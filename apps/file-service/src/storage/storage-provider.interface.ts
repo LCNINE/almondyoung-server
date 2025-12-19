@@ -14,6 +14,7 @@ export interface UploadRequest {
   buffer: Buffer;
   contentType: string;
   metadata?: Record<string, string>;
+  isPublic?: boolean;
 }
 
 export interface UploadResult {
@@ -21,20 +22,24 @@ export interface UploadResult {
   key: string;
   url: string;
   provider: StorageProviderType;
+  isPublic: boolean;
   metadata?: {
     etag?: string;
     versionId?: string;
+    bucket?: string;
   };
 }
 
 export interface DeleteRequest {
   key: string;
+  isPublic?: boolean;
 }
 
 export interface SignedUrlRequest {
   key: string;
   expiresIn: number;
   operation?: 'get' | 'put';
+  isPublic?: boolean;
 }
 
 export interface SignedUrlResult {

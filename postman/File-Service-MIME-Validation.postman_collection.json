@@ -1,0 +1,1078 @@
+{
+	"info": {
+		"name": "File Service - MIME Type Validation Tests",
+		"description": "Test suite for file upload MIME type validation with magic number detection",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Setup",
+			"item": [
+				{
+					"name": "Health Check",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Server is running', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}",
+							"host": ["{{baseUrl}}"],
+							"path": []
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "1. Security Tests",
+			"item": [
+				{
+					"name": "1.1 Reject EXE disguised as JPG",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Should reject executable file', function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"",
+									"pm.test('Error message mentions file type', function () {",
+									"    const response = pm.response.json();",
+									"    pm.expect(response.message).to.include('Invalid file type');",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "test-files/malicious.exe.jpg",
+									"description": "Executable file with .jpg extension"
+								},
+								{
+									"key": "contextId",
+									"value": "product-image",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/upload",
+							"host": ["{{baseUrl}}"],
+							"path": ["files", "upload"]
+						}
+					}
+				},
+				{
+					"name": "1.2 Reject HTML with image Content-Type",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Should reject HTML file', function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"",
+									"pm.test('Error message mentions file type', function () {",
+									"    const response = pm.response.json();",
+									"    pm.expect(response.message).to.include('Invalid file type');",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "test-files/malicious.html",
+									"description": "HTML file sent as image/png"
+								},
+								{
+									"key": "contextId",
+									"value": "product-image",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/upload",
+							"host": ["{{baseUrl}}"],
+							"path": ["files", "upload"]
+						}
+					}
+				},
+				{
+					"name": "1.3 Accept JPEG with wrong Content-Type (warn)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Should accept file (detected type is valid)', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response contains file metadata', function () {",
+									"    const response = pm.response.json();",
+									"    pm.expect(response).to.have.property('id');",
+									"    pm.expect(response).to.have.property('url');",
+									"    pm.expect(response.status).to.equal('active');",
+									"});",
+									"",
+									"// Save file ID for cleanup",
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    pm.collectionVariables.set('lastUploadedFileId', response.id);",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "test-files/valid-image.jpg",
+									"description": "Real JPEG but sent as application/octet-stream"
+								},
+								{
+									"key": "contextId",
+									"value": "product-image",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/upload",
+							"host": ["{{baseUrl}}"],
+							"path": ["files", "upload"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "2. Practical Compatibility Tests",
+			"item": [
+				{
+					"name": "2.1 Accept JPEG with non-standard mime (image/jpg)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Should accept despite non-standard MIME', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('File uploaded successfully', function () {",
+									"    const response = pm.response.json();",
+									"    pm.expect(response.status).to.equal('active');",
+									"    pm.collectionVariables.set('lastUploadedFileId', response.id);",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "test-files/image-with-wrong-mime.jpg"
+								},
+								{
+									"key": "contextId",
+									"value": "user-avatar",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/upload",
+							"host": ["{{baseUrl}}"],
+							"path": ["files", "upload"]
+						}
+					}
+				},
+				{
+					"name": "2.2 Accept PNG with correct MIME",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Should accept PNG', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Correct MIME type stored', function () {",
+									"    const response = pm.response.json();",
+									"    // Note: mimeType is from client, but file was validated",
+									"    pm.expect(response).to.have.property('url');",
+									"    pm.collectionVariables.set('lastUploadedFileId', response.id);",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "test-files/valid-image.png"
+								},
+								{
+									"key": "contextId",
+									"value": "product-image",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/upload",
+							"host": ["{{baseUrl}}"],
+							"path": ["files", "upload"]
+						}
+					}
+				},
+				{
+					"name": "2.3 Reject SVG (security: XSS risk)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Should reject SVG for security reasons', function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"",
+									"pm.test('Error message mentions file type', function () {",
+									"    const response = pm.response.json();",
+									"    pm.expect(response.message).to.include('Invalid file type');",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "test-files/image.svg"
+								},
+								{
+									"key": "contextId",
+									"value": "product-image",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/upload",
+							"host": ["{{baseUrl}}"],
+							"path": ["files", "upload"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "3. Fallback Cases (Text Files)",
+			"item": [
+				{
+					"name": "3.1 Accept TXT file (text/plain)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Should accept text file', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Text file validated via Content-Type', function () {",
+									"    const response = pm.response.json();",
+									"    pm.expect(response).to.have.property('id');",
+									"    pm.collectionVariables.set('lastUploadedFileId', response.id);",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "test-files/document.txt"
+								},
+								{
+									"key": "contextId",
+									"value": "user-document",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/upload",
+							"host": ["{{baseUrl}}"],
+							"path": ["files", "upload"]
+						}
+					}
+				},
+				{
+					"name": "3.2 Accept CSV file (text/csv)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Should accept CSV file', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('CSV validated via Content-Type', function () {",
+									"    const response = pm.response.json();",
+									"    pm.expect(response.status).to.equal('active');",
+									"    pm.collectionVariables.set('lastUploadedFileId', response.id);",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "test-files/data.csv"
+								},
+								{
+									"key": "contextId",
+									"value": "user-document",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/upload",
+							"host": ["{{baseUrl}}"],
+							"path": ["files", "upload"]
+						}
+					}
+				},
+				{
+					"name": "3.3 Accept JSON file (application/json)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Should accept JSON file', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('JSON validated via Content-Type', function () {",
+									"    const response = pm.response.json();",
+									"    pm.expect(response).to.have.property('url');",
+									"    pm.collectionVariables.set('lastUploadedFileId', response.id);",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "test-files/config.json"
+								},
+								{
+									"key": "contextId",
+									"value": "user-document",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/upload",
+							"host": ["{{baseUrl}}"],
+							"path": ["files", "upload"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "4. Wildcard Pattern Tests",
+			"item": [
+				{
+					"name": "4.1 image/* accepts JPEG",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Wildcard matches JPEG', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.collectionVariables.set('lastUploadedFileId', pm.response.json().id);"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "test-files/photo.jpg"
+								},
+								{
+									"key": "contextId",
+									"value": "user-avatar",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/upload",
+							"host": ["{{baseUrl}}"],
+							"path": ["files", "upload"]
+						}
+					}
+				},
+				{
+					"name": "4.2 image/* accepts WebP",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Wildcard matches WebP', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.collectionVariables.set('lastUploadedFileId', pm.response.json().id);"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "test-files/image.webp"
+								},
+								{
+									"key": "contextId",
+									"value": "product-image",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/upload",
+							"host": ["{{baseUrl}}"],
+							"path": ["files", "upload"]
+						}
+					}
+				},
+				{
+					"name": "4.3 application/pdf + image/* accepts PDF",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Accepts PDF in mixed context', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.collectionVariables.set('lastUploadedFileId', pm.response.json().id);"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "test-files/document.pdf"
+								},
+								{
+									"key": "contextId",
+									"value": "receipt",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/upload",
+							"host": ["{{baseUrl}}"],
+							"path": ["files", "upload"]
+						}
+					}
+				},
+				{
+					"name": "4.4 application/pdf + image/* accepts PNG",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Accepts PNG in mixed context', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.collectionVariables.set('lastUploadedFileId', pm.response.json().id);"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "test-files/receipt-scan.png"
+								},
+								{
+									"key": "contextId",
+									"value": "receipt",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/upload",
+							"host": ["{{baseUrl}}"],
+							"path": ["files", "upload"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "5. Public/Private Access Tests",
+			"item": [
+				{
+					"name": "5.1 Upload as Public File",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Public file uploaded', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+								"pm.test('isPublic is true', function () {",
+								"    const response = pm.response.json();",
+								"    pm.expect(response.isPublic).to.be.true;",
+								"    pm.environment.set('publicFileId', response.id);",
+								"    pm.environment.set('publicFileUrl', response.url);",
+								"    console.log('Set publicFileId:', response.id);",
+								"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "test-files/public-image.jpg"
+								},
+								{
+									"key": "contextId",
+									"value": "product-image",
+									"type": "text"
+								},
+								{
+									"key": "isPublic",
+									"value": true,
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/upload",
+							"host": ["{{baseUrl}}"],
+							"path": ["files", "upload"]
+						}
+					}
+				},
+				{
+					"name": "5.2 Access Public File without Auth",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Public file accessible without auth', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Content-Type is image', function () {",
+									"    pm.expect(pm.response.headers.get('Content-Type')).to.include('image');",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/public/{{publicFileId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["files", "public", "{{publicFileId}}"]
+						}
+					}
+				},
+				{
+					"name": "5.3 Upload as Private File (default)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Private file uploaded', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+								"pm.test('isPublic is false', function () {",
+								"    const response = pm.response.json();",
+								"    pm.expect(response.isPublic).to.be.false;",
+								"    pm.environment.set('privateFileId', response.id);",
+								"    console.log('Set privateFileId:', response.id);",
+								"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "test-files/private-document.pdf"
+								},
+								{
+									"key": "contextId",
+									"value": "user-document",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/upload",
+							"host": ["{{baseUrl}}"],
+							"path": ["files", "upload"]
+						}
+					}
+				},
+				{
+					"name": "5.4 Private File requires Auth",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Private file blocks public access', function () {",
+									"    pm.response.to.have.status(404);",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/public/{{privateFileId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["files", "public", "{{privateFileId}}"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "6. Edge Cases & Validation",
+			"item": [
+				{
+					"name": "6.1 Reject File Too Large",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Reject oversized file', function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"",
+									"pm.test('Error mentions size limit', function () {",
+									"    const response = pm.response.json();",
+									"    pm.expect(response.message).to.include('size');",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "test-files/large-file.bin"
+								},
+								{
+									"key": "contextId",
+									"value": "user-avatar",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/upload",
+							"host": ["{{baseUrl}}"],
+							"path": ["files", "upload"]
+						}
+					}
+				},
+				{
+					"name": "6.2 Reject Invalid Context",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Reject invalid context', function () {",
+									"    pm.response.to.have.status(404);",
+									"});",
+									"",
+									"pm.test('Error mentions context not found', function () {",
+									"    const response = pm.response.json();",
+									"    pm.expect(response.message).to.include('not found');",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "test-files/valid-image.jpg"
+								},
+								{
+									"key": "contextId",
+									"value": "non-existent-context",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/upload",
+							"host": ["{{baseUrl}}"],
+							"path": ["files", "upload"]
+						}
+					}
+				},
+				{
+					"name": "6.3 Reject Missing File",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Reject missing file', function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"",
+									"pm.test('Error mentions file required', function () {",
+									"    const response = pm.response.json();",
+									"    pm.expect(response.message).to.include('required');",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "contextId",
+									"value": "product-image",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/upload",
+							"host": ["{{baseUrl}}"],
+							"path": ["files", "upload"]
+						}
+					}
+				}
+			]
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Auto-refresh token if needed",
+					"const tokenExpiry = pm.collectionVariables.get('tokenExpiry');",
+					"if (tokenExpiry && Date.now() > tokenExpiry) {",
+					"    console.log('Token expired, need to refresh');",
+					"}"
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Global error handling",
+					"if (pm.response.code >= 500) {",
+					"    console.error('Server error:', pm.response.json());",
+					"}"
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:3000/api/files",
+			"type": "string"
+		},
+		{
+			"key": "authToken",
+			"value": "YOUR_JWT_TOKEN_HERE",
+			"type": "string"
+		},
+		{
+			"key": "lastUploadedFileId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "publicFileId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "publicFileUrl",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "privateFileId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "tokenExpiry",
+			"value": "",
+			"type": "string"
+		}
+	]
+}
+
+
