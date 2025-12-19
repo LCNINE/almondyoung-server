@@ -19,7 +19,8 @@ import { useRouter } from "next/navigation"
 import { useActionState, useEffect, useState, useTransition } from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
-import { useBankAccountModalStore } from "../store/payment-method-modal-store"
+import { useBnplModalStore } from "../store/bnpl-modal-store"
+import { usePaymentMethodModalStore } from "../store/payment-method-modal-store"
 import { paymentMethodFormSchema, PaymentMethodFormSchema } from "./schema"
 import BankSelectorStep from "./step1"
 import BankAccountLookupStep from "./step2"
@@ -29,7 +30,9 @@ type Step = "method" | "bank" | "account" | "agreement"
 
 // 결제 수단 선택 모달 컴포넌트
 export default function BankAccountWizard({ user }: { user: UserDetail }) {
-  const { isOpen, openModal, closeModal } = useBankAccountModalStore() // 결제 수단 선택 모달
+  const { isOpen, closeModal } = usePaymentMethodModalStore() // 결제 수단 선택 모달
+  const { closeModal: closeBnplModal } = useBnplModalStore() // 나중결제 결제 수단관리 모달창 닫기
+
   const router = useRouter()
 
   const form = useForm<PaymentMethodFormSchema>({
@@ -64,7 +67,7 @@ export default function BankAccountWizard({ user }: { user: UserDetail }) {
     }
 
     fetchBusinessInfo()
-  }, [])
+  }, [isOpen])
 
   useEffect(() => {
     if (user.profile?.birthDate) {
@@ -74,14 +77,17 @@ export default function BankAccountWizard({ user }: { user: UserDetail }) {
     if (user) {
       form.setValue("email", user.email)
     }
-  }, [user])
+  }, [user, isOpen])
 
   useEffect(() => {
     if (state) {
-      if (state && state.success) {
+      if (state && state.success && "profileId" in state) {
         toast.success("정기 결제 등록이 완료되었습니다.")
+
+        form.reset()
         router.refresh()
         closeModal()
+        closeBnplModal()
       } else {
         toast.error(state?.message || "정기결제 신청에 실패했습니다.")
       }
@@ -90,7 +96,9 @@ export default function BankAccountWizard({ user }: { user: UserDetail }) {
 
   const [step, setStep] = useState<Step>("method")
 
-  const handleBankSelect = (nextStep: "bank" | "account" | "agreement") => {
+  const handleBankSelect = (
+    nextStep: "method" | "bank" | "account" | "agreement"
+  ) => {
     setStep(nextStep)
   }
 
@@ -133,12 +141,13 @@ export default function BankAccountWizard({ user }: { user: UserDetail }) {
     formData.append("payerName", data.accountHolderName) // 납부자 명
     formData.append("phone", formattedPhone) // 전화번호
     formData.append("paymentCompany", data.bankCode) // 은행코드
+    formData.append("name", data.bankName) // 은행 명
     formData.append("paymentNumber", data.accountNumber) // 계좌번호
     formData.append("payerNumber", data.payerNumber || "") // 납부자 사업자 번호
     formData.append("file", data.signature as File) //  전자서명 파일
-
     startTransition(async () => {
       formAction(formData)
+      handleBankSelect("method")
     })
   }
 

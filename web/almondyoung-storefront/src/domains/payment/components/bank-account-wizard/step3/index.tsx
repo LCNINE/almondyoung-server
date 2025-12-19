@@ -63,7 +63,7 @@ export default function BankAgreementStep({
   const dayOptions = Array.from({ length: 28 }, (_, i) => i + 1)
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex h-full flex-col gap-4 overflow-y-auto pb-40">
       <section className="flex">
         <div className="flex-1 space-y-2">
           <div>
@@ -143,19 +143,7 @@ export default function BankAgreementStep({
       {/* 약관 동의 섹션 */}
       <section className="mt-4">
         {agreements.slice(2, 5).map((agreement) => (
-          <AgreementForm
-            key={agreement.id}
-            agreement={agreement}
-            checked={
-              !!form.watch(agreement.id as keyof PaymentMethodFormSchema)
-            }
-            onCheckedChange={(checked) =>
-              form.setValue(
-                agreement.id as keyof PaymentMethodFormSchema,
-                checked
-              )
-            }
-          />
+          <AgreementForm key={agreement.id} agreement={agreement} />
         ))}
       </section>
 
@@ -175,62 +163,62 @@ export default function BankAgreementStep({
             위와 같이 정기결제 신청에 동의합니다.
           </p>
         )}
+      </section>
 
-        <div className="fixed right-0 bottom-0 left-0 space-y-2 bg-white p-4">
-          {/* 전자서명 영역 */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label className="text-sm font-medium">
-                전자서명 <span className="text-red-500">*</span>
-              </Label>
-              {form.watch("signature") && (
-                <span className="flex items-center gap-1 text-xs text-green-600">
-                  <Check className="size-3.5" />
-                  서명 완료
-                </span>
-              )}
+      <div className="fixed right-0 bottom-0 left-0 space-y-2 bg-white p-4">
+        {/* 전자서명 영역 */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label className="text-sm font-medium">
+              전자서명 <span className="text-red-500">*</span>
+            </Label>
+            {form.watch("signature") && (
+              <span className="flex items-center gap-1 text-xs text-green-600">
+                <Check className="size-3.5" />
+                서명 완료
+              </span>
+            )}
 
-              {!form.watch("signature") && (
-                <p className="text-center text-xs text-gray-500">
-                  전자서명을 완료해주세요
-                </p>
-              )}
-            </div>
-
-            <Button
-              type="button"
-              variant={"outline"}
-              size="lg"
-              className={`w-full cursor-pointer transition-all hover:bg-yellow-50 hover:text-white ${
-                form.formState.errors.signature
-                  ? "animate-pulse border-red-500 bg-red-50"
-                  : ""
-              }`}
-              onClick={() => {
-                setIsSignatureModalOpen(true)
-              }}
-            >
-              <PenLine className="mr-2 size-4" />
-              {form.watch("signature") ? "서명 다시하기" : "전자서명 하기"}
-            </Button>
+            {!form.watch("signature") && (
+              <p className="text-center text-xs text-gray-500">
+                전자서명을 완료해주세요
+              </p>
+            )}
           </div>
 
-          {/* 신청 버튼 */}
           <Button
-            type="submit"
-            variant={"default"}
+            type="button"
+            variant={"outline"}
             size="lg"
-            className="bg-primary hover:bg-primary/90 w-full cursor-pointer font-semibold"
-            disabled={!form.watch("signature") || isFormSubmitting}
+            className={`w-full cursor-pointer transition-all hover:bg-yellow-50 hover:text-white ${
+              form.formState.errors.signature
+                ? "animate-pulse border-red-500 bg-red-50"
+                : ""
+            }`}
+            onClick={() => {
+              setIsSignatureModalOpen(true)
+            }}
           >
-            {isFormSubmitting ? (
-              <Spinner size="sm" color="white" />
-            ) : (
-              "정기결제 신청하기"
-            )}
+            <PenLine className="mr-2 size-4" />
+            {form.watch("signature") ? "서명 다시하기" : "전자서명 하기"}
           </Button>
         </div>
-      </section>
+
+        {/* 신청 버튼 */}
+        <Button
+          type="submit"
+          variant={"default"}
+          size="lg"
+          className="bg-primary hover:bg-primary/90 w-full cursor-pointer font-semibold"
+          disabled={!form.watch("signature") || isFormSubmitting}
+        >
+          {isFormSubmitting ? (
+            <Spinner size="sm" color="white" />
+          ) : (
+            "정기결제 신청하기"
+          )}
+        </Button>
+      </div>
 
       <SignaturePad
         user={user}
@@ -246,16 +234,12 @@ export default function BankAgreementStep({
 
 function AgreementForm({
   agreement,
-  checked,
-  onCheckedChange,
 }: {
   agreement: {
     id: string
     name: string
     content: string | null
   }
-  checked: boolean
-  onCheckedChange: (checked: boolean) => void
 }) {
   const form = useFormContext<PaymentMethodFormSchema>()
 

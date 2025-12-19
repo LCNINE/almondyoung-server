@@ -1,21 +1,23 @@
 "use client"
 
-import { Spinner } from "@components/common/spinner"
 import { Button } from "@components/common/ui/button"
 import {
   Sheet,
   SheetContent,
   SheetDescription,
+  SheetFooter,
   SheetHeader,
   SheetTitle,
 } from "@components/common/ui/sheet"
-import { setDefaultPaymentProfile } from "@lib/api/wallet/wallet-api"
+import { deletePaymentProfile, setDefaultPaymentProfile } from "@lib/api/wallet"
 import type { BnplProfileDto } from "@lib/types/dto/wallet"
-import { CheckCircle2, CreditCard } from "lucide-react"
+import { Check, CreditCard, Loader2, Trash2 } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useEffect, useTransition } from "react"
 import { toast } from "sonner"
-import { useBankAccountModalStore } from "../store/payment-method-modal-store"
+import { usePaymentMethodModalStore } from "../store/payment-method-modal-store"
+import { maskAccountNumber } from "../utils"
+import { Spinner } from "@components/common/spinner"
 
 interface ChangeAccountSheetProps {
   isOpen: boolean
@@ -23,175 +25,237 @@ interface ChangeAccountSheetProps {
   bnplProfiles: BnplProfileDto[]
 }
 
+// 계좌 변경 시트 컴포넌트
 export default function ChangeAccountSheet({
   isOpen,
   onClose,
   bnplProfiles,
 }: ChangeAccountSheetProps) {
   const router = useRouter()
-  const { openModal: openBankAccountModal } = useBankAccountModalStore()
-  const [loadingProfileId, setLoadingProfileId] = useState<string | null>(null)
+  const [isPending, startTransition] = useTransition()
+  const { openModal: openPaymentMethodModal } = usePaymentMethodModalStore() // 결제 수단 선택 모달
+
+  useEffect(() => {
+    // 나중결제 계좌가 1개이고, 기본 결제 수단이 설정되지 않은 경우에만 설정
+    if (bnplProfiles.length === 1 && !bnplProfiles[0].isDefault) {
+      console.log("기본 결제 수단 자동 설정:", bnplProfiles[0])
+      startTransition(async () => {
+        try {
+          await setDefaultPaymentProfile(bnplProfiles[0].id)
+          router.refresh()
+        } catch (error) {
+          console.error("기본 결제 수단 설정에 실패했습니다.", error)
+        }
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    bnplProfiles.length,
+    bnplProfiles[0]?.id,
+    bnplProfiles[0]?.isDefault,
+    router,
+  ])
 
   const handleSelectAccount = async (profileId: string) => {
-    setLoadingProfileId(profileId)
     try {
-      await setDefaultPaymentProfile(profileId)
-      toast.success("기본 출금 계좌가 변경되었습니다")
-      router.refresh()
-      onClose()
+      if (confirm("기본 출금 계좌를 변경하시겠습니까?")) {
+        await setDefaultPaymentProfile(profileId)
+        toast.success("기본 출금 계좌가 변경되었습니다")
+        router.refresh()
+      }
     } catch (error) {
       toast.error("계좌 변경에 실패했습니다")
-    } finally {
-      setLoadingProfileId(null)
     }
   }
 
-  const handleAddNewAccount = () => {
-    onClose()
-
-    openBankAccountModal()
-  }
-
-  const getAccountDisplayInfo = (profile: BnplProfileDto) => {
-    if (profile.kind === "BANK_ACCOUNT") {
-      return {
-        title: profile.details?.paymentCompanyName || "은행 계좌",
-        subtitle: profile.details?.paymentNumber
-          ? `${profile.details.paymentNumber}`
-          : "계좌번호 정보 없음",
-        holder: profile.details?.payerName || "예금주 정보 없음",
-      }
-    }
-
-    return {
-      title: "결제 수단",
-      subtitle: profile.name || "정보 없음",
-      holder: "",
-    }
-  }
+  if (!isOpen) return null
 
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
       <SheetContent
         side="bottom"
-        className="h-[85vh] p-0 sm:mx-auto sm:h-auto sm:max-h-[85vh] sm:max-w-[540px]"
+        className="m-auto flex h-2/4 max-w-3xl flex-col"
       >
-        <SheetHeader className="border-b px-6 py-4">
-          <SheetTitle className="text-xl font-bold">출금 계좌 변경</SheetTitle>
-          <SheetDescription className="text-sm text-gray-600">
-            기본 출금 계좌를 선택해주세요
-          </SheetDescription>
+        <SheetHeader>
+          <SheetTitle>계좌 변경</SheetTitle>
+          <SheetDescription>변경할 출금 계좌를 선택해주세요</SheetDescription>
         </SheetHeader>
 
-        <div className="flex flex-col gap-4 overflow-y-auto px-6 py-4">
-          {/* 등록된 계좌 목록 */}
-          <div className="space-y-3">
-            <h3 className="text-sm font-semibold text-gray-700">등록된 계좌</h3>
+        <p className="text-sm font-medium">
+          등록 계좌 <span className="font-bold">{bnplProfiles.length}개</span>
+        </p>
 
-            {bnplProfiles.length === 0 ? (
-              <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-gray-300 py-12 text-center">
-                <CreditCard className="mb-3 size-12 text-gray-400" />
-                <p className="text-sm font-medium text-gray-900">
-                  등록된 계좌가 없습니다
-                </p>
-                <p className="mt-1 text-xs text-gray-500">
-                  새로운 계좌를 등록해주세요
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {bnplProfiles.map((profile) => {
-                  const displayInfo = getAccountDisplayInfo(profile)
-                  const isLoading = loadingProfileId === profile.id
-                  const isDefault = profile.isDefault
-
-                  return (
-                    <button
-                      key={profile.id}
-                      onClick={() => handleSelectAccount(profile.id)}
-                      disabled={isLoading || isDefault}
-                      className={`w-full rounded-lg border p-4 text-left transition-all ${
-                        isDefault
-                          ? "border-blue-500 bg-blue-50"
-                          : "hover:bg-gray-10 border-gray-200 hover:border-gray-300"
-                      } ${isLoading ? "opacity-50" : ""}`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex flex-1 items-center gap-3">
-                          {/* 아이콘 */}
-                          <div
-                            className={`flex size-12 shrink-0 items-center justify-center rounded-lg ${
-                              isDefault ? "bg-blue-500" : "bg-gray-20"
-                            }`}
-                          >
-                            <CreditCard
-                              className={`size-6 ${
-                                isDefault ? "text-white" : "text-gray-50"
-                              }`}
-                            />
-                          </div>
-
-                          {/* 계좌 정보 */}
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <p
-                                className={`text-sm font-semibold ${
-                                  isDefault ? "text-blue-900" : "text-gray-900"
-                                }`}
-                              >
-                                {displayInfo.title}
-                              </p>
-                              {isDefault && (
-                                <span className="rounded-full bg-blue-500 px-2 py-0.5 text-xs font-medium text-white">
-                                  기본
-                                </span>
-                              )}
-                            </div>
-                            <p
-                              className={`mt-0.5 text-xs ${
-                                isDefault ? "text-blue-700" : "text-gray-600"
-                              }`}
-                            >
-                              {displayInfo.subtitle}
-                            </p>
-                            {displayInfo.holder && (
-                              <p
-                                className={`mt-0.5 text-xs ${
-                                  isDefault ? "text-blue-600" : "text-gray-500"
-                                }`}
-                              >
-                                예금주: {displayInfo.holder}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* 로딩 또는 체크 아이콘 */}
-                        {isLoading ? (
-                          <Spinner size="sm" />
-                        ) : isDefault ? (
-                          <CheckCircle2 className="size-5 text-blue-500" />
-                        ) : null}
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
-            )}
+        {isPending ? (
+          <div className="flex flex-1 items-center justify-center">
+            <Spinner size="sm" color="white" />
           </div>
-
-          {/* 새 계좌 추가 버튼 */}
-          <div className="border-t pt-4">
-            <Button
-              variant="outline"
-              className="w-full cursor-pointer"
-              onClick={handleAddNewAccount}
-            >
-              + 새로운 계좌 등록
-            </Button>
+        ) : (
+          <div className="flex-1 overflow-y-auto pb-4">
+            <BankAccountList
+              bnplProfiles={bnplProfiles}
+              onSelectAccount={handleSelectAccount}
+            />
           </div>
-        </div>
+        )}
+
+        <SheetFooter className="mt-4">
+          <Button
+            variant="default"
+            className="w-full cursor-pointer"
+            onClick={openPaymentMethodModal}
+          >
+            + {bnplProfiles.length === 0 ? "결제수단 등록" : "결제수단 추가"}
+          </Button>
+        </SheetFooter>
       </SheetContent>
     </Sheet>
+  )
+}
+
+function BankAccountList({
+  bnplProfiles,
+  onSelectAccount,
+}: {
+  bnplProfiles: BnplProfileDto[]
+  onSelectAccount: (profileId: string) => void
+}) {
+  // isDefault가 true인 항목을 맨 위로 정렬
+  const sortedProfiles = [...bnplProfiles].sort((a, b) => {
+    if (a.isDefault) return -1
+    if (b.isDefault) return 1
+    return 0
+  })
+
+  return (
+    <div>
+      <ul className="mt-4 space-y-3 px-1">
+        {sortedProfiles.map((paymentProfile, index) => (
+          <BankAccountItem
+            key={paymentProfile.id}
+            paymentProfile={paymentProfile}
+            onSelectAccount={onSelectAccount}
+            style={{ animationDelay: `${index * 50}ms` }}
+          />
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function BankAccountItem({
+  paymentProfile,
+  style,
+  onSelectAccount,
+}: {
+  paymentProfile: BnplProfileDto
+  style?: React.CSSProperties
+  onSelectAccount: (profileId: string) => void
+}) {
+  const [isPending, startTransition] = useTransition()
+  const router = useRouter()
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation()
+
+    startTransition(async () => {
+      try {
+        if (confirm("계좌를 삭제하시겠습니까?")) {
+          await deletePaymentProfile(paymentProfile.id)
+          router.refresh()
+          toast.success("계좌가 삭제되었습니다.")
+        }
+      } catch (error) {
+        console.error("Failed to delete payment profile:", error)
+        toast.error("계좌 삭제에 실패했습니다. 잠시 후 다시 시도해주세요.")
+      }
+    })
+  }
+
+  if (paymentProfile.isDefault) {
+    return (
+      <li
+        className="animate-fade-in bg-card-default card-default-glow card-hover border-border overflow-hidden rounded-xl border"
+        style={style}
+      >
+        {/* Default badge - integrated top bar */}
+        <div className="bg-primary flex items-center gap-2 px-4 py-2">
+          <div className="bg-primary-foreground/20 flex items-center justify-center rounded-full p-1">
+            <Check className="text-primary-foreground size-3" strokeWidth={3} />
+          </div>
+          <span className="text-primary-foreground text-xs font-semibold">
+            기본 결제수단
+          </span>
+        </div>
+
+        {/* Card content */}
+        <div className="flex items-center justify-between p-4">
+          <div className="flex items-center gap-4">
+            {/* Icon */}
+            <div className="bg-primary flex size-12 items-center justify-center rounded-xl shadow-sm">
+              <CreditCard className="text-primary-foreground size-6" />
+            </div>
+
+            {/* Info */}
+            <div>
+              <p className="text-foreground font-semibold">
+                {paymentProfile.name}
+              </p>
+              <p className="text-muted-foreground mt-0.5 text-sm">
+                {maskAccountNumber(paymentProfile.details?.paymentNumber || "")}
+              </p>
+            </div>
+          </div>
+
+          {/* Delete button */}
+          <Button
+            type="button"
+            onClick={handleDelete}
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-destructive cursor-pointer hover:bg-transparent"
+            disabled={isPending}
+          >
+            <Trash2 className="size-4" />
+          </Button>
+        </div>
+      </li>
+    )
+  }
+
+  return (
+    <li
+      className="animate-fade-in border-border bg-card card-hover overflow-hidden rounded-xl border"
+      style={style}
+      onClick={() => onSelectAccount(paymentProfile.id)}
+    >
+      <div className="flex items-center justify-between p-4">
+        <div className="flex items-center gap-4">
+          {/* Icon */}
+          <div className="bg-secondary flex size-12 items-center justify-center rounded-xl">
+            <CreditCard className="text-muted-foreground size-6" />
+          </div>
+
+          {/* Info */}
+          <div>
+            <p className="text-foreground font-medium">{paymentProfile.name}</p>
+            <p className="text-muted-foreground mt-0.5 text-sm">
+              {maskAccountNumber(paymentProfile.details?.paymentNumber || "")}
+            </p>
+          </div>
+        </div>
+
+        {/* Delete button */}
+        <Button
+          type="button"
+          onClick={handleDelete}
+          variant="ghost"
+          size="sm"
+          className="text-muted-foreground hover:text-destructive cursor-pointer hover:bg-transparent"
+          disabled={isPending}
+        >
+          <Trash2 className="size-4" />
+        </Button>
+      </div>
+    </li>
   )
 }

@@ -62,8 +62,6 @@ export function getBankName(profile: BnplProfileDto): string {
 
 // 계좌번호 마스킹
 export function maskAccountNumber(accountNumber: string): string {
-  if (accountNumber.length <= 8) return accountNumber
-  const start = accountNumber.slice(0, 4)
-  const end = accountNumber.slice(-2)
-  return `${start}-${"*".repeat(accountNumber.length - 6)}-${end}`
+  if (!accountNumber || accountNumber.length < 4) return accountNumber
+  return `****-****-${accountNumber.slice(-4)}`
 }

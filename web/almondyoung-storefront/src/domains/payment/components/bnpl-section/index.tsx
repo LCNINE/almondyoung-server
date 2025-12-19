@@ -1,8 +1,10 @@
 "use client"
 
 import { Button } from "@components/common/ui/button"
+import { setDefaultPaymentProfile } from "@lib/api/wallet"
 import type { BnplProfileDto } from "@lib/types/dto/wallet"
-import { useCallback, useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
+import { useCallback, useEffect, useState, useTransition } from "react"
 import EmptyState from "../empty-state"
 import { useBnplModalStore } from "../store/bnpl-modal-store"
 import BnplCard from "./bnpl-card"
@@ -25,15 +27,29 @@ export default function BnplSection({
   const { isOpen: isChangeAccountSheetOpen, closeSheet } =
     useChangeAccountSheet()
 
-  const { bnplSummary, isPending: isLoadingSummary } = useBnplSummary()
-  const {
-    fetchBnplHistory,
-    data: bnplHistory,
-    isPending: isLoadingHistory,
-  } = useBnplHistory()
+  const [isPending, startTransition] = useTransition()
+  const router = useRouter()
 
-  // Sheet 열림 상태
-  const [isSheetOpen, setIsSheetOpen] = useState(false)
+  useEffect(() => {
+    // 나중결제 계좌가 1개이고, 기본 결제 수단이 설정되지 않은 경우에만 설정
+    if (bnplProfiles.length === 1 && !bnplProfiles[0].isDefault) {
+      console.log("기본 결제 수단 자동 설정:", bnplProfiles[0])
+      startTransition(async () => {
+        try {
+          await setDefaultPaymentProfile(bnplProfiles[0].id)
+          router.refresh()
+        } catch (error) {
+          console.error("기본 결제 수단 설정에 실패했습니다.", error)
+        }
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    bnplProfiles.length,
+    bnplProfiles[0]?.id,
+    bnplProfiles[0]?.isDefault,
+    router,
+  ])
 
   // 현재 년월 관리
   const [currentDate, setCurrentDate] = useState(() => {
@@ -41,9 +57,19 @@ export default function BnplSection({
     return { year: now.getFullYear(), month: now.getMonth() + 1 }
   })
 
-  useEffect(() => {
-    fetchBnplHistory(currentDate.year, currentDate.month)
-  }, [currentDate.year, currentDate.month])
+  // Sheet 열림 상태
+  const [isSheetOpen, setIsSheetOpen] = useState(false)
+
+  const hasBnplProfile = bnplProfiles.length > 0
+
+  // 계좌가 있을 때만 요청 (enabled: hasBnplProfile)
+  const { bnplSummary, isPending: isLoadingSummary } =
+    useBnplSummary(hasBnplProfile)
+  const { data: bnplHistory, isPending: isLoadingHistory } = useBnplHistory(
+    currentDate.year,
+    currentDate.month,
+    hasBnplProfile
+  )
 
   // 이전 달로 이동
   const handlePrevious = useCallback(() => {
@@ -65,8 +91,6 @@ export default function BnplSection({
     })
   }, [])
 
-  const hasBnplProfile = bnplProfiles.length > 0
-
   // Error State
   if (hasError) {
     return (
@@ -76,7 +100,7 @@ export default function BnplSection({
         action={
           <Button
             variant="outline"
-            className="w-full cursor-pointer px-6 font-medium sm:w-auto"
+            className="w-full cursor-pointer px-6 text-sm font-medium sm:w-auto sm:text-base"
             onClick={() => window.location.reload()}
           >
             다시 시도
@@ -95,7 +119,7 @@ export default function BnplSection({
         action={
           <Button
             variant="default"
-            className="w-full cursor-pointer px-6 font-medium sm:w-auto"
+            className="w-full cursor-pointer px-6 text-sm font-medium sm:w-auto sm:text-base"
             onClick={openModal}
           >
             + 결제수단 등록
@@ -115,8 +139,11 @@ export default function BnplSection({
         onPrevious={handlePrevious}
         onNext={handleNext}
         onViewDetails={() => setIsSheetOpen(true)}
+        isLoading={isLoadingSummary}
+        bankName={bnplProfiles[0].name}
       />
 
+      {/* 내역 보기 */}
       <BnplHistorySheet
         isOpen={isSheetOpen}
         onClose={() => setIsSheetOpen(false)}
@@ -127,6 +154,7 @@ export default function BnplSection({
         onNext={handleNext}
       />
 
+      {/* 출금 계좌 변경 */}
       <ChangeAccountSheet
         isOpen={isChangeAccountSheetOpen}
         onClose={closeSheet}

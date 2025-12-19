@@ -19,8 +19,10 @@ export function Price({
 }) {
   return (
     <div className="inline-flex items-baseline">
-      <div className={className}>{formatNumber(amount)}</div>
-      <span className={cn(unitClassName)}>원</span>
+      <div className={cn("text-sm sm:text-base", className)}>
+        {formatNumber(amount)}
+      </div>
+      <span className={cn("text-sm sm:text-base", unitClassName)}>원</span>
     </div>
   )
 }

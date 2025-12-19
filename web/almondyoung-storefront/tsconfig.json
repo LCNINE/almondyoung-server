@@ -1,10 +1,16 @@
 {
   "compilerOptions": {
     "target": "es5",
-    "lib": ["dom", "dom.iterable", "esnext"],
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
     "esModuleInterop": true,
@@ -16,17 +22,39 @@
     "incremental": true,
     "baseUrl": "./src",
     "paths": {
-      "@assets/*": ["assets/*"],
-      "@lib/*": ["lib/*"],
-      "@modules/*": ["modules/*"],
-      "@pages/*": ["pages/*"],
-      "@types/*": ["types/*"],
-      "@components/*": ["components/*"],
-      "@utils/*": ["utils/*"],
-      "@hooks/*": ["hooks/*"],
-      "@context/*": ["context/*"],
-      "@data/*": ["data/*"],
-      "domains/*": ["domains/*"]
+      "@assets/*": [
+        "assets/*"
+      ],
+      "@lib/*": [
+        "lib/*"
+      ],
+      "@modules/*": [
+        "modules/*"
+      ],
+      "@pages/*": [
+        "pages/*"
+      ],
+      "@types/*": [
+        "types/*"
+      ],
+      "@components/*": [
+        "components/*"
+      ],
+      "@utils/*": [
+        "utils/*"
+      ],
+      "@hooks/*": [
+        "hooks/*"
+      ],
+      "@context/*": [
+        "context/*"
+      ],
+      "@data/*": [
+        "data/*"
+      ],
+      "domains/*": [
+        "domains/*"
+      ]
     },
     "plugins": [
       {
@@ -39,7 +67,8 @@
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-    "src/lib/types/ui/filter.tts"
+    "src/lib/types/ui/filter.tts",
+    ".next/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

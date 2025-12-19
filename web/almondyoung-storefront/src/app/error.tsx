@@ -101,7 +101,7 @@ export default function Error({
         <main className="flex flex-1 items-center justify-center px-4 py-12">
           <div className="w-full max-w-lg text-center">
             {/* Illustration */}
-            <div className="animate-fade-in mb-6">
+            <div className="mb-6">
               <Image
                 src={LostAlmondImage}
                 alt="에러가 발생한 아몬드 캐릭터"
@@ -112,29 +112,26 @@ export default function Error({
             </div>
 
             {/* Error Title */}
-            <div
-              className="animate-fade-in mb-4"
-              style={{ animationDelay: "0.1s" }}
-            >
+            <div className="mb-4" style={{ animationDelay: "0.1s" }}>
               <span className="text-gold text-5xl font-bold">앗!</span>
             </div>
 
             {/* Message */}
             <h1
-              className="text-foreground animate-fade-in mb-3 text-xl font-semibold"
+              className="text-foreground mb-3 text-xl font-semibold"
               style={{ animationDelay: "0.2s" }}
             >
               뭔가 잘못됐어요!
             </h1>
 
             <p
-              className="text-muted-foreground animate-fade-in mb-2 text-sm leading-relaxed"
+              className="text-muted-foreground mb-2 text-sm leading-relaxed"
               style={{ animationDelay: "0.3s" }}
             >
               예상치 못한 오류가 발생했어요. 걱정 마세요!
             </p>
             <p
-              className="text-muted-foreground animate-fade-in mb-8 text-sm"
+              className="text-muted-foreground mb-8 text-sm"
               style={{ animationDelay: "0.4s" }}
             >
               새로고침하거나 홈으로 돌아가 보세요!
@@ -142,7 +139,7 @@ export default function Error({
 
             {/* Action Buttons */}
             <div
-              className="animate-fade-in flex flex-col gap-3 sm:flex-row sm:justify-center"
+              className="flex flex-col gap-3 sm:flex-row sm:justify-center"
               style={{ animationDelay: "0.5s" }}
             >
               <Button
@@ -168,7 +165,7 @@ export default function Error({
 
             {/* Help Section */}
             <div
-              className="bg-surface animate-fade-in mt-10 rounded-lg p-4"
+              className="bg-surface mt-10 rounded-lg p-4"
               style={{ animationDelay: "0.7s" }}
             >
               <p className="text-muted-foreground text-xs">

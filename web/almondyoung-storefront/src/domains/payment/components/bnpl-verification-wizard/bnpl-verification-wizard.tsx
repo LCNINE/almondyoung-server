@@ -30,7 +30,7 @@ export default function BnplVerificationWizard({
   businessInfo: BusinessInfo | null
   bnplProfiles: BnplProfileDto[]
 }) {
-  const { isOpen, openModal, closeModal, toggleModal } = useBnplModalStore()
+  const { isOpen, toggleModal } = useBnplModalStore()
 
   const [currentStep, setCurrentStep] = useState<Step>("phone")
 
@@ -96,11 +96,7 @@ export default function BnplVerificationWizard({
         )}
 
         {currentStep === "bankAccount" && (
-          <BankAccountStep
-            onComplete={() => closeModal()}
-            user={user}
-            bnplProfiles={bnplProfiles}
-          />
+          <BankAccountStep bnplProfiles={bnplProfiles} />
         )}
       </DialogContent>
     </Dialog>

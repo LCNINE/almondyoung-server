@@ -58,16 +58,15 @@ export default function AccountSection({
     <Card className="mb-4 border-none shadow-xs">
       <CardContent className="flex items-center justify-between p-7">
         <div>
-          <span className="text-foreground text-lg font-bold">계좌</span>
+          <span className="text-foreground font-bold sm:text-lg">계좌</span>
         </div>
 
         <button
-          className="hover:text-primary flex cursor-pointer items-center gap-2"
+          className="hover:text-primary flex cursor-pointer items-center gap-2 text-base sm:text-lg"
           aria-label="계좌 변경"
         >
-          {/* todo: 계좌 정보 불러와서 표시 */}
-          <span className="text-foreground text-base font-normal">
-            우리은행 계좌
+          <span className="text-foreground text-sm font-normal sm:text-base">
+            {defaultBnplProfile.name ?? "계좌"}
           </span>
           <ChevronRight className="size-4" />
         </button>

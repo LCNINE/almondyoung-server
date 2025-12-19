@@ -1,6 +1,6 @@
 "use client"
 
-import { UserDetail } from "domains/auth/types"
+import type { UserDetail } from "@lib/types/ui/user"
 import { createContext, useContext, useEffect, useState } from "react"
 
 const UserContext = createContext<{

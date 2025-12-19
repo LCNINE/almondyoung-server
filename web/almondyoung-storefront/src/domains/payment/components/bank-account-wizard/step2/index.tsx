@@ -173,11 +173,11 @@ function VerifiedBankAccountCard({
   bankCode: string | null
   onNextStep: () => void
 }) {
-  if (!bankCode) return null
-
   const form = useFormContext<PaymentMethodFormSchema>()
   const accountHolderName = form.watch("accountHolderName")
   const accountNumber = form.watch("accountNumber")
+
+  if (!bankCode) return null
 
   return (
     <>

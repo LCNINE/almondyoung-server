@@ -7,7 +7,7 @@ interface BankAccountModalStore {
   toggleModal: () => void
 }
 
-export const useBankAccountModalStore = create<BankAccountModalStore>(
+export const usePaymentMethodModalStore = create<BankAccountModalStore>(
   (set) => ({
     isOpen: false,
     openModal: () => set({ isOpen: true }),

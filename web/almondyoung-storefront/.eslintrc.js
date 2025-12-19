@@ -12,7 +12,5 @@ module.exports = {
         ],
       },
     ],
-
-    "@typescript-eslint/no-unsafe-argument": "warn",
   },
 }

@@ -15,7 +15,6 @@ const funMessages = [
 ]
 
 export default function NotFound() {
-  const pathname = usePathname()
   const router = useRouter()
   const [message] = useState(
     () => funMessages[Math.floor(Math.random() * funMessages.length)]
@@ -36,7 +35,7 @@ export default function NotFound() {
       <main className="flex flex-1 items-center justify-center px-4 py-12">
         <div className="w-full max-w-lg text-center">
           {/* Illustration */}
-          <div className="animate-fade-in mb-6">
+          <div className="mb-6">
             <Image
               src={NotfoundImage}
               alt="길을 잃은 아몬드 캐릭터"
@@ -47,29 +46,26 @@ export default function NotFound() {
           </div>
 
           {/* Error Code with Animation */}
-          <div
-            className="animate-fade-in mb-4"
-            style={{ animationDelay: "0.1s" }}
-          >
+          <div className="mb-4" style={{ animationDelay: "0.1s" }}>
             <span className="text-gold text-7xl font-bold">404</span>
           </div>
 
           {/* Fun Message */}
           <h1
-            className="text-foreground animate-fade-in mb-3 text-xl font-semibold"
+            className="text-foreground mb-3 text-xl font-semibold"
             style={{ animationDelay: "0.2s" }}
           >
             {message}
           </h1>
 
           <p
-            className="text-muted-foreground animate-fade-in mb-2 text-sm leading-relaxed"
+            className="text-muted-foreground mb-2 text-sm leading-relaxed"
             style={{ animationDelay: "0.3s" }}
           >
             걱정 마세요, 누구나 가끔은 길을 잃을 수 있잖아요.
           </p>
           <p
-            className="text-muted-foreground animate-fade-in mb-8 text-sm"
+            className="text-muted-foreground mb-8 text-sm"
             style={{ animationDelay: "0.4s" }}
           >
             아래 버튼을 눌러 다시 쇼핑을 시작해 보세요! 🌰
@@ -77,7 +73,7 @@ export default function NotFound() {
 
           {/* Action Buttons */}
           <div
-            className="animate-fade-in flex flex-col gap-3 sm:flex-row sm:justify-center"
+            className="flex flex-col gap-3 sm:flex-row sm:justify-center"
             style={{ animationDelay: "0.5s" }}
           >
             <Button
@@ -103,7 +99,7 @@ export default function NotFound() {
 
           {/* Additional Help */}
           <div
-            className="bg-surface animate-fade-in mt-10 rounded-lg p-4"
+            className="bg-surface mt-10 rounded-lg p-4"
             style={{ animationDelay: "0.6s" }}
           >
             <p className="text-muted-foreground text-xs">

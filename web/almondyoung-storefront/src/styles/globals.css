@@ -37,6 +37,7 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --color-card-default: var(--card-default);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -171,6 +172,8 @@
   --foreground: var(--gray-90);
   --card: var(--gray-0);
   --card-foreground: var(--gray-90);
+  --card-default: var(--gray-0);
+  --card-default-border: var(--primary);
   --popover: var(--gray-0);
   --popover-foreground: var(--gray-90);
   --primary: var(--yellow-30);
@@ -408,6 +411,11 @@
 }
 
 @layer components {
+  /* 애니메이션 */
+  .animate-fade-in {
+    animation: fade-in 0.3s ease-out;
+  }
+
   /* 버튼 베이스 스타일 */
   .ay-btn-base {
     @apply focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 aria-invalid:border-destructive inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:ring-[3px] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4;
@@ -479,6 +487,18 @@
   60%,
   80% {
     transform: translateX(10px);
+  }
+}
+
+/* Fade-in 애니메이션 */
+@keyframes fade-in {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
@@ -620,5 +640,22 @@
     .carousel-nav-btn {
       display: none !important;
     }
+  }
+}
+
+@layer utilities {
+  .card-default-glow {
+    box-shadow:
+      0 0 0 1px hsl(var(--card-default-border)),
+      0 4px 16px -4px hsl(var(--primary) / 0.15);
+  }
+
+  .card-hover {
+    @apply transition-all duration-200 ease-out;
+  }
+
+  .card-hover:hover {
+    @apply shadow-md;
+    transform: translateY(-1px);
   }
 }

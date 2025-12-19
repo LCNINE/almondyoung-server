@@ -195,7 +195,7 @@ export async function getBnplHistory(
  * HMS BNPL 온보딩 (FormData)
  * @param formData FormData (서명 파일 포함)
  */
-export async function onboardHmsBnpl(prevState: any, formData: FormData) {
+export async function onboardHmsBnpl(_: any, formData: FormData) {
   try {
     const data = await api<OnboardHmsBnplResponse>(
       "wallet",

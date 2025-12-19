@@ -11,7 +11,7 @@ export default function PendingPointsSection({
     <Card className="my-4 border-none shadow-xs">
       <CardContent className="flex items-center justify-between p-7">
         <div>
-          <span className="text-foreground text-lg font-bold">
+          <span className="text-foreground font-bold sm:text-lg">
             곧 적립될 아몬드영 적립금이에요
           </span>
         </div>
@@ -19,8 +19,8 @@ export default function PendingPointsSection({
         <div>
           <Price
             amount={pendingPoints}
-            className="text-foreground mr-2 text-lg font-bold"
-            unitClassName="text-muted-foreground text-base"
+            className="text-foreground mr-2 text-base font-bold sm:text-lg"
+            unitClassName="text-muted-foreground text-sm sm:text-base"
           />
         </div>
       </CardContent>

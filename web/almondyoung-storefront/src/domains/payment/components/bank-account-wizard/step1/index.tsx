@@ -27,7 +27,9 @@ export default function BankSelectorStep({
                 "flex w-full items-center gap-3 rounded-lg border p-3 transition"
               )}
             >
-              <span className="text-[15px] font-medium">{bank.name}</span>
+              <span className="text-xs font-medium sm:text-base">
+                {bank.name}
+              </span>
             </Button>
           ))}
         </div>
