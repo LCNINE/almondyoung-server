@@ -75,6 +75,15 @@ fix-provider.js
 temp_*.js
 temp_*.ts
 
+# Postman environment files with secrets
+postman/*.postman_environment.json
+!postman/*.postman_environment.example.json
+
+# Newman test results
+test-results/
+newman-*.html
+newman-*.json
+
 # Response files
 *_response.json
 email_response.json

@@ -7,17 +7,16 @@ import {
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { FastifyRequest } from 'fastify';
-import { MultipartFile } from '@fastify/multipart'; // VAP-FIX: Gemini's fix - Import type
+import { MultipartFile } from '@fastify/multipart';
 
 /**
  * @description
- * VAP-FIX: Changed by Gemini
  * This interceptor solves the "Maximum call stack size exceeded" (RangeError)
  * that occurs when using NestJS's ValidationPipe with Fastify's multipart file uploads.
  *
- * It intercepts multipart/form-data requests *before* the ValidationPipe runs.
- * It manually processes the multipart stream, extracts all fields and the file,
- * and attaches them to the `request.body`. This presents a stable, parsed object
+ * It intercepts multipart/form-data requests before the ValidationPipe runs,
+ * manually processes the multipart stream, extracts all fields and files,
+ * and attaches them to the request.body. This presents a stable, parsed object
  * to the ValidationPipe, preventing the crash.
  */
 @Injectable()
@@ -34,12 +33,12 @@ export class FileTransformInterceptor implements NestInterceptor {
     }
 
     const body = {};
-    const files: MultipartFile[] = []; // VAP-FIX: Gemini's fix - Explicitly type the array
+    const files: MultipartFile[] = [];
 
     try {
       const parts = request.parts();
       for await (const part of parts) {
-        // VAP-FIX: Gemini's fix - Use a type guard to check for file parts
+        // Check for file parts using type guard
         if ('filename' in part) {
           // It's a file part
           // To keep memory usage low, we pass the stream object itself.

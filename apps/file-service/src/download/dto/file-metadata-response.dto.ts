@@ -32,10 +32,11 @@ export class FileMetadataResponseDto {
   size: number;
 
   @ApiProperty({
-    description: 'File URL',
+    description: 'File URL (only included for public files)',
     example: 'https://bucket.s3.amazonaws.com/products/images/2025/01/file.jpg',
+    required: false,
   })
-  url: string;
+  url?: string;
 
   @ApiProperty({
     description: 'File status',
@@ -45,11 +46,16 @@ export class FileMetadataResponseDto {
   status: string;
 
   @ApiProperty({
-    description: 'File context',
+    description: 'File context ID',
     example: 'product-image',
-    required: false,
   })
-  context?: string | null;
+  contextId: string;
+
+  @ApiProperty({
+    description: 'Whether the file is publicly accessible',
+    example: true,
+  })
+  isPublic: boolean;
 
   @ApiProperty({
     description: 'Additional metadata',

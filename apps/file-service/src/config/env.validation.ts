@@ -21,7 +21,8 @@ export const fileServiceEnvSchema = z
     AWS_REGION: z.string().optional(),
     AWS_ACCESS_KEY_ID: z.string().optional(),
     AWS_SECRET_ACCESS_KEY: z.string().optional(),
-    AWS_S3_BUCKET: z.string().optional(),
+    AWS_S3_PUBLIC_BUCKET: z.string().optional(),
+    AWS_S3_PRIVATE_BUCKET: z.string().optional(),
   })
   .refine(
     (data) => {
@@ -30,14 +31,15 @@ export const fileServiceEnvSchema = z
           data.AWS_REGION &&
           data.AWS_ACCESS_KEY_ID &&
           data.AWS_SECRET_ACCESS_KEY &&
-          data.AWS_S3_BUCKET
+          data.AWS_S3_PUBLIC_BUCKET &&
+          data.AWS_S3_PRIVATE_BUCKET
         );
       }
       return true;
     },
     {
       message:
-        'AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_S3_BUCKET are required when STORAGE_PROVIDER is S3',
+        'AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_S3_PUBLIC_BUCKET, and AWS_S3_PRIVATE_BUCKET are required when STORAGE_PROVIDER is S3',
       path: ['STORAGE_PROVIDER'],
     },
   );

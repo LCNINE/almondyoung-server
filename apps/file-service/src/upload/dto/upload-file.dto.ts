@@ -1,15 +1,25 @@
-import { IsEnum, IsOptional, IsObject, IsArray } from 'class-validator';
+import { IsString, IsOptional, IsObject, IsArray, IsBoolean } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { FILE_CONTEXTS, FileContext } from '../../shared/constants/file-contexts';
+import { Transform } from 'class-transformer';
 
 export class UploadFileDto {
   @ApiProperty({
-    description: 'Context in which the file is being uploaded',
-    enum: Object.values(FILE_CONTEXTS),
+    description: 'File context ID (validated against file_contexts table)',
     example: 'product-image',
   })
-  @IsEnum(FILE_CONTEXTS)
-  context: FileContext;
+  @IsString()
+  contextId: string;
+
+  @ApiProperty({
+    description: 'Whether the file should be publicly accessible. ' +
+      'Required for contexts that allow both public and private.',
+    required: false,
+    example: true,
+  })
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  isPublic?: boolean;
 
   @ApiProperty({
     description: 'Additional metadata for the file',
@@ -20,17 +30,5 @@ export class UploadFileDto {
   @IsObject()
   metadata?: Record<string, any>;
 
-  /**
-   * @description
-   * VAP-FIX: Changed by Gemini
-   * This property is populated by the FileTransformInterceptor.
-   * It is not expected from the client directly in the request body,
-   * but is attached for internal processing and validation.
-   * Marked as optional so validation passes.
-   */
-  @ApiProperty({ type: 'array', items: { type: 'string', format: 'binary' }, required: false, readOnly: true })
-  @IsOptional()
-  @IsArray()
-  files: any[];
 }
 

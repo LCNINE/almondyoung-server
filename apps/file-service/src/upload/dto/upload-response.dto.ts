@@ -31,6 +31,12 @@ export class UploadResponseDto {
     example: 'pending',
   })
   status: string;
+
+  @ApiProperty({
+    description: 'Whether the file is publicly accessible',
+    example: true,
+  })
+  isPublic: boolean;
 }
 
 export class BatchUploadResponseDto {
