@@ -1,5 +1,6 @@
 import { IsString, IsOptional, IsObject, IsArray, IsBoolean } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 
 export class UploadFileDto {
   @ApiProperty({
@@ -11,11 +12,12 @@ export class UploadFileDto {
 
   @ApiProperty({
     description: 'Whether the file should be publicly accessible. ' +
-                 'Required for contexts that allow both public and private.',
+      'Required for contexts that allow both public and private.',
     required: false,
     example: true,
   })
   @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
   @IsBoolean()
   isPublic?: boolean;
 
