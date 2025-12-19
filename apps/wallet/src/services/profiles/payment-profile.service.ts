@@ -229,6 +229,8 @@ export class PaymentProfileService {
         )
         .limit(1);
 
+      console.log('existingBnplProfiles::::', existingBnplProfiles);
+
       if (existingBnplProfiles.length > 0) {
         // 멱등성 확보: 이미 존재하면 조용히 기존 프로필 정보 반환
         const existing = existingBnplProfiles[0];
