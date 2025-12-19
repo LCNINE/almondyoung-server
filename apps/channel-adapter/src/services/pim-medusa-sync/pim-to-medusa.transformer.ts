@@ -1,3 +1,4 @@
+// apps/channel-adapter/src/services/pim-medusa-sync/pim-to-medusa.transformer.ts
 import { Logger } from '@nestjs/common';
 import type { PimProductSnapshot, MedusaProductPayload } from '../../types';
 
@@ -100,7 +101,7 @@ function transformVariants(
     }
 
     return pimVariants
-        .filter((v) => v.status !== 'deleted') // 삭제된 variant 제외
+        .filter((v) => v.status !== 'deleted')
         .map((variant) => {
             // 옵션 조합 매핑
             const options = variant.optionCombination?.reduce(
@@ -127,24 +128,26 @@ function transformVariants(
 
             if (variant.basePrice !== undefined && variant.basePrice !== null) {
                 prices.push({
-                    amount: Math.round(variant.basePrice), // 원 단위 정수
+                    amount: Math.round(variant.basePrice),
                     currency_code: 'KRW',
                 });
             }
 
-            // 멤버십 가격 (필요하면 rules로 추가)
+            // 멤버십 가격 (customer_group_id 기반 규칙)
             if (variant.membershipPrice !== undefined && variant.membershipPrice !== null) {
                 prices.push({
                     amount: Math.round(variant.membershipPrice),
                     currency_code: 'KRW',
-                    rules: { customer_group: 'membership' }, // 예시: 멤버십 그룹 규칙
+                    // TODO: 실제 customer_group_id로 교체 필요
+                    // rules: { customer_group_id: 'cgroup_membership_xxx' },
                 });
             }
 
             return {
                 title,
                 sku: variant.sku || undefined,
-                manage_inventory: true, // 기본값: 재고 관리 활성화
+                // WMS 재고 동기화 완성 전까지 false (품절 처리 방지)
+                manage_inventory: false,
                 options: Object.keys(options).length > 0 ? options : undefined,
                 prices: prices.length > 0 ? prices : undefined,
                 metadata: {
@@ -169,4 +172,3 @@ export function validatePimSnapshot(snapshot: PimProductSnapshot): void {
         throw new Error('PIM snapshot must have at least one variant');
     }
 }
-

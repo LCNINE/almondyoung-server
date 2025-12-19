@@ -1,3 +1,4 @@
+// apps/channel-adapter/src/schema.ts
 // 스키마 상단 import에 index 추가
 import {
   pgTable,
@@ -252,20 +253,20 @@ export const outboxEvents = pgTable(
 
 // 🔹 PIM-Medusa 상품 매핑 테이블
 export const pimMedusaMappings = pgTable(
-  'pim_medusa_product_mappings',
+  'pim_medusa_mappings',
   {
     id: uuid('id')
       .primaryKey()
       .$defaultFn(() => uuidv7()),
 
-    // PIM 정보
+    // PIM 정보 (nullable: 실패 케이스도 기록)
     pimMasterId: uuid('pim_master_id').notNull(),
-    pimVersionId: uuid('pim_version_id').notNull(),
-    pimVersion: integer('pim_version').notNull(),
+    pimVersionId: uuid('pim_version_id'), // nullable
+    pimVersion: integer('pim_version'), // nullable
 
-    // Medusa 정보
-    medusaProductId: varchar('medusa_product_id', { length: 255 }).notNull(),
-    medusaHandle: varchar('medusa_handle', { length: 255 }).notNull(), // pim-{masterId}
+    // Medusa 정보 (nullable: 실패 시 없을 수 있음)
+    medusaProductId: varchar('medusa_product_id', { length: 255 }), // nullable
+    medusaHandle: varchar('medusa_handle', { length: 255 }), // nullable
 
     // 동기화 정보
     syncStatus: varchar('sync_status', { length: 20 }).notNull().default('synced'),

@@ -128,14 +128,14 @@ export class PimMedusaMappingRepository {
         pimMasterId,
         pimVersionId: data.pimVersionId,
         pimVersion: data.pimVersion,
-        medusaProductId: '', // 실패 시 빈 값
-        medusaHandle: '',
+        medusaProductId: null,
+        medusaHandle: null,
         syncStatus: 'failed',
         syncErrorCount: 1,
         lastSyncError: data.error,
       });
     } else {
-      // 업데이트 (에러 카운트 증가)
+      // 업데이트(에러 카운트 증가)
       await this.update(pimMasterId, {
         pimVersionId: data.pimVersionId,
         pimVersion: data.pimVersion,
@@ -151,8 +151,8 @@ export class PimMedusaMappingRepository {
   async shouldProcess(pimMasterId: string, newVersion: number): Promise<boolean> {
     const existing = await this.findByPimMasterId(pimMasterId);
 
-    if (!existing) {
-      // 매핑이 없으면 처리
+    if (!existing || existing.pimVersion === null || existing.pimVersion === undefined) {
+      // 매핑이 없거나 버전 정보가 없으면 처리
       return true;
     }
 
