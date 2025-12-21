@@ -24,6 +24,7 @@ import {
   channelProducts,
   channelVariantListings,
   pricingRules,
+  productVariantPriceCache,
   productImages,
   productApprovalHistory,
   productAuditLog,
@@ -91,6 +92,9 @@ export type PricingRuleInsert = typeof pricingRules.$inferInsert;
 
 export type ProductMasterPricingRuleEntity = typeof productMasterPricingRules.$inferSelect;
 export type ProductMasterPricingRuleInsert = typeof productMasterPricingRules.$inferInsert;
+
+export type ProductVariantPriceCacheEntity = typeof productVariantPriceCache.$inferSelect;
+export type ProductVariantPriceCacheInsert = typeof productVariantPriceCache.$inferInsert;
 
 // ===== Tag Types =====
 export type TagGroupEntity = typeof tagGroups.$inferSelect;

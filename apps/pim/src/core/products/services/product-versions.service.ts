@@ -3,6 +3,7 @@ import { DbService, InjectDb } from '@app/db';
 import { InjectStreamPublisher, StreamPublisher } from '@app/events';
 import { ProductEvents, PRODUCT_STREAM } from '@packages/event-contracts';
 import { PricingValidatorService } from '../../pricing/pricing-validator.service';
+import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
 import {
   ProductMasterVersion,
   DbTransaction,
@@ -42,6 +43,7 @@ export class ProductVersionsService {
     @InjectStreamPublisher(PRODUCT_STREAM.topic.topic)
     private readonly productPublisher: StreamPublisher<ProductEvents>,
     private readonly pricingValidator: PricingValidatorService,
+    private readonly priceCacheService: VariantPriceCacheService,
   ) { }
 
   private get dbConn() {
@@ -163,6 +165,13 @@ export class ProductVersionsService {
 
       const primaryImage = images.find(img => img.isPrimary);
       const thumbnail = primaryImage ? primaryImage.fileId : null;
+      const priceSummary =
+        version.status === 'draft'
+          ? null
+          : (await this.priceCacheService.getPriceSummariesByVersionIds(
+            [versionId],
+            tx,
+          )).get(versionId) ?? null;
 
       return {
         ...version,
@@ -172,6 +181,7 @@ export class ProductVersionsService {
         variants: variantsWithOptions,
         channelProducts: [],
         tagValues: tags,
+        priceSummary,
       };
     }, tx);
   }
@@ -258,6 +268,9 @@ export class ProductVersionsService {
 
       // 가격 검증 (publish 시점)
       await this.pricingValidator.validateCalculatedPrices(versionId, tx);
+
+      // 가격 캐시 생성 (publish 시점)
+      await this.priceCacheService.cachePricesForVersion(versionId, tx);
 
       // draft를 active로 publish
       await tx
@@ -1264,4 +1277,3 @@ export class ProductVersionsService {
     return optionValues;
   }
 }
-

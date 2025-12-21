@@ -3,6 +3,23 @@ import { ProductMasterEntity } from '../entities/master.entity';
 import { ProductVersionDto } from '../entities/master-version.entity';
 import { ProductImageDto } from './product-image.dto';
 
+export class PriceSummaryDto {
+  @ApiProperty({ description: '최소 일반가' })
+  minBasePrice: number;
+
+  @ApiProperty({ description: '최대 일반가' })
+  maxBasePrice: number;
+
+  @ApiProperty({ description: '최소 멤버십가' })
+  minMembershipPrice: number;
+
+  @ApiProperty({ description: '최대 멤버십가' })
+  maxMembershipPrice: number;
+
+  @ApiProperty({ description: '도매가 존재 여부' })
+  hasTieredPrices: boolean;
+}
+
 export class ProductDto {
   @ApiProperty({ description: 'Version ID' })
   id: string;
@@ -68,6 +85,13 @@ export class ProductDto {
 
   @ApiProperty({ description: '삭제일시', nullable: true })
   deletedAt: string | null;
+
+  @ApiProperty({
+    description: '가격 요약 (일반가/멤버십가 최소·최대, 도매가 여부)',
+    type: PriceSummaryDto,
+    nullable: true,
+  })
+  priceSummary: PriceSummaryDto | null;
 }
 
 export class ProductListItemDto {
@@ -140,5 +164,12 @@ export class ProductSummaryDto {
 
   @ApiProperty({ description: '변형 개수' })
   variantCount: number;
+
+  @ApiProperty({
+    description: '가격 요약 (일반가/멤버십가 최소·최대, 도매가 여부)',
+    type: PriceSummaryDto,
+    nullable: true,
+  })
+  priceSummary: PriceSummaryDto | null;
 
 }

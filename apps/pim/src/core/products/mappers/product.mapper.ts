@@ -1,10 +1,14 @@
 import { ProductMasterVersionEntity } from 'apps/pim/src/schema.types';
 import { DateMapper } from '../../../common/mappers';
 import { ProductImageDto } from '../dto/products/product-image.dto';
-import { ProductDto, ProductListItemDto } from '../dto/products/product-response.dto';
+import { PriceSummaryDto, ProductDto, ProductListItemDto } from '../dto/products/product-response.dto';
 
 export class ProductMapper {
-  static toDto(version: ProductMasterVersionEntity, images: ProductImageDto[]): ProductDto {
+  static toDto(
+    version: ProductMasterVersionEntity,
+    images: ProductImageDto[],
+    priceSummary: PriceSummaryDto | null = null,
+  ): ProductDto {
     // thumbnail은 product_images에서 isPrimary=true인 이미지의 fileId 사용
     const primaryImage = images.find(img => img.isPrimary);
     const thumbnail = primaryImage ? primaryImage.fileId : null;
@@ -30,6 +34,7 @@ export class ProductMapper {
       createdAt: DateMapper.toNotNullString(version.createdAt),
       updatedAt: DateMapper.toNotNullString(version.updatedAt),
       deletedAt: DateMapper.toNullableString(version.deletedAt),
+      priceSummary,
     };
   }
 
@@ -44,5 +49,4 @@ export class ProductMapper {
     };
   }
 }
-
 

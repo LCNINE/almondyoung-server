@@ -5,7 +5,7 @@ import {
   OptionValueDto,
   VariantDto,
 } from '../dto/masters/master-response.dto';
-import { ProductSummaryDto } from '../dto/products/product-response.dto';
+import { PriceSummaryDto, ProductSummaryDto } from '../dto/products/product-response.dto';
 import {
   ProductMasterVersionEntity,
   ProductOptionGroupEntity,
@@ -55,6 +55,7 @@ export class ProductMasterMapper {
       optionGroupNames: string[];
       variantCount: number;
       thumbnail?: string | null; // product_images에서 가져온 primary 이미지 fileId
+      priceSummary?: PriceSummaryDto | null;
     }
   ): ProductSummaryDto {
     // thumbnail은 product_images에서 가져온 값 사용
@@ -69,6 +70,7 @@ export class ProductMasterMapper {
       createdAt: DateMapper.toNotNullString(entity.createdAt),
       optionGroupNames: entity.optionGroupNames,
       variantCount: entity.variantCount,
+      priceSummary: entity.priceSummary ?? null,
     };
   }
 
