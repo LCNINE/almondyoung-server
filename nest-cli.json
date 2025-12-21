@@ -128,6 +128,15 @@
         "tsConfigPath": "apps/test-auth-scope/tsconfig.app.json"
       }
     },
+    "ugc-service": {
+      "type": "application",
+      "root": "apps/ugc-service",
+      "entryFile": "main",
+      "sourceRoot": "apps/ugc-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/ugc-service/tsconfig.app.json"
+      }
+    },
     "user-service": {
       "type": "application",
       "root": "apps/user-service",
