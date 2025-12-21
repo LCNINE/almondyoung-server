@@ -11,6 +11,7 @@ import {
   ProductMasterWithVersion,
   ProductImage,
   ProductDetailDto,
+  PriceSummary,
 } from '../../../types';
 import { ProductMasterMapper } from '../mappers';
 import {
@@ -37,6 +38,7 @@ import {
 import { eq, and, ilike, count, asc, desc, inArray, isNull, isNotNull, sql } from 'drizzle-orm';
 import { ProductVersionsService } from './product-versions.service';
 import { PricingCalculatorService } from '../../pricing/pricing-calculator.service';
+import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
 import { v7 as uuidv7 } from 'uuid';
 import { ProductVersionDto } from '../dto/entities/master-version.entity';
 import { MasterProductWithPrimaryVersionDto } from '../dto/products/product-response.dto';
@@ -89,6 +91,7 @@ export class ProductMastersService {
     private readonly productVersionsService: ProductVersionsService,
 
     private readonly pricingCalculatorService: PricingCalculatorService,
+    private readonly priceCacheService: VariantPriceCacheService,
   ) { }
 
   private get client() {
@@ -507,6 +510,7 @@ export class ProductMastersService {
         optionGroupNames: string[];
         variantCount: number;
         thumbnail: string | null;
+        priceSummary: PriceSummary | null;
       }
     }[];
     total: number;
@@ -739,6 +743,11 @@ export class ProductMastersService {
           )
         );
 
+      const priceSummaryMap = await this.priceCacheService.getPriceSummariesByVersionIds(
+        versionIds,
+        trx,
+      );
+
       // Map으로 변환 (O(1) 조회)
       const optionGroupNamesMap = new Map(
         optionGroupNamesResult.map(item => [item.versionId, item.names])
@@ -766,6 +775,7 @@ export class ProductMastersService {
             optionGroupNames: optionGroupNamesMap.get(version.id) ?? [],
             variantCount: variantCountMap.get(version.id) ?? 0,
             thumbnail: thumbnailMap.get(version.id) ?? null,
+            priceSummary: priceSummaryMap.get(version.id) ?? null,
           },
         };
       });

@@ -84,7 +84,6 @@ export const productCategories = pgTable(
     index('idx_categories_slug').on(table.slug),
     index('idx_categories_active').on(table.isActive),
     index('idx_categories_sort_order').on(table.parentId, table.sortOrder),
-    uniqueIndex('unique_categories_parent_name').on(table.parentId, table.name),
     // 자기 참조 foreign key 제약 조건
     foreignKey({
       columns: [table.parentId],
@@ -592,6 +591,37 @@ export const pricingRules = pgTable(
   },
 );
 
+// ===== 11. PRODUCT VARIANT PRICE CACHE (버전별 가격 캐시) =====
+export const productVariantPriceCache = pgTable(
+  'product_variant_price_cache',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    versionId: uuid('version_id')
+      .notNull()
+      .references(() => productMasterVersions.id, { onDelete: 'cascade' }),
+    variantId: uuid('variant_id')
+      .notNull()
+      .references(() => productVariants.id, { onDelete: 'cascade' }),
+    basePrice: bigint('base_price', { mode: 'number' }).notNull(),
+    membershipPrice: bigint('membership_price', { mode: 'number' }).notNull(),
+    tieredPrices: jsonb('tiered_prices')
+      .$type<Array<{ minQuantity: number; price: number }>>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_variant_price_cache_version').on(table.versionId),
+    index('idx_variant_price_cache_variant').on(table.variantId),
+    uniqueIndex('unique_variant_price_cache_version_variant').on(
+      table.versionId,
+      table.variantId,
+    ),
+  ],
+);
+
 
 // ===== 12. PRODUCT IMAGES (상품 이미지) =====
 export const productImages = pgTable(
@@ -919,6 +949,7 @@ export const pimSchema = {
   channelProducts,
   channelVariantListings,
   pricingRules,
+  productVariantPriceCache,
   productImages,
   productApprovalHistory,
   productAuditLog,

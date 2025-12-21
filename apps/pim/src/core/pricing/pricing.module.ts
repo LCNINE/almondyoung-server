@@ -4,6 +4,7 @@ import { MasterPricingController } from './master-pricing.controller';
 import { PricingService } from './pricing.service';
 import { PricingCalculatorService } from './pricing-calculator.service';
 import { PricingValidatorService } from './pricing-validator.service';
+import { VariantPriceCacheService } from './variant-price-cache.service';
 
 @Module({
   controllers: [VersionPricingController, MasterPricingController],
@@ -11,12 +12,13 @@ import { PricingValidatorService } from './pricing-validator.service';
     PricingService,
     PricingCalculatorService,
     PricingValidatorService,
+    VariantPriceCacheService,
   ],
   exports: [
     PricingService,
     PricingCalculatorService,
     PricingValidatorService,
+    VariantPriceCacheService,
   ],
 })
 export class PricingModule {}
-

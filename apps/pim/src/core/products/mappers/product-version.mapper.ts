@@ -45,6 +45,7 @@ export interface ProductVersionDetailResponseDto {
   variants: any[];
   channelProducts: any[];
   tagValues?: any[];
+  priceSummary?: ProductDetailDto['priceSummary'];
 }
 
 /**
@@ -95,7 +96,7 @@ export class ProductVersionMapper {
       variants: detail.variants,
       channelProducts: detail.channelProducts,
       tagValues: detail.tagValues,
+      priceSummary: detail.priceSummary,
     };
   }
 }
-
