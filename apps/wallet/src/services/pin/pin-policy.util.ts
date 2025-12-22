@@ -12,23 +12,19 @@ export class PinPolicyUtil {
   static isValid(pin: string): boolean {
     // 1. 숫자만 허용 및 6자리 확인
     if (!/^\d{6}$/.test(pin)) {
-      console.log('숫자만 허용 및 6자리 확인', pin);
       return false;
     }
 
     // 2. 동일 숫자 반복 체크 (예: 111111, 000000)
     if (this.isRepetitive(pin)) {
-      console.log('동일 숫자 반복 체크', pin);
       return false;
     }
 
     // 3. 연속된 숫자 체크 (예: 123456, 987654)
     if (this.isSequential(pin)) {
-      console.log('연속된 숫자 체크', pin);
       return false;
     }
 
-    console.log('보안 정책 통과', pin);
     return true;
   }
 

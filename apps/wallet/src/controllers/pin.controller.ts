@@ -37,7 +37,7 @@ export class PinController {
     private readonly pinService: PinService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
-  ) {}
+  ) { }
 
   /**
    * GET /payments/pin/status
@@ -105,7 +105,6 @@ export class PinController {
     try {
       const forwardedFor = req.headers['x-forwarded-for'];
       const ipAddress = req.ip || (Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor) || undefined;
-      console.log('Body pin', body.pin);
       await this.pinService.register(userId, body.pin, ipAddress);
       return { success: true };
     } catch (error) {
