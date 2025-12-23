@@ -16,14 +16,13 @@ import { UserDetail } from "@lib/types/ui/user"
 import { cn } from "@lib/utils"
 import { format } from "date-fns"
 import "intl-tel-input/build/css/intlTelInput.css"
-import { useRef, useState, useTransition } from "react"
+import { useEffect, useRef, useState, useTransition } from "react"
 import { Controller, useForm } from "react-hook-form"
 import PhoneInput, { type Country } from "react-phone-number-input"
-import "react-phone-number-input/style.css"
 import { toast } from "sonner"
 import { z } from "zod"
 import useTwilio from "../../hooks/use-twilio"
-import "./phone-input.css"
+import CustomPhoneInput from "@components/phone-input"
 
 const schema = z.object({
   name: z.string().min(1, "이름을 입력해주세요"),
@@ -38,13 +37,13 @@ type FormData = z.infer<typeof schema>
 
 // 휴대폰 인증 스텝 컴포넌트
 export function PhoneVerificationStep({
-  status,
   onComplete,
   user,
+  isVerification,
 }: {
-  status: "verified" | "rejected" | "under_review" | "none"
   onComplete: () => void
   user: UserDetail
+  isVerification: boolean
 }) {
   const verificationCodeRef = useRef<HTMLInputElement>(null)
   const [verificationCode, setVerificationCode] = useState("") // 인증번호
@@ -71,6 +70,18 @@ export function PhoneVerificationStep({
       carrier: "",
     },
   })
+
+  useEffect(() => {
+    if (user.profile?.phoneNumber) {
+      form.setValue("phoneNumber", user.profile.phoneNumber)
+    }
+  }, [user.profile?.phoneNumber])
+
+  useEffect(() => {
+    if (isVerification) {
+      onComplete()
+    }
+  }, [isVerification])
 
   const onSubmit = async (data: FormData) => {
     const birthDateFormatted = format(user.profile?.birthDate!, "yyMMdd")
@@ -242,18 +253,10 @@ export function PhoneVerificationStep({
             name="phoneNumber"
             control={form.control}
             render={({ field }) => (
-              <PhoneInput
-                required
-                defaultCountry="KR"
-                country={form.watch("countryCode") as Country}
-                placeholder="휴대폰번호 (숫자만 입력하세요)"
+              <CustomPhoneInput
                 value={field.value}
                 onChange={field.onChange}
-                onCountryChange={(country) => {
-                  if (country) {
-                    form.setValue("countryCode", country)
-                  }
-                }}
+                countryCode={form.watch("countryCode")}
               />
             )}
           />

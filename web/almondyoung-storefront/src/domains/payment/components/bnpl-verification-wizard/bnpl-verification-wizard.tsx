@@ -15,6 +15,7 @@ import { useBnplModalStore } from "../store/bnpl-modal-store"
 import { PhoneVerificationStep } from "./step1"
 import BusinessVerificationStep from "./step2"
 import BankAccountStep from "./step3"
+import { usePathname, useRouter } from "next/navigation"
 
 type Step = "phone" | "business" | "bankAccount"
 
@@ -30,7 +31,13 @@ export default function BnplVerificationWizard({
   businessInfo: BusinessInfo | null
   bnplProfiles: BnplProfileDto[]
 }) {
-  const { isOpen, toggleModal } = useBnplModalStore()
+  const router = useRouter()
+  const pathname = usePathname()
+
+  const isSecurityPage =
+    pathname.includes("security") || pathname.includes("forget-pin")
+
+  const { isOpen, toggleModal, closeModal } = useBnplModalStore()
 
   const [currentStep, setCurrentStep] = useState<Step>("phone")
 
@@ -45,9 +52,21 @@ export default function BnplVerificationWizard({
     } else if (business.status !== "verified") {
       setCurrentStep("business")
     } else {
-      setCurrentStep("bankAccount")
+      if (isSecurityPage) {
+        router.refresh()
+      } else {
+        setCurrentStep("bankAccount")
+      }
     }
   }, [verificationStatus])
+
+  const handleClose = () => {
+    // 핀 설정하는 페이지라면, 뒤로가기
+    if (isSecurityPage) {
+      router.back()
+    }
+    toggleModal()
+  }
 
   const steps = [
     { id: "phone", label: "본인인증", status: verificationStatus?.phone },
@@ -64,7 +83,7 @@ export default function BnplVerificationWizard({
   ] as const
 
   return (
-    <Dialog open={isOpen} onOpenChange={toggleModal}>
+    <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle
@@ -76,12 +95,16 @@ export default function BnplVerificationWizard({
           </DialogTitle>
         </DialogHeader>
 
-        <StepIndicator steps={steps} currentStep={currentStep} />
+        <StepIndicator
+          steps={steps}
+          currentStep={currentStep}
+          isSecurityPage={isSecurityPage}
+        />
 
         {currentStep === "phone" && (
           <PhoneVerificationStep
-            status={verificationStatus?.phone}
             onComplete={() => setCurrentStep("business")}
+            isVerification={verificationStatus?.phone === "verified"}
             user={user}
           />
         )}
@@ -92,11 +115,16 @@ export default function BnplVerificationWizard({
             rejectionReason={verificationStatus?.business.rejectionReason}
             onComplete={() => setCurrentStep("bankAccount")}
             businessInfo={businessInfo}
+            isVerification={verificationStatus?.business.status === "verified"}
           />
         )}
 
         {currentStep === "bankAccount" && (
-          <BankAccountStep bnplProfiles={bnplProfiles} />
+          <BankAccountStep
+            bnplProfiles={bnplProfiles}
+            isSecurityPage={isSecurityPage}
+            closeModal={closeModal}
+          />
         )}
       </DialogContent>
     </Dialog>

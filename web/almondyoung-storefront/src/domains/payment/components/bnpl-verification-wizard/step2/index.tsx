@@ -19,7 +19,7 @@ import { FilesDto } from "@lib/types/dto/files"
 import type { BusinessInfo } from "@lib/types/ui/user"
 import { Clock } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { useRef, useTransition } from "react"
+import { useEffect, useRef, useTransition } from "react"
 import { Controller, useForm } from "react-hook-form"
 import { toast } from "sonner"
 import { z } from "zod"
@@ -31,12 +31,20 @@ export default function BusinessVerificationStep({
   rejectionReason,
   onComplete,
   businessInfo,
+  isVerification,
 }: {
   status: "verified" | "rejected" | "under_review" | "none"
   rejectionReason: string | null
   onComplete: () => void
   businessInfo: BusinessInfo | null
+  isVerification: boolean
 }) {
+  useEffect(() => {
+    if (isVerification) {
+      onComplete()
+    }
+  }, [isVerification])
+
   if (status === "under_review") {
     return (
       <div className="py-8 text-center">

@@ -12,13 +12,15 @@ interface Step {
 export function StepIndicator({
   steps,
   currentStep,
+  isSecurityPage,
 }: {
   steps: readonly Step[]
   currentStep: string
+  isSecurityPage: boolean
 }) {
   const currentIndex = steps.findIndex((s) => s.id === currentStep)
 
-  if (currentStep === "bankAccount") {
+  if (currentStep === "bankAccount" || isSecurityPage) {
     return null
   }
 

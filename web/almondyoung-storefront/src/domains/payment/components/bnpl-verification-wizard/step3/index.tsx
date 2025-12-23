@@ -5,7 +5,7 @@ import { deletePaymentProfile } from "@lib/api/wallet"
 import type { BnplProfileDto } from "@lib/types/dto/wallet"
 import { Check, CreditCard, Trash2 } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { useTransition } from "react"
+import { useEffect, useTransition } from "react"
 import { toast } from "sonner"
 import { usePaymentMethodModalStore } from "../../store/payment-method-modal-store"
 import { maskAccountNumber } from "../../utils"
@@ -13,11 +13,29 @@ import { maskAccountNumber } from "../../utils"
 // 계좌 등록 스텝 컴포넌트
 export default function BankAccountStep({
   bnplProfiles,
+  isSecurityPage,
+  closeModal,
 }: {
   bnplProfiles: BnplProfileDto[]
+  isSecurityPage: boolean
+  closeModal: () => void
 }) {
+  const router = useRouter()
   // 결제수단 등록 모달 오픈
   const { openModal } = usePaymentMethodModalStore()
+
+  useEffect(() => {
+    if (bnplProfiles.length > 0 && !isSecurityPage) {
+      openModal()
+    }
+
+    if (isSecurityPage) {
+      closeModal()
+      setTimeout(() => {
+        router.refresh()
+      }, 0)
+    }
+  }, [bnplProfiles, isSecurityPage])
 
   return (
     <div className="min-h-96">

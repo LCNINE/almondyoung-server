@@ -123,6 +123,7 @@ export interface UserVerificationStatusDto {
 export type SendTwilioMessageDto = {
   countryCode: string
   phoneNumber: string
+  purpose?: "forget_pin" | "phone_verify"
 }
 
 /**

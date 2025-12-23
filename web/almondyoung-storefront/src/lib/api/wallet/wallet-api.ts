@@ -247,7 +247,7 @@ export async function authorizePayment(intentId: string, data: any) {
     `/payments/intents/${intentId}/authorize`,
     {
       method: "POST",
-      body: JSON.stringify(data),
+      body: data,
       withAuth: true,
     }
   )
@@ -280,7 +280,7 @@ export async function registerPin(pin: string): Promise<{ success: boolean }> {
     "/payments/pin/register",
     {
       method: "POST",
-      body: JSON.stringify({ pin }),
+      body: { pin },
       withAuth: true,
     }
   )
@@ -297,7 +297,7 @@ export async function verifyPin(pin: string): Promise<PinVerifyResponse> {
     "/payments/pin/verify",
     {
       method: "POST",
-      body: JSON.stringify({ pin }),
+      body: { pin },
       withAuth: true,
     }
   )
@@ -308,16 +308,13 @@ export async function verifyPin(pin: string): Promise<PinVerifyResponse> {
 /**
  * PIN 재설정 (본인인증 토큰 필요)
  */
-export async function resetPin(
-  newPin: string,
-  verificationToken: string
-): Promise<{ success: boolean }> {
+export async function resetPin(newPin: string): Promise<{ success: boolean }> {
   const result = await api<{ success: boolean }>(
     "wallet",
     "/payments/pin/reset",
     {
       method: "POST",
-      body: JSON.stringify({ newPin }),
+      body: { newPin },
       withAuth: true,
     }
   )
@@ -341,7 +338,7 @@ export async function changePin(
         "Content-Type": "application/json",
       },
       credentials: "include",
-      body: JSON.stringify({ currentPin, newPin }),
+      body: { currentPin, newPin },
       withAuth: true,
     }
   )
@@ -365,7 +362,7 @@ export async function verifyPasswordForPinReset(
     "/verify-password-for-pin-reset",
     {
       method: "POST",
-      body: JSON.stringify({ password }),
+      body: { password },
       withAuth: true,
     }
   )

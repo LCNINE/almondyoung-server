@@ -1,9 +1,8 @@
 "use server"
 
-import { api } from "@lib/api/api"
+import { api, type ApiResponse } from "@lib/api/api"
 import { ApiNetworkError, HttpApiError } from "@lib/api/api-error"
 import { SendTwilioMessageDto, VerifyCodeDto } from "@lib/types/dto/users"
-import type { ApiResponse } from "@lib/types/common/users"
 
 export const sendTwilioMessageApi = async (
   data: SendTwilioMessageDto
