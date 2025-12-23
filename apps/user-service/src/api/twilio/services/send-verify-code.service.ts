@@ -33,7 +33,7 @@ export class SendMessageService {
     sendVerificationCodeDto: SendVerificationCodeDto,
     tx?: DbTransaction,
   ) {
-    const { phoneNumber } = sendVerificationCodeDto;
+    const { phoneNumber, purpose = 'phone_verify' } = sendVerificationCodeDto;
 
     return this.inTx(async (trx) => {
       // 1. 번호 검증 및 국제 형식 변환
@@ -55,6 +55,7 @@ export class SendMessageService {
       await trx.insert(userServiceSchema.phoneVerifications).values({
         phoneNumber,
         code: code.toString(),
+        purpose,
         expiresAt: new Date(Date.now() + 3 * 60 * 1000), // 3분
       });
 
