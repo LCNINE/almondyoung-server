@@ -14,7 +14,7 @@ import { SyncStatusController } from './controllers/sync-status.controller';
 import { ChannelAdapterService } from './services/channel-adapter.service';
 import { NullEventPublisher } from './services/null-event-publisher.service';
 import { DbModule } from '@app/db';
-import { CHANNEL_ADAPTER_STREAM, ORDER_STREAM, FULFILLMENT_STREAM } from '@packages/event-contracts/streams';
+import { CHANNEL_ADAPTER_STREAM, ORDER_STREAM, FULFILLMENT_STREAM, PRODUCT_STREAM } from '@packages/event-contracts/streams';
 import { FulfillmentEventsConsumer } from './consumers/fulfillment-events.consumer';
 import * as schema from './schema';
 import { channelAdapterSchema } from './schema';
@@ -104,7 +104,7 @@ function createKafkaConfig() {
     ...(process.env.NODE_ENV === 'production'
       ? [
         EventsModule.forRoot({
-          streams: [CHANNEL_ADAPTER_STREAM, ORDER_STREAM, FULFILLMENT_STREAM],
+          streams: [CHANNEL_ADAPTER_STREAM, ORDER_STREAM, FULFILLMENT_STREAM, PRODUCT_STREAM],
           serviceName: 'channel-adapter',
           kafka: createKafkaConfig(),
           validation: {
@@ -115,7 +115,7 @@ function createKafkaConfig() {
       ]
       : []),
   ],
-  controllers: [ChannelAdapterController, SyncStatusController, FulfillmentEventsConsumer],
+  controllers: [ChannelAdapterController, SyncStatusController, FulfillmentEventsConsumer, PimProductEventConsumer],
   providers: [
     ChannelAdapterService,
     SyncStatusService,
