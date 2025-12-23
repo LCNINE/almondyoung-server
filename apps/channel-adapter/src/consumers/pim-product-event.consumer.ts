@@ -1,179 +1,127 @@
 // PIM에서 publish/unpublish/rollback 이벤트가 발생하면 Outbox에 저장
 
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { Kafka, Consumer, EachMessagePayload } from 'kafkajs';
-import { ConfigService } from '@nestjs/config';
+import { Controller, Logger } from '@nestjs/common';
+import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
+import { DomainEvent } from '@packages/event-contracts/types';
+import { ProductMasterActiveVersionChangedPayload } from '@packages/event-contracts/streams/product.stream';
 import { DbService } from '@app/db';
 import { processedEvents, outboxEvents } from '../schema';
 import { eq } from 'drizzle-orm';
-import type { PimActiveVersionChangedEvent, ChannelAdapterSchema } from '../types';
+import type { ChannelAdapterSchema } from '../types';
 
-@Injectable()
-export class PimProductEventConsumer implements OnModuleInit {
+/**
+ * PIM Product Event Consumer
+ * 
+ * PIM 서비스가 발행한 Product 이벤트를 수신하여 Outbox에 저장합니다.
+ * OutboxWorker가 비동기로 Medusa에 동기화 처리합니다.
+ * 
+ * - ProductMasterActiveVersionChanged: 상품 버전 활성화 변경 (발행/취소/롤백)
+ */
+@Controller()
+export class PimProductEventConsumer {
     private readonly logger = new Logger(PimProductEventConsumer.name);
-    private consumer: Consumer;
-    private kafka: Kafka;
 
     constructor(
-        private readonly configService: ConfigService,
         private readonly dbService: DbService<ChannelAdapterSchema>,
     ) {
-        const kafkaBrokers =
-            this.configService.get<string>('KAFKA_BROKERS')?.split(',') || [
-                'localhost:9092',
-            ];
-
-        this.kafka = new Kafka({
-            clientId: 'channel-adapter-pim-sync',
-            brokers: kafkaBrokers,
-            ssl: this.configService.get<string>('KAFKA_API_KEY') ? true : false,
-            sasl:
-                this.configService.get<string>('KAFKA_API_KEY') &&
-                    this.configService.get<string>('KAFKA_API_SECRET')
-                    ? {
-                        mechanism: 'plain' as const,
-                        username: this.configService.get<string>('KAFKA_API_KEY')!,
-                        password: this.configService.get<string>('KAFKA_API_SECRET')!,
-                    }
-                    : undefined,
-        });
-
-        this.consumer = this.kafka.consumer({
-            groupId: 'channel-adapter-pim-medusa-sync',
-        });
+        this.logger.log('🎨 PIM Product Event Consumer 초기화 완료');
     }
 
-    async onModuleInit() {
-        // Kafka 연결 실패해도 앱은 계속 실행되도록 비동기 처리
-        this.connect().catch((error) => {
-            this.logger.error(
-                'Failed to initialize Kafka consumer, will retry later',
-                error.message,
-            );
-        });
-    }
+    /**
+     * PIM ProductMasterActiveVersionChanged 이벤트 처리
+     * 
+     * 이벤트를 Outbox에 저장하여 OutboxWorker가 비동기로 처리하도록 함
+     * 
+     * @param envelope 이벤트 메타데이터 (correlationId, timestamp 등)
+     * @param payload 이벤트 페이로드
+     */
+    @OnEvent('products.events.v1', 'ProductMasterActiveVersionChanged')
+    async onProductMasterActiveVersionChanged(
+        @EventEnvelope() envelope: DomainEvent<ProductMasterActiveVersionChangedPayload>,
+        @EventPayload() payload: ProductMasterActiveVersionChangedPayload,
+    ): Promise<void> {
+        const startTime = Date.now();
+        const { masterId, version, changeReason } = payload;
 
-    private async connect() {
-        try {
-            this.logger.log('Connecting to Kafka...');
-            await this.consumer.connect();
-            this.logger.log('✅ Kafka consumer connected');
-
-            // PIM Product Stream 구독
-            await this.consumer.subscribe({
-                topic: 'pim.product',
-                fromBeginning: false, // 최신 메시지만
-            });
-
-            this.logger.log('Subscribed to topic: pim.product');
-
-            await this.consumer.run({
-                eachMessage: async (payload: EachMessagePayload) => {
-                    await this.handleMessage(payload);
-                },
-            });
-
-            this.logger.log('Consumer running...');
-        } catch (error) {
-            this.logger.error('❌ Failed to connect Kafka consumer');
-            this.logger.error(error.stack);
-            throw error;
-        }
-    }
-
-    // 컨슈머는 DB에 저장만
-    private async handleMessage(payload: EachMessagePayload) {
-        const { topic, partition, message } = payload;
+        this.logger.log(
+            `🎨 [PIM] Product Event 수신: ${masterId} → ${changeReason} (correlationId: ${envelope.correlationId})`,
+            {
+                version,
+                productId: payload.productId,
+            },
+        );
 
         try {
-            const key = message.key?.toString();
-            const valueRaw = message.value?.toString();
+            const db = this.dbService.db;
 
-            if (!valueRaw) {
-                this.logger.warn('Empty message received, skipping');
+            // 1. 멱등성 체크: 동일 이벤트 처리 방지
+            const idempotencyKey = `${masterId}:${version}:ProductMasterActiveVersionChanged`;
+            const [existing] = await db
+                .select()
+                .from(processedEvents)
+                .where(eq(processedEvents.idempotencyKey, idempotencyKey))
+                .limit(1);
+
+            if (existing) {
+                this.logger.debug(
+                    `⏭️  [PIM] 이미 처리된 이벤트 스킵: ${idempotencyKey}`,
+                );
                 return;
             }
 
-            const event = JSON.parse(valueRaw);
-            const eventType = event.eventType;
+            // 2. processedEvents에 기록
+            await db.insert(processedEvents).values({
+                idempotencyKey,
+                source: 'products.events.v1',
+                eventType: 'ProductMasterActiveVersionChanged',
+                resourceId: masterId,
+                eventVersion: envelope.messageId || new Date().toISOString(),
+                status: 'PROCESSED',
+                createdAt: new Date(),
+                updatedAt: new Date(),
+            });
 
-            this.logger.debug(
-                `Received event: ${eventType} (key: ${key}, partition: ${partition})`,
+            // 3. Outbox에 저장 (OutboxWorker가 처리할 것)
+            await db.insert(outboxEvents).values({
+                eventType: 'ProductMasterActiveVersionChanged',
+                aggregateType: 'Product',
+                aggregateId: masterId,
+                partitionKey: masterId, // Product 도메인은 masterId로 파티셔닝
+                payload: payload,
+                metadata: {
+                    correlationId: envelope.correlationId,
+                    messageId: envelope.messageId,
+                },
+                status: 'pending',
+                createdAt: new Date(),
+            });
+
+            const duration = Date.now() - startTime;
+            this.logger.log(
+                `✅ [PIM] Outbox 저장 완료: ${masterId} (${duration}ms)`,
             );
-
-            // ProductMasterActiveVersionChanged 이벤트만 처리
-            if (eventType === 'ProductMasterActiveVersionChanged') {
-                const eventPayload: PimActiveVersionChangedEvent = event.payload;
-
-                // Idempotency 체크 + Outbox에 저장
-                await this.storeEventToOutbox(eventPayload);
-            } else {
-                this.logger.debug(`Ignoring event type: ${eventType}`);
-            }
         } catch (error) {
+            const duration = Date.now() - startTime;
             this.logger.error(
-                `Failed to process message from ${topic}`,
-                error.stack,
+                `❌ [PIM] Outbox 저장 실패: ${masterId} (${duration}ms)`,
+                {
+                    error: error.message,
+                    stack: error.stack,
+                },
             );
-            // throw 하지 않으면 오프셋 커밋됨
-            // 하지만 지금은 DB 저장 실패도 throw 해서 재시도
-            throw error;
+            throw error; // Re-throw to send to DLQ
         }
     }
 
-    // Idempotency 체크 + Outbox 저장
-    private async storeEventToOutbox(
-        event: PimActiveVersionChangedEvent,
-    ): Promise<void> {
-        const { masterId, version, changeReason, changedAt } = event;
-
-        // Idempotency Key 생성 (source + eventType + masterId + version)
-        const idempotencyKey = `pim:version_changed:${masterId}:${version ?? 'null'}`;
-
-        // 1. processed_events에 이미 있으면 skip
-        const [existing] = await this.dbService.db
-            .select()
-            .from(processedEvents)
-            .where(eq(processedEvents.idempotencyKey, idempotencyKey))
-            .limit(1);
-
-        if (existing) {
-            this.logger.debug(`Duplicate event detected, skipping: ${idempotencyKey}`);
-            return;
-        }
-
-        // 2. processed_events에 기록 (PROCESSED 상태)
-        await this.dbService.db.insert(processedEvents).values({
-            idempotencyKey,
-            source: 'pim',
-            eventType: 'ProductMasterActiveVersionChanged',
-            resourceId: masterId,
-            eventVersion: String(version ?? 0),
-            status: 'PROCESSED', // 일단 받았다는 의미
-        });
-
-        // 3. outbox_events에 저장 (pending 상태, 워커가 처리)
-        await this.dbService.db.insert(outboxEvents).values({
-            eventType: 'PimProductSync',
-            aggregateType: 'PimProduct',
-            aggregateId: masterId,
-            partitionKey: masterId,
-            payload: event,
-            metadata: {
-                source: 'pim.product',
-                changeReason,
-                changedAt,
-            },
-            status: 'pending',
-        });
-
-        this.logger.log(
-            `Event stored to outbox: ${masterId} (${changeReason}, v${version})`,
-        );
-    }
-
-    async onModuleDestroy() {
-        await this.consumer.disconnect();
-        this.logger.log('Kafka consumer disconnected');
+    /**
+     * Consumer 상태 확인 (헬스체크용)
+     */
+    getHealthStatus() {
+        return {
+            consumer: 'PimProductEventConsumer',
+            topic: 'products.events.v1',
+            status: 'active',
+            lastProcessedAt: new Date().toISOString(),
+        };
     }
 }
