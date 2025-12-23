@@ -1,6 +1,6 @@
 "use client"
 
-import { findPwByEmailAndLoginId } from "@lib/api/users/auth/signup-base"
+import { findPwByEmailAndLoginId } from "@lib/api/users/forgot/find-pwby-email-and-loginId"
 import { useState } from "react"
 import { toast } from "sonner"
 

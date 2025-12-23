@@ -1,6 +1,6 @@
 "use client"
 
-import { findIdByEmail } from "@lib/api/users/auth/signup-base"
+import { findIdByEmail } from "@lib/api/users/forgot/find-by-email"
 import { useState } from "react"
 import { toast } from "sonner"
 

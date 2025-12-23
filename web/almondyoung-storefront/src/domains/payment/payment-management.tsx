@@ -26,7 +26,7 @@ export default async function PaymentManager() {
     bnplProfiles?.find((profile) => profile.isDefault) ?? null // 나중결제 계좌 중 내가 기본으로 설정한 계좌 조회
 
   return (
-    <div className="p x-3 rounded-xl bg-white pt-4 pb-9 md:px-6">
+    <div className="rounded-xl bg-white px-3 pt-4 pb-9 md:px-6">
       <PageTitle>결제수단 관리</PageTitle>
 
       <div className="bg-gray-10 mt-5 mb-4 space-y-4 p-4">
