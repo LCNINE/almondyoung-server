@@ -24,7 +24,7 @@ export class PimProductEventConsumer {
     constructor(
         private readonly dbService: DbService<ChannelAdapterSchema>,
     ) {
-        this.logger.log('🎨 PIM Product Event Consumer 초기화 완료');
+        this.logger.log('PIM Product Event Consumer 초기화 완료');
     }
 
     /**
@@ -44,7 +44,7 @@ export class PimProductEventConsumer {
         const { masterId, version, changeReason } = payload;
 
         this.logger.log(
-            `🎨 [PIM] Product Event 수신: ${masterId} → ${changeReason} (correlationId: ${envelope.correlationId})`,
+            `[PIM] Product Event 수신: ${masterId} → ${changeReason} (correlationId: ${envelope.correlationId})`,
             {
                 version,
                 productId: payload.productId,
@@ -64,7 +64,7 @@ export class PimProductEventConsumer {
 
             if (existing) {
                 this.logger.debug(
-                    `⏭️  [PIM] 이미 처리된 이벤트 스킵: ${idempotencyKey}`,
+                    `[PIM] 이미 처리된 이벤트 스킵: ${idempotencyKey}`,
                 );
                 return;
             }
@@ -98,12 +98,12 @@ export class PimProductEventConsumer {
 
             const duration = Date.now() - startTime;
             this.logger.log(
-                `✅ [PIM] Outbox 저장 완료: ${masterId} (${duration}ms)`,
+                `[PIM] Outbox 저장 완료: ${masterId} (${duration}ms)`,
             );
         } catch (error) {
             const duration = Date.now() - startTime;
             this.logger.error(
-                `❌ [PIM] Outbox 저장 실패: ${masterId} (${duration}ms)`,
+                `[PIM] Outbox 저장 실패: ${masterId} (${duration}ms)`,
                 {
                     error: error.message,
                     stack: error.stack,
