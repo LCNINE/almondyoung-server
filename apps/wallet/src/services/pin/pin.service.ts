@@ -51,7 +51,6 @@ export class PinService {
    */
   async register(userId: string, pin: string, ipAddress?: string, tx?: WalletExecutor): Promise<void> {
 
-    console.log('register', pin);
     // 1. 보안 정책 검사
     if (!PinPolicyUtil.isValid(pin)) {
       throw new Error('WEAK_PIN');

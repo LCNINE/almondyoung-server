@@ -197,37 +197,6 @@ export class PinController {
     @Req() req: FastifyRequest,
   ) {
     try {
-      // 1. 토큰 존재 확인
-      if (!verificationToken) {
-        throw new Error('Verification token required');
-      }
-
-      // 2. JWT 검증 (서명, 만료 시간)
-      let payload: { sub: string; scopes?: string[]; purpose?: string };
-      try {
-        payload = await this.jwtService.verifyAsync(verificationToken, {
-          secret: this.configService.getOrThrow<string>('AUTH_SECRET'),
-        });
-      } catch (error) {
-        throw new Error('Invalid or expired verification token');
-      }
-
-      // 3. Scope 확인 (PIN_RESET 포함 여부)
-      if (!payload.scopes || !payload.scopes.includes('PIN_RESET')) {
-        throw new Error('Token does not have PIN_RESET scope');
-      }
-
-      // 4. Purpose 확인
-      if (payload.purpose !== 'pin_reset') {
-        throw new Error('Token purpose mismatch');
-      }
-
-      // 5. 사용자 ID 일치 확인
-      if (payload.sub !== userId) {
-        throw new Error('Token user ID mismatch');
-      }
-
-      // 6. PIN 재설정 실행
       const forwardedFor = req.headers['x-forwarded-for'];
       const ipAddress = req.ip || (Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor) || undefined;
       await this.pinService.reset(userId, body.newPin, ipAddress);
