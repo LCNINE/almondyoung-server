@@ -26,6 +26,16 @@ export class PimProductEventConsumer implements OnModuleInit {
         this.kafka = new Kafka({
             clientId: 'channel-adapter-pim-sync',
             brokers: kafkaBrokers,
+            ssl: this.configService.get<string>('KAFKA_API_KEY') ? true : false,
+            sasl:
+                this.configService.get<string>('KAFKA_API_KEY') &&
+                    this.configService.get<string>('KAFKA_API_SECRET')
+                    ? {
+                        mechanism: 'plain' as const,
+                        username: this.configService.get<string>('KAFKA_API_KEY')!,
+                        password: this.configService.get<string>('KAFKA_API_SECRET')!,
+                    }
+                    : undefined,
         });
 
         this.consumer = this.kafka.consumer({
@@ -34,13 +44,20 @@ export class PimProductEventConsumer implements OnModuleInit {
     }
 
     async onModuleInit() {
-        await this.connect();
+        // Kafka 연결 실패해도 앱은 계속 실행되도록 비동기 처리
+        this.connect().catch((error) => {
+            this.logger.error(
+                'Failed to initialize Kafka consumer, will retry later',
+                error.message,
+            );
+        });
     }
 
     private async connect() {
         try {
+            this.logger.log('Connecting to Kafka...');
             await this.consumer.connect();
-            this.logger.log('Kafka consumer connected');
+            this.logger.log('✅ Kafka consumer connected');
 
             // PIM Product Stream 구독
             await this.consumer.subscribe({
@@ -58,7 +75,8 @@ export class PimProductEventConsumer implements OnModuleInit {
 
             this.logger.log('Consumer running...');
         } catch (error) {
-            this.logger.error('Failed to connect Kafka consumer', error.stack);
+            this.logger.error('❌ Failed to connect Kafka consumer');
+            this.logger.error(error.stack);
             throw error;
         }
     }
