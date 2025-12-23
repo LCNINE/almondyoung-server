@@ -2,6 +2,7 @@ import { DbService, InjectDb } from '@app/db';
 import { Inject, Injectable } from '@nestjs/common';
 import {
   userServiceSchema,
+  userServiceEnums,
   UserServiceSchema,
 } from 'apps/user-service/database/drizzle/schema';
 import { DbTransaction } from 'apps/user-service/src/commons/types';
@@ -33,7 +34,9 @@ export class SendMessageService {
     sendVerificationCodeDto: SendVerificationCodeDto,
     tx?: DbTransaction,
   ) {
-    const { phoneNumber, purpose = 'phone_verify' } = sendVerificationCodeDto;
+
+    const { phoneNumber, purpose } = sendVerificationCodeDto;
+    const _purpose = purpose ?? 'phone_verify';
 
     return this.inTx(async (trx) => {
       // 1. 번호 검증 및 국제 형식 변환
@@ -55,7 +58,7 @@ export class SendMessageService {
       await trx.insert(userServiceSchema.phoneVerifications).values({
         phoneNumber,
         code: code.toString(),
-        purpose,
+        purpose: _purpose,
         expiresAt: new Date(Date.now() + 3 * 60 * 1000), // 3분
       });
 

@@ -40,6 +40,8 @@ export const statusEnum = pgEnum('status', [
   'rejected', // 거절됨
 ]);
 
+export const phoneVerificationPurposeEnum = pgEnum('phone_verification_purpose', ['phone_verify', 'pin_reset']);
+
 /*───────────────────────────
  * HELPER COLUMNS
  *──────────────────────────*/
@@ -292,6 +294,7 @@ export const businessLicenses = pgTable(
   }),
 );
 
+
 // ==================== 번호 인증 테이블 ====================
 export const phoneVerifications = pgTable(
   'phone_verifications',
@@ -301,7 +304,7 @@ export const phoneVerifications = pgTable(
     code: varchar('code', { length: 6 }).notNull(),
 
     // 용도 구분
-    purpose: varchar('purpose', { length: 50 }).notNull(), // 'phone_verify' | 'pin_reset' ...
+    purpose: phoneVerificationPurposeEnum('purpose').notNull(), // 'phone_verify' | 'pin_reset' ...
 
     // 검증 관련
     isVerified: boolean('is_verified').default(false).notNull(),
@@ -324,7 +327,7 @@ export const phoneVerifications = pgTable(
   }),
 );
 
-// ==================== 블랙리스트 테이블 ====================
+
 
 /**
  * 블랙리스트 관리 테이블
@@ -556,6 +559,7 @@ export const userServiceEnums = {
   providerTypeEnum,
   shopTypeEnum,
   statusEnum,
+  phoneVerificationPurposeEnum,
 } as const;
 
 /*───────────────────────────
@@ -572,6 +576,7 @@ export const userServiceSchema = {
 export type UserServiceSchema = typeof userServiceSchema;
 export type UserServiceTables = typeof userServiceTables;
 export type UserServiceEnums = typeof userServiceEnums;
+
 
 export type User = typeof users.$inferSelect;
 export type UserWithoutPassword = Omit<User, 'password'>;
