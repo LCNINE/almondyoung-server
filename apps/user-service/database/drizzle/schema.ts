@@ -300,6 +300,9 @@ export const phoneVerifications = pgTable(
     phoneNumber: varchar('phone_number', { length: 20 }).notNull(),
     code: varchar('code', { length: 6 }).notNull(),
 
+    // 용도 구분
+    purpose: varchar('purpose', { length: 50 }).notNull(), // 'phone_verify' | 'pin_reset' ...
+
     // 검증 관련
     isVerified: boolean('is_verified').default(false).notNull(),
     verifiedAt: timestamp('verified_at'),
@@ -317,6 +320,7 @@ export const phoneVerifications = pgTable(
     phoneNumberIdx: index('phone_verifications_phone_number_idx').on(
       table.phoneNumber,
     ),
+    purposeIdx: index('phone_verifications_purpose_idx').on(table.purpose),
   }),
 );
 
