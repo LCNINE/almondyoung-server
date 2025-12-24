@@ -48,6 +48,10 @@ RUN echo "===== After copying config and src =====" && \
 WORKDIR /app/apps/medusa/.medusa/server
 RUN yarn install --frozen-lockfile --non-interactive --production
 
+# 6-1) 필수 모듈(@medusajs/api-key) 존재 확인 (없으면 빌드 실패)
+RUN node -e "const deps=require('./package.json').dependencies||{}; if(!deps['@medusajs/api-key']){console.error('Missing @medusajs/api-key in .medusa/server/package.json'); process.exit(1);} else {console.log('Confirmed @medusajs/api-key in build output');}" \
+ && test -d node_modules/@medusajs/api-key || (ls node_modules/@medusajs && exit 1)
+
 # 7) 프로덕션 환경 설정 및 캐시 정리
 ENV NODE_ENV=production
 RUN yarn cache clean
@@ -57,5 +61,4 @@ EXPOSE 9000
 # 외부 인프라는 환경 변수로 주입 (DATABASE_URL, REDIS_URL, KAFKA_BROKERS 등)
 # .medusa/server 디렉토리에서 실행
 CMD ["yarn", "start"]
-
 
