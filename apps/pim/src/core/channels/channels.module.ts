@@ -7,8 +7,10 @@ import { SalesChannelsService } from './sales-channels.service';
 import { ChannelProductsService } from './channel-products.service';
 import { ChannelCategoriesService } from './channel-categories.service';
 import { ChannelListingService } from './channel-listing.service';
+import { ProductsModule } from '../products/products.module';
 
 @Module({
+  imports: [ProductsModule],
   controllers: [
     SalesChannelsController,
     ChannelProductsController,
@@ -29,4 +31,3 @@ import { ChannelListingService } from './channel-listing.service';
   ],
 })
 export class ChannelsModule {}
-
