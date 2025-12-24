@@ -9,7 +9,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { AddressDto } from '../../../commons/dto/address.dto';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 
 export class UpdateUserDto {
   @ApiProperty({
@@ -52,10 +52,11 @@ export class UpdateUserDto {
   @ApiProperty({
     description: '생년월일',
     example: '1990-01-01',
-    required: false,
+    required: true,
   })
-  @IsOptional()
-  @IsDateString({}, { message: '생년월일은 날짜 형식이어야 합니다.' })
+  @IsNotEmpty()
+  @IsDateString()
+  @Transform(({ value }) => new Date(value))
   birthDate?: string;
 
   @ApiProperty({

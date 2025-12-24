@@ -1,6 +1,5 @@
 import { DbService, InjectDb } from '@app/db';
-import { StreamPublisher, InjectStreamPublisher } from '@app/events';
-import { UserEvents } from '@packages/event-contracts/streams';
+import { InjectStreamPublisher, StreamPublisher } from '@app/events';
 import {
   BadRequestException,
   Injectable,
@@ -8,6 +7,10 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { UserEvents } from '@packages/event-contracts/streams';
+import {
+  type UserServiceSchema
+} from 'apps/user-service/database/drizzle/schema';
 import { and, eq, isNull } from 'drizzle-orm';
 import * as schema from '../../../database/drizzle/schema';
 import { AddressDto } from '../../commons/dto/address.dto';
@@ -19,10 +22,6 @@ import {
   UserRoleScopesResponseDto,
   UserRolesResponse,
 } from './dto/user-role-scopes.response.dto';
-import {
-  userServiceSchema,
-  type UserServiceSchema,
-} from 'apps/user-service/database/drizzle/schema';
 
 @Injectable()
 export class UsersService {
