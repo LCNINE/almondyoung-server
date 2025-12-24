@@ -1,6 +1,6 @@
-/**
- * 결제 프로필 타입
- */
+/*───────────────────────────
+ * BNPL Profile
+ *──────────────────────────*/
 export type BnplProfileDto = {
   id: string
   kind: "CARD" | "BANK_ACCOUNT" | "WALLET"
@@ -21,9 +21,9 @@ export type BnplProfileDto = {
   } | null
 }
 
-/**
- * HMS 카드 등록 요청 타입
- */
+/*───────────────────────────
+ * HMS 카드 등록 요청
+ *──────────────────────────*/
 export type CreateHmsCardProfileRequest = {
   memberName: string
   phone: string
@@ -37,26 +37,26 @@ export type CreateHmsCardProfileRequest = {
   paymentCompany?: string
 }
 
-/**
- * HMS BNPL 온보딩 응답 타입
- */
+/*───────────────────────────
+ * HMS BNPL 온보딩 응답
+ *──────────────────────────*/
 export type OnboardHmsBnplResponse = {
   success: boolean
   profileId: string
   memberId: string
 }
 
-/**
+/*───────────────────────────
  * 포인트 잔액 조회
- */
+ *──────────────────────────*/
 export type PointBalanceDto = {
   balance: number // 포인트 잔액
   withdrawable: number // 출금 가능 포인트
 }
 
-/**
+/*───────────────────────────
  * 나중결제 요약 조회
- */
+ *──────────────────────────*/
 export type BnplSummaryDto = {
   hasAccount: boolean
   creditLimit: number | null
@@ -68,9 +68,9 @@ export type BnplSummaryDto = {
   targetMonth: number | null
 }
 
-/**
+/*───────────────────────────
  * 나중결제 내역 조회
- */
+ *──────────────────────────*/
 export type BnplHistoryDto = {
   events: {
     id: string

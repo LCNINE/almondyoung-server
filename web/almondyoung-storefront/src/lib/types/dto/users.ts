@@ -29,7 +29,9 @@ export interface WishlistDto {
   userId: string
 }
 
-// 상점 정보 DTO
+/*───────────────────────────
+ * 상점 정보
+ *──────────────────────────*/
 export interface ShopInfoDto {
   id: string //상점 ID
   userId: string //사용자 ID
@@ -43,7 +45,9 @@ export interface ShopInfoDto {
   updatedAt: Date
 }
 
-// 프로필 정보 DTO
+/*───────────────────────────
+ * 프로필 정보
+ *──────────────────────────*/
 export interface ProfileDto {
   id: string //프로필 ID
   userId: string //사용자 ID
@@ -55,7 +59,9 @@ export interface ProfileDto {
   updatedAt: Date //프로필 수정일
 }
 
-// 최근 본 상품 DTO (실제 DB구조)
+/*───────────────────────────
+ * 최근 본 상품
+ *──────────────────────────*/
 export interface RecentViewDto {
   id: string //최근 본 상품 ID
   userId: string //사용자 ID
@@ -64,7 +70,9 @@ export interface RecentViewDto {
   updatedAt: string //수정 시간
 }
 
-// 최근 본 상품 응답 DTO
+/*───────────────────────────
+ * 최근 본 상품 응답
+ *──────────────────────────*/
 export interface RecentViewsResponseDto {
   items: RecentViewDto[] //최근 본 상품 목록
   total: number //전체 개수
@@ -72,7 +80,9 @@ export interface RecentViewsResponseDto {
   limit: number //페이지당 항목 수
 }
 
-// --------------- 사업자 정보 관련 DTO --------------
+/*───────────────────────────
+ * 사업자 정보
+ *──────────────────────────*/
 export interface BusinessInfoDto {
   id: string
   userId: string
@@ -95,19 +105,25 @@ export interface BusinessInfoRequestDto {
   externalBusinessStatus?: boolean
 }
 
-/** 사업자 정보 외부 조회 응답 DTO */
+/*───────────────────────────
+ * 사업자 정보 외부 조회 응답
+ *──────────────────────────*/
 export interface ExternalBusinessInfoResponseDto {
   success: boolean
   data: BusinessInfoDto
 }
 
-/** 사업자 정보 외부 조회 요청 DTO */
+/*───────────────────────────
+ * 사업자 정보 외부 조회 요청
+ *──────────────────────────*/
 export interface ExternalBusinessInfoRequestDto {
   businessNumber: string
   representativeName: string
 }
 
-// --------------- 유저 결제 등록 상태 관련 DTO --------------
+/*───────────────────────────
+ * 유저 결제 등록 상태
+ *──────────────────────────*/
 export interface UserVerificationStatusDto {
   birthDate: "verified" | "none"
   phone: "verified" | "none"
@@ -117,26 +133,26 @@ export interface UserVerificationStatusDto {
   }
 }
 
-/**
- * 휴대폰 인증번호 발송 요청 DTO
- */
+/*───────────────────────────
+ * 휴대폰 인증번호 발송 요청
+ *──────────────────────────*/
 export type SendTwilioMessageDto = {
   countryCode: string
   phoneNumber: string
   purpose?: "forget_pin" | "phone_verify"
 }
 
-/**
- * 휴대폰 인증번호 검증 요청 DTO
- */
+/*───────────────────────────
+ * 휴대폰 인증번호 검증 요청
+ *──────────────────────────*/
 export type VerifyCodeDto = {
   code: string
   phoneNumber: string
 }
 
-/**
- * 약관 동의 정보 DTO
- */
+/*───────────────────────────
+ * 약관 동의 정보
+ *──────────────────────────*/
 export type CreateConsentsDto = {
   isOver14: boolean
   termsOfService: boolean
@@ -146,9 +162,9 @@ export type CreateConsentsDto = {
   marketingConsent: boolean
 }
 
-/**
- * 위시리스트
- */
+/*───────────────────────────
+ * Wishlist
+ *──────────────────────────*/
 export interface WishlistDto {
   success: boolean
   data: {

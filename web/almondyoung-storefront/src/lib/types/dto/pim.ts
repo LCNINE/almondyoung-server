@@ -1,8 +1,6 @@
-
-// ==========================================
-// 공통 타입
-// ==========================================
-
+/*───────────────────────────
+ * Common Types
+ *──────────────────────────*/
 export interface PaginatedResponse<T> {
   data: T[]
   total: number
@@ -10,9 +8,9 @@ export interface PaginatedResponse<T> {
   limit: number
 }
 
-// ==========================================
-// Product Masters
-// ==========================================
+/*───────────────────────────
+ * Product Masters
+ *──────────────────────────*/
 
 // 상품 목록 아이템
 export interface ProductListItemDto {
@@ -29,7 +27,7 @@ export interface ProductListItemDto {
 }
 
 // 상품 목록 응답
-export interface ProductListResponseDto extends PaginatedResponse<ProductListItemDto> { }
+export interface ProductListResponseDto extends PaginatedResponse<ProductListItemDto> {}
 
 // 옵션 그룹 DTO
 export interface OptionGroupDto {
@@ -116,11 +114,9 @@ export interface VersionTreeResponseDto extends ProductVersionDto {
   children: VersionTreeResponseDto[]
 }
 
-
-// ==========================================
-// Product Variants
-// ==========================================
-
+/*───────────────────────────
+ * Product Variants
+ *──────────────────────────*/
 // Variant 목록 아이템
 export interface VariantListItemDto {
   id: string
@@ -133,7 +129,7 @@ export interface VariantListItemDto {
 }
 
 // Variant 목록 응답
-export interface VariantListResponseDto extends PaginatedResponse<VariantListItemDto> { }
+export interface VariantListResponseDto extends PaginatedResponse<VariantListItemDto> {}
 
 // Variant 상세 (가격 포함)
 export interface VariantWithPriceDto extends VariantListItemDto {
@@ -144,11 +140,9 @@ export interface VariantWithPriceDto extends VariantListItemDto {
   }>
 }
 
-
-// ==========================================
-// Pricing
-// ==========================================
-
+/*───────────────────────────
+ * Pricing
+ *──────────────────────────*/
 // 가격 규칙 DTO
 export interface PricingRuleDto {
   ruleId: string
@@ -212,11 +206,9 @@ export interface VariantPriceSetDto {
   }>
 }
 
-
-// ==========================================
-// Categories
-// ==========================================
-
+/*───────────────────────────
+ * Categories
+ *──────────────────────────*/
 // 카테고리 표시 설정
 export interface CategoryDisplaySettings {
   mobileOnly?: boolean
@@ -383,6 +375,3 @@ export interface ProductSearchResponseDto {
   pagination: PaginationDto
   aggregations?: SearchAggregationsDto
 }
-
-
-
