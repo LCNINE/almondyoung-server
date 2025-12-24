@@ -8,6 +8,9 @@ import { ProductSearchService } from './services/product-search.service';
 import { ProductVersionsService } from './services/product-versions.service';
 import { PricingModule } from '../pricing/pricing.module';
 import { ProductVersionsController } from './controllers/product-versions.controller';
+import { ProductReadAssembler } from './assemblers/product-read.assembler';
+import { OptionReadLoader } from './loaders/option-read.loader';
+import { TagReadLoader } from './loaders/tag-read.loader';
 
 @Module({
   imports: [PricingModule],
@@ -22,13 +25,16 @@ import { ProductVersionsController } from './controllers/product-versions.contro
     ProductVariantsService,
     ProductSearchService,
     ProductVersionsService,
+    ProductReadAssembler,
+    OptionReadLoader,
+    TagReadLoader,
   ],
   exports: [
     ProductMastersService,
     ProductVariantsService,
     ProductSearchService,
     ProductVersionsService,
+    ProductReadAssembler,
   ],
 })
 export class ProductsModule { }
-

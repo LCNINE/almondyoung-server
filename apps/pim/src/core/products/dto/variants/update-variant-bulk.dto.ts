@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsArray, IsString, IsOptional, IsNumber, MinLength, ValidateNested } from 'class-validator';
+import { IsArray, IsString, IsOptional, IsNumber, MinLength, ValidateNested, IsUUID } from 'class-validator';
 import { Type } from 'class-transformer';
 
 class BulkUpdateItemDto {
@@ -27,11 +27,10 @@ class BulkUpdateItemDto {
   @IsNumber()
   displayOrder?: number;
 
-  @ApiProperty({ description: '이미지 목록', type: [String], required: false })
+  @ApiProperty({ description: '품목 이미지 ID', type: String, required: false })
   @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  images?: string[];
+  @IsUUID()
+  imageId: string;
 }
 
 export class UpdateVariantBulkDto {

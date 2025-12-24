@@ -447,7 +447,7 @@ export const productVariants = pgTable(
       .primaryKey()
       .$defaultFn(() => uuidv7()),
     variantName: varchar('variant_name', { length: 255 }), // 수동 설정 이름
-    images: uuid('image_id'), // 품목별 이미지 파일 ID
+    imageId: uuid('image_id'), // 품목별 이미지 파일 ID
 
     displayOrder: integer('display_order').default(0).notNull(), // 표시 순서
     status: varchar('status', { length: 20 }).notNull().default('active'), // active, inactive
