@@ -26,7 +26,13 @@ export class MedusaClient {
 
         const apiKey = this.configService.get<string>('MEDUSA_API_KEY');
         if (apiKey) {
-            this.client.defaults.headers.common['Authorization'] = `Bearer ${apiKey}`;
+            // If it's a JWT (starts with ey), use Authorization: Bearer
+            // Otherwise use x-medusa-access-token for secret keys
+            if (apiKey.startsWith('ey')) {
+                this.client.defaults.headers.common['Authorization'] = `Bearer ${apiKey}`;
+            } else {
+                this.client.defaults.headers.common['x-medusa-access-token'] = apiKey;
+            }
         }
 
         this.logger.log(`Medusa client initialized: ${this.apiUrl}`);
