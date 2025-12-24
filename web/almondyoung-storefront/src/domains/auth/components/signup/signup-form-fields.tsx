@@ -47,7 +47,7 @@ const FORM_SECTIONS = [
         autoFocus: false,
       },
       {
-        name: "birthDate" as const,
+        name: "birthday" as const,
         placeholder: "생년월일",
         type: "text",
         description: "YYYYMMDD 형식 (예: 19900101)",

@@ -10,7 +10,7 @@ type LocalSignupResponse = {
 }
 
 export const createUser = async (
-  prevState: LocalSignupResponse | null,
+  _prevState: LocalSignupResponse | null,
   payload: LocalSignupRequest & { redirectTo?: string }
 ): Promise<LocalSignupResponse> => {
   try {

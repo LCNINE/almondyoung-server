@@ -20,6 +20,7 @@ import { useForm, useFormContext } from "react-hook-form"
 import { toast } from "sonner"
 import { AgreementsSection } from "./agreement"
 import { SignupFormFields } from "./signup-form-fields"
+import { formatBirthday } from "@lib/utils/format-birthday"
 
 export function SignupForm() {
   const searchParams = useSearchParams()
@@ -42,7 +43,7 @@ export function SignupForm() {
       email: "",
       password: "",
       passwordConfirm: "",
-      birthDate: "",
+      birthday: "",
       // 필수 약관
       isOver14: false,
       termsOfService: false,
@@ -73,10 +74,16 @@ export function SignupForm() {
 
   const onSubmit = async (data: SignupSchema) => {
     const { passwordConfirm, ...submitData } = data
+    const formattedBirthday = formatBirthday(submitData.birthday)
+
+    const formattedSubmitData = {
+      ...submitData,
+      birthday: formattedBirthday,
+    }
 
     startTransition(() => {
       formAction({
-        ...submitData,
+        ...formattedSubmitData,
         redirectTo,
       })
     })
@@ -91,7 +98,7 @@ export function SignupForm() {
       "email",
       "password",
       "passwordConfirm",
-      "birthDate",
+      "birthday",
     ])
 
     // 검증 통과하면 다이얼로그 열기
