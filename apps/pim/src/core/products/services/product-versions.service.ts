@@ -4,6 +4,7 @@ import { InjectStreamPublisher, StreamPublisher } from '@app/events';
 import { ProductEvents, PRODUCT_STREAM } from '@packages/event-contracts';
 import { PricingValidatorService } from '../../pricing/pricing-validator.service';
 import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
+import { ProductReadAssembler } from '../assemblers/product-read.assembler';
 import {
   ProductMasterVersion,
   DbTransaction,
@@ -21,14 +22,10 @@ import {
   productMasterPricingRules,
   productOptionGroupDisplays,
   productOptionValueDisplays,
-  variantOptionValues,
   productVariants,
   pricingRules,
   productTagValues,
   tagValues,
-  tagGroups,
-  productOptionGroups,
-  productOptionValues,
   productImages,
 } from '../../../schema';
 import { eq, and, sql, max as drizzleMax, isNull, inArray, asc, desc } from 'drizzle-orm';
@@ -43,6 +40,7 @@ export class ProductVersionsService {
     @InjectStreamPublisher(PRODUCT_STREAM.topic.topic)
     private readonly productPublisher: StreamPublisher<ProductEvents>,
     private readonly pricingValidator: PricingValidatorService,
+    private readonly productReadAssembler: ProductReadAssembler,
     private readonly priceCacheService: VariantPriceCacheService,
   ) { }
 
@@ -145,45 +143,7 @@ export class ProductVersionsService {
   }
 
   async getVersionDetail(versionId: string, tx?: DbTransaction): Promise<ProductDetailDto> {
-    return this.inTx(async (tx) => {
-      const version = await this.getVersionById(versionId, tx);
-      const masterId = version.masterId;
-
-      const [optionGroups, variants, tags, images] = await Promise.all([
-        this._fetchOptionGroups(masterId, versionId, tx),
-        this._fetchVariants(masterId, versionId, tx),
-        this._fetchTags(masterId, versionId, tx),
-        this._fetchImages(versionId, tx),
-      ]);
-
-      const variantsWithOptions = await Promise.all(
-        variants.map(async (v) => {
-          const optionValues = await this._fetchVariantOptionValues(v.id, versionId, tx);
-          return { ...v, optionValues };
-        })
-      );
-
-      const primaryImage = images.find(img => img.isPrimary);
-      const thumbnail = primaryImage ? primaryImage.fileId : null;
-      const priceSummary =
-        version.status === 'draft'
-          ? null
-          : (await this.priceCacheService.getPriceSummariesByVersionIds(
-            [versionId],
-            tx,
-          )).get(versionId) ?? null;
-
-      return {
-        ...version,
-        thumbnail,
-        images,
-        optionGroups,
-        variants: variantsWithOptions,
-        channelProducts: [],
-        tagValues: tags,
-        priceSummary,
-      };
-    }, tx);
+    return this.productReadAssembler.getVersionDetail(versionId, undefined, tx);
   }
 
   async createDraftVersion(
@@ -1075,205 +1035,4 @@ export class ProductVersionsService {
     }
   }
 
-  private async _fetchOptionGroups(
-    masterId: string,
-    versionId: string,
-    tx: DbTransaction,
-  ): Promise<any[]> {
-    const optionGroupResults = await tx
-      .select({
-        id: productOptionGroups.id,
-        displayName: productOptionGroupDisplays.displayName,
-        sortOrder: productOptionGroupDisplays.sortOrder,
-        createdAt: productOptionGroups.createdAt,
-      })
-      .from(productMasterOptionGroups)
-      .innerJoin(
-        productOptionGroups,
-        eq(productMasterOptionGroups.optionGroupId, productOptionGroups.id),
-      )
-      .innerJoin(
-        productOptionGroupDisplays,
-        and(
-          eq(productOptionGroups.id, productOptionGroupDisplays.optionGroupId),
-          eq(productOptionGroupDisplays.masterId, masterId),
-          eq(productOptionGroupDisplays.versionId, versionId),
-          eq(productOptionGroupDisplays.locale, 'ko-KR'),
-        ),
-      )
-      .where(
-        and(
-          eq(productMasterOptionGroups.masterId, masterId),
-          eq(productMasterOptionGroups.versionId, versionId),
-        ),
-      )
-      .orderBy(asc(productOptionGroupDisplays.sortOrder));
-
-    const optionGroupIds = optionGroupResults.map(g => g.id);
-
-    if (optionGroupIds.length === 0) {
-      return [];
-    }
-
-    const allValues = await tx
-      .select({
-        id: productOptionValues.id,
-        optionGroupId: productOptionValues.optionGroupId,
-        displayName: productOptionValueDisplays.displayName,
-        sortOrder: productOptionValueDisplays.sortOrder,
-        createdAt: productOptionValues.createdAt,
-      })
-      .from(productOptionValues)
-      .innerJoin(
-        productOptionValueDisplays,
-        and(
-          eq(productOptionValues.id, productOptionValueDisplays.optionValueId),
-          eq(productOptionValueDisplays.masterId, masterId),
-          eq(productOptionValueDisplays.versionId, versionId),
-          eq(productOptionValueDisplays.locale, 'ko-KR'),
-        ),
-      )
-      .where(inArray(productOptionValues.optionGroupId, optionGroupIds))
-      .orderBy(
-        asc(productOptionValues.optionGroupId),
-        asc(productOptionValueDisplays.sortOrder),
-      );
-
-    const valuesByGroup = new Map<string, typeof allValues>();
-    for (const v of allValues) {
-      const list = valuesByGroup.get(v.optionGroupId) ?? [];
-      list.push(v);
-      valuesByGroup.set(v.optionGroupId, list);
-    }
-
-    return optionGroupResults.map(group => ({
-      ...group,
-      values: valuesByGroup.get(group.id) ?? [],
-    }));
-  }
-
-  private async _fetchVariants(
-    masterId: string,
-    versionId: string,
-    tx: DbTransaction,
-  ): Promise<any[]> {
-    const variantResults = await tx
-      .select()
-      .from(productMasterVariants)
-      .innerJoin(
-        productVariants,
-        eq(productMasterVariants.variantId, productVariants.id),
-      )
-      .where(
-        and(
-          eq(productMasterVariants.masterId, masterId),
-          eq(productMasterVariants.versionId, versionId),
-        ),
-      )
-      .orderBy(asc(productVariants.displayOrder));
-
-    return variantResults.map((r) => r.product_variants);
-  }
-
-  private async _fetchTags(
-    masterId: string,
-    versionId: string,
-    tx: DbTransaction,
-  ): Promise<Array<{ id: string; name: string; displayOrder: number; groupId: string; groupName: string }>> {
-    const tagResults = await tx
-      .select({
-        tagValueId: productTagValues.tagValueId,
-        tagValueName: tagValues.name,
-        tagValueDisplayOrder: tagValues.displayOrder,
-        tagGroupId: tagGroups.id,
-        tagGroupName: tagGroups.name,
-      })
-      .from(productTagValues)
-      .innerJoin(
-        tagValues,
-        eq(productTagValues.tagValueId, tagValues.id)
-      )
-      .innerJoin(
-        tagGroups,
-        eq(tagValues.groupId, tagGroups.id)
-      )
-      .where(
-        and(
-          eq(productTagValues.masterId, masterId),
-          eq(productTagValues.versionId, versionId),
-          eq(tagValues.isActive, true),
-          eq(tagGroups.isActive, true)
-        )
-      )
-      .orderBy(
-        asc(tagGroups.displayOrder),
-        asc(tagValues.displayOrder)
-      );
-
-    return tagResults.map(r => ({
-      id: r.tagValueId,
-      name: r.tagValueName,
-      displayOrder: r.tagValueDisplayOrder,
-      groupId: r.tagGroupId,
-      groupName: r.tagGroupName,
-    }));
-  }
-
-  private async _fetchImages(
-    versionId: string,
-    tx: DbTransaction,
-  ): Promise<any[]> {
-    return await tx
-      .select()
-      .from(productImages)
-      .where(eq(productImages.versionId, versionId))
-      .orderBy(desc(productImages.isPrimary), asc(productImages.sortOrder));
-  }
-
-  private async _fetchVariantOptionValues(
-    variantId: string,
-    versionId: string,
-    tx: DbTransaction,
-  ): Promise<any[]> {
-    const optionValues = await tx
-      .select({
-        id: productOptionValues.id,
-        optionGroupId: productOptionValues.optionGroupId,
-        displayName: productOptionValueDisplays.displayName,
-        sortOrder: productOptionValueDisplays.sortOrder,
-        createdAt: productOptionValues.createdAt,
-      })
-      .from(variantOptionValues)
-      .innerJoin(
-        productOptionValues,
-        eq(variantOptionValues.optionValueId, productOptionValues.id),
-      )
-      .innerJoin(
-        productOptionValueDisplays,
-        and(
-          eq(productOptionValues.id, productOptionValueDisplays.optionValueId),
-          eq(productOptionValueDisplays.versionId, versionId),
-          eq(productOptionValueDisplays.locale, 'ko-KR'),
-        ),
-      )
-      .innerJoin(
-        productOptionGroups,
-        eq(productOptionValues.optionGroupId, productOptionGroups.id),
-      )
-      .innerJoin(
-        productOptionGroupDisplays,
-        and(
-          eq(productOptionGroups.id, productOptionGroupDisplays.optionGroupId),
-          eq(productOptionGroupDisplays.versionId, versionId),
-          eq(productOptionGroupDisplays.locale, 'ko-KR'),
-        ),
-      )
-      .where(eq(variantOptionValues.variantId, variantId))
-      .orderBy(
-        asc(productOptionGroupDisplays.sortOrder),
-        asc(productOptionValueDisplays.sortOrder),
-      );
-
-    return optionValues;
-  }
 }
