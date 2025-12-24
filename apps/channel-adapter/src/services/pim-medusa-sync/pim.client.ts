@@ -30,86 +30,56 @@ export class PimClient {
         try {
             this.logger.debug(`Fetching PIM active version: ${masterId}`);
 
-            // GET /masters/:masterId/versions/active
-            const versionResponse = await this.client.get(
-                `/masters/${masterId}/versions/active`,
-            );
+            // GET /masters/:masterId (Active 버전 상세 정보 포함)
+            const response = await this.client.get(`/masters/${masterId}`);
+            const data = response.data;
 
-            const version = versionResponse.data;
-            if (!version) {
+            if (!data) {
                 throw new Error(`No active version found for master ${masterId}`);
             }
 
-            this.logger.debug(
-                `Got PIM version: ${version.id} v${version.version} (${version.name})`,
-            );
-
-            // 추가 데이터 조회
-
-            // 1. Variants 조회
-            const variantsResponse = await this.client.get(
-                `/masters/${masterId}/variants`,
-                {
-                    params: {
-                        versionId: version.id,
-                        includePrice: true, // 가격 정보 포함
-                    },
-                },
-            );
-
-            const variants = variantsResponse.data?.data || [];
-
-            // 2. 옵션 그룹 조회
-            const optionsResponse = await this.client.get(
-                `/masters/${masterId}/options`,
-                {
-                    params: {
-                        versionId: version.id,
-                    },
-                },
-            );
-
-            const optionGroups = optionsResponse.data?.data || [];
-
-            // 스냅샷 구성
+            // 스냅샷 구성 (ProductDetailDto 기반)
             const snapshot: PimProductSnapshot = {
-                masterId: version.masterId,
-                versionId: version.id,
-                version: version.version,
-                name: version.name,
-                description: version.description || undefined,
-                thumbnail: version.thumbnail || undefined,
-                images: version.images || undefined,
-                categoryIds: version.categoryIds || undefined,
-                brand: version.brand || undefined,
-                tags: version.tags || undefined,
-                optionGroups: optionGroups.map((group: any) => ({
+                masterId: data.masterId,
+                versionId: data.id,
+                version: data.version,
+                name: data.name,
+                description: data.description || undefined,
+                thumbnail: data.thumbnail || undefined,
+                images: data.images?.map((img: any) => img.fileId) || undefined,
+                categoryIds: data.categoryIds || undefined,
+                brand: data.brand || undefined,
+                tags: data.tagValues?.map((tv: any) => tv.name) || undefined,
+                optionGroups: data.optionGroups?.map((group: any) => ({
                     id: group.id,
-                    name: group.displayName,
-                    values: group.values.map((value: any) => ({
+                    name: group.name,
+                    values: group.values?.map((value: any) => ({
                         id: value.id,
-                        name: value.displayName,
+                        name: value.name,
                         colorCode: value.colorCode,
                         imageUrl: value.imageUrl,
                     })),
-                })),
-                variants: variants.map((variant: any) => ({
+                })) || [],
+                variants: data.variants?.map((variant: any) => ({
                     id: variant.id,
                     variantName: variant.variantName,
                     sku: variant.sku,
                     isDefault: variant.isDefault || false,
                     status: variant.status || 'active',
-                    optionCombination: variant.optionCombination || undefined,
-                    basePrice: variant.calculatedPrice?.basePrice, // 가격 정책 계산 결과
-                    membershipPrice: variant.calculatedPrice?.membershipPrice,
-                })),
-                status: version.status,
-                isGiftcard: version.isGiftcard || false,
-                discountable: version.discountable !== false, // 기본값 true
+                    optionCombination: variant.optionValues?.map((ov: any) => ({
+                        name: ov.optionGroupName,
+                        value: ov.name,
+                    })),
+                    basePrice: variant.priceSet?.basePrice ?? variant.price,
+                    membershipPrice: variant.priceSet?.membershipPrice,
+                })) || [],
+                status: data.status,
+                isGiftcard: data.isGiftcard || false,
+                discountable: data.discountable !== false,
             };
 
             this.logger.debug(
-                `Built PIM snapshot: ${masterId} with ${variants.length} variants`,
+                `Built PIM snapshot: ${masterId} with ${snapshot.variants.length} variants`,
             );
 
             return snapshot;

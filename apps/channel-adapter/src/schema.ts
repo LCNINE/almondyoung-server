@@ -309,7 +309,7 @@ export const channelAdapterSchema = {
   syncStatuses,
   pendingOrders,
   outboxEvents,
-  pimMedusaMappings, // ← 추가
+  pimMedusaMappings,
 } as const;
 
 export type ChannelAdapterSchema = typeof channelAdapterSchema;

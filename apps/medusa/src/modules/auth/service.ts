@@ -78,9 +78,10 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
       }
 
       if (!almond_token) {
+        // 토큰이 없으면 이 프로바이더에서는 인증 실패로 처리하되, 
+        // 에러를 반환하지 않고 다음 프로바이더(예: api-key)가 처리할 수 있게 함
         return {
           success: false,
-          error: 'No token found',
         };
       }
 
