@@ -36,12 +36,16 @@ import {
   CategorySeoConfig,
   CategoryTemplateConfig,
 } from '../../schema';
+import { ProductReadAssembler } from '../products/assemblers/product-read.assembler';
 import { eq, isNull, like, inArray, and, or, sql, asc } from 'drizzle-orm';
 import { RowList } from 'postgres';
 
 @Injectable()
 export class ProductCategoriesService {
-  constructor(@InjectDb() private readonly db: DbService<PimSchema>) { }
+  constructor(
+    @InjectDb() private readonly db: DbService<PimSchema>,
+    private readonly productReadAssembler: ProductReadAssembler,
+  ) { }
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.db.db;
@@ -668,23 +672,9 @@ export class ProductCategoriesService {
 
     // product_images에서 primary 이미지 조회 (thumbnail용)
     const versionIds = products.map(p => p.versionId);
-    const primaryImages = versionIds.length > 0
-      ? await client
-        .select({
-          versionId: pimSchema.productImages.versionId,
-          fileId: pimSchema.productImages.fileId,
-        })
-        .from(pimSchema.productImages)
-        .where(
-          and(
-            inArray(pimSchema.productImages.versionId, versionIds),
-            eq(pimSchema.productImages.isPrimary, true)
-          )
-        )
-      : [];
-
-    const thumbnailMap = new Map(
-      primaryImages.map(img => [img.versionId, img.fileId])
+    const thumbnailMap = await this.productReadAssembler.getPrimaryImagesByVersionIds(
+      versionIds,
+      tx,
     );
 
     const productsWithThumbnail = products.map(product => ({
