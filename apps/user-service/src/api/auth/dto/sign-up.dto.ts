@@ -132,12 +132,10 @@ export class LocalSignUpDto extends BaseSignUpDto {
 
   @ApiProperty({
     description: '생년월일',
-    example: '1990-01-01',
+    example: '19900101',
     required: true,
   })
-  @IsNotEmpty()
-  @IsDateString()
-  @Transform(({ value }) => new Date(value))
+  @IsNotEmpty({ message: '생년월일은 필수 입력 항목입니다.' })
   birthday: string
 }
 

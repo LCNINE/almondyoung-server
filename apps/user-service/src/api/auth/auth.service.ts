@@ -134,6 +134,11 @@ export class AuthService {
             })
             .where(eq(userServiceSchema.users.id, existingUser.id));
 
+          // 유저 프로필에 생년월일 업데이트
+          await this.usersService.updateMyProfile(existingUser.id, {
+            birthDate: birthday,
+          }, client);
+
           await client
             .update(userServiceSchema.userConsents)
             .set({
@@ -207,6 +212,11 @@ export class AuthService {
             isEmailVerified: false,
           })
           .returning();
+
+        // 유저 프로필에 생년월일 업데이트
+        await this.usersService.updateMyProfile(user.id, {
+          birthDate: birthday,
+        }, client);
 
         // 유저 동의 항목 생성
         await client.insert(userServiceSchema.userConsents).values({
