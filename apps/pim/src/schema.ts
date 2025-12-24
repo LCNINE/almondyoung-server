@@ -135,9 +135,8 @@ export const productMasterVersions = pgTable(
     name: varchar('name', { length: 255 }).notNull().default('새 상품'),
     description: text('description'),
     brand: varchar('brand', { length: 100 }),
-    thumbnail: text('thumbnail'), // 썸네일 이미지 URL
+    thumbnail: text('thumbnail'), // 썸네일 이미지 파일 ID
 
-    images: jsonb('images'), // 상품 이미지 (string[])
     seoTitle: varchar('seo_title', { length: 255 }), // SEO 제목
     seoDescription: text('seo_description'), // SEO 설명
     seoKeywords: text('seo_keywords').array(), // SEO 키워드
@@ -448,7 +447,7 @@ export const productVariants = pgTable(
       .primaryKey()
       .$defaultFn(() => uuidv7()),
     variantName: varchar('variant_name', { length: 255 }), // 수동 설정 이름
-    images: jsonb('images'), // string[] - 품목별 이미지
+    images: uuid('image_id'), // 품목별 이미지 파일 ID
 
     displayOrder: integer('display_order').default(0).notNull(), // 표시 순서
     status: varchar('status', { length: 20 }).notNull().default('active'), // active, inactive
