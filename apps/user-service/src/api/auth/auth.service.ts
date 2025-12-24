@@ -90,6 +90,7 @@ export class AuthService {
       privacyPolicy,
       thirdPartySharing,
       marketingConsent,
+      birthday,
     } = signUpDto;
 
     let expiresIn = JWT_EMAIL_VERIFICATION_ACCESS_TOKEN_EXPIRATION;
