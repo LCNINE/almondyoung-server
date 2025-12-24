@@ -1751,7 +1751,7 @@
   resolved "https://registry.npmjs.org/@medusajs/analytics/-/analytics-2.11.3.tgz"
   integrity sha512-JvkmD0WnRjrYe/5FMxX09qordfjBBKyb2UrGva8CaFdAIBrj6UKeQnv2tH4+qeFbCae5vWa+iw6Q1Ms3HQubtQ==
 
-"@medusajs/api-key@2.11.3":
+"@medusajs/api-key@^2.11.3", "@medusajs/api-key@2.11.3":
   version "2.11.3"
   resolved "https://registry.npmjs.org/@medusajs/api-key/-/api-key-2.11.3.tgz"
   integrity sha512-N3X3QRip1kWxLibboRFt6gVnMypPuNpyquq9Q5ci4p5eR2oZgRIcak0n6B8I8Gi3OLFpFbRBU9juM051ulBoiA==
