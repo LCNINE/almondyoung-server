@@ -70,6 +70,7 @@ export class OutboxWorkerService implements OnModuleInit {
                     and(
                         eq(outboxEvents.status, 'pending'),
                         lte(outboxEvents.nextAttemptAt, new Date()),
+                        eq(outboxEvents.aggregateType, 'Product'),
                     ),
                 )
                 .orderBy(outboxEvents.createdAt)

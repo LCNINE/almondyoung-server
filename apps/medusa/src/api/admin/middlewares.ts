@@ -1,16 +1,21 @@
 import { authenticate, MiddlewareRoute } from '@medusajs/framework/http';
 import { adminPaymentRoutesMiddlewares } from './payments/middlewares';
+import { logHeadersMiddleware } from '../log-headers';
 
 export const adminRouteMiddlewares: MiddlewareRoute[] = [
   {
     matcher: '/admin/*',
+    middlewares: [logHeadersMiddleware],
+  },
+  {
+    matcher: '/admin/*',
     method: ['POST'],
-    middlewares: [authenticate('user', ['session', 'bearer'])],
+    middlewares: [authenticate('user', ['session', 'bearer', 'api-key'])],
   },
   {
     matcher: '/admin/*',
     method: ['GET'],
-    middlewares: [authenticate('user', ['session', 'bearer'])],
+    middlewares: [authenticate('user', ['session', 'bearer', 'api-key'])],
   },
   ...adminPaymentRoutesMiddlewares,
 ];
