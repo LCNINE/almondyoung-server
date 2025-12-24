@@ -16,16 +16,16 @@ export function FloatingButtons({
   showChatbot = true,
   scrollThreshold = 300,
   onChatbotClick,
-  className = ""
+  className = "",
 }: FloatingButtonsProps) {
   return (
-    <div className={`fixed flex flex-col items-center gap-3 bottom-20 right-6 z-50 ${className}`}>
-      {showChatbot && (
+    <div
+      className={`fixed right-6 bottom-20 z-50 flex flex-col items-center gap-3 ${className}`}
+    >
+      {/* {showChatbot && (
         <ChatbotButton onClick={onChatbotClick} />
-      )}
-      {showScrollTop && (
-        <ScrollTopButton threshold={scrollThreshold} />
-      )}
+      )} */}
+      {showScrollTop && <ScrollTopButton threshold={scrollThreshold} />}
     </div>
   )
 }

@@ -9,7 +9,7 @@ export default async function Layout({
       <div className="relative hidden items-center justify-center bg-gradient-to-br from-[#FFA500] to-[#FFD97D] md:sticky md:top-0 md:flex md:h-screen">
         <div className="flex flex-wrap items-center justify-center gap-6 px-12">
           {/* 아이콘 */}
-          <div className="flex-shrink-0">
+          <div className="shrink-0">
             <img
               src="/images/cart-icon.png"
               alt="cart icon"
@@ -37,7 +37,7 @@ export default async function Layout({
       {/* 오른쪽 영역 - 40% (스크롤 가능) */}
       <div className="bg-gray-0 overflow-x-hidden">
         <div className="flex h-full flex-col">
-          <div className="flex h-full items-center justify-center">
+          <div className="flex h-full items-center justify-center px-4 py-8 sm:px-6 md:px-8 lg:px-12">
             {children}
           </div>
         </div>

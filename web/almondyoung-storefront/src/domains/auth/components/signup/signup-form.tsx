@@ -7,11 +7,18 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { createUser } from "@lib/api/users/auth/signup-base"
 import { signupSchema, SignupSchema } from "domains/auth/schemas/signup-schema"
 import { useSearchParams } from "next/navigation"
-import { useActionState, useEffect, useTransition } from "react"
-import { useForm } from "react-hook-form"
+import { useActionState, useEffect, useState, useTransition } from "react"
+import { useForm, useFormContext } from "react-hook-form"
 import { toast } from "sonner"
 import { AgreementsSection } from "./agreement"
 import { SignupFormFields } from "./signup-form-fields"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@components/common/ui/dialog"
 
 export function SignupForm() {
   const searchParams = useSearchParams()
@@ -19,6 +26,9 @@ export function SignupForm() {
 
   const [state, formAction, pending] = useActionState(createUser, null)
   const [isPending, startTransition] = useTransition()
+
+  const [isAgreementsDialogOpen, setIsAgreementsDialogOpen] =
+    useState<boolean>(false)
 
   const form = useForm<SignupSchema>({
     resolver: zodResolver(signupSchema),
@@ -31,6 +41,7 @@ export function SignupForm() {
       email: "",
       password: "",
       passwordConfirm: "",
+      birthDate: "",
       // 필수 약관
       isOver14: false,
       termsOfService: false,
@@ -73,18 +84,27 @@ export function SignupForm() {
     <Form {...form}>
       <form
         onSubmit={form.handleSubmit(onSubmit)}
-        className="flex flex-col gap-4"
+        className="flex w-full flex-col gap-4"
       >
         {/* 회원 정보 입력 필드들 */}
         <SignupFormFields form={form} />
 
         {/* 약관 동의 섹션 */}
-        <div className="h-32 overflow-y-auto py-4">
+        {/* <div className="h-32 overflow-y-auto py-4">
           <AgreementsSection form={form} />
+        </div> */}
+
+        {/* 동의 약관 온오프 다이얼로그 */}
+        <div className="ml-auto">
+          <AgreementsDialogBtn
+            isOpen={isAgreementsDialogOpen}
+            setIsOpen={setIsAgreementsDialogOpen}
+          />
         </div>
+
         {/* 제출 버튼 */}
-        <div className="w-full">
-          <CustomButton
+        {/* <div className="w-full">
+           <CustomButton
             type="submit"
             disabled={!form.formState.isValid || pending || isPending}
             className={`h-[42px] w-full ${
@@ -98,9 +118,36 @@ export function SignupForm() {
             ) : (
               "동의하고 가입하기"
             )}
-          </CustomButton>
-        </div>
+          </CustomButton> 
+        </div> */}
       </form>
     </Form>
+  )
+}
+
+function AgreementsDialogBtn({
+  isOpen,
+  setIsOpen,
+}: {
+  isOpen: boolean
+  setIsOpen: (isOpen: boolean) => void
+}) {
+  const form = useFormContext<SignupSchema>()
+
+  return (
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      <DialogTrigger>
+        <CustomButton type="button" className="cursor-pointer">
+          동의하고 가입하기
+        </CustomButton>
+      </DialogTrigger>
+
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>약관 동의</DialogTitle>{" "}
+        </DialogHeader>
+        <AgreementsSection form={form} />
+      </DialogContent>
+    </Dialog>
   )
 }

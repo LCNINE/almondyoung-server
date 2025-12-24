@@ -15,6 +15,7 @@ export const signupSchema = z
     email: z.string().email("이메일 형식이 올바르지 않습니다"),
     username: z.string().min(1, "이름을 입력해주세요"),
     nickname: z.string().min(1, "닉네임을 입력해주세요"),
+    birthDate: z.string().min(1, "생년월일을 입력해주세요"),
     // 필수 약관
     isOver14: z.boolean().refine((val) => val === true, {
       message: "필수 약관에 동의해주세요",
