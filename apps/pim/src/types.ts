@@ -280,26 +280,46 @@ export interface MasterListItemDto {
   createdAt: Date;
 }
 
+export type OptionValueReadModel = {
+  id: string;
+  optionGroupId: string;
+  displayName: string;
+  sortOrder: number;
+  createdAt: Date;
+};
+
+export type OptionGroupReadModel = {
+  id: string;
+  displayName: string;
+  sortOrder: number;
+  createdAt: Date;
+  values: OptionValueReadModel[];
+};
+
+export type VariantOptionValueReadModel = OptionValueReadModel;
+
+export type VariantReadModel = ProductVariant & {
+  optionValues: VariantOptionValueReadModel[];
+  price?: number;
+};
+
+export type TagReadModel = {
+  id: string;
+  name: string;
+  groupId: string;
+  groupName: string;
+  displayOrder: number;
+};
+
 // Product Master 상세 응답 DTO (모든 정보 포함)
 export interface ProductDetailDto extends ProductMasterVersion {
   images: ProductImage[];
-  optionGroups: (ProductOptionGroup & {
-    values: ProductOptionValue[];
-  })[];
-  variants: (ProductVariant & {
-    optionValues: ProductOptionValue[];
-    price?: number;
-  })[];
+  optionGroups: OptionGroupReadModel[];
+  variants: VariantReadModel[];
   channelProducts: (ChannelProduct & {
     channel: SalesChannel;
   })[];
-  tagValues?: Array<{
-    id: string;
-    name: string;
-    groupId: string;
-    groupName: string;
-    displayOrder: number;
-  }>;
+  tagValues?: TagReadModel[];
   priceSummary?: PriceSummary | null;
 }
 
