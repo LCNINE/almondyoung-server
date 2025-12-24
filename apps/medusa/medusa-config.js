@@ -108,6 +108,11 @@ module.exports = defineConfig({
         ],
       },
     },
+    {
+      resolve: '@medusajs/api-key',
+      options: {},
+    },
+    
   ],
 
   admin: {
