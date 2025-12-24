@@ -1,7 +1,8 @@
 // PIM에서 publish/unpublish/rollback 이벤트가 발생하면 Outbox에 저장
 
-import { Controller, Logger } from '@nestjs/common';
+import { Controller, Logger, UseInterceptors } from '@nestjs/common';
 import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
+import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { DomainEvent } from '@packages/event-contracts/types';
 import { ProductMasterActiveVersionChangedPayload } from '@packages/event-contracts/streams/product.stream';
 import { DbService } from '@app/db';
@@ -18,6 +19,7 @@ import type { ChannelAdapterSchema } from '../types';
  * - ProductMasterActiveVersionChanged: 상품 버전 활성화 변경 (발행/취소/롤백)
  */
 @Controller()
+@UseInterceptors(EventTypeGuard)
 export class PimProductEventConsumer {
     private readonly logger = new Logger(PimProductEventConsumer.name);
 
