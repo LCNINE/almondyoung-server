@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional, IsUrl, IsArray, IsEnum, IsNumber, IsPositive, MinLength, ValidateNested } from 'class-validator';
+import { IsString, IsOptional, IsEnum, MinLength, IsUUID } from 'class-validator';
 import { Type } from 'class-transformer';
 
 
@@ -14,11 +14,10 @@ export class UpdateProductVariantDto {
   @MinLength(1)
   variantName?: string;
 
-  @ApiProperty({ description: '변형별 이미지 URL 배열', type: [String], required: false })
+  @ApiProperty({ description: '품목 이미지 ID', type: String, required: false })
   @IsOptional()
-  @IsArray()
-  @IsUrl({}, { each: true })
-  images?: string[];
+  @IsUUID()
+  imageId: string;
 
   @ApiProperty({
     description: '변형 상태',

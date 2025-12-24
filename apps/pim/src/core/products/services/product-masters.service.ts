@@ -43,6 +43,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { ProductVersionDto } from '../dto/entities/master-version.entity';
 import { MasterProductWithPrimaryVersionDto } from '../dto/products/product-response.dto';
 import { ProductMasterVersionEntity } from 'apps/pim/src/schema.types';
+import { ProductReadAssembler } from '../assemblers/product-read.assembler';
 
 
 type VersionOptionValueDisplay = {
@@ -90,6 +91,7 @@ export class ProductMastersService {
     @Inject(forwardRef(() => ProductVersionsService))
     private readonly productVersionsService: ProductVersionsService,
 
+    private readonly productReadAssembler: ProductReadAssembler,
     private readonly pricingCalculatorService: PricingCalculatorService,
     private readonly priceCacheService: VariantPriceCacheService,
   ) { }
@@ -485,11 +487,7 @@ export class ProductMastersService {
     masterId: string,
     tx?: DbTransaction,
   ): Promise<ProductDetailDto> {
-    return this.inTx(async (tx) => {
-      const activeVersion = await this.productVersionsService.getActiveVersion(masterId, tx);
-
-      return await this.productVersionsService.getVersionDetail(activeVersion.id, tx);
-    }, tx);
+    return this.productReadAssembler.getMasterDetail(masterId, undefined, tx);
   }
 
   async getMasters(
@@ -730,18 +728,10 @@ export class ProductMastersService {
         .groupBy(productMasterVariants.versionId);
 
       // 한 번에 모든 primary 이미지 조회 (thumbnail용)
-      const primaryImages = await trx
-        .select({
-          versionId: productImages.versionId,
-          fileId: productImages.fileId,
-        })
-        .from(productImages)
-        .where(
-          and(
-            inArray(productImages.versionId, versionIds),
-            eq(productImages.isPrimary, true)
-          )
-        );
+      const thumbnailMap = await this.productReadAssembler.getPrimaryImagesByVersionIds(
+        versionIds,
+        trx,
+      );
 
       const priceSummaryMap = await this.priceCacheService.getPriceSummariesByVersionIds(
         versionIds,
@@ -754,9 +744,6 @@ export class ProductMastersService {
       );
       const variantCountMap = new Map(
         variantCounts.map(item => [item.versionId, item.count])
-      );
-      const thumbnailMap = new Map(
-        primaryImages.map(item => [item.versionId, item.fileId])
       );
 
       // 결과 조합 (더 이상 비동기 쿼리 없음)
@@ -823,7 +810,6 @@ export class ProductMastersService {
         tagValueIds,
         thumbnailFileId,
         additionalImageFileIds,
-        images,
         ...masterUpdateData
       } = data;
 

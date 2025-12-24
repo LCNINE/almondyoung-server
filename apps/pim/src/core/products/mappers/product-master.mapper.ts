@@ -116,7 +116,7 @@ export class ProductMasterMapper {
       id: entity.id,
       masterId: entity.masterId ?? '',
       variantName: entity.variantName,
-      images: entity.images,
+      imageId: entity.imageId,
       displayOrder: entity.displayOrder,
       status: entity.status,
       isDefault: entity.isDefault,
