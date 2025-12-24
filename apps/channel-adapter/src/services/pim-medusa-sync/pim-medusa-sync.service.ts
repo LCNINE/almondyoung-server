@@ -113,11 +113,7 @@ export class PimMedusaSyncService {
                 this.logger.error('Failed to record failure', recordError);
             }
 
-            return {
-                success: false,
-                masterId,
-                error: error.message,
-            };
+            throw error;
         }
     }
 
