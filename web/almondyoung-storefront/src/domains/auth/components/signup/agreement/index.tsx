@@ -26,6 +26,7 @@ export function AgreementsSection({ form }: AgreementsSectionProps) {
         checked={isAllAgreed()}
         onChange={handleAllAgreements}
       />
+
       {/* 개별 약관 목록 */}
       <div className="border-border-muted mt-4 flex flex-col gap-1 border-[0.5px] px-2.5 py-2.5 md:mt-5 md:px-3.5 md:py-3">
         {agreements.map((agreement) => (
