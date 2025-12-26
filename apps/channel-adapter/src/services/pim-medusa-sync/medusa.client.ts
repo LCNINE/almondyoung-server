@@ -28,11 +28,17 @@ export class MedusaClient {
         if (apiKey) {
             // Medusa v2 admin auth:
             // - JWT starts with "ey" -> Bearer (Authorization)
-            // - Secret API key starts with "sk_" -> x-medusa-access-token (raw sk token)
+            // - Secret API key starts with "sk_" -> Basic (Authorization) and x-medusa-access-token (best-effort)
             if (apiKey.startsWith('ey')) {
                 this.client.defaults.headers.common['Authorization'] = `Bearer ${apiKey}`;
             } else if (apiKey.startsWith('sk_')) {
+                // Medusa's authenticate-middleware expects Basic with the raw sk token (base64 optional)
+                this.client.defaults.headers.common['Authorization'] = `Basic ${apiKey}`;
+                // Also send x-medusa-access-token for compatibility (ignored if not needed)
                 this.client.defaults.headers.common['x-medusa-access-token'] = apiKey;
+                this.logger.log(
+                    `Medusa admin API key detected (sk_... length=${apiKey.length}). Using Basic auth header.`,
+                );
             }
         }
 
