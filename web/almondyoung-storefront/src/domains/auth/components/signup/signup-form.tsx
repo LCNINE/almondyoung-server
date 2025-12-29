@@ -13,14 +13,15 @@ import {
 import { Form } from "@components/common/ui/form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { createUser } from "@lib/api/users/auth/signup-base"
+import { formatBirthday } from "@lib/utils/format-birthday"
 import { signupSchema, SignupSchema } from "domains/auth/schemas/signup-schema"
+import { setFormError } from "domains/auth/utils/set-form-error"
 import { useSearchParams } from "next/navigation"
 import { useActionState, useEffect, useState, useTransition } from "react"
 import { useForm, useFormContext } from "react-hook-form"
 import { toast } from "sonner"
 import { AgreementsSection } from "./agreement"
 import { SignupFormFields } from "./signup-form-fields"
-import { formatBirthday } from "@lib/utils/format-birthday"
 
 export function SignupForm() {
   const searchParams = useSearchParams()
@@ -67,6 +68,7 @@ export function SignupForm() {
         })
       } else {
         toast.error(state.message)
+        setFormError(state.message, form)
         setIsAgreementsDialogOpen(false) // 약관 모달 닫기
       }
     }
