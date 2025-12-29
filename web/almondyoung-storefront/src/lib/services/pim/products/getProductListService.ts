@@ -120,7 +120,7 @@ export async function getProductsByBrandService(
   }
 
   const res = result.data
-  const items = res.data.map(toProductCard)
+  const items = res.data.map((dto) => toProductCard(dto, "products/images"))
   return { items, total: res.total, page: res.page, limit: res.limit }
 }
 

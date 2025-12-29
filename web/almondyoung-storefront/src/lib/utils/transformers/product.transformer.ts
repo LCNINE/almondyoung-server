@@ -247,7 +247,6 @@ export const toProductCard = (
   const isSingle = !(optionGroups?.length > 0 || variants?.length > 1)
 
   const defaultSku = variants?.[0]?.id // 단일/다중 모두 첫 변형을 기본 값으로 둠
-
   return {
     id: (dto as any).masterId || (dto as ProductDetailDto).id, // ProductListItemDto는 masterId, ProductDetailDto는 id
     name: dto.name,
