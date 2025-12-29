@@ -81,9 +81,6 @@ export function SignupForm() {
       birthday: formattedBirthday,
     }
 
-    // 약관 동의 모달 열려있으면 닫기
-    if (isAgreementsDialogOpen) setIsAgreementsDialogOpen(false)
-
     startTransition(() => {
       formAction({
         ...formattedSubmitData,

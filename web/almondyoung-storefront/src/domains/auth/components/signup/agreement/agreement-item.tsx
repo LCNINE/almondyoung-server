@@ -24,7 +24,6 @@ export function AgreementItem({
   content,
   checked,
   onChange,
-  children,
 }: AgreementItemProps) {
   return (
     <div className="flex flex-col">
@@ -37,7 +36,7 @@ export function AgreementItem({
             checked={checked}
             onCheckedChange={(checked) => onChange(checked as boolean)}
           />
-          <Label htmlFor={id} className="text-xs">
+          <Label htmlFor={id} className="text-xs md:text-base">
             {name}
           </Label>
         </div>
@@ -51,27 +50,6 @@ export function AgreementItem({
           />
         )}
       </div>
-
-      {/* 하위 약관들 */}
-      {children && children.length > 0 && (
-        <ul className="ml-5">
-          {children.map((child) => (
-            <li className="mt-1 flex h-5 items-center gap-1" key={child.id}>
-              <Checkbox
-                id={child.id}
-                className="h-3.5 w-3.5"
-                checked={child.checked}
-                onCheckedChange={(checked) =>
-                  child.onChange(checked as boolean)
-                }
-              />
-              <Label htmlFor={child.id} className="text-xs leading-5">
-                {child.name}
-              </Label>
-            </li>
-          ))}
-        </ul>
-      )}
     </div>
   )
 }
