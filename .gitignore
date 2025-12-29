@@ -386,3 +386,4 @@ dist
 
 # VS Code settings
 .vscode/
+apps/medusa/docs/llms_full.md
