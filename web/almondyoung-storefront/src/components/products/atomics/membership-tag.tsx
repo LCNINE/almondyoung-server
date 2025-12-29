@@ -1,7 +1,6 @@
 "use client"
 
-import React from "react"
-import MembershipTagIcon from "../../../icons/membership-tag-icon"
+import { MembershipTagIcon } from "icons/membership-tag-icon"
 
 export const MembershipTag = ({
   isMembership,

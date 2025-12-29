@@ -1,10 +1,10 @@
 import { ThemeManager } from "@components/common/theme-manager"
 import ProtectedRoute from "@components/protected-route"
-import HomeTemplate from "domains/home/template/home-template"
 import { getCategoryTree } from "@lib/api/pim/categories.server"
 import { getProductsByCategoryService } from "@lib/services/pim/products/getProductListService"
 import type { CategoryTreeNodeDto } from "@lib/types/dto/pim.dto"
 import type { ProductCard } from "@lib/types/ui/product"
+import HomeTemplate from "domains/home/template/home-template"
 
 export default async function Home(props: {
   params: Promise<{ countryCode: string }>
@@ -28,16 +28,20 @@ export default async function Home(props: {
     if (categories.length > 0) {
       // 루트 카테고리의 첫 번째 자식이 있으면 그것을 사용, 없으면 루트 카테고리 사용
       const firstCategory = categories[0]
-      initialCategoryId = firstCategory.children && firstCategory.children.length > 0
-        ? firstCategory.children[0].id
-        : firstCategory.id
+      initialCategoryId =
+        firstCategory.children && firstCategory.children.length > 0
+          ? firstCategory.children[0].id
+          : firstCategory.id
 
       // 초기 카테고리의 제품 목록 조회
       if (initialCategoryId) {
-        const productsResult = await getProductsByCategoryService(initialCategoryId, {
-          page: 1,
-          limit: 20,
-        })
+        const productsResult = await getProductsByCategoryService(
+          initialCategoryId,
+          {
+            page: 1,
+            limit: 20,
+          }
+        )
         initialCategoryProducts = productsResult.items || []
       }
     }
@@ -49,7 +53,6 @@ export default async function Home(props: {
   return (
     <ProtectedRoute>
       <HomeTemplate
-        countryCode={countryCode}
         categories={categories}
         initialCategoryId={initialCategoryId}
         initialCategoryProducts={initialCategoryProducts}

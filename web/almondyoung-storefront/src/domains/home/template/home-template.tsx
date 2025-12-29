@@ -1,21 +1,17 @@
 "use client"
 
-import { useUser } from "contexts/user-context"
-import HeroBannerSlider from "../components/banner/heroBannerSlider"
-import { HomeLoggedIn } from "../home-loggedin"
-import { HomeLogout } from "../home-logout"
 import type { CategoryTreeNodeDto } from "@lib/types/dto/pim"
 import type { ProductCard } from "@lib/types/ui/product"
+import HeroBannerSlider from "../components/banner/heroBannerSlider"
+import { HomeLogout } from "../home-logout"
 
 interface HomeTemplateProps {
-  countryCode: string
   categories: CategoryTreeNodeDto[]
   initialCategoryId: string | null
   initialCategoryProducts: ProductCard[]
 }
 
 export default function HomeTemplate({
-  countryCode,
   categories,
   initialCategoryId,
   initialCategoryProducts,
