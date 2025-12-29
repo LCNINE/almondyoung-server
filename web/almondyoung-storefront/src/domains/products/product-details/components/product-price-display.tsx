@@ -1,5 +1,5 @@
 import { AnimatedMembershipText } from "@components/products/atomics/animated-membership-text"
-import MembershipTagIcon from "icons/membership-tag-icon"
+import { MembershipTagIcon } from "icons/membership-tag-icon"
 
 type MemberPrice = {
   range: string
