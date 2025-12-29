@@ -35,7 +35,9 @@ export async function getProductListService(
       throw new Error(`Invalid API response: items is not an array`)
     }
 
-    let items: ProductCard[] = productItems.map(toProductCard)
+    let items: ProductCard[] = productItems.map((dto) =>
+      toProductCard(dto, "products/images")
+    )
 
     // 정렬 처리 (클라이언트 사이드)
     if (params.sort) {
