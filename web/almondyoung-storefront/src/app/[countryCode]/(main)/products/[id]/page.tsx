@@ -18,7 +18,6 @@ export default async function Page({
   const wishlist: WishlistItem | null = await getWishlistByProductId(id)
 
   try {
-    // 실제 PIM API를 통해 상품 상세 정보 조회
     product = await getProductDetailService(id, {
       userId: user?.id,
       withStock: true,

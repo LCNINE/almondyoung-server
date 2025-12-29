@@ -1,3 +1,5 @@
+import Image from "next/image"
+
 type ProductInfo = {
   productNumber?: string
   weight?: string
@@ -77,11 +79,14 @@ export function ProductDetailInfo({
         <h4 className="sr-only">상품 상세 이미지</h4>
         {detailImages.map((image, idx) => (
           <figure key={idx} className="w-full overflow-hidden rounded-lg">
-            <img
+            <Image
               src={image}
               alt={`${productName} 상세 이미지 ${idx + 1}`}
               className="h-auto w-full object-contain"
               loading="lazy"
+              width={350}
+              height={350}
+              sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
               onError={(e) => console.error("이미지 로드 실패:", image, e)}
             />
           </figure>
