@@ -4,10 +4,19 @@ import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
 import type { PimProductSnapshot } from '../../types';
 
+export interface PimCategoryDetail {
+  id: string;
+  name: string;
+  slug: string;
+  parentId: string | null;
+  isActive: boolean;
+  path?: string;
+}
+
 @Injectable()
 export class PimClient {
-    private readonly logger = new Logger(PimClient.name);
-    private readonly client: AxiosInstance;
+  private readonly logger = new Logger(PimClient.name);
+  private readonly client: AxiosInstance;
     private readonly apiUrl: string;
 
     constructor(private readonly configService: ConfigService) {
@@ -131,7 +140,33 @@ export class PimClient {
         } catch (error) {
             this.logger.error('PIM health check failed', error.message);
             return false;
-        }
     }
-}
+  }
 
+  // 단일 카테고리 상세 조회 (parentId/이름/슬러그 포함)
+  async getCategory(categoryId: string): Promise<PimCategoryDetail> {
+    try {
+      const response = await this.client.get(`/categories/${categoryId}`);
+      const data = response.data;
+
+      if (!data) {
+        throw new Error(`Category not found: ${categoryId}`);
+      }
+
+      return {
+        id: data.id,
+        name: data.name,
+        slug: data.slug,
+        parentId: data.parentId ?? null,
+        isActive: data.isActive ?? true,
+        path: data.path,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Failed to fetch category from PIM: ${categoryId}`,
+        error.stack,
+      );
+      throw new Error(`PIM getCategory failed: ${error.message}`);
+    }
+  }
+}

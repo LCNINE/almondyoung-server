@@ -7,6 +7,7 @@ import {
     validatePimSnapshot,
 } from './pim-to-medusa.transformer';
 import type { PimActiveVersionChangedEvent } from '../../types';
+import type { PimCategoryDetail } from './pim.client';
 
 export interface SyncResult {
     success: boolean;
@@ -25,6 +26,48 @@ export class PimMedusaSyncService {
         private readonly medusaClient: MedusaClient,
         private readonly mappingRepo: PimMedusaMappingRepository,
     ) { }
+
+    // PIM 카테고리를 Medusa에 보장(부모까지 생성) 후 Medusa category ID 배열 반환
+    private async ensureMedusaCategories(
+        categoryIds: string[] | undefined,
+    ): Promise<Array<{ id: string }>> {
+        if (!categoryIds || categoryIds.length === 0) {
+            return [];
+        }
+
+        const detailCache = new Map<string, PimCategoryDetail>();
+        const resolveCategory = async (id: string): Promise<PimCategoryDetail> => {
+            if (detailCache.has(id)) {
+                return detailCache.get(id)!;
+            }
+            const detail = await this.pimClient.getCategory(id);
+            detailCache.set(id, detail);
+            return detail;
+        };
+
+        const medusaIds: Array<{ id: string }> = [];
+        for (const categoryId of [...new Set(categoryIds)]) {
+            const medusaCategoryId = await this.medusaClient.ensureCategoryTree(
+                categoryId,
+                resolveCategory,
+            );
+            medusaIds.push({ id: medusaCategoryId });
+        }
+        return medusaIds;
+    }
+
+    // PIM 태그 문자열을 Medusa에 보장 후 {id,value} 배열 반환
+    private async ensureMedusaTags(
+        tags: string[] | undefined,
+    ): Promise<Array<{ value: string; id: string }>> {
+        if (!tags || tags.length === 0) {
+            return [];
+        }
+
+        const uniqueTags = [...new Set(tags)];
+        const ensured = await this.medusaClient.ensureTags(uniqueTags);
+        return ensured;
+    }
 
     // 단일 Master 동기화 (Main Entry Point - mapping 기반)
     async syncMaster(masterId: string, versionToCheck?: number): Promise<SyncResult> {
@@ -61,8 +104,17 @@ export class PimMedusaSyncService {
             // 3. 검증
             validatePimSnapshot(snapshot);
 
+            // 3-1. 카테고리/태그 보장 (Medusa에 없으면 생성)
+            const medusaCategories = await this.ensureMedusaCategories(
+                snapshot.categoryIds,
+            );
+            const medusaTags = await this.ensureMedusaTags(snapshot.tags);
+
             // 4. Medusa Payload로 변환
-            const medusaPayload = transformPimToMedusa(snapshot);
+            const medusaPayload = transformPimToMedusa(snapshot, {
+                categories: medusaCategories,
+                tags: medusaTags,
+            });
 
             // 5. 기존 매핑 조회
             const existingMapping = await this.mappingRepo.findByPimMasterId(masterId);
@@ -218,4 +270,3 @@ export class PimMedusaSyncService {
         return { pim, medusa, overall };
     }
 }
-

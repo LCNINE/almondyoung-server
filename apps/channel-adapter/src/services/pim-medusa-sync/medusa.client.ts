@@ -5,12 +5,15 @@ import type {
     MedusaProductPayload,
     MedusaProduct,
 } from '../../types';
+import type { PimCategoryDetail } from './pim.client';
 
 @Injectable()
 export class MedusaClient {
     private readonly logger = new Logger(MedusaClient.name);
     private readonly client: AxiosInstance;
     private readonly apiUrl: string;
+    private readonly categoryCache = new Map<string, MedusaProduct['id']>(); // key: handle
+    private readonly tagCache = new Map<string, string>(); // key: value
 
     constructor(private readonly configService: ConfigService) {
         this.apiUrl =
@@ -43,6 +46,174 @@ export class MedusaClient {
         }
 
         this.logger.log(`Medusa client initialized: ${this.apiUrl}`);
+    }
+
+    // ===== Product Categories =====
+    private normalizeCategoryListResponse(resp: any): any[] {
+        return (
+            resp?.data?.product_categories ||
+            resp?.data?.productCategories ||
+            resp?.data?.categories ||
+            []
+        );
+    }
+
+    private normalizeCategoryResponse(resp: any): any | null {
+        return (
+            resp?.data?.product_category ||
+            resp?.data?.productCategory ||
+            resp?.data?.category ||
+            null
+        );
+    }
+
+    private async findCategoryByHandle(handle: string): Promise<any | null> {
+        try {
+            const response = await this.client.get('/product-categories', {
+                params: { handle },
+            });
+            const categories = this.normalizeCategoryListResponse(response);
+            return categories.find((c: any) => c.handle === handle) || null;
+        } catch (error) {
+            this.logger.warn(
+                `Medusa findCategoryByHandle failed for ${handle}: ${error.message}`,
+            );
+            return null;
+        }
+    }
+
+    private async createCategory(payload: any): Promise<any> {
+        const response = await this.client.post('/product-categories', payload);
+        const created = this.normalizeCategoryResponse(response);
+        if (!created) {
+            throw new Error('Medusa API returned no category in response');
+        }
+        return created;
+    }
+
+    /**
+     * 카테고리 보장: PIM 카테고리 트리를 따라 부모→자식 순서로 생성/조회
+     * handle: pim-cat-{pimCategoryId}
+     */
+    async ensureCategoryTree(
+        pimCategoryId: string,
+        resolver: (id: string) => Promise<PimCategoryDetail>,
+    ): Promise<string> {
+        const handle = `pim-cat-${pimCategoryId}`;
+
+        if (this.categoryCache.has(handle)) {
+            return this.categoryCache.get(handle)!;
+        }
+
+        // 부모부터 보장
+        const detail = await resolver(pimCategoryId);
+        let parentMedusaId: string | undefined;
+
+        if (detail.parentId) {
+            parentMedusaId = await this.ensureCategoryTree(
+                detail.parentId,
+                resolver,
+            );
+        }
+
+        // 기존 조회
+        const existing = await this.findCategoryByHandle(handle);
+        if (existing?.id) {
+            this.categoryCache.set(handle, existing.id);
+            return existing.id;
+        }
+
+        const payload = {
+            name: detail.name,
+            handle,
+            is_internal: false,
+            is_active: detail.isActive !== false,
+            parent_category_id: parentMedusaId,
+            metadata: {
+                pimCategoryId: detail.id,
+                pimPath: detail.path,
+            },
+        };
+
+        const created = await this.createCategory(payload);
+        this.categoryCache.set(handle, created.id);
+        this.logger.log(
+            `Created Medusa category ${created.id} for PIM category ${detail.id}`,
+        );
+        return created.id;
+    }
+
+    // ===== Product Tags =====
+    private normalizeTagListResponse(resp: any): any[] {
+        return (
+            resp?.data?.product_tags ||
+            resp?.data?.productTags ||
+            resp?.data?.tags ||
+            []
+        );
+    }
+
+    private normalizeTagResponse(resp: any): any | null {
+        return (
+            resp?.data?.product_tag ||
+            resp?.data?.productTag ||
+            resp?.data?.tag ||
+            null
+        );
+    }
+
+    private async findTagByValue(value: string): Promise<any | null> {
+        try {
+            const response = await this.client.get('/product-tags', {
+                params: { q: value },
+            });
+            const tags = this.normalizeTagListResponse(response);
+            return tags.find((t: any) => t.value === value) || null;
+        } catch (error) {
+            this.logger.warn(
+                `Medusa findTagByValue failed for ${value}: ${error.message}`,
+            );
+            return null;
+        }
+    }
+
+    private async createTag(value: string): Promise<any> {
+        const response = await this.client.post('/product-tags', { value });
+        const created = this.normalizeTagResponse(response);
+        if (!created) {
+            throw new Error('Medusa API returned no tag in response');
+        }
+        return created;
+    }
+
+    async ensureTag(value: string): Promise<string> {
+        if (!value) {
+            throw new Error('Tag value is required');
+        }
+
+        if (this.tagCache.has(value)) {
+            return this.tagCache.get(value)!;
+        }
+
+        const existing = await this.findTagByValue(value);
+        if (existing?.id) {
+            this.tagCache.set(value, existing.id);
+            return existing.id;
+        }
+
+        const created = await this.createTag(value);
+        this.tagCache.set(value, created.id);
+        this.logger.log(`Created Medusa tag "${value}" (${created.id})`);
+        return created.id;
+    }
+
+    async ensureTags(values: string[]): Promise<Array<{ id: string; value: string }>> {
+        const results: Array<{ id: string; value: string }> = [];
+        for (const value of values) {
+            const id = await this.ensureTag(value);
+            results.push({ id, value });
+        }
+        return results;
     }
 
     // handle로 medusa product 조회 (handle = pim-{masterId})
