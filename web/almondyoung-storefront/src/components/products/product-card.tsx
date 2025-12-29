@@ -1,20 +1,16 @@
 "use client"
 
-import React from "react"
 import Link from "next/link"
+import React from "react"
+import { ProductCard as UIProductCard } from "../../lib/types/ui/product"
 import {
   AlternativeProductButton,
-  ProductThumbnail,
-  SoldOutTag,
-  ProductTitle,
-  ProductStockAlert,
-  ProductRating,
-  MembershipTag,
   ProductPrice,
+  ProductRating,
+  ProductStockAlert,
+  ProductThumbnail,
+  ProductTitle,
 } from "./atomics"
-import { AnimatedMembershipText } from "@components/products/atomics/animated-membership-text"
-import { ProductCard as UIProductCard } from "../../lib/types/ui/product"
-import { addToRecentViewsService } from "@lib/services/users/recent-views"
 
 /**
  * ProductInfo - 공통 상품 정보 렌더링 컴포넌트

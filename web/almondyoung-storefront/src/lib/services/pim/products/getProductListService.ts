@@ -85,7 +85,9 @@ export async function getProductsByCategoryService(
       throw new Error(`Invalid API response: items is not an array`)
     }
 
-    const items: ProductCard[] = productItems.map(toProductCard)
+    const items: ProductCard[] = productItems.map((dto) =>
+      toProductCard(dto, "products/images")
+    )
 
     return { items, total: res.total, page: res.page, limit: res.limit }
   } catch (error) {

@@ -49,7 +49,9 @@ export const HomeLogout: React.FC<{
   const [sectionProducts, setSectionProducts] = useState<
     Record<string, ProductCard[]>
   >({})
-  const [isLoadingSections, setIsLoadingSections] = useState<Record<string, boolean>>({})
+  const [isLoadingSections, setIsLoadingSections] = useState<
+    Record<string, boolean>
+  >({})
 
   // 카테고리 선택 시 제품 조회
   useEffect(() => {
@@ -142,7 +144,6 @@ export const HomeLogout: React.FC<{
     loadSectionProducts()
   }, [])
 
-
   return (
     <div className="w-full">
       {/* 카테고리별 제품 섹션 */}
@@ -153,7 +154,7 @@ export const HomeLogout: React.FC<{
         />
         <CategoryBadgeTabs
           categories={categories}
-          initialCategoryId='first'
+          initialCategoryId="first"
           onCategorySelect={setSelectedCategoryId}
         />
         <div className="mt-6">
@@ -215,7 +216,7 @@ export const HomeLogout: React.FC<{
         />
         <CategoryBadgeTabs
           categories={categories}
-          initialCategoryId='first'
+          initialCategoryId="first"
           onCategorySelect={setSelectedTimeSaleCategory}
         />
         <div className="mt-6">

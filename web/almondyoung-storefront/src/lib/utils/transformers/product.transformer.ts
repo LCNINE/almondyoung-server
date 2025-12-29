@@ -3,20 +3,20 @@
 // - 폴백/파생값 계산 책임 (할인율, priceRange, 이미지 폴백 등)
 
 import type {
-  ProductDetailDto,
-  ProductListItemDto,
   OptionGroupDto,
   OptionValueDto,
-  VariantDto,
+  ProductDetailDto,
+  ProductListItemDto,
   ProductSearchItemDto,
+  VariantDto,
 } from "@lib/types/dto/pim"
 import type {
+  PriceInfo,
+  PriceRange,
   ProductCard,
   ProductDetail,
   ProductOption,
   ProductOptionValue,
-  PriceInfo,
-  PriceRange,
 } from "@lib/types/ui/product"
 
 type RawOpt = {
@@ -79,7 +79,9 @@ const sanitizeAndRewrite = (
 const isFileId = (str?: string | null): boolean => {
   if (!str) return false
   // UUID 형식: 8-4-4-4-12 (예: 019b2b3c-e60b-7030-a246-079f1e492f70)
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    str
+  )
 }
 
 // 이미지 URL 정규화 (fileId 감지 시 placeholder로 대체)
@@ -89,7 +91,9 @@ const normalizeImageUrl = (url?: string | null): string => {
   // TODO: 백엔드에서 public URL 제공 시 제거
   // 현재는 fileId (UUID)가 오는 경우 placeholder로 대체
   if (isFileId(url)) {
-    console.warn(`[normalizeImageUrl] fileId 감지됨 (${url}). 백엔드 public URL 제공 대기 중.`)
+    console.warn(
+      `[normalizeImageUrl] fileId 감지됨 (${url}). 백엔드 public URL 제공 대기 중.`
+    )
     return "https://placehold.co/240x240?text=No+Image"
   }
 
@@ -234,7 +238,8 @@ function buildOptions(
 // 옵션 그룹 -> UI 옵션
 // ---------- 목록용 ----------
 export const toProductCard = (
-  dto: ProductListItemDto | ProductDetailDto
+  dto: ProductListItemDto | ProductDetailDto,
+  filePath?: string
 ): ProductCard => {
   const variants = (dto as any).variants ?? []
   const optionGroups = (dto as any).optionGroups ?? []
@@ -247,7 +252,9 @@ export const toProductCard = (
     id: (dto as any).masterId || (dto as ProductDetailDto).id, // ProductListItemDto는 masterId, ProductDetailDto는 id
     name: dto.name,
     brand: (dto as any).brand || undefined,
-    thumbnail: pickPrimaryImage(dto),
+    thumbnail: dto.thumbnail
+      ? `${process.env.AWS_S3_PRODUCTS}/${filePath}/${dto.thumbnail}.png`
+      : "https://placehold.co/240x240?text=No+Image",
     // 가격 정보는 Pricing API로 별도 조회 필요 (스펙에 없음)
     basePrice: undefined,
     membershipPrice: undefined,
@@ -275,7 +282,10 @@ export const toProductDetail = (dto: ProductDetailDto): ProductDetail => {
   // ProductDetailDto의 variants는 optionValues가 없으므로 variantName을 파싱해야 함
   // variantName 형식: "빨강 × L" 또는 "색상:빨강|사이즈:L"
   const skuIndex: Record<string, string> = {}
-  const groupById = new Map<string, { label: string; values: Map<string, OptionValueDto> }>()
+  const groupById = new Map<
+    string,
+    { label: string; values: Map<string, OptionValueDto> }
+  >()
 
   for (const g of dto.optionGroups ?? []) {
     const valueMap = new Map<string, OptionValueDto>()
@@ -301,7 +311,7 @@ export const toProductDetail = (dto: ProductDetailDto): ProductDetail => {
     const parts: Record<string, string> = {}
 
     // variantName을 파싱 (예: "빨강 × L" → ["빨강", "L"])
-    const variantParts = v.variantName.split(/[×x]/).map(s => s.trim())
+    const variantParts = v.variantName.split(/[×x]/).map((s) => s.trim())
 
     // optionGroups의 값들과 매칭 시도
     let partIndex = 0
@@ -309,9 +319,9 @@ export const toProductDetail = (dto: ProductDetailDto): ProductDetail => {
       if (partIndex >= variantParts.length) break
 
       const variantPart = variantParts[partIndex].toLowerCase().trim()
-      const matchedValue = Array.from(groupById.get(g.id)?.values.values() ?? []).find(
-        val => val.displayName.toLowerCase().trim() === variantPart
-      )
+      const matchedValue = Array.from(
+        groupById.get(g.id)?.values.values() ?? []
+      ).find((val) => val.displayName.toLowerCase().trim() === variantPart)
 
       if (matchedValue) {
         parts[g.displayName] = matchedValue.displayName
@@ -391,4 +401,3 @@ export const toProductCardFromSearch = (
     createdAt: dto.created_at,
   }
 }
-
