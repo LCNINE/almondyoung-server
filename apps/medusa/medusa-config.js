@@ -118,16 +118,28 @@ module.exports = defineConfig({
     },
     
   ],
+  admin: {
+    // Custom Vite config is needed because the admin bundler sometimes
+    // fails to resolve `@medusajs/admin-sdk` during Docker builds.
+    // Point directly to the installed package to avoid rollup resolution errors.
+    vite: () => {
+      const adminSdkPath = path.resolve(__dirname, 'node_modules/@medusajs/admin-sdk');
 
-//   admin: {
-//     vite: () => {
-//       return {
-//         server: {
-//           allowedHosts: ['localhost', '127.0.0.1', 'medusa-dev.up.railway.app'],
-//         },
-//       };
-//     },
-//   },
+      return {
+        resolve: {
+          alias: {
+            '@medusajs/admin-sdk': adminSdkPath,
+          },
+        },
+        optimizeDeps: {
+          include: ['@medusajs/admin-sdk'],
+        },
+        server: {
+          allowedHosts: ['localhost', '127.0.0.1', 'medusa-dev.up.railway.app'],
+        },
+      };
+    },
+  },
 
   plugins: [
     {
