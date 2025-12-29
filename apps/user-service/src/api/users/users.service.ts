@@ -2,6 +2,7 @@ import { DbService, InjectDb } from '@app/db';
 import { InjectStreamPublisher, StreamPublisher } from '@app/events';
 import {
   BadRequestException,
+  HttpException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -68,6 +69,10 @@ export class UsersService {
 
       return user;
     } catch (error) {
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+
       throw new InternalServerErrorException(
         error.message ?? '사용자 정보 조회 중 오류가 발생했습니다.',
       );
@@ -327,10 +332,12 @@ export class UsersService {
           : null,
       };
     } catch (error) {
-      console.log('error:', error);
       if (error instanceof NotFoundException) {
+        console.log('NotFoundException:', error);
         throw error;
       }
+
+      console.log('InternalServerErrorException:', error);
       throw new InternalServerErrorException(
         '사용자 상세 정보를 불러오는 중 오류가 발생했습니다.',
       );
