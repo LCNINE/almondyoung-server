@@ -4,9 +4,15 @@ import type { PimProductSnapshot, MedusaProductPayload } from '../../types';
 
 const logger = new Logger('PimToMedusaTransformer');
 
+export interface MedusaSyncOverrides {
+    categories?: Array<{ id: string }>;
+    tags?: Array<{ value: string; id?: string }>;
+}
+
 // PIM Product Snapshot을 Medusa Upsert Payload로 변환
 export function transformPimToMedusa(
     snapshot: PimProductSnapshot,
+    overrides?: MedusaSyncOverrides,
 ): MedusaProductPayload {
     logger.log(`Transforming PIM snapshot: ${snapshot.masterId} v${snapshot.version}`);
 
@@ -39,8 +45,12 @@ export function transformPimToMedusa(
     };
 
     // 6. 분류
-    const categories = snapshot.categoryIds?.map((id) => ({ id }));
-    const tags = snapshot.tags?.map((value) => ({ value }));
+    const categories =
+        overrides?.categories ??
+        snapshot.categoryIds?.map((id) => ({ id }));
+    const tags =
+        overrides?.tags ??
+        snapshot.tags?.map((value) => ({ value }));
 
     return {
         title,
