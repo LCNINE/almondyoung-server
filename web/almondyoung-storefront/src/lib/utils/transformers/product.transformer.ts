@@ -251,9 +251,7 @@ export const toProductCard = (
     id: (dto as any).masterId || (dto as ProductDetailDto).id, // ProductListItemDto는 masterId, ProductDetailDto는 id
     name: dto.name,
     brand: (dto as any).brand || undefined,
-    thumbnail: dto.thumbnail
-      ? `${process.env.AWS_S3_PRODUCTS}/${filePath}/${dto.thumbnail}.png`
-      : "https://placehold.co/240x240?text=No+Image",
+    thumbnail: dto.thumbnail || "",
     // 가격 정보는 Pricing API로 별도 조회 필요 (스펙에 없음)
     basePrice: undefined,
     membershipPrice: undefined,

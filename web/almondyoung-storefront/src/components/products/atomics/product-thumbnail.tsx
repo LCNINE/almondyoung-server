@@ -30,7 +30,7 @@ export const ProductThumbnail = ({
       }
     >
       <Image
-        src={src || "/placeholder.png"}
+        src={`${process.env.NEXT_PUBLIC_FS_URL}/files/public/${src}`}
         alt={alt}
         className="h-full w-full object-cover"
         width={240}

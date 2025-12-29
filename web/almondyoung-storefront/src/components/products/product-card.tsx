@@ -76,7 +76,7 @@ const ProductInfo = ({
       style={{ minWidth: `${minWidth}px` }}
     >
       <ProductThumbnail
-        src={product.thumbnail}
+        src={product.thumbnail ?? "https://placehold.co/240x240?text=No+Image"}
         alt={product.name}
         showCartIcon={showCartIcon}
         timer={showTimer && timeLeft ? formatTimer(timeLeft) : undefined}

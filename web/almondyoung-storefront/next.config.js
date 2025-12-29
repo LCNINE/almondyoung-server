@@ -87,6 +87,10 @@ const nextConfig = {
         protocol: "https",
         hostname: "almondyoung-public-template.s3.ap-northeast-2.amazonaws.com",
       },
+      {
+        protocol: "https",
+        hostname: "api-gateway-development-10ed.up.railway.app",
+      },
     ],
   },
 }
