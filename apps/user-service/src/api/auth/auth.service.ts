@@ -90,6 +90,7 @@ export class AuthService {
       privacyPolicy,
       thirdPartySharing,
       marketingConsent,
+      birthday,
     } = signUpDto;
 
     let expiresIn = JWT_EMAIL_VERIFICATION_ACCESS_TOKEN_EXPIRATION;
@@ -132,6 +133,11 @@ export class AuthService {
               updatedAt: new Date(),
             })
             .where(eq(userServiceSchema.users.id, existingUser.id));
+
+          // 유저 프로필에 생년월일 업데이트
+          await this.usersService.updateMyProfile(existingUser.id, {
+            birthDate: birthday,
+          }, client);
 
           await client
             .update(userServiceSchema.userConsents)
@@ -206,6 +212,11 @@ export class AuthService {
             isEmailVerified: false,
           })
           .returning();
+
+        // 유저 프로필에 생년월일 업데이트
+        await this.usersService.updateMyProfile(user.id, {
+          birthDate: birthday,
+        }, client);
 
         // 유저 동의 항목 생성
         await client.insert(userServiceSchema.userConsents).values({

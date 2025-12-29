@@ -1,5 +1,6 @@
 import { ApiProperty, PickType } from '@nestjs/swagger';
-import { IsNotEmpty, IsString, Matches } from 'class-validator';
+import type { userServiceEnums } from 'apps/user-service/database/drizzle/schema';
+import { IsNotEmpty, IsOptional, IsString, Matches } from 'class-validator';
 
 export class SendVerificationCodeDto {
   @ApiProperty({
@@ -22,9 +23,18 @@ export class SendVerificationCodeDto {
     message: '전화번호는 E.164 국제 표준 형식이어야 합니다.',
   })
   phoneNumber: string;
+
+  @ApiProperty({
+    description: '용도 (예: phone_verify, pin_reset)',
+    example: 'phone_verify',
+    required: false,
+  })
+  @IsString({ message: '용도는 문자열이어야 합니다.' })
+  @IsOptional()
+  purpose?: typeof userServiceEnums.phoneVerificationPurposeEnum.enumValues[number] = 'phone_verify';
 }
 
 export class LookupDto extends PickType(SendVerificationCodeDto, [
   'phoneNumber',
   'countryCode',
-] as const) {}
+] as const) { }

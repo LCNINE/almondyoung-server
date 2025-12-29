@@ -51,7 +51,7 @@ export class UpdateUserDto {
 
   @ApiProperty({
     description: '생년월일',
-    example: '1990-01-01',
+    example: '19900101',
     required: false,
   })
   @IsOptional()

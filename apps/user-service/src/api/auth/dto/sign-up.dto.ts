@@ -2,6 +2,7 @@ import { PartialType } from '@nestjs/mapped-types';
 import { ApiProperty } from '@nestjs/swagger';
 import {
   IsBoolean,
+  IsDateString,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -12,6 +13,7 @@ import {
 } from 'class-validator';
 import { AddressDto } from '../../../commons/dto/address.dto';
 import { IConsent } from '../../consents/types/consent.type';
+import { Transform } from 'class-transformer';
 
 // 기본 회원가입 DTO (공통 필드)
 export class BaseSignUpDto extends PartialType(AddressDto) implements IConsent {
@@ -127,6 +129,14 @@ export class LocalSignUpDto extends BaseSignUpDto {
   @MinLength(8, { message: '비밀번호는 최소 8자 이상이어야 합니다.' })
   @MaxLength(20, { message: '비밀번호는 최대 20자 이하여야 합니다.' })
   password: string;
+
+  @ApiProperty({
+    description: '생년월일',
+    example: '19900101',
+    required: true,
+  })
+  @IsNotEmpty({ message: '생년월일은 필수 입력 항목입니다.' })
+  birthday: string
 }
 
 // 소셜 로그인용 DTO (비밀번호 옵션)

@@ -84,7 +84,6 @@ export const productCategories = pgTable(
     index('idx_categories_slug').on(table.slug),
     index('idx_categories_active').on(table.isActive),
     index('idx_categories_sort_order').on(table.parentId, table.sortOrder),
-    uniqueIndex('unique_categories_parent_name').on(table.parentId, table.name),
     // 자기 참조 foreign key 제약 조건
     foreignKey({
       columns: [table.parentId],
@@ -136,9 +135,8 @@ export const productMasterVersions = pgTable(
     name: varchar('name', { length: 255 }).notNull().default('새 상품'),
     description: text('description'),
     brand: varchar('brand', { length: 100 }),
-    thumbnail: text('thumbnail'), // 썸네일 이미지 URL
+    thumbnail: text('thumbnail'), // 썸네일 이미지 파일 ID
 
-    images: jsonb('images'), // 상품 이미지 (string[])
     seoTitle: varchar('seo_title', { length: 255 }), // SEO 제목
     seoDescription: text('seo_description'), // SEO 설명
     seoKeywords: text('seo_keywords').array(), // SEO 키워드
@@ -449,7 +447,7 @@ export const productVariants = pgTable(
       .primaryKey()
       .$defaultFn(() => uuidv7()),
     variantName: varchar('variant_name', { length: 255 }), // 수동 설정 이름
-    images: jsonb('images'), // string[] - 품목별 이미지
+    imageId: uuid('image_id'), // 품목별 이미지 파일 ID
 
     displayOrder: integer('display_order').default(0).notNull(), // 표시 순서
     status: varchar('status', { length: 20 }).notNull().default('active'), // active, inactive
@@ -590,6 +588,37 @@ export const pricingRules = pgTable(
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
+);
+
+// ===== 11. PRODUCT VARIANT PRICE CACHE (버전별 가격 캐시) =====
+export const productVariantPriceCache = pgTable(
+  'product_variant_price_cache',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    versionId: uuid('version_id')
+      .notNull()
+      .references(() => productMasterVersions.id, { onDelete: 'cascade' }),
+    variantId: uuid('variant_id')
+      .notNull()
+      .references(() => productVariants.id, { onDelete: 'cascade' }),
+    basePrice: bigint('base_price', { mode: 'number' }).notNull(),
+    membershipPrice: bigint('membership_price', { mode: 'number' }).notNull(),
+    tieredPrices: jsonb('tiered_prices')
+      .$type<Array<{ minQuantity: number; price: number }>>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_variant_price_cache_version').on(table.versionId),
+    index('idx_variant_price_cache_variant').on(table.variantId),
+    uniqueIndex('unique_variant_price_cache_version_variant').on(
+      table.versionId,
+      table.variantId,
+    ),
+  ],
 );
 
 
@@ -919,6 +948,7 @@ export const pimSchema = {
   channelProducts,
   channelVariantListings,
   pricingRules,
+  productVariantPriceCache,
   productImages,
   productApprovalHistory,
   productAuditLog,

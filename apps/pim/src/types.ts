@@ -20,6 +20,7 @@ import {
   channelProducts,
   channelVariantListings,
   pricingRules,
+  productVariantPriceCache,
   productImages,
   productApprovalHistory,
   productAuditLog,
@@ -222,6 +223,9 @@ export type UpdatePricingRule = Partial<
   Omit<NewPricingRule, 'id' | 'createdAt' | 'updatedAt'>
 >;
 
+export type ProductVariantPriceCache = InferSelectModel<typeof productVariantPriceCache>;
+export type NewProductVariantPriceCache = InferInsertModel<typeof productVariantPriceCache>;
+
 // 가격 레이어 타입
 export type PriceLayer = 'base_price' | 'membership_price' | 'tiered_price';
 
@@ -276,26 +280,47 @@ export interface MasterListItemDto {
   createdAt: Date;
 }
 
+export type OptionValueReadModel = {
+  id: string;
+  optionGroupId: string;
+  displayName: string;
+  sortOrder: number;
+  createdAt: Date;
+};
+
+export type OptionGroupReadModel = {
+  id: string;
+  displayName: string;
+  sortOrder: number;
+  createdAt: Date;
+  values: OptionValueReadModel[];
+};
+
+export type VariantOptionValueReadModel = OptionValueReadModel;
+
+export type VariantReadModel = ProductVariant & {
+  optionValues: VariantOptionValueReadModel[];
+  price?: number;
+};
+
+export type TagReadModel = {
+  id: string;
+  name: string;
+  groupId: string;
+  groupName: string;
+  displayOrder: number;
+};
+
 // Product Master 상세 응답 DTO (모든 정보 포함)
 export interface ProductDetailDto extends ProductMasterVersion {
   images: ProductImage[];
-  optionGroups: (ProductOptionGroup & {
-    values: ProductOptionValue[];
-  })[];
-  variants: (ProductVariant & {
-    optionValues: ProductOptionValue[];
-    price?: number;
-  })[];
+  optionGroups: OptionGroupReadModel[];
+  variants: VariantReadModel[];
   channelProducts: (ChannelProduct & {
     channel: SalesChannel;
   })[];
-  tagValues?: Array<{
-    id: string;
-    name: string;
-    groupId: string;
-    groupName: string;
-    displayOrder: number;
-  }>;
+  tagValues?: TagReadModel[];
+  priceSummary?: PriceSummary | null;
 }
 
 // 가격 조회 응답 DTO
@@ -334,6 +359,14 @@ export interface CalculatedVariantPrice {
   membershipPrice: number; // 멤버십가 (base + membership 레이어 적용 결과)
   tieredPrices: TieredPrice[]; // 도매가 (수량별)
 }
+
+export type PriceSummary = {
+  minBasePrice: number;
+  maxBasePrice: number;
+  minMembershipPrice: number;
+  maxMembershipPrice: number;
+  hasTieredPrices: boolean;
+};
 
 // 수량별 도매가
 export interface TieredPrice {

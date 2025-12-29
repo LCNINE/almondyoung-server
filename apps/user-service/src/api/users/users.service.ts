@@ -1,13 +1,17 @@
 import { DbService, InjectDb } from '@app/db';
-import { StreamPublisher, InjectStreamPublisher } from '@app/events';
-import { UserEvents } from '@packages/event-contracts/streams';
+import { InjectStreamPublisher, StreamPublisher } from '@app/events';
 import {
   BadRequestException,
+  HttpException,
   Injectable,
   InternalServerErrorException,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { UserEvents } from '@packages/event-contracts/streams';
+import {
+  type UserServiceSchema
+} from 'apps/user-service/database/drizzle/schema';
 import { and, eq, isNull } from 'drizzle-orm';
 import * as schema from '../../../database/drizzle/schema';
 import { AddressDto } from '../../commons/dto/address.dto';
@@ -19,10 +23,6 @@ import {
   UserRoleScopesResponseDto,
   UserRolesResponse,
 } from './dto/user-role-scopes.response.dto';
-import {
-  userServiceSchema,
-  type UserServiceSchema,
-} from 'apps/user-service/database/drizzle/schema';
 
 @Injectable()
 export class UsersService {
@@ -69,6 +69,10 @@ export class UsersService {
 
       return user;
     } catch (error) {
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+
       throw new InternalServerErrorException(
         error.message ?? '사용자 정보 조회 중 오류가 발생했습니다.',
       );
@@ -328,10 +332,12 @@ export class UsersService {
           : null,
       };
     } catch (error) {
-      console.log('error:', error);
       if (error instanceof NotFoundException) {
+        console.log('NotFoundException:', error);
         throw error;
       }
+
+      console.log('InternalServerErrorException:', error);
       throw new InternalServerErrorException(
         '사용자 상세 정보를 불러오는 중 오류가 발생했습니다.',
       );

@@ -13,7 +13,6 @@ import {
   channelProducts,
   salesChannels,
   productMasterVersions,
-  productImages,
 } from '../../schema';
 import {
   eq,
@@ -31,10 +30,14 @@ import {
 import { ChannelProductWithChannelDto } from './dto';
 import { ChannelProductMapper } from './mappers';
 import { ChannelProductEntity, SalesChannelEntity } from '../../schema.types';
+import { ProductReadAssembler } from '../products/assemblers/product-read.assembler';
 
 @Injectable()
 export class ChannelProductsService {
-  constructor(@InjectDb() private readonly db: DbService<PimSchema>) { }
+  constructor(
+    @InjectDb() private readonly db: DbService<PimSchema>,
+    private readonly productReadAssembler: ProductReadAssembler,
+  ) { }
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.db.db;
@@ -272,23 +275,9 @@ export class ChannelProductsService {
 
     // product_images에서 primary 이미지 조회 (thumbnail용)
     const versionIds = rawData.map(item => item.versionId);
-    const primaryImages = versionIds.length > 0
-      ? await client
-        .select({
-          versionId: productImages.versionId,
-          fileId: productImages.fileId,
-        })
-        .from(productImages)
-        .where(
-          and(
-            inArray(productImages.versionId, versionIds),
-            eq(productImages.isPrimary, true)
-          )
-        )
-      : [];
-
-    const thumbnailMap = new Map(
-      primaryImages.map(img => [img.versionId, img.fileId])
+    const thumbnailMap = await this.productReadAssembler.getPrimaryImagesByVersionIds(
+      versionIds,
+      tx,
     );
 
     const data = rawData.map(item => ({
@@ -433,11 +422,10 @@ export class ChannelProductsService {
     const data = result[0];
 
     // product_images에서 이미지 조회
-    const images = await client
-      .select()
-      .from(productImages)
-      .where(eq(productImages.versionId, data.versionId))
-      .orderBy(desc(productImages.isPrimary), asc(productImages.sortOrder));
+    const images = await this.productReadAssembler.getImagesByVersionId(
+      data.versionId,
+      tx,
+    );
 
     // 2. 데이터 병합 로직
     return {
