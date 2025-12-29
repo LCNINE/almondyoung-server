@@ -19,7 +19,7 @@ export class PinService {
     private readonly pinReader: PinReader,
     private readonly pinCreator: PinCreator,
     private readonly pinManager: PinManager,
-  ) {}
+  ) { }
 
   /**
    * PIN 상태 조회
@@ -50,6 +50,7 @@ export class PinService {
    * PIN 등록
    */
   async register(userId: string, pin: string, ipAddress?: string, tx?: WalletExecutor): Promise<void> {
+
     // 1. 보안 정책 검사
     if (!PinPolicyUtil.isValid(pin)) {
       throw new Error('WEAK_PIN');

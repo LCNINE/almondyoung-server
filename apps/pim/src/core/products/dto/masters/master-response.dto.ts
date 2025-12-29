@@ -108,8 +108,8 @@ export class VariantDto {
   @ApiProperty({ description: '변형명', nullable: true })
   variantName: string | null;
 
-  @ApiProperty({ description: '변형 이미지' })
-  images: any;
+  @ApiProperty({ description: '품목 이미지 ID', nullable: true })
+  imageId: string | null;
 
   @ApiProperty({ description: '표시 순서', nullable: true })
   displayOrder: number | null;

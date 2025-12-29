@@ -25,6 +25,15 @@
 - **이력 관리**: 동기화 히스토리 및 오류 로그
 - **헬스 체크**: 채널별 연결 상태 확인
 
+### 3. PIM-Medusa 동기화 (🆕 NEW!)
+
+- **이벤트 기반 동기화**: PIM에서 상품 publish 시 자동으로 Medusa로 동기화
+- **백필 스크립트**: 기존 PIM 상품 일괄 동기화 CLI 도구
+- **Upsert 패턴**: PIM Master ID 기반 자동 생성/업데이트
+- **안정적인 추적**: `metadata.pimMasterId`로 매핑 관리
+
+📖 **자세한 내용**: [PIM_MEDUSA_SYNC.md](./PIM_MEDUSA_SYNC.md)
+
 ## 🔗 API 엔드포인트
 
 ### 핵심 기능

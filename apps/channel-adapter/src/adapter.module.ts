@@ -14,7 +14,7 @@ import { SyncStatusController } from './controllers/sync-status.controller';
 import { ChannelAdapterService } from './services/channel-adapter.service';
 import { NullEventPublisher } from './services/null-event-publisher.service';
 import { DbModule } from '@app/db';
-import { CHANNEL_ADAPTER_STREAM, ORDER_STREAM, FULFILLMENT_STREAM } from '@packages/event-contracts/streams';
+import { CHANNEL_ADAPTER_STREAM, ORDER_STREAM, FULFILLMENT_STREAM, PRODUCT_STREAM } from '@packages/event-contracts/streams';
 import { FulfillmentEventsConsumer } from './consumers/fulfillment-events.consumer';
 import * as schema from './schema';
 import { channelAdapterSchema } from './schema';
@@ -38,6 +38,14 @@ import { ChannelListingClient } from './services/clients/channel-listing.client'
 import { PendingOrderService } from './services/pending-order.service';
 import { OutboxService } from './services/outbox.service';
 import { OutboxDispatcherService } from './services/outbox-dispatcher.service';
+
+// PIM-Medusa 동기화 서비스
+import { PimClient } from './services/pim-medusa-sync/pim.client';
+import { MedusaClient } from './services/pim-medusa-sync/medusa.client';
+import { PimMedusaSyncService } from './services/pim-medusa-sync/pim-medusa-sync.service';
+import { PimProductEventConsumer } from './consumers/pim-product-event.consumer';
+import { PimMedusaMappingRepository } from './services/pim-medusa-sync/pim-medusa-mapping.repository';
+import { OutboxWorkerService } from './services/pim-medusa-sync/outbox-worker.service';
 
 // Kafka 설정 생성 함수 (운영 환경 전용)
 function createKafkaConfig() {
@@ -97,7 +105,7 @@ function createKafkaConfig() {
     ...(process.env.NODE_ENV === 'production'
       ? [
         EventsModule.forRoot({
-          streams: [CHANNEL_ADAPTER_STREAM, ORDER_STREAM, FULFILLMENT_STREAM],
+          streams: [CHANNEL_ADAPTER_STREAM, ORDER_STREAM, FULFILLMENT_STREAM, PRODUCT_STREAM],
           serviceName: 'channel-adapter',
           kafka: createKafkaConfig(),
           validation: {
@@ -108,7 +116,7 @@ function createKafkaConfig() {
       ]
       : []),
   ],
-  controllers: [ChannelAdapterController, SyncStatusController, FulfillmentEventsConsumer],
+  controllers: [ChannelAdapterController, SyncStatusController, FulfillmentEventsConsumer, PimProductEventConsumer],
   providers: [
     ChannelAdapterService,
     SyncStatusService,
@@ -144,6 +152,14 @@ function createKafkaConfig() {
     OutboxService,
     OutboxDispatcherService,
 
+    // PIM-Medusa 동기화
+    PimClient,
+    MedusaClient,
+    PimMedusaSyncService,
+    PimProductEventConsumer,
+    PimMedusaMappingRepository,
+    OutboxWorkerService,
+
     // 개발/테스트 환경: NullEventPublisher를 토큰으로 제공
     ...(process.env.NODE_ENV !== 'production'
       ? [
@@ -159,4 +175,4 @@ function createKafkaConfig() {
       : []),
   ],
 })
-export class AdapterModule {}
+export class AdapterModule { }

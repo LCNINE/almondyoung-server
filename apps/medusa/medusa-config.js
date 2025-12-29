@@ -21,11 +21,6 @@ module.exports = defineConfig({
       cookieSecret: process.env.COOKIE_SECRET || 'supersecret',
       jwtExpiresIn: process.env.JWT_EXPIRES_IN || '30d',
     },
-
-    // 개발 환경에서 API 키 검증 비활성화 (테스트용)
-    ...(process.env.NODE_ENV === 'development' && {
-      apiKeyAuthentication: false,
-    }),
   },
   presets: [require('@medusajs/ui-preset')],
 
@@ -39,6 +34,10 @@ module.exports = defineConfig({
           groupId: process.env.KAFKA_GROUP_ID || 'medusa-consumer',
         },
       },
+    },
+    {
+      resolve: '@medusajs/medusa/product',
+      options: {},
     },
     {
       resolve: '@medusajs/medusa/auth',
@@ -113,11 +112,28 @@ module.exports = defineConfig({
         ],
       },
     },
+    {
+      resolve: '@medusajs/api-key',
+      options: {},
+    },
+    
   ],
-
   admin: {
+    // Custom Vite config is needed because the admin bundler sometimes
+    // fails to resolve `@medusajs/admin-sdk` during Docker builds.
+    // Point directly to the installed package to avoid rollup resolution errors.
     vite: () => {
+      const adminSdkPath = path.resolve(__dirname, 'node_modules/@medusajs/admin-sdk');
+
       return {
+        resolve: {
+          alias: {
+            '@medusajs/admin-sdk': adminSdkPath,
+          },
+        },
+        optimizeDeps: {
+          include: ['@medusajs/admin-sdk'],
+        },
         server: {
           allowedHosts: ['localhost', '127.0.0.1', 'medusa-dev.up.railway.app'],
         },
@@ -130,9 +146,9 @@ module.exports = defineConfig({
       resolve: '@medusajs/draft-order',
       options: {},
     },
-    {
-      resolve: 'almond-digital-asset-plugin',
-      options: {},
-    },
+    // {
+    //   resolve: 'almond-digital-asset-plugin',
+    //   options: {},
+    // },
   ],
 });

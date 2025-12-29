@@ -5,7 +5,7 @@ config({ path: './apps/pim/.env', override: true });
 
 export default {
   schema: './apps/pim/src/schema.ts',
-  out: './drizzle/migrations',
+  out: './drizzle',
   dialect: 'postgresql',
   dbCredentials: {
     url: process.env.DATABASE_URL || '',

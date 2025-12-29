@@ -18,7 +18,7 @@ import {
   OrderModifiedPayload,
 } from '@packages/event-contracts/streams';
 import { channelAdapterSchema, outboxEvents } from '../schema';
-import { eq, and, lte, sql } from 'drizzle-orm';
+import { eq, and, lte, sql, inArray, ne } from 'drizzle-orm';
 
 type ChannelAdapterPayload =
   | OrderSyncCompletedPayload
@@ -49,10 +49,10 @@ export class OutboxDispatcherService implements OnModuleInit {
     private readonly channelAdapterPublisher: StreamPublisher<ChannelAdapterEvents>,
     @InjectStreamPublisher(ORDER_STREAM.topic.topic)
     private readonly ordersPublisher: StreamPublisher<OrderEvents>,
-  ) {}
+  ) { }
 
   onModuleInit() {
-    this.logger.log('📤 OutboxDispatcher 초기화 완료 ✅');
+    this.logger.log('OutboxDispatcher 초기화 완료');
   }
 
   /**
@@ -95,6 +95,7 @@ export class OutboxDispatcherService implements OnModuleInit {
           FROM ${outboxEvents}
           WHERE status = 'pending'
             AND next_attempt_at <= NOW()
+            AND aggregate_type != 'Product'
           ORDER BY created_at ASC
           LIMIT ${batchSize}
           FOR UPDATE SKIP LOCKED
@@ -111,7 +112,7 @@ export class OutboxDispatcherService implements OnModuleInit {
           .set({
             attempts: sql`${outboxEvents.attempts} + 1`,
           })
-          .where(sql`${outboxEvents.id} = ANY(${eventIds})`);
+          .where(inArray(outboxEvents.id, eventIds));
 
         return pendingEvents;
       });
@@ -120,7 +121,7 @@ export class OutboxDispatcherService implements OnModuleInit {
         return;
       }
 
-      this.logger.log(`📤 Outbox 이벤트 발행 시작: ${events.length}개`);
+      this.logger.log(`Outbox 이벤트 발행 시작: ${events.length}개`);
 
       for (const event of events) {
         try {
@@ -131,7 +132,7 @@ export class OutboxDispatcherService implements OnModuleInit {
         }
       }
 
-      this.logger.log(`✅ Outbox 이벤트 발행 완료: ${processedCount}/${events.length}개`);
+      this.logger.log(`Outbox 이벤트 발행 완료: ${processedCount}/${events.length}개`);
     } catch (error) {
       this.logger.error('Outbox dispatch 실행 중 오류:', error);
     } finally {
@@ -188,7 +189,7 @@ export class OutboxDispatcherService implements OnModuleInit {
         })
         .where(eq(outboxEvents.id, event.id));
 
-      this.logger.debug(`✅ Event ${event.id}: ${event.event_type} (${event.aggregate_type})`);
+      this.logger.debug(`Event ${event.id}: ${event.event_type} (${event.aggregate_type})`);
     } catch (error) {
       const newAttempts = event.attempts + 1;
       const isFinalFailure = newAttempts >= 5;
@@ -203,12 +204,12 @@ export class OutboxDispatcherService implements OnModuleInit {
         .where(eq(outboxEvents.id, event.id));
 
       this.logger.error(
-        `❌ Event ${event.id} 실패 (${newAttempts}/5): ${event.event_type}`,
+        `Event ${event.id} 실패 (${newAttempts}/5): ${event.event_type}`,
         error instanceof Error ? error.message : String(error),
       );
 
       if (isFinalFailure) {
-        this.logger.error(`🚨 최종 실패: ${event.id} (${event.event_type}) - 수동 처리 필요`);
+        this.logger.error(`최종 실패: ${event.id} (${event.event_type}) - 수동 처리 필요`);
       }
 
       throw error;
@@ -244,7 +245,7 @@ export class OutboxDispatcherService implements OnModuleInit {
       })
       .where(
         eventIds
-          ? and(eq(outboxEvents.status, 'failed'), sql`${outboxEvents.id} = ANY(${eventIds})`)
+          ? and(eq(outboxEvents.status, 'failed'), inArray(outboxEvents.id, eventIds))
           : eq(outboxEvents.status, 'failed'),
       )
       .returning({ id: outboxEvents.id });

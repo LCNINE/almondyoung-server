@@ -2,15 +2,15 @@
 import { NestFactory } from '@nestjs/core';
 import { AdapterModule } from './adapter.module';
 import { ValidationPipe } from '@nestjs/common';
-import {
-  FastifyAdapter,
-  NestFastifyApplication,
-} from '@nestjs/platform-fastify';
+// import {
+//   FastifyAdapter,
+//   NestFastifyApplication,
+// } from '@nestjs/platform-fastify';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { join } from 'path';
 import { writeFileSync, mkdirSync } from 'fs';
 import { EventsModule } from '@app/events';
-import { FULFILLMENT_STREAM } from '@packages/event-contracts/streams';
+import { FULFILLMENT_STREAM, PRODUCT_STREAM } from '@packages/event-contracts/streams';
 import * as os from 'os';
 
 function createKafkaConfig() {
@@ -37,18 +37,18 @@ function createKafkaConfig() {
     sasl:
       process.env.KAFKA_API_KEY && process.env.KAFKA_API_SECRET
         ? {
-            mechanism: 'plain' as const,
-            username: process.env.KAFKA_API_KEY,
-            password: process.env.KAFKA_API_SECRET,
-          }
+          mechanism: 'plain' as const,
+          username: process.env.KAFKA_API_KEY,
+          password: process.env.KAFKA_API_SECRET,
+        }
         : undefined,
   };
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestFastifyApplication>(
+  const app = await NestFactory.create(
     AdapterModule,
-    new FastifyAdapter(),
+    // new FastifyAdapter(),
   );
 
   app.useGlobalPipes(new ValidationPipe());
@@ -96,21 +96,21 @@ async function bootstrap() {
   });
 
   // YAML 문서 charset 헤더 설정
-  app.getHttpAdapter().getInstance().addHook('onSend', (request, reply, payload, done) => {
-    if (request.url === '/docs.yaml') {
-      reply.header('Content-Type', 'application/x-yaml; charset=utf-8');
-    }
-    done();
-  });
+  // app.getHttpAdapter().getInstance().addHook('onSend', (request, reply, payload, done) => {
+  //   if (request.url === '/docs.yaml') {
+  //     reply.header('Content-Type', 'application/x-yaml; charset=utf-8');
+  //   }
+  //   done();
+  // });
 
   // 파일 업로드 등 Fastify 설정
-  await app.register(require('@fastify/multipart'), {
-    attachFieldsToBody: false,
-    limits: {
-      fileSize: 1024 * 1024 * 10,
-      files: 1,
-    },
-  });
+  // await app.register(require('@fastify/multipart'), {
+  //   attachFieldsToBody: false,
+  //   limits: {
+  //     fileSize: 1024 * 1024 * 10,
+  //     files: 1,
+  //   },
+  // });
 
   // CORS 허용
   app.enableCors({
@@ -125,17 +125,18 @@ async function bootstrap() {
   });
 
   // 정적 파일 서빙 설정
-  const htmlPath = join(process.cwd(), 'html');
-  await app.register(require('@fastify/static'), {
-    root: htmlPath,
-    prefix: '/html/',
-  });
-  console.log(`정적 파일 서빙 경로: ${htmlPath}`);
+  // const htmlPath = join(process.cwd(), 'html');
+  // await app.register(require('@fastify/static'), {
+  //   root: htmlPath,
+  //   prefix: '/html/',
+  // });
+  // console.log(`정적 파일 서빙 경로: ${htmlPath}`);
 
+  console.log(`Current NODE_ENV: ${process.env.NODE_ENV}`);
   // 운영 환경에서만 Kafka Consumer 연결
   if (process.env.NODE_ENV === 'production') {
     const consumerOptions = EventsModule.forConsumer({
-      streams: [FULFILLMENT_STREAM],
+      streams: [FULFILLMENT_STREAM, PRODUCT_STREAM],
       groupId: 'channel-adapter-consumer',
       kafka: createKafkaConfig(),
     });

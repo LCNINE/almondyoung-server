@@ -1,3 +1,4 @@
+// apps/channel-adapter/src/schema.ts
 // 스키마 상단 import에 index 추가
 import {
   pgTable,
@@ -250,6 +251,51 @@ export const outboxEvents = pgTable(
   ],
 );
 
+// 🔹 PIM-Medusa 상품 매핑 테이블
+export const pimMedusaMappings = pgTable(
+  'pim_medusa_mappings',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+
+    // PIM 정보 (nullable: 실패 케이스도 기록)
+    pimMasterId: uuid('pim_master_id').notNull(),
+    pimVersionId: uuid('pim_version_id'), // nullable
+    pimVersion: integer('pim_version'), // nullable
+
+    // Medusa 정보 (nullable: 실패 시 없을 수 있음)
+    medusaProductId: varchar('medusa_product_id', { length: 255 }), // nullable
+    medusaHandle: varchar('medusa_handle', { length: 255 }), // nullable
+
+    // 동기화 정보
+    syncStatus: varchar('sync_status', { length: 20 }).notNull().default('synced'),
+    // 'synced' | 'pending' | 'failed'
+    lastSyncedAt: timestamp('last_synced_at').notNull().defaultNow(),
+    lastSyncAction: varchar('last_sync_action', { length: 20 }), // 'created' | 'updated' | 'deleted'
+
+    // 에러 추적
+    syncErrorCount: integer('sync_error_count').notNull().default(0),
+    lastSyncError: text('last_sync_error'),
+
+    // 타임스탬프
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => [
+    // PIM Master ID로 조회 (가장 빈번한 쿼리)
+    uniqueIndex('uq_pim_medusa_master').on(table.pimMasterId),
+    // Medusa Product ID로 역조회
+    index('idx_pim_medusa_product').on(table.medusaProductId),
+    // Medusa Handle로 조회
+    index('idx_pim_medusa_handle').on(table.medusaHandle),
+    // 동기화 상태별 조회
+    index('idx_pim_medusa_sync_status').on(table.syncStatus),
+    // 최근 동기화 시간 조회
+    index('idx_pim_medusa_last_synced').on(table.lastSyncedAt),
+  ],
+);
+
 // ===============================
 // 전체 스키마 객체 Export (Drizzle ORM 규칙)
 // ===============================
@@ -262,7 +308,8 @@ export const channelAdapterSchema = {
   wmsOrderMappings,
   syncStatuses,
   pendingOrders,
-  outboxEvents, // ← 추가
+  outboxEvents,
+  pimMedusaMappings,
 } as const;
 
 export type ChannelAdapterSchema = typeof channelAdapterSchema;
