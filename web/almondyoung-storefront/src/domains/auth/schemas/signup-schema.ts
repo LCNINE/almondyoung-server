@@ -15,7 +15,13 @@ export const signupSchema = z
     email: z.string().email("이메일 형식이 올바르지 않습니다"),
     username: z.string().min(1, "이름을 입력해주세요"),
     nickname: z.string().min(1, "닉네임을 입력해주세요"),
-    birthday: z.string().min(1, "생년월일을 입력해주세요"),
+    birthday: z
+      .string()
+      .min(1, "생년월일을 입력해주세요")
+      .regex(
+        /^\d{8}$/,
+        "생년월일은 YYYYMMDD 형식으로 입력해주세요 (예: 19900101)"
+      ),
     // 필수 약관
     isOver14: z.boolean().refine((val) => val === true, {
       message: "필수 약관에 동의해주세요",
@@ -43,4 +49,5 @@ export const signupSchema = z
     message: "비밀번호가 일치하지 않습니다",
     path: ["passwordConfirm"],
   })
+
 export type SignupSchema = z.infer<typeof signupSchema>
