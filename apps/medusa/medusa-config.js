@@ -36,6 +36,10 @@ module.exports = defineConfig({
       },
     },
     {
+      resolve: '@medusajs/medusa/product',
+      options: {},
+    },
+    {
       resolve: '@medusajs/medusa/auth',
       dependencies: [Modules.CACHE, ContainerRegistrationKeys.LOGGER],
       options: {
@@ -115,24 +119,24 @@ module.exports = defineConfig({
     
   ],
 
-  admin: {
-    vite: () => {
-      return {
-        server: {
-          allowedHosts: ['localhost', '127.0.0.1', 'medusa-dev.up.railway.app'],
-        },
-      };
-    },
-  },
+//   admin: {
+//     vite: () => {
+//       return {
+//         server: {
+//           allowedHosts: ['localhost', '127.0.0.1', 'medusa-dev.up.railway.app'],
+//         },
+//       };
+//     },
+//   },
 
   plugins: [
     {
       resolve: '@medusajs/draft-order',
       options: {},
     },
-    {
-      resolve: 'almond-digital-asset-plugin',
-      options: {},
-    },
+    // {
+    //   resolve: 'almond-digital-asset-plugin',
+    //   options: {},
+    // },
   ],
 });
