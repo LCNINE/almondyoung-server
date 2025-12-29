@@ -83,6 +83,10 @@ const nextConfig = {
         hostname: "almondyoung-public-template.s3.ap-northeast-2.amazonaws.com",
         pathname: "/products/images/**",
       },
+      {
+        protocol: "https",
+        hostname: "almondyoung-public-template.s3.ap-northeast-2.amazonaws.com",
+      },
     ],
   },
 }
