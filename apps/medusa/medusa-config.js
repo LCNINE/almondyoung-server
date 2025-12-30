@@ -13,6 +13,8 @@ loadEnv(process.env.NODE_ENV || 'development', medusaDir);
 module.exports = defineConfig({
   projectConfig: {
     databaseUrl: process.env.DATABASE_URL,
+    // RedisUrl이 없으면 Medusa는 자동으로 In-memory(Fake) Redis를 사용합니다.
+    // (이로 인해 재부팅 이슈가 생길 수 있으나, debug.log 폴더 트릭으로 막기로 했습니다.)
     http: {
       storeCors: process.env.STORE_CORS || '',
       adminCors: process.env.ADMIN_CORS || '',
@@ -25,16 +27,20 @@ module.exports = defineConfig({
   presets: [require('@medusajs/ui-preset')],
 
   modules: [
+    // USE_KAFKA 환경변수가 '1'일 때만 활성화 (또는 항상 활성화하려면 조건문 제거)
+    // 현재는 항상 활성화된 상태로 두었습니다.
     {
       resolve: './src/modules/events',
       options: {
         kafka: {
           clientId: process.env.KAFKA_CLIENT_ID || 'medusa-service',
+          // npm run dev(로컬)에서는 'localhost:9092'로 접속
           brokers: (process.env.KAFKA_BROKERS || 'localhost:9092').split(','),
           groupId: process.env.KAFKA_GROUP_ID || 'medusa-consumer',
         },
       },
     },
+
     {
       resolve: '@medusajs/medusa/product',
       options: {},
@@ -116,7 +122,6 @@ module.exports = defineConfig({
       resolve: '@medusajs/api-key',
       options: {},
     },
-    
   ],
   admin: {
     // Custom Vite config is needed because the admin bundler sometimes
