@@ -1,9 +1,0 @@
-{
-  "ignore": [
-    "debug.log",
-    "*.log",
-    "uploads/*"
-  ],
-  "ext": "ts,js,json",
-  "verbose": true
-}
