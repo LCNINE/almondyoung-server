@@ -13,6 +13,8 @@ loadEnv(process.env.NODE_ENV || 'development', medusaDir);
 module.exports = defineConfig({
   projectConfig: {
     databaseUrl: process.env.DATABASE_URL,
+    // Redis 연결 명시: 없으면 fake redis 사용으로 재시동 루프가 발생할 수 있음
+    redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
     http: {
       storeCors: process.env.STORE_CORS || '',
       adminCors: process.env.ADMIN_CORS || '',
@@ -25,16 +27,52 @@ module.exports = defineConfig({
   presets: [require('@medusajs/ui-preset')],
 
   modules: [
+    // Redis 기반 이벤트 버스 명시 (로컬 이벤트 버스 경고 제거)
     {
-      resolve: './src/modules/events',
+      resolve: '@medusajs/event-bus-redis',
+      key: Modules.EVENT_BUS,
       options: {
-        kafka: {
-          clientId: process.env.KAFKA_CLIENT_ID || 'medusa-service',
-          brokers: (process.env.KAFKA_BROKERS || 'localhost:9092').split(','),
-          groupId: process.env.KAFKA_GROUP_ID || 'medusa-consumer',
+        redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
+      },
+    },
+    // 캐시 모듈을 Redis로 명시
+    {
+      resolve: '@medusajs/cache-redis',
+      key: Modules.CACHE,
+      options: {
+        redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
+      },
+    },
+    // 워크플로우 엔진을 Redis 기반으로 명시
+    {
+      resolve: '@medusajs/workflow-engine-redis',
+      key: Modules.WORKFLOW_ENGINE,
+      options: {
+        redis: {
+          url: process.env.REDIS_URL || 'redis://localhost:6379',
+        },
+        connection: {
+          url: process.env.REDIS_URL || 'redis://localhost:6379',
         },
       },
     },
+    // Kafka 연동은 개발/로컬 환경에서는 기본적으로 비활성화.
+    // 필요 시 USE_KAFKA=1 환경변수를 설정하면 활성화됩니다.
+    ...(process.env.USE_KAFKA === '1'
+      ? [
+          {
+            resolve: './src/modules/events',
+            options: {
+              kafka: {
+                clientId: process.env.KAFKA_CLIENT_ID || 'medusa-service',
+                brokers:
+                  (process.env.KAFKA_BROKERS || 'localhost:9092').split(','),
+                groupId: process.env.KAFKA_GROUP_ID || 'medusa-consumer',
+              },
+            },
+          },
+        ]
+      : []),
     {
       resolve: '@medusajs/medusa/product',
       options: {},
