@@ -76,7 +76,11 @@ const ProductInfo = ({
       style={{ minWidth: `${minWidth}px` }}
     >
       <ProductThumbnail
-        src={product.thumbnail ?? "https://placehold.co/240x240?text=No+Image"}
+        src={
+          product.thumbnail
+            ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/fs/files/public/${product.thumbnail}`
+            : "https://placehold.co/240x240?text=No+Image"
+        }
         alt={product.name}
         showCartIcon={showCartIcon}
         timer={showTimer && timeLeft ? formatTimer(timeLeft) : undefined}
