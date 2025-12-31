@@ -589,6 +589,7 @@ export interface PimProductSnapshot {
     // 가격 정보
     basePrice?: number;
     membershipPrice?: number;
+    tieredPrices?: Array<{ minQuantity: number; price: number }>;
   }>;
 
   // 메타데이터
