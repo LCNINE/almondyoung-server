@@ -111,11 +111,13 @@ const buttonVariants = cva(
  * 2. CVA 타입을 컴포넌트 Props로 사용
  */
 interface CustomButtonProps
-  extends Omit<React.ComponentProps<"button">, "color">,
+  extends
+    Omit<React.ComponentProps<"button">, "color">,
     VariantProps<typeof buttonVariants> {
   // 'rounded'가 자동으로 포함됨
   asChild?: boolean
   isLoading?: boolean
+  spinnerColor?: "blue" | "gray" | "white"
 }
 
 /**
@@ -127,18 +129,15 @@ function CustomButton({
   color,
   size,
   fullWidth,
-  rounded, // (수정) 'rounded' prop 받기
+  rounded,
   asChild = false,
   isLoading = false,
   disabled,
+  spinnerColor = "white",
   children,
   ...props
 }: CustomButtonProps) {
   const Comp = asChild ? Slot : "button"
-
-  const isFilledContrast =
-    variant === "fill" && (color === "primary" || color === "destructive")
-  const spinnerColor = isFilledContrast ? "white" : "primary"
 
   return (
     <Comp
@@ -151,7 +150,7 @@ function CustomButton({
     >
       {isLoading ? (
         <span className="flex items-center gap-2">
-          <Spinner size="sm" color="white" />
+          <Spinner size="sm" color={spinnerColor} />
           {children}
         </span>
       ) : (
@@ -161,4 +160,4 @@ function CustomButton({
   )
 }
 
-export { CustomButton, buttonVariants }
+export { buttonVariants, CustomButton }

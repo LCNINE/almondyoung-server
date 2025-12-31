@@ -1,5 +1,6 @@
 "use client"
 
+import { useAddToCart } from "@hooks/index"
 import Link from "next/link"
 import React from "react"
 import { ProductCard as UIProductCard } from "../../lib/types/ui/product"
@@ -11,6 +12,7 @@ import {
   ProductThumbnail,
   ProductTitle,
 } from "./atomics"
+import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
 
 /**
  * ProductInfo - 공통 상품 정보 렌더링 컴포넌트
@@ -32,6 +34,8 @@ const ProductInfo = ({
   rankInfo: { show: boolean; rank: number }
   minWidth?: number
 }) => {
+  const { addToCart } = useAddToCart()
+
   // ===== 프론트 계산 (최소한) =====
 
   // 1. 품절 여부 (status 기반)
@@ -78,7 +82,7 @@ const ProductInfo = ({
       <ProductThumbnail
         src={
           product.thumbnail
-            ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/fs/files/public/${product.thumbnail}`
+            ? getThumbnailUrl(product.thumbnail)
             : "https://placehold.co/240x240?text=No+Image"
         }
         alt={product.name}
@@ -86,6 +90,7 @@ const ProductInfo = ({
         timer={showTimer && timeLeft ? formatTimer(timeLeft) : undefined}
         rankInfo={{ show: show, rank: rank }}
         isSoldOut={isSoldOut}
+        onCartClick={() => addToCart({ variantId: product.id, quantity: 1 })}
       />
 
       <div className="flex flex-col gap-0 md:gap-1">

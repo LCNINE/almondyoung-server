@@ -2,7 +2,7 @@
 // PIM 상세 + (선택) 카테고리 경로/WMS 재고/유저 메타 주입
 // 컴포넌트는 ProductDetail만 의존하도록 보장
 
-import { getProductDetail } from "@lib/api/pim/masters.server"
+import { getProductDetail } from "@lib/api/medusa/products"
 import { toProductDetail } from "@lib/utils/transformers"
 import type {
   ProductDetail,
@@ -18,7 +18,7 @@ const extractAllImgs = (html?: string | null): string[] => {
   while ((match = regex.exec(html)) !== null) {
     let imageUrl = match[1]
     // 상대 경로인 경우 절대 경로로 변환
-    if (imageUrl.startsWith('/')) {
+    if (imageUrl.startsWith("/")) {
       imageUrl = `https://almondyoung.com${imageUrl}`
     }
     matches.push(imageUrl)
@@ -55,12 +55,11 @@ export async function getProductDetailService(
   const detailImages = extractAllImgs(dto.descriptionHtml)
   productDetail = {
     ...productDetail,
-    detailImages
+    detailImages,
   }
 
   // 3) (선택) 부가 데이터 병렬 처리 준비
   const promises: Array<Promise<unknown>> = []
-
 
   // 3-2) WMS 재고 (TODO: 실제 WMS 연동 시 교체)
   const skuStockPromise = opts?.withStock
@@ -74,9 +73,8 @@ export async function getProductDetailService(
   //   : Promise.resolve(undefined)
   // promises.push(userMetaPromise)
 
-
   // 4) (선택) 결과 주입
-  const [skuStock] = await Promise.all(promises) as [Record<string, number>]
+  const [skuStock] = (await Promise.all(promises)) as [Record<string, number>]
 
   if (skuStock) {
     productDetail = { ...productDetail, skuStock }

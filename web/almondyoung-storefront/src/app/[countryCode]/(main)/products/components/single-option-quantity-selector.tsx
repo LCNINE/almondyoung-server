@@ -5,7 +5,7 @@ import Image from "next/image"
 
 interface SingleOptionQuantitySelectorProps {
   productName: string
-  thumbnail?: string
+  thumbnail: string
   quantity: number
   onQuantityChange: (quantity: number) => void
   price: number
@@ -32,13 +32,11 @@ export const SingleOptionQuantitySelector = ({
 
   return (
     <div className={className}>
-      {showTitle && (
-        <div className="mb-3 text-base font-bold">수량 선택</div>
-      )}
+      {showTitle && <div className="mb-3 text-base font-bold">수량 선택</div>}
       <div className="flex items-center gap-3 rounded-lg bg-white py-3">
         <Image
           className="h-20 w-20 rounded object-cover"
-          src={thumbnail || "https://placehold.co/80x80?text=No+Image"}
+          src={thumbnail}
           alt={productName || "상품 이미지"}
           width={80}
           height={80}

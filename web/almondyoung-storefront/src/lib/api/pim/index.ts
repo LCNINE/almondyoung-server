@@ -3,7 +3,7 @@
  */
 
 // 서버 액션 export
-export * from "./masters.server"
+export * from "../medusa/products"
 export * from "./versions.server"
 export * from "./variants.server"
 export * from "./pricing.server"

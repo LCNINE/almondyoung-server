@@ -44,7 +44,6 @@ export const getRegion = async (countryCode: string) => {
     }
 
     const regions = await listRegions()
-
     if (!regions) {
       return null
     }

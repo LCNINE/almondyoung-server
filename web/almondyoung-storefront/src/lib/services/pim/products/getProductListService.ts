@@ -1,6 +1,6 @@
 "use server"
 
-import { getProductList } from "@lib/api/pim/masters.server"
+import { getProductList } from "@lib/api/medusa/products"
 import { toProductCard } from "@lib/utils/transformers"
 import type {
   ProductCard,

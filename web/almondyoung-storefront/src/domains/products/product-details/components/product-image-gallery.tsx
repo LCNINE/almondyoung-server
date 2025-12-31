@@ -1,3 +1,7 @@
+"use client"
+
+import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
+
 type Props = {
   thumbnails: string[]
   mainImage: string
@@ -30,11 +34,11 @@ export function ProductImageGallery({
             <button
               key={idx}
               onClick={() => onImageChange(thumb)}
-              className="h-20 w-20 min-w-20 flex-shrink-0 overflow-hidden bg-gray-200"
+              className="h-20 w-20 min-w-20 shrink-0 overflow-hidden bg-gray-200"
               aria-label={`상품 이미지 ${idx + 1} 보기`}
             >
               <img
-                src={thumb}
+                src={getThumbnailUrl(thumb)}
                 alt={`${productName} 썸네일 ${idx + 1}`}
                 className="h-full w-full object-cover"
               />
@@ -69,7 +73,7 @@ export function ProductImageGallery({
             aria-label={`상품 이미지 ${idx + 1} 보기`}
           >
             <img
-              src={thumb}
+              src={getThumbnailUrl(thumb)}
               alt={`${productName} 썸네일 ${idx + 1}`}
               className="h-full w-full object-cover"
             />

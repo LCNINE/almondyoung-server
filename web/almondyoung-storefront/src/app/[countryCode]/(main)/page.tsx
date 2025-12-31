@@ -2,7 +2,7 @@ import { ThemeManager } from "@components/common/theme-manager"
 import ProtectedRoute from "@components/protected-route"
 import { getCategoryTree } from "@lib/api/pim/categories.server"
 import { getProductsByCategoryService } from "@lib/services/pim/products/getProductListService"
-import type { CategoryTreeNodeDto } from "@lib/types/dto/pim.dto"
+import type { CategoryTreeNodeDto } from "@lib/api/pim"
 import type { ProductCard } from "@lib/types/ui/product"
 import HomeTemplate from "domains/home/template/home-template"
 

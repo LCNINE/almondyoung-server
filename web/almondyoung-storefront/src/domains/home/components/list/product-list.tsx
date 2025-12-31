@@ -44,7 +44,7 @@ export default function ProductList({
             key={`${product.id}-${index}`}
             // [핵심 수정]
             // 하드코딩된 'w-[150px]' 대신 'mobileItemClassName' prop을 사용합니다.
-            className={cn("flex-shrink-0 md:w-auto", mobileItemClassName)}
+            className={cn("shrink-0 md:w-auto", mobileItemClassName)}
           >
             {renderCard(product, index)}
           </div>

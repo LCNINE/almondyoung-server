@@ -114,11 +114,6 @@ export const getCartId = async () => {
   const cookies = await nextCookies()
   const cartId = cookies.get("_medusa_cart_id")?.value
 
-  // Mock 환경에서는 cart ID가 없으면 mock cart ID 반환
-  if (!cartId) {
-    return "mock-cart-001"
-  }
-
   return cartId
 }
 

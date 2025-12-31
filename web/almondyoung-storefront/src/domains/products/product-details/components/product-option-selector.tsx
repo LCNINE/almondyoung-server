@@ -47,6 +47,8 @@ export function ProductOptionSelector({
   const hasMultipleOptions =
     options.length >= 3 || options.some((o) => o.values.length >= 7)
 
+  // todo: 여기 값 확인해서 image url 확인해서 썸네일 이미지 추가해야함 getThumbnailUrl()
+  console.log("selectedCartOptions", selectedCartOptions)
   return (
     <section className="space-y-4">
       {/* 옵션 선택 */}
@@ -75,7 +77,7 @@ export function ProductOptionSelector({
                   type="button"
                   onClick={() => onOptionChange(option.label, value.name)}
                   disabled={isDisabled}
-                  className={`flex-shrink-0 rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
+                  className={`shrink-0 rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
                     isSelected
                       ? "border-blue-500 bg-blue-500 text-white"
                       : isDisabled
@@ -122,7 +124,7 @@ function OptionCartItem({
   return (
     <li className="flex items-center gap-3 rounded-lg bg-white py-3">
       <Image
-        className="h-20 w-20 flex-shrink-0 rounded object-cover md:h-20 md:w-20"
+        className="h-20 w-20 shrink-0 rounded object-cover md:h-20 md:w-20"
         src={option.image}
         alt={option.name}
         width={80}

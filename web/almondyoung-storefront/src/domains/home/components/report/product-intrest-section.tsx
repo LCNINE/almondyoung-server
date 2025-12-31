@@ -1,12 +1,9 @@
 "use client"
 
 import { ScrollArea, ScrollBar } from "@components/common/ui/scroll-area"
-// [제거] 'UserBasicInfo' 타입 임포트 제거
-import ProductCard, {
-  BasicProductCard,
-} from "../../../../components/products/product-card"
-import Image from "next/image" // 'img' 태그 대신 'Image'를 사용합니다.
-// [제거] 'useState' 임포트 제거
+import { BasicProductCard } from "../../../../components/products/product-card"
+import type { ProductCard } from "@lib/types/ui/product"
+import Image from "next/image"
 
 // --- 1. 목업 데이터 및 타입 정의 ---
 
@@ -22,7 +19,7 @@ type MockProduct = {
   }
 }
 
-type Product = Parameters<typeof ProductCard>[0]["product"]
+type Product = ProductCard
 
 const mockRecentViews = [
   { productId: "rv1", thumbnail: "https://picsum.photos/seed/rv1/100/100" },

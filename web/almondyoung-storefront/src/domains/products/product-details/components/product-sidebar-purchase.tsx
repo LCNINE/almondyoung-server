@@ -11,6 +11,7 @@ import { ProductOptionSelector } from "./product-option-selector"
 import { ProductPriceDisplay } from "./product-price-display"
 import { ProductRatingDisplay } from "./product-rating-display"
 import { ProductShippingInfo } from "./product-shipping-info"
+import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
 
 type Props = {
   product: ProductDetail
@@ -127,6 +128,7 @@ export function ProductSidebarPurchase({
       addToCart({ variantId: product.id, quantity })
       return
     }
+
     selectedCartOptions.forEach((option) => {
       addToCart({ variantId: product.id, quantity: option.quantity })
     })
@@ -205,7 +207,11 @@ export function ProductSidebarPurchase({
           {isSingleOption ? (
             <SingleOptionQuantitySelector
               productName={product.name}
-              thumbnail={product.thumbnails?.[0]}
+              thumbnail={
+                product.thumbnails?.[0]
+                  ? getThumbnailUrl(product.thumbnails?.[0])
+                  : "https://placehold.co/80x80?text=No+Image"
+              }
               quantity={quantity}
               onQuantityChange={setQuantity}
               price={getPrice()}
@@ -270,8 +276,10 @@ export function ProductSidebarPurchase({
                 className="hover:text-primary flex-1 cursor-pointer hover:bg-transparent"
                 onClick={handleAddToCart}
                 disabled={isLoading}
+                spinnerColor="blue"
+                isLoading={isLoading}
               >
-                {isLoading ? <Spinner size="sm" color="blue" /> : "장바구니"}
+                장바구니
               </CustomButton>
               <CustomButton
                 variant="fill"

@@ -297,7 +297,7 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
             />
 
             {/* 모바일 상품 정보 */}
-            <ProductInfoMobile product={product} />
+            {/* <ProductInfoMobile product={product} /> */}
 
             {/* 추천 상품 */}
             <ProductRecommandSlider
@@ -321,11 +321,11 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
 
             {/* 상세정보 */}
             <div ref={detailRef} id="detail-panel" role="tabpanel">
-              <ProductDetailInfo
+              {/* <ProductDetailInfo
                 productInfo={product.productInfo || {}}
                 detailImages={product.detailImages || []}
                 productName={product.name}
-              />
+              /> */}
             </div>
 
             {/* 리뷰 */}
