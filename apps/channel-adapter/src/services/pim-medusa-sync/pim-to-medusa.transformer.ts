@@ -105,6 +105,9 @@ function transformVariants(
     pimVariants: PimProductSnapshot['variants'],
     optionGroups: PimProductSnapshot['optionGroups'],
 ): MedusaProductPayload['variants'] {
+    const MEMBERSHIP_GROUP_ID = process.env.MEDUSA_MEMBERSHIP_GROUP_ID || '';
+    const SKIP_VARIANTS_WITHOUT_PRICE = process.env.SKIP_VARIANTS_WITHOUT_PRICE === 'true';
+
     if (!pimVariants || pimVariants.length === 0) {
         logger.warn('No variants found in PIM snapshot');
         return [];
@@ -112,6 +115,14 @@ function transformVariants(
 
     return pimVariants
         .filter((v) => v.status !== 'deleted')
+        .filter((v) => {
+            // 가격 검증: basePrice 없으면 스킵 (옵션)
+            if (SKIP_VARIANTS_WITHOUT_PRICE && !v.basePrice) {
+                logger.warn(`Skipping variant ${v.id} - no basePrice`);
+                return false;
+            }
+            return true;
+        })
         .map((variant) => {
             // 옵션 조합 매핑
             const options = variant.optionCombination?.reduce(
@@ -129,13 +140,16 @@ function transformVariants(
                 Object.values(options).join(' / ') ||
                 `Variant ${variant.id.slice(0, 8)}`;
 
-            // 가격 변환 (KRW 기준)
+            // 가격 배열 구성
             const prices: Array<{
                 amount: number;
                 currency_code: string;
+                min_quantity?: number;
+                max_quantity?: number;
                 rules?: Record<string, string>;
             }> = [];
 
+            // 1. 일반 가격 (basePrice)
             if (variant.basePrice !== undefined && variant.basePrice !== null) {
                 prices.push({
                     amount: Math.round(variant.basePrice),
@@ -143,14 +157,25 @@ function transformVariants(
                 });
             }
 
-            // 멤버십 가격 (customer_group_id 기반 규칙)
-            if (variant.membershipPrice !== undefined && variant.membershipPrice !== null) {
+            // 2. 멤버십 가격 (customer_group rule)
+            if (variant.membershipPrice !== undefined && variant.membershipPrice !== null && MEMBERSHIP_GROUP_ID) {
                 prices.push({
                     amount: Math.round(variant.membershipPrice),
                     currency_code: 'KRW',
-                    // TODO: 실제 customer_group_id로 교체 필요
-                    // rules: { customer_group_id: 'cgroup_membership_xxx' },
+                    rules: { customer_group_id: MEMBERSHIP_GROUP_ID },
                 });
+            }
+
+            // 3. Tier 가격 (min_quantity 기반)
+            if (variant.tieredPrices && variant.tieredPrices.length > 0) {
+                for (const tier of variant.tieredPrices) {
+                    prices.push({
+                        amount: Math.round(tier.price),
+                        currency_code: 'KRW',
+                        min_quantity: tier.minQuantity,
+                        // max_quantity는 다음 tier의 minQuantity - 1로 계산 가능 (선택)
+                    });
+                }
             }
 
             return {
@@ -180,5 +205,16 @@ export function validatePimSnapshot(snapshot: PimProductSnapshot): void {
     }
     if (!snapshot.variants || snapshot.variants.length === 0) {
         throw new Error('PIM snapshot must have at least one variant');
+    }
+
+    // 가격 검증: 최소 하나의 variant에 가격이 있어야 함
+    const SKIP_VARIANTS_WITHOUT_PRICE = process.env.SKIP_VARIANTS_WITHOUT_PRICE === 'true';
+    if (SKIP_VARIANTS_WITHOUT_PRICE) {
+        const validVariants = snapshot.variants.filter(
+            (v) => v.status !== 'deleted' && v.basePrice !== undefined && v.basePrice !== null
+        );
+        if (validVariants.length === 0) {
+            throw new Error('PIM snapshot has no variants with valid prices');
+        }
     }
 }
