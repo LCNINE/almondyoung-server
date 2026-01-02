@@ -124,33 +124,6 @@ export async function getProductsByBrandService(
   return { items, total: res.total, page: res.page, limit: res.limit }
 }
 
-type CachedPage = {
-  items: ProductCard[]
-  total: number
-  page: number
-  limit: number
-}
-
-const _cache: Map<string, CachedPage> = new Map()
-
-// 페이지 단위로 캐싱하며, 짧은 TTL 적용 (선택)
-export async function getProductListServiceCached(
-  params: ProductListParams,
-  opts?: ProductListServiceOpts
-): Promise<ProductListServiceResponse> {
-  const key = JSON.stringify({ params, opts })
-  const cached = _cache.get(key)
-  if (cached) return cached
-
-  const result = await getProductListService(params, opts)
-  _cache.set(key, result)
-
-  // 5분 TTL
-  setTimeout(() => _cache.delete(key), 5 * 60 * 1000)
-
-  return result
-}
-
 /**
  * "인기 상품" 목록 조회
  * - 실제로는 백엔드에 "인기순" 필터가 있어야 하지만, 임시로 기본 목록을 반환
