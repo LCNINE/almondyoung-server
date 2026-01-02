@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
 import {
@@ -39,6 +39,8 @@ type ProductReadAssemblerOptions = {
 
 @Injectable()
 export class ProductReadAssembler {
+  private readonly logger = new Logger(ProductReadAssembler.name);
+
   constructor(
     @InjectDb() private readonly db: DbService<PimSchema>,
     private readonly priceCacheService: VariantPriceCacheService,
@@ -97,6 +99,12 @@ export class ProductReadAssembler {
         imagesPromise,
       ]);
 
+      const cachedPrices = await this.priceCacheService.getCachedPriceSetsByVersion(
+        versionId,
+        tx,
+      );
+      const priceMap = new Map(cachedPrices.map((p) => [p.variantId, p]));
+
       const variantsWithOptions: VariantReadModel[] = include.variants
         ? await Promise.all(
           variants.map(async (v) => {
@@ -106,7 +114,23 @@ export class ProductReadAssembler {
               versionId,
               locale,
             );
-            return { ...v, optionValues };
+            const priceSet = priceMap.get(v.id);
+            if (!priceSet && version.status === 'active') {
+              this.logger.warn(`No cached price found for active variant ${v.id} in version ${versionId}`);
+            }
+
+            return {
+              ...v,
+              optionValues,
+              price: priceSet?.basePrice,
+              priceSet: priceSet
+                ? {
+                  basePrice: priceSet.basePrice,
+                  membershipPrice: priceSet.membershipPrice,
+                  tieredPrices: priceSet.tieredPrices,
+                }
+                : undefined,
+            };
           })
         )
         : [];

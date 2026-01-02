@@ -91,7 +91,8 @@ function transformOptions(
     optionGroups: PimProductSnapshot['optionGroups'],
 ): Array<{ title: string; values: string[] }> {
     if (!optionGroups || optionGroups.length === 0) {
-        return [];
+        // Medusa requires at least one option
+        return [{ title: 'Default', values: ['Default'] }];
     }
 
     return optionGroups.map((group) => ({
@@ -183,7 +184,7 @@ function transformVariants(
                 sku: variant.sku || undefined,
                 // WMS 재고 동기화 완성 전까지 false (품절 처리 방지)
                 manage_inventory: false,
-                options: Object.keys(options).length > 0 ? options : undefined,
+                options: Object.keys(options).length > 0 ? options : { Default: 'Default' },
                 prices: prices.length > 0 ? prices : undefined,
                 metadata: {
                     pimVariantId: variant.id,

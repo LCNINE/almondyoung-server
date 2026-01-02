@@ -301,6 +301,7 @@ export type VariantOptionValueReadModel = OptionValueReadModel;
 export type VariantReadModel = ProductVariant & {
   optionValues: VariantOptionValueReadModel[];
   price?: number;
+  priceSet?: VariantPriceSet;
 };
 
 export type TagReadModel = {
