@@ -14,6 +14,8 @@ export class MedusaClient {
     private readonly apiUrl: string;
     private readonly categoryCache = new Map<string, MedusaProduct['id']>(); // key: handle
     private readonly tagCache = new Map<string, string>(); // key: value
+    private readonly typeCache = new Map<string, string>(); // key: value
+    private readonly salesChannelCache = new Map<string, string>(); // key: name
 
     constructor(private readonly configService: ConfigService) {
         this.apiUrl =
@@ -91,15 +93,12 @@ export class MedusaClient {
         return created;
     }
 
-    /**
-     * 카테고리 보장: PIM 카테고리 트리를 따라 부모→자식 순서로 생성/조회
-     * handle: pim-cat-{pimCategoryId}
-     */
+    // 카테고리 보장: PIM 카테고리 트리를 따라 부모→자식 순서로 생성/조회
     async ensureCategoryTree(
         pimCategoryId: string,
         resolver: (id: string) => Promise<PimCategoryDetail>,
     ): Promise<string> {
-        const handle = `pim-cat-${pimCategoryId}`;
+        const handle = `${pimCategoryId}`;
 
         if (this.categoryCache.has(handle)) {
             return this.categoryCache.get(handle)!;
@@ -207,6 +206,42 @@ export class MedusaClient {
         return created.id;
     }
 
+    async ensureProductType(value: string): Promise<string> {
+        // 캐시 확인
+        if (this.typeCache.has(value)) {
+            return this.typeCache.get(value)!;
+        }
+
+        try {
+            // 조회
+            const response = await this.client.get('/product-types', {
+                params: { q: value, limit: 1 }
+            });
+
+            const existing = response.data.product_types?.find((t: any) => t.value === value);
+            if (existing) {
+                this.typeCache.set(value, existing.id);
+                return existing.id;
+            }
+
+            // 생성
+            const createRes = await this.client.post('/product-types', {
+                value,
+            });
+            const newId = createRes.data.product_type.id;
+            this.typeCache.set(value, newId);
+            this.logger.log(`Created Medusa product type "${value}" (${newId})`);
+            return newId;
+
+        } catch (error) {
+            this.logger.error(
+                `Failed to ensure product type ${value}: ${JSON.stringify(error.response?.data || error.message)}`
+            );
+            // 실패 시 빈 문자열 반환하거나 에러 throw (여기선 에러 throw)
+            throw new Error(`Medusa ensureProductType failed: ${error.message}`);
+        }
+    }
+
     async ensureTags(values: string[]): Promise<Array<{ id: string; value: string }>> {
         const results: Array<{ id: string; value: string }> = [];
         for (const value of values) {
@@ -216,7 +251,42 @@ export class MedusaClient {
         return results;
     }
 
-    // handle로 medusa product 조회 (handle = pim-{masterId})
+    async getDefaultSalesChannel(): Promise<string> {
+        try {
+            // 캐시 확인
+            if (this.salesChannelCache.has('Default Sales Channel')) {
+                return this.salesChannelCache.get('Default Sales Channel')!;
+            }
+
+            const response = await this.client.get('/sales-channels', {
+                params: { q: 'Default Sales Channel', limit: 1 }
+            });
+
+            const channel = response.data.sales_channels?.[0];
+            if (channel) {
+                this.salesChannelCache.set('Default Sales Channel', channel.id);
+                return channel.id;
+            }
+
+            // 없으면 생성 (혹은 에러 처리)
+            this.logger.warn('Default Sales Channel not found, creating...');
+            const createRes = await this.client.post('/sales-channels', {
+                name: 'Default Sales Channel',
+                description: 'Created by Medusa'
+            });
+            const newId = createRes.data.sales_channel.id;
+            this.salesChannelCache.set('Default Sales Channel', newId);
+            return newId;
+
+        } catch (error) {
+            this.logger.error(
+                `Failed to get default sales channel: ${JSON.stringify(error.response?.data || error.message)}`
+            );
+            throw new Error(`Medusa getDefaultSalesChannel failed: ${error.message}`);
+        }
+    }
+
+    // handle로 medusa product 조회
     async findProductByHandle(
         handle: string,
     ): Promise<MedusaProduct | null> {
@@ -382,6 +452,80 @@ export class MedusaClient {
         } catch (error) {
             this.logger.error('Medusa health check failed', error.message);
             return false;
+        }
+    }
+
+    // ===== Price Lists =====
+    async ensurePriceList(payload: {
+        name: string;
+        description: string;
+        type: 'sale' | 'override';
+        status: 'active' | 'draft';
+        rules?: Record<string, string[]>;
+    }): Promise<string> {
+        try {
+            // 1. 이름으로 기존 Price List 조회
+            const searchRes = await this.client.get('/price-lists', {
+                params: { q: payload.name, limit: 1 },
+            });
+            const existing = searchRes.data?.price_lists?.find(
+                (pl: any) => pl.name === payload.name
+            );
+
+            if (existing) {
+                // 업데이트 (필요시)
+                if (existing.status !== payload.status) {
+                    await this.client.post(`/price-lists/${existing.id}`, {
+                        status: payload.status,
+                    });
+                }
+                return existing.id;
+            }
+
+            // 2. 생성
+            const createPayload = {
+                title: payload.name,
+                description: payload.description,
+                type: payload.type,
+                status: payload.status,
+                prices: [],
+                rules: payload.rules,
+            };
+            this.logger.debug(`Creating Price List: ${JSON.stringify(createPayload)}`);
+
+            const createRes = await this.client.post('/price-lists', createPayload);
+
+            return createRes.data.price_list.id;
+        } catch (error) {
+            this.logger.error(
+                `Failed to ensure price list ${payload.name}: ${JSON.stringify(error.response?.data || error.message)}`
+            );
+            throw new Error(`Medusa ensurePriceList failed: ${error.message}`);
+        }
+    }
+
+    async addPricesToPriceList(
+        priceListId: string,
+        prices: Array<{
+            amount: number;
+            currency_code: string;
+            variant_id: string;
+            min_quantity?: number;
+            max_quantity?: number;
+        }>
+    ): Promise<void> {
+        try {
+            this.logger.debug(`Adding prices to list ${priceListId}: ${JSON.stringify({ create: prices })}`);
+            // Medusa v2 Admin API: POST /admin/price-lists/:id/prices/batch
+            await this.client.post(`/price-lists/${priceListId}/prices/batch`, {
+                create: prices,
+            });
+            this.logger.log(`Added ${prices.length} prices to list ${priceListId}`);
+        } catch (error) {
+            this.logger.error(
+                `Failed to add prices to list ${priceListId}: ${JSON.stringify(error.response?.data || error.message)}`
+            );
+            throw new Error(`Medusa addPricesToPriceList failed: ${error.message}`);
         }
     }
 }

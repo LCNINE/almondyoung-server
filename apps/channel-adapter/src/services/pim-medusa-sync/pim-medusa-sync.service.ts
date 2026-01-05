@@ -6,7 +6,11 @@ import {
     transformPimToMedusa,
     validatePimSnapshot,
 } from './pim-to-medusa.transformer';
-import type { PimActiveVersionChangedEvent } from '../../types';
+import type {
+    PimActiveVersionChangedEvent,
+    PimProductSnapshot,
+    MedusaProduct,
+} from '../../types';
 import type { PimCategoryDetail } from './pim.client';
 
 export interface SyncResult {
@@ -110,10 +114,18 @@ export class PimMedusaSyncService {
             );
             const medusaTags = await this.ensureMedusaTags(snapshot.tags);
 
+            // 3-2. Product Type & Sales Channel (Simplified)
+            const medusaTypeId = await this.medusaClient.ensureProductType(
+                snapshot.productType || 'Unknown',
+            );
+            const defaultSalesChannelId = await this.medusaClient.getDefaultSalesChannel();
+
             // 4. Medusa Payload로 변환
             const medusaPayload = transformPimToMedusa(snapshot, {
                 categories: medusaCategories,
                 tags: medusaTags,
+                type_id: medusaTypeId,
+                sales_channels: [defaultSalesChannelId],
             });
 
             // 5. 기존 매핑 조회
@@ -130,7 +142,10 @@ export class PimMedusaSyncService {
                 `Sync completed: ${masterId} → Medusa ${product.id} (${action})`,
             );
 
-            // 7. 매핑 테이블 업데이트
+            // 7. 가격 정책(Price List) 동기화
+            await this.syncPriceLists(snapshot, product.id, product.variants);
+
+            // 8. 매핑 테이블 업데이트
             await this.mappingRepo.recordSuccess(masterId, {
                 pimVersionId: snapshot.versionId,
                 pimVersion: snapshot.version,
@@ -268,5 +283,71 @@ export class PimMedusaSyncService {
         this.logger.log(`Health check - PIM: ${pim}, Medusa: ${medusa}`);
 
         return { pim, medusa, overall };
+    }
+
+    private async syncPriceLists(
+        snapshot: PimProductSnapshot,
+        medusaProductId: string,
+        medusaVariants?: MedusaProduct['variants'],
+    ): Promise<void> {
+        if (!medusaVariants || medusaVariants.length === 0) return;
+
+        const MEMBERSHIP_GROUP_ID = process.env.MEDUSA_MEMBERSHIP_GROUP_ID;
+        const membershipPrices: any[] = [];
+        const tieredPricesMap = new Map<number, any[]>(); // minQuantity -> prices
+
+        // 1. 가격 데이터 수집
+        for (const variant of snapshot.variants) {
+            const medusaVariant = medusaVariants.find(
+                (mv) => mv.metadata?.pimVariantId === variant.id
+            );
+            if (!medusaVariant) continue;
+
+            // 멤버십 가격
+            if (variant.membershipPrice && MEMBERSHIP_GROUP_ID) {
+                membershipPrices.push({
+                    amount: Math.round(variant.membershipPrice),
+                    currency_code: 'KRW',
+                    variant_id: medusaVariant.id,
+                });
+            }
+
+            // Tier 가격
+            if (variant.tieredPrices && variant.tieredPrices.length > 0) {
+                for (const tier of variant.tieredPrices) {
+                    const list = tieredPricesMap.get(tier.minQuantity) || [];
+                    list.push({
+                        amount: Math.round(tier.price),
+                        currency_code: 'KRW',
+                        variant_id: medusaVariant.id,
+                        min_quantity: tier.minQuantity,
+                    });
+                    tieredPricesMap.set(tier.minQuantity, list);
+                }
+            }
+        }
+
+        // 2. Membership Price List 동기화
+        if (membershipPrices.length > 0 && MEMBERSHIP_GROUP_ID) {
+            const listId = await this.medusaClient.ensurePriceList({
+                name: 'Membership Prices',
+                description: 'Prices for membership customers',
+                type: 'sale',
+                status: 'active',
+                rules: { customer_group_id: [MEMBERSHIP_GROUP_ID] },
+            });
+            await this.medusaClient.addPricesToPriceList(listId, membershipPrices);
+        }
+
+        // 3. Tiered Price Lists 동기화
+        for (const [minQty, prices] of tieredPricesMap.entries()) {
+            const listId = await this.medusaClient.ensurePriceList({
+                name: `Tiered Prices - Min ${minQty}`,
+                description: `Bulk discount for quantity ${minQty}+`,
+                type: 'sale',
+                status: 'active',
+            });
+            await this.medusaClient.addPricesToPriceList(listId, prices);
+        }
     }
 }
