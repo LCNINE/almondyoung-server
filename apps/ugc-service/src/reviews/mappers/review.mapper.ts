@@ -1,14 +1,15 @@
 import { ReviewResponseDto } from '../dto/review-response.dto';
-import { type ReviewEntity } from '../types';
+import { type ReviewWithMediaEntity } from '../types';
 
 export class ReviewMapper {
-  static toResponse(entity: ReviewEntity): ReviewResponseDto {
+  static toResponse(entity: ReviewWithMediaEntity): ReviewResponseDto {
     return {
       id: entity.id,
       userId: entity.userId ?? null,
       productId: entity.productId,
       rating: entity.rating,
       content: entity.content,
+      mediaFileIds: entity.mediaFileIds,
       status: entity.status,
       createdAt: entity.createdAt.toISOString(),
       updatedAt: entity.updatedAt.toISOString(),
