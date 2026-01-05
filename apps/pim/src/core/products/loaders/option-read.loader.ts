@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { and, asc, eq, inArray } from 'drizzle-orm';
-import { DbTransaction, OptionGroupReadModel, OptionValueReadModel } from '../../../types';
+import { DbTransaction, OptionGroupReadModel, OptionValueReadModel, VariantOptionValueReadModel } from '../../../types';
 import {
   productMasterOptionGroups,
   productOptionGroups,
@@ -95,11 +95,12 @@ export class OptionReadLoader {
     variantId: string,
     versionId: string,
     locale: string,
-  ): Promise<OptionValueReadModel[]> {
+  ): Promise<VariantOptionValueReadModel[]> {
     const optionValues = await tx
       .select({
         id: productOptionValues.id,
         optionGroupId: productOptionValues.optionGroupId,
+        optionGroupName: productOptionGroupDisplays.displayName,
         displayName: productOptionValueDisplays.displayName,
         sortOrder: productOptionValueDisplays.sortOrder,
         createdAt: productOptionValues.createdAt,

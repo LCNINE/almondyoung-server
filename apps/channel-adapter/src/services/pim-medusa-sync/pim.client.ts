@@ -47,6 +47,11 @@ export class PimClient {
                 throw new Error(`No active version found for master ${masterId}`);
             }
 
+            // 옵션 그룹 맵 (ID -> 이름) - variant option mapping용
+            const optionGroupMap = new Map<string, string>(
+                data.optionGroups?.map((g: any) => [g.id, g.displayName || g.name]) || []
+            );
+
             // 스냅샷 구성 (ProductDetailDto 기반)
             const snapshot: PimProductSnapshot = {
                 masterId: data.masterId,
@@ -65,10 +70,10 @@ export class PimClient {
                 tags: data.tagValues?.map((tv: any) => tv.name) || undefined,
                 optionGroups: data.optionGroups?.map((group: any) => ({
                     id: group.id,
-                    name: group.name,
+                    name: group.displayName || group.name,
                     values: group.values?.map((value: any) => ({
                         id: value.id,
-                        name: value.name,
+                        name: value.displayName || value.name,
                         colorCode: value.colorCode,
                         imageUrl: value.imageUrl,
                     })),
@@ -80,8 +85,8 @@ export class PimClient {
                     isDefault: variant.isDefault || false,
                     status: variant.status || 'active',
                     optionCombination: variant.optionValues?.map((ov: any) => ({
-                        name: ov.optionGroupName,
-                        value: ov.name,
+                        name: ov.optionGroupName || optionGroupMap.get(ov.optionGroupId) || 'Unknown',
+                        value: ov.displayName || ov.name,
                     })),
                     basePrice: variant.priceSet?.basePrice ?? variant.price,
                     membershipPrice: variant.priceSet?.membershipPrice,
