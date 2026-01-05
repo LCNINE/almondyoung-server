@@ -557,13 +557,20 @@ export interface PimProductSnapshot {
   name: string;
   handle?: string; // 고유 slug
   description?: string;
+  descriptionHtml?: string;
   thumbnail?: string;
   images?: string[];
+
+  // SEO
+  seoTitle?: string;
+  seoDescription?: string;
+  seoKeywords?: string[];
 
   // 분류
   categoryIds?: string[];
   brand?: string;
   tags?: string[];
+  productType?: string;
 
   // 옵션 그룹
   optionGroups?: Array<{
@@ -582,6 +589,7 @@ export interface PimProductSnapshot {
     id: string; // PIM variant ID
     variantName?: string;
     sku?: string;
+    variantCode?: string;
     isDefault: boolean;
     status: string;
     optionCombination?: Array<{ name: string; value: string }>;
@@ -594,6 +602,8 @@ export interface PimProductSnapshot {
 
   // 메타데이터
   status: 'draft' | 'active' | 'inactive';
+  isWholesaleOnly?: boolean;
+  isMembershipOnly?: boolean;
   isGiftcard?: boolean;
   discountable?: boolean;
 }
@@ -631,6 +641,7 @@ export interface MedusaProductPayload {
     }>;
     metadata?: {
       pimVariantId: string;
+      variantCode?: string;
     };
   }>;
 
@@ -645,6 +656,13 @@ export interface MedusaProductPayload {
     pimMasterId: string;
     pimVersionId: string;
     pimVersion: number;
+    brand?: string;
+    seoTitle?: string;
+    seoDescription?: string;
+    seoKeywords?: string[];
+    isWholesaleOnly?: boolean;
+    isMembershipOnly?: boolean;
+    productType?: string;
     syncedAt: string;
   };
 
