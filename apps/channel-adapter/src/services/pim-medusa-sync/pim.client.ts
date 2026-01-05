@@ -59,15 +59,20 @@ export class PimClient {
                 version: data.version,
                 name: data.name,
                 description: data.description || undefined,
+                descriptionHtml: data.descriptionHtml || undefined,
                 thumbnail: data.thumbnail
                     ? `${this.configService.get('FILE_SERVICE_URL')}/files/${data.thumbnail}`
                     : undefined,
                 images: data.images?.map((img: any) =>
                     `${this.configService.get('FILE_SERVICE_URL')}/files/${img.fileId}`
                 ) || undefined,
+                seoTitle: data.seoTitle || undefined,
+                seoDescription: data.seoDescription || undefined,
+                seoKeywords: data.seoKeywords || undefined,
                 categoryIds: data.categoryIds || undefined,
                 brand: data.brand || undefined,
                 tags: data.tagValues?.map((tv: any) => tv.name) || undefined,
+                productType: data.productType || undefined,
                 optionGroups: data.optionGroups?.map((group: any) => ({
                     id: group.id,
                     name: group.displayName || group.name,
@@ -82,6 +87,7 @@ export class PimClient {
                     id: variant.id,
                     variantName: variant.variantName,
                     sku: variant.sku,
+                    variantCode: variant.variantCode,
                     isDefault: variant.isDefault || false,
                     status: variant.status || 'active',
                     optionCombination: variant.optionValues?.map((ov: any) => ({
@@ -93,6 +99,8 @@ export class PimClient {
                     tieredPrices: variant.priceSet?.tieredPrices ?? [],
                 })) || [],
                 status: data.status,
+                isWholesaleOnly: data.isWholesaleOnly || false,
+                isMembershipOnly: data.isMembershipOnly || false,
                 isGiftcard: data.isGiftcard || false,
                 discountable: data.discountable !== false,
             };
