@@ -1,12 +1,13 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { and, count, desc, eq, inArray, type SQL } from 'drizzle-orm';
-import { reviews, type UgcServiceSchema } from '../db/schema';
+import { reviewMedia, reviews, type UgcServiceSchema } from '../db/schema';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { ReviewListQueryDto } from './dto/review-list-query.dto';
 import { UpdateReviewDto } from './dto/update-review.dto';
-import { type ReviewEntity } from './types';
+import { type ReviewEntity, type ReviewWithMediaEntity } from './types';
 import { PaginatedResponseDto } from '@app/shared/dto';
+import { MAX_REVIEW_MEDIA_COUNT } from './constants';
 
 const SOURCE_SYSTEM = 'almondyoung';
 
@@ -29,12 +30,89 @@ export class ReviewsService {
     return tx ? fn(tx) : this.client.transaction(fn);
   }
 
+  private normalizeMediaFileIds(mediaFileIds?: string[] | null): string[] {
+    if (!mediaFileIds) {
+      return [];
+    }
+
+    if (mediaFileIds.length > MAX_REVIEW_MEDIA_COUNT) {
+      throw new BadRequestException(
+        `Media files can be attached up to ${MAX_REVIEW_MEDIA_COUNT}`,
+      );
+    }
+
+    const uniqueMedia = new Set(mediaFileIds);
+    if (uniqueMedia.size !== mediaFileIds.length) {
+      throw new BadRequestException('Duplicate media files are not allowed');
+    }
+
+    return mediaFileIds;
+  }
+
+  private async insertReviewMedia(
+    reviewId: string,
+    mediaFileIds: string[],
+    tx: DbTransaction,
+  ): Promise<void> {
+    if (mediaFileIds.length === 0) {
+      return;
+    }
+
+    await tx.insert(reviewMedia).values(
+      mediaFileIds.map((fileId, index) => ({
+        reviewId,
+        fileId,
+        order: index,
+      })),
+    );
+  }
+
+  private async fetchMediaFileIdsByReviewIds(
+    reviewIds: string[],
+    tx: DbTransaction,
+  ): Promise<Map<string, string[]>> {
+    if (reviewIds.length === 0) {
+      return new Map();
+    }
+
+    const rows = await tx
+      .select({
+        reviewId: reviewMedia.reviewId,
+        fileId: reviewMedia.fileId,
+        order: reviewMedia.order,
+      })
+      .from(reviewMedia)
+      .where(inArray(reviewMedia.reviewId, reviewIds))
+      .orderBy(reviewMedia.reviewId, reviewMedia.order);
+
+    const mediaMap = new Map<string, string[]>();
+    for (const row of rows) {
+      const list = mediaMap.get(row.reviewId);
+      if (list) {
+        list.push(row.fileId);
+      } else {
+        mediaMap.set(row.reviewId, [row.fileId]);
+      }
+    }
+
+    return mediaMap;
+  }
+
+  private async fetchMediaFileIdsByReviewId(
+    reviewId: string,
+    tx: DbTransaction,
+  ): Promise<string[]> {
+    const mediaMap = await this.fetchMediaFileIdsByReviewIds([reviewId], tx);
+    return mediaMap.get(reviewId) ?? [];
+  }
+
   async create(
     userId: string,
     dto: CreateReviewDto,
     tx?: DbTransaction,
-  ): Promise<ReviewEntity> {
+  ): Promise<ReviewWithMediaEntity> {
     return this.inTx(async (tx) => {
+      const mediaFileIds = this.normalizeMediaFileIds(dto.mediaFileIds);
       const [review] = await tx
         .insert(reviews)
         .values({
@@ -46,7 +124,12 @@ export class ReviewsService {
         })
         .returning();
 
-      return review;
+      await this.insertReviewMedia(review.id, mediaFileIds, tx);
+
+      return {
+        ...review,
+        mediaFileIds,
+      };
     }, tx);
   }
 
@@ -55,8 +138,11 @@ export class ReviewsService {
     id: string,
     dto: UpdateReviewDto,
     tx?: DbTransaction,
-  ): Promise<ReviewEntity> {
+  ): Promise<ReviewWithMediaEntity> {
     return this.inTx(async (tx) => {
+      const hasMediaUpdate = dto.mediaFileIds !== undefined;
+      const mediaFileIds = this.normalizeMediaFileIds(dto.mediaFileIds);
+
       const updateData: Partial<ReviewEntity> = {
         updatedAt: new Date(),
       };
@@ -69,7 +155,9 @@ export class ReviewsService {
         updateData.content = dto.content;
       }
 
-      if (Object.keys(updateData).length === 1) {
+      const hasReviewUpdate = Object.keys(updateData).length > 1;
+
+      if (!hasReviewUpdate && !hasMediaUpdate) {
         throw new BadRequestException('No fields to update');
       }
 
@@ -89,7 +177,19 @@ export class ReviewsService {
         throw new NotFoundException('Review not found');
       }
 
-      return review;
+      if (hasMediaUpdate) {
+        await tx.delete(reviewMedia).where(eq(reviewMedia.reviewId, id));
+        await this.insertReviewMedia(id, mediaFileIds, tx);
+      }
+
+      const resolvedMediaFileIds = hasMediaUpdate
+        ? mediaFileIds
+        : await this.fetchMediaFileIdsByReviewId(id, tx);
+
+      return {
+        ...review,
+        mediaFileIds: resolvedMediaFileIds,
+      };
     }, tx);
   }
 
@@ -119,7 +219,7 @@ export class ReviewsService {
   async listByProduct(
     query: ReviewListQueryDto,
     tx?: DbTransaction,
-  ): Promise<PaginatedResponseDto<ReviewEntity>> {
+  ): Promise<PaginatedResponseDto<ReviewWithMediaEntity>> {
     return this.inTx(async (tx) => {
       const page = query.page ?? 1;
       const limit = query.limit ?? 20;
@@ -162,8 +262,16 @@ export class ReviewsService {
 
       const data = await dataQuery;
 
+      const mediaMap = await this.fetchMediaFileIdsByReviewIds(
+        data.map((review) => review.id),
+        tx,
+      );
+
       return {
-        data,
+        data: data.map((review) => ({
+          ...review,
+          mediaFileIds: mediaMap.get(review.id) ?? [],
+        })),
         total,
         page,
         limit,
