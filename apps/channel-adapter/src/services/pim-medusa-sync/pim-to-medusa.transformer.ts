@@ -20,6 +20,7 @@ export function transformPimToMedusa(
     const title = snapshot.name || '제목 없음';
     const handle = `pim-${snapshot.masterId}`;
     const status = mapPimStatusToMedusaStatus(snapshot.status);
+    const description = snapshot.descriptionHtml || snapshot.description;
 
     // 2. 이미지
     const images = snapshot.images?.map((url, index) => ({
@@ -42,6 +43,12 @@ export function transformPimToMedusa(
         pimVersionId: snapshot.versionId,
         pimVersion: snapshot.version,
         brand: snapshot.brand,
+        seoTitle: snapshot.seoTitle,
+        seoDescription: snapshot.seoDescription,
+        seoKeywords: snapshot.seoKeywords,
+        isWholesaleOnly: snapshot.isWholesaleOnly,
+        isMembershipOnly: snapshot.isMembershipOnly,
+        productType: snapshot.productType,
         syncedAt: new Date().toISOString(),
     };
 
@@ -57,7 +64,7 @@ export function transformPimToMedusa(
         title,
         handle,
         status,
-        description: snapshot.description,
+        description,
         thumbnail: snapshot.thumbnail,
         images,
         options,
@@ -189,6 +196,7 @@ function transformVariants(
                 prices: prices.length > 0 ? prices : undefined,
                 metadata: {
                     pimVariantId: variant.id,
+                    variantCode: variant.variantCode,
                 },
             };
         });
