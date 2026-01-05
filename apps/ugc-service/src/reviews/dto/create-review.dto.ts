@@ -1,5 +1,6 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsUUID, IsInt, Min, Max, IsString, MinLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsUUID, IsInt, Min, Max, IsString, MinLength, IsArray, IsOptional, ArrayMaxSize } from 'class-validator';
+import { MAX_REVIEW_MEDIA_COUNT } from '../constants';
 
 export class CreateReviewDto {
   @ApiProperty({
@@ -19,4 +20,15 @@ export class CreateReviewDto {
   @IsString()
   @MinLength(1)
   content: string;
+
+  @ApiPropertyOptional({
+    description: '첨부 미디어 파일 ID 목록',
+    type: [String],
+    maxItems: MAX_REVIEW_MEDIA_COUNT,
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_REVIEW_MEDIA_COUNT)
+  @IsUUID('all', { each: true })
+  mediaFileIds?: string[];
 }

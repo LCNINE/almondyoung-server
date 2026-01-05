@@ -23,6 +23,9 @@ export class ReviewResponseDto {
   @ApiProperty({ description: '리뷰 본문' })
   content: string;
 
+  @ApiProperty({ description: '첨부 미디어 파일 ID 목록', type: [String] })
+  mediaFileIds: string[];
+
   @ApiProperty({ description: '상태', example: 'active' })
   status: string;
 

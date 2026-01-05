@@ -1,4 +1,4 @@
-import { integer, pgTable, uuid, text, timestamp, jsonb, boolean, varchar, uniqueIndex, index } from "drizzle-orm/pg-core"
+import { integer, pgTable, uuid, text, timestamp, jsonb, boolean, varchar, uniqueIndex, index, primaryKey } from "drizzle-orm/pg-core"
 
 
 const timestampColumns = {
@@ -38,6 +38,22 @@ export const reviews = pgTable(
   ],
 );
 
+export const reviewMedia = pgTable(
+  'review_media',
+  {
+    reviewId: uuid('review_id').notNull().references(() => reviews.id, { onDelete: 'cascade' }),
+    fileId: uuid('file_id').notNull(),
+    order: integer('order').notNull(),
+    ...timestampColumns,
+  },
+  (table) => [
+    uniqueIndex('review_media_review_order_unique').on(table.reviewId, table.order),
+    primaryKey({ columns: [table.reviewId, table.fileId], name: 'review_media_pkey' }),
+    index('review_media_review_id').on(table.reviewId),
+    index('review_media_file_id').on(table.fileId),
+  ],
+)
+
 export const reviewEligibilities = pgTable(
   'review_eligibilities',
   {
@@ -72,6 +88,7 @@ export const reviewEligibilities = pgTable(
 
 export const ugcServiceSchema = {
   reviews,
+  reviewMedia,
   reviewEligibilities,
 } as const;
 
