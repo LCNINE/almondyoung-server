@@ -41,6 +41,7 @@ export function transformPimToMedusa(
         pimMasterId: snapshot.masterId,
         pimVersionId: snapshot.versionId,
         pimVersion: snapshot.version,
+        brand: snapshot.brand,
         syncedAt: new Date().toISOString(),
     };
 
