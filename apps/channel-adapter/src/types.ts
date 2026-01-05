@@ -12,7 +12,7 @@ import {
   pimMedusaMappings,
 } from './schema';
 
-// ===== DATABASE SERVICE 타입 =====
+// DATABASE SERVICE 타입
 export const channelAdapterSchema = {
   eventLogs,
   syncHistories,
@@ -26,44 +26,44 @@ export const channelAdapterSchema = {
 
 export type ChannelAdapterSchema = typeof channelAdapterSchema;
 export type DbService = import('@app/db').DbService<ChannelAdapterSchema>;
-// ===== EVENT LOGS 타입 =====
+// EVENT LOGS 타입
 export type EventLog = InferSelectModel<typeof eventLogs>;
 export type NewEventLog = InferInsertModel<typeof eventLogs>;
 export type UpdateEventLog = Partial<Omit<NewEventLog, 'id' | 'createdAt' | 'processedAt'>>;
 
-// ===== SYNC HISTORIES 타입 =====
+// SYNC HISTORIES 타입
 export type SyncHistory = InferSelectModel<typeof syncHistories>;
 export type NewSyncHistory = InferInsertModel<typeof syncHistories>;
 export type UpdateSyncHistory = Partial<Omit<NewSyncHistory, 'id' | 'createdAt'>>;
 
-// ===== PROCESSED EVENTS 타입 =====
+// PROCESSED EVENTS 타입
 export type ProcessedEvent = InferSelectModel<typeof processedEvents>;
 export type NewProcessedEvent = InferInsertModel<typeof processedEvents>;
 export type UpdateProcessedEvent = Partial<Omit<NewProcessedEvent, 'idempotencyKey' | 'createdAt'>>;
 
-// ===== SYNC STATUSES 타입 =====
+// SYNC STATUSES 타입
 export type SyncStatus = InferSelectModel<typeof syncStatuses>;
 export type NewSyncStatus = InferInsertModel<typeof syncStatuses>;
 export type UpdateSyncStatus = Partial<Omit<NewSyncStatus, 'id' | 'createdAt'>>;
 
-// ===== WMS ORDER MAPPINGS 타입 =====
+// WMS ORDER MAPPINGS 타입
 export type WmsOrderMapping = InferSelectModel<typeof wmsOrderMappings>;
 export type NewWmsOrderMapping = InferInsertModel<typeof wmsOrderMappings>;
 export type UpdateWmsOrderMapping = Partial<Omit<NewWmsOrderMapping, 'id' | 'createdAt'>>;
 
-// ===== PENDING ORDERS 타입 (미매핑 주문 계류) =====
+// PENDING ORDERS 타입 (미매핑 주문 계류)
 export type PendingOrder = InferSelectModel<typeof pendingOrders>;
 export type NewPendingOrder = InferInsertModel<typeof pendingOrders>;
 export type UpdatePendingOrder = Partial<Omit<NewPendingOrder, 'id' | 'createdAt'>>;
 
 export type PendingOrderStatus = 'pending_mapping' | 'processing' | 'completed' | 'failed';
 
-// ===== OUTBOX EVENTS 타입 =====
+// OUTBOX EVENTS 타입
 export type OutboxEvent = InferSelectModel<typeof outboxEvents>;
 export type NewOutboxEvent = InferInsertModel<typeof outboxEvents>;
 export type UpdateOutboxEvent = Partial<Omit<NewOutboxEvent, 'id' | 'createdAt'>>;
 
-// ===== PIM-MEDUSA MAPPINGS 타입 (NEW!) =====
+// PIM-MEDUSA MAPPINGS 타입
 export type PimMedusaMapping = InferSelectModel<typeof pimMedusaMappings>;
 export type NewPimMedusaMapping = InferInsertModel<typeof pimMedusaMappings>;
 export type UpdatePimMedusaMapping = Partial<Omit<NewPimMedusaMapping, 'id' | 'createdAt'>>;
@@ -84,9 +84,9 @@ export interface SyncResult {
   data?: any; // API 응답 데이터
 }
 
-// ===== 내부 데이터 타입들 =====
+// 내부 데이터 타입들
 
-/** 내부 PIM 시스템의 상품 데이터 형식 */
+// 내부 PIM 시스템의 상품 데이터 형식
 export interface InternalProductData {
   id: string;
   name: string;
@@ -101,7 +101,7 @@ export interface InternalProductData {
   }>;
 }
 
-/** 내부 WMS 시스템의 재고 데이터 형식 */
+// 내부 WMS 시스템의 재고 데이터 형식
 export interface InternalInventoryData {
   productId: string; // 네이버의 originProductNo 또는 내부 상품 ID
   stockQuantity: number;
@@ -125,7 +125,7 @@ export interface InternalInventoryData {
   };
 }
 
-/** 내부 주문 상태 업데이트 데이터 형식 */
+// 내부 주문 상태 업데이트 데이터 형식
 export interface InternalOrderStatusData {
   orderId: string;
   status: string;
@@ -133,27 +133,27 @@ export interface InternalOrderStatusData {
   reason?: string;
 }
 
-// ===== 동기화 페이로드 타입들 (식별 가능한 유니언) =====
+// 동기화 페이로드 타입들 (식별 가능한 유니언)
 
-/** 상품 정보 동기화를 위한 페이로드 */
+// 상품 정보 동기화를 위한 페이로드
 export interface ProductSyncPayload {
   dataType: 'products';
   payload: InternalProductData;
 }
 
-/** 재고 정보 동기화를 위한 페이로드 */
+// 재고 정보 동기화를 위한 페이로드
 export interface InventorySyncPayload {
   dataType: 'inventory';
   payload: InternalInventoryData;
 }
 
-/** 주문 상태 동기화를 위한 페이로드 */
+// 주문 상태 동기화를 위한 페이로드
 export interface OrderStatusSyncPayload {
   dataType: 'order_status';
   payload: InternalOrderStatusData;
 }
 
-/** 모든 동기화 타입의 유니언 */
+// 모든 동기화 타입의 유니언
 export type SyncToChannelPayload = ProductSyncPayload | InventorySyncPayload | OrderStatusSyncPayload;
 
 export type ClaimType = 'CANCEL' | 'RETURN' | 'EXCHANGE';
@@ -185,24 +185,17 @@ export interface BuyerInfo {
   };
 }
 
-// ===== 주문 조회 쿼리 타입 =====
+// 주문 조회 쿼리 타입
 
-/**
- * 단일 주문 조회를 위한 표준 쿼리 객체 타입
- * 내부 시스템은 이 타입을 사용하여 어떤 종류의 조회든 요청할 수 있습니다.
- */
+// 단일 주문 조회를 위한 표준 쿼리 객체 타입
 export type OrderQuery =
   | { by: 'channelShipmentId'; id: string } // 쿠팡의 shipmentBoxId
   | { by: 'channelProductOrderId'; id: string } // 네이버의 productOrderId
   | { by: 'channelOrderId'; id: string }; // 쿠팡의 orderId, 네이버의 orderId
 
-// ===================================================================
-// == Consumer 이벤트 타입들 (Kafka 메시지)
-// ===================================================================
+// Consumer 이벤트 타입들 (Kafka 메시지)
 
-/**
- * WMS에서 발행하는 재고 변경 이벤트
- */
+// WMS에서 발행하는 재고 변경 이벤트
 export interface StockChangedEvent {
   sku: string; // 상품 SKU
   deltaQty: number; // 변경량 (+50, -10 등)
@@ -212,9 +205,7 @@ export interface StockChangedEvent {
   occurredAt: string; // 이벤트 발생 시각 (ISO 8601)
 }
 
-/**
- * WMS에서 발행하는 이행 상태 업데이트 이벤트
- */
+// WMS에서 발행하는 이행 상태 업데이트 이벤트
 export interface FulfillmentUpdatedEvent {
   orderId: string; // 내부 주문 ID
   fulfillmentNo: string; // 이행 번호
@@ -227,9 +218,7 @@ export interface FulfillmentUpdatedEvent {
   occurredAt: string; // 이벤트 발생 시각
 }
 
-/**
- * PIM에서 발행하는 상품 정보 업데이트 이벤트
- */
+// PIM에서 발행하는 상품 정보 업데이트 이벤트
 export interface ProductUpdatedEvent {
   productId: string; // 상품 ID
   changes: {
@@ -243,9 +232,7 @@ export interface ProductUpdatedEvent {
   occurredAt: string; // 이벤트 발생 시각
 }
 
-/**
- * 내부 이행 데이터 형식 (WMS → Channel 동기화용)
- */
+// 내부 이행 데이터 형식 (WMS → Channel 동기화용)
 export interface InternalFulfillmentData {
   orderId: string; // 내부 주문 ID
   status: string; // 이행 상태
@@ -261,16 +248,8 @@ export interface InternalFulfillmentData {
 // InternalOrderEvent는 이제 @app/shared/channel-adapter.types에서 import
 export type { InternalOrderEvent } from '@packages/domain-types';
 
-// =================================================================
-// == 표준 내부 교환 이벤트 모델 (SSOT - Single Source of Truth)
-// =================================================================
+// 표준 내부 교환 이벤트 모델
 
-/**
- * 채널에 비종속적인 표준 교환 이벤트
- * 모든 채널의 교환 정보를 이 형태로 번역하여 내부 시스템에서 일관되게 사용
- *
- * 🎯 SSOT 원칙: 이 모델이 교환 데이터의 유일한 신뢰 가능한 출처
- */
 export interface InternalExchangeEvent {
   eventId: string; // 고유 이벤트 ID
   eventType: 'exchange_created' | 'exchange_updated' | 'exchange_completed' | 'exchange_rejected';
@@ -332,9 +311,7 @@ export interface InternalExchangeEvent {
   };
 }
 
-/**
- * 표준 내부 반품 이벤트 모델 (SSOT)
- */
+// 표준 내부 반품 이벤트 모델
 export interface InternalReturnEvent {
   eventId: string;
   eventType: 'return_created' | 'return_updated' | 'return_completed' | 'return_rejected';
@@ -387,14 +364,10 @@ export interface InternalReturnEvent {
   };
 }
 
-// ===================================================================
-// == 표준 비즈니스 명령 (Standard Business Commands)
-// ===================================================================
-// 채널과 무관한 순수 비즈니스 행위만을 표현하는 표준화된 명령 타입
-// 각 Strategy가 이 표준 명령을 채널별 API 호출로 번역하는 책임을 가짐
+// 표준 비즈니스 명령 (Standard Business Commands)
 
 export type ChannelCommand =
-  // === 주문 관리 (Order Management) ===
+  // 주문 관리 (Order Management)
   | {
     type: 'order.prepare'; // 주문 준비 (네이버: order.confirm, 쿠팡: order.acknowledge)
     orderIds: string[]; // 내부 표준 주문 ID들
@@ -405,7 +378,7 @@ export type ChannelCommand =
     reason?: string;
   }
 
-  // === 발송 관리 (Dispatch Management) ===
+  // 발송 관리 (Dispatch Management)
   | {
     type: 'dispatch.ship'; // 발송 처리 (네이버/쿠팡: dispatch.confirm)
     orderId: string;
@@ -425,7 +398,7 @@ export type ChannelCommand =
     reason: string;
   }
 
-  // === 반품 관리 (Return Management) ===
+  // 반품 관리 (Return Management)
   | {
     type: 'return.approve'; // 반품 승인 (네이버/쿠팡 공통)
     claimId: string; // 내부 표준 클레임 ID
@@ -466,7 +439,7 @@ export type ChannelCommand =
     reason: string;
   }
 
-  // === 교환 관리 (Exchange Management) ===
+  // 교환 관리 (Exchange Management)
   | {
     type: 'exchange.confirm_pickup'; // 교환 회수 완료
     claimId: string;
@@ -501,10 +474,7 @@ export type ChannelCommand =
     claimId: string;
   };
 
-// ===================================================================
-// == 조회 명령 (Query Commands) - CQRS 패턴 적용
-// ===================================================================
-// 상태를 변경하지 않는 조회성 작업들을 별도로 분리
+// 조회 명령 (Query Commands)
 
 export type ChannelQuery =
   | {
@@ -540,13 +510,9 @@ export type ChannelQuery =
     claimId: string;
   };
 
-// ===================================================================
-// == PIM-Medusa 동기화 타입
-// ===================================================================
+// PIM-Medusa 동기화 타입
 
-/**
- * PIM Active Version 스냅샷 (동기화 소스 데이터)
- */
+// PIM Active Version 스냅샷 (동기화 소스 데이터)
 export interface PimProductSnapshot {
   // Master/Version 식별
   masterId: string;
@@ -592,12 +558,23 @@ export interface PimProductSnapshot {
     variantCode?: string;
     isDefault: boolean;
     status: string;
+    displayOrder?: number;
     optionCombination?: Array<{ name: string; value: string }>;
 
     // 가격 정보
     basePrice?: number;
     membershipPrice?: number;
     tieredPrices?: Array<{ minQuantity: number; price: number }>;
+
+    // 물리적 속성 (Optional)
+    weight?: number;
+    length?: number;
+    width?: number;
+    height?: number;
+    originCountry?: string;
+    midCode?: string;
+    hsCode?: string;
+    material?: string;
   }>;
 
   // 메타데이터
@@ -608,9 +585,7 @@ export interface PimProductSnapshot {
   discountable?: boolean;
 }
 
-/**
- * Medusa Upsert Payload (변환 결과)
- */
+// Medusa Upsert Payload (변환 결과)
 export interface MedusaProductPayload {
   // 필수 기본 정보
   title: string;
@@ -632,7 +607,20 @@ export interface MedusaProductPayload {
   variants?: Array<{
     title: string;
     sku?: string;
+    barcode?: string;
+    ean?: string;
+    upc?: string;
+    inventory_quantity?: number;
     manage_inventory?: boolean;
+    allow_backorder?: boolean;
+    weight?: number;
+    length?: number;
+    width?: number;
+    height?: number;
+    origin_country?: string;
+    mid_code?: string;
+    hs_code?: string;
+    material?: string;
     options?: Record<string, string>; // { "Color": "Red", "Size": "M" }
     prices?: Array<{
       amount: number;
@@ -642,6 +630,9 @@ export interface MedusaProductPayload {
     metadata?: {
       pimVariantId: string;
       variantCode?: string;
+      displayOrder?: number;
+      membershipPrice?: number;
+      tieredPrices?: Array<{ minQuantity: number; price: number }>;
     };
   }>;
 
@@ -671,9 +662,7 @@ export interface MedusaProductPayload {
   discountable?: boolean;
 }
 
-/**
- * Medusa Product 조회 응답 (단순화)
- */
+// Medusa Product 조회 응답 (단순화)
 export interface MedusaProduct {
   id: string;
   title: string;
@@ -694,9 +683,7 @@ export interface MedusaProduct {
   }>;
 }
 
-/**
- * PIM 이벤트: ProductMasterActiveVersionChanged
- */
+// PIM 이벤트: ProductMasterActiveVersionChanged
 export interface PimActiveVersionChangedEvent {
   masterId: string;
   productId: string | null; // versionId (active인 경우)
