@@ -296,7 +296,9 @@ export type OptionGroupReadModel = {
   values: OptionValueReadModel[];
 };
 
-export type VariantOptionValueReadModel = OptionValueReadModel;
+export type VariantOptionValueReadModel = OptionValueReadModel & {
+  optionGroupName: string;
+};
 
 export type VariantReadModel = ProductVariant & {
   optionValues: VariantOptionValueReadModel[];
