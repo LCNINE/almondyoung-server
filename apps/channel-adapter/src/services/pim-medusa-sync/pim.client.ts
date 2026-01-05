@@ -52,7 +52,7 @@ export class PimClient {
                 data.optionGroups?.map((g: any) => [g.id, g.displayName || g.name]) || []
             );
 
-            // 스냅샷 구성 (ProductDetailDto 기반)
+            // 스냅샷 구성 (ProductDetailDto)
             const snapshot: PimProductSnapshot = {
                 masterId: data.masterId,
                 versionId: data.id,
@@ -123,28 +123,63 @@ export class PimClient {
         }
     }
 
-    // 모든 Active Masters 목록 조회 (백필용)
+    // 모든 Active Masters 목록 조회 (메두사 채널에 할당된 것만)
     async getAllActiveMasters(): Promise<string[]> {
         try {
-            this.logger.log('Fetching all active PIM masters...');
+            this.logger.log('Fetching Medusa channel products from PIM...');
 
-            // GET /masters?mode=active
-            const response = await this.client.get('/masters', {
+            // 1. 메두사 세일즈 채널 ID 찾기
+            const medusaSalesChannelId = await this.getMedusaSalesChannelId();
+            if (!medusaSalesChannelId) {
+                this.logger.warn('Medusa sales channel not found in PIM. No products to sync.');
+                return [];
+            }
+
+            // 2. 메두사 채널에 할당된 active 제품만 조회
+            const response = await this.client.get(`/channel-products/channels/${medusaSalesChannelId}`, {
                 params: {
-                    mode: 'active',
-                    page: 1,
-                    limit: 1000, // 최대치 todo: 페이징 필요
+                    isActive: 'true',
+                    limit: 1000, // todo: 페이징 필요
                 },
             });
 
-            const masters = response.data?.data || [];
-            const masterIds = masters.map((item: any) => item.product.masterId);
+            const channelProducts = response.data?.data || [];
+            const masterIds = channelProducts
+                .filter((item: any) => item.master?.status === 'active') // master도 active인 것만
+                .map((item: any) => item.master?.id)
+                .filter(Boolean);
 
-            this.logger.log(`Found ${masterIds.length} active PIM masters`);
+            this.logger.log(`Found ${masterIds.length} products in Medusa channel`);
             return masterIds;
         } catch (error) {
-            this.logger.error('Failed to get all active masters', error.stack);
+            this.logger.error('Failed to get Medusa channel products', error.stack);
             throw new Error(`PIM getAllActiveMasters failed: ${error.message}`);
+        }
+    }
+
+    // 메두사 세일즈 채널 ID 조회
+    private async getMedusaSalesChannelId(): Promise<string | null> {
+        try {
+            // GET /sales-channels?site=medusa
+            const response = await this.client.get('/sales-channels', {
+                params: { site: 'medusa' }, // PIM에서 메두사 채널의 site 값
+            });
+
+            const channels = response.data?.data || response.data || [];
+            const medusaChannel = channels.find((ch: any) =>
+                ch.site?.toLowerCase() === 'medusa' ||
+                ch.name?.toLowerCase().includes('medusa')
+            );
+
+            if (medusaChannel) {
+                this.logger.log(`Found Medusa sales channel: ${medusaChannel.id} (${medusaChannel.name})`);
+                return medusaChannel.id;
+            }
+
+            return null;
+        } catch (error) {
+            this.logger.error('Failed to get Medusa sales channel ID', error.stack);
+            return null;
         }
     }
 

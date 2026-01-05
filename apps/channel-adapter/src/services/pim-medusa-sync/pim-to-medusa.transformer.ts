@@ -7,6 +7,8 @@ const logger = new Logger('PimToMedusaTransformer');
 export interface MedusaSyncOverrides {
     categories?: Array<{ id: string }>;
     tags?: Array<{ value: string; id?: string }>;
+    type_id?: string;
+    sales_channels?: string[];
 }
 
 // PIM Product Snapshot을 Medusa Upsert Payload로 변환
@@ -18,7 +20,7 @@ export function transformPimToMedusa(
 
     // 1. 기본 정보
     const title = snapshot.name || '제목 없음';
-    const handle = `pim-${snapshot.masterId}`;
+    const handle = `${snapshot.masterId}`;
     const status = mapPimStatusToMedusaStatus(snapshot.status);
     const description = snapshot.descriptionHtml || snapshot.description;
 
@@ -149,13 +151,10 @@ function transformVariants(
                 Object.values(options).join(' / ') ||
                 `Variant ${variant.id.slice(0, 8)}`;
 
-            // 가격 배열 구성
+            // 가격 배열 구성 (기본 가격만 포함)
             const prices: Array<{
                 amount: number;
                 currency_code: string;
-                min_quantity?: number;
-                max_quantity?: number;
-                rules?: Record<string, string>;
             }> = [];
 
             // 1. 일반 가격 (basePrice)
@@ -166,37 +165,30 @@ function transformVariants(
                 });
             }
 
-            // 2. 멤버십 가격 (customer_group rule)
-            if (variant.membershipPrice !== undefined && variant.membershipPrice !== null && MEMBERSHIP_GROUP_ID) {
-                prices.push({
-                    amount: Math.round(variant.membershipPrice),
-                    currency_code: 'KRW',
-                    rules: { customer_group_id: MEMBERSHIP_GROUP_ID },
-                });
-            }
-
-            // 3. Tier 가격 (min_quantity 기반)
-            if (variant.tieredPrices && variant.tieredPrices.length > 0) {
-                for (const tier of variant.tieredPrices) {
-                    prices.push({
-                        amount: Math.round(tier.price),
-                        currency_code: 'KRW',
-                        min_quantity: tier.minQuantity,
-                        // max_quantity는 다음 tier의 minQuantity - 1로 계산 가능 (선택)
-                    });
-                }
-            }
-
             return {
-                title,
+                title: variant.variantName || '기본 품목',
                 sku: variant.sku || undefined,
-                // WMS 재고 동기화 완성 전까지 false (품절 처리 방지)
-                manage_inventory: false,
+                barcode: variant.variantCode || undefined,
+                manage_inventory: true,
+
+                weight: variant.weight,
+                length: variant.length,
+                width: variant.width,
+                height: variant.height,
+                origin_country: variant.originCountry,
+                mid_code: variant.midCode,
+                hs_code: variant.hsCode,
+                material: variant.material,
+
                 options: Object.keys(options).length > 0 ? options : { Default: 'Default' },
                 prices: prices.length > 0 ? prices : undefined,
                 metadata: {
                     pimVariantId: variant.id,
                     variantCode: variant.variantCode,
+                    displayOrder: variant.displayOrder,
+                    // Price List 동기화를 위해 원본 가격 정보 보존
+                    membershipPrice: variant.membershipPrice,
+                    tieredPrices: variant.tieredPrices,
                 },
             };
         });
