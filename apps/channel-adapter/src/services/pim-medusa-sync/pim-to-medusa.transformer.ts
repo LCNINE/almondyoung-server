@@ -22,7 +22,8 @@ export function transformPimToMedusa(
     const title = snapshot.name || '제목 없음';
     const handle = `${snapshot.masterId}`;
     const status = mapPimStatusToMedusaStatus(snapshot.status);
-    const description = snapshot.descriptionHtml || snapshot.description;
+
+    const description = undefined;
 
     // 2. 이미지
     const images = snapshot.images?.map((url, index) => ({
