@@ -34,7 +34,7 @@ export class PimMedusaSyncService {
     // PIM 카테고리를 Medusa에 보장(부모까지 생성) 후 Medusa category ID 배열 반환
     private async ensureMedusaCategories(
         categoryIds: string[] | undefined,
-    ): Promise<Array<{ id: string }>> {
+    ): Promise<Array<{ id: string; pimCategoryId: string }>> {
         if (!categoryIds || categoryIds.length === 0) {
             return [];
         }
@@ -49,13 +49,13 @@ export class PimMedusaSyncService {
             return detail;
         };
 
-        const medusaIds: Array<{ id: string }> = [];
+        const medusaIds: Array<{ id: string; pimCategoryId: string }> = [];
         for (const categoryId of [...new Set(categoryIds)]) {
             const medusaCategoryId = await this.medusaClient.ensureCategoryTree(
                 categoryId,
                 resolveCategory,
             );
-            medusaIds.push({ id: medusaCategoryId });
+            medusaIds.push({ id: medusaCategoryId, pimCategoryId: categoryId });
         }
         return medusaIds;
     }
@@ -122,7 +122,7 @@ export class PimMedusaSyncService {
 
             // 4. Medusa Payload로 변환
             const medusaPayload = transformPimToMedusa(snapshot, {
-                categories: medusaCategories,
+                categories: medusaCategories.map(({ id }) => ({ id })),
                 tags: medusaTags,
                 type_id: medusaTypeId,
                 sales_channels: [defaultSalesChannelId],
@@ -137,6 +137,46 @@ export class PimMedusaSyncService {
                 medusaPayload,
                 medusaProductId,
             );
+
+            // 6-1. 카테고리 매핑 보강: join 테이블 확실히 삽입
+            if (medusaCategories && medusaCategories.length > 0) {
+                for (const cat of medusaCategories) {
+                    try {
+                        await this.medusaClient.attachProductToCategories(
+                            product.id,
+                            [cat.id],
+                            { throwOnFailure: true },
+                        );
+                    } catch (err: any) {
+                        const status = err?.response?.status;
+                        const errType = err?.response?.data?.type;
+                        const is404 =
+                            status === 404 ||
+                            errType === 'not_found' ||
+                            /404/i.test(err?.message || '');
+
+                        if (is404) {
+                            this.logger.warn(
+                                `Category ${cat.id} missing in Medusa, re-ensuring from PIM (${cat.pimCategoryId})`,
+                            );
+                            const refreshedId =
+                                await this.medusaClient.ensureCategoryTree(
+                                    cat.pimCategoryId,
+                                    (id) => this.pimClient.getCategory(id),
+                                );
+                            await this.medusaClient.attachProductToCategories(
+                                product.id,
+                                [refreshedId],
+                                { throwOnFailure: false },
+                            );
+                        } else {
+                            this.logger.warn(
+                                `Failed to attach product ${product.id} to category ${cat.id}: ${err?.response?.data?.message || err?.message}`,
+                            );
+                        }
+                    }
+                }
+            }
 
             this.logger.log(
                 `Sync completed: ${masterId} → Medusa ${product.id} (${action})`,
