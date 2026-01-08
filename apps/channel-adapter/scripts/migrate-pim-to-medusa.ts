@@ -70,6 +70,10 @@ async function main() {
   const mappingRepo = new PimMedusaMappingRepository(dbService as any);
   const syncService = new PimMedusaSyncService(pimClient, medusaClient, mappingRepo);
 
+  // 캐시 초기화
+  console.log('Clearing all caches to ensure fresh sync...');
+  medusaClient.clearAllCaches();
+
   const masters = args.masters?.length
     ? args.masters
     : process.env.PIM_SOURCE_DB_URL
