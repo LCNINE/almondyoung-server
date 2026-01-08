@@ -150,28 +150,43 @@ export class PimMedusaSyncService {
                     } catch (err: any) {
                         const status = err?.response?.status;
                         const errType = err?.response?.data?.type;
+                        const errMsg = err?.message || '';
                         const is404 =
                             status === 404 ||
                             errType === 'not_found' ||
-                            /404/i.test(err?.message || '');
+                            /404/i.test(errMsg) ||
+                            /not found/i.test(errMsg);
 
                         if (is404) {
                             this.logger.warn(
                                 `Category ${cat.id} missing in Medusa, re-ensuring from PIM (${cat.pimCategoryId})`,
                             );
+
+                            // PIM 카테고리 ID로 다시 생성/조회
                             const refreshedId =
                                 await this.medusaClient.ensureCategoryTree(
                                     cat.pimCategoryId,
                                     (id) => this.pimClient.getCategory(id),
                                 );
-                            await this.medusaClient.attachProductToCategories(
-                                product.id,
-                                [refreshedId],
-                                { throwOnFailure: false },
-                            );
+
+                            // 재생성된 카테고리 ID로 재시도
+                            try {
+                                await this.medusaClient.attachProductToCategories(
+                                    product.id,
+                                    [refreshedId],
+                                    { throwOnFailure: false },
+                                );
+                                this.logger.log(
+                                    `Successfully attached product ${product.id} to re-ensured category ${refreshedId}`,
+                                );
+                            } catch (retryErr: any) {
+                                this.logger.error(
+                                    `Failed to attach product ${product.id} to re-ensured category ${refreshedId}: ${retryErr?.message}`,
+                                );
+                            }
                         } else {
                             this.logger.warn(
-                                `Failed to attach product ${product.id} to category ${cat.id}: ${err?.response?.data?.message || err?.message}`,
+                                `Failed to attach product ${product.id} to category ${cat.id}: ${err?.response?.data?.message || errMsg}`,
                             );
                         }
                     }

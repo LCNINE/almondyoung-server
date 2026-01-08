@@ -59,6 +59,15 @@ export class MedusaClient {
         this.logger.log(`Medusa client initialized: ${this.apiUrl}`);
     }
 
+    // 모든 캐시 초기화 (마이그레이션 시작 시 사용)
+    clearAllCaches(): void {
+        this.categoryCache.clear();
+        this.tagCache.clear();
+        this.typeCache.clear();
+        this.salesChannelCache.clear();
+        this.logger.log('All caches cleared');
+    }
+
     // ===== Product Categories =====
     private normalizeCategoryListResponse(resp: any): any[] {
         return (
@@ -76,6 +85,20 @@ export class MedusaClient {
             resp?.data?.category ||
             null
         );
+    }
+
+    private async getCategoryById(id: string): Promise<any | null> {
+        try {
+            const res = await this.client.get(`/product-categories/${id}`);
+            return this.normalizeCategoryResponse(res);
+        } catch (error: any) {
+            const status = error?.response?.status;
+            if (status === 404) return null;
+            this.logger.warn(
+                `Medusa getCategoryById failed for ${id}: ${error?.response?.data?.message || error?.message}`,
+            );
+            return null;
+        }
     }
 
     private async findCategoryByHandle(handle: string): Promise<any | null> {
@@ -109,10 +132,6 @@ export class MedusaClient {
     ): Promise<string> {
         const handle = `${pimCategoryId}`;
 
-        if (this.categoryCache.has(handle)) {
-            return this.categoryCache.get(handle)!;
-        }
-
         // 부모부터 보장
         const detail = await resolver(pimCategoryId);
         let parentMedusaId: string | undefined;
@@ -133,7 +152,7 @@ export class MedusaClient {
             );
         }
 
-        // 기존 조회
+        // 항상 실제 Medusa에서 조회 (캐시 불일치 방지)
         const existing = await this.findCategoryByHandle(handle);
         if (existing?.id) {
             const updatePayload = {
@@ -156,10 +175,15 @@ export class MedusaClient {
                     `Failed to update Medusa category ${existing.id} from PIM ${detail.id}: ${err?.response?.data?.message || err?.message}`,
                 );
             }
+            // 조회 결과를 캐시에 저장 (다음 동일 제품에서 재사용)
             this.categoryCache.set(handle, existing.id);
+            this.logger.debug(
+                `Ensured existing Medusa category ${existing.id} for PIM ${pimCategoryId}`,
+            );
             return existing.id;
         }
 
+        // 새로 생성
         const payload = {
             name: detail.name,
             handle,
@@ -189,6 +213,18 @@ export class MedusaClient {
         const unique = [...new Set(categoryIds)];
         for (const catId of unique) {
             try {
+                // 카테고리 존재 여부 확인 (캐시 문제 방지)
+                const categoryExists = await this.getCategoryById(catId);
+                if (!categoryExists) {
+                    this.logger.warn(
+                        `Category ${catId} does not exist in Medusa before attaching product ${productId}`,
+                    );
+                    if (options?.throwOnFailure) {
+                        throw new Error(`Category ${catId} not found`);
+                    }
+                    continue;
+                }
+
                 // Medusa 버전에 따라 요구하는 필드명이 다를 수 있어 product_ids / add 순차 시도
                 try {
                     await this.client.post(
