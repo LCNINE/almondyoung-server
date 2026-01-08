@@ -17,6 +17,13 @@ export function transformPimToMedusa(
     overrides?: MedusaSyncOverrides,
 ): MedusaProductPayload {
     logger.log(`Transforming PIM snapshot: ${snapshot.masterId} v${snapshot.version}`);
+    const toFileUrl = (fileId?: string | null): string | undefined => {
+        if (!fileId) return undefined;
+        if (/^https?:\/\//i.test(fileId)) return fileId;
+        const base = process.env.FILE_SERVICE_URL;
+        if (!base) return fileId;
+        return `${base.replace(/\/$/, '')}/files/${fileId}`;
+    };
 
     // 1. 기본 정보
     const title = snapshot.name || '제목 없음';
@@ -26,18 +33,22 @@ export function transformPimToMedusa(
     const description = undefined;
 
     // 2. 이미지
-    const images = snapshot.images?.map((url, index) => ({
-        url,
-        rank: index + 1,
-    })) || [];
+    const images =
+        snapshot.images
+            ?.map((fileId) => toFileUrl(fileId))
+            .filter((url): url is string => !!url)
+            .map((url, index) => ({
+                url,
+                rank: index + 1,
+            })) || [];
 
-    // 3. 옵션 변환
-    const options = transformOptions(snapshot.optionGroups || []);
+    // 3. 옵션 스키마/제목 목록 산출
+    const { options, optionTitles } = buildOptionSchema(snapshot.optionGroups || [], snapshot.variants || []);
 
     // 4. Variants 변환
     const variants = transformVariants(
         snapshot.variants,
-        snapshot.optionGroups || [],
+        optionTitles,
     );
 
     // 5. 메타데이터
@@ -62,18 +73,20 @@ export function transformPimToMedusa(
     const tags =
         overrides?.tags ??
         snapshot.tags?.map((value) => ({ value }));
+    const salesChannels = overrides?.sales_channels?.map((id) => ({ id }));
 
     return {
         title,
         handle,
         status,
         description,
-        thumbnail: snapshot.thumbnail,
+        thumbnail: toFileUrl(snapshot.thumbnail),
         images,
         options,
         variants,
         categories,
         tags,
+        sales_channels: salesChannels,
         metadata,
         is_giftcard: snapshot.isGiftcard,
         discountable: snapshot.discountable,
@@ -112,10 +125,54 @@ function transformOptions(
     }));
 }
 
+// 옵션 스키마 구성: 옵션 제목 목록 + 각 옵션의 값 목록. Variants에 사용된 값도 포함시키며, 부족할 경우 'Default'를 포함시켜 변환 시 옵션 개수 불일치 오류를 방지.
+function buildOptionSchema(
+    optionGroups: PimProductSnapshot['optionGroups'],
+    variants: PimProductSnapshot['variants'],
+): { options: Array<{ title: string; values: string[] }>; optionTitles: string[] } {
+    const optionSets = new Map<string, Set<string>>();
+
+    // 1) PIM 옵션 그룹 기반으로 초기화
+    if (optionGroups && optionGroups.length > 0) {
+        optionGroups.forEach((group) => {
+            const set = optionSets.get(group.name) || new Set<string>();
+            group.values.forEach((v) => set.add(v.name));
+            optionSets.set(group.name, set);
+        });
+    }
+
+    // 2) Variants의 optionCombination에 등장하는 제목/값 반영
+    if (variants) {
+        variants.forEach((variant) => {
+            variant.optionCombination?.forEach((opt) => {
+                const set = optionSets.get(opt.name) || new Set<string>();
+                set.add(opt.value);
+                optionSets.set(opt.name, set);
+            });
+        });
+    }
+
+    // 3) 어떤 옵션도 없을 때 기본 옵션 추가
+    if (optionSets.size === 0) {
+        optionSets.set('Default', new Set<string>(['Default']));
+    }
+
+    // 4) 변환 시 누락 방지를 위해 모든 옵션에 'Default' 값 보강
+    optionSets.forEach((set) => set.add('Default'));
+
+    const optionTitles = Array.from(optionSets.keys());
+    const options = optionTitles.map((title) => ({
+        title,
+        values: Array.from(optionSets.get(title) || []).sort(),
+    }));
+
+    return { options, optionTitles };
+}
+
 // PIM Variants를 Medusa Variants로 변환
 function transformVariants(
     pimVariants: PimProductSnapshot['variants'],
-    optionGroups: PimProductSnapshot['optionGroups'],
+    optionTitles: string[],
 ): MedusaProductPayload['variants'] {
     const MEMBERSHIP_GROUP_ID = process.env.MEDUSA_MEMBERSHIP_GROUP_ID || '';
     const SKIP_VARIANTS_WITHOUT_PRICE = process.env.SKIP_VARIANTS_WITHOUT_PRICE === 'true';
@@ -136,14 +193,18 @@ function transformVariants(
             return true;
         })
         .map((variant) => {
-            // 옵션 조합 매핑
-            const options = variant.optionCombination?.reduce(
+            // 옵션 조합 매핑 (부족한 옵션은 Default로 채워서 Medusa 옵션 개수 불일치 오류 방지)
+            const rawOptions = variant.optionCombination?.reduce(
                 (acc, opt) => {
                     acc[opt.name] = opt.value;
                     return acc;
                 },
                 {} as Record<string, string>,
             ) || {};
+            const options: Record<string, string> = {};
+            optionTitles.forEach((title) => {
+                options[title] = rawOptions[title] || 'Default';
+            });
 
             // Variant 제목: 기본 variant면 "기본", 아니면 옵션 조합
             const title = variant.isDefault
@@ -166,10 +227,12 @@ function transformVariants(
                 });
             }
 
+            const stripBarcode = process.env.STRIP_BARCODE_ON_SYNC === 'true';
+
             return {
                 title: variant.variantName || '기본 품목',
                 sku: variant.sku || undefined,
-                barcode: variant.variantCode || undefined,
+                barcode: stripBarcode ? undefined : variant.variantCode || undefined,
                 manage_inventory: true,
 
                 weight: variant.weight,
