@@ -155,32 +155,41 @@ export class MedusaClient {
         // 항상 실제 Medusa에서 조회 (캐시 불일치 방지)
         const existing = await this.findCategoryByHandle(handle);
         if (existing?.id) {
-            const updatePayload = {
-                name: detail.name,
-                is_internal: false,
-                is_active: isActive,
-                parent_category_id: parentMedusaId,
-                metadata: {
-                    ...(existing.metadata || {}),
-                    ...pimMetadata,
-                },
-            };
-            try {
-                await this.client.post(
-                    `/product-categories/${existing.id}`,
-                    updatePayload,
-                );
-            } catch (err: any) {
+            // 실제 존재 여부 재확인 (findCategoryByHandle이 잘못된 결과를 반환할 수 있음)
+            const verified = await this.getCategoryById(existing.id);
+            if (!verified) {
                 this.logger.warn(
-                    `Failed to update Medusa category ${existing.id} from PIM ${detail.id}: ${err?.response?.data?.message || err?.message}`,
+                    `Category ${existing.id} found by handle but doesn't exist by ID. Creating new...`,
                 );
+                // existing을 null로 처리하여 아래 생성 로직으로 이동
+            } else {
+                const updatePayload = {
+                    name: detail.name,
+                    is_internal: false,
+                    is_active: isActive,
+                    parent_category_id: parentMedusaId,
+                    metadata: {
+                        ...(existing.metadata || {}),
+                        ...pimMetadata,
+                    },
+                };
+                try {
+                    await this.client.post(
+                        `/product-categories/${existing.id}`,
+                        updatePayload,
+                    );
+                } catch (err: any) {
+                    this.logger.warn(
+                        `Failed to update Medusa category ${existing.id} from PIM ${detail.id}: ${err?.response?.data?.message || err?.message}`,
+                    );
+                }
+                // 조회 결과를 캐시에 저장 (다음 동일 제품에서 재사용)
+                this.categoryCache.set(handle, existing.id);
+                this.logger.debug(
+                    `Ensured existing Medusa category ${existing.id} for PIM ${pimCategoryId}`,
+                );
+                return existing.id;
             }
-            // 조회 결과를 캐시에 저장 (다음 동일 제품에서 재사용)
-            this.categoryCache.set(handle, existing.id);
-            this.logger.debug(
-                `Ensured existing Medusa category ${existing.id} for PIM ${pimCategoryId}`,
-            );
-            return existing.id;
         }
 
         // 새로 생성
@@ -203,7 +212,7 @@ export class MedusaClient {
         return created.id;
     }
 
-    // 상품을 지정된 카테고리에 강제 매핑 (join 테이블 확실히 채우기)
+    // 상품을 지정된 카테고리에 강제 매핑 (Medusa v2: 제품 업데이트로 categories 설정)
     async attachProductToCategories(
         productId: string,
         categoryIds: string[],
@@ -211,48 +220,35 @@ export class MedusaClient {
     ): Promise<void> {
         if (!categoryIds || categoryIds.length === 0) return;
         const unique = [...new Set(categoryIds)];
-        for (const catId of unique) {
-            try {
-                // 카테고리 존재 여부 확인 (캐시 문제 방지)
-                const categoryExists = await this.getCategoryById(catId);
-                if (!categoryExists) {
-                    this.logger.warn(
-                        `Category ${catId} does not exist in Medusa before attaching product ${productId}`,
-                    );
-                    if (options?.throwOnFailure) {
-                        throw new Error(`Category ${catId} not found`);
-                    }
-                    continue;
-                }
 
-                // Medusa 버전에 따라 요구하는 필드명이 다를 수 있어 product_ids / add 순차 시도
-                try {
-                    await this.client.post(
-                        `/product-categories/${catId}/products/batch`,
-                        { product_ids: [productId] },
-                    );
-                    this.logger.debug(
-                        `Attached product ${productId} to category ${catId} (product_ids)`,
-                    );
-                } catch (innerErr: any) {
-                    this.logger.warn(
-                        `product_ids payload failed for category ${catId}: ${innerErr?.response?.status} ${innerErr?.response?.data?.message || innerErr?.message}`,
-                    );
-                    await this.client.post(
-                        `/product-categories/${catId}/products/batch`,
-                        { add: [productId] },
-                    );
-                    this.logger.debug(
-                        `Attached product ${productId} to category ${catId} (add)`,
-                    );
-                }
-            } catch (error: any) {
+        // 카테고리 존재 여부 확인
+        for (const catId of unique) {
+            const categoryExists = await this.getCategoryById(catId);
+            if (!categoryExists) {
                 this.logger.warn(
-                    `Failed to attach product ${productId} to category ${catId}: ${error?.response?.data?.message || error?.message}`,
+                    `Category ${catId} does not exist in Medusa before attaching product ${productId}`,
                 );
                 if (options?.throwOnFailure) {
-                    throw error;
+                    throw new Error(`Category ${catId} not found`);
                 }
+                return;
+            }
+        }
+
+        try {
+            // Medusa v2 방식: POST /products/:id 에 categories 필드로 업데이트
+            await this.client.post(`/products/${productId}`, {
+                categories: unique.map(id => ({ id })),
+            });
+            this.logger.debug(
+                `Attached product ${productId} to ${unique.length} categories: ${unique.join(', ')}`,
+            );
+        } catch (error: any) {
+            this.logger.warn(
+                `Failed to attach product ${productId} to categories: ${error?.response?.data?.message || error?.message}`,
+            );
+            if (options?.throwOnFailure) {
+                throw error;
             }
         }
     }
