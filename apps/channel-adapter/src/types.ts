@@ -641,6 +641,7 @@ export interface MedusaProductPayload {
   tags?: Array<{ value: string }>;
   collection_id?: string;
   type_id?: string;
+  sales_channels?: Array<{ id: string }>;
 
   // 메타데이터 (핵심: PIM 추적용)
   metadata: {

@@ -16,6 +16,8 @@ export class MedusaClient {
     private readonly tagCache = new Map<string, string>(); // key: value
     private readonly typeCache = new Map<string, string>(); // key: value
     private readonly salesChannelCache = new Map<string, string>(); // key: name
+    // 대용량 상품일 때 한번에 보내는 variants 수를 제한 (unknown_error 완화 목적)
+    private readonly MAX_VARIANTS_PER_REQUEST = 30;
 
     constructor(private readonly configService: ConfigService) {
         this.apiUrl =
@@ -26,7 +28,10 @@ export class MedusaClient {
             headers: {
                 'Content-Type': 'application/json',
             },
-            timeout: 30000,
+            // 대용량 variants/가격 동기화 시 타임아웃 및 바디 제한 확대
+            timeout: 180000,
+            maxBodyLength: Infinity,
+            maxContentLength: Infinity,
         });
 
         const apiKey = this.configService.get<string>('MEDUSA_API_KEY');
@@ -37,12 +42,16 @@ export class MedusaClient {
             if (apiKey.startsWith('ey')) {
                 this.client.defaults.headers.common['Authorization'] = `Bearer ${apiKey}`;
             } else if (apiKey.startsWith('sk_')) {
-                // Medusa's authenticate-middleware expects Basic with the raw sk token (base64 optional)
-                this.client.defaults.headers.common['Authorization'] = `Basic ${apiKey}`;
-                // Also send x-medusa-access-token for compatibility (ignored if not needed)
+                /**
+                 * Medusa admin secret key
+                 * - Basic Auth expects base64("<token>:");
+                 * - Also send x-medusa-access-token for compatibility.
+                 */
+                const basic = Buffer.from(`${apiKey}:`).toString('base64');
+                this.client.defaults.headers.common['Authorization'] = `Basic ${basic}`;
                 this.client.defaults.headers.common['x-medusa-access-token'] = apiKey;
                 this.logger.log(
-                    `Medusa admin API key detected (sk_... length=${apiKey.length}). Using Basic auth header.`,
+                    `Medusa admin API key detected (sk_... length=${apiKey.length}). Using Basic(base64) auth header.`,
                 );
             }
         }
@@ -107,6 +116,15 @@ export class MedusaClient {
         // 부모부터 보장
         const detail = await resolver(pimCategoryId);
         let parentMedusaId: string | undefined;
+        const isActive =
+            (detail.isActive ?? true) && (detail.visibility ?? true);
+        const pimMetadata = {
+            pimCategoryId: detail.id,
+            pimPath: detail.path,
+            pimSlug: detail.slug,
+            pimVisibility: detail.visibility ?? true,
+            pimShowOnMainCategory: detail.showOnMainCategory ?? false,
+        };
 
         if (detail.parentId) {
             parentMedusaId = await this.ensureCategoryTree(
@@ -118,6 +136,26 @@ export class MedusaClient {
         // 기존 조회
         const existing = await this.findCategoryByHandle(handle);
         if (existing?.id) {
+            const updatePayload = {
+                name: detail.name,
+                is_internal: false,
+                is_active: isActive,
+                parent_category_id: parentMedusaId,
+                metadata: {
+                    ...(existing.metadata || {}),
+                    ...pimMetadata,
+                },
+            };
+            try {
+                await this.client.post(
+                    `/product-categories/${existing.id}`,
+                    updatePayload,
+                );
+            } catch (err: any) {
+                this.logger.warn(
+                    `Failed to update Medusa category ${existing.id} from PIM ${detail.id}: ${err?.response?.data?.message || err?.message}`,
+                );
+            }
             this.categoryCache.set(handle, existing.id);
             return existing.id;
         }
@@ -126,11 +164,10 @@ export class MedusaClient {
             name: detail.name,
             handle,
             is_internal: false,
-            is_active: detail.isActive !== false,
+            is_active: isActive,
             parent_category_id: parentMedusaId,
             metadata: {
-                pimCategoryId: detail.id,
-                pimPath: detail.path,
+                ...pimMetadata,
             },
         };
 
@@ -140,6 +177,48 @@ export class MedusaClient {
             `Created Medusa category ${created.id} for PIM category ${detail.id}`,
         );
         return created.id;
+    }
+
+    // 상품을 지정된 카테고리에 강제 매핑 (join 테이블 확실히 채우기)
+    async attachProductToCategories(
+        productId: string,
+        categoryIds: string[],
+        options?: { throwOnFailure?: boolean },
+    ): Promise<void> {
+        if (!categoryIds || categoryIds.length === 0) return;
+        const unique = [...new Set(categoryIds)];
+        for (const catId of unique) {
+            try {
+                // Medusa 버전에 따라 요구하는 필드명이 다를 수 있어 product_ids / add 순차 시도
+                try {
+                    await this.client.post(
+                        `/product-categories/${catId}/products/batch`,
+                        { product_ids: [productId] },
+                    );
+                    this.logger.debug(
+                        `Attached product ${productId} to category ${catId} (product_ids)`,
+                    );
+                } catch (innerErr: any) {
+                    this.logger.warn(
+                        `product_ids payload failed for category ${catId}: ${innerErr?.response?.status} ${innerErr?.response?.data?.message || innerErr?.message}`,
+                    );
+                    await this.client.post(
+                        `/product-categories/${catId}/products/batch`,
+                        { add: [productId] },
+                    );
+                    this.logger.debug(
+                        `Attached product ${productId} to category ${catId} (add)`,
+                    );
+                }
+            } catch (error: any) {
+                this.logger.warn(
+                    `Failed to attach product ${productId} to category ${catId}: ${error?.response?.data?.message || error?.message}`,
+                );
+                if (options?.throwOnFailure) {
+                    throw error;
+                }
+            }
+        }
     }
 
     // ===== Product Tags =====
@@ -348,6 +427,64 @@ export class MedusaClient {
         }
     }
 
+    // 대용량 variant를 나눠서 생성
+    private async createProductChunked(
+        payload: MedusaProductPayload,
+    ): Promise<MedusaProduct> {
+        const variants = payload.variants || [];
+        if (variants.length <= this.MAX_VARIANTS_PER_REQUEST) {
+            return this.createProduct(payload);
+        }
+
+        // 1) 첫 variant만 넣어 product 생성
+        const [firstVariant, ...rest] = variants;
+        const created = await this.createProduct({
+            ...payload,
+            variants: [firstVariant],
+        });
+
+        try {
+            // 2) 나머지 variants는 작은 청크로 추가
+            const chunkSize = 10;
+            for (let i = 0; i < rest.length; i += chunkSize) {
+                const chunk = rest.slice(i, i + chunkSize);
+                await this.addVariants(created.id, chunk);
+            }
+        } catch (err) {
+            // 부분 생성 방지: 추가 중 실패하면 생성한 상품을 롤백
+            this.logger.error(
+                `Failed to add variants for product ${created.id}, rolling back create.`,
+                err?.response?.data || err?.message,
+            );
+            await this.safeDeleteProduct(created.id);
+            throw err;
+        }
+
+        // 3) 최신 product 리턴 (variant id 매핑 위해 조회)
+        return this.getProduct(created.id);
+    }
+
+    private async addVariants(productId: string, variants: any[]): Promise<void> {
+        for (const variant of variants) {
+            await this.client.post(`/products/${productId}/variants`, variant);
+        }
+    }
+
+    private async getProduct(productId: string): Promise<MedusaProduct> {
+        const res = await this.client.get(`/products/${productId}`);
+        return res.data?.product;
+    }
+
+    private async safeDeleteProduct(productId: string): Promise<void> {
+        try {
+            await this.deleteProduct(productId);
+        } catch (e) {
+            this.logger.warn(
+                `Failed to rollback product ${productId} after variant add error: ${e?.message}`,
+            );
+        }
+    }
+
     // medusa product 업데이트
     async updateProduct(
         medusaProductId: string,
@@ -370,12 +507,13 @@ export class MedusaClient {
                 `Updated Medusa product: ${product.id} (${product.handle})`,
             );
             return product;
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error(
                 `Failed to update Medusa product: ${medusaProductId}`,
-                error.response?.data || error.stack,
+                error?.response?.data || error?.stack,
             );
-            throw new Error(`Medusa updateProduct failed: ${error.message}`);
+            // Re-throw original error so caller can inspect status/type and decide fallback (create)
+            throw error;
         }
     }
 
@@ -386,9 +524,26 @@ export class MedusaClient {
         medusaProductId?: string,
     ): Promise<{ product: MedusaProduct; action: 'created' | 'updated' }> {
         if (medusaProductId) {
-            // 매핑이 있으면 업데이트
-            const product = await this.updateProduct(medusaProductId, payload);
-            return { product, action: 'updated' };
+            try {
+                // 매핑이 있으면 업데이트
+                const product = await this.updateProduct(medusaProductId, payload);
+                return { product, action: 'updated' };
+            } catch (err: any) {
+                // 이전에 존재하던 product id가 삭제되었을 경우 create로 재시도
+                const errType = err?.response?.data?.type;
+                const status = err?.response?.status;
+                const is404 =
+                    errType === 'not_found' ||
+                    status === 404 ||
+                    /status code 404/i.test(err?.message || '');
+                if (is404) {
+                    this.logger.warn(
+                        `Medusa product ${medusaProductId} not found. Recreating with handle ${payload.handle}`,
+                    );
+                } else {
+                    throw err;
+                }
+            }
         }
 
         // 매핑이 없으면 handle로 조회 (혹시 매핑 테이블과 실제 상태가 다른 경우 복구)
@@ -402,7 +557,7 @@ export class MedusaClient {
         }
 
         // 완전히 새 상품
-        const product = await this.createProduct(payload);
+        const product = await this.createProductChunked(payload);
         return { product, action: 'created' };
     }
 
