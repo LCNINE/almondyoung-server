@@ -39,6 +39,10 @@ async function main() {
     const pimClient = new PimClient(config);
     const medusaClient = new MedusaClient(config);
 
+    // 캐시 초기화
+    console.log('Clearing all caches before prefill...');
+    medusaClient.clearAllCaches();
+
     console.log('📂 Fetching PIM categories...');
     const categories = process.env.PIM_SOURCE_DB_URL
         ? await fetchPimCategoriesFromDb(process.env.PIM_SOURCE_DB_URL)
