@@ -147,18 +147,21 @@ export class PimMedusaMappingRepository {
     }
   }
 
-  // 버전 기반 순서 제어: 이미 반영된 버전보다 낮으면 skip
-  async shouldProcess(pimMasterId: string, newVersion: number): Promise<boolean> {
+  // 동일 버전 중복 처리 방지: 이미 반영된 버전이면 skip
+  async shouldProcessVersionId(
+    pimMasterId: string,
+    newVersionId: string,
+  ): Promise<boolean> {
     const existing = await this.findByPimMasterId(pimMasterId);
 
-    if (!existing || existing.pimVersion === null || existing.pimVersion === undefined) {
+    if (!existing || !existing.pimVersionId) {
       // 매핑이 없거나 버전 정보가 없으면 처리
       return true;
     }
 
-    if (newVersion <= existing.pimVersion) {
+    if (newVersionId === existing.pimVersionId) {
       this.logger.warn(
-        `Skipping stale event: ${pimMasterId} (new: v${newVersion}, existing: v${existing.pimVersion})`,
+        `Skipping duplicate event: ${pimMasterId} (versionId: ${newVersionId})`,
       );
       return false;
     }
@@ -166,4 +169,3 @@ export class PimMedusaMappingRepository {
     return true;
   }
 }
-

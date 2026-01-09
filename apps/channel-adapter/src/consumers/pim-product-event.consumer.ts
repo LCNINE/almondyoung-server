@@ -43,13 +43,12 @@ export class PimProductEventConsumer {
         @EventPayload() payload: ProductMasterActiveVersionChangedPayload,
     ): Promise<void> {
         const startTime = Date.now();
-        const { masterId, version, changeReason } = payload;
+        const { masterId, versionId, changeReason } = payload;
 
         this.logger.log(
             `[PIM] Product Event 수신: ${masterId} → ${changeReason} (correlationId: ${envelope.correlationId})`,
             {
-                version,
-                productId: payload.productId,
+                versionId,
             },
         );
 
@@ -57,7 +56,7 @@ export class PimProductEventConsumer {
             const db = this.dbService.db;
 
             // 1. 멱등성 체크: 동일 이벤트 처리 방지
-            const idempotencyKey = `${masterId}:${version}:ProductMasterActiveVersionChanged`;
+            const idempotencyKey = `${masterId}:${versionId ?? 'none'}:ProductMasterActiveVersionChanged`;
             const [existing] = await db
                 .select()
                 .from(processedEvents)

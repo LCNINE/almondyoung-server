@@ -4,6 +4,9 @@ import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 
 export interface LookupVariantResult {
+  masterId: string;
+  versionId: string;
+  productName: string;
   variantId: string;
   variantCode: string | null;
   variantName: string | null;
@@ -193,4 +196,3 @@ export class ChannelListingClient {
     return chunks;
   }
 }
-

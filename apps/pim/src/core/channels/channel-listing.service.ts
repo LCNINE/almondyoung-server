@@ -8,13 +8,18 @@ import {
 import {
   type PimSchema,
   channelVariantListings,
+  productMasterVariants,
+  productMasterVersions,
   productVariants,
   salesChannels,
 } from '../../schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, desc, sql } from 'drizzle-orm';
 import { ChannelVariantListingEntity, SalesChannelEntity } from '../../schema.types';
 
 export interface LookupVariantResult {
+  masterId: string;
+  versionId: string;
+  productName: string;
   variantId: string;
   variantCode: string | null;
   variantName: string | null;
@@ -57,6 +62,9 @@ export class ChannelListingService {
 
     const result = await client
       .select({
+        masterId: productMasterVariants.masterId,
+        versionId: productMasterVariants.versionId,
+        productName: productMasterVersions.name,
         variantId: channelVariantListings.variantId,
         variantCode: productVariants.variantCode,
         variantName: productVariants.variantName,
@@ -67,12 +75,25 @@ export class ChannelListingService {
         productVariants,
         eq(channelVariantListings.variantId, productVariants.id),
       )
+      .innerJoin(
+        productMasterVariants,
+        eq(productMasterVariants.variantId, productVariants.id),
+      )
+      .innerJoin(
+        productMasterVersions,
+        eq(productMasterVariants.versionId, productMasterVersions.id),
+      )
       .where(
         and(
           eq(channelVariantListings.salesChannelId, salesChannelId),
           eq(channelVariantListings.channelItemId, channelItemId),
           eq(channelVariantListings.isActive, true),
         ),
+      )
+      .orderBy(
+        sql`CASE WHEN ${productMasterVersions.status} = 'active' THEN 0 ELSE 1 END`,
+        desc(productMasterVersions.version),
+        desc(productMasterVersions.createdAt),
       )
       .limit(1);
 
@@ -91,6 +112,9 @@ export class ChannelListingService {
 
     const result = await client
       .select({
+        masterId: productMasterVariants.masterId,
+        versionId: productMasterVariants.versionId,
+        productName: productMasterVersions.name,
         variantId: channelVariantListings.variantId,
         variantCode: productVariants.variantCode,
         variantName: productVariants.variantName,
@@ -102,6 +126,14 @@ export class ChannelListingService {
         eq(channelVariantListings.variantId, productVariants.id),
       )
       .innerJoin(
+        productMasterVariants,
+        eq(productMasterVariants.variantId, productVariants.id),
+      )
+      .innerJoin(
+        productMasterVersions,
+        eq(productMasterVariants.versionId, productMasterVersions.id),
+      )
+      .innerJoin(
         salesChannels,
         eq(channelVariantListings.salesChannelId, salesChannels.id),
       )
@@ -111,6 +143,11 @@ export class ChannelListingService {
           eq(channelVariantListings.channelItemId, channelItemId),
           eq(channelVariantListings.isActive, true),
         ),
+      )
+      .orderBy(
+        sql`CASE WHEN ${productMasterVersions.status} = 'active' THEN 0 ELSE 1 END`,
+        desc(productMasterVersions.version),
+        desc(productMasterVersions.createdAt),
       )
       .limit(1);
 
@@ -331,4 +368,3 @@ export class ChannelListingService {
     return result[0] ?? null;
   }
 }
-

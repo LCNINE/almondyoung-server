@@ -124,8 +124,11 @@ export class OrderEventPublisher {
       {
         orderItemId: channelProductId,
         skuId: listing.variantId,
-        productId: orderEvent.productId,
+        masterId: listing.masterId,
+        versionId: listing.versionId,
         variantId: listing.variantId,
+        productName: listing.productName,
+        channelProductId,
         quantity: orderEvent.quantity ?? 1,
         unitPrice: orderEvent.priceAmount ?? 0,
         totalPrice: orderEvent.priceAmount ?? 0,

@@ -124,8 +124,11 @@ export class OrderEventPublisher {
       {
         orderItemId: channelProductId,
         skuId: listing.variantId,
-        productId: orderEvent.productId,
+        masterId: listing.masterId,
+        versionId: listing.versionId,
         variantId: listing.variantId,
+        productName: listing.productName,
+        channelProductId,
         quantity: orderEvent.quantity ?? 1,
         unitPrice: orderEvent.priceAmount ?? 0,
         totalPrice: orderEvent.priceAmount ?? 0,
@@ -178,13 +181,20 @@ export class OrderEventPublisher {
   async publishOrderCreated(
     channel: 'naver_smartstore' | 'coupang',
     orderEvent: InternalOrderEvent,
-    variantIdMapper?: (channelProductId: string) => Promise<string | null>,
+    variantIdMapper?: (channelProductId: string) => Promise<LookupVariantResult | string | null>,
   ): Promise<void> {
     const salesChannel = this.mapChannelToSalesChannel(channel);
     const orderId = uuidv4();
 
     // 주문 라인 아이템 변환
-    const items: OrderItem[] = await this.transformOrderItems(orderEvent, variantIdMapper);
+    const channelCode = this.channelListingClient.getChannelCodeFromType(channel);
+    const fallbackMapper = async (channelProductId: string) => {
+      return this.channelListingClient.lookupByChannelCode(channelCode, channelProductId);
+    };
+    const items: OrderItem[] = await this.transformOrderItems(
+      orderEvent,
+      variantIdMapper ?? fallbackMapper,
+    );
 
     // 배송 주소 변환
     const shippingAddress: ShippingAddress = {
@@ -302,7 +312,7 @@ export class OrderEventPublisher {
    */
   private async transformOrderItems(
     orderEvent: InternalOrderEvent,
-    variantIdMapper?: (channelProductId: string) => Promise<string | null>,
+    variantIdMapper?: (channelProductId: string) => Promise<LookupVariantResult | string | null>,
   ): Promise<OrderItem[]> {
     const channelProductId =
       orderEvent.externalProductOrderId ?? orderEvent.externalOrderId;
@@ -310,13 +320,24 @@ export class OrderEventPublisher {
     // variantId 매핑 시도
     let skuId = channelProductId;
     let variantId: string | undefined;
+    let masterId: string | undefined;
+    let versionId: string | undefined;
+    let productName: string | undefined;
 
     if (variantIdMapper) {
       try {
-        const mappedVariantId = await variantIdMapper(channelProductId);
-        if (mappedVariantId) {
-          variantId = mappedVariantId;
-          skuId = mappedVariantId;
+        const mapped = await variantIdMapper(channelProductId);
+        if (mapped) {
+          if (typeof mapped === 'string') {
+            variantId = mapped;
+            skuId = mapped;
+          } else {
+            variantId = mapped.variantId;
+            skuId = mapped.variantId;
+            masterId = mapped.masterId;
+            versionId = mapped.versionId;
+            productName = mapped.productName;
+          }
         } else {
           this.logger.warn(
             `⚠️ variantId 매핑 실패: ${channelProductId}, 채널 ID 사용`,
@@ -330,12 +351,19 @@ export class OrderEventPublisher {
       }
     }
 
+    if (!variantId || !masterId || !versionId || !productName) {
+      throw new Error(`Missing required product mapping for ${channelProductId}`);
+    }
+
     return [
       {
         orderItemId: channelProductId,
         skuId,
-        productId: orderEvent.productId,
+        masterId,
+        versionId,
         variantId,
+        productName,
+        channelProductId,
         quantity: orderEvent.quantity ?? 1,
         unitPrice: orderEvent.priceAmount ?? 0,
         totalPrice: orderEvent.priceAmount ?? 0,
@@ -361,4 +389,3 @@ export class OrderEventPublisher {
     return reasonMap[reason] ?? 'CUSTOMER_REQUEST';
   }
 }
-
