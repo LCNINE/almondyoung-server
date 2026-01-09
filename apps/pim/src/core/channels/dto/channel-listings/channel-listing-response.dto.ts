@@ -1,6 +1,15 @@
 import { ApiProperty } from '@nestjs/swagger';
 
 export class LookupChannelListingResponseDto {
+  @ApiProperty({ description: 'PIM Master ID' })
+  masterId: string;
+
+  @ApiProperty({ description: 'PIM Version ID' })
+  versionId: string;
+
+  @ApiProperty({ description: '상품 표시명' })
+  productName: string;
+
   @ApiProperty({ description: 'PIM Variant ID' })
   variantId: string;
 
@@ -96,4 +105,3 @@ export class ChannelListingListResponseDto {
   @ApiProperty({ description: '전체 개수' })
   total: number;
 }
-

@@ -612,13 +612,12 @@ export class SalesOrdersService {
    */
   private convertOrderItems(items: OrderItem[]) {
     return items.map(item => ({
-      variantId: item.variantId ?? item.skuId, // variantId가 없으면 skuId 사용
-      productName: item.productId ?? '',
+      variantId: item.variantId,
+      productName: item.productName,
       quantity: item.quantity,
       unitPrice: item.unitPrice,
       totalPrice: item.totalPrice,
     }));
   }
 }
-
 

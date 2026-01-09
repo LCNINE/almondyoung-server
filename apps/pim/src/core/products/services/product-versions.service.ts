@@ -342,8 +342,7 @@ export class ProductVersionsService {
         aggregateId: newVersion.masterId,
         payload: {
           masterId: newVersion.masterId,
-          productId: targetStatus === 'active' ? newVersion.id : null,
-          version: targetStatus === 'active' ? newVersion.version : null,
+          versionId: targetStatus === 'active' ? newVersion.id : null,
           name: targetStatus === 'active' ? newVersion.name : null,
           previousActiveVersionId: previousActiveVersion?.id || null,
           changeReason,
