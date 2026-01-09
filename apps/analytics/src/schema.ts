@@ -7,6 +7,7 @@ import {
   integer,
   text,
   date,
+  boolean,
   index,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
@@ -123,11 +124,81 @@ export const aggJobRuns = pgTable(
   ],
 );
 
+export const dimProductMasters = pgTable(
+  'dim_product_masters',
+  {
+    masterId: varchar('master_id', { length: 255 }).primaryKey(),
+    name: text('name'),
+    activeVersionId: varchar('active_version_id', { length: 255 }),
+    isActive: boolean('is_active'),
+    lastChangeReason: varchar('last_change_reason', { length: 50 }),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+    deletedAt: timestamp('deleted_at'),
+    lastEventAt: timestamp('last_event_at'),
+  },
+  (table) => [
+    index('idx_dim_product_masters_active').on(table.isActive),
+    index('idx_dim_product_masters_name').on(table.name),
+    index('idx_dim_product_masters_updated_at').on(table.updatedAt),
+  ],
+);
+
+export const dimProductVariants = pgTable(
+  'dim_product_variants',
+  {
+    variantId: varchar('variant_id', { length: 255 }).primaryKey(),
+    masterId: varchar('master_id', { length: 255 }).notNull(),
+    versionId: varchar('version_id', { length: 255 }).notNull(),
+    variantName: text('variant_name'),
+    isDefault: boolean('is_default'),
+    status: varchar('status', { length: 20 }),
+    inventoryManagement: boolean('inventory_management'),
+    preStockSellable: boolean('pre_stock_sellable'),
+    alwaysSellableZeroStock: boolean('always_sellable_zero_stock'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+    deletedAt: timestamp('deleted_at'),
+    lastEventAt: timestamp('last_event_at'),
+  },
+  (table) => [
+    index('idx_dim_product_variants_master').on(table.masterId),
+    index('idx_dim_product_variants_status').on(table.status),
+    index('idx_dim_product_variants_updated_at').on(table.updatedAt),
+  ],
+);
+
+export const dimProductCategories = pgTable(
+  'dim_product_categories',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    masterId: varchar('master_id', { length: 255 }).notNull(),
+    categoryId: varchar('category_id', { length: 255 }).notNull(),
+    isPrimary: boolean('is_primary').notNull().default(false),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uq_dim_product_categories_master_category').on(
+      table.masterId,
+      table.categoryId,
+    ),
+    index('idx_dim_product_categories_master').on(table.masterId),
+    index('idx_dim_product_categories_category').on(table.categoryId),
+    index('idx_dim_product_categories_primary').on(table.isPrimary),
+  ],
+);
+
 export const analyticsSchema = {
   factOrderEvents,
   factOrderItems,
   aggProductOrderDaily,
   aggJobRuns,
+  dimProductMasters,
+  dimProductVariants,
+  dimProductCategories,
 } as const;
 
 export type AnalyticsSchema = typeof analyticsSchema;

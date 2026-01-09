@@ -16,6 +16,7 @@ import {
 import {
   type PimSchema,
   productMasters,
+  productMasterCategories,
   productMasterVersions,
   productMasterOptionGroups,
   productMasterVariants,
@@ -337,6 +338,13 @@ export class ProductVersionsService {
           ? 'rollback'
           : 'published';
 
+      const categoryIds = targetStatus === 'active'
+        ? await this.getVersionCategoryIds(newVersion.masterId, newVersion.id, tx)
+        : [];
+      const primaryCategoryId = categoryIds.length > 0
+        ? await this.getPrimaryCategoryId(newVersion.masterId, newVersion.id, tx)
+        : null;
+
       await this.productPublisher.publishEvent({
         eventType: 'ProductMasterActiveVersionChanged',
         aggregateId: newVersion.masterId,
@@ -345,6 +353,8 @@ export class ProductVersionsService {
           versionId: targetStatus === 'active' ? newVersion.id : null,
           name: targetStatus === 'active' ? newVersion.name : null,
           previousActiveVersionId: previousActiveVersion?.id || null,
+          categoryIds,
+          primaryCategoryId,
           changeReason,
           changedAt: new Date().toISOString(),
         },
@@ -359,6 +369,44 @@ export class ProductVersionsService {
         error.stack,
       );
     }
+  }
+
+  private async getVersionCategoryIds(
+    masterId: string,
+    versionId: string,
+    tx: DbTransaction,
+  ): Promise<string[]> {
+    const rows = await tx
+      .select({ categoryId: productMasterCategories.categoryId })
+      .from(productMasterCategories)
+      .where(
+        and(
+          eq(productMasterCategories.masterId, masterId),
+          eq(productMasterCategories.versionId, versionId),
+        ),
+      );
+
+    return rows.map((row) => row.categoryId);
+  }
+
+  private async getPrimaryCategoryId(
+    masterId: string,
+    versionId: string,
+    tx: DbTransaction,
+  ): Promise<string | null> {
+    const [row] = await tx
+      .select({ categoryId: productMasterCategories.categoryId })
+      .from(productMasterCategories)
+      .where(
+        and(
+          eq(productMasterCategories.masterId, masterId),
+          eq(productMasterCategories.versionId, versionId),
+          eq(productMasterCategories.isPrimary, true),
+        ),
+      )
+      .limit(1);
+
+    return row?.categoryId ?? null;
   }
 
   /**
