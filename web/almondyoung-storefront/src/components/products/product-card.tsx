@@ -1,6 +1,5 @@
 "use client"
 
-import { useAddToCart } from "@hooks/index"
 import Link from "next/link"
 import React from "react"
 import { ProductCard as UIProductCard } from "../../lib/types/ui/product"
@@ -13,6 +12,7 @@ import {
   ProductTitle,
 } from "./atomics"
 import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
+import { useAddToCart } from "@hooks/api/use-add-to-cart"
 
 /**
  * ProductInfo - 공통 상품 정보 렌더링 컴포넌트

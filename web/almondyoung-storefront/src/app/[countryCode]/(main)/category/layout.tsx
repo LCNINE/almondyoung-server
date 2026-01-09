@@ -1,5 +1,4 @@
-import { WithHeaderLayout } from "@components/layout"
-import { Breadcrumb } from "@components/layout/components/breadcrumb"
+// import { Breadcrumb } from "@components/layout/components/breadcrumb"
 
 export default function CategoryLayout({
   children,
@@ -8,7 +7,7 @@ export default function CategoryLayout({
 }) {
   return (
     <>
-      <Breadcrumb className="bg-stone-100" />
+      {/* <Breadcrumb className="bg-stone-100" /> */}
       <div className="bg-white">{children}</div>
     </>
   )

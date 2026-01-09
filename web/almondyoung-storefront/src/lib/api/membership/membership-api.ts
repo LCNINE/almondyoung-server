@@ -1,51 +1,33 @@
-/**
- * 멤버십 API 클라이언트
- * 라우트 핸들러를 통해 백엔드 API를 호출합니다.
- * 클라이언트 측에서는 credentials: "include"로 쿠키가 자동 전달됩니다.
- */
+"use server"
+
+import { CurrentSubscriptionResDto } from "@lib/types/dto/membership"
+import { api } from "../api"
 
 const API_BASE = "/api/membership"
 
 /**
  * 현재 구독 조회
  */
-export async function getCurrentSubscription() {
-  const res = await fetch(`${API_BASE}/subscriptions/current`, {
-    method: "GET",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    credentials: "include", // 쿠키 자동 전달
-    cache: "no-store",
-  })
-
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ message: "Unknown error" }))
-    throw new Error(error.message || `Failed to fetch current subscription: ${res.statusText}`)
-  }
-
-  return res.json()
+export async function getCurrentSubscription(): Promise<CurrentSubscriptionResDto> {
+  return await api<CurrentSubscriptionResDto>(
+    "membership",
+    `subscriptions/current`,
+    {
+      withAuth: true,
+    }
+  )
 }
 
 /**
  * 멤버십 플랜 목록 조회
  */
 export async function getPlans() {
-  const res = await fetch(`${API_BASE}/plans`, {
+  const result = await api("membership", `plans`, {
     method: "GET",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    credentials: "include",
+    withAuth: true,
     cache: "no-store",
   })
-
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ message: "Unknown error" }))
-    throw new Error(error.message || `Failed to fetch plans: ${res.statusText}`)
-  }
-
-  return res.json()
+  return result
 }
 
 /**
@@ -64,7 +46,9 @@ export async function createSubscription(planId: string) {
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({ message: "Unknown error" }))
-    throw new Error(error.message || `Failed to create subscription: ${res.statusText}`)
+    throw new Error(
+      error.message || `Failed to create subscription: ${res.statusText}`
+    )
   }
 
   return res.json()
@@ -93,9 +77,10 @@ export async function cancelSubscription(
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({ message: "Unknown error" }))
-    throw new Error(error.message || `Failed to cancel subscription: ${res.statusText}`)
+    throw new Error(
+      error.message || `Failed to cancel subscription: ${res.statusText}`
+    )
   }
 
   return res.json()
 }
-

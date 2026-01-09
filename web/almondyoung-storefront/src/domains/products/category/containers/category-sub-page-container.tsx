@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation"
 import { CategorySubPageClient } from "../components/category-sub-page-client"
-import { getCategoryBySlug } from "@lib/api/pim/categories.server"
+import { getCategoryBySlug } from "@lib/api/pim/categories"
 import { getProductsByCategoryService } from "@lib/services/pim/products/getProductListService"
 
 interface CategorySubPageContainerProps {
@@ -21,7 +21,10 @@ export async function CategorySubPageContainer({
 
   // 에러 처리
   if ("error" in result) {
-    console.error("❌ [CategorySubPageContainer] 카테고리 조회 실패:", result.error)
+    console.error(
+      "❌ [CategorySubPageContainer] 카테고리 조회 실패:",
+      result.error
+    )
     return notFound()
   }
 
@@ -46,13 +49,10 @@ export async function CategorySubPageContainer({
   let initialTotal = 0
 
   try {
-    const productsResult = await getProductsByCategoryService(
-      categoryData.id,
-      {
-        page: 1,
-        limit: 20,
-      }
-    )
+    const productsResult = await getProductsByCategoryService(categoryData.id, {
+      page: 1,
+      limit: 20,
+    })
     initialProducts = productsResult.items
     initialTotal = productsResult.total
     console.log(`✅ [CategorySubPageContainer] 상품 목록 로드 완료:`, {
@@ -77,4 +77,3 @@ export async function CategorySubPageContainer({
     />
   )
 }
-

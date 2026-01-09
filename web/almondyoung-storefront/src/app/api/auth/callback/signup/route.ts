@@ -1,6 +1,6 @@
 import { medusaSignin } from "@lib/api/medusa/signin"
 import { medusaSignup } from "@lib/api/medusa/signup"
-import { appConfig } from "@lib/app-config"
+import { appConfig } from "@/lib/config/medusa"
 import { setTokenCookies } from "@lib/data/cookies"
 import { NextRequest, NextResponse } from "next/server"
 

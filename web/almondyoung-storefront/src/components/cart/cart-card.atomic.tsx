@@ -2,7 +2,7 @@
 
 import React, { forwardRef } from "react"
 import { ChevronRight, X } from "lucide-react"
-import MemberShipTagIcon from "../../icons/membership-tag-icon"
+import { MembershipTagIcon as MemberShipTagIcon } from "../../icons/membership-tag-icon"
 
 // --- Props 타입 정의 ---
 interface CartCardThumbnailProps {
@@ -92,7 +92,7 @@ export const CartCardOption = ({ children }: CartCardOptionProps) => {
 
 export const CartCardBrand = ({ children }: CartCardBrandProps) => {
   return (
-    <div className="mt-1 text-sm font-medium text-zinc-800 flex items-center gap-1">
+    <div className="mt-1 flex items-center gap-1 text-sm font-medium text-zinc-800">
       {children} <ChevronRight className="h-4 w-4" />
     </div>
   )
@@ -178,18 +178,14 @@ export const CartCardPCThumbnail = ({
 
 export const CartCardPCTitle = ({ children }: CartCardPCTitleProps) => {
   return (
-    <h3 className="text-base font-normal text-gray-900 line-clamp-1">
+    <h3 className="line-clamp-1 text-base font-normal text-gray-900">
       {children}
     </h3>
   )
 }
 
 export const CartCardPCOption = ({ children }: CartCardPCOptionProps) => {
-  return (
-    <p className="mt-2.5 text-sm text-gray-500">
-      옵션 : {children}
-    </p>
-  )
+  return <p className="mt-2.5 text-sm text-gray-500">옵션 : {children}</p>
 }
 
 export const CartCardPCBadge = ({ children }: CartCardPCBadgeProps) => {
@@ -234,20 +230,24 @@ export const CartCardPCPrice = ({
 }
 
 export const CartCardPCContent = ({ children }: CartCardPCContentProps) => (
-  <div className="flex flex-col gap-4 min-w-[200px]">{children}</div>
+  <div className="flex min-w-[200px] flex-col gap-4">{children}</div>
 )
 
 export const CartCardPCInfo = ({ children }: { children: React.ReactNode }) => (
   <div className="flex-1">{children}</div>
 )
 
-export const CartCardPCImageSection = ({ children }: { children: React.ReactNode }) => (
-  <div className="mt-2.5 flex gap-3.5 pl-8">{children}</div>
-)
+export const CartCardPCImageSection = ({
+  children,
+}: {
+  children: React.ReactNode
+}) => <div className="mt-2.5 flex gap-3.5 pl-8">{children}</div>
 
-export const CartCardPCHeader = ({ children }: { children: React.ReactNode }) => (
-  <div className="flex items-start gap-5">{children}</div>
-)
+export const CartCardPCHeader = ({
+  children,
+}: {
+  children: React.ReactNode
+}) => <div className="flex items-start gap-5">{children}</div>
 
 /** PC 버전 전체 카드 레이아웃을 담당하는 Root 컴포넌트 */
 export const CartCardPCRoot = forwardRef<HTMLDivElement, CartCardPCRootProps>(
@@ -255,10 +255,7 @@ export const CartCardPCRoot = forwardRef<HTMLDivElement, CartCardPCRootProps>(
     return (
       <div
         ref={ref}
-        className={[
-          "bg-white border-b border-gray-200 px-4 py-5",
-          className,
-        ]
+        className={["border-b border-gray-200 bg-white px-4 py-5", className]
           .filter(Boolean)
           .join(" ")}
         {...rest}

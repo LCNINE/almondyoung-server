@@ -4,11 +4,7 @@ import * as React from "react"
 import { Drawer as DrawerPrimitive } from "vaul"
 import { cn } from "@lib/utils"
 // shadcn/ui 컴포넌트를 임포트합니다. (경로는 실제 위치에 맞게 수정)
-import {
-  Drawer,
-  DrawerPortal,
-  DrawerOverlay,
-} from "@components/common/ui/drawer"
+import { Drawer, DrawerPortal, DrawerOverlay } from "@/components/ui/drawer"
 
 type DrawerDirection = "top" | "bottom" | "left" | "right"
 
@@ -24,8 +20,9 @@ const directionClasses: Record<DrawerDirection, string> = {
     "fixed inset-y-0 right-0 z-50 flex h-full w-3/4 flex-col border-l bg-background sm:max-w-sm",
 }
 
-interface OverlayDrawerContentProps
-  extends React.ComponentPropsWithoutRef<typeof DrawerPrimitive.Content> {
+interface OverlayDrawerContentProps extends React.ComponentPropsWithoutRef<
+  typeof DrawerPrimitive.Content
+> {
   direction?: DrawerDirection
 }
 

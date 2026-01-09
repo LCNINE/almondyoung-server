@@ -1,9 +1,9 @@
 "use client"
 
-import { Button } from "@components/common/ui/button"
+import { Button } from "@/components/ui/button"
 import { ArrowLeft, Home } from "lucide-react"
 import Image from "next/image"
-import { usePathname, useRouter } from "next/navigation"
+import { useRouter } from "next/navigation"
 import { useState } from "react"
 import NotfoundImage from "../assets/images/404-notfound.png"
 

@@ -223,21 +223,41 @@ export interface CategoryDisplaySettings {
   productDisplayOrder?: "asc" | "desc"
 }
 
+export interface CategorySeoConfig {
+  metaAuthor: string
+  browserTitle: string
+  metaKeywords: string[]
+  metaDescription: string
+  showInSearchEngines: boolean
+}
+
+export interface CategoryTemplateConfig {
+  templateType: "default" | string
+}
+
 // 카테고리 트리 노드
 export interface CategoryTreeNodeDto {
   id: string
   name: string
   description: string | null
   slug: string
+  parentId: string | null
   level: number
   path: string
   sortOrder: number
   isActive: boolean
+  visibility: boolean
   productCount?: number
   imageUrl?: string | null
   displaySettings?: CategoryDisplaySettings | null
-  display_settings?: string | null // 하위 호환성
-  children?: CategoryTreeNodeDto[]
+  display_settings?: string | null
+  seoConfig?: CategorySeoConfig | null
+  templateConfig?: CategoryTemplateConfig | null
+  createdAt: string
+  updatedAt: string
+  createdBy: string | null
+  updatedBy: string | null
+  children: CategoryTreeNodeDto[]
 }
 
 // 카테고리 트리 응답

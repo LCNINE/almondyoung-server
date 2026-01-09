@@ -1,9 +1,7 @@
 "use client"
 
-import { Button } from "@components/common/ui/button"
-import { Input } from "@components/common/ui/input"
-import { useState } from "react"
-import { CustomButton } from "../custom-buttons"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 
 interface NumberStepperProps {
   yearsOperating: number

@@ -1,36 +1,35 @@
-"use client";
+"use client"
 
-import * as React from "react";
-import Image from "next/image";
-import { cn } from "@lib/utils";
-import { Button } from "@components/common/ui/button";
-import { ChevronLeft, ChevronRight, Pause, Play } from "lucide-react";
-
+import * as React from "react"
+import Image from "next/image"
+import { cn } from "@lib/utils"
+import { Button } from "@/components/ui/button"
+import { ChevronLeft, ChevronRight, Pause, Play } from "lucide-react"
 
 export type Slide = {
-  id: string | number;
+  id: string | number
   image: {
-    src: string;
-    alt: string;
-    priority?: boolean;
-  };
-  title?: React.ReactNode;
-  subtitle?: React.ReactNode;
-  href?: string;
-  ctaLabel?: string;
+    src: string
+    alt: string
+    priority?: boolean
+  }
+  title?: React.ReactNode
+  subtitle?: React.ReactNode
+  href?: string
+  ctaLabel?: string
   // 배경/오버레이 커스터마이즈
-  className?: string; // 섹션 배경용
-  overlayClassName?: string; // 텍스트 영역 박스용
-};
+  className?: string // 섹션 배경용
+  overlayClassName?: string // 텍스트 영역 박스용
+}
 
 type BannerCarouselProps = {
-  slides: Slide[];
-  autoPlay?: boolean;
-  autoPlayInterval?: number; // ms
-  aspectRatio?: `${number}/${number}`; // ex) "21/9", "16/9"
-  height?: string | number; // 직접 높이 지정 (ex: "400px", 400)
-  className?: string;
-};
+  slides: Slide[]
+  autoPlay?: boolean
+  autoPlayInterval?: number // ms
+  aspectRatio?: `${number}/${number}` // ex) "21/9", "16/9"
+  height?: string | number // 직접 높이 지정 (ex: "400px", 400)
+  className?: string
+}
 
 export function BannerCarousel({
   slides,
@@ -40,60 +39,60 @@ export function BannerCarousel({
   height,
   className,
 }: BannerCarouselProps) {
-  const [index, setIndex] = React.useState(0);
-  const [isPlaying, setIsPlaying] = React.useState(autoPlay);
-  const containerRef = React.useRef<HTMLDivElement | null>(null);
-  const touchStartX = React.useRef<number | null>(null);
-  const touchDeltaX = React.useRef(0);
+  const [index, setIndex] = React.useState(0)
+  const [isPlaying, setIsPlaying] = React.useState(autoPlay)
+  const containerRef = React.useRef<HTMLDivElement | null>(null)
+  const touchStartX = React.useRef<number | null>(null)
+  const touchDeltaX = React.useRef(0)
 
-  const count = slides.length;
+  const count = slides.length
 
   // 이동 함수
   const goTo = React.useCallback(
     (next: number) => {
-      const safe = ((next % count) + count) % count;
-      setIndex(safe);
+      const safe = ((next % count) + count) % count
+      setIndex(safe)
     },
     [count]
-  );
-  const next = React.useCallback(() => goTo(index + 1), [goTo, index]);
-  const prev = React.useCallback(() => goTo(index - 1), [goTo, index]);
+  )
+  const next = React.useCallback(() => goTo(index + 1), [goTo, index])
+  const prev = React.useCallback(() => goTo(index - 1), [goTo, index])
 
   // 자동재생 (사용자 선호: 감소된 모션 고려)
   React.useEffect(() => {
-    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
-    if (!isPlaying || media.matches) return;
-    const id = window.setInterval(next, autoPlayInterval);
-    return () => window.clearInterval(id);
-  }, [isPlaying, autoPlayInterval, next]);
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)")
+    if (!isPlaying || media.matches) return
+    const id = window.setInterval(next, autoPlayInterval)
+    return () => window.clearInterval(id)
+  }, [isPlaying, autoPlayInterval, next])
 
   // hover 시 일시정지
-  const onMouseEnter = () => setIsPlaying(false);
-  const onMouseLeave = () => setIsPlaying(true);
+  const onMouseEnter = () => setIsPlaying(false)
+  const onMouseLeave = () => setIsPlaying(true)
 
   // 키보드 내비게이션
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "ArrowRight") next();
-    if (e.key === "ArrowLeft") prev();
-  };
+    if (e.key === "ArrowRight") next()
+    if (e.key === "ArrowLeft") prev()
+  }
 
   // 터치 스와이프
   const onTouchStart = (e: React.TouchEvent) => {
-    touchStartX.current = e.touches[0].clientX;
-    touchDeltaX.current = 0;
-  };
+    touchStartX.current = e.touches[0].clientX
+    touchDeltaX.current = 0
+  }
   const onTouchMove = (e: React.TouchEvent) => {
-    if (touchStartX.current == null) return;
-    touchDeltaX.current = e.touches[0].clientX - touchStartX.current;
-  };
+    if (touchStartX.current == null) return
+    touchDeltaX.current = e.touches[0].clientX - touchStartX.current
+  }
   const onTouchEnd = () => {
-    const delta = touchDeltaX.current;
-    touchStartX.current = null;
-    touchDeltaX.current = 0;
+    const delta = touchDeltaX.current
+    touchStartX.current = null
+    touchDeltaX.current = 0
     if (Math.abs(delta) > 50) {
-      delta < 0 ? next() : prev();
+      delta < 0 ? next() : prev()
     }
-  };
+  }
 
   return (
     <section
@@ -118,7 +117,7 @@ export function BannerCarousel({
               className={cn(
                 "relative min-w-full",
                 // 원하는 비율 유지
-                "grid",
+                "grid"
               )}
             >
               <div
@@ -129,7 +128,12 @@ export function BannerCarousel({
                   s.className
                 )}
                 style={{
-                  ...(height ? { height: typeof height === 'number' ? `${height}px` : height } : { aspectRatio }),
+                  ...(height
+                    ? {
+                        height:
+                          typeof height === "number" ? `${height}px` : height,
+                      }
+                    : { aspectRatio }),
                 }}
               >
                 <Image
@@ -146,13 +150,13 @@ export function BannerCarousel({
                   className={cn(
                     "absolute inset-0",
                     "flex items-center",
-                    "bg-gradient-to-r from-black/40 via-black/20 to-transparent",
+                    "bg-gradient-to-r from-black/40 via-black/20 to-transparent"
                   )}
                 >
                   <div
                     className={cn(
                       "mx-auto px-6",
-                      "text-white max-w-[1200px] text-center"
+                      "max-w-[1200px] text-center text-white"
                     )}
                   >
                     <div
@@ -163,12 +167,12 @@ export function BannerCarousel({
                       )}
                     >
                       {s.title ? (
-                        <span className="text-[24px] md:text-[30px] font-extrabold leading-tight">
+                        <span className="text-[24px] leading-tight font-extrabold md:text-[30px]">
                           {s.title}
                         </span>
                       ) : null}
                       {s.subtitle ? (
-                        <p className="text-base md:text-lg/relaxed opacity-90">
+                        <p className="text-base opacity-90 md:text-lg/relaxed">
                           {s.subtitle}
                         </p>
                       ) : null}
@@ -232,5 +236,5 @@ export function BannerCarousel({
         </div>
       </div> */}
     </section>
-  );
+  )
 }

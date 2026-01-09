@@ -1,6 +1,6 @@
 "use client"
 
-import { MembershipTagIcon } from "icons/membership-tag-icon"
+import { MembershipTagIcon } from "@/icons/membership-tag-icon"
 
 export const MembershipTag = ({
   isMembership,

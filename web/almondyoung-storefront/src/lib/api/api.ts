@@ -129,7 +129,8 @@ export async function api<T>(
   }
 
   const errorData = await response.json().catch(() => ({})) // response.json()이 실패하면 빈 객체 반환, 크게 상관 없는 에러임
-  console.log("response", response)
+  // console.log("errorData", errorData)
+
   if (response.status === 401) {
     throw new ApiAuthError(
       errorData.message ?? "인증이 필요합니다",

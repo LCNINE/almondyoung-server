@@ -1,21 +1,20 @@
 "use client"
 
-import React, { useState } from "react"
+import { useState } from "react"
 
 import {
-  Home,
-  Search,
   Clock,
-  User,
-  ShoppingBag,
   Heart,
-  RotateCcw,
-  Settings,
-  ShoppingCart,
+  Home,
   Menu,
+  RotateCcw,
+  Search,
+  Settings,
+  ShoppingBag,
+  ShoppingCart,
+  User,
 } from "lucide-react"
-import { IconTextLink, IconTextText, IconTextIcon } from "./icon-text.atomic"
-import { CategorySheet } from "@components/category/categorySheet"
+import { IconTextIcon, IconTextLink, IconTextText } from "./icon-text.atomic"
 // ==================================================================
 // 파트 1: 기본 구성 요소 (Building Blocks)
 // ==================================================================
@@ -77,12 +76,12 @@ export const CategoryNavButton = ({
         </IconTextIcon>
         <IconTextText>카테고리</IconTextText>
       </button>
-
+      {/* 
       <CategorySheet
         isOpen={isCategorySheetOpen}
         onClose={() => setIsCategorySheetOpen(false)}
         countryCode="kr"
-      />
+      /> */}
     </>
   )
 }

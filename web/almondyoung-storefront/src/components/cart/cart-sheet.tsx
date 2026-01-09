@@ -2,7 +2,7 @@
 
 import React, { useState } from "react"
 import { X, ShoppingCart, Plus, Minus, Trash2 } from "lucide-react"
-import { Button } from "@components/common/ui/button"
+import { Button } from "@/components/ui/button"
 
 interface CartItem {
   id: string
@@ -28,15 +28,15 @@ const CartSheet: React.FC<CartSheetProps> = ({
   onClose,
   cartItems = [],
   onUpdateQuantity,
-  onRemoveItem
+  onRemoveItem,
 }) => {
   const [items, setItems] = useState<CartItem[]>(cartItems)
 
   const handleQuantityChange = (id: string, newQuantity: number) => {
     if (newQuantity < 1) return
-    
-    setItems(prev => 
-      prev.map(item => 
+
+    setItems((prev) =>
+      prev.map((item) =>
         item.id === id ? { ...item, quantity: newQuantity } : item
       )
     )
@@ -44,23 +44,28 @@ const CartSheet: React.FC<CartSheetProps> = ({
   }
 
   const handleRemoveItem = (id: string) => {
-    setItems(prev => prev.filter(item => item.id !== id))
+    setItems((prev) => prev.filter((item) => item.id !== id))
     onRemoveItem?.(id)
   }
 
-  const totalPrice = items.reduce((sum, item) => sum + (item.price * item.quantity), 0)
+  const totalPrice = items.reduce(
+    (sum, item) => sum + item.price * item.quantity,
+    0
+  )
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0)
 
   return (
-    <div 
+    <div
       className={`fixed inset-0 z-50 transition-opacity duration-300 ${
-        isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-      }`} 
+        isOpen
+          ? "pointer-events-auto opacity-100"
+          : "pointer-events-none opacity-0"
+      }`}
       onClick={onClose}
     >
-      <div 
-        className={`absolute right-0 top-0 h-full w-full max-w-sm bg-white shadow-xl transform transition-all duration-500 ease-out ${
-          isOpen ? 'translate-x-0' : 'translate-x-full'
+      <div
+        className={`absolute top-0 right-0 h-full w-full max-w-sm transform bg-white shadow-xl transition-all duration-500 ease-out ${
+          isOpen ? "translate-x-0" : "translate-x-full"
         }`}
         onClick={(e) => e.stopPropagation()}
       >
@@ -73,10 +78,7 @@ const CartSheet: React.FC<CartSheetProps> = ({
               {totalItems}
             </span>
           </div>
-          <button 
-            onClick={onClose}
-            className="p-1 hover:bg-muted rounded-full"
-          >
+          <button onClick={onClose} className="hover:bg-muted rounded-full p-1">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -85,47 +87,56 @@ const CartSheet: React.FC<CartSheetProps> = ({
         <div className="flex-1 overflow-y-auto p-4">
           {items.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-gray-500">
-              <ShoppingCart className="h-12 w-12 mb-4 text-gray-300" />
+              <ShoppingCart className="mb-4 h-12 w-12 text-gray-300" />
               <p className="text-sm">장바구니가 비어있습니다</p>
             </div>
           ) : (
             <div className="space-y-4">
               {items.map((item) => (
-                <div key={item.id} className="flex gap-3 rounded-lg border border-gray-200 p-3">
+                <div
+                  key={item.id}
+                  className="flex gap-3 rounded-lg border border-gray-200 p-3"
+                >
                   {/* Product Image */}
-                  <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-md bg-muted">
-                    <img 
-                      src={item.image} 
+                  <div className="bg-muted h-16 w-16 flex-shrink-0 overflow-hidden rounded-md">
+                    <img
+                      src={item.image}
                       alt={item.name}
                       className="h-full w-full object-cover"
                     />
                   </div>
-                  
+
                   {/* Product Info */}
-                  <div className="flex-1 min-w-0">
-                    <h3 className="text-sm font-medium text-gray-900 line-clamp-2">
+                  <div className="min-w-0 flex-1">
+                    <h3 className="line-clamp-2 text-sm font-medium text-gray-900">
                       {item.name}
                     </h3>
                     {item.options && (
-                      <p className="text-xs text-gray-500 mt-1">{item.options}</p>
+                      <p className="mt-1 text-xs text-gray-500">
+                        {item.options}
+                      </p>
                     )}
-                    <p className="text-sm font-bold text-gray-900 mt-1">
+                    <p className="mt-1 text-sm font-bold text-gray-900">
                       {item.price.toLocaleString()}원
                     </p>
-                    
+
                     {/* Quantity Controls */}
                     <div className="mt-2 flex items-center gap-2">
                       <button
-                        onClick={() => handleQuantityChange(item.id, item.quantity - 1)}
+                        onClick={() =>
+                          handleQuantityChange(item.id, item.quantity - 1)
+                        }
                         className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-300 hover:bg-gray-50"
                       >
                         <Minus className="h-3 w-3" />
                       </button>
-                      <span className="text-sm font-medium w-6 text-center">
+                      <span className="w-6 text-center text-sm font-medium">
                         {item.quantity}
                       </span>
                       <button
-                        onClick={() => handleQuantityChange(item.id, item.quantity + 1)}
+                        onClick={() =>
+                          handleQuantityChange(item.id, item.quantity + 1)
+                        }
                         className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-300 hover:bg-gray-50"
                       >
                         <Plus className="h-3 w-3" />
@@ -146,14 +157,16 @@ const CartSheet: React.FC<CartSheetProps> = ({
 
         {/* Footer */}
         {items.length > 0 && (
-          <div className="border-t border-gray-20 p-4">
+          <div className="border-gray-20 border-t p-4">
             <div className="mb-4 flex items-center justify-between">
-              <span className="text-sm text-gray-600">총 {totalItems}개 상품</span>
+              <span className="text-sm text-gray-600">
+                총 {totalItems}개 상품
+              </span>
               <span className="text-lg font-bold text-gray-900">
                 {totalPrice.toLocaleString()}원
               </span>
             </div>
-            <Button className="w-full bg-orange-500 hover:bg-orange-600 text-white">
+            <Button className="w-full bg-orange-500 text-white hover:bg-orange-600">
               장바구니로 이동
             </Button>
           </div>

@@ -1,3 +1,4 @@
+import { getSEOTags } from "@/lib/seo"
 import { WithHeaderLayout } from "@components/layout"
 import MypageLayout from "@components/layout/mypage-layout"
 import { getDigitalAssets } from "@lib/api/medusa/digital-asset"
@@ -5,12 +6,15 @@ import { fetchMe } from "@lib/api/users/me"
 import { UserDetail } from "@lib/types/ui/user"
 import DownloadPageTemplate from "domains/download/download-page-template"
 import { AlertCircle } from "lucide-react"
-import { Metadata } from "next"
 
-export const metadata: Metadata = {
+export const metadata = getSEOTags({
   title: "마이페이지 | 다운로드",
   description: "다운로드 내역을 확인하세요",
-}
+  openGraph: {
+    title: "마이페이지 | 다운로드",
+    description: "다운로드 내역을 확인하세요",
+  },
+})
 
 export default async function DownloadPage({
   searchParams,

@@ -48,6 +48,20 @@ export interface RecentViewProductThumbnail {
 }
 
 /**
+ * ProductCardProps - 상품 카드 타입
+ */
+export interface ProductCardProps {
+  rank?: number
+  title: string
+  price: number
+  originalPrice: number
+  discount: number
+  rating: number
+  reviewCount: number
+  imageSrc: string
+}
+
+/**
  * ProductCard - 상품 목록/카드 타입
  *
  * 책임 분리 원칙:

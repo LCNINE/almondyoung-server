@@ -1,6 +1,6 @@
 "use server"
 
-import { appConfig } from "@lib/app-config"
+import { appConfig } from "@/lib/config/medusa"
 import { getCacheTag, setTokenCookies } from "@lib/data/cookies"
 import { revalidatePath, revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"

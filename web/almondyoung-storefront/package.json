@@ -93,7 +93,7 @@
     "@medusajs/types": "latest",
     "@svgr/webpack": "^8.1.0",
     "@tailwindcss/postcss": "^4.1.13",
-    "@types/lodash": "^4.14.195",
+    "@types/lodash": "^4.17.21",
     "@types/node": "17.0.21",
     "@types/pg": "^8.11.0",
     "@types/react": "^18.3.12",

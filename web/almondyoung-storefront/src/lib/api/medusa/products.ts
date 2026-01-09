@@ -1,75 +1,62 @@
 "use server"
 
-import { api } from "@lib/api/api"
-import { ApiNetworkError, HttpApiError } from "@lib/api/api-error"
-import type { ApiResponse } from "@lib/api/api"
-import type {
-  ProductListResponseDto,
-  ProductDetailDto,
-} from "@lib/types/dto/pim"
+import { sdk } from "@/lib/config/medusa"
+import type { ProductsResponseDto } from "@lib/types/dto/medusa"
+
+import type { StoreProduct } from "@medusajs/types"
 
 // 상품 목록 조회
-export const getProductList = async (params?: {
-  page?: number
-  limit?: number
-  mode?: "active" | "active-or-inactive"
+export const getProductList = async (
+  page: number = 1,
+  limit: number = 10,
   categoryId?: string
-  brand?: string
-  name?: string
-}): Promise<ApiResponse<ProductListResponseDto>> => {
+): Promise<ProductsResponseDto> => {
+  const offset = (page - 1) * limit
+
   try {
-    const queryParams: Record<string, string> = {}
-    if (params?.page) queryParams.page = params.page.toString()
-    if (params?.limit) queryParams.limit = params.limit.toString()
-    if (params?.mode) queryParams.mode = params.mode
-    if (params?.categoryId) queryParams.categoryId = params.categoryId
-    if (params?.brand) queryParams.brand = params.brand
-    if (params?.name) queryParams.name = params.name
-
-    const result = await api<ProductListResponseDto>("pim", "/masters", {
-      method: "GET",
-      params: queryParams,
-      withAuth: false, // PIM API는 인증 불필요 (쇼핑몰 클라이언트)
-    })
-
-    return { data: result }
-  } catch (error) {
-    if (error instanceof HttpApiError) {
-      return { error: { message: error.message, status: error.status } }
-    }
-    if (error instanceof ApiNetworkError) {
-      return {
-        error: { message: "네트워크 오류가 발생했습니다.", status: 500 },
+    const {
+      products,
+      count,
+      limit: resLimit,
+    } = await sdk.store.product.list(
+      {
+        limit,
+        offset,
+        category_id: categoryId,
+        fields: "*variants,+categories,+metadata,+tags",
+      },
+      {
+        next: {
+          tags: ["products", categoryId || ""],
+        },
       }
-    }
+    )
+
+    const totalPages = Math.ceil(count / resLimit)
+
     return {
-      error: { message: "알 수 없는 오류가 발생했습니다.", status: 500 },
+      products,
+      count,
+      totalPages,
+      currentPage: page,
     }
+  } catch (error) {
+    console.error("상품 목록 로드 실패:", error)
+    throw error
   }
 }
-
 // 상품 상세 조회
 export const getProductDetail = async (
-  masterId: string
-): Promise<ApiResponse<ProductDetailDto>> => {
+  productId: string
+): Promise<StoreProduct> => {
   try {
-    const result = await api<ProductDetailDto>("pim", `/masters/${masterId}`, {
-      method: "GET",
-      withAuth: false,
+    const { product } = await sdk.store.product.retrieve(productId, {
+      fields: "*variants.calculated_price",
     })
 
-    return { data: result }
+    return product
   } catch (error) {
-    if (error instanceof HttpApiError) {
-      return { error: { message: error.message, status: error.status } }
-    }
-    if (error instanceof ApiNetworkError) {
-      return {
-        error: { message: "네트워크 오류가 발생했습니다.", status: 500 },
-      }
-    }
-    return {
-      error: { message: "알 수 없는 오류가 발생했습니다.", status: 500 },
-    }
+    console.error("상품 상세 조회 실패:", error)
+    throw error
   }
 }

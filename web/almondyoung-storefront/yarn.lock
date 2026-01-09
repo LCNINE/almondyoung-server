@@ -4191,7 +4191,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/lodash@npm:^4.14.195":
+"@types/lodash@npm:^4.17.21":
   version: 4.17.21
   resolution: "@types/lodash@npm:4.17.21"
   checksum: e09e3eaf29b18b6c8e130fcbafd8e3c4ecc2110f35255079245e7d1bd310a5a8f93e4e70266533dce672f253bba899c721bc6870097e0a8c5448e0b628136d39
@@ -8739,7 +8739,7 @@ __metadata:
     "@svgr/webpack": ^8.1.0
     "@tailwindcss/postcss": ^4.1.13
     "@tosspayments/tosspayments-sdk": ^2.4.1
-    "@types/lodash": ^4.14.195
+    "@types/lodash": ^4.17.21
     "@types/node": 17.0.21
     "@types/pg": ^8.11.0
     "@types/react": ^18.3.12

@@ -3,6 +3,8 @@
  * 서버 컴포넌트에서 사용할 때는 쿠키를 수동으로 전달해야 합니다.
  */
 
+// todo: 다 삭제할 예정 레거시임
+
 const API_BASE = "/api/membership"
 
 /**
@@ -10,12 +12,15 @@ const API_BASE = "/api/membership"
  * @param cookies 쿠키 문자열 (request.cookies.toString())
  */
 export async function getCurrentSubscriptionServer(cookies?: string) {
-  const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
-  
+  const appUrl =
+    process.env.APP_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    "http://localhost:3000"
+
   const headers: HeadersInit = {
     "Content-Type": "application/json",
   }
-  
+
   if (cookies) {
     headers["Cookie"] = cookies
   }
@@ -32,7 +37,9 @@ export async function getCurrentSubscriptionServer(cookies?: string) {
       return null
     }
     const error = await res.json().catch(() => ({ message: "Unknown error" }))
-    throw new Error(error.message || `Failed to fetch current subscription: ${res.statusText}`)
+    throw new Error(
+      error.message || `Failed to fetch current subscription: ${res.statusText}`
+    )
   }
 
   return res.json()
@@ -43,12 +50,15 @@ export async function getCurrentSubscriptionServer(cookies?: string) {
  * @param cookies 쿠키 문자열 (request.cookies.toString())
  */
 export async function getPlansServer(cookies?: string) {
-  const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
-  
+  const appUrl =
+    process.env.APP_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    "http://localhost:3000"
+
   const headers: HeadersInit = {
     "Content-Type": "application/json",
   }
-  
+
   if (cookies) {
     headers["Cookie"] = cookies
   }
@@ -66,4 +76,3 @@ export async function getPlansServer(cookies?: string) {
 
   return res.json()
 }
-

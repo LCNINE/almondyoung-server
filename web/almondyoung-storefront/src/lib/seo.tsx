@@ -1,5 +1,5 @@
-import { OpenGraph, SEOTags } from "../types/seo"
-import { appConfig } from "./app-config"
+import { siteConfig } from "./config/site"
+import { OpenGraph, SEOTags } from "./types/common/seo"
 
 // SEO 기본값 상수
 const DEFAULT_SEO = {
@@ -11,18 +11,18 @@ const DEFAULT_SEO = {
 
 // OpenGraph 메타데이터 생성 함수
 const createOpenGraphMetadata = (openGraph: OpenGraph) => ({
-  title: openGraph.title || appConfig.appName,
-  description: openGraph.description || appConfig.appDescription,
-  url: openGraph.url || `https://${appConfig.domainName}/`,
-  siteName: openGraph.title || appConfig.appName,
+  title: openGraph.title || siteConfig.appName,
+  description: openGraph.description || siteConfig.appDescription,
+  url: openGraph.url || `https://${siteConfig.domainName}/`,
+  siteName: openGraph.title || siteConfig.appName,
   locale: DEFAULT_SEO.locale,
   type: DEFAULT_SEO.type,
 })
 
 // Twitter 메타데이터 생성 함수
 const createTwitterMetadata = (openGraph: OpenGraph) => ({
-  title: openGraph.title || appConfig.appName,
-  description: openGraph.description || appConfig.appDescription,
+  title: openGraph.title || siteConfig.appName,
+  description: openGraph.description || siteConfig.appDescription,
   card: DEFAULT_SEO.cardType,
   creator: DEFAULT_SEO.twitterCreator,
 })
@@ -32,9 +32,9 @@ const createSchemaData = () => ({
   "@context": "http://schema.org",
   "@type": "Store",
   name: "아몬드영",
-  description: appConfig.appDescription,
-  image: `https://${appConfig.domainName}/icon.png`,
-  url: `https://${appConfig.domainName}/`,
+  description: siteConfig.appDescription,
+  image: `https://${siteConfig.domainName}/icon.png`,
+  url: `https://${siteConfig.domainName}/`,
 })
 
 export const getSEOTags = ({
@@ -48,13 +48,13 @@ export const getSEOTags = ({
   const baseUrl =
     process.env.NODE_ENV === "development"
       ? "http://localhost:3000/"
-      : `https://${appConfig.domainName}/`
+      : `https://${siteConfig.domainName}/`
 
   return {
-    title: title || appConfig.appName,
-    description: description || appConfig.appDescription,
-    keywords: keywords || [appConfig.appName],
-    applicationName: appConfig.appName,
+    title: title || siteConfig.appName,
+    description: description || siteConfig.appDescription,
+    keywords: keywords || [siteConfig.appName],
+    applicationName: siteConfig.appName,
     metadataBase: new URL(baseUrl),
     openGraph: createOpenGraphMetadata(openGraph),
     twitter: createTwitterMetadata(openGraph),

@@ -11,8 +11,6 @@ import { Suspense } from "react"
 export const metadata = getSEOTags({
   title: `마이페이지 | 사업자 정보`,
   openGraph: {},
-  twitter: {},
-  extraTags: {},
 })
 
 export default async function BusinessPage() {

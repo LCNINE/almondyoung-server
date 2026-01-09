@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation"
 import { CategoryPageClient } from "../components/category-page-client"
-import { getCategoryBySlug } from "@lib/api/pim/categories.server"
+import { getCategoryBySlug } from "@lib/api/pim/categories"
 import { getProductsByCategoryService } from "@lib/services/pim/products/getProductListService"
 
 interface CategoryPageContainerProps {
@@ -20,7 +20,10 @@ export async function CategoryPageContainer({
 
   // 2. 에러 처리
   if ("error" in result) {
-    console.error("❌ [CategoryPageContainer] 카테고리 조회 실패:", result.error)
+    console.error(
+      "❌ [CategoryPageContainer] 카테고리 조회 실패:",
+      result.error
+    )
     return notFound()
   }
 
@@ -39,7 +42,7 @@ export async function CategoryPageContainer({
   // 4. 카테고리별 상품 목록 로드
   console.log(`🚀 [CategoryPageContainer] 상품 목록 로드 시작:`, {
     categoryId: categoryData.id,
-    categoryName: categoryData.name
+    categoryName: categoryData.name,
   })
 
   let initialProducts: any[] = []
@@ -54,7 +57,7 @@ export async function CategoryPageContainer({
     initialTotal = productsResult.total
     console.log(`✅ [CategoryPageContainer] 상품 목록 로드 완료:`, {
       itemCount: initialProducts.length,
-      total: initialTotal
+      total: initialTotal,
     })
   } catch (error) {
     console.error("❌ [CategoryPageContainer] 상품 목록 로드 실패:", error)

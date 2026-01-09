@@ -6,7 +6,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@components/common/ui/dropdown-menu"
+} from "@components/ui/dropdown-menu"
 import React from "react"
 import { cn } from "@lib/utils" // (cn 유틸리티를 사용해 클래스를 병합합니다)
 

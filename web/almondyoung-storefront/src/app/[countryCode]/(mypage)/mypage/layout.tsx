@@ -1,4 +1,4 @@
-import { appConfig } from "@lib/app-config"
+import { appConfig } from "@/lib/config/medusa"
 import { getSEOTags } from "@lib/seo"
 
 export const metadata = getSEOTags({

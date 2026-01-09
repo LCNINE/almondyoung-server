@@ -1,6 +1,6 @@
 "use client"
 
-import { Button } from "@components/common/ui/button"
+import { Button } from "@/components/ui/button"
 import { Home, RefreshCw } from "lucide-react"
 import Image from "next/image"
 import { usePathname, useRouter } from "next/navigation"
@@ -105,7 +105,7 @@ export default function Error({
               <Image
                 src={LostAlmondImage}
                 alt="에러가 발생한 아몬드 캐릭터"
-                className="mx-auto h-48 w-48 object-contain transition-transform duration-300 hover:scale-105"
+                className="mx-auto h-48 w-48 object-contain"
                 width={192}
                 height={192}
               />
@@ -139,27 +139,29 @@ export default function Error({
 
             {/* Action Buttons */}
             <div
-              className="flex flex-col gap-3 sm:flex-row sm:justify-center"
+              className="mx-auto mt-8 grid max-w-[320px] grid-cols-2 gap-3"
               style={{ animationDelay: "0.5s" }}
             >
+              {/* 홈으로 돌아가기: 시안의 메인 다크 브라운 배경색 적용 */}
               <Button
                 variant="default"
                 size="lg"
-                className="w-full sm:w-auto"
+                className="flex h-16 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-none bg-[#4A4744] text-white transition-all hover:bg-[#3d3a37] active:scale-95"
                 onClick={() => (window.location.href = "/")}
               >
-                <Home className="h-4 w-4" />
-                홈으로 돌아가기
+                <Home className="h-5 w-5 text-white" />
+                <span className="text-xs font-bold">홈으로</span>
               </Button>
 
+              {/* 새로고침: 시안의 포인트 컬러(골드/옐로우) 적용 */}
               <Button
-                variant="outline"
+                variant="default"
                 size="lg"
-                className="w-full sm:w-auto"
+                className="group flex h-16 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-none bg-[#E9B93F] text-white transition-all hover:bg-[#d4a835] active:scale-95"
                 onClick={() => window.location.reload()}
               >
-                <RefreshCw className="h-4 w-4" />
-                새로고침
+                <RefreshCw className="h-5 w-5 text-white transition-transform duration-500 group-hover:rotate-180" />
+                <span className="text-xs font-bold">새로고침</span>
               </Button>
             </div>
 
@@ -176,15 +178,6 @@ export default function Error({
             </div>
           </div>
         </main>
-
-        {/* Footer */}
-        <footer className="border-border border-t py-6">
-          <div className="container mx-auto px-4 text-center">
-            <p className="text-muted-foreground text-xs">
-              © {new Date().getFullYear()} ALMOND YOUNG. All rights reserved.
-            </p>
-          </div>
-        </footer>
       </div>
     )
   }
