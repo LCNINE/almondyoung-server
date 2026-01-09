@@ -65,6 +65,8 @@ export interface ProductMasterActiveVersionChangedPayload {
   versionId: string | null;
   name: string | null;
   previousActiveVersionId: string | null;
+  categoryIds?: string[];
+  primaryCategoryId?: string | null;
   changeReason: 'published' | 'unpublished' | 'rollback';
   changedAt: string;
 }
@@ -131,6 +133,8 @@ const ProductMasterActiveVersionChangedSchema = z.object({
   versionId: z.string().nullable(),
   name: z.string().nullable(),
   previousActiveVersionId: z.string().nullable(),
+  categoryIds: z.array(z.string().min(1)).optional(),
+  primaryCategoryId: z.string().nullable().optional(),
   changeReason: z.enum(['published', 'unpublished', 'rollback']),
   changedAt: z.string().datetime(),
 });
