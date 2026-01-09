@@ -4,7 +4,7 @@ import { DbService } from '@app/db';
 import { sql } from 'drizzle-orm';
 import { analyticsSchema, aggProductOrderDaily } from '../schema';
 import { DbTx } from '../db.types';
-import { OrderAggregateSeed } from './order-types';
+import { OrderAggregateSeed } from '../facts/order-types';
 
 @Injectable()
 export class OrderAggregatesService {

@@ -4,12 +4,12 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { DbModule } from '@app/db';
 import { EventsModule } from '@app/events';
 import { ORDER_STREAM } from '@packages/event-contracts';
-import { AnalyticsController } from './analytics.controller';
-import { AnalyticsService } from './analytics.service';
-import { OrderEventsConsumer } from './orders/order-events.consumer';
-import { OrderAggregatesService } from './orders/order-aggregates.service';
-import { OrderAggregatesBatchService } from './orders/order-aggregates-batch.service';
-import { OrderFactsService } from './orders/order-facts.service';
+import { AnalyticsController } from './modules/analytics-api/analytics.controller';
+import { AnalyticsService } from './modules/analytics-api/analytics.service';
+import { OrderEventsConsumer } from './ingest/order-events.consumer';
+import { OrderAggregatesService } from './aggregates/order-aggregates.service';
+import { OrderAggregatesBatchService } from './aggregates/order-aggregates-batch.service';
+import { OrderFactsService } from './facts/order-facts.service';
 import { analyticsSchema } from './schema';
 
 @Module({
