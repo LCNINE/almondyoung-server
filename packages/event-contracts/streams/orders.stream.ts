@@ -12,8 +12,11 @@ import { z } from 'zod';
 export interface OrderItem {
   orderItemId: string;
   skuId: string;
-  productId?: string;
-  variantId?: string;
+  masterId: string;
+  versionId: string;
+  variantId: string;
+  productName: string;
+  channelProductId: string;
   quantity: number;
   unitPrice: number;
   totalPrice: number;
@@ -194,8 +197,11 @@ const OrderStatusSchema = z.enum(['pending', 'confirmed', 'processing', 'shipped
 const OrderItemSchema = z.object({
   orderItemId: z.string().min(1),
   skuId: z.string().min(1),
-  productId: z.string().optional(),
-  variantId: z.string().optional(),
+  masterId: z.string().min(1),
+  versionId: z.string().min(1),
+  variantId: z.string().min(1),
+  productName: z.string().min(1),
+  channelProductId: z.string().min(1),
   quantity: z.number().int().positive(),
   unitPrice: z.number().nonnegative(),
   totalPrice: z.number().nonnegative(),
