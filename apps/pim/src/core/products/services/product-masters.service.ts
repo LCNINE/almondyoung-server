@@ -125,7 +125,6 @@ export class ProductMastersService {
         payload: {
           masterId: version.masterId,
           versionId: version.id,
-          version: version.version,
           productName: version.name,
           variantId: variant.id,
           variantName: variant.variantName,

@@ -12,7 +12,6 @@ import { DbTransaction } from '../types';
 
 interface ProductMasterActiveVersionChangedPayload {
   masterId: string;
-  productId: string | null;
   versionId: string | null;
   name: string | null;
   previousActiveVersionId: string | null;
@@ -62,9 +61,9 @@ export class ElasticsearchSyncService {
   private async handleActiveVersionChanged(
     payload: ProductMasterActiveVersionChangedPayload,
   ): Promise<void> {
-    const { masterId, productId, versionId } = payload;
+    const { masterId, versionId } = payload;
 
-    if (!productId || versionId === null) {
+    if (!versionId) {
       this.logger.log(`Unpublished master ${masterId}, deleting from ES`);
       await this.deleteProductFromEs(masterId);
       return;
@@ -73,7 +72,7 @@ export class ElasticsearchSyncService {
     this.logger.log(
       `Syncing active version ${versionId} of master ${masterId} to ES`,
     );
-    const document = await this._buildElasticsearchDocument(productId, versionId);
+    const document = await this._buildElasticsearchDocument(versionId);
     await this.indexProductToEs(masterId, document);
   }
 
@@ -86,7 +85,6 @@ export class ElasticsearchSyncService {
   }
 
   private async _buildElasticsearchDocument(
-    productId: string,
     versionId: string,
   ): Promise<ElasticsearchProductDocument> {
     return this.db.db.transaction(async (tx) => {
@@ -122,14 +120,14 @@ export class ElasticsearchSyncService {
         )
         .where(
           and(
-            eq(productMasterVersions.id, productId),
+            eq(productMasterVersions.id, versionId),
             isNull(productMasterVersions.deletedAt),
           ),
         )
         .limit(1);
 
       if (!product) {
-        throw new Error(`Product ${productId} not found`);
+        throw new Error(`Product ${versionId} not found`);
       }
 
       const tagsData = await tx
@@ -231,4 +229,3 @@ export class ElasticsearchSyncService {
     }
   }
 }
-
