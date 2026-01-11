@@ -1,11 +1,14 @@
-import { Controller, Get } from '@nestjs/common';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Controller, Get, Query } from '@nestjs/common';
+import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { AnalyticsService } from './analytics.service';
 import {
   AnalyticsHealthDto,
   AnalyticsSummaryDto,
-  ProductOrderMetricDto,
 } from './dto';
+import {
+  ProductOrderMetricDto,
+  ProductRankingQueryDto,
+} from '../product-ranking/api/dto';
 
 @ApiTags('Analytics')
 @Controller('analytics')
@@ -45,12 +48,19 @@ export class AnalyticsController {
     summary: 'Product order metrics',
     description: 'Returns per-product order counts and quantities.',
   })
+  @ApiQuery({
+    name: 'categoryId',
+    required: false,
+    description: 'Filter by category id.',
+  })
   @ApiResponse({
     status: 200,
     description: 'Product order metrics response.',
     type: [ProductOrderMetricDto],
   })
-  getProductOrderMetrics(): ProductOrderMetricDto[] {
-    return this.analyticsService.getProductOrderMetrics();
+  getProductOrderMetrics(
+    @Query() query: ProductRankingQueryDto,
+  ): Promise<ProductOrderMetricDto[]> {
+    return this.analyticsService.getProductOrderMetrics(query.categoryId);
   }
 }

@@ -3,8 +3,8 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { DomainEvent } from '@packages/event-contracts/types';
 import { OrderCreatedPayload } from '@packages/event-contracts/streams/orders.stream';
-import { analyticsSchema, factOrderEvents, factOrderItems } from '../schema';
-import { DbTx } from '../db.types';
+import { analyticsSchema, factOrderEvents, factOrderItems } from '../../../schema';
+import { DbTx } from '../../../db.types';
 import { OrderAggregateSeed } from './order-types';
 
 @Injectable()
@@ -93,19 +93,26 @@ export class OrderFactsService {
         })
         .returning({
           masterId: factOrderItems.masterId,
+          quantity: factOrderItems.quantity,
         });
       if (insertedItems.length === 0) {
         return [];
       }
 
-      const uniqueMasterIds = new Set(
-        insertedItems.map((item) => item.masterId),
-      );
+      const aggregated = new Map<string, number>();
+      for (const item of insertedItems) {
+        aggregated.set(
+          item.masterId,
+          (aggregated.get(item.masterId) ?? 0) + (item.quantity ?? 0),
+        );
+      }
 
-      return [...uniqueMasterIds].map((masterId) => ({
+      return [...aggregated.entries()].map(([masterId, quantitySold]) => ({
         masterId,
         salesChannel: payload.salesChannel,
         occurredDate,
+        orderCount: 1,
+        quantitySold,
       }));
     }, tx);
 

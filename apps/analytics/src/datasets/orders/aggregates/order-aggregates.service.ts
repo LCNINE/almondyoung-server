@@ -2,8 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { sql } from 'drizzle-orm';
-import { analyticsSchema, aggProductOrderDaily } from '../schema';
-import { DbTx } from '../db.types';
+import { analyticsSchema, aggProductOrderDaily } from '../../../schema';
+import { DbTx } from '../../../db.types';
 import { OrderAggregateSeed } from '../facts/order-types';
 
 @Injectable()
@@ -33,20 +33,28 @@ export class OrderAggregatesService {
 
     const increments = new Map<
       string,
-      { aggDate: string; masterId: string; salesChannel: string; count: number }
+      {
+        aggDate: string;
+        masterId: string;
+        salesChannel: string;
+        ordersCount: number;
+        quantitySold: number;
+      }
     >();
 
     for (const seed of seeds) {
       const key = `${seed.occurredDate}|${seed.salesChannel}|${seed.masterId}`;
       const current = increments.get(key);
       if (current) {
-        current.count += 1;
+        current.ordersCount += seed.orderCount;
+        current.quantitySold += seed.quantitySold;
       } else {
         increments.set(key, {
           aggDate: seed.occurredDate,
           masterId: seed.masterId,
           salesChannel: seed.salesChannel,
-          count: 1,
+          ordersCount: seed.orderCount,
+          quantitySold: seed.quantitySold,
         });
       }
     }
@@ -60,7 +68,8 @@ export class OrderAggregatesService {
             aggDate: increment.aggDate,
             masterId: increment.masterId,
             salesChannel: increment.salesChannel,
-            ordersCount: increment.count,
+            ordersCount: increment.ordersCount,
+            quantitySold: increment.quantitySold,
             updatedAt: now,
           })
           .onConflictDoUpdate({
@@ -70,7 +79,8 @@ export class OrderAggregatesService {
               aggProductOrderDaily.salesChannel,
             ],
             set: {
-              ordersCount: sql`${aggProductOrderDaily.ordersCount} + ${increment.count}`,
+              ordersCount: sql`${aggProductOrderDaily.ordersCount} + ${increment.ordersCount}`,
+              quantitySold: sql`${aggProductOrderDaily.quantitySold} + ${increment.quantitySold}`,
               updatedAt: now,
             },
           });

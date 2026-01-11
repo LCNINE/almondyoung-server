@@ -88,6 +88,7 @@ export const aggProductOrderDaily = pgTable(
     masterId: varchar('master_id', { length: 255 }).notNull(),
     salesChannel: varchar('sales_channel', { length: 50 }).notNull(),
     ordersCount: integer('orders_count').notNull().default(0),
+    quantitySold: integer('quantity_sold').notNull().default(0),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
   },
@@ -100,27 +101,6 @@ export const aggProductOrderDaily = pgTable(
     index('idx_agg_product_order_daily_date').on(table.aggDate),
     index('idx_agg_product_order_daily_master').on(table.masterId),
     index('idx_agg_product_order_daily_channel').on(table.salesChannel),
-  ],
-);
-
-export const aggJobRuns = pgTable(
-  'agg_job_runs',
-  {
-    id: uuid('id')
-      .primaryKey()
-      .$defaultFn(() => uuidv7()),
-    jobName: varchar('job_name', { length: 100 }).notNull(),
-    status: varchar('status', { length: 20 }).notNull(),
-    rangeStart: date('range_start'),
-    rangeEnd: date('range_end'),
-    startedAt: timestamp('started_at').notNull().defaultNow(),
-    finishedAt: timestamp('finished_at'),
-    errorMessage: text('error_message'),
-  },
-  (table) => [
-    index('idx_agg_job_runs_name').on(table.jobName),
-    index('idx_agg_job_runs_status').on(table.status),
-    index('idx_agg_job_runs_started_at').on(table.startedAt),
   ],
 );
 
@@ -195,7 +175,6 @@ export const analyticsSchema = {
   factOrderEvents,
   factOrderItems,
   aggProductOrderDaily,
-  aggJobRuns,
   dimProductMasters,
   dimProductVariants,
   dimProductCategories,

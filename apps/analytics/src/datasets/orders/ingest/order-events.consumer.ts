@@ -6,8 +6,8 @@ import { OrderCreatedPayload } from '@packages/event-contracts/streams/orders.st
 import { DomainEvent } from '@packages/event-contracts/types';
 import { OrderAggregatesService } from '../aggregates/order-aggregates.service';
 import { OrderFactsService } from '../facts/order-facts.service';
-import { DbTx } from '../db.types';
-import { analyticsSchema } from '../schema';
+import { DbTx } from '../../../db.types';
+import { analyticsSchema } from '../../../schema';
 import { DbService } from '@app/db';
 
 @Controller()
