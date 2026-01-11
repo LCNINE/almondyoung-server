@@ -15,8 +15,8 @@ import {
   dimProductCategories,
   dimProductMasters,
   dimProductVariants,
-} from '../schema';
-import { DbTx } from '../db.types';
+} from '../../../schema';
+import { DbTx } from '../../../db.types';
 
 type MasterPatch = {
   masterId: string;

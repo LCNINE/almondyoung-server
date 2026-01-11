@@ -1,18 +1,17 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { ScheduleModule } from '@nestjs/schedule';
 import { DbModule } from '@app/db';
 import { EventsModule } from '@app/events';
 import { ORDER_STREAM, PRODUCT_STREAM } from '@packages/event-contracts';
-import { AnalyticsController } from './modules/analytics-api/analytics.controller';
-import { AnalyticsService } from './modules/analytics-api/analytics.service';
-import { OrderEventsConsumer } from './ingest/order-events.consumer';
-import { ProductEventsConsumer } from './ingest/product-events.consumer';
-import { OrderAggregatesService } from './aggregates/order-aggregates.service';
-import { OrderAggregatesBatchService } from './aggregates/order-aggregates-batch.service';
-import { OrderFactsService } from './facts/order-facts.service';
+import { AnalyticsController } from './features/analytics-api/analytics.controller';
+import { AnalyticsService } from './features/analytics-api/analytics.service';
+import { OrderEventsConsumer } from './datasets/orders/ingest/order-events.consumer';
+import { ProductEventsConsumer } from './datasets/products/ingest/product-events.consumer';
+import { OrderAggregatesService } from './datasets/orders/aggregates/order-aggregates.service';
+import { OrderFactsService } from './datasets/orders/facts/order-facts.service';
 import { analyticsSchema } from './schema';
-import { ProductDimensionsService } from './dimensions/product-dimensions.service';
+import { ProductDimensionsService } from './datasets/products/dimensions/product-dimensions.service';
+import { ProductRankingQuery } from './features/product-ranking/read-model/product-ranking.query';
 
 @Module({
   imports: [
@@ -20,7 +19,6 @@ import { ProductDimensionsService } from './dimensions/product-dimensions.servic
       isGlobal: true,
       envFilePath: ['.env', 'apps/analytics/.env'],
     }),
-    ScheduleModule.forRoot(),
     DbModule.forRoot({
       config: {
         connectionString: process.env.DATABASE_URL ?? '',
@@ -38,8 +36,8 @@ import { ProductDimensionsService } from './dimensions/product-dimensions.servic
     AnalyticsService,
     OrderFactsService,
     OrderAggregatesService,
-    OrderAggregatesBatchService,
     ProductDimensionsService,
+    ProductRankingQuery,
   ],
 })
 export class AnalyticsModule {}
