@@ -687,8 +687,7 @@ export interface MedusaProduct {
 // PIM 이벤트: ProductMasterActiveVersionChanged
 export interface PimActiveVersionChangedEvent {
   masterId: string;
-  productId: string | null; // versionId (active인 경우)
-  version: number | null;
+  versionId: string | null;
   name: string | null;
   previousActiveVersionId: string | null;
   changeReason: 'published' | 'rollback' | 'unpublished';

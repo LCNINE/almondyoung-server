@@ -12,7 +12,6 @@ import { z } from 'zod';
 export interface ProductVariantCreatedPayload {
   masterId: string;
   versionId: string;
-  version: number;
   productName: string;
   variantId: string;
   variantName: string | null;
@@ -36,7 +35,6 @@ export interface ProductVariantCreatedPayload {
 export interface ProductVariantUpdatedPayload {
   masterId: string;
   versionId: string;
-  version: number;
   variantId: string;
   variantName?: string | null;
   status?: 'active' | 'draft' | 'archived';
@@ -46,7 +44,6 @@ export interface ProductVariantUpdatedPayload {
 export interface ProductVariantDeletedPayload {
   masterId: string;
   versionId: string;
-  version: number;
   variantId: string;
   deletedAt: string;
 }
@@ -54,7 +51,6 @@ export interface ProductVariantDeletedPayload {
 export interface ProductInventoryManagementChangedPayload {
   masterId: string;
   versionId: string;
-  version: number;
   productName: string;
   inventoryManagement: boolean;
   affectedVariants: Array<{
@@ -66,10 +62,11 @@ export interface ProductInventoryManagementChangedPayload {
 
 export interface ProductMasterActiveVersionChangedPayload {
   masterId: string;
-  productId: string | null;
-  version: number | null;
+  versionId: string | null;
   name: string | null;
   previousActiveVersionId: string | null;
+  categoryIds?: string[];
+  primaryCategoryId?: string | null;
   changeReason: 'published' | 'unpublished' | 'rollback';
   changedAt: string;
 }
@@ -89,7 +86,6 @@ const OptionCombinationItemSchema = z.object({
 const ProductVariantCreatedSchema = z.object({
   masterId: z.string().min(1),
   versionId: z.string().min(1),
-  version: z.number().int().positive(),
   productName: z.string().min(1),
   variantId: z.string().min(1),
   variantName: z.string().nullable(),
@@ -105,7 +101,6 @@ const ProductVariantCreatedSchema = z.object({
 const ProductVariantUpdatedSchema = z.object({
   masterId: z.string().min(1),
   versionId: z.string().min(1),
-  version: z.number().int().positive(),
   variantId: z.string().min(1),
   variantName: z.string().nullable().optional(),
   status: z.enum(['active', 'draft', 'archived']).optional(),
@@ -115,7 +110,6 @@ const ProductVariantUpdatedSchema = z.object({
 const ProductVariantDeletedSchema = z.object({
   masterId: z.string().min(1),
   versionId: z.string().min(1),
-  version: z.number().int().positive(),
   variantId: z.string().min(1),
   deletedAt: z.string().datetime(),
 });
@@ -123,7 +117,6 @@ const ProductVariantDeletedSchema = z.object({
 const ProductInventoryManagementChangedSchema = z.object({
   masterId: z.string().min(1),
   versionId: z.string().min(1),
-  version: z.number().int().positive(),
   productName: z.string().min(1),
   inventoryManagement: z.boolean(),
   affectedVariants: z.array(
@@ -137,10 +130,11 @@ const ProductInventoryManagementChangedSchema = z.object({
 
 const ProductMasterActiveVersionChangedSchema = z.object({
   masterId: z.string().min(1),
-  productId: z.string().nullable(),
-  version: z.number().nullable(),
+  versionId: z.string().nullable(),
   name: z.string().nullable(),
   previousActiveVersionId: z.string().nullable(),
+  categoryIds: z.array(z.string().min(1)).optional(),
+  primaryCategoryId: z.string().nullable().optional(),
   changeReason: z.enum(['published', 'unpublished', 'rollback']),
   changedAt: z.string().datetime(),
 });
@@ -187,4 +181,3 @@ export const PRODUCT_STREAM = stream({
 // ===== 타입 추론 =====
 
 export type ProductEvents = typeof PRODUCT_STREAM.events;
-

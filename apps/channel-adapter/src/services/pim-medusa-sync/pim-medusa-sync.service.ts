@@ -74,7 +74,7 @@ export class PimMedusaSyncService {
     }
 
     // 단일 Master 동기화 (Main Entry Point - mapping 기반)
-    async syncMaster(masterId: string, versionToCheck?: number): Promise<SyncResult> {
+    async syncMaster(masterId: string, versionIdToCheck?: string): Promise<SyncResult> {
         this.logger.log(`Starting sync for PIM master: ${masterId}`);
 
         try {
@@ -91,10 +91,10 @@ export class PimMedusaSyncService {
             }
 
             // shouldProcess 체크
-            if (versionToCheck !== undefined) {
-                const shouldProcess = await this.mappingRepo.shouldProcess(
+            if (versionIdToCheck) {
+                const shouldProcess = await this.mappingRepo.shouldProcessVersionId(
                     masterId,
-                    versionToCheck,
+                    versionIdToCheck,
                 );
                 if (!shouldProcess) {
                     return {
@@ -284,21 +284,21 @@ export class PimMedusaSyncService {
     async handleActiveVersionChanged(
         event: PimActiveVersionChangedEvent,
     ): Promise<void> {
-        const { masterId, productId, version, changeReason } = event;
+        const { masterId, versionId, changeReason } = event;
 
         this.logger.log(
-            `📨 PIM Event: ${masterId} (${changeReason}) - productId: ${productId}, version: ${version}`,
+            `📨 PIM Event: ${masterId} (${changeReason}) - versionId: ${versionId ?? 'none'}`,
         );
 
         // changeReason에 따라 처리
         switch (changeReason) {
             case 'published':
             case 'rollback':
-                if (!productId || version === null) {
-                    this.logger.error(`productId or version is null for published/rollback event`);
+                if (!versionId) {
+                    this.logger.error(`versionId is null for published/rollback event`);
                     return;
                 }
-                await this.syncMaster(masterId, version);
+                await this.syncMaster(masterId, versionId);
                 break;
 
             case 'unpublished':
