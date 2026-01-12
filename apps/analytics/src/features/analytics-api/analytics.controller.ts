@@ -11,7 +11,7 @@ import {
 } from '../product-ranking/api/dto';
 
 @ApiTags('Analytics')
-@Controller('analytics')
+@Controller()
 export class AnalyticsController {
   constructor(private readonly analyticsService: AnalyticsService) {}
 
@@ -43,10 +43,10 @@ export class AnalyticsController {
     return this.analyticsService.getSummary();
   }
 
-  @Get('orders/products')
+  @Get('best-product')
   @ApiOperation({
-    summary: 'Product order metrics',
-    description: 'Returns per-product order counts and quantities.',
+    summary: 'Best product metrics',
+    description: 'Returns per-product order counts and quantities for best products.',
   })
   @ApiQuery({
     name: 'categoryId',
