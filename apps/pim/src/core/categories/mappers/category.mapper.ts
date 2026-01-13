@@ -14,7 +14,6 @@ export class CategoryMapper {
   static toDto(entity: CategoryEntity & {
     childCount?: number;
     productCount?: number;
-    thumbnail?: string | null;
   }): CategoryResponseDto {
     return {
       id: entity.id,
@@ -30,7 +29,7 @@ export class CategoryMapper {
       updatedAt: DateMapper.toNotNullString(entity.updatedAt),
       childCount: entity.childCount,
       productCount: entity.productCount,
-      thumbnail: entity.thumbnail,
+      thumbnail: entity.imageUrl, // DB의 imageUrl을 API의 thumbnail로 매핑
     };
   }
 
@@ -40,7 +39,6 @@ export class CategoryMapper {
   static toDtoArray(entities: Array<CategoryEntity & {
     childCount?: number;
     productCount?: number;
-    thumbnail?: string | null;
   }>): CategoryResponseDto[] {
     return entities.map(e => this.toDto(e));
   }
