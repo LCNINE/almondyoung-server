@@ -53,5 +53,8 @@ export class CategoryDetailResponseDto {
 
   @ApiProperty({ description: '모든 하위 카테고리 포함 전체 제품 수', minimum: 0 })
   totalProductCount: number;
+
+  @ApiProperty({ description: '썸네일 이미지 URL', required: false, nullable: true })
+  thumbnail?: string | null;
 }
 

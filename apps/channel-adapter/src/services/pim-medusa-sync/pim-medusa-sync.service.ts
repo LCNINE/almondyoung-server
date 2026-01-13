@@ -108,6 +108,8 @@ export class PimMedusaSyncService {
             // 3. 검증
             validatePimSnapshot(snapshot);
 
+            this.logger.debug(`PIM snapshot categoryIds: ${JSON.stringify(snapshot.categoryIds)}`);
+
             // 3-1. 카테고리/태그 보장 (Medusa에 없으면 생성)
             const medusaCategories = await this.ensureMedusaCategories(
                 snapshot.categoryIds,
@@ -138,8 +140,11 @@ export class PimMedusaSyncService {
                 medusaProductId,
             );
 
+            this.logger.debug(`medusaCategories for ${product.id}: ${JSON.stringify(medusaCategories)}`);
+
             // 6-1. 카테고리 매핑 보강: join 테이블 확실히 삽입
             if (medusaCategories && medusaCategories.length > 0) {
+                this.logger.log(`Attaching ${medusaCategories.length} categories to product ${product.id}`);
                 for (const cat of medusaCategories) {
                     try {
                         await this.medusaClient.attachProductToCategories(
