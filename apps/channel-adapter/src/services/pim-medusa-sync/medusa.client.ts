@@ -168,6 +168,7 @@ export class MedusaClient {
                     is_internal: false,
                     is_active: isActive,
                     parent_category_id: parentMedusaId,
+                    ...(detail.thumbnail && { thumbnail: detail.thumbnail }),
                     metadata: {
                         ...(existing.metadata || {}),
                         ...pimMetadata,
@@ -199,6 +200,7 @@ export class MedusaClient {
             is_internal: false,
             is_active: isActive,
             parent_category_id: parentMedusaId,
+            ...(detail.thumbnail && { thumbnail: detail.thumbnail }),
             metadata: {
                 ...pimMetadata,
             },
