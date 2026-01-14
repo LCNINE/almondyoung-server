@@ -88,9 +88,12 @@ export class PimClient {
                 thumbnail: data.thumbnail
                     ? `${this.configService.get('FILE_SERVICE_URL')}/files/${data.thumbnail}`
                     : undefined,
-                images: data.images?.map((img: any) =>
-                    `${this.configService.get('FILE_SERVICE_URL')}/files/${img.fileId}`
-                ) || undefined,
+                images: data.images?.map((img: any) => ({
+                    fileId: img.fileId,
+                    url: `${this.configService.get('FILE_SERVICE_URL')}/files/${img.fileId}`,
+                    isPrimary: img.isPrimary ?? false,
+                    sortOrder: img.sortOrder ?? 0,
+                })) || undefined,
                 seoTitle: data.seoTitle || undefined,
                 seoDescription: data.seoDescription || undefined,
                 seoKeywords: data.seoKeywords || undefined,
