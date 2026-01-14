@@ -39,7 +39,7 @@ export function WelcomeDealSection() {
           className="md:hidden"
         >
           <ProductCarousel.List className="ml-0">
-            {products.map((product, index) => (
+            {products.map((product) => (
               <ProductCarousel.Item
                 key={product.id}
                 className="basis-[42%] pl-0"

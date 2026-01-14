@@ -1,14 +1,14 @@
 "use server"
 
-import type { UserDetail } from "@lib/types/ui/user"
 import {
   removeAccessToken,
   removeMedusaAuthToken,
   removeRefreshToken,
 } from "@lib/data/cookies"
+import type { UserDetail } from "@lib/types/ui/user"
 import { cache } from "react"
 import { api } from "../api"
-import { ApiAuthError, HttpApiError } from "../api-error"
+import { HttpApiError } from "../api-error"
 
 export const fetchMe = cache(async (): Promise<UserDetail> => {
   try {

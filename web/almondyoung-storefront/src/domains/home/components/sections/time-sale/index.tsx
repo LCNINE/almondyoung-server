@@ -1,17 +1,15 @@
 "use client"
 
+import { ProductCard } from "@/components/products/prodcut-card"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
-import { useCarousel } from "@/hooks/ui/use-carousel"
 import { useDraggableScroll } from "@/hooks/ui/use-draggable-scroll"
 import testImg from "@assets/images/test.png"
 import type { CategoryTreeNodeDto } from "@lib/types/dto/pim"
 import { AnimatePresence, motion } from "framer-motion"
+import { ProductGrid } from "../../../../../components/products/product-grid"
 import { useCategoryBest } from "../../../hooks/use-category-best"
 import { SectionHeader } from "../../header/section-header"
 import { ProductCarousel } from "../../shared/product-carousel"
-import { ProductGrid } from "../../../../../components/products/product-grid"
-import { ProductCard } from "@/components/products/prodcut-card"
-import { chunk } from "lodash"
 import { CategoryTabs } from "../category-best/category-tabs"
 
 interface TimeSaleSectionProps {
@@ -23,7 +21,7 @@ export function TimeSaleSection({ initialCategories }: TimeSaleSectionProps) {
 
   const { activeTab, setActiveTab, visitedTabs, markAsVisited } =
     useCategoryBest(bestCategories[0]?.slug || "")
-  const carousel = useCarousel()
+
   const { props: dragHandlers } = useDraggableScroll()
 
   // TODO: 추후 실제 API 데이터로 교체
@@ -45,13 +43,11 @@ export function TimeSaleSection({ initialCategories }: TimeSaleSectionProps) {
 
   const isVisitedTab = visitedTabs.has(activeTab)
 
-  const chunkedProducts = chunk(products, 6)
-
   return (
     <div className="w-full">
       <SectionHeader className="justify-between md:justify-center!">
         <SectionHeader.Title>
-          <span className="text-red-30 md:text-black">타임</span> 세일
+          <span className="md:text-red-30 text-black">타임</span> 세일
         </SectionHeader.Title>
         <SectionHeader.More href={`/category/time-sale`} />
       </SectionHeader>
@@ -79,42 +75,38 @@ export function TimeSaleSection({ initialCategories }: TimeSaleSectionProps) {
               onAnimationComplete={() => markAsVisited(activeTab)}
               className="min-h-96"
             >
-              <TabsContent value={activeTab} className="mt-6">
+              <TabsContent value={activeTab} className="">
                 {/* modile */}
                 <div className="md:hidden">
-                  <ProductCarousel className="md:hidden">
-                    <ProductCarousel.List>
-                      {chunkedProducts.map((group, groupIndex) => (
-                        <ProductCarousel.Item key={groupIndex}>
-                          <div className="grid grid-cols-3 gap-x-3 gap-y-8 px-1">
-                            {group.map((product, itemIndex) => {
-                              const rank = groupIndex * 6 + itemIndex + 1
-                              return (
-                                <ProductCard key={product.id}>
-                                  <ProductCard.Thumbnail
-                                    src={product.imageSrc}
-                                    alt={product.title}
-                                    rank={<ProductCard.Rank rank={rank} />}
-                                    className="rounded-tl-sm rounded-tr-xl rounded-br-xl rounded-bl-md"
-                                  />
-                                  <ProductCard.Info {...product} />
-                                </ProductCard>
-                              )
-                            })}
-                          </div>
+                  <ProductCarousel
+                    opts={{ align: "start", containScroll: "trimSnaps" }}
+                    className="md:hidden"
+                  >
+                    <ProductCarousel.List className="ml-0">
+                      {products.map((product) => (
+                        <ProductCarousel.Item
+                          key={product.id}
+                          className="basis-[42%] pl-0"
+                        >
+                          <ProductCard className="border-r-[0.5px] border-r-gray-100 pr-4 last:border-r-0">
+                            <ProductCard.Thumbnail
+                              src={product.imageSrc}
+                              alt={product.title}
+                              className="rounded-sm md:rounded-md"
+                            />
+                            <ProductCard.Info {...product} />
+                          </ProductCard>
                         </ProductCarousel.Item>
                       ))}
                     </ProductCarousel.List>
-
-                    <ProductCarousel.Indicator itemsPerGroup={1} />
                   </ProductCarousel>
                 </div>
 
                 {/* desktop */}
                 <div className="hidden md:block">
                   <ProductGrid
-                    products={products.slice(0, 10)}
-                    showRank={true}
+                    products={products.slice(0, 5)}
+                    showRank={false}
                     roundedClassName="rounded-sm md:rounded-md"
                   />
                 </div>

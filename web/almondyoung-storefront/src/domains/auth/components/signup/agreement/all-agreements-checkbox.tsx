@@ -1,9 +1,9 @@
 "use client"
 
-import { Checkbox } from "@components/common/ui/checkbox"
-import { Label } from "@components/common/ui/label"
-import { Button } from "@components/common/ui/button"
+import { Label } from "@/components/ui/label"
+import { Button } from "@/components/ui/button"
 import { useState } from "react"
+import { Checkbox } from "@/components/ui/checkbox"
 
 interface AllAgreementsCheckboxProps {
   checked?: boolean

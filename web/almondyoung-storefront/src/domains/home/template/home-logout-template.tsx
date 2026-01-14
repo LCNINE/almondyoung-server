@@ -1,12 +1,14 @@
 import type { CategoryTreeNodeDto } from "@lib/types/dto/pim"
 import { HeroBanner } from "../components/banner/hero-banner"
+import LashBannerBanner from "../components/banner/lashbanner-banner"
 import { LoginPromptBanner } from "../components/banner/login-prompt-banner"
 import MembershipBanner from "../components/banner/membership-banner"
+import { BundleSection } from "../components/sections/bundle"
 import { CategoryBestSection } from "../components/sections/category-best"
-import { ProductListSection } from "../components/shared/product-list-section"
-import { WelcomeDealSection } from "../components/sections/welcome-deal"
-import LashBannerBanner from "../components/banner/lashbanner-banner"
+import { DigitalAssetSection } from "../components/sections/digital-asset"
 import { TimeSaleSection } from "../components/sections/time-sale"
+import { WelcomeDealSection } from "../components/sections/welcome-deal"
+import { ProductListSection } from "../components/shared/product-list-section"
 
 interface HomeLogoutTemplateProps {
   initialCategories: CategoryTreeNodeDto[]
@@ -53,6 +55,16 @@ export function HomeLogoutTemplate({
       {/* 타임 세일 섹션 */}
       <ProductListSection>
         <TimeSaleSection initialCategories={initialCategories} />
+      </ProductListSection>
+
+      {/* 디지털 템플릿 섹션 */}
+      <ProductListSection>
+        <DigitalAssetSection />
+      </ProductListSection>
+
+      {/* 한꺼번에 구매 시 할인이 늘어나요 섹션 */}
+      <ProductListSection>
+        <BundleSection />
       </ProductListSection>
     </div>
   )

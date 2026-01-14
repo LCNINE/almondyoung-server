@@ -9,8 +9,8 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@components/common/ui/dialog"
-import { Form } from "@components/common/ui/form"
+} from "@/components/ui/dialog"
+import { Form } from "@/components/ui/form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { createUser } from "@lib/api/users/auth/signup-base"
 import { formatBirthday } from "@lib/utils/format-birthday"

@@ -1,6 +1,6 @@
 import { medusaSignin } from "@lib/api/medusa/signin"
 import { medusaSignup } from "@lib/api/medusa/signup"
-import { appConfig } from "@/lib/config/medusa"
+import { siteConfig } from "@/lib/config/site"
 import { setTokenCookies } from "@lib/data/cookies"
 import { NextRequest, NextResponse } from "next/server"
 
@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const userId = searchParams.get("userId")
     const redirectTo =
-      searchParams.get("redirect_to") ?? appConfig.auth.redirect_to
+      searchParams.get("redirect_to") ?? siteConfig.auth.redirect_to
 
     if (!userId) {
       return NextResponse.redirect(new URL("/login", request.url))

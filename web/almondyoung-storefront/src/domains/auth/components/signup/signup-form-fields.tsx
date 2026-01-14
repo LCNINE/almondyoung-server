@@ -8,7 +8,7 @@ import {
   FormItem,
   FormMessage,
   FormDescription,
-} from "@components/common/ui/form"
+} from "@/components/ui/form"
 import { UseFormReturn } from "react-hook-form"
 import { Info } from "lucide-react"
 

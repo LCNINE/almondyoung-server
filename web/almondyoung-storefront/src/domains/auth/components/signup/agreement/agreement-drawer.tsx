@@ -3,7 +3,7 @@
 import * as React from "react"
 import { ChevronRight } from "lucide-react"
 
-import { Button } from "@components/common/ui/button"
+import { Button } from "@/components/ui/button"
 import {
   Drawer,
   DrawerClose,
@@ -13,7 +13,7 @@ import {
   DrawerHeader,
   DrawerTitle,
   DrawerTrigger,
-} from "@components/common/ui/drawer"
+} from "@/components/ui/drawer"
 
 interface AgreementDrawerProps {
   title: string

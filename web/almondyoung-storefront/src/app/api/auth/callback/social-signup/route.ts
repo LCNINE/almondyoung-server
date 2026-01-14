@@ -1,6 +1,6 @@
+import { siteConfig } from "@/lib/config/site"
 import { medusaSignin } from "@lib/api/medusa/signin"
 import { medusaSignup } from "@lib/api/medusa/signup"
-import { appConfig } from "@/lib/config/medusa"
 import { getAccessToken, setTokenCookies } from "@lib/data/cookies"
 import { NextRequest, NextResponse } from "next/server"
 
@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     const social = searchParams.get("social")
     const countryCode = searchParams.get("countryCode") ?? "kr"
     const redirectTo =
-      searchParams.get("redirect_to") ?? appConfig.auth.redirect_to
+      searchParams.get("redirect_to") ?? siteConfig.auth.redirect_to
 
     // 아몬드영 토큰 생성 및 회원 생성
     const response = await fetch(

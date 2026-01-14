@@ -1,7 +1,7 @@
 "use client"
 
 import { CustomButton } from "@/components/shared/custom-buttons"
-import { Button } from "@components/common/ui/button"
+import { Button } from "@/components/ui/button"
 import { useRouter } from "next/navigation"
 
 export default function Error() {

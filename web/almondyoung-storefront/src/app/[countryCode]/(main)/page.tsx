@@ -1,4 +1,5 @@
 import { ThemeManager } from "@/components/shared/theme-manager"
+import { HomeLoggedInTemplate } from "@/domains/home/template/home-loggedin-template"
 import { getProductList } from "@/lib/api/medusa/products"
 import { getRegion } from "@/lib/api/medusa/regions"
 import { siteConfig } from "@/lib/config/site"
@@ -42,7 +43,11 @@ export default async function Home({
 
   return (
     <ProtectedRoute>
-      <HomeLogoutTemplate initialCategories={categories} />
+      {user ? (
+        <HomeLoggedInTemplate user={user} />
+      ) : (
+        <HomeLogoutTemplate initialCategories={categories} />
+      )}
 
       {/* 테마 매니저 (개발 모드에서만 표시) */}
       {process.env.NODE_ENV === "development" && <ThemeManager />}

@@ -1,16 +1,15 @@
-import { CartQuickButton } from "@components/cart/mobile-cart-quickButton"
-import { FloatingButtons } from "@/components/shared/custom-buttons/floating-buttons"
-import { BottomNavigation } from "@/components/layout/nav/bottom-nav"
 import Footer from "@/components/layout/footer"
+import { BottomNavigation } from "@/components/layout/nav/bottom-nav"
+import { FloatingButtons } from "@/components/shared/custom-buttons/floating-buttons"
+import { UserProvider } from "@/contexts/user-context"
+import "@/styles/globals.css"
 import { fetchMe } from "@lib/api/users/me"
 import { CustomThemeProvider } from "@lib/providers/custom-theme-provider"
 import { ThemeProvider } from "@lib/providers/theme-provider"
 import { getSEOTags, renderSchemaTags } from "@lib/seo"
-import { UserProvider } from "@/contexts/user-context"
 import { Metadata } from "next"
 import { OverlayProvider } from "overlay-kit"
 import { Toaster } from "sonner"
-import "@/styles/globals.css"
 
 export const metadata: Metadata = getSEOTags({
   title: {
@@ -50,7 +49,6 @@ export default async function RootLayout(props: { children: React.ReactNode }) {
                 <div className="relative">
                   {props.children}
 
-                  <CartQuickButton />
                   <FloatingButtons />
                 </div>
                 <Toaster />

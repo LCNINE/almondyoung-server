@@ -1,7 +1,7 @@
 "use client"
 
-import { Checkbox } from "@components/common/ui/checkbox"
-import { Label } from "@components/common/ui/label"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Label } from "@/components/ui/label"
 import { AgreementDrawer } from "./agreement-drawer"
 
 interface AgreementItemProps {
