@@ -600,15 +600,7 @@ export interface MedusaProductPayload {
   // 선택 정보
   description?: string;
   thumbnail?: string;
-  images?: Array<{
-    url: string;
-    rank?: number;
-    metadata?: {
-      pimIsPrimary?: boolean;
-      pimSortOrder?: number;
-      pimFileId?: string;
-    };
-  }>;
+  images?: Array<{ url: string }>;
 
   // 옵션
   options?: Array<{
