@@ -33,7 +33,7 @@ export function transformPimToMedusa(
     const description = undefined;
 
     // 2. 이미지
-    // PIM의 sortOrder에 따라 정렬하고, Medusa images 배열 순서로 rank 부여
+    // PIM의 sortOrder에 따라 정렬 - 배열 순서가 Medusa의 rank가 됨
     const images =
         snapshot.images
             ?.slice() // 원본 배열 복사
@@ -46,12 +46,6 @@ export function transformPimToMedusa(
             })
             .map((img) => ({
                 url: img.url,
-                // rank는 Medusa Admin API에서 무시되므로 metadata에 저장
-                metadata: {
-                    pimIsPrimary: img.isPrimary,
-                    pimSortOrder: img.sortOrder,
-                    pimFileId: img.fileId,
-                },
             })) || [];
 
     // 3. 옵션 스키마/제목 목록 산출
