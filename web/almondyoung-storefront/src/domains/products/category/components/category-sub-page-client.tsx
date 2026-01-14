@@ -3,8 +3,8 @@
 import { useState } from "react"
 import Link from "next/link"
 import { BasicProductCard } from "@components/products/product-card"
-import ProductFilterSidebar from "@components/product-filter-sidebar"
-import ProductSortToolbar from "@components/product-sort-toolbar"
+import ProductFilterSidebar from "@/components/products/product-filter-sidebar"
+import ProductSortToolbar from "@/components/products/product-sort-toolbar"
 import CustomDropdown from "@components/dropdown"
 import { SlidersHorizontal } from "lucide-react"
 import { overlay } from "overlay-kit"
@@ -88,19 +88,11 @@ export function CategorySubPageClient({
                         <li key={child.id} className="flex-shrink-0">
                           <Link
                             href={href}
-                            className={`
-                              flex items-center justify-center gap-2.5 rounded-full 
-                              px-2.5 py-1 text-sm 
-                              md:px-3.5 md:py-2 md:text-base 
-                              outline outline-[0.50px] outline-offset-[-0.50px] 
-                              border-gray-200
-                              font-['Pretendard'] transition-colors
-                              whitespace-nowrap
-                              ${isActive
-                                ? "bg-black outline-black text-zinc-100 font-normal md:bg-zinc-800 md:outline-zinc-800 md:font-bold"
+                            className={`flex items-center justify-center gap-2.5 rounded-full border-gray-200 px-2.5 py-1 font-['Pretendard'] text-sm whitespace-nowrap outline outline-[0.50px] outline-offset-[-0.50px] transition-colors md:px-3.5 md:py-2 md:text-base ${
+                              isActive
+                                ? "bg-black font-normal text-zinc-100 outline-black md:bg-zinc-800 md:font-bold md:outline-zinc-800"
                                 : "outline-Grays-Gray-3 text-Grays-Gray font-normal hover:bg-gray-100"
-                              }
-                            `}
+                            } `}
                             aria-pressed={isActive}
                           >
                             {child.name}
@@ -164,4 +156,3 @@ export function CategorySubPageClient({
     </main>
   )
 }
-

@@ -1,6 +1,6 @@
 "use client"
 
-import { Spinner } from "@components/common/spinner"
+import { Spinner } from "@/components/shared/spinner"
 import { medusaSignin } from "@lib/api/medusa/signin"
 import { useRouter } from "next/navigation"
 import { useEffect, useTransition } from "react"

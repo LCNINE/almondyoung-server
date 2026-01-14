@@ -1,10 +1,4 @@
 import React from "react"
-import {
-  OrderListIcon,
-  WishlistIcon,
-  FrequentPurchaseIcon,
-  RecentViewIcon,
-} from "components/common/icons"
 
 // --- 1. 재사용 가능한 메뉴 아이템 컴포넌트 ---
 interface QuickMenuItemProps {
@@ -38,13 +32,13 @@ export function QuickLinks() {
       className="flex w-full items-center justify-between rounded-[10px] bg-white py-[15px] shadow-sm"
       aria-label="퀵 메뉴"
     >
-      <QuickMenuItem label="주문목록" icon={<OrderListIcon size={27} />} />
+      {/* <QuickMenuItem label="주문목록" icon={<OrderListIcon size={27} />} />
       <QuickMenuItem label="찜한상품" icon={<WishlistIcon size={27} />} />
       <QuickMenuItem
         label="자주산상품"
         icon={<FrequentPurchaseIcon size={27} />}
       />
-      <QuickMenuItem label="최근 본 상품" icon={<RecentViewIcon size={27} />} />
+      <QuickMenuItem label="최근 본 상품" icon={<RecentViewIcon size={27} />} /> */}
     </nav>
   )
 }

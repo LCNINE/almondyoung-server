@@ -1,6 +1,6 @@
 "use client"
 
-import { CustomButton } from "@components/common/custom-buttons"
+import { CustomButton } from "@/components/shared/custom-buttons"
 import { Button } from "@components/common/ui/button"
 import { useRouter } from "next/navigation"
 

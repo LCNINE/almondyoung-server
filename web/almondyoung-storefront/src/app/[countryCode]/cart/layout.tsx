@@ -1,7 +1,5 @@
 import { Metadata } from "next"
 import React from "react"
-
-import { ThemeToggle } from "@components/common/thema-toggle"
 import { DesktopHeader } from "@components/layout/components/header"
 import { getBaseURL } from "@lib/utils/env"
 
@@ -17,9 +15,6 @@ export default async function CartLayout(props: { children: React.ReactNode }) {
       <div className="container mx-auto py-8 md:max-w-[1360px] md:px-[40px]">
         {props.children}
       </div>
-
-      {/* 임시 */}
-      <ThemeToggle />
     </div>
   )
 }

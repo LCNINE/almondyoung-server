@@ -1,7 +1,7 @@
 import { UserDetail } from "@lib/types/ui/user"
 import React from "react"
-import { MainHeader } from "./components/header/main-header"
-import MobileSubBackHeader from "./components/header/mobile-sub-back-header"
+import { MainHeader } from "@/components/layout/header/main-header"
+import MobileSubBackHeader from "./header/m-sub-back-header"
 
 /**
  * 글로벌 헤더 설정 타입

@@ -1,10 +1,3 @@
-import {
-  OrderListIcon,
-  WishlistIcon,
-  FrequentPurchaseIcon,
-  RecentViewIcon,
-} from "components/common/icons"
-
 export function QuickMenuSection() {
   return (
     <nav className="rounded-lg bg-white">
@@ -21,7 +14,7 @@ export function QuickMenuSection() {
                 className="flex w-full flex-col items-center gap-2 transition-opacity hover:opacity-70"
               >
                 <div className="flex h-10 w-10 items-center justify-center">
-                  <OrderListIcon size={32} />
+                  {/* <OrderListIcon size={32} /> */}
                 </div>
                 <span className="font-['Pretendard'] text-sm font-medium text-black">
                   주문목록
@@ -36,7 +29,7 @@ export function QuickMenuSection() {
                 className="flex w-full flex-col items-center gap-2 transition-opacity hover:opacity-70"
               >
                 <div className="flex h-10 w-10 items-center justify-center">
-                  <WishlistIcon size={32} />
+                  {/* <WishlistIcon size={32} /> */}
                 </div>
                 <span className="font-['Pretendard'] text-sm font-medium text-black">
                   찜한상품
@@ -51,7 +44,7 @@ export function QuickMenuSection() {
                 className="flex w-full flex-col items-center gap-2 transition-opacity hover:opacity-70"
               >
                 <div className="flex h-10 w-10 items-center justify-center">
-                  <FrequentPurchaseIcon size={32} />
+                  {/* <FrequentPurchaseIcon size={32} /> */}
                 </div>
                 <span className="font-['Pretendard'] text-sm font-medium text-black">
                   자주산상품
@@ -66,7 +59,7 @@ export function QuickMenuSection() {
                 className="flex w-full flex-col items-center gap-2 transition-opacity hover:opacity-70"
               >
                 <div className="flex h-10 w-10 items-center justify-center">
-                  <RecentViewIcon size={32} />
+                  {/* <RecentViewIcon size={32} /> */}
                 </div>
                 <span className="font-['Pretendard'] text-sm font-medium text-black">
                   최근 본 상품

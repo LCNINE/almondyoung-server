@@ -1,7 +1,7 @@
 import { WithHeaderLayout } from "@components/layout"
 import { OrderListClient } from "domains/order/list/components/order-list-client"
 import { Metadata } from "next"
-import MypageLayout from "@components/layout/mypage-layout"
+import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 export const metadata: Metadata = {
   title: "주문내역",
   description: "주문 내역을 확인하세요",

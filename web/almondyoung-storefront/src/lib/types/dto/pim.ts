@@ -156,56 +156,6 @@ export interface PricingRuleDto {
   description?: string | null
 }
 
-// 가격 규칙 응답
-export interface PricingRulesResponseDto {
-  base_price: PricingRuleDto[]
-  membership_price: PricingRuleDto[]
-  tiered_price: PricingRuleDto[]
-}
-
-// 가격 계산 요청
-export interface CalculatePriceRequestDto {
-  variantId: string
-  quantity: number
-  customerType?: "regular" | "membership"
-}
-
-// 적용된 가격 규칙
-export interface AppliedRuleDto {
-  ruleId: string
-  layer: string
-  order: number
-  scopeType: string
-  operationType: string
-  operationValue: number
-  priceBeforeRule: number
-  priceAfterRule: number
-}
-
-// 가격 계산 응답
-export interface CalculatePriceResponseDto {
-  variantId: string
-  price: number
-  totalPrice: number
-  appliedRules: AppliedRuleDto[]
-  priceBreakdown: {
-    initialPrice: number
-    afterBasePrice: number
-    afterMembershipPrice: number
-    afterTieredPrice: number
-  }
-}
-
-// 가격 세트 DTO
-export interface VariantPriceSetDto {
-  basePrice: number
-  membershipPrice: number
-  tieredPrices: Array<{
-    minQuantity: number
-    price: number
-  }>
-}
-
 /*───────────────────────────
  * Categories
  *──────────────────────────*/
@@ -394,4 +344,44 @@ export interface ProductSearchResponseDto {
   items: ProductSearchItemDto[]
   pagination: PaginationDto
   aggregations?: SearchAggregationsDto
+}
+
+// ==========================================
+// Banner
+// ==========================================
+
+export interface BannerGroupDto {
+  id: string
+  code: string
+  title: string
+  category: string
+  pcWidth: number | null
+  pcHeight: number | null
+  mobileWidth: number | null
+  mobileHeight: number | null
+  description: string | null
+  isActive: boolean
+  sortOrder: number
+  deletedAt: string | null
+  createdAt: string
+  updatedAt: string
+  banners: BannerDto[]
+}
+
+export interface BannerDto {
+  id: string
+  bannerGroupId: string
+  title: string
+  description: string | null
+  pcImageFileId: string
+  mobileImageFileId: string
+  linkUrl: string | null
+  linkedProductMasterIds: string[] | null
+  displayStartAt: string | null
+  displayEndAt: string | null
+  isActive: boolean
+  sortOrder: number
+  deletedAt: string | null
+  createdAt: string
+  updatedAt: string
 }

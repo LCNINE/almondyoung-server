@@ -3,7 +3,7 @@ import type { PlanWithTier } from "@lib/types/membership"
 
 import { HttpApiError } from "@lib/api/api-error"
 import { WithHeaderLayout } from "@components/layout/with-header-layout"
-import MypageLayout from "@components/layout/mypage-layout"
+import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { getPlansServer } from "@lib/api/membership"
 import { cookies } from "next/headers"
 

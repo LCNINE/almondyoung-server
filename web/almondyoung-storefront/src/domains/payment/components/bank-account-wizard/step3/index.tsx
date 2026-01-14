@@ -1,6 +1,6 @@
 "use client"
 
-import { Spinner } from "@components/common/spinner"
+import { Spinner } from "@/components/shared/spinner"
 import { Button } from "@components/common/ui/button"
 import { Checkbox } from "@components/common/ui/checkbox"
 import {

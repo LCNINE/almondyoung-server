@@ -17,7 +17,7 @@ import { useEffect, useTransition } from "react"
 import { toast } from "sonner"
 import { usePaymentMethodModalStore } from "../store/payment-method-modal-store"
 import { maskAccountNumber } from "../utils"
-import { Spinner } from "@components/common/spinner"
+import { Spinner } from "@/components/shared/spinner"
 
 interface ChangeAccountSheetProps {
   isOpen: boolean

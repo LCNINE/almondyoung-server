@@ -1,6 +1,6 @@
 "use client"
 
-import { PageTitle } from "@components/common/page-title"
+import { PageTitle } from "@/components/shared/page-title"
 import MembershipStatusSection from "../components/status-selection"
 import SubscriberSection from "./components/subscriber/subscriber-section"
 import NonSubscriberSection from "./components/non-subscriber/non-subscriber-section"

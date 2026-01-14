@@ -1,6 +1,6 @@
 "use client"
 
-import { Spinner } from "@components/common/spinner"
+import { Spinner } from "@/components/shared/spinner"
 import { Button } from "@components/common/ui/button"
 import { Input } from "@components/common/ui/input"
 import {
@@ -22,7 +22,7 @@ import PhoneInput, { type Country } from "react-phone-number-input"
 import { toast } from "sonner"
 import { z } from "zod"
 import useTwilio from "../../hooks/use-twilio"
-import CustomPhoneInput from "@components/phone-input"
+import CustomPhoneInput from "@/components/shared/inputs/phone-input"
 
 const schema = z.object({
   name: z.string().min(1, "이름을 입력해주세요"),

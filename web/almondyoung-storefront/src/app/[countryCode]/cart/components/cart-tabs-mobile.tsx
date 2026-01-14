@@ -6,7 +6,7 @@ import {
   TabsList,
   TabsTrigger,
   TabsContent,
-} from "@components/common/components/tabs"
+} from "@/components/shared/components/tabs"
 import type { CartItem } from "@lib/types/ui/cart"
 import { ShippingNotice } from "./shipping-notice"
 import { CartControls } from "./cart-controls"

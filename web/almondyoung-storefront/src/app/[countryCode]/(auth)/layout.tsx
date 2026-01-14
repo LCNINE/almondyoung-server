@@ -1,12 +1,11 @@
-import { MobileBackHeader } from "@components/layout/components/header/m.back-header"
-import { appConfig } from "@/lib/config/medusa"
+import { MobileBackHeader } from "@/components/layout/header/m-back-header"
+import { siteConfig } from "@/lib/config/site"
 import { getSEOTags } from "@lib/seo"
 import { Toaster } from "sonner"
 
 export const metadata = getSEOTags({
-  title: `${appConfig.appName}`,
+  title: `${siteConfig.appName}`,
   openGraph: {},
-  twitter: {},
   extraTags: {},
 })
 

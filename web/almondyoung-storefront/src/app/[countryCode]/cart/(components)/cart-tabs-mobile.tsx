@@ -6,7 +6,7 @@ import {
   TabsList,
   TabsTrigger,
   TabsContent,
-} from "@components/common/components/tabs"
+} from "@/components/shared/components/tabs"
 import type { CartItem } from "@lib/types/ui/cart"
 import { ShippingNotice } from "./shipping-notice"
 import { CartControls } from "./cart-controls"
@@ -47,9 +47,7 @@ export function CartTabsMobile({
       <Tabs defaultValue="purchase">
         <div className="tab-header bg-white">
           <TabsList className="tab-list">
-            <TabsTrigger value="purchase">
-              구매({cartItems.length})
-            </TabsTrigger>
+            <TabsTrigger value="purchase">구매({cartItems.length})</TabsTrigger>
             <TabsTrigger value="regular">자주산상품</TabsTrigger>
             <TabsTrigger value="wishlist">찜한상품(24)</TabsTrigger>
           </TabsList>
@@ -103,4 +101,3 @@ export function CartTabsMobile({
     </nav>
   )
 }
-

@@ -1,4 +1,4 @@
-import { Spinner } from "@components/common/spinner"
+import { Spinner } from "@/components/shared/spinner"
 
 export default function Loading() {
   return (

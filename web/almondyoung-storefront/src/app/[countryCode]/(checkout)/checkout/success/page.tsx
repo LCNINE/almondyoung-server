@@ -1,5 +1,5 @@
 "use client"
-import CheckoutHeader from "@components/layout/components/header/checkout-header"
+import CheckoutHeader from "@/app/[countryCode]/(checkout)/checkout/checkout-header"
 import { Rating } from "@components/rating"
 import { useRating } from "@components/rating/use-rating-hooks"
 import OrderSuccessContainer from "domains/order/success/components/order-success-container"

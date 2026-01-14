@@ -1,4 +1,4 @@
-import ClientToast from "@components/common/client-toast"
+import ClientToast from "@/components/shared/client-toast"
 import { ApiNetworkError } from "@lib/api/api-error"
 import { fetchMe } from "@lib/api/users/me"
 import { cookies, headers } from "next/headers"

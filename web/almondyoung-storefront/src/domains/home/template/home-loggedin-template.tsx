@@ -8,11 +8,11 @@ import {
 import { getProductListService } from "@lib/services/pim/products/getProductListService"
 import type { UserDetailDto } from "@lib/types/dto/users"
 import { ProductCard } from "@lib/types/ui/product"
-import MembershipBanner from "domains/home/components/banner/membership-banner"
+import MembershipBanner from "@/domains/home/components/banner/membership-banner"
 import ProductIntrestSection from "domains/home/components/report/product-intrest-section"
 import { useEffect, useState } from "react"
 import ProductList from "../components/list/product-list"
-import { ProductListSection } from "../components/common/product-list-section"
+import { ProductListSection } from "../components/shared/product-list-section"
 import SectionHeader from "../components/list/section-header"
 import UserReport from "../components/report/user-report"
 

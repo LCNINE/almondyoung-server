@@ -1,5 +1,5 @@
 import { WithHeaderLayout } from "@components/layout"
-import MypageLayout from "@components/layout/mypage-layout"
+import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import MembershipPageClient from "../../../../../domains/membership/home/membership-page-client"
 import { getCurrentSubscriptionServer } from "@lib/api/membership"
 import { cookies } from "next/headers"

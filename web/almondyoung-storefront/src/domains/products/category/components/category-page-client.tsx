@@ -2,20 +2,23 @@
 
 import { useState } from "react"
 // TODO: 서버에서 데이터를 받아서 props로 전달하도록 변경 필요
-import { CategoryCircleTabs } from "@components/category-circle-tabs"
-import { BannerCarousel } from "@components/layout/components/banner/banner-carousel"
+import { CategoryCircleTabs } from "@/components/category/category-circle-tabs"
+import { BannerCarousel } from "@/components/banner/banner-carousel"
 import {
   BasicProductCard,
   TimeSaleProductCard,
 } from "@components/products/product-card"
-import ProductFilterSidebar from "@components/product-filter-sidebar"
-import ProductSortToolbar from "@components/product-sort-toolbar"
+import ProductFilterSidebar from "@/components/products/product-filter-sidebar"
+import ProductSortToolbar from "@/components/products/product-sort-toolbar"
 import { SectionSliderHorizontal } from "@components/section-sliders-horizontal"
 import { SlidersHorizontal } from "lucide-react"
 import { overlay } from "overlay-kit"
 import { MobileFilterSheet } from "./mobile-filter-sheet"
 import CustomDropdown from "@components/dropdown"
-import type { CategoryResponseDto, CategoryTreeNodeDto } from "@lib/types/dto/pim"
+import type {
+  CategoryResponseDto,
+  CategoryTreeNodeDto,
+} from "@lib/types/dto/pim"
 import type { ProductCard } from "@lib/types/ui/product"
 
 // 프론트 전용 타입(CategoryInfo)을 별도로 쓰기보다
@@ -82,7 +85,7 @@ export function CategoryPageClient({
               <CategoryCircleTabs
                 items={categoryData.children as CategoryResponseDto[]} // 서버 DTO 구조 그대로 전달
                 selectedId=""
-                onSelect={() => { }}
+                onSelect={() => {}}
                 countryCode={countryCode}
                 parentSlug={slug}
               />

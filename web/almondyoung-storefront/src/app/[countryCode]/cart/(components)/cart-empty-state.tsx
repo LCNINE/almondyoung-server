@@ -1,5 +1,5 @@
 import React from "react"
-import { CustomButton } from "@components/common/custom-buttons/custom-button"
+import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
 
 interface CartEmptyStateProps {
   type: "login" | "empty"
@@ -52,4 +52,3 @@ export function CartEmptyState({ type }: CartEmptyStateProps) {
     </div>
   )
 }
-

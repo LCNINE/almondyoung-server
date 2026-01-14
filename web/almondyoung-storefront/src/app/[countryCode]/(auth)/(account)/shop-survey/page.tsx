@@ -1,4 +1,4 @@
-import ShopSurveyTemplate from "@components/shop-survey/template/shop-survey-template"
+import ShopSurveyTemplate from "domains/shop-survey/template/shop-survey-template"
 
 export default async function ShopSurveyPage({
   searchParams,

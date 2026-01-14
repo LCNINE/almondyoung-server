@@ -1,6 +1,6 @@
 "use client"
 
-import { CustomButton } from "@components/common/custom-buttons/custom-button"
+import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
 import { SingleOptionQuantitySelector } from "app/[countryCode]/(main)/products/components/single-option-quantity-selector"
 import { Bell, Check, ChevronDown, ShoppingCart, Zap } from "lucide-react"
 import { ProductOptionSelector } from "./product-option-selector"
@@ -72,11 +72,7 @@ export function ProductBottomSheet({
     >
       {/* 헤더 */}
       <header className="flex flex-col items-center justify-center">
-        <button
-          onClick={onClose}
-          className="p-2"
-          aria-label="시트 닫기"
-        >
+        <button onClick={onClose} className="p-2" aria-label="시트 닫기">
           <ChevronDown className="h-7 w-7 text-gray-300" />
         </button>
       </header>
@@ -184,4 +180,3 @@ export function ProductBottomSheet({
     </div>
   )
 }
-

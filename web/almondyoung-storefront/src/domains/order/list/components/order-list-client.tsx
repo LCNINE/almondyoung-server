@@ -1,6 +1,6 @@
 "use client"
 
-import { PageTitle } from "@components/common/page-title"
+import { PageTitle } from "@/components/shared/page-title"
 import { useOrderList } from "../hooks/use-order-list"
 import { groupOrdersByDate } from "../../../../components/orders/utils"
 
@@ -30,7 +30,8 @@ const mockOrders = [
     deliveryInfo: "6/12(금) 도착 예정",
     shippingNote: "경비실 보관",
     productName: "노모드 속눈썹 영양제 블랙",
-    productImage: "https://almondyoung.com/web/product/medium/202503/d21d85aa58f14bb4cc2a69342d24c4fa.jpg",
+    productImage:
+      "https://almondyoung.com/web/product/medium/202503/d21d85aa58f14bb4cc2a69342d24c4fa.jpg",
     price: "9,000원",
     quantity: 2,
     options: ["브러쉬 타입 1개", "마스카라 타입 1개"],

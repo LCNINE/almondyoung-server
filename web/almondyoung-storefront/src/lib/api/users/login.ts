@@ -1,6 +1,6 @@
 "use server"
 
-import { appConfig } from "@/lib/config/medusa"
+import { siteConfig } from "@/lib/config/site"
 import { getCacheTag, setTokenCookies } from "@lib/data/cookies"
 import { revalidatePath, revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
@@ -87,7 +87,7 @@ export async function login(
     console.error("Cart transfer error:", error)
   }
 
-  const targetPath = redirectTo ?? `${appConfig.auth.redirect_to}`
+  const targetPath = redirectTo ?? `${siteConfig.auth.redirect_to}`
   revalidatePath("/", "layout")
   revalidatePath(targetPath)
   redirect(targetPath)

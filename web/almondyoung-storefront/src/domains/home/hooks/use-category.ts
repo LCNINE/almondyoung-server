@@ -17,7 +17,11 @@ export function useCategory(initialCategories: CategoryTreeNodeDto[]) {
     if (!selectedCategoryId) return
 
     startTransition(async () => {
-      const data = await getProductList(1, 10, selectedCategoryId)
+      const data = await getProductList({
+        page: 1,
+        limit: 10,
+        categoryId: selectedCategoryId,
+      })
       setCategoryProducts(data.products)
     })
   }, [selectedCategoryId])

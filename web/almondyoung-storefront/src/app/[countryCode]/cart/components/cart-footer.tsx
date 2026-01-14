@@ -2,7 +2,7 @@
 
 import React from "react"
 import { ChevronUp } from "lucide-react"
-import { CustomButton } from "@components/common/custom-buttons/custom-button"
+import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
 
 interface CartFooterProps {
   totalOriginalPrice: number

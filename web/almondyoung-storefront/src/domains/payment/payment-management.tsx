@@ -1,4 +1,4 @@
-import { PageTitle } from "@components/common/page-title"
+import { PageTitle } from "@/components/shared/page-title"
 import { getMyBusiness } from "@lib/api/users/business"
 import { fetchMe } from "@lib/api/users/me"
 import { getVerificationStatus } from "@lib/api/users/verification-status"

@@ -3,7 +3,7 @@ import React from "react"
 import {
   RoundedBaseCard,
   type RoundedBaseCardProps,
-} from "../common/components/base-rounded-card"
+} from "../shared/components/base-rounded-card"
 
 /* ---------------- Root & Divider ---------------------------------- */
 export const OrderInfoCardRoot = (props: RoundedBaseCardProps) => (

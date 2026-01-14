@@ -1,6 +1,6 @@
 import { getSEOTags } from "@/lib/seo"
 import { WithHeaderLayout } from "@components/layout"
-import MypageLayout from "@components/layout/mypage-layout"
+import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { ExchangeClient } from "../../../../../domains/order/exchange/exchange-client"
 
 export const metadata = getSEOTags({

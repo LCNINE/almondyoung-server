@@ -22,16 +22,16 @@ import {
   CartCardPCImageSection,
   CartCardPCHeader,
 } from "./cart-card.atomic"
-import { CustomCheckbox } from "../common/checkbox"
+import { CustomCheckbox } from "../shared/checkbox"
 import { X } from "lucide-react"
 
 // 수량 조절 컴포넌트
-const QuantityControl = ({ 
-  quantity = 1, 
-  onQuantityChange 
-}: { 
+const QuantityControl = ({
+  quantity = 1,
+  onQuantityChange,
+}: {
   quantity?: number
-  onQuantityChange?: (quantity: number) => void 
+  onQuantityChange?: (quantity: number) => void
 }) => {
   const handleDecrease = () => {
     if (onQuantityChange && quantity > 1) {
@@ -47,8 +47,8 @@ const QuantityControl = ({
 
   return (
     <div className="flex w-fit items-center overflow-hidden rounded border border-gray-300 text-sm">
-      <button 
-        className="px-3 py-1 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed" 
+      <button
+        className="px-3 py-1 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
         onClick={handleDecrease}
         disabled={quantity <= 1}
       >
@@ -57,10 +57,7 @@ const QuantityControl = ({
       <span className="border-x border-gray-300 bg-white px-4 py-1 font-bold">
         {quantity}
       </span>
-      <button 
-        className="px-3 py-1 hover:bg-gray-50" 
-        onClick={handleIncrease}
-      >
+      <button className="px-3 py-1 hover:bg-gray-50" onClick={handleIncrease}>
         +
       </button>
     </div>
@@ -118,8 +115,8 @@ export const CartCard = ({
             />
           }
           controlRight={
-            <button 
-              name="삭제" 
+            <button
+              name="삭제"
               aria-label="삭제"
               onClick={onDelete}
               className="p-1"
@@ -142,8 +139,8 @@ export const CartCard = ({
                 membership={isMembership}
               />
               <div className="mt-2">
-                <QuantityControl 
-                  quantity={quantity} 
+                <QuantityControl
+                  quantity={quantity}
                   onQuantityChange={onQuantityChange}
                 />
               </div>
@@ -153,7 +150,7 @@ export const CartCard = ({
       </div>
 
       {/* PC 버전 (1024px 이상) */}
-      <div className="hidden lg:block px-4">
+      <div className="hidden px-4 lg:block">
         <CartCardPCRoot>
           <CartCardPCHeader>
             {/* 체크박스 + 상품 정보 영역 */}
@@ -163,10 +160,12 @@ export const CartCard = ({
                 id="cart-card-checkbox-pc"
                 name="cart-card-checkbox"
                 value="1"
-                onCheckedChange={(checked) => onCheckChange?.(checked as boolean)}
+                onCheckedChange={(checked) =>
+                  onCheckChange?.(checked as boolean)
+                }
                 className="mt-1"
               />
-              
+
               {/* 상품명과 옵션 */}
               <CartCardPCInfo>
                 <CartCardPCTitle>{title}</CartCardPCTitle>
@@ -179,7 +178,7 @@ export const CartCard = ({
               name="삭제"
               aria-label="삭제"
               onClick={onDelete}
-              className="p-1 hover:bg-gray-50 rounded"
+              className="rounded p-1 hover:bg-gray-50"
             >
               <X className="h-5 w-5" />
             </button>
@@ -196,8 +195,8 @@ export const CartCard = ({
                 discountRate={discountRate}
                 isMembership={isMembership}
               />
-              <QuantityControl 
-                quantity={quantity} 
+              <QuantityControl
+                quantity={quantity}
                 onQuantityChange={onQuantityChange}
               />
             </CartCardPCContent>
@@ -225,9 +224,9 @@ export const BasicCartCard = () => {
       discountRate={78}
       isMembership={true}
       quantity={2}
-      onCheckChange={(checked) => console.log('Checked:', checked)}
-      onDelete={() => console.log('Delete clicked')}
-      onQuantityChange={(qty) => console.log('Quantity:', qty)}
+      onCheckChange={(checked) => console.log("Checked:", checked)}
+      onDelete={() => console.log("Delete clicked")}
+      onQuantityChange={(qty) => console.log("Quantity:", qty)}
     />
   )
 }

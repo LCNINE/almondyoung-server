@@ -1,5 +1,5 @@
-import LocalizedClientLink from "@components/common/localized-client-link"
-import { Separator } from "@components/common/ui/separator"
+import LocalizedClientLink from "@/components/shared/localized-client-link"
+import { Separator } from "@/components/ui/separator"
 import { LoginForm } from "../components/login"
 import Image from "next/image"
 

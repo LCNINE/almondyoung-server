@@ -3,7 +3,7 @@ import { OrderInfoCardShipping } from "@components/orders/order-info-cards"
 import { ExternalLink } from "lucide-react"
 import { Accordion } from "./accordion"
 import { WithHeaderLayout } from "@components/layout"
-import MypageLayout from "@components/layout/mypage-layout"
+import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { DeliveryHeader } from "domains/order/track/components"
 export default function OrderTrackPage() {
   const faqData = [

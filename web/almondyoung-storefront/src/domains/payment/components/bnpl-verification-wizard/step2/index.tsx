@@ -1,4 +1,4 @@
-import { Spinner } from "@components/common/spinner"
+import { Spinner } from "@/components/shared/spinner"
 import { Alert, AlertDescription } from "@components/common/ui/alert"
 import { Badge } from "@components/common/ui/badge"
 import { Button } from "@components/common/ui/button"

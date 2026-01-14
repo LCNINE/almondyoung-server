@@ -1,4 +1,4 @@
-import { CustomButton } from "@components/common/custom-buttons"
+import { CustomButton } from "@/components/shared/custom-buttons"
 import { MoreVertical } from "lucide-react"
 
 interface ExchangeOrderCardProps {

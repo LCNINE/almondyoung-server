@@ -9,7 +9,7 @@ import {
   SelectValue,
   SelectContent,
   SelectItem,
-} from "@components/common/ui/select"
+} from "@components/ui/select"
 
 export default function CustomDropdown({
   items,

@@ -1,6 +1,6 @@
 import { getSEOTags } from "@/lib/seo"
 import { WithHeaderLayout } from "@components/layout"
-import MypageLayout from "@components/layout/mypage-layout"
+import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { getDigitalAssets } from "@lib/api/medusa/digital-asset"
 import { fetchMe } from "@lib/api/users/me"
 import { UserDetail } from "@lib/types/ui/user"

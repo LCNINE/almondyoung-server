@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation"
 import { cookies } from "next/headers"
-import CheckoutHeader from "@components/layout/components/header/checkout-header"
+import CheckoutHeader from "@/app/[countryCode]/(checkout)/checkout/checkout-header"
 
 import ReviewPromptCard from "./review-prompt-card"
 

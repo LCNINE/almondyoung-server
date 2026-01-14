@@ -7,7 +7,7 @@ import {
   OrderInfoCardRowItem,
   OrderInfoCardDivider,
 } from "./order-info-card.atomic"
-import { CustomButton } from "../common/custom-buttons/custom-button"
+import { CustomButton } from "../shared/custom-buttons/custom-button"
 
 /**
  * 배송지 정보 카드 컴포넌트

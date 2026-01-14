@@ -1,4 +1,4 @@
-import MypageLayout from "@components/layout/mypage-layout"
+import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { fetchMe } from "@lib/api/users/me"
 import type { UserDetail } from "@lib/types/ui/user"
 import { MyPageDesktopContent } from "../components/desktop"

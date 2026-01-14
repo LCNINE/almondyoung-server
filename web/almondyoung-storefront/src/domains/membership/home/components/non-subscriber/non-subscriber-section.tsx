@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation"
 import MembershipPlanCard from "../membership-benefit-card"
-import { CustomButton } from "@components/common/custom-buttons"
+import { CustomButton } from "@/components/shared/custom-buttons"
 import NonSubscriberBanner from "./non-subcriber-banner"
 import MembershipStatusSection from "domains/membership/components/status-selection"
 import MembershipPromoBanner from "./membership-promo-banner"

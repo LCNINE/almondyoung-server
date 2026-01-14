@@ -1,4 +1,4 @@
-import { MobileBackHeader } from "@components/layout/components/header"
+import { MobileBackHeader } from "@/components/layout/header/m-back-header"
 import { fetchMe } from "@lib/api/users/me"
 import LoginTemplate from "domains/auth/templates/login-template"
 import { redirect } from "next/navigation"

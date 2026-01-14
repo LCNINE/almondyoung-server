@@ -1,5 +1,5 @@
 import { WithHeaderLayout } from "@components/layout"
-import MypageLayout from "@components/layout/mypage-layout"
+import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { ReviewsContainer } from "domains/reviews/manage/components/reviews-container"
 import { Metadata } from "next"
 

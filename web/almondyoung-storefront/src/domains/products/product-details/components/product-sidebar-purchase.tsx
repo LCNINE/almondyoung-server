@@ -1,7 +1,7 @@
 "use client"
 
-import { CustomButton } from "@components/common/custom-buttons/custom-button"
-import { Spinner } from "@components/common/spinner"
+import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
+import { Spinner } from "@/components/shared/spinner"
 import { useAddToCart } from "@hooks/api/use-add-to-cart"
 import type { ProductDetail } from "@lib/types/ui/product"
 import { SingleOptionQuantitySelector } from "app/[countryCode]/(main)/products/components/single-option-quantity-selector"

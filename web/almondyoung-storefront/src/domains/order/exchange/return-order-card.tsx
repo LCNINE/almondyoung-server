@@ -1,5 +1,5 @@
 import { MoreVertical } from "lucide-react"
-import { CustomButton } from "@components/common/custom-buttons"
+import { CustomButton } from "@/components/shared/custom-buttons"
 
 /** ============================================
  * 반품 카드 컴포넌트

@@ -1,6 +1,6 @@
 "use client"
 
-import { CustomButton } from "@components/common/custom-buttons"
+import { CustomButton } from "@/components/shared/custom-buttons"
 import { Button } from "@components/common/ui/button"
 import { useRouter } from "next/navigation"
 
@@ -26,7 +26,7 @@ export default function Error() {
           </svg>
         </div>
 
-        <h1 className="mb-4 text-2xl font-bold text-gray-900 ">
+        <h1 className="mb-4 text-2xl font-bold text-gray-900">
           죄송합니다. 문제가 발생했습니다.
         </h1>
 

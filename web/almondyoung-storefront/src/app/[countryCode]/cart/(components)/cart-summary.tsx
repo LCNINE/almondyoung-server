@@ -1,7 +1,7 @@
 "use client"
 
 import React from "react"
-import { CustomButton } from "@components/common/custom-buttons/custom-button"
+import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
 
 interface CartSummaryProps {
   totalOriginalPrice: number
@@ -58,11 +58,7 @@ export function CartSummary({
             </div>
           </div>
 
-          <CustomButton
-            className="mt-6 w-full"
-            variant="primary"
-            size="lg"
-          >
+          <CustomButton className="mt-6 w-full" variant="primary" size="lg">
             총 {selectedCount}개 상품 구매하기
           </CustomButton>
         </div>
@@ -70,4 +66,3 @@ export function CartSummary({
     </div>
   )
 }
-

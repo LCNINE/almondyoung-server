@@ -1,17 +1,17 @@
 "use client"
 
-import { CustomButton } from "@components/common/custom-buttons"
-import { CustomCheckbox } from "@components/common/checkbox"
-import { CustomInput } from "@components/common/inputs/custom-input"
-import { Spinner } from "@components/common/spinner"
+import { CustomButton } from "@/components/shared/custom-buttons"
+import { CustomCheckbox } from "@/components/shared/checkbox"
+import { CustomInput } from "@/components/shared/inputs/custom-input"
+import { Spinner } from "@/components/shared/spinner"
 import {
   Form,
   FormControl,
   FormField,
   FormItem,
   FormMessage,
-} from "@components/common/ui/form"
-import { Label } from "@components/common/ui/label"
+} from "@/components/ui/form"
+import { Label } from "@/components/ui/label"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { login } from "@lib/api/users/login"
 import { useParams, useSearchParams } from "next/navigation"

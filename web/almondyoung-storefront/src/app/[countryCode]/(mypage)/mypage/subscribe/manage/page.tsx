@@ -1,6 +1,6 @@
 import { Metadata } from "next"
-import { PageTitle } from "@components/common/page-title"
-import MypageLayout from "@components/layout/mypage-layout"
+import { PageTitle } from "@/components/shared/page-title"
+import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { WithHeaderLayout } from "@components/layout"
 
 export const metadata: Metadata = {

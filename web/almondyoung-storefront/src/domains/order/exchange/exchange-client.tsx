@@ -1,7 +1,7 @@
 "use client"
 
 import { ShippingProduct, OrderStatus } from "@components/orders/types"
-import { PageTitle } from "@components/common/page-title"
+import { PageTitle } from "@/components/shared/page-title"
 import OrderCardContent from "@components/orders/order-card/order-card-content"
 import OrderCard from "@components/orders/order-card/order-card"
 

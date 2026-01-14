@@ -1,6 +1,6 @@
-import { Spinner } from "@components/common/spinner"
+import { Spinner } from "@/components/shared/spinner"
 import { WithHeaderLayout } from "@components/layout"
-import MypageLayout from "@components/layout/mypage-layout"
+import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import ProtectedRoute from "@components/protected-route"
 import { fetchMe } from "@lib/api/users/me"
 import { Suspense } from "react"

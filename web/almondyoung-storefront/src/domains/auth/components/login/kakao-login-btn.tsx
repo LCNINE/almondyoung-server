@@ -1,6 +1,6 @@
 "use client"
 
-import { CustomButton } from "@components/common/custom-buttons"
+import { CustomButton } from "@/components/shared/custom-buttons"
 import Image from "next/image"
 
 export function KakaoLoginBtn({ redirectTo }: { redirectTo: string }) {

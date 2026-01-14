@@ -1,7 +1,7 @@
 "use client"
 
 import { SignupSchema } from "domains/auth/schemas/signup-schema"
-import { CustomInput } from "@components/common/inputs/custom-input"
+import { CustomInput } from "@/components/shared/inputs/custom-input"
 import {
   FormControl,
   FormField,

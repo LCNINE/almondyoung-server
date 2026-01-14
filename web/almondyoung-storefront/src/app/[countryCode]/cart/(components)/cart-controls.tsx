@@ -1,6 +1,6 @@
 import React from "react"
 import { Checkbox } from "@components/common/ui/checkbox"
-import { CustomButton } from "@components/common/custom-buttons/custom-button"
+import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
 
 interface CartControlsProps {
   isAllChecked: boolean
@@ -47,15 +47,10 @@ export function CartControls({
           <Checkbox checked={isAllChecked} onCheckedChange={onCheckAll} />
           <span className="text-base font-semibold">전체 선택</span>
         </label>
-        <CustomButton
-          onClick={onDeleteSelected}
-          variant="secondary"
-          size="sm"
-        >
+        <CustomButton onClick={onDeleteSelected} variant="secondary" size="sm">
           선택삭제
         </CustomButton>
       </div>
     </div>
   )
 }
-

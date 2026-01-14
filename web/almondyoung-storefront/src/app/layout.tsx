@@ -1,7 +1,7 @@
 import { CartQuickButton } from "@components/cart/mobile-cart-quickButton"
-import { FloatingButtons } from "@components/common/custom-buttons/floating-buttons"
-import { BottomNavigation } from "@components/layout/components/bottom-nav"
-import Footer from "@components/layout/components/footer"
+import { FloatingButtons } from "@/components/shared/custom-buttons/floating-buttons"
+import { BottomNavigation } from "@/components/layout/nav/bottom-nav"
+import Footer from "@/components/layout/footer"
 import { fetchMe } from "@lib/api/users/me"
 import { CustomThemeProvider } from "@lib/providers/custom-theme-provider"
 import { ThemeProvider } from "@lib/providers/theme-provider"
@@ -56,9 +56,9 @@ export default async function RootLayout(props: { children: React.ReactNode }) {
                 <Toaster />
               </CustomThemeProvider>
             </ThemeProvider>
+            <BottomNavigation />
           </UserProvider>
           <Footer />
-          <BottomNavigation />
           {renderSchemaTags()}
         </OverlayProvider>
       </body>

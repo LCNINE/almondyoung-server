@@ -1,6 +1,6 @@
 "use client"
 
-import CustomRadio from "@components/common/custom-radio"
+import CustomRadio from "@/components/shared/custom-radio"
 
 // 현금영수증/세금계산서 섹션
 export const ReceiptSection = ({

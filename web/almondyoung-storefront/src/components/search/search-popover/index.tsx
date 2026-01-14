@@ -90,7 +90,7 @@ function SearchHistory() {
             ))}
           </ul>
         ) : (
-          <p className="mt-10 text-center text-sm text-gray-400">
+          <p className="mt-10 text-left text-sm text-gray-400">
             최근 검색어가 없어요.
           </p>
         )}

@@ -1,6 +1,6 @@
 "use client"
 
-import { CustomButton } from "@components/common/custom-buttons/custom-button"
+import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
 import { Heart } from "lucide-react"
 
 type Props = {
@@ -65,4 +65,3 @@ export function ProductBottomBar({
     </nav>
   )
 }
-

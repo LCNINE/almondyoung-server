@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { CustomButton } from "@components/common/custom-buttons"
+import { CustomButton } from "@/components/shared/custom-buttons"
 import { MoreVertical } from "lucide-react"
 
 interface OrderCardContentProps {
@@ -137,7 +137,10 @@ export default function OrderCardContent({
         >
           주문 취소 / 반품 신청
         </CustomButton>
-        <Link href={`/mypage/order/track?orderId=${orderId}`} className="flex-1">
+        <Link
+          href={`/mypage/order/track?orderId=${orderId}`}
+          className="flex-1"
+        >
           <CustomButton
             type="button"
             variant="outline"
