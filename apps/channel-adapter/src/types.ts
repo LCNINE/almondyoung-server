@@ -525,7 +525,12 @@ export interface PimProductSnapshot {
   description?: string;
   descriptionHtml?: string;
   thumbnail?: string;
-  images?: string[];
+  images?: Array<{
+    fileId: string;
+    url: string;
+    isPrimary: boolean;
+    sortOrder: number;
+  }>;
 
   // SEO
   seoTitle?: string;
@@ -595,7 +600,15 @@ export interface MedusaProductPayload {
   // 선택 정보
   description?: string;
   thumbnail?: string;
-  images?: Array<{ url: string; rank?: number }>;
+  images?: Array<{
+    url: string;
+    rank?: number;
+    metadata?: {
+      pimIsPrimary?: boolean;
+      pimSortOrder?: number;
+      pimFileId?: string;
+    };
+  }>;
 
   // 옵션
   options?: Array<{
