@@ -1,10 +1,85 @@
 import { fetchMe } from "@lib/api/users/me"
 import { getWishlistByProductId } from "@lib/api/users/wishlist"
-import { getProductDetailService } from "@lib/services/pim/products/getProductDetailService"
+import { getProductDetail } from "@lib/api/medusa/products"
+import { getRegion } from "@lib/api/medusa/regions"
+import { getActiveVersion } from "@lib/api/pim/versions"
 import { ProductDetail } from "@lib/types/ui/product"
 import type { UserDetail, WishlistItem } from "@lib/types/ui/user"
 import ProductDetailPage from "domains/products/product-details/product-detail-page"
 import { Suspense } from "react"
+import type { StoreProduct } from "@medusajs/types"
+import { getProductPrice } from "@lib/utils/get-product-price"
+
+const mapProductMetadata = (metadata?: Record<string, unknown>) => {
+  if (!metadata) return undefined
+
+  return Object.entries(metadata).reduce<Record<string, string>>(
+    (acc, [key, value]) => {
+      if (value == null) return acc
+      acc[key] = typeof value === "string" ? value : String(value)
+      return acc
+    },
+    {}
+  )
+}
+
+const mapMedusaProductToDetail = (
+  product: StoreProduct,
+  descriptionHtml?: string
+): ProductDetail => {
+  const thumbnail =
+    product.thumbnail ||
+    product.images?.[0]?.url ||
+    ""
+
+  const thumbnails =
+    product.images?.map((image) => image.url).filter(Boolean) ||
+    (thumbnail ? [thumbnail] : [])
+
+  const priceInfo = getProductPrice({ product })
+  const basePrice = priceInfo?.cheapestPrice?.original_price_number
+  const membershipPrice = priceInfo?.cheapestPrice?.calculated_price_number
+
+  const options =
+    product.options?.map((option) => ({
+      type: option.title,
+      label: option.title,
+      values:
+        option.values?.map((value) => ({
+          id: value.id,
+          name: value.value,
+        })) || [],
+    })) || []
+
+  const metadata = product.metadata as Record<string, unknown> | undefined
+  const brand =
+    (metadata?.brand && String(metadata.brand)) ||
+    product.subtitle ||
+    undefined
+
+  return {
+    id: product.id,
+    name: product.title,
+    thumbnail,
+    thumbnails,
+    description: product.description || undefined,
+    descriptionHtml: descriptionHtml || undefined,
+    brand,
+    status: product.status
+      ? product.status === "published"
+        ? "active"
+        : "inactive"
+      : "active",
+    basePrice,
+    membershipPrice,
+    isMembershipOnly: false,
+    options,
+    optionMeta: { isSingle: options.length === 0 },
+    tags: product.tags?.map((tag) => tag.value) || undefined,
+    productInfo: mapProductMetadata(metadata),
+    detailImages: thumbnails.slice(1),
+  }
+}
 
 export default async function Page({
   params,
@@ -16,12 +91,23 @@ export default async function Page({
   let error: string | null = null
   const user: UserDetail | null = await fetchMe().catch(() => null)
   const wishlist: WishlistItem | null = await getWishlistByProductId(id)
+  const region = await getRegion(countryCode)
 
   try {
-    product = await getProductDetailService(id, {
-      userId: user?.id,
-      withStock: true,
-    })
+    const medusaProduct = await getProductDetail(id, region?.id)
+    let pimDescriptionHtml: string | undefined
+
+    try {
+      const pimResult = await getActiveVersion(id)
+      pimDescriptionHtml =
+        "data" in pimResult ? pimResult.data?.descriptionHtml ?? undefined : undefined
+    } catch (pimError) {
+      console.error("상품 상세 HTML 로드 실패:", pimError)
+    }
+
+    product = medusaProduct
+      ? mapMedusaProductToDetail(medusaProduct, pimDescriptionHtml)
+      : null
   } catch (err) {
     console.error("상품 상세 정보 로드 실패:", err)
     error =

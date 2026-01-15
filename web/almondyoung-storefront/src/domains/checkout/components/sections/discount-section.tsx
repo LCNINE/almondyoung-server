@@ -1,6 +1,6 @@
 import { Input } from "@components/common/ui/input"
 import { formatPrice } from "@lib/utils/format-price"
-import { CheckoutMembershipTagIcon } from "icons/membership-tag-icon"
+import { CheckoutMembershipTagIcon } from "@/icons/membership-tag-icon"
 import { ChevronDown } from "lucide-react"
 
 // 할인/부가결제 섹션

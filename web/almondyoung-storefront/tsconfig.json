@@ -24,6 +24,7 @@
       "@modules/*": ["src/modules/*"],
       "@pages/*": ["src/pages/*"],
       "@types/*": ["src/types/*"],
+      "@components/common/ui/*": ["src/components/ui/*"],
       "@components/*": ["src/components/*"],
       "@utils/*": ["src/utils/*"],
       "@hooks/*": ["src/hooks/*"],

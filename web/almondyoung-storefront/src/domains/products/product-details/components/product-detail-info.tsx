@@ -16,6 +16,7 @@ type ProductInfo = {
 
 type Props = {
   productInfo: ProductInfo
+  descriptionHtml?: string
   detailImages: string[]
   productName: string
 }
@@ -26,6 +27,7 @@ type Props = {
  */
 export function ProductDetailInfo({
   productInfo,
+  descriptionHtml,
   detailImages,
   productName,
 }: Props) {
@@ -74,24 +76,34 @@ export function ProductDetailInfo({
         })}
       </dl>
 
-      {/* 상품 상세 이미지 */}
-      <section className="mt-8 space-y-4">
-        <h4 className="sr-only">상품 상세 이미지</h4>
-        {detailImages.map((image, idx) => (
-          <figure key={idx} className="w-full overflow-hidden rounded-lg">
-            <Image
-              src={image}
-              alt={`${productName} 상세 이미지 ${idx + 1}`}
-              className="h-auto w-full object-contain"
-              loading="lazy"
-              width={350}
-              height={350}
-              sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-              onError={(e) => console.error("이미지 로드 실패:", image, e)}
-            />
-          </figure>
-        ))}
-      </section>
+      {/* 상품 상세 정보 (HTML 우선) */}
+      {descriptionHtml ? (
+        <section className="mt-8">
+          <h4 className="sr-only">상품 상세 정보</h4>
+          <div
+            className="prose max-w-none"
+            dangerouslySetInnerHTML={{ __html: descriptionHtml }}
+          />
+        </section>
+      ) : (
+        <section className="mt-8 space-y-4">
+          <h4 className="sr-only">상품 상세 이미지</h4>
+          {detailImages.map((image, idx) => (
+            <figure key={idx} className="w-full overflow-hidden rounded-lg">
+              <Image
+                src={image}
+                alt={`${productName} 상세 이미지 ${idx + 1}`}
+                className="h-auto w-full object-contain"
+                loading="lazy"
+                width={350}
+                height={350}
+                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                onError={(e) => console.error("이미지 로드 실패:", image, e)}
+              />
+            </figure>
+          ))}
+        </section>
+      )}
     </article>
   )
 }

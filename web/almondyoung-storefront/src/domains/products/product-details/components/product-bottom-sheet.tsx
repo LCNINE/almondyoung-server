@@ -1,7 +1,7 @@
 "use client"
 
 import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
-import { SingleOptionQuantitySelector } from "app/[countryCode]/(main)/products/components/single-option-quantity-selector"
+import { SingleOptionQuantitySelector } from "@/app/[countryCode]/(main)/products/components/single-option-quantity-selector"
 import { Bell, Check, ChevronDown, ShoppingCart, Zap } from "lucide-react"
 import { ProductOptionSelector } from "./product-option-selector"
 

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { SingleOptionQuantitySelector } from "app/[countryCode]/(main)/products/components/single-option-quantity-selector"
+import { SingleOptionQuantitySelector } from "@/app/[countryCode]/(main)/products/components/single-option-quantity-selector"
 import { ProductPriceDisplay } from "./product-price-display"
 import { ProductRatingDisplay } from "./product-rating-display"
 import { ProductShippingInfo } from "./product-shipping-info"
