@@ -1,6 +1,7 @@
 "use server"
 
 import { api } from "../api"
+import type { ProductDetailDto } from "@lib/types/dto/pim"
 
 export const getProductByMasterId = async (masterId: string) => {
   const result = await api("pim", "/products", {
@@ -12,4 +13,13 @@ export const getProductByMasterId = async (masterId: string) => {
   })
 
   return result
+}
+
+export const getProductDetailByMasterId = async (
+  masterId: string
+): Promise<ProductDetailDto> => {
+  return await api("pim", `/masters/${masterId}`, {
+    method: "GET",
+    withAuth: false,
+  })
 }

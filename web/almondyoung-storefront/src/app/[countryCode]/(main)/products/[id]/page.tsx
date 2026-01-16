@@ -2,7 +2,7 @@ import { fetchMe } from "@lib/api/users/me"
 import { getWishlistByProductId } from "@lib/api/users/wishlist"
 import { getProductDetail } from "@lib/api/medusa/products"
 import { getRegion } from "@lib/api/medusa/regions"
-import { getActiveVersion } from "@lib/api/pim/versions"
+import { getProductDetailByMasterId } from "@lib/api/pim/products"
 import { ProductDetail } from "@lib/types/ui/product"
 import type { UserDetail, WishlistItem } from "@lib/types/ui/user"
 import ProductDetailPage from "domains/products/product-details/product-detail-page"
@@ -53,7 +53,7 @@ const mapMedusaProductToDetail = (
 
   const metadata = product.metadata as Record<string, unknown> | undefined
   const brand =
-    (metadata?.brand && String(metadata.brand)) ||
+    (typeof metadata?.brand === "string" && metadata.brand) ||
     product.subtitle ||
     undefined
 
@@ -98,9 +98,18 @@ export default async function Page({
     let pimDescriptionHtml: string | undefined
 
     try {
-      const pimResult = await getActiveVersion(id)
-      pimDescriptionHtml =
-        "data" in pimResult ? pimResult.data?.descriptionHtml ?? undefined : undefined
+      const metadata = medusaProduct?.metadata as
+        | Record<string, unknown>
+        | undefined
+      const pimMasterId =
+        (typeof metadata?.pimMasterId === "string" && metadata.pimMasterId) ||
+        medusaProduct?.handle ||
+        undefined
+
+      if (pimMasterId) {
+        const pimDetail = await getProductDetailByMasterId(pimMasterId)
+        pimDescriptionHtml = pimDetail?.descriptionHtml ?? undefined
+      }
     } catch (pimError) {
       console.error("상품 상세 HTML 로드 실패:", pimError)
     }

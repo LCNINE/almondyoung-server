@@ -45,6 +45,8 @@ export async function CategoryPageContainer({
   console.log(`🚀 [CategoryPageContainer] 상품 목록 로드 시작:`, {
     categoryId: categoryData.id,
     categoryName: categoryData.name,
+    regionId: countryCode.toUpperCase(),
+    regionName: region?.name
   })
 
   let initialProducts: any[] = []
