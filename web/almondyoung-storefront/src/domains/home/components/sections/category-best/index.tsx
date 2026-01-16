@@ -12,13 +12,16 @@ import { useCategoryBest } from "../../../hooks/use-category-best"
 import { SectionHeader } from "../../header/section-header"
 import { ProductCarousel } from "../../shared/product-carousel"
 import { CategoryTabs } from "./category-tabs"
+import type { ProductList } from "@/lib/types/ui/product"
 
 interface CategoryBestSectionProps {
   initialCategories: CategoryTreeNodeDto[]
+  initialProducts: ProductList["products"] | null
 }
 
 export function CategoryBestSection({
   initialCategories,
+  initialProducts,
 }: CategoryBestSectionProps) {
   const bestCategories = initialCategories.slice(0, 7)
 
