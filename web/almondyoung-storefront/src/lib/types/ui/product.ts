@@ -1,7 +1,15 @@
-// 쇼핑몰 사용자에게 보여줄 데이터 구조. 컴포넌트는 이 타입만 의존.
-// Transformer에서 Pim DTO -> UI 타입으로 가공하고, Service에서 외부데이터(WMS/USER)를 주입.
+import { StoreProduct } from "@medusajs/types"
+import { ProductsResponseDto } from "../dto/medusa"
+import { ReviewResponseDto } from "../dto/ugc"
 
-import { BannerDto, BannerGroupDto } from "../dto/pim"
+/*───────────────────────────
+ * 상품 타입
+ *──────────────────────────*/
+export interface ProductList extends Pick<ProductsResponseDto, "products"> {}
+
+export interface ProductWithReviews extends StoreProduct {
+  reviews: ReviewResponseDto[] | undefined
+}
 
 export interface PriceInfo {
   original: number // 정가
@@ -258,17 +266,3 @@ export interface SearchProductResult {
     }>
   }
 }
-
-// ==========================================
-// Banner
-// ==========================================
-
-/**
- * BannerGroup
- */
-export interface BannerGroup extends BannerGroupDto {}
-
-/**
- * Banner
- */
-export interface Banner extends BannerDto {}

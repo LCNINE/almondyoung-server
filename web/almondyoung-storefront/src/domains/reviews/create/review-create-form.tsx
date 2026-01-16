@@ -43,7 +43,7 @@ export function ReviewCreateForm() {
           <p className="text-left text-xs font-medium text-black">
             이 상품에 대해 얼마나 만족하셨나요?
           </p>
-          <Rating rating={rating} onChange={handleRatingChange} />
+          <Rating rating={rating} onChange={handleRatingChange} size={44} />
         </section>
 
         {/* 섹션 3: 리뷰 텍스트 */}

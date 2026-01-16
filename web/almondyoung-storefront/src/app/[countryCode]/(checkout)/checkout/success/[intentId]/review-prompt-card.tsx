@@ -14,7 +14,7 @@ export default function ReviewPromptCard() {
         <h2 className="text-lg font-bold text-black">
           구매 경험이 만족스러웠나요?
         </h2>
-        <Rating rating={rating} onChange={handleRatingChange} />
+        <Rating rating={rating} onChange={handleRatingChange} size={44} />
       </div>
     </section>
   )

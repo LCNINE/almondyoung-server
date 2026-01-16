@@ -19,7 +19,8 @@ type ServiceType =
   | "users"
   | "wallet"
   | "wms"
-
+  | "anly"
+  | "ugc"
 type RequestOptions = Omit<RequestInit, "body"> & {
   body?: unknown
   params?: Record<string, string>
@@ -38,6 +39,8 @@ const getBaseUrl = (service: ServiceType) => {
       notification: `${process.env.BACKEND_URL}/notification`,
       pim: `${process.env.BACKEND_URL}/pim`,
       wallet: `${process.env.BACKEND_URL}/wallet`,
+      anly: `${process.env.BACKEND_URL}/anly`,
+      ugc: `${process.env.BACKEND_URL}/ugc`,
     }
     return serviceUrls[service]
   }
@@ -53,6 +56,8 @@ const getBaseUrl = (service: ServiceType) => {
     notification: "http://localhost:5001",
     pim: "http://localhost:3020",
     wallet: "http://localhost:5000",
+    anly: "http://localhost:3040",
+    ugc: "http://localhost:3031",
   }
 
   return localUrls[service]
