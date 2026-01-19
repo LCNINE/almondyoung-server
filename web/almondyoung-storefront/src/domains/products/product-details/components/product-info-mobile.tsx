@@ -7,6 +7,7 @@ import { ProductRatingDisplay } from "./product-rating-display"
 import { ProductShippingInfo } from "./product-shipping-info"
 import { ProductOptionSelector } from "./product-option-selector"
 import type { ProductDetail } from "@lib/types/ui/product"
+import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
 
 type Props = {
   product: ProductDetail
@@ -27,16 +28,29 @@ export function ProductInfoMobile({ product }: Props) {
   const [selectedCartOptions, setSelectedCartOptions] = useState<
     Array<{
       id: string
+      variantId?: string
       name: string
       quantity: number
       price: number
       image: string
+      stock?: number
     }>
   >([])
 
   // 유틸 함수
   const isSingleOption = !product.options || product.options.length === 0
-  const getPrice = () => product.membershipPrice || product.basePrice || 0
+  const getVariantPrice = (variantId?: string) => {
+    if (variantId && variantId === product.defaultVariantId) {
+      return product.membershipPrice || product.basePrice || 0
+    }
+    if (variantId && product.variantPriceMap?.[variantId]) {
+      const price = product.variantPriceMap[variantId]
+      return price.membershipPrice || price.basePrice || 0
+    }
+    return product.membershipPrice || product.basePrice || 0
+  }
+  const defaultVariantId = product.defaultVariantId
+  const getPrice = () => getVariantPrice(defaultVariantId)
   const getDiscountRate = () => {
     const base = product.basePrice || 0
     const member = product.membershipPrice || 0
@@ -58,6 +72,13 @@ export function ProductInfoMobile({ product }: Props) {
       .map((o) => next[o.label])
       .join(" / ")
 
+    const selectionKey = (product.options ?? [])
+      .map((o) => `${o.label}=${next[o.label]}`)
+      .join("|")
+    const variantId = product.skuIndex?.[selectionKey]
+    if (!variantId) return
+    const optionPrice = getVariantPrice(variantId)
+
     setSelectedCartOptions((prev) => {
       const exists = prev.find((p) => p.name === optionName)
       if (exists) {
@@ -69,10 +90,17 @@ export function ProductInfoMobile({ product }: Props) {
         ...prev,
         {
           id: `${product.id}-${Date.now()}`,
+          variantId,
           name: optionName,
           quantity: 1,
-          price: getPrice(),
-          image: product.thumbnails?.[0] || product.thumbnail,
+          price: optionPrice,
+          image:
+            (variantId && product.variantThumbnailMap?.[variantId]) ||
+            product.thumbnails?.[0] ||
+            product.thumbnail ||
+            "https://placehold.co/80x80?text=No+Image",
+          stock:
+            (variantId && product.skuStock?.[variantId]) || undefined,
         },
       ]
     })
@@ -130,7 +158,7 @@ export function ProductInfoMobile({ product }: Props) {
       {isSingleOption ? (
         <SingleOptionQuantitySelector
           productName={product.name}
-          thumbnail={product.thumbnails?.[0]}
+          thumbnail={getThumbnailUrl(product.thumbnails?.[0] || "")}
           quantity={quantity}
           onQuantityChange={setQuantity}
           price={getPrice()}

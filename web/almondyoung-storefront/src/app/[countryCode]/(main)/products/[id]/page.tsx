@@ -8,7 +8,7 @@ import type { UserDetail, WishlistItem } from "@lib/types/ui/user"
 import ProductDetailPage from "domains/products/product-details/product-detail-page"
 import { Suspense } from "react"
 import type { StoreProduct } from "@medusajs/types"
-import { getProductPrice } from "@lib/utils/get-product-price"
+import { getPricesForVariant, getProductPrice } from "@lib/utils/get-product-price"
 
 const mapProductMetadata = (metadata?: Record<string, unknown>) => {
   if (!metadata) return undefined
@@ -23,9 +23,26 @@ const mapProductMetadata = (metadata?: Record<string, unknown>) => {
   )
 }
 
+const buildSelectionKey = (
+  selection: Record<string, string>,
+  optionOrder: string[]
+) => {
+  if (optionOrder.length === 0) return undefined
+
+  const parts = optionOrder.map((label) => {
+    const value = selection[label]
+    return value ? `${label}=${value}` : ""
+  })
+
+  if (parts.some((part) => !part)) return undefined
+
+  return parts.join("|")
+}
+
 const mapMedusaProductToDetail = (
   product: StoreProduct,
-  descriptionHtml?: string
+  descriptionHtml?: string,
+  pimMasterId?: string
 ): ProductDetail => {
   const thumbnail =
     product.thumbnail ||
@@ -36,9 +53,21 @@ const mapMedusaProductToDetail = (
     product.images?.map((image) => image.url).filter(Boolean) ||
     (thumbnail ? [thumbnail] : [])
 
+  const defaultVariant =
+    product.variants?.find(
+      (variant: any) => variant?.is_default || variant?.isDefault
+    ) || product.variants?.[0]
+  const defaultVariantId = defaultVariant?.id
+  const defaultPrice = defaultVariant
+    ? getPricesForVariant(defaultVariant)
+    : null
   const priceInfo = getProductPrice({ product })
-  const basePrice = priceInfo?.cheapestPrice?.original_price_number
-  const membershipPrice = priceInfo?.cheapestPrice?.calculated_price_number
+  const basePrice =
+    defaultPrice?.original_price_number ||
+    priceInfo?.cheapestPrice?.original_price_number
+  const membershipPrice =
+    defaultPrice?.calculated_price_number ||
+    priceInfo?.cheapestPrice?.calculated_price_number
 
   const options =
     product.options?.map((option) => ({
@@ -50,6 +79,46 @@ const mapMedusaProductToDetail = (
           name: value.value,
         })) || [],
     })) || []
+
+  const optionOrder = product.options?.map((option) => option.title) || []
+  const optionLabelById = new Map(
+    product.options?.map((option) => [option.id, option.title]) || []
+  )
+  const skuIndex: Record<string, string> = {}
+  const variantPriceMap: Record<
+    string,
+    { basePrice?: number; membershipPrice?: number }
+  > = {}
+  const variantThumbnailMap: Record<string, string> = {}
+
+  for (const variant of product.variants || []) {
+    const variantPrice = getPricesForVariant(variant)
+    if (variant.id) {
+      variantPriceMap[variant.id] = {
+        basePrice: variantPrice?.original_price_number,
+        membershipPrice: variantPrice?.calculated_price_number,
+      }
+      variantThumbnailMap[variant.id] =
+        variant?.images?.[0]?.url || thumbnail
+    }
+
+    const selection: Record<string, string> = {}
+    for (const opt of variant.options || []) {
+      const optionId = opt.option_id ?? undefined
+      const label =
+        (optionId ? optionLabelById.get(optionId) : undefined) ||
+        optionId ||
+        ""
+      if (label && opt.value) {
+        selection[label] = opt.value
+      }
+    }
+
+    const selectionKey = buildSelectionKey(selection, optionOrder)
+    if (selectionKey && variant.id) {
+      skuIndex[selectionKey] = variant.id
+    }
+  }
 
   const metadata = product.metadata as Record<string, unknown> | undefined
   const brand =
@@ -78,6 +147,11 @@ const mapMedusaProductToDetail = (
     tags: product.tags?.map((tag) => tag.value) || undefined,
     productInfo: mapProductMetadata(metadata),
     detailImages: thumbnails.slice(1),
+    defaultVariantId,
+    variantPriceMap,
+    variantThumbnailMap,
+    skuIndex: Object.keys(skuIndex).length > 0 ? skuIndex : undefined,
+    pimMasterId,
   }
 }
 
@@ -96,12 +170,13 @@ export default async function Page({
   try {
     const medusaProduct = await getProductDetail(id, region?.id)
     let pimDescriptionHtml: string | undefined
+    let pimMasterId: string | undefined
 
     try {
       const metadata = medusaProduct?.metadata as
         | Record<string, unknown>
         | undefined
-      const pimMasterId =
+      pimMasterId =
         (typeof metadata?.pimMasterId === "string" && metadata.pimMasterId) ||
         medusaProduct?.handle ||
         undefined
@@ -115,7 +190,7 @@ export default async function Page({
     }
 
     product = medusaProduct
-      ? mapMedusaProductToDetail(medusaProduct, pimDescriptionHtml)
+      ? mapMedusaProductToDetail(medusaProduct, pimDescriptionHtml, pimMasterId)
       : null
   } catch (err) {
     console.error("상품 상세 정보 로드 실패:", err)

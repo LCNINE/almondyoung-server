@@ -4,6 +4,7 @@ import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
 import { SingleOptionQuantitySelector } from "@/app/[countryCode]/(main)/products/components/single-option-quantity-selector"
 import { Bell, Check, ChevronDown, ShoppingCart, Zap } from "lucide-react"
 import { ProductOptionSelector } from "./product-option-selector"
+import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
 
 type Product = {
   name: string
@@ -91,7 +92,7 @@ export function ProductBottomSheet({
         ) : (
           <SingleOptionQuantitySelector
             productName={product.name}
-            thumbnail={product.thumbnails?.[0]}
+            thumbnail={getThumbnailUrl(product.thumbnails?.[0] || "")}
             quantity={quantity}
             onQuantityChange={onQuantityChange}
             price={getProductPrice()}
@@ -143,7 +144,7 @@ export function ProductBottomSheet({
                 <Bell className="h-4 w-4" />
                 <span>재입고알림 신청하기</span>
               </CustomButton>
-              <CustomButton variant="primary" size="lg" className="flex-1">
+              <CustomButton variant="fill" size="lg" className="flex-1">
                 <Zap className="h-4 w-4" />
                 <span>미리구매하기</span>
               </CustomButton>
@@ -163,7 +164,7 @@ export function ProductBottomSheet({
                 <span>장바구니</span>
               </CustomButton>
               <CustomButton
-                variant="primary"
+                variant="fill"
                 size="lg"
                 className="flex-1"
                 onClick={onBuyNow}
