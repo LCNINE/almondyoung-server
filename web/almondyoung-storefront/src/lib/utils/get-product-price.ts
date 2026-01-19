@@ -36,7 +36,13 @@ const getPriceType = (variant: any) => {
 }
 
 export const getPricesForVariant = (variant: any) => {
-  const calculatedAmount = getCalculatedAmount(variant)
+  let calculatedAmount = getCalculatedAmount(variant)
+
+  if (calculatedAmount == null && variant?.prices?.length > 0) {
+    const firstPrice = variant.prices[0]
+    calculatedAmount = firstPrice?.amount ?? null
+  }
+
   if (calculatedAmount == null) {
     return null
   }

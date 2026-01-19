@@ -2,6 +2,7 @@ import { fetchMe } from "@lib/api/users/me"
 import { getWishlistByProductId } from "@lib/api/users/wishlist"
 import { getProductDetail } from "@lib/api/medusa/products"
 import { getRegion } from "@lib/api/medusa/regions"
+import { getDefaultSalesChannelId } from "@lib/api/medusa/store"
 import { getProductDetailByMasterId } from "@lib/api/pim/products"
 import { ProductDetail } from "@lib/types/ui/product"
 import type { UserDetail, WishlistItem } from "@lib/types/ui/user"
@@ -166,9 +167,33 @@ export default async function Page({
   const user: UserDetail | null = await fetchMe().catch(() => null)
   const wishlist: WishlistItem | null = await getWishlistByProductId(id)
   const region = await getRegion(countryCode)
+  const salesChannelId = await getDefaultSalesChannelId()
 
   try {
-    const medusaProduct = await getProductDetail(id, region?.id)
+    const medusaProduct = await getProductDetail(
+      id,
+      region?.id,
+      // salesChannelId
+    )
+    const sampleVariant = medusaProduct?.variants?.[0]
+    if (sampleVariant) {
+      console.log("[PRICE DEBUG] Store API Response", {
+        productId: medusaProduct?.id,
+        regionId: region?.id,
+        regionCurrencyCode: region?.currency_code,
+        salesChannelId,
+        variantId: sampleVariant.id,
+        calculated_price: sampleVariant.calculated_price,
+      })
+
+      console.log("[REGION DEBUG]", {
+        regionId: region?.id,
+        regionName: region?.name,
+        currencyCode: region?.currency_code,
+        countries: region?.countries?.map(c => c.iso_2),
+        _fullRegion: JSON.stringify(region, null, 2),
+      })
+    }
     let pimDescriptionHtml: string | undefined
     let pimMasterId: string | undefined
 

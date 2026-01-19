@@ -60,11 +60,13 @@ export const getProductList = async ({
 // 상품 상세 조회
 export const getProductDetail = async (
   productId: string,
-  regionId?: string
+  regionId?: string,
+  // salesChannelId?: string | null
 ): Promise<StoreProduct> => {
   try {
     const { product } = await sdk.store.product.retrieve(productId, {
-      fields: "*variants.calculated_price",
+      fields:
+        "variants.*,+variants.prices.*,+variants.calculated_price,+variants.calculated_price_incl_tax,+variants.original_price,+variants.original_price_incl_tax,+variants.price_type,+variants.currency_code",
       region_id: regionId,
     })
 
