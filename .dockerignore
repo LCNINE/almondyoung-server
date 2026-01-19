@@ -5,6 +5,8 @@ npm-debug.log*
 # Build outputs
 dist
 build
+!packages/hms-api-wrapper/dist
+!packages/hms-api-wrapper/dist/**
 *.tsbuildinfo
 
 # Environment files
