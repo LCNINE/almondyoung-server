@@ -16,6 +16,7 @@ type Option = {
 
 type SelectedCartOption = {
   id: string
+  variantId?: string
   name: string
   quantity: number
   price: number

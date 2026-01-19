@@ -2,7 +2,6 @@
 
 import React, { useState, useMemo, useEffect } from "react"
 import type { CartItem } from "@lib/types/ui/cart"
-import { getAllCategories } from "@lib/services/pim/category/getCategoryService"
 import { ProductCard } from "@lib/types/ui/product"
 import { CartHeader } from "./cart-header"
 import { CartTabsMobile } from "./cart-tabs-mobile"

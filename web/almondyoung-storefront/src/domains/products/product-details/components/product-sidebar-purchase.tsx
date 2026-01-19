@@ -4,7 +4,7 @@ import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
 import { Spinner } from "@/components/shared/spinner"
 import { useAddToCart } from "@hooks/api/use-add-to-cart"
 import type { ProductDetail } from "@lib/types/ui/product"
-import { SingleOptionQuantitySelector } from "app/[countryCode]/(main)/products/components/single-option-quantity-selector"
+import { SingleOptionQuantitySelector } from "@/app/[countryCode]/(main)/products/components/single-option-quantity-selector"
 import { Bell, Heart, MessageCircle, Zap } from "lucide-react"
 import { useState } from "react"
 import { ProductOptionSelector } from "./product-option-selector"
@@ -12,6 +12,7 @@ import { ProductPriceDisplay } from "./product-price-display"
 import { ProductRatingDisplay } from "./product-rating-display"
 import { ProductShippingInfo } from "./product-shipping-info"
 import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
+import { toast } from "sonner"
 
 type Props = {
   product: ProductDetail
@@ -41,10 +42,12 @@ export function ProductSidebarPurchase({
   const [selectedCartOptions, setSelectedCartOptions] = useState<
     Array<{
       id: string
+      variantId?: string
       name: string
       quantity: number
       price: number
       image: string
+      stock?: number
     }>
   >([])
 
@@ -53,7 +56,18 @@ export function ProductSidebarPurchase({
   // 유틸 함수
   const isSingleOption = !product.options || product.options.length === 0
   const isOutOfStock = product.status !== "active"
-  const getPrice = () => product.membershipPrice || product.basePrice || 0
+  const getVariantPrice = (variantId?: string) => {
+    if (variantId && variantId === product.defaultVariantId) {
+      return product.membershipPrice || product.basePrice || 0
+    }
+    if (variantId && product.variantPriceMap?.[variantId]) {
+      const price = product.variantPriceMap[variantId]
+      return price.membershipPrice || price.basePrice || 0
+    }
+    return product.membershipPrice || product.basePrice || 0
+  }
+  const defaultVariantId = product.defaultVariantId
+  const getPrice = () => getVariantPrice(defaultVariantId)
   const getDiscountRate = () => {
     const base = product.basePrice || 0
     const member = product.membershipPrice || 0
@@ -64,14 +78,17 @@ export function ProductSidebarPurchase({
   }
 
   const getTotalQuantity = () => {
-    const cartQuantity = selectedCartOptions.reduce(
-      (sum, opt) => sum + opt.quantity,
-      0
-    )
-    return isSingleOption ? cartQuantity + quantity : cartQuantity
+    if (isSingleOption) return quantity
+    return selectedCartOptions.reduce((sum, opt) => sum + opt.quantity, 0)
   }
 
-  const getTotalPrice = () => getTotalQuantity() * getPrice()
+  const getTotalPrice = () => {
+    if (isSingleOption) return quantity * getPrice()
+    return selectedCartOptions.reduce(
+      (sum, opt) => sum + opt.price * opt.quantity,
+      0
+    )
+  }
 
   // 핸들러
   const handleOptionChange = (optionLabel: string, value: string) => {
@@ -85,6 +102,18 @@ export function ProductSidebarPurchase({
       .map((o) => next[o.label])
       .join(" / ")
 
+    const selectionKey = (product.options ?? [])
+      .map((o) => `${o.label}=${next[o.label]}`)
+      .join("|")
+    const variantId = product.skuIndex?.[selectionKey]
+
+    if (!variantId) {
+      toast.error("선택한 옵션 조합의 정보를 찾을 수 없습니다.")
+      return
+    }
+
+    const optionPrice = getVariantPrice(variantId)
+
     setSelectedCartOptions((prev) => {
       const exists = prev.find((p) => p.name === optionName)
       if (exists) {
@@ -96,10 +125,17 @@ export function ProductSidebarPurchase({
         ...prev,
         {
           id: `${product.id}-${Date.now()}`,
+          variantId,
           name: optionName,
           quantity: 1,
-          price: getPrice(),
-          image: product.thumbnails?.[0] || product.thumbnail,
+          price: optionPrice,
+          image:
+            (variantId && product.variantThumbnailMap?.[variantId]) ||
+            product.thumbnails?.[0] ||
+            product.thumbnail ||
+            "https://placehold.co/80x80?text=No+Image",
+          stock:
+            (variantId && product.skuStock?.[variantId]) || undefined,
         },
       ]
     })
@@ -125,19 +161,30 @@ export function ProductSidebarPurchase({
 
   const handleAddToCart = () => {
     if (isSingleOption) {
-      addToCart({ variantId: product.id, quantity })
+      const variantId = product.defaultVariantId || product.id
+      addToCart({ variantId, quantity })
+      return
+    }
+
+    if (selectedCartOptions.length === 0) {
+      toast.error("옵션을 선택해 주세요.")
       return
     }
 
     selectedCartOptions.forEach((option) => {
-      addToCart({ variantId: product.id, quantity: option.quantity })
+      if (option.variantId) {
+        addToCart({ variantId: option.variantId, quantity: option.quantity })
+      }
     })
   }
 
   const handleBuyNow = () => {
-    if (selectedOptions && Object.keys(selectedOptions).length > 0) {
-      handleAddToCart()
+    if (!isSingleOption && selectedCartOptions.length === 0) {
+      toast.error("옵션을 선택해 주세요.")
+      return
     }
+
+    handleAddToCart()
     window.location.href = `/${countryCode}/checkout`
   }
   return (

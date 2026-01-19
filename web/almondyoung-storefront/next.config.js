@@ -103,6 +103,10 @@ const nextConfig = {
       },
       {
         protocol: "https",
+        hostname: "fs-development.up.railway.app",
+      },
+      {
+        protocol: "https",
         hostname: "almondyoung-public.s3.ap-northeast-2.amazonaws.com",
         pathname: "/**",
       },

@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation"
 import { CategoryPageClient } from "../components/category-page-client"
 import { getCategoryBySlug } from "@lib/api/pim/categories"
-import { getProductsByCategoryService } from "@lib/services/pim/products/getProductListService"
+import { getProductList } from "@lib/api/medusa/products"
+import { getRegion } from "@lib/api/medusa/regions"
 
 interface CategoryPageContainerProps {
   params: Promise<{
@@ -14,6 +15,7 @@ export async function CategoryPageContainer({
   params,
 }: CategoryPageContainerProps) {
   const { slug, countryCode } = await params
+  const region = await getRegion(countryCode)
 
   // 1. API 모듈을 통해 데이터 조회 (서버 액션 -> 백엔드)
   const result = await getCategoryBySlug(slug)
@@ -43,22 +45,22 @@ export async function CategoryPageContainer({
   console.log(`🚀 [CategoryPageContainer] 상품 목록 로드 시작:`, {
     categoryId: categoryData.id,
     categoryName: categoryData.name,
+    regionId: countryCode.toUpperCase(),
+    regionName: region?.name
   })
 
   let initialProducts: any[] = []
   let initialTotal = 0
 
   try {
-    const productsResult = await getProductsByCategoryService(categoryData.id, {
+    const productsResult = await getProductList({
       page: 1,
       limit: 20,
+      categoryId: categoryData.id,
+      region_id: region?.id,
     })
-    initialProducts = productsResult.items
-    initialTotal = productsResult.total
-    console.log(`✅ [CategoryPageContainer] 상품 목록 로드 완료:`, {
-      itemCount: initialProducts.length,
-      total: initialTotal,
-    })
+    initialProducts = productsResult.products
+    initialTotal = productsResult.count
   } catch (error) {
     console.error("❌ [CategoryPageContainer] 상품 목록 로드 실패:", error)
     // 에러 발생 시 빈 배열로 계속 진행

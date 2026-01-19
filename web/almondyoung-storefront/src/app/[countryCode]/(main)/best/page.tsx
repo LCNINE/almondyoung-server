@@ -7,7 +7,11 @@ import RankedKeywordList, {
 } from "domains/best/components/ranked-keyword-list"
 import RankedHeader from "domains/best/components/ranked-header"
 import ScrollToTopButton from "./components/scroll-to-top-button"
-import { getProductListService } from "@lib/services/pim/products/getProductListService"
+import { getProductList } from "@lib/api/medusa/products"
+import { getRegion } from "@lib/api/medusa/regions"
+import type { StoreProduct } from "@medusajs/types"
+import type { ProductCard } from "@lib/types/ui/product"
+import { getProductPrice } from "@lib/utils/get-product-price"
 
 // TODO: 백엔드에 판매량/인기도 기반 베스트 상품 API 추가 필요
 // 현재 PIM API는 sortBy: "relevance" | "price" | "createdAt"만 지원
@@ -18,19 +22,51 @@ import { getProductListService } from "@lib/services/pim/products/getProductList
 //
 // 임시 대안: 최신 상품(createdAt:desc)을 표시하거나 빈 상태 표시
 
-export default async function BestPage() {
+const mapToProductCard = (product: StoreProduct): ProductCard => {
+  const thumbnail =
+    product.thumbnail ||
+    product.images?.[0]?.url ||
+    ""
+
+  const priceInfo = getProductPrice({ product })
+  const basePrice = priceInfo?.cheapestPrice?.original_price_number
+  const membershipPrice = priceInfo?.cheapestPrice?.calculated_price_number
+
+  return {
+    id: product.id,
+    name: product.title,
+    thumbnail,
+    basePrice,
+    membershipPrice,
+    status: product.status === "published" ? "active" : "inactive",
+    optionMeta: {
+      isSingle: (product.variants?.length ?? 0) <= 1,
+    },
+  }
+}
+
+export default async function BestPage({
+  params,
+}: {
+  params: { countryCode: string }
+}) {
+  const { countryCode } = params
+  const region = await getRegion(countryCode)
+
   // TODO: 실제 베스트 상품 API로 교체
   // 현재는 최신 상품 20개를 가져옴 (임시)
-  const bestProductsResult = await getProductListService({
+  const bestProductsResult = await getProductList({
     page: 1,
     limit: 20,
-    sort: "createdAt:desc",
+    region_id: region?.id,
   })
 
-  const bestProducts = bestProductsResult.items.slice(0, 5).map((product, index) => ({
-    ...product,
-    rank: index + 1,
-  }))
+  const bestProducts = bestProductsResult.products
+    .slice(0, 5)
+    .map((product, index) => ({
+      ...mapToProductCard(product),
+      rank: index + 1,
+    }))
 
   // TODO: 백엔드에 검색 키워드 랭킹 API 추가 필요
   // 현재는 빈 배열

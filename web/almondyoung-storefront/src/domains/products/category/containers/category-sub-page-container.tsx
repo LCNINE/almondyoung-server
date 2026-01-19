@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation"
 import { CategorySubPageClient } from "../components/category-sub-page-client"
 import { getCategoryBySlug } from "@lib/api/pim/categories"
-import { getProductsByCategoryService } from "@lib/services/pim/products/getProductListService"
+import { getProductList } from "@lib/api/medusa/products"
+import { getRegion } from "@lib/api/medusa/regions"
 
 interface CategorySubPageContainerProps {
   params: Promise<{
@@ -15,6 +16,7 @@ export async function CategorySubPageContainer({
   params,
 }: CategorySubPageContainerProps) {
   const { slug, sub: subSlug, countryCode } = await params
+  const region = await getRegion(countryCode)
 
   // 서브 카테고리 정보 조회 (subSlug로 직접 조회)
   const result = await getCategoryBySlug(subSlug)
@@ -49,12 +51,14 @@ export async function CategorySubPageContainer({
   let initialTotal = 0
 
   try {
-    const productsResult = await getProductsByCategoryService(categoryData.id, {
+    const productsResult = await getProductList({
       page: 1,
       limit: 20,
+      categoryId: categoryData.id,
+      region_id: region?.id,
     })
-    initialProducts = productsResult.items
-    initialTotal = productsResult.total
+    initialProducts = productsResult.products
+    initialTotal = productsResult.count
     console.log(`✅ [CategorySubPageContainer] 상품 목록 로드 완료:`, {
       itemCount: initialProducts.length,
       total: initialTotal,

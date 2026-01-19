@@ -154,9 +154,17 @@ export interface ProductDetail extends ProductCard {
   originalPrice?: number // 호환성(카드 original mirror)
   options: ProductOption[] // 옵션 그룹
 
+  defaultVariantId?: string
+  variantPriceMap?: Record<
+    string,
+    { basePrice?: number; membershipPrice?: number }
+  >
+  variantThumbnailMap?: Record<string, string>
+
   // SKU → 수량 (WMS 연동 시 서비스에서 주입)
   skuStock?: Record<string, number>
   skuIndex?: Record<string, string> // "색상=블랙|용량=500ml" → variantId
+  pimMasterId?: string
 
   // 옵션 선택 → SKU 매핑 함수 (서비스에서 주입)
   getSkuForSelection?: (
