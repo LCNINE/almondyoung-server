@@ -24,6 +24,9 @@ COPY libs/ ./libs/
 COPY packages/ ./packages/
 COPY apps/wallet/ ./apps/wallet/
 
+# Ensure local file dependency is installed in node_modules for build-time TS resolution.
+RUN npm i --no-save ./packages/hms-api-wrapper
+
 RUN npm run build:wallet
 
 FROM base AS runner
