@@ -1,0 +1,71 @@
+{
+  "name": "hms-api-wrapper",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./mock": {
+      "import": "./dist/mock/index.mjs",
+      "require": "./dist/mock/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "jest",
+    "test:unit": "jest --selectProjects unit",
+    "test:integration": "jest --selectProjects integration",
+    "test:all": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:api": "SW_KEY=your-sw-key CUST_KEY=your-cust-key jest --selectProjects integration",
+    "mock:server": "ts-node-dev --respawn --transpile-only mock-server/src/server.ts"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "axios": "^1.8.4",
+    "body-parser": "^2.2.0",
+    "buffer": "^6.0.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0",
+    "formdata-node": "^6.0.3",
+    "lowdb": "^7.0.1",
+    "mkdirp": "^3.0.1",
+    "multer": "^2.0.1",
+    "node-fetch": "^3.3.2",
+    "undici": "^7.11.0",
+    "uuid": "^11.1.0",
+    "zod": "^4.1.11"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/jest": "^29.5.14",
+    "@types/mkdirp": "^1.0.2",
+    "@types/multer": "^2.0.0",
+    "@types/node": "^22.16.4",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.3.2",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.8.3"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "nodemonConfig": {
+    "ignore": [
+      "mock-db.json"
+    ]
+  }
+}
