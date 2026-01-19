@@ -6,11 +6,13 @@ RUN apk add --no-cache postgresql-client git openssh-client
 
 FROM base AS deps
 COPY package*.json ./
+# Ensure local file dependency is available during npm ci.
 COPY packages/hms-api-wrapper/ ./packages/hms-api-wrapper/
 RUN npm ci
 
 FROM base AS deps-prod
 COPY package*.json ./
+# Ensure local file dependency is available during npm ci.
 COPY packages/hms-api-wrapper/ ./packages/hms-api-wrapper/
 RUN npm ci --omit=dev && npm cache clean --force
 
