@@ -33,13 +33,19 @@ export function transformPimToMedusa(
     const description = undefined;
 
     // 2. 이미지
+    // PIM의 sortOrder에 따라 정렬 - 배열 순서가 Medusa의 rank가 됨
     const images =
         snapshot.images
-            ?.map((fileId) => toFileUrl(fileId))
-            .filter((url): url is string => !!url)
-            .map((url, index) => ({
-                url,
-                rank: index + 1,
+            ?.slice() // 원본 배열 복사
+            .sort((a, b) => {
+                // isPrimary가 true인 것을 먼저
+                if (a.isPrimary && !b.isPrimary) return -1;
+                if (!a.isPrimary && b.isPrimary) return 1;
+                // 그 다음 sortOrder로 정렬
+                return a.sortOrder - b.sortOrder;
+            })
+            .map((img) => ({
+                url: img.url,
             })) || [];
 
     // 3. 옵션 스키마/제목 목록 산출

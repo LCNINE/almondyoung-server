@@ -13,6 +13,7 @@ export interface PimCategoryDetail {
     path?: string;
     visibility?: boolean;
     showOnMainCategory?: boolean;
+    thumbnail?: string;
 }
 
 @Injectable()
@@ -51,13 +52,18 @@ export class PimClient {
 
             // 카테고리 Fallback: PIM API가 categoryIds를 내려주지 않는 경우 DB에서 조회
             let categoryIds: string[] | undefined = data.categoryIds || undefined;
+            this.logger.debug(`PIM API returned categoryIds for ${masterId}: ${JSON.stringify(categoryIds)}`);
+
             if ((!categoryIds || categoryIds.length === 0) && process.env.PIM_SOURCE_DB_URL) {
+                this.logger.debug(`Attempting to fetch categoryIds from DB for ${masterId}...`);
                 try {
                     categoryIds = await this.fetchCategoryIdsFromDb(masterId);
                     if (categoryIds.length > 0) {
                         this.logger.debug(
                             `Resolved categoryIds from DB for ${masterId}: ${categoryIds.length}`,
                         );
+                    } else {
+                        this.logger.warn(`DB query returned 0 categoryIds for ${masterId}`);
                     }
                 } catch (e) {
                     this.logger.warn(
@@ -82,9 +88,12 @@ export class PimClient {
                 thumbnail: data.thumbnail
                     ? `${this.configService.get('FILE_SERVICE_URL')}/files/${data.thumbnail}`
                     : undefined,
-                images: data.images?.map((img: any) =>
-                    `${this.configService.get('FILE_SERVICE_URL')}/files/${img.fileId}`
-                ) || undefined,
+                images: data.images?.map((img: any) => ({
+                    fileId: img.fileId,
+                    url: `${this.configService.get('FILE_SERVICE_URL')}/files/${img.fileId}`,
+                    isPrimary: img.isPrimary ?? false,
+                    sortOrder: img.sortOrder ?? 0,
+                })) || undefined,
                 seoTitle: data.seoTitle || undefined,
                 seoDescription: data.seoDescription || undefined,
                 seoKeywords: data.seoKeywords || undefined,
@@ -277,6 +286,9 @@ export class PimClient {
                     data.display_settings?.showOnMainCategory ??
                     false,
                 path: data.path,
+                thumbnail: data.thumbnail
+                    ? `${this.configService.get('FILE_SERVICE_URL')}/files/${data.thumbnail}`
+                    : undefined,
             };
         } catch (error) {
             this.logger.error(

@@ -7,6 +7,7 @@ ENV PORT=9000
 WORKDIR /app
 RUN apk add --no-cache postgresql-client git openssh-client
 COPY package.json package-lock.json ./
+COPY packages/hms-api-wrapper/ ./packages/hms-api-wrapper/
 RUN npm ci --no-audit --no-fund
 
 # 2) 메두사 의존성 설치 (yarn v1)
