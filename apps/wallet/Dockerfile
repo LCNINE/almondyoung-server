@@ -33,6 +33,7 @@ FROM base AS runner
 # 런타임 이미지에서는 이미 deps-prod 레이어에서 설치한 node_modules를 재사용하여 중복 설치를 피함
 COPY --from=deps-prod /app/node_modules ./node_modules
 COPY package*.json ./
+COPY packages/hms-api-wrapper/ ./packages/hms-api-wrapper/
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/libs ./libs
