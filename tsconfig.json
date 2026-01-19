@@ -65,6 +65,12 @@
       ],
       "@packages/event-contracts/*": [
         "packages/event-contracts/*"
+      ],
+      "hms-api-wrapper": [
+        "packages/hms-api-wrapper/dist"
+      ],
+      "hms-api-wrapper/*": [
+        "packages/hms-api-wrapper/dist/*"
       ]
     }
   }
