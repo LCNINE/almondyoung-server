@@ -38,16 +38,16 @@ export default async function Home({
     return null
   })
 
-  // todo: 로그인 사용자용 홈페이지 섹션들
-  const user = await fetchMe().catch(() => null)
+  // const user = await fetchMe().catch(() => null)
 
   return (
     <ProtectedRoute>
-      {user ? (
+      {/* {user ? (
         <HomeLoggedInTemplate user={user} />
       ) : (
         <HomeLogoutTemplate initialCategories={categories} />
-      )}
+      )} */}
+      <HomeLogoutTemplate initialCategories={categories} />
 
       {/* 테마 매니저 (개발 모드에서만 표시) */}
       {process.env.NODE_ENV === "development" && <ThemeManager />}

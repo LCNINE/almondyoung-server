@@ -57,3 +57,6 @@ dump.rdb
 /playwright/.auth
 
 package-lock.json
+
+# MCP config (contains API keys)
+.mcp.json

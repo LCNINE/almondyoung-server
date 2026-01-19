@@ -4,22 +4,22 @@ import {
   Alert,
   AlertDescription,
   AlertTitle,
-} from "@components/common/ui/alert"
-import { Badge } from "@components/common/ui/badge"
-import { Button } from "@components/common/ui/button"
+} from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
-} from "@components/common/ui/card"
-import { Checkbox } from "@components/common/ui/checkbox"
+} from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
-} from "@components/common/ui/dialog"
+} from "@/components/ui/dialog"
 import {
   Form,
   FormControl,
@@ -27,26 +27,26 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "@components/common/ui/form"
-import { Input } from "@components/common/ui/input"
-import { Label } from "@components/common/ui/label"
-import { RadioGroup, RadioGroupItem } from "@components/common/ui/radio-group"
+} from "@/components/ui/form"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import {
   Table,
   TableBody,
   TableCell,
   TableRow,
-} from "@components/common/ui/table"
+} from "@/components/ui/table"
 import {
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
-} from "@components/common/ui/tabs"
+} from "@/components/ui/tabs"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { HttpApiError } from "@lib/api/api-error"
 import { cn } from "@lib/utils"
-import { useUser } from "contexts/user-context"
+import { useUser } from "@/contexts/user-context"
 import { Calendar, CreditCard, Gift, TriangleAlert } from "lucide-react"
 import { useRouter } from "next/navigation"
 import React, { useState } from "react"
@@ -641,7 +641,7 @@ export function MembershipForm({
                                       className={cn(
                                         "bg-popover hover:bg-accent hover:text-accent-foregroundx flex w-full items-center justify-between rounded-md border-2 p-3",
                                         field.value === discountBenefit.id &&
-                                          "border-primary"
+                                        "border-primary"
                                       )}
                                       onClick={() => {
                                         if (field.value === discountBenefit.id)

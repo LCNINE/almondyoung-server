@@ -2,12 +2,12 @@
 
 import { ProductCard } from "@/components/products/prodcut-card"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
+import { useCategoryTabs } from "@/domains/home/hooks/use-category-tabs"
 import { useDraggableScroll } from "@/hooks/ui/use-draggable-scroll"
 import testImg from "@assets/images/test.png"
 import type { CategoryTreeNodeDto } from "@lib/types/dto/pim"
 import { AnimatePresence, motion } from "framer-motion"
 import { ProductGrid } from "../../../../../components/products/product-grid"
-import { useCategoryBest } from "../../../hooks/use-category-best"
 import { SectionHeader } from "../../header/section-header"
 import { ProductCarousel } from "../../shared/product-carousel"
 import { CategoryTabs } from "../category-best/category-tabs"
@@ -20,7 +20,7 @@ export function TimeSaleSection({ initialCategories }: TimeSaleSectionProps) {
   const bestCategories = initialCategories.slice(0, 7)
 
   const { activeTab, setActiveTab, visitedTabs, markAsVisited } =
-    useCategoryBest(bestCategories[0]?.slug || "")
+    useCategoryTabs(bestCategories[0]?.slug || "")
 
   const { props: dragHandlers } = useDraggableScroll()
 

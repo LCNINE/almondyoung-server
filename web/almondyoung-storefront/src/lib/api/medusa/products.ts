@@ -33,8 +33,8 @@ export const getProductList = async ({
         offset,
         category_id: categoryId,
         handle,
-        // fields: "*variants.calculated_price,+categories,+metadata,+tags",
-        fields: "variants.*,+variants.prices.*",
+        fields:
+          "*variants.calculated_price,+categories,+metadata,+tags,+variants.prices.*",
         region_id: region_id,
       },
       {

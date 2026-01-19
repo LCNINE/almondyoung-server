@@ -1,7 +1,7 @@
-import { useState, useCallback } from "react"
+import { useCallback, useState } from "react"
 
-export function useCategoryBest(initialActiveTab: string) {
-  const [activeTab, setActiveTab] = useState(initialActiveTab)
+export function useCategoryTabs(initialActiveTab: string) {
+  const [activeTab, setActiveTab] = useState(initialActiveTab) // category id
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(
     new Set([initialActiveTab])
   )

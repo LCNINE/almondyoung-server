@@ -1,5 +1,5 @@
 import React from "react"
-import { Checkbox } from "@components/common/ui/checkbox"
+import { Checkbox } from "@/components/ui/checkbox"
 import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
 
 interface CartControlsProps {

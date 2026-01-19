@@ -8,3 +8,72 @@
 - 모든 파일명: kebab-case (예: custom-input.tsx, form-text-field.tsx)
 - 컴포넌트 파일도 kebab-case 사용
 - 파일 생성 시 camelCase나 PascalCase 사용 금지
+
+# React Best Practices (Vercel Labs 기준)
+# 참고: https://github.com/vercel-labs/agent-skills/tree/main/skills/react-best-practices
+
+## Critical: Async Waterfalls 제거
+- 불필요한 순차적 await 호출 방지
+- 병렬 실행 가능한 작업은 Promise.all 사용
+- Early return으로 불필요한 작업 방지
+- 예시:
+  ```tsx
+  // ❌ 나쁜 예: 순차 실행
+  const user = await fetchUser()
+  const posts = await fetchPosts(user.id)
+  
+  // ✅ 좋은 예: 병렬 실행
+  const [user, posts] = await Promise.all([
+    fetchUser(),
+    fetchPosts(userId)
+  ])
+  
+  // ✅ 좋은 예: Early return
+  if (skip) return { skipped: true }
+  const data = await fetchData()
+  ```
+
+## Critical: Bundle Size 최적화
+- 동적 임포트 사용 (next/dynamic, React.lazy)
+- 불필요한 라이브러리 제거
+- Tree-shaking 가능한 구조 사용
+
+## High: 서버 사이드 성능
+- 서버 컴포넌트 우선 사용
+- 클라이언트 컴포넌트는 필수인 경우만
+- "use client" 지시문 최소화
+
+## Medium-High: 클라이언트 데이터 페칭
+- fetch api의 next cache 사용
+- 적절한 캐싱 전략
+
+## Medium: Re-render 최적화
+- 불필요한 렌더링 방지
+- React.memo, useMemo, useCallback 적절히 사용
+- Props 변경 최소화
+
+## Medium: 렌더링 성능
+- 가상화 (Virtualization) 사용
+- 레이아웃 최적화
+- Layout thrashing 방지
+
+## Low-Medium: JavaScript 성능
+- 루프 통합 (여러 번 순회하지 않기)
+- 불필요한 처리 제거
+- 알고리즘 개선
+
+## 루프 최적화 예시
+```tsx
+// ❌ 나쁜 예: O(n²) 복잡도
+products.map(product => {
+  const review = reviews.find(r => r.productId === product.id)
+  return { ...product, review }
+})
+
+// ✅ 좋은 예: O(n) 복잡도
+const reviewsMap = new Map(reviews.map(r => [r.productId, r]))
+products.map(product => ({
+  ...product,
+  review: reviewsMap.get(product.id)
+}))
+```

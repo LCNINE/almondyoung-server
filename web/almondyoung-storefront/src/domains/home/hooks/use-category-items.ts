@@ -1,35 +1,28 @@
 "use client"
 
 import { getProductList } from "@lib/api/medusa/products"
-import { CategoryTreeNodeDto } from "@lib/types/dto/pim"
 import type { StoreProduct } from "@medusajs/types"
 import { useEffect, useState, useTransition } from "react"
 
-export function useCategory(initialCategories: CategoryTreeNodeDto[]) {
-  const [categories, _] = useState(initialCategories)
-  const [selectedCategoryId, setSelectedCategoryId] = useState(
-    categories[0]?.id || ""
-  )
+export function useCategoryItems({categoryId,masterIds}: {categoryId: string,masterIds?: string[]}) {
   const [categoryProducts, setCategoryProducts] = useState<StoreProduct[]>([])
   const [isPending, startTransition] = useTransition()
 
   useEffect(() => {
-    if (!selectedCategoryId) return
+    if (!categoryId) return
 
     startTransition(async () => {
       const data = await getProductList({
         page: 1,
         limit: 10,
-        categoryId: selectedCategoryId,
+        categoryId,
+        handle:masterIds,
       })
       setCategoryProducts(data.products)
     })
-  }, [selectedCategoryId])
+  }, [categoryId])
 
   return {
-    categories,
-    selectedCategoryId,
-    setSelectedCategoryId,
     categoryProducts,
     isPending,
   }

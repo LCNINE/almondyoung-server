@@ -8,7 +8,7 @@ interface HomeLoggedInTemplateProps {
 }
 
 /*───────────────────────────────────────────────
- * 로그인한 사용자용
+ * 로그인한 사용자용 todo: 추후 수정 필요 미완성
  *───────────────────────────────────────────────*/
 export function HomeLoggedInTemplate({ user }: HomeLoggedInTemplateProps) {
   return (

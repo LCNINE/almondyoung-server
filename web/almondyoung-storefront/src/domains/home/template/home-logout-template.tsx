@@ -1,21 +1,15 @@
-import { getBestOrderMetricsByCategory } from "@/lib/api/analytics"
-import { getProductList } from "@/lib/api/medusa/products"
-import { getReviewsByProductId } from "@/lib/api/ugc"
-import { PaginatedResponseDto } from "@/lib/types/common/pagination"
-import { ReviewResponseDto } from "@/lib/types/dto/ugc"
-import type { ProductsResponseDto } from "@lib/types/dto/medusa"
 import type { CategoryTreeNodeDto } from "@lib/types/dto/pim"
+import { Suspense } from "react"
 import { HeroBanner } from "../components/banner/hero-banner"
 import LashBannerBanner from "../components/banner/lashbanner-banner"
 import { LoginPromptBanner } from "../components/banner/login-prompt-banner"
 import MembershipBanner from "../components/banner/membership-banner"
 import { BundleSection } from "../components/sections/bundle"
-import { CategoryBestSection } from "../components/sections/category-best"
+import { CategoryBestSectionContainer } from "../components/sections/category-best"
 import { DigitalAssetSection } from "../components/sections/digital-asset"
 import { TimeSaleSection } from "../components/sections/time-sale"
 import { WelcomeDealSection } from "../components/sections/welcome-deal"
 import { ProductListSection } from "../components/shared/product-list-section"
-import { ProductWithReviews } from "@/lib/types/ui/product"
 
 interface HomeLogoutTemplateProps {
   initialCategories: CategoryTreeNodeDto[]
@@ -27,38 +21,6 @@ interface HomeLogoutTemplateProps {
 export async function HomeLogoutTemplate({
   initialCategories,
 }: HomeLogoutTemplateProps) {
-  const bestOrderMetrics = await getBestOrderMetricsByCategory(
-    initialCategories[0].id
-  )
-  const masterIds = bestOrderMetrics.map((metric) => metric.masterId)
-
-  const bestProducts: ProductsResponseDto | null =
-    masterIds.length > 0 ? await getProductList({ handle: masterIds }) : null
-
-  let reviews: PaginatedResponseDto<ReviewResponseDto>[] = []
-
-  if (bestProducts?.products) {
-    reviews = await Promise.all(
-      bestProducts.products.map(async (product) => {
-        return await getReviewsByProductId({
-          productId: product.id,
-        })
-      })
-    )
-  }
-
-  const bestProdcutsWithReviews: ProductWithReviews[] | undefined =
-    bestProducts?.products?.map((product) => {
-      const productReview = reviews.find(
-        (review) =>
-          review.data.length > 0 && review.data[0].productId === product.id
-      )
-      return {
-        ...product,
-        reviews: productReview?.data,
-      }
-    })
-
   return (
     <div className="w-full">
       {/* 메인 히어로 배너 */}
@@ -67,12 +29,17 @@ export async function HomeLogoutTemplate({
       {/* 로그인 유도 배너 */}
       <LoginPromptBanner />
 
-      {/* 카테고리별 제품 섹션 */}
+      {/* 카테고리별 제품 섹션  */}
       <ProductListSection>
-        <CategoryBestSection
-          initialCategories={initialCategories}
-          initialProducts={bestProducts?.products || null}
-        />
+        <Suspense
+          fallback={
+            <div className="flex min-h-96 items-center justify-center">
+              <p className="text-gray-500">로딩 중...</p>
+            </div>
+          }
+        >
+          <CategoryBestSectionContainer initialCategories={initialCategories} />
+        </Suspense>
       </ProductListSection>
 
       {/* 멤버십 배너 (데스크탑) */}

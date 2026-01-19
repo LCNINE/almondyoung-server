@@ -1,9 +1,16 @@
 /* OrderInfoCard.tsx ------------------------------------------------- */
 import React from "react"
-import {
-  RoundedBaseCard,
-  type RoundedBaseCardProps,
-} from "../shared/components/base-rounded-card"
+
+/* ---------------- RoundedBaseCard ---------------------------------- */
+export interface RoundedBaseCardProps extends React.HTMLAttributes<HTMLDivElement> {
+  children?: React.ReactNode
+}
+
+const RoundedBaseCard = ({ children, className, ...props }: RoundedBaseCardProps) => (
+  <div className={["rounded-lg bg-white p-4 shadow-sm", className].filter(Boolean).join(" ")} {...props}>
+    {children}
+  </div>
+)
 
 /* ---------------- Root & Divider ---------------------------------- */
 export const OrderInfoCardRoot = (props: RoundedBaseCardProps) => (

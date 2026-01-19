@@ -1,4 +1,4 @@
-import { Input } from "@components/common/ui/input"
+import { Input } from "@/components/ui/input"
 import React, { forwardRef, useEffect, useRef, useState } from "react"
 
 function format(value: string, pattern: string) {
