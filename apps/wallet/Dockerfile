@@ -6,10 +6,14 @@ RUN apk add --no-cache postgresql-client git openssh-client
 
 FROM base AS deps
 COPY package*.json ./
+# Ensure local file dependency is available during npm ci.
+COPY packages/hms-api-wrapper/ ./packages/hms-api-wrapper/
 RUN npm ci
 
 FROM base AS deps-prod
 COPY package*.json ./
+# Ensure local file dependency is available during npm ci.
+COPY packages/hms-api-wrapper/ ./packages/hms-api-wrapper/
 RUN npm ci --omit=dev && npm cache clean --force
 
 FROM base AS builder
@@ -20,12 +24,16 @@ COPY libs/ ./libs/
 COPY packages/ ./packages/
 COPY apps/wallet/ ./apps/wallet/
 
+# Ensure local file dependency is installed in node_modules for build-time TS resolution.
+RUN npm i --no-save ./packages/hms-api-wrapper
+
 RUN npm run build:wallet
 
 FROM base AS runner
 # 런타임 이미지에서는 이미 deps-prod 레이어에서 설치한 node_modules를 재사용하여 중복 설치를 피함
 COPY --from=deps-prod /app/node_modules ./node_modules
 COPY package*.json ./
+COPY packages/hms-api-wrapper/ ./packages/hms-api-wrapper/
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/libs ./libs
