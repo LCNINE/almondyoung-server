@@ -5,6 +5,7 @@
 ### 1. `/masters` API 응답에 가격 정보 없음
 
 **현재 응답**:
+
 ```json
 {
   "versionId": "...",
@@ -22,6 +23,7 @@
 ```
 
 **프론트엔드 결과**:
+
 - 모든 상품이 **0원**으로 표시됨
 - 사용자 경험 저하
 
@@ -32,11 +34,13 @@
 ### 옵션 1: `/masters` API에 가격 범위 추가 ⭐⭐⭐ (권장)
 
 **장점**:
+
 - 성능 최고 (단일 쿼리)
 - 프론트엔드 로직 단순
 - 사용자 경험 최상
 
 **구현 방법**:
+
 ```json
 {
   "versionId": "...",
@@ -55,9 +59,10 @@
 ```
 
 **백엔드 쿼리 예시** (PostgreSQL + Drizzle):
+
 ```sql
 -- 각 Master의 Active 버전 기준으로 가격 계산
-SELECT 
+SELECT
   pm.id as master_id,
   pmv.id as version_id,
   pmv.name,
@@ -77,6 +82,7 @@ GROUP BY pm.id, pmv.id, pmv.name;
 ```
 
 **예상 작업 시간**: 2-3시간
+
 - 가격 계산 로직 추가 (~1.5시간)
 - 테스트 (~1시간)
 
@@ -85,15 +91,18 @@ GROUP BY pm.id, pmv.id, pmv.name;
 ### 옵션 2: Bulk Pricing API 추가 ⭐⭐
 
 **장점**:
+
 - 유연성 높음
 - 기존 API 구조 유지
 - 다른 서비스에서도 활용 가능
 
 **단점**:
+
 - 추가 API 호출 필요 (N+1 문제 발생 가능)
 - 프론트엔드 복잡도 증가
 
 **구현 방법**:
+
 ```typescript
 // POST /pim/masters/pricing/bulk
 {
@@ -111,6 +120,7 @@ GROUP BY pm.id, pmv.id, pmv.name;
 ```
 
 **예상 작업 시간**: 3-4시간
+
 - 새 엔드포인트 추가 (~2시간)
 - 가격 계산 로직 (~1시간)
 - 테스트 (~1시간)
@@ -120,14 +130,17 @@ GROUP BY pm.id, pmv.id, pmv.name;
 ### 옵션 3: 프론트엔드에서 개별 조회 ⭐ (비권장)
 
 **장점**:
+
 - 백엔드 작업 불필요
 
 **단점**:
+
 - 성능 최악 (302개 상품 = 302번 API 호출)
 - 페이지 로딩 매우 느림
 - 사용자 경험 최악
 
 **예상 문제**:
+
 - 초기 로딩 시간 15-30초
 - 서버 부하 증가
 - Rate limiting 문제 가능성
@@ -137,14 +150,17 @@ GROUP BY pm.id, pmv.id, pmv.name;
 ## 🎯 프론트엔드 팀 권장사항
 
 **우선순위 1**: 옵션 1 (권장) ⭐⭐⭐
+
 - 최소한의 노력으로 최고의 성능
 - `/masters` API 응답에 `priceRange` 필드만 추가
 
 **우선순위 2**: 옵션 2
+
 - 유연성이 필요한 경우
 - 다른 서비스에서도 활용 가능
 
 **우선순위 3**: 옵션 3 (비권장)
+
 - 백엔드 리소스가 부족한 경우만
 - 임시 방편으로만 사용
 
@@ -163,6 +179,7 @@ GROUP BY pm.id, pmv.id, pmv.name;
 ### 백엔드 팀
 
 1. **가격 계산 로직 확인**
+
    ```bash
    # 테스트: 특정 Master의 가격 계산이 정상 작동하는지 확인
    curl -X POST \
@@ -193,6 +210,7 @@ GROUP BY pm.id, pmv.id, pmv.name;
 ## 💬 질문사항
 
 1. **가격 규칙이 정상 생성되었는지** 확인 필요
+
    ```sql
    SELECT COUNT(*) FROM product_master_pricing_rules;
    SELECT COUNT(*) FROM pricing_rules;
@@ -215,4 +233,3 @@ GROUP BY pm.id, pmv.id, pmv.name;
 
 **긴급도**: 🔴 높음 (사용자에게 가격이 안 보임)
 **예상 소요 시간**: 2-3시간 (옵션 1 선택 시)
-

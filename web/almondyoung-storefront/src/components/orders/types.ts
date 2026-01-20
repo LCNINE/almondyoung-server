@@ -12,11 +12,7 @@ export interface Order {
   products: ShippingProduct[]
 }
 
-export type OrderStatus = 
-  | "preparing"
-  | "shipping" 
-  | "completed" 
-  | "cancelled"
+export type OrderStatus = "preparing" | "shipping" | "completed" | "cancelled"
 
 export interface ShippingProduct {
   id: number

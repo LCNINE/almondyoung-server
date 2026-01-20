@@ -1,12 +1,7 @@
 "use client"
 
 import React from "react"
-import {
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  TabsContent,
-} from "@/components/ui/tabs"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import type { CartItem } from "@lib/types/ui/cart"
 import { ShippingNotice } from "./shipping-notice"
 import { CartControls } from "./cart-controls"

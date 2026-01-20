@@ -36,4 +36,3 @@ export function useHorizontalScroll(itemCount: number) {
     handleScrollNext,
   }
 }
-

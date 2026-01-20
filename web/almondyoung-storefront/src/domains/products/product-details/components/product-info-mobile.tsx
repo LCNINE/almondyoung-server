@@ -99,8 +99,7 @@ export function ProductInfoMobile({ product }: Props) {
             product.thumbnails?.[0] ||
             product.thumbnail ||
             "https://placehold.co/80x80?text=No+Image",
-          stock:
-            (variantId && product.skuStock?.[variantId]) || undefined,
+          stock: (variantId && product.skuStock?.[variantId]) || undefined,
         },
       ]
     })

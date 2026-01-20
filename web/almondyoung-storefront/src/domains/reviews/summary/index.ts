@@ -6,4 +6,3 @@ export { ProductReviewThumbnailGallery } from "./product-review-thumbnail-galler
 export type { Review } from "./review-summary-card"
 export type { ReviewSummaryProps } from "./review-summary"
 export type { ProductReviewThumbnailProps } from "./product-review-thumbnail-gallery"
-

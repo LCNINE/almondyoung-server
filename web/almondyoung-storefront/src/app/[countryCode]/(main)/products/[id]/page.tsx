@@ -9,7 +9,10 @@ import type { UserDetail, WishlistItem } from "@lib/types/ui/user"
 import ProductDetailPage from "domains/products/product-details/product-detail-page"
 import { Suspense } from "react"
 import type { StoreProduct } from "@medusajs/types"
-import { getPricesForVariant, getProductPrice } from "@lib/utils/get-product-price"
+import {
+  getPricesForVariant,
+  getProductPrice,
+} from "@lib/utils/get-product-price"
 
 const mapProductMetadata = (metadata?: Record<string, unknown>) => {
   if (!metadata) return undefined
@@ -45,10 +48,7 @@ const mapMedusaProductToDetail = (
   descriptionHtml?: string,
   pimMasterId?: string
 ): ProductDetail => {
-  const thumbnail =
-    product.thumbnail ||
-    product.images?.[0]?.url ||
-    ""
+  const thumbnail = product.thumbnail || product.images?.[0]?.url || ""
 
   const thumbnails =
     product.images?.map((image) => image.url).filter(Boolean) ||
@@ -99,17 +99,14 @@ const mapMedusaProductToDetail = (
         basePrice: variantPrice?.original_price_number,
         membershipPrice: variantPrice?.calculated_price_number,
       }
-      variantThumbnailMap[variant.id] =
-        variant?.images?.[0]?.url || thumbnail
+      variantThumbnailMap[variant.id] = variant?.images?.[0]?.url || thumbnail
     }
 
     const selection: Record<string, string> = {}
     for (const opt of variant.options || []) {
       const optionId = opt.option_id ?? undefined
       const label =
-        (optionId ? optionLabelById.get(optionId) : undefined) ||
-        optionId ||
-        ""
+        (optionId ? optionLabelById.get(optionId) : undefined) || optionId || ""
       if (label && opt.value) {
         selection[label] = opt.value
       }
@@ -172,7 +169,7 @@ export default async function Page({
   try {
     const medusaProduct = await getProductDetail(
       id,
-      region?.id,
+      region?.id
       // salesChannelId
     )
     const sampleVariant = medusaProduct?.variants?.[0]
@@ -190,7 +187,7 @@ export default async function Page({
         regionId: region?.id,
         regionName: region?.name,
         currencyCode: region?.currency_code,
-        countries: region?.countries?.map(c => c.iso_2),
+        countries: region?.countries?.map((c) => c.iso_2),
         _fullRegion: JSON.stringify(region, null, 2),
       })
     }

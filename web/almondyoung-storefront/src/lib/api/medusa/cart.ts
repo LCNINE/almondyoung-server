@@ -89,11 +89,6 @@ export async function getOrSetCart(countryCode: string) {
 }
 
 export async function updateCart(data: HttpTypes.StoreUpdateCart) {
-  // Mock 환경에서는 업데이트된 장바구니 반환
-  console.log("Mock updateCart called with:", data)
-  return await retrieveCart()
-
-  /* 기존 코드 (주석처리)
   const cartId = await getCartId()
 
   if (!cartId) {
@@ -116,7 +111,6 @@ export async function updateCart(data: HttpTypes.StoreUpdateCart) {
       return cart
     })
     .catch(medusaError)
-  */
 }
 
 export async function addToCart({
@@ -226,26 +220,6 @@ export async function deleteLineItem(lineId: string) {
 
       const fulfillmentCacheTag = await getCacheTag("fulfillment")
       revalidateTag(fulfillmentCacheTag)
-    })
-    .catch(medusaError)
-}
-
-export async function setShippingMethod({
-  cartId,
-  shippingMethodId,
-}: {
-  cartId: string
-  shippingMethodId: string
-}) {
-  const headers = {
-    ...(await getAuthHeaders()),
-  }
-
-  return sdk.store.cart
-    .addShippingMethod(cartId, { option_id: shippingMethodId }, {}, headers)
-    .then(async () => {
-      const cartCacheTag = await getCacheTag("carts")
-      revalidateTag(cartCacheTag)
     })
     .catch(medusaError)
 }

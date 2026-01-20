@@ -128,6 +128,7 @@ _Scope: order, payment, membership 라우팅 재설계_
 ```
 
 **변경 사항**:
+
 - `checkout-backup` 삭제 (백업 폴더)
 - 나머지는 현재 구조 유지
 

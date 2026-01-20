@@ -14,4 +14,3 @@ export function ProductGrid({ products, mockProductData }: ProductGridProps) {
     </div>
   )
 }
-

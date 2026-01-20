@@ -76,4 +76,3 @@ export function RecommendedProducts({ products }: RecommendedProductsProps) {
     </aside>
   )
 }
-

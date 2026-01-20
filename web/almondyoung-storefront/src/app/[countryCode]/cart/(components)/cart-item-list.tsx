@@ -23,7 +23,11 @@ export function CartItemList({
 }: CartItemListProps) {
   if (variant === "mobile") {
     return (
-      <section className="cart-items" role="region" aria-label="장바구니 상품 목록">
+      <section
+        className="cart-items"
+        role="region"
+        aria-label="장바구니 상품 목록"
+      >
         <div className="items-container">
           {items.map((item) => (
             <CartCard
@@ -105,4 +109,3 @@ export function CartItemList({
     </div>
   )
 }
-

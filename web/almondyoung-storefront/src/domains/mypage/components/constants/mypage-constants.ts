@@ -17,7 +17,7 @@ export const MENU_ITEMS: MenuItem[] = [
   { label: "쿠폰", icon: "🏷️", path: "/mypage/coupons" },
   { label: "다운로드", icon: "📥", path: "/mypage/download" },
   // { label: "구독 관리", icon: "🔁", path: "/mypage/subscribe/manage" },
-  {    
+  {
     label: "사업자 정보",
     icon: "💼",
     path: "/mypage/business",

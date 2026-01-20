@@ -60,7 +60,7 @@ export const getProductList = async ({
 // 상품 상세 조회
 export const getProductDetail = async (
   productId: string,
-  regionId?: string,
+  regionId?: string
   // salesChannelId?: string | null
 ): Promise<StoreProduct> => {
   try {

@@ -5,7 +5,7 @@ export function useMediaQuery(query: string): boolean {
 
   useEffect(() => {
     const media = window.matchMedia(query)
-    
+
     // 초기값 설정
     if (media.matches !== matches) {
       setMatches(media.matches)

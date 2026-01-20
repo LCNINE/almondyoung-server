@@ -165,7 +165,7 @@ export default function DeliveryTrackingPage() {
         original: 30000,
         member: 5000,
         discountRate: 83,
-        isMembership: false
+        isMembership: false,
       },
       membershipPrice: 5000,
       discountRate: 78,
@@ -185,7 +185,7 @@ export default function DeliveryTrackingPage() {
         original: 30000,
         member: 28000,
         discountRate: 7,
-        isMembership: false
+        isMembership: false,
       },
       membershipPrice: 28000, // 멤버십 가격 추가
       discountRate: 78,
@@ -206,7 +206,7 @@ export default function DeliveryTrackingPage() {
         original: 30000,
         member: 15000,
         discountRate: 50,
-        isMembership: false
+        isMembership: false,
       },
       membershipPrice: 15000, // 멤버십 가격
       discountRate: 78,
@@ -226,7 +226,7 @@ export default function DeliveryTrackingPage() {
         original: 25000,
         member: 18000,
         discountRate: 28,
-        isMembership: false
+        isMembership: false,
       },
       membershipPrice: 18000,
       discountRate: 28,
@@ -258,7 +258,9 @@ export default function DeliveryTrackingPage() {
                 className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none"
               />
               {errors.orderNumber && (
-                <p className="mt-1 text-sm text-red-500">{errors.orderNumber.message}</p>
+                <p className="mt-1 text-sm text-red-500">
+                  {errors.orderNumber.message}
+                </p>
               )}
             </div>
 
@@ -273,7 +275,9 @@ export default function DeliveryTrackingPage() {
                 className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none"
               />
               {errors.email && (
-                <p className="mt-1 text-sm text-red-500">{errors.email.message}</p>
+                <p className="mt-1 text-sm text-red-500">
+                  {errors.email.message}
+                </p>
               )}
             </div>
 
@@ -301,8 +305,6 @@ export default function DeliveryTrackingPage() {
           deliveryInfo={completedInfo}
         />
 
-
-
         {/* 배송 정보 (순수 UI) */}
         <section className="mt-6 rounded-xl bg-white p-6 shadow-sm">
           <h3 className="mb-4 text-lg font-bold">배송 정보</h3>
@@ -311,7 +313,7 @@ export default function DeliveryTrackingPage() {
             (10303) 서울특별시 강북구 도봉로 89길 27(수유동)4층
           </p>
           <p className="mt-1 text-sm text-gray-600">010-0000-0000</p>
-          <hr className="my-4 border-muted" />
+          <hr className="border-muted my-4" />
           <dl className="flex text-sm">
             <dt className="w-28 shrink-0 text-gray-500">배송요청사항</dt>
             <dd className="text-gray-700">부재 시 문앞에 놔주세요.</dd>

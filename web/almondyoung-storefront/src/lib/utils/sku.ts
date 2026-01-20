@@ -19,16 +19,16 @@ export function generateSkuId(selectedOptions: Record<string, string>): string {
  */
 export function parseSkuId(skuId: string): Record<string, string> {
   const options: Record<string, string> = {}
-  
+
   if (!skuId) return options
-  
-  skuId.split("|").forEach(pair => {
+
+  skuId.split("|").forEach((pair) => {
     const [key, value] = pair.split(":")
     if (key && value) {
       options[key] = value
     }
   })
-  
+
   return options
 }
 
@@ -37,9 +37,9 @@ export function parseSkuId(skuId: string): Record<string, string> {
  */
 export function isValidSkuId(skuId: string): boolean {
   if (!skuId || typeof skuId !== "string") return false
-  
+
   const pairs = skuId.split("|")
-  return pairs.every(pair => {
+  return pairs.every((pair) => {
     const [key, value] = pair.split(":")
     return key && value && key.trim() !== "" && value.trim() !== ""
   })

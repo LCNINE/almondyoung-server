@@ -124,8 +124,7 @@ export const ShipmentProductCardProductList = ({
 /* ------------------------------------------------------------------ */
 /* 5. Root                                                             */
 /* ------------------------------------------------------------------ */
-interface ShipmentProductCardRootProps
-  extends React.HTMLAttributes<HTMLDivElement> {
+interface ShipmentProductCardRootProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode
 }
 export const ShipmentProductCardRoot = forwardRef<

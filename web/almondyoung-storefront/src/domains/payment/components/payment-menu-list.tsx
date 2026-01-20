@@ -15,7 +15,7 @@ export default function PaymentMenuList() {
         <Link
           key={item.href}
           href={item.href}
-          className={`border-gray-20 hover:bg-gray-10 flex items-center justify-between border-t px-7 py-4 cursor-pointer ${idx === menuItems.length - 1 ? "border-b" : ""} `}
+          className={`border-gray-20 hover:bg-gray-10 flex cursor-pointer items-center justify-between border-t px-7 py-4 ${idx === menuItems.length - 1 ? "border-b" : ""} `}
         >
           <span className="text-sm">{item.label}</span>
           <ChevronRight className="h-4 w-4 text-gray-400" />

@@ -112,7 +112,9 @@ export async function api<T>(
       // Next.js 캐싱 옵션 전달
       ...(next && { next }),
       // 서버 사이드에서만 캐싱 적용 (클라이언트에서는 작동하지 않음)
-      ...(typeof window === "undefined" && next?.tags ? { cache: "force-cache" } : {}),
+      ...(typeof window === "undefined" && next?.tags
+        ? { cache: "force-cache" }
+        : {}),
     })
   } catch {
     // 서버 액션에서만 쓸 거면 네트워크 에러 날 일이 거의 없긴 한데, 백엔드 서버가 죽어있거나 URL 잘못됐을 때 대비용으로 넣어둠

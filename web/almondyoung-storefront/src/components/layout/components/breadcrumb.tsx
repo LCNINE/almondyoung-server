@@ -273,12 +273,8 @@ type BreadcrumbProps = {
   className?: string
 }
 
-export const Breadcrumb = ({
-  items,
-  className = "",
-}: BreadcrumbProps) => {
-  const list =
-    items && items.length > 0 ? items : [{ label: "홈", href: "/" }]
+export const Breadcrumb = ({ items, className = "" }: BreadcrumbProps) => {
+  const list = items && items.length > 0 ? items : [{ label: "홈", href: "/" }]
 
   return (
     <nav className={className} aria-label="breadcrumb">

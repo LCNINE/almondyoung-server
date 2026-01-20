@@ -6,8 +6,17 @@ export interface RoundedBaseCardProps extends React.HTMLAttributes<HTMLDivElemen
   children?: React.ReactNode
 }
 
-const RoundedBaseCard = ({ children, className, ...props }: RoundedBaseCardProps) => (
-  <div className={["rounded-lg bg-white p-4 shadow-sm", className].filter(Boolean).join(" ")} {...props}>
+const RoundedBaseCard = ({
+  children,
+  className,
+  ...props
+}: RoundedBaseCardProps) => (
+  <div
+    className={["rounded-lg bg-white p-4 shadow-sm", className]
+      .filter(Boolean)
+      .join(" ")}
+    {...props}
+  >
     {children}
   </div>
 )

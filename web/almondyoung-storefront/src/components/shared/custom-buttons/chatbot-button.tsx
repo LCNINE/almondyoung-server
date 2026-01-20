@@ -7,10 +7,7 @@ interface ChatbotButtonProps {
   onClick?: () => void
 }
 
-export function ChatbotButton({ 
-  className = "",
-  onClick
-}: ChatbotButtonProps) {
+export function ChatbotButton({ className = "", onClick }: ChatbotButtonProps) {
   const handleClick = () => {
     if (onClick) {
       onClick()
@@ -25,12 +22,7 @@ export function ChatbotButton({
     <button
       onClick={handleClick}
       aria-label="상담톡"
-      className={`
-        bg-fab-talk shadow-fab flex h-14 w-14 items-center justify-center 
-        rounded-full text-black
-        hover:opacity-80 transition-opacity
-        ${className}
-      `}
+      className={`bg-fab-talk shadow-fab flex h-14 w-14 items-center justify-center rounded-full text-black transition-opacity hover:opacity-80 ${className} `}
     >
       <MessageCircle size={28} />
     </button>

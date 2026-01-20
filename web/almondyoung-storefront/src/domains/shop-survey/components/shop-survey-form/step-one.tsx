@@ -47,8 +47,7 @@ const categoryWidthMap: Record<string, string> = {
 const defaultCategoryWidth = "w-[81.75px]"
 
 // --- (이전 리팩토링) 캡슐화된 라벨 컴포넌트들 (규칙 #4 와 유사) ---
-interface SurveyRadioLabelProps
-  extends React.LabelHTMLAttributes<HTMLLabelElement> {
+interface SurveyRadioLabelProps extends React.LabelHTMLAttributes<HTMLLabelElement> {
   isChecked: boolean
 }
 const SurveyRadioLabel: React.FC<SurveyRadioLabelProps> = ({
@@ -74,8 +73,7 @@ const SurveyRadioLabel: React.FC<SurveyRadioLabelProps> = ({
   </FormLabel>
 )
 
-interface CategoryCheckboxLabelProps
-  extends React.LabelHTMLAttributes<HTMLLabelElement> {
+interface CategoryCheckboxLabelProps extends React.LabelHTMLAttributes<HTMLLabelElement> {
   isChecked: boolean
 }
 const CategoryCheckboxLabel: React.FC<CategoryCheckboxLabelProps> = ({

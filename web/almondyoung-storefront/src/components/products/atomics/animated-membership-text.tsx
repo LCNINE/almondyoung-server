@@ -16,7 +16,10 @@ export const AnimatedMembershipText = ({
   return (
     <span
       className={`animate-pulse ${className}`}
-      style={{ animationDelay: `${delay}ms`, animationDuration: `${duration}ms` }}
+      style={{
+        animationDelay: `${delay}ms`,
+        animationDuration: `${duration}ms`,
+      }}
     >
       {text}
     </span>

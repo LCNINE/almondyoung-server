@@ -46,7 +46,7 @@ export async function CategoryPageContainer({
     categoryId: categoryData.id,
     categoryName: categoryData.name,
     regionId: countryCode.toUpperCase(),
-    regionName: region?.name
+    regionName: region?.name,
   })
 
   let initialProducts: any[] = []

@@ -8,9 +8,9 @@ interface ScrollTopButtonProps {
   className?: string
 }
 
-export function ScrollTopButton({ 
-  threshold = 300, 
-  className = "" 
+export function ScrollTopButton({
+  threshold = 300,
+  className = "",
 }: ScrollTopButtonProps) {
   const [isVisible, setIsVisible] = useState(false)
 
@@ -30,7 +30,7 @@ export function ScrollTopButton({
   const scrollToTop = () => {
     window.scrollTo({
       top: 0,
-      behavior: "smooth"
+      behavior: "smooth",
     })
   }
 
@@ -40,12 +40,7 @@ export function ScrollTopButton({
     <button
       onClick={scrollToTop}
       aria-label="맨 위로 가기"
-      className={`
-        border-border-primary flex h-12 w-12 items-center justify-center 
-        rounded-full border bg-white text-black shadow-md transition-opacity
-        hover:opacity-80
-        ${className}
-      `}
+      className={`border-border-primary flex h-12 w-12 items-center justify-center rounded-full border bg-white text-black shadow-md transition-opacity hover:opacity-80 ${className} `}
     >
       <ArrowUp size={24} />
     </button>

@@ -933,10 +933,10 @@ userId: 작업자 ID
 
 ```typescript
 {
-  variantId: string;
-  variantCode: string | null;
-  variantName: string | null;
-  isActive: boolean;
+  variantId: string
+  variantCode: string | null
+  variantName: string | null
+  isActive: boolean
 }
 ```
 
@@ -1000,8 +1000,8 @@ userId: 작업자 ID
 
 ```typescript
 {
-  success: boolean;
-  data: T; // 수정된 객체
+  success: boolean
+  data: T // 수정된 객체
 }
 ```
 

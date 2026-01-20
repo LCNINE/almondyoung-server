@@ -14,11 +14,12 @@ inclusion: false
 
 ```typescript
 const result = products.filter((product) =>
-  product.categories.some((category) =>
-    category.id === targetCategory.id &&
-    product.prices.some((price) => price >= minPrice && price <= maxPrice)
+  product.categories.some(
+    (category) =>
+      category.id === targetCategory.id &&
+      product.prices.some((price) => price >= minPrice && price <= maxPrice)
   )
-);
+)
 ```
 
 ### 좋은 예시
@@ -26,24 +27,26 @@ const result = products.filter((product) =>
 ```typescript
 const matchedProducts = products.filter((product) => {
   return product.categories.some((category) => {
-    const isSameCategory = category.id === targetCategory.id;
+    const isSameCategory = category.id === targetCategory.id
     const isPriceInRange = product.prices.some(
       (price) => price >= minPrice && price <= maxPrice
-    );
-ㅈ
-    return isSameCategory && isPriceInRange;
-  });
-});
+    )
+    ㅈ
+    return isSameCategory && isPriceInRange
+  })
+})
 ```
 
 **규칙**: 복잡한 조건식에는 명시적인 이름을 붙여서 코드를 읽는 사람이 한 번에 고려해야 할 맥락을 줄이세요.
 
 **언제 조건에 이름을 붙이는가?**
+
 - 복잡한 로직을 다룰 때 (여러 줄에 걸친 조건)
 - 재사용성이 필요할 때
 - 단위 테스트가 필요할 때
 
 **언제 이름을 붙이지 않아도 되는가?**
+
 - 로직이 간단할 때 (예: `arr.map(x => x * 2)`)
 - 한 번만 사용될 때
 
@@ -55,21 +58,21 @@ const matchedProducts = products.filter((product) => {
 
 ```typescript
 async function onLikeClick() {
-  await postLike(url);
-  await delay(300);
-  await refetchPostLike();
+  await postLike(url)
+  await delay(300)
+  await refetchPostLike()
 }
 ```
 
 ### 좋은 예시
 
 ```typescript
-const ANIMATION_DELAY_MS = 300;
+const ANIMATION_DELAY_MS = 300
 
 async function onLikeClick() {
-  await postLike(url);
-  await delay(ANIMATION_DELAY_MS);
-  await refetchPostLike();
+  await postLike(url)
+  await delay(ANIMATION_DELAY_MS)
+  await refetchPostLike()
 }
 ```
 
@@ -85,11 +88,11 @@ async function onLikeClick() {
 function LoginStartPage() {
   useCheckLogin({
     onChecked: (status) => {
-      if (status === "LOGGED_IN") location.href = "/home";
-    }
-  });
+      if (status === "LOGGED_IN") location.href = "/home"
+    },
+  })
   /* ... 로그인 관련 로직 ... */
-  return <>{/* ... 로그인 관련 컴포넌트 ... */}</>;
+  return <>{/* ... 로그인 관련 컴포넌트 ... */}</>
 }
 ```
 
@@ -101,24 +104,24 @@ function App() {
     <AuthGuard>
       <LoginStartPage />
     </AuthGuard>
-  );
+  )
 }
 
 function AuthGuard({ children }) {
-  const status = useCheckLoginStatus();
+  const status = useCheckLoginStatus()
 
   useEffect(() => {
     if (status === "LOGGED_IN") {
-      location.href = "/home";
+      location.href = "/home"
     }
-  }, [status]);
+  }, [status])
 
-  return status !== "LOGGED_IN" ? children : null;
+  return status !== "LOGGED_IN" ? children : null
 }
 
 function LoginStartPage() {
   /* ... 로그인 관련 로직 ... */
-  return <>{/* ... 로그인 관련 컴포넌트 ... */}</>;
+  return <>{/* ... 로그인 관련 컴포넌트 ... */}</>
 }
 ```
 
@@ -134,12 +137,16 @@ function LoginStartPage() {
 
 ```tsx
 function SubmitButton() {
-  const isViewer = useRole() === "viewer";
+  const isViewer = useRole() === "viewer"
   useEffect(() => {
-    if (isViewer) return;
-    showButtonAnimation();
-  }, [isViewer]);
-  return isViewer ? <TextButton disabled>Submit</TextButton> : <Button type="submit">Submit</Button>;
+    if (isViewer) return
+    showButtonAnimation()
+  }, [isViewer])
+  return isViewer ? (
+    <TextButton disabled>Submit</TextButton>
+  ) : (
+    <Button type="submit">Submit</Button>
+  )
 }
 ```
 
@@ -147,19 +154,19 @@ function SubmitButton() {
 
 ```tsx
 function SubmitButton() {
-  const isViewer = useRole() === "viewer";
-  return isViewer ? <ViewerSubmitButton /> : <AdminSubmitButton />;
+  const isViewer = useRole() === "viewer"
+  return isViewer ? <ViewerSubmitButton /> : <AdminSubmitButton />
 }
 
 function ViewerSubmitButton() {
-  return <TextButton disabled>Submit</TextButton>;
+  return <TextButton disabled>Submit</TextButton>
 }
 
 function AdminSubmitButton() {
   useEffect(() => {
-    showButtonAnimation();
-  }, []);
-  return <Button type="submit">Submit</Button>;
+    showButtonAnimation()
+  }, [])
+  return <Button type="submit">Submit</Button>
 }
 ```
 
@@ -173,18 +180,18 @@ function AdminSubmitButton() {
 
 ```typescript
 const status =
-  A조건 && B조건 ? "BOTH" : A조건 || B조건 ? (A조건 ? "A" : "B") : "NONE";
+  A조건 && B조건 ? "BOTH" : A조건 || B조건 ? (A조건 ? "A" : "B") : "NONE"
 ```
 
 ### 좋은 예시
 
 ```typescript
 const status = (() => {
-  if (A조건 && B조건) return "BOTH";
-  if (A조건) return "A";
-  if (B조건) return "B";
-  return "NONE";
-})();
+  if (A조건 && B조건) return "BOTH"
+  if (A조건) return "A"
+  if (B조건) return "B"
+  return "NONE"
+})()
 ```
 
 **규칙**: 조건을 `if` 문으로 풀어서 사용하면 보다 명확하고 간단하게 조건을 드러낼 수 있습니다.
@@ -197,33 +204,33 @@ const status = (() => {
 
 ```tsx
 function Page() {
-  const user = useUser();
-  const policy = getPolicyByRole(user.role); // 3번의 시점 이동 발생
+  const user = useUser()
+  const policy = getPolicyByRole(user.role) // 3번의 시점 이동 발생
 
   return (
     <div>
       <Button disabled={!policy.canInvite}>Invite</Button>
       <Button disabled={!policy.canView}>View</Button>
     </div>
-  );
+  )
 }
 
 function getPolicyByRole(role) {
-  const policy = POLICY_SET[role];
+  const policy = POLICY_SET[role]
   return {
     canInvite: policy.includes("invite"),
-    canView: policy.includes("view")
-  };
+    canView: policy.includes("view"),
+  }
 }
 
-const POLICY_SET = { admin: ["invite", "view"], viewer: ["view"] };
+const POLICY_SET = { admin: ["invite", "view"], viewer: ["view"] }
 ```
 
 ### 좋은 예시 (조건을 펼쳐서 그대로 드러내기)
 
 ```tsx
 function Page() {
-  const user = useUser();
+  const user = useUser()
 
   switch (user.role) {
     case "admin":
@@ -232,16 +239,16 @@ function Page() {
           <Button disabled={false}>Invite</Button>
           <Button disabled={false}>View</Button>
         </div>
-      );
+      )
     case "viewer":
       return (
         <div>
           <Button disabled={true}>Invite</Button>
           <Button disabled={false}>View</Button>
         </div>
-      );
+      )
     default:
-      return null;
+      return null
   }
 }
 ```
@@ -250,18 +257,18 @@ function Page() {
 
 ```tsx
 function Page() {
-  const user = useUser();
+  const user = useUser()
   const policy = {
     admin: { canInvite: true, canView: true },
-    viewer: { canInvite: false, canView: true }
-  }[user.role];
+    viewer: { canInvite: false, canView: true },
+  }[user.role]
 
   return (
     <div>
       <Button disabled={!policy.canInvite}>Invite</Button>
       <Button disabled={!policy.canView}>View</Button>
     </div>
-  );
+  )
 }
 ```
 
@@ -280,38 +287,42 @@ export function usePageState() {
     statementId: NumberParam,
     dateFrom: DateParam,
     dateTo: DateParam,
-    statusList: ArrayParam
-  });
+    statusList: ArrayParam,
+  })
 
-  return useMemo(() => ({
-    values: {
-      cardId: query.cardId ?? undefined,
-      statementId: query.statementId ?? undefined,
-      dateFrom: query.dateFrom == null ? defaultDateFrom : moment(query.dateFrom),
-      dateTo: query.dateTo == null ? defaultDateTo : moment(query.dateTo),
-      statusList: query.statusList as StatementStatusType[] | undefined
-    },
-    controls: {
-      setCardId: (cardId: number) => setQuery({ cardId }, "replaceIn"),
-      // ... 나머지 setter 함수들
-    }
-  }), [query, setQuery]);
+  return useMemo(
+    () => ({
+      values: {
+        cardId: query.cardId ?? undefined,
+        statementId: query.statementId ?? undefined,
+        dateFrom:
+          query.dateFrom == null ? defaultDateFrom : moment(query.dateFrom),
+        dateTo: query.dateTo == null ? defaultDateTo : moment(query.dateTo),
+        statusList: query.statusList as StatementStatusType[] | undefined,
+      },
+      controls: {
+        setCardId: (cardId: number) => setQuery({ cardId }, "replaceIn"),
+        // ... 나머지 setter 함수들
+      },
+    }),
+    [query, setQuery]
+  )
 }
 ```
 
 ### 좋은 예시
 
 ```typescript
-import { useQueryParam } from "use-query-params";
+import { useQueryParam } from "use-query-params"
 
 export function useCardIdQueryParam() {
-  const [cardId, _setCardId] = useQueryParam("cardId", NumberParam);
+  const [cardId, _setCardId] = useQueryParam("cardId", NumberParam)
 
   const setCardId = useCallback((cardId: number) => {
-    _setCardId({ cardId }, "replaceIn");
-  }, []);
+    _setCardId({ cardId }, "replaceIn")
+  }, [])
 
-  return [cardId ?? undefined, setCardId] as const;
+  return [cardId ?? undefined, setCardId] as const
 }
 ```
 
@@ -325,11 +336,11 @@ export function useCardIdQueryParam() {
 
 ```typescript
 async function fetchBalance(): Promise<number> {
-  const balance = await http.get<number>("...");
+  const balance = await http.get<number>("...")
 
-  logging.log("balance_fetched");
+  logging.log("balance_fetched")
 
-  return balance;
+  return balance
 }
 ```
 
@@ -337,19 +348,19 @@ async function fetchBalance(): Promise<number> {
 
 ```typescript
 async function fetchBalance(): Promise<number> {
-  const balance = await http.get<number>("...");
+  const balance = await http.get<number>("...")
 
-  return balance;
+  return balance
 }
 ```
 
 ```tsx
 <Button
   onClick={async () => {
-    const balance = await fetchBalance();
-    logging.log("balance_fetched");
+    const balance = await fetchBalance()
+    logging.log("balance_fetched")
 
-    await syncBalance(balance);
+    await syncBalance(balance)
   }}
 >
   계좌 잔액 갱신하기
@@ -366,25 +377,25 @@ async function fetchBalance(): Promise<number> {
 
 ```typescript
 // http.ts
-import { http as httpLibrary } from "@some-library/http";
+import { http as httpLibrary } from "@some-library/http"
 
 export const http = {
   async get(url: string) {
-    const token = await fetchToken();
+    const token = await fetchToken()
 
     return httpLibrary.get(url, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-  }
-};
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+}
 ```
 
 ```typescript
 // fetchUser.ts
-import { http } from "./http";
+import { http } from "./http"
 
 export async function fetchUser() {
-  return http.get("...");
+  return http.get("...")
 }
 ```
 
@@ -392,25 +403,25 @@ export async function fetchUser() {
 
 ```typescript
 // httpService.ts
-import { http as httpLibrary } from "@some-library/http";
+import { http as httpLibrary } from "@some-library/http"
 
 export const httpService = {
   async getWithAuth(url: string) {
-    const token = await fetchToken();
+    const token = await fetchToken()
 
     return httpLibrary.get(url, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-  }
-};
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+}
 ```
 
 ```typescript
 // fetchUser.ts
-import { httpService } from "./httpService";
+import { httpService } from "./httpService"
 
 export async function fetchUser() {
-  return await httpService.getWithAuth("...");
+  return await httpService.getWithAuth("...")
 }
 ```
 
@@ -424,12 +435,12 @@ API 호출과 관련된 Hook들처럼 같은 종류의 함수나 Hook이 서로 
 
 ```typescript
 function useUser() {
-  return useQuery({ queryKey: ["user"], queryFn: fetchUser });
+  return useQuery({ queryKey: ["user"], queryFn: fetchUser })
 }
 
 function useServerTime() {
-  const query = useQuery({ queryKey: ["serverTime"], queryFn: fetchServerTime });
-  return query.data; // ❌ 데이터만 반환
+  const query = useQuery({ queryKey: ["serverTime"], queryFn: fetchServerTime })
+  return query.data // ❌ 데이터만 반환
 }
 ```
 
@@ -437,11 +448,11 @@ function useServerTime() {
 
 ```typescript
 function useUser() {
-  return useQuery({ queryKey: ["user"], queryFn: fetchUser });
+  return useQuery({ queryKey: ["user"], queryFn: fetchUser })
 }
 
 function useServerTime() {
-  return useQuery({ queryKey: ["serverTime"], queryFn: fetchServerTime }); // ✅ Query 객체 반환
+  return useQuery({ queryKey: ["serverTime"], queryFn: fetchServerTime }) // ✅ Query 객체 반환
 }
 ```
 
@@ -452,28 +463,30 @@ function useServerTime() {
 ```typescript
 // ❌ 나쁜 예시: 반환 타입이 다름
 function checkIsNameValid(name: string) {
-  return name.length > 0 && name.length < 20; // boolean 반환
+  return name.length > 0 && name.length < 20 // boolean 반환
 }
 
 function checkIsAgeValid(age: number) {
   if (!Number.isInteger(age)) {
-    return { ok: false, reason: "나이는 정수여야 해요." }; // 객체 반환
+    return { ok: false, reason: "나이는 정수여야 해요." } // 객체 반환
   }
   // ...
 }
 
 // ✅ 좋은 예시: 일관된 반환 타입
-type ValidationResult = { ok: true } | { ok: false; reason: string };
+type ValidationResult = { ok: true } | { ok: false; reason: string }
 
 function checkIsNameValid(name: string): ValidationResult {
-  if (name.length === 0) return { ok: false, reason: "이름을 입력해주세요." };
-  if (name.length >= 20) return { ok: false, reason: "이름은 20자 미만이어야 해요." };
-  return { ok: true };
+  if (name.length === 0) return { ok: false, reason: "이름을 입력해주세요." }
+  if (name.length >= 20)
+    return { ok: false, reason: "이름은 20자 미만이어야 해요." }
+  return { ok: true }
 }
 
 function checkIsAgeValid(age: number): ValidationResult {
-  if (!Number.isInteger(age)) return { ok: false, reason: "나이는 정수여야 해요." };
-  if (age < 18) return { ok: false, reason: "나이는 18세 이상이어야 해요." };
-  return { ok: true };
+  if (!Number.isInteger(age))
+    return { ok: false, reason: "나이는 정수여야 해요." }
+  if (age < 18) return { ok: false, reason: "나이는 18세 이상이어야 해요." }
+  return { ok: true }
 }
 ```

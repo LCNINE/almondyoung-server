@@ -11,7 +11,7 @@ export const getBestOrderMetricsByCategory = async (
       method: "GET",
       withAuth: false,
       next: {
-        tags: [ categoryId || ""],
+        tags: [categoryId || ""],
       },
     }
   )

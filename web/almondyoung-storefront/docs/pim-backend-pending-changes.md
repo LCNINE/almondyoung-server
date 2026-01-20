@@ -10,20 +10,26 @@
 ### 1. 이미지 URL 제공
 
 **현재 상황**:
+
 - PIM API 응답에서 이미지가 `fileId` (UUID)로 내려옴
 - Next.js Image 컴포넌트는 URL이 필요하여 에러 발생
 
 **임시 해결**:
+
 ```typescript
 // src/lib/utils/transformers/product.transformer.ts
 // fileId (UUID) 감지 시 placeholder로 대체
 const isFileId = (str?: string | null): boolean => {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    str
+  )
 }
 
 const normalizeImageUrl = (url?: string | null): string => {
   if (isFileId(url)) {
-    console.warn(`[normalizeImageUrl] fileId 감지됨. 백엔드 public URL 제공 대기 중.`)
+    console.warn(
+      `[normalizeImageUrl] fileId 감지됨. 백엔드 public URL 제공 대기 중.`
+    )
     return "https://placehold.co/240x240?text=No+Image"
   }
   return url || "https://placehold.co/240x240?text=No+Image"
@@ -31,14 +37,17 @@ const normalizeImageUrl = (url?: string | null): string => {
 ```
 
 **백엔드 수정 내용 (동영님 답변)**:
+
 > 1. 이미지를 private과 public 이미지로 나눠서, public 이미지는 별도의 signed url 호출 없이 고정된 url을 이미지의 src로 사용할 수 있도록 하겠습니다.
 
 **프론트엔드 반영 작업**:
+
 1. `normalizeImageUrl` 함수에서 fileId 감지 로직 제거
 2. PIM API 응답의 `thumbnail`, `images` 필드가 public URL로 바로 사용 가능
 3. console.warn 제거
 
 **영향 범위**:
+
 - `src/lib/utils/transformers/product.transformer.ts`
 - 모든 상품 목록/상세 페이지
 
@@ -47,10 +56,12 @@ const normalizeImageUrl = (url?: string | null): string => {
 ### 2. 가격 정보 (priceRange) 제공
 
 **현재 상황**:
+
 - `GET /pim/masters?mode=active` 목록 응답에 가격 정보 없음
 - 모든 상품이 0원으로 표시됨
 
 **임시 해결**:
+
 ```typescript
 // src/components/products/product-card.tsx
 {basePrice === 0 ? (
@@ -63,9 +74,11 @@ const normalizeImageUrl = (url?: string | null): string => {
 ```
 
 **백엔드 수정 내용 (동영님 답변)**:
+
 > 2. 해당 필드는 원래 있었는데, 속도 문제의 원인으로 의심되어 잠시 제거했었습니다. 실제로 속도 문제는 즉시 컴파일되는 개발 빌드라서 그랬던 것으로 파악했으므로 필드는 복구시키겠습니다.
 
 **기대 응답**:
+
 ```json
 {
   "data": [
@@ -73,8 +86,9 @@ const normalizeImageUrl = (url?: string | null): string => {
       "masterId": "uuid",
       "versionId": "uuid",
       "name": "상품명",
-      "thumbnail": "https://...",  // ✅ public URL
-      "priceRange": {              // ✅ 복구 예정
+      "thumbnail": "https://...", // ✅ public URL
+      "priceRange": {
+        // ✅ 복구 예정
         "min": 10000,
         "max": 50000
       },
@@ -92,7 +106,9 @@ const normalizeImageUrl = (url?: string | null): string => {
 ```
 
 **프론트엔드 반영 작업**:
+
 1. `ProductListItemDto` 타입에 `priceRange` 추가:
+
    ```typescript
    export interface ProductListItemDto {
      masterId: string
@@ -110,6 +126,7 @@ const normalizeImageUrl = (url?: string | null): string => {
    ```
 
 2. `toProductCard` transformer에서 priceRange 사용:
+
    ```typescript
    export const toProductCard = (dto: ProductListItemDto): ProductCard => {
      return {
@@ -127,6 +144,7 @@ const normalizeImageUrl = (url?: string | null): string => {
 3. `product-card.tsx`에서 "가격 문의" fallback 제거
 
 **영향 범위**:
+
 - `src/lib/types/dto/pim.ts` - `ProductListItemDto` 타입
 - `src/lib/utils/transformers/product.transformer.ts` - `toProductCard` 함수
 - `src/components/products/product-card.tsx` - UI 렌더링
@@ -191,11 +209,13 @@ const normalizeImageUrl = (url?: string | null): string => {
 가격 범위가 있을 때 UI 표시 방식:
 
 1. **단일 가격** (`min === max`):
+
    ```
    10,000원
    ```
 
 2. **가격 범위** (`min !== max`):
+
    ```
    10,000원 ~ 50,000원
    ```
@@ -210,17 +230,19 @@ const normalizeImageUrl = (url?: string | null): string => {
 ## 📞 연락
 
 **프론트엔드 준비 상태**:
+
 - ✅ 임시 해결 완료 (fileId → placeholder, 가격 0원 → "가격 문의")
 - ✅ 백엔드 수정 후 즉시 반영 가능한 구조
 
 **백엔드 요청**:
+
 - [ ] 이미지 public URL 제공
 - [ ] 가격 범위 (priceRange) 복구
 
 ---
 
 **관련 문서**:
+
 - `docs/backend-check-pim-price.md` - 가격 문제 상세 설명
 - `src/lib/utils/transformers/product.transformer.ts` - 이미지/가격 변환 로직
 - `src/components/products/product-card.tsx` - UI 렌더링
-
