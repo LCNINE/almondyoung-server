@@ -229,7 +229,7 @@ function transformVariants(
             if (variant.basePrice !== undefined && variant.basePrice !== null) {
                 prices.push({
                     amount: Math.round(variant.basePrice),
-                    currency_code: 'KRW',
+                    currency_code: 'krw',
                 });
             }
 
@@ -239,7 +239,7 @@ function transformVariants(
                 title: variant.variantName || '기본 품목',
                 sku: variant.sku || undefined,
                 barcode: stripBarcode ? undefined : variant.variantCode || undefined,
-                manage_inventory: true,
+                manage_inventory: false,
 
                 weight: variant.weight,
                 length: variant.length,
