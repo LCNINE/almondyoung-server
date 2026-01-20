@@ -1,4 +1,4 @@
-import { ProductCard } from "@/components/products-origin/prodcut-card"
+import { ProductCard } from "@/components/products/prodcut-card"
 
 interface ProductGridProps {
   products: number[]

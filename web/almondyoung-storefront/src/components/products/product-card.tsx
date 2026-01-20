@@ -15,6 +15,9 @@ import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
 import { useAddToCart } from "@hooks/api/use-add-to-cart"
 
 /**
+ * 추후 사라질 레거시코드
+ */
+/**
  * ProductInfo - 공통 상품 정보 렌더링 컴포넌트
  *
  * 책임:
