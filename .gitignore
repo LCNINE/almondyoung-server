@@ -39,6 +39,7 @@ Thumbs.db
 !.vscode/extensions.json
 
 # dotenv environment variable files
+envs/**/*
 /**/*.env
 .env
 .env.development.local
