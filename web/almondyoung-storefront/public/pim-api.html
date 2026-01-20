@@ -1,1746 +1,1677 @@
-
-<!DOCTYPE html>
+<!doctype html>
 <html>
-<head>
-  <title>PIM API</title>
-  <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui.css" />
-  <style>
-    html {
-      box-sizing: border-box;
-      overflow: -moz-scrollbars-vertical;
-      overflow-y: scroll;
-    }
-    *, *:before, *:after {
-      box-sizing: inherit;
-    }
-    body {
-      margin:0;
-      background: #fafafa;
-    }
-  </style>
-</head>
-<body>
-  <div id="swagger-ui"></div>
-  <script src="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui-bundle.js"></script>
-  <script src="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui-standalone-preset.js"></script>
-  <script>
-    window.onload = function() {
-      const ui = SwaggerUIBundle({
-        spec: {
-  "openapi": "3.0.0",
-  "paths": {
-    "/health": {
-      "get": {
-        "description": "PIM 서비스의 상태를 확인합니다.",
-        "operationId": "PimController_getHealthCheck",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "PIM 서비스 정상 작동",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "status": {
-                      "type": "string",
-                      "example": "ok"
+  <head>
+    <title>PIM API</title>
+    <link
+      rel="stylesheet"
+      type="text/css"
+      href="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui.css"
+    />
+    <style>
+      html {
+        box-sizing: border-box;
+        overflow: -moz-scrollbars-vertical;
+        overflow-y: scroll;
+      }
+      *,
+      *:before,
+      *:after {
+        box-sizing: inherit;
+      }
+      body {
+        margin: 0;
+        background: #fafafa;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="swagger-ui"></div>
+    <script src="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui-bundle.js"></script>
+    <script src="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui-standalone-preset.js"></script>
+    <script>
+      window.onload = function () {
+        const ui = SwaggerUIBundle({
+          spec: {
+            openapi: "3.0.0",
+            paths: {
+              "/health": {
+                get: {
+                  description: "PIM 서비스의 상태를 확인합니다.",
+                  operationId: "PimController_getHealthCheck",
+                  parameters: [],
+                  responses: {
+                    200: {
+                      description: "PIM 서비스 정상 작동",
+                      content: {
+                        "application/json": {
+                          schema: {
+                            type: "object",
+                            properties: {
+                              status: {
+                                type: "string",
+                                example: "ok",
+                              },
+                              service: {
+                                type: "string",
+                                example: "PIM (Product Information Management)",
+                              },
+                            },
+                          },
+                        },
+                      },
                     },
-                    "service": {
-                      "type": "string",
-                      "example": "PIM (Product Information Management)"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "summary": "PIM 서비스 헬스체크",
-        "tags": [
-          "PIM Health"
-        ]
-      }
-    },
-    "/categories": {
-      "post": {
-        "description": "새로운 제품 카테고리를 생성합니다.",
-        "operationId": "ProductCategoriesController_createCategory",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "description": "카테고리 생성 정보",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "string"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "카테고리 생성 성공"
-          },
-          "400": {
-            "description": "잘못된 요청 데이터"
-          },
-          "409": {
-            "description": "이미 존재하는 카테고리명"
-          }
-        },
-        "summary": "카테고리 생성",
-        "tags": [
-          "Categories"
-        ]
-      },
-      "get": {
-        "description": "전체 카테고리를 계층구조로 조회합니다.",
-        "operationId": "ProductCategoriesController_getCategoryTree",
-        "parameters": [
-          {
-            "name": "maxDepth",
-            "required": false,
-            "in": "query",
-            "description": "조회할 최대 깊이 (미지정시 전체)",
-            "schema": {
-              "type": "number"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "카테고리 트리 조회 성공"
-          }
-        },
-        "summary": "카테고리 트리 조회",
-        "tags": [
-          "Categories"
-        ]
-      }
-    },
-    "/categories/{id}": {
-      "put": {
-        "description": "기존 카테고리 정보를 수정합니다.",
-        "operationId": "ProductCategoriesController_updateCategory",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "카테고리 ID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "description": "카테고리 수정 정보",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "string"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "카테고리 수정 성공"
-          },
-          "400": {
-            "description": "잘못된 요청 데이터"
-          },
-          "404": {
-            "description": "카테고리를 찾을 수 없음"
-          }
-        },
-        "summary": "카테고리 수정",
-        "tags": [
-          "Categories"
-        ]
-      },
-      "delete": {
-        "description": "카테고리를 삭제합니다. 해당 카테고리의 제품들을 다른 카테고리로 이동할 수 있습니다.",
-        "operationId": "ProductCategoriesController_deleteCategory",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "삭제할 카테고리 ID",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "moveProductsTo",
-            "required": false,
-            "in": "query",
-            "description": "제품들을 이동시킬 대상 카테고리 ID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "카테고리 삭제 성공"
-          },
-          "400": {
-            "description": "하위 카테고리가 존재하여 삭제할 수 없음"
-          },
-          "404": {
-            "description": "카테고리를 찾을 수 없음"
-          }
-        },
-        "summary": "카테고리 삭제",
-        "tags": [
-          "Categories"
-        ]
-      },
-      "get": {
-        "description": "특정 카테고리의 상세 정보를 조회합니다.",
-        "operationId": "ProductCategoriesController_getCategoryById",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "조회할 카테고리 ID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "카테고리 조회 성공"
-          },
-          "404": {
-            "description": "카테고리를 찾을 수 없음"
-          }
-        },
-        "summary": "카테고리 상세 조회",
-        "tags": [
-          "Categories"
-        ]
-      }
-    },
-    "/categories/{id}/children": {
-      "get": {
-        "description": "특정 카테고리의 직계 하위 카테고리 목록을 조회합니다.",
-        "operationId": "ProductCategoriesController_getChildCategories",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "부모 카테고리 ID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "하위 카테고리 조회 성공"
-          },
-          "404": {
-            "description": "부모 카테고리를 찾을 수 없음"
-          }
-        },
-        "summary": "하위 카테고리 조회",
-        "tags": [
-          "Categories"
-        ]
-      }
-    },
-    "/categories/{id}/path": {
-      "get": {
-        "description": "특정 카테고리의 루트부터의 전체 경로를 조회합니다.",
-        "operationId": "ProductCategoriesController_getCategoryPath",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "카테고리 ID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "카테고리 경로 조회 성공"
-          },
-          "404": {
-            "description": "카테고리를 찾을 수 없음"
-          }
-        },
-        "summary": "카테고리 경로 조회",
-        "tags": [
-          "Categories"
-        ]
-      }
-    },
-    "/categories/{id}/move": {
-      "put": {
-        "description": "카테고리를 다른 부모 카테고리 하위로 이동시킵니다.",
-        "operationId": "ProductCategoriesController_moveCategory",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "이동할 카테고리 ID",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "newParentId",
-            "required": false,
-            "in": "query",
-            "description": "새로운 부모 카테고리 ID (미지정시 루트로 이동)",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "카테고리 이동 성공"
-          },
-          "400": {
-            "description": "순환 참조 또는 자기 자신으로 이동 시도"
-          },
-          "404": {
-            "description": "카테고리를 찾을 수 없음"
-          }
-        },
-        "summary": "카테고리 이동",
-        "tags": [
-          "Categories"
-        ]
-      }
-    },
-    "/masters": {
-      "post": {
-        "description": "새로운 제품 마스터를 생성합니다.",
-        "operationId": "ProductMastersController_createMaster",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "description": "제품 마스터 생성 정보",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "string"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "제품 마스터 생성 성공"
-          },
-          "400": {
-            "description": "잘못된 요청 데이터 (name, basePrice, pricingStrategy 필수)"
-          },
-          "500": {
-            "description": "서버 오류"
-          }
-        },
-        "summary": "제품 마스터 생성",
-        "tags": [
-          "Product Masters"
-        ]
-      },
-      "get": {
-        "description": "제품 마스터 목록을 필터링 및 페이지네이션과 함께 조회합니다.",
-        "operationId": "ProductMastersController_getMasters",
-        "parameters": [
-          {
-            "name": "search",
-            "required": false,
-            "in": "query",
-            "description": "검색 키워드",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "pricingStrategy",
-            "required": false,
-            "in": "query",
-            "description": "가격 전략 필터",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "brand",
-            "required": false,
-            "in": "query",
-            "description": "브랜드 필터",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "categoryId",
-            "required": false,
-            "in": "query",
-            "description": "카테고리 ID 필터",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "status",
-            "required": false,
-            "in": "query",
-            "description": "제품 상태 필터",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "required": false,
-            "in": "query",
-            "description": "페이지 당 아이템 수",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "page",
-            "required": false,
-            "in": "query",
-            "description": "페이지 번호",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "제품 마스터 목록 조회 성공"
-          },
-          "500": {
-            "description": "서버 오류"
-          }
-        },
-        "summary": "제품 마스터 목록 조회",
-        "tags": [
-          "Product Masters"
-        ]
-      }
-    },
-    "/masters/{id}": {
-      "get": {
-        "description": "특정 제품 마스터의 상세 정보를 조회합니다.",
-        "operationId": "ProductMastersController_getMasterDetail",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "제품 마스터 ID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "제품 마스터 상세 조회 성공"
-          },
-          "404": {
-            "description": "제품 마스터를 찾을 수 없음"
-          },
-          "500": {
-            "description": "서버 오류"
-          }
-        },
-        "summary": "제품 마스터 상세 조회",
-        "tags": [
-          "Product Masters"
-        ]
-      },
-      "put": {
-        "description": "기존 제품 마스터 정보를 수정합니다.",
-        "operationId": "ProductMastersController_updateMaster",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "제품 마스터 ID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "description": "수정할 제품 마스터 정보",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "string"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "제품 마스터 수정 성공"
-          },
-          "400": {
-            "description": "잘못된 요청 데이터"
-          },
-          "404": {
-            "description": "제품 마스터를 찾을 수 없음"
-          },
-          "500": {
-            "description": "서버 오류"
-          }
-        },
-        "summary": "제품 마스터 수정",
-        "tags": [
-          "Product Masters"
-        ]
-      },
-      "delete": {
-        "description": "제품 마스터를 삭제합니다.",
-        "operationId": "ProductMastersController_deleteMaster",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "삭제할 제품 마스터 ID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "제품 마스터 삭제 성공"
-          },
-          "400": {
-            "description": "삭제 요구사항 불충족"
-          },
-          "404": {
-            "description": "제품 마스터를 찾을 수 없음"
-          },
-          "500": {
-            "description": "서버 오류"
-          }
-        },
-        "summary": "제품 마스터 삭제",
-        "tags": [
-          "Product Masters"
-        ]
-      }
-    },
-    "/masters/{id}/price-preview": {
-      "get": {
-        "description": "제품 마스터의 가격 전략 적용 미리보기를 제공합니다.",
-        "operationId": "ProductMastersController_getPricePreview",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "제품 마스터 ID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "가격 미리보기 성공"
-          },
-          "400": {
-            "description": "잘못된 요청"
-          },
-          "404": {
-            "description": "제품 마스터를 찾을 수 없음"
-          },
-          "500": {
-            "description": "서버 오류"
-          }
-        },
-        "summary": "가격 미리보기",
-        "tags": [
-          "Product Masters"
-        ]
-      }
-    },
-    "/masters/{id}/pricing": {
-      "put": {
-        "description": "제품 마스터의 가격 전략을 변경합니다.",
-        "operationId": "ProductMastersController_changePricingStrategy",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "제품 마스터 ID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "description": "가격 전략 변경 데이터",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "pricingStrategy": {
-                    "type": "string",
-                    "description": "새로운 가격 전략"
                   },
-                  "migrationData": {
-                    "description": "마이그레이션 데이터 (선택사항)"
-                  }
+                  summary: "PIM 서비스 헬스체크",
+                  tags: ["PIM Health"],
                 },
-                "required": [
-                  "pricingStrategy"
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "가격 전략 변경 성공"
-          },
-          "400": {
-            "description": "잘못된 요청 데이터 (pricingStrategy 필수)"
-          },
-          "404": {
-            "description": "제품 마스터를 찾을 수 없음"
-          },
-          "500": {
-            "description": "서버 오류"
-          }
-        },
-        "summary": "가격 전략 변경",
-        "tags": [
-          "Product Masters"
-        ]
-      }
-    },
-    "/variants/masters/{masterId}": {
-      "get": {
-        "description": "특정 제품 마스터의 모든 변형(색상, 사이즈 등)을 조회합니다.",
-        "operationId": "ProductVariantsController_getVariantsByMaster",
-        "parameters": [
-          {
-            "name": "masterId",
-            "required": true,
-            "in": "path",
-            "description": "제품 마스터 ID",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "required": false,
-            "in": "query",
-            "description": "페이지 당 아이템 수",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "page",
-            "required": false,
-            "in": "query",
-            "description": "페이지 번호",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "includePrice",
-            "required": false,
-            "in": "query",
-            "description": "가격 정보 포함 여부 (true/false, 기본값: true)",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "status",
-            "required": false,
-            "in": "query",
-            "description": "변형 상태 필터",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "제품 변형 목록 조회 성공"
-          },
-          "400": {
-            "description": "잘못된 요청 데이터"
-          },
-          "500": {
-            "description": "서버 오류"
-          }
-        },
-        "summary": "마스터별 제품 변형 조회",
-        "tags": [
-          "Product Variants"
-        ]
-      }
-    },
-    "/variants/{id}": {
-      "get": {
-        "description": "특정 제품 변형의 상세 정보를 조회합니다.",
-        "operationId": "ProductVariantsController_getVariantDetail",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "제품 변형 ID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "제품 변형 상세 조회 성공"
-          },
-          "400": {
-            "description": "잘못된 요청"
-          },
-          "404": {
-            "description": "제품 변형을 찾을 수 없음"
-          },
-          "500": {
-            "description": "서버 오류"
-          }
-        },
-        "summary": "제품 변형 상세 조회",
-        "tags": [
-          "Product Variants"
-        ]
-      },
-      "put": {
-        "description": "기존 제품 변형 정보를 수정합니다.",
-        "operationId": "ProductVariantsController_updateVariant",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "제품 변형 ID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "description": "수정할 제품 변형 정보",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "string"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "제품 변형 수정 성공"
-          },
-          "400": {
-            "description": "잘못된 요청 데이터"
-          },
-          "404": {
-            "description": "제품 변형을 찾을 수 없음"
-          },
-          "500": {
-            "description": "서버 오류"
-          }
-        },
-        "summary": "제품 변형 수정",
-        "tags": [
-          "Product Variants"
-        ]
-      }
-    },
-    "/variants/bulk": {
-      "put": {
-        "description": "여러 제품 변형을 동시에 수정합니다.",
-        "operationId": "ProductVariantsController_bulkUpdateVariants",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "description": "일괄 수정할 제품 변형 정보",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "string"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "제품 변형 일괄 수정 성공"
-          },
-          "400": {
-            "description": "잘못된 요청 데이터"
-          },
-          "404": {
-            "description": "일부 제품 변형을 찾을 수 없음"
-          },
-          "500": {
-            "description": "서버 오류"
-          }
-        },
-        "summary": "제품 변형 일괄 수정",
-        "tags": [
-          "Product Variants"
-        ]
-      }
-    },
-    "/variants/{id}/price": {
-      "get": {
-        "description": "특정 제품 변형의 계산된 가격을 조회합니다.",
-        "operationId": "ProductVariantsController_getVariantPrice",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "제품 변형 ID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "제품 변형 가격 조회 성공",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "variantId": {
-                      "type": "string"
+              },
+              "/categories": {
+                post: {
+                  description: "새로운 제품 카테고리를 생성합니다.",
+                  operationId: "ProductCategoriesController_createCategory",
+                  parameters: [],
+                  requestBody: {
+                    required: true,
+                    description: "카테고리 생성 정보",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          type: "string",
+                        },
+                      },
                     },
-                    "price": {
-                      "type": "number"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "잘못된 요청"
-          },
-          "404": {
-            "description": "제품 변형을 찾을 수 없음"
-          },
-          "500": {
-            "description": "서버 오류"
-          }
-        },
-        "summary": "제품 변형 가격 조회",
-        "tags": [
-          "Product Variants"
-        ]
-      }
-    },
-    "/variants/{id}/status": {
-      "put": {
-        "description": "제품 변형의 상태를 수정합니다 (활성/비활성 등).",
-        "operationId": "ProductVariantsController_updateVariantStatus",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "제품 변형 ID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "description": "상태 수정 데이터",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "status": {
-                    "type": "string",
-                    "description": "새로운 상태"
-                  }
-                },
-                "required": [
-                  "status"
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "제품 변형 상태 수정 성공"
-          },
-          "400": {
-            "description": "잘못된 요청 데이터 (status 필수)"
-          },
-          "404": {
-            "description": "제품 변형을 찾을 수 없음"
-          },
-          "500": {
-            "description": "서버 오류"
-          }
-        },
-        "summary": "제품 변형 상태 수정",
-        "tags": [
-          "Product Variants"
-        ]
-      }
-    },
-    "/channel-products": {
-      "post": {
-        "description": "특정 판매 채널에서 사용할 제품 정보를 생성합니다.",
-        "operationId": "ChannelProductsController_createChannelProduct",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "description": "채널별 제품 생성 정보",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "string"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "채널별 제품 생성 성공"
-          },
-          "400": {
-            "description": "잘못된 요청 데이터 (masterId, channelId 필수)"
-          },
-          "404": {
-            "description": "제품 마스터 또는 판매 채널을 찾을 수 없음"
-          },
-          "500": {
-            "description": "서버 오류"
-          }
-        },
-        "summary": "채널별 제품 생성",
-        "tags": [
-          "Channel Products"
-        ]
-      }
-    },
-    "/channel-products/masters/{masterId}": {
-      "get": {
-        "description": "특정 제품 마스터의 모든 채널별 제품들을 조회합니다.",
-        "operationId": "ChannelProductsController_getChannelProductsByMaster",
-        "parameters": [
-          {
-            "name": "masterId",
-            "required": true,
-            "in": "path",
-            "description": "제품 마스터 ID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "마스터별 채널 제품 조회 성공"
-          },
-          "400": {
-            "description": "잘못된 요청"
-          },
-          "500": {
-            "description": "서버 오류"
-          }
-        },
-        "summary": "마스터별 채널 제품 조회",
-        "tags": [
-          "Channel Products"
-        ]
-      }
-    },
-    "/channel-products/channels/{channelId}": {
-      "get": {
-        "description": "특정 판매 채널의 모든 제품들을 조회합니다.",
-        "operationId": "ChannelProductsController_getChannelProductsByChannel",
-        "parameters": [
-          {
-            "name": "channelId",
-            "required": true,
-            "in": "path",
-            "description": "판매 채널 ID",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "required": false,
-            "in": "query",
-            "description": "페이지 당 아이템 수",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "page",
-            "required": false,
-            "in": "query",
-            "description": "페이지 번호",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "search",
-            "required": false,
-            "in": "query",
-            "description": "검색 키워드",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "isActive",
-            "required": false,
-            "in": "query",
-            "description": "활성 상태 필터 (true/false)",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "채널별 제품 조회 성공"
-          },
-          "400": {
-            "description": "잘못된 요청"
-          },
-          "500": {
-            "description": "서버 오류"
-          }
-        },
-        "summary": "채널별 제품 조회",
-        "tags": [
-          "Channel Products"
-        ]
-      }
-    },
-    "/channel-products/{id}": {
-      "get": {
-        "description": "특정 채널 제품의 상세 정보를 조회합니다.",
-        "operationId": "ChannelProductsController_getChannelProduct",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "채널 제품 ID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "채널 제품 상세 조회 성공"
-          },
-          "400": {
-            "description": "잘못된 요청"
-          },
-          "404": {
-            "description": "채널 제품을 찾을 수 없음"
-          },
-          "500": {
-            "description": "서버 오류"
-          }
-        },
-        "summary": "채널 제품 상세 조회",
-        "tags": [
-          "Channel Products"
-        ]
-      },
-      "put": {
-        "description": "기존 채널 제품 정보를 수정합니다.",
-        "operationId": "ChannelProductsController_updateChannelProduct",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "채널 제품 ID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "description": "수정할 채널 제품 정보",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "string"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "채널 제품 수정 성공"
-          },
-          "400": {
-            "description": "잘못된 요청 데이터"
-          },
-          "404": {
-            "description": "채널 제품을 찾을 수 없음"
-          },
-          "500": {
-            "description": "서버 오류"
-          }
-        },
-        "summary": "채널 제품 수정",
-        "tags": [
-          "Channel Products"
-        ]
-      },
-      "delete": {
-        "description": "채널 제품을 삭제합니다.",
-        "operationId": "ChannelProductsController_deleteChannelProduct",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "삭제할 채널 제품 ID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "채널 제품 삭제 성공"
-          },
-          "400": {
-            "description": "삭제 요구사항 불충족"
-          },
-          "404": {
-            "description": "채널 제품을 찾을 수 없음"
-          },
-          "500": {
-            "description": "서버 오류"
-          }
-        },
-        "summary": "채널 제품 삭제",
-        "tags": [
-          "Channel Products"
-        ]
-      }
-    },
-    "/channel-products/masters/{masterId}/channels/{channelId}/merged": {
-      "get": {
-        "description": "제품 마스터와 채널별 설정이 병합된 제품 정보를 조회합니다.",
-        "operationId": "ChannelProductsController_getMergedChannelProduct",
-        "parameters": [
-          {
-            "name": "masterId",
-            "required": true,
-            "in": "path",
-            "description": "제품 마스터 ID",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "channelId",
-            "required": true,
-            "in": "path",
-            "description": "판매 채널 ID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "병합된 채널 제품 조회 성공"
-          },
-          "400": {
-            "description": "잘못된 요청"
-          },
-          "404": {
-            "description": "채널 제품을 찾을 수 없음"
-          },
-          "500": {
-            "description": "서버 오류"
-          }
-        },
-        "summary": "병합된 채널 제품 조회",
-        "tags": [
-          "Channel Products"
-        ]
-      }
-    },
-    "/channel-products/{id}/name": {
-      "put": {
-        "description": "채널별 제품의 이름을 덤어쓰기합니다.",
-        "operationId": "ChannelProductsController_overrideProductName",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "채널 제품 ID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "description": "새로운 제품명",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "type": "string",
-                    "description": "새로운 제품 이름"
-                  }
-                },
-                "required": [
-                  "name"
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "제품명 덤어쓰기 성공"
-          },
-          "400": {
-            "description": "잘못된 요청 데이터 (name 필수)"
-          },
-          "404": {
-            "description": "채널 제품을 찾을 수 없음"
-          },
-          "500": {
-            "description": "서버 오류"
-          }
-        },
-        "summary": "제품명 덤어쓰기",
-        "tags": [
-          "Channel Products"
-        ]
-      }
-    },
-    "/channel-products/{id}/status": {
-      "put": {
-        "description": "채널 제품의 활성/비활성 상태를 설정합니다.",
-        "operationId": "ChannelProductsController_setChannelProductActive",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "채널 제품 ID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "description": "상태 설정 데이터",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "isActive": {
-                    "type": "boolean",
-                    "description": "활성 여부"
-                  }
-                },
-                "required": [
-                  "isActive"
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "채널 제품 상태 설정 성공"
-          },
-          "400": {
-            "description": "잘못된 요청 데이터 (isActive 필수)"
-          },
-          "404": {
-            "description": "채널 제품을 찾을 수 없음"
-          },
-          "500": {
-            "description": "서버 오류"
-          }
-        },
-        "summary": "채널 제품 상태 설정",
-        "tags": [
-          "Channel Products"
-        ]
-      }
-    },
-    "/channels": {
-      "post": {
-        "description": "새로운 판매 채널(온라인 쇼핑몰, 오프라인 매장 등)을 생성합니다.",
-        "operationId": "SalesChannelsController_createChannel",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "description": "판매 채널 생성 정보",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "string"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "판매 채널 생성 성공"
-          },
-          "400": {
-            "description": "잘못된 요청 데이터 (type, name 필수)"
-          },
-          "500": {
-            "description": "서버 오류"
-          }
-        },
-        "summary": "판매 채널 생성",
-        "tags": [
-          "Sales Channels"
-        ]
-      },
-      "get": {
-        "description": "판매 채널 목록을 필터링 및 페이지네이션과 함께 조회합니다.",
-        "operationId": "SalesChannelsController_getChannels",
-        "parameters": [
-          {
-            "name": "limit",
-            "required": false,
-            "in": "query",
-            "description": "페이지 당 아이템 수",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "page",
-            "required": false,
-            "in": "query",
-            "description": "페이지 번호",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "search",
-            "required": false,
-            "in": "query",
-            "description": "검색 키워드",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "type",
-            "required": false,
-            "in": "query",
-            "description": "채널 타입 필터",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "isActive",
-            "required": false,
-            "in": "query",
-            "description": "활성 상태 필터 (true/false)",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "판매 채널 목록 조회 성공"
-          },
-          "500": {
-            "description": "서버 오류"
-          }
-        },
-        "summary": "판매 채널 목록 조회",
-        "tags": [
-          "Sales Channels"
-        ]
-      }
-    },
-    "/channels/active": {
-      "get": {
-        "description": "활성 상태인 판매 채널만 조회합니다.",
-        "operationId": "SalesChannelsController_getActiveChannels",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "활성 판매 채널 조회 성공"
-          },
-          "500": {
-            "description": "서버 오류"
-          }
-        },
-        "summary": "활성 판매 채널 조회",
-        "tags": [
-          "Sales Channels"
-        ]
-      }
-    },
-    "/channels/{id}": {
-      "get": {
-        "description": "특정 판매 채널의 상세 정보를 조회합니다.",
-        "operationId": "SalesChannelsController_getChannelById",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "판매 채널 ID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "판매 채널 상세 조회 성공"
-          },
-          "400": {
-            "description": "잘못된 요청"
-          },
-          "404": {
-            "description": "판매 채널을 찾을 수 없음"
-          },
-          "500": {
-            "description": "서버 오류"
-          }
-        },
-        "summary": "판매 채널 상세 조회",
-        "tags": [
-          "Sales Channels"
-        ]
-      },
-      "put": {
-        "description": "기존 판매 채널 정보를 수정합니다.",
-        "operationId": "SalesChannelsController_updateChannel",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "판매 채널 ID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "description": "수정할 판매 채널 정보",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "string"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "판매 채널 수정 성공"
-          },
-          "400": {
-            "description": "잘못된 요청 데이터"
-          },
-          "404": {
-            "description": "판매 채널을 찾을 수 없음"
-          },
-          "500": {
-            "description": "서버 오류"
-          }
-        },
-        "summary": "판매 채널 수정",
-        "tags": [
-          "Sales Channels"
-        ]
-      },
-      "delete": {
-        "description": "판매 채널을 삭제합니다.",
-        "operationId": "SalesChannelsController_deleteChannel",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "삭제할 판매 채널 ID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "판매 채널 삭제 성공"
-          },
-          "400": {
-            "description": "삭제 요구사항 불충족"
-          },
-          "404": {
-            "description": "판매 채널을 찾을 수 없음"
-          },
-          "409": {
-            "description": "사용 중인 채널로 삭제할 수 없음"
-          },
-          "500": {
-            "description": "서버 오류"
-          }
-        },
-        "summary": "판매 채널 삭제",
-        "tags": [
-          "Sales Channels"
-        ]
-      }
-    },
-    "/channels/{id}/status": {
-      "put": {
-        "description": "판매 채널의 활성/비활성 상태를 설정합니다.",
-        "operationId": "SalesChannelsController_setChannelActive",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "판매 채널 ID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "description": "상태 설정 데이터",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "isActive": {
-                    "type": "boolean",
-                    "description": "활성 여부"
-                  }
-                },
-                "required": [
-                  "isActive"
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "판매 채널 상태 설정 성공"
-          },
-          "400": {
-            "description": "잘못된 요청 데이터 (isActive 필수)"
-          },
-          "404": {
-            "description": "판매 채널을 찾을 수 없음"
-          },
-          "500": {
-            "description": "서버 오류"
-          }
-        },
-        "summary": "판매 채널 상태 설정",
-        "tags": [
-          "Sales Channels"
-        ]
-      }
-    },
-    "/channels/type/{type}": {
-      "get": {
-        "description": "특정 타입의 판매 채널을 조회합니다.",
-        "operationId": "SalesChannelsController_getChannelByType",
-        "parameters": [
-          {
-            "name": "type",
-            "required": true,
-            "in": "path",
-            "description": "판매 채널 타입",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "타입별 판매 채널 조회 성공"
-          },
-          "400": {
-            "description": "잘못된 요청"
-          },
-          "404": {
-            "description": "해당 타입의 판매 채널을 찾을 수 없음"
-          },
-          "500": {
-            "description": "서버 오류"
-          }
-        },
-        "summary": "타입별 판매 채널 조회",
-        "tags": [
-          "Sales Channels"
-        ]
-      }
-    },
-    "/channels/validate": {
-      "post": {
-        "description": "판매 채널의 설정 정보가 유효한지 검증합니다.",
-        "operationId": "SalesChannelsController_validateChannelConfig",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "description": "검증할 채널 설정 데이터",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "type": {
-                    "type": "string",
-                    "description": "채널 타입"
                   },
-                  "config": {
-                    "description": "채널 설정 데이터"
-                  }
-                },
-                "required": [
-                  "type"
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "채널 설정 검증 완료",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "isValid": {
-                      "type": "boolean"
+                  responses: {
+                    201: {
+                      description: "카테고리 생성 성공",
                     },
-                    "errors": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    }
-                  }
-                }
-              }
-            }
+                    400: {
+                      description: "잘못된 요청 데이터",
+                    },
+                    409: {
+                      description: "이미 존재하는 카테고리명",
+                    },
+                  },
+                  summary: "카테고리 생성",
+                  tags: ["Categories"],
+                },
+                get: {
+                  description: "전체 카테고리를 계층구조로 조회합니다.",
+                  operationId: "ProductCategoriesController_getCategoryTree",
+                  parameters: [
+                    {
+                      name: "maxDepth",
+                      required: false,
+                      in: "query",
+                      description: "조회할 최대 깊이 (미지정시 전체)",
+                      schema: {
+                        type: "number",
+                      },
+                    },
+                  ],
+                  responses: {
+                    200: {
+                      description: "카테고리 트리 조회 성공",
+                    },
+                  },
+                  summary: "카테고리 트리 조회",
+                  tags: ["Categories"],
+                },
+              },
+              "/categories/{id}": {
+                put: {
+                  description: "기존 카테고리 정보를 수정합니다.",
+                  operationId: "ProductCategoriesController_updateCategory",
+                  parameters: [
+                    {
+                      name: "id",
+                      required: true,
+                      in: "path",
+                      description: "카테고리 ID",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                  ],
+                  requestBody: {
+                    required: true,
+                    description: "카테고리 수정 정보",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          type: "string",
+                        },
+                      },
+                    },
+                  },
+                  responses: {
+                    200: {
+                      description: "카테고리 수정 성공",
+                    },
+                    400: {
+                      description: "잘못된 요청 데이터",
+                    },
+                    404: {
+                      description: "카테고리를 찾을 수 없음",
+                    },
+                  },
+                  summary: "카테고리 수정",
+                  tags: ["Categories"],
+                },
+                delete: {
+                  description:
+                    "카테고리를 삭제합니다. 해당 카테고리의 제품들을 다른 카테고리로 이동할 수 있습니다.",
+                  operationId: "ProductCategoriesController_deleteCategory",
+                  parameters: [
+                    {
+                      name: "id",
+                      required: true,
+                      in: "path",
+                      description: "삭제할 카테고리 ID",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                    {
+                      name: "moveProductsTo",
+                      required: false,
+                      in: "query",
+                      description: "제품들을 이동시킬 대상 카테고리 ID",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                  ],
+                  responses: {
+                    200: {
+                      description: "카테고리 삭제 성공",
+                    },
+                    400: {
+                      description: "하위 카테고리가 존재하여 삭제할 수 없음",
+                    },
+                    404: {
+                      description: "카테고리를 찾을 수 없음",
+                    },
+                  },
+                  summary: "카테고리 삭제",
+                  tags: ["Categories"],
+                },
+                get: {
+                  description: "특정 카테고리의 상세 정보를 조회합니다.",
+                  operationId: "ProductCategoriesController_getCategoryById",
+                  parameters: [
+                    {
+                      name: "id",
+                      required: true,
+                      in: "path",
+                      description: "조회할 카테고리 ID",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                  ],
+                  responses: {
+                    200: {
+                      description: "카테고리 조회 성공",
+                    },
+                    404: {
+                      description: "카테고리를 찾을 수 없음",
+                    },
+                  },
+                  summary: "카테고리 상세 조회",
+                  tags: ["Categories"],
+                },
+              },
+              "/categories/{id}/children": {
+                get: {
+                  description:
+                    "특정 카테고리의 직계 하위 카테고리 목록을 조회합니다.",
+                  operationId: "ProductCategoriesController_getChildCategories",
+                  parameters: [
+                    {
+                      name: "id",
+                      required: true,
+                      in: "path",
+                      description: "부모 카테고리 ID",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                  ],
+                  responses: {
+                    200: {
+                      description: "하위 카테고리 조회 성공",
+                    },
+                    404: {
+                      description: "부모 카테고리를 찾을 수 없음",
+                    },
+                  },
+                  summary: "하위 카테고리 조회",
+                  tags: ["Categories"],
+                },
+              },
+              "/categories/{id}/path": {
+                get: {
+                  description:
+                    "특정 카테고리의 루트부터의 전체 경로를 조회합니다.",
+                  operationId: "ProductCategoriesController_getCategoryPath",
+                  parameters: [
+                    {
+                      name: "id",
+                      required: true,
+                      in: "path",
+                      description: "카테고리 ID",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                  ],
+                  responses: {
+                    200: {
+                      description: "카테고리 경로 조회 성공",
+                    },
+                    404: {
+                      description: "카테고리를 찾을 수 없음",
+                    },
+                  },
+                  summary: "카테고리 경로 조회",
+                  tags: ["Categories"],
+                },
+              },
+              "/categories/{id}/move": {
+                put: {
+                  description:
+                    "카테고리를 다른 부모 카테고리 하위로 이동시킵니다.",
+                  operationId: "ProductCategoriesController_moveCategory",
+                  parameters: [
+                    {
+                      name: "id",
+                      required: true,
+                      in: "path",
+                      description: "이동할 카테고리 ID",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                    {
+                      name: "newParentId",
+                      required: false,
+                      in: "query",
+                      description:
+                        "새로운 부모 카테고리 ID (미지정시 루트로 이동)",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                  ],
+                  responses: {
+                    200: {
+                      description: "카테고리 이동 성공",
+                    },
+                    400: {
+                      description: "순환 참조 또는 자기 자신으로 이동 시도",
+                    },
+                    404: {
+                      description: "카테고리를 찾을 수 없음",
+                    },
+                  },
+                  summary: "카테고리 이동",
+                  tags: ["Categories"],
+                },
+              },
+              "/masters": {
+                post: {
+                  description: "새로운 제품 마스터를 생성합니다.",
+                  operationId: "ProductMastersController_createMaster",
+                  parameters: [],
+                  requestBody: {
+                    required: true,
+                    description: "제품 마스터 생성 정보",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          type: "string",
+                        },
+                      },
+                    },
+                  },
+                  responses: {
+                    201: {
+                      description: "제품 마스터 생성 성공",
+                    },
+                    400: {
+                      description:
+                        "잘못된 요청 데이터 (name, basePrice, pricingStrategy 필수)",
+                    },
+                    500: {
+                      description: "서버 오류",
+                    },
+                  },
+                  summary: "제품 마스터 생성",
+                  tags: ["Product Masters"],
+                },
+                get: {
+                  description:
+                    "제품 마스터 목록을 필터링 및 페이지네이션과 함께 조회합니다.",
+                  operationId: "ProductMastersController_getMasters",
+                  parameters: [
+                    {
+                      name: "search",
+                      required: false,
+                      in: "query",
+                      description: "검색 키워드",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                    {
+                      name: "pricingStrategy",
+                      required: false,
+                      in: "query",
+                      description: "가격 전략 필터",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                    {
+                      name: "brand",
+                      required: false,
+                      in: "query",
+                      description: "브랜드 필터",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                    {
+                      name: "categoryId",
+                      required: false,
+                      in: "query",
+                      description: "카테고리 ID 필터",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                    {
+                      name: "status",
+                      required: false,
+                      in: "query",
+                      description: "제품 상태 필터",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                    {
+                      name: "limit",
+                      required: false,
+                      in: "query",
+                      description: "페이지 당 아이템 수",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                    {
+                      name: "page",
+                      required: false,
+                      in: "query",
+                      description: "페이지 번호",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                  ],
+                  responses: {
+                    200: {
+                      description: "제품 마스터 목록 조회 성공",
+                    },
+                    500: {
+                      description: "서버 오류",
+                    },
+                  },
+                  summary: "제품 마스터 목록 조회",
+                  tags: ["Product Masters"],
+                },
+              },
+              "/masters/{id}": {
+                get: {
+                  description: "특정 제품 마스터의 상세 정보를 조회합니다.",
+                  operationId: "ProductMastersController_getMasterDetail",
+                  parameters: [
+                    {
+                      name: "id",
+                      required: true,
+                      in: "path",
+                      description: "제품 마스터 ID",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                  ],
+                  responses: {
+                    200: {
+                      description: "제품 마스터 상세 조회 성공",
+                    },
+                    404: {
+                      description: "제품 마스터를 찾을 수 없음",
+                    },
+                    500: {
+                      description: "서버 오류",
+                    },
+                  },
+                  summary: "제품 마스터 상세 조회",
+                  tags: ["Product Masters"],
+                },
+                put: {
+                  description: "기존 제품 마스터 정보를 수정합니다.",
+                  operationId: "ProductMastersController_updateMaster",
+                  parameters: [
+                    {
+                      name: "id",
+                      required: true,
+                      in: "path",
+                      description: "제품 마스터 ID",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                  ],
+                  requestBody: {
+                    required: true,
+                    description: "수정할 제품 마스터 정보",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          type: "string",
+                        },
+                      },
+                    },
+                  },
+                  responses: {
+                    200: {
+                      description: "제품 마스터 수정 성공",
+                    },
+                    400: {
+                      description: "잘못된 요청 데이터",
+                    },
+                    404: {
+                      description: "제품 마스터를 찾을 수 없음",
+                    },
+                    500: {
+                      description: "서버 오류",
+                    },
+                  },
+                  summary: "제품 마스터 수정",
+                  tags: ["Product Masters"],
+                },
+                delete: {
+                  description: "제품 마스터를 삭제합니다.",
+                  operationId: "ProductMastersController_deleteMaster",
+                  parameters: [
+                    {
+                      name: "id",
+                      required: true,
+                      in: "path",
+                      description: "삭제할 제품 마스터 ID",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                  ],
+                  responses: {
+                    200: {
+                      description: "제품 마스터 삭제 성공",
+                    },
+                    400: {
+                      description: "삭제 요구사항 불충족",
+                    },
+                    404: {
+                      description: "제품 마스터를 찾을 수 없음",
+                    },
+                    500: {
+                      description: "서버 오류",
+                    },
+                  },
+                  summary: "제품 마스터 삭제",
+                  tags: ["Product Masters"],
+                },
+              },
+              "/masters/{id}/price-preview": {
+                get: {
+                  description:
+                    "제품 마스터의 가격 전략 적용 미리보기를 제공합니다.",
+                  operationId: "ProductMastersController_getPricePreview",
+                  parameters: [
+                    {
+                      name: "id",
+                      required: true,
+                      in: "path",
+                      description: "제품 마스터 ID",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                  ],
+                  responses: {
+                    200: {
+                      description: "가격 미리보기 성공",
+                    },
+                    400: {
+                      description: "잘못된 요청",
+                    },
+                    404: {
+                      description: "제품 마스터를 찾을 수 없음",
+                    },
+                    500: {
+                      description: "서버 오류",
+                    },
+                  },
+                  summary: "가격 미리보기",
+                  tags: ["Product Masters"],
+                },
+              },
+              "/masters/{id}/pricing": {
+                put: {
+                  description: "제품 마스터의 가격 전략을 변경합니다.",
+                  operationId: "ProductMastersController_changePricingStrategy",
+                  parameters: [
+                    {
+                      name: "id",
+                      required: true,
+                      in: "path",
+                      description: "제품 마스터 ID",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                  ],
+                  requestBody: {
+                    required: true,
+                    description: "가격 전략 변경 데이터",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          type: "object",
+                          properties: {
+                            pricingStrategy: {
+                              type: "string",
+                              description: "새로운 가격 전략",
+                            },
+                            migrationData: {
+                              description: "마이그레이션 데이터 (선택사항)",
+                            },
+                          },
+                          required: ["pricingStrategy"],
+                        },
+                      },
+                    },
+                  },
+                  responses: {
+                    200: {
+                      description: "가격 전략 변경 성공",
+                    },
+                    400: {
+                      description: "잘못된 요청 데이터 (pricingStrategy 필수)",
+                    },
+                    404: {
+                      description: "제품 마스터를 찾을 수 없음",
+                    },
+                    500: {
+                      description: "서버 오류",
+                    },
+                  },
+                  summary: "가격 전략 변경",
+                  tags: ["Product Masters"],
+                },
+              },
+              "/variants/masters/{masterId}": {
+                get: {
+                  description:
+                    "특정 제품 마스터의 모든 변형(색상, 사이즈 등)을 조회합니다.",
+                  operationId: "ProductVariantsController_getVariantsByMaster",
+                  parameters: [
+                    {
+                      name: "masterId",
+                      required: true,
+                      in: "path",
+                      description: "제품 마스터 ID",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                    {
+                      name: "limit",
+                      required: false,
+                      in: "query",
+                      description: "페이지 당 아이템 수",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                    {
+                      name: "page",
+                      required: false,
+                      in: "query",
+                      description: "페이지 번호",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                    {
+                      name: "includePrice",
+                      required: false,
+                      in: "query",
+                      description:
+                        "가격 정보 포함 여부 (true/false, 기본값: true)",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                    {
+                      name: "status",
+                      required: false,
+                      in: "query",
+                      description: "변형 상태 필터",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                  ],
+                  responses: {
+                    200: {
+                      description: "제품 변형 목록 조회 성공",
+                    },
+                    400: {
+                      description: "잘못된 요청 데이터",
+                    },
+                    500: {
+                      description: "서버 오류",
+                    },
+                  },
+                  summary: "마스터별 제품 변형 조회",
+                  tags: ["Product Variants"],
+                },
+              },
+              "/variants/{id}": {
+                get: {
+                  description: "특정 제품 변형의 상세 정보를 조회합니다.",
+                  operationId: "ProductVariantsController_getVariantDetail",
+                  parameters: [
+                    {
+                      name: "id",
+                      required: true,
+                      in: "path",
+                      description: "제품 변형 ID",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                  ],
+                  responses: {
+                    200: {
+                      description: "제품 변형 상세 조회 성공",
+                    },
+                    400: {
+                      description: "잘못된 요청",
+                    },
+                    404: {
+                      description: "제품 변형을 찾을 수 없음",
+                    },
+                    500: {
+                      description: "서버 오류",
+                    },
+                  },
+                  summary: "제품 변형 상세 조회",
+                  tags: ["Product Variants"],
+                },
+                put: {
+                  description: "기존 제품 변형 정보를 수정합니다.",
+                  operationId: "ProductVariantsController_updateVariant",
+                  parameters: [
+                    {
+                      name: "id",
+                      required: true,
+                      in: "path",
+                      description: "제품 변형 ID",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                  ],
+                  requestBody: {
+                    required: true,
+                    description: "수정할 제품 변형 정보",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          type: "string",
+                        },
+                      },
+                    },
+                  },
+                  responses: {
+                    200: {
+                      description: "제품 변형 수정 성공",
+                    },
+                    400: {
+                      description: "잘못된 요청 데이터",
+                    },
+                    404: {
+                      description: "제품 변형을 찾을 수 없음",
+                    },
+                    500: {
+                      description: "서버 오류",
+                    },
+                  },
+                  summary: "제품 변형 수정",
+                  tags: ["Product Variants"],
+                },
+              },
+              "/variants/bulk": {
+                put: {
+                  description: "여러 제품 변형을 동시에 수정합니다.",
+                  operationId: "ProductVariantsController_bulkUpdateVariants",
+                  parameters: [],
+                  requestBody: {
+                    required: true,
+                    description: "일괄 수정할 제품 변형 정보",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          type: "string",
+                        },
+                      },
+                    },
+                  },
+                  responses: {
+                    200: {
+                      description: "제품 변형 일괄 수정 성공",
+                    },
+                    400: {
+                      description: "잘못된 요청 데이터",
+                    },
+                    404: {
+                      description: "일부 제품 변형을 찾을 수 없음",
+                    },
+                    500: {
+                      description: "서버 오류",
+                    },
+                  },
+                  summary: "제품 변형 일괄 수정",
+                  tags: ["Product Variants"],
+                },
+              },
+              "/variants/{id}/price": {
+                get: {
+                  description: "특정 제품 변형의 계산된 가격을 조회합니다.",
+                  operationId: "ProductVariantsController_getVariantPrice",
+                  parameters: [
+                    {
+                      name: "id",
+                      required: true,
+                      in: "path",
+                      description: "제품 변형 ID",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                  ],
+                  responses: {
+                    200: {
+                      description: "제품 변형 가격 조회 성공",
+                      content: {
+                        "application/json": {
+                          schema: {
+                            type: "object",
+                            properties: {
+                              variantId: {
+                                type: "string",
+                              },
+                              price: {
+                                type: "number",
+                              },
+                            },
+                          },
+                        },
+                      },
+                    },
+                    400: {
+                      description: "잘못된 요청",
+                    },
+                    404: {
+                      description: "제품 변형을 찾을 수 없음",
+                    },
+                    500: {
+                      description: "서버 오류",
+                    },
+                  },
+                  summary: "제품 변형 가격 조회",
+                  tags: ["Product Variants"],
+                },
+              },
+              "/variants/{id}/status": {
+                put: {
+                  description:
+                    "제품 변형의 상태를 수정합니다 (활성/비활성 등).",
+                  operationId: "ProductVariantsController_updateVariantStatus",
+                  parameters: [
+                    {
+                      name: "id",
+                      required: true,
+                      in: "path",
+                      description: "제품 변형 ID",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                  ],
+                  requestBody: {
+                    required: true,
+                    description: "상태 수정 데이터",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          type: "object",
+                          properties: {
+                            status: {
+                              type: "string",
+                              description: "새로운 상태",
+                            },
+                          },
+                          required: ["status"],
+                        },
+                      },
+                    },
+                  },
+                  responses: {
+                    200: {
+                      description: "제품 변형 상태 수정 성공",
+                    },
+                    400: {
+                      description: "잘못된 요청 데이터 (status 필수)",
+                    },
+                    404: {
+                      description: "제품 변형을 찾을 수 없음",
+                    },
+                    500: {
+                      description: "서버 오류",
+                    },
+                  },
+                  summary: "제품 변형 상태 수정",
+                  tags: ["Product Variants"],
+                },
+              },
+              "/channel-products": {
+                post: {
+                  description:
+                    "특정 판매 채널에서 사용할 제품 정보를 생성합니다.",
+                  operationId: "ChannelProductsController_createChannelProduct",
+                  parameters: [],
+                  requestBody: {
+                    required: true,
+                    description: "채널별 제품 생성 정보",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          type: "string",
+                        },
+                      },
+                    },
+                  },
+                  responses: {
+                    201: {
+                      description: "채널별 제품 생성 성공",
+                    },
+                    400: {
+                      description:
+                        "잘못된 요청 데이터 (masterId, channelId 필수)",
+                    },
+                    404: {
+                      description: "제품 마스터 또는 판매 채널을 찾을 수 없음",
+                    },
+                    500: {
+                      description: "서버 오류",
+                    },
+                  },
+                  summary: "채널별 제품 생성",
+                  tags: ["Channel Products"],
+                },
+              },
+              "/channel-products/masters/{masterId}": {
+                get: {
+                  description:
+                    "특정 제품 마스터의 모든 채널별 제품들을 조회합니다.",
+                  operationId:
+                    "ChannelProductsController_getChannelProductsByMaster",
+                  parameters: [
+                    {
+                      name: "masterId",
+                      required: true,
+                      in: "path",
+                      description: "제품 마스터 ID",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                  ],
+                  responses: {
+                    200: {
+                      description: "마스터별 채널 제품 조회 성공",
+                    },
+                    400: {
+                      description: "잘못된 요청",
+                    },
+                    500: {
+                      description: "서버 오류",
+                    },
+                  },
+                  summary: "마스터별 채널 제품 조회",
+                  tags: ["Channel Products"],
+                },
+              },
+              "/channel-products/channels/{channelId}": {
+                get: {
+                  description: "특정 판매 채널의 모든 제품들을 조회합니다.",
+                  operationId:
+                    "ChannelProductsController_getChannelProductsByChannel",
+                  parameters: [
+                    {
+                      name: "channelId",
+                      required: true,
+                      in: "path",
+                      description: "판매 채널 ID",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                    {
+                      name: "limit",
+                      required: false,
+                      in: "query",
+                      description: "페이지 당 아이템 수",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                    {
+                      name: "page",
+                      required: false,
+                      in: "query",
+                      description: "페이지 번호",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                    {
+                      name: "search",
+                      required: false,
+                      in: "query",
+                      description: "검색 키워드",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                    {
+                      name: "isActive",
+                      required: false,
+                      in: "query",
+                      description: "활성 상태 필터 (true/false)",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                  ],
+                  responses: {
+                    200: {
+                      description: "채널별 제품 조회 성공",
+                    },
+                    400: {
+                      description: "잘못된 요청",
+                    },
+                    500: {
+                      description: "서버 오류",
+                    },
+                  },
+                  summary: "채널별 제품 조회",
+                  tags: ["Channel Products"],
+                },
+              },
+              "/channel-products/{id}": {
+                get: {
+                  description: "특정 채널 제품의 상세 정보를 조회합니다.",
+                  operationId: "ChannelProductsController_getChannelProduct",
+                  parameters: [
+                    {
+                      name: "id",
+                      required: true,
+                      in: "path",
+                      description: "채널 제품 ID",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                  ],
+                  responses: {
+                    200: {
+                      description: "채널 제품 상세 조회 성공",
+                    },
+                    400: {
+                      description: "잘못된 요청",
+                    },
+                    404: {
+                      description: "채널 제품을 찾을 수 없음",
+                    },
+                    500: {
+                      description: "서버 오류",
+                    },
+                  },
+                  summary: "채널 제품 상세 조회",
+                  tags: ["Channel Products"],
+                },
+                put: {
+                  description: "기존 채널 제품 정보를 수정합니다.",
+                  operationId: "ChannelProductsController_updateChannelProduct",
+                  parameters: [
+                    {
+                      name: "id",
+                      required: true,
+                      in: "path",
+                      description: "채널 제품 ID",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                  ],
+                  requestBody: {
+                    required: true,
+                    description: "수정할 채널 제품 정보",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          type: "string",
+                        },
+                      },
+                    },
+                  },
+                  responses: {
+                    200: {
+                      description: "채널 제품 수정 성공",
+                    },
+                    400: {
+                      description: "잘못된 요청 데이터",
+                    },
+                    404: {
+                      description: "채널 제품을 찾을 수 없음",
+                    },
+                    500: {
+                      description: "서버 오류",
+                    },
+                  },
+                  summary: "채널 제품 수정",
+                  tags: ["Channel Products"],
+                },
+                delete: {
+                  description: "채널 제품을 삭제합니다.",
+                  operationId: "ChannelProductsController_deleteChannelProduct",
+                  parameters: [
+                    {
+                      name: "id",
+                      required: true,
+                      in: "path",
+                      description: "삭제할 채널 제품 ID",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                  ],
+                  responses: {
+                    200: {
+                      description: "채널 제품 삭제 성공",
+                    },
+                    400: {
+                      description: "삭제 요구사항 불충족",
+                    },
+                    404: {
+                      description: "채널 제품을 찾을 수 없음",
+                    },
+                    500: {
+                      description: "서버 오류",
+                    },
+                  },
+                  summary: "채널 제품 삭제",
+                  tags: ["Channel Products"],
+                },
+              },
+              "/channel-products/masters/{masterId}/channels/{channelId}/merged":
+                {
+                  get: {
+                    description:
+                      "제품 마스터와 채널별 설정이 병합된 제품 정보를 조회합니다.",
+                    operationId:
+                      "ChannelProductsController_getMergedChannelProduct",
+                    parameters: [
+                      {
+                        name: "masterId",
+                        required: true,
+                        in: "path",
+                        description: "제품 마스터 ID",
+                        schema: {
+                          type: "string",
+                        },
+                      },
+                      {
+                        name: "channelId",
+                        required: true,
+                        in: "path",
+                        description: "판매 채널 ID",
+                        schema: {
+                          type: "string",
+                        },
+                      },
+                    ],
+                    responses: {
+                      200: {
+                        description: "병합된 채널 제품 조회 성공",
+                      },
+                      400: {
+                        description: "잘못된 요청",
+                      },
+                      404: {
+                        description: "채널 제품을 찾을 수 없음",
+                      },
+                      500: {
+                        description: "서버 오류",
+                      },
+                    },
+                    summary: "병합된 채널 제품 조회",
+                    tags: ["Channel Products"],
+                  },
+                },
+              "/channel-products/{id}/name": {
+                put: {
+                  description: "채널별 제품의 이름을 덤어쓰기합니다.",
+                  operationId: "ChannelProductsController_overrideProductName",
+                  parameters: [
+                    {
+                      name: "id",
+                      required: true,
+                      in: "path",
+                      description: "채널 제품 ID",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                  ],
+                  requestBody: {
+                    required: true,
+                    description: "새로운 제품명",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          type: "object",
+                          properties: {
+                            name: {
+                              type: "string",
+                              description: "새로운 제품 이름",
+                            },
+                          },
+                          required: ["name"],
+                        },
+                      },
+                    },
+                  },
+                  responses: {
+                    200: {
+                      description: "제품명 덤어쓰기 성공",
+                    },
+                    400: {
+                      description: "잘못된 요청 데이터 (name 필수)",
+                    },
+                    404: {
+                      description: "채널 제품을 찾을 수 없음",
+                    },
+                    500: {
+                      description: "서버 오류",
+                    },
+                  },
+                  summary: "제품명 덤어쓰기",
+                  tags: ["Channel Products"],
+                },
+              },
+              "/channel-products/{id}/status": {
+                put: {
+                  description: "채널 제품의 활성/비활성 상태를 설정합니다.",
+                  operationId:
+                    "ChannelProductsController_setChannelProductActive",
+                  parameters: [
+                    {
+                      name: "id",
+                      required: true,
+                      in: "path",
+                      description: "채널 제품 ID",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                  ],
+                  requestBody: {
+                    required: true,
+                    description: "상태 설정 데이터",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          type: "object",
+                          properties: {
+                            isActive: {
+                              type: "boolean",
+                              description: "활성 여부",
+                            },
+                          },
+                          required: ["isActive"],
+                        },
+                      },
+                    },
+                  },
+                  responses: {
+                    200: {
+                      description: "채널 제품 상태 설정 성공",
+                    },
+                    400: {
+                      description: "잘못된 요청 데이터 (isActive 필수)",
+                    },
+                    404: {
+                      description: "채널 제품을 찾을 수 없음",
+                    },
+                    500: {
+                      description: "서버 오류",
+                    },
+                  },
+                  summary: "채널 제품 상태 설정",
+                  tags: ["Channel Products"],
+                },
+              },
+              "/channels": {
+                post: {
+                  description:
+                    "새로운 판매 채널(온라인 쇼핑몰, 오프라인 매장 등)을 생성합니다.",
+                  operationId: "SalesChannelsController_createChannel",
+                  parameters: [],
+                  requestBody: {
+                    required: true,
+                    description: "판매 채널 생성 정보",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          type: "string",
+                        },
+                      },
+                    },
+                  },
+                  responses: {
+                    201: {
+                      description: "판매 채널 생성 성공",
+                    },
+                    400: {
+                      description: "잘못된 요청 데이터 (type, name 필수)",
+                    },
+                    500: {
+                      description: "서버 오류",
+                    },
+                  },
+                  summary: "판매 채널 생성",
+                  tags: ["Sales Channels"],
+                },
+                get: {
+                  description:
+                    "판매 채널 목록을 필터링 및 페이지네이션과 함께 조회합니다.",
+                  operationId: "SalesChannelsController_getChannels",
+                  parameters: [
+                    {
+                      name: "limit",
+                      required: false,
+                      in: "query",
+                      description: "페이지 당 아이템 수",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                    {
+                      name: "page",
+                      required: false,
+                      in: "query",
+                      description: "페이지 번호",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                    {
+                      name: "search",
+                      required: false,
+                      in: "query",
+                      description: "검색 키워드",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                    {
+                      name: "type",
+                      required: false,
+                      in: "query",
+                      description: "채널 타입 필터",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                    {
+                      name: "isActive",
+                      required: false,
+                      in: "query",
+                      description: "활성 상태 필터 (true/false)",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                  ],
+                  responses: {
+                    200: {
+                      description: "판매 채널 목록 조회 성공",
+                    },
+                    500: {
+                      description: "서버 오류",
+                    },
+                  },
+                  summary: "판매 채널 목록 조회",
+                  tags: ["Sales Channels"],
+                },
+              },
+              "/channels/active": {
+                get: {
+                  description: "활성 상태인 판매 채널만 조회합니다.",
+                  operationId: "SalesChannelsController_getActiveChannels",
+                  parameters: [],
+                  responses: {
+                    200: {
+                      description: "활성 판매 채널 조회 성공",
+                    },
+                    500: {
+                      description: "서버 오류",
+                    },
+                  },
+                  summary: "활성 판매 채널 조회",
+                  tags: ["Sales Channels"],
+                },
+              },
+              "/channels/{id}": {
+                get: {
+                  description: "특정 판매 채널의 상세 정보를 조회합니다.",
+                  operationId: "SalesChannelsController_getChannelById",
+                  parameters: [
+                    {
+                      name: "id",
+                      required: true,
+                      in: "path",
+                      description: "판매 채널 ID",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                  ],
+                  responses: {
+                    200: {
+                      description: "판매 채널 상세 조회 성공",
+                    },
+                    400: {
+                      description: "잘못된 요청",
+                    },
+                    404: {
+                      description: "판매 채널을 찾을 수 없음",
+                    },
+                    500: {
+                      description: "서버 오류",
+                    },
+                  },
+                  summary: "판매 채널 상세 조회",
+                  tags: ["Sales Channels"],
+                },
+                put: {
+                  description: "기존 판매 채널 정보를 수정합니다.",
+                  operationId: "SalesChannelsController_updateChannel",
+                  parameters: [
+                    {
+                      name: "id",
+                      required: true,
+                      in: "path",
+                      description: "판매 채널 ID",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                  ],
+                  requestBody: {
+                    required: true,
+                    description: "수정할 판매 채널 정보",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          type: "string",
+                        },
+                      },
+                    },
+                  },
+                  responses: {
+                    200: {
+                      description: "판매 채널 수정 성공",
+                    },
+                    400: {
+                      description: "잘못된 요청 데이터",
+                    },
+                    404: {
+                      description: "판매 채널을 찾을 수 없음",
+                    },
+                    500: {
+                      description: "서버 오류",
+                    },
+                  },
+                  summary: "판매 채널 수정",
+                  tags: ["Sales Channels"],
+                },
+                delete: {
+                  description: "판매 채널을 삭제합니다.",
+                  operationId: "SalesChannelsController_deleteChannel",
+                  parameters: [
+                    {
+                      name: "id",
+                      required: true,
+                      in: "path",
+                      description: "삭제할 판매 채널 ID",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                  ],
+                  responses: {
+                    200: {
+                      description: "판매 채널 삭제 성공",
+                    },
+                    400: {
+                      description: "삭제 요구사항 불충족",
+                    },
+                    404: {
+                      description: "판매 채널을 찾을 수 없음",
+                    },
+                    409: {
+                      description: "사용 중인 채널로 삭제할 수 없음",
+                    },
+                    500: {
+                      description: "서버 오류",
+                    },
+                  },
+                  summary: "판매 채널 삭제",
+                  tags: ["Sales Channels"],
+                },
+              },
+              "/channels/{id}/status": {
+                put: {
+                  description: "판매 채널의 활성/비활성 상태를 설정합니다.",
+                  operationId: "SalesChannelsController_setChannelActive",
+                  parameters: [
+                    {
+                      name: "id",
+                      required: true,
+                      in: "path",
+                      description: "판매 채널 ID",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                  ],
+                  requestBody: {
+                    required: true,
+                    description: "상태 설정 데이터",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          type: "object",
+                          properties: {
+                            isActive: {
+                              type: "boolean",
+                              description: "활성 여부",
+                            },
+                          },
+                          required: ["isActive"],
+                        },
+                      },
+                    },
+                  },
+                  responses: {
+                    200: {
+                      description: "판매 채널 상태 설정 성공",
+                    },
+                    400: {
+                      description: "잘못된 요청 데이터 (isActive 필수)",
+                    },
+                    404: {
+                      description: "판매 채널을 찾을 수 없음",
+                    },
+                    500: {
+                      description: "서버 오류",
+                    },
+                  },
+                  summary: "판매 채널 상태 설정",
+                  tags: ["Sales Channels"],
+                },
+              },
+              "/channels/type/{type}": {
+                get: {
+                  description: "특정 타입의 판매 채널을 조회합니다.",
+                  operationId: "SalesChannelsController_getChannelByType",
+                  parameters: [
+                    {
+                      name: "type",
+                      required: true,
+                      in: "path",
+                      description: "판매 채널 타입",
+                      schema: {
+                        type: "string",
+                      },
+                    },
+                  ],
+                  responses: {
+                    200: {
+                      description: "타입별 판매 채널 조회 성공",
+                    },
+                    400: {
+                      description: "잘못된 요청",
+                    },
+                    404: {
+                      description: "해당 타입의 판매 채널을 찾을 수 없음",
+                    },
+                    500: {
+                      description: "서버 오류",
+                    },
+                  },
+                  summary: "타입별 판매 채널 조회",
+                  tags: ["Sales Channels"],
+                },
+              },
+              "/channels/validate": {
+                post: {
+                  description: "판매 채널의 설정 정보가 유효한지 검증합니다.",
+                  operationId: "SalesChannelsController_validateChannelConfig",
+                  parameters: [],
+                  requestBody: {
+                    required: true,
+                    description: "검증할 채널 설정 데이터",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          type: "object",
+                          properties: {
+                            type: {
+                              type: "string",
+                              description: "채널 타입",
+                            },
+                            config: {
+                              description: "채널 설정 데이터",
+                            },
+                          },
+                          required: ["type"],
+                        },
+                      },
+                    },
+                  },
+                  responses: {
+                    200: {
+                      description: "채널 설정 검증 완료",
+                      content: {
+                        "application/json": {
+                          schema: {
+                            type: "object",
+                            properties: {
+                              isValid: {
+                                type: "boolean",
+                              },
+                              errors: {
+                                type: "array",
+                                items: {
+                                  type: "string",
+                                },
+                              },
+                            },
+                          },
+                        },
+                      },
+                    },
+                    400: {
+                      description: "잘못된 요청 데이터 (type 필수)",
+                    },
+                    500: {
+                      description: "서버 오류",
+                    },
+                  },
+                  summary: "판매 채널 설정 검증",
+                  tags: ["Sales Channels"],
+                },
+              },
+            },
+            info: {
+              title: "PIM API",
+              description:
+                "상품 정보 관리 시스템 (Product Information Management) API",
+              version: "1.0.0",
+              contact: {},
+            },
+            tags: [],
+            servers: [],
+            components: {
+              schemas: {},
+            },
           },
-          "400": {
-            "description": "잘못된 요청 데이터 (type 필수)"
-          },
-          "500": {
-            "description": "서버 오류"
-          }
-        },
-        "summary": "판매 채널 설정 검증",
-        "tags": [
-          "Sales Channels"
-        ]
+          dom_id: "#swagger-ui",
+          deepLinking: true,
+          presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+          plugins: [SwaggerUIBundle.plugins.DownloadUrl],
+          layout: "StandaloneLayout",
+        })
       }
-    }
-  },
-  "info": {
-    "title": "PIM API",
-    "description": "상품 정보 관리 시스템 (Product Information Management) API",
-    "version": "1.0.0",
-    "contact": {}
-  },
-  "tags": [],
-  "servers": [],
-  "components": {
-    "schemas": {}
-  }
-},
-        dom_id: '#swagger-ui',
-        deepLinking: true,
-        presets: [
-          SwaggerUIBundle.presets.apis,
-          SwaggerUIStandalonePreset
-        ],
-        plugins: [
-          SwaggerUIBundle.plugins.DownloadUrl
-        ],
-        layout: "StandaloneLayout"
-      });
-    };
-  </script>
-</body>
+    </script>
+  </body>
 </html>

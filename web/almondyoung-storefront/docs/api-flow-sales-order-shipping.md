@@ -24,26 +24,26 @@ Sales Order (SO) → Fulfillment Order (FO) → Invoice → 배송 추적
 
 #### Query Parameters
 
-| 파라미터 | 타입 | 필수 | 설명 |
-|---------|------|------|------|
-| `startDate` | string | ❌ | 조회 시작일 (YYYY-MM-DD) |
-| `endDate` | string | ❌ | 조회 종료일 (YYYY-MM-DD) |
-| `channel` | string | ❌ | 판매 채널 (`medusa`, `naver`, `coupang`, `3pl`) |
-| `status` | string | ❌ | 주문 상태 필터 |
-| `limit` | number | ❌ | 조회 개수 (기본값: 20) |
-| `offset` | number | ❌ | 건너뛸 개수 (기본값: 0) |
+| 파라미터    | 타입   | 필수 | 설명                                            |
+| ----------- | ------ | ---- | ----------------------------------------------- |
+| `startDate` | string | ❌   | 조회 시작일 (YYYY-MM-DD)                        |
+| `endDate`   | string | ❌   | 조회 종료일 (YYYY-MM-DD)                        |
+| `channel`   | string | ❌   | 판매 채널 (`medusa`, `naver`, `coupang`, `3pl`) |
+| `status`    | string | ❌   | 주문 상태 필터                                  |
+| `limit`     | number | ❌   | 조회 개수 (기본값: 20)                          |
+| `offset`    | number | ❌   | 건너뛸 개수 (기본값: 0)                         |
 
 #### 주문 상태 (`status`)
 
-| 상태 | 설명 | 고객에게 표시할 문구 예시 |
-|------|------|-------------------------|
-| `pending` | 주문 접수 | 주문 접수 완료 |
-| `confirmed` | 주문 확정 | 상품 준비중 |
-| `processing` | 처리중 | 상품 준비중 |
-| `shipped` | 발송 완료 | 배송중 |
-| `delivered` | 배송 완료 | 배송 완료 |
-| `cancelled` | 주문 취소 | 주문 취소됨 |
-| `timeout` | 시간 초과 | 주문 처리 실패 |
+| 상태         | 설명      | 고객에게 표시할 문구 예시 |
+| ------------ | --------- | ------------------------- |
+| `pending`    | 주문 접수 | 주문 접수 완료            |
+| `confirmed`  | 주문 확정 | 상품 준비중               |
+| `processing` | 처리중    | 상품 준비중               |
+| `shipped`    | 발송 완료 | 배송중                    |
+| `delivered`  | 배송 완료 | 배송 완료                 |
+| `cancelled`  | 주문 취소 | 주문 취소됨               |
+| `timeout`    | 시간 초과 | 주문 처리 실패            |
 
 #### Response 예시
 
@@ -97,9 +97,9 @@ Sales Order (SO) → Fulfillment Order (FO) → Invoice → 배송 추적
 
 #### Path Parameters
 
-| 파라미터 | 설명 |
-|---------|------|
-| `id` | 판매 주문 ID (UUID) |
+| 파라미터 | 설명                |
+| -------- | ------------------- |
+| `id`     | 판매 주문 ID (UUID) |
 
 #### Response
 
@@ -109,11 +109,11 @@ Sales Order (SO) → Fulfillment Order (FO) → Invoice → 배송 추적
 
 ```typescript
 // 주문 상세 조회
-const order = await fetch(`/api/sales-orders/${orderId}`).then(r => r.json());
+const order = await fetch(`/api/sales-orders/${orderId}`).then((r) => r.json())
 
 // 배송 정보 표시를 위해 Fulfillment 조회 필요
-if (order.status === 'shipped' || order.status === 'delivered') {
-  const fulfillments = await fetch(`/api/fulfillments?salesOrderId=${orderId}`);
+if (order.status === "shipped" || order.status === "delivered") {
+  const fulfillments = await fetch(`/api/fulfillments?salesOrderId=${orderId}`)
 }
 ```
 
@@ -127,10 +127,10 @@ if (order.status === 'shipped' || order.status === 'delivered') {
 
 #### Query Parameters
 
-| 파라미터 | 타입 | 필수 | 설명 |
-|---------|------|------|------|
-| `limit` | number | ❌ | 조회 개수 (기본값: 20) |
-| `offset` | number | ❌ | 건너뛸 개수 (기본값: 0) |
+| 파라미터 | 타입   | 필수 | 설명                    |
+| -------- | ------ | ---- | ----------------------- |
+| `limit`  | number | ❌   | 조회 개수 (기본값: 20)  |
+| `offset` | number | ❌   | 건너뛸 개수 (기본값: 0) |
 
 > **Note**: `salesOrderId`로 필터링하려면 서버 측 구현 추가 필요
 
@@ -140,19 +140,19 @@ if (order.status === 'shipped' || order.status === 'delivered') {
 
 #### Fulfillment 상태 (`status`)
 
-| 상태 | 설명 | 고객에게 표시할 문구 예시 |
-|------|------|-------------------------|
-| `created` | 생성됨 | 상품 준비중 |
-| `reserving` | 재고 예약중 | 상품 준비중 |
-| `ready` | 준비 완료 | 상품 준비 완료 |
-| `allocated` | 할당됨 | 출고 준비중 |
-| `picking` | 피킹중 | 출고 준비중 |
-| `picked` | 피킹 완료 | 출고 준비 완료 |
-| `inspecting` | 검수중 | 검수중 |
-| `invoiced` | 송장 발급됨 | 배송 준비중 |
-| `shipped` | 발송됨 | 배송중 |
-| `completed` | 완료됨 | 배송 완료 |
-| `canceled` | 취소됨 | 주문 취소됨 |
+| 상태         | 설명        | 고객에게 표시할 문구 예시 |
+| ------------ | ----------- | ------------------------- |
+| `created`    | 생성됨      | 상품 준비중               |
+| `reserving`  | 재고 예약중 | 상품 준비중               |
+| `ready`      | 준비 완료   | 상품 준비 완료            |
+| `allocated`  | 할당됨      | 출고 준비중               |
+| `picking`    | 피킹중      | 출고 준비중               |
+| `picked`     | 피킹 완료   | 출고 준비 완료            |
+| `inspecting` | 검수중      | 검수중                    |
+| `invoiced`   | 송장 발급됨 | 배송 준비중               |
+| `shipped`    | 발송됨      | 배송중                    |
+| `completed`  | 완료됨      | 배송 완료                 |
+| `canceled`   | 취소됨      | 주문 취소됨               |
 
 #### Response 예시
 
@@ -213,22 +213,22 @@ if (order.status === 'shipped' || order.status === 'delivered') {
 
 #### Invoice 상태 (`status`)
 
-| 상태 | 설명 |
-|------|------|
-| `issued` | 송장 발급됨 |
-| `printed` | 송장 출력됨 |
-| `shipped` | 발송됨 |
-| `canceled` | 취소됨 |
+| 상태       | 설명        |
+| ---------- | ----------- |
+| `issued`   | 송장 발급됨 |
+| `printed`  | 송장 출력됨 |
+| `shipped`  | 발송됨      |
+| `canceled` | 취소됨      |
 
 #### 택배사 코드 (`carrierCode`)
 
-| 코드 | 택배사 |
-|------|--------|
-| `CJ` | CJ대한통운 |
-| `HANJIN` | 한진택배 |
-| `LOTTE` | 롯데택배 |
-| `POST` | 우체국 |
-| `LOGEN` | 로젠택배 |
+| 코드     | 택배사     |
+| -------- | ---------- |
+| `CJ`     | CJ대한통운 |
+| `HANJIN` | 한진택배   |
+| `LOTTE`  | 롯데택배   |
+| `POST`   | 우체국     |
+| `LOGEN`  | 로젠택배   |
 
 ---
 
@@ -272,19 +272,21 @@ if (order.status === 'shipped' || order.status === 'delivered') {
 
 ```typescript
 interface OrderListItem {
-  id: string;
-  channelOrderId: string;
-  status: string;
-  totalAmount: number;
-  orderDate: string;
-  productSummary: string; // e.g., "프리미엄 티셔츠 외 2건"
+  id: string
+  channelOrderId: string
+  status: string
+  totalAmount: number
+  orderDate: string
+  productSummary: string // e.g., "프리미엄 티셔츠 외 2건"
 }
 
 // 주문 목록 조회
 async function fetchMyOrders(page: number = 1, limit: number = 10) {
-  const offset = (page - 1) * limit;
-  const response = await fetch(`/api/sales-orders?limit=${limit}&offset=${offset}`);
-  return response.json();
+  const offset = (page - 1) * limit
+  const response = await fetch(
+    `/api/sales-orders?limit=${limit}&offset=${offset}`
+  )
+  return response.json()
 }
 ```
 
@@ -292,32 +294,36 @@ async function fetchMyOrders(page: number = 1, limit: number = 10) {
 
 ```typescript
 interface OrderDetail {
-  order: SalesOrder;
+  order: SalesOrder
   shipping: {
-    status: string;
-    carrier: string;
-    trackingNumber: string;
-    trackingUrl: string;
-  } | null;
+    status: string
+    carrier: string
+    trackingNumber: string
+    trackingUrl: string
+  } | null
 }
 
 async function fetchOrderDetail(orderId: string): Promise<OrderDetail> {
   // 1. 주문 상세 조회
-  const order = await fetch(`/api/sales-orders/${orderId}`).then(r => r.json());
-  
+  const order = await fetch(`/api/sales-orders/${orderId}`).then((r) =>
+    r.json()
+  )
+
   // 2. 배송 정보가 필요한 상태인지 확인
-  if (!['shipped', 'delivered', 'processing'].includes(order.status)) {
-    return { order, shipping: null };
+  if (!["shipped", "delivered", "processing"].includes(order.status)) {
+    return { order, shipping: null }
   }
-  
+
   // 3. Fulfillment 조회 (주문에 연결된 FO 찾기)
-  const fulfillments = await fetch(`/api/fulfillments?limit=100`).then(r => r.json());
-  const fo = fulfillments.find(f => f.salesOrderId === orderId);
-  
+  const fulfillments = await fetch(`/api/fulfillments?limit=100`).then((r) =>
+    r.json()
+  )
+  const fo = fulfillments.find((f) => f.salesOrderId === orderId)
+
   if (!fo?.invoice) {
-    return { order, shipping: null };
+    return { order, shipping: null }
   }
-  
+
   // 4. 배송 정보 구성
   return {
     order,
@@ -325,38 +331,45 @@ async function fetchOrderDetail(orderId: string): Promise<OrderDetail> {
       status: fo.status,
       carrier: fo.invoice.carrierCode,
       trackingNumber: fo.invoice.invoiceNumber,
-      trackingUrl: getTrackingUrl(fo.invoice.carrierCode, fo.invoice.invoiceNumber)
-    }
-  };
+      trackingUrl: getTrackingUrl(
+        fo.invoice.carrierCode,
+        fo.invoice.invoiceNumber
+      ),
+    },
+  }
 }
 
 // 택배사별 추적 URL 생성
 function getTrackingUrl(carrier: string, trackingNumber: string): string {
   const urls = {
-    'CJ': `https://www.cjlogistics.com/ko/tool/parcel/tracking?gnbInvcNo=${trackingNumber}`,
-    'HANJIN': `https://www.hanjin.com/kor/CMS/DeliveryMgr/WaybillResult.do?mession=&wblnum=${trackingNumber}`,
-    'LOTTE': `https://www.lotteglogis.com/home/reservation/tracking/index?InvNo=${trackingNumber}`,
-    'POST': `https://service.epost.go.kr/trace.RetrieveDomRi498.postal?sid1=${trackingNumber}`,
-    'LOGEN': `https://www.ilogen.com/web/personal/trace/${trackingNumber}`
-  };
-  return urls[carrier] || '';
+    CJ: `https://www.cjlogistics.com/ko/tool/parcel/tracking?gnbInvcNo=${trackingNumber}`,
+    HANJIN: `https://www.hanjin.com/kor/CMS/DeliveryMgr/WaybillResult.do?mession=&wblnum=${trackingNumber}`,
+    LOTTE: `https://www.lotteglogis.com/home/reservation/tracking/index?InvNo=${trackingNumber}`,
+    POST: `https://service.epost.go.kr/trace.RetrieveDomRi498.postal?sid1=${trackingNumber}`,
+    LOGEN: `https://www.ilogen.com/web/personal/trace/${trackingNumber}`,
+  }
+  return urls[carrier] || ""
 }
 ```
 
 ### 주문 상태별 UI 표시
 
 ```typescript
-function getOrderStatusDisplay(status: string): { text: string; color: string; icon: string } {
+function getOrderStatusDisplay(status: string): {
+  text: string
+  color: string
+  icon: string
+} {
   const statusMap = {
-    pending: { text: '주문 접수', color: 'gray', icon: '📋' },
-    confirmed: { text: '상품 준비중', color: 'blue', icon: '📦' },
-    processing: { text: '출고 준비중', color: 'blue', icon: '🏭' },
-    shipped: { text: '배송중', color: 'orange', icon: '🚚' },
-    delivered: { text: '배송 완료', color: 'green', icon: '✅' },
-    cancelled: { text: '주문 취소', color: 'red', icon: '❌' },
-    timeout: { text: '주문 실패', color: 'red', icon: '⚠️' }
-  };
-  return statusMap[status] || { text: status, color: 'gray', icon: '❓' };
+    pending: { text: "주문 접수", color: "gray", icon: "📋" },
+    confirmed: { text: "상품 준비중", color: "blue", icon: "📦" },
+    processing: { text: "출고 준비중", color: "blue", icon: "🏭" },
+    shipped: { text: "배송중", color: "orange", icon: "🚚" },
+    delivered: { text: "배송 완료", color: "green", icon: "✅" },
+    cancelled: { text: "주문 취소", color: "red", icon: "❌" },
+    timeout: { text: "주문 실패", color: "red", icon: "⚠️" },
+  }
+  return statusMap[status] || { text: status, color: "gray", icon: "❓" }
 }
 ```
 
@@ -414,12 +427,11 @@ function getOrderStatusDisplay(status: string): { text: string; color: string; i
 
 ## 🔗 관련 API 엔드포인트 요약
 
-| 목적 | Method | Endpoint |
-|------|--------|----------|
-| 주문 목록 | GET | `/sales-orders` |
-| 주문 상세 | GET | `/sales-orders/:id` |
-| 출고 목록 | GET | `/fulfillments` |
-| 출고 상세 | GET | `/fulfillments/:id` |
-| 송장 상세 | GET | `/invoices/:id` |
-| 배송 추적 | GET | `/invoices/:id/track` |
-
+| 목적      | Method | Endpoint              |
+| --------- | ------ | --------------------- |
+| 주문 목록 | GET    | `/sales-orders`       |
+| 주문 상세 | GET    | `/sales-orders/:id`   |
+| 출고 목록 | GET    | `/fulfillments`       |
+| 출고 상세 | GET    | `/fulfillments/:id`   |
+| 송장 상세 | GET    | `/invoices/:id`       |
+| 배송 추적 | GET    | `/invoices/:id/track` |

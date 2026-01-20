@@ -6,7 +6,9 @@ import { getProductList } from "@/lib/api/medusa/products"
 import { getReviewsByProductId } from "@/lib/api/ugc"
 import { ProductCardProps } from "@/lib/types/ui/product"
 
-const fetchCategoryBestProducts = async (categoryId: string): Promise<ProductCardProps[]> => {
+const fetchCategoryBestProducts = async (
+  categoryId: string
+): Promise<ProductCardProps[]> => {
   if (!categoryId) {
     return []
   }
@@ -90,10 +92,12 @@ const fetchCategoryBestProducts = async (categoryId: string): Promise<ProductCar
     })
     .filter((props): props is ProductCardProps => props !== null)
 
-    return transformedProducts
-  }
+  return transformedProducts
+}
 
-export const getCategoryBestProducts = async (categoryId: string): Promise<ProductCardProps[]> => {
+export const getCategoryBestProducts = async (
+  categoryId: string
+): Promise<ProductCardProps[]> => {
   if (!categoryId) {
     return []
   }
@@ -107,4 +111,3 @@ export const getCategoryBestProducts = async (categoryId: string): Promise<Produ
     }
   )()
 }
-

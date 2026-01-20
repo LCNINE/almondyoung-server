@@ -22,9 +22,7 @@ const getOriginalAmount = (variant: any) => {
 
 const getCurrencyCode = (variant: any) => {
   return (
-    variant?.currency_code ??
-    variant?.calculated_price?.currency_code ??
-    "krw"
+    variant?.currency_code ?? variant?.calculated_price?.currency_code ?? "krw"
   )
 }
 

@@ -63,9 +63,9 @@ inclusion: false
 
 ```typescript
 async function onLikeClick() {
-  await postLike(url);
-  await delay(300);
-  await refetchPostLike();
+  await postLike(url)
+  await delay(300)
+  await refetchPostLike()
 }
 ```
 
@@ -74,12 +74,12 @@ async function onLikeClick() {
 ### 좋은 예시
 
 ```typescript
-const ANIMATION_DELAY_MS = 300;
+const ANIMATION_DELAY_MS = 300
 
 async function onLikeClick() {
-  await postLike(url);
-  await delay(ANIMATION_DELAY_MS);
-  await refetchPostLike();
+  await postLike(url)
+  await delay(ANIMATION_DELAY_MS)
+  await refetchPostLike()
 }
 ```
 
@@ -94,19 +94,24 @@ Form을 관리할 때는 2가지의 방법으로 응집도를 관리해서, 함�
 필드 단위 응집은 개별 입력 요소를 독립적으로 관리하는 방식입니다.
 
 ```tsx
-import { useForm } from "react-hook-form";
+import { useForm } from "react-hook-form"
 
 export function Form() {
-  const { register, formState: { errors }, handleSubmit } = useForm({
-    defaultValues: { name: "", email: "" }
-  });
+  const {
+    register,
+    formState: { errors },
+    handleSubmit,
+  } = useForm({
+    defaultValues: { name: "", email: "" },
+  })
 
   return (
     <form onSubmit={handleSubmit((data) => console.log(data))}>
       <div>
         <input
           {...register("name", {
-            validate: (value) => isEmptyStringOrNil(value) ? "이름을 입력해주세요." : ""
+            validate: (value) =>
+              isEmptyStringOrNil(value) ? "이름을 입력해주세요." : "",
           })}
           placeholder="이름"
         />
@@ -117,12 +122,12 @@ export function Form() {
         <input
           {...register("email", {
             validate: (value) => {
-              if (isEmptyStringOrNil(value)) return "이메일을 입력해주세요.";
+              if (isEmptyStringOrNil(value)) return "이메일을 입력해주세요."
               if (!/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(value)) {
-                return "유효한 이메일 주소를 입력해주세요.";
+                return "유효한 이메일 주소를 입력해주세요."
               }
-              return "";
-            }
+              return ""
+            },
           })}
           placeholder="이메일"
         />
@@ -131,7 +136,7 @@ export function Form() {
 
       <button type="submit">제출</button>
     </form>
-  );
+  )
 }
 ```
 
@@ -140,20 +145,27 @@ export function Form() {
 폼 전체 응집은 모든 필드의 검증 로직이 폼에 종속되는 방식입니다.
 
 ```tsx
-import * as z from "zod";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
 
 const schema = z.object({
   name: z.string().min(1, "이름을 입력해주세요."),
-  email: z.string().min(1, "이메일을 입력해주세요.").email("유효한 이메일 주소를 입력해주세요.")
-});
+  email: z
+    .string()
+    .min(1, "이메일을 입력해주세요.")
+    .email("유효한 이메일 주소를 입력해주세요."),
+})
 
 export function Form() {
-  const { register, formState: { errors }, handleSubmit } = useForm({
+  const {
+    register,
+    formState: { errors },
+    handleSubmit,
+  } = useForm({
     defaultValues: { name: "", email: "" },
-    resolver: zodResolver(schema)
-  });
+    resolver: zodResolver(schema),
+  })
 
   return (
     <form onSubmit={handleSubmit((data) => console.log(data))}>
@@ -167,11 +179,12 @@ export function Form() {
       </div>
       <button type="submit">제출</button>
     </form>
-  );
+  )
 }
 ```
 
-**규칙**: 
+**규칙**:
+
 - **필드 단위 응집도를 선택하면 좋을 때**: 독립적인 검증이 필요할 때, 재사용이 필요할 때
 - **폼 전체 단위 응집도를 선택하면 좋을 때**: 단일 기능을 나타낼 때, 단계별 입력이 필요할 때, 필드 간 의존성이 있을 때
 
@@ -183,7 +196,7 @@ Props Drilling은 부모 컴포넌트와 자식 컴포넌트 사이에 결합도
 
 ```tsx
 function ItemEditModal({ open, items, recommendedItems, onConfirm, onClose }) {
-  const [keyword, setKeyword] = useState("");
+  const [keyword, setKeyword] = useState("")
 
   return (
     <Modal open={open} onClose={onClose}>
@@ -196,19 +209,34 @@ function ItemEditModal({ open, items, recommendedItems, onConfirm, onClose }) {
         onClose={onClose}
       />
     </Modal>
-  );
+  )
 }
 
-function ItemEditBody({ keyword, onKeywordChange, items, recommendedItems, onConfirm, onClose }) {
+function ItemEditBody({
+  keyword,
+  onKeywordChange,
+  items,
+  recommendedItems,
+  onConfirm,
+  onClose,
+}) {
   return (
     <>
       <div style={{ display: "flex", justifyContent: "space-between" }}>
-        <Input value={keyword} onChange={(e) => onKeywordChange(e.target.value)} />
+        <Input
+          value={keyword}
+          onChange={(e) => onKeywordChange(e.target.value)}
+        />
         <Button onClick={onClose}>닫기</Button>
       </div>
-      <ItemEditList keyword={keyword} items={items} recommendedItems={recommendedItems} onConfirm={onConfirm} />
+      <ItemEditList
+        keyword={keyword}
+        items={items}
+        recommendedItems={recommendedItems}
+        onConfirm={onConfirm}
+      />
     </>
-  );
+  )
 }
 ```
 
@@ -216,27 +244,39 @@ function ItemEditBody({ keyword, onKeywordChange, items, recommendedItems, onCon
 
 ```tsx
 function ItemEditModal({ open, items, recommendedItems, onConfirm, onClose }) {
-  const [keyword, setKeyword] = useState("");
+  const [keyword, setKeyword] = useState("")
 
   return (
     <Modal open={open} onClose={onClose}>
-      <ItemEditBody keyword={keyword} onKeywordChange={setKeyword} onClose={onClose}>
-        <ItemEditList keyword={keyword} items={items} recommendedItems={recommendedItems} onConfirm={onConfirm} />
+      <ItemEditBody
+        keyword={keyword}
+        onKeywordChange={setKeyword}
+        onClose={onClose}
+      >
+        <ItemEditList
+          keyword={keyword}
+          items={items}
+          recommendedItems={recommendedItems}
+          onConfirm={onConfirm}
+        />
       </ItemEditBody>
     </Modal>
-  );
+  )
 }
 
 function ItemEditBody({ children, keyword, onKeywordChange, onClose }) {
   return (
     <>
       <div style={{ display: "flex", justifyContent: "space-between" }}>
-        <Input value={keyword} onChange={(e) => onKeywordChange(e.target.value)} />
+        <Input
+          value={keyword}
+          onChange={(e) => onKeywordChange(e.target.value)}
+        />
         <Button onClick={onClose}>닫기</Button>
       </div>
       {children}
     </>
-  );
+  )
 }
 ```
 
@@ -244,32 +284,40 @@ function ItemEditBody({ children, keyword, onKeywordChange, onClose }) {
 
 ```tsx
 function ItemEditModal({ open, onConfirm, onClose }) {
-  const [keyword, setKeyword] = useState("");
+  const [keyword, setKeyword] = useState("")
 
   return (
     <Modal open={open} onClose={onClose}>
-      <ItemEditBody keyword={keyword} onKeywordChange={setKeyword} onClose={onClose}>
+      <ItemEditBody
+        keyword={keyword}
+        onKeywordChange={setKeyword}
+        onClose={onClose}
+      >
         <ItemEditList keyword={keyword} onConfirm={onConfirm} />
       </ItemEditBody>
     </Modal>
-  );
+  )
 }
 
 function ItemEditList({ keyword, onConfirm }) {
-  const { items, recommendedItems } = useItemEditModalContext();
+  const { items, recommendedItems } = useItemEditModalContext()
   return (
     <>
       <div style={{ display: "flex", justifyContent: "space-between" }}>
-        <Input value={keyword} onChange={(e) => onKeywordChange(e.target.value)} />
+        <Input
+          value={keyword}
+          onChange={(e) => onKeywordChange(e.target.value)}
+        />
         <Button onClick={onClose}>닫기</Button>
       </div>
       {children}
     </>
-  );
+  )
 }
 ```
 
-**규칙**: 
+**규칙**:
+
 1. 컴포넌트는 props를 통해서 어떤 데이터를 사용할지 명확하게 표현합니다. 컴포넌트의 역할과 의도를 담고 있는 props라면 문제가 되지 않을 수 있습니다.
 2. ContextAPI를 사용하기 전, `children` prop을 이용해서 컴포넌트를 전달해 depth를 줄일 수 있습니다.
 3. 위 내용을 먼저 고려를 해보고 접근 방법이 모두 맞지 않을 때 최후의 방법으로 ContextAPI를 사용하세요.
@@ -282,21 +330,22 @@ function ItemEditList({ keyword, onConfirm }) {
 
 ```typescript
 export const useOpenMaintenanceBottomSheet = () => {
-  const maintenanceBottomSheet = useMaintenanceBottomSheet();
-  const logger = useLogger();
+  const maintenanceBottomSheet = useMaintenanceBottomSheet()
+  const logger = useLogger()
 
   return async (maintainingInfo: TelecomMaintenanceInfo) => {
-    logger.log("점검 바텀시트 열림");
-    const result = await maintenanceBottomSheet.open(maintainingInfo);
+    logger.log("점검 바텀시트 열림")
+    const result = await maintenanceBottomSheet.open(maintainingInfo)
     if (result) {
-      logger.log("점검 바텀시트 알림받기 클릭");
+      logger.log("점검 바텀시트 알림받기 클릭")
     }
-    closeView();
-  };
-};
+    closeView()
+  }
+}
 ```
 
 이 Hook은 여러 페이지에서 반복적으로 보이는 로직이기에 공통화되었습니다. 그렇지만 앞으로 생길 수 있는 다양한 코드 변경의 가능성을 생각해볼 수 있습니다:
+
 - 만약에 페이지마다 로깅하는 값이 달라진다면?
 - 만약에 어떤 페이지에서는 점검 바텀시트를 닫더라도 화면을 닫을 필요가 없다면?
 - 바텀시트에서 보여지는 텍스트나 이미지를 다르게 해야 한다면?
@@ -316,22 +365,26 @@ export function usePageState() {
     statementId: NumberParam,
     dateFrom: DateParam,
     dateTo: DateParam,
-    statusList: ArrayParam
-  });
+    statusList: ArrayParam,
+  })
 
-  return useMemo(() => ({
-    values: {
-      cardId: query.cardId ?? undefined,
-      statementId: query.statementId ?? undefined,
-      dateFrom: query.dateFrom == null ? defaultDateFrom : moment(query.dateFrom),
-      dateTo: query.dateTo == null ? defaultDateTo : moment(query.dateTo),
-      statusList: query.statusList as StatementStatusType[] | undefined
-    },
-    controls: {
-      setCardId: (cardId: number) => setQuery({ cardId }, "replaceIn"),
-      // ... 나머지 setter 함수들
-    }
-  }), [query, setQuery]);
+  return useMemo(
+    () => ({
+      values: {
+        cardId: query.cardId ?? undefined,
+        statementId: query.statementId ?? undefined,
+        dateFrom:
+          query.dateFrom == null ? defaultDateFrom : moment(query.dateFrom),
+        dateTo: query.dateTo == null ? defaultDateTo : moment(query.dateTo),
+        statusList: query.statusList as StatementStatusType[] | undefined,
+      },
+      controls: {
+        setCardId: (cardId: number) => setQuery({ cardId }, "replaceIn"),
+        // ... 나머지 setter 함수들
+      },
+    }),
+    [query, setQuery]
+  )
 }
 ```
 
@@ -340,16 +393,16 @@ export function usePageState() {
 ### 좋은 예시
 
 ```typescript
-import { useQueryParam } from "use-query-params";
+import { useQueryParam } from "use-query-params"
 
 export function useCardIdQueryParam() {
-  const [cardId, _setCardId] = useQueryParam("cardId", NumberParam);
+  const [cardId, _setCardId] = useQueryParam("cardId", NumberParam)
 
   const setCardId = useCallback((cardId: number) => {
-    _setCardId({ cardId }, "replaceIn");
-  }, []);
+    _setCardId({ cardId }, "replaceIn")
+  }, [])
 
-  return [cardId ?? undefined, setCardId] as const;
+  return [cardId ?? undefined, setCardId] as const
 }
 ```
 

@@ -28,7 +28,8 @@ const tagVariants = cva(
 )
 
 export interface TagProps
-  extends React.HTMLAttributes<HTMLDivElement>,
+  extends
+    React.HTMLAttributes<HTMLDivElement>,
     VariantProps<typeof tagVariants> {
   onRemove?: () => void
 }

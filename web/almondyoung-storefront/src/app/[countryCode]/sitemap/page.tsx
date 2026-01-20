@@ -326,7 +326,8 @@ export default function SitemapPage() {
           path: "/kr/mypage/point",
           isChecked: true,
           step: 3,
-          description: "API 연동 완료 (포인트 내역/잔액), BNPL 히스토리는 Drawer로 통합",
+          description:
+            "API 연동 완료 (포인트 내역/잔액), BNPL 히스토리는 Drawer로 통합",
         },
         {
           id: "mypage-verify",
@@ -346,7 +347,8 @@ export default function SitemapPage() {
           path: "/kr/mypage/payment-methods",
           isChecked: true,
           step: 3,
-          description: "API 연동 완료 (BNPL 요약), 카드/계좌 추가는 Drawer로 통합",
+          description:
+            "API 연동 완료 (BNPL 요약), 카드/계좌 추가는 Drawer로 통합",
         },
       ],
     },

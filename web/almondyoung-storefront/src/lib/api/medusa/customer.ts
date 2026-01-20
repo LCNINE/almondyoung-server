@@ -12,23 +12,6 @@ import {
   getCartId,
 } from "../../data/cookies"
 
-type MedusaSignupRequest = {
-  email: string
-  first_name: string
-  last_name: string
-  almond_user_id: string
-  almond_login_id: string
-}
-
-type MedusaSignupResponse = {
-  authIdentity: {
-    id: string
-  }
-  customer: {
-    id: string
-  }
-}
-
 export const retrieveCustomer =
   async (): Promise<HttpTypes.StoreCustomer | null> => {
     const authHeaders = await getAuthHeaders()
@@ -47,7 +30,7 @@ export const retrieveCustomer =
       .fetch<{ customer: HttpTypes.StoreCustomer }>(`/store/customers/me`, {
         method: "GET",
         query: {
-          fields: "*orders",
+          fields: "*orders,*addresses",
         },
         headers,
         next,
@@ -56,6 +39,23 @@ export const retrieveCustomer =
       .then(({ customer }) => customer)
       .catch(() => null)
   }
+
+export const getCustomerAddresses = async (): Promise<
+  HttpTypes.StoreCustomerAddress[] | null
+> => {
+  const authHeaders = await getAuthHeaders()
+
+  if (!authHeaders) return null
+
+  const headers = {
+    ...authHeaders,
+  }
+
+  return await sdk.store.customer
+    .listAddress({}, headers)
+    .then(({ addresses }) => addresses)
+    .catch(() => null)
+}
 
 export const updateCustomer = async (body: HttpTypes.StoreUpdateCustomer) => {
   const headers = {
@@ -126,15 +126,110 @@ export const addCustomerAddress = async (
     })
 }
 
-export const deleteCustomerAddress = async (
-  addressId: string
-): Promise<void> => {
+export const createCustomerShippingAddress = async (address: {
+  first_name: string
+  last_name?: string
+  address_1: string
+  address_2?: string
+  city: string
+  postal_code: string
+  province: string
+  country_code: string
+  phone?: string
+  is_default_shipping?: boolean
+  address_name?: string
+}): Promise<{ success: boolean; error: string | null }> => {
   const headers = {
     ...(await getAuthHeaders()),
   }
 
-  await sdk.store.customer
+  return await sdk.store.customer
+    .createAddress(
+      {
+        ...address,
+        is_default_shipping: address.is_default_shipping ?? true,
+      },
+      {},
+      headers
+    )
+    .then(async () => {
+      const customerCacheTag = await getCacheTag("customers")
+      revalidateTag(customerCacheTag)
+      return { success: true, error: null }
+    })
+    .catch((err) => {
+      return { success: false, error: err.toString() }
+    })
+}
+
+export const deleteCustomerAddress = async (
+  addressId: string
+): Promise<{ success: boolean; error: string | null }> => {
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  return sdk.store.customer
     .deleteAddress(addressId, headers)
+    .then(async () => {
+      const customerCacheTag = await getCacheTag("customers")
+      revalidateTag(customerCacheTag)
+      return { success: true, error: null }
+    })
+    .catch((err) => {
+      return { success: false, error: err.toString() }
+    })
+}
+
+export const setDefaultShippingAddress = async (
+  addressId: string
+): Promise<{ success: boolean; error: string | null }> => {
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  return sdk.store.customer
+    .updateAddress(addressId, { is_default_shipping: true }, {}, headers)
+    .then(async () => {
+      const customerCacheTag = await getCacheTag("customers")
+      revalidateTag(customerCacheTag)
+      return { success: true, error: null }
+    })
+    .catch((err) => {
+      return { success: false, error: err.toString() }
+    })
+}
+
+export const updateCustomerShippingAddress = async (
+  addressId: string,
+  address: {
+    first_name: string
+    last_name?: string
+    address_1: string
+    address_2?: string
+    city: string
+    postal_code: string
+    province: string
+    country_code: string
+    phone?: string
+    is_default_shipping?: boolean
+    address_name?: string
+  }
+): Promise<{ success: boolean; error: string | null }> => {
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  return sdk.store.customer
+    .updateAddress(
+      addressId,
+      {
+        ...address,
+        metadata: { shipping_address_name: address.address_name || null },
+      },
+      {},
+      headers
+    )
     .then(async () => {
       const customerCacheTag = await getCacheTag("customers")
       revalidateTag(customerCacheTag)

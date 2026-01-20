@@ -32,17 +32,17 @@ export const ProductThumbnail = ({
         src={src}
         fill
         alt={alt}
-        className="pointer-events-none select-none object-cover transition-transform duration-300 group-hover:scale-105"
+        className="pointer-events-none object-cover transition-transform duration-300 select-none group-hover:scale-105"
       />
 
       {rankInfo?.show && (
-        <div className="absolute left-0 top-0 bg-black px-2.5 py-1 text-[12px] font-bold text-white">
+        <div className="absolute top-0 left-0 bg-black px-2.5 py-1 text-[12px] font-bold text-white">
           {rankInfo.rank}
         </div>
       )}
 
       {timer && (
-        <div className="absolute left-2 top-2 rounded-full bg-black/70 px-2 py-0.5 text-[11px] font-semibold text-white">
+        <div className="absolute top-2 left-2 rounded-full bg-black/70 px-2 py-0.5 text-[11px] font-semibold text-white">
           {timer}
         </div>
       )}
@@ -61,7 +61,7 @@ export const ProductThumbnail = ({
             onCartClick?.()
           }}
           aria-label="장바구니 담기"
-          className="absolute bottom-2 right-2 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/90 shadow transition hover:bg-white"
+          className="absolute right-2 bottom-2 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/90 shadow transition hover:bg-white"
         >
           <ShoppingCart className="h-4 w-4 text-gray-700" />
         </button>

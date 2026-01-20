@@ -1,11 +1,7 @@
 "use client"
 
 import { useState, useMemo } from "react"
-import {
-  FilterOptions,
-  Order,
-  OrderStatus,
-} from "../types/order-list-types"
+import { FilterOptions, Order, OrderStatus } from "../types/order-list-types"
 
 const MOCK_ORDERS: Order[] = [
   {

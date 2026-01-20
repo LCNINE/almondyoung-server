@@ -60,6 +60,7 @@ if ("error" in result) {
 ```
 
 **Response:**
+
 ```typescript
 {
   variantId: string
@@ -94,6 +95,7 @@ if ("error" in result) {
 ```
 
 **Response:**
+
 ```typescript
 {
   basePrice: number
@@ -129,6 +131,7 @@ console.log("할인 내역:", result.breakdown)
 ```
 
 **Response:**
+
 ```typescript
 {
   price: number
@@ -259,7 +262,7 @@ function PriceInfo({ masterId, variantId }) {
 ```tsx
 import { ProductPriceDisplay } from "@components/product-price-display"
 
-<ProductPriceDisplay
+;<ProductPriceDisplay
   masterId={product.masterId}
   variantId={selectedVariant?.id}
   quantity={quantity}
@@ -268,6 +271,7 @@ import { ProductPriceDisplay } from "@components/product-price-display"
 ```
 
 **기능:**
+
 - 단가 표시
 - 총가격 표시 (수량 > 1일 때)
 - 멤버십 할인 표시
@@ -281,13 +285,14 @@ import { ProductPriceDisplay } from "@components/product-price-display"
 ```tsx
 import { ProductPriceInfo } from "@components/product-price-display"
 
-<ProductPriceInfo
+;<ProductPriceInfo
   masterId={product.masterId}
   variantId={selectedVariant?.id}
 />
 ```
 
 **기능:**
+
 - 정가 표시
 - 멤버십가 및 할인율 표시
 - 수량별 할인 정보 표시
@@ -311,7 +316,10 @@ export function ProductDetailPage({ product, user }) {
   const [quantity, setQuantity] = useState(1)
 
   // 선택된 옵션으로 variant 찾기
-  const selectedVariant = findVariantByOptions(product.variants, selectedOptions)
+  const selectedVariant = findVariantByOptions(
+    product.variants,
+    selectedOptions
+  )
 
   // 실시간 가격 계산
   const { price, totalPrice, loading } = useProductPrice({
@@ -460,15 +468,15 @@ export function CartItem({ item, user }) {
 
 ## API 스펙 요약
 
-| 함수/훅 | 타입 | 용도 | 입력 | 출력 |
-|--------|------|------|------|------|
-| `calculateMasterPrice` | Server Action | 가격 계산 | masterId, request | price, totalPrice |
-| `getMasterPriceSet` | Server Action | 가격 세트 조회 | masterId, variantId | basePrice, membershipPrice |
-| `calculateProductPrice` | Service | 가격 계산 (래퍼) | masterId, variantId, quantity, isMembership | price, totalPrice, breakdown |
-| `getProductPriceSet` | Service | 가격 세트 (래퍼) | masterId, variantId | basePrice, membershipPrice, discountRate |
-| `calculatePriceRange` | Service | 가격 범위 계산 | masterId, variantIds[], isMembership | minPrice, maxPrice |
-| `useProductPrice` | Hook | 실시간 가격 계산 | masterId, variantId, quantity, isMembership | price, totalPrice, loading |
-| `useProductPriceSet` | Hook | 가격 세트 조회 | masterId, variantId | basePrice, membershipPrice, loading |
+| 함수/훅                 | 타입          | 용도             | 입력                                        | 출력                                     |
+| ----------------------- | ------------- | ---------------- | ------------------------------------------- | ---------------------------------------- |
+| `calculateMasterPrice`  | Server Action | 가격 계산        | masterId, request                           | price, totalPrice                        |
+| `getMasterPriceSet`     | Server Action | 가격 세트 조회   | masterId, variantId                         | basePrice, membershipPrice               |
+| `calculateProductPrice` | Service       | 가격 계산 (래퍼) | masterId, variantId, quantity, isMembership | price, totalPrice, breakdown             |
+| `getProductPriceSet`    | Service       | 가격 세트 (래퍼) | masterId, variantId                         | basePrice, membershipPrice, discountRate |
+| `calculatePriceRange`   | Service       | 가격 범위 계산   | masterId, variantIds[], isMembership        | minPrice, maxPrice                       |
+| `useProductPrice`       | Hook          | 실시간 가격 계산 | masterId, variantId, quantity, isMembership | price, totalPrice, loading               |
+| `useProductPriceSet`    | Hook          | 가격 세트 조회   | masterId, variantId                         | basePrice, membershipPrice, loading      |
 
 ---
 
@@ -477,6 +485,7 @@ export function CartItem({ item, user }) {
 ### 1. Batch 가격 계산 API (백엔드 추가 권장)
 
 **현재 문제:**
+
 - 상품 목록에서 가격 범위 표시 시 variant마다 개별 API 호출
 - Variant가 많을 경우 (예: 10개) 10번의 API 호출 발생
 - 네트워크 비용 및 지연 시간 증가
@@ -507,10 +516,11 @@ Response:
 ```
 
 **프론트 적용 예시:**
+
 ```typescript
 // 기존: 개별 호출
 const prices = await Promise.all(
-  variantIds.map(id => calculateProductPrice(masterId, id, 1, isMembership))
+  variantIds.map((id) => calculateProductPrice(masterId, id, 1, isMembership))
 )
 
 // 개선: 배치 호출
@@ -532,6 +542,7 @@ Response:
 ```
 
 **장점:**
+
 - 서버에서 모든 variant의 가격을 계산하여 min/max만 반환
 - 프론트에서는 1번의 API 호출만 필요
 - 상품 목록 페이지 성능 대폭 개선
@@ -539,6 +550,7 @@ Response:
 ### 3. 현재 임시 대응
 
 백엔드 API 추가 전까지는:
+
 - Variant 수가 10개 이하: 전체 조회
 - Variant 수가 10개 초과: 첫 번째, 중간 샘플 8개, 마지막 variant만 조회 (총 10개)
 - 근사값으로 가격 범위 표시
@@ -550,6 +562,6 @@ Response:
 가격 계산 관련 문의는 백엔드 PIM 팀에게 문의하세요.
 
 **성능 개선 제안:**
+
 - Batch 가격 계산 API
 - 가격 범위 계산 API
-

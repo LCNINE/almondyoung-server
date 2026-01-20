@@ -28,15 +28,20 @@ export const toggleWishlist = async (productId: string) => {
   return data
 }
 
-
 /**
  * 위시리스트에 상품이 있는지 확인합니다
  */
-export const getWishlistByProductId = async (productId: string): Promise<WishlistResponse | null> => {
-  const data = await api<WishlistResponse[]>("users", `/wishlist/${productId}`, {
-    method: "GET",
-    withAuth: true,
-  })
+export const getWishlistByProductId = async (
+  productId: string
+): Promise<WishlistResponse | null> => {
+  const data = await api<WishlistResponse[]>(
+    "users",
+    `/wishlist/${productId}`,
+    {
+      method: "GET",
+      withAuth: true,
+    }
+  )
 
   return data[0] || null
 }

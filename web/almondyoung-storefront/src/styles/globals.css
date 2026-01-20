@@ -192,8 +192,8 @@ input[type="search"]::-webkit-search-results-decoration {
   --muted: var(--gray-10);
   --muted-hover: var(--gray-20);
   --muted-foreground: var(--gray-50);
-  --accent: var(--orange-600);
-  --accent-foreground: var(--gray-0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: var(--gray-90);
   --destructive: var(--red-30);
   --destructive-foreground: var(--gray-0);
   --border: var(--gray-30);
@@ -427,58 +427,6 @@ input[type="search"]::-webkit-search-results-decoration {
 
   .animate-shake {
     animation: shake 0.5s ease-in-out;
-  }
-
-  /* 버튼 베이스 스타일 */
-  .ay-btn-base {
-    @apply focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 aria-invalid:border-destructive inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:ring-[3px] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4;
-  }
-
-  /* 버튼 variant 기본 */
-  .ay-btn-primary {
-    @apply bg-primary text-primary-foreground hover:bg-yellow-40 border border-transparent shadow-xs;
-  }
-
-  /* 버튼 variant outline */
-  .ay-btn-outline {
-    @apply border-primary text-primary hover:border-yellow-40 hover:bg-yellow-10 active:bg-yellow-10 active:text-yellow-30 active:border-yellow-30 disabled:text-muted-foreground disabled:border-muted border;
-  }
-
-  /* 버튼 variant destructive */
-  .ay-btn-destructive {
-    @apply bg-destructive hover:bg-red-40 hover:border-yellow-20 disabled:text-muted-foreground border border-transparent text-white shadow-xs disabled:bg-transparent disabled:shadow-none;
-  }
-
-  /* 버튼 variant secondary */
-  .ay-btn-secondary {
-    @apply bg-background text-secondary-foreground border-border hover:bg-secondary/80 disabled:border-muted disabled:text-muted-foreground active:bg-yellow-10 border;
-  }
-
-  /* 버튼 variant ghost */
-  .ay-btn-ghost {
-    @apply hover:bg-accent hover:text-accent-foreground;
-  }
-
-  /* 버튼 variant link */
-  .ay-btn-link {
-    @apply text-primary hover:text-yellow-40 disabled:text-muted-foreground underline underline-offset-4 hover:underline disabled:no-underline;
-  }
-
-  /* 버튼 사이즈 */
-  .ay-btn-size-md {
-    @apply h-9 px-4 py-2 has-[>svg]:px-3;
-  }
-
-  .ay-btn-size-sm {
-    @apply h-8 gap-1.5 rounded-md px-3 has-[>svg]:px-2.5;
-  }
-
-  .ay-btn-size-lg {
-    @apply h-11 rounded-md px-6 has-[>svg]:px-4;
-  }
-
-  .ay-btn-size-icon {
-    @apply size-9;
   }
 }
 

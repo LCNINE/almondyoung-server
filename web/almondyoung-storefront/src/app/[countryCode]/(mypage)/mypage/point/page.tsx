@@ -30,7 +30,15 @@ interface PointBalanceResponse {
 // --- Components ---
 
 // 1. [변경] 메인 캐시 디스플레이 (상세 내역 카드형)
-const CashSummary = ({ balance, totalEarned, totalUsed }: { balance: number, totalEarned: number, totalUsed: number }) => (
+const CashSummary = ({
+  balance,
+  totalEarned,
+  totalUsed,
+}: {
+  balance: number
+  totalEarned: number
+  totalUsed: number
+}) => (
   <section className="bg-white px-5 pt-6 pb-6">
     {/* 카드 컨테이너 */}
     <div className="rounded-2xl bg-[#F7F8FA] p-5 shadow-sm">
@@ -39,7 +47,9 @@ const CashSummary = ({ balance, totalEarned, totalUsed }: { balance: number, tot
         <button className="flex items-center gap-1 text-[15px] font-bold text-gray-800 transition-opacity hover:opacity-70">
           현재 포인트 잔액
         </button>
-        <span className="text-lg font-bold text-black">{balance.toLocaleString()}원</span>
+        <span className="text-lg font-bold text-black">
+          {balance.toLocaleString()}원
+        </span>
       </div>
 
       {/* 구분선 */}
@@ -50,13 +60,17 @@ const CashSummary = ({ balance, totalEarned, totalUsed }: { balance: number, tot
         {/* 적립 */}
         <div className="flex items-center justify-between text-sm">
           <span className="font-medium text-gray-500">적립</span>
-          <span className="font-bold text-green-600">+{totalEarned.toLocaleString()}원</span>
+          <span className="font-bold text-green-600">
+            +{totalEarned.toLocaleString()}원
+          </span>
         </div>
 
         {/* 사용 */}
         <div className="flex items-center justify-between text-sm">
           <span className="font-medium text-gray-500">사용</span>
-          <span className="font-bold text-gray-900">-{totalUsed.toLocaleString()}원</span>
+          <span className="font-bold text-gray-900">
+            -{totalUsed.toLocaleString()}원
+          </span>
         </div>
       </div>
     </div>
@@ -98,20 +112,30 @@ const HistorySection = ({ history }: { history: PointHistoryItem[] }) => {
 
       <ul className="flex flex-col pb-20">
         {filteredHistory.length === 0 ? (
-          <li className="py-10 text-center text-sm text-gray-400">내역이 없습니다.</li>
+          <li className="py-10 text-center text-sm text-gray-400">
+            내역이 없습니다.
+          </li>
         ) : (
           filteredHistory.map((item) => (
             <li
               key={item.id}
               className="flex flex-col gap-3 border-b border-gray-50 px-5 py-5 last:border-0"
             >
-              <span className="text-xs text-gray-400">{new Date(item.createdAt).toLocaleDateString()}</span>
+              <span className="text-xs text-gray-400">
+                {new Date(item.createdAt).toLocaleDateString()}
+              </span>
               <div className="flex items-start justify-between">
                 <div className="flex flex-col gap-1">
                   <span className="text-[15px] font-bold text-gray-900">
-                    {item.eventType === 'EARN' ? '적립' : item.eventType === 'REDEEM' ? '사용' : item.eventType}
+                    {item.eventType === "EARN"
+                      ? "적립"
+                      : item.eventType === "REDEEM"
+                        ? "사용"
+                        : item.eventType}
                   </span>
-                  <span className="text-xs text-gray-500">{item.reason || item.eventType}</span>
+                  <span className="text-xs text-gray-500">
+                    {item.reason || item.eventType}
+                  </span>
                 </div>
                 <div className="flex flex-col items-end gap-1">
                   <span
@@ -146,15 +170,22 @@ export default function PointPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const { getPointHistory, getPointBalance } = await import("@lib/api/wallet")
-        
+        const { getPointHistory, getPointBalance } =
+          await import("@lib/api/wallet")
+
         // 1. 내역 조회
         const historyData: PointHistoryResponse = await getPointHistory(100)
         setHistory(historyData.items)
 
         // 간단한 클라이언트 사이드 집계 (실제로는 API에서 주는게 좋음)
-        const earned = historyData.items.reduce((acc, item) => item.amount > 0 ? acc + item.amount : acc, 0)
-        const used = historyData.items.reduce((acc, item) => item.amount < 0 ? acc + Math.abs(item.amount) : acc, 0)
+        const earned = historyData.items.reduce(
+          (acc, item) => (item.amount > 0 ? acc + item.amount : acc),
+          0
+        )
+        const used = historyData.items.reduce(
+          (acc, item) => (item.amount < 0 ? acc + Math.abs(item.amount) : acc),
+          0
+        )
         setTotalEarned(earned)
         setTotalUsed(used)
 
@@ -181,7 +212,11 @@ export default function PointPage() {
       <div className="min-h-screen w-full bg-white font-['Pretendard'] text-black">
         <div className="mx-auto min-h-screen max-w-md bg-white">
           <main>
-            <CashSummary balance={balance} totalEarned={totalEarned} totalUsed={totalUsed} />
+            <CashSummary
+              balance={balance}
+              totalEarned={totalEarned}
+              totalUsed={totalUsed}
+            />
 
             <HistorySection history={history} />
           </main>

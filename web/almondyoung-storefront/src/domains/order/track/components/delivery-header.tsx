@@ -32,7 +32,7 @@ export default function DeliveryHeader({
   completedDate,
 }: DeliveryHeaderProps) {
   return (
-    <section className="flex flex-col items-center justify-start gap-5 self-stretch md:rounded-lg bg-[#3b4156] p-[30px]">
+    <section className="flex flex-col items-center justify-start gap-5 self-stretch bg-[#3b4156] p-[30px] md:rounded-lg">
       {children ? (
         children
       ) : currentStep !== undefined ? (

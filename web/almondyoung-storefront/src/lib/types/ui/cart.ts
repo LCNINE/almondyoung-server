@@ -16,4 +16,3 @@ export interface CartItem {
   quantity: number
   isSelected?: boolean
 }
-

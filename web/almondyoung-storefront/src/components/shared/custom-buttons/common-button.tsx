@@ -88,7 +88,8 @@ const commonButtonVariants = cva(
 
 // 3. Props 인터페이스: CVA의 VariantProps를 상속
 interface CommonButtonProps
-  extends ButtonHTMLAttributes<HTMLButtonElement>,
+  extends
+    ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof commonButtonVariants> {
   size?: ButtonSize | ResponsiveSize
   /** 커스텀 높이 (px 단위) - 지정하면 size보다 우선 적용 */

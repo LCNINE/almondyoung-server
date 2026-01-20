@@ -71,7 +71,7 @@ export default function PinVerificationForm({
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-amber-50 to-orange-50 p-4">
-        <Card className="w-full max-w-md p-6 sm:p-8 max-sm:border-none max-sm:shadow-none">
+      <Card className="w-full max-w-md p-6 max-sm:border-none max-sm:shadow-none sm:p-8">
         <div className="mb-8 flex flex-col items-center">
           <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-amber-100">
             <KeyRound className="h-8 w-8 text-amber-600" />

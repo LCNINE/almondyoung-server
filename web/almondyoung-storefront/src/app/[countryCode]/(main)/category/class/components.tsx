@@ -206,7 +206,7 @@ export function MobileFilterSheet({
         - `flex-shrink-0`로 높이 고정.
         - `flex`와 `gap`으로 버튼 배치 (원본의 `space-between` 대체)
       */}
-        <footer className="flex shrink-0s-center gap-3 border-t border-gray-200 p-4">
+        <footer className="shrink-0s-center flex gap-3 border-t border-gray-200 p-4">
           {/* 초기화 버튼 */}
           <button
             type="button"

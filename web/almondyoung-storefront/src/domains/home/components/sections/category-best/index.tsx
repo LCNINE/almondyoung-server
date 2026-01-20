@@ -2,7 +2,6 @@ import type { CategoryTreeNodeDto } from "@lib/types/dto/pim"
 import { CategoryBestSection } from "./category-best-section"
 import { getCategoryBestProducts } from "../../actions/get-category-products"
 
-
 interface CategoryBestSectionContainerProps {
   initialCategories: CategoryTreeNodeDto[]
 }

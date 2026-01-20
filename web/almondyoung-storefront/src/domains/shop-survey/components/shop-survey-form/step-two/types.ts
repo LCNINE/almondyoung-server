@@ -22,4 +22,3 @@ export interface StepTwoProps {
   onChange: (field: keyof StepTwoValues, value: any) => void
   errors?: StepTwoErrors
 }
-

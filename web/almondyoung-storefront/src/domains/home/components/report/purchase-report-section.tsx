@@ -1,10 +1,7 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
-import {
-  X,
-  Calendar,
-} from "lucide-react"
+import { X, Calendar } from "lucide-react"
 
 interface Report {
   id: number
@@ -119,9 +116,8 @@ const PurchaseReportDashboard = () => {
     )
   }
 
-
   return (
-    <div className="w-full rounded-2xl border border-gray-20 bg-background md:mt-10 lg:mt-0 lg:min-h-screen lg:max-w-[406px]">
+    <div className="border-gray-20 bg-background w-full rounded-2xl border md:mt-10 lg:mt-0 lg:min-h-screen lg:max-w-[406px]">
       {/* Header */}
       <div className="flex items-start justify-between p-5">
         <div>
@@ -137,12 +133,12 @@ const PurchaseReportDashboard = () => {
           {reports.map((report) => (
             <div key={report.id} className="bg-muted rounded-b-xl">
               {/* 카드 헤더 */}
-              <div className="flex items-center justify-between rounded-xl border border-gray-80 bg-background p-4 shadow-md">
+              <div className="border-gray-80 bg-background flex items-center justify-between rounded-xl border p-4 shadow-md">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-sm font-bold text-white">
+                  <div className="bg-accent flex h-8 w-8 items-center justify-center rounded-lg text-sm font-bold text-white">
                     {report.id}
                   </div>
-                  <div className="text-[16px] font-semibold text-foreground">
+                  <div className="text-foreground text-[16px] font-semibold">
                     {report.title}
                   </div>
                 </div>
@@ -154,7 +150,7 @@ const PurchaseReportDashboard = () => {
                         ? "품절임박"
                         : "리뷰"}
                   </span>
-                  <X size={16} className="cursor-pointer text-gray-40" />
+                  <X size={16} className="text-gray-40 cursor-pointer" />
                 </div>
               </div>
 
@@ -164,7 +160,7 @@ const PurchaseReportDashboard = () => {
                   <div className="space-y-4">
                     {/* 사용자 리뷰 */}
                     <div className="flex-1">
-                      <p className="mb-2 text-[14px] leading-relaxed text-gray-70">
+                      <p className="text-gray-70 mb-2 text-[14px] leading-relaxed">
                         {report.message}
                       </p>
                       <div className="flex items-center gap-1 text-[12px] text-gray-50">
@@ -189,10 +185,10 @@ const PurchaseReportDashboard = () => {
                               className="h-full w-full object-cover"
                             />
                           </div>
-                          <div className="absolute top-1 right-1 rounded bg-blue-500 px-1 py-0.5 text-[10px] text-foreground">
+                          <div className="text-foreground absolute top-1 right-1 rounded bg-blue-500 px-1 py-0.5 text-[10px]">
                             공식
                           </div>
-                          <div className="absolute bottom-1 left-1 rounded bg-foreground/80 px-1 py-0.5 text-[10px] text-gray-600">
+                          <div className="bg-foreground/80 absolute bottom-1 left-1 rounded px-1 py-0.5 text-[10px] text-gray-600">
                             {product.stock ||
                               Math.floor(Math.random() * 50) + 10}
                           </div>
@@ -263,7 +259,6 @@ const PurchaseReportDashboard = () => {
           ))}
         </div>
       </div>
-
     </div>
   )
 }

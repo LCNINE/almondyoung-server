@@ -37,7 +37,7 @@ export function ReviewDetailCard({ review, onLike }: Props) {
     .replace(/ /g, "")
 
   return (
-    <article className="w-full space-y-3 border-t border-gray-200  py-8">
+    <article className="w-full space-y-3 border-t border-gray-200 py-8">
       {/* 1. 헤더: 작성자, 별점, 날짜 정보 */}
       <header className="space-y-2">
         {/* 공통 컴포넌트 재사용 */}

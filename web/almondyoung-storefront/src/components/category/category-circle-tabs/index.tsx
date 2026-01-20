@@ -49,8 +49,9 @@ function CategoryCircleItem({
         - isSelected 상태일 때 시각적 강조 (ring 처리) 추가
       */}
       <div
-        className={`bg-muted mb-2 max-h-[180px] max-w-[180px] overflow-hidden rounded-full transition-transform duration-200 group-hover:scale-105 ${isSelected ? "ring-2 ring-black ring-offset-2" : ""
-          }`}
+        className={`bg-muted mb-2 max-h-[180px] max-w-[180px] overflow-hidden rounded-full transition-transform duration-200 group-hover:scale-105 ${
+          isSelected ? "ring-2 ring-black ring-offset-2" : ""
+        }`}
       >
         <Image
           src={imageUrl}
@@ -63,10 +64,11 @@ function CategoryCircleItem({
 
       {/* 텍스트 스타일 */}
       <span
-        className={`line-clamp-2 text-xs font-medium md:text-sm ${isSelected
-          ? "font-bold text-black"
-          : "text-gray-900 group-hover:text-gray-700"
-          }`}
+        className={`line-clamp-2 text-xs font-medium md:text-sm ${
+          isSelected
+            ? "font-bold text-black"
+            : "text-gray-900 group-hover:text-gray-700"
+        }`}
       >
         {category.name}
       </span>

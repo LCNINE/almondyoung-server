@@ -139,7 +139,7 @@ export function CartMainClient({ user, isLoggedIn }: CartMainClientProps) {
       (sum, item) =>
         sum +
         (item.product.membershipPrice || item.product.basePrice || 0) *
-        item.quantity,
+          item.quantity,
       0
     )
     // 50,000원 이상 무료배송
