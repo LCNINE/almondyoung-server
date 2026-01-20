@@ -1,3 +1,2 @@
-type ReviewRatingFilter = "1" | "2" | "3" | "4" | "5" | "positive" | "negative"
-
-export type { ReviewRatingFilter }
+// dto에서 re-export
+export type { ReviewRatingFilter } from "@/lib/types/dto/ugc"

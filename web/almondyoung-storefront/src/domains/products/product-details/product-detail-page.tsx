@@ -8,7 +8,7 @@ import type { ProductDetail } from "@lib/types/ui/product"
 import { ProductCard } from "@lib/types/ui/product"
 import type { UserDetail, WishlistItem } from "@lib/types/ui/user"
 import { ProductRecommandSlider } from "@components/products/product-recommand-slider"
-import { ReviewSummary } from "domains/reviews/summary"
+import { ProductReviewSection } from "domains/reviews/product-review-section"
 import { use, useEffect, useRef, useState, useTransition } from "react"
 import { toast } from "sonner"
 import { ProductDetailInfo } from "./components/product-detail-info"
@@ -364,16 +364,13 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
               ref={reviewRef}
               id="review-panel"
               role="tabpanel"
-              className="mb-8 rounded-lg bg-white px-0 py-6 md:px-6"
+              className="mb-8 rounded-lg bg-white px-4 py-6 md:px-6"
             >
-              <ReviewSummary
+              <ProductReviewSection
+                productId={product.id}
                 totalReviews={product.reviewCount || 0}
                 averageRating={product.rating || 0}
-                summaryTags={[]}
               />
-              <div className="px-4 text-sm text-gray-500">
-                리뷰 데이터가 준비되면 표시됩니다.
-              </div>
             </div>
 
             {/* Q&A */}
