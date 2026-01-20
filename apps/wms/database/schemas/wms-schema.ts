@@ -300,7 +300,7 @@ export const supplierCategoryMappings = pgTable('supplier_category_mappings', {
  * MOVEMENT JOBS (헤더/라인/타임라인)
  *──────────────────────────*/
 export const movementJobs = pgTable('movement_jobs', {
-  id: uuid('id').primaryKey().default(sql`uuid_v7()`),
+  id: uuid('id').primaryKey().defaultRandom(),
   warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'cascade' }).notNull(),
   occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
   totalQuantity: integer('total_quantity').notNull().default(0),
@@ -314,7 +314,7 @@ export const movementJobs = pgTable('movement_jobs', {
 }));
 
 export const movementJobLines = pgTable('movement_job_lines', {
-  id: uuid('id').primaryKey().default(sql`uuid_v7()`),
+  id: uuid('id').primaryKey().defaultRandom(),
   jobId: uuid('job_id').references(() => movementJobs.id, { onDelete: 'cascade' }).notNull(),
   skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
   quantity: integer('quantity').notNull(),
@@ -329,7 +329,7 @@ export const movementJobLines = pgTable('movement_job_lines', {
 }));
 
 export const movementWorkLogs = pgTable('movement_work_logs', {
-  id: uuid('id').primaryKey().default(sql`uuid_v7()`),
+  id: uuid('id').primaryKey().defaultRandom(),
   type: varchar('type', { length: 32 }).notNull().default('MOVE'),
   timestamp: timestamp('timestamp', { withTimezone: true }).notNull().defaultNow(),
   jobId: uuid('job_id').references(() => movementJobs.id, { onDelete: 'set null' }),
@@ -654,7 +654,7 @@ export const locations = pgTable('locations', {
  * STOCK LEDGER
  *──────────────────────────*/
 export const stockJournals = pgTable("stock_journals", {
-  id: uuid("id").primaryKey().default(sql`uuid_v7()`),
+  id: uuid("id").primaryKey().defaultRandom(),
   sourceType: varchar("source_type", { length: 64 }),
   sourceId: uuid("source_id"),
   idempotencyKey: varchar("idempotency_key", { length: 128 }).unique(),
@@ -665,7 +665,7 @@ export const stockJournals = pgTable("stock_journals", {
 export const stockEvents = pgTable(
   "stock_events",
   {
-    id: uuid("id").primaryKey().default(sql`uuid_v7()`),
+    id: uuid("id").primaryKey().defaultRandom(),
 
     journalId: uuid("journal_id").references(() => stockJournals.id),
 
