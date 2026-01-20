@@ -1,4 +1,4 @@
-import { useShopSurvey } from "@components/shop-survey/hooks/use-shop-survey"
+import { useShopSurvey } from "@/domains/shop-survey/hooks/use-shop-survey"
 import { useFormContext } from "react-hook-form"
 import { StepOne } from "./step-one"
 import { StepTwoForm } from "./step-two/with-form"

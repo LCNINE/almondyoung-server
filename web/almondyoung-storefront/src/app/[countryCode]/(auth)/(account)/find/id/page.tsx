@@ -1,4 +1,4 @@
-import { MobileBackHeader } from "@/components/layout/header"
+import { MobileBackHeader } from "@/components/layout/header/m-back-header"
 import { AccountFindIdForm } from "domains/auth/components/account-find"
 
 export default function FindIdPage() {

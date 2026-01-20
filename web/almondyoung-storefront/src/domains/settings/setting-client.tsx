@@ -3,7 +3,7 @@
 import { useForm, Controller } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Building2, Check, Scissors, Users } from "lucide-react"
-import SurveyHeader from "@components/shop-survey/components/surbey-header"
+import SurveyHeader from "@/domains/shop-survey/components/surbey-header"
 import { z } from "zod"
 import { useEffect, useState } from "react"
 import { getShopInfo, updateShopInfo, ServerError } from "@lib/api/users/shop"
