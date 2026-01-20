@@ -9,109 +9,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { updateCart } from "@/lib/api/medusa/cart"
 import { cn } from "@/lib/utils"
-import { HttpTypes, StoreCartAddress } from "@medusajs/types"
+import { HttpTypes } from "@medusajs/types"
 import debounce from "lodash/debounce"
 import { MapPin } from "lucide-react"
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
-import { ShippingAddressModal } from "./shipping-address-modal"
-import { ShippingAddressSelector } from "./shipping-address-selector"
-import { updateCart } from "@/lib/api/medusa/cart"
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────────────────────────────────
-
-interface ShippingSectionProps {
-  shippingAddress: StoreCartAddress | null
-  addressName?: string | null
-  /** 배송메모 타입: "door" | "security" | "parcel-box" | "direct" | "other" */
-  shippingMemoType?: string | null
-  /** 기타 선택 시 직접 입력한 메모 */
-  shippingMemoCustom?: string | null
-}
-
-interface EditAddressState {
-  address: HttpTypes.StoreCustomerAddress
-  defaultValues: {
-    addressName?: string
-    name: string
-    phone: string
-    postalCode: string
-    address1: string
-    address2: string
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Utilities
-// ─────────────────────────────────────────────────────────────────────────────
-
-const isValidAddress = (address: StoreCartAddress | null): boolean => {
-  if (!address) return false
-
-  const hasName = !!(address.first_name || address.last_name)
-  const hasAddress = !!(
-    address.province ||
-    address.city ||
-    address.address_1 ||
-    address.address_2
-  )
-  const hasPhone = !!address.phone
-
-  return hasName || hasAddress || hasPhone
-}
-
-const formatPhoneNumber = (value: string): string => {
-  const numbers = value.replace(/\D/g, "")
-  if (numbers.length <= 3) return numbers
-  if (numbers.length <= 7) return `${numbers.slice(0, 3)}-${numbers.slice(3)}`
-  return `${numbers.slice(0, 3)}-${numbers.slice(3, 7)}-${numbers.slice(7, 11)}`
-}
-
-const formatAddress = (
-  address: StoreCartAddress | null
-): {
-  name: string
-  phone: string
-  fullAddress: string
-} => {
-  if (!address) {
-    return { name: "", phone: "", fullAddress: "" }
-  }
-
-  const name = [address.first_name, address.last_name].filter(Boolean).join(" ")
-  const phone = address.phone ? formatPhoneNumber(address.phone) : ""
-  const addressParts = [
-    address.province,
-    address.city,
-    address.address_1,
-    address.address_2,
-  ].filter(Boolean)
-  const fullAddress = addressParts.join(" ")
-
-  return { name, phone, fullAddress }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Constants
-// ─────────────────────────────────────────────────────────────────────────────
-
-const SHIPPING_MEMO_OPTIONS = [
-  { value: "door", label: "문 앞에 놓아주세요" },
-  { value: "security", label: "경비실에 맡겨주세요" },
-  { value: "parcel-box", label: "택배함에 넣어주세요" },
-  { value: "direct", label: "직접 받겠습니다" },
-  { value: "other", label: "기타 (직접 입력)" },
-] as const
-
-type ShippingMemoValue = (typeof SHIPPING_MEMO_OPTIONS)[number]["value"]
-
-const DEBOUNCE_DELAY = 800
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Main Component
-// ─────────────────────────────────────────────────────────────────────────────
+import { ShippingAddressModal } from "./address-form-modal"
+import { ShippingAddressSelectorModal } from "./address-selector-modal"
+import {
+  DEBOUNCE_DELAY,
+  SHIPPING_MEMO_OPTIONS,
+  type ShippingMemoValue,
+} from "./constants"
+import type { EditAddressState, ShippingSectionProps } from "./types"
+import { formatAddress, isValidAddress } from "./utils"
 
 export const ShippingSection = ({
   shippingAddress,
@@ -128,7 +40,7 @@ export const ShippingSection = ({
   const [selectedMemoType, setSelectedMemoType] = useState<
     ShippingMemoValue | ""
   >((shippingMemoType as ShippingMemoValue) || "")
-  const [customMemo, setCustomMemo] = useState(shippingMemoCustom || "")
+  const [customMemo, setCustomMemo] = useState(shippingMemoCustom || "") // 배송메모 직접 입력
   const [isPending, startTransition] = useTransition()
 
   useEffect(() => {
@@ -136,6 +48,7 @@ export const ShippingSection = ({
     setCustomMemo(shippingMemoCustom || "")
   }, [shippingMemoType, shippingMemoCustom])
 
+  // 배송지 유효성 검사
   const isValid = useMemo(
     () => isValidAddress(shippingAddress),
     [shippingAddress]
@@ -146,9 +59,9 @@ export const ShippingSection = ({
     [shippingAddress]
   )
 
+  // 배송메모 '가타' 선택여부
   const isOtherSelected = selectedMemoType === "other"
 
-  // 배송메모 저장
   const saveShippingMemo = useMemo(
     () =>
       debounce((type: ShippingMemoValue | "", custom: string) => {
@@ -174,14 +87,12 @@ export const ShippingSection = ({
     }
   }, [saveShippingMemo])
 
-  // 새 배송지 추가 핸들러
   const handleAddNewAddress = useCallback(() => {
     setModalMode("create")
     setEditAddressState(null)
     setIsModalOpen(true)
   }, [])
 
-  // 배송지 수정 핸들러
   const handleEditAddress = useCallback(
     (address: HttpTypes.StoreCustomerAddress) => {
       setModalMode("edit")
@@ -205,7 +116,6 @@ export const ShippingSection = ({
     []
   )
 
-  // 모달 닫기 핸들러
   const handleModalOpenChange = useCallback((open: boolean) => {
     setIsModalOpen(open)
     if (!open) {
@@ -214,13 +124,11 @@ export const ShippingSection = ({
     }
   }, [])
 
-  // 배송메모 타입 변경 핸들러
   const handleMemoTypeChange = useCallback(
     (value: string) => {
       const memoType = value as ShippingMemoValue
       setSelectedMemoType(memoType)
 
-      // 기타가 아닌 경우 즉시 저장
       if (memoType !== "other") {
         setCustomMemo("")
         saveShippingMemo(memoType, "")
@@ -229,7 +137,6 @@ export const ShippingSection = ({
     [saveShippingMemo]
   )
 
-  // 커스텀 메모 입력 핸들러 (debounced 저장)
   const handleCustomMemoChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const value = e.target.value
@@ -271,11 +178,13 @@ export const ShippingSection = ({
                     </span>
                   </p>
                 )}
+
                 {phone && (
                   <p className="mt-1 text-[13px] text-gray-700 md:text-base">
                     {phone}
                   </p>
                 )}
+
                 {fullAddress && (
                   <address className="text-[13px] leading-5 text-gray-700 not-italic md:text-base">
                     {fullAddress}
@@ -290,7 +199,7 @@ export const ShippingSection = ({
                 변경
               </Button>
             </div>
-            {/* 배송메모 섹션 */}
+
             <div className="mt-4 space-y-3">
               <Select
                 value={selectedMemoType}
@@ -318,7 +227,6 @@ export const ShippingSection = ({
                 </SelectContent>
               </Select>
 
-              {/* 기타 직접 입력 필드 */}
               <div
                 className={cn(
                   "grid transition-all duration-200 ease-in-out",
@@ -378,7 +286,7 @@ export const ShippingSection = ({
         )}
       </div>
 
-      <ShippingAddressSelector
+      <ShippingAddressSelectorModal
         open={isSelectorOpen}
         onOpenChange={setIsSelectorOpen}
         onAddNewAddress={handleAddNewAddress}
@@ -391,6 +299,7 @@ export const ShippingSection = ({
         mode={modalMode}
         addressId={editAddressState?.address.id}
         defaultValues={editAddressState?.defaultValues}
+        onSuccess={modalMode === "create" ? () => setIsSelectorOpen(true) : undefined}
       />
     </section>
   )
