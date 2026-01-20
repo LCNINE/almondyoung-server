@@ -1,14 +1,13 @@
-import { HttpApiError } from "@lib/api/api-error"
 import { addToCart } from "@lib/api/medusa/cart"
 import { useState } from "react"
 import { toast } from "sonner"
 
 interface AddToCartParams {
   variantId: string
-  productVariantId?: string // 추가
-  productId?: string // 추가
-  productName?: string // 추가
-  productImage?: string // 추가
+  productVariantId?: string
+  productId?: string
+  productName?: string
+  productImage?: string
   quantity?: number
 }
 
@@ -28,13 +27,8 @@ export function useAddToCart() {
         quantity,
       })
 
-      if (result !== undefined) {
-        toast.success("장바구니에 추가되었습니다.")
-        return { success: true, data: result }
-      } else {
-        toast.error("장바구니 추가에 실패했습니다.")
-        return { success: false, error: "Failed to add to cart" }
-      }
+      toast.success("장바구니에 추가되었습니다.")
+      return { success: true, data: result }
     } catch (error) {
       toast.error("장바구니 추가 중 오류가 발생했습니다.")
       return {

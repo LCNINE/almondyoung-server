@@ -49,7 +49,11 @@ export async function retrieveCart(cartId?: string, fields?: string) {
       cache: "force-cache",
     })
     .then(({ cart }: { cart: HttpTypes.StoreCart }) => cart)
-    .catch(() => null)
+    .catch(async () => {
+      // cart를 찾지 못하면 쿠키에서 cart ID 삭제
+      await removeCartId()
+      return null
+    })
 }
 
 export async function getOrSetCart(countryCode: string) {
@@ -121,7 +125,7 @@ export async function addToCart({
   variantId: string
   quantity: number
   countryCode: string
-}) {
+}): Promise<void> {
   if (!variantId) {
     throw new HttpApiError(
       "Missing variant ID when adding to cart",
@@ -148,7 +152,8 @@ export async function addToCart({
     .createLineItem(
       cart.id,
       {
-        variant_id: variantId,
+        // variant_id: variantId,
+        variant_id: "variant_01KFCYG6WW099RWTRTAXBB5903", // 임시로 하드코딩되어있습니다. 추후 테이블에 KRW->krw로 올바르게 들어갔을때 삭제할것
         quantity,
       },
       {},
@@ -162,6 +167,8 @@ export async function addToCart({
       revalidateTag(fulfillmentCacheTag)
     })
     .catch(medusaError)
+
+  return
 }
 
 export async function updateLineItem({

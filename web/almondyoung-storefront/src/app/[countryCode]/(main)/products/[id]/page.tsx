@@ -174,22 +174,21 @@ export default async function Page({
     )
     const sampleVariant = medusaProduct?.variants?.[0]
     if (sampleVariant) {
-      console.log("[PRICE DEBUG] Store API Response", {
-        productId: medusaProduct?.id,
-        regionId: region?.id,
-        regionCurrencyCode: region?.currency_code,
-        salesChannelId,
-        variantId: sampleVariant.id,
-        calculated_price: sampleVariant.calculated_price,
-      })
-
-      console.log("[REGION DEBUG]", {
-        regionId: region?.id,
-        regionName: region?.name,
-        currencyCode: region?.currency_code,
-        countries: region?.countries?.map((c) => c.iso_2),
-        _fullRegion: JSON.stringify(region, null, 2),
-      })
+      // console.log("[PRICE DEBUG] Store API Response", {
+      //   productId: medusaProduct?.id,
+      //   regionId: region?.id,
+      //   regionCurrencyCode: region?.currency_code,
+      //   salesChannelId,
+      //   variantId: sampleVariant.id,
+      //   calculated_price: sampleVariant.calculated_price,
+      // })
+      // console.log("[REGION DEBUG]", {
+      //   regionId: region?.id,
+      //   regionName: region?.name,
+      //   currencyCode: region?.currency_code,
+      //   countries: region?.countries?.map((c) => c.iso_2),
+      //   _fullRegion: JSON.stringify(region, null, 2),
+      // })
     }
     let pimDescriptionHtml: string | undefined
     let pimMasterId: string | undefined
