@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { EditAddressState } from "../types"
 
 export const shippingAddressSchema = z.object({
   addressName: z.string().optional(),
@@ -22,13 +23,6 @@ export interface ShippingAddressModalProps {
   onOpenChange: (open: boolean) => void
   mode?: "create" | "edit"
   addressId?: string
-  defaultValues?: {
-    addressName?: string
-    name?: string
-    phone?: string
-    postalCode?: string
-    address1?: string
-    address2?: string
-  }
+  defaultValues?: EditAddressState["defaultValues"]
   onSuccess?: () => void
 }

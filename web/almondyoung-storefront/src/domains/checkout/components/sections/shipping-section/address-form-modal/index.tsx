@@ -71,7 +71,7 @@ export function ShippingAddressModal({
       postalCode: "",
       address1: "",
       address2: "",
-      saveAsDefault: !isEditMode,
+      saveAsDefault: defaultValues?.isDefaultShipping ?? false,
     },
   })
 
@@ -80,19 +80,21 @@ export function ShippingAddressModal({
     if (!open) return
 
     form.reset({
-      addressName: defaultValues?.addressName ?? "",
+      addressName:
+        (defaultValues?.metadata.shipping_address_name as string) ?? "",
       name: defaultValues?.name ?? "",
       phone: defaultValues?.phone ? formatPhoneNumber(defaultValues.phone) : "",
       postalCode: defaultValues?.postalCode ?? "",
       address1: defaultValues?.address1 ?? "",
       address2: defaultValues?.address2 ?? "",
-      saveAsDefault: !isEditMode,
+      saveAsDefault: defaultValues?.isDefaultShipping ?? false,
     })
   }, [open, defaultValues, form, isEditMode])
 
   // 배송지 수정
   const handleUpdate = useCallback(
     async (data: ShippingAddressFormData) => {
+      console.log("data:", data)
       if (!addressId) return false
 
       const addressData = transformFormDataToAddress(data)

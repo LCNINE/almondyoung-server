@@ -216,162 +216,162 @@ export function ProductSidebarPurchase({
   return (
     <>
       <aside className="hidden w-full min-w-[383px] overflow-y-auto md:sticky md:top-0 md:block md:max-h-screen md:max-w-[383px] lg:max-w-[480px]">
-      <div className="h-full bg-white p-6">
-        {/* 헤더: 브랜드, 상품명, 액션 버튼 */}
-        <header className="flex justify-between gap-4">
-          <div className="mb-4">
-            {product.brand && (
-              <p className="text-sm text-gray-600">{product.brand}</p>
-            )}
-            <h2 className="text-xl font-bold">{product.name}</h2>
-          </div>
-
-          <div className="flex gap-2">
-            <CustomButton
-              variant="outline"
-              color="secondary"
-              size="md"
-              onClick={() => onWishlistToggle(product.id)}
-              disabled={isWishlistPending}
-              aria-label="찜하기"
-            >
-              <Heart
-                className={`h-7 w-7 ${
-                  isWishlisted ? "text-red-500" : "text-gray-300"
-                }`}
-              />
-              찜
-            </CustomButton>
-            <CustomButton
-              variant="outline"
-              color="secondary"
-              size="md"
-              aria-label="챗봇"
-            >
-              <MessageCircle className="h-7 w-7" />
-              챗봇
-            </CustomButton>
-          </div>
-        </header>
-
-        {/* 평점 */}
-        <ProductRatingDisplay
-          rating={product.rating || 0}
-          reviewCount={product.reviewCount || 0}
-        />
-
-        {/* 가격 */}
-        {product.basePrice !== undefined && (
-          <ProductPriceDisplay
-            basePrice={product.basePrice}
-            membershipPrice={product.membershipPrice}
-            isMembershipOnly={product.isMembershipOnly || false}
-            discountRate={getDiscountRate()}
-            memberPrices={product.memberPrices}
-          />
-        )}
-
-        {/* 배송 정보 */}
-        {product.shipping && (
-          <ProductShippingInfo shipping={product.shipping} />
-        )}
-
-        {/* 옵션 선택 */}
-        <section className="border-gray-20 mb-4 border-t pt-4">
-          {isSingleOption ? (
-            <SingleOptionQuantitySelector
-              productName={product.name}
-              thumbnail={
-                product.thumbnails?.[0]
-                  ? getThumbnailUrl(product.thumbnails?.[0])
-                  : "https://placehold.co/80x80?text=No+Image"
-              }
-              quantity={quantity}
-              onQuantityChange={setQuantity}
-              price={getPrice()}
-              stock={0}
-              showTitle={true}
-            />
-          ) : (
-            <ProductOptionSelector
-              options={product.options || []}
-              selectedOptions={selectedOptions}
-              selectedCartOptions={selectedCartOptions}
-              onOptionChange={handleOptionChange}
-              onQuantityUpdate={handleQuantityUpdate}
-              onOptionRemove={handleOptionRemove}
-            />
-          )}
-        </section>
-
-        {/* 총 상품 금액 */}
-        <section className="border-gray-20 mb-4 border-t pt-4">
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-gray-600">총 상품 금액</span>
-            <div className="flex items-center gap-4 text-right">
-              <p className="text-sm text-gray-500">
-                총 수량 {getTotalQuantity()}개
-              </p>
-              <output className="text-xl font-bold">
-                {getTotalPrice().toLocaleString()}원
-              </output>
+        <div className="h-full bg-white p-6">
+          {/* 헤더: 브랜드, 상품명, 액션 버튼 */}
+          <header className="flex justify-between gap-4">
+            <div className="mb-4">
+              {product.brand && (
+                <p className="text-sm text-gray-600">{product.brand}</p>
+              )}
+              <h2 className="text-xl font-bold">{product.name}</h2>
             </div>
-          </div>
-        </section>
 
-        {/* 액션 버튼 */}
-        <footer className="flex gap-2">
-          {isOutOfStock ? (
-            <>
+            <div className="flex gap-2">
               <CustomButton
                 variant="outline"
                 color="secondary"
-                size="lg"
-                className="flex-1"
+                size="md"
+                onClick={() => onWishlistToggle(product.id)}
+                disabled={isWishlistPending}
+                aria-label="찜하기"
               >
-                <Bell className="h-4 w-4" />
-                <span>재입고알림 신청하기</span>
+                <Heart
+                  className={`h-7 w-7 ${
+                    isWishlisted ? "text-red-500" : "text-gray-300"
+                  }`}
+                />
+                찜
               </CustomButton>
-              <CustomButton
-                variant="fill"
-                color="primary"
-                size="lg"
-                className="flex-1 bg-green-600"
-              >
-                <Zap className="h-4 w-4" />
-                <span>미리구매하기</span>
-              </CustomButton>
-            </>
-          ) : (
-            <>
               <CustomButton
                 variant="outline"
-                size="lg"
-                className="hover:text-primary flex-1 cursor-pointer hover:bg-transparent"
-                onClick={handleAddToCart}
-                disabled={isLoading}
-                spinnerColor="blue"
-                isLoading={isLoading}
+                color="secondary"
+                size="md"
+                aria-label="챗봇"
               >
-                장바구니
+                <MessageCircle className="h-7 w-7" />
+                챗봇
               </CustomButton>
-              <CustomButton
-                variant="fill"
-                color="primary"
-                size="lg"
-                className="flex-1 cursor-pointer"
-                onClick={handleBuyNow}
-                disabled={isLoading}
-                spinnerColor="blue"
-                isLoading={isLoading}
-              >
-                바로구매
-              </CustomButton>
-            </>
+            </div>
+          </header>
+
+          {/* 평점 */}
+          <ProductRatingDisplay
+            rating={product.rating || 0}
+            reviewCount={product.reviewCount || 0}
+          />
+
+          {/* 가격 */}
+          {product.basePrice !== undefined && (
+            <ProductPriceDisplay
+              basePrice={product.basePrice}
+              membershipPrice={product.membershipPrice}
+              isMembershipOnly={product.isMembershipOnly || false}
+              discountRate={getDiscountRate()}
+              memberPrices={product.memberPrices}
+            />
           )}
-        </footer>
-      </div>
-    </aside>
+
+          {/* 배송 정보 */}
+          {product.shipping && (
+            <ProductShippingInfo shipping={product.shipping} />
+          )}
+
+          {/* 옵션 선택 */}
+          <section className="border-gray-20 mb-4 border-t pt-4">
+            {isSingleOption ? (
+              <SingleOptionQuantitySelector
+                productName={product.name}
+                thumbnail={
+                  product.thumbnails?.[0]
+                    ? getThumbnailUrl(product.thumbnails?.[0])
+                    : "https://placehold.co/80x80?text=No+Image"
+                }
+                quantity={quantity}
+                onQuantityChange={setQuantity}
+                price={getPrice()}
+                stock={0}
+                showTitle={true}
+              />
+            ) : (
+              <ProductOptionSelector
+                options={product.options || []}
+                selectedOptions={selectedOptions}
+                selectedCartOptions={selectedCartOptions}
+                onOptionChange={handleOptionChange}
+                onQuantityUpdate={handleQuantityUpdate}
+                onOptionRemove={handleOptionRemove}
+              />
+            )}
+          </section>
+
+          {/* 총 상품 금액 */}
+          <section className="border-gray-20 mb-4 border-t pt-4">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-gray-600">총 상품 금액</span>
+              <div className="flex items-center gap-4 text-right">
+                <p className="text-sm text-gray-500">
+                  총 수량 {getTotalQuantity()}개
+                </p>
+                <output className="text-xl font-bold">
+                  {getTotalPrice().toLocaleString()}원
+                </output>
+              </div>
+            </div>
+          </section>
+
+          {/* 액션 버튼 */}
+          <footer className="flex gap-2">
+            {isOutOfStock ? (
+              <>
+                <CustomButton
+                  variant="outline"
+                  color="secondary"
+                  size="lg"
+                  className="flex-1"
+                >
+                  <Bell className="h-4 w-4" />
+                  <span>재입고알림 신청하기</span>
+                </CustomButton>
+                <CustomButton
+                  variant="fill"
+                  color="primary"
+                  size="lg"
+                  className="flex-1 bg-green-600"
+                >
+                  <Zap className="h-4 w-4" />
+                  <span>미리구매하기</span>
+                </CustomButton>
+              </>
+            ) : (
+              <>
+                <CustomButton
+                  variant="outline"
+                  size="lg"
+                  className="hover:text-primary flex-1 cursor-pointer hover:bg-transparent"
+                  onClick={handleAddToCart}
+                  disabled={isLoading}
+                  spinnerColor="blue"
+                  isLoading={isLoading}
+                >
+                  장바구니
+                </CustomButton>
+                <CustomButton
+                  variant="fill"
+                  color="primary"
+                  size="lg"
+                  className="flex-1 cursor-pointer"
+                  onClick={handleBuyNow}
+                  disabled={isLoading}
+                  spinnerColor="blue"
+                  isLoading={isLoading}
+                >
+                  바로구매
+                </CustomButton>
+              </>
+            )}
+          </footer>
+        </div>
+      </aside>
 
       {/* 로그인 필요 확인 모달 */}
       <AlertDialog open={showLoginDialog} onOpenChange={setShowLoginDialog}>

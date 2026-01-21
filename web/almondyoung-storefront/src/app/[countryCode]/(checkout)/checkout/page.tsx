@@ -13,7 +13,6 @@ export default async function CheckoutPage({
   const { countryCode } = await params
   const currentUser = await fetchMe()
   const storeCart: StoreCart | null = await retrieveCart()
-  console.log("storeCart:", storeCart)
 
   // cart가 없거나 비어있으면 장바구니로 리다이렉트
   if (!storeCart || !storeCart.items?.length) {

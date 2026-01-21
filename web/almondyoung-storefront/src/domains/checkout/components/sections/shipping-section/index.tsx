@@ -109,6 +109,8 @@ export const ShippingSection = ({
             .filter(Boolean)
             .join(" "),
           address2: address.address_2 ?? "",
+          isDefaultShipping: address.is_default_shipping ?? false,
+          metadata: address.metadata ?? {},
         },
       })
       setIsModalOpen(true)
@@ -299,7 +301,9 @@ export const ShippingSection = ({
         mode={modalMode}
         addressId={editAddressState?.address.id}
         defaultValues={editAddressState?.defaultValues}
-        onSuccess={modalMode === "create" ? () => setIsSelectorOpen(true) : undefined}
+        onSuccess={
+          modalMode === "create" ? () => setIsSelectorOpen(true) : undefined
+        }
       />
     </section>
   )

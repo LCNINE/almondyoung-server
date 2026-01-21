@@ -8,7 +8,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
-import { Check, MapPin, MoreVertical, Pencil, Plus, Star, Trash2 } from "lucide-react"
+import {
+  Check,
+  MapPin,
+  MoreVertical,
+  Pencil,
+  Plus,
+  Star,
+  Trash2,
+} from "lucide-react"
 import type { AddressCardProps } from "./types"
 import { buildFullAddress, buildFullName, formatPhoneNumber } from "./utils"
 
@@ -61,7 +69,9 @@ export function AddressCard({
             ) : null}
             <span
               className={
-                addressName ? "text-sm text-gray-600" : "font-medium text-gray-900"
+                addressName
+                  ? "text-sm text-gray-600"
+                  : "font-medium text-gray-900"
               }
             >
               {name}
@@ -82,7 +92,7 @@ export function AddressCard({
 
         <div className="flex items-center gap-1">
           {isSelected ? (
-            <Check className="absolute right-6 top-0 h-5 w-5 shrink-0 text-primary" />
+            <Check className="text-primary absolute top-0 right-6 h-5 w-5 shrink-0" />
           ) : null}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -126,7 +136,12 @@ interface AddNewAddressButtonProps {
 
 export function AddNewAddressButton({ onClick }: AddNewAddressButtonProps) {
   return (
-    <Button type="button" variant="outline" className="w-full" onClick={onClick}>
+    <Button
+      type="button"
+      variant="outline"
+      className="w-full"
+      onClick={onClick}
+    >
       <Plus className="mr-2 h-4 w-4" />새 배송지 추가
     </Button>
   )

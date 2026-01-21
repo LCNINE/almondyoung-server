@@ -16,6 +16,8 @@ export interface EditAddressState {
     postalCode: string
     address1: string
     address2: string
+    isDefaultShipping: boolean
+    metadata: Record<string, unknown>
   }
 }
 
