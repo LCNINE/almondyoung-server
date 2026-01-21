@@ -3,6 +3,16 @@
 import { useCallback, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -52,6 +62,7 @@ export function ShippingAddressSelectorModal({
   )
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
 
   const fetchAddresses = useCallback(async () => {
     setIsLoading(true)
@@ -145,35 +156,39 @@ export function ShippingAddressSelectorModal({
     [fetchAddresses]
   )
 
-  const handleDelete = useCallback(
-    async (e: React.MouseEvent, addressId: string) => {
+  const handleDeleteClick = useCallback(
+    (e: React.MouseEvent, addressId: string) => {
       e.stopPropagation()
-
-      if (!confirm("이 배송지를 삭제하시겠습니까?")) return
-
-      setActionLoading(addressId)
-
-      try {
-        const result = await deleteCustomerAddress(addressId)
-
-        if (result.success) {
-          toast.success("배송지가 삭제되었습니다.")
-          if (selectedId === addressId) {
-            setSelectedId(null)
-          }
-          await fetchAddresses()
-        } else {
-          toast.error("배송지 삭제에 실패했습니다.")
-        }
-      } catch (error) {
-        console.error("배송지 삭제 실패:", error)
-        toast.error("배송지 삭제에 실패했습니다.")
-      } finally {
-        setActionLoading(null)
-      }
+      setDeleteConfirmId(addressId)
     },
-    [selectedId, fetchAddresses]
+    []
   )
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!deleteConfirmId) return
+
+    setActionLoading(deleteConfirmId)
+    setDeleteConfirmId(null)
+
+    try {
+      const result = await deleteCustomerAddress(deleteConfirmId)
+
+      if (result.success) {
+        toast.success("배송지가 삭제되었습니다.")
+        if (selectedId === deleteConfirmId) {
+          setSelectedId(null)
+        }
+        await fetchAddresses()
+      } else {
+        toast.error("배송지 삭제에 실패했습니다.")
+      }
+    } catch (error) {
+      console.error("배송지 삭제 실패:", error)
+      toast.error("배송지 삭제에 실패했습니다.")
+    } finally {
+      setActionLoading(null)
+    }
+  }, [deleteConfirmId, selectedId, fetchAddresses])
 
   const handleAddNew = useCallback(() => {
     onOpenChange(false)
@@ -200,7 +215,7 @@ export function ShippingAddressSelectorModal({
             onSelect={() => setSelectedId(address.id)}
             onEdit={(e) => handleEdit(e, address)}
             onSetDefault={(e) => handleSetDefault(e, address.id)}
-            onDelete={(e) => handleDelete(e, address.id)}
+            onDelete={(e) => handleDeleteClick(e, address.id)}
           />
         ))}
       </div>
@@ -216,23 +231,73 @@ export function ShippingAddressSelectorModal({
 
   const isSelectDisabled = !selectedId || isSubmitting || addresses.length === 0
 
+  const deleteConfirmDialog = (
+    <AlertDialog
+      open={!!deleteConfirmId}
+      onOpenChange={(open) => !open && setDeleteConfirmId(null)}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>배송지 삭제</AlertDialogTitle>
+          <AlertDialogDescription>
+            이 배송지를 삭제하시겠습니까? 삭제된 배송지는 복구할 수 없습니다.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>취소</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={handleDeleteConfirm}
+            className="bg-red-600 hover:bg-red-700"
+          >
+            삭제
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+
   if (isDesktop) {
     return (
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>배송지 선택</DialogTitle>
-          </DialogHeader>
-          <div className="py-4">{content}</div>
-          <div className="flex justify-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={isSubmitting}
-            >
-              취소
-            </Button>
+      <>
+        <Dialog open={open} onOpenChange={onOpenChange}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>배송지 선택</DialogTitle>
+            </DialogHeader>
+            <div className="py-4">{content}</div>
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={isSubmitting}
+              >
+                취소
+              </Button>
+              <Button
+                type="button"
+                onClick={handleSelect}
+                disabled={isSelectDisabled}
+              >
+                {isSubmitting ? "변경 중..." : "선택 완료"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+        {deleteConfirmDialog}
+      </>
+    )
+  }
+
+  return (
+    <>
+      <Drawer open={open} onOpenChange={onOpenChange}>
+        <DrawerContent>
+          <DrawerHeader className="text-left">
+            <DrawerTitle>배송지 선택</DrawerTitle>
+          </DrawerHeader>
+          <div className="px-4">{content}</div>
+          <DrawerFooter className="pt-4">
             <Button
               type="button"
               onClick={handleSelect}
@@ -240,34 +305,15 @@ export function ShippingAddressSelectorModal({
             >
               {isSubmitting ? "변경 중..." : "선택 완료"}
             </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-    )
-  }
-
-  return (
-    <Drawer open={open} onOpenChange={onOpenChange}>
-      <DrawerContent>
-        <DrawerHeader className="text-left">
-          <DrawerTitle>배송지 선택</DrawerTitle>
-        </DrawerHeader>
-        <div className="px-4">{content}</div>
-        <DrawerFooter className="pt-4">
-          <Button
-            type="button"
-            onClick={handleSelect}
-            disabled={isSelectDisabled}
-          >
-            {isSubmitting ? "변경 중..." : "선택 완료"}
-          </Button>
-          <DrawerClose asChild>
-            <Button variant="outline" disabled={isSubmitting}>
-              취소
-            </Button>
-          </DrawerClose>
-        </DrawerFooter>
-      </DrawerContent>
-    </Drawer>
+            <DrawerClose asChild>
+              <Button variant="outline" disabled={isSubmitting}>
+                취소
+              </Button>
+            </DrawerClose>
+          </DrawerFooter>
+        </DrawerContent>
+      </Drawer>
+      {deleteConfirmDialog}
+    </>
   )
 }
