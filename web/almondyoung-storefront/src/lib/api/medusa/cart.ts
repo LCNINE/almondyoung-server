@@ -151,8 +151,7 @@ export async function addToCart({
     .createLineItem(
       cart.id,
       {
-        // variant_id: variantId,
-        variant_id: "variant_01KFCYG6WW099RWTRTAXBB5903", // 임시로 하드코딩되어있습니다. 추후 테이블에 KRW->krw로 올바르게 들어갔을때 삭제할것
+        variant_id: variantId,
         quantity,
       },
       {},

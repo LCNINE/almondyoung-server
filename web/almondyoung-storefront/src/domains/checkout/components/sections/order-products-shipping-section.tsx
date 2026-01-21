@@ -70,8 +70,6 @@ function ProductItem({
   const salePrice = item.total ?? item.unit_price * quantity
   const hasDiscount = originalPrice && originalPrice > salePrice
 
-  console.log("thumbnail:", thumbnail)
-
   return (
     <div className={showDivider ? "border-b border-gray-100 pb-4" : ""}>
       <div className="flex items-start gap-3 md:gap-4">
