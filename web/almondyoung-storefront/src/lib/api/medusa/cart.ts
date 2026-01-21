@@ -15,20 +15,18 @@ import { revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
 import { getRegion } from "./regions"
 import { HttpApiError } from "../api-error"
+import { transferCart } from "./customer"
 
 /**
  * Retrieves a cart by its ID. If no ID is provided, it will use the cart ID from the cookies.
+ * If no cookie exists but user is authenticated, tries to find the customer's cart.
  * @param cartId - optional - The ID of the cart to retrieve.
  * @returns The cart object if found, or null if not found.
  */
 export async function retrieveCart(cartId?: string, fields?: string) {
-  const id = cartId || (await getCartId())
+  let id = cartId || (await getCartId())
   fields ??=
     "*items, *region, *items.product, *items.variant, *items.thumbnail, *items.metadata, +items.total, *promotions, +shipping_methods.name"
-
-  if (!id) {
-    return null
-  }
 
   const headers = {
     ...(await getAuthHeaders()),
@@ -36,6 +34,35 @@ export async function retrieveCart(cartId?: string, fields?: string) {
 
   const next = {
     ...(await getCacheOptions("carts")),
+  }
+
+  // 쿠키에 cart_id가 없으면 customer의 카트를 조회 시도
+  if (!id && headers.authorization) {
+    try {
+      const response = await sdk.client.fetch<{
+        carts: HttpTypes.StoreCart[]
+      }>(`/store/carts`, {
+        method: "GET",
+        query: {
+          fields: "id",
+          limit: 1,
+        },
+        headers,
+        cache: "no-store",
+      })
+
+      if (response.carts && response.carts.length > 0) {
+        id = response.carts[0].id
+        // 찾은 카트 ID를 쿠키에 저장
+        await setCartId(id)
+      }
+    } catch (error) {
+      console.error("Customer cart lookup failed:", error)
+    }
+  }
+
+  if (!id) {
+    return null
   }
 
   return await sdk.client
@@ -62,7 +89,8 @@ export async function getOrSetCart(countryCode: string) {
     throw new Error(`Region not found for country code: ${countryCode}`)
   }
 
-  let cart = await retrieveCart(undefined, "id,region_id")
+  // customer_id도 함께 조회해서 연결 여부 확인
+  let cart = await retrieveCart(undefined, "id,region_id,customer_id")
 
   const headers = {
     ...(await getAuthHeaders()),
@@ -78,8 +106,26 @@ export async function getOrSetCart(countryCode: string) {
 
     await setCartId(cart.id)
 
+    // 로그인된 사용자라면 카트를 고객에게 연결
+    if (headers.authorization) {
+      try {
+        await transferCart()
+      } catch (error) {
+        console.error("Cart transfer failed:", error)
+      }
+    }
+
     const cartCacheTag = await getCacheTag("carts")
     revalidateTag(cartCacheTag)
+  } else if (headers.authorization && !cart.customer_id) {
+    // 기존 카트가 있지만 고객에게 연결되지 않은 경우 연결
+    try {
+      await transferCart()
+      const cartCacheTag = await getCacheTag("carts")
+      revalidateTag(cartCacheTag)
+    } catch (error) {
+      console.error("Cart transfer failed:", error)
+    }
   }
 
   if (cart && cart?.region_id !== region.id) {

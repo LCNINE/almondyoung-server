@@ -13,6 +13,7 @@ import {
   updateLineItem,
   deleteLineItem,
 } from "@lib/api/medusa/cart"
+import { transferCart } from "@lib/api/medusa/customer"
 import type { HttpTypes } from "@medusajs/types"
 import { toast } from "sonner"
 
@@ -57,25 +58,44 @@ export function CartMainClient() {
   const [cartItems, setCartItems] = useState<CartItem[]>([])
   const [checkedItems, setCheckedItems] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [isUpdating, setIsUpdating] = useState(false)
   const [recommendedProducts, setRecommendedProducts] = useState<any[]>([])
 
   // 장바구니 데이터 로드
   const loadCart = useCallback(async () => {
+    console.log("[장바구니] 로드 시작...")
     setIsLoading(true)
     try {
-      const cart = await retrieveCart()
+      // customer_id도 함께 조회
+      const cart = await retrieveCart(
+        undefined,
+        "*items, *region, *items.product, *items.variant, *items.thumbnail, *items.metadata, +items.total, *promotions, +shipping_methods.name, +customer_id"
+      )
+      console.log("[장바구니] API 응답:", cart)
+
+      // 카트가 있지만 고객에게 연결되지 않은 경우 연결 시도
+      if (cart && !cart.customer_id) {
+        try {
+          await transferCart()
+          console.log("[장바구니] 카트를 고객에게 연결 완료")
+        } catch (error) {
+          // 로그인 안 된 상태면 실패할 수 있음 - 무시
+          console.log("[장바구니] 카트 연결 스킵 (로그인 필요)")
+        }
+      }
+
       if (cart?.items && cart.items.length > 0) {
         const items = cart.items.map(mapMedusaItemToCartItem)
+        console.log("[장바구니] 매핑된 아이템:", items)
         setCartItems(items)
         // 기본으로 모든 아이템 선택
         setCheckedItems(items.map((item) => item.id))
       } else {
+        console.log("[장바구니] 아이템 없음")
         setCartItems([])
         setCheckedItems([])
       }
     } catch (error) {
-      console.error("장바구니 로드 실패:", error)
+      console.error("[장바구니] 로드 실패:", error)
       setCartItems([])
       setCheckedItems([])
     } finally {
@@ -113,7 +133,6 @@ export function CartMainClient() {
   }
 
   const handleDeleteItem = async (id: string) => {
-    setIsUpdating(true)
     try {
       await deleteLineItem(id)
       setCartItems((prev) => prev.filter((item) => item.id !== id))
@@ -122,14 +141,11 @@ export function CartMainClient() {
     } catch (error) {
       console.error("상품 삭제 실패:", error)
       toast.error("상품 삭제에 실패했습니다.")
-    } finally {
-      setIsUpdating(false)
     }
   }
 
   const handleDeleteSelected = async () => {
     if (checkedItems.length === 0) return
-    setIsUpdating(true)
     try {
       // 선택된 아이템들 순차 삭제
       await Promise.all(checkedItems.map((id) => deleteLineItem(id)))
@@ -143,8 +159,6 @@ export function CartMainClient() {
       toast.error("상품 삭제에 실패했습니다.")
       // 실패 시 다시 로드
       await loadCart()
-    } finally {
-      setIsUpdating(false)
     }
   }
 
