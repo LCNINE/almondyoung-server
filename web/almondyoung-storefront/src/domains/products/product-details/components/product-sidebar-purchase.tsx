@@ -1,18 +1,28 @@
 "use client"
 
+import { SingleOptionQuantitySelector } from "@/app/[countryCode]/(main)/products/components/single-option-quantity-selector"
 import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
-import { Spinner } from "@/components/shared/spinner"
 import { useAddToCart } from "@hooks/api/use-add-to-cart"
 import type { ProductDetail } from "@lib/types/ui/product"
-import { SingleOptionQuantitySelector } from "@/app/[countryCode]/(main)/products/components/single-option-quantity-selector"
+import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Bell, Heart, MessageCircle, Zap } from "lucide-react"
 import { useState } from "react"
+import { toast } from "sonner"
 import { ProductOptionSelector } from "./product-option-selector"
 import { ProductPriceDisplay } from "./product-price-display"
 import { ProductRatingDisplay } from "./product-rating-display"
 import { ProductShippingInfo } from "./product-shipping-info"
-import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
-import { toast } from "sonner"
+import { usePathname, useRouter } from "next/navigation"
 
 type Props = {
   product: ProductDetail
@@ -20,6 +30,7 @@ type Props = {
   isWishlistPending: boolean
   onWishlistToggle: (productId: string) => void
   countryCode: string
+  isUser: boolean
 }
 
 /**
@@ -33,9 +44,13 @@ export function ProductSidebarPurchase({
   isWishlistPending,
   onWishlistToggle,
   countryCode,
+  isUser,
 }: Props) {
+  const router = useRouter()
+  const pathname = usePathname()
   // 내부 상태 관리
   const [quantity, setQuantity] = useState(1)
+  const [showLoginDialog, setShowLoginDialog] = useState(false)
   const [selectedOptions, setSelectedOptions] = useState<
     Record<string, string>
   >({})
@@ -178,6 +193,11 @@ export function ProductSidebarPurchase({
   }
 
   const handleBuyNow = () => {
+    if (!isUser) {
+      setShowLoginDialog(true)
+      return
+    }
+
     if (!isSingleOption && selectedCartOptions.length === 0) {
       toast.error("옵션을 선택해 주세요.")
       return
@@ -186,8 +206,16 @@ export function ProductSidebarPurchase({
     handleAddToCart()
     window.location.href = `/${countryCode}/checkout`
   }
+
+  const handleLoginConfirm = () => {
+    setShowLoginDialog(false)
+    router.push(
+      `/${countryCode}/login?redirect_to=${encodeURIComponent(pathname)}`
+    )
+  }
   return (
-    <aside className="hidden w-full min-w-[383px] overflow-y-auto md:sticky md:top-0 md:block md:max-h-screen md:max-w-[383px] lg:max-w-[480px]">
+    <>
+      <aside className="hidden w-full min-w-[383px] overflow-y-auto md:sticky md:top-0 md:block md:max-h-screen md:max-w-[383px] lg:max-w-[480px]">
       <div className="h-full bg-white p-6">
         {/* 헤더: 브랜드, 상품명, 액션 버튼 */}
         <header className="flex justify-between gap-4">
@@ -333,6 +361,9 @@ export function ProductSidebarPurchase({
                 size="lg"
                 className="flex-1 cursor-pointer"
                 onClick={handleBuyNow}
+                disabled={isLoading}
+                spinnerColor="blue"
+                isLoading={isLoading}
               >
                 바로구매
               </CustomButton>
@@ -341,5 +372,24 @@ export function ProductSidebarPurchase({
         </footer>
       </div>
     </aside>
+
+      {/* 로그인 필요 확인 모달 */}
+      <AlertDialog open={showLoginDialog} onOpenChange={setShowLoginDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>로그인이 필요합니다</AlertDialogTitle>
+            <AlertDialogDescription>
+              로그인이 필요한 기능입니다. 로그인 화면으로 이동하시겠습니까?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogAction onClick={handleLoginConfirm}>
+              로그인하기
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 }

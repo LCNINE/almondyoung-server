@@ -1,5 +1,15 @@
 "use client"
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Breadcrumb } from "@components/layout/components/breadcrumb"
 import { useAddToCart } from "@hooks/api/use-add-to-cart"
 import { useRecentViews } from "@hooks/api/use-recent-views"
@@ -79,6 +89,7 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   >([])
   const [showSuccessMessage, setShowSuccessMessage] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
+  const [showLoginDialog, setShowLoginDialog] = useState(false)
 
   const [isPending, startTransition] = useTransition()
 
@@ -225,8 +236,7 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
               product.thumbnails?.[0] ||
               product.thumbnail ||
               "https://placehold.co/80x80?text=No+Image",
-            stock:
-              (variantId && product.skuStock?.[variantId]) || undefined,
+            stock: (variantId && product.skuStock?.[variantId]) || undefined,
           },
         ]
       })
@@ -280,7 +290,10 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
     const results = await Promise.all(
       selectedCartOptions.map((option) =>
         option.variantId
-          ? addToCart({ variantId: option.variantId, quantity: option.quantity })
+          ? addToCart({
+              variantId: option.variantId,
+              quantity: option.quantity,
+            })
           : Promise.resolve({ success: false })
       )
     )
@@ -292,6 +305,11 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   }
 
   const handleBuyNow = async () => {
+    if (!user) {
+      setShowLoginDialog(true)
+      return
+    }
+
     if (!isSingleOption && selectedCartOptions.length === 0) {
       toast.error("옵션을 선택해 주세요.")
       return
@@ -301,6 +319,13 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
     if (didAdd) {
       window.location.href = `/${countryCode}/checkout`
     }
+  }
+
+  const handleLoginConfirm = () => {
+    setShowLoginDialog(false)
+    router.push(
+      `/${countryCode}/login?redirect_to=${encodeURIComponent(window.location.pathname)}`
+    )
   }
 
   const handleGoToCart = () => {
@@ -391,6 +416,7 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
             isWishlistPending={isPending}
             onWishlistToggle={handleWishlistToggle}
             countryCode={countryCode}
+            isUser={!!user}
           />
         </div>
       </div>
@@ -430,6 +456,24 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
           </>,
           document.body
         )}
+
+      {/* 로그인 필요 확인 모달 */}
+      <AlertDialog open={showLoginDialog} onOpenChange={setShowLoginDialog}>
+        <AlertDialogContent className="z-80">
+          <AlertDialogHeader>
+            <AlertDialogTitle>로그인이 필요합니다</AlertDialogTitle>
+            <AlertDialogDescription>
+              로그인이 필요한 기능입니다. 로그인 화면으로 이동하시겠습니까?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogAction onClick={handleLoginConfirm}>
+              로그인하기
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
