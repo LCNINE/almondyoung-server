@@ -1,5 +1,8 @@
 "use client"
 
+import { ShippingSection } from "@/domains/checkout/components/sections/shipping-section"
+import type { ShippingMemo } from "@/domains/checkout/components/sections/shipping-section/types"
+import { updateCart } from "@/lib/api/medusa/cart"
 import type { UserDetail } from "@lib/types/ui/user"
 import { StoreCart } from "@medusajs/types"
 import { loadTossPayments } from "@tosspayments/tosspayments-sdk"
@@ -12,9 +15,8 @@ import { OrderProductsSection } from "domains/checkout/components/sections/order
 import { PaymentMethodSection } from "domains/checkout/components/sections/payment-method-section"
 import { PaymentInfoSection } from "domains/checkout/components/sections/paymentInfo-section"
 import { ReceiptSection } from "domains/checkout/components/sections/receipt-section"
-import { ShippingSection } from "@/domains/checkout/components/sections/shipping-section"
 import { useParams, useRouter } from "next/navigation"
-import { useRef, useState } from "react"
+import { useCallback, useRef, useState } from "react"
 
 interface CheckoutTemplateProps {
   user: UserDetail
@@ -36,6 +38,16 @@ export default function CheckoutTemplate({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const tossPaymentRef = useRef<any>(null)
+
+  // 배송 메모 상태
+  const [shippingMemo, setShippingMemo] = useState<ShippingMemo>(() => ({
+    type: (storeCart?.metadata?.shipping_memo_type as string) || "",
+    custom: (storeCart?.metadata?.shipping_memo_custom as string) || "",
+  }))
+
+  const handleShippingMemoChange = useCallback((memo: ShippingMemo) => {
+    setShippingMemo(memo)
+  }, [])
 
   // Intent 생성 및 토스 결제 초기화
   const initializeTossPayment = async () => {
@@ -88,6 +100,15 @@ export default function CheckoutTemplate({
     try {
       setLoading(true)
       setError(null)
+
+      // 결제 전 배송 메모 저장
+      await updateCart({
+        metadata: {
+          shipping_memo_type: shippingMemo.type,
+          shipping_memo_custom:
+            shippingMemo.type === "other" ? shippingMemo.custom : "",
+        },
+      })
 
       if (selectedMethod === "toss") {
         // 토스 결제: 결제창 열기
@@ -221,16 +242,12 @@ export default function CheckoutTemplate({
           {/* 왼쪽 섹션 */}
           <div className="md:max-w-[820px] md:min-w-[420px] md:flex-1">
             <ShippingSection
-              shippingMemoType={
-                storeCart?.metadata?.shipping_memo_type as string | null
-              }
-              shippingMemoCustom={
-                storeCart?.metadata?.shipping_memo_custom as string | null
-              }
+              shippingAddress={storeCart?.shipping_address || null}
               addressName={
                 storeCart?.metadata?.shipping_address_name as string | null
               }
-              shippingAddress={storeCart?.shipping_address || null}
+              shippingMemo={shippingMemo}
+              onShippingMemoChange={handleShippingMemoChange}
             />
             <OrderProductsSection />
             <DiscountSection />

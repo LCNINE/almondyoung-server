@@ -1,10 +1,15 @@
 import { HttpTypes, StoreCartAddress } from "@medusajs/types"
 
+export interface ShippingMemo {
+  type: string
+  custom: string
+}
+
 export interface ShippingSectionProps {
   shippingAddress: StoreCartAddress | null
   addressName?: string | null
-  shippingMemoType?: string | null
-  shippingMemoCustom?: string | null
+  shippingMemo: ShippingMemo
+  onShippingMemoChange: (memo: ShippingMemo) => void
 }
 
 export interface EditAddressState {

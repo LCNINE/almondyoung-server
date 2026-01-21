@@ -1,9 +1,7 @@
 "use client"
 
-import { updateCart } from "@/lib/api/medusa/cart"
 import { HttpTypes } from "@medusajs/types"
-import debounce from "lodash/debounce"
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
+import { useCallback, useMemo, useState } from "react"
 import { ShippingAddressModal } from "./address-form-modal"
 import { ShippingAddressSelectorModal } from "./address-selector-modal"
 import {
@@ -12,7 +10,6 @@ import {
   EmptyAddressState,
   ShippingMemoSelector,
 } from "./components"
-import { DEBOUNCE_DELAY, type ShippingMemoValue } from "./constants"
 import { useAutoFillShipping } from "./hooks/use-auto-fill-shipping"
 import type { EditAddressState, ShippingSectionProps } from "./types"
 import { formatAddress, isValidAddress } from "./utils"
@@ -20,20 +17,14 @@ import { formatAddress, isValidAddress } from "./utils"
 export const ShippingSection = ({
   shippingAddress,
   addressName,
-  shippingMemoType,
-  shippingMemoCustom,
+  shippingMemo,
+  onShippingMemoChange,
 }: ShippingSectionProps) => {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isSelectorOpen, setIsSelectorOpen] = useState(false)
   const [modalMode, setModalMode] = useState<"create" | "edit">("create")
   const [editAddressState, setEditAddressState] =
     useState<EditAddressState | null>(null)
-
-  const [selectedMemoType, setSelectedMemoType] = useState<
-    ShippingMemoValue | ""
-  >((shippingMemoType as ShippingMemoValue) || "")
-  const [customMemo, setCustomMemo] = useState(shippingMemoCustom || "")
-  const [isPending, startTransition] = useTransition()
 
   // 자동 배송지 채움
   const { isAutoFilling } = useAutoFillShipping({ shippingAddress })
@@ -48,36 +39,7 @@ export const ShippingSection = ({
     [shippingAddress]
   )
 
-  // 메모 타입 동기화
-  useEffect(() => {
-    setSelectedMemoType((shippingMemoType as ShippingMemoValue) || "")
-    setCustomMemo(shippingMemoCustom || "")
-  }, [shippingMemoType, shippingMemoCustom])
-
-  // 디바운스된 메모 저장
-  const saveShippingMemo = useMemo(
-    () =>
-      debounce((type: ShippingMemoValue | "", custom: string) => {
-        startTransition(async () => {
-          try {
-            await updateCart({
-              metadata: {
-                shipping_memo_type: type,
-                shipping_memo_custom: type === "other" ? custom : "",
-              },
-            })
-          } catch (error) {
-            console.error("배송메모 저장 실패:", error)
-          }
-        })
-      }, DEBOUNCE_DELAY),
-    []
-  )
-
-  useEffect(() => {
-    return () => saveShippingMemo.cancel()
-  }, [saveShippingMemo])
-
+  // 핸들러
   const handleAddNewAddress = useCallback(() => {
     setModalMode("create")
     setEditAddressState(null)
@@ -119,24 +81,22 @@ export const ShippingSection = ({
 
   const handleMemoTypeChange = useCallback(
     (value: string) => {
-      const memoType = value as ShippingMemoValue
-      setSelectedMemoType(memoType)
-
-      if (memoType !== "other") {
-        setCustomMemo("")
-        saveShippingMemo(memoType, "")
-      }
+      onShippingMemoChange({
+        type: value,
+        custom: value === "other" ? shippingMemo.custom : "",
+      })
     },
-    [saveShippingMemo]
+    [onShippingMemoChange, shippingMemo.custom]
   )
 
   const handleCustomMemoChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const value = e.target.value
-      setCustomMemo(value)
-      saveShippingMemo("other", value)
+      onShippingMemoChange({
+        type: "other",
+        custom: e.target.value,
+      })
     },
-    [saveShippingMemo]
+    [onShippingMemoChange]
   )
 
   const renderContent = () => {
@@ -163,9 +123,8 @@ export const ShippingSection = ({
           onChangeClick={() => setIsSelectorOpen(true)}
         />
         <ShippingMemoSelector
-          selectedMemoType={selectedMemoType}
-          customMemo={customMemo}
-          isPending={isPending}
+          selectedMemoType={shippingMemo.type}
+          customMemo={shippingMemo.custom}
           onMemoTypeChange={handleMemoTypeChange}
           onCustomMemoChange={handleCustomMemoChange}
         />

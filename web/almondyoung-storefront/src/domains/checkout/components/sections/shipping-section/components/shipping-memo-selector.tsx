@@ -9,23 +9,24 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
-import { SHIPPING_MEMO_OPTIONS, type ShippingMemoValue } from "../constants"
+import { SHIPPING_MEMO_OPTIONS } from "../constants"
 
 interface ShippingMemoSelectorProps {
-  selectedMemoType: ShippingMemoValue | ""
+  selectedMemoType: string
   customMemo: string
-  isPending: boolean
   onMemoTypeChange: (value: string) => void
   onCustomMemoChange: (e: React.ChangeEvent<HTMLInputElement>) => void
 }
 
 /**
- * 배송 메모 선택 컴포넌트
+ * 배송 메모 선택 컴포넌트 (Controlled)
+ *
+ * - 저장은 하지 않고 상태 변경만 처리
+ * - 실제 저장은 결제 시점에 상위에서 처리
  */
 export function ShippingMemoSelector({
   selectedMemoType,
   customMemo,
-  isPending,
   onMemoTypeChange,
   onCustomMemoChange,
 }: ShippingMemoSelectorProps) {
@@ -59,7 +60,6 @@ export function ShippingMemoSelector({
       <CustomMemoInput
         isVisible={isOtherSelected}
         value={customMemo}
-        isPending={isPending}
         onChange={onCustomMemoChange}
       />
     </div>
@@ -72,12 +72,10 @@ export function ShippingMemoSelector({
 function CustomMemoInput({
   isVisible,
   value,
-  isPending,
   onChange,
 }: {
   isVisible: boolean
   value: string
-  isPending: boolean
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void
 }) {
   return (
@@ -102,11 +100,6 @@ function CustomMemoInput({
             {value.length}/50
           </span>
         </div>
-        {isPending && (
-          <p className="mt-1.5 text-[11px] text-gray-500 md:text-xs">
-            저장 중...
-          </p>
-        )}
       </div>
     </div>
   )
