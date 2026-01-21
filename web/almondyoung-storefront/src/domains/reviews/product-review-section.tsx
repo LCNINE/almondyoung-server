@@ -18,6 +18,7 @@ type Props = {
   productId: string
   totalReviews: number
   averageRating: number
+  onTotalChange?: (total: number) => void
 }
 
 const ITEMS_PER_PAGE = 10
@@ -53,6 +54,7 @@ export function ProductReviewSection({
   productId,
   totalReviews,
   averageRating,
+  onTotalChange,
 }: Props) {
   const [reviews, setReviews] = useState<ReviewDetail[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -75,6 +77,7 @@ export function ProductReviewSection({
       })
       setReviews(result.data.map(mapToReviewDetail))
       setTotal(result.total)
+      onTotalChange?.(result.total)
     } catch (error) {
       console.error("리뷰 로드 실패:", error)
       setReviews([])
