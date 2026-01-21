@@ -90,6 +90,7 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   const [showSuccessMessage, setShowSuccessMessage] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
   const [showLoginDialog, setShowLoginDialog] = useState(false)
+  const [reviewCount, setReviewCount] = useState(product?.reviewCount || 0)
 
   const [isPending, startTransition] = useTransition()
 
@@ -366,7 +367,7 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
             {/* 탭 네비게이션 */}
             <ProductTabs
               activeTab={activeTab}
-              reviewCount={product.reviewCount || 0}
+              reviewCount={reviewCount}
               qnaCount={product.qnaCount || 0}
               onTabChange={(tab) => {
                 setActiveTab(tab)
@@ -395,6 +396,7 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                 productId={product.pimMasterId || product.id}
                 totalReviews={product.reviewCount || 0}
                 averageRating={product.rating || 0}
+                onTotalChange={setReviewCount}
               />
             </div>
 
