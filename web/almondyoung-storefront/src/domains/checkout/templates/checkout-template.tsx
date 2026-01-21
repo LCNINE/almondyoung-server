@@ -20,12 +20,12 @@ import { useCallback, useRef, useState } from "react"
 
 interface CheckoutTemplateProps {
   user: UserDetail
-  storeCart: StoreCart | null
+  cart: StoreCart | null
 }
 
 export default function CheckoutTemplate({
   user,
-  storeCart,
+  cart,
 }: CheckoutTemplateProps) {
   const router = useRouter()
   const params = useParams()
@@ -41,8 +41,8 @@ export default function CheckoutTemplate({
 
   // 배송 메모 상태
   const [shippingMemo, setShippingMemo] = useState<ShippingMemo>(() => ({
-    type: (storeCart?.metadata?.shipping_memo_type as string) || "",
-    custom: (storeCart?.metadata?.shipping_memo_custom as string) || "",
+    type: (cart?.metadata?.shipping_memo_type as string) || "",
+    custom: (cart?.metadata?.shipping_memo_custom as string) || "",
   }))
 
   const handleShippingMemoChange = useCallback((memo: ShippingMemo) => {
@@ -242,16 +242,16 @@ export default function CheckoutTemplate({
           {/* 왼쪽 섹션 */}
           <div className="md:max-w-[820px] md:min-w-[420px] md:flex-1">
             <ShippingSection
-              shippingAddress={storeCart?.shipping_address || null}
+              shippingAddress={cart?.shipping_address || null}
               addressName={
-                storeCart?.metadata?.shipping_address_name as string | null
+                cart?.metadata?.shipping_address_name as string | null
               }
               shippingMemo={shippingMemo}
               onShippingMemoChange={handleShippingMemoChange}
             />
             <OrderProductsSection
-              products={storeCart?.items}
-              shippingTotal={storeCart?.shipping_total}
+              products={cart?.items}
+              shippingTotal={cart?.shipping_total}
             />
             <DiscountSection />
             <PaymentInfoSection />
