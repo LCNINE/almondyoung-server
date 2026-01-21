@@ -31,7 +31,8 @@ const fetchCategoryBestProducts = async (
   const reviews = await Promise.all(
     bestProducts.products.map((product) =>
       getReviewsByProductId({
-        productId: product.id,
+        // handle이 PIM의 masterId(UUID)이므로 이것을 사용
+        productId: product.handle || product.id,
       })
     )
   )
@@ -75,7 +76,8 @@ const fetchCategoryBestProducts = async (
       const displayPrice = membershipPrice || basePrice
       const imageUrl = product.thumbnail || ""
 
-      const reviewData = reviewsMap.get(product.id)
+      // handle이 PIM의 masterId(UUID)이므로 이것으로 조회
+      const reviewData = reviewsMap.get(product.handle || product.id)
       const rating = reviewData?.rating || 0
       const reviewCount = reviewData?.reviewCount || 0
 

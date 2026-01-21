@@ -3,21 +3,43 @@ import { getPercentageDiff } from "./get-precentage-diff"
 import { convertToLocale } from "./money"
 
 const getCalculatedAmount = (variant: any) => {
-  return (
-    variant?.calculated_price_incl_tax ??
-    variant?.calculated_price ??
-    variant?.calculated_price?.calculated_amount ??
-    null
-  )
+  // calculated_price_incl_tax가 있으면 사용
+  if (typeof variant?.calculated_price_incl_tax === "number") {
+    return variant.calculated_price_incl_tax
+  }
+
+  // calculated_price가 객체인 경우 calculated_amount 사용
+  const cp = variant?.calculated_price
+  if (typeof cp === "object" && cp !== null) {
+    return cp.calculated_amount ?? null
+  }
+
+  // calculated_price가 숫자인 경우 직접 사용
+  if (typeof cp === "number") {
+    return cp
+  }
+
+  return null
 }
 
 const getOriginalAmount = (variant: any) => {
-  return (
-    variant?.original_price_incl_tax ??
-    variant?.original_price ??
-    variant?.calculated_price?.original_amount ??
-    null
-  )
+  // original_price_incl_tax가 있으면 사용
+  if (typeof variant?.original_price_incl_tax === "number") {
+    return variant.original_price_incl_tax
+  }
+
+  // original_price가 숫자인 경우 직접 사용
+  if (typeof variant?.original_price === "number") {
+    return variant.original_price
+  }
+
+  // calculated_price 객체에서 original_amount 사용
+  const cp = variant?.calculated_price
+  if (typeof cp === "object" && cp !== null) {
+    return cp.original_amount ?? null
+  }
+
+  return null
 }
 
 const getCurrencyCode = (variant: any) => {

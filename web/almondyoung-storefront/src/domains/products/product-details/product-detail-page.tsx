@@ -392,7 +392,7 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
               className="mb-8 rounded-lg bg-white px-4 py-6 md:px-6"
             >
               <ProductReviewSection
-                productId={product.id}
+                productId={product.pimMasterId || product.id}
                 totalReviews={product.reviewCount || 0}
                 averageRating={product.rating || 0}
               />
