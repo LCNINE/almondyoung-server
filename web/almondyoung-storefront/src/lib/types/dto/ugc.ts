@@ -1,6 +1,7 @@
 interface ReviewResponseDto {
   id: string
   userId: string | null
+  legacyAuthorName: string | null // 레거시 데이터의 마스킹된 작성자명
   productId: string
   rating: number
   content: string
