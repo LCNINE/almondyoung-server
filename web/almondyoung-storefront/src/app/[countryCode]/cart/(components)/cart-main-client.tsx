@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useMemo, useEffect } from "react"
+import React, { useState, useMemo, useEffect, useCallback } from "react"
 import type { CartItem } from "@lib/types/ui/cart"
 import { CartHeader } from "./cart-header"
 import { CartTabsMobile } from "./cart-tabs-mobile"
@@ -8,30 +8,84 @@ import { CartDesktopContent } from "./cart-desktop-content"
 import { CartSummary } from "./cart-summary"
 import { CartFooter } from "./cart-footer"
 import { RecommendedProducts } from "./recommended-products"
+import {
+  retrieveCart,
+  updateLineItem,
+  deleteLineItem,
+} from "@lib/api/medusa/cart"
+import type { HttpTypes } from "@medusajs/types"
+import { toast } from "sonner"
+
+/**
+ * 메두사 장바구니 아이템을 UI용 CartItem으로 변환
+ */
+function mapMedusaItemToCartItem(item: HttpTypes.StoreCartLineItem): CartItem {
+  const variant = item.variant as any
+  const product = item.product as any
+
+  // 옵션 정보 추출
+  const selectedOptions: Record<string, string> = {}
+  if (variant?.options) {
+    for (const opt of variant.options) {
+      const optionTitle = opt.option?.title || opt.option_id || "옵션"
+      selectedOptions[optionTitle] = opt.value
+    }
+  }
+
+  // 가격 정보
+  const basePrice = item.unit_price || 0
+  const membershipPrice = (variant?.metadata as any)?.membershipPrice || basePrice
+
+  return {
+    id: item.id,
+    productId: product?.id || "",
+    product: {
+      name: item.title || product?.title || "상품명 없음",
+      thumbnail: item.thumbnail || product?.thumbnail || "",
+      basePrice,
+      membershipPrice,
+      brand: product?.subtitle || (product?.metadata as any)?.brand || "",
+      isMembershipOnly: false,
+    },
+    selectedOptions,
+    quantity: item.quantity,
+    isSelected: true,
+  }
+}
 
 export function CartMainClient() {
   const [cartItems, setCartItems] = useState<CartItem[]>([])
   const [checkedItems, setCheckedItems] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [isUpdating, setIsUpdating] = useState(false)
   const [recommendedProducts, setRecommendedProducts] = useState<any[]>([])
 
   // 장바구니 데이터 로드
-  useEffect(() => {
-    const loadCart = async () => {
-      setIsLoading(true)
-      try {
-        // TODO: 실제 장바구니 API 연동 필요
+  const loadCart = useCallback(async () => {
+    setIsLoading(true)
+    try {
+      const cart = await retrieveCart()
+      if (cart?.items && cart.items.length > 0) {
+        const items = cart.items.map(mapMedusaItemToCartItem)
+        setCartItems(items)
+        // 기본으로 모든 아이템 선택
+        setCheckedItems(items.map((item) => item.id))
+      } else {
         setCartItems([])
-      } catch (error) {
-        console.error("장바구니 로드 실패:", error)
-        setCartItems([])
-      } finally {
-        setIsLoading(false)
+        setCheckedItems([])
       }
+    } catch (error) {
+      console.error("장바구니 로드 실패:", error)
+      setCartItems([])
+      setCheckedItems([])
+    } finally {
+      setIsLoading(false)
     }
-
-    loadCart()
   }, [])
+
+  useEffect(() => {
+    loadCart()
+  }, [loadCart])
 
   // 추천 제품 로드
   useEffect(() => {
@@ -58,25 +112,58 @@ export function CartMainClient() {
     setCheckedItems(checked ? cartItems.map((item) => item.id) : [])
   }
 
-  const handleDeleteItem = (id: string) => {
-    setCartItems((prev) => prev.filter((item) => item.id !== id))
-    setCheckedItems((prev) => prev.filter((itemId) => itemId !== id))
+  const handleDeleteItem = async (id: string) => {
+    setIsUpdating(true)
+    try {
+      await deleteLineItem(id)
+      setCartItems((prev) => prev.filter((item) => item.id !== id))
+      setCheckedItems((prev) => prev.filter((itemId) => itemId !== id))
+      toast.success("상품이 삭제되었습니다.")
+    } catch (error) {
+      console.error("상품 삭제 실패:", error)
+      toast.error("상품 삭제에 실패했습니다.")
+    } finally {
+      setIsUpdating(false)
+    }
   }
 
-  const handleDeleteSelected = () => {
+  const handleDeleteSelected = async () => {
     if (checkedItems.length === 0) return
-    setCartItems((prev) =>
-      prev.filter((item) => !checkedItems.includes(item.id))
-    )
-    setCheckedItems([])
+    setIsUpdating(true)
+    try {
+      // 선택된 아이템들 순차 삭제
+      await Promise.all(checkedItems.map((id) => deleteLineItem(id)))
+      setCartItems((prev) =>
+        prev.filter((item) => !checkedItems.includes(item.id))
+      )
+      setCheckedItems([])
+      toast.success("선택한 상품이 삭제되었습니다.")
+    } catch (error) {
+      console.error("선택 상품 삭제 실패:", error)
+      toast.error("상품 삭제에 실패했습니다.")
+      // 실패 시 다시 로드
+      await loadCart()
+    } finally {
+      setIsUpdating(false)
+    }
   }
 
-  const handleQuantityChange = (id: string, newQuantity: number) => {
+  const handleQuantityChange = async (id: string, newQuantity: number) => {
+    const quantity = Math.max(1, newQuantity)
+
+    // 낙관적 업데이트
     setCartItems((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, quantity: Math.max(1, newQuantity) } : item
-      )
+      prev.map((item) => (item.id === id ? { ...item, quantity } : item))
     )
+
+    try {
+      await updateLineItem({ lineId: id, quantity })
+    } catch (error) {
+      console.error("수량 변경 실패:", error)
+      toast.error("수량 변경에 실패했습니다.")
+      // 실패 시 다시 로드
+      await loadCart()
+    }
   }
 
   // 가격 계산
