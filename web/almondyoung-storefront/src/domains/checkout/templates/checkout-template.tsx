@@ -249,7 +249,10 @@ export default function CheckoutTemplate({
               shippingMemo={shippingMemo}
               onShippingMemoChange={handleShippingMemoChange}
             />
-            <OrderProductsSection />
+            <OrderProductsSection
+              products={storeCart?.items}
+              shippingTotal={storeCart?.shipping_total}
+            />
             <DiscountSection />
             <PaymentInfoSection />
             <PaymentMethodSection
