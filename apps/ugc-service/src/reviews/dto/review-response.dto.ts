@@ -23,6 +23,13 @@ export class ReviewResponseDto {
   @ApiProperty({ description: '리뷰 본문' })
   content: string;
 
+  @ApiProperty({
+    description: '레거시 작성자명',
+    nullable: true,
+    example: '홍길동',
+  })
+  legacy_author_name: string | null;
+
   @ApiProperty({ description: '첨부 미디어 파일 ID 목록', type: [String] })
   mediaFileIds: string[];
 
