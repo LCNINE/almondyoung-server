@@ -2,7 +2,7 @@
 
 import React, { forwardRef } from "react"
 import { ChevronRight, X } from "lucide-react"
-import { MembershipTagIcon as MemberShipTagIcon } from "../../icons/membership-tag-icon"
+import { ProductMembershipBadge } from "@/components/shared/badges/product-membership-badge"
 
 // --- Props 타입 정의 ---
 interface CartCardThumbnailProps {
@@ -121,7 +121,7 @@ export const CartCardPrice = ({
           {(discounted ?? original).toLocaleString()}원
         </span>
         {membership && discounted != null && (
-          <MemberShipTagIcon width={80} height={16} />
+          <ProductMembershipBadge size="sm" />
         )}
       </div>
     </>
@@ -211,11 +211,7 @@ export const CartCardPCPrice = ({
             <span className="text-[19px] font-bold text-gray-900">
               {discounted.toLocaleString()}원
             </span>
-            {isMembership && (
-              <div className="flex items-center gap-0.5">
-                <MemberShipTagIcon width={90} height={20} />
-              </div>
-            )}
+            {isMembership && <ProductMembershipBadge size="md" />}
           </div>
         </div>
       ) : (
