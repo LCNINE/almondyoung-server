@@ -10,8 +10,7 @@ import { CartItemList } from "./cart-item-list"
 interface CartTabsMobileProps {
   cartItems: CartItem[]
   checkedItems: string[]
-  remainingForFreeShipping: number
-  freeShippingProgress: number
+  shippingTotal: number
   onCheckAll: (checked: boolean) => void
   onDeleteSelected: () => void
   onCheckItem: (id: string, checked: boolean) => void
@@ -22,8 +21,7 @@ interface CartTabsMobileProps {
 export function CartTabsMobile({
   cartItems,
   checkedItems,
-  remainingForFreeShipping,
-  freeShippingProgress,
+  shippingTotal,
   onCheckAll,
   onDeleteSelected,
   onCheckItem,
@@ -54,8 +52,7 @@ export function CartTabsMobile({
               <div className="cart-inner space-y-4">
                 {/* 무료배송 안내 - 모바일 */}
                 <ShippingNotice
-                  remainingForFreeShipping={remainingForFreeShipping}
-                  freeShippingProgress={freeShippingProgress}
+                  shippingTotal={shippingTotal}
                   variant="mobile"
                 />
 

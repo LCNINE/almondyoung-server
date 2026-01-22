@@ -486,7 +486,10 @@ export async function updateRegion(countryCode: string, currentPath: string) {
   redirect(`/${countryCode}${currentPath}`)
 }
 
-export const listCartShippingMethods = async (cartId: string) => {
+export const listCartShippingMethods = async (
+  cartId: string,
+  cache: RequestCache = "force-cache"
+) => {
   const headers = {
     ...(await getAuthHeaders()),
   }
@@ -505,11 +508,33 @@ export const listCartShippingMethods = async (cartId: string) => {
         },
         headers,
         next,
-        cache: "force-cache",
+        cache,
       }
     )
     .then(({ shipping_options }) => shipping_options)
     .catch(() => {
       return null
     })
+}
+
+export const addCartShippingMethod = async (
+  cartId: string,
+  optionId: string
+) => {
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  return sdk.store.cart
+    .addShippingMethod(cartId, { option_id: optionId }, {}, headers)
+    .then(async ({ cart }: { cart: HttpTypes.StoreCart }) => {
+      const cartCacheTag = await getCacheTag("carts")
+      revalidateTag(cartCacheTag)
+
+      const fulfillmentCacheTag = await getCacheTag("fulfillment")
+      revalidateTag(fulfillmentCacheTag)
+
+      return cart
+    })
+    .catch(medusaError)
 }

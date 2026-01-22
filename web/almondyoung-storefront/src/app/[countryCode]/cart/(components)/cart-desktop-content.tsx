@@ -9,8 +9,7 @@ import { CartItemList } from "./cart-item-list"
 interface CartDesktopContentProps {
   cartItems: CartItem[]
   checkedItems: string[]
-  remainingForFreeShipping: number
-  freeShippingProgress: number
+  shippingTotal: number
   onCheckAll: (checked: boolean) => void
   onDeleteSelected: () => void
   onCheckItem: (id: string, checked: boolean) => void
@@ -21,8 +20,7 @@ interface CartDesktopContentProps {
 export function CartDesktopContent({
   cartItems,
   checkedItems,
-  remainingForFreeShipping,
-  freeShippingProgress,
+  shippingTotal,
   onCheckAll,
   onDeleteSelected,
   onCheckItem,
@@ -37,8 +35,7 @@ export function CartDesktopContent({
       <div className="mb-6 overflow-hidden rounded-xl border border-gray-200 bg-white">
         {/* PC 무료배송 안내 */}
         <ShippingNotice
-          remainingForFreeShipping={remainingForFreeShipping}
-          freeShippingProgress={freeShippingProgress}
+          shippingTotal={shippingTotal}
           variant="desktop"
         />
 
