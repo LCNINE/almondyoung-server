@@ -33,7 +33,7 @@ export function ShippingNotice({
             <div className="mt-4 flex items-center gap-2">
               <div className="bg-yellow-10 relative h-2 flex-1 rounded-full">
                 <div
-                  className="bg-yellow-30 absolute h-2 rounded-full"
+                  className="bg-yellow-30 absolute h-2 rounded-full transition-all duration-300"
                   style={{ width: `${freeShippingProgress}%` }}
                 />
               </div>
@@ -48,11 +48,11 @@ export function ShippingNotice({
   }
 
   return (
-    <div className="border-b border-gray-200 px-8 py-6">
+    <div className="border-b px-8 py-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <span className="text-lg font-semibold">무료배송</span>
-          <span className="text-sm text-gray-600">
+          <span className="text-3xl font-semibold">무료배송</span>
+          <span className="text-xs font-medium">
             {remainingForFreeShipping > 0
               ? `${remainingForFreeShipping.toLocaleString()}원 추가 시 무료배송 (결제금액 기준)`
               : "무료배송 적용"}
@@ -60,14 +60,14 @@ export function ShippingNotice({
         </div>
       </div>
       <div className="mt-4 flex items-center gap-4">
-        <div className="bg-yellow-10 relative h-3 flex-1 rounded-full">
+        <div className="bg-yellow-10 relative h-2.5 flex-1 overflow-hidden rounded-full">
           <div
-            className="bg-yellow-30 absolute h-3 rounded-full"
+            className="bg-yellow-30 absolute h-2.5 rounded-full transition-all duration-300"
             style={{ width: `${freeShippingProgress}%` }}
           />
         </div>
         <div className="text-yellow-30">
-          <Truck className="h-6 w-6" />
+          <Truck className="h-5 w-5" />
         </div>
       </div>
     </div>
