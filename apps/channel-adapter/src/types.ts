@@ -539,6 +539,17 @@ export interface PimProductSnapshot {
 
   // 분류
   categoryIds?: string[];
+  categories?: Array<{
+    id: string;
+    name: string;
+    slug: string;
+    path: string;
+    parentId: string | null;
+    isActive: boolean;
+    visibility: boolean;
+    showOnMainCategory: boolean;
+    thumbnail?: string;
+  }>;
   brand?: string;
   tags?: string[];
   productType?: string;
@@ -695,6 +706,9 @@ export interface PimActiveVersionChangedEvent {
   versionId: string | null;
   name: string | null;
   previousActiveVersionId: string | null;
+  categoryIds?: string[];
+  primaryCategoryId?: string | null;
   changeReason: 'published' | 'rollback' | 'unpublished';
   changedAt: string;
+  snapshot?: PimProductSnapshot | null;
 }
