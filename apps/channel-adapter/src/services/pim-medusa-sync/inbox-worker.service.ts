@@ -5,6 +5,7 @@ import { inboxEvents } from '../../schema';
 import { eq, and, lte } from 'drizzle-orm';
 import { PimMedusaSyncService } from './pim-medusa-sync.service';
 import type { PimActiveVersionChangedEvent, ChannelAdapterSchema } from '../../types';
+import type { CategoryChangedPayload } from '@packages/event-contracts/streams/product.stream';
 
 @Injectable()
 export class InboxWorkerService implements OnModuleInit {
@@ -70,7 +71,6 @@ export class InboxWorkerService implements OnModuleInit {
                     and(
                         eq(inboxEvents.status, 'pending'),
                         lte(inboxEvents.nextAttemptAt, new Date()),
-                        eq(inboxEvents.aggregateType, 'Product'),
                     ),
                 )
                 .orderBy(inboxEvents.createdAt)
@@ -93,9 +93,10 @@ export class InboxWorkerService implements OnModuleInit {
     // 단일 inbox 이벤트 처리
     private async processInboxEvent(event: any): Promise<void> {
         const eventId = event.id;
+        const eventType = event.eventType;
 
         try {
-            this.logger.debug(`Processing inbox event: ${eventId}`);
+            this.logger.debug(`Processing inbox event: ${eventId} (type: ${eventType})`);
 
             // 상태를 processing으로 변경 (동시성 제어)
             await this.dbService.db
@@ -103,9 +104,22 @@ export class InboxWorkerService implements OnModuleInit {
                 .set({ status: 'processing' })
                 .where(eq(inboxEvents.id, eventId));
 
-            // PIM 동기화 처리
-            const payload: PimActiveVersionChangedEvent = event.payload;
-            await this.syncService.handleActiveVersionChanged(payload);
+            // Route based on event type
+            switch (eventType) {
+                case 'ProductMasterActiveVersionChanged':
+                    const productPayload: PimActiveVersionChangedEvent = event.payload;
+                    await this.syncService.handleActiveVersionChanged(productPayload);
+                    break;
+
+                case 'CategoryChanged':
+                    const categoryPayload: CategoryChangedPayload = event.payload;
+                    await this.syncService.handleCategoryChanged(categoryPayload);
+                    break;
+
+                default:
+                    this.logger.warn(`Unknown event type: ${eventType} for event ${eventId}`);
+                    break;
+            }
 
             // 성공 처리
             await this.dbService.db

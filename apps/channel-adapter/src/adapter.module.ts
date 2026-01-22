@@ -45,6 +45,7 @@ import { OutboxDispatcherService } from './services/outbox-dispatcher.service';
 import { MedusaClient } from './services/pim-medusa-sync/medusa.client';
 import { PimMedusaSyncService } from './services/pim-medusa-sync/pim-medusa-sync.service';
 import { PimProductEventConsumer } from './consumers/pim-product-event.consumer';
+import { PimCategoryConsumer } from './consumers/pim-category.consumer';
 import { PimMedusaMappingRepository } from './services/pim-medusa-sync/pim-medusa-mapping.repository';
 import { InboxWorkerService } from './services/pim-medusa-sync/inbox-worker.service';
 
@@ -117,7 +118,13 @@ function createKafkaConfig() {
       ]
       : []),
   ],
-  controllers: [ChannelAdapterController, SyncStatusController, FulfillmentEventsConsumer, PimProductEventConsumer],
+  controllers: [
+    ChannelAdapterController,
+    SyncStatusController,
+    FulfillmentEventsConsumer,
+    PimProductEventConsumer,
+    PimCategoryConsumer,
+  ],
   providers: [
     ChannelAdapterService,
     SyncStatusService,
@@ -159,6 +166,7 @@ function createKafkaConfig() {
     MedusaClient,
     PimMedusaSyncService,
     PimProductEventConsumer,
+    PimCategoryConsumer,
     PimMedusaMappingRepository,
     InboxWorkerService,
 

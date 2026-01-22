@@ -14,6 +14,7 @@ import type {
 } from '../../types';
 // PIMCLIENT: Type import removed
 // import type { PimCategoryDetail } from './pim.client';
+import type { CategoryChangedPayload } from '@packages/event-contracts/streams/product.stream';
 
 export interface SyncResult {
   success: boolean;
@@ -581,6 +582,90 @@ export class PimMedusaSyncService {
         status: 'active',
       });
       await this.medusaClient.addPricesToPriceList(listId, prices);
+    }
+  }
+
+  /**
+   * Handle CategoryChanged event from PIM
+   */
+  async handleCategoryChanged(
+    event: CategoryChangedPayload,
+  ): Promise<SyncResult> {
+    const { categoryId, changeType, category } = event;
+
+    this.logger.log(`Processing CategoryChanged: ${categoryId} (${changeType})`);
+
+    try {
+      // Handle delete
+      if (changeType === 'deleted' || category === null) {
+        await this.handleCategoryDelete(categoryId);
+        return {
+          success: true,
+          masterId: categoryId,
+          action: 'unpublished',
+        };
+      }
+
+      // Handle create/update/moved (all treated as upsert)
+      const medusaCategoryId = await this.medusaClient.ensureCategoryFromSnapshot({
+        id: category.id,
+        name: category.name,
+        slug: category.slug,
+        path: category.path,
+        parentId: category.parentId,
+        isActive: category.isActive,
+        visibility: category.visibility,
+        showOnMainCategory: category.displaySettings?.showOnMainCategory ?? false,
+        thumbnail: category.thumbnail ?? undefined,
+      });
+
+      this.logger.log(
+        `Category synced to Medusa: PIM=${categoryId} → Medusa=${medusaCategoryId}`,
+      );
+
+      return {
+        success: true,
+        masterId: categoryId,
+        medusaProductId: medusaCategoryId,
+        action: changeType === 'created' ? 'created' : 'updated',
+      };
+    } catch (error) {
+      this.logger.error(
+        `Failed to sync category ${categoryId} to Medusa`,
+        error.stack,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Handle category deletion in Medusa
+   */
+  private async handleCategoryDelete(pimCategoryId: string): Promise<void> {
+    try {
+      const handle = `${pimCategoryId}`;
+      const existing = await this.medusaClient['findCategoryByHandle'](handle);
+
+      if (existing?.id) {
+        // Mark as inactive (soft delete)
+        await this.medusaClient['client'].post(
+          `/product-categories/${existing.id}`,
+          { is_active: false },
+        );
+
+        // Invalidate cache
+        this.medusaClient['categoryCache'].delete(handle);
+
+        this.logger.log(`Marked Medusa category as inactive: ${existing.id}`);
+      } else {
+        this.logger.debug(`Category ${pimCategoryId} not found in Medusa`);
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to delete category ${pimCategoryId} from Medusa`,
+        error.stack,
+      );
+      throw error;
     }
   }
 }
