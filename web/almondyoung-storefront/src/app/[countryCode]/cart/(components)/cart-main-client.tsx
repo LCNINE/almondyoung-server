@@ -35,7 +35,8 @@ function mapMedusaItemToCartItem(item: HttpTypes.StoreCartLineItem): CartItem {
 
   // 가격 정보
   const basePrice = item.unit_price || 0
-  const membershipPrice = (variant?.metadata as any)?.membershipPrice || basePrice
+  const membershipPrice = (variant?.metadata as any)?.membershipPrice || null
+  const isMembershipOnly = (product?.metadata as any)?.isMembershipOnly || false
 
   return {
     id: item.id,
@@ -44,9 +45,9 @@ function mapMedusaItemToCartItem(item: HttpTypes.StoreCartLineItem): CartItem {
       name: item.title || product?.title || "상품명 없음",
       thumbnail: item.thumbnail || product?.thumbnail || "",
       basePrice,
-      membershipPrice,
+      membershipPrice: membershipPrice || basePrice,
       brand: product?.subtitle || (product?.metadata as any)?.brand || "",
-      isMembershipOnly: false,
+      isMembershipOnly,
     },
     selectedOptions,
     quantity: item.quantity,
@@ -198,7 +199,7 @@ export function CartMainClient() {
       (sum, item) =>
         sum +
         (item.product.membershipPrice || item.product.basePrice || 0) *
-          item.quantity,
+        item.quantity,
       0
     )
     const shippingFee = finalPrice >= 50000 ? 0 : 3000
@@ -290,6 +291,7 @@ export function CartMainClient() {
             totalDiscount={totalDiscount}
             finalPrice={finalPrice}
             selectedCount={selectedCount}
+            shippingFee={shippingFee}
           />
         </div>
       </main>
