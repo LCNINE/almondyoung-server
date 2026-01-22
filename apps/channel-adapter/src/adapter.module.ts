@@ -40,7 +40,8 @@ import { InboxService } from './services/inbox.service';
 import { OutboxDispatcherService } from './services/outbox-dispatcher.service';
 
 // PIM-Medusa 동기화 서비스
-import { PimClient } from './services/pim-medusa-sync/pim.client';
+// PIMCLIENT: Removed to enforce MSA boundary - no sync calls between internal services
+// import { PimClient } from './services/pim-medusa-sync/pim.client';
 import { MedusaClient } from './services/pim-medusa-sync/medusa.client';
 import { PimMedusaSyncService } from './services/pim-medusa-sync/pim-medusa-sync.service';
 import { PimProductEventConsumer } from './consumers/pim-product-event.consumer';
@@ -153,7 +154,8 @@ function createKafkaConfig() {
     OutboxDispatcherService,
 
     // PIM-Medusa 동기화
-    PimClient,
+    // PIMCLIENT: Removed to enforce MSA boundary
+    // PimClient,
     MedusaClient,
     PimMedusaSyncService,
     PimProductEventConsumer,
