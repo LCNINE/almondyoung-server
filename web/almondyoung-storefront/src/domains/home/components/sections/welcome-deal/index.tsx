@@ -2,26 +2,19 @@
 
 import { ProductCard } from "@/components/products/prodcut-card"
 import { ProductGrid } from "@/components/products/product-grid"
-import testImg from "@assets/images/test.png"
+import type { ProductCardProps } from "@/lib/types/ui/product"
+import { useParams } from "next/navigation"
+import Link from "next/link"
 import { SectionHeader } from "../../header/section-header"
 import { ProductCarousel } from "../../shared/product-carousel"
 
-export function WelcomeDealSection() {
-  const mockProductData = {
-    brand: "아리메스",
-    title: "아리메스 리뉴얼 블랙 영양제 블랙 10ml",
-    price: 27000,
-    originalPrice: 70000,
-    discount: 78,
-    rating: 4.9,
-    reviewCount: 401,
-    imageSrc: testImg.src,
-  }
+interface WelcomeDealSectionProps {
+  products: ProductCardProps[]
+}
 
-  const products = Array.from({ length: 12 }, (_, index) => ({
-    ...mockProductData,
-    id: String(index + 1),
-  }))
+export function WelcomeDealSection({ products }: WelcomeDealSectionProps) {
+  const params = useParams() as { countryCode?: string }
+  const countryCode = params?.countryCode || "kr"
 
   return (
     <div className="w-full">
@@ -44,14 +37,19 @@ export function WelcomeDealSection() {
                 key={product.id}
                 className="basis-[42%] pl-0"
               >
-                <ProductCard className="border-r-[0.5px] border-r-gray-100 pr-4 last:border-r-0">
-                  <ProductCard.Thumbnail
-                    src={product.imageSrc}
-                    alt={product.title}
-                    className="rounded-sm md:rounded-md"
-                  />
-                  <ProductCard.Info {...product} />
-                </ProductCard>
+                <Link
+                  href={`/${countryCode}/products/${product.id}`}
+                  className="block"
+                >
+                  <ProductCard className="border-r-[0.5px] border-r-gray-100 pr-4 last:border-r-0">
+                    <ProductCard.Thumbnail
+                      src={product.imageSrc}
+                      alt={product.title}
+                      className="rounded-sm md:rounded-md"
+                    />
+                    <ProductCard.Info {...product} />
+                  </ProductCard>
+                </Link>
               </ProductCarousel.Item>
             ))}
           </ProductCarousel.List>
@@ -66,6 +64,7 @@ export function WelcomeDealSection() {
           products={products.slice(0, 5)}
           showRank={false}
           roundedClassName="rounded-sm md:rounded-md"
+          countryCode={countryCode}
         />
       </div>
     </div>

@@ -5,6 +5,10 @@ import { getBestOrderMetricsByCategory } from "@/lib/api/analytics"
 import { getProductList } from "@/lib/api/medusa/products"
 import { getReviewsByProductId } from "@/lib/api/ugc"
 import { ProductCardProps } from "@/lib/types/ui/product"
+import {
+  mapStoreProductsToCardProps,
+  type ReviewSummary,
+} from "@/lib/utils/product-card"
 
 const fetchCategoryBestProducts = async (
   categoryId: string
@@ -38,7 +42,7 @@ const fetchCategoryBestProducts = async (
   )
 
   // 리뷰 데이터 변환
-  const reviewsMap = new Map<string, { rating: number; reviewCount: number }>()
+  const reviewsMap = new Map<string, ReviewSummary>()
   reviews.forEach((review) => {
     if (review.data.length > 0) {
       const productId = review.data[0].productId
@@ -55,46 +59,7 @@ const fetchCategoryBestProducts = async (
     }
   })
 
-  const transformedProducts: ProductCardProps[] = bestProducts.products
-    .map((product) => {
-      if (!product.variants || product.variants.length === 0) {
-        return null
-      }
-
-      const variant = product.variants[0] as any
-
-      const basePrice = (variant.prices?.[0]?.amount as number) || 0
-      const membershipPrice =
-        (variant.metadata as { membershipPrice?: number })?.membershipPrice ||
-        null
-
-      const discount =
-        membershipPrice && basePrice > membershipPrice && basePrice > 0
-          ? Math.round(((basePrice - membershipPrice) / basePrice) * 100)
-          : 0
-
-      const displayPrice = membershipPrice || basePrice
-      const imageUrl = product.thumbnail || ""
-
-      // handle이 PIM의 masterId(UUID)이므로 이것으로 조회
-      const reviewData = reviewsMap.get(product.handle || product.id)
-      const rating = reviewData?.rating || 0
-      const reviewCount = reviewData?.reviewCount || 0
-
-      return {
-        id: product.id,
-        title: product.title || "",
-        price: displayPrice,
-        originalPrice: basePrice,
-        discount,
-        rating,
-        reviewCount,
-        imageSrc: imageUrl,
-      }
-    })
-    .filter((props): props is ProductCardProps => props !== null)
-
-  return transformedProducts
+  return mapStoreProductsToCardProps(bestProducts.products, reviewsMap)
 }
 
 export const getCategoryBestProducts = async (
@@ -110,6 +75,51 @@ export const getCategoryBestProducts = async (
     {
       tags: [`category-best-${categoryId}`, "category-best"],
       revalidate: 3600, // 1시간
+    }
+  )()
+}
+
+const fetchCategoryProducts = async (
+  categoryId: string,
+  regionId?: string,
+  limit = 12
+): Promise<ProductCardProps[]> => {
+  if (!categoryId) {
+    return []
+  }
+
+  const list = await getProductList({
+    categoryId,
+    region_id: regionId,
+    limit,
+  })
+
+  if (!list?.products || list.products.length === 0) {
+    const fallbackList = await getProductList({
+      region_id: regionId,
+      limit,
+    })
+    return mapStoreProductsToCardProps(fallbackList.products || [])
+  }
+
+  return mapStoreProductsToCardProps(list.products)
+}
+
+export const getCategoryProducts = async (
+  categoryId: string,
+  regionId?: string,
+  limit = 12
+): Promise<ProductCardProps[]> => {
+  if (!categoryId) {
+    return []
+  }
+
+  return unstable_cache(
+    () => fetchCategoryProducts(categoryId, regionId, limit),
+    [`category-products-${categoryId}-${regionId || "default"}-${limit}`],
+    {
+      tags: ["category-products", `category-products-${categoryId}`],
+      revalidate: 900, // 15분
     }
   )()
 }

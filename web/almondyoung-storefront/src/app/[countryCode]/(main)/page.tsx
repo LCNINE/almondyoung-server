@@ -1,6 +1,5 @@
 import { ThemeManager } from "@/components/shared/theme-manager"
 import { HomeLoggedInTemplate } from "@/domains/home/template/home-loggedin-template"
-import { getProductList } from "@/lib/api/medusa/products"
 import { getRegion } from "@/lib/api/medusa/regions"
 import { siteConfig } from "@/lib/config/site"
 import { getSEOTags } from "@/lib/seo"
@@ -30,14 +29,6 @@ export default async function Home({
   const result = await getCategoryTree().catch(() => null)
   categories = result?.categories || []
 
-  const productList = await getProductList({
-    region_id: region?.id,
-    // categoryId: categories[0]?.id,
-  }).catch((err) => {
-    console.error("getProductList failed:", err)
-    return null
-  })
-
   // const user = await fetchMe().catch(() => null)
 
   return (
@@ -47,7 +38,10 @@ export default async function Home({
       ) : (
         <HomeLogoutTemplate initialCategories={categories} />
       )} */}
-      <HomeLogoutTemplate initialCategories={categories} />
+      <HomeLogoutTemplate
+        initialCategories={categories}
+        regionId={region?.id}
+      />
 
       {/* 테마 매니저 (개발 모드에서만 표시) */}
       {process.env.NODE_ENV === "development" && <ThemeManager />}

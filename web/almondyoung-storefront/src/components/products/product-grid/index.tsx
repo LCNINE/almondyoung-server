@@ -1,4 +1,5 @@
 import { ProductCard } from "@/components/products/prodcut-card"
+import Link from "next/link"
 import { cn } from "@/lib/utils"
 import type { ProductCardProps } from "@/lib/types/ui/product"
 
@@ -7,6 +8,7 @@ interface ProductGridProps {
   showRank: boolean
   className?: string
   roundedClassName?: string
+  countryCode?: string
 }
 
 export function ProductGrid({
@@ -14,6 +16,7 @@ export function ProductGrid({
   showRank = false,
   className,
   roundedClassName,
+  countryCode,
 }: ProductGridProps) {
   return (
     <div
@@ -24,8 +27,8 @@ export function ProductGrid({
     >
       {products.map((product, index) => {
         const rank = showRank ? index + 1 : undefined
-        return (
-          <ProductCard key={product.id}>
+        const card = (
+          <ProductCard>
             <ProductCard.Thumbnail
               src={product.imageSrc}
               alt={product.title}
@@ -34,6 +37,18 @@ export function ProductGrid({
             />
             <ProductCard.Info {...product} />
           </ProductCard>
+        )
+
+        return countryCode ? (
+          <Link
+            key={product.id}
+            href={`/${countryCode}/products/${product.id}`}
+            className="block"
+          >
+            {card}
+          </Link>
+        ) : (
+          <div key={product.id}>{card}</div>
         )
       })}
     </div>

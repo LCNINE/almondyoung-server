@@ -3,7 +3,7 @@
 import { useState } from "react"
 // TODO: 서버에서 데이터를 받아서 props로 전달하도록 변경 필요
 import { CategoryCircleTabs } from "@/components/category/category-circle-tabs"
-import { BannerCarousel } from "@/components/banner/banner-carousel"
+import { BannerCarousel } from "@/components/layout/components/banner/banner-carousel"
 import {
   BasicProductCard,
   TimeSaleProductCard,

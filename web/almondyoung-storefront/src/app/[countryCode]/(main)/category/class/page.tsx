@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { overlay } from "overlay-kit"
 import { CategoryCircleTabs } from "@/components/category/category-circle-tabs"
-import { BannerCarousel } from "@/components/banner/banner-carousel"
+import { BannerCarousel } from "@/components/layout/components/banner/banner-carousel"
 import ProductFilterSidebar from "@/components/products/product-filter-sidebar"
 import ProductSortToolbar from "@/components/products/product-sort-toolbar"
 import { SlidersHorizontal } from "lucide-react"
