@@ -25,8 +25,8 @@ export function ProductInfo({
         />
 
         {/* 배지/태그 영역 */}
-        <div className="flex items-center gap-1 text-[13px] font-bold text-[#F2994A]">
-          <ProductMembershipBadge />
+        <div className="flex items-center gap-1">
+          <ProductMembershipBadge size="md" />
         </div>
       </div>
 
