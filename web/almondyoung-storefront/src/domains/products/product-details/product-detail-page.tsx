@@ -317,8 +317,10 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
     }
 
     const didAdd = await handleAddToCart()
+
     if (didAdd) {
-      window.location.href = `/${countryCode}/checkout`
+      setShowSuccessMessage(true)
+      router.push(`/${countryCode}/checkout`)
     }
   }
 

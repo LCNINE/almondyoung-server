@@ -1,27 +1,28 @@
-import { retrieveCart } from "@/lib/api/medusa/cart"
+import { listCartShippingMethods, retrieveCart } from "@/lib/api/medusa/cart"
+import { listCartPaymentMethods } from "@/lib/api/medusa/payment"
 import ProtectedRoute from "@components/protected-route"
 import { fetchMe } from "@lib/api/users/me"
 import { StoreCart } from "@medusajs/types"
 import CheckoutTemplate from "domains/checkout/templates/checkout-template"
-import { redirect } from "next/navigation"
+import { notFound } from "next/navigation"
 
-export default async function CheckoutPage({
-  params,
-}: {
-  params: Promise<{ countryCode: string }>
-}) {
-  const { countryCode } = await params
+export default async function CheckoutPage() {
   const currentUser = await fetchMe()
-  const storeCart: StoreCart | null = await retrieveCart()
+  const cart: StoreCart | null = await retrieveCart()
 
-  // cart가 없거나 비어있으면 장바구니로 리다이렉트
-  if (!storeCart || !storeCart.items?.length) {
-    redirect(`/${countryCode}/cart`)
+  if (!cart) {
+    return notFound()
   }
+
+  const shippingMethods = await listCartShippingMethods(cart.id)
+  const paymentMethods = await listCartPaymentMethods(cart.region?.id ?? "")
+
+  console.log("shippingMethods::", shippingMethods)
+  console.log("paymentMethods::", paymentMethods)
 
   return (
     <ProtectedRoute>
-      <CheckoutTemplate user={currentUser} storeCart={storeCart} />
+      <CheckoutTemplate user={currentUser} cart={cart} />
     </ProtectedRoute>
   )
 }
