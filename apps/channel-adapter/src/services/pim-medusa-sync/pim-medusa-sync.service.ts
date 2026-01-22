@@ -367,7 +367,7 @@ export class PimMedusaSyncService {
             if (variant.membershipPrice && MEMBERSHIP_GROUP_ID) {
                 membershipPrices.push({
                     amount: Math.round(variant.membershipPrice),
-                    currency_code: 'KRW',
+                    currency_code: 'krw',
                     variant_id: medusaVariant.id,
                 });
             }
@@ -378,7 +378,7 @@ export class PimMedusaSyncService {
                     const list = tieredPricesMap.get(tier.minQuantity) || [];
                     list.push({
                         amount: Math.round(tier.price),
-                        currency_code: 'KRW',
+                        currency_code: 'krw',
                         variant_id: medusaVariant.id,
                         min_quantity: tier.minQuantity,
                     });
