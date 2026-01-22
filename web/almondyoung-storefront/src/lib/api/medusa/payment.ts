@@ -1,8 +1,5 @@
 "use server"
 
-/**
- * 추후 쓰일수 있음
- */
 import { sdk } from "@/lib/config/medusa"
 import { getAuthHeaders, getCacheOptions } from "../../data/cookies"
 import { HttpTypes } from "@medusajs/types"

@@ -173,10 +173,10 @@ export function ProductSidebarPurchase({
     setSelectedCartOptions(selectedCartOptions.filter((opt) => opt.id !== id))
   }
 
-  const handleAddToCart = () => {
+  const handleAddToCart = async () => {
     if (isSingleOption) {
       const variantId = product.defaultVariantId || product.id
-      addToCart({ variantId, quantity })
+      await addToCart({ variantId, quantity })
       return
     }
 
@@ -185,14 +185,19 @@ export function ProductSidebarPurchase({
       return
     }
 
-    selectedCartOptions.forEach((option) => {
-      if (option.variantId) {
-        addToCart({ variantId: option.variantId, quantity: option.quantity })
-      }
-    })
+    await Promise.all(
+      selectedCartOptions
+        .filter((option) => option.variantId)
+        .map((option) =>
+          addToCart({
+            variantId: option.variantId!,
+            quantity: option.quantity,
+          })
+        )
+    )
   }
 
-  const handleBuyNow = () => {
+  const handleBuyNow = async () => {
     if (!isUser) {
       setShowLoginDialog(true)
       return
@@ -203,8 +208,8 @@ export function ProductSidebarPurchase({
       return
     }
 
-    handleAddToCart()
-    window.location.href = `/${countryCode}/checkout`
+    await handleAddToCart()
+    router.push(`/${countryCode}/checkout`)
   }
 
   const handleLoginConfirm = () => {

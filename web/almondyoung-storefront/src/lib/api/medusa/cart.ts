@@ -76,10 +76,7 @@ export async function retrieveCart(cartId?: string, fields?: string) {
       cache: "force-cache",
     })
     .then(({ cart }: { cart: HttpTypes.StoreCart }) => cart)
-    .catch(() => {
-      // cart를 찾지 못하면 null 반환
-      return null
-    })
+    .catch(() => null)
 }
 
 export async function getOrSetCart(countryCode: string) {
@@ -211,8 +208,6 @@ export async function addToCart({
       revalidateTag(fulfillmentCacheTag)
     })
     .catch(medusaError)
-
-  return
 }
 
 export async function updateLineItem({
@@ -491,43 +486,30 @@ export async function updateRegion(countryCode: string, currentPath: string) {
   redirect(`/${countryCode}${currentPath}`)
 }
 
-export async function listCartOptions() {
-  // Mock 환경에서는 mock 배송 옵션 반환
-  return {
-    shipping_options: [
-      {
-        id: "shipping-001",
-        name: "일반 배송",
-        amount: 0,
-        data: {},
-        requirements: [],
-      },
-      {
-        id: "shipping-002",
-        name: "당일 배송",
-        amount: 3000,
-        data: {},
-        requirements: [],
-      },
-    ],
-  }
-
-  /* 기존 코드 (주석처리)
-  const cartId = await getCartId()
+export const listCartShippingMethods = async (cartId: string) => {
   const headers = {
     ...(await getAuthHeaders()),
   }
+
   const next = {
-    ...(await getCacheOptions("shippingOptions")),
+    ...(await getCacheOptions("fulfillment")),
   }
 
-  return await sdk.client.fetch<{
-    shipping_options: HttpTypes.StoreCartShippingOption[]
-  }>("/store/shipping-options", {
-    query: { cart_id: cartId },
-    next,
-    headers,
-    cache: "force-cache",
-  })
-  */
+  return sdk.client
+    .fetch<HttpTypes.StoreShippingOptionListResponse>(
+      `/store/shipping-options`,
+      {
+        method: "GET",
+        query: {
+          cart_id: cartId,
+        },
+        headers,
+        next,
+        cache: "force-cache",
+      }
+    )
+    .then(({ shipping_options }) => shipping_options)
+    .catch(() => {
+      return null
+    })
 }
