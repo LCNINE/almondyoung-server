@@ -151,6 +151,32 @@ export interface ProductMasterDeletedPayload {
   deletedAt: string;
 }
 
+export interface CategoryChangedPayload {
+  categoryId: string;
+  changeType: 'created' | 'updated' | 'deleted' | 'moved';
+  timestamp: string; // ISO 8601
+  category: CategorySnapshot | null; // null only if deleted
+}
+
+export interface CategorySnapshot {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  parentId: string | null;
+  level: number;
+  path: string;
+  sortOrder: number;
+  isActive: boolean;
+  visibility: boolean;
+  thumbnail: string | null;
+  displaySettings: Record<string, any> | null;
+  seoConfig: Record<string, any> | null;
+  templateConfig: Record<string, any> | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ===== Zod 스키마 정의 =====
 
 const OptionCombinationItemSchema = z.object({
@@ -301,6 +327,32 @@ const ProductMasterDeletedSchema = z.object({
   deletedAt: z.string().datetime(),
 });
 
+const CategorySnapshotSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1),
+  slug: z.string().min(1),
+  description: z.string().nullable(),
+  parentId: z.string().uuid().nullable(),
+  level: z.number().int().min(0),
+  path: z.string().min(1),
+  sortOrder: z.number().int().min(0),
+  isActive: z.boolean(),
+  visibility: z.boolean(),
+  thumbnail: z.string().nullable(),
+  displaySettings: z.record(z.string(), z.any()).nullable(),
+  seoConfig: z.record(z.string(), z.any()).nullable(),
+  templateConfig: z.record(z.string(), z.any()).nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+const CategoryChangedSchema = z.object({
+  categoryId: z.string().uuid(),
+  changeType: z.enum(['created', 'updated', 'deleted', 'moved']),
+  timestamp: z.string().datetime(),
+  category: CategorySnapshotSchema.nullable(),
+});
+
 // ===== Stream Config =====
 
 export const PRODUCT_STREAM = stream({
@@ -331,6 +383,10 @@ export const PRODUCT_STREAM = stream({
     ProductMasterDeleted: event<'ProductMasterDeleted', ProductMasterDeletedPayload>(
       'ProductMasterDeleted',
       ProductMasterDeletedSchema,
+    ),
+    CategoryChanged: event<'CategoryChanged', CategoryChangedPayload>(
+      'CategoryChanged',
+      CategoryChangedSchema,
     ),
   },
 });
