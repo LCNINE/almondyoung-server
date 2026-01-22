@@ -214,6 +214,101 @@ export class MedusaClient {
         return created.id;
     }
 
+    // 스냅샷 기반 카테고리 보장 (Phase 2 - PIM API 호출 없음)
+    async ensureCategoryFromSnapshot(
+        categorySnapshot: {
+            id: string;
+            name: string;
+            slug: string;
+            path: string;
+            parentId: string | null;
+            isActive: boolean;
+            visibility: boolean;
+            showOnMainCategory: boolean;
+            thumbnail?: string;
+        }
+    ): Promise<string> {
+        const handle = `${categorySnapshot.id}`;
+
+        const isActive = categorySnapshot.isActive && categorySnapshot.visibility;
+        const pimMetadata = {
+            pimCategoryId: categorySnapshot.id,
+            pimPath: categorySnapshot.path,
+            pimSlug: categorySnapshot.slug,
+            pimVisibility: categorySnapshot.visibility,
+            pimShowOnMainCategory: categorySnapshot.showOnMainCategory,
+        };
+
+        let parentMedusaId: string | undefined;
+        if (categorySnapshot.parentId) {
+            const parentHandle = `${categorySnapshot.parentId}`;
+            const existingParent = await this.findCategoryByHandle(parentHandle);
+            if (existingParent?.id) {
+                parentMedusaId = existingParent.id;
+            } else {
+                this.logger.warn(
+                    `Parent category ${categorySnapshot.parentId} not found in Medusa, creating without parent`,
+                );
+            }
+        }
+
+        const existing = await this.findCategoryByHandle(handle);
+        if (existing?.id) {
+            const verified = await this.getCategoryById(existing.id);
+            if (!verified) {
+                this.logger.warn(
+                    `Category ${existing.id} found by handle but doesn't exist by ID. Creating new...`,
+                );
+            } else {
+                const updatePayload = {
+                    name: categorySnapshot.name,
+                    is_internal: false,
+                    is_active: isActive,
+                    parent_category_id: parentMedusaId,
+                    ...(categorySnapshot.thumbnail && { thumbnail: categorySnapshot.thumbnail }),
+                    metadata: {
+                        ...(existing.metadata || {}),
+                        ...pimMetadata,
+                    },
+                };
+                try {
+                    await this.client.post(
+                        `/product-categories/${existing.id}`,
+                        updatePayload,
+                    );
+                } catch (err: any) {
+                    this.logger.warn(
+                        `Failed to update Medusa category ${existing.id} from snapshot ${categorySnapshot.id}: ${err?.response?.data?.message || err?.message}`,
+                    );
+                }
+                this.categoryCache.set(handle, existing.id);
+                this.logger.debug(
+                    `Ensured existing Medusa category ${existing.id} for PIM ${categorySnapshot.id}`,
+                );
+                return existing.id;
+            }
+        }
+
+        const payload = {
+            name: categorySnapshot.name,
+            handle,
+            is_internal: false,
+            is_active: isActive,
+            parent_category_id: parentMedusaId,
+            ...(categorySnapshot.thumbnail && { thumbnail: categorySnapshot.thumbnail }),
+            metadata: {
+                ...pimMetadata,
+            },
+        };
+
+        const created = await this.createCategory(payload);
+        this.categoryCache.set(handle, created.id);
+        this.logger.log(
+            `Created Medusa category ${created.id} from snapshot for PIM category ${categorySnapshot.id}`,
+        );
+        return created.id;
+    }
+
     // 상품을 지정된 카테고리에 강제 매핑 (Medusa v2: 제품 업데이트로 categories 설정)
     async attachProductToCategories(
         productId: string,

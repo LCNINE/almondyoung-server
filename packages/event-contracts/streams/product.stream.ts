@@ -69,6 +69,81 @@ export interface ProductMasterActiveVersionChangedPayload {
   primaryCategoryId?: string | null;
   changeReason: 'published' | 'unpublished' | 'rollback';
   changedAt: string;
+  snapshot?: ProductSnapshot | null;
+}
+
+export interface ProductSnapshot {
+  masterId: string;
+  versionId: string;
+  version: number;
+  name: string;
+  description?: string;
+  descriptionHtml?: string;
+  thumbnail?: string;
+  images?: Array<{
+    fileId: string;
+    url: string;
+    isPrimary: boolean;
+    sortOrder: number;
+  }>;
+  seoTitle?: string;
+  seoDescription?: string;
+  seoKeywords?: string;
+  categories?: Array<{
+    id: string;
+    name: string;
+    slug: string;
+    path: string;
+    parentId: string | null;
+    isActive: boolean;
+    visibility: boolean;
+    showOnMainCategory: boolean;
+    thumbnail?: string;
+  }>;
+  brand?: string;
+  tags?: string[];
+  productType?: string;
+  optionGroups?: Array<{
+    id: string;
+    name: string;
+    values: Array<{
+      id: string;
+      name: string;
+      colorCode?: string;
+      imageUrl?: string;
+    }>;
+  }>;
+  variants: Array<{
+    id: string;
+    variantName: string;
+    sku: string;
+    variantCode?: string;
+    isDefault: boolean;
+    status: string;
+    optionCombination?: Array<{
+      name: string;
+      value: string;
+    }>;
+    basePrice: number;
+    membershipPrice?: number;
+    tieredPrices?: Array<{
+      minQuantity: number;
+      price: number;
+    }>;
+    weight?: number;
+    length?: number;
+    width?: number;
+    height?: number;
+    originCountry?: string;
+    midCode?: string;
+    hsCode?: string;
+    material?: string;
+  }>;
+  status: 'active' | 'draft' | 'archived';
+  isWholesaleOnly: boolean;
+  isMembershipOnly: boolean;
+  isGiftcard: boolean;
+  discountable: boolean;
 }
 
 export interface ProductMasterDeletedPayload {
@@ -128,6 +203,87 @@ const ProductInventoryManagementChangedSchema = z.object({
   changedAt: z.string().datetime(),
 });
 
+const ProductSnapshotImageSchema = z.object({
+  fileId: z.string(),
+  url: z.string(),
+  isPrimary: z.boolean(),
+  sortOrder: z.number(),
+});
+
+const ProductSnapshotCategorySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  path: z.string(),
+  parentId: z.string().nullable(),
+  isActive: z.boolean(),
+  visibility: z.boolean(),
+  showOnMainCategory: z.boolean(),
+  thumbnail: z.string().optional(),
+});
+
+const ProductSnapshotOptionValueSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  colorCode: z.string().optional(),
+  imageUrl: z.string().optional(),
+});
+
+const ProductSnapshotOptionGroupSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  values: z.array(ProductSnapshotOptionValueSchema),
+});
+
+const ProductSnapshotVariantSchema = z.object({
+  id: z.string(),
+  variantName: z.string(),
+  sku: z.string(),
+  variantCode: z.string().optional(),
+  isDefault: z.boolean(),
+  status: z.string(),
+  optionCombination: z.array(OptionCombinationItemSchema).optional(),
+  basePrice: z.number(),
+  membershipPrice: z.number().optional(),
+  tieredPrices: z.array(z.object({
+    minQuantity: z.number(),
+    price: z.number(),
+  })).optional(),
+  weight: z.number().optional(),
+  length: z.number().optional(),
+  width: z.number().optional(),
+  height: z.number().optional(),
+  originCountry: z.string().optional(),
+  midCode: z.string().optional(),
+  hsCode: z.string().optional(),
+  material: z.string().optional(),
+});
+
+const ProductSnapshotSchema = z.object({
+  masterId: z.string(),
+  versionId: z.string(),
+  version: z.number(),
+  name: z.string(),
+  description: z.string().optional(),
+  descriptionHtml: z.string().optional(),
+  thumbnail: z.string().optional(),
+  images: z.array(ProductSnapshotImageSchema).optional(),
+  seoTitle: z.string().optional(),
+  seoDescription: z.string().optional(),
+  seoKeywords: z.string().optional(),
+  categories: z.array(ProductSnapshotCategorySchema).optional(),
+  brand: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  productType: z.string().optional(),
+  optionGroups: z.array(ProductSnapshotOptionGroupSchema).optional(),
+  variants: z.array(ProductSnapshotVariantSchema),
+  status: z.enum(['active', 'draft', 'archived']),
+  isWholesaleOnly: z.boolean(),
+  isMembershipOnly: z.boolean(),
+  isGiftcard: z.boolean(),
+  discountable: z.boolean(),
+});
+
 const ProductMasterActiveVersionChangedSchema = z.object({
   masterId: z.string().min(1),
   versionId: z.string().nullable(),
@@ -137,6 +293,7 @@ const ProductMasterActiveVersionChangedSchema = z.object({
   primaryCategoryId: z.string().nullable().optional(),
   changeReason: z.enum(['published', 'unpublished', 'rollback']),
   changedAt: z.string().datetime(),
+  snapshot: ProductSnapshotSchema.nullable().optional(),
 });
 
 const ProductMasterDeletedSchema = z.object({
