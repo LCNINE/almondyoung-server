@@ -9,6 +9,7 @@ export class ReviewMapper {
       productId: entity.productId,
       rating: entity.rating,
       content: entity.content,
+      legacy_author_name: entity.legacyAuthorName ?? null,
       mediaFileIds: entity.mediaFileIds,
       status: entity.status,
       createdAt: entity.createdAt.toISOString(),
