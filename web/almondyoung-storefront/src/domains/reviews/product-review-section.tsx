@@ -77,9 +77,11 @@ function getAuthorName(
 }
 
 function mapToReviewDetail(dto: ReviewResponseDto): ReviewDetail {
+  const legacyName = dto.legacyAuthorName ?? dto.legacy_author_name ?? null
+
   return {
     id: dto.id,
-    author: getAuthorName(dto.legacyAuthorName, dto.userId),
+    author: getAuthorName(legacyName, dto.userId),
     rating: dto.rating,
     date: dto.createdAt,
     tags: [],
