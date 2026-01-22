@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ChannelAdapterFactory, ChannelType } from './adapters/channel-adapter.factory';
 import { ChannelCommand, SyncResult } from '../types';
 import { ChannelsConfig } from '../config/channels.config';
-import { OutboxService } from './outbox.service';
+import { InboxService } from './inbox.service';
 
 /**
  * 채널 명령 Manager
@@ -23,7 +23,7 @@ export class ChannelCommandManager {
 
   constructor(
     private readonly adapterFactory: ChannelAdapterFactory,
-    private readonly outboxService: OutboxService,
+    private readonly inboxService: InboxService,
   ) {}
 
   /**
@@ -55,10 +55,10 @@ export class ChannelCommandManager {
 
     const duration = Date.now() - startTime;
 
-    // 3️⃣ Outbox에 이벤트 enqueue
+    // 3️⃣ Inbox에 이벤트 enqueue
     const targetId = this.extractTargetId(command);
 
-    await this.outboxService.enqueue({
+    await this.inboxService.enqueue({
       eventType: 'CommandExecuted',
       aggregateId: `${channel}-${targetId}`,
       partitionKey: channel,
