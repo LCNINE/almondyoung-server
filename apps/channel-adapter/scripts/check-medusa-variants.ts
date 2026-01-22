@@ -1,3 +1,13 @@
+// ========================================================================
+// PIMCLIENT: MIGRATION SCRIPT ONLY
+// ========================================================================
+// This script is allowed to use PimClient for direct PIM API access.
+// This is an exception to the MSA boundary rule and should ONLY be used for:
+// - One-time data migration/backfill operations
+// - Administrative/debugging tasks
+// - NOT for regular operational code
+// ========================================================================
+
 import { MedusaClient } from '../src/services/pim-medusa-sync/medusa.client';
 import { PimClient } from '../src/services/pim-medusa-sync/pim.client';
 import type { ConfigService } from '@nestjs/config';
