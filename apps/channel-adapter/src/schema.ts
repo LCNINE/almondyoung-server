@@ -210,16 +210,25 @@ export const pendingOrders = pgTable(
   ],
 );
 
-// 🔹 Outbox Events 테이블 (Transactional Outbox Pattern)
-export const outboxEvents = pgTable(
-  'outbox_events',
+// ⚠️ IMPORTANT: This is the INBOX pattern (event reception/processing)
+// NOT to be confused with the shared Outbox pattern (libs/events/src/outbox/)
+// 
+// Purpose: 
+// - Receives events from Kafka and stores them immediately (fast ACK)
+// - Separate worker processes them asynchronously (slow external API calls)
+// - Prevents Kafka consumer timeout during long-running operations
+//
+// Shared Outbox is for EVENT PUBLISHING (DB → Kafka)
+// This Inbox is for EVENT PROCESSING (Kafka → External APIs)
+export const inboxEvents = pgTable(
+  'inbox_events',
   {
     id: uuid('id')
       .primaryKey()
       .$defaultFn(() => uuidv7()),
 
     // 이벤트 식별
-    eventType: varchar('event_type', { length: 100 }).notNull(), // 'OrderSyncCompleted', 'CommandExecuted' 등
+    eventType: varchar('event_type', { length: 100 }).notNull(), // 'ProductMasterActiveVersionChanged' 등
     aggregateType: varchar('aggregate_type', { length: 50 }).notNull().default('ChannelAdapter'),
     aggregateId: varchar('aggregate_id', { length: 255 }).notNull(), // 채널별 주문/상품 ID (varchar)
     partitionKey: varchar('partition_key', { length: 255 }).notNull(), // Kafka 파티션 키
@@ -244,10 +253,10 @@ export const outboxEvents = pgTable(
   },
   (table) => [
     // 상태별 조회 최적화
-    index('idx_outbox_status_created').on(table.status, table.createdAt),
-    index('idx_outbox_pending_next_attempt').on(table.status, table.nextAttemptAt),
+    index('idx_inbox_status_created').on(table.status, table.createdAt),
+    index('idx_inbox_pending_next_attempt').on(table.status, table.nextAttemptAt),
     // 파티션 키 인덱스
-    index('idx_outbox_partition_key').on(table.partitionKey),
+    index('idx_inbox_partition_key').on(table.partitionKey),
   ],
 );
 
@@ -308,7 +317,7 @@ export const channelAdapterSchema = {
   wmsOrderMappings,
   syncStatuses,
   pendingOrders,
-  outboxEvents,
+  inboxEvents,
   pimMedusaMappings,
 } as const;
 

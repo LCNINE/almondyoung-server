@@ -36,7 +36,7 @@ import { ChannelCommandManager } from './services/channel-command.manager';
 import { PendingOrderRepository } from './services/pending-order.repository';
 import { ChannelListingClient } from './services/clients/channel-listing.client';
 import { PendingOrderService } from './services/pending-order.service';
-import { OutboxService } from './services/outbox.service';
+import { InboxService } from './services/inbox.service';
 import { OutboxDispatcherService } from './services/outbox-dispatcher.service';
 
 // PIM-Medusa 동기화 서비스
@@ -45,7 +45,7 @@ import { MedusaClient } from './services/pim-medusa-sync/medusa.client';
 import { PimMedusaSyncService } from './services/pim-medusa-sync/pim-medusa-sync.service';
 import { PimProductEventConsumer } from './consumers/pim-product-event.consumer';
 import { PimMedusaMappingRepository } from './services/pim-medusa-sync/pim-medusa-mapping.repository';
-import { OutboxWorkerService } from './services/pim-medusa-sync/outbox-worker.service';
+import { InboxWorkerService } from './services/pim-medusa-sync/inbox-worker.service';
 
 // Kafka 설정 생성 함수 (운영 환경 전용)
 function createKafkaConfig() {
@@ -148,8 +148,8 @@ function createKafkaConfig() {
     // 주문 이벤트 발행 서비스
     OrderEventPublisher,
 
-    // Outbox 패턴 서비스
-    OutboxService,
+    // Inbox/Outbox 패턴 서비스
+    InboxService,
     OutboxDispatcherService,
 
     // PIM-Medusa 동기화
@@ -158,7 +158,7 @@ function createKafkaConfig() {
     PimMedusaSyncService,
     PimProductEventConsumer,
     PimMedusaMappingRepository,
-    OutboxWorkerService,
+    InboxWorkerService,
 
     // 개발/테스트 환경: NullEventPublisher를 토큰으로 제공
     ...(process.env.NODE_ENV !== 'production'

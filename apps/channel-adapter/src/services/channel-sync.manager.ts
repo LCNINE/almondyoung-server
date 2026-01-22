@@ -4,7 +4,7 @@ import { ChannelAdapterFactory, ChannelType } from './adapters/channel-adapter.f
 import { InternalOrderEvent, DataType, SyncToChannelPayload, SyncResult, channelAdapterSchema } from '../types';
 import { ChannelAdapterValidator } from '../validators/channel-adapter.validator';
 import { ChannelsConfig } from '../config/channels.config';
-import { OutboxService } from './outbox.service';
+import { InboxService } from './inbox.service';
 import { syncHistories, eventLogs } from '../schema';
 
 /**
@@ -27,7 +27,7 @@ export class ChannelSyncManager {
 
   constructor(
     private readonly db: DbService<typeof channelAdapterSchema>,
-    private readonly outboxService: OutboxService,
+    private readonly inboxService: InboxService,
     private readonly adapterFactory: ChannelAdapterFactory,
   ) {}
 
@@ -79,7 +79,7 @@ export class ChannelSyncManager {
 
       // 3️⃣ Outbox에 이벤트 enqueue (같은 트랜잭션!)
     if (dataType === 'orders') {
-        await this.outboxService.enqueue(
+        await this.inboxService.enqueue(
           {
         eventType: 'OrderSyncCompleted',
         aggregateId: `${channel}-sync`,
@@ -130,7 +130,7 @@ export class ChannelSyncManager {
     });
 
     if (payload.dataType === 'inventory' && result.success) {
-      await this.outboxService.enqueue({
+      await this.inboxService.enqueue({
         eventType: 'InventorySyncCompleted',
         aggregateId: `${channel}-inventory-${payload.payload.productId}`,
         partitionKey: channel,

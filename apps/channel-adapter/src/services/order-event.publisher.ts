@@ -1,7 +1,7 @@
 /**
- * Order Event Publisher (Outbox Pattern 적용)
+ * Order Event Publisher (Inbox Pattern 적용)
  *
- * Channel Adapter에서 발생하는 주문 이벤트를 Outbox를 통해 Kafka로 발행합니다.
+ * Channel Adapter에서 발생하는 주문 이벤트를 Inbox를 통해 Kafka로 발행합니다.
  * WMS OrderEventsConsumer가 이 이벤트를 구독하여 Sales Order를 생성합니다.
  *
  * @see order-event.publisher.legacy.ts - 원본 직접 발행 버전
@@ -19,7 +19,7 @@ import {
 import { InternalOrderEvent, UnmappedItem } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { ChannelListingClient, LookupVariantResult } from './clients/channel-listing.client';
-import { OutboxService } from './outbox.service';
+import { InboxService } from './inbox.service';
 import { DbService } from '@app/db';
 import { channelAdapterSchema } from '../types';
 
@@ -37,10 +37,10 @@ export class OrderEventPublisher {
   private readonly logger = new Logger(OrderEventPublisher.name);
 
   constructor(
-    private readonly outboxService: OutboxService,
+    private readonly inboxService: InboxService,
     private readonly channelListingClient: ChannelListingClient,
   ) {
-    this.logger.log('📤 OrderEventPublisher 초기화 완료 (Outbox Pattern)');
+    this.logger.log('📤 OrderEventPublisher 초기화 완료 (Inbox Pattern)');
   }
 
   /**
@@ -160,10 +160,10 @@ export class OrderEventPublisher {
       createdAt: orderEvent.createdAt ?? new Date().toISOString(),
     };
 
-    // Outbox에 enqueue (트랜잭션 내에서 호출 가능)
+    // Inbox에 enqueue (트랜잭션 내에서 호출 가능)
     // aggregateType은 'ChannelAdapter'로 통일 (동영님 의견: 채널 어댑터 서비스 자체가 aggregateType)
     // OutboxDispatcherService가 eventType으로 orders.events.v1 또는 channel-adapter.events.v1로 분기
-    await this.outboxService.enqueue(
+    await this.inboxService.enqueue(
       {
       eventType: 'OrderCreated',
       aggregateId: orderEvent.externalOrderId,
@@ -179,7 +179,7 @@ export class OrderEventPublisher {
       tx,
     );
 
-    this.logger.log(`📤 [OrderCreated] Enqueued to Outbox: ${orderEvent.externalOrderId} from ${channel}`, {
+    this.logger.log(`📤 [OrderCreated] Enqueued to Inbox: ${orderEvent.externalOrderId} from ${channel}`, {
       orderId,
       salesChannel,
       variantId: listing.variantId,
@@ -208,8 +208,8 @@ export class OrderEventPublisher {
       refundAmount: orderEvent.priceAmount,
     };
 
-    // Outbox에 enqueue
-    await this.outboxService.enqueue(
+    // Inbox에 enqueue
+    await this.inboxService.enqueue(
       {
       eventType: 'OrderCancelled',
       aggregateId: orderEvent.externalOrderId,
@@ -224,7 +224,7 @@ export class OrderEventPublisher {
       tx,
     );
 
-    this.logger.log(`📤 [OrderCancelled] Enqueued to Outbox: ${orderEvent.externalOrderId} from ${channel}`, {
+    this.logger.log(`📤 [OrderCancelled] Enqueued to Inbox: ${orderEvent.externalOrderId} from ${channel}`, {
       reason,
       cancelledBy,
     });
@@ -256,8 +256,8 @@ export class OrderEventPublisher {
       reason: orderEvent.reason,
     };
 
-    // Outbox에 enqueue
-    await this.outboxService.enqueue(
+    // Inbox에 enqueue
+    await this.inboxService.enqueue(
       {
       eventType: 'OrderModified',
       aggregateId: orderEvent.externalOrderId,
@@ -272,7 +272,7 @@ export class OrderEventPublisher {
       tx,
     );
 
-    this.logger.log(`📤 [OrderModified] Enqueued to Outbox: ${orderEvent.externalOrderId} from ${channel}`, {
+    this.logger.log(`📤 [OrderModified] Enqueued to Inbox: ${orderEvent.externalOrderId} from ${channel}`, {
       modifiedBy,
       hasAddressChange: !!changes.shippingAddress,
     });
