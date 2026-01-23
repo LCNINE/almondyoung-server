@@ -1,6 +1,6 @@
-import { InternalOrderEvent, OrderQuery } from '../../types';
-import { DataType, SyncResult, SyncToChannelPayload } from '../../types';
-import { ChannelCommand, ChannelQuery } from '../../types';
+import { InternalOrderEvent, OrderQuery } from '../types';
+import { DataType, SyncResult, SyncToChannelPayload } from '../types';
+import { ChannelCommand, ChannelQuery } from '../types';
 
 /**
  * 채널 어댑터 인터페이스

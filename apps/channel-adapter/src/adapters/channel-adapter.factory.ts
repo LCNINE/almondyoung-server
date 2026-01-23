@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ChannelAdapter } from './channel-adapter.interface';
-import { NaverSmartstoreAdapter } from './naver-smartstore.adapter';
-import { CoupangAdapter } from './coupang.adapter';
+import { NaverSmartstoreAdapter } from './naver/naver-smartstore.adapter';
+import { CoupangAdapter } from './coupang/coupang.adapter';
 
 /**
  * 지원되는 판매채널 타입

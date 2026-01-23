@@ -17,7 +17,7 @@ import {
   ApiParam,
 } from '@nestjs/swagger';
 import { ZodValidationPipe } from 'nestjs-zod';
-import { ChannelType } from '../services/adapters/channel-adapter.factory';
+import { ChannelType } from '../adapters/channel-adapter.factory';
 import {
   DataType,
   ChannelCommand,
