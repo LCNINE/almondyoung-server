@@ -1,6 +1,5 @@
 "use client"
 
-import { useState } from "react"
 import Link from "next/link"
 import { BasicProductCard } from "@components/products/product-card"
 import ProductFilterSidebar from "@/components/products/product-filter-sidebar"
@@ -9,38 +8,31 @@ import CustomDropdown from "@components/dropdown"
 import { SlidersHorizontal } from "lucide-react"
 import { overlay } from "overlay-kit"
 import { MobileFilterSheet } from "./mobile-filter-sheet"
-import type { CategoryTreeNodeDto } from "@lib/types/dto/pim"
+import type { StoreProductCategoryTree } from "@lib/types/medusa-category"
 import type { ProductCard } from "@lib/types/ui/product"
 
 export interface CategoryInfo {
   title: string
-  description: string
+  description?: string
 }
 
 interface CategorySubPageClientProps {
-  slug: string
   subSlug: string
   categoryInfo: CategoryInfo
-  categoryData: CategoryTreeNodeDto
+  categoryData: StoreProductCategoryTree
   initialProducts?: ProductCard[]
   initialTotal?: number
   countryCode: string
-  parentSlug: string
 }
 
 export function CategorySubPageClient({
-  slug,
   subSlug,
   categoryInfo,
   categoryData,
   initialProducts = [],
   initialTotal = 0,
   countryCode,
-  parentSlug,
 }: CategorySubPageClientProps) {
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(20)
-
   const paginatedProducts = initialProducts
 
   const openMobileFilter = () => {
@@ -50,7 +42,8 @@ export function CategorySubPageClient({
   }
 
   // 하위 카테고리가 있는지 확인
-  const hasChildren = categoryData.children && categoryData.children.length > 0
+  const hasChildren =
+    categoryData.category_children && categoryData.category_children.length > 0
 
   return (
     <main className="">
@@ -67,9 +60,11 @@ export function CategorySubPageClient({
                   <h1 className="mb-2 text-2xl font-bold text-gray-900 md:text-3xl">
                     {categoryInfo.title}
                   </h1>
-                  <p className="text-sm leading-relaxed text-gray-600 md:text-base">
-                    {categoryInfo.description}
-                  </p>
+                  {categoryInfo.description ? (
+                    <p className="text-sm leading-relaxed text-gray-600 md:text-base">
+                      {categoryInfo.description}
+                    </p>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -79,10 +74,12 @@ export function CategorySubPageClient({
               <section className="mb-8">
                 <nav aria-label="하위 카테고리" className="w-full">
                   <ul className="scrollbar-hide flex flex-nowrap items-center gap-[5px] overflow-x-auto md:flex-wrap md:gap-1.5 md:overflow-x-visible">
-                    {categoryData.children!.map((child) => {
-                      const isActive = child.slug === subSlug
-                      // 재귀적으로 하위 카테고리를 표시하기 위해 현재 카테고리의 slug를 parentSlug로 사용
-                      const href = `/${countryCode}/category/${categoryData.slug}/${child.slug}`
+                    {categoryData.category_children!.map((child) => {
+                      const isActive = child.handle === subSlug
+                      // 재귀적으로 하위 카테고리를 표시하기 위해 현재 카테고리의 handle 사용
+                      const parentHandle = categoryData.handle ?? subSlug
+                      const childHandle = child.handle ?? ""
+                      const href = `/${countryCode}/category/${parentHandle}/${childHandle}`
 
                       return (
                         <li key={child.id} className="flex-shrink-0">

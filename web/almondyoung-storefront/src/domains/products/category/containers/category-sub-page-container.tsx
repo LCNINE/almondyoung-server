@@ -1,8 +1,10 @@
 import { notFound } from "next/navigation"
 import { CategorySubPageClient } from "../components/category-sub-page-client"
-import { getCategoryBySlug } from "@lib/api/pim/categories"
+import { getCategoryByHandle } from "@lib/api/medusa/categories"
 import { getProductList } from "@lib/api/medusa/products"
 import { getRegion } from "@lib/api/medusa/regions"
+import { mapMedusaProductsToCards } from "@lib/utils/map-medusa-product-card"
+import type { StoreProductCategoryTree } from "@lib/types/medusa-category"
 
 interface CategorySubPageContainerProps {
   params: Promise<{
@@ -18,19 +20,10 @@ export async function CategorySubPageContainer({
   const { slug, sub: subSlug, countryCode } = await params
   const region = await getRegion(countryCode)
 
-  // 서브 카테고리 정보 조회 (subSlug로 직접 조회)
-  const result = await getCategoryBySlug(subSlug)
-
-  // 에러 처리
-  if ("error" in result) {
-    console.error(
-      "❌ [CategorySubPageContainer] 카테고리 조회 실패:",
-      result.error
-    )
-    return notFound()
-  }
-
-  const categoryData = result.data
+  const parentCategory = await getCategoryByHandle(slug)
+  const categoryData = parentCategory
+    ? findCategoryByHandle(parentCategory.category_children ?? [], subSlug)
+    : null
   if (!categoryData) {
     return notFound()
   }
@@ -38,7 +31,7 @@ export async function CategorySubPageContainer({
   // UI에 필요한 메타데이터 구성
   const categoryInfo = {
     title: categoryData.name,
-    description: categoryData.description || "전문 뷰티 제품",
+    description: categoryData.description ?? "",
   }
 
   // 카테고리별 상품 목록 로드
@@ -57,7 +50,7 @@ export async function CategorySubPageContainer({
       categoryId: categoryData.id,
       region_id: region?.id,
     })
-    initialProducts = productsResult.products
+    initialProducts = mapMedusaProductsToCards(productsResult.products)
     initialTotal = productsResult.count
     console.log(`✅ [CategorySubPageContainer] 상품 목록 로드 완료:`, {
       itemCount: initialProducts.length,
@@ -70,14 +63,32 @@ export async function CategorySubPageContainer({
 
   return (
     <CategorySubPageClient
-      slug={slug}
       subSlug={subSlug}
       categoryInfo={categoryInfo}
       categoryData={categoryData}
       initialProducts={initialProducts}
       initialTotal={initialTotal}
       countryCode={countryCode}
-      parentSlug={categoryData.slug}
     />
   )
+}
+
+const findCategoryByHandle = (
+  categories: StoreProductCategoryTree[],
+  handle: string
+): StoreProductCategoryTree | null => {
+  for (const category of categories) {
+    if (category.handle === handle) {
+      return category
+    }
+
+    if (category.category_children?.length) {
+      const found = findCategoryByHandle(category.category_children, handle)
+      if (found) {
+        return found
+      }
+    }
+  }
+
+  return null
 }

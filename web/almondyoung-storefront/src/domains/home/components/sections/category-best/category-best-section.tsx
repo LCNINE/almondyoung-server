@@ -9,6 +9,8 @@ import { AnimatePresence, motion } from "framer-motion"
 import { Package } from "lucide-react"
 import { chunk } from "lodash"
 import { useEffect, useMemo, useState, useTransition } from "react"
+import Link from "next/link"
+import { useParams } from "next/navigation"
 import { ProductGrid } from "../../../../../components/products/product-grid"
 import { useCategoryTabs } from "../../../hooks/use-category-tabs"
 import { getCategoryBestProducts } from "../../actions/get-category-products"
@@ -25,6 +27,8 @@ export function CategoryBestSection({
   initialCategories,
   initialProducts,
 }: CategoryBestSectionProps) {
+  const params = useParams() as { countryCode?: string }
+  const countryCode = params?.countryCode || "kr"
   const [isPending, startTransition] = useTransition()
 
   const bestCategories = initialCategories.slice(0, 7)
@@ -137,15 +141,23 @@ export function CategoryBestSection({
                                 {group.map((product, itemIndex) => {
                                   const rank = groupIndex * 6 + itemIndex + 1
                                   return (
-                                    <ProductCard key={product.id}>
-                                      <ProductCard.Thumbnail
-                                        src={product.imageSrc}
-                                        alt={product.title}
-                                        rank={<ProductCard.Rank rank={rank} />}
-                                        className="rounded-tl-sm rounded-tr-xl rounded-br-xl rounded-bl-md"
-                                      />
-                                      <ProductCard.Info {...product} />
-                                    </ProductCard>
+                                    <Link
+                                      key={product.id}
+                                      href={`/${countryCode}/products/${product.id}`}
+                                      className="block"
+                                    >
+                                      <ProductCard>
+                                        <ProductCard.Thumbnail
+                                          src={product.imageSrc}
+                                          alt={product.title}
+                                          rank={
+                                            <ProductCard.Rank rank={rank} />
+                                          }
+                                          className="rounded-tl-sm rounded-tr-xl rounded-br-xl rounded-bl-md"
+                                        />
+                                        <ProductCard.Info {...product} />
+                                      </ProductCard>
+                                    </Link>
                                   )
                                 })}
                               </div>
@@ -162,6 +174,7 @@ export function CategoryBestSection({
                         products={products.slice(0, 10)}
                         showRank={true}
                         roundedClassName="rounded-sm md:rounded-md"
+                        countryCode={countryCode}
                       />
                     </div>
                   </TabsContent>
