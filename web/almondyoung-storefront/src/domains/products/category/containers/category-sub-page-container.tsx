@@ -44,10 +44,11 @@ export async function CategorySubPageContainer({
   let initialTotal = 0
 
   try {
+    const categoryIds = collectCategoryIds(categoryData)
     const productsResult = await getProductList({
       page: 1,
       limit: 20,
-      categoryId: categoryData.id,
+      categoryId: categoryIds,
       region_id: region?.id,
     })
     initialProducts = mapMedusaProductsToCards(productsResult.products)
@@ -91,4 +92,17 @@ const findCategoryByHandle = (
   }
 
   return null
+}
+
+const collectCategoryIds = (category: StoreProductCategoryTree) => {
+  const ids: string[] = []
+
+  const walk = (node: StoreProductCategoryTree) => {
+    ids.push(node.id)
+    node.category_children?.forEach((child) => walk(child))
+  }
+
+  walk(category)
+
+  return ids
 }

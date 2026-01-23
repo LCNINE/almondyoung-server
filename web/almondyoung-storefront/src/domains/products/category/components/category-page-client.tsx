@@ -173,6 +173,10 @@ export function CategoryPageClient({
 
 const getTimerFromEndTime = (endTime: string) => {
   const end = new Date(endTime).getTime()
+  if (Number.isNaN(end)) {
+    return { hours: 0, minutes: 0, seconds: 0 }
+  }
+
   const now = Date.now()
   const diff = Math.max(end - now, 0)
 

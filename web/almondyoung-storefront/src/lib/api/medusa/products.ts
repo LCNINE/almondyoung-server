@@ -7,7 +7,7 @@ import type { StoreProduct } from "@medusajs/types"
 interface GetProductListParams {
   page?: number
   limit?: number
-  categoryId?: string
+  categoryId?: string | string[]
   region_id?: string
   handle?: string[] | string
 }
