@@ -1,7 +1,5 @@
 "use client"
 
-import { useState } from "react"
-// TODO: 서버에서 데이터를 받아서 props로 전달하도록 변경 필요
 import { CategoryCircleTabs } from "@/components/category/category-circle-tabs"
 import { BannerCarousel } from "@/components/layout/components/banner/banner-carousel"
 import {
@@ -15,23 +13,21 @@ import { SlidersHorizontal } from "lucide-react"
 import { overlay } from "overlay-kit"
 import { MobileFilterSheet } from "./mobile-filter-sheet"
 import CustomDropdown from "@components/dropdown"
-import type {
-  CategoryResponseDto,
-  CategoryTreeNodeDto,
-} from "@lib/types/dto/pim"
+import type { StoreProductCategoryTree } from "@lib/types/medusa-category"
 import type { ProductCard } from "@lib/types/ui/product"
 
 // 프론트 전용 타입(CategoryInfo)을 별도로 쓰기보다
 // 가능하면 DTO나 간단한 인터페이스로 유지하는 것이 좋습니다.
 export interface CategoryInfo {
   title: string
-  description: string
+  description?: string
+  banners?: { id: string; image: { src: string; alt: string } }[]
 }
 
 interface CategoryPageClientProps {
   slug: string
   categoryInfo: CategoryInfo
-  categoryData: CategoryTreeNodeDto // null 가능성 제거 (Container에서 처리함)
+  categoryData: StoreProductCategoryTree // null 가능성 제거 (Container에서 처리함)
   initialProducts?: ProductCard[] // 서버에서 로드한 초기 상품 목록
   initialTotal?: number // 전체 상품 수
   countryCode: string
@@ -45,12 +41,17 @@ export function CategoryPageClient({
   initialTotal = 0,
   countryCode,
 }: CategoryPageClientProps) {
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(20)
-
   // 서버에서 받은 초기 상품 목록 사용
   // TODO: 페이지네이션 시 추가 API 호출 필요 (클라이언트에서)
   const paginatedProducts = initialProducts
+  const timeSaleProducts = paginatedProducts
+    .filter((product) => product.isTimeSale && product.timeSaleEndTime)
+    .map((product) => ({
+      ...product,
+      timer: product.timeSaleEndTime
+        ? getTimerFromEndTime(product.timeSaleEndTime)
+        : undefined,
+    }))
 
   const openMobileFilter = () => {
     overlay.open(({ isOpen, close, unmount }) => (
@@ -74,16 +75,19 @@ export function CategoryPageClient({
                     {categoryInfo.title}
                   </h1>
 
-                  <p className="text-sm leading-relaxed text-gray-600 md:text-base">
-                    {categoryInfo.description}
-                  </p>
+                  {categoryInfo.description ? (
+                    <p className="text-sm leading-relaxed text-gray-600 md:text-base">
+                      {categoryInfo.description}
+                    </p>
+                  ) : null}
                 </div>
               </div>
             </div>
 
-            {categoryData.children && categoryData.children.length > 0 && (
+            {categoryData.category_children &&
+              categoryData.category_children.length > 0 && (
               <CategoryCircleTabs
-                items={categoryData.children as CategoryResponseDto[]} // 서버 DTO 구조 그대로 전달
+                items={categoryData.category_children}
                 selectedId=""
                 onSelect={() => {}}
                 countryCode={countryCode}
@@ -91,55 +95,31 @@ export function CategoryPageClient({
               />
             )}
 
-            {/* 프로모션 배너 */}
-            <section className="my-4">
-              <BannerCarousel
-                slides={[
-                  {
-                    id: "1",
-                    image: {
-                      src: "https://almondyoung.com/web/product/medium/202503/d21d85aa58f14bb4cc2a69342d24c4fa.jpg",
-                      alt: "프로모션 배너",
-                    },
-                  },
-                  {
-                    id: "2",
-                    image: {
-                      src: "https://almondyoung.com/web/product/medium/202503/d21d85aa58f14bb4cc2a69342d24c4fa.jpg",
-                      alt: "프로모션 배너",
-                    },
-                  },
-                ]}
-                height="120px"
-                autoPlay={true}
-                autoPlayInterval={6000}
-                className="lg:overflow-hidden lg:rounded-2xl"
-              />
-            </section>
+            {categoryInfo.banners && categoryInfo.banners.length > 0 && (
+              <section className="my-4">
+                <BannerCarousel
+                  slides={categoryInfo.banners}
+                  height="120px"
+                  autoPlay={true}
+                  autoPlayInterval={6000}
+                  className="lg:overflow-hidden lg:rounded-2xl"
+                />
+              </section>
+            )}
 
             {/* 타임 세일 섹션 */}
-            <SectionSliderHorizontal
-              title={`${categoryInfo.title} 재료 타임 세일!`}
-              itemCount={8}
-            >
-              {paginatedProducts.slice(0, 8).map((product, index) => (
-                <div key={product.id} className="w-48 shrink-0 snap-start">
-                  <TimeSaleProductCard
-                    product={{
-                      ...product,
-                      // 💡 서버에서 올 데이터 (고정값 시뮬레이션)
-                      basePrice: 30000, // 정가
-                      membershipPrice: 9000, // 할인가
-                      isMembershipOnly: false,
-                      isTimeSale: true,
-                      status: "active",
-                      timer: { hours: 16, minutes: 1, seconds: 10 },
-                    }}
-                    minWidth={192}
-                  />
-                </div>
-              ))}
-            </SectionSliderHorizontal>
+            {timeSaleProducts.length > 0 && (
+              <SectionSliderHorizontal
+                title={`${categoryInfo.title} 타임 세일`}
+                itemCount={timeSaleProducts.length}
+              >
+                {timeSaleProducts.map((product) => (
+                  <div key={product.id} className="w-48 shrink-0 snap-start">
+                    <TimeSaleProductCard product={product} minWidth={192} />
+                  </div>
+                ))}
+              </SectionSliderHorizontal>
+            )}
             <section>
               {/* 모바일: 필터 버튼 + 정렬 툴바 */}
               <div className="mb-4 flex justify-end gap-4 md:hidden">
@@ -171,7 +151,7 @@ export function CategoryPageClient({
             </section>
             <section>
               {/* Product Grid */}
-              {paginatedProducts.length && (
+              {paginatedProducts.length > 0 && (
                 <>
                   <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
                     {paginatedProducts.map((product, idx) => (
@@ -189,4 +169,17 @@ export function CategoryPageClient({
       </div>
     </main>
   )
+}
+
+const getTimerFromEndTime = (endTime: string) => {
+  const end = new Date(endTime).getTime()
+  const now = Date.now()
+  const diff = Math.max(end - now, 0)
+
+  const totalSeconds = Math.floor(diff / 1000)
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+
+  return { hours, minutes, seconds }
 }

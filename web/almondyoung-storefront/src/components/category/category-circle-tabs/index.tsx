@@ -1,27 +1,35 @@
 import Image from "next/image"
 import Link from "next/link"
 import * as React from "react"
-import type { CategoryResponseDto } from "@lib/types/dto/pim"
-
 // placeholder 이미지 (없을 때만 사용)
 const PLACEHOLDER_IMAGE = "https://placehold.co/120x120?text=No+Image"
 
 /**
  * 카테고리 탭 아이템의 데이터 구조
  */
+type CategoryCircleItem = {
+  id: string
+  name: string
+  handle?: string | null
+  metadata?: Record<string, unknown> | null
+  imageUrl?: string | null
+  thumbnail?: string | null
+}
+
 interface CategoryCircleItemProps {
-  category: CategoryResponseDto
+  category: CategoryCircleItem
   isSelected: boolean
-  countryCode: string
-  parentSlug: string
+  countryCode?: string
+  parentSlug?: string
+  onSelect?: (id: string) => void
 }
 
 interface CategoryCircleTabsProps {
-  items: CategoryResponseDto[]
+  items: CategoryCircleItem[]
   selectedId: string
-  onSelect: (id: string) => void
-  countryCode: string
-  parentSlug: string
+  onSelect?: (id: string) => void
+  countryCode?: string
+  parentSlug?: string
 }
 
 // --- 하위 컴포넌트: 개별 아이템 ---
@@ -31,23 +39,28 @@ function CategoryCircleItem({
   isSelected,
   countryCode,
   parentSlug,
+  onSelect,
 }: CategoryCircleItemProps) {
-  // 서버 데이터 구조: imageUrl 또는 thumbnail 사용
-  const imageUrl = category.imageUrl || category.thumbnail || PLACEHOLDER_IMAGE
+  const metadata = category.metadata as
+    | { imageUrl?: unknown; image_url?: unknown; thumbnail?: unknown }
+    | null
+    | undefined
+  const metadataImage =
+    (typeof metadata?.imageUrl === "string" && metadata.imageUrl) ||
+    (typeof metadata?.image_url === "string" && metadata.image_url) ||
+    (typeof metadata?.thumbnail === "string" && metadata.thumbnail) ||
+    null
 
-  // sub 페이지로 이동하는 링크 생성
-  const href = `/${countryCode}/category/${parentSlug}/${category.slug}`
+  const imageUrl =
+    category.imageUrl || category.thumbnail || metadataImage || PLACEHOLDER_IMAGE
 
-  return (
-    <Link
-      href={href}
-      className="group flex flex-col items-center text-center outline-none"
-    >
-      {/* [디자인] 이전 HTML의 스타일 적용:
-        - bg-muted, rounded-full, overflow-hidden
-        - hover:scale-105 (호버 시 확대 애니메이션)
-        - isSelected 상태일 때 시각적 강조 (ring 처리) 추가
-      */}
+  const href =
+    countryCode && parentSlug && category.handle
+      ? `/${countryCode}/category/${parentSlug}/${category.handle}`
+      : null
+
+  const content = (
+    <>
       <div
         className={`bg-muted mb-2 max-h-[180px] max-w-[180px] overflow-hidden rounded-full transition-transform duration-200 group-hover:scale-105 ${
           isSelected ? "ring-2 ring-black ring-offset-2" : ""
@@ -62,7 +75,6 @@ function CategoryCircleItem({
         />
       </div>
 
-      {/* 텍스트 스타일 */}
       <span
         className={`line-clamp-2 text-xs font-medium md:text-sm ${
           isSelected
@@ -72,7 +84,28 @@ function CategoryCircleItem({
       >
         {category.name}
       </span>
-    </Link>
+    </>
+  )
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className="group flex flex-col items-center text-center outline-none"
+      >
+        {content}
+      </Link>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      className="group flex flex-col items-center text-center outline-none"
+      onClick={() => onSelect?.(category.id)}
+    >
+      {content}
+    </button>
   )
 }
 
@@ -100,6 +133,7 @@ export function CategoryCircleTabs({
             isSelected={selectedId === category.id}
             countryCode={countryCode}
             parentSlug={parentSlug}
+            onSelect={onSelect}
           />
         ))}
       </div>
