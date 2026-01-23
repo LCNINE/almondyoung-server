@@ -34,12 +34,18 @@ export function HeroBannerCarousel({
   mobileWidth,
   mobileHeight,
 }: HeroBannerCarouselProps) {
+  if (!banners || banners.length === 0) {
+    return null
+  }
+
   const [api, setApi] = useState<CarouselApi>()
   const [isPlaying, setIsPlaying] = useState(true)
 
   const isMobile = useMediaQuery("(max-width: 768px)")
 
-  const autoplay = useRef(Autoplay({ delay: 4000, stopOnInteraction: false }))
+  const autoplay = useRef(
+    Autoplay({ delay: 4000, stopOnInteraction: false })
+  )
 
   useEffect(() => {
     if (!api) return
@@ -58,7 +64,7 @@ export function HeroBannerCarousel({
     <div className="bg-background relative w-full overflow-hidden border-b border-gray-100">
       <Carousel
         setApi={setApi}
-        plugins={[autoplay.current]}
+        plugins={banners.length > 1 ? [autoplay.current] : []}
         opts={{
           loop: true,
           align: isMobile ? "start" : "center",

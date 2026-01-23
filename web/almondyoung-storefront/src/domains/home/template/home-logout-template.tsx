@@ -1,7 +1,7 @@
-import type { CategoryTreeNodeDto } from "@lib/types/dto/pim"
 import { getProductList } from "@/lib/api/medusa/products"
 import { mapStoreProductsToCardProps } from "@/lib/utils/product-card"
 import type { ProductCardProps } from "@/lib/types/ui/product"
+import type { StoreProductCategoryTree } from "@/lib/types/medusa-category"
 import { Suspense } from "react"
 import { HeroBanner } from "../components/banner/hero-banner"
 import LashBannerBanner from "../components/banner/lashbanner-banner"
@@ -13,9 +13,10 @@ import { DigitalAssetSection } from "../components/sections/digital-asset"
 import { TimeSaleSection } from "../components/sections/time-sale"
 import { WelcomeDealSection } from "../components/sections/welcome-deal"
 import { ProductListSection } from "../components/shared/product-list-section"
+import { getTimeSaleProducts } from "../components/actions/get-category-products"
 
 interface HomeLogoutTemplateProps {
-  initialCategories: CategoryTreeNodeDto[]
+  initialCategories: StoreProductCategoryTree[]
   regionId?: string
 }
 
@@ -26,14 +27,14 @@ export async function HomeLogoutTemplate({
   initialCategories,
   regionId,
 }: HomeLogoutTemplateProps) {
-  const findCategoryBySlug = (
-    categories: CategoryTreeNodeDto[],
-    slug: string
-  ): CategoryTreeNodeDto | undefined => {
+  const findCategoryByHandle = (
+    categories: StoreProductCategoryTree[],
+    handle: string
+  ): StoreProductCategoryTree | undefined => {
     for (const category of categories) {
-      if (category.slug === slug) return category
-      if (category.children?.length) {
-        const match = findCategoryBySlug(category.children, slug)
+      if (category.handle === handle) return category
+      if (category.category_children?.length) {
+        const match = findCategoryByHandle(category.category_children, handle)
         if (match) return match
       }
     }
@@ -41,11 +42,11 @@ export async function HomeLogoutTemplate({
   }
 
   const fetchSectionProducts = async (
-    slug: string,
+    handle: string,
     fallbackLimit = 12
   ): Promise<ProductCardProps[]> => {
     try {
-      const category = findCategoryBySlug(initialCategories, slug)
+      const category = findCategoryByHandle(initialCategories, handle)
       const list = await getProductList({
         categoryId: category?.id,
         region_id: regionId,
@@ -62,7 +63,7 @@ export async function HomeLogoutTemplate({
       })
       return mapStoreProductsToCardProps(fallbackList.products || [])
     } catch (error) {
-      console.error(`홈 섹션 상품 로드 실패: ${slug}`, error)
+      console.error(`홈 섹션 상품 로드 실패: ${handle}`, error)
       return []
     }
   }
@@ -79,7 +80,7 @@ export async function HomeLogoutTemplate({
     fetchSectionProducts("digital-asset"),
     fetchSectionProducts("bulk-discount"),
     timeSaleInitialCategory?.id
-      ? fetchSectionProducts(timeSaleInitialCategory.slug)
+      ? getTimeSaleProducts(timeSaleInitialCategory.id, regionId)
       : Promise.resolve([]),
   ])
 
@@ -100,7 +101,10 @@ export async function HomeLogoutTemplate({
             </div>
           }
         >
-          <CategoryBestSectionContainer initialCategories={initialCategories} />
+          <CategoryBestSectionContainer
+            initialCategories={initialCategories}
+            regionId={regionId}
+          />
         </Suspense>
       </ProductListSection>
 

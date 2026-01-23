@@ -1,10 +1,10 @@
 import { TabsList, TabsTrigger } from "@/components/ui/tabs"
-import type { CategoryTreeNodeDto } from "@lib/types/dto/pim"
+import type { StoreProductCategoryTree } from "@/lib/types/medusa-category"
 import { cn } from "@lib/utils"
 import { motion } from "framer-motion"
 
 interface CategoryTabsProps {
-  categories: CategoryTreeNodeDto[]
+  categories: StoreProductCategoryTree[]
   activeTab: string
   dragHandlers: React.HTMLAttributes<HTMLDivElement>
   layoutId: string

@@ -4,20 +4,20 @@ import { ProductCard } from "@/components/products/prodcut-card"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { useCategoryTabs } from "@/domains/home/hooks/use-category-tabs"
 import { useDraggableScroll } from "@/hooks/ui/use-draggable-scroll"
-import type { CategoryTreeNodeDto } from "@lib/types/dto/pim"
+import type { StoreProductCategoryTree } from "@/lib/types/medusa-category"
 import { AnimatePresence, motion } from "framer-motion"
 import { ProductGrid } from "../../../../../components/products/product-grid"
 import { SectionHeader } from "../../header/section-header"
 import { ProductCarousel } from "../../shared/product-carousel"
 import { CategoryTabs } from "../category-best/category-tabs"
 import type { ProductCardProps } from "@/lib/types/ui/product"
-import { getCategoryProducts } from "../../actions/get-category-products"
-import { useEffect, useMemo, useState, useTransition } from "react"
+import { getTimeSaleProducts } from "../../actions/get-category-products"
+import { useEffect, useState, useTransition } from "react"
 import { useParams } from "next/navigation"
 import Link from "next/link"
 
 interface TimeSaleSectionProps {
-  initialCategories: CategoryTreeNodeDto[]
+  initialCategories: StoreProductCategoryTree[]
   initialProducts: ProductCardProps[]
   regionId?: string
 }
@@ -37,13 +37,10 @@ export function TimeSaleSection({
   const [, startTransition] = useTransition()
 
   const { activeTab, setActiveTab, visitedTabs, markAsVisited } =
-    useCategoryTabs(bestCategories[0]?.slug || "")
+    useCategoryTabs(bestCategories[0]?.id || "")
 
   const { props: dragHandlers } = useDraggableScroll()
-  const activeCategoryId = useMemo(
-    () => bestCategories.find((category) => category.slug === activeTab)?.id,
-    [activeTab, bestCategories]
-  )
+  const activeCategoryId = activeTab
 
   useEffect(() => {
     if (!activeCategoryId) {
@@ -52,10 +49,7 @@ export function TimeSaleSection({
     }
 
     startTransition(async () => {
-      const nextProducts = await getCategoryProducts(
-        activeCategoryId,
-        regionId
-      )
+      const nextProducts = await getTimeSaleProducts(activeCategoryId, regionId)
       setProducts(nextProducts)
     })
   }, [activeCategoryId, regionId])
@@ -68,7 +62,7 @@ export function TimeSaleSection({
         <SectionHeader.Title>
           <span className="md:text-red-30 text-black">타임</span> 세일
         </SectionHeader.Title>
-        <SectionHeader.More href={`/category/time-sale`} />
+        <SectionHeader.More href={`/${countryCode}/category/time-sale`} />
       </SectionHeader>
 
       <div className="flex w-full flex-col gap-1.5">

@@ -4,7 +4,7 @@ import { ProductCard } from "@/components/products/prodcut-card"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { useDraggableScroll } from "@/hooks/ui/use-draggable-scroll"
 import { ProductCardProps } from "@/lib/types/ui/product"
-import type { CategoryTreeNodeDto } from "@lib/types/dto/pim"
+import type { StoreProductCategoryTree } from "@/lib/types/medusa-category"
 import { AnimatePresence, motion } from "framer-motion"
 import { Package } from "lucide-react"
 import { chunk } from "lodash"
@@ -19,13 +19,15 @@ import { ProductCarousel } from "../../shared/product-carousel"
 import { CategoryTabs } from "./category-tabs"
 
 interface CategoryBestSectionProps {
-  initialCategories: CategoryTreeNodeDto[]
+  initialCategories: StoreProductCategoryTree[]
   initialProducts: ProductCardProps[] | undefined
+  regionId?: string
 }
 
 export function CategoryBestSection({
   initialCategories,
   initialProducts,
+  regionId,
 }: CategoryBestSectionProps) {
   const params = useParams() as { countryCode?: string }
   const countryCode = params?.countryCode || "kr"
@@ -43,10 +45,10 @@ export function CategoryBestSection({
 
   useEffect(() => {
     startTransition(async () => {
-      const products = await getCategoryBestProducts(activeTab)
+      const products = await getCategoryBestProducts(activeTab, regionId)
       setProducts(products)
     })
-  }, [activeTab])
+  }, [activeTab, regionId])
 
   const { props: dragHandlers } = useDraggableScroll()
   const isVisitedTab = visitedTabs.has(activeTab)
@@ -61,7 +63,9 @@ export function CategoryBestSection({
           카테고리 <span className="text-yellow-30">베스트</span>
         </SectionHeader.Title>
         <SectionHeader.More
-          href={`/category/${activeCategory?.slug || activeTab}`}
+          href={`/${countryCode}/category/${
+            activeCategory?.handle || activeTab
+          }`}
         />
       </SectionHeader>
 
