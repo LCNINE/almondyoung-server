@@ -17,7 +17,7 @@ import {
   FulfillmentCancelledPayload,
 } from '@packages/event-contracts/streams';
 import { MessageEnvelope } from '@packages/event-contracts/types';
-import { ChannelAdapterFactory } from '../services/adapters/channel-adapter.factory';
+import { ChannelAdapterFactory } from '../adapters/channel-adapter.factory';
 
 type SalesChannel = 'naver' | 'coupang' | 'medusa' | '3pl';
 

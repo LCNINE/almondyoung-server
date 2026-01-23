@@ -1,5 +1,5 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
-import { ChannelAdapter } from './channel-adapter.interface';
+import { ChannelAdapter } from '../channel-adapter.interface';
 import { DataType, SyncResult, SyncToChannelPayload } from '../../types';
 import {
   InternalOrderEvent,
@@ -12,7 +12,7 @@ import {
   CoupangOrderClient,
   CoupangReturnClient,
   CoupangExchangeClient,
-} from '../clients/coupang';
+} from './clients';
 import {
   CoupangOrderSheet,
   CoupangDeliveryHistoryResponse,
@@ -20,8 +20,8 @@ import {
   validateCoupangDateRange,
   mapCoupangStatusToInternal,
 } from '../../zods/coupang';
-import { OrderEventPublisher } from '../order-event.publisher';
-import { PendingOrderService } from '../pending-order.service';
+import { OrderEventPublisher } from '../../services/order-event.publisher';
+import { PendingOrderService } from '../../services/pending-order.service';
 
 /**
  * 쿠팡 채널 어댑터

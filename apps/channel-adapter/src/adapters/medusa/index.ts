@@ -7,5 +7,5 @@ export { InboxWorkerService } from './inbox-worker.service';
 export {
     transformPimToMedusa,
     validatePimSnapshot,
-} from './pim-to-medusa.transformer';
+} from './transformers/pim-to-medusa.transformer';
 

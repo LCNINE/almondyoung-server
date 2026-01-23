@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { ChannelAdapterFactory, ChannelType } from './adapters/channel-adapter.factory';
+import { ChannelAdapterFactory, ChannelType } from '../adapters/channel-adapter.factory';
 import { InternalOrderEvent, DataType, SyncToChannelPayload, SyncResult, channelAdapterSchema } from '../types';
 import { ChannelAdapterValidator } from '../validators/channel-adapter.validator';
 import { ChannelsConfig } from '../config/channels.config';

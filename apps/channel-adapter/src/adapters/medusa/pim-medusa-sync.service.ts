@@ -6,7 +6,7 @@ import { PimMedusaMappingRepository } from './pim-medusa-mapping.repository';
 import {
   transformPimToMedusa,
   validatePimSnapshot,
-} from './pim-to-medusa.transformer';
+} from './transformers/pim-to-medusa.transformer';
 import type {
   PimActiveVersionChangedEvent,
   PimProductSnapshot,

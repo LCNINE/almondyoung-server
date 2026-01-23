@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ChannelAdapterFactory, ChannelType } from './adapters/channel-adapter.factory';
+import { ChannelAdapterFactory, ChannelType } from '../adapters/channel-adapter.factory';
 import { ChannelCommand, SyncResult } from '../types';
 import { ChannelsConfig } from '../config/channels.config';
 import { InboxService } from './inbox.service';

@@ -1,6 +1,6 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 // import { HttpService } from '@nestjs/axios'; // BaseClient로 이동
-import { ChannelAdapter } from './channel-adapter.interface';
+import { ChannelAdapter } from '../channel-adapter.interface';
 import {
   DataType,
   SyncResult,
@@ -18,8 +18,8 @@ import { z } from 'zod';
 // API 클라이언트 Import (리팩토링된 파일)
 
 // import { NaverAuthService } from '../apis/naver-auth.service'; // 제거
-import { OrderEventPublisher } from '../order-event.publisher';
-import { PendingOrderService } from '../pending-order.service';
+import { OrderEventPublisher } from '../../services/order-event.publisher';
+import { PendingOrderService } from '../../services/pending-order.service';
 
 // 신규 Zod 스키마 Import
 import {
@@ -48,9 +48,9 @@ import {
   ChangeSaleStatusBodySchema,
   UpdateOptionStockBodySchema,
 } from '../../zods/naver/naver.product.zod'; // .zod.ts 제거
-import { NaverOrderClient } from '../clients/naver/naver-order.client';
-import { NaverClaimClient } from '../clients/naver/naver-claim.client';
-import { NaverProductClient } from '../clients/naver/naver-product.client';
+import { NaverOrderClient } from './clients/naver-order.client';
+import { NaverClaimClient } from './clients/naver-claim.client';
+import { NaverProductClient } from './clients/naver-product.client';
 import { CancelApproveCommandSchema, DispatchDelayCommandSchema, OrderConfirmCommandSchema, ReturnApproveCommandSchema } from '../../zods/naver/naver-adapter.zod';
 
 // -----------------------------------------------------------------
