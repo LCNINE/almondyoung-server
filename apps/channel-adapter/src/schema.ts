@@ -8,6 +8,7 @@ import {
   timestamp,
   integer,
   text,
+  boolean,
   uniqueIndex,
   index, // ← index 추가
 } from 'drizzle-orm/pg-core';
@@ -305,6 +306,83 @@ export const pimMedusaMappings = pgTable(
   ],
 );
 
+// 🔹 Migration Progress Tracking (Phase 5 - Backfill Script)
+// Tracks session-based migration progress with checkpoint support
+export const migrationProgress = pgTable(
+  'migration_progress',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+
+    // Session identification
+    sessionId: varchar('session_id', { length: 100 }).notNull().unique(),
+    startedAt: timestamp('started_at').notNull().defaultNow(),
+    completedAt: timestamp('completed_at'),
+    status: varchar('status', { length: 20 }).notNull().default('in_progress'),
+    // 'in_progress' | 'completed' | 'failed' | 'paused'
+
+    // Progress counters
+    totalMasters: integer('total_masters').notNull().default(0),
+    processedCount: integer('processed_count').notNull().default(0),
+    successCount: integer('success_count').notNull().default(0),
+    failedCount: integer('failed_count').notNull().default(0),
+    skippedCount: integer('skipped_count').notNull().default(0),
+
+    // Batch tracking
+    batchSize: integer('batch_size').notNull().default(100),
+    currentOffset: integer('current_offset').notNull().default(0),
+    lastProcessedMasterId: varchar('last_processed_master_id', { length: 100 }),
+
+    // Error tracking
+    lastError: text('last_error'),
+    errorStackTrace: text('error_stack_trace'),
+
+    updatedAt: timestamp('updated_at').defaultNow(),
+  },
+  (table) => [
+    index('idx_migration_session').on(table.sessionId),
+    index('idx_migration_status').on(table.status),
+    index('idx_migration_started').on(table.startedAt),
+  ],
+);
+
+// 🔹 Migration Failure Tracking (Phase 5 - Backfill Script)
+// Records individual product failures with snapshot for retry
+export const migrationFailures = pgTable(
+  'migration_failures',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+
+    sessionId: varchar('session_id', { length: 100 }).notNull(),
+    masterId: varchar('master_id', { length: 100 }).notNull(),
+    versionId: varchar('version_id', { length: 100 }),
+
+    // Error classification
+    errorType: varchar('error_type', { length: 50 }).notNull(),
+    // 'validation_error' | 'medusa_api_error' | 'network_error' | 'db_error' | 'unknown'
+    errorMessage: text('error_message').notNull(),
+    stackTrace: text('stack_trace'),
+
+    // Retry tracking
+    retryCount: integer('retry_count').notNull().default(0),
+    lastRetryAt: timestamp('last_retry_at'),
+    resolved: boolean('resolved').notNull().default(false),
+
+    // Snapshot for retry (full PimProductSnapshot)
+    snapshot: jsonb('snapshot'),
+
+    createdAt: timestamp('created_at').defaultNow(),
+  },
+  (table) => [
+    index('idx_migration_failures_session').on(table.sessionId),
+    index('idx_migration_failures_master').on(table.masterId),
+    index('idx_migration_failures_resolved').on(table.resolved),
+  ],
+);
+
 // ===============================
 // 전체 스키마 객체 Export (Drizzle ORM 규칙)
 // ===============================
@@ -319,6 +397,8 @@ export const channelAdapterSchema = {
   pendingOrders,
   inboxEvents,
   pimMedusaMappings,
+  migrationProgress,
+  migrationFailures,
 } as const;
 
 export type ChannelAdapterSchema = typeof channelAdapterSchema;
