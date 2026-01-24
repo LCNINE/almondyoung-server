@@ -1,5 +1,15 @@
 #!/usr/bin/env ts-node
 
+// ========================================================================
+// PIMCLIENT: MIGRATION SCRIPT ONLY
+// ========================================================================
+// This script is allowed to use PimClient for direct PIM API access.
+// This is an exception to the MSA boundary rule and should ONLY be used for:
+// - One-time data migration/backfill operations
+// - Administrative/debugging tasks
+// - NOT for regular operational code
+// ========================================================================
+
 /**
  * PIM → Medusa full migration/backfill.
  * - Pulls active masters from PIM (Medusa sales channel mapped masters).

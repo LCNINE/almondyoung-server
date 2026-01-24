@@ -17,7 +17,7 @@ import {
   OrderCancelledPayload,
   OrderModifiedPayload,
 } from '@packages/event-contracts/streams';
-import { channelAdapterSchema, outboxEvents } from '../schema';
+import { channelAdapterSchema, inboxEvents } from '../schema';
 import { eq, and, lte, sql, inArray, ne } from 'drizzle-orm';
 
 type ChannelAdapterPayload =
@@ -92,7 +92,7 @@ export class OutboxDispatcherService implements OnModuleInit {
             partition_key, 
             payload,
             attempts
-          FROM ${outboxEvents}
+          FROM ${inboxEvents}
           WHERE status = 'pending'
             AND next_attempt_at <= NOW()
             AND aggregate_type != 'Product'
@@ -108,11 +108,11 @@ export class OutboxDispatcherService implements OnModuleInit {
         // 조회된 이벤트의 attempts 증가 (트랜잭션 내)
         const eventIds = pendingEvents.map((e) => e.id);
         await tx
-          .update(outboxEvents)
+          .update(inboxEvents)
           .set({
-            attempts: sql`${outboxEvents.attempts} + 1`,
+            attempts: sql`${inboxEvents.attempts} + 1`,
           })
-          .where(inArray(outboxEvents.id, eventIds));
+          .where(inArray(inboxEvents.id, eventIds));
 
         return pendingEvents;
       });
@@ -182,12 +182,12 @@ export class OutboxDispatcherService implements OnModuleInit {
 
       // 성공 → published 상태로 변경
       await this.db.db
-        .update(outboxEvents)
+        .update(inboxEvents)
         .set({
           status: 'published',
           publishedAt: new Date(),
         })
-        .where(eq(outboxEvents.id, event.id));
+        .where(eq(inboxEvents.id, event.id));
 
       this.logger.debug(`Event ${event.id}: ${event.event_type} (${event.aggregate_type})`);
     } catch (error) {
@@ -195,13 +195,13 @@ export class OutboxDispatcherService implements OnModuleInit {
       const isFinalFailure = newAttempts >= 5;
 
       await this.db.db
-        .update(outboxEvents)
+        .update(inboxEvents)
         .set({
           status: isFinalFailure ? 'failed' : 'pending',
           attempts: newAttempts,
           nextAttemptAt: isFinalFailure ? undefined : this.calculateNextAttempt(newAttempts),
         })
-        .where(eq(outboxEvents.id, event.id));
+        .where(eq(inboxEvents.id, event.id));
 
       this.logger.error(
         `Event ${event.id} 실패 (${newAttempts}/5): ${event.event_type}`,
@@ -237,7 +237,7 @@ export class OutboxDispatcherService implements OnModuleInit {
    */
   async retryFailedEvents(eventIds?: string[]): Promise<number> {
     const result = await this.db.db
-      .update(outboxEvents)
+      .update(inboxEvents)
       .set({
         status: 'pending',
         attempts: 0,
@@ -245,10 +245,10 @@ export class OutboxDispatcherService implements OnModuleInit {
       })
       .where(
         eventIds
-          ? and(eq(outboxEvents.status, 'failed'), inArray(outboxEvents.id, eventIds))
-          : eq(outboxEvents.status, 'failed'),
+          ? and(eq(inboxEvents.status, 'failed'), inArray(inboxEvents.id, eventIds))
+          : eq(inboxEvents.status, 'failed'),
       )
-      .returning({ id: outboxEvents.id });
+      .returning({ id: inboxEvents.id });
 
     this.logger.log(`수동 재시도: ${result.length}개 이벤트 재활성화`);
     return result.length;

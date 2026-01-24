@@ -1,4 +1,4 @@
-import { ChannelType } from '../services/adapters/channel-adapter.factory';
+import { ChannelType } from '../adapters/channel-adapter.factory';
 
 /**
  * 활성화된 채널 목록
