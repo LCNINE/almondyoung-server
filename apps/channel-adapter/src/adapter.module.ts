@@ -3,11 +3,11 @@ import * as os from 'os';
 import { HttpModule } from '@nestjs/axios';
 import { ScheduleModule } from '@nestjs/schedule';
 import { EventsModule, StreamPublisher } from '@app/events';
-import { NaverSmartstoreAdapter } from './services/adapters/naver-smartstore.adapter';
-import { CoupangAdapter } from './services/adapters/coupang.adapter';
+import { NaverSmartstoreAdapter } from './adapters/naver/naver-smartstore.adapter';
+import { CoupangAdapter } from './adapters/coupang/coupang.adapter';
 import { OrderEventPublisher } from './services/order-event.publisher';
 
-import { ChannelAdapterFactory } from './services/adapters/channel-adapter.factory';
+import { ChannelAdapterFactory } from './adapters/channel-adapter.factory';
 import { SyncStatusService } from './services/sync-status.service';
 import { ChannelAdapterController } from './controllers/channel-adapter.controller';
 import { SyncStatusController } from './controllers/sync-status.controller';
@@ -23,11 +23,11 @@ import {
   CoupangReturnClient,
   CoupangExchangeClient,
   CoupangProductClient,
-} from './services/clients/coupang';
-import { NaverOrderClient } from './services/clients/naver/naver-order.client';
-import { NaverClaimClient } from './services/clients/naver/naver-claim.client';
-import { NaverProductClient } from './services/clients/naver/naver-product.client';
-import { NaverAuthService } from './services/clients/naver/naver-auth.client';
+} from './adapters/coupang/clients';
+import { NaverOrderClient } from './adapters/naver/clients/naver-order.client';
+import { NaverClaimClient } from './adapters/naver/clients/naver-claim.client';
+import { NaverProductClient } from './adapters/naver/clients/naver-product.client';
+import { NaverAuthService } from './adapters/naver/clients/naver-auth.client';
 import { ConfigModule } from '@nestjs/config';
 import { validateChannelAdapterEnv } from './config/env.validation';
 import { ChannelDataReader } from './services/channel-data.reader';
@@ -36,16 +36,18 @@ import { ChannelCommandManager } from './services/channel-command.manager';
 import { PendingOrderRepository } from './services/pending-order.repository';
 import { ChannelListingClient } from './services/clients/channel-listing.client';
 import { PendingOrderService } from './services/pending-order.service';
-import { OutboxService } from './services/outbox.service';
+import { InboxService } from './services/inbox.service';
 import { OutboxDispatcherService } from './services/outbox-dispatcher.service';
 
 // PIM-Medusa 동기화 서비스
-import { PimClient } from './services/pim-medusa-sync/pim.client';
-import { MedusaClient } from './services/pim-medusa-sync/medusa.client';
-import { PimMedusaSyncService } from './services/pim-medusa-sync/pim-medusa-sync.service';
+// PIMCLIENT: Removed to enforce MSA boundary - no sync calls between internal services
+// import { PimClient } from './adapters/medusa/pim.client';
+import { MedusaClient } from './adapters/medusa/medusa.client';
+import { PimMedusaSyncService } from './adapters/medusa/pim-medusa-sync.service';
 import { PimProductEventConsumer } from './consumers/pim-product-event.consumer';
-import { PimMedusaMappingRepository } from './services/pim-medusa-sync/pim-medusa-mapping.repository';
-import { OutboxWorkerService } from './services/pim-medusa-sync/outbox-worker.service';
+import { PimCategoryConsumer } from './consumers/pim-category.consumer';
+import { PimMedusaMappingRepository } from './adapters/medusa/pim-medusa-mapping.repository';
+import { InboxWorkerService } from './adapters/medusa/inbox-worker.service';
 
 // Kafka 설정 생성 함수 (운영 환경 전용)
 function createKafkaConfig() {
@@ -116,7 +118,13 @@ function createKafkaConfig() {
       ]
       : []),
   ],
-  controllers: [ChannelAdapterController, SyncStatusController, FulfillmentEventsConsumer, PimProductEventConsumer],
+  controllers: [
+    ChannelAdapterController,
+    SyncStatusController,
+    FulfillmentEventsConsumer,
+    PimProductEventConsumer,
+    PimCategoryConsumer,
+  ],
   providers: [
     ChannelAdapterService,
     SyncStatusService,
@@ -148,17 +156,19 @@ function createKafkaConfig() {
     // 주문 이벤트 발행 서비스
     OrderEventPublisher,
 
-    // Outbox 패턴 서비스
-    OutboxService,
+    // Inbox/Outbox 패턴 서비스
+    InboxService,
     OutboxDispatcherService,
 
     // PIM-Medusa 동기화
-    PimClient,
+    // PIMCLIENT: Removed to enforce MSA boundary
+    // PimClient,
     MedusaClient,
     PimMedusaSyncService,
     PimProductEventConsumer,
+    PimCategoryConsumer,
     PimMedusaMappingRepository,
-    OutboxWorkerService,
+    InboxWorkerService,
 
     // 개발/테스트 환경: NullEventPublisher를 토큰으로 제공
     ...(process.env.NODE_ENV !== 'production'

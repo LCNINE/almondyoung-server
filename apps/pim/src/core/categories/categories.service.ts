@@ -39,12 +39,17 @@ import {
 import { ProductReadAssembler } from '../products/assemblers/product-read.assembler';
 import { eq, isNull, like, inArray, and, or, sql, asc } from 'drizzle-orm';
 import { RowList } from 'postgres';
+import { InjectStreamPublisher, StreamPublisher } from '@app/events';
+import { PRODUCT_STREAM } from '@packages/event-contracts/streams/product.stream';
+import type { CategoryChangedPayload, CategorySnapshot } from '@packages/event-contracts/streams/product.stream';
 
 @Injectable()
 export class ProductCategoriesService {
   constructor(
     @InjectDb() private readonly db: DbService<PimSchema>,
     private readonly productReadAssembler: ProductReadAssembler,
+    @InjectStreamPublisher(PRODUCT_STREAM.topic.topic)
+    private readonly eventPublisher: StreamPublisher,
   ) { }
 
   private getClient(tx?: DbTransaction) {
@@ -110,6 +115,10 @@ export class ProductCategoriesService {
           await this._linkTagGroups(newCategory.id, tagGroupLinks, client);
         }
 
+        // Publish CategoryChanged event
+        const snapshot = this.buildCategorySnapshot(newCategory);
+        await this.publishCategoryEvent(newCategory.id, 'created', snapshot);
+
         const responseDto: CategoryResponseDto = CategoryMapper.toDto(newCategory);
         return responseDto;
       } catch (error: any) {
@@ -160,6 +169,10 @@ export class ProductCategoriesService {
           await this._linkTagGroups(categoryId, tagGroupLinks, client);
         }
       }
+
+      // Publish CategoryChanged event
+      const snapshot = this.buildCategorySnapshot(updatedCategory);
+      await this.publishCategoryEvent(categoryId, 'updated', snapshot);
 
       return CategoryMapper.toDto(updatedCategory);
     });
@@ -228,6 +241,9 @@ export class ProductCategoriesService {
       await txn
         .delete(pimSchema.productCategories)
         .where(eq(pimSchema.productCategories.id, categoryId));
+
+      // Publish CategoryChanged event
+      await this.publishCategoryEvent(categoryId, 'deleted', null);
     };
 
     // 트랜잭션 처리
@@ -418,6 +434,10 @@ export class ProductCategoriesService {
 
       // 모든 자손들의 레벨과 경로 재계산
       await this._updateDescendantPaths(categoryId, txn);
+
+      // Publish CategoryChanged event
+      const snapshot = this.buildCategorySnapshot(updatedCategory);
+      await this.publishCategoryEvent(categoryId, 'moved', snapshot);
 
       return updatedCategory;
     };
@@ -1226,6 +1246,54 @@ export class ProductCategoriesService {
     }
   }
 
+  // ===== Event Publishing Helpers =====
+
+  /**
+   * Build category snapshot for event publishing
+   */
+  private buildCategorySnapshot(category: ProductCategory): CategorySnapshot {
+    return {
+      id: category.id,
+      name: category.name,
+      slug: category.slug,
+      description: category.description ?? null,
+      parentId: category.parentId ?? null,
+      level: category.level,
+      path: category.path,
+      sortOrder: category.sortOrder,
+      isActive: category.isActive,
+      visibility: category.visibility,
+      thumbnail: category.imageUrl ?? null,
+      displaySettings: category.displaySettings as any,
+      seoConfig: category.seoConfig as any,
+      templateConfig: category.templateConfig as any,
+      createdAt: category.createdAt.toISOString(),
+      updatedAt: category.updatedAt.toISOString(),
+    };
+  }
+
+  /**
+   * Publish CategoryChanged event
+   */
+  private async publishCategoryEvent(
+    categoryId: string,
+    changeType: 'created' | 'updated' | 'deleted' | 'moved',
+    snapshot: CategorySnapshot | null,
+  ): Promise<void> {
+    const payload: CategoryChangedPayload = {
+      categoryId,
+      changeType,
+      timestamp: new Date().toISOString(),
+      category: snapshot,
+    };
+
+    await this.eventPublisher.publishEvent({
+      eventType: 'CategoryChanged',
+      aggregateId: categoryId,
+      payload,
+    });
+  }
+
   // ===== Phase 2: Category Configuration Methods =====
 
   /**
@@ -1260,6 +1328,10 @@ export class ProductCategoriesService {
       })
       .where(eq(pimSchema.productCategories.id, categoryId))
       .returning();
+
+    // Publish CategoryChanged event
+    const snapshot = this.buildCategorySnapshot(updated);
+    await this.publishCategoryEvent(categoryId, 'updated', snapshot);
 
     const responseDto: CategoryResponseDto = CategoryMapper.toDto(updated);
     return responseDto;
@@ -1298,6 +1370,10 @@ export class ProductCategoriesService {
       .where(eq(pimSchema.productCategories.id, categoryId))
       .returning();
 
+    // Publish CategoryChanged event
+    const snapshot = this.buildCategorySnapshot(updated);
+    await this.publishCategoryEvent(categoryId, 'updated', snapshot);
+
     const responseDto: CategoryResponseDto = CategoryMapper.toDto(updated);
     return responseDto;
   }
@@ -1335,6 +1411,10 @@ export class ProductCategoriesService {
       .where(eq(pimSchema.productCategories.id, categoryId))
       .returning();
 
+    // Publish CategoryChanged event
+    const snapshot = this.buildCategorySnapshot(updated);
+    await this.publishCategoryEvent(categoryId, 'updated', snapshot);
+
     const responseDto: CategoryResponseDto = CategoryMapper.toDto(updated);
     return responseDto;
   }
@@ -1366,6 +1446,10 @@ export class ProductCategoriesService {
       })
       .where(eq(pimSchema.productCategories.id, categoryId))
       .returning();
+
+    // Publish CategoryChanged event
+    const snapshot = this.buildCategorySnapshot(updated);
+    await this.publishCategoryEvent(categoryId, 'updated', snapshot);
 
     const responseDto: CategoryResponseDto = CategoryMapper.toDto(updated);
     return responseDto;

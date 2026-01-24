@@ -1,6 +1,6 @@
-// apps/channel-adapter/src/services/pim-medusa-sync/pim-to-medusa.transformer.ts
+// apps/channel-adapter/src/adapters/medusa/transformers/pim-to-medusa.transformer.ts
 import { Logger } from '@nestjs/common';
-import type { PimProductSnapshot, MedusaProductPayload } from '../../types';
+import type { PimProductSnapshot, MedusaProductPayload } from '../../../types';
 
 const logger = new Logger('PimToMedusaTransformer');
 

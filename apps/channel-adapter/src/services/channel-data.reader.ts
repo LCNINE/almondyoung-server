@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import {
   ChannelAdapterFactory,
   ChannelType,
-} from './adapters/channel-adapter.factory';
+} from '../adapters/channel-adapter.factory';
 import {
   InternalOrderEvent,
   DataType,

@@ -8,6 +8,7 @@ import {
   timestamp,
   integer,
   text,
+  boolean,
   uniqueIndex,
   index, // ← index 추가
 } from 'drizzle-orm/pg-core';
@@ -210,16 +211,25 @@ export const pendingOrders = pgTable(
   ],
 );
 
-// 🔹 Outbox Events 테이블 (Transactional Outbox Pattern)
-export const outboxEvents = pgTable(
-  'outbox_events',
+// ⚠️ IMPORTANT: This is the INBOX pattern (event reception/processing)
+// NOT to be confused with the shared Outbox pattern (libs/events/src/outbox/)
+// 
+// Purpose: 
+// - Receives events from Kafka and stores them immediately (fast ACK)
+// - Separate worker processes them asynchronously (slow external API calls)
+// - Prevents Kafka consumer timeout during long-running operations
+//
+// Shared Outbox is for EVENT PUBLISHING (DB → Kafka)
+// This Inbox is for EVENT PROCESSING (Kafka → External APIs)
+export const inboxEvents = pgTable(
+  'inbox_events',
   {
     id: uuid('id')
       .primaryKey()
       .$defaultFn(() => uuidv7()),
 
     // 이벤트 식별
-    eventType: varchar('event_type', { length: 100 }).notNull(), // 'OrderSyncCompleted', 'CommandExecuted' 등
+    eventType: varchar('event_type', { length: 100 }).notNull(), // 'ProductMasterActiveVersionChanged' 등
     aggregateType: varchar('aggregate_type', { length: 50 }).notNull().default('ChannelAdapter'),
     aggregateId: varchar('aggregate_id', { length: 255 }).notNull(), // 채널별 주문/상품 ID (varchar)
     partitionKey: varchar('partition_key', { length: 255 }).notNull(), // Kafka 파티션 키
@@ -244,10 +254,10 @@ export const outboxEvents = pgTable(
   },
   (table) => [
     // 상태별 조회 최적화
-    index('idx_outbox_status_created').on(table.status, table.createdAt),
-    index('idx_outbox_pending_next_attempt').on(table.status, table.nextAttemptAt),
+    index('idx_inbox_status_created').on(table.status, table.createdAt),
+    index('idx_inbox_pending_next_attempt').on(table.status, table.nextAttemptAt),
     // 파티션 키 인덱스
-    index('idx_outbox_partition_key').on(table.partitionKey),
+    index('idx_inbox_partition_key').on(table.partitionKey),
   ],
 );
 
@@ -296,6 +306,83 @@ export const pimMedusaMappings = pgTable(
   ],
 );
 
+// 🔹 Migration Progress Tracking (Phase 5 - Backfill Script)
+// Tracks session-based migration progress with checkpoint support
+export const migrationProgress = pgTable(
+  'migration_progress',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+
+    // Session identification
+    sessionId: varchar('session_id', { length: 100 }).notNull().unique(),
+    startedAt: timestamp('started_at').notNull().defaultNow(),
+    completedAt: timestamp('completed_at'),
+    status: varchar('status', { length: 20 }).notNull().default('in_progress'),
+    // 'in_progress' | 'completed' | 'failed' | 'paused'
+
+    // Progress counters
+    totalMasters: integer('total_masters').notNull().default(0),
+    processedCount: integer('processed_count').notNull().default(0),
+    successCount: integer('success_count').notNull().default(0),
+    failedCount: integer('failed_count').notNull().default(0),
+    skippedCount: integer('skipped_count').notNull().default(0),
+
+    // Batch tracking
+    batchSize: integer('batch_size').notNull().default(100),
+    currentOffset: integer('current_offset').notNull().default(0),
+    lastProcessedMasterId: varchar('last_processed_master_id', { length: 100 }),
+
+    // Error tracking
+    lastError: text('last_error'),
+    errorStackTrace: text('error_stack_trace'),
+
+    updatedAt: timestamp('updated_at').defaultNow(),
+  },
+  (table) => [
+    index('idx_migration_session').on(table.sessionId),
+    index('idx_migration_status').on(table.status),
+    index('idx_migration_started').on(table.startedAt),
+  ],
+);
+
+// 🔹 Migration Failure Tracking (Phase 5 - Backfill Script)
+// Records individual product failures with snapshot for retry
+export const migrationFailures = pgTable(
+  'migration_failures',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+
+    sessionId: varchar('session_id', { length: 100 }).notNull(),
+    masterId: varchar('master_id', { length: 100 }).notNull(),
+    versionId: varchar('version_id', { length: 100 }),
+
+    // Error classification
+    errorType: varchar('error_type', { length: 50 }).notNull(),
+    // 'validation_error' | 'medusa_api_error' | 'network_error' | 'db_error' | 'unknown'
+    errorMessage: text('error_message').notNull(),
+    stackTrace: text('stack_trace'),
+
+    // Retry tracking
+    retryCount: integer('retry_count').notNull().default(0),
+    lastRetryAt: timestamp('last_retry_at'),
+    resolved: boolean('resolved').notNull().default(false),
+
+    // Snapshot for retry (full PimProductSnapshot)
+    snapshot: jsonb('snapshot'),
+
+    createdAt: timestamp('created_at').defaultNow(),
+  },
+  (table) => [
+    index('idx_migration_failures_session').on(table.sessionId),
+    index('idx_migration_failures_master').on(table.masterId),
+    index('idx_migration_failures_resolved').on(table.resolved),
+  ],
+);
+
 // ===============================
 // 전체 스키마 객체 Export (Drizzle ORM 규칙)
 // ===============================
@@ -308,8 +395,10 @@ export const channelAdapterSchema = {
   wmsOrderMappings,
   syncStatuses,
   pendingOrders,
-  outboxEvents,
+  inboxEvents,
   pimMedusaMappings,
+  migrationProgress,
+  migrationFailures,
 } as const;
 
 export type ChannelAdapterSchema = typeof channelAdapterSchema;

@@ -133,8 +133,8 @@ async function bootstrap() {
   // console.log(`정적 파일 서빙 경로: ${htmlPath}`);
 
   console.log(`Current NODE_ENV: ${process.env.NODE_ENV}`);
-  // 운영 환경에서만 Kafka Consumer 연결
-  if (process.env.NODE_ENV === 'production') {
+  // 테스트 환경을 제외하고 Kafka Consumer 연결 (dev/prod)
+  if (process.env.NODE_ENV !== 'test') {
     const consumerOptions = EventsModule.forConsumer({
       streams: [FULFILLMENT_STREAM, PRODUCT_STREAM],
       groupId: 'channel-adapter-consumer',

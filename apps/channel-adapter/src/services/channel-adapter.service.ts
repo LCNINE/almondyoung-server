@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ChannelType } from './adapters/channel-adapter.factory';
+import { ChannelType } from '../adapters/channel-adapter.factory';
 import {
   DataType,
   InternalOrderEvent,
