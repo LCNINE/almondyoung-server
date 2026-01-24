@@ -1,6 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import axios, { AxiosInstance } from 'axios';
+import Medusa from '@medusajs/js-sdk';
+import type { FetchError } from '@medusajs/js-sdk';
+import type { HttpTypes } from '@medusajs/types';
+import { createMedusaSdk } from './medusa-sdk.config';
 import type {
     MedusaProductPayload,
     MedusaProduct,
@@ -10,7 +13,7 @@ import type { PimCategoryDetail } from './pim.client';
 @Injectable()
 export class MedusaClient {
     private readonly logger = new Logger(MedusaClient.name);
-    private readonly client: AxiosInstance;
+    private readonly sdk: Medusa;
     private readonly apiUrl: string;
     private readonly categoryCache = new Map<string, MedusaProduct['id']>(); // key: handle
     private readonly tagCache = new Map<string, string>(); // key: value
@@ -23,40 +26,10 @@ export class MedusaClient {
         this.apiUrl =
             this.configService.get<string>('MEDUSA_API_URL') || '';
 
-        this.client = axios.create({
-            baseURL: `${this.apiUrl}/admin`,
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            // 대용량 variants/가격 동기화 시 타임아웃 및 바디 제한 확대
-            timeout: 180000,
-            maxBodyLength: Infinity,
-            maxContentLength: Infinity,
-        });
+        // Initialize Medusa SDK (handles authentication automatically)
+        this.sdk = createMedusaSdk(configService);
 
-        const apiKey = this.configService.get<string>('MEDUSA_API_KEY');
-        if (apiKey) {
-            // Medusa v2 admin auth:
-            // - JWT starts with "ey" -> Bearer (Authorization)
-            // - Secret API key starts with "sk_" -> Basic (Authorization) and x-medusa-access-token (best-effort)
-            if (apiKey.startsWith('ey')) {
-                this.client.defaults.headers.common['Authorization'] = `Bearer ${apiKey}`;
-            } else if (apiKey.startsWith('sk_')) {
-                /**
-                 * Medusa admin secret key
-                 * - Basic Auth expects base64("<token>:");
-                 * - Also send x-medusa-access-token for compatibility.
-                 */
-                const basic = Buffer.from(`${apiKey}:`).toString('base64');
-                this.client.defaults.headers.common['Authorization'] = `Basic ${basic}`;
-                this.client.defaults.headers.common['x-medusa-access-token'] = apiKey;
-                this.logger.log(
-                    `Medusa admin API key detected (sk_... length=${apiKey.length}). Using Basic(base64) auth header.`,
-                );
-            }
-        }
-
-        this.logger.log(`Medusa client initialized: ${this.apiUrl}`);
+        this.logger.log(`Medusa SDK initialized: ${this.apiUrl}`);
     }
 
     // 모든 캐시 초기화 (마이그레이션 시작 시 사용)
@@ -69,60 +42,52 @@ export class MedusaClient {
     }
 
     // ===== Product Categories =====
-    private normalizeCategoryListResponse(resp: any): any[] {
-        return (
-            resp?.data?.product_categories ||
-            resp?.data?.productCategories ||
-            resp?.data?.categories ||
-            []
-        );
+    // Note: These normalizers may be removed after testing confirms SDK consistency
+    private normalizeCategoryListResponse(resp: { product_categories?: HttpTypes.AdminProductCategory[] }): HttpTypes.AdminProductCategory[] {
+        // SDK already returns normalized format: { product_categories: [...] }
+        return resp?.product_categories || [];
     }
 
-    private normalizeCategoryResponse(resp: any): any | null {
-        return (
-            resp?.data?.product_category ||
-            resp?.data?.productCategory ||
-            resp?.data?.category ||
-            null
-        );
+    private normalizeCategoryResponse(resp: { product_category?: HttpTypes.AdminProductCategory }): HttpTypes.AdminProductCategory | null {
+        // SDK already returns normalized format: { product_category: {...} }
+        return resp?.product_category || null;
     }
 
-    private async getCategoryById(id: string): Promise<any | null> {
+    private async getCategoryById(id: string): Promise<HttpTypes.AdminProductCategory | null> {
         try {
-            const res = await this.client.get(`/product-categories/${id}`);
-            return this.normalizeCategoryResponse(res);
-        } catch (error: any) {
-            const status = error?.response?.status;
-            if (status === 404) return null;
-            this.logger.warn(
-                `Medusa getCategoryById failed for ${id}: ${error?.response?.data?.message || error?.message}`,
-            );
-            return null;
-        }
-    }
-
-    private async findCategoryByHandle(handle: string): Promise<any | null> {
-        try {
-            const response = await this.client.get('/product-categories', {
-                params: { handle },
-            });
-            const categories = this.normalizeCategoryListResponse(response);
-            return categories.find((c: any) => c.handle === handle) || null;
+            const { product_category } = await this.sdk.admin.productCategory.retrieve(id);
+            return product_category;
         } catch (error) {
+            const fetchError = error as FetchError;
+            if (fetchError.status === 404) return null;
             this.logger.warn(
-                `Medusa findCategoryByHandle failed for ${handle}: ${error.message}`,
+                `Medusa getCategoryById failed for ${id}: ${fetchError.message}`,
             );
             return null;
         }
     }
 
-    private async createCategory(payload: any): Promise<any> {
-        const response = await this.client.post('/product-categories', payload);
-        const created = this.normalizeCategoryResponse(response);
-        if (!created) {
+    private async findCategoryByHandle(handle: string): Promise<HttpTypes.AdminProductCategory | null> {
+        try {
+            const { product_categories } = await this.sdk.admin.productCategory.list({
+                handle,
+            });
+            return product_categories?.find((c) => c.handle === handle) || null;
+        } catch (error) {
+            const fetchError = error as FetchError;
+            this.logger.warn(
+                `Medusa findCategoryByHandle failed for ${handle}: ${fetchError.message}`,
+            );
+            return null;
+        }
+    }
+
+    private async createCategory(payload: HttpTypes.AdminCreateProductCategory): Promise<HttpTypes.AdminProductCategory> {
+        const { product_category } = await this.sdk.admin.productCategory.create(payload);
+        if (!product_category) {
             throw new Error('Medusa API returned no category in response');
         }
-        return created;
+        return product_category;
     }
 
     // 카테고리 보장: PIM 카테고리 트리를 따라 부모→자식 순서로 생성/조회
@@ -175,13 +140,14 @@ export class MedusaClient {
                     },
                 };
                 try {
-                    await this.client.post(
-                        `/product-categories/${existing.id}`,
+                    await this.sdk.admin.productCategory.update(
+                        existing.id,
                         updatePayload,
                     );
-                } catch (err: any) {
+                } catch (err) {
+                    const fetchError = err as FetchError;
                     this.logger.warn(
-                        `Failed to update Medusa category ${existing.id} from PIM ${detail.id}: ${err?.response?.data?.message || err?.message}`,
+                        `Failed to update Medusa category ${existing.id} from PIM ${detail.id}: ${fetchError.message}`,
                     );
                 }
                 // 조회 결과를 캐시에 저장 (다음 동일 제품에서 재사용)
@@ -272,13 +238,14 @@ export class MedusaClient {
                     },
                 };
                 try {
-                    await this.client.post(
-                        `/product-categories/${existing.id}`,
+                    await this.sdk.admin.productCategory.update(
+                        existing.id,
                         updatePayload,
                     );
-                } catch (err: any) {
+                } catch (err) {
+                    const fetchError = err as FetchError;
                     this.logger.warn(
-                        `Failed to update Medusa category ${existing.id} from snapshot ${categorySnapshot.id}: ${err?.response?.data?.message || err?.message}`,
+                        `Failed to update Medusa category ${existing.id} from snapshot ${categorySnapshot.id}: ${fetchError.message}`,
                     );
                 }
                 this.categoryCache.set(handle, existing.id);
@@ -316,7 +283,7 @@ export class MedusaClient {
         options?: { throwOnFailure?: boolean },
     ): Promise<void> {
         if (!categoryIds || categoryIds.length === 0) return;
-        const unique = [...new Set(categoryIds)];
+        const unique = Array.from(new Set(categoryIds));
 
         // 카테고리 존재 여부 확인
         for (const catId of unique) {
@@ -334,15 +301,16 @@ export class MedusaClient {
 
         try {
             // Medusa v2 방식: POST /products/:id 에 categories 필드로 업데이트
-            await this.client.post(`/products/${productId}`, {
+            await this.sdk.admin.product.update(productId, {
                 categories: unique.map(id => ({ id })),
             });
             this.logger.debug(
                 `Attached product ${productId} to ${unique.length} categories: ${unique.join(', ')}`,
             );
-        } catch (error: any) {
+        } catch (error) {
+            const fetchError = error as FetchError;
             this.logger.warn(
-                `Failed to attach product ${productId} to categories: ${error?.response?.data?.message || error?.message}`,
+                `Failed to attach product ${productId} to categories: ${fetchError.message}`,
             );
             if (options?.throwOnFailure) {
                 throw error;
@@ -351,46 +319,36 @@ export class MedusaClient {
     }
 
     // ===== Product Tags =====
-    private normalizeTagListResponse(resp: any): any[] {
-        return (
-            resp?.data?.product_tags ||
-            resp?.data?.productTags ||
-            resp?.data?.tags ||
-            []
-        );
+    // Note: These normalizers may be removed after testing confirms SDK consistency
+    private normalizeTagListResponse(resp: { product_tags?: HttpTypes.AdminProductTag[] }): HttpTypes.AdminProductTag[] {
+        // SDK already returns normalized format: { product_tags: [...] }
+        return resp?.product_tags || [];
     }
 
-    private normalizeTagResponse(resp: any): any | null {
-        return (
-            resp?.data?.product_tag ||
-            resp?.data?.productTag ||
-            resp?.data?.tag ||
-            null
-        );
+    private normalizeTagResponse(resp: { product_tag?: HttpTypes.AdminProductTag }): HttpTypes.AdminProductTag | null {
+        // SDK already returns normalized format: { product_tag: {...} }
+        return resp?.product_tag || null;
     }
 
-    private async findTagByValue(value: string): Promise<any | null> {
+    private async findTagByValue(value: string): Promise<HttpTypes.AdminProductTag | null> {
         try {
-            const response = await this.client.get('/product-tags', {
-                params: { q: value },
-            });
-            const tags = this.normalizeTagListResponse(response);
-            return tags.find((t: any) => t.value === value) || null;
+            const { product_tags } = await this.sdk.admin.productTag.list({ q: value });
+            return product_tags?.find((t) => t.value === value) || null;
         } catch (error) {
+            const fetchError = error as FetchError;
             this.logger.warn(
-                `Medusa findTagByValue failed for ${value}: ${error.message}`,
+                `Medusa findTagByValue failed for ${value}: ${fetchError.message}`,
             );
             return null;
         }
     }
 
-    private async createTag(value: string): Promise<any> {
-        const response = await this.client.post('/product-tags', { value });
-        const created = this.normalizeTagResponse(response);
-        if (!created) {
+    private async createTag(value: string): Promise<HttpTypes.AdminProductTag> {
+        const { product_tag } = await this.sdk.admin.productTag.create({ value });
+        if (!product_tag) {
             throw new Error('Medusa API returned no tag in response');
         }
-        return created;
+        return product_tag;
     }
 
     async ensureTag(value: string): Promise<string> {
@@ -422,31 +380,32 @@ export class MedusaClient {
 
         try {
             // 조회
-            const response = await this.client.get('/product-types', {
-                params: { q: value, limit: 1 }
+            const { product_types } = await this.sdk.admin.productType.list({
+                q: value,
+                limit: 1,
             });
 
-            const existing = response.data.product_types?.find((t: any) => t.value === value);
+            const existing = product_types?.find((t) => t.value === value);
             if (existing) {
                 this.typeCache.set(value, existing.id);
                 return existing.id;
             }
 
             // 생성
-            const createRes = await this.client.post('/product-types', {
+            const { product_type } = await this.sdk.admin.productType.create({
                 value,
             });
-            const newId = createRes.data.product_type.id;
+            const newId = product_type.id;
             this.typeCache.set(value, newId);
             this.logger.log(`Created Medusa product type "${value}" (${newId})`);
             return newId;
 
         } catch (error) {
+            const fetchError = error as FetchError;
             this.logger.error(
-                `Failed to ensure product type ${value}: ${JSON.stringify(error.response?.data || error.message)}`
+                `Failed to ensure product type ${value}: ${fetchError.message}`
             );
-            // 실패 시 빈 문자열 반환하거나 에러 throw (여기선 에러 throw)
-            throw new Error(`Medusa ensureProductType failed: ${error.message}`);
+            throw new Error(`Medusa ensureProductType failed: ${fetchError.message}`);
         }
     }
 
@@ -466,11 +425,12 @@ export class MedusaClient {
                 return this.salesChannelCache.get('Default Sales Channel')!;
             }
 
-            const response = await this.client.get('/sales-channels', {
-                params: { q: 'Default Sales Channel', limit: 1 }
+            const { sales_channels } = await this.sdk.admin.salesChannel.list({
+                q: 'Default Sales Channel',
+                limit: 1,
             });
 
-            const channel = response.data.sales_channels?.[0];
+            const channel = sales_channels?.[0];
             if (channel) {
                 this.salesChannelCache.set('Default Sales Channel', channel.id);
                 return channel.id;
@@ -478,19 +438,20 @@ export class MedusaClient {
 
             // 없으면 생성 (혹은 에러 처리)
             this.logger.warn('Default Sales Channel not found, creating...');
-            const createRes = await this.client.post('/sales-channels', {
+            const { sales_channel } = await this.sdk.admin.salesChannel.create({
                 name: 'Default Sales Channel',
-                description: 'Created by Medusa'
+                description: 'Created by Medusa',
             });
-            const newId = createRes.data.sales_channel.id;
+            const newId = sales_channel.id;
             this.salesChannelCache.set('Default Sales Channel', newId);
             return newId;
 
         } catch (error) {
+            const fetchError = error as FetchError;
             this.logger.error(
-                `Failed to get default sales channel: ${JSON.stringify(error.response?.data || error.message)}`
+                `Failed to get default sales channel: ${fetchError.message}`
             );
-            throw new Error(`Medusa getDefaultSalesChannel failed: ${error.message}`);
+            throw new Error(`Medusa getDefaultSalesChannel failed: ${fetchError.message}`);
         }
     }
 
@@ -501,16 +462,12 @@ export class MedusaClient {
         try {
             this.logger.debug(`Finding Medusa product by handle: ${handle}`);
 
-            // Medusa는 handle 기반 조회를 공식 지원
-            const response = await this.client.get(`/products`, {
-                params: {
-                    handle,
-                    limit: 1,
-                },
+            const { products } = await this.sdk.admin.product.list({
+                handle,
+                limit: 1,
             });
 
-            const products = response.data?.products || [];
-            if (products.length === 0) {
+            if (!products || products.length === 0) {
                 this.logger.debug(`No Medusa product found for handle: ${handle}`);
                 return null;
             }
@@ -519,13 +476,14 @@ export class MedusaClient {
             this.logger.debug(
                 `Found Medusa product: ${product.id} (handle: ${product.handle})`,
             );
-            return product;
+            return product as MedusaProduct;
         } catch (error) {
+            const fetchError = error as FetchError;
             this.logger.error(
                 `Failed to find product by handle: ${handle}`,
-                error.stack,
+                fetchError.message,
             );
-            throw new Error(`Medusa findProductByHandle failed: ${error.message}`);
+            throw new Error(`Medusa findProductByHandle failed: ${fetchError.message}`);
         }
     }
 
@@ -536,9 +494,9 @@ export class MedusaClient {
         try {
             this.logger.log(`Creating Medusa product: ${payload.title} (${payload.handle})`);
 
-            const response = await this.client.post('/products', payload);
+            // MedusaProductPayload는 커스텀 타입이므로 SDK 타입으로 변환 필요
+            const { product } = await this.sdk.admin.product.create(payload as unknown as HttpTypes.AdminCreateProduct);
 
-            const product = response.data?.product;
             if (!product) {
                 throw new Error('Medusa API returned no product in response');
             }
@@ -546,13 +504,14 @@ export class MedusaClient {
             this.logger.log(
                 `Created Medusa product: ${product.id} (${product.handle})`,
             );
-            return product;
+            return product as MedusaProduct;
         } catch (error) {
+            const fetchError = error as FetchError;
             this.logger.error(
                 `Failed to create Medusa product: ${payload.title}`,
-                error.response?.data || error.stack,
+                fetchError.message,
             );
-            throw new Error(`Medusa createProduct failed: ${error.message}`);
+            throw new Error(`Medusa createProduct failed: ${fetchError.message}`);
         }
     }
 
@@ -577,7 +536,8 @@ export class MedusaClient {
             const chunkSize = 10;
             for (let i = 0; i < rest.length; i += chunkSize) {
                 const chunk = rest.slice(i, i + chunkSize);
-                await this.addVariants(created.id, chunk);
+                // MedusaProductPayload의 variants는 커스텀 타입이므로 SDK 타입으로 변환 필요
+                await this.addVariants(created.id, chunk as unknown as HttpTypes.AdminCreateProductVariant[]);
             }
         } catch (err) {
             // 부분 생성 방지: 추가 중 실패하면 생성한 상품을 롤백
@@ -593,15 +553,18 @@ export class MedusaClient {
         return this.getProduct(created.id);
     }
 
-    private async addVariants(productId: string, variants: any[]): Promise<void> {
+    private async addVariants(productId: string, variants: HttpTypes.AdminCreateProductVariant[]): Promise<void> {
         for (const variant of variants) {
-            await this.client.post(`/products/${productId}/variants`, variant);
+            await this.sdk.client.fetch(`/admin/products/${productId}/variants`, {
+                method: 'post',
+                body: variant,
+            });
         }
     }
 
     private async getProduct(productId: string): Promise<MedusaProduct> {
-        const res = await this.client.get(`/products/${productId}`);
-        return res.data?.product;
+        const { product } = await this.sdk.admin.product.retrieve(productId);
+        return product as MedusaProduct;
     }
 
     private async safeDeleteProduct(productId: string): Promise<void> {
@@ -622,12 +585,12 @@ export class MedusaClient {
         try {
             this.logger.log(`Updating Medusa product: ${medusaProductId}`);
 
-            const response = await this.client.post(
-                `/products/${medusaProductId}`,
-                payload,
+            // MedusaProductPayload는 커스텀 타입이므로 SDK 타입으로 변환 필요
+            const { product } = await this.sdk.admin.product.update(
+                medusaProductId,
+                payload as unknown as HttpTypes.AdminUpdateProduct,
             );
 
-            const product = response.data?.product;
             if (!product) {
                 throw new Error('Medusa API returned no product in response');
             }
@@ -635,11 +598,12 @@ export class MedusaClient {
             this.logger.log(
                 `Updated Medusa product: ${product.id} (${product.handle})`,
             );
-            return product;
-        } catch (error: any) {
+            return product as MedusaProduct;
+        } catch (error) {
+            const fetchError = error as FetchError;
             this.logger.error(
                 `Failed to update Medusa product: ${medusaProductId}`,
-                error?.response?.data || error?.stack,
+                fetchError.message,
             );
             // Re-throw original error so caller can inspect status/type and decide fallback (create)
             throw error;
@@ -657,14 +621,13 @@ export class MedusaClient {
                 // 매핑이 있으면 업데이트
                 const product = await this.updateProduct(medusaProductId, payload);
                 return { product, action: 'updated' };
-            } catch (err: any) {
+            } catch (err) {
                 // 이전에 존재하던 product id가 삭제되었을 경우 create로 재시도
-                const errType = err?.response?.data?.type;
-                const status = err?.response?.status;
+                const fetchError = err as FetchError;
+                const status = fetchError.status;
                 const is404 =
-                    errType === 'not_found' ||
                     status === 404 ||
-                    /status code 404/i.test(err?.message || '');
+                    /status code 404/i.test(fetchError.message || '');
                 if (is404) {
                     this.logger.warn(
                         `Medusa product ${medusaProductId} not found. Recreating with handle ${payload.handle}`,
@@ -695,17 +658,18 @@ export class MedusaClient {
         try {
             this.logger.log(`Setting Medusa product to draft: ${medusaProductId}`);
 
-            await this.client.post(`/products/${medusaProductId}`, {
+            await this.sdk.admin.product.update(medusaProductId, {
                 status: 'draft',
             });
 
             this.logger.log(`Set product to draft: ${medusaProductId}`);
         } catch (error) {
+            const fetchError = error as FetchError;
             this.logger.error(
                 `Failed to set product to draft: ${medusaProductId}`,
-                error.response?.data || error.stack,
+                fetchError.message,
             );
-            throw new Error(`Medusa setProductToDraft failed: ${error.message}`);
+            throw new Error(`Medusa setProductToDraft failed: ${fetchError.message}`);
         }
     }
 
@@ -714,27 +678,27 @@ export class MedusaClient {
         try {
             this.logger.warn(`Deleting Medusa product: ${medusaProductId}`);
 
-            await this.client.delete(`/products/${medusaProductId}`);
+            await this.sdk.admin.product.delete(medusaProductId);
 
             this.logger.log(`Deleted Medusa product: ${medusaProductId}`);
         } catch (error) {
+            const fetchError = error as FetchError;
             this.logger.error(
                 `Failed to delete Medusa product: ${medusaProductId}`,
-                error.response?.data || error.stack,
+                fetchError.message,
             );
-            throw new Error(`Medusa deleteProduct failed: ${error.message}`);
+            throw new Error(`Medusa deleteProduct failed: ${fetchError.message}`);
         }
     }
 
     // 헬스 체크: medusa api 연결 확인
     async healthCheck(): Promise<boolean> {
         try {
-            const response = await this.client.get('/products', {
-                params: { limit: 1 },
-            });
-            return response.status === 200;
+            await this.sdk.admin.product.list({ limit: 1 });
+            return true;
         } catch (error) {
-            this.logger.error('Medusa health check failed', error.message);
+            const fetchError = error as FetchError;
+            this.logger.error('Medusa health check failed', fetchError.message);
             return false;
         }
     }
@@ -749,17 +713,18 @@ export class MedusaClient {
     }): Promise<string> {
         try {
             // 1. 이름으로 기존 Price List 조회
-            const searchRes = await this.client.get('/price-lists', {
-                params: { q: payload.name, limit: 1 },
+            const { price_lists } = await this.sdk.admin.priceList.list({
+                q: payload.name,
+                limit: 1,
             });
-            const existing = searchRes.data?.price_lists?.find(
-                (pl: any) => pl.name === payload.name
+            const existing = price_lists?.find(
+                (pl) => pl.title === payload.name
             );
 
             if (existing) {
                 // 업데이트 (필요시)
                 if (existing.status !== payload.status) {
-                    await this.client.post(`/price-lists/${existing.id}`, {
+                    await this.sdk.admin.priceList.update(existing.id, {
                         status: payload.status,
                     });
                 }
@@ -767,7 +732,7 @@ export class MedusaClient {
             }
 
             // 2. 생성
-            const createPayload = {
+            const createPayload: HttpTypes.AdminCreatePriceList = {
                 title: payload.name,
                 description: payload.description,
                 type: payload.type,
@@ -777,14 +742,15 @@ export class MedusaClient {
             };
             this.logger.debug(`Creating Price List: ${JSON.stringify(createPayload)}`);
 
-            const createRes = await this.client.post('/price-lists', createPayload);
+            const { price_list } = await this.sdk.admin.priceList.create(createPayload);
 
-            return createRes.data.price_list.id;
+            return price_list.id;
         } catch (error) {
+            const fetchError = error as FetchError;
             this.logger.error(
-                `Failed to ensure price list ${payload.name}: ${JSON.stringify(error.response?.data || error.message)}`
+                `Failed to ensure price list ${payload.name}: ${fetchError.message}`
             );
-            throw new Error(`Medusa ensurePriceList failed: ${error.message}`);
+            throw new Error(`Medusa ensurePriceList failed: ${fetchError.message}`);
         }
     }
 
@@ -799,17 +765,19 @@ export class MedusaClient {
         }>
     ): Promise<void> {
         try {
-            this.logger.debug(`Adding prices to list ${priceListId}: ${JSON.stringify({ create: prices })}`);
-            // Medusa v2 Admin API: POST /admin/price-lists/:id/prices/batch
-            await this.client.post(`/price-lists/${priceListId}/prices/batch`, {
-                create: prices,
+            this.logger.debug(`Adding prices to list ${priceListId}`);
+            // Medusa v2 Admin API: Custom batch route - use client.fetch
+            await this.sdk.client.fetch(`/admin/price-lists/${priceListId}/prices/batch`, {
+                method: 'post',
+                body: { create: prices },
             });
             this.logger.log(`Added ${prices.length} prices to list ${priceListId}`);
         } catch (error) {
+            const fetchError = error as FetchError;
             this.logger.error(
-                `Failed to add prices to list ${priceListId}: ${JSON.stringify(error.response?.data || error.message)}`
+                `Failed to add prices to list ${priceListId}: ${fetchError.message}`
             );
-            throw new Error(`Medusa addPricesToPriceList failed: ${error.message}`);
+            throw new Error(`Medusa addPricesToPriceList failed: ${fetchError.message}`);
         }
     }
 }
