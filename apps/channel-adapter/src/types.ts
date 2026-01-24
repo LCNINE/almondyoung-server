@@ -8,7 +8,7 @@ import {
   syncStatuses,
   wmsOrderMappings,
   pendingOrders,
-  outboxEvents,
+  inboxEvents,
   pimMedusaMappings,
 } from './schema';
 
@@ -20,7 +20,7 @@ export const channelAdapterSchema = {
   syncStatuses,
   wmsOrderMappings,
   pendingOrders,
-  outboxEvents,
+  inboxEvents,
   pimMedusaMappings,
 } as const;
 
@@ -58,10 +58,10 @@ export type UpdatePendingOrder = Partial<Omit<NewPendingOrder, 'id' | 'createdAt
 
 export type PendingOrderStatus = 'pending_mapping' | 'processing' | 'completed' | 'failed';
 
-// OUTBOX EVENTS 타입
-export type OutboxEvent = InferSelectModel<typeof outboxEvents>;
-export type NewOutboxEvent = InferInsertModel<typeof outboxEvents>;
-export type UpdateOutboxEvent = Partial<Omit<NewOutboxEvent, 'id' | 'createdAt'>>;
+// INBOX EVENTS 타입 (Kafka 이벤트 수신 처리)
+export type InboxEvent = InferSelectModel<typeof inboxEvents>;
+export type NewInboxEvent = InferInsertModel<typeof inboxEvents>;
+export type UpdateInboxEvent = Partial<Omit<NewInboxEvent, 'id' | 'createdAt'>>;
 
 // PIM-MEDUSA MAPPINGS 타입
 export type PimMedusaMapping = InferSelectModel<typeof pimMedusaMappings>;
@@ -539,6 +539,17 @@ export interface PimProductSnapshot {
 
   // 분류
   categoryIds?: string[];
+  categories?: Array<{
+    id: string;
+    name: string;
+    slug: string;
+    path: string;
+    parentId: string | null;
+    isActive: boolean;
+    visibility: boolean;
+    showOnMainCategory: boolean;
+    thumbnail?: string;
+  }>;
   brand?: string;
   tags?: string[];
   productType?: string;
@@ -695,6 +706,9 @@ export interface PimActiveVersionChangedEvent {
   versionId: string | null;
   name: string | null;
   previousActiveVersionId: string | null;
+  categoryIds?: string[];
+  primaryCategoryId?: string | null;
   changeReason: 'published' | 'rollback' | 'unpublished';
   changedAt: string;
+  snapshot?: PimProductSnapshot | null;
 }

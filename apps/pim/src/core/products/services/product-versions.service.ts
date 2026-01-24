@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { InjectStreamPublisher, StreamPublisher } from '@app/events';
-import { ProductEvents, PRODUCT_STREAM } from '@packages/event-contracts';
+import { ProductEvents, PRODUCT_STREAM, ProductSnapshot } from '@packages/event-contracts';
 import { PricingValidatorService } from '../../pricing/pricing-validator.service';
 import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
 import { ProductReadAssembler } from '../assemblers/product-read.assembler';
@@ -17,13 +17,17 @@ import {
   type PimSchema,
   productMasters,
   productMasterCategories,
+  productCategories,
   productMasterVersions,
   productMasterOptionGroups,
   productMasterVariants,
   productMasterPricingRules,
   productOptionGroupDisplays,
   productOptionValueDisplays,
+  productOptionGroups,
+  productOptionValues,
   productVariants,
+  variantOptionValues,
   pricingRules,
   productTagValues,
   tagValues,
@@ -338,9 +342,11 @@ export class ProductVersionsService {
           ? 'rollback'
           : 'published';
 
-      const categoryIds = targetStatus === 'active'
-        ? await this.getVersionCategoryIds(newVersion.masterId, newVersion.id, tx)
-        : [];
+      const snapshot = targetStatus === 'active'
+        ? await this._buildFullSnapshot(newVersion.masterId, newVersion.id, tx)
+        : null;
+
+      const categoryIds = snapshot?.categories?.map(c => c.id) || [];
       const primaryCategoryId = categoryIds.length > 0
         ? await this.getPrimaryCategoryId(newVersion.masterId, newVersion.id, tx)
         : null;
@@ -357,11 +363,12 @@ export class ProductVersionsService {
           primaryCategoryId,
           changeReason,
           changedAt: new Date().toISOString(),
+          snapshot,
         },
       });
 
       this.logger.log(
-        `📤 Published ProductMasterActiveVersionChanged: ${newVersion.masterId} (${changeReason})`,
+        `📤 Published ProductMasterActiveVersionChanged: ${newVersion.masterId} (${changeReason}) with ${snapshot ? 'full snapshot' : 'no snapshot'}`,
       );
     } catch (error) {
       this.logger.error(
@@ -407,6 +414,325 @@ export class ProductVersionsService {
       .limit(1);
 
     return row?.categoryId ?? null;
+  }
+
+  /**
+   * 전체 ProductSnapshot 빌드 (Phase 2)
+   * 이벤트 페이로드에 포함할 모든 상품 데이터를 조회
+   */
+  private async _buildFullSnapshot(
+    masterId: string,
+    versionId: string,
+    tx: DbTransaction,
+  ): Promise<ProductSnapshot> {
+    const version = await tx.query.productMasterVersions.findFirst({
+      where: eq(productMasterVersions.id, versionId),
+    });
+
+    if (!version) {
+      throw new Error(`Version ${versionId} not found`);
+    }
+
+    const categories = await this._buildCategoryTree(masterId, versionId, tx);
+    const optionGroups = await this._getVersionOptionGroups(masterId, versionId, tx);
+    const variants = await this._getVersionVariants(versionId, tx);
+
+    const images = await tx
+      .select()
+      .from(productImages)
+      .where(eq(productImages.versionId, versionId))
+      .orderBy(asc(productImages.sortOrder));
+
+    const tagRows = await tx
+      .select({
+        name: tagValues.name,
+      })
+      .from(productTagValues)
+      .innerJoin(tagValues, eq(productTagValues.tagValueId, tagValues.id))
+      .where(eq(productTagValues.versionId, versionId));
+
+    const fileServiceUrl = process.env.FILE_SERVICE_URL || '';
+
+    return {
+      masterId,
+      versionId,
+      version: version.version,
+      name: version.name,
+      description: version.description || undefined,
+      descriptionHtml: version.descriptionHtml || undefined,
+      thumbnail: version.thumbnail ? `${fileServiceUrl}/files/${version.thumbnail}` : undefined,
+      images: images.map(img => ({
+        fileId: img.fileId,
+        url: `${fileServiceUrl}/files/${img.fileId}`,
+        isPrimary: img.isPrimary,
+        sortOrder: img.sortOrder,
+      })),
+      seoTitle: version.seoTitle || undefined,
+      seoDescription: version.seoDescription || undefined,
+      seoKeywords: version.seoKeywords?.join(', ') || undefined,
+      categories,
+      brand: version.brand || undefined,
+      tags: tagRows.map(t => t.name),
+      productType: version.productType || undefined,
+      optionGroups,
+      variants,
+      status: version.status === 'inactive' ? 'draft' : version.status,
+      isWholesaleOnly: version.isWholesaleOnly || false,
+      isMembershipOnly: version.isMembershipOnly || false,
+      isGiftcard: false,
+      discountable: true,
+    };
+  }
+
+  /**
+   * 카테고리 트리 빌드 (부모 경로 포함)
+   */
+  private async _buildCategoryTree(
+    masterId: string,
+    versionId: string,
+    tx: DbTransaction,
+  ): Promise<Array<{
+    id: string;
+    name: string;
+    slug: string;
+    path: string;
+    parentId: string | null;
+    isActive: boolean;
+    visibility: boolean;
+    showOnMainCategory: boolean;
+    thumbnail?: string;
+  }>> {
+    const categoryRows = await tx
+      .select({
+        categoryId: productMasterCategories.categoryId,
+      })
+      .from(productMasterCategories)
+      .where(eq(productMasterCategories.masterId, masterId));
+
+    if (categoryRows.length === 0) return [];
+
+    const categoryIds = categoryRows.map(r => r.categoryId);
+
+    const categories = await tx
+      .select()
+      .from(productCategories)
+      .where(inArray(productCategories.id, categoryIds));
+
+    const fileServiceUrl = process.env.FILE_SERVICE_URL || '';
+
+    const categoriesWithPath = await Promise.all(
+      categories.map(async (cat) => {
+        const path = await this._buildCategoryPath(cat.id, tx);
+        return {
+          id: cat.id,
+          name: cat.name,
+          slug: cat.slug,
+          path,
+          parentId: cat.parentId,
+          isActive: cat.isActive,
+          visibility: cat.visibility ?? true,
+          showOnMainCategory: cat.displaySettings?.showOnMainCategory ?? false,
+          thumbnail: cat.imageUrl ? `${fileServiceUrl}/files/${cat.imageUrl}` : undefined,
+        };
+      })
+    );
+
+    return categoriesWithPath;
+  }
+
+  /**
+   * 카테고리 경로 재귀적으로 구성
+   */
+  private async _buildCategoryPath(
+    categoryId: string,
+    tx: DbTransaction,
+  ): Promise<string> {
+    const pathParts: string[] = [];
+    let currentId: string | null = categoryId;
+
+    while (currentId) {
+      const category = await tx.query.productCategories.findFirst({
+        where: eq(productCategories.id, currentId),
+      });
+
+      if (!category) break;
+
+      pathParts.unshift(category.slug);
+      currentId = category.parentId;
+    }
+
+    return '/' + pathParts.join('/');
+  }
+
+  /**
+   * 버전의 옵션 그룹 조회
+   */
+  private async _getVersionOptionGroups(
+    masterId: string,
+    versionId: string,
+    tx: DbTransaction,
+  ): Promise<Array<{
+    id: string;
+    name: string;
+    values: Array<{
+      id: string;
+      name: string;
+      colorCode?: string;
+      imageUrl?: string;
+    }>;
+  }>> {
+    const optionGroupRows = await tx
+      .select({
+        optionGroupId: productMasterOptionGroups.optionGroupId,
+        displayName: productOptionGroupDisplays.displayName,
+      })
+      .from(productMasterOptionGroups)
+      .leftJoin(
+        productOptionGroupDisplays,
+        and(
+          eq(productMasterOptionGroups.optionGroupId, productOptionGroupDisplays.optionGroupId),
+          eq(productOptionGroupDisplays.versionId, versionId),
+        )
+      )
+      .where(eq(productMasterOptionGroups.masterId, masterId));
+
+    const fileServiceUrl = process.env.FILE_SERVICE_URL || '';
+
+    const optionGroups = await Promise.all(
+      optionGroupRows.map(async (row) => {
+        const valueRows = await tx
+          .select({
+            id: productOptionValueDisplays.optionValueId,
+            name: productOptionValueDisplays.displayName,
+            colorCode: productOptionValueDisplays.colorCode,
+            imageUrl: productOptionValueDisplays.imageUrl,
+          })
+          .from(productOptionValueDisplays)
+          .where(
+            and(
+              eq(productOptionValueDisplays.versionId, versionId),
+            )
+          );
+
+        return {
+          id: row.optionGroupId,
+          name: row.displayName || row.optionGroupId,
+          values: valueRows.map(v => ({
+            id: v.id,
+            name: v.name,
+            colorCode: v.colorCode || undefined,
+            imageUrl: v.imageUrl ? `${fileServiceUrl}/files/${v.imageUrl}` : undefined,
+          })),
+        };
+      })
+    );
+
+    return optionGroups;
+  }
+
+  /**
+   * 버전의 변형(Variants) 조회
+   */
+  private async _getVersionVariants(
+    versionId: string,
+    tx: DbTransaction,
+  ): Promise<Array<{
+    id: string;
+    variantName: string;
+    sku: string;
+    variantCode?: string;
+    isDefault: boolean;
+    status: string;
+    optionCombination?: Array<{
+      name: string;
+      value: string;
+    }>;
+    basePrice: number;
+    membershipPrice?: number;
+    tieredPrices?: Array<{
+      minQuantity: number;
+      price: number;
+    }>;
+    weight?: number;
+    length?: number;
+    width?: number;
+    height?: number;
+    originCountry?: string;
+    midCode?: string;
+    hsCode?: string;
+    material?: string;
+  }>> {
+    const variantRows = await tx
+      .select({
+        id: productVariants.id,
+        variantName: productVariants.variantName,
+        variantCode: productVariants.variantCode,
+        isDefault: productVariants.isDefault,
+        status: productVariants.status,
+      })
+      .from(productMasterVariants)
+      .innerJoin(
+        productVariants,
+        eq(productMasterVariants.variantId, productVariants.id),
+      )
+      .where(eq(productMasterVariants.versionId, versionId));
+
+    const cachedPrices = await this.priceCacheService.getCachedPriceSetsByVersion(versionId, tx);
+    const priceMap = new Map(cachedPrices.map(p => [p.variantId, p]));
+
+    const variants = await Promise.all(
+      variantRows.map(async (variant) => {
+        const priceData = priceMap.get(variant.id);
+
+        const optionValues = await tx
+          .select({
+            optionGroupName: productOptionGroupDisplays.displayName,
+            optionValueName: productOptionValueDisplays.displayName,
+          })
+          .from(variantOptionValues)
+          .innerJoin(
+            productOptionValues,
+            eq(variantOptionValues.optionValueId, productOptionValues.id),
+          )
+          .innerJoin(
+            productOptionValueDisplays,
+            and(
+              eq(productOptionValues.id, productOptionValueDisplays.optionValueId),
+              eq(productOptionValueDisplays.versionId, versionId),
+            ),
+          )
+          .innerJoin(
+            productOptionGroups,
+            eq(productOptionValues.optionGroupId, productOptionGroups.id),
+          )
+          .innerJoin(
+            productOptionGroupDisplays,
+            and(
+              eq(productOptionGroups.id, productOptionGroupDisplays.optionGroupId),
+              eq(productOptionGroupDisplays.versionId, versionId),
+            ),
+          )
+          .where(eq(variantOptionValues.variantId, variant.id));
+
+        return {
+          id: variant.id,
+          variantName: variant.variantName || '',
+          sku: variant.id,
+          variantCode: variant.variantCode || undefined,
+          isDefault: variant.isDefault,
+          status: variant.status,
+          optionCombination: optionValues.map(ov => ({
+            name: ov.optionGroupName || '',
+            value: ov.optionValueName || '',
+          })),
+          basePrice: priceData?.basePrice ?? 0,
+          membershipPrice: priceData?.membershipPrice || undefined,
+          tieredPrices: priceData?.tieredPrices || undefined,
+        };
+      })
+    );
+
+    return variants;
   }
 
   /**

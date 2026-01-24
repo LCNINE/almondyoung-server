@@ -1,0 +1,23 @@
+{
+  "name": "almondyoung-seed-data",
+  "version": "1.0.0",
+  "description": "Integrated seed data script for Almondyoung microservices",
+  "scripts": {
+    "seed": "ts-node index.ts"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.30.0",
+    "postgres": "^3.4.3",
+    "uuid": "^9.0.1",
+    "bcrypt": "^5.1.1",
+    "dotenv": "^16.4.1",
+    "chalk": "^4.1.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.5",
+    "@types/uuid": "^9.0.7",
+    "@types/bcrypt": "^5.0.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}

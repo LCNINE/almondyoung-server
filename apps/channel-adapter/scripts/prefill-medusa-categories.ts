@@ -1,4 +1,15 @@
 #!/usr/bin/env ts-node
+
+// ========================================================================
+// PIMCLIENT: MIGRATION SCRIPT ONLY
+// ========================================================================
+// This script is allowed to use PimClient for direct PIM API access.
+// This is an exception to the MSA boundary rule and should ONLY be used for:
+// - One-time data migration/backfill operations
+// - Administrative/debugging tasks
+// - NOT for regular operational code
+// ========================================================================
+
 /**
  * PIM 카테고리를 Medusa에 선행 생성/동기화합니다.
  * - PIM /categories 목록을 가져와 parent → child 순서로 ensureCategoryTree 실행
