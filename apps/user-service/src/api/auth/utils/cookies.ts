@@ -4,6 +4,7 @@ interface CookieEnvironment {
   isRailway: boolean;
   isProd: boolean;
   corsOrigin: string;
+  cookieDomain?: string;
 }
 
 /**
@@ -14,13 +15,16 @@ interface CookieEnvironment {
 export function getCookieOptions(
   env: CookieEnvironment,
 ): CookieSerializeOptions {
-  const { isRailway, isProd, corsOrigin } = env;
+  const { isRailway, isProd, corsOrigin, cookieDomain } = env;
 
   // 프론트엔드가 로컬 개발 환경인지 확인
   const isLocalFrontend =
     corsOrigin.includes('localhost') ||
     corsOrigin.includes('127.0.0.1') ||
     corsOrigin.startsWith('http://');
+
+  const normalizedCookieDomain =
+    cookieDomain && (cookieDomain.startsWith('.') ? cookieDomain : `.${cookieDomain}`);
 
   const cookieOptions: CookieSerializeOptions = {
     path: '/',
@@ -29,7 +33,7 @@ export function getCookieOptions(
     secure: isRailway,
     // 프로덕션이고 로컬 프론트가 아닐 때만 domain 설정
     ...(isProd && !isLocalFrontend
-      ? { domain: `.${getDomain(corsOrigin)}` }
+      ? { domain: normalizedCookieDomain ?? `.${getDomain(corsOrigin)}` }
       : {}),
   };
 

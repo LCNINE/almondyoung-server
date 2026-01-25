@@ -617,24 +617,29 @@ export class AuthService {
         }
         this.logger.log(`logout 진행중...`);
 
+        const cookieDomain = this.configService.get<string>('COOKIE_DOMAIN');
+        const normalizedCookieDomain = cookieDomain
+          ? cookieDomain.startsWith('.') ? cookieDomain : `.${cookieDomain}`
+          : `.${getDomain(this.frontendUrl)}`;
+
         // 쿠키 삭제
         reply.clearCookie('accessToken', {
           path: '/',
-          domain: `.${getDomain(this.frontendUrl)}`,
+          domain: normalizedCookieDomain,
           httpOnly: true,
           secure: true,
           sameSite: 'lax',
         });
         reply.clearCookie('refreshToken', {
           path: '/',
-          domain: `.${getDomain(this.frontendUrl)}`,
+          domain: normalizedCookieDomain,
           httpOnly: true,
           secure: true,
           sameSite: 'lax',
         });
         reply.clearCookie('_medusa_jwt', {
           path: '/',
-          domain: `.${getDomain(this.frontendUrl)}`,
+          domain: normalizedCookieDomain,
           httpOnly: true,
           secure: true,
           sameSite: 'lax',
@@ -708,12 +713,14 @@ export class AuthService {
     const isRailway = !!process.env.RAILWAY_ENVIRONMENT;
     const isProd = process.env.NODE_ENV === 'production';
     const corsOrigin = this.frontendUrl;
+    const cookieDomain = this.configService.get('COOKIE_DOMAIN');
 
     // 쿠키 옵션 생성
     const cookieOptions = getCookieOptions({
       isRailway,
       isProd,
       corsOrigin,
+      cookieDomain,
     });
 
     // 개발 환경에서만 디버깅 로그
@@ -756,12 +763,14 @@ export class AuthService {
     const isRailway = !!process.env.RAILWAY_ENVIRONMENT;
     const isProd = process.env.NODE_ENV === 'production';
     const corsOrigin = this.frontendUrl;
+    const cookieDomain = this.configService.get('COOKIE_DOMAIN');
 
     // 쿠키 옵션 생성
     const cookieOptions = getCookieOptions({
       isRailway,
       isProd,
       corsOrigin,
+      cookieDomain,
     });
 
     // 개발 환경에서만 디버깅 로그
