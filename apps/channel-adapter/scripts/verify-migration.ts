@@ -16,7 +16,7 @@
  */
 
 import postgres from 'postgres';
-import { DbService } from '@app/db';
+import { drizzle } from 'drizzle-orm/postgres-js';
 import { channelAdapterSchema, pimMedusaMappings } from '../src/schema';
 import { eq, sql } from 'drizzle-orm';
 
@@ -72,10 +72,8 @@ async function main() {
 
   // Initialize Channel Adapter database
   console.log('🔌 Connecting to Channel Adapter database...\n');
-  const channelDb = new DbService({
-    connectionString: process.env.DATABASE_URL!,
-    schema: channelAdapterSchema,
-  });
+  const channelDbClient = postgres(process.env.DATABASE_URL!);
+  const channelDb = drizzle(channelDbClient, { schema: channelAdapterSchema });
 
   try {
     console.log('📊 Counting products...\n');
@@ -92,20 +90,20 @@ async function main() {
     const pimCount = Number(pimCountResult[0].count);
 
     // Count synced mappings in Channel Adapter
-    const syncedCountResult = await channelDb.db
+    const syncedCountResult = await channelDb
       .select({ count: sql<number>`count(*)` })
       .from(pimMedusaMappings)
       .where(eq(pimMedusaMappings.syncStatus, 'synced'));
     const syncedCount = syncedCountResult[0].count;
 
     // Count pending/failed mappings
-    const pendingCountResult = await channelDb.db
+    const pendingCountResult = await channelDb
       .select({ count: sql<number>`count(*)` })
       .from(pimMedusaMappings)
       .where(eq(pimMedusaMappings.syncStatus, 'pending'));
     const pendingCount = pendingCountResult[0].count;
 
-    const failedCountResult = await channelDb.db
+    const failedCountResult = await channelDb
       .select({ count: sql<number>`count(*)` })
       .from(pimMedusaMappings)
       .where(eq(pimMedusaMappings.syncStatus, 'failed'));
@@ -163,7 +161,7 @@ async function main() {
       console.log(`${'='.repeat(60)}`);
       console.log('❌ VERIFICATION FAILED\n');
       console.log(`Channel Adapter has MORE synced items than PIM active masters!`);
-      console.log(`This may indicate:');
+      console.log('This may indicate:');
       console.log('   - Stale data in Channel Adapter');
       console.log('   - Products deleted from PIM but not removed from Medusa');
       console.log('   - Data inconsistency requiring manual investigation');
@@ -186,8 +184,8 @@ async function main() {
       `;
 
       // Get all synced master IDs from Channel Adapter
-      const syncedMasterIds = await channelDb.db
-        .select({ masterId: pimMedusaMappings.masterId })
+      const syncedMasterIds = await channelDb
+        .select({ masterId: pimMedusaMappings.pimMasterId })
         .from(pimMedusaMappings)
         .where(eq(pimMedusaMappings.syncStatus, 'synced'));
 
@@ -248,6 +246,7 @@ async function main() {
     // Cleanup connections
     console.log('🧹 Cleaning up connections...');
     await pimDb.end();
+    await channelDbClient.end();
   }
 }
 

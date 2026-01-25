@@ -13,8 +13,9 @@
  *   npx ts-node apps/channel-adapter/scripts/retry-failed.ts --all
  */
 
+import postgres from 'postgres';
+import { drizzle } from 'drizzle-orm/postgres-js';
 import { ConfigService } from '@nestjs/config';
-import { DbService } from '@app/db';
 import { channelAdapterSchema, migrationFailures } from '../src/schema';
 import { MigrationSessionService } from './lib/migration-session.service';
 import { syncWithRetry } from './lib/error-classifier';
@@ -80,10 +81,8 @@ async function main() {
 
   // Initialize services
   console.log('🔌 Connecting to database...');
-  const channelDb = new DbService({
-    connectionString: process.env.DATABASE_URL!,
-    schema: channelAdapterSchema,
-  });
+  const channelDbClient = postgres(process.env.DATABASE_URL!);
+  const channelDb = drizzle(channelDbClient, { schema: channelAdapterSchema });
 
   const configService = new ConfigService({
     MEDUSA_API_URL: process.env.MEDUSA_API_URL,
@@ -93,7 +92,7 @@ async function main() {
 
   const sessionService = new MigrationSessionService(channelDb);
   const medusaClient = new MedusaClient(configService);
-  const mappingRepo = new PimMedusaMappingRepository(channelDb);
+  const mappingRepo = new PimMedusaMappingRepository({ db: channelDb } as any);
   const syncService = new PimMedusaSyncService(medusaClient, mappingRepo);
 
   try {
@@ -102,7 +101,7 @@ async function main() {
     let failures;
 
     if (options.sessionId) {
-      failures = await channelDb.db
+      failures = await channelDb
         .select()
         .from(migrationFailures)
         .where(
@@ -112,7 +111,7 @@ async function main() {
           )
         );
     } else {
-      failures = await channelDb.db
+      failures = await channelDb
         .select()
         .from(migrationFailures)
         .where(eq(migrationFailures.resolved, false));
@@ -172,11 +171,13 @@ async function main() {
       console.log('⚠️  Some products still failing. Check logs for details.');
     }
 
+    await channelDbClient.end();
     process.exit(0);
 
   } catch (error: any) {
     console.error('\n❌ Retry failed:', error.message);
     console.error(error.stack);
+    await channelDbClient.end();
     process.exit(1);
   }
 }

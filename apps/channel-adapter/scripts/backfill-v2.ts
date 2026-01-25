@@ -22,8 +22,8 @@
  */
 
 import postgres from 'postgres';
+import { drizzle } from 'drizzle-orm/postgres-js';
 import { ConfigService } from '@nestjs/config';
-import { DbService } from '@app/db';
 import { channelAdapterSchema } from '../src/schema';
 import { PimSnapshotBuilder } from './lib/pim-snapshot-builder';
 import { MigrationSessionService } from './lib/migration-session.service';
@@ -124,10 +124,8 @@ async function main() {
 
   // Initialize Channel Adapter database
   console.log('🔌 Connecting to Channel Adapter database...');
-  const channelDb = new DbService({
-    connectionString: process.env.DATABASE_URL!,
-    schema: channelAdapterSchema,
-  });
+  const channelDbClient = postgres(process.env.DATABASE_URL!);
+  const channelDb = drizzle(channelDbClient, { schema: channelAdapterSchema });
 
   // Initialize ConfigService for Medusa client
   const configService = new ConfigService({
@@ -140,7 +138,7 @@ async function main() {
   const snapshotBuilder = new PimSnapshotBuilder(pimDb);
   const sessionService = new MigrationSessionService(channelDb);
   const medusaClient = new MedusaClient(configService);
-  const mappingRepo = new PimMedusaMappingRepository(channelDb);
+  const mappingRepo = new PimMedusaMappingRepository({ db: channelDb } as any);
   const syncService = new PimMedusaSyncService(medusaClient, mappingRepo);
 
   let startTime = Date.now();
@@ -304,7 +302,7 @@ async function main() {
     // Cleanup connections
     console.log('\n🧹 Cleaning up connections...');
     await snapshotBuilder.close();
-    // channelDb connection will close automatically
+    await channelDbClient.end();
   }
 }
 

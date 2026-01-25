@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Integrated seed data script for Almondyoung microservices",
   "scripts": {
-    "seed": "ts-node index.ts"
+    "seed": "ts-node --transpileOnly index.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.30.0",

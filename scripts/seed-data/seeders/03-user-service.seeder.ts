@@ -1,32 +1,16 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
+import { InferInsertModel, sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import * as bcrypt from 'bcrypt';
+import * as userSchema from '../../../apps/user-service/database/drizzle/schema';
 import { Logger } from '../shared/logger';
 import { FIXED_UUIDS } from '../constants/uuids';
 
 const logger = new Logger('User Service Seeder');
 
-interface Role {
-  roleId: string;
-  name: string;
-  description: string;
-}
-
-interface Scope {
-  scopeId: string;
-  scopeName: string;
-  description: string;
-}
-
-interface User {
-  id: string;
-  loginId: string;
-  username: string;
-  nickname: string;
-  email: string;
-  password: string;
-  isEmailVerified: boolean;
-}
+type RoleInsert = InferInsertModel<typeof userSchema.roles>;
+type ScopeInsert = InferInsertModel<typeof userSchema.scopes>;
+type UserInsert = InferInsertModel<typeof userSchema.users>;
 
 export async function seedUserService(
   databaseUrl: string,
@@ -34,14 +18,14 @@ export async function seedUserService(
 ): Promise<void> {
   logger.info('Starting User Service seeding');
 
-  const sql = postgres(databaseUrl);
-  const db = drizzle(sql);
+  const client = postgres(databaseUrl);
+  const db = drizzle(client);
 
   try {
     // Step 1: Insert Roles
     logger.step(1, 5, 'Inserting roles');
 
-    const roles: Role[] = [
+    const roles: RoleInsert[] = [
       {
         roleId: FIXED_UUIDS.ROLE_ADMIN,
         name: 'admin',
@@ -67,7 +51,7 @@ export async function seedUserService(
     // Step 2: Insert Scopes (12 scopes from USER_SCOPES)
     logger.step(2, 5, 'Inserting scopes');
 
-    const scopes: Scope[] = [
+    const scopes: ScopeInsert[] = [
       {
         scopeId: FIXED_UUIDS.SCOPE_MASTER,
         scopeName: 'master',
@@ -177,7 +161,7 @@ export async function seedUserService(
 
     const hashedPassword = await bcrypt.hash(adminPassword, 10);
 
-    const adminUser: User = {
+    const adminUser: UserInsert = {
       id: FIXED_UUIDS.USER_ADMIN,
       loginId: 'admin',
       username: 'Admin User',
@@ -220,6 +204,6 @@ export async function seedUserService(
     logger.error('User Service seeding failed', error);
     throw error;
   } finally {
-    await sql.end();
+    await client.end();
   }
 }

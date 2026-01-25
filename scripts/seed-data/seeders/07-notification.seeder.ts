@@ -1,19 +1,13 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
+import { InferInsertModel, sql } from 'drizzle-orm';
 import postgres from 'postgres';
+import * as notificationSchema from '../../../apps/notification/database/schemas/notification-schema';
 import { Logger } from '../shared/logger';
 import { FIXED_UUIDS } from '../constants/uuids';
 
 const logger = new Logger('Notification Seeder');
 
-interface NotificationProvider {
-  providerId: string;
-  providerName: string;
-  channel: 'EMAIL' | 'SMS' | 'KAKAO' | 'PUSH';
-  config: Record<string, any>;
-  status: 'ACTIVE' | 'INACTIVE';
-  isActive: boolean;
-  priority: number;
-}
+type NotificationProviderInsert = InferInsertModel<typeof notificationSchema.notificationProviders>;
 
 export async function seedNotification(
   databaseUrl: string,
@@ -24,14 +18,14 @@ export async function seedNotification(
 ): Promise<void> {
   logger.info('Starting Notification seeding');
 
-  const sql = postgres(databaseUrl);
-  const db = drizzle(sql);
+  const client = postgres(databaseUrl);
+  const db = drizzle(client);
 
   try {
     // Step 1: Insert Notification Providers
     logger.step(1, 1, 'Inserting notification providers');
 
-    const providers: NotificationProvider[] = [
+    const providers: NotificationProviderInsert[] = [
       {
         providerId: FIXED_UUIDS.PROVIDER_FCM_PUSH,
         providerName: 'FCM Push',
@@ -125,6 +119,6 @@ export async function seedNotification(
     logger.error('Notification seeding failed', error);
     throw error;
   } finally {
-    await sql.end();
+    await client.end();
   }
 }

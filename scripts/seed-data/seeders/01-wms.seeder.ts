@@ -1,51 +1,27 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
+import { InferInsertModel, sql } from 'drizzle-orm';
 import postgres from 'postgres';
+import * as wmsSchema from '../../../apps/wms/database/schemas/wms-schema';
 import { Logger } from '../shared/logger';
 import { FIXED_UUIDS } from '../constants/uuids';
 
 const logger = new Logger('WMS Seeder');
 
-interface Warehouse {
-  id: string;
-  name: string;
-  type: 'domestic' | 'overseas' | 'bonded' | 'return';
-  location?: string;
-}
-
-interface Location {
-  id: string;
-  warehouseId: string;
-  code: string;
-  locationType: 'standard' | 'zone';
-  rackId?: string;
-  binIdentifier?: string;
-  displayName: string;
-  capacityLimit?: number;
-  fifoRank?: number;
-  isExpirySeparated: boolean;
-  isActive: boolean;
-  notes?: string;
-  isSystem: boolean;
-  systemRole?: 'inbound_default' | 'return_default';
-}
-
-interface Setting {
-  warehouseId: string;
-  key: 'use_sub_barcode' | 'use_expiry_separation';
-  value: string;
-}
+type WarehouseInsert = InferInsertModel<typeof wmsSchema.warehouses>;
+type LocationInsert = InferInsertModel<typeof wmsSchema.locations>;
+type SettingInsert = InferInsertModel<typeof wmsSchema.settings>;
 
 export async function seedWMS(databaseUrl: string): Promise<void> {
   logger.info('Starting WMS seeding');
 
-  const sql = postgres(databaseUrl);
-  const db = drizzle(sql);
+  const client = postgres(databaseUrl);
+  const db = drizzle(client);
 
   try {
     // Step 1: Insert Warehouses
     logger.step(1, 3, 'Inserting warehouses');
 
-    const warehouses: Warehouse[] = [
+    const warehouses: WarehouseInsert[] = [
       {
         id: FIXED_UUIDS.WAREHOUSE_BUCHEON_DOMESTIC,
         name: '부천 물류창고',
@@ -71,7 +47,7 @@ export async function seedWMS(databaseUrl: string): Promise<void> {
     // Step 2: Insert System Locations
     logger.step(2, 3, 'Inserting system locations');
 
-    const locations: Location[] = [
+    const locations: LocationInsert[] = [
       // Bucheon warehouse locations
       {
         id: FIXED_UUIDS.LOC_BUCHEON_RECEIVING,
@@ -181,7 +157,7 @@ export async function seedWMS(databaseUrl: string): Promise<void> {
     // Step 3: Insert Settings
     logger.step(3, 3, 'Inserting warehouse settings');
 
-    const settings: Setting[] = [
+    const settings: SettingInsert[] = [
       // Bucheon settings
       {
         warehouseId: FIXED_UUIDS.WAREHOUSE_BUCHEON_DOMESTIC,
@@ -220,6 +196,6 @@ export async function seedWMS(databaseUrl: string): Promise<void> {
     logger.error('WMS seeding failed', error);
     throw error;
   } finally {
-    await sql.end();
+    await client.end();
   }
 }
