@@ -2,6 +2,7 @@
 import { InferSelectModel, InferInsertModel } from 'drizzle-orm';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import {
+  channelAdapterSchema,
   eventLogs,
   syncHistories,
   processedEvents,
@@ -13,17 +14,7 @@ import {
 } from './schema';
 
 // DATABASE SERVICE 타입
-export const channelAdapterSchema = {
-  eventLogs,
-  syncHistories,
-  processedEvents,
-  syncStatuses,
-  wmsOrderMappings,
-  pendingOrders,
-  inboxEvents,
-  pimMedusaMappings,
-} as const;
-
+export { channelAdapterSchema } from './schema';
 export type ChannelAdapterSchema = typeof channelAdapterSchema;
 export type DbService = import('@app/db').DbService<ChannelAdapterSchema>;
 // EVENT LOGS 타입
