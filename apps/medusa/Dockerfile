@@ -1,5 +1,8 @@
 FROM node:20-alpine
 
+# Build-time env for Vite-powered admin bundle
+ARG VITE_USER_SERVICE_URL
+
 # 기본 런타임 설정
 ENV PORT=9000
 
@@ -25,6 +28,8 @@ RUN mkdir -p /app/apps/channel-adapter/src
 COPY apps/channel-adapter/src/types.ts /app/apps/channel-adapter/src/types.ts
 
 # 4) 애플리케이션 빌드 (Medusa CLI가 빌드 수행)
+# Vite envs must be present at build time to be baked into the admin bundle
+ENV VITE_USER_SERVICE_URL=$VITE_USER_SERVICE_URL
 RUN yarn build
 
 # DEBUG: 빌드 후 디렉토리 구조 확인
@@ -62,4 +67,3 @@ EXPOSE 9000
 # 외부 인프라는 환경 변수로 주입 (DATABASE_URL, REDIS_URL, KAFKA_BROKERS 등)
 # .medusa/server 디렉토리에서 실행
 CMD ["yarn", "start"]
-
