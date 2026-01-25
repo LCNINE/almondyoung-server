@@ -22,8 +22,8 @@
 
 import axios from 'axios';
 import { ConfigService } from '@nestjs/config';
-import { PimClient } from '../src/services/pim-medusa-sync/pim.client';
-import { MedusaClient } from '../src/services/pim-medusa-sync/medusa.client';
+import { PimClient } from '../src/adapters/medusa/pim.client';
+import { MedusaClient } from '../src/adapters/medusa/medusa.client';
 import * as postgres from 'postgres';
 
 type PimCategory = {

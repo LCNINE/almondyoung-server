@@ -1,45 +1,27 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
+import { InferInsertModel, sql } from 'drizzle-orm';
 import postgres from 'postgres';
+import * as membershipSchema from '../../../apps/membership/drizzle/schema';
 import { Logger } from '../shared/logger';
 import { FIXED_UUIDS } from '../constants/uuids';
 
 const logger = new Logger('Membership Seeder');
 
-interface Tier {
-  id: string;
-  code: string;
-  priorityLevel: number;
-}
-
-interface Plan {
-  id: string;
-  tierId: string;
-  price: number;
-  durationDays: number;
-  currency: string;
-  trialDays: number;
-  isActive: boolean;
-}
-
-interface CancellationReason {
-  code: string;
-  displayText: string;
-  category: string;
-  sortOrder: number;
-  isActive: boolean;
-}
+type TierInsert = InferInsertModel<typeof membershipSchema.tiers>;
+type PlanInsert = InferInsertModel<typeof membershipSchema.plan>;
+type CancellationReasonInsert = InferInsertModel<typeof membershipSchema.cancellationReasons>;
 
 export async function seedMembership(databaseUrl: string): Promise<void> {
   logger.info('Starting Membership seeding');
 
-  const sql = postgres(databaseUrl);
-  const db = drizzle(sql);
+  const client = postgres(databaseUrl);
+  const db = drizzle(client);
 
   try {
     // Step 1: Insert Tier
     logger.step(1, 3, 'Inserting membership tier');
 
-    const tier: Tier = {
+    const tier: TierInsert = {
       id: FIXED_UUIDS.TIER_MEMBERSHIP,
       code: 'MEMBERSHIP',
       priorityLevel: 1,
@@ -56,7 +38,7 @@ export async function seedMembership(databaseUrl: string): Promise<void> {
     // Step 2: Insert Plans
     logger.step(2, 3, 'Inserting membership plans');
 
-    const plans: Plan[] = [
+    const plans: PlanInsert[] = [
       {
         id: FIXED_UUIDS.PLAN_30DAYS,
         tierId: FIXED_UUIDS.TIER_MEMBERSHIP,
@@ -100,7 +82,7 @@ export async function seedMembership(databaseUrl: string): Promise<void> {
     // Step 3: Insert Cancellation Reasons
     logger.step(3, 3, 'Inserting cancellation reasons');
 
-    const cancellationReasons: CancellationReason[] = [
+    const cancellationReasons: CancellationReasonInsert[] = [
       {
         code: 'NOT_USING',
         displayText: '사용하지 않음',
@@ -160,6 +142,6 @@ export async function seedMembership(databaseUrl: string): Promise<void> {
     logger.error('Membership seeding failed', error);
     throw error;
   } finally {
-    await sql.end();
+    await client.end();
   }
 }

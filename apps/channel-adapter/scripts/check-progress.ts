@@ -13,10 +13,10 @@
  *   npx ts-node apps/channel-adapter/scripts/check-progress.ts --latest
  */
 
-import { DbService } from '@app/db';
+import postgres from 'postgres';
+import { drizzle } from 'drizzle-orm/postgres-js';
 import { channelAdapterSchema, migrationProgress, migrationFailures } from '../src/schema';
-import { eq, and, desc } from 'drizzle-orm';
-import { sql } from 'drizzle-orm';
+import { eq, desc, sql } from 'drizzle-orm';
 
 /**
  * Parse command-line arguments
@@ -102,10 +102,8 @@ async function main() {
 
   // Initialize database
   console.log('🔌 Connecting to database...\n');
-  const channelDb = new DbService({
-    connectionString: process.env.DATABASE_URL!,
-    schema: channelAdapterSchema,
-  });
+  const channelDbClient = postgres(process.env.DATABASE_URL!);
+  const channelDb = drizzle(channelDbClient, { schema: channelAdapterSchema });
 
   try {
     // Query session
@@ -113,7 +111,7 @@ async function main() {
 
     if (options.latest) {
       console.log('🔍 Finding latest session...\n');
-      const sessions = await channelDb.db
+      const sessions = await channelDb
         .select()
         .from(migrationProgress)
         .orderBy(desc(migrationProgress.startedAt))
@@ -121,7 +119,7 @@ async function main() {
 
       session = sessions[0];
     } else {
-      const sessions = await channelDb.db
+      const sessions = await channelDb
         .select()
         .from(migrationProgress)
         .where(eq(migrationProgress.sessionId, options.sessionId!));
@@ -135,7 +133,7 @@ async function main() {
     }
 
     // Query failure stats
-    const failureStats = await channelDb.db
+    const failureStats = await channelDb
       .select({
         total: sql<number>`count(*)`,
         unresolved: sql<number>`count(*) filter (where ${migrationFailures.resolved} = false)`,
@@ -244,11 +242,13 @@ async function main() {
 
     console.log(`${'='.repeat(60)}\n`);
 
+    await channelDbClient.end();
     process.exit(0);
 
   } catch (error: any) {
     console.error('\n❌ Check progress failed:', error.message);
     console.error(error.stack);
+    await channelDbClient.end();
     process.exit(1);
   }
 }
