@@ -1,8 +1,8 @@
 // apps/channel-adapter/scripts/lib/migration-session.service.ts
 import { eq, and } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
-import type { DbService } from '../../src/types';
-import { migrationProgress, migrationFailures } from '../../src/schema';
+import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import { migrationProgress, migrationFailures, type ChannelAdapterSchema } from '../../src/schema';
 import type { PimProductSnapshot } from '../../src/types';
 
 export interface MigrationSession {
@@ -51,7 +51,7 @@ export type ErrorType =
  * - Mark sessions as complete/failed
  */
 export class MigrationSessionService {
-  constructor(private readonly db: DbService) {}
+  constructor(private readonly db: PostgresJsDatabase<ChannelAdapterSchema>) {}
 
   /**
    * Create a new migration session
@@ -61,7 +61,7 @@ export class MigrationSessionService {
 
     console.log(`[MigrationSession] Creating new session: ${sessionId}`);
 
-    const [session] = await this.db.db
+    const [session] = await this.db
       .insert(migrationProgress)
       .values({
         sessionId,
@@ -79,7 +79,7 @@ export class MigrationSessionService {
   async loadSession(sessionId: string): Promise<MigrationSession | null> {
     console.log(`[MigrationSession] Loading session: ${sessionId}`);
 
-    const [session] = await this.db.db
+    const [session] = await this.db
       .select()
       .from(migrationProgress)
       .where(eq(migrationProgress.sessionId, sessionId));
@@ -103,7 +103,7 @@ export class MigrationSessionService {
     sessionId: string,
     updates: ProgressUpdate
   ): Promise<void> {
-    await this.db.db
+    await this.db
       .update(migrationProgress)
       .set({
         processedCount: updates.processedCount,
@@ -127,7 +127,7 @@ export class MigrationSessionService {
   async completeSession(sessionId: string): Promise<void> {
     console.log(`[MigrationSession] Completing session: ${sessionId}`);
 
-    await this.db.db
+    await this.db
       .update(migrationProgress)
       .set({
         status: 'completed',
@@ -143,7 +143,7 @@ export class MigrationSessionService {
   async failSession(sessionId: string, error: Error): Promise<void> {
     console.error(`[MigrationSession] Session failed: ${sessionId}`, error);
 
-    await this.db.db
+    await this.db
       .update(migrationProgress)
       .set({
         status: 'failed',
@@ -165,7 +165,7 @@ export class MigrationSessionService {
     errorType: ErrorType,
     snapshot: PimProductSnapshot
   ): Promise<void> {
-    await this.db.db.insert(migrationFailures).values({
+    await this.db.insert(migrationFailures).values({
       sessionId,
       masterId,
       versionId,
@@ -184,7 +184,7 @@ export class MigrationSessionService {
    * Get all unresolved failures for a session
    */
   async getUnresolvedFailures(sessionId: string): Promise<any[]> {
-    return await this.db.db
+    return await this.db
       .select()
       .from(migrationFailures)
       .where(
@@ -199,7 +199,7 @@ export class MigrationSessionService {
    * Mark a failure as resolved
    */
   async resolveFailure(failureId: string): Promise<void> {
-    await this.db.db
+    await this.db
       .update(migrationFailures)
       .set({
         resolved: true,
@@ -212,14 +212,14 @@ export class MigrationSessionService {
    * Increment retry count for a failure
    */
   async incrementRetryCount(failureId: string, error: Error): Promise<void> {
-    const [failure] = await this.db.db
+    const [failure] = await this.db
       .select()
       .from(migrationFailures)
       .where(eq(migrationFailures.id, failureId));
 
     if (!failure) return;
 
-    await this.db.db
+    await this.db
       .update(migrationFailures)
       .set({
         retryCount: failure.retryCount + 1,

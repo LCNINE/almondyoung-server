@@ -20,14 +20,14 @@
  *   npx ts-node -r tsconfig-paths/register apps/channel-adapter/scripts/migrate-pim-to-medusa.ts [--masters id1,id2] [--limit N]
  */
 
+import postgres from 'postgres';
+import { drizzle } from 'drizzle-orm/postgres-js';
 import { ConfigService } from '@nestjs/config';
-import { DbService } from '@app/db';
 import { channelAdapterSchema } from '../src/schema';
-import { PimClient } from '../src/services/pim-medusa-sync/pim.client';
-import { MedusaClient } from '../src/services/pim-medusa-sync/medusa.client';
-import { PimMedusaMappingRepository } from '../src/services/pim-medusa-sync/pim-medusa-mapping.repository';
-import { PimMedusaSyncService } from '../src/services/pim-medusa-sync/pim-medusa-sync.service';
-import * as postgres from 'postgres';
+import { PimClient } from '../src/adapters/medusa/pim.client';
+import { MedusaClient } from '../src/adapters/medusa/medusa.client';
+import { PimMedusaMappingRepository } from '../src/adapters/medusa/pim-medusa-mapping.repository';
+import { PimMedusaSyncService } from '../src/adapters/medusa/pim-medusa-sync.service';
 
 type Args = {
   masters?: string[];
@@ -70,15 +70,14 @@ async function main() {
     MEDUSA_MEMBERSHIP_GROUP_ID: process.env.MEDUSA_MEMBERSHIP_GROUP_ID || undefined,
   });
 
-  const dbService = new DbService(
-    { connectionString: process.env.DATABASE_URL! },
-    channelAdapterSchema as any,
-  );
+  // Initialize database with drizzle directly
+  const dbClient = postgres(process.env.DATABASE_URL!);
+  const db = drizzle(dbClient, { schema: channelAdapterSchema });
 
   const pimClient = new PimClient(configService);
   const medusaClient = new MedusaClient(configService);
-  const mappingRepo = new PimMedusaMappingRepository(dbService as any);
-  const syncService = new PimMedusaSyncService(pimClient, medusaClient, mappingRepo);
+  const mappingRepo = new PimMedusaMappingRepository({ db } as any);
+  const syncService = new PimMedusaSyncService(medusaClient, mappingRepo);
 
   // 캐시 초기화
   console.log('Clearing all caches to ensure fresh sync...');
@@ -97,9 +96,14 @@ async function main() {
   const results: any[] = [];
   for (const masterId of targets) {
     try {
-      // Pre-check active version to skip stale channel-product rows
-      await pimClient.getActiveVersion(masterId);
-      const res = await syncService.syncMaster(masterId);
+      // Get snapshot from PIM API and use syncFromSnapshot
+      const snapshot = await pimClient.getActiveVersion(masterId);
+      if (!snapshot || !snapshot.versionId) {
+        console.log(`⏭️ ${masterId}: No active version, skipping`);
+        results.push({ success: true, masterId, action: 'skipped' });
+        continue;
+      }
+      const res = await syncService.syncFromSnapshot(snapshot);
       results.push(res);
       console.log(`✅ ${masterId} -> ${res.medusaProductId || res.action}`);
     } catch (err: any) {
@@ -113,13 +117,12 @@ async function main() {
   console.log(`\n=== Migration finished ===`);
   console.log(`Total: ${results.length}, Success: ${success}, Failed: ${failed}`);
 
-  await (dbService as any)?.onApplicationShutdown?.();
+  await dbClient.end();
 }
 
 async function getMastersFromDb(dbUrl: string): Promise<string[]> {
   console.log(`Fetching active masters directly from DB: ${dbUrl.replace(/:[^:@]+@/, ':***@')}`);
-  const createSql = (postgres as any).default ?? (postgres as any);
-  const sql = createSql(dbUrl, { max: 1 });
+  const sql = postgres(dbUrl, { max: 1 });
   try {
     const rows = await sql<{ masterId: string }[]>`
       SELECT DISTINCT pmv.master_id AS "masterId"

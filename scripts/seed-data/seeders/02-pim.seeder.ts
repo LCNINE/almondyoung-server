@@ -1,34 +1,25 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
+import { InferInsertModel, sql } from 'drizzle-orm';
 import postgres from 'postgres';
+import * as pimSchema from '../../../apps/pim/src/schema';
 import { Logger } from '../shared/logger';
 import { FIXED_UUIDS } from '../constants/uuids';
 
 const logger = new Logger('PIM Seeder');
 
-interface SalesChannel {
-  id: string;
-  type: string;
-  site: string;
-  categoryId?: string;
-  name: string;
-  description?: string;
-  config?: Record<string, any>;
-  isActive: boolean;
-  apiEndpoint?: string;
-  credentials?: Record<string, any>;
-}
+type SalesChannelInsert = InferInsertModel<typeof pimSchema.salesChannels>;
 
 export async function seedPIM(databaseUrl: string): Promise<void> {
   logger.info('Starting PIM seeding');
 
-  const sql = postgres(databaseUrl);
-  const db = drizzle(sql);
+  const client = postgres(databaseUrl);
+  const db = drizzle(client);
 
   try {
     // Step 1: Insert Sales Channel
     logger.step(1, 1, 'Inserting sales channel');
 
-    const salesChannel: SalesChannel = {
+    const salesChannel: SalesChannelInsert = {
       id: FIXED_UUIDS.CHANNEL_ALMONDYOUNG_MEDUSA,
       type: 'ONLINE',
       site: 'MEDUSA',
@@ -54,6 +45,6 @@ export async function seedPIM(databaseUrl: string): Promise<void> {
     logger.error('PIM seeding failed', error);
     throw error;
   } finally {
-    await sql.end();
+    await client.end();
   }
 }
