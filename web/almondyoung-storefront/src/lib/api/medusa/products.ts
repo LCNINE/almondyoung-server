@@ -1,6 +1,7 @@
 "use server"
 
 import { sdk } from "@/lib/config/medusa"
+import { getAuthHeaders } from "@lib/data/cookies"
 import type { ProductsResponseDto } from "@lib/types/dto/medusa"
 import type { StoreProduct } from "@medusajs/types"
 
@@ -23,6 +24,17 @@ export const getProductList = async ({
   const offset = (page - 1) * limit
 
   try {
+    const authHeaders = await getAuthHeaders()
+    const isAuthed = "authorization" in authHeaders
+    const headers = isAuthed
+      ? { ...authHeaders }
+      : {
+          ...authHeaders,
+          next: {
+            tags: ["products", categoryId || ""],
+          },
+        }
+
     const {
       products,
       count,
@@ -34,13 +46,12 @@ export const getProductList = async ({
         category_id: categoryId,
         handle,
         fields:
-          "*variants.calculated_price,+categories,+metadata,+tags,+variants.prices.*",
+          "variants.*,+variants.prices.*,+variants.calculated_price,+variants.calculated_price_incl_tax,+variants.original_price,+variants.original_price_incl_tax,+categories,+metadata,+tags",
         region_id: region_id,
       },
       {
-        next: {
-          tags: ["products", categoryId || ""],
-        },
+        ...headers,
+        cache: isAuthed ? "no-store" : undefined,
       }
     )
 
@@ -64,11 +75,24 @@ export const getProductDetail = async (
   // salesChannelId?: string | null
 ): Promise<StoreProduct> => {
   try {
-    const { product } = await sdk.store.product.retrieve(productId, {
-      fields:
-        "variants.*,+variants.prices.*,+variants.calculated_price,+variants.calculated_price_incl_tax,+variants.original_price,+variants.original_price_incl_tax,+variants.price_type,+variants.currency_code",
-      region_id: regionId,
-    })
+    const authHeaders = await getAuthHeaders()
+    const isAuthed = "authorization" in authHeaders
+    const headers = {
+      ...authHeaders,
+    }
+
+    const { product } = await sdk.store.product.retrieve(
+      productId,
+      {
+        fields:
+          "variants.*,+variants.prices.*,+variants.calculated_price,+variants.calculated_price_incl_tax,+variants.original_price,+variants.original_price_incl_tax,+variants.price_type,+variants.currency_code",
+        region_id: regionId,
+      },
+      {
+        ...headers,
+        cache: isAuthed ? "no-store" : undefined,
+      }
+    )
 
     return product
   } catch (error) {

@@ -1,5 +1,6 @@
 import type { StoreProduct } from "@medusajs/types"
 import type { ProductCardProps } from "@/lib/types/ui/product"
+import { getPricesForVariant, getProductPrice } from "@/lib/utils/get-product-price"
 
 export type ReviewSummary = { rating: number; reviewCount: number }
 
@@ -11,13 +12,23 @@ export function mapStoreProductToCardProps(
     return null
   }
 
-  const variant = product.variants[0] as any
-  const basePrice = (variant.prices?.[0]?.amount as number) || 0
+  const defaultVariant =
+    (product.variants as any[])?.find(
+      (variant) => variant?.is_default || variant?.isDefault
+    ) ?? (product.variants as any[])?.[0]
+  const defaultPrice = defaultVariant ? getPricesForVariant(defaultVariant) : null
+  const priceInfo = getProductPrice({ product })
+  const basePrice =
+    defaultPrice?.original_price_number ||
+    priceInfo?.cheapestPrice?.original_price_number ||
+    0
   const membershipPrice =
-    (variant.metadata as { membershipPrice?: number })?.membershipPrice || null
+    defaultPrice?.calculated_price_number ||
+    priceInfo?.cheapestPrice?.calculated_price_number ||
+    0
 
   const discount =
-    membershipPrice && basePrice > membershipPrice && basePrice > 0
+    membershipPrice > 0 && basePrice > membershipPrice && basePrice > 0
       ? Math.round(((basePrice - membershipPrice) / basePrice) * 100)
       : 0
 

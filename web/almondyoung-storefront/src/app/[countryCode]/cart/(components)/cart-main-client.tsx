@@ -37,8 +37,12 @@ function mapMedusaItemToCartItem(item: HttpTypes.StoreCartLineItem): CartItem {
   }
 
   // 가격 정보
-  const basePrice = item.unit_price || 0
-  const membershipPrice = (variant?.metadata as any)?.membershipPrice || null
+  const originalTotal = item.original_total
+  const basePrice =
+    typeof originalTotal === "number" && item.quantity > 0
+      ? Math.round(originalTotal / item.quantity)
+      : item.unit_price || 0
+  const membershipPrice = item.unit_price || basePrice
   const isMembershipOnly = (product?.metadata as any)?.isMembershipOnly || false
 
   return {

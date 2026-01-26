@@ -30,7 +30,7 @@ export async function retrieveCart(
 ) {
   let id = cartId || (await getCartId())
   fields ??=
-    "*items, *region, *items.product, *items.variant, *items.thumbnail, *items.metadata, +items.total, *promotions, +shipping_methods.name"
+    "*items, *region, *items.product, *items.variant, *items.thumbnail, *items.metadata, +items.total, +items.original_total, *promotions, +shipping_methods.name"
 
   const headers = {
     ...(await getAuthHeaders()),
