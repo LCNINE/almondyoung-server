@@ -8,7 +8,7 @@ import { notFound } from "next/navigation"
 
 export default async function CheckoutPage() {
   const currentUser = await fetchMe()
-  const cart: StoreCart | null = await retrieveCart()
+  const cart: StoreCart | null = await retrieveCart(undefined, undefined, "no-store")
 
   if (!cart) {
     return notFound()

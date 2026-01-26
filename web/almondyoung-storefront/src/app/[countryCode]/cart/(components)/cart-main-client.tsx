@@ -82,12 +82,12 @@ export function CartMainClient() {
     setIsLoading(true)
     try {
       // customer_id도 함께 조회
-      let cart = await retrieveCart()
+      let cart = await retrieveCart(undefined, undefined, "no-store")
 
       if (!cart) {
         const ensuredCart = await getOrSetCart(countryCode)
         if (ensuredCart?.id) {
-          cart = await retrieveCart(ensuredCart.id)
+          cart = await retrieveCart(ensuredCart.id, undefined, "no-store")
         }
       }
 

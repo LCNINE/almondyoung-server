@@ -44,8 +44,11 @@ export const DiscountSection = () => (
           쿠폰
         </label>
         <div className="relative w-full">
-          <select className="w-full appearance-none rounded-[5px] border border-[#d9d9d9] bg-white px-2.5 py-[9px] text-[11px] text-black placeholder:text-[#b3b3b3] focus:border-black focus:outline-none md:px-4 md:py-3 md:text-sm">
-            <option value="" disabled selected>
+          <select
+            defaultValue=""
+            className="w-full appearance-none rounded-[5px] border border-[#d9d9d9] bg-white px-2.5 py-[9px] text-[11px] text-black placeholder:text-[#b3b3b3] focus:border-black focus:outline-none md:px-4 md:py-3 md:text-sm"
+          >
+            <option value="" disabled>
               쿠폰을 선택해주세요 (1)
             </option>
             <option value="coupon1">5% 할인 쿠폰</option>
