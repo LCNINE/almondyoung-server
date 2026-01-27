@@ -39,19 +39,11 @@ Thumbs.db
 !.vscode/extensions.json
 
 # dotenv environment variable files
-envs/**/*
+envs/**
 /**/*.env
-.env
-.env.development.local
-.env.test.local
-.env.production.local
-.env.local
-.env.dev
-.env.notification
-.env.user-service
-.env.medusa
-.env.wallet
-.env.wms
+.env*
+!.env.example
+!.env.*.example
 
 # temp directory
 .temp
