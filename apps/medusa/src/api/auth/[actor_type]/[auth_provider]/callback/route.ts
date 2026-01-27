@@ -11,6 +11,48 @@ import {
 import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { generateJwtTokenForAuthIdentity } from '../../../../../utils/generate-jwt-token';
 import { setAuthCookie } from '../../../../../utils/set-auth-cookie';
+import { jwtVerify } from '../../../../../utils/jwt-verify';
+import { registerCustomerWorkflow } from '../../../../../workflows/auth/workflows/register-customer-workflow';
+import { registerUserWorkflow } from '../../../../../workflows/auth/workflows/register-user-workflow';
+
+const buildAuthData = (req: MedusaRequest): AuthenticationInput => ({
+  url: req.url,
+  headers: req.headers,
+  query: req.query,
+  body: req.body,
+  protocol: req.protocol,
+});
+
+const extractUserServiceToken = (req: MedusaRequest): string | undefined => {
+  const authHeader = req.headers?.authorization;
+
+  if (authHeader?.startsWith('Bearer ')) {
+    return authHeader.split(' ')[1];
+  }
+
+  const cookies = req.headers?.cookie;
+  if (cookies) {
+    const tokenCookie = cookies
+      .split(';')
+      .find((cookie) => cookie.trim().startsWith('accessToken='));
+    if (tokenCookie) {
+      return tokenCookie.split('=')[1];
+    }
+  }
+
+  const token = req.query?.token;
+  if (typeof token === 'string') {
+    return token;
+  }
+  if (Array.isArray(token)) {
+    return token[0];
+  }
+
+  return undefined;
+};
+
+const shouldAutoRegister = (error?: string) =>
+  typeof error === 'string' && error.toLowerCase().includes('not found');
 
 // 구글(Google) 같은 서드파티(Third-Party) 인증 서비스에서 인증이 끝난 후,
 // 해당 서비스가 사용자를 다시 프론트엔드(스토어프론트)로 리디렉션할 때 전달받은 쿼리 파라미터(예: code, state 등)를
@@ -27,7 +69,7 @@ import { setAuthCookie } from '../../../../../utils/set-auth-cookie';
 // - user-service를 신뢰할 수 있는 인증 제공자(auth provider)로 취급
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   const { actor_type, auth_provider } = req.params;
-  const { redirect_to = process.env.FRONTEND_URL, token } = req.query;
+  const { redirect_to = process.env.FRONTEND_URL } = req.query;
 
   const config: ConfigModule = req.scope.resolve(
     ContainerRegistrationKeys.CONFIG_MODULE,
@@ -35,15 +77,9 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
 
   const service: IAuthModuleService = req.scope.resolve(Modules.AUTH);
 
-  const authData = {
-    url: req.url,
-    headers: req.headers,
-    query: req.query,
-    body: req.body,
-    protocol: req.protocol,
-  } as AuthenticationInput;
+  const authData = buildAuthData(req);
 
-  const { success, error, authIdentity } = await service.authenticate(
+  let { success, error, authIdentity } = await service.authenticate(
     auth_provider,
     authData,
   );
@@ -66,6 +102,98 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     setAuthCookie(res, token);
 
     return res.status(200).json({ token });
+  }
+
+  if (shouldAutoRegister(error)) {
+    const userServiceToken = extractUserServiceToken(req);
+
+    if (!userServiceToken) {
+      throw new MedusaError(
+        MedusaError.Types.UNAUTHORIZED,
+        error || 'Authentication failed',
+      );
+    }
+
+    if (!process.env.AUTH_SECRET) {
+      throw new MedusaError(
+        MedusaError.Types.UNAUTHORIZED,
+        'AUTH_SECRET is not defined',
+      );
+    }
+
+    const payload = jwtVerify(userServiceToken, process.env.AUTH_SECRET);
+    const almondUserId = payload.sub;
+    const almondLoginId = payload.login_id ?? '';
+    const email = payload.email;
+
+    const registerAuthData = {
+      ...authData,
+      body: {
+        email,
+        almond_user_id: almondUserId,
+        almond_login_id: almondLoginId,
+      },
+    } as AuthenticationInput;
+
+    try {
+      if (actor_type === 'customer') {
+        await registerCustomerWorkflow(req.scope).run({
+          input: {
+            authProvider: auth_provider,
+            authData: registerAuthData,
+            customerData: {
+              email,
+              first_name: '',
+              last_name: '',
+              metadata: {
+                almond_user_id: almondUserId,
+                almond_login_id: almondLoginId,
+              },
+            },
+          },
+        });
+      } else {
+        await registerUserWorkflow(req.scope).run({
+          input: {
+            authProvider: auth_provider,
+            authData: registerAuthData,
+            userData: {
+              email,
+              first_name: '',
+              last_name: '',
+            },
+          },
+        });
+      }
+    } catch (registerError: any) {
+      const message = registerError?.message || '';
+      if (!message.toLowerCase().includes('already exists')) {
+        throw registerError;
+      }
+    }
+
+    ({ success, error, authIdentity } = await service.authenticate(
+      auth_provider,
+      authData,
+    ));
+
+    if (success && authIdentity) {
+      const actorType = authIdentity?.app_metadata?.actor_type || actor_type;
+      const { http } = config.projectConfig;
+
+      const token = generateJwtTokenForAuthIdentity(
+        { authIdentity, actorType: actorType as string },
+        {
+          secret: http.jwtSecret!,
+          expiresIn: http.jwtExpiresIn,
+          options: http.jwtOptions,
+        },
+      );
+
+      setAuthCookie(res, token);
+
+      return res.status(200).json({ token });
+    }
   }
 
   throw new MedusaError(
