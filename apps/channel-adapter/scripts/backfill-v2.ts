@@ -21,7 +21,7 @@
  *   npx ts-node apps/channel-adapter/scripts/backfill-v2.ts --resume=backfill-1737600000-abc12345
  */
 
-import postgres from 'postgres';
+import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { ConfigService } from '@nestjs/config';
 import { channelAdapterSchema } from '../src/schema';
