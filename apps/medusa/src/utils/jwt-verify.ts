@@ -4,6 +4,7 @@ interface MyTokenPayload extends JwtPayload {
   sub: string;
   scopes: string[];
   email: string;
+  login_id?: string;
   iat: number;
   exp: number;
 }
