@@ -29,14 +29,14 @@ import { toast } from "sonner"
 
 interface OrderProductsSectionProps {
   products: StoreCart["items"]
-  shippingFee: number
+  shipping: number
   selectedIds: Set<string>
   onSelectedIdsChange: (ids: Set<string>) => void
 }
 
 export const OrderProductsSection = ({
   products,
-  shippingFee,
+  shipping,
   selectedIds,
   onSelectedIdsChange,
 }: OrderProductsSectionProps) => {
@@ -167,7 +167,7 @@ export const OrderProductsSection = ({
         {/* 배송비 */}
         <div className="border-t border-gray-100 px-[14px] py-3 lg:px-10">
           <p className="text-right text-[12px] text-gray-600 lg:text-sm">
-            배송비 {formatPrice(shippingFee)}원
+            배송비 {formatPrice(shipping)}원
           </p>
         </div>
       </article>

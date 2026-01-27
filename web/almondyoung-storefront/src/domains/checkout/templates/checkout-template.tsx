@@ -14,7 +14,7 @@ import {
 } from "@/lib/api/wallet"
 import { CartResponseDto } from "@/lib/types/dto/medusa"
 import type { PointBalanceDto } from "@/lib/types/dto/wallet"
-import type { CartTotals } from "@/lib/types/ui/cart"
+import type { CartTotals, ShippingInfo } from "@/lib/types/ui/cart"
 import type { Promotion } from "@/lib/types/ui/promotion"
 import { TaxInvoiceType } from "@/lib/types/ui/wallet"
 import {
@@ -34,7 +34,7 @@ import { ReceiptSection } from "../components/sections/receipt/"
 interface CheckoutTemplateProps {
   user: UserDetail
   cart: CartResponseDto["cart"]
-  shippingFee: number
+  shipping: ShippingInfo
   promotions: Promotion[]
   pointBalance: PointBalanceDto
   taxInvoice: TaxInvoiceType
@@ -43,7 +43,7 @@ interface CheckoutTemplateProps {
 export default function CheckoutTemplate({
   user,
   cart,
-  shippingFee,
+  shipping,
   promotions,
   pointBalance,
   taxInvoice,
@@ -81,19 +81,22 @@ export default function CheckoutTemplate({
         ? calculateMembershipDiscount(selectedItems)
         : 0
     const totalDiscount = discount_subtotal + membershipDiscount + pointsUsed
-    const finalTotal = Math.max(0, item_subtotal + shippingFee - totalDiscount)
+    const finalTotal = Math.max(
+      0,
+      item_subtotal + shipping.amount - totalDiscount
+    )
 
     return {
       currency_code,
       item_subtotal,
-      shippingFee,
+      shipping: shipping.amount,
       discount_subtotal,
       membershipDiscount,
       pointsUsed,
       totalDiscount,
       finalTotal,
     }
-  }, [cart, shippingFee, isMembership, selectedItems, pointsUsed])
+  }, [cart, shipping, isMembership, selectedItems, pointsUsed])
 
   const [selectedMethod, setSelectedMethod] = useState("payLater")
   const [cashReceiptOption, setCashReceiptOption] = useState("noapply")
@@ -261,7 +264,7 @@ export default function CheckoutTemplate({
             />
             <OrderProductsSection
               products={cart?.items}
-              shippingFee={shippingFee}
+              shipping={shipping.amount}
               selectedIds={selectedIds}
               onSelectedIdsChange={setSelectedIds}
             />
@@ -269,6 +272,8 @@ export default function CheckoutTemplate({
               cartId={cart.id}
               isMembership={isMembership}
               membershipDiscount={cartTotals.membershipDiscount}
+              itemSubtotal={cartTotals.item_subtotal}
+              shipping={shipping}
               promotions={promotions}
               appliedPromotionCode={cart.promotions?.[0]?.code}
               availablePoints={pointBalance.withdrawable}

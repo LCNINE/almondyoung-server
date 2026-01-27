@@ -20,7 +20,7 @@ interface CartItem {
 interface CartTotals {
   currency_code: string
   item_subtotal: number
-  shippingFee: number
+  shipping: number
   discount_subtotal: number
   membershipDiscount: number
   pointsUsed: number
@@ -28,4 +28,10 @@ interface CartTotals {
   finalTotal: number
 }
 
-export type { CartItemProduct, CartItem, CartTotals }
+interface ShippingInfo {
+  amount: number
+  name: string
+  description: string
+}
+
+export type { CartItemProduct, CartItem, CartTotals, ShippingInfo }

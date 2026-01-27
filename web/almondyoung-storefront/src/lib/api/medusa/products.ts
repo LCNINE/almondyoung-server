@@ -39,7 +39,12 @@ export const getProductList = async ({
       },
       {
         next: {
-          tags: ["products", categoryId || ""],
+          tags: [
+            "products",
+            Array.isArray(categoryId)
+              ? categoryId.join(",")
+              : categoryId || "",
+          ],
         },
       }
     )

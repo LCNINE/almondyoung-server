@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button"
-import { formatAmount } from "@/domains/payment/components/utils"
 import { CartTotals } from "@/lib/types/ui/cart"
+import { formatPrice } from "@/lib/utils/price-utils"
 
 export const MobileCTA = ({
   onPayment,
@@ -48,7 +48,7 @@ export const PCFixedCTA = ({
         >
           {loading
             ? "처리 중..."
-            : `${formatAmount(totals.finalTotal)} 결제하기`}
+            : `${formatPrice(totals.finalTotal)}원 결제하기`}
         </Button>
       </div>
     </div>
