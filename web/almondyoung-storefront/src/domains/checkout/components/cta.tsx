@@ -1,3 +1,7 @@
+import { Button } from "@/components/ui/button"
+import { formatAmount } from "@/domains/payment/components/utils"
+import { CartTotals } from "@/lib/types/ui/cart"
+
 export const MobileCTA = ({
   onPayment,
   loading,
@@ -5,7 +9,7 @@ export const MobileCTA = ({
   onPayment: () => void
   loading: boolean
 }) => (
-  <footer className="mt-6 px-4 pb-6 md:hidden">
+  <footer className="mt-6 px-4 pb-6 lg:hidden">
     <p className="mb-2 text-center text-[11px] text-gray-600">
       주문 내용을 확인하였으며, 정보 제공에 동의합니다.
     </p>
@@ -23,23 +27,29 @@ export const MobileCTA = ({
 export const PCFixedCTA = ({
   onPayment,
   loading,
+  totals,
 }: {
   onPayment: () => void
   loading: boolean
+  totals: CartTotals
 }) => (
-  <div className="fixed right-0 bottom-0 left-0 hidden bg-white shadow-[0px_-6px_18px_-2px_rgba(0,0,0,0.25)] md:block">
+  <div className="fixed right-0 bottom-0 left-0 hidden bg-white shadow-[0px_-6px_18px_-2px_rgba(0,0,0,0.25)] lg:block">
     <div className="container mx-auto max-w-[1360px] px-[40px] py-4">
       <div className="flex items-center justify-between">
         <p className="text-base text-gray-600">
           약관 및 주문 내용을 확인하였으며, 정보 제공 등에 동의합니다.
         </p>
-        <button
+        <Button
           onClick={onPayment}
           disabled={loading}
-          className="min-w-[403px] rounded-[5px] bg-[#F29219] px-4 py-[14px] text-[19px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+          size="lg"
+          color="primary"
+          className="min-w-[403px] cursor-pointer rounded-[5px] bg-[#F29219] px-4 py-[14px] text-[19px] font-bold text-white hover:bg-[#F29219]/90 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {loading ? "처리 중..." : "20,500원 결제하기"}
-        </button>
+          {loading
+            ? "처리 중..."
+            : `${formatAmount(totals.finalTotal)} 결제하기`}
+        </Button>
       </div>
     </div>
   </div>

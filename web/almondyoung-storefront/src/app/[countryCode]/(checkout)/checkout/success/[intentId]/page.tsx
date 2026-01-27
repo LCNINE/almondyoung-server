@@ -1,8 +1,7 @@
 import { notFound } from "next/navigation"
 import { cookies } from "next/headers"
 import CheckoutHeader from "@/app/[countryCode]/(checkout)/checkout/checkout-header"
-
-import ReviewPromptCard from "./review-prompt-card"
+import { ReviewPromptCard } from "../_components"
 
 interface PageProps {
   params: Promise<{ intentId: string; countryCode: string }>
@@ -23,9 +22,6 @@ interface IntentData {
   }
 }
 
-/**
- * 헬퍼 컴포넌트: 가독성을 위해 복잡한 SVG를 분리
- */
 function ChevronDownIcon({ className }: { className?: string }) {
   return (
     <svg
@@ -48,14 +44,10 @@ function ChevronDownIcon({ className }: { className?: string }) {
   )
 }
 
-/**
- * 헬퍼 컴포넌트: 주문 요약 카드
- */
 async function OrderSummaryCard({ intent }: { intent: IntentData }) {
   return (
     <section className="w-full max-w-[816px] overflow-hidden rounded-[10px] border-[0.5px] border-[#d9d9d9] bg-white">
       <div className="flex flex-col divide-y-[0.5px] divide-[#d9d9d9]">
-        {/* 1. 주문번호 헤더 */}
         <header className="flex items-center justify-between px-8 pt-8 pb-6">
           <h2 className="text-lg text-black">
             <span className="font-bold">주문번호 </span>
@@ -63,7 +55,7 @@ async function OrderSummaryCard({ intent }: { intent: IntentData }) {
           </h2>
         </header>
 
-        {/* 2. 배송 정보: <dl> (정의 목록) 사용 */}
+        {/* 배송 정보 */}
         <div className="px-8 py-6">
           <dl>
             <div className="flex items-center justify-between">
@@ -91,7 +83,6 @@ async function OrderSummaryCard({ intent }: { intent: IntentData }) {
           </dl>
         </div>
 
-        {/* 3. 주문 상품: <details> (접기/펴기) 사용 */}
         <details className="group">
           <summary className="flex cursor-pointer list-none items-center justify-between p-8">
             <div className="flex items-center gap-6">
@@ -111,7 +102,6 @@ async function OrderSummaryCard({ intent }: { intent: IntentData }) {
           </div>
         </details>
 
-        {/* 4. 주문 상세보기 버튼 */}
         <div className="p-8">
           <button
             type="button"
@@ -128,7 +118,6 @@ async function OrderSummaryCard({ intent }: { intent: IntentData }) {
 export default async function CheckoutSuccessPage({ params }: PageProps) {
   const { intentId, countryCode } = await params
 
-  // NestJS 백엔드에서 Intent 정보 조회
   const cookieStore = await cookies()
   const cookieHeader = cookieStore.toString()
 
@@ -148,18 +137,17 @@ export default async function CheckoutSuccessPage({ params }: PageProps) {
 
   return (
     <main className="flex min-h-screen w-full flex-col items-center gap-[41px] bg-[#f8f8f8] pb-20">
-      {/* 헤더 컴포넌트 (시맨틱) */}
+      {/* 헤더 컴포넌트 */}
       <CheckoutHeader title="주문/결제" />
 
-      {/* <h1> 태그: 페이지의 유일하고 가장 중요한 제목 */}
       <h1 className="text-center text-2xl font-bold text-black">
         <span className="text-[#ffa500]">주문완료</span> 되었습니다.
       </h1>
 
-      {/* 주문 요약 카드 (시맨틱) */}
+      {/* 주문 요약 카드 */}
       <OrderSummaryCard intent={intent} />
 
-      {/* 리뷰 유도 카드 (시맨틱) */}
+      {/* 리뷰 유도 카드 */}
       <ReviewPromptCard />
     </main>
   )

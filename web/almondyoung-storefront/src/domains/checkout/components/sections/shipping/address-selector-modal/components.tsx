@@ -8,6 +8,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
+import { formatPhoneNumber } from "@/lib/utils/format-phone-number"
 import {
   Check,
   MapPin,
@@ -18,7 +19,7 @@ import {
   Trash2,
 } from "lucide-react"
 import type { AddressCardProps } from "./types"
-import { buildFullAddress, buildFullName, formatPhoneNumber } from "./utils"
+import { buildFullAddress, buildFullName } from "./utils"
 
 export function EmptyState() {
   return (

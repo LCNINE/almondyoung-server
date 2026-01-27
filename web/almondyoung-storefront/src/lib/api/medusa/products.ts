@@ -70,6 +70,8 @@ export const getProductDetail = async (
       region_id: regionId,
     })
 
+    console.log("product::", product)
+
     return product
   } catch (error) {
     console.error("상품 상세 조회 실패:", error)

@@ -37,7 +37,7 @@ export function ShippingMemoSelector({
       <Select value={selectedMemoType} onValueChange={onMemoTypeChange}>
         <SelectTrigger
           className={cn(
-            "h-auto w-full rounded border border-gray-300 bg-white px-3 py-2.5 text-[13px] text-gray-700 md:rounded-[5px] md:px-4 md:py-3.5 md:text-sm",
+            "h-auto w-full rounded border border-gray-300 bg-white px-3 py-2.5 text-[13px] text-gray-700 lg:rounded-[5px] lg:px-4 lg:py-3.5 lg:text-sm",
             !selectedMemoType && "text-gray-400"
           )}
           aria-label="배송메모 선택"
@@ -49,7 +49,7 @@ export function ShippingMemoSelector({
             <SelectItem
               key={option.value}
               value={option.value}
-              className="cursor-pointer py-2.5 text-[13px] md:text-sm"
+              className="cursor-pointer py-2.5 text-[13px] lg:text-sm"
             >
               {option.label}
             </SelectItem>
@@ -93,10 +93,10 @@ function CustomMemoInput({
             onChange={onChange}
             placeholder="배송 시 요청사항을 입력해주세요"
             maxLength={50}
-            className="h-auto w-full rounded border border-gray-300 px-3 py-2.5 pr-14 text-[13px] text-gray-700 placeholder:text-gray-400 focus:border-gray-400 focus:bg-white md:rounded-[5px] md:px-4 md:py-3.5 md:text-sm"
+            className="h-auto w-full rounded border border-gray-300 px-3 py-2.5 pr-14 text-[13px] text-gray-700 placeholder:text-gray-400 focus:border-gray-400 focus:bg-white lg:rounded-[5px] lg:px-4 lg:py-3.5 lg:text-sm"
             aria-label="배송메모 직접 입력"
           />
-          <span className="absolute top-1/2 right-3 -translate-y-1/2 text-[11px] text-gray-400 md:text-xs">
+          <span className="absolute top-1/2 right-3 -translate-y-1/2 text-[11px] text-gray-400 lg:text-xs">
             {value.length}/50
           </span>
         </div>

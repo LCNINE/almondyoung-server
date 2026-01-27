@@ -43,13 +43,13 @@ export const PaymentMethodSection = ({
             <h3 className="text-lg leading-none font-bold text-[#1c1c1e]">
               나중 결제
             </h3>
-            <p className="text-base leading-normal text-black">
+            <p className="text-sm leading-normal text-black sm:text-base">
               지금 구매, 납부는 다음달에! (최대 50만원)
             </p>
           </div>
 
           <div
-            className={`relative mt-2 h-44 w-72 overflow-hidden rounded-xl bg-linear-to-br from-[#2C2C2E] to-[#1C1C1E] p-6 text-white shadow-lg ${selectedMethod === "payLater" ? "opacity-100 ring-2 ring-[#F29219]/30" : "opacity-70 grayscale"} transition-all duration-300`}
+            className={`relative mt-2 w-64 overflow-hidden rounded-xl bg-linear-to-br from-[#2C2C2E] to-[#1C1C1E] p-6 text-white shadow-lg sm:h-44 sm:w-72 ${selectedMethod === "payLater" ? "opacity-100 ring-2 ring-[#F29219]/30" : "opacity-70 grayscale"} transition-all duration-300`}
           >
             <div className="absolute -top-10 -right-10 h-32 w-32 rounded-full bg-white/5 blur-2xl" />
             <div className="absolute -bottom-8 -left-8 h-32 w-32 rounded-full bg-[#F29219]/20 blur-2xl" />
@@ -78,7 +78,9 @@ export const PaymentMethodSection = ({
                 </p>
                 <div className="flex items-end justify-between">
                   <p className="text-xs font-medium text-white/60">MEMBER</p>
-                  <p className="font-mono text-sm text-white/80">11 / 29</p>
+                  <p className="font-mono text-sm text-white/80">
+                    11 / {(new Date().getFullYear() + 2).toString().slice(-2)}
+                  </p>
                 </div>
               </div>
             </div>

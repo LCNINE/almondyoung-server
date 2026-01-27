@@ -1,7 +1,7 @@
 import { getMyBusiness } from "@lib/api/users/business"
 import { fetchMe } from "@lib/api/users/me"
 import { getVerificationStatus } from "@lib/api/users/verification-status"
-import { getBnplProfiles, getPinStatus } from "@lib/api/wallet"
+import { getBnplProfiles, getPinStatus } from "@/lib/api/wallet"
 import PinChangeForm from "domains/payment/components/security-pin/pin-change-form"
 import PinSetupForm from "domains/payment/components/security-pin/pin-setup-form"
 import VerificationModal from "./verification-modal"
