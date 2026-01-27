@@ -1,5 +1,4 @@
 import { ProductCardProps } from "@/lib/types/ui/product"
-import { ProductMembershipBadge } from "./product-membership-badge"
 import { ProductPrice } from "./product-price"
 import { ProductRating } from "./product-rating"
 
@@ -10,7 +9,11 @@ export function ProductInfo({
   discount,
   rating,
   reviewCount,
+  membershipSavings,
+  showMembershipHint,
 }: Omit<ProductCardProps, "imageSrc" | "rank">) {
+  const showMembershipBadge = membershipSavings != null
+
   return (
     <div className="flex flex-col gap-0.5 px-1">
       <h3 className="line-clamp-2 text-[14px] leading-tight text-gray-600">
@@ -22,12 +25,10 @@ export function ProductInfo({
           price={price}
           originalPrice={originalPrice}
           discount={discount}
+          membershipSavings={membershipSavings}
+          showMembershipHint={showMembershipHint}
+          showMembershipBadge={showMembershipBadge}
         />
-
-        {/* 배지/태그 영역 */}
-        <div className="flex items-center gap-1">
-          <ProductMembershipBadge size="md" />
-        </div>
       </div>
 
       {/* 리뷰 영역 */}

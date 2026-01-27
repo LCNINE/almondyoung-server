@@ -47,25 +47,36 @@ const ProductInfo = ({
   // 2. 가격 처리
   const basePrice = product.basePrice ?? 0
   const membershipPrice = product.membershipPrice ?? 0
+  const actualPrice = product.actualPrice ?? basePrice
   const isMembershipOnly = product.isMembershipOnly ?? false
+  const effectiveMembershipPrice =
+    basePrice > 0 && membershipPrice > 0 && membershipPrice < basePrice
+      ? membershipPrice
+      : 0
 
   // 2-1. 가격 정보가 없는 경우 체크
   const noPriceInfo = basePrice === 0 && membershipPrice === 0
 
   // 3. 할인율 계산 (단순 수식 - 프론트 책임)
   const discountRate =
-    basePrice > 0 && membershipPrice > 0 && membershipPrice < basePrice
-      ? Math.round(((basePrice - membershipPrice) / basePrice) * 100)
+    basePrice > 0 && effectiveMembershipPrice > 0
+      ? Math.round(((basePrice - effectiveMembershipPrice) / basePrice) * 100)
+      : undefined
+  const membershipSavings =
+    effectiveMembershipPrice > 0 ? basePrice - effectiveMembershipPrice
       : undefined
 
   // 4. 표시할 가격 결정
-  const displayPrice = membershipPrice > 0 ? membershipPrice : basePrice
+  const displayPrice =
+    effectiveMembershipPrice > 0 ? effectiveMembershipPrice : basePrice
   const originalPrice =
-    membershipPrice > 0 && basePrice > membershipPrice ? basePrice : undefined
+    effectiveMembershipPrice > 0 && basePrice > 0 ? basePrice : undefined
 
   // 5. 멤버십 태그 표시 여부
   const showMembershipTag =
-    !isMembershipOnly && membershipPrice > 0 && basePrice > membershipPrice
+    !isMembershipOnly && effectiveMembershipPrice > 0
+  const showMembershipHint =
+    showMembershipTag && Math.abs(actualPrice - membershipPrice) >= 1
 
   // 6. 장바구니 아이콘 표시 여부
   const showCartIcon = product.optionMeta?.isSingle && !isSoldOut
@@ -75,6 +86,17 @@ const ProductInfo = ({
 
   // 8. 타임세일 여부
   const isTimeSale = product.isTimeSale ?? false
+
+  if (process.env.NODE_ENV === "development") {
+    console.log("[PRICE DEBUG][ProductCard]", {
+      id: product.id,
+      name: product.name,
+      basePrice,
+      membershipPrice,
+      actualPrice,
+      isMembershipOnly,
+    })
+  }
 
   return (
     <Link
@@ -121,6 +143,8 @@ const ProductInfo = ({
             isMembershipOnly={isMembershipOnly}
             showMembershipTag={showMembershipTag}
             isTimeSale={isTimeSale}
+            showMembershipHint={showMembershipHint}
+            membershipSavings={membershipSavings}
           />
         )}
 

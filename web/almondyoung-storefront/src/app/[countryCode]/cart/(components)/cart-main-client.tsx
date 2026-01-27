@@ -42,7 +42,20 @@ function mapMedusaItemToCartItem(item: HttpTypes.StoreCartLineItem): CartItem {
     typeof originalTotal === "number" && item.quantity > 0
       ? Math.round(originalTotal / item.quantity)
       : item.unit_price || 0
-  const membershipPrice = item.unit_price || basePrice
+  const rawMembershipPrice = (variant?.metadata as any)?.membershipPrice
+  const parsedMembershipPrice =
+    typeof rawMembershipPrice === "string" ? Number(rawMembershipPrice) : null
+  const membershipPrice =
+    typeof rawMembershipPrice === "number"
+      ? rawMembershipPrice
+      : Number.isFinite(parsedMembershipPrice)
+        ? parsedMembershipPrice
+        : null
+  const normalizedMembershipPrice =
+    membershipPrice != null && basePrice > membershipPrice
+      ? membershipPrice
+      : null
+  const unitPrice = item.unit_price || basePrice
   const isMembershipOnly = (product?.metadata as any)?.isMembershipOnly || false
 
   return {
@@ -52,7 +65,8 @@ function mapMedusaItemToCartItem(item: HttpTypes.StoreCartLineItem): CartItem {
       name: item.title || product?.title || "상품명 없음",
       thumbnail: item.thumbnail || product?.thumbnail || "",
       basePrice,
-      membershipPrice: membershipPrice || basePrice,
+      membershipPrice: normalizedMembershipPrice || undefined,
+      unitPrice,
       brand: product?.subtitle || (product?.metadata as any)?.brand || "",
       isMembershipOnly,
     },
@@ -242,13 +256,18 @@ export function CartMainClient() {
     const selected = cartItems.filter((item) => checkedItems.includes(item.id))
 
     const totalOriginalPrice = selected.reduce(
-      (sum, item) => sum + (item.product.basePrice || 0) * item.quantity,
+      (sum, item) =>
+        sum +
+        (item.product.basePrice || item.product.unitPrice || 0) * item.quantity,
       0
     )
     const finalPrice = selected.reduce(
       (sum, item) =>
         sum +
-        (item.product.membershipPrice || item.product.basePrice || 0) *
+        (item.product.unitPrice ||
+          item.product.basePrice ||
+          item.product.membershipPrice ||
+          0) *
         item.quantity,
       0
     )

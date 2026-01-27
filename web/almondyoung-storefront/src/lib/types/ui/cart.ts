@@ -4,6 +4,7 @@ export interface CartItemProduct {
   thumbnail?: string
   basePrice?: number
   membershipPrice?: number
+  unitPrice?: number
   brand?: string
   isMembershipOnly?: boolean
 }

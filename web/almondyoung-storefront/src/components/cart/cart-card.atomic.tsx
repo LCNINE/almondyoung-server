@@ -22,10 +22,12 @@ interface CartCardBadgeProps {
   children: React.ReactNode
 }
 interface CartCardPriceProps {
-  original: number
+  original?: number
   discounted?: number
   discountRate?: number
   membership?: boolean
+  actual?: number
+  showMembershipHint?: boolean
 }
 interface CartCardContentProps {
   children: React.ReactNode
@@ -55,6 +57,8 @@ interface CartCardPCPriceProps {
   discounted: number
   discountRate?: number
   isMembership?: boolean
+  actual?: number
+  showMembershipHint?: boolean
 }
 interface CartCardPCContentProps {
   children: React.ReactNode
@@ -107,10 +111,50 @@ export const CartCardPrice = ({
   discounted,
   discountRate,
   membership,
+  actual,
+  showMembershipHint = false,
 }: CartCardPriceProps) => {
+  const hasDiscount =
+    typeof original === "number" &&
+    typeof discountRate === "number" &&
+    discountRate > 0
+
+  if (showMembershipHint && typeof actual === "number") {
+    const membershipSavings =
+      hasDiscount && discounted != null ? original - discounted : null
+    return (
+      <>
+        <div className="flex items-center gap-2">
+          <span className="text-lg font-bold">
+            {actual.toLocaleString()}원
+          </span>
+        </div>
+        {hasDiscount && discounted != null && (
+          <div className="mt-1 space-y-0.5">
+            <p className="text-xs text-gray-400">
+              {discountRate}%{" "}
+              <span className="line-through">{original.toLocaleString()}원</span>
+            </p>
+            <div className="flex items-center gap-1">
+              <span className="text-sm font-bold text-[#F2994A]">
+                {discounted.toLocaleString()}원
+              </span>
+              <ProductMembershipBadge size="sm" />
+            </div>
+            {membershipSavings != null && membershipSavings > 0 && (
+              <p className="text-[11px] text-gray-500">
+                멤버십 가입 시 {membershipSavings.toLocaleString()}원 절약
+              </p>
+            )}
+          </div>
+        )}
+      </>
+    )
+  }
+
   return (
     <>
-      {membership && discounted != null && (
+      {membership && discounted != null && hasDiscount && (
         <p className="text-xs text-gray-400">
           {discountRate}%{" "}
           <span className="line-through">{original.toLocaleString()}원</span>
@@ -118,7 +162,7 @@ export const CartCardPrice = ({
       )}
       <div className="flex items-center gap-2">
         <span className="text-lg font-bold">
-          {(discounted ?? original).toLocaleString()}원
+          {(discounted ?? original ?? 0).toLocaleString()}원
         </span>
         {membership && discounted != null && (
           <ProductMembershipBadge size="sm" />
@@ -197,11 +241,51 @@ export const CartCardPCPrice = ({
   discounted,
   discountRate,
   isMembership = false,
+  actual,
+  showMembershipHint = false,
 }: CartCardPCPriceProps) => {
+  const hasDiscount =
+    typeof original === "number" &&
+    typeof discountRate === "number" &&
+    discountRate > 0
+
+  if (showMembershipHint && typeof actual === "number") {
+    const membershipSavings =
+      hasDiscount ? original - discounted : null
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center gap-1">
+          <span className="text-[19px] font-bold text-gray-900">
+            {actual.toLocaleString()}원
+          </span>
+        </div>
+        {hasDiscount && (
+          <div>
+            <div className="flex items-center gap-1 text-xs text-[#aeaeb2]">
+              <span className="font-medium">{discountRate}%</span>
+              <span className="line-through">{original.toLocaleString()}원</span>
+            </div>
+            <div className="mt-2 flex items-center gap-1">
+              <span className="text-[15px] font-bold text-[#F2994A]">
+                {discounted.toLocaleString()}원
+              </span>
+              <ProductMembershipBadge size="md" />
+            </div>
+            {membershipSavings != null && membershipSavings > 0 && (
+              <p className="mt-1 text-[12px] text-gray-500">
+                멤버십 가입 시 {membershipSavings.toLocaleString()}원 절약
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-2">
       {/* 할인가격 표시 */}
-      {original && discountRate ? (
+      {hasDiscount ? (
         <div>
           <div className="flex items-center gap-1 text-xs text-[#aeaeb2]">
             <span className="font-medium">{discountRate}%</span>

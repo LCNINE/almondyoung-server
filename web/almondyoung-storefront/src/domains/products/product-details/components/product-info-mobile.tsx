@@ -50,6 +50,21 @@ export function ProductInfoMobile({ product }: Props) {
         isMembershipOnly={product.isMembershipOnly}
         discountRate={getDiscountRate()}
         memberPrices={product.memberPrices}
+        actualPrice={product.actualPrice}
+        showMembershipHint={
+          typeof product.membershipPrice === "number" &&
+          typeof product.basePrice === "number" &&
+          typeof product.actualPrice === "number" &&
+          product.basePrice > product.membershipPrice &&
+          Math.abs(product.actualPrice - product.membershipPrice) >= 1
+        }
+        membershipSavings={
+          typeof product.membershipPrice === "number" &&
+          typeof product.basePrice === "number" &&
+          product.basePrice > product.membershipPrice
+            ? product.basePrice - product.membershipPrice
+            : undefined
+        }
       />
 
       {/* 배송 정보 - 선택 필드 */}

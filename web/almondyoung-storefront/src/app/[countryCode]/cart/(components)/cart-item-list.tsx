@@ -30,14 +30,22 @@ export function CartItemList({
       >
         <div className="items-container">
           {items.map((item) => {
-            const basePrice = item.product.basePrice || 0
-            const membershipPrice = item.product.membershipPrice || basePrice
+            const basePrice =
+              item.product.basePrice || item.product.unitPrice || 0
+            const membershipPrice = item.product.membershipPrice
+            const unitPrice = item.product.unitPrice || basePrice
             const quantity = item.quantity || 1
             const hasMembershipPrice =
-              membershipPrice > 0 && membershipPrice < basePrice
+              typeof membershipPrice === "number" &&
+              membershipPrice > 0 &&
+              membershipPrice < basePrice
             const discountRate = hasMembershipPrice
               ? Math.round(((basePrice - membershipPrice) / basePrice) * 100)
               : 0
+            const isMembershipApplied =
+              hasMembershipPrice &&
+              Math.abs(unitPrice - membershipPrice) < 1
+            const showMembershipHint = hasMembershipPrice && !isMembershipApplied
 
             return (
               <CartCard
@@ -62,10 +70,12 @@ export function CartItemList({
                 discountedPrice={
                   hasMembershipPrice
                     ? membershipPrice * quantity
-                    : basePrice * quantity
+                    : unitPrice * quantity
                 }
+                actualPrice={unitPrice * quantity}
                 discountRate={discountRate}
                 isMembership={hasMembershipPrice}
+                showMembershipHint={showMembershipHint}
                 quantity={item.quantity}
                 onQuantityChange={(qty) => onQuantityChange(item.id, qty)}
               />
@@ -79,14 +89,20 @@ export function CartItemList({
   return (
     <div className="divide-y divide-gray-200">
       {items.map((item) => {
-        const basePrice = item.product.basePrice || 0
-        const membershipPrice = item.product.membershipPrice || basePrice
+        const basePrice = item.product.basePrice || item.product.unitPrice || 0
+        const membershipPrice = item.product.membershipPrice
+        const unitPrice = item.product.unitPrice || basePrice
         const quantity = item.quantity || 1
         const hasMembershipPrice =
-          membershipPrice > 0 && membershipPrice < basePrice
+          typeof membershipPrice === "number" &&
+          membershipPrice > 0 &&
+          membershipPrice < basePrice
         const discountRate = hasMembershipPrice
           ? Math.round(((basePrice - membershipPrice) / basePrice) * 100)
           : 0
+        const isMembershipApplied =
+          hasMembershipPrice && Math.abs(unitPrice - membershipPrice) < 1
+        const showMembershipHint = hasMembershipPrice && !isMembershipApplied
 
         return (
           <CartCard
@@ -111,10 +127,12 @@ export function CartItemList({
             discountedPrice={
               hasMembershipPrice
                 ? membershipPrice * quantity
-                : basePrice * quantity
+                : unitPrice * quantity
             }
             discountRate={discountRate}
             isMembership={hasMembershipPrice}
+            actualPrice={unitPrice * quantity}
+            showMembershipHint={showMembershipHint}
             quantity={item.quantity}
             onQuantityChange={(qty) => onQuantityChange(item.id, qty)}
           />

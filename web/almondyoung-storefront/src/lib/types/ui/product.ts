@@ -70,6 +70,8 @@ export interface ProductCardProps {
   rating: number
   reviewCount: number
   imageSrc: string
+  membershipSavings?: number
+  showMembershipHint?: boolean
 }
 
 /**
@@ -91,6 +93,7 @@ export interface ProductCard {
   // 💻 프론트: 할인율 계산 (단순 수식), 포맷팅
   basePrice?: number // 정가
   membershipPrice?: number // 멤버십가
+  actualPrice?: number // 현재 유저 기준 계산가
   isMembershipOnly?: boolean // 멤버십 전용 여부
 
   // ===== 재고/판매 상태 (서버 제공) =====
@@ -154,6 +157,7 @@ export interface ProductDetail extends ProductCard {
   originalPrice?: number // 호환성(카드 original mirror)
   options: ProductOption[] // 옵션 그룹
 
+  actualPrice?: number
   defaultVariantId?: string
   variantPriceMap?: Record<
     string,

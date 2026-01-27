@@ -13,6 +13,9 @@ type Props = {
   isMembershipOnly?: boolean
   discountRate: number
   memberPrices?: MemberPrice[]
+  actualPrice?: number
+  showMembershipHint?: boolean
+  membershipSavings?: number
 }
 
 /**
@@ -25,7 +28,20 @@ export function ProductPriceDisplay({
   isMembershipOnly,
   discountRate,
   memberPrices,
+  showMembershipHint,
+  membershipSavings,
 }: Props) {
+  if (process.env.NODE_ENV === "development") {
+    console.log("[PRICE DEBUG][ProductDetail]", {
+      basePrice,
+      membershipPrice,
+      isMembershipOnly,
+      discountRate,
+      membershipSavings,
+      showMembershipHint,
+    })
+  }
+
   return (
     <section className="mb-6" aria-label="상품 가격">
       {/* 멤버십 태그 */}
@@ -68,6 +84,11 @@ export function ProductPriceDisplay({
           </>
         )}
       </output>
+      {!isMembershipOnly && showMembershipHint && membershipSavings != null && (
+        <p className="text-xs text-gray-500">
+          멤버십 가입 시 {membershipSavings.toLocaleString()}원 절약
+        </p>
+      )}
 
       {/* 멤버십 등급별 가격 */}
       {memberPrices && memberPrices.length > 0 && (

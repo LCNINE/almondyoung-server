@@ -1,7 +1,7 @@
 "use client"
 
 import React from "react"
-import { MembershipTag } from "./membership-tag"
+import { ProductMembershipBadge } from "@/components/shared/badges/product-membership-badge"
 import { SoldOutTag } from "@/components/products/prodcut-card/parts/sold-out-tag"
 import AnimatedMembershipText from "@components/products/atomics/animated-membership-text"
 
@@ -22,6 +22,8 @@ export const ProductPrice = ({
   isMembershipOnly, // 멤버십 전용 여부
   showMembershipTag, // 멤버십 태그 표시 여부
   isTimeSale, // 타임세일 여부
+  showMembershipHint, // 멤버십 안내 문구 표시
+  membershipSavings, // 멤버십 절약액
 }: {
   displayPrice: number
   originalPrice?: number
@@ -30,6 +32,8 @@ export const ProductPrice = ({
   isMembershipOnly: boolean
   showMembershipTag: boolean
   isTimeSale?: boolean
+  showMembershipHint?: boolean
+  membershipSavings?: number
 }) => {
   // ===== 1. 품절 상품 =====
   if (isSoldOut) {
@@ -57,7 +61,10 @@ export const ProductPrice = ({
   }
 
   // ===== 3. 타임세일 상품 (할인 있음) =====
-  if (isTimeSale && discountRate && originalPrice) {
+  const hasDiscountInfo =
+    typeof discountRate === "number" && typeof originalPrice === "number"
+
+  if (isTimeSale && hasDiscountInfo) {
     return (
       <div className="gap-0.7 flex flex-col">
         {/* 원가 (회색 취소선) */}
@@ -72,10 +79,13 @@ export const ProductPrice = ({
           <span className="text-base font-bold text-[#f54527] md:text-[19px]">
             {displayPrice.toLocaleString()}원
           </span>
-          {showMembershipTag && (
-            <MembershipTag isMembership={true} isSoldOut={false} />
-          )}
-        </div>
+          {showMembershipTag && <ProductMembershipBadge size="sm" />}
+      </div>
+        {showMembershipHint && membershipSavings != null && (
+          <span className="text-[11px] text-gray-500">
+            멤버십 가입 시 {membershipSavings.toLocaleString()}원 절약
+          </span>
+        )}
 
         {/* 빨간색 할인 배지 */}
         <span className="mt-1 inline-flex items-center self-start rounded-[3px] bg-[#f54527] px-1 py-0.5 text-xs font-medium text-white">
@@ -86,7 +96,7 @@ export const ProductPrice = ({
   }
 
   // ===== 4. 일반 상품 (할인 있음) =====
-  if (discountRate && originalPrice) {
+  if (hasDiscountInfo) {
     return (
       <div className="gap-0.7 flex flex-col">
         {/* 할인율 + 원가 (같은 줄) */}
@@ -104,10 +114,13 @@ export const ProductPrice = ({
           <span className="text-base font-bold md:text-[19px]">
             {displayPrice.toLocaleString()}원
           </span>
-          {showMembershipTag && (
-            <MembershipTag isMembership={true} isSoldOut={false} />
-          )}
-        </div>
+          {showMembershipTag && <ProductMembershipBadge size="sm" />}
+      </div>
+        {showMembershipHint && membershipSavings != null && (
+          <span className="text-[11px] text-gray-500">
+            멤버십 가입 시 {membershipSavings.toLocaleString()}원 절약
+          </span>
+        )}
       </div>
     )
   }
@@ -118,9 +131,7 @@ export const ProductPrice = ({
       <span className="text-base font-bold md:text-[19px]">
         {displayPrice.toLocaleString()}원
       </span>
-      {showMembershipTag && (
-        <MembershipTag isMembership={true} isSoldOut={false} />
-      )}
+      {showMembershipTag && <ProductMembershipBadge size="sm" />}
     </div>
   )
 }

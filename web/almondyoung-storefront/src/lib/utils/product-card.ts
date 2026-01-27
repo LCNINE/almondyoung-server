@@ -4,6 +4,16 @@ import { getPricesForVariant, getProductPrice } from "@/lib/utils/get-product-pr
 
 export type ReviewSummary = { rating: number; reviewCount: number }
 
+const getMembershipPreviewPrice = (variant: any) => {
+  const raw = variant?.metadata?.membershipPrice
+  if (typeof raw === "number") return raw
+  if (typeof raw === "string") {
+    const parsed = Number(raw)
+    return Number.isFinite(parsed) ? parsed : undefined
+  }
+  return undefined
+}
+
 export function mapStoreProductToCardProps(
   product: StoreProduct,
   reviewsMap?: Map<string, ReviewSummary>
@@ -17,22 +27,41 @@ export function mapStoreProductToCardProps(
       (variant) => variant?.is_default || variant?.isDefault
     ) ?? (product.variants as any[])?.[0]
   const defaultPrice = defaultVariant ? getPricesForVariant(defaultVariant) : null
+  const membershipPreviewPrice = defaultVariant
+    ? getMembershipPreviewPrice(defaultVariant)
+    : undefined
   const priceInfo = getProductPrice({ product })
   const basePrice =
     defaultPrice?.original_price_number ||
     priceInfo?.cheapestPrice?.original_price_number ||
     0
-  const membershipPrice =
+  const actualPrice =
     defaultPrice?.calculated_price_number ||
     priceInfo?.cheapestPrice?.calculated_price_number ||
     0
+  const rawMembershipPrice =
+    membershipPreviewPrice ??
+    defaultPrice?.calculated_price_number ||
+    priceInfo?.cheapestPrice?.calculated_price_number ||
+    0
+  const membershipPrice =
+    rawMembershipPrice > 0 && basePrice > rawMembershipPrice
+      ? rawMembershipPrice
+      : 0
 
   const discount =
-    membershipPrice > 0 && basePrice > membershipPrice && basePrice > 0
+    membershipPrice > 0 && basePrice > 0
       ? Math.round(((basePrice - membershipPrice) / basePrice) * 100)
       : 0
 
   const displayPrice = membershipPrice || basePrice
+  const membershipSavings =
+    membershipPrice > 0
+      ? basePrice - membershipPrice
+      : undefined
+  const showMembershipHint =
+    membershipSavings != null &&
+    Math.abs(actualPrice - membershipPrice) >= 1
   const imageUrl = product.thumbnail || ""
   const reviewData = reviewsMap?.get(product.handle || product.id)
 
@@ -45,6 +74,8 @@ export function mapStoreProductToCardProps(
     rating: reviewData?.rating || 0,
     reviewCount: reviewData?.reviewCount || 0,
     imageSrc: imageUrl,
+    membershipSavings,
+    showMembershipHint,
   }
 }
 

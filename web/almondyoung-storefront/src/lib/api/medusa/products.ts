@@ -46,7 +46,7 @@ export const getProductList = async ({
         category_id: categoryId,
         handle,
         fields:
-          "variants.*,+variants.prices.*,+variants.calculated_price,+variants.calculated_price_incl_tax,+variants.original_price,+variants.original_price_incl_tax,+categories,+metadata,+tags",
+          "variants.*,+variants.metadata,+variants.prices.*,+variants.calculated_price,+variants.calculated_price_incl_tax,+variants.original_price,+variants.original_price_incl_tax,+categories,+metadata,+tags",
         region_id: region_id,
       },
       {
@@ -85,7 +85,7 @@ export const getProductDetail = async (
       productId,
       {
         fields:
-          "variants.*,+variants.prices.*,+variants.calculated_price,+variants.calculated_price_incl_tax,+variants.original_price,+variants.original_price_incl_tax,+variants.price_type,+variants.currency_code",
+          "variants.*,+variants.metadata,+variants.prices.*,+variants.calculated_price,+variants.calculated_price_incl_tax,+variants.original_price,+variants.original_price_incl_tax,+variants.price_type,+variants.currency_code",
         region_id: regionId,
       },
       {
