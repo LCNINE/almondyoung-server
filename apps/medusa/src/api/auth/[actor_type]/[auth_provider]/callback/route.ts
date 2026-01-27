@@ -15,11 +15,45 @@ import { jwtVerify } from '../../../../../utils/jwt-verify';
 import { registerCustomerWorkflow } from '../../../../../workflows/auth/workflows/register-customer-workflow';
 import { registerUserWorkflow } from '../../../../../workflows/auth/workflows/register-user-workflow';
 
+const normalizeRecord = (
+  input: unknown,
+): Record<string, string> | undefined => {
+  if (!input || typeof input !== 'object') {
+    return undefined;
+  }
+
+  const record: Record<string, string> = {};
+
+  for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+    if (value === undefined || value === null) {
+      continue;
+    }
+
+    if (Array.isArray(value)) {
+      const first = value.find((item) => item !== undefined && item !== null);
+      if (first === undefined) {
+        continue;
+      }
+      record[key] = String(first);
+      continue;
+    }
+
+    if (typeof value === 'object') {
+      record[key] = JSON.stringify(value);
+      continue;
+    }
+
+    record[key] = String(value);
+  }
+
+  return Object.keys(record).length ? record : undefined;
+};
+
 const buildAuthData = (req: MedusaRequest): AuthenticationInput => ({
   url: req.url,
-  headers: req.headers,
-  query: req.query,
-  body: req.body,
+  headers: normalizeRecord(req.headers),
+  query: normalizeRecord(req.query),
+  body: normalizeRecord(req.body),
   protocol: req.protocol,
 });
 
@@ -40,12 +74,15 @@ const extractUserServiceToken = (req: MedusaRequest): string | undefined => {
     }
   }
 
-  const token = req.query?.token;
+  const token = (req.query as Record<string, unknown> | undefined)?.token;
   if (typeof token === 'string') {
     return token;
   }
   if (Array.isArray(token)) {
-    return token[0];
+    return token.length ? String(token[0]) : undefined;
+  }
+  if (token !== undefined && token !== null) {
+    return String(token);
   }
 
   return undefined;
