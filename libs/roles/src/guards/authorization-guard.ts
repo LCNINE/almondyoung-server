@@ -8,12 +8,13 @@ export interface JwtPayload {
   email: string;
   id: string;
   scopes: string[];
+  login_id?: string;
 }
 
 //todo 룰 가드로 변경
 @Injectable()
 export class AuthorizationGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) {}
+  constructor(private readonly reflector: Reflector) { }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     // 요구 스코프 확인
@@ -29,7 +30,7 @@ export class AuthorizationGuard implements CanActivate {
 
     // 사용자/JWT 확인
     const request = context.switchToHttp().getRequest<FastifyRequest>();
-    const user = request['user'] as JwtPayload;
+    const user = request['user'];
 
     if (!user || !user.id || !user.scopes) {
       return false;
