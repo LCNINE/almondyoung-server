@@ -33,13 +33,14 @@ export class JwtAccessStrategy extends PassportStrategy(Strategy) {
 
   async validate(
     req: any,
-    payload: { sub: string; email: string; scopes: string[] },
+    payload: { sub: string; email: string; scopes: string[]; login_id?: string },
   ) {
     // JWT payload 정보 반환
     return {
       id: payload.sub,
       email: payload.email,
       scopes: payload.scopes,
+      login_id: payload.login_id,
     };
   }
 }

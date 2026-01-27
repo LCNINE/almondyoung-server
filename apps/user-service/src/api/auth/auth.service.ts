@@ -702,6 +702,7 @@ export class AuthService {
       sub: user.id,
       scopes,
       email: user.email,
+      login_id: user.loginId,
     };
 
     const expiresIn = JWT_ACCESS_TOKEN_EXPIRATION;
