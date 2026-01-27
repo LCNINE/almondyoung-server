@@ -23,23 +23,23 @@ export function AddressDisplay({
   const hasNameInfo = addressName || name
 
   return (
-    <div className="flex justify-between md:w-full">
+    <div className="flex justify-between lg:w-full">
       <div className="flex-1">
         {hasNameInfo && (
-          <p className="mb-3 flex flex-col gap-2 text-[15px] font-semibold text-gray-900 md:flex-row md:items-center md:text-lg">
+          <p className="mb-3 flex flex-col gap-2 text-[15px] font-semibold text-gray-900 lg:flex-row lg:items-center lg:text-lg">
             <AddressNameDisplay addressName={addressName} name={name} />
-            <span className="hidden rounded bg-[#e8f6ea] px-2 py-[2px] text-[11px] font-semibold text-[#2ba24c] md:inline">
+            <span className="hidden rounded bg-[#e8f6ea] px-2 py-[2px] text-[11px] font-semibold text-[#2ba24c] lg:inline">
               기본 배송지
             </span>
           </p>
         )}
 
         {phone && (
-          <p className="mt-1 text-[13px] text-gray-700 md:text-base">{phone}</p>
+          <p className="mt-1 text-[13px] text-gray-700 lg:text-base">{phone}</p>
         )}
 
         {fullAddress && (
-          <address className="text-[13px] leading-5 text-gray-700 not-italic md:text-base">
+          <address className="text-[13px] leading-5 text-gray-700 not-italic lg:text-base">
             {fullAddress}
           </address>
         )}

@@ -101,7 +101,7 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   const infoRef = useRef<HTMLDivElement>(null)
 
   // ===== Hooks =====
-  const { addToCart } = useAddToCart()
+  const { addToCart, isLoading: isAddToCartLoading } = useAddToCart()
 
   useRecentViews(null, {
     userId: user?.id,
@@ -413,7 +413,7 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
             </div>
           </main>
 
-          {/* 사이드바 (데스크탑) */}
+          {/* 사이드바 (데스크탑)*/}
           <ProductSidebarPurchase
             product={product}
             isWishlisted={isWishlisted}
@@ -421,6 +421,16 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
             onWishlistToggle={handleWishlistToggle}
             countryCode={countryCode}
             isUser={!!user}
+            quantity={quantity}
+            onQuantityChange={setQuantity}
+            selectedOptions={selectedOptions}
+            selectedCartOptions={selectedCartOptions}
+            onOptionChange={handleOptionChange}
+            onQuantityUpdate={handleQuantityUpdate}
+            onOptionRemove={handleOptionRemove}
+            onAddToCart={handleAddToCart}
+            onBuyNow={handleBuyNow}
+            isAddToCartLoading={isAddToCartLoading}
           />
         </div>
       </div>

@@ -40,14 +40,9 @@ async function getPlans(): Promise<PlanWithTier[]> {
 
 async function getPaymentProfiles() {
   try {
-    const { getPaymentProfilesServer } = await import("@lib/api/wallet")
-    const cookieStore = await cookies()
-    const cookieString = cookieStore
-      .getAll()
-      .map((cookie) => `${cookie.name}=${cookie.value}`)
-      .join("; ")
+    const { getBnplProfiles } = await import("@lib/api/wallet")
 
-    const profiles = await getPaymentProfilesServer(cookieString)
+    const profiles = await getBnplProfiles()
     console.log("✅ Payment profiles loaded:", profiles)
     return profiles
   } catch (error) {
@@ -74,7 +69,7 @@ export default async function MembershipFormPage() {
   }
 
   // HMS 카드 프로필 찾기
-  const hmsCardProfile = paymentProfiles.find(
+  const hmsCardProfile = paymentProfiles?.find(
     (p: any) => p.kind === "CARD" && p.provider === "HMS_CARD"
   )
 

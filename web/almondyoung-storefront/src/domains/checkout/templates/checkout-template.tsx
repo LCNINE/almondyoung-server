@@ -1,39 +1,105 @@
 "use client"
 
-import { ShippingSection } from "@/domains/checkout/components/sections/shipping-section"
-import type { ShippingMemo } from "@/domains/checkout/components/sections/shipping-section/types"
+import { DiscountSection } from "@/domains/checkout/components/sections/discount"
+import { OrderProductsSection } from "@/domains/checkout/components/sections/order-products-shipping"
+import { PaymentMethodSection } from "@/domains/checkout/components/sections/payment-method"
+import { PaymentTotalSection } from "@/domains/checkout/components/sections/payment-total"
+import { ShippingSection } from "@/domains/checkout/components/sections/shipping"
+import type { ShippingMemo } from "@/domains/checkout/components/sections/shipping/types"
 import { updateCart } from "@/lib/api/medusa/cart"
+import {
+  authorizePayment,
+  createIntent,
+  getBnplProfiles,
+} from "@/lib/api/wallet"
+import { CartResponseDto } from "@/lib/types/dto/medusa"
+import type { PointBalanceDto } from "@/lib/types/dto/wallet"
+import type { CartTotals } from "@/lib/types/ui/cart"
+import type { Promotion } from "@/lib/types/ui/promotion"
+import { TaxInvoiceType } from "@/lib/types/ui/wallet"
+import {
+  calculateMembershipDiscount,
+  getCartTotals,
+} from "@/lib/utils/price-utils"
 import type { UserDetail } from "@lib/types/ui/user"
-import { StoreCart } from "@medusajs/types"
 import { loadTossPayments } from "@tosspayments/tosspayments-sdk"
 import { MobileCTA, PCFixedCTA } from "domains/checkout/components/cta"
 import { MobileHeader, PCHeader } from "domains/checkout/components/header"
 import { MobileOrderSummary } from "domains/checkout/components/order-summary"
 import { PaymentDetailSidebar } from "domains/checkout/components/payment-detail-sidebar"
-import { DiscountSection } from "domains/checkout/components/sections/discount-section"
-import { OrderProductsSection } from "domains/checkout/components/sections/order-products-shipping-section"
-import { PaymentMethodSection } from "domains/checkout/components/sections/payment-method-section"
-import { PaymentInfoSection } from "domains/checkout/components/sections/paymentInfo-section"
-import { ReceiptSection } from "domains/checkout/components/sections/receipt-section"
 import { useParams, useRouter } from "next/navigation"
-import { useCallback, useRef, useState } from "react"
+import { useCallback, useMemo, useRef, useState } from "react"
+import { ReceiptSection } from "../components/sections/receipt/"
 
 interface CheckoutTemplateProps {
   user: UserDetail
-  cart: StoreCart | null
+  cart: CartResponseDto["cart"]
+  shippingFee: number
+  promotions: Promotion[]
+  pointBalance: PointBalanceDto
+  taxInvoice: TaxInvoiceType
 }
 
 export default function CheckoutTemplate({
   user,
   cart,
+  shippingFee,
+  promotions,
+  pointBalance,
+  taxInvoice,
 }: CheckoutTemplateProps) {
   const router = useRouter()
   const params = useParams()
   const countryCode = params.countryCode as string
 
+  // 선택된 상품 ID (기본값: 전체 선택)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(
+    () => new Set(cart.items?.map((item) => item.id) ?? [])
+  )
+
+  // 선택된 상품만 필터링
+  const selectedItems = useMemo(
+    () => cart.items?.filter((item) => selectedIds.has(item.id)) ?? [],
+    [cart.items, selectedIds]
+  )
+
+  // 멤버십 여부
+  const isMembership =
+    cart?.customer?.groups?.some(
+      (group) => group.name.toLowerCase() === "membership"
+    ) ?? false
+
+  // 적립금 사용 상태
+  const [pointsUsed, setPointsUsed] = useState(0)
+
+  // 가격 계산 (한 번에 계산하여 여러 컴포넌트에 전달)
+  const cartTotals: CartTotals = useMemo(() => {
+    const { currency_code, item_subtotal, discount_subtotal } =
+      getCartTotals(cart)
+    const membershipDiscount =
+      isMembership && selectedItems.length > 0
+        ? calculateMembershipDiscount(selectedItems)
+        : 0
+    const totalDiscount = discount_subtotal + membershipDiscount + pointsUsed
+    const finalTotal = Math.max(0, item_subtotal + shippingFee - totalDiscount)
+
+    return {
+      currency_code,
+      item_subtotal,
+      shippingFee,
+      discount_subtotal,
+      membershipDiscount,
+      pointsUsed,
+      totalDiscount,
+      finalTotal,
+    }
+  }, [cart, shippingFee, isMembership, selectedItems, pointsUsed])
+
   const [selectedMethod, setSelectedMethod] = useState("payLater")
   const [cashReceiptOption, setCashReceiptOption] = useState("noapply")
-  const [taxInvoiceOption, setTaxInvoiceOption] = useState("noapply")
+  const [taxInvoiceOption, setTaxInvoiceOption] = useState(
+    taxInvoice?.defaultEnabled ? "apply" : "noapply"
+  )
   const [isPaymentDetailsOpen, setIsPaymentDetailsOpen] = useState(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -56,28 +122,14 @@ export default function CheckoutTemplate({
         throw new Error("로그인이 필요합니다.")
       }
 
-      // Intent 생성 (라우트 핸들러 사용)
-      const intentResponse = await fetch("/api/wallet/payments/intents", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
-        body: JSON.stringify({
+      const intent = await createIntent({
+        data: {
           customerId: user.id,
-          originalAmount: 100, // TODO: 실제 금액으로 교체
+          originalAmount: cartTotals.finalTotal,
           discountAmount: 0,
           type: "ORDER",
-        }),
-        cache: "no-store",
+        },
       })
-
-      if (!intentResponse.ok) {
-        const errorData = await intentResponse.json().catch(() => ({}))
-        throw new Error(errorData.message || "Intent 생성 실패")
-      }
-
-      const intent = await intentResponse.json()
 
       // 3. 토스 결제 SDK 초기화
       const clientKey =
@@ -123,15 +175,16 @@ export default function CheckoutTemplate({
           method: "CARD",
           amount: {
             currency: "KRW",
-            value: 100, // TODO: 실제 금액으로 교체
+            value: cartTotals.finalTotal,
           },
           orderId: intentId,
-          orderName: "주문 상품", // TODO: 실제 주문명으로 교체
+          orderName: cart.items?.map((item) => item.title).join(", "),
           successUrl: `${baseUrl}/${countryCode}/checkout/callback`,
           failUrl: `${baseUrl}/${countryCode}/checkout/callback`,
-          customerEmail: "customer@example.com", // TODO: 실제 이메일로 교체
-          customerName: "고객명", // TODO: 실제 이름으로 교체
-          customerMobilePhone: "01012341234", // TODO: 실제 전화번호로 교체
+          customerEmail: user.email,
+          customerName: user.username,
+          customerMobilePhone:
+            cart.shipping_address?.phone ?? user.profile?.phoneNumber,
         })
       } else if (selectedMethod === "payLater") {
         // 나중 결제: 라우트 핸들러로 직접 요청
@@ -139,47 +192,24 @@ export default function CheckoutTemplate({
           throw new Error("로그인이 필요합니다.")
         }
 
-        // Intent 생성 (라우트 핸들러 사용)
-        const intentResponse = await fetch("/api/wallet/payments/intents", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            credentials: "include",
-          },
-
-          body: JSON.stringify({
+        const intent = await createIntent({
+          data: {
             customerId: user.id,
-            originalAmount: 100, // TODO: 실제 금액으로 교체
+            originalAmount: cartTotals.finalTotal,
             discountAmount: 0,
             type: "ORDER",
-          }),
-          cache: "no-store",
-        })
-
-        if (!intentResponse.ok) {
-          const errorData = await intentResponse.json().catch(() => ({}))
-          throw new Error(errorData.message || "Intent 생성 실패")
-        }
-
-        const intent = await intentResponse.json()
-
-        // 3. BNPL 프로필 조회 (나중 결제는 프로필이 필요)
-        const profilesResponse = await fetch("/api/wallet/payments/profiles", {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
           },
         })
 
-        let profileId: string | undefined
-        if (profilesResponse.ok) {
-          const profiles = await profilesResponse.json()
-          // HMS_BNPL 프로필 찾기
-          const bnplProfile = profiles.find(
-            (p: any) => p.provider === "HMS_BNPL" && p.status === "ACTIVE"
-          )
-          profileId = bnplProfile?.id
-        }
+        //  BNPL 프로필 조회 (나중 결제는 프로필이 필요)
+        const profiles = await getBnplProfiles()
+
+        // HMS_BNPL 프로필 찾기
+        const bnplProfile = profiles?.find(
+          (p: any) => p.provider === "HMS_BNPL" && p.status === "ACTIVE"
+        )
+
+        const profileId = bnplProfile?.id
 
         if (!profileId) {
           throw new Error(
@@ -187,39 +217,19 @@ export default function CheckoutTemplate({
           )
         }
 
-        // 4. 결제 승인 (라우트 핸들러 사용)
+        // 결제 승인 (라우트 핸들러 사용)
         // 나중 결제는 HMS_BNPL로 처리
-        const authorizeResponse = await fetch(
-          `/api/wallet/payments/intents/${intent.id}/authorize`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            credentials: "include",
-            body: JSON.stringify({
-              provider: "HMS_BNPL", // 나중 결제는 BNPL로 처리
-              profileId: profileId, // BNPL 프로필 ID 필수
-            }),
-            cache: "no-store",
-          }
-        )
+        const authorize = await authorizePayment(intent.id, {
+          provider: "HMS_BNPL",
+          profileId: profileId,
+        })
 
-        if (!authorizeResponse.ok) {
-          const errorData = await authorizeResponse.json().catch(() => ({}))
-          throw new Error(errorData.message || "결제 승인 실패")
-        }
-
-        const responseData = await authorizeResponse.json()
-
-        const result = responseData.data || responseData
-
-        if (result.success && result.intentId) {
-          router.push(`/${countryCode}/checkout/success/${result.intentId}`)
+        if (authorize.success) {
+          router.push(`/${countryCode}/checkout/success/${intent.id}`)
         } else {
           throw new Error(
-            result.message ||
-              `결제 승인 실패: success=${result?.success}, intentId=${result?.intentId}`
+            authorize.message ||
+              `결제 승인 실패: success=${authorize?.success}, intentId=${intent.id}`
           )
         }
       }
@@ -235,12 +245,12 @@ export default function CheckoutTemplate({
     <main className="bg-muted min-h-screen w-full">
       <PCHeader />
 
-      <div className="container mx-auto max-w-[1360px] px-4 md:px-[40px] md:py-8">
+      <div className="container mx-auto max-w-[1360px] px-4 lg:px-[40px] lg:py-8">
         <MobileHeader onClose={() => router.back()} />
 
-        <div className="md:flex md:w-full md:justify-between md:gap-9">
+        <div className="lg:flex lg:w-full lg:justify-between lg:gap-9">
           {/* 왼쪽 섹션 */}
-          <div className="md:max-w-[820px] md:min-w-[420px] md:flex-1">
+          <div className="lg:max-w-[820px] lg:min-w-[420px] lg:flex-1">
             <ShippingSection
               shippingAddress={cart?.shipping_address || null}
               addressName={
@@ -251,28 +261,46 @@ export default function CheckoutTemplate({
             />
             <OrderProductsSection
               products={cart?.items}
-              shippingTotal={cart?.shipping_total}
+              shippingFee={shippingFee}
+              selectedIds={selectedIds}
+              onSelectedIdsChange={setSelectedIds}
             />
-            <DiscountSection />
-            <PaymentInfoSection />
+            <DiscountSection
+              cartId={cart.id}
+              isMembership={isMembership}
+              membershipDiscount={cartTotals.membershipDiscount}
+              promotions={promotions}
+              appliedPromotionCode={cart.promotions?.[0]?.code}
+              availablePoints={pointBalance.withdrawable}
+              onPointsChange={setPointsUsed}
+              onCouponApplied={() => router.refresh()}
+            />
+            <PaymentTotalSection totals={cartTotals} />
+
             <PaymentMethodSection
               selectedMethod={selectedMethod}
               setSelectedMethod={setSelectedMethod}
             />
+
             <ReceiptSection
               cashReceiptOption={cashReceiptOption}
               setCashReceiptOption={setCashReceiptOption}
               taxInvoiceOption={taxInvoiceOption}
               setTaxInvoiceOption={setTaxInvoiceOption}
+              taxInvoice={taxInvoice}
             />
           </div>
 
           {/* 오른쪽 섹션 */}
-          <div className="md:shrink-0">
-            <MobileOrderSummary />
+          <div className="lg:shrink-0">
+            <MobileOrderSummary
+              totals={cartTotals}
+              isMembership={isMembership}
+            />
             <PaymentDetailSidebar
               isOpen={isPaymentDetailsOpen}
               setIsOpen={setIsPaymentDetailsOpen}
+              totals={cartTotals}
             />
           </div>
         </div>
@@ -296,7 +324,11 @@ export default function CheckoutTemplate({
         </div>
       )}
 
-      <PCFixedCTA onPayment={handlePayment} loading={loading} />
+      <PCFixedCTA
+        onPayment={handlePayment}
+        loading={loading}
+        totals={cartTotals}
+      />
       <MobileCTA onPayment={handlePayment} loading={loading} />
     </main>
   )

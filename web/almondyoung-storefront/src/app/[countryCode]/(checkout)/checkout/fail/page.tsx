@@ -42,59 +42,20 @@ export default function CheckoutFailPage() {
       <CheckoutHeader title="주문/결제" />
 
       <div className="w-full max-w-md rounded-lg bg-white p-8 shadow-lg">
-        {/* Error Icon */}
-        <div className="mb-6 flex justify-center">
-          <div className="rounded-full bg-red-100 p-3">
-            <svg
-              className="h-16 w-16 text-red-600"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          </div>
-        </div>
-
         {/* Title */}
         <h1 className="mb-2 text-center text-2xl font-bold text-gray-900">
           결제 실패
         </h1>
         <p className="mb-8 text-center text-gray-600">
           결제 처리 중 문제가 발생했습니다.
+          <br />
+          <span className="text-sm font-medium text-red-900">
+            {errorInfo.message}
+          </span>
         </p>
 
-        {/* Error Details */}
         <div className="mb-8 space-y-4">
-          <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-            <div className="space-y-3">
-              <div>
-                <span className="mb-1 block text-sm text-gray-600">
-                  오류 코드
-                </span>
-                <span className="text-sm font-medium text-red-900">
-                  {errorInfo.code}
-                </span>
-              </div>
-
-              <div>
-                <span className="mb-1 block text-sm text-gray-600">
-                  오류 메시지
-                </span>
-                <span className="text-sm font-medium text-red-900">
-                  {errorInfo.message}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Common Error Explanations */}
-          <div className="rounded-lg bg-gray-50 p-4">
+          <div className="bg-gray-10 rounded-lg p-4">
             <h3 className="mb-2 text-sm font-medium text-gray-900">
               일반적인 오류 원인
             </h3>
@@ -108,7 +69,6 @@ export default function CheckoutFailPage() {
           </div>
         </div>
 
-        {/* Action Buttons */}
         <div className="space-y-3">
           <button
             onClick={handleRetry}

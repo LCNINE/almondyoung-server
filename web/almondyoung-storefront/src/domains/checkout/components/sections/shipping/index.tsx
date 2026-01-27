@@ -26,7 +26,7 @@ export const ShippingSection = ({
   const [editAddressState, setEditAddressState] =
     useState<EditAddressState | null>(null)
 
-  // 자동 배송지 채움
+  // 배송지 자동 채움
   const { isAutoFilling } = useAutoFillShipping({ shippingAddress })
 
   // 배송지 정보 파싱
@@ -136,11 +136,11 @@ export const ShippingSection = ({
     <section aria-labelledby="shipping-heading" className="mb-8">
       <h2
         id="shipping-heading"
-        className="mb-3 text-base font-bold text-gray-900 md:text-xl"
+        className="mb-3 text-base font-bold text-gray-900 lg:text-xl"
       >
         배송지
       </h2>
-      <div className="rounded-md border border-gray-200 bg-white px-[14px] py-[18px] md:rounded-[10px] md:px-10 md:py-8">
+      <div className="rounded-md border border-gray-200 bg-white px-[14px] py-[18px] lg:rounded-[10px] lg:px-10 lg:py-8">
         {renderContent()}
       </div>
 

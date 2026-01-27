@@ -1,5 +1,5 @@
 // 장바구니 아이템 타입 정의
-export interface CartItemProduct {
+interface CartItemProduct {
   name: string
   thumbnail?: string
   basePrice?: number
@@ -9,7 +9,7 @@ export interface CartItemProduct {
   isMembershipOnly?: boolean
 }
 
-export interface CartItem {
+interface CartItem {
   id: string
   productId: string
   product: CartItemProduct
@@ -17,3 +17,16 @@ export interface CartItem {
   quantity: number
   isSelected?: boolean
 }
+
+interface CartTotals {
+  currency_code: string
+  item_subtotal: number
+  shippingFee: number
+  discount_subtotal: number
+  membershipDiscount: number
+  pointsUsed: number
+  totalDiscount: number
+  finalTotal: number
+}
+
+export type { CartItemProduct, CartItem, CartTotals }

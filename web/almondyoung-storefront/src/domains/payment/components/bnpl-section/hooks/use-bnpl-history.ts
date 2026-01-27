@@ -1,4 +1,4 @@
-import { getBnplHistory } from "@lib/api/wallet"
+import { getBnplHistory } from "@/lib/api/wallet"
 import { BnplHistoryDto } from "@lib/types/dto/wallet"
 import useSWR from "swr"
 

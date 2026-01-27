@@ -2,7 +2,6 @@
 
 import { SingleOptionQuantitySelector } from "@/app/[countryCode]/(main)/products/components/single-option-quantity-selector"
 import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
-import { useAddToCart } from "@hooks/api/use-add-to-cart"
 import type { ProductDetail } from "@lib/types/ui/product"
 import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
 import {
@@ -17,12 +16,21 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Bell, Heart, MessageCircle, Zap } from "lucide-react"
 import { useState } from "react"
-import { toast } from "sonner"
 import { ProductOptionSelector } from "./product-option-selector"
 import { ProductPriceDisplay } from "./product-price-display"
 import { ProductRatingDisplay } from "./product-rating-display"
 import { ProductShippingInfo } from "./product-shipping-info"
 import { usePathname, useRouter } from "next/navigation"
+
+type SelectedCartOption = {
+  id: string
+  variantId?: string
+  name: string
+  quantity: number
+  price: number
+  image: string
+  stock?: number
+}
 
 type Props = {
   product: ProductDetail
@@ -31,6 +39,16 @@ type Props = {
   onWishlistToggle: (productId: string) => void
   countryCode: string
   isUser: boolean
+  quantity: number
+  onQuantityChange: (value: number) => void
+  selectedOptions: Record<string, string>
+  selectedCartOptions: SelectedCartOption[]
+  onOptionChange: (optionLabel: string, value: string) => void
+  onQuantityUpdate: (id: string, newQuantity: number) => void
+  onOptionRemove: (id: string) => void
+  onAddToCart: () => void | Promise<boolean>
+  onBuyNow: () => void | Promise<void>
+  isAddToCartLoading?: boolean
 }
 
 /**
@@ -45,30 +63,21 @@ export function ProductSidebarPurchase({
   onWishlistToggle,
   countryCode,
   isUser,
+  quantity,
+  onQuantityChange,
+  selectedOptions,
+  selectedCartOptions,
+  onOptionChange,
+  onQuantityUpdate,
+  onOptionRemove,
+  onAddToCart,
+  onBuyNow,
+  isAddToCartLoading = false,
 }: Props) {
   const router = useRouter()
   const pathname = usePathname()
-  // 내부 상태 관리
-  const [quantity, setQuantity] = useState(1)
   const [showLoginDialog, setShowLoginDialog] = useState(false)
-  const [selectedOptions, setSelectedOptions] = useState<
-    Record<string, string>
-  >({})
-  const [selectedCartOptions, setSelectedCartOptions] = useState<
-    Array<{
-      id: string
-      variantId?: string
-      name: string
-      quantity: number
-      price: number
-      image: string
-      stock?: number
-    }>
-  >([])
 
-  const { isLoading, addToCart } = useAddToCart()
-
-  // 유틸 함수
   const isSingleOption = !product.options || product.options.length === 0
   const isOutOfStock = product.status !== "active"
   const getVariantPrice = (variantId?: string) => {
@@ -103,113 +112,6 @@ export function ProductSidebarPurchase({
       (sum, opt) => sum + opt.price * opt.quantity,
       0
     )
-  }
-
-  // 핸들러
-  const handleOptionChange = (optionLabel: string, value: string) => {
-    const next = { ...selectedOptions, [optionLabel]: value }
-    setSelectedOptions(next)
-
-    const allSelected = (product.options ?? []).every((o) => !!next[o.label])
-    if (!allSelected) return
-
-    const optionName = (product.options ?? [])
-      .map((o) => next[o.label])
-      .join(" / ")
-
-    const selectionKey = (product.options ?? [])
-      .map((o) => `${o.label}=${next[o.label]}`)
-      .join("|")
-    const variantId = product.skuIndex?.[selectionKey]
-
-    if (!variantId) {
-      toast.error("선택한 옵션 조합의 정보를 찾을 수 없습니다.")
-      return
-    }
-
-    const optionPrice = getVariantPrice(variantId)
-
-    setSelectedCartOptions((prev) => {
-      const exists = prev.find((p) => p.name === optionName)
-      if (exists) {
-        return prev.map((p) =>
-          p.name === optionName ? { ...p, quantity: p.quantity + 1 } : p
-        )
-      }
-      return [
-        ...prev,
-        {
-          id: `${product.id}-${Date.now()}`,
-          variantId,
-          name: optionName,
-          quantity: 1,
-          price: optionPrice,
-          image:
-            (variantId && product.variantThumbnailMap?.[variantId]) ||
-            product.thumbnails?.[0] ||
-            product.thumbnail ||
-            "https://placehold.co/80x80?text=No+Image",
-          stock: (variantId && product.skuStock?.[variantId]) || undefined,
-        },
-      ]
-    })
-
-    setSelectedOptions({})
-  }
-
-  const handleQuantityUpdate = (id: string, newQuantity: number) => {
-    if (newQuantity < 1) {
-      setSelectedCartOptions(selectedCartOptions.filter((opt) => opt.id !== id))
-    } else {
-      setSelectedCartOptions(
-        selectedCartOptions.map((opt) =>
-          opt.id === id ? { ...opt, quantity: newQuantity } : opt
-        )
-      )
-    }
-  }
-
-  const handleOptionRemove = (id: string) => {
-    setSelectedCartOptions(selectedCartOptions.filter((opt) => opt.id !== id))
-  }
-
-  const handleAddToCart = async () => {
-    if (isSingleOption) {
-      const variantId = product.defaultVariantId || product.id
-      await addToCart({ variantId, quantity })
-      return
-    }
-
-    if (selectedCartOptions.length === 0) {
-      toast.error("옵션을 선택해 주세요.")
-      return
-    }
-
-    await Promise.all(
-      selectedCartOptions
-        .filter((option) => option.variantId)
-        .map((option) =>
-          addToCart({
-            variantId: option.variantId!,
-            quantity: option.quantity,
-          })
-        )
-    )
-  }
-
-  const handleBuyNow = async () => {
-    if (!isUser) {
-      setShowLoginDialog(true)
-      return
-    }
-
-    if (!isSingleOption && selectedCartOptions.length === 0) {
-      toast.error("옵션을 선택해 주세요.")
-      return
-    }
-
-    await handleAddToCart()
-    router.push(`/${countryCode}/checkout`)
   }
 
   const handleLoginConfirm = () => {
@@ -307,7 +209,7 @@ export function ProductSidebarPurchase({
                     : "https://placehold.co/80x80?text=No+Image"
                 }
                 quantity={quantity}
-                onQuantityChange={setQuantity}
+                onQuantityChange={onQuantityChange}
                 price={getPrice()}
                 stock={0}
                 showTitle={true}
@@ -317,9 +219,9 @@ export function ProductSidebarPurchase({
                 options={product.options || []}
                 selectedOptions={selectedOptions}
                 selectedCartOptions={selectedCartOptions}
-                onOptionChange={handleOptionChange}
-                onQuantityUpdate={handleQuantityUpdate}
-                onOptionRemove={handleOptionRemove}
+                onOptionChange={onOptionChange}
+                onQuantityUpdate={onQuantityUpdate}
+                onOptionRemove={onOptionRemove}
               />
             )}
           </section>
@@ -368,10 +270,10 @@ export function ProductSidebarPurchase({
                   variant="outline"
                   size="lg"
                   className="hover:text-primary flex-1 cursor-pointer hover:bg-transparent"
-                  onClick={handleAddToCart}
-                  disabled={isLoading}
+                  onClick={onAddToCart}
+                  disabled={isAddToCartLoading}
                   spinnerColor="blue"
-                  isLoading={isLoading}
+                  isLoading={isAddToCartLoading}
                 >
                   장바구니
                 </CustomButton>
@@ -380,10 +282,10 @@ export function ProductSidebarPurchase({
                   color="primary"
                   size="lg"
                   className="flex-1 cursor-pointer"
-                  onClick={handleBuyNow}
-                  disabled={isLoading}
+                  onClick={onBuyNow}
+                  disabled={isAddToCartLoading}
                   spinnerColor="blue"
-                  isLoading={isLoading}
+                  isLoading={isAddToCartLoading}
                 >
                   바로구매
                 </CustomButton>

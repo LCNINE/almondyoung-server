@@ -1,6 +1,6 @@
 import { HttpTypes } from "@medusajs/types"
 import { getPercentageDiff } from "./get-precentage-diff"
-import { convertToLocale } from "./money"
+import { convertToLocale } from "./price-utils"
 
 const getCalculatedAmount = (variant: any) => {
   // calculated_price_incl_tax가 있으면 사용
