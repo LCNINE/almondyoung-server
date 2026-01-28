@@ -1,5 +1,5 @@
 /*───────────────────────────
- * Intent 생성
+ * Intent
  *──────────────────────────*/
 export type CreateIntentRequestDto = {
   customerId: string
@@ -18,6 +18,18 @@ export type CreateIntentResponseDto = {
   updatedAt: string
   metadata: any | null
   capturedAt: string | null
+}
+
+export type IntentDto = {
+  id: string
+  customerId: string
+  amount: number
+  type: string
+  status: string
+  createdAt: string
+  updatedAt: string
+  metadata?: any | null
+  capturedAt?: string | null
 }
 
 /*───────────────────────────

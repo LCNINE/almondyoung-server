@@ -1,6 +1,6 @@
-import { notFound } from "next/navigation"
-import { cookies } from "next/headers"
 import CheckoutHeader from "@/app/[countryCode]/(checkout)/checkout/checkout-header"
+import { getIntent } from "@/lib/api/wallet"
+import { notFound } from "next/navigation"
 import { ReviewPromptCard } from "../_components"
 
 interface PageProps {
@@ -22,25 +22,29 @@ interface IntentData {
   }
 }
 
-function ChevronDownIcon({ className }: { className?: string }) {
+export default async function CheckoutSuccessPage({ params }: PageProps) {
+  const { intentId } = await params
+
+  const intent = await getIntent(intentId)
+  if (!intent) {
+    notFound()
+  }
+
   return (
-    <svg
-      width={24}
-      height={24}
-      viewBox="0 0 24 24"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      className={className}
-      preserveAspectRatio="none"
-    >
-      <path
-        d="M6 9L12 15L18 9"
-        stroke="black"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
+    <main className="flex min-h-screen w-full flex-col items-center gap-[41px] bg-[#f8f8f8] pb-20">
+      {/* 헤더 컴포넌트 */}
+      <CheckoutHeader title="주문/결제" />
+
+      <h1 className="text-center text-2xl font-bold text-black">
+        <span className="text-[#ffa500]">주문완료</span> 되었습니다.
+      </h1>
+
+      {/* 주문 요약 카드 */}
+      <OrderSummaryCard intent={intent} />
+
+      {/* 리뷰 유도 카드 */}
+      <ReviewPromptCard />
+    </main>
   )
 }
 
@@ -115,40 +119,24 @@ async function OrderSummaryCard({ intent }: { intent: IntentData }) {
   )
 }
 
-export default async function CheckoutSuccessPage({ params }: PageProps) {
-  const { intentId, countryCode } = await params
-
-  const cookieStore = await cookies()
-  const cookieHeader = cookieStore.toString()
-
-  const backendUrl = process.env.BACKEND_URL || "http://localhost:5000"
-  const res = await fetch(`${backendUrl}/wallet/payments/intents/${intentId}`, {
-    headers: {
-      Cookie: cookieHeader,
-    },
-    cache: "no-store",
-  })
-
-  if (!res.ok) {
-    notFound()
-  }
-
-  const intent: IntentData = await res.json()
-
+function ChevronDownIcon({ className }: { className?: string }) {
   return (
-    <main className="flex min-h-screen w-full flex-col items-center gap-[41px] bg-[#f8f8f8] pb-20">
-      {/* 헤더 컴포넌트 */}
-      <CheckoutHeader title="주문/결제" />
-
-      <h1 className="text-center text-2xl font-bold text-black">
-        <span className="text-[#ffa500]">주문완료</span> 되었습니다.
-      </h1>
-
-      {/* 주문 요약 카드 */}
-      <OrderSummaryCard intent={intent} />
-
-      {/* 리뷰 유도 카드 */}
-      <ReviewPromptCard />
-    </main>
+    <svg
+      width={24}
+      height={24}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      preserveAspectRatio="none"
+    >
+      <path
+        d="M6 9L12 15L18 9"
+        stroke="black"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   )
 }
