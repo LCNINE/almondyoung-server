@@ -3,6 +3,7 @@ import { medusaSignin } from "@lib/api/medusa/signin"
 import { medusaSignup } from "@lib/api/medusa/signup"
 import { getAccessToken, setTokenCookies } from "@lib/data/cookies"
 import { NextRequest, NextResponse } from "next/server"
+import { requireBackendBaseUrl } from "@/lib/config/backend"
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,8 +15,10 @@ export async function GET(request: NextRequest) {
       searchParams.get("redirect_to") ?? siteConfig.auth.redirect_to
 
     // 아몬드영 토큰 생성 및 회원 생성
+    const usersBaseUrl = requireBackendBaseUrl("users")
+
     const response = await fetch(
-      `${process.env.BACKEND_URL}/users/auth/social/set-cookie`,
+      `${usersBaseUrl}/auth/social/set-cookie`,
       {
         method: "POST",
         body: JSON.stringify({ userId, social }),
@@ -62,16 +65,13 @@ export async function GET(request: NextRequest) {
     }
 
     // 이미 메두사 회원이 아니라면 신규 메두사 회원 가입 처리
-    const currentUser = await fetch(
-      `${process.env.BACKEND_URL}/users/users/${userId}`,
-      {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          Cookie: request.cookies.toString(),
-        },
-      }
-    )
+    const currentUser = await fetch(`${usersBaseUrl}/users/${userId}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: request.cookies.toString(),
+      },
+    })
     if (!currentUser.ok) {
       return NextResponse.json(
         {
@@ -126,7 +126,8 @@ export async function GET(request: NextRequest) {
 
 // 소셜 유저 동의 페이지로 리다이렉트
 async function getSocialUserConsentRedirectUrl(token: string) {
-  const response = await fetch(`${process.env.BACKEND_URL}/users/consents`, {
+  const usersBaseUrl = requireBackendBaseUrl("users")
+  const response = await fetch(`${usersBaseUrl}/consents`, {
     method: "GET",
     headers: {
       "Content-Type": "application/json",

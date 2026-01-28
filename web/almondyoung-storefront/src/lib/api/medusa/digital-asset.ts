@@ -5,6 +5,7 @@ import { DigitalAssetsResDto } from "@lib/types/dto/digital-asset.dto"
 import { revalidatePath } from "next/cache"
 import { api } from "../api"
 import { HttpApiError } from "../api-error"
+import { getBackendBaseUrl, isRailwayBackend } from "@/lib/config/backend"
 
 export const getDigitalAssets = async ({
   skip,
@@ -83,10 +84,17 @@ export const downloadDigitalAsset = async (
   try {
     const headers = await getAuthHeaders()
 
-    const baseUrl =
-      process.env.USE_RAILWAY_BACKEND === "true"
-        ? `${process.env.BACKEND_URL}/medusa`
-        : "http://localhost:9000" // 메두사 server PORT
+    const baseUrl = isRailwayBackend()
+      ? getBackendBaseUrl("medusa")
+      : "http://localhost:9000" // 메두사 server PORT
+
+    if (!baseUrl) {
+      throw new HttpApiError(
+        "Medusa base URL is not configured",
+        500,
+        "CONFIG_ERROR"
+      )
+    }
 
     const response = await fetch(
       `${baseUrl}/store/library/${assetId}/download`,

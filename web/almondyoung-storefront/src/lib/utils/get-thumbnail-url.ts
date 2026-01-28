@@ -7,6 +7,8 @@
  * 실제 공개 파일 엔드포인트는 `/files/public/{fileId}`입니다.
  * 이 함수에서 해당 패턴을 감지하여 올바른 경로로 변환합니다.
  */
+import { getBackendBaseUrl, isRailwayBackend } from "@/lib/config/backend"
+
 export const getThumbnailUrl = (thumbnail: string) => {
   if (!thumbnail) return ""
 
@@ -21,15 +23,12 @@ export const getThumbnailUrl = (thumbnail: string) => {
     return corrected
   }
 
-  const useRailway =
-    process.env.NEXT_PUBLIC_USE_RAILWAY_BACKEND === "true" ||
-    process.env.USE_RAILWAY_BACKEND === "true"
-  const backendUrl =
-    process.env.NEXT_PUBLIC_BACKEND_URL || process.env.BACKEND_URL
+  const useRailway = isRailwayBackend()
+  const fileBaseUrl = getBackendBaseUrl("fs")
 
-  if (useRailway && backendUrl) {
-    return `${backendUrl}/fs/files/public/${thumbnail}`
-  } else {
-    return `http://localhost:3020/files/public/${thumbnail}`
+  if (useRailway && fileBaseUrl) {
+    return `${fileBaseUrl}/files/public/${thumbnail}`
   }
+
+  return `http://localhost:3020/files/public/${thumbnail}`
 }

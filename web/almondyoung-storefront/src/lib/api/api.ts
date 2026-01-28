@@ -1,5 +1,9 @@
 import { getAccessToken, getCookies } from "@lib/data/cookies"
 import { ApiAuthError, ApiNetworkError, HttpApiError } from "./api-error"
+import {
+  getBackendBaseUrl,
+  type BackendService,
+} from "@/lib/config/backend"
 
 /**
  * server action response type
@@ -9,18 +13,7 @@ export type ApiResponse<T> =
   | { success?: boolean; data: T }
   | { success?: false; error: { message: string; status: number } }
 
-type ServiceType =
-  | "channelAdapter"
-  | "fs"
-  | "medusa"
-  | "membership"
-  | "notification"
-  | "pim"
-  | "users"
-  | "wallet"
-  | "wms"
-  | "anly"
-  | "ugc"
+type ServiceType = BackendService
 type RequestOptions = Omit<RequestInit, "body"> & {
   body?: unknown
   params?: Record<string, string>
@@ -31,42 +24,6 @@ type RequestOptions = Omit<RequestInit, "body"> & {
   }
 }
 
-const getBaseUrl = (service: ServiceType) => {
-  if (process.env.USE_RAILWAY_BACKEND === "true") {
-    const serviceUrls: Record<ServiceType, string> = {
-      users: `${process.env.BACKEND_URL}/users`,
-      wms: `${process.env.BACKEND_URL}/wms`,
-      channelAdapter: `${process.env.BACKEND_URL}/channel-adapter`,
-      fs: `${process.env.BACKEND_URL}/fs`,
-      medusa: `${process.env.BACKEND_URL}/medusa`,
-      membership: `${process.env.BACKEND_URL}/membership`,
-      notification: `${process.env.BACKEND_URL}/notification`,
-      pim: `${process.env.BACKEND_URL}/pim`,
-      wallet: `${process.env.BACKEND_URL}/wallet`,
-      anly: `${process.env.BACKEND_URL}/anly`,
-      ugc: `${process.env.BACKEND_URL}/ugc`,
-    }
-    return serviceUrls[service]
-  }
-
-  // 기본값은 로컬 (USE_RAILWAY_BACKEND가 false거나 env 없을 때)
-  const localUrls: Record<ServiceType, string> = {
-    users: "http://localhost:3030", // user-service
-    wms: "http://localhost:3010",
-    channelAdapter: "http://localhost:3003",
-    fs: "http://localhost:3000", // file-service
-    medusa: "http://localhost:9000",
-    membership: "http://localhost:3001",
-    notification: "http://localhost:5001",
-    pim: "http://localhost:3020",
-    wallet: "http://localhost:5000",
-    anly: "http://localhost:3040",
-    ugc: "http://localhost:3031",
-  }
-
-  return localUrls[service]
-}
-
 export async function api<T>(
   service: ServiceType,
   path: string,
@@ -74,7 +31,15 @@ export async function api<T>(
 ): Promise<T> {
   const { body, params, withAuth = true, next, ...init } = options
 
-  const baseUrl = getBaseUrl(service)
+  const baseUrl = getBackendBaseUrl(service)
+
+  if (!baseUrl) {
+    throw new ApiNetworkError(
+      `Missing backend base URL for service: ${service}`,
+      500,
+      "BACKEND_DOMAIN_MISSING"
+    )
+  }
   const fullUrl = params
     ? `${baseUrl}${path}?${new URLSearchParams(params)}`
     : `${baseUrl}${path}`

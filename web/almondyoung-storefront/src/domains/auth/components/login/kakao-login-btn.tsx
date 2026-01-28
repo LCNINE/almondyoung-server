@@ -2,12 +2,18 @@
 
 import { CustomButton } from "@/components/shared/custom-buttons"
 import Image from "next/image"
+import { getBackendBaseUrl } from "@/lib/config/backend"
 
 export function KakaoLoginBtn({ redirectTo }: { redirectTo: string }) {
   const handleKakaoLogin = () => {
-    const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL
+    const baseUrl = getBackendBaseUrl("users")
 
-    window.location.href = `${baseUrl}/users/auth/kakao/signin`
+    if (!baseUrl) {
+      console.error("User service base URL is not configured")
+      return
+    }
+
+    window.location.href = `${baseUrl}/auth/kakao/signin`
   }
 
   return (

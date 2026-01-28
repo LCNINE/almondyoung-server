@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation"
 import { cookies } from "next/headers"
+import { requireBackendBaseUrl } from "@/lib/config/backend"
 
 interface PageProps {
   searchParams: Promise<{
@@ -58,9 +59,9 @@ export default async function CallbackPage({
     const cookieStore = await cookies()
     const cookieHeader = cookieStore.toString()
 
-    const backendUrl = process.env.BACKEND_URL || "http://localhost:5000"
+    const backendUrl = requireBackendBaseUrl("wallet")
     const response = await fetch(
-      `${backendUrl}/wallet/payments/intents/${orderId}/authorize`,
+      `${backendUrl}/payments/intents/${orderId}/authorize`,
       {
         method: "POST",
         headers: {

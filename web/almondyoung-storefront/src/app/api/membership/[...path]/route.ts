@@ -2,8 +2,9 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { cookies } from "next/headers"
+import { getBackendBaseUrl } from "@/lib/config/backend"
 
-const BACKEND_BASE_URL = process.env.BACKEND_URL
+const MEMBERSHIP_BASE_URL = getBackendBaseUrl("membership")
 
 // ==========================================
 // 1. 공통 헬퍼 함수 (중복 제거용)
@@ -43,7 +44,10 @@ async function buildBackendUrl(
   const { path } = await params
   const pathString = path.join("/")
   const searchParams = request.nextUrl.search
-  return `${BACKEND_BASE_URL}/membership/${pathString}${searchParams}`
+  if (!MEMBERSHIP_BASE_URL) {
+    throw new Error("Membership base URL is not configured")
+  }
+  return `${MEMBERSHIP_BASE_URL}/${pathString}${searchParams}`
 }
 
 // 응답 처리기 (에러 포워딩 포함)

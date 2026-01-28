@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { cookies } from "next/headers"
+import { requireBackendBaseUrl } from "@/lib/config/backend"
 
 export async function POST(request: NextRequest) {
   try {
@@ -24,16 +25,15 @@ export async function POST(request: NextRequest) {
       return response
     }
 
-    const res = await fetch(
-      `${process.env.BACKEND_URL}/users/auth/restore-token`,
-      {
-        method: "POST",
-        headers: {
-          Cookie: `refreshToken=${refreshToken}`,
-        },
-        credentials: "include",
-      }
-    )
+    const usersBaseUrl = requireBackendBaseUrl("users")
+
+    const res = await fetch(`${usersBaseUrl}/auth/restore-token`, {
+      method: "POST",
+      headers: {
+        Cookie: `refreshToken=${refreshToken}`,
+      },
+      credentials: "include",
+    })
 
     if (!res.ok) {
       throw new Error("Restore token failed!!")

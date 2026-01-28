@@ -3,6 +3,7 @@ import { medusaSignup } from "@lib/api/medusa/signup"
 import { siteConfig } from "@/lib/config/site"
 import { setTokenCookies } from "@lib/data/cookies"
 import { NextRequest, NextResponse } from "next/server"
+import { requireBackendBaseUrl } from "@/lib/config/backend"
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,8 +17,10 @@ export async function GET(request: NextRequest) {
     }
 
     // 토큰 받아오기
+    const usersBaseUrl = requireBackendBaseUrl("users")
+
     const response = await fetch(
-      `${process.env.BACKEND_URL}/users/auth/callback/signup`,
+      `${usersBaseUrl}/auth/callback/signup`,
       {
         method: "POST",
         body: JSON.stringify({ userId }),
@@ -53,16 +56,13 @@ export async function GET(request: NextRequest) {
     }
 
     // 신규 회원 가입 처리
-    const currentUser = await fetch(
-      `${process.env.BACKEND_URL}/users/users/${userId}`,
-      {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          Cookie: request.cookies.toString(),
-        },
-      }
-    )
+    const currentUser = await fetch(`${usersBaseUrl}/users/${userId}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: request.cookies.toString(),
+      },
+    })
 
     if (!currentUser.ok) {
       return NextResponse.json(

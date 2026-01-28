@@ -1,10 +1,11 @@
 import Medusa from "@medusajs/js-sdk"
+import { requireBackendBaseUrl } from "./backend"
 
 const getMedusaBaseUrl = () => {
   const isServer = typeof window === "undefined"
 
   if (isServer) {
-    return process.env.BACKEND_URL + "/medusa"
+    return requireBackendBaseUrl("medusa")
   } else {
     return `${window.location.origin}/api/medusa`
   }

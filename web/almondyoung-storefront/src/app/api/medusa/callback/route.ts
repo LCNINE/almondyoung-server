@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { getBackendBaseUrl } from "@/lib/config/backend"
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,8 +16,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const medusaBaseUrl =
+      process.env.MEDUSA_BACKEND_URL ?? getBackendBaseUrl("medusa")
+
+    if (!medusaBaseUrl) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Medusa base URL is not configured",
+          message: "Medusa base URL is not configured",
+        },
+        { status: 500 }
+      )
+    }
+
     const res = await fetch(
-      `${process.env.MEDUSA_BACKEND_URL}/auth/user/my-auth/callback`,
+      `${medusaBaseUrl}/auth/user/my-auth/callback`,
       {
         method: "POST",
         headers: {

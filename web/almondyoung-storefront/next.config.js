@@ -2,6 +2,12 @@ const checkEnvVariables = require("./check-env-variables")
 
 checkEnvVariables()
 
+const backendDomain =
+  process.env.NEXT_PUBLIC_BACKEND_DOMAIN || process.env.BACKEND_DOMAIN
+const normalizedBackendDomain = backendDomain
+  ? backendDomain.replace(/^https?:\/\//, "").replace(/\/+$/, "")
+  : null
+
 /**
  * @type {import('next').NextConfig}
  */
@@ -33,6 +39,14 @@ const nextConfig = {
 
   images: {
     remotePatterns: [
+      ...(normalizedBackendDomain
+        ? [
+            {
+              protocol: "https",
+              hostname: `file.${normalizedBackendDomain}`,
+            },
+          ]
+        : []),
       {
         protocol: "https",
         hostname: "placehold.co",

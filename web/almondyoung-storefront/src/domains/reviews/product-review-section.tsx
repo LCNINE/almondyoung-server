@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { getReviewsByProductId } from "@/lib/api/ugc"
+import { getBackendBaseUrl, isRailwayBackend } from "@/lib/config/backend"
 import type { ReviewResponseDto, ReviewRatingFilter } from "@/lib/types/dto/ugc"
 import { ReviewSummary } from "./summary/review-summary"
 import { ReviewDetailCard, type ReviewDetail } from "./details/review-detail-card"
@@ -71,6 +72,9 @@ function getAuthorName(
 
 function mapToReviewDetail(dto: ReviewResponseDto): ReviewDetail {
   const legacyName = dto.legacyAuthorName ?? dto.legacy_author_name ?? null
+  const fileServiceBaseUrl =
+    process.env.NEXT_PUBLIC_FILE_SERVICE_URL ||
+    (isRailwayBackend() ? getBackendBaseUrl("fs") : "")
 
   return {
     id: dto.id,
@@ -80,7 +84,7 @@ function mapToReviewDetail(dto: ReviewResponseDto): ReviewDetail {
     tags: [],
     text: dto.content,
     thumbnails: dto.mediaFileIds.map((fileId, index) => ({
-      src: `${process.env.NEXT_PUBLIC_FILE_SERVICE_URL || ""}/files/${fileId}`,
+      src: `${fileServiceBaseUrl ?? ""}/files/${fileId}`,
       alt: `리뷰 이미지 ${index + 1}`,
     })),
     likeCount: 0,
