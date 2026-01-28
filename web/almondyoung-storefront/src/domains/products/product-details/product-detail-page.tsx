@@ -10,6 +10,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { CartSuccessModal } from "@/components/modals/cart-success-modal"
 import { Breadcrumb } from "@components/layout/components/breadcrumb"
 import { useAddToCart } from "@hooks/api/use-add-to-cart"
 import { useRecentViews } from "@hooks/api/use-recent-views"
@@ -90,7 +91,9 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   const [showSuccessMessage, setShowSuccessMessage] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
   const [showLoginDialog, setShowLoginDialog] = useState(false)
+  const [showCartSuccessModal, setShowCartSuccessModal] = useState(false)
   const [reviewCount, setReviewCount] = useState(product?.reviewCount || 0)
+  const [averageRating, setAverageRating] = useState(product?.rating || 0)
 
   const [isPending, startTransition] = useTransition()
 
@@ -197,53 +200,57 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   }
 
   const handleOptionChange = (optionLabel: string, value: string) => {
-    setSelectedOptions((prev) => {
-      const next = { ...prev, [optionLabel]: value }
-      const allSelected = (product.options ?? []).every((o) => !!next[o.label])
-      if (!allSelected) return next
+    const next = { ...selectedOptions, [optionLabel]: value }
+    const allSelected = (product.options ?? []).every((o) => !!next[o.label])
 
-      const optionName = (product.options ?? [])
-        .map((o) => next[o.label])
-        .join(" / ")
-      const selectionKey = (product.options ?? [])
-        .map((o) => `${o.label}=${next[o.label]}`)
-        .join("|")
-      const variantId = product.skuIndex?.[selectionKey]
+    if (!allSelected) {
+      setSelectedOptions(next)
+      return
+    }
 
-      if (!variantId) {
-        toast.error("선택한 옵션 조합의 정보를 찾을 수 없습니다.")
-        return next
+    const optionName = (product.options ?? [])
+      .map((o) => next[o.label])
+      .join(" / ")
+    const selectionKey = (product.options ?? [])
+      .map((o) => `${o.label}=${next[o.label]}`)
+      .join("|")
+    const variantId = product.skuIndex?.[selectionKey]
+
+    if (!variantId) {
+      toast.error("선택한 옵션 조합의 정보를 찾을 수 없습니다.")
+      setSelectedOptions(next)
+      return
+    }
+
+    const optionPrice = getVariantPrice(variantId)
+
+    setSelectedCartOptions((prevCart) => {
+      const exists = prevCart.find((p) => p.name === optionName)
+      if (exists) {
+        return prevCart.map((p) =>
+          p.name === optionName ? { ...p, quantity: p.quantity + 1 } : p
+        )
       }
-
-      const optionPrice = getVariantPrice(variantId)
-
-      setSelectedCartOptions((prevCart) => {
-        const exists = prevCart.find((p) => p.name === optionName)
-        if (exists) {
-          return prevCart.map((p) =>
-            p.name === optionName ? { ...p, quantity: p.quantity + 1 } : p
-          )
-        }
-        return [
-          ...prevCart,
-          {
-            id: `${product.id}-${Date.now()}`,
-            variantId,
-            name: optionName,
-            quantity: 1,
-            price: optionPrice,
-            image:
-              (variantId && product.variantThumbnailMap?.[variantId]) ||
-              product.thumbnails?.[0] ||
-              product.thumbnail ||
-              "https://placehold.co/80x80?text=No+Image",
-            stock: (variantId && product.skuStock?.[variantId]) || undefined,
-          },
-        ]
-      })
-
-      return {}
+      return [
+        ...prevCart,
+        {
+          id: `${product.id}-${Date.now()}`,
+          variantId,
+          name: optionName,
+          quantity: 1,
+          price: optionPrice,
+          image:
+            (variantId && product.variantThumbnailMap?.[variantId]) ||
+            product.thumbnails?.[0] ||
+            product.thumbnail ||
+            "https://placehold.co/80x80?text=No+Image",
+          stock: (variantId && product.skuStock?.[variantId]) || undefined,
+        },
+      ]
     })
+
+    // 옵션 선택 초기화
+    setSelectedOptions({})
   }
 
   const handleQuantityUpdate = (id: string, newQuantity: number) => {
@@ -272,12 +279,15 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
     setIsBottomSheetOpen(false)
   }
 
-  const handleAddToCart = async () => {
+  const handleAddToCart = async (showModal = false) => {
     if (isSingleOption) {
       const variantId = product.defaultVariantId || product.id
       const result = await addToCart({ variantId, quantity })
       if (result?.success) {
         setShowSuccessMessage(true)
+        if (showModal) {
+          setShowCartSuccessModal(true)
+        }
         return true
       }
       return false
@@ -301,8 +311,16 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
     const hasSuccess = results.some((result) => result?.success)
     if (hasSuccess) {
       setShowSuccessMessage(true)
+      if (showModal) {
+        setShowCartSuccessModal(true)
+      }
     }
     return hasSuccess
+  }
+
+  // 데스크탑 사이드바용 장바구니 담기 핸들러 (모달 표시)
+  const handleDesktopAddToCart = async () => {
+    return handleAddToCart(true)
   }
 
   const handleBuyNow = async () => {
@@ -399,6 +417,7 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                 totalReviews={product.reviewCount || 0}
                 averageRating={product.rating || 0}
                 onTotalChange={setReviewCount}
+                onAverageRatingChange={setAverageRating}
               />
             </div>
 
@@ -428,9 +447,11 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
             onOptionChange={handleOptionChange}
             onQuantityUpdate={handleQuantityUpdate}
             onOptionRemove={handleOptionRemove}
-            onAddToCart={handleAddToCart}
+            onAddToCart={handleDesktopAddToCart}
             onBuyNow={handleBuyNow}
             isAddToCartLoading={isAddToCartLoading}
+            rating={averageRating}
+            reviewCount={reviewCount}
           />
         </div>
       </div>
@@ -488,6 +509,14 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* 장바구니 담기 성공 모달 */}
+      <CartSuccessModal
+        open={showCartSuccessModal}
+        onOpenChange={setShowCartSuccessModal}
+        onGoToCart={handleGoToCart}
+        onContinueShopping={() => setShowCartSuccessModal(false)}
+      />
     </div>
   )
 }

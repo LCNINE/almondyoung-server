@@ -12,6 +12,7 @@ type ProductThumbnailProps = {
   isSoldOut?: boolean
   onCartClick?: () => void
   className?: string
+  action?: React.ReactNode // 커스텀 액션 (찜/장바구니 버튼 등)
 }
 
 export const ProductThumbnail = ({
@@ -23,6 +24,7 @@ export const ProductThumbnail = ({
   isSoldOut = false,
   onCartClick,
   className = "",
+  action,
 }: ProductThumbnailProps) => {
   return (
     <div
@@ -53,19 +55,23 @@ export const ProductThumbnail = ({
         </div>
       )}
 
-      {showCartIcon && !isSoldOut && (
-        <button
-          type="button"
-          onClick={(event) => {
-            event.preventDefault()
-            onCartClick?.()
-          }}
-          aria-label="장바구니 담기"
-          className="absolute right-2 bottom-2 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/90 shadow transition hover:bg-white"
-        >
-          <ShoppingCart className="h-4 w-4 text-gray-700" />
-        </button>
-      )}
+      {/* 커스텀 액션 (우선) 또는 기본 장바구니 아이콘 */}
+      {action
+        ? action
+        : showCartIcon &&
+          !isSoldOut && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.preventDefault()
+                onCartClick?.()
+              }}
+              aria-label="장바구니 담기"
+              className="absolute right-2 bottom-2 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/90 shadow transition hover:bg-white"
+            >
+              <ShoppingCart className="h-4 w-4 text-gray-700" />
+            </button>
+          )}
     </div>
   )
 }

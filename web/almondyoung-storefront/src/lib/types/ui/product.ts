@@ -107,6 +107,7 @@ export interface ProductCard {
   tags?: string[]
   optionMeta?: {
     isSingle?: boolean // 단일 옵션 여부 (장바구니 아이콘 판단용)
+    defaultVariantId?: string // 기본 variant ID (장바구니 담기용)
   }
   defaultSku?: number
   purchaseCount?: number
