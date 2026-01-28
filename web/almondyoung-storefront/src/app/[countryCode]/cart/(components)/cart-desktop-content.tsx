@@ -10,6 +10,7 @@ interface CartDesktopContentProps {
   cartItems: CartItem[]
   checkedItems: string[]
   shippingTotal: number
+  selectedTotal: number
   onCheckAll: (checked: boolean) => void
   onDeleteSelected: () => void
   onCheckItem: (id: string, checked: boolean) => void
@@ -22,6 +23,7 @@ export function CartDesktopContent({
   cartItems,
   checkedItems,
   shippingTotal,
+  selectedTotal,
   onCheckAll,
   onDeleteSelected,
   onCheckItem,
@@ -36,7 +38,11 @@ export function CartDesktopContent({
     <div className="hidden md:block">
       <div className="mb-6 overflow-hidden rounded-xl border border-gray-200 bg-white">
         {/* PC 무료배송 안내 */}
-        <ShippingNotice shippingTotal={shippingTotal} variant="desktop" />
+        <ShippingNotice
+          shippingTotal={shippingTotal}
+          selectedTotal={selectedTotal}
+          variant="desktop"
+        />
 
         {/* PC 선택 컨트롤 */}
         <CartControls

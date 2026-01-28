@@ -11,6 +11,7 @@ interface CartTabsMobileProps {
   cartItems: CartItem[]
   checkedItems: string[]
   shippingTotal: number
+  selectedTotal: number
   onCheckAll: (checked: boolean) => void
   onDeleteSelected: () => void
   onCheckItem: (id: string, checked: boolean) => void
@@ -23,6 +24,7 @@ export function CartTabsMobile({
   cartItems,
   checkedItems,
   shippingTotal,
+  selectedTotal,
   onCheckAll,
   onDeleteSelected,
   onCheckItem,
@@ -55,6 +57,7 @@ export function CartTabsMobile({
                 {/* 무료배송 안내 - 모바일 */}
                 <ShippingNotice
                   shippingTotal={shippingTotal}
+                  selectedTotal={selectedTotal}
                   variant="mobile"
                 />
 

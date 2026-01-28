@@ -308,6 +308,7 @@ export function CartMainClient() {
                 cartItems={cartItems}
                 checkedItems={checkedItems}
                 shippingTotal={shippingTotal}
+                selectedTotal={finalPrice}
                 onCheckAll={handleCheckAll}
                 onDeleteSelected={handleDeleteSelected}
                 onCheckItem={handleCheckItem}
@@ -321,6 +322,7 @@ export function CartMainClient() {
                 cartItems={cartItems}
                 checkedItems={checkedItems}
                 shippingTotal={shippingTotal}
+                selectedTotal={finalPrice}
                 onCheckAll={handleCheckAll}
                 onDeleteSelected={handleDeleteSelected}
                 onCheckItem={handleCheckItem}
