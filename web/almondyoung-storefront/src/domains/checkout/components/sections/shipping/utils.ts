@@ -1,5 +1,6 @@
 import { HttpTypes, StoreCartAddress } from "@medusajs/types"
 import type { FormattedAddress } from "./types"
+import { formatPhoneNumber } from "@/lib/utils/format-phone-number"
 
 /**
  * 우선순위에 따라 자동 설정할 배송지를 선택합니다.
@@ -56,13 +57,6 @@ export const isValidAddress = (address: StoreCartAddress | null): boolean => {
   const hasPhone = !!address.phone
 
   return hasName || hasAddress || hasPhone
-}
-
-export const formatPhoneNumber = (value: string): string => {
-  const numbers = value.replace(/\D/g, "")
-  if (numbers.length <= 3) return numbers
-  if (numbers.length <= 7) return `${numbers.slice(0, 3)}-${numbers.slice(3)}`
-  return `${numbers.slice(0, 3)}-${numbers.slice(3, 7)}-${numbers.slice(7, 11)}`
 }
 
 export const formatAddress = (

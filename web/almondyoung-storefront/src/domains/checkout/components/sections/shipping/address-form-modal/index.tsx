@@ -1,9 +1,5 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
-import { useForm } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers/zod"
-import { useMediaQuery } from "@/hooks/use-media-query"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -20,25 +16,30 @@ import {
   DrawerTitle,
 } from "@/components/ui/drawer"
 import { Form } from "@/components/ui/form"
+import { useMediaQuery } from "@/hooks/use-media-query"
 import {
   createCustomerShippingAddress,
   updateCustomerShippingAddress,
 } from "@/lib/api/medusa/customer"
+import { zodResolver } from "@hookform/resolvers/zod"
 import { useRouter } from "next/navigation"
+import { useCallback, useEffect, useState } from "react"
+import { useForm } from "react-hook-form"
 import { toast } from "sonner"
 
-import {
-  shippingAddressSchema,
-  type ShippingAddressFormData,
-  type ShippingAddressModalProps,
-} from "./schema"
-import { formatPhoneNumber, transformFormDataToAddress } from "./utils"
+import { formatPhoneNumber } from "@/lib/utils/format-phone-number"
 import {
   FormTextField,
   PhoneField,
   PostalCodeField,
   SaveAsDefaultField,
 } from "./form-fields"
+import {
+  shippingAddressSchema,
+  type ShippingAddressFormData,
+  type ShippingAddressModalProps,
+} from "./schema"
+import { transformFormDataToAddress } from "./utils"
 
 export function ShippingAddressModal({
   open,

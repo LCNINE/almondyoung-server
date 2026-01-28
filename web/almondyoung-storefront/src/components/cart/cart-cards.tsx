@@ -24,6 +24,7 @@ import {
 } from "./cart-card.atomic"
 import { CustomCheckbox } from "../shared/checkbox"
 import { X } from "lucide-react"
+import { Button } from "../ui/button"
 
 // 수량 조절 컴포넌트
 const QuantityControl = ({
@@ -47,19 +48,26 @@ const QuantityControl = ({
 
   return (
     <div className="flex w-fit items-center overflow-hidden rounded border border-gray-300 text-sm">
-      <button
-        className="px-3 py-1 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+      <Button
+        variant="ghost"
         onClick={handleDecrease}
         disabled={quantity <= 1}
+        size="icon"
+        className="rounded-none"
       >
         -
-      </button>
+      </Button>
       <span className="border-x border-gray-300 bg-white px-4 py-1 font-bold">
         {quantity}
       </span>
-      <button className="px-3 py-1 hover:bg-gray-50" onClick={handleIncrease}>
+      <Button
+        variant="ghost"
+        onClick={handleIncrease}
+        size="icon"
+        className="rounded-none"
+      >
         +
-      </button>
+      </Button>
     </div>
   )
 }
@@ -115,14 +123,15 @@ export const CartCard = ({
             />
           }
           controlRight={
-            <button
+            <Button
+              variant="ghost"
               name="삭제"
               aria-label="삭제"
               onClick={onDelete}
               className="p-1"
             >
               <X className="h-5 w-5" />
-            </button>
+            </Button>
           }
         >
           <div className="flex gap-4">
@@ -174,14 +183,15 @@ export const CartCard = ({
             </div>
 
             {/* 삭제 버튼 */}
-            <button
+            <Button
+              variant="ghost"
               name="삭제"
               aria-label="삭제"
               onClick={onDelete}
-              className="rounded p-1 hover:bg-gray-50"
+              className="rounded p-1"
             >
               <X className="h-5 w-5" />
-            </button>
+            </Button>
           </CartCardPCHeader>
 
           {/* 이미지와 가격/수량 정보 영역 */}

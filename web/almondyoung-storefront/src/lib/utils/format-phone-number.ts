@@ -1,3 +1,4 @@
+/** 전화번호 포맷팅 (010-1234-5678 형식) */
 export const formatPhoneNumber = (value: string): string => {
   const numbers = value.replace(/\D/g, "")
   if (numbers.length <= 3) return numbers

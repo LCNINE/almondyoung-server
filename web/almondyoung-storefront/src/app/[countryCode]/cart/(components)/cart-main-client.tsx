@@ -68,13 +68,16 @@ export function CartMainClient() {
   const [shippingTotal, setShippingTotal] = useState<number>(0)
   const [cartId, setCartId] = useState<string | null>(null)
 
-  const getEstimatedShippingTotal = useCallback(async (id: string) => {
-    const options = await listCartShippingMethods(id, "no-store")
-    const standard =
-      options?.find((option) => option.type?.code === "standard") ??
-      options?.[0]
-    return standard?.amount ?? 0
-  }, [listCartShippingMethods])
+  const getEstimatedShippingTotal = useCallback(
+    async (id: string) => {
+      const options = await listCartShippingMethods(id, "no-store")
+      const standard =
+        options?.find((option) => option.type?.code === "standard") ??
+        options?.[0]
+      return standard?.amount ?? 0
+    },
+    [listCartShippingMethods]
+  )
 
   // 장바구니 데이터 로드
   const loadCart = useCallback(async () => {
@@ -229,32 +232,30 @@ export function CartMainClient() {
   }
 
   // 가격 계산
-  const {
-    totalOriginalPrice,
-    finalPrice,
-    totalDiscount,
-    selectedCount,
-  } = useMemo(() => {
-    const selected = cartItems.filter((item) => checkedItems.includes(item.id))
+  const { totalOriginalPrice, finalPrice, totalDiscount, selectedCount } =
+    useMemo(() => {
+      const selected = cartItems.filter((item) =>
+        checkedItems.includes(item.id)
+      )
 
-    const totalOriginalPrice = selected.reduce(
-      (sum, item) => sum + (item.product.basePrice || 0) * item.quantity,
-      0
-    )
-    const finalPrice = selected.reduce(
-      (sum, item) =>
-        sum +
-        (item.product.membershipPrice || item.product.basePrice || 0) *
-        item.quantity,
-      0
-    )
-    return {
-      totalOriginalPrice,
-      finalPrice,
-      totalDiscount: totalOriginalPrice - finalPrice,
-      selectedCount: selected.length,
-    }
-  }, [cartItems, checkedItems])
+      const totalOriginalPrice = selected.reduce(
+        (sum, item) => sum + (item.product.basePrice || 0) * item.quantity,
+        0
+      )
+      const finalPrice = selected.reduce(
+        (sum, item) =>
+          sum +
+          (item.product.membershipPrice || item.product.basePrice || 0) *
+            item.quantity,
+        0
+      )
+      return {
+        totalOriginalPrice,
+        finalPrice,
+        totalDiscount: totalOriginalPrice - finalPrice,
+        selectedCount: selected.length,
+      }
+    }, [cartItems, checkedItems])
 
   // 로딩 상태
   if (isLoading) {

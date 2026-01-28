@@ -6,12 +6,24 @@ import PinChangeForm from "domains/payment/components/security-pin/pin-change-fo
 import PinSetupForm from "domains/payment/components/security-pin/pin-setup-form"
 import VerificationModal from "./verification-modal"
 
-export default async function SecurityManager() {
-  const currentUser = await fetchMe()
-  const pinStatus = await getPinStatus()
-  const verificationStatus = await getVerificationStatus() // step 별 진행 상태, 결제 수단 등록할 때 인증 정보 steps 별 진행 상태 확인용
-  const businessInfo = await getMyBusiness() // 사업자 정보 조회
-  const bnplProfiles = await getBnplProfiles() // 나중결제 계좌 조회
+export default async function SecurityManager({
+  redirectTo,
+}: {
+  redirectTo: string
+}) {
+  const [
+    currentUser,
+    pinStatus,
+    verificationStatus,
+    businessInfo,
+    bnplProfiles,
+  ] = await Promise.all([
+    fetchMe(),
+    getPinStatus(),
+    getVerificationStatus(), // step 별 진행 상태, 결제 수단 등록할 때 인증 정보 steps 별 진행 상태 확인용
+    getMyBusiness(), // 사업자 정보 조회
+    getBnplProfiles(), // 나중결제 계좌 조회
+  ])
 
   // 휴대폰 인증 안하면 휴대폰 인증 모달 띄움
   if (!currentUser.profile?.phoneNumber) {
@@ -27,7 +39,7 @@ export default async function SecurityManager() {
 
   // 새로 등록
   if (pinStatus.status === "NONE") {
-    return <PinSetupForm />
+    return <PinSetupForm redirectTo={redirectTo} />
   }
 
   // PIN 변경

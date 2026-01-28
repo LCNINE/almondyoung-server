@@ -34,10 +34,7 @@ export function CartDesktopContent({
     <div className="hidden md:block">
       <div className="mb-6 overflow-hidden rounded-xl border border-gray-200 bg-white">
         {/* PC 무료배송 안내 */}
-        <ShippingNotice
-          shippingTotal={shippingTotal}
-          variant="desktop"
-        />
+        <ShippingNotice shippingTotal={shippingTotal} variant="desktop" />
 
         {/* PC 선택 컨트롤 */}
         <CartControls

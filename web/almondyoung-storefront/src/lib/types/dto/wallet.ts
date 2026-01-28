@@ -164,3 +164,22 @@ export interface TaxInvoiceData {
   address: string // 사업장 주소
   ownerName: string // 대표자명
 }
+
+/*───────────────────────────
+ * 현금영수증
+ *──────────────────────────*/
+
+export type CashReceiptDto = {
+  userId: string
+  createdAt: Date
+  updatedAt: Date
+  defaultEnabled: number
+  defaultInfo: CashReceiptData
+}
+
+/** 현금영수증 정보 */
+export interface CashReceiptData {
+  type: "business" | "personal" // 사업자/개인
+  name: string // 상호명 또는 성명
+  number: string // 사업자등록번호 또는 휴대폰번호
+}

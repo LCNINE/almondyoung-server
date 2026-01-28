@@ -1,17 +1,17 @@
 "use client"
 
-import { Control } from "react-hook-form"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Input } from "@/components/ui/input"
 import {
   FormControl,
   FormField,
   FormItem,
   FormMessage,
 } from "@/components/ui/form"
+import { Input } from "@/components/ui/input"
+import { formatPhoneNumber } from "@/lib/utils/format-phone-number"
+import { Control } from "react-hook-form"
 import { INPUT_CLASSNAME, PHONE_MAX_LENGTH } from "./constants"
-import { formatPhoneNumber } from "./utils"
 import type { ShippingAddressFormData } from "./schema"
 
 interface FormTextFieldProps {

@@ -5,7 +5,14 @@ import ProtectedRoute from "@components/protected-route"
 import { Suspense } from "react"
 import SecurityManager from "../(components)/sucurity-manager"
 
-export default async function SecurityPage() {
+export default async function SecurityPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ redirect_to?: string }>
+}) {
+  const params = await searchParams
+  const redirectTo = params.redirect_to ?? ""
+
   return (
     <ProtectedRoute>
       <WithHeaderLayout
@@ -24,7 +31,7 @@ export default async function SecurityPage() {
               </div>
             }
           >
-            <SecurityManager />
+            <SecurityManager redirectTo={redirectTo} />
           </Suspense>
         </MypageLayout>
       </WithHeaderLayout>
