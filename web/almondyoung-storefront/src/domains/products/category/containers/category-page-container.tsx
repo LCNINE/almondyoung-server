@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation"
 import { CategoryPageClient } from "../components/category-page-client"
-import { getCategoryByHandle } from "@lib/api/medusa/categories"
+import { getCategoryByHandle, getCategoryTree } from "@lib/api/medusa/categories"
 import { getProductList } from "@lib/api/medusa/products"
 import { getRegion } from "@lib/api/medusa/regions"
 import { mapMedusaProductsToCards } from "@lib/utils/map-medusa-product-card"
@@ -20,7 +20,10 @@ export async function CategoryPageContainer({
   const region = await getRegion(countryCode)
 
   // 1. API 모듈을 통해 데이터 조회 (서버 액션 -> 백엔드)
-  const categoryData = await getCategoryByHandle(slug)
+  const [categoryData, allCategories] = await Promise.all([
+    getCategoryByHandle(slug),
+    getCategoryTree(),
+  ])
   if (!categoryData) {
     return notFound()
   }
@@ -70,6 +73,7 @@ export async function CategoryPageContainer({
       countryCode={countryCode}
       categoryIds={categoryIds}
       regionId={region?.id}
+      allCategories={allCategories}
     />
   )
 }

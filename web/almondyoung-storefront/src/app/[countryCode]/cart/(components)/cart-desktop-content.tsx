@@ -15,6 +15,7 @@ interface CartDesktopContentProps {
   onCheckItem: (id: string, checked: boolean) => void
   onDeleteItem: (id: string) => void
   onQuantityChange: (id: string, quantity: number) => void
+  countryCode?: string
 }
 
 export function CartDesktopContent({
@@ -26,6 +27,7 @@ export function CartDesktopContent({
   onCheckItem,
   onDeleteItem,
   onQuantityChange,
+  countryCode = "kr",
 }: CartDesktopContentProps) {
   const isAllChecked =
     cartItems.length > 0 && checkedItems.length === cartItems.length
@@ -52,6 +54,7 @@ export function CartDesktopContent({
           onDelete={onDeleteItem}
           onQuantityChange={onQuantityChange}
           variant="desktop"
+          countryCode={countryCode}
         />
       </div>
     </div>

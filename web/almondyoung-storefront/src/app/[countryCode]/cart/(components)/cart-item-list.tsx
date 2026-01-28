@@ -11,6 +11,7 @@ interface CartItemListProps {
   onDelete: (id: string) => void
   onQuantityChange: (id: string, quantity: number) => void
   variant?: "mobile" | "desktop"
+  countryCode?: string
 }
 
 export function CartItemList({
@@ -20,6 +21,7 @@ export function CartItemList({
   onDelete,
   onQuantityChange,
   variant = "mobile",
+  countryCode = "kr",
 }: CartItemListProps) {
   if (variant === "mobile") {
     return (
@@ -78,6 +80,8 @@ export function CartItemList({
                 showMembershipHint={showMembershipHint}
                 quantity={item.quantity}
                 onQuantityChange={(qty) => onQuantityChange(item.id, qty)}
+                productId={item.productId}
+                countryCode={countryCode}
               />
             )
           })}
@@ -135,6 +139,8 @@ export function CartItemList({
             showMembershipHint={showMembershipHint}
             quantity={item.quantity}
             onQuantityChange={(qty) => onQuantityChange(item.id, qty)}
+            productId={item.productId}
+            countryCode={countryCode}
           />
         )
       })}

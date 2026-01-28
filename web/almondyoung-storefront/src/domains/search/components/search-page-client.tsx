@@ -9,8 +9,9 @@ import { SearchPopularKeyword } from "@components/search/search-popular-keyword"
 import { useSearchHistory } from "@hooks/ui/use-search-history"
 import CustomDropdown from "@components/dropdown"
 import type { SearchProductResult } from "@lib/types/ui/product"
-import { SearchResultPagination } from "./search-pagination"
+import { SharedPagination } from "@/components/shared/pagination"
 import { SearchEmptyState } from "./search-empty-state"
+import { useUser } from "@/contexts/user-context"
 
 interface SearchPageClientProps {
   keyword: string
@@ -35,6 +36,8 @@ export function SearchPageClient({
   const router = useRouter()
   const searchParams = useSearchParams()
   const { keywords: historyKeywords } = useSearchHistory()
+  const { user } = useUser()
+  const isLoggedIn = !!user
 
   const hasKeyword = keyword.length > 0
   const hasResults = searchResult.items.length > 0
@@ -138,6 +141,9 @@ export function SearchPageClient({
             <BasicProductCard
               key={`${product.id}-${idx}`}
               product={product}
+              showQuickActions
+              countryCode={countryCode}
+              isLoggedIn={isLoggedIn}
             />
           ))}
         </div>
@@ -145,7 +151,7 @@ export function SearchPageClient({
 
       {/* 페이지네이션 */}
       {totalPages > 1 && (
-        <SearchResultPagination
+        <SharedPagination
           currentPage={currentPage}
           totalPages={totalPages}
           onPageChange={handlePageChange}
