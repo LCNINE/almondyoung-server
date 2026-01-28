@@ -21,7 +21,7 @@
  *   npx ts-node apps/channel-adapter/scripts/backfill-v2.ts --resume=backfill-1737600000-abc12345
  */
 
-import postgres from 'postgres';
+import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { ConfigService } from '@nestjs/config';
 import { channelAdapterSchema } from '../src/schema';
@@ -142,6 +142,15 @@ async function main() {
   const syncService = new PimMedusaSyncService(medusaClient, mappingRepo);
 
   let startTime = Date.now();
+  let stopRequested = false;
+  const requestStop = () => {
+    if (!stopRequested) {
+      console.log('\n🛑 Stop requested. Finishing current item and saving checkpoint...');
+      stopRequested = true;
+    }
+  };
+  process.on('SIGINT', requestStop);
+  process.on('SIGTERM', requestStop);
 
   try {
     // Create or resume session
@@ -184,16 +193,19 @@ async function main() {
       // Process batch
       let batchSuccess = 0;
       let batchFailed = 0;
+      let shouldExit = false;
 
       for (let i = 0; i < snapshots.length; i++) {
         const snapshot = snapshots[i];
         const num = offset + i + 1;
+        let itemSucceeded = false;
 
         try {
           // Sync with retry
-          const result = await syncWithRetry(snapshot, syncService, 3);
+          await syncWithRetry(snapshot, syncService, 3);
 
           batchSuccess++;
+          itemSucceeded = true;
           console.log(`  ✅ [${num}] ${snapshot.name} (${snapshot.masterId})`);
 
         } catch (error: any) {
@@ -213,38 +225,53 @@ async function main() {
           console.error(`  ❌ [${num}] ${snapshot.name} (${snapshot.masterId})`);
           console.error(`     ${errorType}: ${error.message}`);
         }
+
+        // Update progress after each item to improve resume accuracy
+        session.processedCount += 1;
+        if (itemSucceeded) {
+          session.successCount += 1;
+        } else {
+          session.failedCount += 1;
+        }
+        session.currentOffset = offset + i + 1;
+        session.lastProcessedMasterId = snapshot.masterId;
+        try {
+          await sessionService.updateProgress(session.sessionId, {
+            processedCount: session.processedCount,
+            successCount: session.successCount,
+            failedCount: session.failedCount,
+            skippedCount: session.skippedCount,
+            currentOffset: session.currentOffset,
+            lastProcessedMasterId: session.lastProcessedMasterId,
+          });
+        } catch (updateError: any) {
+          console.error(
+            `⚠️  Failed to persist checkpoint for ${snapshot.masterId}: ${updateError?.message || updateError}`,
+          );
+        }
+
+        totalProcessed += 1;
+
+        // Check limit
+        if (options.limit && totalProcessed >= options.limit) {
+          console.log(`\n⏸️  Limit reached: ${options.limit} products`);
+          shouldExit = true;
+          break;
+        }
+
+        if (stopRequested) {
+          shouldExit = true;
+          break;
+        }
       }
-
-      // Update progress
-      const newProcessedCount = session.processedCount + snapshots.length;
-      const newSuccessCount = session.successCount + batchSuccess;
-      const newFailedCount = session.failedCount + batchFailed;
-
-      await sessionService.updateProgress(session.sessionId, {
-        processedCount: newProcessedCount,
-        successCount: newSuccessCount,
-        failedCount: newFailedCount,
-        skippedCount: session.skippedCount,
-        currentOffset: offset + session.batchSize,
-        lastProcessedMasterId: snapshots[snapshots.length - 1].masterId,
-      });
-
-      // Update local session object
-      session.processedCount = newProcessedCount;
-      session.successCount = newSuccessCount;
-      session.failedCount = newFailedCount;
 
       // Print batch summary
       console.log(`\n   Batch ${batchNumber} complete:`);
       console.log(`     Success: ${batchSuccess}`);
       console.log(`     Failed: ${batchFailed}`);
-      console.log(`     Total processed: ${newProcessedCount}`);
+      console.log(`     Total processed: ${session.processedCount}`);
 
-      totalProcessed += snapshots.length;
-
-      // Check limit
-      if (options.limit && totalProcessed >= options.limit) {
-        console.log(`\n⏸️  Limit reached: ${options.limit} products`);
+      if (shouldExit) {
         break;
       }
 

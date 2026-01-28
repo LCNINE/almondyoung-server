@@ -15,7 +15,7 @@
  *   npx ts-node apps/channel-adapter/scripts/verify-migration.ts --detailed
  */
 
-import postgres from 'postgres';
+import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { channelAdapterSchema, pimMedusaMappings } from '../src/schema';
 import { eq, sql } from 'drizzle-orm';
