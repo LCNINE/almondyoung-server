@@ -129,7 +129,7 @@ export function SharedPagination({
               "flex items-center justify-center rounded-lg font-medium transition-colors",
               sizes.button,
               isActive
-                ? "bg-blue-500 text-white"
+                ? "bg-yellow-30 text-white"
                 : "text-gray-600 hover:bg-gray-100"
             )}
             aria-label={`${page} 페이지`}

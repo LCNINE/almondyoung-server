@@ -2,13 +2,47 @@
 
 import { unstable_cache } from "next/cache"
 import { getProductList } from "@/lib/api/medusa/products"
+import { getCategoryTree } from "@/lib/api/medusa/categories"
 import { getReviewsByProductId } from "@/lib/api/ugc"
 import { ProductCardProps } from "@/lib/types/ui/product"
+import type { StoreProductCategoryTree } from "@/lib/types/medusa-category"
 import { isTimeSaleProduct } from "@/lib/utils/time-sale"
 import {
   mapStoreProductsToCardProps,
   type ReviewSummary,
 } from "@/lib/utils/product-card"
+
+/**
+ * 카테고리와 모든 하위 카테고리의 ID를 수집합니다.
+ */
+const collectCategoryIds = (category: StoreProductCategoryTree): string[] => {
+  const ids: string[] = [category.id]
+  if (category.category_children) {
+    for (const child of category.category_children) {
+      ids.push(...collectCategoryIds(child))
+    }
+  }
+  return ids
+}
+
+/**
+ * 카테고리 트리에서 특정 ID의 카테고리를 찾습니다.
+ */
+const findCategoryById = (
+  categories: StoreProductCategoryTree[],
+  targetId: string
+): StoreProductCategoryTree | null => {
+  for (const category of categories) {
+    if (category.id === targetId) {
+      return category
+    }
+    if (category.category_children) {
+      const found = findCategoryById(category.category_children, targetId)
+      if (found) return found
+    }
+  }
+  return null
+}
 
 const fetchCategoryBestProducts = async (
   categoryId: string,
@@ -18,8 +52,13 @@ const fetchCategoryBestProducts = async (
     return []
   }
 
+  // 카테고리 트리를 가져와서 해당 카테고리와 모든 하위 카테고리 ID 수집
+  const categoryTree = await getCategoryTree()
+  const category = findCategoryById(categoryTree, categoryId)
+  const categoryIds = category ? collectCategoryIds(category) : [categoryId]
+
   const bestProducts = await getProductList({
-    categoryId,
+    categoryId: categoryIds,
     limit: 20,
     region_id: regionId,
   })
@@ -130,8 +169,13 @@ const fetchTimeSaleProducts = async (
     return []
   }
 
+  // 카테고리 트리를 가져와서 해당 카테고리와 모든 하위 카테고리 ID 수집
+  const categoryTree = await getCategoryTree()
+  const category = findCategoryById(categoryTree, categoryId)
+  const categoryIds = category ? collectCategoryIds(category) : [categoryId]
+
   const list = await getProductList({
-    categoryId,
+    categoryId: categoryIds,
     region_id: regionId,
     limit: Math.max(limit, 24),
   })

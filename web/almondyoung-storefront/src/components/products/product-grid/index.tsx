@@ -38,12 +38,11 @@ export function ProductGrid({
               alt={product.title}
               rank={rank && <ProductCard.Rank rank={rank} />}
               action={
-                showQuickActions && (product as any).optionMeta ? (
+                showQuickActions ? (
                   <ProductCard.QuickActions
                     productId={product.id}
-                    variantId={(product as any).optionMeta?.defaultVariantId}
-                    isSingleOption={(product as any).optionMeta?.isSingle ?? false}
-                    isWishlisted={(product as any).userMeta?.isWishlisted ?? false}
+                    variantId={product.optionMeta?.defaultVariantId}
+                    isSingleOption={product.optionMeta?.isSingle ?? false}
                     isLoggedIn={isLoggedIn}
                     countryCode={countryCode}
                   />
