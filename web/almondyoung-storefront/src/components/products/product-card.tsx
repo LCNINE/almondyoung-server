@@ -1,5 +1,8 @@
 "use client"
 
+import { useMembership } from "@/contexts/membership-context"
+import { useAddToCart } from "@hooks/api/use-add-to-cart"
+import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
 import Link from "next/link"
 import React from "react"
 import { ProductCard as UIProductCard } from "../../lib/types/ui/product"
@@ -11,8 +14,6 @@ import {
   ProductThumbnail,
   ProductTitle,
 } from "./atomics"
-import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
-import { useAddToCart } from "@hooks/api/use-add-to-cart"
 
 /**
  * 추후 사라질 레거시코드
@@ -38,6 +39,8 @@ const ProductInfo = ({
   minWidth?: number
 }) => {
   const { addToCart } = useAddToCart()
+  const { status } = useMembership()
+  const isMember = status === "membership"
 
   // ===== 프론트 계산 (최소한) =====
 
@@ -63,20 +66,18 @@ const ProductInfo = ({
       ? Math.round(((basePrice - effectiveMembershipPrice) / basePrice) * 100)
       : undefined
   const membershipSavings =
-    effectiveMembershipPrice > 0 ? basePrice - effectiveMembershipPrice
-      : undefined
+    effectiveMembershipPrice > 0 ? basePrice - effectiveMembershipPrice : undefined
 
-  // 4. 표시할 가격 결정
-  const displayPrice =
-    effectiveMembershipPrice > 0 ? effectiveMembershipPrice : basePrice
-  const originalPrice =
-    effectiveMembershipPrice > 0 && basePrice > 0 ? basePrice : undefined
+  // 4. 표시할 가격 결정 (멤버십 상태에 따라)
+  // 멤버십 회원: 멤버십 가격 표시 + 뱃지
+  // 비회원/일반회원: 기본가 표시 + 멤버십 절약 힌트
+  const hasMembershipPrice = effectiveMembershipPrice > 0
+  const displayPrice = isMember && hasMembershipPrice ? effectiveMembershipPrice : basePrice
+  const originalPrice = isMember && hasMembershipPrice ? basePrice : undefined
 
   // 5. 멤버십 태그 표시 여부
-  const showMembershipTag =
-    !isMembershipOnly && effectiveMembershipPrice > 0
-  const showMembershipHint =
-    showMembershipTag && Math.abs(actualPrice - membershipPrice) >= 1
+  const showMembershipTag = !isMembershipOnly && isMember && hasMembershipPrice
+  const showMembershipHint = !isMember && hasMembershipPrice
 
   // 6. 장바구니 아이콘 표시 여부
   const showCartIcon = product.optionMeta?.isSingle && !isSoldOut
@@ -95,6 +96,7 @@ const ProductInfo = ({
       membershipPrice,
       actualPrice,
       isMembershipOnly,
+      isMember,
     })
   }
 
@@ -138,7 +140,7 @@ const ProductInfo = ({
           <ProductPrice
             displayPrice={displayPrice}
             originalPrice={originalPrice}
-            discountRate={discountRate}
+            discountRate={isMember ? discountRate : undefined}
             isSoldOut={isSoldOut}
             isMembershipOnly={isMembershipOnly}
             showMembershipTag={showMembershipTag}

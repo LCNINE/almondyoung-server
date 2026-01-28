@@ -1,8 +1,15 @@
 import Footer from "@/components/layout/footer"
 import { BottomNavigation } from "@/components/layout/nav/bottom-nav"
 import { FloatingButtons } from "@/components/shared/custom-buttons/floating-buttons"
+import { CartProvider } from "@/contexts/cart-context"
+import {
+  MembershipContextType,
+  MembershipProvider,
+} from "@/contexts/membership-context"
 import { UserProvider } from "@/contexts/user-context"
 import "@/styles/globals.css"
+import { retrieveCart } from "@lib/api/medusa/cart"
+import { getCurrentSubscription } from "@lib/api/membership/membership-api"
 import { fetchMe } from "@lib/api/users/me"
 import { CustomThemeProvider } from "@lib/providers/custom-theme-provider"
 import { ThemeProvider } from "@lib/providers/theme-provider"
@@ -28,8 +35,38 @@ export const metadata: Metadata = getSEOTags({
   },
 })
 
+async function getMembershipStatus(
+  isLoggedIn: boolean
+): Promise<MembershipContextType> {
+  if (!isLoggedIn) {
+    return { status: "guest" }
+  }
+
+  try {
+    const subscription = await getCurrentSubscription()
+    if (subscription?.data?.status === "ACTIVE") {
+      return {
+        status: "membership",
+        tier: {
+          code: subscription.data.tier.code,
+          name: subscription.data.tier.name,
+          priorityLevel: subscription.data.tier.priorityLevel,
+        },
+      }
+    }
+    return { status: "regular" }
+  } catch {
+    return { status: "regular" }
+  }
+}
+
 export default async function RootLayout(props: { children: React.ReactNode }) {
-  const user = await fetchMe().catch(() => null)
+  const [user, cart] = await Promise.all([
+    fetchMe().catch(() => null),
+    retrieveCart().catch(() => null),
+  ])
+
+  const membershipStatus = await getMembershipStatus(!!user)
 
   return (
     <html lang="ko" suppressHydrationWarning>
@@ -39,22 +76,26 @@ export default async function RootLayout(props: { children: React.ReactNode }) {
       >
         <OverlayProvider>
           <UserProvider initialUser={user}>
-            <ThemeProvider
-              attribute="class"
-              defaultTheme="light"
-              enableSystem={false}
-              disableTransitionOnChange
-            >
-              <CustomThemeProvider>
-                <div className="relative">
-                  {props.children}
+            <CartProvider initialCart={cart}>
+              <MembershipProvider initialMembership={membershipStatus}>
+                <ThemeProvider
+                  attribute="class"
+                  defaultTheme="light"
+                  enableSystem={false}
+                  disableTransitionOnChange
+                >
+                  <CustomThemeProvider>
+                    <div className="relative">
+                      {props.children}
 
-                  <FloatingButtons />
-                </div>
-                <Toaster />
-              </CustomThemeProvider>
-            </ThemeProvider>
-            <BottomNavigation />
+                      <FloatingButtons />
+                    </div>
+                    <Toaster />
+                  </CustomThemeProvider>
+                </ThemeProvider>
+                <BottomNavigation />
+              </MembershipProvider>
+            </CartProvider>
           </UserProvider>
           <Footer />
           {renderSchemaTags()}

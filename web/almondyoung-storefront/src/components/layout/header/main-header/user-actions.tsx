@@ -1,7 +1,8 @@
 "use client"
 
-import { useSearchSheetStore } from "@hooks/ui/use-search-sheet-store"
+import { useCart } from "@/contexts/cart-context"
 import { useUser } from "@/contexts/user-context"
+import { useSearchSheetStore } from "@hooks/ui/use-search-sheet-store"
 import { Bell, Search, ShoppingCart, User } from "lucide-react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
@@ -9,9 +10,9 @@ import { useParams } from "next/navigation"
 export function AccountMenu() {
   const { countryCode } = useParams()
   const { user } = useUser()
+  const { itemCount: cartItemCount } = useCart()
 
-  // todo: 임시임
-  const cartItemCount = 1
+  // todo: 알림 기능 구현 필요
   const hasNotification = true
 
   const { onOpen } = useSearchSheetStore()
