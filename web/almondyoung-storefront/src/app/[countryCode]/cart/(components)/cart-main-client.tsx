@@ -37,8 +37,25 @@ function mapMedusaItemToCartItem(item: HttpTypes.StoreCartLineItem): CartItem {
   }
 
   // 가격 정보
-  const basePrice = item.unit_price || 0
-  const membershipPrice = (variant?.metadata as any)?.membershipPrice || null
+  const originalTotal = item.original_total
+  const basePrice =
+    typeof originalTotal === "number" && item.quantity > 0
+      ? Math.round(originalTotal / item.quantity)
+      : item.unit_price || 0
+  const rawMembershipPrice = (variant?.metadata as any)?.membershipPrice
+  const parsedMembershipPrice =
+    typeof rawMembershipPrice === "string" ? Number(rawMembershipPrice) : null
+  const membershipPrice =
+    typeof rawMembershipPrice === "number"
+      ? rawMembershipPrice
+      : Number.isFinite(parsedMembershipPrice)
+        ? parsedMembershipPrice
+        : null
+  const normalizedMembershipPrice =
+    membershipPrice != null && basePrice > membershipPrice
+      ? membershipPrice
+      : null
+  const unitPrice = item.unit_price || basePrice
   const isMembershipOnly = (product?.metadata as any)?.isMembershipOnly || false
 
   return {
@@ -48,7 +65,8 @@ function mapMedusaItemToCartItem(item: HttpTypes.StoreCartLineItem): CartItem {
       name: item.title || product?.title || "상품명 없음",
       thumbnail: item.thumbnail || product?.thumbnail || "",
       basePrice,
-      membershipPrice: membershipPrice || basePrice,
+      membershipPrice: normalizedMembershipPrice || undefined,
+      unitPrice,
       brand: product?.subtitle || (product?.metadata as any)?.brand || "",
       isMembershipOnly,
     },
@@ -85,12 +103,12 @@ export function CartMainClient() {
     setIsLoading(true)
     try {
       // customer_id도 함께 조회
-      let cart = await retrieveCart()
+      let cart = await retrieveCart(undefined, undefined, "no-store")
 
       if (!cart) {
         const ensuredCart = await getOrSetCart(countryCode)
         if (ensuredCart?.id) {
-          cart = await retrieveCart(ensuredCart.id)
+          cart = await retrieveCart(ensuredCart.id, undefined, "no-store")
         }
       }
 
@@ -246,7 +264,7 @@ export function CartMainClient() {
         (sum, item) =>
           sum +
           (item.product.membershipPrice || item.product.basePrice || 0) *
-            item.quantity,
+          item.quantity,
         0
       )
       return {

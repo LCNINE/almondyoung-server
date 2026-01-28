@@ -22,7 +22,11 @@ import { transferCart } from "./customer"
  * @param cartId (선택 사항) - 조회할 카트의 고유 ID입니다.
  * @returns 카트를 찾으면 카트 객체를, 찾지 못하면 null을 반환합니다.
  */
-export async function retrieveCart(cartId?: string, fields?: string) {
+export async function retrieveCart(
+  cartId?: string,
+  fields?: string,
+  cache: RequestCache = "force-cache"
+) {
   let id = cartId || (await getCartId())
   fields ??=
     "*items, *region, *items.product, *items.variant, *items.thumbnail, *items.metadata, +items.total, *promotions, +shipping_methods, *customer.groups"
@@ -75,10 +79,15 @@ export async function retrieveCart(cartId?: string, fields?: string) {
       },
       headers,
       next,
-      cache: "force-cache",
+      cache,
     })
     .then(({ cart }: { cart: HttpTypes.StoreCart }) => cart)
-    .catch(() => null)
+    .catch(async (error) => {
+      if (error?.response?.status === 404) {
+        await removeCartId()
+      }
+      return null
+    })
 }
 
 export async function getOrSetCart(countryCode: string) {

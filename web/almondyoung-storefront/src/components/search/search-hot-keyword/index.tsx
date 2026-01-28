@@ -1,33 +1,74 @@
 "use client"
 
 import { useRouter } from "next/navigation"
+import { useEffect, useState } from "react"
 import _ from "lodash"
-
-// todo: 백엔드에서 데이터를 가져오도록 수정
-const HOT_KEYWORD_LIST = [
-  { title: "비타민D", status: "up" },
-  { title: "저당 젤리", status: "new" },
-  { title: "식물성 단백질", status: "up" },
-  { title: "아르기닌 6000", status: "down" },
-  { title: "콜라겐 스틱", status: "new" },
-  { title: "유산균", status: "up" },
-  { title: "오메가3", status: "new" },
-  { title: "다이어트 쉐이크", status: "up" },
-  { title: "선크림", status: "down" },
-  { title: "비타민C", status: "new" },
-]
+import {
+  getTrendingKeywords,
+  type TrendingKeyword,
+} from "@lib/api/pim/search"
 
 export function SearchHotKeyword() {
   const router = useRouter()
+  const [keywords, setKeywords] = useState<TrendingKeyword[]>([])
+  const [updatedAt, setUpdatedAt] = useState<string>("")
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchKeywords = async () => {
+      try {
+        const result = await getTrendingKeywords()
+        if ("data" in result && result.data) {
+          setKeywords(result.data.keywords)
+          // 시간만 추출 (예: "08:00")
+          const date = new Date(result.data.updatedAt)
+          const timeStr = date.toLocaleTimeString("ko-KR", {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+          })
+          setUpdatedAt(timeStr)
+        }
+      } catch (error) {
+        console.error("급상승 검색어 로드 실패:", error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchKeywords()
+  }, [])
 
   // 데이터를 반으로 나눔 (예: 10개면 5개씩 2덩어리)
-  const columns = _.chunk(
-    HOT_KEYWORD_LIST,
-    Math.ceil(HOT_KEYWORD_LIST.length / 2)
-  )
+  const columns = _.chunk(keywords, Math.ceil(keywords.length / 2))
 
-  const handleHotKeywordClick = (item: string) => {
-    router.push(`/search?q=${encodeURIComponent(item)}`)
+  const handleHotKeywordClick = (keyword: string) => {
+    router.push(`/search?q=${encodeURIComponent(keyword)}`)
+  }
+
+  if (isLoading) {
+    return (
+      <section>
+        <div className="mb-6 flex items-center justify-between">
+          <h3 className="text-base leading-none font-bold text-gray-900">
+            급상승 검색어
+          </h3>
+          <span className="h-4 w-16 animate-pulse rounded bg-gray-200" />
+        </div>
+        <div className="grid grid-cols-2 gap-x-8 gap-y-4">
+          {Array.from({ length: 10 }).map((_, idx) => (
+            <div key={idx} className="flex items-center gap-3">
+              <span className="h-5 w-5 animate-pulse rounded bg-gray-200" />
+              <span className="h-5 flex-1 animate-pulse rounded bg-gray-200" />
+            </div>
+          ))}
+        </div>
+      </section>
+    )
+  }
+
+  if (keywords.length === 0) {
+    return null
   }
 
   return (
@@ -37,7 +78,7 @@ export function SearchHotKeyword() {
           급상승 검색어
         </h3>
         <span className="text-[12px] font-normal text-gray-400">
-          08:00 기준
+          {updatedAt} 기준
         </span>
       </div>
 
@@ -47,19 +88,19 @@ export function SearchHotKeyword() {
             {col.map((item, itemIdx) => {
               // 전체 순서를 계산
               const overallIdx =
-                colIdx * Math.ceil(HOT_KEYWORD_LIST.length / 2) + itemIdx
+                colIdx * Math.ceil(keywords.length / 2) + itemIdx
 
               return (
                 <div
-                  key={item.title}
+                  key={item.keyword}
                   className="flex cursor-pointer items-center gap-3 transition-opacity hover:opacity-70"
-                  onClick={() => handleHotKeywordClick(item.title)}
+                  onClick={() => handleHotKeywordClick(item.keyword)}
                 >
                   <span className="w-5 text-center font-black text-green-700 italic">
                     {overallIdx + 1}
                   </span>
                   <span className="flex-1 truncate text-[15px] font-medium text-gray-800">
-                    {item.title}
+                    {item.keyword}
                   </span>
                   <div className="flex w-8 justify-end">
                     {item.status === "new" ? (
@@ -68,8 +109,10 @@ export function SearchHotKeyword() {
                       </span>
                     ) : item.status === "up" ? (
                       <span className="text-[10px] text-red-500">▲</span>
-                    ) : (
+                    ) : item.status === "down" ? (
                       <span className="text-[10px] text-blue-500">▼</span>
+                    ) : (
+                      <span className="text-[10px] text-gray-400">-</span>
                     )}
                   </div>
                 </div>

@@ -48,6 +48,15 @@ const mapMedusaProductToDetail = (
   descriptionHtml?: string,
   pimMasterId?: string
 ): ProductDetail => {
+  const getMembershipPreviewPrice = (variant?: any) => {
+    const raw = variant?.metadata?.membershipPrice
+    if (typeof raw === "number") return raw
+    if (typeof raw === "string") {
+      const parsed = Number(raw)
+      return Number.isFinite(parsed) ? parsed : undefined
+    }
+    return undefined
+  }
   const thumbnail = product.thumbnail || product.images?.[0]?.url || ""
 
   const thumbnails =
@@ -62,13 +71,22 @@ const mapMedusaProductToDetail = (
   const defaultPrice = defaultVariant
     ? getPricesForVariant(defaultVariant)
     : null
+  const membershipPreviewPrice = getMembershipPreviewPrice(defaultVariant)
   const priceInfo = getProductPrice({ product })
   const basePrice =
     defaultPrice?.original_price_number ||
     priceInfo?.cheapestPrice?.original_price_number
-  const membershipPrice =
+  const actualPrice =
     defaultPrice?.calculated_price_number ||
     priceInfo?.cheapestPrice?.calculated_price_number
+  const rawMembershipPrice =
+    membershipPreviewPrice ??
+    defaultPrice?.calculated_price_number ||
+    priceInfo?.cheapestPrice?.calculated_price_number
+  const membershipPrice =
+    rawMembershipPrice && basePrice && basePrice > rawMembershipPrice
+      ? rawMembershipPrice
+      : undefined
 
   const options =
     product.options?.map((option) => ({
@@ -94,10 +112,19 @@ const mapMedusaProductToDetail = (
 
   for (const variant of product.variants || []) {
     const variantPrice = getPricesForVariant(variant)
+    const variantMembershipPreview = getMembershipPreviewPrice(variant)
     if (variant.id) {
+      const variantBasePrice = variantPrice?.original_price_number
+      const variantRawMembership =
+        variantMembershipPreview ?? variantPrice?.calculated_price_number
+      const variantMembershipPrice =
+        variantRawMembership && variantBasePrice && variantBasePrice > variantRawMembership
+          ? variantRawMembership
+          : undefined
+
       variantPriceMap[variant.id] = {
-        basePrice: variantPrice?.original_price_number,
-        membershipPrice: variantPrice?.calculated_price_number,
+        basePrice: variantBasePrice,
+        membershipPrice: variantMembershipPrice,
       }
       variantThumbnailMap[variant.id] = variant?.images?.[0]?.url || thumbnail
     }
@@ -139,6 +166,7 @@ const mapMedusaProductToDetail = (
       : "active",
     basePrice,
     membershipPrice,
+    actualPrice,
     isMembershipOnly: false,
     options,
     optionMeta: { isSingle: options.length === 0 },

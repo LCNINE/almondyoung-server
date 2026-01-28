@@ -1,6 +1,7 @@
 "use server"
 
 import { sdk } from "@/lib/config/medusa"
+import { getAuthHeaders } from "@lib/data/cookies"
 import type { ProductsResponseDto } from "@lib/types/dto/medusa"
 import type { StoreProduct } from "@medusajs/types"
 
@@ -10,6 +11,7 @@ interface GetProductListParams {
   categoryId?: string | string[]
   region_id?: string
   handle?: string[] | string
+  q?: string // 검색어 파라미터 추가
 }
 
 // 상품 목록 조회
@@ -19,10 +21,22 @@ export const getProductList = async ({
   categoryId,
   region_id,
   handle,
+  q,
 }: GetProductListParams): Promise<ProductsResponseDto> => {
   const offset = (page - 1) * limit
 
   try {
+    const authHeaders = await getAuthHeaders()
+    const isAuthed = "authorization" in authHeaders
+    const headers = isAuthed
+      ? { ...authHeaders }
+      : {
+        ...authHeaders,
+        next: {
+          tags: ["products", categoryId || "", q || ""],
+        },
+      }
+
     const {
       products,
       count,
@@ -33,8 +47,9 @@ export const getProductList = async ({
         offset,
         category_id: categoryId,
         handle,
+        q, // 검색어 전달
         fields:
-          "*variants.calculated_price,+categories,+metadata,+tags,+variants.prices.*",
+          "variants.*,+variants.metadata,+variants.prices.*,+variants.calculated_price,+variants.calculated_price_incl_tax,+variants.original_price,+variants.original_price_incl_tax,+categories,+metadata,+tags",
         region_id: region_id,
       },
       {
@@ -69,11 +84,24 @@ export const getProductDetail = async (
   // salesChannelId?: string | null
 ): Promise<StoreProduct> => {
   try {
-    const { product } = await sdk.store.product.retrieve(productId, {
-      fields:
-        "variants.*,+variants.prices.*,+variants.calculated_price,+variants.calculated_price_incl_tax,+variants.original_price,+variants.original_price_incl_tax,+variants.price_type,+variants.currency_code",
-      region_id: regionId,
-    })
+    const authHeaders = await getAuthHeaders()
+    const isAuthed = "authorization" in authHeaders
+    const headers = {
+      ...authHeaders,
+    }
+
+    const { product } = await sdk.store.product.retrieve(
+      productId,
+      {
+        fields:
+          "variants.*,+variants.metadata,+variants.prices.*,+variants.calculated_price,+variants.calculated_price_incl_tax,+variants.original_price,+variants.original_price_incl_tax,+variants.price_type,+variants.currency_code",
+        region_id: regionId,
+      },
+      {
+        ...headers,
+        cache: isAuthed ? "no-store" : undefined,
+      }
+    )
 
     console.log("product::", product)
 

@@ -8,6 +8,12 @@ import {
 import { useSearchHistory } from "@/hooks/ui/use-search-history"
 import { cn } from "@/lib/utils"
 import { X } from "lucide-react"
+import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
+import {
+  getTrendingKeywords,
+  type TrendingKeyword,
+} from "@lib/api/pim/search"
 
 export function SearchPopover({
   isOpen,
@@ -18,19 +24,32 @@ export function SearchPopover({
   setIsOpen: (open: boolean) => void
   children: React.ReactNode
 }) {
-  // todo: 백엔드에서 데이터를 가져오도록 수정
-  const HOT_KEYWORD_LIST = [
-    { title: "비타민D", status: "up" },
-    { title: "저당 젤리", status: "new" },
-    { title: "식물성 단백질", status: "up" },
-    { title: "아르기닌 6000", status: "down" },
-    { title: "콜라겐 스틱", status: "new" },
-    { title: "유산균", status: "up" },
-    { title: "오메가3", status: "new" },
-    { title: "다이어트 쉐이크", status: "up" },
-    { title: "선크림", status: "down" },
-    { title: "비타민C", status: "new" },
-  ]
+  const [trendingKeywords, setTrendingKeywords] = useState<TrendingKeyword[]>([])
+  const [updatedAt, setUpdatedAt] = useState<string>("")
+
+  useEffect(() => {
+    const fetchKeywords = async () => {
+      try {
+        const result = await getTrendingKeywords()
+        if ("data" in result && result.data) {
+          setTrendingKeywords(result.data.keywords)
+          const date = new Date(result.data.updatedAt)
+          const timeStr = date.toLocaleTimeString("ko-KR", {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+          })
+          setUpdatedAt(timeStr)
+        }
+      } catch (error) {
+        console.error("급상승 검색어 로드 실패:", error)
+      }
+    }
+
+    if (isOpen) {
+      fetchKeywords()
+    }
+  }, [isOpen])
 
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
@@ -43,7 +62,11 @@ export function SearchPopover({
       >
         <div className="flex min-h-[420px]">
           <SearchHistory />
-          <SearchTrending items={HOT_KEYWORD_LIST} />
+          <SearchTrending
+            items={trendingKeywords}
+            updatedAt={updatedAt}
+            onClose={() => setIsOpen(false)}
+          />
         </div>
       </PopoverContent>
     </Popover>
@@ -119,9 +142,20 @@ function SearchHistory() {
 // --- 서브 컴포넌트: 급상승 검색어 섹션 ---
 function SearchTrending({
   items,
+  updatedAt,
+  onClose,
 }: {
-  items: { title: string; status: string }[]
+  items: TrendingKeyword[]
+  updatedAt: string
+  onClose: () => void
 }) {
+  const router = useRouter()
+
+  const handleKeywordClick = (keyword: string) => {
+    onClose()
+    router.push(`/search?q=${encodeURIComponent(keyword)}`)
+  }
+
   return (
     <div className="flex flex-1 flex-col justify-between px-8">
       <div>
@@ -131,8 +165,9 @@ function SearchTrending({
         <ul className="space-y-4">
           {items.map((item, i) => (
             <li
-              key={i}
+              key={item.keyword}
               className="group flex cursor-pointer items-center justify-between"
+              onClick={() => handleKeywordClick(item.keyword)}
             >
               <div className="flex items-center gap-4">
                 <span
@@ -144,10 +179,22 @@ function SearchTrending({
                   {i + 1}
                 </span>
                 <span className="text-[15px] text-gray-700 group-hover:underline">
-                  {item.title}
+                  {item.keyword}
                 </span>
               </div>
-              <span className="text-[10px] text-gray-300">—</span>
+              <div className="flex w-8 justify-end">
+                {item.status === "new" ? (
+                  <span className="rounded-sm bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold text-orange-600">
+                    NEW
+                  </span>
+                ) : item.status === "up" ? (
+                  <span className="text-[10px] text-red-500">▲</span>
+                ) : item.status === "down" ? (
+                  <span className="text-[10px] text-blue-500">▼</span>
+                ) : (
+                  <span className="text-[10px] text-gray-400">-</span>
+                )}
+              </div>
             </li>
           ))}
         </ul>
@@ -156,7 +203,7 @@ function SearchTrending({
       {/* 기준 시간 영역 */}
       <div className="mt-8 pb-2">
         <span className="text-[11px] font-medium text-gray-300">
-          21:00 기준
+          {updatedAt || "00:00"} 기준
         </span>
       </div>
     </div>

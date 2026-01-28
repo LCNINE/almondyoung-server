@@ -83,8 +83,10 @@ interface CartCardProps {
   badge?: string
   originalPrice?: number
   discountedPrice: number
+  actualPrice?: number
   discountRate?: number
   isMembership?: boolean
+  showMembershipHint?: boolean
   quantity?: number
   onQuantityChange?: (quantity: number) => void
 }
@@ -103,8 +105,10 @@ export const CartCard = ({
   badge,
   originalPrice,
   discountedPrice,
+  actualPrice,
   discountRate,
   isMembership = false,
+  showMembershipHint = false,
   quantity = 1,
   onQuantityChange,
 }: CartCardProps) => {
@@ -146,6 +150,8 @@ export const CartCard = ({
                 discounted={discountedPrice}
                 discountRate={discountRate || 0}
                 membership={isMembership}
+                actual={actualPrice}
+                showMembershipHint={showMembershipHint}
               />
               <div className="mt-2">
                 <QuantityControl
@@ -204,6 +210,8 @@ export const CartCard = ({
                 discounted={discountedPrice}
                 discountRate={discountRate}
                 isMembership={isMembership}
+                actual={actualPrice}
+                showMembershipHint={showMembershipHint}
               />
               <QuantityControl
                 quantity={quantity}
