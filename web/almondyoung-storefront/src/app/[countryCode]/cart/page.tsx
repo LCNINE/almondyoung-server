@@ -1,6 +1,23 @@
+import { retrieveCart } from "@/lib/api/medusa/cart"
 import { CartMainClient } from "./(components)/cart-main-client"
+import { EmptyCartView } from "@/components/cart/empty-cart-view"
 
-export default async function ShoppingCartPage() {
-  // 로그인 상태 - 클라이언트 컴포넌트에서 장바구니 데이터 로드 및 처리
+export default async function ShoppingCartPage({
+  params,
+}: {
+  params: Promise<{ countryCode: string }>
+}) {
+  const { countryCode } = await params
+  let cart = await retrieveCart()
+
+  if (cart?.items?.length === 0)
+    return (
+      <EmptyCartView
+        countryCode={countryCode}
+        showHeader={false}
+        bgColor="bg-muted"
+      />
+    )
+
   return <CartMainClient />
 }

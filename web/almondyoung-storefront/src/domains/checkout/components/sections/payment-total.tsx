@@ -12,7 +12,7 @@ export const PaymentTotalSection = ({ totals }: PaymentTotalSectionProps) => {
   const {
     currency_code,
     item_subtotal,
-    shippingFee,
+    shipping,
     membershipDiscount,
     totalDiscount,
     finalTotal,
@@ -37,9 +37,9 @@ export const PaymentTotalSection = ({ totals }: PaymentTotalSectionProps) => {
           />
           <InfoRow
             label="배송비"
-            value={formatAmount(shippingFee)}
+            value={formatAmount(shipping)}
             dataTestId="cart-shipping"
-            dataValue={shippingFee}
+            dataValue={shipping}
           />
           {totalDiscount > 0 && (
             <InfoRow

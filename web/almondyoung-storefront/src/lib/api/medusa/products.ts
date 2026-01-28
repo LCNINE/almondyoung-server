@@ -31,11 +31,11 @@ export const getProductList = async ({
     const headers = isAuthed
       ? { ...authHeaders }
       : {
-          ...authHeaders,
-          next: {
-            tags: ["products", categoryId || "", q || ""],
-          },
-        }
+        ...authHeaders,
+        next: {
+          tags: ["products", categoryId || "", q || ""],
+        },
+      }
 
     const {
       products,
@@ -53,8 +53,14 @@ export const getProductList = async ({
         region_id: region_id,
       },
       {
-        ...headers,
-        cache: isAuthed ? "no-store" : undefined,
+        next: {
+          tags: [
+            "products",
+            Array.isArray(categoryId)
+              ? categoryId.join(",")
+              : categoryId || "",
+          ],
+        },
       }
     )
 

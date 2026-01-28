@@ -13,6 +13,7 @@ import {
   addPromotionToCart,
   removePromotionFromCart,
 } from "@/lib/api/medusa/store"
+import type { ShippingInfo } from "@/lib/types/ui/cart"
 import type { Promotion } from "@/lib/types/ui/promotion"
 import { formatPrice } from "@/lib/utils/price-utils"
 import { useCallback, useState, useTransition } from "react"
@@ -22,6 +23,8 @@ interface DiscountSectionProps {
   cartId: string
   isMembership: boolean
   membershipDiscount: number
+  itemSubtotal: number
+  shipping: ShippingInfo
   promotions: Promotion[]
   appliedPromotionCode?: string | null
   availablePoints: number
@@ -33,6 +36,8 @@ export const DiscountSection = ({
   cartId,
   isMembership = false,
   membershipDiscount,
+  itemSubtotal,
+  shipping,
   promotions,
   appliedPromotionCode,
   availablePoints,
@@ -113,8 +118,21 @@ export const DiscountSection = ({
     onPointsChange?.(availablePoints)
   }, [availablePoints, onPointsChange])
 
-  // 총 할인 금액 = 멤버십 할인 + 적립금 사용
-  const totalDiscount = membershipDiscount + pointsUsed
+  // 쿠폰 할인 금액 계산
+  const appliedPromotion = selectedCoupon
+    ? promotions.find((p) => p.code === selectedCoupon)
+    : null
+
+  const couponDiscount = appliedPromotion
+    ? appliedPromotion.application_method?.type === "percentage"
+      ? Math.floor(
+          itemSubtotal * (appliedPromotion.application_method.value / 100)
+        )
+      : (appliedPromotion.application_method?.value ?? 0)
+    : 0
+
+  // 총 할인 금액 = 멤버십 할인 + 쿠폰 할인 + 적립금 사용
+  const totalDiscount = membershipDiscount + couponDiscount + pointsUsed
 
   return (
     <section aria-labelledby="discount-heading" className="mb-8">
@@ -133,6 +151,9 @@ export const DiscountSection = ({
           totalDiscount={totalDiscount}
           pointsUsed={pointsUsed}
           membershipDiscount={membershipDiscount}
+          couponDiscount={couponDiscount}
+          shipping={shipping}
+          appliedPromotion={appliedPromotion}
         />
 
         <hr className="border-t border-gray-100" />
@@ -271,6 +292,9 @@ interface DiscountRowProps {
   totalDiscount: number
   pointsUsed: number
   membershipDiscount: number
+  couponDiscount: number
+  shipping: ShippingInfo
+  appliedPromotion: Promotion | null | undefined
 }
 
 const DiscountRow = ({
@@ -279,10 +303,15 @@ const DiscountRow = ({
   totalDiscount,
   pointsUsed,
   membershipDiscount,
+  couponDiscount,
+  shipping,
+  appliedPromotion,
 }: DiscountRowProps) => {
   const hasMembershipDiscount = isMembership && membershipDiscount > 0
   const hasDiscount = totalDiscount > 0
   const hasPointsUsed = pointsUsed > 0
+  const hasCouponDiscount = couponDiscount > 0
+  const isFreeShipping = shipping.amount === 0
 
   return (
     <div className="flex items-start justify-between">
@@ -291,11 +320,27 @@ const DiscountRow = ({
           {label}
         </span>
 
+        {isFreeShipping && shipping.description && (
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] font-medium text-[#F29219] lg:text-xs">
+              {shipping.description}
+            </span>
+          </div>
+        )}
+
         {hasMembershipDiscount && (
           <div className="flex items-center gap-1">
             <CheckoutMembershipTagIcon />
             <span className="text-[10px] font-medium text-[#E08F00] lg:text-xs">
               멤버십 할인 {formatPrice(membershipDiscount)}원
+            </span>
+          </div>
+        )}
+
+        {hasCouponDiscount && appliedPromotion && (
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] font-medium text-[#F29219] lg:text-xs">
+              쿠폰 할인 {formatPrice(couponDiscount)}원
             </span>
           </div>
         )}

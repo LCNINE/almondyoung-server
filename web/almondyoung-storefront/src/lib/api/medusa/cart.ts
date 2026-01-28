@@ -15,6 +15,7 @@ import { revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
 import { HttpApiError } from "../api-error"
 import { getRegion } from "./regions"
+import { transferCart } from "./customer"
 
 /**
  * 카트 ID를 통해 카트 정보를 조회합니다. 만약 ID가 제공되지 않으면, 쿠키에 저장된 카트 ID를 사용합니다.
@@ -28,7 +29,10 @@ export async function retrieveCart(
 ) {
   let id = cartId || (await getCartId())
   fields ??=
-    "*items, *region, *items.product, *items.variant, +items.variant.metadata, *items.thumbnail, *items.metadata, +items.total, +items.original_total, *promotions, +shipping_methods.name"
+    "*items, *region, *items.product, *items.variant, *items.thumbnail, *items.metadata, +items.total, *promotions, +shipping_methods, *customer.groups"
+  if (!id) {
+    return null
+  }
 
   const headers = {
     ...(await getAuthHeaders()),
@@ -492,6 +496,39 @@ export async function updateRegion(countryCode: string, currentPath: string) {
 
   redirect(`/${countryCode}${currentPath}`)
 }
+// {shipping_methods.map((method) => (
+//   <li key={method.id}>
+//     <span>{method.name}</span>
+//     {/* 최종 배송비 */}
+//     <span>{formatPrice(method.total!)}</span>
+//     {/* 원래 배송비 */}
+//     <span>(Subtotal: {formatPrice(method.subtotal!)})</span>
+//     {/* 배송비 할인 */}
+//     <span>(Discounts: {formatPrice(method.discount_total!)})</span>
+//   </li>
+// ))}
+
+export const addCartShippingMethod = async (
+  cartId: string,
+  optionId: string
+) => {
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  return sdk.store.cart
+    .addShippingMethod(cartId, { option_id: optionId }, {}, headers)
+    .then(async ({ cart }: { cart: HttpTypes.StoreCart }) => {
+      const cartCacheTag = await getCacheTag("carts")
+      revalidateTag(cartCacheTag)
+
+      const fulfillmentCacheTag = await getCacheTag("fulfillment")
+      revalidateTag(fulfillmentCacheTag)
+
+      return cart
+    })
+    .catch(medusaError)
+}
 
 export const listCartShippingMethods = async (
   cartId: string,
@@ -524,24 +561,41 @@ export const listCartShippingMethods = async (
     })
 }
 
-export const addCartShippingMethod = async (
-  cartId: string,
-  optionId: string
-) => {
+export async function setShippingMethod({
+  cartId,
+  shippingMethodId,
+}: {
+  cartId: string
+  shippingMethodId: string
+}) {
   const headers = {
     ...(await getAuthHeaders()),
   }
 
   return sdk.store.cart
-    .addShippingMethod(cartId, { option_id: optionId }, {}, headers)
-    .then(async ({ cart }: { cart: HttpTypes.StoreCart }) => {
+    .addShippingMethod(cartId, { option_id: shippingMethodId }, {}, headers)
+    .then(async () => {
       const cartCacheTag = await getCacheTag("carts")
       revalidateTag(cartCacheTag)
-
-      const fulfillmentCacheTag = await getCacheTag("fulfillment")
-      revalidateTag(fulfillmentCacheTag)
-
-      return cart
     })
     .catch(medusaError)
+}
+
+export async function listCartOptions() {
+  const cartId = await getCartId()
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+  const next = {
+    ...(await getCacheOptions("shippingOptions")),
+  }
+
+  return await sdk.client.fetch<{
+    shipping_options: HttpTypes.StoreCartShippingOption[]
+  }>("/store/shipping-options", {
+    query: { cart_id: cartId },
+    next,
+    headers,
+    cache: "force-cache",
+  })
 }
