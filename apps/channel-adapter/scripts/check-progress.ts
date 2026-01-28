@@ -13,7 +13,7 @@
  *   npx ts-node apps/channel-adapter/scripts/check-progress.ts --latest
  */
 
-import postgres from 'postgres';
+import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { channelAdapterSchema, migrationProgress, migrationFailures } from '../src/schema';
 import { eq, desc, sql } from 'drizzle-orm';

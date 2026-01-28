@@ -13,7 +13,7 @@
  *   npx ts-node apps/channel-adapter/scripts/retry-failed.ts --all
  */
 
-import postgres from 'postgres';
+import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { ConfigService } from '@nestjs/config';
 import { channelAdapterSchema, migrationFailures } from '../src/schema';
