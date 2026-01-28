@@ -113,15 +113,13 @@ export function TimeSaleSection({
                                 src={product.imageSrc}
                                 alt={product.title}
                                 action={
-                                  (product as any).optionMeta ? (
-                                    <ProductCard.QuickActions
-                                      productId={product.id}
-                                      variantId={(product as any).optionMeta?.defaultVariantId}
-                                      isSingleOption={(product as any).optionMeta?.isSingle ?? false}
-                                      isLoggedIn={isLoggedIn}
-                                      countryCode={countryCode}
-                                    />
-                                  ) : undefined
+                                  <ProductCard.QuickActions
+                                    productId={product.id}
+                                    variantId={product.optionMeta?.defaultVariantId}
+                                    isSingleOption={product.optionMeta?.isSingle ?? false}
+                                    isLoggedIn={isLoggedIn}
+                                    countryCode={countryCode}
+                                  />
                                 }
                                 className="rounded-sm md:rounded-md"
                               />
