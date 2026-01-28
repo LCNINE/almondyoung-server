@@ -81,8 +81,10 @@ const mapMedusaProductToDetail = (
     priceInfo?.cheapestPrice?.calculated_price_number
   const rawMembershipPrice =
     membershipPreviewPrice ??
-    defaultPrice?.calculated_price_number ||
-    priceInfo?.cheapestPrice?.calculated_price_number
+    (
+      defaultPrice?.calculated_price_number ||
+      priceInfo?.cheapestPrice?.calculated_price_number
+    )
   const membershipPrice =
     rawMembershipPrice && basePrice && basePrice > rawMembershipPrice
       ? rawMembershipPrice

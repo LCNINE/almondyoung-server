@@ -41,9 +41,12 @@ export function mapStoreProductToCardProps(
     0
   const rawMembershipPrice =
     membershipPreviewPrice ??
-    defaultPrice?.calculated_price_number ||
-    priceInfo?.cheapestPrice?.calculated_price_number ||
-    0
+    (
+      defaultPrice?.calculated_price_number ||
+      priceInfo?.cheapestPrice?.calculated_price_number ||
+      0
+    )
+
   const membershipPrice =
     rawMembershipPrice > 0 && basePrice > rawMembershipPrice
       ? rawMembershipPrice
