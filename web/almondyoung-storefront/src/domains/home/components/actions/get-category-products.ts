@@ -89,7 +89,8 @@ const fetchCategoryBestProducts = async (
 
       reviewsMap.set(productId, {
         rating: Math.round(averageRating * 10) / 10,
-        reviewCount: review.data.length,
+        // total을 사용하여 실제 총 리뷰 수 표시
+        reviewCount: review.total || review.data.length,
       })
     }
   })

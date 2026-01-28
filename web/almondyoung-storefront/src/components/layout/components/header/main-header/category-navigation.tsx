@@ -10,6 +10,7 @@ import { useRef, useState } from "react"
 /*───────────────────────────
  * 카테고리 네비게이션 컴포넌트
  * 데스크탑 main header에서 사용되는 카테고리 네비게이션 컴포넌트입니다.
+ * ex) 홈, 카테고리1, 카테고리2 ... 를 표시합니다.
  *──────────────────────────*/
 export function CategoryNavigation({
   mainCategories,
@@ -77,6 +78,7 @@ export function CategoryNavigation({
           />
         ))}
       </div>
+
       {/* ─── 데스크탑 ─── */}
       <ul className="hidden items-center gap-[clamp(0.875rem,2vw,1.75rem)] md:flex">
         {allTabs.map((tab) => (

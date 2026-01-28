@@ -1,12 +1,17 @@
-import { CategorySheet } from "@/components/category/sheet"
-import { CategoryNavigation } from "@/components/layout/nav/category-nav"
 import { SearchCombobox } from "@/components/search/search-combobox"
-import { SearchSheet } from "@/components/search/search-sheet"
-import { getCategoryTree } from "@/lib/api/medusa/categories"
+import { CategorySheet } from "@components/category/category-sheet"
+import { SearchSheet } from "@components/search/search-sheet"
+import { getCategoryTree } from "@lib/api/medusa/categories"
 import { Menu } from "lucide-react"
+import { CategoryNavigation } from "./category-navigation"
 import { Logo } from "./logo"
-import { AccountMenu } from "./user-actions"
+import { UserActions } from "./user-actions"
 
+/*─────────────────────────────────────────────────────────
+ * 메인 헤더 컴포넌트
+ * main header에서 사용되는 메인 헤더 컴포넌트입니다.
+ * ex) 로고, 검색, 사용자 액션 버튼, 카테고리 네비게이션 등을 표시합니다.
+ *───────────────────────────────────────────────────────────*/
 export async function MainHeader() {
   // Medusa 카테고리를 사용하여 category page와 일관성 유지
   const categories = await getCategoryTree().catch(() => [])
@@ -26,7 +31,7 @@ export async function MainHeader() {
           </div>
 
           <div className="shrink-0">
-            <AccountMenu />
+            <UserActions />
           </div>
         </div>
 
