@@ -25,6 +25,7 @@ import {
 import { CustomCheckbox } from "../shared/checkbox"
 import { X } from "lucide-react"
 import { Button } from "../ui/button"
+import Link from "next/link"
 
 // 수량 조절 컴포넌트
 const QuantityControl = ({
@@ -89,6 +90,8 @@ interface CartCardProps {
   showMembershipHint?: boolean
   quantity?: number
   onQuantityChange?: (quantity: number) => void
+  productId?: string
+  countryCode?: string
 }
 
 /**
@@ -111,7 +114,10 @@ export const CartCard = ({
   showMembershipHint = false,
   quantity = 1,
   onQuantityChange,
+  productId,
+  countryCode = "kr",
 }: CartCardProps) => {
+  const productLink = productId ? `/${countryCode}/products/${productId}` : undefined
   return (
     <>
       {/* 모바일 버전 (768px 미만) */}
@@ -139,9 +145,21 @@ export const CartCard = ({
           }
         >
           <div className="flex gap-4">
-            <CartCardThumbnail src={thumbnail} />
+            {productLink ? (
+              <Link href={productLink} className="shrink-0">
+                <CartCardThumbnail src={thumbnail} />
+              </Link>
+            ) : (
+              <CartCardThumbnail src={thumbnail} />
+            )}
             <CartCardContent>
-              <CartCardTitle>{title}</CartCardTitle>
+              {productLink ? (
+                <Link href={productLink} className="hover:text-blue-600">
+                  <CartCardTitle>{title}</CartCardTitle>
+                </Link>
+              ) : (
+                <CartCardTitle>{title}</CartCardTitle>
+              )}
               {option && <CartCardOption>{option}</CartCardOption>}
               {brand && <CartCardBrand>{brand}</CartCardBrand>}
               {badge && <CartCardBadge>{badge}</CartCardBadge>}
@@ -183,7 +201,13 @@ export const CartCard = ({
 
               {/* 상품명과 옵션 */}
               <CartCardPCInfo>
-                <CartCardPCTitle>{title}</CartCardPCTitle>
+                {productLink ? (
+                  <Link href={productLink} className="hover:text-blue-600">
+                    <CartCardPCTitle>{title}</CartCardPCTitle>
+                  </Link>
+                ) : (
+                  <CartCardPCTitle>{title}</CartCardPCTitle>
+                )}
                 {option && <CartCardPCOption>{option}</CartCardPCOption>}
               </CartCardPCInfo>
             </div>
@@ -202,7 +226,13 @@ export const CartCard = ({
 
           {/* 이미지와 가격/수량 정보 영역 */}
           <CartCardPCImageSection>
-            <CartCardPCThumbnail src={thumbnail} alt={title} />
+            {productLink ? (
+              <Link href={productLink} className="shrink-0">
+                <CartCardPCThumbnail src={thumbnail} alt={title} />
+              </Link>
+            ) : (
+              <CartCardPCThumbnail src={thumbnail} alt={title} />
+            )}
             <CartCardPCContent>
               {badge && <CartCardPCBadge>{badge}</CartCardPCBadge>}
               <CartCardPCPrice

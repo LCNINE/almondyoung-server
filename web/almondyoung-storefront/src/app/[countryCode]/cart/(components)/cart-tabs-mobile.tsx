@@ -16,6 +16,7 @@ interface CartTabsMobileProps {
   onCheckItem: (id: string, checked: boolean) => void
   onDeleteItem: (id: string) => void
   onQuantityChange: (id: string, quantity: number) => void
+  countryCode?: string
 }
 
 export function CartTabsMobile({
@@ -27,6 +28,7 @@ export function CartTabsMobile({
   onCheckItem,
   onDeleteItem,
   onQuantityChange,
+  countryCode = "kr",
 }: CartTabsMobileProps) {
   const isAllChecked =
     cartItems.length > 0 && checkedItems.length === cartItems.length
@@ -72,6 +74,7 @@ export function CartTabsMobile({
                   onDelete={onDeleteItem}
                   onQuantityChange={onQuantityChange}
                   variant="mobile"
+                  countryCode={countryCode}
                 />
               </div>
             </div>

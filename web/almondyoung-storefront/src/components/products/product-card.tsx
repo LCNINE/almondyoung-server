@@ -14,6 +14,7 @@ import {
   ProductThumbnail,
   ProductTitle,
 } from "./atomics"
+import { ProductQuickActions } from "./prodcut-card/parts/product-quick-actions"
 
 /**
  * 추후 사라질 레거시코드
@@ -31,12 +32,18 @@ const ProductInfo = ({
   timeLeft,
   rankInfo: { show, rank },
   minWidth = 130,
+  showQuickActions = false,
+  countryCode = "kr",
+  isLoggedIn = false,
 }: {
   product: UIProductCard
   showTimer?: boolean
   timeLeft?: { hours: number; minutes: number; seconds: number } | null
   rankInfo: { show: boolean; rank: number }
   minWidth?: number
+  showQuickActions?: boolean
+  countryCode?: string
+  isLoggedIn?: boolean
 }) => {
   const { addToCart } = useAddToCart()
   const { status } = useMembership()
@@ -113,11 +120,22 @@ const ProductInfo = ({
             : "https://placehold.co/240x240?text=No+Image"
         }
         alt={product.name}
-        showCartIcon={showCartIcon}
+        showCartIcon={!showQuickActions && showCartIcon}
         timer={showTimer && timeLeft ? formatTimer(timeLeft) : undefined}
         rankInfo={{ show: show, rank: rank }}
         isSoldOut={isSoldOut}
         onCartClick={() => addToCart({ variantId: product.id, quantity: 1 })}
+        action={
+          showQuickActions && !isSoldOut ? (
+            <ProductQuickActions
+              productId={product.id}
+              variantId={product.optionMeta?.defaultVariantId}
+              isSingleOption={product.optionMeta?.isSingle ?? false}
+              isLoggedIn={isLoggedIn}
+              countryCode={countryCode}
+            />
+          ) : undefined
+        }
       />
 
       <div className="flex flex-col gap-0 md:gap-1">
@@ -218,15 +236,24 @@ const useTimer = (
 export function BasicProductCard({
   product,
   minWidth = 130,
+  showQuickActions = false,
+  countryCode = "kr",
+  isLoggedIn = false,
 }: {
   product: UIProductCard
   minWidth?: number
+  showQuickActions?: boolean
+  countryCode?: string
+  isLoggedIn?: boolean
 }) {
   return (
     <ProductInfo
       product={product}
       rankInfo={{ show: false, rank: 0 }}
       minWidth={minWidth}
+      showQuickActions={showQuickActions}
+      countryCode={countryCode}
+      isLoggedIn={isLoggedIn}
     />
   )
 }

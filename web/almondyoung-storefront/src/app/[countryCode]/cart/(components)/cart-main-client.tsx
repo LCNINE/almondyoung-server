@@ -313,6 +313,7 @@ export function CartMainClient() {
                 onCheckItem={handleCheckItem}
                 onDeleteItem={handleDeleteItem}
                 onQuantityChange={handleQuantityChange}
+                countryCode={countryCode}
               />
 
               {/* PC 버전 컨텐츠 */}
@@ -325,6 +326,7 @@ export function CartMainClient() {
                 onCheckItem={handleCheckItem}
                 onDeleteItem={handleDeleteItem}
                 onQuantityChange={handleQuantityChange}
+                countryCode={countryCode}
               />
             </div>
 

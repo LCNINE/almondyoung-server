@@ -17,6 +17,7 @@ import { getCategoryBestProducts } from "../../actions/get-category-products"
 import { SectionHeader } from "../../header/section-header"
 import { ProductCarousel } from "../../shared/product-carousel"
 import { CategoryTabs } from "./category-tabs"
+import { useUser } from "@/contexts/user-context"
 
 interface CategoryBestSectionProps {
   initialCategories: StoreProductCategoryTree[]
@@ -32,6 +33,8 @@ export function CategoryBestSection({
   const params = useParams() as { countryCode?: string }
   const countryCode = params?.countryCode || "kr"
   const [isPending, startTransition] = useTransition()
+  const { user } = useUser()
+  const isLoggedIn = !!user
 
   const bestCategories = initialCategories.slice(0, 7)
   const [products, setProducts] = useState<ProductCardProps[]>(
@@ -157,6 +160,17 @@ export function CategoryBestSection({
                                           rank={
                                             <ProductCard.Rank rank={rank} />
                                           }
+                                          action={
+                                            (product as any).optionMeta ? (
+                                              <ProductCard.QuickActions
+                                                productId={product.id}
+                                                variantId={(product as any).optionMeta?.defaultVariantId}
+                                                isSingleOption={(product as any).optionMeta?.isSingle ?? false}
+                                                isLoggedIn={isLoggedIn}
+                                                countryCode={countryCode}
+                                              />
+                                            ) : undefined
+                                          }
                                           className="rounded-tl-sm rounded-tr-xl rounded-br-xl rounded-bl-md"
                                         />
                                         <ProductCard.Info {...product} />
@@ -177,8 +191,10 @@ export function CategoryBestSection({
                       <ProductGrid
                         products={products.slice(0, 10)}
                         showRank={true}
+                        showQuickActions
                         roundedClassName="rounded-sm md:rounded-md"
                         countryCode={countryCode}
+                        isLoggedIn={isLoggedIn}
                       />
                     </div>
                   </TabsContent>

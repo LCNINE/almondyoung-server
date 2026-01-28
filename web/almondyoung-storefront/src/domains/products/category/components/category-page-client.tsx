@@ -7,9 +7,9 @@ import {
   TimeSaleProductCard,
 } from "@components/products/product-card"
 import ProductFilterSidebar from "@/components/products/product-filter-sidebar"
-import ProductSortToolbar from "@/components/products/product-sort-toolbar"
 import { SectionSliderHorizontal } from "@components/section-sliders-horizontal"
-import { ChevronLeft, ChevronRight, SlidersHorizontal } from "lucide-react"
+import { SharedPagination } from "@/components/shared/pagination"
+import { SlidersHorizontal, ChevronDown } from "lucide-react"
 import { overlay } from "overlay-kit"
 import { MobileFilterSheet } from "./mobile-filter-sheet"
 import CustomDropdown from "@components/dropdown"
@@ -19,6 +19,8 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { useCallback, useEffect, useState, useTransition } from "react"
 import { getProductList } from "@lib/api/medusa/products"
 import { mapMedusaProductsToCards } from "@lib/utils/map-medusa-product-card"
+import { cn } from "@lib/utils"
+import { useUser } from "@/contexts/user-context"
 
 // 프론트 전용 타입(CategoryInfo)을 별도로 쓰기보다
 // 가능하면 DTO나 간단한 인터페이스로 유지하는 것이 좋습니다.
@@ -33,11 +35,25 @@ const SORT_OPTIONS = {
   ranking: undefined, // 기본 정렬 (Medusa 기본)
   "price-asc": "variants.calculated_price", // 가격 낮은순
   "price-desc": "-variants.calculated_price", // 가격 높은순
-  sales: undefined, // 판매량순 (Medusa에서 지원하지 않으면 클라이언트 정렬 필요)
+  sales: "-metadata.salesCount", // 판매량순
   newest: "-created_at", // 최신순
 } as const
 
-const ITEMS_PER_PAGE = 20
+const SORT_LABELS = [
+  { id: "ranking", label: "아몬드영 랭킹 순" },
+  { id: "price-asc", label: "낮은가격순" },
+  { id: "price-desc", label: "높은가격순" },
+  { id: "sales", label: "판매량순" },
+  { id: "newest", label: "최신순" },
+]
+
+const ITEMS_PER_PAGE_OPTIONS = [
+  { value: "20", label: "20개씩 보기" },
+  { value: "40", label: "40개씩 보기" },
+  { value: "60", label: "60개씩 보기" },
+]
+
+const DEFAULT_ITEMS_PER_PAGE = 20
 
 interface CategoryPageClientProps {
   slug: string
@@ -48,6 +64,7 @@ interface CategoryPageClientProps {
   countryCode: string
   categoryIds?: string[] // 카테고리 ID 목록
   regionId?: string // 지역 ID
+  allCategories?: StoreProductCategoryTree[] // 전체 카테고리 트리
 }
 
 export function CategoryPageClient({
@@ -59,23 +76,27 @@ export function CategoryPageClient({
   countryCode,
   categoryIds = [],
   regionId,
+  allCategories = [],
 }: CategoryPageClientProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [isPending, startTransition] = useTransition()
+  const { user } = useUser()
+  const isLoggedIn = !!user
 
-  // URL에서 페이지와 정렬 파라미터 읽기
+  // URL에서 페이지, 정렬, 개수 파라미터 읽기
   const currentPage = Number(searchParams.get("page")) || 1
   const currentSort = searchParams.get("sort") || "ranking"
+  const currentLimit = Number(searchParams.get("limit")) || DEFAULT_ITEMS_PER_PAGE
 
   // 상품 목록 상태
   const [products, setProducts] = useState<ProductCard[]>(initialProducts)
   const [total, setTotal] = useState(initialTotal)
-  const totalPages = Math.ceil(total / ITEMS_PER_PAGE)
+  const totalPages = Math.ceil(total / currentLimit)
 
   // URL 파라미터 업데이트 함수
   const updateParams = useCallback(
-    (params: { page?: number; sort?: string }) => {
+    (params: { page?: number; sort?: string; limit?: number }) => {
       const newParams = new URLSearchParams(searchParams.toString())
 
       if (params.page !== undefined) {
@@ -96,6 +117,16 @@ export function CategoryPageClient({
         newParams.delete("page")
       }
 
+      if (params.limit !== undefined) {
+        if (params.limit === DEFAULT_ITEMS_PER_PAGE) {
+          newParams.delete("limit")
+        } else {
+          newParams.set("limit", String(params.limit))
+        }
+        // 개수 변경 시 페이지 1로 초기화
+        newParams.delete("page")
+      }
+
       const queryString = newParams.toString()
       router.push(queryString ? `?${queryString}` : window.location.pathname, {
         scroll: false,
@@ -104,10 +135,10 @@ export function CategoryPageClient({
     [router, searchParams]
   )
 
-  // 페이지/정렬 변경 시 데이터 로드
+  // 페이지/정렬/개수 변경 시 데이터 로드
   useEffect(() => {
-    // 초기 로드 시에는 서버에서 받은 데이터 사용
-    if (currentPage === 1 && currentSort === "ranking") {
+    // 초기 로드 시에는 서버에서 받은 데이터 사용 (기본 설정일 때만)
+    if (currentPage === 1 && currentSort === "ranking" && currentLimit === DEFAULT_ITEMS_PER_PAGE) {
       setProducts(initialProducts)
       setTotal(initialTotal)
       return
@@ -119,7 +150,7 @@ export function CategoryPageClient({
           SORT_OPTIONS[currentSort as keyof typeof SORT_OPTIONS]
         const result = await getProductList({
           page: currentPage,
-          limit: ITEMS_PER_PAGE,
+          limit: currentLimit,
           categoryId: categoryIds,
           region_id: regionId,
           order: sortOrder,
@@ -133,6 +164,7 @@ export function CategoryPageClient({
   }, [
     currentPage,
     currentSort,
+    currentLimit,
     categoryIds,
     regionId,
     initialProducts,
@@ -159,7 +191,11 @@ export function CategoryPageClient({
       <div className="container mx-auto max-w-[1360px]">
         <div className="flex px-4 py-6 md:gap-[40px] md:px-[40px]">
           <aside className="hidden w-[233px] shrink-0 md:block">
-            <ProductFilterSidebar />
+            <ProductFilterSidebar
+              categories={allCategories}
+              currentCategoryId={categoryData.id}
+              countryCode={countryCode}
+            />
           </aside>
           <div className="min-w-0 flex-1">
             {/* 카테고리 헤더(타이틀/설명/배너) */}
@@ -216,46 +252,68 @@ export function CategoryPageClient({
               </SectionSliderHorizontal>
             )}
             <section>
-              {/* 상품 수 및 정렬 정보 */}
-              <div className="mb-4 flex items-center justify-between">
+              {/* 모바일: 필터 버튼 + 정렬 툴바 */}
+              <div className="mb-4 flex items-center justify-between md:hidden">
                 <p className="text-sm text-gray-600">
                   총{" "}
                   <span className="font-semibold text-gray-900">{total}</span>개
-                  상품
                 </p>
-              </div>
-
-              {/* 모바일: 필터 버튼 + 정렬 툴바 */}
-              <div className="mb-4 flex justify-end gap-4 md:hidden">
-                <div>
+                <div className="flex items-center gap-3">
                   <CustomDropdown
-                    items={[
-                      { id: "ranking", label: "인기순" },
-                      { id: "price-asc", label: "낮은가격순" },
-                      { id: "price-desc", label: "높은가격순" },
-                      { id: "sales", label: "판매량순" },
-                      { id: "newest", label: "최신순" },
-                    ]}
+                    items={SORT_LABELS}
                     defaultValue={currentSort}
                     onSelect={(id) => updateParams({ sort: id })}
                   />
+                  <button
+                    onClick={openMobileFilter}
+                    className="flex h-10 items-center gap-2 font-['Pretendard'] text-sm font-medium text-gray-700 transition-colors"
+                    aria-label="필터 열기"
+                  >
+                    필터
+                    <SlidersHorizontal className="h-4 w-4" />
+                  </button>
                 </div>
-                <button
-                  onClick={openMobileFilter}
-                  className="flex h-10 items-center gap-2 font-['Pretendard'] text-sm font-medium text-gray-700 transition-colors"
-                  aria-label="필터 열기"
-                >
-                  필터
-                  <SlidersHorizontal className="h-4 w-4" />
-                </button>
               </div>
 
-              {/* 데스크톱: 정렬 툴바만 */}
-              <div className="hidden md:block">
-                <ProductSortToolbar
-                  activeSort={currentSort}
-                  onSortChange={(sort) => updateParams({ sort })}
-                />
+              {/* 데스크톱: 정렬 툴바 + n개씩 보기 */}
+              <div className="mb-5 hidden items-center justify-between bg-gray-100 px-3.5 py-2.5 md:flex">
+                {/* 정렬 옵션 */}
+                <div className="flex items-center divide-x divide-gray-300">
+                  {SORT_LABELS.map((option, index) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => updateParams({ sort: option.id })}
+                      className={cn(
+                        "font-['Pretendard'] text-base",
+                        index > 0 ? "pl-4" : "",
+                        index < SORT_LABELS.length - 1 ? "pr-4" : "",
+                        currentSort === option.id
+                          ? "font-bold text-stone-900"
+                          : "font-normal text-gray-500 hover:text-stone-900"
+                      )}
+                      aria-pressed={currentSort === option.id}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* n개씩 보기 드롭다운 */}
+                <div className="relative">
+                  <select
+                    value={currentLimit}
+                    onChange={(e) => updateParams({ limit: Number(e.target.value) })}
+                    className="appearance-none bg-transparent pr-6 font-['Pretendard'] text-base font-normal text-gray-700 focus:outline-none"
+                  >
+                    {ITEMS_PER_PAGE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-0 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-500" />
+                </div>
               </div>
             </section>
             <section className="relative">
@@ -274,67 +332,20 @@ export function CategoryPageClient({
                       <BasicProductCard
                         key={`${product.id}-${idx}`}
                         product={product}
+                        showQuickActions
+                        countryCode={countryCode}
+                        isLoggedIn={isLoggedIn}
                       />
                     ))}
                   </div>
 
                   {/* 페이지네이션 */}
-                  {totalPages > 1 && (
-                    <div className="mt-8 flex items-center justify-center gap-2">
-                      <button
-                        onClick={() =>
-                          updateParams({ page: Math.max(1, currentPage - 1) })
-                        }
-                        disabled={currentPage === 1}
-                        className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
-                        aria-label="이전 페이지"
-                      >
-                        <ChevronLeft className="h-5 w-5" />
-                      </button>
-
-                      {/* 페이지 번호 */}
-                      {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                        // 현재 페이지 중심으로 5개 페이지 표시
-                        let pageNum: number
-                        if (totalPages <= 5) {
-                          pageNum = i + 1
-                        } else if (currentPage <= 3) {
-                          pageNum = i + 1
-                        } else if (currentPage >= totalPages - 2) {
-                          pageNum = totalPages - 4 + i
-                        } else {
-                          pageNum = currentPage - 2 + i
-                        }
-
-                        return (
-                          <button
-                            key={pageNum}
-                            onClick={() => updateParams({ page: pageNum })}
-                            className={`flex h-10 w-10 items-center justify-center rounded-lg text-sm font-medium ${
-                              currentPage === pageNum
-                                ? "bg-blue-500 text-white"
-                                : "border border-gray-300 text-gray-700 hover:bg-gray-100"
-                            }`}
-                          >
-                            {pageNum}
-                          </button>
-                        )
-                      })}
-
-                      <button
-                        onClick={() =>
-                          updateParams({
-                            page: Math.min(totalPages, currentPage + 1),
-                          })
-                        }
-                        disabled={currentPage === totalPages}
-                        className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
-                        aria-label="다음 페이지"
-                      >
-                        <ChevronRight className="h-5 w-5" />
-                      </button>
-                    </div>
-                  )}
+                  <SharedPagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    onPageChange={(page) => updateParams({ page })}
+                    className="mt-8"
+                  />
                 </>
               ) : (
                 <div className="flex min-h-[200px] items-center justify-center">
