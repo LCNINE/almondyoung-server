@@ -10,6 +10,7 @@ import type {
   CreateHmsCardProfileRequest,
   CreateIntentRequestDto,
   CreateIntentResponseDto,
+  IntentDto,
   OnboardHmsBnplResponse,
   PointBalanceDto,
   TaxInvoiceData,
@@ -261,6 +262,12 @@ export async function createIntent({ data }: { data: CreateIntentRequestDto }) {
   return result
 }
 
+export async function getIntent(intentId: string): Promise<IntentDto> {
+  return await api<IntentDto>("wallet", `/payments/intents/${intentId}`, {
+    method: "GET",
+    withAuth: true,
+  })
+}
 // ==========================================
 // 결제 비밀번호 (PIN) 관련 API
 // ==========================================

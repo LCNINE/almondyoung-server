@@ -16,7 +16,7 @@ import {
 import type { ShippingInfo } from "@/lib/types/ui/cart"
 import type { Promotion } from "@/lib/types/ui/promotion"
 import { formatPrice } from "@/lib/utils/price-utils"
-import { useCallback, useState, useTransition } from "react"
+import { useCallback, useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
 
 interface DiscountSectionProps {
@@ -96,28 +96,6 @@ export const DiscountSection = ({
     })
   }, [cartId, selectedCoupon, onCouponApplied])
 
-  const handlePointsInputChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const rawValue = e.target.value
-      const numericValue = parseNumber(rawValue)
-
-      // 사용 가능 금액 초과 방지
-      const clampedValue = Math.min(numericValue, availablePoints)
-
-      setPointsInput(clampedValue === 0 ? "0" : formatPrice(clampedValue))
-      setPointsUsed(clampedValue)
-      onPointsChange?.(clampedValue)
-    },
-    [availablePoints, onPointsChange]
-  )
-
-  // 전액사용 핸들러
-  const handleUseAll = useCallback(() => {
-    setPointsInput(availablePoints === 0 ? "0" : formatPrice(availablePoints))
-    setPointsUsed(availablePoints)
-    onPointsChange?.(availablePoints)
-  }, [availablePoints, onPointsChange])
-
   // 쿠폰 할인 금액 계산
   const appliedPromotion = selectedCoupon
     ? promotions.find((p) => p.code === selectedCoupon)
@@ -130,6 +108,46 @@ export const DiscountSection = ({
         )
       : (appliedPromotion.application_method?.value ?? 0)
     : 0
+
+  // 적립금 사용 가능 상한 = min(잔액, 주문금액 - 기타할인)
+  const orderTotalBeforePoints =
+    itemSubtotal + shipping.amount - membershipDiscount - couponDiscount
+  const maxUsablePoints = Math.max(
+    0,
+    Math.min(availablePoints, orderTotalBeforePoints)
+  )
+
+  // 쿠폰 변경 등으로 상한이 바뀌면 적립금 사용량 자동 조정
+  useEffect(() => {
+    if (pointsUsed > maxUsablePoints) {
+      const adjusted = maxUsablePoints
+      setPointsInput(adjusted === 0 ? "0" : formatPrice(adjusted))
+      setPointsUsed(adjusted)
+      onPointsChange?.(adjusted)
+    }
+  }, [maxUsablePoints, pointsUsed, onPointsChange])
+
+  const handlePointsInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const rawValue = e.target.value
+      const numericValue = parseNumber(rawValue)
+
+      // 사용 가능 금액 초과 방지: min(입력값, 잔액, 주문금액)
+      const clampedValue = Math.min(numericValue, maxUsablePoints)
+
+      setPointsInput(clampedValue === 0 ? "0" : formatPrice(clampedValue))
+      setPointsUsed(clampedValue)
+      onPointsChange?.(clampedValue)
+    },
+    [maxUsablePoints, onPointsChange]
+  )
+
+  // 전액사용 핸들러
+  const handleUseAll = useCallback(() => {
+    setPointsInput(maxUsablePoints === 0 ? "0" : formatPrice(maxUsablePoints))
+    setPointsUsed(maxUsablePoints)
+    onPointsChange?.(maxUsablePoints)
+  }, [maxUsablePoints, onPointsChange])
 
   // 총 할인 금액 = 멤버십 할인 + 쿠폰 할인 + 적립금 사용
   const totalDiscount = membershipDiscount + couponDiscount + pointsUsed
