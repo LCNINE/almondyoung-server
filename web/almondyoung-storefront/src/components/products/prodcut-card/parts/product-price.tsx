@@ -15,12 +15,12 @@ export function ProductPrice({
   showMembershipHint?: boolean
   showMembershipBadge?: boolean
 }) {
-  const hasMembershipPrice =
-    membershipSavings != null && membershipSavings > 0
+  // 멤버십 회원이고 할인이 있는 경우에만 할인 정보 표시
+  const showDiscountInfo = discount > 0 && showMembershipBadge
 
   return (
     <>
-      {hasMembershipPrice && (
+      {showDiscountInfo && (
         <div className="text-[13px] text-gray-400">
           <span className="font-bold">{discount}% </span>
           <span className="line-through">
