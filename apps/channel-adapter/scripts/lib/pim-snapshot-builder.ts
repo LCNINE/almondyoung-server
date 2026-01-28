@@ -1,5 +1,5 @@
 // apps/channel-adapter/scripts/lib/pim-snapshot-builder.ts
-import postgres from 'postgres';
+import * as postgres from 'postgres';
 import type { PimProductSnapshot } from '../../src/types';
 
 // Database row types
@@ -73,7 +73,7 @@ interface OptionGroupRow {
  * Total: 4 queries for 100 products (vs 100+ API calls)
  */
 export class PimSnapshotBuilder {
-  constructor(private readonly pimDb: postgres.Sql) {}
+  constructor(private readonly pimDb: postgres.Sql) { }
 
   /**
    * Fetch active product masters with full snapshots
