@@ -49,6 +49,8 @@ type Props = {
   onAddToCart: () => void | Promise<boolean>
   onBuyNow: () => void | Promise<void>
   isAddToCartLoading?: boolean
+  rating?: number
+  reviewCount?: number
 }
 
 /**
@@ -73,6 +75,8 @@ export function ProductSidebarPurchase({
   onAddToCart,
   onBuyNow,
   isAddToCartLoading = false,
+  rating,
+  reviewCount,
 }: Props) {
   const router = useRouter()
   const pathname = usePathname()
@@ -163,8 +167,8 @@ export function ProductSidebarPurchase({
 
           {/* 평점 */}
           <ProductRatingDisplay
-            rating={product.rating || 0}
-            reviewCount={product.reviewCount || 0}
+            rating={rating ?? product.rating ?? 0}
+            reviewCount={reviewCount ?? product.reviewCount ?? 0}
           />
 
           {/* 가격 */}

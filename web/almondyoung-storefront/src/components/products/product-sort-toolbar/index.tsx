@@ -1,4 +1,3 @@
-import React from "react"
 // [참고] ChevronDown은 이제 데스크탑 '60개씩 보기'에만 사용됩니다.
 import { ChevronDown } from "lucide-react"
 
@@ -12,8 +11,21 @@ const sortOptions = [
   { id: "newest", label: "최신순" },
 ]
 
-export default function ProductSortToolbar() {
-  const [activeSort, setActiveSort] = React.useState("ranking")
+interface ProductSortToolbarProps {
+  activeSort?: string
+  onSortChange?: (sort: string) => void
+}
+
+export default function ProductSortToolbar({
+  activeSort: controlledActiveSort,
+  onSortChange,
+}: ProductSortToolbarProps = {}) {
+  // 제어/비제어 모드 지원
+  const activeSort = controlledActiveSort ?? "ranking"
+
+  const handleSortChange = (sort: string) => {
+    onSortChange?.(sort)
+  }
 
   return (
     <div className="mb-[20px] flex items-center self-stretch py-2.5 md:justify-between md:bg-gray-100 md:px-3.5">
@@ -25,7 +37,7 @@ export default function ProductSortToolbar() {
           <button
             key={option.id}
             type="button"
-            onClick={() => setActiveSort(option.id)}
+            onClick={() => handleSortChange(option.id)}
             className={`font-['Pretendard'] text-base ${index > 0 ? "pl-4" : ""} ${index < sortOptions.length - 1 ? "pr-4" : ""} ${
               activeSort === option.id
                 ? "font-bold text-stone-900" // 활성

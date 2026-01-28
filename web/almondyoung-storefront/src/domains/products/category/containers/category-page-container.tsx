@@ -44,9 +44,9 @@ export async function CategoryPageContainer({
 
   let initialProducts: any[] = []
   let initialTotal = 0
+  const categoryIds = collectCategoryIds(categoryData)
 
   try {
-    const categoryIds = collectCategoryIds(categoryData)
     const productsResult = await getProductList({
       page: 1,
       limit: 20,
@@ -68,6 +68,8 @@ export async function CategoryPageContainer({
       initialProducts={initialProducts}
       initialTotal={initialTotal}
       countryCode={countryCode}
+      categoryIds={categoryIds}
+      regionId={region?.id}
     />
   )
 }

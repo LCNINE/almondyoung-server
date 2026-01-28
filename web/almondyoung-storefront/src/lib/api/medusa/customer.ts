@@ -181,6 +181,43 @@ export const deleteCustomerAddress = async (
     })
 }
 
+/**
+ * 고객 주문 목록 조회
+ */
+export const getCustomerOrders = async (params?: {
+  limit?: number
+  offset?: number
+}): Promise<{ orders: HttpTypes.StoreOrder[]; count: number } | null> => {
+  const authHeaders = await getAuthHeaders()
+
+  if (!authHeaders) return null
+
+  const headers = {
+    ...authHeaders,
+  }
+
+  try {
+    const response = await sdk.store.order.list(
+      {
+        limit: params?.limit ?? 10,
+        offset: params?.offset ?? 0,
+        fields:
+          "*items,*items.variant,*items.variant.product,*shipping_address,*billing_address",
+      },
+      {},
+      headers
+    )
+
+    return {
+      orders: response.orders,
+      count: response.count ?? 0,
+    }
+  } catch (error) {
+    console.error("주문 목록 조회 실패:", error)
+    return null
+  }
+}
+
 export const setDefaultShippingAddress = async (
   addressId: string
 ): Promise<{ success: boolean; error: string | null }> => {

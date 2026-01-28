@@ -2,6 +2,7 @@ import { cn } from "@lib/utils"
 import { ProductThumbnail } from "./parts/product-thumbnail"
 import { ProductInfo } from "./parts/product-info"
 import { ProductRank } from "./parts/product-rank"
+import { ProductQuickActions } from "./parts/product-quick-actions"
 
 interface ProductCardProps {
   children: React.ReactNode
@@ -24,3 +25,4 @@ export function ProductCard({ children, className }: ProductCardProps) {
 ProductCard.Thumbnail = ProductThumbnail
 ProductCard.Info = ProductInfo
 ProductCard.Rank = ProductRank
+ProductCard.QuickActions = ProductQuickActions

@@ -5,18 +5,22 @@ import type { ProductCardProps } from "@/lib/types/ui/product"
 
 interface ProductGridProps {
   products: ProductCardProps[]
-  showRank: boolean
+  showRank?: boolean
+  showQuickActions?: boolean
   className?: string
   roundedClassName?: string
   countryCode?: string
+  isLoggedIn?: boolean
 }
 
 export function ProductGrid({
   products,
   showRank = false,
+  showQuickActions = false,
   className,
   roundedClassName,
   countryCode,
+  isLoggedIn = false,
 }: ProductGridProps) {
   return (
     <div
@@ -33,6 +37,18 @@ export function ProductGrid({
               src={product.imageSrc}
               alt={product.title}
               rank={rank && <ProductCard.Rank rank={rank} />}
+              action={
+                showQuickActions && (product as any).optionMeta ? (
+                  <ProductCard.QuickActions
+                    productId={product.id}
+                    variantId={(product as any).optionMeta?.defaultVariantId}
+                    isSingleOption={(product as any).optionMeta?.isSingle ?? false}
+                    isWishlisted={(product as any).userMeta?.isWishlisted ?? false}
+                    isLoggedIn={isLoggedIn}
+                    countryCode={countryCode}
+                  />
+                ) : undefined
+              }
               className={roundedClassName}
             />
             <ProductCard.Info {...product} />

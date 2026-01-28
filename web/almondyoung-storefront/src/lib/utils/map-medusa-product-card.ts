@@ -53,6 +53,7 @@ export const mapMedusaProductToCard = (product: StoreProduct): ProductCard => {
     timeSaleEndTime: timeSaleInfo.endTime,
     optionMeta: {
       isSingle: (product.variants?.length ?? 0) <= 1,
+      defaultVariantId: defaultVariant?.id,
     },
   }
 }
