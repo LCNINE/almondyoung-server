@@ -47,13 +47,16 @@ export function CartControls({
     <div className="border-b border-gray-200 px-8 py-4">
       <div className="flex items-center justify-between">
         <label className="flex items-center gap-3">
-          <CustomCheckbox
-            checked={isAllChecked}
-            onCheckedChange={onCheckAll}
-          />
+          <CustomCheckbox checked={isAllChecked} onCheckedChange={onCheckAll} />
           <span className="text-base font-semibold">전체 선택</span>
         </label>
-        <CustomButton onClick={onDeleteSelected} variant="outline" size="sm">
+        <CustomButton
+          onClick={onDeleteSelected}
+          variant="outline"
+          color="primary"
+          size="sm"
+          className="hover:bg-background cursor-pointer"
+        >
           선택삭제
         </CustomButton>
       </div>

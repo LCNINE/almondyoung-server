@@ -5,6 +5,7 @@ import { Card, CardContent } from "@components/common/ui/card"
 import { BnplProfileDto } from "@lib/types/dto/wallet"
 import { ChevronRight } from "lucide-react"
 import EmptyState from "../empty-state"
+import { useBnplModalStore } from "../store/bnpl-modal-store"
 
 interface AccountSectionProps {
   defaultBnplProfile: BnplProfileDto | null
@@ -35,6 +36,8 @@ export default function AccountSection({
   }
 
   if (!defaultBnplProfile) {
+    const { openModal } = useBnplModalStore()
+
     return (
       <EmptyState
         message="계좌"
@@ -43,6 +46,7 @@ export default function AccountSection({
           <Button
             variant="ghost"
             className="w-full cursor-pointer px-0! font-medium hover:bg-transparent hover:text-inherit sm:w-auto md:px-6"
+            onClick={openModal}
           >
             <span className="w-full text-left font-bold">
               등록한 계좌가 없어요

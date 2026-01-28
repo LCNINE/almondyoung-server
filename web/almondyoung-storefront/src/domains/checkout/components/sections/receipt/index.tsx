@@ -2,8 +2,10 @@
 
 import CustomRadio from "@/components/shared/custom-radio"
 import { Button } from "@/components/ui/button"
-import type { TaxInvoiceType } from "@/lib/types/ui/wallet"
+import type { CashReceiptData } from "@/lib/types/dto/wallet"
+import type { CashReceiptType, TaxInvoiceType } from "@/lib/types/ui/wallet"
 import { useState } from "react"
+import { CashReceiptModal } from "./cash-receipt-modal"
 import { TaxInvoiceModal } from "./tax-invoice-modal"
 
 // 현금영수증/세금계산서 섹션
@@ -13,16 +15,28 @@ export const ReceiptSection = ({
   taxInvoiceOption,
   setTaxInvoiceOption,
   taxInvoice,
+  cashReceipt,
 }: {
   cashReceiptOption: string
   setCashReceiptOption: (value: string) => void
   taxInvoiceOption: string
   setTaxInvoiceOption: (value: string) => void
   taxInvoice?: TaxInvoiceType
+  cashReceipt?: CashReceiptType
 }) => {
   const [taxInvoiceModalOpen, setTaxInvoiceModalOpen] = useState(false)
+  const [cashReceiptModalOpen, setCashReceiptModalOpen] = useState(false)
+  const [localCashReceipt, setLocalCashReceipt] = useState<
+    CashReceiptData | undefined
+  >(cashReceipt?.defaultInfo) // 임시임
 
   const taxInvoiceData = taxInvoice?.defaultBusinessInfo
+  const cashReceiptData = localCashReceipt
+
+  // 임시임 api 생기면 그걸로할거같음
+  const handleCashReceiptSave = (data: CashReceiptData) => {
+    setLocalCashReceipt(data)
+  }
 
   return (
     <section className="mb-8">
@@ -51,18 +65,47 @@ export const ReceiptSection = ({
               />
             </div>
           </div>
-          {cashReceiptOption === "apply" && (
-            <div className="mt-3 rounded-lg bg-[#fff] p-4">
+          {/* 신청함 선택 시 - 데이터 없음 */}
+          {cashReceiptOption === "apply" && !cashReceiptData && (
+            <div className="mt-3 rounded-lg bg-white p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <p className="text-sm text-gray-500">
+                  등록된 현금영수증 정보가 없습니다.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCashReceiptModalOpen(true)}
+                  className="w-fit shrink-0"
+                >
+                  추가
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* 신청함 선택 시 - 데이터 있음 */}
+          {cashReceiptOption === "apply" && cashReceiptData && (
+            <div className="mt-3 rounded-lg bg-white p-4">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div>
-                  <p className="text-sm font-semibold text-gray-800">사업자</p>
+                  <p className="text-sm font-semibold text-gray-800">
+                    {cashReceiptData.type === "business" ? "사업자" : "개인"}
+                  </p>
                   <p className="mt-1 text-sm text-gray-500">
-                    바나뷰티 010-101010-1020
+                    {cashReceiptData.name} {cashReceiptData.number}
                   </p>
                 </div>
-                <button className="w-fit rounded border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-600">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCashReceiptModalOpen(true)}
+                  className="w-fit shrink-0"
+                >
                   변경
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -142,6 +185,14 @@ export const ReceiptSection = ({
           )}
         </div>
       </div>
+
+      {/* 현금영수증 모달 */}
+      <CashReceiptModal
+        open={cashReceiptModalOpen}
+        onOpenChange={setCashReceiptModalOpen}
+        initialData={cashReceiptData}
+        onSave={handleCashReceiptSave}
+      />
 
       {/* 세금계산서 모달 */}
       <TaxInvoiceModal

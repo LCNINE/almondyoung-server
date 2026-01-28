@@ -5,8 +5,8 @@ import { Form } from "@components/common/ui/form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { registerPin, resetPin } from "@lib/api/wallet"
 import { AlertCircle, CheckCircle2 } from "lucide-react"
-import { useRouter, useSearchParams } from "next/navigation"
-import { useState, useTransition } from "react"
+import { useRouter } from "next/navigation"
+import { useState, useTransition, useEffect } from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
 import { usePinKeypad } from "./hooks/use-pin-keypad"
@@ -20,19 +20,20 @@ import PinDots from "./shared/pin-dots"
 type Step = "input" | "confirm" | "success"
 
 export default function PinSetupForm({
+  redirectTo,
   isForgetPinPage = false,
 }: {
+  redirectTo?: string
   isForgetPinPage?: boolean
 }) {
   const router = useRouter()
-  const searchParams = useSearchParams()
-  const redirectTo = searchParams.get("redirect_to")
 
   const [step, setStep] = useState<Step>("input")
   const [isShaking, setIsShaking] = useState(false)
   const { shuffledNumbers, shuffleKeypad } = usePinKeypad(true)
 
   const [isPending, startTransition] = useTransition()
+  const [countdown, setCountdown] = useState<number | null>(null)
 
   const form = useForm<PinSetupFormValues>({
     resolver: zodResolver(pinSetupSchema),
@@ -117,7 +118,7 @@ export default function PinSetupForm({
       try {
         if (isForgetPinPage) {
           await resetPin(pin)
-        } else if (!isForgetPinPage) {
+        } else {
           await registerPin(pin)
         }
 
@@ -125,13 +126,10 @@ export default function PinSetupForm({
         setStep("success")
         toast.success("PIN 설정 완료")
 
-        setTimeout(() => {
-          if (redirectTo) {
-            router.push(redirectTo)
-          } else {
-            router.push("/kr/mypage/payment")
-          }
-        }, 2000)
+        // 리다이렉트가 필요한 경우 카운트다운 시작
+        if (redirectTo) {
+          setCountdown(3)
+        }
       } catch (error: any) {
         console.error("PIN 저장 실패:", error)
         toast.error(error.message ?? "PIN 저장 실패")
@@ -142,6 +140,30 @@ export default function PinSetupForm({
         shuffleKeypad()
       }
     })
+  }
+
+  // 카운트다운 및 자동 리다이렉트 처리
+  useEffect(() => {
+    if (countdown === null || !redirectTo) return
+
+    if (countdown > 0) {
+      const timer = setTimeout(() => {
+        setCountdown(countdown - 1)
+      }, 1000)
+      return () => clearTimeout(timer)
+    } else {
+      // 카운트다운이 0이 되면 리다이렉트
+      router.push(redirectTo)
+    }
+  }, [countdown, redirectTo, router])
+
+  // 수동 리다이렉트 핸들러
+  const handleRedirect = () => {
+    if (redirectTo) {
+      router.push(redirectTo)
+    } else {
+      router.push("/kr/mypage/payment")
+    }
   }
 
   const triggerShakeAndReset = () => {
@@ -174,7 +196,38 @@ export default function PinSetupForm({
           <h2 className="mb-2 text-2xl font-bold text-gray-900">
             PIN 설정 완료!
           </h2>
-          <p className="text-gray-600">보안 PIN이 성공적으로 설정되었습니다.</p>
+          <p className="mb-4 text-gray-600">
+            보안 PIN이 성공적으로 설정되었습니다.
+          </p>
+
+          {/* 리다이렉트가 있는 경우 카운트다운 및 버튼 표시 */}
+          {redirectTo && countdown !== null && (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-500">
+                {countdown > 0
+                  ? `${countdown}초 후 자동으로 이동합니다`
+                  : "이동 중..."}
+              </p>
+              <button
+                type="button"
+                onClick={handleRedirect}
+                className="w-full rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800"
+              >
+                지금 이동하기
+              </button>
+            </div>
+          )}
+
+          {/* 리다이렉트가 없는 경우 (forget-pin 페이지 등) */}
+          {!redirectTo && (
+            <button
+              type="button"
+              onClick={() => router.push("/kr/mypage/payment")}
+              className="mt-4 w-full rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800"
+            >
+              결제 수단 관리로 이동
+            </button>
+          )}
         </Card>
       </div>
     )

@@ -1,6 +1,7 @@
 import type {
   BnplHistoryDto,
   BnplSummaryDto,
+  CashReceiptDto,
   TaxInvoiceDto,
 } from "../dto/wallet"
 
@@ -16,3 +17,9 @@ export interface BnplHistoryType extends BnplHistoryDto {}
  *──────────────────────────*/
 
 export interface TaxInvoiceType extends TaxInvoiceDto {}
+
+/*───────────────────────────
+ * 현금영수증
+ *──────────────────────────*/
+
+export interface CashReceiptType extends CashReceiptDto {}
