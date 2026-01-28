@@ -3,6 +3,8 @@ import { Logger } from '@nestjs/common';
 import type { PimProductSnapshot, MedusaProductPayload } from '../../../types';
 
 const logger = new Logger('PimToMedusaTransformer');
+const DEFAULT_OPTION_TITLE = '기본 옵션';
+const DEFAULT_OPTION_VALUE = '기본 옵션값';
 
 export interface MedusaSyncOverrides {
     categories?: Array<{ id: string }>;
@@ -49,12 +51,17 @@ export function transformPimToMedusa(
             })) || [];
 
     // 3. 옵션 스키마/제목 목록 산출
-    const { options, optionTitles } = buildOptionSchema(snapshot.optionGroups || [], snapshot.variants || []);
+    const { options, optionTitles, defaultOptionTitles, isOptionlessProduct } = buildOptionSchema(
+        snapshot.optionGroups || [],
+        snapshot.variants || [],
+    );
 
     // 4. Variants 변환
     const variants = transformVariants(
         snapshot.variants,
         optionTitles,
+        defaultOptionTitles,
+        isOptionlessProduct,
     );
 
     // 5. 메타데이터
@@ -122,7 +129,7 @@ function transformOptions(
 ): Array<{ title: string; values: string[] }> {
     if (!optionGroups || optionGroups.length === 0) {
         // Medusa requires at least one option
-        return [{ title: 'Default', values: ['Default'] }];
+        return [{ title: DEFAULT_OPTION_TITLE, values: [DEFAULT_OPTION_VALUE] }];
     }
 
     return optionGroups.map((group) => ({
@@ -131,11 +138,16 @@ function transformOptions(
     }));
 }
 
-// 옵션 스키마 구성: 옵션 제목 목록 + 각 옵션의 값 목록. Variants에 사용된 값도 포함시키며, 부족할 경우 'Default'를 포함시켜 변환 시 옵션 개수 불일치 오류를 방지.
+// 옵션 스키마 구성: 옵션 제목 목록 + 각 옵션의 값 목록. Variants에 사용된 값도 포함시키며, 부족할 경우 기본 옵션값을 포함시켜 변환 시 옵션 개수 불일치 오류를 방지.
 function buildOptionSchema(
     optionGroups: PimProductSnapshot['optionGroups'],
     variants: PimProductSnapshot['variants'],
-): { options: Array<{ title: string; values: string[] }>; optionTitles: string[] } {
+): {
+    options: Array<{ title: string; values: string[] }>;
+    optionTitles: string[];
+    defaultOptionTitles: string[];
+    isOptionlessProduct: boolean;
+} {
     const optionSets = new Map<string, Set<string>>();
 
     // 1) PIM 옵션 그룹 기반으로 초기화
@@ -158,30 +170,63 @@ function buildOptionSchema(
         });
     }
 
-    // 3) 어떤 옵션도 없을 때 기본 옵션 추가
+    // 3) 어떤 옵션도 없으면 기본 옵션 1개/값 1개 구성
     if (optionSets.size === 0) {
-        optionSets.set('Default', new Set<string>(['Default']));
+        return {
+            options: [
+                {
+                    title: DEFAULT_OPTION_TITLE,
+                    values: [DEFAULT_OPTION_VALUE],
+                },
+            ],
+            optionTitles: [DEFAULT_OPTION_TITLE],
+            defaultOptionTitles: [DEFAULT_OPTION_TITLE],
+            isOptionlessProduct: true,
+        };
     }
 
-    // 4) 변환 시 누락 방지를 위해 모든 옵션에 'Default' 값 보강
-    optionSets.forEach((set) => set.add('Default'));
-
     const optionTitles = Array.from(optionSets.keys());
+
+    // 4) 일부 variant가 값을 갖지 않는 옵션 타이틀에만 기본 옵션값 추가
+    const defaultOptionTitles = new Set<string>();
+    if (variants && variants.length > 0) {
+        optionTitles.forEach((title) => {
+            const hasMissing = variants.some((variant) => {
+                const hasValue = variant.optionCombination?.some(
+                    (opt) => opt.name === title && opt.value,
+                );
+                return !hasValue;
+            });
+            if (hasMissing) {
+                defaultOptionTitles.add(title);
+                optionSets.get(title)?.add(DEFAULT_OPTION_VALUE);
+            }
+        });
+    }
+
     const options = optionTitles.map((title) => ({
         title,
         values: Array.from(optionSets.get(title) || []).sort(),
     }));
 
-    return { options, optionTitles };
+    return {
+        options,
+        optionTitles,
+        defaultOptionTitles: Array.from(defaultOptionTitles),
+        isOptionlessProduct: false,
+    };
 }
 
 // PIM Variants를 Medusa Variants로 변환
 function transformVariants(
     pimVariants: PimProductSnapshot['variants'],
     optionTitles: string[],
+    defaultOptionTitles: string[],
+    isOptionlessProduct: boolean,
 ): MedusaProductPayload['variants'] {
     const MEMBERSHIP_GROUP_ID = process.env.MEDUSA_MEMBERSHIP_GROUP_ID || '';
     const SKIP_VARIANTS_WITHOUT_PRICE = process.env.SKIP_VARIANTS_WITHOUT_PRICE === 'true';
+    const defaultableTitles = new Set(defaultOptionTitles || []);
 
     if (!pimVariants || pimVariants.length === 0) {
         logger.warn('No variants found in PIM snapshot');
@@ -199,7 +244,7 @@ function transformVariants(
             return true;
         })
         .map((variant) => {
-            // 옵션 조합 매핑 (부족한 옵션은 Default로 채워서 Medusa 옵션 개수 불일치 오류 방지)
+            // 옵션 조합 매핑 (부족한 옵션은 기본 옵션값으로 채워서 Medusa 옵션 개수 불일치 오류 방지)
             const rawOptions = variant.optionCombination?.reduce(
                 (acc, opt) => {
                     acc[opt.name] = opt.value;
@@ -208,16 +253,29 @@ function transformVariants(
                 {} as Record<string, string>,
             ) || {};
             const options: Record<string, string> = {};
-            optionTitles.forEach((title) => {
-                options[title] = rawOptions[title] || 'Default';
-            });
+            if (optionTitles.length > 0) {
+                optionTitles.forEach((title) => {
+                    if (rawOptions[title]) {
+                        options[title] = rawOptions[title];
+                    } else if (defaultableTitles.has(title)) {
+                        options[title] = DEFAULT_OPTION_VALUE;
+                    }
+                });
+            }
 
-            // Variant 제목: 기본 variant면 "기본", 아니면 옵션 조합
-            const title = variant.isDefault
-                ? '기본'
+            const hasOptions = optionTitles.length > 0;
+            const visibleOptionValues = Object.values(options).filter(
+                (value) => value && value !== 'Default' && value !== DEFAULT_OPTION_VALUE,
+            );
+            const isSingleVariantNoOptions = isOptionlessProduct && pimVariants.length === 1;
+
+            // Variant 제목: 옵션 없는 단일 품목이면 "기본 품목", 그 외엔 옵션 조합/이름 우선
+            const title = isSingleVariantNoOptions
+                ? '기본 품목'
                 : variant.variantName ||
-                Object.values(options).join(' / ') ||
-                `Variant ${variant.id.slice(0, 8)}`;
+                (visibleOptionValues.length > 0
+                    ? visibleOptionValues.join(' / ')
+                    : `Variant ${variant.id.slice(0, 8)}`);
 
             // 가격 배열 구성 (기본 가격만 포함)
             const prices: Array<{
@@ -236,7 +294,7 @@ function transformVariants(
             const stripBarcode = process.env.STRIP_BARCODE_ON_SYNC === 'true';
 
             return {
-                title: variant.variantName || '기본 품목',
+                title,
                 sku: variant.sku || undefined,
                 barcode: stripBarcode ? undefined : variant.variantCode || undefined,
                 manage_inventory: false,
@@ -250,7 +308,7 @@ function transformVariants(
                 hs_code: variant.hsCode,
                 material: variant.material,
 
-                options: Object.keys(options).length > 0 ? options : { Default: 'Default' },
+                options: Object.keys(options).length > 0 ? options : undefined,
                 prices: prices.length > 0 ? prices : undefined,
                 metadata: {
                     pimVariantId: variant.id,

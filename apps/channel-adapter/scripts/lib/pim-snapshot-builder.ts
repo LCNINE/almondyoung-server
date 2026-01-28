@@ -1,5 +1,5 @@
 // apps/channel-adapter/scripts/lib/pim-snapshot-builder.ts
-import postgres from 'postgres';
+import * as postgres from 'postgres';
 import type { PimProductSnapshot } from '../../src/types';
 
 // Database row types
@@ -40,11 +40,11 @@ interface VariantRow {
   version_id: string;
   variant_id: string;
   variant_name?: string;
-  sku?: string;
   variant_code?: string;
   is_default: boolean;
   status: string;
-  base_price: string; // numeric from DB
+  display_order?: number;
+  base_price?: string; // numeric from DB
   membership_price?: string;
   tiered_prices?: any;
   option_combination?: any;
@@ -54,7 +54,7 @@ interface OptionGroupRow {
   master_id: string;
   version_id: string;
   option_group_id: string;
-  option_group_name: string;
+  option_group_name?: string;
   option_value_id?: string;
   option_value_name?: string;
   color_code?: string;
@@ -73,7 +73,7 @@ interface OptionGroupRow {
  * Total: 4 queries for 100 products (vs 100+ API calls)
  */
 export class PimSnapshotBuilder {
-  constructor(private readonly pimDb: postgres.Sql) {}
+  constructor(private readonly pimDb: postgres.Sql) { }
 
   /**
    * Fetch active product masters with full snapshots
@@ -186,19 +186,56 @@ export class PimSnapshotBuilder {
         pmv.version_id,
         pv.id AS variant_id,
         pv.variant_name,
-        pv.sku,
         pv.variant_code,
         pv.is_default,
         pv.status,
-        pv.base_price,
-        pv.membership_price,
-        pv.tiered_prices,
-        pv.option_combination
+        pv.display_order,
+        pvc.base_price,
+        pvc.membership_price,
+        pvc.tiered_prices,
+        COALESCE(
+          jsonb_agg(
+            jsonb_build_object(
+              'name', pogd.display_name,
+              'value', povd.display_name
+            )
+          ) FILTER (WHERE povd.option_value_id IS NOT NULL),
+          '[]'::jsonb
+        ) AS option_combination
       FROM product_master_variants pmv
       INNER JOIN product_variants pv ON pmv.variant_id = pv.id
+      LEFT JOIN product_variant_price_cache pvc
+        ON pvc.version_id = pmv.version_id
+       AND pvc.variant_id = pv.id
+      LEFT JOIN variant_option_values vov
+        ON vov.variant_id = pv.id
+      LEFT JOIN product_option_values pov
+        ON vov.option_value_id = pov.id
+      LEFT JOIN product_option_group_displays pogd
+        ON pov.option_group_id = pogd.option_group_id
+       AND pogd.version_id = pmv.version_id
+       AND pogd.master_id = pmv.master_id
+       AND pogd.locale = 'ko-KR'
+      LEFT JOIN product_option_value_displays povd
+        ON vov.option_value_id = povd.option_value_id
+       AND povd.version_id = pmv.version_id
+       AND povd.master_id = pmv.master_id
+       AND povd.locale = 'ko-KR'
       WHERE pmv.master_id = ANY(${masterIds})
         AND pmv.version_id = ANY(${versionIds})
-      ORDER BY pmv.master_id, pv.is_default DESC
+      GROUP BY
+        pmv.master_id,
+        pmv.version_id,
+        pv.id,
+        pv.variant_name,
+        pv.variant_code,
+        pv.is_default,
+        pv.status,
+        pv.display_order,
+        pvc.base_price,
+        pvc.membership_price,
+        pvc.tiered_prices
+      ORDER BY pmv.master_id, pv.is_default DESC, pv.display_order ASC
     `;
   }
 
@@ -215,18 +252,28 @@ export class PimSnapshotBuilder {
       SELECT
         pmog.master_id,
         pmog.version_id,
-        pog.id AS option_group_id,
-        pog.name AS option_group_name,
+        pmog.option_group_id,
+        pogd.display_name AS option_group_name,
         pov.id AS option_value_id,
-        pov.name AS option_value_name,
-        pov.color_code,
-        pov.image_url
+        povd.display_name AS option_value_name,
+        povd.color_code,
+        povd.image_url
       FROM product_master_option_groups pmog
-      INNER JOIN product_option_groups pog ON pmog.option_group_id = pog.id
-      LEFT JOIN product_option_values pov ON pov.option_group_id = pog.id
+      LEFT JOIN product_option_group_displays pogd
+        ON pmog.option_group_id = pogd.option_group_id
+       AND pogd.version_id = pmog.version_id
+       AND pogd.master_id = pmog.master_id
+       AND pogd.locale = 'ko-KR'
+      LEFT JOIN product_option_values pov
+        ON pmog.option_group_id = pov.option_group_id
+      LEFT JOIN product_option_value_displays povd
+        ON pov.id = povd.option_value_id
+       AND povd.version_id = pmog.version_id
+       AND povd.master_id = pmog.master_id
+       AND povd.locale = 'ko-KR'
       WHERE pmog.master_id = ANY(${masterIds})
         AND pmog.version_id = ANY(${versionIds})
-      ORDER BY pmog.master_id, pog.id, pov.id
+      ORDER BY pmog.master_id, pmog.option_group_id, pov.id
     `;
   }
 
@@ -261,12 +308,12 @@ export class PimSnapshotBuilder {
         .map(v => ({
           id: v.variant_id,
           variantName: v.variant_name,
-          sku: v.sku ?? '',
           variantCode: v.variant_code,
           isDefault: v.is_default,
           status: v.status,
+          displayOrder: v.display_order ?? undefined,
           optionCombination: v.option_combination || [],
-          basePrice: Number(v.base_price),
+          basePrice: v.base_price !== undefined && v.base_price !== null ? Number(v.base_price) : undefined,
           membershipPrice: v.membership_price ? Number(v.membership_price) : undefined,
           tieredPrices: v.tiered_prices || [],
         }));
@@ -279,7 +326,7 @@ export class PimSnapshotBuilder {
         if (!groupedOptions.has(opt.option_group_id)) {
           groupedOptions.set(opt.option_group_id, {
             id: opt.option_group_id,
-            name: opt.option_group_name,
+            name: opt.option_group_name || opt.option_group_id,
             values: []
           });
         }
@@ -287,7 +334,7 @@ export class PimSnapshotBuilder {
         if (opt.option_value_id) {
           groupedOptions.get(opt.option_group_id).values.push({
             id: opt.option_value_id,
-            name: opt.option_value_name!,
+            name: opt.option_value_name || opt.option_value_id,
             colorCode: opt.color_code,
             imageUrl: opt.image_url,
           });
