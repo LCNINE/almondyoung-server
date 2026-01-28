@@ -197,55 +197,64 @@ function SubCategoryList({
       ) : (
         /* 정상 데이터 출력 */
         <>
-          <div className="mb-8 flex items-center justify-between">
-            <h3 className="text-[17px] font-bold tracking-tight">
-              {categories.find((c) => c.id === activeTab)?.name}
-            </h3>
+          {(() => {
+            const activeCategory = categories.find((c) => c.id === activeTab)
+            const activeCategorySlug = activeCategory?.slug || activeTab
+            return (
+              <>
+                <div className="mb-8 flex items-center justify-between">
+                  <h3 className="text-[17px] font-bold tracking-tight">
+                    {activeCategory?.name}
+                  </h3>
 
-            <Button
-              variant="link"
-              asChild
-              className="group flex items-center gap-0.5 px-0! text-[12px] font-semibold text-gray-400"
-              onClick={() => console.log(activeTab)}
-            >
-              <Link href={`/${countryCode}/category/${activeTab}`}>
-                전체보기
-                <ChevronRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
-              </Link>
-            </Button>
-          </div>
+                  <Button
+                    variant="link"
+                    asChild
+                    className="group flex items-center gap-0.5 px-0! text-[12px] font-semibold text-gray-400"
+                    onClick={() => setOpen(false)}
+                  >
+                    <Link href={`/${countryCode}/category/${activeCategorySlug}`}>
+                      전체보기
+                      <ChevronRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
+                    </Link>
+                  </Button>
+                </div>
 
-          {/* 서브 카테고리 리스트  */}
-          <div className="grid grid-cols-3 gap-x-4 gap-y-10">
-            {subCategories.map((sub) => (
-              <Button
-                key={sub.id}
-                variant="link"
-                asChild
-                className="group flex h-full w-full flex-col items-center gap-3 px-0! py-0!"
-              >
-                <Link
-                  href={`/${countryCode}/category/${activeTab}/${sub.slug}`}
-                >
-                  <div className="relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-[22px] bg-[#F5F5F7] transition-transform duration-200 group-active:scale-95">
-                    {sub.imageUrl ? (
-                      <Image
-                        src={sub.imageUrl}
-                        alt={sub.name}
-                        fill
-                        className="object-contain p-3.5"
-                      />
-                    ) : (
-                      <div className="h-6 w-6 rounded bg-gray-200/50" />
-                    )}
-                  </div>
-                  <span className="text-center text-[11px] leading-[1.3] font-medium break-keep text-gray-600">
-                    {sub.name}
-                  </span>
-                </Link>
-              </Button>
-            ))}
-          </div>
+                {/* 서브 카테고리 리스트  */}
+                <div className="grid grid-cols-3 gap-x-4 gap-y-10">
+                  {subCategories.map((sub) => (
+                    <Button
+                      key={sub.id}
+                      variant="link"
+                      asChild
+                      className="group flex h-full w-full flex-col items-center gap-3 px-0! py-0!"
+                    >
+                      <Link
+                        href={`/${countryCode}/category/${activeCategorySlug}/${sub.slug}`}
+                        onClick={() => setOpen(false)}
+                      >
+                        <div className="relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-[22px] bg-[#F5F5F7] transition-transform duration-200 group-active:scale-95">
+                          {sub.imageUrl ? (
+                            <Image
+                              src={sub.imageUrl}
+                              alt={sub.name}
+                              fill
+                              className="object-contain p-3.5"
+                            />
+                          ) : (
+                            <div className="h-6 w-6 rounded bg-gray-200/50" />
+                          )}
+                        </div>
+                        <span className="text-center text-[11px] leading-[1.3] font-medium break-keep text-gray-600">
+                          {sub.name}
+                        </span>
+                      </Link>
+                    </Button>
+                  ))}
+                </div>
+              </>
+            )
+          })()}
         </>
       )}
     </main>

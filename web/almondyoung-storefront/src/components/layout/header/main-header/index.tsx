@@ -2,14 +2,15 @@ import { CategorySheet } from "@/components/category/sheet"
 import { CategoryNavigation } from "@/components/layout/nav/category-nav"
 import { SearchCombobox } from "@/components/search/search-combobox"
 import { SearchSheet } from "@/components/search/search-sheet"
-import { getCategoryTree } from "@/lib/api/pim"
+import { getCategoryTree } from "@/lib/api/medusa/categories"
 import { Menu } from "lucide-react"
 import { Logo } from "./logo"
 import { AccountMenu } from "./user-actions"
 
 export async function MainHeader() {
-  const categories = await getCategoryTree().catch(() => null)
-  const mainCategories = categories?.categories.slice(0, 7) ?? []
+  // Medusa 카테고리를 사용하여 category page와 일관성 유지
+  const categories = await getCategoryTree().catch(() => [])
+  const mainCategories = categories.slice(0, 7)
 
   return (
     <header className="bg-header-background overflow-visible">

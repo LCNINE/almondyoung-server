@@ -1,6 +1,6 @@
 "use client"
 
-import { CategoryTree } from "@lib/types/ui/pim"
+import type { StoreProductCategoryTree } from "@lib/types/medusa-category"
 import { cn } from "@lib/utils"
 import { motion } from "framer-motion"
 import Link from "next/link"
@@ -15,7 +15,7 @@ import { useRef, useState } from "react"
 export function CategoryNavigation({
   mainCategories,
 }: {
-  mainCategories: CategoryTree[]
+  mainCategories: StoreProductCategoryTree[]
 }) {
   const { countryCode } = useParams()
   const pathname = usePathname()
@@ -26,14 +26,15 @@ export function CategoryNavigation({
   const [startX, setStartX] = useState(0)
   const [scrollLeft, setScrollLeft] = useState(0)
 
-  const getIsActive = (slug?: string) => {
-    if (!slug) return pathname === `/${countryCode}`
-    return pathname?.startsWith(`/${countryCode}/category/${slug}`)
+  const getIsActive = (handle?: string) => {
+    if (!handle) return pathname === `/${countryCode}`
+    return pathname?.startsWith(`/${countryCode}/category/${handle}`)
   }
 
+  // Medusa 카테고리의 handle을 사용 (category page와 일관성 유지)
   const allTabs = [
-    { name: "홈", slug: undefined },
-    ...mainCategories.map((c) => ({ name: c.name, slug: c.slug })),
+    { name: "홈", handle: undefined },
+    ...mainCategories.map((c) => ({ name: c.name, handle: c.handle })),
   ]
 
   // 마우스 드래그 핸들러 (선택 사항)
@@ -72,7 +73,7 @@ export function CategoryNavigation({
           <NavItem
             key={tab.name}
             tab={tab}
-            isActive={getIsActive(tab.slug)}
+            isActive={getIsActive(tab.handle)}
             countryCode={countryCode as string}
           />
         ))}
@@ -84,7 +85,7 @@ export function CategoryNavigation({
           <NavItem
             key={tab.name}
             tab={tab}
-            isActive={getIsActive(tab.slug)}
+            isActive={getIsActive(tab.handle)}
             countryCode={countryCode as string}
           />
         ))}
@@ -98,7 +99,7 @@ function NavItem({
   isActive,
   countryCode,
 }: {
-  tab: any
+  tab: { name: string; handle?: string }
   isActive: boolean
   countryCode: string
 }) {
@@ -106,7 +107,7 @@ function NavItem({
     <li className="relative shrink-0 list-none py-2">
       <Link
         href={
-          tab.slug ? `/${countryCode}/category/${tab.slug}` : `/${countryCode}`
+          tab.handle ? `/${countryCode}/category/${tab.handle}` : `/${countryCode}`
         }
         draggable={false}
         onDragStart={(e) => e.preventDefault()}
