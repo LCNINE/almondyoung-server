@@ -554,12 +554,12 @@ export class MedusaClient {
     }
 
     private async addVariants(productId: string, variants: HttpTypes.AdminCreateProductVariant[]): Promise<void> {
-        for (const variant of variants) {
-            await this.sdk.client.fetch(`/admin/products/${productId}/variants`, {
-                method: 'post',
-                body: variant,
-            });
-        }
+        this.logger.debug(
+            `Batch-adding ${variants.length} variants to product ${productId}`,
+        );
+        await this.sdk.admin.product.batchVariants(productId, {
+            create: variants,
+        });
     }
 
     private async getProduct(productId: string): Promise<MedusaProduct> {

@@ -20,7 +20,7 @@
  *   npx ts-node -r tsconfig-paths/register apps/channel-adapter/scripts/migrate-pim-to-medusa.ts [--masters id1,id2] [--limit N]
  */
 
-import postgres from 'postgres';
+import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { ConfigService } from '@nestjs/config';
 import { channelAdapterSchema } from '../src/schema';
