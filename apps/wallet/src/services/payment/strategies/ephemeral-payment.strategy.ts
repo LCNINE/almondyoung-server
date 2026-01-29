@@ -46,10 +46,10 @@ export class EphemeralPaymentStrategy implements PaymentStrategy {
 
   /**
    * Toss Payments Payload 조립
-   * 
+   *
    * @param intent 결제 의도
    * @param amount 결제 금액
-   * @param authParams 인증 파라미터 (paymentKey 포함)
+   * @param authParams 인증 파라미터 (paymentKey, orderId, amount 포함)
    * @returns TossPayload
    */
   private buildTossPayload(
@@ -57,18 +57,20 @@ export class EphemeralPaymentStrategy implements PaymentStrategy {
     amount: number,
     authParams: Record<string, string>,
   ): any {
-    const { paymentKey } = authParams;
+    const { paymentKey, orderId, amount: tossAmount } = authParams;
 
     if (!paymentKey) {
       throw new Error('paymentKey required for Toss payment');
     }
 
+    const finalAmount = tossAmount ? Number(tossAmount) : amount;
+
     this.logger.log(
-      `Toss payload built: orderId=${intent.id}, amount=${amount}`,
+      `Toss payload built: orderId=${orderId || intent.id}, amount=${finalAmount} (backend: ${amount}, toss: ${tossAmount})`,
     );
 
     return {
-      amount,
+      amount: finalAmount,
       oneTimeToken: paymentKey, // paymentKey → oneTimeToken 매핑
       metadata: {
         intentId: intent.id,
