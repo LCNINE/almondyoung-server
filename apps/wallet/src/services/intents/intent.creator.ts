@@ -17,7 +17,6 @@ export interface CreateIntentParams {
   customerId: string;
   originalAmount: number;
   discountBreakdown?: DiscountBreakdown[];
-
   expiresInMinutes?: number;
   metadata?: Record<string, any>;
 }
@@ -31,7 +30,7 @@ export interface CreateIntentParams {
 export class IntentCreator {
   private readonly logger = new Logger(IntentCreator.name);
 
-  constructor(private readonly repo: IntentRepository) {}
+  constructor(private readonly repo: IntentRepository) { }
 
   async create(
     params: CreateIntentParams,
