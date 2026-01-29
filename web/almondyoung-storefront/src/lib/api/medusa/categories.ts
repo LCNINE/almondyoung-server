@@ -23,6 +23,26 @@ const findCategoryByHandle = (
   return null
 }
 
+const findCategoryById = (
+  categories: StoreProductCategoryTree[],
+  id: string
+): StoreProductCategoryTree | null => {
+  for (const category of categories) {
+    if (category.id === id) {
+      return category
+    }
+
+    if (category.category_children?.length) {
+      const found = findCategoryById(category.category_children, id)
+      if (found) {
+        return found
+      }
+    }
+  }
+
+  return null
+}
+
 export const getCategoryTree = async (): Promise<StoreProductCategoryTree[]> => {
   const { product_categories } = await sdk.store.category.list(
     {
@@ -45,5 +65,13 @@ export const getCategoryByHandle = async (
   handle: string
 ): Promise<StoreProductCategoryTree | null> => {
   const categories = await getCategoryTree()
-  return findCategoryByHandle(categories, handle)
+  // handle로 먼저 찾고, 없으면 id로 찾기 (PIM 카테고리 id 지원)
+  return findCategoryByHandle(categories, handle) || findCategoryById(categories, handle)
+}
+
+export const getCategoryById = async (
+  id: string
+): Promise<StoreProductCategoryTree | null> => {
+  const categories = await getCategoryTree()
+  return findCategoryById(categories, id)
 }
