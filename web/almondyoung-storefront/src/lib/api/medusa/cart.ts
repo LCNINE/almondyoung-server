@@ -15,7 +15,7 @@ import { revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
 import { HttpApiError } from "../api-error"
 import { getRegion } from "./regions"
-import { transferCart } from "./customer"
+import { retrieveCustomer, transferCart } from "./customer"
 
 /**
  * 카트 ID를 통해 카트 정보를 조회합니다. 만약 ID가 제공되지 않으면, 쿠키에 저장된 카트 ID를 사용합니다.
@@ -27,9 +27,10 @@ export async function retrieveCart(
   fields?: string,
   cache: RequestCache = "force-cache"
 ) {
-  let id = cartId || (await getCartId())
+  const id = cartId || (await getCartId())
   fields ??=
     "*items, *region, *items.product, *items.variant, *items.thumbnail, *items.metadata, +items.total, *promotions, +shipping_methods, *customer.groups"
+
   if (!id) {
     return null
   }
@@ -40,35 +41,6 @@ export async function retrieveCart(
 
   const next = {
     ...(await getCacheOptions("carts")),
-  }
-
-  // 쿠키에 cart_id가 없으면 customer의 카트를 조회 시도
-  if (!id && headers.authorization) {
-    try {
-      const response = await sdk.client.fetch<{
-        carts: HttpTypes.StoreCart[]
-      }>(`/store/carts`, {
-        method: "GET",
-        query: {
-          fields: "id",
-          limit: 1,
-        },
-        headers,
-        cache: "no-store",
-      })
-
-      if (response.carts && response.carts.length > 0) {
-        id = response.carts[0].id
-        // 찾은 카트 ID를 쿠키에 저장
-        await setCartId(id)
-      }
-    } catch (error) {
-      console.error("Customer cart lookup failed:", error)
-    }
-  }
-
-  if (!id) {
-    return null
   }
 
   return await sdk.client
@@ -102,6 +74,16 @@ export async function getOrSetCart(countryCode: string) {
 
   const headers = {
     ...(await getAuthHeaders()),
+  }
+
+  // 로그인된 상태에서 장바구니가 다른 사용자의 것인지 확인
+  if (cart && cart.customer_id && headers.authorization) {
+    const customer = await retrieveCustomer()
+    if (customer && cart.customer_id !== customer.id) {
+      // 다른 사용자의 장바구니이므로 쿠키 제거 후 새 장바구니 생성
+      await removeCartId()
+      cart = null
+    }
   }
 
   if (!cart) {

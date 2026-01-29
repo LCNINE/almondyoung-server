@@ -22,7 +22,7 @@ export const MENU_ITEMS: MenuItem[] = [
     icon: "💼",
     path: "/mypage/business",
   },
-  { label: "로그아웃", icon: "🚪", path: "/mypage/logout" },
+  { label: "로그아웃", icon: "🚪", action: "logout" },
 ]
 
 export const SIDEBAR_MENU_ITEMS = [
