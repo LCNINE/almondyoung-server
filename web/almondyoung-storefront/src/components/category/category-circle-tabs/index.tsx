@@ -1,6 +1,7 @@
-import Image from "next/image"
 import Link from "next/link"
 import * as React from "react"
+import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
+
 // placeholder 이미지 (없을 때만 사용)
 const PLACEHOLDER_IMAGE = "https://placehold.co/120x120?text=No+Image"
 
@@ -66,12 +67,13 @@ function CategoryCircleItem({
           isSelected ? "ring-2 ring-black ring-offset-2" : ""
         }`}
       >
-        <Image
-          src={imageUrl}
+        <img
+          src={imageUrl === PLACEHOLDER_IMAGE ? imageUrl : getThumbnailUrl(imageUrl)}
           alt={category.name}
           width={117}
           height={117}
           loading="lazy"
+          className="h-[117px] w-[117px] object-cover"
         />
       </div>
 

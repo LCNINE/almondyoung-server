@@ -36,16 +36,17 @@ export const ProductPrice = ({
   membershipSavings?: number
 }) => {
   // ===== 1. 품절 상품 =====
-  if (isSoldOut) {
-    return (
-      <div className="flex flex-col gap-1 md:flex-row md:flex-wrap md:items-center md:gap-1.5">
-        <span className="text-base font-bold text-gray-400 md:text-[19px]">
-          {displayPrice.toLocaleString()}원
-        </span>
-        <SoldOutTag isSoldOut={true} />
-      </div>
-    )
-  }
+  // TODO: 재고 연동 후 활성화
+  // if (isSoldOut) {
+  //   return (
+  //     <div className="flex flex-col gap-1 md:flex-row md:flex-wrap md:items-center md:gap-1.5">
+  //       <span className="text-base font-bold text-gray-400 md:text-[19px]">
+  //         {displayPrice.toLocaleString()}원
+  //       </span>
+  //       <SoldOutTag isSoldOut={true} />
+  //     </div>
+  //   )
+  // }
 
   // ===== 2. 멤버십 전용 상품 =====
   if (isMembershipOnly) {

@@ -51,6 +51,14 @@ export function mapStoreProductToCardProps(
     rawMembershipPrice > 0 && basePrice > rawMembershipPrice
       ? rawMembershipPrice
       : 0
+  const originalAmount =
+    defaultPrice?.original_price_number ??
+    priceInfo?.cheapestPrice?.original_price_number ??
+    null
+  const calculatedAmount =
+    defaultPrice?.calculated_price_number ??
+    priceInfo?.cheapestPrice?.calculated_price_number ??
+    null
 
   const discount =
     membershipPrice > 0 && basePrice > 0
@@ -84,6 +92,13 @@ export function mapStoreProductToCardProps(
     imageSrc: imageUrl,
     membershipSavings,
     showMembershipHint,
+    debugPrices: {
+      basePrice,
+      membershipPrice,
+      rawMembershipPrice,
+      originalAmount,
+      calculatedAmount,
+    },
     optionMeta: {
       isSingle: isSingleOption,
       defaultVariantId,

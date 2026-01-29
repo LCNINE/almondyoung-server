@@ -1,6 +1,6 @@
 "use client"
 
-import Image from "next/image"
+import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
 import { Minus, Plus, X } from "lucide-react"
 
 type OptionValue = {
@@ -48,8 +48,6 @@ export function ProductOptionSelector({
   const hasMultipleOptions =
     options.length >= 3 || options.some((o) => o.values.length >= 7)
 
-  // todo: 여기 값 확인해서 image url 확인해서 썸네일 이미지 추가해야함 getThumbnailUrl()
-  console.log("selectedCartOptions", selectedCartOptions)
   return (
     <section className="space-y-4">
       {/* 옵션 선택 */}
@@ -124,9 +122,9 @@ function OptionCartItem({
 }) {
   return (
     <li className="flex items-center gap-3 rounded-lg bg-white py-3">
-      <Image
+      <img
         className="h-20 w-20 shrink-0 rounded object-cover md:h-20 md:w-20"
-        src={option.image}
+        src={getThumbnailUrl(option.image)}
         alt={option.name}
         width={80}
         height={80}
