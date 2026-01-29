@@ -22,12 +22,6 @@ export const CreateIntentSchema = z.object({
   originalAmount: z.number({ message: '금액은 양수여야 합니다.' }).int().positive(),
   discountAmount: z.number({ message: '할인 금액은 0 이상이어야 합니다.' }).int().min(0),
   type: z.enum(['ORDER', 'BNPL_CAPTURE', 'MEMBERSHIP_FEE'], { message: '유효하지 않은 결제 타입입니다.' }),
-  discountBreakdown: z.array(z.object({
-    amount: z.number({ message: '할인 금액은 양수여야 합니다.' }).int().positive(),
-    type: z.enum(['COUPON', 'POINT', 'PROMOTION'], { message: '유효하지 않은 할인 타입입니다.' }),
-    id: z.string().optional(),  // 쿠폰 ID, 프로모션 코드 등
-    description: z.string().optional(),  // 할인 설명
-  })),
 });
 
 const IntentResponseSchema = z.object({
