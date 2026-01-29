@@ -163,7 +163,6 @@ export class PaymentController {
     type: ErrorResponseDto,
   })
   async createPaymentIntent(@Body() dto: CreateIntentDto, @Headers('Idempotency-Key') idemKey?: string) {
-    console.log('dto::', dto)
     try {
       return await runInTransaction(this.db, async (tx) => {
         const { hit, response } = await this.idempotencyService.checkOrCreate(
@@ -176,7 +175,6 @@ export class PaymentController {
         if (hit) return response;
 
         const newIntent = await this.intentService.createIntent(dto, tx);
-        console.log('newIntent::', newIntent)
 
         await this.idempotencyService.complete(tx, idemKey, newIntent);
         return newIntent;
