@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { ArrowLeft, Home } from "lucide-react"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import NotfoundImage from "../assets/images/404-notfound.png"
 
 const funMessages = [
@@ -14,11 +14,15 @@ const funMessages = [
   "이런, 잘못된 길로 들어왔나봐요!",
 ]
 
+const defaultMessage = "페이지를 찾을 수 없어요"
+
 export default function NotFound() {
   const router = useRouter()
-  const [message] = useState(
-    () => funMessages[Math.floor(Math.random() * funMessages.length)]
-  )
+  const [message, setMessage] = useState(defaultMessage)
+
+  useEffect(() => {
+    setMessage(funMessages[Math.floor(Math.random() * funMessages.length)])
+  }, [])
 
   return (
     <div className="bg-background flex min-h-screen flex-col">

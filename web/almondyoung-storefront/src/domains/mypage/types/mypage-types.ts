@@ -6,7 +6,8 @@ export interface QuickLink {
 export interface MenuItem {
   label: string
   icon: string
-  path: string
+  path?: string
+  action?: "logout"
 }
 
 export interface ShippingItem {

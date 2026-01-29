@@ -4,7 +4,6 @@ import { sdk } from "@/lib/config/medusa"
 import {
   getCacheTag,
   removeAccessToken,
-  removeCartId,
   removeMedusaAuthToken,
   removeRefreshToken,
 } from "@lib/data/cookies"
@@ -31,8 +30,7 @@ export async function signout(): Promise<void> {
   const customerCacheTag = await getCacheTag("customers")
   revalidateTag(customerCacheTag)
 
-  await removeCartId()
-
+  // 장바구니 ID는 삭제하지 않음 - 다시 로그인하면 복원됨
   const cartCacheTag = await getCacheTag("carts")
   revalidateTag(cartCacheTag)
 
