@@ -1,9 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PointService } from '../points/point.service';
+import { DbTx, PointService } from '../points/point.service';
 import { IntentRepository } from '../intents/intent.repository';
 import type { PaymentIntent } from '../../shared/database/types';
 import type { DiscountLine } from '../../shared/database/schema';
 import type { PaymentResult } from '../../providers/payment-provider.interface';
+import { WalletExecutor } from '../../shared/database';
 
 export interface PointResult {
   pointEventId: number | null;
@@ -29,7 +30,7 @@ export class PaymentPointManager {
   constructor(
     private readonly pointService: PointService,
     private readonly intentRepo: IntentRepository,
-  ) {}
+  ) { }
 
   /**
    * 포인트 적용 (검증 + 차감 + 할인 계산)
@@ -37,7 +38,7 @@ export class PaymentPointManager {
   async applyPoints(
     intent: PaymentIntent,
     usePoints: number | undefined,
-    tx: any,
+    tx?: DbTx,
   ): Promise<PointResult> {
     // 1. 포인트 사용 요청이 없는 경우
     if (!usePoints || usePoints <= 0) {
@@ -100,6 +101,7 @@ export class PaymentPointManager {
       intent.id,
       intent.finalAmount,
       discountAmount,
+      undefined,
       tx,
     );
 
