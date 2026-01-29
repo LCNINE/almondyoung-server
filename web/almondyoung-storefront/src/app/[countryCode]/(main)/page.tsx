@@ -28,7 +28,7 @@ export default async function Home({
 
   categories = await getCategoryTree().catch(() => [])
 
-  // const user = await fetchMe().catch(() => null)
+  const user = await fetchMe().catch(() => null)
 
   return (
     <ProtectedRoute>
@@ -40,6 +40,7 @@ export default async function Home({
       <HomeLogoutTemplate
         initialCategories={categories}
         regionId={region?.id}
+        user={user}
       />
 
       {/* 테마 매니저 (개발 모드에서만 표시) */}

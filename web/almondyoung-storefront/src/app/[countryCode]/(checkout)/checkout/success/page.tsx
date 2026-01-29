@@ -1,29 +1,23 @@
 "use client"
-import CheckoutHeader from "@/app/[countryCode]/(checkout)/checkout/checkout-header"
-import { Rating } from "@components/rating"
-import { useRating } from "@components/rating/use-rating-hooks"
-import OrderSuccessContainer from "domains/order/success/components/order-success-container"
-import { ReviewPromptCard } from "./_components"
 
-function ChevronDownIcon({ className }: { className?: string }) {
+import CheckoutHeader from "@/app/[countryCode]/(checkout)/checkout/checkout-header"
+import { ChevronDownIcon, ReviewPromptCard } from "./_components"
+
+export default function CheckoutSuccessPage() {
   return (
-    <svg
-      width={24}
-      height={24}
-      viewBox="0 0 24 24"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      className={className}
-      preserveAspectRatio="none"
-    >
-      <path
-        d="M6 9L12 15L18 9"
-        stroke="black"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
+    <main className="flex min-h-screen w-full flex-col items-center gap-6 bg-[#f8f8f8] pb-12 sm:gap-[41px] sm:pb-20">
+      <CheckoutHeader title="주문/결제" />
+
+      <h1 className="text-center text-xl font-bold text-black sm:text-2xl">
+        <span className="text-[#ffa500]">주문완료</span> 되었습니다.
+      </h1>
+
+      {/* 주문 요약 카드 */}
+      <OrderSummaryCard />
+
+      {/* 리뷰 유도 카드 */}
+      <ReviewPromptCard />
+    </main>
   )
 }
 
@@ -100,23 +94,5 @@ function OrderSummaryCard() {
         </div>
       </div>
     </section>
-  )
-}
-
-export default function CheckoutSuccessPage() {
-  return (
-    <main className="flex min-h-screen w-full flex-col items-center gap-6 bg-[#f8f8f8] pb-12 sm:gap-[41px] sm:pb-20">
-      <CheckoutHeader title="주문/결제" />
-
-      <h1 className="text-center text-xl font-bold text-black sm:text-2xl">
-        <span className="text-[#ffa500]">주문완료</span> 되었습니다.
-      </h1>
-
-      {/* 주문 요약 카드 */}
-      <OrderSummaryCard />
-
-      {/* 리뷰 유도 카드 */}
-      <ReviewPromptCard />
-    </main>
   )
 }

@@ -5,6 +5,7 @@ export type CreateIntentRequestDto = {
   customerId: string
   originalAmount: number
   discountAmount: number
+  metadata?: Record<string, string>
   type: string
 }
 

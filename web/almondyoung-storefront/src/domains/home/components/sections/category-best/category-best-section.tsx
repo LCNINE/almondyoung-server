@@ -155,7 +155,12 @@ export function CategoryBestSection({
                                     >
                                       <ProductCard>
                                         <ProductCard.Thumbnail
-                                          src={product.imageSrc}
+                                          src={
+                                            "https://file.almondyoung-next.com/files/public/" +
+                                            (product.imageSrc
+                                              .split("/")
+                                              .pop() ?? "")
+                                          }
                                           alt={product.title}
                                           rank={
                                             <ProductCard.Rank rank={rank} />
