@@ -2,8 +2,8 @@ import { SearchPageClient } from "../components/search-page-client"
 import { searchProducts } from "@lib/api/pim/search"
 import { getProductList } from "@lib/api/medusa/products"
 import { getRegion } from "@lib/api/medusa/regions"
-import { mapMedusaProductsToCards } from "@lib/utils/map-medusa-product-card"
-import type { ProductCard, SearchProductResult } from "@lib/types/ui/product"
+import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
+import type { ProductCardProps, SearchProductResult } from "@lib/types/ui/product"
 
 interface SearchContainerProps {
   searchParams: Promise<{
@@ -81,7 +81,7 @@ export async function SearchContainer({
         // 2. master_id 목록 추출 (medusa에서 handle로 사용)
         const masterIds = searchData.items.map(item => item.master_id)
 
-        let items: ProductCard[] = []
+        let items: ProductCardProps[] = []
 
         if (masterIds.length > 0) {
           // 3. medusa에서 handle로 상품 조회
@@ -100,8 +100,8 @@ export async function SearchContainer({
             return orderA - orderB
           })
 
-          // 5. medusa 상품을 ProductCard로 변환
-          items = mapMedusaProductsToCards(sortedProducts)
+          // 5. medusa 상품을 ProductCardProps로 변환
+          items = mapStoreProductsToCardProps(sortedProducts)
         }
 
         searchResult = {

@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation"
 import { useCallback } from "react"
-import { BasicProductCard } from "@components/products/product-card"
+import { ProductGrid } from "@/components/products/product-grid"
 import { SearchHistory } from "@components/search/search-history"
 import { SearchHotKeyword } from "@components/search/search-hot-keyword"
 import { SearchPopularKeyword } from "@components/search/search-popular-keyword"
@@ -136,17 +136,13 @@ export function SearchPageClient({
 
       {/* 상품 그리드 */}
       <section className="mb-8">
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
-          {searchResult.items.map((product, idx) => (
-            <BasicProductCard
-              key={`${product.id}-${idx}`}
-              product={product}
-              showQuickActions
-              countryCode={countryCode}
-              isLoggedIn={isLoggedIn}
-            />
-          ))}
-        </div>
+        <ProductGrid
+          products={searchResult.items}
+          showQuickActions
+          className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4"
+          countryCode={countryCode}
+          isLoggedIn={isLoggedIn}
+        />
       </section>
 
       {/* 페이지네이션 */}

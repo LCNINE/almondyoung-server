@@ -271,7 +271,7 @@ export interface SearchProductParams {
 
 // 상품 검색 결과
 export interface SearchProductResult {
-  items: ProductCard[]
+  items: ProductCardProps[]
   pagination: {
     page: number
     limit: number
