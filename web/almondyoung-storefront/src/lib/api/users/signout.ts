@@ -9,16 +9,8 @@ import {
   removeRefreshToken,
 } from "@lib/data/cookies"
 import { revalidateTag } from "next/cache"
-import { redirect } from "next/navigation"
 import { api } from "../api"
 
-/**
- * 사용자 로그아웃을 처리합니다.
- * - 백엔드 세션 종료
- * - Medusa 인증 종료
- * - 모든 쿠키 제거
- * - 캐시 무효화
- */
 export async function signout(): Promise<void> {
   try {
     await api<{ success: boolean }>("users", "/auth/signout", {

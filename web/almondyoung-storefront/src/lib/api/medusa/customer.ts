@@ -4,7 +4,7 @@ import { sdk } from "@/lib/config/medusa"
 import medusaError from "@lib/utils/medusa-error"
 import { HttpTypes } from "@medusajs/types"
 import { revalidateTag } from "next/cache"
-
+import { handleMedusaAuthError } from "./auth-utils"
 import {
   getAuthHeaders,
   getCacheOptions,
@@ -54,7 +54,11 @@ export const getCustomerAddresses = async (): Promise<
   return await sdk.store.customer
     .listAddress({}, headers)
     .then(({ addresses }) => addresses)
-    .catch(() => null)
+    .catch(async (error) => {
+      await handleMedusaAuthError(error)
+      console.error("getCustomerAddresses error:", error)
+      return null
+    })
 }
 
 export const updateCustomer = async (body: HttpTypes.StoreUpdateCustomer) => {
@@ -204,7 +208,6 @@ export const getCustomerOrders = async (params?: {
         fields:
           "*items,*items.variant,*items.variant.product,*shipping_address,*billing_address",
       },
-      {},
       headers
     )
 

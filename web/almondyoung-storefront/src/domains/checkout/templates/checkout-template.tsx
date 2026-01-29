@@ -149,7 +149,7 @@ export default function CheckoutTemplate({
         },
       })
 
-      // 3. 토스 결제 SDK 초기화
+      // 토스 결제 SDK 초기화
       const clientKey =
         process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY ||
         "test_ck_pP2YxJ4K87ZZmMga5K59rRGZwXLO"
@@ -167,6 +167,11 @@ export default function CheckoutTemplate({
   }
 
   const handlePayment = async () => {
+    // 배송지 확인
+    if (!cart?.shipping_address?.address_1) {
+      return toast.error("배송지를 설정해주세요.")
+    }
+
     try {
       setLoading(true)
       setError(null)
@@ -249,8 +254,8 @@ export default function CheckoutTemplate({
         const intent = await createIntent({
           data: {
             customerId: user.id,
-            originalAmount: cartTotals.finalTotal,
-            discountAmount: 0,
+            originalAmount: cartTotals.finalTotal, // todo: 할인전 가격을 넣어야함
+            discountAmount: 0, // 적립금 사용했을때의 금액을 여기에 넣어야 함
             type: "ORDER",
           },
         })
