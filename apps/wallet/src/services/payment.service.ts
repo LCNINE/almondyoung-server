@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { walletSchema } from '../shared/database/schema';
+import { paymentIntents, walletSchema } from '../shared/database/schema';
 import { OutboxService } from './outbox/outbox.service';
 import {
   PaymentResult,
@@ -20,6 +20,8 @@ import { PaymentPointManager } from './payment/payment-point.manager';
 import { PaymentProviderManager } from './payment/payment-provider.manager';
 import { PaymentAttemptRepository } from './payment/payment-attempt.repository';
 import { generateUUIDv7 } from '../shared/utils/id-generator';
+import type { WalletExecutor } from '../shared/database';
+import { PaymentIntent } from '../shared/database/types';
 
 /**
  * PaymentService (Business Layer)
@@ -41,7 +43,22 @@ export class PaymentService {
     private readonly providerManager: PaymentProviderManager,
     private readonly attemptRepo: PaymentAttemptRepository,
     private readonly outboxService: OutboxService,
-  ) {}
+  ) { }
+
+  /**
+   * 이미 완료된 Intent의 기존 결과를 반환합니다. (멱등성 보장)
+   *
+   * - Intent가 이미 AUTHORIZED 또는 CAPTURED 상태이면 기존 결과 반환
+   * - 요청한 Provider 타입과 기존 타입이 다르면 PROVIDER_MISMATCH 에러
+   * - 완료된 상태가 아니면 undefined 반환
+   */
+  private async _getExistingResult(
+    intent: PaymentIntent,
+    expectedProvider?: ProviderType | null,
+    tx?: WalletExecutor,
+  ): Promise<PaymentResult | undefined> {
+    return this.paymentManager.getCompletedResult(intent, expectedProvider, tx);
+  }
 
   /**
    * 결제 승인 (5줄)
@@ -64,6 +81,21 @@ export class PaymentService {
     return this.db.db.transaction(async (tx) => {
       // 1. Intent 조회 및 검증
       const intent = await this.paymentReader.findIntent(intentId);
+
+      // 멱등성 가드: 이미 완료된 결제라면 기존 결과 반환
+      const existingResult = await this._getExistingResult(
+        intent,
+        providerType,
+        tx,
+      );
+      if (existingResult) {
+        this.logger.log(
+          `기존에 처리된 Intent: ${intentId}의 결과를 반환합니다 (Idempotency 보장).`
+        );
+
+        return existingResult;
+      }
+
       await this.paymentManager.prepareIntent(intent);
 
       // 2. 기존 활성 결제 취소
