@@ -16,7 +16,7 @@ export class OutboxService {
         aggregateId: params.aggregateId,
         partitionKey: params.partitionKey,
         payload: params.payload as any,
-        status: 'pending' as any,
+        status: 'PENDING',
       });
     };
     if (tx) return exec(tx);
