@@ -92,12 +92,15 @@ export class UsersController {
   }
 
   @ApiOperation({ summary: '현재 사용자 정보 조회' })
-  @ApiResponse({ status: 200, description: '현재 사용자 정보 조회 성공' })
+  @ApiResponse({
+    status: 200,
+    description: '현재 사용자 상세 정보 조회 성공',
+    type: UserDetailsResponseDto,
+  })
   @Get('me')
-  @RequireScopes(['user:read', 'master', 'admin:users:read'])
   @HttpCode(HttpStatus.OK)
   async getMe(@CurrentUser() user: JwtPayload) {
-    return this.usersService.retrieveMe(user.id);
+    return this.usersService.getUserDetails(user.id);
   }
 
   @ApiOperation({ summary: '내 프로필 정보 수정' })

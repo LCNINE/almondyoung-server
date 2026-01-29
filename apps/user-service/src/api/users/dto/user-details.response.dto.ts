@@ -69,6 +69,9 @@ export class UserDetailsResponseDto {
   @ApiProperty({ description: '사용자 이름' })
   username: string;
 
+  @ApiProperty({ description: '사용자 닉네임', nullable: true })
+  nickname: string | null;
+
   @ApiProperty({ description: '이메일' })
   email: string;
 
