@@ -438,7 +438,7 @@ export class AuthService {
       throw new ForbiddenException('이메일 인증이 필요한 사용자입니다.');
     }
 
-    const isAuth = await bcrypt.compare(signInDto.password, user.password);
+    const isAuth = await bcrypt.compare(signInDto.password, user.password ?? '');
     if (!isAuth) throw new BadRequestException('비밀번호가 일치하지 않습니다');
 
     const { refreshToken } = await this.setRefreshToken(user.id, reply, signInDto.rememberMe);
@@ -694,10 +694,6 @@ export class AuthService {
     const client = this.getClient(tx);
     const scopes = await this.getUserScopes(user.id, tx);
 
-    if (scopes.length === 0) {
-      throw new UnauthorizedException('사용자에게 할당된 권한이 없습니다. 관리자에게 문의해주세요.');
-    }
-
     const payload = {
       sub: user.id,
       scopes,
@@ -886,7 +882,7 @@ export class AuthService {
 
     if (!user) throw new NotFoundException('존재하지 않는 사용자입니다');
 
-    const isAuth = await bcrypt.compare(password, user.password);
+    const isAuth = await bcrypt.compare(password, user.password ?? '');
     if (!isAuth) throw new UnauthorizedException('비밀번호가 일치하지 않습니다');
 
     return;
