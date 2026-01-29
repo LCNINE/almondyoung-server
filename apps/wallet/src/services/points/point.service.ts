@@ -11,7 +11,8 @@ import type {
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { walletSchema } from '../../shared/database/schema';
 
-type DbTx = Parameters<
+// 위치는 여기가 적절한지 모르겠지만, 상위레벨에서 tx가 any로 선언되어있어서 타입에러뜨는것을 방지하고자 export를 붙여줬습니다.-중식
+export type DbTx = Parameters<
   Parameters<PostgresJsDatabase<typeof walletSchema>['transaction']>[0]
 >[0];
 
