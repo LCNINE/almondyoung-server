@@ -28,17 +28,6 @@ export const getProductList = async ({
   const offset = (page - 1) * limit
 
   try {
-    const authHeaders = await getAuthHeaders()
-    const isAuthed = "authorization" in authHeaders
-    const headers = isAuthed
-      ? { ...authHeaders }
-      : {
-        ...authHeaders,
-        next: {
-          tags: ["products", categoryId || "", q || ""],
-        },
-      }
-
     const {
       products,
       count,
@@ -89,9 +78,6 @@ export const getProductDetail = async (
   try {
     const authHeaders = await getAuthHeaders()
     const isAuthed = "authorization" in authHeaders
-    const headers = {
-      ...authHeaders,
-    }
 
     const { product } = await sdk.store.product.retrieve(
       productId,
@@ -101,8 +87,8 @@ export const getProductDetail = async (
         region_id: regionId,
       },
       {
-        ...headers,
-        cache: isAuthed ? "no-store" : undefined,
+        ...authHeaders,
+        ...(isAuthed && { cache: "no-store" }),
       }
     )
 
