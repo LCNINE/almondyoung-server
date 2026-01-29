@@ -22,7 +22,7 @@ import type {
 export class PaymentAttemptRepository {
   private readonly logger = new Logger(PaymentAttemptRepository.name);
 
-  constructor(private readonly db: DbService<typeof walletSchema>) {}
+  constructor(private readonly db: DbService<typeof walletSchema>) { }
 
   /**
    * PaymentAttempt를 생성합니다.
@@ -182,6 +182,29 @@ export class PaymentAttemptRepository {
       );
       return null;
     }
+  }
+
+  /**
+   * Intent ID로 성공한 Attempt를 조회함.
+   * 멱등성 보장을 위해 이미 완료된 결제를 찾을 때 사용함.
+   *
+   * @param intentId - 결제 의도 ID
+   * @param tx - 트랜잭션 객체
+   * @returns 성공한 Attempt (없으면 undefined)
+   */
+  async findSuccessfulByIntentId(
+    intentId: string,
+    tx?: any,
+  ): Promise<PaymentAttempt | undefined> {
+    const executor = tx ?? this.db.db;
+
+    return executor.query.paymentAttempts.findFirst({
+      where: and(
+        eq(schema.paymentAttempts.intentId, intentId),
+        inArray(schema.paymentAttempts.status, ['AUTHORIZED', 'CAPTURED']),
+      ),
+      orderBy: (attempts, { desc }) => [desc(attempts.createdAt)],
+    });
   }
 
   /**
