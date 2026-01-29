@@ -22,6 +22,12 @@ export const CreateIntentSchema = z.object({
   originalAmount: z.number({ message: '금액은 양수여야 합니다.' }).int().positive(),
   discountAmount: z.number({ message: '할인 금액은 0 이상이어야 합니다.' }).int().min(0),
   type: z.enum(['ORDER', 'BNPL_CAPTURE', 'MEMBERSHIP_FEE'], { message: '유효하지 않은 결제 타입입니다.' }),
+  discountBreakdown: z.array(z.object({
+    amount: z.number({ message: '할인 금액은 양수여야 합니다.' }).int().positive(),
+    type: z.enum(['COUPON', 'POINT', 'PROMOTION'], { message: '유효하지 않은 할인 타입입니다.' }),
+    id: z.string().optional(),  // 쿠폰 ID, 프로모션 코드 등
+    description: z.string().optional(),  // 할인 설명
+  })),
 });
 
 const IntentResponseSchema = z.object({
@@ -167,22 +173,22 @@ const RefundPaymentResponseSchema = BaseResponseSchema.extend({
 });
 
 // DTO 클래스 생성
-export class CreateIntentDto extends createZodDto(CreateIntentSchema) {}
-export class AuthorizePaymentDto extends createZodDto(AuthorizePaymentSchema) {}
-export class CapturePaymentDto extends createZodDto(CapturePaymentSchema) {}
-export class RefundPaymentDto extends createZodDto(RefundPaymentSchema) {}
-export class CreateHmsCardProfileDto extends createZodDto(CreateHmsCardProfileSchema) {}
+export class CreateIntentDto extends createZodDto(CreateIntentSchema) { }
+export class AuthorizePaymentDto extends createZodDto(AuthorizePaymentSchema) { }
+export class CapturePaymentDto extends createZodDto(CapturePaymentSchema) { }
+export class RefundPaymentDto extends createZodDto(RefundPaymentSchema) { }
+export class CreateHmsCardProfileDto extends createZodDto(CreateHmsCardProfileSchema) { }
 
-export class CreateBnplAccountDto extends createZodDto(CreateBnplAccountSchema) {}
+export class CreateBnplAccountDto extends createZodDto(CreateBnplAccountSchema) { }
 
 // Response DTO 클래스
-export class IntentResponseDto extends createZodDto(IntentResponseSchema) {}
-export class AuthorizePaymentResponseDto extends createZodDto(AuthorizePaymentResponseSchema) {}
-export class CapturePaymentResponseDto extends createZodDto(CapturePaymentResponseSchema) {}
-export class HmsCardProfileResponseDto extends createZodDto(HmsCardProfileResponseSchema) {}
+export class IntentResponseDto extends createZodDto(IntentResponseSchema) { }
+export class AuthorizePaymentResponseDto extends createZodDto(AuthorizePaymentResponseSchema) { }
+export class CapturePaymentResponseDto extends createZodDto(CapturePaymentResponseSchema) { }
+export class HmsCardProfileResponseDto extends createZodDto(HmsCardProfileResponseSchema) { }
 
-export class RefundPaymentResponseDto extends createZodDto(RefundPaymentResponseSchema) {}
-export class ErrorResponseDto extends createZodDto(ErrorResponseSchema) {}
+export class RefundPaymentResponseDto extends createZodDto(RefundPaymentResponseSchema) { }
+export class ErrorResponseDto extends createZodDto(ErrorResponseSchema) { }
 
 // 타입 추론 (기존 호환성을 위해)
 export type CreateIntentDtoType = z.infer<typeof CreateIntentSchema>;
@@ -227,9 +233,9 @@ const BnplSummaryResponseSchema = BaseResponseSchema.extend({
   targetMonth: z.number({ message: '청구 대상 월은 필수입니다.' }).nullable(), // 청구 대상 월
 });
 
-export class BnplHistoryQueryDto extends createZodDto(BnplHistoryQuerySchema) {}
-export class BnplHistoryResponseDto extends createZodDto(BnplHistoryResponseSchema) {}
-export class BnplSummaryResponseDto extends createZodDto(BnplSummaryResponseSchema) {}
+export class BnplHistoryQueryDto extends createZodDto(BnplHistoryQuerySchema) { }
+export class BnplHistoryResponseDto extends createZodDto(BnplHistoryResponseSchema) { }
+export class BnplSummaryResponseDto extends createZodDto(BnplSummaryResponseSchema) { }
 
 // 결제 프로필 관리 응답 스키마
 const SetDefaultProfileResponseSchema = BaseResponseSchema.extend({
@@ -244,5 +250,5 @@ const DeleteProfileResponseSchema = BaseResponseSchema.extend({
   message: z.string(),
 });
 
-export class SetDefaultProfileResponseDto extends createZodDto(SetDefaultProfileResponseSchema) {}
-export class DeleteProfileResponseDto extends createZodDto(DeleteProfileResponseSchema) {}
+export class SetDefaultProfileResponseDto extends createZodDto(SetDefaultProfileResponseSchema) { }
+export class DeleteProfileResponseDto extends createZodDto(DeleteProfileResponseSchema) { }
