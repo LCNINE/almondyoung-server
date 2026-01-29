@@ -127,14 +127,14 @@ export function ProductQuickActions({
 
   return (
     <div className="absolute right-2 bottom-2 flex flex-col items-end gap-1.5">
-      {/* 찜하기 버튼 */}
+      {/* 찜하기 버튼 - 모바일에서는 항상 표시, 데스크탑에서는 호버 시 표시 */}
       <Button
         variant="ghost"
         size="icon"
         className={cn(
           "h-8 w-8 rounded-full border border-white/20 bg-white/80 shadow-sm backdrop-blur-sm",
           "transition-all duration-200 hover:scale-105 hover:bg-white active:scale-95",
-          "opacity-0 group-hover:opacity-100",
+          "md:opacity-0 md:group-hover:opacity-100",
           isPending && "pointer-events-none opacity-50"
         )}
         onClick={handleWishlistToggle}
@@ -148,7 +148,7 @@ export function ProductQuickActions({
         />
       </Button>
 
-      {/* 장바구니 버튼 / 수량 선택 UI */}
+      {/* 장바구니 버튼 / 수량 선택 UI - 모바일에서는 항상 표시, 데스크탑에서는 호버 시 표시 */}
       {!showQuantitySelector ? (
         <Button
           variant="ghost"
@@ -156,7 +156,7 @@ export function ProductQuickActions({
           className={cn(
             "h-8 w-8 rounded-full border border-white/20 bg-white/80 shadow-sm backdrop-blur-sm",
             "transition-all duration-200 hover:scale-105 hover:bg-white active:scale-95",
-            "opacity-0 group-hover:opacity-100"
+            "md:opacity-0 md:group-hover:opacity-100"
           )}
           onClick={handleCartClick}
         >
@@ -197,7 +197,7 @@ export function ProductQuickActions({
               <Button
                 variant="ghost"
                 size="sm"
-                className="ml-1 h-6 rounded-full bg-blue-500 px-2 text-xs text-white hover:bg-blue-600"
+                className="bg-yellow-30 hover:bg-yellow-40 ml-1 h-6 rounded-full px-2 text-xs text-white"
                 onClick={handleAddToCart}
                 disabled={isCartLoading}
               >
