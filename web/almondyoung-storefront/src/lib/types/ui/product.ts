@@ -72,6 +72,13 @@ export interface ProductCardProps {
   imageSrc: string
   membershipSavings?: number
   showMembershipHint?: boolean
+  debugPrices?: {
+    basePrice: number
+    membershipPrice: number
+    rawMembershipPrice: number
+    originalAmount: number | null
+    calculatedAmount: number | null
+  }
   optionMeta?: {
     isSingle?: boolean // 단일 옵션 여부 (퀵 장바구니 담기용)
     defaultVariantId?: string // 기본 variant ID
