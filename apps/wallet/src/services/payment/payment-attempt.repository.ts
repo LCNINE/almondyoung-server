@@ -50,8 +50,8 @@ export class PaymentAttemptRepository {
       amount: data.amount,
       status: result.success ? status : 'FAILED',
       transactionId: result.transactionId ?? null,
-      requestMetadata: data.metadata ? JSON.stringify(data.metadata) : null,
-      providerResponseSnapshot: result.raw ? JSON.stringify(result.raw) : null,
+      request_payload: data.metadata ?? null,
+      provider_raw_response: result.raw ?? null,
     });
 
     this.logger.log(`Attempt ${data.attemptId} created with status ${status}`);
@@ -94,9 +94,7 @@ export class PaymentAttemptRepository {
         status,
         updatedAt: new Date(),
         transactionId: result.transactionId ?? undefined,
-        providerResponseSnapshot: result.raw
-          ? JSON.stringify(result.raw)
-          : undefined,
+        provider_raw_response: result.raw ?? undefined,
       })
       .where(eq(schema.paymentAttempts.id, attemptId));
 
