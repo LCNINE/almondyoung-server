@@ -6,6 +6,7 @@ import { LoginPromptBanner } from "../components/banner/login-prompt-banner"
 import MembershipBanner from "../components/banner/membership-banner"
 import { CategoryBestSectionContainer } from "../components/sections/category-best"
 import { ProductListSection } from "../components/shared/product-list-section"
+import { UserDetail } from "@/lib/types/ui/user"
 
 /*
  * ============================================================================
