@@ -18,7 +18,7 @@ import type { WalletExecutor } from '../../shared/database';
 export class IntentRepository {
   private readonly logger = new Logger(IntentRepository.name);
 
-  constructor(private readonly db: DbService<typeof walletSchema>) {}
+  constructor(private readonly db: DbService<typeof walletSchema>) { }
 
   async findById(intentId: string): Promise<PaymentIntent | null> {
     const intent = await this.db.db.query.paymentIntents.findFirst({
@@ -57,7 +57,7 @@ export class IntentRepository {
     intentId: string,
     finalAmount: number,
     discountAmount: number,
-    metadata?: Record<string, any>, // 👈 추가: 상세 내역 업데이트용
+    metadata?: Record<string, any>,
     tx?: WalletExecutor,
   ): Promise<void> {
     const executor = tx || this.db.db;
