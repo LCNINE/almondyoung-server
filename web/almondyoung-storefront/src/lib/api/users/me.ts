@@ -12,7 +12,7 @@ import { HttpApiError } from "../api-error"
 
 export const fetchMe = cache(async (): Promise<UserDetail> => {
   try {
-    const result = await api<UserDetail>("users", "/users/detail", {
+    const result = await api<UserDetail>("users", "/users/me", {
       cache: "no-store",
       withAuth: true,
     })
