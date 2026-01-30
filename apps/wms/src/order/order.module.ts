@@ -29,7 +29,7 @@ import { AvailabilityService } from './shared/services/availability.service';
 import { DbModule } from '@app/db';
 import { wmsTables, wmsSchema } from '../../database/schemas/wms-schema';
 import { EventsModule } from '@app/events';
-import { FULFILLMENT_STREAM } from '@packages/event-contracts/streams';
+import { FULFILLMENT_STREAM, INVENTORY_STREAM } from '@packages/event-contracts/streams';
 import { MatchingsController } from './matchings/controllers/matchings.controller';
 import { MatchingsService } from './matchings/services/matchings.service';
 import { OutboxService } from './shared/services/outbox.service';
@@ -82,7 +82,7 @@ function createKafkaConfig() {
     }),
     EventsModule.forRoot({
       kafka: createKafkaConfig(),
-      streams: [FULFILLMENT_STREAM],
+      streams: [FULFILLMENT_STREAM, INVENTORY_STREAM],
       serviceName: 'wms-order',
     }),
   ],

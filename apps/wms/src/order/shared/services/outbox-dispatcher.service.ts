@@ -12,6 +12,8 @@ import {
   FulfillmentDeliveredPayload,
   FulfillmentCancelledPayload,
   FulfillmentReturnedPayload,
+  INVENTORY_STREAM,
+  InventoryEvents,
 } from '@packages/event-contracts/streams';
 import { wmsTables, wmsSchema } from '../../../../database/schemas/wms-schema';
 import { eq, and, lte, sql, inArray } from 'drizzle-orm';
@@ -32,6 +34,7 @@ type FulfillmentPayload =
  * - Cron으로 주기적 폴링 (10초마다)
  * - FOR UPDATE SKIP LOCKED로 동시성 제어
  * - 발행 실패 시 재시도 (최대 5회)
+ * - Fulfillment와 Inventory 이벤트 모두 처리
  */
 @Injectable()
 export class OutboxDispatcherService implements OnModuleInit {
@@ -42,10 +45,12 @@ export class OutboxDispatcherService implements OnModuleInit {
     private readonly db: DbService<typeof wmsSchema>,
     @InjectStreamPublisher(FULFILLMENT_STREAM.topic.topic)
     private readonly fulfillmentPublisher: StreamPublisher<FulfillmentEvents>,
+    @InjectStreamPublisher(INVENTORY_STREAM.topic.topic)
+    private readonly inventoryPublisher: StreamPublisher<InventoryEvents>,
   ) { }
 
   onModuleInit() {
-    this.logger.log('📤 OutboxDispatcher 초기화 완료 ✅');
+    this.logger.log('📤 OutboxDispatcher 초기화 완료 ✅ (Fulfillment + Inventory)');
   }
 
   /**
@@ -150,13 +155,24 @@ export class OutboxDispatcherService implements OnModuleInit {
     attempts: number;
   }) {
     try {
-      // Fulfillment 이벤트 발행
-      await this.fulfillmentPublisher.publishEvent({
-        eventType: event.event_type as keyof FulfillmentEvents,
-        aggregateId: event.aggregate_id,
-        payload: event.payload as unknown as FulfillmentPayload,
-        metadata: { partitionKey: event.partition_key },
-      });
+      // aggregateType에 따라 적절한 Publisher 선택
+      if (event.aggregate_type === 'Stock') {
+        // Inventory 이벤트 발행
+        await this.inventoryPublisher.publishEvent({
+          eventType: event.event_type as keyof InventoryEvents,
+          aggregateId: event.aggregate_id,
+          payload: event.payload as any,
+          metadata: { partitionKey: event.partition_key },
+        });
+      } else {
+        // Fulfillment 이벤트 발행 (기존 로직)
+        await this.fulfillmentPublisher.publishEvent({
+          eventType: event.event_type as keyof FulfillmentEvents,
+          aggregateId: event.aggregate_id,
+          payload: event.payload as unknown as FulfillmentPayload,
+          metadata: { partitionKey: event.partition_key },
+        });
+      }
 
       // 성공 → published 상태로 변경
       await this.db.db
@@ -167,7 +183,7 @@ export class OutboxDispatcherService implements OnModuleInit {
         })
         .where(eq(wmsTables.outboxEvents.id, event.id));
 
-      this.logger.debug(`✅ Event ${event.id}: ${event.event_type}`);
+      this.logger.debug(`✅ Event ${event.id}: ${event.event_type} (${event.aggregate_type})`);
     } catch (error) {
       const newAttempts = event.attempts + 1;
       const isFinalFailure = newAttempts >= 5;
@@ -184,7 +200,7 @@ export class OutboxDispatcherService implements OnModuleInit {
         .where(eq(wmsTables.outboxEvents.id, event.id));
 
       this.logger.error(
-        `❌ Event ${event.id} 실패 (${newAttempts}/5): ${event.event_type}`,
+        `❌ Event ${event.id} 실패 (${newAttempts}/5): ${event.event_type} (${event.aggregate_type})`,
         error instanceof Error ? error.message : String(error),
       );
 
