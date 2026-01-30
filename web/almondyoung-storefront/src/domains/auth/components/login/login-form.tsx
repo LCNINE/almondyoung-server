@@ -187,9 +187,12 @@ export function LoginForm() {
           <CustomButton type="submit" fullWidth size="lg" disabled={isPending}>
             {isPending ? <Spinner size="sm" color="white" /> : "로그인"}
           </CustomButton>
-          <div className="relative w-full">
-            <KakaoLoginBtn redirectTo={redirectTo} />
-          </div>
+          {/*
+            TODO: 카카오 로그인 일시 비활성화
+            <div className="relative w-full">
+              <KakaoLoginBtn redirectTo={redirectTo} />
+            </div>
+          */}
         </div>
       </form>
     </Form>
