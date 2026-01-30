@@ -1,7 +1,7 @@
 import { SubscriberArgs, type SubscriberConfig } from '@medusajs/framework';
 import { Modules } from '@medusajs/framework/utils';
 import EventModuleService from '../modules/events/service';
-import { ORDER_EVENTS } from '@packages/event-contracts/streams';
+import { ORDER_STREAM } from '@packages/event-contracts/streams';
 import { EVENT_MODULE } from '../modules/events';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
@@ -43,7 +43,8 @@ export default async function handler({
 
   // 주문 생성 시 발생
   if (name === 'order.placed') {
-    await eventService.publishEvent(ORDER_EVENTS.ORDER_CREATED.topic, {
+    await eventService.publishEvent(ORDER_STREAM.topic.topic, {
+      messageType: ORDER_STREAM.events.OrderCreated.messageType,
       orderId: order.id,
       orderTotal: order.total,
       orderStatus: order.status,
@@ -52,7 +53,8 @@ export default async function handler({
 
   // 주문 취소 시 발생
   if (name === 'order.canceled') {
-    await eventService.publishEvent(ORDER_EVENTS.ORDER_CANCELLED.topic, {
+    await eventService.publishEvent(ORDER_STREAM.topic.topic, {
+      messageType: ORDER_STREAM.events.OrderCancelled.messageType,
       order_id: order.id,
       canceled_at: order.canceled_at,
     });
@@ -60,7 +62,8 @@ export default async function handler({
 
   // 반품 요청 시 발생
   if (name === 'order.return_requested') {
-    await eventService.publishEvent(ORDER_EVENTS.ORDER_RETURN_REQUESTED.topic, {
+    await eventService.publishEvent(ORDER_STREAM.topic.topic, {
+      messageType: ORDER_STREAM.events.OrderReturnRequested.messageType,
       order_id: order.id,
       return_id: order.return_id,
       items: order.items,

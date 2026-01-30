@@ -1,9 +1,8 @@
-import { type SubscriberConfig, type SubscriberArgs } from '@medusajs/medusa';
-import { CART_EVENTS } from '@packages/event-contracts/streams';
-import { container } from '@medusajs/framework';
 import { Modules } from '@medusajs/framework/utils';
-import EventModuleService from '../modules/events/service';
+import { type SubscriberArgs, type SubscriberConfig } from '@medusajs/medusa';
+import { CART_STREAM } from '@packages/event-contracts/streams';
 import { EVENT_MODULE } from '../modules/events';
+import EventModuleService from '../modules/events/service';
 
 export const config: SubscriberConfig = {
   event: ['cart.created', 'cart.updated'],
@@ -30,7 +29,8 @@ export default async function handler({
 
   // Medusa 이벤트를 Kafka 이벤트로 변환
   if (eventName === 'cart.created') {
-    await eventService.publishEvent(CART_EVENTS.CART_CREATED.topic, {
+    await eventService.publishEvent(CART_STREAM.topic.topic, {
+      messageType: CART_STREAM.events.CartCreated.messageType,
       id: cart.id,
       customer_id: cart.customer_id,
       region_id: cart.region_id,
@@ -38,7 +38,8 @@ export default async function handler({
       created_at: cart.created_at,
     });
   } else if (eventName === 'cart.updated') {
-    await eventService.publishEvent(CART_EVENTS.CART_UPDATED.topic, {
+    await eventService.publishEvent(CART_STREAM.topic.topic, {
+      messageType: CART_STREAM.events.CartUpdated.messageType,
       id: cart.id,
       items:
         cart.items?.map((item) => ({
