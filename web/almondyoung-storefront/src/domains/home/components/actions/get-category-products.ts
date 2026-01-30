@@ -3,14 +3,10 @@
 import { unstable_cache } from "next/cache"
 import { getProductList } from "@/lib/api/medusa/products"
 import { getCategoryTree } from "@/lib/api/medusa/categories"
-import { getReviewsByProductId } from "@/lib/api/ugc"
 import { ProductCardProps } from "@/lib/types/ui/product"
 import type { StoreProductCategoryTree } from "@/lib/types/medusa-category"
 import { isTimeSaleProduct } from "@/lib/utils/time-sale"
-import {
-  mapStoreProductsToCardProps,
-  type ReviewSummary,
-} from "@/lib/utils/product-card"
+import { mapStoreProductsToCardProps } from "@/lib/utils/product-card"
 
 /**
  * 카테고리와 모든 하위 카테고리의 ID를 수집합니다.
@@ -46,7 +42,8 @@ const findCategoryById = (
 
 const fetchCategoryBestProducts = async (
   categoryId: string,
-  regionId?: string
+  regionId?: string,
+  limit = 12
 ): Promise<ProductCardProps[]> => {
   if (!categoryId) {
     return []
@@ -57,58 +54,28 @@ const fetchCategoryBestProducts = async (
   const category = findCategoryById(categoryTree, categoryId)
   const categoryIds = category ? collectCategoryIds(category) : [categoryId]
 
+  // TODO: 베스트 선정 로직 없는 채로 뭉갠 부분
   const bestProducts = await getProductList({
     categoryId: categoryIds,
-    limit: 20,
+    limit,
     region_id: regionId,
   })
 
-  if (!bestProducts?.products || bestProducts.products.length === 0) {
-    return []
-  }
-
-  const reviews = await Promise.all(
-    bestProducts.products.map((product) =>
-      getReviewsByProductId({
-        // handle이 PIM의 masterId(UUID)이므로 이것을 사용
-        productId: product.handle || product.id,
-      })
-    )
-  )
-
-  // 리뷰 데이터 변환
-  const reviewsMap = new Map<string, ReviewSummary>()
-  reviews.forEach((review) => {
-    if (review.data.length > 0) {
-      const productId = review.data[0].productId
-      const ratings = review.data.map((r) => r.rating || 0).filter((r) => r > 0)
-      const averageRating =
-        ratings.length > 0
-          ? ratings.reduce((sum, r) => sum + r, 0) / ratings.length
-          : 0
-
-      reviewsMap.set(productId, {
-        rating: Math.round(averageRating * 10) / 10,
-        // total을 사용하여 실제 총 리뷰 수 표시
-        reviewCount: review.total || review.data.length,
-      })
-    }
-  })
-
-  return mapStoreProductsToCardProps(bestProducts.products, reviewsMap)
+  return mapStoreProductsToCardProps(bestProducts.products || [])
 }
 
 export const getCategoryBestProducts = async (
   categoryId: string,
-  regionId?: string
+  regionId?: string,
+  limit = 12
 ): Promise<ProductCardProps[]> => {
   if (!categoryId) {
     return []
   }
 
   return unstable_cache(
-    () => fetchCategoryBestProducts(categoryId, regionId).catch(() => []),
-    [`category-best-products-${categoryId}-${regionId || "default"}`],
+    () => fetchCategoryBestProducts(categoryId, regionId, limit).catch(() => []),
+    [`category-best-products-${categoryId}-${regionId || "default"}-${limit}`],
     {
       tags: [`category-best-${categoryId}`, "category-best"],
       revalidate: 3600, // 1시간
