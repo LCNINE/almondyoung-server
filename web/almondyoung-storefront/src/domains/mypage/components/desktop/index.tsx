@@ -4,6 +4,7 @@ import { QuickMenuSection } from "./quick-menu-section"
 import { RecommendedProductsSection } from "./recommended-products-section"
 import { ShippingItemsSection } from "./shipping-items-section"
 import { UserProfileSection } from "./user-profile-section"
+import { AdminAccessButton } from "@/components/admin/admin-access-button"
 
 /**
  * 마이페이지 데스크탑 콘텐츠
@@ -14,10 +15,14 @@ import { UserProfileSection } from "./user-profile-section"
  */
 interface MyPageDesktopContentProps {
   currentUser: UserDetail
+  isAdmin?: boolean
+  countryCode?: string
 }
 
 export function MyPageDesktopContent({
   currentUser,
+  isAdmin = false,
+  countryCode = "kr",
 }: MyPageDesktopContentProps) {
   return (
     <div>
@@ -25,6 +30,14 @@ export function MyPageDesktopContent({
         userName={currentUser?.username}
         userId={currentUser?.id}
       />
+      
+      {/* 관리자 버튼 */}
+      {isAdmin && (
+        <div className="mb-4">
+          <AdminAccessButton countryCode={countryCode} />
+        </div>
+      )}
+
       <QuickMenuSection />
       <ShippingItemsSection />
       <PaymentInfoSection />
