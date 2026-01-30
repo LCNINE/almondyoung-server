@@ -95,7 +95,7 @@ export class PaymentController {
     private readonly idempotencyService: IdempotencyService,
     private readonly refundService: RefundService,
     private readonly pinService: PinService,
-  ) {}
+  ) { }
 
   @Post('intents')
   @UseGuards(JwtAuthGuard)

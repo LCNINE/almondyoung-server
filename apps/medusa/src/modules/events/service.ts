@@ -1,6 +1,6 @@
 import { Kafka, Producer, Consumer, EachMessagePayload } from 'kafkajs';
 import { MedusaService } from '@medusajs/framework/utils';
-import { PAYMENT_EVENTS, USER_EVENTS } from '@packages/event-contracts/streams';
+import { PAYMENT_EVENTS, USER_EVENTS, INVENTORY_STREAM } from '@packages/event-contracts/streams';
 
 type ModuleOptions = {
   kafka: {
@@ -176,10 +176,13 @@ export default class EventModuleService extends MedusaService({}) {
     // - PAYMENT_EVENTS.REFUND_COMPLETED: 결제 환불 완료 이벤트
     // - USER_EVENTS.USER_PERMANENT_DELETED: 유저 영구 삭제 이벤트
     // - 'USER_PERMANENT_DELETED': 레거시 호환성을 위한 추가 토픽
+    // - INVENTORY_STREAM: WMS 재고 변동 이벤트
+    const inventoryTopic = INVENTORY_STREAM.topic.topic; // 'inventory.events.v1'
     const topics = [
       PAYMENT_EVENTS.REFUND_COMPLETED.topic,
       USER_EVENTS.USER_PERMANENT_DELETED.topic,
       'USER_PERMANENT_DELETED',
+      inventoryTopic,
     ];
 
     // 모든 토픽을 단일 핸들러로 구독
@@ -260,6 +263,22 @@ export default class EventModuleService extends MedusaService({}) {
           return;
         }
 
+        // ==========================================
+        // WMS 재고 변동 이벤트 처리
+        // ==========================================
+        // WMS에서 재고 입고/출고/조정 이벤트가 발생->Medusa의 Inventory Module을 통해 재고 업데이트
+        if (topic === inventoryTopic) {
+          const { eventType, data } = message;
+          console.log(`📦 Received inventory event: ${eventType}`, data);
+
+          try {
+            await this.handleInventoryEvent(eventType, data);
+          } catch (err) {
+            console.error('Failed to handle inventory event:', err);
+          }
+          return;
+        }
+
         // 처리되지 않은 토픽이 들어온 경우 경고 로그
         // 새로운 이벤트 타입 추가 시 이곳에서 확인 가능
         console.warn(`Unhandled topic received: ${topic}`);
@@ -269,5 +288,138 @@ export default class EventModuleService extends MedusaService({}) {
     });
 
     console.log('✅ External Kafka subscriptions ready');
+  }
+
+  /**
+   * WMS 재고 이벤트 처리
+   *
+   * StockReceived (입고), StockShipped (출고), StockAdjusted (조정) 이벤트를
+   * Medusa Inventory Module로 반영합니다.
+   */
+  private async handleInventoryEvent(eventType: string, data: any): Promise<void> {
+    const { skuCode, quantity, deltaQuantity, afterQuantity, warehouseId } = data;
+
+    if (!skuCode) {
+      console.warn('Inventory event missing skuCode:', data);
+      return;
+    }
+
+    try {
+      const { Modules } = await import('@medusajs/framework/utils');
+      const inventoryService = this.container_?.resolve(Modules.INVENTORY);
+      const productService = this.container_?.resolve(Modules.PRODUCT);
+
+      if (!inventoryService || !productService) {
+        console.warn('Inventory or Product service not available');
+        return;
+      }
+
+      // 1. SKU로 variant 조회
+      const [variant] = await productService.listProductVariants({
+        sku: skuCode,
+      });
+
+      if (!variant) {
+        console.warn(`Variant not found for SKU: ${skuCode}`);
+        return;
+      }
+
+      // 2. Variant의 Inventory Item 조회
+      const inventoryItems = await inventoryService.listInventoryItems({
+        sku: skuCode,
+      });
+
+      if (!inventoryItems || inventoryItems.length === 0) {
+        console.warn(`No inventory item for SKU: ${skuCode}`);
+        return;
+      }
+
+      const inventoryItem = inventoryItems[0];
+
+      // 3. Stock Location 조회 (기본 위치 사용)
+      const stockLocations = await inventoryService.listStockLocations({});
+      const location = stockLocations?.[0];
+
+      if (!location) {
+        console.warn('No stock location found');
+        return;
+      }
+
+      // 4. 이벤트 타입에 따라 재고 업데이트
+      let newQuantity: number;
+
+      switch (eventType) {
+        case 'StockReceived':
+          // 입고: 현재 재고 + 입고량
+          newQuantity = await this.getCurrentStockAndAdd(
+            inventoryService,
+            inventoryItem.id,
+            location.id,
+            quantity,
+          );
+          break;
+
+        case 'StockShipped':
+          // 출고: 현재 재고 - 출고량
+          newQuantity = await this.getCurrentStockAndSubtract(
+            inventoryService,
+            inventoryItem.id,
+            location.id,
+            quantity,
+          );
+          break;
+
+        case 'StockAdjusted':
+          // 조정: 조정 후 수량으로 직접 설정
+          newQuantity = afterQuantity ?? 0;
+          break;
+
+        default:
+          console.log(`Unhandled inventory event type: ${eventType}`);
+          return;
+      }
+
+      // 5. Inventory Level 업데이트
+      await inventoryService.updateInventoryLevels([
+        {
+          inventory_item_id: inventoryItem.id,
+          location_id: location.id,
+          stocked_quantity: Math.max(0, newQuantity),
+        },
+      ]);
+
+      console.log(`Inventory updated: SKU=${skuCode}, qty=${newQuantity}`);
+    } catch (error) {
+      console.error(`Failed to update inventory for ${skuCode}:`, error);
+      throw error;
+    }
+  }
+
+  private async getCurrentStockAndAdd(
+    inventoryService: any,
+    inventoryItemId: string,
+    locationId: string,
+    addQuantity: number,
+  ): Promise<number> {
+    const levels = await inventoryService.listInventoryLevels({
+      inventory_item_id: inventoryItemId,
+      location_id: locationId,
+    });
+    const currentQty = levels?.[0]?.stocked_quantity ?? 0;
+    return currentQty + addQuantity;
+  }
+
+  private async getCurrentStockAndSubtract(
+    inventoryService: any,
+    inventoryItemId: string,
+    locationId: string,
+    subtractQuantity: number,
+  ): Promise<number> {
+    const levels = await inventoryService.listInventoryLevels({
+      inventory_item_id: inventoryItemId,
+      location_id: locationId,
+    });
+    const currentQty = levels?.[0]?.stocked_quantity ?? 0;
+    return Math.max(0, currentQty - subtractQuantity);
   }
 }

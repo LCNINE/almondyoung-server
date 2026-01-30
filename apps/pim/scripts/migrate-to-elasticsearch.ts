@@ -125,7 +125,6 @@ async function bootstrap() {
       .select({
         id: productMasterVersions.id,
         masterId: productMasterVersions.masterId,
-        version: productMasterVersions.version,
         name: productMasterVersions.name,
       })
       .from(productMasterVersions)
@@ -153,7 +152,6 @@ async function bootstrap() {
         const document = await buildElasticsearchDocument(
           db,
           master.id,
-          master.version,
           master.masterId,
         );
 
@@ -195,8 +193,7 @@ async function bootstrap() {
 
 async function buildElasticsearchDocument(
   db: PostgresJsDatabase<PimSchema>,
-  productId: string,
-  version: number,
+  versionId: string,
   masterId: string,
 ): Promise<ElasticsearchProductDocument> {
   // 상품 기본 정보 + 카테고리 정보 조회 (productMasterCategories join)
@@ -204,7 +201,6 @@ async function buildElasticsearchDocument(
     .select({
       id: productMasterVersions.id,
       masterId: productMasterVersions.masterId,
-      version: productMasterVersions.version,
       name: productMasterVersions.name,
       description: productMasterVersions.description,
       productCode: productMasterVersions.productCode,
@@ -223,18 +219,18 @@ async function buildElasticsearchDocument(
       productMasterCategories,
       and(
         eq(productMasterVersions.masterId, productMasterCategories.masterId),
-        eq(productMasterVersions.version, productMasterCategories.version),
+        eq(productMasterVersions.id, productMasterCategories.versionId),
       ),
     )
     .leftJoin(
       productCategories,
       eq(productMasterCategories.categoryId, productCategories.id),
     )
-    .where(eq(productMasterVersions.id, productId))
+    .where(eq(productMasterVersions.id, versionId))
     .limit(1);
 
   if (!product) {
-    throw new Error(`Product ${productId} not found`);
+    throw new Error(`Product ${versionId} not found`);
   }
 
   const tagsData = await db
@@ -252,7 +248,7 @@ async function buildElasticsearchDocument(
     .where(
       and(
         eq(productTagValues.masterId, masterId),
-        eq(productTagValues.version, version),
+        eq(productTagValues.versionId, versionId),
         eq(tagGroups.isActive, true),
         eq(tagValues.isActive, true),
       ),
@@ -271,7 +267,7 @@ async function buildElasticsearchDocument(
   return {
     master_id: product.masterId,
     product_id: product.id,
-    version: product.version,
+    version_id: product.id,
     name: product.name,
     description: product.description,
     product_code: product.productCode,
@@ -293,4 +289,3 @@ bootstrap().catch((error) => {
   console.error('Fatal error:', error);
   process.exit(1);
 });
-
