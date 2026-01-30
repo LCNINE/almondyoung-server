@@ -39,6 +39,7 @@ import { SkuGroupService } from './services/sku-group.service';
 import { SkuGroupController } from './controllers/sku-group.controller';
 import { HolderService } from './services/holder.service';
 import { HolderController } from './controllers/holder.controller';
+import { OutboxService } from '../order/shared/services/outbox.service';
 
 @Module({
   imports: [
@@ -92,6 +93,7 @@ import { HolderController } from './controllers/holder.controller';
     TransferService,
     SkuGroupService,
     HolderService,
+    OutboxService,
   ],
   exports: [
     InventoryService,
