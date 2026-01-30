@@ -297,7 +297,7 @@ function transformVariants(
                 title,
                 sku: variant.sku || undefined,
                 barcode: stripBarcode ? undefined : variant.variantCode || undefined,
-                manage_inventory: false,
+                manage_inventory: true,
 
                 weight: variant.weight,
                 length: variant.length,
