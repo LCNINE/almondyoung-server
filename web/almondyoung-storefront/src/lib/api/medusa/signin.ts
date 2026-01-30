@@ -49,3 +49,32 @@ export async function medusaSignin(): Promise<{
     }
   }
 }
+
+// 임시
+export async function medusaSigninAdmin(): Promise<{
+  success: boolean
+  data?: string
+  error?: string
+  message?: string
+}> {
+  try {
+    const data = await api<{ token: string }>("medusa", "/auth/user/my-auth", {
+      method: "POST",
+      withAuth: true,
+    })
+
+    setMedusaAuthToken(data.token)
+
+    return {
+      success: true,
+      data: data.token,
+    }
+  } catch (error) {
+    console.error("medusaSignin error:", error)
+    return {
+      success: false,
+      error: "NETWORK_ERROR",
+      message: "Failed to connect to Medusa API",
+    }
+  }
+}
