@@ -27,8 +27,12 @@ export interface ReviewInfo {
 
 export interface WritableReview {
   id: string
-  product: ProductInfo
-  benefit: BenefitInfo
+  orderId: string
+  productId: string
+  productName: string
+  productImage: string
+  orderDate: string
+  variantTitle?: string
 }
 
 export interface WrittenReview {

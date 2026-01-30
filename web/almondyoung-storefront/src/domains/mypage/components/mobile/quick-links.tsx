@@ -1,18 +1,18 @@
 import React from "react"
+import Link from "next/link"
+import { Package, Heart, ShoppingBag, Eye } from "lucide-react"
 
 // --- 1. 재사용 가능한 메뉴 아이템 컴포넌트 ---
 interface QuickMenuItemProps {
   icon: React.ReactNode
   label: string
-  onClick?: () => void
+  href: string
 }
 
-function QuickMenuItem({ icon, label, onClick }: QuickMenuItemProps) {
+function QuickMenuItem({ icon, label, href }: QuickMenuItemProps) {
   return (
-    // flex-1: 아이템들이 공간을 균등하게 차지하도록 합니다.
-    <button
-      type="button"
-      onClick={onClick}
+    <Link
+      href={href}
       className="group flex flex-1 flex-col items-center justify-center gap-[6px]"
     >
       {/* 아이콘 영역 */}
@@ -21,7 +21,7 @@ function QuickMenuItem({ icon, label, onClick }: QuickMenuItemProps) {
       <span className="text-center font-['Pretendard'] text-xs whitespace-nowrap text-black">
         {label}
       </span>
-    </button>
+    </Link>
   )
 }
 
@@ -32,13 +32,26 @@ export function QuickLinks() {
       className="flex w-full items-center justify-between rounded-[10px] bg-white py-[15px] shadow-sm"
       aria-label="퀵 메뉴"
     >
-      {/* <QuickMenuItem label="주문목록" icon={<OrderListIcon size={27} />} />
-      <QuickMenuItem label="찜한상품" icon={<WishlistIcon size={27} />} />
+      <QuickMenuItem
+        label="주문목록"
+        icon={<Package size={27} className="text-amber-500" />}
+        href="/kr/mypage/order/list"
+      />
+      <QuickMenuItem
+        label="찜한상품"
+        icon={<Heart size={27} className="text-amber-500" />}
+        href="/kr/mypage/wish"
+      />
       <QuickMenuItem
         label="자주산상품"
-        icon={<FrequentPurchaseIcon size={27} />}
+        icon={<ShoppingBag size={27} className="text-amber-500" />}
+        href="/kr/mypage/rebuy"
       />
-      <QuickMenuItem label="최근 본 상품" icon={<RecentViewIcon size={27} />} /> */}
+      <QuickMenuItem
+        label="최근 본 상품"
+        icon={<Eye size={27} className="text-amber-500" />}
+        href="/kr/mypage/recent"
+      />
     </nav>
   )
 }
