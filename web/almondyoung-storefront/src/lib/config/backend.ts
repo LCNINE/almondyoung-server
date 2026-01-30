@@ -72,7 +72,6 @@ const getBackendDomain = () => {
 
   return normalizeDomain(rawDomain)
 }
-
 const getLegacyGatewayBaseUrl = (service: BackendService) => {
   const isServer = typeof window === "undefined"
   const legacyBase = isServer
