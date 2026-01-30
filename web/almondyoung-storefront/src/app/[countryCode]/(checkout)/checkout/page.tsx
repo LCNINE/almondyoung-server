@@ -31,6 +31,8 @@ export default async function CheckoutPage({
     )
   }
 
+  console.log("cart:", cart)
+
   const [shippingMethods, paymentMethods, promotionsResponse] =
     await Promise.all([
       listCartShippingMethods(cart.id),

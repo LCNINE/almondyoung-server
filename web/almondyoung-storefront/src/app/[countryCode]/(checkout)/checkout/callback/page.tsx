@@ -1,81 +1,75 @@
-import { redirect } from "next/navigation"
-import { authorizePayment } from "@/lib/api/wallet"
+"use client"
 
-interface PageProps {
-  searchParams: Promise<{
-    paymentKey?: string
-    orderId?: string
-    amount?: string
-    status?: string
-    code?: string
-    message?: string
-  }>
-  params: Promise<{ countryCode: string }>
-}
+import { useEffect } from "react"
+import { useParams, useSearchParams, useRouter } from "next/navigation"
+import { processPaymentCallback } from "./actions"
 
-export default async function CallbackPage({
-  searchParams,
-  params,
-}: PageProps) {
-  const { countryCode } = await params
-  const queryParams = await searchParams
+export default function CallbackPage() {
+  const router = useRouter()
+  const params = useParams()
+  const searchParams = useSearchParams()
 
-  // 실패 케이스 처리 (토스에서 실패로 리다이렉트된 경우)
-  if (queryParams.status === "FAIL") {
-    const code = queryParams.code || "UNKNOWN"
-    const failMessage = queryParams.message || "결제 실패"
+  const countryCode = params.countryCode as string
 
-    redirect(
-      `/${countryCode}/checkout/fail?code=${code}&message=${encodeURIComponent(failMessage)}`
-    )
-  }
+  useEffect(() => {
+    const status = searchParams.get("status")
+    const code = searchParams.get("code")
+    const message = searchParams.get("message")
+    const paymentKey = searchParams.get("paymentKey")
+    const orderId = searchParams.get("orderId")
+    const usePoints = searchParams.get("usePoints")
+    const amount = searchParams.get("amount")
 
-  // 필수 파라미터 검증
-  const { paymentKey, orderId } = queryParams
-  if (!paymentKey || !orderId) {
-    redirect(
-      `/${countryCode}/checkout/fail?code=MISSING_PARAMS&message=${encodeURIComponent("필수 파라미터가 누락되었습니다.")}`
-    )
-    return
-  }
+    // 실패 케이스 처리 (토스에서 실패로 리다이렉트된 경우)
+    if (status === "FAIL") {
+      const failCode = code || "UNKNOWN"
+      const failMessage = message || "결제 실패"
+      router.replace(
+        `/${countryCode}/checkout/fail?code=${failCode}&message=${encodeURIComponent(failMessage)}`
+      )
+      return
+    }
 
-  try {
-    // authorizePayment 함수 사용
-    const response = await authorizePayment(orderId, {
-      provider: "TOSS",
-      authParams: { paymentKey },
+    // 필수 파라미터 검증
+    if (!paymentKey || !orderId) {
+      router.replace(
+        `/${countryCode}/checkout/fail?code=MISSING_PARAMS&message=${encodeURIComponent("필수 파라미터가 누락되었습니다.")}`
+      )
+      return
+    }
+
+    const usePointsNumber = usePoints ? parseInt(usePoints) : 0
+
+    processPaymentCallback(
+      countryCode,
+      paymentKey,
+      orderId,
+      amount!,
+      usePointsNumber
+    ).then((result) => {
+      router.replace(result.redirectUrl)
     })
+  }, [countryCode, searchParams, router])
 
-    console.log("🔍 콜백 페이지 - 승인 응답:", response)
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-[#f8f8f8]">
+      <div className="w-full max-w-md rounded-lg bg-white p-8 shadow-lg">
+        <div className="flex flex-col items-center">
+          {/* Loading Spinner */}
+          <div className="mb-4 h-16 w-16 animate-spin rounded-full border-b-2 border-[#F29219]"></div>
 
-    if (!response.success) {
-      console.log("response.message:", response.message)
-      return
-      // redirect(
-      //   `/${countryCode}/checkout/fail?code=AUTHORIZE_ERROR&message=${encodeURIComponent(response.message || "결제 승인 실패")}`
-      // )
-    }
+          <h2 className="mb-2 text-2xl font-bold text-gray-900">
+            결제 처리 중
+          </h2>
+          <p className="text-center text-gray-600">결제를 처리 중입니다...</p>
 
-    if (!response.intentId) {
-      console.log("response.intentId:", response.intentId)
-      return
-      // redirect(
-      //   `/${countryCode}/checkout/fail?code=MISSING_INTENT_ID&message=${encodeURIComponent("결제 승인 응답에 intentId가 없습니다.")}`
-      // )
-    }
-
-    // 성공 시 -> 성공 페이지로 리다이렉트
-    // redirect(`/${countryCode}/checkout/success/${response.intentId}`)
-  } catch (err) {
-    // NEXT_REDIRECT 에러는 정상적인 리다이렉트이므로 다시 던짐
-    if (err instanceof Error && err.message === "NEXT_REDIRECT") {
-      throw err
-    }
-
-    const errorMessage = err instanceof Error ? err.message : "알 수 없는 오류"
-    console.log("error message", errorMessage)
-    redirect(
-      `/${countryCode}/checkout/fail?code=CALLBACK_ERROR&message=${encodeURIComponent(errorMessage)}`
-    )
-  }
+          <div className="mt-6 text-center text-sm text-gray-500">
+            잠시만 기다려주세요.
+            <br />
+            페이지를 닫거나 새로고침하지 마세요.
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }

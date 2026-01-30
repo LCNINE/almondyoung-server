@@ -16,8 +16,8 @@ export const PaymentMethodSection = ({
   <section className="mb-8">
     <h2 className="mb-3 text-xl font-bold text-gray-900">결제 수단</h2>
     <div className="flex w-full max-w-[810px] flex-col gap-4">
-      {/* 나중 결제 */}
-      <div
+      {/* 나중 결제 - 임시 주석처리 */}
+      {/* <div
         role="radio"
         aria-checked={selectedMethod === "payLater"}
         tabIndex={0}
@@ -86,7 +86,7 @@ export const PaymentMethodSection = ({
             </div>
           </div>
         </div>
-      </div>
+      </div> */}
 
       {/* 토스 결제 */}
       <div
