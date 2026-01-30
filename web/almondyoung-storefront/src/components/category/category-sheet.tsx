@@ -17,8 +17,8 @@ import { CurrentSubscription } from "@lib/types/ui/membership"
 import { CategoryTree } from "@lib/types/ui/pim"
 import { UserDetail } from "@lib/types/ui/user"
 import { cn } from "@lib/utils"
+import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
 import { AlertCircle, ChevronRight, UserCircle2 } from "lucide-react"
-import Image from "next/image"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { useEffect, useMemo, useState, useTransition } from "react"
@@ -199,7 +199,8 @@ function SubCategoryList({
         <>
           {(() => {
             const activeCategory = categories.find((c) => c.id === activeTab)
-            const activeCategorySlug = activeCategory?.slug || activeTab
+            // 카테고리 id를 사용 (medusa에서 handle 또는 id로 조회 가능)
+            const activeCategoryId = activeCategory?.id || activeTab
             return (
               <>
                 <div className="mb-8 flex items-center justify-between">
@@ -213,7 +214,7 @@ function SubCategoryList({
                     className="group flex items-center gap-0.5 px-0! text-[12px] font-semibold text-gray-400"
                     onClick={() => setOpen(false)}
                   >
-                    <Link href={`/${countryCode}/category/${activeCategorySlug}`}>
+                    <Link href={`/${countryCode}/category/${activeCategoryId}`}>
                       전체보기
                       <ChevronRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
                     </Link>
@@ -230,16 +231,15 @@ function SubCategoryList({
                       className="group flex h-full w-full flex-col items-center gap-3 px-0! py-0!"
                     >
                       <Link
-                        href={`/${countryCode}/category/${activeCategorySlug}/${sub.slug}`}
+                        href={`/${countryCode}/category/${sub.id}`}
                         onClick={() => setOpen(false)}
                       >
                         <div className="relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-[22px] bg-[#F5F5F7] transition-transform duration-200 group-active:scale-95">
                           {sub.imageUrl ? (
-                            <Image
-                              src={sub.imageUrl}
+                            <img
+                              src={getThumbnailUrl(sub.imageUrl)}
                               alt={sub.name}
-                              fill
-                              className="object-contain p-3.5"
+                              className="h-full w-full object-contain p-3.5"
                             />
                           ) : (
                             <div className="h-6 w-6 rounded bg-gray-200/50" />

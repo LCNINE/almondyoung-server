@@ -2,23 +2,19 @@
 
 import { CategoryCircleTabs } from "@/components/category/category-circle-tabs"
 import { BannerCarousel } from "@/components/layout/components/banner/banner-carousel"
-import {
-  BasicProductCard,
-  TimeSaleProductCard,
-} from "@components/products/product-card"
+import { ProductGrid } from "@/components/products/product-grid"
 import ProductFilterSidebar from "@/components/products/product-filter-sidebar"
-import { SectionSliderHorizontal } from "@components/section-sliders-horizontal"
 import { SharedPagination } from "@/components/shared/pagination"
 import { SlidersHorizontal, ChevronDown } from "lucide-react"
 import { overlay } from "overlay-kit"
 import { MobileFilterSheet } from "./mobile-filter-sheet"
 import CustomDropdown from "@components/dropdown"
 import type { StoreProductCategoryTree } from "@lib/types/medusa-category"
-import type { ProductCard } from "@lib/types/ui/product"
+import type { ProductCardProps } from "@lib/types/ui/product"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useCallback, useEffect, useState, useTransition } from "react"
 import { getProductList } from "@lib/api/medusa/products"
-import { mapMedusaProductsToCards } from "@lib/utils/map-medusa-product-card"
+import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
 import { cn } from "@lib/utils"
 import { useUser } from "@/contexts/user-context"
 
@@ -59,7 +55,7 @@ interface CategoryPageClientProps {
   slug: string
   categoryInfo: CategoryInfo
   categoryData: StoreProductCategoryTree // null 가능성 제거 (Container에서 처리함)
-  initialProducts?: ProductCard[] // 서버에서 로드한 초기 상품 목록
+  initialProducts?: ProductCardProps[] // 서버에서 로드한 초기 상품 목록
   initialTotal?: number // 전체 상품 수
   countryCode: string
   categoryIds?: string[] // 카테고리 ID 목록
@@ -90,7 +86,7 @@ export function CategoryPageClient({
   const currentLimit = Number(searchParams.get("limit")) || DEFAULT_ITEMS_PER_PAGE
 
   // 상품 목록 상태
-  const [products, setProducts] = useState<ProductCard[]>(initialProducts)
+  const [products, setProducts] = useState<ProductCardProps[]>(initialProducts)
   const [total, setTotal] = useState(initialTotal)
   const totalPages = Math.ceil(total / currentLimit)
 
@@ -155,7 +151,7 @@ export function CategoryPageClient({
           region_id: regionId,
           order: sortOrder,
         })
-        setProducts(mapMedusaProductsToCards(result.products))
+        setProducts(mapStoreProductsToCardProps(result.products))
         setTotal(result.count)
       } catch (error) {
         console.error("상품 목록 로드 실패:", error)
@@ -170,15 +166,6 @@ export function CategoryPageClient({
     initialProducts,
     initialTotal,
   ])
-
-  const timeSaleProducts = products
-    .filter((product) => product.isTimeSale && product.timeSaleEndTime)
-    .map((product) => ({
-      ...product,
-      timer: product.timeSaleEndTime
-        ? getTimerFromEndTime(product.timeSaleEndTime)
-        : undefined,
-    }))
 
   const openMobileFilter = () => {
     overlay.open(({ isOpen, close, unmount }) => (
@@ -238,19 +225,6 @@ export function CategoryPageClient({
               </section>
             )}
 
-            {/* 타임 세일 섹션 */}
-            {timeSaleProducts.length > 0 && (
-              <SectionSliderHorizontal
-                title={`${categoryInfo.title} 타임 세일`}
-                itemCount={timeSaleProducts.length}
-              >
-                {timeSaleProducts.map((product) => (
-                  <div key={product.id} className="w-48 shrink-0 snap-start">
-                    <TimeSaleProductCard product={product} minWidth={192} />
-                  </div>
-                ))}
-              </SectionSliderHorizontal>
-            )}
             <section>
               {/* 모바일: 필터 버튼 + 정렬 툴바 */}
               <div className="mb-4 flex items-center justify-between md:hidden">
@@ -327,17 +301,13 @@ export function CategoryPageClient({
               {/* Product Grid */}
               {products.length > 0 ? (
                 <>
-                  <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
-                    {products.map((product, idx) => (
-                      <BasicProductCard
-                        key={`${product.id}-${idx}`}
-                        product={product}
-                        showQuickActions
-                        countryCode={countryCode}
-                        isLoggedIn={isLoggedIn}
-                      />
-                    ))}
-                  </div>
+                  <ProductGrid
+                    products={products}
+                    showQuickActions
+                    className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4"
+                    countryCode={countryCode}
+                    isLoggedIn={isLoggedIn}
+                  />
 
                   {/* 페이지네이션 */}
                   <SharedPagination
@@ -358,21 +328,4 @@ export function CategoryPageClient({
       </div>
     </main>
   )
-}
-
-const getTimerFromEndTime = (endTime: string) => {
-  const end = new Date(endTime).getTime()
-  if (Number.isNaN(end)) {
-    return { hours: 0, minutes: 0, seconds: 0 }
-  }
-
-  const now = Date.now()
-  const diff = Math.max(end - now, 0)
-
-  const totalSeconds = Math.floor(diff / 1000)
-  const hours = Math.floor(totalSeconds / 3600)
-  const minutes = Math.floor((totalSeconds % 3600) / 60)
-  const seconds = totalSeconds % 60
-
-  return { hours, minutes, seconds }
 }

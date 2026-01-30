@@ -48,8 +48,21 @@ export function CategoryBestSection({
 
   useEffect(() => {
     startTransition(async () => {
-      const products = await getCategoryBestProducts(activeTab, regionId)
-      setProducts(products)
+      const nextProducts = await getCategoryBestProducts(activeTab, regionId)
+      if (process.env.NODE_ENV !== "production") {
+        console.log(
+          "[Home][CategoryBest] products",
+          nextProducts.map((product) => ({
+            id: product.id,
+            title: product.title,
+            price: product.price,
+            originalPrice: product.originalPrice,
+            membershipSavings: product.membershipSavings,
+            debugPrices: product.debugPrices,
+          }))
+        )
+      }
+      setProducts(nextProducts)
     })
   }, [activeTab, regionId])
 
@@ -155,12 +168,7 @@ export function CategoryBestSection({
                                     >
                                       <ProductCard>
                                         <ProductCard.Thumbnail
-                                          src={
-                                            "https://file.almondyoung-next.com/files/public/" +
-                                            (product.imageSrc
-                                              .split("/")
-                                              .pop() ?? "")
-                                          }
+                                          src={product.imageSrc}
                                           alt={product.title}
                                           rank={
                                             <ProductCard.Rank rank={rank} />

@@ -53,7 +53,7 @@ export function ProductImageGallery({
       <figure className="flex-1">
         <div className="aspect-square overflow-hidden bg-gray-200">
           <img
-            src={mainImage}
+            src={getThumbnailUrl(mainImage)}
             alt={`${productName} 메인 이미지`}
             className="h-full w-full object-cover"
           />

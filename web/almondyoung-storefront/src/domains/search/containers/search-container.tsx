@@ -1,7 +1,9 @@
 import { SearchPageClient } from "../components/search-page-client"
 import { searchProducts } from "@lib/api/pim/search"
-import type { ProductCard, SearchProductResult } from "@lib/types/ui/product"
-import type { ProductSearchItemDto } from "@lib/types/dto/pim"
+import { getProductList } from "@lib/api/medusa/products"
+import { getRegion } from "@lib/api/medusa/regions"
+import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
+import type { ProductCardProps, SearchProductResult } from "@lib/types/ui/product"
 
 interface SearchContainerProps {
   searchParams: Promise<{
@@ -17,24 +19,13 @@ interface SearchContainerProps {
   }>
 }
 
-// PIM 검색 결과를 ProductCard로 변환
-// TODO: 서버에서 thumbnail 필드 추가 후 매핑 업데이트
-const mapSearchItemToProductCard = (item: ProductSearchItemDto): ProductCard => ({
-  id: item.master_id,
-  name: item.name,
-  thumbnail: "", // TODO: 서버 인덱스에 thumbnail 필드 추가 필요
-  basePrice: item.price ?? undefined,
-  status: item.status === "active" ? "active" : "inactive",
-  brand: item.brand ?? undefined,
-  createdAt: item.created_at,
-})
-
 export async function SearchContainer({
   searchParams,
   params,
 }: SearchContainerProps) {
   const { q, page, sort, brands, minPrice, maxPrice } = await searchParams
   const { countryCode } = await params
+  const region = await getRegion(countryCode)
 
   const keyword = q?.trim() || ""
   const currentPage = parseInt(page || "1", 10)
@@ -72,8 +63,8 @@ export async function SearchContainer({
 
   if (keyword) {
     try {
-      // PIM Elasticsearch 검색
-      const result = await searchProducts({
+      // 1. PIM Elasticsearch 검색으로 master_id 목록 가져오기
+      const pimResult = await searchProducts({
         keyword,
         page: currentPage,
         limit,
@@ -84,11 +75,37 @@ export async function SearchContainer({
         maxPrice: maxPrice ? parseInt(maxPrice, 10) : undefined,
       })
 
-      if ("data" in result && result.data) {
-        const searchData = result.data
+      if ("data" in pimResult && pimResult.data) {
+        const searchData = pimResult.data
+
+        // 2. master_id 목록 추출 (medusa에서 handle로 사용)
+        const masterIds = searchData.items.map(item => item.master_id)
+
+        let items: ProductCardProps[] = []
+
+        if (masterIds.length > 0) {
+          // 3. medusa에서 handle로 상품 조회
+          const medusaResult = await getProductList({
+            handle: masterIds,
+            limit: masterIds.length,
+            region_id: region?.id,
+          })
+
+          // 4. PIM 검색 순서대로 정렬 (검색 관련도 유지)
+          // medusa product의 handle이 PIM master_id와 매핑됨
+          const orderMap = new Map(masterIds.map((id, idx) => [id, idx]))
+          const sortedProducts = [...medusaResult.products].sort((a, b) => {
+            const orderA = orderMap.get(a.handle ?? "") ?? Infinity
+            const orderB = orderMap.get(b.handle ?? "") ?? Infinity
+            return orderA - orderB
+          })
+
+          // 5. medusa 상품을 ProductCardProps로 변환
+          items = mapStoreProductsToCardProps(sortedProducts)
+        }
 
         searchResult = {
-          items: searchData.items.map(mapSearchItemToProductCard),
+          items,
           pagination: searchData.pagination,
           aggregations: searchData.aggregations,
         }

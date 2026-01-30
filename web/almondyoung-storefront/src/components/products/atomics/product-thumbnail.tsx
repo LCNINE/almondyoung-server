@@ -49,11 +49,13 @@ export const ProductThumbnail = ({
         </div>
       )}
 
+      {/* TODO: 재고 연동 후 활성화
       {isSoldOut && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/45 text-sm font-semibold text-white">
           품절
         </div>
       )}
+      */}
 
       {/* 커스텀 액션 (우선) 또는 기본 장바구니 아이콘 */}
       {action
