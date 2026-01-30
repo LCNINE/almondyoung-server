@@ -3,13 +3,12 @@ import {
   type SubscriberConfig,
 } from '@medusajs/framework';
 import {
-  AbstractPaymentProvider,
   ContainerRegistrationKeys,
-  Modules,
+  Modules
 } from '@medusajs/framework/utils';
+import { PAYMENT_STREAM } from '@packages/event-contracts/streams';
 import { EVENT_MODULE } from '../modules/events';
 import EventModuleService from '../modules/events/service';
-import { PAYMENT_EVENTS } from '@packages/event-contracts/streams';
 
 export const config: SubscriberConfig = {
   event: [
@@ -57,7 +56,8 @@ export default async function handler({
 
   // 결제 포착 시 발행
   if (name === 'payment.captured') {
-    await eventService.publishEvent(PAYMENT_EVENTS.CAPTURED.topic, {
+    await eventService.publishEvent(PAYMENT_STREAM.topic.topic, {
+      messageType: PAYMENT_STREAM.events.PaymentCaptured.messageType,
       order_id: orderId,
       payment_id: payment.id,
       amount: payment.amount,
