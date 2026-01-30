@@ -26,11 +26,8 @@ export function MyPageDesktopContent({
 }: MyPageDesktopContentProps) {
   return (
     <div>
-      <UserProfileSection
-        userName={currentUser?.username}
-        userId={currentUser?.id}
-      />
-      
+      <UserProfileSection userName={currentUser?.username} />
+
       {/* 관리자 버튼 */}
       {isAdmin && (
         <div className="mb-4">

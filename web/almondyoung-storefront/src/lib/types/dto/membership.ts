@@ -15,6 +15,9 @@ export interface CurrentSubscriptionResDto {
     endDate: string | null
     createdAt: string
     updatedAt: string
+    nextBillingDate?: string | null
+    currentPeriodStart?: string | null
+    currentPeriodEnd?: string | null
 
     plan: {
       id: string
@@ -26,6 +29,14 @@ export interface CurrentSubscriptionResDto {
       isActive: boolean
       createdAt: string
       updatedAt: string
+      tier?: {
+        id: string
+        code: string
+        name: string | null
+        priorityLevel: number
+        createdAt: string
+        updatedAt: string
+      }
     }
 
     tier: {
