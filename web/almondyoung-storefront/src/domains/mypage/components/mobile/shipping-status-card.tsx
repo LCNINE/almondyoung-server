@@ -1,6 +1,10 @@
+"use client"
+
 import { ChevronRight } from "lucide-react"
 import Image from "next/image"
-import React from "react"
+import React, { useEffect, useState } from "react"
+import { getOrders } from "@lib/api/medusa/orders"
+import Link from "next/link"
 
 // --- 1. 데이터 타입 정의 ---
 type OrderStatus = "SHIPPING" | "PREPARING"
@@ -13,75 +17,139 @@ interface OrderItem {
   thumbnail: string
 }
 
-// --- 2. 목업 데이터 ---
-const orderList: OrderItem[] = [
-  {
-    id: "1",
-    orderNumber: "20102-202031",
-    status: "SHIPPING",
-    statusLabel: "배송 중",
-    thumbnail: "https://placehold.co/44x45", // (예시 이미지)
-  },
-  {
-    id: "2",
-    orderNumber: "20232-202031",
-    status: "PREPARING",
-    statusLabel: "상품 준비 중",
-    thumbnail: "https://placehold.co/44x45",
-  },
-]
-
-// --- 3. 개별 아이템 컴포넌트 (분리) ---
+// --- 3. 개별 아이템 컴포넌트 ---
 function ShippingItem({ item }: { item: OrderItem }) {
-  // 상태에 따른 텍스트 색상 결정
   const statusColor =
     item.status === "SHIPPING" ? "text-[#007aff]" : "text-black"
 
   return (
-    <li className="flex w-full items-center gap-4 py-1">
-      {/* 썸네일 */}
-      <div className="relative h-[45px] w-11 shrink-0 overflow-hidden rounded-[5px] border border-[#d9d9d9]/50">
-        <Image
-          src={item.thumbnail}
-          alt={`주문번호 ${item.orderNumber}`}
-          fill
-          className="object-cover"
-          unoptimized // placehold.co 사용 시 필요 (실제 이미지 사용 시 제거 가능)
-        />
-      </div>
+    <Link href={`/kr/mypage/order/details?orderId=${item.id}`}>
+      <li className="flex w-full items-center gap-4 py-1 transition-opacity hover:opacity-80">
+        {/* 썸네일 */}
+        <div className="relative h-[45px] w-11 shrink-0 overflow-hidden rounded-[5px] border border-[#d9d9d9]/50">
+          <Image
+            src={item.thumbnail}
+            alt={`주문번호 ${item.orderNumber}`}
+            fill
+            className="object-cover"
+          />
+        </div>
 
-      {/* 텍스트 정보 */}
-      <div className="flex flex-1 flex-col gap-1">
-        <span className="text-xs font-medium text-[#5a5a5a]">
-          주문번호 {item.orderNumber}
-        </span>
-        <span className={`text-base font-medium ${statusColor}`}>
-          {item.statusLabel}
-        </span>
-      </div>
+        {/* 텍스트 정보 */}
+        <div className="flex flex-1 flex-col gap-1">
+          <span className="text-xs font-medium text-[#5a5a5a]">
+            주문번호 {item.orderNumber}
+          </span>
+          <span className={`text-base font-medium ${statusColor}`}>
+            {item.statusLabel}
+          </span>
+        </div>
 
-      {/* 아이콘 (Lucide) */}
-      <button type="button" aria-label="상세보기" className="text-[#1E1E1E]">
-        <ChevronRight size={24} strokeWidth={1.5} />
-      </button>
-    </li>
+        {/* 아이콘 */}
+        <button type="button" aria-label="상세보기" className="text-[#1E1E1E]">
+          <ChevronRight size={24} strokeWidth={1.5} />
+        </button>
+      </li>
+    </Link>
   )
 }
 
 // --- 4. 메인 컴포넌트 ---
 export default function ShippingStatusCard() {
+  const [orderList, setOrderList] = useState<OrderItem[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchOrders = async () => {
+      try {
+        const ordersData = await getOrders({ limit: 10 })
+
+        // Medusa 주문 데이터를 OrderItem으로 변환
+        const shippingOrders: OrderItem[] = (ordersData?.orders || [])
+          .filter((order) => {
+            const fulfillmentStatus = order.fulfillment_status
+            return (
+              fulfillmentStatus === "partially_fulfilled" ||
+              fulfillmentStatus === "fulfilled" ||
+              fulfillmentStatus === "shipped" ||
+              fulfillmentStatus === "not_fulfilled"
+            )
+          })
+          .slice(0, 2)
+          .map((order) => {
+            const fulfillmentStatus = order.fulfillment_status
+            let status: OrderStatus = "PREPARING"
+            let statusLabel = "상품 준비 중"
+
+            if (
+              fulfillmentStatus === "shipped" ||
+              fulfillmentStatus === "fulfilled"
+            ) {
+              status = "SHIPPING"
+              statusLabel = "배송 중"
+            } else if (fulfillmentStatus === "partially_fulfilled") {
+              status = "SHIPPING"
+              statusLabel = "부분 배송 중"
+            }
+
+            const thumbnail =
+              order.items?.[0]?.thumbnail ||
+              order.items?.[0]?.variant?.product?.thumbnail ||
+              "https://placehold.co/44x45"
+
+            return {
+              id: order.id,
+              orderNumber: order.display_id?.toString() || order.id.slice(0, 12),
+              status,
+              statusLabel,
+              thumbnail,
+            }
+          })
+
+        setOrderList(shippingOrders)
+      } catch (error) {
+        console.error("주문 조회 실패:", error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchOrders()
+  }, [])
+
+  if (isLoading) {
+    return (
+      <section className="flex w-full flex-col gap-3">
+        <h2 className="text-base font-bold text-black">배송 중 상품</h2>
+        <div className="flex flex-col gap-4 rounded-[10px] border-[0.5px] border-[#d9d9d9] bg-white px-4 py-3.5">
+          <p className="text-sm text-gray-500">로딩 중...</p>
+        </div>
+      </section>
+    )
+  }
+
+  if (orderList.length === 0) {
+    return (
+      <section className="flex w-full flex-col gap-3">
+        <h2 className="text-base font-bold text-black">배송 중 상품</h2>
+        <div
+          className="flex flex-col gap-4 rounded-[10px] border-[0.5px] border-[#d9d9d9] bg-white px-4 py-3.5"
+          style={{ boxShadow: "0px 4px 10px 0 rgba(0,0,0,0.1)" }}
+        >
+          <p className="py-4 text-center text-sm text-gray-500">
+            배송 중인 상품이 없습니다
+          </p>
+        </div>
+      </section>
+    )
+  }
+
   return (
-    // PARENT:
-    // - w-full: 반응형이되, 너무 넓어지지 않도록 제한
-    // - p-4: 적절한 내부 여백
     <section className="flex w-full flex-col gap-3">
-      {/* Header */}
       <h2 className="text-base font-bold text-black">배송 중 상품</h2>
 
-      {/* List Container */}
       <div
         className="flex flex-col gap-4 rounded-[10px] border-[0.5px] border-[#d9d9d9] bg-white px-4 py-3.5"
-        // 원본 디자인의 그림자 값 적용
         style={{ boxShadow: "0px 4px 10px 0 rgba(0,0,0,0.1)" }}
       >
         <ul className="flex flex-col gap-4">

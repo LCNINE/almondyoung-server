@@ -2,7 +2,7 @@ import { ReviewBenefitBanner } from "./review-benefit-banner"
 import { ReviewListHeader } from "./review-list-header"
 import { ReviewCardBeforeWritten } from "./review-card-before-written"
 import { ReviewCardAfterWritten } from "./review-card-after-written"
-import type { WritableReview } from "domains/reviews/manage/types"
+import type { WritableReview, ProductInfo, BenefitInfo } from "domains/reviews/manage/types"
 
 interface WritableReviewsSectionProps {
   reviews: WritableReview[]
@@ -22,12 +22,33 @@ interface WritableReviewsSectionProps {
  */
 export const WritableReviewsSection = ({
   reviews,
-  editingReviewId,
+
   isReviewBeingEdited,
   onStartEditing,
   onSave,
   onCancel,
 }: WritableReviewsSectionProps) => {
+  // WritableReview를 ProductInfo와 BenefitInfo로 변환
+  const convertToProductInfo = (review: WritableReview): ProductInfo => ({
+    imageUrl: review.productImage,
+    storeName: "올마이영", // TODO: 실제 스토어 이름이 필요한 경우 API에서 가져오기
+    title: review.productName,
+    options: review.variantTitle || "기본 옵션",
+    purchaseDate: review.orderDate,
+  })
+
+  const convertToBenefitInfo = (): BenefitInfo => {
+    // TODO: 실제 포인트 및 작성 기한 정보를 가져오기
+    const deadline = new Date()
+    deadline.setDate(deadline.getDate() + 7)
+
+    return {
+      points: 1000,
+      deadline: `${deadline.getFullYear()}.${String(deadline.getMonth() + 1).padStart(2, '0')}.${String(deadline.getDate()).padStart(2, '0')}.`,
+      dDay: 7,
+    }
+  }
+
   return (
     <section>
       <ReviewBenefitBanner />
@@ -37,6 +58,8 @@ export const WritableReviewsSection = ({
       <ul className="overflow-hidden rounded-lg border border-[#F0F0F0] bg-[#FFFFFF] shadow-sm">
         {reviews.map((item) => {
           const isBeingEdited = isReviewBeingEdited(item.id)
+          const productInfo = convertToProductInfo(item)
+          const benefitInfo = convertToBenefitInfo()
 
           return (
             <li
@@ -45,15 +68,15 @@ export const WritableReviewsSection = ({
             >
               {isBeingEdited ? (
                 <ReviewCardAfterWritten
-                  product={item.product}
+                  product={productInfo}
                   review={{ rating: 0, text: "" }}
                   onSave={(data) => onSave(item.id, data)}
                   onDelete={onCancel}
                 />
               ) : (
                 <ReviewCardBeforeWritten
-                  product={item.product}
-                  benefit={item.benefit}
+                  product={productInfo}
+                  benefit={benefitInfo}
                   onWriteReview={() => onStartEditing(item.id)}
                 />
               )}

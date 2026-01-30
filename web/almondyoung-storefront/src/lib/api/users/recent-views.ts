@@ -1,6 +1,6 @@
 "use server"
 
-import { RecentViewDto, RecentViewsResponseDto } from "@lib/types/dto/users"
+import { RecentViewDto } from "@lib/types/dto/users"
 import { api } from "../api"
 
 /**
@@ -23,8 +23,8 @@ export async function addToRecentViews(
  */
 export async function getRecentViews(
   limit: number = 10
-): Promise<RecentViewsResponseDto[]> {
-  const data = await api<RecentViewsResponseDto[]>("users", "/recent-views", {
+): Promise<RecentViewDto[]> {
+  const data = await api<RecentViewDto[]>("users", "/recent-views", {
     method: "GET",
     withAuth: true,
     params: {

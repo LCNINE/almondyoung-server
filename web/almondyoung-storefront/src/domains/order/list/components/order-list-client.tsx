@@ -1,69 +1,148 @@
 "use client"
 
 import { PageTitle } from "@/components/shared/page-title"
-import { useOrderList } from "../hooks/use-order-list"
-import { groupOrdersByDate } from "../../../../components/orders/utils"
-
 import OrderCard from "@components/orders/order-card/order-card"
 import OrderCardContent from "@components/orders/order-card/order-card-content"
 import { OrderFilter } from "./shared/order-filter"
+import { useEffect, useState } from "react"
+import { getOrders } from "@lib/api/medusa/orders"
+import { Spinner } from "@/components/shared/spinner"
+import { Package } from "lucide-react"
 
-// Mock 주문 데이터
-const mockOrders = [
-  {
-    orderId: "ORD-2025-0615-001",
-    orderDate: "6월 15일",
-    status: "배송 완료",
-    deliveryInfo: "6/18(화) 도착",
-    shippingNote: "문 앞 배송",
-    productName: "초경량 하이킹 백팩 25L (블랙)",
-    productImage: "/images/backpack.jpg",
-    price: "89,000원",
-    quantity: 1,
-    options: ["옵션: 블랙"],
-    showInquiry: true,
-  },
-  {
-    orderId: "ORD-2025-0610-002",
-    orderDate: "6월 10일",
-    status: "배송 중",
-    deliveryInfo: "6/12(금) 도착 예정",
-    shippingNote: "경비실 보관",
-    productName: "노모드 속눈썹 영양제 블랙",
-    productImage:
-      "https://almondyoung.com/web/product/medium/202503/d21d85aa58f14bb4cc2a69342d24c4fa.jpg",
-    price: "9,000원",
-    quantity: 2,
-    options: ["브러쉬 타입 1개", "마스카라 타입 1개"],
-    showInquiry: true,
-  },
-  {
-    orderId: "ORD-2025-0601-003",
-    orderDate: "6월 1일",
-    status: "결제 완료",
-    deliveryInfo: "",
-    shippingNote: "",
-    productName: "프로페셔널 네일 아트 키트",
-    productImage: "/images/nail-kit.jpg",
-    price: "45,000원",
-    quantity: 1,
-    options: ["풀세트"],
-    showInquiry: false,
-  },
-]
+interface OrderItem {
+  orderId: string
+  orderDate: string
+  status: string
+  deliveryInfo: string
+  shippingNote: string
+  productName: string
+  productImage: string
+  price: string
+  quantity: number
+  options: string[]
+  showInquiry: boolean
+}
+
 export function OrderListClient() {
-  const { orders, handleFilterChange, handleMoreClick } = useOrderList()
-  const groupedOrders = groupOrdersByDate(orders)
+  const [orders, setOrders] = useState<OrderItem[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const fetchOrders = async () => {
+      try {
+        const ordersData = await getOrders({ limit: 50 })
+
+        const mappedOrders: OrderItem[] = (ordersData?.orders || []).map(
+          (order) => {
+            const orderDate = new Date(order.created_at)
+            const formatDate = `${orderDate.getMonth() + 1}월 ${orderDate.getDate()}일`
+
+            // 주문 상태 매핑
+            let status = "결제 완료"
+            let deliveryInfo = ""
+
+            const fulfillmentStatus = order.fulfillment_status
+            const paymentStatus = order.payment_status
+
+            if (paymentStatus === "awaiting") {
+              status = "결제 대기"
+            } else if (fulfillmentStatus === "fulfilled") {
+              status = "배송 완료"
+            } else if (fulfillmentStatus === "shipped") {
+              status = "배송 중"
+            } else if (fulfillmentStatus === "partially_fulfilled") {
+              status = "부분 배송"
+            } else if (fulfillmentStatus === "not_fulfilled") {
+              status = "상품 준비 중"
+            } else if (order.status === "canceled") {
+              status = "취소됨"
+            }
+
+            // 첫 번째 상품 정보
+            const firstItem = order.items?.[0]
+            const productName =
+              firstItem?.title || firstItem?.variant?.product?.title || "상품"
+            const productImage =
+              firstItem?.thumbnail ||
+              firstItem?.variant?.product?.thumbnail ||
+              "https://placehold.co/80x80"
+            const price = `${(order.total / 100).toLocaleString()}원`
+
+            const options: string[] = []
+            if (firstItem?.variant?.title && firstItem.variant.title !== "Default") {
+              options.push(firstItem.variant.title)
+            }
+
+            return {
+              orderId: order.id,
+              orderDate: formatDate,
+              status,
+              deliveryInfo,
+              shippingNote: "",
+              productName,
+              productImage,
+              price,
+              quantity: order.items?.length || 0,
+              options,
+              showInquiry: status === "배송 완료",
+            }
+          }
+        )
+
+        setOrders(mappedOrders)
+      } catch (err) {
+        console.error("주문 목록 조회 실패:", err)
+        setError("주문 목록을 불러오는데 실패했습니다")
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchOrders()
+  }, [])
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-[400px] items-center justify-center">
+        <Spinner size="lg" color="gray" />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex min-h-[400px] flex-col items-center justify-center gap-4">
+        <p className="text-gray-500">{error}</p>
+      </div>
+    )
+  }
+
+  if (orders.length === 0) {
+    return (
+      <div className="min-h-screen bg-white px-3 py-4 md:px-6">
+        <PageTitle>주문 목록</PageTitle>
+        <div className="flex min-h-[400px] flex-col items-center justify-center gap-4">
+          <Package className="h-12 w-12 text-gray-300" />
+          <div className="text-center">
+            <p className="text-lg font-medium text-gray-600">주문 내역이 없습니다</p>
+            <p className="mt-1 text-sm text-gray-400">
+              첫 주문을 시작해보세요
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-white px-3 py-4 md:px-6">
       <PageTitle>주문 목록</PageTitle>
-      {/* <FrequentProducts />  이건 잠시 보류 물어볼것 */}
       <section className="my-5">
         <OrderFilter />
       </section>
       <section className="space-y-6">
-        {mockOrders.map((order) => (
+        {orders.map((order) => (
           <OrderCard
             key={order.orderId}
             orderId={order.orderId}
