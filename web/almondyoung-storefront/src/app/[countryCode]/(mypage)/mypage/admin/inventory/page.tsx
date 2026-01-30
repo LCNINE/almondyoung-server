@@ -10,7 +10,8 @@ import {
   ShieldAlert,
 } from "lucide-react"
 import { toast } from "sonner"
-import { processInventoryExcel, checkAdminAccess, type InventoryRow } from "@lib/api/admin/inventory"
+import { processInventoryExcel, checkAdminAccess, checkAdminScope, type InventoryRow } from "@lib/api/admin/inventory"
+import { medusaSigninAdmin } from "@lib/api/medusa/signin"
 
 export default function AdminInventoryPage() {
   const [isProcessing, setIsProcessing] = useState(false)
@@ -23,7 +24,48 @@ export default function AdminInventoryPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    checkAdminAccess().then(setHasAccess)
+    async function initializeAdminAccess() {
+      // 1. accessToken의 scope 확인
+      const { isAdmin } = await checkAdminScope()
+
+      if (!isAdmin) {
+        setHasAccess(false)
+        return
+      }
+
+      // 2. Medusa JWT의 actor_type 확인
+      const hasAccess = await checkAdminAccess()
+
+      // 3. actor_type이 "user"가 아니면 medusaSigninAdmin 호출
+      if (!hasAccess) {
+        try {
+          const result = await medusaSigninAdmin()
+
+          if (result.success) {
+            // 성공 후 다시 확인
+            const recheckAccess = await checkAdminAccess()
+            setHasAccess(recheckAccess)
+
+            if (recheckAccess) {
+              toast.success("관리자 권한이 활성화되었습니다.")
+            } else {
+              toast.error("관리자 권한 활성화에 실패했습니다.")
+            }
+          } else {
+            setHasAccess(false)
+            toast.error("관리자 인증에 실패했습니다.")
+          }
+        } catch (error) {
+          console.error("Admin signin error:", error)
+          setHasAccess(false)
+          toast.error("관리자 인증 중 오류가 발생했습니다.")
+        }
+      } else {
+        setHasAccess(true)
+      }
+    }
+
+    initializeAdminAccess()
   }, [])
 
   const handleFile = useCallback(async (file: File) => {

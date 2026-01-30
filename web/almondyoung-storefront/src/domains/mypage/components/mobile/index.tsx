@@ -7,6 +7,7 @@ import { QuickLinks } from "./quick-links"
 import { SavingsBanner } from "./savings-banner"
 import ShippingStatusCard from "./shipping-status-card"
 import PayLaterBanner from "./paylater-banner"
+import { AdminAccessButton } from "@/components/admin/admin-access-button"
 
 /**
  * 마이페이지 모바일 콘텐츠
@@ -17,13 +18,30 @@ import PayLaterBanner from "./paylater-banner"
  */
 interface MyPageMobileContentProps {
   currentUser: UserDetail
+  isAdmin?: boolean
+  countryCode?: string
 }
 
-export function MyPageMobileContent({ currentUser }: MyPageMobileContentProps) {
+export function MyPageMobileContent({ 
+  currentUser,
+  isAdmin = false,
+  countryCode = "kr",
+}: MyPageMobileContentProps) {
   return (
     <div className="mx-auto">
       <div className="bg-muted space-y-4 px-6 py-4">
         <MobileHeader userName={currentUser?.username} />
+        
+        {/* 관리자 버튼 */}
+        {isAdmin && (
+          <div className="pb-2">
+            <AdminAccessButton 
+              countryCode={countryCode}
+              className="w-full"
+            />
+          </div>
+        )}
+
         <SavingsBanner />
         <PointsBanner />
         <QuickLinks />

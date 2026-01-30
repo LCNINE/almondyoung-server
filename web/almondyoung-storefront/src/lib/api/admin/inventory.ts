@@ -2,26 +2,11 @@
 
 import { cookies as nextCookies } from "next/headers"
 
-export interface InventoryRow {
-  sku: string
-  productName: string
-  optionName?: string
-  quantity: number
-  status?: "pending" | "success" | "error"
-  message?: string
-}
-
-export interface ProcessResult {
-  success: boolean
-  processedCount?: number
-  failedCount?: number
-  data?: InventoryRow[]
-  error?: string
-}
-
 interface JwtPayload {
   actor_type?: "user" | "customer"
   actor_id?: string
+  scope?: string
+  scopes?: string[]  // 배열 형태도 지원
   [key: string]: any
 }
 
@@ -45,7 +30,55 @@ function decodeJwtPayload(token: string): JwtPayload | null {
   }
 }
 
+/**
+ * accessToken의 scope를 확인하여 관리자 권한이 있는지 체크
+ * scope 또는 scopes 배열에 "master" 또는 "admin"이 있으면 관리자로 인정 (대소문자 구분 없음)
+ */
+export async function checkAdminScope(): Promise<{
+  isAdmin: boolean
+  scope?: string
+}> {
+  try {
+    const cookies = await nextCookies()
+    const accessToken = cookies.get("accessToken")?.value
 
+    if (!accessToken) {
+      return { isAdmin: false }
+    }
+
+    const payload = decodeJwtPayload(accessToken)
+
+    if (!payload) {
+      return { isAdmin: false }
+    }
+
+    // scopes 배열이 있는 경우 (예: ["master"])
+    if (payload.scopes && Array.isArray(payload.scopes)) {
+      const hasAdminScope = payload.scopes.some(
+        (s) => s.toLowerCase() === "master" || s.toLowerCase() === "admin"
+      )
+      if (hasAdminScope) {
+        return { isAdmin: true, scope: payload.scopes.join(", ") }
+      }
+    }
+
+    // scope 단수형이 있는 경우 (하위 호환성)
+    if (payload.scope) {
+      const scope = payload.scope.toLowerCase()
+      const isAdmin = scope === "master" || scope === "admin"
+      return { isAdmin, scope: payload.scope }
+    }
+
+    return { isAdmin: false }
+  } catch {
+    return { isAdmin: false }
+  }
+}
+
+/**
+ * Medusa JWT의 actor_type을 확인하여 관리자인지 체크
+ * (기존 방식 - medusaSigninAdmin 이후 사용)
+ */
 export async function checkAdminAccess(): Promise<boolean> {
   try {
     const cookies = await nextCookies()
@@ -61,11 +94,28 @@ export async function checkAdminAccess(): Promise<boolean> {
       return false
     }
 
-    // user관리자 customer 고객
+    // user=관리자, customer=고객
     return payload.actor_type === "user"
   } catch {
     return false
   }
+}
+
+export interface InventoryRow {
+  sku: string
+  productName: string
+  optionName?: string
+  quantity: number
+  status?: "pending" | "success" | "error"
+  message?: string
+}
+
+export interface ProcessResult {
+  success: boolean
+  processedCount?: number
+  failedCount?: number
+  data?: InventoryRow[]
+  error?: string
 }
 
 // 엑셀 파일에서 재고 데이터를 파싱하고 WMS 재고 업데이트
@@ -201,7 +251,6 @@ export async function processInventoryExcel(
     }
   }
 }
-
 
 // WMS를 통한 재고 조정
 async function adjustWmsInventory(
