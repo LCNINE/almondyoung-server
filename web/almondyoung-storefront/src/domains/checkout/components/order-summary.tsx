@@ -15,7 +15,7 @@ export const MobileOrderSummary = ({
   const {
     currency_code,
     item_subtotal,
-    shippingFee,
+    shipping,
     membershipDiscount,
     totalDiscount,
     finalTotal,
@@ -46,8 +46,8 @@ export const MobileOrderSummary = ({
           <div className="flex justify-between px-5 py-4">
             <dt className="text-sm text-gray-600">배송비</dt>
             <dd className="text-sm font-semibold text-gray-800">
-              {shippingFee > 0
-                ? convertToLocale({ amount: shippingFee, currency_code })
+              {shipping > 0
+                ? convertToLocale({ amount: shipping, currency_code })
                 : "무료"}
             </dd>
           </div>

@@ -1,12 +1,19 @@
 /*───────────────────────────
  * Intent
  *──────────────────────────*/
+export interface DiscountBreakdown {
+  amount: number // 차감액
+  type: "COUPON" | "POINT" | "PROMOTION"
+  id?: string // 쿠폰 ID, 프로모션 코드 등
+  description?: string // "신규가입 쿠폰"
+}
+
 export type CreateIntentRequestDto = {
   customerId: string
   originalAmount: number
   discountAmount: number
-  metadata?: Record<string, string>
   type: string
+  discountBreakdown?: DiscountBreakdown[]
 }
 
 export type CreateIntentResponseDto = {

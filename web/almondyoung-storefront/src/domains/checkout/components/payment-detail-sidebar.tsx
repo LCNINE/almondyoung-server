@@ -49,16 +49,32 @@ export const PaymentDetailSidebar = ({
       {isOpen && (
         <div className="rounded-[10px] border border-gray-200 bg-white">
           <div className="p-7">
-            <div className="mb-10 flex items-center justify-between">
-              <span className="text-lg font-bold text-gray-900">나중결제</span>
-              <span className="text-lg font-bold text-gray-900">
-                {formatAmount(totals.finalTotal)}
+            <div className="mb-4 flex items-center justify-between">
+              <span className="text-base text-gray-600">상품금액</span>
+              <span className="text-base font-semibold text-gray-900">
+                {formatAmount(totals.item_subtotal)}
               </span>
             </div>
-            <hr className="-mx-7 mb-4 border-gray-200" />
-            <div className="space-y-2 text-base text-gray-900">
-              <p>사용중: 150,000원 / 한도: 800,000원</p>
-              <p>다음 결제일: 2024.02.25 (D-5)</p>
+            <div className="mb-4 flex items-center justify-between">
+              <span className="text-base text-gray-600">배송비</span>
+              <span className="text-base font-semibold text-gray-900">
+                {totals.shipping > 0 ? formatAmount(totals.shipping) : "무료"}
+              </span>
+            </div>
+            <div className="mb-4 flex items-center justify-between">
+              <span className="text-base text-gray-600">할인</span>
+              <span className="text-base font-semibold text-gray-900">
+                {totals.totalDiscount > 0
+                  ? `-${formatAmount(totals.totalDiscount)}`
+                  : formatAmount(0)}
+              </span>
+            </div>
+            <hr className="-mx-7 my-4 border-gray-200" />
+            <div className="flex items-center justify-between">
+              <span className="text-lg font-bold text-gray-900">총 결제금액</span>
+              <span className="text-lg font-bold text-[#F29219]">
+                {formatAmount(totals.finalTotal)}
+              </span>
             </div>
           </div>
         </div>

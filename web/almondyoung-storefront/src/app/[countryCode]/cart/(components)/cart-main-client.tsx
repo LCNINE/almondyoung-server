@@ -264,7 +264,7 @@ export function CartMainClient() {
         (sum, item) =>
           sum +
           (item.product.membershipPrice || item.product.basePrice || 0) *
-          item.quantity,
+            item.quantity,
         0
       )
       return {

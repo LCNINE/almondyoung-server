@@ -243,7 +243,6 @@ export async function authorizePayment(
     withAuth: true,
     cache: "no-store",
   })
-
   return result
 }
 
@@ -268,6 +267,7 @@ export async function getIntent(intentId: string): Promise<IntentDto> {
     withAuth: true,
   })
 }
+
 // ==========================================
 // 결제 비밀번호 (PIN) 관련 API
 // ==========================================

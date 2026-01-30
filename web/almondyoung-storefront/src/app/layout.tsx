@@ -9,7 +9,7 @@ import {
 import { UserProvider } from "@/contexts/user-context"
 import "@/styles/globals.css"
 import { retrieveCart } from "@lib/api/medusa/cart"
-import { getCurrentSubscription } from "@lib/api/membership/membership-api"
+import { getCurrentSubscription } from "@/lib/api/membership"
 import { fetchMe } from "@lib/api/users/me"
 import { CustomThemeProvider } from "@lib/providers/custom-theme-provider"
 import { ThemeProvider } from "@lib/providers/theme-provider"
