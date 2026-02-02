@@ -1,8 +1,12 @@
 // setup-notification-data.js
 const { Client } = require('pg');
 
+if (!process.env.DATABASE_URL) {
+  throw new Error('DATABASE_URL 환경 변수가 필요합니다.');
+}
+
 const client = new Client({
-  connectionString: 'postgresql://neondb_owner:npg_27JqkIlicZHD@ep-long-pine-a10ch769-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require'
+  connectionString: process.env.DATABASE_URL,
 });
 
 // 템플릿 데이터
@@ -59,6 +63,21 @@ const templates = [
     }
   },
   {
+    templateKey: 'USER_FIND_ID_SMS',
+    name: 'ID 찾기 (SMS)',
+    category: 'SYSTEM',
+    contents: {
+      SMS: {
+        ko: {
+          body: `[알몬드영] 아이디 찾기 결과\n등록된 아이디: {{loginId}}`
+        }
+      }
+    },
+    variablesSchema: {
+      loginId: { type: 'string', required: true, description: '로그인 ID' }
+    }
+  },
+  {
     templateKey: 'USER_RESET_PASSWORD_EMAIL',
     name: '비밀번호 재설정',
     category: 'SYSTEM',
@@ -81,6 +100,19 @@ const templates = [
     variablesSchema: {
       resetUrl: { type: 'string', required: true, description: '비밀번호 재설정 링크' }
     }
+  },
+  {
+    templateKey: 'USER_RESET_PASSWORD_SMS',
+    name: '비밀번호 재설정 (SMS)',
+    category: 'SYSTEM',
+    contents: {
+      SMS: {
+        ko: {
+          body: `[알몬드영] 비밀번호 재설정이 요청되었습니다.\n본인 인증 완료 후 새 비밀번호를 설정해주세요.`
+        }
+      }
+    },
+    variablesSchema: {}
   },
   {
     templateKey: 'ORDER_CREATED_EMAIL',
@@ -182,18 +214,18 @@ const eventMappings = [
     eventKey: 'USER_FIND_ID',
     name: '아이디 찾기',
     description: '아이디 찾기 결과 알림',
-    templateKey: 'USER_FIND_ID_EMAIL',
+    templateKey: 'USER_FIND_ID_SMS',
     category: 'SYSTEM',
-    defaultChannels: ['EMAIL'],
+    defaultChannels: ['SMS'],
     priority: 'HIGH'
   },
   {
     eventKey: 'USER_RESET_PASSWORD',
     name: '비밀번호 재설정',
     description: '비밀번호 재설정 알림',
-    templateKey: 'USER_RESET_PASSWORD_EMAIL',
+    templateKey: 'USER_RESET_PASSWORD_SMS',
     category: 'SYSTEM',
-    defaultChannels: ['EMAIL'],
+    defaultChannels: ['SMS'],
     priority: 'HIGH'
   },
   {
@@ -216,26 +248,26 @@ const eventMappings = [
   }
 ];
 
-// 사용자 프로필 데이터
+// 사용자 프로필 데이터 (캠페인용 - 필요 시에만 사용)
 const userProfiles = [
-  { 
-    userId: 'user-001', 
-    name: '배현지', 
-    email: 'hyunji.bea@lcnine.kr', 
+  {
+    userId: 'user-001',
+    name: '배현지',
+    email: 'hyunji.bea@lcnine.kr',
     phone: '010-6607-3764',
     isMarketingEnabled: true
   },
-  { 
-    userId: 'user-002', 
-    name: '정중식', 
-    email: 'jungsik.jeong@lcnine.kr', 
+  {
+    userId: 'user-002',
+    name: '정중식',
+    email: 'jungsik.jeong@lcnine.kr',
     phone: '010-2272-0693',
     isMarketingEnabled: true
   },
-  { 
-    userId: 'user-003', 
-    name: '고지훈', 
-    email: 'jihun.go@lcnine.kr', 
+  {
+    userId: 'user-003',
+    name: '고지훈',
+    email: 'jihun.go@lcnine.kr',
     phone: '010-7721-0149',
     isMarketingEnabled: false
   }
@@ -253,7 +285,24 @@ async function setupNotificationData() {
       const checkResult = await client.query(checkQuery, [template.templateKey]);
       
       if (checkResult.rows.length > 0) {
-        console.log(`⚠️ 템플릿이 이미 존재함: ${template.templateKey}`);
+        const updateQuery = `
+          UPDATE templates
+          SET name = $2,
+              category = $3,
+              contents = $4,
+              variables_schema = $5,
+              updated_at = NOW()
+          WHERE template_key = $1
+        `;
+        const values = [
+          template.templateKey,
+          template.name,
+          template.category,
+          JSON.stringify(template.contents),
+          JSON.stringify(template.variablesSchema)
+        ];
+        await client.query(updateQuery, values);
+        console.log(`🔄 템플릿 업데이트 완료: ${template.templateKey}`);
         continue;
       }
 
@@ -282,7 +331,28 @@ async function setupNotificationData() {
       const checkResult = await client.query(checkQuery, [mapping.eventKey]);
       
       if (checkResult.rows.length > 0) {
-        console.log(`⚠️ 이벤트가 이미 존재함: ${mapping.eventKey}`);
+        const updateQuery = `
+          UPDATE notification_events
+          SET name = $2,
+              description = $3,
+              template_key = $4,
+              category = $5,
+              default_channels = $6,
+              priority = $7,
+              updated_at = NOW()
+          WHERE event_key = $1
+        `;
+        const values = [
+          mapping.eventKey,
+          mapping.name,
+          mapping.description,
+          mapping.templateKey,
+          mapping.category,
+          JSON.stringify(mapping.defaultChannels),
+          mapping.priority
+        ];
+        await client.query(updateQuery, values);
+        console.log(`🔄 이벤트 매핑 업데이트 완료: ${mapping.eventKey}`);
         continue;
       }
 
@@ -306,41 +376,54 @@ async function setupNotificationData() {
       console.log(`✅ 이벤트 매핑 삽입 완료: ${mapping.eventKey} (ID: ${result.rows[0].event_id})`);
     }
 
-    // 사용자 프로필 삽입
-    console.log('\n사용자 프로필 삽입 시작...');
-    for (const user of userProfiles) {
-      const checkQuery = 'SELECT user_id FROM user_profiles WHERE user_id = $1';
-      const checkResult = await client.query(checkQuery, [user.userId]);
-      
-      if (checkResult.rows.length > 0) {
-        console.log(`⚠️ 사용자가 이미 존재함: ${user.userId}`);
-        continue;
+    // 사용자 프로필 삽입 (선택)
+    const enableUserProfiles = process.env.ENABLE_USER_PROFILES === 'true';
+    if (enableUserProfiles) {
+      console.log('\n사용자 프로필 삽입 시작...');
+      try {
+        for (const user of userProfiles) {
+          const checkQuery = 'SELECT user_id FROM user_profiles WHERE user_id = $1';
+          const checkResult = await client.query(checkQuery, [user.userId]);
+
+          if (checkResult.rows.length > 0) {
+            console.log(`⚠️ 사용자가 이미 존재함: ${user.userId}`);
+            continue;
+          }
+
+          const query = `
+            INSERT INTO user_profiles (user_id, email, phone_number, membership_type, synced_at)
+            VALUES ($1, $2, $3, 'general', NOW())
+            RETURNING user_id, email
+          `;
+
+          const values = [user.userId, user.email, user.phone];
+
+          const result = await client.query(query, values);
+          console.log(`✅ 사용자 프로필 삽입 완료: ${user.name} (${user.email})`);
+
+          // 사용자 알림 설정 삽입
+          const settingsQuery = `
+            INSERT INTO user_notification_settings (user_id, is_marketing_enabled, preferred_language, created_at, updated_at)
+            VALUES ($1, $2, 'ko', NOW(), NOW())
+            ON CONFLICT (user_id) DO UPDATE SET
+              is_marketing_enabled = EXCLUDED.is_marketing_enabled,
+              updated_at = NOW()
+            RETURNING user_id, is_marketing_enabled
+          `;
+
+          const settingsValues = [user.userId, user.isMarketingEnabled];
+          await client.query(settingsQuery, settingsValues);
+          console.log(`✅ 사용자 알림 설정 삽입 완료: ${user.name} (마케팅 동의: ${user.isMarketingEnabled})`);
+        }
+      } catch (error) {
+        if (error?.message?.includes('user_profiles')) {
+          console.warn('⚠️ user_profiles 테이블이 없어 사용자 프로필 삽입을 건너뜁니다.');
+        } else {
+          throw error;
+        }
       }
-
-      const query = `
-        INSERT INTO user_profiles (user_id, email, phone_number, membership_type, synced_at)
-        VALUES ($1, $2, $3, 'general', NOW())
-        RETURNING user_id, email
-      `;
-      
-      const values = [user.userId, user.email, user.phone];
-      
-      const result = await client.query(query, values);
-      console.log(`✅ 사용자 프로필 삽입 완료: ${user.name} (${user.email})`);
-
-      // 사용자 알림 설정 삽입
-      const settingsQuery = `
-        INSERT INTO user_notification_settings (user_id, is_marketing_enabled, preferred_language, created_at, updated_at)
-        VALUES ($1, $2, 'ko', NOW(), NOW())
-        ON CONFLICT (user_id) DO UPDATE SET
-          is_marketing_enabled = EXCLUDED.is_marketing_enabled,
-          updated_at = NOW()
-        RETURNING user_id, is_marketing_enabled
-      `;
-      
-      const settingsValues = [user.userId, user.isMarketingEnabled];
-      const settingsResult = await client.query(settingsQuery, settingsValues);
-      console.log(`✅ 사용자 알림 설정 삽입 완료: ${user.name} (마케팅 동의: ${user.isMarketingEnabled})`);
+    } else {
+      console.log('\n사용자 프로필 삽입 건너뜀 (ENABLE_USER_PROFILES=false)');
     }
 
     console.log('\n🎉 모든 데이터 설정이 완료되었습니다!');

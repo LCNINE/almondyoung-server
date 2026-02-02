@@ -65,8 +65,8 @@
 | `UserDeleted` | 사용자 삭제 (논리 삭제) | `userId` |
 | `UserDormantConverted` | 휴면 계정 전환 | `userId`, `convertedAt` |
 | `UserPermanentDeleted` | 완전 삭제 (GDPR) | `userId`, `deletedAt` |
-| `UserFindId` | 아이디 찾기 결과 | `email`, `loginId` |
-| `UserResetPassword` | 비밀번호 재설정 요청 | `email`, `verificationToken` |
+| `UserFindId` | 아이디 찾기 결과 | `phoneNumber`, `loginId` |
+| `UserResetPassword` | 비밀번호 재설정 요청 | `phoneNumber` |
 
 #### Payload 예시
 
