@@ -26,6 +26,11 @@ export const userServiceEnvSchema = z.object({
   AWS_ACCESS_KEY_ID: z.string(),
   AWS_SECRET_ACCESS_KEY: z.string(),
   AWS_S3_BUCKET: z.string(),
+
+  // Cafe24 OAuth
+  CAFE24_CLIENT_ID: z.string(),
+  CAFE24_CLIENT_SECRET: z.string(),
+  CAFE24_TOKEN_URL: z.string().url().optional(),
 });
 
 export type UserServiceEnvConfig = z.infer<typeof userServiceEnvSchema>;
