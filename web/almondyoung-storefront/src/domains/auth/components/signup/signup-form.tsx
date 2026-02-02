@@ -8,7 +8,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog"
 import { Form } from "@/components/ui/form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -16,28 +15,28 @@ import { createUser } from "@lib/api/users/auth/signup-base"
 import { formatBirthday } from "@lib/utils/format-birthday"
 import { signupSchema, SignupSchema } from "domains/auth/schemas/signup-schema"
 import { setFormError } from "domains/auth/utils/set-form-error"
-import { useSearchParams } from "next/navigation"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { useActionState, useEffect, useState, useTransition } from "react"
-import { useForm, useFormContext } from "react-hook-form"
+import { useForm } from "react-hook-form"
 import { toast } from "sonner"
-import { AgreementsSection } from "./agreement"
 import { SignupFormFields } from "./signup-form-fields"
 
 export function SignupForm() {
+  const router = useRouter()
+  const { countryCode } = useParams() as { countryCode: string }
   const searchParams = useSearchParams()
-  const redirectTo = searchParams.get("redirect_to") || undefined
+  const redirectTo = searchParams.get("redirect_to") || "/"
 
   const [state, formAction, pending] = useActionState(createUser, null)
   const [isPending, startTransition] = useTransition()
 
-  const [isAgreementsDialogOpen, setIsAgreementsDialogOpen] =
-    useState<boolean>(false)
+  const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false)
+  const [hasAgreed, setHasAgreed] = useState(false)
 
   const form = useForm<SignupSchema>({
     resolver: zodResolver(signupSchema),
     mode: "onChange",
     defaultValues: {
-      // 회원 정보 필드
       loginId: "",
       username: "",
       nickname: "",
@@ -45,14 +44,11 @@ export function SignupForm() {
       password: "",
       passwordConfirm: "",
       birthday: "",
-      // 필수 약관
       isOver14: false,
       termsOfService: false,
       electronicTransaction: false,
       privacyPolicy: false,
       thirdPartySharing: false,
-
-      // 선택 약관
       marketingConsent: false,
     },
   })
@@ -60,16 +56,11 @@ export function SignupForm() {
   useEffect(() => {
     if (state) {
       if (state.success) {
-        toast(state.message, {
-          action: {
-            label: "확인",
-            onClick: () => {},
-          },
-        })
+        window.location.href = `/api/auth/callback/signup?userId=${state.userId}&redirect_to=${encodeURIComponent(redirectTo)}`
       } else {
         toast.error(state.message)
         setFormError(state.message, form)
-        setIsAgreementsDialogOpen(false) // 약관 모달 닫기
+        setIsConfirmDialogOpen(false)
       }
     }
   }, [state])
@@ -84,15 +75,11 @@ export function SignupForm() {
     }
 
     startTransition(() => {
-      formAction({
-        ...formattedSubmitData,
-        redirectTo,
-      })
+      formAction(formattedSubmitData)
     })
   }
 
-  const handleAgreementsDialogOpen = async () => {
-    // 회원 정보 필드들만 검증
+  const handleSignupClick = async () => {
     const isValid = await form.trigger([
       "loginId",
       "username",
@@ -103,10 +90,28 @@ export function SignupForm() {
       "birthday",
     ])
 
-    // 검증 통과하면 다이얼로그 열기
-    if (isValid) {
-      setIsAgreementsDialogOpen(!isAgreementsDialogOpen)
+    if (!isValid) return
+
+    // 이미 약관 동의한 경우 바로 제출
+    if (hasAgreed) {
+      form.handleSubmit(onSubmit)()
+      return
     }
+
+    setIsConfirmDialogOpen(true)
+  }
+
+  const handleConfirmSignup = () => {
+    setHasAgreed(true)
+
+    // 모든 필수 약관에 자동 동의 처리
+    form.setValue("isOver14", true)
+    form.setValue("termsOfService", true)
+    form.setValue("electronicTransaction", true)
+    form.setValue("privacyPolicy", true)
+    form.setValue("thirdPartySharing", true)
+
+    form.handleSubmit(onSubmit)()
   }
 
   return (
@@ -116,97 +121,52 @@ export function SignupForm() {
         className="flex w-full flex-col gap-4"
         id="signup-form"
       >
-        {/* 회원 정보 입력 필드들 */}
         <SignupFormFields form={form} />
 
-        {!state ? (
-          <div className="ml-auto">
-            {/* 동의 약관 온오프 다이얼로그 */}
-            <AgreementsDialogBtn
-              isOpen={isAgreementsDialogOpen}
-              onOpen={handleAgreementsDialogOpen}
-              isPending={isPending}
-              buttonText="동의하고 가입하기"
-            />
-          </div>
-        ) : (
-          <div className="ml-auto">
-            {/* 동의 약관 온오프 다이얼로그 */}
-            <AgreementsDialogBtn
-              isOpen={isAgreementsDialogOpen}
-              onOpen={handleAgreementsDialogOpen}
-              isPending={isPending}
-              buttonText="동의 약관 보기"
-              variant="link"
-            />
-
-            {/* 제출 버튼 */}
-            <CustomButton
-              type="submit"
-              disabled={!form.formState.isValid || pending || isPending}
-              isLoading={pending || isPending}
-              className="cursor-pointer"
-            >
-              가입하기
-            </CustomButton>
-          </div>
-        )}
-      </form>
-    </Form>
-  )
-}
-
-function AgreementsDialogBtn({
-  isOpen,
-  onOpen,
-  isPending,
-  buttonText,
-  className,
-  variant = "fill",
-}: {
-  isOpen: boolean
-  onOpen: () => void
-  isPending: boolean
-  buttonText: string
-  className?: string
-  variant?: "fill" | "outline" | "ghost" | "link"
-}) {
-  const form = useFormContext<SignupSchema>()
-
-  return (
-    <Dialog open={isOpen} onOpenChange={onOpen}>
-      <DialogTrigger asChild>
-        <CustomButton
-          type="button"
-          variant={variant}
-          className={`${className} cursor-pointer`}
-        >
-          {buttonText}
-        </CustomButton>
-      </DialogTrigger>
-
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>약관 동의</DialogTitle>{" "}
-        </DialogHeader>
-        <DialogDescription className="sr-only">
-          아래 내용을 자세히 읽어보시고 동의해 주세요.
-        </DialogDescription>
-
-        <AgreementsSection form={form} />
-
-        <DialogFooter>
+        <div className="ml-auto">
           <CustomButton
-            type="submit"
+            type="button"
             className="cursor-pointer"
-            disabled={isPending}
-            isLoading={isPending}
-            form="signup-form"
+            disabled={pending || isPending}
+            isLoading={pending || isPending}
+            onClick={handleSignupClick}
           >
             가입하기
           </CustomButton>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+      </form>
+
+      <Dialog open={isConfirmDialogOpen} onOpenChange={setIsConfirmDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>약관 동의 안내</DialogTitle>
+            <DialogDescription>
+              가입을 계속하시면 이용약관, 전자금융거래 약관, 개인정보 수집 및
+              이용, 개인정보 제3자 제공에 동의한 것으로 간주됩니다.
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="flex gap-2">
+            <CustomButton
+              type="button"
+              variant="outline"
+              className="cursor-pointer"
+              onClick={() => setIsConfirmDialogOpen(false)}
+            >
+              취소
+            </CustomButton>
+            <CustomButton
+              type="button"
+              className="cursor-pointer"
+              disabled={pending || isPending}
+              isLoading={pending || isPending}
+              onClick={handleConfirmSignup}
+            >
+              계속
+            </CustomButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Form>
   )
 }

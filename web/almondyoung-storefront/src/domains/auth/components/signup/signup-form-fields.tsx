@@ -89,7 +89,7 @@ export function SignupFormFields({ form }: SignupFormFieldsProps) {
         <div key={section.title} className="space-y-4">
           {/* 섹션 제목 */}
           <div className="flex items-center gap-2">
-            <div className="bg-primary text-primary-foreground flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold">
+            <div className="bg-yellow-30 text-primary-foreground flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold">
               {sectionIndex + 1}
             </div>
             <h3 className="text-foreground text-sm font-semibold">
