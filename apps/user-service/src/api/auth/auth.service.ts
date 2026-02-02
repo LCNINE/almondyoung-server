@@ -77,7 +77,7 @@ export class AuthService {
     signUpDto: LocalSignUpDto,
     @Res() reply: FastifyReply,
     redirect_to?: string,
-  ): Promise<{ message: string }> {
+  ): Promise<{ userId: string, message: string }> {
     const {
       email,
       username,
@@ -147,7 +147,7 @@ export class AuthService {
           marketingConsent,
         });
 
-        return { message: '회원가입 성공' }
+        return { userId: user.id, message: '회원가입 성공' }
       });
     } catch (error) {
       if (error instanceof ConflictException) {
