@@ -64,7 +64,7 @@ export class AuthService {
     return isProd ? this.configService.getOrThrow('FRONTEND_URL') : 'http://localhost:8000';
   }
 
-  //
+
   private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction) {
     return tx ? fn(tx) : this.dbService.db.transaction(fn);
   }
@@ -93,7 +93,7 @@ export class AuthService {
       birthday,
     } = signUpDto;
 
-    let expiresIn = JWT_EMAIL_VERIFICATION_ACCESS_TOKEN_EXPIRATION;
+    const redirectTo = redirect_to ?? '/';
 
     try {
       return await this.dbService.db.transaction(async (tx) => {
@@ -152,38 +152,7 @@ export class AuthService {
             })
             .where(eq(userServiceSchema.userConsents.userId, existingUser.id));
 
-          const verificationToken = await this.jwtService.signAsync(
-            { sub: existingUser.id },
-            {
-              secret: this.configService.getOrThrow<string>('JWT_VERIFICATION_TOKEN_SECRET'),
-              expiresIn: this.parseExpiresIn(expiresIn),
-            },
-          );
-
-          // 새 토큰 저장
-          await this.tokensService.saveVerificationToken(
-            existingUser.id,
-            verificationToken,
-            new Date(Date.now() + this.parseExpiresIn(expiresIn)),
-            client,
-          );
-
-          await this.eventPublisher.publishEvent({
-            eventType: 'UserVerification',
-            aggregateId: existingUser.id,
-            payload: {
-              userId: existingUser.id,
-              email: existingUser.email,
-              name: signUpDto.username,
-              verificationToken: verificationToken,
-              callbackUrl: this.configService.get('USER_SERVICE_URL') + `/auth/verify-email`,
-              redirectTo: redirect_to ?? '/',
-            },
-          });
-
-          return {
-            message: '이전에 가입 시도한 이력이 있습니다. 새로운 인증 링크를 해당 이메일로 발송했습니다.',
-          };
+          return reply.status(302).redirect(this.frontendUrl + '/callback/signup?redirect_to=' + redirectTo);
         }
 
         const existsUserId = await this.usersService.findUserByLoginId(signUpDto.loginId);
@@ -229,39 +198,7 @@ export class AuthService {
           marketingConsent,
         });
 
-        // 이메일 인증용 토큰 생성
-        const verificationToken = await this.jwtService.signAsync(
-          { sub: user.id as string },
-          {
-            secret: this.configService.getOrThrow<string>('JWT_VERIFICATION_TOKEN_SECRET'),
-            expiresIn: this.parseExpiresIn(expiresIn),
-          },
-        );
-
-        // 토큰 저장
-        await this.tokensService.saveVerificationToken(
-          user.id,
-          verificationToken,
-          new Date(Date.now() + this.parseExpiresIn(expiresIn)),
-          client,
-        );
-
-        await this.eventPublisher.publishEvent({
-          eventType: 'UserVerification',
-          aggregateId: user.id,
-          payload: {
-            userId: user.id,
-            email: user.email,
-            name: user.username,
-            verificationToken: verificationToken,
-            callbackUrl: this.configService.get('USER_SERVICE_URL') + `/auth/verify-email`,
-            redirectTo: redirect_to ?? '/',
-          },
-        });
-
-        return {
-          message: '이메일로 인증 링크가 발송되었습니다. 인증을 완료해 주세요.',
-        };
+        return reply.status(302).redirect(this.frontendUrl + '/callback/signup?redirect_to=' + redirectTo);
       });
     } catch (error) {
       if (error instanceof ConflictException) {
@@ -434,10 +371,6 @@ export class AuthService {
       throw new ForbiddenException('휴면 처리된 사용자입니다. 관리자에게 문의해주세요.');
     }
 
-    if (!user.isEmailVerified) {
-      throw new ForbiddenException('이메일 인증이 필요한 사용자입니다.');
-    }
-
     const isAuth = await bcrypt.compare(signInDto.password, user.password ?? '');
     if (!isAuth) throw new BadRequestException('비밀번호가 일치하지 않습니다');
 
@@ -484,7 +417,6 @@ export class AuthService {
     };
 
 
-    console.log("sogininwithSocial:::::::", socialUser.redirectTo)
     if (tx) {
       const result = await processSignIn(tx);
 
