@@ -5,7 +5,10 @@ module.exports = {
   rootDir: '../../',
   testMatch: ['<rootDir>/apps/user-service/**/*.spec.ts'],
   moduleNameMapper: {
-    '^@app/(.*)$': '<rootDir>/libs/$1/src',
+    '^@app/([^/]+)$': '<rootDir>/libs/$1/src',
+    '^@app/([^/]+)/(.*)$': '<rootDir>/libs/$1/src/$2',
+    '^@packages/(.*)$': '<rootDir>/packages/$1',
+    '^apps/(.*)$': '<rootDir>/apps/$1',
   },
   collectCoverageFrom: [
     'apps/user-service/src/**/*.ts',
@@ -17,7 +20,7 @@ module.exports = {
   coverageReporters: ['text', 'lcov', 'html'],
   moduleFileExtensions: ['js', 'json', 'ts'],
   transform: {
-    '^.+\\.(t|j)s$': 'ts-jest',
+    '^.+\\.(t|j)s$': ['ts-jest', { isolatedModules: true }],
   },
   testTimeout: 30000,
 };
