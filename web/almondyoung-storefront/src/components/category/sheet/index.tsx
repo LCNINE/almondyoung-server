@@ -12,9 +12,9 @@ import {
   SheetTrigger,
 } from "@components/ui/sheet"
 import { getCurrentSubscription } from "@lib/api/membership"
-import { getCategoryTree } from "@lib/api/pim/categories"
+import { getCategoryTree } from "@lib/api/medusa/categories"
+import { StoreProductCategoryTree } from "@lib/types/medusa-category"
 import { CurrentSubscription } from "@lib/types/ui/membership"
-import { CategoryTree } from "@lib/types/ui/pim"
 import { UserDetail } from "@lib/types/ui/user"
 import { cn } from "@lib/utils"
 import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
@@ -31,7 +31,7 @@ export function CategorySheet({ trigger }: CategorySheetProps) {
   const { countryCode } = useParams()
   const [open, setOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
-  const [categories, setCategories] = useState<CategoryTree[]>([])
+  const [categories, setCategories] = useState<StoreProductCategoryTree[]>([])
   const [activeTab, setActiveTab] = useState<string | null>(null)
   const [isError, setIsError] = useState(false)
 
@@ -42,8 +42,7 @@ export function CategorySheet({ trigger }: CategorySheetProps) {
 
     startTransition(async () => {
       try {
-        const data = await getCategoryTree(1)
-        const list: CategoryTree[] = data.categories || []
+        const list = await getCategoryTree()
         setCategories(list)
         if (list.length > 0) setActiveTab(list[0].id)
         setIsError(false)
@@ -52,12 +51,12 @@ export function CategorySheet({ trigger }: CategorySheetProps) {
         setIsError(true)
       }
     })
-  }, [open])
+  }, [open, categories.length])
 
   const subCategories = useMemo(() => {
     const activeCategory = categories.find((c) => c.id === activeTab)
 
-    return activeCategory?.children || []
+    return activeCategory?.category_children || []
   }, [categories, activeTab])
 
   return (
@@ -119,7 +118,7 @@ function MainCategoryList({
   isError,
   setActiveTab,
 }: {
-  categories: CategoryTree[]
+  categories: StoreProductCategoryTree[]
   activeTab: string | null
   isError: boolean
   setActiveTab: (id: string) => void
@@ -158,9 +157,9 @@ function SubCategoryList({
   setOpen,
   countryCode,
 }: {
-  categories: CategoryTree[]
+  categories: StoreProductCategoryTree[]
   activeTab: string | null
-  subCategories: CategoryTree[]
+  subCategories: StoreProductCategoryTree[]
   isPending: boolean
   isError: boolean
   setOpen: (open: boolean) => void
@@ -199,8 +198,7 @@ function SubCategoryList({
         <>
           {(() => {
             const activeCategory = categories.find((c) => c.id === activeTab)
-            // 카테고리 id를 사용 (medusa에서 handle 또는 id로 조회 가능)
-            const activeCategoryId = activeCategory?.id || activeTab
+            const activeCategoryHandle = activeCategory?.handle
             return (
               <>
                 <div className="mb-8 flex items-center justify-between">
@@ -208,22 +206,26 @@ function SubCategoryList({
                     {activeCategory?.name}
                   </h3>
 
-                  <Button
-                    variant="link"
-                    asChild
-                    className="group flex items-center gap-0.5 px-0! text-[12px] font-semibold text-gray-400"
-                    onClick={() => setOpen(false)}
-                  >
-                    <Link href={`/${countryCode}/category/${activeCategoryId}`}>
-                      전체보기
-                      <ChevronRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
-                    </Link>
-                  </Button>
+                  {activeCategoryHandle ? (
+                    <Button
+                      variant="link"
+                      asChild
+                      className="group flex items-center gap-0.5 px-0! text-[12px] font-semibold text-gray-400"
+                      onClick={() => setOpen(false)}
+                    >
+                      <Link href={`/${countryCode}/category/${activeCategoryHandle}`}>
+                        전체보기
+                        <ChevronRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
+                      </Link>
+                    </Button>
+                  ) : null}
                 </div>
 
                 {/* 서브 카테고리 리스트  */}
                 <div className="grid grid-cols-3 gap-x-4 gap-y-10">
-                  {subCategories.map((sub) => (
+                  {subCategories
+                    .filter((sub) => Boolean(sub.handle))
+                    .map((sub) => (
                     <Button
                       key={sub.id}
                       variant="link"
@@ -231,13 +233,13 @@ function SubCategoryList({
                       className="group flex h-full w-full flex-col items-center gap-3 px-0! py-0!"
                     >
                       <Link
-                        href={`/${countryCode}/category/${sub.id}`}
+                        href={`/${countryCode}/category/${sub.handle}`}
                         onClick={() => setOpen(false)}
                       >
                         <div className="relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-[22px] bg-[#F5F5F7] transition-transform duration-200 group-active:scale-95">
-                          {sub.imageUrl ? (
+                          {getCategoryImageSrc(sub) ? (
                             <img
-                              src={getThumbnailUrl(sub.imageUrl)}
+                              src={getThumbnailUrl(getCategoryImageSrc(sub) || "")}
                               alt={sub.name}
                               className="h-full w-full object-contain p-3.5"
                             />
@@ -259,6 +261,18 @@ function SubCategoryList({
       )}
     </main>
   )
+}
+
+const getCategoryImageSrc = (category: StoreProductCategoryTree) => {
+  const metadata = category.metadata as
+    | { imageUrl?: unknown; image_url?: unknown; image?: unknown }
+    | null
+    | undefined
+
+  const image =
+    metadata?.imageUrl || metadata?.image_url || metadata?.image || null
+
+  return typeof image === "string" ? image : null
 }
 
 function User({ user }: { user: UserDetail | null }) {
