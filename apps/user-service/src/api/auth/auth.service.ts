@@ -152,7 +152,7 @@ export class AuthService {
             })
             .where(eq(userServiceSchema.userConsents.userId, existingUser.id));
 
-          return '회원가입 성공'
+          return { message: '회원가입 성공' }
         }
 
         const existsUserId = await this.usersService.findUserByLoginId(signUpDto.loginId);
@@ -198,7 +198,7 @@ export class AuthService {
           marketingConsent,
         });
 
-        return '회원가입 성공'
+        return { message: '회원가입 성공' }
       });
     } catch (error) {
       if (error instanceof ConflictException) {
