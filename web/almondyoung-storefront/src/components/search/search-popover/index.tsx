@@ -6,14 +6,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { useSearchHistory } from "@/hooks/ui/use-search-history"
-import { cn } from "@/lib/utils"
 import { X } from "lucide-react"
-import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
-import {
-  getTrendingKeywords,
-  type TrendingKeyword,
-} from "@lib/api/pim/search"
 
 export function SearchPopover({
   isOpen,
@@ -24,33 +17,6 @@ export function SearchPopover({
   setIsOpen: (open: boolean) => void
   children: React.ReactNode
 }) {
-  const [trendingKeywords, setTrendingKeywords] = useState<TrendingKeyword[]>([])
-  const [updatedAt, setUpdatedAt] = useState<string>("")
-
-  useEffect(() => {
-    const fetchKeywords = async () => {
-      try {
-        const result = await getTrendingKeywords()
-        if ("data" in result && result.data) {
-          setTrendingKeywords(result.data.keywords)
-          const date = new Date(result.data.updatedAt)
-          const timeStr = date.toLocaleTimeString("ko-KR", {
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false,
-          })
-          setUpdatedAt(timeStr)
-        }
-      } catch (error) {
-        console.error("급상승 검색어 로드 실패:", error)
-      }
-    }
-
-    if (isOpen) {
-      fetchKeywords()
-    }
-  }, [isOpen])
-
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger asChild>{children}</PopoverTrigger>
@@ -62,11 +28,12 @@ export function SearchPopover({
       >
         <div className="flex min-h-[420px]">
           <SearchHistory />
-          <SearchTrending
+          {/* todo: 급상승 검색어(미연결 구간) 임시 비활성화 */}
+          {/* <SearchTrending
             items={trendingKeywords}
             updatedAt={updatedAt}
             onClose={() => setIsOpen(false)}
-          />
+          /> */}
         </div>
       </PopoverContent>
     </Popover>
@@ -134,77 +101,6 @@ function SearchHistory() {
         >
           {disableSave ? "검색어 저장 켜기" : "검색어 저장 끄기"}
         </button>
-      </div>
-    </div>
-  )
-}
-
-// --- 서브 컴포넌트: 급상승 검색어 섹션 ---
-function SearchTrending({
-  items,
-  updatedAt,
-  onClose,
-}: {
-  items: TrendingKeyword[]
-  updatedAt: string
-  onClose: () => void
-}) {
-  const router = useRouter()
-
-  const handleKeywordClick = (keyword: string) => {
-    onClose()
-    router.push(`/search?q=${encodeURIComponent(keyword)}`)
-  }
-
-  return (
-    <div className="flex flex-1 flex-col justify-between px-8">
-      <div>
-        <h3 className="mb-5 text-[17px] font-bold text-gray-900">
-          급상승 검색어
-        </h3>
-        <ul className="space-y-4">
-          {items.map((item, i) => (
-            <li
-              key={item.keyword}
-              className="group flex cursor-pointer items-center justify-between"
-              onClick={() => handleKeywordClick(item.keyword)}
-            >
-              <div className="flex items-center gap-4">
-                <span
-                  className={cn(
-                    "w-4 text-base font-bold",
-                    i < 3 ? "text-olive-600" : "text-gray-400"
-                  )}
-                >
-                  {i + 1}
-                </span>
-                <span className="text-[15px] text-gray-700 group-hover:underline">
-                  {item.keyword}
-                </span>
-              </div>
-              <div className="flex w-8 justify-end">
-                {item.status === "new" ? (
-                  <span className="rounded-sm bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold text-orange-600">
-                    NEW
-                  </span>
-                ) : item.status === "up" ? (
-                  <span className="text-[10px] text-red-500">▲</span>
-                ) : item.status === "down" ? (
-                  <span className="text-[10px] text-blue-500">▼</span>
-                ) : (
-                  <span className="text-[10px] text-gray-400">-</span>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      {/* 기준 시간 영역 */}
-      <div className="mt-8 pb-2">
-        <span className="text-[11px] font-medium text-gray-300">
-          {updatedAt || "00:00"} 기준
-        </span>
       </div>
     </div>
   )
