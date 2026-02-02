@@ -35,10 +35,10 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
-  ) {}
+  ) { }
 
   @ApiOperation({ summary: '회원가입' })
-  @ApiResponse({ status: 201, description: '회원가입 성공' })
+  @ApiResponse({ status: 201, description: '회원가입 성공, 스토어프론트의 /callback/signup 경로로 리다이렉트' })
   @Post('signup')
   @Public()
   async signUp(
