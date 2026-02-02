@@ -152,7 +152,7 @@ export class AuthService {
             })
             .where(eq(userServiceSchema.userConsents.userId, existingUser.id));
 
-          return reply.status(302).redirect(this.frontendUrl + '/callback/signup?redirect_to=' + redirectTo);
+          return '회원가입 성공'
         }
 
         const existsUserId = await this.usersService.findUserByLoginId(signUpDto.loginId);
@@ -198,7 +198,7 @@ export class AuthService {
           marketingConsent,
         });
 
-        return reply.status(302).redirect(this.frontendUrl + '/callback/signup?redirect_to=' + redirectTo);
+        return '회원가입 성공'
       });
     } catch (error) {
       if (error instanceof ConflictException) {
