@@ -3,17 +3,17 @@
 import { useCart } from "@/contexts/cart-context"
 import { useUser } from "@/contexts/user-context"
 import { useSearchSheetStore } from "@hooks/ui/use-search-sheet-store"
-import { Bell, Search, ShoppingCart, User } from "lucide-react"
+import { Search, ShoppingCart, User } from "lucide-react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
+// import { Bell } from "lucide-react"
 
 export function AccountMenu() {
   const { countryCode } = useParams()
   const { user } = useUser()
   const { itemCount: cartItemCount } = useCart()
-
-  // todo: 알림 기능 구현 필요
-  const hasNotification = true
+  // todo: 알림 기능 활성화 시 복구
+  // const hasNotification = true
 
   const { onOpen } = useSearchSheetStore()
 
@@ -45,13 +45,13 @@ export function AccountMenu() {
         />
       </div>
 
-      {/* 알림  */}
-      <AccountMenuItem
+      {/* todo: 알림 기능 미연결로 임시 비활성화 */}
+      {/* <AccountMenuItem
         onClick={() => console.log("알림 열기")}
         icon={<Bell className="h-6 w-6 md:h-8 md:w-8" color="white" />}
         label="알림"
         showDot={hasNotification}
-      />
+      /> */}
     </div>
   )
 }

@@ -1,12 +1,12 @@
 import type { StoreProductCategoryTree } from "@/lib/types/medusa-category"
 import { Suspense } from "react"
 import { HeroBanner } from "../components/banner/hero-banner"
-import LashBannerBanner from "../components/banner/lashbanner-banner"
 import { LoginPromptBanner } from "../components/banner/login-prompt-banner"
-import MembershipBanner from "../components/banner/membership-banner"
 import { CategoryBestSectionContainer } from "../components/sections/category-best"
 import { ProductListSection } from "../components/shared/product-list-section"
 import { UserDetail } from "@/lib/types/ui/user"
+// import LashBannerBanner from "../components/banner/lashbanner-banner"
+// import MembershipBanner from "../components/banner/membership-banner"
 
 /*
  * ============================================================================
@@ -233,12 +233,12 @@ export async function HomeLogoutTemplate({
         </Suspense>
       </ProductListSection>
 
-      {/* 멤버십 배너 (데스크탑) */}
-      <div className="hidden w-full border-t border-gray-200 md:block">
+      {/* todo: 멤버십 배너 임시 비활성화 */}
+      {/* <div className="hidden w-full border-t border-gray-200 md:block">
         <ProductListSection.Inner className="px-0 pt-5 md:container md:mx-auto md:max-w-[1360px] md:px-[40px]">
           <MembershipBanner />
         </ProductListSection.Inner>
-      </div>
+      </div> */}
 
       {/*
        * ====================================================================
@@ -261,12 +261,12 @@ export async function HomeLogoutTemplate({
         <WelcomeDealSection products={welcomeDealProducts} />
       </ProductListSection> */}
 
-      {/* 래쉬 배너 (모바일) */}
-      <div className="w-full border-t border-gray-200 md:hidden">
+      {/* todo: 모바일 보조 배너 임시 비활성화 */}
+      {/* <div className="w-full border-t border-gray-200 md:hidden">
         <ProductListSection.Inner className="px-0 pt-5 md:container md:mx-auto md:max-w-[1360px] md:px-[40px]">
           <LashBannerBanner />
         </ProductListSection.Inner>
-      </div>
+      </div> */}
 
       {/* 타임 세일 섹션 - 시간 제한 할인 상품 */}
       {/* <ProductListSection>

@@ -1,10 +1,10 @@
 import type { UserDetail } from "@lib/types/ui/user"
 import { PaymentInfoSection } from "./payment-info-section"
 import { QuickMenuSection } from "./quick-menu-section"
-import { RecommendedProductsSection } from "./recommended-products-section"
 import { ShippingItemsSection } from "./shipping-items-section"
 import { UserProfileSection } from "./user-profile-section"
 import { AdminAccessButton } from "@/components/admin/admin-access-button"
+// import { RecommendedProductsSection } from "./recommended-products-section"
 
 /**
  * 마이페이지 데스크탑 콘텐츠
@@ -38,7 +38,8 @@ export function MyPageDesktopContent({
       <QuickMenuSection />
       <ShippingItemsSection />
       <PaymentInfoSection />
-      <RecommendedProductsSection />
+      {/* todo: 추천상품 섹션 임시 비활성화 */}
+      {/* <RecommendedProductsSection /> */}
     </div>
   )
 }

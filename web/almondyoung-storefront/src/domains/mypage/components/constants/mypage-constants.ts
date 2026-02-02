@@ -14,7 +14,8 @@ export const MENU_ITEMS: MenuItem[] = [
   { label: "아몬드영 멤버십", icon: "💎", path: "/mypage/membership" },
   { label: "결제수단", icon: "💳", path: "/mypage/payment" },
   { label: "적립금", icon: "💰", path: "/mypage/point" },
-  { label: "쿠폰", icon: "🏷️", path: "/mypage/coupons" },
+  // todo: 쿠폰 임시 비활성화
+  // { label: "쿠폰", icon: "🏷️", path: "/mypage/coupons" },
   { label: "다운로드", icon: "📥", path: "/mypage/download" },
   // { label: "구독 관리", icon: "🔁", path: "/mypage/subscribe/manage" },
   {
@@ -86,12 +87,12 @@ export const SIDEBAR_MENU_ITEMS = [
     hasSubMenu: false,
     path: "/mypage/payment",
   },
-  {
-    id: "coupon",
-    label: "쿠폰",
-    hasSubMenu: false,
-    path: "/mypage/coupons",
-  },
+  // {
+  //   id: "coupon",
+  //   label: "쿠폰",
+  //   hasSubMenu: false,
+  //   path: "/mypage/coupons",
+  // },
   {
     id: "download",
     label: "다운로드",

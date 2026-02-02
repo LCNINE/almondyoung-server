@@ -14,7 +14,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Bell, Heart, MessageCircle, Zap } from "lucide-react"
+import { Heart, MessageCircle } from "lucide-react"
 import { useState } from "react"
 import { ProductOptionSelector } from "./product-option-selector"
 import { ProductPriceDisplay } from "./product-price-display"
@@ -38,7 +38,7 @@ type Props = {
   isWishlistPending: boolean
   onWishlistToggle: (productId: string) => void
   countryCode: string
-  isUser: boolean
+  // isUser: boolean
   quantity: number
   onQuantityChange: (value: number) => void
   selectedOptions: Record<string, string>
@@ -64,7 +64,7 @@ export function ProductSidebarPurchase({
   isWishlistPending,
   onWishlistToggle,
   countryCode,
-  isUser,
+  // isUser,
   quantity,
   onQuantityChange,
   selectedOptions,
@@ -147,9 +147,8 @@ export function ProductSidebarPurchase({
                 aria-label="찜하기"
               >
                 <Heart
-                  className={`h-7 w-7 ${
-                    isWishlisted ? "text-red-500" : "text-gray-300"
-                  }`}
+                  className={`h-7 w-7 ${isWishlisted ? "text-red-500" : "text-gray-300"
+                    }`}
                 />
                 찜
               </CustomButton>
@@ -173,28 +172,28 @@ export function ProductSidebarPurchase({
 
           {/* 가격 */}
           {product.basePrice !== undefined && (
-              <ProductPriceDisplay
-                basePrice={product.basePrice}
-                membershipPrice={product.membershipPrice}
-                isMembershipOnly={product.isMembershipOnly || false}
-                discountRate={getDiscountRate()}
-                memberPrices={product.memberPrices}
-                actualPrice={product.actualPrice}
-                showMembershipHint={
-                  typeof product.membershipPrice === "number" &&
-                  typeof product.basePrice === "number" &&
-                  typeof product.actualPrice === "number" &&
-                  product.basePrice > product.membershipPrice &&
-                  Math.abs(product.actualPrice - product.membershipPrice) >= 1
-                }
-                membershipSavings={
-                  typeof product.membershipPrice === "number" &&
+            <ProductPriceDisplay
+              basePrice={product.basePrice}
+              membershipPrice={product.membershipPrice}
+              isMembershipOnly={product.isMembershipOnly || false}
+              discountRate={getDiscountRate()}
+              memberPrices={product.memberPrices}
+              actualPrice={product.actualPrice}
+              showMembershipHint={
+                typeof product.membershipPrice === "number" &&
+                typeof product.basePrice === "number" &&
+                typeof product.actualPrice === "number" &&
+                product.basePrice > product.membershipPrice &&
+                Math.abs(product.actualPrice - product.membershipPrice) >= 1
+              }
+              membershipSavings={
+                typeof product.membershipPrice === "number" &&
                   typeof product.basePrice === "number" &&
                   product.basePrice > product.membershipPrice
-                    ? product.basePrice - product.membershipPrice
-                    : undefined
-                }
-              />
+                  ? product.basePrice - product.membershipPrice
+                  : undefined
+              }
+            />
           )}
 
           {/* 배송 정보 */}
@@ -249,7 +248,8 @@ export function ProductSidebarPurchase({
           <footer className="flex gap-2">
             {isOutOfStock ? (
               <>
-                <CustomButton
+                {/* todo: 미연결 액션 임시 비활성화 */}
+                {/* <CustomButton
                   variant="outline"
                   color="secondary"
                   size="lg"
@@ -266,6 +266,15 @@ export function ProductSidebarPurchase({
                 >
                   <Zap className="h-4 w-4" />
                   <span>미리구매하기</span>
+                </CustomButton> */}
+                <CustomButton
+                  variant="outline"
+                  color="secondary"
+                  size="lg"
+                  className="flex-1"
+                  disabled
+                >
+                  품절 상품
                 </CustomButton>
               </>
             ) : (
