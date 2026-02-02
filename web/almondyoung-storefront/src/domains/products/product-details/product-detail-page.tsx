@@ -11,14 +11,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { CartSuccessModal } from "@/components/modals/cart-success-modal"
-import { Breadcrumb } from "@components/layout/components/breadcrumb"
 import { useAddToCart } from "@hooks/api/use-add-to-cart"
 import { useRecentViews } from "@hooks/api/use-recent-views"
 import { toggleWishlist } from "@lib/api/users/wishlist"
 import type { ProductDetail } from "@lib/types/ui/product"
-import { ProductCard } from "@lib/types/ui/product"
 import type { UserDetail, WishlistItem } from "@lib/types/ui/user"
-import { ProductRecommandSlider } from "@components/products/product-recommand-slider"
 import { ProductReviewSection } from "domains/reviews/product-review-section"
 import { use, useEffect, useRef, useState, useTransition } from "react"
 import { toast } from "sonner"
@@ -28,11 +25,14 @@ import { ProductInfoAccordion } from "./components/product-info-accordion"
 import { ProductBottomBar } from "./components/product-bottom-bar"
 import { ProductBottomSheet } from "./components/product-bottom-sheet"
 import { ProductInfoMobile } from "./components/product-info-mobile"
-import { ProductQnaSection } from "./components/product-qna-section"
 import { ProductSidebarPurchase } from "./components/product-sidebar-purchase"
 import { ProductTabs } from "./components/product-tabs"
 import { useRouter } from "next/navigation"
 import { createPortal } from "react-dom"
+// import { Breadcrumb } from "@components/layout/components/breadcrumb"
+// import { ProductCard } from "@lib/types/ui/product"
+// import { ProductRecommandSlider } from "@components/products/product-recommand-slider"
+// import { ProductQnaSection } from "./components/product-qna-section"
 
 interface ProductDetailPageProps {
   params: Promise<{
@@ -302,9 +302,9 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
       selectedCartOptions.map((option) =>
         option.variantId
           ? addToCart({
-              variantId: option.variantId,
-              quantity: option.quantity,
-            })
+            variantId: option.variantId,
+            quantity: option.quantity,
+          })
           : Promise.resolve({ success: false })
       )
     )
@@ -353,12 +353,13 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
     router.push(`/${countryCode}/cart`)
   }
 
-  // TODO: 실제 추천 제품 API 연동 필요
-  const recommendedProducts: ProductCard[] = []
+  // todo: 추천상품 임시 비활성화
+  // const recommendedProducts: ProductCard[] = []
 
   return (
     <div className="md:bg-muted/50 min-h-screen bg-white">
-      <Breadcrumb />
+      {/* todo: 상품 상세 상단 breadcrumb 임시 비활성화 */}
+      {/* <Breadcrumb /> */}
 
       <div className="mx-auto max-w-[1360px] px-[15px] md:px-[40px]">
         <div className="py-2 md:flex md:gap-4">
@@ -375,14 +376,14 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
             {/* 모바일 상품 정보 */}
             <ProductInfoMobile product={product} />
 
-            {/* 추천 상품 */}
-            <ProductRecommandSlider
+            {/* todo: 추천 상품 임시 비활성화 */}
+            {/* <ProductRecommandSlider
               title="다른 원장님들이 함께 본 상품 BEST"
               products={recommendedProducts}
               onCartClick={(p) => addToCart({ variantId: p.id, quantity: 1 })}
               className="py-4 md:py-8"
               itemsPerView={{ mobile: 1.2, tablet: 2.5, desktop: 4 }}
-            />
+            /> */}
 
             {/* 탭 네비게이션 */}
             <ProductTabs
@@ -421,10 +422,10 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
               />
             </div>
 
-            {/* Q&A */}
-            <div ref={qnaRef} id="qna-panel" role="tabpanel">
+            {/* todo: Q&A 임시 비활성화 */}
+            {/* <div ref={qnaRef} id="qna-panel" role="tabpanel">
               <ProductQnaSection />
-            </div>
+            </div> */}
 
             {/* 구매/반품 정보 */}
             <div ref={infoRef} id="info-panel" role="tabpanel">
@@ -439,7 +440,7 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
             isWishlistPending={isPending}
             onWishlistToggle={handleWishlistToggle}
             countryCode={countryCode}
-            isUser={!!user}
+            // isUser={!!user}
             quantity={quantity}
             onQuantityChange={setQuantity}
             selectedOptions={selectedOptions}

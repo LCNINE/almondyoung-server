@@ -4,14 +4,14 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { useCallback } from "react"
 import { ProductGrid } from "@/components/products/product-grid"
 import { SearchHistory } from "@components/search/search-history"
-import { SearchHotKeyword } from "@components/search/search-hot-keyword"
-import { SearchPopularKeyword } from "@components/search/search-popular-keyword"
 import { useSearchHistory } from "@hooks/ui/use-search-history"
 import CustomDropdown from "@components/dropdown"
 import type { SearchProductResult } from "@lib/types/ui/product"
 import { SharedPagination } from "@/components/shared/pagination"
 import { SearchEmptyState } from "./search-empty-state"
 import { useUser } from "@/contexts/user-context"
+// import { SearchHotKeyword } from "@components/search/search-hot-keyword"
+// import { SearchPopularKeyword } from "@components/search/search-popular-keyword"
 
 interface SearchPageClientProps {
   keyword: string
@@ -84,15 +84,13 @@ export function SearchPageClient({
           </section>
         )}
 
-        {/* 추천 검색어 */}
-        <section>
+        {/* todo: 인기/급상승 검색어 임시 비활성화 */}
+        {/* <section>
           <SearchPopularKeyword />
         </section>
-
-        {/* 급상승 검색어 */}
         <section>
           <SearchHotKeyword />
-        </section>
+        </section> */}
       </div>
     )
   }

@@ -1,5 +1,4 @@
-import { Check, ChevronRight } from "lucide-react"
-
+// import { ChevronRight } from "lucide-react"
 /**
  * MembershipBanner - 멤버십 가입 배너
  *
@@ -45,8 +44,8 @@ export default function NonSubscriberBanner() {
             미용 재료 최저가 100% 보장
           </h1>
 
-          {/* CTA 버튼 */}
-          <button
+          {/* todo: CTA 버튼 임시 비활성화 */}
+          {/* <button
             type="button"
             className="flex items-center gap-1 rounded-full bg-white px-4 py-3 shadow-[0_4px_10px_rgba(0,0,0,0.25)] transition-transform hover:scale-105 active:scale-95"
           >
@@ -57,7 +56,7 @@ export default function NonSubscriberBanner() {
               className="h-[18px] w-[18px] text-[#2c2c2e]"
               strokeWidth={1.5}
             />
-          </button>
+          </button> */}
 
           {/* 약관 및 안내 문구 */}
           <footer className="mt-4 space-y-0.5 text-[13px] leading-relaxed text-[#f4f4f4]">

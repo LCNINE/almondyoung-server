@@ -2,8 +2,8 @@
 
 import { SearchX } from "lucide-react"
 import { SearchHistory } from "@components/search/search-history"
-import { SearchPopularKeyword } from "@components/search/search-popular-keyword"
-import { SearchHotKeyword } from "@components/search/search-hot-keyword"
+// import { SearchPopularKeyword } from "@components/search/search-popular-keyword"
+// import { SearchHotKeyword } from "@components/search/search-hot-keyword"
 
 interface SearchEmptyStateProps {
   keyword: string
@@ -52,15 +52,13 @@ export function SearchEmptyState({
         </section>
       )}
 
-      {/* 추천 검색어 */}
-      <section className="mb-8">
+      {/* todo: 추천/급상승 검색어 임시 비활성화 */}
+      {/* <section className="mb-8">
         <SearchPopularKeyword />
       </section>
-
-      {/* 급상승 검색어 */}
       <section>
         <SearchHotKeyword />
-      </section>
+      </section> */}
     </div>
   )
 }
