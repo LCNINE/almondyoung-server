@@ -166,6 +166,25 @@ export const tokens = pgTable(
   }),
 );
 
+export const cafe24Tokens = pgTable(
+  'cafe24_tokens',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    mallId: varchar('mall_id', { length: 64 }).notNull(),
+    accessToken: text('access_token').notNull(),
+    refreshToken: text('refresh_token').notNull(),
+    expiresAt: timestamp('expires_at').notNull(),
+    refreshTokenExpiresAt: timestamp('refresh_token_expires_at'),
+    lastRefreshedAt: timestamp('last_refreshed_at'),
+    lastError: text('last_error'),
+    ...timestampColumns,
+  },
+  (table) => ({
+    mallIdUniqueIdx: unique().on(table.mallId),
+    expiresAtIdx: index('cafe24_tokens_expires_at_idx').on(table.expiresAt),
+  }),
+);
+
 // User_profile
 export const profiles = pgTable('profiles', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -524,6 +543,7 @@ export const userServiceTables = {
   shops,
   userConsents,
   tokens,
+  cafe24Tokens,
   profiles,
   blacklists,
   wishlist,
@@ -584,6 +604,7 @@ export type Shop = typeof shops.$inferSelect;
 export type Wishlist = typeof wishlist.$inferSelect;
 export type RecentView = typeof userRecentViews.$inferSelect;
 export type BusinessLicense = typeof businessLicenses.$inferSelect;
+export type Cafe24Token = typeof cafe24Tokens.$inferSelect;
 
 export type ShopType = (typeof shopTypeEnum.enumValues)[number];
 export const SHOP_TYPES = shopTypeEnum.enumValues;
