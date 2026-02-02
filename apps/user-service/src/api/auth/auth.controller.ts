@@ -24,6 +24,9 @@ import { Public } from '../../commons/decorator/public.decorator';
 import { ProviderType } from '../../commons/types';
 import { AuthService } from './auth.service';
 import { ChangePasswordDto } from './dto/change-pw.dto';
+import { FindUserIdDto } from './dto/find-userid.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { SignInDto } from './dto/sign-in.dto';
 import { LocalSignUpDto } from './dto/sign-up.dto';
 
@@ -90,22 +93,31 @@ export class AuthController {
   }
 
   @ApiOperation({ summary: '아이디 찾기' })
-  @ApiResponse({ status: 200, description: '아이디 찾기 이메일 전송 성공' })
+  @ApiResponse({ status: 200, description: '아이디 찾기 SMS 전송 성공' })
   @Post('forget-userid')
   @Public()
-  async forgetUserId(@Body(ValidationPipe) { email }: { email: string }) {
-    return this.authService.forgetUserId(email);
+  async forgetUserId(@Body(ValidationPipe) { phoneNumber }: FindUserIdDto) {
+    return this.authService.forgetUserId(phoneNumber);
   }
 
   @ApiOperation({ summary: '비밀번호 찾기' })
-  @ApiResponse({ status: 200, description: '비밀번호 재설정 이메일 전송 성공' })
+  @ApiResponse({
+    status: 200,
+    description: '비밀번호 재설정 SMS 전송 성공',
+    schema: {
+      type: 'object',
+      properties: {
+        verificationToken: { type: 'string', example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' },
+      },
+    },
+  })
   @Post('forget-password')
   @Public()
   async forgotPassword(
     @Body(ValidationPipe)
-    { email, loginId }: { email: string; loginId: string },
+    { phoneNumber, loginId }: ForgotPasswordDto,
   ) {
-    return this.authService.forgotPassword(email, loginId);
+    return this.authService.forgotPassword(phoneNumber, loginId);
   }
 
   @ApiOperation({ summary: '비밀번호 재설정' })
@@ -113,8 +125,7 @@ export class AuthController {
   @Post('reset-password')
   @Public()
   async resetPassword(
-    @Body(ValidationPipe)
-    { token, password }: { token: string; password: string },
+    @Body(ValidationPipe) { token, password }: ResetPasswordDto,
   ): Promise<void> {
     return this.authService.resetPassword(token, password);
   }

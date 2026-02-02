@@ -52,13 +52,12 @@ export interface UserPermanentDeletedPayload {
 }
 
 export interface UserFindIdPayload {
-  email: string;
+  phoneNumber: string;
   loginId: string;
 }
 
 export interface UserResetPasswordPayload {
-  email: string;
-  verificationToken: string;
+  phoneNumber: string;
 }
 
 export interface BusinessLicenseApprovedPayload {
@@ -112,13 +111,12 @@ const UserPermanentDeletedSchema = z.object({
 });
 
 const UserFindIdSchema = z.object({
-  email: z.string().email(),
+  phoneNumber: z.string().min(1),
   loginId: z.string().min(1),
 });
 
 const UserResetPasswordSchema = z.object({
-  email: z.string().email(),
-  verificationToken: z.string().min(1),
+  phoneNumber: z.string().min(1),
 });
 
 const BusinessLicenseApprovedSchema = z.object({
@@ -158,4 +156,3 @@ export const USER_EVENTS = {
     messageType: 'UserPermanentDeleted' as const,
   },
 } as const;
-

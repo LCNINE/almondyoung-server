@@ -21,7 +21,7 @@ import {
   type UserServiceSchema,
 } from 'apps/user-service/database/drizzle/schema';
 import * as bcrypt from 'bcrypt';
-import { and, eq, gt, isNull, or } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull, or } from 'drizzle-orm';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { DbTransaction, IUser, ProviderType } from '../../commons/types';
 import {
@@ -669,28 +669,48 @@ export class AuthService {
     return await this.setAccessToken(user, reply, client);
   }
 
-  async forgetUserId(email: string) {
-    const user = await this.usersService.findUserByEmail(email);
-    if (!user) throw new NotFoundException('존재하지 않는 이메일입니다');
+  async forgetUserId(phoneNumber: string) {
+    await this.assertPhoneVerified(phoneNumber);
+
+    const users = await this.usersService.findUsersByPhoneNumber(phoneNumber);
+    if (users.length === 0) throw new NotFoundException('존재하지 않는 휴대폰 번호입니다');
+    if (users.length > 1) {
+      throw new ConflictException('해당 번호로 가입된 계정이 여러 개입니다. 고객센터에 문의해주세요.');
+    }
+
+    const user = users[0];
 
     // ID 찾기 이벤트 발행
     await this.eventPublisher.publishEvent({
       eventType: 'UserFindId',
-      aggregateId: email,
+      aggregateId: user.id,
       payload: {
-        email,
+        phoneNumber,
         loginId: user.loginId,
       },
     });
   }
 
-  async forgotPassword(email: string, loginId: string) {
-    const user = await this.usersService.findUserByEmail(email);
-    if (!user) throw new NotFoundException('존재하지 않는 이메일입니다');
-    if (user.loginId !== loginId) throw new NotFoundException('존재하지 않는 아이디입니다');
+  async forgotPassword(phoneNumber: string, loginId: string) {
+    await this.assertPhoneVerified(phoneNumber);
+
+    const user = await this.usersService.findUserByLoginId(loginId);
+    if (!user) throw new NotFoundException('존재하지 않는 아이디입니다');
+
+    const [profile] = await this.dbService.db
+      .select({
+        phoneNumber: userServiceSchema.profiles.phoneNumber,
+      })
+      .from(userServiceSchema.profiles)
+      .where(eq(userServiceSchema.profiles.userId, user.id))
+      .limit(1);
+
+    if (!profile || profile.phoneNumber !== phoneNumber) {
+      throw new NotFoundException('휴대폰 번호가 일치하지 않습니다');
+    }
 
     const verificationToken = await this.jwtService.signAsync(
-      { email },
+      { sub: user.id },
       {
         secret: this.configService.getOrThrow('AUTH_SECRET'),
         expiresIn: JWT_RESET_PASSWORD_ACCESS_TOKEN_EXPIRATION,
@@ -699,26 +719,35 @@ export class AuthService {
 
     await this.eventPublisher.publishEvent({
       eventType: 'UserResetPassword',
-      aggregateId: email,
+      aggregateId: user.id,
       payload: {
-        email,
-        verificationToken,
+        phoneNumber,
       },
     });
+
+    return { verificationToken };
   }
 
   async resetPassword(token: string, password: string): Promise<void> {
-    const email = await this.jwtService.verify(token, {
+    const payload = await this.jwtService.verify(token, {
       secret: this.configService.getOrThrow('AUTH_SECRET'),
     });
 
-    if (typeof email !== 'string') {
-      throw new BadRequestException('Invalid token');
+    let user: User | null = null;
+
+    if (typeof payload === 'string') {
+      user = await this.usersService.findUserByEmail(payload);
+    } else if (payload?.sub) {
+      const [row] = await this.dbService.db
+        .select()
+        .from(userServiceSchema.users)
+        .where(eq(userServiceSchema.users.id, payload.sub))
+        .limit(1);
+      user = row ?? null;
     }
 
-    const user = await this.usersService.findUserByEmail(email);
     if (!user) {
-      throw new NotFoundException(`No user found for email: ${email}`);
+      throw new NotFoundException('존재하지 않는 사용자입니다');
     }
 
     const saltOrRounds = 10;
@@ -730,6 +759,35 @@ export class AuthService {
       .where(eq(userServiceSchema.users.id, user.id));
 
     return;
+  }
+
+  private async assertPhoneVerified(phoneNumber: string) {
+    const [verification] = await this.dbService.db
+      .select()
+      .from(userServiceSchema.phoneVerifications)
+      .where(
+        and(
+          eq(userServiceSchema.phoneVerifications.phoneNumber, phoneNumber),
+          eq(
+            userServiceSchema.phoneVerifications.purpose,
+            userServiceEnums.phoneVerificationPurposeEnum.enumValues[0],
+          ),
+          eq(userServiceSchema.phoneVerifications.isVerified, true),
+          eq(userServiceSchema.phoneVerifications.isExpired, false),
+          gt(userServiceSchema.phoneVerifications.expiresAt, new Date()),
+        ),
+      )
+      .orderBy(desc(userServiceSchema.phoneVerifications.verifiedAt))
+      .limit(1);
+
+    if (!verification) {
+      throw new BadRequestException('휴대폰 인증이 필요합니다');
+    }
+
+    await this.dbService.db
+      .update(userServiceSchema.phoneVerifications)
+      .set({ isExpired: true })
+      .where(eq(userServiceSchema.phoneVerifications.id, verification.id));
   }
 
   async changePassword(password: string, userId: string, tx?: DbTransaction) {
