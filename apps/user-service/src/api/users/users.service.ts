@@ -165,6 +165,32 @@ export class UsersService {
     }
   }
 
+  // 휴대폰 번호로 사용자 찾기 (복수 가능)
+  async findUsersByPhoneNumber(
+    phoneNumber: string,
+    tx?: DbTransaction,
+  ): Promise<schema.User[]> {
+    const client = this.getClient(tx);
+    try {
+      const rows = await client
+        .select({
+          user: schema.users,
+        })
+        .from(schema.users)
+        .innerJoin(
+          schema.profiles,
+          eq(schema.users.id, schema.profiles.userId),
+        )
+        .where(eq(schema.profiles.phoneNumber, phoneNumber));
+
+      return rows.map((row) => row.user);
+    } catch (error) {
+      throw new InternalServerErrorException(
+        '휴대폰 번호로 사용자 조회 중 오류가 발생했습니다.',
+      );
+    }
+  }
+
   // 사용자명으로 사용자 찾기
   async findUserByUsername(username: string): Promise<schema.User | null> {
     try {

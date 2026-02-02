@@ -74,7 +74,7 @@ export class UserEventConsumer {
     @EventEnvelope() envelope: DomainEvent<UserFindIdPayload>,
     @EventPayload() payload: UserFindIdPayload,
   ) {
-    this.logger.log(`[Event] Received UserFindId: ${payload.email} (correlationId: ${envelope.correlationId})`);
+    this.logger.log(`[Event] Received UserFindId: ${payload.phoneNumber} (correlationId: ${envelope.correlationId})`);
     try {
       const eventMapping = await this.eventMappingService.getEventMapping('USER_FIND_ID');
       if (!eventMapping || !eventMapping.isActive) {
@@ -92,12 +92,12 @@ export class UserEventConsumer {
         correlationId: envelope.correlationId,
         priority: eventMapping.priority as any,
         variables: {
-          email: payload.email,
+          phoneNumber: payload.phoneNumber,
           loginId: payload.loginId,
         },
       };
       await this.notificationDispatcherService.send(sendDto);
-      this.logger.log(`[Event] Dispatched USER_FIND_ID notification for ${payload.email}`);
+      this.logger.log(`[Event] Dispatched USER_FIND_ID notification for ${payload.phoneNumber}`);
     } catch (error) {
       this.logger.error(`[Event] Failed to process USER_FIND_ID notification: ${error.message}`, error.stack);
       throw error;
@@ -109,7 +109,7 @@ export class UserEventConsumer {
     @EventEnvelope() envelope: DomainEvent<UserResetPasswordPayload>,
     @EventPayload() payload: UserResetPasswordPayload,
   ) {
-    this.logger.log(`[Event] Received UserResetPassword: ${payload.email} (correlationId: ${envelope.correlationId})`);
+    this.logger.log(`[Event] Received UserResetPassword: ${payload.phoneNumber} (correlationId: ${envelope.correlationId})`);
     try {
       const eventMapping = await this.eventMappingService.getEventMapping('USER_RESET_PASSWORD');
       if (!eventMapping || !eventMapping.isActive) {
@@ -127,16 +127,14 @@ export class UserEventConsumer {
         correlationId: envelope.correlationId,
         priority: eventMapping.priority as any,
         variables: {
-          email: payload.email,
-          verificationToken: payload.verificationToken,
+          phoneNumber: payload.phoneNumber,
         },
       };
       await this.notificationDispatcherService.send(sendDto);
-      this.logger.log(`[Event] Dispatched USER_RESET_PASSWORD notification for ${payload.email}`);
+      this.logger.log(`[Event] Dispatched USER_RESET_PASSWORD notification for ${payload.phoneNumber}`);
     } catch (error) {
       this.logger.error(`[Event] Failed to process USER_RESET_PASSWORD notification: ${error.message}`, error.stack);
       throw error;
     }
   }
 }
-
