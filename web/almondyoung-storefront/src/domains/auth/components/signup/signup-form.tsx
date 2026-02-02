@@ -32,6 +32,7 @@ export function SignupForm() {
 
   const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false)
   const [hasAgreed, setHasAgreed] = useState(false)
+  const [isRedirecting, setIsRedirecting] = useState(false)
 
   const form = useForm<SignupSchema>({
     resolver: zodResolver(signupSchema),
@@ -56,6 +57,7 @@ export function SignupForm() {
   useEffect(() => {
     if (state) {
       if (state.success) {
+        setIsRedirecting(true)
         window.location.href = `/api/auth/callback/signup?userId=${state.userId}&redirect_to=${encodeURIComponent(redirectTo)}`
       } else {
         toast.error(state.message)
@@ -127,8 +129,8 @@ export function SignupForm() {
           <CustomButton
             type="button"
             className="cursor-pointer"
-            disabled={pending || isPending}
-            isLoading={pending || isPending}
+            disabled={pending || isPending || isRedirecting}
+            isLoading={pending || isPending || isRedirecting}
             onClick={handleSignupClick}
           >
             가입하기
@@ -151,6 +153,7 @@ export function SignupForm() {
               type="button"
               variant="outline"
               className="cursor-pointer"
+              disabled={isRedirecting}
               onClick={() => setIsConfirmDialogOpen(false)}
             >
               취소
@@ -158,8 +161,8 @@ export function SignupForm() {
             <CustomButton
               type="button"
               className="cursor-pointer"
-              disabled={pending || isPending}
-              isLoading={pending || isPending}
+              disabled={pending || isPending || isRedirecting}
+              isLoading={pending || isPending || isRedirecting}
               onClick={handleConfirmSignup}
             >
               계속
