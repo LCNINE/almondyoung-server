@@ -1,5 +1,6 @@
 "use client"
 
+import { BusinessInfo } from "@/lib/types/ui/user"
 import { Badge } from "@components/common/ui/badge"
 import { Button } from "@components/common/ui/button"
 import {
@@ -9,7 +10,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@components/common/ui/dialog"
-import type { BusinessInfo } from "@lib/types/dto/business"
 import { formatBusinessNumber } from "@lib/utils/format-business-number"
 import { getDisplayFilename } from "@lib/utils/get-diplay-filename"
 import { Pencil } from "lucide-react"

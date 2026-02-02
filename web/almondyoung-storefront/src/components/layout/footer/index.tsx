@@ -1,6 +1,6 @@
-// components/layout/footer.tsx
 import Link from "next/link"
 import { cn } from "@lib/utils"
+import { Button } from "@/components/ui/button"
 
 export default function Footer({ className }: { className?: string }) {
   return (
@@ -14,46 +14,58 @@ export default function Footer({ className }: { className?: string }) {
             </h3>
             <div className="flex flex-col gap-3">
               <div className="flex gap-4 text-sm">
-                <button
-                  type="button"
-                  className="hover:text-stone-700 hover:underline"
+                <Button
+                  variant="link"
+                  asChild
+                  className="px-0 py-0 text-stone-400 hover:text-stone-700 hover:underline"
                 >
-                  전화걸기
-                </button>
-                <button
-                  type="button"
-                  className="hover:text-stone-700 hover:underline"
+                  <Link href="tel:18777184" target="_blank">
+                    전화걸기
+                  </Link>
+                </Button>
+                <Button
+                  variant="link"
+                  asChild
+                  className="px-0 py-0 text-stone-400 hover:text-stone-700 hover:underline"
                 >
-                  카카오챗 채널추가
-                </button>
-                <button
-                  type="button"
-                  className="hover:text-stone-700 hover:underline"
+                  <Link href="https://pf.kakao.com/_xaxgxazs" target="_blank">
+                    카카오챗 채널추가
+                  </Link>
+                </Button>
+                <Button
+                  variant="link"
+                  asChild
+                  className="px-0 py-0 text-stone-400 hover:text-stone-700 hover:underline"
                 >
-                  인스타그램
-                </button>
+                  <Link
+                    href="https://www.instagram.com/almondyoung_official/"
+                    target="_blank"
+                  >
+                    인스타그램
+                  </Link>
+                </Button>
               </div>
               <nav className="flex flex-wrap gap-4 text-sm">
                 <Link
-                  href="/#"
+                  href="/kr/company"
                   className="hover:text-stone-700 hover:underline"
                 >
                   회사소개
                 </Link>
                 <Link
-                  href="/#"
+                  href="/kr/terms"
                   className="hover:text-stone-700 hover:underline"
                 >
                   이용약관
                 </Link>
                 <Link
-                  href="/#"
+                  href="/kr/privacy"
                   className="font-bold text-stone-600 hover:text-stone-800 hover:underline"
                 >
                   개인정보처리방침
                 </Link>
                 <Link
-                  href="/#"
+                  href="/kr/guide"
                   className="hover:text-stone-700 hover:underline"
                 >
                   이용안내
@@ -117,19 +129,19 @@ export default function Footer({ className }: { className?: string }) {
 
             {/* 정책 링크 */}
             <nav className="mb-6 flex flex-wrap justify-start gap-x-4 gap-y-2 text-xs text-stone-500">
-              <Link href="/company" className="hover:text-stone-800">
+              <Link href="/kr/company" className="hover:text-stone-800">
                 회사소개
               </Link>
-              <Link href="/terms" className="hover:text-stone-800">
+              <Link href="/kr/terms" className="hover:text-stone-800">
                 이용약관
               </Link>
               <Link
-                href="/privacy"
+                href="/kr/privacy"
                 className="font-bold text-stone-700 hover:text-stone-900"
               >
                 개인정보처리방침
               </Link>
-              <Link href="/guide" className="hover:text-stone-800">
+              <Link href="/kr/guide" className="hover:text-stone-800">
                 이용안내
               </Link>
             </nav>
