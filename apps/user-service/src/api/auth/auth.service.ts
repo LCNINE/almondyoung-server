@@ -101,69 +101,18 @@ export class AuthService {
 
         // 이메일로 기존 사용자 조회
         const existingUser = await this.usersService.findUserByEmail(signUpDto.email, client);
-
         if (existingUser) {
-          // 이미 인증된 이메일인 경우
-          if (existingUser.isEmailVerified) {
-            throw new ConflictException('이미 가입된 이메일입니다. 로그인을 시도해주세요.');
+          if (existingUser.email === signUpDto.email) {
+            throw new ConflictException('이미 가입된 이메일입니다.');
           }
 
-          const existsUserId = await this.usersService.findUserByLoginId(signUpDto.loginId, client);
-          if (existsUserId && existsUserId.id !== existingUser.id) {
+          if (existingUser.loginId === signUpDto.loginId) {
             throw new ConflictException('이미 존재하는 아이디입니다.');
           }
 
-          const existingUserByNickname = await this.usersService.findUserByNickname(signUpDto.nickname, client);
-          if (existingUserByNickname && existingUserByNickname.id !== existingUser.id) {
+          if (existingUser.nickname === signUpDto.nickname) {
             throw new ConflictException('이미 존재하는 닉네임입니다.');
           }
-
-          const saltOrRounds = 10;
-          const hash = await bcrypt.hash(signUpDto.password, saltOrRounds);
-
-          await client
-            .update(userServiceSchema.users)
-            .set({
-              email: signUpDto.email,
-              username: signUpDto.username,
-              nickname: signUpDto.nickname,
-              loginId: signUpDto.loginId,
-              password: hash,
-              isEmailVerified: false,
-              updatedAt: new Date(),
-            })
-            .where(eq(userServiceSchema.users.id, existingUser.id));
-
-          // 유저 프로필에 생년월일 업데이트
-          await this.usersService.updateMyProfile(existingUser.id, {
-            birthDate: birthday,
-          }, client);
-
-          await client
-            .update(userServiceSchema.userConsents)
-            .set({
-              isOver14,
-              termsOfService,
-              electronicTransaction,
-              privacyPolicy,
-              thirdPartySharing,
-              marketingConsent,
-              updatedAt: new Date(),
-            })
-            .where(eq(userServiceSchema.userConsents.userId, existingUser.id));
-
-          return { message: '회원가입 성공' }
-        }
-
-        const existsUserId = await this.usersService.findUserByLoginId(signUpDto.loginId);
-        if (existsUserId) {
-          throw new ConflictException('이미 존재하는 아이디입니다.');
-        }
-
-        const existingUserByNickname = await this.usersService.findUserByNickname(signUpDto.nickname);
-
-        if (existingUserByNickname) {
-          throw new ConflictException('이미 존재하는 닉네임입니다.');
         }
 
         const saltOrRounds = 10;
