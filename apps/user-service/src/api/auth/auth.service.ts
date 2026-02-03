@@ -91,6 +91,7 @@ export class AuthService {
       thirdPartySharing,
       marketingConsent,
       birthday,
+      phoneNumber,
     } = signUpDto;
 
     const redirectTo = redirect_to ?? '/';
@@ -134,6 +135,7 @@ export class AuthService {
         // 유저 프로필에 생년월일 업데이트
         await this.usersService.updateMyProfile(user.id, {
           birthDate: birthday,
+          phoneNumber,
         }, client);
 
         // 유저 동의 항목 생성
