@@ -24,18 +24,9 @@
     rootDataset.redirectTo ||
     config.redirectTo ||
     '';
-  const apiBase =
-    params.get('api_base') || rootDataset.apiBase || config.apiBase || '';
-  const memberInfoPath =
-    params.get('member_info_path') ||
-    rootDataset.memberInfoPath ||
-    config.memberInfoPath ||
-    '/cafe24/member-info';
-  const linkTokenPath =
-    params.get('link_token_path') ||
-    rootDataset.linkTokenPath ||
-    config.linkTokenPath ||
-    '/cafe24/link-token';
+  const apiBase = 'https://user.almondyoung-next.com';
+  const memberInfoPath = '/cafe24/member-info';
+  const linkTokenPath = '/cafe24/link-token';
   const mallId =
     params.get('mall_id') || rootDataset.mallId || config.mallId || '';
 
