@@ -17,6 +17,7 @@ import { BulkModule } from './bulk/bulk.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      envFilePath: process.env.NOTIFICATION_ENV_PATH,
       validate: validateNotificationEnv,
     }),
     // Redis가 있으면 Bull 큐 사용, 없으면 직접 발송
