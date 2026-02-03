@@ -32,7 +32,6 @@ export function CategoryNavigation({
 
   // Medusa 카테고리의 handle을 사용 (category page와 일관성 유지)
   const allTabs = [
-    { name: "홈", handle: undefined },
     ...mainCategories.map((c) => ({ name: c.name, handle: c.handle })),
   ]
 
@@ -64,7 +63,7 @@ export function CategoryNavigation({
         onMouseUp={onDragEnd}
         onMouseLeave={onDragEnd}
         className={cn(
-          "scrollbar-hide flex w-full items-center gap-4 overflow-x-auto px-4 py-2 select-none md:hidden",
+          "scrollbar-hide flex w-full items-center gap-4 overflow-x-auto py-2 select-none md:hidden md:px-4",
           isDrag ? "cursor-grabbing" : "cursor-grab"
         )}
       >
@@ -105,7 +104,9 @@ function NavItem({
     <li className="relative shrink-0 list-none py-2">
       <Link
         href={
-          tab.handle ? `/${countryCode}/category/${tab.handle}` : `/${countryCode}`
+          tab.handle
+            ? `/${countryCode}/category/${tab.handle}`
+            : `/${countryCode}`
         }
         draggable={false}
         onDragStart={(e) => e.preventDefault()}

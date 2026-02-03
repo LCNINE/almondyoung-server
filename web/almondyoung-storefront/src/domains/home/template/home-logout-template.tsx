@@ -214,8 +214,9 @@ export async function HomeLogoutTemplate({
       {/* 메인 히어로 배너 */}
       <HeroBanner />
 
+      {/* todo: 추후 섹션이 많아지면 활성화 */}
       {/* 로그인 유도 배너 */}
-      {!user && <LoginPromptBanner />}
+      {/* {!user && <LoginPromptBanner />} */}
 
       {/* 카테고리별 제품 섹션  */}
       <ProductListSection>
