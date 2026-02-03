@@ -1,10 +1,13 @@
 import { DbService, InjectDb } from '@app/db';
+import { HttpService } from '@nestjs/axios';
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, createHash, randomBytes, timingSafeEqual } from 'crypto';
 import { eq } from 'drizzle-orm';
+import { firstValueFrom } from 'rxjs';
 import {
   cafe24LinkTokens,
+  cafe24Tokens,
   type UserServiceSchema,
 } from '../../../database/drizzle/schema';
 import { DbTransaction } from '../../commons/types';
@@ -20,6 +23,7 @@ export class Cafe24LinkService {
 
   constructor(
     @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
+    private readonly httpService: HttpService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -79,6 +83,60 @@ export class Cafe24LinkService {
     };
   }
 
+  async fetchMemberInfo(
+    encryptedIdToken: string,
+    mallId?: string,
+    tx?: DbTransaction,
+  ) {
+    const serviceKey = this.configService.get<string>('CAFE24_SERVICE_KEY');
+    if (!serviceKey) {
+      throw new Error('CAFE24_SERVICE_KEY 환경변수가 필요합니다.');
+    }
+
+    const resolvedMallId =
+      mallId ?? this.configService.get<string>('CAFE24_MALL_ID');
+    if (!resolvedMallId) {
+      throw new BadRequestException('mallId가 필요합니다.');
+    }
+
+    let payload: Record<string, unknown>;
+    try {
+      payload = this.decodeEncryptedIdToken(encryptedIdToken, serviceKey);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Cafe24 token decode failed: ${message}`);
+      throw new BadRequestException('암호화 id 토큰이 유효하지 않습니다.');
+    }
+
+    const cafe24MemberId = this.extractMemberId(payload);
+    if (!cafe24MemberId) {
+      throw new BadRequestException('회원 ID를 확인할 수 없습니다.');
+    }
+
+    const accessToken = await this.getCafe24AccessToken(resolvedMallId, tx);
+    const apiVersion =
+      this.configService.get<string>('CAFE24_API_VERSION') ?? '2025-12-01';
+    const encodedMemberId = encodeURIComponent(cafe24MemberId);
+    const url = `https://${resolvedMallId}.cafe24api.com/api/v2/admin/customersprivacy/${encodedMemberId}`;
+
+    const response = await firstValueFrom(
+      this.httpService.get(url, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'X-Cafe24-Api-Version': apiVersion,
+        },
+      }),
+    );
+
+    const data = response.data ?? {};
+    const memberName = this.extractMemberName(data);
+
+    return {
+      memberId: cafe24MemberId,
+      memberName,
+    };
+  }
+
   async consumeCafe24LinkToken(
     cafe24LinkToken: string,
     tx?: DbTransaction,
@@ -111,6 +169,25 @@ export class Cafe24LinkService {
       .where(eq(cafe24LinkTokens.id, token.id));
 
     return token;
+  }
+
+  private async getCafe24AccessToken(mallId: string, tx?: DbTransaction) {
+    const client = this.getClient(tx);
+    const [token] = await client
+      .select()
+      .from(cafe24Tokens)
+      .where(eq(cafe24Tokens.mallId, mallId))
+      .limit(1);
+
+    if (!token) {
+      throw new BadRequestException('Cafe24 access token이 없습니다.');
+    }
+
+    if (token.expiresAt < new Date()) {
+      throw new BadRequestException('Cafe24 access token이 만료되었습니다.');
+    }
+
+    return token.accessToken;
   }
 
   private decodeEncryptedIdToken(
@@ -192,5 +269,22 @@ export class Cafe24LinkService {
     }
 
     return null;
+  }
+
+  private extractMemberName(data: Record<string, any>) {
+    const customer = data?.customer ?? data?.customer_privacy ?? data?.data;
+    const candidate =
+      customer?.name ||
+      customer?.member_name ||
+      customer?.user_name ||
+      data?.name ||
+      data?.member_name ||
+      data?.user_name;
+
+    if (typeof candidate === 'string') {
+      return candidate;
+    }
+
+    return '';
   }
 }

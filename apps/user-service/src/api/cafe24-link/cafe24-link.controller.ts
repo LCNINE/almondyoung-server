@@ -1,4 +1,3 @@
-import { Public } from '../../commons/decorator/public.decorator';
 import {
   BadRequestException,
   Body,
@@ -6,6 +5,7 @@ import {
   Post,
   Req,
 } from '@nestjs/common';
+import { Public } from '../../commons/decorator/public.decorator';
 import {
   ApiBody,
   ApiOperation,
@@ -17,6 +17,10 @@ import {
   IssueCafe24LinkTokenDto,
   IssueCafe24LinkTokenResponseDto,
 } from './dto/issue-link-token.dto';
+import {
+  Cafe24MemberInfoRequestDto,
+  Cafe24MemberInfoResponseDto,
+} from './dto/member-info.dto';
 
 @ApiTags('Cafe24 Link')
 @Controller('cafe24')
@@ -61,5 +65,36 @@ export class Cafe24LinkController {
       cafe24LinkToken: result.cafe24LinkToken,
       expiresAt: result.expiresAt.toISOString(),
     };
+  }
+
+  @Post('member-info')
+  @Public()
+  @ApiOperation({
+    summary: 'Cafe24 회원 정보 조회',
+    description: '암호화 id 토큰으로 Cafe24 회원 정보를 조회합니다.',
+  })
+  @ApiBody({ type: Cafe24MemberInfoRequestDto })
+  @ApiResponse({
+    status: 200,
+    description: '회원 정보 조회 성공',
+    type: Cafe24MemberInfoResponseDto,
+  })
+  @ApiResponse({ status: 400, description: '잘못된 요청' })
+  async getMemberInfo(
+    @Body()
+    body: Cafe24MemberInfoRequestDto & {
+      encrypted_id_token?: string;
+      mall_id?: string;
+    },
+  ): Promise<Cafe24MemberInfoResponseDto> {
+    const encryptedIdToken =
+      body.encryptedIdToken ?? body.encrypted_id_token;
+    const mallId = body.mallId ?? body.mall_id;
+
+    if (!encryptedIdToken) {
+      throw new BadRequestException('암호화 id 토큰이 필요합니다.');
+    }
+
+    return this.cafe24LinkService.fetchMemberInfo(encryptedIdToken, mallId);
   }
 }
