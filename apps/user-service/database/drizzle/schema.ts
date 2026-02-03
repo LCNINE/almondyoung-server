@@ -185,6 +185,28 @@ export const cafe24Tokens = pgTable(
   }),
 );
 
+export const cafe24LinkTokens = pgTable(
+  'cafe24_link_tokens',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tokenHash: varchar('token_hash', { length: 64 }).notNull(),
+    encryptedTokenHash: varchar('encrypted_token_hash', { length: 64 }).notNull(),
+    mallId: varchar('mall_id', { length: 64 }).notNull(),
+    cafe24MemberId: varchar('cafe24_member_id', { length: 128 }),
+    payload: jsonb('payload'),
+    ip: varchar('ip', { length: 64 }),
+    userAgent: varchar('user_agent', { length: 256 }),
+    expiresAt: timestamp('expires_at').notNull(),
+    usedAt: timestamp('used_at'),
+    lastError: text('last_error'),
+    ...timestampColumns,
+  },
+  (table) => ({
+    tokenHashUniqueIdx: unique().on(table.tokenHash),
+    expiresAtIdx: index('cafe24_link_tokens_expires_at_idx').on(table.expiresAt),
+  }),
+);
+
 // User_profile
 export const profiles = pgTable('profiles', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -544,6 +566,7 @@ export const userServiceTables = {
   userConsents,
   tokens,
   cafe24Tokens,
+  cafe24LinkTokens,
   profiles,
   blacklists,
   wishlist,
@@ -605,6 +628,7 @@ export type Wishlist = typeof wishlist.$inferSelect;
 export type RecentView = typeof userRecentViews.$inferSelect;
 export type BusinessLicense = typeof businessLicenses.$inferSelect;
 export type Cafe24Token = typeof cafe24Tokens.$inferSelect;
+export type Cafe24LinkToken = typeof cafe24LinkTokens.$inferSelect;
 
 export type ShopType = (typeof shopTypeEnum.enumValues)[number];
 export const SHOP_TYPES = shopTypeEnum.enumValues;
