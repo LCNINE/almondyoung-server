@@ -17,6 +17,7 @@
   const rootEl = document.getElementById('migrate-root');
   const rootDataset = rootEl ? rootEl.dataset : {};
   const config = window.CAFE24_MIGRATION_CONFIG || {};
+  const clientId = 'ttE1ehvFAqzFp2HetA0d6P';
   log({ rootDataset, hasConfig: Boolean(window.CAFE24_MIGRATION_CONFIG) });
 
   const redirectUrl =
@@ -130,7 +131,7 @@
       log('initialize start');
       setLoading(true);
       setBusy(true, '회원 정보를 불러오는 중...');
-      const encrypted = await fetchEncryptedMemberId(config, params);
+      const encrypted = await fetchEncryptedMemberId(config);
       log({ encryptedMemberId: encrypted.memberId, guestId: encrypted.guestId });
       if (!encrypted.memberId) {
         log('guest detected, redirect to login');
@@ -168,7 +169,7 @@
     }
   }
 
-  function fetchEncryptedMemberId(configValue, paramsValue) {
+  function fetchEncryptedMemberId(configValue) {
     return new Promise((resolve, reject) => {
       log('fetchEncryptedMemberId');
       if (!window.CAFE24API) {
@@ -176,21 +177,12 @@
         return;
       }
 
-      const appKey = configValue.appKey || configValue.clientId || paramsValue.get('app_key') || paramsValue.get('client_id');
-      const apiVersion =
-        configValue.apiVersion || paramsValue.get('api_version') || '2025-12-01';
-      const serviceKey =
-        configValue.serviceKey || paramsValue.get('service_key');
-      const mallId = configValue.mallId || paramsValue.get('mall_id');
-
-      if (!appKey || !serviceKey) {
-        reject(new Error('Cafe24 API 설정값이 부족합니다. (appKey 또는 serviceKey)'));
-        return;
-      }
+      const apiVersion = configValue.apiVersion || '2025-12-01';
+      const mallId = configValue.mallId || params.get('mall_id');
 
       log({ action: 'init cafe24 api', apiVersion });
       const api = window.CAFE24API.init({
-        client_id: appKey,
+        client_id: clientId,
         version: apiVersion,
       });
 
@@ -199,7 +191,7 @@
         return;
       }
 
-      api.getEncryptedMemberId(serviceKey, (err, res) => {
+      api.getEncryptedMemberId(clientId, (err, res) => {
         if (err) {
           log({ action: 'getEncryptedMemberId error', err });
           reject(new Error(err.message || '회원 정보 확인에 실패했습니다.'));
