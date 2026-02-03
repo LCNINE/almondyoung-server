@@ -1,9 +1,11 @@
-import type { StoreProduct } from "@medusajs/types"
+import type { StoreProduct, StoreProductVariant } from "@medusajs/types"
 import type { ProductCard } from "@/lib/types/ui/product"
 import { getPricesForVariant, getProductPrice } from "@/lib/utils/get-product-price"
 import { getTimeSaleInfo } from "@/lib/utils/time-sale"
 
-const getMembershipPreviewPrice = (variant: any) => {
+const getMembershipPreviewPrice = (
+  variant: StoreProductVariant | null | undefined
+) => {
   const raw = variant?.metadata?.membershipPrice
   if (typeof raw === "number") return raw
   if (typeof raw === "string") {
@@ -13,13 +15,19 @@ const getMembershipPreviewPrice = (variant: any) => {
   return undefined
 }
 
+const isDefaultVariant = (variant: StoreProductVariant) => {
+  const withDefaultFlag = variant as StoreProductVariant & {
+    is_default?: boolean
+    isDefault?: boolean
+  }
+  return Boolean(withDefaultFlag.is_default ?? withDefaultFlag.isDefault)
+}
+
 export const mapMedusaProductToCard = (product: StoreProduct): ProductCard => {
   const thumbnail = product.thumbnail || product.images?.[0]?.url || ""
 
-  const defaultVariant =
-    (product.variants as any[])?.find(
-      (variant) => variant?.is_default || variant?.isDefault
-    ) ?? (product.variants as any[])?.[0]
+  const variants = product.variants ?? []
+  const defaultVariant = variants.find(isDefaultVariant) ?? variants[0]
   const defaultPrice = defaultVariant ? getPricesForVariant(defaultVariant) : null
   const membershipPreviewPrice = defaultVariant
     ? getMembershipPreviewPrice(defaultVariant)
