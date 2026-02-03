@@ -3,7 +3,13 @@
 import { SignupSchema } from "domains/auth/schemas/signup-schema"
 import { api } from "../../api"
 
-type LocalSignupRequest = Omit<SignupSchema, "passwordConfirm">
+type LocalSignupRequest = Omit<
+  SignupSchema,
+  | "passwordConfirm"
+  | "verificationCode"
+  | "countryCode"
+  | "isPhoneVerified"
+>
 
 type LocalSignupSuccessResponse = {
   message: string

@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/form"
 import { UseFormReturn } from "react-hook-form"
 import { Info } from "lucide-react"
+import { PhoneVerificationField } from "./phone-verification-field"
 
 interface SignupFormFieldsProps {
   form: UseFormReturn<SignupSchema>
@@ -20,6 +21,7 @@ interface SignupFormFieldsProps {
 const FORM_SECTIONS = [
   {
     title: "계정 정보",
+    type: "fields" as const,
     fields: [
       {
         name: "loginId" as const,
@@ -39,6 +41,7 @@ const FORM_SECTIONS = [
   },
   {
     title: "개인 정보",
+    type: "fields" as const,
     fields: [
       {
         name: "username" as const,
@@ -63,7 +66,13 @@ const FORM_SECTIONS = [
     ],
   },
   {
+    title: "휴대폰 인증",
+    type: "phone" as const,
+    fields: [],
+  },
+  {
     title: "비밀번호 설정",
+    type: "fields" as const,
     fields: [
       {
         name: "password" as const,
@@ -99,36 +108,40 @@ export function SignupFormFields({ form }: SignupFormFieldsProps) {
 
           {/* 섹션 필드들 */}
           <div className="space-y-4 pl-8">
-            {section.fields.map((fieldConfig) => (
-              <FormField
-                key={fieldConfig.name}
-                control={form.control}
-                name={fieldConfig.name}
-                render={({ field }) => (
-                  <FormItem>
-                    <FormControl>
-                      <CustomInput
-                        label={fieldConfig.placeholder}
-                        type={fieldConfig.type}
-                        onClear={() => form.setValue(fieldConfig.name, "")}
-                        hasValue={!!field.value}
-                        error={!!form.formState.errors[fieldConfig.name]}
-                        autoFocus={fieldConfig.autoFocus}
-                        {...field}
-                      />
-                    </FormControl>
-                    {fieldConfig.description &&
-                      !form.formState.errors[fieldConfig.name] && (
-                        <FormDescription className="flex items-start gap-1.5 text-xs">
-                          <Info className="text-muted-foreground mt-0.5 h-3 w-3 shrink-0" />
-                          <span>{fieldConfig.description}</span>
-                        </FormDescription>
-                      )}
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            ))}
+            {section.type === "phone" ? (
+              <PhoneVerificationField form={form} />
+            ) : (
+              section.fields.map((fieldConfig) => (
+                <FormField
+                  key={fieldConfig.name}
+                  control={form.control}
+                  name={fieldConfig.name}
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <CustomInput
+                          label={fieldConfig.placeholder}
+                          type={fieldConfig.type}
+                          onClear={() => form.setValue(fieldConfig.name, "")}
+                          hasValue={!!field.value}
+                          error={!!form.formState.errors[fieldConfig.name]}
+                          autoFocus={fieldConfig.autoFocus}
+                          {...field}
+                        />
+                      </FormControl>
+                      {fieldConfig.description &&
+                        !form.formState.errors[fieldConfig.name] && (
+                          <FormDescription className="flex items-start gap-1.5 text-xs">
+                            <Info className="text-muted-foreground mt-0.5 h-3 w-3 shrink-0" />
+                            <span>{fieldConfig.description}</span>
+                          </FormDescription>
+                        )}
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              ))
+            )}
           </div>
         </div>
       ))}

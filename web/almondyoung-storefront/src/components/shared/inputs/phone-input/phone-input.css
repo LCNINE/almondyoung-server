@@ -15,6 +15,16 @@
   width: 100% !important;
   max-width: 100% !important;
   box-sizing: border-box !important;
+  height: 100% !important;
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.PhoneInputInput:focus {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
 }
 
 .PhoneInputCountry {
