@@ -8,7 +8,7 @@ export const useTwilio = () => {
   const [isCodeVerifyPending, startCodeVerifyTransition] = useTransition()
   const [isCodeSent, setIsCodeSent] = useState(false) // 인증번호 발송 여부
   const [isCodeVerified, setIsCodeVerified] = useState(false) // 인증번호 검증 여부
-  const [timer, setTimer] = useState(60) // 1분 (60초)
+  const [timer, setTimer] = useState(180) // 3분 (180초)
 
   useEffect(() => {
     if (isCodeSent && timer > 0) {
@@ -27,7 +27,7 @@ export const useTwilio = () => {
       if ("data" in result) {
         toast.success("인증번호가 발송되었습니다.")
         setIsCodeSent(true)
-        setTimer(60)
+        setTimer(180)
       } else {
         toast.error(result.error.message)
       }
