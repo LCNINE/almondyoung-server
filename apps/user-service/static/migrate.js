@@ -1,4 +1,10 @@
 (function () {
+  const log = (content) => {
+    console.log('[Migrator]', content);
+  };
+
+  log('bootstrap');
+
   const memberIdEl = document.getElementById('member-id');
   const memberNameEl = document.getElementById('member-name');
   const errorEl = document.getElementById('migrate-error');
@@ -10,6 +16,7 @@
   const rootEl = document.getElementById('migrate-root');
   const rootDataset = rootEl ? rootEl.dataset : {};
   const config = window.CAFE24_MIGRATION_CONFIG || {};
+  log({ rootDataset, hasConfig: Boolean(window.CAFE24_MIGRATION_CONFIG) });
 
   const redirectUrl =
     params.get('redirect_to') ||
@@ -33,6 +40,13 @@
 
   const memberInfoUrl = resolveApiUrl(apiBase, memberInfoPath);
   const linkTokenUrl = resolveApiUrl(apiBase, linkTokenPath);
+  log({
+    redirectUrl,
+    apiBase,
+    memberInfoUrl,
+    linkTokenUrl,
+    mallId,
+  });
 
   let encryptedIdToken = '';
 
@@ -43,11 +57,13 @@
 
   if (!redirectUrl) {
     setError('이동 경로(redirect_to)를 확인할 수 없어요.');
+    log('missing redirect_to');
     return;
   }
 
   if (!memberInfoUrl || !linkTokenUrl) {
     setError('API 경로를 확인할 수 없어요. 관리자에게 문의해 주세요.');
+    log('missing api url');
     return;
   }
 
@@ -62,11 +78,13 @@
         throw new Error('암호화 id 토큰이 없습니다.');
       }
 
+      log('issue link token');
       const issued = await issueLinkToken(linkTokenUrl, {
         encryptedIdToken,
         mallId,
       });
 
+      log('redirect to storefront');
       postRedirect(redirectUrl, {
         cafe24_link_token: issued.cafe24LinkToken,
         expires_at: issued.expiresAt,
@@ -80,6 +98,7 @@
   });
 
   function setBusy(isBusy, label, keepDisabled) {
+    log({ action: 'setBusy', isBusy, label, keepDisabled });
     if (isBusy) {
       continueBtn.disabled = true;
       continueBtn.textContent = label || '연결 정보를 확인 중...';
@@ -93,18 +112,22 @@
   }
 
   function setError(message) {
+    log({ action: 'setError', message });
     errorEl.textContent = message;
     errorEl.classList.add('active');
     setLoading(false);
   }
 
   function clearError() {
+    log('clearError');
     errorEl.textContent = '';
     errorEl.classList.remove('active');
   }
 
   function setLoading(isLoading) {
+    log({ action: 'setLoading', isLoading });
     if (!cardEl) {
+      log('missing card element');
       return;
     }
     cardEl.classList.toggle('is-loading', isLoading);
@@ -112,27 +135,40 @@
 
   async function initialize() {
     try {
+      log('initialize start');
       setLoading(true);
       setBusy(true, '회원 정보를 불러오는 중...');
       const encrypted = await fetchEncryptedMemberId(config, params);
+      log({ encryptedMemberId: encrypted.memberId, guestId: encrypted.guestId });
+      if (!encrypted.memberId) {
+        log('guest detected, redirect to login');
+        window.location.href =
+          'https://almondyoung.com/member/login.html?returnUrl=/migrator/confirm.html';
+        return;
+      }
+
       encryptedIdToken = encrypted.memberId;
 
+      log('fetch member info');
       const memberInfo = await fetchMemberInfo(memberInfoUrl, {
         encryptedIdToken,
         mallId: encrypted.mallId || mallId,
       });
 
+      log({ memberInfo });
       memberIdEl.textContent = memberInfo.memberId || '확인 필요';
       memberNameEl.textContent = memberInfo.memberName || '확인 필요';
       continueBtn.disabled = false;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      log({ action: 'initialize error', message });
       setError(message);
       memberIdEl.textContent = '확인 필요';
       memberNameEl.textContent = '확인 필요';
       continueBtn.disabled = true;
       setBusy(false, '', true);
     } finally {
+      log('initialize done');
       setLoading(false);
       if (!continueBtn.disabled) {
         setBusy(false);
@@ -142,6 +178,7 @@
 
   function fetchEncryptedMemberId(configValue, paramsValue) {
     return new Promise((resolve, reject) => {
+      log('fetchEncryptedMemberId');
       if (!window.CAFE24API) {
         reject(new Error('CAFE24API를 찾을 수 없습니다.'));
         return;
@@ -159,6 +196,7 @@
         return;
       }
 
+      log({ action: 'init cafe24 api', apiVersion });
       const api = window.CAFE24API.init({
         client_id: appKey,
         version: apiVersion,
@@ -171,10 +209,12 @@
 
       api.getEncryptedMemberId(serviceKey, (err, res) => {
         if (err) {
+          log({ action: 'getEncryptedMemberId error', err });
           reject(new Error(err.message || '회원 정보 확인에 실패했습니다.'));
           return;
         }
 
+        log({ action: 'getEncryptedMemberId success' });
         resolve({
           memberId: res.member_id,
           guestId: res.guest_id,
@@ -185,6 +225,7 @@
   }
 
   async function fetchMemberInfo(url, payload) {
+    log({ action: 'fetchMemberInfo', url });
     const data = await postJson(url, payload);
     return {
       memberId: data.memberId || data.member_id || data.user_id || '',
@@ -193,6 +234,7 @@
   }
 
   async function issueLinkToken(url, payload) {
+    log({ action: 'issueLinkToken', url });
     const data = await postJson(url, payload);
     return {
       cafe24LinkToken: data.cafe24LinkToken || data.cafe24_link_token,
@@ -201,6 +243,7 @@
   }
 
   async function postJson(url, payload) {
+    log({ action: 'postJson', url, payloadKeys: Object.keys(payload || {}) });
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -211,11 +254,13 @@
 
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
+      log({ action: 'postJson error', status: response.status, body });
       const message =
         body?.message || body?.error || '요청에 실패했습니다.';
       throw new Error(message);
     }
 
+    log({ action: 'postJson success', status: response.status });
     return body && body.data !== undefined ? body.data : body;
   }
 
@@ -237,6 +282,7 @@
   }
 
   function postRedirect(url, fields) {
+    log({ action: 'postRedirect', url, fieldKeys: Object.keys(fields || {}) });
     const form = document.createElement('form');
     form.method = 'POST';
     form.action = url;
