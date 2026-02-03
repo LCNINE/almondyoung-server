@@ -20,6 +20,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { deleteLineItem, updateLineItem } from "@/lib/api/medusa/cart"
+import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { calcItemPrice, formatPrice } from "@/lib/utils/price-utils"
 import { StoreCart, StoreCartLineItem } from "@medusajs/types"
 import { Minus, Plus, Trash2, X } from "lucide-react"
@@ -212,7 +213,6 @@ function ProductItem({
       }
     })
   }
-
   return (
     <div className={showDivider ? "border-b border-gray-100 pb-4" : ""}>
       <div className="flex items-start gap-3 lg:gap-4">
@@ -223,13 +223,15 @@ function ProductItem({
           disabled={disabled || isPending}
           className="mt-1"
         />
-        <Image
-          src={thumbnail ?? "https://placehold.co/400"}
-          alt={productTitle}
-          width={64}
-          height={64}
-          className="h-[52px] w-[52px] rounded-[2px] object-cover lg:h-[64px] lg:w-[64px] lg:rounded-[5px]"
-        />
+        <div className="relative h-[52px] w-[52px] lg:h-[64px] lg:w-[64px]">
+          <Image
+            src={getThumbnailUrl(thumbnail ?? "")}
+            fill
+            alt={productTitle}
+            sizes="(max-width: 1024px) 52px, 64px"
+            className="pointer-events-none rounded-[2px] object-cover select-none lg:rounded-[5px]"
+          />
+        </div>
         <p className="flex-1 text-[12px] text-gray-900 lg:text-sm">
           {productTitle}
         </p>

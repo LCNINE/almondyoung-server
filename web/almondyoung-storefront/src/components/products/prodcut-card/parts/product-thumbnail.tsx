@@ -1,5 +1,6 @@
 import { cn } from "@lib/utils"
 import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
+import Image from "next/image"
 
 export function ProductThumbnail({
   src,
@@ -21,11 +22,11 @@ export function ProductThumbnail({
         className
       )}
     >
-      {/* todo: Image 태그로 왜 안되는지는 모르겠는데, 나중에 확인후 변경 예정 */}
-      <img
+      <Image
         src={getThumbnailUrl(src)}
-        // fill
+        fill
         alt={alt}
+        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
         className="pointer-events-none h-full object-cover transition-transform duration-300 will-change-transform select-none group-hover:scale-105"
       />
       {rank}

@@ -16,6 +16,15 @@ export default async function CheckoutPage({
   params: Promise<{ countryCode: string }>
 }) {
   const { countryCode } = await params
+
+  return (
+    <ProtectedRoute>
+      <CheckoutManager countryCode={countryCode} />
+    </ProtectedRoute>
+  )
+}
+
+async function CheckoutManager({ countryCode }: { countryCode: string }) {
   const currentUser = await fetchMe()
   const cart = (await retrieveCart()) as CartResponseDto["cart"]
 
@@ -30,8 +39,6 @@ export default async function CheckoutPage({
       </ProtectedRoute>
     )
   }
-
-  console.log("cart:", cart)
 
   const [shippingMethods, paymentMethods, promotionsResponse] =
     await Promise.all([
@@ -59,15 +66,13 @@ export default async function CheckoutPage({
   }
 
   return (
-    <ProtectedRoute>
-      <CheckoutTemplate
-        user={currentUser}
-        cart={cart}
-        shipping={shipping}
-        promotions={promotionsResponse.promotions}
-        pointBalance={pointBalance}
-        taxInvoice={taxInvoice}
-      />
-    </ProtectedRoute>
+    <CheckoutTemplate
+      user={currentUser}
+      cart={cart}
+      shipping={shipping}
+      promotions={promotionsResponse.promotions}
+      pointBalance={pointBalance}
+      taxInvoice={taxInvoice}
+    />
   )
 }
