@@ -10,6 +10,7 @@
   const errorEl = document.getElementById('migrate-error');
   const continueBtn = document.getElementById('continue-btn');
   const cardEl = document.querySelector('.card');
+  const protocolRegex = new RegExp('^https?://', 'i');
 
   const params = new URLSearchParams(window.location.search);
 
@@ -263,8 +264,6 @@
     log({ action: 'postJson success', status: response.status });
     return body && body.data !== undefined ? body.data : body;
   }
-
-  const protocolRegex = new RegExp('^https?://', 'i');
 
   function resolveApiUrl(base, path) {
     if (!path) {
