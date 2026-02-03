@@ -6,7 +6,7 @@ import {
   UserServiceSchema,
 } from 'apps/user-service/database/drizzle/schema';
 import { DbTransaction } from 'apps/user-service/src/commons/types';
-import { eq, lt } from 'drizzle-orm';
+import { and, eq, lt } from 'drizzle-orm';
 
 @Injectable()
 export class ExpireExistingCodesService {
@@ -27,7 +27,12 @@ export class ExpireExistingCodesService {
       .set({
         isExpired: true,
       })
-      .where(eq(userServiceSchema.phoneVerifications.phoneNumber, phoneNumber));
+      .where(
+        and(
+          eq(userServiceSchema.phoneVerifications.phoneNumber, phoneNumber),
+          eq(userServiceSchema.phoneVerifications.isVerified, false),
+        ),
+      );
   }
 
   @Cron('0 0 * * *') // 매일 자정 실행
