@@ -7,6 +7,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { USER_STREAM } from '@packages/event-contracts/streams';
 import { config } from 'dotenv';
+import { existsSync } from 'fs';
 import * as os from 'os';
 import { join } from 'path';
 import { userServiceSchema } from '../database/drizzle/schema';
@@ -25,10 +26,15 @@ import { WishlistModule } from './api/wishlist/wishlist.module';
 import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
 import { validateUserServiceEnv } from './config/env.validation';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { ServeStaticModule } from '@nestjs/serve-static';
 
 config({
   path: join(process.cwd(), 'apps', 'user-service', '.env'),
 });
+
+const staticRoot = existsSync(join(__dirname, 'static'))
+  ? join(__dirname, 'static')
+  : join(__dirname, '..', 'static');
 // Kafka 설정 생성 함수
 function createKafkaConfig() {
   // 필수 환경변수 검증
@@ -104,6 +110,10 @@ function createKafkaConfig() {
           limit: 10,
         },
       ],
+    }),
+    ServeStaticModule.forRoot({
+      rootPath: staticRoot,
+      serveRoot: '/static',
     }),
 
 
