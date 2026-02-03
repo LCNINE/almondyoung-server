@@ -73,16 +73,16 @@ export class ShopService {
   }
 
   /**
-   *
-   * return undefined 뜨면 shop 데이터 없는거임
+   * userId로 상점 정보 조회.
+   * 없으면 null 반환 → 프론트에서 data === null 이면 설문 등 처리 가능.
    */
-  async findOneByUserId(userId: string): Promise<schema.Shop | undefined> {
+  async findOneByUserId(userId: string): Promise<schema.Shop | null> {
     const [shop] = await this.dbService.db
       .select()
       .from(schema.shops)
       .where(eq(schema.shops.userId, userId));
 
-    return shop;
+    return shop ?? null;
   }
 
   async findOneByShopIdAndUserId(
