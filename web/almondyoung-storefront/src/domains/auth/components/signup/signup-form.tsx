@@ -15,15 +15,13 @@ import { createUser } from "@lib/api/users/auth/signup-base"
 import { formatBirthday } from "@lib/utils/format-birthday"
 import { signupSchema, SignupSchema } from "domains/auth/schemas/signup-schema"
 import { setFormError } from "domains/auth/utils/set-form-error"
-import { useParams, useRouter, useSearchParams } from "next/navigation"
+import { useSearchParams } from "next/navigation"
 import { useActionState, useEffect, useState, useTransition } from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
 import { SignupFormFields } from "./signup-form-fields"
 
 export function SignupForm() {
-  const router = useRouter()
-  const { countryCode } = useParams() as { countryCode: string }
   const searchParams = useSearchParams()
   const redirectTo = searchParams.get("redirect_to") || "/"
 
@@ -45,6 +43,10 @@ export function SignupForm() {
       password: "",
       passwordConfirm: "",
       birthday: "",
+      phoneNumber: "",
+      verificationCode: "",
+      countryCode: "KR",
+      isPhoneVerified: false,
       isOver14: false,
       termsOfService: false,
       electronicTransaction: false,
@@ -68,7 +70,13 @@ export function SignupForm() {
   }, [state])
 
   const onSubmit = async (data: SignupSchema) => {
-    const { passwordConfirm, ...submitData } = data
+    const {
+      passwordConfirm,
+      verificationCode,
+      countryCode,
+      isPhoneVerified,
+      ...submitData
+    } = data
     const formattedBirthday = formatBirthday(submitData.birthday)
 
     const formattedSubmitData = {
@@ -82,6 +90,14 @@ export function SignupForm() {
   }
 
   const handleSignupClick = async () => {
+    const isPhoneVerified = form.getValues("isPhoneVerified")
+    if (!isPhoneVerified) {
+      form.setError("isPhoneVerified", {
+        type: "manual",
+        message: "휴대폰 인증을 완료해주세요",
+      })
+    }
+
     const isValid = await form.trigger([
       "loginId",
       "username",
@@ -90,9 +106,10 @@ export function SignupForm() {
       "password",
       "passwordConfirm",
       "birthday",
+      "phoneNumber",
     ])
 
-    if (!isValid) return
+    if (!isValid || !isPhoneVerified) return
 
     // 이미 약관 동의한 경우 바로 제출
     if (hasAgreed) {

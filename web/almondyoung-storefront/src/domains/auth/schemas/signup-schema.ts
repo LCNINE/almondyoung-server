@@ -22,6 +22,10 @@ export const signupSchema = z
         /^\d{8}$/,
         "생년월일은 YYYYMMDD 형식으로 입력해주세요 (예: 19900101)"
       ),
+    phoneNumber: z.string().min(1, "휴대폰 번호를 입력해주세요"),
+    verificationCode: z.string(),
+    countryCode: z.string(),
+    isPhoneVerified: z.boolean(),
     // 필수 약관
     isOver14: z.boolean().refine((val) => val === true, {
       message: "필수 약관에 동의해주세요",

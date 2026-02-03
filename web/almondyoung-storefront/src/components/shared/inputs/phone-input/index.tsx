@@ -6,6 +6,7 @@ import "./phone-input.css"
 interface CustomPhoneInputProps {
   value: string
   onChange: (value: string) => void
+  onCountryChange?: (country: string) => void
   countryCode: string
   className?: string
   placeholder?: string
@@ -14,6 +15,7 @@ interface CustomPhoneInputProps {
 export default function CustomPhoneInput({
   value,
   onChange,
+  onCountryChange,
   countryCode,
   className,
   placeholder,
@@ -28,8 +30,8 @@ export default function CustomPhoneInput({
       value={value || ""}
       onChange={(value) => onChange(value?.toString() || "")}
       onCountryChange={(country) => {
-        if (country) {
-          onChange(country)
+        if (country && onCountryChange) {
+          onCountryChange(country)
         }
       }}
     />

@@ -8,21 +8,19 @@ export const sendTwilioMessageApi = async (
   data: SendTwilioMessageDto
 ): Promise<ApiResponse<{ success: boolean }>> => {
   try {
-    const result = await api<ApiResponse<{ success: boolean }>>(
-      "users",
-      "/twilio/send-message",
-      {
-        method: "POST",
-        body: data,
-      }
-    )
+    await api<{ message: string }>("users", "/twilio/send-message", {
+      method: "POST",
+      withAuth: false,
+      body: data,
+    })
 
-    return result
+    return { data: { success: true } }
   } catch (error) {
     if (error instanceof HttpApiError) {
       if (error.status === 429) {
         return { error: { message: error.message, status: error.status } }
       }
+      return { error: { message: error.message, status: error.status } }
     }
 
     if (error instanceof ApiNetworkError) {
@@ -41,18 +39,24 @@ export const verifyCodeApi = async (
   data: VerifyCodeDto
 ): Promise<ApiResponse<{ success: boolean }>> => {
   try {
-    const result = await api<ApiResponse<{ success: boolean }>>(
-      "users",
-      "/twilio/verify-code",
-      {
-        method: "POST",
-        body: data,
-      }
-    )
+    await api<{ message: string }>("users", "/twilio/verify-code", {
+      method: "POST",
+      withAuth: false,
+      body: data,
+    })
 
-    return result
+    return { data: { success: true } }
   } catch (error) {
     if (error instanceof HttpApiError) {
+      if (error.status === 429) {
+        return {
+          error: {
+            message: "너무 많은 요청을 보냈습니다. 잠시 후 다시 시도해주세요.",
+            status: error.status,
+          },
+        }
+      }
+
       return { error: { message: error.message, status: error.status } }
     }
 
