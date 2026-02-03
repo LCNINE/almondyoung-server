@@ -7,7 +7,9 @@ export const getThumbnailUrl = (thumbnail: string) => {
   if (!thumbnail) return ""
 
   if (thumbnail.startsWith("http://") || thumbnail.startsWith("https://")) {
-    const fileIdMatch = thumbnail.match(/\/files\/(?:public\/)?([a-f0-9-]{36})$/i)
+    const fileIdMatch = thumbnail.match(
+      /\/files\/(?:public\/)?([a-f0-9-]{36})$/i
+    )
     if (fileIdMatch) {
       const fileId = fileIdMatch[1]
       return `${FILE_SERVER_URL}/files/public/${fileId}`
