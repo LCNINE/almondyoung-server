@@ -8,6 +8,7 @@ import { DbTransaction } from 'apps/user-service/src/commons/types';
 import { and, desc, eq, gt } from 'drizzle-orm';
 import { VerifyCodeDto } from '../dto/verify-code.dto';
 import { TwilioException } from '../exceptions/twilio.exceptions';
+import { HttpStatus } from '@nestjs/common';
 
 /**
  * 사용자가 입력한 인증번호를 검증하는 서비스
@@ -17,7 +18,7 @@ import { TwilioException } from '../exceptions/twilio.exceptions';
 export class VerifyCodeService {
   constructor(
     @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
-  ) {}
+  ) { }
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.dbService.db;
