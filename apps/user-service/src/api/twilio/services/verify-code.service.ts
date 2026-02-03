@@ -1,5 +1,5 @@
 import { DbService, InjectDb } from '@app/db';
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import {
   userServiceSchema,
   UserServiceSchema,
@@ -30,11 +30,7 @@ export class VerifyCodeService {
 
     const alreadyVerified = await this.alreadyVerified(phoneNumber, code, tx);
     if (alreadyVerified) {
-      throw new TwilioException({
-        message: '이미 인증된 코드입니다',
-        errorCode: 'ALREADY_VERIFIED',
-        httpStatus: HttpStatus.CONFLICT,
-      });
+      return '인증이 완료되었습니다';
     }
 
     // 가장 최근의 유효한 코드만 조회

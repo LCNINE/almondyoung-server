@@ -683,15 +683,7 @@ export class AuthService {
 
     const user = users[0];
 
-    // ID 찾기 이벤트 발행
-    await this.eventPublisher.publishEvent({
-      eventType: 'UserFindId',
-      aggregateId: user.id,
-      payload: {
-        phoneNumber,
-        loginId: user.loginId,
-      },
-    });
+    return { loginId: user.loginId };
   }
 
   async forgotPassword(phoneNumber: string, loginId: string) {
@@ -719,14 +711,6 @@ export class AuthService {
         expiresIn: JWT_RESET_PASSWORD_ACCESS_TOKEN_EXPIRATION,
       },
     );
-
-    await this.eventPublisher.publishEvent({
-      eventType: 'UserResetPassword',
-      aggregateId: user.id,
-      payload: {
-        phoneNumber,
-      },
-    });
 
     return { verificationToken };
   }
@@ -786,11 +770,6 @@ export class AuthService {
     if (!verification) {
       throw new BadRequestException('휴대폰 인증이 필요합니다');
     }
-
-    await this.dbService.db
-      .update(userServiceSchema.phoneVerifications)
-      .set({ isExpired: true })
-      .where(eq(userServiceSchema.phoneVerifications.id, verification.id));
   }
 
   async changePassword(password: string, userId: string, tx?: DbTransaction) {
