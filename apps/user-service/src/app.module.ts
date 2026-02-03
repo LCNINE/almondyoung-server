@@ -114,6 +114,20 @@ function createKafkaConfig() {
     ServeStaticModule.forRoot({
       rootPath: staticRoot,
       serveRoot: '/static',
+      serveStaticOptions: {
+        setHeaders: (res) => {
+          const target = res?.raw ?? res;
+          if (!target || typeof target.setHeader !== 'function') {
+            return;
+          }
+          target.setHeader('Access-Control-Allow-Origin', '*');
+          target.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+          if (typeof target.removeHeader === 'function') {
+            target.removeHeader('Access-Control-Allow-Credentials');
+            target.removeHeader('Access-Control-Expose-Headers');
+          }
+        },
+      },
     }),
 
 
