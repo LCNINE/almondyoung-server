@@ -666,6 +666,7 @@ export class AuthService {
 
     const user = await this.usersService.findUserById(userId, client);
 
+    this.logger.log(`restoreToken 진행중...`);
     return await this.setAccessToken(user, reply, client);
   }
 
