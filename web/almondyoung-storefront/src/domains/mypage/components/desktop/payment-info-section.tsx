@@ -2,7 +2,7 @@
 
 import { ChevronRight } from "lucide-react"
 import { useEffect, useState } from "react"
-import { getCurrentSubscription } from "@lib/api/membership"
+import { getCurrentSubscription } from "@lib/api/membership/client"
 import Link from "next/link"
 
 interface BillingInfo {
@@ -21,12 +21,12 @@ export function PaymentInfoSection() {
       try {
         const subscription = await getCurrentSubscription()
 
-        if (subscription && subscription.data.status === "ACTIVE") {
+        if (subscription && subscription.status === "ACTIVE") {
           setBillingInfo({
-            nextBillingDate: subscription.data.nextBillingDate || null,
-            nextBillingAmount: subscription.data.plan?.price || 0,
-            periodStart: subscription.data.currentPeriodStart || null,
-            periodEnd: subscription.data.currentPeriodEnd || null,
+            nextBillingDate: subscription.nextBillingDate || null,
+            nextBillingAmount: subscription.plan?.price || 0,
+            periodStart: subscription.currentPeriodStart || null,
+            periodEnd: subscription.currentPeriodEnd || null,
           })
         }
       } catch (error) {

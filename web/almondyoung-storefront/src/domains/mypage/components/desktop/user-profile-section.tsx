@@ -7,7 +7,7 @@ import { signout } from "@lib/api/users/signout"
 import { ChevronRight, Coins, Crown, User } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useTransition, useEffect, useState } from "react"
-import { getCurrentSubscription } from "@lib/api/membership"
+import { getCurrentSubscription } from "@lib/api/membership/client"
 import { getPointBalance } from "@lib/api/wallet"
 import Link from "next/link"
 
@@ -37,9 +37,9 @@ export function UserProfileSection({
           getPointBalance().catch(() => ({ balance: 0, withdrawable: 0 })),
         ])
 
-        if (subscription && subscription.data.status === "ACTIVE") {
+        if (subscription && subscription.status === "ACTIVE") {
           setIsMember(true)
-          setTierName(subscription.data.plan?.tier?.name || "멤버십")
+          setTierName(subscription.plan?.tier?.name || "멤버십")
         }
 
         setPointBalance(points.balance)

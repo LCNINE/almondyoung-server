@@ -1,4 +1,9 @@
 import React from "react"
+import type {
+  CycleBenefitDto,
+  SubscriptionDetailsDto,
+} from "@lib/types/dto/membership"
+import type { MonthlySavingsDto } from "@lib/types/dto/membership-savings"
 
 /**
  * 멤버십 가입자 상세 정보
@@ -9,7 +14,17 @@ import React from "react"
  * - 이번달 절약 금액
  * - 통계 정보
  */
-export default function MemberDetails() {
+interface MemberDetailsProps {
+  membershipData: SubscriptionDetailsDto | null
+  currentSavings: MonthlySavingsDto | null
+  currentBenefit: CycleBenefitDto | null
+}
+
+export default function MemberDetails({
+  membershipData,
+  currentSavings,
+  currentBenefit,
+}: MemberDetailsProps) {
   // -- 대시보드용 StatCard (Helper Component) --
   function StatCard({
     label,
@@ -33,39 +48,51 @@ export default function MemberDetails() {
     )
   }
 
-  // -- 대시보드용 데이터 --
-  const secondaryStats = [
-    {
-      id: "coupons",
-      label: "이번달 발급받은 쿠폰",
-      value: "3",
-      unit: "개 발급받았어요",
-    },
-    {
-      id: "referrals",
-      label: "이번달 추천인 적립금",
-      value: "1,430",
-      unit: "원",
-    },
-  ]
+  const formatDate = (value?: string | null) => {
+    if (!value) return "-"
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return "-"
+    return date.toLocaleDateString("ko-KR", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    })
+  }
+
+  const nextBillingDate =
+    membershipData?.nextBillingDate ??
+    membershipData?.currentPeriodEnd ??
+    membershipData?.endDate
+
+  const tierCode =
+    membershipData?.tier?.code ?? membershipData?.plan?.tier?.code ?? "-"
+  const tierName =
+    membershipData?.tier?.name ?? membershipData?.plan?.tier?.name ?? "멤버십"
+
+  const savingsTotal = currentSavings?.totalSavings ?? 0
+  const savingsOrders = currentSavings?.orderCount ?? 0
+  const cycleSavingsTotal = currentBenefit?.totalDiscountAmount ?? 0
+  const cycleOrders = currentBenefit?.orderCount ?? 0
+  const daysRemaining = currentBenefit?.daysRemaining
 
   // -- 렌더링 --
   return (
     <div className="flex w-full flex-col items-center gap-4">
       {/* 1. 계정 상태 및 플랜 관리 */}
       <figcaption className="text-center font-['Pretendard'] text-sm font-normal text-black">
-        다음 결제 예정일은 <strong>2025년 6월 8일</strong> 입니다
+        다음 결제 예정일은{" "}
+        <strong>{formatDate(nextBillingDate)}</strong> 입니다
       </figcaption>
       <div className="flex items-center gap-2">
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1.5 rounded-md bg-yellow-100 px-2 py-1">
             <span className="text-xs font-bold text-yellow-700">
-              (멤버십 태그)
+              {tierName}
             </span>
           </div>
           <div className="flex h-5 items-center justify-center rounded-md bg-indigo-100 px-2">
             <span className="text-xs leading-3 font-bold text-indigo-500">
-              PRO
+              {tierCode}
             </span>
           </div>
         </div>
@@ -86,15 +113,34 @@ export default function MemberDetails() {
           이번달 멤버십으로 절약한 금액
         </h3>
         <div className="flex items-end justify-center gap-1">
-          <span className="text-2xl font-bold text-black">50,430</span>
+          <span className="text-2xl font-bold text-black">
+            {savingsTotal.toLocaleString()}
+          </span>
           <span className="text-xs leading-5 text-gray-900">원</span>
         </div>
       </article>
 
-      <div className="flex w-full flex-col items-stretch gap-4 md:flex-row">
-        {secondaryStats.map((stat) => (
-          <StatCard key={stat.id} {...stat} />
-        ))}
+      <div className="flex w-full flex-col items-stretch gap-4 md:flex-row md:flex-wrap">
+        <StatCard
+          label="이번달 주문 건수"
+          value={savingsOrders.toLocaleString()}
+          unit="건"
+        />
+        <StatCard
+          label="이번 주기 절약 금액"
+          value={cycleSavingsTotal.toLocaleString()}
+          unit="원"
+        />
+        <StatCard
+          label="주기 내 주문 건수"
+          value={cycleOrders.toLocaleString()}
+          unit="건"
+        />
+        <StatCard
+          label="주기 종료까지"
+          value={daysRemaining != null ? daysRemaining.toLocaleString() : "-"}
+          unit="일"
+        />
       </div>
     </div>
   )

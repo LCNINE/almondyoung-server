@@ -1,13 +1,26 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { IconTextButton } from "../../../components/icon-button"
 import { MembershipCancelModal } from "../../../components/modal"
 import MembershipPlanCard from "../membership-benefit-card"
 import MembershipStatusSection from "domains/membership/components/status-selection"
 import MemberDetails from "./member-details"
-import { cancelSubscription } from "@lib/api/membership"
+import { cancelSubscription } from "@lib/api/membership/client"
+import type {
+  CancellationReasonDto,
+  CycleBenefitDto,
+  CycleBenefitHistoryDto,
+  SubscriptionDetailsDto,
+  SubscriptionHistoryItemDto,
+} from "@lib/types/dto/membership"
+import type {
+  MonthlySavingsDto,
+  RangeSavingsDto,
+} from "@lib/types/dto/membership-savings"
+import MembershipHistorySection from "./subscriber-history-section"
+import type { PlanWithTier } from "@lib/types/membership"
 
 /**
  * 멤버십 가입자 전용 섹션
@@ -19,15 +32,58 @@ import { cancelSubscription } from "@lib/api/membership"
  * - 멤버십 혜택 카드
  * - 멤버십 해지하기
  */
-export default function SubscriberSection() {
+interface SubscriberSectionProps {
+  membershipData: SubscriptionDetailsDto | null
+  plans: PlanWithTier[]
+  currentSavings: MonthlySavingsDto | null
+  rangeSavings: RangeSavingsDto | null
+  subscriptionHistory: SubscriptionHistoryItemDto[]
+  cancellationReasons: CancellationReasonDto[]
+  currentBenefit: CycleBenefitDto | null
+  benefitHistory: CycleBenefitHistoryDto | null
+}
+
+export default function SubscriberSection({
+  membershipData,
+  plans,
+  currentSavings,
+  rangeSavings,
+  subscriptionHistory,
+  cancellationReasons,
+  currentBenefit,
+  benefitHistory,
+}: SubscriberSectionProps) {
   const [open, setOpen] = useState(false)
+  const [isCancelling, setIsCancelling] = useState(false)
   const router = useRouter()
+  const hasCancellationReasons = useMemo(
+    () => cancellationReasons.length > 0,
+    [cancellationReasons]
+  )
+  const monthlyPlan = plans.find((plan) => plan.plan.durationDays === 30)
+  const yearlyPlan = plans.find((plan) => plan.plan.durationDays === 365)
+  const yearlyMonthlyPrice = yearlyPlan
+    ? Math.round(yearlyPlan.plan.price / Math.max(1, yearlyPlan.plan.durationDays / 30))
+    : null
+  const discountRate =
+    yearlyPlan && monthlyPlan
+      ? Math.max(
+          0,
+          Math.round(
+            (1 - yearlyPlan.plan.price / (monthlyPlan.plan.price * 12)) * 100
+          )
+        )
+      : null
 
   return (
     <>
       {/* 멤버십 회원 전용 섹션 */}
       <MembershipStatusSection>
-        <MemberDetails />
+        <MemberDetails
+          membershipData={membershipData}
+          currentSavings={currentSavings}
+          currentBenefit={currentBenefit}
+        />
       </MembershipStatusSection>
       <section className="mb-6 flex flex-col gap-4">
         {/* 월회비 결제수단 변경 */}
@@ -37,22 +93,54 @@ export default function SubscriberSection() {
           onClick={() => router.push("/kr/mypage/membership/payment-method")}
         />
       </section>
-      <MembershipPlanCard />
+      <MembershipPlanCard
+        planName={yearlyPlan?.tier?.name ?? "연간"}
+        price={yearlyPlan?.plan.price ?? 0}
+        period={
+          yearlyPlan
+            ? `${Math.round(yearlyPlan.plan.durationDays / 30)}개월(연간구독)`
+            : "12개월(연간구독)"
+        }
+        monthlyPrice={
+          yearlyMonthlyPrice != null
+            ? `${yearlyMonthlyPrice.toLocaleString()}원`
+            : "-"
+        }
+        discountRate={
+          discountRate != null ? `약 ${discountRate}% 절감` : "혜택 안내"
+        }
+        benefitText="첫달 무료 + 사용하지 않는 기간 일시정지 가능"
+        variant="annual"
+      />
+      <MembershipHistorySection
+        rangeSavings={rangeSavings}
+        subscriptionHistory={subscriptionHistory}
+        benefitHistory={benefitHistory}
+      />
       {/* 해지 버튼 */}
       <IconTextButton
         label="멤버십 해지하기"
         size="full"
-        onClick={async () => {
+        onClick={() => setOpen(true)}
+      />
+      <MembershipCancelModal
+        open={open}
+        setOpen={setOpen}
+        reasons={hasCancellationReasons ? cancellationReasons : []}
+        isSubmitting={isCancelling}
+        onConfirm={async ({ reasonCode, reasonText }) => {
           try {
-            await cancelSubscription("PRICE_TOO_HIGH")
+            setIsCancelling(true)
+            await cancelSubscription(reasonCode, reasonText)
             setOpen(false)
             router.push("/kr/mypage/membership")
           } catch (error) {
             console.error("멤버십 해지 실패:", error)
+          } finally {
+            setIsCancelling(false)
           }
         }}
       />
-      <MembershipCancelModal open={open} setOpen={setOpen} />
     </>
   )
 }
