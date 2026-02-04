@@ -3,11 +3,15 @@ import { HttpService } from '@nestjs/axios';
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, createHash, randomBytes, timingSafeEqual } from 'crypto';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { firstValueFrom } from 'rxjs';
 import {
+  cafe24Links,
   cafe24LinkTokens,
+  cafe24Snapshots,
   cafe24Tokens,
+  profiles,
+  users,
   type UserServiceSchema,
 } from '../../../database/drizzle/schema';
 import { DbTransaction } from '../../commons/types';
@@ -15,6 +19,16 @@ import { DbTransaction } from '../../commons/types';
 interface IssueCafe24LinkTokenResult {
   cafe24LinkToken: string;
   expiresAt: Date;
+}
+
+type MigrationKey = 'email' | 'name' | 'birthday' | 'phone';
+type MigrationStatus = 'synced' | 'out_of_sync' | 'missing';
+
+interface MigrationItemResult {
+  key: MigrationKey;
+  status: MigrationStatus;
+  cafe24Value: string | null;
+  userValue: string | null;
 }
 
 @Injectable()
@@ -130,6 +144,112 @@ export class Cafe24LinkService {
     };
   }
 
+  async getMigrationItems(userId: string, tx?: DbTransaction) {
+    const keys: MigrationKey[] = ['email', 'name', 'birthday', 'phone'];
+    const results = await Promise.all(
+      keys.map((key) => this.lookupMigrationItem(userId, key, tx)),
+    );
+    return results;
+  }
+
+  async linkCafe24Account(
+    userId: string,
+    cafe24LinkToken: string,
+    tx?: DbTransaction,
+  ) {
+    const client = this.getClient(tx);
+    const token = await this.consumeCafe24LinkToken(cafe24LinkToken, tx);
+
+    if (!token.cafe24MemberId) {
+      throw new BadRequestException('Cafe24 회원 ID가 없습니다.');
+    }
+
+    const [existingByMember] = await client
+      .select()
+      .from(cafe24Links)
+      .where(
+        and(
+          eq(cafe24Links.mallId, token.mallId),
+          eq(cafe24Links.cafe24MemberId, token.cafe24MemberId),
+        ),
+      )
+      .limit(1);
+
+    if (
+      existingByMember &&
+      existingByMember.cafe24MemberId === token.cafe24MemberId &&
+      existingByMember.userId !== userId
+    ) {
+      throw new BadRequestException('이미 다른 계정에 연결된 Cafe24 계정입니다.');
+    }
+
+    const now = new Date();
+    const [link] = await client
+      .insert(cafe24Links)
+      .values({
+        userId,
+        mallId: token.mallId,
+        cafe24MemberId: token.cafe24MemberId,
+        linkedAt: now,
+        updatedAt: now,
+      } as typeof cafe24Links.$inferInsert)
+      .onConflictDoUpdate({
+        target: [cafe24Links.userId, cafe24Links.mallId],
+        set: {
+          cafe24MemberId: token.cafe24MemberId,
+          linkedAt: now,
+          updatedAt: now,
+        },
+      })
+      .returning();
+
+    return link;
+  }
+
+  async lookupMigrationItem(
+    userId: string,
+    key: MigrationKey,
+    tx?: DbTransaction,
+  ): Promise<MigrationItemResult> {
+    const client = this.getClient(tx);
+    const link = await this.getCafe24LinkByUserId(userId, tx);
+    const snapshot = await this.getOrFetchSnapshot(link, tx);
+    const userData = await this.getUserAndProfile(userId, client);
+
+    const cafe24Value = this.getSnapshotValue(snapshot, key);
+    const userValue = this.getUserValue(userData, key);
+
+    if (!cafe24Value) {
+      return { key, status: 'missing', cafe24Value: null, userValue };
+    }
+
+    const isSynced = this.compareValues(key, userValue, cafe24Value);
+    return {
+      key,
+      status: isSynced ? 'synced' : 'out_of_sync',
+      cafe24Value,
+      userValue,
+    };
+  }
+
+  async migrateItem(
+    userId: string,
+    key: MigrationKey,
+    tx?: DbTransaction,
+  ): Promise<MigrationItemResult> {
+    const client = this.getClient(tx);
+    const link = await this.getCafe24LinkByUserId(userId, tx);
+    const snapshot = await this.getOrFetchSnapshot(link, tx);
+    const cafe24Value = this.getSnapshotValue(snapshot, key);
+
+    if (!cafe24Value) {
+      throw new BadRequestException('이관할 데이터가 없습니다.');
+    }
+
+    await this.applyMigration(userId, key, cafe24Value, client);
+    return this.lookupMigrationItem(userId, key, tx);
+  }
+
   async consumeCafe24LinkToken(
     cafe24LinkToken: string,
     tx?: DbTransaction,
@@ -181,6 +301,273 @@ export class Cafe24LinkService {
     }
 
     return token.accessToken;
+  }
+
+  private async getCafe24LinkByUserId(userId: string, tx?: DbTransaction) {
+    const client = this.getClient(tx);
+    const [link] = await client
+      .select()
+      .from(cafe24Links)
+      .where(eq(cafe24Links.userId, userId))
+      .limit(1);
+
+    if (!link) {
+      throw new BadRequestException('연결된 Cafe24 계정이 없습니다.');
+    }
+
+    return link;
+  }
+
+  private async getOrFetchSnapshot(link: typeof cafe24Links.$inferSelect, tx?: DbTransaction) {
+    const client = this.getClient(tx);
+    const [existing] = await client
+      .select()
+      .from(cafe24Snapshots)
+      .where(eq(cafe24Snapshots.linkId, link.id))
+      .limit(1);
+
+    if (existing) {
+      return existing;
+    }
+
+    const snapshot = await this.fetchPrivacySnapshot(link, tx);
+    return snapshot;
+  }
+
+  private async fetchPrivacySnapshot(
+    link: typeof cafe24Links.$inferSelect,
+    tx?: DbTransaction,
+  ) {
+    const accessToken = await this.getCafe24AccessToken(link.mallId, tx);
+    const apiVersion =
+      this.configService.get<string>('CAFE24_API_VERSION') ?? '2025-12-01';
+    const encodedMemberId = encodeURIComponent(link.cafe24MemberId);
+    const url = `https://${link.mallId}.cafe24api.com/api/v2/admin/customersprivacy/${encodedMemberId}`;
+
+    const response = await firstValueFrom(
+      this.httpService.get(url, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'X-Cafe24-Api-Version': apiVersion,
+        },
+      }),
+    );
+
+    const rawData = response.data ?? {};
+    const normalized = this.normalizePrivacyData(rawData);
+    const now = new Date();
+
+    const client = this.getClient(tx);
+    const [snapshot] = await client
+      .insert(cafe24Snapshots)
+      .values({
+        linkId: link.id,
+        email: normalized.email,
+        name: normalized.name,
+        birthDate: normalized.birthDate,
+        phoneNumber: normalized.phoneNumber,
+        rawData,
+        fetchedAt: now,
+        updatedAt: now,
+      } as typeof cafe24Snapshots.$inferInsert)
+      .onConflictDoUpdate({
+        target: cafe24Snapshots.linkId,
+        set: {
+          email: normalized.email,
+          name: normalized.name,
+          birthDate: normalized.birthDate,
+          phoneNumber: normalized.phoneNumber,
+          rawData,
+          fetchedAt: now,
+          updatedAt: now,
+        },
+      })
+      .returning();
+
+    return snapshot;
+  }
+
+  private normalizePrivacyData(data: Record<string, any>) {
+    const customer = data?.customersprivacy ?? {};
+    const email = customer?.email ?? null;
+    const name = customer?.name ?? null;
+    const phone = customer?.cellphone ?? customer?.phone ?? null;
+    const birth = customer?.birthday ?? null;
+
+    return {
+      email: typeof email === 'string' ? email : null,
+      name: typeof name === 'string' ? name : null,
+      phoneNumber: typeof phone === 'string' ? phone : null,
+      birthDate: this.parseDateValue(birth),
+    };
+  }
+
+  private parseDateValue(value: unknown) {
+    if (!value) {
+      return null;
+    }
+
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (/^\\d{8}$/.test(trimmed)) {
+        const year = trimmed.slice(0, 4);
+        const month = trimmed.slice(4, 6);
+        const day = trimmed.slice(6, 8);
+        const parsed = new Date(`${year}-${month}-${day}T00:00:00Z`);
+        return Number.isNaN(parsed.getTime()) ? null : parsed;
+      }
+
+      const parsed = new Date(trimmed);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+
+    return null;
+  }
+
+  private async getUserAndProfile(
+    userId: string,
+    client: ReturnType<Cafe24LinkService['getClient']>,
+  ) {
+    const [row] = await client
+      .select({
+        user: users,
+        profile: profiles,
+      })
+      .from(users)
+      .leftJoin(profiles, eq(users.id, profiles.userId))
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    if (!row) {
+      throw new BadRequestException('사용자를 찾을 수 없습니다.');
+    }
+
+    return row;
+  }
+
+  private getSnapshotValue(
+    snapshot: typeof cafe24Snapshots.$inferSelect,
+    key: MigrationKey,
+  ) {
+    switch (key) {
+      case 'email':
+        return snapshot.email ?? null;
+      case 'name':
+        return snapshot.name ?? null;
+      case 'birthday':
+        return snapshot.birthDate
+          ? snapshot.birthDate.toISOString().slice(0, 10)
+          : null;
+      case 'phone':
+        return snapshot.phoneNumber ?? null;
+      default:
+        return null;
+    }
+  }
+
+  private getUserValue(
+    data: { user: typeof users.$inferSelect; profile: typeof profiles.$inferSelect | null },
+    key: MigrationKey,
+  ) {
+    switch (key) {
+      case 'email':
+        return data.user.email ?? null;
+      case 'name':
+        return data.user.username ?? null;
+      case 'birthday':
+        return data.profile?.birthDate
+          ? data.profile.birthDate.toISOString().slice(0, 10)
+          : null;
+      case 'phone':
+        return data.profile?.phoneNumber ?? null;
+      default:
+        return null;
+    }
+  }
+
+  private compareValues(
+    key: MigrationKey,
+    userValue: string | null,
+    cafe24Value: string | null,
+  ) {
+    if (!cafe24Value) {
+      return false;
+    }
+
+    if (!userValue) {
+      return false;
+    }
+
+    switch (key) {
+      case 'email':
+        return userValue.trim().toLowerCase() === cafe24Value.trim().toLowerCase();
+      case 'name':
+        return userValue.trim() === cafe24Value.trim();
+      case 'birthday':
+        return userValue.slice(0, 10) === cafe24Value.slice(0, 10);
+      case 'phone':
+        return this.normalizePhone(userValue) === this.normalizePhone(cafe24Value);
+      default:
+        return false;
+    }
+  }
+
+  private normalizePhone(value: string) {
+    return value.replace(/\\D/g, '');
+  }
+
+  private async applyMigration(
+    userId: string,
+    key: MigrationKey,
+    cafe24Value: string,
+    client: ReturnType<Cafe24LinkService['getClient']>,
+  ) {
+    switch (key) {
+      case 'email': {
+        await client
+          .update(users)
+          .set({ email: cafe24Value, updatedAt: new Date() })
+          .where(eq(users.id, userId));
+        return;
+      }
+      case 'name': {
+        await client
+          .update(users)
+          .set({ username: cafe24Value, updatedAt: new Date() })
+          .where(eq(users.id, userId));
+        return;
+      }
+      case 'birthday': {
+        const birthDate = this.parseDateValue(cafe24Value);
+        if (!birthDate) {
+          throw new BadRequestException('생년월일 형식이 올바르지 않습니다.');
+        }
+        await client
+          .insert(profiles)
+          .values({ userId, birthDate })
+          .onConflictDoUpdate({
+            target: profiles.userId,
+            set: { birthDate },
+          });
+        return;
+      }
+      case 'phone': {
+        await client
+          .insert(profiles)
+          .values({ userId, phoneNumber: cafe24Value })
+          .onConflictDoUpdate({
+            target: profiles.userId,
+            set: { phoneNumber: cafe24Value },
+          });
+        return;
+      }
+      default:
+        return;
+    }
   }
 
   private decodeEncryptedIdToken(
@@ -265,7 +652,11 @@ export class Cafe24LinkService {
   }
 
   private extractMemberName(data: Record<string, any>) {
-    const customer = data?.customer ?? data?.customer_privacy ?? data?.data;
+    const customer =
+      data?.customersprivacy ??
+      data?.customer ??
+      data?.customer_privacy ??
+      data?.data;
     const candidate =
       customer?.name ||
       customer?.member_name ||

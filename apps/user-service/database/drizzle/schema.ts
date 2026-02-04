@@ -207,6 +207,44 @@ export const cafe24LinkTokens = pgTable(
   }),
 );
 
+export const cafe24Links = pgTable(
+  'cafe24_links',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .references(() => users.id, { onDelete: 'cascade' })
+      .notNull(),
+    mallId: varchar('mall_id', { length: 64 }).notNull(),
+    cafe24MemberId: varchar('cafe24_member_id', { length: 128 }).notNull(),
+    linkedAt: timestamp('linked_at').defaultNow().notNull(),
+    ...timestampColumns,
+  },
+  (table) => ({
+    userMallIdx: unique().on(table.userId, table.mallId),
+    mallMemberIdx: unique().on(table.mallId, table.cafe24MemberId),
+  }),
+);
+
+export const cafe24Snapshots = pgTable(
+  'cafe24_snapshots',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    linkId: uuid('link_id')
+      .references(() => cafe24Links.id, { onDelete: 'cascade' })
+      .notNull(),
+    email: varchar('email', { length: 255 }),
+    name: varchar('name', { length: 100 }),
+    birthDate: timestamp('birth_date'),
+    phoneNumber: varchar('phone_number', { length: 20 }),
+    rawData: jsonb('raw_data').notNull(),
+    fetchedAt: timestamp('fetched_at').defaultNow().notNull(),
+    ...timestampColumns,
+  },
+  (table) => ({
+    linkIdUniqueIdx: unique().on(table.linkId),
+  }),
+);
+
 // User_profile
 export const profiles = pgTable('profiles', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -567,6 +605,8 @@ export const userServiceTables = {
   tokens,
   cafe24Tokens,
   cafe24LinkTokens,
+  cafe24Links,
+  cafe24Snapshots,
   profiles,
   blacklists,
   wishlist,
@@ -629,6 +669,8 @@ export type RecentView = typeof userRecentViews.$inferSelect;
 export type BusinessLicense = typeof businessLicenses.$inferSelect;
 export type Cafe24Token = typeof cafe24Tokens.$inferSelect;
 export type Cafe24LinkToken = typeof cafe24LinkTokens.$inferSelect;
+export type Cafe24Link = typeof cafe24Links.$inferSelect;
+export type Cafe24Snapshot = typeof cafe24Snapshots.$inferSelect;
 
 export type ShopType = (typeof shopTypeEnum.enumValues)[number];
 export const SHOP_TYPES = shopTypeEnum.enumValues;

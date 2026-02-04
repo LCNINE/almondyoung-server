@@ -2,11 +2,16 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Get,
+  Param,
   Post,
   Req,
 } from '@nestjs/common';
 import { Public } from '../../commons/decorator/public.decorator';
+import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
+import { JwtPayload, RequireScopes } from '@app/roles';
 import {
+  ApiBearerAuth,
   ApiBody,
   ApiOperation,
   ApiResponse,
@@ -21,8 +26,17 @@ import {
   Cafe24MemberInfoRequestDto,
   Cafe24MemberInfoResponseDto,
 } from './dto/member-info.dto';
+import {
+  Cafe24MigrationItemDto,
+  Cafe24MigrationListResponseDto,
+} from './dto/migration.dto';
+import {
+  Cafe24LinkRequestDto,
+  Cafe24LinkResponseDto,
+} from './dto/link.dto';
 
 @ApiTags('Cafe24 Link')
+@ApiBearerAuth('access-token')
 @Controller('cafe24')
 export class Cafe24LinkController {
   constructor(private readonly cafe24LinkService: Cafe24LinkService) { }
@@ -85,5 +99,107 @@ export class Cafe24LinkController {
     body: Cafe24MemberInfoRequestDto,
   ): Promise<Cafe24MemberInfoResponseDto> {
     return this.cafe24LinkService.fetchMemberInfo(body.encryptedIdToken);
+  }
+
+  @Post('link')
+  @ApiOperation({
+    summary: 'Cafe24 계정 연결',
+    description: 'cafe24_link_token으로 계정을 연결합니다.',
+  })
+  @ApiBody({ type: Cafe24LinkRequestDto })
+  @ApiResponse({
+    status: 200,
+    description: '연결 성공',
+    type: Cafe24LinkResponseDto,
+  })
+  @RequireScopes(['user:modify'])
+  async linkCafe24Account(
+    @Body() body: Cafe24LinkRequestDto & { cafe24_link_token?: string },
+    @CurrentUser() user: JwtPayload,
+  ): Promise<Cafe24LinkResponseDto> {
+    const cafe24LinkToken =
+      body.cafe24LinkToken ?? body.cafe24_link_token;
+
+    if (!cafe24LinkToken) {
+      throw new BadRequestException('cafe24_link_token이 필요합니다.');
+    }
+
+    const link = await this.cafe24LinkService.linkCafe24Account(
+      user.id,
+      cafe24LinkToken,
+    );
+
+    return {
+      linkId: link.id,
+      mallId: link.mallId,
+      cafe24MemberId: link.cafe24MemberId,
+      linkedAt: link.linkedAt.toISOString(),
+    };
+  }
+
+  @Get('migration')
+  @ApiOperation({
+    summary: 'Cafe24 이관 항목 전체 조회',
+    description: '이관 항목 전체 lookup 결과를 반환합니다.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '이관 항목 조회 성공',
+    type: Cafe24MigrationListResponseDto,
+  })
+  @RequireScopes(['user:read'])
+  async getMigrationItems(
+    @CurrentUser() user: JwtPayload,
+  ): Promise<Cafe24MigrationListResponseDto> {
+    const items = await this.cafe24LinkService.getMigrationItems(user.id);
+    return { items };
+  }
+
+  @Get('migration/:key')
+  @ApiOperation({
+    summary: 'Cafe24 이관 항목 단건 조회',
+    description: '단일 이관 항목 lookup 결과를 반환합니다.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '이관 항목 조회 성공',
+    type: Cafe24MigrationItemDto,
+  })
+  @RequireScopes(['user:read'])
+  async getMigrationItem(
+    @Param('key') key: string,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<Cafe24MigrationItemDto> {
+    this.assertMigrationKey(key);
+    return this.cafe24LinkService.lookupMigrationItem(
+      user.id,
+      key as any,
+    );
+  }
+
+  @Post('migration/:key')
+  @ApiOperation({
+    summary: 'Cafe24 이관 항목 단건 이관',
+    description: '단일 이관 항목을 이관합니다.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '이관 완료',
+    type: Cafe24MigrationItemDto,
+  })
+  @RequireScopes(['user:modify'])
+  async migrateMigrationItem(
+    @Param('key') key: string,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<Cafe24MigrationItemDto> {
+    this.assertMigrationKey(key);
+    return this.cafe24LinkService.migrateItem(user.id, key as any);
+  }
+
+  private assertMigrationKey(key: string) {
+    const allowed = ['email', 'name', 'birthday', 'phone'];
+    if (!allowed.includes(key)) {
+      throw new BadRequestException('지원하지 않는 이관 항목입니다.');
+    }
   }
 }
