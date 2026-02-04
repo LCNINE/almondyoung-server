@@ -772,23 +772,41 @@ export class AuthService {
     }
   }
 
-  async changePassword(password: string, userId: string, tx?: DbTransaction) {
-    const existingUser = await this.usersService.findUserById(userId);
+  async changePassword(currentPassword: string, newPassword: string, userId: string, tx?: DbTransaction) {
+    const client = this.getClient(tx);
 
-    if (!existingUser) throw new NotFoundException('존재하지 않는 사용자입니다');
+    const [user] = await client
+      .select()
+      .from(userServiceSchema.users)
+      .where(eq(userServiceSchema.users.id, userId))
+      .limit(1);
 
-    try {
-      const saltOrRounds = 10;
-      const hash = await bcrypt.hash(password, saltOrRounds);
-      await this.dbService.db
-        .update(userServiceSchema.users)
-        .set({ password: hash })
-        .where(eq(userServiceSchema.users.id, userId));
+    if (!user) throw new NotFoundException('존재하지 않는 사용자입니다');
 
-      return;
-    } catch (error) {
-      throw new InternalServerErrorException('비밀번호 변경 중 오류가 발생했습니다.');
+    // 소셜 로그인 사용자는 비밀번호가 없으므로 변경 불가
+    if (!user.password) {
+      throw new BadRequestException('소셜 로그인 사용자는 비밀번호를 변경할 수 없습니다.');
     }
+
+    // 현재 비밀번호 검증
+    const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password);
+    if (!isCurrentPasswordValid) {
+      throw new BadRequestException('현재 비밀번호가 일치하지 않습니다.');
+    }
+
+    // 새 비밀번호가 현재 비밀번호와 동일한지 확인
+    const isSamePassword = await bcrypt.compare(newPassword, user.password);
+    if (isSamePassword) {
+      throw new BadRequestException('새 비밀번호는 현재 비밀번호와 다르게 설정해주세요.');
+    }
+
+    const saltOrRounds = 10;
+    const hash = await bcrypt.hash(newPassword, saltOrRounds);
+
+    await client
+      .update(userServiceSchema.users)
+      .set({ password: hash })
+      .where(eq(userServiceSchema.users.id, userId));
   }
 
   async checkPassword(password: string, userId: string, tx?: DbTransaction): Promise<void> {
