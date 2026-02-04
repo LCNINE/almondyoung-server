@@ -780,4 +780,51 @@ export class MedusaClient {
             throw new Error(`Medusa addPricesToPriceList failed: ${fetchError.message}`);
         }
     }
+
+    // ===== Customers & Groups =====
+    async findCustomerByEmail(email: string): Promise<HttpTypes.AdminCustomer | null> {
+        try {
+            const { customers } = await this.sdk.admin.customer.list({
+                email,
+                limit: 1,
+            });
+            return customers?.[0] || null;
+        } catch (error) {
+            const fetchError = error as FetchError;
+            this.logger.warn(
+                `Medusa findCustomerByEmail failed for ${email}: ${fetchError.message}`,
+            );
+            return null;
+        }
+    }
+
+    async addCustomerToGroup(customerId: string, groupId: string): Promise<void> {
+        try {
+            await this.sdk.admin.customer.batchCustomerGroups(customerId, {
+                add: [groupId],
+            });
+            this.logger.log(`Added customer ${customerId} to group ${groupId}`);
+        } catch (error) {
+            const fetchError = error as FetchError;
+            this.logger.error(
+                `Failed to add customer ${customerId} to group ${groupId}: ${fetchError.message}`,
+            );
+            throw new Error(`Medusa addCustomerToGroup failed: ${fetchError.message}`);
+        }
+    }
+
+    async removeCustomerFromGroup(customerId: string, groupId: string): Promise<void> {
+        try {
+            await this.sdk.admin.customer.batchCustomerGroups(customerId, {
+                remove: [groupId],
+            });
+            this.logger.log(`Removed customer ${customerId} from group ${groupId}`);
+        } catch (error) {
+            const fetchError = error as FetchError;
+            this.logger.error(
+                `Failed to remove customer ${customerId} from group ${groupId}: ${fetchError.message}`,
+            );
+            throw new Error(`Medusa removeCustomerFromGroup failed: ${fetchError.message}`);
+        }
+    }
 }

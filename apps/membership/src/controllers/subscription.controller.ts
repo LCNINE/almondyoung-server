@@ -131,10 +131,12 @@ export class SubscriptionController {
   })
   @UseGuards(JwtAuthGuard)
   async createSubscription(
-    @User('userId') userId: string,
+    @User() user: { userId: string; email?: string },
     @Body(new ZodValidationPipe(CreateSubscriptionRequestSchema))
     createSubscriptionDto: CreateSubscriptionRequest,
   ) {
+    const userId = user?.userId;
+    const email = user?.email;
     console.log('📥 구독 생성 요청:', {
       userId,
       planId: createSubscriptionDto.planId,
@@ -143,10 +145,14 @@ export class SubscriptionController {
     if (!userId) {
       throw new BadRequestException('userId가 필요합니다');
     }
+    if (!email) {
+      throw new BadRequestException('email이 필요합니다');
+    }
 
     return this.subscriptionService.createSubscription(
       userId,
       createSubscriptionDto.planId,
+      email,
     );
   }
 
@@ -249,13 +255,22 @@ export class SubscriptionController {
   })
   @UseGuards(JwtAuthGuard) // 🚨 임시 가드 사용
   async cancelSubscription(
-    @User('userId') userId: string,
+    @User() user: { userId: string; email?: string },
     @Body(new ZodValidationPipe(CancelSubscriptionRequestSchema))
     cancelSubscriptionDto: CancelSubscriptionRequest,
   ) {
+    const userId = user?.userId;
+    const email = user?.email;
     try {
+      if (!userId) {
+        throw new BadRequestException('userId가 필요합니다');
+      }
+      if (!email) {
+        throw new BadRequestException('email이 필요합니다');
+      }
       return await this.cancellationService.cancelSubscription(
         userId,
+        email,
         cancelSubscriptionDto.reasonCode,
         cancelSubscriptionDto.reasonText,
       );

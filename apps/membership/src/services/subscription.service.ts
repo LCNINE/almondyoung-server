@@ -9,6 +9,7 @@ import { PlanService } from './plan.service';
 import { SubscriptionContractReader } from './subscription/subscription-contract.reader';
 import { SubscriptionCreator } from './subscription/subscription.creator';
 import { SubscriptionManager } from './subscription/subscription.manager';
+import { MembershipEventPublisher } from './membership-event.publisher';
 
 /**
  * SubscriptionService (Business Layer)
@@ -45,6 +46,7 @@ export class SubscriptionService {
     private readonly contractReader: SubscriptionContractReader,
     private readonly subscriptionCreator: SubscriptionCreator,
     private readonly subscriptionManager: SubscriptionManager,
+    private readonly membershipEventPublisher: MembershipEventPublisher,
   ) {}
 
   /**
@@ -61,18 +63,30 @@ export class SubscriptionService {
    *
    * ✅ 흐름만 표현: "기존 구독 확인 → 플랜 조회 → 구독 생성"
    */
-  async createSubscription(userId: string, planId: string) {
+  async createSubscription(userId: string, planId: string, email: string) {
     const existing = await this.entitlementService.getUserEntitlement(userId);
     if (existing) throw new ActiveSubscriptionExistsException();
 
     const planDetails = await this.planService.getPlanDetails(planId);
     if (!planDetails) throw new PlanNotFoundException();
 
-    return this.subscriptionCreator.createNewSubscription(
+    const result = await this.subscriptionCreator.createNewSubscription(
       userId,
       planDetails.plan,
       planDetails.tier,
     );
+
+    await this.membershipEventPublisher.publishStatusChanged({
+      userId,
+      email,
+      status: 'ACTIVE',
+      occurredAt: new Date().toISOString(),
+      contractId: result.contractId,
+      planId: planDetails.plan.id,
+      tierId: planDetails.tier.id,
+    });
+
+    return result;
   }
 
   /**

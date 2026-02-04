@@ -6,6 +6,7 @@ import { EntitlementService } from '../entitlement.service';
 import { SubscriptionContractReader } from '../subscription/subscription-contract.reader';
 import { SubscriptionCancellationManager } from '../subscription/subscription-cancellation.manager';
 import { MembershipPolicyService } from '../membership-policy.service';
+import { MembershipEventPublisher } from '../membership-event.publisher';
 
 describe('SubscriptionCancellationService - Unified Cancellation', () => {
   let service: SubscriptionCancellationService;
@@ -52,6 +53,10 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
     getBooleanPolicy: jest.fn(),
   };
 
+  const mockMembershipEventPublisher = {
+    publishStatusChanged: jest.fn(),
+  };
+
   beforeEach(async () => {
     // 정책 기본값 설정
     mockPolicyService.getBooleanPolicy.mockResolvedValue(true);
@@ -85,6 +90,10 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
           provide: MembershipPolicyService,
           useValue: mockPolicyService,
         },
+        {
+          provide: MembershipEventPublisher,
+          useValue: mockMembershipEventPublisher,
+        },
       ],
     }).compile();
 
@@ -101,19 +110,21 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
     it('활성 구독이 없으면 에러를 발생시켜야 함', async () => {
       // Given
       const userId = 'test_user_001';
+      const email = 'test@example.com';
       mockEntitlementService.checkAndUpdateSubscription.mockResolvedValue(true);
       mockContractReader.findContractWithPlan.mockResolvedValue(null);
       mockContractReader.findContractsByUserId.mockResolvedValue([]);
 
       // When & Then
       await expect(
-        service.cancelSubscription(userId, 'NO_LONGER_NEEDED'),
+        service.cancelSubscription(userId, email, 'NO_LONGER_NEEDED'),
       ).rejects.toThrow('Active subscription not found');
     });
 
     it('무료체험 중 취소 시 즉시 취소 + 환불을 반환해야 함', async () => {
       // Given
       const userId = 'test_user_001';
+      const email = 'test@example.com';
       const contract = {
         id: 'contract_001',
         userId,
@@ -159,6 +170,7 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
       // When
       const result = await service.cancelSubscription(
         userId,
+        email,
         'TRIAL_PERIOD',
         '체험 후 결정',
       );
@@ -175,6 +187,7 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
     it('무료체험 후 취소 시 정기결제 중단을 반환해야 함', async () => {
       // Given
       const userId = 'test_user_001';
+      const email = 'test@example.com';
       const billingDate = new Date();
       billingDate.setDate(billingDate.getDate() - 10);
 
@@ -226,6 +239,7 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
       // When
       const result = await service.cancelSubscription(
         userId,
+        email,
         'NO_LONGER_NEEDED',
         '더 이상 필요하지 않음',
       );

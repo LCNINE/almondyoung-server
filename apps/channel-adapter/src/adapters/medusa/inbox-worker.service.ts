@@ -4,8 +4,10 @@ import { DbService } from '@app/db';
 import { inboxEvents } from '../../schema';
 import { eq, and, lte } from 'drizzle-orm';
 import { PimMedusaSyncService } from './pim-medusa-sync.service';
+import { MembershipMedusaSyncService } from './membership-medusa-sync.service';
 import type { PimActiveVersionChangedEvent, ChannelAdapterSchema } from '../../types';
 import type { CategoryChangedPayload } from '@packages/event-contracts/streams/product.stream';
+import type { MembershipStatusChangedPayload } from '@packages/event-contracts/streams/membership.stream';
 
 @Injectable()
 export class InboxWorkerService implements OnModuleInit {
@@ -19,6 +21,7 @@ export class InboxWorkerService implements OnModuleInit {
     constructor(
         private readonly dbService: DbService<ChannelAdapterSchema>,
         private readonly syncService: PimMedusaSyncService,
+        private readonly membershipSyncService: MembershipMedusaSyncService,
         private readonly configService: ConfigService,
     ) {
         this.pollIntervalMs = this.configService.get<number>(
@@ -116,6 +119,11 @@ export class InboxWorkerService implements OnModuleInit {
                     await this.syncService.handleCategoryChanged(categoryPayload);
                     break;
 
+                case 'MembershipStatusChanged':
+                    const membershipPayload: MembershipStatusChangedPayload = event.payload;
+                    await this.membershipSyncService.handleMembershipStatusChanged(membershipPayload);
+                    break;
+
                 default:
                     this.logger.warn(`Unknown event type: ${eventType} for event ${eventId}`);
                     break;
@@ -185,4 +193,3 @@ export class InboxWorkerService implements OnModuleInit {
         this.stop();
     }
 }
-

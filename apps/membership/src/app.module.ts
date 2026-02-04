@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { DbModule } from '@app/db';
+import { EventsModule } from '@app/events';
+import { MEMBERSHIP_STREAM } from '@packages/event-contracts/streams';
 import { membershipSchema } from './shared/schemas/entities/schema';
 import { ConfigModule } from '@nestjs/config';
 import { validateMembershipEnv } from './config/env.validation';
@@ -39,6 +41,7 @@ import { BillingReader } from './services/billing/billing.reader';
 import { MembershipPolicyService } from './services/membership-policy.service';
 import { SavingsService } from './services/savings/savings.service';
 import { SavingsReader } from './services/savings/savings.reader';
+import { MembershipEventPublisher } from './services/membership-event.publisher';
 import { AuthorizationModule } from '@app/authorization';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtAuthGuard } from '@app/authorization';
@@ -60,6 +63,11 @@ import { JwtAuthGuard } from '@app/authorization';
         connectionString: process.env.DATABASE_URL || '',
       },
       schema: membershipSchema,
+    }),
+    EventsModule.forRoot({
+      streams: [MEMBERSHIP_STREAM],
+      serviceName: 'membership',
+      enableDLQ: true,
     }),
   ],
   controllers: [
@@ -111,6 +119,7 @@ import { JwtAuthGuard } from '@app/authorization';
     MembershipPolicyService,
     // Infrastructure
     PaymentClientService,
+    MembershipEventPublisher,
   ],
 })
 export class AppModule {}

@@ -7,6 +7,7 @@ import {
   RecurringCancellationResult,
 } from './subscription/subscription-cancellation.manager';
 import { CancellationReasonReader } from './subscription/cancellation-reason.reader';
+import { MembershipEventPublisher } from './membership-event.publisher';
 
 // 하위 호환성을 위한 타입 export
 export type {
@@ -39,6 +40,7 @@ export class SubscriptionCancellationService {
     private readonly contractReader: SubscriptionContractReader,
     private readonly cancellationManager: SubscriptionCancellationManager,
     private readonly reasonReader: CancellationReasonReader,
+    private readonly membershipEventPublisher: MembershipEventPublisher,
   ) {}
 
   /**
@@ -48,6 +50,7 @@ export class SubscriptionCancellationService {
    */
   async cancelSubscription(
     userId: string,
+    email: string,
     reasonCode: string,
     reasonText?: string,
   ): Promise<ImmediateCancellationResult | RecurringCancellationResult> {
@@ -75,8 +78,8 @@ export class SubscriptionCancellationService {
       data.plan,
     );
 
-    return eligibility.eligible
-      ? this.cancellationManager.cancelImmediately(
+    const result = eligibility.eligible
+      ? await this.cancellationManager.cancelImmediately(
           userId,
           data.contract,
           data.plan,
@@ -84,12 +87,40 @@ export class SubscriptionCancellationService {
           reasonText,
           eligibility,
         )
-      : this.cancellationManager.cancelRecurringPayment(
+      : await this.cancellationManager.cancelRecurringPayment(
           userId,
           data.contract,
           reasonCode,
           reasonText,
         );
+
+    if (result.type === 'IMMEDIATE_CANCELLATION') {
+      await this.membershipEventPublisher.publishStatusChanged({
+        userId,
+        email,
+        status: 'CANCELLED',
+        occurredAt: new Date().toISOString(),
+        contractId: data.contract.id,
+        planId: data.plan.id,
+        tierId: data.plan.tierId,
+        reasonCode,
+        reasonText,
+      });
+    } else {
+      await this.membershipEventPublisher.publishStatusChanged({
+        userId,
+        email,
+        status: 'RECURRING_CANCELLED',
+        occurredAt: new Date().toISOString(),
+        contractId: data.contract.id,
+        planId: data.plan.id,
+        tierId: data.plan.tierId,
+        reasonCode,
+        reasonText,
+      });
+    }
+
+    return result;
   }
 
   /**

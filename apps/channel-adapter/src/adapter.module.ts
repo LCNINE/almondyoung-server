@@ -14,7 +14,7 @@ import { SyncStatusController } from './controllers/sync-status.controller';
 import { ChannelAdapterService } from './services/channel-adapter.service';
 import { NullEventPublisher } from './services/null-event-publisher.service';
 import { DbModule } from '@app/db';
-import { CHANNEL_ADAPTER_STREAM, ORDER_STREAM, FULFILLMENT_STREAM, PRODUCT_STREAM } from '@packages/event-contracts/streams';
+import { CHANNEL_ADAPTER_STREAM, ORDER_STREAM, FULFILLMENT_STREAM, PRODUCT_STREAM, MEMBERSHIP_STREAM } from '@packages/event-contracts/streams';
 import { FulfillmentEventsConsumer } from './consumers/fulfillment-events.consumer';
 import * as schema from './schema';
 import { channelAdapterSchema } from './schema';
@@ -44,8 +44,10 @@ import { OutboxDispatcherService } from './services/outbox-dispatcher.service';
 // import { PimClient } from './adapters/medusa/pim.client';
 import { MedusaClient } from './adapters/medusa/medusa.client';
 import { PimMedusaSyncService } from './adapters/medusa/pim-medusa-sync.service';
+import { MembershipMedusaSyncService } from './adapters/medusa/membership-medusa-sync.service';
 import { PimProductEventConsumer } from './consumers/pim-product-event.consumer';
 import { PimCategoryConsumer } from './consumers/pim-category.consumer';
+import { MembershipEventConsumer } from './consumers/membership-event.consumer';
 import { PimMedusaMappingRepository } from './adapters/medusa/pim-medusa-mapping.repository';
 import { InboxWorkerService } from './adapters/medusa/inbox-worker.service';
 
@@ -124,6 +126,7 @@ function createKafkaConfig() {
     FulfillmentEventsConsumer,
     PimProductEventConsumer,
     PimCategoryConsumer,
+    MembershipEventConsumer,
   ],
   providers: [
     ChannelAdapterService,
@@ -165,8 +168,10 @@ function createKafkaConfig() {
     // PimClient,
     MedusaClient,
     PimMedusaSyncService,
+    MembershipMedusaSyncService,
     PimProductEventConsumer,
     PimCategoryConsumer,
+    MembershipEventConsumer,
     PimMedusaMappingRepository,
     InboxWorkerService,
 

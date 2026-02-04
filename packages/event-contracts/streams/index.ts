@@ -27,5 +27,8 @@ export * from './adapter.stream';
 // Product Stream
 export * from './product.stream';
 
+// Membership Stream
+export * from './membership.stream';
+
 // Inventory Stream (WMS)
 export * from './inventory.stream';

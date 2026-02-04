@@ -638,6 +638,7 @@ export class PimMedusaSyncService {
     }
   }
 
+
   /**
    * Handle category deletion in Medusa
    */
