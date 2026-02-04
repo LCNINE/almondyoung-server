@@ -28,8 +28,6 @@
   const apiBase = 'https://user.almondyoung-next.com';
   const memberInfoPath = '/cafe24/member-info';
   const linkTokenPath = '/cafe24/link-token';
-  const mallId =
-    params.get('mall_id') || rootDataset.mallId || config.mallId || '';
 
   const memberInfoUrl = resolveApiUrl(apiBase, memberInfoPath);
   const linkTokenUrl = resolveApiUrl(apiBase, linkTokenPath);
@@ -38,7 +36,6 @@
     apiBase,
     memberInfoUrl,
     linkTokenUrl,
-    mallId,
   });
 
   let encryptedIdToken = '';
@@ -74,14 +71,12 @@
       log('issue link token');
       const issued = await issueLinkToken(linkTokenUrl, {
         encryptedIdToken,
-        mallId,
       });
 
       log('redirect to storefront');
       postRedirect(redirectUrl, {
         cafe24_link_token: issued.cafe24LinkToken,
         expires_at: issued.expiresAt,
-        mall_id: mallId || undefined,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -144,7 +139,6 @@
       log('fetch member info');
       const memberInfo = await fetchMemberInfo(memberInfoUrl, {
         encryptedIdToken,
-        mallId: encrypted.mallId || mallId,
       });
 
       log({ memberInfo });
@@ -177,7 +171,6 @@
       }
 
       const apiVersion = configValue.apiVersion || '2025-12-01';
-      const mallId = configValue.mallId || params.get('mall_id');
 
       log({ action: 'init cafe24 api', apiVersion });
       const api = window.CAFE24API.init({
@@ -213,7 +206,6 @@
         resolve({
           memberId: res.member_id,
           guestId: res.guest_id,
-          mallId,
         });
       });
     });
