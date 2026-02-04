@@ -10,7 +10,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { join } from 'path';
 import { writeFileSync, mkdirSync } from 'fs';
 import { EventsModule } from '@app/events';
-import { FULFILLMENT_STREAM, PRODUCT_STREAM } from '@packages/event-contracts/streams';
+import { FULFILLMENT_STREAM, PRODUCT_STREAM, MEMBERSHIP_STREAM } from '@packages/event-contracts/streams';
 import * as os from 'os';
 
 function createKafkaConfig() {
@@ -136,7 +136,7 @@ async function bootstrap() {
   // 테스트 환경을 제외하고 Kafka Consumer 연결 (dev/prod)
   if (process.env.NODE_ENV !== 'test') {
     const consumerOptions = EventsModule.forConsumer({
-      streams: [FULFILLMENT_STREAM, PRODUCT_STREAM],
+      streams: [FULFILLMENT_STREAM, PRODUCT_STREAM, MEMBERSHIP_STREAM],
       groupId: 'channel-adapter-consumer',
       kafka: createKafkaConfig(),
     });

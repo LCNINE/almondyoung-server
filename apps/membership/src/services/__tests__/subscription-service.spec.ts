@@ -5,6 +5,7 @@ import { PlanService } from '../plan.service';
 import { SubscriptionContractReader } from '../subscription/subscription-contract.reader';
 import { SubscriptionCreator } from '../subscription/subscription.creator';
 import { SubscriptionManager } from '../subscription/subscription.manager';
+import { MembershipEventPublisher } from '../membership-event.publisher';
 
 describe('SubscriptionService - Layer Refactoring', () => {
   let service: SubscriptionService;
@@ -33,6 +34,10 @@ describe('SubscriptionService - Layer Refactoring', () => {
     voidSubscription: jest.fn(),
   };
 
+  const mockMembershipEventPublisher = {
+    publishStatusChanged: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -57,6 +62,10 @@ describe('SubscriptionService - Layer Refactoring', () => {
           provide: SubscriptionManager,
           useValue: mockSubscriptionManager,
         },
+        {
+          provide: MembershipEventPublisher,
+          useValue: mockMembershipEventPublisher,
+        },
       ],
     }).compile();
 
@@ -72,6 +81,7 @@ describe('SubscriptionService - Layer Refactoring', () => {
       // Given
       const userId = 'test_user_001';
       const planId = 'plan_001';
+      const email = 'test@example.com';
 
       mockEntitlementService.checkAndUpdateSubscription.mockResolvedValue(true);
       mockEntitlementService.getUserEntitlement.mockResolvedValue(null);
@@ -85,7 +95,7 @@ describe('SubscriptionService - Layer Refactoring', () => {
       });
 
       // When
-      const result = await service.createSubscription(userId, planId);
+      const result = await service.createSubscription(userId, planId, email);
 
       // Then
       expect(result).toEqual({
@@ -99,12 +109,14 @@ describe('SubscriptionService - Layer Refactoring', () => {
         { id: planId, price: 10000, durationDays: 30 },
         { id: 'tier_001', code: 'PREMIUM' },
       );
+      expect(mockMembershipEventPublisher.publishStatusChanged).toHaveBeenCalled();
     });
 
     it('기존 구독이 있으면 에러를 발생시켜야 함', async () => {
       // Given
       const userId = 'test_user_001';
       const planId = 'plan_001';
+      const email = 'test@example.com';
 
       mockEntitlementService.checkAndUpdateSubscription.mockResolvedValue(true);
       mockEntitlementService.getUserEntitlement.mockResolvedValue({
@@ -113,7 +125,7 @@ describe('SubscriptionService - Layer Refactoring', () => {
 
       // When & Then
       await expect(
-        service.createSubscription(userId, planId),
+        service.createSubscription(userId, planId, email),
       ).rejects.toThrow();
     });
   });

@@ -78,15 +78,25 @@ export class PauseController {
   })
   @UseGuards(JwtAuthGuard)
   async pauseSubscription(
-    @User('userId') userId: string,
+    @User() user: { userId: string; email?: string },
     @Body(new ZodValidationPipe(PauseSubscriptionRequestSchema))
     pauseDto: PauseSubscriptionRequest,
   ) {
+    const userId = user?.userId;
+    const email = user?.email;
     try {
       this.logger.log(`구독 일시정지 요청: ${userId}`);
 
+      if (!userId) {
+        throw new HttpException('userId가 필요합니다.', HttpStatus.BAD_REQUEST);
+      }
+      if (!email) {
+        throw new HttpException('email이 필요합니다.', HttpStatus.BAD_REQUEST);
+      }
+
       const result = await this.pauseService.pauseSubscription(
         userId,
+        email,
         new Date(pauseDto.startDate),
         new Date(pauseDto.endDate),
         pauseDto.reason,
@@ -166,15 +176,24 @@ export class PauseController {
   })
   @UseGuards(JwtAuthGuard)
   async resumeSubscription(
-    @User('userId') userId: string,
+    @User() user: { userId: string; email?: string },
     // 참고: resumeRequest DTO는 현재 사용되지 않지만, Zod 유효성 검사를 위해 유지합니다.
     @Body(new ZodValidationPipe(ResumeSubscriptionRequestSchema))
     resumeRequest: ResumeSubscriptionRequest,
   ) {
+    const userId = user?.userId;
+    const email = user?.email;
     try {
       this.logger.log(`구독 재개 요청: ${userId}`);
 
-      const result = await this.pauseService.resumeSubscription(userId);
+      if (!userId) {
+        throw new HttpException('userId가 필요합니다.', HttpStatus.BAD_REQUEST);
+      }
+      if (!email) {
+        throw new HttpException('email이 필요합니다.', HttpStatus.BAD_REQUEST);
+      }
+
+      const result = await this.pauseService.resumeSubscription(userId, email);
 
       this.logger.log(`✅ 구독 재개 성공: ${userId}`);
 
