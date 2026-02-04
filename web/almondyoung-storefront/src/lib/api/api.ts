@@ -1,9 +1,6 @@
 import { getAccessToken, getCookies } from "@lib/data/cookies"
 import { ApiAuthError, ApiNetworkError, HttpApiError } from "./api-error"
-import {
-  getBackendBaseUrl,
-  type BackendService,
-} from "@/lib/config/backend"
+import { getBackendBaseUrl, type BackendService } from "@/lib/config/backend"
 
 /**
  * server action response type

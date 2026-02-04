@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { EditAddressState } from "../types"
+import { EditAddressState } from "../../domains/checkout/components/sections/shipping/types"
 
 export const shippingAddressSchema = z.object({
   addressName: z.string().optional(),

@@ -20,7 +20,7 @@ export async function MyPageTemplate() {
     <>
       {/* 모바일 콘텐츠 - lg 미만 */}
       <div className="block lg:hidden">
-        <MyPageMobileContent 
+        <MyPageMobileContent
           currentUser={currentUser as UserDetail}
           isAdmin={isAdmin}
           countryCode={countryCode}
@@ -29,7 +29,7 @@ export async function MyPageTemplate() {
       {/* 데스크탑 콘텐츠 - lg 이상 */}
       <div className="hidden lg:block">
         <MypageLayout>
-          <MyPageDesktopContent 
+          <MyPageDesktopContent
             currentUser={currentUser as UserDetail}
             isAdmin={isAdmin}
             countryCode={countryCode}

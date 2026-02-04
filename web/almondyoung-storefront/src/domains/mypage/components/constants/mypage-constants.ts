@@ -14,6 +14,8 @@ export const MENU_ITEMS: MenuItem[] = [
   { label: "아몬드영 멤버십", icon: "💎", path: "/mypage/membership" },
   { label: "결제수단", icon: "💳", path: "/mypage/payment" },
   { label: "적립금", icon: "💰", path: "/mypage/point" },
+  { label: "회원정보 수정", icon: "👤", path: "/mypage/account/profile" },
+  { label: "비밀번호 변경", icon: "🔒", path: "/mypage/account/password" },
   // todo: 쿠폰 임시 비활성화
   // { label: "쿠폰", icon: "🏷️", path: "/mypage/coupons" },
   { label: "다운로드", icon: "📥", path: "/mypage/download" },
@@ -62,6 +64,15 @@ export const SIDEBAR_MENU_ITEMS = [
     label: "맞춤설정",
     hasSubMenu: false,
     path: "/mypage/setting",
+  },
+  {
+    id: "account",
+    label: "계정 설정",
+    hasSubMenu: true,
+    subItems: [
+      { id: "account-profile", label: "회원정보 수정", path: "/mypage/account/profile" },
+      { id: "account-password", label: "비밀번호 변경", path: "/mypage/account/password" },
+    ],
   },
   {
     id: "return",
