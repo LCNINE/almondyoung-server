@@ -275,24 +275,29 @@ export class UsersService {
           .where(eq(schema.users.id, userId));
       }
 
-      await client
-        .insert(schema.profiles)
-        .values({
-          userId,
-          birthDate: birthDate ? new Date(birthDate) : undefined,
-          phoneNumber,
-          profileImageUrl,
-          address: address ? JSON.stringify(address) : undefined,
-        })
-        .onConflictDoUpdate({
-          target: schema.profiles.userId,
-          set: {
-            ...(phoneNumber && { phoneNumber }),
-            ...(profileImageUrl && { profileImageUrl }),
-            ...(birthDate && { birthDate: new Date(birthDate) }),
-            ...(address && { address: JSON.stringify(address) }),
-          },
-        });
+      const profileData = {
+        userId,
+        ...(phoneNumber && { phoneNumber }),
+        ...(profileImageUrl && { profileImageUrl }),
+        ...(birthDate && { birthDate: new Date(birthDate) }),
+        ...(address && { address: JSON.stringify(address) }),
+      };
+
+      // 업데이트할 프로필 필드가 있는 경우에만 upsert 실행
+      if (Object.keys(profileData).length > 1) {
+        await client
+          .insert(schema.profiles)
+          .values(profileData)
+          .onConflictDoUpdate({
+            target: schema.profiles.userId,
+            set: {
+              ...(phoneNumber && { phoneNumber }),
+              ...(profileImageUrl && { profileImageUrl }),
+              ...(birthDate && { birthDate: new Date(birthDate) }),
+              ...(address && { address: JSON.stringify(address) }),
+            },
+          });
+      }
 
 
       // 트랜잭션 컨텍스트(tx)가 주입된 경우, 커밋 이후 상위 레벨에서 이벤트를 발행하는 코드 작성.
@@ -309,6 +314,7 @@ export class UsersService {
 
       return;
     } catch (error) {
+      
       throw new InternalServerErrorException(
         '사용자 정보 업데이트 중 오류가 발생했습니다.',
       );
