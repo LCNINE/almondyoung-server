@@ -413,17 +413,11 @@ export async function getPointHistory(limit?: number) {
  * 포인트 잔액 조회
  */
 export async function getPointBalance(): Promise<PointBalanceDto> {
-  const result = await api<PointBalanceDto>(
-    "wallet",
-    "/payments/points/balance",
-    {
-      method: "GET",
-      cache: "no-store",
-      withAuth: true,
-    }
-  )
-
-  return result
+  return await api<PointBalanceDto>("wallet", "/payments/points/balance", {
+    method: "GET",
+    cache: "no-store",
+    withAuth: true,
+  })
 }
 
 /*───────────────────────────

@@ -51,7 +51,7 @@ export function MobileHeader({ userName }: MobileHeaderProps) {
             </Link>
           )}
         </div>
-        <Link href="/kr/mypage/setting">
+        <Link href="/kr/mypage/account/profile">
           <button aria-label="설정">
             <Settings className="h-6 w-6" />
           </button>
