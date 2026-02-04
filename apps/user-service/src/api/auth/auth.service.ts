@@ -38,6 +38,7 @@ import { UsersService } from '../users/users.service';
 import { SignInDto } from './dto/sign-in.dto';
 import { LocalSignUpDto } from './dto/sign-up.dto';
 import { getCookieOptions, getDomain, logCookieDebugInfo } from './utils/cookies';
+import { generateSocialNickname } from './utils/generate-social-nickname';
 
 @Injectable()
 export class AuthService {
@@ -220,9 +221,6 @@ export class AuthService {
         url.searchParams.set('userId', verificationToken.user.id);
       }
 
-
-
-
       await this.eventPublisher.publishEvent({
         eventType: 'UserEmailVerified',
         aggregateId: verificationToken.user.id,
@@ -370,12 +368,10 @@ export class AuthService {
 
     if (tx) {
       const result = await processSignIn(tx);
-
       return reply.status(302).redirect(this.getSocialRedirectUrl(provider, result.user.id));
     } else {
       return await this.dbService.db.transaction(async (transaction) => {
         const result = await processSignIn(transaction);
-
         return reply.status(302).redirect(this.getSocialRedirectUrl(provider, result.user.id));
       });
     }
@@ -448,13 +444,15 @@ export class AuthService {
       throw new Error('This email already exists');
     }
 
+    const nickname = generateSocialNickname();
+
     // 새 사용자 생성
     const [newUser] = await tx
       .insert(userServiceSchema.users)
       .values({
         loginId: `${provider}_${socialUser.providerId}`,
         username: socialUser.name,
-        nickname: socialUser.name,
+        nickname,
         email: socialUser.email,
         password: null,
         isEmailVerified: true,
