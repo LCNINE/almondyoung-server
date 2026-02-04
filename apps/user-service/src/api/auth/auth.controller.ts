@@ -88,8 +88,8 @@ export class AuthController {
   @Post('change-password')
   @UseGuards(AuthGuard('jwt'))
   @RequireScopes(['user:modify', 'master', 'admin:access'])
-  async changePassword(@Body(ValidationPipe) { password }: ChangePasswordDto, @CurrentUser() user: JwtPayload) {
-    return this.authService.changePassword(password, user.id);
+  async changePassword(@Body(ValidationPipe) dto: ChangePasswordDto, @CurrentUser() user: JwtPayload) {
+    return this.authService.changePassword(dto.currentPassword, dto.newPassword, user.id);
   }
 
   @ApiOperation({ summary: '아이디 찾기' })
@@ -168,15 +168,6 @@ export class AuthController {
   @RequireScopes(['user:delete'])
   async softDeleteUser(@CurrentUser() user: JwtPayload) {
     return this.authService.softDeleteUser(user.id);
-  }
-
-  @ApiOperation({ summary: '비밀번호 확인' })
-  @ApiResponse({ status: 200, description: '비밀번호 확인 성공' })
-  @Post('check-password')
-  @UseGuards(AuthGuard('jwt'))
-  @RequireScopes(['user:modify', 'master', 'admin:access'])
-  async checkPassword(@Body(ValidationPipe) { password }: { password: string }, @CurrentUser() user: JwtPayload) {
-    return this.authService.checkPassword(password, user.id);
   }
 
   @ApiOperation({ summary: 'PIN 재설정을 위한 본인인증 토큰 발급' })
