@@ -42,5 +42,8 @@ export const transformFormDataToAddress = (data: ShippingAddressFormData) => {
     address_2: data.address2 ?? "",
     postal_code: data.postalCode,
     country_code: "kr" as const,
+    metadata: {
+      shipping_address_name: data.addressName || "",
+    },
   }
 }

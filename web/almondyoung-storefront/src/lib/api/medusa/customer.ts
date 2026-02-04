@@ -11,6 +11,7 @@ import {
   getCacheTag,
   getCartId,
 } from "../../data/cookies"
+import { transformFormDataToAddress } from "@/components/address/utils"
 
 export const retrieveCustomer =
   async (): Promise<HttpTypes.StoreCustomer | null> => {
@@ -147,10 +148,20 @@ export const createCustomerShippingAddress = async (address: {
     ...(await getAuthHeaders()),
   }
 
+  const transformedAddress = transformFormDataToAddress({
+    name: `${address.first_name} ${address.last_name}`,
+    phone: address.phone ?? "",
+    postalCode: address.postal_code,
+    address1: address.address_1,
+    addressName: address.address_name,
+    address2: address.address_2,
+    saveAsDefault: address.is_default_shipping ?? false,
+  })
+
   return await sdk.store.customer
     .createAddress(
       {
-        ...address,
+        ...transformedAddress,
         is_default_shipping: address.is_default_shipping ?? true,
       },
       {},

@@ -2,7 +2,7 @@
 
 import { HttpTypes } from "@medusajs/types"
 import { useCallback, useMemo, useState } from "react"
-import { ShippingAddressModal } from "./address-form-modal"
+import { ShippingAddressModal } from "../../../../../components/address"
 import { ShippingAddressSelectorModal } from "./address-selector-modal"
 import {
   AddressDisplay,
