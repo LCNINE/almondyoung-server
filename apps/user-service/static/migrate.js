@@ -193,15 +193,21 @@
 
       api.getEncryptedMemberId(clientId, (err, res) => {
         if (err) {
-          log({ action: 'getEncryptedMemberId error', err });
           const status = err.status || err.statusCode || err.code;
-          if (status === 403 || status === '403') {
+          const message = err && (err.message || String(err));
+          log({ action: 'getEncryptedMemberId error', status, message, err });
+          if (
+            status === 403 ||
+            status === '403' ||
+            message === '403' ||
+            String(err).includes('403')
+          ) {
             log('getEncryptedMemberId 403, redirect to login');
             window.location.href =
               'https://almondyoung.com/member/login.html?returnUrl=/migrator/confirm.html';
             return;
           }
-          reject(new Error(err.message || '회원 정보 확인에 실패했습니다.'));
+          reject(new Error(message || '회원 정보 확인에 실패했습니다.'));
           return;
         }
 
