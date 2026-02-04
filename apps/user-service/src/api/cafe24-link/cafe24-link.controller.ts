@@ -25,7 +25,7 @@ import {
 @ApiTags('Cafe24 Link')
 @Controller('cafe24')
 export class Cafe24LinkController {
-  constructor(private readonly cafe24LinkService: Cafe24LinkService) {}
+  constructor(private readonly cafe24LinkService: Cafe24LinkService) { }
 
   @Post('link-token')
   @Public()
@@ -82,19 +82,8 @@ export class Cafe24LinkController {
   @ApiResponse({ status: 400, description: '잘못된 요청' })
   async getMemberInfo(
     @Body()
-    body: Cafe24MemberInfoRequestDto & {
-      encrypted_id_token?: string;
-      mall_id?: string;
-    },
+    body: Cafe24MemberInfoRequestDto,
   ): Promise<Cafe24MemberInfoResponseDto> {
-    const encryptedIdToken =
-      body.encryptedIdToken ?? body.encrypted_id_token;
-    const mallId = body.mallId ?? body.mall_id;
-
-    if (!encryptedIdToken) {
-      throw new BadRequestException('암호화 id 토큰이 필요합니다.');
-    }
-
-    return this.cafe24LinkService.fetchMemberInfo(encryptedIdToken, mallId);
+    return this.cafe24LinkService.fetchMemberInfo(body.encryptedIdToken);
   }
 }

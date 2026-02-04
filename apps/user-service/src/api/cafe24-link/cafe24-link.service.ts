@@ -82,7 +82,6 @@ export class Cafe24LinkService {
 
   async fetchMemberInfo(
     encryptedIdToken: string,
-    mallId?: string,
     tx?: DbTransaction,
   ) {
     const serviceKey = this.configService.get<string>('CAFE24_SERVICE_KEY');
@@ -90,11 +89,8 @@ export class Cafe24LinkService {
       throw new Error('CAFE24_SERVICE_KEY 환경변수가 필요합니다.');
     }
 
-    const resolvedMallId =
-      mallId ?? this.configService.get<string>('CAFE24_MALL_ID');
-    if (!resolvedMallId) {
-      throw new BadRequestException('mallId가 필요합니다.');
-    }
+    const resolvedMallId = this.configService.get<string>('CAFE24_MALL_ID') ?? 'lcnine';
+
 
     let payload: Record<string, unknown>;
     try {
