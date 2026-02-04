@@ -1,7 +1,7 @@
 "use client"
 
-import { CustomButton } from "@/components/shared/custom-buttons"
 import { CustomCheckbox } from "@/components/shared/checkbox"
+import { CustomButton } from "@/components/shared/custom-buttons"
 import { CustomInput } from "@/components/shared/inputs/custom-input"
 import { Spinner } from "@/components/shared/spinner"
 import {
@@ -12,23 +12,46 @@ import {
   FormMessage,
 } from "@/components/ui/form"
 import { Label } from "@/components/ui/label"
+import { getBackendBaseUrl } from "@/lib/config/backend"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { login } from "@lib/api/users/login"
+import { useAuthStorage } from "domains/auth/hooks"
+import { signinSchema, SigninSchema } from "domains/auth/schemas/signin-schema"
 import { useParams, useSearchParams } from "next/navigation"
 import { useActionState, useEffect } from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
-import { KakaoLoginBtn } from "./kakao-login-btn"
-import { useAuthStorage } from "domains/auth/hooks"
-import { signinSchema, SigninSchema } from "domains/auth/schemas/signin-schema"
+import { getSocialErrorMessage } from "../../utils/set-form-error"
+import { SocialLoginBtn } from "./social-login-btn"
 
 export function LoginForm() {
   const searchParams = useSearchParams()
   const redirectTo = searchParams.get("redirect_to") || "/"
+  const errorMessage = searchParams.get("errorMessage")
   const { countryCode } = useParams() as { countryCode: string }
 
   const { saveCredentials, loadCredentials } = useAuthStorage()
   const [state, formAction, isPending] = useActionState(login, null)
+
+  const form = useForm<SigninSchema>({
+    resolver: zodResolver(signinSchema),
+    mode: "onChange",
+    defaultValues: {
+      loginId: loadCredentials().loginId || "",
+      password: "",
+      rememberMe: loadCredentials().rememberMe || false,
+      loginIdRemember: loadCredentials().loginIdRemember || false,
+    },
+  })
+
+  // 소셜 로그인 에러 처리
+  useEffect(() => {
+    if (errorMessage) {
+      form.setError("root", {
+        message: getSocialErrorMessage(errorMessage),
+      })
+    }
+  }, [errorMessage, form])
 
   useEffect(() => {
     // 로그인 성공 시 redirect가 throw되므로 state는 에러일 때만 업데이트됨
@@ -65,17 +88,6 @@ export function LoginForm() {
     }
   }, [state])
 
-  const form = useForm<SigninSchema>({
-    resolver: zodResolver(signinSchema),
-    mode: "onChange",
-    defaultValues: {
-      loginId: loadCredentials().loginId || "",
-      password: "",
-      rememberMe: loadCredentials().rememberMe || false,
-      loginIdRemember: loadCredentials().loginIdRemember || false,
-    },
-  })
-
   const loginId = form.watch("loginId")
   const loginIdRemember = form.watch("loginIdRemember")
   const rememberMe = form.watch("rememberMe")
@@ -90,6 +102,12 @@ export function LoginForm() {
   return (
     <Form {...form}>
       <form action={handleSubmit} className="flex flex-col gap-4">
+        {form.formState.errors.root && (
+          <p className="text-center text-sm text-red-500">
+            {form.formState.errors.root.message}
+          </p>
+        )}
+
         <FormField
           control={form.control}
           name="loginId"
@@ -187,12 +205,41 @@ export function LoginForm() {
           <CustomButton type="submit" fullWidth size="lg" disabled={isPending}>
             {isPending ? <Spinner size="sm" color="white" /> : "로그인"}
           </CustomButton>
-          {/*
-            TODO: 카카오 로그인 일시 비활성화
-            <div className="relative w-full">
-              <KakaoLoginBtn redirectTo={redirectTo} />
-            </div>
-          */}
+
+          {/* TODO: 아몬드영 도메인 제대로 연결되면 다시 활성화할것, 기능테스트는 다 했음 */}
+          {/* <div className="relative w-full">
+            <SocialLoginBtn
+              label="kakao"
+              handleLogin={() => {
+                const baseUrl = getBackendBaseUrl("users")
+
+                if (!baseUrl) {
+                  console.error("User service base URL is not configured")
+                  return
+                }
+
+                window.location.href = `${baseUrl}/auth/kakao/signin`
+              }}
+              src={"/images/kakao_login-large.png"}
+            />
+          </div>
+
+          <div className="relative w-full">
+            <SocialLoginBtn
+              label="naver"
+              handleLogin={() => {
+                const baseUrl = getBackendBaseUrl("users")
+
+                if (!baseUrl) {
+                  console.error("User service base URL is not configured")
+                  return
+                }
+
+                window.location.href = `${baseUrl}/auth/naver/signin`
+              }}
+              src={"/images/NAVER_login_Light_KR_green_center_H48.png"}
+            />
+          </div> */}
         </div>
       </form>
     </Form>
