@@ -11,7 +11,6 @@ describe('SubscriptionService - Layer Refactoring', () => {
   let service: SubscriptionService;
 
   const mockEntitlementService = {
-    checkAndUpdateSubscription: jest.fn(),
     getUserEntitlement: jest.fn(),
   };
 
@@ -83,7 +82,6 @@ describe('SubscriptionService - Layer Refactoring', () => {
       const planId = 'plan_001';
       const email = 'test@example.com';
 
-      mockEntitlementService.checkAndUpdateSubscription.mockResolvedValue(true);
       mockEntitlementService.getUserEntitlement.mockResolvedValue(null);
       mockPlanService.getPlanDetails.mockResolvedValue({
         plan: { id: planId, price: 10000, durationDays: 30 },
@@ -118,7 +116,6 @@ describe('SubscriptionService - Layer Refactoring', () => {
       const planId = 'plan_001';
       const email = 'test@example.com';
 
-      mockEntitlementService.checkAndUpdateSubscription.mockResolvedValue(true);
       mockEntitlementService.getUserEntitlement.mockResolvedValue({
         entitlement: { id: 'existing' },
       });
@@ -163,7 +160,6 @@ describe('SubscriptionService - Layer Refactoring', () => {
       // Given
       const userId = 'test_user_001';
 
-      mockEntitlementService.checkAndUpdateSubscription.mockResolvedValue(true);
       mockEntitlementService.getUserEntitlement.mockResolvedValue({
         entitlement: { id: 'entitlement_001' },
         contract: { id: 'contract_001' },
@@ -174,9 +170,6 @@ describe('SubscriptionService - Layer Refactoring', () => {
 
       // Then
       expect(result).toHaveProperty('entitlement');
-      expect(
-        mockEntitlementService.checkAndUpdateSubscription,
-      ).toHaveBeenCalledWith(userId);
     });
   });
 });
