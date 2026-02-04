@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PauseReader } from './pause/pause.reader';
 import { PauseManager } from './pause/pause.manager';
+import { MembershipEventPublisher } from './membership-event.publisher';
 
 // 하위 호환성을 위한 타입 export
 export type { PauseResult, ResumeResult } from './pause/pause.manager';
@@ -19,6 +20,7 @@ export class PauseService {
   constructor(
     private readonly pauseReader: PauseReader,
     private readonly pauseManager: PauseManager,
+    private readonly membershipEventPublisher: MembershipEventPublisher,
   ) {}
 
   /**
@@ -28,6 +30,7 @@ export class PauseService {
    */
   async pauseSubscription(
     userId: string,
+    email: string,
     startDate: Date,
     endDate: Date,
     reason?: string,
@@ -38,13 +41,23 @@ export class PauseService {
       throw new Error('Active subscription not found');
     }
 
-    return this.pauseManager.startPause(
+    const result = await this.pauseManager.startPause(
       userId,
       entitlement,
       startDate,
       endDate,
       reason,
     );
+
+    await this.membershipEventPublisher.publishStatusChanged({
+      userId,
+      email,
+      status: 'PAUSED',
+      occurredAt: new Date().toISOString(),
+      reasonText: reason,
+    });
+
+    return result;
   }
 
   /**
@@ -52,13 +65,22 @@ export class PauseService {
    *
    * ✅ 흐름만 표현: "권한 조회 → 일시정지 재개"
    */
-  async resumeSubscription(userId: string) {
+  async resumeSubscription(userId: string, email: string) {
     const entitlement = await this.pauseReader.findPausedEntitlement(userId);
     if (!entitlement || !entitlement.pausedAt) {
       throw new Error('No paused subscription found');
     }
 
-    return this.pauseManager.resumePause(userId, entitlement);
+    const result = await this.pauseManager.resumePause(userId, entitlement);
+
+    await this.membershipEventPublisher.publishStatusChanged({
+      userId,
+      email,
+      status: 'RESUMED',
+      occurredAt: new Date().toISOString(),
+    });
+
+    return result;
   }
 
   /**
