@@ -7,6 +7,7 @@ import { SubscriptionContractReader } from '../subscription/subscription-contrac
 import { SubscriptionCancellationManager } from '../subscription/subscription-cancellation.manager';
 import { MembershipPolicyService } from '../membership-policy.service';
 import { MembershipEventPublisher } from '../membership-event.publisher';
+import { CancellationReasonReader } from '../subscription/cancellation-reason.reader';
 
 describe('SubscriptionCancellationService - Unified Cancellation', () => {
   let service: SubscriptionCancellationService;
@@ -57,6 +58,10 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
     publishStatusChanged: jest.fn(),
   };
 
+  const mockCancellationReasonReader = {
+    findActiveReasons: jest.fn(),
+  };
+
   beforeEach(async () => {
     // 정책 기본값 설정
     mockPolicyService.getBooleanPolicy.mockResolvedValue(true);
@@ -93,6 +98,10 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
         {
           provide: MembershipEventPublisher,
           useValue: mockMembershipEventPublisher,
+        },
+        {
+          provide: CancellationReasonReader,
+          useValue: mockCancellationReasonReader,
         },
       ],
     }).compile();
