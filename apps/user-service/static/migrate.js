@@ -135,8 +135,7 @@
       log({ encryptedMemberId: encrypted.memberId, guestId: encrypted.guestId });
       if (!encrypted.memberId) {
         log('guest detected, redirect to login');
-        window.location.href =
-          'https://almondyoung.com/member/login.html?returnUrl=/migrator/confirm.html';
+        window.location.href = buildLoginRedirectUrl();
         return;
       }
 
@@ -203,8 +202,7 @@
             String(err).includes('403')
           ) {
             log('getEncryptedMemberId 403, redirect to login');
-            window.location.href =
-              'https://almondyoung.com/member/login.html?returnUrl=/migrator/confirm.html';
+            window.location.href = buildLoginRedirectUrl();
             return;
           }
           reject(new Error(message || '회원 정보 확인에 실패했습니다.'));
@@ -296,5 +294,13 @@
 
     document.body.appendChild(form);
     form.submit();
+  }
+
+  function buildLoginRedirectUrl() {
+    const path = window.location.pathname || '/';
+    const query = window.location.search || '';
+    const hash = window.location.hash || '';
+    const returnUrl = `${path}${query}${hash}`;
+    return `https://almondyoung.com/member/login.html?returnUrl=${encodeURIComponent(returnUrl)}`;
   }
 })();
