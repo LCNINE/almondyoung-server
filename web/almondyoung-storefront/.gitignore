@@ -61,3 +61,5 @@ package-lock.json
 # MCP config (contains API keys)
 .mcp.json
 .env*.local
+
+.claude

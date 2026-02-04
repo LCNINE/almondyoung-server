@@ -109,13 +109,13 @@ export function UserProfileSection({
           <nav aria-label="프로필 액션" className="ml-0 md:ml-1">
             <ul className="flex items-center gap-2">
               <li>
-                <Link href="/kr/mypage/setting">
+                <Link href="/kr/mypage/account/profile">
                   <CustomButton
                     className="text-gray-90 border-gray-90 hover:border-gray-90 whitespace-nowrap hover:bg-gray-100"
                     variant="outline"
                     size="sm"
                   >
-                    설정
+                    프로필 수정
                   </CustomButton>
                 </Link>
               </li>

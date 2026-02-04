@@ -81,8 +81,7 @@ export function ShippingAddressModal({
     if (!open) return
 
     form.reset({
-      addressName:
-        (defaultValues?.metadata.shipping_address_name as string) ?? "",
+      addressName: defaultValues?.addressName ?? "",
       name: defaultValues?.name ?? "",
       phone: defaultValues?.phone ? formatPhoneNumber(defaultValues.phone) : "",
       postalCode: defaultValues?.postalCode ?? "",
@@ -95,7 +94,6 @@ export function ShippingAddressModal({
   // 배송지 수정
   const handleUpdate = useCallback(
     async (data: ShippingAddressFormData) => {
-      console.log("data:", data)
       if (!addressId) return false
 
       const addressData = transformFormDataToAddress(data)
@@ -117,7 +115,6 @@ export function ShippingAddressModal({
 
   const handleCreate = useCallback(async (data: ShippingAddressFormData) => {
     const addressData = transformFormDataToAddress(data)
-
     const result = await createCustomerShippingAddress({
       ...addressData,
       is_default_shipping: data.saveAsDefault ?? false,

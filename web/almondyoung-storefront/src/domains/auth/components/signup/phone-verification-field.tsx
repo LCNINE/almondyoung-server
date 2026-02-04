@@ -224,7 +224,7 @@ export function PhoneVerificationField({ form }: PhoneVerificationFieldProps) {
         type="button"
         size="sm"
         variant="outline"
-        className="w-full cursor-pointer"
+        className="hover:bg-yellow-30 hover:text-background w-full cursor-pointer"
         disabled={isCodeSendPending}
         isLoading={isCodeSendPending}
         onClick={handleSendCode}
