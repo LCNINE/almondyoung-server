@@ -1,7 +1,7 @@
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { Separator } from "@/components/ui/separator"
-import { LoginForm } from "../components/login"
 import Image from "next/image"
+import { LoginForm } from "../components/login"
 
 export default function LoginTemplate() {
   return (
