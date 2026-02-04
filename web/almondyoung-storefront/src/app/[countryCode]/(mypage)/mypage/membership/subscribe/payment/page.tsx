@@ -4,8 +4,7 @@ import type { PlanWithTier } from "@lib/types/membership"
 import { HttpApiError } from "@lib/api/api-error"
 import { WithHeaderLayout } from "@components/layout/with-header-layout"
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
-import { getPlansServer } from "@lib/api/membership"
-import { cookies } from "next/headers"
+import { getCurrentSubscription, getPlans } from "@lib/api/membership"
 
 const mockBenefits = [
   {
@@ -27,15 +26,8 @@ const mockBenefits = [
   },
 ]
 
-async function getPlans(): Promise<PlanWithTier[]> {
-  // 서버 사이드에서는 쿠키를 수동으로 전달
-  const cookieStore = await cookies()
-  const cookieString = cookieStore
-    .getAll()
-    .map((cookie) => `${cookie.name}=${cookie.value}`)
-    .join("; ")
-
-  return getPlansServer(cookieString)
+async function getPlansData(): Promise<PlanWithTier[]> {
+  return getPlans()
 }
 
 async function getPaymentProfiles() {
@@ -57,15 +49,48 @@ async function getPaymentProfiles() {
 }
 
 export default async function MembershipFormPage() {
-  const plans = await getPlans()
-  const paymentProfiles = await getPaymentProfiles()
+  let plans: PlanWithTier[] = []
+  let plansError = false
+
+  const [plansResult, paymentProfiles, currentSubscription] =
+    await Promise.all([
+      getPlansData().catch((error) => {
+        plansError = true
+        console.error("❌ Plans API error:", error)
+        return []
+      }),
+      getPaymentProfiles(),
+      getCurrentSubscription().catch(() => null),
+    ])
+
+  plans = plansResult
 
   // 월간/연간 플랜 추출 (durationDays로 판별)
   const monthlyPlan = plans.find((p) => p.plan.durationDays === 30)
   const yearlyPlan = plans.find((p) => p.plan.durationDays === 365)
 
-  if (!monthlyPlan || !yearlyPlan) {
-    throw new Error("필요한 플랜을 찾을 수 없습니다")
+  if (plansError || !monthlyPlan || !yearlyPlan) {
+    return (
+      <WithHeaderLayout
+        config={{
+          showDesktopHeader: true,
+          showMobileHeader: false,
+          showMobileSubBackHeader: true,
+          mobileSubBackHeaderTitle: "멤버십 구독",
+        }}
+      >
+        <MypageLayout>
+          <section className="rounded-lg border border-gray-200 bg-white p-6 text-center">
+            <h2 className="text-lg font-semibold text-gray-900">
+              멤버십 플랜 정보를 불러오지 못했습니다.
+            </h2>
+            <p className="mt-2 text-sm text-gray-500">
+              잠시 후 다시 시도해주세요.
+            </p>
+          </section>
+        </MypageLayout>
+      </WithHeaderLayout>
+    )
   }
 
   // HMS 카드 프로필 찾기
@@ -99,7 +124,13 @@ export default async function MembershipFormPage() {
                 }
               : null
           }
-          existingSubType={null}
+          existingSubType={
+            currentSubscription?.plan?.durationDays === 30
+              ? "monthly"
+              : currentSubscription?.plan?.durationDays === 365
+                ? "yearly"
+                : null
+          }
           availableBenefits={mockBenefits}
         />
       </MypageLayout>

@@ -26,10 +26,11 @@ import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { HttpApiError } from "@lib/api/api-error"
+import { createSubscription } from "@lib/api/membership/client"
 import { cn } from "@lib/utils"
 import { useUser } from "@/contexts/user-context"
 import { Calendar, CreditCard, Gift, TriangleAlert } from "lucide-react"
-import { useRouter } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import React, { useState } from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
@@ -159,6 +160,9 @@ export function MembershipForm({
   availableBenefits,
 }: MembershipFormProps) {
   const router = useRouter()
+  const params = useParams()
+  const countryCode =
+    typeof params.countryCode === "string" ? params.countryCode : "kr"
   const { user } = useUser()
 
   const trialBenefits: MembershipTrialBenefit[] = []
@@ -225,21 +229,16 @@ export function MembershipForm({
         router.refresh()
       }
 
-      // // 2단계: 멤버십 구독 생성
-      // const selectedPlanId =
-      //   data.subscriptionType === "monthly"
-      //     ? monthlyPlan.plan.id
-      //     : yearlyPlan.plan.id
+      // 2단계: 멤버십 구독 생성
+      const selectedPlanId =
+        data.subscriptionType === "monthly"
+          ? monthlyPlan.plan.id
+          : yearlyPlan.plan.id
 
-      // await clientApi("/api/membership/subscriptions", {
-      //   method: "POST",
-      //   body: JSON.stringify({
-      //     planId: selectedPlanId,
-      //   }),
-      // })
+      await createSubscription(selectedPlanId)
 
       toast.success("멤버십이 등록되었습니다!")
-      router.push("/mypage/membership")
+      router.push(`/${countryCode}/mypage/membership/subscribe/success`)
     } catch (error) {
       if (error instanceof HttpApiError) {
         toast.error(error.message)
