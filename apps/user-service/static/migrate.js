@@ -28,8 +28,6 @@
   const apiBase = 'https://user.almondyoung-next.com';
   const memberInfoPath = '/cafe24/member-info';
   const linkTokenPath = '/cafe24/link-token';
-  const mallId =
-    params.get('mall_id') || rootDataset.mallId || config.mallId || '';
 
   const memberInfoUrl = resolveApiUrl(apiBase, memberInfoPath);
   const linkTokenUrl = resolveApiUrl(apiBase, linkTokenPath);
@@ -38,7 +36,6 @@
     apiBase,
     memberInfoUrl,
     linkTokenUrl,
-    mallId,
   });
 
   let encryptedIdToken = '';
@@ -74,14 +71,12 @@
       log('issue link token');
       const issued = await issueLinkToken(linkTokenUrl, {
         encryptedIdToken,
-        mallId,
       });
 
       log('redirect to storefront');
       postRedirect(redirectUrl, {
         cafe24_link_token: issued.cafe24LinkToken,
         expires_at: issued.expiresAt,
-        mall_id: mallId || undefined,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -135,8 +130,7 @@
       log({ encryptedMemberId: encrypted.memberId, guestId: encrypted.guestId });
       if (!encrypted.memberId) {
         log('guest detected, redirect to login');
-        window.location.href =
-          'https://almondyoung.com/member/login.html?returnUrl=/migrator/confirm.html';
+        window.location.href = buildLoginRedirectUrl();
         return;
       }
 
@@ -145,7 +139,6 @@
       log('fetch member info');
       const memberInfo = await fetchMemberInfo(memberInfoUrl, {
         encryptedIdToken,
-        mallId: encrypted.mallId || mallId,
       });
 
       log({ memberInfo });
@@ -178,7 +171,6 @@
       }
 
       const apiVersion = configValue.apiVersion || '2025-12-01';
-      const mallId = configValue.mallId || params.get('mall_id');
 
       log({ action: 'init cafe24 api', apiVersion });
       const api = window.CAFE24API.init({
@@ -193,8 +185,20 @@
 
       api.getEncryptedMemberId(clientId, (err, res) => {
         if (err) {
-          log({ action: 'getEncryptedMemberId error', err });
-          reject(new Error(err.message || '회원 정보 확인에 실패했습니다.'));
+          const status = err.status || err.statusCode || err.code;
+          const message = err && (err.message || String(err));
+          log({ action: 'getEncryptedMemberId error', status, message, err });
+          if (
+            status === 403 ||
+            status === '403' ||
+            message === '403' ||
+            String(err).includes('403')
+          ) {
+            log('getEncryptedMemberId 403, redirect to login');
+            window.location.href = buildLoginRedirectUrl();
+            return;
+          }
+          reject(new Error(message || '회원 정보 확인에 실패했습니다.'));
           return;
         }
 
@@ -202,7 +206,6 @@
         resolve({
           memberId: res.member_id,
           guestId: res.guest_id,
-          mallId,
         });
       });
     });
@@ -283,5 +286,13 @@
 
     document.body.appendChild(form);
     form.submit();
+  }
+
+  function buildLoginRedirectUrl() {
+    const path = window.location.pathname || '/';
+    const query = window.location.search || '';
+    const hash = window.location.hash || '';
+    const returnUrl = `${path}${query}${hash}`;
+    return `https://almondyoung.com/member/login.html?returnUrl=${encodeURIComponent(returnUrl)}`;
   }
 })();
