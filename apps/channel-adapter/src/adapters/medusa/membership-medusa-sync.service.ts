@@ -22,12 +22,12 @@ export class MembershipMedusaSyncService {
 
     if (!membershipGroupId) {
       this.logger.warn('MEDUSA_MEMBERSHIP_GROUP_ID is not set. Skipping sync.');
-      return { success: false, masterId: userId, action: 'skipped' };
+      return { success: false, data: { userId, action: 'skipped' } };
     }
 
     if (!email) {
       this.logger.warn(`Missing email for membership sync: ${userId}`);
-      return { success: false, masterId: userId, action: 'skipped' };
+      return { success: false, data: { userId, action: 'skipped' } };
     }
 
     try {
@@ -36,7 +36,7 @@ export class MembershipMedusaSyncService {
         this.logger.warn(
           `Medusa customer not found for email=${email} (userId=${userId})`,
         );
-        return { success: false, masterId: userId, action: 'skipped' };
+        return { success: false, data: { userId, action: 'skipped' } };
       }
 
       const addStatuses = new Set(['ACTIVE', 'RESUMED']);
@@ -47,7 +47,7 @@ export class MembershipMedusaSyncService {
           customer.id,
           membershipGroupId,
         );
-        return { success: true, masterId: userId, action: 'synced' };
+        return { success: true, data: { userId, action: 'synced' } };
       }
 
       if (removeStatuses.has(status)) {
@@ -55,20 +55,20 @@ export class MembershipMedusaSyncService {
           customer.id,
           membershipGroupId,
         );
-        return { success: true, masterId: userId, action: 'synced' };
+        return { success: true, data: { userId, action: 'synced' } };
       }
 
       // RECURRING_CANCELLED 등: 그룹 유지 (noop)
       this.logger.log(
         `Membership status ${status} is a no-op for group sync (userId=${userId})`,
       );
-      return { success: true, masterId: userId, action: 'skipped' };
+      return { success: true, data: { userId, action: 'skipped' } };
     } catch (error) {
       this.logger.error(
         `Failed to sync membership group for userId=${userId}`,
         error.stack,
       );
-      return { success: false, masterId: userId, action: 'failed' };
+      return { success: false, data: { userId, action: 'failed' } };
     }
   }
 }
