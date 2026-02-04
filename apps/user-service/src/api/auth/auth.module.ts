@@ -12,6 +12,7 @@ import { AuthService } from './auth.service';
 import { JwtAccessStrategy } from './strategies/jwt-access.strategy';
 import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
 import { JwtKakaoStrategy } from './strategies/jwt-social-kakao.strategy';
+import { JwtNaverStrategy } from './strategies/jwt-social-naver.strategy';
 
 @Module({})
 export class AuthModule {
@@ -21,14 +22,29 @@ export class AuthModule {
     const kakaoClientSecret = process.env.KAKAO_CLIENT_SECRET;
     const kakaoCallbackUrl = process.env.KAKAO_CALLBACK_URL;
 
+    const naverClientId = process.env.NAVER_CLIENT_ID;
+    const naverClientSecret = process.env.NAVER_CLIENT_SECRET;
+    const naverCallbackUrl = process.env.NAVER_CALLBACK_URL;
+
     const hasKakaoConfig =
       kakaoClientId && kakaoClientSecret && kakaoCallbackUrl;
+
+    const hasNaverConfig =
+      naverClientId && naverClientSecret && naverCallbackUrl;
 
     if (hasKakaoConfig) {
       console.log('✅ Kakao OAuth Strategy 활성화');
     } else {
       console.warn(
         '⚠️  Kakao OAuth 환경 변수가 설정되지 않아 Kakao 로그인이 비활성화됩니다.',
+      );
+    }
+
+    if (hasNaverConfig) {
+      console.log('✅ Naver OAuth Strategy 활성화');
+    } else {
+      console.warn(
+        '⚠️  Naver OAuth 환경 변수가 설정되지 않아 Naver 로그인이 비활성화됩니다.',
       );
     }
 
@@ -41,6 +57,11 @@ export class AuthModule {
     // Kakao 설정이 있을 때만 Strategy 추가
     if (hasKakaoConfig) {
       providers.push(JwtKakaoStrategy);
+    }
+
+    // Naver 설정이 있을 때만 Strategy 추가
+    if (hasNaverConfig) {
+      providers.push(JwtNaverStrategy);
     }
 
     return {

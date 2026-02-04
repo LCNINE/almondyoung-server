@@ -2,13 +2,11 @@ import { AuthorizationGuard, JwtPayload, RequireScopes } from '@app/roles';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import {
   Body,
-  ConflictException,
   Controller,
   Delete,
   Get,
   HttpCode,
   HttpStatus,
-  InternalServerErrorException,
   Post,
   Query,
   Req,
@@ -215,13 +213,42 @@ export class AuthController {
     try {
       return await this.authService.signInWithSocial(kakaoUser, ProviderType.KAKAO, res);
     } catch (error) {
-      if (error.message.includes('already exists')) {
-        throw new ConflictException('This email already exists');
-      }
-      if (error.message.includes('user role is not set')) {
-        throw new InternalServerErrorException('Default user role is not set');
-      }
-      throw error;
+      const frontendUrl = this.configService.get('FRONTEND_URL') ?? 'http://localhost:8000';
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+      return res.status(302).redirect(`${frontendUrl}/login?errorMessage=${encodeURIComponent(errorMessage)}`);
+    }
+  }
+
+  @ApiOperation({ summary: '네이버 로그인' })
+  @ApiResponse({ status: 200, description: '네이버 로그인 성공' })
+  @Get('naver/signin')
+  @UseGuards(AuthGuard('naver'))
+  @Public()
+  async naverAuth() {
+    // 네이버 로그인 리다이렉트
+  }
+
+  @ApiOperation({ summary: '네이버 로그인 콜백' })
+  @ApiResponse({ status: 200, description: '네이버 로그인 콜백 성공' })
+  @Get('naver/callback')
+  @UseGuards(AuthGuard('naver'))
+  @Public()
+  async naverCallback(@Req() req: any, @Res() res: FastifyReply): Promise<void | { redirectUrl: string }> {
+    const naverUser = req.user as {
+      name: string;
+      email: string;
+      providerId: string;
+    };
+
+    try {
+      return await this.authService.signInWithSocial(naverUser, ProviderType.NAVER, res);
+    } catch (error) {
+      const frontendUrl = this.configService.get('FRONTEND_URL') ?? 'http://localhost:8000';
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+      return res.status(302).redirect(`${frontendUrl}/login?errorMessage=${encodeURIComponent(errorMessage)}`);
+
     }
   }
 
@@ -230,7 +257,6 @@ export class AuthController {
   @Post('social/set-cookie')
   @Public()
   async setSocialCookie(@Body() { userId }: { userId: string }, @Res({ passthrough: true }) res: FastifyReply) {
-    console.log('social/set-cookie 경로 접근 ', userId);
     return await this.authService.setSocialCookie(userId, res);
   }
 }
