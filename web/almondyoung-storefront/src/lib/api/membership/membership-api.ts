@@ -113,6 +113,18 @@ export async function getPlans() {
 }
 
 /**
+ * 멤버십 구독 생성
+ */
+export async function createSubscriptionServer(planId: string) {
+  return await api("membership", "/subscriptions", {
+    method: "POST",
+    body: { planId },
+    withAuth: true,
+    cache: "no-store",
+  })
+}
+
+/**
  * 티어별 혜택(플랜 포함) 조회
  */
 export async function getTierBenefits(tierId: string): Promise<{
