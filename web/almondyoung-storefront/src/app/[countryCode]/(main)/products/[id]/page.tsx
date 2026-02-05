@@ -73,17 +73,19 @@ const mapMedusaProductToDetail = (
     : null
   const membershipPreviewPrice = getMembershipPreviewPrice(defaultVariant)
   const priceInfo = getProductPrice({ product })
-  const basePrice =
+  const originalPrice =
     defaultPrice?.original_price_number ||
     priceInfo?.cheapestPrice?.original_price_number
-  const actualPrice =
+  const calculatedPrice =
     defaultPrice?.calculated_price_number ||
     priceInfo?.cheapestPrice?.calculated_price_number
+  const basePrice = originalPrice ?? calculatedPrice ?? 0
+  const actualPrice = calculatedPrice ?? originalPrice ?? 0
   const rawMembershipPrice =
     membershipPreviewPrice ??
     (
-      defaultPrice?.calculated_price_number ||
-      priceInfo?.cheapestPrice?.calculated_price_number
+      calculatedPrice ??
+      originalPrice
     )
   const membershipPrice =
     rawMembershipPrice && basePrice && basePrice > rawMembershipPrice
@@ -116,7 +118,9 @@ const mapMedusaProductToDetail = (
     const variantPrice = getPricesForVariant(variant)
     const variantMembershipPreview = getMembershipPreviewPrice(variant)
     if (variant.id) {
-      const variantBasePrice = variantPrice?.original_price_number
+      const variantBasePrice =
+        variantPrice?.original_price_number ??
+        variantPrice?.calculated_price_number
       const variantRawMembership =
         variantMembershipPreview ?? variantPrice?.calculated_price_number
       const variantMembershipPrice =
