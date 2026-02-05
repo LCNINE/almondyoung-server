@@ -5,14 +5,18 @@ import { redirect } from "next/navigation"
 
 export default async function LoginPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ countryCode: string }>
+  searchParams?: Promise<{ redirect_to?: string }>
 }) {
   const { countryCode } = await params
+  const resolvedSearchParams = (await searchParams) ?? {}
+  const redirectTo = resolvedSearchParams.redirect_to
   const currentUser = await fetchMe().catch(() => null)
 
   if (currentUser) {
-    redirect(`/${countryCode}/`)
+    redirect(redirectTo || `/${countryCode}/`)
   }
 
   return (
