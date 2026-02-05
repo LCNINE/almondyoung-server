@@ -2,6 +2,7 @@
 
 import { createSubscriptionServer } from "@/lib/api/membership"
 import { authorizePayment } from "@/lib/api/wallet"
+import { HttpApiError } from "@/lib/api/api-error"
 
 interface ProcessPaymentResult {
   success: boolean
@@ -50,6 +51,12 @@ export async function processPaymentCallback(
           redirectUrl: `/${countryCode}/mypage/membership/subscribe/success`,
         }
       } catch (error: any) {
+        if (error instanceof HttpApiError && error.status === 409) {
+          return {
+            success: true,
+            redirectUrl: `/${countryCode}/mypage/membership/subscribe/success`,
+          }
+        }
         const message =
           error instanceof Error ? error.message : "멤버십 가입 처리 실패"
         return {
