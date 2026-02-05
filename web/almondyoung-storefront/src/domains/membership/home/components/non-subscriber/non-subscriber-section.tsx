@@ -22,6 +22,18 @@ interface NonSubscriberSectionProps {
 const getMonthlyPrice = (plan: PlanWithTier) =>
   Math.round(plan.plan.price / Math.max(1, plan.plan.durationDays / 30))
 
+const buildPlanBenefits = (plan?: PlanWithTier) => {
+  if (!plan) return []
+  const benefits = []
+  if (plan.plan.trialDays > 0) {
+    benefits.push({
+      id: `${plan.plan.id}-trial`,
+      title: `무료 체험 ${plan.plan.trialDays}일`,
+    })
+  }
+  return benefits
+}
+
 export default function NonSubscriberSection({ plans }: NonSubscriberSectionProps) {
   const router = useRouter()
   const monthlyPlan = plans.find((plan) => plan.plan.durationDays === 30)
@@ -48,6 +60,24 @@ export default function NonSubscriberSection({ plans }: NonSubscriberSectionProp
         <h3 className="my-4 hidden text-center text-lg font-semibold text-black md:block">
           멤버십 혜택
         </h3>
+        {monthlyPlan && (
+          <div className="mb-6">
+            <MembershipPlanCard
+              planName={monthlyPlan.tier?.name ?? "월간"}
+              price={monthlyPlan.plan.price}
+              period="1개월(월간구독)"
+              monthlyPrice={`${monthlyPlan.plan.price.toLocaleString()}원`}
+              discountRate="-"
+              benefitText={
+                monthlyPlan.plan.trialDays
+                  ? `무료 체험 ${monthlyPlan.plan.trialDays}일`
+                  : undefined
+              }
+              benefits={buildPlanBenefits(monthlyPlan)}
+              variant="basic"
+            />
+          </div>
+        )}
         <MembershipPlanCard
           planName={yearlyPlan?.tier?.name ?? "연간"}
           price={yearlyPlan?.plan.price ?? 0}
@@ -62,9 +92,14 @@ export default function NonSubscriberSection({ plans }: NonSubscriberSectionProp
               : "-"
           }
           discountRate={
-            discountRate != null ? `약 ${discountRate}% 절감` : "혜택 안내"
+            discountRate != null ? `약 ${discountRate}% 절감` : "-"
           }
-          benefitText="첫달 무료 + 사용하지 않는 기간 일시정지 가능"
+          benefitText={
+            yearlyPlan?.plan.trialDays
+              ? `무료 체험 ${yearlyPlan.plan.trialDays}일`
+              : undefined
+          }
+          benefits={buildPlanBenefits(yearlyPlan)}
           variant="annual"
         />
       </section>

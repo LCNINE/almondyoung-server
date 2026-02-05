@@ -43,6 +43,18 @@ interface SubscriberSectionProps {
   benefitHistory: CycleBenefitHistoryDto | null
 }
 
+const buildPlanBenefits = (plan?: PlanWithTier) => {
+  if (!plan) return []
+  const benefits = []
+  if (plan.plan.trialDays > 0) {
+    benefits.push({
+      id: `${plan.plan.id}-trial`,
+      title: `무료 체험 ${plan.plan.trialDays}일`,
+    })
+  }
+  return benefits
+}
+
 export default function SubscriberSection({
   membershipData,
   plans,
@@ -106,10 +118,13 @@ export default function SubscriberSection({
             ? `${yearlyMonthlyPrice.toLocaleString()}원`
             : "-"
         }
-        discountRate={
-          discountRate != null ? `약 ${discountRate}% 절감` : "혜택 안내"
+        discountRate={discountRate != null ? `약 ${discountRate}% 절감` : "-"}
+        benefitText={
+          yearlyPlan?.plan.trialDays
+            ? `무료 체험 ${yearlyPlan.plan.trialDays}일`
+            : undefined
         }
-        benefitText="첫달 무료 + 사용하지 않는 기간 일시정지 가능"
+        benefits={buildPlanBenefits(yearlyPlan)}
         variant="annual"
       />
       <MembershipHistorySection
