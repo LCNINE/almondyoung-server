@@ -3,7 +3,7 @@
 import { Settings, Crown } from "lucide-react"
 import Link from "next/link"
 import { useEffect, useState } from "react"
-import { getCurrentSubscription } from "@lib/api/membership"
+import { getCurrentSubscription } from "@lib/api/membership/client"
 
 interface MobileHeaderProps {
   userName: string
@@ -18,9 +18,9 @@ export function MobileHeader({ userName }: MobileHeaderProps) {
       try {
         const subscription = await getCurrentSubscription()
 
-        if (subscription && subscription.data.status === "ACTIVE") {
+        if (subscription && subscription.status === "ACTIVE") {
           setIsMember(true)
-          setTierName(subscription.data.plan?.tier?.name || "멤버십")
+          setTierName(subscription.plan?.tier?.name || "멤버십")
         }
       } catch (error) {
         // 멤버십이 없거나 오류 발생 시 비회원으로 처리

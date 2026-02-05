@@ -4,6 +4,7 @@ import { CustomButton } from "@/components/shared/custom-buttons"
 import CustomPhoneInput from "@/components/shared/inputs/phone-input"
 import { Spinner } from "@/components/shared/spinner"
 import { Input } from "@/components/ui/input"
+import LocalizedClientLink from "@/components/shared/localized-client-link"
 import {
   Form,
   FormControl,
@@ -319,6 +320,13 @@ export function AccountFindIdForm() {
               </p>
             </div>
           )}
+
+          <LocalizedClientLink
+            href="/login"
+            className="text-muted-foreground hover:text-foreground mt-4 block text-center text-xs underline transition-colors"
+          >
+            로그인 페이지로 이동
+          </LocalizedClientLink>
         </form>
       </Form>
     </section>

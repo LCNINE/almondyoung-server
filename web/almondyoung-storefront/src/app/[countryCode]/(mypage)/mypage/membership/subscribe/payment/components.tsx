@@ -29,7 +29,7 @@ import { HttpApiError } from "@lib/api/api-error"
 import { cn } from "@lib/utils"
 import { useUser } from "@/contexts/user-context"
 import { Calendar, CreditCard, Gift, TriangleAlert } from "lucide-react"
-import { useRouter } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import React, { useState } from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
@@ -37,7 +37,7 @@ import { z } from "zod"
 import FormattedInput from "./formatted-input"
 
 // 순수 UI용 타입 정의
-type SubscriptionType = "inactive" | "monthly" | "yearly" | null
+type SubscriptionType = "monthly" | "yearly" | null
 type FmsMember = {
   paymentCompany: string
   paymentCompanyName: string
@@ -103,7 +103,8 @@ const cardDetailsSchema = z.object({
 const subscriptionSchema = z.object({
   useNewCard: z.boolean(),
   subscriptionType: z
-    .enum(["inactive", "monthly", "yearly"])
+    .enum(["monthly", "yearly"])
+    .optional()
     .refine((val) => val === "monthly" || val === "yearly", {
       message: "구독 유형을 선택해주세요",
     }),
@@ -159,6 +160,9 @@ export function MembershipForm({
   availableBenefits,
 }: MembershipFormProps) {
   const router = useRouter()
+  const params = useParams()
+  const countryCode =
+    typeof params.countryCode === "string" ? params.countryCode : "kr"
   const { user } = useUser()
 
   const trialBenefits: MembershipTrialBenefit[] = []
@@ -185,7 +189,7 @@ export function MembershipForm({
     subscriptionType:
       existingSubType === "monthly" || existingSubType === "yearly"
         ? existingSubType
-        : ("inactive" as const),
+        : undefined,
     agreement: false,
   }
 
@@ -200,6 +204,10 @@ export function MembershipForm({
       // 사용자 인증 확인
       if (!user) {
         toast.error("로그인이 필요합니다.")
+        return
+      }
+      if (!data.subscriptionType) {
+        toast.error("구독 유형을 선택해주세요.")
         return
       }
 
@@ -225,21 +233,16 @@ export function MembershipForm({
         router.refresh()
       }
 
-      // // 2단계: 멤버십 구독 생성
-      // const selectedPlanId =
-      //   data.subscriptionType === "monthly"
-      //     ? monthlyPlan.plan.id
-      //     : yearlyPlan.plan.id
+      // 2단계: 멤버십 구독 생성
+      const selectedPlanId =
+        data.subscriptionType === "monthly"
+          ? monthlyPlan.plan.id
+          : yearlyPlan.plan.id
 
-      // await clientApi("/api/membership/subscriptions", {
-      //   method: "POST",
-      //   body: JSON.stringify({
-      //     planId: selectedPlanId,
-      //   }),
-      // })
-
-      toast.success("멤버십이 등록되었습니다!")
-      router.push("/mypage/membership")
+      toast.success("멤버십 결제 페이지로 이동합니다.")
+      router.push(
+        `/${countryCode}/checkout/membership?planId=${selectedPlanId}`
+      )
     } catch (error) {
       if (error instanceof HttpApiError) {
         toast.error(error.message)
@@ -559,6 +562,8 @@ export function MembershipForm({
                   <AgreementCheckbox
                     value={field.value}
                     onChange={field.onChange}
+                    monthlyPrice={monthlyPlan.plan.price}
+                    yearlyPrice={yearlyPlan.plan.price}
                   />
                 )}
               />
@@ -699,7 +704,6 @@ export function MembershipForm({
               disabled={
                 !form.watch("agreement") ||
                 !form.watch("subscriptionType") ||
-                form.watch("subscriptionType") === "inactive" ||
                 form.formState.isSubmitting
               }
               type="submit"
@@ -727,11 +731,15 @@ export function MembershipForm({
 interface AgreementCheckboxProps {
   value: boolean
   onChange: (checked: boolean) => void
+  monthlyPrice: number
+  yearlyPrice: number
 }
 
 const AgreementCheckbox: React.FC<AgreementCheckboxProps> = ({
   value,
   onChange,
+  monthlyPrice,
+  yearlyPrice,
 }) => {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
 
@@ -764,7 +772,10 @@ const AgreementCheckbox: React.FC<AgreementCheckboxProps> = ({
         <DialogContent>
           <DialogHeader>아몬드영 멤버십 이용약관</DialogHeader>
           <div className="h-60 overflow-y-auto border p-4">
-            <TermsAndConditions />
+            <TermsAndConditions
+              monthlyPrice={monthlyPrice}
+              yearlyPrice={yearlyPrice}
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
@@ -778,7 +789,13 @@ const AgreementCheckbox: React.FC<AgreementCheckboxProps> = ({
   )
 }
 
-function TermsAndConditions() {
+function TermsAndConditions({
+  monthlyPrice,
+  yearlyPrice,
+}: {
+  monthlyPrice: number
+  yearlyPrice: number
+}) {
   return (
     <div className="space-y-4 text-sm">
       <div>
@@ -806,7 +823,10 @@ function TermsAndConditions() {
         <h2 className="mb-2 text-lg font-bold">결제 주기 및 금액</h2>
         <ul className="list-disc space-y-1 pl-5">
           <li>결제 주기: 매월 또는 매년 구독 기간이 하루 남았을 때 1회</li>
-          <li>결제 금액: 매월 4,990원 또는 매년 49,900원</li>
+          <li>
+            결제 금액: 매월 {monthlyPrice.toLocaleString()}원 또는 매년{" "}
+            {yearlyPrice.toLocaleString()}원
+          </li>
           <li>결제 금액은 동의 없이 변경되지 않습니다.</li>
         </ul>
       </div>
