@@ -5,8 +5,8 @@ import { Metadata } from "next"
 import { Cafe24LinkSection } from "@/domains/mypage/components/account/cafe24-link-section"
 
 export const metadata: Metadata = {
-  title: "카페24 계정 연결/이관",
-  description: "카페24 계정을 연결하고 이관 정보를 확인하세요",
+  title: "기존 아몬드영 계정 연결/이관",
+  description: "기존 아몬드영 계정을 연결하고 이관 정보를 확인하세요",
 }
 
 export default function Cafe24AccountPage() {
@@ -16,12 +16,12 @@ export default function Cafe24AccountPage() {
         showDesktopHeader: true,
         showMobileHeader: false,
         showMobileSubBackHeader: true,
-        mobileSubBackHeaderTitle: "카페24 계정 연결/이관",
+        mobileSubBackHeaderTitle: "기존 아몬드영 계정 연결/이관",
       }}
     >
       <MypageLayout>
         <div className="bg-white px-3 py-4 md:min-h-screen md:px-6">
-          <PageTitle>카페24 계정 연결/이관</PageTitle>
+          <PageTitle>기존 아몬드영 계정 연결/이관</PageTitle>
           <Cafe24LinkSection />
         </div>
       </MypageLayout>
