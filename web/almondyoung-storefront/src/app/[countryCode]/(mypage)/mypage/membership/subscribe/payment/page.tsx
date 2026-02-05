@@ -6,26 +6,6 @@ import { WithHeaderLayout } from "@components/layout/with-header-layout"
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { getCurrentSubscription, getPlans } from "@lib/api/membership"
 
-const mockBenefits = [
-  {
-    id: "trial-1",
-    type: "trial" as const,
-    title: "신규 가입 무료 체험",
-    days: 7,
-    used: false,
-    isSuspended: false,
-  },
-  {
-    id: "discount-1",
-    type: "discount" as const,
-    title: "첫 구독 할인",
-    percentage: 20,
-    maxUses: 3,
-    usedPayments: [],
-    isSuspended: false,
-  },
-]
-
 async function getPlansData(): Promise<PlanWithTier[]> {
   return getPlans()
 }
@@ -131,7 +111,7 @@ export default async function MembershipFormPage() {
                 ? "yearly"
                 : null
           }
-          availableBenefits={mockBenefits}
+          availableBenefits={[]}
         />
       </MypageLayout>
     </WithHeaderLayout>
