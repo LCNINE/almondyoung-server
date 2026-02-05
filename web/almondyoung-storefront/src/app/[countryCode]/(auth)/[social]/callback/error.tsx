@@ -39,7 +39,7 @@ export default function Error() {
             홈으로 돌아가기
           </Button>
 
-          <CustomButton onClick={() => router.refresh()} variant="primary">
+          <CustomButton onClick={() => router.refresh()} variant="fill">
             새로고침
           </CustomButton>
         </div>
