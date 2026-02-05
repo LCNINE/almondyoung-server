@@ -2,7 +2,6 @@ import { PageTitle } from "@/components/shared/page-title"
 import { Spinner } from "@/components/shared/spinner"
 import { WithHeaderLayout } from "@components/layout"
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
-import ProtectedRoute from "@components/protected-route"
 import { getRecentViews } from "@lib/api/users/recent-views"
 import { getProductList } from "@lib/api/medusa/products"
 import { mapMedusaProductsToCards } from "@lib/utils/map-medusa-product-card"
@@ -12,32 +11,30 @@ import { Eye } from "lucide-react"
 
 export default async function RecentPage() {
   return (
-    <ProtectedRoute>
-      <WithHeaderLayout
-        config={{
-          showDesktopHeader: true,
-          showMobileHeader: false,
-          showMobileSubBackHeader: true,
-          mobileSubBackHeaderTitle: "최근 본 상품",
-        }}
-      >
-        <MypageLayout>
-          <Suspense
-            fallback={
-              <div className="flex h-56 items-center justify-center text-center">
-                <Spinner size="lg" color="gray" />
-              </div>
-            }
-          >
-            <div className="rounded-xl bg-white px-3 pt-4 pb-9 md:px-6">
-              <PageTitle>최근 본 상품</PageTitle>
-
-              <RecentViewsManager />
+    <WithHeaderLayout
+      config={{
+        showDesktopHeader: true,
+        showMobileHeader: false,
+        showMobileSubBackHeader: true,
+        mobileSubBackHeaderTitle: "최근 본 상품",
+      }}
+    >
+      <MypageLayout>
+        <Suspense
+          fallback={
+            <div className="flex h-56 items-center justify-center text-center">
+              <Spinner size="lg" color="gray" />
             </div>
-          </Suspense>
-        </MypageLayout>
-      </WithHeaderLayout>
-    </ProtectedRoute>
+          }
+        >
+          <div className="rounded-xl bg-white px-3 pt-4 pb-9 md:px-6">
+            <PageTitle>최근 본 상품</PageTitle>
+
+            <RecentViewsManager />
+          </div>
+        </Suspense>
+      </MypageLayout>
+    </WithHeaderLayout>
   )
 }
 
