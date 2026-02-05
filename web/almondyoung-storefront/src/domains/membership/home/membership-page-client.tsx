@@ -59,7 +59,12 @@ export default function MembershipPageClient({
           benefitHistory={benefitHistory}
         />
       ) : (
-        <NonSubscriberSection plans={plans} />
+        <NonSubscriberSection
+          plans={plans}
+          rangeSavings={rangeSavings}
+          subscriptionHistory={subscriptionHistory}
+          benefitHistory={benefitHistory}
+        />
       )}
     </div>
   )
