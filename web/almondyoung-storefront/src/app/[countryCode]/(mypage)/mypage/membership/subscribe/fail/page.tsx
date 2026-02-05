@@ -1,11 +1,24 @@
 import type { Metadata } from "next"
+import Link from "next/link"
 
 export const metadata: Metadata = {
   title: "결제 실패 - 멤버십",
 }
 
 // 멤버십 결제실패페이지
-export default function PaymentFailedScreen() {
+export default async function PaymentFailedScreen({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ countryCode: string }>
+  searchParams: Promise<{ code?: string; message?: string }>
+}) {
+  const { countryCode } = await params
+  const { code, message } = await searchParams
+  const displayMessage =
+    message && message.trim().length > 0
+      ? message
+      : "결제 처리 중 문제가 발생했습니다."
   return (
     // PARENT:
     // 화면 전체를 채우고, 자식(단일 컨테S...이너)을 수직 배치합니다.
@@ -36,20 +49,6 @@ export default function PaymentFailedScreen() {
               </h1>
             </section>
 
-            <section aria-labelledby="account-info-title">
-              <h2 id="account-info-title" className="sr-only">
-                결제 수단 정보
-              </h2>
-              <div className="flex flex-col gap-2 rounded-md bg-gray-100 p-6">
-                <p className="text-sm leading-5 font-medium text-gray-700">
-                  우리은행 계좌
-                </p>
-                <p className="text-sm leading-5 text-black">
-                  1239-*******-****23
-                </p>
-              </div>
-            </section>
-
             <section aria-labelledby="payment-failure-reason">
               <h2 id="payment-failure-reason" className="sr-only">
                 실패 사유
@@ -58,10 +57,11 @@ export default function PaymentFailedScreen() {
                 만약 이 텍스트도 중앙 정렬이 필요하면 'text-center'를 추가합니다.
               */}
               <p className="text-sm leading-relaxed text-gray-800">
-                잔액이 부족합니다. 결제수단을 확인해주세요.
-                <br />
-                또는 새로운 결제수단을 등록해주세요.
+                {displayMessage}
               </p>
+              {code && (
+                <p className="mt-2 text-xs text-gray-500">오류 코드: {code}</p>
+              )}
             </section>
           </div>
         </div>
@@ -71,9 +71,12 @@ export default function PaymentFailedScreen() {
             - 배경색이나 테두리가 더 이상 full-width로 적용되지 않습니다.
         */}
         <footer className="w-full flex-shrink-0 py-4">
-          <button className="w-full rounded-md bg-amber-500 px-4 py-3 text-center text-sm leading-5 font-semibold text-white transition-colors hover:bg-amber-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600">
-            새로운 결제수단 등록하기
-          </button>
+          <Link
+            href={`/${countryCode}/mypage/membership/subscribe/payment`}
+            className="block w-full rounded-md bg-amber-500 px-4 py-3 text-center text-sm leading-5 font-semibold text-white transition-colors hover:bg-amber-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600"
+          >
+            다시 결제하기
+          </Link>
         </footer>
       </div>
     </div>

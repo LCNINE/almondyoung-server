@@ -19,13 +19,17 @@ export default function CallbackPage() {
     const orderId = searchParams.get("orderId")
     const usePoints = searchParams.get("usePoints")
     const amount = searchParams.get("amount")
+    const mode = searchParams.get("mode")
+    const planId = searchParams.get("planId")
 
     // 실패 케이스 처리 (토스에서 실패로 리다이렉트된 경우)
     if (status === "FAIL") {
       const failCode = code || "UNKNOWN"
       const failMessage = message || "결제 실패"
       router.replace(
-        `/${countryCode}/checkout/fail?code=${failCode}&message=${encodeURIComponent(failMessage)}`
+        mode === "membership"
+          ? `/${countryCode}/mypage/membership/subscribe/fail?code=${failCode}&message=${encodeURIComponent(failMessage)}`
+          : `/${countryCode}/checkout/fail?code=${failCode}&message=${encodeURIComponent(failMessage)}`
       )
       return
     }
@@ -33,7 +37,9 @@ export default function CallbackPage() {
     // 필수 파라미터 검증
     if (!paymentKey || !orderId) {
       router.replace(
-        `/${countryCode}/checkout/fail?code=MISSING_PARAMS&message=${encodeURIComponent("필수 파라미터가 누락되었습니다.")}`
+        mode === "membership"
+          ? `/${countryCode}/mypage/membership/subscribe/fail?code=MISSING_PARAMS&message=${encodeURIComponent("필수 파라미터가 누락되었습니다.")}`
+          : `/${countryCode}/checkout/fail?code=MISSING_PARAMS&message=${encodeURIComponent("필수 파라미터가 누락되었습니다.")}`
       )
       return
     }
@@ -45,7 +51,9 @@ export default function CallbackPage() {
       paymentKey,
       orderId,
       amount!,
-      usePointsNumber
+      usePointsNumber,
+      mode,
+      planId
     ).then((result) => {
       router.replace(result.redirectUrl)
     })
