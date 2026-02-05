@@ -69,8 +69,8 @@ const ProductInfo = ({
 
   // 3. 할인율 계산 (단순 수식 - 프론트 책임)
   const discountRate =
-    basePrice > 0 && effectiveMembershipPrice > 0
-      ? Math.round(((basePrice - effectiveMembershipPrice) / basePrice) * 100)
+    isMember && basePrice > 0 && actualPrice > 0 && actualPrice < basePrice
+      ? Math.round(((basePrice - actualPrice) / basePrice) * 100)
       : undefined
   const membershipSavings =
     effectiveMembershipPrice > 0 ? basePrice - effectiveMembershipPrice : undefined
@@ -79,11 +79,12 @@ const ProductInfo = ({
   // 멤버십 회원: 멤버십 가격 표시 + 뱃지
   // 비회원/일반회원: 기본가 표시 + 멤버십 절약 힌트
   const hasMembershipPrice = effectiveMembershipPrice > 0
-  const displayPrice = isMember && hasMembershipPrice ? effectiveMembershipPrice : basePrice
-  const originalPrice = isMember && hasMembershipPrice ? basePrice : undefined
+  const displayPrice = isMember ? actualPrice : basePrice
+  const originalPrice =
+    isMember && actualPrice > 0 && actualPrice < basePrice ? basePrice : undefined
 
   // 5. 멤버십 태그 표시 여부
-  const showMembershipTag = !isMembershipOnly && isMember && hasMembershipPrice
+  const showMembershipTag = !isMembershipOnly && isMember && !!originalPrice
   const showMembershipHint = !isMember && hasMembershipPrice
 
   // 6. 장바구니 아이콘 표시 여부

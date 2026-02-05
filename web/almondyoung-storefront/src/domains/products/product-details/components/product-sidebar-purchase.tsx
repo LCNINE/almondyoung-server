@@ -21,6 +21,7 @@ import { ProductPriceDisplay } from "./product-price-display"
 import { ProductRatingDisplay } from "./product-rating-display"
 import { ProductShippingInfo } from "./product-shipping-info"
 import { usePathname, useRouter } from "next/navigation"
+import { useMembership } from "@/contexts/membership-context"
 
 type SelectedCartOption = {
   id: string
@@ -81,29 +82,41 @@ export function ProductSidebarPurchase({
   const router = useRouter()
   const pathname = usePathname()
   const [showLoginDialog, setShowLoginDialog] = useState(false)
+  const { status } = useMembership()
+  const isMember = status === "membership"
 
   const isSingleOption = !product.options || product.options.length === 0
   const isOutOfStock = product.status !== "active"
+  const resolvePrice = (base?: number, actual?: number) => {
+    const basePrice = base ?? 0
+    const actualPrice = actual ?? basePrice
+    return isMember ? actualPrice : basePrice
+  }
   const getVariantPrice = (variantId?: string) => {
     if (variantId && variantId === product.defaultVariantId) {
-      return product.membershipPrice || product.basePrice || 0
+      return resolvePrice(product.basePrice, product.actualPrice)
     }
     if (variantId && product.variantPriceMap?.[variantId]) {
       const price = product.variantPriceMap[variantId]
-      return price.membershipPrice || price.basePrice || 0
+      return resolvePrice(price.basePrice, price.actualPrice)
     }
-    return product.membershipPrice || product.basePrice || 0
+    return resolvePrice(product.basePrice, product.actualPrice)
   }
   const defaultVariantId = product.defaultVariantId
   const getPrice = () => getVariantPrice(defaultVariantId)
   const getDiscountRate = () => {
     const base = product.basePrice || 0
-    const member = product.membershipPrice || 0
-    if (base > 0 && member > 0 && member < base) {
-      return Math.round(((base - member) / base) * 100)
+    const actual = product.actualPrice ?? base
+    if (isMember && base > 0 && actual > 0 && actual < base) {
+      return Math.round(((base - actual) / base) * 100)
     }
     return 0
   }
+  const hasMembershipPrice =
+    typeof product.membershipPrice === "number" &&
+    typeof product.basePrice === "number" &&
+    product.membershipPrice > 0 &&
+    product.basePrice > product.membershipPrice
 
   const getTotalQuantity = () => {
     if (isSingleOption) return quantity
@@ -175,21 +188,19 @@ export function ProductSidebarPurchase({
             <ProductPriceDisplay
               basePrice={product.basePrice}
               membershipPrice={product.membershipPrice}
+              isMember={isMember}
               isMembershipOnly={product.isMembershipOnly || false}
               discountRate={getDiscountRate()}
               memberPrices={product.memberPrices}
               actualPrice={product.actualPrice}
               showMembershipHint={
-                typeof product.membershipPrice === "number" &&
-                typeof product.basePrice === "number" &&
+                !isMember &&
+                hasMembershipPrice &&
                 typeof product.actualPrice === "number" &&
-                product.basePrice > product.membershipPrice &&
                 Math.abs(product.actualPrice - product.membershipPrice) >= 1
               }
               membershipSavings={
-                typeof product.membershipPrice === "number" &&
-                  typeof product.basePrice === "number" &&
-                  product.basePrice > product.membershipPrice
+                hasMembershipPrice
                   ? product.basePrice - product.membershipPrice
                   : undefined
               }

@@ -110,7 +110,7 @@ const mapMedusaProductToDetail = (
   const skuIndex: Record<string, string> = {}
   const variantPriceMap: Record<
     string,
-    { basePrice?: number; membershipPrice?: number }
+    { basePrice?: number; membershipPrice?: number; actualPrice?: number }
   > = {}
   const variantThumbnailMap: Record<string, string> = {}
 
@@ -121,6 +121,9 @@ const mapMedusaProductToDetail = (
       const variantBasePrice =
         variantPrice?.original_price_number ??
         variantPrice?.calculated_price_number
+      const variantActualPrice =
+        variantPrice?.calculated_price_number ??
+        variantPrice?.original_price_number
       const variantRawMembership =
         variantMembershipPreview ?? variantPrice?.calculated_price_number
       const variantMembershipPrice =
@@ -131,6 +134,7 @@ const mapMedusaProductToDetail = (
       variantPriceMap[variant.id] = {
         basePrice: variantBasePrice,
         membershipPrice: variantMembershipPrice,
+        actualPrice: variantActualPrice,
       }
       variantThumbnailMap[variant.id] = variant?.images?.[0]?.url || thumbnail
     }
