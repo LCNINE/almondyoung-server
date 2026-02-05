@@ -39,19 +39,19 @@ export function mapStoreProductToCardProps(
     ? getMembershipPreviewPrice(defaultVariant)
     : undefined
   const priceInfo = getProductPrice({ product })
-  const basePrice =
+  const originalPrice =
     defaultPrice?.original_price_number ||
-    priceInfo?.cheapestPrice?.original_price_number ||
-    0
-  const actualPrice =
+    priceInfo?.cheapestPrice?.original_price_number
+  const calculatedPrice =
     defaultPrice?.calculated_price_number ||
-    priceInfo?.cheapestPrice?.calculated_price_number ||
-    0
+    priceInfo?.cheapestPrice?.calculated_price_number
+  const basePrice = originalPrice ?? calculatedPrice ?? 0
+  const actualPrice = calculatedPrice ?? originalPrice ?? 0
   const rawMembershipPrice =
     membershipPreviewPrice ??
     (
-      defaultPrice?.calculated_price_number ||
-      priceInfo?.cheapestPrice?.calculated_price_number ||
+      calculatedPrice ??
+      originalPrice ??
       0
     )
 
@@ -59,14 +59,8 @@ export function mapStoreProductToCardProps(
     rawMembershipPrice > 0 && basePrice > rawMembershipPrice
       ? rawMembershipPrice
       : 0
-  const originalAmount =
-    defaultPrice?.original_price_number ??
-    priceInfo?.cheapestPrice?.original_price_number ??
-    null
-  const calculatedAmount =
-    defaultPrice?.calculated_price_number ??
-    priceInfo?.cheapestPrice?.calculated_price_number ??
-    null
+  const originalAmount = originalPrice ?? null
+  const calculatedAmount = calculatedPrice ?? null
 
   const discount =
     membershipPrice > 0 && basePrice > 0
