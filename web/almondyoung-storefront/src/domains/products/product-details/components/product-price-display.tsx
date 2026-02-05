@@ -10,6 +10,7 @@ type MemberPrice = {
 type Props = {
   basePrice: number
   membershipPrice?: number
+  isMember: boolean
   isMembershipOnly?: boolean
   discountRate: number
   memberPrices?: MemberPrice[]
@@ -25,18 +26,34 @@ type Props = {
 export function ProductPriceDisplay({
   basePrice,
   membershipPrice,
+  isMember,
   isMembershipOnly,
   discountRate,
   memberPrices,
+  actualPrice,
   showMembershipHint,
   membershipSavings,
 }: Props) {
+  const hasMembershipPrice =
+    typeof membershipPrice === "number" &&
+    membershipPrice > 0 &&
+    basePrice > 0 &&
+    membershipPrice < basePrice
+  const memberDisplayPrice =
+    typeof actualPrice === "number" ? actualPrice : membershipPrice ?? basePrice
+  const displayPrice = isMember ? memberDisplayPrice : basePrice
+  const displayDiscountRate =
+    isMember && displayPrice < basePrice
+      ? Math.round(((basePrice - displayPrice) / basePrice) * 100)
+      : 0
+
   if (process.env.NODE_ENV === "development") {
     console.log("[PRICE DEBUG][ProductDetail]", {
       basePrice,
       membershipPrice,
+      isMember,
       isMembershipOnly,
-      discountRate,
+      discountRate: displayDiscountRate,
       membershipSavings,
       showMembershipHint,
     })
@@ -45,7 +62,7 @@ export function ProductPriceDisplay({
   return (
     <section className="mb-6" aria-label="상품 가격">
       {/* 멤버십 태그 */}
-      {!isMembershipOnly && discountRate > 0 && (
+      {!isMembershipOnly && displayDiscountRate > 0 && (
         <div className="inline-flex max-w-[120px] items-center">
           <MembershipTagIcon />
         </div>
@@ -68,25 +85,26 @@ export function ProductPriceDisplay({
         ) : (
           /* 일반 상품 */
           <>
-            {discountRate > 0 && (
+            {displayDiscountRate > 0 && (
               <>
                 <span className="text-gray-400 line-through">
                   {basePrice.toLocaleString()}원
                 </span>
                 <span className="text-2xl font-bold text-red-500">
-                  {discountRate}%
+                  {displayDiscountRate}%
                 </span>
               </>
             )}
             <span className="text-2xl font-bold">
-              {(membershipPrice || basePrice).toLocaleString()}원
+              {displayPrice.toLocaleString()}원
             </span>
           </>
         )}
       </output>
       {!isMembershipOnly && showMembershipHint && membershipSavings != null && (
         <p className="text-xs text-gray-500">
-          멤버십 가입 시 {membershipSavings.toLocaleString()}원 절약
+          멤버십가 {membershipPrice?.toLocaleString()}원 · 가입 시{" "}
+          {membershipSavings.toLocaleString()}원 절약
         </p>
       )}
 
