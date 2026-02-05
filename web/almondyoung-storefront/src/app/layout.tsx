@@ -44,13 +44,13 @@ async function getMembershipStatus(
 
   try {
     const subscription = await getCurrentSubscription()
-    if (subscription?.data?.status === "ACTIVE") {
+    if (subscription?.status === "ACTIVE") {
       return {
         status: "membership",
         tier: {
-          code: subscription.data.tier.code,
-          name: subscription.data.tier.name,
-          priorityLevel: subscription.data.tier.priorityLevel,
+          code: subscription.tier.code,
+          name: subscription.tier.name,
+          priorityLevel: subscription.tier.priorityLevel,
         },
       }
     }

@@ -11,7 +11,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@components/ui/sheet"
-import { getCurrentSubscription } from "@lib/api/membership"
+import { getCurrentSubscription } from "@lib/api/membership/client"
 import { getCategoryTree } from "@lib/api/medusa/categories"
 import { StoreProductCategoryTree } from "@lib/types/medusa-category"
 import { CurrentSubscription } from "@lib/types/ui/membership"
@@ -300,7 +300,7 @@ function User({ user }: { user: UserDetail | null }) {
     </div>
   )
 
-  const MemberShip = currentSubscription ? (
+  const MemberShip = currentSubscription?.status === "ACTIVE" ? (
     <Link
       href="/mypage/membership"
       className="text-[13px] font-medium text-yellow-600 underline-offset-4 hover:underline"

@@ -1,3 +1,3 @@
-import { CurrentSubscriptionResDto } from "../dto/membership"
+import type { SubscriptionDetailsDto } from "../dto/membership"
 
-export interface CurrentSubscription extends CurrentSubscriptionResDto {}
+export type CurrentSubscription = SubscriptionDetailsDto

@@ -1,8 +1,24 @@
 import { WithHeaderLayout } from "@components/layout"
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import MembershipPageClient from "../../../../../domains/membership/home/membership-page-client"
-import { getCurrentSubscriptionServer } from "@lib/api/membership"
-import { cookies } from "next/headers"
+import { fetchMe } from "@lib/api/users/me"
+import {
+  getCancellationReasons,
+  getCurrentCycleBenefit,
+  getCurrentSubscription,
+  getCycleBenefitHistory,
+  getPlans,
+  getSubscriptionHistory,
+} from "@lib/api/membership"
+import { getCurrentMonthSavings, getRangeSavings } from "@lib/api/membership/savings"
+import type {
+  CancellationReasonDto,
+  CycleBenefitDto,
+  CycleBenefitHistoryDto,
+  SubscriptionDetailsDto,
+  SubscriptionHistoryItemDto,
+} from "@lib/types/dto/membership"
+import type { PlanWithTier } from "@lib/types/membership"
 
 /**
  * 멤버십 관리 페이지 (Server Component)
@@ -10,32 +26,57 @@ import { cookies } from "next/headers"
  * 서버에서 멤버십 상태를 조회하여 클라이언트 컴포넌트로 전달
  */
 export default async function MembershipPage() {
-  let isMember = false
-  let membershipData = null
+  const [user, subscription, plans] = await Promise.all([
+    fetchMe().catch(() => null),
+    getCurrentSubscription().catch(() => null),
+    getPlans().catch(() => []),
+  ])
 
-  try {
-    // 서버 사이드에서는 쿠키를 수동으로 전달
-    const cookieStore = await cookies()
-    const cookieString = cookieStore
-      .getAll()
-      .map((cookie) => `${cookie.name}=${cookie.value}`)
-      .join("; ")
+  const membershipData: SubscriptionDetailsDto | null = subscription ?? null
+  const isMember = membershipData?.status === "ACTIVE"
 
-    const data = await getCurrentSubscriptionServer(cookieString)
-    console.log("✅ [MembershipPage] API 응답 성공:", data)
+  let currentSavings = null
+  let rangeSavings = null
+  let subscriptionHistory: SubscriptionHistoryItemDto[] = []
+  let currentBenefit: CycleBenefitDto | null = null
+  let benefitHistory: CycleBenefitHistoryDto | null = null
+  let cancellationReasons: CancellationReasonDto[] = []
+  const membershipPlans: PlanWithTier[] = plans ?? []
 
-    // 구독 데이터가 있으면 멤버십 회원
-    if (data) {
-      isMember = true
-      membershipData = data
-    }
-  } catch (error) {
-    // 404 에러는 구독이 없는 것이므로 정상 처리
-    // 다른 에러는 로그만 남기고 비회원으로 처리
-    console.error("❌ [MembershipPage] 멤버십 상태 조회 실패:", error)
+  if (isMember) {
+    const now = new Date()
+    const startDate = new Date(now.getFullYear(), now.getMonth() - 5, 1)
+    const toDateString = (date: Date) => date.toISOString().slice(0, 10)
+
+    const [
+      currentSavingsResult,
+      rangeSavingsResult,
+      subscriptionHistoryResult,
+      cancellationReasonsResult,
+      currentBenefitResult,
+      benefitHistoryResult,
+    ] = await Promise.all([
+      getCurrentMonthSavings().catch(() => null),
+      getRangeSavings(toDateString(startDate), toDateString(now)).catch(
+        () => null
+      ),
+      getSubscriptionHistory().catch(() => []),
+      getCancellationReasons().catch(() => []),
+      user?.id
+        ? getCurrentCycleBenefit(user.id).catch(() => null)
+        : Promise.resolve(null),
+      user?.id
+        ? getCycleBenefitHistory(user.id, 6).catch(() => null)
+        : Promise.resolve(null),
+    ])
+
+    currentSavings = currentSavingsResult
+    rangeSavings = rangeSavingsResult
+    subscriptionHistory = subscriptionHistoryResult
+    cancellationReasons = cancellationReasonsResult
+    currentBenefit = currentBenefitResult
+    benefitHistory = benefitHistoryResult
   }
-
-  console.log("🔍 [MembershipPage] 최종 상태 - isMember:", isMember)
 
   return (
     <WithHeaderLayout
@@ -50,6 +91,13 @@ export default async function MembershipPage() {
         <MembershipPageClient
           isMember={isMember}
           membershipData={membershipData}
+          plans={membershipPlans}
+          currentSavings={currentSavings}
+          rangeSavings={rangeSavings}
+          subscriptionHistory={subscriptionHistory}
+          cancellationReasons={cancellationReasons}
+          currentBenefit={currentBenefit}
+          benefitHistory={benefitHistory}
         />
       </MypageLayout>
     </WithHeaderLayout>

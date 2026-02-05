@@ -1,10 +1,12 @@
-import type { StoreProduct } from "@medusajs/types"
+import type { StoreProduct, StoreProductVariant } from "@medusajs/types"
 import type { ProductCardProps } from "@/lib/types/ui/product"
 import { getPricesForVariant, getProductPrice } from "@/lib/utils/get-product-price"
 
 export type ReviewSummary = { rating: number; reviewCount: number }
 
-const getMembershipPreviewPrice = (variant: any) => {
+const getMembershipPreviewPrice = (
+  variant: StoreProductVariant | null | undefined
+) => {
   const raw = variant?.metadata?.membershipPrice
   if (typeof raw === "number") return raw
   if (typeof raw === "string") {
@@ -12,6 +14,14 @@ const getMembershipPreviewPrice = (variant: any) => {
     return Number.isFinite(parsed) ? parsed : undefined
   }
   return undefined
+}
+
+const isDefaultVariant = (variant: StoreProductVariant) => {
+  const withDefaultFlag = variant as StoreProductVariant & {
+    is_default?: boolean
+    isDefault?: boolean
+  }
+  return Boolean(withDefaultFlag.is_default ?? withDefaultFlag.isDefault)
 }
 
 export function mapStoreProductToCardProps(
@@ -22,10 +32,8 @@ export function mapStoreProductToCardProps(
     return null
   }
 
-  const defaultVariant =
-    (product.variants as any[])?.find(
-      (variant) => variant?.is_default || variant?.isDefault
-    ) ?? (product.variants as any[])?.[0]
+  const variants = product.variants ?? []
+  const defaultVariant = variants.find(isDefaultVariant) ?? variants[0]
   const defaultPrice = defaultVariant ? getPricesForVariant(defaultVariant) : null
   const membershipPreviewPrice = defaultVariant
     ? getMembershipPreviewPrice(defaultVariant)
@@ -77,8 +85,7 @@ export function mapStoreProductToCardProps(
   const reviewData = reviewsMap?.get(product.handle || product.id)
 
   // 옵션 메타 정보 계산 (퀵 장바구니 담기용)
-  const variants = product.variants as any[] | undefined
-  const isSingleOption = variants?.length === 1
+  const isSingleOption = variants.length === 1
   const defaultVariantId = defaultVariant?.id
 
   return {
