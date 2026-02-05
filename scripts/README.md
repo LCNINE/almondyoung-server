@@ -141,3 +141,46 @@ npm run generate:token
 
 - [Authorization Module](../libs/authorization/README.md)
 - [Test Auth Scope App](../apps/test-auth-scope/README.md)
+
+## User Service Test User Generator
+
+### 📝 설명
+
+user-service에 테스트용 계정을 DB에 직접 생성하는 스크립트입니다.
+휴대폰 인증, 이메일 인증, 콜백 절차 없이 회원가입 흐름을 DB 레벨에서 모방합니다.
+
+### 🚀 사용 방법
+
+```bash
+# 한 줄로 1명 생성 (모든 정보를 args로 전달)
+ts-node -r tsconfig-paths/register scripts/user-service/create-test-users.ts \
+  --login-id qa001 \
+  --email qa001@almondyoung.test \
+  --username qa001 \
+  --nickname qa001 \
+  --password Test@1234 \
+  --phone 01000000001 \
+  --birth-date 19900101 \
+  --role membership \
+  --verify-phone
+
+# 여러 명 자동 생성
+ts-node -r tsconfig-paths/register scripts/user-service/create-test-users.ts --count 3 --prefix qauser
+```
+
+### 💡 주요 옵션
+
+```
+--file <path>            JSON 파일로 계정 목록 입력
+--count <n>              생성 개수 (기본 1)
+--prefix <text>          loginId/email prefix (기본 testuser)
+--email-domain <domain>  이메일 도메인 (기본 example.com)
+--email <value>          단일 사용자 이메일
+--login-id <value>       단일 사용자 loginId
+--username <value>       단일 사용자 username
+--nickname <value>       단일 사용자 nickname
+--password <value>       비밀번호 (기본 Test@1234)
+--role <name>            역할 이름 (기본 membership)
+--role-id <uuid>         역할 ID (role보다 우선)
+--verify-phone           휴대폰 인증 완료 레코드 생성
+```
