@@ -43,7 +43,7 @@ export default async function MembershipPage() {
   let cancellationReasons: CancellationReasonDto[] = []
   const membershipPlans: PlanWithTier[] = plans ?? []
 
-  if (isMember) {
+  if (user?.id) {
     const now = new Date()
     const startDate = new Date(now.getFullYear(), now.getMonth() - 5, 1)
     const toDateString = (date: Date) => date.toISOString().slice(0, 10)
@@ -62,12 +62,8 @@ export default async function MembershipPage() {
       ),
       getSubscriptionHistory().catch(() => []),
       getCancellationReasons().catch(() => []),
-      user?.id
-        ? getCurrentCycleBenefit(user.id).catch(() => null)
-        : Promise.resolve(null),
-      user?.id
-        ? getCycleBenefitHistory(user.id, 6).catch(() => null)
-        : Promise.resolve(null),
+      getCurrentCycleBenefit(user.id).catch(() => null),
+      getCycleBenefitHistory(user.id, 6).catch(() => null),
     ])
 
     currentSavings = currentSavingsResult
