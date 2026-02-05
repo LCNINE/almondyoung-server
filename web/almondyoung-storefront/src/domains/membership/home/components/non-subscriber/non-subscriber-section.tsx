@@ -6,6 +6,9 @@ import { CustomButton } from "@/components/shared/custom-buttons"
 import NonSubscriberBanner from "./non-subcriber-banner"
 import MembershipStatusSection from "domains/membership/components/status-selection"
 import MembershipPromoBanner from "./membership-promo-banner"
+import MembershipHistorySection from "../subscriber/subscriber-history-section"
+import type { CycleBenefitHistoryDto, SubscriptionHistoryItemDto } from "@lib/types/dto/membership"
+import type { RangeSavingsDto } from "@lib/types/dto/membership-savings"
 import type { PlanWithTier } from "@lib/types/membership"
 
 /**
@@ -17,6 +20,9 @@ import type { PlanWithTier } from "@lib/types/membership"
  */
 interface NonSubscriberSectionProps {
   plans: PlanWithTier[]
+  rangeSavings: RangeSavingsDto | null
+  subscriptionHistory: SubscriptionHistoryItemDto[]
+  benefitHistory: CycleBenefitHistoryDto | null
 }
 
 const getMonthlyPrice = (plan: PlanWithTier) =>
@@ -34,7 +40,12 @@ const buildPlanBenefits = (plan?: PlanWithTier) => {
   return benefits
 }
 
-export default function NonSubscriberSection({ plans }: NonSubscriberSectionProps) {
+export default function NonSubscriberSection({
+  plans,
+  rangeSavings,
+  subscriptionHistory,
+  benefitHistory,
+}: NonSubscriberSectionProps) {
   const router = useRouter()
   const monthlyPlan = plans.find((plan) => plan.plan.durationDays === 30)
   const yearlyPlan = plans.find((plan) => plan.plan.durationDays === 365)
@@ -103,6 +114,12 @@ export default function NonSubscriberSection({ plans }: NonSubscriberSectionProp
           variant="annual"
         />
       </section>
+
+      <MembershipHistorySection
+        rangeSavings={rangeSavings}
+        subscriptionHistory={subscriptionHistory}
+        benefitHistory={benefitHistory}
+      />
 
       {/* 가입 버튼 */}
       <CustomButton
