@@ -1,19 +1,101 @@
 "use server"
 
-import { CurrentSubscriptionResDto } from "@lib/types/dto/membership"
+import type {
+  CancellationReasonDto,
+  CancellationReasonsResDto,
+  CycleBenefitDto,
+  CycleBenefitHistoryDto,
+  MembershipPlanDto,
+  MembershipTierDto,
+  SubscriptionDetailsDto,
+  SubscriptionHistoryItemDto,
+} from "@lib/types/dto/membership"
+import type { PlanWithTier } from "@lib/types/membership"
 import { api } from "../api"
-
-const API_BASE = "/api/membership"
+import { HttpApiError } from "../api-error"
 
 /**
  * 현재 구독 조회
  */
-export async function getCurrentSubscription(): Promise<CurrentSubscriptionResDto> {
-  return await api<CurrentSubscriptionResDto>(
-    "membership",
-    `subscriptions/current`,
-    {
+export async function getCurrentSubscription(): Promise<SubscriptionDetailsDto | null> {
+  try {
+    return await api<SubscriptionDetailsDto>("membership", `/subscriptions/current`, {
       withAuth: true,
+      cache: "no-store",
+    })
+  } catch (error) {
+    if (error instanceof HttpApiError && error.status === 404) {
+      return null
+    }
+    throw error
+  }
+}
+
+/**
+ * 구독 이력 조회
+ */
+export async function getSubscriptionHistory(): Promise<
+  SubscriptionHistoryItemDto[]
+> {
+  return await api<SubscriptionHistoryItemDto[]>(
+    "membership",
+    `/subscriptions/history`,
+    {
+      method: "GET",
+      withAuth: true,
+      cache: "no-store",
+    }
+  )
+}
+
+/**
+ * 구독 취소 사유 목록 조회
+ */
+export async function getCancellationReasons(): Promise<
+  CancellationReasonDto[]
+> {
+  const result = await api<CancellationReasonsResDto>(
+    "membership",
+    `/subscriptions/cancellation-reasons`,
+    {
+      method: "GET",
+      withAuth: true,
+      cache: "no-store",
+    }
+  )
+
+  return result.reasons ?? []
+}
+
+/**
+ * 현재 주기 혜택 조회
+ */
+export async function getCurrentCycleBenefit(
+  userId: string
+): Promise<CycleBenefitDto> {
+  return await api<CycleBenefitDto>("membership", `/membership/benefits/current`, {
+    method: "GET",
+    params: { userId },
+    withAuth: true,
+    cache: "no-store",
+  })
+}
+
+/**
+ * 혜택 이력 조회
+ */
+export async function getCycleBenefitHistory(
+  userId: string,
+  limit: number = 12
+): Promise<CycleBenefitHistoryDto> {
+  return await api<CycleBenefitHistoryDto>(
+    "membership",
+    `/membership/benefits/history`,
+    {
+      method: "GET",
+      params: { userId, limit: String(limit) },
+      withAuth: true,
+      cache: "no-store",
     }
   )
 }
@@ -22,7 +104,7 @@ export async function getCurrentSubscription(): Promise<CurrentSubscriptionResDt
  * 멤버십 플랜 목록 조회
  */
 export async function getPlans() {
-  const result = await api("membership", `plans`, {
+  const result = await api<PlanWithTier[]>("membership", `/plans`, {
     method: "GET",
     withAuth: true,
     cache: "no-store",
@@ -32,55 +114,35 @@ export async function getPlans() {
 
 /**
  * 멤버십 구독 생성
- * @param planId 선택한 플랜 ID
  */
-export async function createSubscription(planId: string) {
-  const res = await fetch(`${API_BASE}/subscriptions`, {
+export async function createSubscriptionServer(planId: string) {
+  return await api("membership", "/subscriptions", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    credentials: "include",
-    body: JSON.stringify({ planId }),
+    body: { planId },
+    withAuth: true,
+    cache: "no-store",
   })
-
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ message: "Unknown error" }))
-    throw new Error(
-      error.message || `Failed to create subscription: ${res.statusText}`
-    )
-  }
-
-  return res.json()
 }
 
 /**
- * 멤버십 구독 취소
- * @param reasonCode 취소 이유 코드
- * @param reasonText 취소 이유 상세 설명 (선택)
+ * 티어별 혜택(플랜 포함) 조회
  */
-export async function cancelSubscription(
-  reasonCode: string,
-  reasonText?: string
-) {
-  const res = await fetch(`${API_BASE}/subscriptions/cancel`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    credentials: "include",
-    body: JSON.stringify({
-      reasonCode,
-      reasonText,
-    }),
-  })
-
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ message: "Unknown error" }))
-    throw new Error(
-      error.message || `Failed to cancel subscription: ${res.statusText}`
-    )
-  }
-
-  return res.json()
+export async function getTierBenefits(tierId: string): Promise<{
+  tier: MembershipTierDto
+  plans: MembershipPlanDto[]
+}> {
+  return await api<{ tier: MembershipTierDto; plans: MembershipPlanDto[] }>(
+    "membership",
+    `/tiers/${tierId}/benefits`,
+    {
+      method: "GET",
+      withAuth: true,
+      cache: "no-store",
+    }
+  )
 }
+
+/**
+ * 멤버십 구독 생성
+ * @param planId 선택한 플랜 ID
+ */

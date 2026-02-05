@@ -2,8 +2,10 @@
 
 import { ChevronRight } from "lucide-react"
 import { useEffect, useState } from "react"
-import { getCurrentMonthSavings } from "@lib/api/membership/savings"
-import { getCurrentSubscription } from "@lib/api/membership"
+import {
+  getCurrentMonthSavings,
+  getCurrentSubscription,
+} from "@lib/api/membership/client"
 import Link from "next/link"
 
 interface SavingsData {
@@ -26,8 +28,8 @@ export function SavingsBanner() {
 
         setSavingsData({
           totalSavings: savings?.totalSavings ?? 0,
-          hasSubscription: !!subscription,
-          tierName: subscription?.data?.plan?.tier?.name || undefined,
+          hasSubscription: subscription?.status === "ACTIVE",
+          tierName: subscription?.plan?.tier?.name || undefined,
         })
       } catch (error) {
         console.error("절약액 조회 실패:", error)

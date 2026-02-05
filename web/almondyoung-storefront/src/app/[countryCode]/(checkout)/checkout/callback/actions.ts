@@ -1,6 +1,8 @@
 "use server"
 
+import { createSubscriptionServer } from "@/lib/api/membership"
 import { authorizePayment } from "@/lib/api/wallet"
+import { HttpApiError } from "@/lib/api/api-error"
 
 interface ProcessPaymentResult {
   success: boolean
@@ -12,7 +14,9 @@ export async function processPaymentCallback(
   paymentKey: string,
   orderId: string,
   amount: string,
-  usePoints: number
+  usePoints: number,
+  mode?: string | null,
+  planId?: string | null
 ): Promise<ProcessPaymentResult> {
   try {
     const response = await authorizePayment(orderId, {
@@ -39,6 +43,29 @@ export async function processPaymentCallback(
       }
     }
 
+    if (mode === "membership" && planId) {
+      try {
+        await createSubscriptionServer(planId)
+        return {
+          success: true,
+          redirectUrl: `/${countryCode}/mypage/membership/subscribe/success`,
+        }
+      } catch (error: any) {
+        if (error instanceof HttpApiError && error.status === 409) {
+          return {
+            success: true,
+            redirectUrl: `/${countryCode}/mypage/membership/subscribe/success`,
+          }
+        }
+        const message =
+          error instanceof Error ? error.message : "멤버십 가입 처리 실패"
+        return {
+          success: false,
+          redirectUrl: `/${countryCode}/mypage/membership/subscribe/fail?code=SUBSCRIBE_FAILED&message=${encodeURIComponent(message)}`,
+        }
+      }
+    }
+
     return {
       success: true,
       redirectUrl: `/${countryCode}/checkout/success/${response.intentId}`,
@@ -48,7 +75,10 @@ export async function processPaymentCallback(
     console.log("error message", errorMessage)
     return {
       success: false,
-      redirectUrl: `/${countryCode}/checkout/fail?code=CALLBACK_ERROR&message=${encodeURIComponent(errorMessage)}`,
+      redirectUrl:
+        mode === "membership"
+          ? `/${countryCode}/mypage/membership/subscribe/fail?code=CALLBACK_ERROR&message=${encodeURIComponent(errorMessage)}`
+          : `/${countryCode}/checkout/fail?code=CALLBACK_ERROR&message=${encodeURIComponent(errorMessage)}`,
     }
   }
 }
