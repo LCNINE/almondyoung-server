@@ -66,7 +66,7 @@ const LINK_STATUS_MESSAGES: Record<
   },
   missing_token: {
     title: "연결 토큰을 찾을 수 없습니다.",
-    description: "Cafe24 연결을 다시 시작해주세요.",
+    description: "기존 아몬드영 연결을 다시 시작해주세요.",
     variant: "destructive",
   },
   invalid_token: {
@@ -81,7 +81,7 @@ const LINK_STATUS_MESSAGES: Record<
   },
   login_required: {
     title: "로그인이 필요합니다.",
-    description: "로그인 후 Cafe24 연결을 다시 진행해주세요.",
+    description: "로그인 후 기존 아몬드영 연결을 다시 진행해주세요.",
     variant: "destructive",
   },
 }
@@ -204,9 +204,9 @@ export function Cafe24LinkSection() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Cafe24 계정 연결</CardTitle>
+          <CardTitle className="text-lg">기존 아몬드영 계정 연결</CardTitle>
           <CardDescription>
-            Cafe24에 등록된 정보를 가져와 계정 정보를 최신으로 유지할 수
+            기존 아몬드영에 등록된 정보를 가져와 계정 정보를 최신으로 유지할 수
             있습니다.
           </CardDescription>
         </CardHeader>
@@ -225,7 +225,7 @@ export function Cafe24LinkSection() {
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="space-y-1 text-sm text-gray-600">
               <p>
-                Cafe24 계정으로 로그인한 상태에서 연결을 진행해주세요.
+                기존 아몬드영 계정으로 로그인한 상태에서 연결을 진행해주세요.
               </p>
               <p className="text-xs text-gray-400">
                 연결 토큰은 1회용이며 만료 시간이 있습니다.
@@ -237,7 +237,7 @@ export function Cafe24LinkSection() {
               className="gap-2"
             >
               <Link2 className="h-4 w-4" />
-              Cafe24 계정 연결
+              기존 아몬드영 계정 연결
             </Button>
           </div>
         </CardContent>
@@ -248,7 +248,7 @@ export function Cafe24LinkSection() {
           <div>
             <CardTitle className="text-lg">이관 항목</CardTitle>
             <CardDescription>
-              Cafe24와 현재 계정의 차이를 확인하고 필요한 정보를 이관하세요.
+              기존 아몬드영 계정과 현재 계정의 차이를 확인하고 필요한 정보를 이관하세요.
             </CardDescription>
           </div>
           <Button
@@ -278,7 +278,7 @@ export function Cafe24LinkSection() {
                 <TableRow>
                   <TableHead className="w-[140px]">항목</TableHead>
                   <TableHead className="w-[120px]">상태</TableHead>
-                  <TableHead>카페24 값</TableHead>
+                  <TableHead>기존 아몬드영 값</TableHead>
                   <TableHead>현재 값</TableHead>
                   <TableHead className="w-[120px] text-right">
                     작업
@@ -328,7 +328,7 @@ export function Cafe24LinkSection() {
             </Table>
           ) : (
             <div className="rounded-lg border border-dashed border-gray-200 p-4 text-sm text-gray-500">
-              이관 항목이 없습니다. 먼저 Cafe24 계정을 연결해주세요.
+              이관 항목이 없습니다. 먼저 기존 아몬드영 계정을 연결해주세요.
             </div>
           )}
         </CardContent>
