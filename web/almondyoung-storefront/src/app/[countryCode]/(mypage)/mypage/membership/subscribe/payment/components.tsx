@@ -26,7 +26,6 @@ import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { HttpApiError } from "@lib/api/api-error"
-import { createSubscription } from "@lib/api/membership/client"
 import { cn } from "@lib/utils"
 import { useUser } from "@/contexts/user-context"
 import { Calendar, CreditCard, Gift, TriangleAlert } from "lucide-react"
@@ -235,10 +234,10 @@ export function MembershipForm({
           ? monthlyPlan.plan.id
           : yearlyPlan.plan.id
 
-      await createSubscription(selectedPlanId)
-
-      toast.success("멤버십이 등록되었습니다!")
-      router.push(`/${countryCode}/mypage/membership/subscribe/success`)
+      toast.success("멤버십 결제 페이지로 이동합니다.")
+      router.push(
+        `/${countryCode}/checkout/membership?planId=${selectedPlanId}`
+      )
     } catch (error) {
       if (error instanceof HttpApiError) {
         toast.error(error.message)
