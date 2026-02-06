@@ -115,8 +115,12 @@ export function TimeSaleSection({
                                 action={
                                   <ProductCard.QuickActions
                                     productId={product.id}
-                                    variantId={product.optionMeta?.defaultVariantId}
-                                    isSingleOption={product.optionMeta?.isSingle ?? false}
+                                    variantId={
+                                      product.optionMeta?.defaultVariantId
+                                    }
+                                    isSingleOption={
+                                      product.optionMeta?.isSingle ?? false
+                                    }
                                     isLoggedIn={isLoggedIn}
                                     countryCode={countryCode}
                                   />
@@ -138,7 +142,7 @@ export function TimeSaleSection({
                     products={products.slice(0, 5)}
                     showRank={false}
                     showQuickActions
-                    roundedClassName="rounded-sm md:rounded-md"
+                    thumbnailClassName="rounded-sm md:rounded-md"
                     countryCode={countryCode}
                     isLoggedIn={isLoggedIn}
                   />

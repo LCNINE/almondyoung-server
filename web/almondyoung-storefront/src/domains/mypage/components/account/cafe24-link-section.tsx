@@ -138,7 +138,9 @@ export function Cafe24LinkSection() {
         return
       }
 
-      setItems(response.data ?? [])
+      if ("data" in response) {
+        setItems(response.data ?? [])
+      }
     } catch (loadError: any) {
       console.error("Cafe24 migration load failed:", loadError)
       const message =
