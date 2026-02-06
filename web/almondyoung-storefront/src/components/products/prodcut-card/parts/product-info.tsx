@@ -27,6 +27,10 @@ export function ProductInfo({
   const displayDiscount = isMember && hasMembershipPrice ? discount : 0
   const showMembershipBadge = isMember && hasMembershipPrice
   const showMembershipHint = !isMember && hasMembershipPrice
+  const membershipPrice =
+    membershipSavings != null && originalPrice != null
+      ? originalPrice - membershipSavings
+      : undefined
 
   return (
     <div className="flex flex-col gap-0.5 px-1">
@@ -42,6 +46,8 @@ export function ProductInfo({
           membershipSavings={membershipSavings}
           showMembershipHint={showMembershipHint}
           showMembershipBadge={showMembershipBadge}
+          membershipPrice={membershipPrice}
+          isMember={isMember}
         />
       </div>
 
