@@ -166,6 +166,8 @@ const ProductInfo = ({
             isTimeSale={isTimeSale}
             showMembershipHint={showMembershipHint}
             membershipSavings={membershipSavings}
+            membershipPrice={hasMembershipPrice ? effectiveMembershipPrice : undefined}
+            isMember={isMember}
           />
         )}
 

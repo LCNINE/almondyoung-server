@@ -1,5 +1,6 @@
 import { AnimatedMembershipText } from "@components/products/atomics/animated-membership-text"
 import { MembershipTagIcon } from "@/icons/membership-tag-icon"
+import { ProductMembershipBadge } from "@/components/shared/badges/product-membership-badge"
 
 type MemberPrice = {
   range: string
@@ -46,6 +47,9 @@ export function ProductPriceDisplay({
     isMember && displayPrice < basePrice
       ? Math.round(((basePrice - displayPrice) / basePrice) * 100)
       : 0
+  const membershipDiscountRate = hasMembershipPrice
+    ? Math.round(((basePrice - membershipPrice) / basePrice) * 100)
+    : 0
 
   if (process.env.NODE_ENV === "development") {
     console.log("[PRICE DEBUG][ProductDetail]", {
@@ -61,15 +65,8 @@ export function ProductPriceDisplay({
 
   return (
     <section className="mb-6" aria-label="상품 가격">
-      {/* 멤버십 태그 */}
-      {!isMembershipOnly && displayDiscountRate > 0 && (
-        <div className="inline-flex max-w-[120px] items-center">
-          <MembershipTagIcon />
-        </div>
-      )}
-
       {/* 가격 정보 */}
-      <output className="mb-4 flex items-baseline gap-2">
+      <output className="mb-2 flex items-baseline gap-2">
         {isMembershipOnly ? (
           /* 멤버십 전용 */
           <>
@@ -98,14 +95,31 @@ export function ProductPriceDisplay({
             <span className="text-2xl font-bold">
               {displayPrice.toLocaleString()}원
             </span>
+            {isMember && hasMembershipPrice && (
+              <ProductMembershipBadge size="md" label="멤버십할인가" />
+            )}
           </>
         )}
       </output>
-      {!isMembershipOnly && showMembershipHint && membershipSavings != null && (
-        <p className="text-xs text-gray-500">
-          멤버십가 {membershipPrice?.toLocaleString()}원 · 가입 시{" "}
-          {membershipSavings.toLocaleString()}원 절약
-        </p>
+      {!isMembershipOnly && !isMember && hasMembershipPrice && (
+        <div className="flex flex-col gap-1">
+          <div className="flex items-baseline gap-2">
+            <ProductMembershipBadge size="md" label="멤버십할인가" />
+            {membershipDiscountRate > 0 && (
+              <span className="text-sm font-semibold text-[#F29219]">
+                {membershipDiscountRate}% OFF
+              </span>
+            )}
+            <span className="text-lg font-bold text-[#F29219]">
+              {membershipPrice?.toLocaleString()}원
+            </span>
+          </div>
+          {showMembershipHint && membershipSavings != null && (
+            <p className="text-xs font-medium text-[#F29219]">
+              멤버십 가입 시 {membershipSavings.toLocaleString()}원 절약
+            </p>
+          )}
+        </div>
       )}
 
       {/* 멤버십 등급별 가격 */}

@@ -64,11 +64,11 @@ export function ProductInfoMobile({ product }: Props) {
           !isMember &&
           hasMembershipPrice &&
           typeof product.actualPrice === "number" &&
-          Math.abs(product.actualPrice - product.membershipPrice) >= 1
+          Math.abs(product.actualPrice - (product.membershipPrice ?? 0)) >= 1
         }
         membershipSavings={
           hasMembershipPrice
-            ? product.basePrice - product.membershipPrice
+            ? (product.basePrice ?? 0) - (product.membershipPrice ?? 0)
             : undefined
         }
       />
