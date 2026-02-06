@@ -7,6 +7,8 @@ export function ProductPrice({
   membershipSavings,
   showMembershipHint,
   showMembershipBadge,
+  membershipPrice,
+  isMember,
 }: {
   price: number
   originalPrice: number
@@ -14,6 +16,8 @@ export function ProductPrice({
   membershipSavings?: number
   showMembershipHint?: boolean
   showMembershipBadge?: boolean
+  membershipPrice?: number
+  isMember: boolean
 }) {
   // 멤버십 회원이고 할인이 있는 경우에만 할인 정보 표시
   const showDiscountInfo = discount > 0 && showMembershipBadge
@@ -33,13 +37,26 @@ export function ProductPrice({
         <span className="text-[16px] font-bold text-black">
           {price.toLocaleString()}원
         </span>
-        {showMembershipBadge && <ProductMembershipBadge size="sm" />}
+        {showMembershipBadge && (
+          <ProductMembershipBadge size="sm" label="멤버십할인가" />
+        )}
       </div>
-      {showMembershipHint && membershipSavings != null && (
-        <span className="text-[11px] text-gray-500">
-          멤버십 가입 시 {membershipSavings.toLocaleString()}원 절약
-        </span>
-      )}
+      {!isMember &&
+        membershipPrice != null &&
+        membershipPrice > 0 &&
+        membershipSavings != null && (
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#F2994A]">
+              <ProductMembershipBadge size="sm" label="멤버십할인가" />
+              <span className="text-[15px] font-bold">
+                {membershipPrice.toLocaleString()}원
+              </span>
+            </div>
+            <span className="text-[11px] font-medium text-[#F2994A]">
+              가입 시 {membershipSavings.toLocaleString()}원 절약
+            </span>
+          </div>
+        )}
     </>
   )
 }

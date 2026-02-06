@@ -63,11 +63,11 @@ export function mapStoreProductToCardProps(
   const calculatedAmount = calculatedPrice ?? null
 
   const discount =
-    membershipPrice > 0 && basePrice > 0
-      ? Math.round(((basePrice - membershipPrice) / basePrice) * 100)
+    actualPrice > 0 && basePrice > 0 && actualPrice < basePrice
+      ? Math.round(((basePrice - actualPrice) / basePrice) * 100)
       : 0
 
-  const displayPrice = membershipPrice || basePrice
+  const displayPrice = actualPrice || basePrice
   const membershipSavings =
     membershipPrice > 0
       ? basePrice - membershipPrice

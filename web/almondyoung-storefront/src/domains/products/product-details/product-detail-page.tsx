@@ -29,6 +29,7 @@ import { ProductSidebarPurchase } from "./components/product-sidebar-purchase"
 import { ProductTabs } from "./components/product-tabs"
 import { useRouter } from "next/navigation"
 import { createPortal } from "react-dom"
+import { useMembership } from "@/contexts/membership-context"
 // import { Breadcrumb } from "@components/layout/components/breadcrumb"
 // import { ProductCard } from "@lib/types/ui/product"
 // import { ProductRecommandSlider } from "@components/products/product-recommand-slider"
@@ -62,6 +63,8 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   const resolvedParams = use(params)
   const { countryCode } = resolvedParams
   const router = useRouter()
+  const { status } = useMembership()
+  const isMember = status === "membership"
   // ===== 상태 관리 =====
   const [activeTab, setActiveTab] = useState<
     "detail" | "review" | "qna" | "info"
@@ -180,14 +183,19 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   const isSingleOption = !product.options || product.options.length === 0
   const isOutOfStock = product.status !== "active"
   const getVariantPrice = (variantId?: string) => {
+    const resolvePrice = (base?: number, actual?: number) => {
+      const basePrice = base ?? 0
+      const actualPrice = actual ?? basePrice
+      return isMember ? actualPrice : basePrice
+    }
     if (variantId && variantId === product.defaultVariantId) {
-      return product.membershipPrice || product.basePrice || 0
+      return resolvePrice(product.basePrice, product.actualPrice)
     }
     if (variantId && product.variantPriceMap?.[variantId]) {
       const price = product.variantPriceMap[variantId]
-      return price.membershipPrice || price.basePrice || 0
+      return resolvePrice(price.basePrice, price.actualPrice)
     }
-    return product.membershipPrice || product.basePrice || 0
+    return resolvePrice(product.basePrice, product.actualPrice)
   }
   const defaultVariantId = product.defaultVariantId
   const getProductPrice = () => getVariantPrice(defaultVariantId)
