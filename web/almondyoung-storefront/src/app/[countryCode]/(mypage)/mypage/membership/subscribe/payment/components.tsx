@@ -1,6 +1,5 @@
 "use client"
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -10,6 +9,8 @@ import {
   DialogContent,
   DialogFooter,
   DialogHeader,
+  DialogDescription,
+  DialogTitle,
 } from "@/components/ui/dialog"
 import {
   Form,
@@ -19,32 +20,22 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { HttpApiError } from "@lib/api/api-error"
 import { cn } from "@lib/utils"
 import { useUser } from "@/contexts/user-context"
-import { Calendar, CreditCard, Gift, TriangleAlert } from "lucide-react"
+import { Calendar, Gift } from "lucide-react"
 import { useParams, useRouter } from "next/navigation"
 import React, { useState } from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
 import { z } from "zod"
-import FormattedInput from "./formatted-input"
 
 // 순수 UI용 타입 정의
 type SubscriptionType = "monthly" | "yearly" | null
-type FmsMember = {
-  paymentCompany: string
-  paymentCompanyName: string
-  paymentNumber: string
-  cardLast4: string
-  payerName: string
-} | null
 
 type MemberBenefitCommon = {
   id: string
@@ -67,41 +58,7 @@ type MembershipDiscountBenefit = MemberBenefitCommon & {
 
 type MemberBenefit = MembershipTrialBenefit | MembershipDiscountBenefit
 
-const cardDetailsSchema = z.object({
-  phone: z
-    .string()
-    .min(10, "전화번호는 10-11자리여야 합니다")
-    .max(11, "전화번호는 10-11자리여야 합니다")
-    .regex(
-      /^01[0-9]{8,9}$/,
-      "올바른 휴대폰번호 형식이 아닙니다 (예: 01012345678)"
-    ),
-  payerNumber: z
-    .string()
-    .max(10, "10자 이내로 입력해주세요")
-    .min(6, "6자리 생년월일을 입력해주세요")
-    .regex(/^\d+$/, "숫자만 입력해주세요"),
-  paymentNumber: z
-    .string()
-    .max(16, "16자 이내로 입력해주세요")
-    .min(1, "카드번호를 입력해주세요")
-    .regex(/^\d+$/, "숫자만 입력해주세요"),
-  payerName: z
-    .string()
-    .max(10, "10자 이내로 입력해주세요")
-    .min(1, "납부자명을 입력해주세요"),
-  validUntil: z
-    .string()
-    .max(4, "카드 유효기간을 입력해주세요")
-    .min(4, "카드 유효기간을 입력해주세요"),
-  password: z
-    .string()
-    .max(2, "비밀번호 앞 2자리를 입력해주세요")
-    .min(2, "비밀번호 앞 2자리를 입력해주세요")
-    .regex(/^\d+$/, "숫자만 입력해주세요"),
-})
 const subscriptionSchema = z.object({
-  useNewCard: z.boolean(),
   subscriptionType: z
     .enum(["monthly", "yearly"])
     .optional()
@@ -113,15 +70,6 @@ const subscriptionSchema = z.object({
     message: "약관에 동의해주세요",
   }),
 })
-const registerMembershipFormSchema = z.union([
-  subscriptionSchema.extend({
-    useNewCard: z.literal(true),
-    ...cardDetailsSchema.shape,
-  }),
-  subscriptionSchema.extend({
-    useNewCard: z.literal(false),
-  }),
-])
 
 type MembershipFormProps = {
   monthlyPlan: {
@@ -148,14 +96,12 @@ type MembershipFormProps = {
       name: string
     }
   }
-  existingFmsMember: FmsMember
   existingSubType: SubscriptionType
   availableBenefits: MemberBenefit[]
 }
 export function MembershipForm({
   monthlyPlan,
   yearlyPlan,
-  existingFmsMember,
   existingSubType,
   availableBenefits,
 }: MembershipFormProps) {
@@ -179,13 +125,6 @@ export function MembershipForm({
   })
 
   const formDefaultValues = {
-    useNewCard: existingFmsMember == null,
-    phone: "",
-    payerNumber: "",
-    paymentNumber: "",
-    payerName: "",
-    validUntil: "",
-    password: "",
     subscriptionType:
       existingSubType === "monthly" || existingSubType === "yearly"
         ? existingSubType
@@ -193,13 +132,13 @@ export function MembershipForm({
     agreement: false,
   }
 
-  const form = useForm<z.infer<typeof registerMembershipFormSchema>>({
+  const form = useForm<z.infer<typeof subscriptionSchema>>({
     mode: "onChange",
-    resolver: zodResolver(registerMembershipFormSchema),
+    resolver: zodResolver(subscriptionSchema),
     defaultValues: formDefaultValues,
   })
 
-  async function onSubmit(data: z.infer<typeof registerMembershipFormSchema>) {
+  async function onSubmit(data: z.infer<typeof subscriptionSchema>) {
     try {
       // 사용자 인증 확인
       if (!user) {
@@ -211,27 +150,7 @@ export function MembershipForm({
         return
       }
 
-      // 1단계: 새 카드 등록 (조건부)
-      if (data.useNewCard) {
-        const validMonth = data.validUntil.slice(0, 2) // "2812" → "28"
-        const validYear = data.validUntil.slice(2, 4) // "2812" → "12"
-
-        const { createHmsCardProfile } = await import("@lib/api/wallet")
-        await createHmsCardProfile({
-          memberName: data.payerName,
-          phone: data.phone,
-          payerNumber: data.payerNumber,
-          paymentNumber: data.paymentNumber,
-          payerName: data.payerName,
-          validYear: validYear,
-          validMonth: validMonth,
-          validUntil: data.validUntil,
-          password: data.password,
-        })
-
-        // 카드 등록 후 페이지 데이터 새로고침
-        router.refresh()
-      }
+      // 결제는 체크아웃 페이지에서 진행합니다. (HMS 카드 등록은 추후 연동)
 
       // 2단계: 멤버십 구독 생성
       const selectedPlanId =
@@ -277,202 +196,8 @@ export function MembershipForm({
     <Form {...form}>
       <form
         onSubmit={form.handleSubmit(onSubmit)}
-        className="grid grid-cols-1 gap-4 md:grid-cols-2"
+        className="grid grid-cols-1 gap-4"
       >
-        <div>
-          <Card>
-            <CardHeader>
-              <CardTitle>결제 정보</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Tabs
-                value={form.watch("useNewCard") ? "newCard" : "existingCard"}
-                onValueChange={(value) =>
-                  form.setValue("useNewCard", value === "newCard", {
-                    shouldValidate: true,
-                  })
-                }
-              >
-                <TabsList className="w-full">
-                  <TabsTrigger
-                    className="flex-1"
-                    value="existingCard"
-                    disabled={existingFmsMember == null}
-                  >
-                    {existingFmsMember == null
-                      ? "등록된 카드 없음"
-                      : "기존 카드 사용"}
-                  </TabsTrigger>
-                  <TabsTrigger className="flex-1" value="newCard">
-                    새 카드 등록
-                  </TabsTrigger>
-                </TabsList>
-
-                <TabsContent className="space-y-3" value="newCard">
-                  {existingFmsMember != null && (
-                    <Alert>
-                      <TriangleAlert className="h-4 w-4" />
-                      <AlertTitle>이미 등록된 카드가 있습니다!</AlertTitle>
-                      <AlertDescription>
-                        새 카드를 등록하면 기존 카드 정보는 삭제됩니다.
-                      </AlertDescription>
-                    </Alert>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <FormField
-                      control={form.control}
-                      name="payerName"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>카드 소유자명</FormLabel>
-                          <FormControl>
-                            <Input {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="payerNumber"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>6자리 생년월일/사업자번호</FormLabel>
-                          <FormControl>
-                            <Input placeholder="YYMMDD" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  <FormField
-                    control={form.control}
-                    name="phone"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>전화번호</FormLabel>
-                        <FormControl>
-                          <Input
-                            {...field}
-                            placeholder="01012345678"
-                            maxLength={11}
-                          />
-                        </FormControl>
-                        <p className="text-xs text-gray-500">
-                          하이픈 없이 10-11자리 입력
-                        </p>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="paymentNumber"
-                    render={({ field: { onChange, ...rest } }) => (
-                      <FormItem>
-                        <FormLabel>카드번호</FormLabel>
-                        <FormControl>
-                          <FormattedInput
-                            pattern="#### - #### - #### - ####"
-                            {...rest}
-                            onValueChange={onChange}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <div className="grid grid-cols-2 gap-2">
-                    <FormField
-                      control={form.control}
-                      name="validUntil"
-                      render={({ field: { onChange, ...rest } }) => (
-                        <FormItem>
-                          <FormLabel>유효기간</FormLabel>
-                          <FormControl>
-                            <FormattedInput
-                              pattern="## / ##"
-                              placeholder="MM / YY"
-                              {...rest}
-                              onValueChange={onChange}
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="password"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>비밀번호 앞 2자리</FormLabel>
-                          <FormControl>
-                            <Input maxLength={2} {...field} type="password" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                </TabsContent>
-
-                {existingFmsMember && (
-                  <TabsContent value="existingCard">
-                    {/* 등록된 카드 UI */}
-                    <div className="bg-linear-to-brrom-blue-500 relative h-48 w-full max-w-md rounded-2xl to-blue-700 p-6 shadow-lg">
-                      {/* 카드 패턴 */}
-                      <div className="absolute inset-0 rounded-2xl bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAwIDEwIEwgNDAgMTAgTSAxMCAwIEwgMTAgNDAgTSAwIDIwIEwgNDAgMjAgTSAyMCAwIEwgMjAgNDAgTSAwIDMwIEwgNDAgMzAgTSAzMCAwIEwgMzAgNDAiIGZpbGw9Im5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMC41IiBvcGFjaXR5PSIwLjEiLz48L3BhdHRlcm4+PC9kZWZzPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9InVybCgjZ3JpZCkiLz48L3N2Zz4=')] opacity-20" />
-
-                      {/* 카드 내용 */}
-                      <div className="relative z-10 flex h-full flex-col justify-between text-white">
-                        {/* 카드 상단 */}
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <p className="text-sm font-medium opacity-90">
-                              HMS Card
-                            </p>
-                            <h3 className="mt-1 text-xl font-bold">
-                              {existingFmsMember.paymentCompanyName}
-                            </h3>
-                          </div>
-                          <div className="rounded-full bg-white/20 p-2 backdrop-blur-sm">
-                            <CreditCard className="h-6 w-6" />
-                          </div>
-                        </div>
-
-                        {/* 카드 중앙: 카드번호 */}
-                        <div>
-                          <p className="font-mono text-lg tracking-wider">
-                            {existingFmsMember.paymentNumber}
-                          </p>
-                        </div>
-
-                        {/* 카드 하단 */}
-                        <div className="flex items-end justify-between">
-                          <div>
-                            <p className="text-xs opacity-75">카드 소유자</p>
-                            <p className="mt-1 font-medium">
-                              {existingFmsMember.payerName || "등록된 카드"}
-                            </p>
-                          </div>
-                          <Badge className="bg-green-500 text-white hover:bg-green-600">
-                            사용 가능
-                          </Badge>
-                        </div>
-                      </div>
-                    </div>
-                  </TabsContent>
-                )}
-              </Tabs>
-            </CardContent>
-          </Card>
-        </div>
-
         <div className="space-y-4">
           <Card>
             <CardHeader>
@@ -666,7 +391,7 @@ export function MembershipForm({
           )}
         </div>
 
-        <div className="bg-card text-card-foreground grid grid-cols-1 items-center gap-4 rounded-lg border p-6 shadow-sm md:col-span-2 md:grid-cols-2">
+        <div className="bg-card text-card-foreground grid grid-cols-1 items-center gap-4 rounded-lg border p-6 shadow-sm md:grid-cols-2">
           <div className="flex h-full w-full flex-row items-center">
             <div className="flex flex-col">
               {hasPrice ? (
@@ -721,8 +446,6 @@ export function MembershipForm({
             </Button>
           </div>
         </div>
-
-        <div></div>
       </form>
     </Form>
   )
@@ -770,7 +493,12 @@ const AgreementCheckbox: React.FC<AgreementCheckboxProps> = ({
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent>
-          <DialogHeader>아몬드영 멤버십 이용약관</DialogHeader>
+          <DialogHeader>
+            <DialogTitle>아몬드영 멤버십 이용약관</DialogTitle>
+            <DialogDescription>
+              멤버십 이용약관을 확인하고 동의해주세요.
+            </DialogDescription>
+          </DialogHeader>
           <div className="h-60 overflow-y-auto border p-4">
             <TermsAndConditions
               monthlyPrice={monthlyPrice}
