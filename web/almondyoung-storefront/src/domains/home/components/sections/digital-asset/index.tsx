@@ -62,7 +62,7 @@ export function DigitalAssetSection({ products }: DigitalAssetSectionProps) {
           <ProductGrid
             products={products.slice(0, 5)}
             showRank={false}
-            roundedClassName="rounded-sm md:rounded-md"
+            thumbnailClassName="rounded-sm md:rounded-md"
             countryCode={countryCode}
           />
         </div>

@@ -8,7 +8,7 @@ interface ProductGridProps {
   showRank?: boolean
   showQuickActions?: boolean
   className?: string
-  roundedClassName?: string
+  thumbnailClassName?: string
   countryCode?: string
   isLoggedIn?: boolean
 }
@@ -18,7 +18,7 @@ export function ProductGrid({
   showRank = false,
   showQuickActions = false,
   className,
-  roundedClassName,
+  thumbnailClassName,
   countryCode,
   isLoggedIn = false,
 }: ProductGridProps) {
@@ -34,6 +34,7 @@ export function ProductGrid({
         const card = (
           <ProductCard>
             <ProductCard.Thumbnail
+              className={thumbnailClassName}
               src={product.imageSrc}
               alt={product.title}
               rank={rank && <ProductCard.Rank rank={rank} />}
@@ -48,7 +49,6 @@ export function ProductGrid({
                   />
                 ) : undefined
               }
-              className={roundedClassName}
             />
             <ProductCard.Info {...product} />
           </ProductCard>

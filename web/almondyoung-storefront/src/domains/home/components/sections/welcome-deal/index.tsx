@@ -76,7 +76,7 @@ export function WelcomeDealSection({ products }: WelcomeDealSectionProps) {
           products={products.slice(0, 5)}
           showRank={false}
           showQuickActions
-          roundedClassName="rounded-sm md:rounded-md"
+          thumbnailClassName="rounded-sm md:rounded-md"
           countryCode={countryCode}
           isLoggedIn={isLoggedIn}
         />

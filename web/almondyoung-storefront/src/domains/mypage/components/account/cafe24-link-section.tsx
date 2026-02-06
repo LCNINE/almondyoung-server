@@ -1,7 +1,6 @@
 "use client"
 
 import { Badge } from "@/components/ui/badge"
-import { ApiAuthError, HttpApiError } from "@lib/api/api-error"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -116,33 +115,34 @@ export function Cafe24LinkSection() {
     setError(null)
 
     try {
-      const data = await getCafe24Migration()
-      setItems(data ?? [])
-    } catch (loadError: any) {
-      console.error("Cafe24 migration load failed:", loadError)
-      if (loadError instanceof ApiAuthError) {
-        setError("로그인이 필요합니다.")
-        setItems(null)
-        setIsLoading(false)
-        return
-      }
+      const response = await getCafe24Migration()
 
-      if (loadError instanceof HttpApiError) {
-        if (loadError.status === 404) {
+      if ("error" in response && response.error) {
+        const { status, message } = response.error
+
+        if (status === 400 || status === 404) {
           // 연결 전 상태로 간주
           setItems([])
           setError(null)
-          setIsLoading(false)
           return
         }
-        if (loadError.status === 401 || loadError.status === 403) {
+
+        if (status === 401 || status === 403) {
           setError("로그인이 필요합니다.")
           setItems(null)
-          setIsLoading(false)
           return
         }
+
+        setError(message ?? "이관 정보를 불러오는데 실패했습니다.")
+        setItems(null)
+        return
       }
 
+      if ("data" in response) {
+        setItems(response.data ?? [])
+      }
+    } catch (loadError: any) {
+      console.error("Cafe24 migration load failed:", loadError)
       const message =
         loadError?.message ?? "이관 정보를 불러오는데 실패했습니다."
       setError(message)
@@ -182,7 +182,18 @@ export function Cafe24LinkSection() {
     startTransition(async () => {
       setActiveKey(key)
       try {
-        await migrateCafe24Item(key)
+        const response = await migrateCafe24Item(key)
+
+        if ("error" in response && response.error) {
+          const message =
+            response.error.status === 401 || response.error.status === 403
+              ? "로그인이 필요합니다."
+              : response.error.message ??
+                "이관에 실패했습니다. 다시 시도해주세요."
+          toast.error(message)
+          return
+        }
+
         toast.success("이관이 완료되었습니다.")
         await loadMigration()
       } catch (migrationError: any) {
