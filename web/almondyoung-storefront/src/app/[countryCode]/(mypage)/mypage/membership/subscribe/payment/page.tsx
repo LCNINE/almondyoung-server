@@ -1,7 +1,6 @@
 import { MembershipForm } from "./components"
 import type { PlanWithTier } from "@lib/types/membership"
 
-import { HttpApiError } from "@lib/api/api-error"
 import { WithHeaderLayout } from "@components/layout/with-header-layout"
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { getCurrentSubscription, getPlans } from "@lib/api/membership"
@@ -10,38 +9,18 @@ async function getPlansData(): Promise<PlanWithTier[]> {
   return getPlans()
 }
 
-async function getPaymentProfiles() {
-  try {
-    const { getBnplProfiles } = await import("@lib/api/wallet")
-
-    const profiles = await getBnplProfiles()
-    console.log("✅ Payment profiles loaded:", profiles)
-    return profiles
-  } catch (error) {
-    // 에러 상세 정보 로깅
-    console.error("❌ Payment profiles API error:", {
-      message: error instanceof Error ? error.message : "Unknown error",
-      status: error instanceof HttpApiError ? error.status : undefined,
-    })
-    // 프로필이 없거나 에러 발생 시 빈 배열 반환
-    return []
-  }
-}
-
 export default async function MembershipFormPage() {
   let plans: PlanWithTier[] = []
   let plansError = false
 
-  const [plansResult, paymentProfiles, currentSubscription] =
-    await Promise.all([
-      getPlansData().catch((error) => {
-        plansError = true
-        console.error("❌ Plans API error:", error)
-        return []
-      }),
-      getPaymentProfiles(),
-      getCurrentSubscription().catch(() => null),
-    ])
+  const [plansResult, currentSubscription] = await Promise.all([
+    getPlansData().catch((error) => {
+      plansError = true
+      console.error("❌ Plans API error:", error)
+      return []
+    }),
+    getCurrentSubscription().catch(() => null),
+  ])
 
   plans = plansResult
 
@@ -73,11 +52,6 @@ export default async function MembershipFormPage() {
     )
   }
 
-  // HMS 카드 프로필 찾기
-  const hmsCardProfile = paymentProfiles?.find(
-    (p: any) => p.kind === "CARD" && p.provider === "HMS_CARD"
-  )
-
   return (
     <WithHeaderLayout
       config={{
@@ -91,19 +65,6 @@ export default async function MembershipFormPage() {
         <MembershipForm
           monthlyPlan={monthlyPlan}
           yearlyPlan={yearlyPlan}
-          existingFmsMember={
-            hmsCardProfile && hmsCardProfile.details
-              ? {
-                  paymentCompany:
-                    hmsCardProfile.details.paymentCompany || "알 수 없음",
-                  paymentCompanyName:
-                    hmsCardProfile.details.paymentCompanyName || "알 수 없음",
-                  paymentNumber: hmsCardProfile.details.paymentNumber || "",
-                  cardLast4: hmsCardProfile.details.cardLast4 || "",
-                  payerName: hmsCardProfile.details.payerName || "",
-                }
-              : null
-          }
           existingSubType={
             currentSubscription?.plan?.durationDays === 30
               ? "monthly"
