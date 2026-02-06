@@ -24,11 +24,10 @@ import {
   getCafe24Migration,
   migrateCafe24Item,
 } from "@lib/api/users/cafe24"
-import { AlertCircle, Link2, RefreshCw } from "lucide-react"
-import { useParams, useSearchParams } from "next/navigation"
+import { Link2, RefreshCw } from "lucide-react"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
 import { toast } from "sonner"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 const CAFE24_MIGRATOR_BASE =
   "https://almondyoung.com/migrator/confirm.html"
@@ -89,6 +88,7 @@ const formatValue = (value: string | null) => value ?? "-"
 
 export function Cafe24LinkSection() {
   const { countryCode } = useParams() as { countryCode: string }
+  const router = useRouter()
   const searchParams = useSearchParams()
   const linkStatus = searchParams.get("link")
 
@@ -97,8 +97,6 @@ export function Cafe24LinkSection() {
   const [isLoading, setIsLoading] = useState(true)
   const [activeKey, setActiveKey] = useState<Cafe24MigrationKey | null>(null)
   const [isPending, startTransition] = useTransition()
-
-  const linkMessage = linkStatus ? LINK_STATUS_MESSAGES[linkStatus] : null
 
   const postUrl = useMemo(() => {
     if (typeof window === "undefined") return ""
@@ -171,7 +169,15 @@ export function Cafe24LinkSection() {
     if (linkStatus === "success") {
       loadMigration()
     }
-  }, [linkStatus, loadMigration])
+
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete("link")
+    const nextQuery = params.toString()
+    const nextPath = nextQuery
+      ? `/${countryCode}/mypage/account/cafe24?${nextQuery}`
+      : `/${countryCode}/mypage/account/cafe24`
+    router.replace(nextPath)
+  }, [linkStatus, loadMigration, countryCode, router, searchParams])
 
   const handleStartLink = () => {
     if (!cafe24RedirectUrl) return
@@ -222,17 +228,6 @@ export function Cafe24LinkSection() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {linkMessage && (
-            <Alert
-              variant={linkMessage.variant ?? "default"}
-              className="mb-4"
-            >
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>{linkMessage.title}</AlertTitle>
-              <AlertDescription>{linkMessage.description}</AlertDescription>
-            </Alert>
-          )}
-
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="space-y-1 text-sm text-gray-600">
               <p>
