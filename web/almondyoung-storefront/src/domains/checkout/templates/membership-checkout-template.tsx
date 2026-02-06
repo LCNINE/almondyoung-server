@@ -11,6 +11,9 @@ import type { UserDetail } from "@lib/types/ui/user"
 import { getCleanKoreanNumber } from "@/lib/utils/format-phone-number"
 import { loadTossPayments } from "@tosspayments/tosspayments-sdk"
 import { MobileCTA, PCFixedCTA } from "domains/checkout/components/cta"
+import { MobileHeader, PCHeader } from "domains/checkout/components/header"
+import { MobileOrderSummary } from "domains/checkout/components/order-summary"
+import { PaymentDetailSidebar } from "domains/checkout/components/payment-detail-sidebar"
 import { useParams, useRouter } from "next/navigation"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
@@ -35,6 +38,7 @@ export default function MembershipCheckoutTemplate({
   const { pinStatus, fetchPinStatus } = usePinStatus()
   const [selectedMethod, setSelectedMethod] = useState("toss")
   const [loading, setLoading] = useState(false)
+  const [isPaymentDetailsOpen, setIsPaymentDetailsOpen] = useState(true)
   const [pinRequiredModalOpen, setPinRequiredModalOpen] = useState(false)
   const [pinVerifyModalOpen, setPinVerifyModalOpen] = useState(false)
   const tossPaymentRef = useRef<any>(null)
@@ -153,29 +157,46 @@ export default function MembershipCheckoutTemplate({
   }
 
   return (
-    <section className="bg-[#f8f8f8] pb-20">
-      <div className="container mx-auto flex max-w-[1360px] flex-col gap-6 px-4 py-6 lg:flex-row lg:gap-10 lg:px-10">
-        <div className="flex-1 space-y-6">
-          <div className="rounded-lg border border-gray-200 bg-white p-6">
-            <h2 className="text-lg font-bold text-gray-900">멤버십 플랜</h2>
-            <div className="mt-3 flex items-baseline justify-between">
-              <div>
-                <p className="text-sm text-gray-500">선택한 플랜</p>
-                <p className="text-lg font-semibold text-gray-900">
-                  {planName}
+    <main className="bg-muted min-h-screen w-full">
+      <PCHeader />
+
+      <div className="container mx-auto max-w-[1360px] px-4 lg:px-[40px] lg:py-8">
+        <MobileHeader onClose={() => router.back()} />
+
+        <div className="lg:flex lg:w-full lg:justify-between lg:gap-9">
+          {/* 왼쪽 섹션 */}
+          <div className="lg:max-w-[820px] lg:min-w-[420px] lg:flex-1">
+            <section className="mb-6 rounded-[10px] border border-gray-200 bg-white p-6">
+              <h2 className="text-lg font-bold text-gray-900">멤버십 플랜</h2>
+              <div className="mt-3 flex items-baseline justify-between">
+                <div>
+                  <p className="text-sm text-gray-500">선택한 플랜</p>
+                  <p className="text-lg font-semibold text-gray-900">
+                    {planName}
+                  </p>
+                </div>
+                <p className="text-xl font-bold text-[#F29219]">
+                  {price.toLocaleString()}원
                 </p>
               </div>
-              <p className="text-xl font-bold text-[#F29219]">
-                {price.toLocaleString()}원
-              </p>
-            </div>
+            </section>
+
+            <PaymentTotalSection totals={totals} />
+            <PaymentMethodSection
+              selectedMethod={selectedMethod}
+              setSelectedMethod={setSelectedMethod}
+            />
           </div>
 
-          <PaymentTotalSection totals={totals} />
-          <PaymentMethodSection
-            selectedMethod={selectedMethod}
-            setSelectedMethod={setSelectedMethod}
-          />
+          {/* 오른쪽 섹션 */}
+          <div className="lg:shrink-0">
+            <MobileOrderSummary totals={totals} isMembership={false} />
+            <PaymentDetailSidebar
+              isOpen={isPaymentDetailsOpen}
+              setIsOpen={setIsPaymentDetailsOpen}
+              totals={totals}
+            />
+          </div>
         </div>
       </div>
 
@@ -184,14 +205,13 @@ export default function MembershipCheckoutTemplate({
 
       <PinRequiredModal
         open={pinRequiredModalOpen}
-        setOpen={setPinRequiredModalOpen}
+        onOpenChange={setPinRequiredModalOpen}
       />
       <PinVerifyModal
         open={pinVerifyModalOpen}
-        setOpen={setPinVerifyModalOpen}
+        onOpenChange={setPinVerifyModalOpen}
         onSuccess={processPayment}
-        onCancel={() => setLoading(false)}
       />
-    </section>
+    </main>
   )
 }

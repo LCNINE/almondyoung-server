@@ -1,5 +1,6 @@
 import { HttpApiError } from "@/lib/api/api-error"
-import { getPinStatus, type PinStatus } from "@/lib/api/wallet"
+import type { PinStatus } from "@/lib/api/wallet"
+import { getPinStatusClient } from "@/lib/api/wallet/client"
 import { useCallback, useState, useTransition } from "react"
 import { toast } from "sonner"
 
@@ -11,7 +12,7 @@ export const usePinStatus = () => {
     startTransition(() => {
       void (async () => {
         try {
-          const response = await getPinStatus()
+          const response = await getPinStatusClient()
           setPinStatus(response)
         } catch (err) {
           if (err instanceof HttpApiError) {
