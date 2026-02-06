@@ -24,6 +24,8 @@ export const ProductPrice = ({
   isTimeSale, // 타임세일 여부
   showMembershipHint, // 멤버십 안내 문구 표시
   membershipSavings, // 멤버십 절약액
+  membershipPrice, // 멤버십가 (비회원 표시용)
+  isMember, // 멤버십 여부
 }: {
   displayPrice: number
   originalPrice?: number
@@ -34,6 +36,8 @@ export const ProductPrice = ({
   isTimeSale?: boolean
   showMembershipHint?: boolean
   membershipSavings?: number
+  membershipPrice?: number
+  isMember: boolean
 }) => {
   // ===== 1. 품절 상품 =====
   // TODO: 재고 연동 후 활성화
@@ -115,13 +119,31 @@ export const ProductPrice = ({
           <span className="text-base font-bold md:text-[19px]">
             {displayPrice.toLocaleString()}원
           </span>
-          {showMembershipTag && <ProductMembershipBadge size="sm" />}
-      </div>
+          {showMembershipTag && (
+            <ProductMembershipBadge size="sm" label="멤버십할인가" />
+          )}
+        </div>
         {showMembershipHint && membershipSavings != null && (
           <span className="text-[11px] text-gray-500">
             멤버십 가입 시 {membershipSavings.toLocaleString()}원 절약
           </span>
         )}
+        {!isMember &&
+          membershipPrice != null &&
+          membershipPrice > 0 &&
+          membershipSavings != null && (
+            <div className="mt-1 flex flex-col gap-0.5">
+              <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#F2994A]">
+                <ProductMembershipBadge size="sm" label="멤버십할인가" />
+                <span className="text-[15px] font-bold">
+                  {membershipPrice.toLocaleString()}원
+                </span>
+              </div>
+              <span className="text-[11px] font-medium text-[#F2994A]">
+                가입 시 {membershipSavings.toLocaleString()}원 절약
+              </span>
+            </div>
+          )}
       </div>
     )
   }
@@ -132,7 +154,25 @@ export const ProductPrice = ({
       <span className="text-base font-bold md:text-[19px]">
         {displayPrice.toLocaleString()}원
       </span>
-      {showMembershipTag && <ProductMembershipBadge size="sm" />}
+      {showMembershipTag && (
+        <ProductMembershipBadge size="sm" label="멤버십할인가" />
+      )}
+      {!isMember &&
+        membershipPrice != null &&
+        membershipPrice > 0 &&
+        membershipSavings != null && (
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#F2994A]">
+              <ProductMembershipBadge size="sm" label="멤버십할인가" />
+              <span className="text-[15px] font-bold">
+                {membershipPrice.toLocaleString()}원
+              </span>
+            </div>
+            <span className="text-[11px] font-medium text-[#F2994A]">
+              가입 시 {membershipSavings.toLocaleString()}원 절약
+            </span>
+          </div>
+        )}
     </div>
   )
 }
