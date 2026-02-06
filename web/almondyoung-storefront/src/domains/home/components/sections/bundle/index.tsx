@@ -56,7 +56,9 @@ export function BundleSection({ products }: BundleSectionProps) {
                           <ProductCard.QuickActions
                             productId={product.id}
                             variantId={product.optionMeta?.defaultVariantId}
-                            isSingleOption={product.optionMeta?.isSingle ?? false}
+                            isSingleOption={
+                              product.optionMeta?.isSingle ?? false
+                            }
                             isLoggedIn={isLoggedIn}
                             countryCode={countryCode}
                           />
@@ -78,7 +80,7 @@ export function BundleSection({ products }: BundleSectionProps) {
             products={products.slice(0, 5)}
             showRank={false}
             showQuickActions
-            roundedClassName="rounded-sm md:rounded-md"
+            thumbnailClassName="rounded-sm md:rounded-md"
             countryCode={countryCode}
             isLoggedIn={isLoggedIn}
           />

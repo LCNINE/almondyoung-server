@@ -20,12 +20,10 @@ import { ProductCarousel } from "../../shared/product-carousel"
 import { CategoryTabs } from "./category-tabs"
 import { useUser } from "@/contexts/user-context"
 
-function CategoryBestSkeletonCard({ roundedClassName }: { roundedClassName: string }) {
+function CategoryBestSkeletonCard({ className }: { className?: string }) {
   return (
     <div className="flex flex-col gap-2">
-      <Skeleton
-        className={`aspect-3/4 w-full ${roundedClassName} bg-gray-200`}
-      />
+      <Skeleton className={`aspect-3/4 w-full ${className} bg-gray-200`} />
       <div className="flex flex-col gap-1 px-1">
         <Skeleton className="h-4 w-4/5 bg-gray-200" />
         <Skeleton className="h-4 w-3/5 bg-gray-200" />
@@ -44,7 +42,6 @@ function CategoryBestSkeletonGrid() {
           {Array.from({ length: 6 }).map((_, index) => (
             <CategoryBestSkeletonCard
               key={`category-best-skeleton-mobile-${index}`}
-              roundedClassName="rounded-tl-sm rounded-tr-xl rounded-br-xl rounded-bl-md"
             />
           ))}
         </div>
@@ -55,7 +52,6 @@ function CategoryBestSkeletonGrid() {
         {Array.from({ length: 10 }).map((_, index) => (
           <CategoryBestSkeletonCard
             key={`category-best-skeleton-desktop-${index}`}
-            roundedClassName="rounded-sm md:rounded-md"
           />
         ))}
       </div>
@@ -203,6 +199,7 @@ export function CategoryBestSection({
                                     >
                                       <ProductCard>
                                         <ProductCard.Thumbnail
+                                          className="drop-shadow-[0_2px_2px_rgba(0,0,0,0.1)]"
                                           src={product.imageSrc}
                                           alt={product.title}
                                           rank={
@@ -211,7 +208,10 @@ export function CategoryBestSection({
                                           action={
                                             <ProductCard.QuickActions
                                               productId={product.id}
-                                              variantId={product.optionMeta?.defaultVariantId}
+                                              variantId={
+                                                product.optionMeta
+                                                  ?.defaultVariantId
+                                              }
                                               isSingleOption={
                                                 product.optionMeta?.isSingle ??
                                                 false
@@ -220,7 +220,6 @@ export function CategoryBestSection({
                                               countryCode={countryCode}
                                             />
                                           }
-                                          className="rounded-tl-sm rounded-tr-xl rounded-br-xl rounded-bl-md"
                                         />
                                         <ProductCard.Info {...product} />
                                       </ProductCard>
@@ -241,7 +240,7 @@ export function CategoryBestSection({
                         products={products.slice(0, 10)}
                         showRank={true}
                         showQuickActions
-                        roundedClassName="rounded-sm md:rounded-md"
+                        thumbnailClassName="drop-shadow-[0_2px_2px_rgba(0,0,0,0.1)]"
                         countryCode={countryCode}
                         isLoggedIn={isLoggedIn}
                       />
