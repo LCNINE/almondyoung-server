@@ -3,6 +3,7 @@ import { ProductPriceDisplay } from "./product-price-display"
 import { ProductRatingDisplay } from "./product-rating-display"
 import { ProductShippingInfo } from "./product-shipping-info"
 import type { ProductDetail } from "@lib/types/ui/product"
+import { useMembership } from "@/contexts/membership-context"
 
 type Props = {
   product: ProductDetail
@@ -15,15 +16,22 @@ type Props = {
  * - props drilling 최소화
  */
 export function ProductInfoMobile({ product }: Props) {
+  const { status } = useMembership()
+  const isMember = status === "membership"
   // 유틸 함수
   const getDiscountRate = () => {
     const base = product.basePrice || 0
-    const member = product.membershipPrice || 0
-    if (base > 0 && member > 0 && member < base) {
-      return Math.round(((base - member) / base) * 100)
+    const actual = product.actualPrice ?? base
+    if (isMember && base > 0 && actual > 0 && actual < base) {
+      return Math.round(((base - actual) / base) * 100)
     }
     return 0
   }
+  const hasMembershipPrice =
+    typeof product.membershipPrice === "number" &&
+    typeof product.basePrice === "number" &&
+    product.membershipPrice > 0 &&
+    product.basePrice > product.membershipPrice
 
   return (
     <section className="md:hidden" aria-label="상품 정보">
@@ -47,22 +55,20 @@ export function ProductInfoMobile({ product }: Props) {
       <ProductPriceDisplay
         basePrice={product.basePrice || 0}
         membershipPrice={product.membershipPrice}
+        isMember={isMember}
         isMembershipOnly={product.isMembershipOnly}
         discountRate={getDiscountRate()}
         memberPrices={product.memberPrices}
         actualPrice={product.actualPrice}
         showMembershipHint={
-          typeof product.membershipPrice === "number" &&
-          typeof product.basePrice === "number" &&
+          !isMember &&
+          hasMembershipPrice &&
           typeof product.actualPrice === "number" &&
-          product.basePrice > product.membershipPrice &&
-          Math.abs(product.actualPrice - product.membershipPrice) >= 1
+          Math.abs(product.actualPrice - (product.membershipPrice ?? 0)) >= 1
         }
         membershipSavings={
-          typeof product.membershipPrice === "number" &&
-          typeof product.basePrice === "number" &&
-          product.basePrice > product.membershipPrice
-            ? product.basePrice - product.membershipPrice
+          hasMembershipPrice
+            ? (product.basePrice ?? 0) - (product.membershipPrice ?? 0)
             : undefined
         }
       />

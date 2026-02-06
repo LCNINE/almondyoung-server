@@ -173,7 +173,7 @@ export interface ProductDetail extends ProductCard {
   defaultVariantId?: string
   variantPriceMap?: Record<
     string,
-    { basePrice?: number; membershipPrice?: number }
+    { basePrice?: number; membershipPrice?: number; actualPrice?: number }
   >
   variantThumbnailMap?: Record<string, string>
 
