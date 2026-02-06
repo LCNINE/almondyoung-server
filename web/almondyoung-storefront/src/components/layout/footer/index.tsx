@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { cn } from "@lib/utils"
 import { Button } from "@/components/ui/button"
+import { FooterInfoLine } from "./footer-info-line"
 
 export default function Footer({ className }: { className?: string }) {
   return (
@@ -76,29 +77,41 @@ export default function Footer({ className }: { className?: string }) {
               </p>
             </div>
           </section>
-          <address className="flex-1 space-y-1 text-sm not-italic">
+          <address className="flex-1 space-y-1 not-italic">
             <strong className="mb-2 block font-semibold text-stone-500">
               아몬드영 사업자 정보
             </strong>
-            <p>회사 : 주식회사 엘씨나인 | 대표자 : 김정희</p>
-            <p>사업자 등록번호 : 467-86-01638 [사업자정보확인]</p>
-            <p>통신판매업 신고 : 2019-서울영등포-1446</p>
-            <p>전화 : 1877-7184</p>
-            <p>
+            <FooterInfoLine>
+              회사 : 주식회사 엘씨나인 | 대표자 : 김정희
+            </FooterInfoLine>
+            <FooterInfoLine>
+              사업자 등록번호 : 467-86-01638 [사업자정보확인]
+            </FooterInfoLine>
+            <FooterInfoLine>
+              통신판매업 신고 : 2019-서울영등포-1446
+            </FooterInfoLine>
+            <FooterInfoLine>전화 : 1877-7184</FooterInfoLine>
+            <FooterInfoLine>
               주소 : [14521] 경기도 부천시 평천로832번길 42 (도당동) 4층
               엘씨나인
-            </p>
+            </FooterInfoLine>
           </address>
-          <div className="flex-1 space-y-1 text-sm">
-            <p>교육대상 : 의료인 | 기타교육대상 : 의료인</p>
-            <p>의료기관 : 하트웰의원</p>
-            <p>
+          <div className="flex-1 space-y-1">
+            <FooterInfoLine>
+              교육대상 : 의료인 | 기타교육대상 : 의료인
+            </FooterInfoLine>
+            <FooterInfoLine>의료기관 : 하트웰의원</FooterInfoLine>
+            <FooterInfoLine>
               의료기관 소재지 : 서울특별시 성동구 아차산로 126 더리브 세종타워
               201,202호
-            </p>
-            <p>진료과목 : 피부과,성형외과 등</p>
-            <p>대표원장 : 노환규 | 면허번호 : 제 30722 호</p>
-            <p>개인정보보호책임자 : 주식회사엘씨나인(hello@lcnine.kr)</p>
+            </FooterInfoLine>
+            <FooterInfoLine>진료과목 : 피부과,성형외과 등</FooterInfoLine>
+            <FooterInfoLine>
+              대표원장 : 노환규 | 면허번호 : 제 30722 호
+            </FooterInfoLine>
+            <FooterInfoLine>
+              개인정보보호책임자 : 주식회사엘씨나인(hello@lcnine.kr)
+            </FooterInfoLine>
           </div>
         </div>
       </div>
