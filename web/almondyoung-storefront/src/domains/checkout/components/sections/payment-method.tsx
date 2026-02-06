@@ -133,6 +133,7 @@ export const PaymentMethodSection = ({
               src={TOSS_LOGO_URL}
               alt="Toss Payment"
               fill
+              sizes="80px"
               className="object-contain object-right"
             />
           </div>

@@ -10,7 +10,7 @@ export const PCHeader = () => (
         <Image
           src="/images/almond-logo-black.png"
           alt="아몬드영"
-          className="h-7"
+          className="h-7 w-auto"
           width={200}
           height={150}
         />
