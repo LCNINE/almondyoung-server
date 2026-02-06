@@ -20,7 +20,11 @@ import { ProductCarousel } from "../../shared/product-carousel"
 import { CategoryTabs } from "./category-tabs"
 import { useUser } from "@/contexts/user-context"
 
-function CategoryBestSkeletonCard({ roundedClassName }: { roundedClassName: string }) {
+function CategoryBestSkeletonCard({
+  roundedClassName,
+}: {
+  roundedClassName: string
+}) {
   return (
     <div className="flex flex-col gap-2">
       <Skeleton
@@ -44,7 +48,7 @@ function CategoryBestSkeletonGrid() {
           {Array.from({ length: 6 }).map((_, index) => (
             <CategoryBestSkeletonCard
               key={`category-best-skeleton-mobile-${index}`}
-              roundedClassName="rounded-tl-sm rounded-tr-xl rounded-br-xl rounded-bl-md"
+              roundedClassName="rounded-sm"
             />
           ))}
         </div>
@@ -211,7 +215,10 @@ export function CategoryBestSection({
                                           action={
                                             <ProductCard.QuickActions
                                               productId={product.id}
-                                              variantId={product.optionMeta?.defaultVariantId}
+                                              variantId={
+                                                product.optionMeta
+                                                  ?.defaultVariantId
+                                              }
                                               isSingleOption={
                                                 product.optionMeta?.isSingle ??
                                                 false
@@ -220,7 +227,7 @@ export function CategoryBestSection({
                                               countryCode={countryCode}
                                             />
                                           }
-                                          className="rounded-tl-sm rounded-tr-xl rounded-br-xl rounded-bl-md"
+                                          className="rounded-sm"
                                         />
                                         <ProductCard.Info {...product} />
                                       </ProductCard>
@@ -241,7 +248,7 @@ export function CategoryBestSection({
                         products={products.slice(0, 10)}
                         showRank={true}
                         showQuickActions
-                        roundedClassName="rounded-sm md:rounded-md"
+                        thumbnailClassName="rounded-sm md:rounded-md drop-shadow-[0_2px_2px_rgba(0,0,0,0.1)]"
                         countryCode={countryCode}
                         isLoggedIn={isLoggedIn}
                       />
