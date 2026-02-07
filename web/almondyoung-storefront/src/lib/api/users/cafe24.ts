@@ -32,13 +32,17 @@ export async function getCafe24Migration(): Promise<
   ApiResponse<Cafe24MigrationItem[]>
 > {
   try {
-    const data = await api<Cafe24MigrationItem[]>("users", "/cafe24/migration", {
-      method: "GET",
-      withAuth: true,
-      cache: "no-store",
-    })
+    const data = await api<{ items: Cafe24MigrationItem[] }>(
+      "users",
+      "/cafe24/migration",
+      {
+        method: "GET",
+        withAuth: true,
+        cache: "no-store",
+      }
+    )
 
-    return { data }
+    return { data: data.items ?? [] }
   } catch (error) {
     if (error instanceof HttpApiError) {
       return { error: { message: error.message, status: error.status } }
