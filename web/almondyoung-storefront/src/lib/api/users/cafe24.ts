@@ -28,6 +28,59 @@ export async function linkCafe24(cafe24_link_token: string) {
   })
 }
 
+export async function getCafe24LinkInfo(): Promise<
+  ApiResponse<Cafe24LinkResult | null>
+> {
+  try {
+    const data = await api<Cafe24LinkResult | null>("users", "/cafe24/link", {
+      method: "GET",
+      withAuth: true,
+      cache: "no-store",
+    })
+
+    return { data }
+  } catch (error) {
+    if (error instanceof HttpApiError) {
+      return { error: { message: error.message, status: error.status } }
+    }
+
+    if (error instanceof ApiNetworkError) {
+      return {
+        error: { message: "네트워크 오류가 발생했습니다.", status: 500 },
+      }
+    }
+
+    return {
+      error: { message: "알 수 없는 오류가 발생했습니다.", status: 500 },
+    }
+  }
+}
+
+export async function unlinkCafe24(): Promise<ApiResponse<Cafe24LinkResult>> {
+  try {
+    const data = await api<Cafe24LinkResult>("users", "/cafe24/unlink", {
+      method: "POST",
+      withAuth: true,
+    })
+
+    return { data }
+  } catch (error) {
+    if (error instanceof HttpApiError) {
+      return { error: { message: error.message, status: error.status } }
+    }
+
+    if (error instanceof ApiNetworkError) {
+      return {
+        error: { message: "네트워크 오류가 발생했습니다.", status: 500 },
+      }
+    }
+
+    return {
+      error: { message: "알 수 없는 오류가 발생했습니다.", status: 500 },
+    }
+  }
+}
+
 export async function getCafe24Migration(): Promise<
   ApiResponse<Cafe24MigrationItem[]>
 > {
