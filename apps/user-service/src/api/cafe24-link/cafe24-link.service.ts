@@ -3,7 +3,7 @@ import { HttpService } from '@nestjs/axios';
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, createHash, randomBytes, timingSafeEqual } from 'crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { firstValueFrom } from 'rxjs';
 import {
   cafe24Links,
@@ -171,6 +171,7 @@ export class Cafe24LinkService {
         and(
           eq(cafe24Links.mallId, token.mallId),
           eq(cafe24Links.cafe24MemberId, token.cafe24MemberId),
+          isNull(cafe24Links.unlinkedAt),
         ),
       )
       .limit(1);
@@ -308,7 +309,12 @@ export class Cafe24LinkService {
     const [link] = await client
       .select()
       .from(cafe24Links)
-      .where(eq(cafe24Links.userId, userId))
+      .where(
+        and(
+          eq(cafe24Links.userId, userId),
+          isNull(cafe24Links.unlinkedAt),
+        ),
+      )
       .limit(1);
 
     if (!link) {
@@ -332,6 +338,49 @@ export class Cafe24LinkService {
 
     const snapshot = await this.fetchPrivacySnapshot(link, tx);
     return snapshot;
+  }
+
+  async unlinkCafe24Account(userId: string, tx?: DbTransaction) {
+    const client = this.getClient(tx);
+    const now = new Date();
+
+    const [link] = await client
+      .select()
+      .from(cafe24Links)
+      .where(
+        and(
+          eq(cafe24Links.userId, userId),
+          isNull(cafe24Links.unlinkedAt),
+        ),
+      )
+      .limit(1);
+
+    if (!link) {
+      throw new BadRequestException('연결된 Cafe24 계정이 없습니다.');
+    }
+
+    await client
+      .update(cafe24Links)
+      .set({ unlinkedAt: now, updatedAt: now })
+      .where(eq(cafe24Links.id, link.id));
+
+    return link;
+  }
+
+  async getLinkedCafe24Account(userId: string, tx?: DbTransaction) {
+    const client = this.getClient(tx);
+    const [link] = await client
+      .select()
+      .from(cafe24Links)
+      .where(
+        and(
+          eq(cafe24Links.userId, userId),
+          isNull(cafe24Links.unlinkedAt),
+        ),
+      )
+      .limit(1);
+
+    return link ?? null;
   }
 
   private async fetchPrivacySnapshot(
