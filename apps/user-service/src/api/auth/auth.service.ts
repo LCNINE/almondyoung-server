@@ -35,6 +35,7 @@ import {
 import { ConsentsService } from '../consents/consents.service';
 import { TokensService } from '../tokens/tokens.service';
 import { UsersService } from '../users/users.service';
+import { Cafe24LinkService } from '../cafe24-link/cafe24-link.service';
 import { SignInDto } from './dto/sign-in.dto';
 import { LocalSignUpDto } from './dto/sign-up.dto';
 import { getCookieOptions, getDomain, logCookieDebugInfo } from './utils/cookies';
@@ -53,6 +54,7 @@ export class AuthService {
     private readonly eventPublisher: StreamPublisher<UserEvents>,
     private readonly consentsService: ConsentsService,
     private readonly tokensService: TokensService,
+    private readonly cafe24LinkService: Cafe24LinkService,
   ) { }
 
   private getClient(tx?: DbTransaction) {
@@ -93,6 +95,7 @@ export class AuthService {
       marketingConsent,
       birthday,
       phoneNumber,
+      cafe24LinkToken,
     } = signUpDto;
 
     const redirectTo = redirect_to ?? '/';
@@ -150,15 +153,35 @@ export class AuthService {
           marketingConsent,
         });
 
+        if (cafe24LinkToken) {
+          await this.cafe24LinkService.linkCafe24Account(
+            user.id,
+            cafe24LinkToken,
+            tx,
+          );
+        }
+
         return { userId: user.id, message: '회원가입 성공' }
       });
     } catch (error) {
-      if (error instanceof ConflictException) {
+      if (error instanceof ConflictException || error instanceof BadRequestException) {
         throw error;
       }
       console.error('회원가입 중 오류:', error);
       throw new InternalServerErrorException('회원가입 중 오류가 발생했습니다.');
     }
+  }
+
+  async bootstrapCafe24Signup(
+    encryptedIdToken: string,
+    mallId?: string,
+    meta?: { ip?: string; userAgent?: string },
+  ) {
+    return this.cafe24LinkService.issueSignupBootstrapData(
+      encryptedIdToken,
+      mallId,
+      meta,
+    );
   }
 
   // 회원가입 이메일 인증 완료 처리

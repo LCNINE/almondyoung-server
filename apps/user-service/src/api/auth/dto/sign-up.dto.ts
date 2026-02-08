@@ -146,6 +146,15 @@ export class LocalSignUpDto extends BaseSignUpDto {
   })
   @IsNotEmpty({ message: '휴대폰 번호는 필수 입력 항목입니다.' })
   phoneNumber: string;
+
+  @ApiProperty({
+    description: 'Cafe24 가입 시작 플로우에서 발급된 1회용 링크 토큰',
+    example: 'cafe24_link_token_value',
+    required: false,
+  })
+  @IsOptional()
+  @IsString({ message: 'cafe24LinkToken은 문자열이어야 합니다.' })
+  cafe24LinkToken?: string;
 }
 
 // 소셜 로그인용 DTO (비밀번호 옵션)
