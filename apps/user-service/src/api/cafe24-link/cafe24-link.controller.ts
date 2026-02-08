@@ -98,7 +98,10 @@ export class Cafe24LinkController {
     @Body()
     body: Cafe24MemberInfoRequestDto,
   ): Promise<Cafe24MemberInfoResponseDto> {
-    return this.cafe24LinkService.fetchMemberInfo(body.encryptedIdToken);
+    return this.cafe24LinkService.fetchMemberInfo(
+      body.encryptedIdToken,
+      body.mallId,
+    );
   }
 
   @Post('link')
