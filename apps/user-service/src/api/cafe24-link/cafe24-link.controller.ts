@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { Public } from '../../commons/decorator/public.decorator';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
-import { JwtPayload, RequireScopes } from '@app/roles';
+import { JwtPayload } from '@app/roles';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -112,7 +112,6 @@ export class Cafe24LinkController {
     description: '연결 성공',
     type: Cafe24LinkResponseDto,
   })
-  @RequireScopes(['user:modify'])
   async linkCafe24Account(
     @Body() body: Cafe24LinkRequestDto & { cafe24_link_token?: string },
     @CurrentUser() user: JwtPayload,
@@ -137,6 +136,55 @@ export class Cafe24LinkController {
     };
   }
 
+  @Get('link')
+  @ApiOperation({
+    summary: 'Cafe24 연결 정보 조회',
+    description: '현재 로그인한 사용자의 Cafe24 연결 정보를 조회합니다.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '연결 정보 조회 성공',
+    type: Cafe24LinkResponseDto,
+  })
+  async getLinkedCafe24Account(
+    @CurrentUser() user: JwtPayload,
+  ): Promise<Cafe24LinkResponseDto | null> {
+    const link = await this.cafe24LinkService.getLinkedCafe24Account(user.id);
+    if (!link) {
+      return null;
+    }
+
+    return {
+      linkId: link.id,
+      mallId: link.mallId,
+      cafe24MemberId: link.cafe24MemberId,
+      linkedAt: link.linkedAt.toISOString(),
+    };
+  }
+
+  @Post('unlink')
+  @ApiOperation({
+    summary: 'Cafe24 계정 연결 해제',
+    description: '연결된 Cafe24 계정을 해제합니다.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '연결 해제 성공',
+    type: Cafe24LinkResponseDto,
+  })
+  async unlinkCafe24Account(
+    @CurrentUser() user: JwtPayload,
+  ): Promise<Cafe24LinkResponseDto> {
+    const link = await this.cafe24LinkService.unlinkCafe24Account(user.id);
+
+    return {
+      linkId: link.id,
+      mallId: link.mallId,
+      cafe24MemberId: link.cafe24MemberId,
+      linkedAt: link.linkedAt.toISOString(),
+    };
+  }
+
   @Get('migration')
   @ApiOperation({
     summary: 'Cafe24 이관 항목 전체 조회',
@@ -147,7 +195,6 @@ export class Cafe24LinkController {
     description: '이관 항목 조회 성공',
     type: Cafe24MigrationListResponseDto,
   })
-  @RequireScopes(['user:read'])
   async getMigrationItems(
     @CurrentUser() user: JwtPayload,
   ): Promise<Cafe24MigrationListResponseDto> {
@@ -165,7 +212,6 @@ export class Cafe24LinkController {
     description: '이관 항목 조회 성공',
     type: Cafe24MigrationItemDto,
   })
-  @RequireScopes(['user:read'])
   async getMigrationItem(
     @Param('key') key: string,
     @CurrentUser() user: JwtPayload,
@@ -187,7 +233,6 @@ export class Cafe24LinkController {
     description: '이관 완료',
     type: Cafe24MigrationItemDto,
   })
-  @RequireScopes(['user:modify'])
   async migrateMigrationItem(
     @Param('key') key: string,
     @CurrentUser() user: JwtPayload,

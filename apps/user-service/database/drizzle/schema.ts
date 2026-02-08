@@ -13,6 +13,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core';
@@ -217,11 +218,16 @@ export const cafe24Links = pgTable(
     mallId: varchar('mall_id', { length: 64 }).notNull(),
     cafe24MemberId: varchar('cafe24_member_id', { length: 128 }).notNull(),
     linkedAt: timestamp('linked_at').defaultNow().notNull(),
+    unlinkedAt: timestamp('unlinked_at'),
     ...timestampColumns,
   },
   (table) => ({
-    userMallIdx: unique().on(table.userId, table.mallId),
-    mallMemberIdx: unique().on(table.mallId, table.cafe24MemberId),
+    userMallIdx: uniqueIndex('cafe24_links_user_mall_active_idx')
+      .on(table.userId, table.mallId)
+      .where(sql`${table.unlinkedAt} IS NULL`),
+    mallMemberIdx: uniqueIndex('cafe24_links_mall_member_active_idx')
+      .on(table.mallId, table.cafe24MemberId)
+      .where(sql`${table.unlinkedAt} IS NULL`),
   }),
 );
 
