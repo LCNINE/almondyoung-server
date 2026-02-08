@@ -1,6 +1,7 @@
 import { AuthorizationGuard, JwtPayload, RequireScopes } from '@app/roles';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -16,11 +17,15 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuthGuard } from '@nestjs/passport';
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { Public } from '../../commons/decorator/public.decorator';
 import { ProviderType } from '../../commons/types';
 import { AuthService } from './auth.service';
+import {
+  Cafe24SignupBootstrapRequestDto,
+  Cafe24SignupBootstrapResponseDto,
+} from './dto/cafe24-signup-bootstrap.dto';
 import { ChangePasswordDto } from './dto/change-pw.dto';
 import { FindUserIdDto } from './dto/find-userid.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
@@ -43,11 +48,59 @@ export class AuthController {
   @Post('signup')
   @Public()
   async signUp(
-    @Body() localSignUpDto: LocalSignUpDto,
+    @Body() body: LocalSignUpDto & { cafe24_link_token?: string },
     @Res({ passthrough: true }) res: FastifyReply,
     @Query('redirect_to') redirect_to?: string,
   ) {
+    const localSignUpDto: LocalSignUpDto = {
+      ...body,
+      cafe24LinkToken: body.cafe24LinkToken ?? body.cafe24_link_token,
+    };
+
     return this.authService.signUp(localSignUpDto, res, redirect_to);
+  }
+
+  @ApiOperation({
+    summary: 'Cafe24 기반 회원가입 시작',
+    description: '카페24 암호화 id 토큰으로 링크 토큰을 발급하고 회원가입 prefill 정보를 조회합니다.',
+  })
+  @ApiBody({ type: Cafe24SignupBootstrapRequestDto })
+  @ApiResponse({
+    status: 201,
+    description: '회원가입 시작 데이터 준비 성공',
+    type: Cafe24SignupBootstrapResponseDto,
+  })
+  @ApiResponse({ status: 400, description: '잘못된 요청' })
+  @Post('signup/cafe24/bootstrap')
+  @Public()
+  async bootstrapCafe24Signup(
+    @Body() body: Cafe24SignupBootstrapRequestDto & { encrypted_id_token?: string; mall_id?: string },
+    @Req() req: any,
+  ): Promise<Cafe24SignupBootstrapResponseDto> {
+    const encryptedIdToken = body.encryptedIdToken ?? body.encrypted_id_token;
+    const mallId = body.mallId ?? body.mall_id;
+
+    if (!encryptedIdToken) {
+      throw new BadRequestException('암호화 id 토큰이 필요합니다.');
+    }
+
+    const result = await this.authService.bootstrapCafe24Signup(
+      encryptedIdToken,
+      mallId,
+      {
+        ip: req?.ip,
+        userAgent: req?.headers?.['user-agent'],
+      },
+    );
+
+    return {
+      cafe24LinkToken: result.cafe24LinkToken,
+      expiresAt: result.expiresAt.toISOString(),
+      memberId: result.memberId,
+      memberName: result.memberName,
+      prefillAvailable: result.prefillAvailable,
+      prefill: result.prefill,
+    };
   }
 
   @ApiOperation({ summary: '로그인' })

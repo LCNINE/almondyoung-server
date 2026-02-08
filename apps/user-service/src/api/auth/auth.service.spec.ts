@@ -9,6 +9,7 @@ import { LocalSignUpDto } from './dto/sign-up.dto';
 import { ConsentsService } from '../consents/consents.service';
 import { TokensService } from '../tokens/tokens.service';
 import { UsersService } from '../users/users.service';
+import { Cafe24LinkService } from '../cafe24-link/cafe24-link.service';
 
 // bcrypt mock
 jest.mock('bcrypt', () => ({
@@ -89,6 +90,13 @@ describe('AuthService - signUp', () => {
         { provide: 'STREAM_PUBLISHER_users.events.v1', useValue: { publishEvent: jest.fn() } },
         { provide: ConsentsService, useValue: {} },
         { provide: TokensService, useValue: {} },
+        {
+          provide: Cafe24LinkService,
+          useValue: {
+            linkCafe24Account: jest.fn(),
+            issueSignupBootstrapData: jest.fn(),
+          },
+        },
       ],
     }).compile();
 

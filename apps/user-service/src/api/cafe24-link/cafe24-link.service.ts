@@ -21,6 +21,22 @@ interface IssueCafe24LinkTokenResult {
   expiresAt: Date;
 }
 
+export interface Cafe24SignupPrefill {
+  email: string | null;
+  username: string | null;
+  birthday: string | null;
+  phoneNumber: string | null;
+}
+
+export interface Cafe24SignupBootstrapResult {
+  cafe24LinkToken: string;
+  expiresAt: Date;
+  memberId: string | null;
+  memberName: string;
+  prefillAvailable: boolean;
+  prefill: Cafe24SignupPrefill;
+}
+
 type MigrationKey = 'email' | 'name' | 'birthday' | 'phone';
 type MigrationStatus = 'synced' | 'out_of_sync' | 'missing';
 
@@ -94,52 +110,77 @@ export class Cafe24LinkService {
     };
   }
 
-  async fetchMemberInfo(
+  async issueSignupBootstrapData(
     encryptedIdToken: string,
+    mallId?: string,
+    meta?: { ip?: string; userAgent?: string },
     tx?: DbTransaction,
-  ) {
-    const serviceKey = this.configService.get<string>('CAFE24_SERVICE_KEY');
-    if (!serviceKey) {
-      throw new Error('CAFE24_SERVICE_KEY 환경변수가 필요합니다.');
-    }
-
-    const resolvedMallId = this.configService.get<string>('CAFE24_MALL_ID') ?? 'lcnine';
-
-
-    let payload: Record<string, unknown>;
-    try {
-      payload = this.decodeEncryptedIdToken(encryptedIdToken, serviceKey);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.warn(`Cafe24 token decode failed: ${message}`);
-      throw new BadRequestException('암호화 id 토큰이 유효하지 않습니다.');
-    }
-
-    const cafe24MemberId = this.extractMemberId(payload);
-    if (!cafe24MemberId) {
-      throw new BadRequestException('회원 ID를 확인할 수 없습니다.');
-    }
-
-    const accessToken = await this.getCafe24AccessToken(resolvedMallId, tx);
-    const apiVersion =
-      this.configService.get<string>('CAFE24_API_VERSION') ?? '2025-12-01';
-    const encodedMemberId = encodeURIComponent(cafe24MemberId);
-    const url = `https://${resolvedMallId}.cafe24api.com/api/v2/admin/customersprivacy/${encodedMemberId}`;
-
-    const response = await firstValueFrom(
-      this.httpService.get(url, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'X-Cafe24-Api-Version': apiVersion,
-        },
-      }),
+  ): Promise<Cafe24SignupBootstrapResult> {
+    const linkToken = await this.issueCafe24LinkToken(
+      encryptedIdToken,
+      mallId,
+      meta,
+      tx,
     );
 
-    const data = response.data ?? {};
-    const memberName = this.extractMemberName(data);
+    try {
+      const privacy = await this.fetchMemberPrivacyByEncryptedIdToken(
+        encryptedIdToken,
+        mallId,
+        tx,
+      );
+
+      return {
+        cafe24LinkToken: linkToken.cafe24LinkToken,
+        expiresAt: linkToken.expiresAt,
+        memberId: privacy.memberId,
+        memberName: privacy.memberName,
+        prefillAvailable: true,
+        prefill: {
+          email: privacy.normalized.email,
+          username: privacy.normalized.name,
+          birthday: privacy.normalized.birthDate
+            ? this.formatBirthDateForSignup(privacy.normalized.birthDate)
+            : null,
+          phoneNumber: privacy.normalized.phoneNumber,
+        },
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `Cafe24 privacy prefill fetch failed during signup bootstrap: ${message}`,
+      );
+
+      return {
+        cafe24LinkToken: linkToken.cafe24LinkToken,
+        expiresAt: linkToken.expiresAt,
+        memberId: null,
+        memberName: '',
+        prefillAvailable: false,
+        prefill: {
+          email: null,
+          username: null,
+          birthday: null,
+          phoneNumber: null,
+        },
+      };
+    }
+  }
+
+  async fetchMemberInfo(
+    encryptedIdToken: string,
+    mallId?: string,
+    tx?: DbTransaction,
+  ) {
+    const { memberId, memberName } =
+      await this.fetchMemberPrivacyByEncryptedIdToken(
+        encryptedIdToken,
+        mallId,
+        tx,
+      );
 
     return {
-      memberId: cafe24MemberId,
+      memberId,
       memberName,
     };
   }
@@ -436,6 +477,59 @@ export class Cafe24LinkService {
     return snapshot;
   }
 
+  private async fetchMemberPrivacyByEncryptedIdToken(
+    encryptedIdToken: string,
+    mallId?: string,
+    tx?: DbTransaction,
+  ) {
+    const serviceKey = this.configService.get<string>('CAFE24_SERVICE_KEY');
+    if (!serviceKey) {
+      throw new Error('CAFE24_SERVICE_KEY 환경변수가 필요합니다.');
+    }
+
+    const resolvedMallId =
+      mallId ?? this.configService.get<string>('CAFE24_MALL_ID') ?? 'lcnine';
+
+    let payload: Record<string, unknown>;
+    try {
+      payload = this.decodeEncryptedIdToken(encryptedIdToken, serviceKey);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Cafe24 token decode failed: ${message}`);
+      throw new BadRequestException('암호화 id 토큰이 유효하지 않습니다.');
+    }
+
+    const memberId = this.extractMemberId(payload);
+    if (!memberId) {
+      throw new BadRequestException('회원 ID를 확인할 수 없습니다.');
+    }
+
+    const accessToken = await this.getCafe24AccessToken(resolvedMallId, tx);
+    const apiVersion =
+      this.configService.get<string>('CAFE24_API_VERSION') ?? '2025-12-01';
+    const encodedMemberId = encodeURIComponent(memberId);
+    const url = `https://${resolvedMallId}.cafe24api.com/api/v2/admin/customersprivacy/${encodedMemberId}`;
+
+    const response = await firstValueFrom(
+      this.httpService.get(url, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'X-Cafe24-Api-Version': apiVersion,
+        },
+      }),
+    );
+
+    const data = response.data ?? {};
+    const memberName = this.extractMemberName(data);
+    const normalized = this.normalizePrivacyData(data);
+
+    return {
+      memberId,
+      memberName,
+      normalized,
+    };
+  }
+
   private normalizePrivacyData(data: Record<string, any>) {
     const customer = data?.customersprivacy ?? {};
     const email = customer?.email ?? null;
@@ -449,6 +543,10 @@ export class Cafe24LinkService {
       phoneNumber: typeof phone === 'string' ? phone : null,
       birthDate: this.parseDateValue(birth),
     };
+  }
+
+  private formatBirthDateForSignup(value: Date) {
+    return value.toISOString().slice(0, 10).replace(/-/g, '');
   }
 
   private parseDateValue(value: unknown) {
