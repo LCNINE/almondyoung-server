@@ -105,6 +105,7 @@ export function ProductQuickActions({
     }
 
     const result = await addToCart({ variantId, quantity })
+
     if (result?.success) {
       setIsAddedToCart(true)
       toast.success("장바구니에 담았습니다.")
@@ -197,7 +198,7 @@ export function ProductQuickActions({
               <Button
                 variant="ghost"
                 size="sm"
-                className="bg-yellow-30 hover:bg-yellow-40 ml-1 h-6 rounded-full px-2 text-xs text-white"
+                className="bg-yellow-30 hover:bg-yellow-40 ml-1 h-6 rounded-full px-2 text-xs text-white hover:text-white"
                 onClick={handleAddToCart}
                 disabled={isCartLoading}
               >

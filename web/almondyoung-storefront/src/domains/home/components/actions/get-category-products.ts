@@ -74,7 +74,8 @@ export const getCategoryBestProducts = async (
   }
 
   return unstable_cache(
-    () => fetchCategoryBestProducts(categoryId, regionId, limit).catch(() => []),
+    () =>
+      fetchCategoryBestProducts(categoryId, regionId, limit).catch(() => []),
     [`category-best-products-${categoryId}-${regionId || "default"}-${limit}`],
     {
       tags: [`category-best-${categoryId}`, "category-best"],
