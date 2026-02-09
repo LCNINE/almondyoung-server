@@ -41,16 +41,14 @@ export const getProductList = async ({
         q, // 검색어 전달
         order, // 정렬 (예: "-created_at" = 최신순)
         fields:
-          "variants.*,+variants.metadata,+variants.prices.*,+variants.calculated_price,+variants.calculated_price_incl_tax,+variants.original_price,+variants.original_price_incl_tax,+categories,+metadata,+tags",
+          "*variants.calculated_price,+variants.inventory_quantity,+variants.metadata,+variants.prices.*,+variants.calculated_price_incl_tax,+variants.original_price,+variants.original_price_incl_tax,+categories,+metadata,+tags",
         region_id: region_id,
       },
       {
         next: {
           tags: [
             "products",
-            Array.isArray(categoryId)
-              ? categoryId.join(",")
-              : categoryId || "",
+            Array.isArray(categoryId) ? categoryId.join(",") : categoryId || "",
           ],
         },
       }

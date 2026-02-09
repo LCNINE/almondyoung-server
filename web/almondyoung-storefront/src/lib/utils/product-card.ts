@@ -1,6 +1,9 @@
 import type { StoreProduct, StoreProductVariant } from "@medusajs/types"
 import type { ProductCardProps } from "@/lib/types/ui/product"
-import { getPricesForVariant, getProductPrice } from "@/lib/utils/get-product-price"
+import {
+  getPricesForVariant,
+  getProductPrice,
+} from "@/lib/utils/get-product-price"
 
 export type ReviewSummary = { rating: number; reviewCount: number }
 
@@ -34,7 +37,9 @@ export function mapStoreProductToCardProps(
 
   const variants = product.variants ?? []
   const defaultVariant = variants.find(isDefaultVariant) ?? variants[0]
-  const defaultPrice = defaultVariant ? getPricesForVariant(defaultVariant) : null
+  const defaultPrice = defaultVariant
+    ? getPricesForVariant(defaultVariant)
+    : null
   const membershipPreviewPrice = defaultVariant
     ? getMembershipPreviewPrice(defaultVariant)
     : undefined
@@ -48,12 +53,7 @@ export function mapStoreProductToCardProps(
   const basePrice = originalPrice ?? calculatedPrice ?? 0
   const actualPrice = calculatedPrice ?? originalPrice ?? 0
   const rawMembershipPrice =
-    membershipPreviewPrice ??
-    (
-      calculatedPrice ??
-      originalPrice ??
-      0
-    )
+    membershipPreviewPrice ?? calculatedPrice ?? originalPrice ?? 0
 
   const membershipPrice =
     rawMembershipPrice > 0 && basePrice > rawMembershipPrice
@@ -69,12 +69,9 @@ export function mapStoreProductToCardProps(
 
   const displayPrice = actualPrice || basePrice
   const membershipSavings =
-    membershipPrice > 0
-      ? basePrice - membershipPrice
-      : undefined
+    membershipPrice > 0 ? basePrice - membershipPrice : undefined
   const showMembershipHint =
-    membershipSavings != null &&
-    Math.abs(actualPrice - membershipPrice) >= 1
+    membershipSavings != null && Math.abs(actualPrice - membershipPrice) >= 1
   const imageUrl = product.thumbnail || ""
   const reviewData = reviewsMap?.get(product.handle || product.id)
 
@@ -82,9 +79,17 @@ export function mapStoreProductToCardProps(
   const isSingleOption = variants.length === 1
   const defaultVariantId = defaultVariant?.id
 
+  // 해당 상품이 재고가 있는지 여부
+  const isInStock =
+    defaultVariant.manage_inventory === false ||
+    (defaultVariant.inventory_quantity || 0) > 0
+
+  // 사용가능한 재고 수량
+  const available = isInStock ? defaultVariant.inventory_quantity || 0 : 0
+
   return {
-    id: product.id,
     title: product.title || "",
+    id: product.id,
     price: displayPrice,
     originalPrice: basePrice,
     discount,
@@ -93,6 +98,8 @@ export function mapStoreProductToCardProps(
     imageSrc: imageUrl,
     membershipSavings,
     showMembershipHint,
+    manageInventory: defaultVariant.manage_inventory ?? false,
+    available,
     debugPrices: {
       basePrice,
       membershipPrice,

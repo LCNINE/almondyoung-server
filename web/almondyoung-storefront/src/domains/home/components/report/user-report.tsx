@@ -1,14 +1,14 @@
 import {
   ChevronLeft,
   ChevronRight,
-  Info,
   ShoppingCart,
   Star,
   Triangle,
   X,
 } from "lucide-react"
 import React from "react"
-import Image from "next/image" // Next.js Image 컴포넌트 사용
+import Image from "next/image"
+import { LowStockBadge } from "@/components/shared/badges/low-stock-badge"
 
 // --- 1. 데이터 분리 ---
 const recommendedProducts = [
@@ -31,7 +31,6 @@ export default function UserReport() {
   const triangleFillColor = "#f4f4f4"
   const triangleWhiteFillColor = "#ffffff"
   const starFillColor = "#C6C6C6"
-  const infoFillColor = "#F54527"
 
   return (
     <article className="flex flex-col self-stretch overflow-hidden rounded-[15px] bg-[#f4f4f4]">
@@ -142,15 +141,12 @@ export default function UserReport() {
                   className="h-[100px] w-[100px] rounded-[10px] object-cover"
                   unoptimized={true} // [수정] SVG 오류 해결
                 />
-                <div className="flex items-center gap-0.5">
-                  <Info
-                    className="h-3.5 w-3.5 text-[#F54527]"
-                    fill={infoFillColor}
-                  />
-                  <p className="text-xs font-normal text-[#f54527]">
-                    잔여수량 {item.stock}개
-                  </p>
-                </div>
+                <LowStockBadge
+                  count={item.stock}
+                  size="sm"
+                  color="#F54527"
+                  className="font-normal"
+                />
               </div>
             ))}
           </div>

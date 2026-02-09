@@ -89,16 +89,12 @@ export function CategoryBestSection({
   useEffect(() => {
     startTransition(async () => {
       const nextProducts = await getCategoryBestProducts(activeTab, regionId)
+
       if (process.env.NODE_ENV !== "production") {
         console.log(
           "[Home][CategoryBest] products",
           nextProducts.map((product) => ({
-            id: product.id,
-            title: product.title,
-            price: product.price,
-            originalPrice: product.originalPrice,
-            membershipSavings: product.membershipSavings,
-            debugPrices: product.debugPrices,
+            ...product,
           }))
         )
       }
@@ -192,7 +188,7 @@ export function CategoryBestSection({
                           {chunkedProducts.map((group, groupIndex) => (
                             <ProductCarousel.Item
                               key={groupIndex}
-                              className="basis-[85%] pl-3"
+                              className="basis-[92%] pl-3"
                             >
                               <div className="grid grid-cols-3 gap-x-3 gap-y-8">
                                 {group.map((product, itemIndex) => {
