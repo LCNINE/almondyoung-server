@@ -1,7 +1,3 @@
-/**
- * StepTwo 컴포넌트 타입 정의
- */
-
 export interface StepTwoValues {
   isOperating: boolean
   yearsOperating: number
@@ -19,6 +15,9 @@ export interface StepTwoErrors {
 
 export interface StepTwoProps {
   values: StepTwoValues
-  onChange: (field: keyof StepTwoValues, value: any) => void
+  onChange: (
+    field: keyof StepTwoValues,
+    value: string | number | boolean | string[]
+  ) => void
   errors?: StepTwoErrors
 }

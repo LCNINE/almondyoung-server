@@ -1,5 +1,5 @@
 import type { UserDetail } from "@lib/types/ui/user"
-import { MENU_ITEMS } from "../constants/mypage-constants"
+import { MENU_SECTIONS } from "../constants/mypage-constants"
 import { MenuList } from "./menu-list"
 import { MobileHeader } from "./mobile-header"
 import { PointsBanner } from "./points-banner"
@@ -7,7 +7,7 @@ import { QuickLinks } from "./quick-links"
 import { SavingsBanner } from "./savings-banner"
 import ShippingStatusCard from "./shipping-status-card"
 import { AdminAccessButton } from "@/components/admin/admin-access-button"
-// import PayLaterBanner from "./paylater-banner"
+import PayLaterBanner from "./paylater-banner"
 
 /**
  * 마이페이지 모바일 콘텐츠
@@ -27,6 +27,8 @@ export function MyPageMobileContent({
   isAdmin = false,
   countryCode = "kr",
 }: MyPageMobileContentProps) {
+  const isPayLaterBannerEnabled = false
+
   return (
     <div className="mx-auto">
       <div className="bg-muted space-y-4 px-6 py-4">
@@ -35,23 +37,17 @@ export function MyPageMobileContent({
         {/* 관리자 버튼 */}
         {isAdmin && (
           <div className="pb-2">
-            <AdminAccessButton
-              countryCode={countryCode}
-              className="w-full"
-            />
+            <AdminAccessButton countryCode={countryCode} className="w-full" />
           </div>
         )}
 
         <SavingsBanner />
         <PointsBanner />
         <QuickLinks />
-      </div>
-      <div className="space-y-4 bg-white px-4 py-4">
         <ShippingStatusCard />
       </div>
-      {/* todo: 페이라터 배너 임시 비활성화 */}
-      {/* <PayLaterBanner /> */}
-      <MenuList items={MENU_ITEMS} />
+      {isPayLaterBannerEnabled && <PayLaterBanner />}
+      <MenuList sections={MENU_SECTIONS} />
     </div>
   )
 }

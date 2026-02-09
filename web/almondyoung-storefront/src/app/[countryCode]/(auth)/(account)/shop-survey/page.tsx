@@ -1,4 +1,4 @@
-import ShopSurveyTemplate from "domains/shop-survey/template/shop-survey-template"
+import ShopSurveyForm from "@/domains/shop-survey/components/shop-survey-form"
 
 export default async function ShopSurveyPage({
   searchParams,
@@ -9,10 +9,8 @@ export default async function ShopSurveyPage({
   const redirectTo = resolvedSearchParams.redirect_to ?? ""
 
   return (
-    <>
-      <ShopSurveyTemplate
-        searchParams={Promise.resolve({ redirect_to: redirectTo })}
-      />
-    </>
+    <section>
+      <ShopSurveyForm redirectTo={redirectTo} />
+    </section>
   )
 }

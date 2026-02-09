@@ -10,6 +10,7 @@ import { useTransition, useEffect, useState } from "react"
 import { getCurrentSubscription } from "@lib/api/membership/client"
 import { getPointBalance } from "@lib/api/wallet"
 import Link from "next/link"
+import { Skeleton } from "@/components/ui/skeleton"
 
 interface UserProfileSectionProps {
   userName: string
@@ -18,9 +19,7 @@ interface UserProfileSectionProps {
 /**
  * 간결한 DOM 구조 + 의미있는 시맨틱 엘리먼트 사용
  */
-export function UserProfileSection({
-  userName,
-}: UserProfileSectionProps) {
+export function UserProfileSection({ userName }: UserProfileSectionProps) {
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
   const { setUser } = useUser()
@@ -87,7 +86,7 @@ export function UserProfileSection({
 
             {/* 멤버십 뱃지 or 가입 유도 */}
             {isLoading ? (
-              <span className="text-sm text-gray-400">로딩 중...</span>
+              <Skeleton className="h-6 w-24" />
             ) : isMember ? (
               <Link href="/kr/mypage/membership">
                 <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[#FF9500] transition-opacity hover:opacity-80">
@@ -97,7 +96,7 @@ export function UserProfileSection({
               </Link>
             ) : (
               <Link href="/kr/mypage/membership/subscribe">
-                <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-amber-100 px-3 py-1 text-amber-700 transition-colors hover:bg-amber-200">
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-3 py-1 whitespace-nowrap text-amber-700 transition-colors hover:bg-amber-200">
                   <Crown className="size-4" aria-hidden />
                   <span className="text-sm font-bold">멤버십 가입하기</span>
                 </span>
@@ -111,7 +110,7 @@ export function UserProfileSection({
               <li>
                 <Link href="/kr/mypage/account/profile">
                   <CustomButton
-                    className="text-gray-90 border-gray-90 hover:border-gray-90 whitespace-nowrap hover:bg-gray-100"
+                    className="text-gray-90 border-gray-90 hover:border-gray-90 cursor-pointer whitespace-nowrap hover:bg-gray-100"
                     variant="outline"
                     size="sm"
                   >
@@ -121,7 +120,7 @@ export function UserProfileSection({
               </li>
               <li>
                 <CustomButton
-                  className="text-gray-90 border-gray-90 hover:border-gray-90 whitespace-nowrap hover:bg-gray-100"
+                  className="text-gray-90 border-gray-90 hover:border-gray-90 cursor-pointer whitespace-nowrap hover:bg-gray-100"
                   variant="outline"
                   size="sm"
                   onClick={handleLogout}
