@@ -109,7 +109,13 @@ function createKafkaConfig() {
     ...(process.env.NODE_ENV === 'production'
       ? [
         EventsModule.forRoot({
-          streams: [CHANNEL_ADAPTER_STREAM, ORDER_STREAM, FULFILLMENT_STREAM, PRODUCT_STREAM],
+          streams: [
+            CHANNEL_ADAPTER_STREAM,
+            ORDER_STREAM,
+            FULFILLMENT_STREAM,
+            PRODUCT_STREAM,
+            MEMBERSHIP_STREAM,
+          ],
           serviceName: 'channel-adapter',
           kafka: createKafkaConfig(),
           validation: {
