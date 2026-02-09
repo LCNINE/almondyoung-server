@@ -27,10 +27,21 @@ export function useAddToCart() {
         quantity,
       })
 
-      toast.success("장바구니에 추가되었습니다.")
       return { success: true, data: result }
     } catch (error) {
-      toast.error("장바구니 추가 중 오류가 발생했습니다.")
+      if (error) {
+        const rawMessage = error instanceof Error ? error.message : ""
+
+        let errorMessage = "장바구니 추가 중 오류가 발생했습니다"
+        if (rawMessage.includes("inventory")) {
+          errorMessage = "재고가 부족합니다"
+        } else if (rawMessage.includes("not found")) {
+          errorMessage = "상품을 찾을 수 없습니다"
+        }
+
+        toast.error(errorMessage)
+      }
+
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",

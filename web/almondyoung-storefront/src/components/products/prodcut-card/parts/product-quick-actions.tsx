@@ -105,6 +105,7 @@ export function ProductQuickActions({
     }
 
     const result = await addToCart({ variantId, quantity })
+
     if (result?.success) {
       setIsAddedToCart(true)
       toast.success("장바구니에 담았습니다.")

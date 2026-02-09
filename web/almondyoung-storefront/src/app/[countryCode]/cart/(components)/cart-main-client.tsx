@@ -242,8 +242,17 @@ export function CartMainClient() {
         setShippingTotal(estimatedShipping)
       }
     } catch (error) {
-      console.error("수량 변경 실패:", error)
-      toast.error("수량 변경에 실패했습니다.")
+      const rawMessage = error instanceof Error ? error.message : ""
+
+      let errorMessage = "수량 변경에 실패했습니다."
+      if (rawMessage.includes("inventory")) {
+        errorMessage = "재고가 부족합니다"
+      } else if (rawMessage.includes("not found")) {
+        errorMessage = "상품을 찾을 수 없습니다"
+      }
+
+      toast.error(errorMessage)
+
       // 실패 시 다시 로드
       await loadCart()
     }

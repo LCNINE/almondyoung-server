@@ -12,7 +12,13 @@ export default function medusaError(error: any): never {
 
     // Extracting the error message from the response data
     const message = error.response.data.message || error.response.data
-
+    console.log(
+      "🚀 [medusaError] message:",
+      message.charAt(0).toUpperCase() + message.slice(1) + ".",
+      error.response.status,
+      error.response.statusText,
+      error.data
+    )
     throw new HttpApiError(
       message.charAt(0).toUpperCase() + message.slice(1) + ".",
       error.response.status,
