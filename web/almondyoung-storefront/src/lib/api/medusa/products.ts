@@ -81,7 +81,7 @@ export const getProductDetail = async (
       productId,
       {
         fields:
-          "variants.*,+variants.metadata,+variants.prices.*,+variants.calculated_price,+variants.calculated_price_incl_tax,+variants.original_price,+variants.original_price_incl_tax,+variants.price_type,+variants.currency_code",
+          "variants.*,+variants.inventory_quantity,+variants.metadata,+variants.prices.*,+variants.calculated_price",
         region_id: regionId,
       },
       {
@@ -89,8 +89,6 @@ export const getProductDetail = async (
         ...(isAuthed && { cache: "no-store" }),
       }
     )
-
-    console.log("product::", product)
 
     return product
   } catch (error) {
