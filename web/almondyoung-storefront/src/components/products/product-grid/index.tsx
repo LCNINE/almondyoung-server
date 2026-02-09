@@ -31,15 +31,17 @@ export function ProductGrid({
     >
       {products.map((product, index) => {
         const rank = showRank ? index + 1 : undefined
+        const isSoldOut = product.manageInventory && product.available <= 0
         const card = (
           <ProductCard>
             <ProductCard.Thumbnail
               className={thumbnailClassName}
               src={product.imageSrc}
               alt={product.title}
+              isSoldOut={isSoldOut}
               rank={rank && <ProductCard.Rank rank={rank} />}
               action={
-                showQuickActions ? (
+                showQuickActions && !isSoldOut ? (
                   <ProductCard.QuickActions
                     productId={product.id}
                     variantId={product.optionMeta?.defaultVariantId}
