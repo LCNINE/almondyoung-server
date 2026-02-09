@@ -42,7 +42,7 @@ export function PointsBanner() {
 
   return (
     <Link href="/kr/mypage/point">
-      <section className="flex w-full items-center justify-between rounded-[10px] bg-white px-4 py-3.5 shadow-sm transition-opacity hover:opacity-80">
+      <section className="my-3 flex w-full items-center justify-between rounded-[10px] bg-white px-4 py-3.5 shadow-sm transition-opacity hover:opacity-80">
         {/* Left Side: 상태 메시지 */}
         <p className="text-[11px] font-medium text-[#2c2c2e]">
           {hasRecentActivity

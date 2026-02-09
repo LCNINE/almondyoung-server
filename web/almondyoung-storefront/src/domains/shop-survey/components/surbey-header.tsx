@@ -1,4 +1,3 @@
-// [규칙] 구현 상세를 컴포넌트로 추상화
 export default function SurveyHeader() {
   return (
     <header className="inline-flex w-full flex-col items-start justify-start gap-2.5 self-stretch bg-linear-to-l from-amber-300 to-amber-500 p-7">

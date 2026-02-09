@@ -2,13 +2,13 @@ import { HttpApiError } from "@lib/api/api-error"
 import { getShopSurvey, modifyShopSurvey } from "@/lib/api/users/shop-suvery"
 import { useState } from "react"
 import { toast } from "sonner"
-import { ShopSurveySchema } from "../schemas/suvery-schema"
+import type { ShopFormSchema } from "@/components/shop-form/schema"
 
 export const useShopSurvey = () => {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
 
-  const modifyShopSurveyAction = async (data: ShopSurveySchema) => {
+  const modifyShopSurveyAction = async (data: ShopFormSchema) => {
     try {
       setIsSubmitting(true)
 

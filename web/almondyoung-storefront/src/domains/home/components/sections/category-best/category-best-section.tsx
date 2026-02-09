@@ -184,11 +184,17 @@ export function CategoryBestSection({
                   <>
                     {/* mobile layout */}
                     <div className="md:hidden">
-                      <ProductCarousel className="md:hidden">
-                        <ProductCarousel.List>
+                      <ProductCarousel
+                        className="md:hidden"
+                        opts={{ align: "start" }}
+                      >
+                        <ProductCarousel.List className="-ml-3">
                           {chunkedProducts.map((group, groupIndex) => (
-                            <ProductCarousel.Item key={groupIndex}>
-                              <div className="grid grid-cols-3 gap-x-3 gap-y-8 px-1">
+                            <ProductCarousel.Item
+                              key={groupIndex}
+                              className="basis-[85%] pl-3"
+                            >
+                              <div className="grid grid-cols-3 gap-x-3 gap-y-8">
                                 {group.map((product, itemIndex) => {
                                   const rank = groupIndex * 6 + itemIndex + 1
                                   return (

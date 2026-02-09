@@ -1,6 +1,6 @@
-import { ApiAuthError, HttpApiError } from "@lib/api/api-error"
-import { linkCafe24 } from "@lib/api/users/cafe24"
 import { NextRequest, NextResponse } from "next/server"
+
+const CAFE24_LINK_TOKEN_COOKIE = "cafe24_link_token"
 
 const buildStatusRedirect = (
   request: NextRequest,
@@ -12,14 +12,11 @@ const buildStatusRedirect = (
   return NextResponse.redirect(url, 303)
 }
 
-const buildLoginRedirect = (
-  request: NextRequest,
-  countryCode: string,
-  status: string
-) => {
-  const url = new URL(`/${countryCode}/login`, request.url)
-  const redirectTo = `/${countryCode}/mypage/account/cafe24?link=${status}`
-  url.searchParams.set("redirect_to", redirectTo)
+const buildCompleteRedirect = (request: NextRequest, countryCode: string) => {
+  const url = new URL(
+    `/${countryCode}/mypage/account/cafe24/complete`,
+    request.url
+  )
   return NextResponse.redirect(url, 303)
 }
 
@@ -36,23 +33,13 @@ export async function POST(
     return buildStatusRedirect(request, countryCode, "missing_token")
   }
 
-  try {
-    await linkCafe24(cafe24LinkToken)
-    return buildStatusRedirect(request, countryCode, "success")
-  } catch (error) {
-    if (
-      error instanceof ApiAuthError ||
-      (error instanceof HttpApiError &&
-        (error.status === 401 || error.status === 403))
-    ) {
-      return buildLoginRedirect(request, countryCode, "login_required")
-    }
-
-    if (error instanceof HttpApiError && error.status === 400) {
-      return buildStatusRedirect(request, countryCode, "invalid_token")
-    }
-
-    console.error("Cafe24 link failed:", error)
-    return buildStatusRedirect(request, countryCode, "failed")
-  }
+  const response = buildCompleteRedirect(request, countryCode)
+  response.cookies.set(CAFE24_LINK_TOKEN_COOKIE, cafe24LinkToken, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 60 * 5,
+    path: "/",
+  })
+  return response
 }

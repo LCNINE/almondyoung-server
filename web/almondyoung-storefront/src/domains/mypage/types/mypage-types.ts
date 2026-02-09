@@ -10,6 +10,11 @@ export interface MenuItem {
   action?: "logout"
 }
 
+export interface MenuSection {
+  title: string
+  items: MenuItem[]
+}
+
 export interface ShippingItem {
   id: string
   status: "preparing" | "shipping"
