@@ -197,7 +197,7 @@ export function ProductQuickActions({
               <Button
                 variant="ghost"
                 size="sm"
-                className="bg-yellow-30 hover:bg-yellow-40 ml-1 h-6 rounded-full px-2 text-xs text-white"
+                className="bg-yellow-30 hover:bg-yellow-40 ml-1 h-6 rounded-full px-2 text-xs text-white hover:text-white"
                 onClick={handleAddToCart}
                 disabled={isCartLoading}
               >
