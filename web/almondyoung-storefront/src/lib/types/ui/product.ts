@@ -165,6 +165,8 @@ export interface MemberTierPrice {
 
 export interface ProductDetail extends ProductCard {
   thumbnails: string[] // 메인 + 추가 이미지
+  manageInventory: boolean
+  available: number
   description?: string
   descriptionHtml?: string
   detailImages?: string[] // HTML을 쪼개서 이미지 배열로 쓰고 싶을 때

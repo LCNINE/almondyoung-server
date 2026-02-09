@@ -7,6 +7,7 @@ type Props = {
   mainImage: string
   productName: string
   onImageChange: (image: string) => void
+  isSoldOut?: boolean
 }
 
 /**
@@ -17,6 +18,7 @@ export function ProductImageGallery({
   mainImage,
   productName,
   onImageChange,
+  isSoldOut = false,
 }: Props) {
   return (
     <section className="mb-8 flex flex-col gap-4 px-0 md:flex-col-reverse lg:flex-row lg:px-14">
@@ -50,7 +52,7 @@ export function ProductImageGallery({
       </aside>
 
       {/* 메인 이미지 */}
-      <figure className="flex-1">
+      <figure className="relative flex-1">
         <div className="aspect-square overflow-hidden bg-gray-200">
           <img
             src={getThumbnailUrl(mainImage)}
@@ -58,6 +60,11 @@ export function ProductImageGallery({
             className="h-full w-full object-cover"
           />
         </div>
+        {isSoldOut && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/20 transition-opacity duration-300 hover:opacity-30">
+            <span className="text-2xl font-bold text-white">일시 품절</span>
+          </div>
+        )}
       </figure>
 
       {/* 썸네일 리스트 (모바일) */}
