@@ -144,7 +144,7 @@ export default function OrderCardContent({
           <CustomButton
             type="button"
             variant="outline"
-            color="primary"
+            color="secondary"
             size="lg"
             fullWidth={true}
           >
@@ -158,7 +158,7 @@ export default function OrderCardContent({
         <Link href={`/mypage/order/track?orderId=${orderId}`}>
           <CustomButton
             variant="outline"
-            color="primary"
+            color="secondary"
             size="md"
             fullWidth={true}
           >

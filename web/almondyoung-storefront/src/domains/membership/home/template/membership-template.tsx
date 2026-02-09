@@ -1,8 +1,6 @@
-"use client"
-
 import { PageTitle } from "@/components/shared/page-title"
-import SubscriberSection from "./components/subscriber/subscriber-section"
-import NonSubscriberSection from "./components/non-subscriber/non-subscriber-section"
+import SubscriberSection from "../components/subscriber/subscriber-section"
+import NonSubscriberSection from "../components/non-subscriber"
 import type {
   CancellationReasonDto,
   CycleBenefitDto,
@@ -15,7 +13,7 @@ import type {
   RangeSavingsDto,
 } from "@lib/types/dto/membership-savings"
 import type { PlanWithTier } from "@lib/types/membership"
-interface MembershipPageClientProps {
+interface MembershipTemplateProps {
   isMember: boolean
   membershipData: SubscriptionDetailsDto | null
   plans: PlanWithTier[]
@@ -27,12 +25,7 @@ interface MembershipPageClientProps {
   benefitHistory: CycleBenefitHistoryDto | null
 }
 
-/**
- * 멤버십 관리 페이지 클라이언트 컴포넌트
- *
- * 서버에서 전달받은 멤버십 상태에 따라 다른 UI를 렌더링
- */
-export default function MembershipPageClient({
+export default function MembershipTemplate({
   isMember,
   membershipData,
   plans,
@@ -42,11 +35,9 @@ export default function MembershipPageClient({
   cancellationReasons,
   currentBenefit,
   benefitHistory,
-}: MembershipPageClientProps) {
+}: MembershipTemplateProps) {
   return (
     <div className="bg-white px-3 py-4 md:min-h-screen md:px-6">
-      <PageTitle>멤버십 관리</PageTitle>
-
       {isMember ? (
         <SubscriberSection
           membershipData={membershipData}
@@ -59,12 +50,7 @@ export default function MembershipPageClient({
           benefitHistory={benefitHistory}
         />
       ) : (
-        <NonSubscriberSection
-          plans={plans}
-          rangeSavings={rangeSavings}
-          subscriptionHistory={subscriptionHistory}
-          benefitHistory={benefitHistory}
-        />
+        <NonSubscriberSection />
       )}
     </div>
   )

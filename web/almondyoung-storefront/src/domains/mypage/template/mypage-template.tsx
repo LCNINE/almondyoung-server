@@ -1,11 +1,10 @@
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
+import { checkAdminScope } from "@lib/api/admin/inventory"
 import { fetchMe } from "@lib/api/users/me"
 import type { UserDetail } from "@lib/types/ui/user"
+import { headers } from "next/headers"
 import { MyPageDesktopContent } from "../components/desktop"
 import { MyPageMobileContent } from "../components/mobile"
-import { checkAdminScope } from "@lib/api/admin/inventory"
-import { headers } from "next/headers"
-import { AdminAccessButton } from "@/components/admin/admin-access-button"
 
 export async function MyPageTemplate() {
   const currentUser = await fetchMe()

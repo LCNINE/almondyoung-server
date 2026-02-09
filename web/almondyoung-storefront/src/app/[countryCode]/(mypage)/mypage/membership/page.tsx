@@ -1,7 +1,6 @@
-import { WithHeaderLayout } from "@components/layout"
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
-import MembershipPageClient from "../../../../../domains/membership/home/membership-page-client"
-import { fetchMe } from "@lib/api/users/me"
+import MembershipTemplate from "@/domains/membership/home/template/membership-template"
+import { WithHeaderLayout } from "@components/layout"
 import {
   getCancellationReasons,
   getCurrentCycleBenefit,
@@ -10,7 +9,11 @@ import {
   getPlans,
   getSubscriptionHistory,
 } from "@lib/api/membership"
-import { getCurrentMonthSavings, getRangeSavings } from "@lib/api/membership/savings"
+import {
+  getCurrentMonthSavings,
+  getRangeSavings,
+} from "@lib/api/membership/savings"
+import { fetchMe } from "@lib/api/users/me"
 import type {
   CancellationReasonDto,
   CycleBenefitDto,
@@ -20,11 +23,6 @@ import type {
 } from "@lib/types/dto/membership"
 import type { PlanWithTier } from "@lib/types/membership"
 
-/**
- * 멤버십 관리 페이지 (Server Component)
- *
- * 서버에서 멤버십 상태를 조회하여 클라이언트 컴포넌트로 전달
- */
 export default async function MembershipPage() {
   const [user, subscription, plans] = await Promise.all([
     fetchMe().catch(() => null),
@@ -84,7 +82,7 @@ export default async function MembershipPage() {
       }}
     >
       <MypageLayout>
-        <MembershipPageClient
+        <MembershipTemplate
           isMember={isMember}
           membershipData={membershipData}
           plans={membershipPlans}
