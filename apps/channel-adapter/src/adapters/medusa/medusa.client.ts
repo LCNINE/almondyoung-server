@@ -26,6 +26,10 @@ export class MedusaClient {
         this.apiUrl =
             this.configService.get<string>('MEDUSA_API_URL') || '';
 
+        if (!this.apiUrl) {
+            throw new Error('MEDUSA_API_URL is not set. Cannot initialize Medusa SDK.');
+        }
+
         // Initialize Medusa SDK (handles authentication automatically)
         this.sdk = createMedusaSdk(configService);
 
@@ -792,7 +796,7 @@ export class MedusaClient {
         } catch (error) {
             const fetchError = error as FetchError;
             this.logger.warn(
-                `Medusa findCustomerByEmail failed for ${email}: ${fetchError.message}`,
+                `Medusa findCustomerByEmail failed for ${email}: ${fetchError.message} (status=${fetchError.status})`,
             );
             return null;
         }
