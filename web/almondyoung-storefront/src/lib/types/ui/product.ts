@@ -72,6 +72,8 @@ export interface ProductCardProps {
   imageSrc: string
   membershipSavings?: number
   showMembershipHint?: boolean
+  available: number
+  manageInventory: boolean
   debugPrices?: {
     basePrice: number
     membershipPrice: number
@@ -144,6 +146,8 @@ export interface ProductOptionValue {
   stock?: number // ✅ 해당 옵션 조합의 재고
   disabled?: boolean // ✅ 품절 여부를 직접 표시할 수도 있음
 }
+
+export type StockStatus = "soldOut" | "lowStock" | "inStock"
 
 export interface ProductOption {
   type: string // 예: "색상"

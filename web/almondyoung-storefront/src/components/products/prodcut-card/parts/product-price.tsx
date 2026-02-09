@@ -50,7 +50,7 @@ export function ProductPrice({
             <span className="text-[15px] font-bold">
               {membershipPrice.toLocaleString()}원
             </span>
-            <span className="text-[11px] font-medium">
+            <span className="hidden text-[11px] font-medium md:block">
               가입 시 {membershipSavings.toLocaleString()}원 절약
             </span>
           </div>

@@ -1,12 +1,17 @@
 "use client"
 
 import { useMembership } from "@/contexts/membership-context"
-import { ProductCardProps } from "@/lib/types/ui/product"
+import { ProductCardProps, StockStatus } from "@/lib/types/ui/product"
 import { ProductPrice } from "./product-price"
 import { ProductRating } from "./product-rating"
+import { LowStockBadge } from "@/components/shared/badges/low-stock-badge"
+
+const LOW_STOCK_THRESHOLD = 4
 
 export function ProductInfo({
   title,
+  available,
+  manageInventory,
   price,
   originalPrice,
   discount,
@@ -23,7 +28,8 @@ export function ProductInfo({
   const hasMembershipPrice = membershipSavings != null && membershipSavings > 0
 
   const displayPrice = isMember || !hasMembershipPrice ? price : originalPrice
-  const displayOriginalPrice = isMember && hasMembershipPrice ? originalPrice : undefined
+  const displayOriginalPrice =
+    isMember && hasMembershipPrice ? originalPrice : undefined
   const displayDiscount = isMember && hasMembershipPrice ? discount : 0
   const showMembershipBadge = isMember && hasMembershipPrice
   const showMembershipHint = !isMember && hasMembershipPrice
@@ -32,13 +38,35 @@ export function ProductInfo({
       ? originalPrice - membershipSavings
       : undefined
 
+  // 재고 상태
+  const stockStatus: StockStatus =
+    manageInventory && available === 0
+      ? "soldOut"
+      : available > 0 && available <= LOW_STOCK_THRESHOLD
+        ? "lowStock"
+        : "inStock"
+
+  const renderStockBadge = () => {
+    switch (stockStatus) {
+      case "soldOut":
+        return <span className="text-xs font-bold text-black">품절</span>
+      case "lowStock":
+        return <LowStockBadge count={available} />
+      case "inStock":
+      default:
+        return null
+    }
+  }
+
   return (
     <div className="flex flex-col gap-0.5 px-1">
       <h3 className="line-clamp-1 text-[14px] leading-tight text-gray-600">
         {title}
       </h3>
 
-      <div className="mt-1 flex flex-col">
+      <div className="min-h-[18px]">{renderStockBadge()}</div>
+
+      <div className="flex flex-col">
         <ProductPrice
           price={displayPrice}
           originalPrice={displayOriginalPrice ?? originalPrice}
