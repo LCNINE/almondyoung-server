@@ -1,4 +1,4 @@
-import { MenuItem, QuickLink } from "../../types/mypage-types"
+import { MenuItem, MenuSection, QuickLink } from "../../types/mypage-types"
 
 export const QUICK_LINKS: QuickLink[] = [
   { label: "주문목록", icon: "📦" },
@@ -33,6 +33,38 @@ export const MENU_ITEMS: MenuItem[] = [
   { label: "로그아웃", icon: "🚪", action: "logout" },
 ]
 
+export const MENU_SECTIONS: MenuSection[] = [
+  {
+    title: "주문 및 배송",
+    items: [
+      { label: "주문 내역", icon: "📦", path: "/mypage/order/list" },
+      { label: "취소/반품/교환", icon: "🔄", path: "/mypage/exchange" },
+      { label: "찜한 상품", icon: "❤️", path: "/mypage/wish" },
+    ],
+  },
+  {
+    title: "계정 관리",
+    items: [
+      { label: "회원정보 수정", icon: "👤", path: "/mypage/account/profile" },
+      { label: "비밀번호 변경", icon: "🔒", path: "/mypage/account/password" },
+      { label: "기존 계정 연결", icon: "🔗", path: "/mypage/account/cafe24" },
+      { label: "맞춤설정", icon: "👀", path: "/mypage/shop-setting" },
+      { label: "사업자 정보", icon: "💼", path: "/mypage/business" },
+      { label: "로그아웃", icon: "🚪", action: "logout" },
+    ],
+  },
+  {
+    title: "혜택 및 서비스",
+    items: [
+      { label: "아몬드영 멤버십", icon: "💎", path: "/mypage/membership" },
+      { label: "적립금", icon: "💰", path: "/mypage/point" },
+      { label: "결제수단", icon: "💳", path: "/mypage/payment" },
+      { label: "리뷰 관리", icon: "⭐", path: "/mypage/reviews" },
+      { label: "다운로드", icon: "📥", path: "/mypage/download" },
+    ],
+  },
+]
+
 export const SIDEBAR_MENU_ITEMS = [
   {
     id: "home",
@@ -65,18 +97,26 @@ export const SIDEBAR_MENU_ITEMS = [
     path: "/mypage/recent",
   },
   {
-    id: "settings",
+    id: "shopSettings",
     label: "맞춤설정",
     hasSubMenu: false,
-    path: "/mypage/setting",
+    path: "/mypage/shop-setting",
   },
   {
     id: "account",
     label: "계정 설정",
     hasSubMenu: true,
     subItems: [
-      { id: "account-profile", label: "회원정보 수정", path: "/mypage/account/profile" },
-      { id: "account-password", label: "비밀번호 변경", path: "/mypage/account/password" },
+      {
+        id: "account-profile",
+        label: "회원정보 수정",
+        path: "/mypage/account/profile",
+      },
+      {
+        id: "account-password",
+        label: "비밀번호 변경",
+        path: "/mypage/account/password",
+      },
       {
         id: "account-cafe24",
         label: "기존 아몬드영 계정 연결",

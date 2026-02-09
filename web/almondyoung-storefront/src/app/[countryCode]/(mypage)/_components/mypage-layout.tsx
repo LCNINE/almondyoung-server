@@ -17,7 +17,7 @@ export default function MypageLayout({ children }: MypageLayoutProps) {
               <MypageSidebar />
             </aside>
 
-            <section className="content-area w-full flex-1">{children}</section>
+            <section className="content-area min-w-0 w-full flex-1">{children}</section>
           </div>
         </div>
       </div>

@@ -2,14 +2,15 @@ import { cn } from "@lib/utils"
 import { NumberStepper } from "@/components/shared/number-stepper"
 import { Checkbox } from "@components/common/ui/checkbox"
 import { Label } from "@components/common/ui/label"
-import { TARGET_CUSTOMERS, DAYS_OF_WEEK, SHOP_TYPES } from "./constants"
-import { StepTwoProps } from "./types"
-/**
- * 샵 설문조사 Step 2 (맞춤설정) - 순수 UI 컴포넌트
- * Form Context에 의존하지 않음 - 재사용 가능
- */
+import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
+import {
+  TARGET_CUSTOMERS,
+  DAYS_OF_WEEK,
+  SHOP_TYPES,
+} from "@/components/shop-form/constants"
+import { useFormContext } from "react-hook-form"
+import { useShopSurvey } from "@/components/shop-form/hooks/use-shop-survey"
 
-// [규칙] 같이 실행되지 않는 코드를 별도 컴포넌트로 분리
 function YearsOperatingSection({
   value,
   onChange,
@@ -103,7 +104,6 @@ function ShopTypeSection({
   )
 }
 
-// [규칙] 중복 코드 허용 - 명확성과 접근성 확보
 function TargetCustomersSection({
   value,
   onChange,
@@ -235,37 +235,73 @@ function OpenDaysSection({
   )
 }
 
-// [규칙] 메인 컴포넌트는 구조만 명확하게 표현
-export function StepTwo({ values, onChange, errors }: StepTwoProps) {
+export function StepTwo() {
+  const form = useFormContext()
+  const { isSubmitting } = useShopSurvey()
+
+  const isOperating = form.watch("isOperating")
+  const yearsOperating = form.watch("yearsOperating")
+  const shopType = form.watch("shopType")
+  const targetCustomers = form.watch("targetCustomers")
+  const openDays = form.watch("openDays")
+  const categories = form.watch("categories")
+
+  const errors = {
+    yearsOperating: form.formState.errors.yearsOperating?.message as
+      | string
+      | undefined,
+    shopType: form.formState.errors.shopType?.message as string | undefined,
+    targetCustomers: form.formState.errors.targetCustomers?.message as
+      | string
+      | undefined,
+    openDays: form.formState.errors.openDays?.message as string | undefined,
+  }
+
+  const isSubmitDisabled =
+    isOperating === undefined || categories?.length === 0 || isSubmitting
+
+  const setValue = (field: string, value: unknown) => {
+    form.setValue(field, value, {
+      shouldValidate: true,
+      shouldDirty: true,
+    })
+  }
+
   return (
     <>
-      {values.isOperating && (
+      {isOperating && (
         <YearsOperatingSection
-          value={values.yearsOperating}
-          onChange={(v) => onChange("yearsOperating", v)}
-          error={errors?.yearsOperating}
+          value={yearsOperating}
+          onChange={(v) => setValue("yearsOperating", v)}
+          error={errors.yearsOperating}
         />
       )}
 
       <ShopTypeSection
-        value={values.shopType}
-        onChange={(v) => onChange("shopType", v)}
-        error={errors?.shopType}
+        value={shopType}
+        onChange={(v) => setValue("shopType", v)}
+        error={errors.shopType}
       />
 
       <TargetCustomersSection
-        value={values.targetCustomers}
-        onChange={(v) => onChange("targetCustomers", v)}
-        error={errors?.targetCustomers}
+        value={targetCustomers}
+        onChange={(v) => setValue("targetCustomers", v)}
+        error={errors.targetCustomers}
       />
 
-      {values.isOperating && (
+      {isOperating && (
         <OpenDaysSection
-          value={values.openDays}
-          onChange={(v) => onChange("openDays", v)}
-          error={errors?.openDays}
+          value={openDays}
+          onChange={(v) => setValue("openDays", v)}
+          error={errors.openDays}
         />
       )}
+
+      <footer className="mt-8 flex w-full gap-2">
+        <CustomButton variant="outline" size="lg" disabled={isSubmitDisabled}>
+          건너뛰기
+        </CustomButton>
+      </footer>
     </>
   )
 }

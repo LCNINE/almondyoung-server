@@ -28,7 +28,7 @@ export function ShippingItemsSection() {
       try {
         const ordersData = await getOrders({ limit: 10 })
 
-        const shippingOrders: ShippingOrder[] = (ordersData.orders || [])
+        const shippingOrders: ShippingOrder[] = (ordersData?.orders || [])
           .filter((order: any) => {
             const fulfillmentStatus = order.fulfillment_status
             return (
@@ -63,7 +63,10 @@ export function ShippingItemsSection() {
             const price = `${(order.total / 100).toLocaleString()}원`
 
             const options: string[] = []
-            if (firstItem?.variant?.title && firstItem.variant.title !== "Default") {
+            if (
+              firstItem?.variant?.title &&
+              firstItem.variant.title !== "Default"
+            ) {
               options.push(firstItem.variant.title)
             }
 
@@ -120,7 +123,7 @@ export function ShippingItemsSection() {
             </p>
           </div>
           <Link
-            href="/kr"
+            href="/kr/best"
             className="mt-2 rounded-md bg-amber-500 px-4 py-2 text-sm text-white transition-colors hover:bg-amber-600"
           >
             쇼핑하러 가기

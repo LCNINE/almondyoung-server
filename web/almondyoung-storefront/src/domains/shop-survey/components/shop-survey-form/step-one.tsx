@@ -12,39 +12,19 @@ import { RadioGroup, RadioGroupItem } from "@components/common/ui/radio-group"
 import { Check } from "lucide-react"
 import { useFormContext } from "react-hook-form"
 import React from "react"
+import {
+  CATEGORIES,
+  CATEGORY_WIDTH_MAP,
+  DEFAULT_CATEGORY_WIDTH,
+} from "@/components/shop-form/constants"
 
 /**
  * 샵 설문조사 Step 1
- * ... (주석 동일) ...
  */
 
 interface StepOneProps {
   onNextStep: () => void
 }
-
-const categories = [
-  "헤어",
-  "네일",
-  "속눈썹",
-  "속눈썹연장",
-  "반영구",
-  "왁싱",
-  "피부미용",
-]
-
-// --- [개선 1: 규칙 #6 (시점 이동 줄이기) 적용] ---
-// getCategoryWidthClass 함수 대신, 한눈에 정책을 볼 수 있는 객체 룩업을 사용합니다.
-// 시점 이동이 줄어들고 조건(정책)이 명확히 드러납니다.
-const categoryWidthMap: Record<string, string> = {
-  헤어: "w-[81.75px]",
-  네일: "w-[81.75px]",
-  속눈썹: "w-[81.75px]",
-  속눈썹연장: "w-[81.75px]",
-  반영구: "w-[111.67px]",
-  왁싱: "w-[111.67px]",
-  피부미용: "w-[111.67px]",
-}
-const defaultCategoryWidth = "w-[81.75px]"
 
 // --- (이전 리팩토링) 캡슐화된 라벨 컴포넌트들 (규칙 #4 와 유사) ---
 interface SurveyRadioLabelProps extends React.LabelHTMLAttributes<HTMLLabelElement> {
@@ -226,7 +206,7 @@ export function StepOne({ onNextStep }: StepOneProps) {
                 </FormLabel>
 
                 <div className="space- flex max-w-[375px] flex-wrap justify-around gap-2">
-                  {categories.map((cat) => {
+                  {CATEGORIES.map((cat) => {
                     const isChecked = field.value?.includes(cat)
                     const inputId = `cat-${cat}`
 
@@ -235,7 +215,7 @@ export function StepOne({ onNextStep }: StepOneProps) {
                       <div
                         key={cat}
                         className={
-                          categoryWidthMap[cat] ?? defaultCategoryWidth
+                          CATEGORY_WIDTH_MAP[cat] ?? DEFAULT_CATEGORY_WIDTH
                         }
                       >
                         <FormControl>

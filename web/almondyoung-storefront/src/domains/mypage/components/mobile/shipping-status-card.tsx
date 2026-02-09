@@ -99,7 +99,8 @@ export default function ShippingStatusCard() {
 
             return {
               id: order.id,
-              orderNumber: order.display_id?.toString() || order.id.slice(0, 12),
+              orderNumber:
+                order.display_id?.toString() || order.id.slice(0, 12),
               status,
               statusLabel,
               thumbnail,
@@ -132,10 +133,7 @@ export default function ShippingStatusCard() {
     return (
       <section className="flex w-full flex-col gap-3">
         <h2 className="text-base font-bold text-black">배송 중 상품</h2>
-        <div
-          className="flex flex-col gap-4 rounded-[10px] border-[0.5px] border-[#d9d9d9] bg-white px-4 py-3.5"
-          style={{ boxShadow: "0px 4px 10px 0 rgba(0,0,0,0.1)" }}
-        >
+        <div className="flex flex-col gap-4 rounded-[10px] border-[0.5px] border-[#d9d9d9] bg-white px-4 py-3.5 shadow-sm">
           <p className="py-4 text-center text-sm text-gray-500">
             배송 중인 상품이 없습니다
           </p>
