@@ -1,5 +1,7 @@
 import type { Metadata } from "next"
 import Image from "next/image" // Next.js Image 컴포넌트 사용
+import Link from "next/link"
+import MembershipStatusSync from "./membership-status-sync"
 
 // (아이콘은 실제 프로젝트에서는 @heroicons/react 등을 사용해야 합니다)
 // 임시 아이콘 컴포넌트
@@ -28,6 +30,7 @@ export default function MembershipSuccessScreen() {
     // PARENT:
     // 화면 전체를 감싸고, 자식(Container)을 수직 배치합니다.
     <div className="flex min-h-screen flex-col bg-white">
+      <MembershipStatusSync />
       {/* SINGLE CONTAINER:
         - 페이지의 모든 요소를 감싸는 "단일 컨테이너"입니다.
         - 너비(max-w-lg), 중앙 정렬(mx-auto), 좌우 패딩(px-6)을 담당합니다.
@@ -158,9 +161,12 @@ export default function MembershipSuccessScreen() {
             - Container의 px-6 내부에 있으므로 py-4(수직 패딩)만 적용합니다.
         */}
         <footer className="w-full shrink-0 border-t border-gray-200 bg-white py-4">
-          <button className="w-full rounded-md bg-amber-500 px-4 py-3 text-center text-sm leading-5 font-semibold text-white transition-colors hover:bg-amber-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600">
+          <Link
+            href="/"
+            className="block w-full rounded-md bg-amber-500 px-4 py-3 text-center text-sm leading-5 font-semibold text-white transition-colors hover:bg-amber-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600"
+          >
             쇼핑 계속하기
-          </button>
+          </Link>
         </footer>
       </div>
     </div>
