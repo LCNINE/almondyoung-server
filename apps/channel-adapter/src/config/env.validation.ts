@@ -37,6 +37,11 @@ export const channelAdapterEnvSchema = z.object({
   WMS_API_URL: z.string().url().optional(),
   WMS_TIMEOUT: z.string().regex(/^\d+$/).optional(),
   WMS_MAX_RETRIES: z.string().regex(/^\d+$/).optional(),
+
+  // Medusa
+  MEDUSA_API_URL: z.string().url(),
+  MEDUSA_API_KEY: z.string(),
+  MEDUSA_MEMBERSHIP_GROUP_ID: z.string().optional(),
 });
 
 export type ChannelAdapterEnvConfig = z.infer<typeof channelAdapterEnvSchema>;
