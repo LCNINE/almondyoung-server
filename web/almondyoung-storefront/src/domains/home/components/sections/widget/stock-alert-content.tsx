@@ -7,6 +7,7 @@ import Image from "next/image"
 import { ProductCarousel } from "../../shared/product-carousel"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
+import { LowStockBadge } from "@/components/shared/badges/low-stock-badge"
 
 export function StockAlertContent() {
   const stockItems = [
@@ -46,12 +47,7 @@ export function StockAlertContent() {
                     </Button>
                   </Link>
 
-                  <p className="flex items-center gap-1.5 text-[12px] font-bold text-[#F24E1E]">
-                    <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[#F24E1E] text-[10px] text-white">
-                      !
-                    </span>
-                    잔여수량 {item.count}개
-                  </p>
+                  <LowStockBadge count={item.count} />
                 </div>
               </ProductCarousel.Item>
             )
