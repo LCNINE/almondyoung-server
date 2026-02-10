@@ -277,12 +277,13 @@ export const shops = pgTable('shops', {
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' })
     .unique(),
-  isOperating: boolean('is_operating').notNull().default(false), // 현재 운영 중 여부
+  isOperating: boolean('is_operating'), // 현재 운영 중 여부
   yearsOperating: integer('years_operating'), // 운영 연수
   shopType: shopTypeEnum('shop_type'), // 매장 유형 (shopTypeEnum 정의된 값 중 하나)
-  categories: jsonb('categories').notNull(), // 취급 카테고리 (JSON 배열 형태로 저장, 예: [미용재료, 화장품])
+  categories: jsonb('categories'), // 취급 카테고리 (JSON 배열 형태로 저장, 예: [미용재료, 화장품])
   targetCustomers: jsonb('target_customers'), // 주요 고객층 (JSON, 예: ["여성","남성","20대","30대","40대 이상"])
   openDays: jsonb('open_days'), // 영업 요일 정보 (JSON, 예: { mon: true, tue: false })
+  remind_at: timestamp('remind_at'), // 리마인드 일시
   ...timestampColumns,
 });
 
