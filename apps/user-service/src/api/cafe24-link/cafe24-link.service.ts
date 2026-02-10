@@ -184,6 +184,7 @@ export class Cafe24LinkService {
       } as typeof cafe24Links.$inferInsert)
       .onConflictDoUpdate({
         target: [cafe24Links.userId, cafe24Links.mallId],
+        targetWhere: isNull(cafe24Links.unlinkedAt),
         set: {
           cafe24MemberId,
           linkedAt: now,
