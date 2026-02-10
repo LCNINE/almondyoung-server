@@ -1,5 +1,5 @@
 import { AuthorizationGuard, JwtPayload, RequireScopes } from '@app/roles';
-import { Body, Controller, Get, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, Put, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -47,4 +47,12 @@ export class ShopController {
   ) {
     return this.shopService.updateShopInfo(updateShopDto, user.id);
   }
+
+
+  @Patch('remind')
+  @RequireScopes(['user:modify', 'master'])
+  async updateRemindAt(@CurrentUser() user: JwtPayload) {
+    return this.shopService.updateRemindAt(user.id);
+  }
+
 }

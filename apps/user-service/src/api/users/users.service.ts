@@ -314,7 +314,7 @@ export class UsersService {
 
       return;
     } catch (error) {
-      
+
       throw new InternalServerErrorException(
         '사용자 정보 업데이트 중 오류가 발생했습니다.',
       );
