@@ -29,8 +29,6 @@ export const userServiceEnvSchema = z.object({
 
   // Cafe24 Link
   CAFE24_SERVICE_KEY: z.string(),
-  CAFE24_MALL_ID: z.string().optional(),
-  CAFE24_LINK_TOKEN_TTL_SECONDS: z.string().optional(),
   CAFE24_API_VERSION: z.string().optional(),
 
   // Cafe24 OAuth

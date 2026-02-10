@@ -27,15 +27,12 @@
     '';
   const apiBase = 'https://user.almondyoung-next.com';
   const memberInfoPath = '/cafe24/member-info';
-  const linkTokenPath = '/cafe24/link-token';
 
   const memberInfoUrl = resolveApiUrl(apiBase, memberInfoPath);
-  const linkTokenUrl = resolveApiUrl(apiBase, linkTokenPath);
   log({
     redirectUrl,
     apiBase,
     memberInfoUrl,
-    linkTokenUrl,
   });
 
   let encryptedIdToken = '';
@@ -51,7 +48,7 @@
     return;
   }
 
-  if (!memberInfoUrl || !linkTokenUrl) {
+  if (!memberInfoUrl) {
     setError('API 경로를 확인할 수 없어요. 관리자에게 문의해 주세요.');
     log('missing api url');
     return;
@@ -61,22 +58,16 @@
 
   continueBtn.addEventListener('click', async () => {
     clearError();
-    setBusy(true, '링크 토큰 발급 중...');
+    setBusy(true, '연결 정보를 준비하는 중...');
 
     try {
       if (!encryptedIdToken) {
         throw new Error('암호화 id 토큰이 없습니다.');
       }
 
-      log('issue link token');
-      const issued = await issueLinkToken(linkTokenUrl, {
-        encryptedIdToken,
-      });
-
       log('redirect to storefront');
       postRedirect(redirectUrl, {
-        cafe24_link_token: issued.cafe24LinkToken,
-        expires_at: issued.expiresAt,
+        encrypted_id_token: encryptedIdToken,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -217,15 +208,6 @@
     return {
       memberId: data.memberId || data.member_id || data.user_id || '',
       memberName: data.memberName || data.member_name || data.name || '',
-    };
-  }
-
-  async function issueLinkToken(url, payload) {
-    log({ action: 'issueLinkToken', url });
-    const data = await postJson(url, payload);
-    return {
-      cafe24LinkToken: data.cafe24LinkToken || data.cafe24_link_token,
-      expiresAt: data.expiresAt || data.expires_at,
     };
   }
 

@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsString } from 'class-validator';
+import { IsString } from 'class-validator';
 
 export class Cafe24MemberInfoRequestDto {
   @ApiProperty({
@@ -8,15 +8,6 @@ export class Cafe24MemberInfoRequestDto {
   })
   @IsString({ message: '암호화 id 토큰은 문자열이어야 합니다.' })
   encryptedIdToken: string;
-
-  @ApiProperty({
-    description: 'Cafe24 몰 ID',
-    required: false,
-    example: 'almondyoung',
-  })
-  @IsOptional()
-  @IsString({ message: '몰 ID는 문자열이어야 합니다.' })
-  mallId?: string;
 }
 
 export class Cafe24MemberInfoResponseDto {

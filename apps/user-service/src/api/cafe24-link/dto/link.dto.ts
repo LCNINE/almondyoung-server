@@ -3,11 +3,11 @@ import { IsString } from 'class-validator';
 
 export class Cafe24LinkRequestDto {
   @ApiProperty({
-    description: '1회용 cafe24_link_token',
-    example: 'cafe24_link_token_value',
+    description: 'Cafe24 front SDK에서 받은 암호화 id 토큰',
+    example: 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9...',
   })
-  @IsString({ message: 'cafe24_link_token은 문자열이어야 합니다.' })
-  cafe24LinkToken: string;
+  @IsString({ message: '암호화 id 토큰은 문자열이어야 합니다.' })
+  encryptedIdToken: string;
 }
 
 export class Cafe24LinkResponseDto {
