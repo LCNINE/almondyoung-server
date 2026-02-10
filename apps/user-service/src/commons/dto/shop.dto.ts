@@ -30,7 +30,7 @@ export class ShopResponseDto implements Shop {
     description: '운영 여부',
     example: true,
   })
-  isOperating: boolean;
+  isOperating: boolean | null;
 
   @ApiProperty({
     description: '운영 연수',
@@ -67,4 +67,11 @@ export class ShopResponseDto implements Shop {
     nullable: true,
   })
   openDays: unknown;
+
+  @ApiProperty({
+    description: '리마인드 일시',
+    example: '2024-01-01T00:00:00Z',
+    nullable: true,
+  })
+  remind_at: Date | null;
 }

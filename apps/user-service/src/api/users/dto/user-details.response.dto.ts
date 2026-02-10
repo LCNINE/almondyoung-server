@@ -9,7 +9,7 @@ export class ShopInfoDto {
   userId: string;
 
   @ApiProperty({ description: '운영 여부' })
-  isOperating: boolean;
+  isOperating: boolean | null;
 
   @ApiProperty({ description: '운영 연수', nullable: true })
   yearsOperating: number | null;
