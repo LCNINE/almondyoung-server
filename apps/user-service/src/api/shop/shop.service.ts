@@ -6,6 +6,7 @@ import * as schema from '../../../database/drizzle/schema';
 import { CreateShopInfoDto } from './dto/create-shop-info.dto';
 import { UpdateShopInfoDto } from './dto/update-shop-info';
 import { ShopException } from './exceptions/shop.exceptions';
+import { REMIND_AFTER_DAYS } from '../../constants/shop-survey';
 
 @Injectable()
 export class ShopService {
@@ -100,7 +101,7 @@ export class ShopService {
 
   async updateRemindAt(userId: string) {
     const remindAt = new Date();
-    remindAt.setDate(remindAt.getDate() + 3); // 3일 후로 변경
+    remindAt.setDate(remindAt.getDate() + REMIND_AFTER_DAYS);
 
     const existingShop = await this.findOneByUserId(userId);
 
