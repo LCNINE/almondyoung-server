@@ -47,6 +47,7 @@ export const signupSchema = z
       message: "필수 약관에 동의해주세요",
     }),
     marketingConsent: z.boolean().optional(),
+    encryptedIdToken: z.string().optional(),
   })
   // 비밀번호 일치 체크
   .refine((data) => data.password === data.passwordConfirm, {
