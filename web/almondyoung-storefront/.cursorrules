@@ -9,8 +9,48 @@
 - 컴포넌트 파일도 kebab-case 사용
 - 파일 생성 시 camelCase나 PascalCase 사용 금지
 
+# 코드 스타일
+- TypeScript 사용, 함수형 & 선언적 프로그래밍 패턴 사용
+- 클래스 사용 금지, 함수형 컴포넌트 + Hooks 사용
+- 서술적 변수명 사용 (예: isLoading, hasError, canSubmit)
+- 코드 중복보다 반복/모듈화 우선
+
+# UI 컴포넌트: shadcn/ui
+# 참고: https://ui.shadcn.com
+- UI 구현 시 shadcn/ui 컴포넌트 우선 사용
+- 컴포넌트 위치: src/components/ui (components.json의 alias 설정 따름)
+- 임포트 예시:
+  ```tsx
+  import { Button } from "@/components/ui/button"
+  import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+  import { Input } from "@/components/ui/input"
+  ```
+- 새 컴포넌트 설치: `npx shadcn@latest add [component-name]`
+  (`npx shadcn-ui@latest`는 deprecated, 반드시 `npx shadcn@latest` 사용)
+- shadcn/ui 컴포넌트 소스 코드를 직접 수정하지 말 것
+  → 커스터마이징이 필요하면 래퍼 컴포넌트를 만들어 사용
+- cn() 유틸리티로 조건부 클래스명 관리
+- Radix UI primitives 기반이므로 접근성(a11y)이 기본 내장됨
+- 커스텀 CSS보다 Tailwind 유틸리티 클래스 우선 사용
+- Compound Component 패턴 활용 (Card, Dialog, Form 등)
+
+# Tailwind CSS 스타일링
+- 인라인 style 대신 Tailwind 유틸리티 클래스 사용
+- 반응형 디자인: mobile-first 접근 (sm → md → lg → xl)
+- CSS 변수 기반 테마 사용 (components.json 설정 따름)
+
+# 폼 처리
+- React Hook Form + Zod 스키마 검증 사용
+- shadcn/ui Form 컴포넌트와 함께 사용
+  ```tsx
+  import { useForm } from "react-hook-form"
+  import { zodResolver } from "@hookform/resolvers/zod"
+  import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
+  ```
+
 # React Best Practices (Vercel Labs 기준)
 # 참고: https://github.com/vercel-labs/agent-skills/tree/main/skills/react-best-practices
+# 45개 이상의 규칙, 8개 카테고리, 영향도순 정렬
 
 ## Critical: Async Waterfalls 제거
 - 불필요한 순차적 await 호출 방지
@@ -37,11 +77,18 @@
 - 동적 임포트 사용 (next/dynamic, React.lazy)
 - 불필요한 라이브러리 제거
 - Tree-shaking 가능한 구조 사용
+- 영향이 큰 라이브러리 주의: lucide-react, @mui/*, lodash, date-fns, react-icons
+  → named import만 사용하여 tree-shaking 보장
+- typeof window !== 'undefined' 체크로 SSR 번들에서 클라이언트 전용 모듈 제외
+- Analytics, logging, error tracking은 hydration 이후 로드
 
 ## High: 서버 사이드 성능
 - 서버 컴포넌트 우선 사용
 - 클라이언트 컴포넌트는 필수인 경우만
 - "use client" 지시문 최소화
+- React.cache()는 단일 요청 내에서만 동작
+  → 요청 간 공유가 필요하면 LRU Cache 사용
+- fetch API의 next cache 활용, 적절한 revalidate 설정
 
 ## Medium-High: 클라이언트 데이터 페칭
 - fetch api의 next cache 사용
@@ -51,16 +98,29 @@
 - 불필요한 렌더링 방지
 - React.memo, useMemo, useCallback 적절히 사용
 - Props 변경 최소화
+- localStorage, sessionStorage, document.cookie는 동기적이고 비쌈
+  → 메모리에 캐시하여 반복 읽기 방지
+  ```tsx
+  // ❌ 나쁜 예: 매번 storage 읽기
+  function getTheme() { return localStorage.getItem('theme') ?? 'light' }
+  
+  // ✅ 좋은 예: 메모리 캐시
+  let cachedTheme: string | null = null
+  function getTheme() {
+    if (!cachedTheme) cachedTheme = localStorage.getItem('theme') ?? 'light'
+    return cachedTheme
+  }
+  ```
 
 ## Medium: 렌더링 성능
-- 가상화 (Virtualization) 사용
-- 레이아웃 최적화
-- Layout thrashing 방지
+- 대량 리스트는 가상화 (Virtualization) 사용
+- 레이아웃 최적화, Layout thrashing 방지
 
 ## Low-Medium: JavaScript 성능
 - 루프 통합 (여러 번 순회하지 않기)
 - 불필요한 처리 제거
 - 알고리즘 개선
+- Map 활용으로 O(n²) → O(n) 개선
 
 ## 루프 최적화 예시
 ```tsx
@@ -77,3 +137,21 @@ products.map(product => ({
   review: reviewsMap.get(product.id)
 }))
 ```
+
+# 에러 처리
+- Early return으로 에러 조건 먼저 처리
+- Guard clause로 사전 조건/유효하지 않은 상태 처리
+- 커스텀 에러 타입으로 일관된 에러 핸들링
+- try-catch 블록에서 에러 타입별 분기 처리
+
+# 이미지 최적화
+- next/image 컴포넌트 사용
+- WebP 포맷 우선
+- width/height 명시 또는 fill 속성 사용
+- lazy loading 기본 적용 (priority가 필요한 경우만 명시)
+
+# 접근성 (Accessibility)
+- 시맨틱 HTML 사용
+- ARIA 속성 적절히 사용
+- 키보드 내비게이션 지원
+- shadcn/ui 사용 시 대부분 자동으로 처리됨
