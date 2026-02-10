@@ -2,12 +2,11 @@ import { DbService, InjectDb } from '@app/db';
 import { HttpService } from '@nestjs/axios';
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHmac, createHash, randomBytes, timingSafeEqual } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { and, eq, isNull } from 'drizzle-orm';
 import { firstValueFrom } from 'rxjs';
 import {
   cafe24Links,
-  cafe24LinkTokens,
   cafe24Snapshots,
   cafe24Tokens,
   profiles,
@@ -15,11 +14,6 @@ import {
   type UserServiceSchema,
 } from '../../../database/drizzle/schema';
 import { DbTransaction } from '../../commons/types';
-
-interface IssueCafe24LinkTokenResult {
-  cafe24LinkToken: string;
-  expiresAt: Date;
-}
 
 export interface Cafe24SignupPrefill {
   email: string | null;
@@ -29,8 +23,6 @@ export interface Cafe24SignupPrefill {
 }
 
 export interface Cafe24SignupBootstrapResult {
-  cafe24LinkToken: string;
-  expiresAt: Date;
   memberId: string | null;
   memberName: string;
   prefillAvailable: boolean;
@@ -61,78 +53,36 @@ export class Cafe24LinkService {
     return tx ?? this.dbService.db;
   }
 
-  async issueCafe24LinkToken(
-    encryptedIdToken: string,
-    mallId?: string,
-    meta?: { ip?: string; userAgent?: string },
-    tx?: DbTransaction,
-  ): Promise<IssueCafe24LinkTokenResult> {
+  private getCafe24MallId() {
+    return 'lcnine';
+  }
+
+  private decodeTokenPayload(encryptedIdToken: string) {
     const serviceKey = this.configService.get<string>('CAFE24_SERVICE_KEY');
     if (!serviceKey) {
       throw new Error('CAFE24_SERVICE_KEY 환경변수가 필요합니다.');
     }
 
-    const resolvedMallId =
-      mallId ?? this.configService.get<string>('CAFE24_MALL_ID') ?? 'lcnine';
-
-    let payload: Record<string, unknown>;
     try {
-      payload = this.decodeEncryptedIdToken(encryptedIdToken, serviceKey);
+      return this.decodeEncryptedIdToken(encryptedIdToken, serviceKey);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`Cafe24 token decode failed: ${message}`);
       throw new BadRequestException('암호화 id 토큰이 유효하지 않습니다.');
     }
-
-    const cafe24MemberId = this.extractMemberId(payload);
-
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + this.getTtlMs());
-    const rawToken = this.generateToken();
-    const tokenHash = this.hashValue(rawToken);
-    const encryptedTokenHash = this.hashValue(encryptedIdToken);
-
-    const client = this.getClient(tx);
-    await client.insert(cafe24LinkTokens).values({
-      tokenHash,
-      encryptedTokenHash,
-      mallId: resolvedMallId,
-      cafe24MemberId,
-      payload,
-      expiresAt,
-      lastError: null,
-      ...meta,
-    } as typeof cafe24LinkTokens.$inferInsert);
-
-    return {
-      cafe24LinkToken: rawToken,
-      expiresAt,
-    };
   }
 
   async issueSignupBootstrapData(
     encryptedIdToken: string,
-    mallId?: string,
-    meta?: { ip?: string; userAgent?: string },
     tx?: DbTransaction,
   ): Promise<Cafe24SignupBootstrapResult> {
-    const linkToken = await this.issueCafe24LinkToken(
-      encryptedIdToken,
-      mallId,
-      meta,
-      tx,
-    );
-
     try {
       const privacy = await this.fetchMemberPrivacyByEncryptedIdToken(
         encryptedIdToken,
-        mallId,
         tx,
       );
 
       return {
-        cafe24LinkToken: linkToken.cafe24LinkToken,
-        expiresAt: linkToken.expiresAt,
         memberId: privacy.memberId,
         memberName: privacy.memberName,
         prefillAvailable: true,
@@ -152,8 +102,6 @@ export class Cafe24LinkService {
       );
 
       return {
-        cafe24LinkToken: linkToken.cafe24LinkToken,
-        expiresAt: linkToken.expiresAt,
         memberId: null,
         memberName: '',
         prefillAvailable: false,
@@ -169,13 +117,11 @@ export class Cafe24LinkService {
 
   async fetchMemberInfo(
     encryptedIdToken: string,
-    mallId?: string,
     tx?: DbTransaction,
   ) {
     const { memberId, memberName } =
       await this.fetchMemberPrivacyByEncryptedIdToken(
         encryptedIdToken,
-        mallId,
         tx,
       );
 
@@ -195,23 +141,24 @@ export class Cafe24LinkService {
 
   async linkCafe24Account(
     userId: string,
-    cafe24LinkToken: string,
+    encryptedIdToken: string,
     tx?: DbTransaction,
   ) {
     const client = this.getClient(tx);
-    const token = await this.consumeCafe24LinkToken(cafe24LinkToken, tx);
-
-    if (!token.cafe24MemberId) {
+    const payload = this.decodeTokenPayload(encryptedIdToken);
+    const cafe24MemberId = this.extractMemberId(payload);
+    if (!cafe24MemberId) {
       throw new BadRequestException('Cafe24 회원 ID가 없습니다.');
     }
+    const mallId = this.getCafe24MallId();
 
     const [existingByMember] = await client
       .select()
       .from(cafe24Links)
       .where(
         and(
-          eq(cafe24Links.mallId, token.mallId),
-          eq(cafe24Links.cafe24MemberId, token.cafe24MemberId),
+          eq(cafe24Links.mallId, mallId),
+          eq(cafe24Links.cafe24MemberId, cafe24MemberId),
           isNull(cafe24Links.unlinkedAt),
         ),
       )
@@ -219,7 +166,7 @@ export class Cafe24LinkService {
 
     if (
       existingByMember &&
-      existingByMember.cafe24MemberId === token.cafe24MemberId &&
+      existingByMember.cafe24MemberId === cafe24MemberId &&
       existingByMember.userId !== userId
     ) {
       throw new BadRequestException('이미 다른 계정에 연결된 Cafe24 계정입니다.');
@@ -230,15 +177,15 @@ export class Cafe24LinkService {
       .insert(cafe24Links)
       .values({
         userId,
-        mallId: token.mallId,
-        cafe24MemberId: token.cafe24MemberId,
+        mallId,
+        cafe24MemberId,
         linkedAt: now,
         updatedAt: now,
       } as typeof cafe24Links.$inferInsert)
       .onConflictDoUpdate({
         target: [cafe24Links.userId, cafe24Links.mallId],
         set: {
-          cafe24MemberId: token.cafe24MemberId,
+          cafe24MemberId,
           linkedAt: now,
           updatedAt: now,
         },
@@ -290,40 +237,6 @@ export class Cafe24LinkService {
 
     await this.applyMigration(userId, key, cafe24Value, client);
     return this.lookupMigrationItem(userId, key, tx);
-  }
-
-  async consumeCafe24LinkToken(
-    cafe24LinkToken: string,
-    tx?: DbTransaction,
-  ) {
-    const tokenHash = this.hashValue(cafe24LinkToken);
-    const now = new Date();
-    const client = this.getClient(tx);
-
-    const [token] = await client
-      .select()
-      .from(cafe24LinkTokens)
-      .where(eq(cafe24LinkTokens.tokenHash, tokenHash))
-      .limit(1);
-
-    if (!token) {
-      throw new BadRequestException('유효하지 않은 토큰입니다.');
-    }
-
-    if (token.usedAt) {
-      throw new BadRequestException('이미 사용된 토큰입니다.');
-    }
-
-    if (token.expiresAt < now) {
-      throw new BadRequestException('만료된 토큰입니다.');
-    }
-
-    await client
-      .update(cafe24LinkTokens)
-      .set({ usedAt: now, updatedAt: now })
-      .where(eq(cafe24LinkTokens.id, token.id));
-
-    return token;
   }
 
   private async getCafe24AccessToken(mallId: string, tx?: DbTransaction) {
@@ -479,25 +392,10 @@ export class Cafe24LinkService {
 
   private async fetchMemberPrivacyByEncryptedIdToken(
     encryptedIdToken: string,
-    mallId?: string,
     tx?: DbTransaction,
   ) {
-    const serviceKey = this.configService.get<string>('CAFE24_SERVICE_KEY');
-    if (!serviceKey) {
-      throw new Error('CAFE24_SERVICE_KEY 환경변수가 필요합니다.');
-    }
-
-    const resolvedMallId =
-      mallId ?? this.configService.get<string>('CAFE24_MALL_ID') ?? 'lcnine';
-
-    let payload: Record<string, unknown>;
-    try {
-      payload = this.decodeEncryptedIdToken(encryptedIdToken, serviceKey);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.warn(`Cafe24 token decode failed: ${message}`);
-      throw new BadRequestException('암호화 id 토큰이 유효하지 않습니다.');
-    }
+    const resolvedMallId = this.getCafe24MallId();
+    const payload = this.decodeTokenPayload(encryptedIdToken);
 
     const memberId = this.extractMemberId(payload);
     if (!memberId) {
@@ -760,23 +658,6 @@ export class Cafe24LinkService {
       normalized += '='.repeat(4 - padding);
     }
     return Buffer.from(normalized, 'base64');
-  }
-
-  private hashValue(value: string) {
-    return createHash('sha256').update(value).digest('hex');
-  }
-
-  private generateToken() {
-    return randomBytes(32).toString('base64url');
-  }
-
-  private getTtlMs() {
-    const raw = this.configService.get<string>('CAFE24_LINK_TOKEN_TTL_SECONDS');
-    const ttlSeconds = Number(raw ?? 3600);
-    if (!Number.isFinite(ttlSeconds) || ttlSeconds <= 0) {
-      return 60 * 60 * 1000;
-    }
-    return ttlSeconds * 1000;
   }
 
   private extractMemberId(payload: Record<string, unknown>) {

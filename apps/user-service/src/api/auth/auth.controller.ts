@@ -48,13 +48,13 @@ export class AuthController {
   @Post('signup')
   @Public()
   async signUp(
-    @Body() body: LocalSignUpDto & { cafe24_link_token?: string },
+    @Body() body: LocalSignUpDto & { encrypted_id_token?: string },
     @Res({ passthrough: true }) res: FastifyReply,
     @Query('redirect_to') redirect_to?: string,
   ) {
     const localSignUpDto: LocalSignUpDto = {
       ...body,
-      cafe24LinkToken: body.cafe24LinkToken ?? body.cafe24_link_token,
+      encryptedIdToken: body.encryptedIdToken ?? body.encrypted_id_token,
     };
 
     return this.authService.signUp(localSignUpDto, res, redirect_to);
@@ -62,7 +62,7 @@ export class AuthController {
 
   @ApiOperation({
     summary: 'Cafe24 기반 회원가입 시작',
-    description: '카페24 암호화 id 토큰으로 링크 토큰을 발급하고 회원가입 prefill 정보를 조회합니다.',
+    description: '카페24 암호화 id 토큰으로 회원가입 prefill 정보를 조회합니다.',
   })
   @ApiBody({ type: Cafe24SignupBootstrapRequestDto })
   @ApiResponse({
@@ -74,11 +74,9 @@ export class AuthController {
   @Post('signup/cafe24/bootstrap')
   @Public()
   async bootstrapCafe24Signup(
-    @Body() body: Cafe24SignupBootstrapRequestDto & { encrypted_id_token?: string; mall_id?: string },
-    @Req() req: any,
+    @Body() body: Cafe24SignupBootstrapRequestDto & { encrypted_id_token?: string },
   ): Promise<Cafe24SignupBootstrapResponseDto> {
     const encryptedIdToken = body.encryptedIdToken ?? body.encrypted_id_token;
-    const mallId = body.mallId ?? body.mall_id;
 
     if (!encryptedIdToken) {
       throw new BadRequestException('암호화 id 토큰이 필요합니다.');
@@ -86,16 +84,9 @@ export class AuthController {
 
     const result = await this.authService.bootstrapCafe24Signup(
       encryptedIdToken,
-      mallId,
-      {
-        ip: req?.ip,
-        userAgent: req?.headers?.['user-agent'],
-      },
     );
 
     return {
-      cafe24LinkToken: result.cafe24LinkToken,
-      expiresAt: result.expiresAt.toISOString(),
       memberId: result.memberId,
       memberName: result.memberName,
       prefillAvailable: result.prefillAvailable,

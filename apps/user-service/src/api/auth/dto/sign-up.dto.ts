@@ -148,13 +148,13 @@ export class LocalSignUpDto extends BaseSignUpDto {
   phoneNumber: string;
 
   @ApiProperty({
-    description: 'Cafe24 가입 시작 플로우에서 발급된 1회용 링크 토큰',
-    example: 'cafe24_link_token_value',
+    description: 'Cafe24 front SDK에서 받은 암호화 id 토큰',
+    example: 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9...',
     required: false,
   })
   @IsOptional()
-  @IsString({ message: 'cafe24LinkToken은 문자열이어야 합니다.' })
-  cafe24LinkToken?: string;
+  @IsString({ message: 'encryptedIdToken은 문자열이어야 합니다.' })
+  encryptedIdToken?: string;
 }
 
 // 소셜 로그인용 DTO (비밀번호 옵션)

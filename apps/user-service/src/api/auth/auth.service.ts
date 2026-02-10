@@ -95,7 +95,7 @@ export class AuthService {
       marketingConsent,
       birthday,
       phoneNumber,
-      cafe24LinkToken,
+      encryptedIdToken,
     } = signUpDto;
 
     const redirectTo = redirect_to ?? '/';
@@ -153,10 +153,10 @@ export class AuthService {
           marketingConsent,
         });
 
-        if (cafe24LinkToken) {
+        if (encryptedIdToken) {
           await this.cafe24LinkService.linkCafe24Account(
             user.id,
-            cafe24LinkToken,
+            encryptedIdToken,
             tx,
           );
         }
@@ -174,13 +174,9 @@ export class AuthService {
 
   async bootstrapCafe24Signup(
     encryptedIdToken: string,
-    mallId?: string,
-    meta?: { ip?: string; userAgent?: string },
   ) {
     return this.cafe24LinkService.issueSignupBootstrapData(
       encryptedIdToken,
-      mallId,
-      meta,
     );
   }
 
