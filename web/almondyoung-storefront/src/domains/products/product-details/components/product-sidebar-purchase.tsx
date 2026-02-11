@@ -2,8 +2,6 @@
 
 import { SingleOptionQuantitySelector } from "@/app/[countryCode]/(main)/products/components/single-option-quantity-selector"
 import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
-import type { ProductDetail } from "@lib/types/ui/product"
-import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,14 +12,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { useMembership } from "@/contexts/membership-context"
+import type { ProductDetail } from "@lib/types/ui/product"
+import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
 import { Heart, MessageCircle } from "lucide-react"
+import { usePathname, useRouter } from "next/navigation"
 import { useState } from "react"
 import { ProductOptionSelector } from "./product-option-selector"
 import { ProductPriceDisplay } from "./product-price-display"
 import { ProductRatingDisplay } from "./product-rating-display"
 import { ProductShippingInfo } from "./product-shipping-info"
-import { usePathname, useRouter } from "next/navigation"
-import { useMembership } from "@/contexts/membership-context"
 
 type SelectedCartOption = {
   id: string
@@ -31,6 +31,16 @@ type SelectedCartOption = {
   price: number
   image: string
   stock?: number
+}
+
+type OptionWithSoldOut = {
+  label: string
+  type: string
+  values: Array<{
+    id: string
+    name: string
+    isSoldOut?: boolean
+  }>
 }
 
 type Props = {
@@ -52,6 +62,8 @@ type Props = {
   isAddToCartLoading?: boolean
   rating?: number
   reviewCount?: number
+  optionsWithSoldOut?: OptionWithSoldOut[]
+  isSoldOut?: boolean
 }
 
 /**
@@ -78,6 +90,8 @@ export function ProductSidebarPurchase({
   isAddToCartLoading = false,
   rating,
   reviewCount,
+  optionsWithSoldOut,
+  isSoldOut = false,
 }: Props) {
   const router = useRouter()
   const pathname = usePathname()
@@ -137,6 +151,7 @@ export function ProductSidebarPurchase({
       `/${countryCode}/login?redirect_to=${encodeURIComponent(pathname)}`
     )
   }
+
   return (
     <>
       <aside className="hidden w-full min-w-[383px] overflow-y-auto md:sticky md:top-0 md:block md:max-h-screen md:max-w-[383px] lg:max-w-[480px]">
@@ -160,10 +175,9 @@ export function ProductSidebarPurchase({
                 aria-label="찜하기"
               >
                 <Heart
-                  className={`h-7 w-7 ${isWishlisted
-                      ? "fill-red-500 text-red-500"
-                      : "text-gray-300"
-                    }`}
+                  className={`h-7 w-7 ${
+                    isWishlisted ? "text-red-500" : "text-gray-300"
+                  }`}
                 />
               </CustomButton>
               <CustomButton
@@ -197,7 +211,9 @@ export function ProductSidebarPurchase({
                 !isMember &&
                 hasMembershipPrice &&
                 typeof product.actualPrice === "number" &&
-                Math.abs(product.actualPrice - (product.membershipPrice ?? 0)) >= 1
+                Math.abs(
+                  product.actualPrice - (product.membershipPrice ?? 0)
+                ) >= 1
               }
               membershipSavings={
                 hasMembershipPrice
@@ -212,52 +228,56 @@ export function ProductSidebarPurchase({
             <ProductShippingInfo shipping={product.shipping} />
           )}
 
-          {/* 옵션 선택 */}
-          <section className="border-gray-20 mb-4 border-t pt-4">
-            {isSingleOption ? (
-              <SingleOptionQuantitySelector
-                productName={product.name}
-                thumbnail={
-                  product.thumbnails?.[0]
-                    ? getThumbnailUrl(product.thumbnails?.[0])
-                    : "https://placehold.co/80x80?text=No+Image"
-                }
-                quantity={quantity}
-                onQuantityChange={onQuantityChange}
-                price={getPrice()}
-                stock={0}
-                showTitle={true}
-              />
-            ) : (
-              <ProductOptionSelector
-                options={product.options || []}
-                selectedOptions={selectedOptions}
-                selectedCartOptions={selectedCartOptions}
-                onOptionChange={onOptionChange}
-                onQuantityUpdate={onQuantityUpdate}
-                onOptionRemove={onOptionRemove}
-              />
-            )}
-          </section>
+          {/* 옵션 선택 (단일 옵션 품절 시 숨김) */}
+          {!(isSingleOption && isSoldOut) && (
+            <section className="border-gray-20 mb-4 border-t pt-4">
+              {isSingleOption ? (
+                <SingleOptionQuantitySelector
+                  productName={product.name}
+                  thumbnail={
+                    product.thumbnails?.[0]
+                      ? getThumbnailUrl(product.thumbnails?.[0])
+                      : "https://placehold.co/80x80?text=No+Image"
+                  }
+                  quantity={quantity}
+                  onQuantityChange={onQuantityChange}
+                  price={getPrice()}
+                  stock={product.manageInventory ? product.available : null}
+                  showTitle={true}
+                />
+              ) : (
+                <ProductOptionSelector
+                  options={optionsWithSoldOut || product.options || []}
+                  selectedOptions={selectedOptions}
+                  selectedCartOptions={selectedCartOptions}
+                  onOptionChange={onOptionChange}
+                  onQuantityUpdate={onQuantityUpdate}
+                  onOptionRemove={onOptionRemove}
+                />
+              )}
+            </section>
+          )}
 
-          {/* 총 상품 금액 */}
-          <section className="border-gray-20 mb-4 border-t pt-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">총 상품 금액</span>
-              <div className="flex items-center gap-4 text-right">
-                <p className="text-sm text-gray-500">
-                  총 수량 {getTotalQuantity()}개
-                </p>
-                <output className="text-xl font-bold">
-                  {getTotalPrice().toLocaleString()}원
-                </output>
+          {/* 총 상품 금액 (단일 옵션 품절 시 숨김) */}
+          {!(isSingleOption && isSoldOut) && (
+            <section className="border-gray-20 mb-4 border-t pt-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600">총 상품 금액</span>
+                <div className="flex items-center gap-4 text-right">
+                  <p className="text-sm text-gray-500">
+                    총 수량 {getTotalQuantity()}개
+                  </p>
+                  <output className="text-xl font-bold">
+                    {getTotalPrice().toLocaleString()}원
+                  </output>
+                </div>
               </div>
-            </div>
-          </section>
+            </section>
+          )}
 
           {/* 액션 버튼 */}
           <footer className="flex gap-2">
-            {isOutOfStock ? (
+            {isOutOfStock || (isSingleOption && isSoldOut) ? (
               <>
                 {/* todo: 미연결 액션 임시 비활성화 */}
                 {/* <CustomButton
@@ -282,10 +302,10 @@ export function ProductSidebarPurchase({
                   variant="outline"
                   color="secondary"
                   size="lg"
-                  className="flex-1"
+                  className="flex-1 cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400"
                   disabled
                 >
-                  품절 상품
+                  현재 품절된 상품이에요
                 </CustomButton>
               </>
             ) : (
