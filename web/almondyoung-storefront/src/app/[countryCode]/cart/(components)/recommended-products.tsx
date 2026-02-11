@@ -1,7 +1,9 @@
 "use client"
 
 import React, { useState, useRef, ReactNode, MouseEvent } from "react"
-import { BasicProductCard } from "@components/products/product-card"
+import Link from "next/link"
+import { ProductCard } from "@/components/products/prodcut-card"
+import type { ProductCardProps } from "@lib/types/ui/product"
 
 interface DraggableSliderProps {
   title: string
@@ -55,23 +57,39 @@ function DraggableSliderCards({ title, children }: DraggableSliderProps) {
 }
 
 interface RecommendedProductsProps {
-  products: any[]
+  products: ProductCardProps[]
+  countryCode?: string
 }
 
-export function RecommendedProducts({ products }: RecommendedProductsProps) {
+export function RecommendedProducts({
+  products,
+  countryCode = "kr",
+}: RecommendedProductsProps) {
   if (products.length === 0) return null
 
   return (
     <aside className="recommendations mt-2 md:hidden" role="complementary">
       <DraggableSliderCards title="한번에 구매 시 할인이 늘어나요">
-        {products.map((product) => (
-          <div
-            key={product.id}
-            className="recommendation-item w-[40%] flex-shrink-0 pr-3 sm:w-[calc(100%/3.2)]"
-          >
-            <BasicProductCard product={product} />
-          </div>
-        ))}
+        {products.map((product) => {
+          const isSoldOut = product.manageInventory && product.available <= 0
+          return (
+            <div
+              key={product.id}
+              className="recommendation-item w-[40%] flex-shrink-0 pr-3 sm:w-[calc(100%/3.2)]"
+            >
+              <Link href={`/${countryCode}/products/${product.id}`}>
+                <ProductCard>
+                  <ProductCard.Thumbnail
+                    src={product.imageSrc}
+                    alt={product.title}
+                    isSoldOut={isSoldOut}
+                  />
+                  <ProductCard.Info {...product} />
+                </ProductCard>
+              </Link>
+            </div>
+          )
+        })}
       </DraggableSliderCards>
     </aside>
   )

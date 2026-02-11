@@ -1,6 +1,6 @@
 import React from "react"
 
-import { RankProductCard } from "@components/products/product-card"
+import { ProductGrid } from "@/components/products/product-grid"
 
 import RankedKeywordList, {
   type Keyword,
@@ -9,9 +9,7 @@ import RankedHeader from "domains/best/components/ranked-header"
 import ScrollToTopButton from "./components/scroll-to-top-button"
 import { getProductList } from "@lib/api/medusa/products"
 import { getRegion } from "@lib/api/medusa/regions"
-import type { StoreProduct } from "@medusajs/types"
-import type { ProductCard } from "@lib/types/ui/product"
-import { getProductPrice } from "@lib/utils/get-product-price"
+import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
 
 // TODO: 백엔드에 판매량/인기도 기반 베스트 상품 API 추가 필요
 // 현재 PIM API는 sortBy: "relevance" | "price" | "createdAt"만 지원
@@ -21,26 +19,6 @@ import { getProductPrice } from "@lib/utils/get-product-price"
 // 3. GET /analytics/popular-brands?period=7d&limit=10 (인기 브랜드)
 //
 // 임시 대안: 최신 상품(createdAt:desc)을 표시하거나 빈 상태 표시
-
-const mapToProductCard = (product: StoreProduct): ProductCard => {
-  const thumbnail = product.thumbnail || product.images?.[0]?.url || ""
-
-  const priceInfo = getProductPrice({ product })
-  const basePrice = priceInfo?.cheapestPrice?.original_price_number
-  const membershipPrice = priceInfo?.cheapestPrice?.calculated_price_number
-
-  return {
-    id: product.id,
-    name: product.title,
-    thumbnail,
-    basePrice,
-    membershipPrice,
-    status: product.status === "published" ? "active" : "inactive",
-    optionMeta: {
-      isSingle: (product.variants?.length ?? 0) <= 1,
-    },
-  }
-}
 
 export default async function BestPage({
   params,
@@ -58,12 +36,9 @@ export default async function BestPage({
     region_id: region?.id,
   })
 
-  const bestProducts = bestProductsResult.products
-    .slice(0, 5)
-    .map((product, index) => ({
-      ...mapToProductCard(product),
-      rank: index + 1,
-    }))
+  const mappedProducts = mapStoreProductsToCardProps(
+    bestProductsResult.products.slice(0, 5)
+  )
 
   // TODO: 백엔드에 검색 키워드 랭킹 API 추가 필요
   // 현재는 빈 배열
@@ -78,16 +53,13 @@ export default async function BestPage({
           <RankedHeader title="BEST ITEMS" />
 
           {/* TODO: 판매량 기반 베스트 상품 API 연동 필요 */}
-          {bestProducts.length > 0 ? (
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-              {bestProducts.map((item) => (
-                <RankProductCard
-                  key={item.id}
-                  product={item}
-                  rank={item.rank}
-                />
-              ))}
-            </div>
+          {mappedProducts.length > 0 ? (
+            <ProductGrid
+              products={mappedProducts}
+              showRank={true}
+              className="grid-cols-2 md:grid-cols-4"
+              countryCode={countryCode}
+            />
           ) : (
             <div className="flex min-h-[400px] items-center justify-center text-gray-500">
               <div className="text-center">
@@ -104,7 +76,7 @@ export default async function BestPage({
         <section className="my-8 rounded-lg bg-white">
           <RankedHeader title="BEST BRAND" />
           {keywords.length > 0 ? (
-            <RankedKeywordList keywords={keywords} />
+            <RankedKeywordList keywords={keywords} countryCode={countryCode} />
           ) : (
             <div className="flex min-h-[300px] items-center justify-center text-gray-500">
               <div className="text-center">
@@ -121,7 +93,7 @@ export default async function BestPage({
         <section className="my-8 rounded-lg bg-white">
           <RankedHeader title="BEST KEYWORD" />
           {keywords.length > 0 ? (
-            <RankedKeywordList keywords={keywords} />
+            <RankedKeywordList keywords={keywords} countryCode={countryCode} />
           ) : (
             <div className="flex min-h-[300px] items-center justify-center text-gray-500">
               <div className="text-center">

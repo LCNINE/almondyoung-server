@@ -160,10 +160,11 @@ export function ProductSidebarPurchase({
                 aria-label="찜하기"
               >
                 <Heart
-                  className={`h-7 w-7 ${isWishlisted ? "text-red-500" : "text-gray-300"
+                  className={`h-7 w-7 ${isWishlisted
+                      ? "fill-red-500 text-red-500"
+                      : "text-gray-300"
                     }`}
                 />
-                찜
               </CustomButton>
               <CustomButton
                 variant="outline"
@@ -172,7 +173,6 @@ export function ProductSidebarPurchase({
                 aria-label="챗봇"
               >
                 <MessageCircle className="h-7 w-7" />
-                챗봇
               </CustomButton>
             </div>
           </header>

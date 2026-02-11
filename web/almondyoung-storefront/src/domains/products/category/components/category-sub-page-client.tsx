@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { BasicProductCard } from "@components/products/product-card"
+import { ProductGrid } from "@/components/products/product-grid"
 import ProductFilterSidebar from "@/components/products/product-filter-sidebar"
 import ProductSortToolbar from "@/components/products/product-sort-toolbar"
 import CustomDropdown from "@components/dropdown"
@@ -9,7 +9,7 @@ import { SlidersHorizontal } from "lucide-react"
 import { overlay } from "overlay-kit"
 import { MobileFilterSheet } from "./mobile-filter-sheet"
 import type { StoreProductCategoryTree } from "@lib/types/medusa-category"
-import type { ProductCard } from "@lib/types/ui/product"
+import type { ProductCardProps } from "@lib/types/ui/product"
 
 export interface CategoryInfo {
   title: string
@@ -20,7 +20,7 @@ interface CategorySubPageClientProps {
   subSlug: string
   categoryInfo: CategoryInfo
   categoryData: StoreProductCategoryTree
-  initialProducts?: ProductCard[]
+  initialProducts?: ProductCardProps[]
   initialTotal?: number
   countryCode: string
 }
@@ -135,16 +135,11 @@ export function CategorySubPageClient({
             <section>
               {/* Product Grid */}
               {paginatedProducts.length > 0 && (
-                <>
-                  <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
-                    {paginatedProducts.map((product, idx) => (
-                      <BasicProductCard
-                        key={`${product.id}-${idx}`}
-                        product={product}
-                      />
-                    ))}
-                  </div>
-                </>
+                <ProductGrid
+                  products={paginatedProducts}
+                  className="grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
+                  countryCode={countryCode}
+                />
               )}
             </section>
           </div>

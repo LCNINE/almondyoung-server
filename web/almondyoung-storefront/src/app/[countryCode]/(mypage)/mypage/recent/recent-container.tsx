@@ -4,89 +4,25 @@ import {
   ProductListCard,
   ProductListCardSkeleton,
 } from "@/components/products/product-list-card"
-import { useWishlist } from "@/contexts/wishlist-context"
-import { getProductList } from "@lib/api/medusa/products"
-import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
-import { useEffect, useState, useTransition } from "react"
 import type { ProductCardProps } from "@lib/types/ui/product"
-import { Heart } from "lucide-react"
+import { Eye } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
 import Link from "next/link"
 import { useAddToCart } from "@hooks/api/use-add-to-cart"
+import { useState } from "react"
 
-interface WishlistContainerProps {
+interface RecentContainerProps {
+  products: ProductCardProps[]
   countryCode: string
 }
 
-export function WishlistContainer({ countryCode }: WishlistContainerProps) {
-  const { ids, isLoaded, isLoading: isWishlistLoading, toggle, isPending } =
-    useWishlist()
+export function RecentContainer({ products, countryCode }: RecentContainerProps) {
   const { addToCart, isLoading: isAddingToCart } = useAddToCart()
-  const [products, setProducts] = useState<ProductCardProps[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [removingIds, setRemovingIds] = useState<Set<string>>(new Set())
   const [addingToCartIds, setAddingToCartIds] = useState<Set<string>>(new Set())
   const [excludeSoldOut, setExcludeSoldOut] = useState(false)
-  const [isTransitionPending, startTransition] = useTransition()
-
-  useEffect(() => {
-    if (!isLoaded) return
-
-    const fetchWishlist = async () => {
-      try {
-        setIsLoading(true)
-        setError(null)
-
-        const productIds = Array.from(ids)
-
-        if (productIds.length === 0) {
-          setProducts([])
-          return
-        }
-
-        const productsResult = await getProductList({
-          id: productIds,
-          limit: productIds.length,
-        })
-
-        const mappedProducts = mapStoreProductsToCardProps(productsResult.products)
-        setProducts(mappedProducts)
-      } catch (err) {
-        console.error("위시리스트 로드 실패:", err)
-        setError("위시리스트를 불러오는데 실패했습니다.")
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    fetchWishlist()
-  }, [ids, isLoaded])
-
-  const handleRemove = (productId: string) => {
-    setRemovingIds((prev) => new Set(prev).add(productId))
-
-    startTransition(async () => {
-      try {
-        const action = await toggle(productId)
-        setProducts((prev) => prev.filter((p) => p.id !== productId))
-        if (action === "removed") {
-          toast.success("찜 목록에서 삭제되었습니다.")
-        }
-      } catch {
-        toast.error("삭제에 실패했습니다.")
-      } finally {
-        setRemovingIds((prev) => {
-          const next = new Set(prev)
-          next.delete(productId)
-          return next
-        })
-      }
-    })
-  }
 
   const handleAddToCart = async (product: ProductCardProps) => {
     if (!product.optionMeta?.isSingle || !product.optionMeta?.defaultVariantId) {
@@ -118,37 +54,16 @@ export function WishlistContainer({ countryCode }: WishlistContainerProps) {
     ? products.filter((p) => !p.manageInventory || p.available > 0)
     : products
 
-  if (isLoading || isWishlistLoading) {
-    return (
-      <div className="space-y-0">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <ProductListCardSkeleton key={i} />
-        ))}
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="flex min-h-[200px] flex-col items-center justify-center gap-4 text-center">
-        <p className="text-gray-500">{error}</p>
-        <Button variant="outline" onClick={() => window.location.reload()}>
-          다시 시도
-        </Button>
-      </div>
-    )
-  }
-
   if (products.length === 0) {
     return (
       <div className="flex min-h-[300px] flex-col items-center justify-center gap-4 text-center">
-        <Heart className="h-12 w-12 text-gray-300" />
+        <Eye className="h-12 w-12 text-gray-300" />
         <div>
           <p className="text-lg font-medium text-gray-600">
-            찜한 상품이 없습니다
+            최근 본 상품이 없습니다
           </p>
           <p className="mt-1 text-sm text-gray-400">
-            마음에 드는 상품을 찜해보세요
+            상품을 둘러보고 나만의 취향을 찾아보세요
           </p>
         </div>
         <Link href={`/${countryCode}`}>
@@ -191,13 +106,8 @@ export function WishlistContainer({ countryCode }: WishlistContainerProps) {
             manageInventory={product.manageInventory}
             countryCode={countryCode}
             optionMeta={product.optionMeta}
-            onDelete={() => handleRemove(product.id)}
+            showDeleteButton={false}
             onAddToCart={() => handleAddToCart(product)}
-            isDeleting={
-              removingIds.has(product.id) ||
-              isTransitionPending ||
-              isPending(product.id)
-            }
             isAddingToCart={addingToCartIds.has(product.id) || isAddingToCart}
           />
         ))}
@@ -216,6 +126,16 @@ export function WishlistContainer({ countryCode }: WishlistContainerProps) {
           </Button>
         </div>
       )}
+    </div>
+  )
+}
+
+export function RecentContainerSkeleton() {
+  return (
+    <div className="space-y-0">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <ProductListCardSkeleton key={i} />
+      ))}
     </div>
   )
 }

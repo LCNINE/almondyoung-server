@@ -1,9 +1,10 @@
 "use client"
 
 import { ScrollArea, ScrollBar } from "@components/common/ui/scroll-area"
-import { BasicProductCard } from "../../../../components/products/product-card"
-import type { ProductCard } from "@lib/types/ui/product"
+import { ProductCard } from "@/components/products/prodcut-card"
+import type { ProductCardProps } from "@lib/types/ui/product"
 import Image from "next/image"
+import Link from "next/link"
 
 // --- 1. 목업 데이터 및 타입 정의 ---
 
@@ -18,8 +19,6 @@ type MockProduct = {
     discountRate: number
   }
 }
-
-type Product = ProductCard
 
 const mockRecentViews = [
   { productId: "rv1", thumbnail: "https://picsum.photos/seed/rv1/100/100" },
@@ -44,7 +43,6 @@ const mockProductDb: { [key: string]: MockProduct } = {
     image: "https://picsum.photos/seed/rv2/300/300",
     price: { original: 78000, member: 70000, discountRate: 10 },
   },
-  // ... (다른 목업 데이터) ...
 }
 
 const mockRelatedProducts: MockProduct[] = [
@@ -99,15 +97,26 @@ const mockRelatedProducts: MockProduct[] = [
   },
 ]
 
+// Mock을 ProductCardProps로 변환
+function toProductCardProps(mock: MockProduct): ProductCardProps {
+  return {
+    id: mock.id,
+    title: mock.name,
+    imageSrc: mock.thumbnail,
+    price: mock.price.member,
+    originalPrice: mock.price.original,
+    discount: mock.price.discountRate,
+    rating: 0,
+    reviewCount: 0,
+    available: 100,
+    manageInventory: false,
+  }
+}
+
 // --- 3. 순수 정적 UI 컴포넌트 ---
 export default function ProductIntrestSection() {
-  // [제거] user prop 제거
-  // [제거] useState 제거
-
-  // [수정] "보이는 게 디폴트" - 첫 번째 아이템을 기본으로 고정합니다.
   const selectedProductId = mockRecentViews[0].productId
 
-  // [수정] 고정된 ID를 기반으로 정적 데이터를 파생합니다.
   const selectedRecentProduct = mockProductDb[selectedProductId] || null
   const relatedProducts = mockRelatedProducts
   const grid = (
@@ -125,13 +134,11 @@ export default function ProductIntrestSection() {
         <div className="m-1 flex gap-3 p-2 md:gap-4">
           {mockRecentViews.map((rv) => (
             <div key={rv.productId} className="flex flex-col items-center">
-              {/* [수정] onClick 제거, button -> div로 변경 (시맨틱) */}
               <div
                 className={`m-1 mb-2 h-18 w-18 rounded-full transition-all md:h-20 md:w-20 ${
-                  // [유지] 이 로직은 selectedProductId가 상수이므로 정적으로 작동합니다.
                   selectedProductId === rv.productId
                     ? "ring-gray-80 ring-3 ring-offset-2"
-                    : "opacity-70" // 비활성 탭 스타일 (예시)
+                    : "opacity-70"
                 }`}
               >
                 <div className="border-gray-20 h-18 w-18 overflow-hidden rounded-full border md:h-20 md:w-20">
@@ -163,6 +170,8 @@ export default function ProductIntrestSection() {
       {/* 상품 그리드 */}
       <div className="mt-6 grid grid-cols-3 gap-2 md:grid-cols-4 md:gap-2 lg:gap-4">
         {grid.map((p, idx) => {
+          const product = toProductCardProps(p)
+          const isSoldOut = product.manageInventory && product.available <= 0
           return (
             <div key={p.id} className="relative">
               {idx === 0 && selectedRecentProduct ? (
@@ -170,7 +179,16 @@ export default function ProductIntrestSection() {
                   찾아본 상품
                 </div>
               ) : null}
-              <BasicProductCard product={p as Product} />
+              <Link href={`/kr/products/${product.id}`}>
+                <ProductCard>
+                  <ProductCard.Thumbnail
+                    src={product.imageSrc}
+                    alt={product.title}
+                    isSoldOut={isSoldOut}
+                  />
+                  <ProductCard.Info {...product} />
+                </ProductCard>
+              </Link>
             </div>
           )
         })}
