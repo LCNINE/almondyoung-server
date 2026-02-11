@@ -27,6 +27,10 @@ const isDefaultVariant = (variant: StoreProductVariant) => {
   return Boolean(withDefaultFlag.is_default ?? withDefaultFlag.isDefault)
 }
 
+// 각 variant가 재고 있는지 체크하는 헬퍼
+const checkVariantInStock = (variant: StoreProductVariant) =>
+  variant.manage_inventory === false || (variant.inventory_quantity || 0) > 0
+
 export function mapStoreProductToCardProps(
   product: StoreProduct,
   reviewsMap?: Map<string, ReviewSummary>
@@ -79,13 +83,14 @@ export function mapStoreProductToCardProps(
   const isSingleOption = variants.length === 1
   const defaultVariantId = defaultVariant?.id
 
-  // 해당 상품이 재고가 있는지 여부
-  const isInStock =
-    defaultVariant.manage_inventory === false ||
-    (defaultVariant.inventory_quantity || 0) > 0
+  // 전체 variants 중 하나라도 구매 가능하면 true
+  const hasAnyStock = variants.some(checkVariantInStock)
 
-  // 사용가능한 재고 수량
-  const available = isInStock ? defaultVariant.inventory_quantity || 0 : 0
+  // 전체 재고 합계 (manage_inventory가 false인 variant가 있으면 무제한 취급)
+  const hasUnmanagedVariant = variants.some((v) => v.manage_inventory === false)
+  const totalAvailable = hasUnmanagedVariant
+    ? Infinity
+    : variants.reduce((sum, v) => sum + (v.inventory_quantity || 0), 0)
 
   return {
     title: product.title || "",
@@ -98,8 +103,8 @@ export function mapStoreProductToCardProps(
     imageSrc: imageUrl,
     membershipSavings,
     showMembershipHint,
-    manageInventory: defaultVariant.manage_inventory ?? false,
-    available,
+    manageInventory: !hasUnmanagedVariant,
+    available: hasAnyStock ? totalAvailable : 0,
     debugPrices: {
       basePrice,
       membershipPrice,

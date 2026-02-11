@@ -164,17 +164,16 @@ export interface MemberTierPrice {
 }
 
 export interface ProductDetail extends ProductCard {
+  variants: StoreProduct["variants"]
   thumbnails: string[] // 메인 + 추가 이미지
   manageInventory: boolean
-  available: number
+  available: number // 전체 variants 재고 합계 (품절 판단용)
   description?: string
   descriptionHtml?: string
   detailImages?: string[] // HTML을 쪼개서 이미지 배열로 쓰고 싶을 때
-
   memberPrices?: MemberTierPrice[]
   originalPrice?: number // 호환성(카드 original mirror)
   options: ProductOption[] // 옵션 그룹
-
   actualPrice?: number
   defaultVariantId?: string
   variantPriceMap?: Record<

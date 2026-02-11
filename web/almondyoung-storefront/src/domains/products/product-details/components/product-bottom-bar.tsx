@@ -31,7 +31,7 @@ export function ProductBottomBar({
     >
       <div className="flex gap-2">
         <CustomButton
-          variant="secondary"
+          variant="outline"
           size="lg"
           onClick={onWishlistToggle}
           disabled={wishlistLoading}
@@ -54,7 +54,7 @@ export function ProductBottomBar({
         </CustomButton>
 
         <CustomButton
-          variant="primary"
+          variant="fill"
           size="lg"
           className="flex-1"
           onClick={onBuyClick}

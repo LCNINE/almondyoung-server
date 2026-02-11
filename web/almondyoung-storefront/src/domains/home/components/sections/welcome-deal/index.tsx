@@ -3,6 +3,7 @@
 import { ProductCard } from "@/components/products/prodcut-card"
 import { ProductGrid } from "@/components/products/product-grid"
 import type { ProductCardProps } from "@/lib/types/ui/product"
+import { isProductSoldOut } from "@/lib/utils"
 import { useParams } from "next/navigation"
 import Link from "next/link"
 import { SectionHeader } from "../../header/section-header"
@@ -36,8 +37,7 @@ export function WelcomeDealSection({ products }: WelcomeDealSectionProps) {
         >
           <ProductCarousel.List className="ml-0">
             {products.map((product) => {
-              const isSoldOut =
-                product.manageInventory && product.available <= 0
+              const isSoldOut = isProductSoldOut(product)
               return (
                 <ProductCarousel.Item
                   key={product.id}
