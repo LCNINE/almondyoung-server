@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext } from "react"
+import { createContext, useContext, useMemo, useState } from "react"
 
 export type MembershipStatus = "guest" | "regular" | "membership"
 
@@ -13,6 +13,7 @@ export interface MembershipTier {
 export interface MembershipContextType {
   status: MembershipStatus
   tier?: MembershipTier
+  setMembership?: (next: MembershipContextType) => void
 }
 
 const MembershipContext = createContext<MembershipContextType>({
@@ -26,8 +27,20 @@ export function MembershipProvider({
   children: React.ReactNode
   initialMembership: MembershipContextType
 }) {
+  const [membership, setMembership] = useState<MembershipContextType>(
+    initialMembership
+  )
+
+  const value = useMemo(
+    () => ({
+      ...membership,
+      setMembership,
+    }),
+    [membership]
+  )
+
   return (
-    <MembershipContext.Provider value={initialMembership}>
+    <MembershipContext.Provider value={value}>
       {children}
     </MembershipContext.Provider>
   )

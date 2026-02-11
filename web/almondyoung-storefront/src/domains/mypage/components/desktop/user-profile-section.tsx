@@ -3,11 +3,11 @@
 import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
 import { Spinner } from "@/components/shared/spinner"
 import { useUser } from "@/contexts/user-context"
+import { useMembership } from "@/contexts/membership-context"
 import { signout } from "@lib/api/users/signout"
 import { ChevronRight, Coins, Crown, User } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useTransition, useEffect, useState } from "react"
-import { getCurrentSubscription } from "@lib/api/membership/client"
 import { getPointBalance } from "@lib/api/wallet"
 import Link from "next/link"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -23,24 +23,17 @@ export function UserProfileSection({ userName }: UserProfileSectionProps) {
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
   const { setUser } = useUser()
-  const [isMember, setIsMember] = useState(false)
-  const [tierName, setTierName] = useState("")
+  const { status, tier } = useMembership()
   const [pointBalance, setPointBalance] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
     const fetchUserData = async () => {
       try {
-        const [subscription, points] = await Promise.all([
-          getCurrentSubscription().catch(() => null),
-          getPointBalance().catch(() => ({ balance: 0, withdrawable: 0 })),
-        ])
-
-        if (subscription && subscription.status === "ACTIVE") {
-          setIsMember(true)
-          setTierName(subscription.plan?.tier?.name || "멤버십")
-        }
-
+        const points = await getPointBalance().catch(() => ({
+          balance: 0,
+          withdrawable: 0,
+        }))
         setPointBalance(points.balance)
       } catch (error) {
         console.error("사용자 데이터 조회 실패:", error)
@@ -87,11 +80,13 @@ export function UserProfileSection({ userName }: UserProfileSectionProps) {
             {/* 멤버십 뱃지 or 가입 유도 */}
             {isLoading ? (
               <Skeleton className="h-6 w-24" />
-            ) : isMember ? (
+            ) : status === "membership" ? (
               <Link href="/kr/mypage/membership">
                 <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[#FF9500] transition-opacity hover:opacity-80">
                   <Crown className="size-4" aria-hidden />
-                  <span className="text-base font-bold">{tierName} 회원</span>
+                  <span className="text-base font-bold">
+                    {tier?.name ?? "멤버십"} 회원
+                  </span>
                 </span>
               </Link>
             ) : (
