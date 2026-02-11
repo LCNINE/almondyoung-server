@@ -2,7 +2,6 @@
 
 import React from "react"
 import { ProductMembershipBadge } from "@/components/shared/badges/product-membership-badge"
-import { SoldOutTag } from "@/components/products/prodcut-card/parts/sold-out-tag"
 import AnimatedMembershipText from "@components/products/atomics/animated-membership-text"
 
 /**
@@ -85,7 +84,7 @@ export const ProductPrice = ({
             {displayPrice.toLocaleString()}원
           </span>
           {showMembershipTag && <ProductMembershipBadge size="sm" />}
-      </div>
+        </div>
         {showMembershipHint && membershipSavings != null && (
           <span className="text-[11px] text-gray-500">
             멤버십 가입 시 {membershipSavings.toLocaleString()}원 절약
