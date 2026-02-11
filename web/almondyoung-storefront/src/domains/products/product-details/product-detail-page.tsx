@@ -13,7 +13,6 @@ import {
 import { CartSuccessModal } from "@/components/modals/cart-success-modal"
 import { useAddToCart } from "@hooks/api/use-add-to-cart"
 import { useRecentViews } from "@hooks/api/use-recent-views"
-import { toggleWishlist } from "@lib/api/users/wishlist"
 import type { ProductDetail } from "@lib/types/ui/product"
 import type { UserDetail, WishlistItem } from "@lib/types/ui/user"
 import { ProductReviewSection } from "domains/reviews/product-review-section"
@@ -30,6 +29,7 @@ import { ProductTabs } from "./components/product-tabs"
 import { useRouter } from "next/navigation"
 import { createPortal } from "react-dom"
 import { useMembership } from "@/contexts/membership-context"
+import { useWishlist } from "@/contexts/wishlist-context"
 // import { Breadcrumb } from "@components/layout/components/breadcrumb"
 // import { ProductCard } from "@lib/types/ui/product"
 // import { ProductRecommandSlider } from "@components/products/product-recommand-slider"
@@ -65,6 +65,8 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   const router = useRouter()
   const { status } = useMembership()
   const isMember = status === "membership"
+  const { isLoaded, isWishlisted, isPending: isWishlistPending, toggle } =
+    useWishlist()
   // ===== 상태 관리 =====
   const [activeTab, setActiveTab] = useState<
     "detail" | "review" | "qna" | "info"
@@ -72,9 +74,6 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   const [mainImage, setMainImage] = useState(
     product?.thumbnails?.[0] || product?.thumbnail || ""
   )
-  const [isWishlisted, setIsWishlisted] = useState(() => {
-    return wishlist ? true : false
-  })
   const [isBottomSheetOpen, setIsBottomSheetOpen] = useState(false)
   const [quantity, setQuantity] = useState(1)
   const [selectedOptions, setSelectedOptions] = useState<
@@ -148,6 +147,10 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
     refs[tab]?.current?.scrollIntoView({ behavior: "smooth", block: "start" })
   }
 
+  const resolvedWishlisted = isLoaded
+    ? isWishlisted(product?.id || "")
+    : !!wishlist
+
   const handleWishlistToggle = (productId: string) => {
     if (!user) {
       toast.error(
@@ -156,25 +159,18 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
       return
     }
 
-    const previousState: boolean = isWishlisted
-
-    setIsWishlisted(!isWishlisted)
-
     startTransition(async () => {
       try {
         // 성공
-        await toggleWishlist(productId)
-        toast.success(
-          isWishlisted
-            ? "찜 목록에서 상품이 삭제되었습니다."
-            : "상품이 찜 목록에 추가되었습니다."
-        )
-
-        router.refresh()
+        const action = await toggle(productId)
+        if (action) {
+          toast.success(
+            action === "removed"
+              ? "찜 목록에서 상품이 삭제되었습니다."
+              : "상품이 찜 목록에 추가되었습니다."
+          )
+        }
       } catch (error) {
-        // 실패시 상태 복원
-        setIsWishlisted(previousState)
-
         console.error("찜하기 실패", error)
         toast.error("찜 처리 중 오류가 발생했습니다. 다시 시도해 주세요.")
       }
@@ -447,8 +443,8 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
           {/* 사이드바 (데스크탑)*/}
           <ProductSidebarPurchase
             product={product}
-            isWishlisted={isWishlisted}
-            isWishlistPending={isPending}
+            isWishlisted={resolvedWishlisted}
+            isWishlistPending={isPending || isWishlistPending(product.id)}
             onWishlistToggle={handleWishlistToggle}
             countryCode={countryCode}
             // isUser={!!user}
@@ -473,8 +469,8 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
         createPortal(
           <>
             <ProductBottomBar
-              isInWishlist={isWishlisted}
-              wishlistLoading={isPending}
+              isInWishlist={resolvedWishlisted}
+              wishlistLoading={isPending || isWishlistPending(product.id)}
               hasOptions={!isSingleOption}
               onWishlistToggle={() => handleWishlistToggle(product.id)}
               onCartClick={openBottomSheet}

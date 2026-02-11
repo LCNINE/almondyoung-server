@@ -1,8 +1,6 @@
-"use server"
-
 import { ApiAuthError, ApiNetworkError, HttpApiError } from "@lib/api/api-error"
 import { getBackendBaseUrl } from "@/lib/config/backend"
-import { getAccessToken } from "@lib/data/cookies"
+import { getAccessTokenFromCookie } from "@/lib/utils/auth"
 import type { WishlistResponse } from "@lib/types/dto/users"
 
 type WishlistToggleAction = "added" | "removed"
@@ -34,7 +32,7 @@ const request = async <T>(
     )
   }
 
-  const accessToken = await getAccessToken()
+  const accessToken = getAccessTokenFromCookie()
   if (!accessToken) {
     throw new ApiAuthError("UNAUTHORIZED", 401, "UNAUTHORIZED")
   }
@@ -53,6 +51,7 @@ const request = async <T>(
     response = await fetch(`${baseUrl}${path}`, {
       ...init,
       headers,
+      credentials: "include",
     })
   } catch {
     throw new ApiNetworkError("NETWORK_ERROR", 500, "NETWORK_ERROR")

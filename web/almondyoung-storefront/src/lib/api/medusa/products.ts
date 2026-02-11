@@ -11,6 +11,7 @@ interface GetProductListParams {
   categoryId?: string | string[]
   region_id?: string
   handle?: string[] | string
+  id?: string[] | string
   q?: string // 검색어 파라미터 추가
   order?: string // 정렬 파라미터 (예: "created_at", "-created_at", "title", "-title")
 }
@@ -22,6 +23,7 @@ export const getProductList = async ({
   categoryId,
   region_id,
   handle,
+  id,
   q,
   order,
 }: GetProductListParams): Promise<ProductsResponseDto> => {
@@ -38,6 +40,7 @@ export const getProductList = async ({
         offset,
         category_id: categoryId,
         handle,
+        id,
         q, // 검색어 전달
         order, // 정렬 (예: "-created_at" = 최신순)
         fields:
