@@ -8,6 +8,8 @@ import { getCategoryTree } from "@/lib/api/medusa/categories"
 import { fetchMe } from "@lib/api/users/me"
 import type { StoreProductCategoryTree } from "@/lib/types/medusa-category"
 import { HomeLogoutTemplate } from "domains/home/template/home-logout-template"
+import { shouldShowSurvey } from "@/lib/utils/should-show-survey"
+import { SurveyPromptBanner } from "@/components/survey-prompt-banner"
 
 export const metadata = getSEOTags({
   title: `${siteConfig.appName} | 최저가 미용재료 MRO 쇼핑몰`,
@@ -29,7 +31,7 @@ export default async function Home({
   categories = await getCategoryTree().catch(() => [])
 
   const user = await fetchMe().catch(() => null)
-
+  const showSurvey = shouldShowSurvey(user)
   return (
     <ProtectedRoute>
       {/* {user ? (
@@ -42,6 +44,9 @@ export default async function Home({
         regionId={region?.id}
         user={user}
       />
+
+      {/* 설문 유도 배너 */}
+      {showSurvey && <SurveyPromptBanner countryCode={countryCode} />}
 
       {/* 테마 매니저 (개발 모드에서만 표시) */}
       {process.env.NODE_ENV === "development" && <ThemeManager />}

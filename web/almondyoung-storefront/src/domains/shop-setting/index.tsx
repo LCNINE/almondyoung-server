@@ -9,22 +9,25 @@ import {
 import {
   shopFormSchema,
   type ShopFormSchema,
+  type ShopFormValues,
 } from "@/components/shop-form/schema"
 import SurveyHeader from "@/domains/shop-survey/components/surbey-header"
+import { modifyShopSurvey } from "@/lib/api/users/shop-suvery"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { ShopInfoDto } from "@lib/types/dto/users"
 import { Building2, Check, Scissors, Users } from "lucide-react"
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { Controller, useForm } from "react-hook-form"
 import { toast } from "sonner"
-import { useShopSurvey } from "../../components/shop-form/hooks/use-shop-survey"
 
 export function ShopSettingTemplate({
   shopInfo,
 }: {
   shopInfo: ShopInfoDto | null
 }) {
-  const { control, handleSubmit, watch, reset } = useForm<ShopFormSchema>({
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const { control, handleSubmit, watch, reset } = useForm<ShopFormValues>({
     resolver: zodResolver(shopFormSchema),
     defaultValues: {
       isOperating: undefined,
@@ -35,8 +38,6 @@ export function ShopSettingTemplate({
       openDays: [],
     },
   })
-
-  const { modifyShopSurveyAction, isSubmitting } = useShopSurvey()
 
   const isOperating = watch("isOperating")
 
@@ -53,23 +54,19 @@ export function ShopSettingTemplate({
     }
   }, [shopInfo, reset])
 
-  const onSubmit = async (data: ShopFormSchema) => {
-    try {
-      const updateDto = {
-        isOperating: data.isOperating,
-        yearsOperating: data.yearsOperating,
-        shopType: data.shopType,
-        categories: data.categories,
-        targetCustomers: data.targetCustomers,
-        openDays: data.openDays,
-      }
+  const onSubmit = async (data: ShopFormValues) => {
+    setIsSubmitting(true)
 
-      await modifyShopSurveyAction(updateDto)
+    const result = await modifyShopSurvey(data as ShopFormSchema)
 
-      toast.success("상점 정보가 성공적으로 저장되었습니다.")
-    } catch (err) {
-      toast.error("상점 정보 저장에 실패했습니다. 잠시 후 다시 시도해주세요.")
+    setIsSubmitting(false)
+
+    if (!result.success) {
+      toast.error(result.error)
+      return
     }
+
+    toast.success("상점 정보가 성공적으로 저장되었습니다.")
   }
 
   return (

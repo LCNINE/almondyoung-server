@@ -2,40 +2,41 @@
 
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Form } from "@/components/ui/form"
-
-import { useShopSurvey } from "@/components/shop-form/hooks/use-shop-survey"
 import {
   shopFormSchema,
   type ShopFormSchema,
+  type ShopFormValues,
 } from "@/components/shop-form/schema"
+import { modifyShopSurvey } from "@/lib/api/users/shop-suvery"
+import type { ShopInfoDto } from "@/lib/types/dto/users"
 import { useRouter } from "next/navigation"
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
-import ShopSurveySkeleton from "../skeleton"
 import StepsManager from "./step-manger"
+
+interface ShopSurveyFormProps {
+  redirectTo: string
+  initialData: ShopInfoDto | null
+}
 
 export default function ShopSurveyForm({
   redirectTo,
-}: {
-  redirectTo: string | undefined
-}) {
+  initialData,
+}: ShopSurveyFormProps) {
   const [currentStep, setCurrentStep] = useState(0)
-  const { modifyShopSurveyAction, isLoading, getShopSurveyAction } =
-    useShopSurvey()
-
   const router = useRouter()
 
-  const form = useForm<ShopFormSchema>({
+  const form = useForm<ShopFormValues>({
     resolver: zodResolver(shopFormSchema),
     mode: "onChange",
     defaultValues: {
-      isOperating: undefined,
-      yearsOperating: 0,
-      shopType: "",
-      categories: [],
-      targetCustomers: [],
-      openDays: [],
+      isOperating: initialData?.isOperating ?? undefined,
+      yearsOperating: initialData?.yearsOperating ?? 0,
+      shopType: initialData?.shopType ?? "",
+      categories: initialData?.categories ?? [],
+      targetCustomers: (initialData?.targetCustomers as string[]) ?? [],
+      openDays: (initialData?.openDays as string[]) ?? [],
     },
   })
 
@@ -44,40 +45,27 @@ export default function ShopSurveyForm({
   }
 
   const onSubmit = async (data: ShopFormSchema) => {
-    try {
-      await modifyShopSurveyAction(data)
-      toast.success("정보가 저장되었습니다.")
-      router.push(redirectTo ?? "/")
-    } catch (error) {
-      toast.error("정보 저장에 실패했습니다. 잠시 후 다시 시도해주세요.")
+    const transformedData = {
+      ...data,
+      shopType: data.shopType ?? undefined,
     }
-  }
 
-  useEffect(() => {
-    const getShopSurveyData = async () => {
-      const res = await getShopSurveyAction()
+    const result = await modifyShopSurvey(transformedData)
 
-      form.reset({
-        isOperating: res?.isOperating ?? undefined,
-        yearsOperating: res?.yearsOperating ?? 0,
-        shopType: res?.shopType ?? "",
-        categories: res?.categories ?? [],
-        targetCustomers: (res?.targetCustomers as string[]) ?? [],
-        openDays: (res?.openDays as string[]) ?? [],
-      })
+    if (!result.success) {
+      toast.error(result.error)
+      return
     }
-    getShopSurveyData()
-  }, [])
 
-  if (isLoading) {
-    return <ShopSurveySkeleton />
+    toast.success("정보가 저장되었습니다.")
+    router.push(redirectTo || "/")
   }
 
   return (
     <Form {...form}>
       <form
-        onSubmit={form.handleSubmit(onSubmit)}
-        className="max-[600px] relative flex flex-col gap-10 p-2"
+        onSubmit={form.handleSubmit((data) => onSubmit(data as ShopFormSchema))}
+        className="relative mx-auto flex w-full max-w-[600px] flex-col gap-10"
       >
         <StepsManager currentStep={currentStep} onNextStep={handleNext} />
       </form>

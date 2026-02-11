@@ -106,6 +106,7 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   const qnaRef = useRef<HTMLDivElement>(null)
   const infoRef = useRef<HTMLDivElement>(null)
 
+  console.log("product:::::", product)
   // ===== Hooks =====
   const { addToCart, isLoading: isAddToCartLoading } = useAddToCart()
 
@@ -182,6 +183,7 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
 
   const isSingleOption = !product.options || product.options.length === 0
   const isOutOfStock = product.status !== "active"
+  const isSoldOut = product.manageInventory && product.available <= 0
   const getVariantPrice = (variantId?: string) => {
     const resolvePrice = (base?: number, actual?: number) => {
       const basePrice = base ?? 0
@@ -310,9 +312,9 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
       selectedCartOptions.map((option) =>
         option.variantId
           ? addToCart({
-            variantId: option.variantId,
-            quantity: option.quantity,
-          })
+              variantId: option.variantId,
+              quantity: option.quantity,
+            })
           : Promise.resolve({ success: false })
       )
     )
@@ -379,6 +381,7 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
               mainImage={mainImage}
               productName={product.name}
               onImageChange={setMainImage}
+              isSoldOut={isSoldOut}
             />
 
             {/* 모바일 상품 정보 */}

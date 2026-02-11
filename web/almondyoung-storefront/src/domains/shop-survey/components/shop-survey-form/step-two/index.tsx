@@ -1,4 +1,15 @@
+import { useState } from "react"
 import { cn } from "@lib/utils"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { NumberStepper } from "@/components/shared/number-stepper"
 import { Checkbox } from "@components/common/ui/checkbox"
 import { Label } from "@components/common/ui/label"
@@ -9,7 +20,8 @@ import {
   SHOP_TYPES,
 } from "@/components/shop-form/constants"
 import { useFormContext } from "react-hook-form"
-import { useShopSurvey } from "@/components/shop-form/hooks/use-shop-survey"
+import { useRouter } from "next/navigation"
+import { updateSurveyRemind } from "@/lib/api/users/shop-suvery"
 
 function YearsOperatingSection({
   value,
@@ -96,8 +108,9 @@ function ShopTypeSection({
             </div>
           ))}
         </div>
+
         {error && (
-          <p className="ml-2 text-sm font-medium text-red-500">{error}</p>
+          <p className="mt-2 ml-2 text-sm font-medium text-red-500">{error}</p>
         )}
       </div>
     </section>
@@ -236,32 +249,37 @@ function OpenDaysSection({
 }
 
 export function StepTwo() {
-  const form = useFormContext()
-  const { isSubmitting } = useShopSurvey()
+  const [showSkipDialog, setShowSkipDialog] = useState(false)
+  const [isSkipping, setIsSkipping] = useState(false)
+  const router = useRouter()
+  const { watch, setValue: setFormValue, formState } = useFormContext()
+  const { isSubmitting, errors: formErrors } = formState
 
-  const isOperating = form.watch("isOperating")
-  const yearsOperating = form.watch("yearsOperating")
-  const shopType = form.watch("shopType")
-  const targetCustomers = form.watch("targetCustomers")
-  const openDays = form.watch("openDays")
-  const categories = form.watch("categories")
+  const handleSkip = async () => {
+    setIsSkipping(true)
+    await updateSurveyRemind()
+    router.push("/")
+  }
+
+  const isOperating = watch("isOperating")
+  const yearsOperating = watch("yearsOperating")
+  const shopType = watch("shopType")
+  const targetCustomers = watch("targetCustomers")
+  const openDays = watch("openDays")
+  const categories = watch("categories")
 
   const errors = {
-    yearsOperating: form.formState.errors.yearsOperating?.message as
-      | string
-      | undefined,
-    shopType: form.formState.errors.shopType?.message as string | undefined,
-    targetCustomers: form.formState.errors.targetCustomers?.message as
-      | string
-      | undefined,
-    openDays: form.formState.errors.openDays?.message as string | undefined,
+    yearsOperating: formErrors.yearsOperating?.message as string | undefined,
+    shopType: formErrors.shopType?.message as string | undefined,
+    targetCustomers: formErrors.targetCustomers?.message as string | undefined,
+    openDays: formErrors.openDays?.message as string | undefined,
   }
 
   const isSubmitDisabled =
     isOperating === undefined || categories?.length === 0 || isSubmitting
 
   const setValue = (field: string, value: unknown) => {
-    form.setValue(field, value, {
+    setFormValue(field, value, {
       shouldValidate: true,
       shouldDirty: true,
     })
@@ -298,10 +316,47 @@ export function StepTwo() {
       )}
 
       <footer className="mt-8 flex w-full gap-2">
-        <CustomButton variant="outline" size="lg" disabled={isSubmitDisabled}>
+        <CustomButton
+          variant="outline"
+          size="lg"
+          disabled={isSubmitting || isSkipping}
+          type="button"
+          onClick={() => setShowSkipDialog(true)}
+        >
           건너뛰기
         </CustomButton>
+
+        <CustomButton
+          variant="fill"
+          size="lg"
+          disabled={isSubmitDisabled || isSkipping}
+          type="submit"
+          isLoading={isSubmitting}
+        >
+          제출하기
+        </CustomButton>
       </footer>
+
+      <AlertDialog open={showSkipDialog} onOpenChange={setShowSkipDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>설문을 건너뛰시겠어요?</AlertDialogTitle>
+            <AlertDialogDescription>
+              지금까지 입력하신 내용은 저장되지 않아요.
+              <br />
+              나중에 다시 맞춤 설정을 진행하실 수 있습니다.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSkipping}>
+              계속 작성하기
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={handleSkip} disabled={isSkipping}>
+              {isSkipping ? "처리 중..." : "건너뛰기"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }

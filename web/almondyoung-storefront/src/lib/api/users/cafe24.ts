@@ -20,10 +20,10 @@ export interface Cafe24MigrationItem {
   userValue: string | null
 }
 
-export async function linkCafe24(cafe24_link_token: string) {
+export async function linkCafe24(encryptedIdToken: string) {
   return await api<Cafe24LinkResult>("users", "/cafe24/link", {
     method: "POST",
-    body: { cafe24_link_token },
+    body: { encryptedIdToken },
     withAuth: true,
   })
 }

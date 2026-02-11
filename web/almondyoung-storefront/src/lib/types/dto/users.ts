@@ -43,6 +43,7 @@ export interface ShopInfoDto {
   openDays: unknown //영업일 정보
   createdAt: Date //상점 생성일
   updatedAt: Date
+  remind_at: Date | null // 설문 알림 시간
 }
 
 /*───────────────────────────
