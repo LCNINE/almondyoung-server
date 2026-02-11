@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button"
 import { useAddToCart } from "@hooks/api/use-add-to-cart"
-import { toggleWishlist } from "@lib/api/users/wishlist"
+import { useWishlist } from "@/contexts/wishlist-context"
 import { cn } from "@/lib/utils"
 import { Heart, Minus, Plus, ShoppingCart, Check } from "lucide-react"
 import { useRouter } from "next/navigation"
@@ -35,12 +35,17 @@ export function ProductQuickActions({
 }: ProductQuickActionsProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
+  const { isLoaded, isWishlisted, isPending: isWishlistPending, toggle } =
+    useWishlist()
   const { addToCart, isLoading: isCartLoading } = useAddToCart()
 
-  const [isWishlisted, setIsWishlisted] = useState(initialWishlisted)
   const [showQuantitySelector, setShowQuantitySelector] = useState(false)
   const [quantity, setQuantity] = useState(1)
   const [isAddedToCart, setIsAddedToCart] = useState(false)
+
+  const resolvedWishlisted = isLoaded
+    ? isWishlisted(productId)
+    : initialWishlisted
 
   // 찜하기 토글
   const handleWishlistToggle = (e: React.MouseEvent) => {
@@ -52,21 +57,19 @@ export function ProductQuickActions({
       return
     }
 
-    const previousState = isWishlisted
-    setIsWishlisted(!isWishlisted)
-    onWishlistChange?.(!isWishlisted)
-
     startTransition(async () => {
       try {
-        await toggleWishlist(productId)
-        toast.success(
-          isWishlisted
-            ? "찜 목록에서 삭제되었습니다."
-            : "찜 목록에 추가되었습니다."
-        )
+        const action = await toggle(productId)
+        if (action) {
+          const nextWishlisted = action === "added"
+          onWishlistChange?.(nextWishlisted)
+          toast.success(
+            nextWishlisted
+              ? "찜 목록에 추가되었습니다."
+              : "찜 목록에서 삭제되었습니다."
+          )
+        }
       } catch {
-        setIsWishlisted(previousState)
-        onWishlistChange?.(previousState)
         toast.error("처리 중 오류가 발생했습니다.")
       }
     })
@@ -139,12 +142,12 @@ export function ProductQuickActions({
           isPending && "pointer-events-none opacity-50"
         )}
         onClick={handleWishlistToggle}
-        disabled={isPending}
+        disabled={isPending || isWishlistPending(productId)}
       >
         <Heart
           className={cn(
             "h-4 w-4 transition-colors",
-            isWishlisted ? "fill-red-500 text-red-500" : "text-gray-600"
+            resolvedWishlisted ? "fill-red-500 text-red-500" : "text-gray-600"
           )}
         />
       </Button>
