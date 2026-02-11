@@ -110,7 +110,10 @@ export class WishlistController {
   @Get(':productId')
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)
-  async getWishlistByProductId(@CurrentUser() user: User, @Param('productId') productId: string) {
-    return this.wishlistService.getWishlistByProductId(productId);
+  async getWishlistByProductId(
+    @CurrentUser() user: User,
+    @Param('productId') productId: string,
+  ) {
+    return this.wishlistService.getWishlistByProductId(user.id, productId);
   }
 }

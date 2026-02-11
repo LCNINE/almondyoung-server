@@ -43,9 +43,10 @@ export class WishlistService {
           ),
         );
 
-
-
-      return
+      return {
+        action: 'removed',
+        message: '찜 목록에서 제거되었습니다.',
+      };
     }
 
 
@@ -59,8 +60,11 @@ export class WishlistService {
       })
       .returning();
 
-
-    return
+    return {
+      action: 'added',
+      message: '찜 목록에 추가되었습니다.',
+      data: result[0],
+    };
   }
 
   async getWishlistByUserId(userId: string): Promise<schema.Wishlist[]> {
@@ -73,11 +77,19 @@ export class WishlistService {
     return wishlist;
   }
 
-  async getWishlistByProductId(productId: string): Promise<schema.Wishlist[]> {
+  async getWishlistByProductId(
+    userId: string,
+    productId: string,
+  ): Promise<schema.Wishlist[]> {
     const wishlist = await this.dbService.db
       .select()
       .from(schema.wishlist)
-      .where(eq(schema.wishlist.productId, productId));
+      .where(
+        and(
+          eq(schema.wishlist.userId, userId),
+          eq(schema.wishlist.productId, productId),
+        ),
+      );
 
     return wishlist;
   }
