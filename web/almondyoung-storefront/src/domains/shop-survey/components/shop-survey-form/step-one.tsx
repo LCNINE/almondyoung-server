@@ -205,7 +205,7 @@ export function StepOne({ onNextStep }: StepOneProps) {
                   (다중 선택 가능)
                 </FormLabel>
 
-                <div className="space- flex max-w-[375px] flex-wrap justify-around gap-2">
+                <div className="flex w-full flex-wrap justify-start gap-2">
                   {CATEGORIES.map((cat) => {
                     const isChecked = field.value?.includes(cat)
                     const inputId = `cat-${cat}`

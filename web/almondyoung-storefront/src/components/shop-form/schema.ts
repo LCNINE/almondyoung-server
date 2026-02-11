@@ -1,7 +1,8 @@
 import { z } from "zod"
 
-// 매장 규모 enum
-export const shopTypeEnum = z.enum(["", "solo", "small", "large"])
+export const shopTypeEnum = z
+  .enum(["", "solo", "small", "large"])
+  .refine((val) => val !== "", { message: "매장 유형을 선택해주세요." })
 
 export const shopFormSchema = z
   .object({
@@ -9,7 +10,7 @@ export const shopFormSchema = z
     isOperating: z.boolean(),
     // 운영 연수
     yearsOperating: z.number().min(0, "운영 기간을 선택해주세요."),
-    // 매장 규모
+    // 매장 규모 (필수, 폼에서는 ""로 미선택 가능)
     shopType: shopTypeEnum,
     // 시술 카테고리 (최소 1개)
     categories: z
@@ -31,3 +32,4 @@ export const shopFormSchema = z
   })
 
 export type ShopFormSchema = z.infer<typeof shopFormSchema>
+export type ShopFormValues = z.input<typeof shopFormSchema>
