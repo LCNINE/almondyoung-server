@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 
-const CAFE24_LINK_TOKEN_COOKIE = "cafe24_link_token"
+const CAFE24_ENCRYPTED_ID_TOKEN_COOKIE = "cafe24_encrypted_id_token"
 
 const buildStatusRedirect = (
   request: NextRequest,
@@ -20,6 +20,33 @@ const buildCompleteRedirect = (request: NextRequest, countryCode: string) => {
   return NextResponse.redirect(url, 303)
 }
 
+const getFirstFormValue = (formData: FormData, keys: string[]) => {
+  for (const key of keys) {
+    const value = formData.get(key)
+
+    if (typeof value === "string" && value.trim()) {
+      return value.trim()
+    }
+  }
+
+  return null
+}
+
+const getFirstSearchParamValue = (
+  request: NextRequest,
+  keys: string[]
+): string | null => {
+  for (const key of keys) {
+    const value = request.nextUrl.searchParams.get(key)
+
+    if (value && value.trim()) {
+      return value.trim()
+    }
+  }
+
+  return null
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: { countryCode: string } }
@@ -27,14 +54,16 @@ export async function POST(
   const countryCode = params?.countryCode ?? "kr"
 
   const formData = await request.formData()
-  const cafe24LinkToken = formData.get("cafe24_link_token")
+  const encryptedIdToken =
+    getFirstFormValue(formData, ["encryptedIdToken", "encrypted_id_token"]) ??
+    getFirstSearchParamValue(request, ["encryptedIdToken", "encrypted_id_token"])
 
-  if (!cafe24LinkToken || typeof cafe24LinkToken !== "string") {
+  if (!encryptedIdToken) {
     return buildStatusRedirect(request, countryCode, "missing_token")
   }
 
   const response = buildCompleteRedirect(request, countryCode)
-  response.cookies.set(CAFE24_LINK_TOKEN_COOKIE, cafe24LinkToken, {
+  response.cookies.set(CAFE24_ENCRYPTED_ID_TOKEN_COOKIE, encryptedIdToken, {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",

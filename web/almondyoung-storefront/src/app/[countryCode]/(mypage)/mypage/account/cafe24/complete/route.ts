@@ -3,7 +3,7 @@ import { linkCafe24 } from "@lib/api/users/cafe24"
 import { cookies } from "next/headers"
 import { NextRequest, NextResponse } from "next/server"
 
-const CAFE24_LINK_TOKEN_COOKIE = "cafe24_link_token"
+const CAFE24_ENCRYPTED_ID_TOKEN_COOKIE = "cafe24_encrypted_id_token"
 
 const buildStatusRedirect = (
   request: NextRequest,
@@ -16,7 +16,7 @@ const buildStatusRedirect = (
 }
 
 const clearTokenCookie = (response: NextResponse) => {
-  response.cookies.set(CAFE24_LINK_TOKEN_COOKIE, "", {
+  response.cookies.set(CAFE24_ENCRYPTED_ID_TOKEN_COOKIE, "", {
     maxAge: -1,
     path: "/",
   })
@@ -27,14 +27,14 @@ export async function GET(
   { params }: { params: { countryCode: string } }
 ) {
   const countryCode = params?.countryCode ?? "kr"
-  const token = cookies().get(CAFE24_LINK_TOKEN_COOKIE)?.value
+  const encryptedIdToken = cookies().get(CAFE24_ENCRYPTED_ID_TOKEN_COOKIE)?.value
 
-  if (!token) {
+  if (!encryptedIdToken) {
     return buildStatusRedirect(request, countryCode, "missing_token")
   }
 
   try {
-    await linkCafe24(token)
+    await linkCafe24(encryptedIdToken)
     const response = buildStatusRedirect(request, countryCode, "success")
     clearTokenCookie(response)
     return response

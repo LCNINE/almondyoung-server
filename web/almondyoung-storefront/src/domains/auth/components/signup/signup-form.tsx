@@ -11,19 +11,58 @@ import {
 } from "@/components/ui/dialog"
 import { Form } from "@/components/ui/form"
 import { zodResolver } from "@hookform/resolvers/zod"
+import type { Cafe24SignupBootstrapData } from "@lib/api/users/auth/signup-cafe24"
 import { createUser } from "@lib/api/users/auth/signup-base"
 import { formatBirthday } from "@lib/utils/format-birthday"
 import { signupSchema, SignupSchema } from "domains/auth/schemas/signup-schema"
 import { setFormError } from "domains/auth/utils/set-form-error"
-import { useSearchParams } from "next/navigation"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { useActionState, useEffect, useState, useTransition } from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
 import { SignupFormFields } from "./signup-form-fields"
 
-export function SignupForm() {
+const CAFE24_MIGRATOR_BASE = "https://almondyoung.com/migrator/confirm.html"
+
+export type SignupMode = "default" | "cafe24"
+
+interface SignupFormProps {
+  mode: SignupMode
+  cafe24Bootstrap: Cafe24SignupBootstrapData | null
+}
+
+const normalizeBirthday = (value: string | null | undefined) =>
+  value ? value.replace(/\D/g, "").slice(0, 8) : ""
+
+const hasValue = (value: string | null | undefined) =>
+  typeof value === "string" && value.trim().length > 0
+
+const decodeLegacyMessage = (value: string) => {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
+export function SignupForm({ mode, cafe24Bootstrap }: SignupFormProps) {
+  const router = useRouter()
+  const { countryCode: rawCountryCode } = useParams() as { countryCode?: string }
   const searchParams = useSearchParams()
+  const countryCode = rawCountryCode ?? "kr"
   const redirectTo = searchParams.get("redirect_to") || "/"
+  const legacyStatus = searchParams.get("legacy_status")
+  const legacyMessage = searchParams.get("legacy_message")
+  const isCafe24Mode = mode === "cafe24"
+
+  const prefill = cafe24Bootstrap?.prefill
+  const prefillAvailable = !!cafe24Bootstrap?.prefillAvailable
+  const hasIncompletePrefill =
+    isCafe24Mode &&
+    (!hasValue(prefill?.email) ||
+      !hasValue(prefill?.username) ||
+      !hasValue(prefill?.birthday) ||
+      !hasValue(prefill?.phoneNumber))
 
   const [state, formAction, pending] = useActionState(createUser, null)
   const [isPending, startTransition] = useTransition()
@@ -37,22 +76,23 @@ export function SignupForm() {
     mode: "onChange",
     defaultValues: {
       loginId: "",
-      username: "",
+      username: prefill?.username ?? "",
       nickname: "",
-      email: "",
+      email: prefill?.email ?? "",
       password: "",
       passwordConfirm: "",
-      birthday: "",
-      phoneNumber: "",
+      birthday: normalizeBirthday(prefill?.birthday),
+      phoneNumber: prefill?.phoneNumber ?? "",
       verificationCode: "",
       countryCode: "KR",
-      isPhoneVerified: false,
+      isPhoneVerified: isCafe24Mode,
       isOver14: false,
       termsOfService: false,
       electronicTransaction: false,
       privacyPolicy: false,
       thirdPartySharing: false,
       marketingConsent: false,
+      encryptedIdToken: cafe24Bootstrap?.encryptedIdToken ?? "",
     },
   })
 
@@ -69,19 +109,77 @@ export function SignupForm() {
     }
   }, [state])
 
+  useEffect(() => {
+    if (!isCafe24Mode) return
+    form.setValue("isPhoneVerified", true)
+    form.clearErrors("isPhoneVerified")
+  }, [isCafe24Mode, form])
+
+  useEffect(() => {
+    if (!legacyStatus && !legacyMessage) return
+
+    if (legacyStatus === "ready") {
+      toast.success("기존 아몬드영 정보를 불러왔습니다.")
+    } else if (legacyStatus === "missing_token") {
+      toast.error(
+        legacyMessage
+          ? decodeLegacyMessage(legacyMessage)
+          : "기존 아몬드영 인증 토큰을 찾을 수 없습니다."
+      )
+    } else {
+      toast.error(
+        legacyMessage
+          ? decodeLegacyMessage(legacyMessage)
+          : "기존 아몬드영 정보를 불러오지 못했습니다."
+      )
+    }
+
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete("legacy_status")
+    params.delete("legacy_message")
+
+    const nextQuery = params.toString()
+    const nextPath = nextQuery
+      ? `/${countryCode}/signup?${nextQuery}`
+      : `/${countryCode}/signup`
+    router.replace(nextPath)
+  }, [countryCode, legacyMessage, legacyStatus, router, searchParams])
+
+  const handleContinueWithCafe24 = () => {
+    if (typeof window === "undefined") return
+
+    const confirmUrl =
+      `${window.location.origin}/${countryCode}/signup/cafe24/confirm` +
+      `?redirect_to=${encodeURIComponent(redirectTo)}`
+
+    window.location.href =
+      `${CAFE24_MIGRATOR_BASE}?redirect_to=${encodeURIComponent(confirmUrl)}`
+  }
+
   const onSubmit = async (data: SignupSchema) => {
     const {
       passwordConfirm,
       verificationCode,
       countryCode,
       isPhoneVerified,
+      encryptedIdToken,
       ...submitData
     } = data
+
+    if (isCafe24Mode && !encryptedIdToken) {
+      toast.error("기존 아몬드영 연동 토큰이 없습니다. 다시 시작해주세요.")
+      return
+    }
+
     const formattedBirthday = formatBirthday(submitData.birthday)
+    const normalizedEncryptedIdToken = encryptedIdToken?.trim()
 
     const formattedSubmitData = {
       ...submitData,
       birthday: formattedBirthday,
+      ...(normalizedEncryptedIdToken && {
+        encryptedIdToken: normalizedEncryptedIdToken,
+      }),
     }
 
     startTransition(() => {
@@ -90,15 +188,17 @@ export function SignupForm() {
   }
 
   const handleSignupClick = async () => {
+    const shouldRequirePhoneVerification = !isCafe24Mode
     const isPhoneVerified = form.getValues("isPhoneVerified")
-    if (!isPhoneVerified) {
+
+    if (shouldRequirePhoneVerification && !isPhoneVerified) {
       form.setError("isPhoneVerified", {
         type: "manual",
         message: "휴대폰 인증을 완료해주세요",
       })
     }
 
-    const isValid = await form.trigger([
+    const requiredFields: Array<keyof SignupSchema> = [
       "loginId",
       "username",
       "nickname",
@@ -107,9 +207,10 @@ export function SignupForm() {
       "passwordConfirm",
       "birthday",
       "phoneNumber",
-    ])
+    ]
 
-    if (!isValid || !isPhoneVerified) return
+    const isValid = await form.trigger(requiredFields)
+    if (!isValid || (shouldRequirePhoneVerification && !isPhoneVerified)) return
 
     // 이미 약관 동의한 경우 바로 제출
     if (hasAgreed) {
@@ -140,7 +241,32 @@ export function SignupForm() {
         className="flex w-full flex-col gap-4"
         id="signup-form"
       >
-        <SignupFormFields form={form} />
+        {!isCafe24Mode && (
+          <div className="mb-2 rounded-lg border border-zinc-200 p-4">
+            <p className="text-sm font-semibold text-zinc-800">
+              기존 아몬드영 계정이 있으신가요?
+            </p>
+            <p className="mt-1 text-xs text-zinc-500">
+              정보를 불러와 빠르게 가입하고 휴대폰 인증을 건너뛸 수 있습니다.
+            </p>
+            <CustomButton
+              type="button"
+              variant="outline"
+              color="secondary"
+              className="mt-3 w-full cursor-pointer"
+              onClick={handleContinueWithCafe24}
+            >
+              기존 아몬드영 계정으로 계속하기
+            </CustomButton>
+          </div>
+        )}
+
+        <SignupFormFields
+          form={form}
+          mode={mode}
+          prefillAvailable={prefillAvailable}
+          hasIncompletePrefill={hasIncompletePrefill}
+        />
 
         <div className="ml-auto">
           <CustomButton

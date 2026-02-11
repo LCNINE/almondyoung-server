@@ -82,11 +82,7 @@ const mapMedusaProductToDetail = (
   const basePrice = originalPrice ?? calculatedPrice ?? 0
   const actualPrice = calculatedPrice ?? originalPrice ?? 0
   const rawMembershipPrice =
-    membershipPreviewPrice ??
-    (
-      calculatedPrice ??
-      originalPrice
-    )
+    membershipPreviewPrice ?? calculatedPrice ?? originalPrice
   const membershipPrice =
     rawMembershipPrice && basePrice && basePrice > rawMembershipPrice
       ? rawMembershipPrice
@@ -127,7 +123,9 @@ const mapMedusaProductToDetail = (
       const variantRawMembership =
         variantMembershipPreview ?? variantPrice?.calculated_price_number
       const variantMembershipPrice =
-        variantRawMembership && variantBasePrice && variantBasePrice > variantRawMembership
+        variantRawMembership &&
+        variantBasePrice &&
+        variantBasePrice > variantRawMembership
           ? variantRawMembership
           : undefined
 
@@ -166,6 +164,8 @@ const mapMedusaProductToDetail = (
     name: product.title,
     thumbnail,
     thumbnails,
+    manageInventory: product.variants?.[0]?.manage_inventory ?? false,
+    available: product.variants?.[0]?.inventory_quantity ?? 0,
     description: product.description || undefined,
     descriptionHtml: descriptionHtml || undefined,
     brand,
@@ -214,21 +214,23 @@ export default async function Page({
     )
     const sampleVariant = medusaProduct?.variants?.[0]
     if (sampleVariant) {
-      console.log("[PRICE DEBUG] Store API Response", {
-        productId: medusaProduct?.id,
-        regionId: region?.id,
-        regionCurrencyCode: region?.currency_code,
-        salesChannelId,
-        variantId: sampleVariant.id,
-        calculated_price: sampleVariant.calculated_price,
-      })
-      console.log("[REGION DEBUG]", {
-        regionId: region?.id,
-        regionName: region?.name,
-        currencyCode: region?.currency_code,
-        countries: region?.countries?.map((c) => c.iso_2),
-        _fullRegion: JSON.stringify(region, null, 2),
-      })
+      if (process.env.NODE_ENV === "development") {
+        console.log("[PRICE DEBUG] Store API Response", {
+          productId: medusaProduct?.id,
+          regionId: region?.id,
+          regionCurrencyCode: region?.currency_code,
+          salesChannelId,
+          variantId: sampleVariant.id,
+          calculated_price: sampleVariant.calculated_price,
+        })
+        console.log("[REGION DEBUG]", {
+          regionId: region?.id,
+          regionName: region?.name,
+          currencyCode: region?.currency_code,
+          countries: region?.countries?.map((c) => c.iso_2),
+          _fullRegion: JSON.stringify(region, null, 2),
+        })
+      }
     }
     let pimDescriptionHtml: string | undefined
     let pimMasterId: string | undefined

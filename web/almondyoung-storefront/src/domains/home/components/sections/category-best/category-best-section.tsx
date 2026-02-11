@@ -193,6 +193,9 @@ export function CategoryBestSection({
                               <div className="grid grid-cols-3 gap-x-3 gap-y-8">
                                 {group.map((product, itemIndex) => {
                                   const rank = groupIndex * 6 + itemIndex + 1
+                                  const isSoldOut =
+                                    product.manageInventory &&
+                                    product.available <= 0
                                   return (
                                     <Link
                                       key={product.id}
@@ -204,23 +207,26 @@ export function CategoryBestSection({
                                           className="drop-shadow-[0_2px_2px_rgba(0,0,0,0.1)]"
                                           src={product.imageSrc}
                                           alt={product.title}
+                                          isSoldOut={isSoldOut}
                                           rank={
                                             <ProductCard.Rank rank={rank} />
                                           }
                                           action={
-                                            <ProductCard.QuickActions
-                                              productId={product.id}
-                                              variantId={
-                                                product.optionMeta
-                                                  ?.defaultVariantId
-                                              }
-                                              isSingleOption={
-                                                product.optionMeta?.isSingle ??
-                                                false
-                                              }
-                                              isLoggedIn={isLoggedIn}
-                                              countryCode={countryCode}
-                                            />
+                                            !isSoldOut ? (
+                                              <ProductCard.QuickActions
+                                                productId={product.id}
+                                                variantId={
+                                                  product.optionMeta
+                                                    ?.defaultVariantId
+                                                }
+                                                isSingleOption={
+                                                  product.optionMeta
+                                                    ?.isSingle ?? false
+                                                }
+                                                isLoggedIn={isLoggedIn}
+                                                countryCode={countryCode}
+                                              />
+                                            ) : undefined
                                           }
                                         />
                                         <ProductCard.Info {...product} />

@@ -33,26 +33,31 @@ export function DigitalAssetSection({ products }: DigitalAssetSectionProps) {
             className="md:hidden"
           >
             <ProductCarousel.List className="ml-0">
-              {products.map((product) => (
-                <ProductCarousel.Item
-                  key={product.id}
-                  className="basis-[42%] pl-0"
-                >
-                  <Link
-                    href={`/${countryCode}/products/${product.id}`}
-                    className="block"
+              {products.map((product) => {
+                const isSoldOut =
+                  product.manageInventory && product.available <= 0
+                return (
+                  <ProductCarousel.Item
+                    key={product.id}
+                    className="basis-[42%] pl-0"
                   >
-                    <ProductCard className="border-r-[0.5px] border-r-gray-100 pr-4 last:border-r-0">
-                      <ProductCard.Thumbnail
-                        src={product.imageSrc}
-                        alt={product.title}
-                        className="rounded-sm md:rounded-md"
-                      />
-                      <ProductCard.Info {...product} />
-                    </ProductCard>
-                  </Link>
-                </ProductCarousel.Item>
-              ))}
+                    <Link
+                      href={`/${countryCode}/products/${product.id}`}
+                      className="block"
+                    >
+                      <ProductCard className="border-r-[0.5px] border-r-gray-100 pr-4 last:border-r-0">
+                        <ProductCard.Thumbnail
+                          src={product.imageSrc}
+                          alt={product.title}
+                          isSoldOut={isSoldOut}
+                          className="rounded-sm md:rounded-md"
+                        />
+                        <ProductCard.Info {...product} />
+                      </ProductCard>
+                    </Link>
+                  </ProductCarousel.Item>
+                )
+              })}
             </ProductCarousel.List>
           </ProductCarousel>
         </div>
