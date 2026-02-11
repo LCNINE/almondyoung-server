@@ -1,13 +1,33 @@
 "use client"
 
-import type { ProductCard } from "@lib/types/ui/product"
-import { BasicProductCard, ProductCardSkeleton } from "@components/products/product-card"
+import type { ProductCardProps } from "@lib/types/ui/product"
+import { ProductGrid } from "@/components/products/product-grid"
 import { useEffect, useState } from "react"
 import { getProductList } from "@lib/api/medusa/products"
-import { mapMedusaProductsToCards } from "@lib/utils/map-medusa-product-card"
+import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
+
+function ProductGridSkeleton({ count = 6 }: { count?: number }) {
+  return (
+    <div className="grid grid-cols-3 gap-4 lg:grid-cols-6">
+      {Array.from({ length: count }).map((_, i) => (
+        <div
+          key={i}
+          className="flex w-full animate-pulse flex-col gap-2"
+        >
+          <div className="aspect-square w-full rounded-2xl bg-gray-200" />
+          <div className="flex flex-col gap-1.5">
+            <div className="h-4 w-3/4 rounded bg-gray-200" />
+            <div className="h-5 w-1/2 rounded bg-gray-200" />
+            <div className="h-3 w-1/3 rounded bg-gray-200" />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
 
 export function RecommendedProductsSection() {
-  const [products, setProducts] = useState<ProductCard[]>([])
+  const [products, setProducts] = useState<ProductCardProps[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
@@ -19,7 +39,7 @@ export function RecommendedProductsSection() {
           // TODO: 실제로는 추천 알고리즘이나 인기 상품 태그로 필터링
         })
 
-        const mappedProducts = mapMedusaProductsToCards(productsResult.products)
+        const mappedProducts = mapStoreProductsToCardProps(productsResult.products)
         setProducts(mappedProducts)
       } catch (error) {
         console.error("추천 상품 조회 실패:", error)
@@ -43,11 +63,7 @@ export function RecommendedProductsSection() {
         >
           원장님을 위한 추천제품
         </h3>
-        <div className="grid grid-cols-3 gap-4 lg:grid-cols-6">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <ProductCardSkeleton key={i} />
-          ))}
-        </div>
+        <ProductGridSkeleton count={6} />
       </section>
     )
   }
@@ -67,11 +83,11 @@ export function RecommendedProductsSection() {
       >
         원장님을 위한 추천제품
       </h3>
-      <div className="grid grid-cols-3 gap-4 lg:grid-cols-6">
-        {products.map((product) => (
-          <BasicProductCard key={product.id} product={product} />
-        ))}
-      </div>
+      <ProductGrid
+        products={products}
+        className="grid-cols-3 lg:grid-cols-6"
+        countryCode="kr"
+      />
     </section>
   )
 }
