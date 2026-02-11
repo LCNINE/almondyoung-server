@@ -1,14 +1,16 @@
 "use client"
 import React, { useState, useRef } from "react"
+import Link from "next/link"
 import { ChevronLeft, ChevronRight } from "lucide-react"
-import { ProductCard } from "@lib/types/ui/product"
-import { BasicProductCard } from "@components/products/product-card"
+import { ProductCardProps } from "@lib/types/ui/product"
+import { ProductCard } from "@/components/products/prodcut-card"
 
 interface ProductComparisonCarouselProps {
   title: string
-  products: ProductCard[]
-  onCartClick?: (product: ProductCard) => void
+  products: ProductCardProps[]
+  onCartClick?: (product: ProductCardProps) => void
   className?: string
+  countryCode?: string
   itemsPerView?: {
     mobile: number
     tablet: number
@@ -22,6 +24,7 @@ export const ProductRecommandSlider: React.FC<
   title,
   products,
   className = "",
+  countryCode = "kr",
   itemsPerView = {
     mobile: 1.2,
     tablet: 2.5,
@@ -90,17 +93,29 @@ export const ProductRecommandSlider: React.FC<
             msOverflowStyle: "none",
           }}
         >
-          {products.map((product, index) => (
-            <div
-              key={product.id}
-              className="flex-fl snap-start"
-              style={{
-                width: `calc(${100 / itemsPerView.mobile}% - 12px)`,
-              }}
-            >
-              <BasicProductCard product={product} />
-            </div>
-          ))}
+          {products.map((product) => {
+            const isSoldOut = product.manageInventory && product.available <= 0
+            return (
+              <div
+                key={product.id}
+                className="flex-shrink-0 snap-start"
+                style={{
+                  width: `calc(${100 / itemsPerView.mobile}% - 12px)`,
+                }}
+              >
+                <Link href={`/${countryCode}/products/${product.id}`}>
+                  <ProductCard>
+                    <ProductCard.Thumbnail
+                      src={product.imageSrc}
+                      alt={product.title}
+                      isSoldOut={isSoldOut}
+                    />
+                    <ProductCard.Info {...product} />
+                  </ProductCard>
+                </Link>
+              </div>
+            )
+          })}
         </div>
       </div>
 

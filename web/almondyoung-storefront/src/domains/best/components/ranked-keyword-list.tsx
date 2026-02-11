@@ -2,43 +2,28 @@
 
 import React, { useState } from "react"
 import { useRouter } from "next/navigation"
+import Link from "next/link"
 import { ChevronDown, ChevronRight, TrendingUp, Minus } from "lucide-react"
 import { v4 as uuidv4 } from "uuid"
-import { BasicProductCard } from "@components/products/product-card"
-// 서버 데이터 구조를 그대로 사용
-export interface Product {
-  id: string
-  name: string
-  thumbnail: string
-  basePrice?: number
-  membershipPrice: number
-  isMembershipOnly?: boolean
-  status?: string // 옵셔널: status가 없으면 active로 간주
-  optionMeta?: {
-    isSingle?: boolean
-  }
-  defaultSku?: number
-  stock?: {
-    available?: number
-  }
-  rating?: number
-  reviewCount?: number
-}
+import { ProductCard } from "@/components/products/prodcut-card"
+import type { ProductCardProps } from "@lib/types/ui/product"
 
 export interface Keyword {
   rank: number
   name: string
   category: string
   trend: "up" | "down" | "stable"
-  products?: Product[]
+  products?: ProductCardProps[]
 }
 
 interface RankedKeywordListProps {
   keywords: Keyword[]
+  countryCode?: string
 }
 
 export default function RankedKeywordList({
   keywords,
+  countryCode = "kr",
 }: RankedKeywordListProps) {
   const router = useRouter()
   const [expandedKeywords, setExpandedKeywords] = useState<
@@ -112,14 +97,27 @@ export default function RankedKeywordList({
                 aria-label={`${keyword.name} 관련 상품`}
               >
                 <ul className="scrollbar-hide flex gap-2 overflow-x-auto pb-2 md:grid md:grid-cols-3 md:gap-4 md:overflow-visible lg:grid-cols-5 lg:gap-6">
-                  {keyword.products.map((product) => (
-                    <li
-                      key={product.id}
-                      className="w-[150px] flex-shrink-0 md:w-auto"
-                    >
-                      <BasicProductCard product={product} />
-                    </li>
-                  ))}
+                  {keyword.products.map((product) => {
+                    const isSoldOut =
+                      product.manageInventory && product.available <= 0
+                    return (
+                      <li
+                        key={product.id}
+                        className="w-[150px] flex-shrink-0 md:w-auto"
+                      >
+                        <Link href={`/${countryCode}/products/${product.id}`}>
+                          <ProductCard>
+                            <ProductCard.Thumbnail
+                              src={product.imageSrc}
+                              alt={product.title}
+                              isSoldOut={isSoldOut}
+                            />
+                            <ProductCard.Info {...product} />
+                          </ProductCard>
+                        </Link>
+                      </li>
+                    )
+                  })}
                 </ul>
                 <nav className="mt-4 mb-10">
                   <button
