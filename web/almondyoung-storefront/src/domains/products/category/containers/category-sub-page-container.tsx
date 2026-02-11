@@ -3,7 +3,7 @@ import { CategorySubPageClient } from "../components/category-sub-page-client"
 import { getCategoryByHandle } from "@lib/api/medusa/categories"
 import { getProductList } from "@lib/api/medusa/products"
 import { getRegion } from "@lib/api/medusa/regions"
-import { mapMedusaProductsToCards } from "@lib/utils/map-medusa-product-card"
+import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
 import type { StoreProductCategoryTree } from "@lib/types/medusa-category"
 
 interface CategorySubPageContainerProps {
@@ -51,7 +51,7 @@ export async function CategorySubPageContainer({
       categoryId: categoryIds,
       region_id: region?.id,
     })
-    initialProducts = mapMedusaProductsToCards(productsResult.products)
+    initialProducts = mapStoreProductsToCardProps(productsResult.products)
     initialTotal = productsResult.count
     console.log(`✅ [CategorySubPageContainer] 상품 목록 로드 완료:`, {
       itemCount: initialProducts.length,

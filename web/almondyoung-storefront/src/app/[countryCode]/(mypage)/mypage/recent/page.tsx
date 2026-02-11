@@ -1,15 +1,22 @@
 import { PageTitle } from "@/components/shared/page-title"
-import { Spinner } from "@/components/shared/spinner"
 import { WithHeaderLayout } from "@components/layout"
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { getRecentViews } from "@lib/api/users/recent-views"
 import { getProductList } from "@lib/api/medusa/products"
-import { mapMedusaProductsToCards } from "@lib/utils/map-medusa-product-card"
+import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
 import { Suspense } from "react"
-import { BasicProductCard } from "@components/products/product-card"
 import { Eye } from "lucide-react"
+import { RecentContainer, RecentContainerSkeleton } from "./recent-container"
 
-export default async function RecentPage() {
+interface RecentPageProps {
+  params: Promise<{
+    countryCode: string
+  }>
+}
+
+export default async function RecentPage({ params }: RecentPageProps) {
+  const { countryCode } = await params
+
   return (
     <WithHeaderLayout
       config={{
@@ -20,25 +27,18 @@ export default async function RecentPage() {
       }}
     >
       <MypageLayout>
-        <Suspense
-          fallback={
-            <div className="flex h-56 items-center justify-center text-center">
-              <Spinner size="lg" color="gray" />
-            </div>
-          }
-        >
-          <div className="rounded-xl bg-white px-3 pt-4 pb-9 md:px-6">
-            <PageTitle>최근 본 상품</PageTitle>
-
-            <RecentViewsManager />
-          </div>
-        </Suspense>
+        <div className="rounded-xl bg-white px-3 pt-4 pb-9 md:px-6">
+          <PageTitle>최근 본 상품</PageTitle>
+          <Suspense fallback={<RecentContainerSkeleton />}>
+            <RecentViewsManager countryCode={countryCode} />
+          </Suspense>
+        </div>
       </MypageLayout>
     </WithHeaderLayout>
   )
 }
 
-async function RecentViewsManager() {
+async function RecentViewsManager({ countryCode }: { countryCode: string }) {
   const recentViews = await getRecentViews(20)
 
   if (recentViews.length === 0) {
@@ -75,17 +75,9 @@ async function RecentViewsManager() {
       .map((id) => productsMap.get(id))
       .filter(Boolean)
 
-    const mappedProducts = mapMedusaProductsToCards(orderedProducts)
+    const mappedProducts = mapStoreProductsToCardProps(orderedProducts)
 
-    return (
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
-        {mappedProducts.map((product) => (
-          <div key={product.id}>
-            <BasicProductCard product={product} />
-          </div>
-        ))}
-      </div>
-    )
+    return <RecentContainer products={mappedProducts} countryCode={countryCode} />
   } catch (error) {
     console.error("최근 본 상품 조회 실패:", error)
 
