@@ -1,7 +1,7 @@
 "use client"
 
 import { BasicProductCard, ProductCardSkeleton } from "@components/products/product-card"
-import { getWishlist, toggleWishlist } from "@lib/api/users/wishlist"
+import { useWishlist } from "@/contexts/wishlist-context"
 import { getProductList } from "@lib/api/medusa/products"
 import { mapMedusaProductsToCards } from "@lib/utils/map-medusa-product-card"
 import { useEffect, useState, useTransition } from "react"
@@ -16,34 +16,34 @@ interface WishlistContainerProps {
 }
 
 export function WishlistContainer({ countryCode }: WishlistContainerProps) {
+  const { ids, isLoaded, isLoading: isWishlistLoading, toggle, isPending } =
+    useWishlist()
   const [products, setProducts] = useState<ProductCard[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set())
-  const [isPending, startTransition] = useTransition()
+  const [isTransitionPending, startTransition] = useTransition()
 
   useEffect(() => {
+    if (!isLoaded) return
+
     const fetchWishlist = async () => {
       try {
         setIsLoading(true)
         setError(null)
 
-        // 1. 위시리스트 조회
-        const wishlistItems = await getWishlist()
+        const productIds = Array.from(ids)
 
-        if (wishlistItems.length === 0) {
+        if (productIds.length === 0) {
           setProducts([])
           return
         }
 
-        // 2. 상품 정보 조회
-        const productIds = wishlistItems.map((item) => item.productId)
         const productsResult = await getProductList({
-          handle: productIds,
+          id: productIds,
           limit: productIds.length,
         })
 
-        // 3. 상품 카드로 매핑
         const mappedProducts = mapMedusaProductsToCards(productsResult.products)
         setProducts(mappedProducts)
       } catch (err) {
@@ -55,16 +55,18 @@ export function WishlistContainer({ countryCode }: WishlistContainerProps) {
     }
 
     fetchWishlist()
-  }, [])
+  }, [ids, isLoaded])
 
   const handleRemove = (productId: string) => {
     setRemovingIds((prev) => new Set(prev).add(productId))
 
     startTransition(async () => {
       try {
-        await toggleWishlist(productId)
+        const action = await toggle(productId)
         setProducts((prev) => prev.filter((p) => p.id !== productId))
-        toast.success("찜 목록에서 삭제되었습니다.")
+        if (action === "removed") {
+          toast.success("찜 목록에서 삭제되었습니다.")
+        }
       } catch {
         toast.error("삭제에 실패했습니다.")
       } finally {
@@ -77,7 +79,7 @@ export function WishlistContainer({ countryCode }: WishlistContainerProps) {
     })
   }
 
-  if (isLoading) {
+  if (isLoading || isWishlistLoading) {
     return (
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
@@ -131,7 +133,11 @@ export function WishlistContainer({ countryCode }: WishlistContainerProps) {
             size="icon"
             className="absolute top-2 right-2 z-10 h-8 w-8 rounded-full bg-white/80 opacity-0 shadow-sm transition-opacity group-hover:opacity-100"
             onClick={() => handleRemove(product.id)}
-            disabled={removingIds.has(product.id) || isPending}
+            disabled={
+              removingIds.has(product.id) ||
+              isTransitionPending ||
+              isPending(product.id)
+            }
           >
             <Trash2 className="h-4 w-4 text-gray-500" />
           </Button>

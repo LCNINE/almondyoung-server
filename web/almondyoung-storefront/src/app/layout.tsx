@@ -7,6 +7,7 @@ import {
   MembershipProvider,
 } from "@/contexts/membership-context"
 import { UserProvider } from "@/contexts/user-context"
+import { WishlistProvider } from "@/contexts/wishlist-context"
 import "@/styles/globals.css"
 import { retrieveCart } from "@lib/api/medusa/cart"
 import { getCurrentSubscription } from "@/lib/api/membership"
@@ -76,26 +77,28 @@ export default async function RootLayout(props: { children: React.ReactNode }) {
       >
         <OverlayProvider>
           <UserProvider initialUser={user}>
-            <CartProvider initialCart={cart}>
-              <MembershipProvider initialMembership={membershipStatus}>
-                <ThemeProvider
-                  attribute="class"
-                  defaultTheme="light"
-                  enableSystem={false}
-                  disableTransitionOnChange
-                >
-                  <CustomThemeProvider>
-                    <div className="relative">
-                      {props.children}
+            <WishlistProvider>
+              <CartProvider initialCart={cart}>
+                <MembershipProvider initialMembership={membershipStatus}>
+                  <ThemeProvider
+                    attribute="class"
+                    defaultTheme="light"
+                    enableSystem={false}
+                    disableTransitionOnChange
+                  >
+                    <CustomThemeProvider>
+                      <div className="relative">
+                        {props.children}
 
-                      <FloatingButtons />
-                    </div>
-                    <Toaster />
-                  </CustomThemeProvider>
-                </ThemeProvider>
-                <BottomNavigation />
-              </MembershipProvider>
-            </CartProvider>
+                        <FloatingButtons />
+                      </div>
+                      <Toaster />
+                    </CustomThemeProvider>
+                  </ThemeProvider>
+                  <BottomNavigation />
+                </MembershipProvider>
+              </CartProvider>
+            </WishlistProvider>
           </UserProvider>
           <Footer />
           {renderSchemaTags()}
