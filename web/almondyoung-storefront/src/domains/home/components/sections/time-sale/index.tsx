@@ -11,6 +11,7 @@ import { SectionHeader } from "../../header/section-header"
 import { ProductCarousel } from "../../shared/product-carousel"
 import { CategoryTabs } from "../category-best/category-tabs"
 import type { ProductCardProps } from "@/lib/types/ui/product"
+import { isProductSoldOut } from "@/lib/utils"
 import { getTimeSaleProducts } from "../../actions/get-category-products"
 import { useEffect, useState, useTransition } from "react"
 import { useParams } from "next/navigation"
@@ -100,8 +101,7 @@ export function TimeSaleSection({
                   >
                     <ProductCarousel.List className="ml-0">
                       {products.map((product) => {
-                        const isSoldOut =
-                          product.manageInventory && product.available <= 0
+                        const isSoldOut = isProductSoldOut(product)
                         return (
                           <ProductCarousel.Item
                             key={product.id}

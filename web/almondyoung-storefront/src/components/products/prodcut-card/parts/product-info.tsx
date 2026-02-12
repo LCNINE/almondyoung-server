@@ -5,6 +5,7 @@ import { ProductCardProps, StockStatus } from "@/lib/types/ui/product"
 import { ProductPrice } from "./product-price"
 import { ProductRating } from "./product-rating"
 import { LowStockBadge } from "@/components/shared/badges/low-stock-badge"
+import { SoldOutTag } from "./sold-out-tag"
 
 const LOW_STOCK_THRESHOLD = 4
 
@@ -49,7 +50,7 @@ export function ProductInfo({
   const renderStockBadge = () => {
     switch (stockStatus) {
       case "soldOut":
-        return <span className="text-xs font-bold text-black">품절</span>
+        return <SoldOutTag isSoldOut={stockStatus === "soldOut"} />
       case "lowStock":
         return <LowStockBadge count={available} />
       case "inStock":

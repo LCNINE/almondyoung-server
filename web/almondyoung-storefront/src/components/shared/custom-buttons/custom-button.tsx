@@ -58,7 +58,8 @@ const buttonVariants = cva(
       {
         variant: "fill",
         color: "primary",
-        className: "bg-yellow-30 text-white hover:bg-yellow-40 active:bg-yellow-50",
+        className:
+          "bg-yellow-30 text-white hover:bg-yellow-40 active:bg-yellow-50",
       },
       {
         variant: "fill",
@@ -76,7 +77,7 @@ const buttonVariants = cva(
         variant: "outline",
         color: "primary",
         className:
-          "border-yellow-30 text-yellow-30 hover:border-yellow-40 hover:bg-yellow-10 active:bg-yellow-10 active:text-yellow-40 active:border-yellow-40 disabled:text-muted-foreground disabled:border-muted",
+          "border-yellow-30 text-yellow-30 hover:border-yellow-40 hover:text-yellow-40 active:bg-yellow-10 active:text-yellow-40 active:border-yellow-40 disabled:text-muted-foreground disabled:border-muted",
       },
       {
         variant: "outline",
