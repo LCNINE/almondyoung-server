@@ -26,7 +26,6 @@ interface StepOneProps {
   onNextStep: () => void
 }
 
-// --- (이전 리팩토링) 캡슐화된 라벨 컴포넌트들 (규칙 #4 와 유사) ---
 interface SurveyRadioLabelProps extends React.LabelHTMLAttributes<HTMLLabelElement> {
   isChecked: boolean
 }
@@ -76,19 +75,16 @@ const CategoryCheckboxLabel: React.FC<CategoryCheckboxLabelProps> = ({
     {children}
   </FormLabel>
 )
-// --- 캡슐화 컴포넌트 정의 끝 ---
 
 export function StepOne({ onNextStep }: StepOneProps) {
   const form = useFormContext()
 
-  // '다음' 버튼 비활성화 조건을 명시적 변수로 분리 (가독성)
   const watchedIsOperating = form.watch("isOperating")
   const watchedCategories = form.watch("categories")
   const isNextDisabled =
     watchedIsOperating === undefined || watchedCategories.length === 0
 
   const handleNext = () => {
-    // 유효성 검사 로직 (규칙 #8: handleNext는 검사 로직을 포함하는 것이 예측 가능함)
     if (watchedIsOperating === undefined) {
       form.setError("isOperating", { message: "샵 운영 여부를 선택해주세요." })
       return
@@ -102,7 +98,6 @@ export function StepOne({ onNextStep }: StepOneProps) {
 
   return (
     <>
-      {/* 헤더 (시맨틱 마크업) */}
       <header>
         <h2 id="step1-title" className="section-title text-left">
           환영합니다!
@@ -115,7 +110,7 @@ export function StepOne({ onNextStep }: StepOneProps) {
         </p>
       </header>
 
-      {/* 샵 운영 여부 (시맨틱 <section>) */}
+      {/* 샵 운영 여부 */}
       <section aria-labelledby="isOperating-label">
         <FormField
           control={form.control}
@@ -172,15 +167,12 @@ export function StepOne({ onNextStep }: StepOneProps) {
         />
       </section>
 
-      {/* 카테고리 다중 선택 (시맨틱 <section>) */}
+      {/* 카테고리 다중 선택 */}
       <section aria-labelledby="categories-label">
         <FormField
           control={form.control}
           name="categories"
           render={({ field }) => {
-            // --- [개선 2: 규칙 #8 (숨은 로직 드러내기)] ---
-            // 'onCheckedChange'의 인라인 로직을 명명된 함수로 분리합니다.
-            // "체크 시 배열을 업데이트한다"는 로직의 의도를 명확히 드러냅니다.
             const handleCategoryChange = (
               category: string,
               checked: boolean
@@ -211,7 +203,6 @@ export function StepOne({ onNextStep }: StepOneProps) {
                     const inputId = `cat-${cat}`
 
                     return (
-                      // [개선 1] 함수 호출 대신 객체 룩업 사용
                       <div
                         key={cat}
                         className={
@@ -221,7 +212,6 @@ export function StepOne({ onNextStep }: StepOneProps) {
                         <FormControl>
                           <Checkbox
                             checked={isChecked}
-                            // [개선 2] 명명된 핸들러 호출
                             onCheckedChange={(checked) =>
                               handleCategoryChange(cat, !!checked)
                             }
@@ -246,7 +236,7 @@ export function StepOne({ onNextStep }: StepOneProps) {
         />
       </section>
 
-      {/* 다음 버튼 (시맨틱 <footer>) */}
+      {/* 다음 버튼 */}
       <footer className="mt-8 flex justify-end">
         <Button
           size="lg"
@@ -258,7 +248,7 @@ export function StepOne({ onNextStep }: StepOneProps) {
             isNextDisabled && "opacity-50"
           )}
           onClick={handleNext}
-          disabled={isNextDisabled} // 시각적 비활성화(opacity)와 실제 비활성화(disabled)를 일치시킵니다.
+          disabled={isNextDisabled}
         >
           다음
         </Button>
