@@ -1,10 +1,14 @@
 import { MypageLoadingShell } from "@/components/skeletons/mypage-loading-shell"
-import { MypageRebuySkeleton } from "@/components/skeletons/page-skeletons"
+import { PageTitle } from "@/components/shared/page-title"
+import { RebuyContainerSkeleton } from "./rebuy-container"
 
 export default function Loading() {
   return (
     <MypageLoadingShell title="자주 산 상품">
-      <MypageRebuySkeleton />
+      <div className="rounded-xl bg-white px-3 pt-4 pb-9 md:px-6">
+        <PageTitle>자주 산 상품</PageTitle>
+        <RebuyContainerSkeleton />
+      </div>
     </MypageLoadingShell>
   )
 }
