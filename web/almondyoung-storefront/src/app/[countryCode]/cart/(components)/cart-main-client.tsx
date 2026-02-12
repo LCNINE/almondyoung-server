@@ -19,6 +19,7 @@ import {
 import { transferCart } from "@lib/api/medusa/customer"
 import type { HttpTypes } from "@medusajs/types"
 import { toast } from "sonner"
+import { CartPageSkeleton } from "@/components/skeletons/page-skeletons"
 
 /**
  * 메두사 장바구니 아이템을 UI용 CartItem으로 변환
@@ -285,21 +286,8 @@ export function CartMainClient() {
     }, [cartItems, checkedItems])
 
   // 로딩 상태
-  if (isLoading) {
-    return (
-      <div className="page-wrapper">
-        <main className="main-container min-h-screen w-full bg-white lg:bg-white">
-          <div className="main-inner md:mx-auto md:max-w-[1280px] md:px-8">
-            <div className="flex items-center justify-center py-20">
-              <div className="text-center">
-                <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-orange-500"></div>
-                <p className="text-gray-600">장바구니를 불러오는 중...</p>
-              </div>
-            </div>
-          </div>
-        </main>
-      </div>
-    )
+  if (isLoading && cartItems.length === 0) {
+    return <CartPageSkeleton />
   }
 
   return (

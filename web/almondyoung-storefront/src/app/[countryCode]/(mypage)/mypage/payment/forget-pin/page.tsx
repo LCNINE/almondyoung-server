@@ -1,4 +1,4 @@
-import { Spinner } from "@/components/shared/spinner"
+import { MypagePinSkeleton } from "@/components/skeletons/page-skeletons"
 import { WithHeaderLayout } from "@components/layout"
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { fetchMe } from "@lib/api/users/me"
@@ -17,13 +17,7 @@ export default async function ForgetPinPage() {
       }}
     >
       <MypageLayout>
-        <Suspense
-          fallback={
-            <div className="flex h-56 items-center justify-center text-center">
-              <Spinner size="lg" color="gray" />
-            </div>
-          }
-        >
+        <Suspense fallback={<MypagePinSkeleton />}>
           <ForgetPinManager />
         </Suspense>
       </MypageLayout>

@@ -1,5 +1,5 @@
 import { PageTitle } from "@/components/shared/page-title"
-import { Spinner } from "@/components/shared/spinner"
+import { MypageBusinessSkeleton } from "@/components/skeletons/page-skeletons"
 import { WithHeaderLayout } from "@components/layout"
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { getMyBusiness } from "@lib/api/users/business"
@@ -28,13 +28,7 @@ export default async function BusinessPage() {
       <MypageLayout>
         <div className="bg-white px-3 py-4 md:min-h-screen md:px-6">
           <PageTitle>사업자 정보</PageTitle>
-          <Suspense
-            fallback={
-              <div className="flex h-56 items-center justify-center text-center">
-                <Spinner size="lg" color="gray" />
-              </div>
-            }
-          >
+          <Suspense fallback={<MypageBusinessSkeleton />}>
             <BusinessContent user={currentUser} />
           </Suspense>
         </div>

@@ -1,4 +1,4 @@
-import { Spinner } from "@/components/shared/spinner"
+import { MypagePaymentManagerSkeleton } from "@/components/skeletons/page-skeletons"
 import { WithHeaderLayout } from "@components/layout"
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import PaymentManager from "domains/payment/payment-management"
@@ -15,13 +15,7 @@ export default function PaymentPage() {
       }}
     >
       <MypageLayout>
-        <Suspense
-          fallback={
-            <div className="flex h-56 items-center justify-center text-center">
-              <Spinner size="lg" color="gray" />
-            </div>
-          }
-        >
+        <Suspense fallback={<MypagePaymentManagerSkeleton />}>
           <PaymentManager />
         </Suspense>
       </MypageLayout>
