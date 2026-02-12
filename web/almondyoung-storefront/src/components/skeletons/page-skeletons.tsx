@@ -393,8 +393,46 @@ export function CartPageSkeleton() {
   return (
     <div className="min-h-screen bg-muted">
       <div className="container mx-auto py-0 md:py-8 md:max-w-[1360px] md:px-[40px]">
+        {/* Mobile */}
+        <div className="md:hidden">
+          <div className="bg-white">
+            <div className="flex gap-2 px-4 py-3">
+              {repeat(3).map((_, index) => (
+                <Skeleton
+                  key={`cart-tab-${index}`}
+                  className="h-8 w-20 rounded-full"
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-white p-4 space-y-4">
+            <Skeleton className="h-10 w-full rounded-lg" />
+            <div className="flex items-center justify-between">
+              <Skeleton className="h-4 w-20" />
+              <Skeleton className="h-4 w-16" />
+            </div>
+            <div className="space-y-4">
+              {repeat(3).map((_, index) => (
+                <div
+                  key={`cart-mobile-item-${index}`}
+                  className="flex gap-4 rounded-lg border border-gray-200 bg-white p-4"
+                >
+                  <Skeleton className="h-20 w-20 rounded-md" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-40" />
+                    <Skeleton className="h-3 w-24" />
+                    <Skeleton className="h-3 w-32" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Desktop */}
         <div className="hidden md:block">
-          <div className="flex items-center justify-between py-10">
+          <div className="flex items-center justify-between py-8">
             <Skeleton className="h-10 w-32" />
             <div className="flex items-center gap-3">
               <Skeleton className="h-5 w-24" />
@@ -402,33 +440,29 @@ export function CartPageSkeleton() {
               <Skeleton className="h-5 w-12" />
             </div>
           </div>
-        </div>
 
-        <div className="mb-6 md:hidden">
-          <Skeleton className="h-12 w-full rounded-lg" />
-        </div>
-
-        <div className="grid gap-8 lg:grid-cols-[1fr_360px]">
-          <div className="space-y-4">
-            {repeat(3).map((_, index) => (
-              <ListRowSkeleton key={`cart-item-${index}`} />
-            ))}
+          <div className="grid gap-8 lg:grid-cols-[1fr_360px]">
+            <div className="space-y-4">
+              {repeat(3).map((_, index) => (
+                <ListRowSkeleton key={`cart-item-${index}`} />
+              ))}
+            </div>
+            <aside className="space-y-4 rounded-lg border border-gray-200 bg-white p-6">
+              <Skeleton className="h-6 w-32" />
+              {repeat(4).map((_, index) => (
+                <Skeleton key={`cart-summary-${index}`} className="h-4 w-full" />
+              ))}
+              <Skeleton className="h-12 w-full" />
+            </aside>
           </div>
-          <aside className="space-y-4 rounded-lg border border-gray-200 bg-white p-6">
-            <Skeleton className="h-6 w-32" />
-            {repeat(4).map((_, index) => (
-              <Skeleton key={`cart-summary-${index}`} className="h-4 w-full" />
-            ))}
-            <Skeleton className="h-12 w-full" />
-          </aside>
-        </div>
 
-        <div className="mt-10 space-y-4">
-          <Skeleton className="h-6 w-40" />
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-            {repeat(4).map((_, index) => (
-              <ProductCardSkeleton key={`cart-reco-${index}`} />
-            ))}
+          <div className="mt-10 space-y-4">
+            <Skeleton className="h-6 w-40" />
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              {repeat(4).map((_, index) => (
+                <ProductCardSkeleton key={`cart-reco-${index}`} />
+              ))}
+            </div>
           </div>
         </div>
       </div>
