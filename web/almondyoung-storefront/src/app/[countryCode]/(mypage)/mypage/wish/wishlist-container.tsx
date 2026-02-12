@@ -219,3 +219,13 @@ export function WishlistContainer({ countryCode }: WishlistContainerProps) {
     </div>
   )
 }
+
+export function WishlistContainerSkeleton() {
+  return (
+    <div className="space-y-0">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <ProductListCardSkeleton key={i} />
+      ))}
+    </div>
+  )
+}
