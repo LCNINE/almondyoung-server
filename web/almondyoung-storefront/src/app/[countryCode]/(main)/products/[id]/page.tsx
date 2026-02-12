@@ -7,7 +7,6 @@ import { getProductDetailByMasterId } from "@lib/api/pim/products"
 import { ProductDetail } from "@lib/types/ui/product"
 import type { UserDetail, WishlistItem } from "@lib/types/ui/user"
 import ProductDetailPage from "domains/products/product-details/product-detail-page"
-import { Suspense } from "react"
 import type { StoreProduct } from "@medusajs/types"
 import {
   getPricesForVariant,
@@ -263,15 +262,13 @@ export default async function Page({
 
   return (
     <div className="md:bg-muted/50 min-h-screen bg-white">
-      <Suspense fallback={<div className="p-8">로딩 중…</div>}>
-        <ProductDetailPage
-          params={Promise.resolve({ id, countryCode })}
-          product={product}
-          wishlist={wishlist}
-          error={error}
-          user={user}
-        />
-      </Suspense>
+      <ProductDetailPage
+        params={Promise.resolve({ id, countryCode })}
+        product={product}
+        wishlist={wishlist}
+        error={error}
+        user={user}
+      />
     </div>
   )
 }

@@ -4,7 +4,6 @@ import { CategoryCircleTabs } from "@/components/category/category-circle-tabs"
 import { BannerCarousel } from "@/components/layout/components/banner/banner-carousel"
 import { ProductGrid } from "@/components/products/product-grid"
 import ProductFilterSidebar from "@/components/products/product-filter-sidebar"
-import { SharedPagination } from "@/components/shared/pagination"
 import { SlidersHorizontal, ChevronDown } from "lucide-react"
 import { overlay } from "overlay-kit"
 import { MobileFilterSheet } from "./mobile-filter-sheet"
@@ -12,11 +11,12 @@ import CustomDropdown from "@components/dropdown"
 import type { StoreProductCategoryTree } from "@lib/types/medusa-category"
 import type { ProductCardProps } from "@lib/types/ui/product"
 import { useRouter, useSearchParams } from "next/navigation"
-import { useCallback, useEffect, useState, useTransition } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { getProductList } from "@lib/api/medusa/products"
 import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
 import { cn } from "@lib/utils"
 import { useUser } from "@/contexts/user-context"
+import { Spinner } from "@/components/shared/spinner"
 
 // 프론트 전용 타입(CategoryInfo)을 별도로 쓰기보다
 // 가능하면 DTO나 간단한 인터페이스로 유지하는 것이 좋습니다.
@@ -50,6 +50,17 @@ const ITEMS_PER_PAGE_OPTIONS = [
 ]
 
 const DEFAULT_ITEMS_PER_PAGE = 20
+const CACHE_TTL_MS = 30 * 60 * 1000
+
+type CategoryListCache = {
+  ts: number
+  products?: ProductCardProps[]
+  total: number
+  currentPage: number
+  scrollY: number
+}
+
+const memoryCache = new Map<string, CategoryListCache>()
 
 interface CategoryPageClientProps {
   slug: string
@@ -79,29 +90,57 @@ export function CategoryPageClient({
   const [isPending, startTransition] = useTransition()
   const { user } = useUser()
   const isLoggedIn = !!user
+  const sentinelRef = useRef<HTMLDivElement | null>(null)
+  const isLoadingMoreRef = useRef(false)
 
-  // URL에서 페이지, 정렬, 개수 파라미터 읽기
-  const currentPage = Number(searchParams.get("page")) || 1
   const currentSort = searchParams.get("sort") || "ranking"
   const currentLimit = Number(searchParams.get("limit")) || DEFAULT_ITEMS_PER_PAGE
+  const urlPage = Math.max(1, Number(searchParams.get("page")) || 1)
 
-  // 상품 목록 상태
-  const [products, setProducts] = useState<ProductCardProps[]>(initialProducts)
-  const [total, setTotal] = useState(initialTotal)
-  const totalPages = Math.ceil(total / currentLimit)
+  const cacheKey = useMemo(() => {
+    return [
+      "category-products",
+      slug,
+      currentSort,
+      String(currentLimit),
+      regionId ?? "region-none",
+      categoryIds.join(",") || "category-none",
+    ].join("|")
+  }, [categoryIds, currentLimit, currentSort, regionId, slug])
+
+  const restoredFromCacheRef = useRef(false)
+  const scrollTargetRef = useRef(0)
+
+  const [products, setProducts] = useState<ProductCardProps[]>(() => {
+    const cached = memoryCache.get(cacheKey)
+    if (cached?.products?.length && Date.now() - cached.ts <= CACHE_TTL_MS) {
+      restoredFromCacheRef.current = true
+      scrollTargetRef.current = cached.scrollY
+      return cached.products
+    }
+    return initialProducts
+  })
+  const [total, setTotal] = useState(() => {
+    const cached = memoryCache.get(cacheKey)
+    if (cached && Date.now() - cached.ts <= CACHE_TTL_MS) {
+      return cached.total
+    }
+    return initialTotal
+  })
+  const [currentPage, setCurrentPage] = useState(() => {
+    const cached = memoryCache.get(cacheKey)
+    if (cached && Date.now() - cached.ts <= CACHE_TTL_MS) {
+      return Math.max(cached.currentPage, urlPage)
+    }
+    return urlPage
+  })
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const hasMore = useMemo(() => products.length < total, [products.length, total])
 
   // URL 파라미터 업데이트 함수
   const updateParams = useCallback(
-    (params: { page?: number; sort?: string; limit?: number }) => {
+    (params: { sort?: string; limit?: number }) => {
       const newParams = new URLSearchParams(searchParams.toString())
-
-      if (params.page !== undefined) {
-        if (params.page === 1) {
-          newParams.delete("page")
-        } else {
-          newParams.set("page", String(params.page))
-        }
-      }
 
       if (params.sort !== undefined) {
         if (params.sort === "ranking") {
@@ -109,7 +148,6 @@ export function CategoryPageClient({
         } else {
           newParams.set("sort", params.sort)
         }
-        // 정렬 변경 시 페이지 1로 초기화
         newParams.delete("page")
       }
 
@@ -119,7 +157,6 @@ export function CategoryPageClient({
         } else {
           newParams.set("limit", String(params.limit))
         }
-        // 개수 변경 시 페이지 1로 초기화
         newParams.delete("page")
       }
 
@@ -131,41 +168,244 @@ export function CategoryPageClient({
     [router, searchParams]
   )
 
-  // 페이지/정렬/개수 변경 시 데이터 로드
+  const setUrlPage = useCallback(
+    (page: number) => {
+      const newParams = new URLSearchParams(searchParams.toString())
+
+      if (page <= 1) {
+        newParams.delete("page")
+      } else {
+        newParams.set("page", String(page))
+      }
+
+      const queryString = newParams.toString()
+      router.replace(queryString ? `?${queryString}` : window.location.pathname, {
+        scroll: false,
+      })
+    },
+    [router, searchParams]
+  )
+
+  const fetchProductsPage = useCallback(
+    async (page: number) => {
+      const sortOrder = SORT_OPTIONS[currentSort as keyof typeof SORT_OPTIONS]
+      const result = await getProductList({
+        page,
+        limit: currentLimit,
+        categoryId: categoryIds,
+        region_id: regionId,
+        order: sortOrder,
+      })
+      return {
+        products: mapStoreProductsToCardProps(result.products),
+        total: result.count,
+      }
+    },
+    [categoryIds, currentLimit, currentSort, regionId]
+  )
+
+  // 스크롤 위치 복원
   useEffect(() => {
-    // 초기 로드 시에는 서버에서 받은 데이터 사용 (기본 설정일 때만)
-    if (currentPage === 1 && currentSort === "ranking" && currentLimit === DEFAULT_ITEMS_PER_PAGE) {
-      setProducts(initialProducts)
-      setTotal(initialTotal)
+    if (!restoredFromCacheRef.current) return
+    const scrollY = scrollTargetRef.current
+    if (scrollY <= 0) return
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: scrollY, behavior: "auto" })
+      })
+    })
+  }, [])
+
+  // 정렬/개수/카테고리 변경
+  useEffect(() => {
+    if (restoredFromCacheRef.current) {
+      restoredFromCacheRef.current = false
       return
     }
 
+    if (
+      currentSort === "ranking" &&
+      currentLimit === DEFAULT_ITEMS_PER_PAGE &&
+      urlPage === 1 &&
+      initialProducts.length > 0
+    ) {
+      setProducts(initialProducts)
+      setTotal(initialTotal)
+      setCurrentPage(1)
+      return
+    }
+
+    isLoadingMoreRef.current = false
+    setIsLoadingMore(false)
+
     startTransition(async () => {
       try {
-        const sortOrder =
-          SORT_OPTIONS[currentSort as keyof typeof SORT_OPTIONS]
-        const result = await getProductList({
-          page: currentPage,
-          limit: currentLimit,
-          categoryId: categoryIds,
-          region_id: regionId,
-          order: sortOrder,
-        })
-        setProducts(mapStoreProductsToCardProps(result.products))
-        setTotal(result.count)
+        if (urlPage > 1) {
+          const pages = Array.from({ length: urlPage }, (_, index) => index + 1)
+          const results = await Promise.all(
+            pages.map((page) => fetchProductsPage(page))
+          )
+          const merged = results.flatMap((result) => result.products)
+          const last = results[results.length - 1]
+          setProducts(merged)
+          setTotal(last?.total ?? 0)
+          setCurrentPage(urlPage)
+        } else {
+          const { products: nextProducts, total: nextTotal } =
+            await fetchProductsPage(1)
+          setProducts(nextProducts)
+          setTotal(nextTotal)
+          setCurrentPage(1)
+        }
       } catch (error) {
         console.error("상품 목록 로드 실패:", error)
       }
     })
   }, [
-    currentPage,
     currentSort,
     currentLimit,
     categoryIds,
     regionId,
+    fetchProductsPage,
     initialProducts,
     initialTotal,
+    urlPage,
   ])
+
+  // 스크롤 위치, 로드된 목록? 캐시 저장
+  useEffect(() => {
+    if (typeof window === "undefined") return
+
+    let rafId = 0
+    const saveCache = (scrollY: number) => {
+      const payload: CategoryListCache = {
+        ts: Date.now(),
+        products,
+        total,
+        currentPage,
+        scrollY,
+      }
+      memoryCache.set(cacheKey, payload)
+      try {
+        window.sessionStorage.setItem(cacheKey, JSON.stringify(payload))
+      } catch {
+        const minimalPayload: CategoryListCache = {
+          ts: Date.now(),
+          total,
+          currentPage,
+          scrollY,
+        }
+        memoryCache.set(cacheKey, minimalPayload)
+        try {
+          window.sessionStorage.setItem(cacheKey, JSON.stringify(minimalPayload))
+        } catch {
+
+        }
+      }
+    }
+
+    const onScroll = () => {
+      if (rafId) return
+      rafId = window.requestAnimationFrame(() => {
+        rafId = 0
+        saveCache(window.scrollY)
+      })
+    }
+
+    window.addEventListener("scroll", onScroll, { passive: true })
+
+    return () => {
+      if (rafId) {
+        window.cancelAnimationFrame(rafId)
+      }
+      window.removeEventListener("scroll", onScroll)
+      saveCache(window.scrollY)
+    }
+  }, [cacheKey, currentPage, products, total])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+
+    let rafId = 0
+    rafId = window.requestAnimationFrame(() => {
+      const payload: CategoryListCache = {
+        ts: Date.now(),
+        products,
+        total,
+        currentPage,
+        scrollY: window.scrollY,
+      }
+      memoryCache.set(cacheKey, payload)
+      try {
+        window.sessionStorage.setItem(cacheKey, JSON.stringify(payload))
+      } catch {
+        const minimalPayload: CategoryListCache = {
+          ts: Date.now(),
+          total,
+          currentPage,
+          scrollY: window.scrollY,
+        }
+        memoryCache.set(cacheKey, minimalPayload)
+        try {
+          window.sessionStorage.setItem(cacheKey, JSON.stringify(minimalPayload))
+        } catch {
+          // 저장 실패 시 무시
+        }
+      }
+    })
+
+    return () => {
+      if (rafId) {
+        window.cancelAnimationFrame(rafId)
+      }
+    }
+  }, [cacheKey, currentPage, products, total])
+
+  const loadMore = useCallback(async () => {
+    if (isLoadingMoreRef.current || !hasMore) return
+
+    isLoadingMoreRef.current = true
+    setIsLoadingMore(true)
+
+    try {
+      const nextPage = currentPage + 1
+      const { products: nextProducts, total: nextTotal } =
+        await fetchProductsPage(nextPage)
+
+      setProducts((prev) => [...prev, ...nextProducts])
+      setTotal(nextTotal)
+      setCurrentPage(nextPage)
+      setUrlPage(nextPage)
+    } catch (error) {
+      console.error("상품 추가 로드 실패:", error)
+    } finally {
+      isLoadingMoreRef.current = false
+      setIsLoadingMore(false)
+    }
+  }, [currentPage, fetchProductsPage, hasMore])
+
+  useEffect(() => {
+    const target = sentinelRef.current
+    if (!target || !hasMore) {
+      return
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          loadMore()
+        }
+      },
+      { rootMargin: "200px 0px" }
+    )
+
+    observer.observe(target)
+
+    return () => {
+      observer.disconnect()
+    }
+  }, [hasMore, loadMore])
 
   const openMobileFilter = () => {
     overlay.open(({ isOpen, close, unmount }) => (
@@ -204,14 +444,14 @@ export function CategoryPageClient({
 
             {categoryData.category_children &&
               categoryData.category_children.length > 0 && (
-              <CategoryCircleTabs
-                items={categoryData.category_children}
-                selectedId=""
-                onSelect={() => {}}
-                countryCode={countryCode}
-                parentSlug={slug}
-              />
-            )}
+                <CategoryCircleTabs
+                  items={categoryData.category_children}
+                  selectedId=""
+                  onSelect={() => { }}
+                  countryCode={countryCode}
+                  parentSlug={slug}
+                />
+              )}
 
             {categoryInfo.banners && categoryInfo.banners.length > 0 && (
               <section className="my-4">
@@ -294,7 +534,7 @@ export function CategoryPageClient({
               {/* 로딩 오버레이 */}
               {isPending && (
                 <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/50">
-                  <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" />
+                  <Spinner size="md" color="blue" />
                 </div>
               )}
 
@@ -310,12 +550,13 @@ export function CategoryPageClient({
                   />
 
                   {/* 페이지네이션 */}
-                  <SharedPagination
-                    currentPage={currentPage}
-                    totalPages={totalPages}
-                    onPageChange={(page) => updateParams({ page })}
-                    className="mt-8"
-                  />
+                  <div ref={sentinelRef} className="h-10 w-full" />
+
+                  {isLoadingMore && (
+                    <div className="mt-6 flex items-center justify-center">
+                      <Spinner size="sm" color="gray" />
+                    </div>
+                  )}
                 </>
               ) : (
                 <div className="flex min-h-[200px] items-center justify-center">
