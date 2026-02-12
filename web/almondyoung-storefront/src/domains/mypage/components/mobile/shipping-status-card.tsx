@@ -5,6 +5,7 @@ import Image from "next/image"
 import React, { useEffect, useState } from "react"
 import { getOrders } from "@lib/api/medusa/orders"
 import Link from "next/link"
+import { Skeleton } from "@/components/ui/skeleton"
 
 // --- 1. 데이터 타입 정의 ---
 type OrderStatus = "SHIPPING" | "PREPARING"
@@ -123,7 +124,18 @@ export default function ShippingStatusCard() {
       <section className="flex w-full flex-col gap-3">
         <h2 className="text-base font-bold text-black">배송 중 상품</h2>
         <div className="flex flex-col gap-4 rounded-[10px] border-[0.5px] border-[#d9d9d9] bg-white px-4 py-3.5">
-          <p className="text-sm text-gray-500">로딩 중...</p>
+          <div className="flex flex-col gap-4">
+            {Array.from({ length: 2 }).map((_, index) => (
+              <div key={`shipping-mobile-skeleton-${index}`} className="flex items-center gap-4">
+                <Skeleton className="h-[45px] w-11 rounded-[5px]" />
+                <div className="flex flex-1 flex-col gap-2">
+                  <Skeleton className="h-3 w-2/3" />
+                  <Skeleton className="h-4 w-1/2" />
+                </div>
+                <Skeleton className="h-6 w-6 rounded-full" />
+              </div>
+            ))}
+          </div>
         </div>
       </section>
     )

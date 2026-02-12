@@ -6,6 +6,7 @@ import type { BnplProfileDto } from "@lib/types/dto/wallet"
 import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 import { toast } from "sonner"
+import { MembershipPaymentMethodSkeleton } from "@/components/skeletons/page-skeletons"
 
 // (아이콘은 실제 프로젝트에서는 @heroicons/react 등을 사용해야 합니다)
 // 임시 아이콘 컴포넌트
@@ -107,11 +108,7 @@ export default function PaymentMethodScreen() {
   const otherProfiles = profiles.filter((p) => !p.isDefault)
 
   if (isLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-white">
-        <p className="text-gray-600">로딩 중...</p>
-      </div>
-    )
+    return <MembershipPaymentMethodSkeleton />
   }
 
   return (
