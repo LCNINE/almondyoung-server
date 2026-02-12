@@ -8,6 +8,8 @@ import type { UserDetailDto } from "@/lib/types/dto/users"
  * 2. 카테고리가 없고, 리마인드 시간이 도래한 경우
  */
 export function shouldShowSurvey(user: UserDetailDto | null): boolean {
+  if (!user) return false
+
   // 샵 정보가 없는 경우 -> 설문 표시
   if (!user?.shop) return true
 
