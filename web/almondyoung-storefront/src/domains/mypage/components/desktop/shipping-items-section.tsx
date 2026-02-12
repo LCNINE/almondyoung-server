@@ -5,6 +5,7 @@ import { useEffect, useState } from "react"
 import { getOrders } from "@lib/api/medusa/orders"
 import { Package } from "lucide-react"
 import Link from "next/link"
+import { Skeleton } from "@/components/ui/skeleton"
 
 interface ShippingOrder {
   orderId: string
@@ -101,7 +102,23 @@ export function ShippingItemsSection() {
         aria-labelledby="shipping-items-heading"
         className="bg-background mt-6 rounded-lg p-8"
       >
-        <p className="text-sm text-gray-500">로딩 중...</p>
+        <div className="mb-4 flex items-center justify-between">
+          <Skeleton className="h-5 w-28" />
+          <Skeleton className="h-4 w-16" />
+        </div>
+        <div className="space-y-4">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <div key={`shipping-skeleton-${index}`} className="flex gap-4">
+              <Skeleton className="h-20 w-20 rounded-md" />
+              <div className="flex flex-1 flex-col gap-2">
+                <Skeleton className="h-4 w-2/3" />
+                <Skeleton className="h-3 w-1/3" />
+                <Skeleton className="h-3 w-1/2" />
+              </div>
+              <Skeleton className="h-8 w-20 rounded-md" />
+            </div>
+          ))}
+        </div>
       </section>
     )
   }

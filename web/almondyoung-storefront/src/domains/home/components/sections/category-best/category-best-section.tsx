@@ -9,7 +9,7 @@ import type { StoreProductCategoryTree } from "@/lib/types/medusa-category"
 import { AnimatePresence, motion } from "framer-motion"
 import { Package } from "lucide-react"
 import { chunk } from "lodash"
-import { useEffect, useMemo, useState, useTransition } from "react"
+import { useEffect, useMemo, useRef, useState, useTransition } from "react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { ProductGrid } from "../../../../../components/products/product-grid"
@@ -80,6 +80,7 @@ export function CategoryBestSection({
   const [products, setProducts] = useState<ProductCardProps[]>(
     initialProducts || []
   )
+  const didInitialFetchRef = useRef(false)
 
   const { activeTab, setActiveTab, visitedTabs, markAsVisited } =
     useCategoryTabs(bestCategories[0]?.id || "")
@@ -87,6 +88,13 @@ export function CategoryBestSection({
   const chunkedProducts = useMemo(() => chunk(products, 6) || [], [products])
 
   useEffect(() => {
+    if (!didInitialFetchRef.current) {
+      didInitialFetchRef.current = true
+      if (initialProducts && initialProducts.length > 0) {
+        return
+      }
+    }
+
     startTransition(async () => {
       const nextProducts = await getCategoryBestProducts(activeTab, regionId)
 
@@ -104,7 +112,7 @@ export function CategoryBestSection({
 
   const { props: dragHandlers } = useDraggableScroll()
   const isVisitedTab = visitedTabs.has(activeTab)
-  const showSkeleton = isPending
+  const showSkeleton = isPending && !visitedTabs.has(activeTab)
 
   // 현재 활성화된 카테고리 정보 찾기 (더보기 링크용)
   const activeCategory = bestCategories.find((cat) => cat.id === activeTab)

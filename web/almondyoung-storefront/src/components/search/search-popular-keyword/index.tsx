@@ -12,6 +12,7 @@ import {
   getPopularKeywords,
   type PopularKeyword,
 } from "@lib/api/pim/search"
+import { Skeleton } from "@/components/ui/skeleton"
 
 export function SearchPopularKeyword() {
   const router = useRouter()
@@ -50,10 +51,7 @@ export function SearchPopularKeyword() {
         </h3>
         <div className="flex gap-2 py-4">
           {Array.from({ length: 6 }).map((_, idx) => (
-            <div
-              key={idx}
-              className="h-7 w-16 animate-pulse rounded-full bg-gray-200"
-            />
+            <Skeleton key={idx} className="h-7 w-16 rounded-full" />
           ))}
         </div>
       </>

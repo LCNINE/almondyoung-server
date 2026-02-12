@@ -7,6 +7,7 @@ import {
   getTrendingKeywords,
   type TrendingKeyword,
 } from "@lib/api/pim/search"
+import { Skeleton } from "@/components/ui/skeleton"
 
 export function SearchHotKeyword() {
   const router = useRouter()
@@ -53,13 +54,13 @@ export function SearchHotKeyword() {
           <h3 className="text-base leading-none font-bold text-gray-900">
             급상승 검색어
           </h3>
-          <span className="h-4 w-16 animate-pulse rounded bg-gray-200" />
+          <Skeleton className="h-4 w-16" />
         </div>
         <div className="grid grid-cols-2 gap-x-8 gap-y-4">
           {Array.from({ length: 10 }).map((_, idx) => (
             <div key={idx} className="flex items-center gap-3">
-              <span className="h-5 w-5 animate-pulse rounded bg-gray-200" />
-              <span className="h-5 flex-1 animate-pulse rounded bg-gray-200" />
+              <Skeleton className="h-5 w-5 rounded" />
+              <Skeleton className="h-5 flex-1 rounded" />
             </div>
           ))}
         </div>

@@ -4,6 +4,7 @@ import { ChevronRight } from "lucide-react"
 import { useEffect, useState } from "react"
 import { getPointBalance } from "@lib/api/wallet"
 import Link from "next/link"
+import { Skeleton } from "@/components/ui/skeleton"
 
 interface PointBalanceData {
   balance: number
@@ -32,7 +33,12 @@ export function PointsBanner() {
   if (isLoading) {
     return (
       <section className="flex w-full items-center justify-between rounded-[10px] bg-white px-4 py-3.5 shadow-sm">
-        <p className="text-[11px] font-medium text-[#2c2c2e]">로딩 중...</p>
+        <Skeleton className="h-3 w-32" />
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-3 w-12" />
+          <Skeleton className="h-4 w-20" />
+          <Skeleton className="h-4 w-4 rounded-full" />
+        </div>
       </section>
     )
   }

@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState } from "react"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Rating } from "@components/rating/index"
 import { useRating } from "@components/rating/use-rating-hooks"
 
@@ -212,8 +213,8 @@ function PhotoPreview({
 
   if (isLoading || !preview) {
     return (
-      <figure className="relative flex h-20 w-20 items-center justify-center rounded-[5px] bg-gray-100">
-        <span className="text-xs text-gray-400">로딩 중...</span>
+      <figure className="relative h-20 w-20">
+        <Skeleton className="h-full w-full rounded-[5px]" />
       </figure>
     )
   }
