@@ -1,5 +1,10 @@
+import { MypageLoadingShell } from "@/components/skeletons/mypage-loading-shell"
 import { MypageHomeSkeleton } from "@/components/skeletons/page-skeletons"
 
 export default function Loading() {
-  return <MypageHomeSkeleton />
+  return (
+    <MypageLoadingShell showMobileSubBackHeader={false}>
+      <MypageHomeSkeleton />
+    </MypageLoadingShell>
+  )
 }

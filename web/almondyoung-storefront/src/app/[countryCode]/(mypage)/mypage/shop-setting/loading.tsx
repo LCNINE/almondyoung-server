@@ -1,5 +1,10 @@
+import { MypageLoadingShell } from "@/components/skeletons/mypage-loading-shell"
 import { MypageShopSettingSkeleton } from "@/components/skeletons/page-skeletons"
 
 export default function Loading() {
-  return <MypageShopSettingSkeleton />
+  return (
+    <MypageLoadingShell title="샵 설정">
+      <MypageShopSettingSkeleton />
+    </MypageLoadingShell>
+  )
 }
