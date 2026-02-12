@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react"
 import { X, Calendar } from "lucide-react"
+import { Skeleton } from "@/components/ui/skeleton"
 
 interface Report {
   id: number
@@ -110,8 +111,30 @@ const PurchaseReportDashboard = () => {
 
   if (reports.length === 0) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-50">
-        Loading...
+      <div className="border-gray-20 bg-background w-full rounded-2xl border md:mt-10 lg:mt-0 lg:min-h-screen lg:max-w-[406px]">
+        <div className="flex items-start justify-between p-5">
+          <div className="space-y-2">
+            <Skeleton className="h-6 w-28" />
+            <Skeleton className="h-4 w-24" />
+          </div>
+        </div>
+        <div className="space-y-4 px-5 pb-5">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <div key={`report-skeleton-${index}`} className="rounded-b-xl">
+              <div className="border-gray-80 bg-background flex items-center gap-3 rounded-xl border p-4 shadow-md">
+                <Skeleton className="h-8 w-8 rounded-lg" />
+                <div className="flex flex-1 flex-col gap-2">
+                  <Skeleton className="h-4 w-2/3" />
+                  <Skeleton className="h-3 w-1/2" />
+                </div>
+              </div>
+              <div className="rounded-b-xl border-x border-b border-gray-200 p-4">
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="mt-2 h-3 w-2/3" />
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     )
   }
