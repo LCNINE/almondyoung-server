@@ -3,18 +3,51 @@ import {
   MedusaResponse,
 } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
+import { addToCartWorkflow } from '@medusajs/medusa/core-flows';
 import { defaultStoreCartFields } from '../../../carts/query-config';
 
 /**
+ * 고객 카트 조회 헬퍼
+ */
+async function getCustomerCart(query: any, customerId: string) {
+  const { data: carts } = await query.graph({
+    entity: 'cart',
+    fields: [
+      'id',
+      'customer_id',
+      'completed_at',
+      'updated_at',
+      ...defaultStoreCartFields,
+    ],
+    filters: {
+      customer_id: customerId,
+      completed_at: null,
+    },
+  });
+
+  // 카트 선택 우선순위:
+  // 1. 아이템이 있는 카트를 우선
+  // 2. 아이템 수가 많은 카트를 우선
+  // 3. 최근에 업데이트된 카트를 우선
+  const sortedCarts = (carts || []).sort((a: any, b: any) => {
+    const itemsA = a.items?.length ?? 0;
+    const itemsB = b.items?.length ?? 0;
+
+    if (itemsA > 0 && itemsB === 0) return -1;
+    if (itemsB > 0 && itemsA === 0) return 1;
+    if (itemsA !== itemsB) return itemsB - itemsA;
+
+    const dateA = new Date(a.updated_at || 0);
+    const dateB = new Date(b.updated_at || 0);
+    return dateB.getTime() - dateA.getTime();
+  });
+
+  return sortedCarts[0] || null;
+}
+
+/**
  * GET /store/customers/me/cart
- * 로그인한 고객의 미완료 카트를 복구합니다.
- *
- * 로그아웃 후 재로그인 시 이전에 담았던 장바구니를 유실하지 않도록
- * customer_id 기준으로 가장 최근의 미완료 카트를 조회합니다.
- *
- * 반환:
- * - 미완료 카트가 있으면 해당 카트 반환
- * - 미완료 카트가 없으면 null 반환
+ * 로그인한 고객의 미완료 카트를 조회합니다. 
  */
 export async function GET(
   req: AuthenticatedMedusaRequest,
@@ -29,49 +62,106 @@ export async function GET(
   }
 
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
+  const customerCart = await getCustomerCart(query, customerId);
 
-  // 고객의 미완료 카트 조회 (completed_at이 null인 것만)
-  // 가장 최근에 업데이트된 카트를 우선 반환
-  const { data: carts } = await query.graph({
-    entity: 'cart',
-    fields: ['id', 'customer_id', 'completed_at', 'updated_at', ...defaultStoreCartFields],
-    filters: {
-      customer_id: customerId,
-      completed_at: null,
-    },
-  });
-
-  if (!carts || carts.length === 0) {
+  if (!customerCart) {
     return res.status(200).json({
       cart: null,
       message: 'No active cart found for this customer',
     });
   }
 
-  // 카트 선택 우선순위:
-  // 1. 아이템이 있는 카트를 우선
-  // 2. 아이템 수가 많은 카트를 우선
-  // 3. 최근에 업데이트된 카트를 우선
-  const sortedCarts = carts.sort((a: any, b: any) => {
-    const itemsA = a.items?.length ?? 0;
-    const itemsB = b.items?.length ?? 0;
-
-    // 아이템이 있는 카트 우선
-    if (itemsA > 0 && itemsB === 0) return -1;
-    if (itemsB > 0 && itemsA === 0) return 1;
-
-    // 아이템 수가 많은 카트 우선
-    if (itemsA !== itemsB) return itemsB - itemsA;
-
-    // 최근 업데이트된 카트 우선
-    const dateA = new Date(a.updated_at || 0);
-    const dateB = new Date(b.updated_at || 0);
-    return dateB.getTime() - dateA.getTime();
+  return res.status(200).json({
+    cart: customerCart,
   });
+}
 
-  const latestCart = sortedCarts[0];
+/**
+ * POST /store/customers/me/cart
+ * 고객의 미완료 카트를 복구하고, 게스트 카트 아이템을 병합합니다.
+ *
+ * Body:
+ * - guestCartId?: string - 게스트 카트 ID (전달 시 아이템 병합)
+ *
+ * 반환:
+ * - 병합된 고객 카트 (또는 기존 카트)
+ */
+export async function POST(
+  req: AuthenticatedMedusaRequest,
+  res: MedusaResponse,
+) {
+  const customerId = req.auth_context?.actor_id;
+
+  if (!customerId) {
+    return res.status(401).json({
+      message: 'Customer authentication required',
+    });
+  }
+
+  const { guestCartId } = req.body as { guestCartId?: string };
+  const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
+
+  let customerCart = await getCustomerCart(query, customerId);
+
+  // 게스트 카트 ID가 전달된 경우 아이템 병합 시도
+  if (guestCartId && customerCart) {
+    try {
+      // 게스트 카트 조회
+      const { data: guestCarts } = await query.graph({
+        entity: 'cart',
+        fields: ['id', 'items.id', 'items.variant_id', 'items.quantity'],
+        filters: {
+          id: guestCartId,
+          completed_at: null,
+        },
+      });
+
+      const guestCart = guestCarts?.[0];
+
+      if (guestCart?.items?.length > 0) {
+        // 고객 카트에 이미 있는 variant_id 목록
+        const existingVariantIds = new Set(
+          (customerCart.items || []).map((item: any) => item.variant_id),
+        );
+
+        // 고객 카트에 없는 게스트 아이템만 필터링
+        const itemsToAdd = guestCart.items
+          .filter(
+            (item: any) =>
+              item.variant_id && !existingVariantIds.has(item.variant_id),
+          )
+          .map((item: any) => ({
+            variant_id: item.variant_id,
+            quantity: item.quantity || 1,
+          }));
+
+        // 병합할 아이템이 있으면 추가
+        if (itemsToAdd.length > 0) {
+          await addToCartWorkflow(req.scope).run({
+            input: {
+              cart_id: customerCart.id,
+              items: itemsToAdd,
+            },
+          });
+
+          // 병합 후 카트 다시 조회
+          customerCart = await getCustomerCart(query, customerId);
+        }
+      }
+    } catch (error) {
+      // 병합 실패해도 기존 고객 카트는 반환
+      console.error('Failed to merge guest cart items:', error);
+    }
+  }
+
+  if (!customerCart) {
+    return res.status(200).json({
+      cart: null,
+      message: 'No active cart found for this customer',
+    });
+  }
 
   return res.status(200).json({
-    cart: latestCart,
+    cart: customerCart,
   });
 }
