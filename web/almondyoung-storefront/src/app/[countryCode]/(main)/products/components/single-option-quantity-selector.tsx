@@ -9,7 +9,7 @@ interface SingleOptionQuantitySelectorProps {
   quantity: number
   onQuantityChange: (quantity: number) => void
   price: number
-  stock: number
+  stock: number | null // null = 재고 관리 안 함
   className?: string
   showTitle?: boolean
 }
@@ -25,6 +25,7 @@ export const SingleOptionQuantitySelector = ({
   showTitle = false,
 }: SingleOptionQuantitySelectorProps) => {
   const getStockText = () => {
+    if (stock === null) return null // 재고 관리 안 함
     if (stock === 0) return "품절"
     if (stock < 5) return `재고 ${stock}개`
     return `재고 ${stock}개`
@@ -43,7 +44,9 @@ export const SingleOptionQuantitySelector = ({
         />
         <div className="flex-1">
           <p className="text-sm font-medium">{productName}</p>
-          <div className="mt-1 text-xs text-gray-500">{getStockText()}</div>
+          {getStockText() && (
+            <div className="mt-1 text-xs text-gray-500">{getStockText()}</div>
+          )}
           <div className="mt-2 flex items-center gap-1">
             <button
               onClick={() => onQuantityChange(Math.max(1, quantity - 1))}

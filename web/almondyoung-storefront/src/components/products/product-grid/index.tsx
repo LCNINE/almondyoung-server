@@ -1,6 +1,6 @@
 import { ProductCard } from "@/components/products/prodcut-card"
 import Link from "next/link"
-import { cn } from "@/lib/utils"
+import { cn, isProductSoldOut } from "@/lib/utils"
 import type { ProductCardProps } from "@/lib/types/ui/product"
 
 interface ProductGridProps {
@@ -31,7 +31,7 @@ export function ProductGrid({
     >
       {products.map((product, index) => {
         const rank = showRank ? index + 1 : undefined
-        const isSoldOut = product.manageInventory && product.available <= 0
+        const isSoldOut = isProductSoldOut(product)
         const card = (
           <ProductCard>
             <ProductCard.Thumbnail

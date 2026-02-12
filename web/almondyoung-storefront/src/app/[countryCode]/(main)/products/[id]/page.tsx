@@ -103,6 +103,7 @@ const mapMedusaProductToDetail = (
     product.options?.map((option) => [option.id, option.title]) || []
   )
   const skuIndex: Record<string, string> = {}
+  const skuStock: Record<string, number> = {}
   const variantPriceMap: Record<
     string,
     { basePrice?: number; membershipPrice?: number; actualPrice?: number }
@@ -134,6 +135,12 @@ const mapMedusaProductToDetail = (
         actualPrice: variantActualPrice,
       }
       variantThumbnailMap[variant.id] = variant?.images?.[0]?.url || thumbnail
+
+      // 각 variant별 재고 저장 (manage_inventory가 false면 무제한 취급)
+      skuStock[variant.id] =
+        variant.manage_inventory === false
+          ? Infinity
+          : variant.inventory_quantity || 0
     }
 
     const selection: Record<string, string> = {}
@@ -158,13 +165,20 @@ const mapMedusaProductToDetail = (
     product.subtitle ||
     undefined
 
+  // 전체 variants 기준 재고 관리 여부 및 재고 합계 계산
+  const variants = product.variants ?? []
+  const hasUnmanagedVariant = variants.some((v) => v.manage_inventory === false)
+  const totalAvailable = hasUnmanagedVariant
+    ? Infinity
+    : variants.reduce((sum, v) => sum + (v.inventory_quantity || 0), 0)
+
   return {
     id: product.id,
     name: product.title,
     thumbnail,
     thumbnails,
-    manageInventory: product.variants?.[0]?.manage_inventory ?? false,
-    available: product.variants?.[0]?.inventory_quantity ?? 0,
+    manageInventory: !hasUnmanagedVariant,
+    available: totalAvailable,
     description: product.description || undefined,
     descriptionHtml: descriptionHtml || undefined,
     brand,
@@ -182,10 +196,12 @@ const mapMedusaProductToDetail = (
     tags: product.tags?.map((tag) => tag.value) || undefined,
     productInfo: mapProductMetadata(metadata),
     detailImages: thumbnails.slice(1),
+    variants: product.variants,
     defaultVariantId,
     variantPriceMap,
     variantThumbnailMap,
     skuIndex: Object.keys(skuIndex).length > 0 ? skuIndex : undefined,
+    skuStock: Object.keys(skuStock).length > 0 ? skuStock : undefined,
     pimMasterId,
   }
 }
@@ -211,26 +227,7 @@ export default async function Page({
       region?.id
       // salesChannelId
     )
-    const sampleVariant = medusaProduct?.variants?.[0]
-    if (sampleVariant) {
-      if (process.env.NODE_ENV === "development") {
-        console.log("[PRICE DEBUG] Store API Response", {
-          productId: medusaProduct?.id,
-          regionId: region?.id,
-          regionCurrencyCode: region?.currency_code,
-          salesChannelId,
-          variantId: sampleVariant.id,
-          calculated_price: sampleVariant.calculated_price,
-        })
-        console.log("[REGION DEBUG]", {
-          regionId: region?.id,
-          regionName: region?.name,
-          currencyCode: region?.currency_code,
-          countries: region?.countries?.map((c) => c.iso_2),
-          _fullRegion: JSON.stringify(region, null, 2),
-        })
-      }
-    }
+
     let pimDescriptionHtml: string | undefined
     let pimMasterId: string | undefined
 

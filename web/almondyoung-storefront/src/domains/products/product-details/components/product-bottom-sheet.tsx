@@ -6,10 +6,32 @@ import { Check, ChevronDown, ShoppingCart } from "lucide-react"
 import { ProductOptionSelector } from "./product-option-selector"
 import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
 
+type OptionValue = {
+  id: string
+  name: string
+  isSoldOut?: boolean
+}
+
+type ProductOption = {
+  label: string
+  type?: string
+  values: OptionValue[]
+}
+
+type SelectedCartOption = {
+  id: string
+  variantId?: string
+  name: string
+  quantity: number
+  price: number
+  image: string
+  stock?: number
+}
+
 type Product = {
   name: string
   thumbnails?: string[]
-  options?: any[]
+  options?: ProductOption[]
 }
 
 type Props = {
@@ -28,10 +50,12 @@ type Props = {
   onGoToCart: () => void
   // 옵션 관련
   selectedOptions: Record<string, string>
-  selectedCartOptions: any[]
+  selectedCartOptions: SelectedCartOption[]
   onOptionChange: (label: string, value: string) => void
   onQuantityUpdate: (id: string, newQuantity: number) => void
   onOptionRemove: (id: string) => void
+  optionsWithSoldOut?: ProductOption[]
+  isSoldOut?: boolean
 }
 
 /**
@@ -57,6 +81,8 @@ export function ProductBottomSheet({
   onOptionChange,
   onQuantityUpdate,
   onOptionRemove,
+  optionsWithSoldOut,
+  isSoldOut = false,
 }: Props) {
   if (!isOpen) return null
 
@@ -78,18 +104,18 @@ export function ProductBottomSheet({
         </button>
       </header>
 
-      {/* 콘텐츠 */}
+      {/* 콘텐츠 (단일 옵션 품절 시 숨김) */}
       <div className="max-h-[60vh] overflow-y-auto p-4">
         {product.options && product.options.length > 0 ? (
           <ProductOptionSelector
-            options={product.options}
+            options={optionsWithSoldOut || product.options}
             selectedOptions={selectedOptions}
             selectedCartOptions={selectedCartOptions}
             onOptionChange={onOptionChange}
             onQuantityUpdate={onQuantityUpdate}
             onOptionRemove={onOptionRemove}
           />
-        ) : (
+        ) : isSingleOptionProduct && isSoldOut ? null : (
           <SingleOptionQuantitySelector
             productName={product.name}
             thumbnail={getThumbnailUrl(product.thumbnails?.[0] || "")}
@@ -130,15 +156,18 @@ export function ProductBottomSheet({
 
       {/* 푸터 */}
       <footer className="border-gray-20 border-t p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <span className="text-sm text-gray-600">구매수량 1개</span>
-          <output className="text-lg font-bold">
-            총 {getTotalPrice().toLocaleString()}원
-          </output>
-        </div>
+        {/* 총 상품 금액 (단일 옵션 품절 시 숨김) */}
+        {!(isSingleOptionProduct && isSoldOut) && (
+          <div className="mb-3 flex items-center justify-between">
+            <span className="text-sm text-gray-600">구매수량 1개</span>
+            <output className="text-lg font-bold">
+              총 {getTotalPrice().toLocaleString()}원
+            </output>
+          </div>
+        )}
 
         <div className="flex gap-2">
-          {isOutOfStock ? (
+          {isOutOfStock || (isSingleOptionProduct && isSoldOut) ? (
             <>
               {/* todo: 미연결 액션 임시 비활성화 */}
               {/* <CustomButton variant="outline" size="lg" className="flex-1">
@@ -152,10 +181,10 @@ export function ProductBottomSheet({
               <CustomButton
                 variant="outline"
                 size="lg"
-                className="flex-1"
+                className="flex-1 cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400"
                 disabled
               >
-                품절 상품
+                현재 품절된 상품이에요
               </CustomButton>
             </>
           ) : (
@@ -170,7 +199,7 @@ export function ProductBottomSheet({
                 }
               >
                 <ShoppingCart className="h-4 w-4" />
-                <span>장바구니</span>
+                <span>장바구니 담기</span>
               </CustomButton>
               <CustomButton
                 variant="fill"
