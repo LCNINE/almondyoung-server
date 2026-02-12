@@ -13,6 +13,13 @@ const normalizedBackendDomain = backendDomain
  */
 const nextConfig = {
   reactStrictMode: true,
+  experimental: {
+    // 동적 페이지의 라우터 캐시 유효 시간 (초)
+    // 뒤로 가기 시 loading.tsx 깜빡임 방지
+    staleTimes: {
+      dynamic: 30,
+    },
+  },
   logging: {
     fetches: {
       fullUrl: true,
