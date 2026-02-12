@@ -108,13 +108,12 @@ export function CategoryPageClient({
     ].join("|")
   }, [categoryIds, currentLimit, currentSort, regionId, slug])
 
-  const restoredFromCacheRef = useRef(false)
+  // 스크롤 복원 대상 (useState 초기화 시 설정)
   const scrollTargetRef = useRef(0)
 
   const [products, setProducts] = useState<ProductCardProps[]>(() => {
     const cached = memoryCache.get(cacheKey)
     if (cached?.products?.length && Date.now() - cached.ts <= CACHE_TTL_MS) {
-      restoredFromCacheRef.current = true
       scrollTargetRef.current = cached.scrollY
       return cached.products
     }
@@ -136,6 +135,7 @@ export function CategoryPageClient({
   })
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const hasMore = useMemo(() => products.length < total, [products.length, total])
+  const showOverlay = isPending && products.length === 0
 
   // URL 파라미터 업데이트 함수
   const updateParams = useCallback(
@@ -204,26 +204,33 @@ export function CategoryPageClient({
     [categoryIds, currentLimit, currentSort, regionId]
   )
 
-  // 스크롤 위치 복원
+  // 스크롤 위치 복원 (memoryCache에서 초기화된 경우)
   useEffect(() => {
-    if (!restoredFromCacheRef.current) return
     const scrollY = scrollTargetRef.current
     if (scrollY <= 0) return
 
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         window.scrollTo({ top: scrollY, behavior: "auto" })
+        scrollTargetRef.current = 0
       })
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // 정렬/개수/카테고리 변경
+  // 정렬/개수/카테고리 변경 시 데이터 로드
   useEffect(() => {
-    if (restoredFromCacheRef.current) {
-      restoredFromCacheRef.current = false
+    // memoryCache에 유효한 데이터가 있으면 복원 (뒤로 가기, 정렬 복귀 등)
+    // ref 대신 직접 확인 → StrictMode 이중 호출에도 안전
+    const cached = memoryCache.get(cacheKey)
+    if (cached?.products?.length && Date.now() - cached.ts <= CACHE_TTL_MS) {
+      setProducts(cached.products)
+      setTotal(cached.total)
+      setCurrentPage(Math.max(cached.currentPage, urlPage))
       return
     }
 
+    // 기본 설정이면 서버 초기 데이터 사용
     if (
       currentSort === "ranking" &&
       currentLimit === DEFAULT_ITEMS_PER_PAGE &&
@@ -263,6 +270,7 @@ export function CategoryPageClient({
       }
     })
   }, [
+    cacheKey,
     currentSort,
     currentLimit,
     categoryIds,
@@ -321,44 +329,6 @@ export function CategoryPageClient({
       }
       window.removeEventListener("scroll", onScroll)
       saveCache(window.scrollY)
-    }
-  }, [cacheKey, currentPage, products, total])
-
-  useEffect(() => {
-    if (typeof window === "undefined") return
-
-    let rafId = 0
-    rafId = window.requestAnimationFrame(() => {
-      const payload: CategoryListCache = {
-        ts: Date.now(),
-        products,
-        total,
-        currentPage,
-        scrollY: window.scrollY,
-      }
-      memoryCache.set(cacheKey, payload)
-      try {
-        window.sessionStorage.setItem(cacheKey, JSON.stringify(payload))
-      } catch {
-        const minimalPayload: CategoryListCache = {
-          ts: Date.now(),
-          total,
-          currentPage,
-          scrollY: window.scrollY,
-        }
-        memoryCache.set(cacheKey, minimalPayload)
-        try {
-          window.sessionStorage.setItem(cacheKey, JSON.stringify(minimalPayload))
-        } catch {
-          // 저장 실패 시 무시
-        }
-      }
-    })
-
-    return () => {
-      if (rafId) {
-        window.cancelAnimationFrame(rafId)
-      }
     }
   }, [cacheKey, currentPage, products, total])
 
@@ -532,7 +502,7 @@ export function CategoryPageClient({
             </section>
             <section className="relative">
               {/* 로딩 오버레이 */}
-              {isPending && (
+              {showOverlay && (
                 <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/50">
                   <Spinner size="md" color="blue" />
                 </div>
