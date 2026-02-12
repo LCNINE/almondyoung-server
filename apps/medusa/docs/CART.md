@@ -26,6 +26,63 @@ POST /store/carts/{id}/line-items/{line_id}
 
 - 카트에 있는 상품의 수량 등을 수정합니다.
 
+### 고객 카트 복구
+
+```http
+GET /store/customers/me/cart
+```
+
+- 로그인한 고객의 미완료 카트를 복구합니다.
+- **인증 필요**: Bearer 토큰 또는 세션 인증
+- 로그아웃 후 재로그인 시 이전에 담았던 장바구니를 유실하지 않도록 합니다.
+
+**선택 우선순위:**
+1. 아이템이 있는 카트를 우선
+2. 아이템 수가 많은 카트를 우선
+3. 최근에 업데이트된 카트를 우선
+
+**응답 예시 (카트가 있는 경우):**
+
+```json
+{
+  "cart": {
+    "id": "cart_01234...",
+    "customer_id": "cus_01234...",
+    "items": [...],
+    "total": 50000,
+    ...
+  }
+}
+```
+
+**응답 예시 (카트가 없는 경우):**
+
+```json
+{
+  "cart": null,
+  "message": "No active cart found for this customer"
+}
+```
+
+**프론트엔드 사용 예시:**
+
+```typescript
+// 로그인 성공 후 카트 복구
+const recoverCart = async () => {
+  const response = await fetch('/store/customers/me/cart', {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  const { cart } = await response.json();
+
+  if (cart) {
+    // 복구된 카트 ID를 쿠키에 저장
+    setCookie('cart_id', cart.id);
+  }
+};
+```
+
 ## 가격 구조
 
 ### 가격 구성 요소
