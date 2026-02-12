@@ -1,4 +1,5 @@
 import { AlertRedirectDialog } from "@/components/alert-redirect-dialog"
+import { MobileBackHeader } from "@/components/layout/header/m-back-header"
 import ProtectedRoute from "@/components/protected-route"
 import ShopSurveyForm from "@/domains/shop-survey/components/shop-survey-form"
 import { fetchMe } from "@/lib/api/users/me"
@@ -56,7 +57,10 @@ async function ShopSurveyManager({
 
   return (
     <section className="min-h-screen w-full">
-      <ShopSurveyForm redirectTo={redirectTo} initialData={initialData} />
+      <MobileBackHeader title="샵 설문조사" />
+      <div className="mt-4">
+        <ShopSurveyForm redirectTo={redirectTo} initialData={initialData} />
+      </div>
     </section>
   )
 }
