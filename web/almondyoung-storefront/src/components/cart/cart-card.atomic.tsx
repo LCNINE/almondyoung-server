@@ -1,8 +1,10 @@
 // CartCard.tsx
 
 import React, { forwardRef } from "react"
-import { ChevronRight, X } from "lucide-react"
+import { ChevronRight } from "lucide-react"
 import { ProductMembershipBadge } from "@/components/shared/badges/product-membership-badge"
+import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
+import Image from "next/image"
 
 // --- Props 타입 정의 ---
 interface CartCardThumbnailProps {
@@ -69,20 +71,20 @@ interface CartCardPCRootProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode
 }
 
-// --- 풀네임으로 수정된 개별 컴포넌트 ---
-
 export const CartCardThumbnail = ({
   src,
   alt = "상품 이미지",
 }: CartCardThumbnailProps) => {
   return (
-    <img
-      src={src}
-      alt={alt}
-      width={65}
-      height={66}
-      className="h-16 w-16 flex-shrink-0 rounded-md"
-    />
+    <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md shadow-xs ring-1 ring-black/5">
+      <Image
+        src={getThumbnailUrl(src)}
+        fill
+        alt={alt}
+        sizes="64px"
+        className="object-cover"
+      />
+    </div>
   )
 }
 
@@ -125,15 +127,15 @@ export const CartCardPrice = ({
     return (
       <>
         <div className="flex items-center gap-2">
-          <span className="text-lg font-bold">
-            {actual.toLocaleString()}원
-          </span>
+          <span className="text-lg font-bold">{actual.toLocaleString()}원</span>
         </div>
         {hasDiscount && discounted != null && (
           <div className="mt-1 space-y-0.5">
             <p className="text-xs text-gray-400">
               {discountRate}%{" "}
-              <span className="line-through">{original.toLocaleString()}원</span>
+              <span className="line-through">
+                {original.toLocaleString()}원
+              </span>
             </p>
             <div className="flex items-center gap-1">
               <span className="text-sm font-bold text-[#F2994A]">
@@ -210,11 +212,13 @@ export const CartCardPCThumbnail = ({
   alt = "상품 이미지",
 }: CartCardPCThumbnailProps) => {
   return (
-    <div className="h-[101px] w-[99px] flex-shrink-0">
-      <img
-        src={src}
+    <div className="relative h-[101px] w-[99px] shrink-0 overflow-hidden rounded-[5px] shadow-xs ring-1 ring-black/5">
+      <Image
+        src={getThumbnailUrl(src)}
         alt={alt}
-        className="h-full w-full rounded-[5px] object-cover"
+        fill
+        sizes="99px"
+        className="object-cover"
       />
     </div>
   )
@@ -250,8 +254,7 @@ export const CartCardPCPrice = ({
     discountRate > 0
 
   if (showMembershipHint && typeof actual === "number") {
-    const membershipSavings =
-      hasDiscount ? original - discounted : null
+    const membershipSavings = hasDiscount ? original - discounted : null
     return (
       <div className="space-y-2">
         <div className="flex items-center gap-1">
@@ -263,7 +266,9 @@ export const CartCardPCPrice = ({
           <div>
             <div className="flex items-center gap-1 text-xs text-[#aeaeb2]">
               <span className="font-medium">{discountRate}%</span>
-              <span className="line-through">{original.toLocaleString()}원</span>
+              <span className="line-through">
+                {original.toLocaleString()}원
+              </span>
             </div>
             <div className="mt-2 flex items-center gap-1">
               <span className="text-[15px] font-bold text-[#F2994A]">

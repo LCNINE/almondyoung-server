@@ -263,6 +263,44 @@ export async function deleteLineItem(lineId: string) {
     .catch(medusaError)
 }
 
+/**
+ * 여러 line item을 한 번에 삭제합니다 (batch delete)
+ * @param lineIds 삭제할 line item ID 배열
+ */
+export async function deleteLineItems(lineIds: string[]) {
+  if (!lineIds || lineIds.length === 0) {
+    return
+  }
+
+  const cartId = await getCartId()
+
+  if (!cartId) {
+    throw new Error("Missing cart ID when deleting line items")
+  }
+
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  await sdk.client
+    .fetch<{ cart: HttpTypes.StoreCart; deleted_count: number }>(
+      `/store/carts/${cartId}/line-items/batch`,
+      {
+        method: "POST",
+        headers,
+        body: { ids: lineIds },
+      }
+    )
+    .then(async () => {
+      const cartCacheTag = await getCacheTag("carts")
+      revalidateTag(cartCacheTag)
+
+      const fulfillmentCacheTag = await getCacheTag("fulfillment")
+      revalidateTag(fulfillmentCacheTag)
+    })
+    .catch(medusaError)
+}
+
 export async function initiatePaymentSession(
   cart: HttpTypes.StoreCart,
   data: HttpTypes.StoreInitializePaymentSession

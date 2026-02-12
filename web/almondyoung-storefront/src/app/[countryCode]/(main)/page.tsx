@@ -31,7 +31,7 @@ export default async function Home({
   categories = await getCategoryTree().catch(() => [])
 
   const user = await fetchMe().catch(() => null)
-  const showSurvey = shouldShowSurvey(user)
+  const showSurvey: boolean = shouldShowSurvey(user)
   return (
     <ProtectedRoute>
       {/* {user ? (
