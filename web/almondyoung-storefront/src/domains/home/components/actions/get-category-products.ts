@@ -61,8 +61,6 @@ const fetchCategoryBestProducts = async (
     region_id: regionId,
   })
 
-  console.log("🚀 [fetchCategoryBestProducts] bestProducts:", bestProducts)
-
   return mapStoreProductsToCardProps(bestProducts.products || [])
 }
 
