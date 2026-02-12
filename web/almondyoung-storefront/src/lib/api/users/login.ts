@@ -15,7 +15,7 @@ type LoginResult =
   | { success: false; error: string; code?: string }
 
 export async function login(
-  prevState: LoginResult | null,
+  _: LoginResult | null,
   formData: FormData
 ): Promise<LoginResult> {
   const loginId = formData.get("loginId") as string
@@ -87,8 +87,13 @@ export async function login(
     console.error("Cart transfer error:", error)
   }
 
-  const targetPath = redirectTo ?? `${siteConfig.auth.redirect_to}`
+  const targetPath = redirectTo?.startsWith("/")
+    ? redirectTo
+    : redirectTo
+      ? `/${redirectTo}`
+      : siteConfig.auth.redirect_to
+
   revalidatePath("/", "layout")
   revalidatePath(targetPath)
-  redirect(targetPath)
+  redirect(`/${countryCode}${targetPath}`)
 }

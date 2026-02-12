@@ -1,8 +1,11 @@
 "use client"
 
-import React from "react"
+import React, { useState } from "react"
 import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
 import { useRouter, useParams } from "next/navigation"
+import { deleteLineItems } from "@lib/api/medusa/cart"
+import type { CartItem } from "@lib/types/ui/cart"
+import { toast } from "sonner"
 
 interface CartSummaryProps {
   totalOriginalPrice: number
@@ -10,6 +13,8 @@ interface CartSummaryProps {
   shippingFee: number
   finalPrice: number
   selectedCount: number
+  cartItems: CartItem[]
+  checkedItems: string[]
 }
 
 export function CartSummary({
@@ -18,18 +23,39 @@ export function CartSummary({
   shippingFee,
   finalPrice,
   selectedCount,
+  cartItems,
+  checkedItems,
 }: CartSummaryProps) {
   const router = useRouter()
   const params = useParams() as { countryCode?: string }
   const countryCode = params?.countryCode || "kr"
+  const [isProcessing, setIsProcessing] = useState(false)
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
     if (selectedCount === 0) {
       alert("구매할 상품을 선택해주세요.")
       return
     }
-    // 결제 페이지로 이동
-    router.push(`/${countryCode}/checkout`)
+
+    setIsProcessing(true)
+
+    try {
+      // 선택되지 않은 아이템 삭제
+      const uncheckedIds = cartItems
+        .filter((item) => !checkedItems.includes(item.id))
+        .map((item) => item.id)
+
+      if (uncheckedIds.length > 0) {
+        await deleteLineItems(uncheckedIds)
+      }
+
+      // 결제 페이지로 이동
+      router.push(`/${countryCode}/checkout`)
+    } catch (error) {
+      console.error("체크아웃 처리 실패:", error)
+      toast.error("체크아웃 처리 중 오류가 발생했습니다.")
+      setIsProcessing(false)
+    }
   }
 
   return (
@@ -77,8 +103,9 @@ export function CartSummary({
             color="primary"
             size="lg"
             onClick={handleCheckout}
+            disabled={isProcessing}
           >
-            구매하기
+            {isProcessing ? "처리 중..." : "구매하기"}
           </CustomButton>
         </div>
       </div>

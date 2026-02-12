@@ -117,7 +117,10 @@ export const CartCard = ({
   productId,
   countryCode = "kr",
 }: CartCardProps) => {
-  const productLink = productId ? `/${countryCode}/products/${productId}` : undefined
+  const productLink = productId
+    ? `/${countryCode}/products/${productId}`
+    : undefined
+
   return (
     <>
       {/* 모바일 버전 (768px 미만) */}
