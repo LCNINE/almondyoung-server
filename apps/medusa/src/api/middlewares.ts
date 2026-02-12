@@ -9,5 +9,9 @@ export default defineMiddlewares({
       matcher: '/store/customers/me/promotions',
       middlewares: [authenticate('customer', ['session', 'bearer'])],
     },
+    {
+      matcher: '/store/customers/me/cart',
+      middlewares: [authenticate('customer', ['session', 'bearer'])],
+    },
   ],
 });
