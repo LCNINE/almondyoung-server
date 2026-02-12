@@ -5,6 +5,7 @@ import { LoginPromptBanner } from "../components/banner/login-prompt-banner"
 import { CategoryBestSectionContainer } from "../components/sections/category-best"
 import { ProductListSection } from "../components/shared/product-list-section"
 import { UserDetail } from "@/lib/types/ui/user"
+import { CategoryBestSectionSkeleton } from "@/components/skeletons/page-skeletons"
 // import LashBannerBanner from "../components/banner/lashbanner-banner"
 // import MembershipBanner from "../components/banner/membership-banner"
 
@@ -222,9 +223,7 @@ export async function HomeLogoutTemplate({
       <ProductListSection>
         <Suspense
           fallback={
-            <div className="flex min-h-96 items-center justify-center">
-              <p className="text-gray-500">로딩 중...</p>
-            </div>
+            <CategoryBestSectionSkeleton />
           }
         >
           <CategoryBestSectionContainer

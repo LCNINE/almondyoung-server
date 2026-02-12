@@ -6,7 +6,7 @@ import OrderCardContent from "@components/orders/order-card/order-card-content"
 import { OrderFilter } from "./shared/order-filter"
 import { useEffect, useState } from "react"
 import { getOrders } from "@lib/api/medusa/orders"
-import { Spinner } from "@/components/shared/spinner"
+import { MypageOrderListSkeleton } from "@/components/skeletons/page-skeletons"
 import { Package } from "lucide-react"
 
 interface OrderItem {
@@ -103,11 +103,7 @@ export function OrderListClient() {
   }, [])
 
   if (isLoading) {
-    return (
-      <div className="flex min-h-[400px] items-center justify-center">
-        <Spinner size="lg" color="gray" />
-      </div>
-    )
+    return <MypageOrderListSkeleton />
   }
 
   if (error) {

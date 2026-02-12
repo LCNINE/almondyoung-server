@@ -7,6 +7,7 @@ import {
   TabsTrigger,
 } from "@components/common/ui/tabs"
 import { PageTitle } from "@/components/shared/page-title"
+import { MypageReviewsSkeleton } from "@/components/skeletons/page-skeletons"
 import { useReviewActions } from "../hooks/use-review-actions"
 import { WritableReviewsSection } from "./writable-reviews-section"
 import { WrittenReviewsSection } from "./written-reviews-section"
@@ -81,14 +82,7 @@ export const ReviewsContainer = () => {
   }, [])
 
   if (isLoading) {
-    return (
-      <main className="bg-white px-3 py-4 md:min-h-screen md:px-6">
-        <PageTitle>리뷰</PageTitle>
-        <div className="mt-4 flex items-center justify-center py-20">
-          <p className="text-gray-500">로딩 중...</p>
-        </div>
-      </main>
-    )
+    return <MypageReviewsSkeleton />
   }
 
   return (
