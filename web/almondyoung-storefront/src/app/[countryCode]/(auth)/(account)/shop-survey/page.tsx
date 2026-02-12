@@ -41,9 +41,9 @@ async function ShopSurveyManager({
   initialData,
 }: ShopSurveyManagerProps) {
   const user = await fetchMe().catch(() => null)
-  const hasShop = !!user?.shop
+  const hasCompletedSurvey = !!user?.shop?.categories
 
-  if (hasShop) {
+  if (hasCompletedSurvey) {
     return (
       <AlertRedirectDialog
         title="이미 완료됨"
