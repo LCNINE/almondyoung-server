@@ -30,7 +30,7 @@ async function ForgetPinManager() {
 
   // 핸드폰 인증이 안되어있으면 본인인증 모달 띄움
   if (!currentUser.profile?.phoneNumber) {
-    return <SecurityManager />
+    return <SecurityManager redirectTo="" />
   }
 
   return <ForgetPinForm />

@@ -176,7 +176,9 @@ export function ProductSidebarPurchase({
               >
                 <Heart
                   className={`h-7 w-7 ${
-                    isWishlisted ? "text-red-500" : "text-gray-300"
+                    isWishlisted
+                      ? "fill-red-500 text-red-500"
+                      : "text-gray-300"
                   }`}
                 />
               </CustomButton>
