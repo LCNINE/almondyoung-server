@@ -80,14 +80,6 @@ export function ProductOptionSelector({
                   variant="outline"
                   onClick={() => onOptionChange(option.label, value.name)}
                   disabled={isDisabled}
-                  // className="shrink-0 rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
-                  // className={`shrink-0 rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
-                  //   isSelected
-                  //     ? "border-blue-500 bg-blue-500 text-white"
-                  //     : isDisabled || isSoldOut
-                  //       ? "bg-gray-10 cursor-not-allowed border-gray-200 text-gray-400"
-                  //       : "border-gray-300 bg-white text-gray-700 hover:border-blue-300 hover:bg-blue-50"
-                  // }`}
                   aria-pressed={isSelected}
                 >
                   {value.name}
@@ -135,13 +127,6 @@ function OptionCartItem({
   return (
     <li className="flex items-center gap-3 rounded-lg bg-white py-3">
       <div className="relative">
-        <img
-          className={`h-20 w-20 shrink-0 rounded object-cover md:h-20 md:w-20 ${isSoldOut ? "opacity-50" : ""}`}
-          src={getThumbnailUrl(option.image)}
-          alt={option.name}
-          width={80}
-          height={80}
-        />
         {isSoldOut && (
           <div className="absolute inset-0 flex items-center justify-center rounded bg-black/40">
             <span className="text-xs font-bold text-white">품절</span>
