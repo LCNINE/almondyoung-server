@@ -1,11 +1,9 @@
 "use client"
 
 import { Minus, Plus } from "lucide-react"
-import Image from "next/image"
 
 interface SingleOptionQuantitySelectorProps {
   productName: string
-  thumbnail: string
   quantity: number
   onQuantityChange: (quantity: number) => void
   price: number
@@ -16,7 +14,6 @@ interface SingleOptionQuantitySelectorProps {
 
 export const SingleOptionQuantitySelector = ({
   productName,
-  thumbnail,
   quantity,
   onQuantityChange,
   price,
@@ -35,13 +32,6 @@ export const SingleOptionQuantitySelector = ({
     <div className={className}>
       {showTitle && <div className="mb-3 text-base font-bold">수량 선택</div>}
       <div className="flex items-center gap-3 rounded-lg bg-white py-3">
-        <Image
-          className="h-20 w-20 rounded object-cover"
-          src={thumbnail}
-          alt={productName || "상품 이미지"}
-          width={80}
-          height={80}
-        />
         <div className="flex-1">
           <p className="text-sm font-medium">{productName}</p>
           {getStockText() && (

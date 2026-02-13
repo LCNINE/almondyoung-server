@@ -234,11 +234,6 @@ export function ProductSidebarPurchase({
               {isSingleOption ? (
                 <SingleOptionQuantitySelector
                   productName={product.name}
-                  thumbnail={
-                    product.thumbnails?.[0]
-                      ? getThumbnailUrl(product.thumbnails?.[0])
-                      : "https://placehold.co/80x80?text=No+Image"
-                  }
                   quantity={quantity}
                   onQuantityChange={onQuantityChange}
                   price={getPrice()}
