@@ -161,13 +161,13 @@
         ]
       }
     },
-    "wallet": {
+    "wallet-lagacy": {
       "type": "application",
-      "root": "apps/wallet",
+      "root": "apps/wallet-lagacy",
       "entryFile": "main",
-      "sourceRoot": "apps/wallet/src",
+      "sourceRoot": "apps/wallet-lagacy/src",
       "compilerOptions": {
-        "tsConfigPath": "apps/wallet/tsconfig.app.json",
+        "tsConfigPath": "apps/wallet-lagacy/tsconfig.app.json",
         "assets": [
           "html/**/*"
         ]
