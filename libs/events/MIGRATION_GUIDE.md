@@ -170,7 +170,7 @@ npm run db:push:wms
 npm run db:push:pim
 
 # Wallet DB에 push
-npm run db:push:wallet
+npm run db:push:wallet-lagacy
 ```
 
 각 명령어는 해당 앱의 DATABASE_URL을 사용합니다.
@@ -190,4 +190,3 @@ npm run db:push:wms      # 변경사항 적용
 - Drizzle ORM 문서: https://orm.drizzle.team/
 - Transactional Outbox 패턴: `docs/transactional-outbox-pattern.md`
 - Outbox Demo 앱: `apps/outbox-demo/README.md`
-

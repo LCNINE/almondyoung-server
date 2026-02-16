@@ -22,12 +22,12 @@ COPY . .
 COPY tsconfig*.json ./
 COPY libs/ ./libs/
 COPY packages/ ./packages/
-COPY apps/wallet/ ./apps/wallet/
+COPY apps/wallet-lagacy/ ./apps/wallet-lagacy/
 
 # Ensure local file dependency is installed in node_modules for build-time TS resolution.
 RUN npm i --no-save ./packages/hms-api-wrapper
 
-RUN npm run build:wallet
+RUN npm run build:wallet-lagacy
 
 FROM base AS runner
 # 런타임 이미지에서는 이미 deps-prod 레이어에서 설치한 node_modules를 재사용하여 중복 설치를 피함
@@ -51,4 +51,4 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD node -e "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
 
-CMD ["npm", "run", "start:wallet:prod"]
+CMD ["npm", "run", "start:wallet-lagacy:prod"]
