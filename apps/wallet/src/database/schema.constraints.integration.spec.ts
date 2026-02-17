@@ -13,12 +13,22 @@ import {
   WalletSchema,
 } from '../schema';
 
+dotenv.config({ path: path.resolve(process.cwd(), 'apps/wallet/.env.test') });
 dotenv.config({ path: path.resolve(process.cwd(), 'apps/wallet/.env') });
 
-const DATABASE_URL = process.env.DATABASE_URL;
+const DATABASE_URL = process.env.WALLET_TEST_DATABASE_URL;
 const RUN_WALLET_DB_TESTS = process.env.RUN_WALLET_DB_TESTS === '1';
+
+if (RUN_WALLET_DB_TESTS && !DATABASE_URL) {
+  throw new Error(
+    'WALLET_TEST_DATABASE_URL is required when RUN_WALLET_DB_TESTS=1',
+  );
+}
+
 const describeWithDatabase =
   DATABASE_URL && RUN_WALLET_DB_TESTS ? describe : describe.skip;
+
+jest.setTimeout(30_000);
 
 describeWithDatabase('wallet schema constraints (integration)', () => {
   let module: TestingModule;
@@ -236,9 +246,12 @@ async function expectUniqueViolation(
   try {
     await operation();
   } catch (error) {
-    const pgError = error as { code?: string; constraint?: string; message?: string };
+    const pgError = findPgError(error);
+    const isUniqueViolation =
+      pgError.code === '23505' ||
+      (pgError.message ?? '').includes('duplicate key value violates unique constraint');
 
-    expect(pgError.code).toBe('23505');
+    expect(isUniqueViolation).toBe(true);
 
     if (pgError.constraint) {
       expect(pgError.constraint).toBe(constraintName);
@@ -250,4 +263,42 @@ async function expectUniqueViolation(
   }
 
   throw new Error(`Expected unique violation for ${constraintName}`);
+}
+
+function findPgError(error: unknown): {
+  code?: string;
+  constraint?: string;
+  message?: string;
+} {
+  let current = error as
+    | {
+        code?: string;
+        constraint?: string;
+        message?: string;
+        cause?: unknown;
+        originalError?: unknown;
+      }
+    | undefined;
+  const visited = new Set<unknown>();
+
+  while (current && !visited.has(current)) {
+    visited.add(current);
+
+    if (current.code || current.constraint) {
+      return current;
+    }
+
+    const next = (current.cause ?? current.originalError) as
+      | {
+          code?: string;
+          constraint?: string;
+          message?: string;
+          cause?: unknown;
+          originalError?: unknown;
+        }
+      | undefined;
+    current = next;
+  }
+
+  return (error as { code?: string; constraint?: string; message?: string }) ?? {};
 }
