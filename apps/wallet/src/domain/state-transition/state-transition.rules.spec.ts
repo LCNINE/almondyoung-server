@@ -32,4 +32,11 @@ describe('state-transition.rules', () => {
       canTransition('MANUAL_CANCEL_QUEUE_ITEM', 'COMPLETED', 'PROCESSING'),
     ).toBe(false);
   });
+
+  it('allows compensation attempt flow transitions', () => {
+    expect(canTransition('ATTEMPT', 'SENT', 'CANCEL_REQUESTED')).toBe(true);
+    expect(canTransition('ATTEMPT', 'CANCEL_REQUESTED', 'CANCELLED')).toBe(true);
+    expect(canTransition('ATTEMPT', 'SENT', 'REFUND_REQUESTED')).toBe(true);
+    expect(canTransition('ATTEMPT', 'REFUND_REQUESTED', 'REFUNDED')).toBe(true);
+  });
 });
