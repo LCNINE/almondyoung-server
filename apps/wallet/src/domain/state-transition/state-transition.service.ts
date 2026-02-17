@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { eq, sql } from 'drizzle-orm';
 import {
@@ -46,6 +46,7 @@ interface TransitionContext {
   causationId?: string;
   payload?: Record<string, unknown>;
   outboxEvent?: OutboxAppendInput;
+  expectedVersion?: number;
 }
 
 interface TransitionResult<TStatus extends TransitionTargetStatus> {
@@ -72,11 +73,15 @@ export class StateTransitionService {
       }
 
       if (fromStatus && row.status !== fromStatus) {
-        throw new Error(
-          `INTENT_STATUS_MISMATCH: expected=${fromStatus}, actual=${row.status}`,
+        throw this.buildStatusMismatchConflict(
+          'INTENT',
+          intentId,
+          fromStatus,
+          row.status,
         );
       }
 
+      this.assertExpectedVersion('INTENT', intentId, context.expectedVersion, row.version);
       assertTransitionAllowed('INTENT', row.status, toStatus);
 
       await trx
@@ -120,11 +125,10 @@ export class StateTransitionService {
       }
 
       if (fromStatus && row.status !== fromStatus) {
-        throw new Error(
-          `LEG_STATUS_MISMATCH: expected=${fromStatus}, actual=${row.status}`,
-        );
+        throw this.buildStatusMismatchConflict('LEG', legId, fromStatus, row.status);
       }
 
+      this.assertExpectedVersion('LEG', legId, context.expectedVersion, row.version);
       assertTransitionAllowed('LEG', row.status, toStatus);
 
       await trx
@@ -161,8 +165,11 @@ export class StateTransitionService {
       }
 
       if (fromStatus && row.status !== fromStatus) {
-        throw new Error(
-          `ATTEMPT_STATUS_MISMATCH: expected=${fromStatus}, actual=${row.status}`,
+        throw this.buildStatusMismatchConflict(
+          'ATTEMPT',
+          attemptId,
+          fromStatus,
+          row.status,
         );
       }
 
@@ -208,8 +215,11 @@ export class StateTransitionService {
       }
 
       if (fromStatus && row.status !== fromStatus) {
-        throw new Error(
-          `REFUND_REQUEST_STATUS_MISMATCH: expected=${fromStatus}, actual=${row.status}`,
+        throw this.buildStatusMismatchConflict(
+          'REFUND_REQUEST',
+          refundId,
+          fromStatus,
+          row.status,
         );
       }
 
@@ -255,8 +265,11 @@ export class StateTransitionService {
       }
 
       if (fromStatus && row.status !== fromStatus) {
-        throw new Error(
-          `MANUAL_CANCEL_QUEUE_ITEM_STATUS_MISMATCH: expected=${fromStatus}, actual=${row.status}`,
+        throw this.buildStatusMismatchConflict(
+          'MANUAL_CANCEL_QUEUE_ITEM',
+          itemId,
+          fromStatus,
+          row.status,
         );
       }
 
@@ -404,5 +417,35 @@ export class StateTransitionService {
     `)) as Array<{ status: ManualCancelQueueStatus }>;
 
     return rows[0] ?? null;
+  }
+
+  private assertExpectedVersion(
+    entityType: 'INTENT' | 'LEG',
+    entityId: string,
+    expectedVersion: number | undefined,
+    actualVersion: number,
+  ): void {
+    if (expectedVersion === undefined) {
+      return;
+    }
+
+    if (actualVersion !== expectedVersion) {
+      throw new ConflictException({
+        error: 'OPTIMISTIC_LOCK_CONFLICT',
+        message: `${entityType} version mismatch: expected=${expectedVersion}, actual=${actualVersion}, id=${entityId}`,
+      });
+    }
+  }
+
+  private buildStatusMismatchConflict(
+    entityType: PaymentStateEntityType,
+    entityId: string,
+    expectedStatus: string,
+    actualStatus: string,
+  ): ConflictException {
+    return new ConflictException({
+      error: 'STATE_STATUS_MISMATCH',
+      message: `${entityType} status mismatch: expected=${expectedStatus}, actual=${actualStatus}, id=${entityId}`,
+    });
   }
 }
