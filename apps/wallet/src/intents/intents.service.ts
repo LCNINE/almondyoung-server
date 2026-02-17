@@ -8,21 +8,28 @@ import {
 import { DbService } from '@app/db';
 import { and, eq } from 'drizzle-orm';
 import { CreateIntentDto } from './dto/create-intent.dto';
+import { ConfigureLegsDto } from './dto/configure-legs.dto';
 import {
   HmacVerificationError,
   verifyHmacIntegrity,
 } from '../domain/hmac/hmac-integrity';
 import {
+  PaymentLegStatus,
   PaymentIntentStatus,
   WalletSchema,
   paymentIntents,
+  paymentLegs,
   paymentStateTransitions,
 } from '../schema';
-import { PaymentIntent } from '../types';
+import { PaymentIntent, PaymentLeg } from '../types';
+import { ProviderRegistry } from '../providers/provider.registry';
 
 @Injectable()
 export class IntentsService {
-  constructor(private readonly dbService: DbService<WalletSchema>) {}
+  constructor(
+    private readonly dbService: DbService<WalletSchema>,
+    private readonly providerRegistry: ProviderRegistry,
+  ) {}
 
   async createIntent(
     dto: CreateIntentDto,
@@ -149,6 +156,119 @@ export class IntentsService {
     }
 
     return intent;
+  }
+
+  async configureLegs(
+    intentId: string,
+    dto: ConfigureLegsDto,
+    correlationId?: string,
+  ): Promise<PaymentLeg[]> {
+    const intent = await this.getIntent(intentId);
+    this.assertIntentCanConfigureLegs(intent.status, intent.payableAmount);
+
+    const sequenceSet = new Set<number>();
+    let totalAmount = 0;
+
+    for (const leg of dto.legs) {
+      if (sequenceSet.has(leg.sequenceNo)) {
+        throw new BadRequestException({
+          error: 'LEG_SEQUENCE_DUPLICATED',
+          message: `Duplicated leg sequenceNo: ${leg.sequenceNo}`,
+        });
+      }
+      sequenceSet.add(leg.sequenceNo);
+      totalAmount += leg.amount;
+
+      const providerType = leg.providerType.trim().toUpperCase();
+      const provider = this.providerRegistry.assertCapability(
+        providerType,
+        'AUTHORIZE',
+        { intentId },
+      );
+
+      await provider.validateLeg({
+        intentId,
+        customerId: intent.customerId,
+        amount: leg.amount,
+        currency: intent.currency,
+        sequenceNo: leg.sequenceNo,
+        isRequired: leg.isRequired ?? true,
+        metadata: leg.metadata,
+      });
+    }
+
+    if (totalAmount !== intent.payableAmount) {
+      throw new BadRequestException({
+        error: 'LEG_AMOUNT_SUM_MISMATCH',
+        message: `sum(legs.amount) must equal payableAmount: expected=${intent.payableAmount}, actual=${totalAmount}`,
+      });
+    }
+
+    const requestCorrelationId = correlationId?.trim() || randomUUID();
+
+    return this.dbService.db.transaction(async (tx) => {
+      await tx.delete(paymentLegs).where(eq(paymentLegs.intentId, intentId));
+
+      const createdLegs: PaymentLeg[] = [];
+
+      for (const leg of dto.legs) {
+        const providerType = leg.providerType.trim().toUpperCase();
+        const [createdLeg] = await tx
+          .insert(paymentLegs)
+          .values({
+            intentId,
+            providerType,
+            amount: leg.amount,
+            status: 'READY' satisfies PaymentLegStatus,
+            isRequired: leg.isRequired ?? true,
+            sequenceNo: leg.sequenceNo,
+            metadata: leg.metadata ?? {},
+          })
+          .returning();
+
+        createdLegs.push(createdLeg);
+
+        await tx.insert(paymentStateTransitions).values({
+          entityType: 'LEG',
+          entityId: createdLeg.id,
+          previousStatus: null,
+          newStatus: 'READY',
+          reasonCode: 'LEG_CONFIGURED',
+          reasonMessage: 'Leg configured and validated',
+          triggeredByType: 'USER',
+          triggeredById: intent.customerId,
+          correlationId: requestCorrelationId,
+          occurredAt: new Date(),
+          payload: {
+            providerType,
+            sequenceNo: leg.sequenceNo,
+            amount: leg.amount,
+            isRequired: leg.isRequired ?? true,
+          },
+        });
+      }
+
+      return createdLegs.sort((left, right) => left.sequenceNo - right.sequenceNo);
+    });
+  }
+
+  private assertIntentCanConfigureLegs(
+    status: PaymentIntentStatus,
+    payableAmount: number,
+  ): void {
+    if (payableAmount === 0) {
+      throw new ConflictException({
+        error: 'ZERO_AMOUNT_INTENT_DOES_NOT_ACCEPT_LEGS',
+        message: 'Zero-amount fast path intent cannot configure legs',
+      });
+    }
+
+    if (status !== 'PENDING') {
+      throw new ConflictException({
+        error: 'INTENT_STATE_INVALID_FOR_LEG_CONFIGURATION',
+        message: `Intent status ${status} cannot configure legs`,
+      });
+    }
   }
 }
 
