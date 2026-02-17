@@ -13,6 +13,7 @@ import { WALLET_SCOPES } from './auth/wallet.scopes';
 import { validateWalletEnv } from './config/env.validation';
 import { HealthController } from './health.controller';
 import { walletSchema } from './schema';
+import { StateTransitionService } from './domain/state-transition/state-transition.service';
 
 const combinedSchema = { ...walletSchema, ...authorizationSchema };
 
@@ -41,6 +42,7 @@ const combinedSchema = { ...walletSchema, ...authorizationSchema };
   ],
   controllers: [HealthController],
   providers: [
+    StateTransitionService,
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
