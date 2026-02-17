@@ -140,6 +140,51 @@ describe('IdempotencyService', () => {
       expect(first.recordId).not.toBe(second.recordId);
     }
   });
+
+  it('allows same idempotency key across different operations', async () => {
+    const cancel = await service.beginHttpRequest({
+      idempotencyKey: 'idem-5',
+      operation: 'POST /v1/intents/intent-1/cancel',
+      actorId: 'customer-1',
+      requestMethod: 'POST',
+      requestPath: '/v1/intents/intent-1/cancel',
+      requestBody: {},
+    });
+
+    const supersede = await service.beginHttpRequest({
+      idempotencyKey: 'idem-5',
+      operation: 'POST /v1/intents/intent-1/supersede',
+      actorId: 'customer-1',
+      requestMethod: 'POST',
+      requestPath: '/v1/intents/intent-1/supersede',
+      requestBody: {},
+    });
+
+    expect(cancel.kind).toBe('STARTED');
+    expect(supersede.kind).toBe('STARTED');
+  });
+
+  it('throws 409 for cancel when same key is reused with different payload', async () => {
+    await service.beginHttpRequest({
+      idempotencyKey: 'idem-6',
+      operation: 'POST /v1/intents/intent-1/cancel',
+      actorId: 'customer-1',
+      requestMethod: 'POST',
+      requestPath: '/v1/intents/intent-1/cancel',
+      requestBody: { reasonCode: 'CUSTOMER_REQUEST' },
+    });
+
+    await expect(
+      service.beginHttpRequest({
+        idempotencyKey: 'idem-6',
+        operation: 'POST /v1/intents/intent-1/cancel',
+        actorId: 'customer-1',
+        requestMethod: 'POST',
+        requestPath: '/v1/intents/intent-1/cancel',
+        requestBody: { reasonCode: 'DUPLICATE_ORDER' },
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
 });
 
 class InMemoryIdempotencyRepository implements IdempotencyRepository {

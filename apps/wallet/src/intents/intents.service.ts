@@ -36,6 +36,13 @@ interface LegOperationResult {
   attempt: PaymentAttempt;
 }
 
+interface IntentTerminationResult {
+  intentId: string;
+  status: PaymentIntentStatus;
+}
+
+type TerminationReason = 'CANCEL' | 'SUPERSEDE';
+
 interface LockedIntent {
   id: string;
   customerId: string;
@@ -638,6 +645,493 @@ export class IntentsService {
     }
   }
 
+  async cancelIntent(
+    intentId: string,
+    correlationId?: string,
+  ): Promise<IntentTerminationResult> {
+    const requestCorrelationId = correlationId?.trim() || randomUUID();
+
+    return this.dbService.db.transaction(async (tx) => {
+      const intent = await this.lockIntentOrThrow(intentId, tx);
+      this.assertIntentCanCancel(intent.status);
+
+      if (intent.status === 'PENDING') {
+        await this.stateTransitionService.transitionIntent(
+          intentId,
+          'CANCELLED',
+          {
+            correlationId: requestCorrelationId,
+            reasonCode: 'INTENT_CANCELLED',
+            reasonMessage: 'Intent cancelled before payment processing',
+            triggeredByType: 'USER',
+            triggeredById: intent.customerId,
+            payload: {
+              operation: 'CANCEL',
+            },
+          },
+          'PENDING',
+          tx,
+        );
+
+        return {
+          intentId,
+          status: 'CANCELLED',
+        };
+      }
+
+      await this.stateTransitionService.transitionIntent(
+        intentId,
+        'RECONCILING',
+        {
+          correlationId: requestCorrelationId,
+          reasonCode: 'INTENT_CANCEL_RECONCILING',
+          reasonMessage: 'Intent cancel started with compensation',
+          triggeredByType: 'USER',
+          triggeredById: intent.customerId,
+          payload: {
+            operation: 'CANCEL',
+          },
+        },
+        intent.status,
+        tx,
+      );
+
+      const compensationFailed = await this.compensateIntentLegs(
+        tx,
+        intent,
+        requestCorrelationId,
+        'CANCEL',
+      );
+      const finalStatus: PaymentIntentStatus = compensationFailed
+        ? 'RECONCILE_REQUIRED'
+        : 'CANCELLED';
+
+      await this.stateTransitionService.transitionIntent(
+        intentId,
+        finalStatus,
+        {
+          correlationId: requestCorrelationId,
+          reasonCode: compensationFailed
+            ? 'INTENT_CANCEL_RECONCILE_REQUIRED'
+            : 'INTENT_CANCELLED',
+          reasonMessage: compensationFailed
+            ? 'Intent cancellation requires manual reconcile'
+            : 'Intent cancellation completed',
+          triggeredByType: 'SYSTEM',
+          triggeredById: intent.customerId,
+          payload: {
+            operation: 'CANCEL',
+            compensationFailed,
+          },
+        },
+        'RECONCILING',
+        tx,
+      );
+
+      return {
+        intentId,
+        status: finalStatus,
+      };
+    });
+  }
+
+  async supersedeIntent(
+    intentId: string,
+    correlationId?: string,
+  ): Promise<IntentTerminationResult> {
+    const requestCorrelationId = correlationId?.trim() || randomUUID();
+
+    return this.dbService.db.transaction(async (tx) => {
+      const intent = await this.lockIntentOrThrow(intentId, tx);
+      this.assertIntentCanSupersede(intent.status);
+
+      await this.stateTransitionService.transitionIntent(
+        intentId,
+        'SUSPENDED',
+        {
+          correlationId: requestCorrelationId,
+          reasonCode: 'INTENT_SUPERSEDE_STARTED',
+          reasonMessage: 'Intent supersede started',
+          triggeredByType: 'SYSTEM',
+          triggeredById: intent.customerId,
+          payload: {
+            operation: 'SUPERSEDE',
+          },
+        },
+        intent.status,
+        tx,
+      );
+
+      const compensationFailed = await this.compensateIntentLegs(
+        tx,
+        intent,
+        requestCorrelationId,
+        'SUPERSEDE',
+      );
+      const finalStatus: PaymentIntentStatus = compensationFailed
+        ? 'SUPERSEDED_RECONCILE_REQUIRED'
+        : 'SUPERSEDED';
+
+      await this.stateTransitionService.transitionIntent(
+        intentId,
+        finalStatus,
+        {
+          correlationId: requestCorrelationId,
+          reasonCode: compensationFailed
+            ? 'INTENT_SUPERSEDE_RECONCILE_REQUIRED'
+            : 'INTENT_SUPERSEDED',
+          reasonMessage: compensationFailed
+            ? 'Supersede compensation requires manual reconcile'
+            : 'Supersede completed',
+          triggeredByType: 'SYSTEM',
+          triggeredById: intent.customerId,
+          payload: {
+            operation: 'SUPERSEDE',
+            compensationFailed,
+          },
+        },
+        'SUSPENDED',
+        tx,
+      );
+
+      return {
+        intentId,
+        status: finalStatus,
+      };
+    });
+  }
+
+  private async compensateIntentLegs(
+    tx: DbTx,
+    intent: LockedIntent,
+    correlationId: string,
+    reason: TerminationReason,
+  ): Promise<boolean> {
+    const legs = await tx
+      .select()
+      .from(paymentLegs)
+      .where(eq(paymentLegs.intentId, intent.id));
+
+    let hasFailure = false;
+
+    for (const leg of legs) {
+      switch (leg.status) {
+        case 'AUTHORIZED': {
+          const failed = await this.compensateLegWithProvider(
+            tx,
+            intent,
+            leg,
+            'CANCEL',
+            correlationId,
+            reason,
+          );
+          hasFailure = hasFailure || failed;
+          break;
+        }
+        case 'CAPTURED': {
+          const failed = await this.compensateLegWithProvider(
+            tx,
+            intent,
+            leg,
+            'REFUND',
+            correlationId,
+            reason,
+          );
+          hasFailure = hasFailure || failed;
+          break;
+        }
+        case 'READY':
+        case 'PROCESSING':
+        case 'REQUIRES_CUSTOMER_ACTION':
+        case 'REQUIRES_ADMIN_CONFIRMATION': {
+          await this.stateTransitionService.transitionLeg(
+            leg.id,
+            'EXPIRED',
+            {
+              correlationId,
+              reasonCode:
+                reason === 'CANCEL'
+                  ? 'LEG_CANCELLED_BEFORE_CAPTURE'
+                  : 'LEG_SUPERSEDED_BEFORE_CAPTURE',
+              reasonMessage:
+                reason === 'CANCEL'
+                  ? 'Leg expired due to intent cancellation before capture'
+                  : 'Leg expired due to intent supersede before capture',
+              triggeredByType: 'SYSTEM',
+              triggeredById: intent.customerId,
+              payload: {
+                operation: reason,
+              },
+            },
+            leg.status,
+            tx,
+          );
+          break;
+        }
+        case 'CANCELING':
+        case 'REFUNDING':
+        case 'RECONCILE_REQUIRED': {
+          hasFailure = true;
+          break;
+        }
+        default:
+          break;
+      }
+    }
+
+    return hasFailure;
+  }
+
+  private async compensateLegWithProvider(
+    tx: DbTx,
+    intent: LockedIntent,
+    leg: PaymentLeg,
+    operation: 'CANCEL' | 'REFUND',
+    correlationId: string,
+    reason: TerminationReason,
+  ): Promise<boolean> {
+    const attempt = await this.createAttempt(tx, {
+      intentId: intent.id,
+      legId: leg.id,
+      operation,
+      correlationId,
+      triggeredById: intent.customerId,
+    });
+
+    await this.stateTransitionService.transitionAttempt(
+      attempt.id,
+      'SENT',
+      {
+        correlationId,
+        causationId: leg.id,
+        reasonCode: `PROVIDER_${operation}_REQUEST_SENT`,
+        reasonMessage: `Provider ${operation} request sent`,
+        triggeredByType: 'SYSTEM',
+        triggeredById: intent.customerId,
+        payload: {
+          operation,
+          terminationReason: reason,
+        },
+      },
+      'CREATED',
+      tx,
+    );
+
+    const requestedStatus = operation === 'CANCEL' ? 'CANCEL_REQUESTED' : 'REFUND_REQUESTED';
+    await this.stateTransitionService.transitionAttempt(
+      attempt.id,
+      requestedStatus,
+      {
+        correlationId,
+        causationId: leg.id,
+        reasonCode: `PROVIDER_${operation}_REQUEST_ACCEPTED`,
+        reasonMessage: `${operation} request accepted for provider call`,
+        triggeredByType: 'SYSTEM',
+        triggeredById: intent.customerId,
+        payload: {
+          operation,
+          terminationReason: reason,
+        },
+      },
+      'SENT',
+      tx,
+    );
+
+    await this.stateTransitionService.transitionLeg(
+      leg.id,
+      'CANCELING',
+      {
+        correlationId,
+        reasonCode:
+          reason === 'CANCEL' ? `LEG_${operation}_STARTED` : `LEG_SUPERSEDE_${operation}`,
+        reasonMessage:
+          reason === 'CANCEL'
+            ? `${operation} compensation started`
+            : `${operation} compensation started for supersede`,
+        triggeredByType: 'SYSTEM',
+        triggeredById: intent.customerId,
+        payload: {
+          operation,
+          terminationReason: reason,
+        },
+      },
+      leg.status,
+      tx,
+    );
+
+    try {
+      const provider = this.providerRegistry.assertCapability(leg.providerType, operation, {
+        intentId: intent.id,
+        legId: leg.id,
+      });
+
+      const providerResult =
+        operation === 'CANCEL'
+          ? await provider.cancel({
+              intentId: intent.id,
+              legId: leg.id,
+              attemptId: attempt.id,
+              amount: leg.amount,
+              currency: intent.currency,
+              customerId: intent.customerId,
+              correlationId,
+              metadata: leg.metadata,
+            })
+          : await provider.refund({
+              intentId: intent.id,
+              legId: leg.id,
+              attemptId: attempt.id,
+              amount: leg.amount,
+              currency: intent.currency,
+              customerId: intent.customerId,
+              correlationId,
+              metadata: leg.metadata,
+            });
+
+      await this.persistProviderAttemptResult(tx, attempt.id, providerResult);
+
+      const successStatus =
+        operation === 'CANCEL' ? ('CANCELLED' as const) : ('REFUNDED' as const);
+      const isSuccess = providerResult.resultStatus === successStatus;
+
+      if (!isSuccess) {
+        await this.persistProviderAttemptFailure(
+          tx,
+          attempt.id,
+          `PROVIDER_${operation}_FAILED`,
+          `${operation} returned unexpected status ${providerResult.resultStatus}`,
+        );
+        await this.stateTransitionService.transitionAttempt(
+          attempt.id,
+          'FAILED_FINAL',
+          {
+            correlationId,
+            causationId: leg.id,
+            reasonCode: `PROVIDER_${operation}_FAILED`,
+            reasonMessage: `${operation} returned unexpected status ${providerResult.resultStatus}`,
+            triggeredByType: 'SYSTEM',
+            triggeredById: intent.customerId,
+            payload: {
+              operation,
+              providerResultStatus: providerResult.resultStatus,
+              terminationReason: reason,
+            },
+          },
+          requestedStatus,
+          tx,
+        );
+
+        await this.stateTransitionService.transitionLeg(
+          leg.id,
+          'RECONCILE_REQUIRED',
+          {
+            correlationId,
+            reasonCode: `LEG_${operation}_FAILED`,
+            reasonMessage: `${operation} returned unexpected status ${providerResult.resultStatus}`,
+            triggeredByType: 'SYSTEM',
+            triggeredById: intent.customerId,
+            payload: {
+              operation,
+              providerResultStatus: providerResult.resultStatus,
+              terminationReason: reason,
+            },
+          },
+          'CANCELING',
+          tx,
+        );
+        return true;
+      }
+
+      await this.stateTransitionService.transitionAttempt(
+        attempt.id,
+        successStatus,
+        {
+          correlationId,
+          causationId: leg.id,
+          reasonCode: `PROVIDER_${operation}_SUCCEEDED`,
+          reasonMessage: `${operation} compensation succeeded`,
+          triggeredByType: 'SYSTEM',
+          triggeredById: intent.customerId,
+          payload: {
+            operation,
+            providerTransactionId: providerResult.providerTransactionId,
+            terminationReason: reason,
+          },
+        },
+        requestedStatus,
+        tx,
+      );
+
+      await this.stateTransitionService.transitionLeg(
+        leg.id,
+        successStatus,
+        {
+          correlationId,
+          reasonCode: `LEG_${operation}_SUCCEEDED`,
+          reasonMessage: `${operation} compensation succeeded`,
+          triggeredByType: 'SYSTEM',
+          triggeredById: intent.customerId,
+          payload: {
+            operation,
+            providerTransactionId: providerResult.providerTransactionId,
+            terminationReason: reason,
+          },
+        },
+        'CANCELING',
+        tx,
+      );
+
+      return false;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : `${operation} provider call failed`;
+      await this.persistProviderAttemptFailure(
+        tx,
+        attempt.id,
+        `PROVIDER_${operation}_FAILED`,
+        errorMessage,
+      );
+      await this.stateTransitionService.transitionAttempt(
+        attempt.id,
+        'FAILED_RETRYABLE',
+        {
+          correlationId,
+          causationId: leg.id,
+          reasonCode: `PROVIDER_${operation}_FAILED`,
+          reasonMessage: errorMessage,
+          triggeredByType: 'SYSTEM',
+          triggeredById: intent.customerId,
+          payload: {
+            operation,
+            terminationReason: reason,
+          },
+        },
+        requestedStatus,
+        tx,
+      );
+
+      await this.stateTransitionService.transitionLeg(
+        leg.id,
+        'RECONCILE_REQUIRED',
+        {
+          correlationId,
+          reasonCode: `LEG_${operation}_FAILED`,
+          reasonMessage: errorMessage,
+          triggeredByType: 'SYSTEM',
+          triggeredById: intent.customerId,
+          payload: {
+            operation,
+            terminationReason: reason,
+          },
+        },
+        'CANCELING',
+        tx,
+      );
+
+      return true;
+    }
+  }
+
   private async applyAuthorizeResult(
     tx: DbTx,
     context: {
@@ -1235,6 +1729,32 @@ export class IntentsService {
       throw new ConflictException({
         error: 'INTENT_NOT_ACTIVE',
         message: `Intent status ${status} is not checkout-active`,
+      });
+    }
+  }
+
+  private assertIntentCanCancel(status: PaymentIntentStatus): void {
+    if (
+      status !== 'PENDING' &&
+      status !== 'IN_PROGRESS' &&
+      status !== 'PARTIALLY_CAPTURED'
+    ) {
+      throw new ConflictException({
+        error: 'INTENT_STATE_INVALID_FOR_CANCEL',
+        message: `Intent status ${status} cannot be cancelled`,
+      });
+    }
+  }
+
+  private assertIntentCanSupersede(status: PaymentIntentStatus): void {
+    if (
+      status !== 'PENDING' &&
+      status !== 'IN_PROGRESS' &&
+      status !== 'PARTIALLY_CAPTURED'
+    ) {
+      throw new ConflictException({
+        error: 'INTENT_STATE_INVALID_FOR_SUPERSEDE',
+        message: `Intent status ${status} cannot be superseded`,
       });
     }
   }

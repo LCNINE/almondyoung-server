@@ -507,6 +507,513 @@ describe('IntentsService', () => {
       service.captureLeg('intent-1', 'leg-1', 'corr-capture-1'),
     ).rejects.toBeInstanceOf(ConflictException);
   });
+
+  it('captures AUTHORIZED leg and marks intent SUCCEEDED when required legs are captured', async () => {
+    const providerCapture = jest.fn().mockResolvedValue({
+      resultStatus: 'CAPTURED',
+      providerTransactionId: 'provider-capture-1',
+      providerRequestId: 'provider-capture-req-1',
+      raw: { providerType: 'POINTS' },
+    });
+    providerRegistry.assertCapability.mockReturnValue({
+      capture: providerCapture,
+    });
+
+    const createdAttempt = {
+      id: 'attempt-cap-1',
+      intentId: 'intent-1',
+      legId: 'leg-1',
+      attemptNo: 2,
+      status: 'CREATED',
+      providerTransactionId: null,
+      providerRequestId: null,
+      idempotencyKey: null,
+      errorCode: null,
+      errorMessage: null,
+      requestPayload: { operation: 'CAPTURE' },
+      responsePayload: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const txPreInsertMock = jest.fn((table) => {
+      if (table === paymentAttempts) {
+        return {
+          values: jest.fn().mockReturnValue({
+            returning: jest.fn().mockResolvedValue([createdAttempt]),
+          }),
+        };
+      }
+
+      return {
+        values: jest.fn().mockResolvedValue(undefined),
+      };
+    });
+
+    const txPre = {
+      execute: jest
+        .fn()
+        .mockResolvedValueOnce([
+          {
+            id: 'intent-1',
+            customerId: 'customer-1',
+            currency: 'KRW',
+            payableAmount: 10000,
+            status: 'IN_PROGRESS',
+            version: 0,
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: 'leg-1',
+            intentId: 'intent-1',
+            providerType: 'POINTS',
+            amount: 10000,
+            status: 'AUTHORIZED',
+            version: 0,
+            metadata: {},
+          },
+        ]),
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockResolvedValue([{ maxAttemptNo: 1 }]),
+        }),
+      }),
+      insert: txPreInsertMock,
+    };
+
+    const readQueue = [
+      [
+        {
+          id: 'intent-1',
+          referenceType: 'STORE_ORDER',
+          referenceId: 'order-1',
+          customerId: 'customer-1',
+          currency: 'KRW',
+          payableAmount: 10000,
+          status: 'SUCCEEDED',
+          expiresAt: new Date(),
+          version: 2,
+          metadata: {},
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+      [
+        {
+          id: 'leg-1',
+          intentId: 'intent-1',
+          providerType: 'POINTS',
+          amount: 10000,
+          status: 'CAPTURED',
+          isRequired: true,
+          sequenceNo: 1,
+          version: 1,
+          metadata: {},
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+      [
+        {
+          ...createdAttempt,
+          status: 'CAPTURED',
+          providerTransactionId: 'provider-capture-1',
+          providerRequestId: 'provider-capture-req-1',
+          responsePayload: { providerType: 'POINTS' },
+        },
+      ],
+    ];
+    let selectCall = 0;
+    const txPost = {
+      execute: jest.fn().mockResolvedValue([
+        {
+          id: 'intent-1',
+          customerId: 'customer-1',
+          currency: 'KRW',
+          payableAmount: 10000,
+          status: 'IN_PROGRESS',
+          version: 1,
+        },
+      ]),
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockResolvedValue(undefined),
+        }),
+      }),
+      select: jest.fn().mockImplementation(() => {
+        selectCall += 1;
+
+        if (selectCall === 1) {
+          return {
+            from: jest.fn().mockReturnValue({
+              where: jest.fn().mockResolvedValue([
+                {
+                  status: 'CAPTURED',
+                  isRequired: true,
+                },
+              ]),
+            }),
+          };
+        }
+
+        return {
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              limit: jest
+                .fn()
+                .mockImplementation(async () => (readQueue.shift() as unknown[]) ?? []),
+            }),
+          }),
+        };
+      }),
+    };
+
+    db.transaction
+      .mockImplementationOnce(
+        async (callback: (tx: typeof txPre) => unknown) => callback(txPre),
+      )
+      .mockImplementationOnce(
+        async (callback: (tx: typeof txPost) => unknown) => callback(txPost),
+      );
+
+    const result = await service.captureLeg('intent-1', 'leg-1', 'corr-capture-2');
+
+    expect(providerCapture).toHaveBeenCalledTimes(1);
+    expect(stateTransitionService.transitionIntent).toHaveBeenCalledWith(
+      'intent-1',
+      'SUCCEEDED',
+      expect.objectContaining({
+        correlationId: 'corr-capture-2',
+      }),
+      'IN_PROGRESS',
+      txPost,
+    );
+    expect(result.intent.status).toBe('SUCCEEDED');
+    expect(result.leg.status).toBe('CAPTURED');
+    expect(result.attempt.status).toBe('CAPTURED');
+  });
+
+  it('cancels PENDING intent without compensation flow', async () => {
+    const tx = {
+      execute: jest.fn().mockResolvedValue([
+        {
+          id: 'intent-1',
+          customerId: 'customer-1',
+          currency: 'KRW',
+          payableAmount: 10000,
+          status: 'PENDING',
+          version: 0,
+        },
+      ]),
+    };
+
+    db.transaction.mockImplementationOnce(
+      async (callback: (innerTx: typeof tx) => unknown) => callback(tx),
+    );
+
+    const result = await service.cancelIntent('intent-1', 'corr-cancel-1');
+
+    expect(result).toEqual({
+      intentId: 'intent-1',
+      status: 'CANCELLED',
+    });
+    expect(stateTransitionService.transitionIntent).toHaveBeenCalledTimes(1);
+    expect(stateTransitionService.transitionIntent).toHaveBeenCalledWith(
+      'intent-1',
+      'CANCELLED',
+      expect.objectContaining({
+        correlationId: 'corr-cancel-1',
+      }),
+      'PENDING',
+      tx,
+    );
+  });
+
+  it('supersedes IN_PROGRESS intent after successful leg refund compensation', async () => {
+    const providerRefund = jest.fn().mockResolvedValue({
+      resultStatus: 'REFUNDED',
+      providerTransactionId: 'provider-refund-1',
+      raw: { providerType: 'POINTS' },
+    });
+    providerRegistry.assertCapability.mockReturnValue({
+      refund: providerRefund,
+    });
+
+    const createdAttempt = {
+      id: 'attempt-comp-1',
+      intentId: 'intent-1',
+      legId: 'leg-1',
+      attemptNo: 1,
+      status: 'CREATED',
+      providerTransactionId: null,
+      providerRequestId: null,
+      idempotencyKey: null,
+      errorCode: null,
+      errorMessage: null,
+      requestPayload: { operation: 'REFUND' },
+      responsePayload: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const txInsertMock = jest.fn((table) => {
+      if (table === paymentAttempts) {
+        return {
+          values: jest.fn().mockReturnValue({
+            returning: jest.fn().mockResolvedValue([createdAttempt]),
+          }),
+        };
+      }
+
+      return {
+        values: jest.fn().mockResolvedValue(undefined),
+      };
+    });
+
+    const tx = {
+      execute: jest.fn().mockResolvedValue([
+        {
+          id: 'intent-1',
+          customerId: 'customer-1',
+          currency: 'KRW',
+          payableAmount: 10000,
+          status: 'IN_PROGRESS',
+          version: 0,
+        },
+      ]),
+      select: jest.fn().mockImplementation(() => ({
+        from: jest.fn((table) => {
+          if (table === paymentLegs) {
+            return {
+              where: jest.fn().mockResolvedValue([
+                {
+                  id: 'leg-1',
+                  intentId: 'intent-1',
+                  providerType: 'POINTS',
+                  amount: 10000,
+                  status: 'CAPTURED',
+                  isRequired: true,
+                  sequenceNo: 1,
+                  version: 0,
+                  metadata: {},
+                  createdAt: new Date(),
+                  updatedAt: new Date(),
+                },
+              ]),
+            };
+          }
+
+          if (table === paymentAttempts) {
+            return {
+              where: jest.fn().mockResolvedValue([{ maxAttemptNo: 0 }]),
+            };
+          }
+
+          throw new Error('Unexpected table in supersede test');
+        }),
+      })),
+      insert: txInsertMock,
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockResolvedValue(undefined),
+        }),
+      }),
+    };
+
+    db.transaction.mockImplementationOnce(
+      async (callback: (innerTx: typeof tx) => unknown) => callback(tx),
+    );
+
+    const result = await service.supersedeIntent('intent-1', 'corr-supersede-1');
+
+    expect(result).toEqual({
+      intentId: 'intent-1',
+      status: 'SUPERSEDED',
+    });
+    expect(providerRefund).toHaveBeenCalledTimes(1);
+    expect(txInsertMock).toHaveBeenCalled();
+    expect(stateTransitionService.transitionAttempt).toHaveBeenCalledWith(
+      'attempt-comp-1',
+      'REFUND_REQUESTED',
+      expect.objectContaining({
+        correlationId: 'corr-supersede-1',
+      }),
+      'SENT',
+      tx,
+    );
+    expect(stateTransitionService.transitionAttempt).toHaveBeenCalledWith(
+      'attempt-comp-1',
+      'REFUNDED',
+      expect.objectContaining({
+        correlationId: 'corr-supersede-1',
+      }),
+      'REFUND_REQUESTED',
+      tx,
+    );
+    expect(stateTransitionService.transitionIntent).toHaveBeenCalledTimes(2);
+    expect(stateTransitionService.transitionIntent).toHaveBeenNthCalledWith(
+      1,
+      'intent-1',
+      'SUSPENDED',
+      expect.objectContaining({
+        correlationId: 'corr-supersede-1',
+      }),
+      'IN_PROGRESS',
+      tx,
+    );
+    expect(stateTransitionService.transitionIntent).toHaveBeenNthCalledWith(
+      2,
+      'intent-1',
+      'SUPERSEDED',
+      expect.objectContaining({
+        correlationId: 'corr-supersede-1',
+      }),
+      'SUSPENDED',
+      tx,
+    );
+    expect(stateTransitionService.transitionLeg).toHaveBeenCalledTimes(2);
+  });
+
+  it('moves cancel flow to RECONCILE_REQUIRED when compensation fails', async () => {
+    providerRegistry.assertCapability.mockImplementation(() => {
+      throw new BadRequestException({
+        error: 'PROVIDER_CAPABILITY_NOT_SUPPORTED',
+        message: 'Provider POINTS does not support CANCEL',
+      });
+    });
+
+    const createdAttempt = {
+      id: 'attempt-comp-2',
+      intentId: 'intent-1',
+      legId: 'leg-1',
+      attemptNo: 1,
+      status: 'CREATED',
+      providerTransactionId: null,
+      providerRequestId: null,
+      idempotencyKey: null,
+      errorCode: null,
+      errorMessage: null,
+      requestPayload: { operation: 'CANCEL' },
+      responsePayload: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const txInsertMock = jest.fn((table) => {
+      if (table === paymentAttempts) {
+        return {
+          values: jest.fn().mockReturnValue({
+            returning: jest.fn().mockResolvedValue([createdAttempt]),
+          }),
+        };
+      }
+
+      return {
+        values: jest.fn().mockResolvedValue(undefined),
+      };
+    });
+
+    const tx = {
+      execute: jest.fn().mockResolvedValue([
+        {
+          id: 'intent-1',
+          customerId: 'customer-1',
+          currency: 'KRW',
+          payableAmount: 10000,
+          status: 'IN_PROGRESS',
+          version: 0,
+        },
+      ]),
+      select: jest.fn().mockImplementation(() => ({
+        from: jest.fn((table) => {
+          if (table === paymentLegs) {
+            return {
+              where: jest.fn().mockResolvedValue([
+                {
+                  id: 'leg-1',
+                  intentId: 'intent-1',
+                  providerType: 'POINTS',
+                  amount: 10000,
+                  status: 'AUTHORIZED',
+                  isRequired: true,
+                  sequenceNo: 1,
+                  version: 0,
+                  metadata: {},
+                  createdAt: new Date(),
+                  updatedAt: new Date(),
+                },
+              ]),
+            };
+          }
+
+          if (table === paymentAttempts) {
+            return {
+              where: jest.fn().mockResolvedValue([{ maxAttemptNo: 0 }]),
+            };
+          }
+
+          throw new Error('Unexpected table in cancel compensation test');
+        }),
+      })),
+      insert: txInsertMock,
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockResolvedValue(undefined),
+        }),
+      }),
+    };
+
+    db.transaction.mockImplementationOnce(
+      async (callback: (innerTx: typeof tx) => unknown) => callback(tx),
+    );
+
+    const result = await service.cancelIntent('intent-1', 'corr-cancel-2');
+
+    expect(result).toEqual({
+      intentId: 'intent-1',
+      status: 'RECONCILE_REQUIRED',
+    });
+    expect(stateTransitionService.transitionAttempt).toHaveBeenCalledWith(
+      'attempt-comp-2',
+      'CANCEL_REQUESTED',
+      expect.objectContaining({
+        correlationId: 'corr-cancel-2',
+      }),
+      'SENT',
+      tx,
+    );
+    expect(stateTransitionService.transitionAttempt).toHaveBeenCalledWith(
+      'attempt-comp-2',
+      'FAILED_RETRYABLE',
+      expect.objectContaining({
+        correlationId: 'corr-cancel-2',
+      }),
+      'CANCEL_REQUESTED',
+      tx,
+    );
+    expect(stateTransitionService.transitionIntent).toHaveBeenCalledTimes(2);
+    expect(stateTransitionService.transitionIntent).toHaveBeenNthCalledWith(
+      1,
+      'intent-1',
+      'RECONCILING',
+      expect.objectContaining({
+        correlationId: 'corr-cancel-2',
+      }),
+      'IN_PROGRESS',
+      tx,
+    );
+    expect(stateTransitionService.transitionIntent).toHaveBeenNthCalledWith(
+      2,
+      'intent-1',
+      'RECONCILE_REQUIRED',
+      expect.objectContaining({
+        correlationId: 'corr-cancel-2',
+      }),
+      'RECONCILING',
+      tx,
+    );
+  });
 });
 
 function createSignedCreateIntentDto(

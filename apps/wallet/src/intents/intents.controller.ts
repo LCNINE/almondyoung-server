@@ -91,4 +91,34 @@ export class IntentsController {
       timestamp: new Date().toISOString(),
     };
   }
+
+  @Post(':intentId/cancel')
+  async cancelIntent(
+    @Param('intentId') intentId: string,
+    @Headers('x-correlation-id') correlationId?: string,
+  ) {
+    const data = await this.intentsService.cancelIntent(intentId, correlationId);
+
+    return {
+      success: true,
+      data,
+      error: null,
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  @Post(':intentId/supersede')
+  async supersedeIntent(
+    @Param('intentId') intentId: string,
+    @Headers('x-correlation-id') correlationId?: string,
+  ) {
+    const data = await this.intentsService.supersedeIntent(intentId, correlationId);
+
+    return {
+      success: true,
+      data,
+      error: null,
+      timestamp: new Date().toISOString(),
+    };
+  }
 }
