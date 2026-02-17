@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import {
   AuthorizationModule,
   JwtAuthGuard,
@@ -14,6 +14,14 @@ import { validateWalletEnv } from './config/env.validation';
 import { HealthController } from './health.controller';
 import { walletSchema } from './schema';
 import { StateTransitionService } from './domain/state-transition/state-transition.service';
+import {
+  DrizzleIdempotencyRepository,
+  IDEMPOTENCY_REPOSITORY,
+} from './domain/idempotency/idempotency.repository';
+import { IdempotencyService } from './domain/idempotency/idempotency.service';
+import { HttpIdempotencyInterceptor } from './domain/idempotency/http-idempotency.interceptor';
+import { IntentsController } from './intents/intents.controller';
+import { IntentsService } from './intents/intents.service';
 
 const combinedSchema = { ...walletSchema, ...authorizationSchema };
 
@@ -40,12 +48,22 @@ const combinedSchema = { ...walletSchema, ...authorizationSchema };
       enableDLQ: true,
     }),
   ],
-  controllers: [HealthController],
+  controllers: [HealthController, IntentsController],
   providers: [
     StateTransitionService,
+    IntentsService,
+    IdempotencyService,
+    {
+      provide: IDEMPOTENCY_REPOSITORY,
+      useClass: DrizzleIdempotencyRepository,
+    },
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: HttpIdempotencyInterceptor,
     },
   ],
 })
