@@ -51,4 +51,44 @@ export class IntentsController {
       timestamp: new Date().toISOString(),
     };
   }
+
+  @Post(':intentId/legs/:legId/authorize')
+  async authorizeLeg(
+    @Param('intentId') intentId: string,
+    @Param('legId') legId: string,
+    @Headers('x-correlation-id') correlationId?: string,
+  ) {
+    const data = await this.intentsService.authorizeLeg(
+      intentId,
+      legId,
+      correlationId,
+    );
+
+    return {
+      success: true,
+      data,
+      error: null,
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  @Post(':intentId/legs/:legId/capture')
+  async captureLeg(
+    @Param('intentId') intentId: string,
+    @Param('legId') legId: string,
+    @Headers('x-correlation-id') correlationId?: string,
+  ) {
+    const data = await this.intentsService.captureLeg(
+      intentId,
+      legId,
+      correlationId,
+    );
+
+    return {
+      success: true,
+      data,
+      error: null,
+      timestamp: new Date().toISOString(),
+    };
+  }
 }
