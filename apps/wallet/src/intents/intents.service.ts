@@ -6,23 +6,38 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { CreateIntentDto } from './dto/create-intent.dto';
 import { ConfigureLegsDto } from './dto/configure-legs.dto';
+import { CreateRefundRequestDto } from './dto/create-refund-request.dto';
 import {
   HmacVerificationError,
   verifyHmacIntegrity,
 } from '../domain/hmac/hmac-integrity';
 import {
+  ManualCancelQueueStatus,
+  PaymentReferenceType,
   PaymentIntentStatus,
   PaymentLegStatus,
+  RefundRequestStatus,
   WalletSchema,
+  manualCancelQueueItems,
+  outboxEvents,
+  refundAllocations,
+  refundRequests,
   paymentAttempts,
   paymentIntents,
   paymentLegs,
   paymentStateTransitions,
 } from '../schema';
-import { DbTx, PaymentAttempt, PaymentIntent, PaymentLeg } from '../types';
+import {
+  DbTx,
+  PaymentAttempt,
+  PaymentIntent,
+  PaymentLeg,
+  RefundAllocation,
+  RefundRequest,
+} from '../types';
 import { ProviderRegistry } from '../providers/provider.registry';
 import {
   ProviderOperation,
@@ -41,10 +56,17 @@ interface IntentTerminationResult {
   status: PaymentIntentStatus;
 }
 
+interface RefundRequestDetailResult {
+  refundRequest: RefundRequest;
+  allocations: RefundAllocation[];
+}
+
 type TerminationReason = 'CANCEL' | 'SUPERSEDE';
 
 interface LockedIntent {
   id: string;
+  referenceType: PaymentReferenceType;
+  referenceId: string;
   customerId: string;
   currency: string;
   payableAmount: number;
@@ -61,6 +83,22 @@ interface LockedLeg {
   version: number;
   metadata: Record<string, unknown>;
 }
+
+const OPEN_MANUAL_QUEUE_STATUSES: ManualCancelQueueStatus[] = [
+  'QUEUED',
+  'ASSIGNED',
+  'PROCESSING',
+  'FAILED_RETRYABLE',
+];
+
+const REFUND_LIMIT_BLOCKING_STATUSES: RefundRequestStatus[] = [
+  'REQUESTED',
+  'VALIDATED',
+  'PROCESSING',
+  'PARTIALLY_COMPLETED',
+  'COMPLETED',
+  'RECONCILE_REQUIRED',
+];
 
 @Injectable()
 export class IntentsService {
@@ -801,6 +839,377 @@ export class IntentsService {
     });
   }
 
+  async createRefundRequest(
+    intentId: string,
+    dto: CreateRefundRequestDto,
+    correlationId?: string,
+    actorId?: string,
+  ): Promise<RefundRequestDetailResult> {
+    const requestCorrelationId = correlationId?.trim() || randomUUID();
+    const requestedBy = actorId?.trim() || 'system';
+    const totalAllocationAmount = dto.allocation.reduce(
+      (sum, item) => sum + item.amount,
+      0,
+    );
+
+    if (totalAllocationAmount !== dto.refundAmount) {
+      throw new BadRequestException({
+        error: 'ALLOCATION_INVALID',
+        message: `sum(allocation.amount) must equal refundAmount: expected=${dto.refundAmount}, actual=${totalAllocationAmount}`,
+      });
+    }
+
+    const allocationLegIds = dto.allocation.map((item) => item.legId);
+    if (new Set(allocationLegIds).size !== allocationLegIds.length) {
+      throw new BadRequestException({
+        error: 'ALLOCATION_INVALID',
+        message: 'allocation must not contain duplicate legId',
+      });
+    }
+
+    return this.dbService.db.transaction(async (tx) => {
+      const intent = await this.lockIntentForRefundOrThrow(intentId, tx);
+      const lockedLegs = await this.lockLegsForRefund(intentId, allocationLegIds, tx);
+
+      if (lockedLegs.length !== allocationLegIds.length) {
+        throw new NotFoundException({
+          error: 'LEG_NOT_FOUND',
+          message: 'Some allocation legs were not found for this intent',
+        });
+      }
+
+      const refundedByLegId = await this.readRefundedAmountByLegId(
+        intentId,
+        allocationLegIds,
+        tx,
+      );
+      const legsById = new Map(lockedLegs.map((leg) => [leg.id, leg]));
+
+      for (const allocation of dto.allocation) {
+        const leg = legsById.get(allocation.legId);
+        if (!leg) {
+          throw new NotFoundException({
+            error: 'LEG_NOT_FOUND',
+            message: `Payment leg not found: ${allocation.legId}`,
+          });
+        }
+
+        if (leg.status !== 'CAPTURED') {
+          throw new BadRequestException({
+            error: 'ALLOCATION_INVALID',
+            message: `Allocation target leg must be CAPTURED: legId=${allocation.legId}, status=${leg.status}`,
+          });
+        }
+
+        const alreadyRefunded = refundedByLegId.get(leg.id) ?? 0;
+        if (alreadyRefunded + allocation.amount > leg.amount) {
+          throw new BadRequestException({
+            error: 'REFUND_LIMIT_EXCEEDED',
+            message: `Refund limit exceeded for leg=${leg.id}: captured=${leg.amount}, refunded=${alreadyRefunded}, requested=${allocation.amount}`,
+          });
+        }
+      }
+
+      const [createdRefundRequest] = await tx
+        .insert(refundRequests)
+        .values({
+          intentId,
+          referenceType: intent.referenceType,
+          referenceId: intent.referenceId,
+          status: 'REQUESTED',
+          refundAmount: dto.refundAmount,
+          currency: intent.currency,
+          reasonCode: dto.reasonCode,
+          reasonMessage: dto.reasonMessage,
+          requestedBy,
+          metadata: {},
+        })
+        .returning();
+
+      const createdAllocations = await tx
+        .insert(refundAllocations)
+        .values(
+          dto.allocation.map((item) => ({
+            refundRequestId: createdRefundRequest.id,
+            intentId,
+            legId: item.legId,
+            amount: item.amount,
+          })),
+        )
+        .returning();
+
+      await tx.insert(paymentStateTransitions).values({
+        entityType: 'REFUND_REQUEST',
+        entityId: createdRefundRequest.id,
+        previousStatus: null,
+        newStatus: 'REQUESTED',
+        reasonCode: 'REFUND_REQUEST_CREATED',
+        reasonMessage: 'Refund request created',
+        triggeredByType: 'USER',
+        triggeredById: requestedBy,
+        correlationId: requestCorrelationId,
+        occurredAt: new Date(),
+        payload: {
+          intentId,
+          refundAmount: dto.refundAmount,
+          allocation: dto.allocation,
+        },
+      });
+
+      await this.stateTransitionService.transitionRefundRequest(
+        createdRefundRequest.id,
+        'VALIDATED',
+        {
+          correlationId: requestCorrelationId,
+          reasonCode: 'REFUND_REQUEST_VALIDATED',
+          reasonMessage: 'Refund allocation validated',
+          triggeredByType: 'SYSTEM',
+          triggeredById: requestedBy,
+          payload: {
+            intentId,
+            allocationCount: dto.allocation.length,
+          },
+        },
+        'REQUESTED',
+        tx,
+      );
+
+      await this.stateTransitionService.transitionRefundRequest(
+        createdRefundRequest.id,
+        'PROCESSING',
+        {
+          correlationId: requestCorrelationId,
+          reasonCode: 'REFUND_REQUEST_PROCESSING_STARTED',
+          reasonMessage: 'Refund processing started',
+          triggeredByType: 'SYSTEM',
+          triggeredById: requestedBy,
+          payload: {
+            intentId,
+          },
+          outboxEvent: {
+            eventType: 'RefundRequested',
+            aggregateType: 'RefundRequest',
+            aggregateId: createdRefundRequest.id,
+            partitionKey: intentId,
+            payload: {
+              refundId: createdRefundRequest.id,
+              intentId,
+              referenceType: intent.referenceType,
+              referenceId: intent.referenceId,
+              customerId: intent.customerId,
+              refundAmount: dto.refundAmount,
+              currency: intent.currency,
+              allocation: dto.allocation,
+              occurredAt: new Date().toISOString(),
+            },
+          },
+        },
+        'VALIDATED',
+        tx,
+      );
+
+      let hasFailure = false;
+      let successCount = 0;
+      const manualQueueItemIds: string[] = [];
+
+      for (const allocation of dto.allocation) {
+        const leg = legsById.get(allocation.legId)!;
+        const alreadyRefunded = refundedByLegId.get(leg.id) ?? 0;
+        const shouldFullyRefundLeg = alreadyRefunded + allocation.amount >= leg.amount;
+
+        const result = await this.executeRefundAllocation(tx, {
+          intent,
+          leg,
+          allocationAmount: allocation.amount,
+          shouldFullyRefundLeg,
+          correlationId: requestCorrelationId,
+          requestedBy,
+          reasonCode: dto.reasonCode,
+          reasonMessage: dto.reasonMessage,
+        });
+
+        if (result.failed) {
+          hasFailure = true;
+          if (result.manualQueueItemId) {
+            manualQueueItemIds.push(result.manualQueueItemId);
+          }
+        } else {
+          successCount += 1;
+          refundedByLegId.set(leg.id, alreadyRefunded + allocation.amount);
+        }
+      }
+
+      if (!hasFailure) {
+        await this.stateTransitionService.transitionRefundRequest(
+          createdRefundRequest.id,
+          'COMPLETED',
+          {
+            correlationId: requestCorrelationId,
+            reasonCode: 'REFUND_REQUEST_COMPLETED',
+            reasonMessage: 'Refund request completed',
+            triggeredByType: 'SYSTEM',
+            triggeredById: requestedBy,
+            payload: {
+              intentId,
+              successfulAllocationCount: successCount,
+            },
+            outboxEvent: {
+              eventType: 'RefundCompleted',
+              aggregateType: 'RefundRequest',
+              aggregateId: createdRefundRequest.id,
+              partitionKey: intentId,
+              payload: {
+                refundId: createdRefundRequest.id,
+                intentId,
+                referenceType: intent.referenceType,
+                referenceId: intent.referenceId,
+                customerId: intent.customerId,
+                refundAmount: dto.refundAmount,
+                currency: intent.currency,
+                allocation: dto.allocation,
+                occurredAt: new Date().toISOString(),
+              },
+            },
+          },
+          'PROCESSING',
+          tx,
+        );
+      } else {
+        let currentRefundStatus: RefundRequestStatus = 'PROCESSING';
+
+        if (successCount > 0) {
+          await this.stateTransitionService.transitionRefundRequest(
+            createdRefundRequest.id,
+            'PARTIALLY_COMPLETED',
+            {
+              correlationId: requestCorrelationId,
+              reasonCode: 'REFUND_REQUEST_PARTIALLY_COMPLETED',
+              reasonMessage: 'Some allocations were refunded before failure',
+              triggeredByType: 'SYSTEM',
+              triggeredById: requestedBy,
+              payload: {
+                intentId,
+                successfulAllocationCount: successCount,
+              },
+            },
+            'PROCESSING',
+            tx,
+          );
+          currentRefundStatus = 'PARTIALLY_COMPLETED';
+        }
+
+        await this.stateTransitionService.transitionRefundRequest(
+          createdRefundRequest.id,
+          'RECONCILE_REQUIRED',
+          {
+            correlationId: requestCorrelationId,
+            reasonCode: 'REFUND_REQUEST_RECONCILE_REQUIRED',
+            reasonMessage: 'Refund request requires manual reconcile',
+            triggeredByType: 'SYSTEM',
+            triggeredById: requestedBy,
+            payload: {
+              intentId,
+              successfulAllocationCount: successCount,
+              failedAllocationCount: dto.allocation.length - successCount,
+              manualQueueItemIds,
+            },
+            outboxEvent: {
+              eventType: 'RefundFailed',
+              aggregateType: 'RefundRequest',
+              aggregateId: createdRefundRequest.id,
+              partitionKey: intentId,
+              payload: {
+                refundId: createdRefundRequest.id,
+                intentId,
+                referenceType: intent.referenceType,
+                referenceId: intent.referenceId,
+                customerId: intent.customerId,
+                refundAmount: dto.refundAmount,
+                currency: intent.currency,
+                allocation: dto.allocation,
+                reasonCode: 'REFUND_REQUEST_RECONCILE_REQUIRED',
+                reasonMessage: 'Refund request requires manual reconcile',
+                requiresManualAction: true,
+                manualQueueItemId: manualQueueItemIds[0] ?? null,
+                manualQueueItemIds,
+                occurredAt: new Date().toISOString(),
+              },
+            },
+          },
+          currentRefundStatus,
+          tx,
+        );
+
+        await tx.insert(outboxEvents).values({
+          eventType: 'PaymentReconcileRequired',
+          aggregateType: 'PaymentIntent',
+          aggregateId: intentId,
+          partitionKey: intentId,
+          payload: {
+            intentId,
+            referenceType: intent.referenceType,
+            referenceId: intent.referenceId,
+            customerId: intent.customerId,
+            status: 'RECONCILE_REQUIRED',
+            reasonCode: 'REFUND_REQUEST_RECONCILE_REQUIRED',
+            reasonMessage: 'Refund request requires manual reconcile',
+            requiresManualAction: true,
+            manualQueueItemId: manualQueueItemIds[0] ?? null,
+            manualQueueItemIds,
+            occurredAt: new Date().toISOString(),
+          },
+          status: 'PENDING',
+          attempts: 0,
+          nextAttemptAt: new Date(),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      }
+
+      const refreshedRows = await tx
+        .select()
+        .from(refundRequests)
+        .where(eq(refundRequests.id, createdRefundRequest.id))
+        .limit(1);
+      const refreshedRefundRequest = refreshedRows[0];
+
+      if (!refreshedRefundRequest) {
+        throw new Error(`REFUND_REQUEST_NOT_FOUND: ${createdRefundRequest.id}`);
+      }
+
+      return {
+        refundRequest: refreshedRefundRequest,
+        allocations: createdAllocations,
+      };
+    });
+  }
+
+  async getRefundRequest(refundId: string): Promise<RefundRequestDetailResult> {
+    const rows = await this.dbService.db
+      .select()
+      .from(refundRequests)
+      .where(eq(refundRequests.id, refundId))
+      .limit(1);
+    const refundRequest = rows[0];
+
+    if (!refundRequest) {
+      throw new NotFoundException({
+        error: 'REFUND_REQUEST_NOT_FOUND',
+        message: `Refund request not found: ${refundId}`,
+      });
+    }
+
+    const allocations = await this.dbService.db
+      .select()
+      .from(refundAllocations)
+      .where(eq(refundAllocations.refundRequestId, refundId));
+
+    return {
+      refundRequest,
+      allocations,
+    };
+  }
+
   private async compensateIntentLegs(
     tx: DbTx,
     intent: LockedIntent,
@@ -1129,6 +1538,397 @@ export class IntentsService {
       );
 
       return true;
+    }
+  }
+
+  private async executeRefundAllocation(
+    tx: DbTx,
+    input: {
+      intent: {
+        id: string;
+        customerId: string;
+        currency: string;
+      };
+      leg: LockedLeg;
+      allocationAmount: number;
+      shouldFullyRefundLeg: boolean;
+      correlationId: string;
+      requestedBy: string;
+      reasonCode: string;
+      reasonMessage?: string;
+    },
+  ): Promise<{ failed: boolean; manualQueueItemId?: string }> {
+    const {
+      intent,
+      leg,
+      allocationAmount,
+      shouldFullyRefundLeg,
+      correlationId,
+      requestedBy,
+      reasonCode,
+      reasonMessage,
+    } = input;
+
+    const attempt = await this.createAttempt(tx, {
+      intentId: intent.id,
+      legId: leg.id,
+      operation: 'REFUND',
+      correlationId,
+      triggeredById: requestedBy,
+    });
+
+    await this.stateTransitionService.transitionAttempt(
+      attempt.id,
+      'SENT',
+      {
+        correlationId,
+        causationId: leg.id,
+        reasonCode: 'PROVIDER_REFUND_REQUEST_SENT',
+        reasonMessage: 'Provider refund request sent',
+        triggeredByType: 'SYSTEM',
+        triggeredById: requestedBy,
+        payload: {
+          operation: 'REFUND',
+          amount: allocationAmount,
+        },
+      },
+      'CREATED',
+      tx,
+    );
+
+    await this.stateTransitionService.transitionAttempt(
+      attempt.id,
+      'REFUND_REQUESTED',
+      {
+        correlationId,
+        causationId: leg.id,
+        reasonCode: 'PROVIDER_REFUND_REQUEST_ACCEPTED',
+        reasonMessage: 'Provider refund request accepted',
+        triggeredByType: 'SYSTEM',
+        triggeredById: requestedBy,
+        payload: {
+          operation: 'REFUND',
+          amount: allocationAmount,
+        },
+      },
+      'SENT',
+      tx,
+    );
+
+    try {
+      const provider = this.providerRegistry.assertCapability(leg.providerType, 'REFUND', {
+        intentId: intent.id,
+        legId: leg.id,
+      });
+
+      const providerResult = await provider.refund({
+        intentId: intent.id,
+        legId: leg.id,
+        attemptId: attempt.id,
+        amount: allocationAmount,
+        currency: intent.currency,
+        customerId: intent.customerId,
+        correlationId,
+        metadata: leg.metadata,
+      });
+
+      await this.persistProviderAttemptResult(tx, attempt.id, providerResult);
+
+      if (providerResult.resultStatus !== 'REFUNDED') {
+        const queueItemId = await this.markRefundFailureForLeg(tx, {
+          intentId: intent.id,
+          legId: leg.id,
+          attemptId: attempt.id,
+          correlationId,
+          requestedBy,
+          reasonCode: 'PROVIDER_REFUND_FAILED',
+          reasonMessage: `Unexpected provider refund status: ${providerResult.resultStatus}`,
+        });
+        return { failed: true, manualQueueItemId: queueItemId };
+      }
+
+      await this.stateTransitionService.transitionAttempt(
+        attempt.id,
+        'REFUNDED',
+        {
+          correlationId,
+          causationId: leg.id,
+          reasonCode: 'PROVIDER_REFUND_SUCCEEDED',
+          reasonMessage: 'Provider refund succeeded',
+          triggeredByType: 'SYSTEM',
+          triggeredById: requestedBy,
+          payload: {
+            operation: 'REFUND',
+            amount: allocationAmount,
+            providerTransactionId: providerResult.providerTransactionId,
+          },
+        },
+        'REFUND_REQUESTED',
+        tx,
+      );
+
+      if (shouldFullyRefundLeg) {
+        await this.stateTransitionService.transitionLeg(
+          leg.id,
+          'REFUNDING',
+          {
+            correlationId,
+            reasonCode: 'LEG_REFUNDING_STARTED',
+            reasonMessage: 'Leg refunding started',
+            triggeredByType: 'SYSTEM',
+            triggeredById: requestedBy,
+            payload: {
+              operation: 'REFUND',
+              amount: allocationAmount,
+            },
+          },
+          'CAPTURED',
+          tx,
+        );
+
+        await this.stateTransitionService.transitionLeg(
+          leg.id,
+          'REFUNDED',
+          {
+            correlationId,
+            reasonCode: 'LEG_REFUNDED',
+            reasonMessage: 'Leg refunded',
+            triggeredByType: 'SYSTEM',
+            triggeredById: requestedBy,
+            payload: {
+              operation: 'REFUND',
+              amount: allocationAmount,
+              reasonCode,
+              reasonMessage: reasonMessage ?? null,
+            },
+          },
+          'REFUNDING',
+          tx,
+        );
+      }
+
+      return { failed: false };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Provider refund call failed';
+      const queueItemId = await this.markRefundFailureForLeg(tx, {
+        intentId: intent.id,
+        legId: leg.id,
+        attemptId: attempt.id,
+        correlationId,
+        requestedBy,
+        reasonCode: 'PROVIDER_REFUND_FAILED',
+        reasonMessage: errorMessage,
+      });
+      return { failed: true, manualQueueItemId: queueItemId };
+    }
+  }
+
+  private async markRefundFailureForLeg(
+    tx: DbTx,
+    input: {
+      intentId: string;
+      legId: string;
+      attemptId: string;
+      correlationId: string;
+      requestedBy: string;
+      reasonCode: string;
+      reasonMessage: string;
+    },
+  ): Promise<string> {
+    await this.persistProviderAttemptFailure(
+      tx,
+      input.attemptId,
+      input.reasonCode,
+      input.reasonMessage,
+    );
+
+    await this.stateTransitionService.transitionAttempt(
+      input.attemptId,
+      'FAILED_RETRYABLE',
+      {
+        correlationId: input.correlationId,
+        causationId: input.legId,
+        reasonCode: input.reasonCode,
+        reasonMessage: input.reasonMessage,
+        triggeredByType: 'SYSTEM',
+        triggeredById: input.requestedBy,
+        payload: {
+          operation: 'REFUND',
+        },
+      },
+      'REFUND_REQUESTED',
+      tx,
+    );
+
+    await this.stateTransitionService.transitionLeg(
+      input.legId,
+      'REFUNDING',
+      {
+        correlationId: input.correlationId,
+        reasonCode: 'LEG_REFUNDING_STARTED',
+        reasonMessage: 'Leg refunding started',
+        triggeredByType: 'SYSTEM',
+        triggeredById: input.requestedBy,
+        payload: {
+          operation: 'REFUND',
+        },
+      },
+      'CAPTURED',
+      tx,
+    );
+
+    await this.stateTransitionService.transitionLeg(
+      input.legId,
+      'RECONCILE_REQUIRED',
+      {
+        correlationId: input.correlationId,
+        reasonCode: 'LEG_REFUND_FAILED',
+        reasonMessage: input.reasonMessage,
+        triggeredByType: 'SYSTEM',
+        triggeredById: input.requestedBy,
+        payload: {
+          operation: 'REFUND',
+          reasonCode: input.reasonCode,
+        },
+      },
+      'REFUNDING',
+      tx,
+    );
+
+    return this.upsertManualRefundQueueItem(tx, {
+      intentId: input.intentId,
+      legId: input.legId,
+      correlationId: input.correlationId,
+      requestedBy: input.requestedBy,
+      reasonCode: input.reasonCode,
+      reasonMessage: input.reasonMessage,
+    });
+  }
+
+  private async upsertManualRefundQueueItem(
+    tx: DbTx,
+    input: {
+      intentId: string;
+      legId: string;
+      correlationId: string;
+      requestedBy: string;
+      reasonCode: string;
+      reasonMessage: string;
+    },
+  ): Promise<string> {
+    const existingOpenItems = await tx
+      .select({
+        id: manualCancelQueueItems.id,
+      })
+      .from(manualCancelQueueItems)
+      .where(
+        and(
+          eq(manualCancelQueueItems.intentId, input.intentId),
+          eq(manualCancelQueueItems.legId, input.legId),
+          inArray(manualCancelQueueItems.status, OPEN_MANUAL_QUEUE_STATUSES),
+        ),
+      )
+      .limit(1);
+
+    const existing = existingOpenItems[0];
+    if (existing) {
+      await tx
+        .update(manualCancelQueueItems)
+        .set({
+          actionType: 'REFUND',
+          reasonCode: input.reasonCode,
+          reasonMessage: input.reasonMessage,
+          lastErrorCode: input.reasonCode,
+          lastErrorMessage: input.reasonMessage,
+          retryCount: sql`${manualCancelQueueItems.retryCount} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(eq(manualCancelQueueItems.id, existing.id));
+      return existing.id;
+    }
+
+    try {
+      const insertedItems = await tx
+        .insert(manualCancelQueueItems)
+        .values({
+          intentId: input.intentId,
+          legId: input.legId,
+          actionType: 'REFUND',
+          status: 'QUEUED',
+          reasonCode: input.reasonCode,
+          reasonMessage: input.reasonMessage,
+          priority: 'normal',
+          retryCount: 0,
+          lastErrorCode: input.reasonCode,
+          lastErrorMessage: input.reasonMessage,
+        })
+        .returning({
+          id: manualCancelQueueItems.id,
+        });
+
+      const inserted = insertedItems[0];
+      if (!inserted) {
+        throw new Error('MANUAL_QUEUE_INSERT_FAILED');
+      }
+
+      await tx.insert(paymentStateTransitions).values({
+        entityType: 'MANUAL_CANCEL_QUEUE_ITEM',
+        entityId: inserted.id,
+        previousStatus: null,
+        newStatus: 'QUEUED',
+        reasonCode: 'MANUAL_QUEUE_ITEM_CREATED',
+        reasonMessage: 'Manual queue item created for refund reconcile',
+        triggeredByType: 'SYSTEM',
+        triggeredById: input.requestedBy,
+        correlationId: input.correlationId,
+        occurredAt: new Date(),
+        payload: {
+          intentId: input.intentId,
+          legId: input.legId,
+          actionType: 'REFUND',
+        },
+      });
+
+      return inserted.id;
+    } catch (error) {
+      if (!isOpenManualQueueUniqueViolation(error)) {
+        throw error;
+      }
+
+      const conflictOpenItems = await tx
+        .select({
+          id: manualCancelQueueItems.id,
+        })
+        .from(manualCancelQueueItems)
+        .where(
+          and(
+            eq(manualCancelQueueItems.intentId, input.intentId),
+            eq(manualCancelQueueItems.legId, input.legId),
+            inArray(manualCancelQueueItems.status, OPEN_MANUAL_QUEUE_STATUSES),
+          ),
+        )
+        .limit(1);
+
+      const conflictItem = conflictOpenItems[0];
+      if (!conflictItem) {
+        throw error;
+      }
+
+      await tx
+        .update(manualCancelQueueItems)
+        .set({
+          actionType: 'REFUND',
+          reasonCode: input.reasonCode,
+          reasonMessage: input.reasonMessage,
+          lastErrorCode: input.reasonCode,
+          lastErrorMessage: input.reasonMessage,
+          retryCount: sql`${manualCancelQueueItems.retryCount} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(eq(manualCancelQueueItems.id, conflictItem.id));
+
+      return conflictItem.id;
     }
   }
 
@@ -1649,6 +2449,8 @@ export class IntentsService {
     const rows = (await tx.execute(sql`
       select
         id,
+        reference_type as "referenceType",
+        reference_id as "referenceId",
         customer_id as "customerId",
         currency,
         payable_amount as "payableAmount",
@@ -1699,6 +2501,86 @@ export class IntentsService {
     }
 
     return leg;
+  }
+
+  private async lockIntentForRefundOrThrow(
+    intentId: string,
+    tx: DbTx,
+  ): Promise<LockedIntent> {
+    const intent = await this.lockIntentOrThrow(intentId, tx);
+
+    if (intent.status !== 'PARTIALLY_CAPTURED' && intent.status !== 'SUCCEEDED') {
+      throw new ConflictException({
+        error: 'INTENT_STATE_INVALID_FOR_REFUND',
+        message: `Intent status ${intent.status} cannot request refund`,
+      });
+    }
+
+    return intent;
+  }
+
+  private async lockLegsForRefund(
+    intentId: string,
+    legIds: string[],
+    tx: DbTx,
+  ): Promise<LockedLeg[]> {
+    if (legIds.length === 0) {
+      return [];
+    }
+
+    const legIdBindings = legIds.map((id) => sql`${id}`);
+    const rows = (await tx.execute(sql`
+      select
+        id,
+        intent_id as "intentId",
+        provider_type as "providerType",
+        amount,
+        status,
+        version,
+        metadata
+      from payment_legs
+      where intent_id = ${intentId}
+        and id in (${sql.join(legIdBindings, sql`, `)})
+      for update
+    `)) as unknown as LockedLeg[];
+
+    return rows;
+  }
+
+  private async readRefundedAmountByLegId(
+    intentId: string,
+    legIds: string[],
+    tx: DbTx,
+  ): Promise<Map<string, number>> {
+    if (legIds.length === 0) {
+      return new Map<string, number>();
+    }
+
+    const rows = await tx
+      .select({
+        legId: refundAllocations.legId,
+        refundedAmount: sql<number>`coalesce(sum(${refundAllocations.amount}), 0)`,
+      })
+      .from(refundAllocations)
+      .innerJoin(
+        refundRequests,
+        eq(refundAllocations.refundRequestId, refundRequests.id),
+      )
+      .where(
+        and(
+          eq(refundAllocations.intentId, intentId),
+          inArray(refundAllocations.legId, legIds),
+          inArray(refundRequests.status, REFUND_LIMIT_BLOCKING_STATUSES),
+        ),
+      )
+      .groupBy(refundAllocations.legId);
+
+    const refundedByLegId = new Map<string, number>();
+    for (const row of rows) {
+      refundedByLegId.set(row.legId, Number(row.refundedAmount ?? 0));
+    }
+
+    return refundedByLegId;
   }
 
   private assertIntentCanConfigureLegs(
@@ -1806,6 +2688,43 @@ function isReferenceBlockingUniqueViolation(error: unknown): boolean {
 
   if (current.originalError) {
     return isReferenceBlockingUniqueViolation(current.originalError);
+  }
+
+  return false;
+}
+
+function isOpenManualQueueUniqueViolation(error: unknown): boolean {
+  const current = error as
+    | {
+        code?: string;
+        constraint?: string;
+        message?: string;
+        cause?: unknown;
+        originalError?: unknown;
+      }
+    | undefined;
+
+  if (!current) {
+    return false;
+  }
+
+  if (
+    current.code === '23505' &&
+    current.constraint === 'uq_manual_cancel_queue_open_intent_leg'
+  ) {
+    return true;
+  }
+
+  if ((current.message ?? '').includes('uq_manual_cancel_queue_open_intent_leg')) {
+    return true;
+  }
+
+  if (current.cause) {
+    return isOpenManualQueueUniqueViolation(current.cause);
+  }
+
+  if (current.originalError) {
+    return isOpenManualQueueUniqueViolation(current.originalError);
   }
 
   return false;

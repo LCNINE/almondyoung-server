@@ -22,6 +22,7 @@ import { IdempotencyService } from './domain/idempotency/idempotency.service';
 import { HttpIdempotencyInterceptor } from './domain/idempotency/http-idempotency.interceptor';
 import { IntentsController } from './intents/intents.controller';
 import { IntentsService } from './intents/intents.service';
+import { RefundRequestsController } from './intents/refund-requests.controller';
 import { PointsPaymentProvider } from './providers/points.provider';
 import { ProviderRegistry } from './providers/provider.registry';
 
@@ -50,7 +51,7 @@ const combinedSchema = { ...walletSchema, ...authorizationSchema };
       enableDLQ: true,
     }),
   ],
-  controllers: [HealthController, IntentsController],
+  controllers: [HealthController, IntentsController, RefundRequestsController],
   providers: [
     StateTransitionService,
     IntentsService,

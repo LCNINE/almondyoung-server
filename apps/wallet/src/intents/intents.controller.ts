@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Headers, Param, Post, Put } from '@nestjs/common';
 import { CreateIntentDto } from './dto/create-intent.dto';
 import { ConfigureLegsDto } from './dto/configure-legs.dto';
+import { CreateRefundRequestDto } from './dto/create-refund-request.dto';
 import { IntentsService } from './intents.service';
 
 @Controller('v1/intents')
@@ -113,6 +114,28 @@ export class IntentsController {
     @Headers('x-correlation-id') correlationId?: string,
   ) {
     const data = await this.intentsService.supersedeIntent(intentId, correlationId);
+
+    return {
+      success: true,
+      data,
+      error: null,
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  @Post(':intentId/refund-requests')
+  async createRefundRequest(
+    @Param('intentId') intentId: string,
+    @Body() dto: CreateRefundRequestDto,
+    @Headers('x-correlation-id') correlationId?: string,
+    @Headers('x-actor-id') actorId?: string,
+  ) {
+    const data = await this.intentsService.createRefundRequest(
+      intentId,
+      dto,
+      correlationId,
+      actorId,
+    );
 
     return {
       success: true,
