@@ -155,6 +155,7 @@
     "test:payment:integration": "jest --testPathPattern=payment-flow.integration.spec.ts",
     "test:wallet:constraints": "RUN_WALLET_DB_TESTS=1 dotenv -e apps/wallet/.env.test -- jest apps/wallet/src/database/schema.constraints.integration.spec.ts --runInBand",
     "test:wallet:phase2": "RUN_WALLET_DB_TESTS=1 dotenv -e apps/wallet/.env.test -- jest apps/wallet/src/intents/intents.phase2.core.integration.spec.ts apps/wallet/src/intents/intents.phase2.legs.integration.spec.ts apps/wallet/src/intents/intents.phase2.idempotency.integration.spec.ts apps/wallet/src/intents/intents.phase2.supersede.integration.spec.ts --maxWorkers=2 --verbose --testTimeout=180000",
+    "test:wallet:phase3": "RUN_WALLET_DB_TESTS=1 dotenv -e apps/wallet/.env.test -- jest apps/wallet/src/intents/intents.phase3.refunds.integration.spec.ts --runInBand --verbose --testTimeout=180000",
     "test:naver-token": "ts-node apps/channel-adapter/test-naver-token.ts",
     "test:naver-sync": "ts-node apps/channel-adapter/test-naver-sync.ts",
     "test:naver-sync:token": "ts-node apps/channel-adapter/test-naver-sync.ts token",
