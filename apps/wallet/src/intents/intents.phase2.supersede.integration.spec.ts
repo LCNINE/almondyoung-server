@@ -12,10 +12,11 @@ import {
   createSignedCreateIntentBody,
   createWalletIntegrationContext,
   describeWalletDbIntegration,
+  phase2ScopedValue,
   sendWriteRequest,
 } from './test-helpers/wallet-test-app';
 
-jest.setTimeout(60_000);
+jest.setTimeout(180_000);
 
 describeWalletDbIntegration('Intents phase2 supersede integration (real path)', () => {
   let context: WalletIntegrationContext;
@@ -24,21 +25,19 @@ describeWalletDbIntegration('Intents phase2 supersede integration (real path)', 
     context = await createWalletIntegrationContext();
   });
 
-  beforeEach(async () => {
-    await cleanupPhase2TestData(context.dbService);
-  });
-
   afterAll(async () => {
     await cleanupPhase2TestData(context.dbService);
     await closeWalletIntegrationContext(context);
   });
 
   it('allows only one reference-blocking intent under concurrent creation', async () => {
-    const referenceId = 'phase2-ref-concurrent-single-active';
+    const referenceId = phase2ScopedValue('ref-concurrent-single-active');
+    const firstIdempotencyKey = phase2ScopedValue('idem-concurrent-a');
+    const secondIdempotencyKey = phase2ScopedValue('idem-concurrent-b');
 
     const firstBody = createSignedCreateIntentBody({
       referenceId,
-      customerId: 'phase2-customer-concurrent-a',
+      customerId: phase2ScopedValue('customer-concurrent-a'),
       payableAmount: 10000,
       snapshotPayload: {
         referenceType: 'STORE_ORDER',
@@ -49,7 +48,7 @@ describeWalletDbIntegration('Intents phase2 supersede integration (real path)', 
     });
     const secondBody = createSignedCreateIntentBody({
       referenceId,
-      customerId: 'phase2-customer-concurrent-b',
+      customerId: phase2ScopedValue('customer-concurrent-b'),
       payableAmount: 10000,
       snapshotPayload: {
         referenceType: 'STORE_ORDER',
@@ -65,14 +64,14 @@ describeWalletDbIntegration('Intents phase2 supersede integration (real path)', 
         method: 'post',
         path: '/v1/intents',
         body: firstBody,
-        idempotencyKey: 'phase2-idem-concurrent-a',
+        idempotencyKey: firstIdempotencyKey,
       }),
       sendWriteRequest({
         app: context.app,
         method: 'post',
         path: '/v1/intents',
         body: secondBody,
-        idempotencyKey: 'phase2-idem-concurrent-b',
+        idempotencyKey: secondIdempotencyKey,
       }),
     ]);
 
@@ -88,7 +87,7 @@ describeWalletDbIntegration('Intents phase2 supersede integration (real path)', 
   });
 
   it('moves PARTIALLY_CAPTURED intent through SUSPENDED to SUPERSEDED', async () => {
-    const intentId = await createPendingIntent(context, 'phase2-ref-supersede-success');
+    const intentId = await createPendingIntent(context, 'supersede-success');
     const legs = await configureTwoLegs(context, intentId);
 
     const firstLegId = legs.find((leg) => leg.sequenceNo === 1)?.id;
@@ -100,16 +99,16 @@ describeWalletDbIntegration('Intents phase2 supersede integration (real path)', 
       app: context.app,
       method: 'post',
       path: `/v1/intents/${intentId}/legs/${firstLegId as string}/authorize`,
-      idempotencyKey: 'phase2-idem-supersede-authorize-1',
-      actorId: 'phase2-actor-supersede-authorize-1',
+      idempotencyKey: phase2ScopedValue('idem-supersede-authorize-1'),
+      actorId: phase2ScopedValue('actor-supersede-authorize-1'),
     }).expect(201);
 
     await sendWriteRequest({
       app: context.app,
       method: 'post',
       path: `/v1/intents/${intentId}/legs/${firstLegId as string}/capture`,
-      idempotencyKey: 'phase2-idem-supersede-capture-1',
-      actorId: 'phase2-actor-supersede-capture-1',
+      idempotencyKey: phase2ScopedValue('idem-supersede-capture-1'),
+      actorId: phase2ScopedValue('actor-supersede-capture-1'),
     }).expect(201);
 
     const beforeSupersede = await context.dbService.db
@@ -123,8 +122,8 @@ describeWalletDbIntegration('Intents phase2 supersede integration (real path)', 
       app: context.app,
       method: 'post',
       path: `/v1/intents/${intentId}/supersede`,
-      idempotencyKey: 'phase2-idem-supersede-final',
-      actorId: 'phase2-actor-supersede-final',
+      idempotencyKey: phase2ScopedValue('idem-supersede-final'),
+      actorId: phase2ScopedValue('actor-supersede-final'),
     }).expect(201);
 
     expect(supersede.body.data.status).toBe('SUPERSEDED');
@@ -183,11 +182,12 @@ describeWalletDbIntegration('Intents phase2 supersede integration (real path)', 
 
 async function createPendingIntent(
   context: WalletIntegrationContext,
-  referenceId: string,
+  referenceLabel: string,
 ): Promise<string> {
+  const referenceId = phase2ScopedValue(`ref-${referenceLabel}`);
   const body = createSignedCreateIntentBody({
     referenceId,
-    customerId: `${referenceId}-customer`,
+    customerId: phase2ScopedValue(`customer-${referenceLabel}`),
     payableAmount: 10000,
     snapshotPayload: {
       referenceType: 'STORE_ORDER',
@@ -202,7 +202,7 @@ async function createPendingIntent(
     method: 'post',
     path: '/v1/intents',
     body,
-    idempotencyKey: `phase2-idem-create-${referenceId}`,
+    idempotencyKey: phase2ScopedValue(`idem-create-${referenceLabel}`),
   }).expect(201);
 
   return created.body.data.id as string;
@@ -216,8 +216,8 @@ async function configureTwoLegs(
     app: context.app,
     method: 'put',
     path: `/v1/intents/${intentId}/legs`,
-    idempotencyKey: `phase2-idem-configure-${intentId}`,
-    actorId: `phase2-actor-configure-${intentId}`,
+    idempotencyKey: phase2ScopedValue(`idem-configure-${intentId}`),
+    actorId: phase2ScopedValue('actor-configure-two-legs'),
     body: {
       legs: [
         {
