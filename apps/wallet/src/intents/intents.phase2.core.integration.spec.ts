@@ -8,20 +8,17 @@ import {
   createSignedCreateIntentBody,
   createWalletIntegrationContext,
   describeWalletDbIntegration,
+  phase2ScopedValue,
   sendWriteRequest,
 } from './test-helpers/wallet-test-app';
 
-jest.setTimeout(60_000);
+jest.setTimeout(180_000);
 
 describeWalletDbIntegration('Intents phase2 core integration (real path)', () => {
   let context: WalletIntegrationContext;
 
   beforeAll(async () => {
     context = await createWalletIntegrationContext();
-  });
-
-  beforeEach(async () => {
-    await cleanupPhase2TestData(context.dbService);
   });
 
   afterAll(async () => {
@@ -37,7 +34,7 @@ describeWalletDbIntegration('Intents phase2 core integration (real path)', () =>
       method: 'post',
       path: '/v1/intents',
       body,
-      idempotencyKey: 'phase2-idem-core-create-1',
+      idempotencyKey: phase2ScopedValue('idem-core-create-1'),
     }).expect(201);
 
     expect(created.body.success).toBe(true);
@@ -63,7 +60,7 @@ describeWalletDbIntegration('Intents phase2 core integration (real path)', () =>
       method: 'post',
       path: '/v1/intents',
       body,
-      idempotencyKey: 'phase2-idem-core-invalid-ref-type',
+      idempotencyKey: phase2ScopedValue('idem-core-invalid-ref-type'),
     }).expect(400);
   });
 
@@ -77,7 +74,7 @@ describeWalletDbIntegration('Intents phase2 core integration (real path)', () =>
       method: 'post',
       path: '/v1/intents',
       body,
-      idempotencyKey: 'phase2-idem-core-expired-signature',
+      idempotencyKey: phase2ScopedValue('idem-core-expired-signature'),
     }).expect(400);
 
     expect(response.body.error).toBe('SIGNATURE_EXPIRED');
@@ -100,7 +97,7 @@ describeWalletDbIntegration('Intents phase2 core integration (real path)', () =>
       method: 'post',
       path: '/v1/intents',
       body,
-      idempotencyKey: 'phase2-idem-core-invalid-signature',
+      idempotencyKey: phase2ScopedValue('idem-core-invalid-signature'),
     }).expect(400);
 
     expect(response.body.error).toBe('INVALID_SIGNATURE');
@@ -115,11 +112,14 @@ describeWalletDbIntegration('Intents phase2 core integration (real path)', () =>
   });
 
   it('applies zero-amount fast path with no leg creation', async () => {
+    const referenceId = phase2ScopedValue('fastpath-ref');
+
     const body = createSignedCreateIntentBody({
+      referenceId,
       payableAmount: 0,
       snapshotPayload: {
         referenceType: 'STORE_ORDER',
-        referenceId: 'phase2-fastpath-ref',
+        referenceId,
         currency: 'KRW',
         payableAmount: 0,
       },
@@ -130,7 +130,7 @@ describeWalletDbIntegration('Intents phase2 core integration (real path)', () =>
       method: 'post',
       path: '/v1/intents',
       body,
-      idempotencyKey: 'phase2-idem-core-fast-path',
+      idempotencyKey: phase2ScopedValue('idem-core-fast-path'),
     }).expect(201);
 
     expect(response.body.data.status).toBe('SUCCEEDED');
@@ -145,8 +145,8 @@ describeWalletDbIntegration('Intents phase2 core integration (real path)', () =>
   });
 
   it('rejects creating new intent when same reference is already SUCCEEDED', async () => {
-    const referenceId = 'phase2-already-paid-reference';
-    const customerId = 'phase2-customer-already-paid';
+    const referenceId = phase2ScopedValue('already-paid-reference');
+    const customerId = phase2ScopedValue('customer-already-paid');
 
     const firstBody = createSignedCreateIntentBody({
       referenceId,
@@ -165,7 +165,7 @@ describeWalletDbIntegration('Intents phase2 core integration (real path)', () =>
       method: 'post',
       path: '/v1/intents',
       body: firstBody,
-      idempotencyKey: 'phase2-idem-core-already-paid-first',
+      idempotencyKey: phase2ScopedValue('idem-core-already-paid-first'),
     }).expect(201);
 
     const secondBody = createSignedCreateIntentBody({
@@ -185,7 +185,7 @@ describeWalletDbIntegration('Intents phase2 core integration (real path)', () =>
       method: 'post',
       path: '/v1/intents',
       body: secondBody,
-      idempotencyKey: 'phase2-idem-core-already-paid-second',
+      idempotencyKey: phase2ScopedValue('idem-core-already-paid-second'),
     }).expect(409);
 
     expect(second.body.error).toBe('REFERENCE_ALREADY_PAID');

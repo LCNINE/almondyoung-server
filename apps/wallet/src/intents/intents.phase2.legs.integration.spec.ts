@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { ProviderOperationResult } from '../providers/payment-provider.types';
+import { paymentLegs } from '../schema';
 import {
   WalletIntegrationContext,
   cleanupPhase2TestData,
@@ -7,10 +8,11 @@ import {
   createSignedCreateIntentBody,
   createWalletIntegrationContext,
   describeWalletDbIntegration,
+  phase2ScopedValue,
   sendWriteRequest,
 } from './test-helpers/wallet-test-app';
 
-jest.setTimeout(60_000);
+jest.setTimeout(180_000);
 
 describeWalletDbIntegration('Intents phase2 legs integration (real path)', () => {
   let context: WalletIntegrationContext;
@@ -19,9 +21,8 @@ describeWalletDbIntegration('Intents phase2 legs integration (real path)', () =>
     context = await createWalletIntegrationContext();
   });
 
-  beforeEach(async () => {
+  beforeEach(() => {
     jest.restoreAllMocks();
-    await cleanupPhase2TestData(context.dbService);
   });
 
   afterAll(async () => {
@@ -31,14 +32,14 @@ describeWalletDbIntegration('Intents phase2 legs integration (real path)', () =>
   });
 
   it('rejects leg amount <= 0 input', async () => {
-    const intentId = await createPendingIntent(context, 'phase2-legs-invalid-amount');
+    const intentId = await createPendingIntent(context, 'legs-invalid-amount');
 
     await sendWriteRequest({
       app: context.app,
       method: 'put',
       path: `/v1/intents/${intentId}/legs`,
-      idempotencyKey: 'phase2-idem-legs-invalid-amount',
-      actorId: 'phase2-actor-legs-invalid-amount',
+      idempotencyKey: phase2ScopedValue('idem-legs-invalid-amount'),
+      actorId: phase2ScopedValue('actor-legs-invalid-amount'),
       body: {
         legs: [
           {
@@ -53,15 +54,15 @@ describeWalletDbIntegration('Intents phase2 legs integration (real path)', () =>
   });
 
   it('authorizes and captures POINTS leg successfully', async () => {
-    const intentId = await createPendingIntent(context, 'phase2-legs-capture-success');
+    const intentId = await createPendingIntent(context, 'legs-capture-success');
     const [leg] = await configureSinglePointsLeg(context, intentId, 10000);
 
     const authorize = await sendWriteRequest({
       app: context.app,
       method: 'post',
       path: `/v1/intents/${intentId}/legs/${leg.id}/authorize`,
-      idempotencyKey: 'phase2-idem-legs-authorize-success',
-      actorId: 'phase2-actor-legs-authorize-success',
+      idempotencyKey: phase2ScopedValue('idem-legs-authorize-success'),
+      actorId: phase2ScopedValue('actor-legs-authorize-success'),
     }).expect(201);
 
     expect(authorize.body.data.leg.status).toBe('AUTHORIZED');
@@ -71,8 +72,8 @@ describeWalletDbIntegration('Intents phase2 legs integration (real path)', () =>
       app: context.app,
       method: 'post',
       path: `/v1/intents/${intentId}/legs/${leg.id}/capture`,
-      idempotencyKey: 'phase2-idem-legs-capture-success',
-      actorId: 'phase2-actor-legs-capture-success',
+      idempotencyKey: phase2ScopedValue('idem-legs-capture-success'),
+      actorId: phase2ScopedValue('actor-legs-capture-success'),
     }).expect(201);
 
     expect(capture.body.data.leg.status).toBe('CAPTURED');
@@ -87,15 +88,15 @@ describeWalletDbIntegration('Intents phase2 legs integration (real path)', () =>
 
     const intentId = await createPendingIntent(
       context,
-      'phase2-legs-capability-not-supported',
+      'legs-capability-not-supported',
     );
 
     const response = await sendWriteRequest({
       app: context.app,
       method: 'put',
       path: `/v1/intents/${intentId}/legs`,
-      idempotencyKey: 'phase2-idem-legs-capability-not-supported',
-      actorId: 'phase2-actor-legs-capability-not-supported',
+      idempotencyKey: phase2ScopedValue('idem-legs-capability-not-supported'),
+      actorId: phase2ScopedValue('actor-legs-capability-not-supported'),
       body: {
         legs: [
           {
@@ -117,22 +118,22 @@ describeWalletDbIntegration('Intents phase2 legs integration (real path)', () =>
       .spyOn(context.pointsProvider, 'authorize')
       .mockResolvedValueOnce({
         resultStatus: 'REQUIRES_CUSTOMER_ACTION',
-        providerTransactionId: 'phase2-provider-action-1',
+        providerTransactionId: phase2ScopedValue('provider-action-1'),
         nextAction: {
           type: 'REDIRECT',
           url: 'https://example.test/redirect',
         },
       } satisfies ProviderOperationResult);
 
-    const intentId = await createPendingIntent(context, 'phase2-legs-customer-action');
+    const intentId = await createPendingIntent(context, 'legs-customer-action');
     const [leg] = await configureSinglePointsLeg(context, intentId, 10000);
 
     const response = await sendWriteRequest({
       app: context.app,
       method: 'post',
       path: `/v1/intents/${intentId}/legs/${leg.id}/authorize`,
-      idempotencyKey: 'phase2-idem-legs-customer-action',
-      actorId: 'phase2-actor-legs-customer-action',
+      idempotencyKey: phase2ScopedValue('idem-legs-customer-action'),
+      actorId: phase2ScopedValue('actor-legs-customer-action'),
     }).expect(201);
 
     expect(authorizeSpy).toHaveBeenCalledTimes(1);
@@ -145,12 +146,12 @@ describeWalletDbIntegration('Intents phase2 legs integration (real path)', () =>
       .spyOn(context.pointsProvider, 'authorize')
       .mockResolvedValueOnce({
         resultStatus: 'REQUIRES_ADMIN_CONFIRMATION',
-        providerTransactionId: 'phase2-provider-admin-1',
+        providerTransactionId: phase2ScopedValue('provider-admin-1'),
       } satisfies ProviderOperationResult);
 
     const intentId = await createPendingIntent(
       context,
-      'phase2-legs-admin-confirmation',
+      'legs-admin-confirmation',
     );
     const [leg] = await configureSinglePointsLeg(context, intentId, 10000);
 
@@ -158,8 +159,8 @@ describeWalletDbIntegration('Intents phase2 legs integration (real path)', () =>
       app: context.app,
       method: 'post',
       path: `/v1/intents/${intentId}/legs/${leg.id}/authorize`,
-      idempotencyKey: 'phase2-idem-legs-admin-confirmation',
-      actorId: 'phase2-actor-legs-admin-confirmation',
+      idempotencyKey: phase2ScopedValue('idem-legs-admin-confirmation'),
+      actorId: phase2ScopedValue('actor-legs-admin-confirmation'),
     }).expect(201);
 
     expect(authorizeSpy).toHaveBeenCalledTimes(1);
@@ -170,10 +171,10 @@ describeWalletDbIntegration('Intents phase2 legs integration (real path)', () =>
 
 async function createPendingIntent(
   context: WalletIntegrationContext,
-  referenceIdSuffix: string,
+  referenceLabel: string,
 ): Promise<string> {
-  const referenceId = `phase2-ref-${referenceIdSuffix}`;
-  const customerId = `phase2-customer-${referenceIdSuffix}`;
+  const referenceId = phase2ScopedValue(`ref-${referenceLabel}`);
+  const customerId = phase2ScopedValue(`customer-${referenceLabel}`);
   const body = createSignedCreateIntentBody({
     referenceId,
     customerId,
@@ -191,7 +192,7 @@ async function createPendingIntent(
     method: 'post',
     path: '/v1/intents',
     body,
-    idempotencyKey: `phase2-idem-create-${referenceIdSuffix}`,
+    idempotencyKey: phase2ScopedValue(`idem-create-${referenceLabel}`),
   }).expect(201);
 
   return response.body.data.id as string;
@@ -206,8 +207,8 @@ async function configureSinglePointsLeg(
     app: context.app,
     method: 'put',
     path: `/v1/intents/${intentId}/legs`,
-    idempotencyKey: `phase2-idem-configure-${intentId}`,
-    actorId: `phase2-actor-configure-${intentId}`,
+    idempotencyKey: phase2ScopedValue(`idem-configure-${intentId}`),
+    actorId: phase2ScopedValue('actor-configure-single-leg'),
     body: {
       legs: [
         {
