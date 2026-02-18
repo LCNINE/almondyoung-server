@@ -4,9 +4,8 @@ import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout
 import { getRecentViews } from "@lib/api/users/recent-views"
 import { getProductList } from "@lib/api/medusa/products"
 import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
-import { Suspense } from "react"
 import { Eye } from "lucide-react"
-import { RecentContainer, RecentContainerSkeleton } from "./recent-container"
+import { RecentContainer } from "./recent-container"
 
 interface RecentPageProps {
   params: Promise<{
@@ -29,9 +28,7 @@ export default async function RecentPage({ params }: RecentPageProps) {
       <MypageLayout>
         <div className="rounded-xl bg-white px-3 pt-4 pb-9 md:px-6">
           <PageTitle>최근 본 상품</PageTitle>
-          <Suspense fallback={<RecentContainerSkeleton />}>
-            <RecentViewsManager countryCode={countryCode} />
-          </Suspense>
+          <RecentViewsManager countryCode={countryCode} />
         </div>
       </MypageLayout>
     </WithHeaderLayout>

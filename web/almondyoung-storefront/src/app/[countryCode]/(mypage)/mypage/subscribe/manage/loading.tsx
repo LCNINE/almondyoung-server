@@ -1,10 +1,10 @@
 import { MypageLoadingShell } from "@/components/skeletons/mypage-loading-shell"
-import { MypageEmptyStateSkeleton } from "@/components/skeletons/page-skeletons"
+import { GenericPageSkeleton } from "@/components/skeletons/page-skeletons"
 
 export default function Loading() {
   return (
-    <MypageLoadingShell title="구독 관리">
-      <MypageEmptyStateSkeleton />
+    <MypageLoadingShell title="정기구독 관리">
+      <GenericPageSkeleton />
     </MypageLoadingShell>
   )
 }

@@ -1,8 +1,6 @@
-import { MypagePinSkeleton } from "@/components/skeletons/page-skeletons"
 import { WithHeaderLayout } from "@components/layout"
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { fetchMe } from "@lib/api/users/me"
-import { Suspense } from "react"
 import SecurityManager from "../(components)/sucurity-manager"
 import ForgetPinForm from "domains/payment/components/forget-pin"
 
@@ -17,9 +15,7 @@ export default async function ForgetPinPage() {
       }}
     >
       <MypageLayout>
-        <Suspense fallback={<MypagePinSkeleton />}>
-          <ForgetPinManager />
-        </Suspense>
+        <ForgetPinManager />
       </MypageLayout>
     </WithHeaderLayout>
   )
