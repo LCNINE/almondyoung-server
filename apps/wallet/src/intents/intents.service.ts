@@ -15,6 +15,7 @@ import {
   verifyHmacIntegrity,
 } from '../domain/hmac/hmac-integrity';
 import {
+  PaymentAttemptStatus,
   ManualCancelQueueStatus,
   PaymentReferenceType,
   PaymentIntentStatus,
@@ -86,6 +87,7 @@ interface CompensationLegResult {
 
 interface PreparedCompensationOperation {
   attemptId: string;
+  providerIdempotencyKey: string;
   legId: string;
   providerType: string;
   amount: number;
@@ -100,6 +102,7 @@ interface CompensationPrepareResult extends CompensationExecutionResult {
 
 interface PreparedRefundAllocation {
   attemptId: string;
+  providerIdempotencyKey: string;
   legId: string;
   providerType: string;
   metadata: Record<string, unknown>;
@@ -156,6 +159,15 @@ const OPEN_MANUAL_QUEUE_STATUSES: ManualCancelQueueStatus[] = [
   'ASSIGNED',
   'PROCESSING',
   'FAILED_RETRYABLE',
+];
+
+const ACTIVE_ATTEMPT_STATUSES: PaymentAttemptStatus[] = [
+  'CREATED',
+  'SENT',
+  'PENDING_PROVIDER',
+  'REQUIRES_ACTION',
+  'CANCEL_REQUESTED',
+  'REFUND_REQUESTED',
 ];
 
 const REFUND_LIMIT_BLOCKING_STATUSES: RefundRequestStatus[] = [
@@ -513,6 +525,7 @@ export class IntentsService {
         intentId,
         legId,
         attemptId: prepared.attempt.id,
+        idempotencyKey: prepared.attempt.providerIdempotencyKey,
         amount: prepared.leg.amount,
         currency: prepared.intent.currency,
         customerId: prepared.intent.customerId,
@@ -649,6 +662,7 @@ export class IntentsService {
         intentId,
         legId,
         attemptId: prepared.attempt.id,
+        idempotencyKey: prepared.attempt.providerIdempotencyKey,
         amount: prepared.leg.amount,
         currency: prepared.intent.currency,
         customerId: prepared.intent.customerId,
@@ -739,21 +753,22 @@ export class IntentsService {
         await this.persistProviderAttemptFailure(
           tx,
           prepared.attempt.id,
-          'PROVIDER_CAPTURE_FAILED',
+          'PROVIDER_CAPTURE_UNCERTAIN',
           errorMessage,
         );
         await this.stateTransitionService.transitionAttempt(
           prepared.attempt.id,
-          'FAILED_RETRYABLE',
+          'PENDING_PROVIDER',
           {
             correlationId: requestCorrelationId,
             causationId: legId,
-            reasonCode: 'PROVIDER_CAPTURE_FAILED',
-            reasonMessage: errorMessage,
+            reasonCode: 'PROVIDER_CAPTURE_UNCERTAIN',
+            reasonMessage: `Capture result uncertain, reconcile required: ${errorMessage}`,
             triggeredByType: 'SYSTEM',
             triggeredById: prepared.intent.customerId,
             payload: {
               operation: 'CAPTURE',
+              uncertainFailure: true,
             },
           },
           'SENT',
@@ -1478,6 +1493,7 @@ export class IntentsService {
 
         preparedAllocations.push({
           attemptId: attempt.id,
+          providerIdempotencyKey: attempt.providerIdempotencyKey,
           legId: leg.id,
           providerType: leg.providerType,
           metadata: leg.metadata,
@@ -1887,6 +1903,7 @@ export class IntentsService {
 
     return {
       attemptId: attempt.id,
+      providerIdempotencyKey: attempt.providerIdempotencyKey,
       legId: leg.id,
       providerType: leg.providerType,
       amount: leg.amount,
@@ -1947,6 +1964,7 @@ export class IntentsService {
               intentId: intent.id,
               legId: operation.legId,
               attemptId: operation.attemptId,
+              idempotencyKey: operation.providerIdempotencyKey,
               amount: operation.amount,
               currency: intent.currency,
               customerId: intent.customerId,
@@ -1957,6 +1975,7 @@ export class IntentsService {
               intentId: intent.id,
               legId: operation.legId,
               attemptId: operation.attemptId,
+              idempotencyKey: operation.providerIdempotencyKey,
               amount: operation.amount,
               currency: intent.currency,
               customerId: intent.customerId,
@@ -2155,6 +2174,7 @@ export class IntentsService {
         intentId: intent.id,
         legId: allocation.legId,
         attemptId: allocation.attemptId,
+        idempotencyKey: allocation.providerIdempotencyKey,
         amount: allocation.allocationAmount,
         currency: intent.currency,
         customerId: intent.customerId,
@@ -2894,20 +2914,53 @@ export class IntentsService {
       nextAttemptNo,
     );
 
-    const [attempt] = await tx
-      .insert(paymentAttempts)
-      .values({
-        intentId: input.intentId,
-        legId: input.legId,
-        attemptNo: nextAttemptNo,
-        operation: input.operation,
-        status: 'CREATED',
-        providerIdempotencyKey,
-        requestPayload: {
+    let attempt: PaymentAttempt;
+    try {
+      const [createdAttempt] = await tx
+        .insert(paymentAttempts)
+        .values({
+          intentId: input.intentId,
+          legId: input.legId,
+          attemptNo: nextAttemptNo,
           operation: input.operation,
-        },
-      })
-      .returning();
+          status: 'CREATED',
+          providerIdempotencyKey,
+          requestPayload: {
+            operation: input.operation,
+          },
+        })
+        .returning();
+      attempt = createdAttempt;
+    } catch (error) {
+      if (!isActiveAttemptUniqueViolation(error)) {
+        throw error;
+      }
+
+      const activeRows = await tx
+        .select({
+          id: paymentAttempts.id,
+          status: paymentAttempts.status,
+        })
+        .from(paymentAttempts)
+        .where(
+          and(
+            eq(paymentAttempts.legId, input.legId),
+            eq(paymentAttempts.operation, input.operation),
+            inArray(paymentAttempts.status, ACTIVE_ATTEMPT_STATUSES),
+          ),
+        )
+        .limit(1);
+
+      const activeAttempt = activeRows[0];
+      throw new ConflictException({
+        error: 'ACTIVE_ATTEMPT_ALREADY_EXISTS',
+        message: `Active ${input.operation} attempt already exists for leg=${input.legId}`,
+        legId: input.legId,
+        operation: input.operation,
+        attemptId: activeAttempt?.id ?? null,
+        attemptStatus: activeAttempt?.status ?? null,
+      });
+    }
 
     await tx.insert(paymentStateTransitions).values({
       entityType: 'ATTEMPT',
@@ -3386,6 +3439,43 @@ function isOpenManualQueueUniqueViolation(error: unknown): boolean {
 
   if (current.originalError) {
     return isOpenManualQueueUniqueViolation(current.originalError);
+  }
+
+  return false;
+}
+
+function isActiveAttemptUniqueViolation(error: unknown): boolean {
+  const current = error as
+    | {
+        code?: string;
+        constraint?: string;
+        message?: string;
+        cause?: unknown;
+        originalError?: unknown;
+      }
+    | undefined;
+
+  if (!current) {
+    return false;
+  }
+
+  if (
+    current.code === '23505' &&
+    current.constraint === 'uq_payment_attempts_active_leg_operation'
+  ) {
+    return true;
+  }
+
+  if ((current.message ?? '').includes('uq_payment_attempts_active_leg_operation')) {
+    return true;
+  }
+
+  if (current.cause) {
+    return isActiveAttemptUniqueViolation(current.cause);
+  }
+
+  if (current.originalError) {
+    return isActiveAttemptUniqueViolation(current.originalError);
   }
 
   return false;
