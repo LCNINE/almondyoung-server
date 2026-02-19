@@ -84,6 +84,32 @@ interface CompensationLegResult {
   manualQueueItemId?: string;
 }
 
+interface PreparedCompensationOperation {
+  attemptId: string;
+  legId: string;
+  providerType: string;
+  amount: number;
+  metadata: Record<string, unknown>;
+  operation: 'CANCEL' | 'REFUND';
+  requestedStatus: 'CANCEL_REQUESTED' | 'REFUND_REQUESTED';
+}
+
+interface CompensationPrepareResult extends CompensationExecutionResult {
+  operations: PreparedCompensationOperation[];
+}
+
+interface PreparedRefundAllocation {
+  attemptId: string;
+  legId: string;
+  providerType: string;
+  metadata: Record<string, unknown>;
+  allocationAmount: number;
+  shouldFullyRefundLeg: boolean;
+  requestedBy: string;
+  reasonCode: string;
+  reasonMessage?: string;
+}
+
 type TerminationReason = 'CANCEL' | 'SUPERSEDE' | 'EXPIRE';
 
 interface LockedIntent {
@@ -745,7 +771,7 @@ export class IntentsService {
   ): Promise<IntentTerminationResult> {
     const requestCorrelationId = correlationId?.trim() || randomUUID();
 
-    return this.dbService.db.transaction(async (tx) => {
+    const prepared = await this.dbService.db.transaction(async (tx) => {
       const intent = await this.lockIntentOrThrow(intentId, tx);
       this.assertIntentCanCancel(intent.status);
 
@@ -777,8 +803,9 @@ export class IntentsService {
         );
 
         return {
-          intentId,
-          status: 'CANCELLED',
+          mode: 'DONE' as const,
+          intent,
+          status: 'CANCELLED' as PaymentIntentStatus,
         };
       }
 
@@ -799,17 +826,46 @@ export class IntentsService {
         tx,
       );
 
-      const compensationResult = await this.compensateIntentLegs(
+      const compensationPreparation = await this.prepareCompensationIntentLegs(
         tx,
         intent,
         requestCorrelationId,
         'CANCEL',
       );
-      const compensationFailed = compensationResult.hasFailure;
-      const finalStatus: PaymentIntentStatus = compensationFailed
-        ? 'RECONCILE_REQUIRED'
-        : 'CANCELLED';
 
+      return {
+        mode: 'COMPENSATE' as const,
+        intent,
+        compensationPreparation,
+      };
+    });
+
+    if (prepared.mode === 'DONE') {
+      return {
+        intentId,
+        status: prepared.status,
+      };
+    }
+
+    const compensationExecution = await this.executeCompensationOperations(
+      prepared.intent,
+      prepared.compensationPreparation.operations,
+      requestCorrelationId,
+      'CANCEL',
+    );
+    const manualQueueItemIds = [
+      ...new Set([
+        ...prepared.compensationPreparation.manualQueueItemIds,
+        ...compensationExecution.manualQueueItemIds,
+      ]),
+    ];
+    const compensationFailed =
+      prepared.compensationPreparation.hasFailure || compensationExecution.hasFailure;
+    const finalStatus: PaymentIntentStatus = compensationFailed
+      ? 'RECONCILE_REQUIRED'
+      : 'CANCELLED';
+
+    await this.dbService.db.transaction(async (tx) => {
       await this.stateTransitionService.transitionIntent(
         intentId,
         finalStatus,
@@ -822,28 +878,28 @@ export class IntentsService {
             ? 'Intent cancellation requires manual reconcile'
             : 'Intent cancellation completed',
           triggeredByType: 'SYSTEM',
-          triggeredById: intent.customerId,
+          triggeredById: prepared.intent.customerId,
           payload: {
             operation: 'CANCEL',
             compensationFailed,
-            manualQueueItemId: compensationResult.manualQueueItemIds[0] ?? null,
-            manualQueueItemIds: compensationResult.manualQueueItemIds,
+            manualQueueItemId: manualQueueItemIds[0] ?? null,
+            manualQueueItemIds,
           },
           outboxEvent: compensationFailed
             ? this.buildPaymentIntentOutboxEvent(
-                intent,
+                prepared.intent,
                 'PaymentReconcileRequired',
                 finalStatus,
                 {
                   reasonCode: 'INTENT_CANCEL_RECONCILE_REQUIRED',
                   reasonMessage: 'Intent cancellation requires manual reconcile',
                   requiresManualAction: true,
-                  manualQueueItemId: compensationResult.manualQueueItemIds[0] ?? null,
-                  manualQueueItemIds: compensationResult.manualQueueItemIds,
+                  manualQueueItemId: manualQueueItemIds[0] ?? null,
+                  manualQueueItemIds,
                 },
               )
             : this.buildPaymentIntentOutboxEvent(
-                intent,
+                prepared.intent,
                 'PaymentIntentCancelled',
                 finalStatus,
                 {
@@ -855,12 +911,12 @@ export class IntentsService {
         'RECONCILING',
         tx,
       );
-
-      return {
-        intentId,
-        status: finalStatus,
-      };
     });
+
+    return {
+      intentId,
+      status: finalStatus,
+    };
   }
 
   async supersedeIntent(
@@ -869,7 +925,7 @@ export class IntentsService {
   ): Promise<IntentTerminationResult> {
     const requestCorrelationId = correlationId?.trim() || randomUUID();
 
-    return this.dbService.db.transaction(async (tx) => {
+    const prepared = await this.dbService.db.transaction(async (tx) => {
       const intent = await this.lockIntentOrThrow(intentId, tx);
       this.assertIntentCanSupersede(intent.status);
 
@@ -890,17 +946,38 @@ export class IntentsService {
         tx,
       );
 
-      const compensationResult = await this.compensateIntentLegs(
+      const compensationPreparation = await this.prepareCompensationIntentLegs(
         tx,
         intent,
         requestCorrelationId,
         'SUPERSEDE',
       );
-      const compensationFailed = compensationResult.hasFailure;
-      const finalStatus: PaymentIntentStatus = compensationFailed
-        ? 'SUPERSEDED_RECONCILE_REQUIRED'
-        : 'SUPERSEDED';
 
+      return {
+        intent,
+        compensationPreparation,
+      };
+    });
+
+    const compensationExecution = await this.executeCompensationOperations(
+      prepared.intent,
+      prepared.compensationPreparation.operations,
+      requestCorrelationId,
+      'SUPERSEDE',
+    );
+    const manualQueueItemIds = [
+      ...new Set([
+        ...prepared.compensationPreparation.manualQueueItemIds,
+        ...compensationExecution.manualQueueItemIds,
+      ]),
+    ];
+    const compensationFailed =
+      prepared.compensationPreparation.hasFailure || compensationExecution.hasFailure;
+    const finalStatus: PaymentIntentStatus = compensationFailed
+      ? 'SUPERSEDED_RECONCILE_REQUIRED'
+      : 'SUPERSEDED';
+
+    await this.dbService.db.transaction(async (tx) => {
       await this.stateTransitionService.transitionIntent(
         intentId,
         finalStatus,
@@ -913,28 +990,28 @@ export class IntentsService {
             ? 'Supersede compensation requires manual reconcile'
             : 'Supersede completed',
           triggeredByType: 'SYSTEM',
-          triggeredById: intent.customerId,
+          triggeredById: prepared.intent.customerId,
           payload: {
             operation: 'SUPERSEDE',
             compensationFailed,
-            manualQueueItemId: compensationResult.manualQueueItemIds[0] ?? null,
-            manualQueueItemIds: compensationResult.manualQueueItemIds,
+            manualQueueItemId: manualQueueItemIds[0] ?? null,
+            manualQueueItemIds,
           },
           outboxEvent: compensationFailed
             ? this.buildPaymentIntentOutboxEvent(
-                intent,
+                prepared.intent,
                 'PaymentReconcileRequired',
                 finalStatus,
                 {
                   reasonCode: 'INTENT_SUPERSEDE_RECONCILE_REQUIRED',
                   reasonMessage: 'Supersede compensation requires manual reconcile',
                   requiresManualAction: true,
-                  manualQueueItemId: compensationResult.manualQueueItemIds[0] ?? null,
-                  manualQueueItemIds: compensationResult.manualQueueItemIds,
+                  manualQueueItemId: manualQueueItemIds[0] ?? null,
+                  manualQueueItemIds,
                 },
               )
             : this.buildPaymentIntentOutboxEvent(
-                intent,
+                prepared.intent,
                 'PaymentIntentSuperseded',
                 finalStatus,
                 {
@@ -946,12 +1023,12 @@ export class IntentsService {
         'SUSPENDED',
         tx,
       );
-
-      return {
-        intentId,
-        status: finalStatus,
-      };
     });
+
+    return {
+      intentId,
+      status: finalStatus,
+    };
   }
 
   async expireIntent(
@@ -960,7 +1037,7 @@ export class IntentsService {
   ): Promise<IntentTerminationResult> {
     const requestCorrelationId = correlationId?.trim() || randomUUID();
 
-    return this.dbService.db.transaction(async (tx) => {
+    const prepared = await this.dbService.db.transaction(async (tx) => {
       const intent = await this.lockIntentOrThrow(intentId, tx);
       this.assertIntentCanExpire(intent.status);
 
@@ -1004,8 +1081,9 @@ export class IntentsService {
         );
 
         return {
-          intentId,
-          status: 'EXPIRED',
+          mode: 'DONE' as const,
+          intent,
+          status: 'EXPIRED' as PaymentIntentStatus,
         };
       }
 
@@ -1026,17 +1104,46 @@ export class IntentsService {
         tx,
       );
 
-      const compensationResult = await this.compensateIntentLegs(
+      const compensationPreparation = await this.prepareCompensationIntentLegs(
         tx,
         intent,
         requestCorrelationId,
         'EXPIRE',
       );
-      const compensationFailed = compensationResult.hasFailure;
-      const finalStatus: PaymentIntentStatus = compensationFailed
-        ? 'RECONCILE_REQUIRED'
-        : 'EXPIRED';
 
+      return {
+        mode: 'COMPENSATE' as const,
+        intent,
+        compensationPreparation,
+      };
+    });
+
+    if (prepared.mode === 'DONE') {
+      return {
+        intentId,
+        status: prepared.status,
+      };
+    }
+
+    const compensationExecution = await this.executeCompensationOperations(
+      prepared.intent,
+      prepared.compensationPreparation.operations,
+      requestCorrelationId,
+      'EXPIRE',
+    );
+    const manualQueueItemIds = [
+      ...new Set([
+        ...prepared.compensationPreparation.manualQueueItemIds,
+        ...compensationExecution.manualQueueItemIds,
+      ]),
+    ];
+    const compensationFailed =
+      prepared.compensationPreparation.hasFailure || compensationExecution.hasFailure;
+    const finalStatus: PaymentIntentStatus = compensationFailed
+      ? 'RECONCILE_REQUIRED'
+      : 'EXPIRED';
+
+    await this.dbService.db.transaction(async (tx) => {
       await this.stateTransitionService.transitionIntent(
         intentId,
         finalStatus,
@@ -1053,24 +1160,24 @@ export class IntentsService {
           payload: {
             operation: 'EXPIRE',
             compensationFailed,
-            manualQueueItemId: compensationResult.manualQueueItemIds[0] ?? null,
-            manualQueueItemIds: compensationResult.manualQueueItemIds,
+            manualQueueItemId: manualQueueItemIds[0] ?? null,
+            manualQueueItemIds,
           },
           outboxEvent: compensationFailed
             ? this.buildPaymentIntentOutboxEvent(
-                intent,
+                prepared.intent,
                 'PaymentReconcileRequired',
                 finalStatus,
                 {
                   reasonCode: 'INTENT_EXPIRE_RECONCILE_REQUIRED',
                   reasonMessage: 'Intent expiration requires manual reconcile',
                   requiresManualAction: true,
-                  manualQueueItemId: compensationResult.manualQueueItemIds[0] ?? null,
-                  manualQueueItemIds: compensationResult.manualQueueItemIds,
+                  manualQueueItemId: manualQueueItemIds[0] ?? null,
+                  manualQueueItemIds,
                 },
               )
             : this.buildPaymentIntentOutboxEvent(
-                intent,
+                prepared.intent,
                 'PaymentIntentExpired',
                 finalStatus,
                 {
@@ -1082,12 +1189,12 @@ export class IntentsService {
         'RECONCILING',
         tx,
       );
-
-      return {
-        intentId,
-        status: finalStatus,
-      };
     });
+
+    return {
+      intentId,
+      status: finalStatus,
+    };
   }
 
   async expireDueIntents(
@@ -1176,7 +1283,7 @@ export class IntentsService {
       });
     }
 
-    return this.dbService.db.transaction(async (tx) => {
+    const prepared = await this.dbService.db.transaction(async (tx) => {
       const intent = await this.lockIntentForRefundOrThrow(intentId, tx);
       const lockedLegs = await this.lockLegsForRefund(intentId, allocationLegIds, tx);
 
@@ -1316,40 +1423,107 @@ export class IntentsService {
         tx,
       );
 
-      let hasFailure = false;
-      let successCount = 0;
-      const manualQueueItemIds: string[] = [];
+      const preparedAllocations: PreparedRefundAllocation[] = [];
 
       for (const allocation of dto.allocation) {
         const leg = legsById.get(allocation.legId)!;
         const alreadyRefunded = refundedByLegId.get(leg.id) ?? 0;
         const shouldFullyRefundLeg = alreadyRefunded + allocation.amount >= leg.amount;
 
-        const result = await this.executeRefundAllocation(tx, {
-          intent,
-          leg,
+        const attempt = await this.createAttempt(tx, {
+          intentId: intent.id,
+          legId: leg.id,
+          operation: 'REFUND',
+          correlationId: requestCorrelationId,
+          triggeredById: requestedBy,
+        });
+
+        await this.stateTransitionService.transitionAttempt(
+          attempt.id,
+          'SENT',
+          {
+            correlationId: requestCorrelationId,
+            causationId: leg.id,
+            reasonCode: 'PROVIDER_REFUND_REQUEST_SENT',
+            reasonMessage: 'Provider refund request sent',
+            triggeredByType: 'SYSTEM',
+            triggeredById: requestedBy,
+            payload: {
+              operation: 'REFUND',
+              amount: allocation.amount,
+            },
+          },
+          'CREATED',
+          tx,
+        );
+
+        await this.stateTransitionService.transitionAttempt(
+          attempt.id,
+          'REFUND_REQUESTED',
+          {
+            correlationId: requestCorrelationId,
+            causationId: leg.id,
+            reasonCode: 'PROVIDER_REFUND_REQUEST_ACCEPTED',
+            reasonMessage: 'Provider refund request accepted',
+            triggeredByType: 'SYSTEM',
+            triggeredById: requestedBy,
+            payload: {
+              operation: 'REFUND',
+              amount: allocation.amount,
+            },
+          },
+          'SENT',
+          tx,
+        );
+
+        preparedAllocations.push({
+          attemptId: attempt.id,
+          legId: leg.id,
+          providerType: leg.providerType,
+          metadata: leg.metadata,
           allocationAmount: allocation.amount,
           shouldFullyRefundLeg,
-          correlationId: requestCorrelationId,
           requestedBy,
           reasonCode: dto.reasonCode,
           reasonMessage: dto.reasonMessage,
         });
-
-        if (result.failed) {
-          hasFailure = true;
-          if (result.manualQueueItemId) {
-            manualQueueItemIds.push(result.manualQueueItemId);
-          }
-        } else {
-          successCount += 1;
-          refundedByLegId.set(leg.id, alreadyRefunded + allocation.amount);
-        }
       }
 
+      return {
+        intent,
+        refundRequestId: createdRefundRequest.id,
+        allocations: createdAllocations,
+        preparedAllocations,
+      };
+    });
+
+    let hasFailure = false;
+    let successCount = 0;
+    const manualQueueItemIds = new Set<string>();
+
+    for (const allocation of prepared.preparedAllocations) {
+      const result = await this.executePreparedRefundAllocation(
+        prepared.intent,
+        allocation,
+        requestCorrelationId,
+      );
+
+      if (result.failed) {
+        hasFailure = true;
+        if (result.manualQueueItemId) {
+          manualQueueItemIds.add(result.manualQueueItemId);
+        }
+      } else {
+        successCount += 1;
+      }
+    }
+
+    const uniqueManualQueueItemIds = [...manualQueueItemIds];
+
+    await this.dbService.db.transaction(async (tx) => {
       if (!hasFailure) {
         await this.stateTransitionService.transitionRefundRequest(
-          createdRefundRequest.id,
+          prepared.refundRequestId,
           'COMPLETED',
           {
             correlationId: requestCorrelationId,
@@ -1364,16 +1538,16 @@ export class IntentsService {
             outboxEvent: {
               eventType: 'RefundCompleted',
               aggregateType: 'RefundRequest',
-              aggregateId: createdRefundRequest.id,
+              aggregateId: prepared.refundRequestId,
               partitionKey: intentId,
               payload: buildRefundEventPayload({
-                refundId: createdRefundRequest.id,
+                refundId: prepared.refundRequestId,
                 intentId,
-                referenceType: intent.referenceType,
-                referenceId: intent.referenceId,
-                customerId: intent.customerId,
+                referenceType: prepared.intent.referenceType,
+                referenceId: prepared.intent.referenceId,
+                customerId: prepared.intent.customerId,
                 refundAmount: dto.refundAmount,
-                currency: intent.currency,
+                currency: prepared.intent.currency,
                 allocation: dto.allocation,
               }),
             },
@@ -1381,107 +1555,108 @@ export class IntentsService {
           'PROCESSING',
           tx,
         );
-      } else {
-        let currentRefundStatus: RefundRequestStatus = 'PROCESSING';
+        return;
+      }
 
-        if (successCount > 0) {
-          await this.stateTransitionService.transitionRefundRequest(
-            createdRefundRequest.id,
-            'PARTIALLY_COMPLETED',
-            {
-              correlationId: requestCorrelationId,
-              reasonCode: 'REFUND_REQUEST_PARTIALLY_COMPLETED',
-              reasonMessage: 'Some allocations were refunded before failure',
-              triggeredByType: 'SYSTEM',
-              triggeredById: requestedBy,
-              payload: {
-                intentId,
-                successfulAllocationCount: successCount,
-              },
-            },
-            'PROCESSING',
-            tx,
-          );
-          currentRefundStatus = 'PARTIALLY_COMPLETED';
-        }
+      let currentRefundStatus: RefundRequestStatus = 'PROCESSING';
 
+      if (successCount > 0) {
         await this.stateTransitionService.transitionRefundRequest(
-          createdRefundRequest.id,
-          'RECONCILE_REQUIRED',
+          prepared.refundRequestId,
+          'PARTIALLY_COMPLETED',
           {
             correlationId: requestCorrelationId,
-            reasonCode: 'REFUND_REQUEST_RECONCILE_REQUIRED',
-            reasonMessage: 'Refund request requires manual reconcile',
+            reasonCode: 'REFUND_REQUEST_PARTIALLY_COMPLETED',
+            reasonMessage: 'Some allocations were refunded before failure',
             triggeredByType: 'SYSTEM',
             triggeredById: requestedBy,
             payload: {
               intentId,
               successfulAllocationCount: successCount,
-              failedAllocationCount: dto.allocation.length - successCount,
-              manualQueueItemIds,
-            },
-            outboxEvent: {
-              eventType: 'RefundFailed',
-              aggregateType: 'RefundRequest',
-              aggregateId: createdRefundRequest.id,
-              partitionKey: intentId,
-              payload: buildRefundEventPayload({
-                refundId: createdRefundRequest.id,
-                intentId,
-                referenceType: intent.referenceType,
-                referenceId: intent.referenceId,
-                customerId: intent.customerId,
-                refundAmount: dto.refundAmount,
-                currency: intent.currency,
-                allocation: dto.allocation,
-                extra: {
-                  reasonCode: 'REFUND_REQUEST_RECONCILE_REQUIRED',
-                  reasonMessage: 'Refund request requires manual reconcile',
-                  requiresManualAction: true,
-                  manualQueueItemId: manualQueueItemIds[0] ?? null,
-                  manualQueueItemIds,
-                },
-              }),
             },
           },
-          currentRefundStatus,
+          'PROCESSING',
           tx,
         );
+        currentRefundStatus = 'PARTIALLY_COMPLETED';
+      }
 
-        await tx.insert(outboxEvents).values(
-          buildOutboxInsertValues(
-            this.buildPaymentIntentOutboxEvent(
-              intent,
-              'PaymentReconcileRequired',
-              'RECONCILE_REQUIRED',
-              {
+      await this.stateTransitionService.transitionRefundRequest(
+        prepared.refundRequestId,
+        'RECONCILE_REQUIRED',
+        {
+          correlationId: requestCorrelationId,
+          reasonCode: 'REFUND_REQUEST_RECONCILE_REQUIRED',
+          reasonMessage: 'Refund request requires manual reconcile',
+          triggeredByType: 'SYSTEM',
+          triggeredById: requestedBy,
+          payload: {
+            intentId,
+            successfulAllocationCount: successCount,
+            failedAllocationCount: prepared.preparedAllocations.length - successCount,
+            manualQueueItemIds: uniqueManualQueueItemIds,
+          },
+          outboxEvent: {
+            eventType: 'RefundFailed',
+            aggregateType: 'RefundRequest',
+            aggregateId: prepared.refundRequestId,
+            partitionKey: intentId,
+            payload: buildRefundEventPayload({
+              refundId: prepared.refundRequestId,
+              intentId,
+              referenceType: prepared.intent.referenceType,
+              referenceId: prepared.intent.referenceId,
+              customerId: prepared.intent.customerId,
+              refundAmount: dto.refundAmount,
+              currency: prepared.intent.currency,
+              allocation: dto.allocation,
+              extra: {
                 reasonCode: 'REFUND_REQUEST_RECONCILE_REQUIRED',
                 reasonMessage: 'Refund request requires manual reconcile',
                 requiresManualAction: true,
-                manualQueueItemId: manualQueueItemIds[0] ?? null,
-                manualQueueItemIds,
+                manualQueueItemId: uniqueManualQueueItemIds[0] ?? null,
+                manualQueueItemIds: uniqueManualQueueItemIds,
               },
-            ),
+            }),
+          },
+        },
+        currentRefundStatus,
+        tx,
+      );
+
+      await tx.insert(outboxEvents).values(
+        buildOutboxInsertValues(
+          this.buildPaymentIntentOutboxEvent(
+            prepared.intent,
+            'PaymentReconcileRequired',
+            'RECONCILE_REQUIRED',
+            {
+              reasonCode: 'REFUND_REQUEST_RECONCILE_REQUIRED',
+              reasonMessage: 'Refund request requires manual reconcile',
+              requiresManualAction: true,
+              manualQueueItemId: uniqueManualQueueItemIds[0] ?? null,
+              manualQueueItemIds: uniqueManualQueueItemIds,
+            },
           ),
-        );
-      }
-
-      const refreshedRows = await tx
-        .select()
-        .from(refundRequests)
-        .where(eq(refundRequests.id, createdRefundRequest.id))
-        .limit(1);
-      const refreshedRefundRequest = refreshedRows[0];
-
-      if (!refreshedRefundRequest) {
-        throw new Error(`REFUND_REQUEST_NOT_FOUND: ${createdRefundRequest.id}`);
-      }
-
-      return {
-        refundRequest: refreshedRefundRequest,
-        allocations: createdAllocations,
-      };
+        ),
+      );
     });
+
+    const refreshedRows = await this.dbService.db
+      .select()
+      .from(refundRequests)
+      .where(eq(refundRequests.id, prepared.refundRequestId))
+      .limit(1);
+    const refreshedRefundRequest = refreshedRows[0];
+
+    if (!refreshedRefundRequest) {
+      throw new Error(`REFUND_REQUEST_NOT_FOUND: ${prepared.refundRequestId}`);
+    }
+
+    return {
+      refundRequest: refreshedRefundRequest,
+      allocations: prepared.allocations,
+    };
   }
 
   async getRefundRequest(refundId: string): Promise<RefundRequestDetailResult> {
@@ -1510,12 +1685,12 @@ export class IntentsService {
     };
   }
 
-  private async compensateIntentLegs(
+  private async prepareCompensationIntentLegs(
     tx: DbTx,
     intent: LockedIntent,
     correlationId: string,
     reason: TerminationReason,
-  ): Promise<CompensationExecutionResult> {
+  ): Promise<CompensationPrepareResult> {
     const legs = await tx
       .select()
       .from(paymentLegs)
@@ -1523,6 +1698,7 @@ export class IntentsService {
 
     let hasFailure = false;
     const manualQueueItemIds = new Set<string>();
+    const operations: PreparedCompensationOperation[] = [];
 
     const cancelTargets = legs.filter((leg) => leg.status === 'AUTHORIZED');
     const refundTargets = legs
@@ -1533,33 +1709,29 @@ export class IntentsService {
     );
 
     for (const leg of cancelTargets) {
-      const result = await this.compensateLegWithProvider(
-        tx,
-        intent,
-        leg,
-        'CANCEL',
-        correlationId,
-        reason,
+      operations.push(
+        await this.prepareCompensationLegOperation(
+          tx,
+          intent,
+          leg,
+          'CANCEL',
+          correlationId,
+          reason,
+        ),
       );
-      hasFailure = hasFailure || result.failed;
-      if (result.manualQueueItemId) {
-        manualQueueItemIds.add(result.manualQueueItemId);
-      }
     }
 
     for (const leg of refundTargets) {
-      const result = await this.compensateLegWithProvider(
-        tx,
-        intent,
-        leg,
-        'REFUND',
-        correlationId,
-        reason,
+      operations.push(
+        await this.prepareCompensationLegOperation(
+          tx,
+          intent,
+          leg,
+          'REFUND',
+          correlationId,
+          reason,
+        ),
       );
-      hasFailure = hasFailure || result.failed;
-      if (result.manualQueueItemId) {
-        manualQueueItemIds.add(result.manualQueueItemId);
-      }
     }
 
     for (const leg of nonMonetaryTargets) {
@@ -1626,17 +1798,18 @@ export class IntentsService {
     return {
       hasFailure,
       manualQueueItemIds: [...manualQueueItemIds],
+      operations,
     };
   }
 
-  private async compensateLegWithProvider(
+  private async prepareCompensationLegOperation(
     tx: DbTx,
     intent: LockedIntent,
     leg: PaymentLeg,
     operation: 'CANCEL' | 'REFUND',
     correlationId: string,
     reason: TerminationReason,
-  ): Promise<CompensationLegResult> {
+  ): Promise<PreparedCompensationOperation> {
     const attempt = await this.createAttempt(tx, {
       intentId: intent.id,
       legId: leg.id,
@@ -1712,378 +1885,377 @@ export class IntentsService {
       tx,
     );
 
+    return {
+      attemptId: attempt.id,
+      legId: leg.id,
+      providerType: leg.providerType,
+      amount: leg.amount,
+      metadata: leg.metadata,
+      operation,
+      requestedStatus,
+    };
+  }
+
+  private async executeCompensationOperations(
+    intent: LockedIntent,
+    operations: PreparedCompensationOperation[],
+    correlationId: string,
+    reason: TerminationReason,
+  ): Promise<CompensationExecutionResult> {
+    let hasFailure = false;
+    const manualQueueItemIds = new Set<string>();
+
+    for (const operation of operations) {
+      const result = await this.executeCompensationOperation(
+        intent,
+        operation,
+        correlationId,
+        reason,
+      );
+
+      hasFailure = hasFailure || result.failed;
+      if (result.manualQueueItemId) {
+        manualQueueItemIds.add(result.manualQueueItemId);
+      }
+    }
+
+    return {
+      hasFailure,
+      manualQueueItemIds: [...manualQueueItemIds],
+    };
+  }
+
+  private async executeCompensationOperation(
+    intent: LockedIntent,
+    operation: PreparedCompensationOperation,
+    correlationId: string,
+    reason: TerminationReason,
+  ): Promise<CompensationLegResult> {
     try {
-      const provider = this.providerRegistry.assertCapability(leg.providerType, operation, {
-        intentId: intent.id,
-        legId: leg.id,
-      });
+      const provider = this.providerRegistry.assertCapability(
+        operation.providerType,
+        operation.operation,
+        {
+          intentId: intent.id,
+          legId: operation.legId,
+        },
+      );
 
       const providerResult =
-        operation === 'CANCEL'
+        operation.operation === 'CANCEL'
           ? await provider.cancel({
               intentId: intent.id,
-              legId: leg.id,
-              attemptId: attempt.id,
-              amount: leg.amount,
+              legId: operation.legId,
+              attemptId: operation.attemptId,
+              amount: operation.amount,
               currency: intent.currency,
               customerId: intent.customerId,
               correlationId,
-              metadata: leg.metadata,
+              metadata: operation.metadata,
             })
           : await provider.refund({
               intentId: intent.id,
-              legId: leg.id,
-              attemptId: attempt.id,
-              amount: leg.amount,
+              legId: operation.legId,
+              attemptId: operation.attemptId,
+              amount: operation.amount,
               currency: intent.currency,
               customerId: intent.customerId,
               correlationId,
-              metadata: leg.metadata,
+              metadata: operation.metadata,
             });
 
-      await this.persistProviderAttemptResult(tx, attempt.id, providerResult);
+      return this.dbService.db.transaction(async (tx) => {
+        await this.persistProviderAttemptResult(tx, operation.attemptId, providerResult);
 
-      const successStatus =
-        operation === 'CANCEL' ? ('CANCELLED' as const) : ('REFUNDED' as const);
-      const isSuccess = providerResult.resultStatus === successStatus;
+        const successStatus =
+          operation.operation === 'CANCEL' ? ('CANCELLED' as const) : ('REFUNDED' as const);
+        const isSuccess = providerResult.resultStatus === successStatus;
 
-      if (!isSuccess) {
-        await this.persistProviderAttemptFailure(
-          tx,
-          attempt.id,
-          `PROVIDER_${operation}_FAILED`,
-          `${operation} returned unexpected status ${providerResult.resultStatus}`,
-        );
+        if (!isSuccess) {
+          await this.persistProviderAttemptFailure(
+            tx,
+            operation.attemptId,
+            `PROVIDER_${operation.operation}_FAILED`,
+            `${operation.operation} returned unexpected status ${providerResult.resultStatus}`,
+          );
+
+          await this.stateTransitionService.transitionAttempt(
+            operation.attemptId,
+            'FAILED_FINAL',
+            {
+              correlationId,
+              causationId: operation.legId,
+              reasonCode: `PROVIDER_${operation.operation}_FAILED`,
+              reasonMessage: `${operation.operation} returned unexpected status ${providerResult.resultStatus}`,
+              triggeredByType: 'SYSTEM',
+              triggeredById: intent.customerId,
+              payload: {
+                operation: operation.operation,
+                providerResultStatus: providerResult.resultStatus,
+                terminationReason: reason,
+              },
+            },
+            operation.requestedStatus,
+            tx,
+          );
+
+          await this.stateTransitionService.transitionLeg(
+            operation.legId,
+            'RECONCILE_REQUIRED',
+            {
+              correlationId,
+              reasonCode: `LEG_${operation.operation}_FAILED`,
+              reasonMessage: `${operation.operation} returned unexpected status ${providerResult.resultStatus}`,
+              triggeredByType: 'SYSTEM',
+              triggeredById: intent.customerId,
+              payload: {
+                operation: operation.operation,
+                providerResultStatus: providerResult.resultStatus,
+                terminationReason: reason,
+              },
+            },
+            'CANCELING',
+            tx,
+          );
+
+          const queueItemId = await this.upsertManualQueueItem(tx, {
+            intentId: intent.id,
+            legId: operation.legId,
+            actionType: operation.operation,
+            correlationId,
+            requestedBy: intent.customerId,
+            reasonCode: `LEG_${operation.operation}_FAILED`,
+            reasonMessage: `${operation.operation} returned unexpected status ${providerResult.resultStatus}`,
+          });
+          return { failed: true, manualQueueItemId: queueItemId };
+        }
+
         await this.stateTransitionService.transitionAttempt(
-          attempt.id,
-          'FAILED_FINAL',
+          operation.attemptId,
+          successStatus,
           {
             correlationId,
-            causationId: leg.id,
-            reasonCode: `PROVIDER_${operation}_FAILED`,
-            reasonMessage: `${operation} returned unexpected status ${providerResult.resultStatus}`,
+            causationId: operation.legId,
+            reasonCode: `PROVIDER_${operation.operation}_SUCCEEDED`,
+            reasonMessage: `${operation.operation} compensation succeeded`,
             triggeredByType: 'SYSTEM',
             triggeredById: intent.customerId,
             payload: {
-              operation,
-              providerResultStatus: providerResult.resultStatus,
+              operation: operation.operation,
+              providerTransactionId: providerResult.providerTransactionId,
               terminationReason: reason,
             },
           },
-          requestedStatus,
+          operation.requestedStatus,
           tx,
         );
 
         await this.stateTransitionService.transitionLeg(
-          leg.id,
-          'RECONCILE_REQUIRED',
+          operation.legId,
+          successStatus,
           {
             correlationId,
-            reasonCode: `LEG_${operation}_FAILED`,
-            reasonMessage: `${operation} returned unexpected status ${providerResult.resultStatus}`,
+            reasonCode: `LEG_${operation.operation}_SUCCEEDED`,
+            reasonMessage: `${operation.operation} compensation succeeded`,
             triggeredByType: 'SYSTEM',
             triggeredById: intent.customerId,
             payload: {
-              operation,
-              providerResultStatus: providerResult.resultStatus,
+              operation: operation.operation,
+              providerTransactionId: providerResult.providerTransactionId,
               terminationReason: reason,
             },
           },
           'CANCELING',
           tx,
         );
-        const queueItemId = await this.upsertManualQueueItem(tx, {
-          intentId: intent.id,
-          legId: leg.id,
-          actionType: operation,
-          correlationId,
-          requestedBy: intent.customerId,
-          reasonCode: `LEG_${operation}_FAILED`,
-          reasonMessage: `${operation} returned unexpected status ${providerResult.resultStatus}`,
-        });
-        return { failed: true, manualQueueItemId: queueItemId };
-      }
 
-      await this.stateTransitionService.transitionAttempt(
-        attempt.id,
-        successStatus,
-        {
-          correlationId,
-          causationId: leg.id,
-          reasonCode: `PROVIDER_${operation}_SUCCEEDED`,
-          reasonMessage: `${operation} compensation succeeded`,
-          triggeredByType: 'SYSTEM',
-          triggeredById: intent.customerId,
-          payload: {
-            operation,
-            providerTransactionId: providerResult.providerTransactionId,
-            terminationReason: reason,
-          },
-        },
-        requestedStatus,
-        tx,
-      );
-
-      await this.stateTransitionService.transitionLeg(
-        leg.id,
-        successStatus,
-        {
-          correlationId,
-          reasonCode: `LEG_${operation}_SUCCEEDED`,
-          reasonMessage: `${operation} compensation succeeded`,
-          triggeredByType: 'SYSTEM',
-          triggeredById: intent.customerId,
-          payload: {
-            operation,
-            providerTransactionId: providerResult.providerTransactionId,
-            terminationReason: reason,
-          },
-        },
-        'CANCELING',
-        tx,
-      );
-
-      return { failed: false };
+        return { failed: false };
+      });
     } catch (error) {
       const errorMessage =
-        error instanceof Error ? error.message : `${operation} provider call failed`;
-      await this.persistProviderAttemptFailure(
-        tx,
-        attempt.id,
-        `PROVIDER_${operation}_FAILED`,
-        errorMessage,
-      );
-      await this.stateTransitionService.transitionAttempt(
-        attempt.id,
-        'FAILED_RETRYABLE',
-        {
-          correlationId,
-          causationId: leg.id,
-          reasonCode: `PROVIDER_${operation}_FAILED`,
-          reasonMessage: errorMessage,
-          triggeredByType: 'SYSTEM',
-          triggeredById: intent.customerId,
-          payload: {
-            operation,
-            terminationReason: reason,
-          },
-        },
-        requestedStatus,
-        tx,
-      );
+        error instanceof Error
+          ? error.message
+          : `${operation.operation} provider call failed`;
 
-      await this.stateTransitionService.transitionLeg(
-        leg.id,
-        'RECONCILE_REQUIRED',
-        {
-          correlationId,
-          reasonCode: `LEG_${operation}_FAILED`,
-          reasonMessage: errorMessage,
-          triggeredByType: 'SYSTEM',
-          triggeredById: intent.customerId,
-          payload: {
-            operation,
-            terminationReason: reason,
+      return this.dbService.db.transaction(async (tx) => {
+        await this.persistProviderAttemptFailure(
+          tx,
+          operation.attemptId,
+          `PROVIDER_${operation.operation}_FAILED`,
+          errorMessage,
+        );
+        await this.stateTransitionService.transitionAttempt(
+          operation.attemptId,
+          'FAILED_RETRYABLE',
+          {
+            correlationId,
+            causationId: operation.legId,
+            reasonCode: `PROVIDER_${operation.operation}_FAILED`,
+            reasonMessage: errorMessage,
+            triggeredByType: 'SYSTEM',
+            triggeredById: intent.customerId,
+            payload: {
+              operation: operation.operation,
+              terminationReason: reason,
+            },
           },
-        },
-        'CANCELING',
-        tx,
-      );
+          operation.requestedStatus,
+          tx,
+        );
 
-      const queueItemId = await this.upsertManualQueueItem(tx, {
-        intentId: intent.id,
-        legId: leg.id,
-        actionType: operation,
-        correlationId,
-        requestedBy: intent.customerId,
-        reasonCode: `LEG_${operation}_FAILED`,
-        reasonMessage: errorMessage,
+        await this.stateTransitionService.transitionLeg(
+          operation.legId,
+          'RECONCILE_REQUIRED',
+          {
+            correlationId,
+            reasonCode: `LEG_${operation.operation}_FAILED`,
+            reasonMessage: errorMessage,
+            triggeredByType: 'SYSTEM',
+            triggeredById: intent.customerId,
+            payload: {
+              operation: operation.operation,
+              terminationReason: reason,
+            },
+          },
+          'CANCELING',
+          tx,
+        );
+
+        const queueItemId = await this.upsertManualQueueItem(tx, {
+          intentId: intent.id,
+          legId: operation.legId,
+          actionType: operation.operation,
+          correlationId,
+          requestedBy: intent.customerId,
+          reasonCode: `LEG_${operation.operation}_FAILED`,
+          reasonMessage: errorMessage,
+        });
+
+        return { failed: true, manualQueueItemId: queueItemId };
       });
-
-      return { failed: true, manualQueueItemId: queueItemId };
     }
   }
 
-  private async executeRefundAllocation(
-    tx: DbTx,
-    input: {
-      intent: {
-        id: string;
-        customerId: string;
-        currency: string;
-      };
-      leg: LockedLeg;
-      allocationAmount: number;
-      shouldFullyRefundLeg: boolean;
-      correlationId: string;
-      requestedBy: string;
-      reasonCode: string;
-      reasonMessage?: string;
-    },
+  private async executePreparedRefundAllocation(
+    intent: LockedIntent,
+    allocation: PreparedRefundAllocation,
+    correlationId: string,
   ): Promise<{ failed: boolean; manualQueueItemId?: string }> {
-    const {
-      intent,
-      leg,
-      allocationAmount,
-      shouldFullyRefundLeg,
-      correlationId,
-      requestedBy,
-      reasonCode,
-      reasonMessage,
-    } = input;
-
-    const attempt = await this.createAttempt(tx, {
-      intentId: intent.id,
-      legId: leg.id,
-      operation: 'REFUND',
-      correlationId,
-      triggeredById: requestedBy,
-    });
-
-    await this.stateTransitionService.transitionAttempt(
-      attempt.id,
-      'SENT',
-      {
-        correlationId,
-        causationId: leg.id,
-        reasonCode: 'PROVIDER_REFUND_REQUEST_SENT',
-        reasonMessage: 'Provider refund request sent',
-        triggeredByType: 'SYSTEM',
-        triggeredById: requestedBy,
-        payload: {
-          operation: 'REFUND',
-          amount: allocationAmount,
-        },
-      },
-      'CREATED',
-      tx,
-    );
-
-    await this.stateTransitionService.transitionAttempt(
-      attempt.id,
-      'REFUND_REQUESTED',
-      {
-        correlationId,
-        causationId: leg.id,
-        reasonCode: 'PROVIDER_REFUND_REQUEST_ACCEPTED',
-        reasonMessage: 'Provider refund request accepted',
-        triggeredByType: 'SYSTEM',
-        triggeredById: requestedBy,
-        payload: {
-          operation: 'REFUND',
-          amount: allocationAmount,
-        },
-      },
-      'SENT',
-      tx,
-    );
-
     try {
-      const provider = this.providerRegistry.assertCapability(leg.providerType, 'REFUND', {
-        intentId: intent.id,
-        legId: leg.id,
-      });
+      const provider = this.providerRegistry.assertCapability(
+        allocation.providerType,
+        'REFUND',
+        {
+          intentId: intent.id,
+          legId: allocation.legId,
+        },
+      );
 
       const providerResult = await provider.refund({
         intentId: intent.id,
-        legId: leg.id,
-        attemptId: attempt.id,
-        amount: allocationAmount,
+        legId: allocation.legId,
+        attemptId: allocation.attemptId,
+        amount: allocation.allocationAmount,
         currency: intent.currency,
         customerId: intent.customerId,
         correlationId,
-        metadata: leg.metadata,
+        metadata: allocation.metadata,
       });
 
-      await this.persistProviderAttemptResult(tx, attempt.id, providerResult);
+      return this.dbService.db.transaction(async (tx) => {
+        await this.persistProviderAttemptResult(tx, allocation.attemptId, providerResult);
 
-      if (providerResult.resultStatus !== 'REFUNDED') {
-        const queueItemId = await this.markRefundFailureForLeg(tx, {
-          intentId: intent.id,
-          legId: leg.id,
-          attemptId: attempt.id,
-          correlationId,
-          requestedBy,
-          reasonCode: 'PROVIDER_REFUND_FAILED',
-          reasonMessage: `Unexpected provider refund status: ${providerResult.resultStatus}`,
-        });
-        return { failed: true, manualQueueItemId: queueItemId };
-      }
-
-      await this.stateTransitionService.transitionAttempt(
-        attempt.id,
-        'REFUNDED',
-        {
-          correlationId,
-          causationId: leg.id,
-          reasonCode: 'PROVIDER_REFUND_SUCCEEDED',
-          reasonMessage: 'Provider refund succeeded',
-          triggeredByType: 'SYSTEM',
-          triggeredById: requestedBy,
-          payload: {
-            operation: 'REFUND',
-            amount: allocationAmount,
-            providerTransactionId: providerResult.providerTransactionId,
-          },
-        },
-        'REFUND_REQUESTED',
-        tx,
-      );
-
-      if (shouldFullyRefundLeg) {
-        await this.stateTransitionService.transitionLeg(
-          leg.id,
-          'REFUNDING',
-          {
+        if (providerResult.resultStatus !== 'REFUNDED') {
+          const queueItemId = await this.markRefundFailureForLeg(tx, {
+            intentId: intent.id,
+            legId: allocation.legId,
+            attemptId: allocation.attemptId,
             correlationId,
-            reasonCode: 'LEG_REFUNDING_STARTED',
-            reasonMessage: 'Leg refunding started',
-            triggeredByType: 'SYSTEM',
-            triggeredById: requestedBy,
-            payload: {
-              operation: 'REFUND',
-              amount: allocationAmount,
-            },
-          },
-          'CAPTURED',
-          tx,
-        );
+            requestedBy: allocation.requestedBy,
+            reasonCode: 'PROVIDER_REFUND_FAILED',
+            reasonMessage: `Unexpected provider refund status: ${providerResult.resultStatus}`,
+          });
+          return { failed: true, manualQueueItemId: queueItemId };
+        }
 
-        await this.stateTransitionService.transitionLeg(
-          leg.id,
+        await this.stateTransitionService.transitionAttempt(
+          allocation.attemptId,
           'REFUNDED',
           {
             correlationId,
-            reasonCode: 'LEG_REFUNDED',
-            reasonMessage: 'Leg refunded',
+            causationId: allocation.legId,
+            reasonCode: 'PROVIDER_REFUND_SUCCEEDED',
+            reasonMessage: 'Provider refund succeeded',
             triggeredByType: 'SYSTEM',
-            triggeredById: requestedBy,
+            triggeredById: allocation.requestedBy,
             payload: {
               operation: 'REFUND',
-              amount: allocationAmount,
-              reasonCode,
-              reasonMessage: reasonMessage ?? null,
+              amount: allocation.allocationAmount,
+              providerTransactionId: providerResult.providerTransactionId,
             },
           },
-          'REFUNDING',
+          'REFUND_REQUESTED',
           tx,
         );
-      }
 
-      return { failed: false };
+        if (allocation.shouldFullyRefundLeg) {
+          await this.stateTransitionService.transitionLeg(
+            allocation.legId,
+            'REFUNDING',
+            {
+              correlationId,
+              reasonCode: 'LEG_REFUNDING_STARTED',
+              reasonMessage: 'Leg refunding started',
+              triggeredByType: 'SYSTEM',
+              triggeredById: allocation.requestedBy,
+              payload: {
+                operation: 'REFUND',
+                amount: allocation.allocationAmount,
+              },
+            },
+            'CAPTURED',
+            tx,
+          );
+
+          await this.stateTransitionService.transitionLeg(
+            allocation.legId,
+            'REFUNDED',
+            {
+              correlationId,
+              reasonCode: 'LEG_REFUNDED',
+              reasonMessage: 'Leg refunded',
+              triggeredByType: 'SYSTEM',
+              triggeredById: allocation.requestedBy,
+              payload: {
+                operation: 'REFUND',
+                amount: allocation.allocationAmount,
+                reasonCode: allocation.reasonCode,
+                reasonMessage: allocation.reasonMessage ?? null,
+              },
+            },
+            'REFUNDING',
+            tx,
+          );
+        }
+
+        return { failed: false };
+      });
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Provider refund call failed';
-      const queueItemId = await this.markRefundFailureForLeg(tx, {
-        intentId: intent.id,
-        legId: leg.id,
-        attemptId: attempt.id,
-        correlationId,
-        requestedBy,
-        reasonCode: 'PROVIDER_REFUND_FAILED',
-        reasonMessage: errorMessage,
+
+      return this.dbService.db.transaction(async (tx) => {
+        const queueItemId = await this.markRefundFailureForLeg(tx, {
+          intentId: intent.id,
+          legId: allocation.legId,
+          attemptId: allocation.attemptId,
+          correlationId,
+          requestedBy: allocation.requestedBy,
+          reasonCode: 'PROVIDER_REFUND_FAILED',
+          reasonMessage: errorMessage,
+        });
+        return { failed: true, manualQueueItemId: queueItemId };
       });
-      return { failed: true, manualQueueItemId: queueItemId };
     }
   }
 
