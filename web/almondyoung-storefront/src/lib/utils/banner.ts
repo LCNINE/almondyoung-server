@@ -8,8 +8,12 @@ export function getActiveBanners(banners: BannerDto[] = []): BannerDto[] {
   const now = new Date().getTime()
 
   return sortBy(banners, ["sortOrder"]).filter((banner) => {
-    const start = new Date(banner.displayStartAt ?? 0).getTime()
-    const end = new Date(banner.displayEndAt ?? 0).getTime()
+    const start = banner.displayStartAt
+      ? new Date(banner.displayStartAt).getTime()
+      : 0
+    const end = banner.displayEndAt
+      ? new Date(banner.displayEndAt).getTime()
+      : Infinity
 
     return banner.isActive && start <= now && end >= now
   })
