@@ -459,12 +459,16 @@ describeWalletDbIntegration('Reconcile service integration (real path)', () => {
     const payload = eventRow?.payload as
       | {
           reasonCode?: string;
+          payableAmount?: number;
+          currency?: string;
           manualQueueItemId?: string | null;
           manualQueueItemIds?: string[];
         }
       | undefined;
 
     expect(payload?.reasonCode).toBe('INTENT_RECONCILE_REQUIRED');
+    expect(payload?.payableAmount).toBe(10000);
+    expect(payload?.currency).toBe('KRW');
     expect(payload?.manualQueueItemId).toBe(queueItemId);
     expect(payload?.manualQueueItemIds).toContain(queueItemId);
   });

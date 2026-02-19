@@ -676,6 +676,8 @@ export class ReconcileService {
                   referenceId: intent.referenceId,
                   customerId: intent.customerId,
                   status: 'RECONCILE_REQUIRED',
+                  payableAmount: intent.payableAmount,
+                  currency: intent.currency,
                   reasonCode: retryContext?.reasonCode ?? 'INTENT_RECONCILE_REQUIRED',
                   reasonMessage:
                     retryContext?.reasonMessage ??
