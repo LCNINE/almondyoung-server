@@ -7,7 +7,6 @@ import { revalidateTag } from "next/cache"
 import { handleMedusaAuthError } from "./auth-utils"
 import {
   getAuthHeaders,
-  getCacheOptions,
   getCacheTag,
   getCartId,
 } from "../../data/cookies"
@@ -28,19 +27,14 @@ export const retrieveCustomer =
       ...authHeaders,
     }
 
-    const next = {
-      ...(await getCacheOptions("customers")),
-    }
-
     return await sdk.client
       .fetch<{ customer: StoreCustomerWithGroups }>(`/store/customers/me`, {
         method: "GET",
         query: {
-          fields: "*orders,*addresses,*groups",
+          fields: "*addresses",
         },
         headers,
-        next,
-        cache: "force-cache",
+        cache: "no-store",
       })
       .then(({ customer }) => customer)
       .catch(() => null)

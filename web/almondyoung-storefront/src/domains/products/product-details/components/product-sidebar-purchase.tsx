@@ -103,7 +103,24 @@ export function ProductSidebarPurchase({
   const resolvePrice = (base?: number, actual?: number) => {
     const basePrice = base ?? 0
     const actualPrice = actual ?? basePrice
-    return isMembershipPricing ? actualPrice : basePrice
+    if (!isMembershipPricing) {
+      return basePrice
+    }
+
+    if (actualPrice > 0 && actualPrice < basePrice) {
+      return actualPrice
+    }
+
+    const fallbackMembershipPrice = product.membershipPrice
+    if (
+      typeof fallbackMembershipPrice === "number" &&
+      fallbackMembershipPrice > 0 &&
+      fallbackMembershipPrice < basePrice
+    ) {
+      return fallbackMembershipPrice
+    }
+
+    return actualPrice
   }
   const getVariantPrice = (variantId?: string) => {
     if (variantId && variantId === product.defaultVariantId) {

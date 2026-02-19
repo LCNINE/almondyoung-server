@@ -11,7 +11,6 @@ import { WishlistProvider } from "@/contexts/wishlist-context"
 import "@/styles/globals.css"
 import { retrieveCart } from "@lib/api/medusa/cart"
 import { getCurrentSubscription } from "@/lib/api/membership"
-import { retrieveCustomer } from "@lib/api/medusa/customer"
 import { fetchMe } from "@lib/api/users/me"
 import { CustomThemeProvider } from "@lib/providers/custom-theme-provider"
 import { ThemeProvider } from "@lib/providers/theme-provider"
@@ -41,20 +40,19 @@ export const metadata: Metadata = getSEOTags({
 
 async function getMembershipStatus({
   isLoggedIn,
-  customerGroupsFromMe,
   customerGroupsFromCart,
+  cartCustomerId,
 }: {
   isLoggedIn: boolean
-  customerGroupsFromMe?: { id?: string | null }[] | null
   customerGroupsFromCart?: { id?: string | null }[] | null
+  cartCustomerId?: string | null
 }): Promise<MembershipContextType> {
   if (!isLoggedIn) {
     return { status: "guest", isMembershipPricing: false }
   }
 
   const isMembershipPricing =
-    isMembershipGroup(customerGroupsFromMe) ||
-    isMembershipGroup(customerGroupsFromCart)
+    !!cartCustomerId && isMembershipGroup(customerGroupsFromCart)
   const status = isMembershipPricing ? "membership" : "regular"
 
   try {
@@ -77,19 +75,21 @@ async function getMembershipStatus({
 }
 
 export default async function RootLayout(props: { children: React.ReactNode }) {
-  const [user, cart, customer] = await Promise.all([
+  const [user, cart] = await Promise.all([
     fetchMe().catch(() => null),
-    retrieveCart().catch(() => null),
-    retrieveCustomer().catch(() => null),
+    retrieveCart(undefined, undefined, "no-store").catch(() => null),
   ])
-  const cartWithGroups = cart as
-    | (typeof cart & { customer?: { groups?: CustomerGroupRef[] } })
+  const cartWithCustomer = cart as
+    | (typeof cart & {
+        customer_id?: string | null
+        customer?: { groups?: CustomerGroupRef[] }
+      })
     | null
 
   const membershipStatus = await getMembershipStatus({
     isLoggedIn: !!user,
-    customerGroupsFromMe: customer?.groups,
-    customerGroupsFromCart: cartWithGroups?.customer?.groups,
+    customerGroupsFromCart: cartWithCustomer?.customer?.groups,
+    cartCustomerId: cartWithCustomer?.customer_id,
   })
 
   return (
