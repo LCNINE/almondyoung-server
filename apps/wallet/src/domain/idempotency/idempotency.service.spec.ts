@@ -1,5 +1,6 @@
 import { ConflictException } from '@nestjs/common';
 import {
+  IdempotencyTx,
   IdempotencyRepository,
 } from './idempotency.repository';
 import { IdempotencyService } from './idempotency.service';
@@ -233,7 +234,7 @@ describe('IdempotencyService', () => {
     });
   });
 
-  it('allows retry for failed command with same payload', async () => {
+  it('replays failed command with same payload', async () => {
     const begin = await service.beginCommandRequest({
       idempotencyKey: 'cmd-idem-3',
       operation: 'StartPaymentLeg',
@@ -257,8 +258,12 @@ describe('IdempotencyService', () => {
     });
 
     expect(retry).toMatchObject({
-      kind: 'STARTED',
-      recordId: begin.recordId,
+      kind: 'REPLAY',
+      responseCode: 500,
+      responseBody: {
+        error: 'PROVIDER_TIMEOUT',
+        message: 'timeout',
+      },
     });
   });
 });
@@ -266,11 +271,18 @@ describe('IdempotencyService', () => {
 class InMemoryIdempotencyRepository implements IdempotencyRepository {
   private readonly store = new Map<string, IdempotencyKeyRecord>();
 
-  async findById(recordId: string): Promise<IdempotencyKeyRecord | null> {
+  async runInTransaction<T>(callback: (tx: IdempotencyTx) => Promise<T>): Promise<T> {
+    return callback({} as IdempotencyTx);
+  }
+
+  async findByIdForUpdate(
+    _tx: IdempotencyTx,
+    recordId: string,
+  ): Promise<IdempotencyKeyRecord | null> {
     return this.store.get(recordId) ?? null;
   }
 
-  async insert(record: NewIdempotencyKeyRecord): Promise<void> {
+  async insert(_tx: IdempotencyTx, record: NewIdempotencyKeyRecord): Promise<void> {
     if (this.store.has(record.id)) {
       const error = new Error('duplicate key value violates unique constraint');
       (error as Error & { code?: string }).code = '23505';
@@ -285,6 +297,7 @@ class InMemoryIdempotencyRepository implements IdempotencyRepository {
   }
 
   async update(
+    _tx: IdempotencyTx,
     recordId: string,
     patch: UpdateIdempotencyKeyRecord,
   ): Promise<void> {
@@ -296,5 +309,40 @@ class InMemoryIdempotencyRepository implements IdempotencyRepository {
       ...existing,
       ...patch,
     });
+  }
+
+  async updateIfPending(
+    _tx: IdempotencyTx,
+    recordId: string,
+    patch: UpdateIdempotencyKeyRecord,
+  ): Promise<boolean> {
+    const existing = this.store.get(recordId);
+    if (!existing || existing.status !== 'PENDING') {
+      return false;
+    }
+
+    this.store.set(recordId, {
+      ...existing,
+      ...patch,
+    });
+    return true;
+  }
+
+  async updateIfExpired(
+    _tx: IdempotencyTx,
+    recordId: string,
+    now: Date,
+    patch: UpdateIdempotencyKeyRecord,
+  ): Promise<boolean> {
+    const existing = this.store.get(recordId);
+    if (!existing || existing.expiresAt.getTime() > now.getTime()) {
+      return false;
+    }
+
+    this.store.set(recordId, {
+      ...existing,
+      ...patch,
+    });
+    return true;
   }
 }
