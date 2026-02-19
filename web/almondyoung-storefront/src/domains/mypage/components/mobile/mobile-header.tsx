@@ -2,33 +2,16 @@
 
 import { Settings, Crown } from "lucide-react"
 import Link from "next/link"
-import { useEffect, useState } from "react"
-import { getCurrentSubscription } from "@lib/api/membership/client"
+import { useMembership } from "@/contexts/membership-context"
 
 interface MobileHeaderProps {
   userName: string
 }
 
 export function MobileHeader({ userName }: MobileHeaderProps) {
-  const [isMember, setIsMember] = useState(false)
-  const [tierName, setTierName] = useState("")
-
-  useEffect(() => {
-    const fetchMembershipStatus = async () => {
-      try {
-        const subscription = await getCurrentSubscription()
-
-        if (subscription && subscription.status === "ACTIVE") {
-          setIsMember(true)
-          setTierName(subscription.plan?.tier?.name || "멤버십")
-        }
-      } catch (error) {
-        // 멤버십이 없거나 오류 발생 시 비회원으로 처리
-      }
-    }
-
-    fetchMembershipStatus()
-  }, [])
+  const { isMembershipPricing, tier } = useMembership()
+  const isMember = isMembershipPricing
+  const tierName = tier?.name ?? "멤버십"
 
   return (
     <header className="flex items-center justify-between">

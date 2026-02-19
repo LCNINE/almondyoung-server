@@ -6,8 +6,7 @@ import { getOrders } from "@lib/api/medusa/orders"
 import { getProductList } from "@lib/api/medusa/products"
 import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
 import { Package } from "lucide-react"
-import { Suspense } from "react"
-import { RebuyContainer, RebuyContainerSkeleton } from "./rebuy-container"
+import { RebuyContainer } from "./rebuy-container"
 
 export const metadata: Metadata = {
   title: "재구매",
@@ -35,9 +34,7 @@ export default async function RebuyPage({ params }: RebuyPageProps) {
       <MypageLayout>
         <div className="rounded-xl bg-white px-3 pt-4 pb-9 md:px-6">
           <PageTitle>자주 산 상품</PageTitle>
-          <Suspense fallback={<RebuyContainerSkeleton />}>
-            <RebuyProductsList countryCode={countryCode} />
-          </Suspense>
+          <RebuyProductsList countryCode={countryCode} />
         </div>
       </MypageLayout>
     </WithHeaderLayout>

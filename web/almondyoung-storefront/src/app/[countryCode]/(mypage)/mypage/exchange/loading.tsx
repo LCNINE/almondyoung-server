@@ -3,7 +3,7 @@ import { MypageExchangeSkeleton } from "@/components/skeletons/page-skeletons"
 
 export default function Loading() {
   return (
-    <MypageLoadingShell title="취소/교환/반품">
+    <MypageLoadingShell title="교환/환불">
       <MypageExchangeSkeleton />
     </MypageLoadingShell>
   )

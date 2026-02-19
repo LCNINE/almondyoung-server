@@ -3,7 +3,7 @@
 import React from "react"
 import { CartCard } from "@components/cart/cart-cards"
 import type { CartItem } from "@lib/types/ui/cart"
-import { useMembership } from "@/contexts/membership-context"
+import { useMembershipPricing } from "@/hooks/use-membership-pricing"
 
 interface CartItemListProps {
   items: CartItem[]
@@ -24,8 +24,8 @@ export function CartItemList({
   variant = "mobile",
   countryCode = "kr",
 }: CartItemListProps) {
-  const { status } = useMembership()
-  const isMember = status === "membership"
+  const { isMembershipPricing } = useMembershipPricing()
+  const isMember = isMembershipPricing
 
   if (variant === "mobile") {
     return (

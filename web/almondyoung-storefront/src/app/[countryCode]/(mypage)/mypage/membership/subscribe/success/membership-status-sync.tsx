@@ -17,14 +17,13 @@ export default function MembershipStatusSync() {
         if (subscription?.status === "ACTIVE") {
           setMembership?.({
             status: "membership",
+            isMembershipPricing: true,
             tier: {
               code: subscription.tier?.code ?? "membership",
               name: subscription.tier?.name ?? "멤버십",
               priorityLevel: subscription.tier?.priorityLevel ?? 0,
             },
           })
-        } else {
-          setMembership?.({ status: "regular" })
         }
       } catch {
         // 실패 시 강제 변경하지 않음
