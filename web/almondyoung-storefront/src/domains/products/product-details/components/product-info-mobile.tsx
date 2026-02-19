@@ -18,20 +18,34 @@ type Props = {
 export function ProductInfoMobile({ product }: Props) {
   const { isMembershipPricing } = useMembershipPricing()
   const isMember = isMembershipPricing
-  // 유틸 함수
-  const getDiscountRate = () => {
-    const base = product.basePrice || 0
-    const actual = product.actualPrice ?? base
-    if (isMembershipPricing && base > 0 && actual > 0 && actual < base) {
-      return Math.round(((base - actual) / base) * 100)
-    }
-    return 0
-  }
   const hasMembershipPrice =
     typeof product.membershipPrice === "number" &&
     typeof product.basePrice === "number" &&
     product.membershipPrice > 0 &&
     product.basePrice > product.membershipPrice
+
+  const memberDisplayPrice =
+    typeof product.actualPrice === "number" &&
+    product.actualPrice > 0 &&
+    product.actualPrice < (product.basePrice || 0)
+      ? product.actualPrice
+      : hasMembershipPrice
+        ? (product.membershipPrice as number)
+        : (product.actualPrice ?? product.basePrice ?? 0)
+
+  // 유틸 함수
+  const getDiscountRate = () => {
+    const base = product.basePrice || 0
+    if (
+      isMembershipPricing &&
+      base > 0 &&
+      memberDisplayPrice > 0 &&
+      memberDisplayPrice < base
+    ) {
+      return Math.round(((base - memberDisplayPrice) / base) * 100)
+    }
+    return 0
+  }
 
   return (
     <section className="md:hidden" aria-label="상품 정보">
@@ -59,7 +73,7 @@ export function ProductInfoMobile({ product }: Props) {
         isMembershipOnly={product.isMembershipOnly}
         discountRate={getDiscountRate()}
         memberPrices={product.memberPrices}
-        actualPrice={product.actualPrice}
+        actualPrice={memberDisplayPrice}
         showMembershipHint={
           !isMember &&
           hasMembershipPrice &&
