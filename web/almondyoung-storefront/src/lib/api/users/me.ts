@@ -6,11 +6,10 @@ import {
   removeRefreshToken,
 } from "@lib/data/cookies"
 import type { UserDetail } from "@lib/types/ui/user"
-import { cache } from "react"
 import { api } from "../api"
 import { HttpApiError } from "../api-error"
 
-export const fetchMe = cache(async (): Promise<UserDetail> => {
+export const fetchMe = async (): Promise<UserDetail> => {
   try {
     const result = await api<UserDetail>("users", "/users/me", {
       cache: "no-store",
@@ -30,4 +29,4 @@ export const fetchMe = cache(async (): Promise<UserDetail> => {
 
     throw error
   }
-})
+}
