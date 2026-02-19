@@ -184,3 +184,34 @@ ts-node -r tsconfig-paths/register scripts/user-service/create-test-users.ts --c
 --role-id <uuid>         역할 ID (role보다 우선)
 --verify-phone           휴대폰 인증 완료 레코드 생성
 ```
+
+## Wallet Outbox Requeue
+
+### 설명
+
+`DEAD_LETTER` 또는 `FAILED` 상태의 wallet outbox 이벤트 1건을 `PENDING`으로 재큐잉합니다.
+
+### 사용 방법
+
+```bash
+# outbox id 기준 재큐잉
+npm run wallet:outbox:requeue -- --id <outbox-id>
+
+# message id 기준 재큐잉
+npm run wallet:outbox:requeue -- --message-id <message-id>
+
+# dry-run
+npm run wallet:outbox:requeue -- --id <outbox-id> --dry-run
+```
+
+### 주요 옵션
+
+```
+--id <uuid>               outbox 이벤트 id
+--message-id <id>         outbox message_id
+--env <path>              env 파일 경로 (기본: apps/wallet/.env)
+--reason <text>           재큐잉 사유 (last_error_message에 기록)
+--keep-attempts           attempts를 0으로 리셋하지 않고 유지
+--force                   어떤 status에서도 강제 재큐잉 허용
+--dry-run                 변경 없이 대상 이벤트 조회만 수행
+```

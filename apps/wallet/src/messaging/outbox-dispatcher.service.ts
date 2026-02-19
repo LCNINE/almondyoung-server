@@ -19,6 +19,7 @@ const DEFAULT_OUTBOX_MAX_ATTEMPTS = 10;
 const DEFAULT_OUTBOX_BASE_DELAY_MS = 5_000;
 const DEFAULT_OUTBOX_MAX_DELAY_MS = 300_000;
 const DEFAULT_OUTBOX_PROCESSING_TIMEOUT_SECONDS = 300;
+const DEFAULT_OUTBOX_DEAD_LETTER_ENABLED = true;
 
 type PaymentsEventType = keyof PaymentsEventsV1 & string;
 
@@ -34,6 +35,7 @@ export class OutboxDispatcherService {
   private readonly baseDelayMs: number;
   private readonly maxDelayMs: number;
   private readonly processingTimeoutSeconds: number;
+  private readonly deadLetterEnabled: boolean;
 
   constructor(
     private readonly dbService: DbService<WalletSchema>,
@@ -59,6 +61,10 @@ export class OutboxDispatcherService {
     this.processingTimeoutSeconds = this.readPositiveInt(
       process.env.WALLET_OUTBOX_PROCESSING_TIMEOUT_SECONDS,
       DEFAULT_OUTBOX_PROCESSING_TIMEOUT_SECONDS,
+    );
+    this.deadLetterEnabled = this.readBoolean(
+      process.env.WALLET_OUTBOX_DEAD_LETTER_ENABLED,
+      DEFAULT_OUTBOX_DEAD_LETTER_ENABLED,
     );
   }
 
@@ -103,7 +109,7 @@ export class OutboxDispatcherService {
                 previous.created_at < current.created_at
                 or (previous.created_at = current.created_at and previous.id < current.id)
               )
-              and previous.status <> 'PUBLISHED'
+              and previous.status in ('PENDING', 'PROCESSING')
           )
         order by current.created_at asc, current.id asc
         limit ${this.batchSize}
@@ -145,8 +151,11 @@ export class OutboxDispatcherService {
         .set({
           status: 'PUBLISHED',
           publishedAt: new Date(),
+          nextAttemptAt: null,
           lastErrorCode: null,
           lastErrorMessage: null,
+          deadLetteredAt: null,
+          deadLetterReason: null,
           updatedAt: new Date(),
         })
         .where(eq(outboxEvents.id, event.id));
@@ -161,8 +170,10 @@ export class OutboxDispatcherService {
 
   private async markFailure(event: OutboxRow, error: unknown): Promise<void> {
     const nextAttempts = event.attempts + 1;
-    const shouldFail = nextAttempts >= this.maxAttempts;
-    const nextAttemptAt = shouldFail
+    const isTerminalFailure = nextAttempts >= this.maxAttempts;
+    const isDeadLetter = isTerminalFailure && this.deadLetterEnabled;
+    const nextStatus = isDeadLetter ? 'DEAD_LETTER' : isTerminalFailure ? 'FAILED' : 'PENDING';
+    const nextAttemptAt = isTerminalFailure
       ? null
       : new Date(Date.now() + this.calculateBackoffMs(nextAttempts));
     const { errorCode, errorMessage } = this.toOutboxError(error);
@@ -170,17 +181,19 @@ export class OutboxDispatcherService {
     await this.dbService.db
       .update(outboxEvents)
       .set({
-        status: shouldFail ? 'FAILED' : 'PENDING',
+        status: nextStatus,
         attempts: nextAttempts,
         nextAttemptAt,
         lastErrorCode: errorCode,
         lastErrorMessage: errorMessage,
+        deadLetteredAt: isDeadLetter ? new Date() : null,
+        deadLetterReason: isDeadLetter ? `[${errorCode}] ${errorMessage}` : null,
         updatedAt: new Date(),
       })
       .where(eq(outboxEvents.id, event.id));
 
     this.logger.warn(
-      `Outbox publish failed: id=${event.id}, messageId=${event.messageId}, attempts=${nextAttempts}, final=${shouldFail}, eventType=${event.eventType}, partitionKey=${event.partitionKey}, reason=${errorMessage}`,
+      `Outbox publish failed: id=${event.id}, messageId=${event.messageId}, attempts=${nextAttempts}, terminal=${isTerminalFailure}, nextStatus=${nextStatus}, eventType=${event.eventType}, partitionKey=${event.partitionKey}, reason=${errorMessage}`,
     );
   }
 
@@ -194,6 +207,8 @@ export class OutboxDispatcherService {
         updatedAt: new Date(),
         lastErrorCode: 'OUTBOX_PROCESSING_TIMEOUT',
         lastErrorMessage: `Requeued after ${this.processingTimeoutSeconds}s timeout`,
+        deadLetteredAt: null,
+        deadLetterReason: null,
       })
       .where(
         and(
@@ -321,6 +336,20 @@ export class OutboxDispatcherService {
       return fallback;
     }
     return Math.floor(parsed);
+  }
+
+  private readBoolean(raw: string | undefined, fallback: boolean): boolean {
+    if (raw === undefined) {
+      return fallback;
+    }
+    const normalized = raw.trim().toLowerCase();
+    if (normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on') {
+      return true;
+    }
+    if (normalized === '0' || normalized === 'false' || normalized === 'no' || normalized === 'off') {
+      return false;
+    }
+    return fallback;
   }
 
   private isSupportedEventType(eventType: string): eventType is PaymentsEventType {
