@@ -8,9 +8,9 @@ import {
 import {
   PAYMENTS_EVENTS_V1_STREAM,
   PaymentsEventsV1,
-} from '@packages/event-contracts';
+} from '@packages/event-contracts/streams/payments-v1.stream';
 import { DomainEvent } from '@packages/event-contracts/types';
-import { and, asc, eq, inArray, isNull, lte, or } from 'drizzle-orm';
+import { and, eq, inArray, lte, sql } from 'drizzle-orm';
 import { WalletSchema, outboxEvents } from '../schema';
 
 const DEFAULT_OUTBOX_DISPATCH_CRON = '*/5 * * * * *';
@@ -77,29 +77,38 @@ export class OutboxDispatcherService {
   }
 
   private async acquirePendingBatch(): Promise<OutboxRow[]> {
-    const now = new Date();
     return this.dbService.db.transaction(async (tx) => {
-      const rows = await tx
-        .select({
-          id: outboxEvents.id,
-          messageId: outboxEvents.messageId,
-          eventType: outboxEvents.eventType,
-          aggregateType: outboxEvents.aggregateType,
-          aggregateId: outboxEvents.aggregateId,
-          partitionKey: outboxEvents.partitionKey,
-          payload: outboxEvents.payload,
-          attempts: outboxEvents.attempts,
-        })
-        .from(outboxEvents)
-        .where(
-          and(
-            eq(outboxEvents.status, 'PENDING'),
-            or(isNull(outboxEvents.nextAttemptAt), lte(outboxEvents.nextAttemptAt, now)),
-          ),
-        )
-        .orderBy(asc(outboxEvents.createdAt))
-        .limit(this.batchSize)
-        .for('update', { skipLocked: true });
+      const rows = (await tx.execute(sql`
+        select
+          current.id as "id",
+          current.message_id as "messageId",
+          current.event_type as "eventType",
+          current.aggregate_type as "aggregateType",
+          current.aggregate_id as "aggregateId",
+          current.partition_key as "partitionKey",
+          current.payload as "payload",
+          current.attempts as "attempts",
+          current.created_at as "createdAt"
+        from outbox_events current
+        where current.status = 'PENDING'
+          and (
+            current.next_attempt_at is null
+            or current.next_attempt_at <= now()
+          )
+          and not exists (
+            select 1
+            from outbox_events previous
+            where previous.partition_key = current.partition_key
+              and (
+                previous.created_at < current.created_at
+                or (previous.created_at = current.created_at and previous.id < current.id)
+              )
+              and previous.status <> 'PUBLISHED'
+          )
+        order by current.created_at asc, current.id asc
+        limit ${this.batchSize}
+        for update skip locked
+      `)) as unknown as OutboxRow[];
 
       if (rows.length === 0) {
         return [];
@@ -123,6 +132,10 @@ export class OutboxDispatcherService {
       if (!this.isSupportedEventType(event.eventType)) {
         throw new Error(`OUTBOX_EVENT_TYPE_UNSUPPORTED:${event.eventType}`);
       }
+      this.validatePayloadContract({
+        ...event,
+        eventType: event.eventType,
+      });
 
       const envelope = this.buildEnvelope(event);
       await this.paymentsPublisher.publishRawEnvelope(envelope, event.partitionKey);
@@ -137,6 +150,10 @@ export class OutboxDispatcherService {
           updatedAt: new Date(),
         })
         .where(eq(outboxEvents.id, event.id));
+
+      this.logger.debug(
+        `Outbox publish succeeded: id=${event.id}, messageId=${event.messageId}, eventType=${event.eventType}, partitionKey=${event.partitionKey}`,
+      );
     } catch (error) {
       await this.markFailure(event, error);
     }
@@ -163,7 +180,7 @@ export class OutboxDispatcherService {
       .where(eq(outboxEvents.id, event.id));
 
     this.logger.warn(
-      `Outbox publish failed: id=${event.id}, attempts=${nextAttempts}, final=${shouldFail}, eventType=${event.eventType}, reason=${errorMessage}`,
+      `Outbox publish failed: id=${event.id}, messageId=${event.messageId}, attempts=${nextAttempts}, final=${shouldFail}, eventType=${event.eventType}, partitionKey=${event.partitionKey}, reason=${errorMessage}`,
     );
   }
 
@@ -220,6 +237,30 @@ export class OutboxDispatcherService {
         outboxEventId: event.id,
       },
     };
+  }
+
+  private validatePayloadContract(
+    event: OutboxRow & {
+      eventType: PaymentsEventType;
+    },
+  ): void {
+    const eventDef = PAYMENTS_EVENTS_V1_STREAM.events[event.eventType];
+    const schema = eventDef?.schema;
+    if (!schema) {
+      return;
+    }
+
+    const parsed = schema.safeParse(event.payload);
+    if (parsed.success) {
+      return;
+    }
+
+    const firstIssue = parsed.error.issues[0];
+    const issuePath = firstIssue?.path?.join('.') || 'payload';
+    const issueMessage = firstIssue?.message || 'unknown schema validation error';
+    throw new Error(
+      `OUTBOX_PAYLOAD_CONTRACT_INVALID:${event.eventType}:${issuePath}:${issueMessage}`,
+    );
   }
 
   private readPayloadTimestamp(
@@ -296,4 +337,5 @@ interface OutboxRow {
   partitionKey: string;
   payload: Record<string, unknown>;
   attempts: number;
+  createdAt: Date | string;
 }

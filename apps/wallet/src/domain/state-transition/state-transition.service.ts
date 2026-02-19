@@ -1,6 +1,5 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { generateMessageId } from '@app/events';
 import { eq, sql } from 'drizzle-orm';
 import {
   WalletSchema,
@@ -22,6 +21,7 @@ import {
 import { DbTx } from '../../types';
 import { inTx } from '../../database/tx.util';
 import { assertTransitionAllowed } from './state-transition.rules';
+import { buildOutboxInsertValues } from '../../messaging/outbox-event.util';
 
 type TransitionTargetStatus =
   | PaymentIntentStatus
@@ -336,19 +336,7 @@ export class StateTransitionService {
 
     const outboxEvent = context.outboxEvent;
 
-    await tx.insert(outboxEvents).values({
-      messageId: generateMessageId(),
-      eventType: outboxEvent.eventType,
-      aggregateType: outboxEvent.aggregateType,
-      aggregateId: outboxEvent.aggregateId,
-      partitionKey: outboxEvent.partitionKey ?? outboxEvent.aggregateId,
-      payload: outboxEvent.payload,
-      status: 'PENDING',
-      attempts: 0,
-      nextAttemptAt: new Date(),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
+    await tx.insert(outboxEvents).values(buildOutboxInsertValues(outboxEvent));
   }
 
   private async lockIntent(

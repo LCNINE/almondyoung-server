@@ -1,6 +1,6 @@
 import {
   CreatePaymentIntentCommandPayload,
-} from '@packages/event-contracts';
+} from '@packages/event-contracts/streams/payments-v1.stream';
 import { DomainCommand } from '@packages/event-contracts/types';
 import { IdempotencyService } from '../domain/idempotency/idempotency.service';
 import { IntentsService } from '../intents/intents.service';
@@ -96,13 +96,87 @@ describe('PaymentsCommandConsumer', () => {
       {
         error: 'COMMAND_PROCESS_FAILED',
         message: 'boom',
+        commandType: 'CreatePaymentIntent',
+        correlationId: 'corr-1',
       },
     );
   });
+
+  it('records standardized failure when payload validation fails', async () => {
+    idempotencyService.beginCommandRequest.mockResolvedValue({
+      kind: 'STARTED',
+      recordId: 'record-3',
+    });
+
+    await expect(
+      consumer.onCreatePaymentIntent(
+        createPaymentIntentCommand({
+          payload: {
+            referenceId: '',
+          },
+        }),
+      ),
+    ).rejects.toThrow('COMMAND_PAYLOAD_INVALID');
+
+    expect(intentsService.createIntent).not.toHaveBeenCalled();
+    expect(idempotencyService.completeFailure).toHaveBeenCalledWith(
+      'record-3',
+      500,
+      expect.objectContaining({
+        error: 'COMMAND_PAYLOAD_INVALID',
+        commandType: 'CreatePaymentIntent',
+        correlationId: 'corr-1',
+      }),
+    );
+  });
+
+  it('skips expired command before idempotency processing', async () => {
+    const command = createPaymentIntentCommand({
+      expiresAt: new Date(Date.now() - 1000).toISOString(),
+    });
+
+    await consumer.onCreatePaymentIntent(command);
+
+    expect(idempotencyService.beginCommandRequest).not.toHaveBeenCalled();
+    expect(intentsService.createIntent).not.toHaveBeenCalled();
+  });
+
+  it('skips command with invalid expiresAt before idempotency processing', async () => {
+    const command = createPaymentIntentCommand({
+      expiresAt: 'invalid-date',
+    });
+
+    await consumer.onCreatePaymentIntent(command);
+
+    expect(idempotencyService.beginCommandRequest).not.toHaveBeenCalled();
+    expect(intentsService.createIntent).not.toHaveBeenCalled();
+  });
 });
 
-function createPaymentIntentCommand(): DomainCommand<CreatePaymentIntentCommandPayload> {
-  return {
+function createPaymentIntentCommand(
+  overrides?: Omit<Partial<DomainCommand<CreatePaymentIntentCommandPayload>>, 'payload'> & {
+    payload?: Partial<CreatePaymentIntentCommandPayload>;
+  },
+): DomainCommand<CreatePaymentIntentCommandPayload> {
+  const payload: CreatePaymentIntentCommandPayload = {
+    requestedBy: 'service-checkout',
+    requestSource: 'checkout',
+    idempotencyKey: 'cmd-idem-1',
+    referenceType: 'STORE_ORDER',
+    referenceId: 'order-1',
+    customerId: 'customer-1',
+    currency: 'KRW',
+    payableAmount: 1000,
+    snapshotPayload: {
+      orderId: 'order-1',
+    },
+    signature: 'sig',
+    signatureVersion: 'v1',
+    signedAt: new Date().toISOString(),
+    ...(overrides?.payload ?? {}),
+  };
+
+  const baseCommand: DomainCommand<CreatePaymentIntentCommandPayload> = {
     messageId: 'msg-1',
     messageType: 'CreatePaymentIntent',
     messageVersion: 1,
@@ -114,21 +188,12 @@ function createPaymentIntentCommand(): DomainCommand<CreatePaymentIntentCommandP
       aggregateType: 'Order',
       aggregateId: 'order-1',
     },
-    payload: {
-      requestedBy: 'service-checkout',
-      requestSource: 'checkout',
-      idempotencyKey: 'cmd-idem-1',
-      referenceType: 'STORE_ORDER',
-      referenceId: 'order-1',
-      customerId: 'customer-1',
-      currency: 'KRW',
-      payableAmount: 1000,
-      snapshotPayload: {
-        orderId: 'order-1',
-      },
-      signature: 'sig',
-      signatureVersion: 'v1',
-      signedAt: new Date().toISOString(),
-    },
+    payload,
+  };
+
+  return {
+    ...baseCommand,
+    ...(overrides ?? {}),
+    payload,
   };
 }

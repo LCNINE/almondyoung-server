@@ -11,19 +11,30 @@ import {
   RetryReconcileCommandPayload,
   StartPaymentLegCommandPayload,
   SupersedePaymentIntentCommandPayload,
-} from '@packages/event-contracts';
+} from '@packages/event-contracts/streams/payments-v1.stream';
 import { DomainCommand } from '@packages/event-contracts/types';
 import { IdempotencyService } from '../domain/idempotency/idempotency.service';
 import { IntentsService } from '../intents/intents.service';
 import { ReconcileService } from '../reconcile/reconcile.service';
 
 const COMMANDS_TOPIC = PAYMENTS_COMMANDS_V1_STREAM.topic.topic;
+const SUPPORTED_REFERENCE_TYPES = new Set([
+  'STORE_ORDER',
+  'SUBSCRIPTION_BILLING',
+]);
+
+type CommandSkipReason = 'NON_COMMAND' | 'INVALID_EXPIRES_AT' | 'EXPIRED';
 
 @Controller()
 @Public()
 @UseInterceptors(EventTypeGuard)
 export class PaymentsCommandConsumer {
   private readonly logger = new Logger(PaymentsCommandConsumer.name);
+  private readonly skippedCommandCounters: Record<CommandSkipReason, number> = {
+    NON_COMMAND: 0,
+    INVALID_EXPIRES_AT: 0,
+    EXPIRED: 0,
+  };
 
   constructor(
     private readonly intentsService: IntentsService,
@@ -37,6 +48,7 @@ export class PaymentsCommandConsumer {
     envelope: DomainCommand<CreatePaymentIntentCommandPayload>,
   ): Promise<void> {
     await this.handleCommand(envelope, 'CreatePaymentIntent', async () => {
+      this.validateCreatePaymentIntentPayload(envelope.payload);
       await this.intentsService.createIntent(
         {
           referenceType: envelope.payload.referenceType,
@@ -61,6 +73,7 @@ export class PaymentsCommandConsumer {
     envelope: DomainCommand<StartPaymentLegCommandPayload>,
   ): Promise<void> {
     await this.handleCommand(envelope, 'StartPaymentLeg', async () => {
+      this.validateStartPaymentLegPayload(envelope.payload);
       if (envelope.payload.operation === 'CAPTURE') {
         await this.intentsService.captureLeg(
           envelope.payload.intentId,
@@ -84,6 +97,7 @@ export class PaymentsCommandConsumer {
     envelope: DomainCommand<CancelPaymentIntentCommandPayload>,
   ): Promise<void> {
     await this.handleCommand(envelope, 'CancelPaymentIntent', async () => {
+      this.validateIntentOnlyCommandPayload(envelope.payload);
       await this.intentsService.cancelIntent(
         envelope.payload.intentId,
         envelope.correlationId,
@@ -97,6 +111,7 @@ export class PaymentsCommandConsumer {
     envelope: DomainCommand<ExpirePaymentIntentCommandPayload>,
   ): Promise<void> {
     await this.handleCommand(envelope, 'ExpirePaymentIntent', async () => {
+      this.validateIntentOnlyCommandPayload(envelope.payload);
       await this.intentsService.expireIntent(
         envelope.payload.intentId,
         envelope.correlationId,
@@ -110,6 +125,7 @@ export class PaymentsCommandConsumer {
     envelope: DomainCommand<SupersedePaymentIntentCommandPayload>,
   ): Promise<void> {
     await this.handleCommand(envelope, 'SupersedePaymentIntent', async () => {
+      this.validateIntentOnlyCommandPayload(envelope.payload);
       await this.intentsService.supersedeIntent(
         envelope.payload.intentId,
         envelope.correlationId,
@@ -123,6 +139,7 @@ export class PaymentsCommandConsumer {
     envelope: DomainCommand<RequestRefundCommandPayload>,
   ): Promise<void> {
     await this.handleCommand(envelope, 'RequestRefund', async () => {
+      this.validateRequestRefundPayload(envelope.payload);
       await this.intentsService.createRefundRequest(
         envelope.payload.intentId,
         {
@@ -143,6 +160,7 @@ export class PaymentsCommandConsumer {
     envelope: DomainCommand<RetryReconcileCommandPayload>,
   ): Promise<void> {
     await this.handleCommand(envelope, 'RetryReconcile', async () => {
+      this.validateRetryReconcilePayload(envelope.payload);
       const retryInput = {
         reasonCode: envelope.payload.reasonCode,
         reasonMessage: envelope.payload.reasonMessage,
@@ -173,7 +191,9 @@ export class PaymentsCommandConsumer {
     commandType: string,
     execute: () => Promise<void>,
   ): Promise<void> {
-    if (this.shouldSkip(envelope, commandType)) {
+    const skipReason = this.resolveSkipReason(envelope);
+    if (skipReason) {
+      this.recordSkippedCommand(skipReason, commandType, envelope);
       return;
     }
 
@@ -205,40 +225,45 @@ export class PaymentsCommandConsumer {
       await this.idempotencyService.completeFailure(
         decision.recordId,
         this.resolveErrorStatusCode(error),
-        this.resolveErrorResponseBody(error),
+        this.resolveErrorResponseBody(error, commandType, envelope.correlationId),
       );
       throw error;
     }
   }
 
-  private shouldSkip(envelope: DomainCommand<unknown>, commandType: string): boolean {
+  private resolveSkipReason(
+    envelope: DomainCommand<unknown>,
+  ): CommandSkipReason | null {
     if (envelope.messageKind !== 'command') {
-      this.logger.warn(
-        `Ignoring non-command message on command handler: type=${commandType}, kind=${envelope.messageKind}`,
-      );
-      return true;
+      return 'NON_COMMAND';
     }
 
     if (!envelope.expiresAt) {
-      return false;
+      return null;
     }
 
     const expiresAtMs = Date.parse(envelope.expiresAt);
     if (Number.isNaN(expiresAtMs)) {
-      this.logger.warn(
-        `Ignoring command with invalid expiresAt: type=${commandType}, expiresAt=${envelope.expiresAt}`,
-      );
-      return true;
+      return 'INVALID_EXPIRES_AT';
     }
 
     if (expiresAtMs < Date.now()) {
-      this.logger.warn(
-        `Ignoring expired command: type=${commandType}, expiresAt=${envelope.expiresAt}`,
-      );
-      return true;
+      return 'EXPIRED';
     }
 
-    return false;
+    return null;
+  }
+
+  private recordSkippedCommand(
+    reason: CommandSkipReason,
+    commandType: string,
+    envelope: DomainCommand<unknown>,
+  ): void {
+    this.skippedCommandCounters[reason] += 1;
+
+    this.logger.warn(
+      `Skipping command: reason=${reason}, type=${commandType}, messageId=${envelope.messageId}, correlationId=${envelope.correlationId}, expiresAt=${envelope.expiresAt ?? 'none'}, skipCount=${this.skippedCommandCounters[reason]}`,
+    );
   }
 
   private resolveErrorStatusCode(error: unknown): number {
@@ -248,21 +273,183 @@ export class PaymentsCommandConsumer {
     return 500;
   }
 
-  private resolveErrorResponseBody(error: unknown): unknown {
-    if (error instanceof HttpException) {
-      return error.getResponse();
-    }
+  private resolveErrorResponseBody(
+    error: unknown,
+    commandType: string,
+    correlationId: string,
+  ): unknown {
+    const fallback = {
+      error: 'COMMAND_PROCESS_FAILED',
+      message: 'Unhandled command processing error',
+      commandType,
+      correlationId,
+    };
 
-    if (error instanceof Error) {
+    if (error instanceof HttpException) {
+      const response = error.getResponse();
+      const body =
+        typeof response === 'string'
+          ? { message: response }
+          : ((response ?? {}) as Record<string, unknown>);
+
+      const errorCode =
+        typeof body.error === 'string' && body.error.trim().length > 0
+          ? body.error
+          : 'COMMAND_PROCESS_FAILED';
+      const message =
+        typeof body.message === 'string'
+          ? body.message
+          : Array.isArray(body.message)
+            ? body.message.join(', ')
+            : error.message;
+
       return {
-        error: 'COMMAND_PROCESS_FAILED',
-        message: error.message,
+        error: errorCode,
+        message,
+        commandType,
+        correlationId,
       };
     }
 
-    return {
-      error: 'COMMAND_PROCESS_FAILED',
-      message: 'Unhandled command processing error',
-    };
+    if (error instanceof Error) {
+      const [prefixedError] = error.message.split(':');
+      const errorCode = prefixedError.startsWith('COMMAND_')
+        ? prefixedError
+        : 'COMMAND_PROCESS_FAILED';
+
+      return {
+        error: errorCode,
+        message: error.message,
+        commandType,
+        correlationId,
+      };
+    }
+
+    return fallback;
+  }
+
+  private validateCreatePaymentIntentPayload(
+    payload: CreatePaymentIntentCommandPayload,
+  ): void {
+    this.assertRequiredCommonFields(payload);
+    this.assertNonEmptyString('referenceId', payload.referenceId);
+    this.assertNonEmptyString('customerId', payload.customerId);
+    this.assertNonEmptyString('currency', payload.currency);
+    this.assertNonEmptyString('signature', payload.signature);
+    this.assertNonEmptyString('signatureVersion', payload.signatureVersion);
+    this.assertNonEmptyString('signedAt', payload.signedAt);
+    this.assertIntegerAmount('payableAmount', payload.payableAmount, {
+      allowZero: true,
+    });
+
+    if (!SUPPORTED_REFERENCE_TYPES.has(payload.referenceType)) {
+      throw new Error(
+        `COMMAND_PAYLOAD_INVALID: unsupported referenceType=${payload.referenceType}`,
+      );
+    }
+
+    if (!payload.snapshotPayload || typeof payload.snapshotPayload !== 'object') {
+      throw new Error('COMMAND_PAYLOAD_INVALID: snapshotPayload must be an object');
+    }
+  }
+
+  private validateStartPaymentLegPayload(
+    payload: StartPaymentLegCommandPayload,
+  ): void {
+    this.assertRequiredCommonFields(payload);
+    this.assertNonEmptyString('intentId', payload.intentId);
+    this.assertNonEmptyString('legId', payload.legId);
+    this.assertNonEmptyString('providerType', payload.providerType);
+    this.assertIntegerAmount('amount', payload.amount, {
+      allowZero: false,
+    });
+
+    if (payload.operation && payload.operation !== 'AUTHORIZE' && payload.operation !== 'CAPTURE') {
+      throw new Error(`COMMAND_PAYLOAD_INVALID: unsupported operation=${payload.operation}`);
+    }
+  }
+
+  private validateIntentOnlyCommandPayload(payload: {
+    requestedBy: string;
+    requestSource: string;
+    idempotencyKey: string;
+    intentId: string;
+  }): void {
+    this.assertRequiredCommonFields(payload);
+    this.assertNonEmptyString('intentId', payload.intentId);
+  }
+
+  private validateRequestRefundPayload(payload: RequestRefundCommandPayload): void {
+    this.assertRequiredCommonFields(payload);
+    this.assertNonEmptyString('intentId', payload.intentId);
+    this.assertNonEmptyString('reasonCode', payload.reasonCode);
+    this.assertIntegerAmount('refundAmount', payload.refundAmount, {
+      allowZero: false,
+    });
+
+    if (!Array.isArray(payload.allocation) || payload.allocation.length === 0) {
+      throw new Error(
+        'COMMAND_PAYLOAD_INVALID: allocation must contain at least one item',
+      );
+    }
+
+    for (const item of payload.allocation) {
+      this.assertNonEmptyString('allocation.legId', item.legId);
+      this.assertIntegerAmount('allocation.amount', item.amount, {
+        allowZero: false,
+      });
+    }
+  }
+
+  private validateRetryReconcilePayload(payload: RetryReconcileCommandPayload): void {
+    this.assertRequiredCommonFields(payload);
+    this.assertNonEmptyString('reasonCode', payload.reasonCode);
+
+    const hasIntentId =
+      typeof payload.intentId === 'string' && payload.intentId.trim().length > 0;
+    const hasLegId = typeof payload.legId === 'string' && payload.legId.trim().length > 0;
+
+    if (!hasIntentId && !hasLegId) {
+      throw new Error('COMMAND_PAYLOAD_INVALID: RetryReconcile requires intentId or legId');
+    }
+  }
+
+  private assertRequiredCommonFields(payload: {
+    requestedBy: string;
+    requestSource: string;
+    idempotencyKey: string;
+  }): void {
+    this.assertNonEmptyString('requestedBy', payload.requestedBy);
+    this.assertNonEmptyString('requestSource', payload.requestSource);
+    this.assertNonEmptyString('idempotencyKey', payload.idempotencyKey);
+  }
+
+  private assertNonEmptyString(field: string, value: unknown): void {
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      throw new Error(`COMMAND_PAYLOAD_INVALID: ${field} must be a non-empty string`);
+    }
+  }
+
+  private assertIntegerAmount(
+    field: string,
+    value: unknown,
+    options: {
+      allowZero: boolean;
+    },
+  ): void {
+    if (!Number.isInteger(value)) {
+      throw new Error(`COMMAND_PAYLOAD_INVALID: ${field} must be an integer`);
+    }
+
+    if (options.allowZero) {
+      if ((value as number) < 0) {
+        throw new Error(`COMMAND_PAYLOAD_INVALID: ${field} must be >= 0`);
+      }
+      return;
+    }
+
+    if ((value as number) <= 0) {
+      throw new Error(`COMMAND_PAYLOAD_INVALID: ${field} must be > 0`);
+    }
   }
 }
