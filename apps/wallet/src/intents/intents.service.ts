@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, lte, sql } from 'drizzle-orm';
 import { CreateIntentDto } from './dto/create-intent.dto';
 import { ConfigureLegsDto } from './dto/configure-legs.dto';
 import { CreateRefundRequestDto } from './dto/create-refund-request.dto';
@@ -56,12 +56,30 @@ interface IntentTerminationResult {
   status: PaymentIntentStatus;
 }
 
+interface ExpireIntentsBatchResult {
+  scanned: number;
+  expired: number;
+  reconcileRequired: number;
+  skipped: number;
+  failed: number;
+}
+
 interface RefundRequestDetailResult {
   refundRequest: RefundRequest;
   allocations: RefundAllocation[];
 }
 
-type TerminationReason = 'CANCEL' | 'SUPERSEDE';
+interface CompensationExecutionResult {
+  hasFailure: boolean;
+  manualQueueItemIds: string[];
+}
+
+interface CompensationLegResult {
+  failed: boolean;
+  manualQueueItemId?: string;
+}
+
+type TerminationReason = 'CANCEL' | 'SUPERSEDE' | 'EXPIRE';
 
 interface LockedIntent {
   id: string;
@@ -70,6 +88,7 @@ interface LockedIntent {
   customerId: string;
   currency: string;
   payableAmount: number;
+  expiresAt: Date;
   status: PaymentIntentStatus;
   version: number;
 }
@@ -82,6 +101,23 @@ interface LockedLeg {
   status: PaymentLegStatus;
   version: number;
   metadata: Record<string, unknown>;
+}
+
+interface OutboxEventInput {
+  eventType: string;
+  aggregateType: string;
+  aggregateId: string;
+  partitionKey?: string;
+  payload: Record<string, unknown>;
+}
+
+interface PaymentIntentEventSource {
+  id: string;
+  referenceType: PaymentReferenceType;
+  referenceId: string;
+  customerId: string;
+  payableAmount: number;
+  currency: string;
 }
 
 const OPEN_MANUAL_QUEUE_STATUSES: ManualCancelQueueStatus[] = [
@@ -138,31 +174,37 @@ export class IntentsService {
       throw error;
     }
 
-    const existingSucceeded = await this.dbService.db
-      .select({ id: paymentIntents.id })
-      .from(paymentIntents)
-      .where(
-        and(
-          eq(paymentIntents.referenceType, dto.referenceType),
-          eq(paymentIntents.referenceId, dto.referenceId),
-          eq(paymentIntents.status, 'SUCCEEDED'),
-        ),
-      )
-      .limit(1);
-
-    if (existingSucceeded.length > 0) {
-      throw new ConflictException({
-        error: 'REFERENCE_ALREADY_PAID',
-        message: 'The same reference is already paid',
-      });
-    }
-
     const initialStatus: PaymentIntentStatus =
       dto.payableAmount === 0 ? 'SUCCEEDED' : 'PENDING';
     const requestCorrelationId = correlationId?.trim() || randomUUID();
 
     try {
       return await this.dbService.db.transaction(async (tx) => {
+        await this.lockIntentCreationReference(
+          tx,
+          dto.referenceType,
+          dto.referenceId,
+        );
+
+        const existingSucceeded = await tx
+          .select({ id: paymentIntents.id })
+          .from(paymentIntents)
+          .where(
+            and(
+              eq(paymentIntents.referenceType, dto.referenceType),
+              eq(paymentIntents.referenceId, dto.referenceId),
+              eq(paymentIntents.status, 'SUCCEEDED'),
+            ),
+          )
+          .limit(1);
+
+        if (existingSucceeded.length > 0) {
+          throw new ConflictException({
+            error: 'REFERENCE_ALREADY_PAID',
+            message: 'The same reference is already paid',
+          });
+        }
+
         const [createdIntent] = await tx
           .insert(paymentIntents)
           .values({
@@ -203,6 +245,15 @@ export class IntentsService {
             payableAmount: dto.payableAmount,
           },
         });
+
+        if (initialStatus === 'SUCCEEDED') {
+          const outboxEvent = this.buildPaymentIntentOutboxEvent(
+            createdIntent,
+            'PaymentIntentSucceeded',
+            'SUCCEEDED',
+          );
+          await tx.insert(outboxEvents).values(this.toOutboxInsertValues(outboxEvent));
+        }
 
         return createdIntent;
       });
@@ -706,6 +757,15 @@ export class IntentsService {
             payload: {
               operation: 'CANCEL',
             },
+            outboxEvent: this.buildPaymentIntentOutboxEvent(
+              intent,
+              'PaymentIntentCancelled',
+              'CANCELLED',
+              {
+                reasonCode: 'INTENT_CANCELLED',
+                reasonMessage: 'Intent cancelled before payment processing',
+              },
+            ),
           },
           'PENDING',
           tx,
@@ -734,12 +794,13 @@ export class IntentsService {
         tx,
       );
 
-      const compensationFailed = await this.compensateIntentLegs(
+      const compensationResult = await this.compensateIntentLegs(
         tx,
         intent,
         requestCorrelationId,
         'CANCEL',
       );
+      const compensationFailed = compensationResult.hasFailure;
       const finalStatus: PaymentIntentStatus = compensationFailed
         ? 'RECONCILE_REQUIRED'
         : 'CANCELLED';
@@ -760,7 +821,31 @@ export class IntentsService {
           payload: {
             operation: 'CANCEL',
             compensationFailed,
+            manualQueueItemId: compensationResult.manualQueueItemIds[0] ?? null,
+            manualQueueItemIds: compensationResult.manualQueueItemIds,
           },
+          outboxEvent: compensationFailed
+            ? this.buildPaymentIntentOutboxEvent(
+                intent,
+                'PaymentReconcileRequired',
+                finalStatus,
+                {
+                  reasonCode: 'INTENT_CANCEL_RECONCILE_REQUIRED',
+                  reasonMessage: 'Intent cancellation requires manual reconcile',
+                  requiresManualAction: true,
+                  manualQueueItemId: compensationResult.manualQueueItemIds[0] ?? null,
+                  manualQueueItemIds: compensationResult.manualQueueItemIds,
+                },
+              )
+            : this.buildPaymentIntentOutboxEvent(
+                intent,
+                'PaymentIntentCancelled',
+                finalStatus,
+                {
+                  reasonCode: 'INTENT_CANCELLED',
+                  reasonMessage: 'Intent cancellation completed',
+                },
+              ),
         },
         'RECONCILING',
         tx,
@@ -800,12 +885,13 @@ export class IntentsService {
         tx,
       );
 
-      const compensationFailed = await this.compensateIntentLegs(
+      const compensationResult = await this.compensateIntentLegs(
         tx,
         intent,
         requestCorrelationId,
         'SUPERSEDE',
       );
+      const compensationFailed = compensationResult.hasFailure;
       const finalStatus: PaymentIntentStatus = compensationFailed
         ? 'SUPERSEDED_RECONCILE_REQUIRED'
         : 'SUPERSEDED';
@@ -826,7 +912,31 @@ export class IntentsService {
           payload: {
             operation: 'SUPERSEDE',
             compensationFailed,
+            manualQueueItemId: compensationResult.manualQueueItemIds[0] ?? null,
+            manualQueueItemIds: compensationResult.manualQueueItemIds,
           },
+          outboxEvent: compensationFailed
+            ? this.buildPaymentIntentOutboxEvent(
+                intent,
+                'PaymentReconcileRequired',
+                finalStatus,
+                {
+                  reasonCode: 'INTENT_SUPERSEDE_RECONCILE_REQUIRED',
+                  reasonMessage: 'Supersede compensation requires manual reconcile',
+                  requiresManualAction: true,
+                  manualQueueItemId: compensationResult.manualQueueItemIds[0] ?? null,
+                  manualQueueItemIds: compensationResult.manualQueueItemIds,
+                },
+              )
+            : this.buildPaymentIntentOutboxEvent(
+                intent,
+                'PaymentIntentSuperseded',
+                finalStatus,
+                {
+                  reasonCode: 'INTENT_SUPERSEDED',
+                  reasonMessage: 'Supersede completed',
+                },
+              ),
         },
         'SUSPENDED',
         tx,
@@ -837,6 +947,200 @@ export class IntentsService {
         status: finalStatus,
       };
     });
+  }
+
+  async expireIntent(
+    intentId: string,
+    correlationId?: string,
+  ): Promise<IntentTerminationResult> {
+    const requestCorrelationId = correlationId?.trim() || randomUUID();
+
+    return this.dbService.db.transaction(async (tx) => {
+      const intent = await this.lockIntentOrThrow(intentId, tx);
+      this.assertIntentCanExpire(intent.status);
+
+      const expiresAtMs = intent.expiresAt.getTime();
+      if (Number.isNaN(expiresAtMs)) {
+        throw new Error(`INTENT_EXPIRES_AT_INVALID: ${intentId}`);
+      }
+
+      if (expiresAtMs > Date.now()) {
+        throw new ConflictException({
+          error: 'INTENT_NOT_EXPIRED',
+          message: `Intent ${intentId} is not expired yet`,
+        });
+      }
+
+      if (intent.status === 'PENDING') {
+        await this.stateTransitionService.transitionIntent(
+          intentId,
+          'EXPIRED',
+          {
+            correlationId: requestCorrelationId,
+            reasonCode: 'INTENT_EXPIRED',
+            reasonMessage: 'Intent expired before payment processing',
+            triggeredByType: 'SYSTEM',
+            triggeredById: 'system',
+            payload: {
+              operation: 'EXPIRE',
+            },
+            outboxEvent: this.buildPaymentIntentOutboxEvent(
+              intent,
+              'PaymentIntentExpired',
+              'EXPIRED',
+              {
+                reasonCode: 'INTENT_EXPIRED',
+                reasonMessage: 'Intent expired before payment processing',
+              },
+            ),
+          },
+          'PENDING',
+          tx,
+        );
+
+        return {
+          intentId,
+          status: 'EXPIRED',
+        };
+      }
+
+      await this.stateTransitionService.transitionIntent(
+        intentId,
+        'RECONCILING',
+        {
+          correlationId: requestCorrelationId,
+          reasonCode: 'INTENT_EXPIRE_RECONCILING',
+          reasonMessage: 'Intent expiration started with compensation',
+          triggeredByType: 'SYSTEM',
+          triggeredById: 'system',
+          payload: {
+            operation: 'EXPIRE',
+          },
+        },
+        intent.status,
+        tx,
+      );
+
+      const compensationResult = await this.compensateIntentLegs(
+        tx,
+        intent,
+        requestCorrelationId,
+        'EXPIRE',
+      );
+      const compensationFailed = compensationResult.hasFailure;
+      const finalStatus: PaymentIntentStatus = compensationFailed
+        ? 'RECONCILE_REQUIRED'
+        : 'EXPIRED';
+
+      await this.stateTransitionService.transitionIntent(
+        intentId,
+        finalStatus,
+        {
+          correlationId: requestCorrelationId,
+          reasonCode: compensationFailed
+            ? 'INTENT_EXPIRE_RECONCILE_REQUIRED'
+            : 'INTENT_EXPIRED',
+          reasonMessage: compensationFailed
+            ? 'Intent expiration requires manual reconcile'
+            : 'Intent expiration completed',
+          triggeredByType: 'SYSTEM',
+          triggeredById: 'system',
+          payload: {
+            operation: 'EXPIRE',
+            compensationFailed,
+            manualQueueItemId: compensationResult.manualQueueItemIds[0] ?? null,
+            manualQueueItemIds: compensationResult.manualQueueItemIds,
+          },
+          outboxEvent: compensationFailed
+            ? this.buildPaymentIntentOutboxEvent(
+                intent,
+                'PaymentReconcileRequired',
+                finalStatus,
+                {
+                  reasonCode: 'INTENT_EXPIRE_RECONCILE_REQUIRED',
+                  reasonMessage: 'Intent expiration requires manual reconcile',
+                  requiresManualAction: true,
+                  manualQueueItemId: compensationResult.manualQueueItemIds[0] ?? null,
+                  manualQueueItemIds: compensationResult.manualQueueItemIds,
+                },
+              )
+            : this.buildPaymentIntentOutboxEvent(
+                intent,
+                'PaymentIntentExpired',
+                finalStatus,
+                {
+                  reasonCode: 'INTENT_EXPIRED',
+                  reasonMessage: 'Intent expiration completed',
+                },
+              ),
+        },
+        'RECONCILING',
+        tx,
+      );
+
+      return {
+        intentId,
+        status: finalStatus,
+      };
+    });
+  }
+
+  async expireDueIntents(
+    limit?: number,
+    correlationId?: string,
+  ): Promise<ExpireIntentsBatchResult> {
+    const batchSize = this.resolveExpirationBatchSize(limit);
+    const now = new Date();
+    const batchCorrelationId = correlationId?.trim() || randomUUID();
+    const result: ExpireIntentsBatchResult = {
+      scanned: 0,
+      expired: 0,
+      reconcileRequired: 0,
+      skipped: 0,
+      failed: 0,
+    };
+
+    const dueIntents = await this.dbService.db
+      .select({ id: paymentIntents.id })
+      .from(paymentIntents)
+      .where(
+        and(
+          inArray(paymentIntents.status, [
+            'PENDING',
+            'IN_PROGRESS',
+            'PARTIALLY_CAPTURED',
+          ]),
+          lte(paymentIntents.expiresAt, now),
+        ),
+      )
+      .orderBy(asc(paymentIntents.expiresAt))
+      .limit(batchSize);
+
+    result.scanned = dueIntents.length;
+
+    for (const intent of dueIntents) {
+      const intentCorrelationId = `${batchCorrelationId}:expire:${intent.id}`;
+      try {
+        const expired = await this.expireIntent(intent.id, intentCorrelationId);
+        if (expired.status === 'EXPIRED') {
+          result.expired += 1;
+          continue;
+        }
+        if (expired.status === 'RECONCILE_REQUIRED') {
+          result.reconcileRequired += 1;
+          continue;
+        }
+        result.skipped += 1;
+      } catch (error) {
+        if (this.isExpirationSkippableConflict(error)) {
+          result.skipped += 1;
+          continue;
+        }
+        result.failed += 1;
+      }
+    }
+
+    return result;
   }
 
   async createRefundRequest(
@@ -1140,30 +1444,22 @@ export class IntentsService {
           tx,
         );
 
-        await tx.insert(outboxEvents).values({
-          eventType: 'PaymentReconcileRequired',
-          aggregateType: 'PaymentIntent',
-          aggregateId: intentId,
-          partitionKey: intentId,
-          payload: {
-            intentId,
-            referenceType: intent.referenceType,
-            referenceId: intent.referenceId,
-            customerId: intent.customerId,
-            status: 'RECONCILE_REQUIRED',
-            reasonCode: 'REFUND_REQUEST_RECONCILE_REQUIRED',
-            reasonMessage: 'Refund request requires manual reconcile',
-            requiresManualAction: true,
-            manualQueueItemId: manualQueueItemIds[0] ?? null,
-            manualQueueItemIds,
-            occurredAt: new Date().toISOString(),
-          },
-          status: 'PENDING',
-          attempts: 0,
-          nextAttemptAt: new Date(),
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
+        await tx.insert(outboxEvents).values(
+          this.toOutboxInsertValues(
+            this.buildPaymentIntentOutboxEvent(
+              intent,
+              'PaymentReconcileRequired',
+              'RECONCILE_REQUIRED',
+              {
+                reasonCode: 'REFUND_REQUEST_RECONCILE_REQUIRED',
+                reasonMessage: 'Refund request requires manual reconcile',
+                requiresManualAction: true,
+                manualQueueItemId: manualQueueItemIds[0] ?? null,
+                manualQueueItemIds,
+              },
+            ),
+          ),
+        );
       }
 
       const refreshedRows = await tx
@@ -1215,57 +1511,79 @@ export class IntentsService {
     intent: LockedIntent,
     correlationId: string,
     reason: TerminationReason,
-  ): Promise<boolean> {
+  ): Promise<CompensationExecutionResult> {
     const legs = await tx
       .select()
       .from(paymentLegs)
       .where(eq(paymentLegs.intentId, intent.id));
 
     let hasFailure = false;
+    const manualQueueItemIds = new Set<string>();
 
-    for (const leg of legs) {
+    const cancelTargets = legs.filter((leg) => leg.status === 'AUTHORIZED');
+    const refundTargets = legs
+      .filter((leg) => leg.status === 'CAPTURED')
+      .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
+    const nonMonetaryTargets = legs.filter(
+      (leg) => leg.status !== 'AUTHORIZED' && leg.status !== 'CAPTURED',
+    );
+
+    for (const leg of cancelTargets) {
+      const result = await this.compensateLegWithProvider(
+        tx,
+        intent,
+        leg,
+        'CANCEL',
+        correlationId,
+        reason,
+      );
+      hasFailure = hasFailure || result.failed;
+      if (result.manualQueueItemId) {
+        manualQueueItemIds.add(result.manualQueueItemId);
+      }
+    }
+
+    for (const leg of refundTargets) {
+      const result = await this.compensateLegWithProvider(
+        tx,
+        intent,
+        leg,
+        'REFUND',
+        correlationId,
+        reason,
+      );
+      hasFailure = hasFailure || result.failed;
+      if (result.manualQueueItemId) {
+        manualQueueItemIds.add(result.manualQueueItemId);
+      }
+    }
+
+    for (const leg of nonMonetaryTargets) {
       switch (leg.status) {
-        case 'AUTHORIZED': {
-          const failed = await this.compensateLegWithProvider(
-            tx,
-            intent,
-            leg,
-            'CANCEL',
-            correlationId,
-            reason,
-          );
-          hasFailure = hasFailure || failed;
-          break;
-        }
-        case 'CAPTURED': {
-          const failed = await this.compensateLegWithProvider(
-            tx,
-            intent,
-            leg,
-            'REFUND',
-            correlationId,
-            reason,
-          );
-          hasFailure = hasFailure || failed;
-          break;
-        }
         case 'READY':
         case 'PROCESSING':
         case 'REQUIRES_CUSTOMER_ACTION':
         case 'REQUIRES_ADMIN_CONFIRMATION': {
+          const preCaptureReasonCode =
+            reason === 'CANCEL'
+              ? 'LEG_CANCELLED_BEFORE_CAPTURE'
+              : reason === 'SUPERSEDE'
+                ? 'LEG_SUPERSEDED_BEFORE_CAPTURE'
+                : 'LEG_EXPIRED_BEFORE_CAPTURE';
+          const preCaptureReasonMessage =
+            reason === 'CANCEL'
+              ? 'Leg expired due to intent cancellation before capture'
+              : reason === 'SUPERSEDE'
+                ? 'Leg expired due to intent supersede before capture'
+                : 'Leg expired due to intent expiration before capture';
+
           await this.stateTransitionService.transitionLeg(
             leg.id,
             'EXPIRED',
             {
               correlationId,
-              reasonCode:
-                reason === 'CANCEL'
-                  ? 'LEG_CANCELLED_BEFORE_CAPTURE'
-                  : 'LEG_SUPERSEDED_BEFORE_CAPTURE',
-              reasonMessage:
-                reason === 'CANCEL'
-                  ? 'Leg expired due to intent cancellation before capture'
-                  : 'Leg expired due to intent supersede before capture',
+              reasonCode: preCaptureReasonCode,
+              reasonMessage: preCaptureReasonMessage,
               triggeredByType: 'SYSTEM',
               triggeredById: intent.customerId,
               payload: {
@@ -1278,7 +1596,20 @@ export class IntentsService {
           break;
         }
         case 'CANCELING':
-        case 'REFUNDING':
+        case 'REFUNDING': {
+          hasFailure = true;
+          const queueItemId = await this.upsertManualQueueItem(tx, {
+            intentId: intent.id,
+            legId: leg.id,
+            actionType: leg.status === 'REFUNDING' ? 'REFUND' : 'CANCEL',
+            correlationId,
+            requestedBy: intent.customerId,
+            reasonCode: 'LEG_RECONCILE_REQUIRED',
+            reasonMessage: `Leg remained ${leg.status} during ${reason} compensation`,
+          });
+          manualQueueItemIds.add(queueItemId);
+          break;
+        }
         case 'RECONCILE_REQUIRED': {
           hasFailure = true;
           break;
@@ -1288,7 +1619,10 @@ export class IntentsService {
       }
     }
 
-    return hasFailure;
+    return {
+      hasFailure,
+      manualQueueItemIds: [...manualQueueItemIds],
+    };
   }
 
   private async compensateLegWithProvider(
@@ -1298,7 +1632,7 @@ export class IntentsService {
     operation: 'CANCEL' | 'REFUND',
     correlationId: string,
     reason: TerminationReason,
-  ): Promise<boolean> {
+  ): Promise<CompensationLegResult> {
     const attempt = await this.createAttempt(tx, {
       intentId: intent.id,
       legId: leg.id,
@@ -1352,11 +1686,17 @@ export class IntentsService {
       {
         correlationId,
         reasonCode:
-          reason === 'CANCEL' ? `LEG_${operation}_STARTED` : `LEG_SUPERSEDE_${operation}`,
+          reason === 'CANCEL'
+            ? `LEG_${operation}_STARTED`
+            : reason === 'SUPERSEDE'
+              ? `LEG_SUPERSEDE_${operation}`
+              : `LEG_EXPIRE_${operation}`,
         reasonMessage:
           reason === 'CANCEL'
             ? `${operation} compensation started`
-            : `${operation} compensation started for supersede`,
+            : reason === 'SUPERSEDE'
+              ? `${operation} compensation started for supersede`
+              : `${operation} compensation started for expiration`,
         triggeredByType: 'SYSTEM',
         triggeredById: intent.customerId,
         payload: {
@@ -1448,7 +1788,16 @@ export class IntentsService {
           'CANCELING',
           tx,
         );
-        return true;
+        const queueItemId = await this.upsertManualQueueItem(tx, {
+          intentId: intent.id,
+          legId: leg.id,
+          actionType: operation,
+          correlationId,
+          requestedBy: intent.customerId,
+          reasonCode: `LEG_${operation}_FAILED`,
+          reasonMessage: `${operation} returned unexpected status ${providerResult.resultStatus}`,
+        });
+        return { failed: true, manualQueueItemId: queueItemId };
       }
 
       await this.stateTransitionService.transitionAttempt(
@@ -1490,7 +1839,7 @@ export class IntentsService {
         tx,
       );
 
-      return false;
+      return { failed: false };
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : `${operation} provider call failed`;
@@ -1537,7 +1886,17 @@ export class IntentsService {
         tx,
       );
 
-      return true;
+      const queueItemId = await this.upsertManualQueueItem(tx, {
+        intentId: intent.id,
+        legId: leg.id,
+        actionType: operation,
+        correlationId,
+        requestedBy: intent.customerId,
+        reasonCode: `LEG_${operation}_FAILED`,
+        reasonMessage: errorMessage,
+      });
+
+      return { failed: true, manualQueueItemId: queueItemId };
     }
   }
 
@@ -1796,9 +2155,10 @@ export class IntentsService {
       tx,
     );
 
-    return this.upsertManualRefundQueueItem(tx, {
+    return this.upsertManualQueueItem(tx, {
       intentId: input.intentId,
       legId: input.legId,
+      actionType: 'REFUND',
       correlationId: input.correlationId,
       requestedBy: input.requestedBy,
       reasonCode: input.reasonCode,
@@ -1806,11 +2166,12 @@ export class IntentsService {
     });
   }
 
-  private async upsertManualRefundQueueItem(
+  private async upsertManualQueueItem(
     tx: DbTx,
     input: {
       intentId: string;
       legId: string;
+      actionType: 'CANCEL' | 'REFUND' | 'MANUAL_CONFIRM';
       correlationId: string;
       requestedBy: string;
       reasonCode: string;
@@ -1836,7 +2197,7 @@ export class IntentsService {
       await tx
         .update(manualCancelQueueItems)
         .set({
-          actionType: 'REFUND',
+          actionType: input.actionType,
           reasonCode: input.reasonCode,
           reasonMessage: input.reasonMessage,
           lastErrorCode: input.reasonCode,
@@ -1854,7 +2215,7 @@ export class IntentsService {
         .values({
           intentId: input.intentId,
           legId: input.legId,
-          actionType: 'REFUND',
+          actionType: input.actionType,
           status: 'QUEUED',
           reasonCode: input.reasonCode,
           reasonMessage: input.reasonMessage,
@@ -1878,7 +2239,7 @@ export class IntentsService {
         previousStatus: null,
         newStatus: 'QUEUED',
         reasonCode: 'MANUAL_QUEUE_ITEM_CREATED',
-        reasonMessage: 'Manual queue item created for refund reconcile',
+        reasonMessage: 'Manual queue item created for reconcile',
         triggeredByType: 'SYSTEM',
         triggeredById: input.requestedBy,
         correlationId: input.correlationId,
@@ -1886,7 +2247,7 @@ export class IntentsService {
         payload: {
           intentId: input.intentId,
           legId: input.legId,
-          actionType: 'REFUND',
+          actionType: input.actionType,
         },
       });
 
@@ -1918,7 +2279,7 @@ export class IntentsService {
       await tx
         .update(manualCancelQueueItems)
         .set({
-          actionType: 'REFUND',
+          actionType: input.actionType,
           reasonCode: input.reasonCode,
           reasonMessage: input.reasonMessage,
           lastErrorCode: input.reasonCode,
@@ -2234,6 +2595,11 @@ export class IntentsService {
             payload: {
               reason: 'all_required_legs_captured',
             },
+            outboxEvent: this.buildPaymentIntentOutboxEvent(
+              intent,
+              'PaymentIntentSucceeded',
+              'SUCCEEDED',
+            ),
           },
           intent.status,
           tx,
@@ -2254,6 +2620,11 @@ export class IntentsService {
             payload: {
               reason: 'all_required_legs_captured',
             },
+            outboxEvent: this.buildPaymentIntentOutboxEvent(
+              intent,
+              'PaymentIntentSucceeded',
+              'SUCCEEDED',
+            ),
           },
           'IN_PROGRESS',
           tx,
@@ -2445,6 +2816,69 @@ export class IntentsService {
     return { intent, leg, attempt };
   }
 
+  private async lockIntentCreationReference(
+    tx: DbTx,
+    referenceType: PaymentReferenceType,
+    referenceId: string,
+  ): Promise<void> {
+    await tx.execute(sql`
+      select pg_advisory_xact_lock(
+        hashtext(${referenceType}),
+        hashtext(${referenceId})
+      )
+    `);
+  }
+
+  private buildPaymentIntentOutboxEvent(
+    intent: PaymentIntentEventSource,
+    eventType:
+      | 'PaymentIntentSucceeded'
+      | 'PaymentIntentFailed'
+      | 'PaymentIntentExpired'
+      | 'PaymentIntentCancelled'
+      | 'PaymentIntentSuperseded'
+      | 'PaymentReconcileRequired',
+    status: PaymentIntentStatus,
+    extraPayload: Record<string, unknown> = {},
+  ): OutboxEventInput {
+    return {
+      eventType,
+      aggregateType: 'PaymentIntent',
+      aggregateId: intent.id,
+      partitionKey: intent.id,
+      payload: {
+        intentId: intent.id,
+        referenceType: intent.referenceType,
+        referenceId: intent.referenceId,
+        customerId: intent.customerId,
+        status,
+        payableAmount: intent.payableAmount,
+        currency: intent.currency,
+        ...extraPayload,
+        occurredAt:
+          typeof extraPayload.occurredAt === 'string'
+            ? extraPayload.occurredAt
+            : new Date().toISOString(),
+      },
+    };
+  }
+
+  private toOutboxInsertValues(event: OutboxEventInput): typeof outboxEvents.$inferInsert {
+    const now = new Date();
+    return {
+      eventType: event.eventType,
+      aggregateType: event.aggregateType,
+      aggregateId: event.aggregateId,
+      partitionKey: event.partitionKey ?? event.aggregateId,
+      payload: event.payload,
+      status: 'PENDING',
+      attempts: 0,
+      nextAttemptAt: now,
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
+
   private async lockIntentOrThrow(intentId: string, tx: DbTx): Promise<LockedIntent> {
     const rows = (await tx.execute(sql`
       select
@@ -2454,12 +2888,17 @@ export class IntentsService {
         customer_id as "customerId",
         currency,
         payable_amount as "payableAmount",
+        expires_at as "expiresAt",
         status,
         version
       from payment_intents
       where id = ${intentId}
       for update
-    `)) as unknown as LockedIntent[];
+    `)) as unknown as Array<
+      Omit<LockedIntent, 'expiresAt'> & {
+        expiresAt: Date | string | number | null;
+      }
+    >;
 
     const intent = rows[0];
     if (!intent) {
@@ -2469,7 +2908,15 @@ export class IntentsService {
       });
     }
 
-    return intent;
+    const expiresAt = new Date(intent.expiresAt ?? Number.NaN);
+    if (Number.isNaN(expiresAt.getTime())) {
+      throw new Error(`INTENT_EXPIRES_AT_INVALID: ${intentId}`);
+    }
+
+    return {
+      ...intent,
+      expiresAt,
+    };
   }
 
   private async lockLegOrThrow(
@@ -2583,6 +3030,34 @@ export class IntentsService {
     return refundedByLegId;
   }
 
+  private resolveExpirationBatchSize(limit?: number): number {
+    const parsed =
+      limit ?? Number(process.env.WALLET_EXPIRATION_BATCH_SIZE ?? '50');
+
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return 50;
+    }
+
+    return Math.floor(parsed);
+  }
+
+  private isExpirationSkippableConflict(error: unknown): boolean {
+    if (!(error instanceof ConflictException)) {
+      return false;
+    }
+
+    const response = error.getResponse();
+    const errorCode =
+      typeof response === 'object' && response && 'error' in response
+        ? (response as { error?: string }).error
+        : undefined;
+
+    return (
+      errorCode === 'INTENT_STATE_INVALID_FOR_EXPIRE' ||
+      errorCode === 'INTENT_NOT_EXPIRED'
+    );
+  }
+
   private assertIntentCanConfigureLegs(
     status: PaymentIntentStatus,
     payableAmount: number,
@@ -2637,6 +3112,19 @@ export class IntentsService {
       throw new ConflictException({
         error: 'INTENT_STATE_INVALID_FOR_SUPERSEDE',
         message: `Intent status ${status} cannot be superseded`,
+      });
+    }
+  }
+
+  private assertIntentCanExpire(status: PaymentIntentStatus): void {
+    if (
+      status !== 'PENDING' &&
+      status !== 'IN_PROGRESS' &&
+      status !== 'PARTIALLY_CAPTURED'
+    ) {
+      throw new ConflictException({
+        error: 'INTENT_STATE_INVALID_FOR_EXPIRE',
+        message: `Intent status ${status} cannot be expired`,
       });
     }
   }

@@ -5,6 +5,8 @@ import {
   FastifyAdapter,
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
+import { EventsModule } from '@app/events';
+import { PAYMENTS_COMMANDS_V1_STREAM } from '@packages/event-contracts';
 import { GlobalExceptionFilter } from '@app/shared';
 import { WalletModule } from './wallet.module';
 
@@ -24,6 +26,16 @@ async function bootstrap() {
     }),
   );
   app.useGlobalFilters(new GlobalExceptionFilter());
+
+  if ((process.env.KAFKA_BROKERS ?? '').trim()) {
+    const consumerOptions = EventsModule.forConsumer({
+      streams: [PAYMENTS_COMMANDS_V1_STREAM],
+      groupId:
+        process.env.WALLET_COMMAND_CONSUMER_GROUP_ID ?? 'wallet-command-consumer',
+    });
+    app.connectMicroservice(consumerOptions);
+    await app.startAllMicroservices();
+  }
 
   const config = new DocumentBuilder()
     .setTitle('Wallet API')

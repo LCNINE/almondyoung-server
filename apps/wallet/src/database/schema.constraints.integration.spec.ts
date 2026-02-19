@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Test, TestingModule } from '@nestjs/testing';
 import { DbModule, DbService } from '@app/db';
-import { inArray } from 'drizzle-orm';
+import { inArray, sql } from 'drizzle-orm';
 import * as dotenv from 'dotenv';
 import * as path from 'node:path';
 import {
@@ -192,6 +192,52 @@ describeWithDatabase('wallet schema constraints (integration)', () => {
     }
   });
 
+  it('rejects intent-level manual queue insert without legId', async () => {
+    const insertedIntentIds: string[] = [];
+
+    try {
+      const [intent] = await dbService.db
+        .insert(paymentIntents)
+        .values({
+          referenceType: 'STORE_ORDER',
+          referenceId: `test-ref-${randomUUID()}`,
+          customerId: `customer-${randomUUID()}`,
+          currency: 'KRW',
+          payableAmount: 10000,
+          status: 'PENDING',
+          expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+        })
+        .returning({ id: paymentIntents.id });
+      insertedIntentIds.push(intent.id);
+
+      await expectNotNullViolation(
+        () =>
+          dbService.db.execute(sql`
+            insert into manual_cancel_queue_items (
+              intent_id,
+              leg_id,
+              action_type,
+              status,
+              reason_code
+            ) values (
+              ${intent.id},
+              null,
+              'CANCEL',
+              'QUEUED',
+              'TEST_REASON'
+            )
+          `),
+        'leg_id',
+      );
+    } finally {
+      if (insertedIntentIds.length > 0) {
+        await dbService.db
+          .delete(paymentIntents)
+          .where(inArray(paymentIntents.id, insertedIntentIds));
+      }
+    }
+  });
+
   it('enforces provider webhook receipt uniqueness by provider+event', async () => {
     const insertedReceiptIds: string[] = [];
     const providerEventId = `provider-event-${randomUUID()}`;
@@ -263,6 +309,26 @@ async function expectUniqueViolation(
   }
 
   throw new Error(`Expected unique violation for ${constraintName}`);
+}
+
+async function expectNotNullViolation(
+  operation: () => Promise<unknown>,
+  columnName: string,
+): Promise<void> {
+  try {
+    await operation();
+  } catch (error) {
+    const pgError = findPgError(error);
+    const isNotNullViolation =
+      pgError.code === '23502' ||
+      (pgError.message ?? '').includes('violates not-null constraint');
+
+    expect(isNotNullViolation).toBe(true);
+    expect(pgError.message ?? '').toContain(columnName);
+    return;
+  }
+
+  throw new Error(`Expected not-null violation for ${columnName}`);
 }
 
 function findPgError(error: unknown): {

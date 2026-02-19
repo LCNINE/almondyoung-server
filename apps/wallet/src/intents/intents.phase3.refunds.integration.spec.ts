@@ -100,7 +100,62 @@ describeWalletDbIntegration('Intents phase3 refunds integration (real path)', ()
 
   it('rejects refund request when allocation targets non-captured leg', async () => {
     const intentId = await createPendingIntent(context, 'phase3-refund-non-captured');
-    const [leg] = await configureSinglePointsLeg(context, intentId, 10000);
+
+    await sendWriteRequest({
+      app: context.app,
+      method: 'put',
+      path: `/v1/intents/${intentId}/legs`,
+      body: {
+        legs: [
+          {
+            providerType: 'POINTS',
+            amount: 9000,
+            sequenceNo: 1,
+            isRequired: true,
+          },
+          {
+            providerType: 'POINTS',
+            amount: 1000,
+            sequenceNo: 2,
+            isRequired: false,
+          },
+        ],
+      },
+      idempotencyKey: phase2ScopedValue('idem-phase3-refund-non-captured-configure'),
+    }).expect(200);
+
+    const legs = await context.dbService.db
+      .select({
+        id: paymentLegs.id,
+        sequenceNo: paymentLegs.sequenceNo,
+      })
+      .from(paymentLegs)
+      .where(eq(paymentLegs.intentId, intentId));
+
+    const capturedTargetLeg = legs.find((leg) => leg.sequenceNo === 1);
+    const nonCapturedLeg = legs.find((leg) => leg.sequenceNo === 2);
+
+    expect(capturedTargetLeg).toBeDefined();
+    expect(nonCapturedLeg).toBeDefined();
+
+    await sendWriteRequest({
+      app: context.app,
+      method: 'post',
+      path: `/v1/intents/${intentId}/legs/${capturedTargetLeg!.id}/authorize`,
+      idempotencyKey: phase2ScopedValue('idem-phase3-refund-non-captured-authorize'),
+    }).expect(201);
+
+    await sendWriteRequest({
+      app: context.app,
+      method: 'post',
+      path: `/v1/intents/${intentId}/legs/${capturedTargetLeg!.id}/capture`,
+      idempotencyKey: phase2ScopedValue('idem-phase3-refund-non-captured-capture'),
+    }).expect(201);
+
+    const intentState = await request(context.app.getHttpServer())
+      .get(`/v1/intents/${intentId}`)
+      .expect(200);
+    expect(intentState.body.data.status).toBe('SUCCEEDED');
 
     const response = await sendWriteRequest({
       app: context.app,
@@ -108,7 +163,7 @@ describeWalletDbIntegration('Intents phase3 refunds integration (real path)', ()
       path: `/v1/intents/${intentId}/refund-requests`,
       body: {
         refundAmount: 1000,
-        allocation: [{ legId: leg.id, amount: 1000 }],
+        allocation: [{ legId: nonCapturedLeg!.id, amount: 1000 }],
         reasonCode: 'CUSTOMER_REQUEST',
       },
       idempotencyKey: phase2ScopedValue('idem-phase3-refund-non-captured'),

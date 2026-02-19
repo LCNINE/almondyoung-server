@@ -79,7 +79,7 @@
 - `PENDING|IN_PROGRESS|PARTIALLY_CAPTURED -> CANCELLED`
   - 사용자/시스템 취소 + 보상 완료
 - `PENDING|IN_PROGRESS|PARTIALLY_CAPTURED -> SUSPENDED`
-  - 동일 `referenceType + referenceId`의 새 Intent 생성(supersede 시작)
+  - 명시적 supersede 요청(`SupersedePaymentIntent` 커맨드 또는 `POST /v1/intents/{intentId}/supersede`)으로 supersede 시작
 - `SUSPENDED -> SUPERSEDED`
   - 기존 Intent 보상 완료
 - `SUSPENDED -> SUPERSEDED_RECONCILE_REQUIRED`
