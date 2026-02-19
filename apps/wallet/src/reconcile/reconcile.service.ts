@@ -282,7 +282,23 @@ export class ReconcileService {
     };
 
     const lockedLeg = await this.dbService.db.transaction(async (tx) => {
-      const leg = await this.lockLegOrNull(legId, tx);
+      const legSnapshot = await this.readLegOrNull(legId, tx);
+      if (!legSnapshot) {
+        throw new NotFoundException({
+          error: 'LEG_NOT_FOUND',
+          message: `Payment leg not found: ${legId}`,
+        });
+      }
+
+      const intent = await this.lockIntentOrNull(legSnapshot.intentId, tx);
+      if (!intent) {
+        throw new NotFoundException({
+          error: 'INTENT_NOT_FOUND',
+          message: `Payment intent not found: ${legSnapshot.intentId}`,
+        });
+      }
+
+      const leg = await this.lockLegByIntentOrNull(intent.id, legId, tx);
       if (!leg) {
         throw new NotFoundException({
           error: 'LEG_NOT_FOUND',
@@ -335,17 +351,28 @@ export class ReconcileService {
     stats: ReconcileStats,
   ): Promise<void> {
     const prepared = await this.dbService.db.transaction(async (tx) => {
-      const attempt = await this.lockAttemptOrNull(attemptId, tx);
-      if (!attempt || !ATTEMPT_POLLABLE_STATUSES.includes(attempt.status)) {
+      const attemptSnapshot = await this.readAttemptOrNull(attemptId, tx);
+      if (!attemptSnapshot || !ATTEMPT_POLLABLE_STATUSES.includes(attemptSnapshot.status)) {
         return null;
       }
 
-      const leg = await this.lockLegOrNull(attempt.legId, tx);
+      const intent = await this.lockIntentOrNull(attemptSnapshot.intentId, tx);
+      if (!intent) {
+        return null;
+      }
+
+      const leg = await this.lockLegByIntentOrNull(intent.id, attemptSnapshot.legId, tx);
       if (!leg) {
         return null;
       }
-      const intent = await this.lockIntentOrNull(attempt.intentId, tx);
-      if (!intent) {
+
+      const attempt = await this.lockAttemptOrNull(attemptId, tx);
+      if (
+        !attempt ||
+        attempt.intentId !== intent.id ||
+        attempt.legId !== leg.id ||
+        !ATTEMPT_POLLABLE_STATUSES.includes(attempt.status)
+      ) {
         return null;
       }
 
@@ -370,13 +397,32 @@ export class ReconcileService {
     });
 
     await this.dbService.db.transaction(async (tx) => {
-      const attempt = await this.lockAttemptOrNull(prepared.attemptId, tx);
-      if (!attempt || !ATTEMPT_POLLABLE_STATUSES.includes(attempt.status)) {
+      const attemptSnapshot = await this.readAttemptOrNull(prepared.attemptId, tx);
+      if (!attemptSnapshot) {
         return;
       }
 
-      const leg = await this.lockLegOrNull(attempt.legId, tx);
+      const intent = await this.lockIntentOrNull(attemptSnapshot.intentId, tx);
+      if (!intent) {
+        return;
+      }
+
+      const leg = await this.lockLegByIntentOrNull(
+        intent.id,
+        attemptSnapshot.legId,
+        tx,
+      );
       if (!leg) {
+        return;
+      }
+
+      const attempt = await this.lockAttemptOrNull(prepared.attemptId, tx);
+      if (
+        !attempt ||
+        attempt.intentId !== intent.id ||
+        attempt.legId !== leg.id ||
+        !ATTEMPT_POLLABLE_STATUSES.includes(attempt.status)
+      ) {
         return;
       }
 
@@ -541,18 +587,18 @@ export class ReconcileService {
     stats: ReconcileStats,
   ): Promise<void> {
     const prepared = await this.dbService.db.transaction(async (tx) => {
-      const leg = await this.lockLegOrNull(legId, tx);
-      if (
-        !leg ||
-        (leg.status !== 'CANCELING' &&
-          leg.status !== 'REFUNDING' &&
-          leg.status !== 'RECONCILE_REQUIRED')
-      ) {
+      const legSnapshot = await this.readLegOrNull(legId, tx);
+      if (!legSnapshot || !this.isReconcileTargetLegStatus(legSnapshot.status)) {
         return null;
       }
 
-      const intent = await this.lockIntentOrNull(leg.intentId, tx);
+      const intent = await this.lockIntentOrNull(legSnapshot.intentId, tx);
       if (!intent) {
+        return null;
+      }
+
+      const leg = await this.lockLegByIntentOrNull(intent.id, legId, tx);
+      if (!leg || !this.isReconcileTargetLegStatus(leg.status)) {
         return null;
       }
 
@@ -577,13 +623,18 @@ export class ReconcileService {
     const normalizedStatus = providerSnapshot.status.trim().toUpperCase();
 
     await this.dbService.db.transaction(async (tx) => {
-      const leg = await this.lockLegOrNull(prepared.legId, tx);
-      if (
-        !leg ||
-        (leg.status !== 'CANCELING' &&
-          leg.status !== 'REFUNDING' &&
-          leg.status !== 'RECONCILE_REQUIRED')
-      ) {
+      const legSnapshot = await this.readLegOrNull(prepared.legId, tx);
+      if (!legSnapshot || !this.isReconcileTargetLegStatus(legSnapshot.status)) {
+        return;
+      }
+
+      const intent = await this.lockIntentOrNull(legSnapshot.intentId, tx);
+      if (!intent) {
+        return;
+      }
+
+      const leg = await this.lockLegByIntentOrNull(intent.id, prepared.legId, tx);
+      if (!leg || !this.isReconcileTargetLegStatus(leg.status)) {
         return;
       }
 
@@ -998,6 +1049,28 @@ export class ReconcileService {
     return null;
   }
 
+  private isReconcileTargetLegStatus(status: PaymentLegStatus): boolean {
+    return (
+      status === 'CANCELING' || status === 'REFUNDING' || status === 'RECONCILE_REQUIRED'
+    );
+  }
+
+  private async readAttemptOrNull(attemptId: string, tx: DbTx): Promise<LockedAttempt | null> {
+    const rows = (await tx.execute(sql`
+      select
+        id,
+        intent_id as "intentId",
+        leg_id as "legId",
+        status,
+        request_payload as "requestPayload"
+      from payment_attempts
+      where id = ${attemptId}
+      limit 1
+    `)) as unknown as LockedAttempt[];
+
+    return rows[0] ?? null;
+  }
+
   private readBatchSize(): number {
     const parsed = Number(process.env.WALLET_RECONCILE_BATCH_SIZE ?? 50);
     if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -1022,7 +1095,7 @@ export class ReconcileService {
     return rows[0] ?? null;
   }
 
-  private async lockLegOrNull(legId: string, tx: DbTx): Promise<LockedLeg | null> {
+  private async readLegOrNull(legId: string, tx: DbTx): Promise<LockedLeg | null> {
     const rows = (await tx.execute(sql`
       select
         id,
@@ -1031,6 +1104,26 @@ export class ReconcileService {
         status
       from payment_legs
       where id = ${legId}
+      limit 1
+    `)) as unknown as LockedLeg[];
+
+    return rows[0] ?? null;
+  }
+
+  private async lockLegByIntentOrNull(
+    intentId: string,
+    legId: string,
+    tx: DbTx,
+  ): Promise<LockedLeg | null> {
+    const rows = (await tx.execute(sql`
+      select
+        id,
+        intent_id as "intentId",
+        provider_type as "providerType",
+        status
+      from payment_legs
+      where id = ${legId}
+        and intent_id = ${intentId}
       for update
     `)) as unknown as LockedLeg[];
 
