@@ -6,7 +6,6 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { generateMessageId } from '@app/events';
 import { and, asc, eq, inArray, lte, sql } from 'drizzle-orm';
 import { CreateIntentDto } from './dto/create-intent.dto';
 import { ConfigureLegsDto } from './dto/configure-legs.dto';
@@ -45,6 +44,11 @@ import {
   ProviderOperationResult,
 } from '../providers/payment-provider.types';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
+import { buildOutboxInsertValues } from '../messaging/outbox-event.util';
+import {
+  buildPaymentIntentEventPayload,
+  buildRefundEventPayload,
+} from '../messaging/payments-event.builder';
 
 interface LegOperationResult {
   intent: PaymentIntent;
@@ -253,7 +257,7 @@ export class IntentsService {
             'PaymentIntentSucceeded',
             'SUCCEEDED',
           );
-          await tx.insert(outboxEvents).values(this.toOutboxInsertValues(outboxEvent));
+          await tx.insert(outboxEvents).values(buildOutboxInsertValues(outboxEvent));
         }
 
         return createdIntent;
@@ -1296,7 +1300,7 @@ export class IntentsService {
             aggregateType: 'RefundRequest',
             aggregateId: createdRefundRequest.id,
             partitionKey: intentId,
-            payload: {
+            payload: buildRefundEventPayload({
               refundId: createdRefundRequest.id,
               intentId,
               referenceType: intent.referenceType,
@@ -1305,8 +1309,7 @@ export class IntentsService {
               refundAmount: dto.refundAmount,
               currency: intent.currency,
               allocation: dto.allocation,
-              occurredAt: new Date().toISOString(),
-            },
+            }),
           },
         },
         'VALIDATED',
@@ -1363,7 +1366,7 @@ export class IntentsService {
               aggregateType: 'RefundRequest',
               aggregateId: createdRefundRequest.id,
               partitionKey: intentId,
-              payload: {
+              payload: buildRefundEventPayload({
                 refundId: createdRefundRequest.id,
                 intentId,
                 referenceType: intent.referenceType,
@@ -1372,8 +1375,7 @@ export class IntentsService {
                 refundAmount: dto.refundAmount,
                 currency: intent.currency,
                 allocation: dto.allocation,
-                occurredAt: new Date().toISOString(),
-              },
+              }),
             },
           },
           'PROCESSING',
@@ -1423,7 +1425,7 @@ export class IntentsService {
               aggregateType: 'RefundRequest',
               aggregateId: createdRefundRequest.id,
               partitionKey: intentId,
-              payload: {
+              payload: buildRefundEventPayload({
                 refundId: createdRefundRequest.id,
                 intentId,
                 referenceType: intent.referenceType,
@@ -1432,13 +1434,14 @@ export class IntentsService {
                 refundAmount: dto.refundAmount,
                 currency: intent.currency,
                 allocation: dto.allocation,
-                reasonCode: 'REFUND_REQUEST_RECONCILE_REQUIRED',
-                reasonMessage: 'Refund request requires manual reconcile',
-                requiresManualAction: true,
-                manualQueueItemId: manualQueueItemIds[0] ?? null,
-                manualQueueItemIds,
-                occurredAt: new Date().toISOString(),
-              },
+                extra: {
+                  reasonCode: 'REFUND_REQUEST_RECONCILE_REQUIRED',
+                  reasonMessage: 'Refund request requires manual reconcile',
+                  requiresManualAction: true,
+                  manualQueueItemId: manualQueueItemIds[0] ?? null,
+                  manualQueueItemIds,
+                },
+              }),
             },
           },
           currentRefundStatus,
@@ -1446,7 +1449,7 @@ export class IntentsService {
         );
 
         await tx.insert(outboxEvents).values(
-          this.toOutboxInsertValues(
+          buildOutboxInsertValues(
             this.buildPaymentIntentOutboxEvent(
               intent,
               'PaymentReconcileRequired',
@@ -2847,7 +2850,7 @@ export class IntentsService {
       aggregateType: 'PaymentIntent',
       aggregateId: intent.id,
       partitionKey: intent.id,
-      payload: {
+      payload: buildPaymentIntentEventPayload({
         intentId: intent.id,
         referenceType: intent.referenceType,
         referenceId: intent.referenceId,
@@ -2855,29 +2858,10 @@ export class IntentsService {
         status,
         payableAmount: intent.payableAmount,
         currency: intent.currency,
-        ...extraPayload,
         occurredAt:
-          typeof extraPayload.occurredAt === 'string'
-            ? extraPayload.occurredAt
-            : new Date().toISOString(),
-      },
-    };
-  }
-
-  private toOutboxInsertValues(event: OutboxEventInput): typeof outboxEvents.$inferInsert {
-    const now = new Date();
-    return {
-      messageId: generateMessageId(),
-      eventType: event.eventType,
-      aggregateType: event.aggregateType,
-      aggregateId: event.aggregateId,
-      partitionKey: event.partitionKey ?? event.aggregateId,
-      payload: event.payload,
-      status: 'PENDING',
-      attempts: 0,
-      nextAttemptAt: now,
-      createdAt: now,
-      updatedAt: now,
+          typeof extraPayload.occurredAt === 'string' ? extraPayload.occurredAt : undefined,
+        extra: extraPayload,
+      }),
     };
   }
 

@@ -16,10 +16,10 @@
 | `04` | `04-sprint3-refund-compensation-messaging.md` | 환불/보상/정합성 + 명령/이벤트 + outbox |
 | `05` | `05-sprint4-admin-webhook-and-ops.md` | 관리자 API + 웹훅 경계 + 운영 가시성 |
 | `06` | `06-sprint5-cutover-and-hardening.md` | 신규 wallet go-live, legacy 동결, 릴리즈 하드닝 |
+| `07` | `07-phase4-messaging-and-outbox-detail.md` | Phase 4 메시징/Outbox 상세 실행 계획 |
 
 ## 진행 원칙
 
 - 각 스프린트 종료 시 P0 회귀 시나리오를 실행한다.
 - 설계 불변식 위반 이슈는 다음 스프린트로 이월하지 않는다.
 - 문서 변경 시 관련 `design` 문서와 동기화한다.
-

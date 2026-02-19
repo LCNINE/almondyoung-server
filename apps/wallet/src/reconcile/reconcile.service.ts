@@ -25,6 +25,7 @@ import { DbTx } from '../types';
 import { ProviderRegistry } from '../providers/provider.registry';
 import { ProviderOperation } from '../providers/payment-provider.types';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
+import { buildPaymentIntentEventPayload } from '../messaging/payments-event.builder';
 
 const OPEN_MANUAL_QUEUE_STATUSES: ManualCancelQueueStatus[] = [
   'QUEUED',
@@ -670,7 +671,7 @@ export class ReconcileService {
                 aggregateType: 'PaymentIntent',
                 aggregateId: intent.id,
                 partitionKey: intent.id,
-                payload: {
+                payload: buildPaymentIntentEventPayload({
                   intentId: intent.id,
                   referenceType: intent.referenceType,
                   referenceId: intent.referenceId,
@@ -678,15 +679,16 @@ export class ReconcileService {
                   status: 'RECONCILE_REQUIRED',
                   payableAmount: intent.payableAmount,
                   currency: intent.currency,
-                  reasonCode: retryContext?.reasonCode ?? 'INTENT_RECONCILE_REQUIRED',
-                  reasonMessage:
-                    retryContext?.reasonMessage ??
-                    'Compensation was not fully resolved',
-                  requiresManualAction: true,
-                  manualQueueItemId: manualQueueItemIds[0] ?? null,
-                  manualQueueItemIds,
-                  occurredAt: new Date().toISOString(),
-                },
+                  extra: {
+                    reasonCode: retryContext?.reasonCode ?? 'INTENT_RECONCILE_REQUIRED',
+                    reasonMessage:
+                      retryContext?.reasonMessage ??
+                      'Compensation was not fully resolved',
+                    requiresManualAction: true,
+                    manualQueueItemId: manualQueueItemIds[0] ?? null,
+                    manualQueueItemIds,
+                  },
+                }),
               },
             },
             'RECONCILING',
@@ -714,7 +716,7 @@ export class ReconcileService {
               aggregateType: 'PaymentIntent',
               aggregateId: intent.id,
               partitionKey: intent.id,
-              payload: {
+              payload: buildPaymentIntentEventPayload({
                 intentId: intent.id,
                 referenceType: intent.referenceType,
                 referenceId: intent.referenceId,
@@ -722,8 +724,7 @@ export class ReconcileService {
                 status: 'SUPERSEDED',
                 payableAmount: intent.payableAmount,
                 currency: intent.currency,
-                occurredAt: new Date().toISOString(),
-              },
+              }),
             },
           },
           'SUPERSEDED_RECONCILE_REQUIRED',
@@ -759,7 +760,7 @@ export class ReconcileService {
             aggregateType: 'PaymentIntent',
             aggregateId: intent.id,
             partitionKey: intent.id,
-            payload: {
+            payload: buildPaymentIntentEventPayload({
               intentId: intent.id,
               referenceType: intent.referenceType,
               referenceId: intent.referenceId,
@@ -767,8 +768,7 @@ export class ReconcileService {
               status: finalStatus,
               payableAmount: intent.payableAmount,
               currency: intent.currency,
-              occurredAt: new Date().toISOString(),
-            },
+            }),
           },
         },
         intent.status,

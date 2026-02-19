@@ -230,6 +230,10 @@ apps/wallet/src
 
 근거 문서: `03`
 
+상세 실행 문서:
+
+- `07-phase4-messaging-and-outbox-detail.md`
+
 목표:
 
 - `payments.commands.v1`, `payments.events.v1` 기준으로 메시지 입출력 구현
@@ -392,4 +396,3 @@ apps/wallet/src
 6. POINTS provider capability 구현  
 7. `POST /v1/intents` 엔드포인트 E2E green  
 8. outbox dispatcher + `PaymentIntentSucceeded` 발행 검증
-

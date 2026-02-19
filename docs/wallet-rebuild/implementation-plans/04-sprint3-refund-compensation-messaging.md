@@ -9,6 +9,11 @@
 - reconcile batch
 - `payments.commands.v1` / `payments.events.v1` 계약 구현
 
+참고:
+
+- 메시징 상세 하드닝 계획은
+  `07-phase4-messaging-and-outbox-detail.md`에서 분리 관리한다.
+
 ## 2. 범위
 
 ### In Scope
@@ -56,6 +61,12 @@
   - `RefundRequested|Completed|Failed`
 - outbox dispatcher와 retry 정책 연결
 
+Sprint 3 이후 하드닝 항목:
+
+- 동일 intent 이벤트 순서 보장 강화
+- payload 계약 필수 필드 회귀 방지
+- outbox poison/적체 운영 정책 확정
+
 ## 4. 완료 조건 (Definition of Done)
 
 - 환불 성공/실패/거절 경로 모두 상태 정합성 확보
@@ -82,4 +93,3 @@
 - refund/compensation/reconcile 서비스 코드
 - command consumer + event publisher + outbox dispatcher
 - integration/e2e 테스트 세트
-
