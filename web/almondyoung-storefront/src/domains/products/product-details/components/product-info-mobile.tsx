@@ -3,7 +3,7 @@ import { ProductPriceDisplay } from "./product-price-display"
 import { ProductRatingDisplay } from "./product-rating-display"
 import { ProductShippingInfo } from "./product-shipping-info"
 import type { ProductDetail } from "@lib/types/ui/product"
-import { useMembership } from "@/contexts/membership-context"
+import { useMembershipPricing } from "@/hooks/use-membership-pricing"
 
 type Props = {
   product: ProductDetail
@@ -16,13 +16,13 @@ type Props = {
  * - props drilling 최소화
  */
 export function ProductInfoMobile({ product }: Props) {
-  const { status } = useMembership()
-  const isMember = status === "membership"
+  const { isMembershipPricing } = useMembershipPricing()
+  const isMember = isMembershipPricing
   // 유틸 함수
   const getDiscountRate = () => {
     const base = product.basePrice || 0
     const actual = product.actualPrice ?? base
-    if (isMember && base > 0 && actual > 0 && actual < base) {
+    if (isMembershipPricing && base > 0 && actual > 0 && actual < base) {
       return Math.round(((base - actual) / base) * 100)
     }
     return 0

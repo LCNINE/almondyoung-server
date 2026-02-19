@@ -5,7 +5,7 @@ import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
-import { useMembership } from "@/contexts/membership-context"
+import { useMembershipPricing } from "@/hooks/use-membership-pricing"
 import { ProductPrice } from "@/components/products/prodcut-card/parts/product-price"
 
 export interface ProductListCardProps {
@@ -51,8 +51,8 @@ export function ProductListCard({
   showDeleteButton = true,
   showCartButton = true,
 }: ProductListCardProps) {
-  const { status } = useMembership()
-  const isMember = status === "membership"
+  const { isMembershipPricing } = useMembershipPricing()
+  const isMember = isMembershipPricing
 
   const isSoldOut = manageInventory && available <= 0
   const hasMembershipPrice = membershipSavings != null && membershipSavings > 0

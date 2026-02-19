@@ -19,13 +19,7 @@ interface CartResponseDto {
     customer: {
       groups: {
         id: string
-        email: string
-        created_at: string
-        created_by: string
-        deleted_at: string
-        updated_at: string
-        metadata: Record<string, any>
-        name: string
+        name?: string | null
       }[]
     }
   }

@@ -12,12 +12,14 @@ export interface MembershipTier {
 
 export interface MembershipContextType {
   status: MembershipStatus
+  isMembershipPricing: boolean
   tier?: MembershipTier
   setMembership?: (next: MembershipContextType) => void
 }
 
 const MembershipContext = createContext<MembershipContextType>({
   status: "guest",
+  isMembershipPricing: false,
 })
 
 export function MembershipProvider({

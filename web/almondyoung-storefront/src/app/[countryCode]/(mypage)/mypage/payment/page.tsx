@@ -1,8 +1,6 @@
-import { MypagePaymentManagerSkeleton } from "@/components/skeletons/page-skeletons"
 import { WithHeaderLayout } from "@components/layout"
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import PaymentManager from "domains/payment/payment-management"
-import { Suspense } from "react"
 
 export default function PaymentPage() {
   return (
@@ -15,9 +13,7 @@ export default function PaymentPage() {
       }}
     >
       <MypageLayout>
-        <Suspense fallback={<MypagePaymentManagerSkeleton />}>
-          <PaymentManager />
-        </Suspense>
+        <PaymentManager />
       </MypageLayout>
     </WithHeaderLayout>
   )

@@ -1,10 +1,17 @@
 "use client"
 
 import { HttpTypes } from "@medusajs/types"
+import type { CustomerGroupRef } from "@/lib/utils/membership-group"
 import { createContext, useContext } from "react"
 
+type StoreCartWithCustomerGroups = HttpTypes.StoreCart & {
+  customer?: {
+    groups?: CustomerGroupRef[]
+  }
+}
+
 interface CartContextType {
-  cart: HttpTypes.StoreCart | null
+  cart: StoreCartWithCustomerGroups | null
   itemCount: number
 }
 
@@ -18,7 +25,7 @@ export function CartProvider({
   initialCart,
 }: {
   children: React.ReactNode
-  initialCart: HttpTypes.StoreCart | null
+  initialCart: StoreCartWithCustomerGroups | null
 }) {
   const itemCount =
     initialCart?.items?.reduce((sum, item) => sum + item.quantity, 0) ?? 0

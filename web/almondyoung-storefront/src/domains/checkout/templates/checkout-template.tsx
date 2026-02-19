@@ -9,6 +9,7 @@ import { PaymentTotalSection } from "@/domains/checkout/components/sections/paym
 import { ShippingSection } from "@/domains/checkout/components/sections/shipping"
 import type { ShippingMemo } from "@/domains/checkout/components/sections/shipping/types"
 import { usePinStatus } from "@/hooks/api/use-pin-status"
+import { useMembershipPricing } from "@/hooks/use-membership-pricing"
 import { updateCart } from "@/lib/api/medusa/cart"
 import {
   authorizePayment,
@@ -76,11 +77,8 @@ export default function CheckoutTemplate({
     [cart.items, selectedIds]
   )
 
-  // 멤버십 여부
-  const isMembership =
-    cart?.customer?.groups?.some(
-      (group) => group.name.toLowerCase() === "membership"
-    ) ?? false
+  // 멤버십 가격 적용 여부 (고객 그룹 기준)
+  const { isMembershipPricing } = useMembershipPricing()
 
   // 적립금 사용 상태
   const [pointsUsed, setPointsUsed] = useState(0)
@@ -90,7 +88,7 @@ export default function CheckoutTemplate({
     const { currency_code, item_subtotal, discount_subtotal } =
       getCartTotals(cart)
     const membershipDiscount =
-      isMembership && selectedItems.length > 0
+      isMembershipPricing && selectedItems.length > 0
         ? calculateMembershipDiscount(selectedItems)
         : 0
     const totalDiscount = discount_subtotal + membershipDiscount + pointsUsed
@@ -109,7 +107,7 @@ export default function CheckoutTemplate({
       totalDiscount,
       finalTotal,
     }
-  }, [cart, shipping, isMembership, selectedItems, pointsUsed])
+  }, [cart, shipping, isMembershipPricing, selectedItems, pointsUsed])
 
   const [selectedMethod, setSelectedMethod] = useState("toss")
   const [cashReceiptOption, setCashReceiptOption] = useState("noapply")
@@ -327,7 +325,7 @@ export default function CheckoutTemplate({
             />
             <DiscountSection
               cartId={cart.id}
-              isMembership={isMembership}
+              isMembership={isMembershipPricing}
               membershipDiscount={cartTotals.membershipDiscount}
               itemSubtotal={cartTotals.item_subtotal}
               shipping={shipping}
@@ -357,7 +355,7 @@ export default function CheckoutTemplate({
           <div className="lg:shrink-0">
             <MobileOrderSummary
               totals={cartTotals}
-              isMembership={isMembership}
+              isMembership={isMembershipPricing}
             />
             <PaymentDetailSidebar
               isOpen={isPaymentDetailsOpen}
