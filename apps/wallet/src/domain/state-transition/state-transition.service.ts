@@ -1,5 +1,6 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
+import { generateMessageId } from '@app/events';
 import { eq, sql } from 'drizzle-orm';
 import {
   WalletSchema,
@@ -336,6 +337,7 @@ export class StateTransitionService {
     const outboxEvent = context.outboxEvent;
 
     await tx.insert(outboxEvents).values({
+      messageId: generateMessageId(),
       eventType: outboxEvent.eventType,
       aggregateType: outboxEvent.aggregateType,
       aggregateId: outboxEvent.aggregateId,

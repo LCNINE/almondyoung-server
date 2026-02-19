@@ -351,6 +351,7 @@ export const outboxEvents = pgTable(
   'outbox_events',
   {
     id: uuid('id').defaultRandom().primaryKey(),
+    messageId: varchar('message_id', { length: 64 }).notNull(),
     eventType: varchar('event_type', { length: 128 }).notNull(),
     aggregateType: varchar('aggregate_type', { length: 64 }).notNull(),
     aggregateId: uuid('aggregate_id').notNull(),
@@ -366,6 +367,7 @@ export const outboxEvents = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    uniqueIndex('uq_outbox_events_message_id').on(table.messageId),
     index('idx_outbox_events_status_next_attempt_at').on(
       table.status,
       table.nextAttemptAt,

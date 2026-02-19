@@ -185,6 +185,82 @@ describe('IdempotencyService', () => {
       }),
     ).rejects.toBeInstanceOf(ConflictException);
   });
+
+  it('replays completed command for same messageType and idempotency key', async () => {
+    const begin = await service.beginCommandRequest({
+      idempotencyKey: 'cmd-idem-1',
+      operation: 'CreatePaymentIntent',
+      requestBody: { referenceId: 'ref-1', payableAmount: 1000 },
+    });
+
+    expect(begin.kind).toBe('STARTED');
+    if (begin.kind !== 'STARTED') {
+      throw new Error('Expected STARTED');
+    }
+
+    await service.completeSuccess(begin.recordId, 200, { status: 'PROCESSED' });
+
+    const replay = await service.beginCommandRequest({
+      idempotencyKey: 'cmd-idem-1',
+      operation: 'CreatePaymentIntent',
+      requestBody: { referenceId: 'ref-1', payableAmount: 1000 },
+    });
+
+    expect(replay).toMatchObject({
+      kind: 'REPLAY',
+      responseCode: 200,
+      responseBody: { status: 'PROCESSED' },
+    });
+  });
+
+  it('treats in-progress command as replay (no-op)', async () => {
+    await service.beginCommandRequest({
+      idempotencyKey: 'cmd-idem-2',
+      operation: 'CancelPaymentIntent',
+      requestBody: { intentId: 'intent-1' },
+    });
+
+    const replay = await service.beginCommandRequest({
+      idempotencyKey: 'cmd-idem-2',
+      operation: 'CancelPaymentIntent',
+      requestBody: { intentId: 'intent-1' },
+    });
+
+    expect(replay).toMatchObject({
+      kind: 'REPLAY',
+      responseCode: 202,
+      responseBody: { status: 'IN_PROGRESS' },
+    });
+  });
+
+  it('allows retry for failed command with same payload', async () => {
+    const begin = await service.beginCommandRequest({
+      idempotencyKey: 'cmd-idem-3',
+      operation: 'StartPaymentLeg',
+      requestBody: { intentId: 'intent-1', legId: 'leg-1', operation: 'AUTHORIZE' },
+    });
+
+    expect(begin.kind).toBe('STARTED');
+    if (begin.kind !== 'STARTED') {
+      throw new Error('Expected STARTED');
+    }
+
+    await service.completeFailure(begin.recordId, 500, {
+      error: 'PROVIDER_TIMEOUT',
+      message: 'timeout',
+    });
+
+    const retry = await service.beginCommandRequest({
+      idempotencyKey: 'cmd-idem-3',
+      operation: 'StartPaymentLeg',
+      requestBody: { intentId: 'intent-1', legId: 'leg-1', operation: 'AUTHORIZE' },
+    });
+
+    expect(retry).toMatchObject({
+      kind: 'STARTED',
+      recordId: begin.recordId,
+    });
+  });
 });
 
 class InMemoryIdempotencyRepository implements IdempotencyRepository {

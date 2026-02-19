@@ -4,7 +4,6 @@ import { DbService } from '@app/db';
 import {
   InjectStreamPublisher,
   StreamPublisher,
-  generateMessageId,
 } from '@app/events';
 import {
   PAYMENTS_EVENTS_V1_STREAM,
@@ -83,6 +82,7 @@ export class OutboxDispatcherService {
       const rows = await tx
         .select({
           id: outboxEvents.id,
+          messageId: outboxEvents.messageId,
           eventType: outboxEvents.eventType,
           aggregateType: outboxEvents.aggregateType,
           aggregateId: outboxEvents.aggregateId,
@@ -202,7 +202,7 @@ export class OutboxDispatcherService {
     const causationId = this.readPayloadString(event.payload, 'causationId');
 
     return {
-      messageId: generateMessageId(),
+      messageId: event.messageId,
       messageType: event.eventType,
       messageVersion: 1,
       messageKind: 'event',
@@ -289,6 +289,7 @@ export class OutboxDispatcherService {
 
 interface OutboxRow {
   id: string;
+  messageId: string;
   eventType: string;
   aggregateType: string;
   aggregateId: string;
