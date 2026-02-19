@@ -1,181 +1,188 @@
 "use client"
 
-import testImage from "@/assets/images/test.png"
-import { useMediaQuery } from "@/hooks/use-media-query"
-import { PauseIcon } from "@/icons/pause-icon"
-import type { Banner } from "@/lib/types/ui/product"
-import Autoplay from "embla-carousel-autoplay"
-import { Play } from "lucide-react"
-import Image from "next/image"
+import { useState, useCallback, useEffect } from "react"
 import Link from "next/link"
-import { useEffect, useRef, useState } from "react"
-import { Button } from "../ui/button"
+import Image from "next/image"
+import { ChevronLeft, ChevronRight } from "lucide-react"
+import Autoplay from "embla-carousel-autoplay"
+
+import { Banner } from "@/lib/types/ui/pim"
+import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
+import { cn } from "@lib/utils"
 import {
   Carousel,
-  CarouselApi,
   CarouselContent,
   CarouselItem,
-  CarouselNext,
-  CarouselPrevious,
-} from "../ui/carousel"
+  type CarouselApi,
+} from "@/components/ui/carousel"
 
-interface HeroBannerCarouselProps {
+type BannerCarouselProps = {
   banners: Banner[]
-  pcWidth: number | null
-  pcHeight: number | null
-  mobileWidth: number | null
-  mobileHeight: number | null
+  dimensions: {
+    pc: { width: number | null; height: number | null }
+    mobile: { width: number | null; height: number | null }
+  }
 }
 
 export function HeroBannerCarousel({
   banners,
-  pcWidth,
-  pcHeight,
-  mobileWidth,
-  mobileHeight,
-}: HeroBannerCarouselProps) {
-  if (!banners || banners.length === 0) {
-    return null
-  }
-
+  dimensions,
+}: BannerCarouselProps) {
   const [api, setApi] = useState<CarouselApi>()
-  const [isPlaying, setIsPlaying] = useState(true)
+  const [current, setCurrent] = useState(0)
+  const [isHovered, setIsHovered] = useState(false)
 
-  const isMobile = useMediaQuery("(max-width: 768px)")
-
-  const autoplay = useRef(
-    Autoplay({ delay: 4000, stopOnInteraction: false })
-  )
+  const pcWidth = dimensions.pc.width ?? 1920
+  const pcHeight = dimensions.pc.height ?? 600
+  const mobileWidth = dimensions.mobile.width ?? 750
+  const mobileHeight = dimensions.mobile.height ?? 500
 
   useEffect(() => {
     if (!api) return
 
-    const autoplayInstance = api.plugins().autoplay
-    if (!autoplayInstance) return
+    setCurrent(api.selectedScrollSnap())
 
-    if (isPlaying) {
-      autoplayInstance.play()
-    } else {
-      autoplayInstance.stop()
-    }
-  }, [isPlaying, api])
+    api.on("select", () => {
+      setCurrent(api.selectedScrollSnap())
+    })
+  }, [api])
+
+  const scrollTo = useCallback(
+    (index: number) => {
+      api?.scrollTo(index)
+    },
+    [api]
+  )
+
+  const scrollPrev = useCallback(() => {
+    api?.scrollPrev()
+  }, [api])
+
+  const scrollNext = useCallback(() => {
+    api?.scrollNext()
+  }, [api])
+
+  const BannerImage = ({ banner }: { banner: Banner }) => (
+    <>
+      {/* PC 이미지 */}
+      <Image
+        src={getThumbnailUrl(banner.pcImageFileId)}
+        alt={banner.title}
+        fill
+        priority
+        className="hidden object-cover md:block"
+      />
+      {/* 모바일 이미지 */}
+      <Image
+        src={getThumbnailUrl(banner.mobileImageFileId)}
+        alt={banner.title}
+        fill
+        priority
+        className="block object-cover md:hidden"
+      />
+    </>
+  )
 
   return (
-    <div className="bg-background relative w-full overflow-hidden border-b border-gray-100">
+    <div
+      className="relative w-full"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
       <Carousel
         setApi={setApi}
-        plugins={banners.length > 1 ? [autoplay.current] : []}
         opts={{
           loop: true,
-          align: isMobile ? "start" : "center",
-          skipSnaps: false,
         }}
+        plugins={[
+          Autoplay({
+            delay: 4000,
+            stopOnInteraction: false,
+            stopOnMouseEnter: true,
+          }),
+        ]}
         className="w-full"
-        onMouseEnter={() => isPlaying && autoplay.current.stop()}
-        onMouseLeave={() => isPlaying && autoplay.current.play()}
       >
-        <CarouselContent className="-ml-6">
+        <CarouselContent className="ml-0">
           {banners.map((banner) => (
-            <CarouselItem
-              key={banner.id}
-              className="basis-[85%] pl-6 md:basis-[55%] lg:basis-[50%]"
-            >
-              <Link
-                href={banner.linkUrl ?? "#"}
-                className="relative block h-[304px] w-full overflow-hidden rounded-[24px] bg-gray-100 shadow-sm md:h-[518px]"
+            <CarouselItem key={banner.id} className="pl-0">
+              <div
+                className="relative aspect-(--mobile-ratio) w-full md:aspect-(--pc-ratio)"
+                style={
+                  {
+                    "--mobile-ratio": `${mobileWidth}/${mobileHeight}`,
+                    "--pc-ratio": `${pcWidth}/${pcHeight}`,
+                  } as React.CSSProperties
+                }
               >
-                {/* 모바일 이미지 */}
-                <div className="relative block h-full w-full md:hidden">
-                  <Image
-                    src={banner.mobileImageFileId}
-                    alt={banner.title}
-                    fill
-                    sizes="(max-width: 768px) 85vw, 100vw"
-                    className="object-cover transition-transform duration-500 hover:scale-105"
-                    priority
-                  />
-                </div>
-
-                {/* 데스크탑 이미지 */}
-                <div className="relative hidden h-full w-full md:block">
-                  <Image
-                    src={banner.pcImageFileId}
-                    alt={banner.title}
-                    fill
-                    sizes="(max-width: 1024px) 55vw, 50vw"
-                    className="object-cover transition-transform duration-500 hover:scale-105"
-                    priority
-                  />
-                </div>
-
-                {/* 그라데이션 오버레이*/}
-                <div className="absolute inset-0 bg-linear-to-t from-black/70 via-black/20 to-transparent" />
-
-                {/* 콘텐츠 영역 */}
-                <div className="absolute inset-x-0 bottom-0 p-6 text-white md:p-12">
-                  <div className="max-w-[85%] md:max-w-[60%]">
-                    <h2 className="text-xl leading-[1.2] font-bold tracking-tight md:text-4xl lg:text-5xl">
-                      {banner.title}
-                    </h2>
-                    {banner.description && (
-                      <p className="mt-2 line-clamp-1 text-xs font-medium opacity-80 md:mt-4 md:line-clamp-2 md:text-lg">
-                        {banner.description}
-                      </p>
-                    )}
-
-                    {/* subProduct */}
-                    <div className="mt-4 md:mt-8">
-                      <p className="mb-2 text-xs font-medium opacity-80 md:text-sm">
-                        검색 연관 제품
-                      </p>
-                      <div className="flex gap-2 md:gap-4">
-                        <div className="relative aspect-square w-[103px] overflow-hidden rounded-lg bg-white/20 md:w-[131px] md:rounded-xl">
-                          <Image
-                            src={testImage}
-                            alt="product"
-                            fill
-                            className="object-cover"
-                          />
-                        </div>
-                        <div className="relative aspect-square w-[103px] overflow-hidden rounded-lg bg-white/20 md:w-[131px] md:rounded-xl">
-                          <Image
-                            src={testImage}
-                            alt="product"
-                            fill
-                            className="object-cover"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </Link>
+                {banner.linkUrl ? (
+                  <Link
+                    href={banner.linkUrl}
+                    className="block h-full w-full"
+                    target={
+                      banner.linkUrl.startsWith("http") ? "_blank" : undefined
+                    }
+                    rel={
+                      banner.linkUrl.startsWith("http")
+                        ? "noopener noreferrer"
+                        : undefined
+                    }
+                  >
+                    <BannerImage banner={banner} />
+                  </Link>
+                ) : (
+                  <BannerImage banner={banner} />
+                )}
+              </div>
             </CarouselItem>
           ))}
         </CarouselContent>
 
-        {/* 컨트롤 영역 */}
-        <div className="absolute right-8 -bottom-14 z-20 hidden items-center gap-3 md:flex">
-          <div className="flex h-11 items-center overflow-hidden rounded-full border border-white/40 bg-white/80 shadow-md backdrop-blur-md transition-all hover:bg-white">
-            <CarouselPrevious className="static h-full w-12 translate-y-0 cursor-pointer border-none bg-transparent text-black shadow-none transition-colors hover:bg-white/80 hover:text-black" />
-            <div className="h-4 w-px bg-gray-300" />
-            <CarouselNext className="static h-full w-12 translate-y-0 cursor-pointer border-none bg-transparent text-black shadow-none transition-colors hover:bg-white/80 hover:text-black" />
+        {/* 좌우 화살표 - 호버 시에만 표시 */}
+        {banners.length > 1 && (
+          <div className="hidden lg:block">
+            <button
+              onClick={scrollPrev}
+              className={cn(
+                "hover:bg-yellow-30 absolute top-1/2 left-[15%] z-10 flex h-10 w-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-white/80 text-gray-800 shadow-md transition-all duration-300 hover:text-white",
+                isHovered ? "opacity-100" : "opacity-0"
+              )}
+              aria-label="이전 배너"
+            >
+              <ChevronLeft className="h-6 w-6" />
+            </button>
+            <button
+              onClick={scrollNext}
+              className={cn(
+                "hover:bg-yellow-30 absolute top-1/2 right-[15%] z-10 flex h-10 w-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-white/80 text-gray-800 shadow-md transition-all duration-300 hover:text-white",
+                isHovered ? "opacity-100" : "opacity-0"
+              )}
+              aria-label="다음 배너"
+            >
+              <ChevronRight className="h-6 w-6" />
+            </button>
           </div>
-
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-11 w-11 cursor-pointer rounded-full bg-white/80 text-black shadow-md backdrop-blur-md transition-all hover:bg-white hover:text-black active:scale-90"
-            onClick={() => setIsPlaying(!isPlaying)}
-          >
-            {isPlaying ? (
-              <PauseIcon className="h-5 w-5" />
-            ) : (
-              <Play className="h-5 w-5 fill-current" />
-            )}
-          </Button>
-        </div>
+        )}
       </Carousel>
+
+      {/* 도트 인디케이터 */}
+      {banners.length > 1 && (
+        <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 gap-2">
+          {banners.map((_, index) => (
+            <button
+              key={index}
+              onClick={() => scrollTo(index)}
+              className={cn(
+                "h-2 w-2 cursor-pointer rounded-full transition-all duration-300",
+                current === index
+                  ? "w-6 bg-white"
+                  : "bg-white/50 hover:bg-white/80"
+              )}
+              aria-label={`배너 ${index + 1}로 이동`}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }

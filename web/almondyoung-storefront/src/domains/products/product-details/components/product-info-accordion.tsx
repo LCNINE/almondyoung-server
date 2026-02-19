@@ -1,6 +1,6 @@
 "use client"
 
-import { ChevronDown, ChevronUp } from "lucide-react"
+import { ChevronDown } from "lucide-react"
 import { useState } from "react"
 
 /**
@@ -22,7 +22,7 @@ export function ProductInfoAccordion() {
   }
 
   return (
-    <section className="mb-8 rounded-lg bg-white py-6">
+    <section className="bg-background mb-8 rounded-lg p-6">
       <ul className="space-y-4">
         {/* 결제안내 */}
         <li className="rounded-lg border">
@@ -33,18 +33,23 @@ export function ProductInfoAccordion() {
             aria-controls="payment-content"
           >
             <span className="font-medium">결제안내</span>
-            {accordionStates.payment ? <ChevronUp /> : <ChevronDown />}
+            <ChevronDown
+              className={`size-5 shrink-0 transition-transform duration-200 ${accordionStates.payment ? "rotate-180" : ""}`}
+            />
           </button>
-          {accordionStates.payment && (
-            <div id="payment-content" className="px-4 pb-4">
-              <p className="text-sm text-gray-600">
+          <div
+            id="payment-content"
+            className={`grid transition-[grid-template-rows] duration-200 ${accordionStates.payment ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
+          >
+            <div className="overflow-hidden">
+              <p className="px-4 pb-4 text-sm text-gray-600">
                 고액 결제의 경우 안전을 위해 카드사에서 확인 전화를 드릴 수도
                 있습니다. 확인 과정에서 도난 카드의 사용이나 타인 명의의 주문 등
                 정상적인 주문이 아니라고 판단될 경우 임의로 주문을 보류 또는
                 취소할 수 있습니다.
               </p>
             </div>
-          )}
+          </div>
         </li>
 
         {/* 배송 안내 */}
@@ -56,11 +61,16 @@ export function ProductInfoAccordion() {
             aria-controls="shipping-content"
           >
             <span className="font-medium">배송 안내</span>
-            {accordionStates.shipping ? <ChevronUp /> : <ChevronDown />}
+            <ChevronDown
+              className={`size-5 shrink-0 transition-transform duration-200 ${accordionStates.shipping ? "rotate-180" : ""}`}
+            />
           </button>
-          {accordionStates.shipping && (
-            <div id="shipping-content" className="px-4 pb-4">
-              <p className="text-sm text-gray-600">
+          <div
+            id="shipping-content"
+            className={`grid transition-[grid-template-rows] duration-200 ${accordionStates.shipping ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
+          >
+            <div className="overflow-hidden">
+              <p className="px-4 pb-4 text-sm text-gray-600">
                 배송 방법 : 택배
                 <br />
                 배송 지역 : 전국지역
@@ -72,7 +82,7 @@ export function ProductInfoAccordion() {
                 배송 안내 : 택배사는 CJ 대한통운입니다.
               </p>
             </div>
-          )}
+          </div>
         </li>
 
         {/* 교환/반품 안내 */}
@@ -84,11 +94,16 @@ export function ProductInfoAccordion() {
             aria-controls="return-content"
           >
             <span className="font-medium">교환/반품 안내</span>
-            {accordionStates.return ? <ChevronUp /> : <ChevronDown />}
+            <ChevronDown
+              className={`size-5 shrink-0 transition-transform duration-200 ${accordionStates.return ? "rotate-180" : ""}`}
+            />
           </button>
-          {accordionStates.return && (
-            <div id="return-content" className="px-4 pb-4">
-              <p className="text-sm text-gray-600">
+          <div
+            id="return-content"
+            className={`grid transition-[grid-template-rows] duration-200 ${accordionStates.return ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
+          >
+            <div className="overflow-hidden">
+              <p className="px-4 pb-4 text-sm text-gray-600">
                 교환 및 반품 주소
                 <br />
                 - 경기도 부천시 평천로 832번길 42 4층 엘씨나인
@@ -98,7 +113,7 @@ export function ProductInfoAccordion() {
                 <br />- 상품을 공급 받으신 날로부터 7일 이내
               </p>
             </div>
-          )}
+          </div>
         </li>
       </ul>
     </section>

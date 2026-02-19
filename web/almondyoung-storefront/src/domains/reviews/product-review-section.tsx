@@ -5,7 +5,10 @@ import { getReviewsByProductId } from "@/lib/api/ugc"
 import { getBackendBaseUrl, isRailwayBackend } from "@/lib/config/backend"
 import type { ReviewResponseDto, ReviewRatingFilter } from "@/lib/types/dto/ugc"
 import { ReviewSummary } from "./summary/review-summary"
-import { ReviewDetailCard, type ReviewDetail } from "./details/review-detail-card"
+import {
+  ReviewDetailCard,
+  type ReviewDetail,
+} from "./details/review-detail-card"
 import { SharedPagination } from "@/components/shared/pagination"
 import {
   Select,
@@ -37,8 +40,6 @@ const SORT_OPTIONS: { label: string; value: SortOption }[] = [
 
 const RATING_FILTERS: { label: string; value: ReviewRatingFilter | "all" }[] = [
   { label: "전체", value: "all" },
-  { label: "긍정 (4-5점)", value: "positive" },
-  { label: "부정 (1-2점)", value: "negative" },
   { label: "5점", value: "5" },
   { label: "4점", value: "4" },
   { label: "3점", value: "3" },
