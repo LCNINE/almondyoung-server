@@ -332,28 +332,51 @@ export class ReconcileService {
     correlationId: string,
     stats: ReconcileStats,
   ): Promise<void> {
-    await this.dbService.db.transaction(async (tx) => {
+    const prepared = await this.dbService.db.transaction(async (tx) => {
       const attempt = await this.lockAttemptOrNull(attemptId, tx);
+      if (!attempt || attempt.status !== 'UNKNOWN') {
+        return null;
+      }
+
+      const leg = await this.lockLegOrNull(attempt.legId, tx);
+      if (!leg) {
+        return null;
+      }
+      const intent = await this.lockIntentOrNull(attempt.intentId, tx);
+      if (!intent) {
+        return null;
+      }
+
+      return {
+        attemptId: attempt.id,
+        intentId: intent.id,
+        legId: leg.id,
+        providerType: leg.providerType,
+      };
+    });
+
+    if (!prepared) {
+      return;
+    }
+    stats.processedAttempts += 1;
+
+    const provider = this.providerRegistry.getProviderOrThrow(prepared.providerType);
+    const providerSnapshot = await provider.getTransaction({
+      intentId: prepared.intentId,
+      legId: prepared.legId,
+      correlationId,
+    });
+
+    await this.dbService.db.transaction(async (tx) => {
+      const attempt = await this.lockAttemptOrNull(prepared.attemptId, tx);
       if (!attempt || attempt.status !== 'UNKNOWN') {
         return;
       }
-      stats.processedAttempts += 1;
 
       const leg = await this.lockLegOrNull(attempt.legId, tx);
       if (!leg) {
         return;
       }
-      const intent = await this.lockIntentOrNull(attempt.intentId, tx);
-      if (!intent) {
-        return;
-      }
-
-      const provider = this.providerRegistry.getProviderOrThrow(leg.providerType);
-      const providerSnapshot = await provider.getTransaction({
-        intentId: intent.id,
-        legId: leg.id,
-        correlationId,
-      });
 
       const operation = this.resolveAttemptOperation(attempt.requestPayload);
       const resolvedAttemptStatus = this.mapSnapshotToAttemptStatus(
@@ -510,8 +533,44 @@ export class ReconcileService {
     correlationId: string,
     stats: ReconcileStats,
   ): Promise<void> {
-    await this.dbService.db.transaction(async (tx) => {
+    const prepared = await this.dbService.db.transaction(async (tx) => {
       const leg = await this.lockLegOrNull(legId, tx);
+      if (
+        !leg ||
+        (leg.status !== 'CANCELING' &&
+          leg.status !== 'REFUNDING' &&
+          leg.status !== 'RECONCILE_REQUIRED')
+      ) {
+        return null;
+      }
+
+      const intent = await this.lockIntentOrNull(leg.intentId, tx);
+      if (!intent) {
+        return null;
+      }
+
+      return {
+        intentId: intent.id,
+        legId: leg.id,
+        providerType: leg.providerType,
+      };
+    });
+
+    if (!prepared) {
+      return;
+    }
+    stats.processedLegs += 1;
+
+    const provider = this.providerRegistry.getProviderOrThrow(prepared.providerType);
+    const providerSnapshot = await provider.getTransaction({
+      intentId: prepared.intentId,
+      legId: prepared.legId,
+      correlationId,
+    });
+    const normalizedStatus = providerSnapshot.status.trim().toUpperCase();
+
+    await this.dbService.db.transaction(async (tx) => {
+      const leg = await this.lockLegOrNull(prepared.legId, tx);
       if (
         !leg ||
         (leg.status !== 'CANCELING' &&
@@ -520,20 +579,6 @@ export class ReconcileService {
       ) {
         return;
       }
-      stats.processedLegs += 1;
-
-      const intent = await this.lockIntentOrNull(leg.intentId, tx);
-      if (!intent) {
-        return;
-      }
-
-      const provider = this.providerRegistry.getProviderOrThrow(leg.providerType);
-      const providerSnapshot = await provider.getTransaction({
-        intentId: intent.id,
-        legId: leg.id,
-        correlationId,
-      });
-      const normalizedStatus = providerSnapshot.status.trim().toUpperCase();
 
       if (normalizedStatus === 'CANCELLED') {
         await this.stateTransitionService.transitionLeg(

@@ -92,16 +92,28 @@ describe('IntentsService', () => {
   });
 
   it('rejects already-paid reference with 409', async () => {
-    selectResultsQueue.push([{ id: 'existing-succeeded-intent' }]);
+    const tx = {
+      execute: jest.fn().mockResolvedValue(undefined),
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            limit: jest
+              .fn()
+              .mockResolvedValue([{ id: 'existing-succeeded-intent' }]),
+          }),
+        }),
+      }),
+    };
+    db.transaction.mockImplementationOnce(
+      async (callback: (innerTx: typeof tx) => unknown) => callback(tx),
+    );
     const dto = createSignedCreateIntentDto();
 
     await expect(service.createIntent(dto)).rejects.toBeInstanceOf(ConflictException);
-    expect(db.transaction).not.toHaveBeenCalled();
+    expect(db.transaction).toHaveBeenCalledTimes(1);
   });
 
   it('creates SUCCEEDED intent immediately for zero-amount fast path', async () => {
-    selectResultsQueue.push([]);
-
     const createdIntent = {
       id: 'intent-1',
       referenceType: 'STORE_ORDER',
@@ -134,8 +146,22 @@ describe('IntentsService', () => {
     });
 
     db.transaction.mockImplementation(
-      async (callback: (tx: { insert: typeof txInsertMock }) => unknown) =>
+      async (
+        callback: (tx: {
+          execute: jest.Mock;
+          select: jest.Mock;
+          insert: typeof txInsertMock;
+        }) => unknown,
+      ) =>
         callback({
+          execute: jest.fn().mockResolvedValue(undefined),
+          select: jest.fn().mockReturnValue({
+            from: jest.fn().mockReturnValue({
+              where: jest.fn().mockReturnValue({
+                limit: jest.fn().mockResolvedValue([]),
+              }),
+            }),
+          }),
           insert: txInsertMock,
         }),
     );
@@ -369,14 +395,12 @@ describe('IntentsService', () => {
       execute: jest
         .fn()
         .mockResolvedValueOnce([
-          {
+          createLockedIntent({
             id: 'intent-1',
-            customerId: 'customer-1',
-            currency: 'KRW',
-            payableAmount: 10000,
             status: 'PENDING',
+            payableAmount: 10000,
             version: 0,
-          },
+          }),
         ])
         .mockResolvedValueOnce([
           {
@@ -483,14 +507,12 @@ describe('IntentsService', () => {
       execute: jest
         .fn()
         .mockResolvedValueOnce([
-          {
+          createLockedIntent({
             id: 'intent-1',
-            customerId: 'customer-1',
-            currency: 'KRW',
-            payableAmount: 10000,
             status: 'IN_PROGRESS',
+            payableAmount: 10000,
             version: 0,
-          },
+          }),
         ])
         .mockResolvedValueOnce([
           {
@@ -560,14 +582,12 @@ describe('IntentsService', () => {
       execute: jest
         .fn()
         .mockResolvedValueOnce([
-          {
+          createLockedIntent({
             id: 'intent-1',
-            customerId: 'customer-1',
-            currency: 'KRW',
-            payableAmount: 10000,
             status: 'IN_PROGRESS',
+            payableAmount: 10000,
             version: 0,
-          },
+          }),
         ])
         .mockResolvedValueOnce([
           {
@@ -633,14 +653,12 @@ describe('IntentsService', () => {
     let selectCall = 0;
     const txPost = {
       execute: jest.fn().mockResolvedValue([
-        {
+        createLockedIntent({
           id: 'intent-1',
-          customerId: 'customer-1',
-          currency: 'KRW',
-          payableAmount: 10000,
           status: 'IN_PROGRESS',
+          payableAmount: 10000,
           version: 1,
-        },
+        }),
       ]),
       update: jest.fn().mockReturnValue({
         set: jest.fn().mockReturnValue({
@@ -702,16 +720,16 @@ describe('IntentsService', () => {
 
   it('cancels PENDING intent without compensation flow', async () => {
     const tx = {
-      execute: jest.fn().mockResolvedValue([
-        {
-          id: 'intent-1',
-          customerId: 'customer-1',
-          currency: 'KRW',
-          payableAmount: 10000,
-          status: 'PENDING',
-          version: 0,
-        },
-      ]),
+      execute: jest
+        .fn()
+        .mockResolvedValue([
+          createLockedIntent({
+            id: 'intent-1',
+            status: 'PENDING',
+            payableAmount: 10000,
+            version: 0,
+          }),
+        ]),
     };
 
     db.transaction.mockImplementationOnce(
@@ -786,16 +804,16 @@ describe('IntentsService', () => {
     });
 
     const tx = {
-      execute: jest.fn().mockResolvedValue([
-        {
-          id: 'intent-1',
-          customerId: 'customer-1',
-          currency: 'KRW',
-          payableAmount: 10000,
-          status: 'IN_PROGRESS',
-          version: 0,
-        },
-      ]),
+      execute: jest
+        .fn()
+        .mockResolvedValue([
+          createLockedIntent({
+            id: 'intent-1',
+            status: 'IN_PROGRESS',
+            payableAmount: 10000,
+            version: 0,
+          }),
+        ]),
       select: jest.fn().mockImplementation(() => ({
         from: jest.fn((table) => {
           if (table === paymentLegs) {
@@ -835,7 +853,7 @@ describe('IntentsService', () => {
       }),
     };
 
-    db.transaction.mockImplementationOnce(
+    db.transaction.mockImplementation(
       async (callback: (innerTx: typeof tx) => unknown) => callback(tx),
     );
 
@@ -937,16 +955,16 @@ describe('IntentsService', () => {
     });
 
     const tx = {
-      execute: jest.fn().mockResolvedValue([
-        {
-          id: 'intent-1',
-          customerId: 'customer-1',
-          currency: 'KRW',
-          payableAmount: 10000,
-          status: 'IN_PROGRESS',
-          version: 0,
-        },
-      ]),
+      execute: jest
+        .fn()
+        .mockResolvedValue([
+          createLockedIntent({
+            id: 'intent-1',
+            status: 'IN_PROGRESS',
+            payableAmount: 10000,
+            version: 0,
+          }),
+        ]),
       select: jest.fn().mockImplementation(() => ({
         from: jest.fn((table) => {
           if (table === paymentLegs) {
@@ -994,7 +1012,7 @@ describe('IntentsService', () => {
       }),
     };
 
-    db.transaction.mockImplementationOnce(
+    db.transaction.mockImplementation(
       async (callback: (innerTx: typeof tx) => unknown) => callback(tx),
     );
 
@@ -1072,5 +1090,31 @@ function createSignedCreateIntentDto(
     signatureVersion,
     signedAt,
     metadata: override?.metadata,
+  };
+}
+
+function createLockedIntent(
+  override?: Partial<{
+    id: string;
+    referenceType: string;
+    referenceId: string;
+    customerId: string;
+    currency: string;
+    payableAmount: number;
+    expiresAt: Date;
+    status: string;
+    version: number;
+  }>,
+) {
+  return {
+    id: override?.id ?? 'intent-1',
+    referenceType: override?.referenceType ?? 'STORE_ORDER',
+    referenceId: override?.referenceId ?? 'order-1',
+    customerId: override?.customerId ?? 'customer-1',
+    currency: override?.currency ?? 'KRW',
+    payableAmount: override?.payableAmount ?? 10000,
+    expiresAt: override?.expiresAt ?? new Date(Date.now() + 60 * 60 * 1000),
+    status: override?.status ?? 'PENDING',
+    version: override?.version ?? 0,
   };
 }

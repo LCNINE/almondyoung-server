@@ -13,6 +13,7 @@ import {
   varchar,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
+import { idempotencyKeys } from './domain/idempotency/idempotency.schema';
 
 export const paymentReferenceTypeEnum = pgEnum('payment_reference_type', [
   'STORE_ORDER',
@@ -436,6 +437,7 @@ export const walletSchema = {
   paymentStateTransitions,
   outboxEvents,
   providerWebhookReceipts,
+  idempotencyKeys,
 };
 
 export type WalletSchema = typeof walletSchema;
