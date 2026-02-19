@@ -6,6 +6,12 @@ import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify
 import * as request from 'supertest';
 import { IntentsController } from './intents.controller';
 import { IntentsService } from './intents.service';
+import { IntentCreationService } from './application/intent-creation.service';
+import { LegExecutionService } from './application/leg-execution.service';
+import { IntentTerminationService } from './application/intent-termination.service';
+import { RefundOrchestrationService } from './application/refund-orchestration.service';
+import { AttemptService } from './support/attempt.service';
+import { ManualActionQueueService } from './support/manual-action-queue.service';
 import { ProviderRegistry } from '../providers/provider.registry';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
 import { HttpIdempotencyInterceptor } from '../domain/idempotency/http-idempotency.interceptor';
@@ -47,6 +53,12 @@ describe('Intents HMAC verification (integration)', () => {
       controllers: [IntentsController],
       providers: [
         IntentsService,
+        IntentCreationService,
+        LegExecutionService,
+        IntentTerminationService,
+        RefundOrchestrationService,
+        AttemptService,
+        ManualActionQueueService,
         IdempotencyService,
         {
           provide: DbService,

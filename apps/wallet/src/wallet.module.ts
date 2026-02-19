@@ -24,6 +24,10 @@ import { HttpIdempotencyInterceptor } from './domain/idempotency/http-idempotenc
 import { IntentsController } from './intents/intents.controller';
 import { IntentsService } from './intents/intents.service';
 import { RefundRequestsController } from './intents/refund-requests.controller';
+import { IntentCreationService } from './intents/application/intent-creation.service';
+import { LegExecutionService } from './intents/application/leg-execution.service';
+import { IntentTerminationService } from './intents/application/intent-termination.service';
+import { RefundOrchestrationService } from './intents/application/refund-orchestration.service';
 import { ExpirationJob } from './jobs/expiration.job';
 import { ReconcileJob } from './jobs/reconcile.job';
 import { PointsPaymentProvider } from './providers/points.provider';
@@ -32,6 +36,8 @@ import { ReconcileController } from './reconcile/reconcile.controller';
 import { ReconcileService } from './reconcile/reconcile.service';
 import { OutboxDispatcherService } from './messaging/outbox-dispatcher.service';
 import { PaymentsCommandConsumer } from './messaging/payments-command.consumer';
+import { AttemptService } from './intents/support/attempt.service';
+import { ManualActionQueueService } from './intents/support/manual-action-queue.service';
 
 const combinedSchema = { ...walletSchema, ...authorizationSchema };
 
@@ -68,6 +74,12 @@ const combinedSchema = { ...walletSchema, ...authorizationSchema };
   ],
   providers: [
     StateTransitionService,
+    AttemptService,
+    ManualActionQueueService,
+    IntentCreationService,
+    LegExecutionService,
+    IntentTerminationService,
+    RefundOrchestrationService,
     IntentsService,
     ReconcileService,
     OutboxDispatcherService,

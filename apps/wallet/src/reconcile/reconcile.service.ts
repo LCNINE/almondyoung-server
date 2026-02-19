@@ -9,7 +9,6 @@ import { DbService } from '@app/db';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import {
-  ManualCancelQueueStatus,
   PaymentAttemptStatus,
   PaymentIntentStatus,
   PaymentLegStatus,
@@ -26,13 +25,11 @@ import { ProviderRegistry } from '../providers/provider.registry';
 import { ProviderOperation } from '../providers/payment-provider.types';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
 import { buildPaymentIntentEventPayload } from '../messaging/payments-event.builder';
-
-const OPEN_MANUAL_QUEUE_STATUSES: ManualCancelQueueStatus[] = [
-  'QUEUED',
-  'ASSIGNED',
-  'PROCESSING',
-  'FAILED_RETRYABLE',
-];
+import {
+  ManualActionQueueService,
+  ManualActionType,
+  OPEN_MANUAL_QUEUE_STATUSES,
+} from '../intents/support/manual-action-queue.service';
 
 const ATTEMPT_POLLABLE_STATUSES: PaymentAttemptStatus[] = [
   'UNKNOWN',
@@ -68,8 +65,6 @@ interface RetryLegResult {
   intentId: string;
 }
 
-type ManualActionType = 'CANCEL' | 'REFUND' | 'MANUAL_CONFIRM';
-
 interface LockedAttempt {
   id: string;
   intentId: string;
@@ -103,6 +98,7 @@ export class ReconcileService {
     private readonly dbService: DbService<WalletSchema>,
     private readonly providerRegistry: ProviderRegistry,
     private readonly stateTransitionService: StateTransitionService,
+    private readonly manualActionQueueService: ManualActionQueueService,
   ) {}
 
   async runBatch(
@@ -845,102 +841,12 @@ export class ReconcileService {
     },
     correlationId: string,
   ): Promise<void> {
-    const existing = await tx
-      .select({
-        id: manualCancelQueueItems.id,
-      })
-      .from(manualCancelQueueItems)
-      .where(
-        and(
-          eq(manualCancelQueueItems.intentId, input.intentId),
-          eq(manualCancelQueueItems.legId, input.legId),
-          inArray(manualCancelQueueItems.status, OPEN_MANUAL_QUEUE_STATUSES),
-        ),
-      )
-      .limit(1);
-
-    const existingItem = existing[0];
-    if (existingItem) {
-      await tx
-        .update(manualCancelQueueItems)
-        .set({
-          actionType: input.actionType,
-          reasonCode: input.reasonCode,
-          reasonMessage: input.reasonMessage,
-          lastErrorCode: input.reasonCode,
-          lastErrorMessage: input.reasonMessage,
-          retryCount: sql`${manualCancelQueueItems.retryCount} + 1`,
-          updatedAt: new Date(),
-        })
-        .where(eq(manualCancelQueueItems.id, existingItem.id));
-      return;
-    }
-
-    try {
-      const insertedRows = await tx
-        .insert(manualCancelQueueItems)
-        .values({
-          intentId: input.intentId,
-          legId: input.legId,
-          actionType: input.actionType,
-          status: 'QUEUED',
-          reasonCode: input.reasonCode,
-          reasonMessage: input.reasonMessage,
-          priority: 'normal',
-          retryCount: 0,
-          lastErrorCode: input.reasonCode,
-          lastErrorMessage: input.reasonMessage,
-        })
-        .returning({
-          id: manualCancelQueueItems.id,
-        });
-
-      const inserted = insertedRows[0];
-      if (!inserted) {
-        throw new Error('MANUAL_QUEUE_INSERT_FAILED');
-      }
-
-      await tx.insert(paymentStateTransitions).values({
-        entityType: 'MANUAL_CANCEL_QUEUE_ITEM',
-        entityId: inserted.id,
-        previousStatus: null,
-        newStatus: 'QUEUED',
-        reasonCode: 'MANUAL_QUEUE_ITEM_CREATED',
-        reasonMessage: 'Manual queue item created by reconcile',
-        triggeredByType: 'SYSTEM',
-        triggeredById: 'system',
-        correlationId,
-        occurredAt: new Date(),
-        payload: {
-          intentId: input.intentId,
-          legId: input.legId,
-          actionType: input.actionType,
-        },
-      });
-    } catch (error) {
-      if (!isOpenManualQueueUniqueViolation(error)) {
-        throw error;
-      }
-
-      await tx
-        .update(manualCancelQueueItems)
-        .set({
-          actionType: input.actionType,
-          reasonCode: input.reasonCode,
-          reasonMessage: input.reasonMessage,
-          lastErrorCode: input.reasonCode,
-          lastErrorMessage: input.reasonMessage,
-          retryCount: sql`${manualCancelQueueItems.retryCount} + 1`,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(manualCancelQueueItems.intentId, input.intentId),
-            eq(manualCancelQueueItems.legId, input.legId),
-            inArray(manualCancelQueueItems.status, OPEN_MANUAL_QUEUE_STATUSES),
-          ),
-        );
-    }
+    await this.manualActionQueueService.upsertManualQueueItem(tx, {
+      ...input,
+      correlationId,
+      triggeredById: 'system',
+      creationReasonMessage: 'Manual queue item created by reconcile',
+    });
   }
 
   private async resolveManualActionTypeForLeg(
@@ -1155,41 +1061,4 @@ export class ReconcileService {
     }
     return String(error);
   }
-}
-
-function isOpenManualQueueUniqueViolation(error: unknown): boolean {
-  const current = error as
-    | {
-        code?: string;
-        constraint?: string;
-        message?: string;
-        cause?: unknown;
-        originalError?: unknown;
-      }
-    | undefined;
-
-  if (!current) {
-    return false;
-  }
-
-  if (
-    current.code === '23505' &&
-    current.constraint === 'uq_manual_cancel_queue_open_intent_leg'
-  ) {
-    return true;
-  }
-
-  if ((current.message ?? '').includes('uq_manual_cancel_queue_open_intent_leg')) {
-    return true;
-  }
-
-  if (current.cause) {
-    return isOpenManualQueueUniqueViolation(current.cause);
-  }
-
-  if (current.originalError) {
-    return isOpenManualQueueUniqueViolation(current.originalError);
-  }
-
-  return false;
 }
