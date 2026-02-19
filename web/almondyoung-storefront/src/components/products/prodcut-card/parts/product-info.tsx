@@ -27,17 +27,30 @@ export function ProductInfo({
   // 멤버십 회원: 멤버십 가격(price) 표시 + 뱃지
   // 비회원/일반회원: 기본가(originalPrice) 표시 + 멤버십 절약 힌트
   const hasMembershipPrice = membershipSavings != null && membershipSavings > 0
-
-  const displayPrice = isMember || !hasMembershipPrice ? price : originalPrice
-  const displayOriginalPrice =
-    isMember && hasMembershipPrice ? originalPrice : undefined
-  const displayDiscount = isMember && hasMembershipPrice ? discount : 0
-  const showMembershipBadge = isMember && hasMembershipPrice
-  const showMembershipHint = !isMember && hasMembershipPrice
   const membershipPrice =
     membershipSavings != null && originalPrice != null
       ? originalPrice - membershipSavings
       : undefined
+  const memberDisplayPrice =
+    isMember && hasMembershipPrice
+      ? typeof price === "number" && price > 0 && price < originalPrice
+        ? price
+        : (membershipPrice ?? price)
+      : price
+
+  const displayPrice =
+    isMember || !hasMembershipPrice ? memberDisplayPrice : originalPrice
+  const displayOriginalPrice =
+    isMember && hasMembershipPrice ? originalPrice : undefined
+  const displayDiscount =
+    isMember &&
+    hasMembershipPrice &&
+    displayPrice > 0 &&
+    originalPrice > displayPrice
+      ? Math.round(((originalPrice - displayPrice) / originalPrice) * 100)
+      : discount
+  const showMembershipBadge = isMember && hasMembershipPrice
+  const showMembershipHint = !isMember && hasMembershipPrice
 
   // 재고 상태
   const stockStatus: StockStatus =
