@@ -280,6 +280,7 @@ class InMemoryIdempotencyRepository implements IdempotencyRepository {
       responseCode: null,
       responseBody: null,
       ...record,
+      updatedAt: record.updatedAt ?? record.createdAt,
     });
   }
 

@@ -9,6 +9,7 @@ export const idempotencyKeys = pgTable('idempotency_keys', {
   responseBody: text('response_body'),
   status: text('status').$type<'PENDING' | 'SUCCESS' | 'FAILED'>().notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
 });
 
@@ -23,6 +24,7 @@ export interface IdempotencyKeyRecord {
   responseBody: string | null;
   status: IdempotencyStatus;
   createdAt: Date;
+  updatedAt: Date;
   expiresAt: Date;
 }
 
@@ -35,6 +37,7 @@ export interface NewIdempotencyKeyRecord {
   responseBody?: string | null;
   status: IdempotencyStatus;
   createdAt: Date;
+  updatedAt?: Date;
   expiresAt: Date;
 }
 
@@ -46,5 +49,6 @@ export interface UpdateIdempotencyKeyRecord {
   responseBody?: string | null;
   status?: IdempotencyStatus;
   createdAt?: Date;
+  updatedAt?: Date;
   expiresAt?: Date;
 }

@@ -583,7 +583,9 @@ async function insertUnknownAttempt(
       intentId: input.intentId,
       legId: input.legId,
       attemptNo,
+      operation: input.operation,
       status: 'UNKNOWN',
+      providerIdempotencyKey: `wallet:test:${input.legId}:${input.operation}:${attemptNo}`,
       requestPayload: {
         operation: input.operation,
       },
