@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
-import { Inject, Injectable, ConflictException } from '@nestjs/common';
+import { Inject, Injectable, ConflictException, Logger } from '@nestjs/common';
 import {
   IDEMPOTENCY_REPOSITORY,
+  IdempotencyTx,
   IdempotencyRepository,
 } from './idempotency.repository';
 import {
@@ -43,6 +44,8 @@ export type IdempotencyDecision = ReplayDecision | StartDecision;
 
 @Injectable()
 export class IdempotencyService {
+  private readonly logger = new Logger(IdempotencyService.name);
+
   constructor(
     @Inject(IDEMPOTENCY_REPOSITORY)
     private readonly repository: IdempotencyRepository,
@@ -51,9 +54,91 @@ export class IdempotencyService {
   async beginHttpRequest(
     input: BeginHttpIdempotencyRequestInput,
   ): Promise<IdempotencyDecision> {
+    return this.beginRequest({
+      scope: 'HTTP',
+      operation: input.operation,
+      actorId: input.actorId,
+      idempotencyKey: input.idempotencyKey,
+      requestMethod: input.requestMethod,
+      requestPath: input.requestPath,
+      requestBody: input.requestBody,
+    });
+  }
+
+  async beginCommandRequest(
+    input: BeginCommandIdempotencyRequestInput,
+  ): Promise<IdempotencyDecision> {
+    const actorId = 'wallet-command-consumer';
+    const requestPath = `/commands/${input.operation}`;
+    return this.beginRequest({
+      scope: 'COMMAND',
+      operation: input.operation,
+      actorId,
+      idempotencyKey: input.idempotencyKey,
+      requestMethod: 'COMMAND',
+      requestPath,
+      requestBody: input.requestBody,
+    });
+  }
+
+  async completeSuccess(
+    recordId: string,
+    responseCode: number,
+    responseBody: unknown,
+  ): Promise<void> {
+    const now = new Date();
+
+    await this.repository.runInTransaction(async (tx) => {
+      const updated = await this.repository.updateIfPending(tx, recordId, {
+        status: 'SUCCESS',
+        responseCode,
+        responseBody: JSON.stringify(responseBody ?? null),
+        updatedAt: now,
+      });
+
+      if (!updated) {
+        this.logger.warn(
+          `Idempotency completeSuccess no-op: recordId=${recordId}, already-terminal`,
+        );
+      }
+    });
+  }
+
+  async completeFailure(
+    recordId: string,
+    responseCode: number,
+    responseBody: unknown,
+  ): Promise<void> {
+    const now = new Date();
+
+    await this.repository.runInTransaction(async (tx) => {
+      const updated = await this.repository.updateIfPending(tx, recordId, {
+        status: 'FAILED',
+        responseCode,
+        responseBody: JSON.stringify(responseBody ?? null),
+        updatedAt: now,
+      });
+
+      if (!updated) {
+        this.logger.warn(
+          `Idempotency completeFailure no-op: recordId=${recordId}, already-terminal`,
+        );
+      }
+    });
+  }
+
+  private async beginRequest(input: {
+    scope: 'HTTP' | 'COMMAND';
+    operation: string;
+    actorId: string;
+    idempotencyKey: string;
+    requestMethod: string;
+    requestPath: string;
+    requestBody: unknown;
+  }): Promise<IdempotencyDecision> {
     const now = new Date();
     const recordId = this.buildScopedRecordId(
-      'HTTP',
+      input.scope,
       input.operation,
       input.actorId,
       input.idempotencyKey,
@@ -64,9 +149,39 @@ export class IdempotencyService {
       input.requestBody,
     );
 
-    const existing = await this.repository.findById(recordId);
-    if (existing) {
+    return this.repository.runInTransaction(async (tx) => {
+      let existing = await this.repository.findByIdForUpdate(tx, recordId);
+
+      if (!existing) {
+        const newRecord = this.buildPendingRecord({
+          recordId,
+          actorId: input.actorId,
+          requestPath: input.requestPath,
+          requestHash,
+          now,
+        });
+
+        try {
+          await this.repository.insert(tx, newRecord);
+          return {
+            kind: 'STARTED',
+            recordId,
+          };
+        } catch (error) {
+          if (!isUniqueViolation(error)) {
+            throw error;
+          }
+
+          existing = await this.repository.findByIdForUpdate(tx, recordId);
+          if (!existing) {
+            throw error;
+          }
+        }
+      }
+
       return this.handleExistingRecord({
+        tx,
+        scope: input.scope,
         existing,
         recordId,
         requestHash,
@@ -74,125 +189,12 @@ export class IdempotencyService {
         requestPath: input.requestPath,
         now,
       });
-    }
-
-    const newRecord = this.buildPendingRecord({
-      recordId,
-      actorId: input.actorId,
-      requestPath: input.requestPath,
-      requestHash,
-      now,
-    });
-
-    try {
-      await this.repository.insert(newRecord);
-      return { kind: 'STARTED', recordId };
-    } catch (error) {
-      if (!isUniqueViolation(error)) {
-        throw error;
-      }
-
-      const raced = await this.repository.findById(recordId);
-      if (!raced) {
-        throw error;
-      }
-
-      return this.handleExistingRecord({
-        existing: raced,
-        recordId,
-        requestHash,
-        actorId: input.actorId,
-        requestPath: input.requestPath,
-        now,
-      });
-    }
-  }
-
-  async beginCommandRequest(
-    input: BeginCommandIdempotencyRequestInput,
-  ): Promise<IdempotencyDecision> {
-    const now = new Date();
-    const actorId = 'wallet-command-consumer';
-    const requestPath = `/commands/${input.operation}`;
-    const recordId = this.buildScopedRecordId(
-      'COMMAND',
-      input.operation,
-      actorId,
-      input.idempotencyKey,
-    );
-    const requestHash = this.buildRequestHash('COMMAND', requestPath, input.requestBody);
-
-    const existing = await this.repository.findById(recordId);
-    if (existing) {
-      return this.handleExistingCommandRecord({
-        existing,
-        recordId,
-        requestHash,
-        actorId,
-        requestPath,
-        now,
-      });
-    }
-
-    const newRecord = this.buildPendingRecord({
-      recordId,
-      actorId,
-      requestPath,
-      requestHash,
-      now,
-    });
-
-    try {
-      await this.repository.insert(newRecord);
-      return { kind: 'STARTED', recordId };
-    } catch (error) {
-      if (!isUniqueViolation(error)) {
-        throw error;
-      }
-
-      const raced = await this.repository.findById(recordId);
-      if (!raced) {
-        throw error;
-      }
-
-      return this.handleExistingCommandRecord({
-        existing: raced,
-        recordId,
-        requestHash,
-        actorId,
-        requestPath,
-        now,
-      });
-    }
-  }
-
-  async completeSuccess(
-    recordId: string,
-    responseCode: number,
-    responseBody: unknown,
-  ): Promise<void> {
-    await this.repository.update(recordId, {
-      status: 'SUCCESS',
-      responseCode,
-      responseBody: JSON.stringify(responseBody ?? null),
-      updatedAt: new Date(),
-    });
-  }
-
-  async completeFailure(
-    recordId: string,
-    responseCode: number,
-    responseBody: unknown,
-  ): Promise<void> {
-    await this.repository.update(recordId, {
-      status: 'FAILED',
-      responseCode,
-      responseBody: JSON.stringify(responseBody ?? null),
-      updatedAt: new Date(),
     });
   }
 
   private async handleExistingRecord(input: {
+    tx: IdempotencyTx;
+    scope: 'HTTP' | 'COMMAND';
     existing: IdempotencyKeyRecord;
     recordId: string;
     requestHash: string;
@@ -200,10 +202,11 @@ export class IdempotencyService {
     requestPath: string;
     now: Date;
   }): Promise<IdempotencyDecision> {
-    const { existing, recordId, requestHash, actorId, requestPath, now } = input;
+    const { tx, scope, recordId, requestHash, actorId, requestPath, now } = input;
+    let { existing } = input;
 
     if (existing.expiresAt.getTime() <= now.getTime()) {
-      await this.repository.update(recordId, {
+      const didReset = await this.repository.updateIfExpired(tx, recordId, now, {
         userId: this.toStorageUserId(actorId),
         requestPath: this.toStorageRequestPath(requestPath),
         requestHash,
@@ -215,7 +218,15 @@ export class IdempotencyService {
         expiresAt: this.buildExpiresAt(now),
       });
 
-      return { kind: 'STARTED', recordId };
+      if (didReset) {
+        return { kind: 'STARTED', recordId };
+      }
+
+      const refreshed = await this.repository.findByIdForUpdate(tx, recordId);
+      if (!refreshed) {
+        throw new Error(`IDEMPOTENCY_RECORD_MISSING_AFTER_EXPIRED_RESET: ${recordId}`);
+      }
+      existing = refreshed;
     }
 
     if (existing.requestHash !== requestHash) {
@@ -226,6 +237,16 @@ export class IdempotencyService {
     }
 
     if (existing.status === 'PENDING') {
+      if (scope === 'COMMAND') {
+        return {
+          kind: 'REPLAY',
+          responseCode: 202,
+          responseBody: {
+            status: 'IN_PROGRESS',
+          },
+        };
+      }
+
       throw new ConflictException({
         error: 'IDEMPOTENCY_REQUEST_IN_PROGRESS',
         message: 'Request with this Idempotency-Key is currently being processed',
@@ -235,68 +256,6 @@ export class IdempotencyService {
     return {
       kind: 'REPLAY',
       responseCode: existing.responseCode ?? (existing.status === 'FAILED' ? 500 : 200),
-      responseBody: parseStoredResponseBody(existing.responseBody),
-    };
-  }
-
-  private async handleExistingCommandRecord(input: {
-    existing: IdempotencyKeyRecord;
-    recordId: string;
-    requestHash: string;
-    actorId: string;
-    requestPath: string;
-    now: Date;
-  }): Promise<IdempotencyDecision> {
-    const { existing, recordId, requestHash, actorId, requestPath, now } = input;
-
-    if (existing.expiresAt.getTime() <= now.getTime()) {
-      await this.repository.update(recordId, {
-        userId: this.toStorageUserId(actorId),
-        requestPath: this.toStorageRequestPath(requestPath),
-        requestHash,
-        status: 'PENDING',
-        responseCode: null,
-        responseBody: null,
-        createdAt: now,
-        updatedAt: now,
-        expiresAt: this.buildExpiresAt(now),
-      });
-
-      return { kind: 'STARTED', recordId };
-    }
-
-    if (existing.requestHash !== requestHash) {
-      throw new ConflictException({
-        error: 'IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD',
-        message: 'Idempotency-Key reused with different payload',
-      });
-    }
-
-    if (existing.status === 'PENDING') {
-      return {
-        kind: 'REPLAY',
-        responseCode: 202,
-        responseBody: {
-          status: 'IN_PROGRESS',
-        },
-      };
-    }
-
-    if (existing.status === 'FAILED') {
-      await this.repository.update(recordId, {
-        status: 'PENDING',
-        responseCode: null,
-        responseBody: null,
-        createdAt: now,
-        updatedAt: now,
-        expiresAt: this.buildExpiresAt(now),
-      });
-      return { kind: 'STARTED', recordId };
-    }
-
-    return {
-      kind: 'REPLAY',
-      responseCode: existing.responseCode ?? 200,
       responseBody: parseStoredResponseBody(existing.responseBody),
     };
   }

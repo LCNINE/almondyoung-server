@@ -973,6 +973,493 @@ describe('IntentsService', () => {
     );
   });
 
+  it('calls provider capture once when concurrent capture requests race on active attempt guard', async () => {
+    let resolveFirstCapture: (
+      value:
+        | {
+            resultStatus: 'CAPTURED';
+            providerTransactionId: string;
+            providerRequestId: string;
+            raw: { providerType: string };
+          }
+        | PromiseLike<{
+            resultStatus: 'CAPTURED';
+            providerTransactionId: string;
+            providerRequestId: string;
+            raw: { providerType: string };
+          }>,
+    ) => void = () => {
+      throw new Error('First capture resolver was not initialized');
+    };
+
+    const providerCapture = jest.fn().mockImplementation(
+      () =>
+        new Promise<{
+          resultStatus: 'CAPTURED';
+          providerTransactionId: string;
+          providerRequestId: string;
+          raw: { providerType: string };
+        }>((resolve) => {
+          resolveFirstCapture = resolve;
+        }),
+    );
+    providerRegistry.assertCapability.mockReturnValue({
+      capture: providerCapture,
+    });
+
+    const duplicateError = Object.assign(
+      new Error('duplicate key value violates unique constraint'),
+      {
+        code: '23505',
+        constraint: 'uq_payment_attempts_active_leg_operation',
+      },
+    );
+
+    const firstAttempt = {
+      id: 'attempt-cap-race-1',
+      intentId: 'intent-1',
+      legId: 'leg-1',
+      attemptNo: 2,
+      operation: 'CAPTURE',
+      status: 'CREATED',
+      providerTransactionId: null,
+      providerRequestId: null,
+      idempotencyKey: null,
+      providerIdempotencyKey: 'wallet:test:leg-1:CAPTURE:2',
+      errorCode: null,
+      errorMessage: null,
+      requestPayload: { operation: 'CAPTURE' },
+      responsePayload: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const txPreFirst = {
+      execute: jest
+        .fn()
+        .mockResolvedValueOnce([
+          createLockedIntent({
+            id: 'intent-1',
+            status: 'IN_PROGRESS',
+            payableAmount: 10000,
+            version: 0,
+          }),
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: 'leg-1',
+            intentId: 'intent-1',
+            providerType: 'POINTS',
+            amount: 10000,
+            status: 'AUTHORIZED',
+            version: 0,
+            metadata: {},
+          },
+        ]),
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockResolvedValue([{ maxAttemptNo: 1 }]),
+        }),
+      }),
+      insert: jest.fn((table) => {
+        if (table === paymentAttempts) {
+          return {
+            values: jest.fn().mockReturnValue({
+              returning: jest.fn().mockResolvedValue([firstAttempt]),
+            }),
+          };
+        }
+
+        return {
+          values: jest.fn().mockResolvedValue(undefined),
+        };
+      }),
+    };
+
+    const txPreSecond = {
+      execute: jest
+        .fn()
+        .mockResolvedValueOnce([
+          createLockedIntent({
+            id: 'intent-1',
+            status: 'IN_PROGRESS',
+            payableAmount: 10000,
+            version: 0,
+          }),
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: 'leg-1',
+            intentId: 'intent-1',
+            providerType: 'POINTS',
+            amount: 10000,
+            status: 'AUTHORIZED',
+            version: 0,
+            metadata: {},
+          },
+        ]),
+      select: jest
+        .fn()
+        .mockImplementationOnce(() => ({
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockResolvedValue([{ maxAttemptNo: 2 }]),
+          }),
+        }))
+        .mockImplementationOnce(() => ({
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue([
+                {
+                  id: 'attempt-cap-race-1',
+                  status: 'SENT',
+                },
+              ]),
+            }),
+          }),
+        })),
+      insert: jest.fn((table) => {
+        if (table === paymentAttempts) {
+          return {
+            values: jest.fn().mockReturnValue({
+              returning: jest.fn().mockRejectedValue(duplicateError),
+            }),
+          };
+        }
+
+        return {
+          values: jest.fn().mockResolvedValue(undefined),
+        };
+      }),
+    };
+
+    const readQueue = [
+      [
+        {
+          id: 'intent-1',
+          referenceType: 'STORE_ORDER',
+          referenceId: 'order-1',
+          customerId: 'customer-1',
+          currency: 'KRW',
+          payableAmount: 10000,
+          status: 'SUCCEEDED',
+          expiresAt: new Date(),
+          version: 2,
+          metadata: {},
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+      [
+        {
+          id: 'leg-1',
+          intentId: 'intent-1',
+          providerType: 'POINTS',
+          amount: 10000,
+          status: 'CAPTURED',
+          isRequired: true,
+          sequenceNo: 1,
+          version: 1,
+          metadata: {},
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+      [
+        {
+          ...firstAttempt,
+          status: 'CAPTURED',
+          providerTransactionId: 'provider-capture-race-1',
+          providerRequestId: 'provider-capture-race-req-1',
+          responsePayload: { providerType: 'POINTS' },
+        },
+      ],
+    ];
+    let postSelectCall = 0;
+    const txPostFirst = {
+      execute: jest.fn().mockResolvedValue([
+        createLockedIntent({
+          id: 'intent-1',
+          status: 'IN_PROGRESS',
+          payableAmount: 10000,
+          version: 1,
+        }),
+      ]),
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockResolvedValue(undefined),
+        }),
+      }),
+      select: jest.fn().mockImplementation(() => {
+        postSelectCall += 1;
+
+        if (postSelectCall === 1) {
+          return {
+            from: jest.fn().mockReturnValue({
+              where: jest.fn().mockResolvedValue([
+                {
+                  status: 'CAPTURED',
+                  isRequired: true,
+                },
+              ]),
+            }),
+          };
+        }
+
+        return {
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              limit: jest
+                .fn()
+                .mockImplementation(async () => (readQueue.shift() as unknown[]) ?? []),
+            }),
+          }),
+        };
+      }),
+    };
+
+    const txQueue = [txPreFirst, txPreSecond, txPostFirst];
+    db.transaction.mockImplementation(async (callback: (innerTx: unknown) => unknown) =>
+      callback(txQueue.shift()),
+    );
+
+    const firstPromise = service.captureLeg('intent-1', 'leg-1', 'corr-capture-race-a');
+    for (let attempt = 0; attempt < 20 && providerCapture.mock.calls.length === 0; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    expect(providerCapture).toHaveBeenCalledTimes(1);
+    const secondPromise = service.captureLeg('intent-1', 'leg-1', 'corr-capture-race-b');
+
+    await expect(secondPromise).rejects.toMatchObject({
+      response: expect.objectContaining({
+        error: 'ACTIVE_ATTEMPT_ALREADY_EXISTS',
+        attemptId: 'attempt-cap-race-1',
+        attemptStatus: 'SENT',
+      }),
+    });
+    expect(providerCapture).toHaveBeenCalledTimes(1);
+
+    resolveFirstCapture({
+      resultStatus: 'CAPTURED',
+      providerTransactionId: 'provider-capture-race-1',
+      providerRequestId: 'provider-capture-race-req-1',
+      raw: { providerType: 'POINTS' },
+    });
+
+    const firstResult = await firstPromise;
+    expect(firstResult.attempt.status).toBe('CAPTURED');
+    expect(providerCapture).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks retry capture after uncertain timeout while active attempt is PENDING_PROVIDER', async () => {
+    const providerCapture = jest.fn().mockRejectedValue(new Error('capture timeout'));
+    providerRegistry.assertCapability.mockReturnValue({
+      capture: providerCapture,
+    });
+
+    const duplicateError = Object.assign(
+      new Error('duplicate key value violates unique constraint'),
+      {
+        code: '23505',
+        constraint: 'uq_payment_attempts_active_leg_operation',
+      },
+    );
+
+    const pendingAttempt = {
+      id: 'attempt-cap-uncertain-2',
+      intentId: 'intent-1',
+      legId: 'leg-1',
+      attemptNo: 2,
+      operation: 'CAPTURE',
+      status: 'CREATED',
+      providerTransactionId: null,
+      providerRequestId: null,
+      idempotencyKey: null,
+      providerIdempotencyKey: 'wallet:test:leg-1:CAPTURE:2',
+      errorCode: null,
+      errorMessage: null,
+      requestPayload: { operation: 'CAPTURE' },
+      responsePayload: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const txPreFirst = {
+      execute: jest
+        .fn()
+        .mockResolvedValueOnce([
+          createLockedIntent({
+            id: 'intent-1',
+            status: 'IN_PROGRESS',
+            payableAmount: 10000,
+            version: 0,
+          }),
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: 'leg-1',
+            intentId: 'intent-1',
+            providerType: 'POINTS',
+            amount: 10000,
+            status: 'AUTHORIZED',
+            version: 0,
+            metadata: {},
+          },
+        ]),
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockResolvedValue([{ maxAttemptNo: 1 }]),
+        }),
+      }),
+      insert: jest.fn((table) => {
+        if (table === paymentAttempts) {
+          return {
+            values: jest.fn().mockReturnValue({
+              returning: jest.fn().mockResolvedValue([pendingAttempt]),
+            }),
+          };
+        }
+
+        return {
+          values: jest.fn().mockResolvedValue(undefined),
+        };
+      }),
+    };
+
+    const firstReadQueue = [
+      [
+        {
+          id: 'intent-1',
+          referenceType: 'STORE_ORDER',
+          referenceId: 'order-1',
+          customerId: 'customer-1',
+          currency: 'KRW',
+          payableAmount: 10000,
+          status: 'IN_PROGRESS',
+          expiresAt: new Date(),
+          version: 2,
+          metadata: {},
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+      [
+        {
+          id: 'leg-1',
+          intentId: 'intent-1',
+          providerType: 'POINTS',
+          amount: 10000,
+          status: 'AUTHORIZED',
+          isRequired: true,
+          sequenceNo: 1,
+          version: 1,
+          metadata: {},
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+      [
+        {
+          ...pendingAttempt,
+          status: 'PENDING_PROVIDER',
+          errorCode: 'PROVIDER_CAPTURE_UNCERTAIN',
+          errorMessage: 'capture timeout',
+        },
+      ],
+    ];
+    const txPostFirst = {
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockResolvedValue(undefined),
+        }),
+      }),
+      select: jest.fn().mockImplementation(() => ({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            limit: jest
+              .fn()
+              .mockImplementation(() => Promise.resolve(firstReadQueue.shift() ?? [])),
+          }),
+        }),
+      })),
+    };
+
+    const txPreSecond = {
+      execute: jest
+        .fn()
+        .mockResolvedValueOnce([
+          createLockedIntent({
+            id: 'intent-1',
+            status: 'IN_PROGRESS',
+            payableAmount: 10000,
+            version: 0,
+          }),
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: 'leg-1',
+            intentId: 'intent-1',
+            providerType: 'POINTS',
+            amount: 10000,
+            status: 'AUTHORIZED',
+            version: 0,
+            metadata: {},
+          },
+        ]),
+      select: jest
+        .fn()
+        .mockImplementationOnce(() => ({
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockResolvedValue([{ maxAttemptNo: 2 }]),
+          }),
+        }))
+        .mockImplementationOnce(() => ({
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue([
+                {
+                  id: 'attempt-cap-uncertain-2',
+                  status: 'PENDING_PROVIDER',
+                },
+              ]),
+            }),
+          }),
+        })),
+      insert: jest.fn((table) => {
+        if (table === paymentAttempts) {
+          return {
+            values: jest.fn().mockReturnValue({
+              returning: jest.fn().mockRejectedValue(duplicateError),
+            }),
+          };
+        }
+
+        return {
+          values: jest.fn().mockResolvedValue(undefined),
+        };
+      }),
+    };
+
+    const txQueue = [txPreFirst, txPostFirst, txPreSecond];
+    db.transaction.mockImplementation(async (callback: (innerTx: unknown) => unknown) =>
+      callback(txQueue.shift()),
+    );
+
+    const first = await service.captureLeg('intent-1', 'leg-1', 'corr-capture-uncertain-2');
+    expect(first.attempt.status).toBe('PENDING_PROVIDER');
+
+    await expect(
+      service.captureLeg('intent-1', 'leg-1', 'corr-capture-uncertain-retry'),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        error: 'ACTIVE_ATTEMPT_ALREADY_EXISTS',
+        attemptId: 'attempt-cap-uncertain-2',
+        attemptStatus: 'PENDING_PROVIDER',
+      }),
+    });
+    expect(providerCapture).toHaveBeenCalledTimes(1);
+  });
+
   it('cancels PENDING intent without compensation flow', async () => {
     const tx = {
       execute: jest
