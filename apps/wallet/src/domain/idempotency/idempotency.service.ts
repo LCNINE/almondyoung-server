@@ -175,6 +175,7 @@ export class IdempotencyService {
       status: 'SUCCESS',
       responseCode,
       responseBody: JSON.stringify(responseBody ?? null),
+      updatedAt: new Date(),
     });
   }
 
@@ -187,6 +188,7 @@ export class IdempotencyService {
       status: 'FAILED',
       responseCode,
       responseBody: JSON.stringify(responseBody ?? null),
+      updatedAt: new Date(),
     });
   }
 
@@ -209,6 +211,7 @@ export class IdempotencyService {
         responseCode: null,
         responseBody: null,
         createdAt: now,
+        updatedAt: now,
         expiresAt: this.buildExpiresAt(now),
       });
 
@@ -255,6 +258,7 @@ export class IdempotencyService {
         responseCode: null,
         responseBody: null,
         createdAt: now,
+        updatedAt: now,
         expiresAt: this.buildExpiresAt(now),
       });
 
@@ -284,6 +288,7 @@ export class IdempotencyService {
         responseCode: null,
         responseBody: null,
         createdAt: now,
+        updatedAt: now,
         expiresAt: this.buildExpiresAt(now),
       });
       return { kind: 'STARTED', recordId };
@@ -312,6 +317,7 @@ export class IdempotencyService {
       responseCode: null,
       responseBody: null,
       createdAt: input.now,
+      updatedAt: input.now,
       expiresAt: this.buildExpiresAt(input.now),
     };
   }

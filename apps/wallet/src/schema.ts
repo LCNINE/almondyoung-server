@@ -69,6 +69,14 @@ export const paymentAttemptStatusEnum = pgEnum('payment_attempt_status', [
   'RECONCILE_REQUIRED',
 ]);
 
+export const paymentAttemptOperationEnum = pgEnum('payment_attempt_operation', [
+  'AUTHORIZE',
+  'CAPTURE',
+  'CANCEL',
+  'REFUND',
+  'MANUAL_CONFIRM',
+]);
+
 export const refundRequestStatusEnum = pgEnum('refund_request_status', [
   'REQUESTED',
   'VALIDATED',
@@ -117,6 +125,7 @@ export const outboxStatusEnum = pgEnum('wallet_outbox_status', [
   'PROCESSING',
   'PUBLISHED',
   'FAILED',
+  'DEAD_LETTER',
 ]);
 
 export const providerWebhookReceiptStatusEnum = pgEnum(
@@ -198,10 +207,12 @@ export const paymentAttempts = pgTable(
       .notNull()
       .references(() => paymentLegs.id),
     attemptNo: integer('attempt_no').notNull(),
+    operation: paymentAttemptOperationEnum('operation').notNull(),
     status: paymentAttemptStatusEnum('status').notNull(),
     providerTransactionId: varchar('provider_transaction_id', { length: 128 }),
     providerRequestId: varchar('provider_request_id', { length: 128 }),
     idempotencyKey: varchar('idempotency_key', { length: 128 }),
+    providerIdempotencyKey: varchar('provider_idempotency_key', { length: 255 }).notNull(),
     errorCode: varchar('error_code', { length: 128 }),
     errorMessage: text('error_message'),
     requestPayload: jsonb('request_payload').$type<Record<string, unknown> | null>(),
@@ -214,6 +225,14 @@ export const paymentAttempts = pgTable(
     uniqueIndex('uq_payment_attempts_provider_transaction_id').on(
       table.providerTransactionId,
     ),
+    uniqueIndex('uq_payment_attempts_provider_idempotency_key').on(
+      table.providerIdempotencyKey,
+    ),
+    uniqueIndex('uq_payment_attempts_active_leg_operation')
+      .on(table.legId, table.operation)
+      .where(
+        sql`${table.status} in ('CREATED', 'SENT', 'PENDING_PROVIDER', 'REQUIRES_ACTION', 'CANCEL_REQUESTED', 'REFUND_REQUESTED')`,
+      ),
     index('idx_payment_attempts_leg_created_at').on(table.legId, table.createdAt),
     index('idx_payment_attempts_intent_created_at').on(table.intentId, table.createdAt),
     index('idx_payment_attempts_status_created_at').on(table.status, table.createdAt),
@@ -364,6 +383,8 @@ export const outboxEvents = pgTable(
     publishedAt: timestamp('published_at', { withTimezone: true }),
     lastErrorCode: varchar('last_error_code', { length: 128 }),
     lastErrorMessage: text('last_error_message'),
+    deadLetteredAt: timestamp('dead_lettered_at', { withTimezone: true }),
+    deadLetterReason: text('dead_letter_reason'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -418,6 +439,8 @@ export type PaymentIntentStatus =
 export type PaymentLegStatus = (typeof paymentLegStatusEnum.enumValues)[number];
 export type PaymentAttemptStatus =
   (typeof paymentAttemptStatusEnum.enumValues)[number];
+export type PaymentAttemptOperation =
+  (typeof paymentAttemptOperationEnum.enumValues)[number];
 export type RefundRequestStatus =
   (typeof refundRequestStatusEnum.enumValues)[number];
 export type ManualCancelQueueStatus =
@@ -426,6 +449,7 @@ export type PaymentStateEntityType =
   (typeof paymentStateEntityTypeEnum.enumValues)[number];
 export type PaymentStateTriggerType =
   (typeof paymentStateTriggerTypeEnum.enumValues)[number];
+export type OutboxStatus = (typeof outboxStatusEnum.enumValues)[number];
 
 export const walletSchema = {
   paymentIntents,

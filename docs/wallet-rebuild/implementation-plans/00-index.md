@@ -17,6 +17,7 @@
 | `05` | `05-sprint4-admin-webhook-and-ops.md` | 관리자 API + 웹훅 경계 + 운영 가시성 |
 | `06` | `06-sprint5-cutover-and-hardening.md` | 신규 wallet go-live, legacy 동결, 릴리즈 하드닝 |
 | `07` | `07-phase4-messaging-and-outbox-detail.md` | Phase 4 메시징/Outbox 상세 실행 계획 |
+| `08` | `08-phase5a-payment-safety-refactor-no-webhook.md` | Webhook 제외 결제안전 리팩토링(Exactly-once/Idempotency/Outbox/서비스분해) |
 
 ## 진행 원칙
 

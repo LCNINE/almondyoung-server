@@ -2888,6 +2888,11 @@ export class IntentsService {
       .where(eq(paymentAttempts.legId, input.legId));
 
     const nextAttemptNo = Number(maxAttemptRows[0]?.maxAttemptNo ?? 0) + 1;
+    const providerIdempotencyKey = this.buildProviderIdempotencyKey(
+      input.legId,
+      input.operation,
+      nextAttemptNo,
+    );
 
     const [attempt] = await tx
       .insert(paymentAttempts)
@@ -2895,7 +2900,9 @@ export class IntentsService {
         intentId: input.intentId,
         legId: input.legId,
         attemptNo: nextAttemptNo,
+        operation: input.operation,
         status: 'CREATED',
+        providerIdempotencyKey,
         requestPayload: {
           operation: input.operation,
         },
@@ -2921,6 +2928,14 @@ export class IntentsService {
     });
 
     return attempt;
+  }
+
+  private buildProviderIdempotencyKey(
+    legId: string,
+    operation: ProviderOperation,
+    attemptNo: number,
+  ): string {
+    return `wallet:attempt:${legId}:${operation}:${attemptNo}`;
   }
 
   private async persistProviderAttemptResult(
