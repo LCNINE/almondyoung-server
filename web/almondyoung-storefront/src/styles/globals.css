@@ -133,10 +133,10 @@ input[type="search"]::-webkit-search-results-decoration {
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
+  --primary: #f29219;
+  --primary-foreground: #ffffff;
+  --secondary: #ffffff;
+  --secondary-foreground: #1c1c1e;
   --muted: oklch(0.97 0 0);
   --muted-foreground: oklch(0.556 0 0);
   --accent: oklch(0.97 0 0);
@@ -167,9 +167,9 @@ input[type="search"]::-webkit-search-results-decoration {
     "Liberation Mono", monospace;
   --white: #ffffff;
   --gray-0: #ffffff;
-  --gray-10: #f5f5f5;
-  --gray-20: #e2e2e2;
-  --gray-30: #c4c4c4;
+  --gray-10: #f4f4f4;
+  --gray-20: #c6c6c6;
+  --gray-30: #aeaeb2;
   --gray-40: #8e8e93;
   --gray-50: #636366;
   --gray-60: #48484a;
@@ -178,9 +178,9 @@ input[type="search"]::-webkit-search-results-decoration {
   --gray-90: #1c1c1e;
   --yellow-10: #fff7e5;
   --yellow-20: #ffe8b3;
-  --yellow-30: #ffa500;
-  --yellow-40: #e08f00;
-  --yellow-50: #a86500;
+  --yellow-30: #f29219;
+  --yellow-40: #df7b00;
+  --yellow-50: #a86200;
   --red-30: #f54527;
   --red-40: #c7321f;
   --red-50: #981c14;
@@ -211,10 +211,10 @@ input[type="search"]::-webkit-search-results-decoration {
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
+  --primary: #f29219;
+  --primary-foreground: #ffffff;
+  --secondary: #2c2c2e;
+  --secondary-foreground: #ffffff;
   --muted: oklch(0.269 0 0);
   --muted-foreground: oklch(0.708 0 0);
   --accent: oklch(0.269 0 0);
@@ -355,7 +355,7 @@ input[type="search"]::-webkit-search-results-decoration {
   }
 
   body {
-    @apply bg-background text-foreground text-sm;
+    @apply bg-background text-foreground text-base;
   }
 
   [class*="text-"] {

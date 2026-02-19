@@ -6,6 +6,7 @@ import { getOrders } from "@lib/api/medusa/orders"
 import { Package } from "lucide-react"
 import Link from "next/link"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Button } from "@/components/ui/button"
 
 interface ShippingOrder {
   orderId: string
@@ -139,12 +140,14 @@ export function ShippingItemsSection() {
               새로운 상품을 주문해보세요
             </p>
           </div>
-          <Link
-            href="/kr/best"
-            className="mt-2 rounded-md bg-amber-500 px-4 py-2 text-sm text-white transition-colors hover:bg-amber-600"
-          >
-            쇼핑하러 가기
-          </Link>
+          <Button asChild>
+            <Link
+              href="/kr/best"
+              className="mt-2 rounded-md px-4 py-2 text-sm text-white transition-colors"
+            >
+              쇼핑하러 가기
+            </Link>
+          </Button>
         </div>
       </section>
     )
