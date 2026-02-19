@@ -43,7 +43,7 @@ export interface ProviderOperationRequest {
   amount: number;
   currency: string;
   customerId: string;
-  idempotencyKey?: string;
+  idempotencyKey: string;
   correlationId: string;
   metadata?: Record<string, unknown>;
 }

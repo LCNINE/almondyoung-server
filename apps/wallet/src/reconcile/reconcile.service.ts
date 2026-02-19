@@ -34,6 +34,12 @@ const OPEN_MANUAL_QUEUE_STATUSES: ManualCancelQueueStatus[] = [
   'FAILED_RETRYABLE',
 ];
 
+const ATTEMPT_POLLABLE_STATUSES: PaymentAttemptStatus[] = [
+  'UNKNOWN',
+  'PENDING_PROVIDER',
+  'REQUIRES_ACTION',
+];
+
 interface ReconcileStats {
   processedAttempts: number;
   transitionedAttempts: number;
@@ -118,17 +124,17 @@ export class ReconcileService {
     const attempts = await this.dbService.db
       .select({ id: paymentAttempts.id })
       .from(paymentAttempts)
-      .where(eq(paymentAttempts.status, 'UNKNOWN'))
+      .where(inArray(paymentAttempts.status, ATTEMPT_POLLABLE_STATUSES))
       .orderBy(asc(paymentAttempts.createdAt))
       .limit(batchSize);
 
     for (const attempt of attempts) {
       const itemCorrelationId = `${batchCorrelationId}:attempt:${attempt.id}`;
       try {
-        await this.reconcileUnknownAttempt(attempt.id, itemCorrelationId, stats);
+        await this.reconcilePollableAttempt(attempt.id, itemCorrelationId, stats);
       } catch (error) {
         this.logger.warn(
-          `Failed to reconcile UNKNOWN attempt id=${attempt.id}: ${this.stringifyError(error)}`,
+          `Failed to reconcile pollable attempt id=${attempt.id}: ${this.stringifyError(error)}`,
         );
       }
     }
@@ -327,14 +333,14 @@ export class ReconcileService {
     };
   }
 
-  private async reconcileUnknownAttempt(
+  private async reconcilePollableAttempt(
     attemptId: string,
     correlationId: string,
     stats: ReconcileStats,
   ): Promise<void> {
     const prepared = await this.dbService.db.transaction(async (tx) => {
       const attempt = await this.lockAttemptOrNull(attemptId, tx);
-      if (!attempt || attempt.status !== 'UNKNOWN') {
+      if (!attempt || !ATTEMPT_POLLABLE_STATUSES.includes(attempt.status)) {
         return null;
       }
 
@@ -369,7 +375,7 @@ export class ReconcileService {
 
     await this.dbService.db.transaction(async (tx) => {
       const attempt = await this.lockAttemptOrNull(prepared.attemptId, tx);
-      if (!attempt || attempt.status !== 'UNKNOWN') {
+      if (!attempt || !ATTEMPT_POLLABLE_STATUSES.includes(attempt.status)) {
         return;
       }
 
@@ -385,22 +391,26 @@ export class ReconcileService {
       );
 
       if (!resolvedAttemptStatus) {
+        const unresolvedStatusTarget =
+          attempt.status === 'UNKNOWN' ? 'RECONCILE_REQUIRED' : 'UNKNOWN';
+
         await this.stateTransitionService.transitionAttempt(
           attempt.id,
-          'RECONCILE_REQUIRED',
+          unresolvedStatusTarget,
           {
             correlationId,
             causationId: leg.id,
             reasonCode: 'ATTEMPT_RECONCILE_UNRESOLVED',
-            reasonMessage: `Provider status did not resolve UNKNOWN attempt: ${providerSnapshot.status}`,
+            reasonMessage: `Provider status did not resolve ${attempt.status} attempt: ${providerSnapshot.status}`,
             triggeredByType: 'SYSTEM',
             triggeredById: 'system',
             payload: {
               providerStatus: providerSnapshot.status,
               operation,
+              previousAttemptStatus: attempt.status,
             },
           },
-          'UNKNOWN',
+          attempt.status,
           tx,
         );
         stats.transitionedAttempts += 1;
@@ -447,15 +457,16 @@ export class ReconcileService {
           correlationId,
           causationId: leg.id,
           reasonCode: 'ATTEMPT_RECONCILE_RESOLVED',
-          reasonMessage: `UNKNOWN attempt resolved by provider polling: ${resolvedAttemptStatus}`,
+          reasonMessage: `${attempt.status} attempt resolved by provider polling: ${resolvedAttemptStatus}`,
           triggeredByType: 'SYSTEM',
           triggeredById: 'system',
           payload: {
             providerStatus: providerSnapshot.status,
             operation,
+            previousAttemptStatus: attempt.status,
           },
         },
-        'UNKNOWN',
+        attempt.status,
         tx,
       );
       stats.transitionedAttempts += 1;

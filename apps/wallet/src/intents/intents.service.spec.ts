@@ -493,6 +493,11 @@ describe('IntentsService', () => {
     const result = await service.authorizeLeg('intent-1', 'leg-1', 'corr-auth-1');
 
     expect(providerAuthorize).toHaveBeenCalledTimes(1);
+    expect(providerAuthorize).toHaveBeenCalledWith(
+      expect.objectContaining({
+        idempotencyKey: 'wallet:test:leg-1:AUTHORIZE:1',
+      }),
+    );
     expect(stateTransitionService.transitionIntent).toHaveBeenCalledTimes(1);
     expect(stateTransitionService.transitionLeg).toHaveBeenCalledTimes(2);
     expect(stateTransitionService.transitionAttempt).toHaveBeenCalledTimes(2);
@@ -536,6 +541,97 @@ describe('IntentsService', () => {
     await expect(
       service.captureLeg('intent-1', 'leg-1', 'corr-capture-1'),
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('rejects capture when an active CAPTURE attempt already exists', async () => {
+    const providerCapture = jest.fn().mockResolvedValue({
+      resultStatus: 'CAPTURED',
+      providerTransactionId: 'provider-capture-dup',
+      raw: { providerType: 'POINTS' },
+    });
+    providerRegistry.assertCapability.mockReturnValue({
+      capture: providerCapture,
+    });
+
+    const duplicateError = Object.assign(
+      new Error('duplicate key value violates unique constraint'),
+      {
+        code: '23505',
+        constraint: 'uq_payment_attempts_active_leg_operation',
+      },
+    );
+
+    const txPreInsertMock = jest.fn((table) => {
+      if (table === paymentAttempts) {
+        return {
+          values: jest.fn().mockReturnValue({
+            returning: jest.fn().mockRejectedValue(duplicateError),
+          }),
+        };
+      }
+
+      return {
+        values: jest.fn().mockResolvedValue(undefined),
+      };
+    });
+
+    const txPre = {
+      execute: jest
+        .fn()
+        .mockResolvedValueOnce([
+          createLockedIntent({
+            id: 'intent-1',
+            status: 'IN_PROGRESS',
+            payableAmount: 10000,
+            version: 0,
+          }),
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: 'leg-1',
+            intentId: 'intent-1',
+            providerType: 'POINTS',
+            amount: 10000,
+            status: 'AUTHORIZED',
+            version: 0,
+            metadata: {},
+          },
+        ]),
+      select: jest
+        .fn()
+        .mockImplementationOnce(() => ({
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockResolvedValue([{ maxAttemptNo: 1 }]),
+          }),
+        }))
+        .mockImplementationOnce(() => ({
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue([
+                {
+                  id: 'attempt-active-1',
+                  status: 'SENT',
+                },
+              ]),
+            }),
+          }),
+        })),
+      insert: txPreInsertMock,
+    };
+
+    db.transaction.mockImplementationOnce(
+      async (callback: (tx: typeof txPre) => unknown) => callback(txPre),
+    );
+
+    await expect(
+      service.captureLeg('intent-1', 'leg-1', 'corr-capture-duplicate'),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        error: 'ACTIVE_ATTEMPT_ALREADY_EXISTS',
+        attemptId: 'attempt-active-1',
+      }),
+    });
+    expect(providerCapture).not.toHaveBeenCalled();
   });
 
   it('captures AUTHORIZED leg and marks intent SUCCEEDED when required legs are captured', async () => {
@@ -708,6 +804,11 @@ describe('IntentsService', () => {
     const result = await service.captureLeg('intent-1', 'leg-1', 'corr-capture-2');
 
     expect(providerCapture).toHaveBeenCalledTimes(1);
+    expect(providerCapture).toHaveBeenCalledWith(
+      expect.objectContaining({
+        idempotencyKey: 'wallet:test:leg-1:CAPTURE:2',
+      }),
+    );
     expect(stateTransitionService.transitionIntent).toHaveBeenCalledWith(
       'intent-1',
       'SUCCEEDED',
@@ -720,6 +821,156 @@ describe('IntentsService', () => {
     expect(result.intent.status).toBe('SUCCEEDED');
     expect(result.leg.status).toBe('CAPTURED');
     expect(result.attempt.status).toBe('CAPTURED');
+  });
+
+  it('marks capture attempt as PENDING_PROVIDER when provider capture call is uncertain', async () => {
+    const providerCapture = jest.fn().mockRejectedValue(new Error('capture timeout'));
+    providerRegistry.assertCapability.mockReturnValue({
+      capture: providerCapture,
+    });
+
+    const createdAttempt = {
+      id: 'attempt-cap-uncertain-1',
+      intentId: 'intent-1',
+      legId: 'leg-1',
+      attemptNo: 2,
+      operation: 'CAPTURE',
+      status: 'CREATED',
+      providerTransactionId: null,
+      providerRequestId: null,
+      idempotencyKey: null,
+      providerIdempotencyKey: 'wallet:test:leg-1:CAPTURE:2',
+      errorCode: null,
+      errorMessage: null,
+      requestPayload: { operation: 'CAPTURE' },
+      responsePayload: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const txPreInsertMock = jest.fn((table) => {
+      if (table === paymentAttempts) {
+        return {
+          values: jest.fn().mockReturnValue({
+            returning: jest.fn().mockResolvedValue([createdAttempt]),
+          }),
+        };
+      }
+
+      return {
+        values: jest.fn().mockResolvedValue(undefined),
+      };
+    });
+
+    const txPre = {
+      execute: jest
+        .fn()
+        .mockResolvedValueOnce([
+          createLockedIntent({
+            id: 'intent-1',
+            status: 'IN_PROGRESS',
+            payableAmount: 10000,
+            version: 0,
+          }),
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: 'leg-1',
+            intentId: 'intent-1',
+            providerType: 'POINTS',
+            amount: 10000,
+            status: 'AUTHORIZED',
+            version: 0,
+            metadata: {},
+          },
+        ]),
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockResolvedValue([{ maxAttemptNo: 1 }]),
+        }),
+      }),
+      insert: txPreInsertMock,
+    };
+
+    const readQueue = [
+      [
+        {
+          id: 'intent-1',
+          referenceType: 'STORE_ORDER',
+          referenceId: 'order-1',
+          customerId: 'customer-1',
+          currency: 'KRW',
+          payableAmount: 10000,
+          status: 'IN_PROGRESS',
+          expiresAt: new Date(),
+          version: 2,
+          metadata: {},
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+      [
+        {
+          id: 'leg-1',
+          intentId: 'intent-1',
+          providerType: 'POINTS',
+          amount: 10000,
+          status: 'AUTHORIZED',
+          isRequired: true,
+          sequenceNo: 1,
+          version: 1,
+          metadata: {},
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+      [
+        {
+          ...createdAttempt,
+          status: 'PENDING_PROVIDER',
+          errorCode: 'PROVIDER_CAPTURE_UNCERTAIN',
+          errorMessage: 'capture timeout',
+        },
+      ],
+    ];
+
+    const txPost = {
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockResolvedValue(undefined),
+        }),
+      }),
+      select: jest.fn().mockImplementation(() => ({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            limit: jest.fn().mockImplementation(() => Promise.resolve(readQueue.shift() ?? [])),
+          }),
+        }),
+      })),
+    };
+
+    db.transaction
+      .mockImplementationOnce(
+        async (callback: (innerTx: typeof txPre) => unknown) => callback(txPre),
+      )
+      .mockImplementationOnce(
+        async (callback: (innerTx: typeof txPost) => unknown) => callback(txPost),
+      );
+
+    const result = await service.captureLeg('intent-1', 'leg-1', 'corr-capture-uncertain-1');
+
+    expect(result.attempt.status).toBe('PENDING_PROVIDER');
+    expect(providerCapture).toHaveBeenCalledTimes(1);
+    expect(stateTransitionService.transitionAttempt).toHaveBeenCalledWith(
+      'attempt-cap-uncertain-1',
+      'PENDING_PROVIDER',
+      expect.objectContaining({
+        correlationId: 'corr-capture-uncertain-1',
+        reasonCode: 'PROVIDER_CAPTURE_UNCERTAIN',
+      }),
+      'SENT',
+      txPost,
+    );
   });
 
   it('cancels PENDING intent without compensation flow', async () => {
@@ -870,6 +1121,11 @@ describe('IntentsService', () => {
       status: 'SUPERSEDED',
     });
     expect(providerRefund).toHaveBeenCalledTimes(1);
+    expect(providerRefund).toHaveBeenCalledWith(
+      expect.objectContaining({
+        idempotencyKey: 'wallet:test:leg-1:REFUND:1',
+      }),
+    );
     expect(txInsertMock).toHaveBeenCalled();
     expect(stateTransitionService.transitionAttempt).toHaveBeenCalledWith(
       'attempt-comp-1',

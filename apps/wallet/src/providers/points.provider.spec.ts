@@ -26,6 +26,7 @@ describe('PointsPaymentProvider', () => {
         amount: 1000,
         currency: 'KRW',
         customerId: 'customer-1',
+        idempotencyKey: 'wallet:test:intent-1:leg-1:manual-confirm',
         correlationId: 'corr-1',
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
