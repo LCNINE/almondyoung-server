@@ -31,7 +31,7 @@ export async function medusaSignin(): Promise<{
       }
     )
 
-    setMedusaAuthToken(data.token)
+    await setMedusaAuthToken(data.token)
 
     const customerCacheTag = await getCacheTag("customers")
     revalidateTag(customerCacheTag)
@@ -105,7 +105,7 @@ export async function medusaSigninAdmin(): Promise<{
       withAuth: true,
     })
 
-    setMedusaAuthToken(data.token)
+    await setMedusaAuthToken(data.token)
 
     return {
       success: true,

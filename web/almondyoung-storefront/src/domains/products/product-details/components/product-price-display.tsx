@@ -1,5 +1,4 @@
 import { AnimatedMembershipText } from "@components/products/atomics/animated-membership-text"
-import { MembershipTagIcon } from "@/icons/membership-tag-icon"
 import { ProductMembershipBadge } from "@/components/shared/badges/product-membership-badge"
 
 type MemberPrice = {
@@ -29,7 +28,7 @@ export function ProductPriceDisplay({
   membershipPrice,
   isMember,
   isMembershipOnly,
-  discountRate,
+  discountRate: _discountRate,
   memberPrices,
   actualPrice,
   showMembershipHint,
@@ -40,8 +39,14 @@ export function ProductPriceDisplay({
     membershipPrice > 0 &&
     basePrice > 0 &&
     membershipPrice < basePrice
+  const contextualPrice =
+    typeof actualPrice === "number" && actualPrice > 0 ? actualPrice : basePrice
   const memberDisplayPrice =
-    typeof actualPrice === "number" ? actualPrice : membershipPrice ?? basePrice
+    contextualPrice < basePrice
+      ? contextualPrice
+      : hasMembershipPrice
+        ? (membershipPrice as number)
+        : contextualPrice
   const displayPrice = isMember ? memberDisplayPrice : basePrice
   const displayDiscountRate =
     isMember && displayPrice < basePrice
