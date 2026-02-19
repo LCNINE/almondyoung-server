@@ -29,7 +29,7 @@ import { ProductSidebarPurchase } from "./components/product-sidebar-purchase"
 import { ProductTabs } from "./components/product-tabs"
 import { useRouter } from "next/navigation"
 import { createPortal } from "react-dom"
-import { useMembership } from "@/contexts/membership-context"
+import { useMembershipPricing } from "@/hooks/use-membership-pricing"
 import { useWishlist } from "@/contexts/wishlist-context"
 // import { Breadcrumb } from "@components/layout/components/breadcrumb"
 // import { ProductCard } from "@lib/types/ui/product"
@@ -64,8 +64,7 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   const resolvedParams = use(params)
   const { countryCode } = resolvedParams
   const router = useRouter()
-  const { status } = useMembership()
-  const isMember = status === "membership"
+  const { isMembershipPricing } = useMembershipPricing()
   const { isLoaded, isWishlisted, isPending: isWishlistPending, toggle } =
     useWishlist()
   // ===== 상태 관리 =====
@@ -279,7 +278,7 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
     const resolvePrice = (base?: number, actual?: number) => {
       const basePrice = base ?? 0
       const actualPrice = actual ?? basePrice
-      return isMember ? actualPrice : basePrice
+      return isMembershipPricing ? actualPrice : basePrice
     }
     if (variantId && variantId === product.defaultVariantId) {
       return resolvePrice(product.basePrice, product.actualPrice)

@@ -12,9 +12,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { useMembership } from "@/contexts/membership-context"
+import { useMembershipPricing } from "@/hooks/use-membership-pricing"
 import type { ProductDetail } from "@lib/types/ui/product"
-import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
 import { Heart, MessageCircle } from "lucide-react"
 import { usePathname, useRouter } from "next/navigation"
 import { useState } from "react"
@@ -96,15 +95,15 @@ export function ProductSidebarPurchase({
   const router = useRouter()
   const pathname = usePathname()
   const [showLoginDialog, setShowLoginDialog] = useState(false)
-  const { status } = useMembership()
-  const isMember = status === "membership"
+  const { isMembershipPricing } = useMembershipPricing()
+  const isMember = isMembershipPricing
 
   const isSingleOption = !product.options || product.options.length === 0
   const isOutOfStock = product.status !== "active"
   const resolvePrice = (base?: number, actual?: number) => {
     const basePrice = base ?? 0
     const actualPrice = actual ?? basePrice
-    return isMember ? actualPrice : basePrice
+    return isMembershipPricing ? actualPrice : basePrice
   }
   const getVariantPrice = (variantId?: string) => {
     if (variantId && variantId === product.defaultVariantId) {
@@ -121,7 +120,7 @@ export function ProductSidebarPurchase({
   const getDiscountRate = () => {
     const base = product.basePrice || 0
     const actual = product.actualPrice ?? base
-    if (isMember && base > 0 && actual > 0 && actual < base) {
+    if (isMembershipPricing && base > 0 && actual > 0 && actual < base) {
       return Math.round(((base - actual) / base) * 100)
     }
     return 0
