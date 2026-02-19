@@ -3,7 +3,7 @@ import { MypageShopSettingSkeleton } from "@/components/skeletons/page-skeletons
 
 export default function Loading() {
   return (
-    <MypageLoadingShell title="샵 설정">
+    <MypageLoadingShell title="쇼핑 설정">
       <MypageShopSettingSkeleton />
     </MypageLoadingShell>
   )

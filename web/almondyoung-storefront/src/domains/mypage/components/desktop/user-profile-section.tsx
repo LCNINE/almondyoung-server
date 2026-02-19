@@ -23,7 +23,7 @@ export function UserProfileSection({ userName }: UserProfileSectionProps) {
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
   const { setUser } = useUser()
-  const { status, tier } = useMembership()
+  const { isMembershipPricing, tier } = useMembership()
   const [pointBalance, setPointBalance] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
 
@@ -80,7 +80,7 @@ export function UserProfileSection({ userName }: UserProfileSectionProps) {
             {/* 멤버십 뱃지 or 가입 유도 */}
             {isLoading ? (
               <Skeleton className="h-6 w-24" />
-            ) : status === "membership" ? (
+            ) : isMembershipPricing ? (
               <Link href="/kr/mypage/membership">
                 <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[#FF9500] transition-opacity hover:opacity-80">
                   <Crown className="size-4" aria-hidden />

@@ -1,6 +1,6 @@
 "use client"
 
-import { useMembership } from "@/contexts/membership-context"
+import { useMembershipPricing } from "@/hooks/use-membership-pricing"
 import { ProductCardProps, StockStatus } from "@/lib/types/ui/product"
 import { ProductPrice } from "./product-price"
 import { ProductRating } from "./product-rating"
@@ -21,8 +21,8 @@ export function ProductInfo({
   membershipSavings,
   showMembershipHint: _showMembershipHint,
 }: Omit<ProductCardProps, "imageSrc" | "rank">) {
-  const { status } = useMembership()
-  const isMember = status === "membership"
+  const { isMembershipPricing } = useMembershipPricing()
+  const isMember = isMembershipPricing
 
   // 멤버십 회원: 멤버십 가격(price) 표시 + 뱃지
   // 비회원/일반회원: 기본가(originalPrice) 표시 + 멤버십 절약 힌트
