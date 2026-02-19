@@ -16,6 +16,10 @@ export const walletEnvSchema = z.object({
   WALLET_OUTBOX_BASE_DELAY_MS: z.string().regex(/^\d+$/).optional(),
   WALLET_OUTBOX_MAX_DELAY_MS: z.string().regex(/^\d+$/).optional(),
   WALLET_OUTBOX_PROCESSING_TIMEOUT_SECONDS: z.string().regex(/^\d+$/).optional(),
+  WALLET_OUTBOX_DEAD_LETTER_ENABLED: z
+    .string()
+    .regex(/^(1|0|true|false|yes|no|on|off)$/i)
+    .optional(),
   JWT_ISSUER: z.string().optional(),
   JWT_AUDIENCE: z.string().optional(),
   PORT: z.string().regex(/^\d+$/).optional(),

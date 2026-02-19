@@ -100,6 +100,7 @@
     "db:seed:user-service": "ts-node -r tsconfig-paths/register apps/user-service/database/seed-cli.ts",
     "db:push:wallet": "./scripts/with-ipv4.sh drizzle-kit push --config apps/wallet/drizzle.config.ts",
     "db:push:wallet:test": "./scripts/with-ipv4.sh drizzle-kit push --config apps/wallet/drizzle.test.config.ts",
+    "wallet:outbox:requeue": "ts-node scripts/wallet/requeue-outbox-event.ts",
     "db:push:wallet-lagacy": "./scripts/with-ipv4.sh drizzle-kit push --config apps/wallet-lagacy/drizzle.config.ts",
     "db:push:notification": "drizzle-kit push --config apps/notification/database/drizzle/drizzle.config.ts",
     "db:push:channel-adapter": "./scripts/with-ipv4.sh drizzle-kit push --config apps/channel-adapter/drizzle.config.ts",
