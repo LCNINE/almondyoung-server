@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DbService } from '@app/db';
+import { generateMessageId } from '@app/events';
 import { and, asc, eq, inArray, lte, sql } from 'drizzle-orm';
 import { CreateIntentDto } from './dto/create-intent.dto';
 import { ConfigureLegsDto } from './dto/configure-legs.dto';
@@ -2866,6 +2867,7 @@ export class IntentsService {
   private toOutboxInsertValues(event: OutboxEventInput): typeof outboxEvents.$inferInsert {
     const now = new Date();
     return {
+      messageId: generateMessageId(),
       eventType: event.eventType,
       aggregateType: event.aggregateType,
       aggregateId: event.aggregateId,

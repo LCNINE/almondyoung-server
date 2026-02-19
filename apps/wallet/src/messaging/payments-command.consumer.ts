@@ -1,4 +1,4 @@
-import { Controller, Logger, UseInterceptors } from '@nestjs/common';
+import { Controller, HttpException, Logger, UseInterceptors } from '@nestjs/common';
 import { EventEnvelope, OnEvent } from '@app/events';
 import { Public } from '@app/authorization';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
@@ -13,6 +13,7 @@ import {
   SupersedePaymentIntentCommandPayload,
 } from '@packages/event-contracts';
 import { DomainCommand } from '@packages/event-contracts/types';
+import { IdempotencyService } from '../domain/idempotency/idempotency.service';
 import { IntentsService } from '../intents/intents.service';
 import { ReconcileService } from '../reconcile/reconcile.service';
 
@@ -27,6 +28,7 @@ export class PaymentsCommandConsumer {
   constructor(
     private readonly intentsService: IntentsService,
     private readonly reconcileService: ReconcileService,
+    private readonly idempotencyService: IdempotencyService,
   ) {}
 
   @OnEvent(COMMANDS_TOPIC, 'CreatePaymentIntent')
@@ -34,25 +36,23 @@ export class PaymentsCommandConsumer {
     @EventEnvelope()
     envelope: DomainCommand<CreatePaymentIntentCommandPayload>,
   ): Promise<void> {
-    if (this.shouldSkip(envelope, 'CreatePaymentIntent')) {
-      return;
-    }
-
-    await this.intentsService.createIntent(
-      {
-        referenceType: envelope.payload.referenceType,
-        referenceId: envelope.payload.referenceId,
-        customerId: envelope.payload.customerId,
-        currency: envelope.payload.currency,
-        payableAmount: envelope.payload.payableAmount,
-        snapshotPayload: envelope.payload.snapshotPayload,
-        signature: envelope.payload.signature,
-        signatureVersion: envelope.payload.signatureVersion,
-        signedAt: envelope.payload.signedAt,
-        metadata: envelope.payload.metadata,
-      },
-      envelope.correlationId,
-    );
+    await this.handleCommand(envelope, 'CreatePaymentIntent', async () => {
+      await this.intentsService.createIntent(
+        {
+          referenceType: envelope.payload.referenceType,
+          referenceId: envelope.payload.referenceId,
+          customerId: envelope.payload.customerId,
+          currency: envelope.payload.currency,
+          payableAmount: envelope.payload.payableAmount,
+          snapshotPayload: envelope.payload.snapshotPayload,
+          signature: envelope.payload.signature,
+          signatureVersion: envelope.payload.signatureVersion,
+          signedAt: envelope.payload.signedAt,
+          metadata: envelope.payload.metadata,
+        },
+        envelope.correlationId,
+      );
+    });
   }
 
   @OnEvent(COMMANDS_TOPIC, 'StartPaymentLeg')
@@ -60,24 +60,22 @@ export class PaymentsCommandConsumer {
     @EventEnvelope()
     envelope: DomainCommand<StartPaymentLegCommandPayload>,
   ): Promise<void> {
-    if (this.shouldSkip(envelope, 'StartPaymentLeg')) {
-      return;
-    }
+    await this.handleCommand(envelope, 'StartPaymentLeg', async () => {
+      if (envelope.payload.operation === 'CAPTURE') {
+        await this.intentsService.captureLeg(
+          envelope.payload.intentId,
+          envelope.payload.legId,
+          envelope.correlationId,
+        );
+        return;
+      }
 
-    if (envelope.payload.operation === 'CAPTURE') {
-      await this.intentsService.captureLeg(
+      await this.intentsService.authorizeLeg(
         envelope.payload.intentId,
         envelope.payload.legId,
         envelope.correlationId,
       );
-      return;
-    }
-
-    await this.intentsService.authorizeLeg(
-      envelope.payload.intentId,
-      envelope.payload.legId,
-      envelope.correlationId,
-    );
+    });
   }
 
   @OnEvent(COMMANDS_TOPIC, 'CancelPaymentIntent')
@@ -85,14 +83,12 @@ export class PaymentsCommandConsumer {
     @EventEnvelope()
     envelope: DomainCommand<CancelPaymentIntentCommandPayload>,
   ): Promise<void> {
-    if (this.shouldSkip(envelope, 'CancelPaymentIntent')) {
-      return;
-    }
-
-    await this.intentsService.cancelIntent(
-      envelope.payload.intentId,
-      envelope.correlationId,
-    );
+    await this.handleCommand(envelope, 'CancelPaymentIntent', async () => {
+      await this.intentsService.cancelIntent(
+        envelope.payload.intentId,
+        envelope.correlationId,
+      );
+    });
   }
 
   @OnEvent(COMMANDS_TOPIC, 'ExpirePaymentIntent')
@@ -100,14 +96,12 @@ export class PaymentsCommandConsumer {
     @EventEnvelope()
     envelope: DomainCommand<ExpirePaymentIntentCommandPayload>,
   ): Promise<void> {
-    if (this.shouldSkip(envelope, 'ExpirePaymentIntent')) {
-      return;
-    }
-
-    await this.intentsService.expireIntent(
-      envelope.payload.intentId,
-      envelope.correlationId,
-    );
+    await this.handleCommand(envelope, 'ExpirePaymentIntent', async () => {
+      await this.intentsService.expireIntent(
+        envelope.payload.intentId,
+        envelope.correlationId,
+      );
+    });
   }
 
   @OnEvent(COMMANDS_TOPIC, 'SupersedePaymentIntent')
@@ -115,14 +109,12 @@ export class PaymentsCommandConsumer {
     @EventEnvelope()
     envelope: DomainCommand<SupersedePaymentIntentCommandPayload>,
   ): Promise<void> {
-    if (this.shouldSkip(envelope, 'SupersedePaymentIntent')) {
-      return;
-    }
-
-    await this.intentsService.supersedeIntent(
-      envelope.payload.intentId,
-      envelope.correlationId,
-    );
+    await this.handleCommand(envelope, 'SupersedePaymentIntent', async () => {
+      await this.intentsService.supersedeIntent(
+        envelope.payload.intentId,
+        envelope.correlationId,
+      );
+    });
   }
 
   @OnEvent(COMMANDS_TOPIC, 'RequestRefund')
@@ -130,21 +122,19 @@ export class PaymentsCommandConsumer {
     @EventEnvelope()
     envelope: DomainCommand<RequestRefundCommandPayload>,
   ): Promise<void> {
-    if (this.shouldSkip(envelope, 'RequestRefund')) {
-      return;
-    }
-
-    await this.intentsService.createRefundRequest(
-      envelope.payload.intentId,
-      {
-        refundAmount: envelope.payload.refundAmount,
-        allocation: envelope.payload.allocation,
-        reasonCode: envelope.payload.reasonCode,
-        reasonMessage: envelope.payload.reasonMessage,
-      },
-      envelope.correlationId,
-      envelope.payload.requestedBy,
-    );
+    await this.handleCommand(envelope, 'RequestRefund', async () => {
+      await this.intentsService.createRefundRequest(
+        envelope.payload.intentId,
+        {
+          refundAmount: envelope.payload.refundAmount,
+          allocation: envelope.payload.allocation,
+          reasonCode: envelope.payload.reasonCode,
+          reasonMessage: envelope.payload.reasonMessage,
+        },
+        envelope.correlationId,
+        envelope.payload.requestedBy,
+      );
+    });
   }
 
   @OnEvent(COMMANDS_TOPIC, 'RetryReconcile')
@@ -152,30 +142,73 @@ export class PaymentsCommandConsumer {
     @EventEnvelope()
     envelope: DomainCommand<RetryReconcileCommandPayload>,
   ): Promise<void> {
-    if (this.shouldSkip(envelope, 'RetryReconcile')) {
+    await this.handleCommand(envelope, 'RetryReconcile', async () => {
+      const retryInput = {
+        reasonCode: envelope.payload.reasonCode,
+        reasonMessage: envelope.payload.reasonMessage,
+        actorId: envelope.payload.requestedBy,
+        correlationId: envelope.correlationId,
+      };
+
+      if (envelope.payload.legId) {
+        await this.reconcileService.retryLeg(envelope.payload.legId, retryInput);
+        return;
+      }
+
+      if (!envelope.payload.intentId) {
+        throw new Error('RetryReconcile requires intentId or legId');
+      }
+
+      await this.reconcileService.retryIntent(
+        envelope.payload.intentId,
+        retryInput,
+      );
+    });
+  }
+
+  private async handleCommand(
+    envelope: DomainCommand<{
+      idempotencyKey: string;
+    }>,
+    commandType: string,
+    execute: () => Promise<void>,
+  ): Promise<void> {
+    if (this.shouldSkip(envelope, commandType)) {
       return;
     }
 
-    const retryInput = {
-      reasonCode: envelope.payload.reasonCode,
-      reasonMessage: envelope.payload.reasonMessage,
-      actorId: envelope.payload.requestedBy,
-      correlationId: envelope.correlationId,
-    };
+    const idempotencyKey = envelope.payload.idempotencyKey?.trim();
+    if (!idempotencyKey) {
+      throw new Error(`Missing idempotencyKey for command=${commandType}`);
+    }
 
-    if (envelope.payload.legId) {
-      await this.reconcileService.retryLeg(envelope.payload.legId, retryInput);
+    const decision = await this.idempotencyService.beginCommandRequest({
+      idempotencyKey,
+      operation: commandType,
+      requestBody: envelope.payload,
+    });
+
+    if (decision.kind === 'REPLAY') {
+      this.logger.debug(
+        `Skipping duplicate command: type=${commandType}, correlationId=${envelope.correlationId}`,
+      );
       return;
     }
 
-    if (!envelope.payload.intentId) {
-      throw new Error('RetryReconcile requires intentId or legId');
+    try {
+      await execute();
+      await this.idempotencyService.completeSuccess(decision.recordId, 200, {
+        commandType,
+        status: 'PROCESSED',
+      });
+    } catch (error) {
+      await this.idempotencyService.completeFailure(
+        decision.recordId,
+        this.resolveErrorStatusCode(error),
+        this.resolveErrorResponseBody(error),
+      );
+      throw error;
     }
-
-    await this.reconcileService.retryIntent(
-      envelope.payload.intentId,
-      retryInput,
-    );
   }
 
   private shouldSkip(envelope: DomainCommand<unknown>, commandType: string): boolean {
@@ -206,5 +239,30 @@ export class PaymentsCommandConsumer {
     }
 
     return false;
+  }
+
+  private resolveErrorStatusCode(error: unknown): number {
+    if (error instanceof HttpException) {
+      return error.getStatus();
+    }
+    return 500;
+  }
+
+  private resolveErrorResponseBody(error: unknown): unknown {
+    if (error instanceof HttpException) {
+      return error.getResponse();
+    }
+
+    if (error instanceof Error) {
+      return {
+        error: 'COMMAND_PROCESS_FAILED',
+        message: error.message,
+      };
+    }
+
+    return {
+      error: 'COMMAND_PROCESS_FAILED',
+      message: 'Unhandled command processing error',
+    };
   }
 }
