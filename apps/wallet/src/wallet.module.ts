@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
 import {
   AuthorizationModule,
   JwtAuthGuard,
@@ -8,7 +9,7 @@ import {
 } from '@app/authorization';
 import { DbModule } from '@app/db';
 import { EventsModule } from '@app/events';
-import { PAYMENT_STREAM } from '@packages/event-contracts';
+import { PAYMENTS_EVENTS_V1_STREAM } from '@packages/event-contracts';
 import { WALLET_SCOPES } from './auth/wallet.scopes';
 import { validateWalletEnv } from './config/env.validation';
 import { HealthController } from './health.controller';
@@ -23,8 +24,14 @@ import { HttpIdempotencyInterceptor } from './domain/idempotency/http-idempotenc
 import { IntentsController } from './intents/intents.controller';
 import { IntentsService } from './intents/intents.service';
 import { RefundRequestsController } from './intents/refund-requests.controller';
+import { ExpirationJob } from './jobs/expiration.job';
+import { ReconcileJob } from './jobs/reconcile.job';
 import { PointsPaymentProvider } from './providers/points.provider';
 import { ProviderRegistry } from './providers/provider.registry';
+import { ReconcileController } from './reconcile/reconcile.controller';
+import { ReconcileService } from './reconcile/reconcile.service';
+import { OutboxDispatcherService } from './messaging/outbox-dispatcher.service';
+import { PaymentsCommandConsumer } from './messaging/payments-command.consumer';
 
 const combinedSchema = { ...walletSchema, ...authorizationSchema };
 
@@ -46,15 +53,26 @@ const combinedSchema = { ...walletSchema, ...authorizationSchema };
       schema: combinedSchema,
     }),
     EventsModule.forRoot({
-      streams: [PAYMENT_STREAM],
+      streams: [PAYMENTS_EVENTS_V1_STREAM],
       serviceName: process.env.SERVICE_NAME ?? 'wallet',
       enableDLQ: true,
     }),
+    ScheduleModule.forRoot(),
   ],
-  controllers: [HealthController, IntentsController, RefundRequestsController],
+  controllers: [
+    HealthController,
+    IntentsController,
+    RefundRequestsController,
+    ReconcileController,
+    PaymentsCommandConsumer,
+  ],
   providers: [
     StateTransitionService,
     IntentsService,
+    ReconcileService,
+    OutboxDispatcherService,
+    ExpirationJob,
+    ReconcileJob,
     IdempotencyService,
     PointsPaymentProvider,
     ProviderRegistry,

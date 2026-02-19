@@ -7,7 +7,13 @@ import {
   computePayloadHash,
   HMAC_SIGNATURE_VERSION,
 } from '../domain/hmac/hmac-integrity';
-import { WalletSchema, paymentAttempts, paymentIntents, paymentLegs } from '../schema';
+import {
+  WalletSchema,
+  manualCancelQueueItems,
+  paymentAttempts,
+  paymentIntents,
+  paymentLegs,
+} from '../schema';
 import { ProviderRegistry } from '../providers/provider.registry';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
 import { CreateIntentDto } from './dto/create-intent.dto';
@@ -766,6 +772,14 @@ describe('IntentsService', () => {
         };
       }
 
+      if (table === manualCancelQueueItems) {
+        return {
+          values: jest.fn().mockReturnValue({
+            returning: jest.fn().mockResolvedValue([{ id: 'queue-item-1' }]),
+          }),
+        };
+      }
+
       return {
         values: jest.fn().mockResolvedValue(undefined),
       };
@@ -909,6 +923,14 @@ describe('IntentsService', () => {
         };
       }
 
+      if (table === manualCancelQueueItems) {
+        return {
+          values: jest.fn().mockReturnValue({
+            returning: jest.fn().mockResolvedValue([{ id: 'queue-item-1' }]),
+          }),
+        };
+      }
+
       return {
         values: jest.fn().mockResolvedValue(undefined),
       };
@@ -950,6 +972,14 @@ describe('IntentsService', () => {
           if (table === paymentAttempts) {
             return {
               where: jest.fn().mockResolvedValue([{ maxAttemptNo: 0 }]),
+            };
+          }
+
+          if (table === manualCancelQueueItems) {
+            return {
+              where: jest.fn().mockReturnValue({
+                limit: jest.fn().mockResolvedValue([]),
+              }),
             };
           }
 

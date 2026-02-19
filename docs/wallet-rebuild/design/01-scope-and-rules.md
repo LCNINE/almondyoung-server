@@ -86,7 +86,7 @@ checkout-active-status 집합(v1 확정):
 
 ## 6. Supersede (기존 Intent 대체) Policy
 
-- 동일 `reference`로 새 Intent 생성 시 기존 reference-blocking Intent는 즉시 `SUSPENDED` 처리
+- 명시적 supersede 요청(`SupersedePaymentIntent` 커맨드 또는 `POST /v1/intents/{intentId}/supersede`) 시 기존 reference-blocking Intent는 즉시 `SUSPENDED` 처리
 - 이후 보상 오케스트레이션:
   - 자동 취소 가능한 Leg: 즉시 자동 취소
   - 자동 취소 불가 Leg: 수동 처리 큐로 이관

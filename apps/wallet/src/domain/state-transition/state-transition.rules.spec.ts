@@ -39,4 +39,12 @@ describe('state-transition.rules', () => {
     expect(canTransition('ATTEMPT', 'SENT', 'REFUND_REQUESTED')).toBe(true);
     expect(canTransition('ATTEMPT', 'REFUND_REQUESTED', 'REFUNDED')).toBe(true);
   });
+
+  it('allows reconcile retry completion transitions', () => {
+    expect(canTransition('LEG', 'RECONCILE_REQUIRED', 'REFUNDED')).toBe(true);
+    expect(canTransition('INTENT', 'RECONCILE_REQUIRED', 'CANCELLED')).toBe(true);
+    expect(
+      canTransition('INTENT', 'SUPERSEDED_RECONCILE_REQUIRED', 'SUPERSEDED'),
+    ).toBe(true);
+  });
 });

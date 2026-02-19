@@ -113,6 +113,7 @@ export const paymentStateTriggerTypeEnum = pgEnum('payment_state_trigger_type', 
 
 export const outboxStatusEnum = pgEnum('wallet_outbox_status', [
   'PENDING',
+  'PROCESSING',
   'PUBLISHED',
   'FAILED',
 ]);

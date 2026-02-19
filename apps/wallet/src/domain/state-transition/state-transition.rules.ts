@@ -30,6 +30,8 @@ const paymentIntentTransitionRules: TransitionRules<PaymentIntentStatus> = {
   ],
   SUSPENDED: ['SUPERSEDED', 'SUPERSEDED_RECONCILE_REQUIRED'],
   RECONCILING: ['FAILED', 'EXPIRED', 'CANCELLED', 'RECONCILE_REQUIRED'],
+  RECONCILE_REQUIRED: ['FAILED', 'EXPIRED', 'CANCELLED'],
+  SUPERSEDED_RECONCILE_REQUIRED: ['SUPERSEDED'],
 };
 
 const paymentLegTransitionRules: TransitionRules<PaymentLegStatus> = {
@@ -48,6 +50,7 @@ const paymentLegTransitionRules: TransitionRules<PaymentLegStatus> = {
   CAPTURED: ['CANCELING', 'REFUNDING'],
   CANCELING: ['CANCELLED', 'REFUNDED', 'RECONCILE_REQUIRED'],
   REFUNDING: ['REFUNDED', 'RECONCILE_REQUIRED'],
+  RECONCILE_REQUIRED: ['CANCELLED', 'REFUNDED'],
 };
 
 const paymentAttemptTransitionRules: TransitionRules<PaymentAttemptStatus> = {

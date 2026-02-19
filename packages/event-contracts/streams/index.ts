@@ -18,6 +18,7 @@ export * from './fulfillments.stream';
 
 // Payment Stream
 export * from './payment.stream';
+export * from './payments-v1.stream';
 
 // Wallet Stream (included in PAYMENT_STREAM)
 
