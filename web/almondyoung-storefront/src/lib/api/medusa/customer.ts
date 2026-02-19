@@ -12,9 +12,14 @@ import {
   getCartId,
 } from "../../data/cookies"
 import { transformFormDataToAddress } from "@/components/address/utils"
+import type { CustomerGroupRef } from "@/lib/utils/membership-group"
+
+type StoreCustomerWithGroups = HttpTypes.StoreCustomer & {
+  groups?: CustomerGroupRef[]
+}
 
 export const retrieveCustomer =
-  async (): Promise<HttpTypes.StoreCustomer | null> => {
+  async (): Promise<StoreCustomerWithGroups | null> => {
     const authHeaders = await getAuthHeaders()
 
     if (!authHeaders) return null
@@ -28,10 +33,10 @@ export const retrieveCustomer =
     }
 
     return await sdk.client
-      .fetch<{ customer: HttpTypes.StoreCustomer }>(`/store/customers/me`, {
+      .fetch<{ customer: StoreCustomerWithGroups }>(`/store/customers/me`, {
         method: "GET",
         query: {
-          fields: "*orders,*addresses",
+          fields: "*orders,*addresses,*groups",
         },
         headers,
         next,
@@ -121,7 +126,7 @@ export const addCustomerAddress = async (
 
   return sdk.store.customer
     .createAddress(address, {}, headers)
-    .then(async ({ customer }) => {
+    .then(async () => {
       const customerCacheTag = await getCacheTag("customers")
       revalidateTag(customerCacheTag)
       return { success: true, error: null }

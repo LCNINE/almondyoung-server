@@ -11,10 +11,13 @@ import { WishlistProvider } from "@/contexts/wishlist-context"
 import "@/styles/globals.css"
 import { retrieveCart } from "@lib/api/medusa/cart"
 import { getCurrentSubscription } from "@/lib/api/membership"
+import { retrieveCustomer } from "@lib/api/medusa/customer"
 import { fetchMe } from "@lib/api/users/me"
 import { CustomThemeProvider } from "@lib/providers/custom-theme-provider"
 import { ThemeProvider } from "@lib/providers/theme-provider"
 import { getSEOTags, renderSchemaTags } from "@lib/seo"
+import { isMembershipGroup } from "@lib/utils/membership-group"
+import type { CustomerGroupRef } from "@lib/utils/membership-group"
 import { Metadata } from "next"
 import { OverlayProvider } from "overlay-kit"
 import { Toaster } from "sonner"
@@ -36,18 +39,30 @@ export const metadata: Metadata = getSEOTags({
   },
 })
 
-async function getMembershipStatus(
+async function getMembershipStatus({
+  isLoggedIn,
+  customerGroupsFromMe,
+  customerGroupsFromCart,
+}: {
   isLoggedIn: boolean
-): Promise<MembershipContextType> {
+  customerGroupsFromMe?: { id?: string | null }[] | null
+  customerGroupsFromCart?: { id?: string | null }[] | null
+}): Promise<MembershipContextType> {
   if (!isLoggedIn) {
-    return { status: "guest" }
+    return { status: "guest", isMembershipPricing: false }
   }
+
+  const isMembershipPricing =
+    isMembershipGroup(customerGroupsFromMe) ||
+    isMembershipGroup(customerGroupsFromCart)
+  const status = isMembershipPricing ? "membership" : "regular"
 
   try {
     const subscription = await getCurrentSubscription()
-    if (subscription?.status === "ACTIVE") {
+    if (subscription?.status === "ACTIVE" && subscription?.tier) {
       return {
-        status: "membership",
+        status,
+        isMembershipPricing,
         tier: {
           code: subscription.tier.code,
           name: subscription.tier.name,
@@ -55,19 +70,27 @@ async function getMembershipStatus(
         },
       }
     }
-    return { status: "regular" }
+    return { status, isMembershipPricing }
   } catch {
-    return { status: "regular" }
+    return { status, isMembershipPricing }
   }
 }
 
 export default async function RootLayout(props: { children: React.ReactNode }) {
-  const [user, cart] = await Promise.all([
+  const [user, cart, customer] = await Promise.all([
     fetchMe().catch(() => null),
     retrieveCart().catch(() => null),
+    retrieveCustomer().catch(() => null),
   ])
+  const cartWithGroups = cart as
+    | (typeof cart & { customer?: { groups?: CustomerGroupRef[] } })
+    | null
 
-  const membershipStatus = await getMembershipStatus(!!user)
+  const membershipStatus = await getMembershipStatus({
+    isLoggedIn: !!user,
+    customerGroupsFromMe: customer?.groups,
+    customerGroupsFromCart: cartWithGroups?.customer?.groups,
+  })
 
   return (
     <html lang="ko" suppressHydrationWarning>

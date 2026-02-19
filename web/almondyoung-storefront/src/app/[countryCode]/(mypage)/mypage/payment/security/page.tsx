@@ -1,7 +1,5 @@
-import { MypagePinSkeleton } from "@/components/skeletons/page-skeletons"
 import { WithHeaderLayout } from "@components/layout"
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
-import { Suspense } from "react"
 import SecurityManager from "../(components)/sucurity-manager"
 
 export default async function SecurityPage({
@@ -22,9 +20,7 @@ export default async function SecurityPage({
       }}
     >
       <MypageLayout>
-        <Suspense fallback={<MypagePinSkeleton />}>
-          <SecurityManager redirectTo={redirectTo} />
-        </Suspense>
+        <SecurityManager redirectTo={redirectTo} />
       </MypageLayout>
     </WithHeaderLayout>
   )
