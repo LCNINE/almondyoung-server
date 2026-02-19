@@ -19,6 +19,12 @@ import { StateTransitionService } from '../domain/state-transition/state-transit
 import { CreateIntentDto } from './dto/create-intent.dto';
 import { ConfigureLegsDto } from './dto/configure-legs.dto';
 import { IntentsService } from './intents.service';
+import { IntentCreationService } from './application/intent-creation.service';
+import { LegExecutionService } from './application/leg-execution.service';
+import { IntentTerminationService } from './application/intent-termination.service';
+import { RefundOrchestrationService } from './application/refund-orchestration.service';
+import { AttemptService } from './support/attempt.service';
+import { ManualActionQueueService } from './support/manual-action-queue.service';
 
 describe('IntentsService', () => {
   const sharedSecret = 'wallet-hmac-secret';
@@ -68,12 +74,37 @@ describe('IntentsService', () => {
       transitionAttempt: jest.fn().mockResolvedValue(undefined),
     };
 
+    const dbService = {
+      db,
+    } as unknown as DbService<WalletSchema>;
+    const typedProviderRegistry = providerRegistry as unknown as ProviderRegistry;
+    const typedStateTransitionService =
+      stateTransitionService as unknown as StateTransitionService;
+    const attemptService = new AttemptService();
+    const manualActionQueueService = new ManualActionQueueService();
+
     service = new IntentsService(
-      {
-        db,
-      } as unknown as DbService<WalletSchema>,
-      providerRegistry as unknown as ProviderRegistry,
-      stateTransitionService as unknown as StateTransitionService,
+      new IntentCreationService(dbService, typedProviderRegistry),
+      new LegExecutionService(
+        dbService,
+        typedProviderRegistry,
+        typedStateTransitionService,
+        attemptService,
+      ),
+      new IntentTerminationService(
+        dbService,
+        typedProviderRegistry,
+        typedStateTransitionService,
+        attemptService,
+        manualActionQueueService,
+      ),
+      new RefundOrchestrationService(
+        dbService,
+        typedProviderRegistry,
+        typedStateTransitionService,
+        attemptService,
+        manualActionQueueService,
+      ),
     );
   });
 

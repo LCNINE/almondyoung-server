@@ -291,9 +291,9 @@
 
 ## Wave 4 - 서비스 분해
 
-- [ ] support 서비스 분리(Attempt/ManualQueue)
-- [ ] orchestration 서비스 분리
-- [ ] IntentsService facade 최소화
+- [x] support 서비스 분리(Attempt/ManualQueue)
+- [x] orchestration 서비스 분리
+- [x] IntentsService facade 최소화
 
 ---
 
@@ -386,4 +386,3 @@
 10. `IntentsService`는 facade-first로 점진 분해.
 11. manual queue 중복 로직은 공통 서비스로 통합.
 12. PR은 schema -> exactly-once -> idempotency -> outbox -> decomposition 순서.
-
