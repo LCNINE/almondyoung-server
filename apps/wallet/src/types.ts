@@ -8,6 +8,10 @@ import {
   paymentIntents,
   paymentLegs,
   paymentStateTransitions,
+  pointEventDetails,
+  pointEvents,
+  pointHoldDetails,
+  pointHolds,
   providerWebhookReceipts,
   refundAllocations,
   refundRequests,
@@ -52,6 +56,20 @@ export type NewManualCancelQueueItem = InferInsertModel<typeof manualCancelQueue
 export type UpdateManualCancelQueueItem = Partial<
   Omit<NewManualCancelQueueItem, 'id' | 'createdAt' | 'updatedAt'>
 >;
+
+export type PointEvent = InferSelectModel<typeof pointEvents>;
+export type NewPointEvent = InferInsertModel<typeof pointEvents>;
+export type UpdatePointEvent = Partial<Omit<NewPointEvent, 'id' | 'createdAt'>>;
+
+export type PointEventDetail = InferSelectModel<typeof pointEventDetails>;
+export type NewPointEventDetail = InferInsertModel<typeof pointEventDetails>;
+
+export type PointHold = InferSelectModel<typeof pointHolds>;
+export type NewPointHold = InferInsertModel<typeof pointHolds>;
+export type UpdatePointHold = Partial<Omit<NewPointHold, 'id' | 'createdAt' | 'updatedAt'>>;
+
+export type PointHoldDetail = InferSelectModel<typeof pointHoldDetails>;
+export type NewPointHoldDetail = InferInsertModel<typeof pointHoldDetails>;
 
 export type PaymentStateTransition = InferSelectModel<typeof paymentStateTransitions>;
 export type NewPaymentStateTransition = InferInsertModel<typeof paymentStateTransitions>;

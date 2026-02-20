@@ -31,6 +31,7 @@ import { RefundOrchestrationService } from './intents/application/refund-orchest
 import { ExpirationJob } from './jobs/expiration.job';
 import { ReconcileJob } from './jobs/reconcile.job';
 import { PointsPaymentProvider } from './providers/points/points.provider';
+import { PointsLedgerService } from './providers/points/points-ledger.service';
 import { ProviderRegistry } from './providers/provider.registry';
 import { ReconcileController } from './reconcile/reconcile.controller';
 import { ReconcileService } from './reconcile/reconcile.service';
@@ -86,6 +87,7 @@ const combinedSchema = { ...walletSchema, ...authorizationSchema };
     ExpirationJob,
     ReconcileJob,
     IdempotencyService,
+    PointsLedgerService,
     PointsPaymentProvider,
     ProviderRegistry,
     {

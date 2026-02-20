@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { DbService } from '@app/db';
 import {
   CapabilityContext,
   PollablePaymentProvider,
@@ -12,6 +13,8 @@ import {
   ValidateLegRequest,
 } from '../payment-provider.types';
 import { throwProviderCapabilityNotSupported } from '../provider.errors';
+import { WalletSchema } from '../../schema';
+import { PointsLedgerService } from './points-ledger.service';
 
 const POINTS_CAPABILITIES: ProviderCapability[] = [
   'AUTHORIZE',
@@ -27,6 +30,11 @@ const POINTS_CAPABILITIES: ProviderCapability[] = [
 export class PointsPaymentProvider implements PollablePaymentProvider {
   readonly providerType = 'POINTS';
   readonly version = 'v1';
+
+  constructor(
+    private readonly dbService: DbService<WalletSchema>,
+    private readonly pointsLedgerService: PointsLedgerService,
+  ) {}
 
   getStaticCapabilities(): ProviderCapability[] {
     return POINTS_CAPABILITIES;
@@ -80,56 +88,32 @@ export class PointsPaymentProvider implements PollablePaymentProvider {
     req: ProviderOperationRequest,
   ): Promise<ProviderOperationResult> {
     this.assertCapability('AUTHORIZE', req);
-
-    return {
-      resultStatus: 'AUTHORIZED',
-      providerTransactionId: `points-auth-${req.legId}`,
-      raw: {
-        providerType: this.providerType,
-        operation: 'AUTHORIZE',
-      },
-    };
+    return this.dbService.db.transaction((tx) =>
+      this.pointsLedgerService.authorize(tx, req),
+    );
   }
 
   private async executeCapture(
     req: ProviderOperationRequest,
   ): Promise<ProviderOperationResult> {
     this.assertCapability('CAPTURE', req);
-
-    return {
-      resultStatus: 'CAPTURED',
-      providerTransactionId: `points-capture-${req.legId}`,
-      raw: {
-        providerType: this.providerType,
-        operation: 'CAPTURE',
-      },
-    };
+    return this.dbService.db.transaction((tx) =>
+      this.pointsLedgerService.capture(tx, req),
+    );
   }
 
   private async executeCancel(req: ProviderOperationRequest): Promise<ProviderOperationResult> {
     this.assertCapability('CANCEL', req);
-
-    return {
-      resultStatus: 'CANCELLED',
-      providerTransactionId: `points-cancel-${req.legId}`,
-      raw: {
-        providerType: this.providerType,
-        operation: 'CANCEL',
-      },
-    };
+    return this.dbService.db.transaction((tx) =>
+      this.pointsLedgerService.cancel(tx, req),
+    );
   }
 
   private async executeRefund(req: ProviderOperationRequest): Promise<ProviderOperationResult> {
     this.assertCapability('REFUND', req);
-
-    return {
-      resultStatus: 'REFUNDED',
-      providerTransactionId: `points-refund-${req.legId}`,
-      raw: {
-        providerType: this.providerType,
-        operation: 'REFUND',
-      },
-    };
+    return this.dbService.db.transaction((tx) =>
+      this.pointsLedgerService.refund(tx, req),
+    );
   }
 
   private async executeManualConfirm(
@@ -143,13 +127,9 @@ export class PointsPaymentProvider implements PollablePaymentProvider {
   async getTransaction(
     req: ProviderTransactionRequest,
   ): Promise<ProviderTransactionSnapshot> {
-    return {
-      providerTransactionId: `points-tx-${req.legId}`,
-      status: 'CAPTURED',
-      raw: {
-        providerType: this.providerType,
-      },
-    };
+    return this.dbService.db.transaction((tx) =>
+      this.pointsLedgerService.getTransaction(tx, req),
+    );
   }
 
   private assertCapability(

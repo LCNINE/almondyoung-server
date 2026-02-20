@@ -1,11 +1,36 @@
 import { BadRequestException } from '@nestjs/common';
 import { PointsPaymentProvider } from './points.provider';
+import { PointsLedgerService } from './points-ledger.service';
+import { DbService } from '@app/db';
+import { WalletSchema } from '../../schema';
+import {
+  ProviderOperationResult,
+  ProviderTransactionSnapshot,
+} from '../payment-provider.types';
 
 describe('PointsPaymentProvider', () => {
   let provider: PointsPaymentProvider;
+  let pointsLedgerService: jest.Mocked<PointsLedgerService>;
+  let dbService: DbService<WalletSchema>;
 
   beforeEach(() => {
-    provider = new PointsPaymentProvider();
+    pointsLedgerService = {
+      authorize: jest.fn(),
+      capture: jest.fn(),
+      cancel: jest.fn(),
+      refund: jest.fn(),
+      getTransaction: jest.fn(),
+    } as unknown as jest.Mocked<PointsLedgerService>;
+
+    dbService = {
+      db: {
+        transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+          fn({} as unknown),
+        ),
+      },
+    } as unknown as DbService<WalletSchema>;
+
+    provider = new PointsPaymentProvider(dbService, pointsLedgerService);
   });
 
   it('declares expected static capabilities', () => {
@@ -36,6 +61,13 @@ describe('PointsPaymentProvider', () => {
   });
 
   it('executes authorize via unified execute command', async () => {
+    const mockedResult: ProviderOperationResult = {
+      resultStatus: 'AUTHORIZED',
+      providerTransactionId: 'hold-1',
+      raw: { providerType: 'POINTS' },
+    };
+    pointsLedgerService.authorize.mockResolvedValueOnce(mockedResult);
+
     const result = await provider.execute({
       op: 'AUTHORIZE',
       params: {
@@ -50,7 +82,8 @@ describe('PointsPaymentProvider', () => {
     });
 
     expect(result.resultStatus).toBe('AUTHORIZED');
-    expect(result.providerTransactionId).toBe('points-auth-leg-1');
+    expect(result.providerTransactionId).toBe('hold-1');
+    expect(pointsLedgerService.authorize).toHaveBeenCalledTimes(1);
   });
 
   it('validates leg currency and amount', async () => {
@@ -75,5 +108,23 @@ describe('PointsPaymentProvider', () => {
         isRequired: true,
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('delegates polling to points ledger service', async () => {
+    const snapshot: ProviderTransactionSnapshot = {
+      providerTransactionId: 'tx-1',
+      status: 'CAPTURED',
+      raw: { providerType: 'POINTS' },
+    };
+    pointsLedgerService.getTransaction.mockResolvedValueOnce(snapshot);
+
+    const result = await provider.getTransaction({
+      intentId: 'intent-1',
+      legId: 'leg-1',
+      correlationId: 'corr-1',
+    });
+
+    expect(result.status).toBe('CAPTURED');
+    expect(pointsLedgerService.getTransaction).toHaveBeenCalledTimes(1);
   });
 });
