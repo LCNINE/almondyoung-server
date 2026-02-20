@@ -122,6 +122,19 @@ export function ProfileEdit({ userData }: ProfileEditProps) {
                 )}
               />
 
+              {/* 이메일 (읽기 전용) */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">이메일</Label>
+                <div className="relative">
+                  <Input
+                    value={userData.email || ""}
+                    readOnly
+                    disabled
+                    className="bg-gray-20 h-11 cursor-not-allowed rounded-md border border-gray-200 px-4 text-sm text-black"
+                  />
+                </div>
+              </div>
+
               <FormField
                 control={form.control}
                 name="nickname"
