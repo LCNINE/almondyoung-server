@@ -164,7 +164,7 @@ function createPaymentIntentCommand(
     idempotencyKey: 'cmd-idem-1',
     referenceType: 'STORE_ORDER',
     referenceId: 'order-1',
-    customerId: 'customer-1',
+    userId: 'customer-1',
     currency: 'KRW',
     payableAmount: 1000,
     snapshotPayload: {

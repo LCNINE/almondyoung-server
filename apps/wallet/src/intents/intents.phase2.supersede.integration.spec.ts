@@ -37,7 +37,7 @@ describeWalletDbIntegration('Intents phase2 supersede integration (real path)', 
 
     const firstBody = createSignedCreateIntentBody({
       referenceId,
-      customerId: phase2ScopedValue('customer-concurrent-a'),
+      userId: phase2ScopedValue('customer-concurrent-a'),
       payableAmount: 10000,
       snapshotPayload: {
         referenceType: 'STORE_ORDER',
@@ -48,7 +48,7 @@ describeWalletDbIntegration('Intents phase2 supersede integration (real path)', 
     });
     const secondBody = createSignedCreateIntentBody({
       referenceId,
-      customerId: phase2ScopedValue('customer-concurrent-b'),
+      userId: phase2ScopedValue('customer-concurrent-b'),
       payableAmount: 10000,
       snapshotPayload: {
         referenceType: 'STORE_ORDER',
@@ -187,7 +187,7 @@ async function createPendingIntent(
   const referenceId = phase2ScopedValue(`ref-${referenceLabel}`);
   const body = createSignedCreateIntentBody({
     referenceId,
-    customerId: phase2ScopedValue(`customer-${referenceLabel}`),
+    userId: phase2ScopedValue(`customer-${referenceLabel}`),
     payableAmount: 10000,
     snapshotPayload: {
       referenceType: 'STORE_ORDER',

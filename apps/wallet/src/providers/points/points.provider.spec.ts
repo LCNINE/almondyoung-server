@@ -27,7 +27,7 @@ describe('PointsPaymentProvider', () => {
           legId: 'leg-1',
           amount: 1000,
           currency: 'KRW',
-          customerId: 'customer-1',
+          userId: 'customer-1',
           idempotencyKey: 'wallet:test:intent-1:leg-1:manual-confirm',
           correlationId: 'corr-1',
         },
@@ -43,7 +43,7 @@ describe('PointsPaymentProvider', () => {
         legId: 'leg-1',
         amount: 1000,
         currency: 'KRW',
-        customerId: 'customer-1',
+        userId: 'customer-1',
         idempotencyKey: 'wallet:test:intent-1:leg-1:authorize',
         correlationId: 'corr-1',
       },
@@ -57,7 +57,7 @@ describe('PointsPaymentProvider', () => {
     await expect(
       provider.validateLeg({
         intentId: 'intent-1',
-        customerId: 'customer-1',
+        userId: 'customer-1',
         amount: 0,
         currency: 'KRW',
         sequenceNo: 1,
@@ -68,7 +68,7 @@ describe('PointsPaymentProvider', () => {
     await expect(
       provider.validateLeg({
         intentId: 'intent-1',
-        customerId: 'customer-1',
+        userId: 'customer-1',
         amount: 1000,
         currency: 'USD',
         sequenceNo: 1,

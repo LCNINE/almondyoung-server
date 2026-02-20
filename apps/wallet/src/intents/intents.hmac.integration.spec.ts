@@ -115,7 +115,7 @@ describe('Intents HMAC verification (integration)', () => {
       .send({
         referenceType: 'STORE_ORDER',
         referenceId: 'order-1',
-        customerId: 'customer-1',
+        userId: 'customer-1',
         currency: 'KRW',
         payableAmount: 10000,
         snapshotPayload: {

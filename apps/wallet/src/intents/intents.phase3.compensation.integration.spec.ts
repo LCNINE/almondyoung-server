@@ -291,10 +291,10 @@ async function createPendingIntent(
   referenceLabel: string,
 ): Promise<string> {
   const referenceId = phase2ScopedValue(`ref-${referenceLabel}`);
-  const customerId = phase2ScopedValue(`customer-${referenceLabel}`);
+  const userId = phase2ScopedValue(`customer-${referenceLabel}`);
   const body = createSignedCreateIntentBody({
     referenceId,
-    customerId,
+    userId,
     payableAmount: 10000,
     snapshotPayload: {
       referenceType: 'STORE_ORDER',

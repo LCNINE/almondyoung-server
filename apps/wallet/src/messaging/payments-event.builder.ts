@@ -4,7 +4,7 @@ interface PaymentIntentPayloadInput {
   intentId: string;
   referenceType: PaymentReferenceType;
   referenceId: string;
-  customerId: string;
+  userId: string;
   status: PaymentIntentStatus;
   payableAmount: number;
   currency: string;
@@ -22,7 +22,7 @@ interface RefundPayloadInput {
   intentId: string;
   referenceType: PaymentReferenceType;
   referenceId: string;
-  customerId: string;
+  userId: string;
   refundAmount: number;
   currency: string;
   allocation: RefundAllocationItem[];
@@ -36,7 +36,7 @@ export function buildPaymentIntentEventPayload(
   assertNonEmptyString('intentId', input.intentId);
   assertReferenceType(input.referenceType);
   assertNonEmptyString('referenceId', input.referenceId);
-  assertNonEmptyString('customerId', input.customerId);
+  assertNonEmptyString('userId', input.userId);
   assertNonEmptyString('status', input.status);
   assertAmount('payableAmount', input.payableAmount, {
     allowZero: true,
@@ -47,7 +47,7 @@ export function buildPaymentIntentEventPayload(
     intentId: input.intentId,
     referenceType: input.referenceType,
     referenceId: input.referenceId,
-    customerId: input.customerId,
+    userId: input.userId,
     status: input.status,
     payableAmount: input.payableAmount,
     currency: input.currency,
@@ -63,7 +63,7 @@ export function buildRefundEventPayload(
   assertNonEmptyString('intentId', input.intentId);
   assertReferenceType(input.referenceType);
   assertNonEmptyString('referenceId', input.referenceId);
-  assertNonEmptyString('customerId', input.customerId);
+  assertNonEmptyString('userId', input.userId);
   assertAmount('refundAmount', input.refundAmount, { allowZero: false });
   assertNonEmptyString('currency', input.currency);
 
@@ -83,7 +83,7 @@ export function buildRefundEventPayload(
     intentId: input.intentId,
     referenceType: input.referenceType,
     referenceId: input.referenceId,
-    customerId: input.customerId,
+    userId: input.userId,
     refundAmount: input.refundAmount,
     currency: input.currency,
     allocation: input.allocation,

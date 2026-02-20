@@ -53,7 +53,7 @@ export class PaymentsCommandConsumer {
         {
           referenceType: envelope.payload.referenceType,
           referenceId: envelope.payload.referenceId,
-          customerId: envelope.payload.customerId,
+          userId: envelope.payload.userId,
           currency: envelope.payload.currency,
           payableAmount: envelope.payload.payableAmount,
           snapshotPayload: envelope.payload.snapshotPayload,
@@ -333,7 +333,7 @@ export class PaymentsCommandConsumer {
   ): void {
     this.assertRequiredCommonFields(payload);
     this.assertNonEmptyString('referenceId', payload.referenceId);
-    this.assertNonEmptyString('customerId', payload.customerId);
+    this.assertNonEmptyString('userId', payload.userId);
     this.assertNonEmptyString('currency', payload.currency);
     this.assertNonEmptyString('signature', payload.signature);
     this.assertNonEmptyString('signatureVersion', payload.signatureVersion);

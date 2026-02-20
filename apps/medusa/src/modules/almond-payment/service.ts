@@ -155,13 +155,13 @@ class AlmondPaymentProvider extends AbstractPaymentProvider<Options> {
       );
     }
 
-    // customerId: context.customer.id -> 우리 월렛의 DTO 요구사항에 맞춰 전달
-    const customerId =
+    // userId: context.customer.id -> 우리 월렛의 DTO 요구사항에 맞춰 전달
+    const userId =
       (context as any)?.customer?.id ||
       (context as any)?.account_holder?.data?.id ||
-      (data as any)?.customerId;
-    if (!customerId) {
-      throw new Error('initiatePayment: customerId is required');
+      (data as any)?.userId;
+    if (!userId) {
+      throw new Error('initiatePayment: userId is required');
     }
 
     const amountNum = toNumber(amount);
@@ -173,7 +173,7 @@ class AlmondPaymentProvider extends AbstractPaymentProvider<Options> {
       {
         method: 'POST',
         body: JSON.stringify({
-          customerId,
+          userId,
           amount: amountNum,
           type: String(intentType),
         }),

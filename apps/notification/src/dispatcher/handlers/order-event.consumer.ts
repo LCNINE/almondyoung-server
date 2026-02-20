@@ -43,7 +43,7 @@ export class OrderEventConsumer {
       }
 
       const sendDto: SendNotificationDto = {
-        userId: payload.customerId,
+        userId: payload.userId,
         channels: eventMapping.defaultChannels as any,
         category: eventMapping.category as NotificationCategory,
         templateKey: eventMapping.templateKey,
@@ -55,11 +55,11 @@ export class OrderEventConsumer {
           orderId: payload.orderId,
           totalAmount: payload.totalAmount,
           currency: payload.currency,
-          customerEmail: payload.customerId, // TODO: 실제 email 조회 필요
+          customerEmail: payload.userId, // TODO: 실제 email 조회 필요
         },
       };
       await this.notificationDispatcherService.send(sendDto);
-      this.logger.log(`[Event] Dispatched ORDER_CREATED notification for ${payload.customerId}`);
+      this.logger.log(`[Event] Dispatched ORDER_CREATED notification for ${payload.userId}`);
     } catch (error) {
       this.logger.error(`[Event] Failed to process ORDER_CREATED notification: ${error.message}`, error.stack);
       throw error; // Re-throw to send to DLQ

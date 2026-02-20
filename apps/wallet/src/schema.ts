@@ -139,7 +139,7 @@ export const paymentIntents = pgTable(
     id: uuid('id').defaultRandom().primaryKey(),
     referenceType: paymentReferenceTypeEnum('reference_type').notNull(),
     referenceId: varchar('reference_id', { length: 128 }).notNull(),
-    customerId: varchar('customer_id', { length: 128 }).notNull(),
+    userId: varchar('user_id', { length: 128 }).notNull(),
     currency: varchar('currency', { length: 3 }).notNull(),
     payableAmount: integer('payable_amount').notNull(),
     status: paymentIntentStatusEnum('status').notNull(),
@@ -158,7 +158,7 @@ export const paymentIntents = pgTable(
       sql`${table.payableAmount} >= 0`,
     ),
     index('idx_payment_intents_reference').on(table.referenceType, table.referenceId),
-    index('idx_payment_intents_customer_created_at').on(table.customerId, table.createdAt),
+    index('idx_payment_intents_user_created_at').on(table.userId, table.createdAt),
     index('idx_payment_intents_status_expires_at').on(table.status, table.expiresAt),
     uniqueIndex('uq_payment_intents_reference_blocking')
       .on(table.referenceType, table.referenceId)

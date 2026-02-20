@@ -190,7 +190,7 @@ function buildPaymentIntentSucceededPayload() {
     intentId: randomUUID(),
     referenceType: 'STORE_ORDER',
     referenceId: `order-${randomUUID()}`,
-    customerId: `customer-${randomUUID()}`,
+    userId: `customer-${randomUUID()}`,
     status: 'SUCCEEDED',
     payableAmount: 1000,
     currency: 'KRW',

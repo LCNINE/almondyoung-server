@@ -34,7 +34,7 @@ interface PaymentIntentEventSource {
   id: string;
   referenceType: PaymentReferenceType;
   referenceId: string;
-  customerId: string;
+  userId: string;
   payableAmount: number;
   currency: string;
 }
@@ -43,7 +43,7 @@ interface LockedIntent {
   id: string;
   referenceType: PaymentReferenceType;
   referenceId: string;
-  customerId: string;
+  userId: string;
   currency: string;
   payableAmount: number;
   expiresAt: Date;
@@ -94,7 +94,7 @@ export class LegExecutionService {
         legId,
         operation: 'AUTHORIZE',
         correlationId: requestCorrelationId,
-        triggeredById: intent.customerId,
+        triggeredById: intent.userId,
       });
 
       if (intent.status === 'PENDING') {
@@ -107,7 +107,7 @@ export class LegExecutionService {
             reasonCode: 'LEG_AUTHORIZE_STARTED',
             reasonMessage: `Leg authorize started for leg=${legId}`,
             triggeredByType: 'SYSTEM',
-            triggeredById: intent.customerId,
+            triggeredById: intent.userId,
             payload: {
               legId,
               operation: 'AUTHORIZE',
@@ -127,7 +127,7 @@ export class LegExecutionService {
           reasonCode: 'LEG_AUTHORIZE_STARTED',
           reasonMessage: 'Leg moved to PROCESSING before provider authorize',
           triggeredByType: 'SYSTEM',
-          triggeredById: intent.customerId,
+          triggeredById: intent.userId,
           payload: {
             operation: 'AUTHORIZE',
           },
@@ -145,7 +145,7 @@ export class LegExecutionService {
           reasonCode: 'PROVIDER_AUTHORIZE_REQUEST_SENT',
           reasonMessage: 'Provider authorize request sent',
           triggeredByType: 'SYSTEM',
-          triggeredById: intent.customerId,
+          triggeredById: intent.userId,
           payload: {
             providerType: leg.providerType,
             operation: 'AUTHORIZE',
@@ -177,7 +177,7 @@ export class LegExecutionService {
           idempotencyKey: prepared.attempt.providerIdempotencyKey,
           amount: prepared.leg.amount,
           currency: prepared.intent.currency,
-          customerId: prepared.intent.customerId,
+          userId: prepared.intent.userId,
           correlationId: requestCorrelationId,
           metadata: prepared.leg.metadata,
         },
@@ -191,7 +191,7 @@ export class LegExecutionService {
             intentId,
             legId,
             attemptId: prepared.attempt.id,
-            customerId: prepared.intent.customerId,
+            userId: prepared.intent.userId,
           },
           providerResult,
           requestCorrelationId,
@@ -218,7 +218,7 @@ export class LegExecutionService {
             reasonCode: 'PROVIDER_AUTHORIZE_FAILED',
             reasonMessage: errorMessage,
             triggeredByType: 'SYSTEM',
-            triggeredById: prepared.intent.customerId,
+            triggeredById: prepared.intent.userId,
             payload: {
               operation: 'AUTHORIZE',
             },
@@ -235,7 +235,7 @@ export class LegExecutionService {
             reasonCode: 'PROVIDER_AUTHORIZE_FAILED',
             reasonMessage: errorMessage,
             triggeredByType: 'SYSTEM',
-            triggeredById: prepared.intent.customerId,
+            triggeredById: prepared.intent.userId,
             payload: {
               operation: 'AUTHORIZE',
             },
@@ -273,7 +273,7 @@ export class LegExecutionService {
         legId,
         operation: 'CAPTURE',
         correlationId: requestCorrelationId,
-        triggeredById: intent.customerId,
+        triggeredById: intent.userId,
       });
 
       await this.stateTransitionService.transitionAttempt(
@@ -285,7 +285,7 @@ export class LegExecutionService {
           reasonCode: 'PROVIDER_CAPTURE_REQUEST_SENT',
           reasonMessage: 'Provider capture request sent',
           triggeredByType: 'SYSTEM',
-          triggeredById: intent.customerId,
+          triggeredById: intent.userId,
           payload: {
             providerType: leg.providerType,
             operation: 'CAPTURE',
@@ -317,7 +317,7 @@ export class LegExecutionService {
           idempotencyKey: prepared.attempt.providerIdempotencyKey,
           amount: prepared.leg.amount,
           currency: prepared.intent.currency,
-          customerId: prepared.intent.customerId,
+          userId: prepared.intent.userId,
           correlationId: requestCorrelationId,
           metadata: prepared.leg.metadata,
         },
@@ -336,7 +336,7 @@ export class LegExecutionService {
               reasonCode: 'PROVIDER_CAPTURE_SUCCEEDED',
               reasonMessage: 'Provider capture succeeded',
               triggeredByType: 'SYSTEM',
-              triggeredById: prepared.intent.customerId,
+              triggeredById: prepared.intent.userId,
               payload: {
                 operation: 'CAPTURE',
               },
@@ -354,7 +354,7 @@ export class LegExecutionService {
               reasonCode: 'LEG_CAPTURED',
               reasonMessage: 'Leg capture completed',
               triggeredByType: 'SYSTEM',
-              triggeredById: prepared.intent.customerId,
+              triggeredById: prepared.intent.userId,
               payload: {
                 operation: 'CAPTURE',
               },
@@ -385,7 +385,7 @@ export class LegExecutionService {
               reasonCode: 'PROVIDER_CAPTURE_FAILED',
               reasonMessage: `Unexpected provider capture result: ${providerResult.resultStatus}`,
               triggeredByType: 'SYSTEM',
-              triggeredById: prepared.intent.customerId,
+              triggeredById: prepared.intent.userId,
               payload: {
                 operation: 'CAPTURE',
                 providerResultStatus: providerResult.resultStatus,
@@ -418,7 +418,7 @@ export class LegExecutionService {
             reasonCode: 'PROVIDER_CAPTURE_UNCERTAIN',
             reasonMessage: `Capture result uncertain, reconcile required: ${errorMessage}`,
             triggeredByType: 'SYSTEM',
-            triggeredById: prepared.intent.customerId,
+            triggeredById: prepared.intent.userId,
             payload: {
               operation: 'CAPTURE',
               uncertainFailure: true,
@@ -439,7 +439,7 @@ export class LegExecutionService {
       intentId: string;
       legId: string;
       attemptId: string;
-      customerId: string;
+      userId: string;
     },
     providerResult: ProviderOperationResult,
     correlationId: string,
@@ -455,7 +455,7 @@ export class LegExecutionService {
             reasonCode: 'PROVIDER_AUTHORIZE_SUCCEEDED',
             reasonMessage: 'Provider authorize succeeded',
             triggeredByType: 'SYSTEM',
-            triggeredById: context.customerId,
+            triggeredById: context.userId,
             payload: {
               operation: 'AUTHORIZE',
             },
@@ -473,7 +473,7 @@ export class LegExecutionService {
             reasonCode: 'LEG_AUTHORIZED',
             reasonMessage: 'Leg authorize completed',
             triggeredByType: 'SYSTEM',
-            triggeredById: context.customerId,
+            triggeredById: context.userId,
             payload: {
               operation: 'AUTHORIZE',
             },
@@ -493,7 +493,7 @@ export class LegExecutionService {
             reasonCode: 'PROVIDER_AUTHORIZE_CAPTURED',
             reasonMessage: 'Provider authorize returned captured',
             triggeredByType: 'SYSTEM',
-            triggeredById: context.customerId,
+            triggeredById: context.userId,
             payload: {
               operation: 'AUTHORIZE',
             },
@@ -511,7 +511,7 @@ export class LegExecutionService {
             reasonCode: 'LEG_AUTHORIZED',
             reasonMessage: 'Authorize step completed before auto-capture',
             triggeredByType: 'SYSTEM',
-            triggeredById: context.customerId,
+            triggeredById: context.userId,
             payload: {
               operation: 'AUTHORIZE',
             },
@@ -529,7 +529,7 @@ export class LegExecutionService {
             reasonCode: 'LEG_CAPTURED',
             reasonMessage: 'Authorize path auto-captured leg',
             triggeredByType: 'SYSTEM',
-            triggeredById: context.customerId,
+            triggeredById: context.userId,
             payload: {
               operation: 'AUTHORIZE',
               autoCaptured: true,
@@ -557,7 +557,7 @@ export class LegExecutionService {
             reasonCode: 'PROVIDER_AUTHORIZE_REQUIRES_ACTION',
             reasonMessage: 'Provider authorize requires customer action',
             triggeredByType: 'SYSTEM',
-            triggeredById: context.customerId,
+            triggeredById: context.userId,
             payload: {
               operation: 'AUTHORIZE',
               nextAction: providerResult.nextAction ?? null,
@@ -576,7 +576,7 @@ export class LegExecutionService {
             reasonCode: 'LEG_REQUIRES_CUSTOMER_ACTION',
             reasonMessage: 'Leg requires customer action',
             triggeredByType: 'SYSTEM',
-            triggeredById: context.customerId,
+            triggeredById: context.userId,
             payload: {
               operation: 'AUTHORIZE',
               nextAction: providerResult.nextAction ?? null,
@@ -597,7 +597,7 @@ export class LegExecutionService {
             reasonCode: 'PROVIDER_AUTHORIZE_REQUIRES_ADMIN_CONFIRMATION',
             reasonMessage: 'Provider authorize requires admin confirmation',
             triggeredByType: 'SYSTEM',
-            triggeredById: context.customerId,
+            triggeredById: context.userId,
             payload: {
               operation: 'AUTHORIZE',
             },
@@ -615,7 +615,7 @@ export class LegExecutionService {
             reasonCode: 'LEG_REQUIRES_ADMIN_CONFIRMATION',
             reasonMessage: 'Leg requires admin confirmation',
             triggeredByType: 'SYSTEM',
-            triggeredById: context.customerId,
+            triggeredById: context.userId,
             payload: {
               operation: 'AUTHORIZE',
             },
@@ -643,7 +643,7 @@ export class LegExecutionService {
             reasonCode: 'PROVIDER_AUTHORIZE_FAILED',
             reasonMessage: `Provider authorize returned failed status: ${providerResult.resultStatus}`,
             triggeredByType: 'SYSTEM',
-            triggeredById: context.customerId,
+            triggeredById: context.userId,
             payload: {
               operation: 'AUTHORIZE',
               providerResultStatus: providerResult.resultStatus,
@@ -662,7 +662,7 @@ export class LegExecutionService {
             reasonCode: 'PROVIDER_AUTHORIZE_FAILED',
             reasonMessage: 'Leg authorize failed',
             triggeredByType: 'SYSTEM',
-            triggeredById: context.customerId,
+            triggeredById: context.userId,
             payload: {
               operation: 'AUTHORIZE',
             },
@@ -711,7 +711,7 @@ export class LegExecutionService {
             reasonCode: 'INTENT_CAPTURE_PROGRESS',
             reasonMessage: 'Intent moved to IN_PROGRESS before success',
             triggeredByType: 'SYSTEM',
-            triggeredById: intent.customerId,
+            triggeredById: intent.userId,
             payload: {
               reason: 'capture',
             },
@@ -731,7 +731,7 @@ export class LegExecutionService {
             reasonCode: 'INTENT_CAPTURE_SUCCEEDED',
             reasonMessage: 'All required legs captured',
             triggeredByType: 'SYSTEM',
-            triggeredById: intent.customerId,
+            triggeredById: intent.userId,
             payload: {
               reason: 'all_required_legs_captured',
             },
@@ -756,7 +756,7 @@ export class LegExecutionService {
             reasonCode: 'INTENT_CAPTURE_SUCCEEDED',
             reasonMessage: 'All required legs captured',
             triggeredByType: 'SYSTEM',
-            triggeredById: intent.customerId,
+            triggeredById: intent.userId,
             payload: {
               reason: 'all_required_legs_captured',
             },
@@ -784,7 +784,7 @@ export class LegExecutionService {
           reasonCode: 'INTENT_CAPTURE_PROGRESS',
           reasonMessage: 'Intent moved to IN_PROGRESS before partial capture',
           triggeredByType: 'SYSTEM',
-          triggeredById: intent.customerId,
+          triggeredById: intent.userId,
           payload: {
             reason: 'capture',
           },
@@ -802,7 +802,7 @@ export class LegExecutionService {
           reasonCode: 'INTENT_PARTIALLY_CAPTURED',
           reasonMessage: 'Some required legs captured',
           triggeredByType: 'SYSTEM',
-          triggeredById: intent.customerId,
+          triggeredById: intent.userId,
           payload: {
             reason: 'partial_capture',
           },
@@ -823,7 +823,7 @@ export class LegExecutionService {
           reasonCode: 'INTENT_PARTIALLY_CAPTURED',
           reasonMessage: 'Some required legs captured',
           triggeredByType: 'SYSTEM',
-          triggeredById: intent.customerId,
+          triggeredById: intent.userId,
           payload: {
             reason: 'partial_capture',
           },
@@ -925,7 +925,7 @@ export class LegExecutionService {
         intentId: intent.id,
         referenceType: intent.referenceType,
         referenceId: intent.referenceId,
-        customerId: intent.customerId,
+        userId: intent.userId,
         status,
         payableAmount: intent.payableAmount,
         currency: intent.currency,
@@ -942,7 +942,7 @@ export class LegExecutionService {
         id,
         reference_type as "referenceType",
         reference_id as "referenceId",
-        customer_id as "customerId",
+        user_id as "userId",
         currency,
         payable_amount as "payableAmount",
         expires_at as "expiresAt",

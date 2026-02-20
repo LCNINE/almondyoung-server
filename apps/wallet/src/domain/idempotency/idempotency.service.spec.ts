@@ -26,7 +26,7 @@ describe('IdempotencyService', () => {
       actorId: 'customer-1',
       requestMethod: 'POST',
       requestPath: '/v1/intents',
-      requestBody: { customerId: 'customer-1', amount: 1000 },
+      requestBody: { userId: 'customer-1', amount: 1000 },
     });
 
     expect(begin.kind).toBe('STARTED');
@@ -45,7 +45,7 @@ describe('IdempotencyService', () => {
       actorId: 'customer-1',
       requestMethod: 'POST',
       requestPath: '/v1/intents',
-      requestBody: { customerId: 'customer-1', amount: 1000 },
+      requestBody: { userId: 'customer-1', amount: 1000 },
     });
 
     expect(replay).toMatchObject({

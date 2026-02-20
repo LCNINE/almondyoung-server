@@ -10,8 +10,8 @@ import {
   ProviderTransactionRequest,
   ProviderTransactionSnapshot,
   ValidateLegRequest,
-} from './payment-provider.types';
-import { throwProviderCapabilityNotSupported } from './provider.errors';
+} from '../payment-provider.types';
+import { throwProviderCapabilityNotSupported } from '../provider.errors';
 
 const POINTS_CAPABILITIES: ProviderCapability[] = [
   'AUTHORIZE',

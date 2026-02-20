@@ -84,7 +84,7 @@ interface LockedIntent {
   id: string;
   referenceType: PaymentReferenceType;
   referenceId: string;
-  customerId: string;
+  userId: string;
   currency: string;
   payableAmount: number;
   status: PaymentIntentStatus;
@@ -790,7 +790,7 @@ export class ReconcileService {
                   intentId: intent.id,
                   referenceType: intent.referenceType,
                   referenceId: intent.referenceId,
-                  customerId: intent.customerId,
+                  userId: intent.userId,
                   status: 'RECONCILE_REQUIRED',
                   payableAmount: intent.payableAmount,
                   currency: intent.currency,
@@ -835,7 +835,7 @@ export class ReconcileService {
                 intentId: intent.id,
                 referenceType: intent.referenceType,
                 referenceId: intent.referenceId,
-                customerId: intent.customerId,
+                userId: intent.userId,
                 status: 'SUPERSEDED',
                 payableAmount: intent.payableAmount,
                 currency: intent.currency,
@@ -879,7 +879,7 @@ export class ReconcileService {
               intentId: intent.id,
               referenceType: intent.referenceType,
               referenceId: intent.referenceId,
-              customerId: intent.customerId,
+              userId: intent.userId,
               status: finalStatus,
               payableAmount: intent.payableAmount,
               currency: intent.currency,
@@ -1148,7 +1148,7 @@ export class ReconcileService {
         id,
         reference_type as "referenceType",
         reference_id as "referenceId",
-        customer_id as "customerId",
+        user_id as "userId",
         currency,
         payable_amount as "payableAmount",
         status

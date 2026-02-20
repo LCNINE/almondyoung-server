@@ -26,7 +26,7 @@ export interface StreamTopicConfig {
  *
  * const OrderCreatedSchema = z.object({
  *   orderId: z.string().uuid(),
- *   customerId: z.string().uuid(),
+ *   userId: z.string().uuid(),
  * });
  *
  * type OrderCreatedPayload = z.infer<typeof OrderCreatedSchema>;

@@ -67,7 +67,7 @@
 - `intentId`
 - `referenceType` (`STORE_ORDER` | `SUBSCRIPTION_BILLING`)
 - `referenceId`
-- `customerId`
+- `userId`
 - `status`
 - `payableAmount`
 - `currency`
@@ -79,7 +79,7 @@
 - `intentId`
 - `referenceType`
 - `referenceId`
-- `customerId`
+- `userId`
 - `refundAmount`
 - `currency`
 - `allocation` (명시적 leg 배분 정보)
@@ -121,7 +121,7 @@
 
 - `referenceType`
 - `referenceId`
-- `customerId`
+- `userId`
 - `currency`
 - `payableAmount`
 - `snapshotPayload`
@@ -223,7 +223,7 @@ v1 확정:
     "intentId": "pi_01JABC...",
     "referenceType": "STORE_ORDER",
     "referenceId": "medusa_order_123",
-    "customerId": "cus_123",
+    "userId": "cus_123",
     "status": "SUCCEEDED",
     "payableAmount": 10000,
     "currency": "KRW",

@@ -173,8 +173,8 @@ Outbox 발행, 이벤트 빌더, 커맨드 컨슈머
 | `apps/wallet/src/providers/payment-provider.types.ts` | Provider 추상 인터페이스/요청/응답/Capability 타입 정의 |
 | `apps/wallet/src/providers/provider.errors.ts` | Provider 관련 표준 예외 헬퍼 |
 | `apps/wallet/src/providers/provider.registry.ts` | Provider 등록/조회/Capability 검증 레지스트리 |
-| `apps/wallet/src/providers/points.provider.ts` | POINTS provider 구현(기본 authorize/capture/cancel/refund/poll) |
-| `apps/wallet/src/providers/points.provider.spec.ts` | POINTS provider 단위 테스트 |
+| `apps/wallet/src/providers/points/points.provider.ts` | POINTS provider 구현(기본 authorize/capture/cancel/refund/poll) |
+| `apps/wallet/src/providers/points/points.provider.spec.ts` | POINTS provider 단위 테스트 |
 
 ### 4.15 reconcile
 | 파일 | 역할 |

@@ -39,7 +39,7 @@
 - `id` (PK)
 - `reference_type` (`STORE_ORDER` | `SUBSCRIPTION_BILLING`)
 - `reference_id`
-- `customer_id`
+- `user_id`
 - `currency`
 - `payable_amount`
 - `status` (`PaymentIntentStatus`)
@@ -62,7 +62,7 @@
 인덱스:
 
 - `(reference_type, reference_id)`
-- `(customer_id, created_at desc)`
+- `(user_id, created_at desc)`
 - `(status, expires_at)`
 
 ## 3.2 `payment_legs`
@@ -268,7 +268,7 @@ v1 결정:
 - `idempotency_key`
 - `scope` (`HTTP` | `COMMAND`)
 - `operation` (`CreatePaymentIntent` 등)
-- `actor_id` (요청 주체 식별자: `customerId` 또는 내부 서비스명)
+- `actor_id` (요청 주체 식별자: `userId` 또는 내부 서비스명)
 - `request_hash`
 - `request_method` (HTTP scope에서 사용)
 - `request_path` (HTTP scope에서 사용)

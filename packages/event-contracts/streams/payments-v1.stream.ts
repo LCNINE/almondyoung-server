@@ -7,7 +7,7 @@ export interface PaymentIntentEventBasePayload {
   intentId: string;
   referenceType: PaymentsV1ReferenceType;
   referenceId: string;
-  customerId: string;
+  userId: string;
   status: string;
   payableAmount: number;
   currency: string;
@@ -51,7 +51,7 @@ export interface RefundRequestedV1Payload {
   intentId: string;
   referenceType: PaymentsV1ReferenceType;
   referenceId: string;
-  customerId: string;
+  userId: string;
   refundAmount: number;
   currency: string;
   allocation: RefundAllocationItemPayload[];
@@ -63,7 +63,7 @@ export interface RefundCompletedV1Payload {
   intentId: string;
   referenceType: PaymentsV1ReferenceType;
   referenceId: string;
-  customerId: string;
+  userId: string;
   refundAmount: number;
   currency: string;
   allocation: RefundAllocationItemPayload[];
@@ -75,7 +75,7 @@ export interface RefundFailedV1Payload {
   intentId: string;
   referenceType: PaymentsV1ReferenceType;
   referenceId: string;
-  customerId: string;
+  userId: string;
   refundAmount: number;
   currency: string;
   allocation: RefundAllocationItemPayload[];
@@ -96,7 +96,7 @@ interface CommandCommonPayload {
 export interface CreatePaymentIntentCommandPayload extends CommandCommonPayload {
   referenceType: PaymentsV1ReferenceType;
   referenceId: string;
-  customerId: string;
+  userId: string;
   currency: string;
   payableAmount: number;
   snapshotPayload: Record<string, unknown>;
@@ -153,7 +153,7 @@ const PaymentIntentEventBaseSchema = z.object({
   intentId: z.string().min(1),
   referenceType: PaymentReferenceTypeSchema,
   referenceId: z.string().min(1),
-  customerId: z.string().min(1),
+  userId: z.string().min(1),
   status: z.string().min(1),
   payableAmount: z.number().int().nonnegative(),
   currency: z.string().min(1),
@@ -200,7 +200,7 @@ const RefundRequestedSchema = z.object({
   intentId: z.string().min(1),
   referenceType: PaymentReferenceTypeSchema,
   referenceId: z.string().min(1),
-  customerId: z.string().min(1),
+  userId: z.string().min(1),
   refundAmount: z.number().int().positive(),
   currency: z.string().min(1),
   allocation: z.array(RefundAllocationItemSchema).min(1),
@@ -226,7 +226,7 @@ const CommandCommonSchema = z.object({
 const CreatePaymentIntentCommandSchema = CommandCommonSchema.extend({
   referenceType: PaymentReferenceTypeSchema,
   referenceId: z.string().min(1),
-  customerId: z.string().min(1),
+  userId: z.string().min(1),
   currency: z.string().min(1),
   payableAmount: z.number().int().nonnegative(),
   snapshotPayload: z.record(z.string(), z.unknown()),

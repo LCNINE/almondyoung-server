@@ -44,7 +44,7 @@ interface PaymentIntentEventSource {
   id: string;
   referenceType: PaymentReferenceType;
   referenceId: string;
-  customerId: string;
+  userId: string;
   payableAmount: number;
   currency: string;
 }
@@ -53,7 +53,7 @@ interface LockedIntent {
   id: string;
   referenceType: PaymentReferenceType;
   referenceId: string;
-  customerId: string;
+  userId: string;
   currency: string;
   payableAmount: number;
   expiresAt: Date;
@@ -117,7 +117,7 @@ export class IntentTerminationService {
             reasonCode: 'INTENT_CANCELLED',
             reasonMessage: 'Intent cancelled before payment processing',
             triggeredByType: 'USER',
-            triggeredById: intent.customerId,
+            triggeredById: intent.userId,
             payload: {
               operation: 'CANCEL',
             },
@@ -150,7 +150,7 @@ export class IntentTerminationService {
           reasonCode: 'INTENT_CANCEL_RECONCILING',
           reasonMessage: 'Intent cancel started with compensation',
           triggeredByType: 'USER',
-          triggeredById: intent.customerId,
+          triggeredById: intent.userId,
           payload: {
             operation: 'CANCEL',
           },
@@ -211,7 +211,7 @@ export class IntentTerminationService {
             ? 'Intent cancellation requires manual reconcile'
             : 'Intent cancellation completed',
           triggeredByType: 'SYSTEM',
-          triggeredById: prepared.intent.customerId,
+          triggeredById: prepared.intent.userId,
           payload: {
             operation: 'CANCEL',
             compensationFailed,
@@ -270,7 +270,7 @@ export class IntentTerminationService {
           reasonCode: 'INTENT_SUPERSEDE_STARTED',
           reasonMessage: 'Intent supersede started',
           triggeredByType: 'SYSTEM',
-          triggeredById: intent.customerId,
+          triggeredById: intent.userId,
           payload: {
             operation: 'SUPERSEDE',
           },
@@ -323,7 +323,7 @@ export class IntentTerminationService {
             ? 'Supersede compensation requires manual reconcile'
             : 'Supersede completed',
           triggeredByType: 'SYSTEM',
-          triggeredById: prepared.intent.customerId,
+          triggeredById: prepared.intent.userId,
           payload: {
             operation: 'SUPERSEDE',
             compensationFailed,
@@ -664,7 +664,7 @@ export class IntentTerminationService {
               reasonCode: preCaptureReasonCode,
               reasonMessage: preCaptureReasonMessage,
               triggeredByType: 'SYSTEM',
-              triggeredById: intent.customerId,
+              triggeredById: intent.userId,
               payload: {
                 operation: reason,
               },
@@ -682,7 +682,7 @@ export class IntentTerminationService {
             legId: leg.id,
             actionType: leg.status === 'REFUNDING' ? 'REFUND' : 'CANCEL',
             correlationId,
-            requestedBy: intent.customerId,
+            requestedBy: intent.userId,
             reasonCode: 'LEG_RECONCILE_REQUIRED',
             reasonMessage: `Leg remained ${leg.status} during ${reason} compensation`,
           });
@@ -718,7 +718,7 @@ export class IntentTerminationService {
       legId: leg.id,
       operation,
       correlationId,
-      triggeredById: intent.customerId,
+      triggeredById: intent.userId,
     });
 
     await this.stateTransitionService.transitionAttempt(
@@ -730,7 +730,7 @@ export class IntentTerminationService {
         reasonCode: `PROVIDER_${operation}_REQUEST_SENT`,
         reasonMessage: `Provider ${operation} request sent`,
         triggeredByType: 'SYSTEM',
-        triggeredById: intent.customerId,
+        triggeredById: intent.userId,
         payload: {
           operation,
           terminationReason: reason,
@@ -750,7 +750,7 @@ export class IntentTerminationService {
         reasonCode: `PROVIDER_${operation}_REQUEST_ACCEPTED`,
         reasonMessage: `${operation} request accepted for provider call`,
         triggeredByType: 'SYSTEM',
-        triggeredById: intent.customerId,
+        triggeredById: intent.userId,
         payload: {
           operation,
           terminationReason: reason,
@@ -778,7 +778,7 @@ export class IntentTerminationService {
               ? `${operation} compensation started for supersede`
               : `${operation} compensation started for expiration`,
         triggeredByType: 'SYSTEM',
-        triggeredById: intent.customerId,
+        triggeredById: intent.userId,
         payload: {
           operation,
           terminationReason: reason,
@@ -856,7 +856,7 @@ export class IntentTerminationService {
                 idempotencyKey: operation.providerIdempotencyKey,
                 amount: operation.amount,
                 currency: intent.currency,
-                customerId: intent.customerId,
+                userId: intent.userId,
                 correlationId,
                 metadata: operation.metadata,
               },
@@ -870,7 +870,7 @@ export class IntentTerminationService {
                 idempotencyKey: operation.providerIdempotencyKey,
                 amount: operation.amount,
                 currency: intent.currency,
-                customerId: intent.customerId,
+                userId: intent.userId,
                 correlationId,
                 metadata: operation.metadata,
               },
@@ -902,7 +902,7 @@ export class IntentTerminationService {
               reasonCode: `PROVIDER_${operation.operation}_FAILED`,
               reasonMessage: `${operation.operation} returned unexpected status ${providerResult.resultStatus}`,
               triggeredByType: 'SYSTEM',
-              triggeredById: intent.customerId,
+              triggeredById: intent.userId,
               payload: {
                 operation: operation.operation,
                 providerResultStatus: providerResult.resultStatus,
@@ -921,7 +921,7 @@ export class IntentTerminationService {
               reasonCode: `LEG_${operation.operation}_FAILED`,
               reasonMessage: `${operation.operation} returned unexpected status ${providerResult.resultStatus}`,
               triggeredByType: 'SYSTEM',
-              triggeredById: intent.customerId,
+              triggeredById: intent.userId,
               payload: {
                 operation: operation.operation,
                 providerResultStatus: providerResult.resultStatus,
@@ -937,7 +937,7 @@ export class IntentTerminationService {
             legId: operation.legId,
             actionType: operation.operation,
             correlationId,
-            requestedBy: intent.customerId,
+            requestedBy: intent.userId,
             reasonCode: `LEG_${operation.operation}_FAILED`,
             reasonMessage: `${operation.operation} returned unexpected status ${providerResult.resultStatus}`,
           });
@@ -953,7 +953,7 @@ export class IntentTerminationService {
             reasonCode: `PROVIDER_${operation.operation}_SUCCEEDED`,
             reasonMessage: `${operation.operation} compensation succeeded`,
             triggeredByType: 'SYSTEM',
-            triggeredById: intent.customerId,
+            triggeredById: intent.userId,
             payload: {
               operation: operation.operation,
               providerTransactionId: providerResult.providerTransactionId,
@@ -972,7 +972,7 @@ export class IntentTerminationService {
             reasonCode: `LEG_${operation.operation}_SUCCEEDED`,
             reasonMessage: `${operation.operation} compensation succeeded`,
             triggeredByType: 'SYSTEM',
-            triggeredById: intent.customerId,
+            triggeredById: intent.userId,
             payload: {
               operation: operation.operation,
               providerTransactionId: providerResult.providerTransactionId,
@@ -1007,7 +1007,7 @@ export class IntentTerminationService {
             reasonCode: `PROVIDER_${operation.operation}_FAILED`,
             reasonMessage: errorMessage,
             triggeredByType: 'SYSTEM',
-            triggeredById: intent.customerId,
+            triggeredById: intent.userId,
             payload: {
               operation: operation.operation,
               terminationReason: reason,
@@ -1025,7 +1025,7 @@ export class IntentTerminationService {
             reasonCode: `LEG_${operation.operation}_FAILED`,
             reasonMessage: errorMessage,
             triggeredByType: 'SYSTEM',
-            triggeredById: intent.customerId,
+            triggeredById: intent.userId,
             payload: {
               operation: operation.operation,
               terminationReason: reason,
@@ -1040,7 +1040,7 @@ export class IntentTerminationService {
           legId: operation.legId,
           actionType: operation.operation,
           correlationId,
-          requestedBy: intent.customerId,
+          requestedBy: intent.userId,
           reasonCode: `LEG_${operation.operation}_FAILED`,
           reasonMessage: errorMessage,
         });
@@ -1125,7 +1125,7 @@ export class IntentTerminationService {
         intentId: intent.id,
         referenceType: intent.referenceType,
         referenceId: intent.referenceId,
-        customerId: intent.customerId,
+        userId: intent.userId,
         status,
         payableAmount: intent.payableAmount,
         currency: intent.currency,
@@ -1142,7 +1142,7 @@ export class IntentTerminationService {
         id,
         reference_type as "referenceType",
         reference_id as "referenceId",
-        customer_id as "customerId",
+        user_id as "userId",
         currency,
         payable_amount as "payableAmount",
         expires_at as "expiresAt",

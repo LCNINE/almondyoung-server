@@ -63,7 +63,7 @@ describeWithDatabase('wallet schema constraints (integration)', () => {
         .values({
           referenceType: 'STORE_ORDER',
           referenceId,
-          customerId: `customer-${randomUUID()}`,
+          userId: `customer-${randomUUID()}`,
           currency: 'KRW',
           payableAmount: 10000,
           status: 'PENDING',
@@ -77,7 +77,7 @@ describeWithDatabase('wallet schema constraints (integration)', () => {
           dbService.db.insert(paymentIntents).values({
             referenceType: 'STORE_ORDER',
             referenceId,
-            customerId: `customer-${randomUUID()}`,
+            userId: `customer-${randomUUID()}`,
             currency: 'KRW',
             payableAmount: 10000,
             status: 'IN_PROGRESS',
@@ -91,7 +91,7 @@ describeWithDatabase('wallet schema constraints (integration)', () => {
         .values({
           referenceType: 'STORE_ORDER',
           referenceId,
-          customerId: `customer-${randomUUID()}`,
+          userId: `customer-${randomUUID()}`,
           currency: 'KRW',
           payableAmount: 10000,
           status: 'SUCCEEDED',
@@ -119,7 +119,7 @@ describeWithDatabase('wallet schema constraints (integration)', () => {
         .values({
           referenceType: 'STORE_ORDER',
           referenceId: `test-ref-${randomUUID()}`,
-          customerId: `customer-${randomUUID()}`,
+          userId: `customer-${randomUUID()}`,
           currency: 'KRW',
           payableAmount: 20000,
           status: 'PENDING',
@@ -201,7 +201,7 @@ describeWithDatabase('wallet schema constraints (integration)', () => {
         .values({
           referenceType: 'STORE_ORDER',
           referenceId: `test-ref-${randomUUID()}`,
-          customerId: `customer-${randomUUID()}`,
+          userId: `customer-${randomUUID()}`,
           currency: 'KRW',
           payableAmount: 10000,
           status: 'PENDING',

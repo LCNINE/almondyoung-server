@@ -34,12 +34,12 @@ describeWalletDbIntegration('Intents phase2 idempotency integration (real path)'
 
   it('replays stored response for same key and same payload', async () => {
     const referenceId = phase2ScopedValue('ref-idempotency-replay');
-    const customerId = phase2ScopedValue('customer-idempotency-replay');
+    const userId = phase2ScopedValue('customer-idempotency-replay');
     const idempotencyKey = phase2ScopedValue('idem-replay-create');
 
     const body = createSignedCreateIntentBody({
       referenceId,
-      customerId,
+      userId,
       payableAmount: 10000,
       snapshotPayload: {
         referenceType: 'STORE_ORDER',
@@ -76,12 +76,12 @@ describeWalletDbIntegration('Intents phase2 idempotency integration (real path)'
 
   it('returns 409 for same key and different payload', async () => {
     const referenceId = phase2ScopedValue('ref-idempotency-conflict');
-    const customerId = phase2ScopedValue('customer-idempotency-conflict');
+    const userId = phase2ScopedValue('customer-idempotency-conflict');
     const idempotencyKey = phase2ScopedValue('idem-conflict-create');
 
     const firstBody = createSignedCreateIntentBody({
       referenceId,
-      customerId,
+      userId,
       payableAmount: 10000,
       snapshotPayload: {
         referenceType: 'STORE_ORDER',
@@ -101,7 +101,7 @@ describeWalletDbIntegration('Intents phase2 idempotency integration (real path)'
 
     const secondBody = createSignedCreateIntentBody({
       referenceId,
-      customerId,
+      userId,
       payableAmount: 9000,
       snapshotPayload: {
         referenceType: 'STORE_ORDER',
@@ -201,10 +201,10 @@ async function createPendingIntent(
   referenceLabel: string,
 ): Promise<string> {
   const referenceId = phase2ScopedValue(`ref-${referenceLabel}`);
-  const customerId = phase2ScopedValue(`customer-${referenceLabel}`);
+  const userId = phase2ScopedValue(`customer-${referenceLabel}`);
   const body = createSignedCreateIntentBody({
     referenceId,
-    customerId,
+    userId,
     payableAmount: 10000,
     snapshotPayload: {
       referenceType: 'STORE_ORDER',

@@ -146,11 +146,11 @@ describeWalletDbIntegration('Intents phase2 core integration (real path)', () =>
 
   it('rejects creating new intent when same reference is already SUCCEEDED', async () => {
     const referenceId = phase2ScopedValue('already-paid-reference');
-    const customerId = phase2ScopedValue('customer-already-paid');
+    const userId = phase2ScopedValue('customer-already-paid');
 
     const firstBody = createSignedCreateIntentBody({
       referenceId,
-      customerId,
+      userId,
       payableAmount: 0,
       snapshotPayload: {
         referenceType: 'STORE_ORDER',
@@ -170,7 +170,7 @@ describeWalletDbIntegration('Intents phase2 core integration (real path)', () =>
 
     const secondBody = createSignedCreateIntentBody({
       referenceId,
-      customerId,
+      userId,
       payableAmount: 10000,
       snapshotPayload: {
         referenceType: 'STORE_ORDER',

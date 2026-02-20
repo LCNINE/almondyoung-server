@@ -149,7 +149,7 @@ describe('IntentsService', () => {
       id: 'intent-1',
       referenceType: 'STORE_ORDER',
       referenceId: 'order-1',
-      customerId: 'customer-1',
+      userId: 'customer-1',
       currency: 'KRW',
       payableAmount: 0,
       status: 'SUCCEEDED',
@@ -222,7 +222,7 @@ describe('IntentsService', () => {
     selectResultsQueue.push([
       {
         id: 'intent-1',
-        customerId: 'customer-1',
+        userId: 'customer-1',
         currency: 'KRW',
         payableAmount: 10000,
         status: 'PENDING',
@@ -313,7 +313,7 @@ describe('IntentsService', () => {
     selectResultsQueue.push([
       {
         id: 'intent-1',
-        customerId: 'customer-1',
+        userId: 'customer-1',
         currency: 'KRW',
         payableAmount: 10000,
         status: 'PENDING',
@@ -334,7 +334,7 @@ describe('IntentsService', () => {
     selectResultsQueue.push([
       {
         id: 'intent-1',
-        customerId: 'customer-1',
+        userId: 'customer-1',
         currency: 'KRW',
         payableAmount: 0,
         status: 'SUCCEEDED',
@@ -355,7 +355,7 @@ describe('IntentsService', () => {
     selectResultsQueue.push([
       {
         id: 'intent-1',
-        customerId: 'customer-1',
+        userId: 'customer-1',
         currency: 'KRW',
         payableAmount: 10000,
         status: 'PENDING',
@@ -460,7 +460,7 @@ describe('IntentsService', () => {
           id: 'intent-1',
           referenceType: 'STORE_ORDER',
           referenceId: 'order-1',
-          customerId: 'customer-1',
+          userId: 'customer-1',
           currency: 'KRW',
           payableAmount: 10000,
           status: 'IN_PROGRESS',
@@ -748,7 +748,7 @@ describe('IntentsService', () => {
           id: 'intent-1',
           referenceType: 'STORE_ORDER',
           referenceId: 'order-1',
-          customerId: 'customer-1',
+          userId: 'customer-1',
           currency: 'KRW',
           payableAmount: 10000,
           status: 'SUCCEEDED',
@@ -935,7 +935,7 @@ describe('IntentsService', () => {
           id: 'intent-1',
           referenceType: 'STORE_ORDER',
           referenceId: 'order-1',
-          customerId: 'customer-1',
+          userId: 'customer-1',
           currency: 'KRW',
           payableAmount: 10000,
           status: 'IN_PROGRESS',
@@ -1175,7 +1175,7 @@ describe('IntentsService', () => {
           id: 'intent-1',
           referenceType: 'STORE_ORDER',
           referenceId: 'order-1',
-          customerId: 'customer-1',
+          userId: 'customer-1',
           currency: 'KRW',
           payableAmount: 10000,
           status: 'SUCCEEDED',
@@ -1369,7 +1369,7 @@ describe('IntentsService', () => {
           id: 'intent-1',
           referenceType: 'STORE_ORDER',
           referenceId: 'order-1',
-          customerId: 'customer-1',
+          userId: 'customer-1',
           currency: 'KRW',
           payableAmount: 10000,
           status: 'IN_PROGRESS',
@@ -1873,7 +1873,7 @@ function createSignedCreateIntentDto(
   return {
     referenceType: override?.referenceType ?? 'STORE_ORDER',
     referenceId: override?.referenceId ?? 'order-1',
-    customerId: override?.customerId ?? 'customer-1',
+    userId: override?.userId ?? 'customer-1',
     currency: override?.currency ?? 'KRW',
     payableAmount: override?.payableAmount ?? 10000,
     snapshotPayload,
@@ -1889,7 +1889,7 @@ function createLockedIntent(
     id: string;
     referenceType: string;
     referenceId: string;
-    customerId: string;
+    userId: string;
     currency: string;
     payableAmount: number;
     expiresAt: Date;
@@ -1901,7 +1901,7 @@ function createLockedIntent(
     id: override?.id ?? 'intent-1',
     referenceType: override?.referenceType ?? 'STORE_ORDER',
     referenceId: override?.referenceId ?? 'order-1',
-    customerId: override?.customerId ?? 'customer-1',
+    userId: override?.userId ?? 'customer-1',
     currency: override?.currency ?? 'KRW',
     payableAmount: override?.payableAmount ?? 10000,
     expiresAt: override?.expiresAt ?? new Date(Date.now() + 60 * 60 * 1000),

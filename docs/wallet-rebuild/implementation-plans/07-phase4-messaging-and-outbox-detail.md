@@ -107,10 +107,10 @@ Phase 4에서 추가 하드닝이 필요한 항목:
 
 - 이벤트 생성 로직을 공통 팩토리/빌더로 정리하여 payload 누락 방지
 - `PaymentIntent*` 공통 필드:
-  - `intentId`, `referenceType`, `referenceId`, `customerId`,
+  - `intentId`, `referenceType`, `referenceId`, `userId`,
     `status`, `payableAmount`, `currency`, `occurredAt`
 - `Refund*` 공통 필드:
-  - `refundId`, `intentId`, `referenceType`, `referenceId`, `customerId`,
+  - `refundId`, `intentId`, `referenceType`, `referenceId`, `userId`,
     `refundAmount`, `currency`, `allocation`, `occurredAt`
 - payload 회귀 테스트 추가
 
