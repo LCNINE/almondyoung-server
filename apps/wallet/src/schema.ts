@@ -1,4 +1,5 @@
 import {
+  AnyPgColumn,
   boolean,
   check,
   index,
@@ -132,6 +133,19 @@ export const providerWebhookReceiptStatusEnum = pgEnum(
   'provider_webhook_receipt_status',
   ['RECEIVED', 'PROCESSED', 'IGNORED_DUPLICATE', 'FAILED'],
 );
+
+export const pointEventTypeEnum = pgEnum('point_event_type', [
+  'EARN',
+  'REDEEM',
+  'EARN_CANCEL',
+  'REDEEM_CANCEL',
+]);
+
+export const pointHoldStatusEnum = pgEnum('point_hold_status', [
+  'AUTHORIZED',
+  'CAPTURED',
+  'CANCELLED',
+]);
 
 export const paymentIntents = pgTable(
   'payment_intents',
@@ -432,6 +446,160 @@ export const providerWebhookReceipts = pgTable(
   ],
 );
 
+export const pointEvents = pgTable(
+  'point_events',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: varchar('user_id', { length: 128 }).notNull(),
+    eventType: pointEventTypeEnum('event_type').notNull(),
+    amount: integer('amount').notNull(),
+    originalEventId: uuid('original_event_id'),
+    intentId: uuid('intent_id'),
+    legId: uuid('leg_id'),
+    attemptId: uuid('attempt_id'),
+    providerIdempotencyKey: varchar('provider_idempotency_key', { length: 255 }).notNull(),
+    providerTransactionId: varchar('provider_transaction_id', { length: 128 }),
+    reasonCode: varchar('reason_code', { length: 128 }),
+    reasonMessage: text('reason_message'),
+    metadata: jsonb('metadata')
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check('point_events_amount_non_zero', sql`${table.amount} <> 0`),
+    check(
+      'point_events_type_amount_consistency',
+      sql`(
+        (${table.eventType} in ('EARN', 'REDEEM_CANCEL') and ${table.amount} > 0)
+        or
+        (${table.eventType} in ('REDEEM', 'EARN_CANCEL') and ${table.amount} < 0)
+      )`,
+    ),
+    uniqueIndex('uq_point_events_provider_idempotency_key').on(
+      table.providerIdempotencyKey,
+    ),
+    index('idx_point_events_user_created_at').on(table.userId, table.createdAt),
+    index('idx_point_events_intent_leg_created_at').on(
+      table.intentId,
+      table.legId,
+      table.createdAt,
+    ),
+  ],
+);
+
+export const pointEventDetails = pgTable(
+  'point_event_details',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    pointEventId: uuid('point_event_id')
+      .notNull()
+      .references(() => pointEvents.id),
+    userId: varchar('user_id', { length: 128 }).notNull(),
+    eventType: pointEventTypeEnum('event_type').notNull(),
+    amount: integer('amount').notNull(),
+    earnedEventDetailId: uuid('earned_event_detail_id').references(
+      (): AnyPgColumn => pointEventDetails.id,
+    ),
+    originalEventDetailId: uuid('original_event_detail_id').references(
+      (): AnyPgColumn => pointEventDetails.id,
+    ),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check('point_event_details_amount_non_zero', sql`${table.amount} <> 0`),
+    check(
+      'point_event_details_type_amount_consistency',
+      sql`(
+        (${table.eventType} in ('EARN', 'REDEEM_CANCEL') and ${table.amount} > 0)
+        or
+        (${table.eventType} in ('REDEEM', 'EARN_CANCEL') and ${table.amount} < 0)
+      )`,
+    ),
+    index('idx_point_event_details_user_earned_created_at').on(
+      table.userId,
+      table.earnedEventDetailId,
+      table.createdAt,
+    ),
+    index('idx_point_event_details_point_event_created_at').on(
+      table.pointEventId,
+      table.createdAt,
+    ),
+  ],
+);
+
+export const pointHolds = pgTable(
+  'point_holds',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: varchar('user_id', { length: 128 }).notNull(),
+    intentId: uuid('intent_id').notNull(),
+    legId: uuid('leg_id').notNull(),
+    authorizeAttemptId: uuid('authorize_attempt_id').notNull(),
+    authorizeProviderIdempotencyKey: varchar('authorize_provider_idempotency_key', {
+      length: 255,
+    }).notNull(),
+    amount: integer('amount').notNull(),
+    status: pointHoldStatusEnum('status').notNull(),
+    capturedEventId: uuid('captured_event_id').references(() => pointEvents.id),
+    captureAttemptId: uuid('capture_attempt_id'),
+    captureProviderIdempotencyKey: varchar('capture_provider_idempotency_key', {
+      length: 255,
+    }),
+    cancelAttemptId: uuid('cancel_attempt_id'),
+    cancelProviderIdempotencyKey: varchar('cancel_provider_idempotency_key', {
+      length: 255,
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check('point_holds_amount_positive', sql`${table.amount} > 0`),
+    uniqueIndex('uq_point_holds_authorize_provider_idempotency_key').on(
+      table.authorizeProviderIdempotencyKey,
+    ),
+    uniqueIndex('uq_point_holds_capture_provider_idempotency_key')
+      .on(table.captureProviderIdempotencyKey)
+      .where(sql`${table.captureProviderIdempotencyKey} is not null`),
+    uniqueIndex('uq_point_holds_cancel_provider_idempotency_key')
+      .on(table.cancelProviderIdempotencyKey)
+      .where(sql`${table.cancelProviderIdempotencyKey} is not null`),
+    uniqueIndex('uq_point_holds_leg_authorized')
+      .on(table.legId)
+      .where(sql`${table.status} = 'AUTHORIZED'`),
+    index('idx_point_holds_user_status_created_at').on(
+      table.userId,
+      table.status,
+      table.createdAt,
+    ),
+    index('idx_point_holds_leg_created_at').on(table.legId, table.createdAt),
+  ],
+);
+
+export const pointHoldDetails = pgTable(
+  'point_hold_details',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    holdId: uuid('hold_id')
+      .notNull()
+      .references(() => pointHolds.id),
+    earnedEventDetailId: uuid('earned_event_detail_id')
+      .notNull()
+      .references(() => pointEventDetails.id),
+    amount: integer('amount').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check('point_hold_details_amount_positive', sql`${table.amount} > 0`),
+    uniqueIndex('uq_point_hold_details_hold_earned_detail').on(
+      table.holdId,
+      table.earnedEventDetailId,
+    ),
+    index('idx_point_hold_details_earned_event_detail_id').on(table.earnedEventDetailId),
+  ],
+);
+
 export type PaymentReferenceType =
   (typeof paymentReferenceTypeEnum.enumValues)[number];
 export type PaymentIntentStatus =
@@ -450,6 +618,8 @@ export type PaymentStateEntityType =
 export type PaymentStateTriggerType =
   (typeof paymentStateTriggerTypeEnum.enumValues)[number];
 export type OutboxStatus = (typeof outboxStatusEnum.enumValues)[number];
+export type PointEventType = (typeof pointEventTypeEnum.enumValues)[number];
+export type PointHoldStatus = (typeof pointHoldStatusEnum.enumValues)[number];
 
 export const walletSchema = {
   paymentIntents,
@@ -461,6 +631,10 @@ export const walletSchema = {
   paymentStateTransitions,
   outboxEvents,
   providerWebhookReceipts,
+  pointEvents,
+  pointEventDetails,
+  pointHolds,
+  pointHoldDetails,
   idempotencyKeys,
 };
 
