@@ -168,16 +168,19 @@ export class LegExecutionService {
     );
 
     try {
-      const providerResult = await provider.authorize({
-        intentId,
-        legId,
-        attemptId: prepared.attempt.id,
-        idempotencyKey: prepared.attempt.providerIdempotencyKey,
-        amount: prepared.leg.amount,
-        currency: prepared.intent.currency,
-        customerId: prepared.intent.customerId,
-        correlationId: requestCorrelationId,
-        metadata: prepared.leg.metadata,
+      const providerResult = await provider.execute({
+        op: 'AUTHORIZE',
+        params: {
+          intentId,
+          legId,
+          attemptId: prepared.attempt.id,
+          idempotencyKey: prepared.attempt.providerIdempotencyKey,
+          amount: prepared.leg.amount,
+          currency: prepared.intent.currency,
+          customerId: prepared.intent.customerId,
+          correlationId: requestCorrelationId,
+          metadata: prepared.leg.metadata,
+        },
       });
 
       return this.dbService.db.transaction(async (tx) => {
@@ -305,16 +308,19 @@ export class LegExecutionService {
     );
 
     try {
-      const providerResult = await provider.capture({
-        intentId,
-        legId,
-        attemptId: prepared.attempt.id,
-        idempotencyKey: prepared.attempt.providerIdempotencyKey,
-        amount: prepared.leg.amount,
-        currency: prepared.intent.currency,
-        customerId: prepared.intent.customerId,
-        correlationId: requestCorrelationId,
-        metadata: prepared.leg.metadata,
+      const providerResult = await provider.execute({
+        op: 'CAPTURE',
+        params: {
+          intentId,
+          legId,
+          attemptId: prepared.attempt.id,
+          idempotencyKey: prepared.attempt.providerIdempotencyKey,
+          amount: prepared.leg.amount,
+          currency: prepared.intent.currency,
+          customerId: prepared.intent.customerId,
+          correlationId: requestCorrelationId,
+          metadata: prepared.leg.metadata,
+        },
       });
 
       return this.dbService.db.transaction(async (tx) => {

@@ -65,8 +65,7 @@ describeWalletDbIntegration('Intents phase3 compensation integration (real path)
       idempotencyKey: phase2ScopedValue('idem-phase3-comp-order-authorize-2'),
     }).expect(201);
 
-    const cancelSpy = jest.spyOn(context.pointsProvider, 'cancel');
-    const refundSpy = jest.spyOn(context.pointsProvider, 'refund');
+    const executeSpy = jest.spyOn(context.pointsProvider, 'execute');
 
     const cancelIntent = await sendWriteRequest({
       app: context.app,
@@ -76,11 +75,10 @@ describeWalletDbIntegration('Intents phase3 compensation integration (real path)
     }).expect(201);
 
     expect(cancelIntent.body.data.status).toBe('CANCELLED');
-    expect(cancelSpy).toHaveBeenCalledTimes(1);
-    expect(refundSpy).toHaveBeenCalledTimes(1);
-    expect(cancelSpy.mock.invocationCallOrder[0]).toBeLessThan(
-      refundSpy.mock.invocationCallOrder[0],
-    );
+    const compensationOps = executeSpy.mock.calls
+      .map(([command]) => command.op)
+      .filter((op) => op === 'CANCEL' || op === 'REFUND');
+    expect(compensationOps).toEqual(['CANCEL', 'REFUND']);
 
     const legRows = await context.dbService.db
       .select({
@@ -109,9 +107,13 @@ describeWalletDbIntegration('Intents phase3 compensation integration (real path)
       idempotencyKey: phase2ScopedValue('idem-phase3-comp-cancel-fail-authorize'),
     }).expect(201);
 
-    jest
-      .spyOn(context.pointsProvider, 'cancel')
-      .mockRejectedValueOnce(new Error('simulated cancel compensation failure'));
+    const originalExecute = context.pointsProvider.execute.bind(context.pointsProvider);
+    jest.spyOn(context.pointsProvider, 'execute').mockImplementation(async (command) => {
+      if (command.op === 'CANCEL') {
+        throw new Error('simulated cancel compensation failure');
+      }
+      return originalExecute(command);
+    });
 
     const cancelled = await sendWriteRequest({
       app: context.app,
@@ -206,9 +208,13 @@ describeWalletDbIntegration('Intents phase3 compensation integration (real path)
       idempotencyKey: phase2ScopedValue('idem-phase3-comp-sup-fail-capture'),
     }).expect(201);
 
-    jest
-      .spyOn(context.pointsProvider, 'refund')
-      .mockRejectedValueOnce(new Error('simulated refund compensation failure'));
+    const originalExecute = context.pointsProvider.execute.bind(context.pointsProvider);
+    jest.spyOn(context.pointsProvider, 'execute').mockImplementation(async (command) => {
+      if (command.op === 'REFUND') {
+        throw new Error('simulated refund compensation failure');
+      }
+      return originalExecute(command);
+    });
 
     const superseded = await sendWriteRequest({
       app: context.app,

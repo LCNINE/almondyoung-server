@@ -115,7 +115,7 @@ describeWalletDbIntegration('Intents phase2 legs integration (real path)', () =>
 
   it('moves leg to REQUIRES_CUSTOMER_ACTION when provider asks customer action', async () => {
     const authorizeSpy = jest
-      .spyOn(context.pointsProvider, 'authorize')
+      .spyOn(context.pointsProvider, 'execute')
       .mockResolvedValueOnce({
         resultStatus: 'REQUIRES_CUSTOMER_ACTION',
         providerTransactionId: phase2ScopedValue('provider-action-1'),
@@ -143,7 +143,7 @@ describeWalletDbIntegration('Intents phase2 legs integration (real path)', () =>
 
   it('moves leg to REQUIRES_ADMIN_CONFIRMATION when provider asks admin confirmation', async () => {
     const authorizeSpy = jest
-      .spyOn(context.pointsProvider, 'authorize')
+      .spyOn(context.pointsProvider, 'execute')
       .mockResolvedValueOnce({
         resultStatus: 'REQUIRES_ADMIN_CONFIRMATION',
         providerTransactionId: phase2ScopedValue('provider-admin-1'),

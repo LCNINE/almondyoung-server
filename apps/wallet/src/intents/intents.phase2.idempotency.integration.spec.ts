@@ -136,7 +136,7 @@ describeWalletDbIntegration('Intents phase2 idempotency integration (real path)'
     }>();
 
     const authorizeSpy = jest
-      .spyOn(context.pointsProvider, 'authorize')
+      .spyOn(context.pointsProvider, 'execute')
       .mockImplementationOnce(() => deferred.promise);
 
     const firstRequest = sendWriteRequest({
