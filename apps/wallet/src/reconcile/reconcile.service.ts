@@ -389,7 +389,13 @@ export class ReconcileService {
     }
     stats.processedAttempts += 1;
 
-    const provider = this.providerRegistry.getProviderOrThrow(prepared.providerType);
+    const provider = this.providerRegistry.assertPollStatusCapability(
+      prepared.providerType,
+      {
+        intentId: prepared.intentId,
+        legId: prepared.legId,
+      },
+    );
     const providerSnapshot = await provider.getTransaction({
       intentId: prepared.intentId,
       legId: prepared.legId,
@@ -614,7 +620,13 @@ export class ReconcileService {
     }
     stats.processedLegs += 1;
 
-    const provider = this.providerRegistry.getProviderOrThrow(prepared.providerType);
+    const provider = this.providerRegistry.assertPollStatusCapability(
+      prepared.providerType,
+      {
+        intentId: prepared.intentId,
+        legId: prepared.legId,
+      },
+    );
     const providerSnapshot = await provider.getTransaction({
       intentId: prepared.intentId,
       legId: prepared.legId,

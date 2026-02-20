@@ -213,9 +213,13 @@ describeWalletDbIntegration('Intents phase3 refunds integration (real path)', ()
       10000,
     );
 
-    jest
-      .spyOn(context.pointsProvider, 'refund')
-      .mockRejectedValueOnce(new Error('simulated provider refund failure'));
+    const originalExecute = context.pointsProvider.execute.bind(context.pointsProvider);
+    jest.spyOn(context.pointsProvider, 'execute').mockImplementation(async (command) => {
+      if (command.op === 'REFUND') {
+        throw new Error('simulated provider refund failure');
+      }
+      return originalExecute(command);
+    });
 
     const response = await sendWriteRequest({
       app: context.app,

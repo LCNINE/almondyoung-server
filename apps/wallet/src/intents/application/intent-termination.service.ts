@@ -845,30 +845,38 @@ export class IntentTerminationService {
         },
       );
 
-      const providerResult =
+      const command =
         operation.operation === 'CANCEL'
-          ? await provider.cancel({
-              intentId: intent.id,
-              legId: operation.legId,
-              attemptId: operation.attemptId,
-              idempotencyKey: operation.providerIdempotencyKey,
-              amount: operation.amount,
-              currency: intent.currency,
-              customerId: intent.customerId,
-              correlationId,
-              metadata: operation.metadata,
-            })
-          : await provider.refund({
-              intentId: intent.id,
-              legId: operation.legId,
-              attemptId: operation.attemptId,
-              idempotencyKey: operation.providerIdempotencyKey,
-              amount: operation.amount,
-              currency: intent.currency,
-              customerId: intent.customerId,
-              correlationId,
-              metadata: operation.metadata,
-            });
+          ? {
+              op: 'CANCEL' as const,
+              params: {
+                intentId: intent.id,
+                legId: operation.legId,
+                attemptId: operation.attemptId,
+                idempotencyKey: operation.providerIdempotencyKey,
+                amount: operation.amount,
+                currency: intent.currency,
+                customerId: intent.customerId,
+                correlationId,
+                metadata: operation.metadata,
+              },
+            }
+          : {
+              op: 'REFUND' as const,
+              params: {
+                intentId: intent.id,
+                legId: operation.legId,
+                attemptId: operation.attemptId,
+                idempotencyKey: operation.providerIdempotencyKey,
+                amount: operation.amount,
+                currency: intent.currency,
+                customerId: intent.customerId,
+                correlationId,
+                metadata: operation.metadata,
+              },
+            };
+
+      const providerResult = await provider.execute(command);
 
       return this.dbService.db.transaction(async (tx) => {
         await this.persistProviderAttemptResult(tx, operation.attemptId, providerResult);

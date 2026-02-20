@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { ProviderOperation } from './payment-provider.types';
+import { ProviderCapability } from './payment-provider.types';
 
 export function throwProviderNotSupported(providerType: string): never {
   throw new BadRequestException({
@@ -10,10 +10,10 @@ export function throwProviderNotSupported(providerType: string): never {
 
 export function throwProviderCapabilityNotSupported(
   providerType: string,
-  operation: ProviderOperation,
+  capability: ProviderCapability,
 ): never {
   throw new BadRequestException({
     error: 'PROVIDER_CAPABILITY_NOT_SUPPORTED',
-    message: `Provider ${providerType} does not support ${operation}`,
+    message: `Provider ${providerType} does not support ${capability}`,
   });
 }

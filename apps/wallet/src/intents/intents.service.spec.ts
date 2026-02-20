@@ -386,7 +386,7 @@ describe('IntentsService', () => {
       raw: { providerType: 'POINTS' },
     });
     providerRegistry.assertCapability.mockReturnValue({
-      authorize: providerAuthorize,
+      execute: providerAuthorize,
     });
 
     const createdAttempt = {
@@ -526,7 +526,10 @@ describe('IntentsService', () => {
     expect(providerAuthorize).toHaveBeenCalledTimes(1);
     expect(providerAuthorize).toHaveBeenCalledWith(
       expect.objectContaining({
-        idempotencyKey: 'wallet:test:leg-1:AUTHORIZE:1',
+        op: 'AUTHORIZE',
+        params: expect.objectContaining({
+          idempotencyKey: 'wallet:test:leg-1:AUTHORIZE:1',
+        }),
       }),
     );
     expect(stateTransitionService.transitionIntent).toHaveBeenCalledTimes(1);
@@ -538,7 +541,7 @@ describe('IntentsService', () => {
 
   it('rejects capture when leg status is not AUTHORIZED', async () => {
     providerRegistry.assertCapability.mockReturnValue({
-      capture: jest.fn(),
+      execute: jest.fn(),
     });
 
     const txPre = {
@@ -581,7 +584,7 @@ describe('IntentsService', () => {
       raw: { providerType: 'POINTS' },
     });
     providerRegistry.assertCapability.mockReturnValue({
-      capture: providerCapture,
+      execute: providerCapture,
     });
 
     const duplicateError = Object.assign(
@@ -673,7 +676,7 @@ describe('IntentsService', () => {
       raw: { providerType: 'POINTS' },
     });
     providerRegistry.assertCapability.mockReturnValue({
-      capture: providerCapture,
+      execute: providerCapture,
     });
 
     const createdAttempt = {
@@ -837,7 +840,10 @@ describe('IntentsService', () => {
     expect(providerCapture).toHaveBeenCalledTimes(1);
     expect(providerCapture).toHaveBeenCalledWith(
       expect.objectContaining({
-        idempotencyKey: 'wallet:test:leg-1:CAPTURE:2',
+        op: 'CAPTURE',
+        params: expect.objectContaining({
+          idempotencyKey: 'wallet:test:leg-1:CAPTURE:2',
+        }),
       }),
     );
     expect(stateTransitionService.transitionIntent).toHaveBeenCalledWith(
@@ -857,7 +863,7 @@ describe('IntentsService', () => {
   it('marks capture attempt as PENDING_PROVIDER when provider capture call is uncertain', async () => {
     const providerCapture = jest.fn().mockRejectedValue(new Error('capture timeout'));
     providerRegistry.assertCapability.mockReturnValue({
-      capture: providerCapture,
+      execute: providerCapture,
     });
 
     const createdAttempt = {
@@ -1035,7 +1041,7 @@ describe('IntentsService', () => {
         }),
     );
     providerRegistry.assertCapability.mockReturnValue({
-      capture: providerCapture,
+      execute: providerCapture,
     });
 
     const duplicateError = Object.assign(
@@ -1285,7 +1291,7 @@ describe('IntentsService', () => {
   it('blocks retry capture after uncertain timeout while active attempt is PENDING_PROVIDER', async () => {
     const providerCapture = jest.fn().mockRejectedValue(new Error('capture timeout'));
     providerRegistry.assertCapability.mockReturnValue({
-      capture: providerCapture,
+      execute: providerCapture,
     });
 
     const duplicateError = Object.assign(
@@ -1534,7 +1540,7 @@ describe('IntentsService', () => {
       raw: { providerType: 'POINTS' },
     });
     providerRegistry.assertCapability.mockReturnValue({
-      refund: providerRefund,
+      execute: providerRefund,
     });
 
     const createdAttempt = {
@@ -1641,7 +1647,10 @@ describe('IntentsService', () => {
     expect(providerRefund).toHaveBeenCalledTimes(1);
     expect(providerRefund).toHaveBeenCalledWith(
       expect.objectContaining({
-        idempotencyKey: 'wallet:test:leg-1:REFUND:1',
+        op: 'REFUND',
+        params: expect.objectContaining({
+          idempotencyKey: 'wallet:test:leg-1:REFUND:1',
+        }),
       }),
     );
     expect(txInsertMock).toHaveBeenCalled();

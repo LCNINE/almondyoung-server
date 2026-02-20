@@ -48,15 +48,22 @@ export interface ProviderOperationRequest {
   metadata?: Record<string, unknown>;
 }
 
+export type ProviderExecuteCommand =
+  | { op: 'AUTHORIZE'; params: ProviderOperationRequest }
+  | { op: 'CAPTURE'; params: ProviderOperationRequest }
+  | { op: 'CANCEL'; params: ProviderOperationRequest }
+  | { op: 'REFUND'; params: ProviderOperationRequest }
+  | { op: 'MANUAL_CONFIRM'; params: ProviderOperationRequest };
+
 export interface ProviderOperationResult {
   resultStatus:
-    | 'AUTHORIZED'
-    | 'CAPTURED'
-    | 'CANCELLED'
-    | 'REFUNDED'
-    | 'REQUIRES_CUSTOMER_ACTION'
-    | 'REQUIRES_ADMIN_CONFIRMATION'
-    | 'FAILED';
+  | 'AUTHORIZED'
+  | 'CAPTURED'
+  | 'CANCELLED'
+  | 'REFUNDED'
+  | 'REQUIRES_CUSTOMER_ACTION'
+  | 'REQUIRES_ADMIN_CONFIRMATION'
+  | 'FAILED';
   providerTransactionId?: string;
   providerRequestId?: string;
   nextAction?: Record<string, unknown>;
@@ -69,21 +76,23 @@ export interface ProviderTransactionSnapshot {
   raw?: Record<string, unknown>;
 }
 
+export type ProviderTransactionRequest = Pick<
+  ProviderOperationRequest,
+  'intentId' | 'legId' | 'correlationId'
+>;
+
 export interface PaymentProvider {
   readonly providerType: string;
   readonly version: string;
 
   getStaticCapabilities(): ProviderCapability[];
   resolveRuntimeCapabilities(ctx: CapabilityContext): ProviderCapability[];
-  supports(operation: ProviderOperation, ctx?: CapabilityContext): boolean;
+  supports(capability: ProviderCapability, ctx?: CapabilityContext): boolean;
 
   validateLeg(req: ValidateLegRequest): Promise<void>;
-  authorize(req: ProviderOperationRequest): Promise<ProviderOperationResult>;
-  capture(req: ProviderOperationRequest): Promise<ProviderOperationResult>;
-  cancel(req: ProviderOperationRequest): Promise<ProviderOperationResult>;
-  refund(req: ProviderOperationRequest): Promise<ProviderOperationResult>;
-  manualConfirm(req: ProviderOperationRequest): Promise<ProviderOperationResult>;
-  getTransaction(
-    req: Pick<ProviderOperationRequest, 'intentId' | 'legId' | 'correlationId'>,
-  ): Promise<ProviderTransactionSnapshot>;
+  execute(cmd: ProviderExecuteCommand): Promise<ProviderOperationResult>;
+}
+
+export interface PollablePaymentProvider extends PaymentProvider {
+  getTransaction(req: ProviderTransactionRequest): Promise<ProviderTransactionSnapshot>;
 }

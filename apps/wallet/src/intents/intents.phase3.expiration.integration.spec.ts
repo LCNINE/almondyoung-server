@@ -138,9 +138,13 @@ describeWalletDbIntegration('Intents phase3 expiration integration (real path)',
 
     await markIntentExpired(context, intentId);
 
-    jest
-      .spyOn(context.pointsProvider, 'cancel')
-      .mockRejectedValueOnce(new Error('simulated expiration cancel failure'));
+    const originalExecute = context.pointsProvider.execute.bind(context.pointsProvider);
+    jest.spyOn(context.pointsProvider, 'execute').mockImplementation(async (command) => {
+      if (command.op === 'CANCEL') {
+        throw new Error('simulated expiration cancel failure');
+      }
+      return originalExecute(command);
+    });
 
     const result = await intentsService.expireIntent(
       intentId,

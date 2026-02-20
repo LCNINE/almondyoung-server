@@ -20,16 +20,37 @@ describe('PointsPaymentProvider', () => {
 
   it('rejects unsupported manual confirm operation', async () => {
     await expect(
-      provider.manualConfirm({
+      provider.execute({
+        op: 'MANUAL_CONFIRM',
+        params: {
+          intentId: 'intent-1',
+          legId: 'leg-1',
+          amount: 1000,
+          currency: 'KRW',
+          customerId: 'customer-1',
+          idempotencyKey: 'wallet:test:intent-1:leg-1:manual-confirm',
+          correlationId: 'corr-1',
+        },
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('executes authorize via unified execute command', async () => {
+    const result = await provider.execute({
+      op: 'AUTHORIZE',
+      params: {
         intentId: 'intent-1',
         legId: 'leg-1',
         amount: 1000,
         currency: 'KRW',
         customerId: 'customer-1',
-        idempotencyKey: 'wallet:test:intent-1:leg-1:manual-confirm',
+        idempotencyKey: 'wallet:test:intent-1:leg-1:authorize',
         correlationId: 'corr-1',
-      }),
-    ).rejects.toBeInstanceOf(BadRequestException);
+      },
+    });
+
+    expect(result.resultStatus).toBe('AUTHORIZED');
+    expect(result.providerTransactionId).toBe('points-auth-leg-1');
   });
 
   it('validates leg currency and amount', async () => {

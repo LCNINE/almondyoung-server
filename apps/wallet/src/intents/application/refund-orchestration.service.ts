@@ -561,16 +561,19 @@ export class RefundOrchestrationService {
         },
       );
 
-      const providerResult = await provider.refund({
-        intentId: intent.id,
-        legId: allocation.legId,
-        attemptId: allocation.attemptId,
-        idempotencyKey: allocation.providerIdempotencyKey,
-        amount: allocation.allocationAmount,
-        currency: intent.currency,
-        customerId: intent.customerId,
-        correlationId,
-        metadata: allocation.metadata,
+      const providerResult = await provider.execute({
+        op: 'REFUND',
+        params: {
+          intentId: intent.id,
+          legId: allocation.legId,
+          attemptId: allocation.attemptId,
+          idempotencyKey: allocation.providerIdempotencyKey,
+          amount: allocation.allocationAmount,
+          currency: intent.currency,
+          customerId: intent.customerId,
+          correlationId,
+          metadata: allocation.metadata,
+        },
       });
 
       return this.dbService.db.transaction(async (tx) => {

@@ -1,11 +1,13 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import {
   CapabilityContext,
-  PaymentProvider,
+  PollablePaymentProvider,
+  ProviderExecuteCommand,
   ProviderCapability,
   ProviderOperation,
   ProviderOperationRequest,
   ProviderOperationResult,
+  ProviderTransactionRequest,
   ProviderTransactionSnapshot,
   ValidateLegRequest,
 } from './payment-provider.types';
@@ -22,7 +24,7 @@ const POINTS_CAPABILITIES: ProviderCapability[] = [
 ];
 
 @Injectable()
-export class PointsPaymentProvider implements PaymentProvider {
+export class PointsPaymentProvider implements PollablePaymentProvider {
   readonly providerType = 'POINTS';
   readonly version = 'v1';
 
@@ -34,13 +36,13 @@ export class PointsPaymentProvider implements PaymentProvider {
     return POINTS_CAPABILITIES;
   }
 
-  supports(operation: ProviderOperation, ctx?: CapabilityContext): boolean {
+  supports(capability: ProviderCapability, ctx?: CapabilityContext): boolean {
     const capabilities = this.resolveRuntimeCapabilities(
       ctx ?? {
         intentId: '',
       },
     );
-    return capabilities.includes(operation);
+    return capabilities.includes(capability);
   }
 
   async validateLeg(req: ValidateLegRequest): Promise<void> {
@@ -59,7 +61,24 @@ export class PointsPaymentProvider implements PaymentProvider {
     }
   }
 
-  async authorize(req: ProviderOperationRequest): Promise<ProviderOperationResult> {
+  async execute(cmd: ProviderExecuteCommand): Promise<ProviderOperationResult> {
+    switch (cmd.op) {
+      case 'AUTHORIZE':
+        return this.executeAuthorize(cmd.params);
+      case 'CAPTURE':
+        return this.executeCapture(cmd.params);
+      case 'CANCEL':
+        return this.executeCancel(cmd.params);
+      case 'REFUND':
+        return this.executeRefund(cmd.params);
+      case 'MANUAL_CONFIRM':
+        return this.executeManualConfirm(cmd.params);
+    }
+  }
+
+  private async executeAuthorize(
+    req: ProviderOperationRequest,
+  ): Promise<ProviderOperationResult> {
     this.assertCapability('AUTHORIZE', req);
 
     return {
@@ -72,7 +91,9 @@ export class PointsPaymentProvider implements PaymentProvider {
     };
   }
 
-  async capture(req: ProviderOperationRequest): Promise<ProviderOperationResult> {
+  private async executeCapture(
+    req: ProviderOperationRequest,
+  ): Promise<ProviderOperationResult> {
     this.assertCapability('CAPTURE', req);
 
     return {
@@ -85,7 +106,7 @@ export class PointsPaymentProvider implements PaymentProvider {
     };
   }
 
-  async cancel(req: ProviderOperationRequest): Promise<ProviderOperationResult> {
+  private async executeCancel(req: ProviderOperationRequest): Promise<ProviderOperationResult> {
     this.assertCapability('CANCEL', req);
 
     return {
@@ -98,7 +119,7 @@ export class PointsPaymentProvider implements PaymentProvider {
     };
   }
 
-  async refund(req: ProviderOperationRequest): Promise<ProviderOperationResult> {
+  private async executeRefund(req: ProviderOperationRequest): Promise<ProviderOperationResult> {
     this.assertCapability('REFUND', req);
 
     return {
@@ -111,7 +132,7 @@ export class PointsPaymentProvider implements PaymentProvider {
     };
   }
 
-  async manualConfirm(
+  private async executeManualConfirm(
     req: ProviderOperationRequest,
   ): Promise<ProviderOperationResult> {
     this.assertCapability('MANUAL_CONFIRM', req);
@@ -120,7 +141,7 @@ export class PointsPaymentProvider implements PaymentProvider {
   }
 
   async getTransaction(
-    req: Pick<ProviderOperationRequest, 'intentId' | 'legId' | 'correlationId'>,
+    req: ProviderTransactionRequest,
   ): Promise<ProviderTransactionSnapshot> {
     return {
       providerTransactionId: `points-tx-${req.legId}`,
