@@ -12,7 +12,7 @@ import { z } from 'zod';
 export interface PaymentAuthorizedPayload {
   intentId: string;
   paymentId: string;
-  customerId: string;
+  userId: string;
   amount: number;
   currency: string;
   providerType: string;
@@ -25,7 +25,7 @@ export interface PaymentAuthorizedPayload {
 export interface PaymentCapturedPayload {
   intentId: string;
   paymentId: string;
-  customerId: string;
+  userId: string;
   amount: number;
   currency: string;
   providerType: string;
@@ -38,7 +38,7 @@ export interface PaymentCapturedPayload {
 export interface PaymentFailedPayload {
   intentId: string;
   paymentId?: string;
-  customerId: string;
+  userId: string;
   amount: number;
   currency: string;
   providerType: string;
@@ -52,7 +52,7 @@ export interface PaymentFailedPayload {
 export interface PaymentCancelledPayload {
   intentId: string;
   paymentId: string;
-  customerId: string;
+  userId: string;
   amount: number;
   currency: string;
   reason: string;
@@ -67,7 +67,7 @@ export interface RefundRequestedPayload {
   refundId: string;
   paymentId: string;
   intentId: string;
-  customerId: string;
+  userId: string;
   amount: number;
   currency: string;
   reason: string;
@@ -82,7 +82,7 @@ export interface RefundApprovedPayload {
   refundId: string;
   paymentId: string;
   intentId: string;
-  customerId: string;
+  userId: string;
   amount: number;
   currency: string;
   orderId?: string;
@@ -96,7 +96,7 @@ export interface RefundRejectedPayload {
   refundId: string;
   paymentId: string;
   intentId: string;
-  customerId: string;
+  userId: string;
   amount: number;
   currency: string;
   orderId?: string;
@@ -112,7 +112,7 @@ export interface RefundCompletedPayload {
   refundId: string;
   paymentId: string;
   intentId: string;
-  customerId: string;
+  userId: string;
   amount: number;
   currency: string;
   providerRefundId?: string;
@@ -124,7 +124,7 @@ export interface RefundFailedPayload {
   refundId: string;
   paymentId: string;
   intentId: string;
-  customerId: string;
+  userId: string;
   amount: number;
   currency: string;
   errorCode: string;
@@ -161,7 +161,7 @@ export interface BnplCreditUsedPayload {
 
 export interface BnplPurchaseCompletedPayload {
   purchaseId: string;
-  customerId: string;
+  userId: string;
   amount: number;
   currency: string;
   creditUsed: number;
@@ -173,7 +173,7 @@ export interface BnplPurchaseCompletedPayload {
 
 export interface BnplRepaymentSuccessPayload {
   repaymentId: string;
-  customerId: string;
+  userId: string;
   amount: number;
   currency: string;
   paymentMethod: string;
@@ -184,7 +184,7 @@ export interface BnplRepaymentSuccessPayload {
 
 export interface BnplRepaymentFailedPayload {
   repaymentId: string;
-  customerId: string;
+  userId: string;
   amount: number;
   currency: string;
   paymentMethod: string;
@@ -267,7 +267,7 @@ export interface PointsExpiredPayload {
 
 export interface TaxInvoiceIssuedPayload {
   invoiceId: string;
-  customerId: string;
+  userId: string;
   orderId?: string;
   paymentId?: string;
   amount: number;
@@ -283,7 +283,7 @@ export interface TaxInvoiceIssuedPayload {
 
 export interface TaxInvoiceFailedPayload {
   invoiceId: string;
-  customerId: string;
+  userId: string;
   orderId?: string;
   paymentId?: string;
   amount: number;
@@ -297,7 +297,7 @@ export interface TaxInvoiceFailedPayload {
 
 export interface TaxInvoiceCancelledPayload {
   invoiceId: string;
-  customerId: string;
+  userId: string;
   orderId?: string;
   reason: string;
   reasonDetail?: string;
@@ -311,7 +311,7 @@ export interface TaxInvoiceCancelledPayload {
 const PaymentAuthorizedSchema = z.object({
   intentId: z.string().min(1),
   paymentId: z.string().min(1),
-  customerId: z.string().min(1),
+  userId: z.string().min(1),
   amount: z.number().nonnegative(),
   currency: z.string().min(1),
   providerType: z.string().min(1),
@@ -324,7 +324,7 @@ const PaymentAuthorizedSchema = z.object({
 const PaymentCapturedSchema = z.object({
   intentId: z.string().min(1),
   paymentId: z.string().min(1),
-  customerId: z.string().min(1),
+  userId: z.string().min(1),
   amount: z.number().nonnegative(),
   currency: z.string().min(1),
   providerType: z.string().min(1),
@@ -337,7 +337,7 @@ const PaymentCapturedSchema = z.object({
 const PaymentFailedSchema = z.object({
   intentId: z.string().min(1),
   paymentId: z.string().optional(),
-  customerId: z.string().min(1),
+  userId: z.string().min(1),
   amount: z.number().nonnegative(),
   currency: z.string().min(1),
   providerType: z.string().min(1),
@@ -351,7 +351,7 @@ const PaymentFailedSchema = z.object({
 const PaymentCancelledSchema = z.object({
   intentId: z.string().min(1),
   paymentId: z.string().min(1),
-  customerId: z.string().min(1),
+  userId: z.string().min(1),
   amount: z.number().nonnegative(),
   currency: z.string().min(1),
   reason: z.string().min(1),
@@ -365,7 +365,7 @@ const RefundRequestedSchema = z.object({
   refundId: z.string().min(1),
   paymentId: z.string().min(1),
   intentId: z.string().min(1),
-  customerId: z.string().min(1),
+  userId: z.string().min(1),
   amount: z.number().nonnegative(),
   currency: z.string().min(1),
   reason: z.string().min(1),
@@ -380,7 +380,7 @@ const RefundApprovedSchema = z.object({
   refundId: z.string().min(1),
   paymentId: z.string().min(1),
   intentId: z.string().min(1),
-  customerId: z.string().min(1),
+  userId: z.string().min(1),
   amount: z.number().nonnegative(),
   currency: z.string().min(1),
   orderId: z.string().optional(),
@@ -394,7 +394,7 @@ const RefundRejectedSchema = z.object({
   refundId: z.string().min(1),
   paymentId: z.string().min(1),
   intentId: z.string().min(1),
-  customerId: z.string().min(1),
+  userId: z.string().min(1),
   amount: z.number().nonnegative(),
   currency: z.string().min(1),
   orderId: z.string().optional(),
@@ -410,7 +410,7 @@ const RefundCompletedSchema = z.object({
   refundId: z.string().min(1),
   paymentId: z.string().min(1),
   intentId: z.string().min(1),
-  customerId: z.string().min(1),
+  userId: z.string().min(1),
   amount: z.number().nonnegative(),
   currency: z.string().min(1),
   providerRefundId: z.string().optional(),
@@ -422,7 +422,7 @@ const RefundFailedSchema = z.object({
   refundId: z.string().min(1),
   paymentId: z.string().min(1),
   intentId: z.string().min(1),
-  customerId: z.string().min(1),
+  userId: z.string().min(1),
   amount: z.number().nonnegative(),
   currency: z.string().min(1),
   errorCode: z.string().min(1),
@@ -458,7 +458,7 @@ const BnplCreditUsedSchema = z.object({
 
 const BnplPurchaseCompletedSchema = z.object({
   purchaseId: z.string().min(1),
-  customerId: z.string().min(1),
+  userId: z.string().min(1),
   amount: z.number().nonnegative(),
   currency: z.string().min(1),
   creditUsed: z.number().nonnegative(),
@@ -470,7 +470,7 @@ const BnplPurchaseCompletedSchema = z.object({
 
 const BnplRepaymentSuccessSchema = z.object({
   repaymentId: z.string().min(1),
-  customerId: z.string().min(1),
+  userId: z.string().min(1),
   amount: z.number().nonnegative(),
   currency: z.string().min(1),
   paymentMethod: z.string().min(1),
@@ -481,7 +481,7 @@ const BnplRepaymentSuccessSchema = z.object({
 
 const BnplRepaymentFailedSchema = z.object({
   repaymentId: z.string().min(1),
-  customerId: z.string().min(1),
+  userId: z.string().min(1),
   amount: z.number().nonnegative(),
   currency: z.string().min(1),
   paymentMethod: z.string().min(1),
@@ -562,7 +562,7 @@ const PointsExpiredSchema = z.object({
 // Tax Invoice 스키마
 const TaxInvoiceIssuedSchema = z.object({
   invoiceId: z.string().min(1),
-  customerId: z.string().min(1),
+  userId: z.string().min(1),
   orderId: z.string().optional(),
   paymentId: z.string().optional(),
   amount: z.number().nonnegative(),
@@ -578,7 +578,7 @@ const TaxInvoiceIssuedSchema = z.object({
 
 const TaxInvoiceFailedSchema = z.object({
   invoiceId: z.string().min(1),
-  customerId: z.string().min(1),
+  userId: z.string().min(1),
   orderId: z.string().optional(),
   paymentId: z.string().optional(),
   amount: z.number().nonnegative(),
@@ -592,7 +592,7 @@ const TaxInvoiceFailedSchema = z.object({
 
 const TaxInvoiceCancelledSchema = z.object({
   invoiceId: z.string().min(1),
-  customerId: z.string().min(1),
+  userId: z.string().min(1),
   orderId: z.string().optional(),
   reason: z.string().min(1),
   reasonDetail: z.string().optional(),

@@ -30,7 +30,7 @@ import { IntentTerminationService } from './intents/application/intent-terminati
 import { RefundOrchestrationService } from './intents/application/refund-orchestration.service';
 import { ExpirationJob } from './jobs/expiration.job';
 import { ReconcileJob } from './jobs/reconcile.job';
-import { PointsPaymentProvider } from './providers/points.provider';
+import { PointsPaymentProvider } from './providers/points/points.provider';
 import { ProviderRegistry } from './providers/provider.registry';
 import { ReconcileController } from './reconcile/reconcile.controller';
 import { ReconcileService } from './reconcile/reconcile.service';

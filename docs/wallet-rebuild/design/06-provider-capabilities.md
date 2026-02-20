@@ -135,7 +135,7 @@ interface PaymentProvider {
 - `operation`
 - `amount` (minor unit)
 - `currency`
-- `customerId`
+- `userId`
 - `idempotencyKey`
 - `correlationId`
 - `metadata`

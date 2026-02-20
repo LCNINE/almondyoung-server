@@ -11,7 +11,7 @@ import { z } from 'zod';
 
 export interface CartCreatedPayload {
   id: string;
-  customerId: string;
+  userId: string;
   regionId: string;
   createdAt: string; // ISO 8601
 }
@@ -34,7 +34,7 @@ export interface CartUpdatedPayload {
 
 const CartCreatedSchema = z.object({
   id: z.string().min(1),
-  customerId: z.string().min(1),
+  userId: z.string().min(1),
   regionId: z.string().min(1),
   createdAt: z.string().datetime(),
 });

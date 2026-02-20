@@ -87,7 +87,7 @@ export class WalletEventConsumer {
       }
 
       const sendDto: SendNotificationDto = {
-        userId: payload.customerId,
+        userId: payload.userId,
         channels: eventMapping.defaultChannels as any,
         category: eventMapping.category as NotificationCategory,
         templateKey: eventMapping.templateKey,
@@ -105,7 +105,7 @@ export class WalletEventConsumer {
         },
       };
       await this.notificationDispatcherService.send(sendDto);
-      this.logger.log(`[Event] Dispatched PAYMENT_AUTHORIZED notification for ${payload.customerId}`);
+      this.logger.log(`[Event] Dispatched PAYMENT_AUTHORIZED notification for ${payload.userId}`);
     } catch (error) {
       this.logger.error(`[Event] Failed to process PAYMENT_AUTHORIZED notification: ${error.message}`, error.stack);
       throw error;
@@ -163,7 +163,7 @@ export class WalletEventConsumer {
       }
 
       const sendDto: SendNotificationDto = {
-        userId: payload.customerId,
+        userId: payload.userId,
         channels: eventMapping.defaultChannels as any,
         category: eventMapping.category as NotificationCategory,
         templateKey: eventMapping.templateKey,
@@ -182,7 +182,7 @@ export class WalletEventConsumer {
         },
       };
       await this.notificationDispatcherService.send(sendDto);
-      this.logger.log(`[Event] Dispatched PAYMENT_FAILED notification for ${payload.customerId}`);
+      this.logger.log(`[Event] Dispatched PAYMENT_FAILED notification for ${payload.userId}`);
     } catch (error) {
       this.logger.error(`[Event] Failed to process PAYMENT_FAILED notification: ${error.message}`, error.stack);
       throw error;
@@ -203,7 +203,7 @@ export class WalletEventConsumer {
       }
 
       const sendDto: SendNotificationDto = {
-        userId: payload.customerId,
+        userId: payload.userId,
         channels: eventMapping.defaultChannels as any,
         category: eventMapping.category as NotificationCategory,
         templateKey: eventMapping.templateKey,
@@ -221,7 +221,7 @@ export class WalletEventConsumer {
         },
       };
       await this.notificationDispatcherService.send(sendDto);
-      this.logger.log(`[Event] Dispatched PAYMENT_CANCELLED notification for ${payload.customerId}`);
+      this.logger.log(`[Event] Dispatched PAYMENT_CANCELLED notification for ${payload.userId}`);
     } catch (error) {
       this.logger.error(`[Event] Failed to process PAYMENT_CANCELLED notification: ${error.message}`, error.stack);
       throw error;
@@ -322,7 +322,7 @@ export class WalletEventConsumer {
       }
 
       const sendDto: SendNotificationDto = {
-        userId: payload.customerId,
+        userId: payload.userId,
         channels: eventMapping.defaultChannels as any,
         category: eventMapping.category as NotificationCategory,
         templateKey: eventMapping.templateKey,
@@ -340,7 +340,7 @@ export class WalletEventConsumer {
         },
       };
       await this.notificationDispatcherService.send(sendDto);
-      this.logger.log(`[Event] Dispatched REFUND_APPROVED notification for ${payload.customerId}`);
+      this.logger.log(`[Event] Dispatched REFUND_APPROVED notification for ${payload.userId}`);
     } catch (error) {
       this.logger.error(`[Event] Failed to process REFUND_APPROVED notification: ${error.message}`, error.stack);
       throw error;
@@ -361,7 +361,7 @@ export class WalletEventConsumer {
       }
 
       const sendDto: SendNotificationDto = {
-        userId: payload.customerId,
+        userId: payload.userId,
         channels: eventMapping.defaultChannels as any,
         category: eventMapping.category as NotificationCategory,
         templateKey: eventMapping.templateKey,
@@ -380,7 +380,7 @@ export class WalletEventConsumer {
         },
       };
       await this.notificationDispatcherService.send(sendDto);
-      this.logger.log(`[Event] Dispatched REFUND_REJECTED notification for ${payload.customerId}`);
+      this.logger.log(`[Event] Dispatched REFUND_REJECTED notification for ${payload.userId}`);
     } catch (error) {
       this.logger.error(`[Event] Failed to process REFUND_REJECTED notification: ${error.message}`, error.stack);
       throw error;
@@ -401,7 +401,7 @@ export class WalletEventConsumer {
       }
 
       const sendDto: SendNotificationDto = {
-        userId: payload.customerId,
+        userId: payload.userId,
         channels: eventMapping.defaultChannels as any,
         category: eventMapping.category as NotificationCategory,
         templateKey: eventMapping.templateKey,
@@ -421,7 +421,7 @@ export class WalletEventConsumer {
         },
       };
       await this.notificationDispatcherService.send(sendDto);
-      this.logger.log(`[Event] Dispatched REFUND_FAILED notification for ${payload.customerId}`);
+      this.logger.log(`[Event] Dispatched REFUND_FAILED notification for ${payload.userId}`);
     } catch (error) {
       this.logger.error(`[Event] Failed to process REFUND_FAILED notification: ${error.message}`, error.stack);
       throw error;
@@ -594,7 +594,7 @@ export class WalletEventConsumer {
       }
 
       const sendDto: SendNotificationDto = {
-        userId: payload.customerId,
+        userId: payload.userId,
         channels: eventMapping.defaultChannels as any,
         category: eventMapping.category as NotificationCategory,
         templateKey: eventMapping.templateKey,
@@ -613,7 +613,7 @@ export class WalletEventConsumer {
         },
       };
       await this.notificationDispatcherService.send(sendDto);
-      this.logger.log(`[Event] Dispatched TAX_INVOICE_ISSUED notification for ${payload.customerId}`);
+      this.logger.log(`[Event] Dispatched TAX_INVOICE_ISSUED notification for ${payload.userId}`);
     } catch (error) {
       this.logger.error(`[Event] Failed to process TAX_INVOICE_ISSUED notification: ${error.message}`, error.stack);
       throw error;
@@ -634,7 +634,7 @@ export class WalletEventConsumer {
       }
 
       const sendDto: SendNotificationDto = {
-        userId: payload.customerId,
+        userId: payload.userId,
         channels: eventMapping.defaultChannels as any,
         category: eventMapping.category as NotificationCategory,
         templateKey: eventMapping.templateKey,
@@ -651,7 +651,7 @@ export class WalletEventConsumer {
         },
       };
       await this.notificationDispatcherService.send(sendDto);
-      this.logger.log(`[Event] Dispatched TAX_INVOICE_FAILED notification for ${payload.customerId}`);
+      this.logger.log(`[Event] Dispatched TAX_INVOICE_FAILED notification for ${payload.userId}`);
     } catch (error) {
       this.logger.error(`[Event] Failed to process TAX_INVOICE_FAILED notification: ${error.message}`, error.stack);
       throw error;
@@ -672,7 +672,7 @@ export class WalletEventConsumer {
       }
 
       const sendDto: SendNotificationDto = {
-        userId: payload.customerId,
+        userId: payload.userId,
         channels: eventMapping.defaultChannels as any,
         category: eventMapping.category as NotificationCategory,
         templateKey: eventMapping.templateKey,
@@ -687,7 +687,7 @@ export class WalletEventConsumer {
         },
       };
       await this.notificationDispatcherService.send(sendDto);
-      this.logger.log(`[Event] Dispatched TAX_INVOICE_CANCELLED notification for ${payload.customerId}`);
+      this.logger.log(`[Event] Dispatched TAX_INVOICE_CANCELLED notification for ${payload.userId}`);
     } catch (error) {
       this.logger.error(`[Event] Failed to process TAX_INVOICE_CANCELLED notification: ${error.message}`, error.stack);
       throw error;

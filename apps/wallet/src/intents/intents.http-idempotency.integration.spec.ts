@@ -296,7 +296,7 @@ function validCreateIntentBody(): Record<string, unknown> {
   return {
     referenceType: 'STORE_ORDER',
     referenceId: 'order-1',
-    customerId: 'customer-1',
+    userId: 'customer-1',
     currency: 'KRW',
     payableAmount: 10000,
     snapshotPayload: { orderId: 'order-1', totalAmount: 10000 },
@@ -325,7 +325,7 @@ function createIntentFixture(): Record<string, unknown> {
     id: 'intent-1',
     referenceType: 'STORE_ORDER',
     referenceId: 'order-1',
-    customerId: 'customer-1',
+    userId: 'customer-1',
     currency: 'KRW',
     payableAmount: 10000,
     status: 'PENDING',

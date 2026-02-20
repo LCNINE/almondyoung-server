@@ -84,7 +84,7 @@ Wallet Front, Medusa Payment Provider가 주로 사용하는 엔드포인트다.
 
 - `referenceType`
 - `referenceId`
-- `customerId`
+- `userId`
 - `currency`
 - `payableAmount`
 - `snapshotPayload`

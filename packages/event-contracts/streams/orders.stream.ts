@@ -51,7 +51,7 @@ export interface OrderCreatedPayload {
   orderId: string;
   externalOrderId?: string;
   salesChannel: SalesChannel;
-  customerId: string;
+  userId: string;
 
   items: OrderItem[];
 
@@ -220,7 +220,7 @@ const OrderCreatedSchema = z.object({
   orderId: z.string().min(1),
   externalOrderId: z.string().optional(),
   salesChannel: SalesChannelSchema,
-  customerId: z.string().min(1),
+  userId: z.string().min(1),
   items: z.array(OrderItemSchema),
   totalAmount: z.number().nonnegative(),
   subtotalAmount: z.number().nonnegative(),

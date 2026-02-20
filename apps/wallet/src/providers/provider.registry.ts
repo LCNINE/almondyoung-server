@@ -8,7 +8,7 @@ import {
   throwProviderCapabilityNotSupported,
   throwProviderNotSupported,
 } from './provider.errors';
-import { PointsPaymentProvider } from './points.provider';
+import { PointsPaymentProvider } from './points/points.provider';
 
 @Injectable()
 export class ProviderRegistry {

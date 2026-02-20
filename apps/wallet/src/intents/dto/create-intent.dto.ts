@@ -24,7 +24,7 @@ export class CreateIntentDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(128)
-  customerId!: string;
+  userId!: string;
 
   @IsString()
   @IsNotEmpty()

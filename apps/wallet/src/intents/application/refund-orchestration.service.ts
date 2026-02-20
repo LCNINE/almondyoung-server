@@ -56,7 +56,7 @@ interface PaymentIntentEventSource {
   id: string;
   referenceType: PaymentReferenceType;
   referenceId: string;
-  customerId: string;
+  userId: string;
   payableAmount: number;
   currency: string;
 }
@@ -65,7 +65,7 @@ interface LockedIntent {
   id: string;
   referenceType: PaymentReferenceType;
   referenceId: string;
-  customerId: string;
+  userId: string;
   currency: string;
   payableAmount: number;
   expiresAt: Date;
@@ -272,7 +272,7 @@ export class RefundOrchestrationService {
               intentId,
               referenceType: intent.referenceType,
               referenceId: intent.referenceId,
-              customerId: intent.customerId,
+              userId: intent.userId,
               refundAmount: dto.refundAmount,
               currency: intent.currency,
               allocation: dto.allocation,
@@ -406,7 +406,7 @@ export class RefundOrchestrationService {
                 intentId,
                 referenceType: prepared.intent.referenceType,
                 referenceId: prepared.intent.referenceId,
-                customerId: prepared.intent.customerId,
+                userId: prepared.intent.userId,
                 refundAmount: dto.refundAmount,
                 currency: prepared.intent.currency,
                 allocation: dto.allocation,
@@ -467,7 +467,7 @@ export class RefundOrchestrationService {
               intentId,
               referenceType: prepared.intent.referenceType,
               referenceId: prepared.intent.referenceId,
-              customerId: prepared.intent.customerId,
+              userId: prepared.intent.userId,
               refundAmount: dto.refundAmount,
               currency: prepared.intent.currency,
               allocation: dto.allocation,
@@ -570,7 +570,7 @@ export class RefundOrchestrationService {
           idempotencyKey: allocation.providerIdempotencyKey,
           amount: allocation.allocationAmount,
           currency: intent.currency,
-          customerId: intent.customerId,
+          userId: intent.userId,
           correlationId,
           metadata: allocation.metadata,
         },
@@ -831,7 +831,7 @@ export class RefundOrchestrationService {
         intentId: intent.id,
         referenceType: intent.referenceType,
         referenceId: intent.referenceId,
-        customerId: intent.customerId,
+        userId: intent.userId,
         status,
         payableAmount: intent.payableAmount,
         currency: intent.currency,
@@ -848,7 +848,7 @@ export class RefundOrchestrationService {
         id,
         reference_type as "referenceType",
         reference_id as "referenceId",
-        customer_id as "customerId",
+        user_id as "userId",
         currency,
         payable_amount as "payableAmount",
         expires_at as "expiresAt",

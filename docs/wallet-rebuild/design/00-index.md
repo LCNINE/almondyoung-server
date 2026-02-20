@@ -20,6 +20,7 @@
 | `08` | `08-compensation-and-reconcile.md` | `DONE` | 실패/만료/supersede 보상 및 수동 정리 운영 |
 | `09` | `09-admin-ops.md` | `DONE` | 관리자 API/검색/재처리/감사 로그 정책 |
 | `10` | `10-test-scenarios.md` | `DONE` | 단위/통합/E2E 테스트 시나리오 |
+| `11` | `11-points-ledger-auth-capture.md` | `DRAFT` | POINTS 원장(user_id) + auth/capture/cancel/refund 통합 설계 |
 
 ## 3. Authoring Order
 
@@ -33,5 +34,5 @@
 
 ## 4. Notes
 
-- 모든 문서는 v1 기준 초안 범위를 완료했다.
+- `11` 문서는 POINTS 원장 통합 설계 초안(`DRAFT`) 상태다.
 - 새 정책 확정 시, 관련 문서의 `Open Decisions`를 즉시 정리하고 본 문서 상태를 업데이트한다.

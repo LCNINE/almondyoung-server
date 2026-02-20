@@ -20,7 +20,7 @@ export type ProviderCapability =
 export interface CapabilityContext {
   intentId: string;
   legId?: string;
-  customerId?: string;
+  userId?: string;
   amount?: number;
   currency?: string;
   metadata?: Record<string, unknown>;
@@ -28,7 +28,7 @@ export interface CapabilityContext {
 
 export interface ValidateLegRequest {
   intentId: string;
-  customerId: string;
+  userId: string;
   amount: number;
   currency: string;
   sequenceNo: number;
@@ -42,7 +42,7 @@ export interface ProviderOperationRequest {
   attemptId?: string;
   amount: number;
   currency: string;
-  customerId: string;
+  userId: string;
   idempotencyKey: string;
   correlationId: string;
   metadata?: Record<string, unknown>;

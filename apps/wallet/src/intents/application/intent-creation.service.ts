@@ -40,7 +40,7 @@ interface PaymentIntentEventSource {
   id: string;
   referenceType: PaymentReferenceType;
   referenceId: string;
-  customerId: string;
+  userId: string;
   payableAmount: number;
   currency: string;
 }
@@ -118,7 +118,7 @@ export class IntentCreationService {
           .values({
             referenceType: dto.referenceType,
             referenceId: dto.referenceId,
-            customerId: dto.customerId,
+            userId: dto.userId,
             currency: dto.currency.toUpperCase(),
             payableAmount: dto.payableAmount,
             status: initialStatus,
@@ -144,7 +144,7 @@ export class IntentCreationService {
               ? 'Intent created with zero amount fast path'
               : 'Intent created',
           triggeredByType: 'USER',
-          triggeredById: dto.customerId,
+          triggeredById: dto.userId,
           correlationId: requestCorrelationId,
           occurredAt: new Date(),
           payload: {
@@ -224,7 +224,7 @@ export class IntentCreationService {
 
       await provider.validateLeg({
         intentId,
-        customerId: intent.customerId,
+        userId: intent.userId,
         amount: leg.amount,
         currency: intent.currency,
         sequenceNo: leg.sequenceNo,
@@ -272,7 +272,7 @@ export class IntentCreationService {
           reasonCode: 'LEG_CONFIGURED',
           reasonMessage: 'Leg configured and validated',
           triggeredByType: 'USER',
-          triggeredById: intent.customerId,
+          triggeredById: intent.userId,
           correlationId: requestCorrelationId,
           occurredAt: new Date(),
           payload: {
@@ -322,7 +322,7 @@ export class IntentCreationService {
         intentId: intent.id,
         referenceType: intent.referenceType,
         referenceId: intent.referenceId,
-        customerId: intent.customerId,
+        userId: intent.userId,
         status,
         payableAmount: intent.payableAmount,
         currency: intent.currency,

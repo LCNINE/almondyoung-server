@@ -49,7 +49,7 @@ describe('HttpIdempotencyInterceptor', () => {
     const { context, callHandler, reply } = createHttpExecutionContext({
       method: 'POST',
       url: '/v1/intents',
-      body: { customerId: 'customer-1', amount: 1000 },
+      body: { userId: 'customer-1', amount: 1000 },
       headers: { 'idempotency-key': 'idem-1' },
     });
     idempotencyService.beginHttpRequest.mockResolvedValue({
@@ -69,7 +69,7 @@ describe('HttpIdempotencyInterceptor', () => {
     const { context, callHandler } = createHttpExecutionContext({
       method: 'POST',
       url: '/v1/intents',
-      body: { customerId: 'customer-1', amount: 1000 },
+      body: { userId: 'customer-1', amount: 1000 },
       headers: { 'idempotency-key': 'idem-1' },
       callResult: { success: true, data: { intentId: 'intent-1' } },
     });
@@ -92,7 +92,7 @@ describe('HttpIdempotencyInterceptor', () => {
     const { context, callHandler } = createHttpExecutionContext({
       method: 'POST',
       url: '/v1/intents',
-      body: { customerId: 'customer-1', amount: 1000 },
+      body: { userId: 'customer-1', amount: 1000 },
       headers: { 'idempotency-key': 'idem-1' },
       callError: new ConflictException({
         error: 'REFERENCE_ALREADY_PAID',
