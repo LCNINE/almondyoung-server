@@ -1,12 +1,14 @@
-import { WithHeaderLayout } from "@components/layout"
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
-import { ReviewsContainer } from "domains/reviews/manage/components/reviews-container"
-import { Metadata } from "next"
+import { siteConfig } from "@/lib/config/site"
+import { getSEOTags } from "@/lib/seo"
+import { WithHeaderLayout } from "@components/layout"
+import { ReviewsTemplate } from "@/domains/reviews/manage/template"
 
-export const metadata: Metadata = {
-  title: "리뷰",
-  description: "내 리뷰를 확인하고 관리하세요",
-}
+export const metadata = getSEOTags({
+  title: `${siteConfig.appName} | 리뷰`,
+  openGraph: {},
+  extraTags: {},
+})
 
 export default function MyReviewsPage() {
   return (
@@ -19,7 +21,7 @@ export default function MyReviewsPage() {
       }}
     >
       <MypageLayout>
-        <ReviewsContainer />
+        <ReviewsTemplate />
       </MypageLayout>
     </WithHeaderLayout>
   )
