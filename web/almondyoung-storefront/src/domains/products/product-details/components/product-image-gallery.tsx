@@ -21,14 +21,14 @@ export function ProductImageGallery({
   isSoldOut = false,
 }: Props) {
   return (
-    <section className="mb-8 flex flex-col gap-4 px-0 md:flex-col-reverse lg:flex-row lg:px-14">
+    <section className="mb-8 flex flex-col gap-4 px-0 lg:flex-row lg:px-14">
       {/* 썸네일 리스트 (데스크탑) */}
-      <aside className="relative hidden md:flex md:flex-row lg:flex-col">
+      <aside className="relative hidden lg:flex lg:flex-col">
         <ScrollButton direction="left" />
 
         <nav
           id="thumbnail-scroll"
-          className="flex gap-2 overflow-x-auto md:flex-row lg:flex-col"
+          className="flex gap-2 overflow-x-auto lg:flex-col"
           style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
           aria-label="상품 이미지 썸네일"
         >
@@ -69,7 +69,7 @@ export function ProductImageGallery({
 
       {/* 썸네일 리스트 (모바일) */}
       <nav
-        className="flex flex-row gap-2 md:hidden"
+        className="flex flex-row gap-2 lg:hidden"
         aria-label="상품 이미지 썸네일"
       >
         {thumbnails.map((thumb, idx) => (

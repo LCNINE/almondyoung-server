@@ -125,7 +125,7 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   // ===== 에러 처리 =====
   if (error || !product) {
     return (
-      <main className="md:bg-muted/50 flex min-h-screen items-center justify-center bg-white">
+      <main className="lg:bg-muted/50 flex min-h-screen items-center justify-center bg-white">
         <div className="text-center">
           <p className="text-gray-600">
             {error || "상품을 불러올 수 없습니다."}
@@ -501,14 +501,14 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   // const recommendedProducts: ProductCard[] = []
 
   return (
-    <div className="md:bg-muted/50 min-h-screen bg-white">
+    <div className="lg:bg-muted/50 min-h-screen bg-white">
       {/* todo: 상품 상세 상단 breadcrumb 임시 비활성화 */}
       {/* <Breadcrumb /> */}
 
-      <div className="mx-auto max-w-[1360px] px-[15px] md:px-[40px]">
-        <div className="py-2 md:flex md:gap-4">
+      <div className="mx-auto max-w-[1360px] px-[15px] lg:px-[40px]">
+        <div className="py-2 lg:flex lg:gap-4">
           {/* 메인 콘텐츠 */}
-          <main className="w-full min-w-0 flex-1 pb-24 md:pb-0">
+          <main className="w-full min-w-0 flex-1 pb-24 lg:pb-0">
             {/* 이미지 갤러리 */}
             <ProductImageGallery
               thumbnails={product.thumbnails || []}
@@ -556,7 +556,7 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
               ref={reviewRef}
               id="review-panel"
               role="tabpanel"
-              className="mb-8 rounded-lg bg-white px-4 py-6 md:px-6"
+              className="mb-8 rounded-lg bg-white px-4 py-6 lg:px-6"
             >
               <ProductReviewSection
                 productId={product.pimMasterId || product.id}
