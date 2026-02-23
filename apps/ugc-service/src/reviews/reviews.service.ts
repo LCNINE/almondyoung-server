@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { and, asc, count, desc, eq, inArray, type SQL } from 'drizzle-orm';
-import { reviewMedia, reviews, type UgcServiceSchema } from '../db/schema';
+import { reviewMedia, reviews, reviewHelpfuls, type UgcServiceSchema } from '../db/schema';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { ReviewListQueryDto } from './dto/review-list-query.dto';
 import { UpdateReviewDto } from './dto/update-review.dto';
@@ -106,6 +106,93 @@ export class ReviewsService {
     return mediaMap.get(reviewId) ?? [];
   }
 
+  private async fetchHelpfulCounts(
+    reviewIds: string[],
+    tx: DbTransaction,
+  ): Promise<Map<string, number>> {
+    if (reviewIds.length === 0) {
+      return new Map();
+    }
+
+    const rows = await tx
+      .select({
+        reviewId: reviewHelpfuls.reviewId,
+        count: count(),
+      })
+      .from(reviewHelpfuls)
+      .where(inArray(reviewHelpfuls.reviewId, reviewIds))
+      .groupBy(reviewHelpfuls.reviewId);
+
+    const countMap = new Map<string, number>();
+    for (const row of rows) {
+      countMap.set(row.reviewId, row.count);
+    }
+
+    return countMap;
+  }
+
+  async toggleHelpful(
+    userId: string,
+    reviewId: string,
+    tx?: DbTransaction,
+  ): Promise<{ marked: boolean; helpfulCount: number }> {
+    return this.inTx(async (tx) => {
+      // 리뷰 존재 확인
+      const [review] = await tx
+        .select({ id: reviews.id })
+        .from(reviews)
+        .where(and(eq(reviews.id, reviewId), eq(reviews.status, 'active')));
+
+      if (!review) {
+        throw new NotFoundException('Review not found');
+      }
+
+      // 기존 helpful 여부 확인
+      const [existing] = await tx
+        .select({ reviewId: reviewHelpfuls.reviewId })
+        .from(reviewHelpfuls)
+        .where(
+          and(
+            eq(reviewHelpfuls.reviewId, reviewId),
+            eq(reviewHelpfuls.userId, userId),
+          ),
+        );
+
+      let marked: boolean;
+
+      if (existing) {
+        // 이미 있으면 삭제
+        await tx
+          .delete(reviewHelpfuls)
+          .where(
+            and(
+              eq(reviewHelpfuls.reviewId, reviewId),
+              eq(reviewHelpfuls.userId, userId),
+            ),
+          );
+        marked = false;
+      } else {
+        // 없으면 추가
+        await tx.insert(reviewHelpfuls).values({
+          reviewId,
+          userId,
+        });
+        marked = true;
+      }
+
+      // 현재 helpful 카운트 조회
+      const [countResult] = await tx
+        .select({ count: count() })
+        .from(reviewHelpfuls)
+        .where(eq(reviewHelpfuls.reviewId, reviewId));
+
+      return {
+        marked,
+        helpfulCount: countResult.count,
+      };
+    }, tx);
+  }
+
   async create(
     userId: string,
     dto: CreateReviewDto,
@@ -129,6 +216,7 @@ export class ReviewsService {
       return {
         ...review,
         mediaFileIds,
+        helpfulCount: 0,
       };
     }, tx);
   }
@@ -186,9 +274,12 @@ export class ReviewsService {
         ? mediaFileIds
         : await this.fetchMediaFileIdsByReviewId(id, tx);
 
+      const helpfulCountMap = await this.fetchHelpfulCounts([id], tx);
+
       return {
         ...review,
         mediaFileIds: resolvedMediaFileIds,
+        helpfulCount: helpfulCountMap.get(id) ?? 0,
       };
     }, tx);
   }
@@ -269,15 +360,16 @@ export class ReviewsService {
 
       const data = await dataQuery;
 
-      const mediaMap = await this.fetchMediaFileIdsByReviewIds(
-        data.map((review) => review.id),
-        tx,
-      );
+      const reviewIds = data.map((review) => review.id);
+
+      const mediaMap = await this.fetchMediaFileIdsByReviewIds(reviewIds, tx);
+      const helpfulCountMap = await this.fetchHelpfulCounts(reviewIds, tx);
 
       return {
         data: data.map((review) => ({
           ...review,
           mediaFileIds: mediaMap.get(review.id) ?? [],
+          helpfulCount: helpfulCountMap.get(review.id) ?? 0,
         })),
         total,
         page,
