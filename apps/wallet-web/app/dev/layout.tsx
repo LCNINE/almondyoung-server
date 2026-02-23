@@ -15,6 +15,9 @@ export default function DevLayout({ children }: { children: React.ReactNode }) {
           <Link href="/dev/points" className="hover:underline">
             포인트 관리
           </Link>
+          <Link href="/dev/intents" className="hover:underline">
+            Intent 조회
+          </Link>
         </nav>
         <main className="mx-auto max-w-3xl px-4 py-8">{children}</main>
       </div>

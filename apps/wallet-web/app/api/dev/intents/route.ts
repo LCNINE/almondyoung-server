@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { randomUUID } from 'crypto';
 
 const WALLET_API_URL = process.env.WALLET_API_URL ?? 'http://localhost:3100';
 const WALLET_API_KEY = process.env.WALLET_API_KEY ?? '';
@@ -32,7 +33,7 @@ export async function POST(req: NextRequest) {
   if (!pointsMethod) {
     const createRes = await fetch(`${WALLET_API_URL}/v1/payment-methods`, {
       method: 'POST',
-      headers,
+      headers: { ...headers, 'Idempotency-Key': randomUUID() },
       body: JSON.stringify({ externalUserId, type: 'POINTS' }),
     });
     if (!createRes.ok) {
@@ -45,7 +46,7 @@ export async function POST(req: NextRequest) {
   // 2. Create payment intent
   const intentRes = await fetch(`${WALLET_API_URL}/v1/payment-intents`, {
     method: 'POST',
-    headers,
+    headers: { ...headers, 'Idempotency-Key': randomUUID() },
     body: JSON.stringify({ externalUserId, currency, amount, returnUrl }),
   });
   if (!intentRes.ok) {

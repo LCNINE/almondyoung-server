@@ -5,6 +5,7 @@ import {
   FastifyAdapter,
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
+import fastifyCors from '@fastify/cors';
 import { WalletModule } from './wallet.module';
 
 async function bootstrap() {
@@ -12,6 +13,24 @@ async function bootstrap() {
     WalletModule,
     new FastifyAdapter(),
   );
+
+  const isDev = process.env.NODE_ENV !== 'production';
+  const rawOrigins = process.env.WALLET_CORS_ORIGINS;
+  const allowedOrigins = rawOrigins
+    ? rawOrigins.split(',').map((o) => o.trim()).filter(Boolean)
+    : [];
+
+  await app.register(fastifyCors, {
+    origin: isDev ? true : allowedOrigins,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'Idempotency-Key',
+      'X-Client-Secret',
+    ],
+    credentials: true,
+  });
 
   app.useGlobalPipes(
     new ValidationPipe({

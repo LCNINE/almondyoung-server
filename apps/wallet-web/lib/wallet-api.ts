@@ -64,6 +64,7 @@ export async function confirmPaymentIntent(
     headers: {
       'Content-Type': 'application/json',
       'X-Client-Secret': clientSecret,
+      'Idempotency-Key': crypto.randomUUID(),
     },
     body: JSON.stringify({ paymentMethodId }),
   });
@@ -80,7 +81,10 @@ export async function cancelPaymentIntent(
 ): Promise<void> {
   const res = await fetch(`${BASE_URL}/v1/payment-intents/${intentId}/cancel`, {
     method: 'POST',
-    headers: { 'X-Client-Secret': clientSecret },
+    headers: {
+      'X-Client-Secret': clientSecret,
+      'Idempotency-Key': crypto.randomUUID(),
+    },
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
