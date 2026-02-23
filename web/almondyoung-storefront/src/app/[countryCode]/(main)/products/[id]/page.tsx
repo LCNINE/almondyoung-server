@@ -256,6 +256,7 @@ export default async function Page({
     error =
       err instanceof Error ? err.message : "상품 정보를 불러올 수 없습니다."
   }
+  console.log("product::", product)
 
   return (
     <div className="md:bg-muted/50 min-h-screen bg-white">
