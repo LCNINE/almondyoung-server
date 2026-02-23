@@ -1,6 +1,6 @@
 import { fetchMe } from "@lib/api/users/me"
 import { getWishlistByProductId } from "@lib/api/users/wishlist"
-import { getProductDetail } from "@lib/api/medusa/products"
+import { getProductDetail, listProducts } from "@lib/api/medusa/products"
 import { getRegion } from "@lib/api/medusa/regions"
 import { getDefaultSalesChannelId } from "@lib/api/medusa/store"
 import { getProductDetailByMasterId } from "@lib/api/pim/products"
@@ -12,6 +12,42 @@ import {
   getPricesForVariant,
   getProductPrice,
 } from "@lib/utils/get-product-price"
+import { Metadata } from "next"
+import { notFound } from "next/navigation"
+
+type Props = {
+  params: Promise<{ countryCode: string; handle: string; id: string }>
+  searchParams: Promise<{ v_id?: string }>
+}
+
+export async function generateMetadata(props: Props): Promise<Metadata> {
+  const params = await props.params
+  const { handle } = params
+  const region = await getRegion(params.countryCode)
+
+  if (!region) {
+    notFound()
+  }
+
+  const product = await listProducts({
+    countryCode: params.countryCode,
+    queryParams: { handle },
+  }).then(({ response }) => response.products[0])
+
+  if (!product) {
+    notFound()
+  }
+
+  return {
+    title: `${product.title}`,
+    description: `${product.title}`,
+    openGraph: {
+      title: `${product.title}`,
+      description: `${product.title}`,
+      images: product.thumbnail ? [product.thumbnail] : [],
+    },
+  }
+}
 
 const mapProductMetadata = (metadata?: Record<string, unknown>) => {
   if (!metadata) return undefined
@@ -256,7 +292,6 @@ export default async function Page({
     error =
       err instanceof Error ? err.message : "상품 정보를 불러올 수 없습니다."
   }
-  console.log("product::", product)
 
   return (
     <div className="md:bg-muted/50 min-h-screen bg-white">
