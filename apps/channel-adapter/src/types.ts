@@ -612,6 +612,7 @@ export interface MedusaProductPayload {
 
   // Variants
   variants?: Array<{
+    id?: string;
     title: string;
     sku?: string;
     barcode?: string;
@@ -685,6 +686,10 @@ export interface MedusaProduct {
     id: string;
     title: string;
     sku?: string;
+    manage_inventory?: boolean | null;
+    inventory_items?: Array<{
+      inventory_item_id?: string;
+    }>;
     metadata?: {
       pimVariantId?: string;
     };
