@@ -192,20 +192,18 @@ export function ProductSidebarPurchase({
               >
                 <Heart
                   className={`h-7 w-7 ${
-                    isWishlisted
-                      ? "fill-red-500 text-red-500"
-                      : "text-gray-300"
+                    isWishlisted ? "fill-red-500 text-red-500" : "text-gray-300"
                   }`}
                 />
               </CustomButton>
-              <CustomButton
+              {/* <CustomButton
                 variant="outline"
                 color="secondary"
                 size="md"
                 aria-label="챗봇"
               >
                 <MessageCircle className="h-7 w-7" />
-              </CustomButton>
+              </CustomButton> */}
             </div>
           </header>
 
