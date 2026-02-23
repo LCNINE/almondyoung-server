@@ -36,6 +36,15 @@ export interface IdempotencyRepository {
   ): Promise<boolean>;
 }
 
+type RawIdempotencyKeyRecord = Omit<
+  IdempotencyKeyRecord,
+  'createdAt' | 'updatedAt' | 'expiresAt'
+> & {
+  createdAt: Date | string | number | null;
+  updatedAt: Date | string | number | null;
+  expiresAt: Date | string | number | null;
+};
+
 @Injectable()
 export class DrizzleIdempotencyRepository implements IdempotencyRepository {
   constructor(private readonly dbService: DbService<WalletSchema>) {}
@@ -63,8 +72,19 @@ export class DrizzleIdempotencyRepository implements IdempotencyRepository {
       from idempotency_keys
       where id = ${recordId}
       for update
-    `)) as unknown as IdempotencyKeyRecord[];
-    return rows[0] ?? null;
+    `)) as unknown as RawIdempotencyKeyRecord[];
+
+    const row = rows[0];
+    if (!row) {
+      return null;
+    }
+
+    return {
+      ...row,
+      createdAt: normalizeTimestamp(row.createdAt, 'createdAt', row.id),
+      updatedAt: normalizeTimestamp(row.updatedAt, 'updatedAt', row.id),
+      expiresAt: normalizeTimestamp(row.expiresAt, 'expiresAt', row.id),
+    };
   }
 
   async insert(tx: IdempotencyTx, record: NewIdempotencyKeyRecord): Promise<void> {
@@ -120,4 +140,18 @@ export class DrizzleIdempotencyRepository implements IdempotencyRepository {
 
     return rows.length > 0;
   }
+}
+
+function normalizeTimestamp(
+  input: Date | string | number | null,
+  fieldName: string,
+  recordId: string,
+): Date {
+  const parsed = input instanceof Date ? input : new Date(input ?? Number.NaN);
+
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`IDEMPOTENCY_${fieldName.toUpperCase()}_INVALID: ${recordId}`);
+  }
+
+  return parsed;
 }

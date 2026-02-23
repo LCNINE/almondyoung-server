@@ -21,6 +21,7 @@
 | `09` | `09-admin-ops.md` | `DONE` | 관리자 API/검색/재처리/감사 로그 정책 |
 | `10` | `10-test-scenarios.md` | `DONE` | 단위/통합/E2E 테스트 시나리오 |
 | `11` | `11-points-ledger-auth-capture.md` | `DRAFT` | POINTS 원장(user_id) + auth/capture/cancel/refund 통합 설계 |
+| `12` | `12-intent-items-discounts-and-pricing.md` | `DONE` | Intent 품목/할인 입력 스키마 + 가격 계산 + 정규화 저장 규칙 |
 
 ## 3. Authoring Order
 
@@ -35,4 +36,5 @@
 ## 4. Notes
 
 - `11` 문서는 POINTS 원장 통합 설계 초안(`DRAFT`) 상태다.
+- `12` 문서는 Intent 품목/할인/가격 계산 확정 규칙을 정의한다.
 - 새 정책 확정 시, 관련 문서의 `Open Decisions`를 즉시 정리하고 본 문서 상태를 업데이트한다.

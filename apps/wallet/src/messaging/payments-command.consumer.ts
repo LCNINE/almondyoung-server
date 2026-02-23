@@ -351,6 +351,20 @@ export class PaymentsCommandConsumer {
     if (!payload.snapshotPayload || typeof payload.snapshotPayload !== 'object') {
       throw new Error('COMMAND_PAYLOAD_INVALID: snapshotPayload must be an object');
     }
+
+    const snapshotPayload = payload.snapshotPayload as Record<string, unknown>;
+
+    if (snapshotPayload.schemaVersion !== 'INTENT_SNAPSHOT_V1') {
+      throw new Error(
+        'COMMAND_PAYLOAD_INVALID: snapshotPayload.schemaVersion must be INTENT_SNAPSHOT_V1',
+      );
+    }
+
+    if (!Array.isArray(snapshotPayload.items) || snapshotPayload.items.length === 0) {
+      throw new Error(
+        'COMMAND_PAYLOAD_INVALID: snapshotPayload.items must contain at least one item',
+      );
+    }
   }
 
   private validateStartPaymentLegPayload(

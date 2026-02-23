@@ -47,6 +47,7 @@ interface ApiConsoleState {
   includeCorrelationId: boolean;
   correlationId: string;
   actorId: string;
+  idempotencyKey: string;
 }
 
 interface ProxyResponsePayload {
@@ -261,6 +262,7 @@ const DEFAULT_STATE: ApiConsoleState = {
   includeCorrelationId: true,
   correlationId: "",
   actorId: "",
+  idempotencyKey: "",
 };
 
 function isHttpMethod(value: unknown): value is HttpMethod {
@@ -276,6 +278,14 @@ function isHttpMethod(value: unknown): value is HttpMethod {
 function createPresetId(): string {
   const random = Math.random().toString(36).slice(2, 10);
   return `custom-${Date.now()}-${random}`;
+}
+
+function createIdempotencyKey(): string {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return `idem-${crypto.randomUUID()}`;
+  }
+  const random = Math.random().toString(36).slice(2, 10);
+  return `idem-${Date.now()}-${random}`;
 }
 
 function normalizePresets(input: unknown): ApiPreset[] {
@@ -395,6 +405,124 @@ function tryParseBody(text: string): unknown {
   }
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function canonicalizeJsonValue(value: unknown): string {
+  if (value === null) {
+    return "null";
+  }
+
+  if (typeof value === "string") {
+    return JSON.stringify(value);
+  }
+
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      throw new Error("snapshotPayload contains non-finite number");
+    }
+
+    const serialized = JSON.stringify(value);
+    if (!serialized) {
+      throw new Error("snapshotPayload number serialization failed");
+    }
+
+    if (serialized.includes("e") || serialized.includes("E")) {
+      throw new Error("snapshotPayload number cannot use exponential notation");
+    }
+
+    return serialized;
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalizeJsonValue(item)).join(",")}]`;
+  }
+
+  if (isPlainObject(value)) {
+    const sortedKeys = Object.keys(value).sort();
+    const serializedPairs: string[] = [];
+
+    for (const key of sortedKeys) {
+      const propertyValue = value[key];
+      if (propertyValue === undefined) {
+        continue;
+      }
+      serializedPairs.push(
+        `${JSON.stringify(key)}:${canonicalizeJsonValue(propertyValue)}`,
+      );
+    }
+
+    return `{${serializedPairs.join(",")}}`;
+  }
+
+  throw new Error(
+    `snapshotPayload includes unsupported type: ${Object.prototype.toString.call(value)}`,
+  );
+}
+
+function canonicalizeSnapshotPayload(snapshotPayload: unknown): string {
+  return canonicalizeJsonValue(snapshotPayload);
+}
+
+async function computePayloadHash(canonicalPayload: string): Promise<string> {
+  if (!crypto?.subtle) {
+    throw new Error("Web Crypto API is not available in this browser");
+  }
+
+  const bytes = new TextEncoder().encode(canonicalPayload);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function buildSigningString(
+  signatureVersion: string,
+  signedAt: string,
+  payloadHash: string,
+): string {
+  return `${signatureVersion}\n${signedAt}\n${payloadHash}`;
+}
+
+function toBase64Url(input: Uint8Array): string {
+  let binary = "";
+  for (const byte of input) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+async function computeHmacSignature(
+  sharedSecret: string,
+  signingString: string,
+): Promise<string> {
+  if (!crypto?.subtle) {
+    throw new Error("Web Crypto API is not available in this browser");
+  }
+
+  const keyBytes = new TextEncoder().encode(sharedSecret);
+  const messageBytes = new TextEncoder().encode(signingString);
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    keyBytes,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const rawSignature = await crypto.subtle.sign("HMAC", cryptoKey, messageBytes);
+  return toBase64Url(new Uint8Array(rawSignature));
+}
+
 function buildCurlCommand(payload: {
   method: string;
   url: string;
@@ -430,6 +558,8 @@ export default function DevApiConsolePage() {
   const [lastExecutedAt, setLastExecutedAt] = useState<string | null>(null);
   const [result, setResult] = useState<ProxyResponsePayload | null>(null);
   const [lastCurl, setLastCurl] = useState("");
+  const [hmacSharedSecret, setHmacSharedSecret] = useState("");
+  const [lastSignedAt, setLastSignedAt] = useState<string | null>(null);
 
   useEffect(() => {
     const rawState = localStorage.getItem(CONSOLE_STORAGE_KEY);
@@ -590,6 +720,74 @@ export default function DevApiConsolePage() {
     setState((prev) => ({ ...prev, correlationId: nextValue }));
   };
 
+  const onGenerateIdempotencyKey = (): void => {
+    setState((prev) => ({ ...prev, idempotencyKey: createIdempotencyKey() }));
+  };
+
+  const onGenerateIntentSignature = async (): Promise<void> => {
+    setError(null);
+
+    try {
+      const sharedSecret = hmacSharedSecret.trim();
+      if (!sharedSecret) {
+        throw new Error("HMAC shared secret is required");
+      }
+
+      const vars = {
+        intentId: state.intentId.trim(),
+        legId: state.legId.trim(),
+        refundId: state.refundId.trim(),
+      };
+      const bodySource = interpolateText(state.bodyText, vars);
+      const parsedBody = tryParseBody(bodySource);
+
+      if (
+        typeof parsedBody !== "object" ||
+        parsedBody === null ||
+        Array.isArray(parsedBody)
+      ) {
+        throw new Error("Body must be a JSON object to generate signature");
+      }
+
+      const bodyObject = parsedBody as Record<string, unknown>;
+      if (!("snapshotPayload" in bodyObject)) {
+        throw new Error("Body must include snapshotPayload");
+      }
+
+      const signedAt = new Date().toISOString();
+      const signatureVersion = "v1";
+      const canonicalPayload = canonicalizeSnapshotPayload(
+        bodyObject.snapshotPayload,
+      );
+      const payloadHash = await computePayloadHash(canonicalPayload);
+      const signingString = buildSigningString(
+        signatureVersion,
+        signedAt,
+        payloadHash,
+      );
+      const signature = await computeHmacSignature(sharedSecret, signingString);
+
+      const nextBody = {
+        ...bodyObject,
+        signatureVersion,
+        signedAt,
+        signature,
+      };
+
+      setState((prev) => ({
+        ...prev,
+        bodyText: JSON.stringify(nextBody, null, 2),
+      }));
+      setLastSignedAt(signedAt);
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unknown signature generation error",
+      );
+    }
+  };
+
   const onSendRequest = async (): Promise<void> => {
     setError(null);
     setLoading(true);
@@ -631,6 +829,19 @@ export default function DevApiConsolePage() {
       }
       if (state.actorId.trim()) {
         headers["x-actor-id"] = state.actorId.trim();
+      }
+      if (state.method !== "GET") {
+        let idempotencyKey = state.idempotencyKey.trim();
+        if (!idempotencyKey) {
+          idempotencyKey = createIdempotencyKey();
+          setState((prev) => ({ ...prev, idempotencyKey }));
+        }
+        for (const key of Object.keys(headers)) {
+          if (key.toLowerCase() === "idempotency-key") {
+            delete headers[key];
+          }
+        }
+        headers["Idempotency-Key"] = idempotencyKey;
       }
 
       const bodySource = interpolateText(state.bodyText, vars);
@@ -695,6 +906,12 @@ export default function DevApiConsolePage() {
         </Button>
         <Button asChild variant="default">
           <Link href="/dev/api">API Console</Link>
+        </Button>
+        <Button asChild variant="outline">
+          <Link href="/dev/signature">Signature Utility</Link>
+        </Button>
+        <Button asChild variant="outline">
+          <Link href="/dev/points">Points Manager</Link>
         </Button>
       </div>
 
@@ -842,7 +1059,37 @@ export default function DevApiConsolePage() {
             </div>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className="space-y-2 rounded-md border p-3">
+            <p className="text-sm font-medium">intent signature helper</p>
+            <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
+              <Input
+                type="password"
+                placeholder="WALLET_HMAC_SHARED_SECRET (not saved)"
+                value={hmacSharedSecret}
+                onChange={(event) => setHmacSharedSecret(event.target.value)}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  void onGenerateIntentSignature();
+                }}
+              >
+                Sign Intent Body (Now)
+              </Button>
+            </div>
+            <p className="text-muted-foreground text-xs">
+              Uses current time + body.snapshotPayload and updates
+              signatureVersion/signedAt/signature in body JSON.
+            </p>
+            {lastSignedAt ? (
+              <p className="text-muted-foreground text-xs">
+                last signed: {formatDateTime(lastSignedAt)}
+              </p>
+            ) : null}
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
             <label className="flex h-8 items-center gap-2 rounded-lg border px-2.5 text-sm">
               <input
                 type="checkbox"
@@ -870,6 +1117,13 @@ export default function DevApiConsolePage() {
                 setState((prev) => ({ ...prev, actorId: event.target.value }))
               }
             />
+            <Input
+              placeholder="Idempotency-Key (write required; empty => auto)"
+              value={state.idempotencyKey}
+              onChange={(event) =>
+                setState((prev) => ({ ...prev, idempotencyKey: event.target.value }))
+              }
+            />
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -878,6 +1132,9 @@ export default function DevApiConsolePage() {
             </Button>
             <Button type="button" variant="outline" onClick={onGenerateCorrelation}>
               Generate Correlation ID
+            </Button>
+            <Button type="button" variant="outline" onClick={onGenerateIdempotencyKey}>
+              Generate Idempotency Key
             </Button>
             <Button type="button" variant="outline" onClick={onReset}>
               Reset

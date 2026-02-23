@@ -29,16 +29,101 @@
         spec: {
   "openapi": "3.0.0",
   "paths": {
-    "/payments/intents": {
+    "/v1/health": {
+      "get": {
+        "description": "Liveness probe endpoint for wallet service.",
+        "operationId": "HealthController_health",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Wallet service is alive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/WalletSuccessEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/HealthDataResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Health check",
+        "tags": [
+          "Health"
+        ]
+      }
+    },
+    "/v1/ready": {
+      "get": {
+        "description": "Readiness probe endpoint for wallet service.",
+        "operationId": "HealthController_ready",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Wallet service is ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/WalletSuccessEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/HealthDataResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Readiness check",
+        "tags": [
+          "Health"
+        ]
+      }
+    },
+    "/v1/intents": {
       "post": {
-        "description": "새로운 결제 의도를 생성합니다. \n    \n**결제 의도(Payment Intent)란?**\n- 실제 결제 전에 결제할 의향을 나타내는 객체\n- 고객 정보, 금액, 결제 타입 등의 메타데이터를 포함\n- 이후 승인(authorize) → 캡처(capture) 단계로 진행\n\n**지원하는 결제 타입:**\n- `PAYMENT`: 일반 결제\n- `SUBSCRIPTION`: 정기 결제\n- `REFUND`: 환불\n\n**멱등성 보장:**\n- `Idempotency-Key` 헤더를 통해 중복 요청 방지\n- 동일한 키로 재요청 시 기존 결과 반환",
-        "operationId": "PaymentController_createPaymentIntent",
+        "description": "Creates a payment intent from the signed checkout snapshot.",
+        "operationId": "IntentsController_createIntent",
         "parameters": [
           {
-            "name": "Idempotency-Key",
-            "required": false,
+            "name": "x-correlation-id",
+            "required": true,
             "in": "header",
-            "description": "멱등성 보장을 위한 고유 키 (선택사항)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Correlation identifier for tracing",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Idempotency key for write APIs",
+            "required": true,
             "schema": {
               "type": "string"
             }
@@ -46,529 +131,203 @@
         ],
         "requestBody": {
           "required": true,
-          "description": "결제 의도 생성 요청",
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/CreateIntentDto"
-              },
-              "examples": {
-                "payment": {
-                  "summary": "일반 결제 의도",
-                  "description": "단건 상품 구매를 위한 결제 의도",
-                  "value": {
-                    "customerId": "customer_12345",
-                    "amount": 29900,
-                    "type": "PAYMENT"
-                  }
-                },
-                "subscription": {
-                  "summary": "정기 결제 의도",
-                  "description": "구독 서비스를 위한 정기 결제 의도",
-                  "value": {
-                    "customerId": "customer_67890",
-                    "amount": 9900,
-                    "type": "SUBSCRIPTION"
-                  }
-                }
               }
             }
           }
         },
         "responses": {
           "201": {
-            "description": "결제 의도 생성 성공",
+            "description": "Payment intent created",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/IntentResponseDto"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "잘못된 요청 데이터",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponseDto"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "서버 내부 오류",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "summary": "결제 의도(Intent) 생성",
-        "tags": [
-          "결제 (Payments)"
-        ]
-      }
-    },
-    "/payments/intents/{intentId}": {
-      "get": {
-        "description": "결제 의도 ID로 상세 정보를 조회합니다.\n    \n**조회 가능한 정보:**\n- Intent 기본 정보 (ID, 고객 ID, 금액, 상태 등)\n- 생성/수정 시각\n- 메타데이터 (주문명, 상품 정보 등)\n- 현재 처리 상태\n\n**Intent 상태:**\n- `PENDING`: 생성됨, 결제 대기 중\n- `AUTHORIZED`: 승인 완료, 캡처 대기 중\n- `CAPTURED`: 결제 완료\n- `FAILED`: 결제 실패\n- `CANCELLED`: 취소됨",
-        "operationId": "PaymentController_getIntent",
-        "parameters": [
-          {
-            "name": "intentId",
-            "required": true,
-            "in": "path",
-            "description": "결제 의도 ID",
-            "schema": {
-              "example": "intent_20250115_abc123",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Intent 조회 성공",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/IntentResponseDto"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Intent를 찾을 수 없음",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponseDto"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "서버 내부 오류",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "summary": "결제 의도(Intent) 조회",
-        "tags": [
-          "결제 (Payments)"
-        ]
-      }
-    },
-    "/payments/intents/{intentId}/authorize": {
-      "post": {
-        "description": "결제 수단을 승인하여 결제 가능한 상태로 만듭니다.\n    \n**승인(Authorize)과 캡처(Capture)의 분리:**\n- **승인**: 결제 수단 유효성 검증 및 금액 홀드 (실제 차감 X)\n- **캡처**: 실제 금액 차감 및 정산 처리\n\n**지원 결제 제공자:**\n- `TOSS`: 토스페이먼츠 (테스트/운영 환경 지원)\n\n**Toss 결제 플로우:**\n1. 클라이언트에서 Toss SDK로 결제 수단 선택\n2. Toss에서 paymentKey 발급\n3. 이 API로 paymentKey 전달하여 승인 처리\n4. 별도 캡처 API로 실제 결제 완료\n\n**멱등성:**\n- 동일한 paymentKey로 재요청 시 기존 결과 반환",
-        "operationId": "PaymentController_authorizePayment",
-        "parameters": [
-          {
-            "name": "intentId",
-            "required": true,
-            "in": "path",
-            "description": "결제 의도 ID",
-            "schema": {
-              "example": "intent_20250115_abc123",
-              "type": "string"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "required": false,
-            "in": "header",
-            "description": "멱등성 보장을 위한 고유 키 (선택사항)",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "description": "결제 승인 요청",
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AuthorizePaymentDto"
-              },
-              "examples": {
-                "toss": {
-                  "summary": "Toss 결제 승인",
-                  "description": "Toss SDK에서 받은 paymentKey로 승인 처리",
-                  "value": {
-                    "provider": "TOSS",
-                    "paymentKey": "tgen_20250115123456_aB3Cd4Ef"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "결제 승인 성공",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AuthorizePaymentResponseDto"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "잘못된 요청 또는 결제 승인 실패",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponseDto"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Intent를 찾을 수 없음",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponseDto"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "서버 내부 오류",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "summary": "결제 승인 (Authorize)",
-        "tags": [
-          "결제 (Payments)"
-        ]
-      }
-    },
-    "/payments/intents/{intentId}/capture": {
-      "post": {
-        "description": "승인된 결제를 실제로 정산 처리합니다.\n    \n**캡처(Capture)란?**\n- 승인 단계에서 홀드된 금액을 실제로 차감하는 과정\n- 캡처 완료 후 고객에게 실제 청구되며, 판매자에게 정산됨\n- 부분 캡처도 지원 (승인 금액보다 적은 금액 캡처 가능)\n\n**사용 시나리오:**\n- 상품 발송 완료 후 캡처 (배송 후 결제)\n- 서비스 제공 완료 후 캡처\n- 부분 취소 시 남은 금액만 캡처\n\n**부분 캡처:**\n- amount 파라미터로 캡처할 금액 지정\n- 미지정 시 승인된 전체 금액 캡처\n- 승인 금액보다 큰 금액 캡처는 불가\n\n**주의사항:**\n- 승인된 결제만 캡처 가능\n- 캡처 후에는 취소 불가 (환불만 가능)",
-        "operationId": "PaymentController_capturePayment",
-        "parameters": [
-          {
-            "name": "intentId",
-            "required": true,
-            "in": "path",
-            "description": "결제 의도 ID",
-            "schema": {
-              "example": "intent_20250115_abc123",
-              "type": "string"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "required": false,
-            "in": "header",
-            "description": "멱등성 보장을 위한 고유 키 (선택사항)",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "description": "결제 캡처 요청",
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CapturePaymentDto"
-              },
-              "examples": {
-                "full": {
-                  "summary": "전체 금액 캡처",
-                  "description": "승인된 전체 금액을 캡처",
-                  "value": {
-                    "attemptId": "attempt_20250115_def456"
-                  }
-                },
-                "partial": {
-                  "summary": "부분 금액 캡처",
-                  "description": "승인된 금액 중 일부만 캡처 (예: 29,900원 중 20,000원)",
-                  "value": {
-                    "attemptId": "attempt_20250115_def456",
-                    "amount": 20000
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "결제 캡처 성공",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CapturePaymentResponseDto"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "잘못된 요청 또는 캡처 실패",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponseDto"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Intent 또는 Attempt를 찾을 수 없음",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponseDto"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "서버 내부 오류",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "summary": "결제 캡처 (Capture)",
-        "tags": [
-          "결제 (Payments)"
-        ]
-      }
-    },
-    "/payments/profiles": {
-      "get": {
-        "description": "사용자의 모든 결제 프로필을 조회합니다.\n    \n**반환 정보:**\n- 프로필 ID\n- 프로필 종류 (CARD, BANK_ACCOUNT, WALLET)\n- 결제 제공자 (HMS_CARD, HMS_BNPL, TOSS)\n- 프로필 상태\n- 상세 정보 (카드사, 마스킹된 번호 등)",
-        "operationId": "PaymentController_getPaymentProfiles",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "결제 프로필 목록 조회 성공",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "id": {
-                        "type": "string",
-                        "description": "프로필 ID"
-                      },
-                      "kind": {
-                        "type": "string",
-                        "description": "프로필 종류"
-                      },
-                      "provider": {
-                        "type": "string",
-                        "description": "결제 제공자"
-                      },
-                      "status": {
-                        "type": "string",
-                        "description": "프로필 상태"
-                      },
-                      "name": {
-                        "type": "string",
-                        "description": "프로필 이름"
-                      },
-                      "details": {
-                        "type": "object",
-                        "description": "상세 정보"
-                      },
-                      "createdAt": {
-                        "type": "string",
-                        "description": "등록일시"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/WalletSuccessEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/PaymentIntentResponseDto"
+                        }
                       }
                     }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "인증 실패",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "summary": "결제 프로필 목록 조회",
-        "tags": [
-          "결제 (Payments)"
-        ]
-      }
-    },
-    "/payments/profiles/hms-card": {
-      "post": {
-        "description": "HMS(Hyundai Motor Service) 카드 결제를 위한 프로필을 생성합니다.\n    \n**HMS 카드 프로필이란?**\n- 현대자동차 금융서비스 카드 결제를 위한 정보\n- 카드 번호, 유효기간, 비밀번호 등을 안전하게 저장\n- 이후 결제 시 프로필 ID로 간편 결제 가능\n\n**보안 처리:**\n- 민감한 카드 정보는 암호화하여 저장\n- PCI-DSS 규정에 따른 보안 처리\n- 카드 정보는 HMS 시스템에만 전달",
-        "operationId": "PaymentController_createHmsCardProfile",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "description": "HMS 카드 프로필 생성 요청",
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateHmsCardProfileDto"
-              },
-              "examples": {
-                "hmsCard": {
-                  "summary": "HMS 카드 프로필",
-                  "value": {
-                    "memberName": "김현대",
-                    "phone": "01012345678",
-                    "payerNumber": "901201",
-                    "paymentNumber": "1234567890123456",
-                    "payerName": "김현대",
-                    "validYear": "28",
-                    "validMonth": "12",
-                    "validUntil": "2812",
-                    "password": "12",
-                    "paymentCompany": "HMC"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "HMS 카드 프로필 생성 성공",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HmsCardProfileResponseDto"
+                  ]
                 }
               }
             }
           },
           "400": {
-            "description": "잘못된 카드 정보 또는 유효성 검증 실패",
+            "description": "Invalid request payload or missing idempotency key",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponseDto"
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
                 }
               }
             }
           },
           "401": {
-            "description": "인증 실패",
+            "description": "JWT authentication required",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponseDto"
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Blocking intent already exists for reference or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
                 }
               }
             }
           },
           "500": {
-            "description": "프로필 생성 중 서버 오류",
+            "description": "Internal server error",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponseDto"
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
                 }
               }
             }
           }
         },
-        "summary": "HMS 카드 프로필 생성",
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Create intent",
         "tags": [
-          "결제 (Payments)"
+          "Wallet Intents"
         ]
       }
     },
-    "/payments/hms-bnpl/onboard": {
-      "post": {
-        "operationId": "PaymentController_onboardHmsBnplProfile",
-        "parameters": [],
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "summary": "HMS BNPL 프로필 및 동의서 등록",
-        "tags": [
-          "결제 (Payments)"
-        ]
-      }
-    },
-    "/payments/bnpl/accounts": {
-      "post": {
-        "operationId": "PaymentController_createBnplAccount",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateBnplAccountDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "BNPL 계정 생성 성공"
-          }
-        },
-        "summary": "BNPL 계정 생성",
-        "tags": [
-          "결제 (Payments)"
-        ]
-      }
-    },
-    "/payments/{intentId}/refund": {
-      "post": {
-        "description": "결제를 환불합니다.\n    \n**환불 처리 방식:**\n- 포인트와 현금을 비율에 따라 환불\n- 포인트는 즉시 복원\n- 현금은 결제 수단에 따라 환불\n\n**부분 환불:**\n- amount 파라미터로 환불 금액 지정\n- 미지정 시 전액 환불\n- 포인트:현금 비율은 원래 결제 비율과 동일\n\n**환불 비율 계산:**\n- 비율 = 환불금액 / 총금액\n- 포인트 환불 = floor(총포인트 * 비율)\n- 현금 환불 = 환불금액 - 포인트환불\n\n**BNPL 처리:**\n- AUTHORIZED 상태: void 처리 (출금 취소)\n- CAPTURED 상태: refund 처리 (환불)",
-        "operationId": "PaymentController_refundPayment",
+    "/v1/intents/{intentId}": {
+      "get": {
+        "description": "Returns a payment intent by identifier.",
+        "operationId": "IntentsController_getIntent",
         "parameters": [
           {
             "name": "intentId",
             "required": true,
             "in": "path",
-            "description": "환불할 결제 의도 ID",
+            "description": "Payment intent identifier",
             "schema": {
-              "example": "intent_20250115_abc123",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Payment intent fetched",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/WalletSuccessEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/PaymentIntentResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "JWT authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Intent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Get intent",
+        "tags": [
+          "Wallet Intents"
+        ]
+      }
+    },
+    "/v1/intents/{intentId}/legs": {
+      "put": {
+        "description": "Configures execution legs for the given intent.",
+        "operationId": "IntentsController_configureLegs",
+        "parameters": [
+          {
+            "name": "intentId",
+            "required": true,
+            "in": "path",
+            "description": "Payment intent identifier",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-correlation-id",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Correlation identifier for tracing",
+            "required": false,
+            "schema": {
               "type": "string"
             }
           },
           {
             "name": "Idempotency-Key",
-            "required": false,
             "in": "header",
-            "description": "멱등성 보장을 위한 고유 키 (선택사항)",
+            "description": "Idempotency key for write APIs",
+            "required": true,
             "schema": {
               "type": "string"
             }
@@ -576,77 +335,1151 @@
         ],
         "requestBody": {
           "required": true,
-          "description": "환불 요청",
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RefundPaymentDto"
-              },
-              "examples": {
-                "full": {
-                  "summary": "전액 환불",
-                  "description": "결제 전체를 환불",
-                  "value": {
-                    "reason": "CUSTOMER_REQUEST"
-                  }
-                },
-                "partial": {
-                  "summary": "부분 환불",
-                  "description": "결제 일부를 환불 (예: 29,900원 중 10,000원)",
-                  "value": {
-                    "amount": 10000,
-                    "reason": "PARTIAL_CANCEL"
-                  }
-                }
+                "$ref": "#/components/schemas/ConfigureLegsDto"
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "환불 성공",
+            "description": "Legs configured",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RefundPaymentResponseDto"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/WalletSuccessEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/PaymentLegResponseDto"
+                          }
+                        }
+                      }
+                    }
+                  ]
                 }
               }
             }
           },
           "400": {
-            "description": "환불 불가 상태 또는 잘못된 요청",
+            "description": "Invalid request payload or missing idempotency key",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponseDto"
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "JWT authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
                 }
               }
             }
           },
           "404": {
-            "description": "Intent를 찾을 수 없음",
+            "description": "Intent not found",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponseDto"
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Leg configuration is not allowed for current intent state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
                 }
               }
             }
           },
           "500": {
-            "description": "서버 내부 오류",
+            "description": "Internal server error",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponseDto"
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
                 }
               }
             }
           }
         },
-        "summary": "결제 환불",
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Configure legs",
         "tags": [
-          "결제 (Payments)"
+          "Wallet Intents"
+        ]
+      }
+    },
+    "/v1/intents/{intentId}/legs/{legId}/authorize": {
+      "post": {
+        "description": "Runs authorize operation for the selected leg.",
+        "operationId": "IntentsController_authorizeLeg",
+        "parameters": [
+          {
+            "name": "intentId",
+            "required": true,
+            "in": "path",
+            "description": "Payment intent identifier",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "legId",
+            "required": true,
+            "in": "path",
+            "description": "Payment leg identifier",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-correlation-id",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Correlation identifier for tracing",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Idempotency key for write APIs",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Leg authorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/WalletSuccessEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/LegOperationResultResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing idempotency key or invalid request state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "JWT authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Intent or leg not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Authorize operation conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Authorize leg",
+        "tags": [
+          "Wallet Intents"
+        ]
+      }
+    },
+    "/v1/intents/{intentId}/legs/{legId}/capture": {
+      "post": {
+        "description": "Runs capture operation for the selected leg.",
+        "operationId": "IntentsController_captureLeg",
+        "parameters": [
+          {
+            "name": "intentId",
+            "required": true,
+            "in": "path",
+            "description": "Payment intent identifier",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "legId",
+            "required": true,
+            "in": "path",
+            "description": "Payment leg identifier",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-correlation-id",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Correlation identifier for tracing",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Idempotency key for write APIs",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Leg captured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/WalletSuccessEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/LegOperationResultResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing idempotency key or invalid request state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "JWT authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Intent or leg not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Capture operation conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Capture leg",
+        "tags": [
+          "Wallet Intents"
+        ]
+      }
+    },
+    "/v1/intents/{intentId}/cancel": {
+      "post": {
+        "description": "Cancels a payment intent.",
+        "operationId": "IntentsController_cancelIntent",
+        "parameters": [
+          {
+            "name": "intentId",
+            "required": true,
+            "in": "path",
+            "description": "Payment intent identifier",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-correlation-id",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Correlation identifier for tracing",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Idempotency key for write APIs",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Intent cancelled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/WalletSuccessEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/IntentTerminationResultResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing idempotency key or invalid request state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "JWT authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Intent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Cancel operation conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Cancel intent",
+        "tags": [
+          "Wallet Intents"
+        ]
+      }
+    },
+    "/v1/intents/{intentId}/supersede": {
+      "post": {
+        "description": "Supersedes a payment intent with a terminal superseded state.",
+        "operationId": "IntentsController_supersedeIntent",
+        "parameters": [
+          {
+            "name": "intentId",
+            "required": true,
+            "in": "path",
+            "description": "Payment intent identifier",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-correlation-id",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Correlation identifier for tracing",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Idempotency key for write APIs",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Intent superseded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/WalletSuccessEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/IntentTerminationResultResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing idempotency key or invalid request state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "JWT authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Intent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Supersede operation conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Supersede intent",
+        "tags": [
+          "Wallet Intents"
+        ]
+      }
+    },
+    "/v1/intents/{intentId}/refund-requests": {
+      "post": {
+        "description": "Creates a refund request with allocation details for the given intent.",
+        "operationId": "IntentsController_createRefundRequest",
+        "parameters": [
+          {
+            "name": "intentId",
+            "required": true,
+            "in": "path",
+            "description": "Payment intent identifier",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-correlation-id",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-actor-id",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Actor-Id",
+            "in": "header",
+            "description": "Actor identifier for audit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Correlation identifier for tracing",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Idempotency key for write APIs",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRefundRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Refund request created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/WalletSuccessEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/RefundRequestDetailResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request payload or missing idempotency key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "JWT authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Intent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Refund request conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Create refund request",
+        "tags": [
+          "Wallet Intents"
+        ]
+      }
+    },
+    "/v1/refund-requests/{refundId}": {
+      "get": {
+        "description": "Returns refund request details including allocations.",
+        "operationId": "RefundRequestsController_getRefundRequest",
+        "parameters": [
+          {
+            "name": "refundId",
+            "required": true,
+            "in": "path",
+            "description": "Refund request identifier",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Refund request fetched",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/WalletSuccessEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/RefundRequestDetailResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "JWT authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Refund request not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Get refund request",
+        "tags": [
+          "Wallet Refund Requests"
+        ]
+      }
+    },
+    "/v1/admin/intents/{intentId}/reconcile/retry": {
+      "post": {
+        "description": "Retries reconcile flow for a target intent.",
+        "operationId": "ReconcileController_retryIntentReconcile",
+        "parameters": [
+          {
+            "name": "intentId",
+            "required": true,
+            "in": "path",
+            "description": "Payment intent identifier",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-correlation-id",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-actor-id",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Actor-Id",
+            "in": "header",
+            "description": "Actor identifier for audit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Correlation identifier for tracing",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Idempotency key for write APIs",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetryReconcileDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Intent reconcile retry completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/WalletSuccessEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/RetryIntentResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request payload or missing idempotency key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "JWT authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Intent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Retry not allowed for current intent status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Retry intent reconcile",
+        "tags": [
+          "Wallet Reconcile Admin"
+        ]
+      }
+    },
+    "/v1/admin/legs/{legId}/reconcile/retry": {
+      "post": {
+        "description": "Retries reconcile flow for a target leg.",
+        "operationId": "ReconcileController_retryLegReconcile",
+        "parameters": [
+          {
+            "name": "legId",
+            "required": true,
+            "in": "path",
+            "description": "Payment leg identifier",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-correlation-id",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-actor-id",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Actor-Id",
+            "in": "header",
+            "description": "Actor identifier for audit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Correlation identifier for tracing",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Idempotency key for write APIs",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetryReconcileDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Leg reconcile retry completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/WalletSuccessEnvelopeDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/RetryLegResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request payload or missing idempotency key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "JWT authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Leg or parent intent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Retry not allowed for current leg status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Retry leg reconcile",
+        "tags": [
+          "Wallet Reconcile Admin"
         ]
       }
     }
@@ -661,437 +1494,1050 @@
   "servers": [],
   "components": {
     "schemas": {
-      "CreateIntentDto": {
-        "type": "object",
-        "properties": {
-          "customerId": {
-            "type": "string",
-            "minLength": 1
-          },
-          "amount": {
-            "type": "integer",
-            "exclusiveMinimum": 0,
-            "maximum": 9007199254740991
-          },
-          "type": {
-            "type": "string",
-            "enum": [
-              "ORDER",
-              "BNPL_CAPTURE",
-              "MEMBERSHIP_FEE"
-            ]
-          }
-        },
-        "required": [
-          "customerId",
-          "amount",
-          "type"
-        ]
-      },
-      "IntentResponseDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "x-nestjs_zod-has-null": true
-          },
-          "customerId": {
-            "type": "string",
-            "x-nestjs_zod-has-null": true
-          },
-          "amount": {
-            "type": "number",
-            "x-nestjs_zod-has-null": true
-          },
-          "type": {
-            "type": "string",
-            "x-nestjs_zod-has-null": true
-          },
-          "status": {
-            "type": "string",
-            "x-nestjs_zod-has-null": true
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
-            "x-nestjs_zod-has-null": true
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
-            "x-nestjs_zod-has-null": true
-          },
-          "metadata": {
-            "type": "",
-            "x-nestjs_zod-has-null": true,
-            "x-nestjs_zod-empty-type": true
-          },
-          "capturedAt": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time",
-                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "x-nestjs_zod-has-null": true,
-            "x-nestjs_zod-empty-type": true
-          }
-        },
-        "required": [
-          "id",
-          "customerId",
-          "amount",
-          "type",
-          "status",
-          "createdAt",
-          "updatedAt"
-        ]
-      },
-      "ErrorResponseDto": {
+      "WalletSuccessEnvelopeDto": {
         "type": "object",
         "properties": {
           "success": {
             "type": "boolean",
-            "const": false
+            "description": "Request processing result",
+            "example": true
           },
-          "message": {
-            "type": "string"
-          },
-          "statusCode": {
-            "type": "number"
+          "error": {
+            "type": "string",
+            "description": "Business error code. Always null for successful responses.",
+            "nullable": true,
+            "example": null
           },
           "timestamp": {
-            "type": "string"
+            "type": "string",
+            "description": "Response timestamp (ISO-8601)",
+            "format": "date-time",
+            "example": "2026-02-22T14:30:00.000Z"
           }
         },
         "required": [
           "success",
-          "message",
-          "statusCode"
+          "error",
+          "timestamp"
         ]
       },
-      "AuthorizePaymentDto": {
+      "HealthDataResponseDto": {
         "type": "object",
         "properties": {
-          "authParams": {
+          "status": {
+            "type": "string",
+            "description": "Health status",
+            "enum": [
+              "ok",
+              "ready"
+            ],
+            "example": "ok"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "WalletErrorResponseDto": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Request processing result",
+            "example": false
+          },
+          "error": {
+            "type": "string",
+            "description": "Error code",
+            "example": "BAD_REQUEST"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable error message",
+            "example": "Request validation failed"
+          },
+          "devMessage": {
+            "type": "string",
+            "description": "Debug message returned in non-production environments",
+            "example": "Bad Request Exception - POST /v1/intents"
+          },
+          "stack": {
+            "type": "string",
+            "description": "Stack trace returned in non-production environments",
+            "example": "Error: Request validation failed"
+          }
+        },
+        "required": [
+          "success",
+          "error",
+          "message"
+        ]
+      },
+      "PaymentIntentResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Intent identifier",
+            "format": "uuid"
+          },
+          "referenceType": {
+            "type": "string",
+            "description": "Business reference type",
+            "enum": [
+              "STORE_ORDER",
+              "SUBSCRIPTION_BILLING"
+            ]
+          },
+          "referenceId": {
+            "type": "string",
+            "description": "Business reference identifier"
+          },
+          "userId": {
+            "type": "string",
+            "description": "User identifier"
+          },
+          "currency": {
+            "type": "string",
+            "description": "ISO-4217 currency code",
+            "example": "KRW"
+          },
+          "payableAmount": {
+            "type": "number",
+            "description": "Payable amount (minor units)",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string",
+            "description": "Intent status",
+            "enum": [
+              "PENDING",
+              "IN_PROGRESS",
+              "PARTIALLY_CAPTURED",
+              "SUCCEEDED",
+              "FAILED",
+              "EXPIRED",
+              "CANCELLED",
+              "SUSPENDED",
+              "SUPERSEDED",
+              "RECONCILING",
+              "SUPERSEDED_RECONCILE_REQUIRED",
+              "RECONCILE_REQUIRED"
+            ]
+          },
+          "expiresAt": {
+            "type": "string",
+            "description": "Intent expiration time",
+            "format": "date-time"
+          },
+          "version": {
+            "type": "number",
+            "description": "Optimistic lock version",
+            "minimum": 0
+          },
+          "metadata": {
             "type": "object",
-            "propertyNames": {
-              "type": "string"
-            },
-            "additionalProperties": {
-              "type": "string"
+            "description": "Intent metadata",
+            "additionalProperties": true
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "Creation timestamp",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "Last update timestamp",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "referenceType",
+          "referenceId",
+          "userId",
+          "currency",
+          "payableAmount",
+          "status",
+          "expiresAt",
+          "version",
+          "metadata",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "IntentItemDiscountDto": {
+        "type": "object",
+        "properties": {
+          "discountId": {
+            "type": "string",
+            "description": "Discount identifier",
+            "example": "discount-item-1"
+          },
+          "kind": {
+            "type": "string",
+            "description": "Item discount kind",
+            "enum": [
+              "ITEM_PER_UNIT",
+              "ITEM_FLAT"
+            ],
+            "example": "ITEM_PER_UNIT"
+          },
+          "amount": {
+            "type": "number",
+            "description": "Discount amount (minor units)",
+            "minimum": 1,
+            "example": 1000
+          }
+        },
+        "required": [
+          "kind",
+          "amount"
+        ]
+      },
+      "IntentSnapshotItemDto": {
+        "type": "object",
+        "properties": {
+          "lineId": {
+            "type": "string",
+            "description": "Line identifier unique inside snapshot payload",
+            "example": "line-1"
+          },
+          "name": {
+            "type": "string",
+            "description": "Display name",
+            "example": "Front bumper"
+          },
+          "unitPrice": {
+            "type": "number",
+            "description": "Unit price (minor units)",
+            "minimum": 1,
+            "example": 10000
+          },
+          "quantity": {
+            "type": "number",
+            "description": "Quantity",
+            "minimum": 1,
+            "example": 1
+          },
+          "type": {
+            "type": "string",
+            "description": "Item type",
+            "enum": [
+              "PRODUCT",
+              "SHIPPING_FEE"
+            ],
+            "example": "PRODUCT"
+          },
+          "id": {
+            "type": "string",
+            "description": "Optional domain item identifier",
+            "example": "sku-123"
+          },
+          "discounts": {
+            "description": "Discounts applied at item level",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IntentItemDiscountDto"
+            }
+          }
+        },
+        "required": [
+          "lineId",
+          "name",
+          "unitPrice",
+          "quantity",
+          "discounts"
+        ]
+      },
+      "IntentOrderDiscountDto": {
+        "type": "object",
+        "properties": {
+          "discountId": {
+            "type": "string",
+            "description": "Discount identifier",
+            "example": "discount-order-1"
+          },
+          "kind": {
+            "type": "string",
+            "description": "Order discount kind",
+            "enum": [
+              "ORDER"
+            ],
+            "example": "ORDER"
+          },
+          "amount": {
+            "type": "number",
+            "description": "Discount amount (minor units)",
+            "minimum": 1,
+            "example": 3000
+          }
+        },
+        "required": [
+          "kind",
+          "amount"
+        ]
+      },
+      "IntentSnapshotDto": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "type": "string",
+            "description": "Snapshot schema version",
+            "enum": [
+              "INTENT_SNAPSHOT_V1"
+            ],
+            "example": "INTENT_SNAPSHOT_V1"
+          },
+          "items": {
+            "description": "Snapshot items",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IntentSnapshotItemDto"
             }
           },
-          "profileId": {
-            "type": "string"
-          },
-          "provider": {
+          "orderDiscounts": {
+            "description": "Order-level discounts",
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IntentOrderDiscountDto"
+            }
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "items"
+        ]
+      },
+      "CreateIntentDto": {
+        "type": "object",
+        "properties": {
+          "referenceType": {
             "type": "string",
+            "description": "Business reference type",
             "enum": [
-              "TOSS",
-              "HMS_CARD",
-              "HMS_BNPL"
-            ]
+              "STORE_ORDER",
+              "SUBSCRIPTION_BILLING"
+            ],
+            "example": "STORE_ORDER"
           },
-          "usePoints": {
-            "type": "integer",
+          "referenceId": {
+            "type": "string",
+            "description": "Business reference identifier",
+            "maxLength": 128,
+            "example": "order-20260222-001"
+          },
+          "userId": {
+            "type": "string",
+            "description": "User identifier",
+            "maxLength": 128,
+            "example": "user-123"
+          },
+          "currency": {
+            "type": "string",
+            "description": "ISO-4217 currency code",
+            "maxLength": 3,
+            "example": "KRW"
+          },
+          "payableAmount": {
+            "type": "number",
+            "description": "Total payable amount (minor units)",
             "minimum": 0,
-            "maximum": 9007199254740991
+            "example": 10000
+          },
+          "snapshotPayload": {
+            "description": "Snapshot payload used for pricing validation",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/IntentSnapshotDto"
+              }
+            ]
+          },
+          "signature": {
+            "type": "string",
+            "description": "HMAC signature",
+            "example": "6c94a4f5f4e2f5d95e6..."
+          },
+          "signatureVersion": {
+            "type": "string",
+            "description": "Signature version",
+            "example": "v1"
+          },
+          "signedAt": {
+            "type": "string",
+            "description": "Signature creation time (ISO-8601)",
+            "format": "date-time",
+            "example": "2026-02-22T14:30:00.000Z"
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optional metadata",
+            "additionalProperties": true,
+            "example": {
+              "source": "checkout-web"
+            }
           }
         },
         "required": [
-          "provider"
+          "referenceType",
+          "referenceId",
+          "userId",
+          "currency",
+          "payableAmount",
+          "snapshotPayload",
+          "signature",
+          "signatureVersion",
+          "signedAt"
         ]
       },
-      "AuthorizePaymentResponseDto": {
+      "PaymentLegResponseDto": {
         "type": "object",
         "properties": {
-          "success": {
-            "type": "boolean"
-          },
-          "timestamp": {
-            "type": "string"
+          "id": {
+            "type": "string",
+            "description": "Leg identifier",
+            "format": "uuid"
           },
           "intentId": {
-            "type": "string"
+            "type": "string",
+            "description": "Parent intent identifier",
+            "format": "uuid"
           },
-          "attemptId": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string"
-          },
-          "provider": {
-            "type": "string"
+          "providerType": {
+            "type": "string",
+            "description": "Payment provider type",
+            "example": "POINTS"
           },
           "amount": {
-            "type": "number"
+            "type": "number",
+            "description": "Leg amount (minor units)",
+            "minimum": 1
           },
-          "paymentKey": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          },
-          "pointEventId": {
-            "type": "number"
-          },
-          "breakdown": {
-            "type": "object",
-            "properties": {
-              "totalAmount": {
-                "type": "number"
-              },
-              "pointsUsed": {
-                "type": "number"
-              },
-              "finalAmount": {
-                "type": "number"
-              }
-            },
-            "required": [
-              "totalAmount",
-              "pointsUsed",
-              "finalAmount"
+          "status": {
+            "type": "string",
+            "description": "Leg status",
+            "enum": [
+              "PLANNED",
+              "READY",
+              "PROCESSING",
+              "REQUIRES_CUSTOMER_ACTION",
+              "REQUIRES_ADMIN_CONFIRMATION",
+              "AUTHORIZED",
+              "CAPTURED",
+              "FAILED",
+              "EXPIRED",
+              "CANCELING",
+              "CANCELLED",
+              "REFUNDING",
+              "REFUNDED",
+              "RECONCILE_REQUIRED"
             ]
+          },
+          "isRequired": {
+            "type": "boolean",
+            "description": "Whether this leg is required"
+          },
+          "sequenceNo": {
+            "type": "number",
+            "description": "Execution order",
+            "minimum": 1
+          },
+          "version": {
+            "type": "number",
+            "description": "Optimistic lock version",
+            "minimum": 0
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Leg metadata",
+            "additionalProperties": true
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "Creation timestamp",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "Last update timestamp",
+            "format": "date-time"
           }
         },
         "required": [
-          "success",
+          "id",
           "intentId",
-          "status",
-          "provider",
+          "providerType",
           "amount",
-          "paymentKey",
-          "message"
+          "status",
+          "isRequired",
+          "sequenceNo",
+          "version",
+          "metadata",
+          "createdAt",
+          "updatedAt"
         ]
       },
-      "CapturePaymentDto": {
+      "ConfigureLegDto": {
         "type": "object",
         "properties": {
-          "attemptId": {
+          "providerType": {
             "type": "string",
-            "minLength": 1
+            "description": "Payment provider type",
+            "maxLength": 64,
+            "example": "POINTS"
           },
           "amount": {
-            "type": "integer",
-            "exclusiveMinimum": 0,
-            "maximum": 9007199254740991
+            "type": "number",
+            "description": "Leg amount (minor units)",
+            "minimum": 1,
+            "example": 5000
+          },
+          "sequenceNo": {
+            "type": "number",
+            "description": "Execution order (ascending)",
+            "minimum": 1,
+            "example": 1
+          },
+          "isRequired": {
+            "type": "boolean",
+            "description": "Whether the leg is mandatory",
+            "example": true,
+            "default": true
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Leg metadata",
+            "additionalProperties": true,
+            "example": {
+              "channel": "web"
+            }
           }
         },
         "required": [
-          "attemptId"
+          "providerType",
+          "amount",
+          "sequenceNo"
         ]
       },
-      "CapturePaymentResponseDto": {
+      "ConfigureLegsDto": {
         "type": "object",
         "properties": {
-          "success": {
-            "type": "boolean"
-          },
-          "timestamp": {
-            "type": "string"
+          "legs": {
+            "description": "Leg configuration list",
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConfigureLegDto"
+            }
+          }
+        },
+        "required": [
+          "legs"
+        ]
+      },
+      "PaymentAttemptResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Attempt identifier",
+            "format": "uuid"
           },
           "intentId": {
-            "type": "string"
-          },
-          "attemptId": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string"
-          },
-          "amount": {
-            "type": "number"
-          },
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "success",
-          "intentId",
-          "attemptId",
-          "status",
-          "message"
-        ]
-      },
-      "CreateHmsCardProfileDto": {
-        "type": "object",
-        "properties": {
-          "userId": {
             "type": "string",
-            "minLength": 1
+            "description": "Parent intent identifier",
+            "format": "uuid"
           },
-          "memberId": {
+          "legId": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 20
+            "description": "Parent leg identifier",
+            "format": "uuid"
           },
-          "memberName": {
+          "attemptNo": {
+            "type": "number",
+            "description": "Attempt sequence number per leg",
+            "minimum": 1
+          },
+          "operation": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 25
-          },
-          "phone": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 12,
-            "pattern": "^\\d+$"
-          },
-          "payerNumber": {
-            "type": "string",
-            "minLength": 6,
-            "maxLength": 10,
-            "pattern": "^\\d+$"
-          },
-          "paymentNumber": {
-            "type": "string",
-            "minLength": 16,
-            "maxLength": 16,
-            "pattern": "^\\d+$"
-          },
-          "payerName": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 10
-          },
-          "validYear": {
-            "type": "string",
-            "minLength": 2,
-            "maxLength": 2,
-            "pattern": "^\\d+$"
-          },
-          "validMonth": {
-            "type": "string",
-            "minLength": 2,
-            "maxLength": 2,
-            "pattern": "^(0[1-9]|1[0-2])$"
-          },
-          "validUntil": {
-            "type": "string",
-            "minLength": 4,
-            "maxLength": 4
-          },
-          "password": {
-            "type": "string",
-            "minLength": 2,
-            "maxLength": 2,
-            "pattern": "^\\d+$"
-          },
-          "paymentCompany": {
-            "type": "string",
-            "maxLength": 3
-          }
-        },
-        "required": [
-          "memberName",
-          "phone",
-          "payerNumber",
-          "paymentNumber",
-          "payerName",
-          "validYear",
-          "validMonth",
-          "validUntil",
-          "password"
-        ]
-      },
-      "HmsCardProfileResponseDto": {
-        "type": "object",
-        "properties": {
-          "profileId": {
-            "type": "string"
-          },
-          "userId": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "profileId",
-          "userId",
-          "status",
-          "message"
-        ]
-      },
-      "CreateBnplAccountDto": {
-        "type": "object",
-        "properties": {
-          "userId": {
-            "type": "string",
-            "minLength": 1
-          },
-          "creditLimit": {
-            "type": "integer",
-            "exclusiveMinimum": 0,
-            "maximum": 9007199254740991
-          }
-        },
-        "required": [
-          "userId",
-          "creditLimit"
-        ]
-      },
-      "RefundPaymentDto": {
-        "type": "object",
-        "properties": {
-          "amount": {
-            "type": "integer",
-            "exclusiveMinimum": 0,
-            "maximum": 9007199254740991
-          },
-          "reason": {
-            "type": "string"
-          }
-        }
-      },
-      "RefundPaymentResponseDto": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean"
-          },
-          "timestamp": {
-            "type": "string"
-          },
-          "refunded": {
-            "type": "object",
-            "properties": {
-              "points": {
-                "type": "number"
-              },
-              "cash": {
-                "type": "number"
-              },
-              "total": {
-                "type": "number"
-              }
-            },
-            "required": [
-              "points",
-              "cash",
-              "total"
+            "description": "Attempt operation",
+            "enum": [
+              "AUTHORIZE",
+              "CAPTURE",
+              "CANCEL",
+              "REFUND",
+              "MANUAL_CONFIRM"
             ]
           },
           "status": {
-            "type": "string"
+            "type": "string",
+            "description": "Attempt status",
+            "enum": [
+              "CREATED",
+              "SENT",
+              "PENDING_PROVIDER",
+              "REQUIRES_ACTION",
+              "AUTHORIZED",
+              "CAPTURED",
+              "FAILED_RETRYABLE",
+              "FAILED_FINAL",
+              "CANCEL_REQUESTED",
+              "CANCELLED",
+              "REFUND_REQUESTED",
+              "REFUNDED",
+              "UNKNOWN",
+              "RECONCILE_REQUIRED"
+            ]
+          },
+          "providerTransactionId": {
+            "type": "object",
+            "description": "Provider transaction identifier",
+            "nullable": true
+          },
+          "providerRequestId": {
+            "type": "object",
+            "description": "Provider request identifier",
+            "nullable": true
+          },
+          "idempotencyKey": {
+            "type": "object",
+            "description": "Idempotency key from client request",
+            "nullable": true
+          },
+          "providerIdempotencyKey": {
+            "type": "string",
+            "description": "Provider idempotency key"
+          },
+          "errorCode": {
+            "type": "object",
+            "description": "Provider/business error code",
+            "nullable": true
+          },
+          "errorMessage": {
+            "type": "object",
+            "description": "Provider/business error message",
+            "nullable": true
+          },
+          "requestPayload": {
+            "type": "object",
+            "description": "Provider request payload snapshot",
+            "additionalProperties": true,
+            "nullable": true
+          },
+          "responsePayload": {
+            "type": "object",
+            "description": "Provider response payload snapshot",
+            "additionalProperties": true,
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "Creation timestamp",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "Last update timestamp",
+            "format": "date-time"
           }
         },
         "required": [
-          "success",
-          "refunded",
+          "id",
+          "intentId",
+          "legId",
+          "attemptNo",
+          "operation",
+          "status",
+          "providerIdempotencyKey",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "LegOperationResultResponseDto": {
+        "type": "object",
+        "properties": {
+          "intent": {
+            "description": "Updated intent",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentIntentResponseDto"
+              }
+            ]
+          },
+          "leg": {
+            "description": "Updated leg",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentLegResponseDto"
+              }
+            ]
+          },
+          "attempt": {
+            "description": "Operation attempt snapshot",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentAttemptResponseDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "intent",
+          "leg",
+          "attempt"
+        ]
+      },
+      "IntentTerminationResultResponseDto": {
+        "type": "object",
+        "properties": {
+          "intentId": {
+            "type": "string",
+            "description": "Intent identifier",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "description": "Resulting intent status",
+            "enum": [
+              "PENDING",
+              "IN_PROGRESS",
+              "PARTIALLY_CAPTURED",
+              "SUCCEEDED",
+              "FAILED",
+              "EXPIRED",
+              "CANCELLED",
+              "SUSPENDED",
+              "SUPERSEDED",
+              "RECONCILING",
+              "SUPERSEDED_RECONCILE_REQUIRED",
+              "RECONCILE_REQUIRED"
+            ]
+          }
+        },
+        "required": [
+          "intentId",
           "status"
+        ]
+      },
+      "RefundRequestResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Refund request identifier",
+            "format": "uuid"
+          },
+          "intentId": {
+            "type": "string",
+            "description": "Parent intent identifier",
+            "format": "uuid"
+          },
+          "referenceType": {
+            "type": "string",
+            "description": "Business reference type",
+            "enum": [
+              "STORE_ORDER",
+              "SUBSCRIPTION_BILLING"
+            ]
+          },
+          "referenceId": {
+            "type": "string",
+            "description": "Business reference identifier"
+          },
+          "status": {
+            "type": "string",
+            "description": "Refund request status",
+            "enum": [
+              "REQUESTED",
+              "VALIDATED",
+              "PROCESSING",
+              "PARTIALLY_COMPLETED",
+              "COMPLETED",
+              "REJECTED",
+              "FAILED",
+              "RECONCILE_REQUIRED"
+            ]
+          },
+          "refundAmount": {
+            "type": "number",
+            "description": "Requested refund amount (minor units)",
+            "minimum": 1
+          },
+          "currency": {
+            "type": "string",
+            "description": "ISO-4217 currency code",
+            "example": "KRW"
+          },
+          "reasonCode": {
+            "type": "string",
+            "description": "Refund reason code"
+          },
+          "reasonMessage": {
+            "type": "object",
+            "description": "Refund reason message",
+            "nullable": true
+          },
+          "requestedBy": {
+            "type": "string",
+            "description": "Requester identifier"
+          },
+          "approvedBy": {
+            "type": "object",
+            "description": "Approver identifier",
+            "nullable": true
+          },
+          "rejectedBy": {
+            "type": "object",
+            "description": "Rejector identifier",
+            "nullable": true
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Refund metadata",
+            "additionalProperties": true
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "Creation timestamp",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "Last update timestamp",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "intentId",
+          "referenceType",
+          "referenceId",
+          "status",
+          "refundAmount",
+          "currency",
+          "reasonCode",
+          "requestedBy",
+          "metadata",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "RefundAllocationResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Allocation identifier",
+            "format": "uuid"
+          },
+          "refundRequestId": {
+            "type": "string",
+            "description": "Parent refund request identifier",
+            "format": "uuid"
+          },
+          "intentId": {
+            "type": "string",
+            "description": "Parent intent identifier",
+            "format": "uuid"
+          },
+          "legId": {
+            "type": "string",
+            "description": "Leg identifier",
+            "format": "uuid"
+          },
+          "amount": {
+            "type": "number",
+            "description": "Allocated amount (minor units)",
+            "minimum": 1
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "Creation timestamp",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "refundRequestId",
+          "intentId",
+          "legId",
+          "amount",
+          "createdAt"
+        ]
+      },
+      "RefundRequestDetailResponseDto": {
+        "type": "object",
+        "properties": {
+          "refundRequest": {
+            "description": "Refund request detail",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RefundRequestResponseDto"
+              }
+            ]
+          },
+          "allocations": {
+            "description": "Refund allocation list",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RefundAllocationResponseDto"
+            }
+          }
+        },
+        "required": [
+          "refundRequest",
+          "allocations"
+        ]
+      },
+      "RefundAllocationDto": {
+        "type": "object",
+        "properties": {
+          "legId": {
+            "type": "string",
+            "description": "Leg identifier",
+            "format": "uuid",
+            "example": "f3d8f7ab-54f4-4cf4-b8f9-cb8df2c30001"
+          },
+          "amount": {
+            "type": "number",
+            "description": "Allocation amount for this leg (minor units)",
+            "minimum": 1,
+            "example": 3000
+          }
+        },
+        "required": [
+          "legId",
+          "amount"
+        ]
+      },
+      "CreateRefundRequestDto": {
+        "type": "object",
+        "properties": {
+          "refundAmount": {
+            "type": "number",
+            "description": "Requested refund amount (minor units)",
+            "minimum": 1,
+            "example": 5000
+          },
+          "allocation": {
+            "description": "Refund allocations by leg",
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RefundAllocationDto"
+            }
+          },
+          "reasonCode": {
+            "type": "string",
+            "description": "Reason code",
+            "example": "CUSTOMER_REQUEST"
+          },
+          "reasonMessage": {
+            "type": "string",
+            "description": "Optional reason message",
+            "example": "Customer requested partial refund due to delay"
+          }
+        },
+        "required": [
+          "refundAmount",
+          "allocation",
+          "reasonCode"
+        ]
+      },
+      "RetryIntentResponseDto": {
+        "type": "object",
+        "properties": {
+          "intentId": {
+            "type": "string",
+            "description": "Intent identifier",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "description": "Resulting intent status after retry",
+            "enum": [
+              "PENDING",
+              "IN_PROGRESS",
+              "PARTIALLY_CAPTURED",
+              "SUCCEEDED",
+              "FAILED",
+              "EXPIRED",
+              "CANCELLED",
+              "SUSPENDED",
+              "SUPERSEDED",
+              "RECONCILING",
+              "SUPERSEDED_RECONCILE_REQUIRED",
+              "RECONCILE_REQUIRED"
+            ]
+          }
+        },
+        "required": [
+          "intentId",
+          "status"
+        ]
+      },
+      "RetryReconcileDto": {
+        "type": "object",
+        "properties": {
+          "reasonCode": {
+            "type": "string",
+            "description": "Retry reason code",
+            "example": "MANUAL_RETRY"
+          },
+          "reasonMessage": {
+            "type": "string",
+            "description": "Optional retry reason message",
+            "example": "Provider status stabilized, retrying reconcile"
+          },
+          "force": {
+            "type": "boolean",
+            "description": "Reserved flag for force retry behavior",
+            "default": false
+          }
+        },
+        "required": [
+          "reasonCode"
+        ]
+      },
+      "RetryLegResponseDto": {
+        "type": "object",
+        "properties": {
+          "legId": {
+            "type": "string",
+            "description": "Leg identifier",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "description": "Resulting leg status after retry",
+            "enum": [
+              "PLANNED",
+              "READY",
+              "PROCESSING",
+              "REQUIRES_CUSTOMER_ACTION",
+              "REQUIRES_ADMIN_CONFIRMATION",
+              "AUTHORIZED",
+              "CAPTURED",
+              "FAILED",
+              "EXPIRED",
+              "CANCELING",
+              "CANCELLED",
+              "REFUNDING",
+              "REFUNDED",
+              "RECONCILE_REQUIRED"
+            ]
+          },
+          "intentId": {
+            "type": "string",
+            "description": "Parent intent identifier",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "legId",
+          "status",
+          "intentId"
         ]
       }
     }

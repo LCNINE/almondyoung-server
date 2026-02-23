@@ -299,7 +299,21 @@ function validCreateIntentBody(): Record<string, unknown> {
     userId: 'customer-1',
     currency: 'KRW',
     payableAmount: 10000,
-    snapshotPayload: { orderId: 'order-1', totalAmount: 10000 },
+    snapshotPayload: {
+      schemaVersion: 'INTENT_SNAPSHOT_V1',
+      items: [
+        {
+          lineId: 'line-1',
+          name: 'Order item',
+          unitPrice: 10000,
+          quantity: 1,
+          type: 'PRODUCT',
+          id: 'order-1',
+          discounts: [],
+        },
+      ],
+      orderDiscounts: [],
+    },
     signature: 'dummy-signature',
     signatureVersion: 'v1',
     signedAt: '2026-02-17T00:00:00.000Z',
