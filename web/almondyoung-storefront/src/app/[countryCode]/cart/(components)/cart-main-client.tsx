@@ -20,6 +20,8 @@ import { transferCart } from "@lib/api/medusa/customer"
 import type { HttpTypes } from "@medusajs/types"
 import { toast } from "sonner"
 import { CartPageSkeleton } from "@/components/skeletons/page-skeletons"
+import { useMembershipPricing } from "@/hooks/use-membership-pricing"
+import { deriveCartItemPricing } from "./cart-pricing"
 
 /**
  * 메두사 장바구니 아이템을 UI용 CartItem으로 변환
@@ -38,11 +40,16 @@ function mapMedusaItemToCartItem(item: HttpTypes.StoreCartLineItem): CartItem {
   }
 
   // 가격 정보
+  const compareAtUnitPrice = item.compare_at_unit_price ?? null
   const originalTotal = item.original_total
-  const basePrice =
+  const derivedBasePrice =
     typeof originalTotal === "number" && item.quantity > 0
       ? Math.round(originalTotal / item.quantity)
       : item.unit_price || 0
+  const basePrice =
+    typeof compareAtUnitPrice === "number" && compareAtUnitPrice > 0
+      ? compareAtUnitPrice
+      : derivedBasePrice
   const rawMembershipPrice = (variant?.metadata as any)?.membershipPrice
   const parsedMembershipPrice =
     typeof rawMembershipPrice === "string" ? Number(rawMembershipPrice) : null
@@ -86,6 +93,7 @@ export function CartMainClient() {
   const [recommendedProducts, setRecommendedProducts] = useState<any[]>([])
   const [shippingTotal, setShippingTotal] = useState<number>(0)
   const [cartId, setCartId] = useState<string | null>(null)
+  const { isMembershipPricing } = useMembershipPricing()
 
   const getEstimatedShippingTotal = useCallback(
     async (id: string) => {
@@ -260,30 +268,53 @@ export function CartMainClient() {
   }
 
   // 가격 계산
-  const { totalOriginalPrice, finalPrice, totalDiscount, selectedCount } =
+  const {
+    totalOriginalPrice,
+    finalPrice,
+    totalDiscount,
+    membershipDiscount,
+    membershipPreviewPrice,
+    membershipPreviewSavings,
+    selectedCount,
+  } =
     useMemo(() => {
       const selected = cartItems.filter((item) =>
         checkedItems.includes(item.id)
       )
 
-      const totalOriginalPrice = selected.reduce(
-        (sum, item) => sum + (item.product.basePrice || 0) * item.quantity,
-        0
+      let totalOriginalPrice = 0
+      let finalPrice = 0
+      let membershipPreviewPrice = 0
+      let membershipDiscount = 0
+
+      for (const item of selected) {
+        const { quantity, baseUnitPrice, memberUnitPrice, displayUnitPrice } =
+          deriveCartItemPricing(item, isMembershipPricing)
+
+        totalOriginalPrice += baseUnitPrice * quantity
+        finalPrice += displayUnitPrice * quantity
+        membershipPreviewPrice += memberUnitPrice * quantity
+        membershipDiscount += Math.max(
+          0,
+          (baseUnitPrice - memberUnitPrice) * quantity
+        )
+      }
+
+      const membershipPreviewSavings = Math.max(
+        0,
+        totalOriginalPrice - membershipPreviewPrice
       )
-      const finalPrice = selected.reduce(
-        (sum, item) =>
-          sum +
-          (item.product.membershipPrice || item.product.basePrice || 0) *
-            item.quantity,
-        0
-      )
+
       return {
         totalOriginalPrice,
         finalPrice,
-        totalDiscount: totalOriginalPrice - finalPrice,
+        totalDiscount: 0,
+        membershipDiscount: isMembershipPricing ? membershipDiscount : 0,
+        membershipPreviewPrice,
+        membershipPreviewSavings,
         selectedCount: selected.length,
       }
-    }, [cartItems, checkedItems])
+    }, [cartItems, checkedItems, isMembershipPricing])
 
   // 로딩 상태
   if (isLoading && cartItems.length === 0) {
@@ -333,6 +364,9 @@ export function CartMainClient() {
             <CartSummary
               totalOriginalPrice={totalOriginalPrice}
               totalDiscount={totalDiscount}
+              membershipDiscount={membershipDiscount}
+              membershipPreviewPrice={membershipPreviewPrice}
+              membershipPreviewSavings={membershipPreviewSavings}
               shippingFee={shippingTotal}
               finalPrice={finalPrice}
               selectedCount={selectedCount}
@@ -348,6 +382,9 @@ export function CartMainClient() {
           <CartFooter
             totalOriginalPrice={totalOriginalPrice}
             totalDiscount={totalDiscount}
+            membershipDiscount={membershipDiscount}
+            membershipPreviewPrice={membershipPreviewPrice}
+            membershipPreviewSavings={membershipPreviewSavings}
             finalPrice={finalPrice}
             selectedCount={selectedCount}
             shippingFee={shippingTotal}

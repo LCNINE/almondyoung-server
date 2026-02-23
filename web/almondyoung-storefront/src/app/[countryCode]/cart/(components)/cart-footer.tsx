@@ -7,10 +7,14 @@ import { useRouter, useParams } from "next/navigation"
 import { deleteLineItems } from "@lib/api/medusa/cart"
 import type { CartItem } from "@lib/types/ui/cart"
 import { toast } from "sonner"
+import { useMembershipPricing } from "@/hooks/use-membership-pricing"
 
 interface CartFooterProps {
   totalOriginalPrice: number
   totalDiscount: number
+  membershipDiscount: number
+  membershipPreviewPrice: number
+  membershipPreviewSavings: number
   finalPrice: number
   selectedCount: number
   shippingFee: number
@@ -21,6 +25,9 @@ interface CartFooterProps {
 export function CartFooter({
   totalOriginalPrice,
   totalDiscount,
+  membershipDiscount,
+  membershipPreviewPrice,
+  membershipPreviewSavings,
   finalPrice,
   selectedCount,
   shippingFee,
@@ -32,6 +39,10 @@ export function CartFooter({
   const countryCode = params?.countryCode || "kr"
   const [isExpanded, setIsExpanded] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
+  const { isMembershipPricing } = useMembershipPricing()
+  const appliedDiscountTotal = totalDiscount + membershipDiscount
+  const shouldShowMembershipPreview =
+    !isMembershipPricing && membershipPreviewSavings > 0
 
   const handleCheckout = async () => {
     if (selectedCount === 0) {
@@ -73,7 +84,7 @@ export function CartFooter({
               {/* 할인 정보 */}
               <div className="flex items-center gap-1.5">
                 <span className="text-xs font-bold text-red-30">
-                  {totalDiscount.toLocaleString()}원 할인
+                  총 {appliedDiscountTotal.toLocaleString()}원 할인
                 </span>
                 <ChevronUp
                   className={`h-3 w-3 transition-transform ${isExpanded ? "" : "rotate-180"}`}
@@ -100,10 +111,23 @@ export function CartFooter({
                     {totalOriginalPrice.toLocaleString()}원
                   </span>
                 </div>
+                {shouldShowMembershipPreview && (
+                  <p className="text-sm font-medium text-[#F2994A]">
+                    멤버십 가입 시{" "}
+                    {(membershipPreviewPrice + shippingFee).toLocaleString()}원
+                    결제, {membershipPreviewSavings.toLocaleString()}원 절약
+                  </p>
+                )}
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">할인 금액</span>
                   <span className="font-medium">
                     {totalDiscount.toLocaleString()}원
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">멤버십 할인</span>
+                  <span className="font-medium">
+                    {membershipDiscount.toLocaleString()}원
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
