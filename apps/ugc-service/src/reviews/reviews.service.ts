@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { and, count, desc, eq, inArray, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, type SQL } from 'drizzle-orm';
 import { reviewMedia, reviews, type UgcServiceSchema } from '../db/schema';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { ReviewListQueryDto } from './dto/review-list-query.dto';
@@ -249,10 +249,17 @@ export class ReviewsService {
 
       const [{ count: total }] = await countQuery;
 
+      const orderByClause = {
+        latest: desc(reviews.createdAt),
+        oldest: asc(reviews.createdAt),
+        rating_high: desc(reviews.rating),
+        rating_low: asc(reviews.rating),
+      }[query.sort ?? 'latest'];
+
       const dataQuery = tx
         .select()
         .from(reviews)
-        .orderBy(desc(reviews.createdAt))
+        .orderBy(orderByClause)
         .limit(limit)
         .offset(offset);
 
