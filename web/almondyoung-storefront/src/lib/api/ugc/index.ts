@@ -28,6 +28,7 @@ export const getReviewsByProductId = async ({
 
   const queryString = new URLSearchParams(params).toString()
 
+  // todo:임시
   const result = await fetch(
     `https://ugc-demo.up.railway.app/reviews?${queryString}`,
     {
