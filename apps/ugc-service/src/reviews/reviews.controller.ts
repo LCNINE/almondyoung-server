@@ -76,6 +76,12 @@ export class ReviewsController {
     required: false,
     type: Number,
   })
+  @ApiQuery({
+    name: 'sort',
+    description: '정렬 옵션 (기본값: latest)',
+    required: false,
+    enum: ['latest', 'oldest', 'rating_high', 'rating_low'],
+  })
   @ApiOkResponsePaginated(ReviewResponseDto, {
     description: '리뷰 목록 조회 성공',
   })
