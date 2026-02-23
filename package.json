@@ -47,6 +47,8 @@
     "start:wallet": "nest start wallet",
     "start:wallet:dev": "nest start wallet --watch",
     "start:wallet:prod": "node dist/apps/wallet/main.js",
+    "start:wallet-web": "cd apps/wallet-web && npm run start",
+    "start:wallet-web:dev": "cd apps/wallet-web && npm run dev",
     "start:membership": "nest start membership",
     "start:membership:dev": "nest start membership --watch",
     "start:membership:prod": "node dist/apps/membership/main.js",
