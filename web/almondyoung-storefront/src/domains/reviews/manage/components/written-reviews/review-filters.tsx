@@ -6,12 +6,8 @@ import {
   SelectValue,
 } from "@components/common/ui/select"
 import { Separator } from "@components/common/ui/separator"
-import { REVIEW_PERIOD_OPTIONS, REVIEW_TYPE_OPTIONS } from "../utils/constants"
+import { REVIEW_PERIOD_OPTIONS, REVIEW_TYPE_OPTIONS } from "../../utils/constants"
 
-/**
- * 리뷰 필터 컴포넌트
- * 단일 책임: 필터 옵션 표시만 담당
- */
 export const ReviewFilters = () => {
   return (
     <div className="flex items-center gap-2 text-[14px] text-[#666666]">
