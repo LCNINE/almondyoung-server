@@ -571,6 +571,203 @@ export class MedusaClient {
         return product as MedusaProduct;
     }
 
+    private async getProductWithVariantDetails(productId: string): Promise<MedusaProduct> {
+        const { product } = await this.sdk.admin.product.retrieve(productId, {
+            fields: 'id,*variants,+variants.metadata,+variants.manage_inventory,+variants.sku,+variants.title,+variants.inventory_items',
+        });
+        return product as MedusaProduct;
+    }
+
+    private async enrichPayloadWithExistingVariantIds(
+        productId: string,
+        payload: MedusaProductPayload,
+    ): Promise<MedusaProductPayload> {
+        if (!payload.variants || payload.variants.length === 0) {
+            return payload;
+        }
+
+        const existingProduct = await this.getProductWithVariantDetails(productId);
+        const existingVariants = existingProduct.variants || [];
+
+        const pimVariantIdToVariantId = new Map<string, string>();
+        const skuToVariantId = new Map<string, string>();
+        for (const variant of existingVariants) {
+            const pimVariantId = variant.metadata?.pimVariantId;
+            if (pimVariantId) {
+                pimVariantIdToVariantId.set(pimVariantId, variant.id);
+            }
+            if (variant.sku) {
+                skuToVariantId.set(variant.sku, variant.id);
+            }
+        }
+
+        const variants = payload.variants.map((variant) => {
+            const pimVariantId = variant.metadata?.pimVariantId;
+            const matchedId =
+                (pimVariantId ? pimVariantIdToVariantId.get(pimVariantId) : undefined) ||
+                (variant.sku ? skuToVariantId.get(variant.sku) : undefined);
+
+            return {
+                ...variant,
+                // 동기화 대상 variant는 항상 재고 관리로 고정
+                manage_inventory: true,
+                ...(matchedId ? { id: matchedId } : {}),
+            };
+        });
+
+        return {
+            ...payload,
+            variants,
+        };
+    }
+
+    private async getOrCreateInventoryItemBySku(
+        sku: string,
+        title: string,
+    ): Promise<string> {
+        const existing = await this.sdk.admin.inventoryItem.list({
+            sku,
+            limit: 1,
+        });
+        const existingItemId = existing.inventory_items?.[0]?.id;
+        if (existingItemId) {
+            return existingItemId;
+        }
+
+        try {
+            const created = await this.sdk.admin.inventoryItem.create({
+                sku,
+                title,
+            });
+            if (!created.inventory_item?.id) {
+                throw new Error('Medusa API returned no inventory item id');
+            }
+            return created.inventory_item.id;
+        } catch (error) {
+            const fetchError = error as FetchError;
+            const isConflict =
+                fetchError.status === 409 ||
+                /already exists/i.test(fetchError.message || '');
+            if (!isConflict) {
+                throw error;
+            }
+
+            // 레이스 컨디션으로 생성 충돌 시 재조회 후 재사용
+            const retried = await this.sdk.admin.inventoryItem.list({
+                sku,
+                limit: 1,
+            });
+            const retriedId = retried.inventory_items?.[0]?.id;
+            if (!retriedId) {
+                throw error;
+            }
+            return retriedId;
+        }
+    }
+
+    private async ensureVariantInventoryLinks(
+        productId: string,
+        sourceVariants: MedusaProductPayload['variants'],
+    ): Promise<void> {
+        if (!sourceVariants || sourceVariants.length === 0) {
+            return;
+        }
+
+        const latest = await this.getProductWithVariantDetails(productId);
+        const medusaVariants = latest.variants || [];
+
+        type PayloadVariant = NonNullable<MedusaProductPayload['variants']>[number];
+        const sourceByPimVariantId = new Map<string, PayloadVariant>();
+        const sourceBySku = new Map<string, PayloadVariant>();
+
+        for (const variant of sourceVariants) {
+            const pimVariantId = variant.metadata?.pimVariantId;
+            if (pimVariantId) {
+                sourceByPimVariantId.set(pimVariantId, variant);
+            }
+            if (variant.sku) {
+                sourceBySku.set(variant.sku, variant);
+            }
+        }
+
+        const variantsToForceManageInventory = medusaVariants
+            .filter((medusaVariant) => {
+                const src =
+                    (medusaVariant.metadata?.pimVariantId
+                        ? sourceByPimVariantId.get(medusaVariant.metadata.pimVariantId)
+                        : undefined) ||
+                    (medusaVariant.sku ? sourceBySku.get(medusaVariant.sku) : undefined);
+
+                if (!src || src.manage_inventory === false) {
+                    return false;
+                }
+                return medusaVariant.manage_inventory !== true;
+            })
+            .map((medusaVariant) => ({
+                id: medusaVariant.id,
+                manage_inventory: true,
+            }));
+
+        if (variantsToForceManageInventory.length > 0) {
+            await this.sdk.admin.product.batchVariants(productId, {
+                update: variantsToForceManageInventory,
+            });
+        }
+
+        for (const medusaVariant of medusaVariants) {
+            const src =
+                (medusaVariant.metadata?.pimVariantId
+                    ? sourceByPimVariantId.get(medusaVariant.metadata.pimVariantId)
+                    : undefined) ||
+                (medusaVariant.sku ? sourceBySku.get(medusaVariant.sku) : undefined);
+
+            if (!src || src.manage_inventory === false) {
+                continue;
+            }
+
+            const hasInventoryLink =
+                Array.isArray(medusaVariant.inventory_items) &&
+                medusaVariant.inventory_items.length > 0;
+
+            if (hasInventoryLink) {
+                continue;
+            }
+
+            const pimVariantId = src.metadata?.pimVariantId || medusaVariant.id;
+            const sku = medusaVariant.sku || src.sku || `pim-${pimVariantId}`;
+            const title = medusaVariant.title || src.title || sku;
+
+            const inventoryItemId = await this.getOrCreateInventoryItemBySku(sku, title);
+
+            try {
+                await this.sdk.admin.product.batchVariantInventoryItems(productId, {
+                    create: [
+                        {
+                            inventory_item_id: inventoryItemId,
+                            variant_id: medusaVariant.id,
+                            required_quantity: 1,
+                        },
+                    ],
+                });
+                this.logger.log(
+                    `Linked inventory_item ${inventoryItemId} to variant ${medusaVariant.id} (product ${productId})`,
+                );
+            } catch (error) {
+                const fetchError = error as FetchError;
+                const isConflict =
+                    fetchError.status === 409 ||
+                    /already exists/i.test(fetchError.message || '');
+                if (isConflict) {
+                    this.logger.debug(
+                        `Variant inventory link already exists: variant=${medusaVariant.id}, inventory_item=${inventoryItemId}`,
+                    );
+                    continue;
+                }
+                throw error;
+            }
+        }
+    }
+
     private async safeDeleteProduct(productId: string): Promise<void> {
         try {
             await this.deleteProduct(productId);
@@ -623,7 +820,12 @@ export class MedusaClient {
         if (medusaProductId) {
             try {
                 // 매핑이 있으면 업데이트
-                const product = await this.updateProduct(medusaProductId, payload);
+                const updatePayload = await this.enrichPayloadWithExistingVariantIds(
+                    medusaProductId,
+                    payload,
+                );
+                const product = await this.updateProduct(medusaProductId, updatePayload);
+                await this.ensureVariantInventoryLinks(product.id, payload.variants);
                 return { product, action: 'updated' };
             } catch (err) {
                 // 이전에 존재하던 product id가 삭제되었을 경우 create로 재시도
@@ -648,12 +850,18 @@ export class MedusaClient {
             this.logger.warn(
                 `Found product by handle without mapping: ${payload.handle} -> ${existingProduct.id}. Updating.`,
             );
-            const product = await this.updateProduct(existingProduct.id, payload);
+            const updatePayload = await this.enrichPayloadWithExistingVariantIds(
+                existingProduct.id,
+                payload,
+            );
+            const product = await this.updateProduct(existingProduct.id, updatePayload);
+            await this.ensureVariantInventoryLinks(product.id, payload.variants);
             return { product, action: 'updated' };
         }
 
         // 완전히 새 상품
         const product = await this.createProductChunked(payload);
+        await this.ensureVariantInventoryLinks(product.id, payload.variants);
         return { product, action: 'created' };
     }
 
