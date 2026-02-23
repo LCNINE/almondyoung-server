@@ -38,10 +38,7 @@ export const getReviewsByProductId = async ({
     }
   )
 
-  console.log("result::", result)
-
   const data = await result.json()
-  console.log("data::", data)
 
   return data
 
