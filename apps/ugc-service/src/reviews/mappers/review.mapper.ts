@@ -11,6 +11,7 @@ export class ReviewMapper {
       content: entity.content,
       legacy_author_name: entity.legacyAuthorName ?? null,
       mediaFileIds: entity.mediaFileIds,
+      helpfulCount: entity.helpfulCount,
       status: entity.status,
       createdAt: entity.createdAt.toISOString(),
       updatedAt: entity.updatedAt.toISOString(),
