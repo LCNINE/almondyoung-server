@@ -12,7 +12,16 @@ export const REVIEW_RATING_FILTERS = [
   'negative',
 ] as const;
 
-export type ReviewRatingFilter = typeof REVIEW_RATING_FILTERS[number];
+export type ReviewRatingFilter = (typeof REVIEW_RATING_FILTERS)[number];
+
+export const REVIEW_SORT_OPTIONS = [
+  'latest',
+  'oldest',
+  'rating_high',
+  'rating_low',
+] as const;
+
+export type ReviewSortOption = (typeof REVIEW_SORT_OPTIONS)[number];
 
 export class ReviewListQueryDto extends PaginationQueryDto {
   @ApiProperty({
@@ -30,4 +39,14 @@ export class ReviewListQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsIn(REVIEW_RATING_FILTERS)
   rating?: ReviewRatingFilter;
+
+  @ApiPropertyOptional({
+    description: '정렬 옵션',
+    enum: REVIEW_SORT_OPTIONS,
+    example: 'latest',
+    default: 'latest',
+  })
+  @IsOptional()
+  @IsIn(REVIEW_SORT_OPTIONS)
+  sort?: ReviewSortOption;
 }
