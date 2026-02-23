@@ -48,7 +48,7 @@ export function ProductInfoMobile({ product }: Props) {
   }
 
   return (
-    <section className="md:hidden" aria-label="상품 정보">
+    <section className="lg:hidden" aria-label="상품 정보">
       {/* 브랜드 & 상품명 */}
       <header className="mb-4">
         {product.brand && (

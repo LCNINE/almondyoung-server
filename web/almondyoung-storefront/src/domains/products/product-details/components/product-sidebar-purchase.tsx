@@ -170,7 +170,7 @@ export function ProductSidebarPurchase({
 
   return (
     <>
-      <aside className="hidden w-full min-w-[383px] overflow-y-auto md:sticky md:top-0 md:block md:max-h-screen md:max-w-[383px] lg:max-w-[480px]">
+      <aside className="hidden w-full min-w-[383px] overflow-y-auto lg:sticky lg:top-0 lg:block lg:max-h-screen lg:max-w-[480px]">
         <div className="h-full bg-white p-6">
           {/* 헤더: 브랜드, 상품명, 액션 버튼 */}
           <header className="flex justify-between gap-4">
