@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { randomUUID } from 'crypto';
 
 const WALLET_API_URL = process.env.WALLET_API_URL ?? 'http://localhost:3100';
 const WALLET_API_KEY = process.env.WALLET_API_KEY ?? '';
@@ -11,6 +12,7 @@ export async function POST(req: NextRequest) {
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${WALLET_API_KEY}`,
+      'Idempotency-Key': randomUUID(),
     },
     body: JSON.stringify(body),
   });

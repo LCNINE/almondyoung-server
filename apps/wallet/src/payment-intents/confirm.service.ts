@@ -316,9 +316,11 @@ export class ConfirmService {
     intentId: string,
     tx: DbTx,
   ): Promise<typeof paymentIntents.$inferSelect | null> {
-    const rows = (await tx.execute(
-      sql`select * from payment_intents where id = ${intentId} for update`,
-    )) as Array<typeof paymentIntents.$inferSelect>;
-    return rows[0] ?? null;
+    const [row] = await tx.select()
+      .from(paymentIntents)
+      .where(eq(paymentIntents.id, intentId))
+      .for('update', { skipLocked: true })
+      .limit(1);
+    return row ?? null;
   }
 }

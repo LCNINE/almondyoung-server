@@ -19,6 +19,9 @@ export const walletEnvSchema = z.object({
   PORT: z.string().regex(/^\d+$/).optional(),
   NODE_ENV: z.enum(['development', 'production', 'test']).optional(),
   SERVICE_NAME: z.string().optional(),
+  // Comma-separated list of allowed CORS origins (e.g. "https://app.example.com,https://admin.example.com")
+  // Not required in development — all origins are allowed when NODE_ENV=development
+  WALLET_CORS_ORIGINS: z.string().optional(),
 });
 
 export type WalletEnvConfig = z.infer<typeof walletEnvSchema>;
