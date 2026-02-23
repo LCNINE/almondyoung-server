@@ -99,6 +99,9 @@ Wallet Front, Medusa Payment Provider가 주로 사용하는 엔드포인트다.
 - `referenceType=SUBSCRIPTION_BILLING`이면 `referenceId`는 구독 청구/인보이스 식별자여야 함
 - `referenceType`의 허용값 외에는 요청 거절
 - 동일 `referenceType + referenceId`에 `SUCCEEDED` Intent가 이미 존재하면 요청 거절 (`409 Conflict`, `REFERENCE_ALREADY_PAID`)
+- `snapshotPayload`는 반드시 품목/수량 정보를 포함해야 하며, 할인 구조/계산 규칙은 `12-intent-items-discounts-and-pricing.md`를 따른다.
+- Wallet은 `snapshotPayload` 기반으로 `payableAmount`를 재계산해 검증한다.
+- 계산값과 요청 `payableAmount`가 불일치하면 요청 거절 (`400`, `PAYABLE_AMOUNT_MISMATCH`)
 
 ## 5. Refund APIs
 

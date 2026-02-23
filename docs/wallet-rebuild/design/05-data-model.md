@@ -212,6 +212,83 @@ Intent를 결제수단 단위로 분할한 엔티티.
   - `UNIQUE(intent_id, leg_id) WHERE status IN ('QUEUED', 'ASSIGNED', 'PROCESSING', 'FAILED_RETRYABLE')`
   - 의미: open 상태에서는 동일 `intent_id + leg_id` 중복 금지, closed 상태에서는 이력 누적 허용
 
+## 3.7 `payment_intent_items`
+
+Intent 생성 시 전달된 품목의 정규화 저장 테이블.
+
+주요 컬럼(권장):
+
+- `id` (PK)
+- `intent_id` (FK -> `payment_intents.id`)
+- `line_id`
+- `name`
+- `item_type` (`PRODUCT` | `SHIPPING_FEE`, nullable)
+- `item_ref_id` (nullable)
+- `unit_price`
+- `quantity`
+- `base_amount`
+- `item_discount_per_unit_total`
+- `item_discount_flat_total`
+- `payable_amount`
+- `metadata`
+- `created_at`, `updated_at`
+
+핵심 제약:
+
+- `UNIQUE(intent_id, line_id)`
+- `unit_price >= 0`
+- `quantity > 0`
+- `payable_amount >= 0`
+- `item_type IS NULL -> item_ref_id IS NULL`
+- `item_type = 'SHIPPING_FEE' -> item_ref_id IS NULL`
+
+## 3.8 `payment_intent_item_discounts`
+
+품목 단위 할인 정규화 저장 테이블.
+
+주요 컬럼(권장):
+
+- `id` (PK)
+- `intent_id` (FK -> `payment_intents.id`)
+- `item_id` (FK -> `payment_intent_items.id`)
+- `discount_id` (nullable)
+- `kind` (`ITEM_PER_UNIT` | `ITEM_FLAT`)
+- `amount`
+- `metadata`
+- `created_at`, `updated_at`
+
+핵심 제약:
+
+- `amount > 0`
+- `kind in ('ITEM_PER_UNIT', 'ITEM_FLAT')`
+
+## 3.9 `payment_intent_order_discounts`
+
+주문 전체 할인 정규화 저장 테이블.
+
+주요 컬럼(권장):
+
+- `id` (PK)
+- `intent_id` (FK -> `payment_intents.id`)
+- `discount_id` (nullable)
+- `kind` (`ORDER`)
+- `amount`
+- `metadata`
+- `created_at`, `updated_at`
+
+핵심 제약:
+
+- `kind = 'ORDER'`
+- `amount > 0`
+
+## 3.10 Intent Amount Storage Rule
+
+- `payment_intents.payable_amount`는 Wallet 계산 결과를 저장한다.
+- 계산 규칙은 `12-intent-items-discounts-and-pricing.md`를 따른다.
+  - item 경계 clamp 적용
+  - 할인 적용 순서 고정 (`ITEM_PER_UNIT` -> `ITEM_FLAT` -> `ORDER`)
+- 요청의 선언값(`payableAmount`)과 계산값이 다르면 insert 이전에 요청 거절한다.
+
 ## 4. Cross-Cutting Tables
 
 ## 4.1 `payment_state_transitions` (append-only)

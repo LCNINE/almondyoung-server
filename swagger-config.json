@@ -25,7 +25,7 @@
       "title": "Wallet API",
       "description": "지갑 관리 시스템 (Wallet Management System) API",
       "version": "1.0.0",
-      "appModule": "./apps/wallet/src/app.module.ts",
+      "appModule": "./apps/wallet/src/wallet.module.ts",
       "port": 5000
     }
   }

@@ -5,6 +5,9 @@ import {
   manualCancelQueueItems,
   outboxEvents,
   paymentAttempts,
+  paymentIntentItemDiscounts,
+  paymentIntentItems,
+  paymentIntentOrderDiscounts,
   paymentIntents,
   paymentLegs,
   paymentStateTransitions,
@@ -25,6 +28,32 @@ export type PaymentIntent = InferSelectModel<typeof paymentIntents>;
 export type NewPaymentIntent = InferInsertModel<typeof paymentIntents>;
 export type UpdatePaymentIntent = Partial<
   Omit<NewPaymentIntent, 'id' | 'createdAt' | 'updatedAt'>
+>;
+
+export type PaymentIntentItem = InferSelectModel<typeof paymentIntentItems>;
+export type NewPaymentIntentItem = InferInsertModel<typeof paymentIntentItems>;
+export type UpdatePaymentIntentItem = Partial<
+  Omit<NewPaymentIntentItem, 'id' | 'createdAt' | 'updatedAt'>
+>;
+
+export type PaymentIntentItemDiscount = InferSelectModel<
+  typeof paymentIntentItemDiscounts
+>;
+export type NewPaymentIntentItemDiscount = InferInsertModel<
+  typeof paymentIntentItemDiscounts
+>;
+export type UpdatePaymentIntentItemDiscount = Partial<
+  Omit<NewPaymentIntentItemDiscount, 'id' | 'createdAt' | 'updatedAt'>
+>;
+
+export type PaymentIntentOrderDiscount = InferSelectModel<
+  typeof paymentIntentOrderDiscounts
+>;
+export type NewPaymentIntentOrderDiscount = InferInsertModel<
+  typeof paymentIntentOrderDiscounts
+>;
+export type UpdatePaymentIntentOrderDiscount = Partial<
+  Omit<NewPaymentIntentOrderDiscount, 'id' | 'createdAt' | 'updatedAt'>
 >;
 
 export type PaymentLeg = InferSelectModel<typeof paymentLegs>;

@@ -147,6 +147,21 @@ export const pointHoldStatusEnum = pgEnum('point_hold_status', [
   'CANCELLED',
 ]);
 
+export const paymentIntentItemTypeEnum = pgEnum('payment_intent_item_type', [
+  'PRODUCT',
+  'SHIPPING_FEE',
+]);
+
+export const paymentIntentItemDiscountKindEnum = pgEnum(
+  'payment_intent_item_discount_kind',
+  ['ITEM_PER_UNIT', 'ITEM_FLAT'],
+);
+
+export const paymentIntentOrderDiscountKindEnum = pgEnum(
+  'payment_intent_order_discount_kind',
+  ['ORDER'],
+);
+
 export const paymentIntents = pgTable(
   'payment_intents',
   {
@@ -207,6 +222,126 @@ export const paymentLegs = pgTable(
     uniqueIndex('uq_payment_legs_intent_sequence').on(table.intentId, table.sequenceNo),
     index('idx_payment_legs_intent_status').on(table.intentId, table.status),
     index('idx_payment_legs_provider_status').on(table.providerType, table.status),
+  ],
+);
+
+export const paymentIntentItems = pgTable(
+  'payment_intent_items',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    intentId: uuid('intent_id')
+      .notNull()
+      .references(() => paymentIntents.id),
+    lineId: varchar('line_id', { length: 128 }).notNull(),
+    name: varchar('name', { length: 255 }).notNull(),
+    itemType: paymentIntentItemTypeEnum('item_type'),
+    itemRefId: varchar('item_ref_id', { length: 128 }),
+    unitPrice: integer('unit_price').notNull(),
+    quantity: integer('quantity').notNull(),
+    baseAmount: integer('base_amount').notNull(),
+    itemDiscountPerUnitTotal: integer('item_discount_per_unit_total')
+      .notNull()
+      .default(0),
+    itemDiscountFlatTotal: integer('item_discount_flat_total')
+      .notNull()
+      .default(0),
+    payableAmount: integer('payable_amount').notNull(),
+    metadata: jsonb('metadata')
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check('payment_intent_items_unit_price_non_negative', sql`${table.unitPrice} >= 0`),
+    check('payment_intent_items_quantity_positive', sql`${table.quantity} > 0`),
+    check('payment_intent_items_base_amount_non_negative', sql`${table.baseAmount} >= 0`),
+    check(
+      'payment_intent_items_discount_per_unit_non_negative',
+      sql`${table.itemDiscountPerUnitTotal} >= 0`,
+    ),
+    check(
+      'payment_intent_items_discount_flat_non_negative',
+      sql`${table.itemDiscountFlatTotal} >= 0`,
+    ),
+    check(
+      'payment_intent_items_payable_amount_non_negative',
+      sql`${table.payableAmount} >= 0`,
+    ),
+    check(
+      'payment_intent_items_item_type_and_ref_consistency',
+      sql`${table.itemType} is not null or ${table.itemRefId} is null`,
+    ),
+    check(
+      'payment_intent_items_shipping_fee_ref_must_be_null',
+      sql`${table.itemType} <> 'SHIPPING_FEE' or ${table.itemRefId} is null`,
+    ),
+    uniqueIndex('uq_payment_intent_items_intent_line').on(table.intentId, table.lineId),
+    index('idx_payment_intent_items_intent_created_at').on(table.intentId, table.createdAt),
+  ],
+);
+
+export const paymentIntentItemDiscounts = pgTable(
+  'payment_intent_item_discounts',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    intentId: uuid('intent_id')
+      .notNull()
+      .references(() => paymentIntents.id),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => paymentIntentItems.id),
+    discountId: varchar('discount_id', { length: 128 }),
+    kind: paymentIntentItemDiscountKindEnum('kind').notNull(),
+    amount: integer('amount').notNull(),
+    metadata: jsonb('metadata')
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check('payment_intent_item_discounts_amount_positive', sql`${table.amount} > 0`),
+    index('idx_payment_intent_item_discounts_intent_created_at').on(
+      table.intentId,
+      table.createdAt,
+    ),
+    index('idx_payment_intent_item_discounts_item_created_at').on(
+      table.itemId,
+      table.createdAt,
+    ),
+  ],
+);
+
+export const paymentIntentOrderDiscounts = pgTable(
+  'payment_intent_order_discounts',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    intentId: uuid('intent_id')
+      .notNull()
+      .references(() => paymentIntents.id),
+    discountId: varchar('discount_id', { length: 128 }),
+    kind: paymentIntentOrderDiscountKindEnum('kind').notNull(),
+    amount: integer('amount').notNull(),
+    metadata: jsonb('metadata')
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check(
+      'payment_intent_order_discounts_kind_order_only',
+      sql`${table.kind} = 'ORDER'`,
+    ),
+    check('payment_intent_order_discounts_amount_positive', sql`${table.amount} > 0`),
+    index('idx_payment_intent_order_discounts_intent_created_at').on(
+      table.intentId,
+      table.createdAt,
+    ),
   ],
 );
 
@@ -620,9 +755,18 @@ export type PaymentStateTriggerType =
 export type OutboxStatus = (typeof outboxStatusEnum.enumValues)[number];
 export type PointEventType = (typeof pointEventTypeEnum.enumValues)[number];
 export type PointHoldStatus = (typeof pointHoldStatusEnum.enumValues)[number];
+export type PaymentIntentItemType =
+  (typeof paymentIntentItemTypeEnum.enumValues)[number];
+export type PaymentIntentItemDiscountKind =
+  (typeof paymentIntentItemDiscountKindEnum.enumValues)[number];
+export type PaymentIntentOrderDiscountKind =
+  (typeof paymentIntentOrderDiscountKindEnum.enumValues)[number];
 
 export const walletSchema = {
   paymentIntents,
+  paymentIntentItems,
+  paymentIntentItemDiscounts,
+  paymentIntentOrderDiscounts,
   paymentLegs,
   paymentAttempts,
   refundRequests,
@@ -637,5 +781,7 @@ export const walletSchema = {
   pointHoldDetails,
   idempotencyKeys,
 };
+
+export { idempotencyKeys };
 
 export type WalletSchema = typeof walletSchema;

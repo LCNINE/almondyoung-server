@@ -514,6 +514,12 @@ export default function DevIntentsPage() {
         <Button asChild variant="outline">
           <Link href="/dev/api">API Console</Link>
         </Button>
+        <Button asChild variant="outline">
+          <Link href="/dev/signature">Signature Utility</Link>
+        </Button>
+        <Button asChild variant="outline">
+          <Link href="/dev/points">Points Manager</Link>
+        </Button>
       </div>
 
       <Card>

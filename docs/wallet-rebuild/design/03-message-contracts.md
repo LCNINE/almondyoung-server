@@ -138,6 +138,10 @@
   - `referenceId`는 구독 청구/인보이스 식별자여야 함
   - `billingContext` 권장
 - 그 외 `referenceType`은 v1에서 거절
+- `snapshotPayload` 구조는 `12-intent-items-discounts-and-pricing.md`를 따른다.
+  - `items`는 필수이며 item마다 `quantity`를 가진다.
+  - 할인은 `ITEM_PER_UNIT`, `ITEM_FLAT`, `ORDER`만 허용한다.
+- Wallet은 `snapshotPayload`를 기준으로 `payableAmount`를 재계산하며, 불일치 시 커맨드를 거절한다.
 
 #### `StartPaymentLeg`
 

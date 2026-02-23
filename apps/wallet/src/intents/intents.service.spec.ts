@@ -11,6 +11,7 @@ import {
   WalletSchema,
   manualCancelQueueItems,
   paymentAttempts,
+  paymentIntentItems,
   paymentIntents,
   paymentLegs,
 } from '../schema';
@@ -163,11 +164,25 @@ describe('IntentsService', () => {
     const insertIntentValuesMock = jest.fn().mockReturnValue({
       returning: jest.fn().mockResolvedValue([createdIntent]),
     });
+    const insertIntentItemsValuesMock = jest.fn().mockReturnValue({
+      returning: jest.fn().mockResolvedValue([
+        {
+          id: 'intent-item-1',
+          lineId: 'line-1',
+        },
+      ]),
+    });
     const insertTransitionValuesMock = jest.fn().mockResolvedValue(undefined);
     const txInsertMock = jest.fn((table) => {
       if (table === paymentIntents) {
         return {
           values: insertIntentValuesMock,
+        };
+      }
+
+      if (table === paymentIntentItems) {
+        return {
+          values: insertIntentItemsValuesMock,
         };
       }
 
@@ -1858,10 +1873,24 @@ describe('IntentsService', () => {
 function createSignedCreateIntentDto(
   override?: Partial<CreateIntentDto>,
 ): CreateIntentDto {
+  const referenceType = override?.referenceType ?? 'STORE_ORDER';
+  const referenceId = override?.referenceId ?? 'order-1';
+  const currency = override?.currency ?? 'KRW';
+  const payableAmount = override?.payableAmount ?? 10000;
   const snapshotPayload = {
-    orderId: 'order-1',
-    lineItems: [{ sku: 'SKU-1', quantity: 1 }],
-    totalAmount: override?.payableAmount ?? 10000,
+    schemaVersion: 'INTENT_SNAPSHOT_V1',
+    items: [
+      {
+        lineId: 'line-1',
+        name: referenceType === 'SUBSCRIPTION_BILLING' ? 'Subscription billing' : 'Order item',
+        unitPrice: payableAmount,
+        quantity: 1,
+        type: referenceType === 'STORE_ORDER' ? 'PRODUCT' : undefined,
+        id: referenceType === 'STORE_ORDER' ? referenceId : undefined,
+        discounts: [],
+      },
+    ],
+    orderDiscounts: [],
   };
   const signatureVersion = override?.signatureVersion ?? HMAC_SIGNATURE_VERSION;
   const signedAt = override?.signedAt ?? new Date().toISOString();
@@ -1871,11 +1900,11 @@ function createSignedCreateIntentDto(
   const signature = computeHmacSignature('wallet-hmac-secret', signingString);
 
   return {
-    referenceType: override?.referenceType ?? 'STORE_ORDER',
-    referenceId: override?.referenceId ?? 'order-1',
+    referenceType,
+    referenceId,
     userId: override?.userId ?? 'customer-1',
-    currency: override?.currency ?? 'KRW',
-    payableAmount: override?.payableAmount ?? 10000,
+    currency,
+    payableAmount,
     snapshotPayload,
     signature,
     signatureVersion,

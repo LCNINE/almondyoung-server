@@ -168,7 +168,19 @@ function createPaymentIntentCommand(
     currency: 'KRW',
     payableAmount: 1000,
     snapshotPayload: {
-      orderId: 'order-1',
+      schemaVersion: 'INTENT_SNAPSHOT_V1',
+      items: [
+        {
+          lineId: 'line-1',
+          name: 'Order item',
+          unitPrice: 1000,
+          quantity: 1,
+          type: 'PRODUCT',
+          id: 'order-item-1',
+          discounts: [],
+        },
+      ],
+      orderDiscounts: [],
     },
     signature: 'sig',
     signatureVersion: 'v1',

@@ -5,7 +5,7 @@ import { config } from 'dotenv';
 config({ path: join(__dirname, '.env.test'), override: true });
 
 export default defineConfig({
-  schema: 'apps/wallet/src/schema.test.ts',
+  schema: 'apps/wallet/src/schema.ts',
   out: 'apps/wallet/drizzle-test',
   dialect: 'postgresql',
   dbCredentials: { url: process.env.WALLET_TEST_DATABASE_URL ?? '' },

@@ -55,7 +55,7 @@ Outbox 발행, 이벤트 빌더, 커맨드 컨슈머
 | `apps/wallet/.env.test` | Wallet 테스트 실행용 환경 변수 파일 |
 | `apps/wallet/tsconfig.app.json` | Wallet 앱 TypeScript 빌드 설정 |
 | `apps/wallet/drizzle.config.ts` | 운영/개발 DB 스키마 기준 Drizzle 설정 (`src/schema.ts`) |
-| `apps/wallet/drizzle.test.config.ts` | 테스트 DB 스키마 기준 Drizzle 설정 (`src/schema.test.ts`) |
+| `apps/wallet/drizzle.test.config.ts` | 테스트 DB 연결을 사용하되 운영 스키마(`src/schema.ts`)를 기준으로 push/export 하는 Drizzle 설정 |
 
 ### 4.2 Drizzle 마이그레이션/메타
 | 파일 | 역할 |
@@ -72,7 +72,6 @@ Outbox 발행, 이벤트 빌더, 커맨드 컨슈머
 | `apps/wallet/src/main.ts` | Nest 앱 부트스트랩, 글로벌 파이프/필터, Swagger, 커맨드 스트림 컨슈머 연결 |
 | `apps/wallet/src/wallet.module.ts` | Wallet DI 조립 루트 모듈(controllers/providers/guard/interceptor/job 등록) |
 | `apps/wallet/src/schema.ts` | Wallet 핵심 DB 스키마(enum, table, index, 타입 export) |
-| `apps/wallet/src/schema.test.ts` | 테스트용 스키마 export 허브 (`walletTestSchema`) |
 | `apps/wallet/src/types.ts` | Drizzle 추론 타입 및 DB 트랜잭션 타입 별칭 |
 | `apps/wallet/src/health.controller.ts` | `/v1/health`, `/v1/ready` 공개 헬스체크 API |
 

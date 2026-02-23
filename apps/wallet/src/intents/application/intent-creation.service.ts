@@ -15,10 +15,15 @@ import {
 } from '../../domain/hmac/hmac-integrity';
 import {
   PaymentIntentStatus,
+  PaymentIntentItemDiscountKind,
+  PaymentIntentOrderDiscountKind,
   PaymentLegStatus,
   PaymentReferenceType,
   WalletSchema,
   outboxEvents,
+  paymentIntentItemDiscounts,
+  paymentIntentItems,
+  paymentIntentOrderDiscounts,
   paymentIntents,
   paymentLegs,
   paymentStateTransitions,
@@ -27,6 +32,12 @@ import { DbTx, PaymentIntent, PaymentLeg } from '../../types';
 import { ProviderRegistry } from '../../providers/provider.registry';
 import { buildOutboxInsertValues } from '../../messaging/outbox-event.util';
 import { buildPaymentIntentEventPayload } from '../../messaging/payments-event.builder';
+import {
+  IntentPricingResult,
+  IntentSnapshotValidationError,
+  calculateIntentPricing,
+  parseIntentSnapshotPayload,
+} from './intent-pricing';
 
 interface OutboxEventInput {
   eventType: string;
@@ -57,12 +68,14 @@ export class IntentCreationService {
     correlationId?: string,
   ): Promise<PaymentIntent> {
     const sharedSecret = process.env.WALLET_HMAC_SHARED_SECRET ?? '';
+    const normalizedSnapshotPayload = normalizeSnapshotPayload(dto.snapshotPayload);
     let payloadHash = '';
+    let pricingResult: IntentPricingResult;
 
     try {
       const verifyResult = verifyHmacIntegrity(
         {
-          snapshotPayload: dto.snapshotPayload,
+          snapshotPayload: normalizedSnapshotPayload,
           signature: dto.signature,
           signatureVersion: dto.signatureVersion,
           signedAt: dto.signedAt,
@@ -82,8 +95,28 @@ export class IntentCreationService {
       throw error;
     }
 
+    try {
+      const parsedSnapshot = parseIntentSnapshotPayload(normalizedSnapshotPayload);
+      pricingResult = calculateIntentPricing(parsedSnapshot);
+    } catch (error) {
+      if (error instanceof IntentSnapshotValidationError) {
+        throw new BadRequestException({
+          error: error.code,
+          message: error.message,
+        });
+      }
+      throw error;
+    }
+
+    if (pricingResult.intentPayable !== dto.payableAmount) {
+      throw new BadRequestException({
+        error: 'PAYABLE_AMOUNT_MISMATCH',
+        message: `Declared payableAmount does not match calculated amount: declared=${dto.payableAmount}, calculated=${pricingResult.intentPayable}`,
+      });
+    }
+
     const initialStatus: PaymentIntentStatus =
-      dto.payableAmount === 0 ? 'SUCCEEDED' : 'PENDING';
+      pricingResult.intentPayable === 0 ? 'SUCCEEDED' : 'PENDING';
     const requestCorrelationId = correlationId?.trim() || randomUUID();
 
     try {
@@ -120,18 +153,24 @@ export class IntentCreationService {
             referenceId: dto.referenceId,
             userId: dto.userId,
             currency: dto.currency.toUpperCase(),
-            payableAmount: dto.payableAmount,
+            payableAmount: pricingResult.intentPayable,
             status: initialStatus,
             expiresAt: new Date(Date.now() + 72 * 60 * 60 * 1000),
             metadata: {
               ...(dto.metadata ?? {}),
-              snapshotPayload: dto.snapshotPayload,
+              snapshotPayload: normalizedSnapshotPayload,
               signatureVersion: dto.signatureVersion,
               signedAt: dto.signedAt,
               payloadHash,
             },
           })
           .returning();
+
+        await this.persistIntentPricingSnapshot(
+          tx,
+          createdIntent.id,
+          pricingResult,
+        );
 
         await tx.insert(paymentStateTransitions).values({
           entityType: 'INTENT',
@@ -150,7 +189,7 @@ export class IntentCreationService {
           payload: {
             referenceType: dto.referenceType,
             referenceId: dto.referenceId,
-            payableAmount: dto.payableAmount,
+            payableAmount: pricingResult.intentPayable,
           },
         });
 
@@ -173,6 +212,75 @@ export class IntentCreationService {
         });
       }
       throw error;
+    }
+  }
+
+  private async persistIntentPricingSnapshot(
+    tx: DbTx,
+    intentId: string,
+    pricing: IntentPricingResult,
+  ): Promise<void> {
+    const itemRows = pricing.items.map((item) => ({
+      intentId,
+      lineId: item.lineId,
+      name: item.name,
+      itemType: item.type ?? null,
+      itemRefId: item.id ?? null,
+      unitPrice: item.unitPrice,
+      quantity: item.quantity,
+      baseAmount: item.baseAmount,
+      itemDiscountPerUnitTotal: item.itemDiscountPerUnitTotal,
+      itemDiscountFlatTotal: item.itemDiscountFlatTotal,
+      payableAmount: item.payableAmount,
+      metadata: {},
+    }));
+
+    const insertedItems = await tx
+      .insert(paymentIntentItems)
+      .values(itemRows)
+      .returning({
+        id: paymentIntentItems.id,
+        lineId: paymentIntentItems.lineId,
+      });
+
+    const itemIdByLineId = new Map(
+      insertedItems.map((row) => [row.lineId, row.id]),
+    );
+
+    const itemDiscountRows = pricing.items.flatMap((item) =>
+      item.discounts.map((discount) => {
+        const itemId = itemIdByLineId.get(item.lineId);
+        if (!itemId) {
+          throw new BadRequestException({
+            error: 'INVALID_ITEMS',
+            message: `Unable to map discount item lineId: ${item.lineId}`,
+          });
+        }
+        return {
+          intentId,
+          itemId,
+          discountId: discount.discountId ?? null,
+          kind: discount.kind as PaymentIntentItemDiscountKind,
+          amount: discount.amount,
+          metadata: {},
+        };
+      }),
+    );
+
+    if (itemDiscountRows.length > 0) {
+      await tx.insert(paymentIntentItemDiscounts).values(itemDiscountRows);
+    }
+
+    const orderDiscountRows = pricing.orderDiscounts.map((discount) => ({
+      intentId,
+      discountId: discount.discountId ?? null,
+      kind: discount.kind as PaymentIntentOrderDiscountKind,
+      amount: discount.amount,
+      metadata: {},
+    }));
+
+    if (orderDiscountRows.length > 0) {
+      await tx.insert(paymentIntentOrderDiscounts).values(orderDiscountRows);
     }
   }
 
@@ -388,4 +496,29 @@ function isReferenceBlockingUniqueViolation(error: unknown): boolean {
   }
 
   return false;
+}
+
+function normalizeSnapshotPayload(
+  snapshotPayload: unknown,
+): Record<string, unknown> {
+  try {
+    // ValidationPipe transform may turn nested JSON into class instances.
+    // HMAC canonicalization expects plain JSON object graph.
+    const serialized = JSON.stringify(snapshotPayload);
+    if (serialized === undefined) {
+      throw new Error('snapshotPayload serialization returned undefined');
+    }
+
+    const parsed = JSON.parse(serialized) as unknown;
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      throw new Error('snapshotPayload must be a JSON object');
+    }
+
+    return parsed as Record<string, unknown>;
+  } catch {
+    throw new BadRequestException({
+      error: 'INVALID_SNAPSHOT_SCHEMA',
+      message: 'snapshotPayload must be a JSON object',
+    });
+  }
 }
