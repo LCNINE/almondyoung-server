@@ -134,4 +134,30 @@ export class ReviewsController {
   ): Promise<void> {
     await this.reviewsService.remove(userId, id);
   }
+
+  @Post(':id/helpful')
+  @ApiOperation({ summary: '리뷰 도움이 됨 토글' })
+  @ApiParam({
+    name: 'id',
+    description: '리뷰 ID (UUID)',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: '도움이 됨 토글 성공',
+    schema: {
+      type: 'object',
+      properties: {
+        marked: { type: 'boolean', description: '현재 도움이 됨 표시 여부' },
+        helpfulCount: { type: 'number', description: '총 도움이 됨 수' },
+      },
+    },
+  })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: '리뷰를 찾을 수 없음' })
+  async toggleHelpful(
+    @User('userId') userId: string,
+    @Param('id') id: string,
+  ): Promise<{ marked: boolean; helpfulCount: number }> {
+    return this.reviewsService.toggleHelpful(userId, id);
+  }
 }

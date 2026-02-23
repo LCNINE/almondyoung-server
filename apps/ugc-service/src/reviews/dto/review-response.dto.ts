@@ -33,6 +33,9 @@ export class ReviewResponseDto {
   @ApiProperty({ description: '첨부 미디어 파일 ID 목록', type: [String] })
   mediaFileIds: string[];
 
+  @ApiProperty({ description: '도움이 됨 수', example: 5 })
+  helpfulCount: number;
+
   @ApiProperty({ description: '상태', example: 'active' })
   status: string;
 

@@ -54,6 +54,19 @@ export const reviewMedia = pgTable(
   ],
 )
 
+export const reviewHelpfuls = pgTable(
+  'review_helpfuls',
+  {
+    reviewId: uuid('review_id').notNull().references(() => reviews.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.reviewId, table.userId], name: 'review_helpfuls_pkey' }),
+    index('review_helpfuls_review_id').on(table.reviewId),
+  ],
+);
+
 export const reviewEligibilities = pgTable(
   'review_eligibilities',
   {
@@ -89,6 +102,7 @@ export const reviewEligibilities = pgTable(
 export const ugcServiceSchema = {
   reviews,
   reviewMedia,
+  reviewHelpfuls,
   reviewEligibilities,
 } as const;
 
