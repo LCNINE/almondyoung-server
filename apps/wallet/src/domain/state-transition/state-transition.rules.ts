@@ -13,13 +13,15 @@ type TransitionRules<TStatus extends string> = Partial<
 // CREATED → PROCESSING → SUCCEEDED (terminal)
 //                      → FAILED (terminal)
 //                      → REQUIRES_ACTION → PROCESSING
+//                                        → SUCCEEDED (terminal, e.g. Toss confirm)
+//                                        → CREATED (back-transition on confirm failure)
 //                      → CREATED (back-transition on confirm failure)
 //                      → CANCELED (terminal)
 // CREATED → CANCELED
 const paymentIntentTransitionRules: TransitionRules<PaymentIntentStatus> = {
   CREATED: ['PROCESSING', 'CANCELED'],
   PROCESSING: ['SUCCEEDED', 'FAILED', 'REQUIRES_ACTION', 'CREATED', 'CANCELED'],
-  REQUIRES_ACTION: ['PROCESSING', 'FAILED', 'CANCELED'],
+  REQUIRES_ACTION: ['PROCESSING', 'SUCCEEDED', 'FAILED', 'CREATED', 'CANCELED'],
 };
 
 // Charge state machine:
