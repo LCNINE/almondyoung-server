@@ -36,7 +36,7 @@ export class ConfirmService {
     intentId: string,
     paymentMethodId: string,
     correlationId: string,
-  ): Promise<void> {
+  ): Promise<{ nextAction?: Record<string, unknown> }> {
     await this.dbService.db.transaction(async (tx) => {
       // 1. Load intent with FOR UPDATE lock
       const intent = await this.lockIntent(intentId, tx);
@@ -115,14 +115,14 @@ export class ConfirmService {
     });
 
     // After the outer transaction commits, run the provider call
-    await this.runProviderAuthorize(intentId, paymentMethodId, correlationId);
+    return this.runProviderAuthorize(intentId, paymentMethodId, correlationId);
   }
 
   private async runProviderAuthorize(
     intentId: string,
     paymentMethodId: string,
     correlationId: string,
-  ): Promise<void> {
+  ): Promise<{ nextAction?: Record<string, unknown> }> {
     const intent = await this.dbService.db
       .select()
       .from(paymentIntents)
@@ -130,10 +130,10 @@ export class ConfirmService {
       .limit(1)
       .then((r) => r[0]);
 
-    if (!intent) return;
+    if (!intent) return {};
 
     const method = await this.paymentMethodsService.findById(paymentMethodId);
-    if (!method) return;
+    if (!method) return {};
 
     const charge = await this.chargesService.findActiveByIntentAndOperation(
       intentId,
@@ -141,7 +141,7 @@ export class ConfirmService {
     );
     if (!charge) {
       // Charge may have already been updated if there was a race
-      return;
+      return {};
     }
 
     const provider = this.providerRegistry.getProviderOrThrow(method.type);
@@ -164,7 +164,7 @@ export class ConfirmService {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error(`Provider authorize threw: intentId=${intentId}, error=${message}`);
       await this.handleProviderFailure(intentId, charge.id, 'PROVIDER_EXCEPTION', message, correlationId);
-      return;
+      return {};
     }
 
     if (providerResult.status === 'SUCCEEDED') {
@@ -175,19 +175,22 @@ export class ConfirmService {
         providerResult.raw,
         correlationId,
       );
+      return {};
     } else if (providerResult.status === 'PENDING') {
       await this.chargesService.updateStatus(charge.id, 'PENDING', {
         responsePayload: providerResult.raw,
       });
       // Intent stays PROCESSING
+      return {};
     } else if (providerResult.status === 'REQUIRES_ACTION') {
       await this.chargesService.updateStatus(charge.id, 'REQUIRES_ACTION', {
-        responsePayload: providerResult.raw,
+        responsePayload: { ...(providerResult.raw ?? {}), nextAction: providerResult.nextAction },
       });
       await this.stateTransitionService.transitionIntent(intentId, 'REQUIRES_ACTION', {
         correlationId,
         reasonCode: 'REQUIRES_ACTION',
       });
+      return { nextAction: providerResult.nextAction };
     } else {
       // FAILED
       await this.handleProviderFailure(
@@ -197,6 +200,7 @@ export class ConfirmService {
         providerResult.errorMessage ?? 'Provider authorization failed',
         correlationId,
       );
+      return {};
     }
   }
 

@@ -20,6 +20,7 @@ import { HttpIdempotencyInterceptor } from './domain/idempotency/http-idempotenc
 // Providers
 import { PointsPaymentProvider } from './providers/points/points.provider';
 import { PointsLedgerService } from './providers/points/points-ledger.service';
+import { TossPaymentProvider } from './providers/toss/toss.provider';
 import { ProviderRegistry } from './providers/provider.registry';
 
 // Methods
@@ -34,6 +35,7 @@ import { PaymentIntentsService } from './payment-intents/payment-intents.service
 import { PaymentIntentsController } from './payment-intents/payment-intents.controller';
 import { ConfirmService } from './payment-intents/confirm.service';
 import { CaptureService } from './payment-intents/capture.service';
+import { TossApproveService } from './payment-intents/toss-approve.service';
 
 // Refunds
 import { RefundsService } from './refunds/refunds.service';
@@ -199,6 +201,7 @@ function parseCookieValue(cookieHeader: string, name: string): string | null {
     // Providers
     PointsLedgerService,
     PointsPaymentProvider,
+    TossPaymentProvider,
     ProviderRegistry,
 
     // Methods / Charges
@@ -209,6 +212,7 @@ function parseCookieValue(cookieHeader: string, name: string): string | null {
     PaymentIntentsService,
     ConfirmService,
     CaptureService,
+    TossApproveService,
 
     // Refunds
     RefundsService,

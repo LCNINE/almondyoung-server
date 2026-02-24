@@ -21,10 +21,11 @@ import {
 } from '../messaging/gateway-event.builder';
 import { buildOutboxInsertValues } from '../messaging/outbox-event.util';
 import { outboxEvents } from '../schema';
-import { CreatePaymentIntentDto, ConfirmPaymentIntentDto } from './dto';
+import { CreatePaymentIntentDto, ConfirmPaymentIntentDto, TossApproveDto } from './dto';
 import { calculatePricing } from './intent-pricing';
 import { ConfirmService } from './confirm.service';
 import { CaptureService } from './capture.service';
+import { TossApproveService } from './toss-approve.service';
 
 const DEFAULT_INTENT_EXPIRY_MINUTES = 30;
 
@@ -35,6 +36,7 @@ export class PaymentIntentsService {
     private readonly stateTransitionService: StateTransitionService,
     private readonly confirmService: ConfirmService,
     private readonly captureService: CaptureService,
+    private readonly tossApproveService: TossApproveService,
   ) {}
 
   async create(dto: CreatePaymentIntentDto): Promise<typeof paymentIntents.$inferSelect> {
@@ -177,10 +179,25 @@ export class PaymentIntentsService {
     return intent;
   }
 
-  async confirm(intentId: string, dto: ConfirmPaymentIntentDto): Promise<void> {
+  async confirm(
+    intentId: string,
+    dto: ConfirmPaymentIntentDto,
+  ): Promise<{ nextAction?: Record<string, unknown> }> {
     await this.findByIdOrThrow(intentId);
     const correlationId = `confirm:${intentId}:${Date.now()}`;
-    await this.confirmService.confirm(intentId, dto.paymentMethodId, correlationId);
+    return this.confirmService.confirm(intentId, dto.paymentMethodId, correlationId);
+  }
+
+  async tossApprove(intentId: string, dto: TossApproveDto): Promise<void> {
+    await this.findByIdOrThrow(intentId);
+    const correlationId = `toss-approve:${intentId}:${Date.now()}`;
+    await this.tossApproveService.approve(
+      intentId,
+      dto.paymentKey,
+      dto.orderId,
+      dto.amount,
+      correlationId,
+    );
   }
 
   async capture(intentId: string): Promise<void> {

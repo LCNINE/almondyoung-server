@@ -22,6 +22,7 @@ export const paymentMethodTypeEnum = pgEnum('payment_method_type', [
   'CARD',
   'BANK_TRANSFER',
   'BNPL',
+  'TOSS',
 ]);
 
 export const paymentIntentStatusEnum = pgEnum('payment_intent_status', [

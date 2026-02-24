@@ -21,6 +21,7 @@ export interface ConfirmResult {
   id: string;
   status: string;
   returnUrl: string | null;
+  nextAction?: Record<string, unknown>;
 }
 
 /**
@@ -78,6 +79,27 @@ export async function confirmPaymentIntent(
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.message ?? `Payment failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function approveToss(
+  intentId: string,
+  paymentKey: string,
+  orderId: string,
+  amount: number,
+): Promise<{ status: string; returnUrl: string | null }> {
+  const res = await fetch(`${BASE_URL}/v1/payment-intents/${intentId}/toss-approve`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${process.env.WALLET_API_KEY ?? ''}`,
+    },
+    body: JSON.stringify({ paymentKey, orderId, amount }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.message ?? `Toss approve failed (${res.status})`);
   }
   return res.json();
 }

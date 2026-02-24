@@ -25,6 +25,23 @@ export function PayForm({ intent, methods }: Props) {
     setError(null);
     try {
       const result = await confirmPaymentIntent(intent.id, selectedMethodId);
+
+      if (result.status === 'REQUIRES_ACTION' && result.nextAction?.type === 'TOSS_CHECKOUT') {
+        const na = result.nextAction;
+        const { loadTossPayments } = await import('@tosspayments/tosspayments-sdk');
+        const tossPayments = await loadTossPayments(na.clientKey as string);
+        const payment = tossPayments.payment({ customerKey: `user-${intent.userId}` });
+        await payment.requestPayment({
+          method: 'CARD',
+          orderId: na.orderId as string,
+          orderName: na.orderName as string,
+          amount: { currency: 'KRW', value: na.amount as number },
+          successUrl: `${window.location.origin}/pay/${intent.id}/toss-complete`,
+          failUrl: `${window.location.origin}/pay/${intent.id}?toss_fail=1`,
+        });
+        return; // requestPayment redirects
+      }
+
       if (result.returnUrl) {
         router.replace(`${result.returnUrl}?payment_intent_id=${intent.id}&status=succeeded`);
       } else {
