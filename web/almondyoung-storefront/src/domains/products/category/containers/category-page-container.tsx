@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation"
 import { CategoryPageClient } from "../components/category-page-client"
-import { getCategoryByHandle, getCategoryTree } from "@lib/api/medusa/categories"
+import { getCategoryTree } from "@lib/api/medusa/categories"
 import { getProductList } from "@lib/api/medusa/products"
 import { getRegion } from "@lib/api/medusa/regions"
 import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
@@ -9,22 +9,25 @@ import type { StoreProductCategoryTree } from "@lib/types/medusa-category"
 interface CategoryPageContainerProps {
   params: Promise<{
     countryCode: string
-    slug: string // 예: 'shampoo', 'hair-care'
+    segments: string[]
   }>
 }
 
 export async function CategoryPageContainer({
   params,
 }: CategoryPageContainerProps) {
-  const { slug, countryCode } = await params
+  const { segments, countryCode } = await params
+  const pathSegments = (segments || []).filter(Boolean)
+  if (pathSegments.length === 0) {
+    return notFound()
+  }
+
   const region = await getRegion(countryCode)
 
-  // 1. API 모듈을 통해 데이터 조회 (서버 액션 -> 백엔드)
-  const [categoryData, allCategories] = await Promise.all([
-    getCategoryByHandle(slug),
-    getCategoryTree(),
-  ])
-  if (!categoryData) {
+  const allCategories = await getCategoryTree()
+  const categoryPath = findCategoryPathBySegments(allCategories, pathSegments)
+  const categoryData = categoryPath?.[categoryPath.length - 1] ?? null
+  if (!categoryData || !categoryPath) {
     return notFound()
   }
 
@@ -65,7 +68,7 @@ export async function CategoryPageContainer({
 
   return (
     <CategoryPageClient
-      slug={slug}
+      pathSegments={pathSegments}
       categoryInfo={categoryInfo}
       categoryData={categoryData}
       initialProducts={initialProducts}
@@ -74,8 +77,40 @@ export async function CategoryPageContainer({
       categoryIds={categoryIds}
       regionId={region?.id}
       allCategories={allCategories}
+      categoryPath={categoryPath}
     />
   )
+}
+
+const isCategorySegmentMatch = (
+  category: StoreProductCategoryTree,
+  segment: string
+) => {
+  return category.handle === segment || category.id === segment
+}
+
+const findCategoryPathBySegments = (
+  roots: StoreProductCategoryTree[],
+  segments: string[]
+): StoreProductCategoryTree[] | null => {
+  if (segments.length === 0) return null
+
+  const path: StoreProductCategoryTree[] = []
+  let level = roots
+
+  for (const segment of segments) {
+    const matched = level.find((category) =>
+      isCategorySegmentMatch(category, segment)
+    )
+    if (!matched) {
+      return null
+    }
+
+    path.push(matched)
+    level = matched.category_children || []
+  }
+
+  return path
 }
 
 const getCategoryBanners = (category: StoreProductCategoryTree) => {

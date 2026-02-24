@@ -6,10 +6,14 @@ import { useRouter, useParams } from "next/navigation"
 import { deleteLineItems } from "@lib/api/medusa/cart"
 import type { CartItem } from "@lib/types/ui/cart"
 import { toast } from "sonner"
+import { useMembershipPricing } from "@/hooks/use-membership-pricing"
 
 interface CartSummaryProps {
   totalOriginalPrice: number
   totalDiscount: number
+  membershipDiscount: number
+  membershipPreviewPrice: number
+  membershipPreviewSavings: number
   shippingFee: number
   finalPrice: number
   selectedCount: number
@@ -20,6 +24,9 @@ interface CartSummaryProps {
 export function CartSummary({
   totalOriginalPrice,
   totalDiscount,
+  membershipDiscount,
+  membershipPreviewPrice,
+  membershipPreviewSavings,
   shippingFee,
   finalPrice,
   selectedCount,
@@ -30,6 +37,9 @@ export function CartSummary({
   const params = useParams() as { countryCode?: string }
   const countryCode = params?.countryCode || "kr"
   const [isProcessing, setIsProcessing] = useState(false)
+  const { isMembershipPricing } = useMembershipPricing()
+  const shouldShowMembershipPreview =
+    !isMembershipPricing && membershipPreviewSavings > 0
 
   const handleCheckout = async () => {
     if (selectedCount === 0) {
@@ -71,10 +81,22 @@ export function CartSummary({
                 {totalOriginalPrice.toLocaleString()}원
               </span>
             </div>
+            {shouldShowMembershipPreview && (
+              <p className="text-sm font-medium text-[#F2994A]">
+                멤버십 가입 시 {(membershipPreviewPrice + shippingFee).toLocaleString()}원
+                결제, {membershipPreviewSavings.toLocaleString()}원 절약
+              </p>
+            )}
             <div className="flex items-center justify-between">
               <span className="text-base font-normal">할인 금액</span>
               <span className="text-2xl font-bold">
                 {totalDiscount.toLocaleString()}원
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-base font-normal">멤버십 할인</span>
+              <span className="text-2xl font-bold">
+                {membershipDiscount.toLocaleString()}원
               </span>
             </div>
             <div className="w-full">

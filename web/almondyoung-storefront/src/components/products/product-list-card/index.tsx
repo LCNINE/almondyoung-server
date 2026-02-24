@@ -56,18 +56,31 @@ export function ProductListCard({
 
   const isSoldOut = manageInventory && available <= 0
   const hasMembershipPrice = membershipSavings != null && membershipSavings > 0
-
-  // 가격 표시 로직 (ProductInfo와 동일)
-  const displayPrice = isMember || !hasMembershipPrice ? price : originalPrice
-  const displayOriginalPrice =
-    isMember && hasMembershipPrice ? originalPrice : undefined
-  const displayDiscount = isMember && hasMembershipPrice ? discount : 0
-  const showMembershipBadge = isMember && hasMembershipPrice
-  const showMembershipHint = !isMember && hasMembershipPrice
   const membershipPrice =
     membershipSavings != null && originalPrice != null
       ? originalPrice - membershipSavings
       : undefined
+  const memberDisplayPrice =
+    isMember && hasMembershipPrice
+      ? typeof price === "number" && price > 0 && price < originalPrice
+        ? price
+        : (membershipPrice ?? price)
+      : price
+
+  // 가격 표시 로직 (ProductInfo와 동일)
+  const displayPrice =
+    isMember || !hasMembershipPrice ? memberDisplayPrice : originalPrice
+  const displayOriginalPrice =
+    isMember && hasMembershipPrice ? originalPrice : undefined
+  const displayDiscount =
+    isMember &&
+    hasMembershipPrice &&
+    displayPrice > 0 &&
+    originalPrice > displayPrice
+      ? Math.round(((originalPrice - displayPrice) / originalPrice) * 100)
+      : discount
+  const showMembershipBadge = isMember && hasMembershipPrice
+  const showMembershipHint = !isMember && hasMembershipPrice
 
   return (
     <div className="flex gap-4 border-b border-gray-100 py-4 last:border-b-0">
