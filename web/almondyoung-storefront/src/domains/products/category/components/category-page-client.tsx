@@ -11,12 +11,30 @@ import CustomDropdown from "@components/dropdown"
 import type { StoreProductCategoryTree } from "@lib/types/medusa-category"
 import type { ProductCardProps } from "@lib/types/ui/product"
 import { useRouter, useSearchParams } from "next/navigation"
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react"
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react"
 import { getProductList } from "@lib/api/medusa/products"
 import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
 import { cn } from "@lib/utils"
 import { useUser } from "@/contexts/user-context"
 import { Spinner } from "@/components/shared/spinner"
+import Link from "next/link"
+import {
+  Breadcrumb,
+  BreadcrumbEllipsis,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb"
 
 // 프론트 전용 타입(CategoryInfo)을 별도로 쓰기보다
 // 가능하면 DTO나 간단한 인터페이스로 유지하는 것이 좋습니다.
@@ -138,6 +156,23 @@ export function CategoryPageClient({
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const hasMore = useMemo(() => products.length < total, [products.length, total])
   const showOverlay = isPending && products.length === 0
+  const breadcrumbs = useMemo(
+    () =>
+      categoryPath.map((node, index) => ({
+        id: node.id,
+        name: node.name,
+        href: `/${countryCode}/category/${categoryPath
+          .slice(0, index + 1)
+          .map((item) => item.handle || item.id)
+          .join("/")}`,
+      })),
+    [categoryPath, countryCode]
+  )
+  const showBreadcrumb = breadcrumbs.length > 1
+  const showMobileEllipsis = breadcrumbs.length > 3
+  const mobileBreadcrumbs = showMobileEllipsis
+    ? [breadcrumbs[breadcrumbs.length - 2], breadcrumbs[breadcrumbs.length - 1]]
+    : breadcrumbs
 
   // URL 파라미터 업데이트 함수
   const updateParams = useCallback(
@@ -399,6 +434,74 @@ export function CategoryPageClient({
           <div className="min-w-0 flex-1">
             {/* 카테고리 헤더(타이틀/설명/배너) */}
             <div className="mb-8">
+              {showBreadcrumb && (
+                <>
+                  <Breadcrumb className="mb-2 hidden md:block">
+                    <BreadcrumbList>
+                      {breadcrumbs.map((crumb, index) => {
+                        const isLast = index === breadcrumbs.length - 1
+                        return (
+                          <Fragment key={crumb.id}>
+                            {index > 0 && (
+                              <BreadcrumbSeparator className="mx-1 text-gray-500" />
+                            )}
+                            <BreadcrumbItem>
+                              {isLast ? (
+                                <BreadcrumbPage className="font-semibold text-gray-900">
+                                  {crumb.name}
+                                </BreadcrumbPage>
+                              ) : (
+                                <BreadcrumbLink asChild className="text-gray-600 hover:text-gray-900">
+                                  <Link href={crumb.href}>{crumb.name}</Link>
+                                </BreadcrumbLink>
+                              )}
+                            </BreadcrumbItem>
+                          </Fragment>
+                        )
+                      })}
+                    </BreadcrumbList>
+                  </Breadcrumb>
+
+                  <Breadcrumb className="mb-2 md:hidden">
+                    <BreadcrumbList>
+                      {showMobileEllipsis && (
+                        <>
+                          <BreadcrumbItem>
+                            <BreadcrumbLink asChild className="text-gray-600 hover:text-gray-900">
+                              <Link href={breadcrumbs[0].href}>{breadcrumbs[0].name}</Link>
+                            </BreadcrumbLink>
+                          </BreadcrumbItem>
+                          <BreadcrumbSeparator className="text-gray-500" />
+                          <BreadcrumbItem>
+                            <BreadcrumbEllipsis className="h-auto w-auto text-gray-500" />
+                          </BreadcrumbItem>
+                          <BreadcrumbSeparator className="text-gray-500" />
+                        </>
+                      )}
+                      {mobileBreadcrumbs.map((crumb, index) => {
+                        const isLast = index === mobileBreadcrumbs.length - 1
+                        return (
+                          <Fragment key={crumb.id}>
+                            {index > 0 && <BreadcrumbSeparator className="text-gray-500" />}
+                            <BreadcrumbItem>
+                              {isLast ? (
+                                <BreadcrumbPage className="font-semibold text-gray-900">
+                                  {crumb.name}
+                                </BreadcrumbPage>
+                              ) : (
+                                <BreadcrumbLink asChild className="text-gray-600 hover:text-gray-900">
+                                  <Link href={crumb.href}>{crumb.name}</Link>
+                                </BreadcrumbLink>
+                              )}
+                            </BreadcrumbItem>
+                          </Fragment>
+                        )
+                      })}
+                    </BreadcrumbList>
+                  </Breadcrumb>
+                </>
+              )}
+
               <div className="flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
                 <div className="flex-1">
                   <h1 className="mb-2 text-2xl font-bold text-gray-900 md:text-3xl">
