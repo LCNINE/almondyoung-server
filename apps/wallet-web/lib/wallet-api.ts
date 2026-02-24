@@ -94,6 +94,7 @@ export async function approveToss(
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${process.env.WALLET_API_KEY ?? ''}`,
+      'Idempotency-Key': crypto.randomUUID(),
     },
     body: JSON.stringify({ paymentKey, orderId, amount }),
   });
