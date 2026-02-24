@@ -44,21 +44,69 @@ const findCategoryById = (
 }
 
 export const getCategoryTree = async (): Promise<StoreProductCategoryTree[]> => {
-  const { product_categories } = await sdk.store.category.list(
-    {
-      parent_category_id: null,
-      include_descendants_tree: true,
-      fields:
-        "id,name,handle,description,metadata,category_children.id,category_children.name,category_children.handle,category_children.description,category_children.metadata,category_children.parent_category_id,category_children.category_children",
-    },
-    {
-      next: {
-        tags: ["product-categories"],
-      },
-    }
-  )
+  const limit = 100
+  let offset = 0
+  const all: StoreProductCategoryTree[] = []
 
-  return product_categories as StoreProductCategoryTree[]
+  while (true) {
+    const { product_categories, count } = await sdk.store.category.list(
+      {
+        limit,
+        offset,
+        fields: "id,name,handle,description,metadata,parent_category_id",
+      },
+      {
+        next: {
+          tags: ["product-categories"],
+        },
+      }
+    )
+
+    const page = (product_categories || []) as StoreProductCategoryTree[]
+    all.push(...page)
+
+    offset += page.length
+
+    if (page.length === 0 || page.length < limit || offset >= (count ?? 0)) {
+      break
+    }
+  }
+
+  return buildCategoryTree(all)
+}
+
+const buildCategoryTree = (
+  categories: StoreProductCategoryTree[]
+): StoreProductCategoryTree[] => {
+  const map = new Map<string, StoreProductCategoryTree>()
+
+  for (const category of categories) {
+    map.set(category.id, {
+      ...category,
+      category_children: [],
+    })
+  }
+
+  const roots: StoreProductCategoryTree[] = []
+
+  for (const category of map.values()) {
+    const parentId = category.parent_category_id || null
+
+    if (!parentId) {
+      roots.push(category)
+      continue
+    }
+
+    const parent = map.get(parentId)
+    if (!parent) {
+      roots.push(category)
+      continue
+    }
+
+    parent.category_children = [...(parent.category_children || []), category]
+  }
+
+  return roots
 }
 
 export const getCategoryByHandle = async (
