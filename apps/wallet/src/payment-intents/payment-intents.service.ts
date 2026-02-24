@@ -27,7 +27,7 @@ import { ConfirmService } from './confirm.service';
 import { CaptureService } from './capture.service';
 import { TossApproveService } from './toss-approve.service';
 
-const DEFAULT_INTENT_EXPIRY_MINUTES = 30;
+const DEFAULT_INTENT_EXPIRY_MINUTES = 60 * 24; // 24 hours
 
 @Injectable()
 export class PaymentIntentsService {

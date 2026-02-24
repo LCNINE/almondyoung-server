@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PaymentProvider } from './payment-provider.interface';
 import { PointsPaymentProvider } from './points/points.provider';
 import { TossPaymentProvider } from './toss/toss.provider';
+import { BankTransferPaymentProvider } from './bank-transfer/bank-transfer.provider';
 
 @Injectable()
 export class ProviderRegistry {
@@ -10,9 +11,11 @@ export class ProviderRegistry {
   constructor(
     pointsProvider: PointsPaymentProvider,
     tossProvider: TossPaymentProvider,
+    bankTransferProvider: BankTransferPaymentProvider,
   ) {
     this.register(pointsProvider);
     this.register(tossProvider);
+    this.register(bankTransferProvider);
   }
 
   all(): PaymentProvider[] {
