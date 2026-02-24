@@ -234,22 +234,24 @@ function SubCategoryList({
       ) : (
         /* 정상 데이터 출력 */
         <>
-          <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-gray-400">
-            {activePath.map((node, index) => (
-              <button
-                key={node.id}
-                type="button"
-                onClick={() => onNavigatePath(index)}
-                className={cn(
-                  "inline-flex items-center gap-1 hover:text-gray-600",
-                  index === activePath.length - 1 && "font-semibold text-gray-500"
-                )}
-              >
-                {index > 0 && <ChevronRight className="h-3 w-3 text-gray-300" />}
-                {node.name}
-              </button>
-            ))}
-          </div>
+          {activePath.length > 1 && (
+            <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-gray-400">
+              {activePath.map((node, index) => (
+                <button
+                  key={node.id}
+                  type="button"
+                  onClick={() => onNavigatePath(index)}
+                  className={cn(
+                    "inline-flex items-center gap-1 hover:text-gray-700",
+                    index === activePath.length - 1 && "font-semibold text-gray-600"
+                  )}
+                >
+                  {index > 0 && <ChevronRight className="h-3 w-3 text-gray-500" />}
+                  {node.name}
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="mb-8 flex items-center justify-between">
             <h3 className="text-[17px] font-bold tracking-tight">
@@ -286,7 +288,7 @@ function SubCategoryList({
                     <CategoryThumb category={child} />
                     <span className="inline-flex items-center gap-0.5 text-center text-[11px] leading-[1.3] font-medium break-keep text-gray-600">
                       {child.name}
-                      <ChevronRight className="h-3 w-3 text-gray-300" />
+                      <ChevronRight className="h-3 w-3 text-gray-500" />
                     </span>
                   </button>
                 )

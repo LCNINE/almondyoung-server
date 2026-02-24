@@ -67,6 +67,7 @@
     "overlay-kit": "^1.8.6",
     "pg": "^8.11.3",
     "qs": "^6.12.1",
+    "radix-ui": "^1.4.3",
     "react": "19.0.0-rc-66855b96-20241106",
     "react-country-flag": "^3.1.0",
     "react-day-picker": "latest",
