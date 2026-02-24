@@ -20,6 +20,7 @@ interface CategoryLinkProps {
   countryCode: string
   level: number
   currentCategoryId?: string
+  pathSegments: string[]
 }
 
 function CategoryLink({
@@ -30,15 +31,17 @@ function CategoryLink({
   countryCode,
   level,
   currentCategoryId,
+  pathSegments,
 }: CategoryLinkProps) {
   const hasChildren =
     category.category_children && category.category_children.length > 0
+  const href = `/${countryCode}/category/${pathSegments.join("/")}`
 
   return (
     <li className="self-stretch">
       <div className="flex w-full items-center justify-between">
         <Link
-          href={`/${countryCode}/category/${category.handle}`}
+          href={href}
           className={cn(
             "flex-1 py-1 font-['Pretendard'] text-base",
             isActive
@@ -75,6 +78,7 @@ function CategoryLink({
               countryCode={countryCode}
               level={level + 1}
               currentCategoryId={currentCategoryId}
+              parentSegments={pathSegments}
             />
           ))}
         </ul>
@@ -88,15 +92,19 @@ function CategoryLinkItem({
   countryCode,
   level,
   currentCategoryId,
+  parentSegments = [],
 }: {
   category: StoreProductCategoryTree
   countryCode: string
   level: number
   currentCategoryId?: string
+  parentSegments?: string[]
 }) {
   const isActive = category.id === currentCategoryId
   const hasActiveChild = checkHasActiveChild(category, currentCategoryId)
   const [isExpanded, setIsExpanded] = useState(isActive || hasActiveChild)
+  const currentSegment = category.handle || category.id
+  const pathSegments = [...parentSegments, currentSegment]
 
   return (
     <CategoryLink
@@ -107,6 +115,7 @@ function CategoryLinkItem({
       countryCode={countryCode}
       level={level}
       currentCategoryId={currentCategoryId}
+      pathSegments={pathSegments}
     />
   )
 }
