@@ -21,6 +21,7 @@ import { HttpIdempotencyInterceptor } from './domain/idempotency/http-idempotenc
 import { PointsPaymentProvider } from './providers/points/points.provider';
 import { PointsLedgerService } from './providers/points/points-ledger.service';
 import { TossPaymentProvider } from './providers/toss/toss.provider';
+import { BankTransferPaymentProvider } from './providers/bank-transfer/bank-transfer.provider';
 import { ProviderRegistry } from './providers/provider.registry';
 
 // Methods
@@ -44,6 +45,8 @@ import { RefundsController } from './refunds/refunds.controller';
 // Admin
 import { PointsAdminService } from './admin/points-admin.service';
 import { PointsAdminController } from './admin/points-admin.controller';
+import { BankTransferAdminService } from './admin/bank-transfer-admin.service';
+import { BankTransferAdminController } from './admin/bank-transfer-admin.controller';
 
 // Messaging + Jobs
 import { OutboxDispatcherService } from './messaging/outbox-dispatcher.service';
@@ -187,6 +190,7 @@ function parseCookieValue(cookieHeader: string, name: string): string | null {
     PaymentMethodsController,
     RefundsController,
     PointsAdminController,
+    BankTransferAdminController,
   ],
   providers: [
     // Guards & interceptors
@@ -202,6 +206,7 @@ function parseCookieValue(cookieHeader: string, name: string): string | null {
     PointsLedgerService,
     PointsPaymentProvider,
     TossPaymentProvider,
+    BankTransferPaymentProvider,
     ProviderRegistry,
 
     // Methods / Charges
@@ -219,6 +224,7 @@ function parseCookieValue(cookieHeader: string, name: string): string | null {
 
     // Admin
     PointsAdminService,
+    BankTransferAdminService,
 
     // Messaging + Jobs
     OutboxDispatcherService,
