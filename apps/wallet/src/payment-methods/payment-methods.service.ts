@@ -45,15 +45,10 @@ export class PaymentMethodsService {
   }
 
   async findAllByUserId(userId: string): Promise<PaymentMethod[]> {
-    return this.dbService.db
-      .select()
-      .from(paymentMethods)
-      .where(
-        and(
-          eq(paymentMethods.userId, userId),
-          eq(paymentMethods.isDeleted, false),
-        ),
-      );
+    const results = await Promise.all(
+      this.providerRegistry.all().map((p) => p.getUserMethods(userId)),
+    );
+    return results.flat();
   }
 
   async findById(id: string, tx?: DbTx): Promise<PaymentMethod | null> {

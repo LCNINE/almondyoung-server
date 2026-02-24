@@ -4,12 +4,14 @@ import {
   ChargeParams,
   ChargeResult,
   DeleteMethodParams,
+  PaymentMethod,
   PaymentProvider,
   RefundParams,
   RefundResult,
   ValidateMethodParams,
 } from '../payment-provider.interface';
-import { WalletSchema } from '../../schema';
+import { WalletSchema, paymentMethods } from '../../schema';
+import { and, eq } from 'drizzle-orm';
 import { PointsLedgerService, PointsOperationResult } from './points-ledger.service';
 
 @Injectable()
@@ -20,6 +22,36 @@ export class PointsPaymentProvider implements PaymentProvider {
     private readonly dbService: DbService<WalletSchema>,
     private readonly pointsLedgerService: PointsLedgerService,
   ) {}
+
+  async getUserMethods(userId: string): Promise<PaymentMethod[]> {
+    return this.dbService.db.transaction(async (tx) => {
+      const db = tx as typeof this.dbService.db;
+      const existing = await db
+        .select()
+        .from(paymentMethods)
+        .where(
+          and(
+            eq(paymentMethods.userId, userId),
+            eq(paymentMethods.type, 'POINTS'),
+            eq(paymentMethods.isDeleted, false),
+          ),
+        );
+
+      if (existing.length > 0) return existing;
+
+      return db
+        .insert(paymentMethods)
+        .values({
+          userId,
+          type: 'POINTS',
+          displayName: null,
+          isReusable: true,
+          isDeleted: false,
+          providerData: {},
+        })
+        .returning();
+    });
+  }
 
   async validateMethod(_params: ValidateMethodParams): Promise<void> {
     // POINTS payment method is always valid - the balance is checked at authorize time

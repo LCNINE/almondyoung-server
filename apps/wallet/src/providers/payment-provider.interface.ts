@@ -69,8 +69,19 @@ export interface ChargeStatusResult {
   raw?: Record<string, unknown>;
 }
 
+import { PaymentMethod } from '../types';
+
+export type { PaymentMethod };
+
 export interface PaymentProvider {
   readonly providerType: string;
+
+  /**
+   * 이 provider 소속 결제수단 목록 반환.
+   * singleton provider(POINTS 등)는 없으면 자동 생성 후 반환.
+   * multi provider(CARD 등)는 등록된 것만 반환.
+   */
+  getUserMethods(userId: string): Promise<PaymentMethod[]>;
 
   /** Validate that a payment method can be registered (called at method creation) */
   validateMethod(params: ValidateMethodParams): Promise<void>;

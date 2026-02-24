@@ -14,6 +14,7 @@ import {
   ConfirmPaymentIntentDto,
   CreatePaymentIntentDto,
   PaymentIntentResponseDto,
+  TossApproveDto,
 } from './dto';
 import { AuthenticatedRequest } from '../wallet.module';
 
@@ -65,7 +66,19 @@ export class PaymentIntentsController {
       throw new ForbiddenException({ error: 'FORBIDDEN', message: 'Access denied' });
     }
 
-    await this.service.confirm(id, dto);
+    const { nextAction } = await this.service.confirm(id, dto);
+    const updated = await this.service.findByIdOrThrow(id);
+    return this.toResponse(updated, nextAction);
+  }
+
+  @Post(':id/toss-approve')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Approve Toss payment after checkout (API-key authenticated)' })
+  async tossApprove(
+    @Param('id') id: string,
+    @Body() dto: TossApproveDto,
+  ): Promise<PaymentIntentResponseDto> {
+    await this.service.tossApprove(id, dto);
     const updated = await this.service.findByIdOrThrow(id);
     return this.toResponse(updated);
   }
@@ -100,18 +113,21 @@ export class PaymentIntentsController {
     return this.toResponse(updated);
   }
 
-  private toResponse(intent: {
-    id: string;
-    clientSecret: string;
-    status: string;
-    payableAmount: number;
-    currency: string;
-    userId: string;
-    returnUrl: string | null;
-    expiresAt: Date;
-    metadata: Record<string, unknown>;
-    createdAt: Date;
-  }): PaymentIntentResponseDto {
+  private toResponse(
+    intent: {
+      id: string;
+      clientSecret: string;
+      status: string;
+      payableAmount: number;
+      currency: string;
+      userId: string;
+      returnUrl: string | null;
+      expiresAt: Date;
+      metadata: Record<string, unknown>;
+      createdAt: Date;
+    },
+    nextAction?: Record<string, unknown>,
+  ): PaymentIntentResponseDto {
     return {
       id: intent.id,
       clientSecret: intent.clientSecret,
@@ -123,6 +139,7 @@ export class PaymentIntentsController {
       expiresAt: intent.expiresAt,
       metadata: intent.metadata,
       createdAt: intent.createdAt,
+      ...(nextAction !== undefined ? { nextAction } : {}),
     };
   }
 }

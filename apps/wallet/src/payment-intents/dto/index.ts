@@ -145,6 +145,25 @@ export class ConfirmPaymentIntentDto {
   paymentMethodId: string;
 }
 
+// ─── Toss Approve ─────────────────────────────────────────────────────────────
+
+export class TossApproveDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  paymentKey: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  orderId: string;
+
+  @ApiProperty({ minimum: 1 })
+  @IsInt()
+  @Min(1)
+  amount: number;
+}
+
 // ─── Response ─────────────────────────────────────────────────────────────────
 
 export class PaymentIntentResponseDto {
@@ -177,4 +196,7 @@ export class PaymentIntentResponseDto {
 
   @ApiProperty()
   createdAt: Date;
+
+  @ApiPropertyOptional()
+  nextAction?: Record<string, unknown>;
 }

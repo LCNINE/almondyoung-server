@@ -23,6 +23,8 @@ export const walletEnvSchema = z.object({
   // Comma-separated list of allowed CORS origins (e.g. "https://app.example.com,https://admin.example.com")
   // Not required in development — all origins are allowed when NODE_ENV=development
   WALLET_CORS_ORIGINS: z.string().optional(),
+  TOSS_SECRET_KEY: z.string().min(1).optional(),
+  TOSS_CLIENT_KEY: z.string().min(1).optional(),
 });
 
 export type WalletEnvConfig = z.infer<typeof walletEnvSchema>;
