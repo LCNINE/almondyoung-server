@@ -1,13 +1,11 @@
 export interface ValidateMethodParams {
-  customerId: string;
-  externalUserId: string;
+  userId: string;
   type: string;
   providerData?: Record<string, unknown>;
 }
 
 export interface DeleteMethodParams {
-  customerId: string;
-  externalUserId: string;
+  userId: string;
   paymentMethodId: string;
   providerData?: Record<string, unknown>;
 }
@@ -17,9 +15,8 @@ export interface ChargeParams {
   chargeId: string;
   intentId: string;
   paymentMethodId: string;
-  customerId: string;
-  /** The external user identifier (e.g. Medusa user_id) */
-  externalUserId: string;
+  /** The user identifier (e.g. Medusa user_id) */
+  userId: string;
   amount: number;
   currency: string;
   idempotencyKey: string;
@@ -32,8 +29,7 @@ export interface RefundParams {
   refundId: string;
   chargeId: string;
   intentId: string;
-  customerId: string;
-  externalUserId: string;
+  userId: string;
   amount: number;
   currency: string;
   idempotencyKey: string;
@@ -64,7 +60,7 @@ export interface RefundResult {
 export interface GetStatusParams {
   chargeId: string;
   intentId: string;
-  externalUserId: string;
+  userId: string;
   providerTransactionId?: string;
 }
 

@@ -5,9 +5,9 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { WalletSchema } from '../schema';
+import { eq } from 'drizzle-orm';
+import { WalletSchema, paymentIntents } from '../schema';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
-import { PaymentCustomersService } from '../payment-customers/payment-customers.service';
 import { ChargesService } from '../charges/charges.service';
 import { ProviderRegistry } from '../providers/provider.registry';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
@@ -19,7 +19,6 @@ export class CaptureService {
   constructor(
     private readonly dbService: DbService<WalletSchema>,
     private readonly paymentMethodsService: PaymentMethodsService,
-    private readonly customersService: PaymentCustomersService,
     private readonly chargesService: ChargesService,
     private readonly providerRegistry: ProviderRegistry,
     private readonly stateTransitionService: StateTransitionService,
@@ -43,13 +42,11 @@ export class CaptureService {
       });
     }
 
-    const customer = await this.customersService.findById(
-      (await this.getIntentCustomerId(intentId)) ?? '',
-    );
-    if (!customer) {
+    const userId = await this.getIntentUserId(intentId);
+    if (!userId) {
       throw new UnprocessableEntityException({
-        error: 'CUSTOMER_NOT_FOUND',
-        message: `Customer not found for intent: ${intentId}`,
+        error: 'INTENT_NOT_FOUND',
+        message: `Intent not found: ${intentId}`,
       });
     }
 
@@ -76,8 +73,7 @@ export class CaptureService {
         chargeId: authorizeCharge.id,
         intentId,
         paymentMethodId: method.id,
-        customerId: customer.id,
-        externalUserId: customer.externalUserId,
+        userId,
         amount: captureCharge.amount,
         currency: captureCharge.currency,
         idempotencyKey: captureCharge.providerIdempotencyKey,
@@ -108,14 +104,12 @@ export class CaptureService {
     }
   }
 
-  private async getIntentCustomerId(intentId: string): Promise<string | null> {
-    const { paymentIntents } = await import('../schema');
-    const { eq } = await import('drizzle-orm');
+  private async getIntentUserId(intentId: string): Promise<string | null> {
     const rows = await this.dbService.db
-      .select({ customerId: paymentIntents.customerId })
+      .select({ userId: paymentIntents.userId })
       .from(paymentIntents)
       .where(eq(paymentIntents.id, intentId))
       .limit(1);
-    return rows[0]?.customerId ?? null;
+    return rows[0]?.userId ?? null;
   }
 }

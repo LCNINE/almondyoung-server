@@ -3,7 +3,6 @@ import { eq, or } from 'drizzle-orm';
 import {
   db,
   paymentIntents,
-  paymentCustomers,
   paymentMethods,
   charges,
   refunds,
@@ -90,7 +89,6 @@ export default async function IntentDetailPage({
 
   // 2~10. 병렬 조회
   const [
-    customerRows,
     methodRows,
     chargeRows,
     refundRows,
@@ -99,11 +97,6 @@ export default async function IntentDetailPage({
     pointHoldRows,
     itemRows,
   ] = await Promise.all([
-    db
-      .select()
-      .from(paymentCustomers)
-      .where(eq(paymentCustomers.id, intent.customerId))
-      .limit(1),
     intent.paymentMethodId
       ? db
           .select()
@@ -137,7 +130,6 @@ export default async function IntentDetailPage({
       .where(eq(paymentIntentItems.intentId, intentId)),
   ]);
 
-  const customer = customerRows[0] ?? null;
   const method = methodRows[0] ?? null;
   const chargeList: Charge[] = chargeRows;
   const refundList: Refund[] = refundRows;
@@ -190,17 +182,11 @@ export default async function IntentDetailPage({
         </div>
       </Section>
 
-      {/* ── Customer ── */}
-      <Section title="Customer">
-        {customer ? (
-          <div className="space-y-1.5">
-            <KV label="externalUserId" value={customer.externalUserId} />
-            <KV label="id" value={customer.id} />
-            <KV label="createdAt" value={fmt(customer.createdAt)} />
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">없음</p>
-        )}
+      {/* ── User ── */}
+      <Section title="User">
+        <div className="space-y-1.5">
+          <KV label="userId" value={intent.userId} />
+        </div>
       </Section>
 
       {/* ── Payment Method ── */}

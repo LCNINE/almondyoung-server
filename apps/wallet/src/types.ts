@@ -4,7 +4,6 @@ import {
   WalletSchema,
   charges,
   outboxEvents,
-  paymentCustomers,
   paymentIntentItemDiscounts,
   paymentIntentItems,
   paymentIntentOrderDiscounts,
@@ -22,12 +21,6 @@ import {
 export type WalletDb = DbService<WalletSchema>['db'];
 export type DbTx = Parameters<Parameters<WalletDb['transaction']>[0]>[0];
 export type DbTransaction = DbTx;
-
-export type PaymentCustomer = InferSelectModel<typeof paymentCustomers>;
-export type NewPaymentCustomer = InferInsertModel<typeof paymentCustomers>;
-export type UpdatePaymentCustomer = Partial<
-  Omit<NewPaymentCustomer, 'id' | 'createdAt' | 'updatedAt'>
->;
 
 export type PaymentMethod = InferSelectModel<typeof paymentMethods>;
 export type NewPaymentMethod = InferInsertModel<typeof paymentMethods>;

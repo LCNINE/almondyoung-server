@@ -116,30 +116,11 @@ export const paymentIntentOrderDiscountKindEnum = pgEnum(
 
 // ─── Tables ──────────────────────────────────────────────────────────────────
 
-export const paymentCustomers = pgTable(
-  'payment_customers',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-    externalUserId: varchar('external_user_id', { length: 128 }).notNull(),
-    metadata: jsonb('metadata')
-      .$type<Record<string, unknown>>()
-      .notNull()
-      .default(sql`'{}'::jsonb`),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    uniqueIndex('uq_payment_customers_external_user_id').on(table.externalUserId),
-  ],
-);
-
 export const paymentMethods = pgTable(
   'payment_methods',
   {
     id: uuid('id').defaultRandom().primaryKey(),
-    customerId: uuid('customer_id')
-      .notNull()
-      .references(() => paymentCustomers.id),
+    userId: varchar('user_id', { length: 128 }).notNull(),
     type: paymentMethodTypeEnum('type').notNull(),
     displayName: varchar('display_name', { length: 255 }),
     isReusable: boolean('is_reusable').notNull().default(true),
@@ -152,8 +133,8 @@ export const paymentMethods = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('idx_payment_methods_customer_id').on(table.customerId),
-    index('idx_payment_methods_customer_type').on(table.customerId, table.type),
+    index('idx_payment_methods_user_id').on(table.userId),
+    index('idx_payment_methods_user_type').on(table.userId, table.type),
   ],
 );
 
@@ -164,9 +145,7 @@ export const paymentIntents = pgTable(
     payableAmount: integer('payable_amount').notNull(),
     currency: varchar('currency', { length: 3 }).notNull(),
     status: paymentIntentStatusEnum('status').notNull(),
-    customerId: uuid('customer_id')
-      .notNull()
-      .references(() => paymentCustomers.id),
+    userId: varchar('user_id', { length: 128 }).notNull(),
     paymentMethodId: uuid('payment_method_id').references(() => paymentMethods.id),
     clientSecret: varchar('client_secret', { length: 64 }).notNull(),
     returnUrl: text('return_url'),
@@ -186,7 +165,7 @@ export const paymentIntents = pgTable(
     ),
     uniqueIndex('uq_payment_intents_client_secret').on(table.clientSecret),
     index('idx_payment_intents_status_expires_at').on(table.status, table.expiresAt),
-    index('idx_payment_intents_customer_created_at').on(table.customerId, table.createdAt),
+    index('idx_payment_intents_user_created_at').on(table.userId, table.createdAt),
   ],
 );
 
@@ -620,7 +599,6 @@ export type PaymentIntentOrderDiscountKind =
 // ─── Schema object ────────────────────────────────────────────────────────────
 
 export const walletSchema = {
-  paymentCustomers,
   paymentMethods,
   paymentIntents,
   paymentIntentItems,

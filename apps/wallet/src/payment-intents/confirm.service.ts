@@ -10,7 +10,6 @@ import { eq, sql } from 'drizzle-orm';
 import { WalletSchema, paymentIntents } from '../schema';
 import { DbTx } from '../types';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
-import { PaymentCustomersService } from '../payment-customers/payment-customers.service';
 import { ChargesService } from '../charges/charges.service';
 import { ProviderRegistry } from '../providers/provider.registry';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
@@ -28,18 +27,17 @@ export class ConfirmService {
   constructor(
     private readonly dbService: DbService<WalletSchema>,
     private readonly paymentMethodsService: PaymentMethodsService,
-    private readonly customersService: PaymentCustomersService,
     private readonly chargesService: ChargesService,
     private readonly providerRegistry: ProviderRegistry,
     private readonly stateTransitionService: StateTransitionService,
-  ) {}
+  ) { }
 
   async confirm(
     intentId: string,
     paymentMethodId: string,
     correlationId: string,
   ): Promise<void> {
-    return this.dbService.db.transaction(async (tx) => {
+    await this.dbService.db.transaction(async (tx) => {
       // 1. Load intent with FOR UPDATE lock
       const intent = await this.lockIntent(intentId, tx);
       if (!intent) {
@@ -77,16 +75,7 @@ export class ConfirmService {
         });
       }
 
-      // 5. Load customer
-      const customer = await this.customersService.findById(intent.customerId, tx);
-      if (!customer) {
-        throw new UnprocessableEntityException({
-          error: 'CUSTOMER_NOT_FOUND',
-          message: `Customer not found for intent: ${intentId}`,
-        });
-      }
-
-      // 6. Create charge record
+      // 5. Create charge record
       const idempotencyKey = `wallet:authorize:${intentId}:${paymentMethodId}:${Date.now()}`;
       const charge = await this.chargesService.create(
         {
@@ -102,7 +91,7 @@ export class ConfirmService {
         tx,
       );
 
-      // 7. Transition intent → PROCESSING (update payment_method_id)
+      // 6. Transition intent → PROCESSING (update payment_method_id)
       await tx
         .update(paymentIntents)
         .set({
@@ -120,7 +109,7 @@ export class ConfirmService {
         tx,
       );
 
-      // 8. Release transaction lock before calling provider (provider runs its own tx)
+      // 7. Release transaction lock before calling provider (provider runs its own tx)
       // We perform provider call outside this transaction to avoid long locks
       // The status updates are committed in a new transaction below
     });
@@ -146,9 +135,6 @@ export class ConfirmService {
     const method = await this.paymentMethodsService.findById(paymentMethodId);
     if (!method) return;
 
-    const customer = await this.customersService.findById(intent.customerId);
-    if (!customer) return;
-
     const charge = await this.chargesService.findActiveByIntentAndOperation(
       intentId,
       'AUTHORIZE',
@@ -167,8 +153,7 @@ export class ConfirmService {
         chargeId: charge.id,
         intentId,
         paymentMethodId,
-        customerId: customer.id,
-        externalUserId: customer.externalUserId,
+        userId: intent.userId,
         amount: charge.amount,
         currency: charge.currency,
         idempotencyKey,
@@ -188,7 +173,6 @@ export class ConfirmService {
         charge.id,
         providerResult.providerTransactionId,
         providerResult.raw,
-        customer.externalUserId,
         correlationId,
       );
     } else if (providerResult.status === 'PENDING') {
@@ -221,7 +205,6 @@ export class ConfirmService {
     chargeId: string,
     providerTransactionId: string | undefined,
     responsePayload: Record<string, unknown> | undefined,
-    externalUserId: string,
     correlationId: string,
   ): Promise<void> {
     const now = new Date().toISOString();
@@ -248,8 +231,7 @@ export class ConfirmService {
             aggregateId: intent.id,
             payload: buildPaymentIntentEventPayload({
               intentId: intent.id,
-              customerId: intent.customerId,
-              externalUserId,
+              userId: intent.userId,
               status: 'SUCCEEDED',
               payableAmount: intent.payableAmount,
               currency: intent.currency,

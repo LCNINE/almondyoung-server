@@ -1,159 +1,112 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { confirmPaymentIntent, cancelPaymentIntent } from '@/lib/wallet-api';
 import type { PaymentIntent, PaymentMethod } from '@/lib/wallet-api';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Label } from '@/components/ui/label';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Separator } from '@/components/ui/separator';
-
-const METHOD_TYPE_LABELS: Record<string, string> = {
-  POINTS: '포인트',
-  CARD: '카드',
-  BANK_TRANSFER: '계좌이체',
-  BNPL: '후불결제',
-};
-
-function formatAmount(amount: number, currency: string): string {
-  if (currency === 'KRW') {
-    return `${amount.toLocaleString('ko-KR')}원`;
-  }
-  return `${amount.toLocaleString()} ${currency}`;
-}
 
 interface Props {
   intent: PaymentIntent;
   methods: PaymentMethod[];
-  clientSecret: string;
 }
 
-export function PayForm({ intent, methods, clientSecret }: Props) {
+export function PayForm({ intent, methods }: Props) {
   const router = useRouter();
   const [selectedMethodId, setSelectedMethodId] = useState<string>(methods[0]?.id ?? '');
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
-  const [isCanceling, startCancelTransition] = useTransition();
 
-  const handleConfirm = () => {
-    if (!selectedMethodId) return;
+  async function handleConfirm() {
+    if (!selectedMethodId) {
+      setError('결제 수단을 선택해주세요.');
+      return;
+    }
+    setLoading(true);
     setError(null);
-
-    startTransition(async () => {
-      try {
-        const result = await confirmPaymentIntent(intent.id, selectedMethodId, clientSecret);
-        if (result.status === 'SUCCEEDED') {
-          const destination = intent.returnUrl
-            ? `${intent.returnUrl}?payment_intent_id=${intent.id}&status=succeeded`
-            : `/pay/${intent.id}?client_secret=${clientSecret}`;
-          router.replace(destination);
-        } else {
-          // PROCESSING or REQUIRES_ACTION — reload to sync state
-          router.refresh();
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : '결제에 실패했어요. 다시 시도해주세요.');
+    try {
+      const result = await confirmPaymentIntent(intent.id, selectedMethodId);
+      if (result.returnUrl) {
+        router.replace(`${result.returnUrl}?payment_intent_id=${intent.id}&status=succeeded`);
+      } else {
+        router.replace(`/pay/${intent.id}`);
       }
-    });
-  };
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '결제에 실패했어요.');
+    } finally {
+      setLoading(false);
+    }
+  }
 
-  const handleCancel = () => {
-    startCancelTransition(async () => {
-      try {
-        await cancelPaymentIntent(intent.id, clientSecret);
-        const destination = intent.returnUrl
-          ? `${intent.returnUrl}?payment_intent_id=${intent.id}&status=canceled`
-          : `/pay/${intent.id}?client_secret=${clientSecret}`;
-        router.replace(destination);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : '취소에 실패했어요.');
+  async function handleCancel() {
+    setLoading(true);
+    setError(null);
+    try {
+      await cancelPaymentIntent(intent.id);
+      if (intent.returnUrl) {
+        router.replace(`${intent.returnUrl}?payment_intent_id=${intent.id}&status=canceled`);
+      } else {
+        router.replace(`/pay/${intent.id}`);
       }
-    });
-  };
-
-  const expiresAt = intent.expiresAt ? new Date(intent.expiresAt) : null;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '취소에 실패했어요.');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-lg">결제하기</CardTitle>
-      </CardHeader>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-xl font-semibold">결제하기</h1>
+        <p className="text-2xl font-bold mt-1">
+          {intent.payableAmount.toLocaleString()} {intent.currency}
+        </p>
+      </div>
 
-      <CardContent className="space-y-6">
-        {/* Amount */}
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-muted-foreground">결제 금액</span>
-          <span className="text-2xl font-bold tabular-nums">
-            {formatAmount(intent.payableAmount, intent.currency)}
-          </span>
-        </div>
-
-        {expiresAt && (
-          <p className="text-xs text-muted-foreground">
-            만료: {expiresAt.toLocaleString('ko-KR')}
-          </p>
-        )}
-
-        <Separator />
-
-        {/* Payment methods */}
+      <div className="space-y-2">
+        <label className="text-sm font-medium">결제 수단</label>
         {methods.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-4">
-            사용 가능한 결제수단이 없어요.
-          </p>
+          <p className="text-sm text-muted-foreground">사용 가능한 결제 수단이 없습니다.</p>
         ) : (
           <div className="space-y-2">
-            <p className="text-sm font-medium">결제수단</p>
-            <RadioGroup value={selectedMethodId} onValueChange={setSelectedMethodId}>
-              {methods.map((m) => (
-                <div
-                  key={m.id}
-                  className="flex items-center gap-3 rounded-md border p-3 cursor-pointer has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5"
-                >
-                  <RadioGroupItem value={m.id} id={m.id} />
-                  <Label htmlFor={m.id} className="flex-1 cursor-pointer">
-                    <span className="font-medium">
-                      {METHOD_TYPE_LABELS[m.type] ?? m.type}
-                    </span>
-                    {m.displayName && (
-                      <span className="ml-2 text-sm text-muted-foreground">{m.displayName}</span>
-                    )}
-                  </Label>
-                </div>
-              ))}
-            </RadioGroup>
+            {methods.map((m) => (
+              <label key={m.id} className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="method"
+                  value={m.id}
+                  checked={selectedMethodId === m.id}
+                  onChange={() => setSelectedMethodId(m.id)}
+                />
+                <span className="text-sm">
+                  {m.displayName || m.type}
+                </span>
+              </label>
+            ))}
           </div>
         )}
+      </div>
 
-        {/* Error */}
-        {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-      </CardContent>
+      {error && (
+        <p className="text-sm text-red-500">{error}</p>
+      )}
 
-      <CardFooter className="flex flex-col gap-2">
-        <Button
-          className="w-full"
-          size="lg"
+      <div className="flex gap-2">
+        <button
           onClick={handleConfirm}
-          disabled={!selectedMethodId || isPending || isCanceling}
+          disabled={loading || methods.length === 0}
+          className="flex-1 py-2 px-4 bg-primary text-primary-foreground rounded-md disabled:opacity-50"
         >
-          {isPending ? '처리 중...' : `${formatAmount(intent.payableAmount, intent.currency)} 결제하기`}
-        </Button>
-        <Button
-          variant="ghost"
-          className="w-full text-muted-foreground"
+          {loading ? '처리 중...' : '결제하기'}
+        </button>
+        <button
           onClick={handleCancel}
-          disabled={isPending || isCanceling}
+          disabled={loading}
+          className="py-2 px-4 border rounded-md disabled:opacity-50"
         >
-          {isCanceling ? '취소 중...' : '취소'}
-        </Button>
-      </CardFooter>
-    </Card>
+          취소
+        </button>
+      </div>
+    </div>
   );
 }

@@ -93,11 +93,11 @@ export class OrderDiscountDto {
 }
 
 export class CreatePaymentIntentDto {
-  @ApiProperty({ description: 'External user ID', maxLength: 128 })
+  @ApiProperty({ description: 'User ID', maxLength: 128 })
   @IsString()
   @IsNotEmpty()
   @MaxLength(128)
-  externalUserId: string;
+  userId: string;
 
   @ApiProperty({ description: 'Currency code (e.g. KRW)', maxLength: 3 })
   @IsString()
@@ -163,8 +163,8 @@ export class PaymentIntentResponseDto {
   @ApiProperty()
   currency: string;
 
-  @ApiProperty({ description: 'External user ID (caller-side user identifier)' })
-  externalUserId: string;
+  @ApiProperty({ description: 'User ID' })
+  userId: string;
 
   @ApiPropertyOptional()
   returnUrl: string | null;

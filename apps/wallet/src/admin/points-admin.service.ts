@@ -24,19 +24,19 @@ export interface PointsEventRow {
 export class PointsAdminService {
   constructor(private readonly dbService: DbService<WalletSchema>) {}
 
-  async getBalance(externalUserId: string): Promise<PointsBalance> {
+  async getBalance(userId: string): Promise<PointsBalance> {
     const db = this.dbService.db;
 
     const confirmedRows = await db
       .select({ amount: sql<number>`coalesce(sum(${pointEvents.amount}), 0)` })
       .from(pointEvents)
-      .where(eq(pointEvents.userId, externalUserId));
+      .where(eq(pointEvents.userId, userId));
 
     const reservedRows = await db
       .select({ amount: sql<number>`coalesce(sum(${pointHolds.amount}), 0)` })
       .from(pointHolds)
       .where(
-        and(eq(pointHolds.userId, externalUserId), eq(pointHolds.status, 'AUTHORIZED')),
+        and(eq(pointHolds.userId, userId), eq(pointHolds.status, 'AUTHORIZED')),
       );
 
     const confirmed = Number(confirmedRows[0]?.amount ?? 0);
@@ -45,7 +45,7 @@ export class PointsAdminService {
     return { confirmed, reserved, available: confirmed - reserved };
   }
 
-  async getRecentEvents(externalUserId: string, limit = 20): Promise<PointsEventRow[]> {
+  async getRecentEvents(userId: string, limit = 20): Promise<PointsEventRow[]> {
     const db = this.dbService.db;
 
     const rows = await db
@@ -58,7 +58,7 @@ export class PointsAdminService {
         createdAt: pointEvents.createdAt,
       })
       .from(pointEvents)
-      .where(eq(pointEvents.userId, externalUserId))
+      .where(eq(pointEvents.userId, userId))
       .orderBy(desc(pointEvents.createdAt))
       .limit(limit);
 
@@ -66,7 +66,7 @@ export class PointsAdminService {
   }
 
   async earn(
-    externalUserId: string,
+    userId: string,
     amount: number,
     reasonCode?: string,
   ): Promise<{ eventId: string }> {
@@ -80,7 +80,7 @@ export class PointsAdminService {
     await this.dbService.db.transaction(async (tx: DbTx) => {
       await tx.insert(pointEvents).values({
         id: eventId,
-        userId: externalUserId,
+        userId,
         eventType: 'EARN',
         amount,
         providerIdempotencyKey: `admin:earn:${eventId}`,
@@ -90,9 +90,10 @@ export class PointsAdminService {
       await tx.insert(pointEventDetails).values({
         id: detailId,
         pointEventId: eventId,
-        userId: externalUserId,
+        userId,
         eventType: 'EARN',
         amount,
+        earnedEventDetailId: detailId, // EARN detail은 자기 자신이 원본 lot
       });
     });
 
@@ -100,7 +101,7 @@ export class PointsAdminService {
   }
 
   async earnCancel(
-    externalUserId: string,
+    userId: string,
     earnEventId: string,
     amount?: number,
     reasonCode?: string,
@@ -127,8 +128,8 @@ export class PointsAdminService {
         `Event ${earnEventId} is not an EARN event (got ${originalEvent.eventType})`,
       );
     }
-    if (originalEvent.userId !== externalUserId) {
-      throw new BadRequestException(`Event ${earnEventId} does not belong to user ${externalUserId}`);
+    if (originalEvent.userId !== userId) {
+      throw new BadRequestException(`Event ${earnEventId} does not belong to user ${userId}`);
     }
 
     const cancelAmount = amount ?? originalEvent.amount;
@@ -153,7 +154,7 @@ export class PointsAdminService {
     await db.transaction(async (tx: DbTx) => {
       await tx.insert(pointEvents).values({
         id: cancelEventId,
-        userId: externalUserId,
+        userId,
         eventType: 'EARN_CANCEL',
         amount: -cancelAmount,
         originalEventId: earnEventId,
@@ -164,7 +165,7 @@ export class PointsAdminService {
       await tx.insert(pointEventDetails).values({
         id: randomUUID(),
         pointEventId: cancelEventId,
-        userId: externalUserId,
+        userId,
         eventType: 'EARN_CANCEL',
         amount: -cancelAmount,
         originalEventDetailId: earnDetail?.id ?? null,

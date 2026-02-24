@@ -1,28 +1,27 @@
+import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { getPaymentIntent, getPaymentMethods } from '@/lib/wallet-api';
 import { PayForm } from './pay-form';
 
 interface Props {
   params: Promise<{ intentId: string }>;
-  searchParams: Promise<{ client_secret?: string }>;
 }
 
-export default async function PayPage({ params, searchParams }: Props) {
+export default async function PayPage({ params }: Props) {
   const { intentId } = await params;
-  const { client_secret: clientSecret } = await searchParams;
 
-  if (!clientSecret) {
-    notFound();
-  }
+  // 서버 컴포넌트에서 브라우저 쿠키를 wallet API로 직접 포워딩
+  const cookieStore = await cookies();
+  const cookieHeader = cookieStore.toString();
 
   let intent;
   try {
-    intent = await getPaymentIntent(intentId, clientSecret);
+    intent = await getPaymentIntent(intentId, cookieHeader);
   } catch {
     notFound();
   }
 
-  const methods = await getPaymentMethods(intent.externalUserId, clientSecret).catch(() => []);
+  const methods = await getPaymentMethods(cookieHeader).catch(() => []);
 
   if (intent.status === 'SUCCEEDED') {
     const returnUrl = intent.returnUrl
@@ -57,7 +56,7 @@ export default async function PayPage({ params, searchParams }: Props) {
   return (
     <main className="flex min-h-screen items-center justify-center bg-background">
       <div className="mx-auto max-w-md w-full px-4 py-8">
-        <PayForm intent={intent} methods={methods} clientSecret={clientSecret} />
+        <PayForm intent={intent} methods={methods} />
       </div>
     </main>
   );

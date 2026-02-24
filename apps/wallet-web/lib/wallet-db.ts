@@ -93,17 +93,9 @@ export const pointHoldStatusEnum = pgEnum('point_hold_status', [
 
 // ─── Tables (조회 전용 — 제약 생략) ───────────────────────────────────────────
 
-export const paymentCustomers = pgTable('payment_customers', {
-  id: uuid('id').primaryKey(),
-  externalUserId: varchar('external_user_id', { length: 128 }).notNull(),
-  metadata: jsonb('metadata').$type<Record<string, unknown>>(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
-});
-
 export const paymentMethods = pgTable('payment_methods', {
   id: uuid('id').primaryKey(),
-  customerId: uuid('customer_id').notNull(),
+  userId: varchar('user_id', { length: 128 }).notNull(),
   type: paymentMethodTypeEnum('type').notNull(),
   displayName: varchar('display_name', { length: 255 }),
   isReusable: boolean('is_reusable').notNull(),
@@ -117,7 +109,7 @@ export const paymentIntents = pgTable('payment_intents', {
   payableAmount: integer('payable_amount').notNull(),
   currency: varchar('currency', { length: 3 }).notNull(),
   status: paymentIntentStatusEnum('status').notNull(),
-  customerId: uuid('customer_id').notNull(),
+  userId: varchar('user_id', { length: 128 }).notNull(),
   paymentMethodId: uuid('payment_method_id'),
   clientSecret: varchar('client_secret', { length: 64 }).notNull(),
   returnUrl: text('return_url'),
@@ -248,7 +240,6 @@ export const pointHolds = pgTable('point_holds', {
 // ─── Type exports ─────────────────────────────────────────────────────────────
 
 export type PaymentIntent = typeof paymentIntents.$inferSelect;
-export type PaymentCustomer = typeof paymentCustomers.$inferSelect;
 export type PaymentMethod = typeof paymentMethods.$inferSelect;
 export type Charge = typeof charges.$inferSelect;
 export type Refund = typeof refunds.$inferSelect;

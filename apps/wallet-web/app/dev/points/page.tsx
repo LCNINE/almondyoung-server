@@ -66,8 +66,8 @@ export default function DevPointsPage() {
     setLoadingFetch(true);
     try {
       const [balRes, eventsRes] = await Promise.all([
-        fetch(`/api/dev/points/balance?external_user_id=${encodeURIComponent(userId.trim())}`),
-        fetch(`/api/dev/points/events?external_user_id=${encodeURIComponent(userId.trim())}&limit=20`),
+        fetch(`/api/dev/points/balance?user_id=${encodeURIComponent(userId.trim())}`),
+        fetch(`/api/dev/points/events?user_id=${encodeURIComponent(userId.trim())}&limit=20`),
       ]);
 
       if (!balRes.ok) {
@@ -102,7 +102,7 @@ export default function DevPointsPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          externalUserId: userId.trim(),
+          userId: userId.trim(),
           amount: earnAmount,
           ...(earnReason.trim() ? { reasonCode: earnReason.trim() } : {}),
         }),
@@ -130,7 +130,7 @@ export default function DevPointsPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          externalUserId: userId.trim(),
+          userId: userId.trim(),
           earnEventId,
         }),
       });

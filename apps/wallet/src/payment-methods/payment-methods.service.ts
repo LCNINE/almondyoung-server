@@ -6,7 +6,6 @@ import { DbService } from '@app/db';
 import { and, eq } from 'drizzle-orm';
 import { WalletSchema, paymentMethods } from '../schema';
 import { DbTx, PaymentMethod } from '../types';
-import { PaymentCustomersService } from '../payment-customers/payment-customers.service';
 import { ProviderRegistry } from '../providers/provider.registry';
 import { CreatePaymentMethodDto } from './dto';
 
@@ -14,20 +13,14 @@ import { CreatePaymentMethodDto } from './dto';
 export class PaymentMethodsService {
   constructor(
     private readonly dbService: DbService<WalletSchema>,
-    private readonly customersService: PaymentCustomersService,
     private readonly providerRegistry: ProviderRegistry,
   ) {}
 
   async create(dto: CreatePaymentMethodDto): Promise<PaymentMethod> {
     const provider = this.providerRegistry.getProviderOrThrow(dto.type);
 
-    const customer = await this.customersService.upsertByExternalUserId(
-      dto.externalUserId,
-    );
-
     await provider.validateMethod({
-      customerId: customer.id,
-      externalUserId: dto.externalUserId,
+      userId: dto.userId,
       type: dto.type,
       providerData: dto.providerData,
     });
@@ -35,7 +28,7 @@ export class PaymentMethodsService {
     const rows = await this.dbService.db
       .insert(paymentMethods)
       .values({
-        customerId: customer.id,
+        userId: dto.userId,
         type: dto.type,
         displayName: dto.displayName ?? null,
         isReusable: true,
@@ -51,16 +44,13 @@ export class PaymentMethodsService {
     return method;
   }
 
-  async findAllByExternalUserId(externalUserId: string): Promise<PaymentMethod[]> {
-    const customer = await this.customersService.findByExternalUserId(externalUserId);
-    if (!customer) return [];
-
+  async findAllByUserId(userId: string): Promise<PaymentMethod[]> {
     return this.dbService.db
       .select()
       .from(paymentMethods)
       .where(
         and(
-          eq(paymentMethods.customerId, customer.id),
+          eq(paymentMethods.userId, userId),
           eq(paymentMethods.isDeleted, false),
         ),
       );
@@ -83,11 +73,9 @@ export class PaymentMethodsService {
     }
 
     const provider = this.providerRegistry.getProviderOrThrow(method.type);
-    const customer = await this.customersService.findById(method.customerId);
 
     await provider.deleteMethod({
-      customerId: method.customerId,
-      externalUserId: customer?.externalUserId ?? '',
+      userId: method.userId,
       paymentMethodId: id,
       providerData: method.providerData as Record<string, unknown>,
     });

@@ -4,10 +4,10 @@ import { IsInt, IsNotEmpty, IsOptional, IsString, IsUUID, Min } from 'class-vali
 import { PointsAdminService } from './points-admin.service';
 
 class EarnPointsDto {
-  @ApiProperty({ description: 'External user ID', maxLength: 128 })
+  @ApiProperty({ description: 'User ID', maxLength: 128 })
   @IsString()
   @IsNotEmpty()
-  externalUserId: string;
+  userId: string;
 
   @ApiProperty({ description: 'Amount to earn (positive integer)', minimum: 1 })
   @IsInt()
@@ -21,10 +21,10 @@ class EarnPointsDto {
 }
 
 class EarnCancelDto {
-  @ApiProperty({ description: 'External user ID', maxLength: 128 })
+  @ApiProperty({ description: 'User ID', maxLength: 128 })
   @IsString()
   @IsNotEmpty()
-  externalUserId: string;
+  userId: string;
 
   @ApiProperty({ description: 'UUID of the EARN event to cancel' })
   @IsUUID()
@@ -49,25 +49,25 @@ export class PointsAdminController {
 
   @Get('balance')
   @ApiOperation({ summary: 'Get points balance for a user' })
-  async getBalance(@Query('external_user_id') externalUserId: string) {
-    return this.service.getBalance(externalUserId);
+  async getBalance(@Query('user_id') userId: string) {
+    return this.service.getBalance(userId);
   }
 
   @Get('events')
   @ApiOperation({ summary: 'Get recent point events for a user' })
   async getEvents(
-    @Query('external_user_id') externalUserId: string,
+    @Query('user_id') userId: string,
     @Query('limit') limit?: string,
   ) {
     const parsedLimit = limit ? parseInt(limit, 10) : 20;
-    return this.service.getRecentEvents(externalUserId, parsedLimit);
+    return this.service.getRecentEvents(userId, parsedLimit);
   }
 
   @Post('earn')
   @HttpCode(201)
   @ApiOperation({ summary: 'Earn points for a user (admin)' })
   async earn(@Body() dto: EarnPointsDto) {
-    return this.service.earn(dto.externalUserId, dto.amount, dto.reasonCode);
+    return this.service.earn(dto.userId, dto.amount, dto.reasonCode);
   }
 
   @Post('earn-cancel')
@@ -75,7 +75,7 @@ export class PointsAdminController {
   @ApiOperation({ summary: 'Cancel an EARN event (admin)' })
   async earnCancel(@Body() dto: EarnCancelDto) {
     return this.service.earnCancel(
-      dto.externalUserId,
+      dto.userId,
       dto.earnEventId,
       dto.amount,
       dto.reasonCode,

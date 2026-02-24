@@ -96,6 +96,7 @@
     "pim:migrate-es": "./scripts/with-ipv4.sh dotenv -e apps/pim/.env ts-node apps/pim/scripts/migrate-to-elasticsearch.ts",
     "db:push:user-service": "drizzle-kit push --config apps/user-service/database/drizzle/drizzle.config.ts",
     "db:seed:user-service": "ts-node -r tsconfig-paths/register apps/user-service/database/seed-cli.ts",
+    "db:generate:wallet": "drizzle-kit generate --config apps/wallet/drizzle.config.ts",
     "db:push:wallet": "./scripts/with-ipv4.sh drizzle-kit push --config apps/wallet/drizzle.config.ts",
     "db:push:notification": "drizzle-kit push --config apps/notification/database/drizzle/drizzle.config.ts",
     "db:push:channel-adapter": "./scripts/with-ipv4.sh drizzle-kit push --config apps/channel-adapter/drizzle.config.ts",

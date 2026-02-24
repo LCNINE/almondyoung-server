@@ -6,8 +6,8 @@ const WALLET_API_KEY = process.env.WALLET_API_KEY ?? '';
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { externalUserId, amount, currency = 'KRW', returnUrl } = body as {
-    externalUserId: string;
+  const { userId, amount, currency = 'KRW', returnUrl } = body as {
+    userId: string;
     amount: number;
     currency?: string;
     returnUrl?: string;
@@ -18,9 +18,9 @@ export async function POST(req: NextRequest) {
     Authorization: `Bearer ${WALLET_API_KEY}`,
   };
 
-  // 1. Get or create POINTS payment method
+  // 1. Get or create POINTS payment method (API-key authenticated, merchant backend call)
   const methodsRes = await fetch(
-    `${WALLET_API_URL}/v1/payment-methods?external_user_id=${encodeURIComponent(externalUserId)}`,
+    `${WALLET_API_URL}/v1/payment-methods?user_id=${encodeURIComponent(userId)}`,
     { headers, cache: 'no-store' },
   );
   if (!methodsRes.ok) {
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
     const createRes = await fetch(`${WALLET_API_URL}/v1/payment-methods`, {
       method: 'POST',
       headers: { ...headers, 'Idempotency-Key': randomUUID() },
-      body: JSON.stringify({ externalUserId, type: 'POINTS' }),
+      body: JSON.stringify({ userId, type: 'POINTS' }),
     });
     if (!createRes.ok) {
       const err = await createRes.json().catch(() => ({}));
@@ -43,11 +43,11 @@ export async function POST(req: NextRequest) {
     pointsMethod = await createRes.json();
   }
 
-  // 2. Create payment intent
+  // 2. Create payment intent (merchant backend supplies userId in body)
   const intentRes = await fetch(`${WALLET_API_URL}/v1/payment-intents`, {
     method: 'POST',
     headers: { ...headers, 'Idempotency-Key': randomUUID() },
-    body: JSON.stringify({ externalUserId, currency, amount, returnUrl }),
+    body: JSON.stringify({ userId, currency, amount, returnUrl }),
   });
   if (!intentRes.ok) {
     const err = await intentRes.json().catch(() => ({}));

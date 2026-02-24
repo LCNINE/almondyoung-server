@@ -112,7 +112,7 @@ function resolveActorId(request: FastifyRequest & { user?: Record<string, unknow
   }
 
   const body = request.body as Record<string, unknown> | undefined;
-  const bodyActor = toStringIfSet(body?.externalUserId) ?? toStringIfSet(body?.userId);
+  const bodyActor = toStringIfSet(body?.userId);
   if (bodyActor) {
     return bodyActor;
   }
