@@ -88,9 +88,8 @@ module.exports = defineConfig({
             resolve: './src/modules/almond-payment',
             id: 'almond-payment',
             options: {
-              apiKey:
-                process.env.ALMOND_PAYMENT_API_ENDPOINT ||
-                'http://localhost:3000/api/v1',
+              walletBaseUrl: process.env.WALLET_BASE_URL || 'http://localhost:3100',
+              walletApiKey: process.env.WALLET_API_KEY || 'dev-secret',
             },
           },
         ],
