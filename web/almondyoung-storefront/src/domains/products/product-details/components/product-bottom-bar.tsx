@@ -26,7 +26,7 @@ export function ProductBottomBar({
 }: Props) {
   return (
     <nav
-      className="border-gray-20 fixed right-0 bottom-0 left-0 z-50 border-t bg-white p-4 md:hidden"
+      className="border-gray-20 fixed right-0 bottom-0 left-0 z-50 border-t bg-white p-4 lg:hidden"
       aria-label="상품 액션"
     >
       <div className="flex gap-2">

@@ -21,7 +21,6 @@ type Props = {
 
 /**
  * @description 상품 가격 표시 컴포넌트
- * 시맨틱: <output>을 사용하여 계산된 값 표현
  */
 export function ProductPriceDisplay({
   basePrice,
@@ -55,18 +54,6 @@ export function ProductPriceDisplay({
   const membershipDiscountRate = hasMembershipPrice
     ? Math.round(((basePrice - membershipPrice) / basePrice) * 100)
     : 0
-
-  if (process.env.NODE_ENV === "development") {
-    console.log("[PRICE DEBUG][ProductDetail]", {
-      basePrice,
-      membershipPrice,
-      isMember,
-      isMembershipOnly,
-      discountRate: displayDiscountRate,
-      membershipSavings,
-      showMembershipHint,
-    })
-  }
 
   return (
     <section className="mb-6" aria-label="상품 가격">

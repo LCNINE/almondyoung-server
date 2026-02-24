@@ -9,7 +9,6 @@ type Props = {
 
 /**
  * @description 상품 정보 탭 네비게이션
- * 시맨틱: <nav>와 role="tablist" 사용
  */
 export function ProductTabs({
   activeTab,
@@ -21,7 +20,7 @@ export function ProductTabs({
     { id: "detail", label: "상세정보" },
     { id: "review", label: `리뷰 ${reviewCount}` },
     { id: "qna", label: `Q&A ${qnaCount}` },
-    { id: "info", label: "구매, 반품/교환 정보안내" },
+    { id: "info", label: "구매/반품 안내" },
   ]
 
   return (
@@ -38,7 +37,7 @@ export function ProductTabs({
               aria-selected={activeTab === tab.id}
               aria-controls={`${tab.id}-panel`}
               onClick={() => onTabChange(tab.id)}
-              className={`w-full py-4 text-center ${
+              className={`w-full px-2 py-4 text-center text-xs lg:text-base ${
                 activeTab === tab.id
                   ? "border-b-2 border-blue-500 text-blue-500"
                   : "text-gray-600"

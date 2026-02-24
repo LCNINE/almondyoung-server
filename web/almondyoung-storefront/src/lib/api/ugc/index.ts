@@ -26,11 +26,28 @@ export const getReviewsByProductId = async ({
   if (page) params.page = String(page)
   if (limit) params.limit = String(limit)
 
-  return await api<PaginatedResponseDto<ReviewResponseDto>>("ugc", "/reviews", {
-    method: "GET",
-    params,
-    withAuth: false,
-  })
+  const queryString = new URLSearchParams(params).toString()
+
+  // todo:임시
+  const result = await fetch(
+    `https://ugc-demo.up.railway.app/reviews?${queryString}`,
+    {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    }
+  )
+
+  const data = await result.json()
+
+  return data
+
+  // return await api<PaginatedResponseDto<ReviewResponseDto>>("ugc", "/reviews", {
+  //   method: "GET",
+  //   params,
+  //   withAuth: false,
+  // })
 }
 
 /**
