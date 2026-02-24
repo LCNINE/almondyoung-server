@@ -21,7 +21,7 @@ interface CategoryCircleItemProps {
   category: CategoryCircleItem
   isSelected: boolean
   countryCode?: string
-  parentSlug?: string
+  parentSegments?: string[]
   onSelect?: (id: string) => void
 }
 
@@ -30,7 +30,7 @@ interface CategoryCircleTabsProps {
   selectedId: string
   onSelect?: (id: string) => void
   countryCode?: string
-  parentSlug?: string
+  parentSegments?: string[]
 }
 
 // --- 하위 컴포넌트: 개별 아이템 ---
@@ -39,7 +39,7 @@ function CategoryCircleItem({
   category,
   isSelected,
   countryCode,
-  parentSlug,
+  parentSegments,
   onSelect,
 }: CategoryCircleItemProps) {
   const metadata = category.metadata as
@@ -56,8 +56,8 @@ function CategoryCircleItem({
     category.imageUrl || category.thumbnail || metadataImage || PLACEHOLDER_IMAGE
 
   const href =
-    countryCode && parentSlug && category.handle
-      ? `/${countryCode}/category/${parentSlug}/${category.handle}`
+    countryCode && category.handle && parentSegments && parentSegments.length > 0
+      ? `/${countryCode}/category/${[...parentSegments, category.handle].join("/")}`
       : null
 
   const content = (
@@ -118,7 +118,7 @@ export function CategoryCircleTabs({
   selectedId,
   onSelect,
   countryCode,
-  parentSlug,
+  parentSegments,
 }: CategoryCircleTabsProps) {
   return (
     <section className="mb-8 md:mb-12">
@@ -134,7 +134,7 @@ export function CategoryCircleTabs({
             category={category}
             isSelected={selectedId === category.id}
             countryCode={countryCode}
-            parentSlug={parentSlug}
+            parentSegments={parentSegments}
             onSelect={onSelect}
           />
         ))}
