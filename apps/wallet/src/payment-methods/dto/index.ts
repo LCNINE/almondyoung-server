@@ -7,11 +7,11 @@ export class CreatePaymentMethodDto {
   @IsEnum(['POINTS', 'CARD', 'BANK_TRANSFER', 'BNPL'])
   type: PaymentMethodType;
 
-  @ApiProperty({ description: 'External user ID (caller-side user identifier)', maxLength: 128 })
+  @ApiProperty({ description: 'User ID', maxLength: 128 })
   @IsString()
   @IsNotEmpty()
   @MaxLength(128)
-  externalUserId: string;
+  userId: string;
 
   @ApiPropertyOptional({ description: 'Display name for the payment method', maxLength: 255 })
   @IsOptional()
@@ -29,7 +29,7 @@ export class PaymentMethodResponseDto {
   id: string;
 
   @ApiProperty()
-  customerId: string;
+  userId: string;
 
   @ApiProperty()
   type: PaymentMethodType;

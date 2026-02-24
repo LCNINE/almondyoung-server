@@ -4,8 +4,7 @@ import { PaymentIntentStatus, ChargeStatus, RefundStatus } from '../schema';
 
 export interface PaymentIntentEventInput {
   intentId: string;
-  customerId: string;
-  externalUserId: string;
+  userId: string;
   status: PaymentIntentStatus;
   payableAmount: number;
   currency: string;
@@ -18,8 +17,7 @@ export function buildPaymentIntentEventPayload(
 ): Record<string, unknown> {
   return {
     intentId: input.intentId,
-    customerId: input.customerId,
-    externalUserId: input.externalUserId,
+    userId: input.userId,
     status: input.status,
     payableAmount: input.payableAmount,
     currency: input.currency,
@@ -33,8 +31,7 @@ export function buildPaymentIntentEventPayload(
 export interface ChargeEventInput {
   chargeId: string;
   intentId: string;
-  customerId: string;
-  externalUserId: string;
+  userId: string;
   status: ChargeStatus;
   operation: string;
   amount: number;
@@ -50,8 +47,7 @@ export function buildChargeEventPayload(
   return {
     chargeId: input.chargeId,
     intentId: input.intentId,
-    customerId: input.customerId,
-    externalUserId: input.externalUserId,
+    userId: input.userId,
     status: input.status,
     operation: input.operation,
     amount: input.amount,
@@ -68,8 +64,7 @@ export interface RefundEventInput {
   refundId: string;
   chargeId: string;
   intentId: string;
-  customerId: string;
-  externalUserId: string;
+  userId: string;
   status: RefundStatus;
   amount: number;
   currency: string;
@@ -84,8 +79,7 @@ export function buildRefundEventPayload(
     refundId: input.refundId,
     chargeId: input.chargeId,
     intentId: input.intentId,
-    customerId: input.customerId,
-    externalUserId: input.externalUserId,
+    userId: input.userId,
     status: input.status,
     amount: input.amount,
     currency: input.currency,

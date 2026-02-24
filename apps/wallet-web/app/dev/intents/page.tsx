@@ -45,7 +45,7 @@ export default async function IntentsPage() {
                   <th className="text-left px-4 py-2 font-medium">ID</th>
                   <th className="text-left px-4 py-2 font-medium">Status</th>
                   <th className="text-right px-4 py-2 font-medium">Amount</th>
-                  <th className="text-left px-4 py-2 font-medium">Customer</th>
+                  <th className="text-left px-4 py-2 font-medium">User</th>
                   <th className="text-left px-4 py-2 font-medium">생성</th>
                 </tr>
               </thead>
@@ -72,7 +72,7 @@ export default async function IntentsPage() {
                       {intent.payableAmount.toLocaleString()} {intent.currency}
                     </td>
                     <td className="px-4 py-2 font-mono text-xs text-muted-foreground">
-                      {intent.customerId.slice(0, 8)}…
+                      {intent.userId.slice(0, 12)}…
                     </td>
                     <td className="px-4 py-2 text-xs text-muted-foreground">
                       {formatDistanceToNow(intent.createdAt, { addSuffix: true, locale: ko })}

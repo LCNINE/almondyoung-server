@@ -9,12 +9,10 @@ import { randomBytes } from 'node:crypto';
 import {
   WalletSchema,
   paymentIntents,
-  paymentCustomers,
   paymentIntentItems,
   paymentIntentItemDiscounts,
   paymentIntentOrderDiscounts,
 } from '../schema';
-import { PaymentCustomersService } from '../payment-customers/payment-customers.service';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
 import {
   GATEWAY_AGGREGATE_TYPE,
@@ -34,7 +32,6 @@ const DEFAULT_INTENT_EXPIRY_MINUTES = 30;
 export class PaymentIntentsService {
   constructor(
     private readonly dbService: DbService<WalletSchema>,
-    private readonly customersService: PaymentCustomersService,
     private readonly stateTransitionService: StateTransitionService,
     private readonly confirmService: ConfirmService,
     private readonly captureService: CaptureService,
@@ -65,10 +62,6 @@ export class PaymentIntentsService {
       payableAmount = dto.amount;
     }
 
-    const customer = await this.customersService.upsertByExternalUserId(
-      dto.externalUserId,
-    );
-
     const clientSecret = randomBytes(32).toString('hex');
     const expiresAt = new Date(
       Date.now() + DEFAULT_INTENT_EXPIRY_MINUTES * 60 * 1000,
@@ -82,7 +75,7 @@ export class PaymentIntentsService {
           payableAmount,
           currency: dto.currency.toUpperCase(),
           status: 'CREATED',
-          customerId: customer.id,
+          userId: dto.userId,
           clientSecret,
           returnUrl: dto.returnUrl ?? null,
           metadata: dto.metadata ?? {},
@@ -151,8 +144,7 @@ export class PaymentIntentsService {
           aggregateId: intent.id,
           payload: buildPaymentIntentEventPayload({
             intentId: intent.id,
-            customerId: intent.customerId,
-            externalUserId: dto.externalUserId,
+            userId: intent.userId,
             status: 'CREATED',
             payableAmount: intent.payableAmount,
             currency: intent.currency,
@@ -176,32 +168,6 @@ export class PaymentIntentsService {
 
   async findByIdOrThrow(id: string): Promise<typeof paymentIntents.$inferSelect> {
     const intent = await this.findById(id);
-    if (!intent) {
-      throw new NotFoundException({
-        error: 'INTENT_NOT_FOUND',
-        message: `Payment intent not found: ${id}`,
-      });
-    }
-    return intent;
-  }
-
-  async findByIdWithCustomer(
-    id: string,
-  ): Promise<(typeof paymentIntents.$inferSelect & { externalUserId: string }) | null> {
-    const rows = await this.dbService.db
-      .select({ intent: paymentIntents, externalUserId: paymentCustomers.externalUserId })
-      .from(paymentIntents)
-      .innerJoin(paymentCustomers, eq(paymentIntents.customerId, paymentCustomers.id))
-      .where(eq(paymentIntents.id, id))
-      .limit(1);
-    if (!rows[0]) return null;
-    return { ...rows[0].intent, externalUserId: rows[0].externalUserId };
-  }
-
-  async findByIdWithCustomerOrThrow(
-    id: string,
-  ): Promise<typeof paymentIntents.$inferSelect & { externalUserId: string }> {
-    const intent = await this.findByIdWithCustomer(id);
     if (!intent) {
       throw new NotFoundException({
         error: 'INTENT_NOT_FOUND',
@@ -249,8 +215,7 @@ export class PaymentIntentsService {
           aggregateId: intentId,
           payload: buildPaymentIntentEventPayload({
             intentId,
-            customerId: intent.customerId,
-            externalUserId: '',
+            userId: intent.userId,
             status: 'CANCELED',
             payableAmount: intent.payableAmount,
             currency: intent.currency,

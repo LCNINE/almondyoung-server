@@ -3,6 +3,7 @@ import { z } from 'zod';
 export const walletEnvSchema = z.object({
   DATABASE_URL: z.string().min(1),
   WALLET_API_KEY: z.string().min(1),
+  USER_JWT_SECRET: z.string().min(1),
   WALLET_IDEMPOTENCY_TTL_SECONDS: z.string().regex(/^\d+$/).optional(),
   WALLET_EXPIRATION_BATCH_SIZE: z.string().regex(/^\d+$/).optional(),
   WALLET_EXPIRATION_CRON: z.string().min(1).optional(),

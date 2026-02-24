@@ -3,15 +3,13 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  UnprocessableEntityException,
 } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { eq } from 'drizzle-orm';
-import { WalletSchema, refunds } from '../schema';
+import { WalletSchema, refunds, paymentIntents } from '../schema';
 import { Refund } from '../types';
 import { ChargesService } from '../charges/charges.service';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
-import { PaymentCustomersService } from '../payment-customers/payment-customers.service';
 import { ProviderRegistry } from '../providers/provider.registry';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
 import {
@@ -29,7 +27,6 @@ export class RefundsService {
     private readonly dbService: DbService<WalletSchema>,
     private readonly chargesService: ChargesService,
     private readonly paymentMethodsService: PaymentMethodsService,
-    private readonly customersService: PaymentCustomersService,
     private readonly providerRegistry: ProviderRegistry,
     private readonly stateTransitionService: StateTransitionService,
   ) {}
@@ -65,13 +62,11 @@ export class RefundsService {
       });
     }
 
-    const customer = await this.customersService.findById(
-      await this.getIntentCustomerId(charge.intentId) ?? '',
-    );
-    if (!customer) {
-      throw new UnprocessableEntityException({
-        error: 'CUSTOMER_NOT_FOUND',
-        message: `Customer not found for charge: ${charge.id}`,
+    const userId = await this.getIntentUserId(charge.intentId);
+    if (!userId) {
+      throw new NotFoundException({
+        error: 'INTENT_NOT_FOUND',
+        message: `Intent not found for charge: ${charge.id}`,
       });
     }
 
@@ -103,8 +98,7 @@ export class RefundsService {
         refundId: refund.id,
         chargeId: charge.id,
         intentId: charge.intentId,
-        customerId: customer.id,
-        externalUserId: customer.externalUserId,
+        userId,
         amount: dto.amount,
         currency: charge.currency,
         idempotencyKey,
@@ -152,8 +146,7 @@ export class RefundsService {
                 refundId: refund.id,
                 chargeId: charge.id,
                 intentId: charge.intentId,
-                customerId: customer.id,
-                externalUserId: customer.externalUserId,
+                userId,
                 status: 'SUCCEEDED',
                 amount: dto.amount,
                 currency: charge.currency,
@@ -204,14 +197,12 @@ export class RefundsService {
     return refund;
   }
 
-  private async getIntentCustomerId(intentId: string): Promise<string | null> {
-    const { paymentIntents } = await import('../schema');
-    const { eq } = await import('drizzle-orm');
+  private async getIntentUserId(intentId: string): Promise<string | null> {
     const rows = await this.dbService.db
-      .select({ customerId: paymentIntents.customerId })
+      .select({ userId: paymentIntents.userId })
       .from(paymentIntents)
       .where(eq(paymentIntents.id, intentId))
       .limit(1);
-    return rows[0]?.customerId ?? null;
+    return rows[0]?.userId ?? null;
   }
 }

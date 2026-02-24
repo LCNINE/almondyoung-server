@@ -46,7 +46,7 @@ export default function DevStorePage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          externalUserId: userId.trim(),
+          userId: userId.trim(),
           amount: buyAmount,
           currency: 'KRW',
           returnUrl: `${window.location.origin}/dev/store`,
@@ -57,7 +57,7 @@ export default function DevStorePage() {
         toast.error(data?.message ?? '결제 생성 실패');
         return;
       }
-      router.push(`/pay/${data.intentId}?client_secret=${data.clientSecret}`);
+      router.push(`/pay/${data.intentId}`);
     } catch {
       toast.error('네트워크 오류가 발생했습니다');
     } finally {

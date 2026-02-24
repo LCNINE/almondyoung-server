@@ -5,7 +5,7 @@ export interface PaymentIntent {
   payableAmount: number;
   currency: string;
   status: string;
-  externalUserId: string;
+  userId: string;
   returnUrl: string | null;
   expiresAt: string | null;
 }
@@ -23,12 +23,20 @@ export interface ConfirmResult {
   returnUrl: string | null;
 }
 
+/**
+ * cookieHeader: Next.js 서버 컴포넌트에서 호출 시 `cookies().toString()` 값을 전달.
+ * 브라우저 클라이언트에서 호출 시 생략하면 credentials: 'include' 사용.
+ */
 export async function getPaymentIntent(
   intentId: string,
-  clientSecret: string,
+  cookieHeader?: string,
 ): Promise<PaymentIntent> {
+  const headers: Record<string, string> = {};
+  if (cookieHeader) headers['Cookie'] = cookieHeader;
+
   const res = await fetch(`${BASE_URL}/v1/payment-intents/${intentId}`, {
-    headers: { 'X-Client-Secret': clientSecret },
+    headers,
+    credentials: cookieHeader ? undefined : 'include',
     cache: 'no-store',
   });
   if (!res.ok) {
@@ -38,13 +46,13 @@ export async function getPaymentIntent(
   return res.json();
 }
 
-export async function getPaymentMethods(
-  externalUserId: string,
-  clientSecret: string,
-): Promise<PaymentMethod[]> {
-  const url = `${BASE_URL}/v1/payment-methods?external_user_id=${encodeURIComponent(externalUserId)}`;
-  const res = await fetch(url, {
-    headers: { 'X-Client-Secret': clientSecret },
+export async function getPaymentMethods(cookieHeader?: string): Promise<PaymentMethod[]> {
+  const headers: Record<string, string> = {};
+  if (cookieHeader) headers['Cookie'] = cookieHeader;
+
+  const res = await fetch(`${BASE_URL}/v1/payment-methods`, {
+    headers,
+    credentials: cookieHeader ? undefined : 'include',
     cache: 'no-store',
   });
   if (!res.ok) {
@@ -57,15 +65,14 @@ export async function getPaymentMethods(
 export async function confirmPaymentIntent(
   intentId: string,
   paymentMethodId: string,
-  clientSecret: string,
 ): Promise<ConfirmResult> {
   const res = await fetch(`${BASE_URL}/v1/payment-intents/${intentId}/confirm`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Client-Secret': clientSecret,
       'Idempotency-Key': crypto.randomUUID(),
     },
+    credentials: 'include',   // sends JWT cookie
     body: JSON.stringify({ paymentMethodId }),
   });
   if (!res.ok) {
@@ -77,14 +84,13 @@ export async function confirmPaymentIntent(
 
 export async function cancelPaymentIntent(
   intentId: string,
-  clientSecret: string,
 ): Promise<void> {
   const res = await fetch(`${BASE_URL}/v1/payment-intents/${intentId}/cancel`, {
     method: 'POST',
     headers: {
-      'X-Client-Secret': clientSecret,
       'Idempotency-Key': crypto.randomUUID(),
     },
+    credentials: 'include',   // sends JWT cookie
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
