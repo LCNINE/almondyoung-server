@@ -77,9 +77,12 @@ export class CreateAccountDto {
 
   @ApiProperty({
     description: '전화번호',
-    example: '01012345678',
+    example: '+821012345678',
   })
   @IsString({ message: '전화번호는 문자열이어야 합니다.' })
   @IsOptional({ message: '전화번호는 선택적 입력 항목입니다.' })
+  @Matches(/^\+[1-9]\d{7,14}$/, {
+    message: '전화번호는 E.164 형식이어야 합니다. (예: +821012345678)',
+  })
   phone_number?: string;
 }
