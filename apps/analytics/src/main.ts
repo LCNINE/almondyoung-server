@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { GlobalExceptionFilter } from '@app/shared';
+import fastifyCookie from '@fastify/cookie';
 import { EventsModule } from '@app/events';
 import { ORDER_STREAM } from '@packages/event-contracts';
 import * as os from 'os';
@@ -43,6 +44,8 @@ async function bootstrap() {
     AnalyticsModule,
     new FastifyAdapter(),
   );
+
+  await app.register(fastifyCookie);
 
   app.useGlobalPipes(
     new ValidationPipe({
