@@ -1,7 +1,13 @@
 FROM opensearchproject/opensearch:2.18.0
 
+USER root
 RUN opensearch-plugin install --batch analysis-nori
+
+COPY docker-entrypoint-opensearch.sh /usr/local/bin/docker-entrypoint-opensearch.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint-opensearch.sh
 
 ENV discovery.type=single-node
 ENV DISABLE_SECURITY_PLUGIN=true
 ENV OPENSEARCH_JAVA_OPTS="-Xms512m -Xmx512m"
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint-opensearch.sh"]
