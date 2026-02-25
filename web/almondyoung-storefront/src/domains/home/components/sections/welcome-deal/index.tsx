@@ -3,7 +3,7 @@
 import { ProductCard } from "@/components/products/prodcut-card"
 import { ProductGrid } from "@/components/products/product-grid"
 import type { ProductCardProps } from "@/lib/types/ui/product"
-import { isProductSoldOut } from "@/lib/utils"
+import { isProductSoldOut } from "@/lib/utils/is-product-sold-out"
 import { useParams } from "next/navigation"
 import Link from "next/link"
 import { SectionHeader } from "../../header/section-header"

@@ -6,17 +6,14 @@ import { ReviewHelpfulButton } from "../ui/review-helpful-button"
 import { getAuthorName } from "../utils"
 
 type Props = {
+  countryCode: string
   review: ReviewDetail
-  onLike: (
-    reviewId: string,
-    liked: boolean
-  ) => Promise<{ count: number }> | void
 }
 
 /**
  * @description 리뷰 상세 페이지용 카드
  */
-export function ReviewDetailCard({ review, onLike }: Props) {
+export function ReviewDetailCard({ countryCode, review }: Props) {
   const displayDate = new Date(review.createdAt)
     .toLocaleDateString("ko-KR", {
       year: "numeric",
@@ -66,8 +63,9 @@ export function ReviewDetailCard({ review, onLike }: Props) {
 
       {/*  푸터: 도움돼요 버튼 */}
       <ReviewHelpfulButton
+        countryCode={countryCode}
+        reviewId={review.id}
         initialLikeCount={review.helpfulCount}
-        onLike={(liked) => onLike(review.id, liked)}
       />
     </article>
   )

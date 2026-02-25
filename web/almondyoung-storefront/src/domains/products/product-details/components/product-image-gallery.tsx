@@ -1,6 +1,7 @@
 "use client"
 
 import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
+import Image from "next/image"
 
 type Props = {
   thumbnails: string[]
@@ -36,13 +37,15 @@ export function ProductImageGallery({
             <button
               key={idx}
               onClick={() => onImageChange(thumb)}
-              className="h-20 w-20 min-w-20 shrink-0 overflow-hidden bg-gray-200"
+              className="relative h-20 w-20 min-w-20 shrink-0 overflow-hidden bg-gray-200"
               aria-label={`상품 이미지 ${idx + 1} 보기`}
             >
-              <img
+              <Image
                 src={getThumbnailUrl(thumb)}
                 alt={`${productName} 썸네일 ${idx + 1}`}
-                className="h-full w-full object-cover"
+                fill
+                sizes="80px"
+                className="object-cover"
               />
             </button>
           ))}
@@ -53,11 +56,14 @@ export function ProductImageGallery({
 
       {/* 메인 이미지 */}
       <figure className="relative flex-1">
-        <div className="aspect-square overflow-hidden bg-gray-200">
-          <img
+        <div className="relative aspect-square overflow-hidden bg-gray-200">
+          <Image
             src={getThumbnailUrl(mainImage)}
             alt={`${productName} 메인 이미지`}
-            className="h-full w-full object-cover"
+            fill
+            priority
+            sizes="(max-width: 1024px) 100vw, 50vw"
+            className="object-cover"
           />
         </div>
         {isSoldOut && (
@@ -76,13 +82,15 @@ export function ProductImageGallery({
           <button
             key={idx}
             onClick={() => onImageChange(thumb)}
-            className="h-20 w-20 overflow-hidden bg-gray-200"
+            className="relative h-20 w-20 overflow-hidden bg-gray-200"
             aria-label={`상품 이미지 ${idx + 1} 보기`}
           >
-            <img
+            <Image
               src={getThumbnailUrl(thumb)}
               alt={`${productName} 썸네일 ${idx + 1}`}
-              className="h-full w-full object-cover"
+              fill
+              sizes="80px"
+              className="object-cover"
             />
           </button>
         ))}
