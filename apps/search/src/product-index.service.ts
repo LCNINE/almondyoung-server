@@ -7,6 +7,7 @@ import {
 import { OpenSearchService } from './opensearch.service';
 import {
   PRODUCTS_INDEX_MAPPINGS,
+  PRODUCTS_INDEX_SETTINGS,
   SearchProductDocument,
 } from './types/product-document.type';
 import { compactText } from './utils/text.utils';
@@ -128,10 +129,7 @@ export class ProductIndexService implements OnModuleInit {
       try {
         await client.indices.create({
           index,
-          settings: {
-            number_of_shards: 1,
-            number_of_replicas: 1,
-          },
+          settings: PRODUCTS_INDEX_SETTINGS,
           mappings: PRODUCTS_INDEX_MAPPINGS,
         });
         this.logger.log(`Created products index: ${index}`);

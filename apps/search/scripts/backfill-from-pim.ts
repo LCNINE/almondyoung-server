@@ -17,6 +17,7 @@ import {
 import {
   DEFAULT_PRODUCTS_INDEX,
   PRODUCTS_INDEX_MAPPINGS,
+  PRODUCTS_INDEX_SETTINGS,
   SearchProductDocument,
 } from '../src/types/product-document.type';
 
@@ -184,10 +185,7 @@ async function ensureIndex(
     console.log(`Creating index: ${index}`);
     await client.indices.create({
       index,
-      settings: {
-        number_of_shards: 1,
-        number_of_replicas: 1,
-      },
+      settings: PRODUCTS_INDEX_SETTINGS,
       mappings: PRODUCTS_INDEX_MAPPINGS,
     });
   }
