@@ -1,29 +1,14 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  HttpCode,
-  HttpStatus,
-  Param,
-  Patch,
-  Post,
-  Get,
-  Query,
-} from '@nestjs/common';
-import {
-  ApiBody,
-  ApiOperation,
-  ApiParam,
-  ApiResponse,
-  ApiTags,
-  ApiQuery,
-} from '@nestjs/swagger';
-import { Public, User } from '@app/authorization';
+import { Body, Controller, Delete, HttpCode, HttpStatus, Param, Patch, Post, Get, Query } from '@nestjs/common';
+import { ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags, ApiQuery } from '@nestjs/swagger';
+import { Public, RequireScopes, User } from '@app/authorization';
 import { ReviewsService } from './reviews.service';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { ReviewListQueryDto } from './dto/review-list-query.dto';
 import { UpdateReviewDto } from './dto/update-review.dto';
+import { CommentResponseDto } from './dto/comment-response.dto';
+import { CreateCommentDto } from './dto/create-comment.dto';
 import { ReviewResponseDto } from './dto/review-response.dto';
+import { ToggleReactionDto } from './dto/toggle-reaction.dto';
 import { ReviewMapper } from './mappers';
 import { ApiOkResponsePaginated } from '@app/shared/decorators/api-paginated-response.decorator';
 import { PaginatedResponseDto } from '@app/shared/dto';
@@ -31,7 +16,7 @@ import { PaginatedResponseDto } from '@app/shared/dto';
 @ApiTags('Reviews')
 @Controller('reviews')
 export class ReviewsController {
-  constructor(private readonly reviewsService: ReviewsService) { }
+  constructor(private readonly reviewsService: ReviewsService) {}
 
   @Post()
   @ApiOperation({ summary: '리뷰 생성' })
@@ -41,10 +26,7 @@ export class ReviewsController {
     description: '리뷰 생성 성공',
     type: ReviewResponseDto,
   })
-  async create(
-    @User('userId') userId: string,
-    @Body() dto: CreateReviewDto,
-  ): Promise<ReviewResponseDto> {
+  async create(@User('userId') userId: string, @Body() dto: CreateReviewDto): Promise<ReviewResponseDto> {
     const review = await this.reviewsService.create(userId, dto);
     return ReviewMapper.toResponse(review);
   }
@@ -85,9 +67,7 @@ export class ReviewsController {
   @ApiOkResponsePaginated(ReviewResponseDto, {
     description: '리뷰 목록 조회 성공',
   })
-  async list(
-    @Query() query: ReviewListQueryDto,
-  ): Promise<PaginatedResponseDto<ReviewResponseDto>> {
+  async list(@Query() query: ReviewListQueryDto): Promise<PaginatedResponseDto<ReviewResponseDto>> {
     const result = await this.reviewsService.listByProduct(query);
     return {
       ...result,
@@ -128,36 +108,100 @@ export class ReviewsController {
   })
   @ApiResponse({ status: HttpStatus.NO_CONTENT, description: '리뷰 삭제 성공' })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: '리뷰를 찾을 수 없음' })
-  async remove(
-    @User('userId') userId: string,
-    @Param('id') id: string,
-  ): Promise<void> {
+  async remove(@User('userId') userId: string, @Param('id') id: string): Promise<void> {
     await this.reviewsService.remove(userId, id);
   }
 
-  @Post(':id/helpful')
-  @ApiOperation({ summary: '리뷰 도움이 됨 토글' })
+  @Post(':id/reactions')
+  @ApiOperation({ summary: '리뷰 반응 토글 (helpful, like, dislike)' })
   @ApiParam({
     name: 'id',
     description: '리뷰 ID (UUID)',
     example: '550e8400-e29b-41d4-a716-446655440000',
   })
+  @ApiBody({ type: ToggleReactionDto })
   @ApiResponse({
     status: HttpStatus.OK,
-    description: '도움이 됨 토글 성공',
+    description: '반응 토글 성공',
     schema: {
       type: 'object',
       properties: {
-        marked: { type: 'boolean', description: '현재 도움이 됨 표시 여부' },
-        helpfulCount: { type: 'number', description: '총 도움이 됨 수' },
+        marked: { type: 'boolean', description: '현재 반응 표시 여부' },
+        count: { type: 'number', description: '해당 반응 총 수' },
       },
     },
   })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: '리뷰를 찾을 수 없음' })
-  async toggleHelpful(
+  @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: '자기 리뷰에는 반응할 수 없음' })
+  async toggleReaction(
     @User('userId') userId: string,
     @Param('id') id: string,
-  ): Promise<{ marked: boolean; helpfulCount: number }> {
-    return this.reviewsService.toggleHelpful(userId, id);
+    @Body() dto: ToggleReactionDto,
+  ): Promise<{ marked: boolean; count: number }> {
+    return this.reviewsService.toggleReaction(userId, id, dto.type);
+  }
+
+  @Post(':id/comment')
+  @RequireScopes('admin:ugc:modify')
+  @ApiOperation({ summary: '리뷰 관리자 댓글 작성' })
+  @ApiParam({
+    name: 'id',
+    description: '리뷰 ID (UUID)',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
+  @ApiBody({ type: CreateCommentDto })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: '댓글 작성 성공',
+    type: CommentResponseDto,
+  })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: '리뷰를 찾을 수 없음' })
+  @ApiResponse({ status: HttpStatus.CONFLICT, description: '이미 댓글이 존재함' })
+  async createComment(
+    @User('userId') adminUserId: string,
+    @Param('id') id: string,
+    @Body() dto: CreateCommentDto,
+  ): Promise<CommentResponseDto> {
+    const comment = await this.reviewsService.createComment(adminUserId, id, dto);
+    return ReviewMapper.toCommentResponse(comment);
+  }
+
+  @Patch(':id/comment')
+  @RequireScopes('admin:ugc:modify')
+  @ApiOperation({ summary: '리뷰 관리자 댓글 수정' })
+  @ApiParam({
+    name: 'id',
+    description: '리뷰 ID (UUID)',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
+  @ApiBody({ type: CreateCommentDto })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: '댓글 수정 성공',
+    type: CommentResponseDto,
+  })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: '댓글을 찾을 수 없음' })
+  async updateComment(
+    @User('userId') adminUserId: string,
+    @Param('id') id: string,
+    @Body() dto: CreateCommentDto,
+  ): Promise<CommentResponseDto> {
+    const comment = await this.reviewsService.updateComment(adminUserId, id, dto);
+    return ReviewMapper.toCommentResponse(comment);
+  }
+
+  @Delete(':id/comment')
+  @RequireScopes('admin:ugc:modify')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: '리뷰 관리자 댓글 삭제' })
+  @ApiParam({
+    name: 'id',
+    description: '리뷰 ID (UUID)',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
+  @ApiResponse({ status: HttpStatus.NO_CONTENT, description: '댓글 삭제 성공' })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: '댓글을 찾을 수 없음' })
+  async deleteComment(@Param('id') id: string): Promise<void> {
+    await this.reviewsService.deleteComment(id);
   }
 }

@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { DbModule } from '@app/db';
-import { AuthorizationModule, authorizationSchema, JwtAuthGuard } from '@app/authorization';
+import { AuthorizationModule, authorizationSchema, JwtAuthGuard, ScopeGuard } from '@app/authorization';
 import { APP_GUARD } from '@nestjs/core';
 import { UgcServiceController } from './ugc-service.controller';
 import { UgcServiceService } from './ugc-service.service';
 import { ReviewsModule } from './reviews/reviews.module';
+import { QnaModule } from './qna/qna.module';
 import { ugcServiceSchema } from './db/schema';
 
 const combinedSchema = { ...ugcServiceSchema, ...authorizationSchema };
@@ -18,7 +19,7 @@ const combinedSchema = { ...ugcServiceSchema, ...authorizationSchema };
     }),
     AuthorizationModule.forRoot({
       microserviceName: 'ugc-service',
-      scopes: [],
+      scopes: [{ key: 'admin:ugc:modify', category: 'admin', description: '관리자 - UGC 관리 (리뷰 댓글, Q&A 답변)' }],
     }),
     DbModule.forRoot({
       config: {
@@ -27,6 +28,7 @@ const combinedSchema = { ...ugcServiceSchema, ...authorizationSchema };
       schema: combinedSchema,
     }),
     ReviewsModule,
+    QnaModule,
   ],
   controllers: [UgcServiceController],
   providers: [
@@ -34,6 +36,10 @@ const combinedSchema = { ...ugcServiceSchema, ...authorizationSchema };
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: ScopeGuard,
     },
   ],
 })

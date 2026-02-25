@@ -1,4 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { CommentResponseDto } from './comment-response.dto';
 
 export class ReviewResponseDto {
   @ApiProperty({ description: '리뷰 ID' })
@@ -36,6 +37,12 @@ export class ReviewResponseDto {
   @ApiProperty({ description: '도움이 됨 수', example: 5 })
   helpfulCount: number;
 
+  @ApiProperty({ description: '좋아요 수', example: 10 })
+  likeCount: number;
+
+  @ApiProperty({ description: '싫어요 수', example: 2 })
+  dislikeCount: number;
+
   @ApiProperty({ description: '상태', example: 'active' })
   status: string;
 
@@ -50,4 +57,11 @@ export class ReviewResponseDto {
     example: '2025-12-05T10:30:00.000Z',
   })
   updatedAt: string;
+
+  @ApiPropertyOptional({
+    description: '관리자 댓글',
+    type: CommentResponseDto,
+    nullable: true,
+  })
+  adminComment: CommentResponseDto | null;
 }

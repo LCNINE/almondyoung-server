@@ -4,7 +4,7 @@ import { UgcServiceService } from './ugc-service.service';
 
 @Controller()
 export class UgcServiceController {
-  constructor(private readonly ugcServiceService: UgcServiceService) { }
+  constructor(private readonly ugcServiceService: UgcServiceService) {}
 
   @Get()
   @Public()

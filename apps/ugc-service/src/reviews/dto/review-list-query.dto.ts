@@ -2,24 +2,11 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIn, IsOptional, IsUUID } from 'class-validator';
 import { PaginationQueryDto } from '@app/shared/dto';
 
-export const REVIEW_RATING_FILTERS = [
-  '1',
-  '2',
-  '3',
-  '4',
-  '5',
-  'positive',
-  'negative',
-] as const;
+export const REVIEW_RATING_FILTERS = ['1', '2', '3', '4', '5', 'positive', 'negative'] as const;
 
 export type ReviewRatingFilter = (typeof REVIEW_RATING_FILTERS)[number];
 
-export const REVIEW_SORT_OPTIONS = [
-  'latest',
-  'oldest',
-  'rating_high',
-  'rating_low',
-] as const;
+export const REVIEW_SORT_OPTIONS = ['latest', 'oldest', 'rating_high', 'rating_low'] as const;
 
 export type ReviewSortOption = (typeof REVIEW_SORT_OPTIONS)[number];
 

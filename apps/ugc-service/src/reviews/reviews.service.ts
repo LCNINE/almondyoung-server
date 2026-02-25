@@ -1,32 +1,28 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { and, asc, count, desc, eq, inArray, type SQL } from 'drizzle-orm';
-import { reviewMedia, reviews, reviewHelpfuls, type UgcServiceSchema } from '../db/schema';
+import { reviewComments, reviewMedia, reviews, reactions, type UgcServiceSchema } from '../db/schema';
 import { CreateReviewDto } from './dto/create-review.dto';
+import { CreateCommentDto } from './dto/create-comment.dto';
 import { ReviewListQueryDto } from './dto/review-list-query.dto';
 import { UpdateReviewDto } from './dto/update-review.dto';
-import { type ReviewEntity, type ReviewWithMediaEntity } from './types';
+import { type ReviewCommentEntity, type ReviewEntity, type ReviewWithMediaEntity } from './types';
 import { PaginatedResponseDto } from '@app/shared/dto';
 import { MAX_REVIEW_MEDIA_COUNT } from './constants';
 
 const SOURCE_SYSTEM = 'almondyoung';
 
-type DbTransaction = Parameters<
-  Parameters<DbService<UgcServiceSchema>['db']['transaction']>[0]
->[0];
+type DbTransaction = Parameters<Parameters<DbService<UgcServiceSchema>['db']['transaction']>[0]>[0];
 
 @Injectable()
 export class ReviewsService {
-  constructor(@InjectDb() private readonly db: DbService<UgcServiceSchema>) { }
+  constructor(@InjectDb() private readonly db: DbService<UgcServiceSchema>) {}
 
   private get client() {
     return this.db.db;
   }
 
-  private async inTx<T>(
-    fn: (tx: DbTransaction) => Promise<T>,
-    tx?: DbTransaction,
-  ): Promise<T> {
+  private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction): Promise<T> {
     return tx ? fn(tx) : this.client.transaction(fn);
   }
 
@@ -36,9 +32,7 @@ export class ReviewsService {
     }
 
     if (mediaFileIds.length > MAX_REVIEW_MEDIA_COUNT) {
-      throw new BadRequestException(
-        `Media files can be attached up to ${MAX_REVIEW_MEDIA_COUNT}`,
-      );
+      throw new BadRequestException(`Media files can be attached up to ${MAX_REVIEW_MEDIA_COUNT}`);
     }
 
     const uniqueMedia = new Set(mediaFileIds);
@@ -49,11 +43,7 @@ export class ReviewsService {
     return mediaFileIds;
   }
 
-  private async insertReviewMedia(
-    reviewId: string,
-    mediaFileIds: string[],
-    tx: DbTransaction,
-  ): Promise<void> {
+  private async insertReviewMedia(reviewId: string, mediaFileIds: string[], tx: DbTransaction): Promise<void> {
     if (mediaFileIds.length === 0) {
       return;
     }
@@ -67,10 +57,7 @@ export class ReviewsService {
     );
   }
 
-  private async fetchMediaFileIdsByReviewIds(
-    reviewIds: string[],
-    tx: DbTransaction,
-  ): Promise<Map<string, string[]>> {
+  private async fetchMediaFileIdsByReviewIds(reviewIds: string[], tx: DbTransaction): Promise<Map<string, string[]>> {
     if (reviewIds.length === 0) {
       return new Map();
     }
@@ -98,46 +85,77 @@ export class ReviewsService {
     return mediaMap;
   }
 
-  private async fetchMediaFileIdsByReviewId(
-    reviewId: string,
-    tx: DbTransaction,
-  ): Promise<string[]> {
+  private async fetchMediaFileIdsByReviewId(reviewId: string, tx: DbTransaction): Promise<string[]> {
     const mediaMap = await this.fetchMediaFileIdsByReviewIds([reviewId], tx);
     return mediaMap.get(reviewId) ?? [];
   }
 
-  private async fetchHelpfulCounts(
+  private async fetchReactionCounts(
     reviewIds: string[],
     tx: DbTransaction,
-  ): Promise<Map<string, number>> {
+  ): Promise<Map<string, { helpfulCount: number; likeCount: number; dislikeCount: number }>> {
     if (reviewIds.length === 0) {
       return new Map();
     }
 
     const rows = await tx
       .select({
-        reviewId: reviewHelpfuls.reviewId,
+        targetId: reactions.targetId,
+        reactionType: reactions.reactionType,
         count: count(),
       })
-      .from(reviewHelpfuls)
-      .where(inArray(reviewHelpfuls.reviewId, reviewIds))
-      .groupBy(reviewHelpfuls.reviewId);
+      .from(reactions)
+      .where(and(eq(reactions.targetType, 'review'), inArray(reactions.targetId, reviewIds)))
+      .groupBy(reactions.targetId, reactions.reactionType);
 
-    const countMap = new Map<string, number>();
+    const countMap = new Map<string, { helpfulCount: number; likeCount: number; dislikeCount: number }>();
+
+    // 모든 reviewId에 대해 기본값 설정
+    for (const reviewId of reviewIds) {
+      countMap.set(reviewId, { helpfulCount: 0, likeCount: 0, dislikeCount: 0 });
+    }
+
     for (const row of rows) {
-      countMap.set(row.reviewId, row.count);
+      const counts = countMap.get(row.targetId);
+      if (counts) {
+        if (row.reactionType === 'helpful') {
+          counts.helpfulCount = row.count;
+        } else if (row.reactionType === 'like') {
+          counts.likeCount = row.count;
+        } else if (row.reactionType === 'dislike') {
+          counts.dislikeCount = row.count;
+        }
+      }
     }
 
     return countMap;
   }
 
-  async toggleHelpful(
-    userId: string,
+  private async fetchCommentsByReviewIds(
+    reviewIds: string[],
+    tx: DbTransaction,
+  ): Promise<Map<string, ReviewCommentEntity>> {
+    if (reviewIds.length === 0) {
+      return new Map();
+    }
+
+    const rows = await tx.select().from(reviewComments).where(inArray(reviewComments.reviewId, reviewIds));
+
+    const commentMap = new Map<string, ReviewCommentEntity>();
+    for (const row of rows) {
+      commentMap.set(row.reviewId, row);
+    }
+
+    return commentMap;
+  }
+
+  async createComment(
+    adminUserId: string,
     reviewId: string,
+    dto: CreateCommentDto,
     tx?: DbTransaction,
-  ): Promise<{ marked: boolean; helpfulCount: number }> {
+  ): Promise<ReviewCommentEntity> {
     return this.inTx(async (tx) => {
-      // 리뷰 존재 확인
       const [review] = await tx
         .select({ id: reviews.id })
         .from(reviews)
@@ -147,14 +165,98 @@ export class ReviewsService {
         throw new NotFoundException('Review not found');
       }
 
-      // 기존 helpful 여부 확인
       const [existing] = await tx
-        .select({ reviewId: reviewHelpfuls.reviewId })
-        .from(reviewHelpfuls)
+        .select({ id: reviewComments.id })
+        .from(reviewComments)
+        .where(eq(reviewComments.reviewId, reviewId));
+
+      if (existing) {
+        throw new ConflictException('Comment already exists for this review');
+      }
+
+      const [comment] = await tx
+        .insert(reviewComments)
+        .values({
+          reviewId,
+          adminUserId,
+          content: dto.content,
+        })
+        .returning();
+
+      return comment;
+    }, tx);
+  }
+
+  async updateComment(
+    adminUserId: string,
+    reviewId: string,
+    dto: CreateCommentDto,
+    tx?: DbTransaction,
+  ): Promise<ReviewCommentEntity> {
+    return this.inTx(async (tx) => {
+      const [comment] = await tx
+        .update(reviewComments)
+        .set({
+          content: dto.content,
+          adminUserId,
+          updatedAt: new Date(),
+        })
+        .where(eq(reviewComments.reviewId, reviewId))
+        .returning();
+
+      if (!comment) {
+        throw new NotFoundException('Comment not found');
+      }
+
+      return comment;
+    }, tx);
+  }
+
+  async deleteComment(reviewId: string, tx?: DbTransaction): Promise<void> {
+    return this.inTx(async (tx) => {
+      const [comment] = await tx
+        .delete(reviewComments)
+        .where(eq(reviewComments.reviewId, reviewId))
+        .returning({ id: reviewComments.id });
+
+      if (!comment) {
+        throw new NotFoundException('Comment not found');
+      }
+    }, tx);
+  }
+
+  async toggleReaction(
+    userId: string,
+    reviewId: string,
+    reactionType: 'helpful' | 'like' | 'dislike',
+    tx?: DbTransaction,
+  ): Promise<{ marked: boolean; count: number }> {
+    return this.inTx(async (tx) => {
+      // 리뷰 존재 확인 및 작성자 정보 조회
+      const [review] = await tx
+        .select({ id: reviews.id, userId: reviews.userId })
+        .from(reviews)
+        .where(and(eq(reviews.id, reviewId), eq(reviews.status, 'active')));
+
+      if (!review) {
+        throw new NotFoundException('Review not found');
+      }
+
+      // 자기 리뷰인지 체크
+      if (review.userId === userId) {
+        throw new BadRequestException('Cannot react to your own review');
+      }
+
+      // 기존 reaction 여부 확인
+      const [existing] = await tx
+        .select({ targetId: reactions.targetId })
+        .from(reactions)
         .where(
           and(
-            eq(reviewHelpfuls.reviewId, reviewId),
-            eq(reviewHelpfuls.userId, userId),
+            eq(reactions.targetType, 'review'),
+            eq(reactions.targetId, reviewId),
+            eq(reactions.userId, userId),
+            eq(reactions.reactionType, reactionType),
           ),
         );
 
@@ -163,41 +265,47 @@ export class ReviewsService {
       if (existing) {
         // 이미 있으면 삭제
         await tx
-          .delete(reviewHelpfuls)
+          .delete(reactions)
           .where(
             and(
-              eq(reviewHelpfuls.reviewId, reviewId),
-              eq(reviewHelpfuls.userId, userId),
+              eq(reactions.targetType, 'review'),
+              eq(reactions.targetId, reviewId),
+              eq(reactions.userId, userId),
+              eq(reactions.reactionType, reactionType),
             ),
           );
         marked = false;
       } else {
         // 없으면 추가
-        await tx.insert(reviewHelpfuls).values({
-          reviewId,
+        await tx.insert(reactions).values({
+          targetType: 'review',
+          targetId: reviewId,
           userId,
+          reactionType,
         });
         marked = true;
       }
 
-      // 현재 helpful 카운트 조회
+      // 현재 reaction 카운트 조회
       const [countResult] = await tx
         .select({ count: count() })
-        .from(reviewHelpfuls)
-        .where(eq(reviewHelpfuls.reviewId, reviewId));
+        .from(reactions)
+        .where(
+          and(
+            eq(reactions.targetType, 'review'),
+            eq(reactions.targetId, reviewId),
+            eq(reactions.reactionType, reactionType),
+          ),
+        );
 
       return {
         marked,
-        helpfulCount: countResult.count,
+        count: countResult.count,
       };
     }, tx);
   }
 
-  async create(
-    userId: string,
-    dto: CreateReviewDto,
-    tx?: DbTransaction,
-  ): Promise<ReviewWithMediaEntity> {
+  async create(userId: string, dto: CreateReviewDto, tx?: DbTransaction): Promise<ReviewWithMediaEntity> {
     return this.inTx(async (tx) => {
       const mediaFileIds = this.normalizeMediaFileIds(dto.mediaFileIds);
       const [review] = await tx
@@ -217,16 +325,14 @@ export class ReviewsService {
         ...review,
         mediaFileIds,
         helpfulCount: 0,
+        likeCount: 0,
+        dislikeCount: 0,
+        adminComment: null,
       };
     }, tx);
   }
 
-  async update(
-    userId: string,
-    id: string,
-    dto: UpdateReviewDto,
-    tx?: DbTransaction,
-  ): Promise<ReviewWithMediaEntity> {
+  async update(userId: string, id: string, dto: UpdateReviewDto, tx?: DbTransaction): Promise<ReviewWithMediaEntity> {
     return this.inTx(async (tx) => {
       const hasMediaUpdate = dto.mediaFileIds !== undefined;
       const mediaFileIds = this.normalizeMediaFileIds(dto.mediaFileIds);
@@ -252,13 +358,7 @@ export class ReviewsService {
       const [review] = await tx
         .update(reviews)
         .set(updateData)
-        .where(
-          and(
-            eq(reviews.id, id),
-            eq(reviews.userId, userId),
-            eq(reviews.sourceSystem, SOURCE_SYSTEM),
-          ),
-        )
+        .where(and(eq(reviews.id, id), eq(reviews.userId, userId), eq(reviews.sourceSystem, SOURCE_SYSTEM)))
         .returning();
 
       if (!review) {
@@ -270,16 +370,19 @@ export class ReviewsService {
         await this.insertReviewMedia(id, mediaFileIds, tx);
       }
 
-      const resolvedMediaFileIds = hasMediaUpdate
-        ? mediaFileIds
-        : await this.fetchMediaFileIdsByReviewId(id, tx);
+      const resolvedMediaFileIds = hasMediaUpdate ? mediaFileIds : await this.fetchMediaFileIdsByReviewId(id, tx);
 
-      const helpfulCountMap = await this.fetchHelpfulCounts([id], tx);
+      const reactionCountMap = await this.fetchReactionCounts([id], tx);
+      const counts = reactionCountMap.get(id) ?? { helpfulCount: 0, likeCount: 0, dislikeCount: 0 };
+      const commentMap = await this.fetchCommentsByReviewIds([id], tx);
 
       return {
         ...review,
         mediaFileIds: resolvedMediaFileIds,
-        helpfulCount: helpfulCountMap.get(id) ?? 0,
+        helpfulCount: counts.helpfulCount,
+        likeCount: counts.likeCount,
+        dislikeCount: counts.dislikeCount,
+        adminComment: commentMap.get(id) ?? null,
       };
     }, tx);
   }
@@ -292,13 +395,7 @@ export class ReviewsService {
           status: 'deleted',
           updatedAt: new Date(),
         })
-        .where(
-          and(
-            eq(reviews.id, id),
-            eq(reviews.userId, userId),
-            eq(reviews.sourceSystem, SOURCE_SYSTEM),
-          ),
-        )
+        .where(and(eq(reviews.id, id), eq(reviews.userId, userId), eq(reviews.sourceSystem, SOURCE_SYSTEM)))
         .returning({ id: reviews.id });
 
       if (!review) {
@@ -316,10 +413,7 @@ export class ReviewsService {
       const limit = query.limit ?? 20;
       const offset = (page - 1) * limit;
 
-      const conditions: SQL[] = [
-        eq(reviews.productId, query.productId),
-        eq(reviews.status, 'active'),
-      ];
+      const conditions: SQL[] = [eq(reviews.productId, query.productId), eq(reviews.status, 'active')];
 
       if (query.rating) {
         if (query.rating === 'positive') {
@@ -347,12 +441,7 @@ export class ReviewsService {
         rating_low: asc(reviews.rating),
       }[query.sort ?? 'latest'];
 
-      const dataQuery = tx
-        .select()
-        .from(reviews)
-        .orderBy(orderByClause)
-        .limit(limit)
-        .offset(offset);
+      const dataQuery = tx.select().from(reviews).orderBy(orderByClause).limit(limit).offset(offset);
 
       if (whereClause) {
         dataQuery.where(whereClause);
@@ -363,14 +452,21 @@ export class ReviewsService {
       const reviewIds = data.map((review) => review.id);
 
       const mediaMap = await this.fetchMediaFileIdsByReviewIds(reviewIds, tx);
-      const helpfulCountMap = await this.fetchHelpfulCounts(reviewIds, tx);
+      const reactionCountMap = await this.fetchReactionCounts(reviewIds, tx);
+      const commentMap = await this.fetchCommentsByReviewIds(reviewIds, tx);
 
       return {
-        data: data.map((review) => ({
-          ...review,
-          mediaFileIds: mediaMap.get(review.id) ?? [],
-          helpfulCount: helpfulCountMap.get(review.id) ?? 0,
-        })),
+        data: data.map((review) => {
+          const counts = reactionCountMap.get(review.id) ?? { helpfulCount: 0, likeCount: 0, dislikeCount: 0 };
+          return {
+            ...review,
+            mediaFileIds: mediaMap.get(review.id) ?? [],
+            helpfulCount: counts.helpfulCount,
+            likeCount: counts.likeCount,
+            dislikeCount: counts.dislikeCount,
+            adminComment: commentMap.get(review.id) ?? null,
+          };
+        }),
         total,
         page,
         limit,
