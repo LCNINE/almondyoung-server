@@ -4,6 +4,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   MinLength,
   ValidateNested,
@@ -42,11 +43,14 @@ export class UpdateUserDto {
 
   @ApiProperty({
     description: '전화번호',
-    example: '010-1234-5678',
+    example: '+821012345678',
     required: false,
   })
   @IsOptional()
   @IsString({ message: '전화번호는 문자열이어야 합니다.' })
+  @Matches(/^\+[1-9]\d{7,14}$/, {
+    message: '전화번호는 E.164 형식이어야 합니다. (예: +821012345678)',
+  })
   phoneNumber?: string;
 
   @ApiProperty({
