@@ -1,10 +1,21 @@
-import { integer, pgTable, uuid, text, timestamp, jsonb, boolean, varchar, uniqueIndex, index, primaryKey } from "drizzle-orm/pg-core"
-
+import {
+  integer,
+  pgTable,
+  uuid,
+  text,
+  timestamp,
+  jsonb,
+  boolean,
+  varchar,
+  uniqueIndex,
+  index,
+  primaryKey,
+} from 'drizzle-orm/pg-core';
 
 const timestampColumns = {
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-}
+};
 
 export const reviews = pgTable(
   'reviews',
@@ -41,7 +52,9 @@ export const reviews = pgTable(
 export const reviewMedia = pgTable(
   'review_media',
   {
-    reviewId: uuid('review_id').notNull().references(() => reviews.id, { onDelete: 'cascade' }),
+    reviewId: uuid('review_id')
+      .notNull()
+      .references(() => reviews.id, { onDelete: 'cascade' }),
     fileId: uuid('file_id').notNull(),
     order: integer('order').notNull(),
     ...timestampColumns,
@@ -52,19 +65,90 @@ export const reviewMedia = pgTable(
     index('review_media_review_id').on(table.reviewId),
     index('review_media_file_id').on(table.fileId),
   ],
-)
+);
 
-export const reviewHelpfuls = pgTable(
-  'review_helpfuls',
+export const reactions = pgTable(
+  'reactions',
   {
-    reviewId: uuid('review_id').notNull().references(() => reviews.id, { onDelete: 'cascade' }),
+    targetType: varchar('target_type', { length: 20 }).notNull(), // 'review', 'question', 'answer'
+    targetId: uuid('target_id').notNull(),
     userId: uuid('user_id').notNull(),
+    reactionType: varchar('reaction_type', { length: 20 }).notNull(), // 'helpful', 'like', 'dislike'
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.reviewId, table.userId], name: 'review_helpfuls_pkey' }),
-    index('review_helpfuls_review_id').on(table.reviewId),
+    primaryKey({
+      columns: [table.targetType, table.targetId, table.userId, table.reactionType],
+      name: 'reactions_pkey',
+    }),
+    index('reactions_target').on(table.targetType, table.targetId),
+    index('reactions_user').on(table.userId),
   ],
+);
+
+export const reviewComments = pgTable(
+  'review_comments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    reviewId: uuid('review_id')
+      .notNull()
+      .references(() => reviews.id, { onDelete: 'cascade' }),
+    adminUserId: uuid('admin_user_id').notNull(),
+    content: text('content').notNull(),
+    ...timestampColumns,
+  },
+  (table) => [uniqueIndex('review_comments_review_id_unique').on(table.reviewId)],
+);
+
+export const questions = pgTable(
+  'questions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull(),
+    productId: uuid('product_id').notNull(),
+    title: varchar('title', { length: 200 }).notNull(),
+    content: text('content').notNull(),
+    isSecret: boolean('is_secret').notNull().default(false),
+    status: varchar('status', { length: 20 }).notNull().default('active'),
+    ...timestampColumns,
+  },
+  (table) => [
+    index('questions_product_id').on(table.productId),
+    index('questions_user_id').on(table.userId),
+    index('questions_created_at').on(table.createdAt),
+    index('questions_status').on(table.status),
+  ],
+);
+
+export const questionMedia = pgTable(
+  'question_media',
+  {
+    questionId: uuid('question_id')
+      .notNull()
+      .references(() => questions.id, { onDelete: 'cascade' }),
+    fileId: uuid('file_id').notNull(),
+    order: integer('order').notNull(),
+    ...timestampColumns,
+  },
+  (table) => [
+    uniqueIndex('question_media_question_order_unique').on(table.questionId, table.order),
+    primaryKey({ columns: [table.questionId, table.fileId], name: 'question_media_pkey' }),
+    index('question_media_question_id').on(table.questionId),
+  ],
+);
+
+export const answers = pgTable(
+  'answers',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    questionId: uuid('question_id')
+      .notNull()
+      .references(() => questions.id, { onDelete: 'cascade' }),
+    adminUserId: uuid('admin_user_id').notNull(),
+    content: text('content').notNull(),
+    ...timestampColumns,
+  },
+  (table) => [uniqueIndex('answers_question_id_unique').on(table.questionId)],
 );
 
 export const reviewEligibilities = pgTable(
@@ -88,10 +172,7 @@ export const reviewEligibilities = pgTable(
     ...timestampColumns,
   },
   (table) => [
-    uniqueIndex('review_eligibilities_source_unique').on(
-      table.sourceSystem,
-      table.sourceEventId,
-    ),
+    uniqueIndex('review_eligibilities_source_unique').on(table.sourceSystem, table.sourceEventId),
     uniqueIndex('review_eligibilities_order_line_unique').on(table.orderLineId),
     index('review_eligibilities_user_product').on(table.userId, table.productId),
     index('review_eligibilities_order_id').on(table.orderId),
@@ -102,8 +183,12 @@ export const reviewEligibilities = pgTable(
 export const ugcServiceSchema = {
   reviews,
   reviewMedia,
-  reviewHelpfuls,
+  reviewComments,
+  reactions,
   reviewEligibilities,
+  questions,
+  questionMedia,
+  answers,
 } as const;
 
 export type UgcServiceSchema = typeof ugcServiceSchema;

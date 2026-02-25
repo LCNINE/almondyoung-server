@@ -6,10 +6,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestFastifyApplication>(
-    UgcServiceModule,
-    new FastifyAdapter(),
-  );
+  const app = await NestFactory.create<NestFastifyApplication>(UgcServiceModule, new FastifyAdapter());
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -31,8 +28,10 @@ async function bootstrap() {
 
   const config = new DocumentBuilder()
     .setTitle('UGC Service API')
-    .setDescription('UGC Service API\n\n' +
-      'UGC Service는 리뷰, 게시판 등 사용자 생성 콘텐츠 (User Generated Content) 기능을 제공하는 서비스입니다.')
+    .setDescription(
+      'UGC Service API\n\n' +
+        'UGC Service는 리뷰, 게시판 등 사용자 생성 콘텐츠 (User Generated Content) 기능을 제공하는 서비스입니다.',
+    )
     .setVersion('1.0.0')
     .build();
 
@@ -42,12 +41,15 @@ async function bootstrap() {
   });
 
   // YAML 문서 charset 헤더 설정
-  app.getHttpAdapter().getInstance().addHook('onSend', (request, reply, payload, done) => {
-    if (request.url === '/docs.yaml') {
-      reply.header('Content-Type', 'application/x-yaml; charset=utf-8');
-    }
-    done();
-  });
+  app
+    .getHttpAdapter()
+    .getInstance()
+    .addHook('onSend', (request, reply, payload, done) => {
+      if (request.url === '/docs.yaml') {
+        reply.header('Content-Type', 'application/x-yaml; charset=utf-8');
+      }
+      done();
+    });
 
   const port = process.env.PORT ?? 3031;
 
