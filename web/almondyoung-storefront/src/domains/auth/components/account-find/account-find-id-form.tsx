@@ -35,7 +35,7 @@ export function AccountFindIdForm() {
   const [verifiedPhoneNumber, setVerifiedPhoneNumber] = useState<string | null>(
     null
   )
-  const [foundLoginId, setFoundLoginId] = useState<string | null>(null)
+  const [foundLoginIds, setFoundLoginIds] = useState<string[] | null>(null)
   const [isAutoFinding, setIsAutoFinding] = useState(false)
   const [hasRequestedId, setHasRequestedId] = useState(false)
 
@@ -57,34 +57,19 @@ export function AccountFindIdForm() {
     },
   })
 
-  const normalizePhoneNumber = useCallback(
-    (value: string) => {
-      if (!value) return ""
-      if (value.startsWith("+")) return value
-      const digits = value.replace(/\D/g, "")
-      if (digits.startsWith("82")) return `+${digits}`
-      if (countryCode === "KR" && digits.startsWith("0")) {
-        return `+82${digits.slice(1)}`
-      }
-      return digits
-    },
-    [countryCode]
-  )
-
   const phoneNumber = form.watch("phoneNumber")
-  const normalizedPhoneNumber = normalizePhoneNumber(phoneNumber)
 
   useEffect(() => {
     if (isCodeVerified) {
-      setVerifiedPhoneNumber(normalizedPhoneNumber)
+      setVerifiedPhoneNumber(phoneNumber)
     }
-  }, [isCodeVerified, normalizedPhoneNumber])
+  }, [isCodeVerified, phoneNumber])
 
   useEffect(() => {
     if (verifiedPhoneNumber && phoneNumber !== verifiedPhoneNumber) {
       setVerificationCode("")
       setShowVerifyStep(false)
-      setFoundLoginId(null)
+      setFoundLoginIds(null)
       setHasRequestedId(false)
     }
   }, [phoneNumber, verifiedPhoneNumber])
@@ -109,18 +94,18 @@ export function AccountFindIdForm() {
 
     sendTwilioMessage({
       countryCode: countryCode || "KR",
-      phoneNumber: normalizedPhoneNumber,
+      phoneNumber,
       purpose: "phone_verify",
     })
-  }, [form, phoneNumber, countryCode, sendTwilioMessage, normalizedPhoneNumber])
+  }, [form, phoneNumber, countryCode, sendTwilioMessage])
 
   const handleVerifyCode = useCallback(() => {
     if (verificationCode.length !== 6) return
     verifyCode({
-      phoneNumber: normalizedPhoneNumber,
+      phoneNumber,
       code: verificationCode,
     })
-  }, [verificationCode, verifyCode, normalizedPhoneNumber])
+  }, [verificationCode, verifyCode, phoneNumber])
 
   const handleChangeNumber = useCallback(() => {
     setVerificationCode("")
@@ -133,14 +118,13 @@ export function AccountFindIdForm() {
     setVerificationCode("")
     sendTwilioMessage({
       countryCode: countryCode || "KR",
-      phoneNumber: normalizedPhoneNumber,
+      phoneNumber,
       purpose: "phone_verify",
     })
     verificationCodeRef.current?.focus()
-  }, [timer, countryCode, sendTwilioMessage, normalizedPhoneNumber])
+  }, [timer, countryCode, sendTwilioMessage, phoneNumber])
 
-  const isPhoneVerified =
-    verifiedPhoneNumber === normalizedPhoneNumber && isCodeVerified
+  const isPhoneVerified = verifiedPhoneNumber === phoneNumber && isCodeVerified
 
   useEffect(() => {
     if (timer === 0 && isPhoneVerified) {
@@ -158,7 +142,7 @@ export function AccountFindIdForm() {
       return
     }
 
-    const result = await forgetUserId(normalizedPhoneNumber)
+    const result = await forgetUserId(phoneNumber)
 
     if (!result.success) {
       form.setError("phoneNumber", {
@@ -167,25 +151,32 @@ export function AccountFindIdForm() {
       return
     }
 
-    setFoundLoginId(result.loginId ?? null)
+    setFoundLoginIds(result.loginIds || [])
   }
 
   useEffect(() => {
-    if (!isPhoneVerified || foundLoginId || isAutoFinding || hasRequestedId)
+    if (!isPhoneVerified || foundLoginIds || isAutoFinding || hasRequestedId)
       return
 
     const run = async () => {
       try {
         setIsAutoFinding(true)
         setHasRequestedId(true)
-        await runFindId({ phoneNumber: normalizedPhoneNumber })
+        await runFindId({ phoneNumber: phoneNumber })
       } finally {
         setIsAutoFinding(false)
       }
     }
 
     void run()
-  }, [isPhoneVerified, foundLoginId, isAutoFinding, phoneNumber, form, forgetUserId])
+  }, [
+    isPhoneVerified,
+    foundLoginIds,
+    isAutoFinding,
+    phoneNumber,
+    form,
+    forgetUserId,
+  ])
 
   return (
     <section className="flex min-h-lvh w-full max-w-[375px] flex-col justify-center px-4">
@@ -258,7 +249,9 @@ export function AccountFindIdForm() {
                   type="button"
                   size="sm"
                   className="shrink-0 cursor-pointer"
-                  disabled={verificationCode.length !== 6 || isCodeVerifyPending}
+                  disabled={
+                    verificationCode.length !== 6 || isCodeVerifyPending
+                  }
                   isLoading={isCodeVerifyPending}
                   onClick={handleVerifyCode}
                 >
@@ -286,7 +279,8 @@ export function AccountFindIdForm() {
                 </div>
                 {timer > 0 ? (
                   <span className="font-mono text-xs text-red-500 tabular-nums">
-                    {Math.floor(timer / 60)}:{String(timer % 60).padStart(2, "0")}
+                    {Math.floor(timer / 60)}:
+                    {String(timer % 60).padStart(2, "0")}
                   </span>
                 ) : (
                   <span className="text-xs text-red-500">
@@ -304,13 +298,16 @@ export function AccountFindIdForm() {
                 아이디 확인중...
               </p>
             </div>
-          ) : foundLoginId ? (
+          ) : foundLoginIds ? (
             <div className="rounded-lg p-4">
               <p className="text-center text-sm">
                 <strong>아이디를 확인해주세요!</strong>
               </p>
               <p className="text-muted-foreground mt-2 text-center text-xs">
-                아이디: <span className="font-semibold">{foundLoginId}</span>
+                아이디:{" "}
+                <span className="font-semibold">
+                  {foundLoginIds.join(", ")}
+                </span>
               </p>
             </div>
           ) : (

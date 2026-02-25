@@ -13,16 +13,16 @@ export const useForgetUserId = () => {
 
     try {
       const result = await findIdByPhoneNumber(phoneNumber)
+
       if ("data" in result) {
         setIsSent(true)
-        return { success: true, loginId: result.data.loginId }
+        return { success: true, loginIds: result.data.loginIds }
       }
 
       toast.error(result.error.message)
       setIsSent(false)
       return { success: false, error: result.error }
     } catch (error: any) {
-      console.error("result:", error)
       toast.error(error?.error?.message || "오류가 발생했습니다.")
       setIsSent(false)
       return { success: false, error }
