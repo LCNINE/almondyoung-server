@@ -5,9 +5,9 @@ import { ApiNetworkError, HttpApiError } from "@lib/api/api-error"
 
 export const findIdByPhoneNumber = async (
   phoneNumber: string
-): Promise<ApiResponse<{ loginId: string }>> => {
+): Promise<ApiResponse<{ loginIds: string[] }>> => {
   try {
-    const result = await api<{ loginId: string }>(
+    const result = await api<{ loginIds: string[] }>(
       "users",
       "/auth/forget-userid",
       {
