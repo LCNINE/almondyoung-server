@@ -19,7 +19,7 @@ export class DownloadController {
   ) { }
 
   @Get(':fileId/download')
-  @RequireScopes('file:read')
+  // @RequireScopes('file:read')
   @ApiOperation({ summary: 'Get signed URL for file download' })
   @ApiParam({ name: 'fileId', description: 'File ID', type: 'string' })
   @ApiQuery({
@@ -42,7 +42,7 @@ export class DownloadController {
   }
 
   @Get(':fileId/metadata')
-  @RequireScopes('file:read')
+  // @RequireScopes('file:read')
   @ApiOperation({ summary: 'Get file metadata' })
   @ApiParam({ name: 'fileId', description: 'File ID', type: 'string' })
   @ApiResponse({ status: 200, description: 'File metadata', type: FileMetadataResponseDto })

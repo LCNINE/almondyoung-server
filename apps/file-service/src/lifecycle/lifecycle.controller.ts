@@ -13,7 +13,7 @@ export class LifecycleController {
   constructor(private readonly lifecycleService: LifecycleService) { }
 
   @Delete(':fileId')
-  @RequireScopes('file:read')
+  // @RequireScopes('file:read')
   @ApiOperation({ summary: 'Soft delete a file' })
   @ApiParam({ name: 'fileId', description: 'File ID', type: 'string' })
   @ApiResponse({ status: 200, description: 'File deleted successfully', type: DeleteResponseDto })
