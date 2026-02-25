@@ -7,6 +7,7 @@ import {
 } from '@nestjs/platform-fastify';
 import { PimModule } from './pim.module';
 import fastifyMultipart from '@fastify/multipart';
+import fastifyCookie from '@fastify/cookie';
 import { GlobalExceptionFilter } from '@app/shared';
 
 async function bootstrap() {
@@ -14,6 +15,8 @@ async function bootstrap() {
     PimModule,
     new FastifyAdapter(),
   );
+
+  await app.register(fastifyCookie);
 
   // Fastify multipart 지원
   await app.register(fastifyMultipart, {
