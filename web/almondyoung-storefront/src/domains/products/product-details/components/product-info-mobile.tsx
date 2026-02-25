@@ -26,8 +26,8 @@ export function ProductInfoMobile({ product }: Props) {
 
   const memberDisplayPrice =
     typeof product.actualPrice === "number" &&
-    product.actualPrice > 0 &&
-    product.actualPrice < (product.basePrice || 0)
+      product.actualPrice > 0 &&
+      product.actualPrice < (product.basePrice || 0)
       ? product.actualPrice
       : hasMembershipPrice
         ? (product.membershipPrice as number)

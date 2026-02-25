@@ -4,6 +4,7 @@ import React from "react"
 import { CartCard } from "@components/cart/cart-cards"
 import type { CartItem } from "@lib/types/ui/cart"
 import { useMembershipPricing } from "@/hooks/use-membership-pricing"
+import { deriveCartItemPricing } from "./cart-pricing"
 
 interface CartItemListProps {
   items: CartItem[]
@@ -36,20 +37,15 @@ export function CartItemList({
       >
         <div className="items-container">
           {items.map((item) => {
-            const basePrice =
-              item.product.basePrice || item.product.unitPrice || 0
-            const membershipPrice = item.product.membershipPrice
-            const unitPrice = item.product.unitPrice || basePrice
-            const quantity = item.quantity || 1
-            const hasMembershipPrice =
-              typeof membershipPrice === "number" &&
-              membershipPrice > 0 &&
-              membershipPrice < basePrice
-            const isMembershipApplied =
-              isMember && unitPrice > 0 && unitPrice < basePrice
-            const discountRate = isMembershipApplied
-              ? Math.round(((basePrice - unitPrice) / basePrice) * 100)
-              : 0
+            const {
+              baseUnitPrice,
+              hasMembershipPrice,
+              memberUnitPrice,
+              displayUnitPrice,
+              quantity,
+              isMembershipApplied,
+              discountRate,
+            } = deriveCartItemPricing(item, isMember)
             const showMembershipHint = !isMember && hasMembershipPrice
 
             return (
@@ -70,12 +66,14 @@ export function CartItemList({
                 brand={item.product.brand || ""}
                 badge="4시 이전 주문 시 당일 출고 보장"
                 originalPrice={
-                  isMembershipApplied ? basePrice * quantity : undefined
+                  isMembershipApplied || showMembershipHint
+                    ? baseUnitPrice * quantity
+                    : undefined
                 }
                 discountedPrice={
-                  unitPrice * quantity
+                  (isMember ? displayUnitPrice : memberUnitPrice) * quantity
                 }
-                actualPrice={unitPrice * quantity}
+                actualPrice={displayUnitPrice * quantity}
                 discountRate={discountRate}
                 isMembership={isMembershipApplied}
                 showMembershipHint={showMembershipHint}
@@ -94,19 +92,15 @@ export function CartItemList({
   return (
     <div className="divide-y divide-gray-200">
       {items.map((item) => {
-        const basePrice = item.product.basePrice || item.product.unitPrice || 0
-        const membershipPrice = item.product.membershipPrice
-        const unitPrice = item.product.unitPrice || basePrice
-        const quantity = item.quantity || 1
-        const hasMembershipPrice =
-          typeof membershipPrice === "number" &&
-          membershipPrice > 0 &&
-          membershipPrice < basePrice
-        const isMembershipApplied =
-          isMember && unitPrice > 0 && unitPrice < basePrice
-        const discountRate = isMembershipApplied
-          ? Math.round(((basePrice - unitPrice) / basePrice) * 100)
-          : 0
+        const {
+          baseUnitPrice,
+          hasMembershipPrice,
+          memberUnitPrice,
+          displayUnitPrice,
+          quantity,
+          isMembershipApplied,
+          discountRate,
+        } = deriveCartItemPricing(item, isMember)
         const showMembershipHint = !isMember && hasMembershipPrice
 
         return (
@@ -126,13 +120,17 @@ export function CartItemList({
             }
             brand={item.product.brand || ""}
             badge="4시 이전 주문 시 당일 출고 보장"
-            originalPrice={isMembershipApplied ? basePrice * quantity : undefined}
+            originalPrice={
+              isMembershipApplied || showMembershipHint
+                ? baseUnitPrice * quantity
+                : undefined
+            }
             discountedPrice={
-              unitPrice * quantity
+              (isMember ? displayUnitPrice : memberUnitPrice) * quantity
             }
             discountRate={discountRate}
             isMembership={isMembershipApplied}
-            actualPrice={unitPrice * quantity}
+            actualPrice={displayUnitPrice * quantity}
             showMembershipHint={showMembershipHint}
             quantity={item.quantity}
             onQuantityChange={(qty) => onQuantityChange(item.id, qty)}
