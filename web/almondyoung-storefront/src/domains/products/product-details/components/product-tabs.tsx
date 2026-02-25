@@ -7,6 +7,16 @@ type Props = {
   onTabChange: (tab: Tab) => void
 }
 
+function TabCount({ count }: { count: number }) {
+  if (count <= 0) return null
+
+  return (
+    <span className="ml-0.5 inline-block animate-fade-in text-[0.65em] tabular-nums opacity-80">
+      {count.toLocaleString()}
+    </span>
+  )
+}
+
 /**
  * @description 상품 정보 탭 네비게이션
  */
@@ -16,11 +26,11 @@ export function ProductTabs({
   qnaCount,
   onTabChange,
 }: Props) {
-  const tabs: { id: Tab; label: string }[] = [
-    { id: "detail", label: "상세정보" },
-    { id: "review", label: `리뷰 ${reviewCount}` },
-    { id: "qna", label: `Q&A ${qnaCount}` },
-    { id: "info", label: "구매/반품 안내" },
+  const tabs: { id: Tab; label: string; count: number }[] = [
+    { id: "detail", label: "상세정보", count: 0 },
+    { id: "review", label: "리뷰", count: reviewCount },
+    { id: "qna", label: "Q&A", count: qnaCount },
+    { id: "info", label: "구매/반품 안내", count: 0 },
   ]
 
   return (
@@ -44,6 +54,7 @@ export function ProductTabs({
               }`}
             >
               {tab.label}
+              <TabCount count={tab.count} />
             </button>
           </li>
         ))}

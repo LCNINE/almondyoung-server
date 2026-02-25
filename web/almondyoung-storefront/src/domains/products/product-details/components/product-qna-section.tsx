@@ -1,10 +1,9 @@
 /**
  * @description Q&A 섹션
- * 시맨틱: <section> 사용
  */
 export function ProductQnaSection() {
   return (
-    <section className="mb-8 rounded-lg bg-white py-6">
+    <section className="mb-8 rounded-lg bg-white px-4 py-6">
       <header>
         <h3 className="mb-4 text-lg font-bold">Q&A</h3>
       </header>

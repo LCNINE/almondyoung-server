@@ -1,10 +1,7 @@
-type Thumbnail = {
-  src: string
-  alt: string
-}
+import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 
 type Props = {
-  thumbnails: Thumbnail[]
+  thumbnails: string[]
 }
 
 /**
@@ -23,10 +20,10 @@ export function ReviewThumbnailGallery({ thumbnails }: Props) {
       }}
     >
       {thumbnails.map((thumb, index) => (
-        <li key={index} className="flex-shrink-0">
+        <li key={index} className="shrink-0">
           <img
-            src={thumb.src}
-            alt={thumb.alt}
+            src={getThumbnailUrl(thumb)}
+            alt={`리뷰 이미지 ${index + 1}`}
             className="h-[74px] w-[74px] rounded-md object-cover"
             loading="lazy"
           />
