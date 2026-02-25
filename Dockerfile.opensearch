@@ -1,0 +1,7 @@
+FROM opensearchproject/opensearch:2.18.0
+
+RUN opensearch-plugin install --batch analysis-nori
+
+ENV discovery.type=single-node
+ENV DISABLE_SECURITY_PLUGIN=true
+ENV OPENSEARCH_JAVA_OPTS="-Xms512m -Xmx512m"
