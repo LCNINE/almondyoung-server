@@ -1,9 +1,14 @@
 FROM opensearchproject/opensearch:2.18.0
 
 USER root
+
+RUN curl -fsSL https://github.com/tianon/gosu/releases/download/1.17/gosu-amd64 \
+    -o /usr/local/bin/gosu \
+    && chmod +x /usr/local/bin/gosu
+
 RUN opensearch-plugin install --batch analysis-nori
 
-COPY docker-entrypoint-opensearch.sh /usr/local/bin/docker-entrypoint-opensearch.sh
+COPY docker-entrypoint-opensearch.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint-opensearch.sh
 
 ENV discovery.type=single-node
