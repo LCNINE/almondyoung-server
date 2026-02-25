@@ -1,0 +1,209 @@
+import {
+  IsEnum,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUrl,
+  MaxLength,
+  Min,
+  ValidateNested,
+  IsArray,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { PaymentIntentStatus } from '../../schema';
+
+// ─── Create Intent ────────────────────────────────────────────────────────────
+
+export class ItemDiscountDto {
+  @ApiProperty({ enum: ['ITEM_PER_UNIT', 'ITEM_FLAT'] })
+  @IsEnum(['ITEM_PER_UNIT', 'ITEM_FLAT'])
+  kind: 'ITEM_PER_UNIT' | 'ITEM_FLAT';
+
+  @ApiProperty({ description: 'Discount amount (positive integer)', minimum: 1 })
+  @IsInt()
+  @Min(1)
+  amount: number;
+
+  @ApiPropertyOptional({ maxLength: 128 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  discountRefId?: string;
+}
+
+export class ItemDto {
+  @ApiProperty({ maxLength: 128 })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  lineId: string;
+
+  @ApiProperty({ maxLength: 255 })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
+  name: string;
+
+  @ApiPropertyOptional({ enum: ['PRODUCT', 'SUBSCRIPTION', 'SHIPPING_FEE', 'OTHER'] })
+  @IsOptional()
+  @IsEnum(['PRODUCT', 'SUBSCRIPTION', 'SHIPPING_FEE', 'OTHER'])
+  itemType?: 'PRODUCT' | 'SUBSCRIPTION' | 'SHIPPING_FEE' | 'OTHER';
+
+  @ApiPropertyOptional({ maxLength: 128 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  itemRefId?: string;
+
+  @ApiProperty({ description: 'Unit price in smallest currency unit (e.g. KRW)', minimum: 0 })
+  @IsInt()
+  @Min(0)
+  unitPrice: number;
+
+  @ApiProperty({ description: 'Quantity', minimum: 1 })
+  @IsInt()
+  @Min(1)
+  quantity: number;
+
+  @ApiPropertyOptional({ type: [ItemDiscountDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ItemDiscountDto)
+  discounts?: ItemDiscountDto[];
+}
+
+export class OrderDiscountDto {
+  @ApiProperty({ enum: ['ORDER'] })
+  @IsEnum(['ORDER'])
+  kind: 'ORDER';
+
+  @ApiProperty({ description: 'Discount amount (positive integer)', minimum: 1 })
+  @IsInt()
+  @Min(1)
+  amount: number;
+
+  @ApiPropertyOptional({ maxLength: 128 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  discountRefId?: string;
+}
+
+export class CreatePaymentIntentDto {
+  @ApiProperty({ description: 'User ID', maxLength: 128 })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  userId: string;
+
+  @ApiProperty({ description: 'Currency code (e.g. KRW)', maxLength: 3 })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(3)
+  currency: string;
+
+  @ApiPropertyOptional({ description: 'Total payable amount (required if items not provided)', minimum: 0 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  amount?: number;
+
+  @ApiPropertyOptional({ description: 'Return URL after payment', maxLength: 2048 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  returnUrl?: string;
+
+  @ApiPropertyOptional({ description: 'Line items (gateway calculates payable_amount if provided)' })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ItemDto)
+  items?: ItemDto[];
+
+  @ApiPropertyOptional({ description: 'Order-level discounts (applied after item discounts)' })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => OrderDiscountDto)
+  orderDiscounts?: OrderDiscountDto[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  metadata?: Record<string, unknown>;
+}
+
+// ─── Confirm Intent ───────────────────────────────────────────────────────────
+
+export class ConfirmPaymentIntentDto {
+  @ApiPropertyOptional({ description: 'Payment method ID to use for this payment (not required if pointsToApply covers the full amount)' })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  paymentMethodId?: string;
+
+  @ApiPropertyOptional({ description: 'Amount of points to apply toward this payment', minimum: 0 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  pointsToApply?: number;
+}
+
+// ─── Toss Approve ─────────────────────────────────────────────────────────────
+
+export class TossApproveDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  paymentKey: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  orderId: string;
+
+  @ApiProperty({ minimum: 1 })
+  @IsInt()
+  @Min(1)
+  amount: number;
+}
+
+// ─── Response ─────────────────────────────────────────────────────────────────
+
+export class PaymentIntentResponseDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  clientSecret: string;
+
+  @ApiProperty()
+  status: PaymentIntentStatus;
+
+  @ApiProperty()
+  payableAmount: number;
+
+  @ApiProperty()
+  currency: string;
+
+  @ApiProperty({ description: 'User ID' })
+  userId: string;
+
+  @ApiPropertyOptional()
+  returnUrl: string | null;
+
+  @ApiProperty()
+  expiresAt: Date;
+
+  @ApiPropertyOptional()
+  metadata: Record<string, unknown>;
+
+  @ApiProperty()
+  createdAt: Date;
+
+  @ApiPropertyOptional()
+  nextAction?: Record<string, unknown>;
+}
