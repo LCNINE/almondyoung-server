@@ -51,6 +51,39 @@ export class PaymentMethodsService {
     return results.flat();
   }
 
+  async findOrCreatePointsMethod(userId: string, tx?: DbTx): Promise<PaymentMethod> {
+    const db = tx ?? this.dbService.db;
+    const existing = await (db as typeof this.dbService.db)
+      .select()
+      .from(paymentMethods)
+      .where(
+        and(
+          eq(paymentMethods.userId, userId),
+          eq(paymentMethods.type, 'POINTS'),
+          eq(paymentMethods.isDeleted, false),
+        ),
+      )
+      .limit(1);
+
+    if (existing[0]) return existing[0];
+
+    const rows = await (db as typeof this.dbService.db)
+      .insert(paymentMethods)
+      .values({
+        userId,
+        type: 'POINTS',
+        displayName: null,
+        isReusable: true,
+        isDeleted: false,
+        providerData: {},
+      })
+      .returning();
+
+    const method = rows[0];
+    if (!method) throw new Error('POINTS_METHOD_INSERT_FAILED');
+    return method;
+  }
+
   async findById(id: string, tx?: DbTx): Promise<PaymentMethod | null> {
     const db = tx ?? this.dbService.db;
     const rows = await (db as typeof this.dbService.db)
