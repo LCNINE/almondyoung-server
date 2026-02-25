@@ -5,6 +5,7 @@ import { ProductEventsConsumer } from './product-events.consumer';
 import { OpenSearchService } from './opensearch.service';
 import { ProductIndexService } from './product-index.service';
 import { SearchService } from './search.service';
+import { HealthController } from './health.controller';
 
 @Module({
   imports: [
@@ -13,7 +14,7 @@ import { SearchService } from './search.service';
       envFilePath: ['.env', 'apps/search/.env'],
     }),
   ],
-  controllers: [SearchController, ProductEventsConsumer],
+  controllers: [SearchController, ProductEventsConsumer, HealthController],
   providers: [SearchService, OpenSearchService, ProductIndexService],
 })
 export class SearchModule {}

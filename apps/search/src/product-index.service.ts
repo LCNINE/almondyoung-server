@@ -9,11 +9,12 @@ import {
   PRODUCTS_INDEX_MAPPINGS,
   SearchProductDocument,
 } from './types/product-document.type';
+import { compactText } from './utils/text.utils';
 
 @Injectable()
 export class ProductIndexService implements OnModuleInit {
   private readonly logger = new Logger(ProductIndexService.name);
-  private indexReady = false;
+  private initPromise: Promise<void> | null = null;
 
   constructor(private readonly openSearchService: OpenSearchService) {}
 
@@ -111,33 +112,41 @@ export class ProductIndexService implements OnModuleInit {
     };
   }
 
-  private async ensureProductsIndex(): Promise<void> {
-    if (this.indexReady) {
-      return;
+  private ensureProductsIndex(): Promise<void> {
+    if (!this.initPromise) {
+      this.initPromise = this.initIndex();
     }
+    return this.initPromise;
+  }
 
+  private async initIndex(): Promise<void> {
     const client = this.openSearchService.getClient();
     const index = this.openSearchService.getProductsIndex();
     const exists = await client.indices.exists({ index });
 
     if (!exists) {
-      await client.indices.create({
-        index,
-        settings: {
-          number_of_shards: 1,
-          number_of_replicas: 1,
-        },
-        mappings: PRODUCTS_INDEX_MAPPINGS,
-      });
-      this.logger.log(`Created products index: ${index}`);
+      try {
+        await client.indices.create({
+          index,
+          settings: {
+            number_of_shards: 1,
+            number_of_replicas: 1,
+          },
+          mappings: PRODUCTS_INDEX_MAPPINGS,
+        });
+        this.logger.log(`Created products index: ${index}`);
+      } catch (error) {
+        if (error.meta?.body?.error?.type !== 'resource_already_exists_exception') {
+          this.initPromise = null;
+          throw error;
+        }
+      }
     }
-
-    this.indexReady = true;
   }
 
   private buildQuery(query: ProductSearchQueryDto): any {
     const q = query.q?.trim();
-    const compactQ = this.compactText(q);
+    const compactQ = compactText(q ?? '');
     const mustClauses: any[] = [];
     const filterClauses: any[] = [{ term: { status: 'active' } }];
 
@@ -216,7 +225,4 @@ export class ProductIndexService implements OnModuleInit {
     }
   }
 
-  private compactText(value?: string): string {
-    return (value || '').replace(/\s+/g, '');
-  }
 }
