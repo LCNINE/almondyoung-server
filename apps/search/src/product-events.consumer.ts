@@ -9,6 +9,7 @@ import {
 import { DomainEvent } from '@packages/event-contracts/types';
 import { ProductIndexService } from './product-index.service';
 import { SearchProductDocument } from './types/product-document.type';
+import { compactText } from './utils/text.utils';
 
 @Controller()
 @UseInterceptors(EventTypeGuard)
@@ -27,26 +28,35 @@ export class ProductEventsConsumer {
       `ProductMasterActiveVersionChanged received: ${payload.masterId} (${payload.changeReason})`,
     );
 
-    if (!payload.versionId || payload.changeReason === 'unpublished') {
-      await this.productIndexService.deleteProduct(payload.masterId);
+    try {
+      if (!payload.versionId || payload.changeReason === 'unpublished') {
+        await this.productIndexService.deleteProduct(payload.masterId);
+        this.logger.debug(
+          `Product removed from index: ${payload.masterId} (${envelope.messageId})`,
+        );
+        return;
+      }
+
+      if (!payload.snapshot) {
+        this.logger.warn(
+          `Snapshot missing for ${payload.masterId}, skipping indexing (${envelope.messageId})`,
+        );
+        return;
+      }
+
+      const document = this.buildDocument(payload);
+      await this.productIndexService.upsertProduct(payload.masterId, document);
+
       this.logger.debug(
-        `Product removed from index: ${payload.masterId} (${envelope.messageId})`,
+        `Product indexed: ${payload.masterId}/${payload.versionId} (${envelope.messageId})`,
       );
-      return;
-    }
-
-    if (!payload.snapshot) {
-      throw new Error(
-        `Snapshot is required for active version indexing (${payload.masterId})`,
+    } catch (error) {
+      this.logger.error(
+        `Failed to index product ${payload.masterId}: ${error.message}`,
+        error.stack,
       );
+      throw error;
     }
-
-    const document = this.buildDocument(payload);
-    await this.productIndexService.upsertProduct(payload.masterId, document);
-
-    this.logger.debug(
-      `Product indexed: ${payload.masterId}/${payload.versionId} (${envelope.messageId})`,
-    );
   }
 
   @OnEvent('products.events.v1', 'ProductMasterDeleted')
@@ -55,10 +65,18 @@ export class ProductEventsConsumer {
     @EventPayload() payload: ProductMasterDeletedPayload,
   ): Promise<void> {
     this.logger.log(`ProductMasterDeleted received: ${payload.masterId}`);
-    await this.productIndexService.deleteProduct(payload.masterId);
-    this.logger.debug(
-      `Product removed from index: ${payload.masterId} (${envelope.messageId})`,
-    );
+    try {
+      await this.productIndexService.deleteProduct(payload.masterId);
+      this.logger.debug(
+        `Product removed from index: ${payload.masterId} (${envelope.messageId})`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to delete product ${payload.masterId}: ${error.message}`,
+        error.stack,
+      );
+      throw error;
+    }
   }
 
   private buildDocument(
@@ -87,7 +105,7 @@ export class ProductEventsConsumer {
       master_id: payload.masterId,
       version_id: payload.versionId as string,
       name: snapshot.name,
-      name_compact: this.compactText(snapshot.name),
+      name_compact: compactText(snapshot.name),
       description: snapshot.description ?? null,
       thumbnail: snapshot.thumbnail ?? null,
       brand: snapshot.brand ?? null,
@@ -106,7 +124,4 @@ export class ProductEventsConsumer {
     };
   }
 
-  private compactText(value: string): string {
-    return value.replace(/\s+/g, '');
-  }
 }

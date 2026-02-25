@@ -48,4 +48,13 @@ export class OpenSearchService implements OnModuleInit {
       DEFAULT_PRODUCTS_INDEX
     );
   }
+
+  async ping(): Promise<boolean> {
+    try {
+      await this.client.ping();
+      return true;
+    } catch {
+      return false;
+    }
+  }
 }
