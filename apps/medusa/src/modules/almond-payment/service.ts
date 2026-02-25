@@ -1,15 +1,22 @@
-import { AbstractPaymentProvider, PaymentActions } from '@medusajs/framework/utils';
+import { AbstractPaymentProvider, BigNumber, PaymentActions } from '@medusajs/framework/utils';
 import type { PaymentSessionStatus } from '@medusajs/framework/types';
 import type {
   InitiatePaymentInput,
   InitiatePaymentOutput,
+  AuthorizePaymentInput,
   AuthorizePaymentOutput,
+  CapturePaymentInput,
   CapturePaymentOutput,
+  CancelPaymentInput,
   CancelPaymentOutput,
+  DeletePaymentInput,
+  RefundPaymentInput,
   RefundPaymentOutput,
+  RetrievePaymentInput,
   RetrievePaymentOutput,
   UpdatePaymentInput,
   UpdatePaymentOutput,
+  GetPaymentStatusInput,
   GetPaymentStatusOutput,
 } from '@medusajs/framework/types';
 import type {
@@ -22,19 +29,27 @@ import type { AlmondPaymentOptions, WalletSessionData } from './types';
 export class AlmondPaymentProviderService extends AbstractPaymentProvider<AlmondPaymentOptions> {
   static identifier = 'almond-payment';
 
-  constructor(container: any, options: AlmondPaymentOptions) {
-    // @ts-ignore
+  constructor(container: Record<string, unknown>, options: AlmondPaymentOptions) {
     super(container, options);
+  }
+
+  static validateOptions(options: Record<string, unknown>): void {
+    if (!options.walletBaseUrl) {
+      throw new Error('walletBaseUrl is required for almond-payment provider');
+    }
+    if (!options.walletApiKey) {
+      throw new Error('walletApiKey is required for almond-payment provider');
+    }
   }
 
   private async walletFetch<T>(
     path: string,
     options: RequestInit = {},
   ): Promise<T> {
-    const url = `${this.options.walletBaseUrl}${path}`;
+    const url = `${this.config.walletBaseUrl}${path}`;
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${this.options.walletApiKey}`,
+      Authorization: `Bearer ${this.config.walletApiKey}`,
       ...(options.method && options.method !== 'GET'
         ? { 'Idempotency-Key': crypto.randomUUID() }
         : {}),
@@ -67,7 +82,7 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
     context: InitiatePaymentInput,
   ): Promise<InitiatePaymentOutput> {
     const { amount, currency_code, context: ctx } = context;
-    const returnUrl = (ctx?.return_url as string) ?? undefined;
+    const returnUrl = ((ctx as Record<string, unknown>)?.return_url as string) ?? undefined;
 
     const intent = await this.walletFetch<{ id: string }>(
       '/v1/payment-intents',
@@ -86,54 +101,54 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
       amount: Number(amount),
       currency: currency_code.toUpperCase(),
     };
-    return { data: sessionData as unknown as Record<string, unknown> };
+    return { id: intent.id, data: sessionData as unknown as Record<string, unknown> };
   }
 
   async authorizePayment(
-    paymentSessionData: Record<string, unknown>,
+    input: AuthorizePaymentInput,
   ): Promise<AuthorizePaymentOutput> {
-    const { intentId } = paymentSessionData as unknown as WalletSessionData;
+    const { intentId } = input.data as unknown as WalletSessionData;
     const intent = await this.walletFetch<{ id: string; status: string }>(
       `/v1/payment-intents/${intentId}`,
     );
 
     const status = this.mapStatus(intent.status);
-    return { data: paymentSessionData, status };
+    return { data: input.data, status };
   }
 
   async capturePayment(
-    paymentSessionData: Record<string, unknown>,
+    input: CapturePaymentInput,
   ): Promise<CapturePaymentOutput> {
     const { intentId, amount } =
-      paymentSessionData as unknown as WalletSessionData;
+      input.data as unknown as WalletSessionData;
     await this.walletFetch(`/v1/payment-intents/${intentId}/capture`, {
       method: 'POST',
       body: JSON.stringify({ amount }),
     });
-    return { data: paymentSessionData };
+    return { data: input.data };
   }
 
   async cancelPayment(
-    paymentSessionData: Record<string, unknown>,
+    input: CancelPaymentInput,
   ): Promise<CancelPaymentOutput> {
-    const { intentId } = paymentSessionData as unknown as WalletSessionData;
+    const { intentId } = input.data as unknown as WalletSessionData;
     await this.walletFetch(`/v1/payment-intents/${intentId}/cancel`, {
       method: 'POST',
     });
-    return { data: paymentSessionData };
+    return { data: input.data };
   }
 
   async deletePayment(
-    paymentSessionData: Record<string, unknown>,
+    input: DeletePaymentInput,
   ): Promise<CancelPaymentOutput> {
-    return this.cancelPayment(paymentSessionData);
+    return this.cancelPayment(input);
   }
 
   async refundPayment(
-    paymentSessionData: Record<string, unknown>,
-    refundAmount: number,
+    input: RefundPaymentInput,
   ): Promise<RefundPaymentOutput> {
-    const { intentId } = paymentSessionData as unknown as WalletSessionData;
+    const { intentId } = input.data as unknown as WalletSessionData;
+    const refundAmount = Number(input.amount);
     await this.walletFetch('/v1/refunds', {
       method: 'POST',
       body: JSON.stringify({
@@ -142,13 +157,13 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
         reasonCode: 'MEDUSA_REFUND',
       }),
     });
-    return { data: paymentSessionData };
+    return { data: input.data };
   }
 
   async retrievePayment(
-    paymentSessionData: Record<string, unknown>,
+    input: RetrievePaymentInput,
   ): Promise<RetrievePaymentOutput> {
-    const { intentId } = paymentSessionData as unknown as WalletSessionData;
+    const { intentId } = input.data as unknown as WalletSessionData;
     const intent = await this.walletFetch<{
       id: string;
       status: string;
@@ -194,9 +209,9 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
   }
 
   async getPaymentStatus(
-    paymentSessionData: Record<string, unknown>,
+    input: GetPaymentStatusInput,
   ): Promise<GetPaymentStatusOutput> {
-    const { intentId } = paymentSessionData as unknown as WalletSessionData;
+    const { intentId } = input.data as unknown as WalletSessionData;
     const intent = await this.walletFetch<{ status: string }>(
       `/v1/payment-intents/${intentId}`,
     );
@@ -230,7 +245,7 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
 
     const actionData = {
       session_id: String(intentId),
-      amount,
+      amount: new BigNumber(amount),
     };
 
     switch (evt) {
