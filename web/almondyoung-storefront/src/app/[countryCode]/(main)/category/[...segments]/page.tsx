@@ -3,7 +3,7 @@ import { CategoryPageContainer } from "domains/products/category/containers/cate
 interface CategoryPageProps {
   params: Promise<{
     countryCode: string
-    slug: string
+    segments: string[]
   }>
 }
 

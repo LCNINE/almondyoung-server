@@ -63,7 +63,7 @@ type CategoryListCache = {
 const memoryCache = new Map<string, CategoryListCache>()
 
 interface CategoryPageClientProps {
-  slug: string
+  pathSegments: string[]
   categoryInfo: CategoryInfo
   categoryData: StoreProductCategoryTree // null 가능성 제거 (Container에서 처리함)
   initialProducts?: ProductCardProps[] // 서버에서 로드한 초기 상품 목록
@@ -72,10 +72,11 @@ interface CategoryPageClientProps {
   categoryIds?: string[] // 카테고리 ID 목록
   regionId?: string // 지역 ID
   allCategories?: StoreProductCategoryTree[] // 전체 카테고리 트리
+  categoryPath?: StoreProductCategoryTree[]
 }
 
 export function CategoryPageClient({
-  slug,
+  pathSegments,
   categoryInfo,
   categoryData,
   initialProducts = [],
@@ -84,6 +85,7 @@ export function CategoryPageClient({
   categoryIds = [],
   regionId,
   allCategories = [],
+  categoryPath = [],
 }: CategoryPageClientProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -100,13 +102,13 @@ export function CategoryPageClient({
   const cacheKey = useMemo(() => {
     return [
       "category-products",
-      slug,
+      pathSegments.join("/"),
       currentSort,
       String(currentLimit),
       regionId ?? "region-none",
       categoryIds.join(",") || "category-none",
     ].join("|")
-  }, [categoryIds, currentLimit, currentSort, regionId, slug])
+  }, [categoryIds, currentLimit, currentSort, pathSegments, regionId])
 
   // 스크롤 복원 대상 (useState 초기화 시 설정)
   const scrollTargetRef = useRef(0)
@@ -419,7 +421,7 @@ export function CategoryPageClient({
                   selectedId=""
                   onSelect={() => { }}
                   countryCode={countryCode}
-                  parentSlug={slug}
+                  parentSegments={categoryPath.map((node) => node.handle || node.id)}
                 />
               )}
 
