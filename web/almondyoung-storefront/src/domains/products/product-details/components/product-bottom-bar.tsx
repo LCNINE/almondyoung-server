@@ -1,7 +1,7 @@
 "use client"
 
 import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
-import { Heart } from "lucide-react"
+import { AnimatedHeart } from "@/components/shared/animated-heart"
 
 type Props = {
   isInWishlist: boolean
@@ -37,11 +37,7 @@ export function ProductBottomBar({
           disabled={wishlistLoading}
           aria-label="찜하기"
         >
-          <Heart
-            className={`h-6 w-6 ${
-              isInWishlist ? "fill-red-500 text-red-500" : "text-gray-400"
-            }`}
-          />
+          <AnimatedHeart isActive={isInWishlist} className="h-6 w-6" />
         </CustomButton>
 
         <CustomButton

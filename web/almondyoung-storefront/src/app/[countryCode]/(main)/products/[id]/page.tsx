@@ -249,18 +249,17 @@ export default async function Page({
   const { id, countryCode } = await params
   let product: ProductDetail | null = null
   let error: string | null = null
-  const user: UserDetail | null = await fetchMe().catch(() => null)
-  const wishlist: WishlistItem | null = await getWishlistByProductId(id).catch(
-    () => null
-  )
-  const region = await getRegion(countryCode)
+
+  const [user, wishlist, region] = await Promise.all([
+    fetchMe().catch(() => null) as Promise<UserDetail | null>,
+    getWishlistByProductId(id).catch(
+      () => null
+    ) as Promise<WishlistItem | null>,
+    getRegion(countryCode),
+  ])
 
   try {
-    const medusaProduct = await getProductDetail(
-      id,
-      region?.id
-      // salesChannelId
-    )
+    const medusaProduct = await getProductDetail(id, region?.id)
 
     let pimDescriptionHtml: string | undefined
     let pimMasterId: string | undefined

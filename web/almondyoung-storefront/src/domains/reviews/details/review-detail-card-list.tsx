@@ -9,14 +9,15 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
-import { getReviewsByProductId, toggleReviewReaction } from "@/lib/api/ugc"
+import { getReviewsByProductId } from "@/lib/api/ugc"
 import { ReviewRatingFilter, ReviewSortOption } from "@/lib/types/common/filter"
 import { ReviewDetail } from "@/lib/types/ui/ugc"
-import { useCallback, useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { ReviewDetailCard } from "./review-detail-card"
 import { ReviewSummary } from "../summary/review-summary"
 
 type Props = {
+  countryCode: string
   productId: string
   totalReviews: number
   averageRating: number
@@ -43,6 +44,7 @@ const RATING_FILTERS: { label: string; value: ReviewRatingFilter | "all" }[] = [
 ]
 
 export function ReviewDetailCardList({
+  countryCode,
   productId,
   totalReviews,
   averageRating,
@@ -112,10 +114,6 @@ export function ReviewDetailCardList({
     setSortOption(value)
     setCurrentPage(1)
   }
-
-  const handleLike = useCallback(async (reviewId: string, _liked: boolean) => {
-    return await toggleReviewReaction(reviewId, { type: "helpful" })
-  }, [])
 
   return (
     <section className="space-y-6">
@@ -199,7 +197,7 @@ export function ReviewDetailCardList({
           <ul className="divide-y divide-gray-200">
             {reviews.map((review) => (
               <li key={review.id}>
-                <ReviewDetailCard review={review} onLike={handleLike} />
+                <ReviewDetailCard countryCode={countryCode} review={review} />
               </li>
             ))}
           </ul>

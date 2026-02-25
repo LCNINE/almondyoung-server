@@ -1,16 +1,25 @@
 "use client"
 
+import { ApiAuthError } from "@/lib/api/api-error"
+import { toggleReviewReaction } from "@/lib/api/ugc"
+import { siteConfig } from "@/lib/config/site"
+import { getPathWithoutCountry } from "@/lib/utils/get-path-without-country"
 import { useRef, useState } from "react"
 
 type Props = {
+  countryCode: string
+  reviewId: string
   initialLikeCount: number
-  onLike?: (liked: boolean) => Promise<{ count: number }> | void
 }
 
 /**
  * @description '도움이 되었어요' 버튼 및 좋아요 카운트
  */
-export function ReviewHelpfulButton({ initialLikeCount, onLike }: Props) {
+export function ReviewHelpfulButton({
+  countryCode,
+  reviewId,
+  initialLikeCount,
+}: Props) {
   const [liked, setLiked] = useState(false)
   const [likeCount, setLikeCount] = useState(initialLikeCount)
   const isPending = useRef(false)
@@ -20,22 +29,31 @@ export function ReviewHelpfulButton({ initialLikeCount, onLike }: Props) {
     isPending.current = true
 
     const prevLiked = liked
-    const prevCount = likeCount
-    const newLiked = !liked
 
-    setLiked(newLiked)
-    setLikeCount(newLiked ? prevCount + 1 : prevCount - 1)
+    setLiked(!liked)
 
     try {
-      const result = await onLike?.(newLiked)
+      const result = await toggleReviewReaction(reviewId, { type: "helpful" })
 
-      if (result && typeof result.count === "number") {
+      if (result) {
+        setLiked(result.marked)
         setLikeCount(result.count)
       }
-    } catch {
-      // 실패 시 롤백
+    } catch (error) {
       setLiked(prevLiked)
-      setLikeCount(prevCount)
+
+      const message =
+        error instanceof ApiAuthError ? error.message : String(error)
+
+      if (message.includes("Unauthorized")) {
+        const confirmed = window.confirm(
+          "로그인이 필요해요. 로그인 페이지로 이동하시겠어요?"
+        )
+        if (confirmed) {
+          const path = getPathWithoutCountry(countryCode)
+          window.location.href = `/${countryCode}${siteConfig.auth.loginUrl}?redirect_to=${encodeURIComponent(path)}`
+        }
+      }
     } finally {
       isPending.current = false
     }

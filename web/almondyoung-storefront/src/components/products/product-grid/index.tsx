@@ -1,6 +1,7 @@
 import { ProductCard } from "@/components/products/prodcut-card"
 import Link from "next/link"
-import { cn, isProductSoldOut } from "@/lib/utils"
+import { cn } from "@/lib/utils"
+import { isProductSoldOut } from "@/lib/utils/is-product-sold-out"
 import type { ProductCardProps } from "@/lib/types/ui/product"
 
 interface ProductGridProps {
