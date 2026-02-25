@@ -694,13 +694,8 @@ export class AuthService {
 
     const users = await this.usersService.findUsersByPhoneNumber(phoneNumber);
     if (users.length === 0) throw new NotFoundException('존재하지 않는 휴대폰 번호입니다');
-    if (users.length > 1) {
-      throw new ConflictException('해당 번호로 가입된 계정이 여러 개입니다. 고객센터에 문의해주세요.');
-    }
 
-    const user = users[0];
-
-    return { loginId: user.loginId };
+    return { loginIds: users.map((user) => user.loginId) };
   }
 
   async forgotPassword(phoneNumber: string, loginId: string) {
