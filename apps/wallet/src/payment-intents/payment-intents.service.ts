@@ -25,6 +25,7 @@ import { CreatePaymentIntentDto, ConfirmPaymentIntentDto, TossApproveDto } from 
 import { calculatePricing } from './intent-pricing';
 import { ConfirmService } from './confirm.service';
 import { CaptureService } from './capture.service';
+import { CancelService } from './cancel.service';
 import { TossApproveService } from './toss-approve.service';
 
 const DEFAULT_INTENT_EXPIRY_MINUTES = 60 * 24; // 24 hours
@@ -36,6 +37,7 @@ export class PaymentIntentsService {
     private readonly stateTransitionService: StateTransitionService,
     private readonly confirmService: ConfirmService,
     private readonly captureService: CaptureService,
+    private readonly cancelService: CancelService,
     private readonly tossApproveService: TossApproveService,
   ) {}
 
@@ -185,7 +187,11 @@ export class PaymentIntentsService {
   ): Promise<{ nextAction?: Record<string, unknown> }> {
     await this.findByIdOrThrow(intentId);
     const correlationId = `confirm:${intentId}:${Date.now()}`;
-    return this.confirmService.confirm(intentId, dto.paymentMethodId, correlationId);
+    return this.confirmService.confirm(
+      intentId,
+      { paymentMethodId: dto.paymentMethodId, pointsToApply: dto.pointsToApply },
+      correlationId,
+    );
   }
 
   async tossApprove(intentId: string, dto: TossApproveDto): Promise<void> {
@@ -217,29 +223,7 @@ export class PaymentIntentsService {
       });
     }
 
-    const now = new Date().toISOString();
-
-    await this.stateTransitionService.transitionIntent(
-      intentId,
-      'CANCELED',
-      {
-        correlationId: `cancel:${intentId}:${Date.now()}`,
-        triggeredByType: 'USER',
-        reasonCode: 'USER_CANCELED',
-        outboxEvent: {
-          eventType: GatewayEventType.INTENT_CANCELED,
-          aggregateType: GATEWAY_AGGREGATE_TYPE,
-          aggregateId: intentId,
-          payload: buildPaymentIntentEventPayload({
-            intentId,
-            userId: intent.userId,
-            status: 'CANCELED',
-            payableAmount: intent.payableAmount,
-            currency: intent.currency,
-            occurredAt: now,
-          }),
-        },
-      },
-    );
+    const correlationId = `cancel:${intentId}:${Date.now()}`;
+    await this.cancelService.cancel(intent, correlationId);
   }
 }

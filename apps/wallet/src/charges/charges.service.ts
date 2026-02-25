@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
-import { WalletSchema, charges, ChargeOperation, ChargeStatus } from '../schema';
+import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { WalletSchema, charges, paymentMethods, ChargeOperation, ChargeStatus } from '../schema';
 import { Charge, DbTx, NewCharge } from '../types';
 
 @Injectable()
@@ -67,6 +67,45 @@ export class ChargesService {
       .orderBy(desc(charges.createdAt))
       .limit(1);
     return rows[0] ?? null;
+  }
+
+  async findAllSucceededAuthorizeByIntent(
+    intentId: string,
+    tx?: DbTx,
+  ): Promise<Charge[]> {
+    const db = tx ?? this.dbService.db;
+    return (db as typeof this.dbService.db)
+      .select()
+      .from(charges)
+      .where(
+        and(
+          eq(charges.intentId, intentId),
+          eq(charges.operation, 'AUTHORIZE'),
+          eq(charges.status, 'SUCCEEDED'),
+        ),
+      )
+      .orderBy(asc(charges.createdAt));
+  }
+
+  async findSucceededPointsAuthorizeByIntent(
+    intentId: string,
+    tx?: DbTx,
+  ): Promise<Charge | null> {
+    const db = tx ?? this.dbService.db;
+    const rows = await (db as typeof this.dbService.db)
+      .select({ charge: charges })
+      .from(charges)
+      .innerJoin(paymentMethods, eq(paymentMethods.id, charges.paymentMethodId))
+      .where(
+        and(
+          eq(charges.intentId, intentId),
+          eq(charges.operation, 'AUTHORIZE'),
+          eq(charges.status, 'SUCCEEDED'),
+          eq(paymentMethods.type, 'POINTS'),
+        ),
+      )
+      .limit(1);
+    return rows[0]?.charge ?? null;
   }
 
   async updateStatus(

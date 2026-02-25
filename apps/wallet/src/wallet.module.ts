@@ -36,6 +36,7 @@ import { PaymentIntentsService } from './payment-intents/payment-intents.service
 import { PaymentIntentsController } from './payment-intents/payment-intents.controller';
 import { ConfirmService } from './payment-intents/confirm.service';
 import { CaptureService } from './payment-intents/capture.service';
+import { CancelService } from './payment-intents/cancel.service';
 import { TossApproveService } from './payment-intents/toss-approve.service';
 
 // Refunds
@@ -217,6 +218,7 @@ function parseCookieValue(cookieHeader: string, name: string): string | null {
     PaymentIntentsService,
     ConfirmService,
     CaptureService,
+    CancelService,
     TossApproveService,
 
     // Refunds

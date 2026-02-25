@@ -1,12 +1,12 @@
 import {
   Injectable,
   Logger,
-  NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { eq } from 'drizzle-orm';
 import { WalletSchema, paymentIntents } from '../schema';
+import { Charge } from '../types';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { ChargesService } from '../charges/charges.service';
 import { ProviderRegistry } from '../providers/provider.registry';
@@ -25,20 +25,14 @@ export class CaptureService {
   ) {}
 
   async capture(intentId: string, correlationId: string): Promise<void> {
-    // Find the succeeded AUTHORIZE charge
-    const authorizeCharge = await this.chargesService.findSucceededAuthorizeByIntent(intentId);
-    if (!authorizeCharge) {
+    // Find all SUCCEEDED AUTHORIZE charges (ordered by createdAt asc; POINTS always first)
+    const authorizeCharges =
+      await this.chargesService.findAllSucceededAuthorizeByIntent(intentId);
+
+    if (authorizeCharges.length === 0) {
       throw new UnprocessableEntityException({
         error: 'NO_AUTHORIZE_CHARGE',
         message: `No succeeded AUTHORIZE charge found for intent: ${intentId}`,
-      });
-    }
-
-    const method = await this.paymentMethodsService.findById(authorizeCharge.paymentMethodId);
-    if (!method) {
-      throw new NotFoundException({
-        error: 'PAYMENT_METHOD_NOT_FOUND',
-        message: `Payment method not found: ${authorizeCharge.paymentMethodId}`,
       });
     }
 
@@ -50,7 +44,27 @@ export class CaptureService {
       });
     }
 
-    // Create capture charge
+    for (const authorizeCharge of authorizeCharges) {
+      await this.captureOneLeg(authorizeCharge, userId, intentId, correlationId);
+    }
+  }
+
+  private async captureOneLeg(
+    authorizeCharge: Charge,
+    userId: string,
+    intentId: string,
+    correlationId: string,
+  ): Promise<void> {
+    const method = await this.paymentMethodsService.findById(
+      authorizeCharge.paymentMethodId,
+    );
+    if (!method) {
+      this.logger.error(
+        `Payment method not found for charge: ${authorizeCharge.id}`,
+      );
+      return;
+    }
+
     const captureCharge = await this.chargesService.create({
       intentId,
       paymentMethodId: method.id,
@@ -80,12 +94,14 @@ export class CaptureService {
         correlationId,
         providerData: method.providerData as Record<string, unknown>,
       });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.error(`Provider capture threw: intentId=${intentId}, error=${message}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `Provider capture threw: intentId=${intentId}, authorizeChargeId=${authorizeCharge.id}, error=${msg}`,
+      );
       await this.chargesService.updateStatus(captureCharge.id, 'FAILED', {
         errorCode: 'PROVIDER_EXCEPTION',
-        errorMessage: message,
+        errorMessage: msg,
       });
       return;
     }

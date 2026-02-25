@@ -139,10 +139,17 @@ export class CreatePaymentIntentDto {
 // ─── Confirm Intent ───────────────────────────────────────────────────────────
 
 export class ConfirmPaymentIntentDto {
-  @ApiProperty({ description: 'Payment method ID to use for this payment' })
+  @ApiPropertyOptional({ description: 'Payment method ID to use for this payment (not required if pointsToApply covers the full amount)' })
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
-  paymentMethodId: string;
+  paymentMethodId?: string;
+
+  @ApiPropertyOptional({ description: 'Amount of points to apply toward this payment', minimum: 0 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  pointsToApply?: number;
 }
 
 // ─── Toss Approve ─────────────────────────────────────────────────────────────
