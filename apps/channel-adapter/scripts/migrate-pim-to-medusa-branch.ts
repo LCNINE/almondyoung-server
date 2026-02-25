@@ -12,22 +12,26 @@
  *   --batch-size=100
  *   --limit=1000
  *   --offset=0
+ *   --only-missing-inventory
  *   --dry-run
  */
 
 import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { ConfigService } from '@nestjs/config';
+import type Medusa from '@medusajs/js-sdk';
 import { channelAdapterSchema } from '../src/schema';
 import { PimSnapshotBuilder } from './lib/pim-snapshot-builder';
 import { PimMedusaSyncService } from '../src/adapters/medusa/pim-medusa-sync.service';
 import { MedusaClient } from '../src/adapters/medusa/medusa.client';
 import { PimMedusaMappingRepository } from '../src/adapters/medusa/pim-medusa-mapping.repository';
+import { createMedusaSdk } from '../src/adapters/medusa/medusa-sdk.config';
 
 interface Args {
   batchSize: number;
   limit?: number;
   offset: number;
+  onlyMissingInventory: boolean;
   dryRun: boolean;
 }
 
@@ -39,6 +43,7 @@ function parseArgs(): Args {
   const batchSize = Number(getValue('batch-size') || '100');
   const limitRaw = getValue('limit');
   const offset = Number(getValue('offset') || '0');
+  const onlyMissingInventory = args.includes('--only-missing-inventory');
   const dryRun = args.includes('--dry-run');
 
   if (Number.isNaN(batchSize) || batchSize <= 0) {
@@ -57,6 +62,7 @@ function parseArgs(): Args {
     batchSize,
     limit,
     offset,
+    onlyMissingInventory,
     dryRun,
   };
 }
@@ -68,11 +74,50 @@ function requireEnv(required: string[]): void {
   }
 }
 
+async function needsInventoryBackfill(
+  sdk: Medusa,
+  handle: string,
+): Promise<{ needsBackfill: boolean; reason: string }> {
+  const { products } = await sdk.admin.product.list({
+    handle,
+    limit: 1,
+  });
+
+  const product = products?.[0];
+  if (!product?.id) {
+    return { needsBackfill: true, reason: 'product_not_found' };
+  }
+
+  const { product: detailed } = await sdk.admin.product.retrieve(product.id, {
+    fields: 'id,*variants,+variants.manage_inventory,+variants.inventory_items',
+  });
+
+  const variants = (detailed as any)?.variants || [];
+  if (variants.length === 0) {
+    return { needsBackfill: true, reason: 'no_variants' };
+  }
+
+  for (const variant of variants) {
+    if (variant.manage_inventory !== true) {
+      return { needsBackfill: true, reason: 'manage_inventory_false' };
+    }
+
+    const hasInventoryLink =
+      Array.isArray(variant.inventory_items) &&
+      variant.inventory_items.length > 0;
+    if (!hasInventoryLink) {
+      return { needsBackfill: true, reason: 'missing_inventory_item_link' };
+    }
+  }
+
+  return { needsBackfill: false, reason: 'already_synced' };
+}
+
 async function main(): Promise<void> {
   const options = parseArgs();
 
   requireEnv(['PIM_SOURCE_DB_URL', 'DATABASE_URL']);
-  if (!options.dryRun) {
+  if (!options.dryRun || options.onlyMissingInventory) {
     requireEnv(['MEDUSA_API_URL', 'MEDUSA_API_KEY']);
   }
 
@@ -82,6 +127,7 @@ async function main(): Promise<void> {
   if (options.limit) {
     console.log(`   limit=${options.limit}`);
   }
+  console.log(`   onlyMissingInventory=${options.onlyMissingInventory}`);
   console.log(`   mode=${options.dryRun ? 'dry-run' : 'write'}`);
 
   const pimDb = postgres(process.env.PIM_SOURCE_DB_URL!, {
@@ -102,6 +148,7 @@ async function main(): Promise<void> {
   });
 
   const medusaClient = new MedusaClient(configService);
+  const medusaSdk = createMedusaSdk(configService);
   const mappingRepo = new PimMedusaMappingRepository({ db: channelDb } as any);
   const syncService = new PimMedusaSyncService(medusaClient, mappingRepo);
 
@@ -109,6 +156,7 @@ async function main(): Promise<void> {
   let processed = 0;
   let success = 0;
   let failed = 0;
+  let skipped = 0;
   let stopRequested = false;
 
   const requestStop = () => {
@@ -140,6 +188,19 @@ async function main(): Promise<void> {
         const seq = processed + 1;
 
         try {
+          if (options.onlyMissingInventory) {
+            const check = await needsInventoryBackfill(medusaSdk, snapshot.masterId);
+            if (!check.needsBackfill) {
+              skipped += 1;
+              console.log(`⏭️  [${seq}] ${snapshot.masterId} v${snapshot.version} (skip: ${check.reason})`);
+              processed += 1;
+              if (stopRequested) {
+                break;
+              }
+              continue;
+            }
+          }
+
           if (!options.dryRun) {
             await syncService.syncFromSnapshot(snapshot);
           }
@@ -171,6 +232,7 @@ async function main(): Promise<void> {
   console.log(`Processed: ${processed}`);
   console.log(`Success:   ${success}`);
   console.log(`Failed:    ${failed}`);
+  console.log(`Skipped:   ${skipped}`);
 }
 
 main().catch((error) => {
