@@ -1,25 +1,44 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 
 type Props = {
   initialLikeCount: number
-  onLike?: (liked: boolean) => void
+  onLike?: (liked: boolean) => Promise<{ count: number }> | void
 }
 
 /**
  * @description '도움이 되었어요' 버튼 및 좋아요 카운트
- * 컴포넌트 내부에 '좋아요' 상태를 두어 독립적으로 동작
  */
 export function ReviewHelpfulButton({ initialLikeCount, onLike }: Props) {
   const [liked, setLiked] = useState(false)
   const [likeCount, setLikeCount] = useState(initialLikeCount)
+  const isPending = useRef(false)
 
-  const handleLikeClick = () => {
+  const handleLikeClick = async () => {
+    if (isPending.current) return
+    isPending.current = true
+
+    const prevLiked = liked
+    const prevCount = likeCount
     const newLiked = !liked
+
     setLiked(newLiked)
-    setLikeCount(newLiked ? likeCount + 1 : likeCount - 1)
-    onLike?.(newLiked)
+    setLikeCount(newLiked ? prevCount + 1 : prevCount - 1)
+
+    try {
+      const result = await onLike?.(newLiked)
+
+      if (result && typeof result.count === "number") {
+        setLikeCount(result.count)
+      }
+    } catch {
+      // 실패 시 롤백
+      setLiked(prevLiked)
+      setLikeCount(prevCount)
+    } finally {
+      isPending.current = false
+    }
   }
 
   return (

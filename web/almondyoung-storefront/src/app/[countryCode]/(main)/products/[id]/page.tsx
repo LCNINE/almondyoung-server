@@ -1,17 +1,16 @@
-import { fetchMe } from "@lib/api/users/me"
-import { getWishlistByProductId } from "@lib/api/users/wishlist"
 import { getProductDetail, listProducts } from "@lib/api/medusa/products"
 import { getRegion } from "@lib/api/medusa/regions"
-import { getDefaultSalesChannelId } from "@lib/api/medusa/store"
 import { getProductDetailByMasterId } from "@lib/api/pim/products"
+import { fetchMe } from "@lib/api/users/me"
+import { getWishlistByProductId } from "@lib/api/users/wishlist"
 import { ProductDetail } from "@lib/types/ui/product"
 import type { UserDetail, WishlistItem } from "@lib/types/ui/user"
-import ProductDetailPage from "domains/products/product-details/product-detail-page"
-import type { StoreProduct } from "@medusajs/types"
 import {
   getPricesForVariant,
   getProductPrice,
 } from "@lib/utils/get-product-price"
+import type { StoreProduct } from "@medusajs/types"
+import ProductDetailPage from "domains/products/product-details/product-detail-page"
 import { Metadata } from "next"
 import { notFound } from "next/navigation"
 
@@ -255,7 +254,6 @@ export default async function Page({
     () => null
   )
   const region = await getRegion(countryCode)
-  const salesChannelId = await getDefaultSalesChannelId()
 
   try {
     const medusaProduct = await getProductDetail(

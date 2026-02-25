@@ -1,5 +1,6 @@
 "use client"
 
+import { CartSuccessModal } from "@/components/modals/cart-success-modal"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -10,27 +11,28 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { CartSuccessModal } from "@/components/modals/cart-success-modal"
+import { useWishlist } from "@/contexts/wishlist-context"
+import { getQuestionsByProductId } from "@/lib/api/ugc"
+import { ReviewDetailCardList } from "@/domains/reviews/details"
+import { useMembershipPricing } from "@/hooks/use-membership-pricing"
 import { useAddToCart } from "@hooks/api/use-add-to-cart"
 import { useRecentViews } from "@hooks/api/use-recent-views"
 import type { ProductDetail } from "@lib/types/ui/product"
-import { isProductSoldOut } from "@lib/utils"
 import type { UserDetail, WishlistItem } from "@lib/types/ui/user"
-import { ProductReviewSection } from "domains/reviews/product-review-section"
+import { isProductSoldOut } from "@lib/utils"
+import { useRouter } from "next/navigation"
 import { use, useEffect, useRef, useState, useTransition } from "react"
+import { createPortal } from "react-dom"
 import { toast } from "sonner"
+import { ProductBottomBar } from "./components/product-bottom-bar"
+import { ProductBottomSheet } from "./components/product-bottom-sheet"
 import { ProductDetailInfo } from "./components/product-detail-info"
 import { ProductImageGallery } from "./components/product-image-gallery"
 import { ProductInfoAccordion } from "./components/product-info-accordion"
-import { ProductBottomBar } from "./components/product-bottom-bar"
-import { ProductBottomSheet } from "./components/product-bottom-sheet"
 import { ProductInfoMobile } from "./components/product-info-mobile"
 import { ProductSidebarPurchase } from "./components/product-sidebar-purchase"
 import { ProductTabs } from "./components/product-tabs"
-import { useRouter } from "next/navigation"
-import { createPortal } from "react-dom"
-import { useMembershipPricing } from "@/hooks/use-membership-pricing"
-import { useWishlist } from "@/contexts/wishlist-context"
+import { ProductQnaSection } from "./components"
 // import { Breadcrumb } from "@components/layout/components/breadcrumb"
 // import { ProductCard } from "@lib/types/ui/product"
 // import { ProductRecommandSlider } from "@components/products/product-recommand-slider"
@@ -49,10 +51,6 @@ interface ProductDetailPageProps {
 
 /**
  * @description 상품 상세 페이지 (리팩토링 버전)
- * - 시맨틱 HTML 적극 활용
- * - 과도한 div 제거
- * - CSS 중첩 최소화
- * - 컴포넌트 분리
  */
 const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   params,
@@ -65,9 +63,12 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   const { countryCode } = resolvedParams
   const router = useRouter()
   const { isMembershipPricing } = useMembershipPricing()
-  const { isLoaded, isWishlisted, isPending: isWishlistPending, toggle } =
-    useWishlist()
-  // ===== 상태 관리 =====
+  const {
+    isLoaded,
+    isWishlisted,
+    isPending: isWishlistPending,
+    toggle,
+  } = useWishlist()
   const [activeTab, setActiveTab] = useState<
     "detail" | "review" | "qna" | "info"
   >("detail")
@@ -94,18 +95,17 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   const [isMounted, setIsMounted] = useState(false)
   const [showLoginDialog, setShowLoginDialog] = useState(false)
   const [showCartSuccessModal, setShowCartSuccessModal] = useState(false)
-  const [reviewCount, setReviewCount] = useState(product?.reviewCount || 0)
-  const [averageRating, setAverageRating] = useState(product?.rating || 0)
+  const [reviewCount, setReviewCount] = useState(0)
+  const [averageRating, setAverageRating] = useState(0)
+  const [qnaCount, setQnaCount] = useState(0)
 
   const [isPending, startTransition] = useTransition()
 
-  // ===== Refs =====
   const detailRef = useRef<HTMLDivElement>(null)
   const reviewRef = useRef<HTMLDivElement>(null)
   const qnaRef = useRef<HTMLDivElement>(null)
   const infoRef = useRef<HTMLDivElement>(null)
 
-  // ===== Hooks =====
   const { addToCart, isLoading: isAddToCartLoading } = useAddToCart()
 
   useRecentViews(null, {
@@ -122,7 +122,15 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
     setIsMounted(true)
   }, [])
 
-  // ===== 에러 처리 =====
+  useEffect(() => {
+    if (!product) return
+    const productId = product.pimMasterId || product.id
+
+    getQuestionsByProductId({ productId, limit: 1 })
+      .then((result) => setQnaCount(result.total ?? 0))
+      .catch(() => setQnaCount(0))
+  }, [product])
+
   if (error || !product) {
     return (
       <main className="lg:bg-muted/50 flex min-h-screen items-center justify-center bg-white">
@@ -135,7 +143,6 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
     )
   }
 
-  // ===== 핸들러 =====
   const scrollToSection = (tab: typeof activeTab) => {
     const refs = {
       detail: detailRef,
@@ -160,7 +167,6 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
 
     startTransition(async () => {
       try {
-        // 성공
         const action = await toggle(productId)
         if (action) {
           toast.success(
@@ -394,7 +400,9 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
           // 재고 초과 시 최대 수량으로 자동 조정
           const maxStock = opt.stock
           const adjustedQuantity =
-            maxStock !== undefined && maxStock !== Infinity && newQuantity > maxStock
+            maxStock !== undefined &&
+            maxStock !== Infinity &&
+            newQuantity > maxStock
               ? maxStock
               : newQuantity
           return { ...opt, quantity: adjustedQuantity }
@@ -534,7 +542,7 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
             <ProductTabs
               activeTab={activeTab}
               reviewCount={reviewCount}
-              qnaCount={product.qnaCount || 0}
+              qnaCount={qnaCount}
               onTabChange={(tab) => {
                 setActiveTab(tab)
                 scrollToSection(tab)
@@ -558,19 +566,18 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
               role="tabpanel"
               className="mb-8 rounded-lg bg-white px-4 py-6 lg:px-6"
             >
-              <ProductReviewSection
+              <ReviewDetailCardList
                 productId={product.pimMasterId || product.id}
-                totalReviews={product.reviewCount || 0}
-                averageRating={product.rating || 0}
+                totalReviews={0}
+                averageRating={0}
                 onTotalChange={setReviewCount}
                 onAverageRatingChange={setAverageRating}
               />
             </div>
 
-            {/* todo: Q&A 임시 비활성화 */}
-            {/* <div ref={qnaRef} id="qna-panel" role="tabpanel">
+            <div ref={qnaRef} id="qna-panel" role="tabpanel">
               <ProductQnaSection />
-            </div> */}
+            </div>
 
             {/* 구매/반품 정보 */}
             <div ref={infoRef} id="info-panel" role="tabpanel">
