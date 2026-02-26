@@ -26,6 +26,7 @@ interface Phase1Result {
   userId: string;
   currency: string;
   payableAmount: number;
+  medusaSessionId: string | null;
   pointsChargeId: string | null;
   pointsAmount: number;
   externalMethodId: string | null;
@@ -202,6 +203,7 @@ export class ConfirmService {
       userId: intent.userId,
       currency: intent.currency,
       payableAmount: intent.payableAmount,
+      medusaSessionId: (intent.metadata as Record<string, unknown>)?.medusa_session_id as string | null ?? null,
       pointsChargeId,
       pointsAmount,
       externalMethodId,
@@ -519,6 +521,7 @@ export class ConfirmService {
               payableAmount: phase1.payableAmount,
               currency: phase1.currency,
               occurredAt: now,
+              extra: { medusa_session_id: phase1.medusaSessionId },
             }),
           },
         },

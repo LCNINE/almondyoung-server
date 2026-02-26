@@ -108,6 +108,38 @@ export class ChargesService {
     return rows[0]?.charge ?? null;
   }
 
+  async findRefundableByIntent(intentId: string, tx?: DbTx): Promise<Charge[]> {
+    const db = tx ?? this.dbService.db;
+
+    // 1순위: CAPTURE + SUCCEEDED
+    const captured = await (db as typeof this.dbService.db)
+      .select()
+      .from(charges)
+      .where(
+        and(
+          eq(charges.intentId, intentId),
+          eq(charges.operation, 'CAPTURE'),
+          eq(charges.status, 'SUCCEEDED'),
+        ),
+      )
+      .orderBy(asc(charges.createdAt));
+
+    if (captured.length > 0) return captured;
+
+    // 2순위: AUTHORIZE + SUCCEEDED (포인트 전액결제 등 capture 없는 케이스)
+    return (db as typeof this.dbService.db)
+      .select()
+      .from(charges)
+      .where(
+        and(
+          eq(charges.intentId, intentId),
+          eq(charges.operation, 'AUTHORIZE'),
+          eq(charges.status, 'SUCCEEDED'),
+        ),
+      )
+      .orderBy(asc(charges.createdAt));
+  }
+
   async updateStatus(
     id: string,
     status: ChargeStatus,

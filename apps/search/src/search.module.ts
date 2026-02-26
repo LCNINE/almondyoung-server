@@ -6,6 +6,9 @@ import { OpenSearchService } from './opensearch.service';
 import { ProductIndexService } from './product-index.service';
 import { SearchService } from './search.service';
 import { HealthController } from './health.controller';
+import { OpenSearchKeywordRepository } from './opensearch-keyword.repository';
+import { SEARCH_KEYWORD_REPOSITORY } from './search-keyword.repository';
+import { SearchKeywordService } from './search-keyword.service';
 
 @Module({
   imports: [
@@ -15,6 +18,16 @@ import { HealthController } from './health.controller';
     }),
   ],
   controllers: [SearchController, ProductEventsConsumer, HealthController],
-  providers: [SearchService, OpenSearchService, ProductIndexService],
+  providers: [
+    SearchService,
+    OpenSearchService,
+    ProductIndexService,
+    SearchKeywordService,
+    OpenSearchKeywordRepository,
+    {
+      provide: SEARCH_KEYWORD_REPOSITORY,
+      useExisting: OpenSearchKeywordRepository,
+    },
+  ],
 })
 export class SearchModule {}

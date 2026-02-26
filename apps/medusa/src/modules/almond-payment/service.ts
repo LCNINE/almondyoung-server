@@ -10,6 +10,7 @@ import type {
   CancelPaymentInput,
   CancelPaymentOutput,
   DeletePaymentInput,
+  DeletePaymentOutput,
   RefundPaymentInput,
   RefundPaymentOutput,
   RetrievePaymentInput,
@@ -65,10 +66,10 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
     return res.json();
   }
 
-  private mapStatus(walletStatus: string): PaymentSessionStatus {
+  private mapStatus(walletStatus: string, captured = false): PaymentSessionStatus {
     switch (walletStatus) {
       case 'SUCCEEDED':
-        return 'authorized';
+        return captured ? 'captured' : 'authorized';
       case 'CANCELED':
         return 'canceled';
       case 'FAILED':
@@ -81,17 +82,24 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
   async initiatePayment(
     context: InitiatePaymentInput,
   ): Promise<InitiatePaymentOutput> {
-    const { amount, currency_code, context: ctx } = context;
+    const { amount, currency_code, context: ctx, data } = context;
     const returnUrl = ((ctx as Record<string, unknown>)?.return_url as string) ?? undefined;
+    const userId = (ctx as Record<string, unknown>)?.customer?.id as string | undefined;
+    if (!userId) throw new Error('customer.id is required in payment context');
+
+    // Medusa passes its session ID via data.session_id — store it for webhook correlation
+    const medusaSessionId = (data as Record<string, unknown>)?.session_id as string | undefined;
 
     const intent = await this.walletFetch<{ id: string }>(
       '/v1/payment-intents',
       {
         method: 'POST',
         body: JSON.stringify({
-          payableAmount: Number(amount),
+          amount: Number(amount),
           currency: currency_code.toUpperCase(),
+          userId,
           ...(returnUrl ? { returnUrl } : {}),
+          ...(medusaSessionId ? { metadata: { medusa_session_id: medusaSessionId } } : {}),
         }),
       },
     );
@@ -100,6 +108,8 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
       intentId: intent.id,
       amount: Number(amount),
       currency: currency_code.toUpperCase(),
+      userId,
+      medusaSessionId,
     };
     return { id: intent.id, data: sessionData as unknown as Record<string, unknown> };
   }
@@ -107,25 +117,29 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
   async authorizePayment(
     input: AuthorizePaymentInput,
   ): Promise<AuthorizePaymentOutput> {
-    const { intentId } = input.data as unknown as WalletSessionData;
+    const data = input.data as unknown as WalletSessionData;
     const intent = await this.walletFetch<{ id: string; status: string }>(
-      `/v1/payment-intents/${intentId}`,
+      `/v1/payment-intents/${data.intentId}`,
     );
 
-    const status = this.mapStatus(intent.status);
+    const status = this.mapStatus(intent.status, data.captured);
     return { data: input.data, status };
   }
 
   async capturePayment(
     input: CapturePaymentInput,
   ): Promise<CapturePaymentOutput> {
-    const { intentId, amount } =
-      input.data as unknown as WalletSessionData;
+    const { intentId } = input.data as unknown as WalletSessionData;
     await this.walletFetch(`/v1/payment-intents/${intentId}/capture`, {
       method: 'POST',
-      body: JSON.stringify({ amount }),
     });
-    return { data: input.data };
+    // captured: true 플래그를 data에 기록 → 이후 getPaymentStatus에서 'captured' 반환
+    return {
+      data: {
+        ...(input.data as Record<string, unknown>),
+        captured: true,
+      },
+    };
   }
 
   async cancelPayment(
@@ -140,7 +154,7 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
 
   async deletePayment(
     input: DeletePaymentInput,
-  ): Promise<CancelPaymentOutput> {
+  ): Promise<DeletePaymentOutput> {
     return this.cancelPayment(input);
   }
 
@@ -149,13 +163,9 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
   ): Promise<RefundPaymentOutput> {
     const { intentId } = input.data as unknown as WalletSessionData;
     const refundAmount = Number(input.amount);
-    await this.walletFetch('/v1/refunds', {
+    await this.walletFetch(`/v1/payment-intents/${intentId}/refund`, {
       method: 'POST',
-      body: JSON.stringify({
-        intentId,
-        amount: refundAmount,
-        reasonCode: 'MEDUSA_REFUND',
-      }),
+      body: JSON.stringify({ amount: refundAmount, reasonCode: 'MEDUSA_REFUND' }),
     });
     return { data: input.data };
   }
@@ -190,32 +200,40 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
       { method: 'POST' },
     );
 
-    // create new intent
+    // create new intent — userId and medusaSessionId are carried over from existing session data
     const intent = await this.walletFetch<{ id: string }>(
       '/v1/payment-intents',
       {
         method: 'POST',
-        body: JSON.stringify({ payableAmount: newAmount, currency: newCurrency }),
+        body: JSON.stringify({
+          amount: newAmount,
+          currency: newCurrency,
+          userId: prevData.userId,
+          ...(prevData.medusaSessionId
+            ? { metadata: { medusa_session_id: prevData.medusaSessionId } }
+            : {}),
+        }),
       },
     );
 
-    return {
-      data: {
-        intentId: intent.id,
-        amount: newAmount,
-        currency: newCurrency,
-      } as unknown as Record<string, unknown>,
+    const updatedData: WalletSessionData = {
+      intentId: intent.id,
+      amount: newAmount,
+      currency: newCurrency,
+      userId: prevData.userId,
+      medusaSessionId: prevData.medusaSessionId,
     };
+    return { data: updatedData as unknown as Record<string, unknown> };
   }
 
   async getPaymentStatus(
     input: GetPaymentStatusInput,
   ): Promise<GetPaymentStatusOutput> {
-    const { intentId } = input.data as unknown as WalletSessionData;
+    const data = input.data as unknown as WalletSessionData;
     const intent = await this.walletFetch<{ status: string }>(
-      `/v1/payment-intents/${intentId}`,
+      `/v1/payment-intents/${data.intentId}`,
     );
-    return { status: this.mapStatus(intent.status) };
+    return { status: this.mapStatus(intent.status, data.captured) };
   }
 
   async getWebhookActionAndData(
@@ -224,14 +242,14 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
     const body = webhookData.data as Record<string, any>;
     const evt: string = body?.type ?? body?.event ?? body?.event_type ?? '';
 
-    const intentId =
-      body?.intentId ??
-      body?.intent_id ??
-      body?.session_id ??
-      body?.metadata?.intent_id;
+    // wallet이 intent 생성 시 저장한 medusa_session_id를 이벤트 payload에 포함시켜 보냄
+    const sessionId: string | undefined =
+      body?.medusa_session_id ??
+      body?.metadata?.medusa_session_id ??
+      body?.session_id;
 
-    if (!intentId) {
-      throw new Error('Webhook payload missing intentId.');
+    if (!sessionId) {
+      throw new Error('Webhook payload missing medusa_session_id. Ensure wallet events include metadata.medusa_session_id.');
     }
 
     const amountRaw =
@@ -244,7 +262,7 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
       typeof amountRaw === 'number' ? amountRaw : Number(amountRaw) || 0;
 
     const actionData = {
-      session_id: String(intentId),
+      session_id: String(sessionId),
       amount: new BigNumber(amount),
     };
 

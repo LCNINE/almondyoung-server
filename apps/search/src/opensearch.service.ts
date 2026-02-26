@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Client } from '@opensearch-project/opensearch';
 import { DEFAULT_PRODUCTS_INDEX } from './types/product-document.type';
+import { DEFAULT_QUERY_EVENTS_INDEX } from './types/query-keyword-document.type';
 
 @Injectable()
 export class OpenSearchService implements OnModuleInit {
@@ -46,6 +47,13 @@ export class OpenSearchService implements OnModuleInit {
     return (
       this.configService.get<string>('SEARCH_PRODUCTS_INDEX') ||
       DEFAULT_PRODUCTS_INDEX
+    );
+  }
+
+  getQueryEventsIndex(): string {
+    return (
+      this.configService.get<string>('SEARCH_QUERY_EVENTS_INDEX') ||
+      DEFAULT_QUERY_EVENTS_INDEX
     );
   }
 
