@@ -49,18 +49,21 @@ export const getCategoryTree = async (): Promise<StoreProductCategoryTree[]> => 
   const all: StoreProductCategoryTree[] = []
 
   while (true) {
-    const { product_categories, count } = await sdk.store.category.list(
-      {
+    const { product_categories, count } = await sdk.client.fetch<{
+      product_categories: StoreProductCategoryTree[]
+      count: number
+    }>(`/store/product-categories`, {
+      method: "GET",
+      query: {
         limit,
         offset,
         fields: "id,name,handle,description,metadata,parent_category_id",
       },
-      {
-        next: {
-          tags: ["product-categories"],
-        },
-      }
-    )
+      next: {
+        tags: ["product-categories"],
+      },
+      cache: "force-cache",
+    })
 
     const page = (product_categories || []) as StoreProductCategoryTree[]
     all.push(...page)
