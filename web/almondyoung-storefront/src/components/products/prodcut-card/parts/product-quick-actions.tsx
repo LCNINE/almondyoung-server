@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button"
 import { useAddToCart } from "@hooks/api/use-add-to-cart"
 import { useWishlist } from "@/contexts/wishlist-context"
 import { cn } from "@/lib/utils"
-import { Heart, Minus, Plus, ShoppingCart, Check } from "lucide-react"
+import { AnimatedHeart } from "@/components/shared/animated-heart"
+import { Minus, Plus, ShoppingCart, Check } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
@@ -144,11 +145,10 @@ export function ProductQuickActions({
         onClick={handleWishlistToggle}
         disabled={isPending || isWishlistPending(productId)}
       >
-        <Heart
-          className={cn(
-            "h-4 w-4 transition-colors",
-            resolvedWishlisted ? "fill-red-500 text-red-500" : "text-gray-600"
-          )}
+        <AnimatedHeart
+          isActive={resolvedWishlisted}
+          className="h-4 w-4"
+          inactiveColor="text-gray-600"
         />
       </Button>
 

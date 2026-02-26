@@ -1,3 +1,7 @@
+import { ReviewRatingFilter, ReviewSortOption, QnaSortOption } from "../common/filter"
+
+// ─── Reviews ───
+
 interface ReviewResponseDto {
   id: string
   userId: string | null
@@ -8,6 +12,7 @@ interface ReviewResponseDto {
   content: string
   mediaFileIds: string[]
   status: string
+  helpfulCount: number
   createdAt: string
   updatedAt: string
 }
@@ -28,10 +33,97 @@ interface UpdateReviewDto {
 interface ReviewListQueryDto {
   productId: string
   rating?: ReviewRatingFilter
+  sort?: ReviewSortOption
   page?: number
   limit?: number
 }
 
-type ReviewRatingFilter = "1" | "2" | "3" | "4" | "5" | "positive" | "negative"
+interface ToggleReactionDto {
+  type: "helpful" | "like" | "dislike"
+}
 
-export type { ReviewResponseDto, CreateReviewDto, UpdateReviewDto, ReviewListQueryDto, ReviewRatingFilter }
+interface ToggleReactionResponseDto {
+  marked: boolean
+  count: number
+}
+
+interface CreateCommentDto {
+  content: string
+}
+
+interface CommentResponseDto {
+  id: string
+  reviewId: string
+  adminUserId: string
+  content: string
+  createdAt: string
+  updatedAt: string
+}
+
+// ─── Q&A ───
+
+interface QuestionResponseDto {
+  id: string
+  userId: string
+  productId: string
+  title: string
+  content: string
+  isSecret: boolean
+  status: string
+  mediaFileIds: string[]
+  answer: AnswerResponseDto | null
+  createdAt: string
+  updatedAt: string
+}
+
+interface AnswerResponseDto {
+  id: string
+  questionId: string
+  adminUserId: string
+  content: string
+  createdAt: string
+  updatedAt: string
+}
+
+interface CreateQuestionDto {
+  productId: string
+  title: string
+  content: string
+  isSecret?: boolean
+  mediaFileIds?: string[]
+}
+
+interface UpdateQuestionDto {
+  title?: string
+  content?: string
+  isSecret?: boolean
+  mediaFileIds?: string[]
+}
+
+interface QuestionListQueryDto {
+  productId: string
+  sort?: QnaSortOption
+  page?: number
+  limit?: number
+}
+
+interface CreateAnswerDto {
+  content: string
+}
+
+export type {
+  ReviewResponseDto,
+  CreateReviewDto,
+  UpdateReviewDto,
+  ReviewListQueryDto,
+  ToggleReactionDto,
+  ToggleReactionResponseDto,
+  CreateCommentDto,
+  CommentResponseDto,
+  QuestionResponseDto,
+  AnswerResponseDto,
+  CreateQuestionDto,
+  UpdateQuestionDto,
+  QuestionListQueryDto,
+  CreateAnswerDto,
+}

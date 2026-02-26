@@ -69,29 +69,14 @@ export function AccountFindPwForm() {
     },
   })
 
-  const normalizePhoneNumber = useCallback(
-    (value: string) => {
-      if (!value) return ""
-      if (value.startsWith("+")) return value
-      const digits = value.replace(/\D/g, "")
-      if (digits.startsWith("82")) return `+${digits}`
-      if (countryCode === "KR" && digits.startsWith("0")) {
-        return `+82${digits.slice(1)}`
-      }
-      return digits
-    },
-    [countryCode]
-  )
-
   const phoneNumber = form.watch("phoneNumber")
-  const normalizedPhoneNumber = normalizePhoneNumber(phoneNumber)
   const loginId = form.watch("loginId")
 
   useEffect(() => {
     if (isCodeVerified) {
-      setVerifiedPhoneNumber(normalizedPhoneNumber)
+      setVerifiedPhoneNumber(phoneNumber)
     }
-  }, [isCodeVerified, normalizedPhoneNumber])
+  }, [isCodeVerified, phoneNumber])
 
   useEffect(() => {
     if (verifiedPhoneNumber && phoneNumber !== verifiedPhoneNumber) {
@@ -131,18 +116,18 @@ export function AccountFindPwForm() {
 
     sendTwilioMessage({
       countryCode: countryCode || "KR",
-      phoneNumber: normalizedPhoneNumber,
+      phoneNumber,
       purpose: "phone_verify",
     })
-  }, [form, phoneNumber, countryCode, sendTwilioMessage, normalizedPhoneNumber])
+  }, [form, phoneNumber, countryCode, sendTwilioMessage])
 
   const handleVerifyCode = useCallback(() => {
     if (verificationCode.length !== 6) return
     verifyCode({
-      phoneNumber: normalizedPhoneNumber,
+      phoneNumber,
       code: verificationCode,
     })
-  }, [verificationCode, verifyCode, normalizedPhoneNumber])
+  }, [verificationCode, verifyCode, phoneNumber])
 
   const handleChangeNumber = useCallback(() => {
     setVerificationCode("")
@@ -155,14 +140,14 @@ export function AccountFindPwForm() {
     setVerificationCode("")
     sendTwilioMessage({
       countryCode: countryCode || "KR",
-      phoneNumber: normalizedPhoneNumber,
+      phoneNumber,
       purpose: "phone_verify",
     })
     verificationCodeRef.current?.focus()
-  }, [timer, countryCode, sendTwilioMessage, normalizedPhoneNumber])
+  }, [timer, countryCode, sendTwilioMessage, phoneNumber])
 
   const isPhoneVerified =
-    verifiedPhoneNumber === normalizedPhoneNumber && isCodeVerified
+    verifiedPhoneNumber === phoneNumber && isCodeVerified
 
   useEffect(() => {
     if (timer === 0 && isPhoneVerified && !verificationToken) {
@@ -180,7 +165,7 @@ export function AccountFindPwForm() {
       return
     }
 
-    const result = await forgetPw(normalizedPhoneNumber, data.loginId)
+    const result = await forgetPw(phoneNumber, data.loginId)
 
     if (!result.success) {
       if (
