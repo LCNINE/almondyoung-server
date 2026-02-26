@@ -1,7 +1,7 @@
 import { DbService, InjectDb } from '@app/db';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
-import { and, asc, count, desc, eq } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull } from 'drizzle-orm';
 import * as schema from '../../../../database/drizzle/schema';
 import { UpdateUserDto } from '../../users/dto/update-user.dto';
 import { DbTransaction } from 'apps/user-service/src/commons/types';
@@ -24,6 +24,7 @@ export class UsersService {
     userId?: string;
     username?: string;
     email?: string;
+    roleName?: string;
     sort?: 'createdAt' | 'username' | 'email' | 'lastActivityAt';
     order?: 'asc' | 'desc';
     tx?: DbTransaction;
@@ -47,6 +48,25 @@ export class UsersService {
         conditions.push(eq(schema.users.username, filters.username));
       if (filters?.email)
         conditions.push(eq(schema.users.email, filters.email));
+      if (filters?.roleName) {
+        const roleName = filters.roleName.trim();
+        if (roleName.length > 0) {
+          const userIdsByRoleQuery = client
+            .select({ userId: schema.userRoleAssignments.userId })
+            .from(schema.userRoleAssignments)
+            .innerJoin(
+              schema.roles,
+              eq(schema.userRoleAssignments.roleId, schema.roles.roleId),
+            )
+            .where(
+              and(
+                eq(schema.roles.name, roleName),
+                isNull(schema.userRoleAssignments.expiresAt),
+              ),
+            );
+          conditions.push(inArray(schema.users.id, userIdsByRoleQuery));
+        }
+      }
 
       const whereClause =
         conditions.length > 0 ? and(...conditions) : undefined;
