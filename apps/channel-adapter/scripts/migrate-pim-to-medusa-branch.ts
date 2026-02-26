@@ -14,18 +14,19 @@
  *   --offset=0
  *   --only-missing-inventory
  *   --dry-run
+ *
+ * Extra env for --only-missing-inventory:
+ *   MEDUSA_DB_URL=... (direct Medusa DB connection string)
  */
 
 import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { ConfigService } from '@nestjs/config';
-import type Medusa from '@medusajs/js-sdk';
 import { channelAdapterSchema } from '../src/schema';
 import { PimSnapshotBuilder } from './lib/pim-snapshot-builder';
 import { PimMedusaSyncService } from '../src/adapters/medusa/pim-medusa-sync.service';
 import { MedusaClient } from '../src/adapters/medusa/medusa.client';
 import { PimMedusaMappingRepository } from '../src/adapters/medusa/pim-medusa-mapping.repository';
-import { createMedusaSdk } from '../src/adapters/medusa/medusa-sdk.config';
 
 interface Args {
   batchSize: number;
@@ -75,42 +76,56 @@ function requireEnv(required: string[]): void {
 }
 
 async function needsInventoryBackfill(
-  sdk: Medusa,
+  medusaDb: postgres.Sql,
   handle: string,
 ): Promise<{ needsBackfill: boolean; reason: string }> {
-  const { products } = await sdk.admin.product.list({
-    handle,
-    limit: 1,
-  });
+  const rows = await medusaDb<{
+    product_id: string;
+    variant_cnt: number;
+    managed_true_cnt: number;
+    linked_cnt: number;
+  }[]>`
+    SELECT
+      p.id AS product_id,
+      COUNT(v.variant_id)::int AS variant_cnt,
+      COALESCE(SUM(CASE WHEN v.manage_inventory_true THEN 1 ELSE 0 END), 0)::int AS managed_true_cnt,
+      COALESCE(SUM(CASE WHEN v.has_link THEN 1 ELSE 0 END), 0)::int AS linked_cnt
+    FROM product p
+    LEFT JOIN LATERAL (
+      SELECT
+        pv.id AS variant_id,
+        (pv.manage_inventory = true) AS manage_inventory_true,
+        EXISTS(
+          SELECT 1
+          FROM product_variant_inventory_item pvii
+          WHERE pvii.variant_id = pv.id
+        ) AS has_link
+      FROM product_variant pv
+      WHERE pv.product_id = p.id
+    ) v ON TRUE
+    WHERE p.handle = ${handle}
+    GROUP BY p.id
+    LIMIT 1
+  `;
 
-  const product = products?.[0];
-  if (!product?.id) {
-    return { needsBackfill: true, reason: 'product_not_found' };
+  const row = rows[0];
+  if (!row?.product_id) {
+    return { needsBackfill: true, reason: 'product_not_found_in_medusa_db' };
   }
 
-  const { product: detailed } = await sdk.admin.product.retrieve(product.id, {
-    fields: 'id,*variants,+variants.manage_inventory,+variants.inventory_items',
-  });
-
-  const variants = (detailed as any)?.variants || [];
-  if (variants.length === 0) {
+  if (row.variant_cnt === 0) {
     return { needsBackfill: true, reason: 'no_variants' };
   }
 
-  for (const variant of variants) {
-    if (variant.manage_inventory !== true) {
-      return { needsBackfill: true, reason: 'manage_inventory_false' };
-    }
-
-    const hasInventoryLink =
-      Array.isArray(variant.inventory_items) &&
-      variant.inventory_items.length > 0;
-    if (!hasInventoryLink) {
-      return { needsBackfill: true, reason: 'missing_inventory_item_link' };
-    }
+  if (row.managed_true_cnt < row.variant_cnt) {
+    return { needsBackfill: true, reason: 'manage_inventory_false' };
   }
 
-  return { needsBackfill: false, reason: 'already_synced' };
+  if (row.linked_cnt < row.variant_cnt) {
+    return { needsBackfill: true, reason: 'missing_inventory_item_link' };
+  }
+
+  return { needsBackfill: false, reason: 'already_synced_db_verified' };
 }
 
 async function main(): Promise<void> {
@@ -119,6 +134,9 @@ async function main(): Promise<void> {
   requireEnv(['PIM_SOURCE_DB_URL', 'DATABASE_URL']);
   if (!options.dryRun || options.onlyMissingInventory) {
     requireEnv(['MEDUSA_API_URL', 'MEDUSA_API_KEY']);
+  }
+  if (options.onlyMissingInventory) {
+    requireEnv(['MEDUSA_DB_URL']);
   }
 
   console.log('🚀 PIM -> Medusa migration (branch)');
@@ -148,9 +166,15 @@ async function main(): Promise<void> {
   });
 
   const medusaClient = new MedusaClient(configService);
-  const medusaSdk = createMedusaSdk(configService);
   const mappingRepo = new PimMedusaMappingRepository({ db: channelDb } as any);
   const syncService = new PimMedusaSyncService(medusaClient, mappingRepo);
+  const medusaDbClient = options.onlyMissingInventory
+    ? postgres(process.env.MEDUSA_DB_URL!, {
+      max: 3,
+      idle_timeout: 20,
+      connect_timeout: 10,
+    })
+    : null;
 
   let offset = options.offset;
   let processed = 0;
@@ -189,7 +213,7 @@ async function main(): Promise<void> {
 
         try {
           if (options.onlyMissingInventory) {
-            const check = await needsInventoryBackfill(medusaSdk, snapshot.masterId);
+            const check = await needsInventoryBackfill(medusaDbClient!, snapshot.masterId);
             if (!check.needsBackfill) {
               skipped += 1;
               console.log(`⏭️  [${seq}] ${snapshot.masterId} v${snapshot.version} (skip: ${check.reason})`);
@@ -202,7 +226,9 @@ async function main(): Promise<void> {
           }
 
           if (!options.dryRun) {
-            await syncService.syncFromSnapshot(snapshot);
+            await syncService.syncFromSnapshot(snapshot, {
+              skipCategorySync: options.onlyMissingInventory,
+            });
           }
           success += 1;
           console.log(`✅ [${seq}] ${snapshot.masterId} v${snapshot.version}`);
@@ -225,6 +251,9 @@ async function main(): Promise<void> {
     }
   } finally {
     await snapshotBuilder.close();
+    if (medusaDbClient) {
+      await medusaDbClient.end();
+    }
     await channelDbClient.end();
   }
 
