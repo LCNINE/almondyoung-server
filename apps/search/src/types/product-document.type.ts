@@ -6,21 +6,21 @@ export const PRODUCTS_INDEX_SETTINGS = {
   analysis: {
     tokenizer: {
       nori_tokenizer: {
-        type: 'nori_tokenizer',
-        decompound_mode: 'mixed',
+        type: 'nori_tokenizer' as const,
+        decompound_mode: 'mixed' as const,
         discard_punctuation: true,
       },
     },
     filter: {
       nori_posfilter: {
-        type: 'nori_part_of_speech',
+        type: 'nori_part_of_speech' as const,
         stoptags: ['E', 'IC', 'J', 'MAG', 'MM', 'SP', 'SSC', 'SSO', 'SC', 'SE', 'XPN', 'XSA', 'XSN', 'XSV', 'UNA', 'NA', 'VSV'],
       },
     },
     analyzer: {
       nori: {
-        type: 'custom',
-        tokenizer: 'nori_tokenizer',
+        type: 'custom' as const,
+        tokenizer: 'nori_tokenizer' as const,
         filter: ['nori_posfilter', 'lowercase'],
       },
     },
