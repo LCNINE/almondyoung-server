@@ -15,7 +15,7 @@ export const PRODUCTS_INDEX_SETTINGS: Record<string, any> = {
     filter: {
       nori_posfilter: {
         type: 'nori_part_of_speech' as const,
-        stoptags: ['E', 'IC', 'J', 'MAG', 'MM', 'SP', 'SSC', 'SSO', 'SC', 'SE', 'XPN', 'XSA', 'XSN', 'XSV', 'UNA', 'NA', 'VSV'],
+        stoptags: ['E', 'IC', 'J', 'MM', 'SP', 'SSC', 'SSO', 'SC', 'SE', 'XPN', 'XSA', 'XSN', 'XSV', 'VSV'],
       },
     },
     analyzer: {
