@@ -5,6 +5,7 @@ export type BackendService =
   | "membership"
   | "notification"
   | "pim"
+  | "search"
   | "users"
   | "wallet"
   | "wms"
@@ -20,6 +21,7 @@ const SERVICE_SUBDOMAINS: Record<BackendService, string> = {
   membership: "membership",
   notification: "notification",
   pim: "pim",
+  search: "search",
   wallet: "wallet",
   anly: "analytics",
   ugc: "ugc",
@@ -34,6 +36,7 @@ const LEGACY_SERVICE_PATHS: Record<BackendService, string> = {
   membership: "membership",
   notification: "notification",
   pim: "pim",
+  search: "search",
   wallet: "wallet",
   anly: "anly",
   ugc: "ugc",
@@ -48,6 +51,7 @@ const LOCAL_SERVICE_URLS: Record<BackendService, string> = {
   membership: "http://localhost:3001",
   notification: "http://localhost:5001",
   pim: "http://localhost:3020",
+  search: "http://localhost:3000",
   wallet: "http://localhost:5001",
   anly: "http://localhost:3040",
   ugc: "http://localhost:3031",

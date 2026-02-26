@@ -58,7 +58,7 @@ function CategoryLink({
               e.preventDefault()
               onToggle()
             }}
-            className="p-1 text-stone-500 hover:text-stone-900"
+            className="p-1 text-stone-700 hover:text-stone-900"
             aria-label={isExpanded ? "접기" : "펼치기"}
           >
             {isExpanded ? (

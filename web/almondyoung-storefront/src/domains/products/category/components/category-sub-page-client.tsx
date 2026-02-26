@@ -108,17 +108,15 @@ export function CategorySubPageClient({
                 <div>
                   <CustomDropdown
                     items={[
-                      { id: "ranking", label: "인기순" },
-                      { id: "price-asc", label: "낮은가격순" },
-                      { id: "price-desc", label: "높은가격순" },
-                      { id: "sales", label: "판매량순" },
                       { id: "newest", label: "최신순" },
+                      { id: "price_asc", label: "낮은가격순" },
+                      { id: "price_desc", label: "높은가격순" },
                     ]}
                   />
                 </div>
                 <button
                   onClick={openMobileFilter}
-                  className="flex h-10 items-center gap-2 font-['Pretendard'] text-sm font-medium text-gray-700 transition-colors"
+                  className="flex h-10 shrink-0 items-center gap-2 whitespace-nowrap font-['Pretendard'] text-sm font-medium text-gray-700 transition-colors"
                   aria-label="필터 열기"
                 >
                   필터
