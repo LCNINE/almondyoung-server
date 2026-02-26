@@ -25,7 +25,7 @@ export const PRODUCTS_INDEX_SETTINGS = {
       },
     },
   },
-} as const;
+};
 
 export const PRODUCTS_INDEX_MAPPINGS = {
   properties: {
