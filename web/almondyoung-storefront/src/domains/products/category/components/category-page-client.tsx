@@ -46,23 +46,56 @@ export interface CategoryInfo {
 
 // 정렬 옵션 매핑 (UI id -> Medusa order param)
 const SORT_OPTIONS = {
-  ranking: undefined, // 기본 정렬 (Medusa 기본)
-  "price-asc": "variants.calculated_price", // 가격 낮은순
-  "price-desc": "-variants.calculated_price", // 가격 높은순
-  sales: "-metadata.salesCount", // 판매량순
-  newest: "-created_at", // 최신순
+  newest: "-created_at",
+  price_asc: "variants.calculated_price",
+  price_desc: "-variants.calculated_price",
 } as const
 
-const SORT_LABELS = [
-  { id: "ranking", label: "아몬드영 랭킹 순" },
-  { id: "price-asc", label: "낮은가격순" },
-  { id: "price-desc", label: "높은가격순" },
-  { id: "sales", label: "판매량순" },
+const LEGACY_SORT_OPTIONS: Record<string, keyof typeof SORT_OPTIONS> = {
+  "price-asc": "price_asc",
+  "price-desc": "price_desc",
+  ranking: "newest",
+  sales: "newest",
+}
+
+const DEFAULT_SORT: keyof typeof SORT_OPTIONS = "newest"
+
+const SORT_LABELS: Array<{ id: keyof typeof SORT_OPTIONS; label: string }> = [
   { id: "newest", label: "최신순" },
+  { id: "price_asc", label: "낮은가격순" },
+  { id: "price_desc", label: "높은가격순" },
 ]
 
 const DEFAULT_ITEMS_PER_PAGE = 20
 const CACHE_TTL_MS = 30 * 60 * 1000
+
+const getApiOrderForSort = (sort: keyof typeof SORT_OPTIONS) => {
+  if (sort === "newest") {
+    return SORT_OPTIONS.newest
+  }
+
+  // Medusa Store API의 order는 상품 엔티티 필드 기준 정렬이라
+  // 계산 가격 정렬은 클라이언트에서 처리한다.
+  return undefined
+}
+
+const sortProductsByOption = (
+  items: ProductCardProps[],
+  sort: keyof typeof SORT_OPTIONS
+) => {
+  if (sort === "newest") {
+    return items
+  }
+
+  const sorted = [...items]
+  if (sort === "price_asc") {
+    sorted.sort((a, b) => a.price - b.price || a.id.localeCompare(b.id))
+    return sorted
+  }
+
+  sorted.sort((a, b) => b.price - a.price || a.id.localeCompare(b.id))
+  return sorted
+}
 
 type CategoryListCache = {
   ts: number
@@ -107,7 +140,14 @@ export function CategoryPageClient({
   const sentinelRef = useRef<HTMLDivElement | null>(null)
   const isLoadingMoreRef = useRef(false)
 
-  const currentSort = searchParams.get("sort") || "ranking"
+  const currentSort = useMemo(() => {
+    const sort = searchParams.get("sort")
+    if (!sort) return DEFAULT_SORT
+    if (sort in SORT_OPTIONS) {
+      return sort as keyof typeof SORT_OPTIONS
+    }
+    return LEGACY_SORT_OPTIONS[sort] ?? DEFAULT_SORT
+  }, [searchParams])
   const currentLimit = Number(searchParams.get("limit")) || DEFAULT_ITEMS_PER_PAGE
   const urlPage = Math.max(1, Number(searchParams.get("page")) || 1)
 
@@ -170,11 +210,11 @@ export function CategoryPageClient({
 
   // URL 파라미터 업데이트 함수
   const updateParams = useCallback(
-    (params: { sort?: string; limit?: number }) => {
+    (params: { sort?: keyof typeof SORT_OPTIONS; limit?: number }) => {
       const newParams = new URLSearchParams(searchParams.toString())
 
       if (params.sort !== undefined) {
-        if (params.sort === "ranking") {
+        if (params.sort === DEFAULT_SORT) {
           newParams.delete("sort")
         } else {
           newParams.set("sort", params.sort)
@@ -219,7 +259,7 @@ export function CategoryPageClient({
 
   const fetchProductsPage = useCallback(
     async (page: number) => {
-      const sortOrder = SORT_OPTIONS[currentSort as keyof typeof SORT_OPTIONS]
+      const sortOrder = getApiOrderForSort(currentSort)
       const result = await getProductList({
         page,
         limit: currentLimit,
@@ -227,8 +267,10 @@ export function CategoryPageClient({
         region_id: regionId,
         order: sortOrder,
       })
+
+      const mappedProducts = mapStoreProductsToCardProps(result.products)
       return {
-        products: mapStoreProductsToCardProps(result.products),
+        products: sortProductsByOption(mappedProducts, currentSort),
         total: result.count,
       }
     },
@@ -263,7 +305,7 @@ export function CategoryPageClient({
 
     // 기본 설정이면 서버 초기 데이터 사용
     if (
-      currentSort === "ranking" &&
+      currentSort === DEFAULT_SORT &&
       currentLimit === DEFAULT_ITEMS_PER_PAGE &&
       urlPage === 1 &&
       initialProducts.length > 0
@@ -286,7 +328,7 @@ export function CategoryPageClient({
           )
           const merged = results.flatMap((result) => result.products)
           const last = results[results.length - 1]
-          setProducts(merged)
+          setProducts(sortProductsByOption(merged, currentSort))
           setTotal(last?.total ?? 0)
           setCurrentPage(urlPage)
         } else {
@@ -374,7 +416,9 @@ export function CategoryPageClient({
       const { products: nextProducts, total: nextTotal } =
         await fetchProductsPage(nextPage)
 
-      setProducts((prev) => [...prev, ...nextProducts])
+      setProducts((prev) =>
+        sortProductsByOption([...prev, ...nextProducts], currentSort)
+      )
       setTotal(nextTotal)
       setCurrentPage(nextPage)
       setUrlPage(nextPage)
@@ -384,7 +428,7 @@ export function CategoryPageClient({
       isLoadingMoreRef.current = false
       setIsLoadingMore(false)
     }
-  }, [currentPage, fetchProductsPage, hasMore])
+  }, [currentPage, currentSort, fetchProductsPage, hasMore, setUrlPage])
 
   useEffect(() => {
     const target = sentinelRef.current
@@ -545,7 +589,11 @@ export function CategoryPageClient({
                   <CustomDropdown
                     items={SORT_LABELS}
                     defaultValue={currentSort}
-                    onSelect={(id) => updateParams({ sort: id })}
+                    onSelect={(id) =>
+                      updateParams({ sort: (id in SORT_OPTIONS
+                        ? (id as keyof typeof SORT_OPTIONS)
+                        : DEFAULT_SORT) })
+                    }
                   />
                   <button
                     onClick={openMobileFilter}

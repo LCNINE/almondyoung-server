@@ -176,11 +176,9 @@ export default function ClassPage() {
                 <div>
                   <CustomDropdown
                     items={[
-                      { id: "ranking", label: "인기순" },
-                      { id: "price-asc", label: "낮은가격순" },
-                      { id: "price-desc", label: "높은가격순" },
-                      { id: "sales", label: "판매량순" },
                       { id: "newest", label: "최신순" },
+                      { id: "price_asc", label: "낮은가격순" },
+                      { id: "price_desc", label: "높은가격순" },
                     ]}
                   />
                 </div>

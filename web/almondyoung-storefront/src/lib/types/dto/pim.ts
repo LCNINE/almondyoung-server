@@ -277,73 +277,42 @@ export interface CategoryPathResponseDto {
 // Search
 // ==========================================
 
-// 태그 필터 DTO
-export interface TagFilterDto {
-  groupId: string
-  valueIds: string[]
-}
+export const SEARCH_SORT_VALUES = [
+  "relevance",
+  "newest",
+  "price_asc",
+  "price_desc",
+] as const
 
-// 상품 태그 DTO
-export interface ProductTagDto {
-  group_id: string
-  group_name: string
-  value_id: string
-  value_name: string
-}
+export type SearchSort = (typeof SEARCH_SORT_VALUES)[number]
 
 // 검색 결과 상품 아이템
 export interface ProductSearchItemDto {
-  master_id: string
-  product_id: string
-  version: number
+  productId: string
+  versionId: string
   name: string
-  description: string | null
-  product_code: string | null
+  thumbnail: string | null
   brand: string | null
-  status: string
-  approval_status: string | null
-  price: number | null
-  category_id: string | null
-  category_name: string | null
-  category_path: string | null
-  tags: ProductTagDto[]
-  created_at: string
-  updated_at: string
-  _score?: number
+  minBasePrice: number | null
+  maxBasePrice: number | null
+  minMembershipPrice: number | null
+  maxMembershipPrice: number | null
+  categoryIds: string[]
+  score: number | null
 }
 
 // 페이지네이션 DTO
 export interface PaginationDto {
   page: number
-  limit: number
+  size: number
   total: number
   totalPages: number
-}
-
-// 태그 값 집계 DTO
-export interface TagValueAggregationDto {
-  value_id: string
-  value_name: string
-  count: number
-}
-
-// 태그 그룹 집계 DTO
-export interface TagGroupAggregationDto {
-  group_id: string
-  group_name: string
-  values: TagValueAggregationDto[]
-}
-
-// 검색 집계 DTO
-export interface SearchAggregationsDto {
-  tags?: TagGroupAggregationDto[]
 }
 
 // 검색 응답 DTO
 export interface ProductSearchResponseDto {
   items: ProductSearchItemDto[]
   pagination: PaginationDto
-  aggregations?: SearchAggregationsDto
 }
 
 // ==========================================

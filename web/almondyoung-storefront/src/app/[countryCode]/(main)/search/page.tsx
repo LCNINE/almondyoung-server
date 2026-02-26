@@ -7,8 +7,9 @@ interface SearchPageProps {
   searchParams: Promise<{
     q?: string
     page?: string
-    sort?: string
-    brands?: string
+    sort?: string | string[]
+    categoryIds?: string | string[]
+    brands?: string | string[]
     minPrice?: string
     maxPrice?: string
   }>
