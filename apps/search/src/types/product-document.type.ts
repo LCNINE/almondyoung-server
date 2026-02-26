@@ -1,6 +1,7 @@
 export const DEFAULT_PRODUCTS_INDEX = 'search_products';
 
-export const PRODUCTS_INDEX_SETTINGS = {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const PRODUCTS_INDEX_SETTINGS: Record<string, any> = {
   number_of_shards: 1,
   number_of_replicas: 1,
   analysis: {
@@ -25,7 +26,7 @@ export const PRODUCTS_INDEX_SETTINGS = {
       },
     },
   },
-} as const;
+};
 
 export const PRODUCTS_INDEX_MAPPINGS = {
   properties: {
