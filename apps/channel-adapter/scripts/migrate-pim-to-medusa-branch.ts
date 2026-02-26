@@ -226,7 +226,9 @@ async function main(): Promise<void> {
           }
 
           if (!options.dryRun) {
-            await syncService.syncFromSnapshot(snapshot);
+            await syncService.syncFromSnapshot(snapshot, {
+              skipCategorySync: options.onlyMissingInventory,
+            });
           }
           success += 1;
           console.log(`✅ [${seq}] ${snapshot.masterId} v${snapshot.version}`);
