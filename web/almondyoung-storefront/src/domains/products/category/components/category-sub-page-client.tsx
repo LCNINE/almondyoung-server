@@ -118,7 +118,7 @@ export function CategorySubPageClient({
                 </div>
                 <button
                   onClick={openMobileFilter}
-                  className="flex h-10 items-center gap-2 font-['Pretendard'] text-sm font-medium text-gray-700 transition-colors"
+                  className="flex h-10 shrink-0 items-center gap-2 whitespace-nowrap font-['Pretendard'] text-sm font-medium text-gray-700 transition-colors"
                   aria-label="필터 열기"
                 >
                   필터

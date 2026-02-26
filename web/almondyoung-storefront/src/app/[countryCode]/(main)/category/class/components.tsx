@@ -10,12 +10,12 @@ const CustomCheckboxIcon = ({ checked }: { checked: boolean }) => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
     <path
       d="M23.5 12C23.5 18.3513 18.3513 23.5 12 23.5C5.64873 23.5 0.5 18.3513 0.5 12C0.5 5.64873 5.64873 0.5 12 0.5C18.3513 0.5 23.5 5.64873 23.5 12Z"
-      stroke={checked ? "#5F0080" : "#ddd"} // 활성 시 색상 변경
+      stroke={checked ? "currentColor" : "#ddd"} // 활성 시 색상 변경
       fill="none"
     />
     <path
       d="M7 12.6667L10.3846 16L18 8.5"
-      stroke={checked ? "#5F0080" : "#ddd"} // 활성 시 색상 변경
+      stroke={checked ? "currentColor" : "#ddd"} // 활성 시 색상 변경
       strokeWidth="1.5"
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -145,7 +145,7 @@ export function MobileFilterSheet({
                 key={tab}
                 type="button"
                 onClick={() => setActiveTab(tab)}
-                className="py-3 text-sm font-medium whitespace-nowrap transition-colors data-[state=active]:font-bold data-[state=active]:text-purple-700 data-[state=inactive]:text-gray-500"
+                className="py-3 text-sm font-medium whitespace-nowrap transition-colors data-[state=active]:font-bold data-[state=active]:text-primary data-[state=inactive]:text-gray-500"
                 data-state={activeTab === tab ? "active" : "inactive"}
               >
                 {tab}
@@ -180,7 +180,9 @@ export function MobileFilterSheet({
                       onChange={() => handleToggle(item.label)}
                     />
                     {/* 가상 체크박스 UI */}
-                    <div className="h-5 w-5">
+                    <div
+                      className={`h-5 w-5 ${checkedItems[item.label] ? "text-primary" : "text-gray-300"}`}
+                    >
                       <CustomCheckboxIcon
                         checked={!!checkedItems[item.label]}
                       />
@@ -188,7 +190,7 @@ export function MobileFilterSheet({
                     <span
                       className={`text-sm ${
                         checkedItems[item.label]
-                          ? "font-semibold text-purple-700"
+                          ? "font-semibold text-primary"
                           : "text-gray-800"
                       }`}
                     >
@@ -220,7 +222,7 @@ export function MobileFilterSheet({
           <button
             type="button"
             onClick={handleApply}
-            className="h-12 flex-1 rounded-md bg-purple-700 px-6 text-base font-semibold text-white transition-colors hover:bg-purple-800"
+            className="bg-primary text-primary-foreground hover:bg-primary/90 h-12 flex-1 rounded-md px-6 text-base font-semibold transition-colors"
           >
             {selectedCount}개 상품 보기
           </button>

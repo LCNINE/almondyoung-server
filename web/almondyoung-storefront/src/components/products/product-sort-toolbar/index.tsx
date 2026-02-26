@@ -1,6 +1,3 @@
-// [참고] ChevronDown은 이제 데스크탑 '60개씩 보기'에만 사용됩니다.
-import { ChevronDown } from "lucide-react"
-
 // 정렬 옵션 데이터
 const sortOptions = [
   // [참고] 시안의 '추천 순'은 데이터의 '아몬드영 랭킹 순'으로 간주합니다.
@@ -28,17 +25,17 @@ export default function ProductSortToolbar({
   }
 
   return (
-    <div className="mb-[20px] flex items-center self-stretch py-2.5 md:justify-between md:bg-gray-100 md:px-3.5">
+    <div className="mb-[20px] self-stretch py-2.5 md:bg-gray-100 md:px-3.5">
       {/* --- 1. 정렬 옵션 (Left) --- */}
 
       {/* [데스크탑 뷰] */}
-      <div className="hidden items-center divide-x divide-gray-300 md:flex">
+      <div className="hidden flex-wrap items-center gap-x-4 gap-y-2 md:flex lg:flex-nowrap lg:divide-x lg:divide-gray-300">
         {sortOptions.map((option, index) => (
           <button
             key={option.id}
             type="button"
             onClick={() => handleSortChange(option.id)}
-            className={`font-['Pretendard'] text-base ${index > 0 ? "pl-4" : ""} ${index < sortOptions.length - 1 ? "pr-4" : ""} ${
+            className={`shrink-0 whitespace-nowrap font-['Pretendard'] text-base ${index > 0 ? "lg:pl-4" : ""} ${index < sortOptions.length - 1 ? "lg:pr-4" : ""} ${
               activeSort === option.id
                 ? "font-bold text-stone-900" // 활성
                 : "font-normal text-gray-500 hover:text-stone-900" // 비활성
@@ -49,22 +46,6 @@ export default function ProductSortToolbar({
           </button>
         ))}
       </div>
-
-      {/* --- 2. 보기 옵션 (Right - 데스크탑 전용) --- */}
-      <button
-        type="button"
-        className="hidden flex-shrink-0 items-center gap-1.5 md:flex"
-        aria-haspopup="true"
-        aria-expanded="false"
-      >
-        <span className="font-['Pretendard'] text-base font-normal text-gray-700">
-          60개씩 보기
-        </span>
-        <ChevronDown
-          className="h-5 w-5 flex-shrink-0 text-gray-500"
-          strokeWidth={2.5}
-        />
-      </button>
     </div>
   )
 }
