@@ -10,6 +10,7 @@ import {
   ValidateNested,
   IsArray,
 } from 'class-validator';
+import { RefundResponseDto } from '../../refunds/dto';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PaymentIntentStatus } from '../../schema';
@@ -169,6 +170,34 @@ export class TossApproveDto {
   @IsInt()
   @Min(1)
   amount: number;
+}
+
+// ─── Refund by Intent ─────────────────────────────────────────────────────────
+
+export class RefundByIntentDto {
+  @ApiProperty({ description: 'Amount to refund (positive integer)', minimum: 1 })
+  @IsInt()
+  @Min(1)
+  amount: number;
+
+  @ApiPropertyOptional({ maxLength: 128 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  reasonCode?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  reasonMessage?: string;
+}
+
+export class RefundByIntentResponseDto {
+  @ApiProperty()
+  intentId: string;
+
+  @ApiProperty({ type: [RefundResponseDto] })
+  refunds: RefundResponseDto[];
 }
 
 // ─── Response ─────────────────────────────────────────────────────────────────

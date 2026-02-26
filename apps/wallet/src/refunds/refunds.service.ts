@@ -180,6 +180,47 @@ export class RefundsService {
     return this.findByIdOrThrow(refund.id);
   }
 
+  async createByIntent(
+    intentId: string,
+    dto: { amount: number; reasonCode?: string; reasonMessage?: string },
+  ): Promise<Refund[]> {
+    const refundableCharges = await this.chargesService.findRefundableByIntent(intentId);
+    if (refundableCharges.length === 0) {
+      throw new NotFoundException({
+        error: 'REFUNDABLE_CHARGE_NOT_FOUND',
+        message: `No refundable charge found for intent: ${intentId}`,
+      });
+    }
+
+    const totalAvailable = refundableCharges.reduce((s, c) => s + c.amount, 0);
+    if (dto.amount > totalAvailable) {
+      throw new BadRequestException({
+        error: 'REFUND_AMOUNT_EXCEEDS_TOTAL',
+        message: `Refund amount (${dto.amount}) exceeds total available (${totalAvailable})`,
+      });
+    }
+
+    let remaining = dto.amount;
+    const results: Refund[] = [];
+    for (let i = 0; i < refundableCharges.length; i++) {
+      const charge = refundableCharges[i]!;
+      const isLast = i === refundableCharges.length - 1;
+      const share = isLast
+        ? remaining
+        : Math.round(dto.amount * (charge.amount / totalAvailable));
+      if (share <= 0) continue;
+      const refund = await this.create({
+        chargeId: charge.id,
+        amount: share,
+        reasonCode: dto.reasonCode,
+        reasonMessage: dto.reasonMessage,
+      });
+      results.push(refund);
+      remaining -= share;
+    }
+    return results;
+  }
+
   async findByIdOrThrow(id: string): Promise<Refund> {
     const rows = await this.dbService.db
       .select()

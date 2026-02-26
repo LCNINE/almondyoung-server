@@ -12,9 +12,12 @@ import {
 } from './types/product-document.type';
 import { compactText } from './utils/text.utils';
 
+type SearchStage = 'strict' | 'fallback';
+
 @Injectable()
 export class ProductIndexService implements OnModuleInit {
   private readonly logger = new Logger(ProductIndexService.name);
+  private readonly keywordResultPoolLimit = 200;
   private initPromise: Promise<void> | null = null;
 
   constructor(private readonly openSearchService: OpenSearchService) {}
@@ -60,30 +63,60 @@ export class ProductIndexService implements OnModuleInit {
   async searchProducts(
     query: ProductSearchQueryDto,
   ): Promise<ProductSearchResponseDto> {
-    const client = this.openSearchService.getClient();
     const index = this.openSearchService.getProductsIndex();
     await this.ensureProductsIndex();
 
     const page = query.page || 1;
     const size = query.size || 20;
     const from = (page - 1) * size;
-
-    const searchQuery = this.buildQuery(query);
     const sort = this.buildSort(query);
+    const hasKeyword = Boolean(query.q?.trim());
 
-    const response: any = await client.search({
-      index,
-      body: {
-        query: searchQuery,
+    let resultHits: any[] = [];
+    let total = 0;
+
+    if (hasKeyword) {
+      const [strictResponse, fallbackResponse] = await Promise.all([
+        this.executeSearch({
+          index,
+          query: this.buildQuery(query, 'strict'),
+          sort,
+          from: 0,
+          size: this.keywordResultPoolLimit,
+        }),
+        this.executeSearch({
+          index,
+          query: this.buildQuery(query, 'fallback'),
+          sort,
+          from: 0,
+          size: this.keywordResultPoolLimit,
+        }),
+      ]);
+
+      const strictHits = strictResponse.body.hits.hits as any[];
+      const fallbackHits = fallbackResponse.body.hits.hits as any[];
+      const mergedHits = this.mergeHitsWithPriority(
+        strictHits,
+        fallbackHits,
+        this.keywordResultPoolLimit,
+      );
+
+      total = mergedHits.length;
+      resultHits = mergedHits.slice(from, from + size);
+    } else {
+      const response = await this.executeSearch({
+        index,
+        query: this.buildQuery(query, 'strict'),
         sort,
         from,
         size,
-        track_total_hits: true,
-      },
-    });
+      });
+      const hits = response.body.hits;
+      total = this.extractTotal(hits.total);
+      resultHits = hits.hits as any[];
+    }
 
-    const hits = response.body.hits;
-    const items: ProductSearchItemDto[] = hits.hits.map((hit: any) => {
+    const items: ProductSearchItemDto[] = resultHits.map((hit: any) => {
       const source = hit._source as SearchProductDocument;
       return {
         productId: source.master_id,
@@ -99,11 +132,6 @@ export class ProductIndexService implements OnModuleInit {
         score: hit._score ?? null,
       };
     });
-
-    const total =
-      typeof hits.total === 'object'
-        ? hits.total.value
-        : (hits.total ?? 0);
 
     return {
       items,
@@ -147,60 +175,94 @@ export class ProductIndexService implements OnModuleInit {
     }
   }
 
-  private buildQuery(query: ProductSearchQueryDto): any {
+  private async executeSearch(params: {
+    index: string;
+    query: any;
+    sort: any[];
+    from: number;
+    size: number;
+  }): Promise<any> {
+    const client = this.openSearchService.getClient();
+    return client.search({
+      index: params.index,
+      body: {
+        query: params.query,
+        sort: params.sort,
+        from: params.from,
+        size: params.size,
+        track_total_hits: true,
+      },
+    });
+  }
+
+  private extractTotal(totalField: unknown): number {
+    if (typeof totalField === 'object' && totalField !== null) {
+      const value = (totalField as { value?: unknown }).value;
+      return typeof value === 'number' ? value : 0;
+    }
+    return typeof totalField === 'number' ? totalField : 0;
+  }
+
+  private mergeHitsWithPriority(
+    primaryHits: any[],
+    secondaryHits: any[],
+    limit: number,
+  ): any[] {
+    const merged: any[] = [];
+    const seen = new Set<string>();
+
+    const pushHit = (hit: any): void => {
+      const key = this.getHitKey(hit);
+      if (!key || seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      merged.push(hit);
+    };
+
+    for (const hit of primaryHits) {
+      pushHit(hit);
+      if (merged.length >= limit) {
+        return merged;
+      }
+    }
+
+    for (const hit of secondaryHits) {
+      pushHit(hit);
+      if (merged.length >= limit) {
+        return merged;
+      }
+    }
+
+    return merged;
+  }
+
+  private getHitKey(hit: any): string | null {
+    const source = hit?._source as Partial<SearchProductDocument> | undefined;
+    if (typeof hit?._id === 'string') {
+      return hit._id;
+    }
+    if (source?.master_id && source?.version_id) {
+      return `${source.master_id}:${source.version_id}`;
+    }
+    if (source?.master_id) {
+      return source.master_id;
+    }
+    return null;
+  }
+
+  private buildQuery(query: ProductSearchQueryDto, stage: SearchStage): any {
     const q = query.q?.trim();
     const compactQ = compactText(q ?? '');
     const mustClauses: any[] = [];
-    const filterClauses: any[] = [{ term: { status: 'active' } }];
+    const filterClauses = this.buildFilterClauses(query);
 
     if (q) {
-      mustClauses.push({
-        bool: {
-          should: [
-            {
-              multi_match: {
-                query: q,
-                fields: ['name^4', 'description^2', 'brand^2', 'category_names', 'tags'],
-                fuzziness: 'AUTO',
-                operator: 'or',
-              },
-            },
-            {
-              term: {
-                name_compact: {
-                  value: compactQ,
-                  boost: 5,
-                },
-              },
-            },
-          ],
-          minimum_should_match: 1,
-        },
-      });
-    }
-
-    if (query.categoryIds?.length) {
-      filterClauses.push({
-        terms: { category_ids: query.categoryIds },
-      });
-    }
-
-    if (query.brands?.length) {
-      filterClauses.push({
-        terms: { 'brand.keyword': query.brands },
-      });
-    }
-
-    if (query.minPrice !== undefined) {
-      filterClauses.push({
-        range: { max_base_price: { gte: query.minPrice } },
-      });
-    }
-
-    if (query.maxPrice !== undefined) {
-      filterClauses.push({
-        range: { min_base_price: { lte: query.maxPrice } },
-      });
+      if (stage === 'strict') {
+        mustClauses.push(this.buildStrictTextQuery(q, compactQ));
+      } else {
+        mustClauses.push(this.buildFallbackTextQuery(q, compactQ));
+      }
     }
 
     return {
@@ -209,6 +271,156 @@ export class ProductIndexService implements OnModuleInit {
         filter: filterClauses,
       },
     };
+  }
+
+  private buildFilterClauses(query: ProductSearchQueryDto): any[] {
+    const filters: any[] = [{ term: { status: 'active' } }];
+
+    if (query.categoryIds?.length) {
+      filters.push({
+        terms: { category_ids: query.categoryIds },
+      });
+    }
+
+    if (query.brands?.length) {
+      filters.push({
+        terms: { 'brand.keyword': query.brands },
+      });
+    }
+
+    if (query.minPrice !== undefined) {
+      filters.push({
+        range: { max_base_price: { gte: query.minPrice } },
+      });
+    }
+
+    if (query.maxPrice !== undefined) {
+      filters.push({
+        range: { min_base_price: { lte: query.maxPrice } },
+      });
+    }
+
+    return filters;
+  }
+
+  private buildStrictTextQuery(q: string, compactQ: string): any {
+    return {
+      bool: {
+        should: [
+          {
+            term: {
+              name_compact: {
+                value: compactQ,
+                boost: 30,
+              },
+            },
+          },
+          {
+            match_phrase: {
+              name: {
+                query: q,
+                boost: 12,
+              },
+            },
+          },
+          {
+            multi_match: {
+              query: q,
+              fields: ['name^8', 'brand^5', 'category_names^3', 'tags^3', 'description'],
+              operator: 'or',
+              minimum_should_match: '100%',
+            },
+          },
+          {
+            match_phrase_prefix: {
+              name: {
+                query: q,
+                boost: 4,
+                max_expansions: 20,
+              },
+            },
+          },
+        ],
+        minimum_should_match: 1,
+      },
+    };
+  }
+
+  private buildFallbackTextQuery(q: string, compactQ: string): any {
+    const compactLength = compactQ.length;
+    const minimumShouldMatch = this.resolveFallbackMinimumShouldMatch(q, compactQ);
+
+    const multiMatch: Record<string, unknown> = {
+      query: q,
+      fields: ['name^6', 'brand^4', 'category_names^2', 'tags^2', 'description'],
+      operator: 'or',
+      minimum_should_match: minimumShouldMatch,
+    };
+
+    if (compactLength >= 3) {
+      multiMatch.fuzziness = 1;
+      multiMatch.prefix_length =
+        compactLength >= 8 ? 3 : compactLength >= 5 ? 2 : 1;
+      multiMatch.max_expansions = 25;
+      multiMatch.fuzzy_transpositions = false;
+    }
+
+    return {
+      bool: {
+        should: [
+          { multi_match: multiMatch },
+          {
+            term: {
+              name_compact: {
+                value: compactQ,
+                boost: 20,
+              },
+            },
+          },
+          {
+            match_phrase_prefix: {
+              name: {
+                query: q,
+                boost: 2,
+                max_expansions: 20,
+              },
+            },
+          },
+        ],
+        minimum_should_match: 1,
+      },
+    };
+  }
+
+  private resolveFallbackMinimumShouldMatch(
+    q: string,
+    compactQ: string,
+  ): string {
+    const termCount = q
+      .trim()
+      .split(/\s+/)
+      .filter((term) => term.length > 0).length;
+
+    if (termCount >= 5) {
+      return '60%';
+    }
+    if (termCount === 4) {
+      return '75%';
+    }
+    if (termCount === 3) {
+      return '2';
+    }
+    if (termCount === 2) {
+      return '2';
+    }
+
+    if (compactQ.length >= 8) {
+      return '70%';
+    }
+    if (compactQ.length >= 5) {
+      return '80%';
+    }
+    return '100%';
   }
 
   private buildSort(query: ProductSearchQueryDto): any[] {

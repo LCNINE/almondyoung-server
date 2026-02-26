@@ -10,18 +10,25 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PaymentIntentsService } from './payment-intents.service';
+import { RefundsService } from '../refunds/refunds.service';
 import {
   ConfirmPaymentIntentDto,
   CreatePaymentIntentDto,
   PaymentIntentResponseDto,
+  RefundByIntentDto,
+  RefundByIntentResponseDto,
   TossApproveDto,
 } from './dto';
+import { RefundResponseDto } from '../refunds/dto';
 import { AuthenticatedRequest } from '../wallet.module';
 
 @ApiTags('Payment Intents')
 @Controller('v1/payment-intents')
 export class PaymentIntentsController {
-  constructor(private readonly service: PaymentIntentsService) {}
+  constructor(
+    private readonly service: PaymentIntentsService,
+    private readonly refundsService: RefundsService,
+  ) {}
 
   @Post()
   @HttpCode(201)
@@ -111,6 +118,42 @@ export class PaymentIntentsController {
     await this.service.cancel(id);
     const updated = await this.service.findByIdOrThrow(id);
     return this.toResponse(updated);
+  }
+
+  @Post(':id/refund')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Refund a payment intent (API-key authenticated)' })
+  async refund(
+    @Param('id') id: string,
+    @Body() dto: RefundByIntentDto,
+  ): Promise<RefundByIntentResponseDto> {
+    await this.service.findByIdOrThrow(id);
+    const refunds = await this.refundsService.createByIntent(id, dto);
+    return { intentId: id, refunds: refunds.map((r) => this.toRefundResponse(r)) };
+  }
+
+  private toRefundResponse(refund: {
+    id: string;
+    chargeId: string;
+    intentId: string;
+    status: string;
+    amount: number;
+    currency: string;
+    reasonCode: string | null;
+    reasonMessage: string | null;
+    createdAt: Date;
+  }): RefundResponseDto {
+    return {
+      id: refund.id,
+      chargeId: refund.chargeId,
+      intentId: refund.intentId,
+      status: refund.status as any,
+      amount: refund.amount,
+      currency: refund.currency,
+      reasonCode: refund.reasonCode,
+      reasonMessage: refund.reasonMessage,
+      createdAt: refund.createdAt,
+    };
   }
 
   private toResponse(

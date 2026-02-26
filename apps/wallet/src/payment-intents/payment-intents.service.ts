@@ -153,6 +153,9 @@ export class PaymentIntentsService {
             payableAmount: intent.payableAmount,
             currency: intent.currency,
             occurredAt: now,
+            extra: {
+              medusa_session_id: (intent.metadata as Record<string, unknown>)?.medusa_session_id,
+            },
           }),
         }),
       );
