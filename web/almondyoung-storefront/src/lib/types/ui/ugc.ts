@@ -1,2 +1,5 @@
-// dto에서 re-export
-export type { ReviewRatingFilter } from "@/lib/types/dto/ugc"
+import { ReviewResponseDto } from "@/lib/types/dto/ugc"
+
+interface ReviewDetail extends ReviewResponseDto {}
+
+export type { ReviewDetail }

@@ -14,13 +14,14 @@ import {
 } from "@/components/ui/alert-dialog"
 import { useMembershipPricing } from "@/hooks/use-membership-pricing"
 import type { ProductDetail } from "@lib/types/ui/product"
-import { Heart, MessageCircle } from "lucide-react"
+import { AnimatedHeart } from "@/components/shared/animated-heart"
 import { usePathname, useRouter } from "next/navigation"
 import { useState } from "react"
 import { ProductOptionSelector } from "./product-option-selector"
 import { ProductPriceDisplay } from "./product-price-display"
 import { ProductRatingDisplay } from "./product-rating-display"
 import { ProductShippingInfo } from "./product-shipping-info"
+import { Button } from "@/components/ui/button"
 
 type SelectedCartOption = {
   id: string
@@ -182,20 +183,15 @@ export function ProductSidebarPurchase({
             </div>
 
             <div className="flex gap-2">
-              <CustomButton
-                variant="outline"
-                color="secondary"
-                size="md"
+              <Button
+                variant="ghost"
                 onClick={() => onWishlistToggle(product.id)}
                 disabled={isWishlistPending}
-                aria-label="찜하기"
+                aria-label="관심 상품 등록"
+                className="cursor-pointer hover:bg-transparent"
               >
-                <Heart
-                  className={`h-7 w-7 ${
-                    isWishlisted ? "fill-red-500 text-red-500" : "text-gray-300"
-                  }`}
-                />
-              </CustomButton>
+                <AnimatedHeart isActive={isWishlisted} className="h-7 w-7" />
+              </Button>
               {/* <CustomButton
                 variant="outline"
                 color="secondary"

@@ -2,7 +2,7 @@
 
 import { ProductCard } from "@/components/products/prodcut-card"
 import type { ProductCardProps } from "@/lib/types/ui/product"
-import { isProductSoldOut } from "@/lib/utils"
+import { isProductSoldOut } from "@/lib/utils/is-product-sold-out"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { ProductGrid } from "../../../../../components/products/product-grid"

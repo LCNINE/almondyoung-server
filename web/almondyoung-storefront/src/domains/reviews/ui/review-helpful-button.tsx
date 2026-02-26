@@ -1,25 +1,62 @@
 "use client"
 
-import { useState } from "react"
+import { ApiAuthError } from "@/lib/api/api-error"
+import { toggleReviewReaction } from "@/lib/api/ugc"
+import { siteConfig } from "@/lib/config/site"
+import { getPathWithoutCountry } from "@/lib/utils/get-path-without-country"
+import { useRef, useState } from "react"
 
 type Props = {
+  countryCode: string
+  reviewId: string
   initialLikeCount: number
-  onLike?: (liked: boolean) => void
 }
 
 /**
  * @description '도움이 되었어요' 버튼 및 좋아요 카운트
- * 컴포넌트 내부에 '좋아요' 상태를 두어 독립적으로 동작
  */
-export function ReviewHelpfulButton({ initialLikeCount, onLike }: Props) {
+export function ReviewHelpfulButton({
+  countryCode,
+  reviewId,
+  initialLikeCount,
+}: Props) {
   const [liked, setLiked] = useState(false)
   const [likeCount, setLikeCount] = useState(initialLikeCount)
+  const isPending = useRef(false)
 
-  const handleLikeClick = () => {
-    const newLiked = !liked
-    setLiked(newLiked)
-    setLikeCount(newLiked ? likeCount + 1 : likeCount - 1)
-    onLike?.(newLiked)
+  const handleLikeClick = async () => {
+    if (isPending.current) return
+    isPending.current = true
+
+    const prevLiked = liked
+
+    setLiked(!liked)
+
+    try {
+      const result = await toggleReviewReaction(reviewId, { type: "helpful" })
+
+      if (result) {
+        setLiked(result.marked)
+        setLikeCount(result.count)
+      }
+    } catch (error) {
+      setLiked(prevLiked)
+
+      const message =
+        error instanceof ApiAuthError ? error.message : String(error)
+
+      if (message.includes("Unauthorized")) {
+        const confirmed = window.confirm(
+          "로그인이 필요해요. 로그인 페이지로 이동하시겠어요?"
+        )
+        if (confirmed) {
+          const path = getPathWithoutCountry(countryCode)
+          window.location.href = `/${countryCode}${siteConfig.auth.loginUrl}?redirect_to=${encodeURIComponent(path)}`
+        }
+      }
+    } finally {
+      isPending.current = false
+    }
   }
 
   return (
