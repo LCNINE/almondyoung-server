@@ -1,5 +1,9 @@
-import { GenericPageSkeleton } from "@/components/skeletons/page-skeletons"
+import { Spinner } from "@/components/shared/spinner"
 
 export default function Loading() {
-  return <GenericPageSkeleton />
+  return (
+    <div className="flex h-screen items-center justify-center">
+      <Spinner size="lg" color="blue" />
+    </div>
+  )
 }
