@@ -4,7 +4,7 @@ import { CategoryCircleTabs } from "@/components/category/category-circle-tabs"
 import { BannerCarousel } from "@/components/layout/components/banner/banner-carousel"
 import { ProductGrid } from "@/components/products/product-grid"
 import ProductFilterSidebar from "@/components/products/product-filter-sidebar"
-import { SlidersHorizontal, ChevronDown } from "lucide-react"
+import { SlidersHorizontal } from "lucide-react"
 import { overlay } from "overlay-kit"
 import { MobileFilterSheet } from "./mobile-filter-sheet"
 import CustomDropdown from "@components/dropdown"
@@ -59,12 +59,6 @@ const SORT_LABELS = [
   { id: "price-desc", label: "높은가격순" },
   { id: "sales", label: "판매량순" },
   { id: "newest", label: "최신순" },
-]
-
-const ITEMS_PER_PAGE_OPTIONS = [
-  { value: "20", label: "20개씩 보기" },
-  { value: "40", label: "40개씩 보기" },
-  { value: "60", label: "60개씩 보기" },
 ]
 
 const DEFAULT_ITEMS_PER_PAGE = 20
@@ -555,7 +549,7 @@ export function CategoryPageClient({
                   />
                   <button
                     onClick={openMobileFilter}
-                    className="flex h-10 items-center gap-2 font-['Pretendard'] text-sm font-medium text-gray-700 transition-colors"
+                    className="flex h-10 shrink-0 items-center gap-2 whitespace-nowrap font-['Pretendard'] text-sm font-medium text-gray-700 transition-colors"
                     aria-label="필터 열기"
                   >
                     필터
@@ -564,19 +558,19 @@ export function CategoryPageClient({
                 </div>
               </div>
 
-              {/* 데스크톱: 정렬 툴바 + n개씩 보기 */}
-              <div className="mb-5 hidden items-center justify-between bg-gray-100 px-3.5 py-2.5 md:flex">
+              {/* 데스크톱: 정렬 툴바 */}
+              <div className="mb-5 hidden bg-gray-100 px-3.5 py-2.5 md:block">
                 {/* 정렬 옵션 */}
-                <div className="flex items-center divide-x divide-gray-300">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 lg:flex-nowrap lg:divide-x lg:divide-gray-300">
                   {SORT_LABELS.map((option, index) => (
                     <button
                       key={option.id}
                       type="button"
                       onClick={() => updateParams({ sort: option.id })}
                       className={cn(
-                        "font-['Pretendard'] text-base",
-                        index > 0 ? "pl-4" : "",
-                        index < SORT_LABELS.length - 1 ? "pr-4" : "",
+                        "shrink-0 whitespace-nowrap font-['Pretendard'] text-base",
+                        index > 0 ? "lg:pl-4" : "",
+                        index < SORT_LABELS.length - 1 ? "lg:pr-4" : "",
                         currentSort === option.id
                           ? "font-bold text-stone-900"
                           : "font-normal text-gray-500 hover:text-stone-900"
@@ -586,22 +580,6 @@ export function CategoryPageClient({
                       {option.label}
                     </button>
                   ))}
-                </div>
-
-                {/* n개씩 보기 드롭다운 */}
-                <div className="relative">
-                  <select
-                    value={currentLimit}
-                    onChange={(e) => updateParams({ limit: Number(e.target.value) })}
-                    className="appearance-none bg-transparent pr-6 font-['Pretendard'] text-base font-normal text-gray-700 focus:outline-none"
-                  >
-                    {ITEMS_PER_PAGE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-0 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-500" />
                 </div>
               </div>
             </section>
