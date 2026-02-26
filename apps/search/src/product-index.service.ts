@@ -34,7 +34,7 @@ export class ProductIndexService implements OnModuleInit {
     await client.index({
       index,
       id: masterId,
-      document,
+      body: document,
     });
   }
 
@@ -73,14 +73,17 @@ export class ProductIndexService implements OnModuleInit {
 
     const response: any = await client.search({
       index,
-      query: searchQuery,
-      sort,
-      from,
-      size,
-      track_total_hits: true,
+      body: {
+        query: searchQuery,
+        sort,
+        from,
+        size,
+        track_total_hits: true,
+      },
     });
 
-    const items: ProductSearchItemDto[] = response.hits.hits.map((hit: any) => {
+    const hits = response.body.hits;
+    const items: ProductSearchItemDto[] = hits.hits.map((hit: any) => {
       const source = hit._source as SearchProductDocument;
       return {
         productId: source.master_id,
@@ -98,9 +101,9 @@ export class ProductIndexService implements OnModuleInit {
     });
 
     const total =
-      typeof response.hits.total === 'object'
-        ? response.hits.total.value
-        : (response.hits.total ?? 0);
+      typeof hits.total === 'object'
+        ? hits.total.value
+        : (hits.total ?? 0);
 
     return {
       items,
@@ -123,14 +126,16 @@ export class ProductIndexService implements OnModuleInit {
   private async initIndex(): Promise<void> {
     const client = this.openSearchService.getClient();
     const index = this.openSearchService.getProductsIndex();
-    const exists = await client.indices.exists({ index });
+    const existsResponse = await client.indices.exists({ index });
 
-    if (!exists) {
+    if (!existsResponse.body) {
       try {
         await client.indices.create({
           index,
-          settings: PRODUCTS_INDEX_SETTINGS,
-          mappings: PRODUCTS_INDEX_MAPPINGS,
+          body: {
+            settings: PRODUCTS_INDEX_SETTINGS,
+            mappings: PRODUCTS_INDEX_MAPPINGS,
+          },
         });
         this.logger.log(`Created products index: ${index}`);
       } catch (error) {

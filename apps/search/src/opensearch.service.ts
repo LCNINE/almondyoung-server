@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Client } from '@elastic/elasticsearch';
+import { Client } from '@opensearch-project/opensearch';
 import { DEFAULT_PRODUCTS_INDEX } from './types/product-document.type';
 
 @Injectable()
@@ -31,7 +31,7 @@ export class OpenSearchService implements OnModuleInit {
   async onModuleInit(): Promise<void> {
     try {
       const health = await this.client.cluster.health();
-      this.logger.log(`OpenSearch connected: ${health.status}`);
+      this.logger.log(`OpenSearch connected: ${health.body.status}`);
     } catch (error) {
       this.logger.error('Failed to connect to OpenSearch', error.stack);
       throw error;
