@@ -24,6 +24,7 @@ import { getProductList } from "@lib/api/medusa/products"
 import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
 import { cn } from "@lib/utils"
 import { useUser } from "@/contexts/user-context"
+import { useMembershipPricing } from "@/hooks/use-membership-pricing"
 import { Spinner } from "@/components/shared/spinner"
 import Link from "next/link"
 import {
@@ -81,19 +82,39 @@ const getApiOrderForSort = (sort: keyof typeof SORT_OPTIONS) => {
 
 const sortProductsByOption = (
   items: ProductCardProps[],
-  sort: keyof typeof SORT_OPTIONS
+  sort: keyof typeof SORT_OPTIONS,
+  isMembershipPricing: boolean
 ) => {
   if (sort === "newest") {
     return items
   }
 
+  const getSortPrice = (item: ProductCardProps) => {
+    const regularPrice = item.originalPrice > 0 ? item.originalPrice : item.price
+    const membershipPrice = item.debugPrices?.membershipPrice
+
+    if (
+      isMembershipPricing &&
+      typeof membershipPrice === "number" &&
+      membershipPrice > 0
+    ) {
+      return membershipPrice
+    }
+
+    return regularPrice
+  }
+
   const sorted = [...items]
   if (sort === "price_asc") {
-    sorted.sort((a, b) => a.price - b.price || a.id.localeCompare(b.id))
+    sorted.sort(
+      (a, b) => getSortPrice(a) - getSortPrice(b) || a.id.localeCompare(b.id)
+    )
     return sorted
   }
 
-  sorted.sort((a, b) => b.price - a.price || a.id.localeCompare(b.id))
+  sorted.sort(
+    (a, b) => getSortPrice(b) - getSortPrice(a) || a.id.localeCompare(b.id)
+  )
   return sorted
 }
 
@@ -136,6 +157,7 @@ export function CategoryPageClient({
   const searchParams = useSearchParams()
   const [isPending, startTransition] = useTransition()
   const { user } = useUser()
+  const { isMembershipPricing } = useMembershipPricing()
   const isLoggedIn = !!user
   const sentinelRef = useRef<HTMLDivElement | null>(null)
   const isLoadingMoreRef = useRef(false)
@@ -270,11 +292,15 @@ export function CategoryPageClient({
 
       const mappedProducts = mapStoreProductsToCardProps(result.products)
       return {
-        products: sortProductsByOption(mappedProducts, currentSort),
+        products: sortProductsByOption(
+          mappedProducts,
+          currentSort,
+          isMembershipPricing
+        ),
         total: result.count,
       }
     },
-    [categoryIds, currentLimit, currentSort, regionId]
+    [categoryIds, currentLimit, currentSort, isMembershipPricing, regionId]
   )
 
   // 스크롤 위치 복원 (memoryCache에서 초기화된 경우)
@@ -328,7 +354,9 @@ export function CategoryPageClient({
           )
           const merged = results.flatMap((result) => result.products)
           const last = results[results.length - 1]
-          setProducts(sortProductsByOption(merged, currentSort))
+          setProducts(
+            sortProductsByOption(merged, currentSort, isMembershipPricing)
+          )
           setTotal(last?.total ?? 0)
           setCurrentPage(urlPage)
         } else {
@@ -351,6 +379,7 @@ export function CategoryPageClient({
     fetchProductsPage,
     initialProducts,
     initialTotal,
+    isMembershipPricing,
     urlPage,
   ])
 
@@ -417,7 +446,11 @@ export function CategoryPageClient({
         await fetchProductsPage(nextPage)
 
       setProducts((prev) =>
-        sortProductsByOption([...prev, ...nextProducts], currentSort)
+        sortProductsByOption(
+          [...prev, ...nextProducts],
+          currentSort,
+          isMembershipPricing
+        )
       )
       setTotal(nextTotal)
       setCurrentPage(nextPage)
@@ -428,7 +461,14 @@ export function CategoryPageClient({
       isLoadingMoreRef.current = false
       setIsLoadingMore(false)
     }
-  }, [currentPage, currentSort, fetchProductsPage, hasMore, setUrlPage])
+  }, [
+    currentPage,
+    currentSort,
+    fetchProductsPage,
+    hasMore,
+    isMembershipPricing,
+    setUrlPage,
+  ])
 
   useEffect(() => {
     const target = sentinelRef.current
