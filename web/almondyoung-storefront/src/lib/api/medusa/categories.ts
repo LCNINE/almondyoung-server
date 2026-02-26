@@ -77,6 +77,7 @@ export const getCategoryTree = async (): Promise<
         next: {
           tags: ["product-categories"],
         },
+        cache: "force-cache",
       }
     )
 
