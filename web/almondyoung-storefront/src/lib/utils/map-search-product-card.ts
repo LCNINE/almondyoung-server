@@ -8,16 +8,15 @@ export const mapSearchItemToCard = (
   item: ProductSearchItemDto
 ): ProductCard => {
   return {
-    id: item.master_id,
+    id: item.productId,
     name: item.name,
-    thumbnail: "", // 검색 결과에는 썸네일이 없음 - 별도 조회 필요
-    basePrice: item.price ?? undefined,
-    membershipPrice: undefined, // 검색 결과에는 멤버십 가격 미포함
-    actualPrice: item.price ?? undefined,
-    status: item.status === "active" ? "active" : "inactive",
+    thumbnail: item.thumbnail ?? "",
+    basePrice: item.minBasePrice ?? undefined,
+    membershipPrice: item.minMembershipPrice ?? undefined,
+    actualPrice: item.minMembershipPrice ?? item.minBasePrice ?? undefined,
+    status: "active",
     brand: item.brand ?? undefined,
-    tags: item.tags?.map((tag) => tag.value_name) ?? [],
-    createdAt: item.created_at,
+    tags: [],
   }
 }
 

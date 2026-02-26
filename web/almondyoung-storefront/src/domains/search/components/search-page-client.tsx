@@ -1,7 +1,7 @@
 "use client"
 
 import { useRouter, useSearchParams } from "next/navigation"
-import { useCallback } from "react"
+import { useCallback, useMemo } from "react"
 import { ProductGrid } from "@/components/products/product-grid"
 import { SearchHistory } from "@components/search/search-history"
 import { useSearchHistory } from "@hooks/ui/use-search-history"
@@ -10,6 +10,7 @@ import type { SearchProductResult } from "@lib/types/ui/product"
 import { SharedPagination } from "@/components/shared/pagination"
 import { SearchEmptyState } from "./search-empty-state"
 import { useUser } from "@/contexts/user-context"
+import { useMembershipPricing } from "@/hooks/use-membership-pricing"
 // import { SearchHotKeyword } from "@components/search/search-hot-keyword"
 // import { SearchPopularKeyword } from "@components/search/search-popular-keyword"
 
@@ -22,8 +23,8 @@ interface SearchPageClientProps {
 
 const SORT_OPTIONS = [
   { id: "relevance", label: "관련도순" },
-  { id: "price-asc", label: "낮은가격순" },
-  { id: "price-desc", label: "높은가격순" },
+  { id: "price_asc", label: "낮은가격순" },
+  { id: "price_desc", label: "높은가격순" },
   { id: "newest", label: "최신순" },
 ]
 
@@ -37,12 +38,47 @@ export function SearchPageClient({
   const searchParams = useSearchParams()
   const { keywords: historyKeywords } = useSearchHistory()
   const { user } = useUser()
+  const { isMembershipPricing } = useMembershipPricing()
   const isLoggedIn = !!user
+  const currentSort = normalizeSearchSort(searchParams.get("sort"))
 
   const hasKeyword = keyword.length > 0
   const hasResults = searchResult.items.length > 0
   const total = searchResult.pagination.total
   const totalPages = searchResult.pagination.totalPages
+  const sortedItems = useMemo(() => {
+    if (currentSort !== "price_asc" && currentSort !== "price_desc") {
+      return searchResult.items
+    }
+
+    const getSortPrice = (item: SearchProductResult["items"][number]) => {
+      const regularPrice = item.originalPrice > 0 ? item.originalPrice : item.price
+      const membershipPrice = item.debugPrices?.membershipPrice
+
+      if (
+        isMembershipPricing &&
+        typeof membershipPrice === "number" &&
+        membershipPrice > 0
+      ) {
+        return membershipPrice
+      }
+
+      return regularPrice
+    }
+
+    const sorted = [...searchResult.items]
+    if (currentSort === "price_asc") {
+      sorted.sort(
+        (a, b) => getSortPrice(a) - getSortPrice(b) || a.id.localeCompare(b.id)
+      )
+      return sorted
+    }
+
+    sorted.sort(
+      (a, b) => getSortPrice(b) - getSortPrice(a) || a.id.localeCompare(b.id)
+    )
+    return sorted
+  }, [currentSort, isMembershipPricing, searchResult.items])
 
   // 정렬 변경 핸들러
   const handleSortChange = useCallback(
@@ -126,7 +162,7 @@ export function SearchPageClient({
         <div className="ml-auto">
           <CustomDropdown
             items={SORT_OPTIONS}
-            defaultValue={searchParams.get("sort") || "relevance"}
+            defaultValue={currentSort}
             onSelect={handleSortChange}
           />
         </div>
@@ -135,7 +171,7 @@ export function SearchPageClient({
       {/* 상품 그리드 */}
       <section className="mb-8">
         <ProductGrid
-          products={searchResult.items}
+          products={sortedItems}
           showQuickActions
           className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4"
           countryCode={countryCode}
@@ -153,4 +189,11 @@ export function SearchPageClient({
       )}
     </div>
   )
+}
+
+function normalizeSearchSort(value: string | null) {
+  if (!value) return "relevance"
+  if (value === "price-asc") return "price_asc"
+  if (value === "price-desc") return "price_desc"
+  return value
 }

@@ -4,19 +4,38 @@ import { CategoryCircleTabs } from "@/components/category/category-circle-tabs"
 import { BannerCarousel } from "@/components/layout/components/banner/banner-carousel"
 import { ProductGrid } from "@/components/products/product-grid"
 import ProductFilterSidebar from "@/components/products/product-filter-sidebar"
-import { SlidersHorizontal, ChevronDown } from "lucide-react"
+import { SlidersHorizontal } from "lucide-react"
 import { overlay } from "overlay-kit"
 import { MobileFilterSheet } from "./mobile-filter-sheet"
 import CustomDropdown from "@components/dropdown"
 import type { StoreProductCategoryTree } from "@lib/types/medusa-category"
 import type { ProductCardProps } from "@lib/types/ui/product"
 import { useRouter, useSearchParams } from "next/navigation"
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react"
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react"
 import { getProductList } from "@lib/api/medusa/products"
 import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
 import { cn } from "@lib/utils"
 import { useUser } from "@/contexts/user-context"
+import { useMembershipPricing } from "@/hooks/use-membership-pricing"
 import { Spinner } from "@/components/shared/spinner"
+import Link from "next/link"
+import {
+  Breadcrumb,
+  BreadcrumbEllipsis,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb"
 
 // 프론트 전용 타입(CategoryInfo)을 별도로 쓰기보다
 // 가능하면 DTO나 간단한 인터페이스로 유지하는 것이 좋습니다.
@@ -28,29 +47,76 @@ export interface CategoryInfo {
 
 // 정렬 옵션 매핑 (UI id -> Medusa order param)
 const SORT_OPTIONS = {
-  ranking: undefined, // 기본 정렬 (Medusa 기본)
-  "price-asc": "variants.calculated_price", // 가격 낮은순
-  "price-desc": "-variants.calculated_price", // 가격 높은순
-  sales: "-metadata.salesCount", // 판매량순
-  newest: "-created_at", // 최신순
+  newest: "-created_at",
+  price_asc: "variants.calculated_price",
+  price_desc: "-variants.calculated_price",
 } as const
 
-const SORT_LABELS = [
-  { id: "ranking", label: "아몬드영 랭킹 순" },
-  { id: "price-asc", label: "낮은가격순" },
-  { id: "price-desc", label: "높은가격순" },
-  { id: "sales", label: "판매량순" },
-  { id: "newest", label: "최신순" },
-]
+const LEGACY_SORT_OPTIONS: Record<string, keyof typeof SORT_OPTIONS> = {
+  "price-asc": "price_asc",
+  "price-desc": "price_desc",
+  ranking: "newest",
+  sales: "newest",
+}
 
-const ITEMS_PER_PAGE_OPTIONS = [
-  { value: "20", label: "20개씩 보기" },
-  { value: "40", label: "40개씩 보기" },
-  { value: "60", label: "60개씩 보기" },
+const DEFAULT_SORT: keyof typeof SORT_OPTIONS = "newest"
+
+const SORT_LABELS: Array<{ id: keyof typeof SORT_OPTIONS; label: string }> = [
+  { id: "newest", label: "최신순" },
+  { id: "price_asc", label: "낮은가격순" },
+  { id: "price_desc", label: "높은가격순" },
 ]
 
 const DEFAULT_ITEMS_PER_PAGE = 20
 const CACHE_TTL_MS = 30 * 60 * 1000
+
+const getApiOrderForSort = (sort: keyof typeof SORT_OPTIONS) => {
+  if (sort === "newest") {
+    return SORT_OPTIONS.newest
+  }
+
+  // Medusa Store API의 order는 상품 엔티티 필드 기준 정렬이라
+  // 계산 가격 정렬은 클라이언트에서 처리한다.
+  return undefined
+}
+
+const sortProductsByOption = (
+  items: ProductCardProps[],
+  sort: keyof typeof SORT_OPTIONS,
+  isMembershipPricing: boolean
+) => {
+  if (sort === "newest") {
+    return items
+  }
+
+  const getSortPrice = (item: ProductCardProps) => {
+    const regularPrice = item.originalPrice > 0 ? item.originalPrice : item.price
+    const membershipPrice = item.debugPrices?.membershipPrice
+
+    if (
+      isMembershipPricing &&
+      typeof membershipPrice === "number" &&
+      membershipPrice > 0
+    ) {
+      return membershipPrice
+    }
+
+    return regularPrice
+  }
+
+  const sorted = [...items]
+  if (sort === "price_asc") {
+    sorted.sort(
+      (a, b) => getSortPrice(a) - getSortPrice(b) || a.id.localeCompare(b.id)
+    )
+    return sorted
+  }
+
+  sorted.sort(
+    (a, b) => getSortPrice(b) - getSortPrice(a) || a.id.localeCompare(b.id)
+  )
+  return sorted
+}
 
 type CategoryListCache = {
   ts: number
@@ -91,11 +157,19 @@ export function CategoryPageClient({
   const searchParams = useSearchParams()
   const [isPending, startTransition] = useTransition()
   const { user } = useUser()
+  const { isMembershipPricing } = useMembershipPricing()
   const isLoggedIn = !!user
   const sentinelRef = useRef<HTMLDivElement | null>(null)
   const isLoadingMoreRef = useRef(false)
 
-  const currentSort = searchParams.get("sort") || "ranking"
+  const currentSort = useMemo(() => {
+    const sort = searchParams.get("sort")
+    if (!sort) return DEFAULT_SORT
+    if (sort in SORT_OPTIONS) {
+      return sort as keyof typeof SORT_OPTIONS
+    }
+    return LEGACY_SORT_OPTIONS[sort] ?? DEFAULT_SORT
+  }, [searchParams])
   const currentLimit = Number(searchParams.get("limit")) || DEFAULT_ITEMS_PER_PAGE
   const urlPage = Math.max(1, Number(searchParams.get("page")) || 1)
 
@@ -138,14 +212,31 @@ export function CategoryPageClient({
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const hasMore = useMemo(() => products.length < total, [products.length, total])
   const showOverlay = isPending && products.length === 0
+  const breadcrumbs = useMemo(
+    () =>
+      categoryPath.map((node, index) => ({
+        id: node.id,
+        name: node.name,
+        href: `/${countryCode}/category/${categoryPath
+          .slice(0, index + 1)
+          .map((item) => item.handle || item.id)
+          .join("/")}`,
+      })),
+    [categoryPath, countryCode]
+  )
+  const showBreadcrumb = breadcrumbs.length > 1
+  const showMobileEllipsis = breadcrumbs.length > 3
+  const mobileBreadcrumbs = showMobileEllipsis
+    ? [breadcrumbs[breadcrumbs.length - 2], breadcrumbs[breadcrumbs.length - 1]]
+    : breadcrumbs
 
   // URL 파라미터 업데이트 함수
   const updateParams = useCallback(
-    (params: { sort?: string; limit?: number }) => {
+    (params: { sort?: keyof typeof SORT_OPTIONS; limit?: number }) => {
       const newParams = new URLSearchParams(searchParams.toString())
 
       if (params.sort !== undefined) {
-        if (params.sort === "ranking") {
+        if (params.sort === DEFAULT_SORT) {
           newParams.delete("sort")
         } else {
           newParams.set("sort", params.sort)
@@ -190,7 +281,7 @@ export function CategoryPageClient({
 
   const fetchProductsPage = useCallback(
     async (page: number) => {
-      const sortOrder = SORT_OPTIONS[currentSort as keyof typeof SORT_OPTIONS]
+      const sortOrder = getApiOrderForSort(currentSort)
       const result = await getProductList({
         page,
         limit: currentLimit,
@@ -198,12 +289,18 @@ export function CategoryPageClient({
         region_id: regionId,
         order: sortOrder,
       })
+
+      const mappedProducts = mapStoreProductsToCardProps(result.products)
       return {
-        products: mapStoreProductsToCardProps(result.products),
+        products: sortProductsByOption(
+          mappedProducts,
+          currentSort,
+          isMembershipPricing
+        ),
         total: result.count,
       }
     },
-    [categoryIds, currentLimit, currentSort, regionId]
+    [categoryIds, currentLimit, currentSort, isMembershipPricing, regionId]
   )
 
   // 스크롤 위치 복원 (memoryCache에서 초기화된 경우)
@@ -234,7 +331,7 @@ export function CategoryPageClient({
 
     // 기본 설정이면 서버 초기 데이터 사용
     if (
-      currentSort === "ranking" &&
+      currentSort === DEFAULT_SORT &&
       currentLimit === DEFAULT_ITEMS_PER_PAGE &&
       urlPage === 1 &&
       initialProducts.length > 0
@@ -257,7 +354,9 @@ export function CategoryPageClient({
           )
           const merged = results.flatMap((result) => result.products)
           const last = results[results.length - 1]
-          setProducts(merged)
+          setProducts(
+            sortProductsByOption(merged, currentSort, isMembershipPricing)
+          )
           setTotal(last?.total ?? 0)
           setCurrentPage(urlPage)
         } else {
@@ -280,6 +379,7 @@ export function CategoryPageClient({
     fetchProductsPage,
     initialProducts,
     initialTotal,
+    isMembershipPricing,
     urlPage,
   ])
 
@@ -345,7 +445,13 @@ export function CategoryPageClient({
       const { products: nextProducts, total: nextTotal } =
         await fetchProductsPage(nextPage)
 
-      setProducts((prev) => [...prev, ...nextProducts])
+      setProducts((prev) =>
+        sortProductsByOption(
+          [...prev, ...nextProducts],
+          currentSort,
+          isMembershipPricing
+        )
+      )
       setTotal(nextTotal)
       setCurrentPage(nextPage)
       setUrlPage(nextPage)
@@ -355,7 +461,14 @@ export function CategoryPageClient({
       isLoadingMoreRef.current = false
       setIsLoadingMore(false)
     }
-  }, [currentPage, fetchProductsPage, hasMore])
+  }, [
+    currentPage,
+    currentSort,
+    fetchProductsPage,
+    hasMore,
+    isMembershipPricing,
+    setUrlPage,
+  ])
 
   useEffect(() => {
     const target = sentinelRef.current
@@ -399,6 +512,74 @@ export function CategoryPageClient({
           <div className="min-w-0 flex-1">
             {/* 카테고리 헤더(타이틀/설명/배너) */}
             <div className="mb-8">
+              {showBreadcrumb && (
+                <>
+                  <Breadcrumb className="mb-2 hidden md:block">
+                    <BreadcrumbList>
+                      {breadcrumbs.map((crumb, index) => {
+                        const isLast = index === breadcrumbs.length - 1
+                        return (
+                          <Fragment key={crumb.id}>
+                            {index > 0 && (
+                              <BreadcrumbSeparator className="mx-1 text-gray-500" />
+                            )}
+                            <BreadcrumbItem>
+                              {isLast ? (
+                                <BreadcrumbPage className="font-semibold text-gray-900">
+                                  {crumb.name}
+                                </BreadcrumbPage>
+                              ) : (
+                                <BreadcrumbLink asChild className="text-gray-600 hover:text-gray-900">
+                                  <Link href={crumb.href}>{crumb.name}</Link>
+                                </BreadcrumbLink>
+                              )}
+                            </BreadcrumbItem>
+                          </Fragment>
+                        )
+                      })}
+                    </BreadcrumbList>
+                  </Breadcrumb>
+
+                  <Breadcrumb className="mb-2 md:hidden">
+                    <BreadcrumbList>
+                      {showMobileEllipsis && (
+                        <>
+                          <BreadcrumbItem>
+                            <BreadcrumbLink asChild className="text-gray-600 hover:text-gray-900">
+                              <Link href={breadcrumbs[0].href}>{breadcrumbs[0].name}</Link>
+                            </BreadcrumbLink>
+                          </BreadcrumbItem>
+                          <BreadcrumbSeparator className="text-gray-500" />
+                          <BreadcrumbItem>
+                            <BreadcrumbEllipsis className="h-auto w-auto text-gray-500" />
+                          </BreadcrumbItem>
+                          <BreadcrumbSeparator className="text-gray-500" />
+                        </>
+                      )}
+                      {mobileBreadcrumbs.map((crumb, index) => {
+                        const isLast = index === mobileBreadcrumbs.length - 1
+                        return (
+                          <Fragment key={crumb.id}>
+                            {index > 0 && <BreadcrumbSeparator className="text-gray-500" />}
+                            <BreadcrumbItem>
+                              {isLast ? (
+                                <BreadcrumbPage className="font-semibold text-gray-900">
+                                  {crumb.name}
+                                </BreadcrumbPage>
+                              ) : (
+                                <BreadcrumbLink asChild className="text-gray-600 hover:text-gray-900">
+                                  <Link href={crumb.href}>{crumb.name}</Link>
+                                </BreadcrumbLink>
+                              )}
+                            </BreadcrumbItem>
+                          </Fragment>
+                        )
+                      })}
+                    </BreadcrumbList>
+                  </Breadcrumb>
+                </>
+              )}
+
               <div className="flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
                 <div className="flex-1">
                   <h1 className="mb-2 text-2xl font-bold text-gray-900 md:text-3xl">
@@ -448,11 +629,15 @@ export function CategoryPageClient({
                   <CustomDropdown
                     items={SORT_LABELS}
                     defaultValue={currentSort}
-                    onSelect={(id) => updateParams({ sort: id })}
+                    onSelect={(id) =>
+                      updateParams({ sort: (id in SORT_OPTIONS
+                        ? (id as keyof typeof SORT_OPTIONS)
+                        : DEFAULT_SORT) })
+                    }
                   />
                   <button
                     onClick={openMobileFilter}
-                    className="flex h-10 items-center gap-2 font-['Pretendard'] text-sm font-medium text-gray-700 transition-colors"
+                    className="flex h-10 shrink-0 items-center gap-2 whitespace-nowrap font-['Pretendard'] text-sm font-medium text-gray-700 transition-colors"
                     aria-label="필터 열기"
                   >
                     필터
@@ -461,19 +646,19 @@ export function CategoryPageClient({
                 </div>
               </div>
 
-              {/* 데스크톱: 정렬 툴바 + n개씩 보기 */}
-              <div className="mb-5 hidden items-center justify-between bg-gray-100 px-3.5 py-2.5 md:flex">
+              {/* 데스크톱: 정렬 툴바 */}
+              <div className="mb-5 hidden bg-gray-100 px-3.5 py-2.5 md:block">
                 {/* 정렬 옵션 */}
-                <div className="flex items-center divide-x divide-gray-300">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 lg:flex-nowrap lg:divide-x lg:divide-gray-300">
                   {SORT_LABELS.map((option, index) => (
                     <button
                       key={option.id}
                       type="button"
                       onClick={() => updateParams({ sort: option.id })}
                       className={cn(
-                        "font-['Pretendard'] text-base",
-                        index > 0 ? "pl-4" : "",
-                        index < SORT_LABELS.length - 1 ? "pr-4" : "",
+                        "shrink-0 whitespace-nowrap font-['Pretendard'] text-base",
+                        index > 0 ? "lg:pl-4" : "",
+                        index < SORT_LABELS.length - 1 ? "lg:pr-4" : "",
                         currentSort === option.id
                           ? "font-bold text-stone-900"
                           : "font-normal text-gray-500 hover:text-stone-900"
@@ -483,22 +668,6 @@ export function CategoryPageClient({
                       {option.label}
                     </button>
                   ))}
-                </div>
-
-                {/* n개씩 보기 드롭다운 */}
-                <div className="relative">
-                  <select
-                    value={currentLimit}
-                    onChange={(e) => updateParams({ limit: Number(e.target.value) })}
-                    className="appearance-none bg-transparent pr-6 font-['Pretendard'] text-base font-normal text-gray-700 focus:outline-none"
-                  >
-                    {ITEMS_PER_PAGE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-0 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-500" />
                 </div>
               </div>
             </section>
