@@ -3,6 +3,7 @@ import { ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags, ApiQuery } from 
 import { Public, RequireScopes, User } from '@app/authorization';
 import { ReviewsService } from './reviews.service';
 import { CreateReviewDto } from './dto/create-review.dto';
+import { RatingSummaryQueryDto, RatingSummaryResponseDto } from './dto/rating-summary.dto';
 import { ReviewListQueryDto } from './dto/review-list-query.dto';
 import { UpdateReviewDto } from './dto/update-review.dto';
 import { CommentResponseDto } from './dto/comment-response.dto';
@@ -73,6 +74,18 @@ export class ReviewsController {
       ...result,
       data: result.data.map(ReviewMapper.toResponse),
     };
+  }
+
+  @Get('rating-summary')
+  @Public()
+  @ApiOperation({ summary: '상품별 레이팅 요약 조회' })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: '레이팅 요약 조회 성공',
+    type: RatingSummaryResponseDto,
+  })
+  async ratingSummary(@Query() query: RatingSummaryQueryDto): Promise<RatingSummaryResponseDto> {
+    return this.reviewsService.getRatingSummary(query.productId);
   }
 
   @Patch(':id')

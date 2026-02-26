@@ -39,6 +39,13 @@ export class GetUsersQueryDto {
   email?: string;
 
   @ApiPropertyOptional({
+    description: '역할 이름 필터 (예: admin, master, user)',
+  })
+  @IsOptional()
+  @IsString()
+  roleName?: string;
+
+  @ApiPropertyOptional({
     description: '정렬 필드',
     enum: ['createdAt', 'username', 'email', 'lastActivityAt'],
     default: 'createdAt',
