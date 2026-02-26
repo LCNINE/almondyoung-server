@@ -1,11 +1,8 @@
 // 정렬 옵션 데이터
 const sortOptions = [
-  // [참고] 시안의 '추천 순'은 데이터의 '아몬드영 랭킹 순'으로 간주합니다.
-  { id: "ranking", label: "아몬드영 랭킹 순" },
-  { id: "price-asc", label: "낮은가격순" },
-  { id: "price-desc", label: "높은가격순" },
-  { id: "sales", label: "판매량순" },
   { id: "newest", label: "최신순" },
+  { id: "price_asc", label: "낮은가격순" },
+  { id: "price_desc", label: "높은가격순" },
 ]
 
 interface ProductSortToolbarProps {
@@ -18,7 +15,7 @@ export default function ProductSortToolbar({
   onSortChange,
 }: ProductSortToolbarProps = {}) {
   // 제어/비제어 모드 지원
-  const activeSort = controlledActiveSort ?? "ranking"
+  const activeSort = controlledActiveSort ?? "newest"
 
   const handleSortChange = (sort: string) => {
     onSortChange?.(sort)

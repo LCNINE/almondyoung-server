@@ -22,8 +22,8 @@ interface SearchPageClientProps {
 
 const SORT_OPTIONS = [
   { id: "relevance", label: "관련도순" },
-  { id: "price-asc", label: "낮은가격순" },
-  { id: "price-desc", label: "높은가격순" },
+  { id: "price_asc", label: "낮은가격순" },
+  { id: "price_desc", label: "높은가격순" },
   { id: "newest", label: "최신순" },
 ]
 
@@ -126,7 +126,7 @@ export function SearchPageClient({
         <div className="ml-auto">
           <CustomDropdown
             items={SORT_OPTIONS}
-            defaultValue={searchParams.get("sort") || "relevance"}
+            defaultValue={normalizeSearchSort(searchParams.get("sort"))}
             onSelect={handleSortChange}
           />
         </div>
@@ -153,4 +153,11 @@ export function SearchPageClient({
       )}
     </div>
   )
+}
+
+function normalizeSearchSort(value: string | null) {
+  if (!value) return "relevance"
+  if (value === "price-asc") return "price_asc"
+  if (value === "price-desc") return "price_desc"
+  return value
 }
