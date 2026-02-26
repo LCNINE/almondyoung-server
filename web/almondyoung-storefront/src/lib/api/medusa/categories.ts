@@ -43,27 +43,42 @@ const findCategoryById = (
   return null
 }
 
-export const getCategoryTree = async (): Promise<StoreProductCategoryTree[]> => {
+export const getCategoryTree = async (): Promise<
+  StoreProductCategoryTree[]
+> => {
   const limit = 100
   let offset = 0
   const all: StoreProductCategoryTree[] = []
 
   while (true) {
-    const { product_categories, count } = await sdk.client.fetch<{
-      product_categories: StoreProductCategoryTree[]
-      count: number
-    }>(`/store/product-categories`, {
-      method: "GET",
-      query: {
+    // const { product_categories, count } = await sdk.client.fetch<{
+    //   product_categories: StoreProductCategoryTree[]
+    //   count: number
+    // }>(`/store/product-categories`, {
+    //   method: "GET",
+    //   query: {
+    //     limit,
+    //     offset,
+    //     fields: "id,name,handle,description,metadata,parent_category_id",
+    //   },
+    //   next: {
+    //     tags: ["product-categories"],
+    //   },
+    //   cache: "force-cache",
+    // })
+
+    const { product_categories, count } = await sdk.store.category.list(
+      {
         limit,
         offset,
         fields: "id,name,handle,description,metadata,parent_category_id",
       },
-      next: {
-        tags: ["product-categories"],
-      },
-      cache: "force-cache",
-    })
+      {
+        next: {
+          tags: ["product-categories"],
+        },
+      }
+    )
 
     const page = (product_categories || []) as StoreProductCategoryTree[]
     all.push(...page)
@@ -117,7 +132,10 @@ export const getCategoryByHandle = async (
 ): Promise<StoreProductCategoryTree | null> => {
   const categories = await getCategoryTree()
   // handle로 먼저 찾고, 없으면 id로 찾기 (PIM 카테고리 id 지원)
-  return findCategoryByHandle(categories, handle) || findCategoryById(categories, handle)
+  return (
+    findCategoryByHandle(categories, handle) ||
+    findCategoryById(categories, handle)
+  )
 }
 
 export const getCategoryById = async (
