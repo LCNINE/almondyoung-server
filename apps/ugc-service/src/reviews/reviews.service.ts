@@ -404,6 +404,35 @@ export class ReviewsService {
     }, tx);
   }
 
+  async getRatingSummary(productId: string, tx?: DbTransaction) {
+    return this.inTx(async (tx) => {
+      const rows = await tx
+        .select({ rating: reviews.rating, count: count() })
+        .from(reviews)
+        .where(and(eq(reviews.productId, productId), eq(reviews.status, 'active')))
+        .groupBy(reviews.rating);
+
+      const distribution: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+      let totalCount = 0;
+      let weightedSum = 0;
+
+      for (const row of rows) {
+        distribution[row.rating] = row.count;
+        totalCount += row.count;
+        weightedSum += row.rating * row.count;
+      }
+
+      const averageRating = totalCount > 0 ? Math.round((weightedSum / totalCount) * 10) / 10 : 0;
+
+      return {
+        productId,
+        averageRating,
+        totalCount,
+        ratingDistribution: distribution,
+      };
+    }, tx);
+  }
+
   async listByProduct(
     query: ReviewListQueryDto,
     tx?: DbTransaction,
