@@ -2,7 +2,7 @@
 
 import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { Client } from '@elastic/elasticsearch';
+import { Client } from '@opensearch-project/opensearch';
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   pimSchema,
@@ -174,7 +174,7 @@ async function ensureIndex(
   index: string,
   recreateIndex: boolean,
 ): Promise<void> {
-  const exists = await client.indices.exists({ index });
+  const exists = (await client.indices.exists({ index })).body;
 
   if (exists && recreateIndex) {
     console.log(`Deleting existing index: ${index}`);
@@ -185,8 +185,10 @@ async function ensureIndex(
     console.log(`Creating index: ${index}`);
     await client.indices.create({
       index,
-      settings: PRODUCTS_INDEX_SETTINGS,
-      mappings: PRODUCTS_INDEX_MAPPINGS,
+      body: {
+        settings: PRODUCTS_INDEX_SETTINGS,
+        mappings: PRODUCTS_INDEX_MAPPINGS,
+      },
     });
   }
 }
@@ -411,16 +413,16 @@ async function bulkUpsert(
 
   const response: any = await client.bulk({
     refresh: false,
-    operations,
+    body: operations,
   });
 
-  if (!response.errors) {
+  if (!response.body.errors) {
     return { success: documents.length, failed: 0 };
   }
 
   let failed = 0;
-  for (let i = 0; i < response.items.length; i++) {
-    const item = response.items[i]?.index;
+  for (let i = 0; i < response.body.items.length; i++) {
+    const item = response.body.items[i]?.index;
     if (item?.error) {
       failed += 1;
       const id = documents[i]?.master_id;
@@ -551,8 +553,8 @@ async function main() {
 
     if (!options.dryRun) {
       await osClient.indices.refresh({ index: productsIndex });
-      const count = await osClient.count({ index: productsIndex });
-      console.log(`Indexed documents now: ${count.count}`);
+      const countResponse = await osClient.count({ index: productsIndex });
+      console.log(`Indexed documents now: ${countResponse.body.count}`);
     } else {
       console.log('Dry run complete (no documents written)');
     }
