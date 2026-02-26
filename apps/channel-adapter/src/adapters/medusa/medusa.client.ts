@@ -86,6 +86,23 @@ export class MedusaClient {
         }
     }
 
+    private async findCategoryByCandidateHandles(
+        ...handles: Array<string | null | undefined>
+    ): Promise<HttpTypes.AdminProductCategory | null> {
+        const uniqueHandles = Array.from(
+            new Set(handles.filter((h): h is string => Boolean(h && h.trim()))),
+        );
+
+        for (const handle of uniqueHandles) {
+            const found = await this.findCategoryByHandle(handle);
+            if (found?.id) {
+                return found;
+            }
+        }
+
+        return null;
+    }
+
     private async createCategory(payload: HttpTypes.AdminCreateProductCategory): Promise<HttpTypes.AdminProductCategory> {
         const { product_category } = await this.sdk.admin.productCategory.create(payload);
         if (!product_category) {
@@ -198,7 +215,8 @@ export class MedusaClient {
             thumbnail?: string;
         }
     ): Promise<string> {
-        const handle = `${categorySnapshot.id}`;
+        const preferredHandle = categorySnapshot.slug || categorySnapshot.id;
+        const legacyHandle = categorySnapshot.id;
 
         const isActive = categorySnapshot.isActive && categorySnapshot.visibility;
         const pimMetadata = {
@@ -211,8 +229,9 @@ export class MedusaClient {
 
         let parentMedusaId: string | undefined;
         if (categorySnapshot.parentId) {
-            const parentHandle = `${categorySnapshot.parentId}`;
-            const existingParent = await this.findCategoryByHandle(parentHandle);
+            const existingParent = await this.findCategoryByCandidateHandles(
+                categorySnapshot.parentId,
+            );
             if (existingParent?.id) {
                 parentMedusaId = existingParent.id;
             } else {
@@ -222,7 +241,10 @@ export class MedusaClient {
             }
         }
 
-        const existing = await this.findCategoryByHandle(handle);
+        const existing = await this.findCategoryByCandidateHandles(
+            preferredHandle,
+            legacyHandle,
+        );
         if (existing?.id) {
             const verified = await this.getCategoryById(existing.id);
             if (!verified) {
@@ -252,7 +274,7 @@ export class MedusaClient {
                         `Failed to update Medusa category ${existing.id} from snapshot ${categorySnapshot.id}: ${fetchError.message}`,
                     );
                 }
-                this.categoryCache.set(handle, existing.id);
+                this.categoryCache.set(preferredHandle, existing.id);
                 this.logger.debug(
                     `Ensured existing Medusa category ${existing.id} for PIM ${categorySnapshot.id}`,
                 );
@@ -262,7 +284,7 @@ export class MedusaClient {
 
         const payload = {
             name: categorySnapshot.name,
-            handle,
+            handle: preferredHandle,
             is_internal: false,
             is_active: isActive,
             parent_category_id: parentMedusaId,
@@ -273,7 +295,7 @@ export class MedusaClient {
         };
 
         const created = await this.createCategory(payload);
-        this.categoryCache.set(handle, created.id);
+        this.categoryCache.set(preferredHandle, created.id);
         this.logger.log(
             `Created Medusa category ${created.id} from snapshot for PIM category ${categorySnapshot.id}`,
         );

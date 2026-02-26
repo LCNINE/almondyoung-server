@@ -299,7 +299,10 @@ export class PimMedusaSyncService {
   // }
 
   // 스냅샷 기반 동기화 (Phase 2 - PIM API 호출 없음)
-  async syncFromSnapshot(snapshot: PimProductSnapshot): Promise<SyncResult> {
+  async syncFromSnapshot(
+    snapshot: PimProductSnapshot,
+    options?: { skipCategorySync?: boolean },
+  ): Promise<SyncResult> {
     const { masterId, versionId } = snapshot;
 
     this.logger.log(`Syncing from event snapshot: ${masterId} (v${snapshot.version})`);
@@ -309,9 +312,10 @@ export class PimMedusaSyncService {
 
       this.logger.debug(`PIM snapshot categoryIds: ${JSON.stringify(snapshot.categoryIds)}`);
 
-      const medusaCategories = await this.ensureMedusaCategoriesFromSnapshot(
-        snapshot.categories || []
-      );
+      const shouldSyncCategories = !options?.skipCategorySync;
+      const medusaCategories = shouldSyncCategories
+        ? await this.ensureMedusaCategoriesFromSnapshot(snapshot.categories || [])
+        : [];
       const medusaTags = await this.ensureMedusaTags(snapshot.tags);
 
       const medusaTypeId = await this.medusaClient.ensureProductType(
@@ -320,7 +324,9 @@ export class PimMedusaSyncService {
       const defaultSalesChannelId = await this.medusaClient.getDefaultSalesChannel();
 
       const medusaPayload = transformPimToMedusa(snapshot, {
-        categories: medusaCategories.map(({ id }) => ({ id })),
+        ...(shouldSyncCategories
+          ? { categories: medusaCategories.map(({ id }) => ({ id })) }
+          : {}),
         tags: medusaTags,
         type_id: medusaTypeId,
         sales_channels: [defaultSalesChannelId],
@@ -336,7 +342,7 @@ export class PimMedusaSyncService {
 
       this.logger.debug(`medusaCategories for ${product.id}: ${JSON.stringify(medusaCategories)}`);
 
-      if (medusaCategories && medusaCategories.length > 0) {
+      if (shouldSyncCategories && medusaCategories && medusaCategories.length > 0) {
         this.logger.log(`Attaching ${medusaCategories.length} categories to product ${product.id}`);
         for (const cat of medusaCategories) {
           try {
