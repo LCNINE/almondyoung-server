@@ -258,20 +258,14 @@ export interface ProductDetailServiceOpts {
 
 // 상품 검색 파라미터
 export interface SearchProductParams {
-  keyword?: string
-  categoryId?: string
+  q?: string
+  categoryIds?: string[]
   brands?: string[]
   minPrice?: number
   maxPrice?: number
-  status?: string
-  tagFilters?: Array<{
-    groupId: string
-    valueIds: string[]
-  }>
-  sortBy?: "relevance" | "price" | "createdAt"
-  sortOrder?: "asc" | "desc"
+  sort?: "relevance" | "newest" | "price_asc" | "price_desc"
   page?: number
-  limit?: number
+  size?: number
 }
 
 // 상품 검색 결과
@@ -279,19 +273,8 @@ export interface SearchProductResult {
   items: ProductCardProps[]
   pagination: {
     page: number
-    limit: number
+    size: number
     total: number
     totalPages: number
-  }
-  aggregations?: {
-    tags?: Array<{
-      group_id: string
-      group_name: string
-      values: Array<{
-        value_id: string
-        value_name: string
-        count: number
-      }>
-    }>
   }
 }
