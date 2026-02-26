@@ -12,7 +12,7 @@ export class SendMessageController {
   constructor(private readonly sendMessageService: SendMessageService) { }
 
   @UseGuards(ThrottlerGuard)
-  @Throttle({ default: { ttl: 60000, limit: 1 } }) // 1분에 1번만 발송 가능
+  @Throttle({ default: { ttl: 60000, limit: 3 } }) // 1분에 3번만 발송 가능
   @Post()
   @Public()
   @ApiOperation({
