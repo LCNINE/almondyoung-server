@@ -33,27 +33,6 @@ function ProductGridSkeleton({ count = 8 }: { count?: number }) {
   )
 }
 
-function SidebarFilterSkeleton() {
-  return (
-    <div className="space-y-6">
-      <Skeleton className="h-6 w-28" />
-      {repeat(4).map((_, index) => (
-        <div key={`filter-section-${index}`} className="space-y-3">
-          <Skeleton className="h-4 w-24" />
-          <div className="space-y-2">
-            {repeat(4).map((__, itemIndex) => (
-              <Skeleton
-                key={`filter-item-${index}-${itemIndex}`}
-                className="h-3 w-32"
-              />
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 function ListRowSkeleton() {
   return (
     <div className="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-4 md:flex-row md:items-center">
@@ -111,122 +90,95 @@ export function HomePageSkeleton() {
 
 export function CategoryListSkeleton() {
   return (
-    <main className="min-h-screen bg-white">
-      <div className="container mx-auto max-w-[1360px]">
-        <div className="flex px-4 py-6 md:gap-[40px] md:px-[40px]">
-          <aside className="hidden w-[233px] shrink-0 md:block">
-            <SidebarFilterSkeleton />
-          </aside>
-          <div className="min-w-0 flex-1 space-y-6">
-            <div className="space-y-3">
-              <Skeleton className="h-8 w-48" />
-              <Skeleton className="h-4 w-72" />
-            </div>
+    <div className="space-y-6">
+      <div className="space-y-3">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-4 w-72" />
+      </div>
 
-            <div className="flex gap-2 overflow-hidden">
-              {repeat(5).map((_, index) => (
-                <Skeleton key={`tab-${index}`} className="h-10 w-24 rounded-full" />
-              ))}
-            </div>
+      <div className="flex gap-2 overflow-hidden">
+        {repeat(5).map((_, index) => (
+          <Skeleton key={`tab-${index}`} className="h-10 w-24 rounded-full" />
+        ))}
+      </div>
 
-            <Skeleton className="h-28 w-full rounded-2xl" />
+      <Skeleton className="h-28 w-full rounded-2xl" />
 
-            <div className="flex items-center justify-between gap-3">
-              <Skeleton className="h-4 w-32" />
-              <div className="flex items-center gap-2">
-                <Skeleton className="h-9 w-24 rounded-md" />
-                <Skeleton className="h-9 w-24 rounded-md" />
-              </div>
-            </div>
-
-            <ProductGridSkeleton count={12} />
-          </div>
+      <div className="flex items-center justify-between gap-3">
+        <Skeleton className="h-4 w-32" />
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-9 w-24 rounded-md" />
+          <Skeleton className="h-9 w-24 rounded-md" />
         </div>
       </div>
-    </main>
+
+      <ProductGridSkeleton count={12} />
+    </div>
   )
 }
 
 export function CategorySubSkeleton() {
   return (
-    <main className="min-h-screen bg-white">
-      <div className="container mx-auto max-w-[1360px]">
-        <div className="flex px-4 py-6 md:gap-[40px] md:px-[40px]">
-          <aside className="hidden w-[233px] shrink-0 md:block">
-            <SidebarFilterSkeleton />
-          </aside>
-          <div className="min-w-0 flex-1 space-y-6">
-            <div className="space-y-3">
-              <Skeleton className="h-8 w-48" />
-              <Skeleton className="h-4 w-72" />
-            </div>
-
-            <div className="flex gap-2 overflow-hidden">
-              {repeat(6).map((_, index) => (
-                <Skeleton key={`sub-tab-${index}`} className="h-9 w-24 rounded-full" />
-              ))}
-            </div>
-
-            <div className="flex items-center justify-end gap-3 md:hidden">
-              <Skeleton className="h-9 w-24 rounded-md" />
-              <Skeleton className="h-9 w-20 rounded-md" />
-            </div>
-
-            <div className="hidden md:block">
-              <Skeleton className="h-10 w-full rounded-md" />
-            </div>
-
-            <ProductGridSkeleton count={12} />
-          </div>
-        </div>
+    <div className="space-y-6">
+      <div className="space-y-3">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-4 w-72" />
       </div>
-    </main>
+
+      <div className="flex gap-2 overflow-hidden">
+        {repeat(6).map((_, index) => (
+          <Skeleton key={`sub-tab-${index}`} className="h-9 w-24 rounded-full" />
+        ))}
+      </div>
+
+      <div className="flex items-center justify-end gap-3 md:hidden">
+        <Skeleton className="h-9 w-24 rounded-md" />
+        <Skeleton className="h-9 w-20 rounded-md" />
+      </div>
+
+      <div className="hidden md:block">
+        <Skeleton className="h-10 w-full rounded-md" />
+      </div>
+
+      <ProductGridSkeleton count={12} />
+    </div>
   )
 }
 
 export function ClassPageSkeleton() {
   return (
-    <main className="min-h-screen bg-white">
-      <div className="container mx-auto max-w-[1360px]">
-        <div className="flex px-4 py-6 md:gap-[40px] md:px-[40px]">
-          <aside className="hidden w-[233px] shrink-0 md:block">
-            <SidebarFilterSkeleton />
-          </aside>
-          <div className="min-w-0 flex-1 space-y-6">
-            <div className="space-y-3">
-              <Skeleton className="h-8 w-32" />
-              <Skeleton className="h-4 w-72" />
-            </div>
+    <div className="space-y-6">
+      <div className="space-y-3">
+        <Skeleton className="h-8 w-32" />
+        <Skeleton className="h-4 w-72" />
+      </div>
 
-            <div className="flex gap-3 overflow-hidden">
-              {repeat(6).map((_, index) => (
-                <Skeleton key={`class-tab-${index}`} className="h-14 w-24 rounded-full" />
-              ))}
-            </div>
+      <div className="flex gap-3 overflow-hidden">
+        {repeat(6).map((_, index) => (
+          <Skeleton key={`class-tab-${index}`} className="h-14 w-24 rounded-full" />
+        ))}
+      </div>
 
-            <Skeleton className="h-28 w-full rounded-2xl" />
+      <Skeleton className="h-28 w-full rounded-2xl" />
 
-            <div className="space-y-3">
-              <Skeleton className="h-5 w-28" />
-              <div className="flex gap-3 overflow-hidden">
-                {repeat(4).map((_, index) => (
-                  <Skeleton key={`class-slide-${index}`} className="h-40 w-40 rounded-xl" />
-                ))}
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 md:hidden">
-              <Skeleton className="h-9 w-24 rounded-md" />
-              <Skeleton className="h-9 w-20 rounded-md" />
-            </div>
-
-            <div className="hidden md:block">
-              <Skeleton className="h-10 w-full rounded-md" />
-            </div>
-          </div>
+      <div className="space-y-3">
+        <Skeleton className="h-5 w-28" />
+        <div className="flex gap-3 overflow-hidden">
+          {repeat(4).map((_, index) => (
+            <Skeleton key={`class-slide-${index}`} className="h-40 w-40 rounded-xl" />
+          ))}
         </div>
       </div>
-    </main>
+
+      <div className="flex items-center justify-end gap-3 md:hidden">
+        <Skeleton className="h-9 w-24 rounded-md" />
+        <Skeleton className="h-9 w-20 rounded-md" />
+      </div>
+
+      <div className="hidden md:block">
+        <Skeleton className="h-10 w-full rounded-md" />
+      </div>
+    </div>
   )
 }
 

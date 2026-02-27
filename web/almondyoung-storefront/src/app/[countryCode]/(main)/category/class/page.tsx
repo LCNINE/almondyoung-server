@@ -3,7 +3,6 @@
 import { useState } from "react"
 import { CategoryCircleTabs } from "@/components/category/category-circle-tabs"
 import { BannerCarousel } from "@/components/layout/components/banner/banner-carousel"
-import ProductFilterSidebar from "@/components/products/product-filter-sidebar"
 import ProductSortToolbar from "@/components/products/product-sort-toolbar"
 import { SectionSliderHorizontal } from "@components/section-sliders-horizontal"
 
@@ -81,73 +80,64 @@ export default function ClassPage() {
   const paginatedProducts: any[] = [] // TODO: props로 받은 데이터 사용
 
   return (
-    <main className="">
-      <div className="container mx-auto max-w-[1360px]">
-        <div className="flex px-4 py-6 md:gap-[40px] md:px-[40px]">
-          {/* 좌측 필터링 사이드바 (데스크톱만) */}
-          {/* 데스크톱 필터 사이드바 */}
-          <aside className="hidden w-[233px] shrink-0 md:block">
-            <ProductFilterSidebar />
-          </aside>
+    <>
+      {/* 카테고리 헤더(타이틀/설명) */}
+      <div className="mb-8">
+        <div className="flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
+          <div className="flex-1">
+            <h1 className="mb-2 text-2xl font-bold text-gray-900 md:text-3xl">
+              클래스
+            </h1>
+            <p className="text-sm leading-relaxed text-gray-600 md:text-base">
+              전문가가 되는 첫 걸음, 다양한 뷰티 클래스를 만나보세요
+            </p>
+          </div>
+        </div>
+      </div>
 
-          <div className="min-w-0 flex-1">
-            {/* 카테고리 헤더(타이틀/설명) */}
-            <div className="mb-8">
-              <div className="flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
-                <div className="flex-1">
-                  <h1 className="mb-2 text-2xl font-bold text-gray-900 md:text-3xl">
-                    클래스
-                  </h1>
-                  <p className="text-sm leading-relaxed text-gray-600 md:text-base">
-                    전문가가 되는 첫 걸음, 다양한 뷰티 클래스를 만나보세요
-                  </p>
-                </div>
-              </div>
-            </div>
+      {/* 원형 탭 - 분야 선택 (데스크톱만) */}
+      <div className="mb-6">
+        <CategoryCircleTabs
+          items={classFields}
+          selectedId={selectedField}
+          onSelect={setSelectedField}
+        />
+      </div>
 
-            {/* 원형 탭 - 분야 선택 (데스크톱만) */}
-            <div className="mb-6">
-              <CategoryCircleTabs
-                items={classFields}
-                selectedId={selectedField}
-                onSelect={setSelectedField}
-              />
-            </div>
+      {/* 프로모션 배너 */}
+      <section className="my-4">
+        <BannerCarousel
+          slides={[
+            {
+              id: "1",
+              image: {
+                src: "https://almondyoung.com/web/product/medium/202503/d21d85aa58f14bb4cc2a69342d24c4fa.jpg",
+                alt: "프로모션 배너",
+              },
+            },
+            {
+              id: "2",
+              image: {
+                src: "https://almondyoung.com/web/product/medium/202503/d21d85aa58f14bb4cc2a69342d24c4fa.jpg",
+                alt: "프로모션 배너",
+              },
+            },
+          ]}
+          height="120px"
+          autoPlay={true}
+          autoPlayInterval={6000}
+          className="lg:overflow-hidden lg:rounded-2xl"
+        />
+      </section>
 
-            {/* 프로모션 배너 */}
-            <section className="my-4">
-              <BannerCarousel
-                slides={[
-                  {
-                    id: "1",
-                    image: {
-                      src: "https://almondyoung.com/web/product/medium/202503/d21d85aa58f14bb4cc2a69342d24c4fa.jpg",
-                      alt: "프로모션 배너",
-                    },
-                  },
-                  {
-                    id: "2",
-                    image: {
-                      src: "https://almondyoung.com/web/product/medium/202503/d21d85aa58f14bb4cc2a69342d24c4fa.jpg",
-                      alt: "프로모션 배너",
-                    },
-                  },
-                ]}
-                height="120px"
-                autoPlay={true}
-                autoPlayInterval={6000}
-                className="lg:overflow-hidden lg:rounded-2xl"
-              />
-            </section>
-
-            {/* 인기 강의 섹션 */}
-            <SectionSliderHorizontal title="🔥 인기 강의" itemCount={8}>
-              {paginatedProducts.slice(0, 8).map((product) => (
-                <div
-                  key={product.id}
-                  className="w-[calc(40%-0.375rem)] shrink-0 snap-start sm:w-[45%] md:w-[calc(25%-12px)] lg:w-[calc(20%-12.8px)]"
-                >
-                  {/* <BasicProductCard
+      {/* 인기 강의 섹션 */}
+      <SectionSliderHorizontal title="🔥 인기 강의" itemCount={8}>
+        {paginatedProducts.slice(0, 8).map((product) => (
+          <div
+            key={product.id}
+            className="w-[calc(40%-0.375rem)] shrink-0 snap-start sm:w-[45%] md:w-[calc(25%-12px)] lg:w-[calc(20%-12.8px)]"
+          >
+            {/* <BasicProductCard
                     product={{
                       ...product,
                       basePrice: 150000,
@@ -156,23 +146,23 @@ export default function ClassPage() {
                       status: "active",
                     }}
                   /> */}
-                </div>
-              ))}
-            </SectionSliderHorizontal>
+          </div>
+        ))}
+      </SectionSliderHorizontal>
 
-            <section>
-              {/* 모바일: 필터 버튼 + 정렬 툴바 */}
-              <div className="mb-4 flex justify-end gap-4 md:hidden">
-                <div>
-                  <CustomDropdown
-                    items={[
-                      { id: "newest", label: "최신순" },
-                      { id: "price_asc", label: "낮은가격순" },
-                      { id: "price_desc", label: "높은가격순" },
-                    ]}
-                  />
-                </div>
-                {/* <button
+      <section>
+        {/* 모바일: 필터 버튼 + 정렬 툴바 */}
+        <div className="mb-4 flex justify-end gap-4 md:hidden">
+          <div>
+            <CustomDropdown
+              items={[
+                { id: "newest", label: "최신순" },
+                { id: "price_asc", label: "낮은가격순" },
+                { id: "price_desc", label: "높은가격순" },
+              ]}
+            />
+          </div>
+          {/* <button
                   onClick={openMobileFilter}
                   className="flex h-10 shrink-0 items-center gap-2 whitespace-nowrap font-['Pretendard'] text-sm font-medium text-gray-700 transition-colors"
                   aria-label="필터 열기"
@@ -180,33 +170,30 @@ export default function ClassPage() {
                   필터
                   <SlidersHorizontal className="h-4 w-4" />
                 </button> */}
-              </div>
+        </div>
 
-              {/* 데스크톱: 정렬 툴바만 */}
-              <div className="hidden md:block">
-                <ProductSortToolbar />
-              </div>
-            </section>
+        {/* 데스크톱: 정렬 툴바만 */}
+        <div className="hidden md:block">
+          <ProductSortToolbar />
+        </div>
+      </section>
 
-            {/* 전체 강의 섹션 */}
-            <section>
-              {/* 상품 그리드 */}
-              {paginatedProducts.length > 0 && (
-                <>
-                  <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
-                    {/* {paginatedProducts.map((product, idx) => (
+      {/* 전체 강의 섹션 */}
+      <section>
+        {/* 상품 그리드 */}
+        {paginatedProducts.length > 0 && (
+          <>
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+              {/* {paginatedProducts.map((product, idx) => (
                       <BasicProductCard
                         key={`${product.id}-${idx}`}
                         product={product}
                       />
                     ))} */}
-                  </div>
-                </>
-              )}
-            </section>
-          </div>
-        </div>
-      </div>
-    </main>
+            </div>
+          </>
+        )}
+      </section>
+    </>
   )
 }
