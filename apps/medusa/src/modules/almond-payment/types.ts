@@ -9,6 +9,5 @@ export interface WalletSessionData {
   amount: number;
   currency: string;
   userId: string;
-  medusaSessionId?: string; // Medusa payment session ID (for webhook correlation)
   captured?: boolean;       // true after capturePayment succeeds
 }

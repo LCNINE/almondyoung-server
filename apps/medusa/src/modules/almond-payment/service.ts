@@ -87,9 +87,6 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
     const userId = ctx?.customer?.id as string | undefined;
     if (!userId) throw new Error('customer.id is required in payment context');
 
-    // Medusa passes its session ID via data.session_id — store it for webhook correlation
-    const medusaSessionId = (data as Record<string, unknown>)?.session_id as string | undefined;
-
     const intent = await this.walletFetch<{ id: string }>(
       '/v1/payment-intents',
       {
@@ -99,7 +96,6 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
           currency: currency_code.toUpperCase(),
           userId,
           ...(returnUrl ? { returnUrl } : {}),
-          ...(medusaSessionId ? { metadata: { medusa_session_id: medusaSessionId } } : {}),
         }),
       },
     );
@@ -109,7 +105,6 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
       amount: Number(amount),
       currency: currency_code.toUpperCase(),
       userId,
-      medusaSessionId,
     };
     return { id: intent.id, data: sessionData as unknown as Record<string, unknown> };
   }
@@ -200,7 +195,7 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
       { method: 'POST' },
     );
 
-    // create new intent — userId and medusaSessionId are carried over from existing session data
+    // create new intent — userId is carried over from existing session data
     const intent = await this.walletFetch<{ id: string }>(
       '/v1/payment-intents',
       {
@@ -209,9 +204,6 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
           amount: newAmount,
           currency: newCurrency,
           userId: prevData.userId,
-          ...(prevData.medusaSessionId
-            ? { metadata: { medusa_session_id: prevData.medusaSessionId } }
-            : {}),
         }),
       },
     );
@@ -221,7 +213,6 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
       amount: newAmount,
       currency: newCurrency,
       userId: prevData.userId,
-      medusaSessionId: prevData.medusaSessionId,
     };
     return { data: updatedData as unknown as Record<string, unknown> };
   }
@@ -242,14 +233,13 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
     const body = webhookData.data as Record<string, any>;
     const evt: string = body?.type ?? body?.event ?? body?.event_type ?? '';
 
-    // wallet이 intent 생성 시 저장한 medusa_session_id를 이벤트 payload에 포함시켜 보냄
-    const sessionId: string | undefined =
-      body?.medusa_session_id ??
-      body?.metadata?.medusa_session_id ??
-      body?.session_id;
+    // intentId = 아웃박스 payload의 필드이자 initiatePayment가 반환한 id (= Medusa session ID)
+    const sessionId: string | undefined = body?.intentId ?? body?.aggregateId;
 
     if (!sessionId) {
-      throw new Error('Webhook payload missing medusa_session_id. Ensure wallet events include metadata.medusa_session_id.');
+      throw new Error(
+        'Webhook payload missing intentId. Ensure wallet outbox events include intentId in payload.',
+      );
     }
 
     const amountRaw =
