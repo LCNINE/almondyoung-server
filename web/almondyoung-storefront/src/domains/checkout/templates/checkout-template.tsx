@@ -9,8 +9,7 @@ import { ShippingSection } from "@/domains/checkout/components/sections/shipping
 import type { ShippingMemo } from "@/domains/checkout/components/sections/shipping/types"
 // import { usePinStatus } from "@/hooks/api/use-pin-status"
 import { useMembershipPricing } from "@/hooks/use-membership-pricing"
-import { updateCart } from "@/lib/api/medusa/cart"
-import { createIntent } from "@/lib/api/wallet"
+import { initiatePaymentSession, updateCart } from "@/lib/api/medusa/cart"
 import { CartResponseDto } from "@/lib/types/dto/medusa"
 import type { PointBalanceDto } from "@/lib/types/dto/wallet"
 import type { CartTotals, ShippingInfo } from "@/lib/types/ui/cart"
@@ -141,18 +140,21 @@ export default function CheckoutTemplate({
 
       const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback`
 
-      const intent = await createIntent({
-        data: {
-          userId: user.id,
-          amount: cartTotals.finalTotal,
-          currency: "KRW",
-          returnUrl,
-        },
+      const result = await initiatePaymentSession(cart, {
+        provider_id: "pp_almond-payment_almond-payment",
+        data: { returnUrl },
       })
+
+      const intentId = (
+        result?.payment_collection?.payment_sessions?.[0]
+          ?.data as Record<string, unknown>
+      )?.intentId as string | undefined
+
+      if (!intentId) throw new Error("결제 세션 초기화에 실패했습니다.")
 
       const walletWebUrl =
         process.env.NEXT_PUBLIC_WALLET_WEB_URL || "http://localhost:3200"
-      window.location.href = `${walletWebUrl}/pay/${intent.id}`
+      window.location.href = `${walletWebUrl}/pay/${intentId}`
     } catch (err) {
       console.error("결제 처리 실패:", err)
       setError(err instanceof Error ? err.message : "알 수 없는 오류")
