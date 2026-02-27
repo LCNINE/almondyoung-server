@@ -249,7 +249,7 @@ export async function authorizePayment(
 export async function createIntent({ data }: { data: CreateIntentRequestDto }) {
   const result = await api<CreateIntentResponseDto>(
     "wallet",
-    "/payments/intents",
+    "/v1/payment-intents",
     {
       method: "POST",
       body: data,
@@ -262,7 +262,7 @@ export async function createIntent({ data }: { data: CreateIntentRequestDto }) {
 }
 
 export async function getIntent(intentId: string): Promise<IntentDto> {
-  return await api<IntentDto>("wallet", `/payments/intents/${intentId}`, {
+  return await api<IntentDto>("wallet", `/v1/payment-intents/${intentId}`, {
     method: "GET",
     withAuth: true,
   })

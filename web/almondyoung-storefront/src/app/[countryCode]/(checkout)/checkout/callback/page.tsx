@@ -12,51 +12,34 @@ export default function CallbackPage() {
   const countryCode = params.countryCode as string
 
   useEffect(() => {
+    const paymentIntentId = searchParams.get("payment_intent_id")
     const status = searchParams.get("status")
-    const code = searchParams.get("code")
-    const message = searchParams.get("message")
-    const paymentKey = searchParams.get("paymentKey")
-    const orderId = searchParams.get("orderId")
-    const usePoints = searchParams.get("usePoints")
-    const amount = searchParams.get("amount")
     const mode = searchParams.get("mode")
     const planId = searchParams.get("planId")
 
-    // 실패 케이스 처리 (토스에서 실패로 리다이렉트된 경우)
-    if (status === "FAIL") {
-      const failCode = code || "UNKNOWN"
-      const failMessage = message || "결제 실패"
+    if (status !== "succeeded") {
       router.replace(
         mode === "membership"
-          ? `/${countryCode}/mypage/membership/subscribe/fail?code=${failCode}&message=${encodeURIComponent(failMessage)}`
-          : `/${countryCode}/checkout/fail?code=${failCode}&message=${encodeURIComponent(failMessage)}`
+          ? `/${countryCode}/mypage/membership/subscribe/fail?code=PAYMENT_FAILED&message=${encodeURIComponent("결제에 실패했습니다.")}`
+          : `/${countryCode}/checkout/fail?code=PAYMENT_FAILED&message=${encodeURIComponent("결제에 실패했습니다.")}`
       )
       return
     }
 
-    // 필수 파라미터 검증
-    if (!paymentKey || !orderId) {
+    if (!paymentIntentId) {
       router.replace(
         mode === "membership"
-          ? `/${countryCode}/mypage/membership/subscribe/fail?code=MISSING_PARAMS&message=${encodeURIComponent("필수 파라미터가 누락되었습니다.")}`
-          : `/${countryCode}/checkout/fail?code=MISSING_PARAMS&message=${encodeURIComponent("필수 파라미터가 누락되었습니다.")}`
+          ? `/${countryCode}/mypage/membership/subscribe/fail?code=MISSING_PARAMS&message=${encodeURIComponent("결제 정보가 없습니다.")}`
+          : `/${countryCode}/checkout/fail?code=MISSING_PARAMS&message=${encodeURIComponent("결제 정보가 없습니다.")}`
       )
       return
     }
 
-    const usePointsNumber = usePoints ? parseInt(usePoints) : 0
-
-    processPaymentCallback(
-      countryCode,
-      paymentKey,
-      orderId,
-      amount!,
-      usePointsNumber,
-      mode,
-      planId
-    ).then((result) => {
-      router.replace(result.redirectUrl)
-    })
+    processPaymentCallback(countryCode, paymentIntentId, mode, planId).then(
+      (result) => {
+        router.replace(result.redirectUrl)
+      }
+    )
   }, [countryCode, searchParams, router])
 
   return (
