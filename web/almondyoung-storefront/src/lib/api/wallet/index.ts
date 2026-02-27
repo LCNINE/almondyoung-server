@@ -247,22 +247,34 @@ export async function authorizePayment(
 }
 
 export async function createIntent({ data }: { data: CreateIntentRequestDto }) {
-  const result = await api<CreateIntentResponseDto>(
-    "wallet",
-    "/payments/intents",
-    {
-      method: "POST",
-      body: data,
-      withAuth: true,
-      cache: "no-store",
-    }
-  )
+  const { getBackendBaseUrl } = await import("@/lib/config/backend")
+  const baseUrl = getBackendBaseUrl("wallet")
+  const apiKey = process.env.WALLET_API_KEY
 
-  return result
+  if (!baseUrl) throw new Error("Missing wallet base URL")
+  if (!apiKey) throw new Error("Missing WALLET_API_KEY")
+
+  const res = await fetch(`${baseUrl}/v1/payment-intents`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+      "Idempotency-Key": crypto.randomUUID(),
+    },
+    body: JSON.stringify(data),
+    cache: "no-store",
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.message ?? `createIntent 실패: ${res.status}`)
+  }
+
+  return res.json() as Promise<CreateIntentResponseDto>
 }
 
 export async function getIntent(intentId: string): Promise<IntentDto> {
-  return await api<IntentDto>("wallet", `/payments/intents/${intentId}`, {
+  return await api<IntentDto>("wallet", `/v1/payment-intents/${intentId}`, {
     method: "GET",
     withAuth: true,
   })
@@ -412,12 +424,17 @@ export async function getPointHistory(limit?: number) {
 /**
  * 포인트 잔액 조회
  */
+// TODO: 임시 mock 객체 사용
 export async function getPointBalance(): Promise<PointBalanceDto> {
-  return await api<PointBalanceDto>("wallet", "/payments/points/balance", {
-    method: "GET",
-    cache: "no-store",
-    withAuth: true,
-  })
+  return {
+    balance: 0,
+    withdrawable: 0,
+  }
+  // return await api<PointBalanceDto>("wallet", "/payments/points/balance", {
+  //   method: "GET",
+  //   cache: "no-store",
+  //   withAuth: true,
+  // })
 }
 
 /*───────────────────────────
@@ -429,10 +446,23 @@ export async function getPointBalance(): Promise<PointBalanceDto> {
  * @returns
  */
 export async function getTaxInvoice(): Promise<TaxInvoiceDto> {
-  return await api<TaxInvoiceDto>("wallet", "/tax-invoices/preferences", {
-    method: "GET",
-    withAuth: true,
-  })
+  // TODO: 임시 mock 객체 사용
+  return {
+    userId: crypto.randomUUID(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    defaultEnabled: 1,
+    defaultBusinessInfo: {
+      name: "테스트 사업자",
+      businessNumber: "1234567890",
+      address: "서울특별시 강남구 역삼동 123-456",
+      ownerName: "테스트 대표자",
+    }
+  }
+  // return await api<TaxInvoiceDto>("wallet", "/tax-invoices/preferences", {
+  //   method: "GET",
+  //   withAuth: true,
+  // })
 }
 
 /**

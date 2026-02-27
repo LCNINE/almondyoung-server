@@ -1,6 +1,7 @@
 "use server"
 
 import { siteConfig } from "@/lib/config/site"
+import { normalizeRedirectPath, toLocalizedPath } from "@/lib/utils/locale-path"
 import { getCacheTag, setTokenCookies } from "@lib/data/cookies"
 import { revalidatePath, revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
@@ -87,13 +88,15 @@ export async function login(
     console.error("Cart transfer error:", error)
   }
 
-  const targetPath = redirectTo?.startsWith("/")
+  const rawTargetPath = redirectTo?.startsWith("/")
     ? redirectTo
     : redirectTo
       ? `/${redirectTo}`
       : siteConfig.auth.redirect_to
+  const targetPath = normalizeRedirectPath(rawTargetPath)
+  const localizedTargetPath = toLocalizedPath(countryCode, targetPath)
 
   revalidatePath("/", "layout")
-  revalidatePath(targetPath)
-  redirect(`/${countryCode}${targetPath}`)
+  revalidatePath(localizedTargetPath)
+  redirect(localizedTargetPath)
 }

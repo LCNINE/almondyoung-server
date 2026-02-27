@@ -9,35 +9,35 @@ export interface DiscountBreakdown {
 }
 
 export type CreateIntentRequestDto = {
-  customerId: string
-  originalAmount: number
-  discountAmount: number
-  type: string
-  discountBreakdown?: DiscountBreakdown[]
+  userId: string
+  amount: number
+  currency: string
+  returnUrl?: string
+  metadata?: Record<string, unknown>
 }
 
 export type CreateIntentResponseDto = {
   id: string
-  customerId: string
-  amount: number
-  type: string
+  userId: string
   status: string
+  payableAmount: number
+  currency: string
+  returnUrl: string | null
+  expiresAt: string
   createdAt: string
-  updatedAt: string
-  metadata: any | null
-  capturedAt: string | null
 }
 
 export type IntentDto = {
   id: string
-  customerId: string
-  amount: number
-  type: string
+  userId: string
   status: string
+  payableAmount: number
+  currency: string
+  returnUrl: string | null
+  expiresAt: string
   createdAt: string
   updatedAt: string
-  metadata?: any | null
-  capturedAt?: string | null
+  metadata?: Record<string, unknown> | null
 }
 
 /*───────────────────────────

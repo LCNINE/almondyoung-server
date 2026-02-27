@@ -9,7 +9,8 @@ import {
 } from "@/components/shop-form/schema"
 import { modifyShopSurvey } from "@/lib/api/users/shop-suvery"
 import type { ShopInfoDto } from "@/lib/types/dto/users"
-import { useRouter } from "next/navigation"
+import { toLocalizedPath } from "@/lib/utils/locale-path"
+import { useParams, useRouter } from "next/navigation"
 import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
@@ -26,6 +27,8 @@ export default function ShopSurveyForm({
 }: ShopSurveyFormProps) {
   const [currentStep, setCurrentStep] = useState(0)
   const router = useRouter()
+  const { countryCode } = useParams() as { countryCode?: string }
+  const currentCountryCode = countryCode ?? "kr"
 
   const form = useForm<ShopFormValues>({
     resolver: zodResolver(shopFormSchema),
@@ -58,7 +61,7 @@ export default function ShopSurveyForm({
     }
 
     toast.success("정보가 저장되었습니다.")
-    router.push(redirectTo || "/")
+    router.push(toLocalizedPath(currentCountryCode, redirectTo || "/"))
   }
 
   return (

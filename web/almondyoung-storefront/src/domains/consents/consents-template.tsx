@@ -16,12 +16,15 @@ import { HttpApiError } from "@lib/api/api-error"
 import { createConsents } from "@lib/api/users/consents"
 import { agreements } from "@lib/data/agreements"
 import { CreateConsentsDto } from "@lib/types/dto/users"
-import { useRouter } from "next/navigation"
+import { toLocalizedPath } from "@/lib/utils/locale-path"
+import { useParams, useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
 
 export function ConsentsTemplate({ redirectTo }: { redirectTo: string }) {
   const router = useRouter()
+  const { countryCode } = useParams() as { countryCode?: string }
+  const currentCountryCode = countryCode ?? "kr"
   const [isPending, startTransition] = useTransition()
 
   const [consents, setConsents] = useState<CreateConsentsDto>({
@@ -62,7 +65,7 @@ export function ConsentsTemplate({ redirectTo }: { redirectTo: string }) {
     startTransition(async () => {
       try {
         const res = await createConsents(consents)
-        router.replace(redirectTo ?? "/")
+        router.replace(toLocalizedPath(currentCountryCode, redirectTo || "/"))
       } catch (error) {
         if (error instanceof HttpApiError) {
           toast.error(error.message)
