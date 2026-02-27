@@ -72,11 +72,10 @@ export interface AuthenticatedRequest {
  * from the JWT claims and attaches it to request.jwtUserId.
  */
 const JWT_COOKIE_PATTERNS = [
-  /^\/v1\/payment-intents\/[^/]+$/,            // GET /v1/payment-intents/:id
-  /^\/v1\/payment-intents\/[^/]+\/confirm$/,   // POST /v1/payment-intents/:id/confirm
-  /^\/v1\/payment-intents\/[^/]+\/cancel$/,    // POST /v1/payment-intents/:id/cancel
-  /^\/v1\/payment-methods$/,                   // GET /v1/payment-methods
-  /^\/v1\/payment-methods\/?$/,                // also matches trailing slash
+  /^\/v1\/payment-intents\/[^/]+\/?$/,          // GET /v1/payment-intents/:id
+  /^\/v1\/payment-intents\/[^/]+\/confirm\/?$/, // POST /v1/payment-intents/:id/confirm
+  /^\/v1\/payment-intents\/[^/]+\/cancel\/?$/,  // POST /v1/payment-intents/:id/cancel
+  /^\/v1\/payment-methods\/?$/,                 // GET /v1/payment-methods
 ];
 
 @Injectable()
@@ -91,7 +90,7 @@ class ApiKeyGuard implements CanActivate {
     const request = http.getRequest<AuthenticatedRequest>();
 
     // Health & docs are public
-    const path = (request.url ?? '').split('?')[0];
+    const path = normalizePath((request.url ?? '').split('?')[0]);
     if (path === '/v1/health' || path === '/v1/ready' || path.startsWith('/docs')) {
       return true;
     }
@@ -147,8 +146,11 @@ class ApiKeyGuard implements CanActivate {
     try {
       const secret = process.env.USER_JWT_SECRET;
       if (!secret) return null;
-      const payload = this.jwtService.verify<{ sub?: string; id?: string }>(accessToken, { secret });
-      return payload.sub ?? payload.id ?? null;
+      const payload = this.jwtService.verify<{ sub?: string; id?: string; userId?: string }>(
+        accessToken,
+        { secret },
+      );
+      return payload.sub ?? payload.id ?? payload.userId ?? null;
     } catch {
       return null;
     }
@@ -159,14 +161,43 @@ function getHeader(
   headers: Record<string, string | string[] | undefined>,
   name: string,
 ): string | undefined {
-  const val = headers[name];
-  if (Array.isArray(val)) return val[0];
+  const lowerName = name.toLowerCase();
+  const direct = headers[name] ?? headers[lowerName] ?? headers[name.toUpperCase()];
+  if (direct !== undefined) {
+    if (Array.isArray(direct)) {
+      return lowerName === 'cookie' ? direct.join('; ') : direct[0];
+    }
+    return direct;
+  }
+
+  const key = Object.keys(headers).find((k) => k.toLowerCase() === lowerName);
+  const val = key ? headers[key] : undefined;
+  if (Array.isArray(val)) {
+    return lowerName === 'cookie' ? val.join('; ') : val[0];
+  }
   return val;
 }
 
 function parseCookieValue(cookieHeader: string, name: string): string | null {
-  const match = cookieHeader.match(new RegExp(`(?:^|;\\s*)${name}=([^;]*)`));
-  return match ? decodeURIComponent(match[1]) : null;
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = cookieHeader.match(new RegExp(`(?:^|;\\s*)${escapedName}=([^;]*)`));
+  if (!match) return null;
+
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
+}
+
+function normalizePath(path: string): string {
+  if (!path) return '/';
+
+  const collapsed = path.replace(/\/{2,}/g, '/');
+  if (collapsed.length > 1 && collapsed.endsWith('/')) {
+    return collapsed.slice(0, -1);
+  }
+  return collapsed;
 }
 
 // ─── Module ───────────────────────────────────────────────────────────────────
