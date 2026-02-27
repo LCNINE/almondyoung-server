@@ -5,9 +5,6 @@ import { ProductGrid } from "@/components/products/product-grid"
 import ProductFilterSidebar from "@/components/products/product-filter-sidebar"
 import ProductSortToolbar from "@/components/products/product-sort-toolbar"
 import CustomDropdown from "@components/dropdown"
-import { SlidersHorizontal } from "lucide-react"
-import { overlay } from "overlay-kit"
-import { MobileFilterSheet } from "./mobile-filter-sheet"
 import type { StoreProductCategoryTree } from "@lib/types/medusa-category"
 import type { ProductCardProps } from "@lib/types/ui/product"
 
@@ -30,16 +27,10 @@ export function CategorySubPageClient({
   categoryInfo,
   categoryData,
   initialProducts = [],
-  initialTotal = 0,
+  // initialTotal = 0,
   countryCode,
 }: CategorySubPageClientProps) {
   const paginatedProducts = initialProducts
-
-  const openMobileFilter = () => {
-    overlay.open(({ isOpen, close, unmount }) => (
-      <MobileFilterSheet isOpen={isOpen} close={close} exit={unmount} />
-    ))
-  }
 
   // 하위 카테고리가 있는지 확인
   const hasChildren =
@@ -85,11 +76,10 @@ export function CategorySubPageClient({
                         <li key={child.id} className="flex-shrink-0">
                           <Link
                             href={href}
-                            className={`flex items-center justify-center gap-2.5 rounded-full border-gray-200 px-2.5 py-1 font-['Pretendard'] text-sm whitespace-nowrap outline outline-[0.50px] outline-offset-[-0.50px] transition-colors md:px-3.5 md:py-2 md:text-base ${
-                              isActive
+                            className={`flex items-center justify-center gap-2.5 rounded-full border-gray-200 px-2.5 py-1 font-['Pretendard'] text-sm whitespace-nowrap outline outline-[0.50px] outline-offset-[-0.50px] transition-colors md:px-3.5 md:py-2 md:text-base ${isActive
                                 ? "bg-black font-normal text-zinc-100 outline-black md:bg-zinc-800 md:font-bold md:outline-zinc-800"
                                 : "outline-Grays-Gray-3 text-Grays-Gray font-normal hover:bg-gray-100"
-                            } `}
+                              } `}
                             aria-pressed={isActive}
                           >
                             {child.name}
@@ -114,14 +104,14 @@ export function CategorySubPageClient({
                     ]}
                   />
                 </div>
-                <button
+                {/* <button
                   onClick={openMobileFilter}
                   className="flex h-10 shrink-0 items-center gap-2 whitespace-nowrap font-['Pretendard'] text-sm font-medium text-gray-700 transition-colors"
                   aria-label="필터 열기"
                 >
                   필터
                   <SlidersHorizontal className="h-4 w-4" />
-                </button>
+                </button> */}
               </div>
 
               {/* 데스크톱: 정렬 툴바만 */}

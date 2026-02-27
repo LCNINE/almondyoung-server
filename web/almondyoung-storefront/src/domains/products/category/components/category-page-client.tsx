@@ -4,9 +4,6 @@ import { CategoryCircleTabs } from "@/components/category/category-circle-tabs"
 import { BannerCarousel } from "@/components/layout/components/banner/banner-carousel"
 import { ProductGrid } from "@/components/products/product-grid"
 import ProductFilterSidebar from "@/components/products/product-filter-sidebar"
-import { SlidersHorizontal } from "lucide-react"
-import { overlay } from "overlay-kit"
-import { MobileFilterSheet } from "./mobile-filter-sheet"
 import CustomDropdown from "@components/dropdown"
 import type { StoreProductCategoryTree } from "@lib/types/medusa-category"
 import type { ProductCardProps } from "@lib/types/ui/product"
@@ -492,12 +489,6 @@ export function CategoryPageClient({
     }
   }, [hasMore, loadMore])
 
-  const openMobileFilter = () => {
-    overlay.open(({ isOpen, close, unmount }) => (
-      <MobileFilterSheet isOpen={isOpen} close={close} exit={unmount} />
-    ))
-  }
-
   return (
     <main className="">
       <div className="container mx-auto max-w-[1360px]">
@@ -635,14 +626,14 @@ export function CategoryPageClient({
                         : DEFAULT_SORT) })
                     }
                   />
-                  <button
+                  {/* <button
                     onClick={openMobileFilter}
                     className="flex h-10 shrink-0 items-center gap-2 whitespace-nowrap font-['Pretendard'] text-sm font-medium text-gray-700 transition-colors"
                     aria-label="필터 열기"
                   >
                     필터
                     <SlidersHorizontal className="h-4 w-4" />
-                  </button>
+                  </button> */}
                 </div>
               </div>
 
