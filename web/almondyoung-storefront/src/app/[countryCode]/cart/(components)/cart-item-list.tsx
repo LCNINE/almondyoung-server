@@ -56,13 +56,7 @@ export function CartItemList({
                 onDelete={() => onDelete(item.id)}
                 thumbnail={item.product.thumbnail || ""}
                 title={item.product.name}
-                option={
-                  Object.keys(item.selectedOptions).length > 0
-                    ? Object.entries(item.selectedOptions)
-                      .map(([key, value]) => `${key}: ${value}`)
-                      .join(", ")
-                    : undefined
-                }
+                option={item.selectedOptionText}
                 brand={item.product.brand || ""}
                 badge="4시 이전 주문 시 당일 출고 보장"
                 originalPrice={
@@ -113,13 +107,7 @@ export function CartItemList({
             onDelete={() => onDelete(item.id)}
             thumbnail={item.product.thumbnail || ""}
             title={item.product.name}
-            option={
-              Object.keys(item.selectedOptions).length > 0
-                ? Object.entries(item.selectedOptions)
-                  .map(([key, value]) => `${key}: ${value}`)
-                  .join(", ")
-                : undefined
-            }
+            option={item.selectedOptionText}
             brand={item.product.brand || ""}
             badge="4시 이전 주문 시 당일 출고 보장"
             originalPrice={
