@@ -34,6 +34,7 @@ export const PRODUCTS_INDEX_SETTINGS: Record<string, any> = {
       search_synonym_graph: {
         type: 'synonym_graph' as const,
         synonyms: PRODUCT_SEARCH_SYNONYMS,
+        lenient: true,
       },
     },
     analyzer: {
@@ -45,7 +46,7 @@ export const PRODUCTS_INDEX_SETTINGS: Record<string, any> = {
       nori_search_synonym: {
         type: 'custom' as const,
         tokenizer: 'nori_tokenizer' as const,
-        filter: ['nori_posfilter', 'lowercase', 'search_synonym_graph'],
+        filter: ['lowercase', 'search_synonym_graph', 'nori_posfilter'],
       },
       standard_lowercase: {
         type: 'custom' as const,
