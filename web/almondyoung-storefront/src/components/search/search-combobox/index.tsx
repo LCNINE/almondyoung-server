@@ -1,10 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { SearchInput } from "../search-input/input"
 import { SearchPopover } from "../search-popover"
 import { useRouter } from "next/navigation"
 import { useSearchHistory } from "@/hooks/ui/use-search-history"
+import { getSuggestions } from "@lib/api/pim/search"
 
 /**
  * 이 컴포넌트는 검색 입력(SearchInput)과 팝오버(SearchPopover)를 조합하여
@@ -18,10 +19,33 @@ import { useSearchHistory } from "@/hooks/ui/use-search-history"
 export function SearchCombobox() {
   const [searchTerm, setSearchTerm] = useState("")
   const [isOpen, setIsOpen] = useState(false)
+  const [suggestions, setSuggestions] = useState<string[]>([])
 
   const { addKeyword } = useSearchHistory()
-
   const router = useRouter()
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (debounceTimer.current) {
+      clearTimeout(debounceTimer.current)
+    }
+
+    if (searchTerm.length < 2) {
+      setSuggestions([])
+      return
+    }
+
+    debounceTimer.current = setTimeout(async () => {
+      const result = await getSuggestions({ q: searchTerm, size: 5 })
+      setSuggestions(result.data?.items.map((i) => i.keyword) ?? [])
+    }, 300)
+
+    return () => {
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current)
+      }
+    }
+  }, [searchTerm])
 
   const handleSearchKeyword = (key: string) => {
     if (key === "Enter" && searchTerm.trim()) {
@@ -40,7 +64,7 @@ export function SearchCombobox() {
   }
 
   return (
-    <SearchPopover isOpen={isOpen} setIsOpen={setIsOpen}>
+    <SearchPopover isOpen={isOpen} setIsOpen={setIsOpen} suggestions={suggestions}>
       <SearchInput
         searchTerm={searchTerm}
         setSearchTerm={setSearchTerm}

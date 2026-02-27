@@ -51,7 +51,7 @@ const LOCAL_SERVICE_URLS: Record<BackendService, string> = {
   membership: "http://localhost:3001",
   notification: "http://localhost:5001",
   pim: "http://localhost:3020",
-  search: "http://localhost:3000",
+  search: "http://localhost:3004",
   wallet: "http://localhost:5001",
   anly: "http://localhost:3040",
   ugc: "http://localhost:3031",
