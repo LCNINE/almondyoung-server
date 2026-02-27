@@ -1,10 +1,9 @@
 "use server"
 
 import { sdk } from "@/lib/config/medusa"
-import { getAuthHeaders, getCacheOptions } from "@/lib/data/cookies"
 import { HttpTypes, OrderStatus } from "@medusajs/types"
 import { handleMedusaAuthError } from "./auth-utils"
-import medusaError from "@/lib/utils/medusa-error"
+import { getAuthHeaders, getCacheOptions } from "../../data/cookies"
 
 export interface MedusaOrder {
   id: string
@@ -48,7 +47,9 @@ export async function getOrders(params?: {
   status?: OrderStatus | OrderStatus[]
 }): Promise<HttpTypes.StoreOrderListResponse | null> {
   const filters: HttpTypes.StoreOrderFilters = {
-    fields: "id,created_at,updated_at,*items",
+    fields:
+      "id,display_id,status,fulfillment_status,payment_status,created_at,updated_at,total,currency_code,*items,*items.variant,*items.variant.product",
+    order: "-created_at",
   }
 
   if (typeof params?.limit === "number") {
@@ -64,7 +65,7 @@ export async function getOrders(params?: {
   }
 
   const authHeaders = await getAuthHeaders()
-  if (!authHeaders) return null
+  if (!("authorization" in authHeaders)) return null
 
   const headers = { ...authHeaders }
 

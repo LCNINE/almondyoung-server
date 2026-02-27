@@ -1,13 +1,9 @@
-"use client"
-
 import { PageTitle } from "@/components/shared/page-title"
 import OrderCard from "@components/orders/order-card/order-card"
 import OrderCardContent from "@components/orders/order-card/order-card-content"
 import { OrderFilter } from "./shared/order-filter"
-import { useEffect, useState } from "react"
-import { getOrders } from "@lib/api/medusa/orders"
-import { MypageOrderListSkeleton } from "@/components/skeletons/page-skeletons"
 import { Package } from "lucide-react"
+import type { HttpTypes } from "@medusajs/types"
 
 interface OrderItem {
   orderId: string
@@ -23,93 +19,60 @@ interface OrderItem {
   showInquiry: boolean
 }
 
-export function OrderListClient() {
-  const [orders, setOrders] = useState<OrderItem[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+interface OrderListClientProps {
+  initialOrders: HttpTypes.StoreOrder[]
+  hasError?: boolean
+}
 
-  useEffect(() => {
-    const fetchOrders = async () => {
-      try {
-        const ordersData = await getOrders({ limit: 50 })
+const getKoreanOrderStatus = (order: HttpTypes.StoreOrder): string => {
+  if (order.status === "canceled") return "취소됨"
+  if (order.payment_status === "awaiting") return "결제 대기"
+  if (order.fulfillment_status === "fulfilled") return "배송 완료"
+  if (order.fulfillment_status === "shipped") return "배송 중"
+  if (order.fulfillment_status === "partially_fulfilled") return "부분 배송"
+  if (order.fulfillment_status === "not_fulfilled") return "상품 준비 중"
+  return "결제 완료"
+}
 
-        const mappedOrders: OrderItem[] = (ordersData?.orders || []).map(
-          (order) => {
-            const orderDate = new Date(order.created_at)
-            const formatDate = `${orderDate.getMonth() + 1}월 ${orderDate.getDate()}일`
+const mapStoreOrderToOrderItem = (order: HttpTypes.StoreOrder): OrderItem => {
+  const orderDate = new Date(order.created_at)
+  const formatDate = `${orderDate.getMonth() + 1}월 ${orderDate.getDate()}일`
+  const firstItem = order.items?.[0]
+  const total = typeof order.total === "number" ? order.total : 0
 
-            // 주문 상태 매핑
-            let status = "결제 완료"
-            let deliveryInfo = ""
-
-            const fulfillmentStatus = order.fulfillment_status
-            const paymentStatus = order.payment_status
-
-            if (paymentStatus === "awaiting") {
-              status = "결제 대기"
-            } else if (fulfillmentStatus === "fulfilled") {
-              status = "배송 완료"
-            } else if (fulfillmentStatus === "shipped") {
-              status = "배송 중"
-            } else if (fulfillmentStatus === "partially_fulfilled") {
-              status = "부분 배송"
-            } else if (fulfillmentStatus === "not_fulfilled") {
-              status = "상품 준비 중"
-            } else if (order.status === "canceled") {
-              status = "취소됨"
-            }
-
-            // 첫 번째 상품 정보
-            const firstItem = order.items?.[0]
-            const productName =
-              firstItem?.title || firstItem?.variant?.product?.title || "상품"
-            const productImage =
-              firstItem?.thumbnail ||
-              firstItem?.variant?.product?.thumbnail ||
-              "https://placehold.co/80x80"
-            const price = `${(order.total / 100).toLocaleString()}원`
-
-            const options: string[] = []
-            if (firstItem?.variant?.title && firstItem.variant.title !== "Default") {
-              options.push(firstItem.variant.title)
-            }
-
-            return {
-              orderId: order.id,
-              orderDate: formatDate,
-              status,
-              deliveryInfo,
-              shippingNote: "",
-              productName,
-              productImage,
-              price,
-              quantity: order.items?.length || 0,
-              options,
-              showInquiry: status === "배송 완료",
-            }
-          }
-        )
-
-        setOrders(mappedOrders)
-      } catch (err) {
-        console.error("주문 목록 조회 실패:", err)
-        setError("주문 목록을 불러오는데 실패했습니다")
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    fetchOrders()
-  }, [])
-
-  if (isLoading) {
-    return <MypageOrderListSkeleton />
+  const options: string[] = []
+  if (firstItem?.variant?.title && firstItem.variant.title !== "Default") {
+    options.push(firstItem.variant.title)
   }
 
-  if (error) {
+  return {
+    orderId: order.id,
+    orderDate: formatDate,
+    status: getKoreanOrderStatus(order),
+    deliveryInfo: "",
+    shippingNote: "",
+    productName: firstItem?.title || firstItem?.variant?.product?.title || "상품",
+    productImage:
+      firstItem?.thumbnail ||
+      firstItem?.variant?.product?.thumbnail ||
+      "https://placehold.co/80x80",
+    price: `${(total / 100).toLocaleString()}원`,
+    quantity: order.items?.length || 0,
+    options,
+    showInquiry: order.fulfillment_status === "fulfilled",
+  }
+}
+
+export function OrderListClient({
+  initialOrders,
+  hasError = false,
+}: OrderListClientProps) {
+  const orders: OrderItem[] = initialOrders.map(mapStoreOrderToOrderItem)
+
+  if (hasError) {
     return (
       <div className="flex min-h-[400px] flex-col items-center justify-center gap-4">
-        <p className="text-gray-500">{error}</p>
+        <p className="text-gray-500">주문 목록을 불러오는데 실패했습니다</p>
       </div>
     )
   }
