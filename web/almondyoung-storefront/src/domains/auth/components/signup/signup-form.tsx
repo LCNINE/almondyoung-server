@@ -14,6 +14,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import type { Cafe24SignupBootstrapData } from "@lib/api/users/auth/signup-cafe24"
 import { createUser } from "@lib/api/users/auth/signup-base"
 import { formatBirthday } from "@lib/utils/format-birthday"
+import { toE164Korean } from "@lib/utils/format-phone-number"
 import { signupSchema, SignupSchema } from "domains/auth/schemas/signup-schema"
 import { setFormError } from "domains/auth/utils/set-form-error"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
@@ -82,7 +83,7 @@ export function SignupForm({ mode, cafe24Bootstrap }: SignupFormProps) {
       password: "",
       passwordConfirm: "",
       birthday: normalizeBirthday(prefill?.birthday),
-      phoneNumber: prefill?.phoneNumber ?? "",
+      phoneNumber: toE164Korean(prefill?.phoneNumber ?? ""),
       verificationCode: "",
       countryCode: "KR",
       isPhoneVerified: isCafe24Mode,

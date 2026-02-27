@@ -10,9 +10,10 @@ import {
   FormDescription,
 } from "@/components/ui/form"
 import { cn } from "@lib/utils"
-import { UseFormReturn } from "react-hook-form"
+import { Controller, UseFormReturn } from "react-hook-form"
 import { Info } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
+import CustomPhoneInput from "@/components/shared/inputs/phone-input"
 import { PhoneVerificationField } from "./phone-verification-field"
 
 type SignupMode = "default" | "cafe24"
@@ -179,12 +180,6 @@ const CAFE24_HIDDEN_FIELDS: FieldConfig[] = [
     type: "text",
     description: "YYYYMMDD 형식 (예: 19900101)",
   },
-  {
-    name: "phoneNumber",
-    placeholder: "휴대폰 번호",
-    type: "text",
-    description: "연동 가입에서는 휴대폰 인증이 면제됩니다",
-  },
 ]
 
 const renderInputField = (
@@ -208,12 +203,13 @@ const renderInputField = (
             {...field}
           />
         </FormControl>
-        {fieldConfig.description && !form.formState.errors[fieldConfig.name] && (
-          <FormDescription className="flex items-start gap-1.5 text-xs">
-            <Info className="text-muted-foreground mt-0.5 h-3 w-3 shrink-0" />
-            <span>{fieldConfig.description}</span>
-          </FormDescription>
-        )}
+        {fieldConfig.description &&
+          !form.formState.errors[fieldConfig.name] && (
+            <FormDescription className="flex items-start gap-1.5 text-xs">
+              <Info className="text-muted-foreground mt-0.5 h-3 w-3 shrink-0" />
+              <span>{fieldConfig.description}</span>
+            </FormDescription>
+          )}
         <FormMessage />
       </FormItem>
     )}
@@ -235,6 +231,8 @@ export function SignupFormFields({
     () => (isCafe24Mode ? CAFE24_FORM_SECTIONS : DEFAULT_FORM_SECTIONS),
     [isCafe24Mode]
   )
+
+  console.log("form:", form.getValues())
 
   useEffect(() => {
     if (!isCafe24Mode) return
@@ -282,7 +280,9 @@ export function SignupFormFields({
             {section.type === "phone" ? (
               <PhoneVerificationField form={form} />
             ) : (
-              section.fields.map((fieldConfig) => renderInputField(form, fieldConfig))
+              section.fields.map((fieldConfig) =>
+                renderInputField(form, fieldConfig)
+              )
             )}
           </div>
         </div>
@@ -301,9 +301,14 @@ export function SignupFormFields({
 
           <div className="pl-8">
             {!showPrefillEditor ? (
-              <p className="text-xs text-zinc-500">
-                현재 불러온 정보로 진행합니다. 필요하면 펼쳐서 수정할 수 있습니다.
-              </p>
+              <button
+                type="button"
+                className="text-xs text-zinc-500 underline underline-offset-4"
+                onClick={() => setShowPrefillEditor(true)}
+              >
+                현재 불러온 정보로 진행합니다. 필요하면 펼쳐서 수정할 수
+                있습니다.
+              </button>
             ) : (
               <div
                 className={cn(
@@ -313,6 +318,33 @@ export function SignupFormFields({
                 {CAFE24_HIDDEN_FIELDS.map((fieldConfig) =>
                   renderInputField(form, fieldConfig)
                 )}
+                <FormItem>
+                  <FormControl>
+                    <Controller
+                      name="phoneNumber"
+                      control={form.control}
+                      render={({ field }) => (
+                        <CustomPhoneInput
+                          className="h-12"
+                          value={field.value}
+                          onChange={field.onChange}
+                          onCountryChange={(country) => {
+                            if (country) form.setValue("countryCode", country)
+                          }}
+                          countryCode={form.watch("countryCode") || "KR"}
+                          placeholder="010-0000-0000"
+                        />
+                      )}
+                    />
+                  </FormControl>
+                  {!form.formState.errors.phoneNumber && (
+                    <FormDescription className="flex items-start gap-1.5 text-xs">
+                      <Info className="text-muted-foreground mt-0.5 h-3 w-3 shrink-0" />
+                      <span>연동 가입에서는 휴대폰 인증이 면제됩니다</span>
+                    </FormDescription>
+                  )}
+                  <FormMessage />
+                </FormItem>
               </div>
             )}
           </div>

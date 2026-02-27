@@ -20,3 +20,16 @@ export const getCleanKoreanNumber = (phone: string) => {
   // 82로 시작하면 0으로 교체, 아니면 그대로 반환
   return cleaned.startsWith("82") ? "0" + cleaned.slice(2) : cleaned
 }
+
+/**
+ * 010 로컬 번호를 E.164 형식(+82)으로 변환
+ * @param {string} phone - 변환할 전화번호 (예: "010-1234-5678" 또는 "01012345678")
+ * @returns {string} - E.164 형식 (예: "+821012345678")
+ */
+export const toE164Korean = (phone: string): string => {
+  if (!phone) return ""
+  const cleaned = phone.replace(/\D/g, "")
+  if (cleaned.startsWith("0")) return "+82" + cleaned.slice(1)
+  if (cleaned.startsWith("82")) return "+" + cleaned
+  return phone
+}
