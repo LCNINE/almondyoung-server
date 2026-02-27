@@ -69,7 +69,7 @@ async function bootstrap() {
   );
 
   const isDev = process.env.NODE_ENV !== 'production';
-  const allowedOrigins = parseAllowedOrigins(process.env.WALLET_CORS_ORIGINS);
+  const allowedOrigins = parseAllowedOrigins(process.env.CORS_ORIGINS);
 
   await app.register(fastifyCors, {
     origin: isDev
