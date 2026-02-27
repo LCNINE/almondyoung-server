@@ -83,7 +83,7 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
     context: InitiatePaymentInput,
   ): Promise<InitiatePaymentOutput> {
     const { amount, currency_code, context: ctx, data } = context;
-    const returnUrl = ((ctx as Record<string, unknown>)?.return_url as string) ?? undefined;
+    const returnUrl = (data?.returnUrl as string) ?? ((ctx as Record<string, unknown>)?.return_url as string) ?? undefined;
     const userId = ctx?.customer?.id as string | undefined;
     if (!userId) throw new Error('customer.id is required in payment context');
 
