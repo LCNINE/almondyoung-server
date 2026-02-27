@@ -135,7 +135,7 @@ export function CartMainClient() {
 
   // 장바구니 데이터 로드
   const loadCart = useCallback(async () => {
-    console.log("[장바구니] 로드 시작...")
+    // console.log("[장바구니] 로드 시작...")
     setIsLoading(true)
     try {
       // customer_id도 함께 조회
@@ -148,16 +148,16 @@ export function CartMainClient() {
         }
       }
 
-      console.log("[장바구니] API 응답:", cart)
+      // console.log("[장바구니] API 응답:", cart)
 
       // 카트가 있지만 고객에게 연결되지 않은 경우 연결 시도
       if (cart && !cart.customer_id) {
         try {
           await transferCart()
-          console.log("[장바구니] 카트를 고객에게 연결 완료")
+          // console.log("[장바구니] 카트를 고객에게 연결 완료")
         } catch (error) {
           // 로그인 안 된 상태면 실패할 수 있음 - 무시
-          console.log("[장바구니] 카트 연결 스킵 (로그인 필요)")
+          // console.log("[장바구니] 카트 연결 스킵 (로그인 필요)")
         }
       }
 
@@ -246,7 +246,7 @@ export function CartMainClient() {
           toast.info("재고를 반영해 장바구니 수량을 자동 조정했어요.")
         }
 
-        console.log("[장바구니] 매핑된 아이템:", adjustedItems)
+        // console.log("[장바구니] 매핑된 아이템:", adjustedItems)
         setCartItems(adjustedItems)
         
         // 품절되지 않은 아이템만 선택
@@ -266,14 +266,14 @@ export function CartMainClient() {
         }
         setCartId(updatedCart.id)
       } else {
-        console.log("[장바구니] 아이템 없음")
+        // console.log("[장바구니] 아이템 없음")
         setCartItems([])
         setCheckedItems([])
         setShippingTotal(updatedCart?.shipping_total ?? 0)
         setCartId(updatedCart?.id ?? null)
       }
     } catch (error) {
-      console.error("[장바구니] 로드 실패:", error)
+      // console.error("[장바구니] 로드 실패:", error)
       setCartItems([])
       setCheckedItems([])
       setShippingTotal(0)
@@ -294,7 +294,7 @@ export function CartMainClient() {
         // TODO: 실제 추천 제품 API 호출로 교체 필요
         setRecommendedProducts([])
       } catch (error) {
-        console.error("추천 제품 로드 실패:", error)
+        // console.error("추천 제품 로드 실패:", error)
         setRecommendedProducts([])
       }
     }
@@ -342,7 +342,7 @@ export function CartMainClient() {
       }
       toast.success("상품이 삭제되었습니다.")
     } catch (error) {
-      console.error("상품 삭제 실패:", error)
+      // console.error("상품 삭제 실패:", error)
       toast.error("상품 삭제에 실패했습니다.")
     }
   }
@@ -362,7 +362,7 @@ export function CartMainClient() {
       }
       toast.success("선택한 상품이 삭제되었습니다.")
     } catch (error) {
-      console.error("선택 상품 삭제 실패:", error)
+      // console.error("선택 상품 삭제 실패:", error)
       toast.error("상품 삭제에 실패했습니다.")
       // 실패 시 다시 로드
       await loadCart()
@@ -460,7 +460,7 @@ export function CartMainClient() {
       router.push(`/${countryCode}/checkout`)
       return true
     } catch (error) {
-      console.error("체크아웃 처리 실패:", error)
+      // console.error("체크아웃 처리 실패:", error)
       toast.error("체크아웃 처리 중 오류가 발생했습니다.")
       return false
     }
