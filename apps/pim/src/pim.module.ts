@@ -17,7 +17,6 @@ import { ChannelsModule } from './core/channels/channels.module';
 import { PricingModule } from './core/pricing/pricing.module';
 import { TagsModule } from './core/tags/tags.module';
 import { BannersModule } from './core/banners/banners.module';
-import { ElasticsearchModule } from './search/elasticsearch.module';
 import { ApprovalModule } from './operations/approval/approval.module';
 import { BulkModule } from './operations/bulk/bulk.module';
 import { CsvModule } from './operations/csv/csv.module';
@@ -50,8 +49,6 @@ import { DashboardModule } from './analytics/dashboard/dashboard.module';
     PricingModule,
     TagsModule,
     BannersModule,
-    // Search & Elasticsearch
-    ElasticsearchModule,
     // Operations modules
     ApprovalModule,
     BulkModule,
@@ -63,4 +60,4 @@ import { DashboardModule } from './analytics/dashboard/dashboard.module';
   controllers: [PimController],
   providers: [PimService],
 })
-export class PimModule {}
+export class PimModule { }
