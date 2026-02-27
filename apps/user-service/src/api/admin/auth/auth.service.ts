@@ -8,8 +8,9 @@ import { DbTransaction } from 'apps/user-service/src/commons/types';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from '../../users/users.service';
 import { CreateAccountDto } from './dto/create-account-dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { and, isNotNull, lt } from 'drizzle-orm';
+import { and, eq, isNotNull, lt } from 'drizzle-orm';
 
 @Injectable()
 export class AuthService {
@@ -102,6 +103,26 @@ export class AuthService {
     );
 
     return user;
+  }
+
+  async changePassword(changePasswordDto: ChangePasswordDto) {
+    const { loginId, newPassword } = changePasswordDto;
+
+    const user = await this.usersService.findUserByLoginId(loginId);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    const saltOrRounds = 10;
+    const hash = await bcrypt.hash(newPassword, saltOrRounds);
+
+    const client = this.getClient();
+    await client
+      .update(userServiceSchema.users)
+      .set({ password: hash })
+      .where(eq(userServiceSchema.users.id, user.id));
+
+    return { message: '비밀번호가 변경되었습니다.' };
   }
 
   /**
