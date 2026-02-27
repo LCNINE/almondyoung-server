@@ -40,7 +40,7 @@ export class TossPaymentProvider implements PaymentProvider {
         .values({
           userId,
           type: 'TOSS',
-          displayName: '토스페이먼츠',
+          displayName: '카드결제',
           isReusable: true,
           isDeleted: false,
           providerData: {},
