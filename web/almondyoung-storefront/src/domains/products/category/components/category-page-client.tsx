@@ -24,6 +24,8 @@ import { useUser } from "@/contexts/user-context"
 import { useMembershipPricing } from "@/hooks/use-membership-pricing"
 import { Spinner } from "@/components/shared/spinner"
 import Link from "next/link"
+import { useInfiniteScroll } from "@/hooks/ui/use-infinite-scroll"
+import { getListCacheSnapshot, useListCache } from "@/hooks/ui/use-list-cache"
 import {
   Breadcrumb,
   BreadcrumbEllipsis,
@@ -115,16 +117,6 @@ const sortProductsByOption = (
   return sorted
 }
 
-type CategoryListCache = {
-  ts: number
-  products?: ProductCardProps[]
-  total: number
-  currentPage: number
-  scrollY: number
-}
-
-const memoryCache = new Map<string, CategoryListCache>()
-
 interface CategoryPageClientProps {
   pathSegments: string[]
   categoryInfo: CategoryInfo
@@ -156,7 +148,6 @@ export function CategoryPageClient({
   const { user } = useUser()
   const { isMembershipPricing } = useMembershipPricing()
   const isLoggedIn = !!user
-  const sentinelRef = useRef<HTMLDivElement | null>(null)
   const isLoadingMoreRef = useRef(false)
 
   const currentSort = useMemo(() => {
@@ -180,29 +171,26 @@ export function CategoryPageClient({
       categoryIds.join(",") || "category-none",
     ].join("|")
   }, [categoryIds, currentLimit, currentSort, pathSegments, regionId])
-
-  // 스크롤 복원 대상 (useState 초기화 시 설정)
-  const scrollTargetRef = useRef(0)
+  const cachedSnapshot = useMemo(
+    () => getListCacheSnapshot<ProductCardProps>(cacheKey, CACHE_TTL_MS),
+    [cacheKey]
+  )
 
   const [products, setProducts] = useState<ProductCardProps[]>(() => {
-    const cached = memoryCache.get(cacheKey)
-    if (cached?.products?.length && Date.now() - cached.ts <= CACHE_TTL_MS) {
-      scrollTargetRef.current = cached.scrollY
-      return cached.products
+    if (cachedSnapshot?.items?.length) {
+      return cachedSnapshot.items
     }
     return initialProducts
   })
   const [total, setTotal] = useState(() => {
-    const cached = memoryCache.get(cacheKey)
-    if (cached && Date.now() - cached.ts <= CACHE_TTL_MS) {
-      return cached.total
+    if (cachedSnapshot) {
+      return cachedSnapshot.total
     }
     return initialTotal
   })
   const [currentPage, setCurrentPage] = useState(() => {
-    const cached = memoryCache.get(cacheKey)
-    if (cached && Date.now() - cached.ts <= CACHE_TTL_MS) {
-      return Math.max(cached.currentPage, urlPage)
+    if (cachedSnapshot) {
+      return Math.max(cachedSnapshot.currentPage, urlPage)
     }
     return urlPage
   })
@@ -226,6 +214,14 @@ export function CategoryPageClient({
   const mobileBreadcrumbs = showMobileEllipsis
     ? [breadcrumbs[breadcrumbs.length - 2], breadcrumbs[breadcrumbs.length - 1]]
     : breadcrumbs
+  useListCache({
+    cacheKey,
+    ttlMs: CACHE_TTL_MS,
+    items: products,
+    total,
+    currentPage,
+    scrollYToRestore: cachedSnapshot?.scrollY,
+  })
 
   // URL 파라미터 업데이트 함수
   const updateParams = useCallback(
@@ -300,27 +296,11 @@ export function CategoryPageClient({
     [categoryIds, currentLimit, currentSort, isMembershipPricing, regionId]
   )
 
-  // 스크롤 위치 복원 (memoryCache에서 초기화된 경우)
-  useEffect(() => {
-    const scrollY = scrollTargetRef.current
-    if (scrollY <= 0) return
-
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        window.scrollTo({ top: scrollY, behavior: "auto" })
-        scrollTargetRef.current = 0
-      })
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   // 정렬/개수/카테고리 변경 시 데이터 로드
   useEffect(() => {
-    // memoryCache에 유효한 데이터가 있으면 복원 (뒤로 가기, 정렬 복귀 등)
-    // ref 대신 직접 확인 → StrictMode 이중 호출에도 안전
-    const cached = memoryCache.get(cacheKey)
-    if (cached?.products?.length && Date.now() - cached.ts <= CACHE_TTL_MS) {
-      setProducts(cached.products)
+    const cached = getListCacheSnapshot<ProductCardProps>(cacheKey, CACHE_TTL_MS)
+    if (cached?.items?.length) {
+      setProducts(cached.items)
       setTotal(cached.total)
       setCurrentPage(Math.max(cached.currentPage, urlPage))
       return
@@ -380,57 +360,6 @@ export function CategoryPageClient({
     urlPage,
   ])
 
-  // 스크롤 위치, 로드된 목록? 캐시 저장
-  useEffect(() => {
-    if (typeof window === "undefined") return
-
-    let rafId = 0
-    const saveCache = (scrollY: number) => {
-      const payload: CategoryListCache = {
-        ts: Date.now(),
-        products,
-        total,
-        currentPage,
-        scrollY,
-      }
-      memoryCache.set(cacheKey, payload)
-      try {
-        window.sessionStorage.setItem(cacheKey, JSON.stringify(payload))
-      } catch {
-        const minimalPayload: CategoryListCache = {
-          ts: Date.now(),
-          total,
-          currentPage,
-          scrollY,
-        }
-        memoryCache.set(cacheKey, minimalPayload)
-        try {
-          window.sessionStorage.setItem(cacheKey, JSON.stringify(minimalPayload))
-        } catch {
-
-        }
-      }
-    }
-
-    const onScroll = () => {
-      if (rafId) return
-      rafId = window.requestAnimationFrame(() => {
-        rafId = 0
-        saveCache(window.scrollY)
-      })
-    }
-
-    window.addEventListener("scroll", onScroll, { passive: true })
-
-    return () => {
-      if (rafId) {
-        window.cancelAnimationFrame(rafId)
-      }
-      window.removeEventListener("scroll", onScroll)
-      saveCache(window.scrollY)
-    }
-  }, [cacheKey, currentPage, products, total])
-
   const loadMore = useCallback(async () => {
     if (isLoadingMoreRef.current || !hasMore) return
 
@@ -466,28 +395,13 @@ export function CategoryPageClient({
     isMembershipPricing,
     setUrlPage,
   ])
-
-  useEffect(() => {
-    const target = sentinelRef.current
-    if (!target || !hasMore) {
-      return
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting) {
-          loadMore()
-        }
-      },
-      { rootMargin: "200px 0px" }
-    )
-
-    observer.observe(target)
-
-    return () => {
-      observer.disconnect()
-    }
-  }, [hasMore, loadMore])
+  const { sentinelRef } = useInfiniteScroll({
+    hasMore,
+    isLoading: isLoadingMore,
+    onLoadMore: () => {
+      void loadMore()
+    },
+  })
 
   return (
     <main className="">
