@@ -92,6 +92,8 @@ interface CartCardProps {
   onQuantityChange?: (quantity: number) => void
   productId?: string
   countryCode?: string
+  manageInventory?: boolean
+  inventoryQuantity?: number
 }
 
 /**
@@ -116,10 +118,17 @@ export const CartCard = ({
   onQuantityChange,
   productId,
   countryCode = "kr",
+  manageInventory = false,
+  inventoryQuantity = 0,
 }: CartCardProps) => {
   const productLink = productId
     ? `/${countryCode}/products/${productId}`
     : undefined
+
+  // 품절 여부 확인
+  const isSoldOut = manageInventory && inventoryQuantity <= 0
+  // 재고 부족 여부 (10개 이하)
+  const isLowStock = manageInventory && inventoryQuantity > 0 && inventoryQuantity <= 10
 
   return (
     <>
@@ -133,6 +142,7 @@ export const CartCard = ({
               name="cart-card-checkbox"
               value="1"
               onCheckedChange={(checked) => onCheckChange?.(checked as boolean)}
+              disabled={isSoldOut}
             />
           }
           controlRight={
@@ -147,7 +157,16 @@ export const CartCard = ({
             </Button>
           }
         >
-          <div className="flex gap-4">
+          <div className="relative flex gap-4">
+            {/* 품절 오버레이 */}
+            {isSoldOut && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center rounded-md bg-white/80">
+                <div className="rounded-md bg-gray-800 px-4 py-2 text-sm font-medium text-white">
+                  품절된 상품
+                </div>
+              </div>
+            )}
+            
             {productLink ? (
               <Link href={productLink} className="shrink-0">
                 <CartCardThumbnail src={thumbnail} />
@@ -165,7 +184,15 @@ export const CartCard = ({
               )}
               {option && <CartCardOption>{option}</CartCardOption>}
               {brand && <CartCardBrand>{brand}</CartCardBrand>}
-              {badge && <CartCardBadge>{badge}</CartCardBadge>}
+              {badge && !isSoldOut && <CartCardBadge>{badge}</CartCardBadge>}
+              
+              {/* 재고 부족 경고 */}
+              {isLowStock && (
+                <div className="mt-1 text-xs text-orange-600">
+                  재고 {inventoryQuantity}개 남음
+                </div>
+              )}
+              
               <CartCardPrice
                 original={originalPrice || 0}
                 discounted={discountedPrice}
@@ -200,6 +227,7 @@ export const CartCard = ({
                   onCheckChange?.(checked as boolean)
                 }
                 className="mt-1"
+                disabled={isSoldOut}
               />
 
               {/* 상품명과 옵션 */}
@@ -229,15 +257,35 @@ export const CartCard = ({
 
           {/* 이미지와 가격/수량 정보 영역 */}
           <CartCardPCImageSection>
-            {productLink ? (
-              <Link href={productLink} className="shrink-0">
+            <div className="relative shrink-0">
+              {/* 품절 오버레이 */}
+              {isSoldOut && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center rounded-md bg-white/80">
+                  <div className="rounded-md bg-gray-800 px-3 py-1.5 text-xs font-medium text-white">
+                    품절
+                  </div>
+                </div>
+              )}
+              
+              {productLink ? (
+                <Link href={productLink}>
+                  <CartCardPCThumbnail src={thumbnail} alt={title} />
+                </Link>
+              ) : (
                 <CartCardPCThumbnail src={thumbnail} alt={title} />
-              </Link>
-            ) : (
-              <CartCardPCThumbnail src={thumbnail} alt={title} />
-            )}
+              )}
+            </div>
+            
             <CartCardPCContent>
-              {badge && <CartCardPCBadge>{badge}</CartCardPCBadge>}
+              {badge && !isSoldOut && <CartCardPCBadge>{badge}</CartCardPCBadge>}
+              
+              {/* 재고 부족 경고 */}
+              {isLowStock && (
+                <div className="text-sm text-orange-600">
+                  재고 {inventoryQuantity}개 남음
+                </div>
+              )}
+              
               <CartCardPCPrice
                 original={originalPrice}
                 discounted={discountedPrice}
