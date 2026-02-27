@@ -429,10 +429,23 @@ export async function getPointBalance(): Promise<PointBalanceDto> {
  * @returns
  */
 export async function getTaxInvoice(): Promise<TaxInvoiceDto> {
-  return await api<TaxInvoiceDto>("wallet", "/tax-invoices/preferences", {
-    method: "GET",
-    withAuth: true,
-  })
+  // TODO: 임시 mock 객체 사용
+  return {
+    userId: crypto.randomUUID(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    defaultEnabled: 1,
+    defaultBusinessInfo: {
+      name: "테스트 사업자",
+      businessNumber: "1234567890",
+      address: "서울특별시 강남구 역삼동 123-456",
+      ownerName: "테스트 대표자",
+    }
+  }
+  // return await api<TaxInvoiceDto>("wallet", "/tax-invoices/preferences", {
+  //   method: "GET",
+  //   withAuth: true,
+  // })
 }
 
 /**
