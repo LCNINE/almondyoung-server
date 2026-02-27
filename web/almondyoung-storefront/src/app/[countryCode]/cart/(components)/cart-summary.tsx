@@ -37,7 +37,7 @@ export function CartSummary({
     try {
       await onCheckout()
     } catch (error) {
-      console.error("체크아웃 처리 실패:", error)
+      // console.error("체크아웃 처리 실패:", error)
       toast.error("체크아웃 처리 중 오류가 발생했습니다.")
     } finally {
       setIsProcessing(false)
