@@ -17,10 +17,10 @@ type SearchStage = 'strict' | 'fallback';
 @Injectable()
 export class ProductIndexService implements OnModuleInit {
   private readonly logger = new Logger(ProductIndexService.name);
-  private readonly keywordResultPoolLimit = 200;
+  private readonly keywordResultPoolLimit = 5000;
   private initPromise: Promise<void> | null = null;
 
-  constructor(private readonly openSearchService: OpenSearchService) {}
+  constructor(private readonly openSearchService: OpenSearchService) { }
 
   async onModuleInit(): Promise<void> {
     await this.ensureProductsIndex();
