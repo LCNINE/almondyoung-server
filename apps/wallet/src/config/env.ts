@@ -25,6 +25,7 @@ export const walletEnvSchema = z.object({
   WALLET_CORS_ORIGINS: z.string().optional(),
   TOSS_SECRET_KEY: z.string().min(1).optional(),
   TOSS_CLIENT_KEY: z.string().min(1).optional(),
+  WALLET_MEDUSA_WEBHOOK_URL: z.string().url().optional(),
 });
 
 export type WalletEnvConfig = z.infer<typeof walletEnvSchema>;

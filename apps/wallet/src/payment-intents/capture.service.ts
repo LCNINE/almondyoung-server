@@ -45,7 +45,7 @@ export class CaptureService {
         message: `Intent not found: ${intentId}`,
       });
     }
-    const { userId, medusaSessionId } = intentInfo;
+    const { userId } = intentInfo;
 
     for (const authorizeCharge of authorizeCharges) {
       await this.captureOneLeg(authorizeCharge, userId, intentId, correlationId);
@@ -64,7 +64,6 @@ export class CaptureService {
           amount: totalCaptured,
           currency: authorizeCharges[0]!.currency,
           occurredAt: now,
-          medusa_session_id: medusaSessionId,
         },
       }),
     );
@@ -143,17 +142,14 @@ export class CaptureService {
 
   private async getIntentInfo(
     intentId: string,
-  ): Promise<{ userId: string; medusaSessionId: string | null } | null> {
+  ): Promise<{ userId: string } | null> {
     const rows = await this.dbService.db
-      .select({ userId: paymentIntents.userId, metadata: paymentIntents.metadata })
+      .select({ userId: paymentIntents.userId })
       .from(paymentIntents)
       .where(eq(paymentIntents.id, intentId))
       .limit(1);
     const row = rows[0];
     if (!row) return null;
-    return {
-      userId: row.userId,
-      medusaSessionId: (row.metadata as Record<string, unknown>)?.medusa_session_id as string | null ?? null,
-    };
+    return { userId: row.userId };
   }
 }
