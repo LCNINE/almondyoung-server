@@ -247,18 +247,30 @@ export async function authorizePayment(
 }
 
 export async function createIntent({ data }: { data: CreateIntentRequestDto }) {
-  const result = await api<CreateIntentResponseDto>(
-    "wallet",
-    "/v1/payment-intents",
-    {
-      method: "POST",
-      body: data,
-      withAuth: true,
-      cache: "no-store",
-    }
-  )
+  const { getBackendBaseUrl } = await import("@/lib/config/backend")
+  const baseUrl = getBackendBaseUrl("wallet")
+  const apiKey = process.env.WALLET_API_KEY
 
-  return result
+  if (!baseUrl) throw new Error("Missing wallet base URL")
+  if (!apiKey) throw new Error("Missing WALLET_API_KEY")
+
+  const res = await fetch(`${baseUrl}/v1/payment-intents`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+      "Idempotency-Key": crypto.randomUUID(),
+    },
+    body: JSON.stringify(data),
+    cache: "no-store",
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.message ?? `createIntent 실패: ${res.status}`)
+  }
+
+  return res.json() as Promise<CreateIntentResponseDto>
 }
 
 export async function getIntent(intentId: string): Promise<IntentDto> {
