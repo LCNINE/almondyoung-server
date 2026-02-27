@@ -365,7 +365,7 @@ export class ProductIndexService implements OnModuleInit {
       minimum_should_match: minimumShouldMatch,
     };
 
-    if (compactLength >= 4) {
+    if (compactLength >= 3) {
       multiMatch.fuzziness = 1;
       multiMatch.prefix_length = compactLength >= 8 ? 3 : 2;
       multiMatch.max_expansions = 25;

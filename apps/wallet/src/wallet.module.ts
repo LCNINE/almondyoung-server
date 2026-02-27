@@ -141,7 +141,7 @@ class ApiKeyGuard implements CanActivate {
     const cookieHeader = getHeader(request.headers, 'cookie');
     if (!cookieHeader) return null;
 
-    const accessToken = parseCookieValue(cookieHeader, 'access_token');
+    const accessToken = parseCookieValue(cookieHeader, 'accessToken');
     if (!accessToken) return null;
 
     try {
