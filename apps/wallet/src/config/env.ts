@@ -23,7 +23,7 @@ export const walletEnvSchema = z.object({
   // Comma-separated list of allowed CORS origins.
   // Supports exact origins and wildcard subdomains (e.g. "https://app.example.com,*.almondyoung-next.com")
   // Not required in development — all origins are allowed when NODE_ENV=development
-  WALLET_CORS_ORIGINS: z.string().optional(),
+  CORS_ORIGINS: z.string().optional(),
   TOSS_SECRET_KEY: z.string().min(1).optional(),
   TOSS_CLIENT_KEY: z.string().min(1).optional(),
   WALLET_MEDUSA_WEBHOOK_URL: z.string().url().optional(),
