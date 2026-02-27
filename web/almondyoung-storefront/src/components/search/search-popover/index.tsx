@@ -6,7 +6,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { useSearchHistory } from "@/hooks/ui/use-search-history"
-import { useRouter } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { X } from "lucide-react"
 
 export function SearchPopover({
@@ -61,11 +61,21 @@ function SearchHistory({
   } = useSearchHistory()
 
   const router = useRouter()
+  const params = useParams<{ countryCode?: string }>()
+  const countryCode =
+    typeof params?.countryCode === "string" ? params.countryCode : undefined
+  const searchBasePath = countryCode ? `/${countryCode}/search` : "/search"
 
   const handleSuggestionClick = (keyword: string) => {
     addKeyword(keyword)
     onClose()
-    router.push(`/search?q=${encodeURIComponent(keyword)}`)
+    router.push(`${searchBasePath}?q=${encodeURIComponent(keyword)}`)
+  }
+
+  const handleHistoryClick = (keyword: string) => {
+    addKeyword(keyword)
+    onClose()
+    router.push(`${searchBasePath}?q=${encodeURIComponent(keyword)}`)
   }
 
   return (
@@ -103,13 +113,17 @@ function SearchHistory({
               <li
                 key={i}
                 className="group flex cursor-pointer items-center justify-between"
+                onClick={() => handleHistoryClick(item)}
               >
                 <span className="text-[15px] text-gray-600 transition-colors hover:text-black">
                   {item}
                 </span>
                 <button
                   className="cursor-pointer text-gray-300 hover:text-gray-500"
-                  onClick={() => removeKeyword(item)}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    removeKeyword(item)
+                  }}
                 >
                   <X className="h-4 w-4" />
                 </button>

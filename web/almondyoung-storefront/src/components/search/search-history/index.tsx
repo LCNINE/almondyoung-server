@@ -8,14 +8,18 @@ import {
 } from "@/components/ui/carousel"
 import { useSearchHistory } from "@/hooks/ui/use-search-history"
 import { Trash2, X } from "lucide-react"
-import { useRouter } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 
 export function SearchHistory() {
   const { keywords, removeKeyword, clearAll } = useSearchHistory()
   const router = useRouter()
+  const params = useParams<{ countryCode?: string }>()
+  const countryCode =
+    typeof params?.countryCode === "string" ? params.countryCode : undefined
+  const searchBasePath = countryCode ? `/${countryCode}/search` : "/search"
 
   const handleHistoryClick = (item: string) => {
-    router.push(`/search?q=${encodeURIComponent(item)}`)
+    router.push(`${searchBasePath}?q=${encodeURIComponent(item)}`)
   }
 
   return (

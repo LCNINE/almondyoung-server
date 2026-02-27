@@ -9,6 +9,10 @@ import {
   getPricesForVariant,
   getProductPrice,
 } from "@lib/utils/get-product-price"
+import {
+  buildOptionSelectionKey,
+  normalizeOptionText,
+} from "@lib/utils/product-option-selection"
 import type { StoreProduct } from "@medusajs/types"
 import ProductDetailPage from "domains/products/product-details/product-detail-page"
 import { Metadata } from "next"
@@ -59,22 +63,6 @@ const mapProductMetadata = (metadata?: Record<string, unknown>) => {
     },
     {}
   )
-}
-
-const buildSelectionKey = (
-  selection: Record<string, string>,
-  optionOrder: string[]
-) => {
-  if (optionOrder.length === 0) return undefined
-
-  const parts = optionOrder.map((label) => {
-    const value = selection[label]
-    return value ? `${label}=${value}` : ""
-  })
-
-  if (parts.some((part) => !part)) return undefined
-
-  return parts.join("|")
 }
 
 const mapMedusaProductToDetail = (
@@ -133,9 +121,10 @@ const mapMedusaProductToDetail = (
         })) || [],
     })) || []
 
-  const optionOrder = product.options?.map((option) => option.title) || []
+  const optionOrder =
+    product.options?.map((option) => normalizeOptionText(option.title)) || []
   const optionLabelById = new Map(
-    product.options?.map((option) => [option.id, option.title]) || []
+    product.options?.map((option) => [option.id, normalizeOptionText(option.title)]) || []
   )
   const skuIndex: Record<string, string> = {}
   const skuStock: Record<string, number> = {}
@@ -182,13 +171,15 @@ const mapMedusaProductToDetail = (
     for (const opt of variant.options || []) {
       const optionId = opt.option_id ?? undefined
       const label =
-        (optionId ? optionLabelById.get(optionId) : undefined) || optionId || ""
-      if (label && opt.value) {
-        selection[label] = opt.value
+        (optionId ? optionLabelById.get(optionId) : undefined) ||
+        normalizeOptionText(optionId || "")
+      const value = normalizeOptionText(opt.value)
+      if (label && value) {
+        selection[label] = value
       }
     }
 
-    const selectionKey = buildSelectionKey(selection, optionOrder)
+    const selectionKey = buildOptionSelectionKey(selection, optionOrder)
     if (selectionKey && variant.id) {
       skuIndex[selectionKey] = variant.id
     }
