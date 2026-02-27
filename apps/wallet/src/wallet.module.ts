@@ -53,6 +53,9 @@ import { RefundsController } from './refunds/refunds.controller';
 // Admin
 import { PointsAdminService } from './admin/points-admin.service';
 import { PointsAdminController } from './admin/points-admin.controller';
+
+// Points (user-facing)
+import { PointsController } from './points/points.controller';
 import { BankTransferAdminService } from './admin/bank-transfer-admin.service';
 import { BankTransferAdminController } from './admin/bank-transfer-admin.controller';
 
@@ -90,6 +93,7 @@ const JWT_COOKIE_PATTERNS = [
   /^\/v1\/payment-intents\/[^/]+\/confirm\/?$/, // POST /v1/payment-intents/:id/confirm
   /^\/v1\/payment-intents\/[^/]+\/cancel\/?$/,  // POST /v1/payment-intents/:id/cancel
   /^\/v1\/payment-methods\/?$/,                 // GET /v1/payment-methods
+  /^\/v1\/points\/balance\/?$/,                 // GET /v1/points/balance
 ];
 
 @Injectable()
@@ -309,6 +313,7 @@ function normalizePath(path: string): string {
     RefundsController,
     PointsAdminController,
     BankTransferAdminController,
+    PointsController,
   ],
   providers: [
     {
