@@ -1,7 +1,6 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
-import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
 import { Minus, Plus, X } from "lucide-react"
 
 type OptionValue = {
@@ -47,9 +46,6 @@ export function ProductOptionSelector({
   onQuantityUpdate,
   onOptionRemove,
 }: Props) {
-  const hasMultipleOptions =
-    options.length >= 3 || options.some((o) => o.values.length >= 7)
-
   return (
     <section className="space-y-4">
       {/* 옵션 선택 */}
@@ -59,18 +55,10 @@ export function ProductOptionSelector({
             {option.label} 선택
           </legend>
 
-          <div
-            className={`flex gap-2 ${
-              hasMultipleOptions ? "overflow-x-auto pb-2" : "flex-wrap"
-            }`}
-            style={{
-              scrollbarWidth: "none",
-              msOverflowStyle: "none",
-            }}
-          >
+          <div className="flex flex-wrap gap-2">
             {option.values.map((value) => {
               const isSelected = selectedOptions[option.label] === value.name
-              const isDisabled = value.disabled || false
+              const isDisabled = value.disabled || value.isSoldOut || false
               const isSoldOut = value.isSoldOut || false
 
               return (
@@ -81,6 +69,7 @@ export function ProductOptionSelector({
                   onClick={() => onOptionChange(option.label, value.name)}
                   disabled={isDisabled}
                   aria-pressed={isSelected}
+                  className="min-h-10 max-w-full px-3 text-sm leading-5 whitespace-normal break-keep"
                 >
                   {value.name}
                   {isSoldOut && (

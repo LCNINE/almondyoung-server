@@ -10,6 +10,10 @@ import { useRecentViews } from "@hooks/api/use-recent-views"
 import type { ProductDetail } from "@lib/types/ui/product"
 import type { UserDetail, WishlistItem } from "@lib/types/ui/user"
 import { isProductSoldOut } from "@lib/utils"
+import {
+  buildOptionSelectionKey,
+  normalizeOptionText,
+} from "@lib/utils/product-option-selection"
 import dynamic from "next/dynamic"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
@@ -202,6 +206,124 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
       .catch(() => setQnaCount(0))
   }, [product])
 
+  const optionOrder = useMemo(
+    () =>
+      (product?.options ?? []).map((option) =>
+        normalizeOptionText(option.label)
+      ),
+    [product?.options]
+  )
+  const normalizedSelectedOptions = useMemo(() => {
+    const normalized: Record<string, string> = {}
+    for (const option of product?.options ?? []) {
+      const normalizedLabel = normalizeOptionText(option.label)
+      const normalizedValue = normalizeOptionText(selectedOptions[option.label])
+      if (normalizedLabel && normalizedValue) {
+        normalized[normalizedLabel] = normalizedValue
+      }
+    }
+    return normalized
+  }, [product?.options, selectedOptions])
+
+  const resolveVariantIdBySelection = useCallback(
+    (selection: Record<string, string>) => {
+      const key = buildOptionSelectionKey(selection, optionOrder)
+      if (!key) return undefined
+      return product?.skuIndex?.[key]
+    },
+    [optionOrder, product?.skuIndex]
+  )
+
+  const hasPurchasableStock = useCallback(
+    (variantId?: string) => {
+      if (!variantId) return false
+      const stock = product?.skuStock?.[variantId]
+      if (stock === Infinity) return true
+      return typeof stock === "number" && stock > 0
+    },
+    [product?.skuStock]
+  )
+
+  // 선택된 옵션을 기반으로 각 옵션 값의 품절 여부 계산
+  const optionsWithSoldOut = useMemo(() => {
+    const options = product?.options ?? []
+
+    return options.map((option, optionIndex) => ({
+      ...option,
+      values: option.values.map((value) => {
+        const normalizedLabel = normalizeOptionText(option.label)
+        const normalizedValue = normalizeOptionText(value.name)
+
+        // 이전 옵션들이 모두 선택되었는지 확인
+        const prevOptionsSelected = optionOrder
+          .slice(0, optionIndex)
+          .every((label) => !!normalizedSelectedOptions[label])
+
+        if (!prevOptionsSelected) {
+          // 이전 옵션이 선택되지 않으면 품절 여부 알 수 없음
+          return { ...value, isSoldOut: false }
+        }
+
+        // 이전 옵션들 + 현재 값으로 조합 테스트
+        const testSelection = {
+          ...Object.fromEntries(
+            optionOrder
+              .slice(0, optionIndex)
+              .map((label) => [label, normalizedSelectedOptions[label]])
+          ),
+          [normalizedLabel]: normalizedValue,
+        }
+
+        // 남은 옵션들의 모든 조합 확인
+        const remainingOptions = options.slice(optionIndex + 1)
+
+        if (remainingOptions.length === 0) {
+          // 마지막 옵션이면 바로 재고 확인
+          const variantId = resolveVariantIdBySelection(testSelection)
+          return { ...value, isSoldOut: !hasPurchasableStock(variantId) }
+        }
+
+        // 남은 옵션들의 모든 조합을 확인해서 하나라도 재고 있으면 품절 아님
+        const checkAllCombinations = (
+          currentSelection: Record<string, string>,
+          remainingOpts: typeof remainingOptions
+        ): boolean => {
+          if (remainingOpts.length === 0) {
+            const variantId = resolveVariantIdBySelection(currentSelection)
+            return hasPurchasableStock(variantId)
+          }
+
+          const [nextOption, ...rest] = remainingOpts
+          for (const nextValue of nextOption.values) {
+            const normalizedNextLabel = normalizeOptionText(nextOption.label)
+            const normalizedNextValue = normalizeOptionText(nextValue.name)
+            const hasStock = checkAllCombinations(
+              {
+                ...currentSelection,
+                [normalizedNextLabel]: normalizedNextValue,
+              },
+              rest
+            )
+            if (hasStock) return true // 하나라도 재고 있으면 품절 아님
+          }
+          return false // 모든 조합 품절
+        }
+
+        const hasAnyStock = checkAllCombinations(
+          testSelection,
+          remainingOptions
+        )
+        return { ...value, isSoldOut: !hasAnyStock }
+      }),
+    }))
+  }, [
+    hasPurchasableStock,
+    normalizedSelectedOptions,
+    optionOrder,
+    product?.options,
+    resolveVariantIdBySelection,
+  ])
+
   if (error || !product) {
     return (
       <main className="lg:bg-muted/50 flex min-h-screen items-center justify-center bg-white">
@@ -254,84 +376,6 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
         : newQuantity
     setQuantity(adjustedQuantity)
   }
-
-  // 선택된 옵션을 기반으로 각 옵션 값의 품절 여부 계산
-  const optionsWithSoldOut = useMemo(() => {
-    const options = product.options ?? []
-    const optionOrder = options.map((o) => o.label)
-
-    return options.map((option, optionIndex) => ({
-      ...option,
-      values: option.values.map((value) => {
-        // 이전 옵션들이 모두 선택되었는지 확인
-        const prevOptionsSelected = optionOrder
-          .slice(0, optionIndex)
-          .every((label) => !!selectedOptions[label])
-
-        if (!prevOptionsSelected) {
-          // 이전 옵션이 선택되지 않으면 품절 여부 알 수 없음
-          return { ...value, isSoldOut: false }
-        }
-
-        // 이전 옵션들 + 현재 값으로 조합 테스트
-        const testSelection = {
-          ...Object.fromEntries(
-            optionOrder
-              .slice(0, optionIndex)
-              .map((label) => [label, selectedOptions[label]])
-          ),
-          [option.label]: value.name,
-        }
-
-        // 남은 옵션들의 모든 조합 확인
-        const remainingOptions = options.slice(optionIndex + 1)
-
-        if (remainingOptions.length === 0) {
-          // 마지막 옵션이면 바로 재고 확인
-          const selectionKey = optionOrder
-            .map((label) => `${label}=${testSelection[label]}`)
-            .join("|")
-          const variantId = product.skuIndex?.[selectionKey]
-          const stock = variantId ? product.skuStock?.[variantId] : undefined
-          const isSoldOut =
-            stock !== undefined && stock !== Infinity && stock <= 0
-          return { ...value, isSoldOut }
-        }
-
-        // 남은 옵션들의 모든 조합을 확인해서 하나라도 재고 있으면 품절 아님
-        const checkAllCombinations = (
-          currentSelection: Record<string, string>,
-          remainingOpts: typeof remainingOptions
-        ): boolean => {
-          if (remainingOpts.length === 0) {
-            const selectionKey = optionOrder
-              .map((label) => `${label}=${currentSelection[label]}`)
-              .join("|")
-            const variantId = product.skuIndex?.[selectionKey]
-            const stock = variantId ? product.skuStock?.[variantId] : undefined
-            // 재고 있으면 true (품절 아님)
-            return stock === undefined || stock === Infinity || stock > 0
-          }
-
-          const [nextOption, ...rest] = remainingOpts
-          for (const nextValue of nextOption.values) {
-            const hasStock = checkAllCombinations(
-              { ...currentSelection, [nextOption.label]: nextValue.name },
-              rest
-            )
-            if (hasStock) return true // 하나라도 재고 있으면 품절 아님
-          }
-          return false // 모든 조합 품절
-        }
-
-        const hasAnyStock = checkAllCombinations(
-          testSelection,
-          remainingOptions
-        )
-        return { ...value, isSoldOut: !hasAnyStock }
-      }),
-    }))
-  }, [product.options, product.skuIndex, product.skuStock, selectedOptions])
 
   const getVariantPrice = (variantId?: string) => {
     const resolvePrice = (base?: number, actual?: number) => {
@@ -387,25 +431,26 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
     const optionName = (product.options ?? [])
       .map((o) => next[o.label])
       .join(" / ")
-    const selectionKey = (product.options ?? [])
-      .map((o) => `${o.label}=${next[o.label]}`)
-      .join("|")
-    const variantId = product.skuIndex?.[selectionKey]
+    const normalizedSelection = (product.options ?? []).reduce<
+      Record<string, string>
+    >((acc, option) => {
+      const normalizedLabel = normalizeOptionText(option.label)
+      const normalizedValue = normalizeOptionText(next[option.label])
+      if (normalizedLabel && normalizedValue) {
+        acc[normalizedLabel] = normalizedValue
+      }
+      return acc
+    }, {})
+    const variantId = resolveVariantIdBySelection(normalizedSelection)
 
     if (!variantId) {
-      toast.error("선택한 옵션 조합의 정보를 찾을 수 없습니다.")
+      toast.error("선택한 옵션 조합이 존재하지 않습니다.")
       setSelectedOptions(next)
       return
     }
 
     // 품절 체크
-    const variantStock = product.skuStock?.[variantId]
-    const isSoldOut =
-      variantStock !== undefined &&
-      variantStock !== Infinity &&
-      variantStock <= 0
-
-    if (isSoldOut) {
+    if (!hasPurchasableStock(variantId)) {
       toast.error("선택한 옵션은 품절입니다.")
       setSelectedOptions({})
       return
