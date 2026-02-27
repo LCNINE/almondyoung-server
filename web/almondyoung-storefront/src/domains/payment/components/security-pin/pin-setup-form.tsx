@@ -4,8 +4,9 @@ import { Card } from "@components/common/ui/card"
 import { Form } from "@components/common/ui/form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { registerPin, resetPin } from "@lib/api/wallet"
+import { toLocalizedPath } from "@/lib/utils/locale-path"
 import { AlertCircle, CheckCircle2 } from "lucide-react"
-import { useRouter } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { useState, useTransition, useEffect } from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
@@ -27,6 +28,8 @@ export default function PinSetupForm({
   isForgetPinPage?: boolean
 }) {
   const router = useRouter()
+  const { countryCode } = useParams() as { countryCode?: string }
+  const currentCountryCode = countryCode ?? "kr"
 
   const [step, setStep] = useState<Step>("input")
   const [isShaking, setIsShaking] = useState(false)
@@ -153,16 +156,16 @@ export default function PinSetupForm({
       return () => clearTimeout(timer)
     } else {
       // 카운트다운이 0이 되면 리다이렉트
-      router.push(redirectTo)
+      router.push(toLocalizedPath(currentCountryCode, redirectTo))
     }
-  }, [countdown, redirectTo, router])
+  }, [countdown, currentCountryCode, redirectTo, router])
 
   // 수동 리다이렉트 핸들러
   const handleRedirect = () => {
     if (redirectTo) {
-      router.push(redirectTo)
+      router.push(toLocalizedPath(currentCountryCode, redirectTo))
     } else {
-      router.push("/kr/mypage/payment")
+      router.push(toLocalizedPath(currentCountryCode, "/mypage/payment"))
     }
   }
 
@@ -222,7 +225,9 @@ export default function PinSetupForm({
           {!redirectTo && (
             <button
               type="button"
-              onClick={() => router.push("/kr/mypage/payment")}
+              onClick={() =>
+                router.push(toLocalizedPath(currentCountryCode, "/mypage/payment"))
+              }
               className="mt-4 w-full rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800"
             >
               결제 수단 관리로 이동

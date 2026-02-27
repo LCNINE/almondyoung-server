@@ -13,9 +13,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { useMembershipPricing } from "@/hooks/use-membership-pricing"
+import { getPathWithoutCountry } from "@/lib/utils/get-path-without-country"
 import type { ProductDetail } from "@lib/types/ui/product"
 import { AnimatedHeart } from "@/components/shared/animated-heart"
-import { usePathname, useRouter } from "next/navigation"
+import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { ProductOptionSelector } from "./product-option-selector"
 import { ProductPriceDisplay } from "./product-price-display"
@@ -94,7 +95,6 @@ export function ProductSidebarPurchase({
   isSoldOut = false,
 }: Props) {
   const router = useRouter()
-  const pathname = usePathname()
   const [showLoginDialog, setShowLoginDialog] = useState(false)
   const { isMembershipPricing } = useMembershipPricing()
   const isMember = isMembershipPricing
@@ -164,8 +164,9 @@ export function ProductSidebarPurchase({
 
   const handleLoginConfirm = () => {
     setShowLoginDialog(false)
+    const path = getPathWithoutCountry(countryCode)
     router.push(
-      `/${countryCode}/login?redirect_to=${encodeURIComponent(pathname)}`
+      `/${countryCode}/login?redirect_to=${encodeURIComponent(path)}`
     )
   }
 

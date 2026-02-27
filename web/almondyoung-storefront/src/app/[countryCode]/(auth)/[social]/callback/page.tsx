@@ -29,6 +29,6 @@ export default async function SocialCallbackPage({
 
   // API Route로 리다이렉트 (여기서 쿠키를 설정)
   redirect(
-    `/api/auth/callback/social-signup?userId=${query.userId}&social=${social}&redirect_to=${encodeURIComponent(redirectTo)}`
+    `/api/auth/callback/social-signup?userId=${query.userId}&social=${social}&countryCode=${countryCode}&redirect_to=${encodeURIComponent(redirectTo)}`
   )
 }
