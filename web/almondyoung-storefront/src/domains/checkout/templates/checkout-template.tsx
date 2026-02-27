@@ -1,39 +1,32 @@
 "use client"
 
-import { PinRequiredModal } from "@/domains/checkout/components/modals/pin-required-modal"
-import { PinVerifyModal } from "@/domains/checkout/components/modals/pin-verify-modal"
+// import { PinRequiredModal } from "@/domains/checkout/components/modals/pin-required-modal"
+// import { PinVerifyModal } from "@/domains/checkout/components/modals/pin-verify-modal"
 import { DiscountSection } from "@/domains/checkout/components/sections/discount"
 import { OrderProductsSection } from "@/domains/checkout/components/sections/order-products-shipping"
-import { PaymentMethodSection } from "@/domains/checkout/components/sections/payment-method"
 import { PaymentTotalSection } from "@/domains/checkout/components/sections/payment-total"
 import { ShippingSection } from "@/domains/checkout/components/sections/shipping"
 import type { ShippingMemo } from "@/domains/checkout/components/sections/shipping/types"
-import { usePinStatus } from "@/hooks/api/use-pin-status"
+// import { usePinStatus } from "@/hooks/api/use-pin-status"
 import { useMembershipPricing } from "@/hooks/use-membership-pricing"
 import { updateCart } from "@/lib/api/medusa/cart"
-import {
-  authorizePayment,
-  createIntent,
-  getBnplProfiles,
-} from "@/lib/api/wallet"
+import { createIntent } from "@/lib/api/wallet"
 import { CartResponseDto } from "@/lib/types/dto/medusa"
 import type { PointBalanceDto } from "@/lib/types/dto/wallet"
 import type { CartTotals, ShippingInfo } from "@/lib/types/ui/cart"
 import type { Promotion } from "@/lib/types/ui/promotion"
 import { TaxInvoiceType } from "@/lib/types/ui/wallet"
-import { getCleanKoreanNumber } from "@/lib/utils/format-phone-number"
 import {
   calculateMembershipDiscount,
   getCartTotals,
 } from "@/lib/utils/price-utils"
 import type { UserDetail } from "@lib/types/ui/user"
-import { loadTossPayments } from "@tosspayments/tosspayments-sdk"
 import { MobileCTA, PCFixedCTA } from "domains/checkout/components/cta"
 import { MobileHeader, PCHeader } from "domains/checkout/components/header"
 import { MobileOrderSummary } from "domains/checkout/components/order-summary"
 import { PaymentDetailSidebar } from "domains/checkout/components/payment-detail-sidebar"
 import { useParams, useRouter } from "next/navigation"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import { toast } from "sonner"
 import { ReceiptSection } from "../components/sections/receipt/"
 
@@ -51,20 +44,19 @@ export default function CheckoutTemplate({
   cart,
   shipping,
   promotions,
-  pointBalance,
   taxInvoice,
 }: CheckoutTemplateProps) {
   const router = useRouter()
   const params = useParams()
   const countryCode = params.countryCode as string
 
-  // PIN 상태 조회
-  const { pinStatus, fetchPinStatus } = usePinStatus()
+  // // PIN 상태 조회
+  // const { pinStatus, fetchPinStatus } = usePinStatus()
 
-  //  PIN 상태 미리 조회
-  useEffect(() => {
-    fetchPinStatus()
-  }, [fetchPinStatus])
+  // //  PIN 상태 미리 조회
+  // useEffect(() => {
+  //   fetchPinStatus()
+  // }, [fetchPinStatus])
 
   // 선택된 상품 ID (기본값: 전체 선택)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(
@@ -80,9 +72,6 @@ export default function CheckoutTemplate({
   // 멤버십 가격 적용 여부 (고객 그룹 기준)
   const { isMembershipPricing } = useMembershipPricing()
 
-  // 적립금 사용 상태
-  const [pointsUsed, setPointsUsed] = useState(0)
-
   // 가격 계산
   const cartTotals: CartTotals = useMemo(() => {
     const { currency_code, item_subtotal, discount_subtotal } =
@@ -91,7 +80,7 @@ export default function CheckoutTemplate({
       isMembershipPricing && selectedItems.length > 0
         ? calculateMembershipDiscount(selectedItems)
         : 0
-    const totalDiscount = discount_subtotal + membershipDiscount + pointsUsed
+    const totalDiscount = discount_subtotal + membershipDiscount
     const finalTotal = Math.max(
       0,
       item_subtotal + shipping.amount - totalDiscount
@@ -103,13 +92,12 @@ export default function CheckoutTemplate({
       shipping: shipping.amount,
       discount_subtotal,
       membershipDiscount,
-      pointsUsed,
+      pointsUsed: 0,
       totalDiscount,
       finalTotal,
     }
-  }, [cart, shipping, isMembershipPricing, selectedItems, pointsUsed])
+  }, [cart, shipping, isMembershipPricing, selectedItems])
 
-  const [selectedMethod, setSelectedMethod] = useState("toss")
   const [cashReceiptOption, setCashReceiptOption] = useState("noapply")
   const [taxInvoiceOption, setTaxInvoiceOption] = useState(
     taxInvoice?.defaultEnabled ? "apply" : "noapply"
@@ -117,9 +105,8 @@ export default function CheckoutTemplate({
   const [isPaymentDetailsOpen, setIsPaymentDetailsOpen] = useState(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [pinRequiredModalOpen, setPinRequiredModalOpen] = useState(false)
-  const [pinVerifyModalOpen, setPinVerifyModalOpen] = useState(false)
-  const tossPaymentRef = useRef<any>(null)
+  // const [pinRequiredModalOpen, setPinRequiredModalOpen] = useState(false)
+  // const [pinVerifyModalOpen, setPinVerifyModalOpen] = useState(false)
 
   // 배송 메모 상태
   const [shippingMemo, setShippingMemo] = useState<ShippingMemo>(() => ({
@@ -131,78 +118,13 @@ export default function CheckoutTemplate({
     setShippingMemo(memo)
   }, [])
 
-  // Intent 생성 및 토스 결제 초기화
-  const initializeTossPayment = async () => {
-    try {
-      if (!user?.id) {
-        throw new Error("로그인이 필요합니다.")
-      }
-
-      const intent = await createIntent({
-        data: {
-          customerId: user.id,
-          originalAmount: cart.original_item_total + cartTotals.shipping, // 원래 상품 가격 + 배송료
-          discountAmount: 0, // 0을 고정값으로 넣어주기로 함 - 이유는 wallet 설계 미스
-          type: "ORDER",
-        },
-      })
-      // 토스 결제 SDK 초기화
-      const clientKey =
-        process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY ||
-        "test_ck_pP2YxJ4K87ZZmMga5K59rRGZwXLO"
-      const tossPayments = await loadTossPayments(clientKey)
-      const payment = tossPayments.payment({
-        customerKey: intent.customerId,
-      })
-
-      tossPaymentRef.current = { payment, intentId: intent.id }
-      return intent
-    } catch (err) {
-      console.error("토스 결제 초기화 실패:", err)
-      throw err
-    }
-  }
-
   const handlePayment = async () => {
-    // 배송지 확인
     if (!cart?.shipping_address?.address_1) {
       return toast.error("배송지를 설정해주세요.")
     }
-
-    try {
-      setLoading(true)
-      setError(null)
-
-      //  PIN 상태 확인
-      if (!pinStatus) {
-        // PIN 상태 조회 중이거나 실패한 경우
-        fetchPinStatus()
-        return toast.info(
-          "PIN 상태를 확인 중입니다. 잠시 후 다시 시도해주세요."
-        )
-      }
-
-      if (!pinStatus.hasPin || pinStatus.status === "NONE") {
-        // PIN 미등록 → 확인 모달 열기
-        setPinRequiredModalOpen(true)
-        setLoading(false)
-        return
-      }
-
-      if (pinStatus.status === "ACTIVE") {
-        // PIN 검증 필요 → 검증 모달 열기
-        setPinVerifyModalOpen(true)
-        setLoading(false)
-        return
-      }
-    } catch (err) {
-      console.error("결제 처리 실패:", err)
-      setError(err instanceof Error ? err.message : "알 수 없는 오류")
-      setLoading(false)
-    }
+    processPayment()
   }
 
-  // PIN 검증 성공 후 실제 결제 진행
   const processPayment = async () => {
     try {
       setLoading(true)
@@ -217,81 +139,20 @@ export default function CheckoutTemplate({
         },
       })
 
-      if (selectedMethod === "toss") {
-        // 토스 결제: 결제창 열기
-        if (!tossPaymentRef.current) {
-          await initializeTossPayment()
-        }
+      const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback`
 
-        const { payment, intentId } = tossPaymentRef.current
-        const baseUrl = window.location.origin
+      const intent = await createIntent({
+        data: {
+          userId: user.id,
+          amount: cartTotals.finalTotal,
+          currency: "KRW",
+          returnUrl,
+        },
+      })
 
-        await payment.requestPayment({
-          method: "CARD",
-          amount: {
-            currency: "KRW",
-            value: cartTotals.finalTotal,
-          },
-          orderId: intentId,
-          orderName: cart.items?.map((item) => item.title).join(", "),
-          successUrl: `${baseUrl}/${countryCode}/checkout/callback?usePoints=${cartTotals.pointsUsed}`,
-          failUrl: `${baseUrl}/${countryCode}/checkout/callback`,
-          customerEmail: user.email,
-          customerName: user.username,
-          customerMobilePhone:
-            cart.shipping_address?.phone ??
-            getCleanKoreanNumber(user.profile?.phoneNumber ?? ""),
-        })
-        return
-      } else if (selectedMethod === "payLater") {
-        // 나중 결제: 라우트 핸들러로 직접 요청
-        if (!user?.id) {
-          throw new Error("로그인이 필요합니다.")
-        }
-
-        const intent = await createIntent({
-          data: {
-            customerId: user.id,
-            originalAmount: cartTotals.finalTotal,
-            discountAmount: 0,
-            type: "ORDER",
-          },
-        })
-
-        //  BNPL 프로필 조회 (나중 결제는 프로필이 필요)
-        const profiles = await getBnplProfiles()
-
-        // HMS_BNPL 프로필 찾기
-        const bnplProfile = profiles?.find(
-          (p: any) => p.provider === "HMS_BNPL" && p.status === "ACTIVE"
-        )
-
-        const profileId = bnplProfile?.id
-
-        if (!profileId) {
-          throw new Error(
-            "BNPL 프로필이 등록되어 있지 않습니다. 프로필을 먼저 등록해주세요."
-          )
-        }
-
-        // 결제 승인 (라우트 핸들러 사용)
-        // 나중 결제는 HMS_BNPL로 처리
-        const authorize = await authorizePayment(intent.id, {
-          provider: "HMS_BNPL",
-          profileId: profileId,
-        })
-
-        if (authorize.success) {
-          router.replace(
-            `/${countryCode}/checkout/success/${intent.id}?usePoints=${cartTotals.pointsUsed.toString()}`
-          )
-        } else {
-          throw new Error(
-            authorize.message ||
-              `결제 승인 실패: success=${authorize?.success}, intentId=${intent.id}`
-          )
-        }
-      }
+      const walletWebUrl =
+        process.env.NEXT_PUBLIC_WALLET_WEB_URL || "http://localhost:3200"
+      window.location.href = `${walletWebUrl}/pay/${intent.id}`
     } catch (err) {
       console.error("결제 처리 실패:", err)
       setError(err instanceof Error ? err.message : "알 수 없는 오류")
@@ -331,16 +192,9 @@ export default function CheckoutTemplate({
               shipping={shipping}
               promotions={promotions}
               appliedPromotionCode={cart.promotions?.[0]?.code}
-              availablePoints={pointBalance.withdrawable}
-              onPointsChange={setPointsUsed}
               onCouponApplied={() => router.refresh()}
             />
             <PaymentTotalSection totals={cartTotals} />
-
-            <PaymentMethodSection
-              selectedMethod={selectedMethod}
-              setSelectedMethod={setSelectedMethod}
-            />
 
             <ReceiptSection
               cashReceiptOption={cashReceiptOption}
@@ -392,17 +246,17 @@ export default function CheckoutTemplate({
       <MobileCTA onPayment={handlePayment} loading={loading} />
 
       {/* PIN 등록 필요 모달 */}
-      <PinRequiredModal
+      {/* <PinRequiredModal
         open={pinRequiredModalOpen}
         onOpenChange={setPinRequiredModalOpen}
-      />
+      /> */}
 
       {/* PIN 검증 모달 */}
-      <PinVerifyModal
+      {/* <PinVerifyModal
         open={pinVerifyModalOpen}
         onOpenChange={setPinVerifyModalOpen}
         onSuccess={processPayment}
-      />
+      /> */}
     </main>
   )
 }
