@@ -232,8 +232,6 @@ export function SignupFormFields({
     [isCafe24Mode]
   )
 
-  console.log("form:", form.getValues())
-
   useEffect(() => {
     if (!isCafe24Mode) return
     setShowPrefillEditor(!prefillAvailable || hasIncompletePrefill)
