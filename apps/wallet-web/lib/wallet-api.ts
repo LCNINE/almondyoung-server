@@ -24,6 +24,12 @@ export interface ConfirmResult {
   nextAction?: Record<string, unknown>;
 }
 
+export interface PointsBalance {
+  confirmed: number;
+  reserved: number;
+  available: number;
+}
+
 /**
  * cookieHeader: Next.js 서버 컴포넌트에서 호출 시 `cookies().toString()` 값을 전달.
  * 브라우저 클라이언트에서 호출 시 생략하면 credentials: 'include' 사용.
@@ -63,9 +69,26 @@ export async function getPaymentMethods(cookieHeader?: string): Promise<PaymentM
   return res.json();
 }
 
+export async function getPointsBalance(cookieHeader?: string): Promise<PointsBalance> {
+  const headers: Record<string, string> = {};
+  if (cookieHeader) headers['Cookie'] = cookieHeader;
+
+  const res = await fetch(`${BASE_URL}/v1/points/balance`, {
+    headers,
+    credentials: cookieHeader ? undefined : 'include',
+    cache: 'no-store',
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.message ?? `Failed to load points balance (${res.status})`);
+  }
+  return res.json();
+}
+
 export async function confirmPaymentIntent(
   intentId: string,
-  paymentMethodId: string,
+  paymentMethodId: string | null,
+  pointsToApply?: number,
 ): Promise<ConfirmResult> {
   const res = await fetch(`${BASE_URL}/v1/payment-intents/${intentId}/confirm`, {
     method: 'POST',
@@ -74,7 +97,7 @@ export async function confirmPaymentIntent(
       'Idempotency-Key': crypto.randomUUID(),
     },
     credentials: 'include',   // sends JWT cookie
-    body: JSON.stringify({ paymentMethodId }),
+    body: JSON.stringify({ paymentMethodId, pointsToApply }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
