@@ -53,6 +53,10 @@ export const getListCacheSnapshot = <T,>(
   cacheKey: string,
   ttlMs: number
 ): ListCacheSnapshot<T> | null => {
+  if (ttlMs <= 0) {
+    return null
+  }
+
   const inMemory = memoryCache.get(cacheKey) as ListCacheSnapshot<T> | undefined
   if (inMemory) {
     if (isFresh(inMemory.ts, ttlMs)) {
@@ -117,6 +121,7 @@ export const useListCache = <T,>({
   const restoreKeyRef = useRef<string>("")
 
   useEffect(() => {
+    if (ttlMs <= 0) return
     if (scrollYToRestore <= 0) return
     if (restoreKeyRef.current === cacheKey) return
 
@@ -126,10 +131,11 @@ export const useListCache = <T,>({
         window.scrollTo({ top: scrollYToRestore, behavior: "auto" })
       })
     })
-  }, [cacheKey, scrollYToRestore])
+  }, [cacheKey, scrollYToRestore, ttlMs])
 
   useEffect(() => {
     if (typeof window === "undefined") return
+    if (ttlMs <= 0) return
 
     let rafId = 0
     const saveCache = (scrollY: number) => {
@@ -159,7 +165,7 @@ export const useListCache = <T,>({
       window.removeEventListener("scroll", onScroll)
       saveCache(window.scrollY)
     }
-  }, [cacheKey, currentPage, items, total])
+  }, [cacheKey, currentPage, items, total, ttlMs])
 
   return { cacheSnapshot }
 }

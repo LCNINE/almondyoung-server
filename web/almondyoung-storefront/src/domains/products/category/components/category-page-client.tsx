@@ -67,7 +67,7 @@ const SORT_LABELS: Array<{ id: keyof typeof SORT_OPTIONS; label: string }> = [
 ]
 
 const DEFAULT_ITEMS_PER_PAGE = 20
-const CACHE_TTL_MS = 30 * 60 * 1000
+const CACHE_TTL_MS = 0
 
 const getApiOrderForSort = (sort: keyof typeof SORT_OPTIONS) => {
   if (sort === "newest") {
@@ -281,6 +281,7 @@ export function CategoryPageClient({
         categoryId: categoryIds,
         region_id: regionId,
         order: sortOrder,
+        includeFullVariants: true,
       })
 
       const mappedProducts = mapStoreProductsToCardProps(result.products)
