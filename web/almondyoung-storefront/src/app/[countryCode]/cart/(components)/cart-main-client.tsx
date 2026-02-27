@@ -16,6 +16,7 @@ import {
   updateLineItem,
   deleteLineItem,
 } from "@lib/api/medusa/cart"
+import { getProductDetail } from "@lib/api/medusa/products"
 import { transferCart } from "@lib/api/medusa/customer"
 import type { HttpTypes } from "@medusajs/types"
 import { toast } from "sonner"
@@ -66,9 +67,14 @@ function mapMedusaItemToCartItem(item: HttpTypes.StoreCartLineItem): CartItem {
   const unitPrice = item.unit_price || basePrice
   const isMembershipOnly = (product?.metadata as any)?.isMembershipOnly || false
 
+  // 재고 정보 추출
+  const manageInventory = variant?.manage_inventory ?? false
+  const inventoryQuantity = variant?.inventory_quantity ?? 0
+
   return {
     id: item.id,
     productId: product?.id || "",
+    variantId: variant?.id || undefined,
     product: {
       name: item.title || product?.title || "상품명 없음",
       thumbnail: item.thumbnail || product?.thumbnail || "",
@@ -81,6 +87,8 @@ function mapMedusaItemToCartItem(item: HttpTypes.StoreCartLineItem): CartItem {
     selectedOptions,
     quantity: item.quantity,
     isSelected: true,
+    manageInventory,
+    inventoryQuantity,
   }
 }
 
@@ -138,10 +146,56 @@ export function CartMainClient() {
 
       if (updatedCart?.items && updatedCart.items.length > 0) {
         const items = updatedCart.items.map(mapMedusaItemToCartItem)
-        console.log("[장바구니] 매핑된 아이템:", items)
-        setCartItems(items)
-        // 기본으로 모든 아이템 선택
-        setCheckedItems(items.map((item) => item.id))
+
+        // 상세와 동일 기준으로 variant 재고를 보정
+        const productIds = Array.from(
+          new Set(items.map((item) => item.productId).filter(Boolean))
+        )
+        const stockEntries = await Promise.all(
+          productIds.map(async (productId) => {
+            try {
+              const detail = await getProductDetail(productId, updatedCart.region_id)
+              const stockMap = new Map<
+                string,
+                { manageInventory: boolean; inventoryQuantity: number }
+              >()
+              for (const variant of detail.variants ?? []) {
+                if (!variant?.id) continue
+                const manageInventory = variant.manage_inventory ?? false
+                const inventoryQuantity =
+                  variant.manage_inventory === false
+                    ? Number.POSITIVE_INFINITY
+                    : (variant.inventory_quantity ?? 0)
+                stockMap.set(variant.id, { manageInventory, inventoryQuantity })
+              }
+              return [productId, stockMap] as const
+            } catch {
+              return [productId, null] as const
+            }
+          })
+        )
+        const stockByProductId = new Map(stockEntries)
+        const normalizedItems = items.map((item) => {
+          const variantStock = item.variantId
+            ? stockByProductId.get(item.productId)?.get(item.variantId)
+            : undefined
+          if (!variantStock) return item
+          return {
+            ...item,
+            manageInventory: variantStock.manageInventory,
+            inventoryQuantity: variantStock.inventoryQuantity,
+          }
+        })
+        console.log("[장바구니] 매핑된 아이템:", normalizedItems)
+        setCartItems(normalizedItems)
+        
+        // 품절되지 않은 아이템만 선택
+        const availableItems = normalizedItems.filter((item) => {
+          const isSoldOut = item.manageInventory && (item.inventoryQuantity ?? 0) <= 0
+          return !isSoldOut
+        })
+        setCheckedItems(availableItems.map((item) => item.id))
+        
         if (updatedCart.id) {
           const estimatedShipping = await getEstimatedShippingTotal(
             updatedCart.id
@@ -189,13 +243,32 @@ export function CartMainClient() {
   }, [])
 
   const handleCheckItem = (id: string, checked: boolean) => {
+    const item = cartItems.find((item) => item.id === id)
+    if (!item) return
+    
+    // 품절 상품은 체크할 수 없음
+    const isSoldOut = item.manageInventory && (item.inventoryQuantity ?? 0) <= 0
+    if (checked && isSoldOut) {
+      toast.error("품절된 상품은 선택할 수 없습니다.")
+      return
+    }
+    
     setCheckedItems((prev) =>
       checked ? [...prev, id] : prev.filter((itemId) => itemId !== id)
     )
   }
 
   const handleCheckAll = (checked: boolean) => {
-    setCheckedItems(checked ? cartItems.map((item) => item.id) : [])
+    if (checked) {
+      // 품절되지 않은 아이템만 선택
+      const availableItems = cartItems.filter((item) => {
+        const isSoldOut = item.manageInventory && (item.inventoryQuantity ?? 0) <= 0
+        return !isSoldOut
+      })
+      setCheckedItems(availableItems.map((item) => item.id))
+    } else {
+      setCheckedItems([])
+    }
   }
 
   const handleDeleteItem = async (id: string) => {

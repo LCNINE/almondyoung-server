@@ -134,7 +134,7 @@ export function ProductListCard({
                 isMember={isMember}
               />
               {/* 잔여수량 */}
-              {manageInventory && available > 0 && (
+              {manageInventory && available > 0 && available <= 10 && (
                 <span className="text-xs text-gray-500">
                   잔여수량 : {available}
                 </span>

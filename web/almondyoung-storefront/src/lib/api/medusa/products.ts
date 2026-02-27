@@ -61,8 +61,8 @@ export const listProducts = async ({
           limit,
           offset,
           region_id: region?.id,
-          fields:
-            "*variants.calculated_price,+variants.inventory_quantity,*variants.images,+metadata,+tags,",
+        fields:
+          "*variants.calculated_price,+variants.inventory_quantity,+variants.manage_inventory,*variants.images,+metadata,+tags,",
           ...queryParams,
         },
         headers,
@@ -93,6 +93,7 @@ interface GetProductListParams {
   id?: string[] | string
   q?: string // 검색어 파라미터 추가
   order?: string // 정렬 파라미터 (예: "created_at", "-created_at", "title", "-title")
+  includeFullVariants?: boolean
 }
 
 // 상품 목록 조회
@@ -105,6 +106,7 @@ export const getProductList = async ({
   id,
   q,
   order,
+  includeFullVariants = false,
 }: GetProductListParams): Promise<ProductsResponseDto> => {
   const offset = (page - 1) * limit
 
@@ -123,10 +125,11 @@ export const getProductList = async ({
         q, // 검색어 전달
         order, // 정렬 (예: "-created_at" = 최신순)
         fields:
-          "*variants.calculated_price,+variants.inventory_quantity,+variants.metadata,+variants.prices.*,+variants.calculated_price_incl_tax,+variants.original_price,+variants.original_price_incl_tax,+categories,+metadata,+tags",
+          "*variants.calculated_price,+variants.inventory_quantity,+variants.manage_inventory,+variants.metadata,+variants.prices.*,+variants.calculated_price_incl_tax,+variants.original_price,+variants.original_price_incl_tax,+categories,+metadata,+tags",
         region_id: region_id,
       },
       {
+        cache: "no-store",
         next: {
           tags: [
             "products",
@@ -136,10 +139,30 @@ export const getProductList = async ({
       }
     )
 
+    const productsWithFullVariants =
+      includeFullVariants && products.length > 0
+        ? await Promise.all(
+            products.map(async (product) => {
+              try {
+                const detailed = await getProductDetail(product.id, region_id)
+                if (!detailed?.variants?.length) {
+                  return product
+                }
+                return {
+                  ...product,
+                  variants: detailed.variants,
+                }
+              } catch {
+                return product
+              }
+            })
+          )
+        : products
+
     const totalPages = Math.ceil(count / resLimit)
 
     return {
-      products,
+      products: productsWithFullVariants,
       count,
       totalPages,
       currentPage: page,
@@ -157,18 +180,17 @@ export const getProductDetail = async (
 ): Promise<StoreProduct> => {
   try {
     const authHeaders = await getAuthHeaders()
-    const isAuthed = "authorization" in authHeaders
 
     const { product } = await sdk.store.product.retrieve(
       productId,
       {
         fields:
-          "variants.*,+variants.inventory_quantity,+variants.metadata,+variants.prices.*,+variants.calculated_price",
+          "variants.*,+variants.inventory_quantity,+variants.manage_inventory,+variants.metadata,+variants.prices.*,+variants.calculated_price",
         region_id: regionId,
       },
       {
         ...authHeaders,
-        ...(isAuthed && { cache: "no-store" }),
+        cache: "no-store",
       }
     )
 

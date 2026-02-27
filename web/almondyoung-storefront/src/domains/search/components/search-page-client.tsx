@@ -30,7 +30,7 @@ const SORT_OPTIONS = [
   { id: "price_desc", label: "높은가격순" },
   { id: "newest", label: "최신순" },
 ]
-const CACHE_TTL_MS = 30 * 60 * 1000
+const CACHE_TTL_MS = 0
 
 export function SearchPageClient({
   keyword,
@@ -196,6 +196,7 @@ export function SearchPageClient({
         handle: masterIds,
         limit: masterIds.length,
         region_id: regionId,
+        includeFullVariants: true,
       })
       const orderMap = new Map(masterIds.map((id, idx) => [id, idx]))
       const sortedProducts = [...medusaResult.products].sort((a, b) => {

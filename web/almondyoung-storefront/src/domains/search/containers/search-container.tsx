@@ -74,6 +74,7 @@ export async function SearchContainer({
             handle: masterIds,
             limit: masterIds.length,
             region_id: region?.id,
+            includeFullVariants: true,
           })
 
           // 4. 검색 순서대로 정렬 (검색 관련도 유지)
