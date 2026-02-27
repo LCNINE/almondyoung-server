@@ -1,3 +1,4 @@
+import { isRedirectError } from 'next/dist/client/components/redirect-error';
 import { redirect } from 'next/navigation';
 import { approveToss } from '@/lib/wallet-api';
 
@@ -25,6 +26,7 @@ export default async function TossCompletePage({ params, searchParams }: Props) 
     }
     redirect(`/pay/${intentId}`);
   } catch (e) {
+    if (isRedirectError(e)) throw e;
     console.error('[toss-complete] approveToss failed:', e);
     redirect(`/pay/${intentId}?toss_fail=1`);
   }
