@@ -303,15 +303,23 @@ export class ProductIndexService implements OnModuleInit {
     return filters;
   }
 
-  private buildStrictTextQuery(q: string, compactQ: string): any {
+  private buildStrictTextQuery(q: string, _compactQ: string): any {
     return {
       bool: {
         should: [
           {
-            term: {
-              name_compact: {
-                value: compactQ,
-                boost: 30,
+            match_phrase: {
+              'name.standard': {
+                query: q,
+                boost: 25,
+              },
+            },
+          },
+          {
+            match: {
+              'name.ngram': {
+                query: q,
+                boost: 15,
               },
             },
           },
@@ -319,7 +327,7 @@ export class ProductIndexService implements OnModuleInit {
             match_phrase: {
               name: {
                 query: q,
-                boost: 12,
+                boost: 10,
               },
             },
           },
@@ -333,7 +341,7 @@ export class ProductIndexService implements OnModuleInit {
           },
           {
             match_phrase_prefix: {
-              name: {
+              'name.standard': {
                 query: q,
                 boost: 4,
                 max_expansions: 20,
@@ -357,10 +365,9 @@ export class ProductIndexService implements OnModuleInit {
       minimum_should_match: minimumShouldMatch,
     };
 
-    if (compactLength >= 3) {
+    if (compactLength >= 4) {
       multiMatch.fuzziness = 1;
-      multiMatch.prefix_length =
-        compactLength >= 8 ? 3 : compactLength >= 5 ? 2 : 1;
+      multiMatch.prefix_length = compactLength >= 8 ? 3 : 2;
       multiMatch.max_expansions = 25;
       multiMatch.fuzzy_transpositions = false;
     }
@@ -370,16 +377,16 @@ export class ProductIndexService implements OnModuleInit {
         should: [
           { multi_match: multiMatch },
           {
-            term: {
-              name_compact: {
-                value: compactQ,
-                boost: 20,
+            match: {
+              'name.ngram': {
+                query: q,
+                boost: 10,
               },
             },
           },
           {
             match_phrase_prefix: {
-              name: {
+              'name.standard': {
                 query: q,
                 boost: 2,
                 max_expansions: 20,

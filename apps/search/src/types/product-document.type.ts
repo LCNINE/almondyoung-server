@@ -8,7 +8,7 @@ export const PRODUCTS_INDEX_SETTINGS: Record<string, any> = {
     tokenizer: {
       nori_tokenizer: {
         type: 'nori_tokenizer' as const,
-        decompound_mode: 'mixed' as const,
+        decompound_mode: 'discard' as const,
         discard_punctuation: true,
       },
     },
@@ -17,12 +17,27 @@ export const PRODUCTS_INDEX_SETTINGS: Record<string, any> = {
         type: 'nori_part_of_speech' as const,
         stoptags: ['E', 'IC', 'J', 'MM', 'SP', 'SSC', 'SSO', 'SC', 'SE', 'XPN', 'XSA', 'XSN', 'XSV', 'VSV'],
       },
+      edge_ngram: {
+        type: 'edge_ngram' as const,
+        min_gram: 1,
+        max_gram: 15,
+      },
     },
     analyzer: {
       nori: {
         type: 'custom' as const,
         tokenizer: 'nori_tokenizer' as const,
         filter: ['nori_posfilter', 'lowercase'],
+      },
+      standard_lowercase: {
+        type: 'custom' as const,
+        tokenizer: 'standard' as const,
+        filter: ['lowercase'],
+      },
+      edge_ngram_analyzer: {
+        type: 'custom' as const,
+        tokenizer: 'standard' as const,
+        filter: ['lowercase', 'edge_ngram'],
       },
     },
   },
@@ -37,6 +52,15 @@ export const PRODUCTS_INDEX_MAPPINGS = {
       analyzer: 'nori',
       fields: {
         keyword: { type: 'keyword' as const },
+        standard: {
+          type: 'text' as const,
+          analyzer: 'standard_lowercase',
+        },
+        ngram: {
+          type: 'text' as const,
+          analyzer: 'edge_ngram_analyzer',
+          search_analyzer: 'standard_lowercase',
+        },
       },
     },
     name_compact: { type: 'keyword' as const },
