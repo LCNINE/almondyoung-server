@@ -2,6 +2,14 @@
 
 import { createSubscriptionServer } from "@/lib/api/membership"
 import { HttpApiError } from "@/lib/api/api-error"
+import { sdk } from "@/lib/config/medusa"
+import {
+  getAuthHeaders,
+  getCacheTag,
+  getCartId,
+  removeCartId,
+} from "@/lib/data/cookies"
+import { revalidateTag } from "next/cache"
 
 interface ProcessPaymentResult {
   success: boolean
@@ -35,6 +43,28 @@ export async function processPaymentCallback(
           success: false,
           redirectUrl: `/${countryCode}/mypage/membership/subscribe/fail?code=SUBSCRIBE_FAILED&message=${encodeURIComponent(message)}`,
         }
+      }
+    }
+
+    const cartId = await getCartId()
+    if (cartId) {
+      const headers = { ...(await getAuthHeaders()) }
+      const cartRes = await sdk.store.cart.complete(cartId, {}, headers)
+
+      if (cartRes?.type === "order") {
+        revalidateTag(await getCacheTag("orders"))
+        await removeCartId()
+        return {
+          success: true,
+          redirectUrl: `/${countryCode}/checkout/success/${intentId}?orderId=${cartRes.order.id}`,
+        }
+      }
+
+      const errMsg =
+        (cartRes as any)?.error?.message ?? "주문 처리에 실패했습니다."
+      return {
+        success: false,
+        redirectUrl: `/${countryCode}/checkout/fail?code=ORDER_FAILED&message=${encodeURIComponent(errMsg)}`,
       }
     }
 
