@@ -13,6 +13,7 @@ interface CartItem {
   id: string
   productId: string
   variantId?: string
+  selectedOptionText?: string
   product: CartItemProduct
   selectedOptions: Record<string, string>
   quantity: number

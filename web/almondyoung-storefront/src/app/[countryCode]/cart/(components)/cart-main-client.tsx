@@ -39,6 +39,16 @@ function mapMedusaItemToCartItem(item: HttpTypes.StoreCartLineItem): CartItem {
       selectedOptions[optionTitle] = opt.value
     }
   }
+  const selectedOptionText =
+    Object.keys(selectedOptions).length > 0
+      ? Object.entries(selectedOptions)
+          .map(([key, value]) => `${key}: ${value}`)
+          .join(", ")
+      : typeof variant?.title === "string" &&
+          variant.title.trim() &&
+          variant.title !== "Default Variant"
+        ? variant.title
+        : undefined
 
   // 가격 정보
   const compareAtUnitPrice = item.compare_at_unit_price ?? null
@@ -85,6 +95,7 @@ function mapMedusaItemToCartItem(item: HttpTypes.StoreCartLineItem): CartItem {
       isMembershipOnly,
     },
     selectedOptions,
+    selectedOptionText,
     quantity: item.quantity,
     isSelected: true,
     manageInventory,
