@@ -12,10 +12,13 @@ interface CartItemProduct {
 interface CartItem {
   id: string
   productId: string
+  variantId?: string
   product: CartItemProduct
   selectedOptions: Record<string, string>
   quantity: number
   isSelected?: boolean
+  manageInventory?: boolean
+  inventoryQuantity?: number
 }
 
 interface CartTotals {
