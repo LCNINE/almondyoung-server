@@ -1,6 +1,11 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
+import {
+  extractCountryCodeFromPath,
+  normalizeRedirectPath,
+  toLocalizedPath,
+} from "@/lib/utils/locale-path"
 import { Home, RefreshCw } from "lucide-react"
 import Image from "next/image"
 import { usePathname, useRouter } from "next/navigation"
@@ -27,6 +32,9 @@ export default function Error({
       console.log("error:", error.stack)
       if (error.digest === "UNAUTHORIZED" || error.message === "UNAUTHORIZED") {
         const isMainPage = /^\/[a-z]{2}\/?$/.test(pathname)
+        const countryCode = extractCountryCodeFromPath(pathname, "kr")
+        const loginPath = toLocalizedPath(countryCode, "/login")
+        const redirectPath = encodeURIComponent(normalizeRedirectPath(pathname))
 
         try {
           const response = await fetch("/api/auth/restore-token", {
@@ -53,8 +61,7 @@ export default function Error({
           }
 
           // 다른 페이지는 로그인 페이지로 리다이렉트
-          const currentUrl = encodeURIComponent(pathname)
-          window.location.href = `/kr/login?redirect_to=${currentUrl}`
+          window.location.href = `${loginPath}?redirect_to=${redirectPath}`
         } catch (error) {
           console.error("토큰 복구 중 에러:", error)
 
@@ -66,8 +73,7 @@ export default function Error({
           }
 
           // 다른 페이지는 로그인 페이지로 리다이렉트
-          const currentUrl = encodeURIComponent(pathname)
-          router.push(`/kr/login?redirect_to=${currentUrl}`)
+          router.push(`${loginPath}?redirect_to=${redirectPath}`)
         }
       } else {
         // TOKEN_EXPIRED가 아닌 다른 에러인 경우

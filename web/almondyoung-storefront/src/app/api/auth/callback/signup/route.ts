@@ -1,4 +1,5 @@
 import { siteConfig } from "@/lib/config/site"
+import { toLocalizedPath } from "@/lib/utils/locale-path"
 import { setTokenCookies, setMedusaAuthToken } from "@lib/data/cookies"
 import { NextRequest, NextResponse } from "next/server"
 import { requireBackendBaseUrl } from "@/lib/config/backend"
@@ -51,11 +52,14 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const userId = searchParams.get("userId")
+    const countryCode = searchParams.get("countryCode") ?? "kr"
     const redirectTo =
       searchParams.get("redirect_to") ?? siteConfig.auth.redirect_to
+    const targetPath = toLocalizedPath(countryCode, redirectTo)
+    const loginPath = toLocalizedPath(countryCode, siteConfig.auth.loginUrl)
 
     if (!userId) {
-      return NextResponse.redirect(new URL("/login", request.url))
+      return NextResponse.redirect(new URL(loginPath, request.url))
     }
 
     // 1. user-service에서 토큰 받아오기
@@ -90,7 +94,7 @@ export async function GET(request: NextRequest) {
 
     if (medusaToken) {
       await setMedusaAuthToken(medusaToken)
-      return NextResponse.redirect(new URL(redirectTo, request.url))
+      return NextResponse.redirect(new URL(targetPath, request.url))
     }
 
     // 4. 신규 메두사 회원 가입 처리
@@ -123,7 +127,7 @@ export async function GET(request: NextRequest) {
       if (!signupOk) {
         console.error("medusaSignup failed")
         return NextResponse.redirect(
-          new URL("/login?error=signup_failed", request.url)
+          new URL(`${loginPath}?error=signup_failed`, request.url)
         )
       }
     }
@@ -134,11 +138,11 @@ export async function GET(request: NextRequest) {
       await setMedusaAuthToken(finalToken)
     }
 
-    return NextResponse.redirect(new URL(redirectTo, request.url))
+    return NextResponse.redirect(new URL(targetPath, request.url))
   } catch (error) {
     console.error("Signup callback error:", error)
     return NextResponse.redirect(
-      new URL("/login?error=callback_failed", request.url)
+      new URL(`/kr/login?error=callback_failed`, request.url)
     )
   }
 }

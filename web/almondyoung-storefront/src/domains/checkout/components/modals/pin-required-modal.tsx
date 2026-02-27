@@ -24,7 +24,7 @@ export function PinRequiredModal({ open, onOpenChange }: PinRequiredModalProps) 
 
   const handleConfirm = () => {
     router.push(
-      `/${countryCode}/mypage/payment/security?redirect_to=/${countryCode}/checkout`
+      `/${countryCode}/mypage/payment/security?redirect_to=/checkout`
     )
   }
 

@@ -1,5 +1,11 @@
 import { headers } from "next/headers"
 import { redirect } from "next/navigation"
+import { siteConfig } from "@/lib/config/site"
+import {
+  extractCountryCodeFromPath,
+  normalizeRedirectPath,
+  toLocalizedPath,
+} from "@/lib/utils/locale-path"
 import { removeAccessToken, removeRefreshToken } from "@lib/data/cookies"
 
 /**
@@ -20,8 +26,12 @@ export function isUnauthorizedError(error: unknown): boolean {
  */
 export async function redirectToLogin(): Promise<never> {
   const headersList = await headers()
-  const pathname = headersList.get("x-pathname") || "/kr"
-  redirect(`/kr/login?redirect_to=${encodeURIComponent(pathname)}`)
+  const pathname = headersList.get("x-pathname") || "/"
+  const countryCode = extractCountryCodeFromPath(pathname, "kr")
+  const loginPath = toLocalizedPath(countryCode, siteConfig.auth.loginUrl)
+  const redirectPath = normalizeRedirectPath(pathname)
+
+  redirect(`${loginPath}?redirect_to=${encodeURIComponent(redirectPath)}`)
 }
 
 /**
