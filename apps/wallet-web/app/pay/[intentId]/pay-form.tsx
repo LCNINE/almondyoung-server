@@ -111,7 +111,6 @@ export function PayForm({ intent, methods }: Props) {
       <div className="border-b bg-card">
         <div className="flex items-center justify-center gap-1.5 py-2.5">
           <Lock className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-xs text-muted-foreground">안전한 결제</span>
         </div>
       </div>
 
