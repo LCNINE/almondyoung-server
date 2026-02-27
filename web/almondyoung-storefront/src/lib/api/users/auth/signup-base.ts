@@ -5,10 +5,7 @@ import { api } from "../../api"
 
 type LocalSignupRequest = Omit<
   SignupSchema,
-  | "passwordConfirm"
-  | "verificationCode"
-  | "countryCode"
-  | "isPhoneVerified"
+  "passwordConfirm" | "verificationCode" | "countryCode" | "isPhoneVerified"
 >
 
 type LocalSignupSuccessResponse = {

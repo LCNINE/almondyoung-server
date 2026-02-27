@@ -48,7 +48,9 @@ const decodeLegacyMessage = (value: string) => {
 
 export function SignupForm({ mode, cafe24Bootstrap }: SignupFormProps) {
   const router = useRouter()
-  const { countryCode: rawCountryCode } = useParams() as { countryCode?: string }
+  const { countryCode: rawCountryCode } = useParams() as {
+    countryCode?: string
+  }
   const searchParams = useSearchParams()
   const countryCode = rawCountryCode ?? "kr"
   const redirectTo = searchParams.get("redirect_to") || "/"
@@ -153,8 +155,7 @@ export function SignupForm({ mode, cafe24Bootstrap }: SignupFormProps) {
       `${window.location.origin}/${countryCode}/signup/cafe24/confirm` +
       `?redirect_to=${encodeURIComponent(redirectTo)}`
 
-    window.location.href =
-      `${CAFE24_MIGRATOR_BASE}?redirect_to=${encodeURIComponent(confirmUrl)}`
+    window.location.href = `${CAFE24_MIGRATOR_BASE}?redirect_to=${encodeURIComponent(confirmUrl)}`
   }
 
   const onSubmit = async (data: SignupSchema) => {
