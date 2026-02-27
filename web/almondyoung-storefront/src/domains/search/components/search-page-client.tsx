@@ -226,6 +226,8 @@ export function SearchPageClient({
       setItems([])
       setTotal(0)
       setCurrentPage(1)
+      isLoadingMoreRef.current = false
+      setIsLoadingMore(false)
       return
     }
 
@@ -234,6 +236,8 @@ export function SearchPageClient({
       setItems(cached.items)
       setTotal(cached.total)
       setCurrentPage(Math.max(cached.currentPage, urlPage))
+      isLoadingMoreRef.current = false
+      setIsLoadingMore(false)
       return
     }
 
@@ -241,6 +245,8 @@ export function SearchPageClient({
       setItems(searchResult.items)
       setTotal(searchResult.pagination.total)
       setCurrentPage(1)
+      isLoadingMoreRef.current = false
+      setIsLoadingMore(false)
       return
     }
 
@@ -259,8 +265,12 @@ export function SearchPageClient({
         setItems(merged)
         setTotal(last?.total ?? 0)
         setCurrentPage(urlPage)
+        isLoadingMoreRef.current = false
+        setIsLoadingMore(false)
       } catch (error) {
         console.error("검색 목록 로드 실패:", error)
+        isLoadingMoreRef.current = false
+        setIsLoadingMore(false)
       }
     }
 

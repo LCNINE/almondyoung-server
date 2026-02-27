@@ -303,6 +303,8 @@ export function CategoryPageClient({
       setProducts(cached.items)
       setTotal(cached.total)
       setCurrentPage(Math.max(cached.currentPage, urlPage))
+      isLoadingMoreRef.current = false
+      setIsLoadingMore(false)
       return
     }
 
@@ -316,6 +318,8 @@ export function CategoryPageClient({
       setProducts(initialProducts)
       setTotal(initialTotal)
       setCurrentPage(1)
+      isLoadingMoreRef.current = false
+      setIsLoadingMore(false)
       return
     }
 
@@ -336,15 +340,21 @@ export function CategoryPageClient({
           )
           setTotal(last?.total ?? 0)
           setCurrentPage(urlPage)
+          isLoadingMoreRef.current = false
+          setIsLoadingMore(false)
         } else {
           const { products: nextProducts, total: nextTotal } =
             await fetchProductsPage(1)
           setProducts(nextProducts)
           setTotal(nextTotal)
           setCurrentPage(1)
+          isLoadingMoreRef.current = false
+          setIsLoadingMore(false)
         }
       } catch (error) {
         console.error("상품 목록 로드 실패:", error)
+        isLoadingMoreRef.current = false
+        setIsLoadingMore(false)
       }
     })
   }, [
