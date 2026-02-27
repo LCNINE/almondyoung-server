@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
-import { getPaymentIntent, getPaymentMethods } from '@/lib/wallet-api';
+import { getPaymentIntent, getPaymentMethods, getPointsBalance } from '@/lib/wallet-api';
 import { PayForm } from './pay-form';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -25,7 +25,10 @@ export default async function PayPage({ params }: Props) {
     notFound();
   }
 
-  const methods = await getPaymentMethods(cookieHeader).catch(() => []);
+  const [methods, pointsBalance] = await Promise.all([
+    getPaymentMethods(cookieHeader).catch(() => []),
+    getPointsBalance(cookieHeader).catch(() => ({ confirmed: 0, reserved: 0, available: 0 })),
+  ]);
 
   if (intent.status === 'SUCCEEDED') {
     const returnUrl = intent.returnUrl
@@ -76,5 +79,5 @@ export default async function PayPage({ params }: Props) {
     );
   }
 
-  return <PayForm intent={intent} methods={methods} />;
+  return <PayForm intent={intent} methods={methods} pointsBalance={pointsBalance} />;
 }
