@@ -2,8 +2,55 @@ import { NextRequest, NextResponse } from "next/server"
 import { cookies } from "next/headers"
 import { requireBackendBaseUrl } from "@/lib/config/backend"
 
+const isIpHost = (hostname: string) => {
+  return /^(?:\d{1,3}\.){3}\d{1,3}$/.test(hostname) || hostname.includes(":")
+}
+
+const getSecondLevelDomain = (hostname: string): string | undefined => {
+  if (!hostname || hostname === "localhost" || isIpHost(hostname)) {
+    return undefined
+  }
+
+  const parts = hostname.split(".").filter(Boolean)
+
+  if (parts.length < 2) {
+    return undefined
+  }
+
+  return parts.slice(-2).join(".")
+}
+
+const clearAuthCookies = (response: NextResponse, domain?: string) => {
+  response.cookies.set("accessToken", "", {
+    maxAge: -1,
+    path: "/",
+  })
+  if (domain) {
+    response.cookies.set("accessToken", "", {
+      maxAge: -1,
+      path: "/",
+      domain,
+    })
+  }
+
+  response.cookies.set("refreshToken", "", {
+    maxAge: -1,
+    path: "/",
+  })
+  if (domain) {
+    response.cookies.set("refreshToken", "", {
+      maxAge: -1,
+      path: "/",
+      domain,
+    })
+  }
+
+  response.cookies.delete("_medusa_jwt")
+}
+
 export async function POST(request: NextRequest) {
   try {
+    const tokenCookieDomain = getSecondLevelDomain(request.nextUrl.hostname)
     const cookieStore = await cookies()
     const returnUrl = request.nextUrl.searchParams.get("returnUrl")
 
@@ -18,9 +65,7 @@ export async function POST(request: NextRequest) {
         { status: 401 }
       )
 
-      response.cookies.delete("accessToken")
-      response.cookies.delete("refreshToken")
-      response.cookies.delete("_medusa_jwt")
+      clearAuthCookies(response, tokenCookieDomain)
 
       return response
     }
@@ -50,7 +95,17 @@ export async function POST(request: NextRequest) {
       { status: 200 }
     )
 
-    response.cookies.set("accessToken", data.data.accessToken)
+    if (tokenCookieDomain) {
+      response.cookies.set("accessToken", "", {
+        maxAge: -1,
+        path: "/",
+      })
+    }
+
+    response.cookies.set("accessToken", data.data.accessToken, {
+      path: "/",
+      ...(tokenCookieDomain ? { domain: tokenCookieDomain } : {}),
+    })
 
     return response
   } catch (error) {
@@ -83,9 +138,8 @@ export async function POST(request: NextRequest) {
       { status: 401 }
     )
 
-    response.cookies.delete("accessToken")
-    response.cookies.delete("refreshToken")
-    response.cookies.delete("_medusa_jwt")
+    const tokenCookieDomain = getSecondLevelDomain(request.nextUrl.hostname)
+    clearAuthCookies(response, tokenCookieDomain)
 
     return response
   }
