@@ -84,7 +84,7 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
   ): Promise<InitiatePaymentOutput> {
     const { amount, currency_code, context: ctx, data } = context;
     const returnUrl = ((ctx as Record<string, unknown>)?.return_url as string) ?? undefined;
-    const userId = (ctx as Record<string, unknown>)?.customer?.id as string | undefined;
+    const userId = ctx?.customer?.id as string | undefined;
     if (!userId) throw new Error('customer.id is required in payment context');
 
     // Medusa passes its session ID via data.session_id — store it for webhook correlation
