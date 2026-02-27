@@ -3,7 +3,6 @@
 import { CategoryCircleTabs } from "@/components/category/category-circle-tabs"
 import { BannerCarousel } from "@/components/layout/components/banner/banner-carousel"
 import { ProductGrid } from "@/components/products/product-grid"
-import ProductFilterSidebar from "@/components/products/product-filter-sidebar"
 import CustomDropdown from "@components/dropdown"
 import type { StoreProductCategoryTree } from "@lib/types/medusa-category"
 import type { ProductCardProps } from "@lib/types/ui/product"
@@ -89,7 +88,8 @@ const sortProductsByOption = (
   }
 
   const getSortPrice = (item: ProductCardProps) => {
-    const regularPrice = item.originalPrice > 0 ? item.originalPrice : item.price
+    const regularPrice =
+      item.originalPrice > 0 ? item.originalPrice : item.price
     const membershipPrice = item.debugPrices?.membershipPrice
 
     if (
@@ -126,7 +126,6 @@ interface CategoryPageClientProps {
   countryCode: string
   categoryIds?: string[] // 카테고리 ID 목록
   regionId?: string // 지역 ID
-  allCategories?: StoreProductCategoryTree[] // 전체 카테고리 트리
   categoryPath?: StoreProductCategoryTree[]
 }
 
@@ -139,7 +138,6 @@ export function CategoryPageClient({
   countryCode,
   categoryIds = [],
   regionId,
-  allCategories = [],
   categoryPath = [],
 }: CategoryPageClientProps) {
   const router = useRouter()
@@ -158,7 +156,8 @@ export function CategoryPageClient({
     }
     return LEGACY_SORT_OPTIONS[sort] ?? DEFAULT_SORT
   }, [searchParams])
-  const currentLimit = Number(searchParams.get("limit")) || DEFAULT_ITEMS_PER_PAGE
+  const currentLimit =
+    Number(searchParams.get("limit")) || DEFAULT_ITEMS_PER_PAGE
   const urlPage = Math.max(1, Number(searchParams.get("page")) || 1)
 
   const cacheKey = useMemo(() => {
@@ -195,7 +194,10 @@ export function CategoryPageClient({
     return urlPage
   })
   const [isLoadingMore, setIsLoadingMore] = useState(false)
-  const hasMore = useMemo(() => products.length < total, [products.length, total])
+  const hasMore = useMemo(
+    () => products.length < total,
+    [products.length, total]
+  )
   const showOverlay = isPending && products.length === 0
   const breadcrumbs = useMemo(
     () =>
@@ -265,9 +267,12 @@ export function CategoryPageClient({
       }
 
       const queryString = newParams.toString()
-      router.replace(queryString ? `?${queryString}` : window.location.pathname, {
-        scroll: false,
-      })
+      router.replace(
+        queryString ? `?${queryString}` : window.location.pathname,
+        {
+          scroll: false,
+        }
+      )
     },
     [router, searchParams]
   )
@@ -299,7 +304,10 @@ export function CategoryPageClient({
 
   // 정렬/개수/카테고리 변경 시 데이터 로드
   useEffect(() => {
-    const cached = getListCacheSnapshot<ProductCardProps>(cacheKey, CACHE_TTL_MS)
+    const cached = getListCacheSnapshot<ProductCardProps>(
+      cacheKey,
+      CACHE_TTL_MS
+    )
     if (cached?.items?.length) {
       setProducts(cached.items)
       setTotal(cached.total)
@@ -415,143 +423,148 @@ export function CategoryPageClient({
   })
 
   return (
-    <main className="">
-      <div className="container mx-auto max-w-[1360px]">
-        <div className="flex px-4 py-6 md:gap-[40px] md:px-[40px]">
-          <aside className="hidden w-[233px] shrink-0 md:block">
-            <ProductFilterSidebar
-              categories={allCategories}
-              currentCategoryId={categoryData.id}
-              countryCode={countryCode}
-            />
-          </aside>
-          <div className="min-w-0 flex-1">
-            {/* 카테고리 헤더(타이틀/설명/배너) */}
-            <div className="mb-8">
-              {showBreadcrumb && (
-                <>
-                  <Breadcrumb className="mb-2 hidden md:block">
-                    <BreadcrumbList>
-                      {breadcrumbs.map((crumb, index) => {
-                        const isLast = index === breadcrumbs.length - 1
-                        return (
-                          <Fragment key={crumb.id}>
-                            {index > 0 && (
-                              <BreadcrumbSeparator className="mx-1 text-gray-500" />
-                            )}
-                            <BreadcrumbItem>
-                              {isLast ? (
-                                <BreadcrumbPage className="font-semibold text-gray-900">
-                                  {crumb.name}
-                                </BreadcrumbPage>
-                              ) : (
-                                <BreadcrumbLink asChild className="text-gray-600 hover:text-gray-900">
-                                  <Link href={crumb.href}>{crumb.name}</Link>
-                                </BreadcrumbLink>
-                              )}
-                            </BreadcrumbItem>
-                          </Fragment>
-                        )
-                      })}
-                    </BreadcrumbList>
-                  </Breadcrumb>
-
-                  <Breadcrumb className="mb-2 md:hidden">
-                    <BreadcrumbList>
-                      {showMobileEllipsis && (
-                        <>
-                          <BreadcrumbItem>
-                            <BreadcrumbLink asChild className="text-gray-600 hover:text-gray-900">
-                              <Link href={breadcrumbs[0].href}>{breadcrumbs[0].name}</Link>
-                            </BreadcrumbLink>
-                          </BreadcrumbItem>
-                          <BreadcrumbSeparator className="text-gray-500" />
-                          <BreadcrumbItem>
-                            <BreadcrumbEllipsis className="h-auto w-auto text-gray-500" />
-                          </BreadcrumbItem>
-                          <BreadcrumbSeparator className="text-gray-500" />
-                        </>
+    <>
+      {/* 카테고리 헤더(타이틀/설명/배너) */}
+      <div className="mb-8">
+        {showBreadcrumb && (
+          <>
+            <Breadcrumb className="mb-2 hidden md:block">
+              <BreadcrumbList>
+                {breadcrumbs.map((crumb, index) => {
+                  const isLast = index === breadcrumbs.length - 1
+                  return (
+                    <Fragment key={crumb.id}>
+                      {index > 0 && (
+                        <BreadcrumbSeparator className="mx-1 text-gray-500" />
                       )}
-                      {mobileBreadcrumbs.map((crumb, index) => {
-                        const isLast = index === mobileBreadcrumbs.length - 1
-                        return (
-                          <Fragment key={crumb.id}>
-                            {index > 0 && <BreadcrumbSeparator className="text-gray-500" />}
-                            <BreadcrumbItem>
-                              {isLast ? (
-                                <BreadcrumbPage className="font-semibold text-gray-900">
-                                  {crumb.name}
-                                </BreadcrumbPage>
-                              ) : (
-                                <BreadcrumbLink asChild className="text-gray-600 hover:text-gray-900">
-                                  <Link href={crumb.href}>{crumb.name}</Link>
-                                </BreadcrumbLink>
-                              )}
-                            </BreadcrumbItem>
-                          </Fragment>
-                        )
-                      })}
-                    </BreadcrumbList>
-                  </Breadcrumb>
-                </>
-              )}
+                      <BreadcrumbItem>
+                        {isLast ? (
+                          <BreadcrumbPage className="font-semibold text-gray-900">
+                            {crumb.name}
+                          </BreadcrumbPage>
+                        ) : (
+                          <BreadcrumbLink
+                            asChild
+                            className="text-gray-600 hover:text-gray-900"
+                          >
+                            <Link href={crumb.href}>{crumb.name}</Link>
+                          </BreadcrumbLink>
+                        )}
+                      </BreadcrumbItem>
+                    </Fragment>
+                  )
+                })}
+              </BreadcrumbList>
+            </Breadcrumb>
 
-              <div className="flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
-                <div className="flex-1">
-                  <h1 className="mb-2 text-2xl font-bold text-gray-900 md:text-3xl">
-                    {categoryInfo.title}
-                  </h1>
+            <Breadcrumb className="mb-2 md:hidden">
+              <BreadcrumbList>
+                {showMobileEllipsis && (
+                  <>
+                    <BreadcrumbItem>
+                      <BreadcrumbLink
+                        asChild
+                        className="text-gray-600 hover:text-gray-900"
+                      >
+                        <Link href={breadcrumbs[0].href}>
+                          {breadcrumbs[0].name}
+                        </Link>
+                      </BreadcrumbLink>
+                    </BreadcrumbItem>
+                    <BreadcrumbSeparator className="text-gray-500" />
+                    <BreadcrumbItem>
+                      <BreadcrumbEllipsis className="h-auto w-auto text-gray-500" />
+                    </BreadcrumbItem>
+                    <BreadcrumbSeparator className="text-gray-500" />
+                  </>
+                )}
+                {mobileBreadcrumbs.map((crumb, index) => {
+                  const isLast = index === mobileBreadcrumbs.length - 1
+                  return (
+                    <Fragment key={crumb.id}>
+                      {index > 0 && (
+                        <BreadcrumbSeparator className="text-gray-500" />
+                      )}
+                      <BreadcrumbItem>
+                        {isLast ? (
+                          <BreadcrumbPage className="font-semibold text-gray-900">
+                            {crumb.name}
+                          </BreadcrumbPage>
+                        ) : (
+                          <BreadcrumbLink
+                            asChild
+                            className="text-gray-600 hover:text-gray-900"
+                          >
+                            <Link href={crumb.href}>{crumb.name}</Link>
+                          </BreadcrumbLink>
+                        )}
+                      </BreadcrumbItem>
+                    </Fragment>
+                  )
+                })}
+              </BreadcrumbList>
+            </Breadcrumb>
+          </>
+        )}
 
-                  {categoryInfo.description ? (
-                    <p className="text-sm leading-relaxed text-gray-600 md:text-base">
-                      {categoryInfo.description}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
-            </div>
+        <div className="flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
+          <div className="flex-1">
+            <h1 className="mb-2 text-2xl font-bold text-gray-900 md:text-3xl">
+              {categoryInfo.title}
+            </h1>
 
-            {categoryData.category_children &&
-              categoryData.category_children.length > 0 && (
-                <CategoryCircleTabs
-                  items={categoryData.category_children}
-                  selectedId=""
-                  onSelect={() => { }}
-                  countryCode={countryCode}
-                  parentSegments={categoryPath.map((node) => node.handle || node.id)}
-                />
-              )}
+            {categoryInfo.description ? (
+              <p className="text-sm leading-relaxed text-gray-600 md:text-base">
+                {categoryInfo.description}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </div>
 
-            {categoryInfo.banners && categoryInfo.banners.length > 0 && (
-              <section className="my-4">
-                <BannerCarousel
-                  slides={categoryInfo.banners}
-                  height="120px"
-                  autoPlay={true}
-                  autoPlayInterval={6000}
-                  className="lg:overflow-hidden lg:rounded-2xl"
-                />
-              </section>
-            )}
+      {categoryData.category_children &&
+        categoryData.category_children.length > 0 && (
+          <CategoryCircleTabs
+            items={categoryData.category_children}
+            selectedId=""
+            onSelect={() => {}}
+            countryCode={countryCode}
+            parentSegments={categoryPath.map((node) => node.handle || node.id)}
+          />
+        )}
 
-            <section>
-              {/* 모바일: 필터 버튼 + 정렬 툴바 */}
-              <div className="mb-4 flex items-center justify-between md:hidden">
-                <p className="text-sm text-gray-600">
-                  총{" "}
-                  <span className="font-semibold text-gray-900">{total}</span>개
-                </p>
-                <div className="flex items-center gap-3">
-                  <CustomDropdown
-                    items={SORT_LABELS}
-                    defaultValue={currentSort}
-                    onSelect={(id) =>
-                      updateParams({ sort: (id in SORT_OPTIONS
-                        ? (id as keyof typeof SORT_OPTIONS)
-                        : DEFAULT_SORT) })
-                    }
-                  />
-                  {/* <button
+      {categoryInfo.banners && categoryInfo.banners.length > 0 && (
+        <section className="my-4">
+          <BannerCarousel
+            slides={categoryInfo.banners}
+            height="120px"
+            autoPlay={true}
+            autoPlayInterval={6000}
+            className="lg:overflow-hidden lg:rounded-2xl"
+          />
+        </section>
+      )}
+
+      <section>
+        {/* 모바일: 필터 버튼 + 정렬 툴바 */}
+        <div className="mb-4 flex items-center justify-between md:hidden">
+          <p className="text-sm text-gray-600">
+            총 <span className="font-semibold text-gray-900">{total}</span>개
+          </p>
+          <div className="flex items-center gap-3">
+            <CustomDropdown
+              items={SORT_LABELS}
+              defaultValue={currentSort}
+              onSelect={(id) =>
+                updateParams({
+                  sort:
+                    id in SORT_OPTIONS
+                      ? (id as keyof typeof SORT_OPTIONS)
+                      : DEFAULT_SORT,
+                })
+              }
+            />
+            {/* <button
                     onClick={openMobileFilter}
                     className="flex h-10 shrink-0 items-center gap-2 whitespace-nowrap font-['Pretendard'] text-sm font-medium text-gray-700 transition-colors"
                     aria-label="필터 열기"
@@ -559,71 +572,68 @@ export function CategoryPageClient({
                     필터
                     <SlidersHorizontal className="h-4 w-4" />
                   </button> */}
-                </div>
-              </div>
-
-              {/* 데스크톱: 정렬 툴바 */}
-              <div className="mb-5 hidden bg-gray-100 px-3.5 py-2.5 md:block">
-                {/* 정렬 옵션 */}
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 lg:flex-nowrap lg:divide-x lg:divide-gray-300">
-                  {SORT_LABELS.map((option, index) => (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => updateParams({ sort: option.id })}
-                      className={cn(
-                        "shrink-0 whitespace-nowrap font-['Pretendard'] text-base",
-                        index > 0 ? "lg:pl-4" : "",
-                        index < SORT_LABELS.length - 1 ? "lg:pr-4" : "",
-                        currentSort === option.id
-                          ? "font-bold text-stone-900"
-                          : "font-normal text-gray-500 hover:text-stone-900"
-                      )}
-                      aria-pressed={currentSort === option.id}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </section>
-            <section className="relative">
-              {/* 로딩 오버레이 */}
-              {showOverlay && (
-                <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/50">
-                  <Spinner size="md" color="blue" />
-                </div>
-              )}
-
-              {/* Product Grid */}
-              {products.length > 0 ? (
-                <>
-                  <ProductGrid
-                    products={products}
-                    showQuickActions
-                    className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4"
-                    countryCode={countryCode}
-                    isLoggedIn={isLoggedIn}
-                  />
-
-                  {/* 페이지네이션 */}
-                  <div ref={sentinelRef} className="h-10 w-full" />
-
-                  {isLoadingMore && (
-                    <div className="mt-6 flex items-center justify-center">
-                      <Spinner size="sm" color="gray" />
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className="flex min-h-[200px] items-center justify-center">
-                  <p className="text-gray-500">상품이 없습니다.</p>
-                </div>
-              )}
-            </section>
           </div>
         </div>
-      </div>
-    </main>
+
+        {/* 데스크톱: 정렬 툴바 */}
+        <div className="mb-5 hidden bg-gray-100 px-3.5 py-2.5 md:block">
+          {/* 정렬 옵션 */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 lg:flex-nowrap lg:divide-x lg:divide-gray-300">
+            {SORT_LABELS.map((option, index) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => updateParams({ sort: option.id })}
+                className={cn(
+                  "shrink-0 font-['Pretendard'] text-base whitespace-nowrap",
+                  index > 0 ? "lg:pl-4" : "",
+                  index < SORT_LABELS.length - 1 ? "lg:pr-4" : "",
+                  currentSort === option.id
+                    ? "font-bold text-stone-900"
+                    : "font-normal text-gray-500 hover:text-stone-900"
+                )}
+                aria-pressed={currentSort === option.id}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
+      <section className="relative">
+        {/* 로딩 오버레이 */}
+        {showOverlay && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/50">
+            <Spinner size="md" color="blue" />
+          </div>
+        )}
+
+        {/* Product Grid */}
+        {products.length > 0 ? (
+          <>
+            <ProductGrid
+              products={products}
+              showQuickActions
+              className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4"
+              countryCode={countryCode}
+              isLoggedIn={isLoggedIn}
+            />
+
+            {/* 페이지네이션 */}
+            <div ref={sentinelRef} className="h-10 w-full" />
+
+            {isLoadingMore && (
+              <div className="mt-6 flex items-center justify-center">
+                <Spinner size="sm" color="gray" />
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="flex min-h-[200px] items-center justify-center">
+            <p className="text-gray-500">상품이 없습니다.</p>
+          </div>
+        )}
+      </section>
+    </>
   )
 }

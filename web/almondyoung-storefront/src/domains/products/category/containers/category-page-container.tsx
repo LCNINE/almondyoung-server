@@ -40,14 +40,6 @@ export async function CategoryPageContainer({
     banners: categoryBanners.length > 0 ? categoryBanners : undefined,
   }
 
-  // 4. 카테고리별 상품 목록 로드
-  console.log(`🚀 [CategoryPageContainer] 상품 목록 로드 시작:`, {
-    categoryId: categoryData.id,
-    categoryName: categoryData.name,
-    regionId: countryCode.toUpperCase(),
-    regionName: region?.name,
-  })
-
   let initialProducts: any[] = []
   let initialTotal = 0
   const categoryIds = collectCategoryIds(categoryData)
@@ -77,7 +69,6 @@ export async function CategoryPageContainer({
       countryCode={countryCode}
       categoryIds={categoryIds}
       regionId={region?.id}
-      allCategories={allCategories}
       categoryPath={categoryPath}
     />
   )
@@ -128,9 +119,7 @@ const getCategoryBanners = (category: StoreProductCategoryTree) => {
         }
 
         const src =
-          "src" in banner && typeof banner.src === "string"
-            ? banner.src
-            : null
+          "src" in banner && typeof banner.src === "string" ? banner.src : null
         const alt =
           "alt" in banner && typeof banner.alt === "string"
             ? banner.alt
@@ -142,7 +131,12 @@ const getCategoryBanners = (category: StoreProductCategoryTree) => {
 
         return { id: `banner-${index + 1}`, image: { src, alt } }
       })
-      .filter((banner): banner is { id: string; image: { src: string; alt: string } } => Boolean(banner))
+      .filter(
+        (
+          banner
+        ): banner is { id: string; image: { src: string; alt: string } } =>
+          Boolean(banner)
+      )
 
     if (banners.length > 0) {
       return banners
@@ -161,7 +155,12 @@ const getCategoryBanners = (category: StoreProductCategoryTree) => {
           image: { src, alt: category.name },
         }
       })
-      .filter((banner): banner is { id: string; image: { src: string; alt: string } } => Boolean(banner))
+      .filter(
+        (
+          banner
+        ): banner is { id: string; image: { src: string; alt: string } } =>
+          Boolean(banner)
+      )
 
     if (banners.length > 0) {
       return banners
