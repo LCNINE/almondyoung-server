@@ -212,11 +212,8 @@ export async function HomeLogoutTemplate({
 
   return (
     <div className="w-full">
-      {/* todo: 메인 히어로 배너 임시 비활성화
-      - 스마트스토어와 똑같은 pc, mobile 비율로 구현했습니다 다만,
-      - 클릭시 Link 처리가 안되어있어서 비활성화시켰습니다. */}
       {/* 메인 히어로 배너 */}
-      {/* <HeroBanner /> */}
+      <HeroBanner />
 
       {/* todo: 추후 섹션이 많아지면 활성화 */}
       {/* 로그인 유도 배너 */}
