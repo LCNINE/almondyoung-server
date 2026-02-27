@@ -26,6 +26,13 @@ interface OutboxRow {
 
 @Injectable()
 export class OutboxDispatcherService {
+  private static readonly MEDUSA_EVENT_TYPES = new Set([
+    'payment.intent.succeeded',
+    'payment.intent.captured',
+    'payment.intent.canceled',
+    'payment.intent.failed',
+  ]);
+
   private readonly logger = new Logger(OutboxDispatcherService.name);
   private readonly batchSize: number;
   private readonly maxAttempts: number;
@@ -33,6 +40,7 @@ export class OutboxDispatcherService {
   private readonly maxDelayMs: number;
   private readonly processingTimeoutSeconds: number;
   private readonly deadLetterEnabled: boolean;
+  private readonly medusaWebhookUrl: string | undefined;
 
   constructor(private readonly dbService: DbService<WalletSchema>) {
     this.batchSize = this.readPositiveInt(
@@ -59,6 +67,7 @@ export class OutboxDispatcherService {
       process.env.WALLET_OUTBOX_DEAD_LETTER_ENABLED,
       DEFAULT_OUTBOX_DEAD_LETTER_ENABLED,
     );
+    this.medusaWebhookUrl = process.env.WALLET_MEDUSA_WEBHOOK_URL?.trim() || undefined;
   }
 
   @Cron(process.env.WALLET_OUTBOX_DISPATCH_CRON ?? DEFAULT_OUTBOX_DISPATCH_CRON)
@@ -121,11 +130,17 @@ export class OutboxDispatcherService {
 
   private async processEvent(event: OutboxRow): Promise<void> {
     try {
-      // Phase 1: log the event instead of publishing to Kafka
-      // Phase 2: integrate with @app/events stream publisher
-      this.logger.debug(
-        `Outbox event processed (Phase 1 - no Kafka): id=${event.id}, messageId=${event.messageId}, eventType=${event.eventType}, aggregateId=${event.aggregateId}`,
-      );
+      const shouldDispatch =
+        this.medusaWebhookUrl &&
+        OutboxDispatcherService.MEDUSA_EVENT_TYPES.has(event.eventType);
+
+      if (shouldDispatch) {
+        await this.dispatchToMedusa(event);
+      } else {
+        this.logger.debug(
+          `Outbox event log-only: id=${event.id}, eventType=${event.eventType}, aggregateId=${event.aggregateId}`,
+        );
+      }
 
       await this.dbService.db
         .update(outboxEvents)
@@ -143,6 +158,27 @@ export class OutboxDispatcherService {
     } catch (error) {
       await this.markFailure(event, error);
     }
+  }
+
+  private async dispatchToMedusa(event: OutboxRow): Promise<void> {
+    const body = JSON.stringify({ ...event.payload, type: event.eventType });
+
+    const res = await fetch(this.medusaWebhookUrl!, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(
+        `OUTBOX_MEDUSA_HTTP_ERROR: POST ${this.medusaWebhookUrl} returned ${res.status}: ${text}`,
+      );
+    }
+
+    this.logger.debug(
+      `Outbox dispatched to Medusa: id=${event.id}, eventType=${event.eventType}, status=${res.status}`,
+    );
   }
 
   private async markFailure(event: OutboxRow, error: unknown): Promise<void> {
