@@ -412,12 +412,17 @@ export async function getPointHistory(limit?: number) {
 /**
  * 포인트 잔액 조회
  */
+// TODO: 임시 mock 객체 사용
 export async function getPointBalance(): Promise<PointBalanceDto> {
-  return await api<PointBalanceDto>("wallet", "/payments/points/balance", {
-    method: "GET",
-    cache: "no-store",
-    withAuth: true,
-  })
+  return {
+    balance: 0,
+    withdrawable: 0,
+  }
+  // return await api<PointBalanceDto>("wallet", "/payments/points/balance", {
+  //   method: "GET",
+  //   cache: "no-store",
+  //   withAuth: true,
+  // })
 }
 
 /*───────────────────────────
