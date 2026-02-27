@@ -15,6 +15,7 @@ type RequestOptions = Omit<RequestInit, "body"> & {
   body?: unknown
   params?: Record<string, string>
   withAuth?: boolean // 인증이 필요한 요청인지 여부
+  timeout?: number // 타임아웃(ms), 기본값 5초
   next?: {
     revalidate?: number | false
     tags?: string[]
@@ -26,7 +27,7 @@ export async function api<T>(
   path: string,
   options: RequestOptions = {}
 ): Promise<T> {
-  const { body, params, withAuth = true, next, ...init } = options
+  const { body, params, withAuth = true, timeout = 5000, next, ...init } = options
 
   const baseUrl = getBackendBaseUrl(service)
 
@@ -71,6 +72,7 @@ export async function api<T>(
       ...init,
       headers,
       body: isFormData ? body : body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(timeout),
       // Next.js 캐싱 옵션 전달
       ...(next && { next }),
       // 서버 사이드에서만 캐싱 적용 (클라이언트에서는 작동하지 않음)
@@ -106,7 +108,7 @@ export async function api<T>(
   }
 
   const errorData = await response.json().catch(() => ({})) // response.json()이 실패하면 빈 객체 반환, 크게 상관 없는 에러임
-  // console.log("errorData", errorData)
+  console.log("errorData", errorData)
 
   if (response.status === 401) {
     throw new ApiAuthError(

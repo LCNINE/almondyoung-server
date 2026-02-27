@@ -38,7 +38,7 @@ export const getProductsByMasterIds = async (
       api<ProductDetailDto>("pim", `/masters/${masterId}`, {
         method: "GET",
         withAuth: false,
-      }).catch(() => null)
+          }).catch(() => null)
     )
   )
 
