@@ -104,20 +104,21 @@ export class AuthService {
       return await this.dbService.db.transaction(async (tx) => {
         const client = this.getClient(tx);
 
-        // 이메일로 기존 사용자 조회
-        const existingUser = await this.usersService.findUserByEmail(signUpDto.email, client);
-        if (existingUser) {
-          if (existingUser.email === signUpDto.email) {
-            throw new ConflictException('이미 가입된 이메일입니다.');
-          }
+        // 이메일, 아이디, 닉네임 각각 중복 체크
+        const [existingEmail, existingLoginId, existingNickname] = await Promise.all([
+          this.usersService.findUserByEmail(signUpDto.email, client),
+          this.usersService.findUserByLoginId(signUpDto.loginId, client),
+          this.usersService.findUserByNickname(signUpDto.nickname, client),
+        ]);
 
-          if (existingUser.loginId === signUpDto.loginId) {
-            throw new ConflictException('이미 존재하는 아이디입니다.');
-          }
-
-          if (existingUser.nickname === signUpDto.nickname) {
-            throw new ConflictException('이미 존재하는 닉네임입니다.');
-          }
+        if (existingEmail) {
+          throw new ConflictException('이미 가입된 이메일입니다.');
+        }
+        if (existingLoginId) {
+          throw new ConflictException('이미 존재하는 아이디입니다.');
+        }
+        if (existingNickname) {
+          throw new ConflictException('이미 존재하는 닉네임입니다.');
         }
 
         const saltOrRounds = 10;
