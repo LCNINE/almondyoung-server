@@ -1,21 +1,18 @@
 "use client"
 
 import { useState } from "react"
-import { overlay } from "overlay-kit"
 import { CategoryCircleTabs } from "@/components/category/category-circle-tabs"
 import { BannerCarousel } from "@/components/layout/components/banner/banner-carousel"
 import ProductFilterSidebar from "@/components/products/product-filter-sidebar"
 import ProductSortToolbar from "@/components/products/product-sort-toolbar"
-import { SlidersHorizontal } from "lucide-react"
 import { SectionSliderHorizontal } from "@components/section-sliders-horizontal"
 
 // TODO: 서버에서 데이터를 받아서 props로 전달하도록 변경 필요
-import { MobileFilterSheet } from "./components"
 import CustomDropdown from "@components/dropdown"
 
 export default function ClassPage() {
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(20)
+  // const [page, setPage] = useState(1)
+  // const [pageSize, setPageSize] = useState(20)
   const [selectedField, setSelectedField] = useState("nail") // 분야 선택
 
   // 클래스 분야 데이터
@@ -59,36 +56,29 @@ export default function ClassPage() {
   ]
 
   // 지역 데이터
-  const regions = [
-    { id: "seoul", label: "서울" },
-    { id: "gyeonggi", label: "경기" },
-    { id: "incheon", label: "인천" },
-    { id: "busan", label: "부산" },
-    { id: "daegu", label: "대구" },
-    { id: "gwangju", label: "광주" },
-    { id: "daejeon", label: "대전" },
-    { id: "ulsan", label: "울산" },
-    { id: "sejong", label: "세종" },
-    { id: "gangwon", label: "강원" },
-    { id: "chungbuk", label: "충북" },
-    { id: "chungnam", label: "충남" },
-    { id: "jeonbuk", label: "전북" },
-    { id: "jeonnam", label: "전남" },
-    { id: "gyeongbuk", label: "경북" },
-    { id: "gyeongnam", label: "경남" },
-    { id: "jeju", label: "제주" },
-  ]
+  // const regions = [
+  //   { id: "seoul", label: "서울" },
+  //   { id: "gyeonggi", label: "경기" },
+  //   { id: "incheon", label: "인천" },
+  //   { id: "busan", label: "부산" },
+  //   { id: "daegu", label: "대구" },
+  //   { id: "gwangju", label: "광주" },
+  //   { id: "daejeon", label: "대전" },
+  //   { id: "ulsan", label: "울산" },
+  //   { id: "sejong", label: "세종" },
+  //   { id: "gangwon", label: "강원" },
+  //   { id: "chungbuk", label: "충북" },
+  //   { id: "chungnam", label: "충남" },
+  //   { id: "jeonbuk", label: "전북" },
+  //   { id: "jeonnam", label: "전남" },
+  //   { id: "gyeongbuk", label: "경북" },
+  //   { id: "gyeongnam", label: "경남" },
+  //   { id: "jeju", label: "제주" },
+  // ]
 
   // TODO: 서버에서 데이터를 받아서 props로 전달하도록 변경 필요
-  const startIndex = (page - 1) * pageSize
+  // const startIndex = (page - 1) * pageSize
   const paginatedProducts: any[] = [] // TODO: props로 받은 데이터 사용
-
-  // 모바일 필터 열기
-  const openMobileFilter = () => {
-    overlay.open(({ isOpen, close, unmount }) => (
-      <MobileFilterSheet isOpen={isOpen} close={close} exit={unmount} />
-    ))
-  }
 
   return (
     <main className="">
@@ -182,14 +172,14 @@ export default function ClassPage() {
                     ]}
                   />
                 </div>
-                <button
+                {/* <button
                   onClick={openMobileFilter}
                   className="flex h-10 shrink-0 items-center gap-2 whitespace-nowrap font-['Pretendard'] text-sm font-medium text-gray-700 transition-colors"
                   aria-label="필터 열기"
                 >
                   필터
                   <SlidersHorizontal className="h-4 w-4" />
-                </button>
+                </button> */}
               </div>
 
               {/* 데스크톱: 정렬 툴바만 */}
