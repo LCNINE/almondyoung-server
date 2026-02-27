@@ -1,5 +1,14 @@
 export const DEFAULT_PRODUCTS_INDEX = 'search_products';
 
+export const PRODUCT_SEARCH_SYNONYMS: string[] = [
+  '전처리,프라이머',
+  '글루,접착제',
+  '리무버,제거제',
+  '브러시,브러쉬',
+  '롯드,로드,롯뜨,로뜨,롣드,롣뜨',
+  '1회용,일회용',
+];
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const PRODUCTS_INDEX_SETTINGS: Record<string, any> = {
   number_of_shards: 1,
@@ -22,12 +31,21 @@ export const PRODUCTS_INDEX_SETTINGS: Record<string, any> = {
         min_gram: 1,
         max_gram: 15,
       },
+      search_synonym_graph: {
+        type: 'synonym_graph' as const,
+        synonyms: PRODUCT_SEARCH_SYNONYMS,
+      },
     },
     analyzer: {
       nori: {
         type: 'custom' as const,
         tokenizer: 'nori_tokenizer' as const,
         filter: ['nori_posfilter', 'lowercase'],
+      },
+      nori_search_synonym: {
+        type: 'custom' as const,
+        tokenizer: 'nori_tokenizer' as const,
+        filter: ['nori_posfilter', 'lowercase', 'search_synonym_graph'],
       },
       standard_lowercase: {
         type: 'custom' as const,

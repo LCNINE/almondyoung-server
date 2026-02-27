@@ -361,6 +361,7 @@ export class ProductIndexService implements OnModuleInit {
     const multiMatch: Record<string, unknown> = {
       query: q,
       fields: ['name^6', 'brand^4', 'category_names^2', 'tags^2', 'description'],
+      analyzer: 'nori_search_synonym',
       operator: 'or',
       minimum_should_match: minimumShouldMatch,
     };

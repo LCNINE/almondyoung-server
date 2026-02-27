@@ -78,6 +78,7 @@
     "search:backfill:dry": "./scripts/with-ipv4.sh dotenv -e .env -e apps/search/.env -- ts-node -r tsconfig-paths/register apps/search/scripts/backfill-from-pim.ts --dry-run",
     "search:benchmark": "./scripts/with-ipv4.sh dotenv -e .env -e apps/search/.env -- ts-node -r tsconfig-paths/register apps/search/scripts/benchmark-keywords.ts",
     "search:analyze": "ts-node -r tsconfig-paths/register apps/search/scripts/analyze-benchmark.ts",
+    "search:synonym-candidates": "ts-node -r tsconfig-paths/register apps/search/scripts/extract-synonym-candidates.ts",
     "start:analytics": "nest start analytics",
     "start:analytics:dev": "nest start analytics --watch",
     "start:analytics:prod": "node dist/apps/analytics/main.js",
