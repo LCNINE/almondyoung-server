@@ -198,7 +198,7 @@ export default function CheckoutTemplate({
             />
             <PaymentTotalSection totals={cartTotals} />
 
-            // TODO: 현금영수증 및 세금계산서는 wallet-web의 책임이므로 대체 예정
+            {/* TODO: 현금영수증 및 세금계산서는 wallet-web의 책임이므로 대체 예정 */}
             {/* <ReceiptSection
               cashReceiptOption={cashReceiptOption}
               setCashReceiptOption={setCashReceiptOption}
