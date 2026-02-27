@@ -81,6 +81,8 @@ export function CartItemList({
                 onQuantityChange={(qty) => onQuantityChange(item.id, qty)}
                 productId={item.productId}
                 countryCode={countryCode}
+                manageInventory={item.manageInventory}
+                inventoryQuantity={item.inventoryQuantity}
               />
             )
           })}
@@ -136,6 +138,8 @@ export function CartItemList({
             onQuantityChange={(qty) => onQuantityChange(item.id, qty)}
             productId={item.productId}
             countryCode={countryCode}
+            manageInventory={item.manageInventory}
+            inventoryQuantity={item.inventoryQuantity}
           />
         )
       })}

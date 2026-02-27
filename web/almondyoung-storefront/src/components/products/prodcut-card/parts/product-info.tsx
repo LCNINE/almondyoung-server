@@ -7,7 +7,7 @@ import { ProductRating } from "./product-rating"
 import { LowStockBadge } from "@/components/shared/badges/low-stock-badge"
 import { SoldOutTag } from "./sold-out-tag"
 
-const LOW_STOCK_THRESHOLD = 4
+const LOW_STOCK_THRESHOLD = 10
 
 export function ProductInfo({
   title,
@@ -56,7 +56,10 @@ export function ProductInfo({
   const stockStatus: StockStatus =
     manageInventory && available === 0
       ? "soldOut"
-      : available > 0 && available <= LOW_STOCK_THRESHOLD
+      : manageInventory &&
+          Number.isFinite(available) &&
+          available > 0 &&
+          available <= LOW_STOCK_THRESHOLD
         ? "lowStock"
         : "inStock"
 

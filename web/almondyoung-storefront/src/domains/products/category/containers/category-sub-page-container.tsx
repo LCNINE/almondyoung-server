@@ -50,6 +50,7 @@ export async function CategorySubPageContainer({
       limit: 20,
       categoryId: categoryIds,
       region_id: region?.id,
+      includeFullVariants: true,
     })
     initialProducts = mapStoreProductsToCardProps(productsResult.products)
     initialTotal = productsResult.count
