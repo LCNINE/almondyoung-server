@@ -9,6 +9,59 @@ import fastifyCookie from '@fastify/cookie';
 import fastifyCors from '@fastify/cors';
 import { WalletModule } from './wallet.module';
 
+function normalizeOrigin(value: string): string {
+  return value.trim().replace(/\/+$/, '');
+}
+
+function parseAllowedOrigins(rawOrigins?: string): string[] {
+  if (!rawOrigins) {
+    return [];
+  }
+
+  return rawOrigins
+    .split(',')
+    .map((origin) => normalizeOrigin(origin))
+    .filter(Boolean);
+}
+
+function getWildcardDomain(pattern: string): string | null {
+  const normalizedPattern = normalizeOrigin(pattern).toLowerCase();
+  const withoutProtocol = normalizedPattern.replace(/^[a-z]+:\/\//, '');
+
+  if (!withoutProtocol.startsWith('*.')) {
+    return null;
+  }
+
+  const domain = withoutProtocol.slice(2);
+  return domain || null;
+}
+
+function isOriginAllowed(origin: string | undefined, allowedOrigins: string[]): boolean {
+  if (!origin) {
+    return true;
+  }
+
+  const normalizedOrigin = normalizeOrigin(origin);
+  let parsedOrigin: URL;
+
+  try {
+    parsedOrigin = new URL(normalizedOrigin);
+  } catch {
+    return false;
+  }
+
+  const hostname = parsedOrigin.hostname.toLowerCase();
+
+  return allowedOrigins.some((allowedOrigin) => {
+    const wildcardDomain = getWildcardDomain(allowedOrigin);
+    if (wildcardDomain) {
+      return hostname.endsWith(`.${wildcardDomain}`);
+    }
+
+    return normalizedOrigin === normalizeOrigin(allowedOrigin);
+  });
+}
+
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
     WalletModule,
@@ -16,13 +69,14 @@ async function bootstrap() {
   );
 
   const isDev = process.env.NODE_ENV !== 'production';
-  const rawOrigins = process.env.WALLET_CORS_ORIGINS;
-  const allowedOrigins = rawOrigins
-    ? rawOrigins.split(',').map((o) => o.trim()).filter(Boolean)
-    : [];
+  const allowedOrigins = parseAllowedOrigins(process.env.WALLET_CORS_ORIGINS);
 
   await app.register(fastifyCors, {
-    origin: isDev ? true : allowedOrigins,
+    origin: isDev
+      ? true
+      : (origin, callback) => {
+        callback(null, isOriginAllowed(origin, allowedOrigins));
+      },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: [
       'Content-Type',
