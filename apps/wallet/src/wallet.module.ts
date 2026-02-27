@@ -1,9 +1,16 @@
 import { CanActivate, ExecutionContext, Injectable, Module, UnauthorizedException } from '@nestjs/common';
+import {
+  AUTH_CONFIG,
+  AuthenticationService,
+  JwtAccessStrategy,
+  JwtAuthGuard,
+} from '@app/authorization';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { PassportModule } from '@nestjs/passport';
 import { ScheduleModule } from '@nestjs/schedule';
-import { JwtModule, JwtService } from '@nestjs/jwt';
 import { DbModule } from '@app/db';
+import { Observable, firstValueFrom, isObservable } from 'rxjs';
 import { validateWalletEnv } from './config/env';
 import { HealthController } from './health.controller';
 import { walletSchema } from './schema';
@@ -58,9 +65,16 @@ import { ExpirationJob } from './jobs/expiration.job';
 export interface AuthenticatedRequest {
   headers: Record<string, string | string[] | undefined>;
   url: string;
-  /** Set by ApiKeyGuard when JWT cookie auth succeeds */
+  cookies?: Record<string, string | undefined>;
+  user?: {
+    userId?: string;
+    sub?: string;
+    id?: string;
+    [key: string]: unknown;
+  };
+  /** Set by WalletAuthGuard when JWT cookie auth succeeds */
   jwtUserId?: string;
-  /** Set by ApiKeyGuard when API-key auth is used (merchant backend) */
+  /** Set by WalletAuthGuard when API-key auth is used (merchant backend) */
   isApiKeyAuth?: boolean;
 }
 
@@ -79,10 +93,10 @@ const JWT_COOKIE_PATTERNS = [
 ];
 
 @Injectable()
-class ApiKeyGuard implements CanActivate {
-  constructor(private readonly jwtService: JwtService) { }
+class WalletAuthGuard implements CanActivate {
+  constructor(private readonly jwtAuthGuard: JwtAuthGuard) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const type = context.getType<'http'>();
     if (type !== 'http') return true;
 
@@ -98,63 +112,120 @@ class ApiKeyGuard implements CanActivate {
     // ── JWT cookie path (browser-facing endpoints) ──────────────────────────
     // API key is accepted as a fallback (e.g. merchant backend calling GET /v1/payment-methods)
     if (JWT_COOKIE_PATTERNS.some((re) => re.test(path))) {
-      const jwtUserId = this.extractUserIdFromCookie(request);
-      if (jwtUserId) {
-        request.jwtUserId = jwtUserId;
+      if (await this.tryJwtAuth(context, request)) {
         return true;
       }
 
       // No valid JWT cookie — try API key fallback
-      const apiKeyFallback = process.env.WALLET_API_KEY;
-      const authHeaderFallback = getHeader(request.headers, 'authorization');
-      if (apiKeyFallback && authHeaderFallback) {
-        const keyValue = authHeaderFallback.startsWith('Bearer ')
-          ? authHeaderFallback.slice(7)
-          : authHeaderFallback;
-        if (keyValue === apiKeyFallback) {
-          request.isApiKeyAuth = true;
-          return true;
-        }
+      if (this.tryApiKeyAuth(request)) {
+        return true;
       }
 
       throw new UnauthorizedException({ error: 'UNAUTHORIZED', message: 'Missing or invalid JWT cookie' });
     }
 
     // ── API key path (merchant backend) ────────────────────────────────────
-    const apiKey = process.env.WALLET_API_KEY;
-    const authHeader = getHeader(request.headers, 'authorization');
-    if (!authHeader || !apiKey) {
-      throw new UnauthorizedException({ error: 'UNAUTHORIZED', message: 'Missing authorization' });
+    this.requireApiKeyAuth(request);
+    return true;
+  }
+
+  private async tryJwtAuth(
+    context: ExecutionContext,
+    request: AuthenticatedRequest,
+  ): Promise<boolean> {
+    const originalAuthHeader = getHeader(request.headers, 'authorization');
+    const cookieToken = getAccessTokenFromRequest(request);
+    const injectedAuthHeader = cookieToken ? `Bearer ${cookieToken}` : null;
+
+    // Shared JwtAccessStrategy extracts Authorization first, then cookie.
+    // Inject cookie token into Authorization to avoid parser/proxy variance.
+    if (injectedAuthHeader) {
+      setHeader(request.headers, 'authorization', injectedAuthHeader);
     }
 
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
-    if (token !== apiKey) {
-      throw new UnauthorizedException({ error: 'UNAUTHORIZED', message: 'Invalid API key' });
+    try {
+      const activated = await resolveCanActivate(this.jwtAuthGuard.canActivate(context));
+      if (!activated) return false;
+    } catch {
+      return false;
+    } finally {
+      if (injectedAuthHeader !== null) {
+        setHeader(request.headers, 'authorization', originalAuthHeader);
+      }
+    }
+
+    const jwtUserId = getUserIdFromRequestUser(request.user);
+    if (!jwtUserId) return false;
+
+    request.jwtUserId = jwtUserId;
+    return true;
+  }
+
+  private tryApiKeyAuth(request: AuthenticatedRequest): boolean {
+    const apiKey = process.env.WALLET_API_KEY;
+    const token = getBearerToken(getHeader(request.headers, 'authorization'));
+    if (!apiKey || !token || token !== apiKey) {
+      return false;
     }
 
     request.isApiKeyAuth = true;
     return true;
   }
 
-  private extractUserIdFromCookie(request: AuthenticatedRequest): string | null {
-    const cookieHeader = getHeader(request.headers, 'cookie');
-    if (!cookieHeader) return null;
-
-    const accessToken = parseCookieValue(cookieHeader, 'accessToken');
-    if (!accessToken) return null;
-
-    try {
-      const secret = process.env.USER_JWT_SECRET;
-      if (!secret) return null;
-      const payload = this.jwtService.verify<{ sub?: string; id?: string; userId?: string }>(
-        accessToken,
-        { secret },
-      );
-      return payload.sub ?? payload.id ?? payload.userId ?? null;
-    } catch {
-      return null;
+  private requireApiKeyAuth(request: AuthenticatedRequest): void {
+    const apiKey = process.env.WALLET_API_KEY;
+    const token = getBearerToken(getHeader(request.headers, 'authorization'));
+    if (!token || !apiKey) {
+      throw new UnauthorizedException({ error: 'UNAUTHORIZED', message: 'Missing authorization' });
     }
+
+    if (token !== apiKey) {
+      throw new UnauthorizedException({ error: 'UNAUTHORIZED', message: 'Invalid API key' });
+    }
+
+    request.isApiKeyAuth = true;
   }
+}
+
+function getUserIdFromRequestUser(user: AuthenticatedRequest['user']): string | null {
+  if (!user) return null;
+  const candidate = user.userId ?? user.sub ?? user.id;
+  return typeof candidate === 'string' && candidate.length > 0 ? candidate : null;
+}
+
+function getBearerToken(authHeader?: string): string | null {
+  if (!authHeader) return null;
+  return authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
+}
+
+function getAccessTokenFromRequest(request: AuthenticatedRequest): string | null {
+  const fromCookies = request.cookies?.accessToken;
+  if (typeof fromCookies === 'string' && fromCookies.length > 0) {
+    return fromCookies;
+  }
+
+  const cookieHeader = getHeader(request.headers, 'cookie');
+  if (!cookieHeader) return null;
+  return parseCookieValue(cookieHeader, 'accessToken');
+}
+
+function setHeader(
+  headers: Record<string, string | string[] | undefined>,
+  name: string,
+  value: string | undefined,
+): void {
+  const lower = name.toLowerCase();
+  const upper = name.toUpperCase();
+
+  if (value === undefined) {
+    delete headers[name];
+    delete headers[lower];
+    delete headers[upper];
+    return;
+  }
+
+  headers[name] = value;
+  headers[lower] = value;
 }
 
 function getHeader(
@@ -173,7 +244,7 @@ function getHeader(
   const key = Object.keys(headers).find((k) => k.toLowerCase() === lowerName);
   const val = key ? headers[key] : undefined;
   if (Array.isArray(val)) {
-    return lowerName === 'cookie' ? val.join('; ') : val[0];
+    return val[0];
   }
   return val;
 }
@@ -188,6 +259,21 @@ function parseCookieValue(cookieHeader: string, name: string): string | null {
   } catch {
     return match[1];
   }
+}
+
+async function resolveCanActivate(
+  result: boolean | Promise<boolean> | unknown,
+): Promise<boolean> {
+  if (typeof result === 'boolean') {
+    return result;
+  }
+  if (isObservable(result)) {
+    return firstValueFrom(result as Observable<boolean>);
+  }
+  if (result && typeof (result as Promise<boolean>).then === 'function') {
+    return result as Promise<boolean>;
+  }
+  return Boolean(result);
 }
 
 function normalizePath(path: string): string {
@@ -209,11 +295,11 @@ function normalizePath(path: string): string {
       validate: validateWalletEnv,
       envFilePath: ['.env', 'apps/wallet/.env'],
     }),
+    PassportModule.register({ defaultStrategy: 'jwt' }),
     DbModule.forRoot({
       config: { connectionString: process.env.DATABASE_URL ?? '' },
       schema: walletSchema,
     }),
-    JwtModule.register({}),
     ScheduleModule.forRoot(),
   ],
   controllers: [
@@ -225,8 +311,26 @@ function normalizePath(path: string): string {
     BankTransferAdminController,
   ],
   providers: [
+    {
+      provide: AUTH_CONFIG,
+      useFactory: () => {
+        const secret = process.env.USER_JWT_SECRET;
+        if (!secret) {
+          throw new Error('USER_JWT_SECRET is not defined in environment variables');
+        }
+        return {
+          secret,
+          issuer: process.env.JWT_ISSUER ?? 'almondyoung-auth',
+          audience: process.env.JWT_AUDIENCE ?? 'almondyoung',
+        };
+      },
+    },
+    AuthenticationService,
+    JwtAccessStrategy,
+    JwtAuthGuard,
+
     // Guards & interceptors
-    { provide: APP_GUARD, useClass: ApiKeyGuard },
+    { provide: APP_GUARD, useClass: WalletAuthGuard },
     { provide: APP_INTERCEPTOR, useClass: HttpIdempotencyInterceptor },
 
     // Domain

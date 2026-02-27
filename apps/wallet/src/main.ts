@@ -5,6 +5,7 @@ import {
   FastifyAdapter,
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
+import fastifyCookie from '@fastify/cookie';
 import fastifyCors from '@fastify/cors';
 import { WalletModule } from './wallet.module';
 
@@ -31,6 +32,7 @@ async function bootstrap() {
     ],
     credentials: true,
   });
+  await app.register(fastifyCookie);
 
   app.useGlobalPipes(
     new ValidationPipe({
