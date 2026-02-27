@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useMemo, useEffect, useCallback } from "react"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import type { CartItem } from "@lib/types/ui/cart"
 import { CartHeader } from "./cart-header"
 import { CartTabsMobile } from "./cart-tabs-mobile"
@@ -15,6 +15,7 @@ import {
   listCartShippingMethods,
   updateLineItem,
   deleteLineItem,
+  deleteLineItems,
 } from "@lib/api/medusa/cart"
 import { getProductDetail } from "@lib/api/medusa/products"
 import { transferCart } from "@lib/api/medusa/customer"
@@ -104,6 +105,7 @@ function mapMedusaItemToCartItem(item: HttpTypes.StoreCartLineItem): CartItem {
 }
 
 export function CartMainClient() {
+  const router = useRouter()
   const params = useParams() as { countryCode?: string }
   const countryCode = params?.countryCode || "kr"
   const [cartItems, setCartItems] = useState<CartItem[]>([])
@@ -113,6 +115,12 @@ export function CartMainClient() {
   const [shippingTotal, setShippingTotal] = useState<number>(0)
   const [cartId, setCartId] = useState<string | null>(null)
   const { isMembershipPricing } = useMembershipPricing()
+
+  const getItemDisplayLabel = useCallback((item: CartItem) => {
+    return item.selectedOptionText
+      ? `${item.product.name} (${item.selectedOptionText})`
+      : item.product.name
+  }, [])
 
   const getEstimatedShippingTotal = useCallback(
     async (id: string) => {
@@ -197,11 +205,52 @@ export function CartMainClient() {
             inventoryQuantity: variantStock.inventoryQuantity,
           }
         })
-        console.log("[장바구니] 매핑된 아이템:", normalizedItems)
-        setCartItems(normalizedItems)
+        // 재고 초과 수량은 재고 수량으로 자동 조정
+        const quantityAdjustments = normalizedItems
+          .filter(
+            (item) =>
+              item.manageInventory &&
+              Number.isFinite(item.inventoryQuantity) &&
+              (item.inventoryQuantity ?? 0) > 0 &&
+              item.quantity > (item.inventoryQuantity ?? 0)
+          )
+          .map((item) => ({
+            lineId: item.id,
+            quantity: item.inventoryQuantity as number,
+          }))
+
+        if (quantityAdjustments.length > 0) {
+          await Promise.all(
+            quantityAdjustments.map(({ lineId, quantity }) =>
+              updateLineItem({ lineId, quantity }).catch(() => null)
+            )
+          )
+        }
+
+        const adjustedItems = normalizedItems.map((item) => {
+          if (
+            item.manageInventory &&
+            Number.isFinite(item.inventoryQuantity) &&
+            (item.inventoryQuantity ?? 0) > 0 &&
+            item.quantity > (item.inventoryQuantity ?? 0)
+          ) {
+            return {
+              ...item,
+              quantity: item.inventoryQuantity as number,
+            }
+          }
+          return item
+        })
+
+        if (quantityAdjustments.length > 0) {
+          toast.info("재고를 반영해 장바구니 수량을 자동 조정했어요.")
+        }
+
+        console.log("[장바구니] 매핑된 아이템:", adjustedItems)
+        setCartItems(adjustedItems)
         
         // 품절되지 않은 아이템만 선택
-        const availableItems = normalizedItems.filter((item) => {
+        const availableItems = adjustedItems.filter((item) => {
           const isSoldOut = item.manageInventory && (item.inventoryQuantity ?? 0) <= 0
           return !isSoldOut
         })
@@ -321,7 +370,29 @@ export function CartMainClient() {
   }
 
   const handleQuantityChange = async (id: string, newQuantity: number) => {
-    const quantity = Math.max(1, newQuantity)
+    const targetItem = cartItems.find((item) => item.id === id)
+    if (!targetItem) return
+
+    let quantity = Math.max(1, newQuantity)
+    if (
+      targetItem.manageInventory &&
+      Number.isFinite(targetItem.inventoryQuantity)
+    ) {
+      const maxQuantity = Math.max(
+        0,
+        Math.floor(targetItem.inventoryQuantity ?? 0)
+      )
+      if (maxQuantity <= 0) {
+        toast.error("품절된 상품입니다.")
+        return
+      }
+      if (quantity > maxQuantity) {
+        quantity = maxQuantity
+        toast.error(
+          `${getItemDisplayLabel(targetItem)}은 ${maxQuantity}개 이하로 구매해주세요.`
+        )
+      }
+    }
 
     // 낙관적 업데이트
     setCartItems((prev) =>
@@ -350,6 +421,50 @@ export function CartMainClient() {
       await loadCart()
     }
   }
+
+  const handleCheckout = useCallback(async () => {
+    const selectedItems = cartItems.filter((item) => checkedItems.includes(item.id))
+
+    if (selectedItems.length === 0) {
+      toast.error("구매할 상품을 선택해주세요.")
+      return false
+    }
+
+    const invalidItem = selectedItems.find(
+      (item) =>
+        item.manageInventory &&
+        Number.isFinite(item.inventoryQuantity) &&
+        item.quantity > (item.inventoryQuantity ?? 0)
+    )
+
+    if (invalidItem) {
+      const maxQuantity = Math.max(
+        0,
+        Math.floor(invalidItem.inventoryQuantity ?? 0)
+      )
+      toast.error(
+        `${getItemDisplayLabel(invalidItem)}은 ${maxQuantity}개 이하로 구매해주세요.`
+      )
+      return false
+    }
+
+    try {
+      const uncheckedIds = cartItems
+        .filter((item) => !checkedItems.includes(item.id))
+        .map((item) => item.id)
+
+      if (uncheckedIds.length > 0) {
+        await deleteLineItems(uncheckedIds)
+      }
+
+      router.push(`/${countryCode}/checkout`)
+      return true
+    } catch (error) {
+      console.error("체크아웃 처리 실패:", error)
+      toast.error("체크아웃 처리 중 오류가 발생했습니다.")
+      return false
+    }
+  }, [cartItems, checkedItems, countryCode, getItemDisplayLabel, router])
 
   // 가격 계산
   const {
@@ -453,9 +568,7 @@ export function CartMainClient() {
               membershipPreviewSavings={membershipPreviewSavings}
               shippingFee={shippingTotal}
               finalPrice={finalPrice}
-              selectedCount={selectedCount}
-              cartItems={cartItems}
-              checkedItems={checkedItems}
+              onCheckout={handleCheckout}
             />
           </div>
 
@@ -472,8 +585,7 @@ export function CartMainClient() {
             finalPrice={finalPrice}
             selectedCount={selectedCount}
             shippingFee={shippingTotal}
-            cartItems={cartItems}
-            checkedItems={checkedItems}
+            onCheckout={handleCheckout}
           />
         </div>
       </main>
