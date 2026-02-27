@@ -64,9 +64,6 @@ export default async function BestPage({
             <div className="flex min-h-[400px] items-center justify-center text-gray-500">
               <div className="text-center">
                 <p className="text-lg font-medium">베스트 상품 준비 중입니다</p>
-                <p className="mt-2 text-sm">
-                  판매량 기반 베스트 상품 API 연동이 필요합니다
-                </p>
               </div>
             </div>
           )}
@@ -81,9 +78,6 @@ export default async function BestPage({
             <div className="flex min-h-[300px] items-center justify-center text-gray-500">
               <div className="text-center">
                 <p className="text-lg font-medium">인기 브랜드 준비 중입니다</p>
-                <p className="mt-2 text-sm">
-                  브랜드별 판매량 집계 API 연동이 필요합니다
-                </p>
               </div>
             </div>
           )}
@@ -98,9 +92,6 @@ export default async function BestPage({
             <div className="flex min-h-[300px] items-center justify-center text-gray-500">
               <div className="text-center">
                 <p className="text-lg font-medium">인기 키워드 준비 중입니다</p>
-                <p className="mt-2 text-sm">
-                  검색 키워드 랭킹 API 연동이 필요합니다
-                </p>
               </div>
             </div>
           )}
