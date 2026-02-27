@@ -41,7 +41,7 @@ export async function SearchContainer({
     items: [],
     pagination: {
       page: 1,
-      size: 20,
+      limit: 20,
       total: 0,
       totalPages: 0,
     },
@@ -49,6 +49,7 @@ export async function SearchContainer({
 
   if (keyword) {
     try {
+      // 1. search 서비스 OpenSearch 검색으로 productId 목록 가져오기
       const searchApiResult = await searchProducts({
         q: keyword,
         page: currentPage,
@@ -62,17 +63,21 @@ export async function SearchContainer({
 
       if ("data" in searchApiResult && searchApiResult.data) {
         const searchData = searchApiResult.data
+
+        // 2. productId 목록 추출 (medusa에서 handle로 사용)
         const masterIds = searchData.items.map((item) => item.productId)
 
         let items: ProductCardProps[] = []
 
         if (masterIds.length > 0) {
+          // 3. medusa에서 handle로 상품 조회
           const medusaResult = await getProductList({
             handle: masterIds,
             limit: masterIds.length,
             region_id: region?.id,
           })
 
+          // 4. 검색 순서대로 정렬 (검색 관련도 유지)
           const orderMap = new Map(masterIds.map((id, idx) => [id, idx]))
           const sortedProducts = [...medusaResult.products].sort((a, b) => {
             const orderA = orderMap.get(a.handle ?? "") ?? Infinity
@@ -80,12 +85,18 @@ export async function SearchContainer({
             return orderA - orderB
           })
 
+          // 5. medusa 상품을 ProductCardProps로 변환
           items = mapStoreProductsToCardProps(sortedProducts)
         }
 
         searchResult = {
           items,
-          pagination: searchData.pagination,
+          pagination: {
+            page: searchData.pagination.page,
+            limit: searchData.pagination.size,
+            total: searchData.pagination.total,
+            totalPages: searchData.pagination.totalPages,
+          },
         }
       }
     } catch (error) {
