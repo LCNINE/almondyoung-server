@@ -5,9 +5,12 @@ import { inboxEvents } from '../../schema';
 import { eq, and, lte } from 'drizzle-orm';
 import { PimMedusaSyncService } from './pim-medusa-sync.service';
 import { MembershipMedusaSyncService } from './membership-medusa-sync.service';
+import { FirebaseMembershipSyncService } from './firebase-membership-sync.service';
+import { AlmondAuthClient } from '../almond-auth/almond-auth.client';
 import type { PimActiveVersionChangedEvent, ChannelAdapterSchema } from '../../types';
 import type { CategoryChangedPayload } from '@packages/event-contracts/streams/product.stream';
 import type { MembershipStatusChangedPayload } from '@packages/event-contracts/streams/membership.stream';
+import type { Cafe24LinkedPayload, Cafe24UnlinkedPayload } from '@packages/event-contracts/streams/user.stream';
 
 @Injectable()
 export class InboxWorkerService implements OnModuleInit {
@@ -22,6 +25,8 @@ export class InboxWorkerService implements OnModuleInit {
         private readonly dbService: DbService<ChannelAdapterSchema>,
         private readonly syncService: PimMedusaSyncService,
         private readonly membershipSyncService: MembershipMedusaSyncService,
+        private readonly firebaseMembershipSyncService: FirebaseMembershipSyncService,
+        private readonly almondAuthClient: AlmondAuthClient,
         private readonly configService: ConfigService,
     ) {
         this.pollIntervalMs = this.configService.get<number>(
@@ -123,6 +128,36 @@ export class InboxWorkerService implements OnModuleInit {
                     const membershipPayload: MembershipStatusChangedPayload = event.payload;
                     await this.membershipSyncService.handleMembershipStatusChanged(membershipPayload);
                     break;
+
+                case 'Cafe24Linked': {
+                    const linkedPayload: Cafe24LinkedPayload = event.payload;
+                    const isActive = await this.almondAuthClient.getMembershipStatus(linkedPayload.cafe24MemberId);
+                    await this.firebaseMembershipSyncService.syncByFirebase(
+                        linkedPayload.cafe24MemberId,
+                        isActive,
+                        linkedPayload.email,
+                    );
+                    break;
+                }
+
+                case 'Cafe24Unlinked': {
+                    const unlinkedPayload: Cafe24UnlinkedPayload = event.payload;
+                    await this.firebaseMembershipSyncService.syncByFirebase(
+                        unlinkedPayload.cafe24MemberId,
+                        false,
+                        unlinkedPayload.email,
+                    );
+                    break;
+                }
+
+                case 'FirebaseMembershipSynced': {
+                    const syncedPayload: { cafe24MemberId: string; active: boolean } = event.payload;
+                    await this.firebaseMembershipSyncService.syncByFirebase(
+                        syncedPayload.cafe24MemberId,
+                        syncedPayload.active,
+                    );
+                    break;
+                }
 
                 default:
                     this.logger.warn(`Unknown event type: ${eventType} for event ${eventId}`);

@@ -1,4 +1,5 @@
 import { DbService, InjectDb } from '@app/db';
+import { InjectStreamPublisher, StreamPublisher } from '@app/events';
 import { HttpService } from '@nestjs/axios';
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -13,6 +14,7 @@ import {
   users,
   type UserServiceSchema,
 } from '../../../database/drizzle/schema';
+import type { UserEvents } from '@packages/event-contracts/streams';
 import { DbTransaction } from '../../commons/types';
 
 export interface Cafe24SignupPrefill {
@@ -47,6 +49,8 @@ export class Cafe24LinkService {
     @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
+    @InjectStreamPublisher('users.events.v1')
+    private readonly eventPublisher: StreamPublisher<UserEvents>,
   ) {}
 
   private getClient(tx?: DbTransaction) {
@@ -193,6 +197,31 @@ export class Cafe24LinkService {
       })
       .returning();
 
+    // 이메일 조회 후 이벤트 발행
+    const [userRow] = await client
+      .select({ email: users.email })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    if (userRow?.email) {
+      try {
+        await this.eventPublisher.publishEvent({
+          eventType: 'Cafe24Linked',
+          aggregateId: userId,
+          payload: {
+            userId,
+            cafe24MemberId,
+            mallId,
+            email: userRow.email,
+            linkedAt: now.toISOString(),
+          },
+        });
+      } catch (err) {
+        this.logger.error(`Failed to publish Cafe24Linked event for userId=${userId}`, err?.message);
+      }
+    }
+
     return link;
   }
 
@@ -319,7 +348,68 @@ export class Cafe24LinkService {
       .set({ unlinkedAt: now, updatedAt: now })
       .where(eq(cafe24Links.id, link.id));
 
+    // 이메일 조회 후 이벤트 발행
+    const [userRow] = await client
+      .select({ email: users.email })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    if (userRow?.email) {
+      try {
+        await this.eventPublisher.publishEvent({
+          eventType: 'Cafe24Unlinked',
+          aggregateId: userId,
+          payload: {
+            userId,
+            cafe24MemberId: link.cafe24MemberId,
+            mallId: link.mallId,
+            email: userRow.email,
+            unlinkedAt: now.toISOString(),
+          },
+        });
+      } catch (err) {
+        this.logger.error(`Failed to publish Cafe24Unlinked event for userId=${userId}`, err?.message);
+      }
+    }
+
     return link;
+  }
+
+  async getLinkInfoByCafe24MemberId(mallId: string, cafe24MemberId: string) {
+    const [row] = await this.dbService.db
+      .select({ userId: cafe24Links.userId, email: users.email })
+      .from(cafe24Links)
+      .innerJoin(users, eq(cafe24Links.userId, users.id))
+      .where(
+        and(
+          eq(cafe24Links.mallId, mallId),
+          eq(cafe24Links.cafe24MemberId, cafe24MemberId),
+          isNull(cafe24Links.unlinkedAt),
+        ),
+      )
+      .limit(1);
+
+    return row ?? null;
+  }
+
+  async getAllLinksByMallId(mallId: string) {
+    const rows = await this.dbService.db
+      .select({
+        userId: cafe24Links.userId,
+        cafe24MemberId: cafe24Links.cafe24MemberId,
+        email: users.email,
+      })
+      .from(cafe24Links)
+      .innerJoin(users, eq(cafe24Links.userId, users.id))
+      .where(
+        and(
+          eq(cafe24Links.mallId, mallId),
+          isNull(cafe24Links.unlinkedAt),
+        ),
+      );
+
+    return rows;
   }
 
   async getLinkedCafe24Account(userId: string, tx?: DbTransaction) {

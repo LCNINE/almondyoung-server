@@ -3,8 +3,10 @@ import {
   Body,
   Controller,
   Get,
+  NotFoundException,
   Param,
   Post,
+  Query,
 } from '@nestjs/common';
 import { Public } from '../../commons/decorator/public.decorator';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
@@ -203,5 +205,42 @@ export class Cafe24LinkController {
     if (!allowed.includes(key)) {
       throw new BadRequestException('지원하지 않는 이관 항목입니다.');
     }
+  }
+
+  // ===== Internal Endpoints (channel-adapter 전용) =====
+
+  @Get('internal/link-info')
+  @Public()
+  @ApiOperation({
+    summary: '[Internal] Cafe24 회원 ID로 링크 정보 조회',
+    description: 'mallId와 cafe24MemberId로 userId와 email을 조회합니다.',
+  })
+  async getLinkInfo(
+    @Query('mallId') mallId: string,
+    @Query('cafe24MemberId') cafe24MemberId: string,
+  ): Promise<{ userId: string; email: string }> {
+    if (!mallId || !cafe24MemberId) {
+      throw new BadRequestException('mallId와 cafe24MemberId가 필요합니다.');
+    }
+    const result = await this.cafe24LinkService.getLinkInfoByCafe24MemberId(mallId, cafe24MemberId);
+    if (!result) {
+      throw new NotFoundException('연결된 계정을 찾을 수 없습니다.');
+    }
+    return { userId: result.userId, email: result.email };
+  }
+
+  @Get('internal/links')
+  @Public()
+  @ApiOperation({
+    summary: '[Internal] mallId 기준 전체 연동 목록 조회',
+    description: '활성 연동 전체 목록을 반환합니다.',
+  })
+  async getAllLinks(
+    @Query('mallId') mallId: string,
+  ): Promise<Array<{ userId: string; cafe24MemberId: string; email: string }>> {
+    if (!mallId) {
+      throw new BadRequestException('mallId가 필요합니다.');
+    }
+    return this.cafe24LinkService.getAllLinksByMallId(mallId);
   }
 }
