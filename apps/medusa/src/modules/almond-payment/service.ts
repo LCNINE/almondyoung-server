@@ -143,6 +143,7 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
     const { intentId } = input.data as unknown as WalletSessionData;
     await this.walletFetch(`/v1/payment-intents/${intentId}/cancel`, {
       method: 'POST',
+      body: JSON.stringify({}),
     });
     return { data: input.data };
   }
