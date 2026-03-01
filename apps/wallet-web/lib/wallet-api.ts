@@ -1,3 +1,5 @@
+import { fetchWithRefresh } from './fetch-with-refresh';
+
 const BASE_URL = process.env.NEXT_PUBLIC_WALLET_API_URL ?? 'http://localhost:3100';
 
 export interface PaymentIntent {
@@ -90,13 +92,13 @@ export async function confirmPaymentIntent(
   paymentMethodId: string | null,
   pointsToApply?: number,
 ): Promise<ConfirmResult> {
-  const res = await fetch(`${BASE_URL}/v1/payment-intents/${intentId}/confirm`, {
+  const res = await fetchWithRefresh(`${BASE_URL}/v1/payment-intents/${intentId}/confirm`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Idempotency-Key': crypto.randomUUID(),
     },
-    credentials: 'include',   // sends JWT cookie
+    credentials: 'include',
     body: JSON.stringify({ paymentMethodId, pointsToApply }),
   });
   if (!res.ok) {
@@ -131,12 +133,12 @@ export async function approveToss(
 export async function cancelPaymentIntent(
   intentId: string,
 ): Promise<void> {
-  const res = await fetch(`${BASE_URL}/v1/payment-intents/${intentId}/cancel`, {
+  const res = await fetchWithRefresh(`${BASE_URL}/v1/payment-intents/${intentId}/cancel`, {
     method: 'POST',
     headers: {
       'Idempotency-Key': crypto.randomUUID(),
     },
-    credentials: 'include',   // sends JWT cookie
+    credentials: 'include',
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
