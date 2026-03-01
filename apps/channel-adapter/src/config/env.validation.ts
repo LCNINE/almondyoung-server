@@ -42,6 +42,11 @@ export const channelAdapterEnvSchema = z.object({
   MEDUSA_API_URL: z.string().url(),
   MEDUSA_API_KEY: z.string(),
   MEDUSA_MEMBERSHIP_GROUP_ID: z.string().optional(),
+
+  // Firebase Membership Sync
+  ALMOND_AUTH_URL: z.string().url().optional(),
+  USER_SERVICE_URL: z.string().url().optional(),
+  CHANNEL_ADAPTER_INTERNAL_KEY: z.string().optional(),
 });
 
 export type ChannelAdapterEnvConfig = z.infer<typeof channelAdapterEnvSchema>;
