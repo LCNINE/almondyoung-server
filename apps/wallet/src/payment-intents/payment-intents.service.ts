@@ -218,6 +218,11 @@ export class PaymentIntentsService {
   async cancel(intentId: string): Promise<void> {
     const intent = await this.findByIdOrThrow(intentId);
 
+    // 이미 취소된 경우 멱등적 처리 (no-op)
+    if (intent.status === 'CANCELED') {
+      return;
+    }
+
     const cancelableStatuses = ['CREATED', 'PROCESSING', 'REQUIRES_ACTION'];
     if (!cancelableStatuses.includes(intent.status)) {
       throw new BadRequestException({
