@@ -66,6 +66,22 @@ export interface BusinessLicenseApprovedPayload {
   name: string;
 }
 
+export interface Cafe24LinkedPayload {
+  userId: string;
+  cafe24MemberId: string;
+  mallId: string;
+  email: string;
+  linkedAt: string; // ISO 8601
+}
+
+export interface Cafe24UnlinkedPayload {
+  userId: string;
+  cafe24MemberId: string;
+  mallId: string;
+  email: string;
+  unlinkedAt: string; // ISO 8601
+}
+
 // ===== Zod 스키마 정의 =====
 
 const UserCreatedSchema = z.object({
@@ -125,6 +141,22 @@ const BusinessLicenseApprovedSchema = z.object({
   name: z.string().min(1),
 });
 
+const Cafe24LinkedSchema = z.object({
+  userId: z.string().min(1),
+  cafe24MemberId: z.string().min(1),
+  mallId: z.string().min(1),
+  email: z.string().email(),
+  linkedAt: z.string().datetime(),
+});
+
+const Cafe24UnlinkedSchema = z.object({
+  userId: z.string().min(1),
+  cafe24MemberId: z.string().min(1),
+  mallId: z.string().min(1),
+  email: z.string().email(),
+  unlinkedAt: z.string().datetime(),
+});
+
 // ===== Stream Config (타입 안전 버전) =====
 
 export const USER_STREAM = stream({
@@ -142,6 +174,8 @@ export const USER_STREAM = stream({
     UserFindId: event<'UserFindId', UserFindIdPayload>('UserFindId', UserFindIdSchema),
     UserResetPassword: event<'UserResetPassword', UserResetPasswordPayload>('UserResetPassword', UserResetPasswordSchema),
     BusinessLicenseApproved: event<'BusinessLicenseApproved', BusinessLicenseApprovedPayload>('BusinessLicenseApproved', BusinessLicenseApprovedSchema),
+    Cafe24Linked: event<'Cafe24Linked', Cafe24LinkedPayload>('Cafe24Linked', Cafe24LinkedSchema),
+    Cafe24Unlinked: event<'Cafe24Unlinked', Cafe24UnlinkedPayload>('Cafe24Unlinked', Cafe24UnlinkedSchema),
   },
 });
 

@@ -14,8 +14,9 @@ import { SyncStatusController } from './controllers/sync-status.controller';
 import { ChannelAdapterService } from './services/channel-adapter.service';
 import { NullEventPublisher } from './services/null-event-publisher.service';
 import { DbModule } from '@app/db';
-import { CHANNEL_ADAPTER_STREAM, ORDER_STREAM, FULFILLMENT_STREAM, PRODUCT_STREAM, MEMBERSHIP_STREAM } from '@packages/event-contracts/streams';
+import { CHANNEL_ADAPTER_STREAM, ORDER_STREAM, FULFILLMENT_STREAM, PRODUCT_STREAM, MEMBERSHIP_STREAM, USER_STREAM } from '@packages/event-contracts/streams';
 import { FulfillmentEventsConsumer } from './consumers/fulfillment-events.consumer';
+import { UserEventConsumer } from './consumers/user-event.consumer';
 import * as schema from './schema';
 import { channelAdapterSchema } from './schema';
 import {
@@ -50,6 +51,11 @@ import { PimCategoryConsumer } from './consumers/pim-category.consumer';
 import { MembershipEventConsumer } from './consumers/membership-event.consumer';
 import { PimMedusaMappingRepository } from './adapters/medusa/pim-medusa-mapping.repository';
 import { InboxWorkerService } from './adapters/medusa/inbox-worker.service';
+import { FirebaseMembershipSyncService } from './adapters/medusa/firebase-membership-sync.service';
+import { AlmondAuthClient } from './adapters/almond-auth/almond-auth.client';
+import { UserServiceClient } from './services/user-service.client';
+import { MembershipDailySyncService } from './services/membership-daily-sync.service';
+import { InternalMembershipController } from './controllers/internal-membership.controller';
 
 // Kafka 설정 생성 함수 (운영 환경 전용)
 function createKafkaConfig() {
@@ -115,6 +121,7 @@ function createKafkaConfig() {
             FULFILLMENT_STREAM,
             PRODUCT_STREAM,
             MEMBERSHIP_STREAM,
+            USER_STREAM,
           ],
           serviceName: 'channel-adapter',
           kafka: createKafkaConfig(),
@@ -129,10 +136,12 @@ function createKafkaConfig() {
   controllers: [
     ChannelAdapterController,
     SyncStatusController,
+    InternalMembershipController,
     FulfillmentEventsConsumer,
     PimProductEventConsumer,
     PimCategoryConsumer,
     MembershipEventConsumer,
+    UserEventConsumer,
   ],
   providers: [
     ChannelAdapterService,
@@ -181,6 +190,12 @@ function createKafkaConfig() {
     PimMedusaMappingRepository,
     InboxWorkerService,
 
+    // Firebase 멤버십 동기화
+    AlmondAuthClient,
+    UserServiceClient,
+    FirebaseMembershipSyncService,
+    MembershipDailySyncService,
+
     // 개발/테스트 환경: NullEventPublisher를 토큰으로 제공
     ...(process.env.NODE_ENV !== 'production'
       ? [
@@ -190,6 +205,10 @@ function createKafkaConfig() {
         },
         {
           provide: 'STREAM_PUBLISHER_orders.events.v1',
+          useClass: NullEventPublisher,
+        },
+        {
+          provide: 'STREAM_PUBLISHER_users.events.v1',
           useClass: NullEventPublisher,
         },
       ]
