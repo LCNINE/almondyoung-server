@@ -224,7 +224,13 @@ export class PaymentIntentsService {
   }
 
   async capture(intentId: string): Promise<void> {
-    await this.findByIdOrThrow(intentId);
+    const intent = await this.findByIdOrThrow(intentId);
+    if (!['AUTHORIZED', 'SUCCEEDED'].includes(intent.status)) {
+      throw new BadRequestException({
+        error: 'INTENT_NOT_CAPTURABLE',
+        message: `Intent cannot be captured in status: ${intent.status}`,
+      });
+    }
     const correlationId = `capture:${intentId}:${Date.now()}`;
     await this.captureService.capture(intentId, correlationId);
   }
@@ -237,7 +243,7 @@ export class PaymentIntentsService {
       return;
     }
 
-    const cancelableStatuses = ['CREATED', 'PROCESSING', 'REQUIRES_ACTION'];
+    const cancelableStatuses = ['CREATED', 'PROCESSING', 'REQUIRES_ACTION', 'AUTHORIZED', 'SUCCEEDED'];
     if (!cancelableStatuses.includes(intent.status)) {
       throw new BadRequestException({
         error: 'INTENT_NOT_CANCELABLE',
