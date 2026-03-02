@@ -10,18 +10,22 @@ type TransitionRules<TStatus extends string> = Partial<
 >;
 
 // Intent state machine:
-// CREATED → PROCESSING → SUCCEEDED (terminal)
+// CREATED → PROCESSING → AUTHORIZED (terminal-ish: capture pending)
 //                      → FAILED (terminal)
 //                      → REQUIRES_ACTION → PROCESSING
-//                                        → SUCCEEDED (terminal, e.g. Toss confirm)
+//                                        → AUTHORIZED (terminal-ish, e.g. Toss confirm)
 //                                        → CREATED (back-transition on confirm failure)
 //                      → CREATED (back-transition on confirm failure)
 //                      → CANCELED (terminal)
+// AUTHORIZED → CAPTURED (terminal) | CANCELED (terminal)
+// SUCCEEDED → CAPTURED | CANCELED  (backward compat: legacy data)
 // CREATED → CANCELED
 const paymentIntentTransitionRules: TransitionRules<PaymentIntentStatus> = {
   CREATED: ['PROCESSING', 'CANCELED'],
-  PROCESSING: ['SUCCEEDED', 'FAILED', 'REQUIRES_ACTION', 'CREATED', 'CANCELED'],
-  REQUIRES_ACTION: ['PROCESSING', 'SUCCEEDED', 'FAILED', 'CREATED', 'CANCELED'],
+  PROCESSING: ['AUTHORIZED', 'FAILED', 'REQUIRES_ACTION', 'CREATED', 'CANCELED'],
+  REQUIRES_ACTION: ['PROCESSING', 'AUTHORIZED', 'FAILED', 'CREATED', 'CANCELED'],
+  AUTHORIZED: ['CAPTURED', 'CANCELED'],
+  SUCCEEDED: ['CAPTURED', 'CANCELED'], // backward compat: existing SUCCEEDED records
 };
 
 // Charge state machine:

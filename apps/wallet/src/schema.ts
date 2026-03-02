@@ -30,6 +30,8 @@ export const paymentIntentStatusEnum = pgEnum('payment_intent_status', [
   'CREATED',
   'PROCESSING',
   'REQUIRES_ACTION',
+  'AUTHORIZED',
+  'CAPTURED',
   'SUCCEEDED',
   'FAILED',
   'CANCELED',

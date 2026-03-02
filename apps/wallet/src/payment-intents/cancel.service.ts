@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PaymentIntent } from '../types';
 import { ChargesService } from '../charges/charges.service';
+import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { ProviderRegistry } from '../providers/provider.registry';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
 import {
@@ -15,12 +16,13 @@ export class CancelService {
 
   constructor(
     private readonly chargesService: ChargesService,
+    private readonly paymentMethodsService: PaymentMethodsService,
     private readonly providerRegistry: ProviderRegistry,
     private readonly stateTransitionService: StateTransitionService,
   ) {}
 
   async cancel(intent: PaymentIntent, correlationId: string): Promise<void> {
-    // 1. Cancel any active AUTHORIZE charge (DB only — no provider call needed for TOSS/BANK_TRANSFER)
+    // 1. Cancel any active AUTHORIZE charge (DB only — no provider call needed for in-flight charges)
     const activeCharge = await this.chargesService.findActiveByIntentAndOperation(
       intent.id,
       'AUTHORIZE',
@@ -29,29 +31,31 @@ export class CancelService {
       await this.chargesService.updateStatus(activeCharge.id, 'CANCELED', {});
     }
 
-    // 2. Cancel any SUCCEEDED POINTS AUTHORIZE hold (requires provider call to release the hold)
-    const pointsCharge = await this.chargesService.findSucceededPointsAuthorizeByIntent(
-      intent.id,
-    );
-    if (pointsCharge) {
-      const pointsProvider = this.providerRegistry.getProviderOrThrow('POINTS');
+    // 2. Cancel all SUCCEEDED AUTHORIZE charges via their respective providers
+    //    (POINTS requires a hold-release call; TOSS/others require a refund/cancel API call)
+    const succeededAuthorizeCharges =
+      await this.chargesService.findAllSucceededAuthorizeByIntent(intent.id);
+    for (const charge of succeededAuthorizeCharges) {
+      const method = await this.paymentMethodsService.findById(charge.paymentMethodId);
+      if (!method) continue;
+      const provider = this.providerRegistry.getProviderOrThrow(method.type);
       try {
-        await pointsProvider.cancel({
-          chargeId: pointsCharge.id,
+        await provider.cancel({
+          chargeId: charge.id,
           intentId: intent.id,
-          paymentMethodId: pointsCharge.paymentMethodId,
+          paymentMethodId: charge.paymentMethodId,
           userId: intent.userId ?? '',
-          amount: pointsCharge.amount,
+          amount: charge.amount,
           currency: intent.currency,
-          idempotencyKey: `wallet:cancel:points:${pointsCharge.id}:${correlationId}`,
+          idempotencyKey: `wallet:cancel:${method.type.toLowerCase()}:${charge.id}:${correlationId}`,
           correlationId,
         });
-        await this.chargesService.updateStatus(pointsCharge.id, 'CANCELED', {});
+        await this.chargesService.updateStatus(charge.id, 'CANCELED', {});
       } catch (err) {
         this.logger.error(
-          `Failed to cancel POINTS hold during cancel: intentId=${intent.id}, chargeId=${pointsCharge.id}, error=${err}`,
+          `Failed to cancel ${method.type} charge during cancel: intentId=${intent.id}, chargeId=${charge.id}, error=${err}`,
         );
-        // Continue to cancel the intent even if POINTS release fails
+        // Continue to cancel the intent even if individual provider cancel fails
       }
     }
 

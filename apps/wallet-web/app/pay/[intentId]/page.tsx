@@ -30,7 +30,7 @@ export default async function PayPage({ params }: Props) {
     getPointsBalance(cookieHeader).catch(() => ({ confirmed: 0, reserved: 0, available: 0 })),
   ]);
 
-  if (intent.status === 'SUCCEEDED') {
+  if (['AUTHORIZED', 'CAPTURED', 'SUCCEEDED'].includes(intent.status)) {
     const returnUrl = intent.returnUrl
       ? `${intent.returnUrl}?payment_intent_id=${intent.id}&status=succeeded`
       : null;

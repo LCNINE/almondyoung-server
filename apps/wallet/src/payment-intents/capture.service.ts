@@ -5,14 +5,13 @@ import {
 } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { eq } from 'drizzle-orm';
-import { WalletSchema, outboxEvents, paymentIntents } from '../schema';
+import { WalletSchema, paymentIntents } from '../schema';
 import { Charge } from '../types';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { ChargesService } from '../charges/charges.service';
 import { ProviderRegistry } from '../providers/provider.registry';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
-import { buildOutboxInsertValues } from '../messaging/outbox-event.util';
-import { GATEWAY_AGGREGATE_TYPE, GatewayEventType } from '../messaging/gateway-event.builder';
+import { GATEWAY_AGGREGATE_TYPE, GatewayEventType, buildPaymentIntentEventPayload } from '../messaging/gateway-event.builder';
 
 @Injectable()
 export class CaptureService {
@@ -53,20 +52,23 @@ export class CaptureService {
 
     const now = new Date().toISOString();
     const totalCaptured = authorizeCharges.reduce((s, c) => s + c.amount, 0);
-    await this.dbService.db.insert(outboxEvents).values(
-      buildOutboxInsertValues({
+    await this.stateTransitionService.transitionIntent(intentId, 'CAPTURED', {
+      correlationId,
+      reasonCode: 'CAPTURE_SUCCEEDED',
+      outboxEvent: {
         eventType: GatewayEventType.INTENT_CAPTURED,
         aggregateType: GATEWAY_AGGREGATE_TYPE,
         aggregateId: intentId,
-        payload: {
+        payload: buildPaymentIntentEventPayload({
           intentId,
           userId,
-          amount: totalCaptured,
+          status: 'CAPTURED',
+          payableAmount: totalCaptured,
           currency: authorizeCharges[0]!.currency,
           occurredAt: now,
-        },
-      }),
-    );
+        }),
+      },
+    });
   }
 
   private async captureOneLeg(
@@ -128,7 +130,8 @@ export class CaptureService {
 
     if (providerResult.status === 'SUCCEEDED') {
       await this.chargesService.updateStatus(captureCharge.id, 'SUCCEEDED', {
-        providerTransactionId: providerResult.providerTransactionId,
+        providerTransactionId:
+          providerResult.providerTransactionId ?? authorizeCharge.providerTransactionId ?? undefined,
         responsePayload: providerResult.raw,
       });
     } else {
