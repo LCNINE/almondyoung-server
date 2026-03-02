@@ -72,7 +72,7 @@ export default async function IntentsPage() {
                       {intent.payableAmount.toLocaleString()} {intent.currency}
                     </td>
                     <td className="px-4 py-2 font-mono text-xs text-muted-foreground">
-                      {intent.userId.slice(0, 12)}…
+                      {(intent.userId ?? '-').slice(0, 12)}…
                     </td>
                     <td className="px-4 py-2 text-xs text-muted-foreground">
                       {formatDistanceToNow(intent.createdAt, { addSuffix: true, locale: ko })}
