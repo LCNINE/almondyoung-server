@@ -33,12 +33,15 @@ export async function POST(request: NextRequest) {
     return new NextResponse(null, { status: 500 });
   }
 
+  // domain을 user-service와 동일하게 맞춰야 기존 쿠키를 덮어쓰고 중복이 생기지 않음
+  const cookieDomain = process.env.COOKIE_DOMAIN || undefined;
   const response = new NextResponse(null, { status: 204 });
   response.cookies.set('accessToken', match[1], {
     httpOnly: true,
     sameSite: 'lax',
     path: '/',
     maxAge: 60 * 15, // 15분 (user-service와 동일)
+    domain: cookieDomain,
   });
   return response;
 }
