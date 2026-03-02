@@ -40,7 +40,7 @@ export class CancelService {
           chargeId: pointsCharge.id,
           intentId: intent.id,
           paymentMethodId: pointsCharge.paymentMethodId,
-          userId: intent.userId,
+          userId: intent.userId ?? '',
           amount: pointsCharge.amount,
           currency: intent.currency,
           idempotencyKey: `wallet:cancel:points:${pointsCharge.id}:${correlationId}`,
@@ -70,7 +70,7 @@ export class CancelService {
           aggregateId: intent.id,
           payload: buildPaymentIntentEventPayload({
             intentId: intent.id,
-            userId: intent.userId,
+            userId: intent.userId ?? '',
             status: 'CANCELED',
             payableAmount: intent.payableAmount,
             currency: intent.currency,
