@@ -46,15 +46,8 @@ export class PaymentIntentsController {
   @ApiOperation({ summary: 'Get a payment intent' })
   async findOne(
     @Param('id') id: string,
-    @Req() req: AuthenticatedRequest,
   ): Promise<PaymentIntentResponseDto> {
     const intent = await this.service.findByIdOrThrow(id);
-
-    // JWT path: ensure the caller owns this intent
-    if (req.jwtUserId && intent.userId !== req.jwtUserId) {
-      throw new ForbiddenException({ error: 'FORBIDDEN', message: 'Access denied' });
-    }
-
     return this.toResponse(intent);
   }
 
@@ -66,11 +59,8 @@ export class PaymentIntentsController {
     @Body() dto: ConfirmPaymentIntentDto,
     @Req() req: AuthenticatedRequest,
   ): Promise<PaymentIntentResponseDto> {
-    const intent = await this.service.findByIdOrThrow(id);
-
-    // JWT path: ensure the caller owns this intent
-    if (req.jwtUserId && intent.userId !== req.jwtUserId) {
-      throw new ForbiddenException({ error: 'FORBIDDEN', message: 'Access denied' });
+    if (req.jwtUserId) {
+      await this.claimOrVerify(id, req.jwtUserId);
     }
 
     const { nextAction } = await this.service.confirm(id, dto);
@@ -108,11 +98,8 @@ export class PaymentIntentsController {
     @Param('id') id: string,
     @Req() req: AuthenticatedRequest,
   ): Promise<PaymentIntentResponseDto> {
-    const intent = await this.service.findByIdOrThrow(id);
-
-    // JWT path: ensure the caller owns this intent
-    if (req.jwtUserId && intent.userId !== req.jwtUserId) {
-      throw new ForbiddenException({ error: 'FORBIDDEN', message: 'Access denied' });
+    if (req.jwtUserId) {
+      await this.claimOrVerify(id, req.jwtUserId);
     }
 
     await this.service.cancel(id);
@@ -130,6 +117,23 @@ export class PaymentIntentsController {
     await this.service.findByIdOrThrow(id);
     const refunds = await this.refundsService.createByIntent(id, dto);
     return { intentId: id, refunds: refunds.map((r) => this.toRefundResponse(r)) };
+  }
+
+  // userId가 null이면 atomic claim, 이미 설정됐으면 소유권 검증
+  private async claimOrVerify(intentId: string, jwtUserId: string): Promise<void> {
+    const intent = await this.service.findByIdOrThrow(intentId);
+    if (intent.userId === null) {
+      const claimed = await this.service.claimIntent(intentId, jwtUserId);
+      // 동시 요청이 먼저 claim한 경우 재조회 후 소유권 체크
+      if (!claimed) {
+        const latest = await this.service.findByIdOrThrow(intentId);
+        if (latest.userId !== jwtUserId) {
+          throw new ForbiddenException({ error: 'FORBIDDEN', message: 'Access denied' });
+        }
+      }
+    } else if (intent.userId !== jwtUserId) {
+      throw new ForbiddenException({ error: 'FORBIDDEN', message: 'Access denied' });
+    }
   }
 
   private toRefundResponse(refund: {
@@ -163,7 +167,7 @@ export class PaymentIntentsController {
       status: string;
       payableAmount: number;
       currency: string;
-      userId: string;
+      userId: string | null;
       returnUrl: string | null;
       expiresAt: Date;
       metadata: Record<string, unknown>;

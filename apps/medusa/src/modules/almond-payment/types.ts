@@ -8,6 +8,5 @@ export interface WalletSessionData {
   intentId: string;
   amount: number;
   currency: string;
-  userId: string;
   captured?: boolean;       // true after capturePayment succeeds
 }

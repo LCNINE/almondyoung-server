@@ -146,7 +146,7 @@ export const paymentIntents = pgTable(
     payableAmount: integer('payable_amount').notNull(),
     currency: varchar('currency', { length: 3 }).notNull(),
     status: paymentIntentStatusEnum('status').notNull(),
-    userId: varchar('user_id', { length: 128 }).notNull(),
+    userId: varchar('user_id', { length: 128 }),
     paymentMethodId: uuid('payment_method_id').references(() => paymentMethods.id),
     clientSecret: varchar('client_secret', { length: 64 }).notNull(),
     returnUrl: text('return_url'),
