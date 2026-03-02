@@ -550,6 +550,24 @@ export const addCartShippingMethod = async (
     .catch(medusaError)
 }
 
+/**
+ * 서버 컴포넌트 렌더 중 호출용: revalidateTag 없이 shipping method만 추가합니다.
+ * revalidateTag는 렌더 중 호출 불가 (Next.js 제약)이므로 이 함수를 사용하세요.
+ */
+export const addCartShippingMethodDuringRender = async (
+  cartId: string,
+  optionId: string
+) => {
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  return sdk.store.cart
+    .addShippingMethod(cartId, { option_id: optionId }, {}, headers)
+    .then(({ cart }: { cart: HttpTypes.StoreCart }) => cart)
+    .catch(medusaError)
+}
+
 export const listCartShippingMethods = async (
   cartId: string,
   cache: RequestCache = "force-cache"

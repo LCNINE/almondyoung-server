@@ -1,6 +1,6 @@
 import { EmptyCartView } from "@/components/cart/empty-cart-view"
 import {
-  addCartShippingMethod,
+  addCartShippingMethodDuringRender,
   listCartShippingMethods,
   retrieveCart,
 } from "@/lib/api/medusa/cart"
@@ -57,8 +57,9 @@ async function CheckoutManager({ countryCode }: { countryCode: string }) {
     ])
 
   // 배송 수단이 카트에 추가되지 않은 경우 자동으로 첫 번째 옵션 추가
+  // revalidateTag는 렌더 중 호출 불가이므로 DuringRender 전용 함수 사용
   if (!cart.shipping_methods?.length && shippingMethods?.length) {
-    await addCartShippingMethod(cart.id, shippingMethods[0].id)
+    await addCartShippingMethodDuringRender(cart.id, shippingMethods[0].id)
   }
 
   const [pointBalance, taxInvoice] = await Promise.all([
