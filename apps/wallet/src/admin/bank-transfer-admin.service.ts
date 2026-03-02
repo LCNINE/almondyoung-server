@@ -108,7 +108,7 @@ export class BankTransferAdminService {
             aggregateId: intent.id,
             payload: buildPaymentIntentEventPayload({
               intentId: intent.id,
-              userId: intent.userId,
+              userId: intent.userId ?? '',
               status: 'SUCCEEDED',
               payableAmount: intent.payableAmount,
               currency: intent.currency,

@@ -45,7 +45,7 @@ export class CaptureService {
         message: `Intent not found: ${intentId}`,
       });
     }
-    const { userId } = intentInfo;
+    const userId = intentInfo.userId ?? '';
 
     for (const authorizeCharge of authorizeCharges) {
       await this.captureOneLeg(authorizeCharge, userId, intentId, correlationId);
@@ -142,7 +142,7 @@ export class CaptureService {
 
   private async getIntentInfo(
     intentId: string,
-  ): Promise<{ userId: string } | null> {
+  ): Promise<{ userId: string | null } | null> {
     const rows = await this.dbService.db
       .select({ userId: paymentIntents.userId })
       .from(paymentIntents)

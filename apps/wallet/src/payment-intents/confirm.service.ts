@@ -115,12 +115,21 @@ export class ConfirmService {
           : 'composite';
 
     // 7. Resolve method IDs
+    // userId는 controller의 claimOrVerify에서 반드시 설정된 후 confirm이 호출되어야 함
+    if (!intent.userId) {
+      throw new BadRequestException({
+        error: 'INTENT_NOT_CLAIMED',
+        message: 'Intent must have an owner before confirmation',
+      });
+    }
+    const intentUserId: string = intent.userId;
+
     let pointsMethodId: string | null = null;
     let externalMethodId: string | null = null;
 
     if (mode !== 'external-only') {
       const pointsMethod = await this.paymentMethodsService.findOrCreatePointsMethod(
-        intent.userId,
+        intentUserId,
         tx,
       );
       pointsMethodId = pointsMethod.id;
@@ -199,7 +208,7 @@ export class ConfirmService {
 
     return {
       mode,
-      userId: intent.userId,
+      userId: intentUserId,
       currency: intent.currency,
       payableAmount: intent.payableAmount,
       pointsChargeId,
