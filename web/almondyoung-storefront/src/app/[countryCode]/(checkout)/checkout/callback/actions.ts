@@ -11,6 +11,55 @@ import {
 } from "@/lib/data/cookies"
 import { revalidateTag } from "next/cache"
 
+async function ensureShippingMethod(
+  cartId: string,
+  headers: Record<string, string>
+): Promise<void> {
+  const prefix = `[ensureShippingMethod] cartId=${cartId}`
+
+  // 현재 cart의 shipping_methods 확인
+  const { cart } = await sdk.client.fetch<{ cart: { shipping_methods?: { id: string }[] } }>(
+    `/store/carts/${cartId}`,
+    { method: "GET", query: { fields: "+shipping_methods" }, headers }
+  )
+
+  if (cart.shipping_methods?.length) {
+    console.log(`${prefix} shipping_methods 존재 (count=${cart.shipping_methods.length}), 추가 불필요`)
+    return
+  }
+
+  console.warn(`${prefix} shipping_methods 없음, 사용 가능한 옵션 조회 시작`)
+
+  // 사용 가능한 shipping options 조회
+  const { shipping_options } = await sdk.client.fetch<{
+    shipping_options: { id: string; name: string; amount: number }[]
+  }>("/store/shipping-options", {
+    method: "GET",
+    query: { cart_id: cartId },
+    headers,
+  })
+
+  console.log(
+    `${prefix} 사용 가능한 shipping options: ${JSON.stringify(
+      shipping_options?.map((o) => ({ id: o.id, name: o.name, amount: o.amount })) ?? []
+    )}`
+  )
+
+  if (!shipping_options?.length) {
+    console.error(`${prefix} 사용 가능한 shipping option 없음, 할당 불가`)
+    return
+  }
+
+  const targetOption = shipping_options[0]
+  await sdk.store.cart.addShippingMethod(
+    cartId,
+    { option_id: targetOption.id },
+    {},
+    headers
+  )
+  console.log(`${prefix} shipping method 할당 완료 (option_id=${targetOption.id}, name=${targetOption.name})`)
+}
+
 interface ProcessPaymentResult {
   success: boolean
   redirectUrl: string
@@ -49,6 +98,10 @@ export async function processPaymentCallback(
     const cartId = await getCartId()
     if (cartId) {
       const headers = { ...(await getAuthHeaders()) }
+
+      // cart.complete() 직전 shipping method 보장
+      await ensureShippingMethod(cartId, headers)
+
       const cartRes = await sdk.store.cart.complete(cartId, {}, headers)
 
       if (cartRes?.type === "order") {
