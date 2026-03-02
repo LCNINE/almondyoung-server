@@ -54,11 +54,14 @@ export async function middleware(request: NextRequest) {
       const response = NextResponse.next({ request: { headers: requestHeaders } });
 
       // 브라우저도 새 쿠키를 저장하도록 응답에도 Set-Cookie
+      // domain을 user-service와 동일하게 맞춰야 기존 쿠키를 덮어쓰고 중복이 생기지 않음
+      const cookieDomain = process.env.COOKIE_DOMAIN || undefined;
       response.cookies.set('accessToken', newToken, {
         httpOnly: true,
         sameSite: 'lax',
         path: '/',
         maxAge: 60 * 15,
+        domain: cookieDomain,
       });
       return response;
     }
