@@ -94,11 +94,11 @@ export class OrderDiscountDto {
 }
 
 export class CreatePaymentIntentDto {
-  @ApiProperty({ description: 'User ID', maxLength: 128 })
+  @ApiPropertyOptional({ description: 'User ID (optional — first JWT-authenticated GET will claim the intent)', maxLength: 128 })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(128)
-  userId: string;
+  userId?: string;
 
   @ApiProperty({ description: 'Currency code (e.g. KRW)', maxLength: 3 })
   @IsString()
@@ -218,8 +218,8 @@ export class PaymentIntentResponseDto {
   @ApiProperty()
   currency: string;
 
-  @ApiProperty({ description: 'User ID' })
-  userId: string;
+  @ApiPropertyOptional({ description: 'User ID (null until first JWT-authenticated GET claims the intent)' })
+  userId: string | null;
 
   @ApiPropertyOptional()
   returnUrl: string | null;

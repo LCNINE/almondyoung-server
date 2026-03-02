@@ -84,9 +84,8 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
   ): Promise<InitiatePaymentOutput> {
     const { amount, currency_code, context: ctx, data } = context;
     const returnUrl = (data?.returnUrl as string) ?? ((ctx as Record<string, unknown>)?.return_url as string) ?? undefined;
-    const userId = ctx?.customer?.id as string | undefined;
-    if (!userId) throw new Error('customer.id is required in payment context');
 
+    // userId는 wallet-web에서 첫 번째 JWT 인증 GET 요청 시 자동으로 claim되므로 여기서 전달하지 않음
     const intent = await this.walletFetch<{ id: string }>(
       '/v1/payment-intents',
       {
@@ -94,7 +93,6 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
         body: JSON.stringify({
           amount: Number(amount),
           currency: currency_code.toUpperCase(),
-          userId,
           ...(returnUrl ? { returnUrl } : {}),
         }),
       },
@@ -104,7 +102,6 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
       intentId: intent.id,
       amount: Number(amount),
       currency: currency_code.toUpperCase(),
-      userId,
     };
     return { id: intent.id, data: sessionData as unknown as Record<string, unknown> };
   }
@@ -196,7 +193,7 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
       { method: 'POST' },
     );
 
-    // create new intent — userId is carried over from existing session data
+    // create new intent — userId는 wallet-web에서 첫 GET 요청 시 자동 claim됨
     const intent = await this.walletFetch<{ id: string }>(
       '/v1/payment-intents',
       {
@@ -204,7 +201,6 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
         body: JSON.stringify({
           amount: newAmount,
           currency: newCurrency,
-          userId: prevData.userId,
         }),
       },
     );
@@ -213,7 +209,6 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
       intentId: intent.id,
       amount: newAmount,
       currency: newCurrency,
-      userId: prevData.userId,
     };
     return { data: updatedData as unknown as Record<string, unknown> };
   }

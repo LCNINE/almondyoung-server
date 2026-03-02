@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 import {
   WalletSchema,
@@ -79,7 +79,7 @@ export class PaymentIntentsService {
           payableAmount,
           currency: dto.currency.toUpperCase(),
           status: 'CREATED',
-          userId: dto.userId,
+          userId: dto.userId ?? null,
           clientSecret,
           returnUrl: dto.returnUrl ?? null,
           metadata: dto.metadata ?? {},
@@ -148,7 +148,7 @@ export class PaymentIntentsService {
           aggregateId: intent.id,
           payload: buildPaymentIntentEventPayload({
             intentId: intent.id,
-            userId: intent.userId,
+            userId: intent.userId ?? '',
             status: 'CREATED',
             payableAmount: intent.payableAmount,
             currency: intent.currency,
@@ -162,6 +162,20 @@ export class PaymentIntentsService {
 
       return intent;
     });
+  }
+
+  // userId가 null인 intent를 jwtUserId로 원자적으로 claim한다.
+  // 다른 요청이 먼저 claim했으면 null 반환 — 호출자가 다시 읽어서 소유권 체크.
+  async claimIntent(
+    id: string,
+    userId: string,
+  ): Promise<typeof paymentIntents.$inferSelect | null> {
+    const rows = await this.dbService.db
+      .update(paymentIntents)
+      .set({ userId, updatedAt: new Date() })
+      .where(and(eq(paymentIntents.id, id), isNull(paymentIntents.userId)))
+      .returning();
+    return rows[0] ?? null;
   }
 
   async findById(id: string): Promise<typeof paymentIntents.$inferSelect | null> {
