@@ -1,5 +1,9 @@
 import { EmptyCartView } from "@/components/cart/empty-cart-view"
-import { listCartShippingMethods, retrieveCart } from "@/lib/api/medusa/cart"
+import {
+  addCartShippingMethod,
+  listCartShippingMethods,
+  retrieveCart,
+} from "@/lib/api/medusa/cart"
 import { listCartPaymentMethods } from "@/lib/api/medusa/payment"
 import { getMyPromotions } from "@/lib/api/medusa/promotion"
 import { getPointBalance, getTaxInvoice } from "@/lib/api/wallet"
@@ -51,6 +55,11 @@ async function CheckoutManager({ countryCode }: { countryCode: string }) {
         limit: 100,
       })),
     ])
+
+  // 배송 수단이 카트에 추가되지 않은 경우 자동으로 첫 번째 옵션 추가
+  if (!cart.shipping_methods?.length && shippingMethods?.length) {
+    await addCartShippingMethod(cart.id, shippingMethods[0].id)
+  }
 
   const [pointBalance, taxInvoice] = await Promise.all([
     getPointBalance(),
