@@ -1,4 +1,4 @@
-import { requestRefundPaymentWorkFlow } from '../../../../../workflows/payments/workflows/request-refund-payment';
+import { refundPaymentWorkflow } from '@medusajs/core-flows';
 import {
   AuthenticatedMedusaRequest,
   MedusaResponse,
@@ -16,7 +16,7 @@ export const POST = async (
 ) => {
   const { id } = req.params;
 
-  await requestRefundPaymentWorkFlow(req.scope).run({
+  await refundPaymentWorkflow(req.scope).run({
     input: {
       payment_id: id,
       created_by: req.auth_context.actor_id,

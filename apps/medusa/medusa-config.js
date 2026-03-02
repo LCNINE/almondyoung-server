@@ -27,19 +27,6 @@ module.exports = defineConfig({
   presets: [require('@medusajs/ui-preset')],
 
   modules: [
-    // USE_KAFKA 환경변수가 '1'일 때만 활성화 (또는 항상 활성화하려면 조건문 제거)
-    // {
-    //   resolve: './src/modules/events',
-    //   options: {
-    //     kafka: {
-    //       clientId: process.env.KAFKA_CLIENT_ID || 'medusa-service',
-    //       // npm run dev(로컬)에서는 'localhost:9092'로 접속
-    //       brokers: (process.env.KAFKA_BROKERS || 'localhost:9092').split(','),
-    //       groupId: process.env.KAFKA_GROUP_ID || 'medusa-consumer',
-    //     },
-    //   },
-    // },
-
     {
       resolve: '@medusajs/medusa/product',
       options: {},
