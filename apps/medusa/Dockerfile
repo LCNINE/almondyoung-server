@@ -66,4 +66,4 @@ EXPOSE 9000
 
 # 외부 인프라는 환경 변수로 주입 (DATABASE_URL, REDIS_URL, KAFKA_BROKERS 등)
 # .medusa/server 디렉토리에서 실행
-CMD ["yarn", "start"]
+CMD ["sh", "-c", "medusa exec ./src/scripts/seed.ts && medusa exec ./src/scripts/seed-shipping.ts && medusa start"]
