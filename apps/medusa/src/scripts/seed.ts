@@ -66,12 +66,17 @@ export default async function seedData({ container }: ExecArgs) {
   logger.info('[seed] Store 설정 완료.');
 
   // ── 3. Region ─────────────────────────────────────────────────────────────
+  // 이름이 아닌 국가 코드 기준으로 확인 (기존 리전 이름이 달라도 중복 생성 방지)
   logger.info('[seed] Region 확인 중...');
-  const existingRegions = await regionModuleService.listRegions({
-    name: 'Korea',
-  });
+  const allRegions = await regionModuleService.listRegions(
+    {},
+    { relations: ['countries'] },
+  );
+  const krRegionExists = allRegions.some((r) =>
+    r.countries?.some((c) => c.iso_2 === 'kr'),
+  );
 
-  if (!existingRegions.length) {
+  if (!krRegionExists) {
     await createRegionsWorkflow(container).run({
       input: {
         regions: [
