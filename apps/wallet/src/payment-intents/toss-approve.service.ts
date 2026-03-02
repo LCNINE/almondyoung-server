@@ -106,7 +106,7 @@ export class TossApproveService {
     const tossData = await tossRes.json();
     const now = new Date().toISOString();
 
-    // 4. Success: charge → SUCCEEDED, intent → SUCCEEDED
+    // 4. Success: charge → SUCCEEDED, intent → AUTHORIZED
     await this.dbService.db.transaction(async (tx) => {
       await this.chargesService.updateStatus(
         charge.id,
@@ -120,18 +120,18 @@ export class TossApproveService {
 
       await this.stateTransitionService.transitionIntent(
         intent.id,
-        'SUCCEEDED',
+        'AUTHORIZED',
         {
           correlationId,
           reasonCode: 'AUTHORIZE_SUCCEEDED',
           outboxEvent: {
-            eventType: GatewayEventType.INTENT_SUCCEEDED,
+            eventType: GatewayEventType.INTENT_AUTHORIZED,
             aggregateType: GATEWAY_AGGREGATE_TYPE,
             aggregateId: intent.id,
             payload: buildPaymentIntentEventPayload({
               intentId: intent.id,
               userId: intent.userId ?? '',
-              status: 'SUCCEEDED',
+              status: 'AUTHORIZED',
               payableAmount: intent.payableAmount,
               currency: intent.currency,
               occurredAt: now,

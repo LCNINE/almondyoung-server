@@ -68,8 +68,12 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
 
   private mapStatus(walletStatus: string, captured = false): PaymentSessionStatus {
     switch (walletStatus) {
+      case 'AUTHORIZED':
+        return 'authorized';
+      case 'CAPTURED':
+        return 'captured';
       case 'SUCCEEDED':
-        return captured ? 'captured' : 'authorized';
+        return captured ? 'captured' : 'authorized'; // backward compat
       case 'CANCELED':
         return 'canceled';
       case 'FAILED':
@@ -253,7 +257,9 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
     };
 
     switch (evt) {
-      case 'payment.intent.succeeded':
+      case 'payment.intent.authorized':
+        return { action: PaymentActions.AUTHORIZED, data: actionData };
+      case 'payment.intent.succeeded': // legacy
         return { action: PaymentActions.AUTHORIZED, data: actionData };
       case 'payment.intent.captured':
         return { action: PaymentActions.SUCCESSFUL, data: actionData };

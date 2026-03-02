@@ -494,7 +494,7 @@ export class ConfirmService {
     }
   }
 
-  /** Atomically mark the final charge as SUCCEEDED and transition intent → SUCCEEDED */
+  /** Atomically mark the final charge as SUCCEEDED and transition intent → AUTHORIZED */
   private async handleFinalChargeSuccess(
     intentId: string,
     chargeId: string,
@@ -513,18 +513,18 @@ export class ConfirmService {
       );
       await this.stateTransitionService.transitionIntent(
         intentId,
-        'SUCCEEDED',
+        'AUTHORIZED',
         {
           correlationId,
           reasonCode: 'AUTHORIZE_SUCCEEDED',
           outboxEvent: {
-            eventType: GatewayEventType.INTENT_SUCCEEDED,
+            eventType: GatewayEventType.INTENT_AUTHORIZED,
             aggregateType: GATEWAY_AGGREGATE_TYPE,
             aggregateId: intentId,
             payload: buildPaymentIntentEventPayload({
               intentId,
               userId: phase1.userId,
-              status: 'SUCCEEDED',
+              status: 'AUTHORIZED',
               payableAmount: phase1.payableAmount,
               currency: phase1.currency,
               occurredAt: now,

@@ -93,11 +93,12 @@ export function buildRefundEventPayload(
 export const GATEWAY_AGGREGATE_TYPE = 'PaymentGateway';
 
 export const GatewayEventType = {
-  INTENT_CREATED:   'payment.intent.created',
-  INTENT_SUCCEEDED: 'payment.intent.succeeded',
-  INTENT_FAILED:    'payment.intent.failed',
-  INTENT_CANCELED:  'payment.intent.canceled',
-  INTENT_CAPTURED:  'payment.intent.captured',
+  INTENT_CREATED:    'payment.intent.created',
+  INTENT_AUTHORIZED: 'payment.intent.authorized',
+  INTENT_SUCCEEDED:  'payment.intent.succeeded', // legacy: kept for backward compat
+  INTENT_FAILED:     'payment.intent.failed',
+  INTENT_CANCELED:   'payment.intent.canceled',
+  INTENT_CAPTURED:   'payment.intent.captured',
   CHARGE_AUTHORIZED: 'gateway.charge.authorized',
   CHARGE_CAPTURED:   'gateway.charge.captured',
   CHARGE_FAILED:     'gateway.charge.failed',

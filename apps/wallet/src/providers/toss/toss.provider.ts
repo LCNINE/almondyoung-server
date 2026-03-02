@@ -87,8 +87,39 @@ export class TossPaymentProvider implements PaymentProvider {
     return { status: 'SUCCEEDED' };
   }
 
-  async cancel(_params: ChargeParams): Promise<ChargeResult> {
-    return { status: 'SUCCEEDED' };
+  async cancel(params: ChargeParams): Promise<ChargeResult> {
+    const rows = await this.dbService.db
+      .select({ providerTransactionId: charges.providerTransactionId })
+      .from(charges)
+      .where(eq(charges.id, params.chargeId))
+      .limit(1);
+
+    const paymentKey = rows[0]?.providerTransactionId;
+    if (!paymentKey) {
+      return { status: 'FAILED', errorCode: 'TOSS_PAYMENT_KEY_NOT_FOUND' };
+    }
+
+    const secretKey = process.env.TOSS_SECRET_KEY ?? '';
+    const auth = Buffer.from(`${secretKey}:`).toString('base64');
+    const res = await fetch(
+      `https://api.tosspayments.com/v1/payments/${paymentKey}/cancels`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Basic ${auth}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ cancelReason: '고객 요청', cancelAmount: params.amount }),
+      },
+    );
+
+    if (res.ok) return { status: 'SUCCEEDED' };
+    const err = await res.json().catch(() => ({}));
+    return {
+      status: 'FAILED',
+      errorCode: (err as any).code,
+      errorMessage: (err as any).message,
+    };
   }
 
   async refund(params: RefundParams): Promise<RefundResult> {
