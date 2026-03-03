@@ -23,7 +23,8 @@ export default async function disableInventoryManagement({
 
   while (true) {
     const variants = await productModuleService.listProductVariants(
-      { manage_inventory: true },
+      // { manage_inventory: true },
+      {},
       { take: limit, skip: 0 },
     );
 
