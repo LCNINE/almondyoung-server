@@ -56,6 +56,9 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
         : {}),
       ...((options.headers as Record<string, string>) ?? {}),
     };
+    if (options.body == null) {
+      options.body = JSON.stringify({});
+    }
     const res = await fetch(url, { ...options, headers });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
