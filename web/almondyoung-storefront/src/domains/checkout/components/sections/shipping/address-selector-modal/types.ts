@@ -1,6 +1,7 @@
 import { HttpTypes } from "@medusajs/types"
 
 export interface ShippingAddressSelectorProps {
+  cartId: string
   open: boolean
   onOpenChange: (open: boolean) => void
   onAddNewAddress: () => void

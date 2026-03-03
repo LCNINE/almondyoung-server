@@ -45,6 +45,7 @@ import {
 import type { ShippingAddressSelectorProps } from "./types"
 
 export function ShippingAddressSelectorModal({
+  cartId,
   open,
   onOpenChange,
   onAddNewAddress,
@@ -95,22 +96,25 @@ export function ShippingAddressSelectorModal({
     setIsSubmitting(true)
 
     try {
-      await updateCart({
-        shipping_address: {
-          first_name: selectedAddress.first_name ?? "",
-          last_name: selectedAddress.last_name ?? "",
-          phone: selectedAddress.phone ?? "",
-          province: selectedAddress.province ?? "",
-          city: selectedAddress.city ?? "",
-          address_1: selectedAddress.address_1 ?? "",
-          address_2: selectedAddress.address_2 ?? "",
-          postal_code: selectedAddress.postal_code ?? "",
-          country_code: selectedAddress.country_code ?? "kr",
+      await updateCart(
+        {
+          shipping_address: {
+            first_name: selectedAddress.first_name ?? "",
+            last_name: selectedAddress.last_name ?? "",
+            phone: selectedAddress.phone ?? "",
+            province: selectedAddress.province ?? "",
+            city: selectedAddress.city ?? "",
+            address_1: selectedAddress.address_1 ?? "",
+            address_2: selectedAddress.address_2 ?? "",
+            postal_code: selectedAddress.postal_code ?? "",
+            country_code: selectedAddress.country_code ?? "kr",
+          },
+          metadata: {
+            shipping_address_name: selectedAddress.address_name || null,
+          },
         },
-        metadata: {
-          shipping_address_name: selectedAddress.address_name || null,
-        },
-      })
+        cartId
+      )
 
       toast.success("배송지가 변경되었습니다.")
       onOpenChange(false)
@@ -121,7 +125,7 @@ export function ShippingAddressSelectorModal({
     } finally {
       setIsSubmitting(false)
     }
-  }, [selectedId, addresses, onOpenChange, router])
+  }, [selectedId, addresses, onOpenChange, router, cartId])
 
   const handleEdit = useCallback(
     (e: React.MouseEvent, address: HttpTypes.StoreCustomerAddress) => {

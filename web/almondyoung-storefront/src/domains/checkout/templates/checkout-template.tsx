@@ -32,6 +32,7 @@ import { ReceiptSection } from "../components/sections/receipt/"
 interface CheckoutTemplateProps {
   user: UserDetail
   cart: CartResponseDto["cart"]
+  checkoutCartId: string
   shipping: ShippingInfo
   promotions: Promotion[]
   pointBalance: PointBalanceDto
@@ -41,6 +42,7 @@ interface CheckoutTemplateProps {
 export default function CheckoutTemplate({
   user,
   cart,
+  checkoutCartId,
   shipping,
   promotions,
   taxInvoice,
@@ -136,9 +138,9 @@ export default function CheckoutTemplate({
           shipping_memo_custom:
             shippingMemo.type === "other" ? shippingMemo.custom : "",
         },
-      })
+      }, checkoutCartId)
 
-      const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback`
+      const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback?cartId=${checkoutCartId}`
 
       const result = await initiatePaymentSession(cart, {
         provider_id: "pp_almond-payment_almond-payment",
@@ -173,6 +175,7 @@ export default function CheckoutTemplate({
           {/* 왼쪽 섹션 */}
           <div className="lg:max-w-[820px] lg:min-w-[420px] lg:flex-1">
             <ShippingSection
+              cartId={checkoutCartId}
               shippingAddress={cart?.shipping_address || null}
               addressName={
                 cart?.metadata?.shipping_address_name as string | null
