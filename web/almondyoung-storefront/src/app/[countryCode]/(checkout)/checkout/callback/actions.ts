@@ -65,6 +65,67 @@ interface ProcessPaymentResult {
   redirectUrl: string
 }
 
+interface SourceCartSelection {
+  sourceCartId: string
+  sourceLineItemIds: string[]
+}
+
+async function getSourceCartSelection(
+  checkoutCartId: string,
+  headers: Record<string, string>
+): Promise<SourceCartSelection | null> {
+  try {
+    const { cart } = await sdk.client.fetch<{ cart: { metadata?: Record<string, unknown> } }>(
+      `/store/carts/${checkoutCartId}`,
+      { method: "GET", headers }
+    )
+
+    const metadata = cart?.metadata ?? {}
+    const sourceCartId =
+      typeof metadata?.source_cart_id === "string"
+        ? metadata.source_cart_id
+        : null
+    const sourceLineItemIds = Array.isArray(metadata?.source_line_item_ids)
+      ? metadata.source_line_item_ids.filter(
+          (id): id is string => typeof id === "string" && id.length > 0
+        )
+      : []
+
+    if (!sourceCartId || sourceCartId === checkoutCartId || !sourceLineItemIds.length) {
+      return null
+    }
+
+    return { sourceCartId, sourceLineItemIds }
+  } catch {
+    return null
+  }
+}
+
+async function removePurchasedItemsFromSourceCart(
+  selection: SourceCartSelection,
+  headers: Record<string, string>
+) {
+  const results = await Promise.allSettled(
+    selection.sourceLineItemIds.map((lineItemId) =>
+      sdk.store.cart.deleteLineItem(selection.sourceCartId, lineItemId, {}, headers)
+    )
+  )
+
+  const deletedCount = results.filter((result) => result.status === "fulfilled").length
+  const failedCount = results.length - deletedCount
+
+  if (deletedCount > 0) {
+    revalidateTag(await getCacheTag("carts"))
+    revalidateTag(await getCacheTag("fulfillment"))
+  }
+
+  if (failedCount > 0) {
+    console.warn(
+      `[processPaymentCallback] source cart cleanup partially failed (sourceCartId=${selection.sourceCartId}, deleted=${deletedCount}, failed=${failedCount})`
+    )
+  }
+}
+
 export async function processPaymentCallback(
   countryCode: string,
   intentId: string,
@@ -99,6 +160,7 @@ export async function processPaymentCallback(
     const targetCartId = cartId || (await getCartId())
     if (targetCartId) {
       const headers = { ...(await getAuthHeaders()) }
+      const sourceCartSelection = await getSourceCartSelection(targetCartId, headers)
 
       // cart.complete() 직전 shipping method 보장
       await ensureShippingMethod(targetCartId, headers)
@@ -107,6 +169,11 @@ export async function processPaymentCallback(
 
       if (cartRes?.type === "order") {
         revalidateTag(await getCacheTag("orders"))
+
+        if (sourceCartSelection) {
+          await removePurchasedItemsFromSourceCart(sourceCartSelection, headers)
+        }
+
         const currentCartId = await getCartId()
         if (!cartId || currentCartId === targetCartId) {
           await removeCartId()

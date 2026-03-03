@@ -275,6 +275,110 @@ export async function createBuyNowCart(params: {
   return { cartId: cart.id }
 }
 
+export async function createCheckoutCartFromLineItems(params: {
+  countryCode: string
+  lineItemIds: string[]
+}): Promise<{ cartId: string }> {
+  const { countryCode, lineItemIds } = params
+
+  if (!lineItemIds.length) {
+    throw new HttpApiError(
+      "No selected line items for checkout cart",
+      400,
+      "BAD_REQUEST"
+    )
+  }
+
+  const sourceCart = await retrieveCart(
+    undefined,
+    "id,region_id,*items,*items.variant"
+  )
+
+  if (!sourceCart?.id) {
+    throw new HttpApiError("Source cart not found", 404, "NOT_FOUND")
+  }
+
+  const selectedIdSet = new Set(lineItemIds)
+  const selectedItems = (sourceCart.items ?? []).filter((item) =>
+    selectedIdSet.has(item.id)
+  )
+
+  if (!selectedItems.length || selectedItems.length !== selectedIdSet.size) {
+    throw new HttpApiError(
+      "Some selected line items are not in source cart",
+      400,
+      "BAD_REQUEST"
+    )
+  }
+
+  const regionId =
+    sourceCart.region_id ?? (await getRegion(countryCode))?.id ?? null
+
+  if (!regionId) {
+    throw new Error(`Region not found for country code: ${countryCode}`)
+  }
+
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  const checkoutCartResp = await sdk.store.cart.create(
+    { region_id: regionId },
+    {},
+    headers
+  )
+  const checkoutCart = checkoutCartResp.cart
+
+  if (headers.authorization) {
+    try {
+      await sdk.store.cart.transferCart(checkoutCart.id, {}, headers)
+    } catch (error) {
+      console.error("Checkout cart transfer failed:", error)
+    }
+  }
+
+  for (const item of selectedItems) {
+    const variantId = item.variant_id || item.variant?.id
+    if (!variantId) {
+      throw new HttpApiError(
+        "Missing variant ID when creating checkout cart",
+        400,
+        "BAD_REQUEST"
+      )
+    }
+
+    await sdk.store.cart.createLineItem(
+      checkoutCart.id,
+      {
+        variant_id: variantId,
+        quantity: item.quantity,
+      },
+      {},
+      headers
+    )
+  }
+
+  await sdk.store.cart.update(
+    checkoutCart.id,
+    {
+      metadata: {
+        source_cart_id: sourceCart.id,
+        source_line_item_ids: selectedItems.map((item) => item.id),
+      },
+    },
+    {},
+    headers
+  )
+
+  const cartCacheTag = await getCacheTag("carts")
+  revalidateTag(cartCacheTag)
+
+  const fulfillmentCacheTag = await getCacheTag("fulfillment")
+  revalidateTag(fulfillmentCacheTag)
+
+  return { cartId: checkoutCart.id }
+}
+
 export async function updateLineItem({
   lineId,
   quantity,
