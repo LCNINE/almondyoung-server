@@ -15,6 +15,7 @@ export default defineMiddlewares({
     },
     {
       matcher: "/store/customers/me",
+      methods: ["GET"],
       middlewares: [
         (req, res, next) => {
           (req.allowed ??= []).push("groups")
