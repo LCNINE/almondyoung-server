@@ -2,6 +2,10 @@
 
 import { useEffect } from "react"
 import { useParams, useSearchParams, useRouter } from "next/navigation"
+import {
+  getCheckoutCartByIntent,
+  removeCheckoutCartByIntent,
+} from "@/lib/utils/checkout-intent-map"
 import { processPaymentCallback } from "./actions"
 
 export default function CallbackPage() {
@@ -16,9 +20,17 @@ export default function CallbackPage() {
     const status = searchParams.get("status")
     const mode = searchParams.get("mode")
     const planId = searchParams.get("planId")
-    const cartId = searchParams.get("cartId")
+
+    // 하위 호환: 기존 흐름의 cartId 쿼리가 있으면 우선 사용
+    const cartIdFromQuery = searchParams.get("cartId")
+    const cartId =
+      cartIdFromQuery ||
+      (paymentIntentId ? getCheckoutCartByIntent(paymentIntentId) : null)
 
     if (status !== "succeeded") {
+      if (paymentIntentId) {
+        removeCheckoutCartByIntent(paymentIntentId)
+      }
       router.replace(
         mode === "membership"
           ? `/${countryCode}/mypage/membership/subscribe/fail?code=PAYMENT_FAILED&message=${encodeURIComponent("결제에 실패했습니다.")}`
@@ -38,6 +50,7 @@ export default function CallbackPage() {
 
     processPaymentCallback(countryCode, paymentIntentId, mode, planId, cartId).then(
       (result) => {
+        removeCheckoutCartByIntent(paymentIntentId)
         router.replace(result.redirectUrl)
       }
     )
