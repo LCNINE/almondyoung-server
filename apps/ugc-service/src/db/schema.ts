@@ -105,6 +105,7 @@ export const questions = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     userId: uuid('user_id').notNull(),
+    nickname: varchar('nickname', { length: 30 }).notNull(),
     productId: uuid('product_id').notNull(),
     title: varchar('title', { length: 200 }).notNull(),
     content: text('content').notNull(),
