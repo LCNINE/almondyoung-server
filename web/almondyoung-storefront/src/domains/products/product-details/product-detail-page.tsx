@@ -523,7 +523,10 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
     setIsBottomSheetOpen(false)
   }
 
-  const handleAddToCart = async (showModal = false) => {
+  const handleAddToCart = async (
+    showModal = false,
+    forceNewCart = false
+  ) => {
     // 단일 옵션 상품 품절 체크
     if (isSingleOption && isSoldOut) {
       toast.error("품절된 상품입니다.")
@@ -532,7 +535,7 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
 
     if (isSingleOption) {
       const variantId = product.defaultVariantId || product.id
-      const result = await addToCart({ variantId, quantity })
+      const result = await addToCart({ variantId, quantity, forceNewCart })
       if (result?.success) {
         setShowSuccessMessage(true)
         if (showModal) {
@@ -548,16 +551,36 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
       return false
     }
 
-    const results = await Promise.all(
-      selectedCartOptions.map((option) =>
-        option.variantId
-          ? addToCart({
+    const results = forceNewCart
+      ? await (async () => {
+          const sequentialResults: Array<{ success?: boolean }> = []
+
+          for (const [index, option] of selectedCartOptions.entries()) {
+            if (!option.variantId) {
+              sequentialResults.push({ success: false })
+              continue
+            }
+
+            const result = await addToCart({
               variantId: option.variantId,
               quantity: option.quantity,
+              forceNewCart: index === 0,
             })
-          : Promise.resolve({ success: false })
-      )
-    )
+            sequentialResults.push(result ?? { success: false })
+          }
+
+          return sequentialResults
+        })()
+      : await Promise.all(
+          selectedCartOptions.map((option) =>
+            option.variantId
+              ? addToCart({
+                  variantId: option.variantId,
+                  quantity: option.quantity,
+                })
+              : Promise.resolve({ success: false })
+          )
+        )
     const hasSuccess = results.some((result) => result?.success)
     if (hasSuccess) {
       setShowSuccessMessage(true)
@@ -584,7 +607,7 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
       return
     }
 
-    const didAdd = await handleAddToCart()
+    const didAdd = await handleAddToCart(false, true)
 
     if (didAdd) {
       setShowSuccessMessage(true)

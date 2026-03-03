@@ -62,7 +62,13 @@ export async function retrieveCart(
     })
 }
 
-export async function getOrSetCart(countryCode: string) {
+export async function getOrSetCart(
+  countryCode: string,
+  options: {
+    forceCreate?: boolean
+  } = {}
+) {
+  const { forceCreate = false } = options
   const region = await getRegion(countryCode)
 
   if (!region) {
@@ -70,7 +76,9 @@ export async function getOrSetCart(countryCode: string) {
   }
 
   // customer_id도 함께 조회해서 연결 여부 확인
-  let cart = await retrieveCart(undefined, "id,region_id,customer_id")
+  let cart = forceCreate
+    ? null
+    : await retrieveCart(undefined, "id,region_id,customer_id")
 
   const headers = {
     ...(await getAuthHeaders()),
@@ -156,10 +164,12 @@ export async function addToCart({
   variantId,
   quantity,
   countryCode,
+  forceNewCart = false,
 }: {
   variantId: string
   quantity: number
   countryCode: string
+  forceNewCart?: boolean
 }): Promise<void> {
   if (!variantId) {
     throw new HttpApiError(
@@ -169,7 +179,9 @@ export async function addToCart({
     )
   }
 
-  const cart = await getOrSetCart(countryCode)
+  const cart = await getOrSetCart(countryCode, {
+    forceCreate: forceNewCart,
+  })
 
   if (!cart) {
     throw new HttpApiError(

@@ -9,6 +9,7 @@ interface AddToCartParams {
   productName?: string
   productImage?: string
   quantity?: number
+  forceNewCart?: boolean
 }
 
 export function useAddToCart() {
@@ -17,6 +18,7 @@ export function useAddToCart() {
   const addToCartAction = async ({
     variantId,
     quantity = 1,
+    forceNewCart = false,
   }: AddToCartParams) => {
     try {
       setIsLoading(true)
@@ -25,6 +27,7 @@ export function useAddToCart() {
         variantId: variantId,
         countryCode: "kr",
         quantity,
+        forceNewCart,
       })
 
       return { success: true, data: result }
