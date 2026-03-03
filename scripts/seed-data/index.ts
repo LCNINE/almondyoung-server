@@ -27,6 +27,8 @@ interface EnvConfig {
   FILE_SERVICE_DATABASE_URL: string;
   NOTIFICATION_DATABASE_URL: string;
   FILE_TEMPLATE_DB_URL?: string;
+  AWS_S3_PUBLIC_BUCKET?: string;
+  AWS_S3_PRIVATE_BUCKET?: string;
   ADMIN_INITIAL_PASSWORD: string;
   NOTIFICATION_FCM_PRIVATE_KEY: string;
   NOTIFICATION_TWILIO_AUTH_TOKEN: string;
@@ -46,6 +48,8 @@ function loadEnvConfig(): EnvConfig {
     FILE_SERVICE_DATABASE_URL: process.env.FILE_SERVICE_DATABASE_URL || '',
     NOTIFICATION_DATABASE_URL: process.env.NOTIFICATION_DATABASE_URL || '',
     FILE_TEMPLATE_DB_URL: process.env.FILE_TEMPLATE_DB_URL,
+    AWS_S3_PUBLIC_BUCKET: process.env.AWS_S3_PUBLIC_BUCKET,
+    AWS_S3_PRIVATE_BUCKET: process.env.AWS_S3_PRIVATE_BUCKET,
     ADMIN_INITIAL_PASSWORD:
       process.env.ADMIN_INITIAL_PASSWORD || 'Admin@1234!',
     NOTIFICATION_FCM_PRIVATE_KEY:
@@ -245,6 +249,10 @@ async function main() {
         seedFileService(
           config.FILE_SERVICE_DATABASE_URL,
           config.FILE_TEMPLATE_DB_URL,
+          {
+            publicBucket: config.AWS_S3_PUBLIC_BUCKET,
+            privateBucket: config.AWS_S3_PRIVATE_BUCKET,
+          },
         ),
       config.SEED_CONTINUE_ON_ERROR,
     ),
