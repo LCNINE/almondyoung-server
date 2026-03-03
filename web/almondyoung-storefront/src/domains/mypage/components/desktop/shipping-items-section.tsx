@@ -3,6 +3,7 @@
 import OrderCardContent from "@components/orders/order-card/order-card-content"
 import { useEffect, useState } from "react"
 import { getOrders } from "@lib/api/medusa/orders"
+import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
 import { Package } from "lucide-react"
 import Link from "next/link"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -78,7 +79,7 @@ export function ShippingItemsSection() {
               deliveryInfo,
               shippingNote: "",
               productName,
-              productImage,
+              productImage: getThumbnailUrl(productImage),
               price,
               quantity: order.items?.length || 0,
               options,
