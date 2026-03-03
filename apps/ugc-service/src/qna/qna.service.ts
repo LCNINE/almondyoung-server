@@ -20,7 +20,7 @@ type DbTransaction = Parameters<Parameters<DbService<UgcServiceSchema>['db']['tr
 
 @Injectable()
 export class QnaService {
-  constructor(@InjectDb() private readonly db: DbService<UgcServiceSchema>) {}
+  constructor(@InjectDb() private readonly db: DbService<UgcServiceSchema>) { }
 
   private get client() {
     return this.db.db;
@@ -161,15 +161,29 @@ export class QnaService {
         throw new BadRequestException('No fields to update');
       }
 
+      const [existing] = await tx
+        .select({ id: questions.id })
+        .from(questions)
+        .where(and(eq(questions.id, id), eq(questions.userId, userId), ne(questions.status, 'deleted')));
+
+      if (!existing) {
+        throw new NotFoundException('Question not found');
+      }
+
+      const [existingAnswer] = await tx
+        .select({ id: answers.id })
+        .from(answers)
+        .where(eq(answers.questionId, id));
+
+      if (existingAnswer) {
+        throw new ConflictException('답변이 달린 질문은 수정할 수 없습니다');
+      }
+
       const [question] = await tx
         .update(questions)
         .set(updateData)
-        .where(and(eq(questions.id, id), eq(questions.userId, userId), ne(questions.status, 'deleted')))
+        .where(eq(questions.id, id))
         .returning();
-
-      if (!question) {
-        throw new NotFoundException('Question not found');
-      }
 
       if (hasMediaUpdate) {
         await tx.delete(questionMedia).where(eq(questionMedia.questionId, id));
@@ -201,6 +215,9 @@ export class QnaService {
       if (!question) {
         throw new NotFoundException('Question not found');
       }
+
+      // 질문에 달린 답변도 함께 삭제
+      await tx.delete(answers).where(eq(answers.questionId, id));
     }, tx);
   }
 
