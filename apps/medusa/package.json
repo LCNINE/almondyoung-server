@@ -16,6 +16,7 @@
     "build": "medusa build",
     "seed": "medusa exec ./src/scripts/seed.ts",
     "seed:shipping": "medusa exec ./src/scripts/seed-shipping.ts",
+    "disable-inventory": "medusa exec ./src/scripts/disable-inventory-management.ts",
     "start": "medusa exec ./src/scripts/seed.ts && medusa exec ./src/scripts/seed-shipping.ts && medusa start",
     "dev": "medusa develop",
     "test:integration:http": "TEST_TYPE=integration:http NODE_OPTIONS=--experimental-vm-modules jest --silent=false --runInBand --forceExit",
