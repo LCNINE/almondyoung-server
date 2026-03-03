@@ -3,6 +3,12 @@ import { IsUUID, IsString, MinLength, MaxLength, IsBoolean, IsOptional, IsArray,
 import { MAX_QUESTION_MEDIA_COUNT } from '../constants';
 
 export class CreateQuestionDto {
+  @ApiProperty({ description: '작성자 닉네임', example: '홍길동', maxLength: 30 })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(30)
+  nickname: string;
+
   @ApiProperty({
     description: '상품 ID (UUID)',
     example: 'f7b98c38-2d6f-4b37-8b6b-2f68b1c15b0a',

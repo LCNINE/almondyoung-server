@@ -120,6 +120,7 @@ export class QnaService {
         .insert(questions)
         .values({
           userId,
+          nickname: dto.nickname,
           productId: dto.productId,
           title: dto.title,
           content: dto.content,

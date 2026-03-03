@@ -8,6 +8,9 @@ export class QuestionResponseDto {
   @ApiProperty({ description: '작성자 사용자 ID' })
   userId: string;
 
+  @ApiProperty({ description: '작성자 닉네임', example: '홍길동' })
+  nickname: string;
+
   @ApiProperty({ description: '상품 ID' })
   productId: string;
 
