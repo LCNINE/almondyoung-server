@@ -16,21 +16,30 @@ import { notFound } from "next/navigation"
 
 export default async function CheckoutPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ countryCode: string }>
+  searchParams: Promise<{ cartId?: string }>
 }) {
   const { countryCode } = await params
+  const { cartId } = await searchParams
 
   return (
     <ProtectedRoute>
-      <CheckoutManager countryCode={countryCode} />
+      <CheckoutManager countryCode={countryCode} cartId={cartId} />
     </ProtectedRoute>
   )
 }
 
-async function CheckoutManager({ countryCode }: { countryCode: string }) {
+async function CheckoutManager({
+  countryCode,
+  cartId,
+}: {
+  countryCode: string
+  cartId?: string
+}) {
   const currentUser = await fetchMe()
-  const cart = (await retrieveCart()) as CartResponseDto["cart"]
+  const cart = (await retrieveCart(cartId)) as CartResponseDto["cart"]
 
   if (!cart) {
     return notFound()
@@ -79,6 +88,7 @@ async function CheckoutManager({ countryCode }: { countryCode: string }) {
     <CheckoutTemplate
       user={currentUser}
       cart={cart}
+      checkoutCartId={cart.id}
       shipping={shipping}
       promotions={promotionsResponse.promotions}
       pointBalance={pointBalance}

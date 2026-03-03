@@ -16,6 +16,7 @@ export default function CallbackPage() {
     const status = searchParams.get("status")
     const mode = searchParams.get("mode")
     const planId = searchParams.get("planId")
+    const cartId = searchParams.get("cartId")
 
     if (status !== "succeeded") {
       router.replace(
@@ -35,7 +36,7 @@ export default function CallbackPage() {
       return
     }
 
-    processPaymentCallback(countryCode, paymentIntentId, mode, planId).then(
+    processPaymentCallback(countryCode, paymentIntentId, mode, planId, cartId).then(
       (result) => {
         router.replace(result.redirectUrl)
       }

@@ -6,6 +6,7 @@ export interface ShippingMemo {
 }
 
 export interface ShippingSectionProps {
+  cartId: string
   shippingAddress: StoreCartAddress | null
   addressName?: string | null
   shippingMemo: ShippingMemo

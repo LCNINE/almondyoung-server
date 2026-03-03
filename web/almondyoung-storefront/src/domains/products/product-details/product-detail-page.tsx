@@ -181,7 +181,8 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
 
   const [isPending, startTransition] = useTransition()
 
-  const { addToCart, isLoading: isAddToCartLoading } = useAddToCart()
+  const { addToCart, createBuyNowCart, isLoading: isAddToCartLoading } =
+    useAddToCart()
 
   useRecentViews(null, {
     userId: user?.id,
@@ -523,10 +524,7 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
     setIsBottomSheetOpen(false)
   }
 
-  const handleAddToCart = async (
-    showModal = false,
-    forceNewCart = false
-  ) => {
+  const handleAddToCart = async (showModal = false) => {
     // 단일 옵션 상품 품절 체크
     if (isSingleOption && isSoldOut) {
       toast.error("품절된 상품입니다.")
@@ -535,7 +533,7 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
 
     if (isSingleOption) {
       const variantId = product.defaultVariantId || product.id
-      const result = await addToCart({ variantId, quantity, forceNewCart })
+      const result = await addToCart({ variantId, quantity })
       if (result?.success) {
         setShowSuccessMessage(true)
         if (showModal) {
@@ -551,36 +549,16 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
       return false
     }
 
-    const results = forceNewCart
-      ? await (async () => {
-          const sequentialResults: Array<{ success?: boolean }> = []
-
-          for (const [index, option] of selectedCartOptions.entries()) {
-            if (!option.variantId) {
-              sequentialResults.push({ success: false })
-              continue
-            }
-
-            const result = await addToCart({
+    const results = await Promise.all(
+      selectedCartOptions.map((option) =>
+        option.variantId
+          ? addToCart({
               variantId: option.variantId,
               quantity: option.quantity,
-              forceNewCart: index === 0,
             })
-            sequentialResults.push(result ?? { success: false })
-          }
-
-          return sequentialResults
-        })()
-      : await Promise.all(
-          selectedCartOptions.map((option) =>
-            option.variantId
-              ? addToCart({
-                  variantId: option.variantId,
-                  quantity: option.quantity,
-                })
-              : Promise.resolve({ success: false })
-          )
-        )
+          : Promise.resolve({ success: false })
+      )
+    )
     const hasSuccess = results.some((result) => result?.success)
     if (hasSuccess) {
       setShowSuccessMessage(true)
@@ -607,11 +585,28 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
       return
     }
 
-    const didAdd = await handleAddToCart(false, true)
+    const buyNowItems = isSingleOption
+      ? [
+          {
+            variantId: product.defaultVariantId || product.id,
+            quantity,
+          },
+        ]
+      : selectedCartOptions
+          .filter(
+            (option): option is typeof option & { variantId: string } =>
+              !!option.variantId
+          )
+          .map((option) => ({
+            variantId: option.variantId,
+            quantity: option.quantity,
+          }))
 
-    if (didAdd) {
-      setShowSuccessMessage(true)
-      router.push(`/${countryCode}/checkout`)
+    const result = await createBuyNowCart({ items: buyNowItems })
+    const checkoutCartId = result.data?.cartId
+
+    if (result.success && checkoutCartId) {
+      router.push(`/${countryCode}/checkout?cartId=${checkoutCartId}`)
     }
   }
 

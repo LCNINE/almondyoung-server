@@ -15,6 +15,7 @@ import type { EditAddressState, ShippingSectionProps } from "./types"
 import { formatAddress, isValidAddress } from "./utils"
 
 export const ShippingSection = ({
+  cartId,
   shippingAddress,
   addressName,
   shippingMemo,
@@ -28,7 +29,7 @@ export const ShippingSection = ({
 
   // 배송지 자동 채움
   // todo: 메두사 백엔드에서 하도록 변경해야됌 그리고, 배송메모도 마찬가지임 (메두사 카트에 담을때 훅(스텝)걸어서)
-  const { isAutoFilling } = useAutoFillShipping({ shippingAddress })
+  const { isAutoFilling } = useAutoFillShipping({ cartId, shippingAddress })
 
   // 배송지 정보 파싱
   const isValid = useMemo(
@@ -145,6 +146,7 @@ export const ShippingSection = ({
       </div>
 
       <ShippingAddressSelectorModal
+        cartId={cartId}
         open={isSelectorOpen}
         onOpenChange={setIsSelectorOpen}
         onAddNewAddress={handleAddNewAddress}

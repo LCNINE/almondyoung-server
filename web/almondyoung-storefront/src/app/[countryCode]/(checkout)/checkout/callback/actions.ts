@@ -69,7 +69,8 @@ export async function processPaymentCallback(
   countryCode: string,
   intentId: string,
   mode?: string | null,
-  planId?: string | null
+  planId?: string | null,
+  cartId?: string | null
 ): Promise<ProcessPaymentResult> {
   try {
     if (mode === "membership" && planId) {
@@ -95,18 +96,21 @@ export async function processPaymentCallback(
       }
     }
 
-    const cartId = await getCartId()
-    if (cartId) {
+    const targetCartId = cartId || (await getCartId())
+    if (targetCartId) {
       const headers = { ...(await getAuthHeaders()) }
 
       // cart.complete() 직전 shipping method 보장
-      await ensureShippingMethod(cartId, headers)
+      await ensureShippingMethod(targetCartId, headers)
 
-      const cartRes = await sdk.store.cart.complete(cartId, {}, headers)
+      const cartRes = await sdk.store.cart.complete(targetCartId, {}, headers)
 
       if (cartRes?.type === "order") {
         revalidateTag(await getCacheTag("orders"))
-        await removeCartId()
+        const currentCartId = await getCartId()
+        if (!cartId || currentCartId === targetCartId) {
+          await removeCartId()
+        }
         return {
           success: true,
           redirectUrl: `/${countryCode}/checkout/success/${intentId}?orderId=${cartRes.order.id}`,

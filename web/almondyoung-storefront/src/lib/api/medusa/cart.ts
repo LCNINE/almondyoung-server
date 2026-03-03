@@ -62,13 +62,7 @@ export async function retrieveCart(
     })
 }
 
-export async function getOrSetCart(
-  countryCode: string,
-  options: {
-    forceCreate?: boolean
-  } = {}
-) {
-  const { forceCreate = false } = options
+export async function getOrSetCart(countryCode: string) {
   const region = await getRegion(countryCode)
 
   if (!region) {
@@ -76,9 +70,7 @@ export async function getOrSetCart(
   }
 
   // customer_id도 함께 조회해서 연결 여부 확인
-  let cart = forceCreate
-    ? null
-    : await retrieveCart(undefined, "id,region_id,customer_id")
+  let cart = await retrieveCart(undefined, "id,region_id,customer_id")
 
   const headers = {
     ...(await getAuthHeaders()),
@@ -135,10 +127,13 @@ export async function getOrSetCart(
   return cart
 }
 
-export async function updateCart(data: HttpTypes.StoreUpdateCart) {
-  const cartId = await getCartId()
+export async function updateCart(
+  data: HttpTypes.StoreUpdateCart,
+  cartId?: string
+) {
+  const targetCartId = cartId || (await getCartId())
 
-  if (!cartId) {
+  if (!targetCartId) {
     throw new Error("No existing cart found, please create one before updating")
   }
 
@@ -147,7 +142,7 @@ export async function updateCart(data: HttpTypes.StoreUpdateCart) {
   }
 
   return sdk.store.cart
-    .update(cartId, data, {}, headers)
+    .update(targetCartId, data, {}, headers)
     .then(async ({ cart }: { cart: HttpTypes.StoreCart }) => {
       const cartCacheTag = await getCacheTag("carts")
       revalidateTag(cartCacheTag)
@@ -164,13 +159,11 @@ export async function addToCart({
   variantId,
   quantity,
   countryCode,
-  forceNewCart = false,
 }: {
   variantId: string
   quantity: number
   countryCode: string
-  forceNewCart?: boolean
-}): Promise<void> {
+}): Promise<{ cartId: string }> {
   if (!variantId) {
     throw new HttpApiError(
       "Missing variant ID when adding to cart",
@@ -179,9 +172,7 @@ export async function addToCart({
     )
   }
 
-  const cart = await getOrSetCart(countryCode, {
-    forceCreate: forceNewCart,
-  })
+  const cart = await getOrSetCart(countryCode)
 
   if (!cart) {
     throw new HttpApiError(
@@ -195,7 +186,7 @@ export async function addToCart({
     ...(await getAuthHeaders()),
   }
 
-  await sdk.store.cart
+  return await sdk.store.cart
     .createLineItem(
       cart.id,
       {
@@ -211,8 +202,77 @@ export async function addToCart({
 
       const fulfillmentCacheTag = await getCacheTag("fulfillment")
       revalidateTag(fulfillmentCacheTag)
+
+      return { cartId: cart.id }
     })
     .catch(medusaError)
+}
+
+export async function createBuyNowCart(params: {
+  countryCode: string
+  items: Array<{
+    variantId: string
+    quantity: number
+  }>
+}): Promise<{ cartId: string }> {
+  const { countryCode, items } = params
+
+  if (!items.length) {
+    throw new HttpApiError("No line items for buy now", 400, "BAD_REQUEST")
+  }
+
+  const region = await getRegion(countryCode)
+
+  if (!region) {
+    throw new Error(`Region not found for country code: ${countryCode}`)
+  }
+
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  const cartResp = await sdk.store.cart.create(
+    { region_id: region.id },
+    {},
+    headers
+  )
+  const cart = cartResp.cart
+
+  if (headers.authorization) {
+    try {
+      await sdk.store.cart.transferCart(cart.id, {}, headers)
+    } catch (error) {
+      console.error("Buy-now cart transfer failed:", error)
+    }
+  }
+
+  for (const item of items) {
+    if (!item.variantId) {
+      throw new HttpApiError(
+        "Missing variant ID when creating buy-now cart",
+        400,
+        "BAD_REQUEST"
+      )
+    }
+
+    await sdk.store.cart.createLineItem(
+      cart.id,
+      {
+        variant_id: item.variantId,
+        quantity: item.quantity,
+      },
+      {},
+      headers
+    )
+  }
+
+  const cartCacheTag = await getCacheTag("carts")
+  revalidateTag(cartCacheTag)
+
+  const fulfillmentCacheTag = await getCacheTag("fulfillment")
+  revalidateTag(fulfillmentCacheTag)
+
+  return { cartId: cart.id }
 }
 
 export async function updateLineItem({
