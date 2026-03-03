@@ -4,6 +4,7 @@ import { ChevronRight } from "lucide-react"
 import Image from "next/image"
 import React, { useEffect, useState } from "react"
 import { getOrders } from "@lib/api/medusa/orders"
+import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
 import Link from "next/link"
 import { Skeleton } from "@/components/ui/skeleton"
 
@@ -15,7 +16,7 @@ interface OrderItem {
   orderNumber: string
   status: OrderStatus
   statusLabel: string
-  thumbnail: string
+  thumbnailUrl: string
 }
 
 // --- 3. 개별 아이템 컴포넌트 ---
@@ -29,9 +30,10 @@ function ShippingItem({ item }: { item: OrderItem }) {
         {/* 썸네일 */}
         <div className="relative h-[45px] w-11 shrink-0 overflow-hidden rounded-[5px] border border-[#d9d9d9]/50">
           <Image
-            src={item.thumbnail}
+            src={item.thumbnailUrl}
             alt={`주문번호 ${item.orderNumber}`}
             fill
+            sizes="44px"
             className="object-cover"
           />
         </div>
@@ -97,6 +99,7 @@ export default function ShippingStatusCard() {
               order.items?.[0]?.thumbnail ||
               order.items?.[0]?.variant?.product?.thumbnail ||
               "https://placehold.co/44x45"
+            const thumbnailUrl = getThumbnailUrl(thumbnail)
 
             return {
               id: order.id,
@@ -104,7 +107,7 @@ export default function ShippingStatusCard() {
                 order.display_id?.toString() || order.id.slice(0, 12),
               status,
               statusLabel,
-              thumbnail,
+              thumbnailUrl,
             }
           })
 
