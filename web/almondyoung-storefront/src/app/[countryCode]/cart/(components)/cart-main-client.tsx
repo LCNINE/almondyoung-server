@@ -12,10 +12,10 @@ import { RecommendedProducts } from "./recommended-products"
 import {
   retrieveCart,
   getOrSetCart,
+  createCheckoutCartFromLineItems,
   listCartShippingMethods,
   updateLineItem,
   deleteLineItem,
-  deleteLineItems,
 } from "@lib/api/medusa/cart"
 import { getProductDetail } from "@lib/api/medusa/products"
 import { transferCart } from "@lib/api/medusa/customer"
@@ -449,15 +449,16 @@ export function CartMainClient() {
     }
 
     try {
-      const uncheckedIds = cartItems
-        .filter((item) => !checkedItems.includes(item.id))
-        .map((item) => item.id)
+      const result = await createCheckoutCartFromLineItems({
+        countryCode,
+        lineItemIds: selectedItems.map((item) => item.id),
+      })
 
-      if (uncheckedIds.length > 0) {
-        await deleteLineItems(uncheckedIds)
+      if (!result?.cartId) {
+        throw new Error("Checkout cart was not created")
       }
 
-      router.push(`/${countryCode}/checkout`)
+      router.push(`/${countryCode}/checkout?cartId=${result.cartId}`)
       return true
     } catch (error) {
       // console.error("체크아웃 처리 실패:", error)
