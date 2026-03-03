@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { and, asc, count, desc, eq, inArray, ne, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, lt, ne, type SQL } from 'drizzle-orm';
 import { answers, questionMedia, questions, type UgcServiceSchema } from '../db/schema';
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { UpdateQuestionDto } from './dto/update-question.dto';
@@ -20,7 +20,7 @@ type DbTransaction = Parameters<Parameters<DbService<UgcServiceSchema>['db']['tr
 
 @Injectable()
 export class QnaService {
-  constructor(@InjectDb() private readonly db: DbService<UgcServiceSchema>) { }
+  constructor(@InjectDb() private readonly db: DbService<UgcServiceSchema>) {}
 
   private get client() {
     return this.db.db;
@@ -171,20 +171,13 @@ export class QnaService {
         throw new NotFoundException('Question not found');
       }
 
-      const [existingAnswer] = await tx
-        .select({ id: answers.id })
-        .from(answers)
-        .where(eq(answers.questionId, id));
+      const [existingAnswer] = await tx.select({ id: answers.id }).from(answers).where(eq(answers.questionId, id));
 
       if (existingAnswer) {
         throw new ConflictException('답변이 달린 질문은 수정할 수 없습니다');
       }
 
-      const [question] = await tx
-        .update(questions)
-        .set(updateData)
-        .where(eq(questions.id, id))
-        .returning();
+      const [question] = await tx.update(questions).set(updateData).where(eq(questions.id, id)).returning();
 
       if (hasMediaUpdate) {
         await tx.delete(questionMedia).where(eq(questionMedia.questionId, id));
@@ -297,6 +290,50 @@ export class QnaService {
         total,
         page,
         limit,
+      };
+    }, tx);
+  }
+
+  // ─── 삭제된 질문 영구 제거 ───
+
+  async purgeDeletedQuestions(retentionDays: number): Promise<number> {
+    const threshold = new Date();
+    threshold.setDate(threshold.getDate() - retentionDays);
+
+    const deleted = await this.client
+      .delete(questions)
+      .where(and(eq(questions.status, 'deleted'), lt(questions.updatedAt, threshold)))
+      .returning({ id: questions.id });
+
+    return deleted.length;
+  }
+
+  // ─── 요약 ───
+
+  async getQnaSummary(productId: string, tx?: DbTransaction) {
+    return this.inTx(async (tx) => {
+      const rows = await tx
+        .select({ status: questions.status, count: count() })
+        .from(questions)
+        .where(and(eq(questions.productId, productId), ne(questions.status, 'deleted')))
+        .groupBy(questions.status);
+
+      let answeredCount = 0;
+      let unansweredCount = 0;
+
+      for (const row of rows) {
+        if (row.status === 'answered') {
+          answeredCount = row.count;
+        } else {
+          unansweredCount += row.count;
+        }
+      }
+
+      return {
+        productId,
+        totalCount: answeredCount + unansweredCount,
+        answeredCount,
+        unansweredCount,
       };
     }, tx);
   }

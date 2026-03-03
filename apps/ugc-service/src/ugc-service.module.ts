@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { DbModule } from '@app/db';
 import { AuthorizationModule, authorizationSchema, JwtAuthGuard, ScopeGuard } from '@app/authorization';
 import { APP_GUARD } from '@nestjs/core';
@@ -27,6 +28,7 @@ const combinedSchema = { ...ugcServiceSchema, ...authorizationSchema };
       },
       schema: combinedSchema,
     }),
+    ScheduleModule.forRoot(),
     ReviewsModule,
     QnaModule,
   ],

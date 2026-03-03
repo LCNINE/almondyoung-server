@@ -10,6 +10,7 @@ import { QuestionListQueryDto } from './dto/question-list-query.dto';
 import { CreateAnswerDto } from './dto/create-answer.dto';
 import { AnswerResponseDto } from './dto/answer-response.dto';
 import { QuestionResponseDto } from './dto/question-response.dto';
+import { QnaSummaryQueryDto, QnaSummaryResponseDto } from './dto/qna-summary.dto';
 import { QnaMapper } from './mappers';
 
 @ApiTags('Q&A')
@@ -49,6 +50,18 @@ export class QnaController {
       ...result,
       data: result.data.map((q) => QnaMapper.toQuestionResponse(q, { hideSecret: q.hideSecret })),
     };
+  }
+
+  @Get('questions/summary')
+  @Public()
+  @ApiOperation({ summary: '상품별 Q&A 요약 조회' })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Q&A 요약 조회 성공',
+    type: QnaSummaryResponseDto,
+  })
+  async qnaSummary(@Query() query: QnaSummaryQueryDto): Promise<QnaSummaryResponseDto> {
+    return this.qnaService.getQnaSummary(query.productId);
   }
 
   @Get('questions/:id')
