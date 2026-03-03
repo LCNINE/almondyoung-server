@@ -11,6 +11,7 @@ type FileContextSelect = InferSelectModel<typeof fileSchema.fileContexts>;
 export async function seedFileService(
   databaseUrl: string,
   templateDbUrl?: string,
+  s3Config?: { publicBucket?: string; privateBucket?: string },
 ): Promise<void> {
   logger.info('Starting File Service seeding');
 
@@ -29,8 +30,10 @@ export async function seedFileService(
   const templateDb = drizzle(templateClient);
 
   try {
+    const totalSteps = s3Config?.publicBucket || s3Config?.privateBucket ? 3 : 2;
+
     // Step 1: Fetch file_contexts from template database
-    logger.step(1, 2, 'Fetching file_contexts from template database');
+    logger.step(1, totalSteps, 'Fetching file_contexts from template database');
 
     const fileContexts = await templateDb.execute<FileContextSelect>(
       sql`SELECT * FROM file_contexts`,
@@ -45,30 +48,62 @@ export async function seedFileService(
     }
 
     // Step 2: Insert into target database
-    logger.step(2, 2, 'Inserting file_contexts into target database');
+    logger.step(2, totalSteps, 'Inserting file_contexts into target database');
 
     for (const context of fileContexts) {
+      const row = context as Record<string, unknown>;
       await targetDb.execute(sql`
         INSERT INTO file_contexts (
           id, name, description, allow_public, allow_private,
           allowed_mime_types, max_file_size, path_prefix, is_active
         )
         VALUES (
-          ${context.id},
-          ${context.name},
-          ${context.description ?? null},
-          ${context.allowPublic},
-          ${context.allowPrivate},
-          ${JSON.stringify(context.allowedMimeTypes)},
-          ${context.maxFileSize},
-          ${context.pathPrefix},
-          ${context.isActive}
+          ${row.id},
+          ${row.name},
+          ${row.description ?? null},
+          ${row.allow_public},
+          ${row.allow_private},
+          ${JSON.stringify(row.allowed_mime_types)},
+          ${row.max_file_size},
+          ${row.path_prefix},
+          ${row.is_active}
         )
         ON CONFLICT (id) DO NOTHING
       `);
     }
 
     logger.success(`Inserted ${fileContexts.length} file contexts`);
+
+    // Step 3: Fix uploads URL bucket names
+    const publicBucket = s3Config?.publicBucket;
+    const privateBucket = s3Config?.privateBucket;
+
+    if (publicBucket || privateBucket) {
+      logger.step(3, totalSteps, 'Fixing uploads URL bucket names');
+
+      if (publicBucket) {
+        const publicResult = await targetDb.execute(sql`
+          UPDATE uploads
+          SET url = regexp_replace(url, 'https://[^.]+\.s3\.', ${'https://' + publicBucket + '.s3.'})
+          WHERE is_public = true
+          AND url LIKE 'https://%.s3.%amazonaws.com/%'
+          AND url NOT LIKE ${'https://' + publicBucket + '.s3.%'}
+        `);
+        logger.info(`Fixed ${publicResult.count} public upload URLs`);
+      }
+
+      if (privateBucket) {
+        const privateResult = await targetDb.execute(sql`
+          UPDATE uploads
+          SET url = regexp_replace(url, 'https://[^.]+\.s3\.', ${'https://' + privateBucket + '.s3.'})
+          WHERE is_public = false
+          AND url LIKE 'https://%.s3.%amazonaws.com/%'
+          AND url NOT LIKE ${'https://' + privateBucket + '.s3.%'}
+        `);
+        logger.info(`Fixed ${privateResult.count} private upload URLs`);
+      }
+    }
+
     logger.success('File Service seeding completed successfully');
   } catch (error) {
     logger.error('File Service seeding failed', error);
