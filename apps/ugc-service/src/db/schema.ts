@@ -1,5 +1,6 @@
 import {
   integer,
+  pgEnum,
   pgTable,
   uuid,
   text,
@@ -100,6 +101,8 @@ export const reviewComments = pgTable(
   (table) => [uniqueIndex('review_comments_review_id_unique').on(table.reviewId)],
 );
 
+export const questionStatusEnum = pgEnum('question_status', ['active', 'answered', 'deleted']);
+
 export const questions = pgTable(
   'questions',
   {
@@ -110,7 +113,7 @@ export const questions = pgTable(
     title: varchar('title', { length: 200 }).notNull(),
     content: text('content').notNull(),
     isSecret: boolean('is_secret').notNull().default(false),
-    status: varchar('status', { length: 20 }).notNull().default('active'),
+    status: questionStatusEnum('status').notNull().default('active'),
     ...timestampColumns,
   },
   (table) => [
