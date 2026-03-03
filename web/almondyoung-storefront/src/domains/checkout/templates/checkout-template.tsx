@@ -15,6 +15,7 @@ import type { PointBalanceDto } from "@/lib/types/dto/wallet"
 import type { CartTotals, ShippingInfo } from "@/lib/types/ui/cart"
 import type { Promotion } from "@/lib/types/ui/promotion"
 import { TaxInvoiceType } from "@/lib/types/ui/wallet"
+import { setCheckoutCartByIntent } from "@/lib/utils/checkout-intent-map"
 import {
   calculateMembershipDiscount,
   getCartTotals,
@@ -140,7 +141,7 @@ export default function CheckoutTemplate({
         },
       }, checkoutCartId)
 
-      const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback?cartId=${checkoutCartId}`
+      const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback`
 
       const result = await initiatePaymentSession(cart, {
         provider_id: "pp_almond-payment_almond-payment",
@@ -153,6 +154,7 @@ export default function CheckoutTemplate({
       )?.intentId as string | undefined
 
       if (!intentId) throw new Error("결제 세션 초기화에 실패했습니다.")
+      setCheckoutCartByIntent(intentId, checkoutCartId)
 
       const walletWebUrl =
         process.env.NEXT_PUBLIC_WALLET_WEB_URL || "http://localhost:3200"
