@@ -12,6 +12,7 @@ export class QnaMapper {
     return {
       id: entity.id,
       userId: entity.userId,
+      nickname: isHidden ? '' : entity.nickname,
       productId: entity.productId,
       title: isHidden ? '비밀글입니다.' : entity.title,
       content: isHidden ? '' : entity.content,
