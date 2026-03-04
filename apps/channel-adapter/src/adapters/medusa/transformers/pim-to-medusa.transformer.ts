@@ -50,21 +50,27 @@ export function transformPimToMedusa(
                 url: img.url,
             })) || [];
 
-    // 3. 옵션 스키마/제목 목록 산출
+    // 3. 활성 variants만 먼저 필터링 (deleted/가격없는 variant 제외)
+    const SKIP_VARIANTS_WITHOUT_PRICE = process.env.SKIP_VARIANTS_WITHOUT_PRICE === 'true';
+    const activeVariants = (snapshot.variants || [])
+        .filter((v) => v.status !== 'deleted')
+        .filter((v) => !SKIP_VARIANTS_WITHOUT_PRICE || v.basePrice !== undefined && v.basePrice !== null);
+
+    // 4. 옵션 스키마/제목 목록 산출 (활성 variants 기준)
     const { options, optionTitles, defaultOptionTitles, isOptionlessProduct } = buildOptionSchema(
         snapshot.optionGroups || [],
-        snapshot.variants || [],
+        activeVariants,
     );
 
-    // 4. Variants 변환
+    // 5. Variants 변환 (이미 필터링된 activeVariants 사용)
     const variants = transformVariants(
-        snapshot.variants,
+        activeVariants,
         optionTitles,
         defaultOptionTitles,
         isOptionlessProduct,
     );
 
-    // 5. 메타데이터
+    // 6. 메타데이터
     const metadata = {
         pimMasterId: snapshot.masterId,
         pimVersionId: snapshot.versionId,
@@ -79,7 +85,7 @@ export function transformPimToMedusa(
         syncedAt: new Date().toISOString(),
     };
 
-    // 6. 분류
+    // 7. 분류
     const categories =
         overrides?.categories ??
         snapshot.categoryIds?.map((id) => ({ id }));
@@ -150,16 +156,16 @@ function buildOptionSchema(
 } {
     const optionSets = new Map<string, Set<string>>();
 
-    // 1) PIM 옵션 그룹 기반으로 초기화
+    // 1) PIM 옵션 그룹에서 옵션 제목(name)만 초기화 (값은 variant 기준으로 수집)
     if (optionGroups && optionGroups.length > 0) {
         optionGroups.forEach((group) => {
-            const set = optionSets.get(group.name) || new Set<string>();
-            group.values.forEach((v) => set.add(v.name));
-            optionSets.set(group.name, set);
+            if (!optionSets.has(group.name)) {
+                optionSets.set(group.name, new Set<string>());
+            }
         });
     }
 
-    // 2) Variants의 optionCombination에 등장하는 제목/값 반영
+    // 2) 활성 Variants의 optionCombination에서 실제 사용 중인 값만 수집
     if (variants) {
         variants.forEach((variant) => {
             variant.optionCombination?.forEach((opt) => {
@@ -168,6 +174,13 @@ function buildOptionSchema(
                 optionSets.set(opt.name, set);
             });
         });
+    }
+
+    // 2-1) 옵션 제목은 있지만 값이 비어있는 그룹 제거 (활성 variant가 사용하지 않는 옵션)
+    for (const [title, values] of optionSets) {
+        if (values.size === 0) {
+            optionSets.delete(title);
+        }
     }
 
     // 3) 어떤 옵션도 없으면 기본 옵션 1개/값 1개 구성
@@ -224,8 +237,6 @@ function transformVariants(
     defaultOptionTitles: string[],
     isOptionlessProduct: boolean,
 ): MedusaProductPayload['variants'] {
-    const MEMBERSHIP_GROUP_ID = process.env.MEDUSA_MEMBERSHIP_GROUP_ID || '';
-    const SKIP_VARIANTS_WITHOUT_PRICE = process.env.SKIP_VARIANTS_WITHOUT_PRICE === 'true';
     const defaultableTitles = new Set(defaultOptionTitles || []);
 
     if (!pimVariants || pimVariants.length === 0) {
@@ -233,16 +244,8 @@ function transformVariants(
         return [];
     }
 
+    // 이미 호출부에서 deleted/가격 필터링 완료된 상태
     return pimVariants
-        .filter((v) => v.status !== 'deleted')
-        .filter((v) => {
-            // 가격 검증: basePrice 없으면 스킵 (옵션)
-            if (SKIP_VARIANTS_WITHOUT_PRICE && !v.basePrice) {
-                logger.warn(`Skipping variant ${v.id} - no basePrice`);
-                return false;
-            }
-            return true;
-        })
         .map((variant) => {
             // 옵션 조합 매핑 (부족한 옵션은 기본 옵션값으로 채워서 Medusa 옵션 개수 불일치 오류 방지)
             const rawOptions = variant.optionCombination?.reduce(
