@@ -8,20 +8,20 @@ import {
 import { HttpTypes } from "@medusajs/types"
 import { notFound } from "next/navigation"
 import { Suspense } from "react"
+import { WishlistButton } from "../components/actions/wishlist-button"
 import { ImageGallery } from "../components/image-gallery"
 import ProductActions from "../components/product-actions"
 import { ProductInfoAccordion } from "../components/product-detail-info/product-info-accordion"
+import ProductDetailPrice from "../components/product-detail-price"
 import { SectionTabPanel } from "../components/section-nav"
 import { SideBar } from "../components/side-bar"
 import ProductActionsWrapper from "./product-actions-wrappers/product-actions-wrapper"
 import { ProductDetailInfoWrapper } from "./product-actions-wrappers/product-detail-info-wrapper"
 import { QnaSectionWrapper } from "./product-actions-wrappers/qna-section-wrapper"
+import { RatingActionsWrapper } from "./product-actions-wrappers/rating-actions-wrapper"
 import { ReviewSectionWrapper } from "./product-actions-wrappers/review-section-wrapper"
 import { SectionTabsWrapper } from "./product-actions-wrappers/section-tabs-wrapper"
-import { WishlistButton } from "../components/actions/wishlist-button"
 import { WishlistChatActionsWrapper } from "./product-actions-wrappers/wishlist-chat-actions-wrapper"
-import { RatingActionsWrapper } from "./product-actions-wrappers/rating-actions-wrapper"
-import ProductDetailPrice from "../components/product-detail-price"
 
 type ProductTemplateProps = {
   product: HttpTypes.StoreProduct
