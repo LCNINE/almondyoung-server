@@ -18,7 +18,7 @@ export const GET = async (
 
     const { data: [customer] } = await query.graph({
         entity: "customer",
-        fields: ["*", "groups.*"],
+        fields: ["*", "addresses.*", "groups.*"],
         filters: { id },
     }, { throwIfKeyNotFound: true })
 
