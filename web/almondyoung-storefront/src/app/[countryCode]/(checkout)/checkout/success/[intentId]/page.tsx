@@ -176,7 +176,7 @@ async function OrderSummaryCard({
         <div className="p-8">
           {order ? (
             <Link
-              href={`/${countryCode}/order/${order.id}/confirmed`}
+              href={`/${countryCode}/mypage/order/details?orderId=${order.id}`}
               className="flex h-[60px] w-full items-center justify-center rounded-[5px] bg-[#fff7e5] text-center text-[19px] font-bold text-[#ffa500] transition-colors hover:bg-[#ffedcc]"
             >
               주문 상세보기

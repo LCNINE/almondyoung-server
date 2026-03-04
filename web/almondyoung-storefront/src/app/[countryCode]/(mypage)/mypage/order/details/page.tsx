@@ -1,5 +1,3 @@
-"use client"
-
 import { WithHeaderLayout } from "@components/layout"
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { OrderDetailsDesktop } from "domains/order/details/components/order-details-desktop"
