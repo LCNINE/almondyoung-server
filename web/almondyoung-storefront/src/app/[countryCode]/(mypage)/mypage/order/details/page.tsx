@@ -2,6 +2,12 @@ import { WithHeaderLayout } from "@components/layout"
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { OrderDetailsDesktop } from "domains/order/details/components/order-details-desktop"
 import { OrderDetailsMobile } from "domains/order/details/components/order-details-mobile"
+import { getOrder } from "@/lib/api/medusa/orders"
+
+interface OrderDetailsPageProps {
+  params: Promise<{ countryCode: string }>
+  searchParams: Promise<{ orderId?: string }>
+}
 
 /**
  * 주문 상세 페이지 (반응형)
@@ -10,7 +16,14 @@ import { OrderDetailsMobile } from "domains/order/details/components/order-detai
  * - 모바일: lg 미만 화면에서 표시
  * - 데스크탑: lg 이상 화면에서 표시
  */
-export default function OrderDetailsPage() {
+export default async function OrderDetailsPage({
+  params,
+  searchParams,
+}: OrderDetailsPageProps) {
+  const { countryCode } = await params
+  const { orderId } = await searchParams
+  const order = orderId ? await getOrder(orderId) : null
+
   return (
     <WithHeaderLayout
       config={{
@@ -22,13 +35,13 @@ export default function OrderDetailsPage() {
       {/* 데스크탑 버전 - lg 이상에서만 표시 */}
       <div className="hidden lg:block">
         <MypageLayout>
-          <OrderDetailsDesktop />
+          <OrderDetailsDesktop order={order} countryCode={countryCode} />
         </MypageLayout>
       </div>
 
       {/* 모바일 버전 - lg 미만에서만 표시 */}
       <div className="lg:hidden">
-        <OrderDetailsMobile />
+        <OrderDetailsMobile order={order} countryCode={countryCode} />
       </div>
     </WithHeaderLayout>
   )

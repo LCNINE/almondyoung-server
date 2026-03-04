@@ -43,6 +43,8 @@ export default function OrderCardContent({
   showInquiry = true,
 }: OrderCardContentProps) {
   const resolvedProductImage = getThumbnailUrl(productImage)
+  const quantityText =
+    typeof quantity === "number" ? `${quantity}개` : quantity
 
   return (
     <div className="flex flex-col rounded-[5px] border border-gray-200 bg-white px-3 py-3.5 md:flex-row md:items-center md:gap-9 md:px-5">
@@ -101,7 +103,7 @@ export default function OrderCardContent({
                 {/* 가격/옵션 정보 - inner */}
                 <div className="min-w-28 flex-1 text-xs text-gray-500 md:text-sm">
                   <p>
-                    {price} · {quantity}
+                    {price} · {quantityText}
                   </p>
                   {options.map((option, index) => (
                     <p key={index}>- {option}</p>
