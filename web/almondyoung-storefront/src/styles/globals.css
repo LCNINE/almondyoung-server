@@ -391,6 +391,10 @@ input[type="search"]::-webkit-search-results-decoration {
     h3 {
       @apply text-lg font-normal;
     }
+    h4 {
+      @apply text-lg font-normal;
+    }
+
     .text-3xl {
       @apply text-[18px] font-bold;
     }

@@ -21,7 +21,7 @@ export function SideBar({
   handle,
 }: Props) {
   return (
-    <div className="bg-background p-6">
+    <div className="bg-background">
       <header className="flex justify-between gap-4">
         <div className="mb-4">
           <p className="text-sm text-gray-600">{brand}</p>
