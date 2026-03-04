@@ -8,6 +8,7 @@ import {
   QuestionListQueryDto,
   CreateAnswerDto,
   AnswerResponseDto,
+  QnaSummaryResponseDto,
 } from "@/lib/types/dto/ugc"
 import { api } from "../api"
 
@@ -36,6 +37,19 @@ export const getQuestionsByProductId = async ({
 
   return await api("ugc", `/qna/questions?${queryString}`, {
     method: "GET",
+    withAuth: false,
+  })
+}
+
+/**
+ * 상품별 Q&A 요약 조회
+ */
+export const getQnaSummary = async (
+  productId: string
+): Promise<QnaSummaryResponseDto> => {
+  return await api("ugc", `/qna/questions/summary`, {
+    method: "GET",
+    params: { productId },
     withAuth: false,
   })
 }

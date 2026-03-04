@@ -105,7 +105,7 @@ export default function RankedKeywordList({
                         key={product.id}
                         className="w-[150px] flex-shrink-0 md:w-auto"
                       >
-                        <Link href={`/${countryCode}/products/${product.id}`}>
+                        <Link href={`/${countryCode}/products/${product.handle}`}>
                           <ProductCard>
                             <ProductCard.Thumbnail
                               src={product.imageSrc}

@@ -8,6 +8,7 @@ import {
   ReviewListQueryDto,
   ToggleReactionDto,
   ToggleReactionResponseDto,
+  RatingSummaryResponseDto,
   CreateCommentDto,
   CommentResponseDto,
 } from "@/lib/types/dto/ugc"
@@ -37,6 +38,20 @@ export const getReviewsByProductId = async ({
   return await api("ugc", `/reviews?${queryString}`, {
     method: "GET",
     withAuth: false,
+  })
+}
+
+/**
+ * 상품별 레이팅 요약 조회
+ */
+export const getRatingSummary = async (
+  productId: string
+): Promise<RatingSummaryResponseDto> => {
+  return await api("ugc", `/reviews/rating-summary`, {
+    method: "GET",
+    params: { productId },
+    withAuth: false,
+    next: { tags: [`rating-summary-${productId}`] },
   })
 }
 

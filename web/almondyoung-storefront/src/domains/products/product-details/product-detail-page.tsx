@@ -181,8 +181,11 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
 
   const [isPending, startTransition] = useTransition()
 
-  const { addToCart, createBuyNowCart, isLoading: isAddToCartLoading } =
-    useAddToCart()
+  const {
+    addToCart,
+    createBuyNowCart,
+    isLoading: isAddToCartLoading,
+  } = useAddToCart()
 
   useRecentViews(null, {
     userId: user?.id,

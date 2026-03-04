@@ -5,25 +5,13 @@ import Image from "next/image"
 import { useState } from "react"
 import { cn } from "@lib/utils"
 import { Button } from "@/components/ui/button"
-
-type ProductInfo = {
-  productNumber?: string
-  weight?: string
-  dimensions?: string
-  origin?: string
-  capacity?: string
-  expirationDate?: string
-  manufacturer?: string
-  brand?: string
-  material?: string
-  usage?: string
-  [key: string]: string | undefined
-}
+import { ProductInfo } from "../templates/product-actions-wrappers/product-detail-info-wrapper"
+import { HttpTypes } from "@medusajs/types"
 
 type Props = {
   productInfo: ProductInfo
   descriptionHtml?: string
-  detailImages: string[]
+  detailImages: HttpTypes.StoreProductImage[] | (string | null)[]
   productName: string
 }
 

@@ -47,6 +47,13 @@ interface ToggleReactionResponseDto {
   count: number
 }
 
+interface RatingSummaryResponseDto {
+  productId: string
+  averageRating: number
+  totalCount: number
+  ratingDistribution: Record<number, number>
+}
+
 interface CreateCommentDto {
   content: string
 }
@@ -62,14 +69,17 @@ interface CommentResponseDto {
 
 // ─── Q&A ───
 
+type QuestionStatus = "active" | "answered" | "deleted"
+
 interface QuestionResponseDto {
   id: string
   userId: string
+  nickname: string
   productId: string
   title: string
   content: string
   isSecret: boolean
-  status: string
+  status: QuestionStatus
   mediaFileIds: string[]
   answer: AnswerResponseDto | null
   createdAt: string
@@ -87,6 +97,7 @@ interface AnswerResponseDto {
 
 interface CreateQuestionDto {
   productId: string
+  nickname: string
   title: string
   content: string
   isSecret?: boolean
@@ -111,6 +122,13 @@ interface CreateAnswerDto {
   content: string
 }
 
+interface QnaSummaryResponseDto {
+  productId: string
+  totalCount: number
+  answeredCount: number
+  unansweredCount: number
+}
+
 export type {
   ReviewResponseDto,
   CreateReviewDto,
@@ -118,6 +136,7 @@ export type {
   ReviewListQueryDto,
   ToggleReactionDto,
   ToggleReactionResponseDto,
+  RatingSummaryResponseDto,
   CreateCommentDto,
   CommentResponseDto,
   QuestionResponseDto,
@@ -126,4 +145,6 @@ export type {
   UpdateQuestionDto,
   QuestionListQueryDto,
   CreateAnswerDto,
+  QuestionStatus,
+  QnaSummaryResponseDto,
 }
