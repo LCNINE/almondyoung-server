@@ -88,7 +88,7 @@ export default function OrderSuccessContainer() {
 
       {/* 2. <main>: 핵심 콘텐츠 영역 */}
       {/* `flex-1`을 주어 남은 공간을 모두 차지하게 하고, 
-          `absolute` 대신 `flex-col`과 `gap`으로 레이아웃 구성
+          `absolute` 대신 `flex-col`과 `gap`으로 레이아웃 구성    
       */}
       <main className="flex-1 flex-col px-4">
         {/* 원본의 H1 (top-[113px])과 Header(top-16/64px)의 
