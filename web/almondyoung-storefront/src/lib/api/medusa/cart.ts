@@ -379,6 +379,291 @@ export async function createCheckoutCartFromLineItems(params: {
   return { cartId: checkoutCart.id }
 }
 
+export async function createShippingPreviewCartFromLineItems(params: {
+  countryCode: string
+  lineItemIds: string[]
+}): Promise<{ cartId: string }> {
+  const { countryCode, lineItemIds } = params
+
+  if (!lineItemIds.length) {
+    throw new HttpApiError(
+      "No selected line items for shipping preview cart",
+      400,
+      "BAD_REQUEST"
+    )
+  }
+
+  const sourceCart = await retrieveCart(
+    undefined,
+    "id,region_id,*items,*items.variant"
+  )
+
+  if (!sourceCart?.id) {
+    throw new HttpApiError("Source cart not found", 404, "NOT_FOUND")
+  }
+
+  const selectedIdSet = new Set(lineItemIds)
+  const selectedItems = (sourceCart.items ?? []).filter((item) =>
+    selectedIdSet.has(item.id)
+  )
+
+  if (!selectedItems.length || selectedItems.length !== selectedIdSet.size) {
+    throw new HttpApiError(
+      "Some selected line items are not in source cart",
+      400,
+      "BAD_REQUEST"
+    )
+  }
+
+  const regionId =
+    sourceCart.region_id ?? (await getRegion(countryCode))?.id ?? null
+
+  if (!regionId) {
+    throw new Error(`Region not found for country code: ${countryCode}`)
+  }
+
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  const previewCartResp = await sdk.store.cart.create(
+    { region_id: regionId },
+    {},
+    headers
+  )
+  const previewCart = previewCartResp.cart
+
+  if (headers.authorization) {
+    try {
+      await sdk.store.cart.transferCart(previewCart.id, {}, headers)
+    } catch (error) {
+      console.error("Shipping preview cart transfer failed:", error)
+    }
+  }
+
+  for (const item of selectedItems) {
+    const variantId = item.variant_id || item.variant?.id
+    if (!variantId) {
+      throw new HttpApiError(
+        "Missing variant ID when creating shipping preview cart",
+        400,
+        "BAD_REQUEST"
+      )
+    }
+
+    await sdk.store.cart.createLineItem(
+      previewCart.id,
+      {
+        variant_id: variantId,
+        quantity: item.quantity,
+        metadata: {
+          source_line_item_id: item.id,
+        },
+      },
+      {},
+      headers
+    )
+  }
+
+  await sdk.store.cart.update(
+    previewCart.id,
+    {
+      metadata: {
+        is_shipping_preview: true,
+        source_cart_id: sourceCart.id,
+        source_line_item_ids: selectedItems.map((item) => item.id),
+      },
+    },
+    {},
+    headers
+  )
+
+  return { cartId: previewCart.id }
+}
+
+export async function syncShippingPreviewCartLineItems(params: {
+  previewCartId: string
+  items: Array<{ sourceLineItemId: string; variantId: string; quantity: number }>
+}) {
+  const { previewCartId, items } = params
+
+  const normalizedItems = items
+    .filter((item) => item.sourceLineItemId && item.variantId && item.quantity > 0)
+    .map((item) => ({
+      sourceLineItemId: item.sourceLineItemId,
+      variantId: item.variantId,
+      quantity: Math.max(1, Math.floor(item.quantity)),
+    }))
+
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  const previewCart = await sdk.client
+    .fetch<{ cart: HttpTypes.StoreCart }>(`/store/carts/${previewCartId}`, {
+      method: "GET",
+      query: { fields: "id,*items,*items.variant,*items.metadata,+shipping_methods" },
+      headers,
+      cache: "no-store",
+    })
+    .then(({ cart }) => cart)
+    .catch(() => null)
+
+  if (!previewCart?.id) {
+    throw new HttpApiError("Preview cart not found", 404, "NOT_FOUND")
+  }
+
+  const desiredBySource = new Map<
+    string,
+    { variantId: string; quantity: number }
+  >()
+  for (const item of normalizedItems) {
+    desiredBySource.set(item.sourceLineItemId, {
+      variantId: item.variantId,
+      quantity: item.quantity,
+    })
+  }
+
+  const existingBySource = new Map<
+    string,
+    {
+      id: string
+      quantity: number
+      variantId: string | null
+      duplicateIds: string[]
+    }
+  >()
+
+  for (const line of previewCart.items ?? []) {
+    const sourceLineItemId = (line.metadata as Record<string, unknown> | null)
+      ?.source_line_item_id
+    const sourceId = typeof sourceLineItemId === "string" ? sourceLineItemId : null
+
+    if (!sourceId) {
+      await sdk.store.cart.deleteLineItem(previewCartId, line.id, {}, headers)
+      continue
+    }
+
+    const lineVariantId = line.variant_id || line.variant?.id || null
+
+    const existing = existingBySource.get(sourceId)
+    if (!existing) {
+      existingBySource.set(sourceId, {
+        id: line.id,
+        quantity: line.quantity,
+        variantId: lineVariantId,
+        duplicateIds: [],
+      })
+      continue
+    }
+
+    existing.duplicateIds.push(line.id)
+  }
+
+  for (const [sourceId, current] of Array.from(existingBySource.entries())) {
+    for (const duplicateId of current.duplicateIds) {
+      await sdk.store.cart.deleteLineItem(previewCartId, duplicateId, {}, headers)
+    }
+
+    const desired = desiredBySource.get(sourceId)
+    if (!desired) {
+      await sdk.store.cart.deleteLineItem(previewCartId, current.id, {}, headers)
+      continue
+    }
+
+    if (current.variantId !== desired.variantId) {
+      await sdk.store.cart.deleteLineItem(previewCartId, current.id, {}, headers)
+      await sdk.store.cart.createLineItem(
+        previewCartId,
+        {
+          variant_id: desired.variantId,
+          quantity: desired.quantity,
+          metadata: {
+            source_line_item_id: sourceId,
+          },
+        },
+        {},
+        headers
+      )
+      continue
+    }
+
+    if (current.quantity !== desired.quantity) {
+      await sdk.store.cart.updateLineItem(
+        previewCartId,
+        current.id,
+        { quantity: desired.quantity },
+        {},
+        headers
+      )
+    }
+  }
+
+  for (const [sourceId, desired] of Array.from(
+    desiredBySource.entries()
+  )) {
+    if (existingBySource.has(sourceId)) continue
+    await sdk.store.cart.createLineItem(
+      previewCartId,
+      {
+        variant_id: desired.variantId,
+        quantity: desired.quantity,
+        metadata: {
+          source_line_item_id: sourceId,
+        },
+      },
+      {},
+      headers
+    )
+  }
+}
+
+export async function deleteShippingPreviewCart(cartId: string) {
+  if (!cartId) return
+
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  await sdk.client
+    .fetch(`/store/carts/${cartId}`, {
+      method: "DELETE",
+      headers,
+    })
+    .catch(() => null)
+}
+
+export async function getShippingTotalForCartPreview(
+  cartId: string
+): Promise<number> {
+  const cart = await retrieveCart(cartId, undefined, "no-store")
+  if (!cart?.id) return 0
+
+  if (cart.shipping_methods?.length) {
+    return cart.shipping_total ?? 0
+  }
+
+  const options = await listCartShippingMethods(cart.id, "no-store")
+  const firstOption = options?.[0]
+  if (!firstOption) {
+    return cart.shipping_total ?? 0
+  }
+
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  await sdk.store.cart.addShippingMethod(
+    cart.id,
+    { option_id: firstOption.id },
+    {},
+    headers
+  )
+
+  const recalculated = await retrieveCart(cart.id, undefined, "no-store")
+  return recalculated?.shipping_total ?? firstOption.amount ?? 0
+}
+
 export async function updateLineItem({
   lineId,
   quantity,
