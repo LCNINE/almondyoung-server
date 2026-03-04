@@ -21,6 +21,7 @@ import { SectionTabsWrapper } from "./product-actions-wrappers/section-tabs-wrap
 import { WishlistButton } from "../components/actions/wishlist-button"
 import { WishlistChatActionsWrapper } from "./product-actions-wrappers/wishlist-chat-actions-wrapper"
 import { RatingActionsWrapper } from "./product-actions-wrappers/rating-actions-wrapper"
+import ProductDetailPrice from "../components/product-detail-price"
 
 type ProductTemplateProps = {
   product: HttpTypes.StoreProduct
@@ -77,7 +78,10 @@ export function ProductTemplate({
                 <RatingActionsWrapper handle={product.handle} />
               </Suspense>
 
-              {/* todo: 프리뷰 가격표 */}
+              <ProductDetailPrice
+                product={product}
+                selectedVariant={product.variants?.[0]}
+              />
             </div>
 
             <SectionTabsWrapper

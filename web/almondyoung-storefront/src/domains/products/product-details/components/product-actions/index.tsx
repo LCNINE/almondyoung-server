@@ -27,7 +27,7 @@ import { toast } from "sonner"
 import CartAddedModal from "./cart-added-modal"
 import MobileActions from "./mobile-actions"
 import OptionSelect from "./option-select"
-import ProductDetailPrice from "./product-detail-price"
+import ProductDetailPrice from "../product-detail-price"
 
 type ProductActionsProps = {
   product: HttpTypes.StoreProduct
