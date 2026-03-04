@@ -1,21 +1,21 @@
 import { ErrorBoundary } from "@/components/shared/error-boundary"
-import { HttpTypes } from "@medusajs/types"
-import { notFound } from "next/navigation"
-import { Suspense } from "react"
-import { ImageGallery } from "../components2/image-gallery"
-import { ProductInfoAccordion } from "../components2/product-detail-info/product-info-accordion"
-import { SectionTabPanel } from "../components2/section-nav"
-import { SideBar } from "../components2/side-bar"
 import {
   ProductDetailInfoSkeleton,
   ProductQnaSkeleton,
   ProductReviewSkeleton,
 } from "@/components/skeletons/product-detail-skeletons"
+import { HttpTypes } from "@medusajs/types"
+import { notFound } from "next/navigation"
+import { Suspense } from "react"
+import { ImageGallery } from "../components/image-gallery"
+import { ProductInfoAccordion } from "../components/product-detail-info/product-info-accordion"
+import { SectionTabPanel } from "../components/section-nav"
+import { SideBar } from "../components/side-bar"
+import ProductActions from "./product-actions-wrappers/product-actions"
 import { ProductDetailInfoWrapper } from "./product-actions-wrappers/product-detail-info-wrapper"
 import { QnaSectionWrapper } from "./product-actions-wrappers/qna-section-wrapper"
 import { ReviewSectionWrapper } from "./product-actions-wrappers/review-section-wrapper"
 import { SectionTabsWrapper } from "./product-actions-wrappers/section-tabs-wrapper"
-import ProductActions from "./product-actions-wrappers/product-actions"
 
 type ProductTemplateProps = {
   product: HttpTypes.StoreProduct
@@ -81,7 +81,7 @@ export function ProductTemplate({
             </SectionTabsWrapper>
           </main>
 
-          <div className="lg:sticky lg:top-0 lg:max-h-screen lg:w-full lg:min-w-[383px] lg:max-w-[480px] lg:overflow-y-auto">
+          <div className="lg:sticky lg:top-0 lg:max-h-screen lg:w-full lg:max-w-[480px] lg:min-w-[383px] lg:overflow-y-auto">
             <div className="hidden lg:block">
               <SideBar
                 brand={(product.metadata?.brand as string) ?? ""}

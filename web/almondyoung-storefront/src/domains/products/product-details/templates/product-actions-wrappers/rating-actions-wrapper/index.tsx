@@ -1,5 +1,5 @@
 import { getRatingSummary } from "@/lib/api/ugc/reviews"
-import { Rating } from "../../../components2/rating"
+import { Rating } from "../../../components/rating"
 import { RatingSummary } from "@/lib/types/ui/ugc"
 
 interface Props {

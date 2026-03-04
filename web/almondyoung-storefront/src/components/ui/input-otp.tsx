@@ -53,7 +53,7 @@ function InputOTPSlot({
       data-filled={!!char}
       className={cn(
         "bg-gray-10 border-gray-20 relative flex h-12 w-11 items-center justify-center rounded-lg border text-lg font-semibold transition-all outline-none",
-        "data-[active=true]:border-yellow-30 data-[active=true]:ring-2 data-[active=true]:ring-yellow-30/30",
+        "data-[active=true]:border-yellow-30 data-[active=true]:ring-yellow-30/30 data-[active=true]:ring-2",
         "data-[filled=true]:border-yellow-30 data-[filled=true]:bg-yellow-10",
         className
       )}

@@ -3,7 +3,7 @@ import {
   QnaSummaryResponseDto,
   RatingSummaryResponseDto,
 } from "@/lib/types/dto/ugc"
-import { SectionTabs } from "../../../components2/section-nav"
+import { SectionTabs } from "../../../components/section-nav"
 import { getQnaSummary } from "@/lib/api/ugc"
 
 interface Props {

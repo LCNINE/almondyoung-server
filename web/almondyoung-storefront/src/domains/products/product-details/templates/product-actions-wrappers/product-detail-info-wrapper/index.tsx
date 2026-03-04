@@ -1,6 +1,6 @@
 import { getProductDetailByMasterId } from "@/lib/api/pim/products"
 import { HttpTypes } from "@medusajs/types"
-import { ProductDetailInfo } from "../../../components2/product-detail-info"
+import { ProductDetailInfo } from "../../../components/product-detail-info"
 
 interface Props {
   pricedProduct: HttpTypes.StoreProduct
