@@ -60,7 +60,7 @@ export function ProductGrid({
         return countryCode ? (
           <Link
             key={product.id}
-            href={`/${countryCode}/products/${product.id}`}
+            href={`/${countryCode}/products/${product.handle}`}
             className="block"
           >
             {card}

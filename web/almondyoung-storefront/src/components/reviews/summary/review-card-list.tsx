@@ -1,5 +1,5 @@
-import { ReviewSummaryCard } from "domains/reviews/summary/review-summary-card"
-import type { Review } from "domains/reviews/summary/review-summary-card"
+import { ReviewSummaryCard } from "@/components/reviews/summary/review-summary-card"
+import type { Review } from "@/components/reviews/summary/review-summary-card"
 
 export type ReviewCardListProps = {
   reviews: Review[]

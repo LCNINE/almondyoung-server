@@ -106,18 +106,16 @@ export function getProductPrice({
       return null
     }
 
-    const pricedVariants = product.variants
-      .map((variant: any) => ({
-        variant,
-        price: getPricesForVariant(variant),
-      }))
-      .filter((entry: any) => entry.price)
-      .sort(
-        (a: any, b: any) =>
-          a.price.calculated_price_number - b.price.calculated_price_number
-      )
+    const cheapestVariant: any = product.variants
+      .filter((v: any) => !!v.calculated_price)
+      .sort((a: any, b: any) => {
+        return (
+          a.calculated_price.calculated_amount -
+          b.calculated_price.calculated_amount
+        )
+      })[0]
 
-    return pricedVariants[0]?.price || null
+    return getPricesForVariant(cheapestVariant)
   }
 
   const variantPrice = () => {

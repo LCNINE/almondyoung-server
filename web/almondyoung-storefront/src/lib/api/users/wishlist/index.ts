@@ -1,9 +1,8 @@
 "use server"
 
-import { ApiAuthError, ApiNetworkError, HttpApiError } from "@lib/api/api-error"
-import { getBackendBaseUrl } from "@/lib/config/backend"
-import { getAccessToken } from "@lib/data/cookies"
+import { revalidateTag } from "next/cache"
 import type { WishlistResponse } from "@lib/types/dto/users"
+import { api } from "../../api"
 
 type WishlistToggleAction = "added" | "removed"
 
@@ -13,78 +12,14 @@ export interface WishlistToggleResult {
   data?: WishlistResponse
 }
 
-const resolveData = <T>(payload: unknown): T => {
-  if (payload && typeof payload === "object" && "data" in payload) {
-    return (payload as { data: T }).data
-  }
-  return payload as T
-}
-
-const request = async <T>(
-  path: string,
-  init: RequestInit = {}
-): Promise<T> => {
-  const baseUrl = getBackendBaseUrl("users")
-
-  if (!baseUrl) {
-    throw new ApiNetworkError(
-      "Missing backend base URL for service: users",
-      500,
-      "BACKEND_DOMAIN_MISSING"
-    )
-  }
-
-  const accessToken = await getAccessToken()
-  if (!accessToken) {
-    throw new ApiAuthError("UNAUTHORIZED", 401, "UNAUTHORIZED")
-  }
-
-  const headers: HeadersInit = {
-    ...init.headers,
-    Authorization: `Bearer ${accessToken}`,
-  }
-
-  if (init.body && !(init.body instanceof FormData)) {
-    ;(headers as Record<string, string>)["Content-Type"] = "application/json"
-  }
-
-  let response: Response
-  try {
-    response = await fetch(`${baseUrl}${path}`, {
-      ...init,
-      headers,
-    })
-  } catch {
-    throw new ApiNetworkError("NETWORK_ERROR", 500, "NETWORK_ERROR")
-  }
-
-  const json = await response.json().catch(() => ({}))
-
-  if (response.ok) {
-    return resolveData<T>(json)
-  }
-
-  if (response.status === 401) {
-    throw new ApiAuthError(
-      (json as { message?: string })?.message ?? "인증이 필요합니다",
-      401,
-      "UNAUTHORIZED"
-    )
-  }
-
-  throw new HttpApiError(
-    (json as { message?: string })?.message ?? `요청 실패: ${response.status}`,
-    response.status,
-    response.statusText,
-    json
-  )
-}
-
 /**
  * 사용자의 위시리스트를 조회합니다
  */
 export const getWishlist = async (): Promise<WishlistResponse[]> => {
-  return request<WishlistResponse[]>("/wishlist", { method: "GET" })
+  return api<WishlistResponse[]>("users", "/wishlist", {
+    method: "GET",
+    withAuth: true,
+  })
 }
 
 /**
@@ -93,10 +28,13 @@ export const getWishlist = async (): Promise<WishlistResponse[]> => {
 export const toggleWishlist = async (
   productId: string
 ): Promise<WishlistToggleResult> => {
-  return request<WishlistToggleResult>("/wishlist", {
+  const result = await api<WishlistToggleResult>("users", "/wishlist", {
     method: "POST",
-    body: JSON.stringify({ productId }),
+    body: { productId },
+    withAuth: true,
   })
+  revalidateTag("wishlist")
+  return result
 }
 
 /**
@@ -105,9 +43,15 @@ export const toggleWishlist = async (
 export const getWishlistByProductId = async (
   productId: string
 ): Promise<WishlistResponse | null> => {
-  const data = await request<WishlistResponse[]>(`/wishlist/${productId}`, {
-    method: "GET",
-  })
+  const [data] = await api<WishlistResponse[]>(
+    "users",
+    `/wishlist/${productId}`,
+    {
+      method: "GET",
+      withAuth: true,
+      next: { tags: ["wishlist"] },
+    }
+  )
 
-  return data[0] || null
+  return data || []
 }

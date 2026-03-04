@@ -143,21 +143,117 @@ export default function ProductCard({ product }: ProductCardProps) {
 - `"use client"` 지시문 최소화
 - 클라이언트 컴포넌트는 필수인 경우만
 
-### 6. 상태 관리 (fetch tags 우선)
+### 6. API 호출 규칙
 
-- **서버 상태**: Next.js fetch의 `tags` + `revalidateTag()` 사용
+- **모든 백엔드 API 요청은 `api()` 함수를 사용** (`src/lib/api/api.ts`)
+- `fetch()`를 직접 호출하지 마세요. `api()` 함수가 인증, 에러 처리, JSON 파싱을 모두 처리합니다.
+
+```tsx
+import { api } from "@/lib/api/api"
+
+// 기본 사용법: api<응답타입>(서비스명, 경로, 옵션)
+const products = await api<ProductDto[]>("pim", "/products", {
+  method: "GET",
+  next: { tags: ["products"] },
+})
+```
+
+#### 서비스 타입 (`BackendService`)
+
+사용 가능한 서비스: `"users"` | `"pim"` | `"medusa"` | `"membership"` | `"fs"` | `"wallet"` | `"wms"` | `"channelAdapter"` | `"notification"` | `"anly"` | `"ugc"`
+
+#### 인증이 필요한 요청 (`withAuth`)
+
+- `withAuth`는 **기본값이 `true`** (명시하지 않으면 인증 포함)
+- 인증이 **필요 없는** 공개 API는 `withAuth: false`를 명시
+
+```tsx
+// 인증 필요 (기본값, withAuth 생략 가능)
+const profile = await api<ProfileDto>("users", "/users/me", {
+  method: "GET",
+})
+
+// 인증 필요 + 명시적 표기
+const updatedProfile = await api<ProfileDto>("users", "/users/me", {
+  method: "PATCH",
+  body: profileData,
+  withAuth: true,
+})
+
+// 인증 불필요 (공개 API) - 반드시 withAuth: false 명시
+const publicProducts = await api<ProductDto[]>("pim", "/products/public", {
+  method: "GET",
+  withAuth: false,
+})
+```
+
+#### 주요 옵션
+
+```tsx
+type RequestOptions = {
+  method?: string          // HTTP 메서드
+  body?: unknown           // 요청 바디 (자동 JSON 직렬화, FormData도 지원)
+  params?: Record<string, string>  // URL 쿼리 파라미터
+  withAuth?: boolean       // 인증 포함 여부 (기본값: true)
+  next?: {
+    revalidate?: number | false
+    tags?: string[]        // Next.js 캐시 태그
+  }
+}
+```
+
+#### 에러 처리
+
+`api()`는 실패 시 다음 에러를 던집니다:
+- `ApiAuthError` (401): 인증 실패
+- `HttpApiError` (403, 기타): HTTP 에러
+- `ApiNetworkError`: 네트워크 에러
+
+#### 인증이 필요한 mutation (POST/PATCH/DELETE)은 반드시 Server Action + `startTransition`으로 호출
+
+클라이언트 이벤트 핸들러(`onClick` 등)에서 직접 `try-catch`로 감싸면 401 에러가 `error.tsx` Error Boundary로 전파되지 않습니다.
+`error.tsx`가 401을 감지하여 토큰 복구(`restore-token`)를 처리하므로, **인증이 필요한 API 호출은 Server Action(`"use server"`)으로 만들고 클라이언트에서 `startTransition`으로 호출**해야 합니다. UNAUTHORIZED 에러는 catch하지 않고 re-throw하여 `error.tsx`로 전파시킵니다.
+
+```tsx
+// 클라이언트 컴포넌트에서 Server Action 호출 패턴
+import { useTransition } from "react"
+
+const [isPending, startTransition] = useTransition()
+
+const handleSubmit = () => {
+  startTransition(async () => {
+    try {
+      await someServerAction(data)
+    } catch (error: unknown) {
+      const err = error as Error & { digest?: string }
+      // UNAUTHORIZED는 re-throw → error.tsx에서 토큰 복구 처리
+      if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") {
+        throw error
+      }
+      // 그 외 에러만 UI에서 처리
+      toast.error("실패했습니다. 다시 시도해주세요.")
+    }
+  })
+}
+```
+
+### 7. 상태 관리 (fetch tags 우선)
+
+- **서버 상태**: `api()` 함수의 `next.tags` + `revalidateTag()` 사용
 - **클라이언트 상태**: 최소한으로, 필요시 Zustand 사용
 
 ```tsx
-// 데이터 페칭 with tags
-const data = await fetch(url, { next: { tags: ["products"] } })
+// 데이터 페칭 with tags (api 함수 사용)
+const data = await api<ProductDto[]>("pim", "/products", {
+  next: { tags: ["products"] },
+})
 
 // 캐시 무효화
 import { revalidateTag } from "next/cache"
 revalidateTag("products")
 ```
 
-### 7. 스타일링
+### 8. 스타일링
 
 - Tailwind CSS 유틸리티 클래스 사용
 - 인라인 style 지양
@@ -168,7 +264,7 @@ import { cn } from "@/lib/utils"
 ;<div className={cn("flex items-center", isActive && "bg-primary")} />
 ```
 
-### 8. 폼 처리
+### 9. 폼 처리
 
 ```tsx
 import { useForm } from "react-hook-form"
@@ -222,6 +318,7 @@ products.map((product) => ({
 1. **shadcn/ui 컴포넌트 소스**를 직접 수정하지 마세요. 래퍼 컴포넌트를 만드세요.
 2. **MedusaUI**를 사용하지 마세요. 항상 shadcn/ui를 사용하세요.
 3. **npm**을 사용하지 마세요. yarn만 사용합니다.
+4. **`fetch()`를 직접 호출하지 마세요.** 백엔드 API 요청은 반드시 `api()` 함수(`@/lib/api/api`)를 사용합니다.
 
 ## 참고 문서
 

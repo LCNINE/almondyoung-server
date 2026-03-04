@@ -5,7 +5,6 @@ import { useState } from "react"
 
 /**
  * @description 구매/반품/교환 정보 아코디언
- * 시맨틱: <details>와 <summary> 사용 고려했으나 애니메이션을 위해 state 사용
  */
 export function ProductInfoAccordion() {
   const [accordionStates, setAccordionStates] = useState({

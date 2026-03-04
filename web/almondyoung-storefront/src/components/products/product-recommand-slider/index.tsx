@@ -103,7 +103,7 @@ export const ProductRecommandSlider: React.FC<
                   width: `calc(${100 / itemsPerView.mobile}% - 12px)`,
                 }}
               >
-                <Link href={`/${countryCode}/products/${product.id}`}>
+                <Link href={`/${countryCode}/products/${product.handle}`}>
                   <ProductCard>
                     <ProductCard.Thumbnail
                       src={product.imageSrc}
