@@ -1,4 +1,3 @@
-"use client"
 import { OrderInfoCardShipping } from "@components/orders/order-info-cards"
 import { ExternalLink } from "lucide-react"
 import { Accordion } from "./accordion"
