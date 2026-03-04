@@ -3,6 +3,7 @@ import {
   ProductDetailInfoSkeleton,
   ProductQnaSkeleton,
   ProductReviewSkeleton,
+  RatingSkeleton,
 } from "@/components/skeletons/product-detail-skeletons"
 import { HttpTypes } from "@medusajs/types"
 import { notFound } from "next/navigation"
@@ -17,6 +18,9 @@ import { ProductDetailInfoWrapper } from "./product-actions-wrappers/product-det
 import { QnaSectionWrapper } from "./product-actions-wrappers/qna-section-wrapper"
 import { ReviewSectionWrapper } from "./product-actions-wrappers/review-section-wrapper"
 import { SectionTabsWrapper } from "./product-actions-wrappers/section-tabs-wrapper"
+import { WishlistButton } from "../components/actions/wishlist-button"
+import { WishlistChatActionsWrapper } from "./product-actions-wrappers/wishlist-chat-actions-wrapper"
+import { RatingActionsWrapper } from "./product-actions-wrappers/rating-actions-wrapper"
 
 type ProductTemplateProps = {
   product: HttpTypes.StoreProduct
@@ -34,12 +38,47 @@ export function ProductTemplate({
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white pt-6">
       <div className="mx-auto max-w-[1360px] px-[15px] lg:px-[40px]">
         <div className="py-2 lg:flex lg:gap-4">
           {/* 메인 콘텐츠 */}
           <main className="w-full min-w-0 flex-1 pb-24 lg:pb-0">
             <ImageGallery product={product} />
+
+            {/* 모바일 상품 정보 */}
+            <div className="lg:hidden">
+              <div className="flex min-w-0 flex-1 items-center gap-4">
+                <p className="text-sm text-gray-600">
+                  {(product.metadata?.brand as string) ?? ""}
+                </p>
+                <div className="ml-auto">
+                  <Suspense
+                    fallback={
+                      <>
+                        <WishlistButton
+                          productId={product.id}
+                          isWishlisted={false}
+                          countryCode={countryCode}
+                        />
+                      </>
+                    }
+                  >
+                    <WishlistChatActionsWrapper
+                      productId={product.id}
+                      countryCode={countryCode}
+                    />
+                  </Suspense>
+                </div>
+              </div>
+
+              <h4>{product.title}</h4>
+
+              <Suspense fallback={<RatingSkeleton />}>
+                <RatingActionsWrapper handle={product.handle} />
+              </Suspense>
+
+              {/* todo: 프리뷰 가격표 */}
+            </div>
 
             <SectionTabsWrapper
               productId={product.metadata?.pimMasterId as string}

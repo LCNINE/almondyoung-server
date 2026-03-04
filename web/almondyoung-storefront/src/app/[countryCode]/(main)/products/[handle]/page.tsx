@@ -59,6 +59,8 @@ export default async function Page(props: Props) {
 
   const customer = await retrieveCustomer()
 
+  console.log("customer:", customer)
+
   return (
     <div className="md:bg-muted/50 min-h-screen bg-white">
       <ProductTemplate

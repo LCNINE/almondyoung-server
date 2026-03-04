@@ -91,8 +91,7 @@ export function Rating({ rating, reviewCount }: Props) {
           )
         }}
       >
-        리뷰 {reviewCount.toLocaleString()}건
-        <span className="ml-0.5">&gt;</span>
+        리뷰 {reviewCount.toLocaleString()}건<span className="ml-0.5">+</span>
       </button>
     </div>
   )
