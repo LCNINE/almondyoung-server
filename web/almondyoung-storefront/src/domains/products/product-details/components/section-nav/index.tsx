@@ -82,14 +82,15 @@ export function SectionTabs({
             </span>
           )}
         </TabsTrigger>
-        <TabsTrigger value="qna" className={triggerClassName}>
+        {/* todo: 배송 반품교환문의 클릭했을때 1대1 고객센터 문의하기 페이지 및 기능, 그리고 관리자가 답변달아줄수이는 관리자페이지 ui가 완성될떄까지 주석처리 */}
+        {/* <TabsTrigger value="qna" className={triggerClassName}>
           Q&A
           {qnaCount != null && qnaCount > 0 && (
             <span className="ml-0.5 text-[0.65em] tabular-nums opacity-80">
               {qnaCount.toLocaleString()}
             </span>
           )}
-        </TabsTrigger>
+        </TabsTrigger> */}
       </TabsList>
       {children}
     </Tabs>
