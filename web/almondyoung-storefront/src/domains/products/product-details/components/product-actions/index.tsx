@@ -1,10 +1,11 @@
 "use client"
 
-import { addToCart } from "@/lib/api/medusa/cart"
-import { useIntersection } from "@/hooks/use-intersection"
 import { Button } from "@/components/ui/button"
-import { getPricesForVariant } from "@/lib/utils/get-product-price"
+import { Separator } from "@/components/ui/separator"
+import { useIntersection } from "@/hooks/use-intersection"
+import { addToCart } from "@/lib/api/medusa/cart"
 import { VariantPrice } from "@/lib/types/common/price"
+import { getPricesForVariant } from "@/lib/utils/get-product-price"
 import { HttpTypes } from "@medusajs/types"
 import { isEqual } from "lodash"
 import { Minus, Plus, X } from "lucide-react"
@@ -22,7 +23,6 @@ import {
   useState,
   useTransition,
 } from "react"
-import { Separator } from "@/components/ui/separator"
 import { toast } from "sonner"
 import CartAddedModal from "./cart-added-modal"
 import MobileActions from "./mobile-actions"
@@ -430,9 +430,7 @@ export default function ProductActions({
           <Button
             variant="outline"
             onClick={handleAddToCart}
-            disabled={
-              selectedItems.length === 0 || !allInStock || !!disabled
-            }
+            disabled={selectedItems.length === 0 || !allInStock || !!disabled}
             className="border-yellow-30 text-yellow-30 hover:text-primary h-12 w-full flex-1 cursor-pointer text-base hover:bg-transparent"
             data-testid="add-product-button"
           >

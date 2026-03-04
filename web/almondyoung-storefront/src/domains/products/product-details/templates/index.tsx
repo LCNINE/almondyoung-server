@@ -8,10 +8,11 @@ import { HttpTypes } from "@medusajs/types"
 import { notFound } from "next/navigation"
 import { Suspense } from "react"
 import { ImageGallery } from "../components/image-gallery"
+import ProductActions from "../components/product-actions"
 import { ProductInfoAccordion } from "../components/product-detail-info/product-info-accordion"
 import { SectionTabPanel } from "../components/section-nav"
 import { SideBar } from "../components/side-bar"
-import ProductActions from "./product-actions-wrappers/product-actions"
+import ProductActionsWrapper from "./product-actions-wrappers/product-actions-wrapper"
 import { ProductDetailInfoWrapper } from "./product-actions-wrappers/product-detail-info-wrapper"
 import { QnaSectionWrapper } from "./product-actions-wrappers/qna-section-wrapper"
 import { ReviewSectionWrapper } from "./product-actions-wrappers/review-section-wrapper"
@@ -92,8 +93,16 @@ export function ProductTemplate({
               />
             </div>
 
-            <Suspense>
-              <ProductActions product={product} region={region} />
+            <Suspense
+              fallback={
+                <ProductActions
+                  product={product}
+                  region={region}
+                  disabled={false}
+                />
+              }
+            >
+              <ProductActionsWrapper id={product.id} region={region} />
             </Suspense>
           </div>
         </div>
