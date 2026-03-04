@@ -7,6 +7,7 @@ import type { HttpTypes } from "@medusajs/types"
 
 interface OrderItem {
   orderId: string
+  orderNumber: string
   orderDate: string
   status: string
   deliveryInfo: string
@@ -14,7 +15,7 @@ interface OrderItem {
   productName: string
   productImage: string
   price: string
-  quantity: number
+  quantity: string
   options: string[]
   showInquiry: boolean
 }
@@ -38,16 +39,18 @@ const mapStoreOrderToOrderItem = (order: HttpTypes.StoreOrder): OrderItem => {
   const orderDate = new Date(order.created_at)
   const formatDate = `${orderDate.getMonth() + 1}월 ${orderDate.getDate()}일`
   const firstItem = order.items?.[0]
-  const firstItemQuantity =
-    typeof firstItem?.quantity === "number" ? firstItem.quantity : 1
-  const firstItemPriceSnapshot =
-    typeof firstItem?.total === "number"
-      ? firstItem.total
-      : typeof firstItem?.unit_price === "number"
-        ? firstItem.unit_price * firstItemQuantity
-        : null
-  const fallbackOrderTotal = typeof order.total === "number" ? order.total : 0
-  const displayPrice = firstItemPriceSnapshot ?? fallbackOrderTotal
+  const lineItemCount = order.items?.length ?? 0
+  const totalQuantity = (order.items ?? []).reduce(
+    (acc, item) => acc + (item.quantity ?? 0),
+    0
+  )
+  const representativeName =
+    firstItem?.title || firstItem?.variant?.product?.title || "상품"
+  const productName =
+    lineItemCount > 1
+      ? `${representativeName} 외 ${lineItemCount - 1}건`
+      : representativeName
+  const displayPrice = typeof order.total === "number" ? order.total : 0
 
   const options: string[] = []
   if (firstItem?.variant?.title && firstItem.variant.title !== "Default") {
@@ -56,17 +59,20 @@ const mapStoreOrderToOrderItem = (order: HttpTypes.StoreOrder): OrderItem => {
 
   return {
     orderId: order.id,
+    orderNumber: order.display_id
+      ? `#${order.display_id}`
+      : `#${order.id.slice(0, 12)}`,
     orderDate: formatDate,
     status: getKoreanOrderStatus(order),
     deliveryInfo: "",
     shippingNote: "",
-    productName: firstItem?.title || firstItem?.variant?.product?.title || "상품",
+    productName,
     productImage:
       firstItem?.thumbnail ||
       firstItem?.variant?.product?.thumbnail ||
       "https://placehold.co/80x80",
     price: `${displayPrice.toLocaleString()}원`,
-    quantity: order.items?.length || 0,
+    quantity: `상품 ${lineItemCount}건 · 총 수량 ${totalQuantity}개`,
     options,
     showInquiry: order.fulfillment_status === "fulfilled",
   }
@@ -115,6 +121,7 @@ export function OrderListClient({
             key={order.orderId}
             orderId={order.orderId}
             orderDate={order.orderDate}
+            orderNumber={order.orderNumber}
           >
             <OrderCardContent
               orderId={order.orderId}
