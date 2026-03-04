@@ -3,6 +3,7 @@ import { StarRating } from "../ui/star-rating"
 import { ReviewAuthor } from "../ui/review-author"
 import { ReviewThumbnailGallery } from "../ui/review-thumbnail-gallery"
 import { ReviewHelpfulButton } from "../ui/review-helpful-button"
+import { ExpandableReviewContent } from "../ui"
 import { getAuthorName } from "../utils"
 
 type Props = {
@@ -22,7 +23,7 @@ export function ReviewDetailCard({ countryCode, review }: Props) {
     })
     .replace(/ /g, "")
 
-  // 작성자명 처리 (유틸 함수 사용)
+  // 작성자명 처리
   const authorName = getAuthorName(
     review.legacyAuthorName || review.legacy_author_name || null,
     review.userId
@@ -52,16 +53,10 @@ export function ReviewDetailCard({ countryCode, review }: Props) {
           <ReviewThumbnailGallery thumbnails={review.mediaFileIds} />
         )}
 
-        <p className="text-xs text-black">
-          {review.content.split("\n").map((line, i) => (
-            <span key={i} className="block">
-              {line}
-            </span>
-          ))}
-        </p>
+        <ExpandableReviewContent content={review.content} />
       </section>
 
-      {/*  푸터: 도움돼요 버튼 */}
+      {/* 푸터: 도움돼요 버튼 */}
       <ReviewHelpfulButton
         countryCode={countryCode}
         reviewId={review.id}

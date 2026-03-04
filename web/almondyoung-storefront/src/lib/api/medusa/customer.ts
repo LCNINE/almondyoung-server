@@ -5,11 +5,7 @@ import medusaError from "@lib/utils/medusa-error"
 import { HttpTypes } from "@medusajs/types"
 import { revalidateTag } from "next/cache"
 import { handleMedusaAuthError } from "./auth-utils"
-import {
-  getAuthHeaders,
-  getCacheTag,
-  getCartId,
-} from "../../data/cookies"
+import { getAuthHeaders, getCacheTag, getCartId } from "../../data/cookies"
 import { transformFormDataToAddress } from "@/components/address/utils"
 import type { CustomerGroupRef } from "@/lib/utils/membership-group"
 
@@ -30,9 +26,7 @@ export const retrieveCustomer =
     return await sdk.client
       .fetch<{ customer: StoreCustomerWithGroups }>(`/store/customers/me`, {
         method: "GET",
-        query: {
-          fields: "*addresses,*groups",
-        },
+        // 서버측에서 query:{fields: ["*","addresses.*", "groups.*"]} 처리가 되어있기때문에 query 생략해야함
         headers,
         cache: "no-store",
       })

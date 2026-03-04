@@ -11,7 +11,8 @@ export {
 
 export {
   getQuestionsByProductId,
-  getQuestion,
+  getQnaSummary,
+  getQuestionById,
   createQuestion,
   updateQuestion,
   deleteQuestion,

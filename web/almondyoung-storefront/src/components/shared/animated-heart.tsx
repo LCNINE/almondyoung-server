@@ -62,7 +62,11 @@ export function AnimatedHeart({
         {isActive && (
           <motion.div
             className="absolute inset-0 flex items-center justify-center"
-            initial={{ clipPath: "circle(0% at 50% 50%)" }}
+            initial={
+              isFirstRender.current
+                ? false
+                : { clipPath: "circle(0% at 50% 50%)" }
+            }
             animate={{ clipPath: "circle(75% at 50% 50%)" }}
             exit={{ clipPath: "circle(0% at 50% 50%)" }}
             transition={{ duration: 0.3, ease: "easeOut" }}

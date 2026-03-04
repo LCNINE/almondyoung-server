@@ -1,6 +1,14 @@
 "use client"
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import { useUser } from "@/contexts/user-context"
 import { getWishlist, toggleWishlist } from "@lib/api/users/wishlist/client"
 
@@ -12,9 +20,9 @@ type WishlistContextValue = {
   isLoading: boolean
   error: string | null
   refresh: () => Promise<void>
-  toggle: (productId: string) => Promise<WishlistAction | null>
-  isWishlisted: (productId: string) => boolean
-  isPending: (productId: string) => boolean
+  toggle: (handle: string) => Promise<WishlistAction | null>
+  isWishlisted: (handle: string) => boolean
+  isPending: (handle: string) => boolean
 }
 
 const WishlistContext = createContext<WishlistContextValue | null>(null)
@@ -64,31 +72,31 @@ export function WishlistProvider({ children }: { children: React.ReactNode }) {
     refresh()
   }, [refresh])
 
-  const toggle = useCallback(async (productId: string) => {
-    const wasWishlisted = idsRef.current.has(productId)
+  const toggle = useCallback(async (handle: string) => {
+    const wasWishlisted = idsRef.current.has(handle)
 
-    setPendingIds((prev) => new Set(prev).add(productId))
+    setPendingIds((prev) => new Set(prev).add(handle))
     setIds((prev) => {
       const next = new Set(prev)
       if (wasWishlisted) {
-        next.delete(productId)
+        next.delete(handle)
       } else {
-        next.add(productId)
+        next.add(handle)
       }
       return next
     })
 
     try {
-      const result = await toggleWishlist(productId)
+      const result = await toggleWishlist(handle)
       const action = result?.action
 
       if (action === "added" || action === "removed") {
         setIds((prev) => {
           const next = new Set(prev)
           if (action === "added") {
-            next.add(productId)
+            next.add(handle)
           } else {
-            next.delete(productId)
+            next.delete(handle)
           }
           return next
         })
@@ -100,9 +108,9 @@ export function WishlistProvider({ children }: { children: React.ReactNode }) {
       setIds((prev) => {
         const next = new Set(prev)
         if (wasWishlisted) {
-          next.add(productId)
+          next.add(handle)
         } else {
-          next.delete(productId)
+          next.delete(handle)
         }
         return next
       })
@@ -110,7 +118,7 @@ export function WishlistProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setPendingIds((prev) => {
         const next = new Set(prev)
-        next.delete(productId)
+        next.delete(handle)
         return next
       })
     }
@@ -124,8 +132,8 @@ export function WishlistProvider({ children }: { children: React.ReactNode }) {
       error,
       refresh,
       toggle,
-      isWishlisted: (productId: string) => ids.has(productId),
-      isPending: (productId: string) => pendingIds.has(productId),
+      isWishlisted: (handle: string) => ids.has(handle),
+      isPending: (handle: string) => pendingIds.has(handle),
     }),
     [ids, isLoaded, isLoading, error, refresh, toggle, pendingIds]
   )

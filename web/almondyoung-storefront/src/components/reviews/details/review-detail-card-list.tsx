@@ -8,11 +8,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Skeleton } from "@/components/ui/skeleton"
+import { ProductReviewSkeleton } from "@/components/skeletons/product-detail-skeletons"
 import { getReviewsByProductId } from "@/lib/api/ugc"
 import { ReviewRatingFilter, ReviewSortOption } from "@/lib/types/common/filter"
 import { ReviewDetail } from "@/lib/types/ui/ugc"
-import { useEffect, useState, useCallback } from "react"
+import { useCallback, useState } from "react"
 import { ReviewDetailCard } from "./review-detail-card"
 import { ReviewSummary } from "../summary/review-summary"
 
@@ -21,8 +21,7 @@ type Props = {
   productId: string
   totalReviews: number
   averageRating: number
-  onTotalChange?: (total: number) => void
-  onAverageRatingChange?: (rating: number) => void
+  initialReviews: ReviewDetail[]
 }
 
 const ITEMS_PER_PAGE = 10
@@ -48,14 +47,12 @@ export function ReviewDetailCardList({
   productId,
   totalReviews,
   averageRating,
-  onTotalChange,
-  onAverageRatingChange,
+  initialReviews,
 }: Props) {
-  const [reviews, setReviews] = useState<ReviewDetail[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const [reviews, setReviews] = useState<ReviewDetail[]>(initialReviews)
+  const [isLoading, setIsLoading] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [total, setTotal] = useState(totalReviews)
-  const [calculatedAverage, setCalculatedAverage] = useState(averageRating)
   const [selectedFilter, setSelectedFilter] = useState<
     ReviewRatingFilter | "all"
   >("all")
@@ -63,63 +60,59 @@ export function ReviewDetailCardList({
 
   const totalPages = Math.ceil(total / ITEMS_PER_PAGE)
 
-  const fetchReviews = useCallback(async () => {
-    setIsLoading(true)
-    try {
-      const result = await getReviewsByProductId({
-        productId,
-        rating: selectedFilter === "all" ? undefined : selectedFilter,
-        sort: sortOption,
-        page: currentPage,
-        limit: ITEMS_PER_PAGE,
-      })
+  const fetchReviews = useCallback(
+    async (
+      page: number,
+      sort: ReviewSortOption,
+      filter: ReviewRatingFilter | "all"
+    ) => {
+      setIsLoading(true)
+      try {
+        const result = await getReviewsByProductId({
+          productId,
+          rating: filter === "all" ? undefined : filter,
+          sort,
+          page,
+          limit: ITEMS_PER_PAGE,
+        })
 
-      // status가 active인 리뷰만 필터링
-      const activeReviews = (result.data ?? []).filter(
-        (review) => review.status === "active"
-      )
-      setReviews(activeReviews)
-      setTotal(result.total ?? 0)
-      onTotalChange?.(result.total)
-
-      // 별점 평균 계산 (현재 페이지 기준 - 전체 평균은 API 지원 필요)
-      if (activeReviews.length > 0) {
-        const sum = activeReviews.reduce((acc, r) => acc + r.rating, 0)
-        const avg = Math.round((sum / activeReviews.length) * 10) / 10
-        setCalculatedAverage(avg)
-        onAverageRatingChange?.(avg)
+        const activeReviews = (result.data ?? []).filter(
+          (review) => review.status === "active"
+        )
+        setReviews(activeReviews)
+        setTotal(result.total ?? 0)
+      } catch (error) {
+        console.error("리뷰 로드 실패:", error)
+        setReviews([])
+      } finally {
+        setIsLoading(false)
       }
-    } catch (error) {
-      console.error("리뷰 로드 실패:", error)
-      setReviews([])
-    } finally {
-      setIsLoading(false)
-    }
-  }, [productId, selectedFilter, sortOption, currentPage])
-
-  useEffect(() => {
-    fetchReviews()
-  }, [fetchReviews])
+    },
+    [productId]
+  )
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page)
+    fetchReviews(page, sortOption, selectedFilter)
   }
 
   const handleFilterChange = (filter: ReviewRatingFilter | "all") => {
     setSelectedFilter(filter)
     setCurrentPage(1)
+    fetchReviews(1, sortOption, filter)
   }
 
   const handleSortChange = (value: ReviewSortOption) => {
     setSortOption(value)
     setCurrentPage(1)
+    fetchReviews(1, value, selectedFilter)
   }
 
   return (
     <section className="space-y-6">
       <ReviewSummary
-        totalReviews={total}
-        averageRating={calculatedAverage}
+        totalReviews={totalReviews}
+        averageRating={averageRating}
         summaryTags={[]}
       />
 
@@ -159,29 +152,7 @@ export function ReviewDetailCardList({
 
       {/* 리뷰 목록 */}
       {isLoading ? (
-        <div className="space-y-4 py-6">
-          <Skeleton className="h-4 w-40" />
-          <div className="space-y-4">
-            {Array.from({ length: 3 }).map((_, index) => (
-              <div
-                key={`review-skeleton-${index}`}
-                className="rounded-lg border border-gray-100 p-4"
-              >
-                <div className="flex items-center gap-3">
-                  <Skeleton className="h-10 w-10 rounded-full" />
-                  <div className="flex flex-1 flex-col gap-2">
-                    <Skeleton className="h-3 w-24" />
-                    <Skeleton className="h-3 w-32" />
-                  </div>
-                </div>
-                <div className="mt-3 space-y-2">
-                  <Skeleton className="h-3 w-full" />
-                  <Skeleton className="h-3 w-5/6" />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <ProductReviewSkeleton />
       ) : reviews.length === 0 ? (
         <div className="py-12 text-center text-gray-500">
           {selectedFilter === "all"

@@ -44,7 +44,7 @@ export function WelcomeDealSection({ products }: WelcomeDealSectionProps) {
                   className="basis-[42%] pl-0"
                 >
                   <Link
-                    href={`/${countryCode}/products/${product.id}`}
+                    href={`/${countryCode}/products/${product.handle}`}
                     className="block"
                   >
                     <ProductCard className="border-r-[0.5px] border-r-gray-100 pr-4 last:border-r-0">
