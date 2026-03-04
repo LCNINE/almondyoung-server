@@ -31,7 +31,7 @@ export const retrieveCustomer =
       .fetch<{ customer: StoreCustomerWithGroups }>(`/store/customers/me`, {
         method: "GET",
         query: {
-          fields: "*addresses",
+          fields: "*addresses,*groups",
         },
         headers,
         cache: "no-store",

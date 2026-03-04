@@ -17,20 +17,9 @@ export const deriveCartItemPricing = (
   const quantity = item.quantity || 1
   const baseUnitPrice = item.product.basePrice || item.product.unitPrice || 0
   const cartUnitPrice = item.product.unitPrice || baseUnitPrice
-  const membershipPrice = item.product.membershipPrice
-  const hasMembershipPrice =
-    typeof membershipPrice === "number" &&
-    membershipPrice > 0 &&
-    membershipPrice < baseUnitPrice
-
-  const memberUnitPrice =
-    cartUnitPrice > 0 && cartUnitPrice < baseUnitPrice
-      ? cartUnitPrice
-      : hasMembershipPrice
-        ? membershipPrice
-        : cartUnitPrice
-
-  const displayUnitPrice = isMembershipPricing ? memberUnitPrice : baseUnitPrice
+  const hasMembershipPrice = cartUnitPrice > 0 && cartUnitPrice < baseUnitPrice
+  const memberUnitPrice = cartUnitPrice
+  const displayUnitPrice = cartUnitPrice
   const membershipSavingsPerUnit = Math.max(0, baseUnitPrice - memberUnitPrice)
   const isMembershipApplied = isMembershipPricing && membershipSavingsPerUnit > 0
   const discountRate =

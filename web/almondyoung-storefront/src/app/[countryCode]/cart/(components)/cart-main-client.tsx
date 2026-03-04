@@ -62,19 +62,6 @@ function mapMedusaItemToCartItem(item: HttpTypes.StoreCartLineItem): CartItem {
     typeof compareAtUnitPrice === "number" && compareAtUnitPrice > 0
       ? compareAtUnitPrice
       : derivedBasePrice
-  const rawMembershipPrice = (variant?.metadata as any)?.membershipPrice
-  const parsedMembershipPrice =
-    typeof rawMembershipPrice === "string" ? Number(rawMembershipPrice) : null
-  const membershipPrice =
-    typeof rawMembershipPrice === "number"
-      ? rawMembershipPrice
-      : Number.isFinite(parsedMembershipPrice)
-        ? parsedMembershipPrice
-        : null
-  const normalizedMembershipPrice =
-    membershipPrice != null && basePrice > membershipPrice
-      ? membershipPrice
-      : null
   const unitPrice = item.unit_price || basePrice
   const isMembershipOnly = (product?.metadata as any)?.isMembershipOnly || false
 
@@ -90,7 +77,7 @@ function mapMedusaItemToCartItem(item: HttpTypes.StoreCartLineItem): CartItem {
       name: item.title || product?.title || "상품명 없음",
       thumbnail: item.thumbnail || product?.thumbnail || "",
       basePrice,
-      membershipPrice: normalizedMembershipPrice || undefined,
+      membershipPrice: undefined,
       unitPrice,
       brand: product?.subtitle || (product?.metadata as any)?.brand || "",
       isMembershipOnly,
@@ -130,7 +117,7 @@ export function CartMainClient() {
         options?.[0]
       return standard?.amount ?? 0
     },
-    [listCartShippingMethods]
+    []
   )
 
   // 장바구니 데이터 로드
@@ -154,6 +141,16 @@ export function CartMainClient() {
       if (cart && !cart.customer_id) {
         try {
           await transferCart()
+          if (cart.id) {
+            const transferredCart = await retrieveCart(
+              cart.id,
+              undefined,
+              "no-store"
+            )
+            if (transferredCart) {
+              cart = transferredCart
+            }
+          }
           // console.log("[장바구니] 카트를 고객에게 연결 완료")
         } catch (error) {
           // 로그인 안 된 상태면 실패할 수 있음 - 무시
