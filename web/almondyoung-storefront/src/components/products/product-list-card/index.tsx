@@ -10,6 +10,7 @@ import { ProductPrice } from "@/components/products/prodcut-card/parts/product-p
 
 export interface ProductListCardProps {
   id: string
+  handle: string
   title: string
   imageSrc: string
   price: number
@@ -33,7 +34,7 @@ export interface ProductListCardProps {
 }
 
 export function ProductListCard({
-  id,
+  handle,
   title,
   imageSrc,
   price,
@@ -86,8 +87,9 @@ export function ProductListCard({
     <div className="flex gap-4 border-b border-gray-100 py-4 last:border-b-0">
       {/* 썸네일 */}
       <Link
-        href={`/${countryCode}/products/${id}`}
+        href={`/${countryCode}/products/${handle}`}
         className="relative h-[100px] w-[100px] flex-shrink-0 overflow-hidden rounded-lg md:h-[120px] md:w-[120px]"
+
       >
         <Image
           src={imageSrc ? getThumbnailUrl(imageSrc) : "/placeholder.png"}
@@ -102,7 +104,7 @@ export function ProductListCard({
       <div className="flex flex-1 flex-col justify-between">
         {/* 상품명 */}
         <Link
-          href={`/${countryCode}/products/${id}`}
+          href={`/${countryCode}/products/${handle}`}
           className="line-clamp-2 text-sm font-medium text-gray-900 hover:underline md:text-base"
         >
           {title}

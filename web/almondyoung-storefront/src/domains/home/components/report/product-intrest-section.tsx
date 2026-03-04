@@ -101,6 +101,7 @@ const mockRelatedProducts: MockProduct[] = [
 function toProductCardProps(mock: MockProduct): ProductCardProps {
   return {
     id: mock.id,
+    handle: mock.id,
     title: mock.name,
     imageSrc: mock.thumbnail,
     price: mock.price.member,
@@ -179,7 +180,7 @@ export default function ProductIntrestSection() {
                   찾아본 상품
                 </div>
               ) : null}
-              <Link href={`/kr/products/${product.id}`}>
+              <Link href={`/kr/products/${product.handle}`}>
                 <ProductCard>
                   <ProductCard.Thumbnail
                     src={product.imageSrc}

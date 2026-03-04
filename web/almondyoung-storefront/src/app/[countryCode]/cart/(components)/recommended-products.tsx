@@ -77,7 +77,7 @@ export function RecommendedProducts({
               key={product.id}
               className="recommendation-item w-[40%] flex-shrink-0 pr-3 sm:w-[calc(100%/3.2)]"
             >
-              <Link href={`/${countryCode}/products/${product.id}`}>
+              <Link href={`/${countryCode}/products/${product.handle}`}>
                 <ProductCard>
                   <ProductCard.Thumbnail
                     src={product.imageSrc}

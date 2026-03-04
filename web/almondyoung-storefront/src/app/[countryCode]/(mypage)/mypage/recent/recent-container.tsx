@@ -26,7 +26,7 @@ export function RecentContainer({ products, countryCode }: RecentContainerProps)
 
   const handleAddToCart = async (product: ProductCardProps) => {
     if (!product.optionMeta?.isSingle || !product.optionMeta?.defaultVariantId) {
-      window.location.href = `/${countryCode}/products/${product.id}`
+      window.location.href = `/${countryCode}/products/${product.handle}`
       return
     }
 
@@ -96,6 +96,7 @@ export function RecentContainer({ products, countryCode }: RecentContainerProps)
           <ProductListCard
             key={product.id}
             id={product.id}
+            handle={product.handle}
             title={product.title}
             imageSrc={product.imageSrc}
             price={product.price}

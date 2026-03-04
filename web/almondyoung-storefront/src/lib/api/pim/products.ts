@@ -21,6 +21,7 @@ export const getProductDetailByMasterId = async (
   return await api("pim", `/masters/${masterId}`, {
     method: "GET",
     withAuth: false,
+    next: { tags: [`pim-detail-${masterId}`] },
   })
 }
 

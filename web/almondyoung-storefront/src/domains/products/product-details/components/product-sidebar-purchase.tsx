@@ -165,9 +165,7 @@ export function ProductSidebarPurchase({
   const handleLoginConfirm = () => {
     setShowLoginDialog(false)
     const path = getPathWithoutCountry(countryCode)
-    router.push(
-      `/${countryCode}/login?redirect_to=${encodeURIComponent(path)}`
-    )
+    router.push(`/${countryCode}/login?redirect_to=${encodeURIComponent(path)}`)
   }
 
   return (

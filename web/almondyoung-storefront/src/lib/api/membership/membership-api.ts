@@ -19,10 +19,14 @@ import { HttpApiError } from "../api-error"
  */
 export async function getCurrentSubscription(): Promise<SubscriptionDetailsDto | null> {
   try {
-    return await api<SubscriptionDetailsDto>("membership", `/subscriptions/current`, {
-      withAuth: true,
-      cache: "no-store",
-    })
+    return await api<SubscriptionDetailsDto>(
+      "membership",
+      `/subscriptions/current`,
+      {
+        withAuth: true,
+        cache: "no-store",
+      }
+    )
   } catch (error) {
     if (error instanceof HttpApiError && error.status === 404) {
       return null
@@ -73,12 +77,16 @@ export async function getCancellationReasons(): Promise<
 export async function getCurrentCycleBenefit(
   userId: string
 ): Promise<CycleBenefitDto> {
-  return await api<CycleBenefitDto>("membership", `/membership/benefits/current`, {
-    method: "GET",
-    params: { userId },
-    withAuth: true,
-    cache: "no-store",
-  })
+  return await api<CycleBenefitDto>(
+    "membership",
+    `/membership/benefits/current`,
+    {
+      method: "GET",
+      params: { userId },
+      withAuth: true,
+      cache: "no-store",
+    }
+  )
 }
 
 /**

@@ -93,6 +93,11 @@ export async function api<T>(
   }
 
   if (response.ok) {
+    // 204 No Content 등 빈 body 응답
+    if (response.status === 204) {
+      return undefined as T
+    }
+
     const json = await response.json()
 
     //Pagination 응답 (data, total, page, limit이 모두 있으면) 전체 반환

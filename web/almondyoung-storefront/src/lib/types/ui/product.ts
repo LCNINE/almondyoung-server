@@ -62,6 +62,7 @@ export interface RecentViewProductThumbnail {
  */
 export interface ProductCardProps {
   id: string
+  handle: string
   rank?: number
   title: string
   price: number
