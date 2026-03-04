@@ -1,4 +1,3 @@
-console.log("Loading src/api/middlewares.ts");
 import { authenticate, defineMiddlewares } from '@medusajs/framework/http';
 import { adminRouteMiddlewares } from './admin/middlewares';
 
@@ -13,16 +12,5 @@ export default defineMiddlewares({
       matcher: '/store/customers/me/cart',
       middlewares: [authenticate('customer', ['session', 'bearer'])],
     },
-    {
-      matcher: "/store/customers/me",
-      methods: ["GET"],
-      middlewares: [
-        (req, res, next) => {
-          (req.allowed ??= []).push("groups")
-          next()
-        },
-      ],
-    },
-
   ],
 });
