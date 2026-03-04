@@ -40,7 +40,6 @@ export function CartItemList({
             const {
               baseUnitPrice,
               hasMembershipPrice,
-              memberUnitPrice,
               displayUnitPrice,
               quantity,
               isMembershipApplied,
@@ -64,9 +63,7 @@ export function CartItemList({
                     ? baseUnitPrice * quantity
                     : undefined
                 }
-                discountedPrice={
-                  (isMember ? displayUnitPrice : memberUnitPrice) * quantity
-                }
+                discountedPrice={displayUnitPrice * quantity}
                 actualPrice={displayUnitPrice * quantity}
                 discountRate={discountRate}
                 isMembership={isMembershipApplied}
@@ -91,7 +88,6 @@ export function CartItemList({
         const {
           baseUnitPrice,
           hasMembershipPrice,
-          memberUnitPrice,
           displayUnitPrice,
           quantity,
           isMembershipApplied,
@@ -115,9 +111,7 @@ export function CartItemList({
                 ? baseUnitPrice * quantity
                 : undefined
             }
-            discountedPrice={
-              (isMember ? displayUnitPrice : memberUnitPrice) * quantity
-            }
+            discountedPrice={displayUnitPrice * quantity}
             discountRate={discountRate}
             isMembership={isMembershipApplied}
             actualPrice={displayUnitPrice * quantity}
