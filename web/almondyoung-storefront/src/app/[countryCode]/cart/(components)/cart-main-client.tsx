@@ -16,6 +16,7 @@ import {
   createShippingPreviewCartFromLineItems,
   syncShippingPreviewCartLineItems,
   getShippingTotalForCartPreview,
+  deleteShippingPreviewCart,
   updateLineItem,
   deleteLineItem,
 } from "@lib/api/medusa/cart"
@@ -278,6 +279,7 @@ export function CartMainClient() {
     const selectedPreviewItems = selected
       .filter((item) => item.variantId)
       .map((item) => ({
+        sourceLineItemId: item.id,
         variantId: item.variantId as string,
         quantity: item.quantity,
       }))
@@ -292,26 +294,36 @@ export function CartMainClient() {
       try {
         let previewCartId = previewCartIdRef.current
 
-        if (!previewCartId) {
+        const createPreviewCart = async () => {
           const created = await createShippingPreviewCartFromLineItems({
             countryCode,
             lineItemIds: selectedLineItemIds,
           })
           previewCartId = created.cartId
           previewCartIdRef.current = previewCartId
-        } else {
-          await syncShippingPreviewCartLineItems({
-            previewCartId,
-            items: selectedPreviewItems,
-          })
         }
 
-        const total = await getShippingTotalForCartPreview(previewCartId)
+        try {
+          if (!previewCartId) {
+            await createPreviewCart()
+          } else {
+            await syncShippingPreviewCartLineItems({
+              previewCartId,
+              items: selectedPreviewItems,
+            })
+          }
+        } catch {
+          previewCartIdRef.current = null
+          await createPreviewCart()
+        }
+
+        const total = await getShippingTotalForCartPreview(previewCartId!)
 
         if (previewRequestSeqRef.current === requestSeq) {
           setShippingTotal(total)
         }
       } catch {
+        previewCartIdRef.current = null
         if (previewRequestSeqRef.current === requestSeq) {
           setShippingTotal(0)
         }
@@ -322,6 +334,15 @@ export function CartMainClient() {
       clearTimeout(timer)
     }
   }, [cartItems, checkedItems, countryCode])
+
+  useEffect(() => {
+    return () => {
+      const previewCartId = previewCartIdRef.current
+      if (!previewCartId) return
+      void deleteShippingPreviewCart(previewCartId)
+      previewCartIdRef.current = null
+    }
+  }, [])
 
   const handleCheckItem = (id: string, checked: boolean) => {
     const item = cartItems.find((row) => row.id === id)
@@ -448,6 +469,11 @@ export function CartMainClient() {
 
       if (!result?.cartId) {
         throw new Error("Checkout cart was not created")
+      }
+
+      if (previewCartIdRef.current) {
+        void deleteShippingPreviewCart(previewCartIdRef.current)
+        previewCartIdRef.current = null
       }
 
       router.push(`/${countryCode}/checkout?cartId=${result.cartId}`)
