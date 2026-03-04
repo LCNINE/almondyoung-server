@@ -1,6 +1,8 @@
 import CheckoutHeader from "@/app/[countryCode]/(checkout)/checkout/checkout-header"
 import { getIntent } from "@/lib/api/wallet"
 import { getOrder } from "@/lib/api/medusa/orders"
+import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
+import type { IntentDto } from "@/lib/types/dto/wallet"
 import { notFound } from "next/navigation"
 import Link from "next/link"
 import { ChevronDownIcon, ReviewPromptCard } from "../_components"
@@ -11,19 +13,16 @@ interface PageProps {
   searchParams: Promise<{ orderId?: string }>
 }
 
-interface IntentData {
-  id: string
-  customerId: string
-  amount: number
-  type: string
-  status: string
-  createdAt: string
-  updatedAt: string
-  metadata?: {
-    orderId?: string
-    orderName?: string
-    [key: string]: any
-  }
+const resolveItemThumbnail = (item: HttpTypes.StoreOrderLineItem) => {
+  const rawThumbnail =
+    item.thumbnail ?? item.variant?.product?.thumbnail ?? ""
+
+  return getThumbnailUrl(rawThumbnail)
+}
+
+const getIntentOrderId = (intent: IntentDto) => {
+  const orderId = intent.metadata?.["orderId"]
+  return typeof orderId === "string" ? orderId : undefined
 }
 
 export default async function CheckoutSuccessPage({ params, searchParams }: PageProps) {
@@ -64,7 +63,7 @@ async function OrderSummaryCard({
   order,
   countryCode,
 }: {
-  intent: IntentData
+  intent: IntentDto
   order: HttpTypes.StoreOrder | null
   countryCode: string
 }) {
@@ -77,10 +76,7 @@ async function OrderSummaryCard({
     : null
   const items = order?.items ?? []
   const firstItem = items[0]
-  const firstThumbnail =
-    firstItem?.thumbnail ??
-    (firstItem as any)?.variant?.product?.thumbnail ??
-    null
+  const firstThumbnail = firstItem ? resolveItemThumbnail(firstItem) : ""
 
   return (
     <section className="w-full max-w-[816px] overflow-hidden rounded-[10px] border-[0.5px] border-[#d9d9d9] bg-white">
@@ -91,7 +87,7 @@ async function OrderSummaryCard({
             <span>
               {order?.display_id
                 ? `#${order.display_id}`
-                : intent.metadata?.orderId || intent.id}
+                : getIntentOrderId(intent) || intent.id}
             </span>
           </h2>
         </header>
@@ -142,10 +138,7 @@ async function OrderSummaryCard({
             {items.length > 0 ? (
               <ul className="divide-y divide-gray-100">
                 {items.map((item) => {
-                  const thumb =
-                    item.thumbnail ??
-                    (item as any)?.variant?.product?.thumbnail ??
-                    null
+                  const thumb = resolveItemThumbnail(item)
                   return (
                     <li key={item.id} className="flex items-center gap-4 py-3">
                       {thumb && (
