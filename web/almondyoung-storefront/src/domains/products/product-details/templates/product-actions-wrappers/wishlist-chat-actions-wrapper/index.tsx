@@ -1,5 +1,5 @@
 import { getWishlistByProductId } from "@/lib/api/users/wishlist"
-import { WishlistButton } from "../../../components2/actions/wishlist-button"
+import { WishlistButton } from "../../../components/actions/wishlist-button"
 // import { ChatButton } from "./chat-button"
 
 interface Props {
