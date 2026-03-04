@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { CustomButton } from "@/components/shared/custom-buttons"
+import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { MoreVertical } from "lucide-react"
 
 interface OrderCardContentProps {
@@ -41,6 +42,8 @@ export default function OrderCardContent({
   options = [],
   showInquiry = true,
 }: OrderCardContentProps) {
+  const resolvedProductImage = getThumbnailUrl(productImage)
+
   return (
     <div className="flex flex-col rounded-[5px] border border-gray-200 bg-white px-3 py-3.5 md:flex-row md:items-center md:gap-9 md:px-5">
       {/* 좌측: 상품 정보 영역 - container */}
@@ -83,7 +86,7 @@ export default function OrderCardContent({
             <figure className="shrink-0">
               <img
                 className="h-20 w-16 rounded-[5px]"
-                src={productImage}
+                src={resolvedProductImage}
                 alt={productName}
               />
             </figure>

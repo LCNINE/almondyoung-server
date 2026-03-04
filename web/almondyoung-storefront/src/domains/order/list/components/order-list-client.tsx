@@ -38,7 +38,16 @@ const mapStoreOrderToOrderItem = (order: HttpTypes.StoreOrder): OrderItem => {
   const orderDate = new Date(order.created_at)
   const formatDate = `${orderDate.getMonth() + 1}월 ${orderDate.getDate()}일`
   const firstItem = order.items?.[0]
-  const total = typeof order.total === "number" ? order.total : 0
+  const firstItemQuantity =
+    typeof firstItem?.quantity === "number" ? firstItem.quantity : 1
+  const firstItemPriceSnapshot =
+    typeof firstItem?.total === "number"
+      ? firstItem.total
+      : typeof firstItem?.unit_price === "number"
+        ? firstItem.unit_price * firstItemQuantity
+        : null
+  const fallbackOrderTotal = typeof order.total === "number" ? order.total : 0
+  const displayPrice = firstItemPriceSnapshot ?? fallbackOrderTotal
 
   const options: string[] = []
   if (firstItem?.variant?.title && firstItem.variant.title !== "Default") {
@@ -56,7 +65,7 @@ const mapStoreOrderToOrderItem = (order: HttpTypes.StoreOrder): OrderItem => {
       firstItem?.thumbnail ||
       firstItem?.variant?.product?.thumbnail ||
       "https://placehold.co/80x80",
-    price: `${(total / 100).toLocaleString()}원`,
+    price: `${displayPrice.toLocaleString()}원`,
     quantity: order.items?.length || 0,
     options,
     showInquiry: order.fulfillment_status === "fulfilled",
