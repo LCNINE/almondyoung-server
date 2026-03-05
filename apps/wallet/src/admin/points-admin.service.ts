@@ -69,6 +69,7 @@ export class PointsAdminService {
     userId: string,
     amount: number,
     reasonCode?: string,
+    idempotencyKey?: string,
   ): Promise<{ eventId: string }> {
     if (amount <= 0) {
       throw new BadRequestException('amount must be greater than 0');
@@ -83,7 +84,7 @@ export class PointsAdminService {
         userId,
         eventType: 'EARN',
         amount,
-        providerIdempotencyKey: `admin:earn:${eventId}`,
+        providerIdempotencyKey: idempotencyKey ?? `admin:earn:${eventId}`,
         reasonCode: reasonCode ?? null,
       });
 
