@@ -613,9 +613,6 @@ export class PimMedusaSyncService {
       }
 
       // Handle create/update/moved (all treated as upsert)
-      this.logger.log(
-        `[CategorySync] Sending to Medusa: id=${category.id}, name=${category.name}, slug=${category.slug}, sortOrder=${category.sortOrder}, parentId=${category.parentId}`,
-      );
       const medusaCategoryId = await this.medusaClient.ensureCategoryFromSnapshot({
         id: category.id,
         name: category.name,
