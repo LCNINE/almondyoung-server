@@ -32,7 +32,7 @@ export class ReviewsService {
     @InjectDb() private readonly db: DbService<UgcServiceSchema>,
     private readonly rewardPolicyService: ReviewRewardPolicyService,
     private readonly rewardPublisher: ReviewRewardPublisher,
-  ) {}
+  ) { }
 
   private get client() {
     return this.db.db;
@@ -383,7 +383,7 @@ export class ReviewsService {
       };
     }, tx);
 
-    // TX 커밋 후 Kafka command 발행 (fire-and-forget)
+    // TX 커밋 후 Kafka command 발행 
     const reward = rewardHolder.value;
     if (reward) {
       this.rewardPublisher

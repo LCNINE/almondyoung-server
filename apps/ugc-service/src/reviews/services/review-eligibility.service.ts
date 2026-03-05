@@ -1,8 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { and, count, desc, eq, isNotNull, isNull, type SQL } from 'drizzle-orm';
 import { reviewEligibilities, type UgcServiceSchema } from '../../db/schema';
 import { ReviewEligibilityListQueryDto } from '../dto/review-eligibility-query.dto';
+import { CreateReviewEligibilityDto } from '../dto/create-review-eligibility.dto';
 import { type ReviewEligibilityEntity } from '../types';
 import { PaginatedResponseDto } from '@app/shared/dto';
 
@@ -10,6 +11,8 @@ type DbTransaction = Parameters<Parameters<DbService<UgcServiceSchema>['db']['tr
 
 @Injectable()
 export class ReviewEligibilityService {
+  private readonly logger = new Logger(ReviewEligibilityService.name);
+
   constructor(@InjectDb() private readonly db: DbService<UgcServiceSchema>) {}
 
   private get client() {
@@ -18,6 +21,35 @@ export class ReviewEligibilityService {
 
   private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction): Promise<T> {
     return tx ? fn(tx) : this.client.transaction(fn);
+  }
+
+  async create(
+    userId: string,
+    dto: CreateReviewEligibilityDto,
+    tx?: DbTransaction,
+  ): Promise<ReviewEligibilityEntity[]> {
+    return this.inTx(async (tx) => {
+      const values = dto.items.map((item) => ({
+        userId,
+        productId: item.productId,
+        orderId: dto.orderId,
+        orderLineId: item.orderLineId,
+        sourceSystem: 'almondyoung' as const,
+        sourceEventId: `order:${dto.orderId}:${item.orderLineId}`,
+      }));
+
+      const created = await tx
+        .insert(reviewEligibilities)
+        .values(values)
+        .onConflictDoNothing()
+        .returning();
+
+      this.logger.log(
+        `[create] Created ${created.length} eligibilities for orderId=${dto.orderId}, userId=${userId}`,
+      );
+
+      return created;
+    }, tx);
   }
 
   async listByUser(
