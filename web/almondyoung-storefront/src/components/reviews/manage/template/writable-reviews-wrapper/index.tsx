@@ -1,25 +1,48 @@
-import { getOrders } from "@lib/api/medusa/orders"
+import {
+  getReviewEligibilities,
+  getRewardPolicies,
+} from "@/lib/api/ugc/reviews"
+import { getProductsByMasterIds } from "@/lib/api/pim/products"
 import { WritableReviewsSection } from "../../components/writable-reviews/writable-reviews-section"
 import type { WritableReview } from "../../types"
 
 export async function WritableReviewsWrapper() {
-  const ordersData = await getOrders({ limit: 50, status: "completed" })
-  const writableReviews: WritableReview[] =
-    ordersData?.orders?.flatMap(
-      (order) =>
-        order.items?.map((item) => ({
-          id: item.id,
-          orderId: order.id,
-          productId: item.variant?.product_id || item.product_id || "",
-          productName: item.title || item.variant?.product?.title || "상품",
-          productImage:
-            item.thumbnail ||
-            item.variant?.product?.thumbnail ||
-            "https://placehold.co/80x80",
-          orderDate: String(order.updated_at || ""),
-          variantTitle: item.variant?.title || "",
-        })) ?? []
-    ) ?? []
+  const [eligibilityData, rewardPolicies] = await Promise.all([
+    getReviewEligibilities({ limit: 50 }),
+    getRewardPolicies(),
+  ])
 
-  return <WritableReviewsSection reviews={writableReviews} />
+  const eligibilities = eligibilityData.data
+
+  if (eligibilities.length === 0) {
+    return (
+      <WritableReviewsSection reviews={[]} rewardPolicies={rewardPolicies} />
+    )
+  }
+
+  // 중복 제거 후 상품 정보 batch 조회
+  const productIds = Array.from(new Set(eligibilities.map((e) => e.productId)))
+  const products = await getProductsByMasterIds(productIds)
+  const productMap = new Map(products.map((p) => [p.masterId, p]))
+
+  // eligibility + product merge
+  const writableReviews: WritableReview[] = eligibilities.map((e) => {
+    const product = productMap.get(e.productId)
+    return {
+      id: e.id,
+      orderId: e.orderId,
+      orderLineId: e.orderLineId,
+      productId: e.productId,
+      productName: product?.name ?? "상품",
+      productImage: product?.thumbnail ?? "",
+      eligibleAt: e.eligibleAt,
+    }
+  })
+
+  return (
+    <WritableReviewsSection
+      reviews={writableReviews}
+      rewardPolicies={rewardPolicies}
+    />
+  )
 }

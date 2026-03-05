@@ -14,7 +14,7 @@ interface ReviewCardWrittenProps {
 }
 
 export const ReviewCardWritten = ({ review }: ReviewCardWrittenProps) => {
-  const { productInfo, reviewData } = review
+  const formattedDate = new Date(review.createdAt).toLocaleDateString("ko-KR")
 
   return (
     <Card className="border-0 shadow-none">
@@ -22,8 +22,8 @@ export const ReviewCardWritten = ({ review }: ReviewCardWrittenProps) => {
         <CardHeader className="flex flex-row items-start gap-3 p-4">
           <figure className="relative h-20 w-20 shrink-0 overflow-hidden rounded-md border border-[#F0F0F0]">
             <Image
-              src={getThumbnailUrl(productInfo.imageUrl)}
-              alt={`${productInfo.title} 썸네일`}
+              src={getThumbnailUrl(review.productImage)}
+              alt={`${review.productName} 썸네일`}
               width={80}
               height={80}
               className="object-cover"
@@ -31,13 +31,9 @@ export const ReviewCardWritten = ({ review }: ReviewCardWrittenProps) => {
           </figure>
           <div className="flex-1">
             <CardTitle className="line-clamp-2 text-[15px] leading-snug font-semibold">
-              {productInfo.title}
+              {review.productName}
             </CardTitle>
-            {productInfo.options && (
-              <p className="mt-1 text-[13px] text-[#666666]">
-                {productInfo.options}
-              </p>
-            )}
+            <p className="mt-1 text-[12px] text-gray-400">{formattedDate}</p>
           </div>
         </CardHeader>
 
@@ -45,11 +41,11 @@ export const ReviewCardWritten = ({ review }: ReviewCardWrittenProps) => {
           <div className="flex items-center gap-1.5">
             <div className="flex gap-0.5">
               {Array.from({ length: 5 }).map((_, index) => {
-                const isFilled = index < reviewData.rating
+                const isFilled = index < review.rating
                 return (
                   <Star
                     key={index}
-                    className={`h-6 w-6 ${
+                    className={`h-5 w-5 ${
                       isFilled
                         ? "fill-[#FF9500] text-[#FF9500]"
                         : "text-gray-300"
@@ -58,13 +54,13 @@ export const ReviewCardWritten = ({ review }: ReviewCardWrittenProps) => {
                 )
               })}
             </div>
-            <span className="text-lg font-bold text-gray-900">
-              {reviewData.rating}
+            <span className="text-base font-bold text-gray-900">
+              {review.rating}
             </span>
           </div>
-          {reviewData.text && (
-            <p className="mt-3 text-[14px] text-[#333333] whitespace-pre-wrap">
-              {reviewData.text}
+          {review.content && (
+            <p className="mt-3 text-[14px] leading-relaxed text-[#333333] whitespace-pre-wrap">
+              {review.content}
             </p>
           )}
         </CardContent>

@@ -28,7 +28,6 @@ export function WishlistButton({
   const [isPending, startTransition] = useTransition()
   const [optimisticWishlisted, setOptimisticWishlisted] =
     useOptimistic(isWishlisted)
-
   const handleToggle = () => {
     if (!user) {
       const path = getPathWithoutCountry(countryCode)

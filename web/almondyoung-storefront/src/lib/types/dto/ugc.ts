@@ -67,6 +67,31 @@ interface CommentResponseDto {
   updatedAt: string
 }
 
+// ─── Review Eligibility ───
+
+interface ReviewEligibilityResponseDto {
+  id: string
+  userId: string
+  productId: string
+  orderId: string
+  orderLineId: string
+  eligibleAt: string
+  consumedAt: string | null
+  consumedByReviewId: string | null
+  createdAt: string
+}
+
+// ─── Reward Policy ───
+
+type ReviewRewardType = "TEXT" | "PHOTO"
+
+interface RewardPolicyResponseDto {
+  reviewType: ReviewRewardType
+  rewardAmount: number
+  minContentLength: number
+  minMediaCount: number
+}
+
 // ─── Q&A ───
 
 type QuestionStatus = "active" | "answered" | "deleted"
@@ -147,4 +172,7 @@ export type {
   CreateAnswerDto,
   QuestionStatus,
   QnaSummaryResponseDto,
+  RewardPolicyResponseDto,
+  ReviewRewardType,
+  ReviewEligibilityResponseDto,
 }

@@ -53,5 +53,5 @@ export const getWishlistByProductId = async (
     }
   )
 
-  return data || []
+  return data || null
 }

@@ -10,7 +10,6 @@ export const metadata: Metadata = {
 
 export default async function OrderListPage() {
   const ordersData = await getOrders({ limit: 50, offset: 0 })
-
   return (
     <WithHeaderLayout
       config={{

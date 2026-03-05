@@ -12,7 +12,7 @@ export const ReviewCardWritable = ({
   review,
   onWriteReview,
 }: ReviewCardWritableProps) => {
-  const formattedDate = new Date(review.orderDate).toLocaleDateString("ko-KR")
+  const formattedDate = new Date(review.eligibleAt).toLocaleDateString("ko-KR")
 
   return (
     <article className="w-full bg-[#FFFFFF]">
@@ -32,13 +32,8 @@ export const ReviewCardWritable = ({
             <h3 className="line-clamp-2 text-[15px] leading-[22px] font-bold text-[#1A1A1A]">
               {review.productName}
             </h3>
-            {review.variantTitle && (
-              <p className="mt-[4px] text-[13px] text-[#666666]">
-                {review.variantTitle}
-              </p>
-            )}
             <dl className="mt-[2px] flex text-[13px] text-[#666666]">
-              <dt>구매확정 :&nbsp;</dt>
+              <dt>작성 가능일 :&nbsp;</dt>
               <dd>{formattedDate}</dd>
             </dl>
           </div>
