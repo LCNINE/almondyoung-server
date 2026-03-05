@@ -1,16 +1,16 @@
 import { Body, Controller, Delete, HttpCode, HttpStatus, Param, Patch, Post, Get, Query } from '@nestjs/common';
 import { ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags, ApiQuery } from '@nestjs/swagger';
 import { Public, RequireScopes, User } from '@app/authorization';
-import { ReviewsService } from './reviews.service';
-import { CreateReviewDto } from './dto/create-review.dto';
-import { RatingSummaryQueryDto, RatingSummaryResponseDto } from './dto/rating-summary.dto';
-import { ReviewListQueryDto } from './dto/review-list-query.dto';
-import { UpdateReviewDto } from './dto/update-review.dto';
-import { CommentResponseDto } from './dto/comment-response.dto';
-import { CreateCommentDto } from './dto/create-comment.dto';
-import { ReviewResponseDto } from './dto/review-response.dto';
-import { ToggleReactionDto } from './dto/toggle-reaction.dto';
-import { ReviewMapper } from './mappers';
+import { ReviewsService } from '../services/reviews.service';
+import { CreateReviewDto } from '../dto/create-review.dto';
+import { RatingSummaryQueryDto, RatingSummaryResponseDto } from '../dto/rating-summary.dto';
+import { ReviewListQueryDto } from '../dto/review-list-query.dto';
+import { UpdateReviewDto } from '../dto/update-review.dto';
+import { CommentResponseDto } from '../dto/comment-response.dto';
+import { CreateCommentDto } from '../dto/create-comment.dto';
+import { ReviewResponseDto } from '../dto/review-response.dto';
+import { ToggleReactionDto } from '../dto/toggle-reaction.dto';
+import { ReviewMapper } from '../mappers';
 import { ApiOkResponsePaginated } from '@app/shared/decorators/api-paginated-response.decorator';
 import { PaginatedResponseDto } from '@app/shared/dto';
 
