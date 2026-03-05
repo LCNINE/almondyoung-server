@@ -32,3 +32,6 @@ export * from './membership.stream';
 
 // Inventory Stream (WMS)
 export * from './inventory.stream';
+
+// UGC Stream
+export * from './ugc.stream';
