@@ -6,6 +6,10 @@ import { useIntersection } from "@/hooks/use-intersection"
 import { addToCart } from "@/lib/api/medusa/cart"
 import { VariantPrice } from "@/lib/types/common/price"
 import { getPricesForVariant } from "@/lib/utils/get-product-price"
+import {
+  CustomerGroupRef,
+  isMembershipGroup,
+} from "@/lib/utils/membership-group"
 import { HttpTypes } from "@medusajs/types"
 import { isEqual } from "lodash"
 import { Minus, Plus, X } from "lucide-react"
@@ -24,12 +28,13 @@ import {
   useTransition,
 } from "react"
 import { toast } from "sonner"
+import ProductDetailPrice from "../product-detail-price"
 import CartAddedModal from "./cart-added-modal"
 import MobileActions from "./mobile-actions"
 import OptionSelect from "./option-select"
-import ProductDetailPrice from "../product-detail-price"
 
 type ProductActionsProps = {
+  customer: (HttpTypes.StoreCustomer & { groups: CustomerGroupRef[] }) | null
   product: HttpTypes.StoreProduct
   region: HttpTypes.StoreRegion
   disabled?: boolean
@@ -63,6 +68,7 @@ const getVariantLabel = (variant: HttpTypes.StoreProductVariant) => {
 export default function ProductActions({
   product,
   disabled,
+  customer,
 }: ProductActionsProps) {
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
@@ -282,6 +288,7 @@ export default function ProductActions({
     <>
       <div className="hidden lg:flex lg:flex-col lg:gap-y-2" ref={actionsRef}>
         <ProductDetailPrice
+          hasMembership={isMembershipGroup(customer?.groups)}
           product={product}
           selectedVariant={displayVariant}
         />

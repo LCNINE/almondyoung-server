@@ -5,6 +5,8 @@ import {
   ProductReviewSkeleton,
   RatingSkeleton,
 } from "@/components/skeletons/product-detail-skeletons"
+import { Customer } from "@/lib/types/ui/medusa"
+import { isMembershipGroup } from "@/lib/utils/membership-group"
 import { HttpTypes } from "@medusajs/types"
 import { notFound } from "next/navigation"
 import { Suspense } from "react"
@@ -27,12 +29,14 @@ type ProductTemplateProps = {
   product: HttpTypes.StoreProduct
   region: HttpTypes.StoreRegion
   countryCode: string
+  customer: Customer | null
 }
 
 export function ProductTemplate({
   product,
   region,
   countryCode,
+  customer,
 }: ProductTemplateProps) {
   if (!product || !product.id) {
     return notFound()
@@ -79,6 +83,7 @@ export function ProductTemplate({
               </Suspense>
 
               <ProductDetailPrice
+                hasMembership={isMembershipGroup(customer?.groups)}
                 product={product}
                 selectedVariant={product.variants?.[0]}
               />
@@ -139,13 +144,18 @@ export function ProductTemplate({
             <Suspense
               fallback={
                 <ProductActions
+                  customer={customer}
                   product={product}
                   region={region}
                   disabled={false}
                 />
               }
             >
-              <ProductActionsWrapper id={product.id} region={region} />
+              <ProductActionsWrapper
+                id={product.id}
+                region={region}
+                customer={customer}
+              />
             </Suspense>
           </div>
         </div>
