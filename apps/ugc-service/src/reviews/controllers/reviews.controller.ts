@@ -3,6 +3,7 @@ import { ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags, ApiQuery } from 
 import { Public, RequireScopes, User } from '@app/authorization';
 import { ReviewsService } from '../services/reviews.service';
 import { CreateReviewDto } from '../dto/create-review.dto';
+import { MyReviewListQueryDto } from '../dto/my-review-list-query.dto';
 import { RatingSummaryQueryDto, RatingSummaryResponseDto } from '../dto/rating-summary.dto';
 import { ReviewListQueryDto } from '../dto/review-list-query.dto';
 import { UpdateReviewDto } from '../dto/update-review.dto';
@@ -73,6 +74,46 @@ export class ReviewsController {
     return {
       ...result,
       data: result.data.map(ReviewMapper.toResponse),
+    };
+  }
+
+  @Get('me')
+  @ApiOperation({ summary: '내 리뷰 목록 조회' })
+  @ApiQuery({
+    name: 'productId',
+    description: '상품 ID 필터 (UUID)',
+    required: false,
+    type: String,
+  })
+  @ApiQuery({
+    name: 'sort',
+    description: '정렬 옵션 (기본값: latest)',
+    required: false,
+    enum: ['latest', 'oldest', 'rating_high', 'rating_low'],
+  })
+  @ApiQuery({
+    name: 'page',
+    description: '페이지 번호 (1부터 시작)',
+    required: false,
+    type: Number,
+  })
+  @ApiQuery({
+    name: 'limit',
+    description: '페이지당 아이템 수',
+    required: false,
+    type: Number,
+  })
+  @ApiOkResponsePaginated(ReviewResponseDto, {
+    description: '내 리뷰 목록 조회 성공',
+  })
+  async listMine(
+    @User('userId') userId: string,
+    @Query() query: MyReviewListQueryDto,
+  ): Promise<PaginatedResponseDto<ReviewResponseDto>> {
+    const result = await this.reviewsService.listByUser(userId, query);
+    return {
+      ...result,
+      data: result.data.map((r) => ReviewMapper.toResponse(r)),
     };
   }
 

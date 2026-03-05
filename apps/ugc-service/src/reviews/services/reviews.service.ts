@@ -4,6 +4,7 @@ import { and, asc, count, desc, eq, inArray, type SQL } from 'drizzle-orm';
 import { reviewComments, reviewMedia, reviews, reactions, type UgcServiceSchema } from '../../db/schema';
 import { CreateReviewDto } from '../dto/create-review.dto';
 import { CreateCommentDto } from '../dto/create-comment.dto';
+import { MyReviewListQueryDto } from '../dto/my-review-list-query.dto';
 import { ReviewListQueryDto } from '../dto/review-list-query.dto';
 import { UpdateReviewDto } from '../dto/update-review.dto';
 import { type ReviewCommentEntity, type ReviewEntity, type ReviewWithMediaEntity } from '../types';
@@ -465,6 +466,66 @@ export class ReviewsService {
         averageRating,
         totalCount,
         ratingDistribution: distribution,
+      };
+    }, tx);
+  }
+
+  async listByUser(
+    userId: string,
+    query: MyReviewListQueryDto,
+    tx?: DbTransaction,
+  ): Promise<PaginatedResponseDto<ReviewWithMediaEntity>> {
+    return this.inTx(async (tx) => {
+      const page = query.page ?? 1;
+      const limit = query.limit ?? 20;
+      const offset = (page - 1) * limit;
+
+      const conditions: SQL[] = [eq(reviews.userId, userId), eq(reviews.status, 'active')];
+
+      if (query.productId) {
+        conditions.push(eq(reviews.productId, query.productId));
+      }
+
+      const whereClause = and(...conditions);
+
+      const [{ count: total }] = await tx.select({ count: count() }).from(reviews).where(whereClause);
+
+      const orderByClause = {
+        latest: desc(reviews.createdAt),
+        oldest: asc(reviews.createdAt),
+        rating_high: desc(reviews.rating),
+        rating_low: asc(reviews.rating),
+      }[query.sort ?? 'latest'];
+
+      const data = await tx
+        .select()
+        .from(reviews)
+        .where(whereClause)
+        .orderBy(orderByClause)
+        .limit(limit)
+        .offset(offset);
+
+      const reviewIds = data.map((review) => review.id);
+
+      const mediaMap = await this.fetchMediaFileIdsByReviewIds(reviewIds, tx);
+      const reactionCountMap = await this.fetchReactionCounts(reviewIds, tx);
+      const commentMap = await this.fetchCommentsByReviewIds(reviewIds, tx);
+
+      return {
+        data: data.map((review) => {
+          const counts = reactionCountMap.get(review.id) ?? { helpfulCount: 0, likeCount: 0, dislikeCount: 0 };
+          return {
+            ...review,
+            mediaFileIds: mediaMap.get(review.id) ?? [],
+            helpfulCount: counts.helpfulCount,
+            likeCount: counts.likeCount,
+            dislikeCount: counts.dislikeCount,
+            adminComment: commentMap.get(review.id) ?? null,
+          };
+        }),
+        total,
+        page,
+        limit,
       };
     }, tx);
   }
