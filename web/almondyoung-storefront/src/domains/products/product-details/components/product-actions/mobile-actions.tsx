@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils"
 import { HttpTypes } from "@medusajs/types"
 import { Minus, Plus, ShoppingCart, X } from "lucide-react"
 import React, { useState } from "react"
+import ProductPrice from "../product-price"
 
 type SelectedItem = {
   variantId: string
@@ -187,12 +188,11 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold">
-                        {(
-                          item.price.calculated_price_number * item.quantity
-                        ).toLocaleString()}
-                        원
-                      </span>
+                      <ProductPrice
+                        product={product}
+                        variant={item.variant}
+                        quantity={item.quantity}
+                      />
                       <button
                         onClick={() => removeItem(item.variantId)}
                         className="text-gray-400 hover:text-gray-600"
