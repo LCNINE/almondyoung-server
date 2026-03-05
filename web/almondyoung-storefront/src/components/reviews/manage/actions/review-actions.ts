@@ -15,6 +15,7 @@ function toCreateDto(review: WritableReview, data: ReviewInfo) {
     productId: review.productId,
     rating: data.rating,
     content: data.text,
+    ...(data.mediaFileIds?.length && { mediaFileIds: data.mediaFileIds }),
   }
 }
 

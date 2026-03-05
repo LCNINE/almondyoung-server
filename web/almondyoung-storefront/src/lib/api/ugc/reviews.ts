@@ -1,6 +1,4 @@
 "use server"
-
-import { PaginatedResponseDto } from "@/lib/types/common/pagination"
 import {
   ReviewResponseDto,
   CreateReviewDto,
@@ -11,7 +9,10 @@ import {
   RatingSummaryResponseDto,
   CreateCommentDto,
   CommentResponseDto,
+  RewardPolicyResponseDto,
+  ReviewEligibilityResponseDto,
 } from "@/lib/types/dto/ugc"
+import { PaginatedResponseDto } from "@/lib/types/common/pagination"
 import { api } from "../api"
 
 /**
@@ -52,6 +53,71 @@ export const getRatingSummary = async (
     params: { productId },
     withAuth: false,
     next: { tags: [`rating-summary-${productId}`] },
+  })
+}
+
+/**
+ * 내 리뷰 목록 조회
+ */
+export const getMyReviews = async ({
+  productId,
+  sort,
+  page,
+  limit,
+}: {
+  productId?: string
+  sort?: string
+  page?: number
+  limit?: number
+} = {}): Promise<PaginatedResponseDto<ReviewResponseDto>> => {
+  const params: Record<string, string> = {}
+  if (productId) params.productId = productId
+  if (sort) params.sort = sort
+  if (page) params.page = String(page)
+  if (limit) params.limit = String(limit)
+
+  return await api("ugc", `/reviews/me`, {
+    method: "GET",
+    params,
+    withAuth: true,
+    next: { tags: ["my-reviews"] },
+  })
+}
+
+/**
+ * 내 리뷰 작성 자격 목록 조회
+ */
+export const getReviewEligibilities = async ({
+  status = "available",
+  page,
+  limit,
+}: {
+  status?: "available" | "consumed"
+  page?: number
+  limit?: number
+} = {}): Promise<PaginatedResponseDto<ReviewEligibilityResponseDto>> => {
+  const params: Record<string, string> = { status }
+  if (page) params.page = String(page)
+  if (limit) params.limit = String(limit)
+
+  return await api("ugc", `/reviews/eligibilities`, {
+    method: "GET",
+    params,
+    withAuth: true,
+    next: { tags: ["review-eligibilities"] },
+  })
+}
+
+/**
+ * 리뷰 리워드 정책 조회
+ */
+export const getRewardPolicies = async (): Promise<
+  RewardPolicyResponseDto[]
+> => {
+  return await api("ugc", `/reviews/reward-policies`, {
+    method: "GET",
+    withAuth: false,
+    next: { tags: ["reward-policies"] },
   })
 }
 

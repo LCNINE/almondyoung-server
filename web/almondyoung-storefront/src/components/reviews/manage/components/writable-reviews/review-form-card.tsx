@@ -1,8 +1,11 @@
 "use client"
 
 import Image from "next/image"
-import { Star, X, Loader2 } from "lucide-react"
-import { useState } from "react"
+import { Star, X, Loader2, Camera, Plus } from "lucide-react"
+import { useRef, useState } from "react"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { z } from "zod"
 import {
   Card,
   CardHeader,
@@ -12,37 +15,142 @@ import {
 import { Button } from "@components/common/ui/button"
 import { Separator } from "@components/common/ui/separator"
 import { Textarea } from "@components/common/ui/textarea"
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormMessage,
+} from "@/components/ui/form"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
+import { uploadFile } from "@/lib/api/file/upload"
 import type { WritableReview, ReviewInfo } from "../../types"
+import type { RewardPolicyResponseDto } from "@/lib/types/dto/ugc"
 
 interface ReviewFormCardProps {
   review: WritableReview
+  rewardPolicies: RewardPolicyResponseDto[]
   onSave: (data: ReviewInfo) => Promise<void>
   onCancel: () => void
 }
 
+const MAX_CONTENT_LENGTH = 5000
+const MAX_PHOTO_COUNT = 5
+const ACCEPTED_IMAGE_TYPES = "image/jpeg,image/png,image/webp"
+
+interface PhotoPreview {
+  id: string
+  file: File
+  previewUrl: string
+}
+
+function createReviewSchema(minContentLength: number) {
+  return z.object({
+    rating: z
+      .number({ error: "별점을 선택해주세요." })
+      .min(1, "별점을 선택해주세요.")
+      .max(5),
+    text: z
+      .string()
+      .min(minContentLength, `최소 ${minContentLength}자 이상 입력해주세요.`)
+      .max(
+        MAX_CONTENT_LENGTH,
+        `최대 ${MAX_CONTENT_LENGTH.toLocaleString()}자까지 입력 가능합니다.`
+      ),
+  })
+}
+
+type ReviewFormValues = z.infer<ReturnType<typeof createReviewSchema>>
+
 export const ReviewFormCard = ({
   review,
+  rewardPolicies,
   onSave,
   onCancel,
 }: ReviewFormCardProps) => {
-  const [isLoading, setIsLoading] = useState(false)
-  const [currentRating, setCurrentRating] = useState(0)
-  const [currentText, setCurrentText] = useState("")
   const [hoverRating, setHoverRating] = useState(0)
+  const [photos, setPhotos] = useState<PhotoPreview[]>([])
+  const [isUploading, setIsUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const hasValidRating = currentRating > 0
-  const canSave = hasValidRating && !isLoading
+  const textPolicy = rewardPolicies.find((p) => p.reviewType === "TEXT")
+  const photoPolicy = rewardPolicies.find((p) => p.reviewType === "PHOTO")
+  const minContentLength = textPolicy?.minContentLength ?? 30
+  const photoBonusAmount =
+    photoPolicy && textPolicy
+      ? photoPolicy.rewardAmount - textPolicy.rewardAmount
+      : photoPolicy?.rewardAmount ?? 0
 
-  const handleSaveClick = async () => {
-    if (!canSave) return
-    setIsLoading(true)
+  const form = useForm<ReviewFormValues>({
+    resolver: zodResolver(createReviewSchema(minContentLength)),
+    mode: "onChange",
+    defaultValues: {
+      rating: 0,
+      text: "",
+    },
+  })
+
+  const {
+    handleSubmit,
+    formState: { isSubmitting },
+  } = form
+
+  const watchedText = form.watch("text")
+  const isBusy = isSubmitting || isUploading
+
+  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files) return
+
+    const remaining = MAX_PHOTO_COUNT - photos.length
+    const newFiles = Array.from(files).slice(0, remaining)
+
+    const newPreviews: PhotoPreview[] = newFiles.map((file) => ({
+      id: crypto.randomUUID(),
+      file,
+      previewUrl: URL.createObjectURL(file),
+    }))
+
+    setPhotos((prev) => [...prev, ...newPreviews])
+    e.target.value = ""
+  }
+
+  const handlePhotoRemove = (id: string) => {
+    setPhotos((prev) => {
+      const target = prev.find((p) => p.id === id)
+      if (target) URL.revokeObjectURL(target.previewUrl)
+      return prev.filter((p) => p.id !== id)
+    })
+  }
+
+  const uploadPhotos = async (): Promise<string[]> => {
+    const fileIds: string[] = []
+    for (const photo of photos) {
+      const formData = new FormData()
+      formData.append("file", photo.file)
+      formData.append("contextId", "review-media")
+      const result = await uploadFile(formData)
+      fileIds.push(result.id)
+    }
+    return fileIds
+  }
+
+  const onSubmit = async (data: ReviewFormValues) => {
     try {
-      await onSave({ rating: currentRating, text: currentText })
+      let mediaFileIds: string[] | undefined
+      if (photos.length > 0) {
+        setIsUploading(true)
+        mediaFileIds = await uploadPhotos()
+        setIsUploading(false)
+      }
+      await onSave({
+        rating: data.rating,
+        text: data.text,
+        mediaFileIds,
+      })
     } catch (error) {
+      setIsUploading(false)
       console.error("리뷰 저장 실패:", error)
-    } finally {
-      setIsLoading(false)
     }
   }
 
@@ -64,11 +172,6 @@ export const ReviewFormCard = ({
             <CardTitle className="line-clamp-2 text-[15px] leading-snug font-semibold">
               {review.productName}
             </CardTitle>
-            {review.variantTitle && (
-              <p className="mt-1 text-[13px] text-[#666666]">
-                {review.variantTitle}
-              </p>
-            )}
           </div>
 
           <Button
@@ -85,71 +188,212 @@ export const ReviewFormCard = ({
         <Separator className="mx-4 w-auto" />
 
         <CardContent className="p-4">
-          <div className="flex flex-col gap-4">
-            <div
-              className="flex items-center gap-1.5"
-              role="radiogroup"
-              aria-label="별점 평가"
+          <Form {...form}>
+            <form
+              onSubmit={handleSubmit(onSubmit)}
+              className="flex flex-col gap-4"
             >
-              <div
-                className="flex gap-0.5"
-                onMouseLeave={() => setHoverRating(0)}
-              >
-                {Array.from({ length: 5 }).map((_, index) => {
-                  const ratingValue = index + 1
-                  const isFilled = (hoverRating || currentRating) >= ratingValue
-                  return (
-                    <button
-                      key={index}
-                      type="button"
-                      role="radio"
-                      aria-checked={currentRating === ratingValue}
-                      aria-label={`${ratingValue}점`}
-                      onClick={() => setCurrentRating(ratingValue)}
-                      onMouseEnter={() => setHoverRating(ratingValue)}
-                      className="cursor-pointer border-none bg-transparent p-0"
-                    >
-                      <Star
-                        className={`h-6 w-6 transition-colors ${
-                          isFilled
-                            ? "fill-[#FF9500] text-[#FF9500]"
-                            : "text-gray-300"
-                        }`}
-                      />
-                    </button>
-                  )
-                })}
-              </div>
-              {currentRating > 0 && (
-                <span className="text-lg font-bold text-gray-900">
-                  {currentRating}
-                </span>
-              )}
-            </div>
-
-            <Textarea
-              value={currentText}
-              onChange={(e) => setCurrentText(e.target.value)}
-              placeholder="리뷰 내용을 입력해주세요."
-              className="min-h-[120px]"
-            />
-
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={onCancel} disabled={isLoading}>
-                취소
-              </Button>
-              <Button
-                onClick={handleSaveClick}
-                disabled={!canSave}
-                className="bg-[#FF9500] hover:bg-[#FF9500]/90"
-              >
-                {isLoading && (
-                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+              <FormField
+                control={form.control}
+                name="rating"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormControl>
+                      <div
+                        className="flex items-center gap-1.5"
+                        role="radiogroup"
+                        aria-label="별점 평가"
+                      >
+                        <div
+                          className="flex gap-0.5"
+                          onMouseLeave={() => setHoverRating(0)}
+                        >
+                          {Array.from({ length: 5 }).map((_, index) => {
+                            const ratingValue = index + 1
+                            const isFilled =
+                              (hoverRating || field.value) >= ratingValue
+                            return (
+                              <button
+                                key={index}
+                                type="button"
+                                role="radio"
+                                aria-checked={field.value === ratingValue}
+                                aria-label={`${ratingValue}점`}
+                                onClick={() => field.onChange(ratingValue)}
+                                onMouseEnter={() =>
+                                  setHoverRating(ratingValue)
+                                }
+                                className="cursor-pointer border-none bg-transparent p-0"
+                              >
+                                <Star
+                                  className={`h-6 w-6 transition-colors ${
+                                    isFilled
+                                      ? "fill-[#FF9500] text-[#FF9500]"
+                                      : "text-gray-300"
+                                  }`}
+                                />
+                              </button>
+                            )
+                          })}
+                        </div>
+                        {field.value > 0 && (
+                          <span className="text-lg font-bold text-gray-900">
+                            {field.value}
+                          </span>
+                        )}
+                      </div>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
                 )}
-                등록
-              </Button>
-            </div>
-          </div>
+              />
+
+              <FormField
+                control={form.control}
+                name="text"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormControl>
+                      <Textarea
+                        {...field}
+                        onChange={(e) => {
+                          if (e.target.value.length <= MAX_CONTENT_LENGTH) {
+                            field.onChange(e.target.value)
+                          }
+                        }}
+                        placeholder={`최소 ${minContentLength}자 이상 입력해주세요.`}
+                        className="min-h-[120px]"
+                      />
+                    </FormControl>
+                    <div className="mt-1 flex items-center justify-between">
+                      {textPolicy ? (
+                        <p className="text-[12px] text-gray-400">
+                          텍스트 리뷰{" "}
+                          <span className="font-medium text-[#FF9500]">
+                            {textPolicy.rewardAmount.toLocaleString()}원 적립
+                          </span>{" "}
+                          (최소 {minContentLength}자)
+                        </p>
+                      ) : (
+                        <FormMessage />
+                      )}
+                      <p className="text-[12px] text-gray-400">
+                        {watchedText.length.toLocaleString()} /{" "}
+                        {MAX_CONTENT_LENGTH.toLocaleString()}
+                      </p>
+                    </div>
+                    {textPolicy && <FormMessage />}
+                  </FormItem>
+                )}
+              />
+
+              {/* 사진 첨부 영역 */}
+              <div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept={ACCEPTED_IMAGE_TYPES}
+                  multiple
+                  className="hidden"
+                  onChange={handlePhotoSelect}
+                />
+
+                {photos.length === 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex w-full cursor-pointer flex-col items-center rounded-lg border border-dashed border-gray-300 px-4 py-5 transition-colors hover:border-gray-400 "
+                  >
+                    <Camera className="mb-1 h-6 w-6 text-gray-500" />
+                    <p className="text-[15px] font-semibold text-gray-800">
+                      사진 첨부하기
+                    </p>
+                    {photoPolicy && photoBonusAmount > 0 && (
+                      <p className="mt-0.5 text-[13px] text-gray-500">
+                        첨부하면{" "}
+                        <span className="font-semibold text-emerald-500">
+                          {photoBonusAmount.toLocaleString()}원 추가 적립!
+                        </span>
+                      </p>
+                    )}
+                  </button>
+                ) : (
+                  <div className="rounded-lg border border-gray-200 p-3">
+                    <div className="mb-2 flex items-center justify-between">
+                      <p className="text-[13px] font-medium text-gray-700">
+                        사진{" "}
+                        <span className="text-[#FF9500]">{photos.length}</span>
+                        /{MAX_PHOTO_COUNT}
+                      </p>
+                      {photoPolicy && photoBonusAmount > 0 && (
+                        <p className="text-[12px] font-medium text-emerald-500">
+                          포토리뷰 {photoBonusAmount.toLocaleString()}원 추가
+                          적립!
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex gap-2 overflow-x-auto">
+                      {photos.map((photo) => (
+                        <div
+                          key={photo.id}
+                          className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg border border-gray-200"
+                        >
+                          <Image
+                            src={photo.previewUrl}
+                            alt="리뷰 사진"
+                            fill
+                            className="object-cover"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handlePhotoRemove(photo.id)}
+                            className="absolute top-0.5 right-0.5 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full bg-black/50 text-white transition-colors hover:bg-black/70"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ))}
+                      {photos.length < MAX_PHOTO_COUNT && (
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="flex h-20 w-20 shrink-0 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-gray-300 transition-colors hover:border-gray-400 "
+                        >
+                          <Plus className="h-5 w-5 text-gray-400" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <p className="text-[11px] leading-relaxed text-red-400">
+                최초 등록된 리뷰에 첨부된 사진 기준으로 포인트 적립되며, 상품과
+                무관한 첨부파일은 삭제 및 적립혜택이 회수됩니다.
+              </p>
+
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={onCancel}
+                  disabled={isBusy}
+                >
+                  취소
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={isBusy}
+                  className="bg-[#FF9500] hover:bg-[#FF9500]/90"
+                >
+                  {isBusy && (
+                    <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                  )}
+                  {isUploading ? "사진 업로드 중..." : "등록"}
+                </Button>
+              </div>
+            </form>
+          </Form>
         </CardContent>
       </article>
     </Card>

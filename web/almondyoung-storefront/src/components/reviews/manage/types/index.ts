@@ -23,20 +23,26 @@ export interface BenefitInfo {
 export interface ReviewInfo {
   rating: number
   text: string
+  mediaFileIds?: string[]
 }
 
 export interface WritableReview {
   id: string
   orderId: string
+  orderLineId: string
   productId: string
   productName: string
   productImage: string
-  orderDate: string
-  variantTitle?: string
+  eligibleAt: string
 }
 
 export interface WrittenReview {
   id: string
-  productInfo: ProductInfo
-  reviewData: ReviewInfo
+  productId: string
+  productName: string
+  productImage: string
+  rating: number
+  content: string
+  mediaFileIds: string[]
+  createdAt: string
 }
