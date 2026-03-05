@@ -4,14 +4,11 @@ import React, { useState } from "react"
 import { ChevronUp } from "lucide-react"
 import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
 import { toast } from "sonner"
-import { useMembershipPricing } from "@/hooks/use-membership-pricing"
 
 interface CartFooterProps {
   totalOriginalPrice: number
   totalDiscount: number
   membershipDiscount: number
-  membershipPreviewPrice: number
-  membershipPreviewSavings: number
   finalPrice: number
   selectedCount: number
   shippingFee: number
@@ -22,8 +19,6 @@ export function CartFooter({
   totalOriginalPrice,
   totalDiscount,
   membershipDiscount,
-  membershipPreviewPrice,
-  membershipPreviewSavings,
   finalPrice,
   selectedCount,
   shippingFee,
@@ -31,10 +26,7 @@ export function CartFooter({
 }: CartFooterProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
-  const { isMembershipPricing } = useMembershipPricing()
   const appliedDiscountTotal = totalDiscount + membershipDiscount
-  const shouldShowMembershipPreview =
-    !isMembershipPricing && membershipPreviewSavings > 0
 
   const handleCheckout = async () => {
     setIsProcessing(true)
@@ -89,13 +81,6 @@ export function CartFooter({
                     {totalOriginalPrice.toLocaleString()}원
                   </span>
                 </div>
-                {shouldShowMembershipPreview && (
-                  <p className="text-sm font-medium text-[#F2994A]">
-                    멤버십 가입 시{" "}
-                    {(membershipPreviewPrice + shippingFee).toLocaleString()}원
-                    결제, {membershipPreviewSavings.toLocaleString()}원 절약
-                  </p>
-                )}
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">할인 금액</span>
                   <span className="font-medium">
