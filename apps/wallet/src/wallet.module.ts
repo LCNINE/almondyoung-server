@@ -10,6 +10,8 @@ import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { PassportModule } from '@nestjs/passport';
 import { ScheduleModule } from '@nestjs/schedule';
 import { DbModule } from '@app/db';
+import { EventsModule } from '@app/events';
+import { UGC_COMMAND_STREAM } from '@packages/event-contracts/streams';
 import { Observable, firstValueFrom, isObservable } from 'rxjs';
 import { validateWalletEnv } from './config/env';
 import { HealthController } from './health.controller';
@@ -62,6 +64,9 @@ import { BankTransferAdminController } from './admin/bank-transfer-admin.control
 // Messaging + Jobs
 import { OutboxDispatcherService } from './messaging/outbox-dispatcher.service';
 import { ExpirationJob } from './jobs/expiration.job';
+
+// Consumers
+import { UgcCommandConsumer } from './consumers/ugc-command.consumer';
 
 // ─── JWT-authenticated request interface ─────────────────────────────────────
 
@@ -305,6 +310,12 @@ function normalizePath(path: string): string {
       schema: walletSchema,
     }),
     ScheduleModule.forRoot(),
+    EventsModule.forConsumerModule({
+      streams: [UGC_COMMAND_STREAM],
+      groupId: process.env.KAFKA_GROUP_ID || 'wallet-consumer',
+      enableAutoDLQ: true,
+      validation: { validateOnConsume: false },
+    }),
   ],
   controllers: [
     HealthController,
@@ -314,6 +325,7 @@ function normalizePath(path: string): string {
     PointsAdminController,
     BankTransferAdminController,
     PointsController,
+    UgcCommandConsumer,
   ],
   providers: [
     {
