@@ -57,6 +57,9 @@ import { AlmondAuthClient } from './adapters/almond-auth/almond-auth.client';
 import { UserServiceClient } from './services/user-service.client';
 import { MembershipDailySyncService } from './services/membership-daily-sync.service';
 import { InternalMembershipController } from './controllers/internal-membership.controller';
+import { CHANNEL_ORDER_PROVIDER } from './services/order-collection/channel-order-provider.interface';
+import { MedusaOrderProvider } from './services/order-collection/medusa-order.provider';
+import { OrderPollerOrchestrator } from './services/order-collection/order-poller.orchestrator';
 
 // Kafka 설정 생성 함수 (운영 환경 전용)
 function createKafkaConfig() {
@@ -191,6 +194,15 @@ function createKafkaConfig() {
     MembershipEventConsumer,
     PimMedusaMappingRepository,
     InboxWorkerService,
+
+    // 주문 수집 (Provider 패턴)
+    MedusaOrderProvider,
+    {
+      provide: CHANNEL_ORDER_PROVIDER,
+      useFactory: (provider: MedusaOrderProvider) => [provider],
+      inject: [MedusaOrderProvider],
+    },
+    OrderPollerOrchestrator,
 
     // Firebase 멤버십 동기화
     AlmondAuthClient,
