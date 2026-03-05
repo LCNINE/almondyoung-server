@@ -32,8 +32,13 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
     : 0
 
   const isMembershipApplied = hasMembership && hasMembershipPrice
+
+  const cheapestPriceAmount =
+    cheapestPrice.original_price_number - cheapestPrice.calculated_price_number
+
   const showOriginalPrice =
-    isMembershipApplied || cheapestPrice.price_type === "sale"
+    (isMembershipApplied && membershipDiscountRate > 0) ||
+    cheapestPriceAmount > 0
 
   return (
     <div className="flex flex-col gap-2 py-2">
@@ -49,9 +54,11 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
         <div className="flex flex-col gap-2">
           <ProductMembershipBadge size="md" label="멤버십할인가" />
           <div className="flex items-center gap-2">
-            <span className="text-xl font-semibold text-red-500">
-              {membershipDiscountRate}%
-            </span>
+            {membershipDiscountRate > 0 && (
+              <span className="text-xl font-semibold text-red-500">
+                {membershipDiscountRate}%
+              </span>
+            )}
 
             <span className="text-xl font-bold">
               {membershipPrice.toLocaleString()}원
