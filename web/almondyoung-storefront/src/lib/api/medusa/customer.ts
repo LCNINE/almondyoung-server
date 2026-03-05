@@ -12,10 +12,10 @@ import {
   setCartId,
 } from "../../data/cookies"
 import { transformFormDataToAddress } from "@/components/address/utils"
-import type { CustomerGroupRef } from "@/lib/utils/membership-group"
+import { CustomerGroup } from "@/lib/types/dto/medusa"
 
 type StoreCustomerWithGroups = HttpTypes.StoreCustomer & {
-  groups?: CustomerGroupRef[]
+  groups?: CustomerGroup[]
 }
 
 export const retrieveCustomer =
