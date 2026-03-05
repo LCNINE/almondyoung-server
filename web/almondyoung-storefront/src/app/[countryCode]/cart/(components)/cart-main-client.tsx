@@ -70,6 +70,7 @@ function mapMedusaItemToCartItem(item: HttpTypes.StoreCartLineItem): CartItem {
   return {
     id: item.id,
     productId: product?.id || "",
+    productHandle: product?.handle || undefined,
     variantId: variant?.id || undefined,
     product: {
       name: item.title || product?.title || "상품명 없음",
