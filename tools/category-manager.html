@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PIM 카테고리 관리</title>
+<style>
+  :root {
+    --bg: #f5f5f5;
+    --card: #fff;
+    --border: #e0e0e0;
+    --primary: #4a90d9;
+    --primary-hover: #357abd;
+    --danger: #e74c3c;
+    --danger-hover: #c0392b;
+    --success: #27ae60;
+    --text: #333;
+    --text-light: #888;
+    --radius: 6px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); }
+
+  /* Header */
+  .header {
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .header h1 { font-size: 18px; font-weight: 600; white-space: nowrap; }
+  .header label { font-size: 13px; color: var(--text-light); }
+  .header input[type="text"] {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 6px 10px;
+    font-size: 13px;
+    width: 340px;
+  }
+  .header-actions { margin-left: auto; display: flex; gap: 8px; }
+
+  /* Buttons */
+  .btn {
+    border: none; border-radius: var(--radius); padding: 6px 14px;
+    font-size: 13px; cursor: pointer; font-weight: 500;
+    transition: background .15s;
+  }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-primary:hover { background: var(--primary-hover); }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn-danger:hover { background: var(--danger-hover); }
+  .btn-outline {
+    background: transparent; border: 1px solid var(--border); color: var(--text);
+  }
+  .btn-outline:hover { background: #f0f0f0; }
+  .btn-sm { padding: 3px 8px; font-size: 12px; }
+
+  /* Main layout */
+  .container { max-width: 1000px; margin: 20px auto; padding: 0 20px; }
+
+  /* Tree */
+  .tree-root { list-style: none; }
+  .tree-root ul { list-style: none; padding-left: 28px; }
+  .tree-node { margin: 2px 0; }
+
+  .node-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: var(--radius);
+    background: var(--card);
+    border: 1px solid var(--border);
+    cursor: grab;
+    transition: background .1s, box-shadow .15s;
+    user-select: none;
+  }
+  .node-row:hover { background: #f8f9ff; }
+  .node-row.drag-over {
+    box-shadow: 0 -2px 0 0 var(--primary);
+  }
+  .node-row.drag-over-bottom {
+    box-shadow: 0 2px 0 0 var(--primary);
+  }
+  .node-row.dragging { opacity: .4; }
+
+  .toggle-btn {
+    width: 20px; height: 20px; border: none; background: none;
+    cursor: pointer; font-size: 12px; color: var(--text-light);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .toggle-placeholder { width: 20px; flex-shrink: 0; }
+
+  .node-name {
+    flex: 1; font-size: 14px; font-weight: 500;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .node-slug {
+    font-size: 11px; color: var(--text-light);
+    max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .node-sort {
+    font-size: 11px; color: var(--text-light); min-width: 24px; text-align: center;
+  }
+  .node-badge {
+    font-size: 10px; padding: 1px 6px; border-radius: 10px;
+    font-weight: 600;
+  }
+  .badge-active { background: #e8f5e9; color: var(--success); }
+  .badge-inactive { background: #fce4ec; color: var(--danger); }
+
+  .node-actions { display: flex; gap: 4px; opacity: 0; transition: opacity .15s; }
+  .node-row:hover .node-actions { opacity: 1; }
+
+  /* Modal */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.35);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100;
+  }
+  .modal {
+    background: var(--card); border-radius: 10px;
+    padding: 24px; width: 420px; max-width: 90vw;
+    box-shadow: 0 8px 30px rgba(0,0,0,.15);
+  }
+  .modal h2 { font-size: 16px; margin-bottom: 16px; }
+  .modal .field { margin-bottom: 12px; }
+  .modal label { display: block; font-size: 13px; color: var(--text-light); margin-bottom: 4px; }
+  .modal input, .modal select {
+    width: 100%; border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 8px 10px; font-size: 14px;
+  }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
+  /* Toast */
+  .toast-container {
+    position: fixed; bottom: 20px; right: 20px; z-index: 200;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .toast {
+    padding: 10px 18px; border-radius: var(--radius);
+    font-size: 13px; color: #fff; box-shadow: 0 2px 10px rgba(0,0,0,.15);
+    animation: toast-in .25s ease;
+  }
+  .toast-success { background: var(--success); }
+  .toast-error { background: var(--danger); }
+  @keyframes toast-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+  /* Loading */
+  .loading { text-align: center; padding: 40px; color: var(--text-light); font-size: 14px; }
+
+  /* Empty */
+  .empty { text-align: center; padding: 60px 20px; color: var(--text-light); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>PIM 카테고리 관리</h1>
+  <label>API 주소</label>
+  <input type="text" id="apiBase" value="https://pim.almondyoung-next.com">
+  <div class="header-actions">
+    <button class="btn btn-outline" onclick="loadCategories()">새로고침</button>
+    <button class="btn btn-primary" onclick="openCreateModal()">+ 카테고리 추가</button>
+  </div>
+</div>
+
+<div class="container">
+  <div id="treeContainer"><div class="loading">불러오는 중...</div></div>
+</div>
+
+<div id="modalRoot"></div>
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+// ─── State ───────────────────────────────────────────────────
+let categories = [];
+let expandedSet = new Set();
+let dragSrcId = null;
+
+function getApiBase() {
+  return document.getElementById('apiBase').value.replace(/\/+$/, '');
+}
+
+// ─── API ─────────────────────────────────────────────────────
+async function api(path, opts = {}) {
+  const url = getApiBase() + path;
+  const res = await fetch(url, {
+    headers: { 'Content-Type': 'application/json', ...opts.headers },
+    ...opts,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`${res.status}: ${text}`);
+  }
+  const contentType = res.headers.get('content-type');
+  if (contentType && contentType.includes('application/json')) {
+    return res.json();
+  }
+  return null;
+}
+
+async function loadCategories() {
+  try {
+    document.getElementById('treeContainer').innerHTML = '<div class="loading">불러오는 중...</div>';
+    const data = await api('/categories');
+    categories = Array.isArray(data) ? data : (data.data || data.categories || []);
+    renderTree();
+  } catch (e) {
+    document.getElementById('treeContainer').innerHTML = `<div class="empty">로드 실패: ${e.message}</div>`;
+    toast('카테고리 로드 실패: ' + e.message, 'error');
+  }
+}
+
+async function updateCategory(id, body) {
+  try {
+    await api(`/categories/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+    toast('수정 완료');
+    await loadCategories();
+  } catch (e) {
+    toast('수정 실패: ' + e.message, 'error');
+  }
+}
+
+async function createCategory(body) {
+  try {
+    await api('/categories', { method: 'POST', body: JSON.stringify(body) });
+    toast('카테고리 생성 완료');
+    await loadCategories();
+  } catch (e) {
+    toast('생성 실패: ' + e.message, 'error');
+  }
+}
+
+async function deleteCategory(id) {
+  try {
+    await api(`/categories/${id}`, { method: 'DELETE' });
+    toast('삭제 완료');
+    await loadCategories();
+  } catch (e) {
+    toast('삭제 실패: ' + e.message, 'error');
+  }
+}
+
+async function moveCategory(id, newParentId) {
+  try {
+    const query = newParentId ? `?newParentId=${newParentId}` : '';
+    await api(`/categories/${id}/move${query}`, { method: 'PUT' });
+    toast('이동 완료');
+    await loadCategories();
+  } catch (e) {
+    toast('이동 실패: ' + e.message, 'error');
+  }
+}
+
+// ─── Tree Building ───────────────────────────────────────────
+function buildTree(items) {
+  const map = {};
+  const roots = [];
+  items.forEach(c => { map[c.id] = { ...c, children: [] }; });
+  items.forEach(c => {
+    const node = map[c.id];
+    if (c.parentId && map[c.parentId]) {
+      map[c.parentId].children.push(node);
+    } else {
+      roots.push(node);
+    }
+  });
+  const sortChildren = (nodes) => {
+    nodes.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    nodes.forEach(n => sortChildren(n.children));
+  };
+  sortChildren(roots);
+  return roots;
+}
+
+function flatList(tree, depth = 0) {
+  const result = [];
+  tree.forEach(n => {
+    result.push({ ...n, depth });
+    result.push(...flatList(n.children, depth + 1));
+  });
+  return result;
+}
+
+// ─── Render ──────────────────────────────────────────────────
+function renderTree() {
+  const tree = buildTree(categories);
+  if (tree.length === 0) {
+    document.getElementById('treeContainer').innerHTML = '<div class="empty">카테고리가 없습니다. "카테고리 추가"로 생성하세요.</div>';
+    return;
+  }
+  const html = renderNodes(tree);
+  document.getElementById('treeContainer').innerHTML = `<ul class="tree-root">${html}</ul>`;
+}
+
+function renderNodes(nodes) {
+  return nodes.map(node => {
+    const hasChildren = node.children && node.children.length > 0;
+    const expanded = expandedSet.has(node.id);
+    const isActive = node.isActive !== false;
+
+    const toggleHtml = hasChildren
+      ? `<button class="toggle-btn" onclick="toggleExpand('${node.id}')">${expanded ? '▼' : '▶'}</button>`
+      : '<span class="toggle-placeholder"></span>';
+
+    const badgeHtml = isActive
+      ? '<span class="node-badge badge-active">활성</span>'
+      : '<span class="node-badge badge-inactive">비활성</span>';
+
+    const childrenHtml = hasChildren && expanded
+      ? `<ul>${renderNodes(node.children)}</ul>`
+      : '';
+
+    return `
+      <li class="tree-node">
+        <div class="node-row"
+             draggable="true"
+             data-id="${node.id}"
+             data-parent-id="${node.parentId || ''}"
+             data-sort="${node.sortOrder ?? 0}"
+             ondragstart="onDragStart(event)"
+             ondragover="onDragOver(event)"
+             ondragleave="onDragLeave(event)"
+             ondrop="onDrop(event)"
+             ondragend="onDragEnd(event)">
+          ${toggleHtml}
+          <span class="node-name">${esc(node.name)}</span>
+          <span class="node-slug">${esc(node.slug || '')}</span>
+          <span class="node-sort">#${node.sortOrder ?? 0}</span>
+          ${badgeHtml}
+          <div class="node-actions">
+            <button class="btn btn-outline btn-sm" onclick="openEditModal('${node.id}')" title="수정">수정</button>
+            <button class="btn btn-outline btn-sm" onclick="openMoveModal('${node.id}')" title="이동">이동</button>
+            <button class="btn btn-outline btn-sm" onclick="openCreateModal('${node.id}')" title="하위 추가">+하위</button>
+            <button class="btn btn-danger btn-sm" onclick="confirmDelete('${node.id}', '${esc(node.name)}')" title="삭제">삭제</button>
+          </div>
+        </div>
+        ${childrenHtml}
+      </li>`;
+  }).join('');
+}
+
+function toggleExpand(id) {
+  if (expandedSet.has(id)) expandedSet.delete(id);
+  else expandedSet.add(id);
+  renderTree();
+}
+
+// ─── Drag & Drop (같은 레벨 순서 변경) ──────────────────────
+function onDragStart(e) {
+  dragSrcId = e.currentTarget.dataset.id;
+  e.currentTarget.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+}
+
+function onDragOver(e) {
+  e.preventDefault();
+  const row = e.currentTarget;
+  if (row.dataset.id === dragSrcId) return;
+  // 같은 부모인 경우만 허용
+  const srcRow = document.querySelector(`[data-id="${dragSrcId}"]`);
+  if (!srcRow) return;
+  if (srcRow.dataset.parentId !== row.dataset.parentId) return;
+  e.dataTransfer.dropEffect = 'move';
+  const rect = row.getBoundingClientRect();
+  const mid = rect.top + rect.height / 2;
+  row.classList.remove('drag-over', 'drag-over-bottom');
+  row.classList.add(e.clientY < mid ? 'drag-over' : 'drag-over-bottom');
+}
+
+function onDragLeave(e) {
+  e.currentTarget.classList.remove('drag-over', 'drag-over-bottom');
+}
+
+async function onDrop(e) {
+  e.preventDefault();
+  const targetRow = e.currentTarget;
+  targetRow.classList.remove('drag-over', 'drag-over-bottom');
+  if (!dragSrcId || targetRow.dataset.id === dragSrcId) return;
+
+  const srcRow = document.querySelector(`[data-id="${dragSrcId}"]`);
+  if (!srcRow || srcRow.dataset.parentId !== targetRow.dataset.parentId) return;
+
+  const parentId = targetRow.dataset.parentId || null;
+
+  // 같은 레벨의 형제 노드 가져오기
+  const siblings = categories
+    .filter(c => (c.parentId || '') === (parentId || ''))
+    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+
+  const srcIdx = siblings.findIndex(s => s.id === dragSrcId);
+  const targetIdx = siblings.findIndex(s => s.id === targetRow.dataset.id);
+  if (srcIdx < 0 || targetIdx < 0) return;
+
+  // 재정렬
+  const [moved] = siblings.splice(srcIdx, 1);
+  const rect = targetRow.getBoundingClientRect();
+  const insertIdx = e.clientY < rect.top + rect.height / 2 ? targetIdx : targetIdx + (srcIdx < targetIdx ? 0 : 1);
+  siblings.splice(insertIdx, 0, moved);
+
+  // rank 일괄 업데이트
+  try {
+    for (let i = 0; i < siblings.length; i++) {
+      if (siblings[i].sortOrder !== i) {
+        await api(`/categories/${siblings[i].id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ sortOrder: i }),
+        });
+      }
+    }
+    toast('순서 변경 완료');
+    await loadCategories();
+  } catch (err) {
+    toast('순서 변경 실패: ' + err.message, 'error');
+  }
+}
+
+function onDragEnd(e) {
+  e.currentTarget.classList.remove('dragging');
+  document.querySelectorAll('.drag-over, .drag-over-bottom').forEach(el => {
+    el.classList.remove('drag-over', 'drag-over-bottom');
+  });
+  dragSrcId = null;
+}
+
+// ─── Modals ──────────────────────────────────────────────────
+function closeModal() {
+  document.getElementById('modalRoot').innerHTML = '';
+}
+
+function openEditModal(id) {
+  const cat = categories.find(c => c.id === id);
+  if (!cat) return;
+  document.getElementById('modalRoot').innerHTML = `
+    <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+      <div class="modal">
+        <h2>카테고리 수정</h2>
+        <div class="field">
+          <label>이름</label>
+          <input id="editName" value="${esc(cat.name)}">
+        </div>
+        <div class="field">
+          <label>Slug</label>
+          <input id="editSlug" value="${esc(cat.slug || '')}">
+        </div>
+        <div class="field">
+          <label>정렬 순서</label>
+          <input id="editSort" type="number" value="${cat.sortOrder ?? 0}">
+        </div>
+        <div class="field">
+          <label>활성 상태</label>
+          <select id="editActive">
+            <option value="true" ${cat.isActive !== false ? 'selected' : ''}>활성</option>
+            <option value="false" ${cat.isActive === false ? 'selected' : ''}>비활성</option>
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-outline" onclick="closeModal()">취소</button>
+          <button class="btn btn-primary" onclick="submitEdit('${id}')">저장</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function submitEdit(id) {
+  const body = {
+    name: document.getElementById('editName').value.trim(),
+    slug: document.getElementById('editSlug').value.trim(),
+    sortOrder: parseInt(document.getElementById('editSort').value, 10) || 0,
+    isActive: document.getElementById('editActive').value === 'true',
+  };
+  if (!body.name) { toast('이름을 입력하세요', 'error'); return; }
+  closeModal();
+  updateCategory(id, body);
+}
+
+function openCreateModal(parentId) {
+  const parentOptions = categories.map(c =>
+    `<option value="${c.id}" ${c.id === parentId ? 'selected' : ''}>${esc(c.name)}</option>`
+  ).join('');
+
+  document.getElementById('modalRoot').innerHTML = `
+    <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+      <div class="modal">
+        <h2>카테고리 생성</h2>
+        <div class="field">
+          <label>이름</label>
+          <input id="createName" placeholder="카테고리 이름">
+        </div>
+        <div class="field">
+          <label>Slug</label>
+          <input id="createSlug" placeholder="slug (영문, 하이픈)">
+        </div>
+        <div class="field">
+          <label>부모 카테고리</label>
+          <select id="createParent">
+            <option value="">없음 (최상위)</option>
+            ${parentOptions}
+          </select>
+        </div>
+        <div class="field">
+          <label>정렬 순서</label>
+          <input id="createSort" type="number" value="0">
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-outline" onclick="closeModal()">취소</button>
+          <button class="btn btn-primary" onclick="submitCreate()">생성</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function submitCreate() {
+  const name = document.getElementById('createName').value.trim();
+  const slug = document.getElementById('createSlug').value.trim();
+  const parentId = document.getElementById('createParent').value || undefined;
+  const sortOrder = parseInt(document.getElementById('createSort').value, 10) || 0;
+  if (!name) { toast('이름을 입력하세요', 'error'); return; }
+  closeModal();
+  createCategory({ name, slug: slug || undefined, parentId, sortOrder });
+}
+
+function openMoveModal(id) {
+  const cat = categories.find(c => c.id === id);
+  if (!cat) return;
+  // 자기 자신과 자신의 하위 카테고리는 선택지에서 제외
+  const descendants = getDescendantIds(id);
+  const options = categories
+    .filter(c => c.id !== id && !descendants.has(c.id))
+    .map(c => `<option value="${c.id}">${esc(c.name)}</option>`)
+    .join('');
+
+  document.getElementById('modalRoot').innerHTML = `
+    <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+      <div class="modal">
+        <h2>"${esc(cat.name)}" 이동</h2>
+        <div class="field">
+          <label>새 부모 카테고리</label>
+          <select id="moveParent">
+            <option value="">없음 (최상위로)</option>
+            ${options}
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-outline" onclick="closeModal()">취소</button>
+          <button class="btn btn-primary" onclick="submitMove('${id}')">이동</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function submitMove(id) {
+  const newParentId = document.getElementById('moveParent').value || undefined;
+  closeModal();
+  moveCategory(id, newParentId);
+}
+
+function getDescendantIds(id) {
+  const ids = new Set();
+  const collect = (parentId) => {
+    categories.filter(c => c.parentId === parentId).forEach(c => {
+      ids.add(c.id);
+      collect(c.id);
+    });
+  };
+  collect(id);
+  return ids;
+}
+
+function confirmDelete(id, name) {
+  if (confirm(`"${name}" 카테고리를 삭제하시겠습니까?\n하위 카테고리가 있으면 함께 삭제될 수 있습니다.`)) {
+    deleteCategory(id);
+  }
+}
+
+// ─── Utils ───────────────────────────────────────────────────
+function esc(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function toast(msg, type = 'success') {
+  const el = document.createElement('div');
+  el.className = `toast toast-${type}`;
+  el.textContent = msg;
+  document.getElementById('toastContainer').appendChild(el);
+  setTimeout(() => el.remove(), 3000);
+}
+
+// ─── Init ────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  // 모든 노드를 기본 펼침 상태로
+  loadCategories().then(() => {
+    categories.forEach(c => {
+      if (categories.some(child => child.parentId === c.id)) {
+        expandedSet.add(c.id);
+      }
+    });
+    renderTree();
+  });
+});
+</script>
+</body>
+</html>
