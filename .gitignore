@@ -258,6 +258,13 @@ dist
 .cache/
 public
 
+# Next.js app public directories (negation: public above is for Gatsby)
+!apps/wallet-web/public/
+!apps/admin-web/public/
+
+# Next.js auto-generated type declaration files
+**/next-env.d.ts
+
 # Storybook build outputs
 .out
 .storybook-out
