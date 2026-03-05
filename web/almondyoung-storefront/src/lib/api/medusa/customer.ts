@@ -5,7 +5,12 @@ import medusaError from "@lib/utils/medusa-error"
 import { HttpTypes } from "@medusajs/types"
 import { revalidateTag } from "next/cache"
 import { handleMedusaAuthError } from "./auth-utils"
-import { getAuthHeaders, getCacheTag, getCartId } from "../../data/cookies"
+import {
+  getAuthHeaders,
+  getCacheTag,
+  getCartId,
+  setCartId,
+} from "../../data/cookies"
 import { transformFormDataToAddress } from "@/components/address/utils"
 import { CustomerGroup } from "@/lib/types/dto/medusa"
 
@@ -84,6 +89,39 @@ export async function transferCart() {
 
   const cartCacheTag = await getCacheTag("carts")
   revalidateTag(cartCacheTag)
+}
+
+export async function recoverCustomerCart(): Promise<HttpTypes.StoreCart | null> {
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  if (!headers.authorization) {
+    return null
+  }
+
+  const cart = await sdk.client
+    .fetch<{ cart: HttpTypes.StoreCart | null }>(`/store/customers/me/cart`, {
+      method: "GET",
+      headers,
+      cache: "no-store",
+    })
+    .then(({ cart }) => cart)
+    .catch((error) => {
+      console.error("recoverCustomerCart error:", error)
+      return null
+    })
+
+  if (!cart?.id) {
+    return null
+  }
+
+  await setCartId(cart.id)
+
+  const cartCacheTag = await getCacheTag("carts")
+  revalidateTag(cartCacheTag)
+
+  return cart
 }
 
 export const addCustomerAddress = async (
