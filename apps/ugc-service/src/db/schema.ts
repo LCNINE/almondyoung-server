@@ -184,9 +184,9 @@ export const reviewEligibilities = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     userId: uuid('user_id').notNull(),
-    productId: uuid('product_id').notNull(),
-    orderId: uuid('order_id').notNull(),
-    orderLineId: uuid('order_line_id').notNull(),
+    productId: varchar('product_id', { length: 255 }).notNull(),
+    orderId: varchar('order_id', { length: 255 }).notNull(),
+    orderLineId: varchar('order_line_id', { length: 255 }).notNull(),
 
     eligibleAt: timestamp('eligible_at').notNull().defaultNow(),
     consumedAt: timestamp('consumed_at'),

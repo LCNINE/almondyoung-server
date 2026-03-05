@@ -1,20 +1,23 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsUUID, IsArray, ArrayMinSize, ValidateNested } from 'class-validator';
+import { IsString, IsNotEmpty, IsArray, ArrayMinSize, ValidateNested } from 'class-validator';
 
 export class CreateReviewEligibilityItemDto {
-  @ApiProperty({ description: '상품 ID (UUID)' })
-  @IsUUID()
+  @ApiProperty({ description: '상품 ID' })
+  @IsString()
+  @IsNotEmpty()
   productId: string;
 
-  @ApiProperty({ description: '주문 라인 ID (UUID)' })
-  @IsUUID()
+  @ApiProperty({ description: '주문 라인 ID' })
+  @IsString()
+  @IsNotEmpty()
   orderLineId: string;
 }
 
 export class CreateReviewEligibilityDto {
-  @ApiProperty({ description: '주문 ID (UUID)' })
-  @IsUUID()
+  @ApiProperty({ description: '주문 ID' })
+  @IsString()
+  @IsNotEmpty()
   orderId: string;
 
   @ApiProperty({
