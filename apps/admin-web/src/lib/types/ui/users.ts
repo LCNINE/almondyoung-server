@@ -1,7 +1,7 @@
 // src/lib/types/ui/users.ts
 // Users 도메인 UI 타입 정의
 
-import type { User, UserDetail } from '../dto/user/users';
+import type { User } from '../dto/user';
 
 // UI에서 사용하는 사용자 타입
 export interface UserUI extends User {
@@ -17,7 +17,7 @@ export interface UserUI extends User {
 }
 
 // UI에서 사용하는 사용자 상세 타입
-export interface UserDetailUI extends UserDetail {
+export interface UserDetailUI extends User {
     // UI 전용 필드들
     isSelected?: boolean;
     formattedCreatedAt?: string;

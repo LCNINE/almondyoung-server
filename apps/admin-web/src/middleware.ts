@@ -5,6 +5,7 @@ import { jwtVerify } from 'jose';
 import { USER_SERVICE_BASE_URL } from './const';
 
 const JWT_SECRET = new TextEncoder().encode(process.env.AUTH_SECRET);
+const FIVE_MINUTES = 5 * 60 * 1000;
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -20,21 +21,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-
-
-//////////////////>>>>>>>>>>>>>>>>>>>>>>>>>>
-
-// 개발모드 테스트시 추후 지워주세요
-  // 개발 모드에서 인증 우회 (환경 변수로 제어 가능)
-  const isDevelopment = process.env.NODE_ENV === 'development';
-  const bypassAuth = process.env.BYPASS_AUTH === 'true' || isDevelopment;
-
-  if (bypassAuth) {
-    console.log('🔓 개발 모드: 인증 체크 우회', pathname);
+  // BYPASS_AUTH=true 환경변수로만 인증 우회 가능 (개발 환경에서 MSW 사용 시)
+  if (process.env.BYPASS_AUTH === 'true') {
+    console.log('인증 체크 우회 (BYPASS_AUTH=true):', pathname);
     return NextResponse.next();
   }
-//////////////////>>>>>>>>>>>>>>>>>>>>>>>>>>
-
 
   // 공개 경로 (토큰 체크 안 함)
   const publicPaths = ['/login', '/unauthorized'];
@@ -44,67 +35,120 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const accessToken = request.cookies.get('accessToken')?.value;
-  const refreshToken = request.cookies.get('refreshToken')?.value;
+  const accessToken = request.cookies.get('admin_access_token')?.value;
+  const refreshToken = request.cookies.get('admin_refresh_token')?.value;
 
   // 토큰이 둘 다 없으면 로그인 페이지로 리다이렉트
   if (!accessToken && !refreshToken) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
-  // accessToken 검증 (만료 여부 확인)
-  try {
-    if (accessToken) {
-      await jwtVerify(accessToken, JWT_SECRET);
-      // 토큰이 유효하면 통과
-      return NextResponse.next();
-    }
-  } catch { //에러 추가 (error) 해주면 됨됨
-    if (!refreshToken) {
-      return NextResponse.redirect(new URL('/login', request.url));
-    }
-
+  // accessToken 검증 및 선제적 갱신
+  if (accessToken) {
     try {
-      const response = await fetch(
-        `${USER_SERVICE_BASE_URL}/auth/restore-token`,
-        {
-          method: 'POST',
-          credentials: 'include',
-          headers: {
-            Cookie: request.cookies.toString(),
-          },
+      const { payload } = await jwtVerify(accessToken, JWT_SECRET);
+
+      // 만료 5분 전이면 선제적 갱신
+      const expiresAt = (payload.exp ?? 0) * 1000;
+      const needsProactiveRefresh = expiresAt - Date.now() < FIVE_MINUTES;
+
+      if (!needsProactiveRefresh) {
+        return NextResponse.next();
+      }
+
+      // 5분 이내 만료 예정 → refreshToken으로 갱신 시도
+      if (refreshToken) {
+        const newToken = await fetchNewToken(accessToken, refreshToken);
+        if (newToken) {
+          return setRefreshedTokenResponse(request, newToken);
         }
-      );
+      }
 
-      // API 호출 실패 시 로그인으로 리다이렉트
-      if (!response.ok) {
-        console.error('토큰 재발급 실패:', response.status);
+      // 갱신 실패해도 현재 토큰이 아직 유효하므로 통과
+      return NextResponse.next();
+    } catch {
+      // accessToken 만료 → refreshToken으로 갱신 시도
+      if (!refreshToken) {
         return NextResponse.redirect(new URL('/login', request.url));
       }
 
-      const data = await response.json();
-      const newAccessToken = data.data.accessToken;
-
-      // 새 토큰이 유효한지 검증 (무한 리다이렉트 방지)
       try {
-        await jwtVerify(newAccessToken, JWT_SECRET);
-      } catch { //(verifyError) 해주면 됨됨
-        console.error('재발급받은 토큰이 유효하지 않음');
+        const newToken = await fetchNewToken(accessToken, refreshToken);
+        if (!newToken) {
+          return NextResponse.redirect(new URL('/login', request.url));
+        }
+
+        // 갱신된 토큰 유효성 검증
+        try {
+          await jwtVerify(newToken, JWT_SECRET);
+        } catch {
+          console.error('재발급받은 토큰이 유효하지 않음');
+          return NextResponse.redirect(new URL('/login', request.url));
+        }
+
+        return setRefreshedTokenResponse(request, newToken);
+      } catch (fetchError) {
+        console.error('토큰 재발급 중 에러:', fetchError);
+        return NextResponse.redirect(new URL('/login', request.url));
+      }
+    }
+  }
+
+  // accessToken 없고 refreshToken만 있는 경우
+  if (refreshToken) {
+    try {
+      const newToken = await fetchNewToken('', refreshToken);
+      if (!newToken) {
         return NextResponse.redirect(new URL('/login', request.url));
       }
 
-      // 새 토큰을 쿠키에 세팅하고 리다이렉트 (새로운 요청 사이클 시작)
-      const redirectResponse = NextResponse.redirect(request.url);
-      redirectResponse.cookies.set('accessToken', newAccessToken);
+      try {
+        await jwtVerify(newToken, JWT_SECRET);
+      } catch {
+        return NextResponse.redirect(new URL('/login', request.url));
+      }
 
-      return redirectResponse;
-    } catch (fetchError) {
-      console.error('토큰 재발급 중 에러:', fetchError);
+      return setRefreshedTokenResponse(request, newToken);
+    } catch {
       return NextResponse.redirect(new URL('/login', request.url));
     }
   }
 
   return NextResponse.next();
+}
+
+async function fetchNewToken(
+  accessToken: string,
+  refreshToken: string
+): Promise<string | null> {
+  const response = await fetch(`${USER_SERVICE_BASE_URL}/auth/restore-token`, {
+    method: 'POST',
+    headers: {
+      Cookie: `accessToken=${accessToken}; refreshToken=${refreshToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    console.error('토큰 재발급 실패:', response.status);
+    return null;
+  }
+
+  const data = await response.json();
+  return data?.data?.accessToken ?? null;
+}
+
+function setRefreshedTokenResponse(
+  request: NextRequest,
+  newAccessToken: string
+): NextResponse {
+  const response = NextResponse.next();
+  response.cookies.set('admin_access_token', newAccessToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+  });
+  return response;
 }
 
 export const config = {

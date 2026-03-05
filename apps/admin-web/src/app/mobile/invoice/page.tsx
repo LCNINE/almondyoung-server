@@ -118,7 +118,7 @@ interface BarcodeScannerInputProps {
   onClear: () => void;
 }
 
-export function BarcodeScannerInput({
+function BarcodeScannerInput({
   value,
   onScan,
   onClear,
@@ -158,11 +158,8 @@ export function BarcodeScannerInput({
 }
 
 // 페이지 전체
-export default function InspectionShipmentPage({
-  status,
-}: {
-  status: "complete" | "ready";
-}) {
+export default function InspectionShipmentPage() {
+  const status = "ready" as "complete" | "ready";
   return (
     <main className="min-h-screen bg-gray-50">
       {/* 헤더 */}

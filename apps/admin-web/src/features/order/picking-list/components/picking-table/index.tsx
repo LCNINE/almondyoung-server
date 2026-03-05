@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Input } from '@/components/ui/input';
 import {
   Table,
@@ -88,9 +88,9 @@ export default function PickingTable() {
 
         <TableBody>
           {items.map((item) => (
-            <>
+            <React.Fragment key={item.id}>
               {/* Main data row */}
-              <TableRow key={`main-${item.id}`}>
+              <TableRow>
                 <TableCell className="text-center">{item.sequence}</TableCell>
                 <TableCell className="font-medium border-l-2 border-r-2 text-center">
                   {item.location}
@@ -102,11 +102,11 @@ export default function PickingTable() {
               </TableRow>
 
               {/* Grid value row */}
-              <TableRow key={`grid-${item.id}`} className="bg-[#F8F8F8]">
+              <TableRow className="bg-[#F8F8F8]">
                 <TableCell colSpan={4} className="border-t-2 border-b-2">
                   <div className="flex items-center gap-2">
                     {item.grid.map((grid) => (
-                      <div className="flex items-center">
+                      <div className="flex items-center" key={grid.id}>
                         <span className="text-xs text-muted-foreground w-6 text-center">
                           {grid.id}
                         </span>
@@ -118,7 +118,7 @@ export default function PickingTable() {
                   </div>
                 </TableCell>
               </TableRow>
-            </>
+            </React.Fragment>
           ))}
         </TableBody>
       </Table>

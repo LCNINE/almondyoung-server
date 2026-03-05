@@ -104,9 +104,10 @@ export const getChannelTypeColor = (type: ChannelType): string => {
 // ===== 매칭 테이블용 변환 함수들 =====
 
 /**
- * 매칭 상태를 한국어로 변환
+ * 매칭 테이블 상태를 한국어로 변환 (PIM 매칭 테이블 전용)
+ * orders의 getMatchingStatusLabel과 구분하기 위해 이름 변경
  */
-export const getMatchingStatusLabel = (status: string): string => {
+export const getMatchingTableStatusLabel = (status: string): string => {
     const statusMap: Record<string, string> = {
         matched: '매칭됨',
         unmatched: '매칭 대기',
@@ -116,9 +117,10 @@ export const getMatchingStatusLabel = (status: string): string => {
 };
 
 /**
- * 매칭 상태 색상 반환
+ * 매칭 테이블 상태 색상 반환 (PIM 매칭 테이블 전용)
+ * orders의 getMatchingStatusColor와 구분하기 위해 이름 변경
  */
-export const getMatchingStatusColor = (status: string): string => {
+export const getMatchingTableStatusColor = (status: string): string => {
     const colorMap: Record<string, string> = {
         matched: 'text-green-600 bg-green-100',
         unmatched: 'text-yellow-600 bg-yellow-100',
@@ -144,8 +146,8 @@ export const transformMatchingTableRow = (row: MatchingTableRowDto) => {
         // 추가 변환된 필드들
         channelTypeLabel: row.channelProduct.channel?.type ? getChannelTypeLabel(row.channelProduct.channel.type) : '알 수 없음',
         channelTypeColor: row.channelProduct.channel?.type ? getChannelTypeColor(row.channelProduct.channel.type) : 'text-gray-600 bg-gray-100',
-        matchingStatusLabel: getMatchingStatusLabel(row.matchingStatus),
-        matchingStatusColor: getMatchingStatusColor(row.matchingStatus),
+        matchingStatusLabel: getMatchingTableStatusLabel(row.matchingStatus),
+        matchingStatusColor: getMatchingTableStatusColor(row.matchingStatus),
     };
 };
 

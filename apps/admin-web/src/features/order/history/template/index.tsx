@@ -1,7 +1,7 @@
 // src/features/order/history/template/index.tsx
 'use client';
 
-import { usePermission } from '@/hook/use-permission';
+import { usePermission } from '@/hooks/use-permission';
 import FilterBox from '../components/filter-box';
 import OrderTable from '../components/table';
 import { OrderHistoryFilterProvider } from '../contexts/filter.context';

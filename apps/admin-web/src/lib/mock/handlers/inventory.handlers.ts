@@ -541,7 +541,7 @@ export const inventoryMatchingHandlers = [
     // 자동재고매칭 수정 (백엔드 스펙에 맞게 구현)
     http.patch('http://localhost:3010/inventory-matching/:id', async ({ params, request }) => {
         console.log('🎯 MSW: 자동재고매칭 수정', params.id);
-        const updatedData = await request.json();
+        const updatedData = await request.json() as Record<string, unknown>;
         const existingMatching = mockInventoryMatchings.find(m => m.id === params.id);
         if (!existingMatching) {
             return new HttpResponse(null, { status: 404 });

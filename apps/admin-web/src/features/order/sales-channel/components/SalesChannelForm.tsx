@@ -15,7 +15,7 @@ import {
     useCreateChannel,
     useUpdateChannel,
 } from '@/lib/services/products';
-import type { SalesChannel } from '@/lib/types/dto/products';
+import type { ChannelDto as SalesChannel } from '@/lib/types/dto/products';
 
 type UiSite = { id: string; type: string; name: string; icon?: string; isActive?: boolean };
 
@@ -90,7 +90,7 @@ export function SalesChannelForm({ open, onOpenChange, onSuccess, editingChannel
     // 편집 모드 → 기존 데이터 맵핑
     useEffect(() => {
         if (editingChannel) {
-            const cfg = (editingChannel.apiConfig || {}) as Record<string, unknown>;
+            const cfg = (editingChannel.config || {}) as Record<string, unknown>;
             setFormData({
                 type: editingChannel.type || '',
                 name: editingChannel.name || '',
@@ -175,14 +175,14 @@ export function SalesChannelForm({ open, onOpenChange, onSuccess, editingChannel
                         type,
                         name: formData.name,
                         isActive: formData.isActive,
-                        apiConfig,
+                        config: apiConfig,
                     },
                 });
             } else {
                 await createChannel.mutateAsync({
                     type,
                     name: formData.name,
-                    apiConfig,
+                    config: apiConfig,
                 });
             }
             onSuccess();

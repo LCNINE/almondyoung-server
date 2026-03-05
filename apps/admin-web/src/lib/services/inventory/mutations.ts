@@ -48,7 +48,7 @@ export const useCreateSku = () => {
     return useMutation({
         mutationFn: (data: any) => Promise.resolve({ id: 'new-sku-id', ...data }),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skus });
+            queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skus() });
         },
     });
 };
@@ -61,7 +61,7 @@ export const useUpdateSku = () => {
         mutationFn: ({ id, data }: { id: string; data: any }) =>
             Promise.resolve({ id, ...data }),
         onSuccess: (_, { id }) => {
-            queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skus });
+            queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skus() });
             queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.sku(id) });
         },
     });
@@ -74,7 +74,7 @@ export const useDeleteSku = () => {
     return useMutation({
         mutationFn: (id: string) => Promise.resolve(),
         onSuccess: (_, id) => {
-            queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skus });
+            queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skus() });
             queryClient.removeQueries({ queryKey: inventoryQueryKeys.sku(id) });
         },
     });

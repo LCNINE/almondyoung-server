@@ -1,6 +1,5 @@
 import { ApiResponse } from '@/lib/types/dto/api';
 import { client } from '../../client';
-import { USER_SERVICE_BASE_URL } from '@/const';
 
 export const authApi = {
   signin: async (
@@ -9,7 +8,7 @@ export const authApi = {
     rememberMe?: boolean
   ): Promise<ApiResponse<string>> => {
     const response = await client.post<ApiResponse<string>>(
-      `${USER_SERVICE_BASE_URL}/auth/signin`,
+      'auth/signin',
       {
         loginId,
         password,
@@ -20,7 +19,7 @@ export const authApi = {
     return response.data;
   },
   signout: async () => {
-    const response = await client.post(`${USER_SERVICE_BASE_URL}/auth/signout`);
+    const response = await client.post('auth/signout');
     return response.data;
   },
 };
