@@ -2,6 +2,7 @@ import Link from "next/link"
 import { HttpTypes } from "@medusajs/types"
 import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
+import { calculateMembershipDiscount } from "@/lib/utils/price-utils"
 
 const formatDate = (date?: string | Date | null) => {
   if (!date) return "-"
@@ -44,6 +45,7 @@ export const OrderDetailsDesktop = ({
     .filter(Boolean)
     .join(" ")
   const statusLabel = getOrderStatusLabel(order)
+  const membershipDiscount = calculateMembershipDiscount(order.items ?? [])
 
   return (
     <div className="bg-white py-4 font-['Pretendard'] md:px-6">
@@ -139,6 +141,14 @@ export const OrderDetailsDesktop = ({
                   {formatAmount(order.discount_total)}
                 </dd>
               </div>
+              {membershipDiscount > 0 && (
+                <div className="flex items-center justify-between">
+                  <dt className="text-base text-black">멤버십 할인</dt>
+                  <dd className="text-base text-black">
+                    {formatAmount(membershipDiscount)}
+                  </dd>
+                </div>
+              )}
               <div className="flex items-center justify-between">
                 <dt className="text-base text-black">배송비</dt>
                 <dd className="text-base text-black">{formatAmount(order.shipping_total)}</dd>

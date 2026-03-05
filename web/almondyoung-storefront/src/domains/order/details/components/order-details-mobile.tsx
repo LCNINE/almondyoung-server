@@ -8,6 +8,7 @@ import {
   OrderInfoCardDivider,
 } from "@components/orders/order-info-card.atomic"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
+import { calculateMembershipDiscount } from "@/lib/utils/price-utils"
 
 const formatDate = (date?: string | Date | null) => {
   if (!date) return "-"
@@ -50,6 +51,7 @@ export const OrderDetailsMobile = ({
     .filter(Boolean)
     .join(" ")
   const statusLabel = getOrderStatusLabel(order)
+  const membershipDiscount = calculateMembershipDiscount(order.items ?? [])
 
   return (
     <main className="min-h-screen w-full bg-[#f8f8f8] font-sans">
@@ -92,6 +94,16 @@ export const OrderDetailsMobile = ({
                 {formatAmount(order.discount_total)}
               </OrderInfoCardRowItem>
             </OrderInfoCardRow>
+            {membershipDiscount > 0 && (
+              <OrderInfoCardRow className="mb-2">
+                <OrderInfoCardRowItem className="text-gray-500">
+                  멤버십 할인
+                </OrderInfoCardRowItem>
+                <OrderInfoCardRowItem className="text-right text-gray-800">
+                  {formatAmount(membershipDiscount)}
+                </OrderInfoCardRowItem>
+              </OrderInfoCardRow>
+            )}
             <OrderInfoCardRow>
               <OrderInfoCardRowItem className="font-bold text-gray-800">
                 총 결제 금액

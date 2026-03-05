@@ -1,13 +1,21 @@
+"use client"
+
 import Link from "next/link"
 import { CustomButton } from "@/components/shared/custom-buttons"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { MoreVertical } from "lucide-react"
+import { captureOrderPayment } from "@/lib/api/medusa/orders"
+import { useRouter } from "next/navigation"
+import { useTransition } from "react"
+import { toast } from "sonner"
 
 interface OrderCardContentProps {
   /** 주문 ID */
   orderId: string
   /** 주문 상태 (예: "배송 완료") */
   status: string
+  /** 결제 상태 (예: "authorized", "captured") */
+  paymentStatus: string
   /** 배송 관련 추가 정보 (예: "6/18(화) 도착") */
   deliveryInfo?: string
   /** 배송 참고 사항 (모바일 전용) */
@@ -33,6 +41,7 @@ interface OrderCardContentProps {
 export default function OrderCardContent({
   orderId,
   status,
+  paymentStatus,
   deliveryInfo,
   shippingNote,
   productName,
@@ -42,9 +51,26 @@ export default function OrderCardContent({
   options = [],
   showInquiry = true,
 }: OrderCardContentProps) {
+  const router = useRouter()
+  const [isPending, startTransition] = useTransition()
   const resolvedProductImage = getThumbnailUrl(productImage)
   const quantityText =
     typeof quantity === "number" ? `${quantity}개` : quantity
+  const canConfirmPurchase = paymentStatus === "authorized"
+
+  const handleConfirmPurchase = () => {
+    startTransition(async () => {
+      const result = await captureOrderPayment(orderId)
+
+      if (!result.success) {
+        toast.error(result.message ?? "구매확정에 실패했습니다.")
+        return
+      }
+
+      toast.success("구매확정이 완료되었습니다.")
+      router.refresh()
+    })
+  }
 
   return (
     <div className="flex flex-col rounded-[5px] border border-gray-200 bg-white px-3 py-3.5 md:flex-row md:items-center md:gap-9 md:px-5">
@@ -132,6 +158,20 @@ export default function OrderCardContent({
       {/* 우측: 액션 버튼 영역 - 조건부 렌더링 */}
       {/* 모바일 버튼 (2개 가로) */}
       <div className="mt-5 flex items-center gap-2.5 md:hidden">
+        {canConfirmPurchase && (
+          <CustomButton
+            type="button"
+            variant="fill"
+            color="primary"
+            size="lg"
+            className="flex-1"
+            fullWidth={true}
+            isLoading={isPending}
+            onClick={handleConfirmPurchase}
+          >
+            구매확정
+          </CustomButton>
+        )}
         <CustomButton
           type="button"
           variant="outline"
@@ -160,6 +200,18 @@ export default function OrderCardContent({
 
       {/* 데스크탑 버튼 (3개 세로) */}
       <aside className="hidden max-w-48 min-w-28 flex-1 flex-col gap-2.5 md:flex">
+        {canConfirmPurchase && (
+          <CustomButton
+            variant="fill"
+            color="primary"
+            size="md"
+            fullWidth={true}
+            isLoading={isPending}
+            onClick={handleConfirmPurchase}
+          >
+            구매확정
+          </CustomButton>
+        )}
         <Link href={`/mypage/order/track?orderId=${orderId}`}>
           <CustomButton
             variant="outline"
