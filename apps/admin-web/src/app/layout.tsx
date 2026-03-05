@@ -3,9 +3,8 @@ import { AuthExpiredHandler } from '@/components/layout/auth-expired-handler';
 import { MainLayout } from '@/components/layout/main-layout';
 import { MockProvider } from '@/components/providers/mock-provider';
 import QueryProvider from '@/components/providers/query-provider';
-import { userApi } from '@/lib';
+import { serverUserApi } from '@/lib/api/domains/users/server-user';
 import { authQueryKeys } from '@/lib/services/auth';
-import { server } from '@/lib/mock/server';
 import {
   dehydrate,
   HydrationBoundary,
@@ -24,13 +23,6 @@ export const metadata: Metadata = {
   description: 'LCNINE 관리자 시스템',
 };
 
-// 서버에서 Mock 초기화
-if (typeof window === 'undefined') {
-  server.listen({
-    onUnhandledRequest: 'warn',
-  });
-}
-
 export default async function RootLayout({
   children,
 }: Readonly<{
@@ -40,7 +32,7 @@ export default async function RootLayout({
 
   await queryClient.prefetchQuery({
     queryKey: authQueryKeys.me(),
-    queryFn: () => userApi.getMe(),
+    queryFn: () => serverUserApi.getMe(),
   });
 
   return (
