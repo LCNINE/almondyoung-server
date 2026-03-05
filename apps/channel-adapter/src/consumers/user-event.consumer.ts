@@ -70,6 +70,7 @@ export class UserEventConsumer {
         metadata: {
           correlationId: envelope.correlationId,
           messageId: envelope.messageId,
+          chainId: envelope.chainId,
         },
         status: 'pending',
         createdAt: new Date(),
@@ -126,6 +127,7 @@ export class UserEventConsumer {
         metadata: {
           correlationId: envelope.correlationId,
           messageId: envelope.messageId,
+          chainId: envelope.chainId,
         },
         status: 'pending',
         createdAt: new Date(),
