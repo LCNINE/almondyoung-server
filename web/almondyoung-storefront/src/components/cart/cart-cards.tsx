@@ -91,6 +91,7 @@ interface CartCardProps {
   quantity?: number
   onQuantityChange?: (quantity: number) => void
   productId?: string
+  productHandle?: string
   countryCode?: string
   manageInventory?: boolean
   inventoryQuantity?: number
@@ -116,13 +117,13 @@ export const CartCard = ({
   showMembershipHint = false,
   quantity = 1,
   onQuantityChange,
-  productId,
+  productHandle,
   countryCode = "kr",
   manageInventory = false,
   inventoryQuantity = 0,
 }: CartCardProps) => {
-  const productLink = productId
-    ? `/${countryCode}/products/${productId}`
+  const productLink = productHandle
+    ? `/${countryCode}/products/${productHandle}`
     : undefined
 
   // 품절 여부 확인
