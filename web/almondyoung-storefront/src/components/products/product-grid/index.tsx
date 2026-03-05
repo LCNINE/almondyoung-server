@@ -45,6 +45,7 @@ export function ProductGrid({
                 showQuickActions && !isSoldOut ? (
                   <ProductCard.QuickActions
                     productId={product.id}
+                    productHandle={product.handle}
                     variantId={product.optionMeta?.defaultVariantId}
                     isSingleOption={product.optionMeta?.isSingle ?? false}
                     isLoggedIn={isLoggedIn}

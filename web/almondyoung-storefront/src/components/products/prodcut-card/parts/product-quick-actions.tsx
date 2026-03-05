@@ -12,6 +12,7 @@ import { toast } from "sonner"
 
 interface ProductQuickActionsProps {
   productId: string
+  productHandle: string
   variantId?: string
   isSingleOption: boolean
   isWishlisted?: boolean
@@ -27,6 +28,7 @@ interface ProductQuickActionsProps {
  */
 export function ProductQuickActions({
   productId,
+  productHandle,
   variantId,
   isSingleOption,
   isWishlisted: initialWishlisted = false,
@@ -83,7 +85,7 @@ export function ProductQuickActions({
 
     if (!isSingleOption) {
       // 다중 옵션: 상세페이지로 이동
-      router.push(`/${countryCode}/products/${productId}`)
+      router.push(`/${countryCode}/products/${productHandle}`)
       return
     }
 
