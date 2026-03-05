@@ -103,6 +103,23 @@ export class MedusaClient {
         return null;
     }
 
+    private async findCategoryByPimId(pimCategoryId: string): Promise<HttpTypes.AdminProductCategory | null> {
+        try {
+            const { product_categories } = await this.sdk.admin.productCategory.list({
+                limit: 100,
+            });
+            return product_categories?.find(
+                (c) => (c.metadata as any)?.pimCategoryId === pimCategoryId,
+            ) || null;
+        } catch (error) {
+            const fetchError = error as FetchError;
+            this.logger.warn(
+                `Medusa findCategoryByPimId failed for ${pimCategoryId}: ${fetchError.message}`,
+            );
+            return null;
+        }
+    }
+
     private async createCategory(payload: HttpTypes.AdminCreateProductCategory): Promise<HttpTypes.AdminProductCategory> {
         const { product_category } = await this.sdk.admin.productCategory.create(payload);
         if (!product_category) {
@@ -245,7 +262,7 @@ export class MedusaClient {
         const existing = await this.findCategoryByCandidateHandles(
             preferredHandle,
             legacyHandle,
-        );
+        ) || await this.findCategoryByPimId(categorySnapshot.id);
         if (existing?.id) {
             const verified = await this.getCategoryById(existing.id);
             if (!verified) {
