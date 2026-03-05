@@ -14,7 +14,7 @@ import { WishlistButton } from "../components/actions/wishlist-button"
 import { ImageGallery } from "../components/image-gallery"
 import ProductActions from "../components/product-actions"
 import { ProductInfoAccordion } from "../components/product-detail-info/product-info-accordion"
-import ProductDetailPrice from "../components/product-detail-price"
+import ProductPreviewPrice from "../components/product-preview-price"
 import { SectionTabPanel } from "../components/section-nav"
 import { SideBar } from "../components/side-bar"
 import ProductActionsWrapper from "./product-actions-wrappers/product-actions-wrapper"
@@ -82,10 +82,9 @@ export function ProductTemplate({
                 <RatingActionsWrapper handle={product.handle} />
               </Suspense>
 
-              <ProductDetailPrice
+              <ProductPreviewPrice
                 hasMembership={isMembershipGroup(customer?.groups)}
                 product={product}
-                selectedVariant={product.variants?.[0]}
               />
             </div>
 

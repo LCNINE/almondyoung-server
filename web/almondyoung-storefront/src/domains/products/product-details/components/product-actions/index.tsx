@@ -28,7 +28,7 @@ import {
   useTransition,
 } from "react"
 import { toast } from "sonner"
-import ProductDetailPrice from "../product-detail-price"
+import ProductPreviewPrice from "../product-preview-price"
 import CartAddedModal from "./cart-added-modal"
 import MobileActions from "./mobile-actions"
 import OptionSelect from "./option-select"
@@ -287,10 +287,9 @@ export default function ProductActions({
   return (
     <>
       <div className="hidden lg:flex lg:flex-col lg:gap-y-2" ref={actionsRef}>
-        <ProductDetailPrice
+        <ProductPreviewPrice
           hasMembership={isMembershipGroup(customer?.groups)}
           product={product}
-          selectedVariant={displayVariant}
         />
 
         <Separator />
