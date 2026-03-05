@@ -35,13 +35,20 @@ export const convertToLocale = ({
     : amount.toString()
 }
 
+type MembershipDiscountLineItem = Pick<
+  HttpTypes.StoreCartLineItem,
+  "compare_at_unit_price" | "unit_price" | "quantity"
+>
+
 /** 멤버십 할인 금액 계산 (compare_at_unit_price - unit_price) * quantity */
 export const calculateMembershipDiscount = (
-  items: HttpTypes.StoreCartLineItem[]
+  items: MembershipDiscountLineItem[]
 ): number => {
   return items.reduce((acc, item) => {
-    const compareAtPrice = item.compare_at_unit_price ?? item.unit_price
-    const discount = (compareAtPrice - item.unit_price) * item.quantity
+    const unitPrice = item.unit_price ?? 0
+    const quantity = item.quantity ?? 0
+    const compareAtPrice = item.compare_at_unit_price ?? unitPrice
+    const discount = (compareAtPrice - unitPrice) * quantity
     return acc + Math.max(0, discount)
   }, 0)
 }

@@ -10,6 +10,7 @@ interface OrderItem {
   orderNumber: string
   orderDate: string
   status: string
+  paymentStatus: string
   deliveryInfo: string
   shippingNote: string
   productName: string
@@ -64,6 +65,7 @@ const mapStoreOrderToOrderItem = (order: HttpTypes.StoreOrder): OrderItem => {
       : `#${order.id.slice(0, 12)}`,
     orderDate: formatDate,
     status: getKoreanOrderStatus(order),
+    paymentStatus: order.payment_status ?? "",
     deliveryInfo: "",
     shippingNote: "",
     productName,
@@ -126,6 +128,7 @@ export function OrderListClient({
             <OrderCardContent
               orderId={order.orderId}
               status={order.status}
+              paymentStatus={order.paymentStatus}
               deliveryInfo={order.deliveryInfo}
               shippingNote={order.shippingNote}
               productName={order.productName}

@@ -102,6 +102,55 @@ export async function getOrder(
     })
 }
 
+export async function captureOrderPayment(
+  orderId: string
+): Promise<{ success: boolean; message?: string }> {
+  const authHeaders = await getAuthHeaders()
+  if (!("authorization" in authHeaders)) {
+    return {
+      success: false,
+      message: "로그인이 필요합니다.",
+    }
+  }
+
+  const headers = {
+    ...authHeaders,
+  }
+
+  const getErrorStatus = (error: any): number | undefined =>
+    error?.status ?? error?.response?.status
+
+  try {
+    await sdk.client.fetch(`/store/orders/${orderId}/confirm-purchase`, {
+      method: "POST",
+      headers,
+    })
+
+    return { success: true }
+  } catch (error: any) {
+    const status = getErrorStatus(error)
+
+    // 인증 만료로 인한 401일 때만 로그인 리다이렉트 처리
+    if (status === 401) {
+      await handleMedusaAuthError(error)
+    }
+
+    const message =
+      status === 403 || status === 404 || status === 405 || status === 501
+        ? "구매확정 기능을 처리할 수 없습니다. 잠시 후 다시 시도해주세요."
+        :
+      error?.message ||
+      error?.response?.data?.message ||
+      "구매확정에 실패했습니다. 잠시 후 다시 시도해주세요."
+
+    console.error("captureOrderPayment(store) error:", error)
+    return {
+      success: false,
+      message,
+    }
+  }
+}
+
 export const listOrders = async (
   limit: number = 10,
   offset: number = 0,
