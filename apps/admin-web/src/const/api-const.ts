@@ -1,38 +1,35 @@
 // 서비스별 도메인 주소 상수로 관리
-function getBaseUrl(envKey: string, fallback: string) {
-  const isServer = typeof window === 'undefined';
+// 서버 컴포넌트/서버 액션은 환경변수의 실제 URL을 직접 사용하고,
+// 브라우저(클라이언트)는 Next.js 프록시 라우트(/api/proxy/*)를 통해 호출합니다.
+const isServer = typeof window === 'undefined';
 
-  // 서버에서 실행 중일 때
-  if (isServer) {
-    return process.env[envKey] ?? fallback;
-  } else {
-    // 브라우저(클라이언트)에서 실행 중일 때
-    return process.env[`NEXT_PUBLIC_${envKey}`] ?? fallback;
-  }
-}
+const PIM_BASE_URL = isServer
+  ? (process.env.PIM_SERVICE_URL ?? 'http://localhost:3020')
+  : '/api/proxy/pim';
 
-const PIM_BASE_URL = getBaseUrl('PIM_SERVICE_URL', 'http://localhost:3020');
-const WMS_BASE_URL = getBaseUrl('WMS_SERVICE_URL', 'http://localhost:3010');
-const USER_SERVICE_BASE_URL = getBaseUrl(
-  'USER_SERVICE_URL',
-  'http://localhost:3030'
-);
-const WALLET_SERVICE_BASE_URL = getBaseUrl(
-  'WALLET_SERVICE_URL',
-  'http://localhost:3040'
-);
-const MEMBERSHIP_SERVICE_BASE_URL = getBaseUrl(
-  'MEMBERSHIP_SERVICE_URL',
-  'http://localhost:3050'
-);
-const NOTIFICATION_SERVICE_BASE_URL = getBaseUrl(
-  'NOTIFICATION_SERVICE_URL',
-  'http://localhost:3060'
-);
-const CHANNEL_ADAPTER_SERVICE_BASE_URL = getBaseUrl(
-  'CHANNEL_ADAPTER_SERVICE_URL',
-  'http://localhost:3070'
-);
+const WMS_BASE_URL = isServer
+  ? (process.env.WMS_SERVICE_URL ?? 'http://localhost:3010')
+  : '/api/proxy/wms';
+
+const USER_SERVICE_BASE_URL = isServer
+  ? (process.env.USER_SERVICE_URL ?? 'http://localhost:3030')
+  : '/api/proxy/users';
+
+const WALLET_SERVICE_BASE_URL = isServer
+  ? (process.env.WALLET_SERVICE_URL ?? 'http://localhost:3040')
+  : '/api/proxy/wallet';
+
+const MEMBERSHIP_SERVICE_BASE_URL = isServer
+  ? (process.env.MEMBERSHIP_SERVICE_URL ?? 'http://localhost:3050')
+  : '/api/proxy/membership';
+
+const NOTIFICATION_SERVICE_BASE_URL = isServer
+  ? (process.env.NOTIFICATION_SERVICE_URL ?? 'http://localhost:3060')
+  : '/api/proxy/notification';
+
+const CHANNEL_ADAPTER_SERVICE_BASE_URL = isServer
+  ? (process.env.CHANNEL_ADAPTER_SERVICE_URL ?? 'http://localhost:3070')
+  : '/api/proxy/channel';
 
 export {
   PIM_BASE_URL,
