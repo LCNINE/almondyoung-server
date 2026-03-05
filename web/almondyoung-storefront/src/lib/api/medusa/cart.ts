@@ -483,12 +483,18 @@ export async function createShippingPreviewCartFromLineItems(params: {
 
 export async function syncShippingPreviewCartLineItems(params: {
   previewCartId: string
-  items: Array<{ sourceLineItemId: string; variantId: string; quantity: number }>
+  items: Array<{
+    sourceLineItemId: string
+    variantId: string
+    quantity: number
+  }>
 }) {
   const { previewCartId, items } = params
 
   const normalizedItems = items
-    .filter((item) => item.sourceLineItemId && item.variantId && item.quantity > 0)
+    .filter(
+      (item) => item.sourceLineItemId && item.variantId && item.quantity > 0
+    )
     .map((item) => ({
       sourceLineItemId: item.sourceLineItemId,
       variantId: item.variantId,
@@ -502,7 +508,9 @@ export async function syncShippingPreviewCartLineItems(params: {
   const previewCart = await sdk.client
     .fetch<{ cart: HttpTypes.StoreCart }>(`/store/carts/${previewCartId}`, {
       method: "GET",
-      query: { fields: "id,*items,*items.variant,*items.metadata,+shipping_methods" },
+      query: {
+        fields: "id,*items,*items.variant,*items.metadata,+shipping_methods",
+      },
       headers,
       cache: "no-store",
     })
@@ -537,7 +545,8 @@ export async function syncShippingPreviewCartLineItems(params: {
   for (const line of previewCart.items ?? []) {
     const sourceLineItemId = (line.metadata as Record<string, unknown> | null)
       ?.source_line_item_id
-    const sourceId = typeof sourceLineItemId === "string" ? sourceLineItemId : null
+    const sourceId =
+      typeof sourceLineItemId === "string" ? sourceLineItemId : null
 
     if (!sourceId) {
       await sdk.store.cart.deleteLineItem(previewCartId, line.id, {}, headers)
@@ -562,17 +571,32 @@ export async function syncShippingPreviewCartLineItems(params: {
 
   for (const [sourceId, current] of Array.from(existingBySource.entries())) {
     for (const duplicateId of current.duplicateIds) {
-      await sdk.store.cart.deleteLineItem(previewCartId, duplicateId, {}, headers)
+      await sdk.store.cart.deleteLineItem(
+        previewCartId,
+        duplicateId,
+        {},
+        headers
+      )
     }
 
     const desired = desiredBySource.get(sourceId)
     if (!desired) {
-      await sdk.store.cart.deleteLineItem(previewCartId, current.id, {}, headers)
+      await sdk.store.cart.deleteLineItem(
+        previewCartId,
+        current.id,
+        {},
+        headers
+      )
       continue
     }
 
     if (current.variantId !== desired.variantId) {
-      await sdk.store.cart.deleteLineItem(previewCartId, current.id, {}, headers)
+      await sdk.store.cart.deleteLineItem(
+        previewCartId,
+        current.id,
+        {},
+        headers
+      )
       await sdk.store.cart.createLineItem(
         previewCartId,
         {
@@ -599,9 +623,7 @@ export async function syncShippingPreviewCartLineItems(params: {
     }
   }
 
-  for (const [sourceId, desired] of Array.from(
-    desiredBySource.entries()
-  )) {
+  for (const [sourceId, desired] of Array.from(desiredBySource.entries())) {
     if (existingBySource.has(sourceId)) continue
     await sdk.store.cart.createLineItem(
       previewCartId,

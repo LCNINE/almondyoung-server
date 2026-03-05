@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { useIntersection } from "@/hooks/use-intersection"
-import { addToCart } from "@/lib/api/medusa/cart"
+import { addToCart, createBuyNowCart } from "@/lib/api/medusa/cart"
 import { VariantPrice } from "@/lib/types/common/price"
 import { getPricesForVariant } from "@/lib/utils/get-product-price"
 import {
@@ -265,14 +265,16 @@ export default function ProductActions({
 
     startTransition(async () => {
       try {
-        for (const item of selectedItems) {
-          await addToCart({
+        if (!customer) throw new Error("UNAUTHORIZED")
+
+        const { cartId } = await createBuyNowCart({
+          countryCode,
+          items: selectedItems.map((item) => ({
             variantId: item.variantId,
             quantity: item.quantity,
-            countryCode,
-          })
-        }
-        router.push(`/${countryCode}/checkout`)
+          })),
+        })
+        router.push(`/${countryCode}/checkout?cartId=${cartId}`)
       } catch (error: unknown) {
         const err = error as Error & { digest?: string }
         if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") {
