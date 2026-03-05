@@ -574,7 +574,7 @@ export class PimMedusaSyncService {
         description: 'Prices for membership customers',
         type: 'sale',
         status: 'active',
-        rules: { customer_group_id: [MEMBERSHIP_GROUP_ID] },
+        rules: { 'customer.groups.id': [MEMBERSHIP_GROUP_ID] },
       });
       await this.medusaClient.addPricesToPriceList(listId, membershipPrices);
     }

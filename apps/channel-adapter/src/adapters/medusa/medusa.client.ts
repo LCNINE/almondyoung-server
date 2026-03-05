@@ -938,6 +938,24 @@ export class MedusaClient {
     }
 
     // ===== Price Lists =====
+    private normalizePriceListRules(
+        rules?: Record<string, string[]>
+    ): Record<string, string[]> | undefined {
+        if (!rules) return undefined;
+
+        // Medusa pricing context key와 동기화
+        // legacy key(customer_group_id) → customer.groups.id
+        const normalizedRules: Record<string, string[]> = {};
+
+        for (const [key, value] of Object.entries(rules)) {
+            const normalizedKey =
+                key === 'customer_group_id' ? 'customer.groups.id' : key;
+            normalizedRules[normalizedKey] = value;
+        }
+
+        return normalizedRules;
+    }
+
     async ensurePriceList(payload: {
         name: string;
         description: string;
@@ -946,6 +964,8 @@ export class MedusaClient {
         rules?: Record<string, string[]>;
     }): Promise<string> {
         try {
+            const normalizedRules = this.normalizePriceListRules(payload.rules);
+
             // 1. 이름으로 기존 Price List 조회
             const { price_lists } = await this.sdk.admin.priceList.list({
                 q: payload.name,
@@ -956,12 +976,13 @@ export class MedusaClient {
             );
 
             if (existing) {
-                // 업데이트 (필요시)
-                if (existing.status !== payload.status) {
-                    await this.sdk.admin.priceList.update(existing.id, {
-                        status: payload.status,
-                    });
-                }
+                // 업데이트 (status/rules)
+                const updatePayload: HttpTypes.AdminUpdatePriceList = {
+                    status: payload.status,
+                    rules: normalizedRules,
+                };
+
+                await this.sdk.admin.priceList.update(existing.id, updatePayload);
                 return existing.id;
             }
 
@@ -972,7 +993,7 @@ export class MedusaClient {
                 type: payload.type,
                 status: payload.status,
                 prices: [],
-                rules: payload.rules,
+                rules: normalizedRules,
             };
             this.logger.debug(`Creating Price List: ${JSON.stringify(createPayload)}`);
 

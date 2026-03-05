@@ -26,20 +26,24 @@ async function getCustomerCart(query: any, customerId: string) {
   });
 
   // 카트 선택 우선순위:
-  // 1. 아이템이 있는 카트를 우선
-  // 2. 아이템 수가 많은 카트를 우선
-  // 3. 최근에 업데이트된 카트를 우선
+  // 1. updated_at 최신 카트 우선
+  // 2. 동시간대면 아이템이 있는 카트를 우선
+  // 3. 그래도 같으면 아이템 수가 많은 카트를 우선
   const sortedCarts = (carts || []).sort((a: any, b: any) => {
+    const dateA = new Date(a.updated_at || 0).getTime();
+    const dateB = new Date(b.updated_at || 0).getTime();
+
+    if (dateA !== dateB) {
+      return dateB - dateA;
+    }
+
     const itemsA = a.items?.length ?? 0;
     const itemsB = b.items?.length ?? 0;
 
     if (itemsA > 0 && itemsB === 0) return -1;
     if (itemsB > 0 && itemsA === 0) return 1;
-    if (itemsA !== itemsB) return itemsB - itemsA;
 
-    const dateA = new Date(a.updated_at || 0);
-    const dateB = new Date(b.updated_at || 0);
-    return dateB.getTime() - dateA.getTime();
+    return itemsB - itemsA;
   });
 
   return sortedCarts[0] || null;
@@ -47,7 +51,7 @@ async function getCustomerCart(query: any, customerId: string) {
 
 /**
  * GET /store/customers/me/cart
- * 로그인한 고객의 미완료 카트를 조회합니다. 
+ * 로그인한 고객의 미완료 카트를 조회합니다.
  */
 export async function GET(
   req: AuthenticatedMedusaRequest,
