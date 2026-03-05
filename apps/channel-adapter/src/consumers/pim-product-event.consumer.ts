@@ -92,6 +92,7 @@ export class PimProductEventConsumer {
         metadata: {
           correlationId: envelope.correlationId,
           messageId: envelope.messageId,
+          chainId: envelope.chainId,
         },
         status: 'pending',
         createdAt: new Date(),

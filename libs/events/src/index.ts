@@ -41,3 +41,9 @@ export * from './outbox/outbox-dispatcher.service';
 
 // Utilities
 export * from './utils/message-id.util';
+
+// Chain Tracking
+export { EventChainService } from './tracking/event-chain.service';
+export { EventTrackingService, EVENT_TRACKING_SERVICE_NAME } from './tracking/event-tracking.service';
+export { trackingSchema } from './tracking/tracking.schema';
+export type { CausedByResource } from './publishers/stream-publisher.service';
