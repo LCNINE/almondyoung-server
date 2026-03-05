@@ -255,6 +255,7 @@ export class MedusaClient {
             } else {
                 const updatePayload = {
                     name: categorySnapshot.name,
+                    handle: preferredHandle,
                     is_internal: false,
                     is_active: isActive,
                     parent_category_id: parentMedusaId,
