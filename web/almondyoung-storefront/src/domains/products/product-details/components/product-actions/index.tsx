@@ -6,6 +6,10 @@ import { useIntersection } from "@/hooks/use-intersection"
 import { addToCart } from "@/lib/api/medusa/cart"
 import { VariantPrice } from "@/lib/types/common/price"
 import { getPricesForVariant } from "@/lib/utils/get-product-price"
+import {
+  CustomerGroupRef,
+  isMembershipGroup,
+} from "@/lib/utils/membership-group"
 import { HttpTypes } from "@medusajs/types"
 import { isEqual } from "lodash"
 import { Minus, Plus, X } from "lucide-react"
@@ -24,12 +28,14 @@ import {
   useTransition,
 } from "react"
 import { toast } from "sonner"
+import ProductPreviewPrice from "../product-preview-price"
 import CartAddedModal from "./cart-added-modal"
 import MobileActions from "./mobile-actions"
 import OptionSelect from "./option-select"
-import ProductDetailPrice from "../product-detail-price"
+import ProductPrice from "../product-price"
 
 type ProductActionsProps = {
+  customer: (HttpTypes.StoreCustomer & { groups: CustomerGroupRef[] }) | null
   product: HttpTypes.StoreProduct
   region: HttpTypes.StoreRegion
   disabled?: boolean
@@ -63,6 +69,7 @@ const getVariantLabel = (variant: HttpTypes.StoreProductVariant) => {
 export default function ProductActions({
   product,
   disabled,
+  customer,
 }: ProductActionsProps) {
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
@@ -217,9 +224,6 @@ export default function ProductActions({
   const actionsRef = useRef<HTMLDivElement>(null)
   const inView = useIntersection(actionsRef, "0px")
 
-  const displayVariant =
-    selectedItems.length > 0 ? selectedItems[0].variant : undefined
-
   // 재고 확인
   const allInStock = selectedItems.every((item) => {
     const v = item.variant
@@ -281,9 +285,9 @@ export default function ProductActions({
   return (
     <>
       <div className="hidden lg:flex lg:flex-col lg:gap-y-2" ref={actionsRef}>
-        <ProductDetailPrice
+        <ProductPreviewPrice
+          hasMembership={isMembershipGroup(customer?.groups)}
           product={product}
-          selectedVariant={displayVariant}
         />
 
         <Separator />
@@ -385,12 +389,12 @@ export default function ProductActions({
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
-                    <span className="text-base font-bold">
-                      {(
-                        item.price.calculated_price_number * item.quantity
-                      ).toLocaleString()}
-                      원
-                    </span>
+                    <ProductPrice
+                      product={product}
+                      variant={item.variant}
+                      quantity={item.quantity}
+                    />
+
                     {!isSimple && (
                       <Button
                         variant="ghost"

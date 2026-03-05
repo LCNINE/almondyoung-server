@@ -1,9 +1,8 @@
-import { HttpTypes } from "@medusajs/types"
+import { RatingSkeleton } from "@/components/skeletons/product-detail-skeletons"
 import { Suspense } from "react"
 import { RatingActionsWrapper } from "../../templates/product-actions-wrappers/rating-actions-wrapper"
 import { WishlistChatActionsWrapper } from "../../templates/product-actions-wrappers/wishlist-chat-actions-wrapper"
 import { WishlistButton } from "../actions/wishlist-button"
-import { RatingSkeleton } from "@/components/skeletons/product-detail-skeletons"
 
 interface Props {
   brand: string
@@ -11,14 +10,16 @@ interface Props {
   productId: string
   countryCode: string
   handle: string
+  children?: React.ReactNode
 }
 
-export function SideBar({
+export function ProductSummary({
   brand,
   productName,
   productId,
   countryCode,
   handle,
+  children,
 }: Props) {
   return (
     <div className="bg-background">
@@ -52,6 +53,8 @@ export function SideBar({
       <Suspense fallback={<RatingSkeleton />}>
         <RatingActionsWrapper handle={handle} />
       </Suspense>
+
+      {children}
     </div>
   )
 }

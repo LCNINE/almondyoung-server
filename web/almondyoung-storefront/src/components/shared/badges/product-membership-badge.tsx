@@ -31,7 +31,7 @@ export function ProductMembershipBadge({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-0.5 whitespace-nowrap font-bold text-[#F2994A]",
+        "inline-flex items-center gap-0.5 font-bold whitespace-nowrap text-[#F2994A]",
         styles.text,
         className
       )}
