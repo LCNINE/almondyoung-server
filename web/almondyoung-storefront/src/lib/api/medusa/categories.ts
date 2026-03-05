@@ -59,7 +59,7 @@ export const getCategoryTree = async (): Promise<
       query: {
         limit,
         offset,
-        fields: "id,name,handle,description,metadata,parent_category_id",
+        fields: "id,name,handle,description,metadata,parent_category_id,rank",
       },
       next: {
         tags: ["product-categories"],
@@ -94,7 +94,7 @@ const buildCategoryTree = (
 
   const roots: StoreProductCategoryTree[] = []
 
-  for (const category of map.values()) {
+  for (const category of Array.from(map.values())) {
     const parentId = category.parent_category_id || null
 
     if (!parentId) {
@@ -108,10 +108,13 @@ const buildCategoryTree = (
       continue
     }
 
-    parent.category_children = [...(parent.category_children || []), category]
+    parent.category_children = [
+      ...(parent.category_children || []),
+      category,
+    ].sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0))
   }
 
-  return roots
+  return roots.sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0))
 }
 
 export const getCategoryByHandle = async (
