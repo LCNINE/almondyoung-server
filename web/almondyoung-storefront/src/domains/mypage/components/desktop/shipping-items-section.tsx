@@ -21,6 +21,7 @@ interface ShippingOrder {
   quantity: number
   options: string[]
   showInquiry: boolean
+  orderItems: Array<{ productId: string; orderLineId: string }>
 }
 
 export function ShippingItemsSection() {
@@ -86,6 +87,15 @@ export function ShippingItemsSection() {
               quantity: order.items?.length || 0,
               options,
               showInquiry: status === "배송 완료",
+              orderItems: (order.items ?? [])
+                .filter(
+                  (item: any) => item.variant?.product_id || item.product_id
+                )
+                .map((item: any) => ({
+                  productId:
+                    item.variant?.product_id ?? item.product_id,
+                  orderLineId: item.id,
+                })),
             }
           })
 
@@ -184,6 +194,7 @@ export function ShippingItemsSection() {
           quantity={order.quantity}
           options={order.options}
           showInquiry={order.showInquiry}
+          orderItems={order.orderItems}
         />
       ))}
     </section>

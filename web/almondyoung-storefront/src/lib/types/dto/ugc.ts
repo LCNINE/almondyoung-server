@@ -81,6 +81,11 @@ interface ReviewEligibilityResponseDto {
   createdAt: string
 }
 
+interface CreateReviewEligibilityDto {
+  orderId: string
+  items: Array<{ productId: string; orderLineId: string }>
+}
+
 // ─── Reward Policy ───
 
 type ReviewRewardType = "TEXT" | "PHOTO"
@@ -175,4 +180,5 @@ export type {
   RewardPolicyResponseDto,
   ReviewRewardType,
   ReviewEligibilityResponseDto,
+  CreateReviewEligibilityDto,
 }

@@ -5,6 +5,7 @@ import { HttpTypes, OrderStatus } from "@medusajs/types"
 import { revalidatePath } from "next/cache"
 import { handleMedusaAuthError } from "./auth-utils"
 import { getAuthHeaders, getCacheOptions } from "../../data/cookies"
+import { createReviewEligibility } from "../ugc/reviews"
 
 export interface MedusaOrder {
   id: string
@@ -104,7 +105,8 @@ export async function getOrder(
 }
 
 export async function captureOrderPayment(
-  orderId: string
+  orderId: string,
+  items?: Array<{ productId: string; orderLineId: string }>
 ): Promise<{ success: boolean; message?: string }> {
   const authHeaders = await getAuthHeaders()
   if (!("authorization" in authHeaders)) {
@@ -126,6 +128,17 @@ export async function captureOrderPayment(
       method: "POST",
       headers,
     })
+
+    // 구매 확정 성공 시 리뷰 작성 자격 생성
+    if (items && items.length > 0) {
+      try {
+        console.log("createReviewEligibility payload:", JSON.stringify({ orderId, items }, null, 2))
+        await createReviewEligibility({ orderId, items })
+      } catch (e) {
+        console.error("createReviewEligibility error:", e)
+        // eligibility 생성 실패해도 구매 확정은 성공으로 처리
+      }
+    }
 
     revalidatePath("/mypage/order/list")
     return { success: true }

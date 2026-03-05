@@ -6,7 +6,7 @@ import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { MoreVertical } from "lucide-react"
 import { captureOrderPayment } from "@/lib/api/medusa/orders"
 import { useRouter } from "next/navigation"
-import { useTransition } from "react"
+import { useState, useTransition } from "react"
 import { toast } from "sonner"
 
 interface OrderCardContentProps {
@@ -32,6 +32,8 @@ interface OrderCardContentProps {
   options?: string[]
   /** 문의 버튼 표시 여부 (데스크탑 전용) */
   showInquiry?: boolean
+  /** 주문 아이템 목록 (구매 확정 시 리뷰 자격 생성용) */
+  orderItems?: Array<{ productId: string; orderLineId: string }>
 }
 
 /**
@@ -50,23 +52,26 @@ export default function OrderCardContent({
   quantity,
   options = [],
   showInquiry = true,
+  orderItems,
 }: OrderCardContentProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const resolvedProductImage = getThumbnailUrl(productImage)
   const quantityText =
     typeof quantity === "number" ? `${quantity}개` : quantity
-  const canConfirmPurchase = paymentStatus === "authorized"
+  const [isConfirmed, setIsConfirmed] = useState(false)
+  const canConfirmPurchase = paymentStatus === "authorized" && !isConfirmed
 
   const handleConfirmPurchase = () => {
     startTransition(async () => {
-      const result = await captureOrderPayment(orderId)
+      const result = await captureOrderPayment(orderId, orderItems)
 
       if (!result.success) {
         toast.error(result.message ?? "구매확정에 실패했습니다.")
         return
       }
 
+      setIsConfirmed(true)
       toast.success("구매확정이 완료되었습니다.")
       router.refresh()
     })

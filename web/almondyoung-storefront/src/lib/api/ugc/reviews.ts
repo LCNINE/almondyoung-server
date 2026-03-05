@@ -11,6 +11,7 @@ import {
   CommentResponseDto,
   RewardPolicyResponseDto,
   ReviewEligibilityResponseDto,
+  CreateReviewEligibilityDto,
 } from "@/lib/types/dto/ugc"
 import { PaginatedResponseDto } from "@/lib/types/common/pagination"
 import { api } from "../api"
@@ -105,6 +106,19 @@ export const getReviewEligibilities = async ({
     params,
     withAuth: true,
     next: { tags: ["review-eligibilities"] },
+  })
+}
+
+/**
+ * 리뷰 작성 자격 생성 (구매 확정 시 호출)
+ */
+export const createReviewEligibility = async (
+  dto: CreateReviewEligibilityDto
+): Promise<void> => {
+  await api("ugc", `/reviews/eligibilities`, {
+    method: "POST",
+    body: dto,
+    withAuth: true,
   })
 }
 
