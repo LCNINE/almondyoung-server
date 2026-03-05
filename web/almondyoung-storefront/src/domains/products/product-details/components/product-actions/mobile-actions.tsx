@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button"
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
+import { Separator } from "@/components/ui/separator"
 import { VariantPrice } from "@/lib/types/common/price"
 import { cn } from "@/lib/utils"
 import { HttpTypes } from "@medusajs/types"
@@ -155,10 +156,11 @@ const MobileActions: React.FC<MobileActionsProps> = ({
             {/* 선택된 항목 리스트 */}
             {!isSimple && selectedItems.length > 0 && (
               <div className="flex flex-col gap-2 py-3">
+                <Separator />
                 {selectedItems.map((item) => (
                   <div
                     key={item.variantId}
-                    className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2"
+                    className="flex items-center justify-between rounded-lg px-3 py-2"
                   >
                     <div className="flex flex-col gap-1">
                       <span className="text-sm">{item.label}</span>
