@@ -1,9 +1,10 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { User } from '@app/authorization';
 import { ApiOkResponsePaginated } from '@app/shared/decorators/api-paginated-response.decorator';
 import { PaginatedResponseDto } from '@app/shared/dto';
 import { ReviewEligibilityListQueryDto } from '../dto/review-eligibility-query.dto';
+import { CreateReviewEligibilityDto } from '../dto/create-review-eligibility.dto';
 import { ReviewEligibilityResponseDto } from '../dto/review-eligibility-response.dto';
 import { ReviewMapper } from '../mappers';
 import { ReviewEligibilityService } from '../services/review-eligibility.service';
@@ -12,6 +13,16 @@ import { ReviewEligibilityService } from '../services/review-eligibility.service
 @Controller('reviews/eligibilities')
 export class ReviewEligibilityController {
   constructor(private readonly eligibilityService: ReviewEligibilityService) {}
+
+  @Post()
+  @ApiOperation({ summary: '구매확정 후 리뷰 작성 자격 등록' })
+  async create(
+    @User('userId') userId: string,
+    @Body() dto: CreateReviewEligibilityDto,
+  ): Promise<ReviewEligibilityResponseDto[]> {
+    const created = await this.eligibilityService.create(userId, dto);
+    return created.map((e) => ReviewMapper.toEligibilityResponse(e));
+  }
 
   @Get()
   @ApiOperation({ summary: '내 리뷰 작성 자격 목록 조회' })
