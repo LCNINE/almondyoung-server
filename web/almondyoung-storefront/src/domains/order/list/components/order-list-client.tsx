@@ -19,6 +19,7 @@ interface OrderItem {
   quantity: string
   options: string[]
   showInquiry: boolean
+  orderItems: Array<{ productId: string; orderLineId: string }>
 }
 
 interface OrderListClientProps {
@@ -77,6 +78,12 @@ const mapStoreOrderToOrderItem = (order: HttpTypes.StoreOrder): OrderItem => {
     quantity: `상품 ${lineItemCount}건 · 총 수량 ${totalQuantity}개`,
     options,
     showInquiry: order.fulfillment_status === "fulfilled",
+    orderItems: (order.items ?? [])
+      .filter((item) => item.variant?.product_id || item.product_id)
+      .map((item) => ({
+        productId: (item.variant?.product_id ?? item.product_id) as string,
+        orderLineId: item.id,
+      })),
   }
 }
 
@@ -137,6 +144,7 @@ export function OrderListClient({
               quantity={order.quantity}
               options={order.options}
               showInquiry={order.showInquiry}
+              orderItems={order.orderItems}
             />
           </OrderCard>
         ))}

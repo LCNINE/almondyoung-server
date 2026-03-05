@@ -58,7 +58,7 @@ async function getMembershipStatus({
   const status = isMembershipPricing ? "membership" : "regular"
 
   try {
-    const subscription = await getCurrentSubscription()
+    const subscription = await getCurrentSubscription().catch(() => null)
     if (subscription?.status === "ACTIVE" && subscription?.tier) {
       return {
         status,
