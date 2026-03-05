@@ -29,7 +29,7 @@ export async function retrieveCart(
 ) {
   const id = cartId || (await getCartId())
   fields ??=
-    "*items, *region, *items.product, *items.variant, +items.variant.inventory_quantity, +items.variant.manage_inventory, *items.thumbnail, *items.metadata, +items.total, *promotions, +shipping_methods, *customer, *customer.groups, customer_id, +payment_collection.id"
+    "*items, *region, *items.product, *items.variant, +items.variant.inventory_quantity, +items.variant.manage_inventory, *items.thumbnail, *items.metadata, +items.total, +items.original_total, +items.compare_at_unit_price, *promotions, +shipping_methods, *customer, *customer.groups, customer_id, +payment_collection.id, +currency_code, +item_subtotal, +shipping_total, +total, +discount_subtotal, +original_item_subtotal, +original_item_total"
 
   if (!id) {
     return null
@@ -330,10 +330,20 @@ export async function createCheckoutCartFromLineItems(params: {
   const checkoutCart = checkoutCartResp.cart
 
   if (headers.authorization) {
-    try {
-      await sdk.store.cart.transferCart(checkoutCart.id, {}, headers)
-    } catch (error) {
-      console.error("Checkout cart transfer failed:", error)
+    await sdk.store.cart.transferCart(checkoutCart.id, {}, headers)
+
+    const transferredCart = await sdk.store.cart.retrieve(
+      checkoutCart.id,
+      { fields: "id,customer_id" },
+      headers
+    )
+
+    if (!transferredCart?.cart?.customer_id) {
+      throw new HttpApiError(
+        "Checkout cart is not linked to customer",
+        500,
+        "CHECKOUT_CART_TRANSFER_FAILED"
+      )
     }
   }
 
@@ -369,6 +379,10 @@ export async function createCheckoutCartFromLineItems(params: {
     {},
     headers
   )
+
+  // Keep cookie cart in sync with checkout cart so checkout actions
+  // don't accidentally target an old/source cart.
+  await setCartId(checkoutCart.id)
 
   const cartCacheTag = await getCacheTag("carts")
   revalidateTag(cartCacheTag)
@@ -658,17 +672,74 @@ export async function deleteShippingPreviewCart(cartId: string) {
 export async function getShippingTotalForCartPreview(
   cartId: string
 ): Promise<number> {
+  const pricing = await getCartPricingForPreview(cartId)
+  return pricing.shippingTotal
+}
+
+export async function getCartPricingForPreview(cartId: string): Promise<{
+  originalItemSubtotal: number
+  itemSubtotal: number
+  shippingTotal: number
+  total: number
+  membershipDiscount: number
+  nonMembershipDiscount: number
+}> {
   const cart = await retrieveCart(cartId, undefined, "no-store")
-  if (!cart?.id) return 0
+  if (!cart?.id) {
+    return {
+      originalItemSubtotal: 0,
+      itemSubtotal: 0,
+      shippingTotal: 0,
+      total: 0,
+      membershipDiscount: 0,
+      nonMembershipDiscount: 0,
+    }
+  }
+
+  const getOriginalSubtotalFromItems = (target: HttpTypes.StoreCart) => {
+    return (target.items ?? []).reduce((sum, item) => {
+      if (typeof item.original_total === "number") return sum + item.original_total
+      const compareAt =
+        typeof item.compare_at_unit_price === "number"
+          ? item.compare_at_unit_price
+          : null
+      const unit = typeof item.unit_price === "number" ? item.unit_price : 0
+      return sum + (compareAt != null && compareAt > 0 ? compareAt : unit) * item.quantity
+    }, 0)
+  }
+
+  const toPricing = (target: HttpTypes.StoreCart, fallbackShipping = 0) => {
+    const itemSubtotal = target.item_subtotal ?? 0
+    const shippingTotal = target.shipping_total ?? fallbackShipping
+    const total = target.total ?? Math.max(0, itemSubtotal + shippingTotal)
+    const originalItemSubtotal =
+      target.original_item_subtotal ??
+      target.original_item_total ??
+      getOriginalSubtotalFromItems(target) ??
+      itemSubtotal
+
+    const membershipDiscount = Math.max(0, originalItemSubtotal - itemSubtotal)
+    const totalDiscountAll = Math.max(0, originalItemSubtotal + shippingTotal - total)
+    const nonMembershipDiscount = Math.max(0, totalDiscountAll - membershipDiscount)
+
+    return {
+      originalItemSubtotal,
+      itemSubtotal,
+      shippingTotal,
+      total,
+      membershipDiscount,
+      nonMembershipDiscount,
+    }
+  }
 
   if (cart.shipping_methods?.length) {
-    return cart.shipping_total ?? 0
+    return toPricing(cart)
   }
 
   const options = await listCartShippingMethods(cart.id, "no-store")
   const firstOption = options?.[0]
   if (!firstOption) {
-    return cart.shipping_total ?? 0
+    return toPricing(cart)
   }
 
   const headers = {
@@ -683,7 +754,11 @@ export async function getShippingTotalForCartPreview(
   )
 
   const recalculated = await retrieveCart(cart.id, undefined, "no-store")
-  return recalculated?.shipping_total ?? firstOption.amount ?? 0
+  if (!recalculated) {
+    return toPricing(cart, firstOption.amount ?? 0)
+  }
+
+  return toPricing(recalculated, firstOption.amount ?? 0)
 }
 
 export async function updateLineItem({

@@ -39,7 +39,11 @@ async function CheckoutManager({
   cartId?: string
 }) {
   const currentUser = await fetchMe()
-  const cart = (await retrieveCart(cartId)) as CartResponseDto["cart"]
+  const cart = (await retrieveCart(
+    cartId,
+    undefined,
+    "no-store"
+  )) as CartResponseDto["cart"]
 
   if (!cart) {
     return notFound()
