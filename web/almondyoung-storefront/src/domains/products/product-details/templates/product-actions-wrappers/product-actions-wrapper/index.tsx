@@ -20,7 +20,6 @@ export default async function ProductActionsWrapper({
   if (!product) {
     return null
   }
-  console.log("product:", product)
 
   return (
     <ProductActions product={product} region={region} customer={customer} />
