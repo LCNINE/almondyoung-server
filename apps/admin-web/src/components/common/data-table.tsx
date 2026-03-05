@@ -252,7 +252,7 @@ export type DataTableProps<T> = BaseDataTableProps<T> & (SelectableTableProps<T>
                                                     whiteSpace: 'normal',
                                                 }}
                                             >
-                                                {column.render ? column.render(value, row, rowIndex) : value}
+                                                {column.render ? column.render(value, row, rowIndex) : (value as React.ReactNode)}
                                             </TableCell>
                                         );
                                     })}

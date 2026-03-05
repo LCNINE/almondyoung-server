@@ -20,7 +20,7 @@ import {
 import { adaptPagination } from '@/lib/api/adapters/pagination';
 
 import RouteGuard from '@/components/layout/route-guard';
-import type { SalesChannel, SalesChannelQueryDto } from '@/lib';
+import type { ChannelDto as SalesChannel, ChannelsQuery as SalesChannelQueryDto } from '@/lib/types/dto/products';
 import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
 

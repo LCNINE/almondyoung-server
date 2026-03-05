@@ -1,4 +1,5 @@
 // src/app/layout.tsx
+import { AuthExpiredHandler } from '@/components/layout/auth-expired-handler';
 import { MainLayout } from '@/components/layout/main-layout';
 import { MockProvider } from '@/components/providers/mock-provider';
 import QueryProvider from '@/components/providers/query-provider';
@@ -49,6 +50,7 @@ export default async function RootLayout({
           <QueryProvider>
             <HydrationBoundary state={dehydrate(queryClient)}>
               <MainLayout>{children}</MainLayout>
+              <AuthExpiredHandler />
               <Toaster />
               <ReactQueryDevtools initialIsOpen={false} />
             </HydrationBoundary>

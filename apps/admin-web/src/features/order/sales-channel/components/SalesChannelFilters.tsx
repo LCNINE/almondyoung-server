@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Search } from 'lucide-react';
-import type { SalesChannelQueryDto } from '@/lib/types/dto/products';
+import type { ChannelsQuery as SalesChannelQueryDto } from '@/lib/types/dto/products';
 
 type UiSite = { id: string; type: string; name: string; icon?: string; isActive?: boolean };
 

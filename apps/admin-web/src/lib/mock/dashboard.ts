@@ -17,7 +17,7 @@ export interface RecentOrder {
 }
 
 export interface SystemNotification {
-  type: "warning" | "info" | "success";
+  type: "warning" | "info" | "success" | "error";
   title: string;
   message: string;
   time: string;
@@ -63,23 +63,23 @@ export const recentOrders: RecentOrder[] = [
 ];
 
 export const systemNotifications: SystemNotification[] = [
-  { 
-    type: "warning", 
+  {
+    type: "warning",
     title: "재고 부족 알림",
-    message: "재고 부족 상품 5개 발견", 
-    time: "2분 전" 
+    message: "재고 부족 상품 5개 발견",
+    time: "2분 전"
   },
-  { 
-    type: "info", 
+  {
+    type: "info",
     title: "새 주문 알림",
-    message: "새로운 주문 3건 접수", 
-    time: "5분 전" 
+    message: "새로운 주문 3건 접수",
+    time: "5분 전"
   },
-  { 
-    type: "success", 
+  {
+    type: "success",
     title: "배송 완료",
-    message: "배송 완료 12건", 
-    time: "10분 전" 
+    message: "배송 완료 12건",
+    time: "10분 전"
   }
 ];
 

@@ -18,7 +18,7 @@ interface InboundItemCardProps {
 
 
 
-export function InboundItemCard({
+function InboundItemCard({
   code,
   name,
   brand,
@@ -120,7 +120,7 @@ export function InboundItemCard({
 
 // --- InboundFilterForm Component ---
 // 모든 필드를 '레이블-입력창'이 세로로 쌓이는 구조로 변경하여 모바일 가독성을 높였습니다.
-export function InboundFilterForm() {
+function InboundFilterForm() {
   return (
     <div className="space-y-4 border-b bg-white p-4 text-sm">
       {/* 입고 예정일 */}
