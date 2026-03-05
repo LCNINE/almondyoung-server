@@ -42,7 +42,7 @@ export type SalesOrderRow = {
 /**
  * 주문 목록 + 상세 + SKU + 사용자(username/phone)까지 조합한 UI 모델
  */
-export function useSalesOrderRows(query: SalesOrdersQuery = {}) {
+export function useSalesOrderRows(query: SalesOrdersQuery) {
   // 1) 목록
   const listQuery = useQuery({
     queryKey: ['sales-orders', 'list-view', query],
@@ -131,8 +131,8 @@ export function useSalesOrderRows(query: SalesOrdersQuery = {}) {
 
     const skuMap =
       skuMapQuery.data &&
-      typeof skuMapQuery.data === 'object' &&
-      !Array.isArray(skuMapQuery.data)
+        typeof skuMapQuery.data === 'object' &&
+        !Array.isArray(skuMapQuery.data)
         ? (skuMapQuery.data as Record<string, any>)
         : ({} as Record<string, any>);
     const userMap = userMapQuery.data ?? {};
@@ -170,8 +170,8 @@ export function useSalesOrderRows(query: SalesOrdersQuery = {}) {
 
           const optionName = sku?.optionKey
             ? Object.entries(sku.optionKey)
-                .map(([, value]) => `${value}`)
-                .join(', ')
+              .map(([, value]) => `${value}`)
+              .join(', ')
             : skuExt?.optionName ?? item.optionName;
 
           const allocated = Number(item?.allocatedQuantity ?? 0);

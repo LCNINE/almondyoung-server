@@ -32,7 +32,8 @@ export const FormCheckbox = React.forwardRef<
     className,
     ...props
 }, ref) => {
-    const checkboxId = id || React.useId()
+    const generatedId = React.useId()
+    const checkboxId = id ?? generatedId
 
     return (
         <div className={cn("space-y-1", className)}>

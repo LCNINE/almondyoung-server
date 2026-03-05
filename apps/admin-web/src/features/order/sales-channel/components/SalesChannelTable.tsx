@@ -4,7 +4,7 @@
 import React, { useMemo } from 'react';
 import { DataTable, TableColumn } from '@/components/common/data-table';
 import { SalesChannelMark, SalesChannelType } from '@/components/common/sales-channel-mark';
-import type { SalesChannel } from '@/lib/types/dto/products';
+import type { ChannelDto as SalesChannel } from '@/lib/types/dto/products';
 
 interface SalesChannelTableProps {
     data: SalesChannel[];
@@ -35,10 +35,10 @@ export function SalesChannelTable({
             )
         },
         { key: 'name', label: '판매처명' },
-        { key: 'loginId', label: '로그인 아이디 (shop ID)', render: (_, row) => ((row.apiConfig as Record<string, unknown>)?.loginId as string || '-') },
+        { key: 'loginId', label: '로그인 아이디 (shop ID)', render: (_, row) => ((row.config as Record<string, unknown>)?.loginId as string || '-') },
         {
             key: 'password', label: '비밀번호 / OTP', render: (_, row) => {
-                const cfg = (row.apiConfig || {}) as Record<string, unknown>;
+                const cfg = (row.config || {}) as Record<string, unknown>;
                 return `${Boolean(cfg.password) ? '••••••••' : '-'}${Boolean(cfg.hasOtp) ? ' / OTP' : ''}`;
             }
         },
@@ -73,14 +73,15 @@ export function SalesChannelTable({
     ], [onEdit, onDelete, onApiKeyEdit]);
 
     return (
-        <DataTable<SalesChannel>
-            data={data}
-            columns={columns}
-            rowKey="id"
-            loading={loading}
-            emptyMessage="등록된 판매처가 없습니다."
-            headerBgColor="bg-[#DFF1FD]"
-            headerTextColor="text-gray-700 font-normal"
-        />
+      <></> 
+        // <DataTable<SalesChannel>
+        //     data={data}
+        //     columns={columns}
+        //     rowKey="id"
+        //     loading={loading}
+        //     emptyMessage="등록된 판매처가 없습니다."
+        //     headerBgColor="bg-[#DFF1FD]"
+        //     headerTextColor="text-gray-700 font-normal"
+        // />
     );
 }

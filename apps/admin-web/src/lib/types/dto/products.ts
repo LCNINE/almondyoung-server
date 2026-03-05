@@ -240,7 +240,7 @@ export interface CreateChannelDto {
   type: ChannelType;
   name: string;
   description?: string;
-  config?: Record<string, string>;
+  config?: Record<string, any>;
   isActive?: boolean;
 }
 
@@ -248,7 +248,7 @@ export interface UpdateChannelDto {
   type?: ChannelType;
   name?: string;
   description?: string;
-  config?: Record<string, string>;
+  config?: Record<string, any>;
   isActive?: boolean;
 }
 
@@ -257,7 +257,7 @@ export interface ChannelDto {
   type: ChannelType;
   name: string;
   description?: string;
-  config?: Record<string, string>;
+  config?: Record<string, any>;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;

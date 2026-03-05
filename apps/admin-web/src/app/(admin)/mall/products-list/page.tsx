@@ -1,4 +1,4 @@
-import ProductListClient from './product-list.client';
+import ProductListClient from './(components)/product-list.client';
 
 export default function ProductsListPage() {
   return <ProductListClient />;

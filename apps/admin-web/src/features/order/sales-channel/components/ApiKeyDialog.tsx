@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Switch } from '@/components/ui/switch';
 import { useUpdateChannel } from '@/lib/services/products';
-import type { SalesChannel } from '@/lib/types/dto/products';
+import type { ChannelDto as SalesChannel } from '@/lib/types/dto/products';
 
 interface ApiKeyDialogProps {
     open: boolean;
@@ -30,7 +30,7 @@ export function ApiKeyDialog({ open, onOpenChange, channel, onSuccess }: ApiKeyD
 
     useEffect(() => {
         if (!channel) return;
-        const cfg = (channel.apiConfig || {}) as Record<string, unknown>;
+        const cfg = (channel.config || {}) as Record<string, unknown>;
         setForm({
             apiKey: (cfg.accessKey as string) || (cfg.apiKey as string) || '',
             secretKey: (cfg.secretKey as string) || '',
@@ -54,7 +54,7 @@ export function ApiKeyDialog({ open, onOpenChange, channel, onSuccess }: ApiKeyD
 
             await update.mutateAsync({
                 id: channel.id,
-                data: { apiConfig },
+                data: { config: apiConfig },
             });
 
             onSuccess?.();

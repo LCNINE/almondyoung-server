@@ -1,6 +1,5 @@
 'use client';
 
-import { USER_SERVICE_BASE_URL } from '@/const';
 import axios, { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios';
 import { CustomError } from './customError';
 
@@ -29,9 +28,7 @@ function addRefreshSubscriber(callback: (token: string | null) => void) {
 
 async function refreshAccessToken(): Promise<string | null> {
   try {
-    const userServiceUrl = USER_SERVICE_BASE_URL || 'http://localhost:3030';
-
-    const response = await fetch(`${userServiceUrl}/auth/restore-token`, {
+    const response = await fetch('/api/auth/refresh', {
       method: 'POST',
       credentials: 'include',
     });
@@ -41,7 +38,7 @@ async function refreshAccessToken(): Promise<string | null> {
     }
 
     const data = await response.json();
-    return data.accessToken;
+    return data.data.accessToken;
   } catch (error) {
     console.error('Token refresh error:', error);
 
@@ -115,12 +112,9 @@ client.interceptors.response.use(
         onRefreshed(null);
         isRefreshing = false;
 
-        // 로그인 페이지로 리다이렉트 (이미 로그인 페이지가 아닌 경우)
-        if (
-          typeof window !== 'undefined' &&
-          !window.location.pathname.includes('/login')
-        ) {
-          window.location.href = '/login';
+        // 세션 만료 이벤트 발행 (AuthExpiredHandler가 SPA 내 리다이렉트 처리)
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('auth:session-expired'));
         }
 
         throw refreshError as CustomError;

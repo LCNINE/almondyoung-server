@@ -215,8 +215,6 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
     }
   };
 
-  if (!matching) return null;
-
   const channelIcon = useMemo(() => {
     switch (salesChannel) {
       case 'naver':
@@ -229,6 +227,8 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
         return { badge: 'ET', label: '외부채널' };
     }
   }, [salesChannel]);
+
+  if (!matching) return null;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
