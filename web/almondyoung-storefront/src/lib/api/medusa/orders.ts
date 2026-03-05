@@ -2,6 +2,7 @@
 
 import { sdk } from "@/lib/config/medusa"
 import { HttpTypes, OrderStatus } from "@medusajs/types"
+import { revalidatePath } from "next/cache"
 import { handleMedusaAuthError } from "./auth-utils"
 import { getAuthHeaders, getCacheOptions } from "../../data/cookies"
 
@@ -126,6 +127,7 @@ export async function captureOrderPayment(
       headers,
     })
 
+    revalidatePath("/mypage/order/list")
     return { success: true }
   } catch (error: any) {
     const status = getErrorStatus(error)
