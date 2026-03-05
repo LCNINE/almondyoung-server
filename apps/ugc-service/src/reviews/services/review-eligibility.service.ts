@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { and, count, desc, eq, isNotNull, isNull, type SQL } from 'drizzle-orm';
+import { and, count, desc, eq, gte, isNotNull, isNull, type SQL } from 'drizzle-orm';
 import { reviewEligibilities, type UgcServiceSchema } from '../../db/schema';
 import { ReviewEligibilityListQueryDto } from '../dto/review-eligibility-query.dto';
 import { CreateReviewEligibilityDto } from '../dto/create-review-eligibility.dto';
@@ -76,6 +76,7 @@ export class ReviewEligibilityService {
       const status = query.status ?? 'available';
       if (status === 'available') {
         conditions.push(isNull(reviewEligibilities.consumedAt));
+        conditions.push(gte(reviewEligibilities.expiresAt, new Date()));
       } else {
         conditions.push(isNotNull(reviewEligibilities.consumedAt));
       }
