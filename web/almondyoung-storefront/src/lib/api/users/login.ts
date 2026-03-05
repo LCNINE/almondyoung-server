@@ -7,7 +7,6 @@ import { revalidatePath, revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
 import { api } from "../api"
 import { ApiNetworkError, HttpApiError } from "../api-error"
-import { transferCart } from "../medusa/customer"
 import { medusaSignin } from "../medusa/signin"
 
 // 반환 타입 정의
@@ -76,17 +75,18 @@ export async function login(
     }
   }
 
-  // 로그인 성공 후 처리
-  await medusaSignin()
+  // 로그인 성공 후 Medusa 인증/카트 연결까지 성공해야 진행
+  const medusaSigninResult = await medusaSignin()
+  if (!medusaSigninResult.success) {
+    return {
+      success: false,
+      error: "메두사 인증 토큰 처리 중 오류가 발생했습니다",
+      code: "TOKEN_PROCESS_ERROR",
+    }
+  }
 
   const customerCacheTag = await getCacheTag("customers")
   revalidateTag(customerCacheTag)
-
-  try {
-    await transferCart()
-  } catch (error) {
-    console.error("Cart transfer error:", error)
-  }
 
   const rawTargetPath = redirectTo?.startsWith("/")
     ? redirectTo
