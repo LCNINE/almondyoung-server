@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import * as os from 'os';
 import { HttpModule } from '@nestjs/axios';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ClsModule } from 'nestjs-cls';
 import { EventsModule, StreamPublisher } from '@app/events';
 import { NaverSmartstoreAdapter } from './adapters/naver/naver-smartstore.adapter';
 import { CoupangAdapter } from './adapters/coupang/coupang.adapter';
@@ -97,6 +98,7 @@ function createKafkaConfig() {
 
 @Module({
   imports: [
+    ClsModule.forRoot({ global: true, middleware: { mount: false } }),
     ConfigModule.forRoot({
       isGlobal: true,
       validate: validateChannelAdapterEnv,

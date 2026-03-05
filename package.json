@@ -227,6 +227,7 @@
     "handlebars": "^4.7.8",
     "hms-api-wrapper": "file:packages/hms-api-wrapper",
     "kafkajs": "^2.2.4",
+    "nestjs-cls": "^6.2.0",
     "nestjs-resend": "^1.0.3",
     "nestjs-zod": "^5.0.1",
     "node-fetch": "^2.7.0",

@@ -14,11 +14,15 @@ import {
 } from '@nestjs/common';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { ClsModule } from 'nestjs-cls';
 import { StreamPublisher } from './publishers/stream-publisher.service';
 import { DLQHandler } from './dlq/dlq-handler.service';
 import { EventsExceptionFilter } from './filters/events-exception.filter';
 import { SchemaValidationInterceptor } from './interceptors/schema-validation.interceptor';
+import { ChainContextInterceptor } from './interceptors/chain-context.interceptor';
 import { GracefulShutdownService } from './shutdown/graceful-shutdown.service';
+import { EventChainService } from './tracking/event-chain.service';
+import { EventTrackingService } from './tracking/event-tracking.service';
 import {
   KafkaConfig,
   StreamConfig,
@@ -30,6 +34,7 @@ import { OutboxConfig } from './outbox/outbox.types';
 import { OutboxPublisher } from './outbox/outbox-publisher.service';
 import { OutboxDispatcher } from './outbox/outbox-dispatcher.service';
 import { outboxSchema } from './outbox/outbox.schema';
+import { trackingSchema } from './tracking/tracking.schema';
 import { ScheduleModule } from '@nestjs/schedule';
 import { DbService } from '@app/db';
 
@@ -91,15 +96,21 @@ export class EventsModule {
     // 각 stream별 StreamPublisher 제공자 생성
     const publisherProviders = options.streams.map((stream) => ({
       provide: this.getPublisherToken(stream.topic.topic),
-      useFactory: (kafkaClient: any) => {
+      useFactory: (
+        kafkaClient: any,
+        eventChainService: EventChainService,
+        eventTrackingService: EventTrackingService,
+      ) => {
         return new StreamPublisher(
           kafkaClient,
           stream,
           serviceName,
           options.validation, // 스키마 검증 옵션 전달
+          eventChainService,
+          eventTrackingService,
         );
       },
-      inject: ['KAFKA_CLIENT'],
+      inject: ['KAFKA_CLIENT', EventChainService, EventTrackingService],
     }));
 
     // DLQ Handler 제공자 (DLQ가 활성화된 경우에만)
@@ -132,7 +143,12 @@ export class EventsModule {
         },
         {
           provide: OutboxDispatcher,
-          useFactory: (dbService: DbService, kafkaClient: any) => {
+          useFactory: (
+            dbService: DbService,
+            kafkaClient: any,
+            eventChainService: EventChainService,
+            eventTrackingService: EventTrackingService,
+          ) => {
             // topic -> StreamPublisher 매핑 생성
             const publisherMap = new Map<string, StreamPublisher>();
             options.streams.forEach((stream) => {
@@ -141,6 +157,8 @@ export class EventsModule {
                 stream,
                 serviceName,
                 options.validation,
+                eventChainService,
+                eventTrackingService,
               );
               publisherMap.set(stream.topic.topic, publisher);
             });
@@ -151,21 +169,28 @@ export class EventsModule {
               options.outbox,
             );
           },
-          inject: [DbService, 'KAFKA_CLIENT'],
+          inject: [DbService, 'KAFKA_CLIENT', EventChainService, EventTrackingService],
         },
       ]
       : [];
+
+    const trackingProviders = [
+      { provide: EventChainService, useClass: EventChainService },
+      { provide: EventTrackingService, useClass: EventTrackingService },
+    ];
 
     const providers = [
       ...publisherProviders,
       ...(dlqProvider ? [dlqProvider] : []),
       ...outboxProviders,
+      ...trackingProviders,
       shutdownProvider, // Graceful shutdown 항상 등록
     ];
 
     return {
       module: EventsModule,
       imports: [
+        ClsModule.forRoot({ global: true, middleware: { mount: false } }),
         ...(enableOutbox ? [ScheduleModule.forRoot()] : []),
         ClientsModule.register([
           {
@@ -257,17 +282,26 @@ export class EventsModule {
       inject: ['KAFKA_CLIENT'],
     };
 
+    const chainInterceptorProvider = {
+      provide: APP_INTERCEPTOR,
+      useClass: ChainContextInterceptor,
+    };
+
     const providers = [
       ...(dlqProvider ? [dlqProvider] : []),
       ...(filterProvider ? [filterProvider] : []),
       interceptorProvider, // 스키마 검증 Interceptor는 항상 등록
+      chainInterceptorProvider, // chain context 전파 인터셉터
       shutdownProvider, // Graceful shutdown 항상 등록
+      { provide: EventChainService, useClass: EventChainService },
+      { provide: EventTrackingService, useClass: EventTrackingService },
     ];
 
     return {
       module: EventsModule,
       global: true,
       imports: [
+        ClsModule.forRoot({ global: true, middleware: { mount: false } }),
         ClientsModule.register([
           {
             name: 'KAFKA_CLIENT',
@@ -421,6 +455,13 @@ export class EventsModule {
    */
   static get outboxSchema() {
     return outboxSchema;
+  }
+
+  /**
+   * Tracking 스키마 export (앱에서 DbModule 스키마에 병합할 수 있도록)
+   */
+  static get trackingSchema() {
+    return trackingSchema;
   }
 }
 

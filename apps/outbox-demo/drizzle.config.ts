@@ -8,9 +8,11 @@ export default defineConfig({
   schema: [
     'apps/outbox-demo/database/schemas/schema.ts',
     'libs/events/src/outbox/outbox.schema.ts',
+    'libs/events/src/tracking/tracking.schema.ts',
   ],
   out: './database/migrations',
   dbCredentials: {
     url: process.env.DATABASE_URL || '',
   },
+  schemaFilter: ['public', 'event'],
 });

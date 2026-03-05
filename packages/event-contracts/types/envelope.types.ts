@@ -17,6 +17,7 @@ export interface MessageEnvelope<TPayload = unknown> {
   // === 추적 정보 ===
   correlationId: string;               // 요청 추적용 (전체 플로우)
   causationId?: string;                // 이 메시지를 발생시킨 메시지 ID
+  chainId?: string;                    // 이벤트 체인 전체를 묶는 UUID v7
 
   // === 시간 정보 ===
   timestamp: string;                   // ISO 8601 (메시지 생성 시각)

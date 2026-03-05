@@ -3,10 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import { DbService } from '@app/db';
 import { inboxEvents } from '../../schema';
 import { eq, and, lte } from 'drizzle-orm';
+import { v7 } from 'uuid';
 import { PimMedusaSyncService } from './pim-medusa-sync.service';
 import { MembershipMedusaSyncService } from './membership-medusa-sync.service';
 import { FirebaseMembershipSyncService } from './firebase-membership-sync.service';
 import { AlmondAuthClient } from '../almond-auth/almond-auth.client';
+import { EventChainService } from '@app/events';
 import type { PimActiveVersionChangedEvent, ChannelAdapterSchema } from '../../types';
 import type { CategoryChangedPayload } from '@packages/event-contracts/streams/product.stream';
 import type { MembershipStatusChangedPayload } from '@packages/event-contracts/streams/membership.stream';
@@ -28,6 +30,7 @@ export class InboxWorkerService implements OnModuleInit {
         private readonly firebaseMembershipSyncService: FirebaseMembershipSyncService,
         private readonly almondAuthClient: AlmondAuthClient,
         private readonly configService: ConfigService,
+        private readonly eventChainService: EventChainService,
     ) {
         this.pollIntervalMs = this.configService.get<number>(
             'INBOX_POLL_INTERVAL_MS',
@@ -100,6 +103,15 @@ export class InboxWorkerService implements OnModuleInit {
 
     // 단일 inbox 이벤트 처리
     private async processInboxEvent(event: any): Promise<void> {
+        const chainId = event.metadata?.chainId ?? v7();
+        const eventId = event.metadata?.messageId ?? String(event.id);
+
+        await this.eventChainService.runWithChain(chainId, eventId, () =>
+            this.doProcessInboxEvent(event),
+        );
+    }
+
+    private async doProcessInboxEvent(event: any): Promise<void> {
         const eventId = event.id;
         const eventType = event.eventType;
 

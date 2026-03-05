@@ -4,10 +4,11 @@
  * 도메인 스트림 기반 이벤트/커맨드 발행
  */
 
-import { Injectable, Inject, Logger } from '@nestjs/common';
+import { Injectable, Inject, Logger, Optional } from '@nestjs/common';
 import { ClientKafka } from '@nestjs/microservices';
 import { CompressionTypes } from 'kafkajs';
 import { firstValueFrom } from 'rxjs';
+import { v7 } from 'uuid';
 import {
   DomainEvent,
   DomainCommand,
@@ -24,6 +25,14 @@ import {
   logValidationError,
   isZodSchema,
 } from '../validation/schema-validation.util';
+import { EventChainService } from '../tracking/event-chain.service';
+import { EventTrackingService } from '../tracking/event-tracking.service';
+
+export interface CausedByResource {
+  resourceType: string;
+  resourceId: string;
+  description?: string;
+}
 
 /**
  * 이벤트 발행 파라미터 (타입 안전 버전)
@@ -74,6 +83,8 @@ export class StreamPublisher<
     private readonly streamConfig: StreamConfig<TEvents>,
     private readonly serviceName: string,
     validationOptions?: SchemaValidationOptions,
+    private readonly eventChainService?: EventChainService,
+    private readonly eventTrackingService?: EventTrackingService,
   ) {
     this.logger = new Logger(
       `StreamPublisher:${streamConfig.topic.topic}`,
@@ -98,7 +109,7 @@ export class StreamPublisher<
     params: PublishEventParams<
       K,
       TEvents[K] extends EventType<any, infer TPayload> ? TPayload : never
-    >,
+    > & { causedBy?: CausedByResource },
   ): Promise<void> {
     const messageId = generateMessageId();
     const now = new Date();
@@ -112,6 +123,9 @@ export class StreamPublisher<
       );
     }
 
+    // chainId: CLS에서 읽거나 새 UUID v7 생성
+    const chainId = this.eventChainService?.getChainId() ?? v7();
+
     // Envelope 생성
     const envelope: DomainEvent<
       TEvents[K] extends EventType<any, infer TPayload> ? TPayload : never
@@ -123,6 +137,7 @@ export class StreamPublisher<
 
       correlationId: params.correlationId || messageId,
       causationId: params.causationId,
+      chainId,
 
       timestamp: now.toISOString(),
       occurredAt: (params.occurredAt || now).toISOString(),
@@ -139,6 +154,20 @@ export class StreamPublisher<
     };
 
     await this.sendMessage(envelope, params.aggregateId);
+
+    // causedBy가 있으면 CAUSE 링크 기록
+    if (params.causedBy && this.eventTrackingService) {
+      await this.eventTrackingService
+        .trackCause({
+          eventId: envelope.messageId,
+          chainId,
+          eventType: envelope.messageType,
+          ...params.causedBy,
+        })
+        .catch((err) =>
+          this.logger.warn('Failed to track cause', err?.message),
+        );
+    }
   }
 
   /**

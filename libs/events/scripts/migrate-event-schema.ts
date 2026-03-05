@@ -24,34 +24,54 @@ CREATE SCHEMA IF NOT EXISTS event;
 -- Create outbox_events table
 CREATE TABLE IF NOT EXISTS event.outbox_events (
   id serial PRIMARY KEY,
-  
+
   -- Stream 정보
   topic varchar(100) NOT NULL,
-  
+
   -- 이벤트 식별
   aggregate_type varchar(50) NOT NULL,
   aggregate_id varchar(100) NOT NULL,
   event_type varchar(100) NOT NULL,
-  
+
   -- 페이로드 (MessageEnvelope 전체)
   payload jsonb NOT NULL,
-  
+
   -- 상태 관리
   status varchar(20) NOT NULL DEFAULT 'PENDING',
-  
+
   -- 타임스탬프
   created_at timestamp NOT NULL DEFAULT now(),
   published_at timestamp,
   failed_at timestamp,
-  
+
   -- 재시도 관리
   retry_count integer NOT NULL DEFAULT 0,
   error_message text
 );
 
--- Create indexes
+-- Create outbox indexes
 CREATE INDEX IF NOT EXISTS outbox_status_idx ON event.outbox_events (status, created_at);
 CREATE INDEX IF NOT EXISTS outbox_topic_idx ON event.outbox_events (topic);
+
+-- Create event_resource_links table (이벤트 체인 추적)
+CREATE TABLE IF NOT EXISTS event.event_resource_links (
+  id          VARCHAR(36)  PRIMARY KEY,
+  event_id    VARCHAR(26)  NOT NULL,
+  chain_id    VARCHAR(36)  NOT NULL,
+  event_type  VARCHAR(100) NOT NULL,
+  resource_type VARCHAR(100) NOT NULL,
+  resource_id   VARCHAR(100) NOT NULL,
+  direction   VARCHAR(10)  NOT NULL CHECK (direction IN ('CAUSE', 'EFFECT')),
+  action      VARCHAR(50),
+  description TEXT,
+  service_name VARCHAR(100),
+  created_at  TIMESTAMP    NOT NULL DEFAULT NOW()
+);
+
+-- Create event_resource_links indexes
+CREATE INDEX IF NOT EXISTS erl_chain_idx    ON event.event_resource_links (chain_id);
+CREATE INDEX IF NOT EXISTS erl_resource_idx ON event.event_resource_links (resource_type, resource_id);
+CREATE INDEX IF NOT EXISTS erl_event_idx    ON event.event_resource_links (event_id);
 `;
 
 async function main() {
@@ -69,6 +89,8 @@ async function main() {
     console.log('  - event.outbox_events table');
     console.log('  - outbox_status_idx index');
     console.log('  - outbox_topic_idx index');
+    console.log('  - event.event_resource_links table');
+    console.log('  - erl_chain_idx, erl_resource_idx, erl_event_idx indexes');
   } catch (error) {
     console.error('❌ Migration failed:', error);
     process.exit(1);
