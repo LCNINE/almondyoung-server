@@ -22,6 +22,12 @@ export class ReviewEligibilityResponseDto {
   })
   eligibleAt: string;
 
+  @ApiProperty({
+    description: '리뷰 작성 기한 (ISO 8601)',
+    example: '2025-12-20T10:30:00.000Z',
+  })
+  expiresAt: string;
+
   @ApiPropertyOptional({
     description: '리뷰 작성 완료 일시 (ISO 8601)',
     nullable: true,
