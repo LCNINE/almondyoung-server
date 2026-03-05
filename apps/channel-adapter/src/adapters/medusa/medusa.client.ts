@@ -213,6 +213,7 @@ export class MedusaClient {
             visibility: boolean;
             showOnMainCategory: boolean;
             thumbnail?: string;
+            sortOrder?: number;
         }
     ): Promise<string> {
         const preferredHandle = categorySnapshot.slug || categorySnapshot.id;
@@ -258,6 +259,7 @@ export class MedusaClient {
                     is_active: isActive,
                     parent_category_id: parentMedusaId,
                     ...(categorySnapshot.thumbnail && { thumbnail: categorySnapshot.thumbnail }),
+                    ...(categorySnapshot.sortOrder != null && { rank: categorySnapshot.sortOrder }),
                     metadata: {
                         ...(existing.metadata || {}),
                         ...pimMetadata,
@@ -289,6 +291,7 @@ export class MedusaClient {
             is_active: isActive,
             parent_category_id: parentMedusaId,
             ...(categorySnapshot.thumbnail && { thumbnail: categorySnapshot.thumbnail }),
+            ...(categorySnapshot.sortOrder != null && { rank: categorySnapshot.sortOrder }),
             metadata: {
                 ...pimMetadata,
             },

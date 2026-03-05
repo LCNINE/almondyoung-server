@@ -623,6 +623,7 @@ export class PimMedusaSyncService {
         visibility: category.visibility,
         showOnMainCategory: category.displaySettings?.showOnMainCategory ?? false,
         thumbnail: category.thumbnail ?? undefined,
+        sortOrder: category.sortOrder,
       });
 
       this.logger.log(
