@@ -259,16 +259,10 @@ export class MedusaClient {
             }
         }
 
-        this.logger.log(
-            `[CategorySync] Looking up: preferredHandle=${preferredHandle}, legacyHandle=${legacyHandle}, pimId=${categorySnapshot.id}`,
-        );
         const existing = await this.findCategoryByCandidateHandles(
             preferredHandle,
             legacyHandle,
         ) || await this.findCategoryByPimId(categorySnapshot.id);
-        this.logger.log(
-            `[CategorySync] Lookup result: ${existing ? `found=${existing.id}, handle=${existing.handle}` : 'NOT FOUND'}`,
-        );
         if (existing?.id) {
             const verified = await this.getCategoryById(existing.id);
             if (!verified) {
@@ -289,9 +283,6 @@ export class MedusaClient {
                         ...pimMetadata,
                     },
                 };
-                this.logger.log(
-                    `[CategorySync] Updating Medusa category ${existing.id}: ${JSON.stringify(updatePayload)}`,
-                );
                 try {
                     await this.sdk.admin.productCategory.update(
                         existing.id,
