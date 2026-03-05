@@ -18,22 +18,7 @@ export function Rating({ rating, reviewCount }: Props) {
   const emptyStars = 5 - fullStars - (partialFill > 0 ? 1 : 0)
 
   if (reviewCount === 0) {
-    return (
-      <div className="flex items-center gap-1 py-1">
-        <div className="flex" role="img" aria-label="평점 없음">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Star
-              key={`empty-${i}`}
-              className="fill-gray-20 text-gray-20 h-4 w-4"
-              aria-hidden="true"
-            />
-          ))}
-        </div>
-        <span className="text-muted-foreground text-sm">
-          아직 리뷰가 없습니다
-        </span>
-      </div>
-    )
+    return null
   }
 
   return (
