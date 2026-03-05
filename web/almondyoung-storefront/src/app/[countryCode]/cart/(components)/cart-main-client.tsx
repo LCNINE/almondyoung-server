@@ -15,7 +15,7 @@ import {
   createCheckoutCartFromLineItems,
   createShippingPreviewCartFromLineItems,
   syncShippingPreviewCartLineItems,
-  getShippingTotalForCartPreview,
+  getCartPricingForPreview,
   deleteShippingPreviewCart,
   updateLineItem,
   deleteLineItem,
@@ -25,8 +25,6 @@ import { transferCart } from "@lib/api/medusa/customer"
 import type { HttpTypes } from "@medusajs/types"
 import { toast } from "sonner"
 import { CartPageSkeleton } from "@/components/skeletons/page-skeletons"
-import { useMembershipPricing } from "@/hooks/use-membership-pricing"
-import { deriveCartItemPricing } from "./cart-pricing"
 
 function mapMedusaItemToCartItem(item: HttpTypes.StoreCartLineItem): CartItem {
   const variant = item.variant as any
@@ -101,7 +99,13 @@ export function CartMainClient() {
   const [isLoading, setIsLoading] = useState(true)
   const [recommendedProducts, setRecommendedProducts] = useState<any[]>([])
   const [shippingTotal, setShippingTotal] = useState<number>(0)
-  const { isMembershipPricing } = useMembershipPricing()
+  const [selectedPricing, setSelectedPricing] = useState({
+    originalItemSubtotal: 0,
+    itemSubtotal: 0,
+    total: 0,
+    membershipDiscount: 0,
+    nonMembershipDiscount: 0,
+  })
 
   const previewCartIdRef = useRef<string | null>(null)
   const previewRequestSeqRef = useRef(0)
@@ -241,11 +245,25 @@ export function CartMainClient() {
         setCartItems([])
         setCheckedItems([])
         setShippingTotal(0)
+        setSelectedPricing({
+          originalItemSubtotal: 0,
+          itemSubtotal: 0,
+          total: 0,
+          membershipDiscount: 0,
+          nonMembershipDiscount: 0,
+        })
       }
     } catch {
       setCartItems([])
       setCheckedItems([])
       setShippingTotal(0)
+      setSelectedPricing({
+        originalItemSubtotal: 0,
+        itemSubtotal: 0,
+        total: 0,
+        membershipDiscount: 0,
+        nonMembershipDiscount: 0,
+      })
     } finally {
       setIsLoading(false)
     }
@@ -272,6 +290,13 @@ export function CartMainClient() {
 
     if (!selected.length) {
       setShippingTotal(0)
+      setSelectedPricing({
+        originalItemSubtotal: 0,
+        itemSubtotal: 0,
+        total: 0,
+        membershipDiscount: 0,
+        nonMembershipDiscount: 0,
+      })
       return
     }
 
@@ -286,6 +311,13 @@ export function CartMainClient() {
 
     if (!selectedPreviewItems.length) {
       setShippingTotal(0)
+      setSelectedPricing({
+        originalItemSubtotal: 0,
+        itemSubtotal: 0,
+        total: 0,
+        membershipDiscount: 0,
+        nonMembershipDiscount: 0,
+      })
       return
     }
 
@@ -317,15 +349,29 @@ export function CartMainClient() {
           await createPreviewCart()
         }
 
-        const total = await getShippingTotalForCartPreview(previewCartId!)
+        const pricing = await getCartPricingForPreview(previewCartId!)
 
         if (previewRequestSeqRef.current === requestSeq) {
-          setShippingTotal(total)
+          setShippingTotal(pricing.shippingTotal)
+          setSelectedPricing({
+            originalItemSubtotal: pricing.originalItemSubtotal,
+            itemSubtotal: pricing.itemSubtotal,
+            total: pricing.total,
+            membershipDiscount: pricing.membershipDiscount,
+            nonMembershipDiscount: pricing.nonMembershipDiscount,
+          })
         }
       } catch {
         previewCartIdRef.current = null
         if (previewRequestSeqRef.current === requestSeq) {
           setShippingTotal(0)
+          setSelectedPricing({
+            originalItemSubtotal: 0,
+            itemSubtotal: 0,
+            total: 0,
+            membershipDiscount: 0,
+            nonMembershipDiscount: 0,
+          })
         }
       }
     }, 250)
@@ -489,37 +535,38 @@ export function CartMainClient() {
     finalPrice,
     totalDiscount,
     membershipDiscount,
-    membershipPreviewPrice,
-    membershipPreviewSavings,
     selectedCount,
   } = useMemo(() => {
     const selected = cartItems.filter((item) => checkedItems.includes(item.id))
+    const fallbackMembershipDiscount = selected.reduce((sum, item) => {
+      const quantity = item.quantity || 1
+      const baseUnitPrice = item.product.basePrice || item.product.unitPrice || 0
+      const displayUnitPrice = item.product.unitPrice || baseUnitPrice
+      return sum + Math.max(0, (baseUnitPrice - displayUnitPrice) * quantity)
+    }, 0)
 
-    let totalOriginalPrice = 0
-    let finalPrice = 0
-    let membershipPreviewPrice = 0
-    let membershipDiscount = 0
-
-    for (const item of selected) {
-      const { quantity, baseUnitPrice, memberUnitPrice, displayUnitPrice } =
-        deriveCartItemPricing(item, isMembershipPricing)
-
-      totalOriginalPrice += baseUnitPrice * quantity
-      finalPrice += displayUnitPrice * quantity
-      membershipPreviewPrice += memberUnitPrice * quantity
-      membershipDiscount += Math.max(0, (baseUnitPrice - memberUnitPrice) * quantity)
-    }
+    const membershipDiscount = Math.max(
+      selectedPricing.membershipDiscount,
+      fallbackMembershipDiscount
+    )
+    const totalOriginalPrice = Math.max(
+      selectedPricing.originalItemSubtotal,
+      selectedPricing.itemSubtotal + membershipDiscount
+    )
+    const totalDiscountAll = Math.max(
+      0,
+      totalOriginalPrice + shippingTotal - selectedPricing.total
+    )
+    const nonMembershipDiscount = Math.max(0, totalDiscountAll - membershipDiscount)
 
     return {
       totalOriginalPrice,
-      finalPrice,
-      totalDiscount: 0,
-      membershipDiscount: isMembershipPricing ? membershipDiscount : 0,
-      membershipPreviewPrice,
-      membershipPreviewSavings: Math.max(0, totalOriginalPrice - membershipPreviewPrice),
-      selectedCount: selected.length,
+      finalPrice: Math.max(0, selectedPricing.total - shippingTotal),
+      totalDiscount: nonMembershipDiscount,
+      membershipDiscount,
+      selectedCount: checkedItems.length,
     }
-  }, [cartItems, checkedItems, isMembershipPricing])
+  }, [cartItems, checkedItems, selectedPricing, shippingTotal])
 
   if (isLoading && cartItems.length === 0) {
     return <CartPageSkeleton />
@@ -537,7 +584,7 @@ export function CartMainClient() {
                 cartItems={cartItems}
                 checkedItems={checkedItems}
                 shippingTotal={shippingTotal}
-                selectedTotal={finalPrice}
+                selectedTotal={selectedPricing.itemSubtotal}
                 onCheckAll={handleCheckAll}
                 onDeleteSelected={handleDeleteSelected}
                 onCheckItem={handleCheckItem}
@@ -550,7 +597,7 @@ export function CartMainClient() {
                 cartItems={cartItems}
                 checkedItems={checkedItems}
                 shippingTotal={shippingTotal}
-                selectedTotal={finalPrice}
+                selectedTotal={selectedPricing.itemSubtotal}
                 onCheckAll={handleCheckAll}
                 onDeleteSelected={handleDeleteSelected}
                 onCheckItem={handleCheckItem}
@@ -564,8 +611,6 @@ export function CartMainClient() {
               totalOriginalPrice={totalOriginalPrice}
               totalDiscount={totalDiscount}
               membershipDiscount={membershipDiscount}
-              membershipPreviewPrice={membershipPreviewPrice}
-              membershipPreviewSavings={membershipPreviewSavings}
               shippingFee={shippingTotal}
               finalPrice={finalPrice}
               onCheckout={handleCheckout}
@@ -578,8 +623,6 @@ export function CartMainClient() {
             totalOriginalPrice={totalOriginalPrice}
             totalDiscount={totalDiscount}
             membershipDiscount={membershipDiscount}
-            membershipPreviewPrice={membershipPreviewPrice}
-            membershipPreviewSavings={membershipPreviewSavings}
             finalPrice={finalPrice}
             selectedCount={selectedCount}
             shippingFee={shippingTotal}

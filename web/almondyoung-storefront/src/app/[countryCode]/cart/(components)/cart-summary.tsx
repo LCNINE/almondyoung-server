@@ -3,14 +3,11 @@
 import React, { useState } from "react"
 import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
 import { toast } from "sonner"
-import { useMembershipPricing } from "@/hooks/use-membership-pricing"
 
 interface CartSummaryProps {
   totalOriginalPrice: number
   totalDiscount: number
   membershipDiscount: number
-  membershipPreviewPrice: number
-  membershipPreviewSavings: number
   shippingFee: number
   finalPrice: number
   onCheckout: () => Promise<boolean>
@@ -20,16 +17,11 @@ export function CartSummary({
   totalOriginalPrice,
   totalDiscount,
   membershipDiscount,
-  membershipPreviewPrice,
-  membershipPreviewSavings,
   shippingFee,
   finalPrice,
   onCheckout,
 }: CartSummaryProps) {
   const [isProcessing, setIsProcessing] = useState(false)
-  const { isMembershipPricing } = useMembershipPricing()
-  const shouldShowMembershipPreview =
-    !isMembershipPricing && membershipPreviewSavings > 0
 
   const handleCheckout = async () => {
     setIsProcessing(true)
@@ -57,12 +49,6 @@ export function CartSummary({
                 {totalOriginalPrice.toLocaleString()}원
               </span>
             </div>
-            {shouldShowMembershipPreview && (
-              <p className="text-sm font-medium text-[#F2994A]">
-                멤버십 가입 시 {(membershipPreviewPrice + shippingFee).toLocaleString()}원
-                결제, {membershipPreviewSavings.toLocaleString()}원 절약
-              </p>
-            )}
             <div className="flex items-center justify-between">
               <span className="text-base font-normal">할인 금액</span>
               <span className="text-2xl font-bold">
