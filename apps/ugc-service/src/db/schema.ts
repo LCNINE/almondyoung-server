@@ -12,11 +12,35 @@ import {
   index,
   primaryKey,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 const timestampColumns = {
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 };
+
+export const reviewRewardPolicyTypeEnum = pgEnum('review_reward_policy_type', ['TEXT', 'PHOTO']);
+
+export const reviewRewardPolicies = pgTable(
+  'review_reward_policies',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    reviewType: reviewRewardPolicyTypeEnum('review_type').notNull(),
+    rewardAmount: integer('reward_amount').notNull(),
+    active: boolean('active').notNull().default(true),
+    minContentLength: integer('min_content_length').notNull().default(10),
+    minMediaCount: integer('min_media_count').notNull().default(0),
+    description: text('description'),
+    priority: integer('priority').notNull().default(0),
+    ...timestampColumns,
+  },
+  (table) => [
+    uniqueIndex('review_reward_policies_type_active_unique')
+      .on(table.reviewType)
+      .where(sql`${table.active} = true`),
+    index('review_reward_policies_active').on(table.active),
+  ],
+);
 
 export const reviews = pgTable(
   'reviews',
@@ -190,6 +214,7 @@ export const ugcServiceSchema = {
   reviewComments,
   reactions,
   reviewEligibilities,
+  reviewRewardPolicies,
   questions,
   questionMedia,
   answers,

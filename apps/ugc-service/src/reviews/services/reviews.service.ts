@@ -1,14 +1,16 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { and, asc, count, desc, eq, inArray, type SQL } from 'drizzle-orm';
-import { reviewComments, reviewMedia, reviews, reactions, type UgcServiceSchema } from '../db/schema';
-import { CreateReviewDto } from './dto/create-review.dto';
-import { CreateCommentDto } from './dto/create-comment.dto';
-import { ReviewListQueryDto } from './dto/review-list-query.dto';
-import { UpdateReviewDto } from './dto/update-review.dto';
-import { type ReviewCommentEntity, type ReviewEntity, type ReviewWithMediaEntity } from './types';
+import { reviewComments, reviewMedia, reviews, reactions, type UgcServiceSchema } from '../../db/schema';
+import { CreateReviewDto } from '../dto/create-review.dto';
+import { CreateCommentDto } from '../dto/create-comment.dto';
+import { ReviewListQueryDto } from '../dto/review-list-query.dto';
+import { UpdateReviewDto } from '../dto/update-review.dto';
+import { type ReviewCommentEntity, type ReviewEntity, type ReviewWithMediaEntity } from '../types';
 import { PaginatedResponseDto } from '@app/shared/dto';
-import { MAX_REVIEW_MEDIA_COUNT } from './constants';
+import { MAX_REVIEW_MEDIA_COUNT } from '../constants';
+import { ReviewRewardPolicyService } from './review-reward-policy.service';
+import { ReviewRewardPublisher } from './review-reward-publisher.service';
 
 const SOURCE_SYSTEM = 'almondyoung';
 
@@ -16,7 +18,13 @@ type DbTransaction = Parameters<Parameters<DbService<UgcServiceSchema>['db']['tr
 
 @Injectable()
 export class ReviewsService {
-  constructor(@InjectDb() private readonly db: DbService<UgcServiceSchema>) {}
+  private readonly logger = new Logger(ReviewsService.name);
+
+  constructor(
+    @InjectDb() private readonly db: DbService<UgcServiceSchema>,
+    private readonly rewardPolicyService: ReviewRewardPolicyService,
+    private readonly rewardPublisher: ReviewRewardPublisher,
+  ) {}
 
   private get client() {
     return this.db.db;
@@ -306,7 +314,9 @@ export class ReviewsService {
   }
 
   async create(userId: string, dto: CreateReviewDto, tx?: DbTransaction): Promise<ReviewWithMediaEntity> {
-    return this.inTx(async (tx) => {
+    const rewardHolder: { value: { reviewType: 'TEXT' | 'PHOTO'; amount: number } | null } = { value: null };
+
+    const result = await this.inTx(async (tx) => {
       const mediaFileIds = this.normalizeMediaFileIds(dto.mediaFileIds);
       const [review] = await tx
         .insert(reviews)
@@ -321,6 +331,12 @@ export class ReviewsService {
 
       await this.insertReviewMedia(review.id, mediaFileIds, tx);
 
+      rewardHolder.value = await this.rewardPolicyService.calculateReward(
+        dto.content.length,
+        mediaFileIds.length,
+        tx,
+      );
+
       return {
         ...review,
         mediaFileIds,
@@ -330,6 +346,26 @@ export class ReviewsService {
         adminComment: null,
       };
     }, tx);
+
+    // TX 커밋 후 Kafka command 발행 (fire-and-forget)
+    const reward = rewardHolder.value;
+    if (reward) {
+      this.rewardPublisher
+        .publishEarnPointsCommand({
+          reviewId: result.id,
+          userId,
+          reviewType: reward.reviewType,
+          amount: reward.amount,
+          productId: dto.productId,
+        })
+        .catch((err) => {
+          this.logger.error(
+            `Failed to publish reward command for review ${result.id}: ${err.message}`,
+          );
+        });
+    }
+
+    return result;
   }
 
   async update(userId: string, id: string, dto: UpdateReviewDto, tx?: DbTransaction): Promise<ReviewWithMediaEntity> {
