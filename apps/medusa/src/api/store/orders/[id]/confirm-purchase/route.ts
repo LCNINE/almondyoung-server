@@ -8,11 +8,18 @@ import { ContainerRegistrationKeys, MedusaError } from '@medusajs/framework/util
 type OrderWithPayments = {
   id: string;
   customer_id?: string | null;
-  payment_status?: string | null;
   payment_collections?: Array<{
-    payments?: Array<{ id: string }>;
+    payments?: Array<{
+      id: string;
+      captures?: Array<{ id: string }>;
+    }>;
   }>;
 };
+
+const getOrderPaymentRows = (order: OrderWithPayments) =>
+  (order.payment_collections?.flatMap((collection) => collection.payments ?? []) ?? []).filter(
+    (payment): payment is { id: string; captures?: Array<{ id: string }> } => !!payment?.id,
+  );
 
 export const POST = async (
   req: AuthenticatedMedusaRequest,
@@ -34,9 +41,9 @@ export const POST = async (
     fields: [
       'id',
       'customer_id',
-      'payment_status',
       'payment_collections.id',
       'payment_collections.payments.id',
+      'payment_collections.payments.captures.id',
     ],
     filters: { id: orderId },
   });
@@ -57,39 +64,31 @@ export const POST = async (
     );
   }
 
-  if (order.payment_status === 'captured') {
-    return res.status(200).json({
-      success: true,
-      order: {
-        id: order.id,
-        payment_status: order.payment_status,
-      },
-      message: 'Order payment is already captured',
-    });
-  }
+  const payments = getOrderPaymentRows(order);
 
-  if (order.payment_status !== 'authorized') {
-    throw new MedusaError(
-      MedusaError.Types.INVALID_DATA,
-      `Order payment status must be "authorized" to confirm purchase. Current: ${order.payment_status}`,
-    );
-  }
-
-  const paymentIds = (
-    order.payment_collections?.flatMap((collection) => collection.payments ?? []) ??
-    []
-  )
-    .map((payment) => payment.id)
-    .filter(Boolean);
-
-  if (!paymentIds.length) {
+  if (!payments.length) {
     throw new MedusaError(
       MedusaError.Types.INVALID_DATA,
       'No capturable payment found for this order',
     );
   }
 
-  for (const paymentId of paymentIds) {
+  const uncapturedPaymentIds = payments
+    .filter((payment) => !(((payment.captures?.length ?? 0) > 0)))
+    .map((payment) => payment.id);
+
+  if (!uncapturedPaymentIds.length) {
+    return res.status(200).json({
+      success: true,
+      order: {
+        id: order.id,
+        payment_status: 'captured',
+      },
+      message: 'Order payment is already captured',
+    });
+  }
+
+  for (const paymentId of uncapturedPaymentIds) {
     await capturePaymentWorkflow(req.scope).run({
       input: {
         payment_id: paymentId,
@@ -100,19 +99,26 @@ export const POST = async (
 
   const { data: refreshed } = await query.graph({
     entity: 'order',
-    fields: ['id', 'payment_status'],
+    fields: [
+      'id',
+      'payment_collections.id',
+      'payment_collections.payments.id',
+      'payment_collections.payments.captures.id',
+    ],
     filters: { id: orderId },
   });
 
-  const updatedOrder = refreshed?.[0] as
-    | { id: string; payment_status?: string | null }
-    | undefined;
+  const updatedOrder = refreshed?.[0] as OrderWithPayments | undefined;
+  const refreshedPayments = updatedOrder ? getOrderPaymentRows(updatedOrder) : [];
+  const isCaptured =
+    refreshedPayments.length > 0 &&
+    refreshedPayments.every((payment) => ((payment.captures?.length ?? 0) > 0));
 
   return res.status(200).json({
     success: true,
     order: {
       id: updatedOrder?.id ?? orderId,
-      payment_status: updatedOrder?.payment_status ?? 'captured',
+      payment_status: isCaptured ? 'captured' : 'authorized',
     },
   });
 };
