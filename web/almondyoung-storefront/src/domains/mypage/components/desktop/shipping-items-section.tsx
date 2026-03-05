@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button"
 interface ShippingOrder {
   orderId: string
   status: string
+  paymentStatus: string
   deliveryInfo: string
   shippingNote: string
   productName: string
@@ -76,6 +77,7 @@ export function ShippingItemsSection() {
             return {
               orderId: order.id,
               status,
+              paymentStatus: order.payment_status ?? "unknown",
               deliveryInfo,
               shippingNote: "",
               productName,
@@ -173,6 +175,7 @@ export function ShippingItemsSection() {
           key={order.orderId}
           orderId={order.orderId}
           status={order.status}
+          paymentStatus={order.paymentStatus}
           deliveryInfo={order.deliveryInfo}
           shippingNote={order.shippingNote}
           productName={order.productName}
