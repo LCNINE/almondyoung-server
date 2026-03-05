@@ -24,11 +24,12 @@ const globalServerConfig = {
 
 server.interceptors.request.use(async (config) => {
   const cookieStore = await cookies();
-  const cookieString = cookieStore.toString();
+  const accessToken = cookieStore.get('admin_access_token')?.value ?? '';
+  const refreshToken = cookieStore.get('admin_refresh_token')?.value ?? '';
 
   config.headers = {
     ...(config.headers || {}),
-    Cookie: cookieStore.toString(),
+    Cookie: `accessToken=${accessToken}; refreshToken=${refreshToken}`,
   } as any;
 
   return config;
