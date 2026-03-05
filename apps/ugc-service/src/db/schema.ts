@@ -189,6 +189,7 @@ export const reviewEligibilities = pgTable(
     orderLineId: varchar('order_line_id', { length: 255 }).notNull(),
 
     eligibleAt: timestamp('eligible_at').notNull().defaultNow(),
+    expiresAt: timestamp('expires_at').notNull(),
     consumedAt: timestamp('consumed_at'),
     consumedByReviewId: uuid('consumed_by_review_id').references(() => reviews.id, {
       onDelete: 'set null',
@@ -205,6 +206,7 @@ export const reviewEligibilities = pgTable(
     index('review_eligibilities_user_product').on(table.userId, table.productId),
     index('review_eligibilities_order_id').on(table.orderId),
     index('review_eligibilities_consumed_at').on(table.consumedAt),
+    index('review_eligibilities_expires_at').on(table.expiresAt),
   ],
 );
 

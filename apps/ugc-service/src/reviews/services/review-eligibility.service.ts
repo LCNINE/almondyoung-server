@@ -11,9 +11,11 @@ type DbTransaction = Parameters<Parameters<DbService<UgcServiceSchema>['db']['tr
 
 @Injectable()
 export class ReviewEligibilityService {
+  private static readonly ELIGIBILITY_EXPIRATION_DAYS = 15; // 리뷰 자격 만료 기간
+
   private readonly logger = new Logger(ReviewEligibilityService.name);
 
-  constructor(@InjectDb() private readonly db: DbService<UgcServiceSchema>) {}
+  constructor(@InjectDb() private readonly db: DbService<UgcServiceSchema>) { }
 
   private get client() {
     return this.db.db;
@@ -29,11 +31,18 @@ export class ReviewEligibilityService {
     tx?: DbTransaction,
   ): Promise<ReviewEligibilityEntity[]> {
     return this.inTx(async (tx) => {
+      const now = new Date();
+      const expiresAt = new Date(
+        now.getTime() + ReviewEligibilityService.ELIGIBILITY_EXPIRATION_DAYS * 24 * 60 * 60 * 1000,
+      );
+
       const values = dto.items.map((item) => ({
         userId,
         productId: item.productId,
         orderId: dto.orderId,
         orderLineId: item.orderLineId,
+        eligibleAt: now,
+        expiresAt,
         sourceSystem: 'almondyoung' as const,
         sourceEventId: `order:${dto.orderId}:${item.orderLineId}`,
       }));

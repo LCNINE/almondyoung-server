@@ -31,6 +31,7 @@ export class ReviewMapper {
       orderId: entity.orderId,
       orderLineId: entity.orderLineId,
       eligibleAt: entity.eligibleAt.toISOString(),
+      expiresAt: entity.expiresAt.toISOString(),
       consumedAt: entity.consumedAt?.toISOString() ?? null,
       consumedByReviewId: entity.consumedByReviewId ?? null,
       createdAt: entity.createdAt.toISOString(),
