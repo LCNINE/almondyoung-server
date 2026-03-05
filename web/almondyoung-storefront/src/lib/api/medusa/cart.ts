@@ -330,10 +330,20 @@ export async function createCheckoutCartFromLineItems(params: {
   const checkoutCart = checkoutCartResp.cart
 
   if (headers.authorization) {
-    try {
-      await sdk.store.cart.transferCart(checkoutCart.id, {}, headers)
-    } catch (error) {
-      console.error("Checkout cart transfer failed:", error)
+    await sdk.store.cart.transferCart(checkoutCart.id, {}, headers)
+
+    const transferredCart = await sdk.store.cart.retrieve(
+      checkoutCart.id,
+      { fields: "id,customer_id" },
+      headers
+    )
+
+    if (!transferredCart?.cart?.customer_id) {
+      throw new HttpApiError(
+        "Checkout cart is not linked to customer",
+        500,
+        "CHECKOUT_CART_TRANSFER_FAILED"
+      )
     }
   }
 
@@ -369,6 +379,10 @@ export async function createCheckoutCartFromLineItems(params: {
     {},
     headers
   )
+
+  // Keep cookie cart in sync with checkout cart so checkout actions
+  // don't accidentally target an old/source cart.
+  await setCartId(checkoutCart.id)
 
   const cartCacheTag = await getCacheTag("carts")
   revalidateTag(cartCacheTag)

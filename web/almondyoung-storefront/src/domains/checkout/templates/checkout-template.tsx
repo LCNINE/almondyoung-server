@@ -76,17 +76,19 @@ export default function CheckoutTemplate({
 
   // 가격 계산
   const cartTotals: CartTotals = useMemo(() => {
-    const { currency_code, item_subtotal, discount_subtotal } =
+    const { currency_code, item_subtotal, discount_subtotal, total } =
       getCartTotals(cart)
     const membershipDiscount =
       isMembershipPricing && selectedItems.length > 0
         ? calculateMembershipDiscount(selectedItems)
         : 0
-    const totalDiscount = discount_subtotal + membershipDiscount
-    const finalTotal = Math.max(
-      0,
-      item_subtotal + shipping.amount - totalDiscount
-    )
+    // Membership price-list is already reflected in Medusa unit_price/total.
+    // Keep membershipDiscount for UI breakdown only, and trust Medusa total for final amount.
+    const totalDiscount = discount_subtotal
+    const finalTotal =
+      typeof total === "number"
+        ? total
+        : Math.max(0, item_subtotal + shipping.amount - totalDiscount)
 
     return {
       currency_code,

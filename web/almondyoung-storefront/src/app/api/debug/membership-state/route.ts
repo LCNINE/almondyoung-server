@@ -6,9 +6,12 @@ import {
   isMembershipGroup,
 } from "@/lib/utils/membership-group"
 
-export async function GET() {
+export async function GET(request: Request) {
+  const url = new URL(request.url)
+  const cartIdParam = url.searchParams.get("cartId") || undefined
+
   const [cart, customer] = await Promise.all([
-    retrieveCart(undefined, undefined, "no-store").catch(() => null),
+    retrieveCart(cartIdParam, undefined, "no-store").catch(() => null),
     retrieveCustomer().catch(() => null),
   ])
 
@@ -27,8 +30,19 @@ export async function GET() {
     (customer as { groups?: { id?: string | null }[] } | null)?.groups
       ?.map((group) => group?.id)
       .filter((id): id is string => !!id) ?? []
+  const itemPricing =
+    cart?.items?.map((item) => ({
+      line_item_id: item.id,
+      variant_id: item.variant_id ?? null,
+      quantity: item.quantity,
+      compare_at_unit_price: item.compare_at_unit_price ?? null,
+      unit_price: item.unit_price ?? null,
+      total: item.total ?? null,
+      original_total: item.original_total ?? null,
+    })) ?? []
 
   return NextResponse.json({
+    requestedCartId: cartIdParam ?? null,
     membershipGroupId,
     cartId: cart?.id ?? null,
     cartCustomerId: cartWithCustomer?.customer_id ?? null,
@@ -39,5 +53,6 @@ export async function GET() {
     isMembershipFromCustomer: isMembershipGroup(
       (customer as { groups?: { id?: string | null }[] } | null)?.groups
     ),
+    itemPricing,
   })
 }
