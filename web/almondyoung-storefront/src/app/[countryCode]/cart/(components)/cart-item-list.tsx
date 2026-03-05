@@ -71,6 +71,7 @@ export function CartItemList({
                 quantity={item.quantity}
                 onQuantityChange={(qty) => onQuantityChange(item.id, qty)}
                 productId={item.productId}
+                productHandle={item.productHandle}
                 countryCode={countryCode}
                 manageInventory={item.manageInventory}
                 inventoryQuantity={item.inventoryQuantity}
@@ -119,6 +120,7 @@ export function CartItemList({
             quantity={item.quantity}
             onQuantityChange={(qty) => onQuantityChange(item.id, qty)}
             productId={item.productId}
+            productHandle={item.productHandle}
             countryCode={countryCode}
             manageInventory={item.manageInventory}
             inventoryQuantity={item.inventoryQuantity}

@@ -12,6 +12,7 @@ interface CartItemProduct {
 interface CartItem {
   id: string
   productId: string
+  productHandle?: string
   variantId?: string
   selectedOptionText?: string
   product: CartItemProduct
