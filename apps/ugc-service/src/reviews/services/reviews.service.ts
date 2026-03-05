@@ -1,7 +1,14 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { and, asc, count, desc, eq, inArray, type SQL } from 'drizzle-orm';
-import { reviewComments, reviewMedia, reviews, reactions, type UgcServiceSchema } from '../../db/schema';
+import { and, asc, count, desc, eq, inArray, isNull, type SQL } from 'drizzle-orm';
+import {
+  reviewComments,
+  reviewEligibilities,
+  reviewMedia,
+  reviews,
+  reactions,
+  type UgcServiceSchema,
+} from '../../db/schema';
 import { CreateReviewDto } from '../dto/create-review.dto';
 import { CreateCommentDto } from '../dto/create-comment.dto';
 import { MyReviewListQueryDto } from '../dto/my-review-list-query.dto';
@@ -318,6 +325,24 @@ export class ReviewsService {
     const rewardHolder: { value: { reviewType: 'TEXT' | 'PHOTO'; amount: number } | null } = { value: null };
 
     const result = await this.inTx(async (tx) => {
+      // 1. 리뷰 작성 자격 검증
+      const [eligibility] = await tx
+        .select()
+        .from(reviewEligibilities)
+        .where(
+          and(
+            eq(reviewEligibilities.id, dto.eligibilityId),
+            eq(reviewEligibilities.userId, userId),
+            eq(reviewEligibilities.productId, dto.productId),
+            isNull(reviewEligibilities.consumedAt),
+          ),
+        );
+
+      if (!eligibility) {
+        throw new BadRequestException('리뷰 작성 자격이 없습니다.');
+      }
+
+      // 2. 리뷰 생성
       const mediaFileIds = this.normalizeMediaFileIds(dto.mediaFileIds);
       const [review] = await tx
         .insert(reviews)
@@ -331,6 +356,16 @@ export class ReviewsService {
         .returning();
 
       await this.insertReviewMedia(review.id, mediaFileIds, tx);
+
+      // 3. 자격 소비 처리
+      await tx
+        .update(reviewEligibilities)
+        .set({
+          consumedAt: new Date(),
+          consumedByReviewId: review.id,
+          updatedAt: new Date(),
+        })
+        .where(eq(reviewEligibilities.id, eligibility.id));
 
       rewardHolder.value = await this.rewardPolicyService.calculateReward(
         dto.content.length,
