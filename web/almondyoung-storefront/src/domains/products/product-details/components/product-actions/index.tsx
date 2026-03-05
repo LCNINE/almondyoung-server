@@ -32,6 +32,7 @@ import ProductPreviewPrice from "../product-preview-price"
 import CartAddedModal from "./cart-added-modal"
 import MobileActions from "./mobile-actions"
 import OptionSelect from "./option-select"
+import ProductPrice from "../product-price"
 
 type ProductActionsProps = {
   customer: (HttpTypes.StoreCustomer & { groups: CustomerGroupRef[] }) | null
@@ -223,9 +224,6 @@ export default function ProductActions({
   const actionsRef = useRef<HTMLDivElement>(null)
   const inView = useIntersection(actionsRef, "0px")
 
-  const displayVariant =
-    selectedItems.length > 0 ? selectedItems[0].variant : undefined
-
   // 재고 확인
   const allInStock = selectedItems.every((item) => {
     const v = item.variant
@@ -391,12 +389,12 @@ export default function ProductActions({
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
-                    <span className="text-base font-bold">
-                      {(
-                        item.price.calculated_price_number * item.quantity
-                      ).toLocaleString()}
-                      원
-                    </span>
+                    <ProductPrice
+                      product={product}
+                      variant={item.variant}
+                      quantity={item.quantity}
+                    />
+
                     {!isSimple && (
                       <Button
                         variant="ghost"
