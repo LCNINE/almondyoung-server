@@ -57,12 +57,18 @@ export default function OrderCardContent({
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const resolvedProductImage = getThumbnailUrl(productImage)
-  const quantityText =
-    typeof quantity === "number" ? `${quantity}개` : quantity
+  const quantityText = typeof quantity === "number" ? `${quantity}개` : quantity
   const [isConfirmed, setIsConfirmed] = useState(false)
   const canConfirmPurchase = paymentStatus === "authorized" && !isConfirmed
 
   const handleConfirmPurchase = () => {
+    if (
+      !confirm(
+        "구매를 확정하시겠습니까?\n\n확정 후에는 반품·환불이 어려울 수 있어요."
+      )
+    )
+      return
+
     startTransition(async () => {
       const result = await captureOrderPayment(orderId, orderItems)
 
