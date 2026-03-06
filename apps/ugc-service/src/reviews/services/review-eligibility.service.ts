@@ -26,7 +26,6 @@ export class ReviewEligibilityService {
   }
 
   async create(
-    userId: string,
     dto: CreateReviewEligibilityDto,
     tx?: DbTransaction,
   ): Promise<ReviewEligibilityEntity[]> {
@@ -37,7 +36,7 @@ export class ReviewEligibilityService {
       );
 
       const values = dto.items.map((item) => ({
-        userId,
+        userId: dto.userId,
         productId: item.productId,
         orderId: dto.orderId,
         orderLineId: item.orderLineId,
@@ -54,7 +53,7 @@ export class ReviewEligibilityService {
         .returning();
 
       this.logger.log(
-        `[create] Created ${created.length} eligibilities for orderId=${dto.orderId}, userId=${userId}`,
+        `[create] Created ${created.length} eligibilities for orderId=${dto.orderId}, userId=${dto.userId}`,
       );
 
       return created;

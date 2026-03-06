@@ -120,7 +120,7 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
           ...authIdentity,
           app_metadata: {
             actor_type: actorType,
-            user_id: authIdentity?.app_metadata?.user_id,
+            user_id: authIdentity?.app_metadata?.user_id || payload.sub,
             customer_id: authIdentity?.app_metadata?.customer_id,
             email: payload.email,
             scopes: [payload.scopes],
