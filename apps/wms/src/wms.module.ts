@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { EventTraceApiModule } from '@app/events';
 import { WmsController } from './wms.controller';
 import { WmsService } from './wms.service';
 import { InventoryModule } from './inventory/inventory.module';
@@ -33,6 +34,7 @@ import { WMS_SCOPES } from './auth/wms.scopes';
       microserviceName: 'wms',
       scopes: WMS_SCOPES,
     }),
+    EventTraceApiModule,
     InventoryModule,
     MovementModule,
     InboundModule,

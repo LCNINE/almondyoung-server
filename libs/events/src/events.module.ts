@@ -191,7 +191,6 @@ export class EventsModule {
 
     return {
       module: EventsModule,
-      controllers: [EventTraceController],
       imports: [
         ClsModule.forRoot({ global: true, middleware: { mount: false } }),
         ...(enableOutbox ? [ScheduleModule.forRoot()] : []),

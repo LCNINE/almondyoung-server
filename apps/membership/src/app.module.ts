@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { DbModule } from '@app/db';
-import { EventsModule } from '@app/events';
+import { EventsModule, EventTraceApiModule } from '@app/events';
 import { MEMBERSHIP_STREAM } from '@packages/event-contracts/streams';
 import { membershipSchema } from './shared/schemas/entities/schema';
 import { ConfigModule } from '@nestjs/config';
@@ -69,6 +69,7 @@ import { JwtAuthGuard } from '@app/authorization';
       serviceName: 'membership',
       enableDLQ: true,
     }),
+    EventTraceApiModule,
   ],
   controllers: [
     BillingController,
