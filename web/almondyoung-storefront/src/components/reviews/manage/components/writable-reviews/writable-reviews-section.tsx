@@ -1,9 +1,9 @@
 "use client"
 
 import { useState } from "react"
-import type { WritableReview } from "../../types"
+import type { WritableReview, ReviewInfo } from "../../types"
 import type { RewardPolicyResponseDto } from "@/lib/types/dto/ugc"
-import { createReviewAction } from "../../actions/review-actions"
+import { createReview } from "@/lib/api/ugc/reviews"
 import { ReviewBenefitBanner } from "./review-benefit-banner"
 import { ReviewCardWritable } from "./review-card-writable"
 import { ReviewFormCard } from "./review-form-card"
@@ -19,8 +19,14 @@ export const WritableReviewsSection = ({
 }: WritableReviewsSectionProps) => {
   const [editingReviewId, setEditingReviewId] = useState<string | null>(null)
 
-  const handleSave = async (item: WritableReview, data: { rating: number; text: string }) => {
-    await createReviewAction(item, data)
+  const handleSave = async (item: WritableReview, data: ReviewInfo) => {
+    await createReview({
+      eligibilityId: item.id,
+      productId: item.productId,
+      rating: data.rating,
+      content: data.text,
+      ...(data.mediaFileIds?.length && { mediaFileIds: data.mediaFileIds }),
+    })
     setEditingReviewId(null)
   }
 

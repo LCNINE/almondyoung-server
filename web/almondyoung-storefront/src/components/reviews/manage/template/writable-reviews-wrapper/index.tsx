@@ -33,14 +33,15 @@ export async function WritableReviewsWrapper(props: {
   // 중복 제거 후 상품 정보 batch 조회
   const productIds = Array.from(new Set(eligibilities.map((e) => e.productId)))
   const products = await listProducts({
-    queryParams: { id: productIds },
+    queryParams: { handle: productIds },
     regionId: region.id,
   }).then(({ response }) => response.products)
 
-  const productMap = new Map(products.map((p) => [p.id, p]))
+  const productMap = new Map(products.map((p) => [p.handle, p]))
   // eligibility + product merge
   const writableReviews: WritableReview[] = eligibilities.map((e) => {
     const product = productMap.get(e.productId)
+
     return {
       id: e.id,
       orderId: e.orderId,

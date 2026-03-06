@@ -3,7 +3,7 @@
 import Image from "next/image"
 import { Star, X, Loader2, Camera, Plus } from "lucide-react"
 import { useRef, useState } from "react"
-import { useForm } from "react-hook-form"
+import { useForm, useWatch, type Control } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import {
@@ -22,10 +22,13 @@ import {
   FormItem,
   FormMessage,
 } from "@/components/ui/form"
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
+import { VisuallyHidden } from "@radix-ui/react-visually-hidden"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { uploadFile } from "@/lib/api/file/upload"
 import type { WritableReview, ReviewInfo } from "../../types"
 import type { RewardPolicyResponseDto } from "@/lib/types/dto/ugc"
+import { CustomButton } from "@/components/shared/custom-buttons"
 
 interface ReviewFormCardProps {
   review: WritableReview
@@ -62,6 +65,21 @@ function createReviewSchema(minContentLength: number) {
 
 type ReviewFormValues = z.infer<ReturnType<typeof createReviewSchema>>
 
+function TextCharCounter({
+  control,
+  maxLength,
+}: {
+  control: Control<ReviewFormValues>
+  maxLength: number
+}) {
+  const text = useWatch({ control, name: "text" })
+  return (
+    <p className="text-[12px] text-gray-400">
+      {text.length.toLocaleString()} / {maxLength.toLocaleString()}
+    </p>
+  )
+}
+
 export const ReviewFormCard = ({
   review,
   rewardPolicies,
@@ -71,6 +89,7 @@ export const ReviewFormCard = ({
   const [hoverRating, setHoverRating] = useState(0)
   const [photos, setPhotos] = useState<PhotoPreview[]>([])
   const [isUploading, setIsUploading] = useState(false)
+  const [previewPhoto, setPreviewPhoto] = useState<PhotoPreview | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const textPolicy = rewardPolicies.find((p) => p.reviewType === "TEXT")
@@ -79,7 +98,7 @@ export const ReviewFormCard = ({
   const photoBonusAmount =
     photoPolicy && textPolicy
       ? photoPolicy.rewardAmount - textPolicy.rewardAmount
-      : photoPolicy?.rewardAmount ?? 0
+      : (photoPolicy?.rewardAmount ?? 0)
 
   const form = useForm<ReviewFormValues>({
     resolver: zodResolver(createReviewSchema(minContentLength)),
@@ -95,7 +114,6 @@ export const ReviewFormCard = ({
     formState: { isSubmitting },
   } = form
 
-  const watchedText = form.watch("text")
   const isBusy = isSubmitting || isUploading
 
   const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -124,15 +142,15 @@ export const ReviewFormCard = ({
   }
 
   const uploadPhotos = async (): Promise<string[]> => {
-    const fileIds: string[] = []
-    for (const photo of photos) {
-      const formData = new FormData()
-      formData.append("file", photo.file)
-      formData.append("contextId", "review-media")
-      const result = await uploadFile(formData)
-      fileIds.push(result.id)
-    }
-    return fileIds
+    const results = await Promise.all(
+      photos.map((photo) => {
+        const formData = new FormData()
+        formData.append("file", photo.file)
+        formData.append("contextId", "review-media")
+        return uploadFile(formData)
+      })
+    )
+    return results.map((r) => r.id)
   }
 
   const onSubmit = async (data: ReviewFormValues) => {
@@ -220,9 +238,7 @@ export const ReviewFormCard = ({
                                 aria-checked={field.value === ratingValue}
                                 aria-label={`${ratingValue}점`}
                                 onClick={() => field.onChange(ratingValue)}
-                                onMouseEnter={() =>
-                                  setHoverRating(ratingValue)
-                                }
+                                onMouseEnter={() => setHoverRating(ratingValue)}
                                 className="cursor-pointer border-none bg-transparent p-0"
                               >
                                 <Star
@@ -277,10 +293,10 @@ export const ReviewFormCard = ({
                       ) : (
                         <FormMessage />
                       )}
-                      <p className="text-[12px] text-gray-400">
-                        {watchedText.length.toLocaleString()} /{" "}
-                        {MAX_CONTENT_LENGTH.toLocaleString()}
-                      </p>
+                      <TextCharCounter
+                        control={form.control}
+                        maxLength={MAX_CONTENT_LENGTH}
+                      />
                     </div>
                     {textPolicy && <FormMessage />}
                   </FormItem>
@@ -302,7 +318,7 @@ export const ReviewFormCard = ({
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="flex w-full cursor-pointer flex-col items-center rounded-lg border border-dashed border-gray-300 px-4 py-5 transition-colors hover:border-gray-400 "
+                    className="flex w-full cursor-pointer flex-col items-center rounded-lg border border-dashed border-gray-300 px-4 py-5 transition-colors hover:border-gray-400"
                   >
                     <Camera className="mb-1 h-6 w-6 text-gray-500" />
                     <p className="text-[15px] font-semibold text-gray-800">
@@ -322,8 +338,8 @@ export const ReviewFormCard = ({
                     <div className="mb-2 flex items-center justify-between">
                       <p className="text-[13px] font-medium text-gray-700">
                         사진{" "}
-                        <span className="text-[#FF9500]">{photos.length}</span>
-                        /{MAX_PHOTO_COUNT}
+                        <span className="text-[#FF9500]">{photos.length}</span>/
+                        {MAX_PHOTO_COUNT}
                       </p>
                       {photoPolicy && photoBonusAmount > 0 && (
                         <p className="text-[12px] font-medium text-emerald-500">
@@ -338,16 +354,23 @@ export const ReviewFormCard = ({
                           key={photo.id}
                           className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg border border-gray-200"
                         >
-                          <Image
-                            src={photo.previewUrl}
-                            alt="리뷰 사진"
-                            fill
-                            className="object-cover"
-                          />
+                          <button
+                            type="button"
+                            onClick={() => setPreviewPhoto(photo)}
+                            className="h-full w-full cursor-pointer"
+                          >
+                            <Image
+                              src={photo.previewUrl}
+                              alt="리뷰 사진"
+                              fill
+                              className="object-cover"
+                              sizes="80px"
+                            />
+                          </button>
                           <button
                             type="button"
                             onClick={() => handlePhotoRemove(photo.id)}
-                            className="absolute top-0.5 right-0.5 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full bg-black/50 text-white transition-colors hover:bg-black/70"
+                            className="absolute top-0.5 right-0.5 z-10 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full bg-black/50 text-white transition-colors hover:bg-black/70"
                           >
                             <X className="h-3 w-3" />
                           </button>
@@ -357,7 +380,7 @@ export const ReviewFormCard = ({
                         <button
                           type="button"
                           onClick={() => fileInputRef.current?.click()}
-                          className="flex h-20 w-20 shrink-0 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-gray-300 transition-colors hover:border-gray-400 "
+                          className="flex h-20 w-20 shrink-0 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-gray-300 transition-colors hover:border-gray-400"
                         >
                           <Plus className="h-5 w-5 text-gray-400" />
                         </button>
@@ -381,21 +404,45 @@ export const ReviewFormCard = ({
                 >
                   취소
                 </Button>
-                <Button
+                <CustomButton
                   type="submit"
                   disabled={isBusy}
-                  className="bg-[#FF9500] hover:bg-[#FF9500]/90"
+                  // className="bg-[#FF9500] hover:bg-[#FF9500]/90"
+                  isLoading={isUploading || isBusy}
                 >
-                  {isBusy && (
-                    <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-                  )}
-                  {isUploading ? "사진 업로드 중..." : "등록"}
-                </Button>
+                  등록
+                </CustomButton>
               </div>
             </form>
           </Form>
         </CardContent>
       </article>
+
+      {/* 사진 미리보기 모달 */}
+      <Dialog
+        open={!!previewPhoto}
+        onOpenChange={(open) => !open && setPreviewPhoto(null)}
+      >
+        <DialogContent
+          showCloseButton
+          className="max-w-[90vw] border-none bg-transparent p-0 shadow-none sm:max-w-[600px]"
+        >
+          <VisuallyHidden>
+            <DialogTitle>사진 미리보기</DialogTitle>
+          </VisuallyHidden>
+          {previewPhoto && (
+            <div className="relative aspect-square w-full overflow-hidden rounded-lg">
+              <Image
+                src={previewPhoto.previewUrl}
+                alt="리뷰 사진 미리보기"
+                fill
+                className="object-contain"
+                sizes="(max-width: 768px) 90vw, 600px"
+              />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }

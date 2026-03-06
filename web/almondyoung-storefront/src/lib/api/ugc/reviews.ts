@@ -1,4 +1,5 @@
 "use server"
+import { revalidateTag } from "next/cache"
 import {
   ReviewResponseDto,
   CreateReviewDto,
@@ -141,11 +142,14 @@ export const getRewardPolicies = async (): Promise<
 export const createReview = async (
   dto: CreateReviewDto
 ): Promise<ReviewResponseDto> => {
-  return await api("ugc", `/reviews`, {
+  const result = await api<ReviewResponseDto>("ugc", `/reviews`, {
     method: "POST",
     body: dto,
     withAuth: true,
   })
+  revalidateTag("review-eligibilities")
+  revalidateTag("my-reviews")
+  return result
 }
 
 /**
@@ -155,11 +159,13 @@ export const updateReview = async (
   id: string,
   dto: UpdateReviewDto
 ): Promise<ReviewResponseDto> => {
-  return await api("ugc", `/reviews/${id}`, {
+  const result = await api<ReviewResponseDto>("ugc", `/reviews/${id}`, {
     method: "PATCH",
     body: dto,
     withAuth: true,
   })
+  revalidateTag("my-reviews")
+  return result
 }
 
 /**
@@ -167,10 +173,11 @@ export const updateReview = async (
  * 소프트 삭제 - status가 'deleted'로 변경됨
  */
 export const deleteReview = async (id: string): Promise<void> => {
-  return await api("ugc", `/reviews/${id}`, {
+  await api("ugc", `/reviews/${id}`, {
     method: "DELETE",
     withAuth: true,
   })
+  revalidateTag("my-reviews")
 }
 
 /**
