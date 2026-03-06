@@ -305,7 +305,6 @@ export class EventsModule {
     return {
       module: EventsModule,
       global: true,
-      controllers: [EventTraceController],
       imports: [
         ClsModule.forRoot({ global: true, middleware: { mount: false } }),
         ClientsModule.register([
