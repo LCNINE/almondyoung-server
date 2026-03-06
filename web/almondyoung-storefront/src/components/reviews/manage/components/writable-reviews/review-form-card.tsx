@@ -1,7 +1,7 @@
 "use client"
 
 import Image from "next/image"
-import { Star, X, Loader2, Camera, Plus } from "lucide-react"
+import { Star, X, Camera, Plus } from "lucide-react"
 import { useRef, useState } from "react"
 import { useForm, useWatch, type Control } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -22,19 +22,20 @@ import {
   FormItem,
   FormMessage,
 } from "@/components/ui/form"
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
-import { VisuallyHidden } from "@radix-ui/react-visually-hidden"
+import { toast } from "sonner"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { uploadFile } from "@/lib/api/file/upload"
 import type { WritableReview, ReviewInfo } from "../../types"
 import type { RewardPolicy } from "@/lib/types/ui/ugc"
 import { CustomButton } from "@/components/shared/custom-buttons"
+import { ReviewImageModal } from "@/components/reviews/ui/review-image-modal"
 
 interface ReviewFormCardProps {
   review: WritableReview
   rewardPolicies: RewardPolicy[]
-  onSave: (data: ReviewInfo) => Promise<void>
+  onSave: (data: ReviewInfo) => void
   onCancel: () => void
+  isSaving?: boolean
 }
 
 const MAX_CONTENT_LENGTH = 5000
@@ -85,11 +86,13 @@ export const ReviewFormCard = ({
   rewardPolicies,
   onSave,
   onCancel,
+  isSaving = false,
 }: ReviewFormCardProps) => {
   const [hoverRating, setHoverRating] = useState(0)
   const [photos, setPhotos] = useState<PhotoPreview[]>([])
   const [isUploading, setIsUploading] = useState(false)
-  const [previewPhoto, setPreviewPhoto] = useState<PhotoPreview | null>(null)
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [previewIndex, setPreviewIndex] = useState(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const textPolicy = rewardPolicies.find((p) => p.reviewType === "TEXT")
@@ -114,7 +117,7 @@ export const ReviewFormCard = ({
     formState: { isSubmitting },
   } = form
 
-  const isBusy = isSubmitting || isUploading
+  const isBusy = isSubmitting || isUploading || isSaving
 
   const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
@@ -154,22 +157,23 @@ export const ReviewFormCard = ({
   }
 
   const onSubmit = async (data: ReviewFormValues) => {
-    try {
-      let mediaFileIds: string[] | undefined
-      if (photos.length > 0) {
-        setIsUploading(true)
+    let mediaFileIds: string[] | undefined
+    if (photos.length > 0) {
+      setIsUploading(true)
+      try {
         mediaFileIds = await uploadPhotos()
+      } catch (error) {
         setIsUploading(false)
+        toast.error("사진 업로드에 실패했습니다. 다시 시도해주세요.")
+        return
       }
-      await onSave({
-        rating: data.rating,
-        text: data.text,
-        mediaFileIds,
-      })
-    } catch (error) {
       setIsUploading(false)
-      console.error("리뷰 저장 실패:", error)
     }
+    onSave({
+      rating: data.rating,
+      text: data.text,
+      mediaFileIds,
+    })
   }
 
   return (
@@ -356,7 +360,12 @@ export const ReviewFormCard = ({
                         >
                           <button
                             type="button"
-                            onClick={() => setPreviewPhoto(photo)}
+                            onClick={() => {
+                              setPreviewIndex(
+                                photos.findIndex((p) => p.id === photo.id)
+                              )
+                              setPreviewOpen(true)
+                            }}
                             className="h-full w-full cursor-pointer"
                           >
                             <Image
@@ -407,7 +416,6 @@ export const ReviewFormCard = ({
                 <CustomButton
                   type="submit"
                   disabled={isBusy}
-                  // className="bg-[#FF9500] hover:bg-[#FF9500]/90"
                   isLoading={isUploading || isBusy}
                 >
                   등록
@@ -418,31 +426,12 @@ export const ReviewFormCard = ({
         </CardContent>
       </article>
 
-      {/* 사진 미리보기 모달 */}
-      <Dialog
-        open={!!previewPhoto}
-        onOpenChange={(open) => !open && setPreviewPhoto(null)}
-      >
-        <DialogContent
-          showCloseButton
-          className="max-w-[90vw] border-none bg-transparent p-0 shadow-none sm:max-w-[600px]"
-        >
-          <VisuallyHidden>
-            <DialogTitle>사진 미리보기</DialogTitle>
-          </VisuallyHidden>
-          {previewPhoto && (
-            <div className="relative aspect-square w-full overflow-hidden rounded-lg">
-              <Image
-                src={previewPhoto.previewUrl}
-                alt="리뷰 사진 미리보기"
-                fill
-                className="object-contain"
-                sizes="(max-width: 768px) 90vw, 600px"
-              />
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      <ReviewImageModal
+        images={photos.map((p) => p.previewUrl)}
+        startIndex={previewIndex}
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+      />
     </Card>
   )
 }

@@ -6,6 +6,10 @@ const FILE_SERVER_URL = "https://file.almondyoung-next.com"
 export const getThumbnailUrl = (thumbnail: string) => {
   if (!thumbnail) return ""
 
+  if (thumbnail.startsWith("blob:") || thumbnail.startsWith("data:")) {
+    return thumbnail
+  }
+
   if (thumbnail.startsWith("http://") || thumbnail.startsWith("https://")) {
     const fileIdMatch = thumbnail.match(
       /\/files\/(?:public\/)?([a-f0-9-]{36})$/i

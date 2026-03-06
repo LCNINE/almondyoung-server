@@ -130,9 +130,13 @@ export async function captureOrderPayment(
     })
 
     // 구매 확정 성공 시 리뷰 작성 자격 생성
+    //todo: 메두사 워크플로우 흐름으로 커스텀
     if (items && items.length > 0) {
       try {
-        console.log("createReviewEligibility payload:", JSON.stringify({ orderId, items }, null, 2))
+        console.log(
+          "createReviewEligibility payload:",
+          JSON.stringify({ orderId, items }, null, 2)
+        )
         await createReviewEligibility({ orderId, items })
       } catch (e) {
         console.error("createReviewEligibility error:", e)
@@ -153,10 +157,9 @@ export async function captureOrderPayment(
     const message =
       status === 403 || status === 404 || status === 405 || status === 501
         ? "구매확정 기능을 처리할 수 없습니다. 잠시 후 다시 시도해주세요."
-        :
-      error?.message ||
-      error?.response?.data?.message ||
-      "구매확정에 실패했습니다. 잠시 후 다시 시도해주세요."
+        : error?.message ||
+          error?.response?.data?.message ||
+          "구매확정에 실패했습니다. 잠시 후 다시 시도해주세요."
 
     console.error("captureOrderPayment(store) error:", error)
     return {
