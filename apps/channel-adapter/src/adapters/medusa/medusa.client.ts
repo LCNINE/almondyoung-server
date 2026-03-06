@@ -10,6 +10,43 @@ import type {
 } from '../../types';
 import type { PimCategoryDetail } from './pim.client';
 
+export interface MedusaOrder {
+    id: string;
+    email?: string;
+    customer_id?: string;
+    currency_code?: string;
+    total?: number;
+    subtotal?: number;
+    shipping_total?: number;
+    discount_total?: number;
+    created_at?: string;
+    updated_at?: string;
+    items?: Array<{
+        id: string;
+        title?: string;
+        quantity?: number;
+        unit_price?: number;
+        variant_id?: string;
+        variant?: {
+            id?: string;
+            title?: string;
+            metadata?: Record<string, unknown>;
+            product?: {
+                id?: string;
+                metadata?: Record<string, unknown>;
+            };
+        };
+    }>;
+    shipping_address?: {
+        first_name?: string;
+        last_name?: string;
+        phone?: string;
+        postal_code?: string;
+        address_1?: string;
+        address_2?: string;
+    };
+}
+
 @Injectable()
 export class MedusaClient {
     private readonly logger = new Logger(MedusaClient.name);
@@ -944,6 +981,78 @@ export class MedusaClient {
             );
             throw new Error(`Medusa deleteProduct failed: ${fetchError.message}`);
         }
+    }
+
+    // ===== Orders =====
+
+    /**
+     * 결제 완료된 Medusa 주문 목록 조회 (증분 처리)
+     *
+     * - payment_status: 'captured' (결제 완료된 주문만)
+     * - updated_at[gt]: since (신규 + 변경 주문 모두 포함하는 증분 처리)
+     * - line_items.variant.metadata, line_items.variant.product.metadata 포함
+     */
+    async listOrders(params: {
+        since?: Date | null;
+        limit?: number;
+    }): Promise<MedusaOrder[]> {
+        const limit = params.limit ?? 100;
+        const allOrders: MedusaOrder[] = [];
+        let offset = 0;
+
+        const fields = [
+            'id',
+            'email',
+            'customer_id',
+            'currency_code',
+            'total',
+            'subtotal',
+            'shipping_total',
+            'discount_total',
+            'created_at',
+            'updated_at',
+            '*items',
+            'items.id',
+            'items.title',
+            'items.quantity',
+            'items.unit_price',
+            'items.variant_id',
+            '+items.variant',
+            '+items.variant.metadata',
+            '+items.variant.title',
+            '+items.variant.product',
+            '+items.variant.product.metadata',
+            '*shipping_address',
+        ].join(',');
+
+        while (true) {
+            const query: Record<string, unknown> = {
+                limit,
+                offset,
+                fields,
+                payment_status: ['captured'],
+            };
+
+            if (params.since) {
+                query['updated_at'] = { gt: params.since.toISOString() };
+            }
+
+            const result = await this.sdk.client.fetch<{ orders: MedusaOrder[]; count: number }>(
+                '/admin/orders',
+                { method: 'GET', query },
+            );
+
+            const orders = result?.orders ?? [];
+            allOrders.push(...orders);
+
+            if (offset + orders.length >= (result?.count ?? 0) || orders.length < limit) {
+                break;
+            }
+
+            offset += limit;
+        }
+
+        return allOrders;
     }
 
     // 헬스 체크: medusa api 연결 확인
