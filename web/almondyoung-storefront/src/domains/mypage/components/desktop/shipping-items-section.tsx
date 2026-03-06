@@ -64,7 +64,8 @@ export function ShippingItemsSection() {
               firstItem?.thumbnail ||
               firstItem?.variant?.product?.thumbnail ||
               "https://placehold.co/80x80"
-            const price = `${(order.total / 100).toLocaleString()}원`
+            const displayPrice = typeof order.total === "number" ? order.total : 0
+            const price = `${displayPrice.toLocaleString()}원`
 
             const options: string[] = []
             if (

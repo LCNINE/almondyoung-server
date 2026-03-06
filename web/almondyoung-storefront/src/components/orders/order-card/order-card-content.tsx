@@ -3,7 +3,6 @@
 import Link from "next/link"
 import { CustomButton } from "@/components/shared/custom-buttons"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
-import { MoreVertical } from "lucide-react"
 import { captureOrderPayment } from "@/lib/api/medusa/orders"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
@@ -106,9 +105,9 @@ export default function OrderCardContent({
               </div>
 
               {/* 더보기 버튼 */}
-              <button type="button" className="h-5 w-5" aria-label="더보기">
+              {/* <button type="button" className="h-5 w-5" aria-label="더보기">
                 <MoreVertical className="h-5 w-5" />
-              </button>
+              </button> */}
             </div>
 
             {/* 모바일 전용 - 배송 노트 */}
