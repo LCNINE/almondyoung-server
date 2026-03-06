@@ -15,7 +15,6 @@ type CompensationData = {
 export const captureOrderPaymentsStep = createStep(
   'capture-order-payments',
   async ({ paymentIds, customerId }: CaptureOrderPaymentsInput, { container }) => {
-    //
     const capturedIds: string[] = [];
 
     for (const paymentId of paymentIds) {
