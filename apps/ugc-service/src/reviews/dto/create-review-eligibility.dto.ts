@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsString, IsNotEmpty, IsArray, ArrayMinSize, ValidateNested } from 'class-validator';
+import { IsString, IsNotEmpty, IsUUID, IsArray, ArrayMinSize, ValidateNested } from 'class-validator';
 
 export class CreateReviewEligibilityItemDto {
   @ApiProperty({ description: '상품 ID' })
@@ -15,6 +15,11 @@ export class CreateReviewEligibilityItemDto {
 }
 
 export class CreateReviewEligibilityDto {
+  @ApiProperty({ description: '사용자 ID' })
+  @IsUUID()
+  @IsNotEmpty()
+  userId: string;
+
   @ApiProperty({ description: '주문 ID' })
   @IsString()
   @IsNotEmpty()
