@@ -12,6 +12,7 @@
     "headless",
     "medusa"
   ],
+  "packageManager": "npm@10.8.2",
   "scripts": {
     "build": "medusa build",
     "seed": "medusa exec ./src/scripts/seed.ts",
