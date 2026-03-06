@@ -22,6 +22,7 @@ interface ReviewResponseDto {
 }
 
 interface CreateReviewDto {
+  eligibilityId: string
   productId: string
   rating: number // 1~5
   content: string
