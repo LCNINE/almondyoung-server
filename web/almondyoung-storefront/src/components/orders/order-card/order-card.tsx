@@ -37,13 +37,13 @@ export default function OrderCard({
             </p>
           )}
         </div>
-        {/* 데스크탑 전용 - 주문 상세보기 */}
+        {/* 주문 상세보기 */}
         <Link
           href={`/mypage/order/details?orderId=${orderId}`}
-          className="hidden items-center gap-2 text-base text-black md:flex"
+          className="inline-flex items-center gap-1 text-xs text-black md:gap-2 md:text-base"
         >
           주문 상세보기
-          <ArrowRight className="h-4 w-4" />
+          <ArrowRight className="h-3 w-3 md:h-4 md:w-4" />
         </Link>
       </header>
 
