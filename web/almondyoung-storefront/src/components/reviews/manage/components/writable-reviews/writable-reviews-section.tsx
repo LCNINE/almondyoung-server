@@ -46,6 +46,19 @@ export const WritableReviewsSection = ({
   if (reviews.length === 0) {
     return (
       <section>
+        <ReviewListHeader
+          title="리뷰"
+          count={reviews.length}
+          tooltipContent={
+            <p className="text-xs text-[#333333]">
+              리뷰 작성은{" "}
+              <span className="font-medium text-green-600">
+                구매확정 후 15일
+              </span>
+              까지 가능해요
+            </p>
+          }
+        />
         <p className="text-center text-gray-500">
           작성 가능한 리뷰가 없습니다.
         </p>
@@ -55,10 +68,10 @@ export const WritableReviewsSection = ({
 
   return (
     <section>
-      <ReviewBenefitBanner
+      {/* <ReviewBenefitBanner
         policies={rewardPolicies}
         reviewCount={reviews.length}
-      />
+      /> */}
 
       <ReviewListHeader
         title="리뷰"
