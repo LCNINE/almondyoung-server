@@ -27,12 +27,12 @@ import { VisuallyHidden } from "@radix-ui/react-visually-hidden"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { uploadFile } from "@/lib/api/file/upload"
 import type { WritableReview, ReviewInfo } from "../../types"
-import type { RewardPolicyResponseDto } from "@/lib/types/dto/ugc"
+import type { RewardPolicy } from "@/lib/types/ui/ugc"
 import { CustomButton } from "@/components/shared/custom-buttons"
 
 interface ReviewFormCardProps {
   review: WritableReview
-  rewardPolicies: RewardPolicyResponseDto[]
+  rewardPolicies: RewardPolicy[]
   onSave: (data: ReviewInfo) => Promise<void>
   onCancel: () => void
 }

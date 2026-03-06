@@ -9,14 +9,16 @@ import {
 interface ReviewResponseDto {
   id: string
   userId: string | null
-  legacyAuthorName: string | null // 레거시 데이터의 마스킹된 작성자명
-  legacy_author_name?: string | null // 서버에서 스네이크 케이스로 올 때 대비
+  legacy_author_name: string | null // 레거시 데이터의 마스킹된 작성자명
   productId: string
   rating: number
   content: string
   mediaFileIds: string[]
   status: string
   helpfulCount: number
+  likeCount: number
+  dislikeCount: number
+  adminComment: CommentResponseDto | null
   createdAt: string
   updatedAt: string
 }
@@ -38,6 +40,13 @@ interface UpdateReviewDto {
 interface ReviewListQueryDto {
   productId: string
   rating?: ReviewRatingFilter
+  sort?: ReviewSortOption
+  page?: number
+  limit?: number
+}
+
+interface MyReviewListQueryDto {
+  productId?: string
   sort?: ReviewSortOption
   page?: number
   limit?: number
@@ -90,6 +99,16 @@ interface ReviewEligibilityResponseDto {
 interface CreateReviewEligibilityDto {
   orderId: string
   items: Array<{ productId: string; orderLineId: string }>
+}
+
+type EligibilityStatus = "available" | "consumed"
+
+interface ReviewEligibilityListQueryDto {
+  productId?: string
+  orderId?: string
+  status?: EligibilityStatus
+  page?: number
+  limit?: number
 }
 
 // ─── Reward Policy ───
@@ -170,6 +189,7 @@ export type {
   CreateReviewDto,
   UpdateReviewDto,
   ReviewListQueryDto,
+  MyReviewListQueryDto,
   ToggleReactionDto,
   ToggleReactionResponseDto,
   RatingSummaryResponseDto,
@@ -187,4 +207,6 @@ export type {
   ReviewRewardType,
   ReviewEligibilityResponseDto,
   CreateReviewEligibilityDto,
+  EligibilityStatus,
+  ReviewEligibilityListQueryDto,
 }

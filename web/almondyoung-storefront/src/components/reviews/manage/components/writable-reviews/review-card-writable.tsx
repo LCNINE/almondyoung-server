@@ -2,10 +2,12 @@ import Image from "next/image"
 import { Button } from "@components/common/ui/button"
 import type { WritableReview } from "../../types"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
+import type { RewardPolicy } from "@/lib/types/ui/ugc"
 
 interface ReviewCardWritableProps {
   review: WritableReview
   onWriteReview: () => void
+  policies: RewardPolicy[]
 }
 
 export const ReviewCardWritable = ({

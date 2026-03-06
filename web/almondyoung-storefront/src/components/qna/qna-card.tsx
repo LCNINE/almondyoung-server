@@ -18,11 +18,11 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 
-import type { QuestionResponseDto } from "@/lib/types/dto/ugc"
+import type { Question } from "@/lib/types/ui/ugc"
 import { cn } from "@/lib/utils"
 
 type Props = {
-  question: QuestionResponseDto
+  question: Question
   isExpanded: boolean
   onToggle: () => void
   isAuthor?: boolean

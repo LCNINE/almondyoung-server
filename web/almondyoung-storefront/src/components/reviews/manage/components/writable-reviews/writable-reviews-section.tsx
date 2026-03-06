@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import type { WritableReview, ReviewInfo } from "../../types"
-import type { RewardPolicyResponseDto } from "@/lib/types/dto/ugc"
+import type { RewardPolicy } from "@/lib/types/ui/ugc"
 import { createReview } from "@/lib/api/ugc/reviews"
 import { ReviewBenefitBanner } from "./review-benefit-banner"
 import { ReviewCardWritable } from "./review-card-writable"
@@ -10,7 +10,7 @@ import { ReviewFormCard } from "./review-form-card"
 
 interface WritableReviewsSectionProps {
   reviews: WritableReview[]
-  rewardPolicies: RewardPolicyResponseDto[]
+  rewardPolicies: RewardPolicy[]
 }
 
 export const WritableReviewsSection = ({
