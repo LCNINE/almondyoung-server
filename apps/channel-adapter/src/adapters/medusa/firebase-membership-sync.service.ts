@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { MedusaClient } from './medusa.client';
 import { UserServiceClient } from '../../services/user-service.client';
+import { EventTrackingService } from '@app/events';
 
 @Injectable()
 export class FirebaseMembershipSyncService {
@@ -9,6 +10,7 @@ export class FirebaseMembershipSyncService {
   constructor(
     private readonly medusaClient: MedusaClient,
     private readonly userServiceClient: UserServiceClient,
+    private readonly eventTrackingService: EventTrackingService,
   ) {}
 
   /**
@@ -38,6 +40,13 @@ export class FirebaseMembershipSyncService {
         this.logger.log(
           `user-service에 cafe24MemberId=${cafe24MemberId} 연동 정보 없음. Medusa 동기화 건너뜁니다.`,
         );
+        await this.eventTrackingService.trackEffect({
+          resourceType: 'FirebaseMembership',
+          resourceId: cafe24MemberId,
+          action: 'SKIPPED',
+          description: 'user-service 연동 정보 없음',
+          eventType: 'FirebaseMembershipSync',
+        }).catch((e) => this.logger.warn(`trackEffect 실패: ${e?.message}`));
         return;
       }
       resolvedEmail = linkInfo.email;
@@ -48,6 +57,13 @@ export class FirebaseMembershipSyncService {
       this.logger.log(
         `Medusa 고객 없음 (email=${resolvedEmail}, cafe24MemberId=${cafe24MemberId}). 건너뜁니다.`,
       );
+      await this.eventTrackingService.trackEffect({
+        resourceType: 'FirebaseMembership',
+        resourceId: cafe24MemberId,
+        action: 'SKIPPED',
+        description: `Medusa 고객 없음 (email=${resolvedEmail})`,
+        eventType: 'FirebaseMembershipSync',
+      }).catch((e) => this.logger.warn(`trackEffect 실패: ${e?.message}`));
       return;
     }
 
@@ -57,11 +73,25 @@ export class FirebaseMembershipSyncService {
         this.logger.log(
           `멤버십 그룹 추가: customerId=${customer.id}, cafe24MemberId=${cafe24MemberId}`,
         );
+        await this.eventTrackingService.trackEffect({
+          resourceType: 'MedusaCustomer',
+          resourceId: customer.id,
+          action: 'SYNCED',
+          description: `멤버십 그룹 추가 (cafe24MemberId=${cafe24MemberId})`,
+          eventType: 'FirebaseMembershipSync',
+        }).catch((e) => this.logger.warn(`trackEffect 실패: ${e?.message}`));
       } else {
         await this.medusaClient.removeCustomerFromGroup(customer.id, membershipGroupId);
         this.logger.log(
           `멤버십 그룹 제거: customerId=${customer.id}, cafe24MemberId=${cafe24MemberId}`,
         );
+        await this.eventTrackingService.trackEffect({
+          resourceType: 'MedusaCustomer',
+          resourceId: customer.id,
+          action: 'SYNCED',
+          description: `멤버십 그룹 제거 (cafe24MemberId=${cafe24MemberId})`,
+          eventType: 'FirebaseMembershipSync',
+        }).catch((e) => this.logger.warn(`trackEffect 실패: ${e?.message}`));
       }
     } catch (error) {
       this.logger.error(
