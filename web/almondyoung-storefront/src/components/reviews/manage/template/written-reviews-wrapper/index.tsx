@@ -1,9 +1,13 @@
+import { listProducts } from "@/lib/api/medusa/products"
+import { getRegion } from "@/lib/api/medusa/regions"
 import { getMyReviews } from "@/lib/api/ugc/reviews"
-import { getProductsByMasterIds } from "@/lib/api/pim/products"
+import { notFound } from "next/navigation"
 import { WrittenReviewsSection } from "../../components/written-reviews/written-reviews-section"
 import type { WrittenReview } from "../../types"
 
-export async function WrittenReviewsWrapper() {
+export async function WrittenReviewsWrapper(props: {
+  params: { countryCode: string }
+}) {
   const reviewsData = await getMyReviews({ limit: 50 })
   const reviews = reviewsData.data
 
@@ -11,16 +15,27 @@ export async function WrittenReviewsWrapper() {
     return <WrittenReviewsSection reviews={[]} />
   }
 
+  const region = await getRegion(props.params.countryCode)
+
+  if (!region) {
+    notFound()
+  }
+
+  // 중복 제거 후 상품 정보 batch 조회
   const productIds = Array.from(new Set(reviews.map((r) => r.productId)))
-  const products = await getProductsByMasterIds(productIds)
-  const productMap = new Map(products.map((p) => [p.masterId, p]))
+  const products = await listProducts({
+    queryParams: { handle: productIds },
+    regionId: region.id,
+  }).then(({ response }) => response.products)
+
+  const productMap = new Map(products.map((p) => [p.handle, p]))
 
   const writtenReviews: WrittenReview[] = reviews.map((r) => {
     const product = productMap.get(r.productId)
     return {
       id: r.id,
       productId: r.productId,
-      productName: product?.name ?? "상품",
+      productName: product?.title ?? "상품",
       productImage: product?.thumbnail ?? "",
       rating: r.rating,
       content: r.content,
