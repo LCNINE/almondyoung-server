@@ -1,7 +1,7 @@
-import type { RewardPolicyResponseDto } from "@/lib/types/dto/ugc"
+import type { RewardPolicy } from "@/lib/types/ui/ugc"
 
 interface ReviewBenefitBannerProps {
-  policies: RewardPolicyResponseDto[]
+  policies: RewardPolicy[]
 }
 
 export const ReviewBenefitBanner = ({ policies }: ReviewBenefitBannerProps) => {

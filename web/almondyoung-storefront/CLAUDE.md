@@ -65,6 +65,69 @@ src/
 └── contexts/               # React Context
 ```
 
+## 타입 정의 정책 (dto vs ui)
+
+타입은 **레이어별로 분리**하여 관리합니다.
+
+```
+src/lib/types/
+├── dto/          # API 응답/요청의 정확한 형태 (서버 DTO 미러링)
+├── ui/           # dto를 확장한 프레젠테이션 타입
+└── common/       # 공통 타입 (필터, 페이지네이션 등)
+```
+
+### 사용 규칙
+
+| 레이어 | 사용할 타입 | 예시 |
+|--------|------------|------|
+| **API 함수** (`lib/api/`) | `dto` | `api<ReviewResponseDto>(...)` |
+| **Server Action** | `dto` (입력) / `ui` (반환) | 변환 지점 |
+| **SSR 페이지** (`page.tsx`) | `ui` | `const data: ReviewDetail = ...` |
+| **컴포넌트** | `ui` | `props: { review: ReviewDetail }` |
+
+### dto 타입 (`@/lib/types/dto/`)
+
+- 서버 API 응답/요청의 **정확한 형태**를 정의
+- `*ResponseDto`, `*Dto` 네이밍
+- **오직 `lib/api/` 내 API 함수에서만 import**
+- 컴포넌트, 페이지에서 직접 import 금지
+
+### ui 타입 (`@/lib/types/ui/`)
+
+- dto를 `extends`하여 프레젠테이션용 타입 정의
+- UI 친화적 네이밍 (Dto 접미사 제거)
+- **페이지, 컴포넌트, hooks에서 사용**
+- 나중에 UI 전용 computed 필드 추가 가능
+
+```tsx
+// dto: 서버 응답 그대로
+interface ReviewResponseDto {
+  id: string
+  rating: number
+  // ...
+}
+
+// ui: dto 확장 (현재는 alias, 필요시 필드 추가)
+interface ReviewDetail extends ReviewResponseDto {}
+```
+
+```tsx
+// ✅ 올바른 사용
+// lib/api/ugc/reviews.ts (API 함수)
+import type { ReviewResponseDto } from "@/lib/types/dto/ugc"
+
+// components/reviews/review-card.tsx (컴포넌트)
+import type { ReviewDetail } from "@/lib/types/ui/ugc"
+
+// ❌ 잘못된 사용
+// components/reviews/review-card.tsx (컴포넌트에서 dto 직접 import)
+import type { ReviewResponseDto } from "@/lib/types/dto/ugc" // 금지!
+```
+
+### Request DTO는 dto에만 존재
+
+`Create*Dto`, `Update*Dto`, `*QueryDto` 등 요청용 타입은 API 호출에서만 사용하므로 ui 타입을 만들지 않습니다.
+
 ## 핵심 규칙
 
 ### 1. 파일/폴더 명명 규칙

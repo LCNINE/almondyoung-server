@@ -25,7 +25,7 @@ export function ReviewDetailCard({ countryCode, review }: Props) {
 
   // 작성자명 처리
   const authorName = getAuthorName(
-    review.legacyAuthorName || review.legacy_author_name || null,
+    review.legacy_author_name || null,
     review.userId
   )
 

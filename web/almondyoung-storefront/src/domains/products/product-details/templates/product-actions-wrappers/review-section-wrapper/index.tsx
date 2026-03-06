@@ -1,7 +1,7 @@
 import { ReviewDetailCardList } from "@/components/reviews/details/review-detail-card-list"
 import { getRatingSummary, getReviewsByProductId } from "@/lib/api/ugc/reviews"
 import type { ReviewSortOption } from "@/lib/types/common/filter"
-import type { RatingSummaryResponseDto } from "@/lib/types/dto/ugc"
+import type { RatingSummary } from "@/lib/types/ui/ugc"
 
 const ITEMS_PER_PAGE = 10
 
@@ -12,9 +12,7 @@ interface Props {
 
 export async function ReviewSectionWrapper({ productId, countryCode }: Props) {
   const [ratingSummary, reviewResult] = await Promise.all([
-    getRatingSummary(productId).catch(
-      (): RatingSummaryResponseDto | null => null
-    ),
+    getRatingSummary(productId).catch((): RatingSummary | null => null),
     getReviewsByProductId({
       productId,
       sort: "latest" satisfies ReviewSortOption,

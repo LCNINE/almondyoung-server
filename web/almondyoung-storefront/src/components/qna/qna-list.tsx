@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { ProductQnaSkeleton } from "@/components/skeletons/product-detail-skeletons"
 import { deleteQuestion, getQuestionsByProductId } from "@/lib/api/ugc/qna"
-import type { QuestionResponseDto } from "@/lib/types/dto/ugc"
+import type { Question } from "@/lib/types/ui/ugc"
 import { useUser } from "@/contexts/user-context"
 import { siteConfig } from "@/lib/config/site"
 import { getPathWithoutCountry } from "@/lib/utils/get-path-without-country"
@@ -20,7 +20,7 @@ type Props = {
   productName: string
   productThumbnail: string | null
   totalQuestions: number
-  initialQuestions: QuestionResponseDto[]
+  initialQuestions: Question[]
 }
 
 const ITEMS_PER_PAGE = 10
@@ -37,14 +37,14 @@ export function QnaList({
   const { countryCode } = useParams()
 
   const [questions, setQuestions] =
-    useState<QuestionResponseDto[]>(initialQuestions)
+    useState<Question[]>(initialQuestions)
   const [isLoading, setIsLoading] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [total, setTotal] = useState(totalQuestions)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [isInquiryOpen, setIsInquiryOpen] = useState(false)
   const [editQuestion, setEditQuestion] = useState<
-    QuestionResponseDto | undefined
+    Question | undefined
   >(undefined)
   const [isDeleting, startDeleteTransition] = useTransition()
 
@@ -85,7 +85,7 @@ export function QnaList({
     setExpandedId((prev) => (prev === id ? null : id))
   }
 
-  const handleEdit = (question: QuestionResponseDto) => {
+  const handleEdit = (question: Question) => {
     setEditQuestion(question)
     setIsInquiryOpen(true)
   }

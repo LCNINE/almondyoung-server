@@ -13,7 +13,7 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { useUser } from "@/contexts/user-context"
 import { createQuestion, updateQuestion } from "@/lib/api/ugc/qna"
-import type { QuestionResponseDto } from "@/lib/types/dto/ugc"
+import type { Question } from "@/lib/types/ui/ugc"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import Link from "next/link"
 import { toast } from "sonner"
@@ -27,7 +27,7 @@ interface QnaInquiryDialogProps {
   productName: string
   productThumbnail: string | null
   onSuccess?: () => void
-  editQuestion?: QuestionResponseDto
+  editQuestion?: Question
 }
 
 export function QnaInquiryDialog({
