@@ -8,6 +8,8 @@ import {
 import fastifyCookie from '@fastify/cookie';
 import fastifyCors from '@fastify/cors';
 import { WalletModule } from './wallet.module';
+import { EventsModule } from '@app/events';
+import { UGC_COMMAND_STREAM } from '@packages/event-contracts/streams';
 
 function normalizeOrigin(value: string): string {
   return value.trim().replace(/\/+$/, '');
@@ -68,6 +70,13 @@ async function bootstrap() {
     new FastifyAdapter(),
   );
 
+  app.connectMicroservice(
+    EventsModule.forConsumer({
+      streams: [UGC_COMMAND_STREAM],
+      groupId: process.env.KAFKA_GROUP_ID || 'wallet-consumer',
+    }),
+  );
+
   const isDev = process.env.NODE_ENV !== 'production';
   const allowedOrigins = parseAllowedOrigins(process.env.CORS_ORIGINS);
 
@@ -118,6 +127,7 @@ async function bootstrap() {
   });
 
   const port = Number(process.env.PORT ?? 3000);
+  await app.startAllMicroservices();
   await app.listen(port, '0.0.0.0');
 }
 
