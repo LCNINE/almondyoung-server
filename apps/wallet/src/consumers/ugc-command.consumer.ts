@@ -1,11 +1,12 @@
-import { Controller, Logger, UseInterceptors } from '@nestjs/common';
-import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
+import { Controller, Logger, UseFilters, UseInterceptors } from '@nestjs/common';
+import { OnEvent, EventPayload, EventEnvelope, EventsExceptionFilter } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { EarnPointsRequestedPayload } from '@packages/event-contracts/streams/ugc.stream';
 import { DomainEvent } from '@packages/event-contracts/types';
 import { PointsAdminService } from '../admin/points-admin.service';
 
 @Controller()
+@UseFilters(EventsExceptionFilter)
 @UseInterceptors(EventTypeGuard)
 export class UgcCommandConsumer {
   private readonly logger = new Logger(UgcCommandConsumer.name);

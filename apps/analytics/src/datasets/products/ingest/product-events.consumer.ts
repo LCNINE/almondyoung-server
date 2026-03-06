@@ -1,5 +1,5 @@
-import { Controller, Logger, UseInterceptors } from '@nestjs/common';
-import { EventEnvelope, EventPayload, OnEvent } from '@app/events';
+import { Controller, Logger, UseFilters, UseInterceptors } from '@nestjs/common';
+import { EventEnvelope, EventPayload, OnEvent, EventsExceptionFilter } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import {
   ProductInventoryManagementChangedPayload,
@@ -13,6 +13,7 @@ import { DomainEvent } from '@packages/event-contracts/types';
 import { ProductDimensionsService } from '../dimensions/product-dimensions.service';
 
 @Controller()
+@UseFilters(EventsExceptionFilter)
 @UseInterceptors(EventTypeGuard)
 export class ProductEventsConsumer {
   private readonly logger = new Logger(ProductEventsConsumer.name);

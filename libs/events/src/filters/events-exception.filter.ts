@@ -54,10 +54,6 @@ export class EventsExceptionFilter extends BaseRpcExceptionFilter {
   }
 
   private async handleException(exception: Error, host: ArgumentsHost): Promise<void> {
-    if (host.getType() === 'http') {
-      throw exception;
-    }
-
     const ctx = host.switchToRpc();
     const kafkaContext = ctx.getContext<KafkaContext>();
     const handler = (host as any).getHandler ? (host as any).getHandler() : { name: 'UnknownHandler' };

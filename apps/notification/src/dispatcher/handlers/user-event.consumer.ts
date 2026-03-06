@@ -1,6 +1,6 @@
 // apps/notification/src/dispatcher/handlers/user-event.consumer.ts
-import { Controller, Logger, UseInterceptors } from '@nestjs/common';
-import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
+import { Controller, Logger, UseFilters, UseInterceptors } from '@nestjs/common';
+import { OnEvent, EventPayload, EventEnvelope, EventsExceptionFilter } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import {
   UserVerificationPayload,
@@ -22,6 +22,7 @@ import { SendNotificationDto } from '../dto/send-notification.dto';
  * - UserResetPassword: 비밀번호 재설정
  */
 @Controller()
+@UseFilters(EventsExceptionFilter)
 @UseInterceptors(EventTypeGuard)
 export class UserEventConsumer {
   private readonly logger = new Logger(UserEventConsumer.name);
