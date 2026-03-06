@@ -79,9 +79,10 @@ const mapStoreOrderToOrderItem = (order: HttpTypes.StoreOrder): OrderItem => {
     options,
     showInquiry: order.fulfillment_status === "fulfilled",
     orderItems: (order.items ?? [])
-      .filter((item) => item.variant?.product_id || item.product_id)
+      .filter((item) => item.variant?.product?.handle || item.product_handle)
       .map((item) => ({
-        productId: (item.variant?.product_id ?? item.product_id) as string,
+        productId: (item.variant?.product?.handle ??
+          item.product_handle) as string,
         orderLineId: item.id,
       })),
   }
@@ -108,10 +109,10 @@ export function OrderListClient({
         <div className="flex min-h-[400px] flex-col items-center justify-center gap-4">
           <Package className="h-12 w-12 text-gray-300" />
           <div className="text-center">
-            <p className="text-lg font-medium text-gray-600">주문 내역이 없습니다</p>
-            <p className="mt-1 text-sm text-gray-400">
-              첫 주문을 시작해보세요
+            <p className="text-lg font-medium text-gray-600">
+              주문 내역이 없습니다
             </p>
+            <p className="mt-1 text-sm text-gray-400">첫 주문을 시작해보세요</p>
           </div>
         </div>
       </div>
