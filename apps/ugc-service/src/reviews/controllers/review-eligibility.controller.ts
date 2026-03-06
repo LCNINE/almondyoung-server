@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
-import { User } from '@app/authorization';
+import { Public, User } from '@app/authorization';
 import { ApiOkResponsePaginated } from '@app/shared/decorators/api-paginated-response.decorator';
 import { PaginatedResponseDto } from '@app/shared/dto';
 import { ReviewEligibilityListQueryDto } from '../dto/review-eligibility-query.dto';
@@ -14,13 +14,14 @@ import { ReviewEligibilityService } from '../services/review-eligibility.service
 export class ReviewEligibilityController {
   constructor(private readonly eligibilityService: ReviewEligibilityService) {}
 
+  /** 내부 서비스 전용: Medusa 구매확정(confirm-purchase) 시 서버에서 호출 */
   @Post()
-  @ApiOperation({ summary: '구매확정 후 리뷰 작성 자격 등록' })
+  @Public()
+  @ApiOperation({ summary: '구매확정 후 리뷰 작성 자격 등록 (내부 호출)' })
   async create(
-    @User('userId') userId: string,
     @Body() dto: CreateReviewEligibilityDto,
   ): Promise<ReviewEligibilityResponseDto[]> {
-    const created = await this.eligibilityService.create(userId, dto);
+    const created = await this.eligibilityService.create(dto);
     return created.map((e) => ReviewMapper.toEligibilityResponse(e));
   }
 

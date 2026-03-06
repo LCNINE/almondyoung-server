@@ -1,13 +1,17 @@
-import { capturePaymentWorkflow } from '@medusajs/core-flows';
 import {
   AuthenticatedMedusaRequest,
   MedusaResponse,
 } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys, MedusaError } from '@medusajs/framework/utils';
+import { confirmPurchaseWorkflow } from '../../../../../workflows/orders/workflows/confirm-purchase-workflow';
 
 type OrderWithPayments = {
   id: string;
   customer_id?: string | null;
+  items?: Array<{
+    id: string;
+    product_id: string;
+  }>;
   payment_collections?: Array<{
     payments?: Array<{
       id: string;
@@ -41,6 +45,8 @@ export const POST = async (
     fields: [
       'id',
       'customer_id',
+      'items.id',
+      'items.product_id',
       'payment_collections.id',
       'payment_collections.payments.id',
       'payment_collections.payments.captures.id',
@@ -77,25 +83,15 @@ export const POST = async (
     .filter((payment) => !(((payment.captures?.length ?? 0) > 0)))
     .map((payment) => payment.id);
 
-  if (!uncapturedPaymentIds.length) {
-    return res.status(200).json({
-      success: true,
-      order: {
-        id: order.id,
-        payment_status: 'captured',
-      },
-      message: 'Order payment is already captured',
-    });
-  }
-
-  for (const paymentId of uncapturedPaymentIds) {
-    await capturePaymentWorkflow(req.scope).run({
-      input: {
-        payment_id: paymentId,
-        captured_by: customerId,
-      },
-    });
-  }
+  // 결제 캡처 + 리뷰 자격 생성을 워크플로우로 트랜잭션 처리
+  await confirmPurchaseWorkflow(req.scope).run({
+    input: {
+      orderId,
+      customerId,
+      uncapturedPaymentIds,
+      items: order.items ?? [],
+    },
+  });
 
   const { data: refreshed } = await query.graph({
     entity: 'order',
