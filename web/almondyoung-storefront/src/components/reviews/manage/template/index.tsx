@@ -5,14 +5,18 @@ import { ReviewsTabs } from "../components/reviews-tabs"
 import { WritableReviewsWrapper } from "./writable-reviews-wrapper"
 import { WrittenReviewsWrapper } from "./written-reviews-wrapper"
 
-export const ReviewsTemplate = async () => {
+type Props = {
+  params: { countryCode: string }
+}
+
+export const ReviewsTemplate = async ({ params }: Props) => {
   return (
     <main className="bg-white px-3 py-4 md:min-h-screen md:px-6">
       <PageTitle>리뷰</PageTitle>
       <ReviewsTabs
         writableContent={
           <Suspense fallback={<MypageReviewsSkeleton />}>
-            <WritableReviewsWrapper />
+            <WritableReviewsWrapper params={params} />
           </Suspense>
         }
         writtenContent={
