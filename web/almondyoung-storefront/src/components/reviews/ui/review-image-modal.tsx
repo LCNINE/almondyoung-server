@@ -54,7 +54,7 @@ export function ReviewImageModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-[90vw] border-none bg-transparent p-0 shadow-none sm:max-w-[600px] [&>button]:text-white [&>button]:hover:text-white/80"
+        className="max-w-[90vw] border-none bg-transparent p-0 shadow-none sm:max-w-[600px] [&>button]:flex [&>button]:h-9 [&>button]:w-9 [&>button]:items-center [&>button]:justify-center [&>button]:rounded-full [&>button]:bg-black/50 [&>button]:text-white [&>button]:opacity-100 [&>button]:hover:bg-black/70 [&>button]:hover:text-white"
         showCloseButton
       >
         <DialogTitle className="sr-only">리뷰 이미지</DialogTitle>

@@ -1,3 +1,5 @@
+"use client"
+
 import Image from "next/image"
 import { Button } from "@components/common/ui/button"
 import type { WritableReview } from "../../types"
@@ -7,12 +9,13 @@ import type { RewardPolicy } from "@/lib/types/ui/ugc"
 interface ReviewCardWritableProps {
   review: WritableReview
   onWriteReview: () => void
-  policies: RewardPolicy[]
+  rewardPolicies: RewardPolicy[]
 }
 
 export const ReviewCardWritable = ({
   review,
   onWriteReview,
+  rewardPolicies,
 }: ReviewCardWritableProps) => {
   const expiresAt = new Date(review.expiresAt)
   const today = new Date()
@@ -26,6 +29,8 @@ export const ReviewCardWritable = ({
   const formattedExpiresAt = new Date(review.expiresAt).toLocaleDateString(
     "ko-KR"
   )
+
+  const maxReward = Math.max(...rewardPolicies.map((p) => p.rewardAmount))
 
   return (
     <article className="w-full bg-[#FFFFFF]">
@@ -41,30 +46,38 @@ export const ReviewCardWritable = ({
             />
           </figure>
 
-          <div className="flex-1">
+          <div className="flex min-h-24 flex-1 flex-col justify-between">
             <h3 className="line-clamp-2 text-[15px] leading-[22px] font-bold text-[#1A1A1A]">
               {review.productName}
             </h3>
-            <dl className="mt-[2px] flex items-center text-[13px] text-[#666666]">
-              <dt>작성 기한 :&nbsp;</dt>
-              <dd>{formattedExpiresAt}</dd>
-              {diffDays >= 0 && (
-                <dd className="ml-1 text-[12px] font-medium text-red-500">
-                  (D-{diffDays === 0 ? "Day" : diffDays})
-                </dd>
-              )}
-            </dl>
+            <div className="flex items-end justify-between">
+              <div className="text-[#666666]">
+                {maxReward > 0 && (
+                  <p className="text-sm">
+                    포인트 최대{" "}
+                    <span className="font-bold text-[#1A1A1A]">
+                      {maxReward.toLocaleString()}원
+                    </span>
+                  </p>
+                )}
+                <p className="flex items-center">
+                  <span>작성기한 {formattedExpiresAt}</span>
+                  {diffDays >= 0 && (
+                    <span className="ml-1 text-sm font-medium text-red-500">
+                      (D-{diffDays === 0 ? "Day" : diffDays})
+                    </span>
+                  )}
+                </p>
+              </div>
+              <Button
+                variant="default"
+                onClick={onWriteReview}
+                className="h-[36px] px-4 text-[14px] font-medium"
+              >
+                리뷰쓰기
+              </Button>
+            </div>
           </div>
-        </section>
-
-        <section className="flex justify-end">
-          <Button
-            variant="default"
-            onClick={onWriteReview}
-            className="h-[36px] px-4 text-[14px] font-medium"
-          >
-            리뷰쓰기
-          </Button>
         </section>
       </div>
     </article>

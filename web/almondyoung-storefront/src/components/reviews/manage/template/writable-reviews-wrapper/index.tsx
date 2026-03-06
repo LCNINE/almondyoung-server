@@ -16,7 +16,7 @@ export async function WritableReviewsWrapper(props: {
     getRewardPolicies(),
   ])
 
-  const eligibilities = eligibilityData.data
+  const eligibilities = eligibilityData?.data ?? []
 
   if (eligibilities.length === 0) {
     return (
@@ -35,7 +35,7 @@ export async function WritableReviewsWrapper(props: {
   const products = await listProducts({
     queryParams: { handle: productIds },
     regionId: region.id,
-  }).then(({ response }) => response.products)
+  }).then(({ response }) => response.products ?? [])
 
   const productMap = new Map(products.map((p) => [p.handle, p]))
   // eligibility + product merge
