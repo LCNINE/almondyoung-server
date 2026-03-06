@@ -1,6 +1,6 @@
 // apps/notification/src/dispatcher/handlers/wallet-event.consumer.ts
-import { Controller, Logger, UseInterceptors } from '@nestjs/common';
-import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
+import { Controller, Logger, UseFilters, UseInterceptors } from '@nestjs/common';
+import { OnEvent, EventPayload, EventEnvelope, EventsExceptionFilter } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import {
   PaymentAuthorizedPayload,
@@ -62,6 +62,7 @@ import { SendNotificationDto } from '../dto/send-notification.dto';
  * - TaxInvoiceCancelled: 세금계산서 취소
  */
 @Controller()
+@UseFilters(EventsExceptionFilter)
 @UseInterceptors(EventTypeGuard)
 export class WalletEventConsumer {
   private readonly logger = new Logger(WalletEventConsumer.name);

@@ -1,6 +1,6 @@
-import { Controller, Logger, UseInterceptors } from '@nestjs/common';
+import { Controller, Logger, UseFilters, UseInterceptors } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { EventPayload, EventEnvelope, OnEvent } from '@app/events';
+import { EventPayload, EventEnvelope, OnEvent, EventsExceptionFilter } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { OrderCreatedPayload } from '@packages/event-contracts/streams/orders.stream';
 import { DomainEvent } from '@packages/event-contracts/types';
@@ -11,6 +11,7 @@ import { analyticsSchema } from '../../../schema';
 import { DbService } from '@app/db';
 
 @Controller()
+@UseFilters(EventsExceptionFilter)
 @UseInterceptors(EventTypeGuard)
 export class OrderEventsConsumer {
   private readonly logger = new Logger(OrderEventsConsumer.name);
