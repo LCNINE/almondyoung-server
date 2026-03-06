@@ -45,5 +45,9 @@ export * from './utils/message-id.util';
 // Chain Tracking
 export { EventChainService } from './tracking/event-chain.service';
 export { EventTrackingService, EVENT_TRACKING_SERVICE_NAME } from './tracking/event-tracking.service';
+export { EventTraceReader } from './tracking/event-trace.reader';
+export { EventTraceController } from './tracking/event-trace.controller';
 export { trackingSchema } from './tracking/tracking.schema';
 export type { CausedByResource } from './publishers/stream-publisher.service';
+export type { TraceLink } from './tracking/event-trace.reader';
+export type { TraceResponse } from './tracking/event-trace.controller';
