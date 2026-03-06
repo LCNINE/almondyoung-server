@@ -23,6 +23,8 @@ import { ChainContextInterceptor } from './interceptors/chain-context.intercepto
 import { GracefulShutdownService } from './shutdown/graceful-shutdown.service';
 import { EventChainService } from './tracking/event-chain.service';
 import { EventTrackingService } from './tracking/event-tracking.service';
+import { EventTraceReader } from './tracking/event-trace.reader';
+import { EventTraceController } from './tracking/event-trace.controller';
 import {
   KafkaConfig,
   StreamConfig,
@@ -177,6 +179,7 @@ export class EventsModule {
     const trackingProviders = [
       { provide: EventChainService, useClass: EventChainService },
       { provide: EventTrackingService, useClass: EventTrackingService },
+      { provide: EventTraceReader, useClass: EventTraceReader },
     ];
 
     const providers = [
@@ -189,6 +192,7 @@ export class EventsModule {
 
     return {
       module: EventsModule,
+      controllers: [EventTraceController],
       imports: [
         ClsModule.forRoot({ global: true, middleware: { mount: false } }),
         ...(enableOutbox ? [ScheduleModule.forRoot()] : []),
@@ -295,11 +299,13 @@ export class EventsModule {
       shutdownProvider, // Graceful shutdown 항상 등록
       { provide: EventChainService, useClass: EventChainService },
       { provide: EventTrackingService, useClass: EventTrackingService },
+      { provide: EventTraceReader, useClass: EventTraceReader },
     ];
 
     return {
       module: EventsModule,
       global: true,
+      controllers: [EventTraceController],
       imports: [
         ClsModule.forRoot({ global: true, middleware: { mount: false } }),
         ClientsModule.register([
