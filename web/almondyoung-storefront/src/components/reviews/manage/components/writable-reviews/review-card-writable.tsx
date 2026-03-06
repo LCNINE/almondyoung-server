@@ -12,7 +12,18 @@ export const ReviewCardWritable = ({
   review,
   onWriteReview,
 }: ReviewCardWritableProps) => {
-  const formattedDate = new Date(review.eligibleAt).toLocaleDateString("ko-KR")
+  const expiresAt = new Date(review.expiresAt)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  expiresAt.setHours(0, 0, 0, 0)
+
+  const diffDays = Math.ceil(
+    (expiresAt.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+  )
+
+  const formattedExpiresAt = new Date(review.expiresAt).toLocaleDateString(
+    "ko-KR"
+  )
 
   return (
     <article className="w-full bg-[#FFFFFF]">
@@ -32,9 +43,14 @@ export const ReviewCardWritable = ({
             <h3 className="line-clamp-2 text-[15px] leading-[22px] font-bold text-[#1A1A1A]">
               {review.productName}
             </h3>
-            <dl className="mt-[2px] flex text-[13px] text-[#666666]">
-              <dt>작성 가능일 :&nbsp;</dt>
-              <dd>{formattedDate}</dd>
+            <dl className="mt-[2px] flex items-center text-[13px] text-[#666666]">
+              <dt>작성 기한 :&nbsp;</dt>
+              <dd>{formattedExpiresAt}</dd>
+              {diffDays >= 0 && (
+                <dd className="ml-1 text-[12px] font-medium text-red-500">
+                  (D-{diffDays === 0 ? "Day" : diffDays})
+                </dd>
+              )}
             </dl>
           </div>
         </section>

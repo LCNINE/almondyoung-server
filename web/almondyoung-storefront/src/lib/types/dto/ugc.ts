@@ -1,4 +1,8 @@
-import { ReviewRatingFilter, ReviewSortOption, QnaSortOption } from "../common/filter"
+import {
+  ReviewRatingFilter,
+  ReviewSortOption,
+  QnaSortOption,
+} from "../common/filter"
 
 // ─── Reviews ───
 
@@ -79,6 +83,7 @@ interface ReviewEligibilityResponseDto {
   consumedAt: string | null
   consumedByReviewId: string | null
   createdAt: string
+  expiresAt: string
 }
 
 interface CreateReviewEligibilityDto {

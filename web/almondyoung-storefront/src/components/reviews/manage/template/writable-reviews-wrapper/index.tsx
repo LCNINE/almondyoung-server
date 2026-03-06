@@ -1,12 +1,16 @@
+import { listProducts } from "@/lib/api/medusa/products"
+import { getRegion } from "@/lib/api/medusa/regions"
 import {
   getReviewEligibilities,
   getRewardPolicies,
 } from "@/lib/api/ugc/reviews"
-import { getProductsByMasterIds } from "@/lib/api/pim/products"
+import { notFound } from "next/navigation"
 import { WritableReviewsSection } from "../../components/writable-reviews/writable-reviews-section"
-import type { WritableReview } from "../../types"
+import { WritableReview } from "../../types"
 
-export async function WritableReviewsWrapper() {
+export async function WritableReviewsWrapper(props: {
+  params: { countryCode: string }
+}) {
   const [eligibilityData, rewardPolicies] = await Promise.all([
     getReviewEligibilities({ limit: 50 }),
     getRewardPolicies(),
@@ -20,11 +24,20 @@ export async function WritableReviewsWrapper() {
     )
   }
 
+  const region = await getRegion(props.params.countryCode)
+
+  if (!region) {
+    notFound()
+  }
+
   // 중복 제거 후 상품 정보 batch 조회
   const productIds = Array.from(new Set(eligibilities.map((e) => e.productId)))
-  const products = await getProductsByMasterIds(productIds)
-  const productMap = new Map(products.map((p) => [p.masterId, p]))
+  const products = await listProducts({
+    queryParams: { id: productIds },
+    regionId: region.id,
+  }).then(({ response }) => response.products)
 
+  const productMap = new Map(products.map((p) => [p.id, p]))
   // eligibility + product merge
   const writableReviews: WritableReview[] = eligibilities.map((e) => {
     const product = productMap.get(e.productId)
@@ -33,9 +46,10 @@ export async function WritableReviewsWrapper() {
       orderId: e.orderId,
       orderLineId: e.orderLineId,
       productId: e.productId,
-      productName: product?.name ?? "상품",
+      productName: product?.title ?? "상품",
       productImage: product?.thumbnail ?? "",
       eligibleAt: e.eligibleAt,
+      expiresAt: e.expiresAt,
     }
   })
 

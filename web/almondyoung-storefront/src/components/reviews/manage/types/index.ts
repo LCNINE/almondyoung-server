@@ -34,6 +34,7 @@ export interface WritableReview {
   productName: string
   productImage: string
   eligibleAt: string
+  expiresAt: string
 }
 
 export interface WrittenReview {

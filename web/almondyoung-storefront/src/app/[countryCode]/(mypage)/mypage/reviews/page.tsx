@@ -10,7 +10,13 @@ export const metadata = getSEOTags({
   extraTags: {},
 })
 
-export default function MyReviewsPage() {
+type Props = {
+  params: Promise<{ countryCode: string }>
+}
+
+export default async function MyReviewsPage(props: Props) {
+  const params = await props.params
+
   return (
     <WithHeaderLayout
       config={{
@@ -21,7 +27,7 @@ export default function MyReviewsPage() {
       }}
     >
       <MypageLayout>
-        <ReviewsTemplate />
+        <ReviewsTemplate params={params} />
       </MypageLayout>
     </WithHeaderLayout>
   )
