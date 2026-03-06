@@ -27,7 +27,6 @@ interface ShippingOrder {
 export function ShippingItemsSection() {
   const [orders, setOrders] = useState<ShippingOrder[]>([])
   const [isLoading, setIsLoading] = useState(true)
-
   useEffect(() => {
     const fetchShippingOrders = async () => {
       try {
@@ -89,11 +88,10 @@ export function ShippingItemsSection() {
               showInquiry: status === "배송 완료",
               orderItems: (order.items ?? [])
                 .filter(
-                  (item: any) => item.variant?.product_id || item.product_id
+                  (item: any) => item.variant?.product?.handle || item.product_handle
                 )
                 .map((item: any) => ({
-                  productId:
-                    item.variant?.product_id ?? item.product_id,
+                  productId: item.variant?.product?.handle ?? item.product_handle,
                   orderLineId: item.id,
                 })),
             }
