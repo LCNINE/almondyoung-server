@@ -1,11 +1,12 @@
 "use client"
 
+import { KakaoCsButton } from "./kakao-cs-button"
 import { ScrollTopButton } from "./scroll-top-button"
-import { ChatbotButton } from "./chatbot-button"
 
 interface FloatingButtonsProps {
   showScrollTop?: boolean
   showChatbot?: boolean
+  showKakaoTalk?: boolean
   scrollThreshold?: number
   onChatbotClick?: () => void
   className?: string
@@ -14,6 +15,7 @@ interface FloatingButtonsProps {
 export function FloatingButtons({
   showScrollTop = true,
   showChatbot = true,
+  showKakaoTalk = true,
   scrollThreshold = 300,
   onChatbotClick,
   className = "",
@@ -22,9 +24,8 @@ export function FloatingButtons({
     <div
       className={`fixed right-6 bottom-20 z-50 flex flex-col items-center gap-3 ${className}`}
     >
-      {/* {showChatbot && (
-        <ChatbotButton onClick={onChatbotClick} />
-      )} */}
+      {/* {showChatbot && <ChatbotButton onClick={onChatbotClick} />} */}
+      {showKakaoTalk && <KakaoCsButton />}
       {showScrollTop && <ScrollTopButton threshold={scrollThreshold} />}
     </div>
   )
