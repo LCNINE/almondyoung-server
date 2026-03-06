@@ -13,11 +13,10 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ClientsModule, Transport } from '@nestjs/microservices';
-import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ClsModule } from 'nestjs-cls';
 import { StreamPublisher } from './publishers/stream-publisher.service';
 import { DLQHandler } from './dlq/dlq-handler.service';
-import { EventsExceptionFilter } from './filters/events-exception.filter';
 import { SchemaValidationInterceptor } from './interceptors/schema-validation.interceptor';
 import { ChainContextInterceptor } from './interceptors/chain-context.interceptor';
 import { GracefulShutdownService } from './shutdown/graceful-shutdown.service';
@@ -256,14 +255,6 @@ export class EventsModule {
       }
       : null;
 
-    // Exception Filter 제공자
-    const filterProvider = enableAutoDLQ
-      ? {
-        provide: APP_FILTER,
-        useClass: EventsExceptionFilter,
-      }
-      : null;
-
     // Schema Validation Interceptor 제공자
     const interceptorProvider = {
       provide: APP_INTERCEPTOR,
@@ -293,7 +284,6 @@ export class EventsModule {
 
     const providers = [
       ...(dlqProvider ? [dlqProvider] : []),
-      ...(filterProvider ? [filterProvider] : []),
       interceptorProvider, // 스키마 검증 Interceptor는 항상 등록
       chainInterceptorProvider, // chain context 전파 인터셉터
       shutdownProvider, // Graceful shutdown 항상 등록
@@ -325,7 +315,7 @@ export class EventsModule {
       ],
       providers,
       exports: providers
-        .filter((p) => p.provide !== APP_FILTER && p.provide !== APP_INTERCEPTOR)
+        .filter((p) => p.provide !== APP_INTERCEPTOR)
         .map((p) => p.provide),
     };
   }

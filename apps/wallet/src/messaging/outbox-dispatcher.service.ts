@@ -72,13 +72,18 @@ export class OutboxDispatcherService {
 
   @Cron(process.env.WALLET_OUTBOX_DISPATCH_CRON ?? DEFAULT_OUTBOX_DISPATCH_CRON)
   async dispatchPendingEvents(): Promise<void> {
-    await this.requeueStuckProcessingEvents();
-    const batch = await this.acquirePendingBatch();
+    try {
+      await this.requeueStuckProcessingEvents();
+      const batch = await this.acquirePendingBatch();
 
-    if (batch.length === 0) return;
+      if (batch.length === 0) return;
 
-    for (const event of batch) {
-      await this.processEvent(event);
+      for (const event of batch) {
+        await this.processEvent(event);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Outbox dispatch batch failed: ${message}`);
     }
   }
 
