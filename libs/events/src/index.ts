@@ -51,3 +51,4 @@ export { trackingSchema } from './tracking/tracking.schema';
 export type { CausedByResource } from './publishers/stream-publisher.service';
 export type { TraceLink } from './tracking/event-trace.reader';
 export type { TraceResponse } from './tracking/event-trace.controller';
+export { EventTraceApiModule } from './tracking/event-trace-api.module';

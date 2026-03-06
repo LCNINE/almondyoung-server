@@ -10,7 +10,7 @@ import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { PassportModule } from '@nestjs/passport';
 import { ScheduleModule } from '@nestjs/schedule';
 import { DbModule } from '@app/db';
-import { EventsModule } from '@app/events';
+import { EventsModule, EventTraceApiModule } from '@app/events';
 import { UGC_COMMAND_STREAM } from '@packages/event-contracts/streams';
 import { Observable, firstValueFrom, isObservable } from 'rxjs';
 import { validateWalletEnv } from './config/env';
@@ -316,6 +316,7 @@ function normalizePath(path: string): string {
       enableAutoDLQ: true,
       validation: { validateOnConsume: false },
     }),
+    EventTraceApiModule,
   ],
   controllers: [
     HealthController,

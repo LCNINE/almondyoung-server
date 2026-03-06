@@ -1,5 +1,6 @@
 // apps/notification/src/notification.module.ts
 import { Module } from '@nestjs/common';
+import { EventTraceApiModule } from '@app/events';
 import { BullModule } from '@nestjs/bull';
 import { ConfigModule } from '@nestjs/config';
 import { DbModule } from '@app/db';
@@ -36,6 +37,7 @@ import { BulkModule } from './bulk/bulk.module';
       },
       schema: notificationTables,
     }),
+    EventTraceApiModule,
     SharedModule,
     DispatcherModule,
     ProviderModule,

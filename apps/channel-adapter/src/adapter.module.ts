@@ -3,7 +3,7 @@ import * as os from 'os';
 import { HttpModule } from '@nestjs/axios';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ClsModule } from 'nestjs-cls';
-import { EventsModule, StreamPublisher, EventChainService, EventTrackingService } from '@app/events';
+import { EventsModule, StreamPublisher, EventChainService, EventTrackingService, EventTraceApiModule } from '@app/events';
 import { NaverSmartstoreAdapter } from './adapters/naver/naver-smartstore.adapter';
 import { CoupangAdapter } from './adapters/coupang/coupang.adapter';
 import { OrderEventPublisher } from './services/order-event.publisher';
@@ -116,6 +116,7 @@ function createKafkaConfig() {
       },
       schema: { ...channelAdapterSchema },
     }),
+    EventTraceApiModule,
     // 운영 환경에서만 실제 EventsModule 활성화
     ...(process.env.NODE_ENV === 'production'
       ? [

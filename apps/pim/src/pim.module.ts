@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { DbModule } from '@app/db';
-import { EventsModule } from '@app/events';
+import { EventsModule, EventTraceApiModule } from '@app/events';
 import { PRODUCT_STREAM } from '@packages/event-contracts';
 import { validatePimEnv } from './config/env.validation';
 import { pimSchema } from './schema';
@@ -42,6 +42,7 @@ import { DashboardModule } from './analytics/dashboard/dashboard.module';
       serviceName: 'pim',
       enableDLQ: true,
     }),
+    EventTraceApiModule,
     // Core domain modules
     CategoriesModule,
     ProductsModule,

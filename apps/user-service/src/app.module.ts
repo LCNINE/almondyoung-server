@@ -1,5 +1,5 @@
 import { DbModule } from '@app/db';
-import { EventsModule } from '@app/events';
+import { EventsModule, EventTraceApiModule } from '@app/events';
 import { AuthorizationGuard } from '@app/roles';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
@@ -103,6 +103,7 @@ function createKafkaConfig() {
         throwOnValidationError: true,
       },
     }),
+    EventTraceApiModule,
     ThrottlerModule.forRoot({
       throttlers: [
         {
