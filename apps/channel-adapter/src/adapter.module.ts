@@ -3,7 +3,7 @@ import * as os from 'os';
 import { HttpModule } from '@nestjs/axios';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ClsModule } from 'nestjs-cls';
-import { EventsModule, StreamPublisher } from '@app/events';
+import { EventsModule, StreamPublisher, EventChainService, EventTrackingService } from '@app/events';
 import { NaverSmartstoreAdapter } from './adapters/naver/naver-smartstore.adapter';
 import { CoupangAdapter } from './adapters/coupang/coupang.adapter';
 import { OrderEventPublisher } from './services/order-event.publisher';
@@ -209,6 +209,10 @@ function createKafkaConfig() {
     UserServiceClient,
     FirebaseMembershipSyncService,
     MembershipDailySyncService,
+
+    // Event Chain Tracking (환경 무관하게 항상 등록)
+    EventChainService,
+    EventTrackingService,
 
     // 개발/테스트 환경: NullEventPublisher를 토큰으로 제공
     ...(process.env.NODE_ENV !== 'production'
