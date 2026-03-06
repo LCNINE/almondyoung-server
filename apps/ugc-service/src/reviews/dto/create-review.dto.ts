@@ -4,6 +4,13 @@ import { MAX_REVIEW_MEDIA_COUNT } from '../constants';
 
 export class CreateReviewDto {
   @ApiProperty({
+    description: '리뷰 작성 자격 ID (UUID)',
+    example: 'a1b2c3d4-5e6f-7890-abcd-ef1234567890',
+  })
+  @IsUUID()
+  eligibilityId: string;
+
+  @ApiProperty({
     description: '상품 ID (UUID)',
     example: 'f7b98c38-2d6f-4b37-8b6b-2f68b1c15b0a',
   })

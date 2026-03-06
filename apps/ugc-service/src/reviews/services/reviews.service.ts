@@ -1,9 +1,17 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { and, asc, count, desc, eq, inArray, type SQL } from 'drizzle-orm';
-import { reviewComments, reviewMedia, reviews, reactions, type UgcServiceSchema } from '../../db/schema';
+import { and, asc, count, desc, eq, inArray, isNull, type SQL } from 'drizzle-orm';
+import {
+  reviewComments,
+  reviewEligibilities,
+  reviewMedia,
+  reviews,
+  reactions,
+  type UgcServiceSchema,
+} from '../../db/schema';
 import { CreateReviewDto } from '../dto/create-review.dto';
 import { CreateCommentDto } from '../dto/create-comment.dto';
+import { MyReviewListQueryDto } from '../dto/my-review-list-query.dto';
 import { ReviewListQueryDto } from '../dto/review-list-query.dto';
 import { UpdateReviewDto } from '../dto/update-review.dto';
 import { type ReviewCommentEntity, type ReviewEntity, type ReviewWithMediaEntity } from '../types';
@@ -24,7 +32,7 @@ export class ReviewsService {
     @InjectDb() private readonly db: DbService<UgcServiceSchema>,
     private readonly rewardPolicyService: ReviewRewardPolicyService,
     private readonly rewardPublisher: ReviewRewardPublisher,
-  ) {}
+  ) { }
 
   private get client() {
     return this.db.db;
@@ -317,6 +325,24 @@ export class ReviewsService {
     const rewardHolder: { value: { reviewType: 'TEXT' | 'PHOTO'; amount: number } | null } = { value: null };
 
     const result = await this.inTx(async (tx) => {
+      // 1. 리뷰 작성 자격 검증
+      const [eligibility] = await tx
+        .select()
+        .from(reviewEligibilities)
+        .where(
+          and(
+            eq(reviewEligibilities.id, dto.eligibilityId),
+            eq(reviewEligibilities.userId, userId),
+            eq(reviewEligibilities.productId, dto.productId),
+            isNull(reviewEligibilities.consumedAt),
+          ),
+        );
+
+      if (!eligibility) {
+        throw new BadRequestException('리뷰 작성 자격이 없습니다.');
+      }
+
+      // 2. 리뷰 생성
       const mediaFileIds = this.normalizeMediaFileIds(dto.mediaFileIds);
       const [review] = await tx
         .insert(reviews)
@@ -330,6 +356,16 @@ export class ReviewsService {
         .returning();
 
       await this.insertReviewMedia(review.id, mediaFileIds, tx);
+
+      // 3. 자격 소비 처리
+      await tx
+        .update(reviewEligibilities)
+        .set({
+          consumedAt: new Date(),
+          consumedByReviewId: review.id,
+          updatedAt: new Date(),
+        })
+        .where(eq(reviewEligibilities.id, eligibility.id));
 
       rewardHolder.value = await this.rewardPolicyService.calculateReward(
         dto.content.length,
@@ -347,7 +383,7 @@ export class ReviewsService {
       };
     }, tx);
 
-    // TX 커밋 후 Kafka command 발행 (fire-and-forget)
+    // TX 커밋 후 Kafka command 발행 
     const reward = rewardHolder.value;
     if (reward) {
       this.rewardPublisher
@@ -465,6 +501,66 @@ export class ReviewsService {
         averageRating,
         totalCount,
         ratingDistribution: distribution,
+      };
+    }, tx);
+  }
+
+  async listByUser(
+    userId: string,
+    query: MyReviewListQueryDto,
+    tx?: DbTransaction,
+  ): Promise<PaginatedResponseDto<ReviewWithMediaEntity>> {
+    return this.inTx(async (tx) => {
+      const page = query.page ?? 1;
+      const limit = query.limit ?? 20;
+      const offset = (page - 1) * limit;
+
+      const conditions: SQL[] = [eq(reviews.userId, userId), eq(reviews.status, 'active')];
+
+      if (query.productId) {
+        conditions.push(eq(reviews.productId, query.productId));
+      }
+
+      const whereClause = and(...conditions);
+
+      const [{ count: total }] = await tx.select({ count: count() }).from(reviews).where(whereClause);
+
+      const orderByClause = {
+        latest: desc(reviews.createdAt),
+        oldest: asc(reviews.createdAt),
+        rating_high: desc(reviews.rating),
+        rating_low: asc(reviews.rating),
+      }[query.sort ?? 'latest'];
+
+      const data = await tx
+        .select()
+        .from(reviews)
+        .where(whereClause)
+        .orderBy(orderByClause)
+        .limit(limit)
+        .offset(offset);
+
+      const reviewIds = data.map((review) => review.id);
+
+      const mediaMap = await this.fetchMediaFileIdsByReviewIds(reviewIds, tx);
+      const reactionCountMap = await this.fetchReactionCounts(reviewIds, tx);
+      const commentMap = await this.fetchCommentsByReviewIds(reviewIds, tx);
+
+      return {
+        data: data.map((review) => {
+          const counts = reactionCountMap.get(review.id) ?? { helpfulCount: 0, likeCount: 0, dislikeCount: 0 };
+          return {
+            ...review,
+            mediaFileIds: mediaMap.get(review.id) ?? [],
+            helpfulCount: counts.helpfulCount,
+            likeCount: counts.likeCount,
+            dislikeCount: counts.dislikeCount,
+            adminComment: commentMap.get(review.id) ?? null,
+          };
+        }),
+        total,
+        page,
+        limit,
       };
     }, tx);
   }

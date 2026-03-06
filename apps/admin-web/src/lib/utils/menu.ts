@@ -1,0 +1,440 @@
+/** @format */
+
+// src/lib/utils/menu.ts
+export interface MenuItem {
+  id: string;
+  title: string;
+  icon?: string;
+  children?: MenuItem[];
+  isComingSoon?: boolean;
+  path?: string;
+}
+
+export interface MainMenu {
+  id: string;
+  title: string;
+  icon: string;
+  children: MenuItem[];
+  defaultPath?: string; // 첫 번째 페이지 경로 추가
+}
+
+export const mainMenus: MainMenu[] = [
+  {
+    id: 'company',
+    title: '회사/조직',
+    icon: 'Users',
+    defaultPath: '/company/my-account', // 첫 번째 페이지
+    children: [
+      {
+        id: 'user-management',
+        title: '사용자관리',
+        children: [
+          {
+            id: 'my-account',
+            title: '내 계정 정보',
+            path: '/company/my-account',
+            children: [
+              { id: 'sub-users', title: '하부사용자 관리', isComingSoon: true },
+              { id: 'attendance', title: '출퇴근', isComingSoon: true },
+            ],
+          },
+        ],
+      },
+      {
+        id: 'management-support',
+        title: '경영지원',
+        children: [
+          { id: 'operation-docs', title: '운영문서', isComingSoon: true },
+          { id: 'resolutions', title: '결의서', isComingSoon: true },
+          { id: 'leave-attendance', title: '휴가/근태', isComingSoon: true },
+        ],
+      },
+      {
+        id: 'environment-settings',
+        title: '환경설정',
+        children: [
+          {
+            id: 'menu-customize',
+            title: '메뉴 커스터마이즈',
+            isComingSoon: true,
+          },
+          { id: 'integration', title: '연동관리', isComingSoon: true },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'account-management',
+    title: '거래처관리',
+    icon: 'Building2',
+    defaultPath: '/account/sales-channel', // 첫 번째 페이지
+    children: [
+      {
+        id: 'sales-channel',
+        title: '판매처 관리(채널정보)',
+        path: '/account/sales-channel',
+      },
+      {
+        id: 'supplier',
+        title: '발주처 관리',
+        path: '/account/supplier',
+      },
+      {
+        id: 'customer',
+        title: '고객 관리',
+        children: [
+          {
+            id: 'customer-list',
+            title: '고객 조회',
+            path: '/account/customer',
+          },
+          {
+            id: 'regular-list',
+            title: '단골리스트',
+            path: '/account/regular-list',
+          },
+          { id: 'blacklist', title: '블랙리스트', path: '/account/blacklist' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'order-shipment',
+    title: '주문/출고관리',
+    icon: 'Package',
+    defaultPath: '/order/history', // 첫 번째 페이지
+    children: [
+      {
+        id: 'order-collection',
+        title: '주문수집',
+        children: [{ id: 'matching', title: '매칭', path: '/order/matching' }],
+      },
+      {
+        id: 'order-input',
+        title: '주문입력',
+        children: [
+          {
+            id: 'manual-single',
+            title: '주문입력 (수동/건별)',
+            path: '/order/manual-single',
+          },
+          {
+            id: 'manual-bulk',
+            title: '주문입력 (수동/대량)',
+            path: '/order/manual-bulk',
+          },
+        ],
+      },
+      {
+        id: 'order-history',
+        title: '주문내역 목록',
+        path: '/order/history',
+      },
+      {
+        id: 'shipment',
+        title: '출고',
+        children: [
+          {
+            id: 'regional-invoice',
+            title: '(자체배송) 지역별 출고',
+            path: '/order/regional-invoice',
+          },
+          {
+            id: 'print-invoices-by-order',
+            title: '주문별 송장 출력',
+            path: '/order/print-invoices-by-order',
+          },
+          {
+            id: 'shipment-round',
+            title: '송장 출력 / 출고 회차별 조회',
+            path: '/order/shipment-round',
+          },
+          {
+            id: 'picking-list',
+            title: '피킹리스트',
+            path: '/order/picking-list',
+          },
+          {
+            id: 'inspection-dispatch',
+            title: '검수발송',
+            path: '/order/inspection',
+          },
+        ],
+      },
+      {
+        id: 'sales-channel-shipment',
+        title: '판매처 발송처리&현황',
+        isComingSoon: true,
+      },
+    ],
+  },
+  {
+    id: 'inventory-product',
+    title: '재고&상품 관리',
+    icon: 'Boxes',
+    defaultPath: '/inventory/status', // 첫 번째 페이지
+    children: [
+      {
+        id: 'inventory-status',
+        title: '재고 현황',
+        path: '/inventory/status',
+      },
+      {
+        id: 'product-registration',
+        title: '상품 등록',
+        path: '/inventory/product-registration',
+      },
+      {
+        id: 'purchase-order',
+        title: '발주',
+        children: [
+          { id: 'domestic-po', title: '발주리스트 (국내)' },
+          { id: 'overseas-po', title: '발주리스트 (해외)' },
+          { id: 'create-po', title: '발주 생성' },
+        ],
+      },
+      {
+        id: 'product-inout',
+        title: '상품 입출고',
+        children: [
+          { id: 'domestic-receiving', title: '입고리스트 (국내)' },
+          { id: 'overseas-receiving', title: '입고리스트 (해외)' },
+          { id: 'individual-inout', title: '개별 입/출고' },
+        ],
+      },
+      {
+        id: 'barcode-management',
+        title: '바코드 관리',
+        children: [
+          { id: 'product-barcode', title: '상품 바코드' },
+          { id: 'location-barcode', title: '위치 바코드' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'customer-service',
+    title: 'CS',
+    icon: 'Headphones',
+    defaultPath: '/cs/management', // 첫 번째 페이지
+    children: [
+      {
+        id: 'channel-talk',
+        title: '실시간 채널톡',
+        isComingSoon: true,
+      },
+      {
+        id: 'cs-management',
+        title: 'CS 목록',
+        path: '/cs/management',
+      },
+      {
+        id: 'return-exchange',
+        title: '반품&교환 관리',
+        path: '/cs/return-exchange',
+      },
+      {
+        id: 'review-management',
+        title: '리뷰 관리',
+        path: '/cs/reviews',
+      },
+      {
+        id: 'qna-management',
+        title: 'Q&A관리',
+        path: '/cs/qna',
+      },
+      {
+        id: 'chatbot-settings',
+        title: '챗봇 설정',
+        isComingSoon: true,
+      },
+    ],
+  },
+  {
+    id: 'sales-statistics',
+    title: '판매/통계',
+    icon: 'BarChart3',
+    children: [
+      {
+        id: 'sales-status',
+        title: '판매 현황',
+        children: [
+          { id: 'by-product', title: '상품별' },
+          { id: 'by-option', title: '옵션별' },
+          { id: 'by-period', title: '기간별' },
+          { id: 'by-membership', title: '회원등급별' },
+        ],
+      },
+      {
+        id: 'analytics',
+        title: '애널리틱스',
+        children: [
+          { id: 'customer-behavior', title: '고객 행동' },
+          { id: 'conversion-rate', title: '전환율' },
+        ],
+      },
+      {
+        id: 'shipping-statistics',
+        title: '배송 통계',
+        children: [
+          { id: 'combined-shipping', title: '합배송' },
+          { id: 'wrong-shipping', title: '오배송' },
+          { id: 'package-size', title: '택배 사이즈' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'own-mall',
+    title: '자사몰 관리',
+    icon: 'Store',
+    defaultPath: '/mall/settings', // 첫 번째 페이지
+    children: [
+      {
+        id: 'mall-selection',
+        title: '쇼핑몰 선택',
+        isComingSoon: true,
+      },
+      {
+        id: 'products',
+        title: '상품',
+        children: [
+          { id: 'product-dashboard', title: '대시보드' },
+          { id: 'product-list', title: '목록', path: '/mall/products-list' },
+          { id: 'product-registration', title: '등록', path: '/mall/product-registration' },
+          { id: 'product-category', title: '분류/카테고리', path: '/mall/categories' },
+          { id: 'product-display', title: '진열' },
+          { id: 'deleted-products', title: '휴지통(삭제상품 관리)' },
+        ],
+      },
+      {
+        id: 'marketing',
+        title: '마케팅',
+        children: [
+          { id: 'messages', title: '메시지 or 푸시알림' },
+          { id: 'banners', title: '배너' },
+          { id: 'popups', title: '팝업/공지사항' },
+          { id: 'points', title: '적립금' },
+          { id: 'coupons', title: '쿠폰' },
+          { id: 'promotions', title: '프로모션' },
+          { id: 'deposit', title: '예치금' },
+          { id: 'events', title: '이벤트' },
+        ],
+      },
+      {
+        id: 'display-management',
+        title: '화면/전시 관리',
+        isComingSoon: true,
+      },
+      {
+        id: 'settings',
+        title: '설정',
+        path: '/mall/settings',
+      },
+    ],
+  },
+  {
+    id: 'membership',
+    title: '멤버십 관리',
+    icon: 'Crown',
+    children: [
+      {
+        id: 'member-management',
+        title: '멤버십 회원 관리',
+        children: [
+          { id: 'member-inquiry', title: '회원 조회' },
+          { id: 'payment-history', title: '결제 내역 조회' },
+          { id: 'cancellation-history', title: '해지 내역 조회' },
+        ],
+      },
+      {
+        id: 'benefit-management',
+        title: '멤버십 혜택 관리',
+        children: [{ id: 'membership-plans', title: '멤버십 플랜' }],
+      },
+    ],
+  },
+];
+
+// 첫 번째 페이지를 찾는 헬퍼 함수 추가
+export function getFirstPagePath(menuId: string): string | null {
+  const menu = getMenuById(menuId);
+  if (!menu) return null;
+
+  // defaultPath가 있으면 사용
+  if (menu.defaultPath) return menu.defaultPath;
+
+  // 없으면 children에서 첫 번째 path 찾기
+  function findFirstPath(items: MenuItem[]): string | null {
+    for (const item of items) {
+      if (item.path) return item.path;
+      if (item.children) {
+        const found = findFirstPath(item.children);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
+  return findFirstPath(menu.children);
+}
+
+// 현재 경로에 해당하는 메뉴와 아이템을 찾는 함수 수정
+export function getActiveMenuAndItem(currentPath: string): {
+  menuId: string | null;
+  itemId: string | null;
+} {
+  for (const menu of mainMenus) {
+    function findItemByPath(
+      items: MenuItem[],
+      targetPath: string
+    ): MenuItem | null {
+      for (const item of items) {
+        // 정확한 경로 매칭
+        if (item.path === targetPath) return item;
+
+        // 하위 경로 매칭 (발주처 관련 페이지들)
+        if (item.path && targetPath.startsWith(item.path + '/')) {
+          return item;
+        }
+
+        if (item.children) {
+          const found = findItemByPath(item.children, targetPath);
+          if (found) return found;
+        }
+      }
+      return null;
+    }
+
+    const foundItem = findItemByPath(menu.children, currentPath);
+    if (foundItem) {
+      return { menuId: menu.id, itemId: foundItem.id };
+    }
+  }
+
+  return { menuId: null, itemId: null };
+}
+
+export function getMenuById(id: string): MainMenu | null {
+  return mainMenus.find((menu) => menu.id === id) || null;
+}
+export function getMenuItemById(
+  menuId: string,
+  itemId: string
+): MenuItem | null {
+  const menu = getMenuById(menuId);
+  if (!menu) return null;
+
+  function findItem(items: MenuItem[]): MenuItem | null {
+    for (const item of items) {
+      if (item.id === itemId) return item;
+      if (item.children) {
+        const found = findItem(item.children);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
+  return findItem(menu.children);
+}
