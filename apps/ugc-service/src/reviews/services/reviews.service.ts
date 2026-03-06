@@ -384,22 +384,23 @@ export class ReviewsService {
     }, tx);
 
     // TX 커밋 후 Kafka command 발행 
-    const reward = rewardHolder.value;
-    if (reward) {
-      this.rewardPublisher
-        .publishEarnPointsCommand({
-          reviewId: result.id,
-          userId,
-          reviewType: reward.reviewType,
-          amount: reward.amount,
-          productId: dto.productId,
-        })
-        .catch((err) => {
-          this.logger.error(
-            `Failed to publish reward command for review ${result.id}: ${err.message}`,
-          );
-        });
-    }
+    // 카프카 이벤트 발행 임시로 막음 : 리뷰 적립금 정책이 올바르게 자리잡을때까지 주석처리
+    // const reward = rewardHolder.value;
+    // if (reward) {
+    //   this.rewardPublisher
+    //     .publishEarnPointsCommand({
+    //       reviewId: result.id,
+    //       userId,
+    //       reviewType: reward.reviewType,
+    //       amount: reward.amount,
+    //       productId: dto.productId,
+    //     })
+    //     .catch((err) => {
+    //       this.logger.error(
+    //         `Failed to publish reward command for review ${result.id}: ${err.message}`,
+    //       );
+    //     });
+    // }
 
     return result;
   }
