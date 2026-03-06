@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { eq, inArray, or, and } from 'drizzle-orm';
+import { eq, inArray, and, countDistinct } from 'drizzle-orm';
 import { event_resource_links } from './tracking.schema';
 
 export interface TraceLink {
@@ -55,6 +55,33 @@ export class EventTraceReader {
    */
   async findByChain(chainId: string): Promise<TraceLink[]> {
     return this.findByChainIds([chainId]);
+  }
+
+  /**
+   * 특정 resourceType에 속하는 고유 resourceId 목록을 페이지네이션해서 조회
+   */
+  async findResourcesByType(
+    resourceType: string,
+    limit: number,
+    offset: number,
+  ): Promise<{ resourceId: string }[]> {
+    const rows = await this.db
+      .selectDistinct({ resourceId: event_resource_links.resourceId })
+      .from(event_resource_links)
+      .where(eq(event_resource_links.resourceType, resourceType))
+      .orderBy(event_resource_links.resourceId)
+      .limit(limit)
+      .offset(offset);
+
+    return rows;
+  }
+
+  async countResourcesByType(resourceType: string): Promise<number> {
+    const [row] = await this.db
+      .select({ count: countDistinct(event_resource_links.resourceId) })
+      .from(event_resource_links)
+      .where(eq(event_resource_links.resourceType, resourceType));
+    return row?.count ?? 0;
   }
 
   private async findByChainIds(chainIds: string[]): Promise<TraceLink[]> {
