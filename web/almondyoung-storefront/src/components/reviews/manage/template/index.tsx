@@ -21,7 +21,7 @@ export const ReviewsTemplate = async ({ params }: Props) => {
         }
         writtenContent={
           <Suspense fallback={<MypageReviewsSkeleton />}>
-            <WrittenReviewsWrapper />
+            <WrittenReviewsWrapper params={params} />
           </Suspense>
         }
       />
