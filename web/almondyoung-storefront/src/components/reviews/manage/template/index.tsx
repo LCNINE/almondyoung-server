@@ -7,9 +7,10 @@ import { WrittenReviewsWrapper } from "./written-reviews-wrapper"
 
 type Props = {
   params: { countryCode: string }
+  searchParams: { period?: string; type?: string }
 }
 
-export const ReviewsTemplate = async ({ params }: Props) => {
+export const ReviewsTemplate = async ({ params, searchParams }: Props) => {
   return (
     <main className="bg-white px-3 py-4 md:min-h-screen md:px-6">
       <PageTitle>리뷰</PageTitle>
@@ -21,7 +22,7 @@ export const ReviewsTemplate = async ({ params }: Props) => {
         }
         writtenContent={
           <Suspense fallback={<MypageReviewsSkeleton />}>
-            <WrittenReviewsWrapper params={params} />
+            <WrittenReviewsWrapper params={params} searchParams={searchParams} />
           </Suspense>
         }
       />
