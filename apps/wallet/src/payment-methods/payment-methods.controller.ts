@@ -12,7 +12,8 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PaymentMethodsService } from './payment-methods.service';
 import { CreatePaymentMethodDto, PaymentMethodResponseDto } from './dto';
-import { AuthenticatedRequest, WalletJwtAuth } from '../wallet.module';
+import { AuthenticatedRequest } from '../wallet.module';
+import { WalletJwtAuth } from '../wallet-auth.decorator';
 
 @ApiTags('Payment Methods')
 @Controller('v1/payment-methods')
