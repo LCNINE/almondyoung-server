@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, Injectable, Module, SetMetadata, UnauthorizedException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable, Module, UnauthorizedException } from '@nestjs/common';
 import {
   AUTH_CONFIG,
   AuthenticationService,
@@ -14,6 +14,7 @@ import { EventsModule, EventTraceApiModule } from '@app/events';
 import { UGC_COMMAND_STREAM } from '@packages/event-contracts/streams';
 import { Observable, firstValueFrom, isObservable } from 'rxjs';
 import { validateWalletEnv } from './config/env';
+import { WALLET_JWT_AUTH_KEY } from './wallet-auth.decorator';
 import { HealthController } from './health.controller';
 import { walletSchema } from './schema';
 
@@ -68,10 +69,7 @@ import { ExpirationJob } from './jobs/expiration.job';
 // Consumers
 import { UgcCommandConsumer } from './consumers/ugc-command.consumer';
 
-// ─── Auth metadata decorators ────────────────────────────────────────────────
-
-export const WALLET_JWT_AUTH_KEY = 'walletJwtAuth';
-export const WalletJwtAuth = () => SetMetadata(WALLET_JWT_AUTH_KEY, true);
+export { WALLET_JWT_AUTH_KEY, WalletJwtAuth } from './wallet-auth.decorator';
 
 // ─── JWT-authenticated request interface ─────────────────────────────────────
 
