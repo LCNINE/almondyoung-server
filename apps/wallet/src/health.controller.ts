@@ -1,9 +1,10 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, SetMetadata } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { DbService } from '@app/db';
 import { sql } from 'drizzle-orm';
 import { WalletSchema } from './schema';
 
+@SetMetadata('isPublic', true)
 @ApiTags('Health')
 @Controller('v1')
 export class HealthController {

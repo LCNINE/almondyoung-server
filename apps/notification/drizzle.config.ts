@@ -1,7 +1,10 @@
 import { defineConfig } from 'drizzle-kit';
 
 export default defineConfig({
-  schema: './database/schemas/notification-schema.ts',
+  schema: [
+    './database/schemas/notification-schema.ts',
+    'libs/events/src/tracking/tracking.schema.ts',
+  ],
   out: './database/drizzle',
   dialect: 'postgresql',
   dbCredentials: {
