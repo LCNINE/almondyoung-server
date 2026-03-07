@@ -11,24 +11,34 @@ import {
   type ReviewType,
 } from "../../utils/constants"
 
+const ITEMS_PER_PAGE = 10
+
 export async function WrittenReviewsWrapper(props: {
   params: { countryCode: string }
-  searchParams: { period?: string; type?: string }
+  searchParams: { period?: string; type?: string; page?: string }
 }) {
-  const { period: periodParam, type: typeParam } = props.searchParams
+  const { period: periodParam, type: typeParam, page: pageParam } = props.searchParams
 
-  // 기본값: 6개월, 전체
   const period = (periodParam ?? REVIEW_PERIOD_OPTIONS.SIX_MONTHS) as ReviewPeriod
   const type = (typeParam ?? REVIEW_TYPE_OPTIONS.ALL) as ReviewType
+  const page = Math.max(1, Number(pageParam) || 1)
 
-  const reviewsData = await getMyReviews({ period, type, limit: 50 })
+  const reviewsData = await getMyReviews({
+    period,
+    type,
+    page,
+    limit: ITEMS_PER_PAGE,
+  })
   const reviews = reviewsData.data
+  const totalPages = Math.ceil(reviewsData.total / ITEMS_PER_PAGE)
 
   if (reviews.length === 0) {
     return (
       <WrittenReviewsSection
         reviews={[]}
         totalCount={reviewsData.total}
+        currentPage={page}
+        totalPages={totalPages}
         period={period}
         type={type}
       />
@@ -68,6 +78,8 @@ export async function WrittenReviewsWrapper(props: {
     <WrittenReviewsSection
       reviews={writtenReviews}
       totalCount={reviewsData.total}
+      currentPage={page}
+      totalPages={totalPages}
       period={period}
       type={type}
     />

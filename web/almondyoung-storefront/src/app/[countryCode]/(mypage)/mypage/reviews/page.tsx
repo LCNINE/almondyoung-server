@@ -12,7 +12,7 @@ export const metadata = getSEOTags({
 
 type Props = {
   params: Promise<{ countryCode: string }>
-  searchParams: Promise<{ period?: string; type?: string }>
+  searchParams: Promise<{ period?: string; type?: string; page?: string }>
 }
 
 export default async function MyReviewsPage(props: Props) {

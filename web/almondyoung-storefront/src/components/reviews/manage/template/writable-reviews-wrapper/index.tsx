@@ -8,19 +8,32 @@ import { notFound } from "next/navigation"
 import { WritableReviewsSection } from "../../components/writable-reviews/writable-reviews-section"
 import { WritableReview } from "../../types"
 
+const ITEMS_PER_PAGE = 10
+
 export async function WritableReviewsWrapper(props: {
   params: { countryCode: string }
+  searchParams: { page?: string }
 }) {
+  const { page: pageParam } = props.searchParams
+  const page = Math.max(1, Number(pageParam) || 1)
+
   const [eligibilityData, rewardPolicies] = await Promise.all([
-    getReviewEligibilities({ limit: 50 }),
+    getReviewEligibilities({ page, limit: ITEMS_PER_PAGE }),
     getRewardPolicies(),
   ])
 
   const eligibilities = eligibilityData?.data ?? []
+  const totalPages = Math.ceil((eligibilityData?.total ?? 0) / ITEMS_PER_PAGE)
 
   if (eligibilities.length === 0) {
     return (
-      <WritableReviewsSection reviews={[]} rewardPolicies={rewardPolicies} />
+      <WritableReviewsSection
+        reviews={[]}
+        totalCount={eligibilityData?.total ?? 0}
+        currentPage={page}
+        totalPages={totalPages}
+        rewardPolicies={rewardPolicies}
+      />
     )
   }
 
@@ -57,6 +70,9 @@ export async function WritableReviewsWrapper(props: {
   return (
     <WritableReviewsSection
       reviews={writableReviews}
+      totalCount={eligibilityData.total}
+      currentPage={page}
+      totalPages={totalPages}
       rewardPolicies={rewardPolicies}
     />
   )
