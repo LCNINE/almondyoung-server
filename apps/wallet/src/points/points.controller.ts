@@ -1,4 +1,5 @@
 import { Controller, Get, Req, UnauthorizedException } from '@nestjs/common';
+import { WalletJwtAuth } from '../wallet.module';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PointsAdminService, PointsBalance } from '../admin/points-admin.service';
 import { AuthenticatedRequest } from '../wallet.module';
@@ -9,6 +10,7 @@ export class PointsController {
   constructor(private readonly pointsAdminService: PointsAdminService) {}
 
   @Get('balance')
+  @WalletJwtAuth()
   @ApiOperation({ summary: "Get current user's points balance (JWT cookie auth)" })
   async getMyBalance(@Req() req: AuthenticatedRequest): Promise<PointsBalance> {
     if (!req.jwtUserId) {

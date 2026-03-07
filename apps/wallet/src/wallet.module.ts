@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, Injectable, Module, UnauthorizedException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable, Module, SetMetadata, UnauthorizedException } from '@nestjs/common';
 import {
   AUTH_CONFIG,
   AuthenticationService,
@@ -6,7 +6,7 @@ import {
   JwtAuthGuard,
 } from '@app/authorization';
 import { ConfigModule } from '@nestjs/config';
-import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR, Reflector } from '@nestjs/core';
 import { PassportModule } from '@nestjs/passport';
 import { ScheduleModule } from '@nestjs/schedule';
 import { DbModule } from '@app/db';
@@ -68,6 +68,11 @@ import { ExpirationJob } from './jobs/expiration.job';
 // Consumers
 import { UgcCommandConsumer } from './consumers/ugc-command.consumer';
 
+// ─── Auth metadata decorators ────────────────────────────────────────────────
+
+export const WALLET_JWT_AUTH_KEY = 'walletJwtAuth';
+export const WalletJwtAuth = () => SetMetadata(WALLET_JWT_AUTH_KEY, true);
+
 // ─── JWT-authenticated request interface ─────────────────────────────────────
 
 export interface AuthenticatedRequest {
@@ -88,44 +93,38 @@ export interface AuthenticatedRequest {
 
 // ─── Auth guard (API key + JWT cookie) ───────────────────────────────────────
 
-/**
- * Endpoints accessible via JWT cookie (browser / wallet-web / storefront).
- * These paths must NOT accept a body-supplied userId; the guard reads it
- * from the JWT claims and attaches it to request.jwtUserId.
- */
-const JWT_COOKIE_PATTERNS = [
-  /^\/v1\/payment-intents\/[^/]+\/?$/,          // GET /v1/payment-intents/:id
-  /^\/v1\/payment-intents\/[^/]+\/confirm\/?$/, // POST /v1/payment-intents/:id/confirm
-  /^\/v1\/payment-intents\/[^/]+\/cancel\/?$/,  // POST /v1/payment-intents/:id/cancel
-  /^\/v1\/payment-methods\/?$/,                 // GET /v1/payment-methods
-  /^\/v1\/points\/balance\/?$/,                 // GET /v1/points/balance
-];
-
 @Injectable()
 class WalletAuthGuard implements CanActivate {
-  constructor(private readonly jwtAuthGuard: JwtAuthGuard) {}
+  constructor(
+    private readonly jwtAuthGuard: JwtAuthGuard,
+    private readonly reflector: Reflector,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const type = context.getType<'http'>();
     if (type !== 'http') return true;
 
+    const isPublic = this.reflector.getAllAndOverride<boolean>('isPublic', [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (isPublic) return true;
+
     const http = context.switchToHttp();
     const request = http.getRequest<AuthenticatedRequest>();
 
-    // Health & docs are public
-    const path = normalizePath((request.url ?? '').split('?')[0]);
-    if (path === '/v1/health' || path === '/v1/ready' || path.startsWith('/docs')) {
-      return true;
-    }
+    const isJwtAuth = this.reflector.getAllAndOverride<boolean>(WALLET_JWT_AUTH_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
 
-    // ── JWT cookie path (browser-facing endpoints) ──────────────────────────
-    // API key is accepted as a fallback (e.g. merchant backend calling GET /v1/payment-methods)
-    if (JWT_COOKIE_PATTERNS.some((re) => re.test(path))) {
+    if (isJwtAuth) {
+      // ── JWT cookie path (browser-facing endpoints) ──────────────────────
+      // API key is accepted as a fallback (e.g. merchant backend calling GET /v1/payment-methods)
       if (await this.tryJwtAuth(context, request)) {
         return true;
       }
 
-      // No valid JWT cookie — try API key fallback
       if (this.tryApiKeyAuth(request)) {
         return true;
       }
@@ -283,16 +282,6 @@ async function resolveCanActivate(
     return result as Promise<boolean>;
   }
   return Boolean(result);
-}
-
-function normalizePath(path: string): string {
-  if (!path) return '/';
-
-  const collapsed = path.replace(/\/{2,}/g, '/');
-  if (collapsed.length > 1 && collapsed.endsWith('/')) {
-    return collapsed.slice(0, -1);
-  }
-  return collapsed;
 }
 
 // ─── Module ───────────────────────────────────────────────────────────────────

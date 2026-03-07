@@ -20,7 +20,7 @@ import {
   TossApproveDto,
 } from './dto';
 import { RefundResponseDto } from '../refunds/dto';
-import { AuthenticatedRequest } from '../wallet.module';
+import { AuthenticatedRequest, WalletJwtAuth } from '../wallet.module';
 
 @ApiTags('Payment Intents')
 @Controller('v1/payment-intents')
@@ -43,6 +43,7 @@ export class PaymentIntentsController {
   }
 
   @Get(':id')
+  @WalletJwtAuth()
   @ApiOperation({ summary: 'Get a payment intent' })
   async findOne(
     @Param('id') id: string,
@@ -53,6 +54,7 @@ export class PaymentIntentsController {
 
   @Post(':id/confirm')
   @HttpCode(200)
+  @WalletJwtAuth()
   @ApiOperation({ summary: 'Confirm a payment intent with a payment method' })
   async confirm(
     @Param('id') id: string,
@@ -93,6 +95,7 @@ export class PaymentIntentsController {
 
   @Post(':id/cancel')
   @HttpCode(200)
+  @WalletJwtAuth()
   @ApiOperation({ summary: 'Cancel a payment intent' })
   async cancel(
     @Param('id') id: string,

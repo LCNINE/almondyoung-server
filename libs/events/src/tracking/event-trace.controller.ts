@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query, SetMetadata } from '@nestjs/common';
 import { EventTraceReader, TraceLink } from './event-trace.reader';
 
 export interface TraceResponse {
@@ -7,6 +7,7 @@ export interface TraceResponse {
   total: number;
 }
 
+@SetMetadata('isPublic', true)
 @Controller('events/trace')
 export class EventTraceController {
   constructor(private readonly eventTraceReader: EventTraceReader) {}

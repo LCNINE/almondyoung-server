@@ -12,7 +12,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PaymentMethodsService } from './payment-methods.service';
 import { CreatePaymentMethodDto, PaymentMethodResponseDto } from './dto';
-import { AuthenticatedRequest } from '../wallet.module';
+import { AuthenticatedRequest, WalletJwtAuth } from '../wallet.module';
 
 @ApiTags('Payment Methods')
 @Controller('v1/payment-methods')
@@ -30,6 +30,7 @@ export class PaymentMethodsController {
   }
 
   @Get()
+  @WalletJwtAuth()
   @ApiOperation({ summary: 'List payment methods for the authenticated user' })
   async findAll(
     @Req() req: AuthenticatedRequest,
