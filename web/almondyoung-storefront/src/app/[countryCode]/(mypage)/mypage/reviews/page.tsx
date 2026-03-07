@@ -12,10 +12,14 @@ export const metadata = getSEOTags({
 
 type Props = {
   params: Promise<{ countryCode: string }>
+  searchParams: Promise<{ period?: string; type?: string }>
 }
 
 export default async function MyReviewsPage(props: Props) {
-  const params = await props.params
+  const [params, searchParams] = await Promise.all([
+    props.params,
+    props.searchParams,
+  ])
 
   return (
     <WithHeaderLayout
@@ -27,7 +31,7 @@ export default async function MyReviewsPage(props: Props) {
       }}
     >
       <MypageLayout>
-        <ReviewsTemplate params={params} />
+        <ReviewsTemplate params={params} searchParams={searchParams} />
       </MypageLayout>
     </WithHeaderLayout>
   )

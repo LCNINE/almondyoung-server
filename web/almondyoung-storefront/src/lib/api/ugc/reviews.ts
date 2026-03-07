@@ -63,17 +63,23 @@ export const getRatingSummary = async (
  */
 export const getMyReviews = async ({
   productId,
+  period,
+  type,
   sort,
   page,
   limit,
 }: {
   productId?: string
+  period?: "6months" | "1year" | "all"
+  type?: "all" | "photo" | "text"
   sort?: string
   page?: number
   limit?: number
 } = {}): Promise<PaginatedResponseDto<ReviewResponseDto>> => {
   const params: Record<string, string> = {}
   if (productId) params.productId = productId
+  if (period) params.period = period
+  if (type) params.type = type
   if (sort) params.sort = sort
   if (page) params.page = String(page)
   if (limit) params.limit = String(limit)
@@ -82,7 +88,7 @@ export const getMyReviews = async ({
     method: "GET",
     params,
     withAuth: true,
-    next: { tags: ["my-reviews"] },
+    next: { tags: ["my-reviews", `my-reviews-${period}-${type}`] },
   })
 }
 

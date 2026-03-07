@@ -9,17 +9,23 @@ export const ANIMATION_DELAY_MS = 700
 export const MAX_REVIEW_BENEFIT_POINTS = 2000
 export const DEFAULT_REVIEW_POINTS = 1000
 
-// 필터 옵션
+// 필터 옵션 (백엔드 API 스펙에 맞춤)
 export const REVIEW_PERIOD_OPTIONS = {
-  SIX_MONTHS: "6m",
-  ONE_YEAR: "1y",
+  SIX_MONTHS: "6months",
+  ONE_YEAR: "1year",
+  ALL: "all",
 } as const
 
 export const REVIEW_TYPE_OPTIONS = {
   ALL: "all",
-  PHOTO_VIDEO: "photo",
-  TEXT_ONLY: "text",
+  PHOTO: "photo",
+  TEXT: "text",
 } as const
+
+export type ReviewPeriod =
+  (typeof REVIEW_PERIOD_OPTIONS)[keyof typeof REVIEW_PERIOD_OPTIONS]
+export type ReviewType =
+  (typeof REVIEW_TYPE_OPTIONS)[keyof typeof REVIEW_TYPE_OPTIONS]
 
 // 탭 값
 export const REVIEW_TAB_VALUES = {

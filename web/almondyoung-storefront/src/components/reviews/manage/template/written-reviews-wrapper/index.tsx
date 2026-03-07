@@ -4,15 +4,35 @@ import { getMyReviews } from "@/lib/api/ugc/reviews"
 import { notFound } from "next/navigation"
 import { WrittenReviewsSection } from "../../components/written-reviews/written-reviews-section"
 import type { WrittenReview } from "../../types"
+import {
+  REVIEW_PERIOD_OPTIONS,
+  REVIEW_TYPE_OPTIONS,
+  type ReviewPeriod,
+  type ReviewType,
+} from "../../utils/constants"
 
 export async function WrittenReviewsWrapper(props: {
   params: { countryCode: string }
+  searchParams: { period?: string; type?: string }
 }) {
-  const reviewsData = await getMyReviews({ limit: 50 })
+  const { period: periodParam, type: typeParam } = props.searchParams
+
+  // 기본값: 6개월, 전체
+  const period = (periodParam ?? REVIEW_PERIOD_OPTIONS.SIX_MONTHS) as ReviewPeriod
+  const type = (typeParam ?? REVIEW_TYPE_OPTIONS.ALL) as ReviewType
+
+  const reviewsData = await getMyReviews({ period, type, limit: 50 })
   const reviews = reviewsData.data
 
   if (reviews.length === 0) {
-    return <WrittenReviewsSection reviews={[]} />
+    return (
+      <WrittenReviewsSection
+        reviews={[]}
+        totalCount={reviewsData.total}
+        period={period}
+        type={type}
+      />
+    )
   }
 
   const region = await getRegion(props.params.countryCode)
@@ -44,5 +64,12 @@ export async function WrittenReviewsWrapper(props: {
     }
   })
 
-  return <WrittenReviewsSection reviews={writtenReviews} />
+  return (
+    <WrittenReviewsSection
+      reviews={writtenReviews}
+      totalCount={reviewsData.total}
+      period={period}
+      type={type}
+    />
+  )
 }
