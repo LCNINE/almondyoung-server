@@ -126,6 +126,7 @@
     "db:push:file-service:test": "./scripts/with-ipv4.sh drizzle-kit push --config apps/file-service/src/database/drizzle/drizzle.test-config.ts",
     "db:generate:outbox-demo": "cd apps/outbox-demo && drizzle-kit generate",
     "db:push:outbox-demo": "./scripts/with-ipv4.sh drizzle-kit push --config apps/outbox-demo/drizzle.config.ts",
+    "db:push:membership": "./scripts/with-ipv4.sh drizzle-kit push --config apps/membership/drizzle.config.ts",
     "db:seed:membership": "cd apps/membership && npx tsx drizzle/seed.ts",
     "db:seed:membership:billing-test": "cd apps/membership && npx tsx drizzle/seed.ts",
     "docs:generate": "ts-node --transpile-only scripts/generate-swagger-docs.ts",
