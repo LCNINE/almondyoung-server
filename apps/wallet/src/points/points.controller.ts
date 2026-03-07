@@ -1,5 +1,5 @@
 import { Controller, Get, Req, UnauthorizedException } from '@nestjs/common';
-import { WalletJwtAuth } from '../wallet.module';
+import { WalletJwtAuth } from '../wallet-auth.decorator';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PointsAdminService, PointsBalance } from '../admin/points-admin.service';
 import { AuthenticatedRequest } from '../wallet.module';

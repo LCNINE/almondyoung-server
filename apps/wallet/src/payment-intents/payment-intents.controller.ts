@@ -20,7 +20,8 @@ import {
   TossApproveDto,
 } from './dto';
 import { RefundResponseDto } from '../refunds/dto';
-import { AuthenticatedRequest, WalletJwtAuth } from '../wallet.module';
+import { AuthenticatedRequest } from '../wallet.module';
+import { WalletJwtAuth } from '../wallet-auth.decorator';
 
 @ApiTags('Payment Intents')
 @Controller('v1/payment-intents')
