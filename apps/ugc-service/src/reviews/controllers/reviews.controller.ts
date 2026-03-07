@@ -92,6 +92,18 @@ export class ReviewsController {
     enum: ['latest', 'oldest', 'rating_high', 'rating_low'],
   })
   @ApiQuery({
+    name: 'period',
+    description: '기간 필터 (기본값: all)',
+    required: false,
+    enum: ['6months', '1year', 'all'],
+  })
+  @ApiQuery({
+    name: 'type',
+    description: '리뷰 타입 필터 (기본값: all)',
+    required: false,
+    enum: ['all', 'photo', 'text'],
+  })
+  @ApiQuery({
     name: 'page',
     description: '페이지 번호 (1부터 시작)',
     required: false,

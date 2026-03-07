@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { and, asc, count, desc, eq, inArray, isNull, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, exists, gte, inArray, isNull, notExists, type SQL } from 'drizzle-orm';
 import {
   reviewComments,
   reviewEligibilities,
@@ -520,6 +520,35 @@ export class ReviewsService {
 
       if (query.productId) {
         conditions.push(eq(reviews.productId, query.productId));
+      }
+
+      // 기간 필터
+      if (query.period && query.period !== 'all') {
+        const months = query.period === '6months' ? 6 : 12;
+        const cutoffDate = new Date();
+        cutoffDate.setMonth(cutoffDate.getMonth() - months);
+        conditions.push(gte(reviews.createdAt, cutoffDate));
+      }
+
+      // 타입 필터 (photo: 미디어 있음, text: 미디어 없음)
+      if (query.type === 'photo') {
+        conditions.push(
+          exists(
+            tx
+              .select({ one: reviewMedia.reviewId })
+              .from(reviewMedia)
+              .where(eq(reviewMedia.reviewId, reviews.id)),
+          ),
+        );
+      } else if (query.type === 'text') {
+        conditions.push(
+          notExists(
+            tx
+              .select({ one: reviewMedia.reviewId })
+              .from(reviewMedia)
+              .where(eq(reviewMedia.reviewId, reviews.id)),
+          ),
+        );
       }
 
       const whereClause = and(...conditions);
