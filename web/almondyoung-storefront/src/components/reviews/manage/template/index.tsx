@@ -7,7 +7,7 @@ import { WrittenReviewsWrapper } from "./written-reviews-wrapper"
 
 type Props = {
   params: { countryCode: string }
-  searchParams: { period?: string; type?: string }
+  searchParams: { period?: string; type?: string; page?: string }
 }
 
 export const ReviewsTemplate = async ({ params, searchParams }: Props) => {
@@ -17,7 +17,7 @@ export const ReviewsTemplate = async ({ params, searchParams }: Props) => {
       <ReviewsTabs
         writableContent={
           <Suspense fallback={<MypageReviewsSkeleton />}>
-            <WritableReviewsWrapper params={params} />
+            <WritableReviewsWrapper params={params} searchParams={searchParams} />
           </Suspense>
         }
         writtenContent={
