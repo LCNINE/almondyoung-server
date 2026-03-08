@@ -13,7 +13,7 @@ import { useMembershipPricing } from "@/hooks/use-membership-pricing"
 import { useInfiniteScroll } from "@/hooks/ui/use-infinite-scroll"
 import { getListCacheSnapshot, useListCache } from "@/hooks/ui/use-list-cache"
 import { searchProducts } from "@lib/api/pim/search"
-import { getProductList } from "@lib/api/medusa/products"
+import { listProducts } from "@lib/api/medusa/products"
 import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
 import { Spinner } from "@/components/shared/spinner"
 
@@ -192,14 +192,15 @@ export function SearchPageClient({
         }
       }
 
-      const medusaResult = await getProductList({
-        handle: masterIds,
-        limit: masterIds.length,
-        region_id: regionId,
-        includeFullVariants: true,
+      const medusaResult = await listProducts({
+        queryParams: {
+          handle: masterIds,
+          limit: masterIds.length,
+        },
+        regionId,
       })
       const orderMap = new Map(masterIds.map((id, idx) => [id, idx]))
-      const sortedProducts = [...medusaResult.products].sort((a, b) => {
+      const sortedProducts = [...medusaResult.response.products].sort((a, b) => {
         const orderA = orderMap.get(a.handle ?? "") ?? Infinity
         const orderB = orderMap.get(b.handle ?? "") ?? Infinity
         return orderA - orderB

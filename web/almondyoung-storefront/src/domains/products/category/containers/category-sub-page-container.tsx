@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation"
 import { CategorySubPageClient } from "../components/category-sub-page-client"
 import { getCategoryByHandle } from "@lib/api/medusa/categories"
-import { getProductList } from "@lib/api/medusa/products"
+import { listProducts } from "@lib/api/medusa/products"
 import { getRegion } from "@lib/api/medusa/regions"
 import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
 import type { StoreProductCategoryTree } from "@lib/types/medusa-category"
@@ -45,15 +45,16 @@ export async function CategorySubPageContainer({
 
   try {
     const categoryIds = collectCategoryIds(categoryData)
-    const productsResult = await getProductList({
-      page: 1,
-      limit: 20,
-      categoryId: categoryIds,
-      region_id: region?.id,
-      includeFullVariants: true,
+    const productsResult = await listProducts({
+      pageParam: 1,
+      queryParams: {
+        limit: 20,
+        category_id: categoryIds,
+      },
+      regionId: region?.id,
     })
-    initialProducts = mapStoreProductsToCardProps(productsResult.products)
-    initialTotal = productsResult.count
+    initialProducts = mapStoreProductsToCardProps(productsResult.response.products)
+    initialTotal = productsResult.response.count
     console.log(`✅ [CategorySubPageContainer] 상품 목록 로드 완료:`, {
       itemCount: initialProducts.length,
       total: initialTotal,

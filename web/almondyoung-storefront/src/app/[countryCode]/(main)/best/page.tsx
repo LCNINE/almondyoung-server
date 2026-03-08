@@ -7,7 +7,7 @@ import RankedKeywordList, {
 } from "domains/best/components/ranked-keyword-list"
 import RankedHeader from "domains/best/components/ranked-header"
 import ScrollToTopButton from "./components/scroll-to-top-button"
-import { getProductList } from "@lib/api/medusa/products"
+import { listProducts } from "@lib/api/medusa/products"
 import { getRegion } from "@lib/api/medusa/regions"
 import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
 
@@ -30,14 +30,14 @@ export default async function BestPage({
 
   // TODO: 실제 베스트 상품 API로 교체
   // 현재는 최신 상품 20개를 가져옴 (임시)
-  const bestProductsResult = await getProductList({
-    page: 1,
-    limit: 20,
-    region_id: region?.id,
+  const bestProductsResult = await listProducts({
+    pageParam: 1,
+    queryParams: { limit: 20 },
+    countryCode,
   })
 
   const mappedProducts = mapStoreProductsToCardProps(
-    bestProductsResult.products.slice(0, 5)
+    bestProductsResult.response.products.slice(0, 5)
   )
 
   // TODO: 백엔드에 검색 키워드 랭킹 API 추가 필요

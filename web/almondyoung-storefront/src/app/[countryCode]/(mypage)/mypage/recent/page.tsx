@@ -2,7 +2,7 @@ import { PageTitle } from "@/components/shared/page-title"
 import { WithHeaderLayout } from "@components/layout"
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { getRecentViews } from "@lib/api/users/recent-views"
-import { getProductList } from "@lib/api/medusa/products"
+import { listProducts } from "@lib/api/medusa/products"
 import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
 import { Eye } from "lucide-react"
 import { RecentContainer } from "./recent-container"
@@ -58,14 +58,17 @@ async function RecentViewsManager({ countryCode }: { countryCode: string }) {
   const productIds = recentViews.map((view) => view.productId)
 
   try {
-    const productsResult = await getProductList({
-      handle: productIds,
-      limit: productIds.length,
+    const productsResult = await listProducts({
+      countryCode,
+      queryParams: {
+        handle: productIds,
+        limit: productIds.length,
+      },
     })
 
     // 최근 본 순서 유지하면서 상품 매핑
     const productsMap = new Map(
-      productsResult.products.map((p: any) => [p.id, p])
+      productsResult.response.products.map((p: any) => [p.id, p])
     )
 
     const orderedProducts = productIds

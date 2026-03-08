@@ -5,7 +5,7 @@ import {
   ProductListCardSkeleton,
 } from "@/components/products/product-list-card"
 import { useWishlist } from "@/contexts/wishlist-context"
-import { getProductList } from "@lib/api/medusa/products"
+import { listProducts } from "@lib/api/medusa/products"
 import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
 import { useEffect, useState, useTransition } from "react"
 import type { ProductCardProps } from "@lib/types/ui/product"
@@ -48,12 +48,15 @@ export function WishlistContainer({ countryCode }: WishlistContainerProps) {
           return
         }
 
-        const productsResult = await getProductList({
-          id: productIds,
-          limit: productIds.length,
+        const productsResult = await listProducts({
+          countryCode,
+          queryParams: {
+            id: productIds,
+            limit: productIds.length,
+          },
         })
 
-        const mappedProducts = mapStoreProductsToCardProps(productsResult.products)
+        const mappedProducts = mapStoreProductsToCardProps(productsResult.response.products)
         setProducts(mappedProducts)
       } catch (err) {
         console.error("위시리스트 로드 실패:", err)

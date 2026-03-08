@@ -16,7 +16,7 @@ import {
   useState,
   useTransition,
 } from "react"
-import { getProductList } from "@lib/api/medusa/products"
+import { listProducts } from "@lib/api/medusa/products"
 import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
 import { cn } from "@lib/utils"
 import { useUser } from "@/contexts/user-context"
@@ -280,23 +280,24 @@ export function CategoryPageClient({
   const fetchProductsPage = useCallback(
     async (page: number) => {
       const sortOrder = getApiOrderForSort(currentSort)
-      const result = await getProductList({
-        page,
-        limit: currentLimit,
-        categoryId: categoryIds,
-        region_id: regionId,
-        order: sortOrder,
-        includeFullVariants: true,
+      const result = await listProducts({
+        pageParam: page,
+        queryParams: {
+          limit: currentLimit,
+          category_id: categoryIds,
+          order: sortOrder,
+        },
+        regionId,
       })
 
-      const mappedProducts = mapStoreProductsToCardProps(result.products)
+      const mappedProducts = mapStoreProductsToCardProps(result.response.products)
       return {
         products: sortProductsByOption(
           mappedProducts,
           currentSort,
           isMembershipPricing
         ),
-        total: result.count,
+        total: result.response.count,
       }
     },
     [categoryIds, currentLimit, currentSort, isMembershipPricing, regionId]

@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation"
 import { CategoryPageClient } from "../components/category-page-client"
 import { getCategoryTree } from "@lib/api/medusa/categories"
-import { getProductList } from "@lib/api/medusa/products"
+import { listProducts } from "@lib/api/medusa/products"
 import { getRegion } from "@lib/api/medusa/regions"
 import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
 import type { StoreProductCategoryTree } from "@lib/types/medusa-category"
@@ -45,15 +45,16 @@ export async function CategoryPageContainer({
   const categoryIds = collectCategoryIds(categoryData)
 
   try {
-    const productsResult = await getProductList({
-      page: 1,
-      limit: 20,
-      categoryId: categoryIds,
-      region_id: region?.id,
-      includeFullVariants: true,
+    const productsResult = await listProducts({
+      pageParam: 1,
+      queryParams: {
+        limit: 20,
+        category_id: categoryIds,
+      },
+      regionId: region?.id,
     })
-    initialProducts = mapStoreProductsToCardProps(productsResult.products)
-    initialTotal = productsResult.count
+    initialProducts = mapStoreProductsToCardProps(productsResult.response.products)
+    initialTotal = productsResult.response.count
   } catch (error) {
     console.error("❌ [CategoryPageContainer] 상품 목록 로드 실패:", error)
     // 에러 발생 시 빈 배열로 계속 진행
