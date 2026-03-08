@@ -5,15 +5,15 @@ import { useMemo } from "react"
 import ProductFilterSidebar from "@/components/products/product-filter-sidebar"
 import type { StoreProductCategoryTree } from "@lib/types/medusa-category"
 
-interface CategorySidebarWrapperProps {
+interface CategorySidebarProps {
   categories: StoreProductCategoryTree[]
   countryCode: string
 }
 
-export function CategorySidebarWrapper({
+export function CategorySidebar({
   categories,
   countryCode,
-}: CategorySidebarWrapperProps) {
+}: CategorySidebarProps) {
   const pathname = usePathname()
 
   const currentCategoryId = useMemo(() => {
