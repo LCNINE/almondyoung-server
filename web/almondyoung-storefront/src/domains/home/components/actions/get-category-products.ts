@@ -1,7 +1,7 @@
 "use server"
 
 import { unstable_cache } from "next/cache"
-import { getProductList } from "@/lib/api/medusa/products"
+import { listProducts } from "@/lib/api/medusa/products"
 import { getCategoryTree } from "@/lib/api/medusa/categories"
 import { ProductCardProps } from "@/lib/types/ui/product"
 import type { StoreProductCategoryTree } from "@/lib/types/medusa-category"
@@ -55,13 +55,15 @@ const fetchCategoryBestProducts = async (
   const categoryIds = category ? collectCategoryIds(category) : [categoryId]
 
   // TODO: 베스트 선정 로직 없는 채로 뭉갠 부분
-  const bestProducts = await getProductList({
-    categoryId: categoryIds,
-    limit,
-    region_id: regionId,
+  const bestProducts = await listProducts({
+    queryParams: {
+      category_id: categoryIds,
+      limit,
+    },
+    regionId,
   })
 
-  return mapStoreProductsToCardProps(bestProducts.products || [])
+  return mapStoreProductsToCardProps(bestProducts.response.products || [])
 }
 
 export const getCategoryBestProducts = async (
@@ -93,21 +95,23 @@ const fetchCategoryProducts = async (
     return []
   }
 
-  const list = await getProductList({
-    categoryId,
-    region_id: regionId,
-    limit,
+  const list = await listProducts({
+    queryParams: {
+      category_id: categoryId,
+      limit,
+    },
+    regionId,
   })
 
-  if (!list?.products || list.products.length === 0) {
-    const fallbackList = await getProductList({
-      region_id: regionId,
-      limit,
+  if (!list?.response.products || list.response.products.length === 0) {
+    const fallbackList = await listProducts({
+      queryParams: { limit },
+      regionId,
     })
-    return mapStoreProductsToCardProps(fallbackList.products || [])
+    return mapStoreProductsToCardProps(fallbackList.response.products || [])
   }
 
-  return mapStoreProductsToCardProps(list.products)
+  return mapStoreProductsToCardProps(list.response.products)
 }
 
 export const getCategoryProducts = async (
@@ -143,13 +147,15 @@ const fetchTimeSaleProducts = async (
   const category = findCategoryById(categoryTree, categoryId)
   const categoryIds = category ? collectCategoryIds(category) : [categoryId]
 
-  const list = await getProductList({
-    categoryId: categoryIds,
-    region_id: regionId,
-    limit: Math.max(limit, 24),
+  const list = await listProducts({
+    queryParams: {
+      category_id: categoryIds,
+      limit: Math.max(limit, 24),
+    },
+    regionId,
   })
 
-  const timeSaleProducts = (list.products || []).filter(isTimeSaleProduct)
+  const timeSaleProducts = (list.response.products || []).filter(isTimeSaleProduct)
 
   if (timeSaleProducts.length === 0) {
     return []

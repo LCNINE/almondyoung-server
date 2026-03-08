@@ -1,6 +1,6 @@
 import { SearchPageClient } from "../components/search-page-client"
 import { searchProducts } from "@lib/api/pim/search"
-import { getProductList } from "@lib/api/medusa/products"
+import { listProducts } from "@lib/api/medusa/products"
 import { getRegion } from "@lib/api/medusa/regions"
 import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
 import type { ProductCardProps, SearchProductResult } from "@lib/types/ui/product"
@@ -70,16 +70,17 @@ export async function SearchContainer({
 
         if (masterIds.length > 0) {
           // 3. medusa에서 handle로 상품 조회
-          const medusaResult = await getProductList({
-            handle: masterIds,
-            limit: masterIds.length,
-            region_id: region?.id,
-            includeFullVariants: true,
+          const medusaResult = await listProducts({
+            queryParams: {
+              handle: masterIds,
+              limit: masterIds.length,
+            },
+            regionId: region?.id,
           })
 
           // 4. 검색 순서대로 정렬 (검색 관련도 유지)
           const orderMap = new Map(masterIds.map((id, idx) => [id, idx]))
-          const sortedProducts = [...medusaResult.products].sort((a, b) => {
+          const sortedProducts = [...medusaResult.response.products].sort((a, b) => {
             const orderA = orderMap.get(a.handle ?? "") ?? Infinity
             const orderB = orderMap.get(b.handle ?? "") ?? Infinity
             return orderA - orderB

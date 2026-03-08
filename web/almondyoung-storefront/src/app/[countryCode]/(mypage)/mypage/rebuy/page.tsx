@@ -3,7 +3,7 @@ import { PageTitle } from "@/components/shared/page-title"
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { WithHeaderLayout } from "@components/layout"
 import { getOrders } from "@lib/api/medusa/orders"
-import { getProductList } from "@lib/api/medusa/products"
+import { listProducts } from "@lib/api/medusa/products"
 import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
 import { Package } from "lucide-react"
 import { RebuyContainer } from "./rebuy-container"
@@ -100,14 +100,17 @@ async function RebuyProductsList({ countryCode }: { countryCode: string }) {
     }
 
     // 4. 상품 정보 조회
-    const productsResult = await getProductList({
-      handle: sortedProducts,
-      limit: sortedProducts.length,
+    const productsResult = await listProducts({
+      countryCode,
+      queryParams: {
+        handle: sortedProducts,
+        limit: sortedProducts.length,
+      },
     })
 
     // 5. 구매 빈도 순서 유지하면서 매핑
     const productsMap = new Map(
-      productsResult.products.map((p: any) => [p.id, p])
+      productsResult.response.products.map((p: any) => [p.id, p])
     )
 
     const orderedProducts = sortedProducts
