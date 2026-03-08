@@ -92,6 +92,10 @@ export function mapStoreProductToCardProps(
     ? Infinity
     : variants.reduce((sum, v) => sum + (v.inventory_quantity || 0), 0)
 
+  const isMembershipOnly =
+    product.metadata?.isMembershipOnly === true ||
+    product.metadata?.isMembershipOnly === "true"
+
   return {
     title: product.title || "",
     id: product.id,
@@ -104,6 +108,7 @@ export function mapStoreProductToCardProps(
     imageSrc: imageUrl,
     membershipSavings,
     showMembershipHint,
+    isMembershipOnly,
     manageInventory: !hasUnmanagedVariant,
     available: hasAnyStock ? totalAvailable : 0,
     debugPrices: {

@@ -73,6 +73,7 @@ export interface ProductCardProps {
   imageSrc: string
   membershipSavings?: number
   showMembershipHint?: boolean
+  isMembershipOnly?: boolean
   available: number
   manageInventory: boolean
   debugPrices?: {

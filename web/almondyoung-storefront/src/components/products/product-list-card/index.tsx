@@ -17,6 +17,7 @@ export interface ProductListCardProps {
   originalPrice: number
   discount: number
   membershipSavings?: number
+  isMembershipOnly?: boolean
   available: number
   manageInventory: boolean
   restockDate?: string
@@ -41,6 +42,7 @@ export function ProductListCard({
   originalPrice,
   discount,
   membershipSavings,
+  isMembershipOnly,
   available,
   manageInventory,
   restockDate,
@@ -134,6 +136,7 @@ export function ProductListCard({
                 showMembershipBadge={showMembershipBadge}
                 membershipPrice={membershipPrice}
                 isMember={isMember}
+                isMembershipOnly={isMembershipOnly}
               />
               {/* 잔여수량 */}
               {manageInventory && available > 0 && available <= 10 && (

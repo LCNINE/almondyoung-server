@@ -19,6 +19,7 @@ export function ProductInfo({
   rating,
   reviewCount,
   membershipSavings,
+  isMembershipOnly,
   showMembershipHint: _showMembershipHint,
 }: Omit<ProductCardProps, "imageSrc" | "rank">) {
   const { isMembershipPricing } = useMembershipPricing()
@@ -93,6 +94,7 @@ export function ProductInfo({
           showMembershipBadge={showMembershipBadge}
           membershipPrice={membershipPrice}
           isMember={isMember}
+          isMembershipOnly={isMembershipOnly}
         />
       </div>
 

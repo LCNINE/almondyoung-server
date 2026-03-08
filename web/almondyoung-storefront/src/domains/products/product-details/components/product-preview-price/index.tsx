@@ -12,6 +12,10 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
 
   if (!cheapestPrice) return null
 
+  const isMembershipOnly =
+    product.metadata?.isMembershipOnly === true ||
+    product.metadata?.isMembershipOnly === "true"
+
   const membershipPrice = product.variants?.[0]?.metadata?.membershipPrice as
     | number
     | undefined
@@ -85,18 +89,20 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">
             <ProductMembershipBadge size="md" label="멤버십할인가" />
-            {membershipDiscountRate > 0 && (
+            {!isMembershipOnly && membershipDiscountRate > 0 && (
               <span className="text-primary text-sm font-semibold">
                 {membershipDiscountRate}% OFF
               </span>
             )}
             <span className="text-primary text-lg font-bold">
-              {membershipPrice.toLocaleString()}원
+              {isMembershipOnly ? "멤버십 회원 공개" : `${membershipPrice.toLocaleString()}원`}
             </span>
           </div>
-          <p className="text-primary text-xs font-medium">
-            멤버십 가입 시 {membershipSavings.toLocaleString()}원 절약
-          </p>
+          {!isMembershipOnly && (
+            <p className="text-primary text-xs font-medium">
+              멤버십 가입 시 {membershipSavings.toLocaleString()}원 절약
+            </p>
+          )}
         </div>
       )}
     </div>
