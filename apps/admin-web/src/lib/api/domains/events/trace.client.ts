@@ -2,10 +2,15 @@ import { client } from '../../client';
 
 export interface TraceLink {
   id: string;
+  eventId: string;
   chainId: string;
+  eventType: string;
   resourceType: string;
   resourceId: string;
-  eventType: string;
+  direction: 'CAUSE' | 'EFFECT';
+  action: string | null;
+  description: string | null;
+  serviceName: string | null;
   createdAt: string;
 }
 

@@ -19,6 +19,8 @@ interface ResourceListTableProps {
   limit: number;
   onPageChange: (page: number) => void;
   onLimitChange?: (limit: number) => void;
+  resourceType?: string;
+  onRowClick?: (resourceId: string) => void;
 }
 
 export function ResourceListTable({
@@ -29,6 +31,7 @@ export function ResourceListTable({
   limit,
   onPageChange,
   onLimitChange,
+  onRowClick,
 }: ResourceListTableProps) {
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
@@ -59,7 +62,11 @@ export function ResourceListTable({
         </TableHeader>
         <TableBody>
           {resources.map((r, idx) => (
-            <TableRow key={r.resourceId}>
+            <TableRow
+              key={r.resourceId}
+              className={onRowClick ? 'cursor-pointer hover:bg-blue-50' : ''}
+              onClick={() => onRowClick?.(r.resourceId)}
+            >
               <TableCell className="text-gray-500 text-sm">
                 {(page - 1) * limit + idx + 1}
               </TableCell>
