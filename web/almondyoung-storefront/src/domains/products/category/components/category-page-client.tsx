@@ -147,6 +147,7 @@ export function CategoryPageClient({
   const { isMembershipPricing } = useMembershipPricing()
   const isLoggedIn = !!user
   const isLoadingMoreRef = useRef(false)
+  const isInfiniteScrollUpdateRef = useRef(false)
 
   const currentSort = useMemo(() => {
     const sort = searchParams.get("sort")
@@ -305,6 +306,12 @@ export function CategoryPageClient({
 
   // 정렬/개수/카테고리 변경 시 데이터 로드
   useEffect(() => {
+    // 무한 스크롤로 인한 URL 업데이트는 스킵 (loadMore에서 이미 데이터를 로드함)
+    if (isInfiniteScrollUpdateRef.current) {
+      isInfiniteScrollUpdateRef.current = false
+      return
+    }
+
     const cached = getListCacheSnapshot<ProductCardProps>(
       cacheKey,
       CACHE_TTL_MS
@@ -400,6 +407,7 @@ export function CategoryPageClient({
       )
       setTotal(nextTotal)
       setCurrentPage(nextPage)
+      isInfiniteScrollUpdateRef.current = true
       setUrlPage(nextPage)
     } catch (error) {
       console.error("상품 추가 로드 실패:", error)
