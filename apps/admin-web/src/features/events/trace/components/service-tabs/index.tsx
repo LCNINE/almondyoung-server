@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { ResourceListTable } from '../resource-list-table';
@@ -36,6 +37,7 @@ function ServiceTabPanel({
   onPageChange,
   onLimitChange,
 }: ServiceTabPanelProps) {
+  const router = useRouter();
   const offset = (page - 1) * limit;
   const { data, isFetching } = useTracedResources(resourceType, serviceName, limit, offset);
 
@@ -52,6 +54,12 @@ function ServiceTabPanel({
       limit={limit}
       onPageChange={onPageChange}
       onLimitChange={onLimitChange}
+      resourceType={resourceType}
+      onRowClick={(resourceId) =>
+        router.push(
+          `/events/trace/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceId)}`
+        )
+      }
     />
   );
 }
