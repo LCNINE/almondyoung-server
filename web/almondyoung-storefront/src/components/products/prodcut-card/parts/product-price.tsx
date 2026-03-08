@@ -9,6 +9,7 @@ export function ProductPrice({
   showMembershipBadge,
   membershipPrice,
   isMember,
+  isMembershipOnly,
 }: {
   price: number
   originalPrice: number
@@ -18,6 +19,7 @@ export function ProductPrice({
   showMembershipBadge?: boolean
   membershipPrice?: number
   isMember: boolean
+  isMembershipOnly?: boolean
 }) {
   // 멤버십 회원이고 할인이 있는 경우에만 할인 정보 표시
   const showDiscountInfo = discount > 0 && showMembershipBadge
@@ -41,7 +43,14 @@ export function ProductPrice({
           <ProductMembershipBadge size="sm" label="멤버십할인가" />
         )}
       </div>
+      {!isMember && isMembershipOnly && (
+        <div className="flex flex-col gap-0.5 text-[#F2994A]">
+          <ProductMembershipBadge size="sm" label="멤버십할인가" />
+          <span className="text-[15px] font-bold">멤버십 회원 공개</span>
+        </div>
+      )}
       {!isMember &&
+        !isMembershipOnly &&
         membershipPrice != null &&
         membershipPrice > 0 &&
         membershipSavings != null && (

@@ -103,6 +103,7 @@ export function RecentContainer({ products, countryCode }: RecentContainerProps)
             originalPrice={product.originalPrice}
             discount={product.discount}
             membershipSavings={product.membershipSavings}
+            isMembershipOnly={product.isMembershipOnly}
             available={product.available}
             manageInventory={product.manageInventory}
             countryCode={countryCode}

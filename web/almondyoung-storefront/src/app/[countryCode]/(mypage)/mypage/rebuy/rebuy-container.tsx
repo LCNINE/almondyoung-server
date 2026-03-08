@@ -101,6 +101,7 @@ export function RebuyContainer({ products, countryCode }: RebuyContainerProps) {
             originalPrice={product.originalPrice}
             discount={product.discount}
             membershipSavings={product.membershipSavings}
+            isMembershipOnly={product.isMembershipOnly}
             available={product.available}
             manageInventory={product.manageInventory}
             countryCode={countryCode}
