@@ -98,6 +98,16 @@ const getBreadcrumbItems = (pathname: string): BreadcrumbItem[] => {
   else if (pathname.startsWith('/membership/')) {
     items.push({ label: '멤버십 관리' });
   }
+  // 이벤트 추적 관련 페이지들
+  else if (pathname.startsWith('/events/trace/')) {
+    const parts = pathname.split('/').filter(Boolean);
+    const resType = decodeURIComponent(parts[2] ?? '');
+    const resId = decodeURIComponent(parts[3] ?? '');
+    items.push({ label: '이벤트 추적', href: '/events/trace' });
+    if (resType && resId) items.push({ label: `${resType} / ${resId}` });
+  } else if (pathname === '/events/trace') {
+    items.push({ label: '이벤트 추적' });
+  }
 
   return items;
 };
