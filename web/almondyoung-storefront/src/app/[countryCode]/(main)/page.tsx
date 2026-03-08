@@ -4,9 +4,7 @@ import { getRegion } from "@/lib/api/medusa/regions"
 import { siteConfig } from "@/lib/config/site"
 import { getSEOTags } from "@/lib/seo"
 import ProtectedRoute from "@components/protected-route"
-import { getCategoryTree } from "@/lib/api/medusa/categories"
 import { fetchMe } from "@lib/api/users/me"
-import type { StoreProductCategoryTree } from "@/lib/types/medusa-category"
 import { HomeLogoutTemplate } from "domains/home/template/home-logout-template"
 import { shouldShowSurvey } from "@/lib/utils/should-show-survey"
 import { SurveyPromptBanner } from "@/components/survey-prompt-banner"
@@ -24,26 +22,17 @@ export default async function Home({
 }) {
   const { countryCode } = await params
   const region = await getRegion(countryCode)
-
-  // 카테고리 트리 조회
-  let categories: StoreProductCategoryTree[] = []
-
-  categories = await getCategoryTree().catch(() => [])
-
   const user = await fetchMe().catch(() => null)
   const showSurvey: boolean = shouldShowSurvey(user)
+
   return (
     <ProtectedRoute>
       {/* {user ? (
         <HomeLoggedInTemplate user={user} />
       ) : (
-        <HomeLogoutTemplate initialCategories={categories} />
+        <HomeLogoutTemplate />
       )} */}
-      <HomeLogoutTemplate
-        initialCategories={categories}
-        regionId={region?.id}
-        user={user}
-      />
+      <HomeLogoutTemplate regionId={region?.id} user={user} />
 
       {/* 설문 유도 배너 */}
       {showSurvey && <SurveyPromptBanner countryCode={countryCode} />}

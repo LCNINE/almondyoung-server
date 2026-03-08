@@ -5,7 +5,6 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { useDraggableScroll } from "@/hooks/ui/use-draggable-scroll"
 import { ProductCardProps } from "@/lib/types/ui/product"
-import type { StoreProductCategoryTree } from "@/lib/types/medusa-category"
 import { AnimatePresence, motion } from "framer-motion"
 import { Package } from "lucide-react"
 import { chunk } from "lodash"
@@ -18,6 +17,7 @@ import { getCategoryBestProducts } from "../../actions/get-category-products"
 import { SectionHeader } from "../../header/section-header"
 import { ProductCarousel } from "../../shared/product-carousel"
 import { CategoryTabs } from "./category-tabs"
+import { FIXED_CATEGORIES } from "@/lib/constants/categories"
 import { useUser } from "@/contexts/user-context"
 
 function CategoryBestSkeletonCard({ className }: { className?: string }) {
@@ -60,13 +60,11 @@ function CategoryBestSkeletonGrid() {
 }
 
 interface CategoryBestSectionProps {
-  initialCategories: StoreProductCategoryTree[]
   initialProducts: ProductCardProps[] | undefined
   regionId?: string
 }
 
 export function CategoryBestSection({
-  initialCategories,
   initialProducts,
   regionId,
 }: CategoryBestSectionProps) {
@@ -76,7 +74,8 @@ export function CategoryBestSection({
   const { user } = useUser()
   const isLoggedIn = !!user
 
-  const bestCategories = initialCategories.slice(0, 7)
+  // 고정된 카테고리 사용
+  const bestCategories = FIXED_CATEGORIES
   const [products, setProducts] = useState<ProductCardProps[]>(
     initialProducts || []
   )

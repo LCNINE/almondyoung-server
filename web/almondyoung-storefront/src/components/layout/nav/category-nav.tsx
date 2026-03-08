@@ -1,6 +1,5 @@
 "use client"
 
-import type { StoreProductCategoryTree } from "@lib/types/medusa-category"
 import { cn } from "@lib/utils"
 import { motion } from "framer-motion"
 import Link from "next/link"
@@ -14,7 +13,7 @@ import { useRef, useState } from "react"
 export function CategoryNavigation({
   mainCategories,
 }: {
-  mainCategories: StoreProductCategoryTree[]
+  mainCategories: readonly { name: string; handle: string }[]
 }) {
   const { countryCode } = useParams()
   const pathname = usePathname()
