@@ -45,7 +45,10 @@ export function ReviewHelpfulButton({
       const message =
         error instanceof ApiAuthError ? error.message : String(error)
 
-      if (message.includes("Unauthorized")) {
+      if (
+        message.includes("Unauthorized") ||
+        message.includes("UNAUTHORIZED")
+      ) {
         const confirmed = window.confirm(
           "로그인이 필요해요. 로그인 페이지로 이동하시겠어요?"
         )
