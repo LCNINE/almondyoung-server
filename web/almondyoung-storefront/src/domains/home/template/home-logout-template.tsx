@@ -1,4 +1,3 @@
-import type { StoreProductCategoryTree } from "@/lib/types/medusa-category"
 import { Suspense } from "react"
 import { HeroBanner } from "../components/banner/hero-banner"
 import { LoginPromptBanner } from "../components/banner/login-prompt-banner"
@@ -125,7 +124,6 @@ import { CategoryBestSectionSkeleton } from "@/components/skeletons/page-skeleto
 // import { getTimeSaleProducts } from "../components/actions/get-category-products"
 
 interface HomeLogoutTemplateProps {
-  initialCategories: StoreProductCategoryTree[]
   regionId?: string
   user: UserDetail | null
 }
@@ -134,7 +132,6 @@ interface HomeLogoutTemplateProps {
  * 비로그인 사용자용
  *─────────────────*/
 export async function HomeLogoutTemplate({
-  initialCategories,
   regionId,
   user,
 }: HomeLogoutTemplateProps) {
@@ -222,10 +219,7 @@ export async function HomeLogoutTemplate({
       {/* 카테고리별 제품 섹션  */}
       <ProductListSection>
         <Suspense fallback={<CategoryBestSectionSkeleton />}>
-          <CategoryBestSectionContainer
-            initialCategories={initialCategories}
-            regionId={regionId}
-          />
+          <CategoryBestSectionContainer regionId={regionId} />
         </Suspense>
       </ProductListSection>
 
