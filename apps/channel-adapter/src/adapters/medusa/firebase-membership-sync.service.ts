@@ -32,27 +32,25 @@ export class FirebaseMembershipSyncService {
       return;
     }
 
-    // email이 없으면 user-service에서 조회
-    let resolvedEmail = email;
-    if (!resolvedEmail) {
-      const linkInfo = await this.userServiceClient.getLinkInfo(cafe24MemberId);
-      if (!linkInfo) {
-        this.logger.log(
-          `user-service에 cafe24MemberId=${cafe24MemberId} 연동 정보 없음. Medusa 동기화 건너뜁니다.`,
-        );
-        await this.eventTrackingService.trackEffect({
-          resourceType: 'FirebaseMembership',
-          resourceId: cafe24MemberId,
-          action: 'SKIPPED',
-          description: 'user-service 연동 정보 없음',
-          eventType: 'FirebaseMembershipSync',
-        }).catch((e) => this.logger.warn(`trackEffect 실패: ${e?.message}`));
-        return;
-      }
-      resolvedEmail = linkInfo.email;
+    // user-service에서 userId + email 조회 (almond_user_id 기반 매핑에 필요)
+    const linkInfo = await this.userServiceClient.getLinkInfo(cafe24MemberId);
+    if (!linkInfo) {
+      this.logger.log(
+        `user-service에 cafe24MemberId=${cafe24MemberId} 연동 정보 없음. Medusa 동기화 건너뜁니다.`,
+      );
+      await this.eventTrackingService.trackEffect({
+        resourceType: 'FirebaseMembership',
+        resourceId: cafe24MemberId,
+        action: 'SKIPPED',
+        description: 'user-service 연동 정보 없음',
+        eventType: 'FirebaseMembershipSync',
+      }).catch((e) => this.logger.warn(`trackEffect 실패: ${e?.message}`));
+      return;
     }
+    const resolvedEmail = linkInfo.email;
+    const almondUserId = linkInfo.userId;
 
-    const customer = await this.medusaClient.findCustomerByEmail(resolvedEmail);
+    const customer = await this.medusaClient.findCustomerByAlmondUserId(almondUserId);
     if (!customer) {
       this.logger.log(
         `Medusa 고객 없음 (email=${resolvedEmail}, cafe24MemberId=${cafe24MemberId}). 건너뜁니다.`,

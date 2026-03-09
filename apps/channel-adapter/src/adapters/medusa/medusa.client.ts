@@ -1183,6 +1183,26 @@ export class MedusaClient {
         }
     }
 
+    async findCustomerByAlmondUserId(almondUserId: string): Promise<HttpTypes.AdminCustomer | null> {
+        try {
+            const { customer } = await this.sdk.client.fetch<{ customer: HttpTypes.AdminCustomer }>(
+                `/admin/customers/by-almond-user/${encodeURIComponent(almondUserId)}`,
+                { method: 'GET' },
+            );
+            return customer ?? null;
+        } catch (error) {
+            const fetchError = error as FetchError;
+            if (fetchError.status === 404) {
+                this.logger.log(`findCustomerByAlmondUserId: no customer found for almond_user_id=${almondUserId}`);
+                return null;
+            }
+            this.logger.warn(
+                `Medusa findCustomerByAlmondUserId failed (almondUserId=${almondUserId}): ${fetchError.message} (status=${fetchError.status})`,
+            );
+            return null;
+        }
+    }
+
     async addCustomerToGroup(customerId: string, groupId: string): Promise<void> {
         try {
             await this.sdk.admin.customer.batchCustomerGroups(customerId, {
