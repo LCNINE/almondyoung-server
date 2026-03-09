@@ -40,9 +40,10 @@ export class UserServiceClient {
     const url = `${this.getBaseUrl()}/cafe24/internal/link-info?mallId=${encodeURIComponent(mallId)}&cafe24MemberId=${encodeURIComponent(cafe24MemberId)}`;
     try {
       const response = await firstValueFrom(
-        this.httpService.get<Cafe24LinkInfo>(url),
+        this.httpService.get<{ success: boolean; data: Cafe24LinkInfo }>(url),
       );
-      return response.data;
+      // user-service ResponseInterceptor wraps responses in { success, data }
+      return response.data?.data ?? null;
     } catch (error) {
       const status = error?.response?.status;
       if (status === 404) {
@@ -62,9 +63,10 @@ export class UserServiceClient {
     const url = `${this.getBaseUrl()}/cafe24/internal/links?mallId=${encodeURIComponent(mallId)}`;
     try {
       const response = await firstValueFrom(
-        this.httpService.get<Cafe24LinkEntry[]>(url),
+        this.httpService.get<{ success: boolean; data: Cafe24LinkEntry[] }>(url),
       );
-      return response.data ?? [];
+      // user-service ResponseInterceptor wraps responses in { success, data }
+      return response.data?.data ?? [];
     } catch (error) {
       this.logger.error(`getAllLinks 실패: ${error?.message}`);
       throw error;
