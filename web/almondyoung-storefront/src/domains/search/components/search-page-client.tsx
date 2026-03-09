@@ -78,6 +78,7 @@ export function SearchPageClient({
         brands.join(",") || "brand-none",
         minPrice?.toString() ?? "min-none",
         maxPrice?.toString() ?? "max-none",
+        isMembershipPricing ? "membership" : "non-membership",
       ].join("|"),
     [
       brands,
@@ -85,6 +86,7 @@ export function SearchPageClient({
       countryCode,
       currentSize,
       currentSort,
+      isMembershipPricing,
       keyword,
       maxPrice,
       minPrice,
