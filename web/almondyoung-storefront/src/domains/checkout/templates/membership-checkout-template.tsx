@@ -1,21 +1,15 @@
 "use client"
 
-import { PinRequiredModal } from "@/domains/checkout/components/modals/pin-required-modal"
-import { PinVerifyModal } from "@/domains/checkout/components/modals/pin-verify-modal"
-import { PaymentMethodSection } from "@/domains/checkout/components/sections/payment-method"
 import { PaymentTotalSection } from "@/domains/checkout/components/sections/payment-total"
-import { usePinStatus } from "@/hooks/api/use-pin-status"
-import { createIntent } from "@/lib/api/wallet"
+import { createMembershipCheckoutIntent } from "@/lib/api/membership/client"
 import type { CartTotals } from "@/lib/types/ui/cart"
 import type { UserDetail } from "@lib/types/ui/user"
-import { getCleanKoreanNumber } from "@/lib/utils/format-phone-number"
-import { loadTossPayments } from "@tosspayments/tosspayments-sdk"
 import { MobileCTA, PCFixedCTA } from "domains/checkout/components/cta"
 import { MobileHeader, PCHeader } from "domains/checkout/components/header"
 import { MobileOrderSummary } from "domains/checkout/components/order-summary"
 import { PaymentDetailSidebar } from "domains/checkout/components/payment-detail-sidebar"
 import { useParams, useRouter } from "next/navigation"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useMemo, useState } from "react"
 import { toast } from "sonner"
 
 interface MembershipCheckoutTemplateProps {
@@ -35,17 +29,8 @@ export default function MembershipCheckoutTemplate({
   const params = useParams()
   const countryCode = params.countryCode as string
 
-  const { pinStatus, fetchPinStatus } = usePinStatus()
-  const [selectedMethod, setSelectedMethod] = useState("toss")
   const [loading, setLoading] = useState(false)
   const [isPaymentDetailsOpen, setIsPaymentDetailsOpen] = useState(true)
-  const [pinRequiredModalOpen, setPinRequiredModalOpen] = useState(false)
-  const [pinVerifyModalOpen, setPinVerifyModalOpen] = useState(false)
-  const tossPaymentRef = useRef<any>(null)
-
-  useEffect(() => {
-    fetchPinStatus()
-  }, [fetchPinStatus])
 
   const totals: CartTotals = useMemo(
     () => ({
@@ -61,92 +46,27 @@ export default function MembershipCheckoutTemplate({
     [price]
   )
 
-  const initializeTossPayment = async () => {
-    if (!user?.id) {
-      throw new Error("로그인이 필요합니다.")
-    }
-
-    const intent = await createIntent({
-      data: {
-        customerId: user.id,
-        originalAmount: totals.finalTotal,
-        discountAmount: 0,
-        type: "MEMBERSHIP_FEE",
-      },
-    })
-
-    const clientKey =
-      process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY ||
-      "test_ck_pP2YxJ4K87ZZmMga5K59rRGZwXLO"
-    const tossPayments = await loadTossPayments(clientKey)
-    const payment = tossPayments.payment({
-      customerKey: intent.customerId,
-    })
-
-    tossPaymentRef.current = { payment, intentId: intent.id }
-    return intent
-  }
-
   const handlePayment = async () => {
-    try {
-      setLoading(true)
-
-      if (!pinStatus) {
-        fetchPinStatus()
-        toast.info("PIN 상태를 확인 중입니다. 잠시 후 다시 시도해주세요.")
-        setLoading(false)
-        return
-      }
-
-      if (!pinStatus.hasPin || pinStatus.status === "NONE") {
-        setPinRequiredModalOpen(true)
-        setLoading(false)
-        return
-      }
-
-      if (pinStatus.status === "ACTIVE") {
-        setPinVerifyModalOpen(true)
-        setLoading(false)
-        return
-      }
-    } catch (error) {
-      console.error("멤버십 결제 처리 실패:", error)
-      toast.error(
-        error instanceof Error ? error.message : "결제 처리에 실패했습니다."
-      )
-      setLoading(false)
-    }
+    await processPayment()
   }
 
   const processPayment = async () => {
     try {
       setLoading(true)
 
-      if (selectedMethod === "toss") {
-        if (!tossPaymentRef.current) {
-          await initializeTossPayment()
-        }
-
-        const { payment, intentId } = tossPaymentRef.current
-        const baseUrl = window.location.origin
-
-        await payment.requestPayment({
-          method: "CARD",
-          amount: {
-            currency: "KRW",
-            value: totals.finalTotal,
-          },
-          orderId: intentId,
-          orderName: `멤버십 구독 - ${planName}`,
-          successUrl: `${baseUrl}/${countryCode}/checkout/callback?mode=membership&planId=${planId}`,
-          failUrl: `${baseUrl}/${countryCode}/checkout/callback?mode=membership&planId=${planId}`,
-          customerEmail: user.email,
-          customerName: user.username,
-          customerMobilePhone: getCleanKoreanNumber(
-            user.profile?.phoneNumber ?? ""
-          ),
-        })
+      if (!user?.id) {
+        throw new Error("로그인이 필요합니다.")
       }
+
+      const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback?mode=membership&planId=${planId}`
+      const { intentId } = await createMembershipCheckoutIntent(
+        planId,
+        returnUrl
+      )
+
+      const walletWebUrl =
+        process.env.NEXT_PUBLIC_WALLET_WEB_URL || "http://localhost:3200"
+      window.location.href = `${walletWebUrl}/pay/${intentId}`
     } catch (error) {
       console.error("멤버십 결제 요청 실패:", error)
       toast.error(
@@ -182,10 +102,6 @@ export default function MembershipCheckoutTemplate({
             </section>
 
             <PaymentTotalSection totals={totals} />
-            <PaymentMethodSection
-              selectedMethod={selectedMethod}
-              setSelectedMethod={setSelectedMethod}
-            />
           </div>
 
           {/* 오른쪽 섹션 */}
@@ -202,16 +118,6 @@ export default function MembershipCheckoutTemplate({
 
       <PCFixedCTA onPayment={handlePayment} loading={loading} totals={totals} />
       <MobileCTA onPayment={handlePayment} loading={loading} />
-
-      <PinRequiredModal
-        open={pinRequiredModalOpen}
-        onOpenChange={setPinRequiredModalOpen}
-      />
-      <PinVerifyModal
-        open={pinVerifyModalOpen}
-        onOpenChange={setPinVerifyModalOpen}
-        onSuccess={processPayment}
-      />
     </main>
   )
 }
