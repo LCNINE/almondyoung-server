@@ -1,7 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { eq } from 'drizzle-orm';
+import { DbService } from '@app/db';
 import { MedusaClient } from './medusa.client';
-import { UserServiceClient } from '../../services/user-service.client';
 import { EventTrackingService } from '@app/events';
+import { cafe24MemberMappings } from '../../schema';
+import type { ChannelAdapterSchema } from '../../types';
 
 @Injectable()
 export class FirebaseMembershipSyncService {
@@ -9,21 +12,19 @@ export class FirebaseMembershipSyncService {
 
   constructor(
     private readonly medusaClient: MedusaClient,
-    private readonly userServiceClient: UserServiceClient,
+    private readonly dbService: DbService<ChannelAdapterSchema>,
     private readonly eventTrackingService: EventTrackingService,
   ) {}
 
   /**
    * Firebase 멤버십 상태를 Medusa 고객 그룹에 동기화
    *
-   * @param cafe24MemberId - Cafe24 회원 ID (almond-auth: connectedServices.almondYoung.id)
+   * @param cafe24MemberId - Cafe24 회원 ID
    * @param active - 멤버십 활성 여부
-   * @param email - user-service email (없으면 user-service에서 조회)
    */
   async syncByFirebase(
     cafe24MemberId: string,
     active: boolean,
-    email?: string,
   ): Promise<void> {
     const membershipGroupId = process.env.MEDUSA_MEMBERSHIP_GROUP_ID;
 
@@ -32,34 +33,38 @@ export class FirebaseMembershipSyncService {
       return;
     }
 
-    // user-service에서 userId + email 조회 (almond_user_id 기반 매핑에 필요)
-    const linkInfo = await this.userServiceClient.getLinkInfo(cafe24MemberId);
-    if (!linkInfo) {
+    const [mapping] = await this.dbService.db
+      .select()
+      .from(cafe24MemberMappings)
+      .where(eq(cafe24MemberMappings.cafe24MemberId, cafe24MemberId))
+      .limit(1);
+
+    if (!mapping) {
       this.logger.log(
-        `user-service에 cafe24MemberId=${cafe24MemberId} 연동 정보 없음. Medusa 동기화 건너뜁니다.`,
+        `cafe24MemberId=${cafe24MemberId} 매핑 없음. Medusa 동기화 건너뜁니다.`,
       );
       await this.eventTrackingService.trackEffect({
         resourceType: 'FirebaseMembership',
         resourceId: cafe24MemberId,
         action: 'SKIPPED',
-        description: 'user-service 연동 정보 없음',
+        description: 'cafe24_member_mappings 매핑 없음',
         eventType: 'FirebaseMembershipSync',
       }).catch((e) => this.logger.warn(`trackEffect 실패: ${e?.message}`));
       return;
     }
-    const resolvedEmail = linkInfo.email;
-    const almondUserId = linkInfo.userId;
+
+    const almondUserId = mapping.userId;
 
     const customer = await this.medusaClient.findCustomerByAlmondUserId(almondUserId);
     if (!customer) {
       this.logger.log(
-        `Medusa 고객 없음 (email=${resolvedEmail}, cafe24MemberId=${cafe24MemberId}). 건너뜁니다.`,
+        `Medusa 고객 없음 (almondUserId=${almondUserId}, cafe24MemberId=${cafe24MemberId}). 건너뜁니다.`,
       );
       await this.eventTrackingService.trackEffect({
         resourceType: 'FirebaseMembership',
         resourceId: cafe24MemberId,
         action: 'SKIPPED',
-        description: `Medusa 고객 없음 (email=${resolvedEmail})`,
+        description: `Medusa 고객 없음 (almondUserId=${almondUserId})`,
         eventType: 'FirebaseMembershipSync',
       }).catch((e) => this.logger.warn(`trackEffect 실패: ${e?.message}`));
       return;

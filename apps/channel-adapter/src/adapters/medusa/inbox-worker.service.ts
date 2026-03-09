@@ -147,7 +147,6 @@ export class InboxWorkerService implements OnModuleInit {
                     await this.firebaseMembershipSyncService.syncByFirebase(
                         linkedPayload.cafe24MemberId,
                         isActive,
-                        linkedPayload.email,
                     );
                     break;
                 }
@@ -157,7 +156,6 @@ export class InboxWorkerService implements OnModuleInit {
                     await this.firebaseMembershipSyncService.syncByFirebase(
                         unlinkedPayload.cafe24MemberId,
                         false,
-                        unlinkedPayload.email,
                     );
                     break;
                 }

@@ -7,7 +7,7 @@ import type {
   Cafe24LinkedPayload,
   Cafe24UnlinkedPayload,
 } from '@packages/event-contracts/streams/user.stream';
-import { processedEvents, inboxEvents } from '../schema';
+import { processedEvents, inboxEvents, cafe24MemberMappings } from '../schema';
 import { eq } from 'drizzle-orm';
 import type { ChannelAdapterSchema } from '../types';
 
@@ -31,7 +31,7 @@ export class UserEventConsumer {
     @EventEnvelope() envelope: DomainEvent<Cafe24LinkedPayload>,
     @EventPayload() payload: Cafe24LinkedPayload,
   ): Promise<void> {
-    const { userId, cafe24MemberId } = payload;
+    const { userId, cafe24MemberId, email } = payload;
     const idempotencyKey = envelope.messageId || `Cafe24Linked:${userId}:${cafe24MemberId}`;
 
     this.logger.log(`[User] Cafe24Linked 수신: userId=${userId}, cafe24MemberId=${cafe24MemberId}`);
@@ -75,6 +75,13 @@ export class UserEventConsumer {
         status: 'pending',
         createdAt: new Date(),
       });
+
+      await db.insert(cafe24MemberMappings)
+        .values({ cafe24MemberId, userId, email, createdAt: new Date(), updatedAt: new Date() })
+        .onConflictDoUpdate({
+          target: cafe24MemberMappings.cafe24MemberId,
+          set: { userId, email, updatedAt: new Date() },
+        });
 
       this.logger.log(`[User] Cafe24Linked Inbox 저장 완료: userId=${userId}`);
     } catch (error) {
@@ -132,6 +139,9 @@ export class UserEventConsumer {
         status: 'pending',
         createdAt: new Date(),
       });
+
+      await db.delete(cafe24MemberMappings)
+        .where(eq(cafe24MemberMappings.cafe24MemberId, cafe24MemberId));
 
       this.logger.log(`[User] Cafe24Unlinked Inbox 저장 완료: userId=${userId}`);
     } catch (error) {
