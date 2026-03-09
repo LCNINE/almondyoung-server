@@ -41,11 +41,11 @@ function mapMedusaItemToCartItem(item: HttpTypes.StoreCartLineItem): CartItem {
   const selectedOptionText =
     Object.keys(selectedOptions).length > 0
       ? Object.entries(selectedOptions)
-          .map(([key, value]) => `${key}: ${value}`)
-          .join(", ")
+        .map(([key, value]) => `${key}: ${value}`)
+        .join(", ")
       : typeof variant?.title === "string" &&
-          variant.title.trim() &&
-          variant.title !== "Default Variant"
+        variant.title.trim() &&
+        variant.title !== "Default Variant"
         ? variant.title
         : undefined
 
@@ -115,6 +115,30 @@ export function CartMainClient() {
     return item.selectedOptionText
       ? `${item.product.name} (${item.selectedOptionText})`
       : item.product.name
+  }, [])
+
+  const getLocalPricingFromItems = useCallback((items: CartItem[]) => {
+    const originalItemSubtotal = items.reduce((sum, item) => {
+      const quantity = item.quantity || 1
+      const baseUnitPrice = item.product.basePrice || item.product.unitPrice || 0
+      return sum + baseUnitPrice * quantity
+    }, 0)
+
+    const itemSubtotal = items.reduce((sum, item) => {
+      const quantity = item.quantity || 1
+      const displayUnitPrice = item.product.unitPrice || item.product.basePrice || 0
+      return sum + displayUnitPrice * quantity
+    }, 0)
+
+    const membershipDiscount = Math.max(0, originalItemSubtotal - itemSubtotal)
+
+    return {
+      originalItemSubtotal,
+      itemSubtotal,
+      total: itemSubtotal,
+      membershipDiscount,
+      nonMembershipDiscount: 0,
+    }
   }, [])
 
   const loadCart = useCallback(async () => {
@@ -301,6 +325,11 @@ export function CartMainClient() {
       return
     }
 
+    // 프리뷰 카트 API 응답 전에도 로컬 계산값을 즉시 반영
+    // 메두사 주문예상금액이 너무 늦게 반영돼서 일단 로컬 계산값 보여주고 나중에 업데이트하게 
+    const localPricing = getLocalPricingFromItems(selected)
+    setSelectedPricing(localPricing)
+
     const selectedLineItemIds = selected.map((item) => item.id)
     const selectedPreviewItems = selected
       .filter((item) => item.variantId)
@@ -364,23 +393,14 @@ export function CartMainClient() {
         }
       } catch {
         previewCartIdRef.current = null
-        if (previewRequestSeqRef.current === requestSeq) {
-          setShippingTotal(0)
-          setSelectedPricing({
-            originalItemSubtotal: 0,
-            itemSubtotal: 0,
-            total: 0,
-            membershipDiscount: 0,
-            nonMembershipDiscount: 0,
-          })
-        }
+        // 실패 시에도 직전 로컬 계산값은 유지
       }
-    }, 250)
+    }, 80)
 
     return () => {
       clearTimeout(timer)
     }
-  }, [cartItems, checkedItems, countryCode])
+  }, [cartItems, checkedItems, countryCode, getLocalPricingFromItems])
 
   useEffect(() => {
     return () => {
