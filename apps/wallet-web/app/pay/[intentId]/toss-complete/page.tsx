@@ -1,6 +1,7 @@
 import { isRedirectError } from 'next/dist/client/components/redirect-error';
 import { redirect } from 'next/navigation';
 import { approveToss } from '@/lib/wallet-api';
+import { buildReturnUrl } from '@/lib/return-url';
 
 interface Props {
   params: Promise<{ intentId: string }>;
@@ -22,7 +23,12 @@ export default async function TossCompletePage({ params, searchParams }: Props) 
     const result = await approveToss(intentId, paymentKey, orderId, Number(amount));
     console.log('[toss-complete] approveToss result:', result);
     if (result.returnUrl) {
-      redirect(`${result.returnUrl}?payment_intent_id=${intentId}&status=succeeded`);
+      redirect(
+        buildReturnUrl(result.returnUrl, {
+          payment_intent_id: intentId,
+          status: 'succeeded',
+        }),
+      );
     }
     redirect(`/pay/${intentId}`);
   } catch (e) {

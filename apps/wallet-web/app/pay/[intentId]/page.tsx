@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { getPaymentIntent, getPaymentMethods, getPointsBalance } from '@/lib/wallet-api';
+import { buildReturnUrl } from '@/lib/return-url';
 import { PayForm } from './pay-form';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -32,7 +33,10 @@ export default async function PayPage({ params }: Props) {
 
   if (['AUTHORIZED', 'CAPTURED', 'SUCCEEDED'].includes(intent.status)) {
     const returnUrl = intent.returnUrl
-      ? `${intent.returnUrl}?payment_intent_id=${intent.id}&status=succeeded`
+      ? buildReturnUrl(intent.returnUrl, {
+          payment_intent_id: intent.id,
+          status: 'succeeded',
+        })
       : null;
     return (
       <div className="min-h-screen bg-muted/40 flex items-center justify-center p-4">
