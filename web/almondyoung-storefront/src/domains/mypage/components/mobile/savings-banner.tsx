@@ -5,7 +5,7 @@ import { useEffect, useState } from "react"
 import {
   getCurrentMonthSavings,
   getCurrentSubscription,
-} from "@lib/api/membership/client"
+} from "@/lib/api/membership"
 import Link from "next/link"
 
 interface SavingsData {
@@ -60,7 +60,8 @@ export function SavingsBanner() {
             </span>
           )}
           <p className="font-semibold">
-            이번달 <strong>{totalSavings.toLocaleString()}원</strong> 절약했어요!
+            이번달 <strong>{totalSavings.toLocaleString()}원</strong>{" "}
+            절약했어요!
           </p>
         </div>
         <ChevronRight className="h-5 w-5" />

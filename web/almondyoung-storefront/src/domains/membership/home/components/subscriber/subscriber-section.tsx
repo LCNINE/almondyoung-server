@@ -7,7 +7,7 @@ import { MembershipCancelModal } from "../../../components/modal"
 import MembershipPlanCard from "../membership-benefit-card"
 import MembershipStatusSection from "domains/membership/components/status-selection"
 import MemberDetails from "./member-details"
-import { cancelSubscription } from "@lib/api/membership/client"
+import { cancelSubscription } from "@/lib/api/membership"
 import type {
   CancellationReasonDto,
   CycleBenefitDto,
@@ -75,7 +75,9 @@ export default function SubscriberSection({
   const monthlyPlan = plans.find((plan) => plan.plan.durationDays === 30)
   const yearlyPlan = plans.find((plan) => plan.plan.durationDays === 365)
   const yearlyMonthlyPrice = yearlyPlan
-    ? Math.round(yearlyPlan.plan.price / Math.max(1, yearlyPlan.plan.durationDays / 30))
+    ? Math.round(
+        yearlyPlan.plan.price / Math.max(1, yearlyPlan.plan.durationDays / 30)
+      )
     : null
   const discountRate =
     yearlyPlan && monthlyPlan

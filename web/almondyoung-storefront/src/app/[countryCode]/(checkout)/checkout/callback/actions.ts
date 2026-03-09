@@ -1,6 +1,6 @@
 "use server"
 
-import { createSubscriptionServer } from "@/lib/api/membership"
+import { createSubscription } from "@/lib/api/membership"
 import { HttpApiError } from "@/lib/api/api-error"
 import { sdk } from "@/lib/config/medusa"
 import {
@@ -18,13 +18,18 @@ async function ensureShippingMethod(
   const prefix = `[ensureShippingMethod] cartId=${cartId}`
 
   // 현재 cart의 shipping_methods 확인
-  const { cart } = await sdk.client.fetch<{ cart: { shipping_methods?: { id: string }[] } }>(
-    `/store/carts/${cartId}`,
-    { method: "GET", query: { fields: "+shipping_methods" }, headers }
-  )
+  const { cart } = await sdk.client.fetch<{
+    cart: { shipping_methods?: { id: string }[] }
+  }>(`/store/carts/${cartId}`, {
+    method: "GET",
+    query: { fields: "+shipping_methods" },
+    headers,
+  })
 
   if (cart.shipping_methods?.length) {
-    console.log(`${prefix} shipping_methods 존재 (count=${cart.shipping_methods.length}), 추가 불필요`)
+    console.log(
+      `${prefix} shipping_methods 존재 (count=${cart.shipping_methods.length}), 추가 불필요`
+    )
     return
   }
 
@@ -41,7 +46,11 @@ async function ensureShippingMethod(
 
   console.log(
     `${prefix} 사용 가능한 shipping options: ${JSON.stringify(
-      shipping_options?.map((o) => ({ id: o.id, name: o.name, amount: o.amount })) ?? []
+      shipping_options?.map((o) => ({
+        id: o.id,
+        name: o.name,
+        amount: o.amount,
+      })) ?? []
     )}`
   )
 
@@ -57,7 +66,9 @@ async function ensureShippingMethod(
     {},
     headers
   )
-  console.log(`${prefix} shipping method 할당 완료 (option_id=${targetOption.id}, name=${targetOption.name})`)
+  console.log(
+    `${prefix} shipping method 할당 완료 (option_id=${targetOption.id}, name=${targetOption.name})`
+  )
 }
 
 interface ProcessPaymentResult {
@@ -75,10 +86,9 @@ async function getSourceCartSelection(
   headers: Record<string, string>
 ): Promise<SourceCartSelection | null> {
   try {
-    const { cart } = await sdk.client.fetch<{ cart: { metadata?: Record<string, unknown> } }>(
-      `/store/carts/${checkoutCartId}`,
-      { method: "GET", headers }
-    )
+    const { cart } = await sdk.client.fetch<{
+      cart: { metadata?: Record<string, unknown> }
+    }>(`/store/carts/${checkoutCartId}`, { method: "GET", headers })
 
     const metadata = cart?.metadata ?? {}
     const sourceCartId =
@@ -91,7 +101,11 @@ async function getSourceCartSelection(
         )
       : []
 
-    if (!sourceCartId || sourceCartId === checkoutCartId || !sourceLineItemIds.length) {
+    if (
+      !sourceCartId ||
+      sourceCartId === checkoutCartId ||
+      !sourceLineItemIds.length
+    ) {
       return null
     }
 
@@ -107,11 +121,18 @@ async function removePurchasedItemsFromSourceCart(
 ) {
   const results = await Promise.allSettled(
     selection.sourceLineItemIds.map((lineItemId) =>
-      sdk.store.cart.deleteLineItem(selection.sourceCartId, lineItemId, {}, headers)
+      sdk.store.cart.deleteLineItem(
+        selection.sourceCartId,
+        lineItemId,
+        {},
+        headers
+      )
     )
   )
 
-  const deletedCount = results.filter((result) => result.status === "fulfilled").length
+  const deletedCount = results.filter(
+    (result) => result.status === "fulfilled"
+  ).length
   const failedCount = results.length - deletedCount
 
   if (deletedCount > 0) {
@@ -136,7 +157,7 @@ export async function processPaymentCallback(
   try {
     if (mode === "membership" && planId) {
       try {
-        await createSubscriptionServer(planId)
+        await createSubscription(planId)
         return {
           success: true,
           redirectUrl: `/${countryCode}/mypage/membership/subscribe/success`,
@@ -160,7 +181,10 @@ export async function processPaymentCallback(
     const targetCartId = cartId || (await getCartId())
     if (targetCartId) {
       const headers = { ...(await getAuthHeaders()) }
-      const sourceCartSelection = await getSourceCartSelection(targetCartId, headers)
+      const sourceCartSelection = await getSourceCartSelection(
+        targetCartId,
+        headers
+      )
 
       // cart.complete() 직전 shipping method 보장
       await ensureShippingMethod(targetCartId, headers)
