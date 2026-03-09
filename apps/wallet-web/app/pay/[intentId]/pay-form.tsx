@@ -48,7 +48,9 @@ function formatAmount(amount: number, currency: string): string {
 
 export function PayForm({ intent, methods, pointsBalance }: Props) {
   const router = useRouter();
-  const externalMethods = methods.filter((m) => m.type !== 'POINTS');
+  // TODO: 무통장입금 UI 미구현 - 계좌번호 표시 후 활성화 예정
+  // const externalMethods = methods.filter((m) => m.type !== 'POINTS');
+  const externalMethods = methods.filter((m) => m.type !== 'POINTS' && m.type !== 'BANK_TRANSFER');
   const availablePoints = pointsBalance.available;
 
   const [selectedMethodId, setSelectedMethodId] = useState<string>(externalMethods[0]?.id ?? '');
