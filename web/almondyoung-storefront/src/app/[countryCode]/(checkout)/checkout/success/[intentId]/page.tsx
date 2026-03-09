@@ -8,6 +8,9 @@ import Link from "next/link"
 import { ChevronDownIcon, ReviewPromptCard } from "../_components"
 import { HttpTypes } from "@medusajs/types"
 
+// 주문 정보는 사용자별로 다르므로 캐싱 비활성화
+export const dynamic = "force-dynamic"
+
 interface PageProps {
   params: Promise<{ intentId: string; countryCode: string; usePoints: string }>
   searchParams: Promise<{ orderId?: string }>
