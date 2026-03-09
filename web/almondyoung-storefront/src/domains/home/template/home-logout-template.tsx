@@ -210,7 +210,7 @@ export async function HomeLogoutTemplate({
   return (
     <div className="w-full">
       {/* 메인 히어로 배너 */}
-      {/* <HeroBanner /> */}
+      <HeroBanner />
 
       {/* todo: 추후 섹션이 많아지면 활성화 */}
       {/* 로그인 유도 배너 */}
