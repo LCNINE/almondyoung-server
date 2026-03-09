@@ -165,25 +165,67 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                   >
                     <div className="flex flex-col gap-1">
                       <span className="text-sm">{item.label}</span>
-                      <div className="flex items-center">
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center">
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={() => updateQuantity(item.variantId, -1)}
+                            className="h-7 w-7 rounded-r-none"
+                          >
+                            <Minus className="h-3 w-3" />
+                          </Button>
+                          <input
+                            ref={(el) => {
+                              if (el) {
+                                (el as any)._variantId = item.variantId
+                              }
+                            }}
+                            type="text"
+                            inputMode="numeric"
+                            value={item.quantity}
+                            onChange={(e) => {
+                              const raw = e.target.value
+                              if (raw === "") return
+                              const val = parseInt(raw, 10)
+                              if (!isNaN(val)) {
+                                const delta = val - item.quantity
+                                updateQuantity(item.variantId, delta)
+                              }
+                            }}
+                            onBlur={(e) => {
+                              const val = parseInt(e.target.value, 10)
+                              if (isNaN(val) || val < 1) {
+                                const delta = 1 - item.quantity
+                                updateQuantity(item.variantId, delta)
+                              }
+                            }}
+                            onFocus={(e) => e.target.select()}
+                            className="flex h-7 w-10 items-center justify-center border-y text-center text-sm outline-none"
+                          />
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={() => updateQuantity(item.variantId, 1)}
+                            className="h-7 w-7 rounded-l-none"
+                          >
+                            <Plus className="h-3 w-3" />
+                          </Button>
+                        </div>
                         <Button
                           variant="outline"
-                          size="icon"
-                          onClick={() => updateQuantity(item.variantId, -1)}
-                          className="h-7 w-7 rounded-r-none"
+                          size="sm"
+                          onClick={() => {
+                            const input = document.querySelector(
+                              `input[type="text"][inputmode="numeric"]`
+                            ) as HTMLInputElement & { _variantId?: string }
+                            if (input && input._variantId === item.variantId) {
+                              input.focus()
+                            }
+                          }}
+                          className="h-7 px-2 text-[11px] text-gray-600"
                         >
-                          <Minus className="h-3 w-3" />
-                        </Button>
-                        <span className="flex h-7 w-10 items-center justify-center border-y text-sm">
-                          {item.quantity}
-                        </span>
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={() => updateQuantity(item.variantId, 1)}
-                          className="h-7 w-7 rounded-l-none"
-                        >
-                          <Plus className="h-3 w-3" />
+                          직접입력
                         </Button>
                       </div>
                     </div>
