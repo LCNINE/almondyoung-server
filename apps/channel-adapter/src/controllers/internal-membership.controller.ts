@@ -9,8 +9,12 @@ import {
   Headers,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { DbService } from '@app/db';
 import { InboxService } from '../services/inbox.service';
 import { MembershipDailySyncService } from '../services/membership-daily-sync.service';
+import { UserServiceClient } from '../services/user-service.client';
+import { cafe24MemberMappings } from '../schema';
+import type { ChannelAdapterSchema } from '../types';
 
 interface FirebaseSyncBody {
   cafe24MemberId: string;
@@ -31,6 +35,8 @@ export class InternalMembershipController {
     private readonly inboxService: InboxService,
     private readonly configService: ConfigService,
     private readonly membershipDailySyncService: MembershipDailySyncService,
+    private readonly userServiceClient: UserServiceClient,
+    private readonly dbService: DbService<ChannelAdapterSchema>,
   ) {}
 
   private verifyInternalKey(authorization: string | undefined): void {
@@ -86,5 +92,36 @@ export class InternalMembershipController {
     this.verifyInternalKey(authorization);
     this.logger.log('멤버십 일일 정합성 수동 실행 요청');
     return this.membershipDailySyncService.runManually();
+  }
+
+  /**
+   * 기존 연동 회원 매핑 백필 (배포 직후 1회 실행)
+   * POST /internal/membership/backfill-mappings
+   *
+   * user-service에서 전체 연동 목록을 조회하여 cafe24_member_mappings 테이블에 upsert.
+   * 이 엔드포인트는 일회성 마이그레이션용이며, Kafka 이벤트로 소급 불가능한 기존 데이터를 채웁니다.
+   */
+  @Post('backfill-mappings')
+  @HttpCode(HttpStatus.OK)
+  async backfillMappings(
+    @Headers('authorization') authorization: string,
+  ): Promise<{ upserted: number }> {
+    this.verifyInternalKey(authorization);
+    this.logger.log('cafe24_member_mappings 백필 시작');
+
+    const links = await this.userServiceClient.getAllLinks();
+    const db = this.dbService.db;
+
+    for (const { cafe24MemberId, userId, email } of links) {
+      await db.insert(cafe24MemberMappings)
+        .values({ cafe24MemberId, userId, email, createdAt: new Date(), updatedAt: new Date() })
+        .onConflictDoUpdate({
+          target: cafe24MemberMappings.cafe24MemberId,
+          set: { userId, email, updatedAt: new Date() },
+        });
+    }
+
+    this.logger.log(`cafe24_member_mappings 백필 완료: ${links.length}건 upsert`);
+    return { upserted: links.length };
   }
 }

@@ -11,6 +11,7 @@ import {
   pendingOrders,
   inboxEvents,
   pimMedusaMappings,
+  cafe24MemberMappings,
 } from './schema';
 
 // DATABASE SERVICE 타입
@@ -58,6 +59,10 @@ export type UpdateInboxEvent = Partial<Omit<NewInboxEvent, 'id' | 'createdAt'>>;
 export type PimMedusaMapping = InferSelectModel<typeof pimMedusaMappings>;
 export type NewPimMedusaMapping = InferInsertModel<typeof pimMedusaMappings>;
 export type UpdatePimMedusaMapping = Partial<Omit<NewPimMedusaMapping, 'id' | 'createdAt'>>;
+
+// CAFE24 MEMBER MAPPINGS 타입
+export type Cafe24MemberMapping = InferSelectModel<typeof cafe24MemberMappings>;
+export type NewCafe24MemberMapping = InferInsertModel<typeof cafe24MemberMappings>;
 
 export interface UnmappedItem {
   channelItemId: string;

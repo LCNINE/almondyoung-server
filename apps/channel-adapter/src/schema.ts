@@ -383,6 +383,17 @@ export const migrationFailures = pgTable(
   ],
 );
 
+// 🔹 Cafe24 회원 매핑 테이블 (cafe24MemberId → userId/email)
+// user-service HTTP 의존 없이 로컬에서 조회 가능하도록 저장
+// Kafka Cafe24Linked 이벤트 수신 시 upsert, Cafe24Unlinked 시 delete
+export const cafe24MemberMappings = pgTable('cafe24_member_mappings', {
+  cafe24MemberId: varchar('cafe24_member_id', { length: 256 }).primaryKey(),
+  userId: varchar('user_id', { length: 256 }).notNull(),
+  email: varchar('email', { length: 256 }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
 // ===============================
 // 전체 스키마 객체 Export (Drizzle ORM 규칙)
 // ===============================
@@ -399,6 +410,7 @@ export const channelAdapterSchema = {
   pimMedusaMappings,
   migrationProgress,
   migrationFailures,
+  cafe24MemberMappings,
 } as const;
 
 export type ChannelAdapterSchema = typeof channelAdapterSchema;
