@@ -31,7 +31,7 @@ export const retrieveCustomer =
     return await sdk.client
       .fetch<{ customer: StoreCustomerWithGroups }>(`/store/customers/me`, {
         method: "GET",
-        // 서버측에서 query:{fields: ["*","addresses.*", "groups.*"]} 처리가 되어있기때문에 query 생략해야함
+        query: { fields: "*,*addresses,*groups" },
         headers,
         cache: "no-store",
       })
