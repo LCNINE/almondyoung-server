@@ -28,6 +28,8 @@ import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exce
 import {
   CreateSubscriptionRequestSchema,
   CreateSubscriptionRequest,
+  CreateCheckoutIntentRequestSchema,
+  CreateCheckoutIntentRequest,
   UpgradeSubscriptionRequestSchema,
   UpgradeSubscriptionRequest,
   DowngradeSubscriptionRequestSchema,
@@ -45,6 +47,7 @@ import {
 } from '../shared/dto/response.dto';
 import {
   CreateSubscriptionRequestDto,
+  CreateCheckoutIntentRequestDto,
   UpgradeSubscriptionRequestDto,
   DowngradeSubscriptionRequestDto,
   CancelSubscriptionRequestDto,
@@ -153,6 +156,49 @@ export class SubscriptionController {
       userId,
       createSubscriptionDto.planId,
       email,
+    );
+  }
+
+  @Post('checkout-intent')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: '멤버십 최초 결제용 checkout intent 생성',
+    description:
+      '플랜 가격을 membership 서비스에서 검증한 뒤 wallet v1 payment-intent를 생성합니다.',
+  })
+  @ApiBody({ type: CreateCheckoutIntentRequestDto })
+  @ApiResponse({
+    status: 201,
+    description: 'checkout intent 생성 성공',
+    schema: {
+      example: { intentId: '019d0005-1001-7000-a000-000000000001' },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: '잘못된 요청 데이터',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: '플랜을 찾을 수 없음',
+    type: ErrorResponseDto,
+  })
+  @UseGuards(JwtAuthGuard)
+  async createCheckoutIntent(
+    @User() user: { userId: string },
+    @Body(new ZodValidationPipe(CreateCheckoutIntentRequestSchema))
+    dto: CreateCheckoutIntentRequest,
+  ) {
+    const userId = user?.userId;
+    if (!userId) {
+      throw new BadRequestException('userId가 필요합니다');
+    }
+
+    return this.subscriptionService.createCheckoutIntent(
+      userId,
+      dto.planId,
+      dto.returnUrl,
     );
   }
 

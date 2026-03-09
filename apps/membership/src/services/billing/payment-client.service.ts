@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
+import { randomUUID } from 'node:crypto';
 
 // Wallet v4 API 타입 정의 (최신 아키텍처 반영)
 export interface PaymentIntentRequest {
@@ -52,6 +53,18 @@ export interface PaymentProfile {
   createdAt: string;
 }
 
+export interface MembershipCheckoutIntentRequest {
+  userId: string;
+  planId: string;
+  amount: number;
+  returnUrl: string;
+  currency?: string;
+}
+
+export interface MembershipCheckoutIntentResponse {
+  intentId: string;
+}
+
 // // 멤버십 서버의 스케줄러 로직 (수정 제안)
 
 // // 1. 만료된 멤버십 조회
@@ -88,6 +101,56 @@ export class PaymentClientService {
       'PAYMENT_SERVER_URL',
       'http://localhost:5000',
     );
+  }
+
+  async createMembershipCheckoutIntent(
+    request: MembershipCheckoutIntentRequest,
+  ): Promise<MembershipCheckoutIntentResponse> {
+    const walletApiUrl = this.configService.get<string>(
+      'WALLET_API_URL',
+      this.paymentServerUrl,
+    );
+    const walletApiKey = this.configService.get<string>('WALLET_API_KEY');
+
+    if (!walletApiUrl) {
+      throw new Error('WALLET_API_URL is not configured');
+    }
+    if (!walletApiKey) {
+      throw new Error('WALLET_API_KEY is not configured');
+    }
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post<{ id: string }>(
+          `${walletApiUrl}/v1/payment-intents`,
+          {
+            userId: request.userId,
+            amount: request.amount,
+            currency: request.currency ?? 'KRW',
+            returnUrl: request.returnUrl,
+            metadata: {
+              type: 'MEMBERSHIP_FEE',
+              planId: request.planId,
+              userId: request.userId,
+            },
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${walletApiKey}`,
+              'Idempotency-Key': randomUUID(),
+            },
+          },
+        ),
+      );
+
+      return { intentId: response.data.id };
+    } catch (error) {
+      this.logger.error(
+        `Failed to create membership checkout intent: ${error.message}`,
+      );
+      throw new Error(`Checkout intent creation failed: ${error.message}`);
+    }
   }
 
   /**
