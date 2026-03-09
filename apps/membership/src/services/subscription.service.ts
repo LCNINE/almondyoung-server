@@ -10,6 +10,7 @@ import { SubscriptionContractReader } from './subscription/subscription-contract
 import { SubscriptionCreator } from './subscription/subscription.creator';
 import { SubscriptionManager } from './subscription/subscription.manager';
 import { MembershipEventPublisher } from './membership-event.publisher';
+import { PaymentClientService } from './billing/payment-client.service';
 
 /**
  * SubscriptionService (Business Layer)
@@ -47,6 +48,7 @@ export class SubscriptionService {
     private readonly subscriptionCreator: SubscriptionCreator,
     private readonly subscriptionManager: SubscriptionManager,
     private readonly membershipEventPublisher: MembershipEventPublisher,
+    private readonly paymentClientService: PaymentClientService,
   ) {}
 
   /**
@@ -87,6 +89,27 @@ export class SubscriptionService {
     });
 
     return result;
+  }
+
+  async createCheckoutIntent(
+    userId: string,
+    planId: string,
+    returnUrl: string,
+  ): Promise<{ intentId: string }> {
+    const existing = await this.entitlementService.getUserEntitlement(userId);
+    if (existing) throw new ActiveSubscriptionExistsException();
+
+    const planDetails = await this.planService.getPlanDetails(planId);
+    if (!planDetails) throw new PlanNotFoundException();
+    if (!planDetails.plan.isActive) throw new PlanNotFoundException();
+
+    return this.paymentClientService.createMembershipCheckoutIntent({
+      userId,
+      planId: planDetails.plan.id,
+      amount: planDetails.plan.price,
+      returnUrl,
+      currency: planDetails.plan.currency ?? 'KRW',
+    });
   }
 
   /**
