@@ -16,6 +16,7 @@ import {
   // Subscription Operations
   CreateSubscriptionRequestSchema,
   CreateCheckoutIntentRequestSchema,
+  ConfirmCheckoutIntentRequestSchema,
   UpgradeSubscriptionRequestSchema,
   DowngradeSubscriptionRequestSchema,
   CancelSubscriptionRequestSchema,
@@ -55,6 +56,9 @@ export class CreateSubscriptionRequestDto extends createZodDto(
 ) {}
 export class CreateCheckoutIntentRequestDto extends createZodDto(
   CreateCheckoutIntentRequestSchema,
+) {}
+export class ConfirmCheckoutIntentRequestDto extends createZodDto(
+  ConfirmCheckoutIntentRequestSchema,
 ) {}
 export class UpgradeSubscriptionRequestDto extends createZodDto(
   UpgradeSubscriptionRequestSchema,
