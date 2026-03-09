@@ -3,7 +3,10 @@ import {
   MedusaResponse,
 } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
-import { addToCartWorkflow } from '@medusajs/medusa/core-flows';
+import {
+  addToCartWorkflow,
+  transferCartCustomerWorkflow,
+} from '@medusajs/medusa/core-flows';
 import { defaultStoreCartFields } from '../../../carts/query-config';
 
 /**
@@ -107,13 +110,21 @@ export async function POST(
 
   let customerCart = await getCustomerCart(query, customerId);
 
-  // 게스트 카트 ID가 전달된 경우 아이템 병합 시도
-  if (guestCartId && customerCart) {
+  // 게스트 카트 ID가 전달된 경우:
+  // 1) 고객 카트가 없으면 게스트 카트를 고객 카트로 이관
+  // 2) 고객 카트가 있으면 누락 아이템만 병합
+  if (guestCartId) {
     try {
       // 게스트 카트 조회
       const { data: guestCarts } = await query.graph({
         entity: 'cart',
-        fields: ['id', 'items.id', 'items.variant_id', 'items.quantity'],
+        fields: [
+          'id',
+          'customer_id',
+          'items.id',
+          'items.variant_id',
+          'items.quantity',
+        ],
         filters: {
           id: guestCartId,
           completed_at: null,
@@ -122,7 +133,22 @@ export async function POST(
 
       const guestCart = guestCarts?.[0];
 
-      if (guestCart?.items?.length > 0) {
+      if (!customerCart && guestCart?.id) {
+        const isSameCustomerCart = guestCart.customer_id === customerId;
+
+        if (!guestCart.customer_id || isSameCustomerCart) {
+          await transferCartCustomerWorkflow(req.scope).run({
+            input: {
+              id: guestCart.id,
+              customer_id: customerId,
+            },
+          });
+        }
+
+        customerCart = await getCustomerCart(query, customerId);
+      }
+
+      if (customerCart && guestCart?.items?.length > 0) {
         // 고객 카트에 이미 있는 variant_id 목록
         const existingVariantIds = new Set(
           (customerCart.items || []).map((item: any) => item.variant_id),
