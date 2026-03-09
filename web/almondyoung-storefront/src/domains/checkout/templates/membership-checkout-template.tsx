@@ -1,7 +1,7 @@
 "use client"
 
 import { PaymentTotalSection } from "@/domains/checkout/components/sections/payment-total"
-import { createMembershipCheckoutIntent } from "@/lib/api/membership/client"
+import { createMembershipCheckoutIntent } from "@/lib/api/membership"
 import type { CartTotals } from "@/lib/types/ui/cart"
 import type { UserDetail } from "@lib/types/ui/user"
 import { MobileCTA, PCFixedCTA } from "domains/checkout/components/cta"

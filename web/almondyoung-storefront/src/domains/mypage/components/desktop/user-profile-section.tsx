@@ -16,9 +16,6 @@ interface UserProfileSectionProps {
   userName: string
 }
 
-/**
- * 간결한 DOM 구조 + 의미있는 시맨틱 엘리먼트 사용
- */
 export function UserProfileSection({ userName }: UserProfileSectionProps) {
   const [isPending, startTransition] = useTransition()
   const router = useRouter()

@@ -1,12 +1,12 @@
 "use client"
 
-import { ChevronRight } from "lucide-react"
-import Image from "next/image"
-import React, { useEffect, useState } from "react"
+import { Skeleton } from "@/components/ui/skeleton"
 import { getOrders } from "@lib/api/medusa/orders"
 import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
+import { ChevronRight } from "lucide-react"
+import Image from "next/image"
 import Link from "next/link"
-import { Skeleton } from "@/components/ui/skeleton"
+import { useEffect, useState } from "react"
 
 // --- 1. 데이터 타입 정의 ---
 type OrderStatus = "SHIPPING" | "PREPARING"
@@ -30,7 +30,7 @@ function ShippingItem({ item }: { item: OrderItem }) {
         {/* 썸네일 */}
         <div className="relative h-[45px] w-11 shrink-0 overflow-hidden rounded-[5px] border border-[#d9d9d9]/50">
           <Image
-            src={item.thumbnailUrl}
+            src={getThumbnailUrl(item.thumbnailUrl)}
             alt={`주문번호 ${item.orderNumber}`}
             fill
             sizes="44px"
@@ -129,7 +129,10 @@ export default function ShippingStatusCard() {
         <div className="flex flex-col gap-4 rounded-[10px] border-[0.5px] border-[#d9d9d9] bg-white px-4 py-3.5">
           <div className="flex flex-col gap-4">
             {Array.from({ length: 2 }).map((_, index) => (
-              <div key={`shipping-mobile-skeleton-${index}`} className="flex items-center gap-4">
+              <div
+                key={`shipping-mobile-skeleton-${index}`}
+                className="flex items-center gap-4"
+              >
                 <Skeleton className="h-[45px] w-11 rounded-[5px]" />
                 <div className="flex flex-1 flex-col gap-2">
                   <Skeleton className="h-3 w-2/3" />

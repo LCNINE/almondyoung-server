@@ -11,7 +11,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@components/ui/sheet"
-import { getCurrentSubscription } from "@lib/api/membership/client"
+import { getCurrentSubscription } from "@/lib/api/membership"
 import { getCategoryTree } from "@lib/api/medusa/categories"
 import { StoreProductCategoryTree } from "@lib/types/medusa-category"
 import { CurrentSubscription } from "@lib/types/ui/membership"
@@ -243,10 +243,13 @@ function SubCategoryList({
                   onClick={() => onNavigatePath(index)}
                   className={cn(
                     "inline-flex items-center gap-1 hover:text-gray-700",
-                    index === activePath.length - 1 && "font-semibold text-gray-600"
+                    index === activePath.length - 1 &&
+                      "font-semibold text-gray-600"
                   )}
                 >
-                  {index > 0 && <ChevronRight className="h-3 w-3 text-gray-500" />}
+                  {index > 0 && (
+                    <ChevronRight className="h-3 w-3 text-gray-500" />
+                  )}
                   {node.name}
                 </button>
               ))}
@@ -396,21 +399,22 @@ function User({ user }: { user: UserDetail | null }) {
     </div>
   )
 
-  const MemberShip = currentSubscription?.status === "ACTIVE" ? (
-    <Link
-      href="/mypage/membership"
-      className="text-[13px] font-medium text-yellow-600 underline-offset-4 hover:underline"
-    >
-      멤버십 혜택 적용 중
-    </Link>
-  ) : (
-    <Link
-      href="/mypage/membership"
-      className="text-[13px] leading-tight font-medium text-gray-400 hover:underline hover:underline-offset-4"
-    >
-      혜택 가득한 서비스를 경험해보세요.
-    </Link>
-  )
+  const MemberShip =
+    currentSubscription?.status === "ACTIVE" ? (
+      <Link
+        href="/mypage/membership"
+        className="text-[13px] font-medium text-yellow-600 underline-offset-4 hover:underline"
+      >
+        멤버십 혜택 적용 중
+      </Link>
+    ) : (
+      <Link
+        href="/mypage/membership"
+        className="text-[13px] leading-tight font-medium text-gray-400 hover:underline hover:underline-offset-4"
+      >
+        혜택 가득한 서비스를 경험해보세요.
+      </Link>
+    )
 
   if (user) {
     return (

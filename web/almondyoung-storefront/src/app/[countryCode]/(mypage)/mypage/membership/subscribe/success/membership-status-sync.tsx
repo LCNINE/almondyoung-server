@@ -3,7 +3,7 @@
 import { useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useMembership } from "@/contexts/membership-context"
-import { getCurrentSubscription } from "@/lib/api/membership/client"
+import { getCurrentSubscription } from "@/lib/api/membership"
 
 export default function MembershipStatusSync() {
   const router = useRouter()

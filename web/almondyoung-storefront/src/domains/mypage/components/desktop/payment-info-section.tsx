@@ -2,7 +2,7 @@
 
 import { ChevronRight } from "lucide-react"
 import { useEffect, useState } from "react"
-import { getCurrentSubscription } from "@lib/api/membership/client"
+import { getCurrentSubscription } from "@/lib/api/membership"
 import Link from "next/link"
 
 interface BillingInfo {

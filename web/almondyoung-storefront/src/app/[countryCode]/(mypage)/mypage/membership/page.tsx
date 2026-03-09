@@ -9,10 +9,7 @@ import {
   getPlans,
   getSubscriptionHistory,
 } from "@lib/api/membership"
-import {
-  getCurrentMonthSavings,
-  getRangeSavings,
-} from "@lib/api/membership/savings"
+import { getCurrentMonthSavings, getRangeSavings } from "@lib/api/membership"
 import { fetchMe } from "@lib/api/users/me"
 import type {
   CancellationReasonDto,
