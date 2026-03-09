@@ -11,13 +11,12 @@ import { WishlistProvider } from "@/contexts/wishlist-context"
 import "@/styles/globals.css"
 import { retrieveCart } from "@lib/api/medusa/cart"
 import { retrieveCustomer } from "@lib/api/medusa/customer"
-import { getCurrentSubscription } from "@/lib/api/membership"
 import { fetchMe } from "@lib/api/users/me"
 import { CustomThemeProvider } from "@lib/providers/custom-theme-provider"
 import { ThemeProvider } from "@lib/providers/theme-provider"
 import { getSEOTags, renderSchemaTags } from "@lib/seo"
-import { isMembershipGroup } from "@lib/utils/membership-group"
 import type { CustomerGroupRef } from "@lib/utils/membership-group"
+import { resolveMembershipContext } from "@lib/utils/resolve-membership-context"
 import { Metadata } from "next"
 import { OverlayProvider } from "overlay-kit"
 import { Toaster } from "sonner"
@@ -39,43 +38,6 @@ export const metadata: Metadata = getSEOTags({
   },
 })
 
-async function getMembershipStatus({
-  isLoggedIn,
-  customerGroupsFromCart,
-  customerGroupsFromCustomer,
-}: {
-  isLoggedIn: boolean
-  customerGroupsFromCart?: { id?: string | null }[] | null
-  customerGroupsFromCustomer?: { id?: string | null }[] | null
-}): Promise<MembershipContextType> {
-  if (!isLoggedIn) {
-    return { status: "guest", isMembershipPricing: false }
-  }
-
-  const isMembershipPricing =
-    isMembershipGroup(customerGroupsFromCart) ||
-    isMembershipGroup(customerGroupsFromCustomer)
-  const status = isMembershipPricing ? "membership" : "regular"
-
-  try {
-    const subscription = await getCurrentSubscription().catch(() => null)
-    if (subscription?.status === "ACTIVE" && subscription?.tier) {
-      return {
-        status,
-        isMembershipPricing,
-        tier: {
-          code: subscription.tier.code,
-          name: subscription.tier.name,
-          priorityLevel: subscription.tier.priorityLevel,
-        },
-      }
-    }
-    return { status, isMembershipPricing }
-  } catch {
-    return { status, isMembershipPricing }
-  }
-}
-
 export default async function RootLayout(props: { children: React.ReactNode }) {
   const [user, cart, customer] = await Promise.all([
     fetchMe().catch(() => null),
@@ -89,7 +51,7 @@ export default async function RootLayout(props: { children: React.ReactNode }) {
       })
     | null
 
-  const membershipStatus = await getMembershipStatus({
+  const membershipStatus: MembershipContextType = await resolveMembershipContext({
     isLoggedIn: !!user,
     customerGroupsFromCart: cartWithCustomer?.customer?.groups,
     customerGroupsFromCustomer: customer?.groups,
