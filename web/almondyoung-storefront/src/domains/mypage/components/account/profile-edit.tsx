@@ -122,6 +122,19 @@ export function ProfileEdit({ userData }: ProfileEditProps) {
                 )}
               />
 
+              {/* 아이디 (읽기 전용) */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">아이디</Label>
+                <div className="relative">
+                  <Input
+                    value={userData.loginId || ""}
+                    readOnly
+                    disabled
+                    className="bg-gray-20 h-11 cursor-not-allowed rounded-md border border-gray-200 px-4 text-sm text-black"
+                  />
+                </div>
+              </div>
+
               {/* 이메일 (읽기 전용) */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium">이메일</Label>
