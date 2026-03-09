@@ -35,6 +35,8 @@ const QuantityControl = ({
   quantity?: number
   onQuantityChange?: (quantity: number) => void
 }) => {
+  const inputRef = React.useRef<HTMLInputElement>(null)
+
   const handleDecrease = () => {
     if (onQuantityChange && quantity > 1) {
       onQuantityChange(quantity - 1)
@@ -47,27 +49,71 @@ const QuantityControl = ({
     }
   }
 
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value
+    if (raw === "") {
+      return
+    }
+    const val = parseInt(raw, 10)
+    if (!isNaN(val) && onQuantityChange) {
+      onQuantityChange(val)
+    }
+  }
+
+  const handleInputBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    const val = parseInt(e.target.value, 10)
+    if (isNaN(val) || val < 1) {
+      if (onQuantityChange) {
+        onQuantityChange(1)
+      }
+    }
+  }
+
+  const handleInputFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    e.target.select()
+  }
+
+  const handleDirectInputClick = () => {
+    inputRef.current?.focus()
+  }
+
   return (
-    <div className="flex w-fit items-center overflow-hidden rounded border border-gray-300 text-sm">
+    <div className="flex items-center gap-2">
+      <div className="flex w-fit items-center overflow-hidden rounded border border-gray-300 text-sm">
+        <Button
+          variant="ghost"
+          onClick={handleDecrease}
+          disabled={quantity <= 1}
+          size="icon"
+          className="rounded-none"
+        >
+          -
+        </Button>
+        <input
+          ref={inputRef}
+          type="text"
+          inputMode="numeric"
+          value={quantity}
+          onChange={handleInputChange}
+          onBlur={handleInputBlur}
+          onFocus={handleInputFocus}
+          className="border-x border-gray-300 bg-white px-4 py-1 text-center font-bold outline-none w-12"
+        />
+        <Button
+          variant="ghost"
+          onClick={handleIncrease}
+          size="icon"
+          className="rounded-none"
+        >
+          +
+        </Button>
+      </div>
       <Button
-        variant="ghost"
-        onClick={handleDecrease}
-        disabled={quantity <= 1}
-        size="icon"
-        className="rounded-none"
+        variant="outline"
+        onClick={handleDirectInputClick}
+        className="h-8 px-3 text-xs text-gray-600"
       >
-        -
-      </Button>
-      <span className="border-x border-gray-300 bg-white px-4 py-1 font-bold">
-        {quantity}
-      </span>
-      <Button
-        variant="ghost"
-        onClick={handleIncrease}
-        size="icon"
-        className="rounded-none"
-      >
-        +
+        직접입력
       </Button>
     </div>
   )

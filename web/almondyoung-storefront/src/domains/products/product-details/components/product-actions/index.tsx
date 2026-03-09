@@ -327,66 +327,90 @@ export default function ProductActions({
                     {!isSimple && (
                       <span className="text-sm font-medium">{item.label}</span>
                     )}
-                    <div className="flex items-center">
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center">
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => updateQuantity(item.variantId, -1)}
+                          className="h-8 w-8 rounded-r-none"
+                        >
+                          <Minus className="h-3.5 w-3.5" />
+                        </Button>
+
+                        <input
+                          ref={(el) => {
+                            if (el) {
+                              (el as any)._variantId = item.variantId
+                            }
+                          }}
+                          type="text"
+                          inputMode="numeric"
+                          value={item.quantity}
+                          onChange={(e) => {
+                            const raw = e.target.value
+                            if (raw === "") {
+                              setSelectedItems((prev) =>
+                                prev.map((si) =>
+                                  si.variantId === item.variantId
+                                    ? { ...si, quantity: 0 as any }
+                                    : si
+                                )
+                              )
+                              return
+                            }
+                            const val = parseInt(raw, 10)
+                            if (!isNaN(val)) {
+                              setSelectedItems((prev) =>
+                                prev.map((si) =>
+                                  si.variantId === item.variantId
+                                    ? { ...si, quantity: val }
+                                    : si
+                                )
+                              )
+                            }
+                          }}
+                          onBlur={(e) => {
+                            const val = parseInt(e.target.value, 10)
+                            if (isNaN(val) || val < 1) {
+                              setSelectedItems((prev) =>
+                                prev.map((si) =>
+                                  si.variantId === item.variantId
+                                    ? { ...si, quantity: 1 }
+                                    : si
+                                )
+                              )
+                              toast.info("최소 수량은 1개입니다.")
+                            }
+                          }}
+                          onFocus={(e) => e.target.select()}
+                          className="h-8 w-12 border-y text-center text-sm outline-none"
+                        />
+
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => updateQuantity(item.variantId, 1)}
+                          className="h-8 w-8 rounded-l-none"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+
                       <Button
                         variant="outline"
-                        size="icon"
-                        onClick={() => updateQuantity(item.variantId, -1)}
-                        className="h-8 w-8 rounded-r-none"
-                      >
-                        <Minus className="h-3.5 w-3.5" />
-                      </Button>
-
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        value={item.quantity}
-                        onChange={(e) => {
-                          const raw = e.target.value
-                          if (raw === "") {
-                            setSelectedItems((prev) =>
-                              prev.map((si) =>
-                                si.variantId === item.variantId
-                                  ? { ...si, quantity: 0 as any }
-                                  : si
-                              )
-                            )
-                            return
-                          }
-                          const val = parseInt(raw, 10)
-                          if (!isNaN(val)) {
-                            setSelectedItems((prev) =>
-                              prev.map((si) =>
-                                si.variantId === item.variantId
-                                  ? { ...si, quantity: val }
-                                  : si
-                              )
-                            )
+                        size="sm"
+                        onClick={() => {
+                          const input = document.querySelector(
+                            `input[type="text"][inputmode="numeric"]`
+                          ) as HTMLInputElement & { _variantId?: string }
+                          if (input && input._variantId === item.variantId) {
+                            input.focus()
                           }
                         }}
-                        onBlur={(e) => {
-                          const val = parseInt(e.target.value, 10)
-                          if (isNaN(val) || val < 1) {
-                            setSelectedItems((prev) =>
-                              prev.map((si) =>
-                                si.variantId === item.variantId
-                                  ? { ...si, quantity: 1 }
-                                  : si
-                              )
-                            )
-                            toast.info("최소 수량은 1개입니다.")
-                          }
-                        }}
-                        className="h-8 w-12 border-y text-center text-sm outline-none"
-                      />
-
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() => updateQuantity(item.variantId, 1)}
-                        className="h-8 w-8 rounded-l-none"
+                        className="h-8 px-3 text-xs text-gray-600"
                       >
-                        <Plus className="h-3.5 w-3.5" />
+                        직접입력
                       </Button>
                     </div>
                   </div>
