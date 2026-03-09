@@ -48,14 +48,13 @@ export default function CallbackPage() {
       return
     }
 
-    // 멤버십 결제: server action의 accessToken 쿠키 접근 불가 문제로 client-side fetch 사용
-    // (크로스도메인 지갑 리다이렉트 후 서버 사이드에서 쿠키가 전달되지 않는 문제 우회)
-    if (mode === "membership" && planId) {
-      fetch(`/api/membership/subscriptions`, {
+    // 멤버십 결제: JWT 없이 wallet payment intent 검증으로 구독 확정
+    // (크로스도메인 지갑 리다이렉트 후 accessToken 쿠키 소실 문제 우회)
+    if (mode === "membership") {
+      fetch(`/api/membership/subscriptions/confirm-checkout-intent`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ planId }),
+        body: JSON.stringify({ intentId: paymentIntentId }),
       })
         .then(async (res) => {
           removeCheckoutCartByIntent(paymentIntentId)
