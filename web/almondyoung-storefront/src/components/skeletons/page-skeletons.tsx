@@ -15,7 +15,7 @@ function SectionTitleSkeleton({ className }: { className?: string }) {
 function ProductCardSkeleton() {
   return (
     <div className="flex flex-col gap-3">
-      <Skeleton className="aspect-[3/4] w-full" />
+      <Skeleton className="aspect-square w-full" />
       <Skeleton className="h-4 w-4/5" />
       <Skeleton className="h-4 w-2/5" />
       <Skeleton className="h-3 w-1/3" />
@@ -1338,7 +1338,7 @@ export function MypageRecentSkeleton() {
       <div className="mt-6 grid grid-cols-2 gap-4 md:grid-cols-4">
         {repeat(8).map((_, index) => (
           <div key={`recent-card-${index}`} className="space-y-3">
-            <Skeleton className="aspect-[3/4] w-full rounded-lg" />
+            <Skeleton className="aspect-square w-full rounded-lg" />
             <Skeleton className="h-4 w-3/4" />
             <Skeleton className="h-3 w-1/2" />
           </div>
@@ -1355,7 +1355,7 @@ export function MypageRebuySkeleton() {
       <div className="mt-6 grid grid-cols-2 gap-4 md:grid-cols-4">
         {repeat(8).map((_, index) => (
           <div key={`rebuy-card-${index}`} className="space-y-3">
-            <Skeleton className="aspect-[3/4] w-full rounded-lg" />
+            <Skeleton className="aspect-square w-full rounded-lg" />
             <Skeleton className="h-4 w-3/4" />
             <Skeleton className="h-3 w-1/2" />
           </div>

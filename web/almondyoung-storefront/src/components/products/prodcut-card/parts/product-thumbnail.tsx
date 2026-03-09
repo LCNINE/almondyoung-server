@@ -20,7 +20,7 @@ export function ProductThumbnail({
   return (
     <div
       className={cn(
-        "relative aspect-3/4 overflow-hidden bg-[#f4f4f4]",
+        "relative aspect-square overflow-hidden bg-[#f4f4f4]",
         className
       )}
     >
