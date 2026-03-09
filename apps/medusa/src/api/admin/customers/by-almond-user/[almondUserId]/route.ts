@@ -2,8 +2,7 @@ import {
   AuthenticatedMedusaRequest,
   MedusaResponse,
 } from '@medusajs/framework/http';
-import { Modules, MedusaError } from '@medusajs/framework/utils';
-import { ICustomerModuleService } from '@medusajs/framework/types';
+import { MedusaError } from '@medusajs/framework/utils';
 
 export const GET = async (
   req: AuthenticatedMedusaRequest,
@@ -11,14 +10,18 @@ export const GET = async (
 ) => {
   const { almondUserId } = req.params;
 
-  const customerModuleService = req.scope.resolve<ICustomerModuleService>(
-    Modules.CUSTOMER,
-  );
+  const query = req.scope.resolve('query');
 
-  const [customer] = await customerModuleService.listCustomers(
-    { metadata: { almond_user_id: almondUserId } },
-    { take: 1 },
-  );
+  const { data: customers } = await query.graph({
+    entity: 'customer',
+    fields: ['id', 'email', 'metadata'],
+    filters: {
+      metadata: { almond_user_id: almondUserId },
+    },
+    pagination: { take: 1 },
+  });
+
+  const customer = customers[0];
 
   if (!customer) {
     throw new MedusaError(
