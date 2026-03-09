@@ -1,6 +1,4 @@
-import { serverUserApi } from '@/lib/api/domains/users/server-user';
 import { UserScope } from '@/lib/types/dto/scopes';
-import { redirect } from 'next/navigation';
 
 export default async function RouteGuard({
   children,
