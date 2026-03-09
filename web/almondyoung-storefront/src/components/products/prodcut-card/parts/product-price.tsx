@@ -37,20 +37,24 @@ export function ProductPrice({
   return (
     <>
       {showDiscountInfo && (
-        <div className="text-[13px] text-gray-400">
-          <span className="font-bold">{discount}% </span>
-          <span className="line-through">
+        <div className="flex items-center gap-1 text-[13px] text-gray-400">
+          <span className="shrink-0 font-bold">{discount}%</span>
+          <span className="min-w-0 truncate line-through">
             {originalPrice.toLocaleString()}원
           </span>
         </div>
       )}
 
-      <div className="flex items-center gap-1">
-        <span className="text-[16px] font-bold text-black">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5">
+        <span className="whitespace-nowrap text-[16px] font-bold leading-none text-black">
           {price.toLocaleString()}원
         </span>
         {showMembershipBadge && (
-          <ProductMembershipBadge size="sm" label="멤버십할인가" />
+          <ProductMembershipBadge
+            size="sm"
+            label="멤버십할인가"
+            className="shrink-0"
+          />
         )}
       </div>
       {!isMember &&
@@ -59,7 +63,7 @@ export function ProductPrice({
         membershipSavings != null && (
           <div className="flex flex-col gap-0.5 text-[#F2994A]">
             <ProductMembershipBadge size="sm" label="멤버십할인가" />
-            <span className="text-[15px] font-bold">
+            <span className="whitespace-nowrap text-[15px] font-bold">
               {membershipPrice.toLocaleString()}원
             </span>
             <span className="hidden text-[11px] font-medium md:block">
