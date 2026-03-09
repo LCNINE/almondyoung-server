@@ -150,6 +150,7 @@ export const setTokenCookies = async (
 
   cookies.set("accessToken", accessToken, {
     path: "/",
+    maxAge: 60 * 60 * 24 * 7, // 7일: 크로스도메인 결제 리다이렉트 후 세션 쿠키 소실 방지
     ...(domain ? { domain } : {}),
   })
 
@@ -163,6 +164,7 @@ export const setTokenCookies = async (
 
     cookies.set("refreshToken", refreshToken, {
       path: "/",
+      maxAge: 60 * 60 * 24 * 30, // 30일
       ...(domain ? { domain } : {}),
     })
   }
