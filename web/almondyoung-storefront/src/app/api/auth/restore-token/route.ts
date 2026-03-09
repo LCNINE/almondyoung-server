@@ -2,6 +2,33 @@ import { NextRequest, NextResponse } from "next/server"
 import { cookies } from "next/headers"
 import { requireBackendBaseUrl } from "@/lib/config/backend"
 
+/**
+ * 새 accessToken으로 Medusa JWT를 발급받습니다.
+ */
+async function fetchMedusaToken(accessToken: string): Promise<string | null> {
+  try {
+    const medusaBaseUrl = requireBackendBaseUrl("medusa")
+    const res = await fetch(`${medusaBaseUrl}/auth/customer/my-auth`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+    })
+
+    if (!res.ok) {
+      console.error("Medusa signin failed:", res.status)
+      return null
+    }
+
+    const data = await res.json()
+    return data.token ?? null
+  } catch (error) {
+    console.error("Medusa signin error:", error)
+    return null
+  }
+}
+
 const isIpHost = (hostname: string) => {
   return /^(?:\d{1,3}\.){3}\d{1,3}$/.test(hostname) || hostname.includes(":")
 }
@@ -85,6 +112,7 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await res.json()
+    const newAccessToken = data.data.accessToken
 
     // 토큰 복구 성공 - JSON 응답으로 처리
     const response = NextResponse.json(
@@ -102,10 +130,22 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    response.cookies.set("accessToken", data.data.accessToken, {
+    response.cookies.set("accessToken", newAccessToken, {
       path: "/",
       ...(tokenCookieDomain ? { domain: tokenCookieDomain } : {}),
     })
+
+    // 새 accessToken으로 Medusa JWT도 갱신
+    const medusaToken = await fetchMedusaToken(newAccessToken)
+    if (medusaToken) {
+      response.cookies.set("_medusa_jwt", medusaToken, {
+        maxAge: 60 * 60 * 24 * 30, // 30일
+        httpOnly: true,
+        sameSite: "strict",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+      })
+    }
 
     return response
   } catch (error) {
