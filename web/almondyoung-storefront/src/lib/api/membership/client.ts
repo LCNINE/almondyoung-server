@@ -19,6 +19,36 @@ const unwrapData = <T>(payload: any): T => {
   return payload as T
 }
 
+const extractMembershipErrorMessage = (
+  payload: any,
+  fallback: string
+): string => {
+  const errorCode =
+    payload?.error?.code ||
+    payload?.code ||
+    payload?.errorCode ||
+    payload?.error?.error
+
+  if (errorCode === "ACTIVE_SUBSCRIPTION_EXISTS") {
+    return "이미 활성 구독이 존재합니다."
+  }
+
+  const candidates = [
+    payload?.error?.message,
+    payload?.message,
+    Array.isArray(payload?.message) ? payload.message[0] : undefined,
+    payload?.error?.details?.message,
+  ]
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return candidate
+    }
+  }
+
+  return fallback
+}
+
 export interface MembershipCheckoutIntentResponse {
   intentId: string
 }
@@ -75,11 +105,19 @@ export async function createMembershipCheckoutIntent(
   })
 
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ message: "Unknown error" }))
-    throw new Error(
-      error.message ||
-        `Failed to create membership checkout intent: ${res.statusText}`
-    )
+    const errorPayload = await res.json().catch(() => null)
+    if (res.status === 500) {
+      // 백엔드 ExceptionFilter 버그로 ACTIVE_SUBSCRIPTION_EXISTS가 500으로 내려오는 경우 대응
+      const activeSubscription = await getCurrentSubscription().catch(() => null)
+      if (activeSubscription) {
+        throw new Error("이미 활성 구독이 존재합니다.")
+      }
+    }
+    const fallback =
+      res.status === 409
+        ? "이미 활성 구독이 존재합니다."
+        : `Failed to create membership checkout intent: ${res.statusText}`
+    throw new Error(extractMembershipErrorMessage(errorPayload, fallback))
   }
 
   const payload = await res.json()
