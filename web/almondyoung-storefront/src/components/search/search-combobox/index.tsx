@@ -39,7 +39,11 @@ export function SearchCombobox() {
 
     debounceTimer.current = setTimeout(async () => {
       const result = await getSuggestions({ q: searchTerm, size: 5 })
-      setSuggestions(result.data?.items.map((i) => i.keyword) ?? [])
+      if (result.success && result.data) {
+        setSuggestions(result.data.items.map((i: { keyword: string }) => i.keyword))
+      } else {
+        setSuggestions([])
+      }
     }, 300)
 
     return () => {
