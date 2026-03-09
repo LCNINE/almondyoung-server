@@ -15,6 +15,7 @@ import {
 
   // Subscription Operations
   CreateSubscriptionRequestSchema,
+  CreateCheckoutIntentRequestSchema,
   UpgradeSubscriptionRequestSchema,
   DowngradeSubscriptionRequestSchema,
   CancelSubscriptionRequestSchema,
@@ -51,6 +52,9 @@ export class ExtendEntitlementRequestDto extends createZodDto(
 
 export class CreateSubscriptionRequestDto extends createZodDto(
   CreateSubscriptionRequestSchema,
+) {}
+export class CreateCheckoutIntentRequestDto extends createZodDto(
+  CreateCheckoutIntentRequestSchema,
 ) {}
 export class UpgradeSubscriptionRequestDto extends createZodDto(
   UpgradeSubscriptionRequestSchema,

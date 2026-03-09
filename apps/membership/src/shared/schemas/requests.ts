@@ -73,6 +73,11 @@ export const CreateSubscriptionRequestSchema = z.object({
   planId: z.string().min(1, { error: 'planId는 필수입니다' }),
 });
 
+export const CreateCheckoutIntentRequestSchema = z.object({
+  planId: z.string().min(1, { error: 'planId는 필수입니다' }),
+  returnUrl: z.url({ error: '유효한 returnUrl이어야 합니다' }),
+});
+
 export const UpgradeSubscriptionRequestSchema = z.object({
   newPlanId: z.uuid({ error: '유효한 UUID 형식이어야 합니다' }),
 });
@@ -120,6 +125,9 @@ export type UpdatePlanRequest = z.infer<typeof UpdatePlanRequestSchema>;
 export type DeactivatePlanRequest = z.infer<typeof DeactivatePlanRequestSchema>;
 export type CreateSubscriptionRequest = z.infer<
   typeof CreateSubscriptionRequestSchema
+>;
+export type CreateCheckoutIntentRequest = z.infer<
+  typeof CreateCheckoutIntentRequestSchema
 >;
 export type UpgradeSubscriptionRequest = z.infer<
   typeof UpgradeSubscriptionRequestSchema
