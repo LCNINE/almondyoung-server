@@ -30,7 +30,7 @@ const SORT_OPTIONS = [
   { id: "price_desc", label: "높은가격순" },
   { id: "newest", label: "최신순" },
 ]
-const CACHE_TTL_MS = 0
+const CACHE_TTL_MS = 1000 * 60 * 30
 
 export function SearchPageClient({
   keyword,
@@ -117,6 +117,8 @@ export function SearchPageClient({
   })
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const isLoadingMoreRef = useRef(false)
+  const isFetchingRef = useRef(false)
+  const isInfiniteScrollUpdateRef = useRef(false)
 
   const hasKeyword = keyword.length > 0
   const hasResults = items.length > 0
@@ -224,6 +226,17 @@ export function SearchPageClient({
   )
 
   useEffect(() => {
+    // 이미 fetch 중이면 스킵
+    if (isFetchingRef.current) {
+      return
+    }
+
+    // 무한 스크롤로 인한 URL 업데이트는 스킵
+    if (isInfiniteScrollUpdateRef.current) {
+      isInfiniteScrollUpdateRef.current = false
+      return
+    }
+
     if (!hasKeyword) {
       setItems([])
       setTotal(0)
@@ -254,6 +267,7 @@ export function SearchPageClient({
 
     isLoadingMoreRef.current = false
     setIsLoadingMore(false)
+    isFetchingRef.current = true
 
     let cancelled = false
     const hydratePages = async () => {
@@ -267,12 +281,12 @@ export function SearchPageClient({
         setItems(merged)
         setTotal(last?.total ?? 0)
         setCurrentPage(urlPage)
-        isLoadingMoreRef.current = false
-        setIsLoadingMore(false)
       } catch (error) {
         console.error("검색 목록 로드 실패:", error)
+      } finally {
         isLoadingMoreRef.current = false
         setIsLoadingMore(false)
+        isFetchingRef.current = false
       }
     }
 
@@ -300,7 +314,7 @@ export function SearchPageClient({
   )
 
   const loadMore = useCallback(async () => {
-    if (isLoadingMoreRef.current || !hasMore || !hasKeyword) return
+    if (isLoadingMoreRef.current || isFetchingRef.current || !hasMore || !hasKeyword) return
 
     isLoadingMoreRef.current = true
     setIsLoadingMore(true)
@@ -311,6 +325,7 @@ export function SearchPageClient({
       setItems((prev) => [...prev, ...next.items])
       setTotal(next.total)
       setCurrentPage(nextPage)
+      isInfiniteScrollUpdateRef.current = true
       setUrlPage(nextPage)
     } catch (error) {
       console.error("검색 상품 추가 로드 실패:", error)

@@ -66,7 +66,7 @@ const SORT_LABELS: Array<{ id: keyof typeof SORT_OPTIONS; label: string }> = [
 ]
 
 const DEFAULT_ITEMS_PER_PAGE = 20
-const CACHE_TTL_MS = 0
+const CACHE_TTL_MS = 1000 * 60 * 30
 
 const getApiOrderForSort = (sort: keyof typeof SORT_OPTIONS) => {
   if (sort === "newest") {
@@ -148,6 +148,7 @@ export function CategoryPageClient({
   const isLoggedIn = !!user
   const isLoadingMoreRef = useRef(false)
   const isInfiniteScrollUpdateRef = useRef(false)
+  const isFetchingRef = useRef(false)
 
   const currentSort = useMemo(() => {
     const sort = searchParams.get("sort")
@@ -306,6 +307,11 @@ export function CategoryPageClient({
 
   // 정렬/개수/카테고리 변경 시 데이터 로드
   useEffect(() => {
+    // 이미 fetch 중이면 스킵
+    if (isFetchingRef.current) {
+      return
+    }
+
     // 무한 스크롤로 인한 URL 업데이트는 스킵 (loadMore에서 이미 데이터를 로드함)
     if (isInfiniteScrollUpdateRef.current) {
       isInfiniteScrollUpdateRef.current = false
@@ -342,6 +348,7 @@ export function CategoryPageClient({
 
     isLoadingMoreRef.current = false
     setIsLoadingMore(false)
+    isFetchingRef.current = true
 
     startTransition(async () => {
       try {
@@ -357,21 +364,19 @@ export function CategoryPageClient({
           )
           setTotal(last?.total ?? 0)
           setCurrentPage(urlPage)
-          isLoadingMoreRef.current = false
-          setIsLoadingMore(false)
         } else {
           const { products: nextProducts, total: nextTotal } =
             await fetchProductsPage(1)
           setProducts(nextProducts)
           setTotal(nextTotal)
           setCurrentPage(1)
-          isLoadingMoreRef.current = false
-          setIsLoadingMore(false)
         }
       } catch (error) {
         console.error("상품 목록 로드 실패:", error)
+      } finally {
         isLoadingMoreRef.current = false
         setIsLoadingMore(false)
+        isFetchingRef.current = false
       }
     })
   }, [
@@ -388,7 +393,7 @@ export function CategoryPageClient({
   ])
 
   const loadMore = useCallback(async () => {
-    if (isLoadingMoreRef.current || !hasMore) return
+    if (isLoadingMoreRef.current || isFetchingRef.current || !hasMore) return
 
     isLoadingMoreRef.current = true
     setIsLoadingMore(true)
