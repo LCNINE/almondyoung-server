@@ -380,10 +380,6 @@ export async function createCheckoutCartFromLineItems(params: {
     headers
   )
 
-  // Keep cookie cart in sync with checkout cart so checkout actions
-  // don't accidentally target an old/source cart.
-  await setCartId(checkoutCart.id)
-
   const cartCacheTag = await getCacheTag("carts")
   revalidateTag(cartCacheTag)
 
@@ -764,17 +760,19 @@ export async function getCartPricingForPreview(cartId: string): Promise<{
 export async function updateLineItem({
   lineId,
   quantity,
+  cartId,
 }: {
   lineId: string
   quantity: number
+  cartId?: string
 }) {
   if (!lineId) {
     throw new Error("Missing lineItem ID when updating line item")
   }
 
-  const cartId = await getCartId()
+  const targetCartId = cartId || (await getCartId())
 
-  if (!cartId) {
+  if (!targetCartId) {
     throw new Error("Missing cart ID when updating line item")
   }
 
@@ -783,7 +781,7 @@ export async function updateLineItem({
   }
 
   await sdk.store.cart
-    .updateLineItem(cartId, lineId, { quantity }, {}, headers)
+    .updateLineItem(targetCartId, lineId, { quantity }, {}, headers)
     .then(async () => {
       const cartCacheTag = await getCacheTag("carts")
       revalidateTag(cartCacheTag)
@@ -794,14 +792,14 @@ export async function updateLineItem({
     .catch(medusaError)
 }
 
-export async function deleteLineItem(lineId: string) {
+export async function deleteLineItem(lineId: string, cartId?: string) {
   if (!lineId) {
     throw new Error("Missing lineItem ID when deleting line item")
   }
 
-  const cartId = await getCartId()
+  const targetCartId = cartId || (await getCartId())
 
-  if (!cartId) {
+  if (!targetCartId) {
     throw new Error("Missing cart ID when deleting line item")
   }
 
@@ -810,7 +808,7 @@ export async function deleteLineItem(lineId: string) {
   }
 
   await sdk.store.cart
-    .deleteLineItem(cartId, lineId, {}, headers)
+    .deleteLineItem(targetCartId, lineId, {}, headers)
     .then(async () => {
       const cartCacheTag = await getCacheTag("carts")
       revalidateTag(cartCacheTag)
