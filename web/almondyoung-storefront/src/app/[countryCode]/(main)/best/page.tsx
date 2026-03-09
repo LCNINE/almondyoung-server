@@ -23,9 +23,9 @@ import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
 export default async function BestPage({
   params,
 }: {
-  params: { countryCode: string }
+  params: Promise<{ countryCode: string }>
 }) {
-  const { countryCode } = params
+  const { countryCode } = await params
   const region = await getRegion(countryCode)
 
   // TODO: 실제 베스트 상품 API로 교체
