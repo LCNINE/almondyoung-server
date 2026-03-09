@@ -175,18 +175,25 @@ export default function ProductActions({
     }))
   }
 
-  // 수량 변경 (1에서 -1 누르면 삭제)
-  const updateQuantity = useCallback((variantId: string, delta: number) => {
-    setSelectedItems((prev) => {
-      const item = prev.find((i) => i.variantId === variantId)
-      if (item && item.quantity + delta < 1) {
-        return prev.filter((i) => i.variantId !== variantId)
-      }
-      return prev.map((i) =>
-        i.variantId === variantId ? { ...i, quantity: i.quantity + delta } : i
-      )
-    })
-  }, [])
+  // 수량 변경 (1에서 -1 누르면 삭제, 단 옵션이 하나뿐이면 삭제하지 않음)
+  const updateQuantity = useCallback(
+    (variantId: string, delta: number) => {
+      setSelectedItems((prev) => {
+        const item = prev.find((i) => i.variantId === variantId)
+        if (item && item.quantity + delta < 1) {
+          // isSimple(옵션 1개)이면 삭제하지 않고 수량 1 유지
+          if (isSimple) {
+            return prev
+          }
+          return prev.filter((i) => i.variantId !== variantId)
+        }
+        return prev.map((i) =>
+          i.variantId === variantId ? { ...i, quantity: i.quantity + delta } : i
+        )
+      })
+    },
+    [isSimple]
+  )
 
   // 항목 삭제
   const removeItem = useCallback((variantId: string) => {
@@ -341,7 +348,7 @@ export default function ProductActions({
                         <input
                           ref={(el) => {
                             if (el) {
-                              (el as any)._variantId = item.variantId
+                              ;(el as any)._variantId = item.variantId
                             }
                           }}
                           type="text"
