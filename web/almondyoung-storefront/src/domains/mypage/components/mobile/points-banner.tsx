@@ -1,49 +1,13 @@
-"use client"
-
 import { ChevronRight } from "lucide-react"
-import { useEffect, useState } from "react"
-import { getPointBalance } from "@lib/api/wallet"
 import Link from "next/link"
-import { Skeleton } from "@/components/ui/skeleton"
+import type { PointBalanceData } from "../../types/mypage-types"
 
-interface PointBalanceData {
-  balance: number
-  withdrawable: number
+interface PointsBannerProps {
+  initialData: PointBalanceData
 }
 
-export function PointsBanner() {
-  const [pointData, setPointData] = useState<PointBalanceData | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-
-  useEffect(() => {
-    const fetchPointBalance = async () => {
-      try {
-        const data = await getPointBalance()
-        setPointData(data)
-      } catch (error) {
-        console.error("포인트 잔액 조회 실패:", error)
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    fetchPointBalance()
-  }, [])
-
-  if (isLoading) {
-    return (
-      <section className="flex w-full items-center justify-between rounded-[10px] bg-white px-4 py-3.5 shadow-sm">
-        <Skeleton className="h-3 w-32" />
-        <div className="flex items-center gap-2">
-          <Skeleton className="h-3 w-12" />
-          <Skeleton className="h-4 w-20" />
-          <Skeleton className="h-4 w-4 rounded-full" />
-        </div>
-      </section>
-    )
-  }
-
-  const balance = pointData?.balance ?? 0
+export function PointsBanner({ initialData }: PointsBannerProps) {
+  const balance = initialData.balance
   const hasRecentActivity = balance > 0
 
   return (

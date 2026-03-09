@@ -1,15 +1,14 @@
-"use client"
-
 import { Settings, Crown } from "lucide-react"
 import Link from "next/link"
-import { useMembership } from "@/contexts/membership-context"
+import type { MembershipData } from "../../types/mypage-types"
 
 interface MobileHeaderProps {
   userName: string
+  initialMembership: MembershipData
 }
 
-export function MobileHeader({ userName }: MobileHeaderProps) {
-  const { isMembershipPricing, tier } = useMembership()
+export function MobileHeader({ userName, initialMembership }: MobileHeaderProps) {
+  const { isMembershipPricing, tier } = initialMembership
   const isMember = isMembershipPricing
   const tierName = tier?.name ?? "멤버십"
 

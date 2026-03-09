@@ -3,44 +3,28 @@
 import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
 import { Spinner } from "@/components/shared/spinner"
 import { useUser } from "@/contexts/user-context"
-import { useMembership } from "@/contexts/membership-context"
 import { signout } from "@lib/api/users/signout"
 import { ChevronRight, Coins, Crown, User } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { useTransition, useEffect, useState } from "react"
-import { getPointBalance } from "@lib/api/wallet"
+import { useTransition } from "react"
 import Link from "next/link"
-import { Skeleton } from "@/components/ui/skeleton"
+import type { MembershipData } from "../../types/mypage-types"
 
 interface UserProfileSectionProps {
   userName: string
+  initialMembership: MembershipData
+  initialPointBalance: number
 }
 
-export function UserProfileSection({ userName }: UserProfileSectionProps) {
+export function UserProfileSection({
+  userName,
+  initialMembership,
+  initialPointBalance,
+}: UserProfileSectionProps) {
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
   const { setUser } = useUser()
-  const { isMembershipPricing, tier } = useMembership()
-  const [pointBalance, setPointBalance] = useState(0)
-  const [isLoading, setIsLoading] = useState(true)
-
-  useEffect(() => {
-    const fetchUserData = async () => {
-      try {
-        const points = await getPointBalance().catch(() => ({
-          balance: 0,
-          withdrawable: 0,
-        }))
-        setPointBalance(points.balance)
-      } catch (error) {
-        console.error("사용자 데이터 조회 실패:", error)
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    fetchUserData()
-  }, [])
+  const { isMembershipPricing, tier } = initialMembership
 
   const handleLogout = () => {
     startTransition(async () => {
@@ -75,9 +59,7 @@ export function UserProfileSection({ userName }: UserProfileSectionProps) {
             </div>
 
             {/* 멤버십 뱃지 or 가입 유도 */}
-            {isLoading ? (
-              <Skeleton className="h-6 w-24" />
-            ) : isMembershipPricing ? (
+            {isMembershipPricing ? (
               <Link href="/kr/mypage/membership">
                 <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[#FF9500] transition-opacity hover:opacity-80">
                   <Crown className="size-4" aria-hidden />
@@ -146,7 +128,7 @@ export function UserProfileSection({ userName }: UserProfileSectionProps) {
 
               <span className="inline-flex items-center gap-2.5 whitespace-nowrap">
                 <span className="text-lg font-bold text-black">
-                  {pointBalance.toLocaleString()} 원
+                  {initialPointBalance.toLocaleString()} 원
                 </span>
                 <ChevronRight className="size-6 text-zinc-500" aria-hidden />
               </span>

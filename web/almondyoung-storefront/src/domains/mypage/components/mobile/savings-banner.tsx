@@ -1,51 +1,17 @@
-"use client"
-
 import { ChevronRight } from "lucide-react"
-import { useEffect, useState } from "react"
-import {
-  getCurrentMonthSavings,
-  getCurrentSubscription,
-} from "@/lib/api/membership"
 import Link from "next/link"
+import type { SavingsData } from "../../types/mypage-types"
 
-interface SavingsData {
-  totalSavings: number
-  hasSubscription: boolean
-  tierName?: string
+interface SavingsBannerProps {
+  initialData: SavingsData
 }
 
-export function SavingsBanner() {
-  const [savingsData, setSavingsData] = useState<SavingsData | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-
-  useEffect(() => {
-    const fetchSavingsData = async () => {
-      try {
-        const [savings, subscription] = await Promise.all([
-          getCurrentMonthSavings().catch(() => null),
-          getCurrentSubscription().catch(() => null),
-        ])
-
-        setSavingsData({
-          totalSavings: savings?.totalSavings ?? 0,
-          hasSubscription: subscription?.status === "ACTIVE",
-          tierName: subscription?.plan?.tier?.name || undefined,
-        })
-      } catch (error) {
-        console.error("절약액 조회 실패:", error)
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    fetchSavingsData()
-  }, [])
-
-  if (isLoading || !savingsData?.hasSubscription) {
+export function SavingsBanner({ initialData }: SavingsBannerProps) {
+  if (!initialData.hasSubscription) {
     return null
   }
 
-  const { totalSavings, tierName } = savingsData
+  const { totalSavings, tierName } = initialData
 
   return (
     <Link href="/kr/mypage/membership">

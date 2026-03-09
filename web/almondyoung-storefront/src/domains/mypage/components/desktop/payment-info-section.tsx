@@ -1,45 +1,15 @@
-"use client"
-
 import { ChevronRight } from "lucide-react"
-import { useEffect, useState } from "react"
-import { getCurrentSubscription } from "@/lib/api/membership"
 import Link from "next/link"
+import type { BillingInfo } from "../../types/mypage-types"
 
-interface BillingInfo {
-  nextBillingDate: string | null
-  nextBillingAmount: number
-  periodStart: string | null
-  periodEnd: string | null
+interface PaymentInfoSectionProps {
+  initialBillingInfo: BillingInfo | null
 }
 
-export function PaymentInfoSection() {
-  const [billingInfo, setBillingInfo] = useState<BillingInfo | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-
-  useEffect(() => {
-    const fetchBillingInfo = async () => {
-      try {
-        const subscription = await getCurrentSubscription()
-
-        if (subscription && subscription.status === "ACTIVE") {
-          setBillingInfo({
-            nextBillingDate: subscription.nextBillingDate || null,
-            nextBillingAmount: subscription.plan?.price || 0,
-            periodStart: subscription.currentPeriodStart || null,
-            periodEnd: subscription.currentPeriodEnd || null,
-          })
-        }
-      } catch (error) {
-        console.error("구독 정보 조회 실패:", error)
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    fetchBillingInfo()
-  }, [])
-
-  if (isLoading || !billingInfo) {
+export function PaymentInfoSection({
+  initialBillingInfo,
+}: PaymentInfoSectionProps) {
+  if (!initialBillingInfo) {
     return null
   }
 
@@ -58,15 +28,15 @@ export function PaymentInfoSection() {
           </h2>
 
           <>
-            {billingInfo.nextBillingDate && (
+            {initialBillingInfo.nextBillingDate && (
               <p className="text-sm font-normal text-black">
-                {formatDate(billingInfo.nextBillingDate)} 결제 예정
+                {formatDate(initialBillingInfo.nextBillingDate)} 결제 예정
               </p>
             )}
 
             <p className="inline-flex items-center justify-center gap-1">
               <span className="text-lg font-bold text-black">
-                {billingInfo.nextBillingAmount.toLocaleString()}
+                {initialBillingInfo.nextBillingAmount.toLocaleString()}
               </span>
               <span className="text-sm font-normal text-black">원</span>
 
@@ -74,12 +44,12 @@ export function PaymentInfoSection() {
             </p>
           </>
 
-          {billingInfo.periodStart && billingInfo.periodEnd && (
+          {initialBillingInfo.periodStart && initialBillingInfo.periodEnd && (
             <dl className="bg-gray-background inline-flex items-start justify-start gap-7 rounded-[5px] px-3.5 py-1.5">
               <dt className="text-sm font-normal text-black">이용기간</dt>
               <dd className="text-sm font-normal text-black">
-                {formatDate(billingInfo.periodStart)} ~{" "}
-                {formatDate(billingInfo.periodEnd)}
+                {formatDate(initialBillingInfo.periodStart)} ~{" "}
+                {formatDate(initialBillingInfo.periodEnd)}
               </dd>
             </dl>
           )}
