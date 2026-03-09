@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.1",
-    "@medusajs/js-sdk": "latest",
+    "@medusajs/js-sdk": "2.11.3",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-aspect-ratio": "^1.1.7",
@@ -95,7 +95,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.17.5",
-    "@medusajs/types": "latest",
+    "@medusajs/types": "2.11.3",
     "@svgr/webpack": "^8.1.0",
     "@tailwindcss/postcss": "^4.1.13",
     "@types/lodash": "^4.17.21",
