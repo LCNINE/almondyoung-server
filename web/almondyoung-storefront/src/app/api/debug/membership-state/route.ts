@@ -41,6 +41,8 @@ export async function GET(request: Request) {
       original_total: item.original_total ?? null,
     })) ?? []
 
+  const rawCustomerGroups = (customer as { groups?: unknown } | null)?.groups
+
   return NextResponse.json({
     requestedCartId: cartIdParam ?? null,
     membershipGroupId,
@@ -49,6 +51,7 @@ export async function GET(request: Request) {
     cartGroupIds,
     customerId: customer?.id ?? null,
     customerGroupIds,
+    rawCustomerGroups,
     isMembershipFromCart: isMembershipGroup(cartWithCustomer?.customer?.groups),
     isMembershipFromCustomer: isMembershipGroup(
       (customer as { groups?: { id?: string | null }[] } | null)?.groups
