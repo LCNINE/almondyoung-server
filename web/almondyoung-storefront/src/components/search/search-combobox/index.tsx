@@ -5,6 +5,7 @@ import { SearchInput } from "../search-input/input"
 import { SearchPopover } from "../search-popover"
 import { useRouter } from "next/navigation"
 import { useSearchHistory } from "@/hooks/ui/use-search-history"
+import { useSearchSheetStore } from "@/hooks/ui/use-search-sheet-store"
 import { getSuggestions } from "@lib/api/pim/search"
 
 /**
@@ -22,6 +23,7 @@ export function SearchCombobox() {
   const [suggestions, setSuggestions] = useState<string[]>([])
 
   const { addKeyword } = useSearchHistory()
+  const { onClose: closeSheet } = useSearchSheetStore()
   const router = useRouter()
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -52,6 +54,7 @@ export function SearchCombobox() {
       addKeyword(searchTerm.trim())
       setIsOpen(false)
       router.push(`/search?q=${encodeURIComponent(searchTerm)}`)
+      closeSheet()
     }
   }
 
@@ -61,6 +64,7 @@ export function SearchCombobox() {
     addKeyword(searchTerm.trim())
     setIsOpen(false)
     router.push(`/search?q=${encodeURIComponent(searchTerm.trim())}`)
+    closeSheet()
   }
 
   return (

@@ -7,11 +7,13 @@ import {
   CarouselItem,
 } from "@/components/ui/carousel"
 import { useSearchHistory } from "@/hooks/ui/use-search-history"
+import { useSearchSheetStore } from "@/hooks/ui/use-search-sheet-store"
 import { Trash2, X } from "lucide-react"
 import { useParams, useRouter } from "next/navigation"
 
 export function SearchHistory() {
   const { keywords, removeKeyword, clearAll } = useSearchHistory()
+  const { onClose } = useSearchSheetStore()
   const router = useRouter()
   const params = useParams<{ countryCode?: string }>()
   const countryCode =
@@ -20,6 +22,7 @@ export function SearchHistory() {
 
   const handleHistoryClick = (item: string) => {
     router.push(`${searchBasePath}?q=${encodeURIComponent(item)}`)
+    onClose()
   }
 
   return (

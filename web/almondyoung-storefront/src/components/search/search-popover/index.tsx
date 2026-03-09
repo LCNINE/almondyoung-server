@@ -6,6 +6,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { useSearchHistory } from "@/hooks/ui/use-search-history"
+import { useSearchSheetStore } from "@/hooks/ui/use-search-sheet-store"
 import { useParams, useRouter } from "next/navigation"
 import { X } from "lucide-react"
 
@@ -30,7 +31,10 @@ export function SearchPopover({
         className="mt-2 w-(--radix-popover-trigger-width) min-w-[580px] overflow-hidden rounded-[30px] bg-white p-0 py-7"
       >
         <div className="flex min-h-[420px]">
-          <SearchHistory suggestions={suggestions} onClose={() => setIsOpen(false)} />
+          <SearchHistory
+            suggestions={suggestions}
+            onClose={() => setIsOpen(false)}
+          />
           {/* todo: 급상승 검색어(미연결 구간) 임시 비활성화 */}
           {/* <SearchTrending
             items={trendingKeywords}
@@ -59,6 +63,7 @@ function SearchHistory({
     setDisableSave,
     addKeyword,
   } = useSearchHistory()
+  const { onClose: closeSheet } = useSearchSheetStore()
 
   const router = useRouter()
   const params = useParams<{ countryCode?: string }>()
@@ -70,12 +75,14 @@ function SearchHistory({
     addKeyword(keyword)
     onClose()
     router.push(`${searchBasePath}?q=${encodeURIComponent(keyword)}`)
+    closeSheet()
   }
 
   const handleHistoryClick = (keyword: string) => {
     addKeyword(keyword)
     onClose()
     router.push(`${searchBasePath}?q=${encodeURIComponent(keyword)}`)
+    closeSheet()
   }
 
   return (
