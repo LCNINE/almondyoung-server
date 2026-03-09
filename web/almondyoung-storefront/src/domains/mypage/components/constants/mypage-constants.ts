@@ -9,6 +9,11 @@ export const QUICK_LINKS: QuickLink[] = [
 
 export const MENU_ITEMS: MenuItem[] = [
   { label: "주문조회", icon: "📄", path: "/mypage/order/list" },
+  {
+    label: "기존 아몬드영 주문내역 확인",
+    icon: "🧾",
+    path: "/mypage/order/legacy",
+  },
   { label: "취소 / 반품 / 교환목록", icon: "🔄", path: "/mypage/exchange" },
   { label: "리뷰 관리", icon: "⭐", path: "/mypage/reviews" },
   { label: "아몬드영 멤버십", icon: "💎", path: "/mypage/membership" },
@@ -38,6 +43,11 @@ export const MENU_SECTIONS: MenuSection[] = [
     title: "주문 및 배송",
     items: [
       { label: "주문 내역", icon: "📦", path: "/mypage/order/list" },
+      {
+        label: "기존 아몬드영 주문내역 확인",
+        icon: "🧾",
+        path: "/mypage/order/legacy",
+      },
       { label: "취소/반품/교환", icon: "🔄", path: "/mypage/exchange" },
       { label: "찜한 상품", icon: "❤️", path: "/mypage/wish" },
     ],
@@ -77,6 +87,12 @@ export const SIDEBAR_MENU_ITEMS = [
     label: "주문/배송 내역",
     hasSubMenu: false,
     path: "/mypage/order/list",
+  },
+  {
+    id: "legacy-order",
+    label: "기존 아몬드영 주문내역 확인",
+    hasSubMenu: false,
+    path: "/mypage/order/legacy",
   },
   {
     id: "wishlist",
