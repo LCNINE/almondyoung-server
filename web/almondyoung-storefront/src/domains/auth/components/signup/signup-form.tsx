@@ -21,9 +21,8 @@ import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { useActionState, useEffect, useState, useTransition } from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
+import { LegacyAccountMigrationCard } from "../legacy-account-migration-card"
 import { SignupFormFields } from "./signup-form-fields"
-
-const CAFE24_MIGRATOR_BASE = "https://almondyoung.com/migrator/confirm.html"
 
 export type SignupMode = "default" | "cafe24"
 
@@ -148,16 +147,6 @@ export function SignupForm({ mode, cafe24Bootstrap }: SignupFormProps) {
     router.replace(nextPath)
   }, [countryCode, legacyMessage, legacyStatus, router, searchParams])
 
-  const handleContinueWithCafe24 = () => {
-    if (typeof window === "undefined") return
-
-    const confirmUrl =
-      `${window.location.origin}/${countryCode}/signup/cafe24/confirm` +
-      `?redirect_to=${encodeURIComponent(redirectTo)}`
-
-    window.location.href = `${CAFE24_MIGRATOR_BASE}?redirect_to=${encodeURIComponent(confirmUrl)}`
-  }
-
   const onSubmit = async (data: SignupSchema) => {
     const {
       passwordConfirm,
@@ -244,22 +233,8 @@ export function SignupForm({ mode, cafe24Bootstrap }: SignupFormProps) {
         id="signup-form"
       >
         {!isCafe24Mode && (
-          <div className="mb-2 rounded-lg border border-zinc-200 p-4">
-            <p className="text-sm font-semibold text-zinc-800">
-              기존 아몬드영 계정이 있으신가요?
-            </p>
-            <p className="mt-1 text-xs text-zinc-500">
-              정보를 불러와 빠르게 가입하고 휴대폰 인증을 건너뛸 수 있습니다.
-            </p>
-            <CustomButton
-              type="button"
-              variant="outline"
-              color="secondary"
-              className="mt-3 w-full cursor-pointer"
-              onClick={handleContinueWithCafe24}
-            >
-              기존 아몬드영 계정으로 계속하기
-            </CustomButton>
+          <div className="mb-2">
+            <LegacyAccountMigrationCard variant="signup" />
           </div>
         )}
 
