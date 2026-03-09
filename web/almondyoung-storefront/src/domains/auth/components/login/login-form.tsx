@@ -22,6 +22,7 @@ import { useActionState, useEffect } from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
 import { getSocialErrorMessage } from "../../utils/set-form-error"
+import { LegacyAccountMigrationCard } from "../legacy-account-migration-card"
 import { SocialLoginBtn } from "./social-login-btn"
 
 export function LoginForm() {
@@ -205,7 +206,11 @@ export function LoginForm() {
           <CustomButton type="submit" fullWidth size="lg" disabled={isPending}>
             {isPending ? <Spinner size="sm" color="white" /> : "로그인"}
           </CustomButton>
+        </div>
 
+        <LegacyAccountMigrationCard variant="login" />
+
+        <div className="flex w-full flex-col gap-2">
           {/* TODO: 아몬드영 도메인 제대로 연결되면 다시 활성화할것, 기능테스트는 다 했음 */}
           {/* <div className="relative w-full">
             <SocialLoginBtn

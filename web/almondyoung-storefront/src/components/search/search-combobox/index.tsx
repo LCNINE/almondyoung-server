@@ -5,6 +5,7 @@ import { SearchInput } from "../search-input/input"
 import { SearchPopover } from "../search-popover"
 import { useRouter } from "next/navigation"
 import { useSearchHistory } from "@/hooks/ui/use-search-history"
+import { useSearchSheetStore } from "@/hooks/ui/use-search-sheet-store"
 import { getSuggestions } from "@lib/api/pim/search"
 
 /**
@@ -22,6 +23,7 @@ export function SearchCombobox() {
   const [suggestions, setSuggestions] = useState<string[]>([])
 
   const { addKeyword } = useSearchHistory()
+  const { onClose } = useSearchSheetStore()
   const router = useRouter()
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -37,7 +39,11 @@ export function SearchCombobox() {
 
     debounceTimer.current = setTimeout(async () => {
       const result = await getSuggestions({ q: searchTerm, size: 5 })
-      setSuggestions(result.data?.items.map((i) => i.keyword) ?? [])
+      if (result.success && result.data) {
+        setSuggestions(result.data.items.map((i: { keyword: string }) => i.keyword))
+      } else {
+        setSuggestions([])
+      }
     }, 300)
 
     return () => {
@@ -51,6 +57,7 @@ export function SearchCombobox() {
     if (key === "Enter" && searchTerm.trim()) {
       addKeyword(searchTerm.trim())
       setIsOpen(false)
+      onClose() // 모바일 검색창 닫기
       router.push(`/search?q=${encodeURIComponent(searchTerm)}`)
     }
   }
@@ -60,6 +67,7 @@ export function SearchCombobox() {
 
     addKeyword(searchTerm.trim())
     setIsOpen(false)
+    onClose() // 모바일 검색창 닫기
     router.push(`/search?q=${encodeURIComponent(searchTerm.trim())}`)
   }
 
