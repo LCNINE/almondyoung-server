@@ -1,5 +1,6 @@
 "use server"
 
+import { cache } from "react"
 import { sdk } from "@/lib/config/medusa"
 import type { StoreProductCategoryTree } from "@/lib/types/medusa-category"
 
@@ -43,7 +44,7 @@ const findCategoryById = (
   return null
 }
 
-export const getCategoryTree = async (): Promise<
+const getCategoryTreeInternal = async (): Promise<
   StoreProductCategoryTree[]
 > => {
   const limit = 100
@@ -79,6 +80,8 @@ export const getCategoryTree = async (): Promise<
 
   return buildCategoryTree(all)
 }
+
+export const getCategoryTree = cache(getCategoryTreeInternal)
 
 const buildCategoryTree = (
   categories: StoreProductCategoryTree[]

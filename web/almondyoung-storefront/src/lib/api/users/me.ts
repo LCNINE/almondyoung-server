@@ -1,5 +1,6 @@
 "use server"
 
+import { cache } from "react"
 import {
   removeAccessToken,
   removeMedusaAuthToken,
@@ -9,7 +10,7 @@ import type { UserDetail } from "@lib/types/ui/user"
 import { api } from "../api"
 import { HttpApiError } from "../api-error"
 
-export const fetchMe = async (): Promise<UserDetail> => {
+const fetchMeInternal = async (): Promise<UserDetail> => {
   try {
     const result = await api<UserDetail>("users", "/users/me", {
       cache: "no-store",
@@ -30,3 +31,5 @@ export const fetchMe = async (): Promise<UserDetail> => {
     throw error
   }
 }
+
+export const fetchMe = cache(fetchMeInternal)
