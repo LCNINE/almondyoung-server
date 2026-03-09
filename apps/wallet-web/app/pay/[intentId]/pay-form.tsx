@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { confirmPaymentIntent, cancelPaymentIntent } from '@/lib/wallet-api';
+import { buildReturnUrl } from '@/lib/return-url';
 import type { PaymentIntent, PaymentMethod, PointsBalance } from '@/lib/wallet-api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -113,7 +114,12 @@ export function PayForm({ intent, methods, pointsBalance }: Props) {
       }
 
       if (result.returnUrl) {
-        router.replace(`${result.returnUrl}?payment_intent_id=${intent.id}&status=succeeded`);
+        router.replace(
+          buildReturnUrl(result.returnUrl, {
+            payment_intent_id: intent.id,
+            status: 'succeeded',
+          }),
+        );
       } else {
         router.replace(`/pay/${intent.id}`);
       }
@@ -130,7 +136,12 @@ export function PayForm({ intent, methods, pointsBalance }: Props) {
     try {
       await cancelPaymentIntent(intent.id);
       if (intent.returnUrl) {
-        router.replace(`${intent.returnUrl}?payment_intent_id=${intent.id}&status=canceled`);
+        router.replace(
+          buildReturnUrl(intent.returnUrl, {
+            payment_intent_id: intent.id,
+            status: 'canceled',
+          }),
+        );
       } else {
         router.replace(`/pay/${intent.id}`);
       }
