@@ -118,7 +118,7 @@ export function HeroBannerCarousel({
                 {banner.linkUrl ? (
                   <Link
                     href={banner.linkUrl}
-                    className="block h-full w-full"
+                    className="relative block h-full w-full"
                     target={
                       banner.linkUrl.startsWith("http") ? "_blank" : undefined
                     }
