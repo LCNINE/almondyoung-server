@@ -30,6 +30,8 @@ import {
   CreateSubscriptionRequest,
   CreateCheckoutIntentRequestSchema,
   CreateCheckoutIntentRequest,
+  ConfirmCheckoutIntentRequestSchema,
+  ConfirmCheckoutIntentRequest,
   UpgradeSubscriptionRequestSchema,
   UpgradeSubscriptionRequest,
   DowngradeSubscriptionRequestSchema,
@@ -48,6 +50,7 @@ import {
 import {
   CreateSubscriptionRequestDto,
   CreateCheckoutIntentRequestDto,
+  ConfirmCheckoutIntentRequestDto,
   UpgradeSubscriptionRequestDto,
   DowngradeSubscriptionRequestDto,
   CancelSubscriptionRequestDto,
@@ -186,7 +189,7 @@ export class SubscriptionController {
   })
   @UseGuards(JwtAuthGuard)
   async createCheckoutIntent(
-    @User() user: { userId: string },
+    @User() user: { userId: string; email?: string },
     @Body(new ZodValidationPipe(CreateCheckoutIntentRequestSchema))
     dto: CreateCheckoutIntentRequest,
   ) {
@@ -199,7 +202,43 @@ export class SubscriptionController {
       userId,
       dto.planId,
       dto.returnUrl,
+      user?.email,
     );
+  }
+
+  /**
+   * checkout-intent 결제 완료 후 구독 확정
+   * JWT 불필요 - wallet API key로 payment intent를 검증하여 구독을 생성합니다.
+   * (크로스도메인 결제 리다이렉트 후 accessToken 쿠키 소실 문제 우회)
+   */
+  @Post('confirm-checkout-intent')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: '결제 완료 후 구독 확정',
+    description:
+      'wallet payment intent를 검증하고 구독을 생성합니다. JWT 불필요 (API key 기반 검증).',
+  })
+  @ApiBody({ type: ConfirmCheckoutIntentRequestDto })
+  @ApiResponse({
+    status: 201,
+    description: '구독 생성 성공',
+    type: SubscriptionDetailsResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: '결제가 완료되지 않았거나 메타데이터 누락',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 409,
+    description: '이미 활성 구독 존재 (성공으로 처리 가능)',
+    type: ErrorResponseDto,
+  })
+  async confirmCheckoutIntent(
+    @Body(new ZodValidationPipe(ConfirmCheckoutIntentRequestSchema))
+    dto: ConfirmCheckoutIntentRequest,
+  ) {
+    return this.subscriptionService.confirmCheckoutIntent(dto.intentId);
   }
 
   /**
