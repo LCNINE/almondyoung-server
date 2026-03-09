@@ -1989,30 +1989,30 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@medusajs/js-sdk@latest":
-  version: 2.12.5
-  resolution: "@medusajs/js-sdk@npm:2.12.5"
+"@medusajs/js-sdk@npm:2.11.3":
+  version: 2.11.3
+  resolution: "@medusajs/js-sdk@npm:2.11.3"
   dependencies:
     fetch-event-stream: ^0.1.5
     qs: ^6.12.1
-  checksum: 19e64e27be0a50ca7cafce111daf310c6573e021d021fb58bf85e3d67e3b186e975721280d93b124af09b7439185e73420cf798a738ff069c0381309df2927fc
+  checksum: 6077287eddb55b991e9cc5f37d2785a5d19a7004b1d1b210ed7414965c93a57464649351e1f7288804624dcfcce546f6c109447d2d70a9c8b643beaba1d66c7b
   languageName: node
   linkType: hard
 
-"@medusajs/types@latest":
-  version: 2.12.5
-  resolution: "@medusajs/types@npm:2.12.5"
+"@medusajs/types@npm:2.11.3":
+  version: 2.11.3
+  resolution: "@medusajs/types@npm:2.11.3"
   dependencies:
     bignumber.js: ^9.1.2
   peerDependencies:
     ioredis: ^5.4.1
-    vite: ^5.4.21
+    vite: ^5.4.14
   peerDependenciesMeta:
     ioredis:
       optional: true
     vite:
       optional: true
-  checksum: 2358fdefb10eb60749113d96b505d2749bf1d9c4bc333118776db9d62403970d394d30bf1e4cc37a82f5ad9bdb93a894094d03c973c78c27cab837f291ec25b8
+  checksum: 153441c6f382e1a8c8182a136a9ddccafcf2b882974f53e86d2092e8e7c7b0ebeaa132a9c1f352cdc4382907c96b6f66446cc645a8e8aa1e6ccb8ec7fa3b7fe2
   languageName: node
   linkType: hard
 
@@ -9012,8 +9012,8 @@ __metadata:
   dependencies:
     "@babel/core": ^7.17.5
     "@hookform/resolvers": ^5.2.1
-    "@medusajs/js-sdk": latest
-    "@medusajs/types": latest
+    "@medusajs/js-sdk": 2.11.3
+    "@medusajs/types": 2.11.3
     "@radix-ui/react-accordion": ^1.2.12
     "@radix-ui/react-alert-dialog": ^1.1.15
     "@radix-ui/react-aspect-ratio": ^1.1.7
