@@ -3,6 +3,7 @@ import {
   SubscriptionNotFoundException,
   ActiveSubscriptionExistsException,
   PlanNotFoundException,
+  BadRequestException as SubscriptionBadRequestException,
 } from '../shared/exceptions/subscription.exceptions';
 import { EntitlementService } from './entitlement.service';
 import { PlanService } from './plan.service';
@@ -95,6 +96,7 @@ export class SubscriptionService {
     userId: string,
     planId: string,
     returnUrl: string,
+    email?: string,
   ): Promise<{ intentId: string }> {
     const existing = await this.entitlementService.getUserEntitlement(userId);
     if (existing) throw new ActiveSubscriptionExistsException();
@@ -109,7 +111,35 @@ export class SubscriptionService {
       amount: planDetails.plan.price,
       returnUrl,
       currency: planDetails.plan.currency ?? 'KRW',
+      email,
     });
+  }
+
+  /**
+   * checkout-intent 결제 완료 후 구독 생성
+   * JWT 없이 wallet API key로 intent를 검증하고 구독을 생성합니다.
+   */
+  async confirmCheckoutIntent(intentId: string) {
+    const intent =
+      await this.paymentClientService.getWalletPaymentIntent(intentId);
+
+    if (intent.status !== 'AUTHORIZED' && intent.status !== 'CAPTURED') {
+      throw new SubscriptionBadRequestException(
+        `결제가 완료되지 않았습니다. (status: ${intent.status})`,
+      );
+    }
+
+    const userId = intent.metadata?.userId;
+    const planId = intent.metadata?.planId;
+    const email = (intent.metadata?.email as string) ?? '';
+
+    if (!userId || !planId) {
+      throw new SubscriptionBadRequestException(
+        'payment intent metadata에 userId 또는 planId가 없습니다.',
+      );
+    }
+
+    return this.createSubscription(userId, planId, email);
   }
 
   /**

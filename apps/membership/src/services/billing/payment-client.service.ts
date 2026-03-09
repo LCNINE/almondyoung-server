@@ -59,6 +59,19 @@ export interface MembershipCheckoutIntentRequest {
   amount: number;
   returnUrl: string;
   currency?: string;
+  email?: string;
+}
+
+export interface WalletPaymentIntentResponse {
+  id: string;
+  status: 'PENDING' | 'AUTHORIZED' | 'CAPTURED' | 'FAILED' | 'CANCELED';
+  metadata: {
+    type?: string;
+    planId?: string;
+    userId?: string;
+    email?: string;
+    [key: string]: unknown;
+  };
 }
 
 export interface MembershipCheckoutIntentResponse {
@@ -132,6 +145,7 @@ export class PaymentClientService {
               type: 'MEMBERSHIP_FEE',
               planId: request.planId,
               userId: request.userId,
+              ...(request.email ? { email: request.email } : {}),
             },
           },
           {
@@ -150,6 +164,49 @@ export class PaymentClientService {
         `Failed to create membership checkout intent: ${error.message}`,
       );
       throw new Error(`Checkout intent creation failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Wallet v1 payment intent 상태 조회 (서버간 API key 인증)
+   * confirm-checkout-intent 흐름에서 결제 검증에 사용
+   */
+  async getWalletPaymentIntent(
+    intentId: string,
+  ): Promise<WalletPaymentIntentResponse> {
+    const walletApiUrl = this.configService.get<string>(
+      'WALLET_API_URL',
+      this.paymentServerUrl,
+    );
+    const walletApiKey = this.configService.get<string>('WALLET_API_KEY');
+
+    if (!walletApiUrl) {
+      throw new Error('WALLET_API_URL is not configured');
+    }
+    if (!walletApiKey) {
+      throw new Error('WALLET_API_KEY is not configured');
+    }
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get<WalletPaymentIntentResponse>(
+          `${walletApiUrl}/v1/payment-intents/${intentId}`,
+          {
+            headers: {
+              Authorization: `Bearer ${walletApiKey}`,
+            },
+          },
+        ),
+      );
+      return response.data;
+    } catch (error) {
+      this.logger.error(
+        `Failed to get wallet payment intent ${intentId}: ${error.message}`,
+      );
+      if (error.response?.status === 404) {
+        throw new Error(`Payment intent not found: ${intentId}`);
+      }
+      throw new Error(`Wallet payment intent retrieval failed: ${error.message}`);
     }
   }
 
