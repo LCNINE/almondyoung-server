@@ -42,7 +42,7 @@ export class MembershipMedusaSyncService {
     }
 
     try {
-      const customer = await this.medusaClient.findCustomerByEmail(email);
+      const customer = await this.medusaClient.findCustomerByAlmondUserId(userId);
       if (!customer) {
         this.logger.warn(
           `Medusa customer not found for email=${email} (userId=${userId})`,
