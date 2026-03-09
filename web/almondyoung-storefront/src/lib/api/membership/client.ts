@@ -19,6 +19,10 @@ const unwrapData = <T>(payload: any): T => {
   return payload as T
 }
 
+export interface MembershipCheckoutIntentResponse {
+  intentId: string
+}
+
 export async function getCurrentSubscription(): Promise<SubscriptionDetailsDto | null> {
   const res = await fetch(`${API_BASE}/subscriptions/current`, {
     method: "GET",
@@ -55,6 +59,31 @@ export async function createSubscription(planId: string) {
   }
 
   return res.json()
+}
+
+export async function createMembershipCheckoutIntent(
+  planId: string,
+  returnUrl: string
+): Promise<MembershipCheckoutIntentResponse> {
+  const res = await fetch(`${API_BASE}/subscriptions/checkout-intent`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+    body: JSON.stringify({ planId, returnUrl }),
+  })
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ message: "Unknown error" }))
+    throw new Error(
+      error.message ||
+        `Failed to create membership checkout intent: ${res.statusText}`
+    )
+  }
+
+  const payload = await res.json()
+  return unwrapData<MembershipCheckoutIntentResponse>(payload)
 }
 
 export async function cancelSubscription(

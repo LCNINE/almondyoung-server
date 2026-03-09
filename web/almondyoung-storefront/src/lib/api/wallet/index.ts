@@ -247,30 +247,87 @@ export async function authorizePayment(
 }
 
 export async function createIntent({ data }: { data: CreateIntentRequestDto }) {
-  const { getBackendBaseUrl } = await import("@/lib/config/backend")
-  const baseUrl = getBackendBaseUrl("wallet")
-  const apiKey = process.env.WALLET_API_KEY
+  try {
+    return await api<CreateIntentResponseDto>("wallet", `/v1/payment-intents`, {
+      method: "POST",
+      body: data,
+      withAuth: true,
+      cache: "no-store",
+    })
+  } catch (v1Error) {
+    console.warn("[wallet/createIntent] v1 auth path failed, trying legacy path")
+    try {
+      const legacyPayload = {
+        customerId: data.userId,
+        originalAmount: data.amount,
+        discountAmount: 0,
+        type:
+          typeof data.metadata?.type === "string"
+            ? data.metadata.type
+            : "ORDER",
+        metadata: data.metadata,
+        returnUrl: data.returnUrl,
+      }
 
-  if (!baseUrl) throw new Error("Missing wallet base URL")
-  if (!apiKey) throw new Error("Missing WALLET_API_KEY")
+      const legacy = await api<{ id: string; customerId?: string }>(
+        "wallet",
+        `/payments/intents`,
+        {
+          method: "POST",
+          body: legacyPayload,
+          withAuth: true,
+          cache: "no-store",
+        }
+      )
 
-  const res = await fetch(`${baseUrl}/v1/payment-intents`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-      "Idempotency-Key": crypto.randomUUID(),
-    },
-    body: JSON.stringify(data),
-    cache: "no-store",
-  })
+      return {
+        id: legacy.id,
+        userId: data.userId,
+        status: "PENDING",
+        payableAmount: data.amount,
+        currency: data.currency,
+        returnUrl: data.returnUrl ?? null,
+        expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+        createdAt: new Date().toISOString(),
+      }
+    } catch (legacyError) {
+      console.warn(
+        "[wallet/createIntent] legacy auth path failed, trying api-key path"
+      )
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.message ?? `createIntent 실패: ${res.status}`)
+      const { getBackendBaseUrl } = await import("@/lib/config/backend")
+      const baseUrl = getBackendBaseUrl("wallet")
+      const apiKey = process.env.WALLET_API_KEY
+
+      if (!baseUrl) throw new Error("Missing wallet base URL")
+      if (!apiKey) throw legacyError
+
+      const res = await fetch(`${baseUrl}/v1/payment-intents`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+          "Idempotency-Key": crypto.randomUUID(),
+        },
+        body: JSON.stringify(data),
+        cache: "no-store",
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        const message =
+          err.message ??
+          (legacyError instanceof Error
+            ? legacyError.message
+            : v1Error instanceof Error
+              ? v1Error.message
+              : `createIntent 실패: ${res.status}`)
+        throw new Error(message)
+      }
+
+      return res.json() as Promise<CreateIntentResponseDto>
+    }
   }
-
-  return res.json() as Promise<CreateIntentResponseDto>
 }
 
 export async function getIntent(intentId: string): Promise<IntentDto> {
