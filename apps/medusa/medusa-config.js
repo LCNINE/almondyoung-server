@@ -13,8 +13,7 @@ loadEnv(process.env.NODE_ENV || 'development', medusaDir);
 module.exports = defineConfig({
   projectConfig: {
     databaseUrl: process.env.DATABASE_URL,
-    // RedisUrl이 없으면 Medusa는 자동으로 In-memory(Fake) Redis를 사용합니다.
-    // (이로 인해 재부팅 이슈가 생길 수 있으나, debug.log 폴더 트릭으로 막기로 했습니다.)
+    redisUrl: process.env.REDIS_URL,
     http: {
       storeCors: process.env.STORE_CORS || '',
       adminCors: process.env.ADMIN_CORS || '',
@@ -27,35 +26,6 @@ module.exports = defineConfig({
   presets: [require('@medusajs/ui-preset')],
 
   modules: [
-    {
-      resolve: "@medusajs/medusa/caching",
-      options: {
-        providers: [
-          {
-            resolve: "@medusajs/caching-redis",
-            id: "caching-redis",
-            is_default: true,
-            options: {
-              redisUrl: process.env.CACHE_REDIS_URL,
-            },
-          },
-        ],
-      },
-    },
-    {
-      resolve: "@medusajs/medusa/event-bus-redis",
-      options: {
-        redisUrl: process.env.REDIS_URL,
-      },
-    },
-    // {
-    //   resolve: "@medusajs/medusa/workflow-engine-redis",
-    //   options: {
-    //     redis: {
-    //       redisUrl: process.env.REDIS_URL,
-    //     },
-    //   },
-    // },
     {
       resolve: '@medusajs/medusa/product',
       options: {},
