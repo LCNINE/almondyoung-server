@@ -31,7 +31,8 @@ export const retrieveCustomer =
     return await sdk.client
       .fetch<{ customer: StoreCustomerWithGroups }>(`/store/customers/me`, {
         method: "GET",
-        query: { fields: "*,*addresses,*groups" },
+        // groups 필드는 백엔드에서 기본적으로 넣어주기 때문에 따로 요청하면안됌
+        // query: { fields: "*groups" },
         headers,
         cache: "no-store",
       })
