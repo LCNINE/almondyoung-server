@@ -29,6 +29,7 @@ import { useState, useTransition } from "react"
 import { toast } from "sonner"
 
 interface OrderProductsSectionProps {
+  cartId: string
   products: StoreCart["items"]
   shipping: number
   selectedIds: Set<string>
@@ -36,6 +37,7 @@ interface OrderProductsSectionProps {
 }
 
 export const OrderProductsSection = ({
+  cartId,
   products,
   shipping,
   selectedIds,
@@ -86,7 +88,7 @@ export const OrderProductsSection = ({
     startTransition(async () => {
       try {
         await Promise.all(
-          Array.from(selectedIds).map((id) => deleteLineItem(id))
+          Array.from(selectedIds).map((id) => deleteLineItem(id, cartId))
         )
         toast.success(`${selectedIds.size}개 상품이 삭제되었습니다.`)
         onSelectedIdsChange(new Set())
@@ -157,6 +159,7 @@ export const OrderProductsSection = ({
             <ProductItem
               key={item.id}
               item={item}
+              cartId={cartId}
               showDivider={i < products.length - 1}
               isSelected={selectedIds.has(item.id)}
               onToggle={() => toggleItem(item.id)}
@@ -178,12 +181,14 @@ export const OrderProductsSection = ({
 
 function ProductItem({
   item,
+  cartId,
   showDivider,
   isSelected,
   onToggle,
   disabled,
 }: {
   item: StoreCartLineItem
+  cartId: string
   showDivider: boolean
   isSelected: boolean
   onToggle: () => void
@@ -206,7 +211,7 @@ function ProductItem({
   const handleDelete = () => {
     startTransition(async () => {
       try {
-        await deleteLineItem(id)
+        await deleteLineItem(id, cartId)
         toast.success("상품이 삭제되었습니다.")
       } catch {
         toast.error("상품 삭제에 실패했습니다.")
@@ -282,6 +287,7 @@ function ProductItem({
           <div className="flex items-center gap-2">
             <QuantityEditPopover
               itemId={id}
+              cartId={cartId}
               currentQuantity={quantity}
               unitPrice={unit_price}
             />
@@ -299,10 +305,12 @@ function ProductItem({
 
 function QuantityEditPopover({
   itemId,
+  cartId,
   currentQuantity,
   unitPrice,
 }: {
   itemId: string
+  cartId: string
   currentQuantity: number
   unitPrice: number
 }) {
@@ -319,7 +327,7 @@ function QuantityEditPopover({
     if (quantity === currentQuantity) return setOpen(false)
     startTransition(async () => {
       try {
-        await updateLineItem({ lineId: itemId, quantity })
+        await updateLineItem({ lineId: itemId, quantity, cartId })
         toast.success("수량이 변경되었습니다.")
         setOpen(false)
       } catch {

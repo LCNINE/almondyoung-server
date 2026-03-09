@@ -188,6 +188,7 @@ export default function CheckoutTemplate({
               onShippingMemoChange={handleShippingMemoChange}
             />
             <OrderProductsSection
+              cartId={checkoutCartId}
               products={cart?.items}
               shipping={shipping.amount}
               selectedIds={selectedIds}
