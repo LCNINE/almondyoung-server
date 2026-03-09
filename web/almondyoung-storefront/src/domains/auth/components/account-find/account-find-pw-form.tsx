@@ -185,6 +185,7 @@ export function AccountFindPwForm() {
     isCodeVerifyPending,
     isCodeVerified,
     timer,
+    reset: resetTwilio,
   } = useTwilio()
 
   const form = useForm<FindPwFormData>({
@@ -334,8 +335,9 @@ export function AccountFindPwForm() {
   const handleChangeNumber = useCallback(() => {
     setVerificationCode("")
     setVerifiedPhoneNumber(null)
+    resetTwilio()
     setCurrentStep("phone-input")
-  }, [])
+  }, [resetTwilio])
 
   const handleResendCode = useCallback(() => {
     if (sendCount >= 3) {

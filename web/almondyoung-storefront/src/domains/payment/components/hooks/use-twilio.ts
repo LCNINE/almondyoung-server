@@ -48,6 +48,13 @@ export const useTwilio = () => {
     })
   }
 
+  // 상태 초기화
+  const reset = () => {
+    setIsCodeSent(false)
+    setIsCodeVerified(false)
+    setTimer(180)
+  }
+
   return {
     sendTwilioMessage,
     isCodeSendPending,
@@ -56,6 +63,7 @@ export const useTwilio = () => {
     isCodeVerifyPending,
     isCodeVerified,
     timer,
+    reset,
   }
 }
 
