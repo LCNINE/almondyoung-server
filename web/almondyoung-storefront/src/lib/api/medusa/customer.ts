@@ -31,7 +31,7 @@ export const retrieveCustomer =
     return await sdk.client
       .fetch<{ customer: StoreCustomerWithGroups }>(`/store/customers/me`, {
         method: "GET",
-        query: { fields: "*,*addresses,*groups" },
+        query: { fields: "*groups" },
         headers,
         cache: "no-store",
       })
