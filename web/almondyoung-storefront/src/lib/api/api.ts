@@ -62,14 +62,16 @@ export async function api<T>(
 
   if (withAuth) {
     const cookieString = await getCookies()
-    const authHeaders = await getAccessToken()
+    const accessToken = await getAccessToken()
 
     // 쿠키에 jwt 토큰이 없는데도 _medusa_cache_id가 담겨있어서 api요청이 가능한 경우를 방지하고자 추가함
-    if (!authHeaders) {
+    if (!accessToken) {
       throw new ApiAuthError("UNAUTHORIZED", 401, "UNAUTHORIZED")
     }
 
     ;(headers as Record<string, string>).Cookie = cookieString
+    ;(headers as Record<string, string>).Authorization =
+      `Bearer ${accessToken}`
   }
 
   let response: Response
