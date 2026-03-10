@@ -34,23 +34,14 @@ export function useAddToCart() {
         quantity,
       })
 
-      return { success: true, data: result }
-    } catch (error) {
-      if (error) {
-        const rawMessage = error instanceof Error ? error.message : ""
-
-        let errorMessage = "장바구니 추가 중 오류가 발생했습니다"
-        if (rawMessage.includes("inventory")) {
-          errorMessage = "재고가 부족합니다"
-        } else if (rawMessage.includes("not found")) {
-          errorMessage = "상품을 찾을 수 없습니다"
-        } else if (rawMessage.length > 0) {
-          errorMessage = rawMessage
-        }
-
-        toast.error(errorMessage)
+      if (result.error) {
+        toast.error(result.error)
+        return { success: false, error: result.error }
       }
 
+      return { success: true, data: result }
+    } catch (error) {
+      toast.error("장바구니 추가 중 오류가 발생했습니다")
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
@@ -69,23 +60,14 @@ export function useAddToCart() {
         items,
       })
 
-      return { success: true, data: result }
-    } catch (error) {
-      if (error) {
-        const rawMessage = error instanceof Error ? error.message : ""
-
-        let errorMessage = "바로구매 처리 중 오류가 발생했습니다"
-        if (rawMessage.includes("inventory")) {
-          errorMessage = "재고가 부족합니다"
-        } else if (rawMessage.includes("not found")) {
-          errorMessage = "상품을 찾을 수 없습니다"
-        } else if (rawMessage.length > 0) {
-          errorMessage = rawMessage
-        }
-
-        toast.error(errorMessage)
+      if (result.error) {
+        toast.error(result.error)
+        return { success: false, error: result.error }
       }
 
+      return { success: true, data: result }
+    } catch (error) {
+      toast.error("바로구매 처리 중 오류가 발생했습니다")
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",

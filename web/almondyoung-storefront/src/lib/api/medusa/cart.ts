@@ -163,49 +163,45 @@ export async function addToCart({
   variantId: string
   quantity: number
   countryCode: string
-}): Promise<{ cartId: string }> {
+}): Promise<{ cartId: string; error?: never } | { cartId?: never; error: string }> {
   if (!variantId) {
-    throw new HttpApiError(
-      "Missing variant ID when adding to cart",
-      400,
-      "BAD_REQUEST"
-    )
+    return { error: "Missing variant ID when adding to cart" }
   }
 
   const cart = await getOrSetCart(countryCode)
 
   if (!cart) {
-    throw new HttpApiError(
-      "Error retrieving or creating cart",
-      400,
-      "BAD_REQUEST"
-    )
+    return { error: "Error retrieving or creating cart" }
   }
 
   const headers = {
     ...(await getAuthHeaders()),
   }
 
-  return await sdk.store.cart
-    .createLineItem(
+  try {
+    await sdk.store.cart.createLineItem(
       cart.id,
-      {
-        variant_id: variantId,
-        quantity,
-      },
+      { variant_id: variantId, quantity },
       {},
       headers
     )
-    .then(async () => {
-      const cartCacheTag = await getCacheTag("carts")
-      revalidateTag(cartCacheTag)
 
-      const fulfillmentCacheTag = await getCacheTag("fulfillment")
-      revalidateTag(fulfillmentCacheTag)
+    const cartCacheTag = await getCacheTag("carts")
+    revalidateTag(cartCacheTag)
+    const fulfillmentCacheTag = await getCacheTag("fulfillment")
+    revalidateTag(fulfillmentCacheTag)
 
-      return { cartId: cart.id }
-    })
-    .catch(medusaError)
+    return { cartId: cart.id }
+  } catch (err: any) {
+    const status = err?.response?.status ?? err?.status ?? 0
+    if (status === 401) throw err
+
+    const message =
+      err?.response?.data?.message ??
+      err?.message ??
+      "장바구니 담기에 실패했습니다."
+    return { error: String(message) }
+  }
 }
 
 export async function createBuyNowCart(params: {
@@ -214,17 +210,17 @@ export async function createBuyNowCart(params: {
     variantId: string
     quantity: number
   }>
-}): Promise<{ cartId: string }> {
+}): Promise<{ cartId: string; error?: never } | { cartId?: never; error: string }> {
   const { countryCode, items } = params
 
   if (!items.length) {
-    throw new HttpApiError("No line items for buy now", 400, "BAD_REQUEST")
+    return { error: "No line items for buy now" }
   }
 
   const region = await getRegion(countryCode)
 
   if (!region) {
-    throw new Error(`Region not found for country code: ${countryCode}`)
+    return { error: `Region not found for country code: ${countryCode}` }
   }
 
   const headers = {
@@ -246,29 +242,32 @@ export async function createBuyNowCart(params: {
     }
   }
 
-  for (const item of items) {
-    if (!item.variantId) {
-      throw new HttpApiError(
-        "Missing variant ID when creating buy-now cart",
-        400,
-        "BAD_REQUEST"
+  try {
+    for (const item of items) {
+      if (!item.variantId) {
+        return { error: "Missing variant ID when creating buy-now cart" }
+      }
+
+      await sdk.store.cart.createLineItem(
+        cart.id,
+        { variant_id: item.variantId, quantity: item.quantity },
+        {},
+        headers
       )
     }
+  } catch (err: any) {
+    const status = err?.response?.status ?? err?.status ?? 0
+    if (status === 401) throw err
 
-    await sdk.store.cart.createLineItem(
-      cart.id,
-      {
-        variant_id: item.variantId,
-        quantity: item.quantity,
-      },
-      {},
-      headers
-    )
+    const message =
+      err?.response?.data?.message ??
+      err?.message ??
+      "바로구매 처리 중 오류가 발생했습니다."
+    return { error: String(message) }
   }
 
   const cartCacheTag = await getCacheTag("carts")
   revalidateTag(cartCacheTag)
-
   const fulfillmentCacheTag = await getCacheTag("fulfillment")
   revalidateTag(fulfillmentCacheTag)
 
