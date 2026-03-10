@@ -58,12 +58,25 @@ addToCartWorkflow.hooks.validate(
       );
     }
 
+    // Medusa customer → almond user_id 매핑
+    const customerModule = container.resolve(Modules.CUSTOMER);
+    const customer = await customerModule.retrieveCustomer(cart.customer_id, {
+      select: ['metadata'],
+    });
+    const userId = (customer?.metadata as Record<string, unknown> | null)?.almond_user_id as string | undefined;
+
+    if (!userId) {
+      // almond_user_id 없으면 fail-open (연동 안 된 계정)
+      console.warn('[WelcomeMembership] customer has no almond_user_id, failing open');
+      return;
+    }
+
     // 멤버십 서비스에 자격 확인 요청
     let eligible = true;
     let reason: string | undefined;
     try {
       const response = await fetch(
-        `${MEMBERSHIP_SERVICE_URL}/welcome-membership/eligibility/${cart.customer_id}`,
+        `${MEMBERSHIP_SERVICE_URL}/welcome-membership/eligibility/${userId}`,
         { signal: AbortSignal.timeout(5000) },
       );
 
