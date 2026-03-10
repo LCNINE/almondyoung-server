@@ -175,9 +175,17 @@ export default function ProductActions({
     }))
   }
 
+  const isWelcomeMembership = (product.tags ?? []).some(
+    (tag) => tag.value === "welcome-membership"
+  )
+
   // 수량 변경 (1에서 -1 누르면 삭제, 단 옵션이 하나뿐이면 삭제하지 않음)
   const updateQuantity = useCallback(
     (variantId: string, delta: number) => {
+      if (isWelcomeMembership && delta > 0) {
+        toast.error("웰컴 멤버십 상품은 1개만 구매 가능합니다")
+        return
+      }
       setSelectedItems((prev) => {
         const item = prev.find((i) => i.variantId === variantId)
         if (item && item.quantity + delta < 1) {
@@ -192,7 +200,7 @@ export default function ProductActions({
         )
       })
     },
-    [isSimple]
+    [isSimple, isWelcomeMembership]
   )
 
   // 항목 삭제
@@ -348,7 +356,7 @@ export default function ProductActions({
                         <input
                           ref={(el) => {
                             if (el) {
-                              ;(el as any)._variantId = item.variantId
+                              ; (el as any)._variantId = item.variantId
                             }
                           }}
                           type="text"
@@ -398,6 +406,7 @@ export default function ProductActions({
                           variant="outline"
                           size="icon"
                           onClick={() => updateQuantity(item.variantId, 1)}
+                          disabled={isWelcomeMembership && item.quantity >= 1}
                           className="h-8 w-8 rounded-l-none"
                         >
                           <Plus className="h-3.5 w-3.5" />

@@ -41,11 +41,11 @@ function mapMedusaItemToCartItem(item: HttpTypes.StoreCartLineItem): CartItem {
   const selectedOptionText =
     Object.keys(selectedOptions).length > 0
       ? Object.entries(selectedOptions)
-          .map(([key, value]) => `${key}: ${value}`)
-          .join(", ")
+        .map(([key, value]) => `${key}: ${value}`)
+        .join(", ")
       : typeof variant?.title === "string" &&
-          variant.title.trim() &&
-          variant.title !== "Default Variant"
+        variant.title.trim() &&
+        variant.title !== "Default Variant"
         ? variant.title
         : undefined
 
@@ -63,6 +63,9 @@ function mapMedusaItemToCartItem(item: HttpTypes.StoreCartLineItem): CartItem {
 
   const unitPrice = item.unit_price || basePrice
   const isMembershipOnly = (product?.metadata as any)?.isMembershipOnly || false
+  const isWelcomeMembership = ((product as any)?.tags ?? []).some(
+    (tag: { value: string }) => tag.value === "welcome-membership"
+  )
 
   const manageInventory = variant?.manage_inventory ?? false
   const inventoryQuantity = variant?.inventory_quantity ?? 0
@@ -80,6 +83,7 @@ function mapMedusaItemToCartItem(item: HttpTypes.StoreCartLineItem): CartItem {
       unitPrice,
       brand: product?.subtitle || (product?.metadata as any)?.brand || "",
       isMembershipOnly,
+      isWelcomeMembership,
     },
     selectedOptions,
     selectedOptionText,
@@ -147,12 +151,15 @@ export function CartMainClient() {
     setIsLoading(true)
 
     try {
-      let cart = await retrieveCart(undefined, undefined, "no-store")
+      const CART_FIELDS =
+        "*items, *region, *items.product, *items.product.tags, *items.variant, +items.variant.inventory_quantity, +items.variant.manage_inventory, *items.thumbnail, *items.metadata, +items.total, +items.original_total, +items.compare_at_unit_price, *promotions, +shipping_methods, *customer, *customer.groups, customer_id, +payment_collection.id, +currency_code, +item_subtotal, +shipping_total, +total, +discount_subtotal, +original_item_subtotal, +original_item_total"
+
+      let cart = await retrieveCart(undefined, CART_FIELDS, "no-store")
 
       if (!cart) {
         const ensuredCart = await getOrSetCart(countryCode)
         if (ensuredCart?.id) {
-          cart = await retrieveCart(ensuredCart.id, undefined, "no-store")
+          cart = await retrieveCart(ensuredCart.id, CART_FIELDS, "no-store")
         }
       }
 
@@ -162,7 +169,7 @@ export function CartMainClient() {
           if (cart.id) {
             const transferredCart = await retrieveCart(
               cart.id,
-              undefined,
+              CART_FIELDS,
               "no-store"
             )
             if (transferredCart) {
@@ -481,6 +488,11 @@ export function CartMainClient() {
     const targetItem = cartItems.find((item) => item.id === id)
     if (!targetItem) return
 
+    if (targetItem.product.isWelcomeMembership && newQuantity > 1) {
+      toast.error("웰컴 멤버십 상품은 1개만 구매 가능합니다")
+      return
+    }
+
     let quantity = Math.max(1, newQuantity)
     if (
       targetItem.manageInventory &&
@@ -531,6 +543,16 @@ export function CartMainClient() {
 
     if (selectedItems.length === 0) {
       toast.error("구매할 상품을 선택해주세요.")
+      return false
+    }
+
+    // 웰컴 멤버십 상품은 1개만 주문 가능
+    const welcomeMembershipTotal = selectedItems
+      .filter((item) => item.product.isWelcomeMembership)
+      .reduce((sum, item) => sum + item.quantity, 0)
+
+    if (welcomeMembershipTotal > 1) {
+      toast.error("웰컴 멤버십 상품은 1개만 구매 가능합니다")
       return false
     }
 

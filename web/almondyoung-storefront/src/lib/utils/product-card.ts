@@ -107,6 +107,10 @@ export function mapStoreProductToCardProps(
     product.metadata?.isMembershipOnly === "true" ||
     HIDDEN_PRICE_PRODUCT_IDS.includes(product.id)
 
+  const isWelcomeMembership = (product.tags ?? []).some(
+    (tag) => tag.value === "welcome-membership"
+  )
+
   return {
     title: product.title || "",
     id: product.id,
@@ -133,6 +137,7 @@ export function mapStoreProductToCardProps(
       isSingle: isSingleOption,
       defaultVariantId,
     },
+    isWelcomeMembership,
   }
 }
 
