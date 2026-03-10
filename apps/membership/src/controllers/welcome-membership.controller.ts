@@ -2,9 +2,9 @@ import {
   Controller,
   Get,
   Post,
+  Delete,
   Body,
   Param,
-  NotFoundException,
   BadRequestException,
   InternalServerErrorException,
 } from '@nestjs/common';
@@ -57,6 +57,22 @@ export class WelcomeMembershipController {
     } catch (e: any) {
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('required')) throw new BadRequestException(e.message);
+      throw new InternalServerErrorException(e.message);
+    }
+  }
+
+  /**
+   * 웰컴 멤버십 주문 취소 시 구매 이력 되돌리기 (purchase_source=medusa만 해당)
+   * Medusa order.canceled 이벤트에서 호출
+   */
+  @Delete('eligibility/:userId/purchased')
+  @Public()
+  @ApiOperation({ summary: '웰컴 멤버십 구매 이력 되돌리기 (주문 취소 시)' })
+  async revertPurchase(@Param('userId') userId: string) {
+    try {
+      await this.service.revertPurchase(userId);
+      return { success: true };
+    } catch (e: any) {
       throw new InternalServerErrorException(e.message);
     }
   }
