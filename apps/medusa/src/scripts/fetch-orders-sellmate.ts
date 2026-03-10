@@ -112,12 +112,11 @@ export default async function fetchOrdersForSellmate({ container }: ExecArgs) {
           items_count: sample.items?.length,
           first_item: sample.items?.[0]
             ? {
-                product_title: sample.items[0].product_title,
-                unit_price: sample.items[0].unit_price,
-                quantity: sample.items[0].quantity,
-                quantity: sample.items[0].detail?.quantity,
-                variant_options: sample.items[0].variant?.options,
-              }
+              product_title: sample.items[0].product_title,
+              unit_price: sample.items[0].unit_price,
+              quantity: sample.items[0].quantity,
+              variant_options: sample.items[0].variant?.options,
+            }
             : null,
         },
         null,
