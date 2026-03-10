@@ -44,6 +44,8 @@ export function useAddToCart() {
           errorMessage = "재고가 부족합니다"
         } else if (rawMessage.includes("not found")) {
           errorMessage = "상품을 찾을 수 없습니다"
+        } else if (rawMessage.length > 0) {
+          errorMessage = rawMessage
         }
 
         toast.error(errorMessage)
@@ -77,6 +79,8 @@ export function useAddToCart() {
           errorMessage = "재고가 부족합니다"
         } else if (rawMessage.includes("not found")) {
           errorMessage = "상품을 찾을 수 없습니다"
+        } else if (rawMessage.length > 0) {
+          errorMessage = rawMessage
         }
 
         toast.error(errorMessage)
