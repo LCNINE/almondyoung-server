@@ -3,6 +3,7 @@
 import { cache } from "react"
 import { sdk } from "@/lib/config/medusa"
 import type { StoreProductCategoryTree } from "@/lib/types/medusa-category"
+import { shouldHideWelcomeCategory } from "@/lib/utils/welcome-membership-visibility"
 
 const findCategoryByHandle = (
   categories: StoreProductCategoryTree[],
@@ -78,10 +79,10 @@ const getCategoryTreeInternal = async (): Promise<
     }
   }
 
-  return buildCategoryTree(all)
+  const tree = buildCategoryTree(all)
+  // 일단 임시로 웰컴멤버십 노출 안되게
+  return filterHiddenWelcomeCategories(tree)
 }
-
-export const getCategoryTree = cache(getCategoryTreeInternal)
 
 const buildCategoryTree = (
   categories: StoreProductCategoryTree[]
@@ -119,6 +120,27 @@ const buildCategoryTree = (
 
   return roots.sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0))
 }
+// 일단 임시로 웰컴멤버십 노출 안되게
+
+const filterHiddenWelcomeCategories = (
+  categories: StoreProductCategoryTree[]
+): StoreProductCategoryTree[] =>
+  categories
+    .filter(
+      (category) =>
+        !shouldHideWelcomeCategory({
+          name: category.name,
+          handle: category.handle,
+        })
+    )
+    .map((category) => ({
+      ...category,
+      category_children: filterHiddenWelcomeCategories(
+        category.category_children ?? []
+      ),
+    }))
+
+export const getCategoryTree = cache(getCategoryTreeInternal)
 
 export const getCategoryByHandle = async (
   handle: string

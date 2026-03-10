@@ -4,6 +4,7 @@ import {
   getPricesForVariant,
   getProductPrice,
 } from "@/lib/utils/get-product-price"
+import { shouldHideWelcomeMembershipProductByTitle } from "@/lib/utils/welcome-membership-visibility"
 
 export type ReviewSummary = { rating: number; reviewCount: number }
 
@@ -35,6 +36,11 @@ export function mapStoreProductToCardProps(
   product: StoreProduct,
   reviewsMap?: Map<string, ReviewSummary>
 ): ProductCardProps | null {
+  // 일단 임시로 웰컴멤버십 노출 안되게
+  if (shouldHideWelcomeMembershipProductByTitle(product.title)) {
+    return null
+  }
+
   if (!product.variants || product.variants.length === 0) {
     return null
   }
