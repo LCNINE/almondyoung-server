@@ -574,6 +574,36 @@ export const membershipDiscountEventsRelations = relations(
   }),
 );
 
+// =================================================================
+// 웰컴 멤버십 구매 자격 테이블
+// =================================================================
+
+/**
+ * 사용자별 웰컴 멤버십 상품 구매 자격 테이블
+ *
+ * has_purchased = false (or 행 없음) → 구매 가능
+ * has_purchased = true              → 이미 구매함, 재구매 불가
+ *
+ * 데이터 출처:
+ *   - 'cafe24'      : 카페24 주문 이력에서 마이그레이션
+ *   - 'new_system'  : 새 시스템(Medusa)에서 구매 시 기록
+ */
+export const welcomeMembershipEligibility = pgTable(
+  'welcome_membership_eligibility',
+  {
+    userId: uuid('user_id').primaryKey(),
+    hasPurchased: boolean('has_purchased').notNull().default(false),
+    purchaseSource: text('purchase_source').notNull().default('cafe24'), // 'cafe24' | 'new_system'
+    firstOrderId: text('first_order_id'),
+    purchasedAt: timestamp('purchased_at', { withTimezone: true }),
+    computedAt: timestamp('computed_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_wm_eligibility_has_purchased').on(table.hasPurchased),
+  ],
+);
+
 // ===============================
 // 전체 스키마 객체 Export (Drizzle ORM 규칙)
 // ===============================
@@ -595,6 +625,7 @@ export const membershipSchema = {
   subscriptionPolicies,
   membershipCycleBenefits,
   membershipDiscountEvents,
+  welcomeMembershipEligibility,
 
   // Relations
   tiersRelations,

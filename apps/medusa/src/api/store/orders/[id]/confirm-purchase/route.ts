@@ -2,8 +2,45 @@ import {
   AuthenticatedMedusaRequest,
   MedusaResponse,
 } from '@medusajs/framework/http';
-import { ContainerRegistrationKeys, MedusaError } from '@medusajs/framework/utils';
+import { ContainerRegistrationKeys, MedusaError, Modules } from '@medusajs/framework/utils';
 import { confirmPurchaseWorkflow } from '../../../../../workflows/orders/workflows/confirm-purchase-workflow';
+
+const MEMBERSHIP_SERVICE_URL =
+  process.env.MEMBERSHIP_SERVICE_URL || 'http://localhost:3040';
+
+const WELCOME_MEMBERSHIP_TAG = 'welcome-membership';
+
+async function markWelcomeMembershipPurchased(
+  customerId: string,
+  orderId: string,
+  productIds: string[],
+  container: any,
+) {
+  try {
+    const productModule = container.resolve(Modules.PRODUCT);
+    const products = await productModule.listProducts(
+      { id: productIds },
+      { relations: ['tags'] },
+    );
+    const hasWelcomeMembership = products.some((p: any) =>
+      (p.tags ?? []).some((tag: any) => tag.value === WELCOME_MEMBERSHIP_TAG),
+    );
+    if (!hasWelcomeMembership) return;
+
+    await fetch(
+      `${MEMBERSHIP_SERVICE_URL}/welcome-membership/eligibility/${customerId}/purchased`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId }),
+        signal: AbortSignal.timeout(5000),
+      },
+    );
+  } catch (err) {
+    // 구매 기록 실패는 주문 자체를 실패시키지 않음 (로그만)
+    console.error('[WelcomeMembership] markPurchased failed:', err);
+  }
+}
 
 type OrderWithPayments = {
   id: string;
@@ -92,6 +129,12 @@ export const POST = async (
       items: order.items ?? [],
     },
   });
+
+  // 웰컴 멤버십 상품 구매 기록 (비동기, 주문 완료에 영향 없음)
+  const productIds = (order.items ?? []).map((item) => item.product_id).filter(Boolean);
+  if (productIds.length > 0) {
+    void markWelcomeMembershipPurchased(customerId, orderId, productIds, req.scope);
+  }
 
   const { data: refreshed } = await query.graph({
     entity: 'order',

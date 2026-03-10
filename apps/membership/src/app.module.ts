@@ -36,6 +36,8 @@ import { PlanController } from './controllers/plan.controller';
 import { PauseController } from './controllers/pause.controller';
 import { BenefitTrackingController } from './controllers/benefit-tracking.controller';
 import { SavingsController } from './controllers/savings.controller';
+import { WelcomeMembershipController } from './controllers/welcome-membership.controller';
+import { WelcomeMembershipService } from './services/welcome-membership.service';
 import { BillingManager } from './services/billing/billing.manager';
 import { BillingReader } from './services/billing/billing.reader';
 import { MembershipPolicyService } from './services/membership-policy.service';
@@ -79,6 +81,7 @@ import { JwtAuthGuard } from '@app/authorization';
     PauseController,
     BenefitTrackingController,
     SavingsController,
+    WelcomeMembershipController,
   ],
   providers: [
     {
@@ -121,6 +124,7 @@ import { JwtAuthGuard } from '@app/authorization';
     // Infrastructure
     PaymentClientService,
     MembershipEventPublisher,
+    WelcomeMembershipService,
   ],
 })
 export class AppModule {}
