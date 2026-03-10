@@ -9,12 +9,15 @@ import {
   AbstractAuthModuleProvider,
   MedusaError,
 } from '@medusajs/framework/utils';
+import { Logger } from '@medusajs/framework/types';
 
 export class AuthProviderService extends AbstractAuthModuleProvider {
   static identifier = 'my-auth';
+  protected logger: Logger;
 
-  constructor() {
+  constructor(container: Record<string, unknown>) {
     super();
+    this.logger = container.logger as Logger;
   }
 
   async register(
@@ -77,25 +80,25 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
             almond_token = tokenCookie.split('=')[1];
             tokenSource = 'cookie';
             // TODO: 401 디버깅용 임시 로그
-            console.log('cookie:', tokenCookie, 'len:', almond_token?.length);
+            this.logger.info(`[auth] cookie: ${tokenCookie}, len: ${almond_token?.length}`);
           }
         }
       }
 
       // TODO: 401 디버깅용 임시 로그
-      console.log('auth:', tokenSource, !!almond_token, almond_token?.length);
+      this.logger.info(`[auth] tokenSource: ${tokenSource}, hasToken: ${!!almond_token}, len: ${almond_token?.length}`);
 
       if (!almond_token) {
         // 토큰이 없으면 이 프로바이더에서는 인증 실패로 처리하되,
         // 에러를 반환하지 않고 다음 프로바이더(예: api-key)가 처리할 수 있게 함
-        console.log('no token');
+        this.logger.info('[auth] no token');
         return {
           success: false,
         };
       }
 
       if (!process.env.JWT_SECRET) {
-        console.log('no JWT_SECRET');
+        this.logger.error('[auth] no JWT_SECRET');
         return {
           success: false,
           error: 'JWT_SECRET is not defined',
@@ -103,7 +106,7 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
       }
 
       if (!process.env.AUTH_SECRET) {
-        console.log('no AUTH_SECRET');
+        this.logger.error('[auth] no AUTH_SECRET');
         return {
           success: false,
           error: 'AUTH_SECRET is not defined',
@@ -114,7 +117,7 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
       try {
         payload = jwtVerify(almond_token, process.env.AUTH_SECRET!);
       } catch (e: any) {
-        console.log('jwt fail:', e.name, e.message);
+        this.logger.warn(`[auth] jwt fail: ${e.name} ${e.message}`);
         throw e;
       }
 
@@ -125,7 +128,7 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
           entity_id: payload.email,
         });
       } catch (e: any) {
-        console.log('identity fail:', payload.email, e.type, e.message);
+        this.logger.warn(`[auth] identity fail: ${payload.email} ${e.type} ${e.message}`);
         throw e;
       }
       // 메두사에서 'user'는 관리자 권한이 있는 사용자를 의미함
