@@ -50,6 +50,7 @@ export function ProductGrid({
                     isSingleOption={product.optionMeta?.isSingle ?? false}
                     isLoggedIn={isLoggedIn}
                     countryCode={countryCode}
+                    isWelcomeMembership={product.isWelcomeMembership}
                   />
                 ) : undefined
               }
