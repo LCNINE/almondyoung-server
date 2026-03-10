@@ -235,3 +235,19 @@ export const removeCartId = async () => {
     maxAge: -1,
   })
 }
+
+export const removeAllAuthTokens = async () => {
+  const cookies = await nextCookies()
+  const domain = await getTokenCookieDomain()
+
+  // 한 번의 cookies 인스턴스로 모든 쿠키 삭제
+  cookies.set("accessToken", "", { maxAge: -1, path: "/" })
+  cookies.set("refreshToken", "", { maxAge: -1, path: "/" })
+  cookies.set("_medusa_jwt", "", { maxAge: -1, path: "/" })
+  cookies.set("_medusa_cart_id", "", { maxAge: -1 })
+
+  if (domain) {
+    cookies.set("accessToken", "", { maxAge: -1, path: "/", domain })
+    cookies.set("refreshToken", "", { maxAge: -1, path: "/", domain })
+  }
+}
