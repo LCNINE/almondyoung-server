@@ -82,6 +82,27 @@ export class WelcomeMembershipService {
   }
 
   /**
+   * 웰컴 멤버십 주문 취소 시 구매 이력 되돌리기
+   * purchase_source가 'medusa'인 경우에만 되돌림 (cafe24 이력은 유지)
+   */
+  async revertPurchase(userId: string): Promise<void> {
+    await this.dbService.db
+      .update(welcomeMembershipEligibility)
+      .set({
+        hasPurchased: false,
+        firstOrderId: null,
+        purchasedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(welcomeMembershipEligibility.userId, userId),
+          eq(welcomeMembershipEligibility.purchaseSource, 'medusa'),
+        ),
+      );
+  }
+
+  /**
    * 새 시스템(Medusa)에서 웰컴 멤버십 상품 구매 완료 시 호출
    */
   async markPurchased(userId: string, orderId: string): Promise<void> {
@@ -90,7 +111,7 @@ export class WelcomeMembershipService {
       .values({
         userId,
         hasPurchased: true,
-        purchaseSource: 'new_system',
+        purchaseSource: 'medusa',
         firstOrderId: orderId,
         purchasedAt: new Date(),
       })
@@ -98,7 +119,7 @@ export class WelcomeMembershipService {
         target: welcomeMembershipEligibility.userId,
         set: {
           hasPurchased: true,
-          purchaseSource: 'new_system',
+          purchaseSource: 'medusa',
           firstOrderId: orderId,
           purchasedAt: new Date(),
           updatedAt: new Date(),
