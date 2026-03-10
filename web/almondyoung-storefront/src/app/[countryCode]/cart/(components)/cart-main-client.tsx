@@ -655,6 +655,15 @@ export function CartMainClient() {
                 countryCode={countryCode}
               />
             </div>
+
+            <CartSummary
+              totalOriginalPrice={totalOriginalPrice}
+              totalDiscount={totalDiscount}
+              membershipDiscount={membershipDiscount}
+              shippingFee={shippingTotal}
+              finalPrice={finalPrice}
+              onCheckout={handleCheckout}
+            />
           </div>
 
           <RecommendedProducts products={recommendedProducts} />
