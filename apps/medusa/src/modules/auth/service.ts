@@ -1,5 +1,3 @@
-import { USER_SCOPES } from '@packages/auth-constants';
-import { jwtVerify } from '../../utils/jwt-verify';
 import {
   AuthIdentityProviderService,
   AuthenticationInput,
@@ -9,15 +7,14 @@ import {
   AbstractAuthModuleProvider,
   MedusaError,
 } from '@medusajs/framework/utils';
-import { Logger } from '@medusajs/framework/types';
+import { USER_SCOPES } from '@packages/auth-constants';
+import { jwtVerify } from '../../utils/jwt-verify';
 
 export class AuthProviderService extends AbstractAuthModuleProvider {
   static identifier = 'my-auth';
-  protected logger: Logger;
 
   constructor(container: Record<string, unknown>) {
     super();
-    this.logger = container.logger as Logger;
   }
 
   async register(
@@ -61,15 +58,12 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
     data: AuthenticationInput,
     authIdentityProviderService: AuthIdentityProviderService,
   ): Promise<AuthenticationResponse> {
-    console.log('authenticate');
     try {
       const authHeader = data?.headers?.authorization;
       let almond_token;
-      let tokenSource = 'none';
 
       if (authHeader?.startsWith('Bearer ')) {
         almond_token = authHeader.split(' ')[1];
-        tokenSource = 'bearer';
       } else {
         // 쿠키에서 토큰 조회
         const cookies = data?.headers?.cookie;
@@ -79,27 +73,19 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
             .find((cookie) => cookie.trim().startsWith('accessToken='));
           if (tokenCookie) {
             almond_token = tokenCookie.split('=')[1];
-            tokenSource = 'cookie';
-            // TODO: 401 디버깅용 임시 로그
-            this.logger.info(`[auth] cookie: ${tokenCookie}, len: ${almond_token?.length}`);
           }
         }
       }
 
-      // TODO: 401 디버깅용 임시 로그
-      this.logger.info(`[auth] tokenSource: ${tokenSource}, hasToken: ${!!almond_token}, len: ${almond_token?.length}`);
-
       if (!almond_token) {
         // 토큰이 없으면 이 프로바이더에서는 인증 실패로 처리하되,
         // 에러를 반환하지 않고 다음 프로바이더(예: api-key)가 처리할 수 있게 함
-        this.logger.info('[auth] no token');
         return {
           success: false,
         };
       }
 
       if (!process.env.JWT_SECRET) {
-        this.logger.error('[auth] no JWT_SECRET');
         return {
           success: false,
           error: 'JWT_SECRET is not defined',
@@ -107,31 +93,18 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
       }
 
       if (!process.env.AUTH_SECRET) {
-        this.logger.error('[auth] no AUTH_SECRET');
         return {
           success: false,
           error: 'AUTH_SECRET is not defined',
         };
       }
 
-      let payload;
-      try {
-        payload = jwtVerify(almond_token, process.env.AUTH_SECRET!);
-      } catch (e: any) {
-        this.logger.warn(`[auth] jwt fail: ${e.name} ${e.message}`);
-        throw e;
-      }
+      const payload = jwtVerify(almond_token, process.env.AUTH_SECRET!);
 
       // authIdentityProviderService를 사용하여 인증 정보 조회
-      let authIdentity;
-      try {
-        authIdentity = await authIdentityProviderService.retrieve({
-          entity_id: payload.email,
-        });
-      } catch (e: any) {
-        this.logger.warn(`[auth] identity fail: ${payload.email} ${e.type} ${e.message}`);
-        throw e;
-      }
+      const authIdentity = await authIdentityProviderService.retrieve({
+        entity_id: payload.email,
+      });
       // 메두사에서 'user'는 관리자 권한이 있는 사용자를 의미함
       const actorType = payload.scopes?.some(
         (role) =>
