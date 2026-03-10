@@ -61,6 +61,7 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
     data: AuthenticationInput,
     authIdentityProviderService: AuthIdentityProviderService,
   ): Promise<AuthenticationResponse> {
+    console.log('authenticate');
     try {
       const authHeader = data?.headers?.authorization;
       let almond_token;
