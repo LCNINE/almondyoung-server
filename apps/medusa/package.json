@@ -17,6 +17,8 @@
     "seed": "medusa exec ./src/scripts/seed.ts",
     "seed:shipping": "medusa exec ./src/scripts/seed-shipping.ts",
     "disable-inventory": "medusa exec ./src/scripts/disable-inventory-management.ts",
+    "fetch:sellmate": "medusa exec ./src/scripts/fetch-orders-sellmate.ts",
+    "build:sellmate": "python3 src/scripts/build-sellmate-xls.py",
     "start": "medusa exec ./src/scripts/seed.ts && medusa exec ./src/scripts/seed-shipping.ts && medusa start",
     "dev": "medusa develop",
     "test:integration:http": "TEST_TYPE=integration:http NODE_OPTIONS=--experimental-vm-modules jest --silent=false --runInBand --forceExit",
@@ -61,6 +63,7 @@
     "ts-node": "^10.9.2",
     "typescript": "^5.6.2",
     "vite": "^5.2.11",
+    "xlsx": "^0.18.5",
     "yalc": "^1.0.0-pre.53"
   },
   "engines": {
