@@ -20,6 +20,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { deleteLineItem, updateLineItem } from "@/lib/api/medusa/cart"
+import { isWelcomeMembershipProduct } from "@/lib/utils/welcome-membership"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { calcItemPrice, formatPrice } from "@/lib/utils/price-utils"
 import { StoreCart, StoreCartLineItem } from "@medusajs/types"
@@ -207,6 +208,9 @@ function ProductItem({
   } = item
   const productTitle = product_title ?? title
   const { total, originalTotal, hasReducedPrice } = calcItemPrice(item)
+  const isWelcomeMembership = isWelcomeMembershipProduct(
+    (item as any).product?.tags
+  )
 
   const handleDelete = () => {
     startTransition(async () => {
@@ -290,6 +294,7 @@ function ProductItem({
               cartId={cartId}
               currentQuantity={quantity}
               unitPrice={unit_price}
+              isWelcomeMembership={isWelcomeMembership}
             />
             <PriceDisplay
               hasDiscount={hasReducedPrice}
@@ -308,11 +313,13 @@ function QuantityEditPopover({
   cartId,
   currentQuantity,
   unitPrice,
+  isWelcomeMembership,
 }: {
   itemId: string
   cartId: string
   currentQuantity: number
   unitPrice: number
+  isWelcomeMembership?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [quantity, setQuantity] = useState(currentQuantity)
@@ -366,8 +373,14 @@ function QuantityEditPopover({
             variant="outline"
             size="icon"
             className="h-8 w-8"
-            onClick={() => setQuantity((q) => q + 1)}
-            disabled={isPending}
+            onClick={() => {
+              if (isWelcomeMembership) {
+                toast.error("웰컴 멤버십 상품은 1인당 1개 구매")
+                return
+              }
+              setQuantity((q) => q + 1)
+            }}
+            disabled={isPending || (isWelcomeMembership && quantity >= 1)}
           >
             <Plus className="h-4 w-4" />
           </Button>

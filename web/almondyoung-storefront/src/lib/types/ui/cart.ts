@@ -7,6 +7,7 @@ interface CartItemProduct {
   unitPrice?: number
   brand?: string
   isMembershipOnly?: boolean
+  isWelcomeMembership?: boolean
 }
 
 interface CartItem {

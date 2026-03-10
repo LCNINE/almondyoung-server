@@ -31,9 +31,11 @@ import Link from "next/link"
 const QuantityControl = ({
   quantity = 1,
   onQuantityChange,
+  maxQuantity,
 }: {
   quantity?: number
   onQuantityChange?: (quantity: number) => void
+  maxQuantity?: number
 }) => {
   const inputRef = React.useRef<HTMLInputElement>(null)
 
@@ -44,6 +46,7 @@ const QuantityControl = ({
   }
 
   const handleIncrease = () => {
+    if (maxQuantity !== undefined && quantity >= maxQuantity) return
     if (onQuantityChange) {
       onQuantityChange(quantity + 1)
     }
@@ -102,6 +105,7 @@ const QuantityControl = ({
         <Button
           variant="ghost"
           onClick={handleIncrease}
+          disabled={maxQuantity !== undefined && quantity >= maxQuantity}
           size="icon"
           className="h-8 w-8 rounded-none sm:h-9 sm:w-9"
         >
@@ -111,6 +115,7 @@ const QuantityControl = ({
       <Button
         variant="outline"
         onClick={handleDirectInputClick}
+        disabled={maxQuantity !== undefined}
         className="hidden h-8 px-3 text-xs text-gray-600 sm:inline-flex"
       >
         직접입력
@@ -141,6 +146,7 @@ interface CartCardProps {
   countryCode?: string
   manageInventory?: boolean
   inventoryQuantity?: number
+  isWelcomeMembership?: boolean
 }
 
 /**
@@ -167,6 +173,7 @@ export const CartCard = ({
   countryCode = "kr",
   manageInventory = false,
   inventoryQuantity = 0,
+  isWelcomeMembership = false,
 }: CartCardProps) => {
   const productLink = productHandle
     ? `/${countryCode}/products/${productHandle}`
@@ -253,6 +260,7 @@ export const CartCard = ({
                 <QuantityControl
                   quantity={quantity}
                   onQuantityChange={onQuantityChange}
+                  maxQuantity={isWelcomeMembership ? 1 : undefined}
                 />
               </div>
             </CartCardContent>

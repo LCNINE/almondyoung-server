@@ -4,7 +4,7 @@ import {
   getPricesForVariant,
   getProductPrice,
 } from "@/lib/utils/get-product-price"
-import { shouldHideWelcomeMembershipProductByTitle } from "@/lib/utils/welcome-membership-visibility"
+import { isWelcomeMembershipProduct } from "@/lib/utils/welcome-membership"
 
 export type ReviewSummary = { rating: number; reviewCount: number }
 
@@ -36,11 +36,6 @@ export function mapStoreProductToCardProps(
   product: StoreProduct,
   reviewsMap?: Map<string, ReviewSummary>
 ): ProductCardProps | null {
-  // 일단 임시로 웰컴멤버십 노출 안되게
-  if (shouldHideWelcomeMembershipProductByTitle(product.title)) {
-    return null
-  }
-
   if (!product.variants || product.variants.length === 0) {
     return null
   }
@@ -113,6 +108,8 @@ export function mapStoreProductToCardProps(
     product.metadata?.isMembershipOnly === "true" ||
     HIDDEN_PRICE_PRODUCT_IDS.includes(product.id)
 
+  const isWelcomeMembership = isWelcomeMembershipProduct(product.tags)
+
   return {
     title: product.title || "",
     id: product.id,
@@ -139,6 +136,7 @@ export function mapStoreProductToCardProps(
       isSingle: isSingleOption,
       defaultVariantId,
     },
+    isWelcomeMembership,
   }
 }
 
