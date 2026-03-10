@@ -33,6 +33,7 @@ import CartAddedModal from "./cart-added-modal"
 import MobileActions from "./mobile-actions"
 import OptionSelect from "./option-select"
 import ProductPrice from "../product-price"
+import { isWelcomeMembershipProduct } from "@/lib/utils/welcome-membership"
 
 type ProductActionsProps = {
   customer: (HttpTypes.StoreCustomer & { groups: CustomerGroupRef[] }) | null
@@ -175,9 +176,7 @@ export default function ProductActions({
     }))
   }
 
-  const isWelcomeMembership = (product.tags ?? []).some(
-    (tag) => tag.value === "welcome-membership"
-  )
+  const isWelcomeMembership = isWelcomeMembershipProduct(product.tags)
 
   // 수량 변경 (1에서 -1 누르면 삭제, 단 옵션이 하나뿐이면 삭제하지 않음)
   const updateQuantity = useCallback(
@@ -424,6 +423,7 @@ export default function ProductActions({
                             input.focus()
                           }
                         }}
+                        disabled={isWelcomeMembership}
                         className="h-8 px-3 text-xs text-gray-600"
                       >
                         직접입력
@@ -509,6 +509,7 @@ export default function ProductActions({
         totalQuantity={totalQuantity}
         totalPrice={totalPrice}
         isSimple={isSimple}
+        isWelcomeMembership={isWelcomeMembership}
         inStock={allInStock}
         handleAddToCart={handleAddToCart}
         handleBuyNow={handleBuyNow}

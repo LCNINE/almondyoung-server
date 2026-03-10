@@ -25,6 +25,7 @@ import { transferCart } from "@lib/api/medusa/customer"
 import type { HttpTypes } from "@medusajs/types"
 import { toast } from "sonner"
 import { CartPageSkeleton } from "@/components/skeletons/page-skeletons"
+import { isWelcomeMembershipProduct } from "@/lib/utils/welcome-membership"
 
 function mapMedusaItemToCartItem(item: HttpTypes.StoreCartLineItem): CartItem {
   const variant = item.variant as any
@@ -63,9 +64,7 @@ function mapMedusaItemToCartItem(item: HttpTypes.StoreCartLineItem): CartItem {
 
   const unitPrice = item.unit_price || basePrice
   const isMembershipOnly = (product?.metadata as any)?.isMembershipOnly || false
-  const isWelcomeMembership = ((product as any)?.tags ?? []).some(
-    (tag: { value: string }) => tag.value === "welcome-membership"
-  )
+  const isWelcomeMembership = isWelcomeMembershipProduct((product as any)?.tags)
 
   const manageInventory = variant?.manage_inventory ?? false
   const inventoryQuantity = variant?.inventory_quantity ?? 0
