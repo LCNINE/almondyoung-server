@@ -70,18 +70,18 @@ export const getCookies = async () => {
 
 export const getAuthHeaders = async (
   cookieName: string = "_medusa_jwt"
-): Promise<{ authorization: string } | {}> => {
+): Promise<{ authorization: string } | null> => {
   try {
     const cookies = await nextCookies()
     const token = cookies.get(cookieName)?.value
 
     if (!token) {
-      return {}
+      return null
     }
 
     return { authorization: `Bearer ${token}` }
   } catch {
-    return {}
+    return null
   }
 }
 

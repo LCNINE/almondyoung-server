@@ -6,9 +6,8 @@ import { useMembership } from "@/contexts/membership-context"
 import { useUser } from "@/contexts/user-context"
 import { signout } from "@lib/api/users/signout"
 import { ChevronRight, Coins, Crown, User } from "lucide-react"
-import { useRouter } from "next/navigation"
-import { useTransition } from "react"
 import Link from "next/link"
+import { useTransition } from "react"
 
 interface UserProfileSectionProps {
   userName: string
@@ -20,19 +19,13 @@ export function UserProfileSection({
   initialPointBalance,
 }: UserProfileSectionProps) {
   const [isPending, startTransition] = useTransition()
-  const router = useRouter()
   const { setUser } = useUser()
   const { isMembershipPricing, tier } = useMembership()
 
   const handleLogout = () => {
     startTransition(async () => {
-      try {
-        await signout()
-        setUser(null)
-        router.replace("/")
-      } catch (error) {
-        console.error("로그아웃 중 오류가 발생했습니다:", error)
-      }
+      setUser(null)
+      await signout()
     })
   }
 

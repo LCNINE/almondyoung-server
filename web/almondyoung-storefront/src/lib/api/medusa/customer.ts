@@ -86,7 +86,7 @@ export async function transferCart() {
 
   const headers = await getAuthHeaders()
 
-  await sdk.store.cart.transferCart(cartId, {}, headers)
+  await sdk.store.cart.transferCart(cartId, {}, { ...headers })
 
   const cartCacheTag = await getCacheTag("carts")
   revalidateTag(cartCacheTag)
