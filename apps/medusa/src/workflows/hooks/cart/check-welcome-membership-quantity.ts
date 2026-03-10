@@ -1,5 +1,5 @@
 import { updateLineItemInCartWorkflow } from '@medusajs/medusa/core-flows';
-import { Modules } from '@medusajs/framework/utils';
+import { MedusaError, Modules } from '@medusajs/framework/utils';
 
 /**
  * 웰컴 멤버십 상품 수량 변경 서버 검증 훅
@@ -51,6 +51,9 @@ async function checkVariantTag(
   });
 
   if (isWelcomeMembership) {
-    throw new Error('웰컴 멤버십 상품은 1인당 1개 구매 가능합니다.');
+    throw new MedusaError(
+      MedusaError.Types.NOT_ALLOWED,
+      '웰컴 멤버십 상품은 1인당 1개 구매 가능합니다.',
+    );
   }
 }
