@@ -177,7 +177,8 @@ export function CategoryPageClient({
     [cacheKey]
   )
 
-  const [products, setProducts] = useState<ProductCardProps[]>(() => {
+  // 원본 상품 데이터 (정렬 전)
+  const [rawProducts, setRawProducts] = useState<ProductCardProps[]>(() => {
     if (cachedSnapshot?.items?.length) {
       return cachedSnapshot.items
     }
@@ -196,11 +197,17 @@ export function CategoryPageClient({
     return urlPage
   })
   const [isLoadingMore, setIsLoadingMore] = useState(false)
-  const hasMore = useMemo(
-    () => products.length < total,
-    [products.length, total]
+
+  const products = useMemo(
+    () => sortProductsByOption(rawProducts, currentSort, isMembershipPricing),
+    [rawProducts, currentSort, isMembershipPricing]
   )
-  const showOverlay = isPending && products.length === 0
+
+  const hasMore = useMemo(
+    () => rawProducts.length < total,
+    [rawProducts.length, total]
+  )
+  const showOverlay = isPending && rawProducts.length === 0
   const breadcrumbs = useMemo(
     () =>
       categoryPath.map((node, index) => ({
@@ -221,7 +228,7 @@ export function CategoryPageClient({
   useListCache({
     cacheKey,
     ttlMs: CACHE_TTL_MS,
-    items: products,
+    items: rawProducts,
     total,
     currentPage,
     scrollYToRestore: cachedSnapshot?.scrollY,
@@ -292,17 +299,15 @@ export function CategoryPageClient({
         regionId,
       })
 
-      const mappedProducts = mapStoreProductsToCardProps(result.response.products)
+      const mappedProducts = mapStoreProductsToCardProps(
+        result.response.products
+      )
       return {
-        products: sortProductsByOption(
-          mappedProducts,
-          currentSort,
-          isMembershipPricing
-        ),
+        products: mappedProducts,
         total: result.response.count,
       }
     },
-    [categoryIds, currentLimit, currentSort, isMembershipPricing, regionId]
+    [categoryIds, currentLimit, currentSort, regionId]
   )
 
   // 정렬/개수/카테고리 변경 시 데이터 로드
@@ -323,7 +328,7 @@ export function CategoryPageClient({
       CACHE_TTL_MS
     )
     if (cached?.items?.length) {
-      setProducts(cached.items)
+      setRawProducts(cached.items)
       setTotal(cached.total)
       setCurrentPage(Math.max(cached.currentPage, urlPage))
       isLoadingMoreRef.current = false
@@ -338,7 +343,7 @@ export function CategoryPageClient({
       urlPage === 1 &&
       initialProducts.length > 0
     ) {
-      setProducts(initialProducts)
+      setRawProducts(initialProducts)
       setTotal(initialTotal)
       setCurrentPage(1)
       isLoadingMoreRef.current = false
@@ -359,15 +364,13 @@ export function CategoryPageClient({
           )
           const merged = results.flatMap((result) => result.products)
           const last = results[results.length - 1]
-          setProducts(
-            sortProductsByOption(merged, currentSort, isMembershipPricing)
-          )
+          setRawProducts(merged)
           setTotal(last?.total ?? 0)
           setCurrentPage(urlPage)
         } else {
           const { products: nextProducts, total: nextTotal } =
             await fetchProductsPage(1)
-          setProducts(nextProducts)
+          setRawProducts(nextProducts)
           setTotal(nextTotal)
           setCurrentPage(1)
         }
@@ -388,7 +391,6 @@ export function CategoryPageClient({
     fetchProductsPage,
     initialProducts,
     initialTotal,
-    isMembershipPricing,
     urlPage,
   ])
 
@@ -403,13 +405,7 @@ export function CategoryPageClient({
       const { products: nextProducts, total: nextTotal } =
         await fetchProductsPage(nextPage)
 
-      setProducts((prev) =>
-        sortProductsByOption(
-          [...prev, ...nextProducts],
-          currentSort,
-          isMembershipPricing
-        )
-      )
+      setRawProducts((prev) => [...prev, ...nextProducts])
       setTotal(nextTotal)
       setCurrentPage(nextPage)
       isInfiniteScrollUpdateRef.current = true
@@ -420,14 +416,7 @@ export function CategoryPageClient({
       isLoadingMoreRef.current = false
       setIsLoadingMore(false)
     }
-  }, [
-    currentPage,
-    currentSort,
-    fetchProductsPage,
-    hasMore,
-    isMembershipPricing,
-    setUrlPage,
-  ])
+  }, [currentPage, fetchProductsPage, hasMore, setUrlPage])
   const { sentinelRef } = useInfiniteScroll({
     hasMore,
     isLoading: isLoadingMore,
