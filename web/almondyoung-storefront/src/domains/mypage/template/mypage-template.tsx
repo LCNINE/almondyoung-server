@@ -4,7 +4,6 @@ import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout
 import { AdminAccessButton } from "@/components/admin/admin-access-button"
 import { checkAdminScope } from "@lib/api/admin/inventory"
 import { fetchMe } from "@lib/api/users/me"
-import { getCurrentSubscription } from "@/lib/api/membership"
 import { getPointBalance } from "@lib/api/wallet"
 import type { UserDetail } from "@lib/types/ui/user"
 
@@ -31,31 +30,17 @@ import {
   ShippingStatusSkeleton,
 } from "../components/shared/mypage-skeletons"
 
-import type { MembershipData } from "../types/mypage-types"
-
 export async function MyPageTemplate() {
-  const [currentUser, { isAdmin }, subscription, pointBalance] =
+  const [currentUser, { isAdmin }, pointBalance] =
     await Promise.all([
       fetchMe(),
       checkAdminScope(),
-      getCurrentSubscription().catch(() => null),
       getPointBalance().catch(() => ({ balance: 0, withdrawable: 0 })),
     ])
 
   const headersList = await headers()
   const pathname = headersList.get("x-pathname") || ""
   const countryCode = pathname.split("/")[1] || "kr"
-
-  const membershipData: MembershipData = {
-    isMembershipPricing: subscription?.status === "ACTIVE",
-    tier: subscription?.tier
-      ? {
-          code: subscription.tier.code,
-          name: subscription.tier.name,
-          priorityLevel: subscription.tier.priorityLevel,
-        }
-      : undefined,
-  }
 
   const isPayLaterBannerEnabled = false
 
@@ -67,7 +52,6 @@ export async function MyPageTemplate() {
           <div className="bg-muted space-y-4 px-6 py-4">
             <MobileHeader
               userName={(currentUser as UserDetail)?.username}
-              initialMembership={membershipData}
             />
 
             {/* 관리자 버튼 */}
@@ -105,7 +89,6 @@ export async function MyPageTemplate() {
           <div>
             <UserProfileSection
               userName={(currentUser as UserDetail)?.username}
-              initialMembership={membershipData}
               initialPointBalance={pointBalance.balance}
             />
 

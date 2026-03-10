@@ -1,14 +1,15 @@
+"use client"
+
 import { Settings, Crown } from "lucide-react"
 import Link from "next/link"
-import type { MembershipData } from "../../types/mypage-types"
+import { useMembership } from "@/contexts/membership-context"
 
 interface MobileHeaderProps {
   userName: string
-  initialMembership: MembershipData
 }
 
-export function MobileHeader({ userName, initialMembership }: MobileHeaderProps) {
-  const { isMembershipPricing, tier } = initialMembership
+export function MobileHeader({ userName }: MobileHeaderProps) {
+  const { isMembershipPricing, tier } = useMembership()
   const isMember = isMembershipPricing
   const tierName = tier?.name ?? "멤버십"
 
@@ -25,7 +26,7 @@ export function MobileHeader({ userName, initialMembership }: MobileHeaderProps)
               </span>
             </Link>
           ) : (
-            <Link href="/kr/mypage/membership/subscribe">
+            <Link href="/kr/mypage/membership/subscribe/payment">
               <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-1 text-xs font-bold text-gray-600">
                 <Crown className="h-3 w-3" />
                 가입하기

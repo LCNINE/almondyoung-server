@@ -2,29 +2,27 @@
 
 import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
 import { Spinner } from "@/components/shared/spinner"
+import { useMembership } from "@/contexts/membership-context"
 import { useUser } from "@/contexts/user-context"
 import { signout } from "@lib/api/users/signout"
 import { ChevronRight, Coins, Crown, User } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useTransition } from "react"
 import Link from "next/link"
-import type { MembershipData } from "../../types/mypage-types"
 
 interface UserProfileSectionProps {
   userName: string
-  initialMembership: MembershipData
   initialPointBalance: number
 }
 
 export function UserProfileSection({
   userName,
-  initialMembership,
   initialPointBalance,
 }: UserProfileSectionProps) {
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
   const { setUser } = useUser()
-  const { isMembershipPricing, tier } = initialMembership
+  const { isMembershipPricing, tier } = useMembership()
 
   const handleLogout = () => {
     startTransition(async () => {
@@ -69,7 +67,7 @@ export function UserProfileSection({
                 </span>
               </Link>
             ) : (
-              <Link href="/kr/mypage/membership/subscribe">
+              <Link href="/kr/mypage/membership/subscribe/payment">
                 <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-3 py-1 whitespace-nowrap text-amber-700 transition-colors hover:bg-amber-200">
                   <Crown className="size-4" aria-hidden />
                   <span className="text-sm font-bold">멤버십 가입하기</span>
