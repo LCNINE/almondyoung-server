@@ -256,11 +256,16 @@ export default function ProductActions({
     startTransition(async () => {
       try {
         for (const item of selectedItems) {
-          await addToCart({
+          const result = await addToCart({
             variantId: item.variantId,
             quantity: item.quantity,
             countryCode,
           })
+          if (result.error) {
+            setShowCartModal(false)
+            toast.error(result.error)
+            return
+          }
         }
       } catch (error: unknown) {
         const err = error as Error & { digest?: string }
@@ -281,14 +286,18 @@ export default function ProductActions({
       try {
         if (!customer) throw new Error("UNAUTHORIZED")
 
-        const { cartId } = await createBuyNowCart({
+        const result = await createBuyNowCart({
           countryCode,
           items: selectedItems.map((item) => ({
             variantId: item.variantId,
             quantity: item.quantity,
           })),
         })
-        router.push(`/${countryCode}/checkout?cartId=${cartId}`)
+        if (result.error) {
+          toast.error(result.error)
+          return
+        }
+        router.push(`/${countryCode}/checkout?cartId=${result.cartId}`)
       } catch (error: unknown) {
         const err = error as Error & { digest?: string }
         if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") {
