@@ -1,5 +1,5 @@
 import { addToCartWorkflow } from '@medusajs/medusa/core-flows';
-import { Modules } from '@medusajs/framework/utils';
+import { MedusaError, Modules } from '@medusajs/framework/utils';
 
 /**
  * 웰컴 멤버십 상품 구매 자격 검증 훅
@@ -53,7 +53,8 @@ addToCartWorkflow.hooks.validate(
     });
 
     if (!cart?.customer_id) {
-      throw new Error(
+      throw new MedusaError(
+        MedusaError.Types.NOT_ALLOWED,
         '웰컴 멤버십 상품은 로그인 후 구매하실 수 있습니다.',
       );
     }
@@ -100,9 +101,15 @@ addToCartWorkflow.hooks.validate(
 
     if (!eligible) {
       if (reason === 'not_a_member') {
-        throw new Error('웰컴 멤버십 상품은 멤버십 회원만 구매하실 수 있습니다.');
+        throw new MedusaError(
+          MedusaError.Types.NOT_ALLOWED,
+          '웰컴 멤버십 상품은 멤버십 회원만 구매하실 수 있습니다.',
+        );
       }
-      throw new Error('웰컴 멤버십 상품은 1회만 구매 가능합니다. 이미 구매 이력이 있습니다.');
+      throw new MedusaError(
+        MedusaError.Types.NOT_ALLOWED,
+        '이미 웰컴 멤버십 상품 구매 이력이 있습니다.',
+      );
     }
   },
 );
