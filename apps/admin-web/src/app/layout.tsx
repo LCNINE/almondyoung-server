@@ -1,7 +1,6 @@
 // src/app/layout.tsx
 import { AuthExpiredHandler } from '@/components/layout/auth-expired-handler';
 import { MainLayout } from '@/components/layout/main-layout';
-import { MockProvider } from '@/components/providers/mock-provider';
 import QueryProvider from '@/components/providers/query-provider';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import type { Metadata } from 'next';
@@ -24,14 +23,12 @@ export default function RootLayout({
   return (
     <html lang="ko">
       <body className={inter.className}>
-        <MockProvider>
-          <QueryProvider>
-            <MainLayout>{children}</MainLayout>
-            <AuthExpiredHandler />
-            <Toaster />
-            <ReactQueryDevtools initialIsOpen={false} />
-          </QueryProvider>
-        </MockProvider>
+        <QueryProvider>
+          <MainLayout>{children}</MainLayout>
+          <AuthExpiredHandler />
+          <Toaster />
+          <ReactQueryDevtools initialIsOpen={false} />
+        </QueryProvider>
       </body>
     </html>
   );
