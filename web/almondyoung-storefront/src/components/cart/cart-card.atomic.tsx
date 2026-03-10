@@ -105,7 +105,7 @@ export const CartCardBrand = ({ children }: CartCardBrandProps) => {
 }
 
 export const CartCardBadge = ({ children }: CartCardBadgeProps) => {
-  return <div className="text-sm text-green-600">{children}</div>
+  return <div className="text-xs text-green-600 md:text-sm">{children}</div>
 }
 
 export const CartCardPrice = ({

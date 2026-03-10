@@ -85,7 +85,7 @@ const QuantityControl = ({
           onClick={handleDecrease}
           disabled={quantity <= 1}
           size="icon"
-          className="rounded-none"
+          className="h-8 w-8 rounded-none sm:h-9 sm:w-9"
         >
           -
         </Button>
@@ -97,13 +97,13 @@ const QuantityControl = ({
           onChange={handleInputChange}
           onBlur={handleInputBlur}
           onFocus={handleInputFocus}
-          className="border-x border-gray-300 bg-white px-4 py-1 text-center font-bold outline-none w-12"
+          className="w-10 border-x border-gray-300 bg-white px-2 py-1 text-center font-bold outline-none sm:w-12 sm:px-4"
         />
         <Button
           variant="ghost"
           onClick={handleIncrease}
           size="icon"
-          className="rounded-none"
+          className="h-8 w-8 rounded-none sm:h-9 sm:w-9"
         >
           +
         </Button>
@@ -111,7 +111,7 @@ const QuantityControl = ({
       <Button
         variant="outline"
         onClick={handleDirectInputClick}
-        className="h-8 px-3 text-xs text-gray-600"
+        className="hidden h-8 px-3 text-xs text-gray-600 sm:inline-flex"
       >
         직접입력
       </Button>
@@ -175,7 +175,8 @@ export const CartCard = ({
   // 품절 여부 확인
   const isSoldOut = manageInventory && inventoryQuantity <= 0
   // 재고 부족 여부 (10개 이하)
-  const isLowStock = manageInventory && inventoryQuantity > 0 && inventoryQuantity <= 10
+  const isLowStock =
+    manageInventory && inventoryQuantity > 0 && inventoryQuantity <= 10
 
   return (
     <>
@@ -213,7 +214,7 @@ export const CartCard = ({
                 </div>
               </div>
             )}
-            
+
             {productLink ? (
               <Link href={productLink} className="shrink-0">
                 <CartCardThumbnail src={thumbnail} />
@@ -232,14 +233,14 @@ export const CartCard = ({
               {option && <CartCardOption>{option}</CartCardOption>}
               {brand && <CartCardBrand>{brand}</CartCardBrand>}
               {badge && !isSoldOut && <CartCardBadge>{badge}</CartCardBadge>}
-              
+
               {/* 재고 부족 경고 */}
               {isLowStock && (
                 <div className="mt-1 text-xs text-orange-600">
                   재고 {inventoryQuantity}개 남음
                 </div>
               )}
-              
+
               <CartCardPrice
                 original={originalPrice || 0}
                 discounted={discountedPrice}
@@ -313,7 +314,7 @@ export const CartCard = ({
                   </div>
                 </div>
               )}
-              
+
               {productLink ? (
                 <Link href={productLink}>
                   <CartCardPCThumbnail src={thumbnail} alt={title} />
@@ -322,17 +323,19 @@ export const CartCard = ({
                 <CartCardPCThumbnail src={thumbnail} alt={title} />
               )}
             </div>
-            
+
             <CartCardPCContent>
-              {badge && !isSoldOut && <CartCardPCBadge>{badge}</CartCardPCBadge>}
-              
+              {badge && !isSoldOut && (
+                <CartCardPCBadge>{badge}</CartCardPCBadge>
+              )}
+
               {/* 재고 부족 경고 */}
               {isLowStock && (
                 <div className="text-sm text-orange-600">
                   재고 {inventoryQuantity}개 남음
                 </div>
               )}
-              
+
               <CartCardPCPrice
                 original={originalPrice}
                 discounted={discountedPrice}

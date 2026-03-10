@@ -41,11 +41,11 @@ function mapMedusaItemToCartItem(item: HttpTypes.StoreCartLineItem): CartItem {
   const selectedOptionText =
     Object.keys(selectedOptions).length > 0
       ? Object.entries(selectedOptions)
-        .map(([key, value]) => `${key}: ${value}`)
-        .join(", ")
+          .map(([key, value]) => `${key}: ${value}`)
+          .join(", ")
       : typeof variant?.title === "string" &&
-        variant.title.trim() &&
-        variant.title !== "Default Variant"
+          variant.title.trim() &&
+          variant.title !== "Default Variant"
         ? variant.title
         : undefined
 
@@ -120,13 +120,15 @@ export function CartMainClient() {
   const getLocalPricingFromItems = useCallback((items: CartItem[]) => {
     const originalItemSubtotal = items.reduce((sum, item) => {
       const quantity = item.quantity || 1
-      const baseUnitPrice = item.product.basePrice || item.product.unitPrice || 0
+      const baseUnitPrice =
+        item.product.basePrice || item.product.unitPrice || 0
       return sum + baseUnitPrice * quantity
     }, 0)
 
     const itemSubtotal = items.reduce((sum, item) => {
       const quantity = item.quantity || 1
-      const displayUnitPrice = item.product.unitPrice || item.product.basePrice || 0
+      const displayUnitPrice =
+        item.product.unitPrice || item.product.basePrice || 0
       return sum + displayUnitPrice * quantity
     }, 0)
 
@@ -158,7 +160,11 @@ export function CartMainClient() {
         try {
           await transferCart()
           if (cart.id) {
-            const transferredCart = await retrieveCart(cart.id, undefined, "no-store")
+            const transferredCart = await retrieveCart(
+              cart.id,
+              undefined,
+              "no-store"
+            )
             if (transferredCart) {
               cart = transferredCart
             }
@@ -180,7 +186,10 @@ export function CartMainClient() {
         const stockEntries = await Promise.all(
           productIds.map(async (productId) => {
             try {
-              const detail = await getProductDetail(productId, updatedCart.region_id)
+              const detail = await getProductDetail(
+                productId,
+                updatedCart.region_id
+              )
               const stockMap = new Map<
                 string,
                 { manageInventory: boolean; inventoryQuantity: number }
@@ -262,7 +271,8 @@ export function CartMainClient() {
         setCartItems(adjustedItems)
 
         const availableItems = adjustedItems.filter((item) => {
-          const isSoldOut = item.manageInventory && (item.inventoryQuantity ?? 0) <= 0
+          const isSoldOut =
+            item.manageInventory && (item.inventoryQuantity ?? 0) <= 0
           return !isSoldOut
         })
         setCheckedItems(availableItems.map((item) => item.id))
@@ -326,7 +336,7 @@ export function CartMainClient() {
     }
 
     // 프리뷰 카트 API 응답 전에도 로컬 계산값을 즉시 반영
-    // 메두사 주문예상금액이 너무 늦게 반영돼서 일단 로컬 계산값 보여주고 나중에 업데이트하게 
+    // 메두사 주문예상금액이 너무 늦게 반영돼서 일단 로컬 계산값 보여주고 나중에 업데이트하게
     const localPricing = getLocalPricingFromItems(selected)
     setSelectedPricing(localPricing)
 
@@ -429,7 +439,8 @@ export function CartMainClient() {
   const handleCheckAll = (checked: boolean) => {
     if (checked) {
       const availableItems = cartItems.filter((item) => {
-        const isSoldOut = item.manageInventory && (item.inventoryQuantity ?? 0) <= 0
+        const isSoldOut =
+          item.manageInventory && (item.inventoryQuantity ?? 0) <= 0
         return !isSoldOut
       })
       setCheckedItems(availableItems.map((item) => item.id))
@@ -455,7 +466,9 @@ export function CartMainClient() {
 
     try {
       await Promise.all(checkedItems.map((id) => deleteLineItem(id)))
-      setCartItems((prev) => prev.filter((item) => !checkedItems.includes(item.id)))
+      setCartItems((prev) =>
+        prev.filter((item) => !checkedItems.includes(item.id))
+      )
       setCheckedItems([])
       toast.success("선택한 상품이 삭제되었습니다.")
     } catch {
@@ -469,8 +482,14 @@ export function CartMainClient() {
     if (!targetItem) return
 
     let quantity = Math.max(1, newQuantity)
-    if (targetItem.manageInventory && Number.isFinite(targetItem.inventoryQuantity)) {
-      const maxQuantity = Math.max(0, Math.floor(targetItem.inventoryQuantity ?? 0))
+    if (
+      targetItem.manageInventory &&
+      Number.isFinite(targetItem.inventoryQuantity)
+    ) {
+      const maxQuantity = Math.max(
+        0,
+        Math.floor(targetItem.inventoryQuantity ?? 0)
+      )
       if (maxQuantity <= 0) {
         toast.error("품절된 상품입니다.")
         return
@@ -506,7 +525,9 @@ export function CartMainClient() {
   }
 
   const handleCheckout = useCallback(async () => {
-    const selectedItems = cartItems.filter((item) => checkedItems.includes(item.id))
+    const selectedItems = cartItems.filter((item) =>
+      checkedItems.includes(item.id)
+    )
 
     if (selectedItems.length === 0) {
       toast.error("구매할 상품을 선택해주세요.")
@@ -521,7 +542,10 @@ export function CartMainClient() {
     )
 
     if (invalidItem) {
-      const maxQuantity = Math.max(0, Math.floor(invalidItem.inventoryQuantity ?? 0))
+      const maxQuantity = Math.max(
+        0,
+        Math.floor(invalidItem.inventoryQuantity ?? 0)
+      )
       toast.error(
         `${getItemDisplayLabel(invalidItem)}은 ${maxQuantity}개 이하로 구매해주세요.`
       )
@@ -561,7 +585,8 @@ export function CartMainClient() {
     const selected = cartItems.filter((item) => checkedItems.includes(item.id))
     const fallbackMembershipDiscount = selected.reduce((sum, item) => {
       const quantity = item.quantity || 1
-      const baseUnitPrice = item.product.basePrice || item.product.unitPrice || 0
+      const baseUnitPrice =
+        item.product.basePrice || item.product.unitPrice || 0
       const displayUnitPrice = item.product.unitPrice || baseUnitPrice
       return sum + Math.max(0, (baseUnitPrice - displayUnitPrice) * quantity)
     }, 0)
@@ -578,7 +603,10 @@ export function CartMainClient() {
       0,
       totalOriginalPrice + shippingTotal - selectedPricing.total
     )
-    const nonMembershipDiscount = Math.max(0, totalDiscountAll - membershipDiscount)
+    const nonMembershipDiscount = Math.max(
+      0,
+      totalDiscountAll - membershipDiscount
+    )
 
     return {
       totalOriginalPrice,
@@ -627,15 +655,6 @@ export function CartMainClient() {
                 countryCode={countryCode}
               />
             </div>
-
-            <CartSummary
-              totalOriginalPrice={totalOriginalPrice}
-              totalDiscount={totalDiscount}
-              membershipDiscount={membershipDiscount}
-              shippingFee={shippingTotal}
-              finalPrice={finalPrice}
-              onCheckout={handleCheckout}
-            />
           </div>
 
           <RecommendedProducts products={recommendedProducts} />
