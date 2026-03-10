@@ -41,7 +41,7 @@ async function CheckoutManager({
   const currentUser = await fetchMe()
   const cart = (await retrieveCart(
     cartId,
-    undefined,
+    "*items, *items.product, *items.product.tags, *items.variant, *region, *customer, *shipping_methods, +item_subtotal, +shipping_total, +total, +payment_collection.id, +currency_code",
     "no-store"
   )) as CartResponseDto["cart"]
 

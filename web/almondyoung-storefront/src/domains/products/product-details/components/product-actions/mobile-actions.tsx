@@ -29,6 +29,7 @@ type MobileActionsProps = {
   totalQuantity: number
   totalPrice: number
   isSimple: boolean
+  isWelcomeMembership: boolean
   inStock: boolean
   handleAddToCart: () => void
   handleBuyNow: () => void
@@ -47,6 +48,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
   totalQuantity,
   totalPrice,
   isSimple,
+  isWelcomeMembership,
   inStock,
   handleAddToCart,
   handleBuyNow,
@@ -223,6 +225,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                               input.focus()
                             }
                           }}
+                          disabled={isWelcomeMembership}
                           className="h-7 px-2 text-[11px] text-gray-600"
                         >
                           직접입력

@@ -115,6 +115,7 @@ const QuantityControl = ({
       <Button
         variant="outline"
         onClick={handleDirectInputClick}
+        disabled={maxQuantity !== undefined}
         className="hidden h-8 px-3 text-xs text-gray-600 sm:inline-flex"
       >
         직접입력

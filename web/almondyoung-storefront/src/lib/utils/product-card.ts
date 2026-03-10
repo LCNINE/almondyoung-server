@@ -4,6 +4,7 @@ import {
   getPricesForVariant,
   getProductPrice,
 } from "@/lib/utils/get-product-price"
+import { isWelcomeMembershipProduct } from "@/lib/utils/welcome-membership"
 
 export type ReviewSummary = { rating: number; reviewCount: number }
 
@@ -107,9 +108,7 @@ export function mapStoreProductToCardProps(
     product.metadata?.isMembershipOnly === "true" ||
     HIDDEN_PRICE_PRODUCT_IDS.includes(product.id)
 
-  const isWelcomeMembership = (product.tags ?? []).some(
-    (tag) => tag.value === "welcome-membership"
-  )
+  const isWelcomeMembership = isWelcomeMembershipProduct(product.tags)
 
   return {
     title: product.title || "",
