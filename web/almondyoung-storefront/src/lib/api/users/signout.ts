@@ -1,40 +1,27 @@
 "use server"
 
 import { sdk } from "@/lib/config/medusa"
-import {
-  getCacheTag,
-  removeAccessToken,
-  removeCartId,
-  removeMedusaAuthToken,
-  removeRefreshToken,
-} from "@lib/data/cookies"
+import { getCacheTag, removeAllAuthTokens } from "@lib/data/cookies"
 import { revalidateTag } from "next/cache"
 import { api } from "../api"
 
 export async function signout(): Promise<void> {
-  try {
-    await api<{ success: boolean }>("users", "/auth/signout", {
-      method: "POST",
-      withAuth: false,
-    })
-  } catch (error) {
-    console.error("Signout error:", error)
-    // 로그아웃은 실패해도 계속 진행 (쿠키는 삭제해야 함)
-  }
+  // 실패해도ㄱㅊ음 토큰 삭제가 핵심이라
+  api<{ success: boolean }>("users", "/auth/signout", {
+    method: "POST",
+    withAuth: false,
+  }).catch(() => {})
+  sdk.auth.logout().catch(() => {})
 
-  await sdk.auth.logout()
+  // 캐시 태그 조회 병렬 처리
+  const [customerCacheTag, cartCacheTag] = await Promise.all([
+    getCacheTag("customers"),
+    getCacheTag("carts"),
+  ])
 
-  await removeMedusaAuthToken()
-  await removeAccessToken()
-  await removeRefreshToken()
+  // 모든 토큰/쿠키 한 번에 삭제
+  await removeAllAuthTokens()
 
-  const customerCacheTag = await getCacheTag("customers")
   revalidateTag(customerCacheTag)
-
-  await removeCartId()
-
-  const cartCacheTag = await getCacheTag("carts")
   revalidateTag(cartCacheTag)
-
-  return
 }
