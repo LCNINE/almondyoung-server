@@ -27,8 +27,21 @@ async function markWelcomeMembershipPurchased(
     );
     if (!hasWelcomeMembership) return;
 
+    // Medusa customer_id → almond user_id 변환
+    const customerModule = container.resolve(Modules.CUSTOMER);
+    const customer = await customerModule.retrieveCustomer(customerId, {
+      select: ['metadata'],
+    });
+    const userId = (customer?.metadata as Record<string, unknown> | null)
+      ?.almond_user_id as string | undefined;
+
+    if (!userId) {
+      console.warn('[WelcomeMembership] markPurchased: customer has no almond_user_id, skipping');
+      return;
+    }
+
     await fetch(
-      `${MEMBERSHIP_SERVICE_URL}/welcome-membership/eligibility/${customerId}/purchased`,
+      `${MEMBERSHIP_SERVICE_URL}/welcome-membership/eligibility/${userId}/purchased`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
