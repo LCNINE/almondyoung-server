@@ -19,6 +19,7 @@ interface ProductQuickActionsProps {
   isLoggedIn?: boolean
   countryCode?: string
   onWishlistChange?: (isWishlisted: boolean) => void
+  isWelcomeMembership?: boolean
 }
 
 /**
@@ -35,6 +36,7 @@ export function ProductQuickActions({
   isLoggedIn = false,
   countryCode = "kr",
   onWishlistChange,
+  isWelcomeMembership = false,
 }: ProductQuickActionsProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -97,6 +99,10 @@ export function ProductQuickActions({
   const handleQuantityChange = (delta: number, e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
+    if (isWelcomeMembership && delta > 0) {
+      toast.error("웰컴 멤버십 상품은 1개만 구매 가능합니다")
+      return
+    }
     setQuantity((prev) => Math.max(1, prev + delta))
   }
 
@@ -197,6 +203,7 @@ export function ProductQuickActions({
                 size="icon"
                 className="h-6 w-6 rounded-full p-0 hover:bg-gray-100"
                 onClick={(e) => handleQuantityChange(1, e)}
+                disabled={isWelcomeMembership && quantity >= 1}
               >
                 <Plus className="h-3 w-3" />
               </Button>

@@ -75,6 +75,7 @@ export function CartItemList({
                 countryCode={countryCode}
                 manageInventory={item.manageInventory}
                 inventoryQuantity={item.inventoryQuantity}
+                isWelcomeMembership={item.product.isWelcomeMembership}
               />
             )
           })}
