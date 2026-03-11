@@ -20,6 +20,7 @@ interface OrderItem {
   options: string[]
   showInquiry: boolean
   orderItems: Array<{ productId: string; orderLineId: string }>
+  variantId: string
 }
 
 interface OrderListClientProps {
@@ -85,6 +86,7 @@ const mapStoreOrderToOrderItem = (order: HttpTypes.StoreOrder): OrderItem => {
           item.product_handle) as string,
         orderLineId: item.id,
       })),
+    variantId: firstItem?.variant_id ?? "",
   }
 }
 
@@ -146,6 +148,7 @@ export function OrderList({
               options={order.options}
               showInquiry={order.showInquiry}
               orderItems={order.orderItems}
+              variantId={order.variantId}
             />
           </OrderCard>
         ))}

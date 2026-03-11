@@ -55,6 +55,7 @@ export async function ShippingItemsWrapper() {
             productId: item.variant?.product?.handle ?? item.product_handle,
             orderLineId: item.id,
           })),
+        variantId: firstItem?.variant_id ?? "",
       }
     })
     .filter((order): order is ShippingOrder => order !== null)

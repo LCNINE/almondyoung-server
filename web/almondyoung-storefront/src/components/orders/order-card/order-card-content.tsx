@@ -7,6 +7,7 @@ import { captureOrderPayment } from "@/lib/api/medusa/orders"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
+import { useAddToCart } from "@/hooks/api/use-add-to-cart"
 
 interface OrderCardContentProps {
   /** 주문 ID */
@@ -33,6 +34,8 @@ interface OrderCardContentProps {
   showInquiry?: boolean
   /** 주문 아이템 목록 (구매 확정 시 리뷰 자격 생성용) */
   orderItems?: Array<{ productId: string; orderLineId: string }>
+  /** 상품 variant ID (장바구니 담기용) */
+  variantId: string
 }
 
 /**
@@ -52,9 +55,11 @@ export default function OrderCardContent({
   options = [],
   showInquiry = true,
   orderItems,
+  variantId,
 }: OrderCardContentProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
+  const { addToCart, isLoading: isAddingToCart } = useAddToCart()
   const resolvedProductImage = getThumbnailUrl(productImage)
   const quantityText = typeof quantity === "number" ? `${quantity}개` : quantity
   const [isConfirmed, setIsConfirmed] = useState(false)
@@ -80,6 +85,13 @@ export default function OrderCardContent({
       toast.success("구매확정이 완료되었습니다.")
       router.refresh()
     })
+  }
+
+  const handleAddToCart = async () => {
+    const result = await addToCart({ variantId })
+    if (result.success) {
+      toast.success("장바구니에 담았습니다.")
+    }
   }
 
   return (
@@ -147,12 +159,15 @@ export default function OrderCardContent({
                 </div>
 
                 {/* 장바구니 버튼 */}
-                <button
+                <CustomButton
                   type="button"
-                  className="line-clamp-1 h-7 rounded-[3px] border border-zinc-400 bg-white px-2.5 text-xs text-gray-900 md:h-9 md:rounded-[5px] md:px-4 md:py-2.5"
+                  className="rounded-[3px]"
+                  onClick={handleAddToCart}
+                  disabled={isAddingToCart}
+                  isLoading={isAddingToCart}
                 >
-                  장바구니 담기
-                </button>
+                  상품 담기
+                </CustomButton>
               </div>
             </div>
           </div>
