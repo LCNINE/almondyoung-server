@@ -7,6 +7,7 @@ import { notFound } from "next/navigation"
 import Link from "next/link"
 import { ChevronDownIcon, ReviewPromptCard } from "../_components"
 import { HttpTypes } from "@medusajs/types"
+import { buildAddressLine } from "@/lib/utils/address-line"
 
 // 주문 정보는 사용자별로 다르므로 캐싱 비활성화
 export const dynamic = "force-dynamic"
@@ -75,7 +76,11 @@ async function OrderSummaryCard({
     ? [address.first_name, address.last_name].filter(Boolean).join(" ")
     : null
   const addressLine = address
-    ? [address.province, address.city, address.address_1].filter(Boolean).join(" ")
+    ? buildAddressLine({
+        province: address.province,
+        city: address.city,
+        address1: address.address_1,
+      })
     : null
   const items = order?.items ?? []
   const firstItem = items[0]
