@@ -29,4 +29,41 @@ interface UserRolesResponseDto {
   }[];
 }
 
-export type { CreateAdminAccountDto, User, UserRolesResponseDto };
+// ===== 어드민 사용자 목록 조회 =====
+interface AdminUsersQuery {
+  page?: number;
+  limit?: number;
+  userId?: string;
+  username?: string;
+  email?: string;
+  roleName?: string;
+  sort?: string;
+  order?: 'asc' | 'desc';
+}
+
+interface AdminUserDto {
+  id: string;
+  loginId: string;
+  username: string;
+  email: string;
+  isEmailVerified: boolean;
+  lastActivityAt: string | null;
+  createdAt: string;
+  deletedAt: string | null;
+}
+
+interface AdminUsersResponse {
+  data: AdminUserDto[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export type {
+  CreateAdminAccountDto,
+  User,
+  UserRolesResponseDto,
+  AdminUsersQuery,
+  AdminUserDto,
+  AdminUsersResponse,
+};
