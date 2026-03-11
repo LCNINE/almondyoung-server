@@ -1,7 +1,5 @@
 /** @format */
 
-'use client';
-
 import RouteGuard from '@/components/layout/route-guard';
 import ShipmentRoundTemplate from '@/features/order/shipment-round/template/ShipmentRoundTemplate';
 
