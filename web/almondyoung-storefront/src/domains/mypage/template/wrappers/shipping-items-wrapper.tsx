@@ -2,6 +2,7 @@ import { getOrders } from "@lib/api/medusa/orders"
 import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
 import { ShippingItemsSection } from "../../components/desktop/shipping-items-section"
 import type { ShippingOrder } from "../../types/mypage-types"
+import { resolveMypageShippingStatus } from "./mypage-order-status"
 
 /**
  * 배송 중 상품 Wrapper
@@ -10,29 +11,14 @@ export async function ShippingItemsWrapper() {
   const ordersData = await getOrders({ limit: 10 }).catch(() => null)
 
   const shippingOrders: ShippingOrder[] = (ordersData?.orders || [])
-    .filter((order: any) => {
-      const fulfillmentStatus = order.fulfillment_status
-      return (
-        fulfillmentStatus === "partially_fulfilled" ||
-        fulfillmentStatus === "fulfilled" ||
-        fulfillmentStatus === "shipped" ||
-        fulfillmentStatus === "not_fulfilled"
-      )
-    })
-    .slice(0, 3)
+    .filter((order: any) => order.status !== "canceled")
     .map((order: any) => {
-      const fulfillmentStatus = order.fulfillment_status
-      let status = "상품 준비 중"
-      let deliveryInfo = ""
-
-      if (
-        fulfillmentStatus === "shipped" ||
-        fulfillmentStatus === "fulfilled"
-      ) {
-        status = "배송 중"
-      } else if (fulfillmentStatus === "partially_fulfilled") {
-        status = "부분 배송 중"
+      const shippingStatus = resolveMypageShippingStatus(order)
+      if (!shippingStatus) {
+        return null
       }
+
+      let deliveryInfo = ""
 
       const firstItem = order.items?.[0]
       const productName =
@@ -51,7 +37,7 @@ export async function ShippingItemsWrapper() {
 
       return {
         orderId: order.id,
-        status,
+        status: shippingStatus.statusLabel,
         paymentStatus: order.payment_status ?? "unknown",
         deliveryInfo,
         shippingNote: "",
@@ -60,7 +46,7 @@ export async function ShippingItemsWrapper() {
         price,
         quantity: order.items?.length || 0,
         options,
-        showInquiry: status === "배송 완료",
+        showInquiry: false,
         orderItems: (order.items ?? [])
           .filter(
             (item: any) => item.variant?.product?.handle || item.product_handle
@@ -71,6 +57,8 @@ export async function ShippingItemsWrapper() {
           })),
       }
     })
+    .filter((order): order is ShippingOrder => order !== null)
+    .slice(0, 3)
 
   return <ShippingItemsSection initialOrders={shippingOrders} />
 }
