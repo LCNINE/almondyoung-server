@@ -10,7 +10,7 @@ export default async function EventTraceDetailPage({ params }: Props) {
   const { resourceType, resourceId } = await params;
 
   return (
-    <RouteGuard requireRole={['admin', 'master']} requiredScope={['admin:access', 'master']}>
+    <RouteGuard requireRole={['admin', 'master']}>
       <Suspense
         fallback={
           <div className="flex items-center justify-center h-screen">

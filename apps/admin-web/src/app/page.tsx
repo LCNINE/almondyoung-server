@@ -5,7 +5,6 @@ export default function HomePage() {
   return (
     // <RouteGuard
     //   requireRole={['admin', 'master']}
-    //   requiredScope={['admin:access', 'master']}
     // >
       <MainTemplate />
     // </RouteGuard>

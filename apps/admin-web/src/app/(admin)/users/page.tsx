@@ -5,7 +5,6 @@ export default function UsersPage() {
   return (
     <RouteGuard
       requireRole={['admin', 'master']}
-      requiredScope={['admin:users:read']}
     >
       <UserListTemplate />
     </RouteGuard>

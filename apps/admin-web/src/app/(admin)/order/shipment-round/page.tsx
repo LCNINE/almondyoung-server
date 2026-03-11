@@ -10,7 +10,6 @@ export default function OrderShipmentRoundPage() {
   return (
     <RouteGuard
       requireRole={['admin', 'master']}
-      requiredScope={['admin:access', 'master']}
     >
       <ShipmentRoundTemplate />
     </RouteGuard>

@@ -9,7 +9,6 @@ export default function OrderHistoryPage() {
   return (
     <RouteGuard
       requireRole={['admin', 'master']}
-      requiredScope={['admin:access', 'master']}
     >
       <Suspense
         fallback={

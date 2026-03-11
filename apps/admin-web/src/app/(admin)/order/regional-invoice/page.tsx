@@ -6,7 +6,6 @@ export default function OrderRegionalInvoicePage() {
   return (
     <RouteGuard
       requireRole={['admin', 'master']}
-      requiredScope={['admin:access', 'master']}
     >
       <RegionalInvoiceTemplate />
     </RouteGuard>

@@ -5,7 +5,6 @@ export default function OrderInspectionPage() {
   return (
     <RouteGuard
       requireRole={['admin', 'master']}
-      requiredScope={['admin:access', 'master']}
     >
       <InspectionTemplate />
     </RouteGuard>
