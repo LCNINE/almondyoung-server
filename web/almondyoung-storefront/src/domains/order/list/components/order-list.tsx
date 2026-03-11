@@ -88,7 +88,7 @@ const mapStoreOrderToOrderItem = (order: HttpTypes.StoreOrder): OrderItem => {
   }
 }
 
-export function OrderListClient({
+export function OrderList({
   initialOrders,
   hasError = false,
 }: OrderListClientProps) {
