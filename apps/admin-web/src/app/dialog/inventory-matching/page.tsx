@@ -1,12 +1,13 @@
 'use client';
 
+import { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useMatching } from '@/lib/services/orders';
 import { ProductRegistrationDialog } from '@/features/order/matching/components/table/InventoryMatchingDialog';
 import { Button } from '@/components/common';
 import { Loader2, X } from 'lucide-react';
 
-export default function InventoryMatchingDialogPage() {
+function InventoryMatchingDialogContent() {
     const searchParams = useSearchParams();
     const matchingId = searchParams.get('matchingId');
 
@@ -45,5 +46,13 @@ export default function InventoryMatchingDialogPage() {
                 matching={matching}
             />
         </div>
+    );
+}
+
+export default function InventoryMatchingDialogPage() {
+    return (
+        <Suspense>
+            <InventoryMatchingDialogContent />
+        </Suspense>
     );
 }

@@ -1,7 +1,5 @@
 /** @format */
 
-'use client';
-
 import RouteGuard from '@/components/layout/route-guard';
 import MobileBottomNavigation from '@/components/mobile/bottom-navigation';
 

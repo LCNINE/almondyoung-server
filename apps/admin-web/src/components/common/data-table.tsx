@@ -57,7 +57,7 @@ type NonSelectableTableProps = {
 export type DataTableProps<T> = BaseDataTableProps<T> & (SelectableTableProps<T> | NonSelectableTableProps);
 
 
-    export function DataTable<T extends Record<string, unknown>>({
+    export function DataTable<T extends Record<string, any>>({
     data,
     columns,
     rowKey,
