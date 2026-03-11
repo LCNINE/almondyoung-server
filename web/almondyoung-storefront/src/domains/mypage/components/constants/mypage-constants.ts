@@ -17,7 +17,11 @@ export const MENU_ITEMS: MenuItem[] = [
   { label: "취소 / 반품 / 교환목록", icon: "🔄", path: "/mypage/exchange" },
   { label: "리뷰 관리", icon: "⭐", path: "/mypage/reviews" },
   { label: "아몬드영 멤버십", icon: "💎", path: "/mypage/membership" },
-  { label: "멤버십 내역 확인", icon: "📘", path: "/mypage/membership/legacy" },
+  {
+    label: "멤버십 내역 확인",
+    icon: "📘",
+    path: "https://almondyoung.com/myshop/membership.html",
+  },
   { label: "결제수단", icon: "💳", path: "/mypage/payment" },
   { label: "적립금", icon: "💰", path: "/mypage/point" },
   { label: "회원정보 수정", icon: "👤", path: "/mypage/account/profile" },
@@ -68,7 +72,11 @@ export const MENU_SECTIONS: MenuSection[] = [
     title: "혜택 및 서비스",
     items: [
       { label: "아몬드영 멤버십", icon: "💎", path: "/mypage/membership" },
-      { label: "멤버십 내역 확인", icon: "📘", path: "/mypage/membership/legacy" },
+      {
+        label: "멤버십 내역 확인",
+        icon: "📘",
+        path: "https://almondyoung.com/myshop/membership.html",
+      },
       { label: "적립금", icon: "💰", path: "/mypage/point" },
       { label: "결제수단", icon: "💳", path: "/mypage/payment" },
       { label: "리뷰 관리", icon: "⭐", path: "/mypage/reviews" },
@@ -164,7 +172,7 @@ export const SIDEBAR_MENU_ITEMS = [
     id: "legacy-membership",
     label: "멤버십 내역 확인",
     hasSubMenu: false,
-    path: "/mypage/membership/legacy",
+    path: "https://almondyoung.com/myshop/membership.html",
   },
   {
     id: "payment",
