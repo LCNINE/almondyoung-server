@@ -3,6 +3,7 @@ import { HttpTypes } from "@medusajs/types"
 import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { calculateMembershipDiscount } from "@/lib/utils/price-utils"
+import { buildAddressLine } from "@/lib/utils/address-line"
 
 const formatDate = (date?: string | Date | null) => {
   if (!date) return "-"
@@ -41,9 +42,15 @@ export const OrderDetailsDesktop = ({
   const receiverName = [address?.first_name, address?.last_name]
     .filter(Boolean)
     .join(" ")
-  const addressLine = [address?.province, address?.city, address?.address_1]
-    .filter(Boolean)
-    .join(" ")
+  const addressLine = buildAddressLine({
+    province: address?.province,
+    city: address?.city,
+    address1: address?.address_1,
+    address2: address?.address_2,
+  })
+  const postalCode = address?.postal_code || "-"
+  const primaryAddress = address?.address_1 || addressLine || "-"
+  const detailAddress = address?.address_2 || "-"
   const statusLabel = getOrderStatusLabel(order)
   const membershipDiscount = calculateMembershipDiscount(order.items ?? [])
 
@@ -114,8 +121,16 @@ export const OrderDetailsDesktop = ({
             <dd className="text-base text-black">{address?.phone || "-"}</dd>
           </div>
           <div className="flex gap-12">
-            <dt className="w-20 text-base text-black">받는주소</dt>
-            <dd className="text-base text-black">{addressLine || "-"}</dd>
+            <dt className="w-20 text-base text-black">우편번호</dt>
+            <dd className="text-base text-black">{postalCode}</dd>
+          </div>
+          <div className="flex gap-12">
+            <dt className="w-20 text-base text-black">기본주소</dt>
+            <dd className="text-base text-black">{primaryAddress}</dd>
+          </div>
+          <div className="flex gap-12">
+            <dt className="w-20 text-base text-black">상세주소</dt>
+            <dd className="text-base text-black">{detailAddress}</dd>
           </div>
         </dl>
       </section>

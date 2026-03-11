@@ -30,5 +30,8 @@ export interface EditAddressState {
 export interface FormattedAddress {
   name: string
   phone: string
+  postalCode: string
+  address1: string
+  address2: string
   fullAddress: string
 }

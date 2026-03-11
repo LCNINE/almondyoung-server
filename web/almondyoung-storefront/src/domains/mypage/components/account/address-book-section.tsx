@@ -19,6 +19,7 @@ import {
   getCustomerAddresses,
   setDefaultShippingAddress,
 } from "@/lib/api/medusa/customer"
+import { buildAddressLine } from "@/lib/utils/address-line"
 import { formatPhoneNumber } from "@/lib/utils/format-phone-number"
 import { HttpTypes } from "@medusajs/types"
 import { MapPin, MoreVertical, Pencil, Plus, Star, Trash2 } from "lucide-react"
@@ -175,15 +176,21 @@ export function AddressBookSection() {
                   return 0
                 })
                 .map((address) => {
-                const fullAddress = [address.address_1, address.address_2]
-                  .filter(Boolean)
-                  .join(" ")
+                const fullAddress = buildAddressLine({
+                  province: address.province,
+                  city: address.city,
+                  address1: address.address_1,
+                  address2: address.address_2,
+                })
                 const name = [address.first_name, address.last_name]
                   .filter(Boolean)
                   .join(" ")
                 const addressName =
                   (address.metadata?.shipping_address_name as string) ??
                   address.address_name
+                const postalCode = address.postal_code ?? ""
+                const address1 = address.address_1 ?? ""
+                const address2 = address.address_2 ?? ""
                 const isActionLoading = actionLoadingId === address.id
 
                 return (
@@ -221,9 +228,14 @@ export function AddressBookSection() {
                             {formatPhoneNumber(address.phone)}
                           </p>
                         )}
-                        <p className="mt-1 text-sm text-gray-600">
-                          {fullAddress}
-                        </p>
+                        <dl className="mt-1 space-y-1 text-sm text-gray-600">
+                          <AddressRow label="우편번호" value={postalCode} />
+                          <AddressRow
+                            label="기본주소"
+                            value={address1 || fullAddress}
+                          />
+                          <AddressRow label="상세주소" value={address2} />
+                        </dl>
                       </div>
 
                       <DropdownMenu>
@@ -275,5 +287,14 @@ export function AddressBookSection() {
         onSuccess={handleModalSuccess}
       />
     </>
+  )
+}
+
+function AddressRow({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div className="flex items-start gap-2">
+      <dt className="min-w-14 text-gray-500">{label}</dt>
+      <dd className="text-gray-600">{value || "-"}</dd>
+    </div>
   )
 }

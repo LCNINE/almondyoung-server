@@ -36,7 +36,7 @@ export const ShippingSection = ({
     () => isValidAddress(shippingAddress),
     [shippingAddress]
   )
-  const { name, phone, fullAddress } = useMemo(
+  const { name, phone, postalCode, address1, address2, fullAddress } = useMemo(
     () => formatAddress(shippingAddress),
     [shippingAddress]
   )
@@ -59,9 +59,7 @@ export const ShippingSection = ({
             .join(" "),
           phone: address.phone ?? "",
           postalCode: address.postal_code ?? "",
-          address1: [address.province, address.city, address.address_1]
-            .filter(Boolean)
-            .join(" "),
+          address1: address.address_1 ?? "",
           address2: address.address_2 ?? "",
           isDefaultShipping: address.is_default_shipping ?? false,
           metadata: address.metadata ?? {},
@@ -120,6 +118,9 @@ export const ShippingSection = ({
           addressName={addressName}
           name={name}
           phone={phone}
+          postalCode={postalCode}
+          address1={address1}
+          address2={address2}
           fullAddress={fullAddress}
           onChangeClick={() => setIsSelectorOpen(true)}
         />
