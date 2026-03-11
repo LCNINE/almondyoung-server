@@ -6,7 +6,6 @@ export default function OrderPickingListPage() {
   return (
     <RouteGuard
       requireRole={['admin', 'master']}
-      requiredScope={['admin:access', 'master']}
     >
       <PickingListTemplate />
     </RouteGuard>

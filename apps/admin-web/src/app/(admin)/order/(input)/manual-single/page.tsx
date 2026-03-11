@@ -4,7 +4,7 @@ import ManualSingleOrderPage from '@/features/order/input/manual-single/componen
 
 export default function OrderManualSinglePage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']} requiredScope={['admin:access', 'master']}>
+    <RouteGuard requireRole={['admin', 'master']}>
       <ManualSingleOrderPage />
     </RouteGuard>
   );

@@ -102,7 +102,6 @@ export default function SalesChannelPage() {
   return (
     <RouteGuard
       requireRole={['admin', 'master']}
-      requiredScope={['admin:access', 'master']}
     >
       <div className="flex flex-col h-full min-h-screen">
         <div className="p-6 space-y-6 flex-1">

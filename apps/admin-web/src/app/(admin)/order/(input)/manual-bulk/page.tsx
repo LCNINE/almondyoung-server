@@ -6,7 +6,7 @@ import ManualBulkOrderPage from '@/features/order/input/manual-bulk/components';
 
 export default function OrderManualBulkPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']} requiredScope={['admin:access', 'master']}>
+    <RouteGuard requireRole={['admin', 'master']}>
       <ManualBulkOrderPage />
     </RouteGuard>
   );

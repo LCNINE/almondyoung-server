@@ -5,7 +5,7 @@ import { Suspense } from 'react';
 
 export default function EventTracePage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']} requiredScope={['admin:access', 'master']}>
+    <RouteGuard requireRole={['admin', 'master']}>
       <Suspense
         fallback={
           <div className="flex items-center justify-center h-screen">

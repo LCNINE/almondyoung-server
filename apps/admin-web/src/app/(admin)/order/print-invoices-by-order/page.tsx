@@ -23,7 +23,6 @@ export default async function OrderPrintInvoicesByOrderPage({
     return (
       <RouteGuard
         requireRole={['admin', 'master']}
-        requiredScope={['admin:access', 'master']}
       >
         <CustomDialog params={params} />
       </RouteGuard>
@@ -33,7 +32,6 @@ export default async function OrderPrintInvoicesByOrderPage({
   return (
     <RouteGuard
       requireRole={['admin', 'master']}
-      requiredScope={['admin:access', 'master']}
     >
       <PrintInvoicesByOrderTemplate params={params} />
     </RouteGuard>
