@@ -79,7 +79,7 @@ export function CartSummary({
             </div>
           </div>
 
-          <div className="my-6 h-px bg-border" />
+          <div className="bg-border my-6 h-px" />
 
           <CustomButton
             className="w-full"
@@ -88,8 +88,9 @@ export function CartSummary({
             size="lg"
             onClick={handleCheckout}
             disabled={isProcessing}
+            isLoading={isProcessing}
           >
-            {isProcessing ? "처리 중..." : "구매하기"}
+            구매하기
           </CustomButton>
         </div>
       </div>
