@@ -38,7 +38,7 @@ export class JwtRefreshStrategy extends PassportStrategy(
 
   async validate(
     req: FastifyRequest,
-    payload: { sub: string; scopes: string[] },
+    payload: { sub: string; roles: string[] },
   ) {
     const refreshToken = req.cookies?.refreshToken;
 
@@ -64,7 +64,7 @@ export class JwtRefreshStrategy extends PassportStrategy(
     return {
       ...user,
       id: payload.sub,
-      scopes: payload.scopes,
+      roles: payload.roles ?? [],
     };
   }
 }
