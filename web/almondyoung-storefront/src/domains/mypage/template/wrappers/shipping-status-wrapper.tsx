@@ -1,7 +1,8 @@
 import { getOrders } from "@lib/api/medusa/orders"
 import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
 import ShippingStatusCard from "../../components/mobile/shipping-status-card"
-import type { OrderItem, OrderStatus } from "../../types/mypage-types"
+import type { OrderItem } from "../../types/mypage-types"
+import { resolveMypageShippingStatus } from "./mypage-order-status"
 
 /**
  * 배송 상태 카드 Wrapper
@@ -10,30 +11,11 @@ export async function ShippingStatusWrapper() {
   const ordersData = await getOrders({ limit: 10 }).catch(() => null)
 
   const orderList: OrderItem[] = (ordersData?.orders || [])
-    .filter((order: any) => {
-      const fulfillmentStatus = order.fulfillment_status
-      return (
-        fulfillmentStatus === "partially_fulfilled" ||
-        fulfillmentStatus === "fulfilled" ||
-        fulfillmentStatus === "shipped" ||
-        fulfillmentStatus === "not_fulfilled"
-      )
-    })
-    .slice(0, 2)
+    .filter((order: any) => order.status !== "canceled")
     .map((order: any) => {
-      const fulfillmentStatus = order.fulfillment_status
-      let status: OrderStatus = "PREPARING"
-      let statusLabel = "상품 준비 중"
-
-      if (
-        fulfillmentStatus === "shipped" ||
-        fulfillmentStatus === "fulfilled"
-      ) {
-        status = "SHIPPING"
-        statusLabel = "배송 중"
-      } else if (fulfillmentStatus === "partially_fulfilled") {
-        status = "SHIPPING"
-        statusLabel = "부분 배송 중"
+      const shippingStatus = resolveMypageShippingStatus(order)
+      if (!shippingStatus) {
+        return null
       }
 
       const thumbnail =
@@ -45,11 +27,13 @@ export async function ShippingStatusWrapper() {
       return {
         id: order.id,
         orderNumber: order.display_id?.toString() || order.id.slice(0, 12),
-        status,
-        statusLabel,
+        status: shippingStatus.status,
+        statusLabel: shippingStatus.statusLabel,
         thumbnailUrl,
       }
     })
+    .filter((order): order is OrderItem => order !== null)
+    .slice(0, 2)
 
   return <ShippingStatusCard initialOrders={orderList} />
 }
