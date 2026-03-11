@@ -69,6 +69,7 @@ export function ShippingItemsSection({
           options={order.options}
           showInquiry={order.showInquiry}
           orderItems={order.orderItems}
+          variantId={order.variantId}
         />
       ))}
     </section>
