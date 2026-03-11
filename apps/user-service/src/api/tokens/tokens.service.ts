@@ -260,14 +260,14 @@ export class TokensService {
    * 리프레시 토큰을 저장합니다. (기존 토큰이 있으면 삭제 후 저장)
    * @param userId 사용자 ID
    * @param tokenValue 토큰 값
-   * @param scopes 스코프 배열
+   * @param roles 역할 배열
    * @param expiresAt 만료 시간
    * @param tx 트랜잭션 객체 (선택)
    */
   async saveRefreshToken(
     userId: string,
     tokenValue: string,
-    scopes: string[],
+    roles: string[],
     expiresAt: Date,
     autoLogin: boolean,
     tx?: DbTransaction,
@@ -281,7 +281,7 @@ export class TokensService {
         type: userServiceEnums.tokenTypeEnum.enumValues[1],
         userId,
         value: tokenValue,
-        scopes: scopes.join(','),
+        scopes: roles.join(','),
         expiresAt,
         autoLogin,
       })
@@ -292,7 +292,7 @@ export class TokensService {
         ],
         set: {
           value: tokenValue,
-          scopes: scopes.join(','),
+          scopes: roles.join(','),
           expiresAt,
           autoLogin,
           updatedAt: new Date(),

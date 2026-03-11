@@ -558,23 +558,15 @@ export class AuthService {
     }, tx);
   }
 
-  private async getUserScopes(userId: string, tx?: DbTransaction): Promise<string[]> {
+  private async getUserRoles(userId: string, tx?: DbTransaction): Promise<string[]> {
     const client = this.getClient(tx);
 
-    const userScopes = await client
-      .select({
-        scopeName: userServiceSchema.scopes.scopeName,
-        roleName: userServiceSchema.roles.name,
-      })
-      .from(userServiceSchema.scopes)
+    const userRoles = await client
+      .select({ roleName: userServiceSchema.roles.name })
+      .from(userServiceSchema.userRoleAssignments)
       .innerJoin(
-        userServiceSchema.roleScopes,
-        eq(userServiceSchema.scopes.scopeId, userServiceSchema.roleScopes.scopeId),
-      )
-      .innerJoin(userServiceSchema.roles, eq(userServiceSchema.roleScopes.roleId, userServiceSchema.roles.roleId))
-      .innerJoin(
-        userServiceSchema.userRoleAssignments,
-        eq(userServiceSchema.roles.roleId, userServiceSchema.userRoleAssignments.roleId),
+        userServiceSchema.roles,
+        eq(userServiceSchema.userRoleAssignments.roleId, userServiceSchema.roles.roleId),
       )
       .where(
         and(
@@ -586,18 +578,16 @@ export class AuthService {
         ),
       );
 
-    const uniqueScopes = [...new Set(userScopes.map((scope) => scope.scopeName))];
-
-    return uniqueScopes;
+    return [...new Set(userRoles.map((r) => r.roleName))];
   }
 
   private async setAccessToken(user: IUser, reply: FastifyReply, tx?: DbTransaction): Promise<{ accessToken: string }> {
     const client = this.getClient(tx);
-    const scopes = await this.getUserScopes(user.id, tx);
+    const roles = await this.getUserRoles(user.id, tx);
 
     const payload = {
       sub: user.id,
-      scopes,
+      roles,
       email: user.email,
       login_id: user.loginId,
     };
@@ -641,13 +631,13 @@ export class AuthService {
   ): Promise<{ refreshToken: string }> {
     const client = this.getClient(tx);
 
-    const scopes = await this.getUserScopes(userId, tx);
+    const roles = await this.getUserRoles(userId, tx);
 
     // 자동 로그인 여부에 따라 만료 시간 결정
     const expiresIn = this.getRefreshTokenExpiration(rememberMe);
 
     const refreshToken = await this.jwtService.signAsync(
-      { sub: userId, scopes },
+      { sub: userId, roles },
       {
         secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
         expiresIn,
@@ -657,7 +647,7 @@ export class AuthService {
     const expiresAt = new Date(Date.now() + this.parseExpiresIn(expiresIn));
 
     // 리프레시 토큰 저장 (기존 토큰 자동 삭제)
-    await this.tokensService.saveRefreshToken(userId, refreshToken, scopes, expiresAt, rememberMe, tx);
+    await this.tokensService.saveRefreshToken(userId, refreshToken, roles, expiresAt, rememberMe, tx);
     const isRailway = !!process.env.RAILWAY_ENVIRONMENT;
     const isProd = process.env.NODE_ENV === 'production';
     const corsOrigin = this.frontendUrl;
