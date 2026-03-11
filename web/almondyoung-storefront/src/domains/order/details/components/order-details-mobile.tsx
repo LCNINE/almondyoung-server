@@ -9,6 +9,7 @@ import {
 } from "@components/orders/order-info-card.atomic"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { calculateMembershipDiscount } from "@/lib/utils/price-utils"
+import { buildAddressLine } from "@/lib/utils/address-line"
 
 const formatDate = (date?: string | Date | null) => {
   if (!date) return "-"
@@ -47,9 +48,15 @@ export const OrderDetailsMobile = ({
   const receiverName = [address?.first_name, address?.last_name]
     .filter(Boolean)
     .join(" ")
-  const addressLine = [address?.province, address?.city, address?.address_1]
-    .filter(Boolean)
-    .join(" ")
+  const addressLine = buildAddressLine({
+    province: address?.province,
+    city: address?.city,
+    address1: address?.address_1,
+    address2: address?.address_2,
+  })
+  const postalCode = address?.postal_code || "-"
+  const primaryAddress = address?.address_1 || addressLine || "-"
+  const detailAddress = address?.address_2 || "-"
   const statusLabel = getOrderStatusLabel(order)
   const membershipDiscount = calculateMembershipDiscount(order.items ?? [])
 
@@ -123,8 +130,21 @@ export const OrderDetailsMobile = ({
             >
               {receiverName || "-"}
             </h3>
-            <p className="mt-2 text-sm text-gray-600">{addressLine || "-"}</p>
             <p className="mt-1 text-sm text-gray-600">{address?.phone || "-"}</p>
+            <dl className="mt-2 space-y-1 text-sm">
+              <div className="flex">
+                <dt className="w-20 shrink-0 text-gray-500">우편번호</dt>
+                <dd className="text-gray-800">{postalCode}</dd>
+              </div>
+              <div className="flex">
+                <dt className="w-20 shrink-0 text-gray-500">기본주소</dt>
+                <dd className="text-gray-800">{primaryAddress}</dd>
+              </div>
+              <div className="flex">
+                <dt className="w-20 shrink-0 text-gray-500">상세주소</dt>
+                <dd className="text-gray-800">{detailAddress}</dd>
+              </div>
+            </dl>
             <OrderInfoCardDivider />
             <dl className="flex text-sm">
               <dt className="w-24 shrink-0 text-gray-500">상태</dt>
