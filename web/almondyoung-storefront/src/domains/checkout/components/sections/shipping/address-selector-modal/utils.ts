@@ -1,11 +1,15 @@
 import { HttpTypes } from "@medusajs/types"
+import { buildAddressLine } from "@/lib/utils/address-line"
 
 export const buildFullAddress = (
   address: HttpTypes.StoreCustomerAddress
 ): string => {
-  return [address.province, address.city, address.address_1, address.address_2]
-    .filter(Boolean)
-    .join(" ")
+  return buildAddressLine({
+    province: address.province,
+    city: address.city,
+    address1: address.address_1,
+    address2: address.address_2,
+  })
 }
 
 export const buildFullName = (

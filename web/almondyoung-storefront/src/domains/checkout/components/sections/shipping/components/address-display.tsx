@@ -6,6 +6,9 @@ interface AddressDisplayProps {
   addressName?: string | null
   name: string
   phone: string
+  postalCode: string
+  address1: string
+  address2: string
   fullAddress: string
   onChangeClick: () => void
 }
@@ -17,10 +20,14 @@ export function AddressDisplay({
   addressName,
   name,
   phone,
+  postalCode,
+  address1,
+  address2,
   fullAddress,
   onChangeClick,
 }: AddressDisplayProps) {
   const hasNameInfo = addressName || name
+  const hasAddressInfo = postalCode || address1 || address2 || fullAddress
 
   return (
     <div className="flex justify-between lg:w-full">
@@ -34,20 +41,28 @@ export function AddressDisplay({
           </p>
         )}
 
-        {phone && (
-          <p className="mt-1 text-[13px] text-gray-700 lg:text-base">{phone}</p>
-        )}
-
-        {fullAddress && (
-          <address className="text-[13px] leading-5 text-gray-700 not-italic lg:text-base">
-            {fullAddress}
-          </address>
+        {(phone || hasAddressInfo) && (
+          <dl className="space-y-1.5 text-[13px] text-gray-700 lg:text-base">
+            <AddressRow label="연락처" value={phone} />
+            <AddressRow label="우편번호" value={postalCode} />
+            <AddressRow label="기본주소" value={address1 || fullAddress} />
+            <AddressRow label="상세주소" value={address2} />
+          </dl>
         )}
       </div>
 
       <Button type="button" variant="outline" onClick={onChangeClick}>
         변경
       </Button>
+    </div>
+  )
+}
+
+function AddressRow({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div className="flex items-start gap-2">
+      <dt className="min-w-14 text-gray-500">{label}</dt>
+      <dd className="text-gray-700">{value || "-"}</dd>
     </div>
   )
 }

@@ -1,6 +1,7 @@
 import { HttpTypes, StoreCartAddress } from "@medusajs/types"
 import type { FormattedAddress } from "./types"
 import { formatPhoneNumber } from "@/lib/utils/format-phone-number"
+import { buildAddressLine } from "@/lib/utils/address-line"
 
 /**
  * 우선순위에 따라 자동 설정할 배송지를 선택합니다.
@@ -63,18 +64,27 @@ export const formatAddress = (
   address: StoreCartAddress | null
 ): FormattedAddress => {
   if (!address) {
-    return { name: "", phone: "", fullAddress: "" }
+    return {
+      name: "",
+      phone: "",
+      postalCode: "",
+      address1: "",
+      address2: "",
+      fullAddress: "",
+    }
   }
 
   const name = [address.first_name, address.last_name].filter(Boolean).join(" ")
   const phone = address.phone ? formatPhoneNumber(address.phone) : ""
-  const addressParts = [
-    address.province,
-    address.city,
-    address.address_1,
-    address.address_2,
-  ].filter(Boolean)
-  const fullAddress = addressParts.join(" ")
+  const postalCode = address.postal_code ?? ""
+  const address1 = address.address_1 ?? ""
+  const address2 = address.address_2 ?? ""
+  const fullAddress = buildAddressLine({
+    province: address.province,
+    city: address.city,
+    address1,
+    address2,
+  })
 
-  return { name, phone, fullAddress }
+  return { name, phone, postalCode, address1, address2, fullAddress }
 }

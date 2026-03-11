@@ -92,6 +92,9 @@ export function ShippingAddressSelectorModal({
 
     const selectedAddress = addresses.find((addr) => addr.id === selectedId)
     if (!selectedAddress) return
+    const selectedAddressName =
+      (selectedAddress.metadata?.shipping_address_name as string) ??
+      selectedAddress.address_name
 
     setIsSubmitting(true)
 
@@ -110,7 +113,7 @@ export function ShippingAddressSelectorModal({
             country_code: selectedAddress.country_code ?? "kr",
           },
           metadata: {
-            shipping_address_name: selectedAddress.address_name || null,
+            shipping_address_name: selectedAddressName || null,
           },
         },
         cartId

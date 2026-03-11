@@ -49,7 +49,11 @@ export function AddressCard({
 }: AddressCardProps) {
   const fullAddress = buildFullAddress(address)
   const name = buildFullName(address)
-  const addressName = address.address_name
+  const addressName =
+    (address.metadata?.shipping_address_name as string) ?? address.address_name
+  const postalCode = address.postal_code ?? ""
+  const address1 = address.address_1 ?? ""
+  const address2 = address.address_2 ?? ""
 
   return (
     <div
@@ -88,7 +92,11 @@ export function AddressCard({
               {formatPhoneNumber(address.phone)}
             </p>
           ) : null}
-          <p className="mt-1 text-sm text-gray-600">{fullAddress}</p>
+          <dl className="mt-1 space-y-1 text-sm text-gray-600">
+            <AddressRow label="우편번호" value={postalCode} />
+            <AddressRow label="기본주소" value={address1 || fullAddress} />
+            <AddressRow label="상세주소" value={address2} />
+          </dl>
         </div>
 
         <div className="flex items-center gap-1">
@@ -127,6 +135,15 @@ export function AddressCard({
           </DropdownMenu>
         </div>
       </div>
+    </div>
+  )
+}
+
+function AddressRow({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div className="flex items-start gap-2">
+      <dt className="min-w-14 text-gray-500">{label}</dt>
+      <dd className="text-gray-600">{value || "-"}</dd>
     </div>
   )
 }
