@@ -1,8 +1,19 @@
 import { USER_SERVICE_BASE_URL } from '@/const';
 import { User, UserRolesResponseDto } from '@/lib/types';
 import { ApiResponse } from '@/lib/types/dto/api';
+import { AdminUsersQuery, AdminUsersResponse } from '@/lib/types/dto/user';
 import { AxiosResponse } from 'axios';
 import { client } from '../../client';
+
+function buildQueryString(query: Record<string, unknown>): string {
+  const params = new URLSearchParams();
+  Object.entries(query).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      params.append(key, String(value));
+    }
+  });
+  return params.toString();
+}
 
 /**
  * 클라이언트용 사용자 API
@@ -30,5 +41,14 @@ export const userApi = {
     );
 
     return response.data.data;
+  },
+
+  // 어드민 - 전체 사용자 목록 조회
+  getAdminUsers: async (query: AdminUsersQuery): Promise<AdminUsersResponse> => {
+    const qs = buildQueryString(query as Record<string, unknown>);
+    const response: AxiosResponse<AdminUsersResponse> = await client.get(
+      `${USER_SERVICE_BASE_URL}/admin/users${qs ? `?${qs}` : ''}`
+    );
+    return response.data;
   },
 };

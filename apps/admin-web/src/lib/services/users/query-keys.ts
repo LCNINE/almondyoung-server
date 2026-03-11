@@ -1,3 +1,5 @@
+import { AdminUsersQuery } from '@/lib/types/dto/user';
+
 /**
  * 관리자 계정 관련 쿼리 키
  * - 관리자 목록 조회, 상세 정보, 권한 관리 등에 사용
@@ -5,6 +7,7 @@
  */
 export const usersQueryKeys = {
   all: ['users'] as const,
+  list: (query: AdminUsersQuery) => [...usersQueryKeys.all, 'list', query] as const,
   user: (id: string) => [...usersQueryKeys.all, id] as const,
   userRolesById: (userId: string) =>
     [...usersQueryKeys.all, userId, 'roles'] as const,
