@@ -4,11 +4,11 @@ import { CustomButton } from "@/components/shared/custom-buttons"
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import Link from "next/link"
 import { Form } from "@/components/ui/form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import type { Cafe24SignupBootstrapData } from "@lib/api/users/auth/signup-cafe24"
@@ -262,10 +262,45 @@ export function SignupForm({ mode, cafe24Bootstrap }: SignupFormProps) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>약관 동의 안내</DialogTitle>
-            <DialogDescription>
-              가입을 계속하시면 이용약관, 전자금융거래 약관, 개인정보 수집 및
-              이용, 개인정보 제3자 제공에 동의한 것으로 간주됩니다.
-            </DialogDescription>
+            <p className="text-muted-foreground text-sm">
+              가입을 계속하시면{" "}
+              <Link
+                href="/kr/terms"
+                target="_blank"
+                className="text-primary underline underline-offset-2"
+                onClick={(e) => e.stopPropagation()}
+              >
+                이용약관
+              </Link>
+              ,{" "}
+              <Link
+                href="/kr/terms"
+                target="_blank"
+                className="text-primary underline underline-offset-2"
+                onClick={(e) => e.stopPropagation()}
+              >
+                전자금융거래 약관
+              </Link>
+              ,{" "}
+              <Link
+                href="/kr/privacy"
+                target="_blank"
+                className="text-primary underline underline-offset-2"
+                onClick={(e) => e.stopPropagation()}
+              >
+                개인정보 수집 및 이용
+              </Link>
+              ,{" "}
+              <Link
+                href="/kr/privacy"
+                target="_blank"
+                className="text-primary underline underline-offset-2"
+                onClick={(e) => e.stopPropagation()}
+              >
+                개인정보 제3자 제공
+              </Link>
+              에 동의한 것으로 간주됩니다.
+            </p>
           </DialogHeader>
 
           <DialogFooter className="flex gap-2">
