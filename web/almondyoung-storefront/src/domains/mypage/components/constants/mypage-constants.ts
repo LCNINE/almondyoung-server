@@ -20,7 +20,7 @@ export const MENU_ITEMS: MenuItem[] = [
   {
     label: "멤버십 내역 확인",
     icon: "📘",
-    path: "https://almondyoung.com/myshop/membership.html",
+    path: "/mypage/membership/legacy",
   },
   { label: "결제수단", icon: "💳", path: "/mypage/payment" },
   { label: "적립금", icon: "💰", path: "/mypage/point" },
@@ -75,7 +75,7 @@ export const MENU_SECTIONS: MenuSection[] = [
       {
         label: "멤버십 내역 확인",
         icon: "📘",
-        path: "https://almondyoung.com/myshop/membership.html",
+        path: "/mypage/membership/legacy",
       },
       { label: "적립금", icon: "💰", path: "/mypage/point" },
       { label: "결제수단", icon: "💳", path: "/mypage/payment" },
@@ -172,7 +172,7 @@ export const SIDEBAR_MENU_ITEMS = [
     id: "legacy-membership",
     label: "멤버십 내역 확인",
     hasSubMenu: false,
-    path: "https://almondyoung.com/myshop/membership.html",
+    path: "/mypage/membership/legacy",
   },
   {
     id: "payment",
