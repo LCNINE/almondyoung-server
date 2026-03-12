@@ -31,7 +31,7 @@ export function EmptyCartView({
           </p>
 
           <LocalizedClientLink
-            href={"/products"}
+            href={"/category/beseuteu"}
             className="rounded-xl bg-[#F29219] px-10 py-4 text-center text-[15px] font-semibold text-white transition-all hover:bg-[#E08510] sm:w-auto sm:text-[17px]"
           >
             상품 담으러 가기
