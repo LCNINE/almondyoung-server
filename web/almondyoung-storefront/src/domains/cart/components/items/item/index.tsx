@@ -31,7 +31,6 @@ type ItemChildProps = {
   updating: boolean
   deleting: boolean
   error: string | null
-  maxQuantity: number
   unitPrice: number
   compareAtUnitPrice: number | null | undefined
   totalPrice: number
@@ -52,23 +51,21 @@ function Item({ item, children }: ItemProps) {
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // 재고 관리 활성화: 실제 재고 수량 기반 (최대 99개)
-  // 재고 관리 비활성화: 99개까지 허용
-  const maxQuantity = item.variant?.manage_inventory
-    ? Math.min(item.variant.inventory_quantity ?? 99, 99)
-    : 99
-
   const changeQuantity = async (quantity: number) => {
-    if (quantity < 1 || quantity > maxQuantity) return
+    if (quantity < 1) return
     setError(null)
     setUpdating(true)
 
-    await updateLineItem({ lineId: item.id, quantity })
-      .catch((err: Error) => {
-        toast.error("수량 변경에 실패했습니다")
-        setError(err.message)
-      })
-      .finally(() => setUpdating(false))
+    try {
+      await updateLineItem({ lineId: item.id, quantity })
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "수량 변경에 실패했습니다"
+      toast.error(message)
+      setError(message)
+    } finally {
+      setUpdating(false)
+    }
   }
 
   const handleDelete = async () => {
@@ -100,7 +97,6 @@ function Item({ item, children }: ItemProps) {
     updating,
     deleting,
     error,
-    maxQuantity,
     unitPrice,
     compareAtUnitPrice,
     totalPrice,
@@ -117,7 +113,6 @@ function DesktopItem({
   updating,
   deleting,
   error,
-  maxQuantity,
   unitPrice,
   compareAtUnitPrice,
   totalPrice,
@@ -138,12 +133,13 @@ function DesktopItem({
 
   const handleConfirm = async () => {
     const num = parseInt(inputQuantity)
-    if (num === 0) return toast.error("수량은 1개 이상이어야 합니다.")
 
-    if (!isNaN(num) && num >= 1 && num <= (maxQuantity ?? 99)) {
-      await changeQuantity?.(num)
-      setIsModalOpen(false)
+    if (isNaN(num) || num < 1) {
+      return toast.error("수량은 1개 이상이어야 합니다.")
     }
+
+    await changeQuantity?.(num)
+    setIsModalOpen(false)
   }
 
   return (
@@ -190,23 +186,7 @@ function DesktopItem({
       {/* 수량 선택 (full 모드만) */}
       {type === "full" && (
         <TableCell>
-          <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={handleDelete}
-              disabled={deleting}
-              data-testid="product-delete-button"
-            >
-              {deleting ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Trash2 className="h-4 w-4" />
-              )}
-            </Button>
-
-            <div className="border-input relative flex h-9 items-center rounded-lg border bg-white">
+          <div className="border-input relative flex h-9 items-center rounded-lg border bg-white">
               <Button
                 type="button"
                 variant="ghost"
@@ -232,7 +212,7 @@ function DesktopItem({
                 size="icon"
                 className="h-full w-9 rounded-l-none rounded-r-lg"
                 onClick={() => changeQuantity?.(item.quantity + 1)}
-                disabled={updating || item.quantity >= (maxQuantity ?? 99)}
+                disabled={updating}
               >
                 <Plus className="h-4 w-4" />
               </Button>
@@ -253,7 +233,6 @@ function DesktopItem({
                 <Input
                   type="number"
                   min={1}
-                  max={maxQuantity}
                   value={inputQuantity}
                   onChange={(e) => setInputQuantity(e.target.value)}
                   className="focus:border-primary focus:ring-primary h-12 [appearance:textfield] text-center text-lg [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
@@ -273,7 +252,6 @@ function DesktopItem({
                 </DialogFooter>
               </DialogContent>
             </Dialog>
-          </div>
           {error && (
             <p
               className="text-destructive mt-1 text-xs"
@@ -285,10 +263,10 @@ function DesktopItem({
         </TableCell>
       )}
 
-      {/* 단가 (full 모드, sm 이상에서만) */}
+      {/* 단가 (full 모드, xl 이상에서만) */}
       {type === "full" && (
-        <TableCell className="hidden sm:table-cell">
-          <div className="flex flex-col items-start">
+        <TableCell className="hidden xl:table-cell">
+          <div className="flex flex-col items-start whitespace-nowrap">
             {(discountPercentage ?? 0) > 0 && (
               <div className="flex items-center gap-1">
                 <span className="text-muted-foreground text-xs line-through">
@@ -305,9 +283,9 @@ function DesktopItem({
       )}
 
       {/* 합계 */}
-      <TableCell className="pr-0 text-right">
+      <TableCell className="text-right">
         <div
-          className={cn("flex flex-col items-end", {
+          className={cn("flex flex-col items-end whitespace-nowrap", {
             "justify-center": type === "preview",
           })}
         >
@@ -332,6 +310,26 @@ function DesktopItem({
           </span>
         </div>
       </TableCell>
+
+      {/* 삭제 버튼 (full 모드만) */}
+      {type === "full" && (
+        <TableCell className="pr-0">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-muted-foreground h-8 w-8"
+            onClick={handleDelete}
+            disabled={deleting}
+            data-testid="product-delete-button"
+          >
+            {deleting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Trash2 className="h-4 w-4" />
+            )}
+          </Button>
+        </TableCell>
+      )}
     </TableRow>
   )
 }
@@ -340,7 +338,6 @@ function MobileItem({
   item,
   updating,
   deleting,
-  maxQuantity,
   totalPrice,
   discountPercentage,
   changeQuantity,
@@ -358,10 +355,13 @@ function MobileItem({
 
   const handleConfirm = async () => {
     const num = parseInt(inputQuantity)
-    if (!isNaN(num) && num >= 1 && num <= (maxQuantity ?? 99)) {
-      await changeQuantity?.(num)
-      setIsModalOpen(false)
+
+    if (isNaN(num) || num < 1) {
+      return toast.error("수량은 1개 이상이어야 합니다.")
     }
+
+    await changeQuantity?.(num)
+    setIsModalOpen(false)
   }
 
   return (
@@ -444,7 +444,7 @@ function MobileItem({
               size="icon"
               className="h-full w-8 rounded-l-none rounded-r-lg"
               onClick={() => changeQuantity?.(item.quantity + 1)}
-              disabled={updating || item.quantity >= (maxQuantity ?? 99)}
+              disabled={updating}
             >
               <Plus className="h-4 w-4" />
             </Button>
@@ -465,7 +465,6 @@ function MobileItem({
               <Input
                 type="number"
                 min={1}
-                max={maxQuantity}
                 value={inputQuantity}
                 onChange={(e) => setInputQuantity(e.target.value)}
                 className="focus:border-primary focus:ring-primary h-12 [appearance:textfield] text-center text-lg [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"

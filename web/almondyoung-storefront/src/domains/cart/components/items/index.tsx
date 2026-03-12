@@ -38,11 +38,12 @@ export default function Items({ cart }: ItemsProps) {
         <Table>
           <TableHeader className="border-t-0">
             <TableRow>
-              <TableHead className="pl-0">상품</TableHead>
+              <TableHead className="w-24 pl-0">상품</TableHead>
               <TableHead></TableHead>
-              <TableHead>수량</TableHead>
-              <TableHead>단가</TableHead>
-              <TableHead className="pr-0 text-right">합계</TableHead>
+              <TableHead className="w-28">수량</TableHead>
+              <TableHead className="hidden w-20 xl:table-cell">단가</TableHead>
+              <TableHead className="w-20 text-right">합계</TableHead>
+              <TableHead className="w-10 pr-0"></TableHead>
             </TableRow>
           </TableHeader>
 
