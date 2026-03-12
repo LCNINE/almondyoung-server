@@ -1,5 +1,5 @@
 import { ApplicationException } from '@app/shared/filters/application.exception';
-import { AuthorizationGuard, RequireScopes } from '@app/roles';
+import { RequireScopes } from '@app/authorization';
 import {
   Body,
   Controller,
@@ -11,7 +11,6 @@ import {
   Patch,
   Post,
   Put,
-  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -19,7 +18,6 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { JwtAuthGuard } from 'apps/user-service/src/commons/guards/jwt-auth.guard';
 import { CreateRoleDto, RoleResponseDto, UpdateRoleDto } from './dto/roles.dto';
 import { ReplaceUserRolesDto, UserRolesResponseDto } from './dto/user-roles.dto';
 import { RolesService } from './roles.service';
@@ -27,14 +25,13 @@ import { RolesService } from './roles.service';
 @ApiTags('Admin/Roles')
 @ApiBearerAuth('access-token')
 @Controller('/admin/roles')
-@UseGuards(JwtAuthGuard, AuthorizationGuard)
 export class RolesController {
   constructor(private readonly rolesService: RolesService) {}
 
   @ApiOperation({ summary: '사용자의 현재 역할 ID 조회' })
   @ApiResponse({ status: 200, description: '역할 ID 목록 반환' })
   @Get('users/:userId')
-  @RequireScopes(['master'])
+  @RequireScopes('master')
   async getUserRoles(@Param('userId') userId: string): Promise<UserRolesResponseDto> {
     try {
       return await this.rolesService.getUserRoles(userId);
@@ -47,7 +44,7 @@ export class RolesController {
   @ApiOperation({ summary: '사용자 역할 전체 교체 (체크박스 저장)' })
   @ApiResponse({ status: 200, description: '역할 교체 성공' })
   @Put('users/:userId')
-  @RequireScopes(['master'])
+  @RequireScopes('master')
   async replaceUserRoles(
     @Param('userId') userId: string,
     @Body() dto: ReplaceUserRolesDto,
@@ -63,7 +60,7 @@ export class RolesController {
   @ApiOperation({ summary: '전체 역할 목록 조회' })
   @ApiResponse({ status: 200, description: '역할 목록 반환' })
   @Get()
-  @RequireScopes(['master'])
+  @RequireScopes('master')
   async listRoles(): Promise<RoleResponseDto[]> {
     try {
       return await this.rolesService.listRoles();
@@ -76,7 +73,7 @@ export class RolesController {
   @ApiOperation({ summary: '역할 생성' })
   @ApiResponse({ status: 201, description: '역할 생성 성공' })
   @Post()
-  @RequireScopes(['master'])
+  @RequireScopes('master')
   async createRole(@Body() dto: CreateRoleDto): Promise<RoleResponseDto> {
     try {
       return await this.rolesService.createRole(dto);
@@ -89,7 +86,7 @@ export class RolesController {
   @ApiOperation({ summary: '역할 수정' })
   @ApiResponse({ status: 200, description: '역할 수정 성공' })
   @Patch(':roleId')
-  @RequireScopes(['master'])
+  @RequireScopes('master')
   async updateRole(
     @Param('roleId') roleId: string,
     @Body() dto: UpdateRoleDto,
@@ -105,7 +102,7 @@ export class RolesController {
   @ApiOperation({ summary: '역할 삭제' })
   @ApiResponse({ status: 200, description: '역할 삭제 성공' })
   @Delete(':roleId')
-  @RequireScopes(['master'])
+  @RequireScopes('master')
   async deleteRole(@Param('roleId') roleId: string): Promise<void> {
     try {
       return await this.rolesService.deleteRole(roleId);

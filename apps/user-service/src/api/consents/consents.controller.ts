@@ -1,8 +1,5 @@
-import { RequireScopes } from '@app/roles';
-import {
-  AuthorizationGuard,
-  JwtPayload,
-} from '@app/roles/guards/authorization-guard';
+import { RequireScopes } from '@app/authorization';
+import { JwtPayload } from '@app/roles';
 import {
   Body,
   Controller,
@@ -10,7 +7,6 @@ import {
   NotFoundException,
   Param,
   Post,
-  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -18,7 +14,6 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../../commons/guards/jwt-auth.guard';
 import { ConsentsService } from './consents.service';
 import { CreateConsentDto } from './dto/consent-dto';
 import { UserConsent } from './types/consent.type';
@@ -27,7 +22,6 @@ import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 @ApiTags('동의 관리')
 @Controller('consents')
 @ApiBearerAuth('access-token')
-@UseGuards(JwtAuthGuard, AuthorizationGuard)
 export class ConsentsController {
   constructor(private readonly consentsService: ConsentsService) {}
 
@@ -42,7 +36,7 @@ export class ConsentsController {
     description: '내 동의 정보를 찾을 수 없음',
   })
   @Get()
-  @RequireScopes(['user:read'])
+  @RequireScopes('user:read')
   async getMyConsent(
     @CurrentUser() user: JwtPayload,
   ): Promise<UserConsent | null> {
@@ -55,7 +49,7 @@ export class ConsentsController {
     description: '사용자 동의 정보 생성 성공',
   })
   @Post()
-  @RequireScopes(['user:modify'])
+  @RequireScopes('user:modify')
   async createConsent(
     @CurrentUser() user: JwtPayload,
     @Body() createConsentDto: CreateConsentDto,
@@ -78,7 +72,7 @@ export class ConsentsController {
     },
   })
   @Get('marketing/:userId')
-  @RequireScopes(['master', 'admin:users:read'])
+  @RequireScopes('master', 'admin:users:read')
   async getMarketingConsent(
     @Param('userId') userId: string,
   ): Promise<{ isMarketingEnabled: boolean }> {
@@ -93,7 +87,7 @@ export class ConsentsController {
     description: '사용자 프로필 조회 성공',
   })
   @Get('profile/:userId')
-  @RequireScopes(['master', 'admin:users:read'])
+  @RequireScopes('master', 'admin:users:read')
   async getUserProfile(@Param('userId') userId: string) {
     const profile = await this.consentsService.getUserProfile(userId);
     if (!profile) {
@@ -108,7 +102,7 @@ export class ConsentsController {
     description: '사용자 목록 조회 성공',
   })
   @Post('search')
-  @RequireScopes(['master', 'admin:users:read'])
+  @RequireScopes('master', 'admin:users:read')
   async getUsersByCriteria(@Body() criteria: any) {
     return await this.consentsService.getUsersByCriteria(criteria);
   }

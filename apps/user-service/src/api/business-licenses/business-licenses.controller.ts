@@ -1,4 +1,5 @@
-import { AuthorizationGuard, JwtPayload, RequireScopes } from '@app/roles';
+import { RequireScopes } from '@app/authorization';
+import { JwtPayload } from '@app/roles';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import {
   Body,
@@ -8,7 +9,6 @@ import {
   Param,
   Post,
   Put,
-  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -18,7 +18,6 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../../commons/guards/jwt-auth.guard';
 import { BusinessLicensesService } from './business-licenses.service';
 import {
   CreateBusinessLicenseDto,
@@ -32,7 +31,6 @@ import {
 @ApiTags('사업자 등록 관리')
 @ApiBearerAuth('access-token')
 @Controller('business-licenses')
-@UseGuards(JwtAuthGuard, AuthorizationGuard)
 export class BusinessLicensesController {
   constructor(
     private readonly businessLicensesService: BusinessLicensesService,
@@ -48,7 +46,7 @@ export class BusinessLicensesController {
   @ApiResponse({ status: 400, description: '잘못된 요청' })
   @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
   @ApiResponse({ status: 409, description: '이미 해당 사용자에 대한 사업자 등록 정보가 존재합니다.' })
-  @RequireScopes(['user:modify'])
+  @RequireScopes('user:modify')
   async createBusinessLicense(
     @Body() data: CreateBusinessLicenseDto,
     @CurrentUser() user: JwtPayload,
@@ -65,7 +63,7 @@ export class BusinessLicensesController {
   @ApiResponse({ status: 200, description: '사업자 등록 정보 조회 성공' })
   @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
   @ApiResponse({ status: 403, description: '권한 없음' })
-  @RequireScopes(['user:read'])
+  @RequireScopes('user:read')
   async getMyBusinessLicense(
     @CurrentUser() user: JwtPayload,
   ): Promise<BusinessLicenseResponseDto | null> {
@@ -83,7 +81,7 @@ export class BusinessLicensesController {
   @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
   @ApiResponse({ status: 403, description: '권한 없음' })
   @Post('fetch')
-  @RequireScopes(['user:read'])
+  @RequireScopes('user:read')
   async fetchBusinessLicense(
     @Body() fetchBusinessLicenseDto: FetchBusinessLicenseDto,
   ) {
@@ -108,7 +106,7 @@ export class BusinessLicensesController {
   @ApiResponse({ status: 403, description: '권한 없음' })
   @ApiResponse({ status: 404, description: '사업자 등록 정보를 찾을 수 없음' })
   @Put(':businessId')
-  @RequireScopes(['user:modify'])
+  @RequireScopes('user:modify')
   async updateBusinessLicenseByBusinessId(
     @Param('businessId') businessId: string,
     @Body() data: UpdateBusinessLicenseDto,
@@ -131,7 +129,7 @@ export class BusinessLicensesController {
   @ApiResponse({ status: 403, description: '권한 없음' })
   @ApiResponse({ status: 404, description: '사업자 등록 정보를 찾을 수 없음' })
   @Delete(':id')
-  @RequireScopes(['user:delete'])
+  @RequireScopes('user:delete')
   async removeBusinessLicense(
     @Param('id') businessLicenseId: string,
     @CurrentUser() user: JwtPayload,
