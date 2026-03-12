@@ -1,6 +1,7 @@
-import { AuthorizationGuard, JwtPayload, RequireScopes } from '@app/roles';
+import { RequireScopes } from '@app/authorization';
+import { JwtPayload } from '@app/roles';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Post } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -10,7 +11,6 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../../commons/guards/jwt-auth.guard';
 import { DeleteFileDto } from './dto/delete-file.dto';
 import { FileService } from './file.service';
 import {
@@ -23,13 +23,12 @@ import { FileValidatorPipe } from './pipes/file-validator.pipe';
 @Controller('files')
 @ApiTags('파일')
 @ApiBearerAuth('access-token')
-@UseGuards(JwtAuthGuard, AuthorizationGuard)
 export class FileController {
   constructor(private readonly fileService: FileService) {}
 
   @Post('upload')
   @FastifyFileInterceptor('file')
-  @RequireScopes(['user:modify'])
+  @RequireScopes('user:modify')
   @ApiOperation({
     summary: '파일 업로드',
     description: '파일을 AWS S3에 업로드합니다.',
@@ -58,7 +57,7 @@ export class FileController {
    *  aws s3 폴더명과 파일명을 파라미터로 받아서 삭제
    */
   @Post('delete')
-  @RequireScopes(['user:delete'])
+  @RequireScopes('user:delete')
   @ApiOperation({
     summary: '파일 삭제',
     description: 'AWS S3에서 사용자가 업로드한 파일을 삭제합니다.',

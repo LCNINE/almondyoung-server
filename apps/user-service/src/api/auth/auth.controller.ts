@@ -1,4 +1,5 @@
-import { AuthorizationGuard, JwtPayload, RequireScopes } from '@app/roles';
+import { RequireScopes } from '@app/authorization';
+import { JwtPayload } from '@app/roles';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import {
   BadRequestException,
@@ -36,7 +37,6 @@ import { LocalSignUpDto } from './dto/sign-up.dto';
 @ApiTags('Auth')
 @ApiBearerAuth('access-token')
 @Controller('auth')
-@UseGuards(AuthorizationGuard)
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
@@ -129,7 +129,7 @@ export class AuthController {
   @ApiResponse({ status: 200, description: '비밀번호 변경 성공' })
   @Post('change-password')
   @UseGuards(AuthGuard('jwt'))
-  @RequireScopes(['user:modify', 'master', 'admin:access'])
+  @RequireScopes('user:modify', 'master', 'admin:access')
   async changePassword(@Body(ValidationPipe) dto: ChangePasswordDto, @CurrentUser() user: JwtPayload) {
     return this.authService.changePassword(dto.currentPassword, dto.newPassword, user.id);
   }
@@ -207,7 +207,7 @@ export class AuthController {
   @ApiResponse({ status: 200, description: '회원 소프트 탈퇴 성공' })
   @Delete('')
   @UseGuards(AuthGuard('jwt'))
-  @RequireScopes(['user:delete'])
+  @RequireScopes('user:delete')
   async softDeleteUser(@CurrentUser() user: JwtPayload) {
     return this.authService.softDeleteUser(user.id);
   }
@@ -225,7 +225,7 @@ export class AuthController {
   })
   @Post('verify-password-for-pin-reset')
   @UseGuards(AuthGuard('jwt'))
-  @RequireScopes(['user:modify', 'master', 'admin:access'])
+  @RequireScopes('user:modify', 'master', 'admin:access')
   async verifyPasswordForPinReset(
     @Body(ValidationPipe) { password }: { password: string },
     @CurrentUser() user: JwtPayload,

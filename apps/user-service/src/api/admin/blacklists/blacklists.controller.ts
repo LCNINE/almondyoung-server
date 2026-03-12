@@ -1,4 +1,5 @@
-import { AuthorizationGuard, JwtPayload, RequireScopes } from '@app/roles';
+import { RequireScopes } from '@app/authorization';
+import { JwtPayload } from '@app/roles';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import {
   Body,
@@ -8,7 +9,6 @@ import {
   Param,
   Post,
   Query,
-  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -19,7 +19,6 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { JwtAuthGuard } from 'apps/user-service/src/commons/guards/jwt-auth.guard';
 import { BlacklistsService } from './blacklists.service';
 import { BlacklistsCreateDto } from './dto/blacklists-create.dto';
 import { BlacklistsResponseDto } from './dto/blacklists-response.dto';
@@ -28,7 +27,6 @@ import { BlacklistsNotFoundException } from './exceptions/blacklists.exceptions'
 @ApiTags('블랙리스트 관리')
 @ApiBearerAuth('access-token')
 @Controller('admin/blacklists')
-@UseGuards(JwtAuthGuard, AuthorizationGuard)
 export class BlacklistsController {
   constructor(private readonly blacklistsService: BlacklistsService) {}
 
@@ -41,7 +39,7 @@ export class BlacklistsController {
   @ApiQuery({ name: 'userId', description: '사용자 ID', required: false })
   @ApiResponse({ status: 200, description: '블랙리스트 조회 성공' })
   @Get()
-  @RequireScopes(['master', 'admin:users:read'])
+  @RequireScopes('master', 'admin:users:read')
   async getBlacklists(
     @Query() query: { page?: string; limit?: string; userId?: string },
   ): Promise<{
@@ -66,7 +64,7 @@ export class BlacklistsController {
   @ApiResponse({ status: 200, description: '블랙리스트 조회 성공' })
   @ApiResponse({ status: 404, description: '블랙리스트를 찾을 수 없음' })
   @Get(':userId')
-  @RequireScopes(['master', 'admin:users:read'])
+  @RequireScopes('master', 'admin:users:read')
   async getBlacklistByUserId(
     @Param('userId') userId: string,
   ): Promise<BlacklistsResponseDto> {
@@ -86,7 +84,7 @@ export class BlacklistsController {
   @ApiResponse({ status: 200, description: '블랙리스트 생성 성공' })
   @ApiResponse({ status: 400, description: '블랙리스트 생성 실패' })
   @Post()
-  @RequireScopes(['master', 'admin:users:modify'])
+  @RequireScopes('master', 'admin:users:modify')
   async createBlacklist(
     @Body() blacklistsCreateDto: BlacklistsCreateDto,
     @CurrentUser() user: JwtPayload,
@@ -106,7 +104,7 @@ export class BlacklistsController {
   @ApiResponse({ status: 200, description: '블랙리스트 삭제 성공' })
   @ApiResponse({ status: 404, description: '블랙리스트를 찾을 수 없음' })
   @Delete(':userId')
-  @RequireScopes(['master', 'admin:users:modify'])
+  @RequireScopes('master', 'admin:users:modify')
   async deleteBlacklist(
     @Param('userId') userId: string,
     @CurrentUser() user: JwtPayload,
