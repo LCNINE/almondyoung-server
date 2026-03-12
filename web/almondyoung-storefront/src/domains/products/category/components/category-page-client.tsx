@@ -265,26 +265,20 @@ export function CategoryPageClient({
     [router, searchParams]
   )
 
-  const setUrlPage = useCallback(
-    (page: number) => {
-      const newParams = new URLSearchParams(searchParams.toString())
+  const setUrlPage = useCallback((page: number) => {
+    if (typeof window === "undefined") return
 
-      if (page <= 1) {
-        newParams.delete("page")
-      } else {
-        newParams.set("page", String(page))
-      }
+    const newParams = new URLSearchParams(window.location.search)
+    if (page <= 1) {
+      newParams.delete("page")
+    } else {
+      newParams.set("page", String(page))
+    }
 
-      const queryString = newParams.toString()
-      router.replace(
-        queryString ? `?${queryString}` : window.location.pathname,
-        {
-          scroll: false,
-        }
-      )
-    },
-    [router, searchParams]
-  )
+    const queryString = newParams.toString()
+    const nextUrl = `${window.location.pathname}${queryString ? `?${queryString}` : ""}${window.location.hash}`
+    window.history.replaceState(window.history.state, "", nextUrl)
+  }, [])
 
   const fetchProductsPage = useCallback(
     async (page: number) => {
