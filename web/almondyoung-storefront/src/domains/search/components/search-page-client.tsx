@@ -299,21 +299,19 @@ export function SearchPageClient({
     }
   }, [cacheKey, fetchSearchPage, hasKeyword, searchResult.items, searchResult.pagination.total, urlPage])
 
-  const setUrlPage = useCallback(
-    (page: number) => {
-      const params = new URLSearchParams(searchParams.toString())
-      if (page <= 1) {
-        params.delete("page")
-      } else {
-        params.set("page", page.toString())
-      }
-      const query = params.toString()
-      router.replace(query ? `/${countryCode}/search?${query}` : `/${countryCode}/search`, {
-        scroll: false,
-      })
-    },
-    [countryCode, router, searchParams]
-  )
+  const setUrlPage = useCallback((page: number) => {
+    if (typeof window === "undefined") return
+
+    const params = new URLSearchParams(window.location.search)
+    if (page <= 1) {
+      params.delete("page")
+    } else {
+      params.set("page", page.toString())
+    }
+    const query = params.toString()
+    const nextUrl = `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`
+    window.history.replaceState(window.history.state, "", nextUrl)
+  }, [])
 
   const loadMore = useCallback(async () => {
     if (isLoadingMoreRef.current || isFetchingRef.current || !hasMore || !hasKeyword) return
