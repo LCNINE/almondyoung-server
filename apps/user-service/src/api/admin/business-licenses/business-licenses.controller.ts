@@ -1,4 +1,4 @@
-import { AuthorizationGuard, RequireScopes } from '@app/roles';
+import { RequireScopes } from '@app/authorization';
 import {
   Body,
   Controller,
@@ -7,7 +7,6 @@ import {
   Param,
   Put,
   Query,
-  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -15,8 +14,7 @@ import {
   ApiParam,
   ApiResponse,
   ApiTags,
-} from '@nestjs/swagger'; 
-import { JwtAuthGuard } from '../../../commons/guards/jwt-auth.guard';
+} from '@nestjs/swagger';
 import { BusinessLicenseResponseDto } from '../../business-licenses/dto/business-license.response.dto';
 import { BusinessLicensesService } from './business-licenses.service';
 import { BusinessAdminUpdateDto } from './dto/business-updeta.dto';
@@ -25,7 +23,6 @@ import { BusinessLicenseQueryDto } from './dto/pagination-query-dto';
 @ApiTags('사업자 등록 관리')
 @ApiBearerAuth('access-token')
 @Controller('admin/business-licenses')
-@UseGuards(JwtAuthGuard, AuthorizationGuard)
 export class BusinessLicensesController {
   constructor(
     private readonly businessLicensesService: BusinessLicensesService,
@@ -40,7 +37,7 @@ export class BusinessLicensesController {
   @ApiResponse({ status: 200, description: '사업자 등록 정보 조회 성공' })
   @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
   @ApiResponse({ status: 403, description: '권한 없음' })
-  @RequireScopes(['user:read'])
+  @RequireScopes('user:read')
   async getBusinessLicensesByUserId(
     @Param('userId') userId: string,
   ): Promise<BusinessLicenseResponseDto | null> {
@@ -48,7 +45,7 @@ export class BusinessLicensesController {
   }
 
   @Get()
-  @RequireScopes(['master', 'admin:users:read'])
+  @RequireScopes('master', 'admin:users:read')
   @ApiOperation({
     summary: '사업자 등록 목록 조회',
     description: '사업자 등록 신청 목록을 페이지네이션하여 조회합니다.',
@@ -64,7 +61,7 @@ export class BusinessLicensesController {
 
   // 사업자 등록 정보 상세 조회 기능
   @Get(':id')
-  @RequireScopes(['master', 'admin:users:read'])
+  @RequireScopes('master', 'admin:users:read')
   @ApiOperation({
     summary: '사업자 등록 상세 조회',
     description: '특정 사업자 등록 신청의 상세 정보를 조회합니다.',
@@ -78,7 +75,7 @@ export class BusinessLicensesController {
   }
 
   @Put(':businessId')
-  @RequireScopes(['master', 'admin:users:modify'])
+  @RequireScopes('master', 'admin:users:modify')
   @ApiOperation({
     summary: '사업자 등록 정보 수정',
     description: '사업자 등록 신청 정보를 수정하고 상태를 변경합니다.',
@@ -99,7 +96,7 @@ export class BusinessLicensesController {
   }
 
   @Delete(':id')
-  @RequireScopes(['master', 'admin:users:archive', 'admin:users:purge'])
+  @RequireScopes('master', 'admin:users:archive', 'admin:users:purge')
   @ApiOperation({
     summary: '사업자 등록 정보 삭제',
     description: '사업자 등록 신청 정보를 삭제합니다.',

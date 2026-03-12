@@ -1,12 +1,12 @@
-import { AuthorizationGuard, JwtPayload, RequireScopes } from '@app/roles';
-import { Body, Controller, Get, Patch, Post, Put, UseGuards } from '@nestjs/common';
+import { RequireScopes } from '@app/authorization';
+import { JwtPayload } from '@app/roles';
+import { Body, Controller, Get, Patch, Post, Put } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../../commons/guards/jwt-auth.guard';
 import { CreateShopInfoDto } from './dto/create-shop-info.dto';
 import { ShopService } from './shop.service';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
@@ -14,14 +14,13 @@ import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 @ApiTags('Shop')
 @ApiBearerAuth('access-token')
 @Controller('shop')
-@UseGuards(JwtAuthGuard, AuthorizationGuard)
 export class ShopController {
   constructor(private readonly shopService: ShopService) { }
 
   @ApiOperation({ summary: '상점 정보 조회' })
   @ApiResponse({ status: 200, description: '상점 정보 조회 성공' })
   @Get('info')
-  @RequireScopes(['user:read', 'master'])
+  @RequireScopes('user:read', 'master')
   findOneByUserId(@CurrentUser() user: JwtPayload) {
     return this.shopService.findOneByUserId(user.id);
   }
@@ -29,7 +28,7 @@ export class ShopController {
   @ApiOperation({ summary: '상점 정보 생성' })
   @ApiResponse({ status: 201, description: '상점 정보 생성 성공' })
   @Post('info')
-  @RequireScopes(['user:modify', 'master'])
+  @RequireScopes('user:modify', 'master')
   createShopInfo(
     @Body() createShopDto: CreateShopInfoDto,
     @CurrentUser() user: JwtPayload,
@@ -40,7 +39,7 @@ export class ShopController {
   @ApiOperation({ summary: '상점 정보 수정' })
   @ApiResponse({ status: 200, description: '상점 정보 수정 성공' })
   @Put('info')
-  @RequireScopes(['user:modify', 'master'])
+  @RequireScopes('user:modify', 'master')
   updateShopInfo(
     @Body() updateShopDto: CreateShopInfoDto,
     @CurrentUser() user: JwtPayload,
@@ -50,7 +49,7 @@ export class ShopController {
 
 
   @Patch('remind')
-  @RequireScopes(['user:modify', 'master'])
+  @RequireScopes('user:modify', 'master')
   async updateRemindAt(@CurrentUser() user: JwtPayload) {
     return this.shopService.updateRemindAt(user.id);
   }
