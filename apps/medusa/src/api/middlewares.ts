@@ -1,20 +1,32 @@
 import { authenticate, defineMiddlewares } from '@medusajs/framework/http';
 import { adminRouteMiddlewares } from './admin/middlewares';
 
-// TODO: 401 디버깅용 미들웨어
-// const debugAuthMiddleware = (req: any, _res: any, next: any) => {
-//   const authHeader = req.headers?.authorization;
-//   const cookie = req.headers?.cookie;
-//   console.log(`[middleware-debug] ${req.method} ${req.path}`);
-//   console.log(`[middleware-debug] hasAuthHeader: ${!!authHeader}, hasCookie: ${!!cookie}`);
-//   if (authHeader) {
-//     console.log(`[middleware-debug] authHeader: ${authHeader.substring(0, 50)}...`);
-//   }
-//   next();
-// };
+// 프로파일링용 타이밍 미들웨어
+const timingMiddleware = (req: any, res: any, next: any) => {
+  const start = Date.now();
+  const path = req.path;
+  const method = req.method;
+
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    // 300ms 이상 걸리는 요청만 로깅 (눈에 띄게 느린 요청)
+    if (duration > 300) {
+      console.log(
+        `[SLOW] ${method} ${path} - ${duration}ms (status: ${res.statusCode})`,
+      );
+    }
+  });
+
+  next();
+};
 
 export default defineMiddlewares({
   routes: [
+    // 모든 요청에 타이밍 미들웨어 적용
+    {
+      matcher: '/*',
+      middlewares: [timingMiddleware],
+    },
     ...adminRouteMiddlewares,
     // TODO: 401 디버깅용
     // {
