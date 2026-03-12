@@ -1,4 +1,5 @@
-import { HttpTypes } from "@medusajs/types"
+"use client"
+
 import {
   Table,
   TableBody,
@@ -6,15 +7,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { HttpTypes } from "@medusajs/types"
 
-import Item from "../components/item"
-import MobileItem from "../components/item/mobile-item"
+import Item from "./item"
 
-type ItemsTemplateProps = {
+type ItemsProps = {
   cart?: HttpTypes.StoreCart
 }
 
-export default function ItemsTemplate({ cart }: ItemsTemplateProps) {
+export default function Items({ cart }: ItemsProps) {
   const items = cart?.items
 
   const sortedItems = items?.sort((a, b) => {
@@ -26,7 +27,9 @@ export default function ItemsTemplate({ cart }: ItemsTemplateProps) {
       {/* 모바일: 카드 리스트 */}
       <div className="md:hidden">
         {sortedItems?.map((item) => (
-          <MobileItem key={item.id} item={item} />
+          <Item key={item.id} item={item}>
+            <Item.Mobile />
+          </Item>
         ))}
       </div>
 
@@ -45,7 +48,9 @@ export default function ItemsTemplate({ cart }: ItemsTemplateProps) {
 
           <TableBody>
             {sortedItems?.map((item) => (
-              <Item key={item.id} item={item} />
+              <Item key={item.id} item={item}>
+                <Item.Desktop />
+              </Item>
             ))}
           </TableBody>
         </Table>
