@@ -56,7 +56,7 @@ const membershipProductFilterMiddleware = async (
 // 프로파일링용 타이밍 미들웨어
 const timingMiddleware = (req: any, res: any, next: any) => {
   const start = Date.now();
-  const path = req.path;
+  const path = req.originalUrl || req.url;
   const method = req.method;
 
   res.on('finish', () => {
