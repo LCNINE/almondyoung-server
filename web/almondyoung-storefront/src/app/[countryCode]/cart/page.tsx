@@ -25,7 +25,6 @@ export default async function Cart() {
         cart.id,
         options[0].id
       )
-
       if (updatedCart) {
         cart = updatedCart
       }
