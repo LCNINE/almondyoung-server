@@ -15,7 +15,7 @@ export default function CartTemplate({ cart }: Props) {
       <main className="bg-background container mx-auto max-w-[1360px] px-4 py-8">
         <CartHeader />
 
-        <div className="grid grid-cols-1 gap-x-10 md:grid-cols-[1fr_360px]">
+        <div className="grid grid-cols-1 gap-x-10 lg:grid-cols-[1fr_360px]">
           <Card>
             <CardContent className="pt-6">
               {/* todo: 이거는 추후에 다시 고려해보겠습니다. 반응이 좀 느려요 */}
@@ -30,7 +30,7 @@ export default function CartTemplate({ cart }: Props) {
           </Card>
 
           {/* 데스크탑: 오른쪽 사이드바 */}
-          <div className="hidden md:sticky md:top-5 md:block md:self-start">
+          <div className="hidden lg:sticky lg:top-5 lg:block lg:self-start">
             <Card>
               <CardContent>
                 {cart && cart.region && (
