@@ -18,13 +18,6 @@ export default function CartTemplate({ cart }: Props) {
         <div className="grid grid-cols-1 gap-x-10 lg:grid-cols-[1fr_360px]">
           <Card>
             <CardContent className="pt-6">
-              {/* todo: 이거는 추후에 다시 고려해보겠습니다. 반응이 좀 느려요 */}
-              {/* <ShippingNotice
-              shippingTotal={cart?.shipping_total || 0}
-              selectedTotal={cart?.subtotal || 0}
-              variant="desktop"
-            /> */}
-
               <ItemsTemplate cart={cart as HttpTypes.StoreCart} />
             </CardContent>
           </Card>
