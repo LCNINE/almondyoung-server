@@ -299,9 +299,7 @@ export function CategoryPageClient({
         regionId,
       })
 
-      const mappedProducts = mapStoreProductsToCardProps(
-        result.response.products
-      )
+      const mappedProducts = mapStoreProductsToCardProps(result.response.products)
       return {
         products: mappedProducts,
         total: result.response.count,

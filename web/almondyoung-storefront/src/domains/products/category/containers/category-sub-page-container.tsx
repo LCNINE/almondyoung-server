@@ -50,6 +50,7 @@ export async function CategorySubPageContainer({
       queryParams: {
         limit: 20,
         category_id: categoryIds,
+        order: "-created_at",
       },
       regionId: region?.id,
     })
