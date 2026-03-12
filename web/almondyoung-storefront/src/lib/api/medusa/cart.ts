@@ -17,6 +17,10 @@ import { HttpApiError } from "../api-error"
 import { getRegion } from "./regions"
 import { retrieveCustomer, transferCart } from "./customer"
 
+// 카트 조회 시 사용하는 기본 fields
+const DEFAULT_CART_FIELDS =
+  "*items, *region, *items.product, *items.variant, *items.variant.options, *items.variant.options.option, +items.variant.inventory_quantity, +items.variant.manage_inventory, *items.thumbnail, *items.metadata, +items.total, +items.original_total, +items.compare_at_unit_price, *promotions, +shipping_methods, *customer, *customer.groups, customer_id, +payment_collection.id, +currency_code, +item_subtotal, +shipping_total, +total, +discount_total, +original_item_subtotal, +original_item_total"
+
 /**
  * 카트 ID를 통해 카트 정보를 조회합니다. 만약 ID가 제공되지 않으면, 쿠키에 저장된 카트 ID를 사용합니다.
  * @param cartId (선택 사항) - 조회할 카트의 고유 ID입니다.
@@ -28,9 +32,7 @@ export async function retrieveCart(
   cache: RequestCache = "force-cache"
 ) {
   const id = cartId || (await getCartId())
-  fields ??=
-    // "+items.*, +shipping_methods.*," +
-    "*items, *region, *items.product, *items.variant, *items.variant.options, *items.variant.options.option, +items.variant.inventory_quantity, +items.variant.manage_inventory, *items.thumbnail, *items.metadata, +items.total, +items.original_total, +items.compare_at_unit_price, *promotions, +shipping_methods, *customer, *customer.groups, customer_id, +payment_collection.id, +currency_code, +item_subtotal, +shipping_total, +total, +discount_total, +original_item_subtotal, +original_item_total"
+  fields ??= DEFAULT_CART_FIELDS
 
   if (!id) {
     return null
@@ -1133,7 +1135,12 @@ export const addCartShippingMethodDuringRender = async (
   }
 
   return sdk.store.cart
-    .addShippingMethod(cartId, { option_id: optionId }, {}, headers)
+    .addShippingMethod(
+      cartId,
+      { option_id: optionId },
+      { fields: DEFAULT_CART_FIELDS },
+      headers
+    )
     .then(({ cart }: { cart: HttpTypes.StoreCart }) => cart)
     .catch(medusaError)
 }
