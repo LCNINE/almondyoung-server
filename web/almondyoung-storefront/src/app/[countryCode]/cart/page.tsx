@@ -13,7 +13,7 @@ export default async function Cart() {
     return notFound()
   })
 
-  if (!cart) {
+  if (!cart || cart.items?.length === 0) {
     return <EmptyCartView showHeader={false} bgColor="bg-muted" />
   }
 
