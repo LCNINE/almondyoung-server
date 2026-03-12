@@ -25,6 +25,7 @@ type BackfillOptions = {
   batchSize: number;
   offset: number;
   limit?: number;
+  masters?: string[];
   recreateIndex: boolean;
   dryRun: boolean;
 };
@@ -94,10 +95,16 @@ function parseArgs(): BackfillOptions {
       ? undefined
       : parsePositiveInt(limitRaw, '--limit', 0);
 
+  const mastersRaw = getOptionValue('--masters');
+  const masters = mastersRaw
+    ? mastersRaw.split(',').map((s) => s.trim()).filter(Boolean)
+    : undefined;
+
   return {
     batchSize,
     offset,
     limit: limit === undefined ? undefined : Math.max(limit, 0),
+    masters,
     recreateIndex: args.includes('--recreate-index'),
     dryRun: args.includes('--dry-run'),
   };
@@ -113,6 +120,7 @@ function printUsage(): void {
       '  --batch-size=300      Number of products per batch (default: 300)',
       '  --offset=0            Start offset (default: 0)',
       '  --limit=1000          Max number of products to process',
+      '  --masters=id1,id2     Comma-separated PIM master IDs to index (skips --offset/--limit)',
       '  --recreate-index      Delete and recreate target index before backfill',
       '  --dry-run             Read and transform only, skip OpenSearch writes',
       '',
@@ -193,7 +201,7 @@ async function ensureIndex(
   }
 }
 
-async function fetchActiveVersionCount(db: PimDb) {
+async function fetchActiveVersionCount(db: PimDb, masterIds?: string[]) {
   const [row] = await db
     .select({ count: sql<number>`count(*)::int4` })
     .from(productMasterVersions)
@@ -203,6 +211,9 @@ async function fetchActiveVersionCount(db: PimDb) {
         eq(productMasterVersions.status, 'active'),
         isNull(productMasterVersions.deletedAt),
         isNull(productMasters.deletedAt),
+        masterIds && masterIds.length > 0
+          ? inArray(productMasterVersions.masterId, masterIds)
+          : undefined,
       ),
     );
 
@@ -213,6 +224,7 @@ async function fetchActiveVersionsBatch(
   db: PimDb,
   batchSize: number,
   offset: number,
+  masterIds?: string[],
 ): Promise<ActiveVersionRow[]> {
   return db
     .select({
@@ -232,6 +244,9 @@ async function fetchActiveVersionsBatch(
         eq(productMasterVersions.status, 'active'),
         isNull(productMasterVersions.deletedAt),
         isNull(productMasters.deletedAt),
+        masterIds && masterIds.length > 0
+          ? inArray(productMasterVersions.masterId, masterIds)
+          : undefined,
       ),
     )
     .orderBy(
@@ -296,14 +311,20 @@ async function fetchTagMap(
     return new Map();
   }
 
-  const rows = await db
-    .select({
-      versionId: productTagValues.versionId,
-      tagName: tagValues.name,
-    })
-    .from(productTagValues)
-    .innerJoin(tagValues, eq(productTagValues.tagValueId, tagValues.id))
-    .where(inArray(productTagValues.versionId, versionIds));
+  let rows: { versionId: string; tagName: string }[];
+  try {
+    rows = await db
+      .select({
+        versionId: productTagValues.versionId,
+        tagName: tagValues.name,
+      })
+      .from(productTagValues)
+      .innerJoin(tagValues, eq(productTagValues.tagValueId, tagValues.id))
+      .where(inArray(productTagValues.versionId, versionIds));
+  } catch (err: any) {
+    console.warn(`  [warn] fetchTagMap failed (tags skipped): ${err?.message ?? err}`);
+    return new Map();
+  }
 
   const map = new Map<string, Set<string>>();
   for (const row of rows) {
@@ -486,12 +507,15 @@ async function main() {
   const startedAt = Date.now();
 
   try {
-    const sourceCount = await fetchActiveVersionCount(pimDb);
+    const sourceCount = await fetchActiveVersionCount(pimDb, options.masters);
     const targetCount =
       options.limit === undefined
         ? Math.max(sourceCount - options.offset, 0)
         : Math.min(Math.max(sourceCount - options.offset, 0), options.limit);
 
+    if (options.masters) {
+      console.log(`Filtering to masters: ${options.masters.join(', ')}`);
+    }
     console.log(`Source active versions: ${sourceCount}`);
     console.log(`Planned to process: ${targetCount}`);
 
@@ -515,7 +539,7 @@ async function main() {
         break;
       }
 
-      const batch = await fetchActiveVersionsBatch(pimDb, remaining, offset);
+      const batch = await fetchActiveVersionsBatch(pimDb, remaining, offset, options.masters);
       if (batch.length === 0) {
         break;
       }
