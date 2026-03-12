@@ -1,7 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card"
 import { CartHeader } from "@/domains/cart/components/header"
 import { HttpTypes } from "@medusajs/types"
-import ItemsTemplate from "../components/items"
+import Items from "../components/items"
 import MobileCheckoutBar from "../components/mobile-checkout-bar"
 import Summary from "./summary"
 
@@ -18,7 +18,7 @@ export default function CartTemplate({ cart }: Props) {
         <div className="grid grid-cols-1 gap-x-10 lg:grid-cols-[1fr_360px]">
           <Card>
             <CardContent className="pt-6">
-              <ItemsTemplate cart={cart as HttpTypes.StoreCart} />
+              <Items cart={cart as HttpTypes.StoreCart} />
             </CardContent>
           </Card>
 
