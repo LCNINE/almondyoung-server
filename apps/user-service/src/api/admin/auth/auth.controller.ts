@@ -1,4 +1,4 @@
-import { AuthorizationGuard, RequireScopes } from '@app/roles';
+import { RequireScopes } from '@app/authorization';
 import {
   Body,
   Controller,
@@ -6,9 +6,7 @@ import {
   HttpStatus,
   Patch,
   Post,
-  UseGuards,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../../../commons/guards/jwt-auth.guard';
 import { ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { CreateAccountDto } from './dto/create-account-dto';
@@ -16,12 +14,11 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 
 @Controller('admin/auth')
 @ApiBearerAuth('access-token')
-@UseGuards(JwtAuthGuard, AuthorizationGuard)
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post()
-  @RequireScopes(['master', 'admin:users:modify'])
+  @RequireScopes('master', 'admin:users:modify')
   async createAccount(@Body() createAccountDto: CreateAccountDto) {
     try {
       return this.authService.createAccount(createAccountDto);
@@ -37,7 +34,7 @@ export class AuthController {
   }
 
   @Patch('change-password')
-  @RequireScopes(['master', 'admin:users:modify'])
+  @RequireScopes('master', 'admin:users:modify')
   async changePassword(@Body() changePasswordDto: ChangePasswordDto) {
     try {
       return await this.authService.changePassword(changePasswordDto);
