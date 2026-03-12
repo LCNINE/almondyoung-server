@@ -61,7 +61,7 @@ export default function MobileCheckoutBar({ cart }: MobileCheckoutBarProps) {
   }, [])
 
   return (
-    <div className="fixed inset-x-0 bottom-16 z-99 border-t bg-white lg:hidden">
+    <div className="fixed inset-x-0 bottom-0 z-99 border-t bg-white lg:hidden">
       {/* 스크롤 페이드 인디케이터 */}
       <div
         className={`pointer-events-none absolute inset-x-0 -top-12 h-12 bg-gradient-to-t from-white to-transparent transition-opacity duration-300 ${
