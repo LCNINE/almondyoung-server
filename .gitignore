@@ -218,6 +218,9 @@ jspm_packages/
 *.tsbuildinfo
 
 # Optional npm cache directory
+
+# Local Python dependency cache (used by medusa processing scripts)
+**/.pydeps/
 .npm
 
 # Optional eslint cache
