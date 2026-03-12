@@ -104,8 +104,12 @@ export function HeroBannerCarousel({
         className="w-full"
       >
         <CarouselContent className="ml-0">
-          {banners.map((banner) => (
-            <CarouselItem key={banner.id} className="pl-0">
+          {banners.map((banner, index) => (
+            <CarouselItem
+              key={banner.id}
+              // 임시 대응 - 모바일 배너 받는데 시간이 오래걸려 인덱스 2 배너는 모바일에서 깨져 보여서 임시로 숨김 처리
+              className={cn("pl-0", index === 2 && "hidden md:block")}
+            >
               <div
                 className="relative aspect-(--mobile-ratio) w-full md:aspect-(--pc-ratio)"
                 style={
@@ -174,6 +178,7 @@ export function HeroBannerCarousel({
               onClick={() => scrollTo(index)}
               className={cn(
                 "h-2 w-2 cursor-pointer rounded-full transition-all duration-300",
+                index === 2 && "hidden md:block",
                 current === index
                   ? "w-6 bg-white"
                   : "bg-white/50 hover:bg-white/80"
