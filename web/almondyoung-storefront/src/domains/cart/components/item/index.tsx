@@ -24,10 +24,9 @@ import { formatPrice } from "@/lib/utils/price-utils"
 type ItemProps = {
   item: HttpTypes.StoreCartLineItem
   type?: "full" | "preview"
-  currencyCode: string
 }
 
-export default function Item({ item, type = "full", currencyCode }: ItemProps) {
+export default function Item({ item, type = "full" }: ItemProps) {
   const [updating, setUpdating] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -108,9 +107,11 @@ export default function Item({ item, type = "full", currencyCode }: ItemProps) {
         <p className="text-sm font-medium" data-testid="product-title">
           {item.product_title}
         </p>
-        {item.variant?.title && item.variant.title !== "Default Title" && (
+        {item.variant?.options && item.variant.options.length > 0 && (
           <p className="text-muted-foreground mt-1 text-xs">
-            {item.variant.title}
+            {item.variant.options
+              .map((opt) => `${opt.option?.title}: ${opt.value}`)
+              .join(" / ")}
           </p>
         )}
       </TableCell>

@@ -26,11 +26,7 @@ export default function ItemsTemplate({ cart }: ItemsTemplateProps) {
       {/* 모바일: 카드 리스트 */}
       <div className="md:hidden">
         {sortedItems?.map((item) => (
-          <MobileItem
-            key={item.id}
-            item={item}
-            currencyCode={cart?.currency_code ?? "KRW"}
-          />
+          <MobileItem key={item.id} item={item} />
         ))}
       </div>
 
@@ -49,11 +45,7 @@ export default function ItemsTemplate({ cart }: ItemsTemplateProps) {
 
           <TableBody>
             {sortedItems?.map((item) => (
-              <Item
-                key={item.id}
-                item={item}
-                currencyCode={cart?.currency_code ?? "KRW"}
-              />
+              <Item key={item.id} item={item} />
             ))}
           </TableBody>
         </Table>

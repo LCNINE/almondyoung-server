@@ -21,7 +21,6 @@ import { formatPrice } from "@/lib/utils/price-utils"
 
 type MobileItemProps = {
   item: HttpTypes.StoreCartLineItem
-  currencyCode: string
 }
 
 export default function MobileItem({ item }: MobileItemProps) {
@@ -88,7 +87,7 @@ export default function MobileItem({ item }: MobileItemProps) {
         {/* 상단: 상품명 + 삭제버튼 */}
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1">
-            <p className="line-clamp-2 text-sm font-medium leading-snug">
+            <p className="line-clamp-2 text-sm leading-snug font-medium">
               {item.product_title}
             </p>
             {item.variant?.title && item.variant.title !== "Default Title" && (
@@ -100,7 +99,7 @@ export default function MobileItem({ item }: MobileItemProps) {
           <Button
             variant="ghost"
             size="icon"
-            className="text-muted-foreground -mr-2 -mt-1 h-8 w-8 shrink-0"
+            className="text-muted-foreground -mt-1 -mr-2 h-8 w-8 shrink-0"
             onClick={handleDelete}
             disabled={deleting}
           >
