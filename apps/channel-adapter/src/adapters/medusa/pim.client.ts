@@ -72,6 +72,28 @@ export class PimClient {
                 }
             }
 
+            // 카테고리 상세 조회 (syncFromSnapshot이 snapshot.categories를 사용하므로 필수)
+            let categories: PimProductSnapshot['categories'] | undefined;
+            if (categoryIds && categoryIds.length > 0) {
+                const fetched = await Promise.allSettled(
+                    categoryIds.map((id) => this.getCategory(id)),
+                );
+                categories = fetched
+                    .filter((r): r is PromiseFulfilledResult<PimCategoryDetail> => r.status === 'fulfilled')
+                    .map((r) => ({
+                        id: r.value.id,
+                        name: r.value.name,
+                        slug: r.value.slug,
+                        path: r.value.path ?? '',
+                        parentId: r.value.parentId,
+                        isActive: r.value.isActive,
+                        visibility: r.value.visibility ?? true,
+                        showOnMainCategory: r.value.showOnMainCategory ?? false,
+                        thumbnail: r.value.thumbnail,
+                    }));
+                this.logger.debug(`Resolved ${categories.length} category details for ${masterId}`);
+            }
+
             // 옵션 그룹 맵 (ID -> 이름) - variant option mapping용
             const optionGroupMap = new Map<string, string>(
                 data.optionGroups?.map((g: any) => [g.id, g.displayName || g.name]) || []
@@ -98,6 +120,7 @@ export class PimClient {
                 seoDescription: data.seoDescription || undefined,
                 seoKeywords: data.seoKeywords || undefined,
                 categoryIds,
+                categories,
                 brand: data.brand || undefined,
                 tags: data.tagValues?.map((tv: any) => tv.name) || undefined,
                 productType: data.productType || undefined,

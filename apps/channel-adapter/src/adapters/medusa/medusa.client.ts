@@ -303,9 +303,12 @@ export class MedusaClient {
         if (existing?.id) {
             const verified = await this.getCategoryById(existing.id);
             if (!verified) {
+                // getCategoryById 실패 시 handle 조회 결과를 신뢰 (네트워크 오류일 수 있음)
                 this.logger.warn(
-                    `Category ${existing.id} found by handle but doesn't exist by ID. Creating new...`,
+                    `Category ${existing.id} found by handle but getCategoryById failed. Using handle result.`,
                 );
+                this.categoryCache.set(preferredHandle, existing.id);
+                return existing.id;
             } else {
                 const updatePayload = {
                     name: categorySnapshot.name,
@@ -383,21 +386,22 @@ export class MedusaClient {
             }
         }
 
-        try {
-            // Medusa v2 방식: POST /products/:id 에 categories 필드로 업데이트
-            await this.sdk.admin.product.update(productId, {
-                categories: unique.map(id => ({ id })),
-            });
-            this.logger.debug(
-                `Attached product ${productId} to ${unique.length} categories: ${unique.join(', ')}`,
-            );
-        } catch (error) {
-            const fetchError = error as FetchError;
-            this.logger.warn(
-                `Failed to attach product ${productId} to categories: ${fetchError.message}`,
-            );
-            if (options?.throwOnFailure) {
-                throw error;
+        // productCategory.updateProducts로 M:N 조인 테이블에 직접 추가
+        // (product.update({ categories }) 는 product record만 업데이트하고 조인 테이블을 갱신하지 않음)
+        for (const catId of unique) {
+            try {
+                await this.sdk.admin.productCategory.updateProducts(catId, {
+                    add: [productId],
+                } as any);
+                this.logger.debug(`Attached product ${productId} to category ${catId}`);
+            } catch (error) {
+                const fetchError = error as FetchError;
+                this.logger.warn(
+                    `Failed to attach product ${productId} to category ${catId}: ${fetchError.message}`,
+                );
+                if (options?.throwOnFailure) {
+                    throw error;
+                }
             }
         }
     }
