@@ -8,8 +8,8 @@ export function CartHeader() {
         <h1 className="text-4xl font-bold">장바구니</h1>
         <div className="flex items-center gap-2">
           <span className="text-xl font-bold">주문/결제</span>
-          <ChevronRight className="h-6 w-6 text-border" />
-          <span className="text-xl font-normal text-muted-foreground">
+          <ChevronRight className="text-border h-6 w-6" />
+          <span className="text-muted-foreground text-xl font-normal">
             완료
           </span>
         </div>

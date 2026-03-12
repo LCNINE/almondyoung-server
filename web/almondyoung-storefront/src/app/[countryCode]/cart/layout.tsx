@@ -21,7 +21,7 @@ export default async function CartLayout(props: { children: React.ReactNode }) {
         <MobileBackHeader title="장바구니" />
       </div>
 
-      <div className="container mx-auto py-0 md:py-8 md:max-w-[1360px] md:px-[40px]">
+      <div className="container mx-auto pt-16 md:max-w-[1360px] md:px-[40px] md:py-8 md:pt-8">
         {props.children}
       </div>
     </div>

@@ -1,13 +1,11 @@
-import Link from "next/link"
+import LocalizedClientLink from "../shared/localized-client-link"
 
 interface EmptyCartViewProps {
-  countryCode: string
   showHeader?: boolean
   bgColor?: string
 }
 
 export function EmptyCartView({
-  countryCode,
   showHeader = true,
   bgColor = "bg-white",
 }: EmptyCartViewProps) {
@@ -32,12 +30,12 @@ export function EmptyCartView({
             원하는 상품을 담아보세요
           </p>
 
-          <Link
-            href={`/${countryCode}/best`}
+          <LocalizedClientLink
+            href={"/products"}
             className="rounded-xl bg-[#F29219] px-10 py-4 text-center text-[15px] font-semibold text-white transition-all hover:bg-[#E08510] sm:w-auto sm:text-[17px]"
           >
             상품 담으러 가기
-          </Link>
+          </LocalizedClientLink>
         </div>
       </main>
     </div>
