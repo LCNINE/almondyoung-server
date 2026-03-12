@@ -2,19 +2,12 @@
 
 import { useState } from "react"
 import Image from "next/image"
-import { Loader2, Trash2 } from "lucide-react"
+import { Loader2, Minus, Plus, Trash2 } from "lucide-react"
 import { HttpTypes } from "@medusajs/types"
 import { toast } from "sonner"
 
 import { TableCell, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { deleteLineItem, updateLineItem } from "@/lib/api/medusa/cart"
@@ -32,6 +25,7 @@ export default function Item({ item, type = "full" }: ItemProps) {
   const [error, setError] = useState<string | null>(null)
 
   const changeQuantity = async (quantity: number) => {
+    if (quantity < 1 || quantity > maxQuantity) return
     setError(null)
     setUpdating(true)
 
@@ -41,8 +35,22 @@ export default function Item({ item, type = "full" }: ItemProps) {
         setError(err.message)
       })
       .finally(() => setUpdating(false))
+  }
 
-    setUpdating(false)
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value
+    if (value === "") return
+    const num = parseInt(value)
+    if (!isNaN(num) && num >= 1 && num <= maxQuantity) {
+      changeQuantity(num)
+    }
+  }
+
+  const handleInputBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    const value = e.target.value
+    if (value === "" || parseInt(value) < 1) {
+      e.target.value = String(item.quantity)
+    }
   }
 
   const handleDelete = async () => {
@@ -119,7 +127,7 @@ export default function Item({ item, type = "full" }: ItemProps) {
       {/* 수량 선택 (full 모드만) */}
       {type === "full" && (
         <TableCell>
-          <div className="flex w-28 items-center gap-2">
+          <div className="flex items-center gap-3">
             <Button
               variant="ghost"
               size="icon"
@@ -135,23 +143,45 @@ export default function Item({ item, type = "full" }: ItemProps) {
               )}
             </Button>
 
-            <Select
-              value={String(item.quantity)}
-              onValueChange={(value) => changeQuantity(parseInt(value))}
-              data-testid="product-select-button"
-            >
-              <SelectTrigger className="h-10 w-14">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="max-h-60">
-                {Array.from({ length: maxQuantity }, (_, i) => (
-                  <SelectItem key={i + 1} value={String(i + 1)}>
-                    {i + 1}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {updating && <Loader2 className="h-4 w-4 animate-spin" />}
+            <div className="border-input relative flex h-9 items-center rounded-lg border bg-white">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-full w-9 rounded-l-lg rounded-r-none"
+                onClick={() => changeQuantity(item.quantity - 1)}
+                disabled={updating || item.quantity <= 1}
+              >
+                <Minus className="h-4 w-4" />
+              </Button>
+              <input
+                type="number"
+                min={1}
+                max={maxQuantity}
+                defaultValue={item.quantity}
+                key={item.quantity}
+                onChange={handleInputChange}
+                onBlur={handleInputBlur}
+                className="h-full w-10 border-none bg-transparent text-center text-sm font-medium outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                disabled={updating}
+                data-testid="product-quantity-input"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-full w-9 rounded-l-none rounded-r-lg"
+                onClick={() => changeQuantity(item.quantity + 1)}
+                disabled={updating || item.quantity >= maxQuantity}
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+              {updating && (
+                <div className="bg-background/80 absolute inset-0 flex items-center justify-center rounded-lg">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                </div>
+              )}
+            </div>
           </div>
           {error && (
             <p
