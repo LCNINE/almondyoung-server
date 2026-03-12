@@ -1,28 +1,56 @@
 "use client"
 
-import { useState } from "react"
-import Image from "next/image"
-import { Loader2, Minus, Plus, Trash2 } from "lucide-react"
-import { HttpTypes } from "@medusajs/types"
-import { toast } from "sonner"
-
-import { TableCell, TableRow } from "@/components/ui/table"
-import { Button } from "@/components/ui/button"
-import { cn } from "@/lib/utils"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
+import { Button } from "@/components/ui/button"
+import { TableCell, TableRow } from "@/components/ui/table"
 import { deleteLineItem, updateLineItem } from "@/lib/api/medusa/cart"
+import { cn } from "@/lib/utils"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { formatPrice } from "@/lib/utils/price-utils"
+import { HttpTypes } from "@medusajs/types"
+import { Loader2, Minus, Plus, Trash2 } from "lucide-react"
+import Image from "next/image"
+import { cloneElement, ReactElement, useState } from "react"
+import { toast } from "sonner"
 
 type ItemProps = {
   item: HttpTypes.StoreCartLineItem
+  children: ReactElement
+}
+
+type ItemChildProps = {
+  item: HttpTypes.StoreCartLineItem
+  updating: boolean
+  deleting: boolean
+  error: string | null
+  maxQuantity: number
+  unitPrice: number
+  compareAtUnitPrice: number | null | undefined
+  totalPrice: number
+  discountPercentage: number
+  compareAtTotalPrice: number
+  changeQuantity: (quantity: number) => Promise<void>
+  handleInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void
+  handleInputBlur: (e: React.FocusEvent<HTMLInputElement>) => void
+  handleDelete: () => Promise<void>
+}
+
+type DesktopItemProps = Partial<ItemChildProps> & {
   type?: "full" | "preview"
 }
 
-export default function Item({ item, type = "full" }: ItemProps) {
+type MobileItemProps = Partial<ItemChildProps>
+
+function Item({ item, children }: ItemProps) {
   const [updating, setUpdating] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // 재고 관리 활성화: 실제 재고 수량 기반 (최대 99개)
+  // 재고 관리 비활성화: 99개까지 허용
+  const maxQuantity = item.variant?.manage_inventory
+    ? Math.min(item.variant.inventory_quantity ?? 99, 99)
+    : 99
 
   const changeQuantity = async (quantity: number) => {
     if (quantity < 1 || quantity > maxQuantity) return
@@ -64,12 +92,6 @@ export default function Item({ item, type = "full" }: ItemProps) {
     }
   }
 
-  // 재고 관리 활성화: 실제 재고 수량 기반 (최대 99개)
-  // 재고 관리 비활성화: 99개까지 허용
-  const maxQuantity = item.variant?.manage_inventory
-    ? Math.min(item.variant.inventory_quantity ?? 99, 99)
-    : 99
-
   const unitPrice = item.unit_price ?? 0
   const compareAtUnitPrice = item.compare_at_unit_price
   const totalPrice = unitPrice * item.quantity
@@ -82,6 +104,43 @@ export default function Item({ item, type = "full" }: ItemProps) {
   const compareAtTotalPrice = compareAtUnitPrice
     ? compareAtUnitPrice * item.quantity
     : 0
+
+  return cloneElement(children, {
+    item,
+    updating,
+    deleting,
+    error,
+    maxQuantity,
+    unitPrice,
+    compareAtUnitPrice,
+    totalPrice,
+    discountPercentage,
+    compareAtTotalPrice,
+    changeQuantity,
+    handleInputChange,
+    handleInputBlur,
+    handleDelete,
+  } as ItemChildProps)
+}
+
+function DesktopItem({
+  item,
+  type = "full",
+  updating,
+  deleting,
+  error,
+  maxQuantity,
+  unitPrice,
+  compareAtUnitPrice,
+  totalPrice,
+  discountPercentage,
+  compareAtTotalPrice,
+  changeQuantity,
+  handleInputChange,
+  handleInputBlur,
+  handleDelete,
+}: DesktopItemProps) {
+  if (!item) return null
 
   return (
     <TableRow className="w-full" data-testid="product-row">
@@ -149,7 +208,7 @@ export default function Item({ item, type = "full" }: ItemProps) {
                 variant="ghost"
                 size="icon"
                 className="h-full w-9 rounded-l-lg rounded-r-none"
-                onClick={() => changeQuantity(item.quantity - 1)}
+                onClick={() => changeQuantity?.(item.quantity - 1)}
                 disabled={updating || item.quantity <= 1}
               >
                 <Minus className="h-4 w-4" />
@@ -162,7 +221,7 @@ export default function Item({ item, type = "full" }: ItemProps) {
                 key={item.quantity}
                 onChange={handleInputChange}
                 onBlur={handleInputBlur}
-                className="h-full w-10 border-none bg-transparent text-center text-sm font-medium outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                className="h-full w-10 [appearance:textfield] border-none bg-transparent text-center text-sm font-medium outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 disabled={updating}
                 data-testid="product-quantity-input"
               />
@@ -171,8 +230,8 @@ export default function Item({ item, type = "full" }: ItemProps) {
                 variant="ghost"
                 size="icon"
                 className="h-full w-9 rounded-l-none rounded-r-lg"
-                onClick={() => changeQuantity(item.quantity + 1)}
-                disabled={updating || item.quantity >= maxQuantity}
+                onClick={() => changeQuantity?.(item.quantity + 1)}
+                disabled={updating || item.quantity >= (maxQuantity ?? 99)}
               >
                 <Plus className="h-4 w-4" />
               </Button>
@@ -198,7 +257,7 @@ export default function Item({ item, type = "full" }: ItemProps) {
       {type === "full" && (
         <TableCell className="hidden sm:table-cell">
           <div className="flex flex-col items-start">
-            {discountPercentage > 0 && (
+            {(discountPercentage ?? 0) > 0 && (
               <div className="flex items-center gap-1">
                 <span className="text-muted-foreground text-xs line-through">
                   {formatPrice(compareAtUnitPrice!)}원
@@ -208,7 +267,7 @@ export default function Item({ item, type = "full" }: ItemProps) {
                 </span>
               </div>
             )}
-            <span className="text-sm">{formatPrice(unitPrice)}원</span>
+            <span className="text-sm">{formatPrice(unitPrice ?? 0)}원</span>
           </div>
         </TableCell>
       )}
@@ -223,13 +282,13 @@ export default function Item({ item, type = "full" }: ItemProps) {
           {type === "preview" && (
             <span className="flex gap-x-1">
               <span className="text-muted-foreground">{item.quantity}x</span>
-              <span className="text-sm">{formatPrice(unitPrice)}원</span>
+              <span className="text-sm">{formatPrice(unitPrice ?? 0)}원</span>
             </span>
           )}
-          {discountPercentage > 0 && (
+          {(discountPercentage ?? 0) > 0 && (
             <div className="flex items-center gap-1">
               <span className="text-muted-foreground text-xs line-through">
-                {formatPrice(compareAtTotalPrice)}원
+                {formatPrice(compareAtTotalPrice ?? 0)}원
               </span>
               <span className="text-destructive text-xs font-medium">
                 {discountPercentage}%
@@ -237,10 +296,139 @@ export default function Item({ item, type = "full" }: ItemProps) {
             </div>
           )}
           <span className="text-sm font-medium">
-            {formatPrice(totalPrice)}원
+            {formatPrice(totalPrice ?? 0)}원
           </span>
         </div>
       </TableCell>
     </TableRow>
   )
 }
+
+function MobileItem({
+  item,
+  updating,
+  deleting,
+  maxQuantity,
+  totalPrice,
+  discountPercentage,
+  changeQuantity,
+  handleInputChange,
+  handleInputBlur,
+  handleDelete,
+}: MobileItemProps) {
+  if (!item) return null
+
+  return (
+    <div className="flex gap-3 border-b py-4">
+      {/* 썸네일 */}
+      <LocalizedClientLink
+        href={`/products/${item.product_handle}`}
+        className="shrink-0"
+      >
+        {item.thumbnail ? (
+          <Image
+            src={getThumbnailUrl(item.thumbnail)}
+            alt={item.product_title ?? ""}
+            width={72}
+            height={72}
+            className="aspect-square rounded-md object-cover"
+          />
+        ) : (
+          <div className="bg-muted flex h-[72px] w-[72px] items-center justify-center rounded-md">
+            <span className="text-muted-foreground text-xs">No image</span>
+          </div>
+        )}
+      </LocalizedClientLink>
+
+      {/* 상품 정보 & 컨트롤 */}
+      <div className="flex flex-1 flex-col">
+        {/* 상단: 상품명 + 삭제버튼 */}
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1">
+            <p className="line-clamp-2 text-sm leading-snug font-medium">
+              {item.product_title}
+            </p>
+            {item.variant?.options && item.variant.options.length > 0 && (
+              <p className="text-muted-foreground mt-0.5 text-xs">
+                {item.variant.options
+                  .map((opt) => `${opt.option?.title}: ${opt.value}`)
+                  .join(" / ")}
+              </p>
+            )}
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-muted-foreground -mt-1 -mr-2 h-8 w-8 shrink-0"
+            onClick={handleDelete}
+            disabled={deleting}
+          >
+            {deleting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Trash2 className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
+
+        {/* 하단: 수량 + 가격 */}
+        <div className="mt-auto flex items-center justify-between pt-2">
+          <div className="border-input relative flex h-8 items-center rounded-lg border bg-white">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-full w-8 rounded-l-lg rounded-r-none"
+              onClick={() => changeQuantity?.(item.quantity - 1)}
+              disabled={updating || item.quantity <= 1}
+            >
+              <Minus className="h-4 w-4" />
+            </Button>
+            <input
+              type="number"
+              min={1}
+              max={maxQuantity}
+              defaultValue={item.quantity}
+              key={item.quantity}
+              onChange={handleInputChange}
+              onBlur={handleInputBlur}
+              className="h-full w-8 [appearance:textfield] border-none bg-transparent text-center text-sm font-medium outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+              disabled={updating}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-full w-8 rounded-l-none rounded-r-lg"
+              onClick={() => changeQuantity?.(item.quantity + 1)}
+              disabled={updating || item.quantity >= (maxQuantity ?? 99)}
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+            {updating && (
+              <div className="bg-background/80 absolute inset-0 flex items-center justify-center rounded-lg">
+                <Loader2 className="h-4 w-4 animate-spin" />
+              </div>
+            )}
+          </div>
+
+          <div className="text-right">
+            {(discountPercentage ?? 0) > 0 && (
+              <span className="text-destructive mr-1 text-xs font-medium">
+                {discountPercentage}%
+              </span>
+            )}
+            <span className="text-sm font-semibold">
+              {formatPrice(totalPrice ?? 0)}원
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+Item.Desktop = DesktopItem
+Item.Mobile = MobileItem
+
+export default Item

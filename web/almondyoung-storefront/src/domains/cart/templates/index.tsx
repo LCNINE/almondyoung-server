@@ -1,9 +1,9 @@
-import { CartHeader } from "@/domains/cart/components/header"
 import { Card, CardContent } from "@/components/ui/card"
+import { CartHeader } from "@/domains/cart/components/header"
 import { HttpTypes } from "@medusajs/types"
-import ItemsTemplate from "./items"
+import ItemsTemplate from "../components/items"
+import MobileCheckoutBar from "../components/mobile-checkout-bar"
 import Summary from "./summary"
-import MobileCheckoutBar from "./mobile-checkout-bar"
 
 type Props = {
   cart: HttpTypes.StoreCart | null

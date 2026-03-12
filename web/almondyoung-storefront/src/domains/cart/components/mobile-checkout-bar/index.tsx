@@ -8,8 +8,8 @@ import { Button } from "@/components/ui/button"
 import { HttpTypes } from "@medusajs/types"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { formatPrice } from "@/lib/utils/price-utils"
-import PriceErrorNotice from "../components/price-error-notice"
-import { calculateCartDiscount } from "../utils/calculate-discount"
+import PriceErrorNotice from "../price-error-notice"
+import { calculateCartDiscount } from "../../utils/calculate-discount"
 
 type MobileCheckoutBarProps = {
   cart: HttpTypes.StoreCart & {
