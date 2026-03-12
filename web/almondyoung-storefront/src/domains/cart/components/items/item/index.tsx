@@ -2,6 +2,14 @@
 
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 import { TableCell, TableRow } from "@/components/ui/table"
 import { deleteLineItem, updateLineItem } from "@/lib/api/medusa/cart"
 import { cn } from "@/lib/utils"
@@ -30,8 +38,6 @@ type ItemChildProps = {
   discountPercentage: number
   compareAtTotalPrice: number
   changeQuantity: (quantity: number) => Promise<void>
-  handleInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void
-  handleInputBlur: (e: React.FocusEvent<HTMLInputElement>) => void
   handleDelete: () => Promise<void>
 }
 
@@ -63,22 +69,6 @@ function Item({ item, children }: ItemProps) {
         setError(err.message)
       })
       .finally(() => setUpdating(false))
-  }
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value
-    if (value === "") return
-    const num = parseInt(value)
-    if (!isNaN(num) && num >= 1 && num <= maxQuantity) {
-      changeQuantity(num)
-    }
-  }
-
-  const handleInputBlur = (e: React.FocusEvent<HTMLInputElement>) => {
-    const value = e.target.value
-    if (value === "" || parseInt(value) < 1) {
-      e.target.value = String(item.quantity)
-    }
   }
 
   const handleDelete = async () => {
@@ -117,8 +107,6 @@ function Item({ item, children }: ItemProps) {
     discountPercentage,
     compareAtTotalPrice,
     changeQuantity,
-    handleInputChange,
-    handleInputBlur,
     handleDelete,
   } as ItemChildProps)
 }
@@ -136,11 +124,27 @@ function DesktopItem({
   discountPercentage,
   compareAtTotalPrice,
   changeQuantity,
-  handleInputChange,
-  handleInputBlur,
   handleDelete,
 }: DesktopItemProps) {
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [inputQuantity, setInputQuantity] = useState("")
+
   if (!item) return null
+
+  const handleOpenModal = () => {
+    setInputQuantity(String(item.quantity))
+    setIsModalOpen(true)
+  }
+
+  const handleConfirm = async () => {
+    const num = parseInt(inputQuantity)
+    if (num === 0) return toast.error("수량은 1개 이상이어야 합니다.")
+
+    if (!isNaN(num) && num >= 1 && num <= (maxQuantity ?? 99)) {
+      await changeQuantity?.(num)
+      setIsModalOpen(false)
+    }
+  }
 
   return (
     <TableRow className="w-full" data-testid="product-row">
@@ -213,18 +217,15 @@ function DesktopItem({
               >
                 <Minus className="h-4 w-4" />
               </Button>
-              <input
-                type="number"
-                min={1}
-                max={maxQuantity}
-                defaultValue={item.quantity}
-                key={item.quantity}
-                onChange={handleInputChange}
-                onBlur={handleInputBlur}
-                className="h-full w-10 [appearance:textfield] border-none bg-transparent text-center text-sm font-medium outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+              <button
+                type="button"
+                onClick={handleOpenModal}
+                className="hover:bg-gray-10 h-full w-10 cursor-pointer text-center text-sm font-medium"
                 disabled={updating}
                 data-testid="product-quantity-input"
-              />
+              >
+                {item.quantity}
+              </button>
               <Button
                 type="button"
                 variant="ghost"
@@ -241,6 +242,37 @@ function DesktopItem({
                 </div>
               )}
             </div>
+
+            <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+              <DialogContent showCloseButton={false} className="max-w-xs">
+                <DialogHeader>
+                  <DialogTitle className="text-center">
+                    수량을 입력해주세요
+                  </DialogTitle>
+                </DialogHeader>
+                <Input
+                  type="number"
+                  min={1}
+                  max={maxQuantity}
+                  value={inputQuantity}
+                  onChange={(e) => setInputQuantity(e.target.value)}
+                  className="focus:border-primary focus:ring-primary h-12 [appearance:textfield] text-center text-lg [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  autoFocus
+                />
+                <DialogFooter className="grid grid-cols-2 gap-3">
+                  <Button
+                    variant="outline"
+                    className="h-11"
+                    onClick={() => setIsModalOpen(false)}
+                  >
+                    취소
+                  </Button>
+                  <Button className="h-11" onClick={handleConfirm}>
+                    확인
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </div>
           {error && (
             <p
@@ -312,11 +344,25 @@ function MobileItem({
   totalPrice,
   discountPercentage,
   changeQuantity,
-  handleInputChange,
-  handleInputBlur,
   handleDelete,
 }: MobileItemProps) {
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [inputQuantity, setInputQuantity] = useState("")
+
   if (!item) return null
+
+  const handleOpenModal = () => {
+    setInputQuantity(String(item.quantity))
+    setIsModalOpen(true)
+  }
+
+  const handleConfirm = async () => {
+    const num = parseInt(inputQuantity)
+    if (!isNaN(num) && num >= 1 && num <= (maxQuantity ?? 99)) {
+      await changeQuantity?.(num)
+      setIsModalOpen(false)
+    }
+  }
 
   return (
     <div className="flex gap-3 border-b py-4">
@@ -384,17 +430,14 @@ function MobileItem({
             >
               <Minus className="h-4 w-4" />
             </Button>
-            <input
-              type="number"
-              min={1}
-              max={maxQuantity}
-              defaultValue={item.quantity}
-              key={item.quantity}
-              onChange={handleInputChange}
-              onBlur={handleInputBlur}
-              className="h-full w-8 [appearance:textfield] border-none bg-transparent text-center text-sm font-medium outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+            <button
+              type="button"
+              onClick={handleOpenModal}
+              className="h-full w-8 text-center text-sm font-medium hover:bg-gray-50"
               disabled={updating}
-            />
+            >
+              {item.quantity}
+            </button>
             <Button
               type="button"
               variant="ghost"
@@ -411,6 +454,37 @@ function MobileItem({
               </div>
             )}
           </div>
+
+          <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+            <DialogContent showCloseButton={false} className="max-w-xs">
+              <DialogHeader>
+                <DialogTitle className="text-center">
+                  수량을 입력해주세요
+                </DialogTitle>
+              </DialogHeader>
+              <Input
+                type="number"
+                min={1}
+                max={maxQuantity}
+                value={inputQuantity}
+                onChange={(e) => setInputQuantity(e.target.value)}
+                className="focus:border-primary focus:ring-primary h-12 [appearance:textfield] text-center text-lg [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                autoFocus
+              />
+              <DialogFooter className="grid grid-cols-2 gap-3">
+                <Button
+                  variant="outline"
+                  className="h-11"
+                  onClick={() => setIsModalOpen(false)}
+                >
+                  취소
+                </Button>
+                <Button className="h-11" onClick={handleConfirm}>
+                  확인
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           <div className="text-right">
             {(discountPercentage ?? 0) > 0 && (
