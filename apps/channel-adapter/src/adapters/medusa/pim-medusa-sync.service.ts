@@ -344,53 +344,34 @@ export class PimMedusaSyncService {
 
       if (shouldSyncCategories && medusaCategories && medusaCategories.length > 0) {
         this.logger.log(`Attaching ${medusaCategories.length} categories to product ${product.id}`);
+
+        // 먼저 각 카테고리의 유효한 Medusa ID를 확보 (없으면 재생성)
+        const resolvedCategoryIds: string[] = [];
         for (const cat of medusaCategories) {
           try {
-            await this.medusaClient.attachProductToCategories(
-              product.id,
-              [cat.id],
-              { throwOnFailure: true },
-            );
-          } catch (err: any) {
-            const status = err?.response?.status;
-            const errType = err?.response?.data?.type;
-            const errMsg = err?.message || '';
-            const is404 =
-              status === 404 ||
-              errType === 'not_found' ||
-              /404/i.test(errMsg) ||
-              /not found/i.test(errMsg);
-
-            if (is404) {
-              this.logger.warn(
-                `Category ${cat.id} missing in Medusa, re-ensuring from snapshot (${cat.pimCategoryId})`,
-              );
-
+            const exists = await this.medusaClient['getCategoryById'](cat.id);
+            if (exists) {
+              resolvedCategoryIds.push(cat.id);
+            } else {
+              this.logger.warn(`Category ${cat.id} missing in Medusa, re-ensuring from snapshot (${cat.pimCategoryId})`);
               const categorySnapshot = snapshot.categories?.find(c => c.id === cat.pimCategoryId);
               if (categorySnapshot) {
                 const refreshedId = await this.medusaClient.ensureCategoryFromSnapshot(categorySnapshot);
-
-                try {
-                  await this.medusaClient.attachProductToCategories(
-                    product.id,
-                    [refreshedId],
-                    { throwOnFailure: false },
-                  );
-                  this.logger.log(
-                    `Successfully attached product ${product.id} to re-ensured category ${refreshedId}`,
-                  );
-                } catch (retryErr: any) {
-                  this.logger.error(
-                    `Failed to attach product ${product.id} to re-ensured category ${refreshedId}: ${retryErr?.message}`,
-                  );
-                }
+                resolvedCategoryIds.push(refreshedId);
               }
-            } else {
-              this.logger.warn(
-                `Failed to attach product ${product.id} to category ${cat.id}: ${err?.response?.data?.message || errMsg}`,
-              );
             }
+          } catch (err: any) {
+            this.logger.warn(`Failed to resolve category ${cat.id}: ${err?.message}`);
           }
+        }
+
+        // 모든 카테고리를 한 번에 붙임 (개별 호출 시 덮어쓰기 문제 방지)
+        if (resolvedCategoryIds.length > 0) {
+          await this.medusaClient.attachProductToCategories(
+            product.id,
+            resolvedCategoryIds,
+            { throwOnFailure: false },
+          );
         }
       }
 
