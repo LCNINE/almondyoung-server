@@ -138,11 +138,15 @@ export default function ProductActions({
   const matchedVariant = useMemo(() => {
     if (!product.variants || product.variants.length === 0) return undefined
 
+    // 복합 옵션 상품에서 options가 비어있으면 매칭하지 않음
+    // (setOptions({}) 후 빈 옵션의 "기본 품목" variant가 자동 추가되는 것 방지)
+    if (!isSimple && Object.keys(options).length === 0) return undefined
+
     return product.variants.find((v) => {
       const variantOptions = optionsAsKeymap(v.options)
       return isEqual(variantOptions, options)
     })
-  }, [product.variants, options])
+  }, [product.variants, options, isSimple])
 
   // 옵션 선택 시: 매칭된 variant를 선택 리스트에 추가
   useEffect(() => {
@@ -364,7 +368,7 @@ export default function ProductActions({
                         <input
                           ref={(el) => {
                             if (el) {
-                              ; (el as any)._variantId = item.variantId
+                              ;(el as any)._variantId = item.variantId
                             }
                           }}
                           type="text"
