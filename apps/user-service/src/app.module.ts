@@ -1,6 +1,6 @@
 import { DbModule } from '@app/db';
 import { EventsModule, EventTraceApiModule } from '@app/events';
-import { AuthorizationGuard } from '@app/roles';
+import { AuthorizationModule, authorizationSchema, ScopeGuard } from '@app/authorization';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
@@ -10,7 +10,7 @@ import { config } from 'dotenv';
 import { existsSync } from 'fs';
 import * as os from 'os';
 import { join } from 'path';
-import { userServiceSchema } from '../database/drizzle/schema';
+import { userServiceSchema as baseUserServiceSchema } from '../database/drizzle/schema';
 import { AdminModule } from './api/admin/admin.module';
 import { AuthModule } from './api/auth/auth.module';
 import { BusinessLicensesModule } from './api/business-licenses/business-licenses.module';
@@ -27,6 +27,8 @@ import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
 import { validateUserServiceEnv } from './config/env.validation';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ServeStaticModule } from '@nestjs/serve-static';
+
+const userServiceSchema = { ...baseUserServiceSchema, ...authorizationSchema };
 
 config({
   path: join(process.cwd(), 'apps', 'user-service', '.env'),
@@ -133,6 +135,19 @@ function createKafkaConfig() {
 
 
     ScheduleModule.forRoot(),
+    AuthorizationModule.forRoot({
+      microserviceName: 'user-service',
+      scopes: [
+        { key: 'user:read', category: 'user', description: '사용자 - 본인 정보 조회' },
+        { key: 'user:modify', category: 'user', description: '사용자 - 본인 정보 수정' },
+        { key: 'user:delete', category: 'user', description: '사용자 - 본인 계정 삭제' },
+        { key: 'admin:access', category: 'admin', description: '관리자 - 어드민 접근' },
+        { key: 'admin:users:read', category: 'admin', description: '관리자 - 회원 조회' },
+        { key: 'admin:users:modify', category: 'admin', description: '관리자 - 회원 수정' },
+        { key: 'admin:users:archive', category: 'admin', description: '관리자 - 회원 보관' },
+        { key: 'admin:users:purge', category: 'admin', description: '관리자 - 회원 완전삭제' },
+      ],
+    }),
     AuthModule.register(),
     UsersModule,
     Cafe24Module,
@@ -153,7 +168,7 @@ function createKafkaConfig() {
     },
     {
       provide: APP_GUARD,
-      useClass: AuthorizationGuard,
+      useClass: ScopeGuard,
     },
   ],
 })

@@ -1,4 +1,5 @@
-import { AuthorizationGuard, JwtPayload, RequireScopes } from '@app/roles';
+import { RequireScopes } from '@app/authorization';
+import { JwtPayload } from '@app/roles';
 import {
   Body,
   Controller,
@@ -8,7 +9,6 @@ import {
   Param,
   Patch,
   Query,
-  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -19,7 +19,6 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { User } from 'apps/user-service/database/drizzle/schema';
-import { JwtAuthGuard } from '../../commons/guards/jwt-auth.guard';
 import { Public } from '../../commons/decorator/public.decorator';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserDetailsResponseDto } from './dto/user-details.response.dto';
@@ -31,7 +30,6 @@ import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 @ApiTags('Users')
 @ApiBearerAuth()
 @Controller('users')
-@UseGuards(JwtAuthGuard, AuthorizationGuard)
 export class UsersController {
   constructor(private readonly usersService: UsersService) { }
 
@@ -69,7 +67,7 @@ export class UsersController {
     required: false,
   })
   @Get('detail')
-  @RequireScopes(['user:read', 'master', 'admin:users:read'])
+  @RequireScopes('user:read', 'master', 'admin:users:read')
   @HttpCode(HttpStatus.OK)
   async getUserDetails(
     @CurrentUser() user: JwtPayload,
@@ -86,7 +84,7 @@ export class UsersController {
   })
   @Get('roles')
   @HttpCode(HttpStatus.OK)
-  @RequireScopes(['user:read', 'master', 'admin:users:read'])
+  @RequireScopes('user:read', 'master', 'admin:users:read')
   async getUserRoles(@CurrentUser() user: JwtPayload) {
     return this.usersService.getUserRoles(user.id);
   }
@@ -106,7 +104,7 @@ export class UsersController {
   @ApiOperation({ summary: '내 프로필 정보 수정' })
   @ApiResponse({ status: 200, description: '프로필 수정 성공' })
   @Patch('me')
-  @RequireScopes(['user:modify', 'master'])
+  @RequireScopes('user:modify', 'master')
   @HttpCode(HttpStatus.OK)
   async updateMyProfile(
     @CurrentUser() user: JwtPayload,
