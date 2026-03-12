@@ -15,29 +15,20 @@ import CheckoutTemplate from "domains/checkout/templates/checkout-template"
 import { notFound } from "next/navigation"
 
 export default async function CheckoutPage({
-  params,
   searchParams,
 }: {
-  params: Promise<{ countryCode: string }>
   searchParams: Promise<{ cartId?: string }>
 }) {
-  const { countryCode } = await params
   const { cartId } = await searchParams
 
   return (
     <ProtectedRoute>
-      <CheckoutManager countryCode={countryCode} cartId={cartId} />
+      <CheckoutManager cartId={cartId} />
     </ProtectedRoute>
   )
 }
 
-async function CheckoutManager({
-  countryCode,
-  cartId,
-}: {
-  countryCode: string
-  cartId?: string
-}) {
+async function CheckoutManager({ cartId }: { cartId?: string }) {
   const currentUser = await fetchMe()
   const cart = (await retrieveCart(
     cartId,
@@ -52,7 +43,7 @@ async function CheckoutManager({
   if (!cart.items?.length) {
     return (
       <ProtectedRoute>
-        <EmptyCartView countryCode={countryCode} />
+        <EmptyCartView />
       </ProtectedRoute>
     )
   }

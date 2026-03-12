@@ -29,7 +29,8 @@ export async function retrieveCart(
 ) {
   const id = cartId || (await getCartId())
   fields ??=
-    "*items, *region, *items.product, *items.variant, +items.variant.inventory_quantity, +items.variant.manage_inventory, *items.thumbnail, *items.metadata, +items.total, +items.original_total, +items.compare_at_unit_price, *promotions, +shipping_methods, *customer, *customer.groups, customer_id, +payment_collection.id, +currency_code, +item_subtotal, +shipping_total, +total, +discount_subtotal, +original_item_subtotal, +original_item_total"
+    // "+items.*, +shipping_methods.*," +
+    "*items, *region, *items.product, *items.variant, +items.variant.inventory_quantity, +items.variant.manage_inventory, *items.thumbnail, *items.metadata, +items.total, +items.original_total, +items.compare_at_unit_price, *promotions, +shipping_methods, *customer, *customer.groups, customer_id, +payment_collection.id, +currency_code, +item_subtotal, +shipping_total, +total, +discount_total, +original_item_subtotal, +original_item_total"
 
   if (!id) {
     return null
@@ -163,7 +164,9 @@ export async function addToCart({
   variantId: string
   quantity: number
   countryCode: string
-}): Promise<{ cartId: string; error?: never } | { cartId?: never; error: string }> {
+}): Promise<
+  { cartId: string; error?: never } | { cartId?: never; error: string }
+> {
   if (!variantId) {
     return { error: "Missing variant ID when adding to cart" }
   }
@@ -210,7 +213,9 @@ export async function createBuyNowCart(params: {
     variantId: string
     quantity: number
   }>
-}): Promise<{ cartId: string; error?: never } | { cartId?: never; error: string }> {
+}): Promise<
+  { cartId: string; error?: never } | { cartId?: never; error: string }
+> {
   const { countryCode, items } = params
 
   if (!items.length) {
@@ -693,13 +698,17 @@ export async function getCartPricingForPreview(cartId: string): Promise<{
 
   const getOriginalSubtotalFromItems = (target: HttpTypes.StoreCart) => {
     return (target.items ?? []).reduce((sum, item) => {
-      if (typeof item.original_total === "number") return sum + item.original_total
+      if (typeof item.original_total === "number")
+        return sum + item.original_total
       const compareAt =
         typeof item.compare_at_unit_price === "number"
           ? item.compare_at_unit_price
           : null
       const unit = typeof item.unit_price === "number" ? item.unit_price : 0
-      return sum + (compareAt != null && compareAt > 0 ? compareAt : unit) * item.quantity
+      return (
+        sum +
+        (compareAt != null && compareAt > 0 ? compareAt : unit) * item.quantity
+      )
     }, 0)
   }
 
@@ -714,8 +723,14 @@ export async function getCartPricingForPreview(cartId: string): Promise<{
       itemSubtotal
 
     const membershipDiscount = Math.max(0, originalItemSubtotal - itemSubtotal)
-    const totalDiscountAll = Math.max(0, originalItemSubtotal + shippingTotal - total)
-    const nonMembershipDiscount = Math.max(0, totalDiscountAll - membershipDiscount)
+    const totalDiscountAll = Math.max(
+      0,
+      originalItemSubtotal + shippingTotal - total
+    )
+    const nonMembershipDiscount = Math.max(
+      0,
+      totalDiscountAll - membershipDiscount
+    )
 
     return {
       originalItemSubtotal,
