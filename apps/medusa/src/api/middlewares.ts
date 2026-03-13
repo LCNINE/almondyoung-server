@@ -3,21 +3,19 @@ import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { adminRouteMiddlewares } from './admin/middlewares';
 
 // 멤버십 전용 상품 필터 미들웨어
-// - 비멤버(비로그인 포함) 에게는 metadata.isMembershipOnly=true 상품을 DB 쿼리 레벨에서 제외
+// - 비멤버(비로그인 포함) 에게는 membership-only 상품을 DB 쿼리 레벨에서 제외
+// - 롤리킹은 아직 isMembershipOnly 미이관 상태라 현재 필터에 걸리지 않음(상품 노출 유지)
 const membershipProductFilterMiddleware = async (
   req: any,
   res: any,
   next: any,
 ) => {
   const membershipGroupId = process.env.MEDUSA_MEMBERSHIP_GROUP_ID;
-  if (!membershipGroupId) {
-    return next();
-  }
 
   // 인증된 고객이면 멤버십 그룹 여부 확인
   let isMember = false;
   const customerId = req.auth_context?.actor_id;
-  if (customerId) {
+  if (customerId && membershipGroupId) {
     try {
       const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
       const { data: customers } = await query.graph({
@@ -39,14 +37,16 @@ const membershipProductFilterMiddleware = async (
     return next();
   }
 
-  // 비멤버: req.filterableFields에 필터를 추가해 DB 쿼리 자체에서 멤버십 전용 상품 제외
+  // 비멤버: req.filterableFields에 가시성 필터를 추가해 DB 쿼리 자체에서 제외
   // Medusa의 query.graph/query.index가 req.filterableFields를 그대로 사용하므로
   // count 포함 정확한 필터링이 가능
   req.filterableFields = {
     ...req.filterableFields,
     metadata: {
       ...req.filterableFields?.metadata,
+      // camelCase/snake_case 둘 다 방어적으로 처리
       isMembershipOnly: { $nin: [true, 'true'] },
+      is_membership_only: { $nin: [true, 'true'] },
     },
   };
 
