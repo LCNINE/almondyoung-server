@@ -1,5 +1,61 @@
 import { authenticate, defineMiddlewares } from '@medusajs/framework/http';
+import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { adminRouteMiddlewares } from './admin/middlewares';
+
+// 멤버십 전용 상품 필터 미들웨어
+// - 비멤버(비로그인 포함) 에게는 membership-only 상품을 DB 쿼리 레벨에서 제외
+// - 롤리킹 포함 모든 isMembershipOnly=true 상품을 비멤버에게 완전 차단
+const membershipProductFilterMiddleware = async (
+  req: any,
+  res: any,
+  next: any,
+) => {
+  const membershipGroupId = process.env.MEDUSA_MEMBERSHIP_GROUP_ID;
+
+  // 인증된 고객이면 멤버십 그룹 여부 확인
+  let isMember = false;
+  const customerId = req.auth_context?.actor_id;
+  if (customerId && membershipGroupId) {
+    try {
+      const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
+      const { data: customers } = await query.graph({
+        entity: 'customer',
+        fields: ['id', 'groups.id'],
+        filters: { id: customerId },
+      });
+      isMember =
+        customers?.[0]?.groups?.some(
+          (g: any) => g.id === membershipGroupId,
+        ) ?? false;
+    } catch (error) {
+      console.error('[membershipFilter] 멤버십 확인 실패:', error);
+      // 조회 실패 시 비멤버로 처리
+    }
+  }
+
+  // 멤버는 필터 없이 그대로 통과
+  if (isMember) {
+    return next();
+  }
+
+  // 비멤버: metadata 필터 적용
+  // null 또는 false만 허용
+  const existingMetadata = req.filterableFields?.metadata || {};
+
+  req.filterableFields = {
+    ...req.filterableFields,
+    metadata: {
+      ...existingMetadata,
+      $or: [
+        { isMembershipOnly: { $eq: null } },
+        { isMembershipOnly: { $eq: false } },
+        { isMembershipOnly: { $exists: false } },
+      ],
+    },
+  };
+
+  next();
+};
 
 // 프로파일링용 타이밍 미들웨어
 const timingMiddleware = (req: any, res: any, next: any) => {
@@ -28,6 +84,22 @@ export default defineMiddlewares({
       middlewares: [timingMiddleware],
     },
     ...adminRouteMiddlewares,
+    // 멤버십 전용 상품 필터: 비멤버에게는 isMembershipOnly=true 상품 노출 안 함
+    // 문자열 glob 대신 RegExp로 /store/products 및 하위 경로를 확실히 매칭
+    {
+      matcher: /^\/store\/products(?:\/.*)?$/,
+      middlewares: [
+        authenticate('customer', ['session', 'bearer'], {
+          allowUnauthenticated: true,
+        }),
+        membershipProductFilterMiddleware,
+      ],
+    },
+    // TODO: 401 디버깅용
+    // {
+    //   matcher: '/store/customers/me',
+    //   middlewares: [debugAuthMiddleware],
+    // },
     {
       matcher: '/store/customers/me/promotions',
       middlewares: [authenticate('customer', ['session', 'bearer'])],
