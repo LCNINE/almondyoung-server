@@ -8,16 +8,6 @@ import { isWelcomeMembershipProduct } from "@/lib/utils/welcome-membership"
 
 export type ReviewSummary = { rating: number; reviewCount: number }
 
-// 가격 숨김 처리가 필요한 상품 ID (하드코딩 - 나중에 제거 예정)
-// TODO: 롤리킹 상품 is_membership_only 동기화 완료 후 이 배열에서 제거
-const HIDDEN_PRICE_PRODUCT_IDS = [
-  "prod_019c0c0d9b01722ab8ff1ceda3f3501f", // 롤리킹 펌제 1제 2제
-  "prod_019c0c0d9b2776fc840b2e730adc6447", // 롤리킹 글루
-  "prod_019c0c0d9b2e75ca823ec40282e58b09", // 롤리킹 롯드
-  "prod_019c0c0d9b2676c28c79ad749950e351", // 롤리킹 속눈썹펌 세트
-  "prod_019c0c0d9b2676c28c7999efcab89e60", // 롤리킹 에센스 5ml
-]
-
 const getMembershipPreviewPrice = (
   variant: StoreProductVariant | null | undefined
 ) => {
@@ -105,8 +95,7 @@ export function mapStoreProductToCardProps(
 
   const isMembershipOnly =
     product.metadata?.isMembershipOnly === true ||
-    product.metadata?.isMembershipOnly === "true" ||
-    HIDDEN_PRICE_PRODUCT_IDS.includes(product.id)
+    product.metadata?.isMembershipOnly === "true"
 
   const isWelcomeMembership = isWelcomeMembershipProduct(product.tags)
 
@@ -150,8 +139,7 @@ export function mapStoreProductsToCardProps(
       ? products.filter((p) => {
           const isHidden =
             p.metadata?.isMembershipOnly === true ||
-            p.metadata?.isMembershipOnly === "true" ||
-            HIDDEN_PRICE_PRODUCT_IDS.includes(p.id)
+            p.metadata?.isMembershipOnly === "true"
           return !isHidden
         })
       : products
