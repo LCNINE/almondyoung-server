@@ -4,7 +4,7 @@ import { adminRouteMiddlewares } from './admin/middlewares';
 
 // 멤버십 전용 상품 필터 미들웨어
 // - 비멤버(비로그인 포함) 에게는 membership-only 상품을 DB 쿼리 레벨에서 제외
-// - 롤리킹은 아직 isMembershipOnly 미이관 상태라 현재 필터에 걸리지 않음(상품 노출 유지)
+// - 롤리킹 포함 모든 isMembershipOnly=true 상품을 비멤버에게 완전 차단
 const membershipProductFilterMiddleware = async (
   req: any,
   res: any,
@@ -27,7 +27,8 @@ const membershipProductFilterMiddleware = async (
         customers?.[0]?.groups?.some(
           (g: any) => g.id === membershipGroupId,
         ) ?? false;
-    } catch {
+    } catch (error) {
+      console.error('[membershipFilter] 멤버십 확인 실패:', error);
       // 조회 실패 시 비멤버로 처리
     }
   }
@@ -37,16 +38,19 @@ const membershipProductFilterMiddleware = async (
     return next();
   }
 
-  // 비멤버: req.filterableFields에 가시성 필터를 추가해 DB 쿼리 자체에서 제외
-  // Medusa의 query.graph/query.index가 req.filterableFields를 그대로 사용하므로
-  // count 포함 정확한 필터링이 가능
+  // 비멤버: metadata 필터 적용
+  // null 또는 false만 허용
+  const existingMetadata = req.filterableFields?.metadata || {};
+
   req.filterableFields = {
     ...req.filterableFields,
     metadata: {
-      ...req.filterableFields?.metadata,
-      // camelCase/snake_case 둘 다 방어적으로 처리
-      isMembershipOnly: { $nin: [true, 'true'] },
-      is_membership_only: { $nin: [true, 'true'] },
+      ...existingMetadata,
+      $or: [
+        { isMembershipOnly: { $eq: null } },
+        { isMembershipOnly: { $eq: false } },
+        { isMembershipOnly: { $exists: false } },
+      ],
     },
   };
 
