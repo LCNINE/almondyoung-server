@@ -81,8 +81,18 @@ export default defineMiddlewares({
     },
     ...adminRouteMiddlewares,
     // 멤버십 전용 상품 필터: 비멤버에게는 isMembershipOnly=true 상품 노출 안 함
+    // /store/products 및 /store/products/:id 모두 명시적으로 커버
     {
-      matcher: '/store/products*',
+      matcher: '/store/products',
+      middlewares: [
+        authenticate('customer', ['session', 'bearer'], {
+          allowUnauthenticated: true,
+        }),
+        membershipProductFilterMiddleware,
+      ],
+    },
+    {
+      matcher: '/store/products/*',
       middlewares: [
         authenticate('customer', ['session', 'bearer'], {
           allowUnauthenticated: true,
