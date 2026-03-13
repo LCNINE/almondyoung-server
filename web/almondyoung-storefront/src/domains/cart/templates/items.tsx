@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/table"
 import { HttpTypes } from "@medusajs/types"
 
-import Item from "./item"
+import Item from "../components/item"
 
 type ItemsProps = {
   cart?: HttpTypes.StoreCart
