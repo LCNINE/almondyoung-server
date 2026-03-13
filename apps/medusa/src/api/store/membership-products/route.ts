@@ -1,111 +1,336 @@
-import type {
-  AuthenticatedMedusaRequest,
-  MedusaResponse,
-} from '@medusajs/framework/http';
+import type { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 
-/**
- * 멤버십 필터링이 적용된 상품 목록 API (Medusa 권장 방식)
- * 
- * - 기존 /store/products를 override하지 않고 새 경로로 제공
- * - 비멤버: isMembershipOnly=true 상품 제외
- * - 멤버십 회원: 모든 상품 노출
- */
-export const GET = async (
-  req: AuthenticatedMedusaRequest,
-  res: MedusaResponse,
-) => {
-  const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
-  const membershipGroupId = process.env.MEDUSA_MEMBERSHIP_GROUP_ID;
+type ProductMetadata = {
+  isMembershipOnly?: boolean | string;
+  [key: string]: unknown;
+};
 
-  // 멤버십 회원 여부 확인
-  let isMember = false;
-  const customerId = req.auth_context?.actor_id;
+type ProductVariant = {
+  metadata?: Record<string, unknown> | null;
+  [key: string]: unknown;
+};
 
-  if (customerId && membershipGroupId) {
-    try {
-      const { data: customers } = await query.graph({
-        entity: 'customer',
-        fields: ['id', 'groups.id'],
-        filters: { id: customerId },
-      });
+type MembershipProduct = {
+  id?: string;
+  metadata?: ProductMetadata | null;
+  variants?: ProductVariant[] | null;
+  [key: string]: unknown;
+};
 
-      isMember =
-        customers?.[0]?.groups?.some(
-          (g: any) => g.id === membershipGroupId,
-        ) ?? false;
-    } catch (error) {
-      console.error('[membership-products] 멤버십 확인 실패:', error);
+type StoreProductsResponse = {
+  products: MembershipProduct[];
+  count: number;
+  offset?: number;
+  limit?: number;
+};
+
+type MemberState = {
+  customerId?: string;
+  isMember: boolean;
+};
+
+const DEFAULT_LIMIT = 12;
+const SCAN_BATCH_SIZE = 100;
+
+// 비멤버에게는 멤버십가 노출을 제한할 상품 (상품 자체는 노출)
+const MEMBERSHIP_PRICE_HIDDEN_PRODUCT_IDS = new Set([
+  'prod_019c0c0d9b01722ab8ff1ceda3f3501f', // 롤리킹 펌제 1제 2제
+  'prod_019c0c0d9b2776fc840b2e730adc6447', // 롤리킹 글루
+  'prod_019c0c0d9b2e75ca823ec40282e58b09', // 롤리킹 롯드
+  'prod_019c0c0d9b2676c28c79ad749950e351', // 롤리킹 속눈썹펌 세트
+  'prod_019c0c0d9b2676c28c7999efcab89e60', // 롤리킹 에센스 5ml
+]);
+
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === 'object' && value !== null;
+};
+
+const toNumber = (value: unknown, fallback: number) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+};
+
+const isMembershipOnlyProduct = (product: MembershipProduct) => {
+  return product.metadata?.isMembershipOnly === true || product.metadata?.isMembershipOnly === 'true';
+};
+
+const sanitizeMembershipPriceMetadata = (metadata: Record<string, unknown>) => {
+  const next = { ...metadata };
+
+  // snake/camel 모두 방어
+  delete next.membershipPrice;
+  delete next.membership_price;
+  delete next.membershipprice;
+
+  return next;
+};
+
+const sanitizeProductForNonMember = (product: MembershipProduct) => {
+  const productId = product.id;
+
+  if (!productId || !MEMBERSHIP_PRICE_HIDDEN_PRODUCT_IDS.has(productId)) {
+    return product;
+  }
+
+  const variants = Array.isArray(product.variants)
+    ? product.variants.map((variant) => {
+        if (!variant.metadata || !isRecord(variant.metadata)) {
+          return variant;
+        }
+
+        return {
+          ...variant,
+          metadata: sanitizeMembershipPriceMetadata(variant.metadata),
+        };
+      })
+    : product.variants;
+
+  return {
+    ...product,
+    variants,
+  };
+};
+
+const getRequestOrigin = (req: AuthenticatedMedusaRequest) => {
+  const forwardedProtoHeader = req.headers['x-forwarded-proto'];
+  const forwardedProto =
+    typeof forwardedProtoHeader === 'string' ? forwardedProtoHeader.split(',')[0]?.trim() : undefined;
+  const protocol = forwardedProto || req.protocol || 'http';
+  const host = req.headers.host;
+
+  if (!host) {
+    throw new Error('host header is missing');
+  }
+
+  return `${protocol}://${host}`;
+};
+
+const createForwardHeaders = (req: AuthenticatedMedusaRequest) => {
+  const headers = new Headers();
+
+  for (const [key, value] of Object.entries(req.headers || {})) {
+    if (value == null) {
+      continue;
+    }
+
+    if (typeof value === 'string') {
+      headers.set(key, value);
+      continue;
+    }
+
+    if (Array.isArray(value)) {
+      const valid = value.filter((item): item is string => typeof item === 'string');
+      if (valid.length > 0) {
+        headers.set(key, valid.join(','));
+      }
     }
   }
 
-  console.log(
-    `[membership-products] customerId: ${customerId}, isMember: ${isMember}`,
-  );
+  // fetch 대상 호스트는 URL에서 결정되므로 host 헤더는 제거
+  headers.delete('host');
 
-  // 쿼리 파라미터 가져오기
-  const limit = parseInt(req.query.limit as string) || 12;
-  const offset = parseInt(req.query.offset as string) || 0;
-  const fields = req.query.fields as string;
-  const region_id = req.query.region_id as string;
-  const order = req.query.order as string;
-  const category_id = req.query.category_id as string | string[];
-  const collection_id = req.query.collection_id as string | string[];
-  const tag_id = req.query.tag_id as string | string[];
-  const q = req.query.q as string;
+  return headers;
+};
 
-  try {
-    // 기존 Medusa SDK를 통해 상품 조회
-    const productsResponse = await fetch(
-      `${process.env.MEDUSA_BACKEND_URL || 'http://localhost:9000'}/store/products?${new URLSearchParams({
-        limit: limit.toString(),
-        offset: offset.toString(),
-        fields: fields || '*variants.calculated_price,+variants.inventory_quantity,*variants.images,*variants.options,+variants.metadata,*options,*options.values,+metadata,*tags',
-        ...(region_id && { region_id }),
-        ...(order && { order }),
-        ...(category_id && { category_id: Array.isArray(category_id) ? category_id.join(',') : category_id }),
-        ...(collection_id && { collection_id: Array.isArray(collection_id) ? collection_id.join(',') : collection_id }),
-        ...(tag_id && { tag_id: Array.isArray(tag_id) ? tag_id.join(',') : tag_id }),
-        ...(q && { q }),
-      })}`,
-      {
-        headers: req.headers as any,
-      }
-    );
+const appendQueryParam = (searchParams: URLSearchParams, key: string, value: unknown) => {
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    searchParams.append(key, String(value));
+  }
+};
 
-    if (!productsResponse.ok) {
-      throw new Error(`상품 조회 실패: ${productsResponse.status}`);
+const createBaseSearchParams = (req: AuthenticatedMedusaRequest) => {
+  const searchParams = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(req.query || {})) {
+    if (value == null) {
+      continue;
     }
 
-    const data = await productsResponse.json();
-    let { products, count } = data;
+    if (Array.isArray(value)) {
+      value.forEach((item) => appendQueryParam(searchParams, key, item));
+      continue;
+    }
 
-    // 비멤버인 경우 isMembershipOnly=true 상품 필터링
-    if (!isMember) {
-      const originalCount = products.length;
-      products = products.filter((product: any) => {
-        const isMembershipOnly =
-          product.metadata?.isMembershipOnly === true ||
-          product.metadata?.isMembershipOnly === 'true';
-        return !isMembershipOnly;
+    appendQueryParam(searchParams, key, value);
+  }
+
+  return searchParams;
+};
+
+const parseStoreProductsResponse = (payload: unknown): StoreProductsResponse => {
+  if (!isRecord(payload)) {
+    return {
+      products: [],
+      count: 0,
+    };
+  }
+
+  const rawProducts = payload.products;
+  const rawCount = payload.count;
+  const rawOffset = payload.offset;
+  const rawLimit = payload.limit;
+
+  return {
+    products: Array.isArray(rawProducts) ? rawProducts.filter((item): item is MembershipProduct => isRecord(item)) : [],
+    count: typeof rawCount === 'number' ? rawCount : 0,
+    offset: typeof rawOffset === 'number' ? rawOffset : undefined,
+    limit: typeof rawLimit === 'number' ? rawLimit : undefined,
+  };
+};
+
+const fetchStoreProducts = async (
+  req: AuthenticatedMedusaRequest,
+  searchParams: URLSearchParams,
+): Promise<StoreProductsResponse> => {
+  const origin = getRequestOrigin(req);
+  const url = new URL('/store/products', origin);
+  url.search = searchParams.toString();
+
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: createForwardHeaders(req),
+  });
+
+  if (!response.ok) {
+    throw new Error(`상품 조회 실패: ${response.status}`);
+  }
+
+  const data: unknown = await response.json();
+  return parseStoreProductsResponse(data);
+};
+
+const resolveMemberState = async (req: AuthenticatedMedusaRequest): Promise<MemberState> => {
+  const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
+  const membershipGroupId = process.env.MEDUSA_MEMBERSHIP_GROUP_ID?.trim();
+  const customerId = req.auth_context?.actor_id;
+
+  if (!customerId || !membershipGroupId) {
+    return {
+      customerId,
+      isMember: false,
+    };
+  }
+
+  try {
+    const graphResult: unknown = await query.graph({
+      entity: 'customer',
+      fields: ['id', 'groups.id'],
+      filters: { id: customerId },
+    });
+
+    const customers = isRecord(graphResult) ? graphResult.data : undefined;
+
+    if (!Array.isArray(customers)) {
+      return {
+        customerId,
+        isMember: false,
+      };
+    }
+
+    const firstCustomer = (customers as unknown[])[0];
+    if (!isRecord(firstCustomer) || !Array.isArray(firstCustomer.groups)) {
+      return {
+        customerId,
+        isMember: false,
+      };
+    }
+
+    const isMember = firstCustomer.groups.some((group) => {
+      return isRecord(group) && group.id === membershipGroupId;
+    });
+
+    return {
+      customerId,
+      isMember,
+    };
+  } catch (error) {
+    console.error('[membership-products] 멤버십 확인 실패:', error);
+
+    return {
+      customerId,
+      isMember: false,
+    };
+  }
+};
+
+/**
+ * 멤버십 필터링이 적용된 상품 목록 API
+ *
+ * 정책
+ * - isMembershipOnly=true: 비멤버에게 상품 자체를 숨김
+ * - 롤리킹 지정 상품: 비멤버에게는 상품 노출하되 멤버십가(metadata) 제거
+ */
+export const GET = async (req: AuthenticatedMedusaRequest, res: MedusaResponse) => {
+  const requestedLimit = toNumber(req.query.limit, DEFAULT_LIMIT);
+  const requestedOffset = toNumber(req.query.offset, 0);
+
+  try {
+    const { customerId, isMember } = await resolveMemberState(req);
+
+    console.log(`[membership-products] customerId: ${customerId}, isMember: ${isMember}`);
+
+    const baseSearchParams = createBaseSearchParams(req);
+
+    // 멤버십 회원은 기본 /store/products 응답을 그대로 반환
+    if (isMember) {
+      const memberResponse = await fetchStoreProducts(req, baseSearchParams);
+
+      return res.json({
+        products: memberResponse.products,
+        count: memberResponse.count,
+        offset: requestedOffset,
+        limit: requestedLimit,
       });
-      const filteredCount = products.length;
+    }
 
-      // 전체 count도 조정
-      if (typeof count === 'number') {
-        count = count - (originalCount - filteredCount);
+    // 비멤버십은 "필터 후 offset/limit" 기준이 되도록 전체 스캔
+    const scanParams = new URLSearchParams(baseSearchParams);
+    const scanLimit = Math.max(SCAN_BATCH_SIZE, requestedLimit);
+
+    scanParams.set('limit', String(scanLimit));
+    scanParams.set('offset', '0');
+
+    const pagedProducts: MembershipProduct[] = [];
+    let visibleTotal = 0;
+    let seenVisible = 0;
+
+    let rawOffset = 0;
+    let rawCount = Number.POSITIVE_INFINITY;
+
+    while (rawOffset < rawCount) {
+      scanParams.set('offset', String(rawOffset));
+
+      const batchResponse = await fetchStoreProducts(req, scanParams);
+      rawCount = batchResponse.count;
+
+      const batchProducts = batchResponse.products;
+
+      if (batchProducts.length === 0) {
+        break;
       }
 
-      console.log(
-        `[membership-products] 필터링: ${originalCount}개 -> ${filteredCount}개 (제외: ${originalCount - filteredCount}개)`,
-      );
+      const visibleBatch = batchProducts
+        .filter((product) => !isMembershipOnlyProduct(product))
+        .map((product) => sanitizeProductForNonMember(product));
+
+      for (const product of visibleBatch) {
+        if (seenVisible >= requestedOffset && pagedProducts.length < requestedLimit) {
+          pagedProducts.push(product);
+        }
+
+        seenVisible += 1;
+      }
+
+      visibleTotal += visibleBatch.length;
+      rawOffset += batchProducts.length;
     }
 
     return res.json({
-      products,
-      count,
-      offset,
-      limit,
+      products: pagedProducts,
+      count: visibleTotal,
+      offset: requestedOffset,
+      limit: requestedLimit,
     });
   } catch (error) {
     console.error('[membership-products] 상품 조회 실패:', error);
@@ -113,8 +338,8 @@ export const GET = async (
     return res.json({
       products: [],
       count: 0,
-      offset,
-      limit,
+      offset: requestedOffset,
+      limit: requestedLimit,
     });
   }
 };
