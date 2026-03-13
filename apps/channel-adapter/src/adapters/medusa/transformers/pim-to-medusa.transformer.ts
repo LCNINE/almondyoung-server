@@ -300,7 +300,7 @@ function transformVariants(
                 title,
                 sku: variant.sku || undefined,
                 barcode: stripBarcode ? undefined : variant.variantCode || undefined,
-                manage_inventory: true,
+                manage_inventory: false,
 
                 weight: variant.weight,
                 length: variant.length,

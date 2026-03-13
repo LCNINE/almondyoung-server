@@ -693,8 +693,8 @@ export class MedusaClient {
 
             return {
                 ...variant,
-                // 동기화 대상 variant는 항상 재고 관리로 고정
-                manage_inventory: true,
+                // 동기화 대상 variant는 임시로 재고 관리 비활성화
+                manage_inventory: false,
                 ...(matchedId ? { id: matchedId } : {}),
             };
         });
