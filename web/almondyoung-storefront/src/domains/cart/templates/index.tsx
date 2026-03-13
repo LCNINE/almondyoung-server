@@ -1,7 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card"
 import { CartHeader } from "@/domains/cart/components/header"
 import { HttpTypes } from "@medusajs/types"
-import Items from "../components/items"
+import Items from "./items"
 import MobileCheckoutBar from "../components/mobile-checkout-bar"
 import Summary from "./summary"
 
