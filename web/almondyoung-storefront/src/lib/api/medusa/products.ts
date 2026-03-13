@@ -4,6 +4,12 @@ import { sdk } from "@/lib/config/medusa"
 import { getAuthHeaders, getCacheOptions } from "@lib/data/cookies"
 import type { HttpTypes, StoreProduct } from "@medusajs/types"
 import { getRegion, retrieveRegion } from "./regions"
+import { retrieveCustomer } from "./customer"
+import { isMembershipGroup } from "@/lib/utils/membership-group"
+
+const isMembershipOnlyProduct = (product: HttpTypes.StoreProduct) =>
+  product.metadata?.isMembershipOnly === true ||
+  product.metadata?.isMembershipOnly === "true"
 
 export const listProducts = async ({
   pageParam = 1,
@@ -61,36 +67,64 @@ export const listProducts = async ({
           revalidate: fetchOptions?.revalidate ?? 300,
         }
 
-  return sdk.client
-    .fetch<{ products: HttpTypes.StoreProduct[]; count: number }>(
-      `/store/products`,
-      {
-        method: "GET",
-        query: {
-          limit,
-          offset,
-          region_id: region?.id,
-          fields:
-            "*variants.calculated_price,+variants.inventory_quantity,*variants.images,*variants.options,+variants.metadata,*options,*options.values,+metadata,*tags,",
-          ...queryParams,
-        },
-        headers,
-        next,
-        cache: cacheMode,
-      }
-    )
-    .then(({ products, count }) => {
-      const nextPage = count > offset + limit ? pageParam + 1 : null
+  const query = {
+    limit,
+    offset,
+    region_id: region?.id,
+    fields:
+      "*variants.calculated_price,+variants.inventory_quantity,*variants.images,*variants.options,+variants.metadata,*options,*options.values,+metadata,*tags,",
+    ...queryParams,
+  }
 
-      return {
-        response: {
-          products,
-          count,
-        },
-        nextPage: nextPage,
-        queryParams,
-      }
-    })
+  const requestOptions = {
+    method: "GET" as const,
+    query,
+    headers,
+    next,
+    cache: cacheMode,
+  }
+
+  const toResult = (products: HttpTypes.StoreProduct[], count: number) => {
+    const nextPage = count > offset + limit ? pageParam + 1 : null
+
+    return {
+      response: {
+        products,
+        count,
+      },
+      nextPage,
+      queryParams,
+    }
+  }
+
+  const membershipResponse = await sdk.client
+    .fetch<{ products: HttpTypes.StoreProduct[]; count: number }>(
+      `/store/membership-products`,
+      requestOptions
+    )
+    .catch(() => null)
+
+  if (membershipResponse && membershipResponse.count > 0) {
+    return toResult(membershipResponse.products, membershipResponse.count)
+  }
+
+  // 서버 커스텀 라우트 장애 시에도 목록이 완전히 비지 않도록 fallback.
+  const fallbackResponse = await sdk.client.fetch<{
+    products: HttpTypes.StoreProduct[]
+    count: number
+  }>(`/store/products`, requestOptions)
+
+  const customer = await retrieveCustomer().catch(() => null)
+  const isMember = isMembershipGroup(customer?.groups)
+
+  const filteredProducts = isMember
+    ? fallbackResponse.products
+    : fallbackResponse.products.filter((product) => !isMembershipOnlyProduct(product))
+
+  const removedCount = fallbackResponse.products.length - filteredProducts.length
+  const adjustedCount = Math.max(0, fallbackResponse.count - removedCount)
+
+  return toResult(filteredProducts, adjustedCount)
 }
 
 // 상품 상세 조회
