@@ -45,3 +45,4 @@ next-env.d.ts
 .cursor/rules/user.mdc
 .cursor/rules/wms_pim.mdc
 .cursor/rules/medusa.mdc
+.env*.local

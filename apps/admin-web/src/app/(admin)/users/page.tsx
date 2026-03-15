@@ -6,7 +6,9 @@ export default function UsersPage() {
     <RouteGuard
       requireRole={['admin', 'master']}
     >
-      <UserListTemplate />
+      <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
+        <UserListTemplate />
+      </div>
     </RouteGuard>
   );
 }

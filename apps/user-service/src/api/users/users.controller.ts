@@ -8,7 +8,6 @@ import {
   HttpStatus,
   Param,
   Patch,
-  Query,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -21,7 +20,6 @@ import {
 import { User } from 'apps/user-service/database/drizzle/schema';
 import { Public } from '../../commons/decorator/public.decorator';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { UserDetailsResponseDto } from './dto/user-details.response.dto';
 import { UserRolesResponse } from './dto/user-role-scopes.response.dto';
 import { UserResponseDto } from './dto/user.response.dto';
 import { UsersService } from './users.service';
@@ -47,35 +45,6 @@ export class UsersController {
     return this.usersService.findUserByEmail(email);
   }
 
-  @ApiOperation({ summary: '사용자 상세 정보 조회' })
-  @ApiResponse({
-    status: 200,
-    description: '사용자 상세 정보 조회 성공',
-    type: UserDetailsResponseDto,
-  })
-  @ApiResponse({
-    status: 404,
-    description: '사용자를 찾을 수 없습니다.',
-  })
-  @ApiResponse({
-    status: 500,
-    description: '사용자 상세 정보를 불러오는 중 오류가 발생했습니다.',
-  })
-  @ApiQuery({
-    name: 'userId',
-    description: '조회할 사용자 ID',
-    required: false,
-  })
-  @Get('detail')
-  @RequireScopes('user:read', 'master', 'admin:users:read')
-  @HttpCode(HttpStatus.OK)
-  async getUserDetails(
-    @CurrentUser() user: JwtPayload,
-    @Query('userId') userId?: string,
-  ): Promise<UserDetailsResponseDto> {
-    return this.usersService.getUserDetails(userId ?? user.id);
-  }
-
   @ApiOperation({ summary: '사용자 권한 정보 조회' })
   @ApiResponse({
     status: 200,
@@ -92,13 +61,13 @@ export class UsersController {
   @ApiOperation({ summary: '현재 사용자 정보 조회' })
   @ApiResponse({
     status: 200,
-    description: '현재 사용자 상세 정보 조회 성공',
-    type: UserDetailsResponseDto,
+    description: '현재 사용자 정보 조회 성공',
+    type: UserResponseDto,
   })
   @Get('me')
   @HttpCode(HttpStatus.OK)
-  async getMe(@CurrentUser() user: JwtPayload) {
-    return this.usersService.getUserDetails(user.id);
+  async getMe(@CurrentUser() user: JwtPayload): Promise<UserResponseDto> {
+    return this.usersService.findUserById(user.id);
   }
 
   @ApiOperation({ summary: '내 프로필 정보 수정' })
