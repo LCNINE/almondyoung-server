@@ -44,9 +44,14 @@ interface CustomerResponseDto {
   }
 }
 
+type StoreCustomerWithGroupsResDto = HttpTypes.StoreCustomer & {
+  groups?: CustomerGroup[]
+}
+
 export type {
   ProductsResponseDto,
   CartResponseDto,
   CustomerResponseDto,
   CustomerGroup,
+  StoreCustomerWithGroupsResDto,
 }

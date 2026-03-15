@@ -64,20 +64,22 @@ export function HeroBannerCarousel({
 
   const BannerImage = ({ banner }: { banner: Banner }) => (
     <>
-      {/* PC 이미지 */}
+      {/* PC 이미지 - md(768px) 이상에서만 표시 */}
       <Image
         src={getThumbnailUrl(banner.pcImageFileId)}
         alt={banner.title}
         fill
         priority
+        sizes="(max-width: 767px) 0px, 100vw"
         className="hidden object-cover md:block"
       />
-      {/* 모바일 이미지 */}
+      {/* 모바일 이미지 - md(768px) 미만에서만 표시 */}
       <Image
         src={getThumbnailUrl(banner.mobileImageFileId)}
         alt={banner.title}
         fill
         priority
+        sizes="(max-width: 767px) 100vw, 0px"
         className="block object-cover md:hidden"
       />
     </>

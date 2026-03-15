@@ -9,10 +9,10 @@ interface MinPricedProduct extends HttpTypes.StoreProduct {
 }
 
 /**
- * Helper function to sort products by price until the store API supports sorting by price
- * @param products
- * @param sortBy
- * @returns products sorted by price
+ * 스토어 API가 가격 정렬을 지원할 때까지 가격 기준으로 상품을 정렬하는 헬퍼 함수
+ * @param products 정렬할 상품 배열
+ * @param sortBy 정렬 옵션 (예: price_asc, price_desc)
+ * @returns 가격 기준으로 정렬된 상품 배열
  */
 export function sortProducts(
   products: HttpTypes.StoreProduct[],
@@ -21,7 +21,7 @@ export function sortProducts(
   let sortedProducts = products as MinPricedProduct[]
 
   if (["price_asc", "price_desc"].includes(sortBy)) {
-    // Precompute the minimum price for each product
+    // 각 상품의 최저가를 미리 계산
     sortedProducts.forEach((product) => {
       if (product.variants && product.variants.length > 0) {
         product._minPrice = Math.min(
@@ -34,7 +34,7 @@ export function sortProducts(
       }
     })
 
-    // Sort products based on the precomputed minimum prices
+    // 미리 계산한 최저가 기준으로 상품 정렬
     sortedProducts.sort((a, b) => {
       const diff = a._minPrice! - b._minPrice!
       return sortBy === "price_asc" ? diff : -diff

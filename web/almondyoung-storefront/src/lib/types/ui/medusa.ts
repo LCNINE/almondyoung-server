@@ -1,5 +1,10 @@
-import { CustomerResponseDto } from "../dto/medusa"
+import {
+  CustomerResponseDto,
+  StoreCustomerWithGroupsResDto,
+} from "../dto/medusa"
 
 type Customer = CustomerResponseDto["customer"]
 
-export type { Customer }
+type StoreCustomerWithGroups = StoreCustomerWithGroupsResDto
+
+export type { Customer, StoreCustomerWithGroups }
