@@ -1,6 +1,6 @@
 'use client'
 
-import { Copy } from '@/components/admin-ui-experimental/copy/copy'
+import { Copy } from '@/components/admin-ui-experimental/common/copy/copy'
 import { PlaceholderCell } from './placeholder-cell'
 
 type IdCellProps = {
@@ -14,7 +14,7 @@ export const IdCell = ({ value }: IdCellProps) => {
       <span className="font-mono text-xs">
         {value.slice(0, 4)}...{value.slice(-4)}
       </span>
-      <Copy content={value} className="text-muted-foreground" />
+      <Copy content={value} />
     </span>
   )
 }

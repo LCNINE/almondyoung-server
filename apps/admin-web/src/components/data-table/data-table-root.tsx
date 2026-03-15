@@ -2,7 +2,7 @@
 
 import { flexRender, type Row, type RowData, type Table as TanstackTable } from '@tanstack/react-table'
 import { useRouter } from 'next/navigation'
-import { Table } from '@/components/admin-ui-experimental/table/table'
+import { Table } from '@/components/admin-ui-experimental/common/table/table'
 import { Skeleton } from '@/components/ui/skeleton'
 
 type DataTableRootProps<TData extends RowData> = {
