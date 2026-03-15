@@ -12,7 +12,7 @@ import {
   SheetTrigger,
 } from "@components/ui/sheet"
 import { getCurrentSubscription } from "@/lib/api/membership"
-import { getCategoryTree } from "@lib/api/medusa/categories"
+import { listCategories } from "@lib/api/medusa/categories"
 import { StoreProductCategoryTree } from "@lib/types/medusa-category"
 import { CurrentSubscription } from "@lib/types/ui/membership"
 import { UserDetail } from "@lib/types/ui/user"
@@ -43,7 +43,7 @@ export function CategorySheet({ trigger }: CategorySheetProps) {
 
     startTransition(async () => {
       try {
-        const list = await getCategoryTree()
+        const list = await listCategories()
         setCategories(list)
         if (list.length > 0) {
           setActiveRootId(list[0].id)

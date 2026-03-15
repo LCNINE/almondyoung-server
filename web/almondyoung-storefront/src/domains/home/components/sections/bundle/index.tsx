@@ -6,7 +6,7 @@ import { isProductSoldOut } from "@/lib/utils/is-product-sold-out"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { ProductGrid } from "../../../../../components/products/product-grid"
-import { SectionHeader } from "../../header/section-header"
+import { SectionHeader } from "../../header"
 import { ProductCarousel } from "../../shared/product-carousel"
 import { useUser } from "@/contexts/user-context"
 

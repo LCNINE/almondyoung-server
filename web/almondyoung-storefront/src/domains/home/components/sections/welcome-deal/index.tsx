@@ -6,7 +6,7 @@ import type { ProductCardProps } from "@/lib/types/ui/product"
 import { isProductSoldOut } from "@/lib/utils/is-product-sold-out"
 import { useParams } from "next/navigation"
 import Link from "next/link"
-import { SectionHeader } from "../../header/section-header"
+import { SectionHeader } from "../../header"
 import { ProductCarousel } from "../../shared/product-carousel"
 import { useUser } from "@/contexts/user-context"
 

@@ -147,8 +147,11 @@ src/domains/auth/hooks/useAuthStorage.ts
 
 ### 2. UI 컴포넌트 규칙
 
-- **shadcn/ui 컴포넌트 우선 사용**
+- **shadcn/ui 기본 컴포넌트 최대한 활용**
 - MedusaUI (`@medusajs/ui`) 절대 사용 금지
+- **shadcn/ui 컴포넌트 소스(`@/components/ui/`)의 CSS를 직접 수정하지 마세요**
+  - 커스텀 스타일이 필요하면 Tailwind 클래스를 props로 전달하거나 래퍼 컴포넌트를 만드세요
+  - `variants`를 추가해야 한다면 래퍼 컴포넌트에서 확장하세요
 
 ```tsx
 // 올바른 임포트
@@ -157,6 +160,35 @@ import { Card } from "@/components/ui/card"
 
 // 잘못된 임포트
 import { Button } from "@medusajs/ui" // 금지!
+```
+
+```tsx
+// ✅ 올바른 스타일 확장 - className props 사용
+<Button className="my-custom-class">Click</Button>
+
+// ✅ 올바른 스타일 확장 - 래퍼 컴포넌트 생성
+// @/components/shared/custom-button.tsx
+export function CustomButton(props) {
+  return <Button {...props} className={cn("custom-styles", props.className)} />
+}
+
+// ❌ 잘못된 방법 - @/components/ui/button.tsx 직접 수정 금지!
+```
+
+### 2-1. Link 컴포넌트 규칙
+
+- **내부 링크는 반드시 `LocalizedClientLink` 사용**
+- Next.js의 `Link`를 직접 사용하지 마세요 (국가 코드 라우팅 처리가 필요)
+
+```tsx
+// ✅ 올바른 사용
+import LocalizedClientLink from "@/components/shared/localized-client-link"
+
+<LocalizedClientLink href="/products">상품 목록</LocalizedClientLink>
+
+// ❌ 잘못된 사용
+import Link from "next/link"
+<Link href="/products">상품 목록</Link> // 국가 코드 처리 안됨!
 ```
 
 ### 3. 도메인 구조 (캐시 지역성 원칙)
@@ -378,10 +410,11 @@ products.map((product) => ({
 
 ## 주의사항
 
-1. **shadcn/ui 컴포넌트 소스**를 직접 수정하지 마세요. 래퍼 컴포넌트를 만드세요.
+1. **shadcn/ui 컴포넌트 소스**(`@/components/ui/`)를 직접 수정하지 마세요. CSS 변경도 금지! 래퍼 컴포넌트를 만드세요.
 2. **MedusaUI**를 사용하지 마세요. 항상 shadcn/ui를 사용하세요.
 3. **npm**을 사용하지 마세요. yarn만 사용합니다.
 4. **`fetch()`를 직접 호출하지 마세요.** 백엔드 API 요청은 반드시 `api()` 함수(`@/lib/api/api`)를 사용합니다.
+5. **`next/link`의 `Link`를 직접 사용하지 마세요.** 내부 링크는 반드시 `LocalizedClientLink`(`@/components/shared/localized-client-link`)를 사용합니다.
 
 ## 참고 문서
 

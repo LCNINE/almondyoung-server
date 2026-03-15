@@ -1,7 +1,7 @@
 import type { UserDetail } from "@/lib/types/ui/user"
 import { HeroBanner } from "../components/banner/hero-banner"
 import { WidgetSection } from "../components/sections/widget"
-import { ProductListSection } from "../components/shared/product-list-section"
+import { HomeSection } from "../components/shared/home-section"
 
 interface HomeLoggedInTemplateProps {
   user: UserDetail
@@ -16,9 +16,9 @@ export function HomeLoggedInTemplate({ user }: HomeLoggedInTemplateProps) {
       {/* 메인 히어로 배너 */}
       <HeroBanner />
 
-      <ProductListSection className="border-none">
+      <HomeSection className="border-none">
         <WidgetSection />
-      </ProductListSection>
+      </HomeSection>
     </div>
   )
 }

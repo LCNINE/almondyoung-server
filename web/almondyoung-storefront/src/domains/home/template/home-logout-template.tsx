@@ -1,12 +1,10 @@
+import { CategoryBestSectionSkeleton } from "@/components/skeletons/page-skeletons"
+import { UserDetail } from "@/lib/types/ui/user"
 import { Suspense } from "react"
 import { HeroBanner } from "../components/banner/hero-banner"
-import { LoginPromptBanner } from "../components/banner/login-prompt-banner"
-import { CategoryBestSectionContainer } from "../components/sections/category-best"
-import { ProductListSection } from "../components/shared/product-list-section"
-import { UserDetail } from "@/lib/types/ui/user"
-import { CategoryBestSectionSkeleton } from "@/components/skeletons/page-skeletons"
-// import LashBannerBanner from "../components/banner/lashbanner-banner"
-// import MembershipBanner from "../components/banner/membership-banner"
+import { HomeSection } from "../components/shared/home-section"
+import { CategoryBestSWrapper } from "./best-categories"
+import { ErrorBoundary } from "@/components/shared/error-boundary"
 
 /*
  * ============================================================================
@@ -113,168 +111,37 @@ import { CategoryBestSectionSkeleton } from "@/components/skeletons/page-skeleto
  * ============================================================================
  */
 
-// 프로모션 연동 시 활성화할 imports
-// import { getProductList } from "@/lib/api/medusa/products"
-// import { mapStoreProductsToCardProps } from "@/lib/utils/product-card"
-// import type { ProductCardProps } from "@/lib/types/ui/product"
-// import { BundleSection } from "../components/sections/bundle"
-// import { DigitalAssetSection } from "../components/sections/digital-asset"
-// import { TimeSaleSection } from "../components/sections/time-sale"
-// import { WelcomeDealSection } from "../components/sections/welcome-deal"
-// import { getTimeSaleProducts } from "../components/actions/get-category-products"
-
 interface HomeLogoutTemplateProps {
-  regionId?: string
   user: UserDetail | null
+  countryCode: string
 }
 
 /*──────────────────
  * 비로그인 사용자용
  *─────────────────*/
 export async function HomeLogoutTemplate({
-  regionId,
   user,
+  countryCode,
 }: HomeLogoutTemplateProps) {
-  /*
-   * ========================================================================
-   * 프로모션 섹션 데이터 로딩 (현재 비활성화)
-   * ========================================================================
-   *
-   * Medusa Promotion 연동 후 아래 코드를 활성화하세요.
-   *
-   * 1. lib/api/medusa/promotions.ts 파일 생성
-   * 2. 각 섹션별 프로모션 캠페인 ID 설정
-   * 3. 아래 데이터 로딩 로직 활성화
-   *
-   * ========================================================================
-   */
-
-  // const findCategoryByHandle = (
-  //   categories: StoreProductCategoryTree[],
-  //   handle: string
-  // ): StoreProductCategoryTree | undefined => {
-  //   for (const category of categories) {
-  //     if (category.handle === handle) return category
-  //     if (category.category_children?.length) {
-  //       const match = findCategoryByHandle(category.category_children, handle)
-  //       if (match) return match
-  //     }
-  //   }
-  //   return undefined
-  // }
-
-  // const fetchSectionProducts = async (
-  //   handle: string,
-  //   fallbackLimit = 12
-  // ): Promise<ProductCardProps[]> => {
-  //   try {
-  //     const category = findCategoryByHandle(initialCategories, handle)
-  //     const list = await getProductList({
-  //       categoryId: category?.id,
-  //       region_id: regionId,
-  //       limit: fallbackLimit,
-  //     })
-  //     const mapped = mapStoreProductsToCardProps(list.products || [])
-  //     if (mapped.length > 0 || !category?.id) {
-  //       return mapped
-  //     }
-  //
-  //     const fallbackList = await getProductList({
-  //       region_id: regionId,
-  //       limit: fallbackLimit,
-  //     })
-  //     return mapStoreProductsToCardProps(fallbackList.products || [])
-  //   } catch (error) {
-  //     console.error(`홈 섹션 상품 로드 실패: ${handle}`, error)
-  //     return []
-  //   }
-  // }
-
-  // const timeSaleInitialCategory = initialCategories[0]
-
-  // Medusa Promotion 연동 시 아래 코드 활성화
-  // const [
-  //   welcomeDealProducts,
-  //   digitalAssetProducts,
-  //   bundleProducts,
-  //   timeSaleInitialProducts,
-  // ] = await Promise.all([
-  //   fetchSectionProducts("welcome-deal"),      // TODO: getPromotionProducts("welcome-deal-campaign-id")로 변경
-  //   fetchSectionProducts("digital-asset"),     // TODO: getProductsByMetadata({ type: "digital" })로 변경
-  //   fetchSectionProducts("bulk-discount"),     // TODO: getBuyGetPromotionProducts()로 변경
-  //   timeSaleInitialCategory?.id
-  //     ? getTimeSaleProducts(timeSaleInitialCategory.id, regionId)
-  //     : Promise.resolve([]),                   // TODO: getTimeSalePromotionProducts()로 변경
-  // ])
-
   return (
     <div className="w-full">
       {/* 메인 히어로 배너 */}
       <HeroBanner />
 
-      {/* todo: 추후 섹션이 많아지면 활성화 */}
-      {/* 로그인 유도 배너 */}
-      {/* {!user && <LoginPromptBanner />} */}
-
       {/* 카테고리별 제품 섹션  */}
-      <ProductListSection>
-        <Suspense fallback={<CategoryBestSectionSkeleton />}>
-          <CategoryBestSectionContainer regionId={regionId} />
-        </Suspense>
-      </ProductListSection>
-
-      {/* todo: 멤버십 배너 임시 비활성화 */}
-      {/* <div className="hidden w-full border-t border-gray-200 md:block">
-        <ProductListSection.Inner className="px-0 pt-5 md:container md:mx-auto md:max-w-[1360px] md:px-[40px]">
-          <MembershipBanner />
-        </ProductListSection.Inner>
-      </div> */}
-
-      {/*
-       * ====================================================================
-       * 프로모션 섹션들 (Medusa Promotion 연동 후 활성화)
-       * ====================================================================
-       *
-       * 아래 섹션들은 Medusa Promotion 모듈 연동 후 활성화하세요.
-       *
-       * 구현 순서:
-       * 1. Medusa Admin에서 각 프로모션 캠페인 생성
-       * 2. lib/api/medusa/promotions.ts에서 API 함수 구현
-       * 3. 위의 데이터 로딩 코드 활성화
-       * 4. 아래 JSX 주석 해제
-       *
-       * ====================================================================
-       */}
+      <HomeSection>
+        <ErrorBoundary
+          fallback={<div>카테고리별 제품 섹션을 불러오지 못했어요.</div>}
+        >
+          <Suspense fallback={<CategoryBestSectionSkeleton />}>
+            <CategoryBestSWrapper countryCode={countryCode} />
+          </Suspense>
+        </ErrorBoundary>
+      </HomeSection>
 
       {/* 웰컴 딜 섹션 - 신규 회원 대상 할인 상품 */}
       {/* <ProductListSection className="border-t md:border-t-0">
         <WelcomeDealSection products={welcomeDealProducts} />
-      </ProductListSection> */}
-
-      {/* todo: 모바일 보조 배너 임시 비활성화 */}
-      {/* <div className="w-full border-t border-gray-200 md:hidden">
-        <ProductListSection.Inner className="px-0 pt-5 md:container md:mx-auto md:max-w-[1360px] md:px-[40px]">
-          <LashBannerBanner />
-        </ProductListSection.Inner>
-      </div> */}
-
-      {/* 타임 세일 섹션 - 시간 제한 할인 상품 */}
-      {/* <ProductListSection>
-        <TimeSaleSection
-          initialCategories={initialCategories}
-          initialProducts={timeSaleInitialProducts}
-          regionId={regionId}
-        />
-      </ProductListSection> */}
-
-      {/* 디지털 템플릿 섹션 - 디지털 상품 */}
-      {/* <ProductListSection>
-        <DigitalAssetSection products={digitalAssetProducts} />
-      </ProductListSection> */}
-
-      {/* 번들 섹션 - Buy X Get Y 할인 상품 */}
-      {/* <ProductListSection>
-        <BundleSection products={bundleProducts} />
       </ProductListSection> */}
     </div>
   )

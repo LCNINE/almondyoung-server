@@ -1,25 +1,21 @@
 "use server"
 
+import { transformFormDataToAddress } from "@/components/address/utils"
 import { sdk } from "@/lib/config/medusa"
+import { StoreCustomerWithGroupsResDto } from "@/lib/types/dto/medusa"
 import medusaError from "@lib/utils/medusa-error"
 import { HttpTypes } from "@medusajs/types"
 import { revalidateTag } from "next/cache"
-import { handleMedusaAuthError } from "./auth-utils"
 import {
   getAuthHeaders,
   getCacheTag,
   getCartId,
   setCartId,
 } from "../../data/cookies"
-import { transformFormDataToAddress } from "@/components/address/utils"
-import { CustomerGroup } from "@/lib/types/dto/medusa"
-
-type StoreCustomerWithGroups = HttpTypes.StoreCustomer & {
-  groups?: CustomerGroup[]
-}
+import { handleMedusaAuthError } from "./auth-utils"
 
 export const retrieveCustomer =
-  async (): Promise<StoreCustomerWithGroups | null> => {
+  async (): Promise<StoreCustomerWithGroupsResDto | null> => {
     const authHeaders = await getAuthHeaders()
 
     if (!authHeaders) return null
@@ -29,13 +25,16 @@ export const retrieveCustomer =
     }
 
     return await sdk.client
-      .fetch<{ customer: StoreCustomerWithGroups }>(`/store/customers/me`, {
-        method: "GET",
-        // groups 필드는 백엔드에서 기본적으로 넣어주기 때문에 따로 요청하면안됌
-        // query: { fields: "*groups" },
-        headers,
-        cache: "no-store",
-      })
+      .fetch<{ customer: StoreCustomerWithGroupsResDto }>(
+        `/store/customers/me`,
+        {
+          method: "GET",
+          // groups 필드는 백엔드에서 기본적으로 넣어주기 때문에 따로 요청하면안됌
+          // query: { fields: "*groups" },
+          headers,
+          cache: "no-store",
+        }
+      )
       .then(({ customer }) => customer)
       .catch(() => null)
   }
