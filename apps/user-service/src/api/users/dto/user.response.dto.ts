@@ -29,7 +29,4 @@ export class UserResponseDto implements Partial<User> {
 
   @ApiProperty()
   updatedAt: Date;
-
-  @ApiProperty({ type: [String] })
-  roles: string[];
 }

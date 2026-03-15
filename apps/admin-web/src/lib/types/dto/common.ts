@@ -23,9 +23,10 @@ interface BaseUserInfo {
   username: string;
   email: string;
   isEmailVerified: boolean;
-  lastActivityAt: Date;
-  createdAt: Date;
-  updatedAt: Date;
+  lastActivityAt: string | null;
+  deletedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export type { PaginationQuery, SearchQuery, BaseUserInfo, UUID };

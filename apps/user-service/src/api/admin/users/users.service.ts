@@ -5,6 +5,7 @@ import { and, asc, count, desc, eq, inArray, isNull } from 'drizzle-orm';
 import * as schema from '../../../../database/drizzle/schema';
 import { AdminUserDetailResponseDto } from './dto/admin-user-detail.response.dto';
 import { UpdateUserDto } from '../../users/dto/update-user.dto';
+import { AddressDto } from '../../../commons/dto/address.dto';
 import { DbTransaction } from 'apps/user-service/src/commons/types';
 import { UserConsent } from '../../consents/types/consent.type';
 
@@ -196,6 +197,9 @@ export class UsersService {
     return {
       ...user,
       roles: roleRows.map((r) => r.roleName),
+      profile: user.profile
+        ? { ...user.profile, address: user.profile.address as AddressDto | null }
+        : null,
     };
   }
 
