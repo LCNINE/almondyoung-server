@@ -16,6 +16,7 @@ import { JwtService } from '@nestjs/jwt';
 import { UserEvents } from '@packages/event-contracts/streams';
 import {
   User,
+  UserWithoutPassword,
   userServiceEnums,
   userServiceSchema,
   type UserServiceSchema,
@@ -723,7 +724,7 @@ export class AuthService {
       secret: this.configService.getOrThrow('AUTH_SECRET'),
     });
 
-    let user: User | null = null;
+    let user: UserWithoutPassword | null = null;
 
     if (typeof payload === 'string') {
       user = await this.usersService.findUserByEmail(payload);

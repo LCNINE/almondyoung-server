@@ -18,8 +18,8 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { UpdateUserDto } from '../../users/dto/update-user.dto';
-import { UserResponseDto } from '../../users/dto/user.response.dto';
 import { AdminUserDetailResponseDto } from './dto/admin-user-detail.response.dto';
+import { AdminUsersListResponseDto } from './dto/admin-users-list.response.dto';
 import { GetUsersQueryDto } from './dto/get-users-query.dto';
 import { UsersService } from './users.service';
 import { UserConsent } from '../../consents/types/consent.type';
@@ -39,8 +39,7 @@ export class UsersController {
   @ApiResponse({
     status: 200,
     description: '사용자 목록 조회 성공',
-    type: UserResponseDto,
-    isArray: true,
+    type: AdminUsersListResponseDto,
   })
   async getUsers(@Query() query: GetUsersQueryDto) {
     return await this.usersService.getUsers(query);

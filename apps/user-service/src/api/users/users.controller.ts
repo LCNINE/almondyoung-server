@@ -8,6 +8,7 @@ import {
   HttpStatus,
   Param,
   Patch,
+  Query,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
