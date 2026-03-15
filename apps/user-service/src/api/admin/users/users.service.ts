@@ -1,11 +1,14 @@
 import { DbService, InjectDb } from '@app/db';
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
 import { and, asc, count, desc, eq, inArray, isNull } from 'drizzle-orm';
 import * as schema from '../../../../database/drizzle/schema';
+import { AdminUserDetailResponseDto } from './dto/admin-user-detail.response.dto';
 import { UpdateUserDto } from '../../users/dto/update-user.dto';
 import { DbTransaction } from 'apps/user-service/src/commons/types';
 import { UserConsent } from '../../consents/types/consent.type';
+
+export type UserWithRoles = schema.UserWithoutPassword & { roles: string[] };
 
 @Injectable()
 export class UsersService {
@@ -29,7 +32,7 @@ export class UsersService {
     order?: 'asc' | 'desc';
     tx?: DbTransaction;
   }): Promise<{
-    data: schema.UserWithoutPassword[];
+    data: UserWithRoles[];
     total: number;
     page: number;
     limit: number;
@@ -105,7 +108,40 @@ export class UsersService {
         dataQuery.where(whereClause);
       }
 
-      const data = await dataQuery;
+      const users = await dataQuery;
+
+      const userIds = users.map((u) => u.id);
+      const roleRows =
+        userIds.length > 0
+          ? await client
+              .select({
+                userId: schema.userRoleAssignments.userId,
+                roleName: schema.roles.name,
+              })
+              .from(schema.userRoleAssignments)
+              .innerJoin(
+                schema.roles,
+                eq(schema.userRoleAssignments.roleId, schema.roles.roleId),
+              )
+              .where(
+                and(
+                  inArray(schema.userRoleAssignments.userId, userIds),
+                  isNull(schema.userRoleAssignments.expiresAt),
+                ),
+              )
+          : [];
+
+      const rolesByUserId = new Map<string, string[]>();
+      for (const row of roleRows) {
+        const list = rolesByUserId.get(row.userId) ?? [];
+        list.push(row.roleName);
+        rolesByUserId.set(row.userId, list);
+      }
+
+      const data: UserWithRoles[] = users.map((u) => ({
+        ...u,
+        roles: rolesByUserId.get(u.id) ?? [],
+      }));
 
       return { data, total, page, limit };
     } catch (error) {
@@ -113,6 +149,54 @@ export class UsersService {
         error.message ?? '사용자 조회 중 오류가 발생했습니다.',
       );
     }
+  }
+
+  async getUserById(userId: string): Promise<AdminUserDetailResponseDto> {
+    const client = this.getClient();
+
+    const [user] = await client
+      .select({
+        id: schema.users.id,
+        loginId: schema.users.loginId,
+        username: schema.users.username,
+        nickname: schema.users.nickname,
+        email: schema.users.email,
+        isEmailVerified: schema.users.isEmailVerified,
+        lastActivityAt: schema.users.lastActivityAt,
+        deletedAt: schema.users.deletedAt,
+        createdAt: schema.users.createdAt,
+        updatedAt: schema.users.updatedAt,
+        shop: schema.shops,
+        profile: schema.profiles,
+      })
+      .from(schema.users)
+      .leftJoin(schema.shops, eq(schema.users.id, schema.shops.userId))
+      .leftJoin(schema.profiles, eq(schema.users.id, schema.profiles.userId))
+      .where(eq(schema.users.id, userId))
+      .limit(1);
+
+    if (!user) {
+      throw new NotFoundException('사용자를 찾을 수 없습니다.');
+    }
+
+    const roleRows = await client
+      .select({ roleName: schema.roles.name })
+      .from(schema.userRoleAssignments)
+      .innerJoin(
+        schema.roles,
+        eq(schema.userRoleAssignments.roleId, schema.roles.roleId),
+      )
+      .where(
+        and(
+          eq(schema.userRoleAssignments.userId, userId),
+          isNull(schema.userRoleAssignments.expiresAt),
+        ),
+      );
+
+    return {
+      ...user,
+      roles: roleRows.map((r) => r.roleName),
+    };
   }
 
   async updateUser(

@@ -5,31 +5,31 @@ const isServer = typeof window === 'undefined';
 
 const PIM_BASE_URL = isServer
   ? (process.env.PIM_SERVICE_URL ?? 'http://localhost:3020')
-  : '/api/proxy/pim';
+  : '/proxy/pim';
 
 const WMS_BASE_URL = isServer
   ? (process.env.WMS_SERVICE_URL ?? 'http://localhost:3010')
-  : '/api/proxy/wms';
+  : '/proxy/wms';
 
 const USER_SERVICE_BASE_URL = isServer
   ? (process.env.USER_SERVICE_URL ?? 'http://localhost:3030')
-  : '/api/proxy/users';
+  : '/proxy/users';
 
 const WALLET_SERVICE_BASE_URL = isServer
   ? (process.env.WALLET_SERVICE_URL ?? 'http://localhost:3040')
-  : '/api/proxy/wallet';
+  : '/proxy/wallet';
 
 const MEMBERSHIP_SERVICE_BASE_URL = isServer
   ? (process.env.MEMBERSHIP_SERVICE_URL ?? 'http://localhost:3050')
-  : '/api/proxy/membership';
+  : '/proxy/membership';
 
 const NOTIFICATION_SERVICE_BASE_URL = isServer
   ? (process.env.NOTIFICATION_SERVICE_URL ?? 'http://localhost:3060')
-  : '/api/proxy/notification';
+  : '/proxy/notification';
 
 const CHANNEL_ADAPTER_SERVICE_BASE_URL = isServer
   ? (process.env.CHANNEL_ADAPTER_SERVICE_URL ?? 'http://localhost:3070')
-  : '/api/proxy/channel';
+  : '/proxy/channel';
 
 export {
   PIM_BASE_URL,
