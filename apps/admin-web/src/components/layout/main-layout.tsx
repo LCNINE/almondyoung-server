@@ -67,7 +67,7 @@ export function MainLayout({ children }: MainLayoutProps) {
           onItemClick={handleItemClick}
         />
         <main className="flex-1 bg-white overflow-y-auto">
-          <Breadcrumb />
+          {/* <Breadcrumb /> */}
           {children}
         </main>
       </div>

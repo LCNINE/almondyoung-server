@@ -34,22 +34,55 @@ interface AdminUsersQuery {
   page?: number;
   limit?: number;
   userId?: string;
+  q?: string;
   username?: string;
   email?: string;
   roleName?: string;
   sort?: string;
-  order?: 'asc' | 'desc';
+  order?: string;
 }
 
 interface AdminUserDto {
   id: string;
   loginId: string;
   username: string;
+  nickname: string | null;
   email: string;
   isEmailVerified: boolean;
   lastActivityAt: string | null;
   createdAt: string;
+  updatedAt: string;
   deletedAt: string | null;
+  roles: string[];
+}
+
+interface AdminUserProfileDto {
+  id: string;
+  userId: string;
+  phoneNumber: string | null;
+  address: unknown | null;
+  birthDate: string | null;
+  profileImageUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface AdminUserShopDto {
+  id: string;
+  userId: string;
+  isOperating: boolean | null;
+  yearsOperating: number | null;
+  shopType: 'solo' | 'small' | 'large' | null;
+  categories: unknown;
+  targetCustomers: unknown;
+  openDays: unknown;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface AdminUserDetailDto extends AdminUserDto {
+  shop: AdminUserShopDto | null;
+  profile: AdminUserProfileDto | null;
 }
 
 interface AdminUsersResponse {
@@ -65,5 +98,6 @@ export type {
   UserRolesResponseDto,
   AdminUsersQuery,
   AdminUserDto,
+  AdminUserDetailDto,
   AdminUsersResponse,
 };

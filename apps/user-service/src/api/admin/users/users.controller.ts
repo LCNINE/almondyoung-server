@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  InternalServerErrorException,
   NotFoundException,
   Param,
   Patch,
@@ -18,6 +19,7 @@ import {
 } from '@nestjs/swagger';
 import { UpdateUserDto } from '../../users/dto/update-user.dto';
 import { UserResponseDto } from '../../users/dto/user.response.dto';
+import { AdminUserDetailResponseDto } from './dto/admin-user-detail.response.dto';
 import { GetUsersQueryDto } from './dto/get-users-query.dto';
 import { UsersService } from './users.service';
 import { UserConsent } from '../../consents/types/consent.type';
@@ -44,46 +46,7 @@ export class UsersController {
     return await this.usersService.getUsers(query);
   }
 
-  @ApiOperation({ summary: '사용자 정보 수정' })
-  @ApiResponse({ status: 200, description: '프로필 수정 성공' })
-  @Patch(':userId')
-  @RequireScopes('master', 'admin:users:modify')
-  @HttpCode(HttpStatus.OK)
-  async updateUser(
-    @Param('userId') userId: string,
-    @Body() updateUserDto: UpdateUserDto,
-  ) {
-    const updatedUser = await this.usersService.updateUser(
-      userId,
-      updateUserDto,
-    );
-
-    if (!updatedUser) {
-      throw new NotFoundException('해당 사용자를 찾을 수 없습니다.');
-    }
-    return updatedUser;
-  }
-
-  @Get('/consent/:userId')
-  @RequireScopes('master', 'admin:users:read')
-  @ApiOperation({
-    summary: '해당 사용자 동의 정보 조회',
-    description: '해당 사용자 동의 정보를 조회합니다.',
-  })
-  @ApiResponse({
-    status: 200,
-    description:
-      '해당 사용자 동의 정보 조회 성공(null일시 해당 사용자가 아직 약간에 동의하지 않은 상태입니다.)',
-  })
-  async getUserConsent(
-    @Param('userId') userId: string,
-  ): Promise<UserConsent | null> {
-    const consent = await this.usersService.getUserConsentByUserId(userId);
-
-    return consent;
-  }
-
-  @Get('/consents')
+  @Get('consents')
   @RequireScopes('master', 'admin:users:read')
   @ApiOperation({
     summary: '모든 사용자 동의 정보 조회',
@@ -107,5 +70,65 @@ export class UsersController {
       sortBy,
       order,
     });
+  }
+
+  @Get('consent/:userId')
+  @RequireScopes('master', 'admin:users:read')
+  @ApiOperation({
+    summary: '해당 사용자 동의 정보 조회',
+    description: '해당 사용자 동의 정보를 조회합니다.',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      '해당 사용자 동의 정보 조회 성공(null일시 해당 사용자가 아직 약관에 동의하지 않은 상태입니다.)',
+  })
+  async getUserConsent(
+    @Param('userId') userId: string,
+  ): Promise<UserConsent | null> {
+    return await this.usersService.getUserConsentByUserId(userId);
+  }
+
+  @Get(':userId')
+  @RequireScopes('master', 'admin:users:read')
+  @ApiOperation({
+    summary: '사용자 상세 정보 조회',
+    description: '사용자 ID로 상세 정보를 조회합니다.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '사용자 상세 정보 조회 성공',
+    type: AdminUserDetailResponseDto,
+  })
+  async getUserById(
+    @Param('userId') userId: string,
+  ): Promise<AdminUserDetailResponseDto> {
+    try {
+      return await this.usersService.getUserById(userId);
+    } catch (e: any) {
+      const msg = (e?.message ?? '').toLowerCase();
+      if (msg.includes('찾을 수 없습니다')) throw new NotFoundException(e.message);
+      throw new InternalServerErrorException(e.message);
+    }
+  }
+
+  @ApiOperation({ summary: '사용자 정보 수정' })
+  @ApiResponse({ status: 200, description: '프로필 수정 성공' })
+  @Patch(':userId')
+  @RequireScopes('master', 'admin:users:modify')
+  @HttpCode(HttpStatus.OK)
+  async updateUser(
+    @Param('userId') userId: string,
+    @Body() updateUserDto: UpdateUserDto,
+  ) {
+    const updatedUser = await this.usersService.updateUser(
+      userId,
+      updateUserDto,
+    );
+
+    if (!updatedUser) {
+      throw new NotFoundException('해당 사용자를 찾을 수 없습니다.');
+    }
+    return updatedUser;
   }
 }
