@@ -1,67 +1,44 @@
 'use client';
 
-import { DataTable, TableColumn } from '@/components/common/data-table';
-import { Pagination } from '@/components/common/pagination';
-import { AdminUserDto, AdminUsersQuery } from '@/lib/types/dto/user';
 import { useAdminUsers } from '@/lib/services/users';
+import { useDataTable } from '@/hooks/use-data-table';
+import { useUserTableColumns } from '@/hooks/table/columns/use-user-table-columns';
+import { useUserTableFilters } from '@/hooks/table/filters/use-user-table-filters';
+import { useUserTableQuery } from '@/hooks/table/query/use-user-table-query';
+import { DataTable } from '@/components/data-table';
 
-interface UserTableProps {
-  query: AdminUsersQuery;
-  onPageChange: (page: number) => void;
-}
+const PAGE_SIZE = 20;
 
-const columns: TableColumn<AdminUserDto>[] = [
-  { key: 'id', label: 'ID', width: '220px' },
-  { key: 'loginId', label: '로그인ID', width: '140px' },
-  { key: 'username', label: '이름', width: '120px' },
-  { key: 'email', label: '이메일', width: '200px' },
-  {
-    key: 'isEmailVerified',
-    label: '이메일인증',
-    width: '90px',
-    render: (value) => (value ? '인증' : '미인증'),
-  },
-  {
-    key: 'lastActivityAt',
-    label: '최근활동일',
-    width: '140px',
-    render: (value) =>
-      value ? new Date(value as string).toLocaleDateString('ko-KR') : '-',
-  },
-  {
-    key: 'createdAt',
-    label: '가입일',
-    width: '140px',
-    render: (value) =>
-      value ? new Date(value as string).toLocaleDateString('ko-KR') : '-',
-  },
-];
+export function UserTable() {
+  const { searchParams: query } = useUserTableQuery({ pageSize: PAGE_SIZE });
+  const { data, isLoading, isFetching } = useAdminUsers(query);
+  const columns = useUserTableColumns();
+  const filters = useUserTableFilters();
 
-export function UserTable({ query, onPageChange }: UserTableProps) {
-  const { data, isLoading } = useAdminUsers(query);
-
-  const currentPage = query.page ?? 1;
-  const itemsPerPage = query.limit ?? 20;
-  const total = data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / itemsPerPage));
+  const { table } = useDataTable({
+    data: data?.data ?? [],
+    columns,
+    count: data?.total,
+    pageSize: PAGE_SIZE,
+    getRowId: (row) => row.id,
+  });
 
   return (
-    <div>
-      <DataTable<AdminUserDto>
-        data={data?.data ?? []}
-        columns={columns}
-        rowKey="id"
-        loading={isLoading}
-        emptyMessage="회원 데이터가 없습니다."
-      />
-      <Pagination
-        currentPage={currentPage}
-        totalPages={totalPages}
-        totalItems={total}
-        itemsPerPage={itemsPerPage}
-        onPageChange={onPageChange}
-        showItemsPerPage={false}
-      />
-    </div>
+    <DataTable
+      table={table}
+      isLoading={isLoading}
+      isFetching={isFetching}
+      count={data?.total ?? 0}
+      pageSize={PAGE_SIZE}
+      filters={filters}
+      orderBy={[
+        { key: 'loginId', label: '로그인 ID' },
+        { key: 'email', label: '이메일' },
+        { key: 'createdAt', label: '가입일' },
+      ]}
+      search
+      navigateTo={(row) => `/users/${row.original.id}`}
+      noRecords={{ message: '회원 데이터가 없습니다.' }}
+    />
   );
 }

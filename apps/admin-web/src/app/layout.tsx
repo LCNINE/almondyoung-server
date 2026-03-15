@@ -7,6 +7,7 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import { Toaster } from 'sonner';
 import './globals.css';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -24,10 +25,12 @@ export default function RootLayout({
     <html lang="ko">
       <body className={inter.className}>
         <QueryProvider>
-          <MainLayout>{children}</MainLayout>
-          <AuthExpiredHandler />
-          <Toaster />
-          <ReactQueryDevtools initialIsOpen={false} />
+          <TooltipProvider>
+            <MainLayout>{children}</MainLayout>
+            <AuthExpiredHandler />
+            <Toaster />
+            <ReactQueryDevtools initialIsOpen={false} buttonPosition='top-right' />
+          </TooltipProvider>
         </QueryProvider>
       </body>
     </html>

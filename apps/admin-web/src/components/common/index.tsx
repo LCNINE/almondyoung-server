@@ -11,6 +11,19 @@ export { SalesChannelMark, SalesChannelIcon, SalesChannelText } from './sales-ch
 export type { SalesChannelType, SalesChannelMarkProps } from './sales-channel-mark';
 
 export { AddressSearchDialog } from './address-search-dialog';
+export {
+  FocusModal,
+  FocusModalTrigger,
+  FocusModalClose,
+  FocusModalContent,
+  FocusModalOverlay,
+  FocusModalPortal,
+  FocusModalHeader,
+  FocusModalBody,
+  FocusModalFooter,
+  FocusModalTitle,
+  FocusModalDescription,
+} from './focus-modal';
 export { Breadcrumb } from './breadcrumb';
 export { Pagination } from './pagination';
 
