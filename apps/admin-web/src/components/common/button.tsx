@@ -7,7 +7,7 @@ import React, { forwardRef } from 'react';
 import { cn } from '@/lib/utils/cn'; // cn 함수 경로가 맞는지 확인해주세요.
 import { LucideIcon } from 'lucide-react';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'text' | 'danger';
+export type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'text' | 'ghost' | 'danger';
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -48,9 +48,9 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         ];
 
         const sizeClasses = {
-            sm: 'px-2.5 py-2.5 text-[13px] leading-[22px] min-h-[27px]',
-            md: 'px-4 py-2.5 text-[14px] leading-[22px] min-h-[38px]',
-            lg: 'px-4 py-3.25 text-[15px] leading-[22px] min-h-[48px]',
+            sm: 'px-2.5 py-1 text-[11px] leading-[22px] min-h-[27px]',
+            md: 'px-4 py-2 text-[13px] leading-[22px] min-h-[38px]',
+            lg: 'px-4 py-3 text-[15px] leading-[22px] min-h-[48px]',
         };
 
         const variantClasses = {
@@ -81,6 +81,10 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
                 'active:bg-[var(--btn-text-bg-active)]',
                 'focus:ring-[var(--btn-focus-border)]',
                 'disabled:text-[var(--btn-text-text-disabled)]',
+            ],
+            ghost: [
+                'hover:bg-accent hover:text-accent-foreground',
+                'focus:ring-[var(--btn-focus-border)]',
             ],
             danger: [
                 'bg-[var(--btn-danger-bg)] text-[var(--btn-danger-text)]',

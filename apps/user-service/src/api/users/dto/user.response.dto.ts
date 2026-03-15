@@ -15,9 +15,6 @@ export class UserResponseDto implements Partial<User> {
   @ApiProperty()
   email: string;
 
-  @ApiProperty({ nullable: true })
-  password: string | null;
-
   @ApiProperty()
   isEmailVerified: boolean;
 
@@ -32,4 +29,7 @@ export class UserResponseDto implements Partial<User> {
 
   @ApiProperty()
   updatedAt: Date;
+
+  @ApiProperty({ type: [String] })
+  roles: string[];
 }
