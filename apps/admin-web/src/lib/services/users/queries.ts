@@ -1,6 +1,6 @@
 import { userApi } from '@/lib/api/domains/users';
 import { AdminUsersQuery } from '@/lib/types/dto/user';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { usersQueryKeys } from './query-keys';
 
 export const useAdminUsers = (query: AdminUsersQuery) => {
@@ -8,5 +8,6 @@ export const useAdminUsers = (query: AdminUsersQuery) => {
     queryKey: usersQueryKeys.list(query),
     queryFn: () => userApi.getAdminUsers(query),
     staleTime: 30 * 1000, // 30초
+    placeholderData: keepPreviousData,
   });
 };

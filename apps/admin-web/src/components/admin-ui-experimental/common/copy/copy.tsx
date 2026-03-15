@@ -4,7 +4,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils/ui"
 import { Slot } from "@radix-ui/react-slot"
 import copy from "copy-to-clipboard"
-import { CheckCircle, SquareStack } from "lucide-react"
+import { CheckIcon, CopyIcon } from "lucide-react"
 import React, { useState } from "react"
 
 type CopyProps = React.HTMLAttributes<HTMLButtonElement> & {
@@ -73,8 +73,8 @@ const Copy = React.forwardRef<HTMLButtonElement, CopyProps>(
               children ? (
                 children
               ) : done
-                ? <CheckCircle />
-                : <SquareStack />
+                ? <CheckIcon size={16} />
+                : <CopyIcon size={16} />
             }
           </Component>
         </TooltipTrigger>
