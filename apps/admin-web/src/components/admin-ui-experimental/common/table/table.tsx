@@ -173,6 +173,7 @@ const Pagination = React.forwardRef<HTMLDivElement, TablePaginationProps>(
     )
   }
 )
+Pagination.displayName = "Table.Pagination"
 
 type GoToPagePopoverProps = {
   pageCount: number,
