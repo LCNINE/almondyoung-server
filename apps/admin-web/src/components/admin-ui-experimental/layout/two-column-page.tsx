@@ -1,6 +1,6 @@
 "use client"
 
-import { clx } from "@medusajs/ui"
+import { cn } from "@/lib/utils/cn"
 import { Children, ComponentPropsWithoutRef } from "react"
 
 const Root = ({ children }: { children: React.ReactNode }) => {
@@ -23,14 +23,14 @@ const Root = ({ children }: { children: React.ReactNode }) => {
 }
 
 const Main = ({ children, className, ...props }: ComponentPropsWithoutRef<"div">) => (
-  <div className={clx("flex w-full flex-col gap-y-3", className)} {...props}>
+  <div className={cn("flex w-full flex-col gap-y-3", className)} {...props}>
     {children}
   </div>
 )
 
 const Sidebar = ({ children, className, ...props }: ComponentPropsWithoutRef<"div">) => (
   <div
-    className={clx("flex w-full max-w-[100%] flex-col gap-y-3 xl:mt-0 xl:max-w-[440px]", className)}
+    className={cn("flex w-full max-w-[100%] flex-col gap-y-3 xl:mt-0 xl:max-w-[440px]", className)}
     {...props}
   >
     {children}
