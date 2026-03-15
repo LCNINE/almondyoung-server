@@ -10,6 +10,7 @@ import { SoldOutTag } from "./sold-out-tag"
 const LOW_STOCK_THRESHOLD = 10
 
 export function ProductInfo({
+  id,
   title,
   available,
   manageInventory,
@@ -86,6 +87,7 @@ export function ProductInfo({
 
       <div className="flex flex-col">
         <ProductPrice
+          productId={id}
           price={displayPrice}
           originalPrice={displayOriginalPrice ?? originalPrice}
           discount={displayDiscount}

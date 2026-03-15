@@ -85,7 +85,7 @@ export const listProducts = async ({
     })
 }
 
-// export const listProducts = async ({
+// export const listProducts2 = async ({
 //   pageParam = 1,
 //   queryParams,
 //   countryCode,
