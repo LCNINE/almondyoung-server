@@ -56,6 +56,7 @@ export class UsersService {
           email: schema.users.email,
           isEmailVerified: schema.users.isEmailVerified,
           lastActivityAt: schema.users.lastActivityAt,
+          deletedAt: schema.users.deletedAt,
           createdAt: schema.users.createdAt,
           updatedAt: schema.users.updatedAt,
         })
@@ -147,16 +148,27 @@ export class UsersService {
   async findUserByEmail(
     email: string,
     tx?: DbTransaction,
-  ): Promise<schema.User | null> {
+  ): Promise<schema.UserWithoutPassword | null> {
     const client = this.getClient(tx);
     try {
       const [users] = await client
-        .select()
+        .select({
+          id: schema.users.id,
+          loginId: schema.users.loginId,
+          username: schema.users.username,
+          nickname: schema.users.nickname,
+          email: schema.users.email,
+          isEmailVerified: schema.users.isEmailVerified,
+          lastActivityAt: schema.users.lastActivityAt,
+          deletedAt: schema.users.deletedAt,
+          createdAt: schema.users.createdAt,
+          updatedAt: schema.users.updatedAt,
+        })
         .from(schema.users)
         .where(eq(schema.users.email, email))
         .limit(1);
 
-      return users;
+      return users ?? null;
     } catch (error) {
       console.log('error:', error);
       throw new InternalServerErrorException(
