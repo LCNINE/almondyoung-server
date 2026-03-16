@@ -2,6 +2,7 @@
 
 import { PaymentTotalSection } from "@/domains/checkout/components/sections/payment-total"
 import { createMembershipCheckoutIntent } from "@/lib/api/membership"
+import { setPendingPaymentMode } from "@/lib/utils/checkout-intent-map"
 import type { CartTotals } from "@/lib/types/ui/cart"
 import type { UserDetail } from "@lib/types/ui/user"
 import { MobileCTA, PCFixedCTA } from "domains/checkout/components/cta"
@@ -58,11 +59,14 @@ export default function MembershipCheckoutTemplate({
         throw new Error("로그인이 필요합니다.")
       }
 
-      const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback?mode=membership&planId=${planId}`
+      // returnUrl에 쿼리파라미터를 포함하면 wallet이 ?payment_intent_id=...를 붙일 때 URL이 깨짐
+      // mode/planId는 sessionStorage에 저장 후 callback에서 읽음
+      const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback`
       const { intentId } = await createMembershipCheckoutIntent(
         planId,
         returnUrl
       )
+      setPendingPaymentMode("membership", { planId })
 
       const walletWebUrl =
         process.env.NEXT_PUBLIC_WALLET_WEB_URL || "http://localhost:3200"

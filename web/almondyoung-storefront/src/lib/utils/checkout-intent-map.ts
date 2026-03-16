@@ -28,3 +28,38 @@ export function removeCheckoutCartByIntent(intentId: string) {
 
   storage.removeItem(`${CHECKOUT_INTENT_PREFIX}${intentId}`)
 }
+
+const PENDING_PAYMENT_MODE_KEY = "checkout_pending_payment_mode"
+
+export function setPendingPaymentMode(
+  mode: string,
+  extra?: Record<string, string>
+) {
+  const storage = getStorage()
+  if (!storage) return
+  storage.setItem(
+    PENDING_PAYMENT_MODE_KEY,
+    JSON.stringify({ mode, ...extra })
+  )
+}
+
+export function getPendingPaymentMode(): {
+  mode: string
+  [key: string]: string
+} | null {
+  const storage = getStorage()
+  if (!storage) return null
+  const raw = storage.getItem(PENDING_PAYMENT_MODE_KEY)
+  if (!raw) return null
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+export function removePendingPaymentMode() {
+  const storage = getStorage()
+  if (!storage) return
+  storage.removeItem(PENDING_PAYMENT_MODE_KEY)
+}

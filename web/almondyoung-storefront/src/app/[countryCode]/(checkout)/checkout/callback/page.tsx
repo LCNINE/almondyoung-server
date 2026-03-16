@@ -5,6 +5,8 @@ import { useParams, useSearchParams, useRouter } from "next/navigation"
 import {
   getCheckoutCartByIntent,
   removeCheckoutCartByIntent,
+  getPendingPaymentMode,
+  removePendingPaymentMode,
 } from "@/lib/utils/checkout-intent-map"
 import { processPaymentCallback } from "./actions"
 
@@ -18,8 +20,10 @@ export default function CallbackPage() {
   useEffect(() => {
     const paymentIntentId = searchParams.get("payment_intent_id")
     const status = searchParams.get("status")
-    const mode = searchParams.get("mode")
-    const planId = searchParams.get("planId")
+    // URL에 mode가 없으면 sessionStorage fallback (returnUrl에 쿼리가 있을 때 wallet이 URL을 깨뜨리는 문제 대응)
+    const pendingMode = getPendingPaymentMode()
+    const mode = searchParams.get("mode") ?? pendingMode?.mode ?? null
+    const planId = searchParams.get("planId") ?? pendingMode?.planId ?? null
 
     // 하위 호환: 기존 흐름의 cartId 쿼리가 있으면 우선 사용
     const cartIdFromQuery = searchParams.get("cartId")
@@ -31,6 +35,7 @@ export default function CallbackPage() {
       if (paymentIntentId) {
         removeCheckoutCartByIntent(paymentIntentId)
       }
+      removePendingPaymentMode()
       router.replace(
         mode === "membership"
           ? `/${countryCode}/mypage/membership/subscribe/fail?code=PAYMENT_FAILED&message=${encodeURIComponent("결제에 실패했습니다.")}`
@@ -58,6 +63,7 @@ export default function CallbackPage() {
       })
         .then(async (res) => {
           removeCheckoutCartByIntent(paymentIntentId)
+          removePendingPaymentMode()
           if (res.ok || res.status === 409) {
             router.replace(
               `/${countryCode}/mypage/membership/subscribe/success`
@@ -72,6 +78,7 @@ export default function CallbackPage() {
         })
         .catch(() => {
           removeCheckoutCartByIntent(paymentIntentId)
+          removePendingPaymentMode()
           router.replace(
             `/${countryCode}/mypage/membership/subscribe/fail?code=CALLBACK_ERROR&message=${encodeURIComponent("멤버십 결제 처리 중 오류가 발생했습니다.")}`
           )
@@ -82,6 +89,7 @@ export default function CallbackPage() {
     processPaymentCallback(countryCode, paymentIntentId, mode, planId, cartId).then(
       (result) => {
         removeCheckoutCartByIntent(paymentIntentId)
+        removePendingPaymentMode()
         router.replace(result.redirectUrl)
       }
     )
