@@ -154,7 +154,7 @@ const Pagination = React.forwardRef<HTMLDivElement, TablePaginationProps>(
         {...props}
       >
         <div>
-          <p className="text-sm">{ `${count} 중 ${from} - ${to}` }</p>
+          <p className="text-xs">{ `${count} 중 ${from} - ${to}` }</p>
         </div>
         <div className="flex items-center gap-1">
           <GoToPagePopover
