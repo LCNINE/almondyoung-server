@@ -20,7 +20,7 @@ function UserDetailGeneralContent({ userId }: { userId: string }) {
   return (
     <div>
       {rows.map(({ key, value }) => (
-        <div key={key} className="grid grid-cols-2 p-2">
+        <div key={key} className="grid grid-cols-2 p-3">
           <div className="text-sm font-medium text-gray-500">{key}</div>
           <div className="text-sm">{value ?? '-'}</div>
         </div>
@@ -38,4 +38,4 @@ export function UserDetailGeneral({ userId }: { userId: string }) {
       </Suspense>
     </Container>
   )
-}
+} 

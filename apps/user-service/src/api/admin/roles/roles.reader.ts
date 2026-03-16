@@ -25,7 +25,7 @@ export class RolesReader {
   async getUserRoleIds(userId: string): Promise<UserRolesResponseDto> {
     const user = await this.usersService.findUserById(userId);
     if (!user) throw new UserNotFoundException('사용자를 찾을 수 없습니다.');
-    const roleIds = await this.repo.findUserRoleIds(userId);
-    return { roleIds };
+    const roles = await this.repo.findUserRoles(userId);
+    return { roles };
   }
 }

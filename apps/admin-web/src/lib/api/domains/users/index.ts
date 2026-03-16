@@ -1,7 +1,13 @@
 import { USER_SERVICE_BASE_URL } from '@/const';
 import { User, UserRolesResponseDto } from '@/lib/types';
 import { ApiResponse } from '@/lib/types/dto/api';
-import { AdminUserDetailDto, AdminUsersQuery, AdminUsersResponse } from '@/lib/types/dto/user';
+import {
+  AdminUserDetailDto,
+  AdminUsersQuery,
+  AdminUsersResponse,
+  AdminUserRolesResponseDto,
+  ReplaceUserRolesDto,
+} from '@/lib/types/dto/user';
 import { AxiosResponse } from 'axios';
 import { client } from '../../client';
 
@@ -50,5 +56,18 @@ export const userApi = {
       `${USER_SERVICE_BASE_URL}/admin/users${qs ? `?${qs}` : ''}`
     );
     return response.data.data;
+  },
+
+  // 어드민 - 사용자의 현재 역할 ID 목록 조회
+  getUserRoles: async (userId: string): Promise<AdminUserRolesResponseDto> => {
+    const response: AxiosResponse<ApiResponse<AdminUserRolesResponseDto>> = await client.get(
+      `${USER_SERVICE_BASE_URL}/admin/users/${userId}/roles`
+    );
+    return response.data.data;
+  },
+
+  // 어드민 - 사용자 역할 전체 교체
+  replaceUserRoles: async (userId: string, dto: ReplaceUserRolesDto): Promise<void> => {
+    await client.put(`${USER_SERVICE_BASE_URL}/admin/users/${userId}/roles`, dto);
   },
 };
