@@ -1,6 +1,6 @@
 "use client"
 
-import Link from "next/link"
+import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { CustomButton } from "@/components/shared/custom-buttons"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { captureOrderPayment } from "@/lib/api/medusa/orders"
@@ -207,7 +207,7 @@ export default function OrderCardContent({
         >
           주문 취소 / 반품 신청
         </CustomButton>
-        <Link
+        <LocalizedClientLink
           href={`/mypage/order/track?orderId=${orderId}`}
           className="flex-1"
         >
@@ -220,7 +220,7 @@ export default function OrderCardContent({
           >
             배송 조회
           </CustomButton>
-        </Link>
+        </LocalizedClientLink>
       </div>
 
       {/* 데스크탑 버튼 (3개 세로) */}
@@ -237,7 +237,7 @@ export default function OrderCardContent({
             구매확정
           </CustomButton>
         )}
-        <Link href={`/mypage/order/track?orderId=${orderId}`}>
+        <LocalizedClientLink href={`/mypage/order/track?orderId=${orderId}`}>
           <CustomButton
             variant="outline"
             color="primary"
@@ -246,7 +246,7 @@ export default function OrderCardContent({
           >
             배송 조회
           </CustomButton>
-        </Link>
+        </LocalizedClientLink>
         <CustomButton
           variant="outline"
           color="secondary"
