@@ -4,8 +4,6 @@ import { sdk } from "@/lib/config/medusa"
 import { getAuthHeaders, getCacheOptions } from "@lib/data/cookies"
 import type { HttpTypes, StoreProduct } from "@medusajs/types"
 import { getRegion, retrieveRegion } from "./regions"
-import { SortOptions } from "@/domains/category/components/refinement-list/sort-products"
-import { sortProducts } from "@/lib/utils/sort-products"
 
 export const listProducts = async ({
   pageParam = 1,
@@ -200,53 +198,6 @@ export const listProducts = async ({
 
 //   return toResult(filteredProducts, adjustedCount)
 // }
-
-/**
- * Next.js 캐시에 100개 상품을 가져와 sortBy 파라미터 기준으로 정렬합니다.
- * 그 후 page와 limit 파라미터에 따라 페이지네이션된 상품을 반환합니다.
- */
-export const listProductsWithSort = async ({
-  page = 0,
-  queryParams,
-  sortBy = "created_at",
-  countryCode,
-}: {
-  page?: number
-  queryParams?: HttpTypes.FindParams & HttpTypes.StoreProductParams
-  sortBy?: SortOptions
-  countryCode: string
-}): Promise<{
-  response: { products: HttpTypes.StoreProduct[]; count: number }
-  nextPage: number | null
-  queryParams?: HttpTypes.FindParams & HttpTypes.StoreProductParams
-}> => {
-  const limit = queryParams?.limit || 12
-
-  const {
-    response: { products, count },
-  } = await listProducts({
-    pageParam: 0,
-    queryParams,
-    countryCode,
-  })
-
-  const sortedProducts = sortProducts(products, sortBy)
-
-  const pageParam = (page - 1) * limit
-
-  const nextPage = count > pageParam + limit ? pageParam + limit : null
-
-  const paginatedProducts = sortedProducts.slice(pageParam, pageParam + limit)
-
-  return {
-    response: {
-      products: paginatedProducts,
-      count,
-    },
-    nextPage,
-    queryParams,
-  }
-}
 
 // 상품 상세 조회
 export const getProductDetail = async (

@@ -1,5 +1,5 @@
 import { retrieveCustomer } from "@/lib/api/medusa/customer"
-import { listProductsWithSort } from "@/lib/api/medusa/products"
+import { listProducts } from "@/lib/api/medusa/products"
 import { getRegion } from "@/lib/api/medusa/regions"
 import { Pagination } from "../components/pagination"
 import ProductCard from "@/domains/products/components/product-card"
@@ -46,8 +46,13 @@ export default async function PaginatedProducts({
     queryParams["id"] = productsIds
   }
 
+  // sortBy를 서버 order 파라미터로 변환
   if (sortBy === "created_at") {
-    queryParams["order"] = "created_at"
+    queryParams["order"] = "-created_at" // 최신순 (내림차순)
+  } else if (sortBy === "price_asc") {
+    queryParams["order"] = "+variants.calculated_price.calculated_amount"
+  } else if (sortBy === "price_desc") {
+    queryParams["order"] = "-variants.calculated_price.calculated_amount"
   }
 
   const region = await getRegion(countryCode)
@@ -56,12 +61,11 @@ export default async function PaginatedProducts({
     return null
   }
 
-  let {
+  const {
     response: { products, count },
-  } = await listProductsWithSort({
-    page,
+  } = await listProducts({
+    pageParam: page,
     queryParams,
-    sortBy,
     countryCode,
   })
 
