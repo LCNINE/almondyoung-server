@@ -19,14 +19,14 @@ export default function ProductPrice({
   if (!price) {
     return null
   }
-  // TODO: 어드민페이지 가격숨김표시기능이 완성되고 모든 상품 적용이 완성되면 이부분은 지울것
-  if (!isMembership)
-    return (
-      <div className="flex flex-col gap-0.5 text-[#F2994A]">
-        <ProductMembershipBadge size="sm" label="멤버십할인가" />
-        <span className="text-[15px] font-bold">멤버십 회원 공개</span>
-      </div>
-    ) // 여기라인까지 지우면됌
+  // // TODO: 어드민페이지 가격숨김표시기능이 완성되고 모든 상품 적용이 완성되면 이부분은 지울것
+  // if (!isMembership)
+  //   return (
+  //     <div className="flex flex-col gap-0.5 text-[#F2994A]">
+  //       <ProductMembershipBadge size="sm" label="멤버십할인가" />
+  //       <span className="text-[15px] font-bold">멤버십 회원 공개</span>
+  //     </div>
+  //   ) // 여기라인까지 지우면됌
 
   if (!isMembership && isMembershipOnly) {
     return (
