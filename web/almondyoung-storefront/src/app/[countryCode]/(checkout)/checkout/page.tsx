@@ -1,7 +1,6 @@
 import { EmptyCartView } from "@/components/cart/empty-cart-view"
 import {
-  addCartShippingMethodDuringRender,
-  listCartShippingMethods,
+  ensureCorrectShippingMethod,
   retrieveCart,
 } from "@/lib/api/medusa/cart"
 import { listCartPaymentMethods } from "@/lib/api/medusa/payment"
@@ -32,7 +31,7 @@ export default async function CheckoutPage({
 
 async function CheckoutManager({ cartId }: { cartId?: string }) {
   const currentUser = await fetchMe()
-  const cart = (await retrieveCart(
+  let cart = (await retrieveCart(
     cartId,
     "*items, *items.product, *items.product.tags, *items.variant, *region, *customer, *shipping_methods, +item_subtotal, +shipping_total, +total, +payment_collection.id, +currency_code",
     "no-store"
@@ -50,23 +49,20 @@ async function CheckoutManager({ cartId }: { cartId?: string }) {
     )
   }
 
-  const [shippingMethods, paymentMethods, promotionsResponse] =
-    await Promise.all([
-      listCartShippingMethods(cart.id),
-      listCartPaymentMethods(cart.region?.id ?? ""),
-      getMyPromotions({ limit: 100 }).catch(() => ({
-        promotions: [],
-        count: 0,
-        offset: 0,
-        limit: 100,
-      })),
-    ])
+  // 장바구니 아이템 타입에 따라 올바른 배송 옵션 자동 설정
+  const { cart: updatedCart, shippingMethods } =
+    await ensureCorrectShippingMethod(cart)
+  cart = updatedCart as CartResponseDto["cart"]
 
-  // 배송 수단이 카트에 추가되지 않은 경우 자동으로 첫 번째 옵션 추가
-  // revalidateTag는 렌더 중 호출 불가이므로 DuringRender 전용 함수 사용
-  if (!cart.shipping_methods?.length && shippingMethods?.length) {
-    await addCartShippingMethodDuringRender(cart.id, shippingMethods[0].id)
-  }
+  const [paymentMethods, promotionsResponse] = await Promise.all([
+    listCartPaymentMethods(cart.region?.id ?? ""),
+    getMyPromotions({ limit: 100 }).catch(() => ({
+      promotions: [],
+      count: 0,
+      offset: 0,
+      limit: 100,
+    })),
+  ])
 
   const [pointBalance, taxInvoice] = await Promise.all([
     getPointBalance(),

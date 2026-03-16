@@ -1176,6 +1176,58 @@ export const listCartShippingMethods = async (
     })
 }
 
+/**
+ * 장바구니 아이템 타입에 따라 올바른 배송 옵션을 자동 설정합니다.
+ * - 물리 상품이 있으면 → Standard 배송
+ * - 디지털 상품만 있으면 → Digital Delivery
+ *
+ * @param cart - 장바구니 객체 (items 포함 필수)
+ * @returns 업데이트된 cart와 필터링된 배송 옵션
+ */
+export async function ensureCorrectShippingMethod(cart: HttpTypes.StoreCart): Promise<{
+  cart: HttpTypes.StoreCart
+  shippingMethods: HttpTypes.StoreCartShippingOption[] | null
+}> {
+  // 1. 모든 배송 옵션 조회
+  const allShippingMethods = await listCartShippingMethods(cart.id)
+
+  // 2. 장바구니 아이템 분석: 물리 상품 여부 확인
+  const hasPhysicalItem = cart.items?.some(
+    (item) => (item as { product_type?: string | null }).product_type !== "digital_sale"
+  )
+
+  // 3. 배송 옵션 필터링
+  // - 물리 상품이 있으면 → Standard (물리 배송 필요)
+  // - 디지털 상품만 있으면 → Digital Delivery
+  const shippingMethods = allShippingMethods?.filter((option) => {
+    const typeCode = (option.type as { code?: string } | undefined)?.code
+    if (hasPhysicalItem) {
+      return typeCode === "standard"
+    }
+    return typeCode === "digital_delivery"
+  }) ?? null
+
+  // 4. 배송 옵션 자동 설정/업데이트
+  // - shipping method가 없거나
+  // - 현재 설정된 옵션이 필터링된 옵션에 포함되지 않으면 업데이트
+  const currentShippingOptionId = cart.shipping_methods?.[0]?.shipping_option_id
+  const isCurrentOptionValid = shippingMethods?.some(
+    (option) => option.id === currentShippingOptionId
+  )
+
+  if (shippingMethods?.[0] && (!currentShippingOptionId || !isCurrentOptionValid)) {
+    const updatedCart = await addCartShippingMethodDuringRender(
+      cart.id,
+      shippingMethods[0].id
+    )
+    if (updatedCart) {
+      return { cart: updatedCart, shippingMethods }
+    }
+  }
+
+  return { cart, shippingMethods }
+}
+
 export async function setShippingMethod({
   cartId,
   shippingMethodId,
