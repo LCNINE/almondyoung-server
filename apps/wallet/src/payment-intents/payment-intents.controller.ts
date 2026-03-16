@@ -176,6 +176,32 @@ export class PaymentIntentsController {
       expiresAt: Date;
       metadata: Record<string, unknown>;
       createdAt: Date;
+      items?: {
+        id: string;
+        lineId: string;
+        name: string;
+        itemType: string | null;
+        unitPrice: number;
+        quantity: number;
+        baseAmount: number;
+        itemDiscountPerUnitTotal: number;
+        itemDiscountFlatTotal: number;
+        payableAmount: number;
+        discounts: {
+          id: string;
+          kind: string;
+          amount: number;
+          name: string | null;
+          discountRefId: string | null;
+        }[];
+      }[];
+      orderDiscounts?: {
+        id: string;
+        kind: string;
+        amount: number;
+        name: string | null;
+        discountRefId: string | null;
+      }[];
     },
     nextAction?: Record<string, unknown>,
   ): PaymentIntentResponseDto {
@@ -190,6 +216,40 @@ export class PaymentIntentsController {
       expiresAt: intent.expiresAt,
       metadata: intent.metadata,
       createdAt: intent.createdAt,
+      ...(intent.items && intent.items.length > 0
+        ? {
+            items: intent.items.map((item) => ({
+              id: item.id,
+              lineId: item.lineId,
+              name: item.name,
+              itemType: item.itemType,
+              unitPrice: item.unitPrice,
+              quantity: item.quantity,
+              baseAmount: item.baseAmount,
+              itemDiscountPerUnitTotal: item.itemDiscountPerUnitTotal,
+              itemDiscountFlatTotal: item.itemDiscountFlatTotal,
+              payableAmount: item.payableAmount,
+              discounts: item.discounts.map((d) => ({
+                id: d.id,
+                kind: d.kind,
+                amount: d.amount,
+                name: d.name,
+                discountRefId: d.discountRefId,
+              })),
+            })),
+          }
+        : {}),
+      ...(intent.orderDiscounts && intent.orderDiscounts.length > 0
+        ? {
+            orderDiscounts: intent.orderDiscounts.map((d) => ({
+              id: d.id,
+              kind: d.kind,
+              amount: d.amount,
+              name: d.name,
+              discountRefId: d.discountRefId,
+            })),
+          }
+        : {}),
       ...(nextAction !== undefined ? { nextAction } : {}),
     };
   }
