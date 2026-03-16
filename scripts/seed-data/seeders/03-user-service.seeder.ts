@@ -76,6 +76,10 @@ export async function seedUserService(
       { key: 'user:delete', description: '사용자 - 사용자 정보 삭제', microservice_name: 'user-service' },
       { key: 'admin:access', description: '관리자 페이지 접근 권한 (베이스라인)', microservice_name: 'user-service' },
       { key: 'admin:users:*', description: '관리자 - 사용자 전체 권한', microservice_name: 'user-service' },
+      { key: 'admin:users:read', description: '관리자 - 회원 조회', microservice_name: 'user-service' },
+      { key: 'admin:users:modify', description: '관리자 - 회원 수정', microservice_name: 'user-service' },
+      { key: 'admin:users:archive', description: '관리자 - 회원 보관', microservice_name: 'user-service' },
+      { key: 'admin:users:purge', description: '관리자 - 회원 완전삭제', microservice_name: 'user-service' },
       { key: 'admin:settings:*', description: '관리자 - 설정 전체 권한', microservice_name: 'user-service' },
       { key: 'admin:logs:read', description: '관리자 - 로그 조회', microservice_name: 'user-service' },
     ];
