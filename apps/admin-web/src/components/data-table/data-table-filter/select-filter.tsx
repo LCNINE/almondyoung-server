@@ -57,7 +57,11 @@ export function SelectFilter({ filter, open, onOpenChange, prefix }: SelectFilte
       ) : (
         <PopoverAnchor />
       )}
-      <PopoverContent className="w-48 p-0" align="start">
+      <PopoverContent
+        className="w-48 p-0"
+        align="start"
+        onFocusOutside={(e) => e.preventDefault()}
+      >
         <Command>
           {filter.searchable && <CommandInput placeholder={`${filter.label} 검색...`} />}
           <CommandList>

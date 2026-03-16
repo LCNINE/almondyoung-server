@@ -110,7 +110,10 @@ export function DataTableFilter({ filters, prefix }: DataTableFilterProps) {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
             {filters.map((filter) => (
-              <DropdownMenuItem key={filter.key} onSelect={() => setOpenFilter(filter.key)}>
+              <DropdownMenuItem
+                key={filter.key}
+                onSelect={() => setTimeout(() => setOpenFilter(filter.key), 0)}
+              >
                 {filter.label}
               </DropdownMenuItem>
             ))}
