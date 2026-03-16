@@ -13,6 +13,8 @@ import ProtectedRoute from "@components/protected-route"
 import { fetchMe } from "@lib/api/users/me"
 import CheckoutTemplate from "domains/checkout/templates/checkout-template"
 import { notFound } from "next/navigation"
+import { retrieveCustomer } from "@/lib/api/medusa/customer"
+import { getMembershipGroupIdFromEnv } from "@/lib/utils/membership-group"
 
 export default async function CheckoutPage({
   searchParams,
@@ -79,9 +81,16 @@ async function CheckoutManager({ cartId }: { cartId?: string }) {
     description: shippingMethod?.type?.description ?? "",
   }
 
+  const customer = await retrieveCustomer()
+
   return (
     <CheckoutTemplate
       user={currentUser}
+      isMembership={
+        !!customer?.groups?.some(
+          (group) => group.id === getMembershipGroupIdFromEnv()
+        )
+      }
       cart={cart}
       checkoutCartId={cart.id}
       shipping={shipping}

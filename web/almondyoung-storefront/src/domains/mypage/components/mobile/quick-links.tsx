@@ -37,21 +37,21 @@ export function QuickLinks() {
         icon={<Package size={27} className="text-amber-500" />}
         href="/kr/mypage/order/list"
       />
-      <QuickMenuItem
+      {/* <QuickMenuItem
         label="찜한상품"
         icon={<Heart size={27} className="text-amber-500" />}
         href="/kr/mypage/wish"
-      />
-      <QuickMenuItem
+      /> */}
+      {/* <QuickMenuItem
         label="자주산상품"
         icon={<ShoppingBag size={27} className="text-amber-500" />}
         href="/kr/mypage/rebuy"
-      />
-      <QuickMenuItem
+      /> */}
+      {/* <QuickMenuItem
         label="최근 본 상품"
         icon={<Eye size={27} className="text-amber-500" />}
         href="/kr/mypage/recent"
-      />
+      /> */}
     </nav>
   )
 }

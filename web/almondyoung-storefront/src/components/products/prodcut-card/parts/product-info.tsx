@@ -1,6 +1,5 @@
 "use client"
 
-import { useMembershipPricing } from "@/hooks/use-membership-pricing"
 import { ProductCardProps, StockStatus } from "@/lib/types/ui/product"
 import { ProductPrice } from "./product-price"
 import { ProductRating } from "./product-rating"
@@ -21,11 +20,9 @@ export function ProductInfo({
   reviewCount,
   membershipSavings,
   isMembershipOnly,
+  isMembership,
   showMembershipHint: _showMembershipHint,
 }: Omit<ProductCardProps, "imageSrc" | "rank">) {
-  const { isMembershipPricing } = useMembershipPricing()
-  const isMember = isMembershipPricing
-
   // 멤버십 회원: 멤버십 가격(price) 표시 + 뱃지
   // 비회원/일반회원: 기본가(originalPrice) 표시 + 멤버십 절약 힌트
   const hasMembershipPrice = membershipSavings != null && membershipSavings > 0
@@ -34,25 +31,25 @@ export function ProductInfo({
       ? originalPrice - membershipSavings
       : undefined
   const memberDisplayPrice =
-    isMember && hasMembershipPrice
+    isMembership && hasMembershipPrice
       ? typeof price === "number" && price > 0 && price < originalPrice
         ? price
         : (membershipPrice ?? price)
       : price
 
   const displayPrice =
-    isMember || !hasMembershipPrice ? memberDisplayPrice : originalPrice
+    isMembership || !hasMembershipPrice ? memberDisplayPrice : originalPrice
   const displayOriginalPrice =
-    isMember && hasMembershipPrice ? originalPrice : undefined
+    isMembership && hasMembershipPrice ? originalPrice : undefined
   const displayDiscount =
-    isMember &&
+    isMembership &&
     hasMembershipPrice &&
     displayPrice > 0 &&
     originalPrice > displayPrice
       ? Math.round(((originalPrice - displayPrice) / originalPrice) * 100)
       : discount
-  const showMembershipBadge = isMember && hasMembershipPrice
-  const showMembershipHint = !isMember && hasMembershipPrice
+  const showMembershipBadge = isMembership && hasMembershipPrice
+  const showMembershipHint = !isMembership && hasMembershipPrice
 
   // 재고 상태
   const stockStatus: StockStatus =
@@ -95,8 +92,8 @@ export function ProductInfo({
           showMembershipHint={showMembershipHint}
           showMembershipBadge={showMembershipBadge}
           membershipPrice={membershipPrice}
-          isMember={isMember}
           isMembershipOnly={isMembershipOnly}
+          isMembership={isMembership}
         />
       </div>
 

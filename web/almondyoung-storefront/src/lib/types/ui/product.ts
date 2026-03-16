@@ -88,6 +88,7 @@ export interface ProductCardProps {
     defaultVariantId?: string // 기본 variant ID
   }
   isWelcomeMembership?: boolean
+  isMembership?: boolean
 }
 
 /**

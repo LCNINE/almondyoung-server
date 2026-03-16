@@ -3,7 +3,12 @@ import { searchProducts } from "@lib/api/pim/search"
 import { listProducts } from "@lib/api/medusa/products"
 import { getRegion } from "@lib/api/medusa/regions"
 import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
-import type { ProductCardProps, SearchProductResult } from "@lib/types/ui/product"
+import type {
+  ProductCardProps,
+  SearchProductResult,
+} from "@lib/types/ui/product"
+import { retrieveCustomer } from "@/lib/api/medusa/customer"
+import { getMembershipGroupIdFromEnv } from "@/lib/utils/membership-group"
 
 interface SearchContainerProps {
   searchParams: Promise<{
@@ -80,11 +85,13 @@ export async function SearchContainer({
 
           // 4. 검색 순서대로 정렬 (검색 관련도 유지)
           const orderMap = new Map(masterIds.map((id, idx) => [id, idx]))
-          const sortedProducts = [...medusaResult.response.products].sort((a, b) => {
-            const orderA = orderMap.get(a.handle ?? "") ?? Infinity
-            const orderB = orderMap.get(b.handle ?? "") ?? Infinity
-            return orderA - orderB
-          })
+          const sortedProducts = [...medusaResult.response.products].sort(
+            (a, b) => {
+              const orderA = orderMap.get(a.handle ?? "") ?? Infinity
+              const orderB = orderMap.get(b.handle ?? "") ?? Infinity
+              return orderA - orderB
+            }
+          )
 
           // 5. medusa 상품을 ProductCardProps로 변환
           items = mapStoreProductsToCardProps(sortedProducts)
@@ -105,12 +112,18 @@ export async function SearchContainer({
     }
   }
 
+  const customer = await retrieveCustomer().catch(() => null)
+  const isMembership = !!customer?.groups?.some(
+    (group) => group.id === getMembershipGroupIdFromEnv()
+  )
+
   return (
     <SearchPageClient
       keyword={keyword}
       searchResult={searchResult}
       countryCode={countryCode}
       regionId={region?.id}
+      isMembership={isMembership}
     />
   )
 }
