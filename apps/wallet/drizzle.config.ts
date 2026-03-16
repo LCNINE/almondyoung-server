@@ -7,6 +7,7 @@ config({ path: join(__dirname, '.env'), override: true });
 export default defineConfig({
   schema: [
     'apps/wallet/src/schema.ts',
+    'libs/events/src/outbox/outbox.schema.ts',
     'libs/events/src/tracking/tracking.schema.ts',
   ],
   schemaFilter: ['public', 'event'],
