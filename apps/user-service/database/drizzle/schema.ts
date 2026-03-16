@@ -99,13 +99,6 @@ export const users = pgTable('users', {
   ...timestampColumns,
 });
 
-export const scopes = pgTable('scopes', {
-  scopeId: uuid('scope_id').primaryKey().defaultRandom(),
-  scopeName: varchar('scope_name', { length: 100 }).notNull().unique(),
-  description: text('description').notNull(),
-  ...timestampColumns,
-});
-
 // 역할 정의 테이블
 export const roles = pgTable('roles', {
   roleId: uuid('role_id').primaryKey().defaultRandom(),
@@ -133,18 +126,6 @@ export const userRoleAssignments = pgTable(
     userRoleUniqueIdx: unique().on(table.userId, table.roleId),
   }),
 );
-
-// 역할-스코프 할당 테이블
-export const roleScopes = pgTable('role_scopes', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  roleId: uuid('role_id')
-    .references(() => roles.roleId, { onDelete: 'cascade' })
-    .notNull(),
-  scopeId: uuid('scope_id')
-    .references(() => scopes.scopeId, { onDelete: 'cascade' })
-    .notNull(),
-  ...timestampColumns,
-});
 
 export const tokens = pgTable(
   'tokens',
@@ -465,11 +446,6 @@ export const tokensRelations = relations(tokens, ({ one }) => ({
 
 export const rolesRelations = relations(roles, ({ many }) => ({
   userRoles: many(userRoleAssignments),
-  roleScopes: many(roleScopes),
-}));
-
-export const scopesRelations = relations(scopes, ({ many }) => ({
-  roleScopes: many(roleScopes),
 }));
 
 export const userRoleAssignmentsRelations = relations(
@@ -485,17 +461,6 @@ export const userRoleAssignmentsRelations = relations(
     }),
   }),
 );
-
-export const roleScopesRelations = relations(roleScopes, ({ one }) => ({
-  role: one(roles, {
-    fields: [roleScopes.roleId],
-    references: [roles.roleId],
-  }),
-  scope: one(scopes, {
-    fields: [roleScopes.scopeId],
-    references: [scopes.scopeId],
-  }),
-}));
 
 export const profilesRelations = relations(profiles, ({ one }) => ({
   user: one(users, {
@@ -580,9 +545,7 @@ export const blacklistsRelations = relations(blacklists, ({ one }) => ({
 export const userServiceTables = {
   users,
   roles,
-  scopes,
   userRoleAssignments,
-  roleScopes,
   userIdentities,
   businessLicenses,
   shops,
@@ -605,9 +568,7 @@ export const userServiceRelations = {
   usersRelations,
   tokensRelations,
   rolesRelations,
-  scopesRelations,
   userRoleAssignmentsRelations,
-  roleScopesRelations,
   profilesRelations,
   userIdentitiesRelations,
   userConsentsRelations,
