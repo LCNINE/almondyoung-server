@@ -1,16 +1,11 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { InferInsertModel, sql } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import * as bcrypt from 'bcrypt';
-import * as userSchema from '../../../apps/user-service/database/drizzle/schema';
 import { Logger } from '../shared/logger';
 import { FIXED_UUIDS } from '../constants/uuids';
 
 const logger = new Logger('User Service Seeder');
-
-type RoleInsert = InferInsertModel<typeof userSchema.roles>;
-type ScopeInsert = InferInsertModel<typeof userSchema.scopes>;
-type UserInsert = InferInsertModel<typeof userSchema.users>;
 
 export async function seedUserService(
   databaseUrl: string,
@@ -22,10 +17,15 @@ export async function seedUserService(
   const db = drizzle(client);
 
   try {
-    // Step 1: Insert Roles
-    logger.step(1, 5, 'Inserting roles');
+    // Step 1: Insert public.roles (admin, membership, user)
+    logger.step(1, 7, 'Inserting public roles');
 
-    const roles: RoleInsert[] = [
+    const roles = [
+      {
+        roleId: FIXED_UUIDS.ROLE_MASTER,
+        name: 'master',
+        description: '마스터',
+      },
       {
         roleId: FIXED_UUIDS.ROLE_ADMIN,
         name: 'admin',
@@ -35,6 +35,11 @@ export async function seedUserService(
         roleId: FIXED_UUIDS.ROLE_MEMBERSHIP,
         name: 'membership',
         description: '멤버십 회원',
+      },
+      {
+        roleId: FIXED_UUIDS.ROLE_USER,
+        name: 'user',
+        description: '일반 회원',
       },
     ];
 
@@ -46,122 +51,92 @@ export async function seedUserService(
       `);
     }
 
-    logger.success(`Inserted ${roles.length} roles`);
+    logger.success(`Inserted ${roles.length} public roles`);
 
-    // Step 2: Insert Scopes (12 scopes from USER_SCOPES)
-    logger.step(2, 5, 'Inserting scopes');
+    // Step 2: Upsert auth.roles (하위 호환 유지)
+    logger.step(2, 7, 'Upserting auth.roles');
 
-    const scopes: ScopeInsert[] = [
-      {
-        scopeId: FIXED_UUIDS.SCOPE_MASTER,
-        scopeName: 'master',
-        description: '마스터 권한',
-      },
-      {
-        scopeId: FIXED_UUIDS.SCOPE_USER_READ,
-        scopeName: 'user:read',
-        description: '사용자 - 사용자 정보 조회',
-      },
-      {
-        scopeId: FIXED_UUIDS.SCOPE_USER_MODIFY,
-        scopeName: 'user:modify',
-        description: '사용자 - 사용자 정보 생성, 수정',
-      },
-      {
-        scopeId: FIXED_UUIDS.SCOPE_USER_DELETE,
-        scopeName: 'user:delete',
-        description: '사용자 - 사용자 정보 삭제',
-      },
-      {
-        scopeId: FIXED_UUIDS.SCOPE_ADMIN_ACCESS,
-        scopeName: 'admin:access',
-        description: '관리자 페이지 접근 권한 (베이스라인)',
-      },
-      {
-        scopeId: FIXED_UUIDS.SCOPE_ADMIN_USERS_READ,
-        scopeName: 'admin:users:read',
-        description: '관리자 - 사용자 조회만',
-      },
-      {
-        scopeId: FIXED_UUIDS.SCOPE_ADMIN_USERS_MODIFY,
-        scopeName: 'admin:users:modify',
-        description: '관리자 - 사용자 생성, 수정',
-      },
-      {
-        scopeId: FIXED_UUIDS.SCOPE_ADMIN_USERS_ARCHIVE,
-        scopeName: 'admin:users:archive',
-        description: '관리자 - 사용자 soft delete (비활성화, 휴면 처리 등)',
-      },
-      {
-        scopeId: FIXED_UUIDS.SCOPE_ADMIN_USERS_PURGE,
-        scopeName: 'admin:users:purge',
-        description: '관리자 - 사용자 hard delete (완전 삭제, 복구 불가)',
-      },
-      {
-        scopeId: FIXED_UUIDS.SCOPE_ADMIN_SETTINGS_READ,
-        scopeName: 'admin:settings:read',
-        description: '관리자 - 설정 조회',
-      },
-      {
-        scopeId: FIXED_UUIDS.SCOPE_ADMIN_SETTINGS_MODIFY,
-        scopeName: 'admin:settings:modify',
-        description: '관리자 - 설정 수정',
-      },
-      {
-        scopeId: FIXED_UUIDS.SCOPE_ADMIN_LOGS_READ,
-        scopeName: 'admin:logs:read',
-        description: '관리자 - 로그 조회',
-      },
+    for (const role of roles) {
+      await db.execute(sql`
+        INSERT INTO auth.roles (name, description)
+        VALUES (${role.name}, ${role.description})
+        ON CONFLICT (name) DO NOTHING
+      `);
+    }
+
+    logger.success('Upserted auth.roles');
+
+    // Step 3: Upsert auth.scopes
+    logger.step(3, 7, 'Upserting auth.scopes');
+
+    const scopes = [
+      { key: 'master', description: '마스터 권한', microservice_name: 'user-service' },
+      { key: 'user:read', description: '사용자 - 사용자 정보 조회', microservice_name: 'user-service' },
+      { key: 'user:modify', description: '사용자 - 사용자 정보 생성, 수정', microservice_name: 'user-service' },
+      { key: 'user:delete', description: '사용자 - 사용자 정보 삭제', microservice_name: 'user-service' },
+      { key: 'admin:access', description: '관리자 페이지 접근 권한 (베이스라인)', microservice_name: 'user-service' },
+      { key: 'admin:users:*', description: '관리자 - 사용자 전체 권한', microservice_name: 'user-service' },
+      { key: 'admin:settings:*', description: '관리자 - 설정 전체 권한', microservice_name: 'user-service' },
+      { key: 'admin:logs:read', description: '관리자 - 로그 조회', microservice_name: 'user-service' },
     ];
 
     for (const scope of scopes) {
       await db.execute(sql`
-        INSERT INTO scopes (scope_id, scope_name, description)
-        VALUES (${scope.scopeId}, ${scope.scopeName}, ${scope.description})
-        ON CONFLICT (scope_id) DO NOTHING
+        INSERT INTO auth.scopes (key, description, microservice_name)
+        VALUES (${scope.key}, ${scope.description}, ${scope.microservice_name})
+        ON CONFLICT (key) DO NOTHING
       `);
     }
 
-    logger.success(`Inserted ${scopes.length} scopes`);
+    logger.success(`Upserted ${scopes.length} auth scopes`);
 
-    // Step 3: Insert Role-Scope Mappings
-    logger.step(3, 5, 'Inserting role-scope mappings');
+    // Step 4: Upsert auth.role_scope_mapping (role_name 직접 사용)
+    logger.step(4, 7, 'Upserting auth.role_scope_mapping');
 
-    // Admin role gets all scopes
-    const adminScopeIds = scopes.map((s) => s.scopeId);
-
-    for (const scopeId of adminScopeIds) {
+    const masterScopeKeys = ['master'];
+    for (const scopeKey of masterScopeKeys) {
       await db.execute(sql`
-        INSERT INTO role_scopes (role_id, scope_id)
-        VALUES (${FIXED_UUIDS.ROLE_ADMIN}, ${scopeId})
-        ON CONFLICT DO NOTHING
+        INSERT INTO auth.role_scope_mapping (role_name, scope_id)
+        SELECT 'master', id FROM auth.scopes WHERE key = ${scopeKey}
+        ON CONFLICT (role_name, scope_id) DO NOTHING
       `);
     }
 
-    // Membership role gets only user:read and user:modify
-    const membershipScopeIds = [
-      FIXED_UUIDS.SCOPE_USER_READ,
-      FIXED_UUIDS.SCOPE_USER_MODIFY,
-    ];
-
-    for (const scopeId of membershipScopeIds) {
+    const adminScopeKeys = scopes.map(s => s.key).filter(k => k !== 'master');
+    for (const scopeKey of adminScopeKeys) {
       await db.execute(sql`
-        INSERT INTO role_scopes (role_id, scope_id)
-        VALUES (${FIXED_UUIDS.ROLE_MEMBERSHIP}, ${scopeId})
-        ON CONFLICT DO NOTHING
+        INSERT INTO auth.role_scope_mapping (role_name, scope_id)
+        SELECT 'admin', id FROM auth.scopes WHERE key = ${scopeKey}
+        ON CONFLICT (role_name, scope_id) DO NOTHING
       `);
     }
 
-    logger.success(
-      `Inserted role-scope mappings (admin: ${adminScopeIds.length}, membership: ${membershipScopeIds.length})`,
-    );
+    const membershipScopeKeys = ['user:read', 'user:modify'];
+    for (const scopeKey of membershipScopeKeys) {
+      await db.execute(sql`
+        INSERT INTO auth.role_scope_mapping (role_name, scope_id)
+        SELECT 'membership', id FROM auth.scopes WHERE key = ${scopeKey}
+        ON CONFLICT (role_name, scope_id) DO NOTHING
+      `);
+    }
 
-    // Step 4: Create Admin User
-    logger.step(4, 5, 'Creating admin user');
+    const userScopeKeys = ['user:read', 'user:modify'];
+    for (const scopeKey of userScopeKeys) {
+      await db.execute(sql`
+        INSERT INTO auth.role_scope_mapping (role_name, scope_id)
+        SELECT 'user', id FROM auth.scopes WHERE key = ${scopeKey}
+        ON CONFLICT (role_name, scope_id) DO NOTHING
+      `);
+    }
+
+    logger.success('Upserted auth.role_scope_mapping');
+
+    // Step 5: Create Admin User
+    logger.step(5, 7, 'Creating admin user');
 
     const hashedPassword = await bcrypt.hash(adminPassword, 10);
 
-    const adminUser: UserInsert = {
+    const adminUser = {
       id: FIXED_UUIDS.USER_ADMIN,
       loginId: 'admin',
       username: 'Admin User',
@@ -189,8 +164,14 @@ export async function seedUserService(
 
     logger.success('Inserted admin user');
 
-    // Step 5: Assign Admin Role to Admin User
-    logger.step(5, 5, 'Assigning admin role to admin user');
+    // Step 6: Assign master and admin roles to admin user
+    logger.step(6, 7, 'Assigning master and admin roles to admin user');
+
+    await db.execute(sql`
+      INSERT INTO user_roles (user_id, role_id)
+      VALUES (${FIXED_UUIDS.USER_ADMIN}, ${FIXED_UUIDS.ROLE_MASTER})
+      ON CONFLICT DO NOTHING
+    `);
 
     await db.execute(sql`
       INSERT INTO user_roles (user_id, role_id)
@@ -199,6 +180,23 @@ export async function seedUserService(
     `);
 
     logger.success('Assigned admin role to admin user');
+
+    // Step 7: Assign 'user' role to all existing users without any role
+    logger.step(7, 7, 'Assigning user role to existing users without roles');
+
+    await db.execute(sql`
+      INSERT INTO user_roles (user_id, role_id)
+      SELECT u.id, r.role_id
+      FROM users u
+        CROSS JOIN roles r
+      WHERE r.name = 'user'
+        AND NOT EXISTS (
+          SELECT 1 FROM user_roles ur WHERE ur.user_id = u.id
+        )
+      ON CONFLICT DO NOTHING
+    `);
+
+    logger.success('Assigned user role to existing users without roles');
     logger.success('User Service seeding completed successfully');
   } catch (error) {
     logger.error('User Service seeding failed', error);

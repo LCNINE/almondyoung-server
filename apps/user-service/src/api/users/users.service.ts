@@ -12,8 +12,12 @@ import { UserEvents } from '@packages/event-contracts/streams';
 import {
   type UserServiceSchema
 } from 'apps/user-service/database/drizzle/schema';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import * as schema from '../../../database/drizzle/schema';
+import {
+  roleScopeMapping as authRoleScopeMapping,
+  scopes as authScopes,
+} from '@app/authorization';
 import { AddressDto } from '../../commons/dto/address.dto';
 import { DbTransaction } from '../../commons/types';
 import { isValidUUID } from '../../commons/utils/is-valid-uuid';
@@ -92,8 +96,8 @@ export class UsersService {
             name: schema.roles.name,
           },
           scopes: {
-            scope_name: schema.scopes.scopeName,
-            description: schema.scopes.description,
+            scope_name: authScopes.key,
+            description: sql<string>`COALESCE(${authScopes.description}, '')`,
           },
         })
         .from(schema.userRoleAssignments)
@@ -103,17 +107,17 @@ export class UsersService {
             isNull(schema.userRoleAssignments.expiresAt),
           ),
         )
-        .leftJoin(
+        .innerJoin(
           schema.roles,
           eq(schema.userRoleAssignments.roleId, schema.roles.roleId),
         )
-        .leftJoin(
-          schema.roleScopes,
-          eq(schema.roles.roleId, schema.roleScopes.roleId),
+        .innerJoin(
+          authRoleScopeMapping,
+          eq(authRoleScopeMapping.roleName, schema.roles.name),
         )
-        .leftJoin(
-          schema.scopes,
-          eq(schema.roleScopes.scopeId, schema.scopes.scopeId),
+        .innerJoin(
+          authScopes,
+          eq(authRoleScopeMapping.scopeId, authScopes.id),
         );
     } catch (error) {
       throw new InternalServerErrorException(
