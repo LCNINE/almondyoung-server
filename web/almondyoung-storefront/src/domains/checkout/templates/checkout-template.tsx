@@ -14,6 +14,7 @@ import type { PointBalanceDto } from "@/lib/types/dto/wallet"
 import type { CartTotals, ShippingInfo } from "@/lib/types/ui/cart"
 import type { Promotion } from "@/lib/types/ui/promotion"
 import { TaxInvoiceType } from "@/lib/types/ui/wallet"
+import { buildPaymentItems } from "@/lib/utils/build-payment-items"
 import { setCheckoutCartByIntent } from "@/lib/utils/checkout-intent-map"
 import {
   calculateMembershipDiscount,
@@ -152,9 +153,14 @@ export default function CheckoutTemplate({
           ? `아몬드영 - ${firstTitle}`
           : `아몬드영 - ${firstTitle} 외 ${items.length - 1}개`
 
+      const paymentItems = buildPaymentItems(
+        cart.items ?? [],
+        cart.shipping_methods
+      )
+
       const result = await initiatePaymentSession(cart, {
         provider_id: "pp_almond-payment_almond-payment",
-        data: { returnUrl, orderName },
+        data: { returnUrl, orderName, items: paymentItems },
       })
 
       const intentId = (
