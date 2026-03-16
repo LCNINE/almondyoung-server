@@ -93,6 +93,14 @@ export default function MobileCheckoutBar({ cart }: MobileCheckoutBarProps) {
                   </span>
                 </div>
               )}
+              <div className="mt-1 flex justify-between">
+                <span className="text-gray-600">배송비</span>
+                <span>
+                  {cart.shipping_total != null
+                    ? `${formatPrice(cart.shipping_total)}원`
+                    : "-"}
+                </span>
+              </div>
             </div>
           </motion.div>
         )}
@@ -135,14 +143,22 @@ export default function MobileCheckoutBar({ cart }: MobileCheckoutBarProps) {
               )}
 
               {/* 오른쪽: 가격 */}
-              <div className="flex items-baseline gap-2">
-                {membershipDiscount > 0 && (
-                  <span className="text-sm text-gray-400 line-through">
-                    {formatPrice(originalTotal)}원
+              <div className="flex flex-col items-end">
+                <div className="flex items-baseline gap-2">
+                  {membershipDiscount > 0 && (
+                    <span className="text-sm text-gray-400 line-through">
+                      {formatPrice(originalTotal)}원
+                    </span>
+                  )}
+                  <span className="text-xl font-bold">
+                    {formatPrice(cart.total)}원
                   </span>
-                )}
-                <span className="text-xl font-bold">
-                  {formatPrice(cart.total)}원
+                </div>
+                <span className="text-xs text-gray-500">
+                  배송비{" "}
+                  {cart.shipping_total != null
+                    ? `${formatPrice(cart.shipping_total)}원`
+                    : "-"}
                 </span>
               </div>
             </div>
