@@ -6,11 +6,9 @@ import { cn } from "@/lib/utils"
 export function Pagination({
   page,
   totalPages,
-  "data-testid": dataTestid,
 }: {
   page: number
   totalPages: number
-  "data-testid"?: string
 }) {
   const router = useRouter()
   const pathname = usePathname()
@@ -52,7 +50,7 @@ export function Pagination({
   const renderEllipsis = (key: string) => (
     <span
       key={key}
-      className="flex h-9 w-9 items-center justify-center text-sm text-muted-foreground"
+      className="text-muted-foreground flex h-9 w-9 items-center justify-center text-sm"
     >
       ...
     </span>
