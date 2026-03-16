@@ -8,6 +8,15 @@ loadEnv(process.env.NODE_ENV || 'development', medusaDir);
 module.exports = defineConfig({
   projectConfig: {
     databaseUrl: process.env.DATABASE_URL,
+    // Neon serverless DB용 connection pool 최적화
+    databaseDriverOptions: {
+      pool: {
+        min: 2,
+        max: 10,
+        idleTimeoutMillis: 30000,
+        acquireTimeoutMillis: 10000, // 연결 획득 타임아웃
+      },
+    },
     redisUrl: process.env.REDIS_URL,
     http: {
       storeCors: process.env.STORE_CORS || '',
@@ -52,7 +61,7 @@ module.exports = defineConfig({
             id: 'emailpass',
             options: {
               hashConfig: {
-                logN: 14,
+                logN: 15,
                 r: 8,
                 p: 1,
               },
