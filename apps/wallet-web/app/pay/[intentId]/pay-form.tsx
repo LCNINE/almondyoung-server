@@ -109,6 +109,9 @@ export function PayForm({ intent, methods, pointsBalance }: Props) {
           amount: { currency: 'KRW', value: na.amount as number },
           successUrl: `${window.location.origin}/pay/${intent.id}/toss-complete`,
           failUrl: `${window.location.origin}/pay/${intent.id}?toss_fail=1`,
+          ...(na.customerName ? { customerName: na.customerName as string } : {}),
+          ...(na.customerEmail ? { customerEmail: na.customerEmail as string } : {}),
+          ...(na.customerMobilePhone ? { customerMobilePhone: na.customerMobilePhone as string } : {}),
         });
         return; // requestPayment redirects
       }
@@ -176,6 +179,11 @@ export function PayForm({ intent, methods, pointsBalance }: Props) {
                     #{intent.id.slice(-8).toUpperCase()}
                   </span>
                 </div>
+                {intent.metadata?.orderName && (
+                  <p className="text-sm font-medium">
+                    {intent.metadata.orderName as string}
+                  </p>
+                )}
                 <Separator />
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">결제 금액</p>
