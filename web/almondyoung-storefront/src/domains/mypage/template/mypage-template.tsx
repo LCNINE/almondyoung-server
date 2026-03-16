@@ -32,7 +32,7 @@ import {
 import { retrieveCart } from "@/lib/api/medusa/cart"
 import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import type { CustomerGroupRef } from "@/lib/utils/membership-group"
-import { resolveMembershipContext } from "@/lib/utils/resolve-membership-context"
+import { isMembershipGroup } from "@/lib/utils/membership-group"
 
 export async function MyPageTemplate() {
   const [currentUser, { isAdmin }, pointBalance] = await Promise.all([
@@ -54,11 +54,9 @@ export async function MyPageTemplate() {
   const cartWithCustomer = cart as
     | (typeof cart & { customer?: { groups?: CustomerGroupRef[] } })
     | null
-  const { isMembershipPricing } = await resolveMembershipContext({
-    isLoggedIn: !!currentUser,
-    customerGroupsFromCart: cartWithCustomer?.customer?.groups,
-    customerGroupsFromCustomer: customer?.groups,
-  })
+  const isMembershipPricing =
+    isMembershipGroup(cartWithCustomer?.customer?.groups) ||
+    isMembershipGroup(customer?.groups)
 
   return (
     <>
