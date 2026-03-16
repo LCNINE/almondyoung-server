@@ -232,6 +232,7 @@ export const paymentIntentItemDiscounts = pgTable(
     discountRefId: varchar('discount_ref_id', { length: 128 }),
     kind: paymentIntentItemDiscountKindEnum('kind').notNull(),
     amount: integer('amount').notNull(),
+    name: varchar('name', { length: 255 }),
     metadata: jsonb('metadata')
       .$type<Record<string, unknown>>()
       .notNull()
@@ -256,6 +257,7 @@ export const paymentIntentOrderDiscounts = pgTable(
     discountRefId: varchar('discount_ref_id', { length: 128 }),
     kind: paymentIntentOrderDiscountKindEnum('kind').notNull().default('ORDER'),
     amount: integer('amount').notNull(),
+    name: varchar('name', { length: 255 }),
     metadata: jsonb('metadata')
       .$type<Record<string, unknown>>()
       .notNull()
