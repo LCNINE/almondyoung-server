@@ -226,10 +226,7 @@ export const listProductsWithSort = async ({
     response: { products, count },
   } = await listProducts({
     pageParam: 0,
-    queryParams: {
-      ...queryParams,
-      limit: 100,
-    },
+    queryParams,
     countryCode,
   })
 
