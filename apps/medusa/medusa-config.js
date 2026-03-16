@@ -1,9 +1,4 @@
-const {
-  loadEnv,
-  defineConfig,
-  Modules,
-  ContainerRegistrationKeys,
-} = require('@medusajs/framework/utils');
+const { loadEnv, defineConfig, Modules, ContainerRegistrationKeys } = require('@medusajs/framework/utils');
 const path = require('path');
 
 // apps/medusa/ 폴더
@@ -27,19 +22,19 @@ module.exports = defineConfig({
 
   modules: [
     {
-      resolve: "@medusajs/medusa/caching",
+      resolve: '@medusajs/medusa/caching',
       options: {
         providers: [
           {
-            resolve: "@medusajs/caching-redis",
-            id: "caching-redis",
+            resolve: '@medusajs/caching-redis',
+            id: 'caching-redis',
             is_default: true,
             options: {
               redisUrl: process.env.CACHE_REDIS_URL,
             },
           },
         ],
-      }
+      },
     },
     {
       resolve: '@medusajs/medusa/product',
@@ -57,7 +52,7 @@ module.exports = defineConfig({
             id: 'emailpass',
             options: {
               hashConfig: {
-                logN: 15,
+                logN: 14,
                 r: 8,
                 p: 1,
               },
