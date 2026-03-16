@@ -29,8 +29,10 @@ import {
   PointsBannerSkeleton,
   ShippingStatusSkeleton,
 } from "../components/shared/mypage-skeletons"
+import { retrieveCart } from "@/lib/api/medusa/cart"
 import { retrieveCustomer } from "@/lib/api/medusa/customer"
-import { getMembershipGroupIdFromEnv } from "@/lib/utils/membership-group"
+import type { CustomerGroupRef } from "@/lib/utils/membership-group"
+import { resolveMembershipContext } from "@/lib/utils/resolve-membership-context"
 
 export async function MyPageTemplate() {
   const [currentUser, { isAdmin }, pointBalance] = await Promise.all([
@@ -45,7 +47,18 @@ export async function MyPageTemplate() {
 
   const isPayLaterBannerEnabled = false
 
-  const customer = await retrieveCustomer()
+  const [customer, cart] = await Promise.all([
+    retrieveCustomer().catch(() => null),
+    retrieveCart(undefined, undefined, "no-store").catch(() => null),
+  ])
+  const cartWithCustomer = cart as
+    | (typeof cart & { customer?: { groups?: CustomerGroupRef[] } })
+    | null
+  const { isMembershipPricing } = await resolveMembershipContext({
+    isLoggedIn: !!currentUser,
+    customerGroupsFromCart: cartWithCustomer?.customer?.groups,
+    customerGroupsFromCustomer: customer?.groups,
+  })
 
   return (
     <>
@@ -55,11 +68,7 @@ export async function MyPageTemplate() {
           <div className="bg-muted space-y-4 px-6 py-4">
             <MobileHeader
               userName={(currentUser as UserDetail)?.username}
-              isMembership={
-                !!customer?.groups?.some(
-                  (group) => group.id === getMembershipGroupIdFromEnv()
-                )
-              }
+              isMembership={isMembershipPricing}
             />
 
             {/* 관리자 버튼 */}
@@ -97,11 +106,7 @@ export async function MyPageTemplate() {
           <div>
             <UserProfileSection
               userName={(currentUser as UserDetail)?.username}
-              isMembership={
-                !!customer?.groups?.some(
-                  (group) => group.id === getMembershipGroupIdFromEnv()
-                )
-              }
+              isMembership={isMembershipPricing}
               initialPointBalance={pointBalance.balance}
             />
 

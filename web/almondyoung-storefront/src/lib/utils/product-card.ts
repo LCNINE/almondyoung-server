@@ -34,7 +34,8 @@ const checkVariantInStock = (variant: StoreProductVariant) =>
 
 export function mapStoreProductToCardProps(
   product: StoreProduct,
-  reviewsMap?: Map<string, ReviewSummary>
+  reviewsMap?: Map<string, ReviewSummary>,
+  isMembership?: boolean
 ): ProductCardProps | null {
   if (!product.variants || product.variants.length === 0) {
     return null
@@ -126,6 +127,7 @@ export function mapStoreProductToCardProps(
       defaultVariantId,
     },
     isWelcomeMembership,
+    isMembership,
   }
 }
 
@@ -145,6 +147,8 @@ export function mapStoreProductsToCardProps(
       : products
 
   return filtered
-    .map((product) => mapStoreProductToCardProps(product, reviewsMap))
+    .map((product) =>
+      mapStoreProductToCardProps(product, reviewsMap, options?.isMember)
+    )
     .filter((props): props is ProductCardProps => props !== null)
 }

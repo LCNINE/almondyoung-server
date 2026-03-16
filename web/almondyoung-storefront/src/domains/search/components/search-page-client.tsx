@@ -217,7 +217,9 @@ export function SearchPageClient({
       )
 
       return {
-        items: mapStoreProductsToCardProps(sortedProducts),
+        items: mapStoreProductsToCardProps(sortedProducts, undefined, {
+          isMember: isMembership,
+        }),
         total: searchData.pagination.total,
       }
     },
@@ -226,6 +228,7 @@ export function SearchPageClient({
       categoryIds,
       currentSize,
       currentSort,
+      isMembership,
       keyword,
       maxPrice,
       minPrice,
