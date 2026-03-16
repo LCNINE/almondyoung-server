@@ -1,9 +1,11 @@
 "use server"
 
+import { sdk } from "@/lib/config/medusa"
 import { formatBirthday } from "@/lib/utils/format-birthday"
+import { getCacheTag, removeAllAuthTokens } from "@lib/data/cookies"
 import { api } from "@lib/api/api"
 import { HttpApiError } from "@lib/api/api-error"
-import { revalidatePath } from "next/cache"
+import { revalidatePath, revalidateTag } from "next/cache"
 
 export type ProfileActionState = {
   success: boolean
@@ -90,4 +92,41 @@ export async function updatePhoneNumberAction(
 
     return { success: false, error: message }
   }
+}
+
+export async function withdrawUserAction(): Promise<void> {
+  try {
+    await api("users", "/auth", {
+      method: "DELETE",
+      withAuth: true,
+    })
+  } catch (error) {
+    if (
+      error instanceof HttpApiError &&
+      (error.status === 404 || error.status === 405)
+    ) {
+      await api("users", "/users/me", {
+        method: "DELETE",
+        withAuth: true,
+      })
+    } else {
+      throw error
+    }
+  }
+
+  sdk.auth.logout().catch(() => {})
+  await api("users", "/auth/signout", {
+    method: "POST",
+    withAuth: false,
+  }).catch(() => {})
+
+  const [customerCacheTag, cartCacheTag] = await Promise.all([
+    getCacheTag("customers"),
+    getCacheTag("carts"),
+  ])
+
+  await removeAllAuthTokens()
+  revalidateTag(customerCacheTag)
+  revalidateTag(cartCacheTag)
+  revalidatePath("/mypage")
 }
