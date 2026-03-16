@@ -7,8 +7,9 @@ import RankedKeywordList, {
 } from "domains/best/components/ranked-keyword-list"
 import RankedHeader from "domains/best/components/ranked-header"
 import ScrollToTopButton from "./components/scroll-to-top-button"
+import { retrieveCustomer } from "@lib/api/medusa/customer"
 import { listProducts } from "@lib/api/medusa/products"
-import { getRegion } from "@lib/api/medusa/regions"
+import { isMembershipGroup } from "@lib/utils/membership-group"
 import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
 
 // TODO: 백엔드에 판매량/인기도 기반 베스트 상품 API 추가 필요
@@ -26,7 +27,6 @@ export default async function BestPage({
   params: Promise<{ countryCode: string }>
 }) {
   const { countryCode } = await params
-  const region = await getRegion(countryCode)
 
   // TODO: 실제 베스트 상품 API로 교체
   // 현재는 최신 상품 20개를 가져옴 (임시)
@@ -36,8 +36,11 @@ export default async function BestPage({
     countryCode,
   })
 
+  const customer = await retrieveCustomer().catch(() => null)
   const mappedProducts = mapStoreProductsToCardProps(
-    bestProductsResult.response.products.slice(0, 5)
+    bestProductsResult.response.products.slice(0, 5),
+    undefined,
+    { isMember: isMembershipGroup(customer?.groups) }
   )
 
   // TODO: 백엔드에 검색 키워드 랭킹 API 추가 필요

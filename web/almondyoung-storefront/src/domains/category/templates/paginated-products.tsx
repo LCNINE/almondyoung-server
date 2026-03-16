@@ -1,6 +1,7 @@
 import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import { listProductsWithSort } from "@/lib/api/medusa/products"
 import { getRegion } from "@/lib/api/medusa/regions"
+import { isMembershipGroup } from "@/lib/utils/membership-group"
 import { Pagination } from "../components/pagination"
 import ProductCard from "@/domains/products/components/product-card"
 import { SortOptions } from "../components/refinement-list/sort-products"
@@ -80,12 +81,7 @@ export default async function PaginatedProducts({
             <li key={p.id}>
               <ProductCard
                 product={p}
-                isMembership={
-                  groups?.some(
-                    (group) =>
-                      group.id === process.env.MEDUSA_MEMBERSHIP_GROUP_ID
-                  ) ?? false
-                }
+                isMembership={isMembershipGroup(groups)}
                 isMembershipOnly={
                   p.metadata?.isMembershipOnly === true ||
                   p.metadata?.isMembershipOnly === "true"

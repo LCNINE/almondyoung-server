@@ -41,6 +41,11 @@ export async function SearchContainer({
   const brandList = toQueryArray(brands)
   const categoryIdList = toQueryArray(categoryIds)
 
+  const customer = await retrieveCustomer().catch(() => null)
+  const isMembership = !!customer?.groups?.some(
+    (group) => group.id === getMembershipGroupIdFromEnv()
+  )
+
   let searchResult: SearchProductResult = {
     items: [],
     pagination: {
@@ -94,7 +99,9 @@ export async function SearchContainer({
           )
 
           // 5. medusa 상품을 ProductCardProps로 변환
-          items = mapStoreProductsToCardProps(sortedProducts)
+          items = mapStoreProductsToCardProps(sortedProducts, undefined, {
+            isMember: isMembership,
+          })
         }
 
         searchResult = {
@@ -111,11 +118,6 @@ export async function SearchContainer({
       console.error("[SearchContainer] 검색 실패:", error)
     }
   }
-
-  const customer = await retrieveCustomer().catch(() => null)
-  const isMembership = !!customer?.groups?.some(
-    (group) => group.id === getMembershipGroupIdFromEnv()
-  )
 
   return (
     <SearchPageClient
