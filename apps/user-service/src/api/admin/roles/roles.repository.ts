@@ -67,12 +67,21 @@ export class RolesRepository {
       .where(eq(userServiceSchema.roles.roleId, roleId));
   }
 
-  async findUserRoleIds(userId: string): Promise<string[]> {
-    const rows = await this.dbService.db
-      .select({ roleId: userServiceSchema.userRoleAssignments.roleId })
+  async findUserRoles(userId: string): Promise<RoleResponseDto[]> {
+    return this.dbService.db
+      .select({
+        roleId: userServiceSchema.roles.roleId,
+        name: userServiceSchema.roles.name,
+        description: userServiceSchema.roles.description,
+        createdAt: userServiceSchema.roles.createdAt,
+        updatedAt: userServiceSchema.roles.updatedAt,
+      })
       .from(userServiceSchema.userRoleAssignments)
+      .innerJoin(
+        userServiceSchema.roles,
+        eq(userServiceSchema.userRoleAssignments.roleId, userServiceSchema.roles.roleId),
+      )
       .where(eq(userServiceSchema.userRoleAssignments.userId, userId));
-    return rows.map((r) => r.roleId);
   }
 
   async replaceUserRoles(userId: string, roleIds: string[]): Promise<void> {
