@@ -179,9 +179,9 @@ export function PayForm({ intent, methods, pointsBalance }: Props) {
                     #{intent.id.slice(-8).toUpperCase()}
                   </span>
                 </div>
-                {intent.metadata?.orderName && (
+                {typeof intent.metadata?.orderName === 'string' && (
                   <p className="text-sm font-medium">
-                    {intent.metadata.orderName as string}
+                    {intent.metadata.orderName}
                   </p>
                 )}
                 <Separator />
