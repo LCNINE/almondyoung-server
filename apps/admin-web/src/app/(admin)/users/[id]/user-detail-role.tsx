@@ -45,7 +45,7 @@ function UserRoleTable({ userId }: { userId: string }) {
 export function UserDetailRole({ userId }: { userId: string }) {
   return (
     <Container className="divide-y">
-      <Header title="역할" />
+      <Header title="권한" />
       <Suspense fallback={<div className="flex justify-center p-4"><Spinner /></div>}>
         <UserRoleTable userId={userId} />
       </Suspense>
