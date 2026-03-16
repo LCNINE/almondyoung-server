@@ -169,7 +169,8 @@ export const listCategories = async (query?: Record<string, any>) => {
 }
 
 export const getCategoryByHandle = async (categoryHandle: string[]) => {
-  const handle = `${categoryHandle.join("/")}`
+  // segments의 마지막이 실제 카테고리 handle (예: ["clothing", "shirts"] → "shirts")
+  const handle = categoryHandle[categoryHandle.length - 1]
 
   const next = {
     ...(await getCacheOptions("categories")),
