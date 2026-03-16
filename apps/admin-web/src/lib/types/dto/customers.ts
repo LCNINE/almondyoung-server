@@ -14,7 +14,7 @@ interface CustomerProfile extends BaseUserInfo {
   birthDate?: string;
   profileImageUrl?: string;
   shop: Shop | null;
-  lastActivityAt: Date;
+  lastActivityAt: string;
 }
 
 interface UpdateCustomerProfileDto {

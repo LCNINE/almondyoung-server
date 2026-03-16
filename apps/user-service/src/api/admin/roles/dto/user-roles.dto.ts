@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsArray, IsUUID } from 'class-validator';
+import { RoleResponseDto } from './roles.dto';
 
 export class ReplaceUserRolesDto {
   @ApiProperty({
@@ -13,5 +14,5 @@ export class ReplaceUserRolesDto {
 }
 
 export class UserRolesResponseDto {
-  roleIds: string[];
+  roles: RoleResponseDto[];
 }
