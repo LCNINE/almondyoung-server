@@ -19,13 +19,17 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { zodResolver } from "@hookform/resolvers/zod"
+import { useUser } from "@/contexts/user-context"
 import type { UserDetail } from "@lib/types/ui/user"
-import { useActionState, useEffect, useMemo, useState } from "react"
+import { toLocalizedPath } from "@lib/utils/locale-path"
+import { useActionState, useEffect, useMemo, useState, useTransition } from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
+import { useParams } from "next/navigation"
 import { profileSchema, type ProfileSchema } from "../../schemas/profile-schema"
 import {
   updateProfileAction,
+  withdrawUserAction,
   type ProfileActionState,
 } from "../actions/profile"
 import { AddressBookSection } from "./address-book-section"
@@ -48,6 +52,12 @@ interface ProfileEditProps {
 }
 
 export function ProfileEdit({ userData }: ProfileEditProps) {
+  const [isWithdrawPending, startWithdrawTransition] = useTransition()
+  const params = useParams<{ countryCode?: string }>()
+  const currentCountryCode =
+    typeof params.countryCode === "string" ? params.countryCode : "kr"
+  const { setUser } = useUser()
+
   const initialValues = useMemo(() => {
     const birthDate = userData.profile?.birthDate
       ? new Date(userData.profile.birthDate)
@@ -89,6 +99,28 @@ export function ProfileEdit({ userData }: ProfileEditProps) {
       toast.success("회원정보가 수정되었습니다.")
     }
   }, [state])
+
+  const handleWithdraw = () => {
+    const isConfirmed = window.confirm(
+      "정말 회원탈퇴 하시겠습니까? 탈퇴 후 계정 복구가 어려울 수 있습니다."
+    )
+
+    if (!isConfirmed) return
+
+    startWithdrawTransition(async () => {
+      try {
+        await withdrawUserAction()
+        setUser(null)
+        window.location.replace(toLocalizedPath(currentCountryCode, "/"))
+      } catch (error) {
+        const message =
+          error instanceof Error && error.message
+            ? error.message
+            : "회원탈퇴 처리 중 오류가 발생했습니다."
+        toast.error(message)
+      }
+    })
+  }
 
   return (
     <div className="space-y-6 py-2 md:py-4">
@@ -222,6 +254,17 @@ export function ProfileEdit({ userData }: ProfileEditProps) {
 
       {/* 배송지 관리 */}
       <AddressBookSection />
+
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={handleWithdraw}
+          disabled={isWithdrawPending}
+          className="text-xs text-gray-500 underline underline-offset-2 transition-colors hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isWithdrawPending ? "탈퇴 처리 중..." : "회원탈퇴"}
+        </button>
+      </div>
     </div>
   )
 }
