@@ -54,6 +54,7 @@ export function CategoryTemplate({
             sortBy={sort}
             page={pageNumber}
             countryCode={countryCode}
+            categoryId={category?.id}
           />
         </Suspense>
       </div>
