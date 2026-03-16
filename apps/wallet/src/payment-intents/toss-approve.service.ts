@@ -7,6 +7,7 @@ import {
 import { DbService } from '@app/db';
 import { eq } from 'drizzle-orm';
 import { WalletSchema, paymentIntents } from '../schema';
+import { Charge, PaymentIntent } from '../types';
 import { ChargesService } from '../charges/charges.service';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
 import {
@@ -47,19 +48,7 @@ export class TossApproveService {
       });
     }
 
-    // 2. Load intent for outbox event payload
-    const intent = await this.dbService.db
-      .select()
-      .from(paymentIntents)
-      .where(eq(paymentIntents.id, intentId))
-      .limit(1)
-      .then((r) => r[0]);
-
-    if (!intent) {
-      throw new NotFoundException({ error: 'INTENT_NOT_FOUND' });
-    }
-
-    // 3. Call Toss API confirm
+    // 2. Call Toss API confirm
     const secretKey = process.env.TOSS_SECRET_KEY ?? '';
     const auth = Buffer.from(`${secretKey}:`).toString('base64');
     const tossRes = await fetch('https://api.tosspayments.com/v1/payments/confirm', {
@@ -75,28 +64,7 @@ export class TossApproveService {
     if (!tossRes.ok) {
       const err = await tossRes.json().catch(() => ({}));
       this.logger.error(`Toss API confirm failed: ${JSON.stringify(err)}`);
-      await this.dbService.db.transaction(async (tx) => {
-        await this.chargesService.updateStatus(
-          charge.id,
-          'FAILED',
-          {
-            errorCode: err.code ?? 'TOSS_CONFIRM_FAILED',
-            errorMessage: err.message,
-          },
-          tx,
-        );
-        await this.stateTransitionService.transitionIntent(
-          intentId,
-          'CREATED',
-          {
-            correlationId,
-            reasonCode: 'CONFIRM_FAILED',
-            reasonMessage: err.message,
-          },
-          undefined,
-          tx,
-        );
-      });
+      await this.finalizeFailure(charge, err.code ?? 'TOSS_CONFIRM_FAILED', correlationId);
       throw new UnprocessableEntityException({
         error: err.code ?? 'TOSS_CONFIRM_FAILED',
         message: err.message,
@@ -104,17 +72,18 @@ export class TossApproveService {
     }
 
     const tossData = await tossRes.json();
+    await this.finalizeApproval(charge, tossData.paymentKey, correlationId);
+  }
+
+  async finalizeApproval(charge: Charge, paymentKey: string, correlationId: string): Promise<void> {
+    const intent = await this.loadIntent(charge.intentId);
     const now = new Date().toISOString();
 
-    // 4. Success: charge → SUCCEEDED, intent → AUTHORIZED
     await this.dbService.db.transaction(async (tx) => {
       await this.chargesService.updateStatus(
         charge.id,
         'SUCCEEDED',
-        {
-          providerTransactionId: tossData.paymentKey,
-          responsePayload: tossData,
-        },
+        { providerTransactionId: paymentKey },
         tx,
       );
 
@@ -143,5 +112,46 @@ export class TossApproveService {
         tx,
       );
     });
+  }
+
+  async finalizeFailure(charge: Charge, errorCode: string, correlationId: string): Promise<void> {
+    await this.dbService.db.transaction(async (tx) => {
+      await this.chargesService.updateStatus(
+        charge.id,
+        'FAILED',
+        {
+          errorCode,
+          errorMessage: `Payment ${errorCode.toLowerCase()} on Toss side`,
+        },
+        tx,
+      );
+
+      await this.stateTransitionService.transitionIntent(
+        charge.intentId,
+        'CREATED',
+        {
+          correlationId,
+          reasonCode: 'AUTHORIZE_FAILED',
+          reasonMessage: errorCode,
+        },
+        undefined,
+        tx,
+      );
+    });
+  }
+
+  private async loadIntent(intentId: string): Promise<PaymentIntent> {
+    const intent = await this.dbService.db
+      .select()
+      .from(paymentIntents)
+      .where(eq(paymentIntents.id, intentId))
+      .limit(1)
+      .then((r) => r[0]);
+
+    if (!intent) {
+      throw new NotFoundException({ error: 'INTENT_NOT_FOUND' });
+    }
+
+    return intent;
   }
 }
