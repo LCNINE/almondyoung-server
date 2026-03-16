@@ -2,7 +2,6 @@
 
 import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
 import { Spinner } from "@/components/shared/spinner"
-import { useMembership } from "@/contexts/membership-context"
 import { useUser } from "@/contexts/user-context"
 import { signout } from "@lib/api/users/signout"
 import { ChevronRight, Coins, Crown, User } from "lucide-react"
@@ -12,15 +11,17 @@ import { useTransition } from "react"
 interface UserProfileSectionProps {
   userName: string
   initialPointBalance: number
+  isMembership: boolean
 }
 
 export function UserProfileSection({
   userName,
   initialPointBalance,
+  isMembership,
 }: UserProfileSectionProps) {
   const [isPending, startTransition] = useTransition()
   const { setUser } = useUser()
-  const { isMembershipPricing, tier } = useMembership()
+  // const { isMembershipPricing, tier } = useMembership()
 
   const handleLogout = () => {
     startTransition(async () => {
@@ -50,13 +51,11 @@ export function UserProfileSection({
             </div>
 
             {/* 멤버십 뱃지 or 가입 유도 */}
-            {isMembershipPricing ? (
+            {isMembership ? (
               <Link href="/kr/mypage/membership">
                 <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[#FF9500] transition-opacity hover:opacity-80">
                   <Crown className="size-4" aria-hidden />
-                  <span className="text-base font-bold">
-                    {tier?.name ?? "멤버십"} 회원
-                  </span>
+                  <span className="text-base font-bold">멤버십 회원</span>
                 </span>
               </Link>
             ) : (

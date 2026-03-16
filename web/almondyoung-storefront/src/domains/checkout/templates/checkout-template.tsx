@@ -8,7 +8,6 @@ import { PaymentTotalSection } from "@/domains/checkout/components/sections/paym
 import { ShippingSection } from "@/domains/checkout/components/sections/shipping"
 import type { ShippingMemo } from "@/domains/checkout/components/sections/shipping/types"
 // import { usePinStatus } from "@/hooks/api/use-pin-status"
-import { useMembershipPricing } from "@/hooks/use-membership-pricing"
 import { initiatePaymentSession, updateCart } from "@/lib/api/medusa/cart"
 import { CartResponseDto } from "@/lib/types/dto/medusa"
 import type { PointBalanceDto } from "@/lib/types/dto/wallet"
@@ -28,10 +27,10 @@ import { PaymentDetailSidebar } from "domains/checkout/components/payment-detail
 import { useParams, useRouter } from "next/navigation"
 import { useCallback, useMemo, useState } from "react"
 import { toast } from "sonner"
-import { ReceiptSection } from "../components/sections/receipt/"
 
 interface CheckoutTemplateProps {
   user: UserDetail
+  isMembership: boolean
   cart: CartResponseDto["cart"]
   checkoutCartId: string
   shipping: ShippingInfo
@@ -42,6 +41,7 @@ interface CheckoutTemplateProps {
 
 export default function CheckoutTemplate({
   user,
+  isMembership,
   cart,
   checkoutCartId,
   shipping,
@@ -71,15 +71,12 @@ export default function CheckoutTemplate({
     [cart.items, selectedIds]
   )
 
-  // 멤버십 가격 적용 여부 (고객 그룹 기준)
-  const { isMembershipPricing } = useMembershipPricing()
-
   // 가격 계산
   const cartTotals: CartTotals = useMemo(() => {
     const { currency_code, item_subtotal, discount_subtotal, total } =
       getCartTotals(cart)
     const membershipDiscount =
-      isMembershipPricing && selectedItems.length > 0
+      isMembership && selectedItems.length > 0
         ? calculateMembershipDiscount(selectedItems)
         : 0
     // Membership price-list is already reflected in Medusa unit_price/total.
@@ -100,7 +97,7 @@ export default function CheckoutTemplate({
       totalDiscount,
       finalTotal,
     }
-  }, [cart, shipping, isMembershipPricing, selectedItems])
+  }, [cart, shipping, selectedItems])
 
   const [cashReceiptOption, setCashReceiptOption] = useState("noapply")
   const [taxInvoiceOption, setTaxInvoiceOption] = useState(
@@ -135,13 +132,16 @@ export default function CheckoutTemplate({
       setError(null)
 
       // 결제 전 배송 메모 저장
-      await updateCart({
-        metadata: {
-          shipping_memo_type: shippingMemo.type,
-          shipping_memo_custom:
-            shippingMemo.type === "other" ? shippingMemo.custom : "",
+      await updateCart(
+        {
+          metadata: {
+            shipping_memo_type: shippingMemo.type,
+            shipping_memo_custom:
+              shippingMemo.type === "other" ? shippingMemo.custom : "",
+          },
         },
-      }, checkoutCartId)
+        checkoutCartId
+      )
 
       const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback`
 
@@ -151,8 +151,10 @@ export default function CheckoutTemplate({
       })
 
       const intentId = (
-        result?.payment_collection?.payment_sessions?.[0]
-          ?.data as Record<string, unknown>
+        result?.payment_collection?.payment_sessions?.[0]?.data as Record<
+          string,
+          unknown
+        >
       )?.intentId as string | undefined
 
       if (!intentId) throw new Error("결제 세션 초기화에 실패했습니다.")
@@ -196,7 +198,7 @@ export default function CheckoutTemplate({
             />
             <DiscountSection
               cartId={cart.id}
-              isMembership={isMembershipPricing}
+              isMembership={isMembership}
               membershipDiscount={cartTotals.membershipDiscount}
               itemSubtotal={cartTotals.item_subtotal}
               shipping={shipping}
@@ -220,7 +222,7 @@ export default function CheckoutTemplate({
           <div className="lg:shrink-0">
             <MobileOrderSummary
               totals={cartTotals}
-              isMembership={isMembershipPricing}
+              isMembership={isMembership}
             />
             <PaymentDetailSidebar
               isOpen={isPaymentDetailsOpen}

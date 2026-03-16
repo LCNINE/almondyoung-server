@@ -19,8 +19,8 @@ export function ProductPrice({
   showMembershipHint,
   showMembershipBadge,
   membershipPrice,
-  isMember,
   isMembershipOnly,
+  isMembership,
 }: {
   productId?: string
   price: number
@@ -30,14 +30,15 @@ export function ProductPrice({
   showMembershipHint?: boolean
   showMembershipBadge?: boolean
   membershipPrice?: number
-  isMember: boolean
   isMembershipOnly?: boolean
+  isMembership?: boolean
 }) {
   // 가격 숨김 상품: 비회원에게만 가격 숨김 (isMembershipOnly 또는 하드코딩된 상품 ID)
-  const isHiddenPriceProduct = productId && HIDDEN_PRICE_PRODUCT_IDS.includes(productId)
+  const isHiddenPriceProduct =
+    productId && HIDDEN_PRICE_PRODUCT_IDS.includes(productId)
 
   // 가격 숨김 상품: 비회원에게만 가격 숨김 (isMembershipOnly 또는 하드코딩된 상품 ID)
-  if (!isMember && (isMembershipOnly || isHiddenPriceProduct)) {
+  if (!isMembership && (isMembershipOnly || isHiddenPriceProduct)) {
     return (
       <div className="flex flex-col gap-0.5 text-[#F2994A]">
         <ProductMembershipBadge size="sm" label="멤버십할인가" />
@@ -61,7 +62,7 @@ export function ProductPrice({
       )}
 
       <div className="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5">
-        <span className="whitespace-nowrap text-[16px] font-bold leading-none text-black">
+        <span className="text-[16px] leading-none font-bold whitespace-nowrap text-black">
           {price.toLocaleString()}원
         </span>
         {showMembershipBadge && (
@@ -72,13 +73,13 @@ export function ProductPrice({
           />
         )}
       </div>
-      {!isMember &&
+      {!isMembership &&
         membershipPrice != null &&
         membershipPrice > 0 &&
         membershipSavings != null && (
           <div className="flex flex-col gap-0.5 text-[#F2994A]">
             <ProductMembershipBadge size="sm" label="멤버십할인가" />
-            <span className="whitespace-nowrap text-[15px] font-bold">
+            <span className="text-[15px] font-bold whitespace-nowrap">
               {membershipPrice.toLocaleString()}원
             </span>
             <span className="hidden text-[11px] font-medium md:block">

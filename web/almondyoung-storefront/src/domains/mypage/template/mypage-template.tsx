@@ -29,20 +29,23 @@ import {
   PointsBannerSkeleton,
   ShippingStatusSkeleton,
 } from "../components/shared/mypage-skeletons"
+import { retrieveCustomer } from "@/lib/api/medusa/customer"
+import { getMembershipGroupIdFromEnv } from "@/lib/utils/membership-group"
 
 export async function MyPageTemplate() {
-  const [currentUser, { isAdmin }, pointBalance] =
-    await Promise.all([
-      fetchMe(),
-      checkAdminScope(),
-      getPointBalance().catch(() => ({ balance: 0, withdrawable: 0 })),
-    ])
+  const [currentUser, { isAdmin }, pointBalance] = await Promise.all([
+    fetchMe(),
+    checkAdminScope(),
+    getPointBalance().catch(() => ({ balance: 0, withdrawable: 0 })),
+  ])
 
   const headersList = await headers()
   const pathname = headersList.get("x-pathname") || ""
   const countryCode = pathname.split("/")[1] || "kr"
 
   const isPayLaterBannerEnabled = false
+
+  const customer = await retrieveCustomer()
 
   return (
     <>
@@ -52,6 +55,11 @@ export async function MyPageTemplate() {
           <div className="bg-muted space-y-4 px-6 py-4">
             <MobileHeader
               userName={(currentUser as UserDetail)?.username}
+              isMembership={
+                !!customer?.groups?.some(
+                  (group) => group.id === getMembershipGroupIdFromEnv()
+                )
+              }
             />
 
             {/* 관리자 버튼 */}
@@ -89,6 +97,11 @@ export async function MyPageTemplate() {
           <div>
             <UserProfileSection
               userName={(currentUser as UserDetail)?.username}
+              isMembership={
+                !!customer?.groups?.some(
+                  (group) => group.id === getMembershipGroupIdFromEnv()
+                )
+              }
               initialPointBalance={pointBalance.balance}
             />
 

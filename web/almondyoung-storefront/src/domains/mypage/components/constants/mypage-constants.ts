@@ -54,7 +54,7 @@ export const MENU_SECTIONS: MenuSection[] = [
         path: "/mypage/order/legacy",
       },
       { label: "취소/반품/교환", icon: "🔄", path: "/mypage/exchange" },
-      { label: "찜한 상품", icon: "❤️", path: "/mypage/wish" },
+      // { label: "찜한 상품", icon: "❤️", path: "/mypage/wish" },
     ],
   },
   {
@@ -104,24 +104,24 @@ export const SIDEBAR_MENU_ITEMS = [
     hasSubMenu: false,
     path: "/mypage/order/legacy",
   },
-  {
-    id: "wishlist",
-    label: "찜한 상품",
-    hasSubMenu: false,
-    path: "/mypage/wish",
-  },
-  {
-    id: "frequent",
-    label: "자주 산 상품",
-    hasSubMenu: false,
-    path: "/mypage/rebuy",
-  },
-  {
-    id: "recent",
-    label: "최근 본 상품",
-    hasSubMenu: false,
-    path: "/mypage/recent",
-  },
+  // {
+  //   id: "wishlist",
+  //   label: "찜한 상품",
+  //   hasSubMenu: false,
+  //   path: "/mypage/wish",
+  // },
+  // {
+  //   id: "frequent",
+  //   label: "자주 산 상품",
+  //   hasSubMenu: false,
+  //   path: "/mypage/rebuy",
+  // },
+  // {
+  //   id: "recent",
+  //   label: "최근 본 상품",
+  //   hasSubMenu: false,
+  //   path: "/mypage/recent",
+  // },
   {
     id: "shopSettings",
     label: "맞춤설정",

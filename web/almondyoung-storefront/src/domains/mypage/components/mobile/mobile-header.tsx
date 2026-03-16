@@ -1,28 +1,24 @@
 "use client"
 
-import { Settings, Crown } from "lucide-react"
+import { Crown, Settings } from "lucide-react"
 import Link from "next/link"
-import { useMembership } from "@/contexts/membership-context"
 
 interface MobileHeaderProps {
   userName: string
+  isMembership: boolean
 }
 
-export function MobileHeader({ userName }: MobileHeaderProps) {
-  const { isMembershipPricing, tier } = useMembership()
-  const isMember = isMembershipPricing
-  const tierName = tier?.name ?? "멤버십"
-
+export function MobileHeader({ userName, isMembership }: MobileHeaderProps) {
   return (
     <header className="flex items-center justify-between">
       <div className="flex w-full items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <h1 className="text-2xl font-bold">{userName} 님</h1>
-          {isMember ? (
+          {isMembership ? (
             <Link href="/kr/mypage/membership">
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-xs font-bold text-amber-700">
                 <Crown className="h-3 w-3" />
-                {tierName}
+                멤버십 회원
               </span>
             </Link>
           ) : (

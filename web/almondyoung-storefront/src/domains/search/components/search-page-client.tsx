@@ -1,23 +1,26 @@
 "use client"
 
-import { useRouter, useSearchParams } from "next/navigation"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ProductGrid } from "@/components/products/product-grid"
-import { SearchHistory } from "@components/search/search-history"
-import { useSearchHistory } from "@hooks/ui/use-search-history"
-import CustomDropdown from "@components/dropdown"
-import type { ProductCardProps, SearchProductResult } from "@lib/types/ui/product"
-import { SearchEmptyState } from "./search-empty-state"
+import { Spinner } from "@/components/shared/spinner"
 import { useUser } from "@/contexts/user-context"
-import { useMembershipPricing } from "@/hooks/use-membership-pricing"
 import { useInfiniteScroll } from "@/hooks/ui/use-infinite-scroll"
 import { getListCacheSnapshot, useListCache } from "@/hooks/ui/use-list-cache"
-import { searchProducts } from "@lib/api/pim/search"
+import CustomDropdown from "@components/dropdown"
+import { SearchHistory } from "@components/search/search-history"
+import { useSearchHistory } from "@hooks/ui/use-search-history"
 import { listProducts } from "@lib/api/medusa/products"
+import { searchProducts } from "@lib/api/pim/search"
+import type {
+  ProductCardProps,
+  SearchProductResult,
+} from "@lib/types/ui/product"
 import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
-import { Spinner } from "@/components/shared/spinner"
+import { useRouter, useSearchParams } from "next/navigation"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { SearchEmptyState } from "./search-empty-state"
 
 interface SearchPageClientProps {
+  isMembership: boolean
   keyword: string
   searchResult: SearchProductResult
   countryCode: string
@@ -35,6 +38,7 @@ const CACHE_TTL_MS = 1000 * 60 * 30
 export function SearchPageClient({
   keyword,
   searchResult,
+  isMembership,
   countryCode,
   regionId,
 }: SearchPageClientProps) {
@@ -42,7 +46,6 @@ export function SearchPageClient({
   const searchParams = useSearchParams()
   const { keywords: historyKeywords } = useSearchHistory()
   const { user } = useUser()
-  const { isMembershipPricing } = useMembershipPricing()
   const isLoggedIn = !!user
   const currentSort = normalizeSearchSort(searchParams.get("sort"))
   const currentSize = searchResult.pagination.size || 20
@@ -78,7 +81,7 @@ export function SearchPageClient({
         brands.join(",") || "brand-none",
         minPrice?.toString() ?? "min-none",
         maxPrice?.toString() ?? "max-none",
-        isMembershipPricing ? "membership" : "non-membership",
+        isMembership ? "membership" : "non-membership",
       ].join("|"),
     [
       brands,
@@ -86,7 +89,7 @@ export function SearchPageClient({
       countryCode,
       currentSize,
       currentSort,
-      isMembershipPricing,
+      isMembership,
       keyword,
       maxPrice,
       minPrice,
@@ -133,11 +136,12 @@ export function SearchPageClient({
     }
 
     const getSortPrice = (item: ProductCardProps) => {
-      const regularPrice = item.originalPrice > 0 ? item.originalPrice : item.price
+      const regularPrice =
+        item.originalPrice > 0 ? item.originalPrice : item.price
       const membershipPrice = item.debugPrices?.membershipPrice
 
       if (
-        isMembershipPricing &&
+        isMembership &&
         typeof membershipPrice === "number" &&
         membershipPrice > 0
       ) {
@@ -159,7 +163,7 @@ export function SearchPageClient({
       (a, b) => getSortPrice(b) - getSortPrice(a) || a.id.localeCompare(b.id)
     )
     return sorted
-  }, [currentSort, isMembershipPricing, items])
+  }, [currentSort, isMembership, items])
 
   useListCache({
     cacheKey,
@@ -204,11 +208,13 @@ export function SearchPageClient({
         regionId,
       })
       const orderMap = new Map(masterIds.map((id, idx) => [id, idx]))
-      const sortedProducts = [...medusaResult.response.products].sort((a, b) => {
-        const orderA = orderMap.get(a.handle ?? "") ?? Infinity
-        const orderB = orderMap.get(b.handle ?? "") ?? Infinity
-        return orderA - orderB
-      })
+      const sortedProducts = [...medusaResult.response.products].sort(
+        (a, b) => {
+          const orderA = orderMap.get(a.handle ?? "") ?? Infinity
+          const orderB = orderMap.get(b.handle ?? "") ?? Infinity
+          return orderA - orderB
+        }
+      )
 
       return {
         items: mapStoreProductsToCardProps(sortedProducts),
@@ -248,7 +254,10 @@ export function SearchPageClient({
       return
     }
 
-    const cached = getListCacheSnapshot<ProductCardProps>(cacheKey, CACHE_TTL_MS)
+    const cached = getListCacheSnapshot<ProductCardProps>(
+      cacheKey,
+      CACHE_TTL_MS
+    )
     if (cached?.items?.length) {
       setItems(cached.items)
       setTotal(cached.total)
@@ -275,7 +284,9 @@ export function SearchPageClient({
     const hydratePages = async () => {
       try {
         const pages = Array.from({ length: urlPage }, (_, index) => index + 1)
-        const results = await Promise.all(pages.map((page) => fetchSearchPage(page)))
+        const results = await Promise.all(
+          pages.map((page) => fetchSearchPage(page))
+        )
         if (cancelled) return
 
         const merged = results.flatMap((result) => result.items)
@@ -297,7 +308,14 @@ export function SearchPageClient({
     return () => {
       cancelled = true
     }
-  }, [cacheKey, fetchSearchPage, hasKeyword, searchResult.items, searchResult.pagination.total, urlPage])
+  }, [
+    cacheKey,
+    fetchSearchPage,
+    hasKeyword,
+    searchResult.items,
+    searchResult.pagination.total,
+    urlPage,
+  ])
 
   const setUrlPage = useCallback((page: number) => {
     if (typeof window === "undefined") return
@@ -314,7 +332,13 @@ export function SearchPageClient({
   }, [])
 
   const loadMore = useCallback(async () => {
-    if (isLoadingMoreRef.current || isFetchingRef.current || !hasMore || !hasKeyword) return
+    if (
+      isLoadingMoreRef.current ||
+      isFetchingRef.current ||
+      !hasMore ||
+      !hasKeyword
+    )
+      return
 
     isLoadingMoreRef.current = true
     setIsLoadingMore(true)
@@ -370,7 +394,9 @@ export function SearchPageClient({
   }
 
   if (!hasResults) {
-    return <SearchEmptyState keyword={keyword} historyKeywords={historyKeywords} />
+    return (
+      <SearchEmptyState keyword={keyword} historyKeywords={historyKeywords} />
+    )
   }
 
   return (
@@ -380,7 +406,11 @@ export function SearchPageClient({
           <span className="text-olive-600">&apos;{keyword}&apos;</span> 검색결과
         </h1>
         <p className="text-sm text-gray-500">
-          총 <span className="font-semibold text-gray-700">{total.toLocaleString()}</span>개의 상품
+          총{" "}
+          <span className="font-semibold text-gray-700">
+            {total.toLocaleString()}
+          </span>
+          개의 상품
         </p>
       </div>
 
@@ -418,7 +448,9 @@ export function SearchPageClient({
   )
 }
 
-function normalizeSearchSort(value: string | null): "relevance" | "newest" | "price_asc" | "price_desc" {
+function normalizeSearchSort(
+  value: string | null
+): "relevance" | "newest" | "price_asc" | "price_desc" {
   if (!value) return "relevance"
   if (value === "price-asc") return "price_asc"
   if (value === "price-desc") return "price_desc"

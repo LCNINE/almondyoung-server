@@ -5,7 +5,6 @@ import { getRecentViews } from "@lib/api/users/recent-views"
 import { listProducts } from "@lib/api/medusa/products"
 import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
 import { Eye } from "lucide-react"
-import { RecentContainer } from "./recent-container"
 
 interface RecentPageProps {
   params: Promise<{
@@ -77,7 +76,7 @@ async function RecentViewsManager({ countryCode }: { countryCode: string }) {
 
     const mappedProducts = mapStoreProductsToCardProps(orderedProducts)
 
-    return <RecentContainer products={mappedProducts} countryCode={countryCode} />
+    // return <RecentContainer products={mappedProducts} countryCode={countryCode} />
   } catch (error) {
     console.error("최근 본 상품 조회 실패:", error)
 
