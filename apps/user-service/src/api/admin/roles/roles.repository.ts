@@ -1,10 +1,15 @@
 import { DbService, InjectDb } from '@app/db';
+import {
+  roles as authRoles,
+  scopes as authScopes,
+  roleScopeMapping as authRoleScopeMapping,
+} from '@app/authorization';
 import { Injectable } from '@nestjs/common';
 import {
   userServiceSchema,
   type UserServiceSchema,
 } from 'apps/user-service/database/drizzle/schema';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { CreateRoleDto, RoleResponseDto, UpdateRoleDto } from './dto/roles.dto';
 
 @Injectable()
@@ -49,6 +54,7 @@ export class RolesRepository {
       .insert(userServiceSchema.roles)
       .values(data)
       .returning();
+    await this.syncAuthRole(role.name, role.description ?? undefined);
     return role;
   }
 
@@ -62,6 +68,10 @@ export class RolesRepository {
   }
 
   async delete(roleId: string): Promise<void> {
+    const role = await this.findById(roleId);
+    if (role) {
+      await this.deleteAuthRole(role.name);
+    }
     await this.dbService.db
       .delete(userServiceSchema.roles)
       .where(eq(userServiceSchema.roles.roleId, roleId));
@@ -95,5 +105,58 @@ export class RolesRepository {
           .values(roleIds.map((roleId) => ({ userId, roleId })));
       }
     });
+  }
+
+  async syncAuthRole(roleName: string, description?: string): Promise<void> {
+    await this.dbService.db
+      .insert(authRoles)
+      .values({ name: roleName, description })
+      .onConflictDoNothing();
+  }
+
+  async deleteAuthRole(roleName: string): Promise<void> {
+    await this.dbService.db
+      .delete(authRoles)
+      .where(eq(authRoles.name, roleName));
+  }
+
+  async addScopeToRole(roleName: string, scopeKey: string): Promise<void> {
+    const [scope] = await this.dbService.db
+      .select({ id: authScopes.id })
+      .from(authScopes)
+      .where(eq(authScopes.key, scopeKey));
+
+    if (!scope) throw new Error(`Scope '${scopeKey}' not found`);
+
+    await this.dbService.db
+      .insert(authRoleScopeMapping)
+      .values({ roleName, scopeId: scope.id })
+      .onConflictDoNothing();
+  }
+
+  async removeScopeFromRole(roleName: string, scopeKey: string): Promise<void> {
+    const [scope] = await this.dbService.db
+      .select({ id: authScopes.id })
+      .from(authScopes)
+      .where(eq(authScopes.key, scopeKey));
+
+    if (!scope) return;
+
+    await this.dbService.db
+      .delete(authRoleScopeMapping)
+      .where(and(
+        eq(authRoleScopeMapping.roleName, roleName),
+        eq(authRoleScopeMapping.scopeId, scope.id),
+      ));
+  }
+
+  async getScopesForRole(roleName: string): Promise<string[]> {
+    const result = await this.dbService.db
+      .select({ scopeKey: authScopes.key })
+      .from(authRoleScopeMapping)
+      .innerJoin(authScopes, eq(authRoleScopeMapping.scopeId, authScopes.id))
+      .where(eq(authRoleScopeMapping.roleName, roleName));
+
+    return result.map(r => r.scopeKey);
   }
 }
