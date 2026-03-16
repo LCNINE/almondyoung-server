@@ -145,9 +145,16 @@ export default function CheckoutTemplate({
 
       const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback`
 
+      const items = cart.items ?? []
+      const firstTitle = items[0]?.title ?? "상품"
+      const orderName =
+        items.length <= 1
+          ? `아몬드영 - ${firstTitle}`
+          : `아몬드영 - ${firstTitle} 외 ${items.length - 1}개`
+
       const result = await initiatePaymentSession(cart, {
         provider_id: "pp_almond-payment_almond-payment",
-        data: { returnUrl },
+        data: { returnUrl, orderName },
       })
 
       const intentId = (
