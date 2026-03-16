@@ -6,6 +6,7 @@ import { SortOptions } from "../components/refinement-list/sort-products"
 import { SubCategoryNav } from "../components/sub-category-nav"
 import PaginatedProducts from "./paginated-products"
 import { ProductsSkeleton } from "../../../components/skeletons/products-skeleton"
+import { ErrorBoundary } from "@/components/shared/error-boundary"
 
 export function CategoryTemplate({
   sortBy,
@@ -49,14 +50,16 @@ export function CategoryTemplate({
       </div>
 
       <div className="w-full">
-        <Suspense fallback={<ProductsSkeleton />}>
-          <PaginatedProducts
-            sortBy={sort}
-            page={pageNumber}
-            countryCode={countryCode}
-            categoryId={category?.id}
-          />
-        </Suspense>
+        <ErrorBoundary fallback={<div>상품 목록을 불러오지 못했습니다.</div>}>
+          <Suspense fallback={<ProductsSkeleton />}>
+            <PaginatedProducts
+              sortBy={sort}
+              page={pageNumber}
+              countryCode={countryCode}
+              categoryId={category?.id}
+            />
+          </Suspense>
+        </ErrorBoundary>
       </div>
     </div>
   )
