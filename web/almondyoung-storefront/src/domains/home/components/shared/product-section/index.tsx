@@ -81,10 +81,7 @@ export function ProductSection<T extends TabItem>({
               group.id === process.env.NEXT_PUBLIC_MEDUSA_MEMBERSHIP_GROUP_ID
           ) ?? false
         }
-        isMembershipOnly={
-          p.metadata?.isMembershipOnly === true ||
-          p.metadata?.isMembershipOnly === "true"
-        }
+        isMembershipOnly={p.metadata?.isMembershipOnly === true ? true : false}
         rank={index + 1}
       />
     )
