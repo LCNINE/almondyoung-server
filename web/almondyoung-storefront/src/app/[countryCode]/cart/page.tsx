@@ -1,8 +1,7 @@
 import { EmptyCartView } from "@/components/cart/empty-cart-view"
 import CartTemplate from "@/domains/cart/templates"
 import {
-  addCartShippingMethodDuringRender,
-  listCartShippingMethods,
+  ensureCorrectShippingMethod,
   retrieveCart,
 } from "@/lib/api/medusa/cart"
 import { notFound } from "next/navigation"
@@ -17,19 +16,9 @@ export default async function Cart() {
     return <EmptyCartView showHeader={false} bgColor="bg-muted" />
   }
 
-  // shipping method가 없으면 기본 배송 옵션 추가
-  if (!cart.shipping_methods?.length) {
-    const options = await listCartShippingMethods(cart.id)
-    if (options?.[0]) {
-      const updatedCart = await addCartShippingMethodDuringRender(
-        cart.id,
-        options[0].id
-      )
-      if (updatedCart) {
-        cart = updatedCart
-      }
-    }
-  }
+  // 장바구니 아이템 타입에 따라 올바른 배송 옵션 자동 설정
+  const result = await ensureCorrectShippingMethod(cart)
+  cart = result.cart
 
   return <CartTemplate cart={cart} />
 }
