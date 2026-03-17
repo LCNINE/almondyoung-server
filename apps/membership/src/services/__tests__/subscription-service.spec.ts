@@ -6,6 +6,7 @@ import { SubscriptionContractReader } from '../subscription/subscription-contrac
 import { SubscriptionCreator } from '../subscription/subscription.creator';
 import { SubscriptionManager } from '../subscription/subscription.manager';
 import { MembershipEventPublisher } from '../membership-event.publisher';
+import { PaymentClientService } from '../billing/payment-client.service';
 
 describe('SubscriptionService - Layer Refactoring', () => {
   let service: SubscriptionService;
@@ -37,6 +38,11 @@ describe('SubscriptionService - Layer Refactoring', () => {
     publishStatusChanged: jest.fn(),
   };
 
+  const mockPaymentClientService = {
+    createMembershipCheckoutIntent: jest.fn(),
+    getWalletPaymentIntent: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -64,6 +70,10 @@ describe('SubscriptionService - Layer Refactoring', () => {
         {
           provide: MembershipEventPublisher,
           useValue: mockMembershipEventPublisher,
+        },
+        {
+          provide: PaymentClientService,
+          useValue: mockPaymentClientService,
         },
       ],
     }).compile();
@@ -106,6 +116,7 @@ describe('SubscriptionService - Layer Refactoring', () => {
         userId,
         { id: planId, price: 10000, durationDays: 30 },
         { id: 'tier_001', code: 'PREMIUM' },
+        {},
       );
       expect(mockMembershipEventPublisher.publishStatusChanged).toHaveBeenCalled();
     });
