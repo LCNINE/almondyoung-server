@@ -111,16 +111,14 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
         </div>
       )}
 
-      {/* 비멤버에게 멤버십 가격 프로모션 */}
-      {!hasMembership && hasMembershipPrice && (
+      {/* 비멤버에게 멤버십 가격 프로모션 - 할인이 있을 때만 표시 */}
+      {!hasMembership && hasMembershipPrice && membershipDiscountRate > 0 && (
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">
             <ProductMembershipBadge size="md" label="멤버십할인가" />
-            {membershipDiscountRate > 0 && (
-              <span className="text-primary text-sm font-semibold">
-                {membershipDiscountRate}% OFF
-              </span>
-            )}
+            <span className="text-primary text-sm font-semibold">
+              {membershipDiscountRate}% OFF
+            </span>
             <span className="text-primary text-lg font-bold">
               {membershipPrice.toLocaleString()}원
             </span>
