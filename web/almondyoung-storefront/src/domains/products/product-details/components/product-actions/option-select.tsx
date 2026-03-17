@@ -8,6 +8,7 @@ interface OptionSelectProps {
   title: string
   disabled?: boolean
   disabledValues?: Set<string>
+  selectedValues?: Set<string> // 이미 선택된 항목의 옵션 값들
 }
 
 export default function OptionSelect({
@@ -17,6 +18,7 @@ export default function OptionSelect({
   title,
   disabled,
   disabledValues,
+  selectedValues,
 }: OptionSelectProps) {
   const filteredOptions = (option.values ?? []).map((v) => v.value)
 
@@ -26,6 +28,9 @@ export default function OptionSelect({
       <div className="flex flex-wrap gap-2">
         {filteredOptions.map((v) => {
           const isUnavailable = disabledValues?.has(v)
+          const isSelected = selectedValues?.has(v)
+          const isCurrent = v === current
+
           return (
             <button
               onClick={() => updateOption(option.id, v)}
@@ -33,10 +38,15 @@ export default function OptionSelect({
               className={cn(
                 "rounded-full border px-4 py-2 text-sm transition-colors",
                 {
+                  // 현재 선택 중
                   "border-primary bg-primary text-primary-foreground":
-                    v === current && !isUnavailable,
+                    isCurrent && !isUnavailable,
+                  // 이미 선택된 항목
+                  "border-primary text-primary":
+                    isSelected && !isCurrent && !isUnavailable,
+                  // 기본 상태
                   "border-gray-200 hover:border-gray-400":
-                    v !== current && !isUnavailable,
+                    !isCurrent && !isSelected && !isUnavailable,
                   "pointer-events-none": disabled || isUnavailable,
                   "border-gray-200 bg-gray-100 text-gray-400": isUnavailable,
                 }

@@ -145,6 +145,25 @@ export default function ProductActions({
     return map
   }, [product.options, product.variants, options])
 
+  // 이미 선택된 항목들의 옵션 값
+  const selectedValuesMap = useMemo(() => {
+    const map: Record<string, Set<string>> = {}
+    if (!product.options) return map
+
+    for (const option of product.options) {
+      const selectedSet = new Set<string>()
+      for (const item of selectedItems) {
+        const variantOptions = optionsAsKeymap(item.variant.options)
+        const value = variantOptions?.[option.id]
+        if (value) {
+          selectedSet.add(value)
+        }
+      }
+      map[option.id] = selectedSet
+    }
+    return map
+  }, [product.options, selectedItems])
+
   // 옵션으로 매칭되는 variant 찾기
   const matchedVariant = useMemo(() => {
     if (!product.variants || product.variants.length === 0) return undefined
@@ -166,7 +185,11 @@ export default function ProductActions({
     const alreadySelected = selectedItems.some(
       (item) => item.variantId === matchedVariant.id
     )
-    if (alreadySelected) return
+    if (alreadySelected) {
+      // 이미 선택된 항목이면 옵션만 초기화
+      setOptions({})
+      return
+    }
 
     const price = getPricesForVariant(matchedVariant)
     if (!price) return
@@ -181,6 +204,7 @@ export default function ProductActions({
         label: getVariantLabel(matchedVariant),
       },
     ])
+    setOptions({})
   }, [matchedVariant, isSimple, selectedItems])
 
   const setOptionValue = (optionId: string, value: string) => {
@@ -340,6 +364,7 @@ export default function ProductActions({
                   updateOption={setOptionValue}
                   title={option.title ?? ""}
                   disabledValues={disabledValuesMap[option.id]}
+                  selectedValues={selectedValuesMap[option.id]}
                   data-testid="product-options"
                   disabled={!!disabled || isPending}
                 />
