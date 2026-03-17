@@ -40,12 +40,12 @@ export const POST = async (
   const cart = await refetchCart(
     cartId,
     req.scope,
-    prepareRetrieveQuery(
+    (await prepareRetrieveQuery(
       {},
       {
         defaults: defaultStoreCartFields,
       }
-    ).remoteQueryConfig.fields
+    )).remoteQueryConfig.fields
   )
 
   res.status(200).json({

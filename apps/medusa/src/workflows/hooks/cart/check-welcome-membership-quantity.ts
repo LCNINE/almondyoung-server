@@ -1,5 +1,6 @@
 import { updateLineItemInCartWorkflow } from '@medusajs/medusa/core-flows';
 import { MedusaError, Modules } from '@medusajs/framework/utils';
+import type { ICartModuleService, IProductModuleService } from '@medusajs/framework/types';
 
 /**
  * 웰컴 멤버십 상품 수량 변경 서버 검증 훅
@@ -23,7 +24,7 @@ updateLineItemInCartWorkflow.hooks.validate(
 
     if (!variantId) {
       // cart에 items가 없는 경우 cartModule로 fallback
-      const cartModule = container.resolve(Modules.CART);
+      const cartModule = container.resolve<ICartModuleService>(Modules.CART);
       const fetchedItem = await cartModule.retrieveLineItem(input.item_id, {
         select: ['variant_id'],
       });
@@ -39,7 +40,7 @@ async function checkVariantTag(
   variantId: string,
   container: any,
 ): Promise<void> {
-  const productModule = container.resolve(Modules.PRODUCT);
+  const productModule = container.resolve(Modules.PRODUCT) as IProductModuleService;
   const variants = await productModule.listProductVariants(
     { id: [variantId] },
     { relations: ['product', 'product.tags'] },

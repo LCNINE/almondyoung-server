@@ -1,6 +1,7 @@
 import { createStep, StepResponse } from '@medusajs/framework/workflows-sdk';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { logger } from '@medusajs/framework';
+import type { RemoteQueryFunction } from '@medusajs/framework/types';
 
 type CreateReviewEligibilityInput = {
   customerId: string;
@@ -17,7 +18,7 @@ export const createReviewEligibilityStep = createStep(
     }
 
     // customer metadata에서 almond_user_id 조회
-    const query = container.resolve(ContainerRegistrationKeys.QUERY);
+    const query = container.resolve<RemoteQueryFunction>(ContainerRegistrationKeys.QUERY);
     const { data: customers } = await query.graph({
       entity: 'customer',
       fields: ['metadata'],
