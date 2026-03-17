@@ -26,6 +26,7 @@ type MobileActionsProps = {
   updateQuantity: (variantId: string, delta: number) => void
   removeItem: (variantId: string) => void
   disabledValuesMap: Record<string, Set<string>>
+  selectedValuesMap: Record<string, Set<string>>
   totalQuantity: number
   totalPrice: number
   isSimple: boolean
@@ -45,6 +46,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
   updateQuantity,
   removeItem,
   disabledValuesMap,
+  selectedValuesMap,
   totalQuantity,
   totalPrice,
   isSimple,
@@ -155,7 +157,9 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                         const isUnavailable = disabledValuesMap[option.id]?.has(
                           optValue.value
                         )
-                        const isSelected = options[option.id] === optValue.value
+                        const isAlreadySelected =
+                          selectedValuesMap[option.id]?.has(optValue.value)
+                        const isCurrent = options[option.id] === optValue.value
                         return (
                           <button
                             key={optValue.value}
@@ -166,20 +170,24 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                             className={cn(
                               "rounded-full border px-4 py-2 text-sm transition-colors",
                               {
+                                // 현재 선택 중
                                 "border-primary bg-primary text-primary-foreground":
-                                  isSelected && !isUnavailable,
+                                  isCurrent && !isUnavailable,
+                                // 이미 선택된 항목
+                                "border-primary text-primary":
+                                  isAlreadySelected &&
+                                  !isCurrent &&
+                                  !isUnavailable,
+                                // 기본 상태
                                 "border-gray-200 hover:border-gray-400":
-                                  !isSelected && !isUnavailable,
+                                  !isCurrent &&
+                                  !isAlreadySelected &&
+                                  !isUnavailable,
                                 "border-gray-100 text-gray-400": isUnavailable,
                               }
                             )}
                           >
-                            {optValue.value}
-                            {isUnavailable && (
-                              <span className="ml-1 text-xs text-gray-300">
-                                (품절)
-                              </span>
-                            )}
+                            {isUnavailable ? `${optValue.value} (품절)` : optValue.value}
                           </button>
                         )
                       })}

@@ -574,6 +574,7 @@ export default function ProductActions({
         updateQuantity={updateQuantity}
         removeItem={removeItem}
         disabledValuesMap={disabledValuesMap}
+        selectedValuesMap={selectedValuesMap}
         totalQuantity={totalQuantity}
         totalPrice={totalPrice}
         isSimple={isSimple}
