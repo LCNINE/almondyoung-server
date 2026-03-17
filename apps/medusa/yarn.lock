@@ -2096,6 +2096,11 @@
   resolved "https://registry.npmjs.org/@medusajs/index/-/index-2.11.3.tgz"
   integrity sha512-TDr+RczcmdEKhM/rw/Gj+Ng0H9mdnd6d2a8H7MTX45Z6QMSIRTieT3LMQw/DiNasYtrGobHABXOfCRCT8yzRSQ==
 
+"@medusajs/index@^2.13.4":
+  version "2.13.4"
+  resolved "https://registry.yarnpkg.com/@medusajs/index/-/index-2.13.4.tgz#dbcb8b65ee2fb8df83397d0b68c5072884585b73"
+  integrity sha512-Yj93rDWhOmqAhMLoqUlKu0miWecngTcBHRLI465b0/nJhRxYNYL5JN6AZjyDRHlU0AqJu/X89F4HXNet14AMLg==
+
 "@medusajs/inventory@2.11.3":
   version "2.11.3"
   resolved "https://registry.npmjs.org/@medusajs/inventory/-/inventory-2.11.3.tgz"
