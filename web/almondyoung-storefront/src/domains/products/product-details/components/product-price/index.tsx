@@ -24,22 +24,25 @@ export default function ProductPrice({
   const unitPrice = selectedPrice.calculated_price_number
   const subtotal = unitPrice * quantity
 
+  const hasDiscount =
+    selectedPrice.percentage_diff &&
+    Number(selectedPrice.percentage_diff) > 0
+
   return (
     <div className="relative flex flex-col">
-      {/* 원래 가격 (취소선) - 오른쪽 상단 고정 */}
-      {selectedPrice.price_type === "sale" && (
+      {/* 원래 가격 (취소선) - 할인이 있을 때만 표시 */}
+      {hasDiscount && (
         <span className="absolute -top-4 right-0 text-xs text-gray-400 line-through">
           {selectedPrice.original_price}
         </span>
       )}
 
       <div className="flex items-center gap-2">
-        {selectedPrice.percentage_diff &&
-          Number(selectedPrice.percentage_diff) > 0 && (
-            <span className="text-sm font-semibold text-red-500">
-              {selectedPrice.percentage_diff}%
-            </span>
-          )}
+        {hasDiscount && (
+          <span className="text-sm font-semibold text-red-500">
+            {selectedPrice.percentage_diff}%
+          </span>
+        )}
 
         <span className="text-base font-bold">
           {subtotal.toLocaleString()}원
