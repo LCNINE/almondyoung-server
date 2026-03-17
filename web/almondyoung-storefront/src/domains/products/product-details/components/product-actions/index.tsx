@@ -246,9 +246,9 @@ export default function ProductActions({
   const allInStock = selectedItems.every((item) => {
     const v = item.variant
 
-    if (!v.manage_inventory) return true
-    if (v.allow_backorder) return true
-    return (v.inventory_quantity || 0) > 0
+    if (!v.manage_inventory) return true // 재고관리를 안하는 상품은 장바구니에 추가 가능
+    if (v.allow_backorder) return true // 백오더 가능한 상품은 장바구니에 추가 가능
+    return (v.inventory_quantity || 0) > 0 // 재고가 있는 상품은 장바구니에 추가 가능
   })
 
   const disabledLabel =
