@@ -1,10 +1,12 @@
-
 import { MedusaError } from "@medusajs/framework/utils"
 import { completeCartWorkflow } from "@medusajs/medusa/core-flows"
-import { getVariantAvailability } from "@medusajs/framework/utils"
+import { getVariantAvailability, ContainerRegistrationKeys } from "@medusajs/framework/utils"
+
+// getVariantAvailability의 첫 번째 인자 타입 추론 (패키지 간 타입 충돌 방지)
+type QueryParam = Parameters<typeof getVariantAvailability>[0]
 
 completeCartWorkflow.hooks.validate(async ({ cart }, { container }) => {
-  const query = container.resolve("query")
+  const query = container.resolve<QueryParam>(ContainerRegistrationKeys.QUERY)
 
   const { data: carts } = await query.graph(
     {

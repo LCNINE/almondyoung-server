@@ -35,12 +35,12 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
     const cart = await refetchCart(
       cart_id,
       req.scope,
-      prepareRetrieveQuery(
+      (await prepareRetrieveQuery(
         {},
         {
           defaults: defaultStoreCartFields,
         },
-      ).remoteQueryConfig.fields,
+      )).remoteQueryConfig.fields,
     );
 
     if (!statusOKErrors.includes(error.type)) {

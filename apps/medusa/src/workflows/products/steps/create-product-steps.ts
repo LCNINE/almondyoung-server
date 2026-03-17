@@ -5,12 +5,12 @@ import {
   StepResponse,
 } from '@medusajs/framework/workflows-sdk';
 import { Modules } from '@medusajs/framework/utils';
-import { AdminCreateProduct } from '@medusajs/framework/types';
+import type { AdminCreateProduct, IProductModuleService } from '@medusajs/framework/types';
 
 export const createProductStep = createStep(
   'create-product',
   async ({ input }: { input: AdminCreateProduct }, { container }) => {
-    const productService = container.resolve(Modules.PRODUCT);
+    const productService = container.resolve<IProductModuleService>(Modules.PRODUCT);
 
     const products = await productService.createProducts([
       {
@@ -25,7 +25,7 @@ export const createProductStep = createStep(
     if (!productId) {
       return;
     }
-    const productService = container.resolve(Modules.PRODUCT);
+    const productService = container.resolve<IProductModuleService>(Modules.PRODUCT);
 
     await productService.deleteProducts([productId]);
   },
