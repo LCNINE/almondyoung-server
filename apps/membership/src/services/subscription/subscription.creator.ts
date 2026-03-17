@@ -10,6 +10,11 @@ import { MembershipPolicyService } from '../membership-policy.service';
 
 type Plan = typeof schema.plan.$inferSelect;
 type Tier = typeof schema.tiers.$inferSelect;
+type CreateSubscriptionPaymentRefs = {
+  initialPaymentIntentId?: string;
+  initialPaymentAttemptId?: string;
+  initialWalletReferenceId?: string;
+};
 
 /**
  * SubscriptionCreator (Implementation Layer)
@@ -35,6 +40,7 @@ export class SubscriptionCreator {
     userId: string,
     plan: Plan,
     tier: Tier,
+    paymentRefs: CreateSubscriptionPaymentRefs = {},
   ): Promise<{ contractId: string; entitlementId: string }> {
     return await this.dbService.db.transaction(async (tx) => {
       const now = new Date();
@@ -88,6 +94,9 @@ export class SubscriptionCreator {
           planId: plan.id,
           billingDate: billingDate.toISOString().split('T')[0],
           nextBillingDate: nextBillingDate.toISOString().split('T')[0],
+          lastPaymentIntentId: paymentRefs.initialPaymentIntentId ?? null,
+          lastPaymentAttemptId: paymentRefs.initialPaymentAttemptId ?? null,
+          walletReferenceId: paymentRefs.initialWalletReferenceId ?? null,
         })
         .returning();
 
