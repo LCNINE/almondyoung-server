@@ -125,9 +125,6 @@ module.exports = defineConfig({
       resolve: '@medusajs/api-key',
       options: {},
     },
-    {
-      resolve: '@medusajs/index',
-    },
   ],
   admin: {
     // Custom Vite config is needed because the admin bundler sometimes

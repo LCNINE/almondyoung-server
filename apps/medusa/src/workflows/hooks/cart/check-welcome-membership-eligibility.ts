@@ -1,5 +1,6 @@
 import { addToCartWorkflow } from '@medusajs/medusa/core-flows';
 import { MedusaError, Modules } from '@medusajs/framework/utils';
+import type { IProductModuleService, ICartModuleService, ICustomerModuleService } from '@medusajs/framework/types';
 
 /**
  * 웰컴 멤버십 상품 구매 자격 검증 훅
@@ -33,7 +34,7 @@ addToCartWorkflow.hooks.validate(
     if (variantIds.length === 0) return;
 
     // 상품 모듈에서 variant → product → tags 조회
-    const productModule = container.resolve(Modules.PRODUCT);
+    const productModule = container.resolve<IProductModuleService>(Modules.PRODUCT);
     const variants = await productModule.listProductVariants(
       { id: variantIds },
       { relations: ['product', 'product.tags'] },
@@ -47,7 +48,7 @@ addToCartWorkflow.hooks.validate(
     if (!hasWelcomeMembershipItem) return;
 
     // 웰컴 멤버십 상품이 포함되어 있음 → 고객 자격 확인
-    const cartModule = container.resolve(Modules.CART);
+    const cartModule = container.resolve<ICartModuleService>(Modules.CART);
     const cart = await cartModule.retrieveCart(input.cart_id, {
       select: ['customer_id'],
     });
@@ -60,7 +61,7 @@ addToCartWorkflow.hooks.validate(
     }
 
     // Medusa customer → almond user_id 매핑
-    const customerModule = container.resolve(Modules.CUSTOMER);
+    const customerModule = container.resolve<ICustomerModuleService>(Modules.CUSTOMER);
     const customer = await customerModule.retrieveCustomer(cart.customer_id, {
       select: ['metadata'],
     });
