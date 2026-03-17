@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { PaginatedResponseDto } from '@app/shared';
+import { and, count, desc, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { pointEventDetails, pointEvents, pointHolds, WalletSchema } from '../schema';
 import { DbTx } from '../types';
@@ -13,6 +14,7 @@ export interface PointsBalance {
 
 export interface PointsEventRow {
   id: string;
+  userId: string;
   eventType: string;
   amount: number;
   originalEventId: string | null;
@@ -51,6 +53,7 @@ export class PointsAdminService {
     const rows = await db
       .select({
         id: pointEvents.id,
+        userId: pointEvents.userId,
         eventType: pointEvents.eventType,
         amount: pointEvents.amount,
         originalEventId: pointEvents.originalEventId,
@@ -63,6 +66,40 @@ export class PointsAdminService {
       .limit(limit);
 
     return rows;
+  }
+
+  async getEventsPaginated(
+    userId: string,
+    page: number,
+    limit: number,
+  ): Promise<PaginatedResponseDto<PointsEventRow>> {
+    const db = this.dbService.db;
+    const offset = (page - 1) * limit;
+
+    const [countResult] = await db
+      .select({ value: count() })
+      .from(pointEvents)
+      .where(eq(pointEvents.userId, userId));
+
+    const total = countResult?.value ?? 0;
+
+    const rows = await db
+      .select({
+        id: pointEvents.id,
+        userId: pointEvents.userId,
+        eventType: pointEvents.eventType,
+        amount: pointEvents.amount,
+        originalEventId: pointEvents.originalEventId,
+        reasonCode: pointEvents.reasonCode,
+        createdAt: pointEvents.createdAt,
+      })
+      .from(pointEvents)
+      .where(eq(pointEvents.userId, userId))
+      .orderBy(desc(pointEvents.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    return { data: rows, total, page, limit };
   }
 
   async earn(

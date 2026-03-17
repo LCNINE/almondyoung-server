@@ -1,6 +1,7 @@
 import { Body, Controller, Get, HttpCode, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiProperty, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
 import { IsInt, IsNotEmpty, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { PaginationQueryDto } from '@app/shared';
 import { PointsAdminService } from './points-admin.service';
 
 class EarnPointsDto {
@@ -42,6 +43,13 @@ class EarnCancelDto {
   reasonCode?: string;
 }
 
+class PointsEventListQueryDto extends PaginationQueryDto {
+  @ApiProperty({ description: 'User ID' })
+  @IsString()
+  @IsNotEmpty()
+  userId: string;
+}
+
 @ApiTags('Admin - Points')
 @Controller('v1/admin/points')
 export class PointsAdminController {
@@ -54,13 +62,13 @@ export class PointsAdminController {
   }
 
   @Get('events')
-  @ApiOperation({ summary: 'Get recent point events for a user' })
-  async getEvents(
-    @Query('user_id') userId: string,
-    @Query('limit') limit?: string,
-  ) {
-    const parsedLimit = limit ? parseInt(limit, 10) : 20;
-    return this.service.getRecentEvents(userId, parsedLimit);
+  @ApiOperation({ summary: 'Get point events for a user (paginated)' })
+  async getEvents(@Query() query: PointsEventListQueryDto) {
+    return this.service.getEventsPaginated(
+      query.userId,
+      query.page ?? 1,
+      query.limit ?? 20,
+    );
   }
 
   @Post('earn')
