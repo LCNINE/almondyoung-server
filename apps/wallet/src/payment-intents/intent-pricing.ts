@@ -16,6 +16,7 @@ export interface ItemDiscountInput {
   kind: 'ITEM_PER_UNIT' | 'ITEM_FLAT';
   amount: number;
   discountRefId?: string;
+  name?: string;
 }
 
 export interface ItemInput {
@@ -32,6 +33,7 @@ export interface OrderDiscountInput {
   kind: 'ORDER';
   amount: number;
   discountRefId?: string;
+  name?: string;
 }
 
 export interface CalculatedItem {

@@ -92,6 +92,33 @@ interface AdminUsersResponse {
   limit: number;
 }
 
+// ===== Role 관련 =====
+interface RoleDto {
+  roleId: string;
+  name: string;
+  description: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface CreateRoleDto {
+  name: string;
+  description?: string;
+}
+
+interface UpdateRoleDto {
+  name?: string;
+  description?: string;
+}
+
+interface AdminUserRolesResponseDto {
+  roles: RoleDto[];
+}
+
+interface ReplaceUserRolesDto {
+  roleIds: string[];
+}
+
 export type {
   CreateAdminAccountDto,
   User,
@@ -100,4 +127,9 @@ export type {
   AdminUserDto,
   AdminUserDetailDto,
   AdminUsersResponse,
+  RoleDto,
+  CreateRoleDto,
+  UpdateRoleDto,
+  AdminUserRolesResponseDto,
+  ReplaceUserRolesDto,
 };

@@ -48,4 +48,22 @@ export class RolesManager {
 
     await this.repo.replaceUserRoles(userId, dto.roleIds);
   }
+
+  async addScopeToRole(roleId: string, scopeKey: string): Promise<void> {
+    const role = await this.repo.findById(roleId);
+    if (!role) throw new RoleNotFoundException('역할을 찾을 수 없습니다.');
+    await this.repo.addScopeToRole(role.name, scopeKey);
+  }
+
+  async removeScopeFromRole(roleId: string, scopeKey: string): Promise<void> {
+    const role = await this.repo.findById(roleId);
+    if (!role) throw new RoleNotFoundException('역할을 찾을 수 없습니다.');
+    await this.repo.removeScopeFromRole(role.name, scopeKey);
+  }
+
+  async getScopesForRole(roleId: string): Promise<string[]> {
+    const role = await this.repo.findById(roleId);
+    if (!role) throw new RoleNotFoundException('역할을 찾을 수 없습니다.');
+    return this.repo.getScopesForRole(role.name);
+  }
 }

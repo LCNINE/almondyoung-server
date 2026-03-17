@@ -30,6 +30,7 @@ interface Phase1Result {
   pointsAmount: number;
   externalMethodId: string | null;
   externalAmount: number;
+  metadata: Record<string, unknown>;
 }
 
 @Injectable()
@@ -215,6 +216,7 @@ export class ConfirmService {
       pointsAmount,
       externalMethodId,
       externalAmount,
+      metadata: (intent.metadata as Record<string, unknown>) ?? {},
     };
   }
 
@@ -340,6 +342,7 @@ export class ConfirmService {
         idempotencyKey,
         correlationId,
         providerData: method.providerData as Record<string, unknown>,
+        metadata: phase1.metadata,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -429,6 +432,7 @@ export class ConfirmService {
         idempotencyKey,
         correlationId,
         providerData: method.providerData as Record<string, unknown>,
+        metadata: phase1.metadata,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

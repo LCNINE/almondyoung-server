@@ -66,6 +66,11 @@ import { BankTransferAdminController } from './admin/bank-transfer-admin.control
 import { OutboxDispatcherService } from './messaging/outbox-dispatcher.service';
 import { ExpirationJob } from './jobs/expiration.job';
 
+// Webhooks
+import { TossWebhookController } from './webhooks/toss-webhook.controller';
+import { TossWebhookService } from './webhooks/toss-webhook.service';
+import { TossWebhookRepository } from './webhooks/toss-webhook.repository';
+
 // Consumers
 import { UgcCommandConsumer } from './consumers/ugc-command.consumer';
 
@@ -313,6 +318,7 @@ async function resolveCanActivate(
     PointsAdminController,
     BankTransferAdminController,
     PointsController,
+    TossWebhookController,
     UgcCommandConsumer,
   ],
   providers: [
@@ -367,6 +373,10 @@ async function resolveCanActivate(
     // Admin
     PointsAdminService,
     BankTransferAdminService,
+
+    // Webhooks
+    TossWebhookService,
+    TossWebhookRepository,
 
     // Messaging + Jobs
     OutboxDispatcherService,

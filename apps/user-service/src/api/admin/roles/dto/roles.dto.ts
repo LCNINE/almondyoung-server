@@ -32,3 +32,10 @@ export class RoleResponseDto {
   createdAt: Date;
   updatedAt: Date;
 }
+
+export class AddScopeToRoleDto {
+  @ApiProperty({ description: '스코프 키', example: 'user:read' })
+  @IsString()
+  @IsNotEmpty()
+  scopeKey: string;
+}

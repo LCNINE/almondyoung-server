@@ -19,3 +19,11 @@ export const useAdminUser = (id: string) => {
     staleTime: 30 * 1000,
   });
 };
+
+export const useUserRoles = (userId: string) => {
+  return useSuspenseQuery({
+    queryKey: usersQueryKeys.userRolesById(userId),
+    queryFn: () => userApi.getUserRoles(userId),
+    staleTime: 30 * 1000,
+  });
+};

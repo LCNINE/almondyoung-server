@@ -93,6 +93,22 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
     const { amount, currency_code, context: ctx, data } = context;
     const returnUrl = (data?.returnUrl as string) ?? ((ctx as Record<string, unknown>)?.return_url as string) ?? undefined;
 
+    const customer = (ctx as any)?.customer;
+    const firstName = customer?.first_name as string | null | undefined;
+    const lastName = customer?.last_name as string | null | undefined;
+    const customerName = [firstName, lastName].filter(Boolean).join(' ') || undefined;
+    const customerEmail = customer?.email as string | undefined;
+    const customerMobilePhone = customer?.phone as string | null | undefined;
+    const orderName = data?.orderName as string | undefined;
+
+    const metadata: Record<string, unknown> = {};
+    if (orderName) metadata.orderName = orderName;
+    if (customerName) metadata.customerName = customerName;
+    if (customerEmail) metadata.customerEmail = customerEmail;
+    if (customerMobilePhone) metadata.customerMobilePhone = customerMobilePhone;
+
+    const items = data?.items as unknown[] | undefined;
+
     // userId는 wallet-web에서 첫 번째 JWT 인증 GET 요청 시 자동으로 claim되므로 여기서 전달하지 않음
     const intent = await this.walletFetch<{ id: string }>(
       '/v1/payment-intents',
@@ -102,6 +118,8 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
           amount: Number(amount),
           currency: currency_code.toUpperCase(),
           ...(returnUrl ? { returnUrl } : {}),
+          ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
+          ...(items?.length ? { items } : {}),
         }),
       },
     );
