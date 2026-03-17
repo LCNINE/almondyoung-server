@@ -1184,7 +1184,31 @@ export class ProductVersionsService {
       );
     }
 
-    // 이미지 복사 
+    // 카테고리 복사
+    const categories = await tx
+      .select()
+      .from(productMasterCategories)
+      .where(
+        and(
+          eq(productMasterCategories.masterId, masterId),
+          eq(productMasterCategories.versionId, fromVersionId),
+        ),
+      );
+
+    if (categories.length > 0) {
+      await tx.insert(productMasterCategories).values(
+        categories.map((c) => ({
+          id: uuidv7(),
+          masterId,
+          categoryId: c.categoryId,
+          versionId: toVersionId,
+          isPrimary: c.isPrimary,
+          createdAt: new Date(),
+        })),
+      );
+    }
+
+    // 이미지 복사
     const images = await tx
       .select()
       .from(productImages)
@@ -1206,7 +1230,7 @@ export class ProductVersionsService {
 
     this.logger.log(
       `Copied mappings and displays from version ${fromVersionId} to ${toVersionId} for master ${masterId}: ` +
-      `${optionGroups.length} option groups, ${variants.length} variants, ${pricingRules.length} pricing rules, ${tagValueMappings.length} active tag values, ${images.length} images`,
+      `${categories.length} categories, ${optionGroups.length} option groups, ${variants.length} variants, ${pricingRules.length} pricing rules, ${tagValueMappings.length} active tag values, ${images.length} images`,
     );
   }
 
