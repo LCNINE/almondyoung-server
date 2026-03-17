@@ -218,16 +218,16 @@ export class ProductMasterVersionsController {
   @Patch(':versionId/publish')
   @ApiOperation({
     summary: '버전 Publish',
-    description: 'Draft 버전을 Active 상태로 변경합니다. 기존 Active 버전이 있으면 자동으로 Inactive로 전환됩니다.',
+    description: 'Draft 또는 Inactive 버전을 Active 상태로 변경합니다. Inactive 버전을 활성화하면 이전 버전으로 롤백할 수 있습니다. 기존 Active 버전이 있으면 자동으로 Inactive로 전환됩니다.',
   })
   @ApiParam({ name: 'masterId', description: 'Master ID' })
-  @ApiParam({ name: 'versionId', description: 'Version ID (Draft 상태여야 함)' })
+  @ApiParam({ name: 'versionId', description: 'Version ID (Draft 또는 Inactive 상태여야 함)' })
   @ApiResponse({
     status: 200,
     description: '버전 publish 성공',
   })
   @ApiResponse({ status: 404, description: '버전을 찾을 수 없음' })
-  @ApiResponse({ status: 400, description: 'Draft 상태가 아닌 버전은 publish할 수 없음' })
+  @ApiResponse({ status: 400, description: 'Draft 또는 Inactive 상태가 아닌 버전은 publish할 수 없음' })
   async publishVersion(
     @Param('masterId') masterId: string,
     @Param('versionId') versionId: string,
@@ -240,7 +240,7 @@ export class ProductMasterVersionsController {
       if (error.message.includes('not found')) {
         throw new HttpException(error.message, HttpStatus.NOT_FOUND);
       }
-      if (error.message.includes('Only draft')) {
+      if (error.message.includes('Only draft or inactive')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
       }
       throw new HttpException(

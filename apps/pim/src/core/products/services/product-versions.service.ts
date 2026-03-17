@@ -207,8 +207,10 @@ export class ProductVersionsService {
     return this.inTx(async (tx) => {
       const version = await this.getVersionById(versionId, tx);
 
-      if (version.status !== 'draft') {
-        throw new BadRequestException('Only draft versions can be published');
+      if (version.status !== 'draft' && version.status !== 'inactive') {
+        throw new BadRequestException(
+          'Only draft or inactive versions can be published',
+        );
       }
 
       let previousActiveVersion: ProductMasterVersion | null = null;
