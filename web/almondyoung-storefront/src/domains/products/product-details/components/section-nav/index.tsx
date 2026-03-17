@@ -9,7 +9,7 @@ export type SectionTab = "detail" | "review" | "qna"
 const VALID_TABS: SectionTab[] = ["detail", "review", "qna"]
 
 const triggerClassName =
-  "flex-1 cursor-pointer rounded-none border-b-2 border-transparent bg-transparent px-4 py-3 text-sm font-bold text-[#666666] shadow-none transition-colors focus-visible:ring-0 focus-visible:outline-none data-[state=active]:border-[#f29219] data-[state=active]:bg-transparent data-[state=active]:text-[#f29219] data-[state=active]:shadow-none data-[state=inactive]:hover:text-[#333333] lg:text-base"
+  "flex-1 cursor-pointer !rounded-none !border-0 !border-b-2 !border-b-transparent !bg-transparent px-4 py-3 text-sm font-bold text-[#666666] !shadow-none transition-colors focus-visible:!ring-0 focus-visible:!outline-none !after:hidden data-[state=active]:!border-0 data-[state=active]:!border-b-2 data-[state=active]:!border-b-[#f29219] data-[state=active]:!bg-transparent data-[state=active]:!text-[#f29219] data-[state=active]:!shadow-none data-[state=inactive]:hover:text-[#333333] lg:text-base"
 
 interface SectionTabsProps {
   reviewCount?: number
