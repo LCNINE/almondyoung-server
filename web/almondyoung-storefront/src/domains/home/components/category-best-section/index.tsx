@@ -11,12 +11,14 @@ interface CategoryBestSectionProps {
   initialProducts: HttpTypes.StoreProduct[] | undefined
   regionId?: string
   customer: StoreCustomerWithGroups | null
+  wishlistIds?: Set<string>
 }
 
 export function CategoryBestSection({
   initialProducts,
   regionId,
   customer,
+  wishlistIds,
 }: CategoryBestSectionProps) {
   const categories = FIXED_CATEGORIES
 
@@ -54,6 +56,7 @@ export function CategoryBestSection({
       customer={customer}
       emptyTitle="상품이 없습니다"
       emptyDescription="이 카테고리에 등록된 상품이 없습니다."
+      wishlistIds={wishlistIds}
     />
   )
 }

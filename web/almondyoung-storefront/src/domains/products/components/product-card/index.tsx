@@ -12,15 +12,15 @@ export default function ProductCard({
   isMembership,
   isMembershipOnly,
   rank,
-  isLoggedIn = false,
   countryCode = "kr",
+  isWishlisted = false,
 }: {
   product: HttpTypes.StoreProduct
   isMembership: boolean
   isMembershipOnly: boolean
   rank?: number
-  isLoggedIn?: boolean
   countryCode?: string
+  isWishlisted?: boolean
 }) {
   const { cheapestPrice } = getProductPrice({
     product,
@@ -46,8 +46,8 @@ export default function ProductCard({
             productHandle={product.handle ?? ""}
             variantId={product.variants?.[0]?.id}
             isSingleOption={isSingleOption}
-            isLoggedIn={isLoggedIn}
             countryCode={countryCode}
+            isWishlisted={isWishlisted}
           />
         </div>
 

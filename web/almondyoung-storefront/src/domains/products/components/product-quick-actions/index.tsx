@@ -2,7 +2,6 @@
 
 import { Button } from "@/components/ui/button"
 import { useAddToCart } from "@hooks/api/use-add-to-cart"
-import { useWishlist } from "@/contexts/wishlist-context"
 import { cn } from "@/lib/utils"
 import { AnimatedHeart } from "@/components/shared/animated-heart"
 import { Minus, Plus, ShoppingCart, Check } from "lucide-react"
@@ -10,6 +9,7 @@ import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
 import { Spinner } from "@/components/shared/spinner"
+import { toggleWishlist } from "@lib/api/users/wishlist"
 
 interface ProductQuickActionsProps {
   productId: string
@@ -17,7 +17,6 @@ interface ProductQuickActionsProps {
   variantId?: string
   isSingleOption: boolean
   isWishlisted?: boolean
-  isLoggedIn?: boolean
   countryCode?: string
   onWishlistChange?: (isWishlisted: boolean) => void
   isWelcomeMembership?: boolean
@@ -34,53 +33,52 @@ export function ProductQuickActions({
   variantId,
   isSingleOption,
   isWishlisted: initialWishlisted = false,
-  isLoggedIn = false,
   countryCode = "kr",
   onWishlistChange,
   isWelcomeMembership = false,
 }: ProductQuickActionsProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
-  const {
-    isLoaded,
-    isWishlisted,
-    isPending: isWishlistPending,
-    toggle,
-  } = useWishlist()
   const { addToCart, isLoading: isCartLoading } = useAddToCart()
 
   const [showQuantitySelector, setShowQuantitySelector] = useState(false)
   const [quantity, setQuantity] = useState(1)
   const [isAddedToCart, setIsAddedToCart] = useState(false)
-
-  const resolvedWishlisted = isLoaded
-    ? isWishlisted(productId)
-    : initialWishlisted
+  const [isWishlisted, setIsWishlisted] = useState(initialWishlisted)
 
   // 찜하기 토글
   const handleWishlistToggle = (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
 
-    if (!isLoggedIn) {
-      toast.error("로그인이 필요합니다.")
-      return
-    }
+    // 낙관적 업데이트
+    const nextWishlisted = !isWishlisted
+    setIsWishlisted(nextWishlisted)
 
     startTransition(async () => {
       try {
-        const action = await toggle(productId)
-        if (action) {
-          const nextWishlisted = action === "added"
-          onWishlistChange?.(nextWishlisted)
-          toast.success(
-            nextWishlisted
-              ? "찜 목록에 추가되었습니다."
-              : "찜 목록에서 삭제되었습니다."
-          )
+        await toggleWishlist(productId)
+        onWishlistChange?.(nextWishlisted)
+        toast.success(
+          nextWishlisted
+            ? "찜 목록에 추가되었습니다."
+            : "찜 목록에서 삭제되었습니다."
+        )
+      } catch (e) {
+        // 실패 시 롤백
+        setIsWishlisted(!nextWishlisted)
+
+        // 401 에러 시 로그인 안내
+        const error = e as Error & { status?: number; digest?: string }
+        if (
+          error.status === 401 ||
+          error.digest === "UNAUTHORIZED" ||
+          error.message?.includes("UNAUTHORIZED")
+        ) {
+          toast.error("로그인이 필요합니다.")
+        } else {
+          toast.error("처리 중 오류가 발생했습니다.")
         }
-      } catch {
-        toast.error("처리 중 오류가 발생했습니다.")
       }
     })
   }
@@ -156,10 +154,10 @@ export function ProductQuickActions({
           isPending && "pointer-events-none opacity-50"
         )}
         onClick={handleWishlistToggle}
-        disabled={isPending || isWishlistPending(productId)}
+        disabled={isPending}
       >
         <AnimatedHeart
-          isActive={resolvedWishlisted}
+          isActive={isWishlisted}
           className="h-4 w-4"
           inactiveColor="text-gray-600"
         />

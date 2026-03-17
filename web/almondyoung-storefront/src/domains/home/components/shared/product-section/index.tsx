@@ -36,6 +36,8 @@ interface ProductSectionProps<T extends TabItem> {
   emptyDescription?: string
   /** 모바일 캐러셀에서 보여줄 행 수 (기본값: 2) */
   mobileRows?: number
+  /** 위시리스트에 담긴 상품 ID Set */
+  wishlistIds?: Set<string>
 }
 
 export function ProductSection<T extends TabItem>({
@@ -50,6 +52,7 @@ export function ProductSection<T extends TabItem>({
   emptyTitle,
   emptyDescription,
   mobileRows = 2,
+  wishlistIds,
 }: ProductSectionProps<T>) {
   const handleTabChange = (value: string) => {
     const nextTab = tabs.find((t) => t.id === value)
@@ -83,6 +86,7 @@ export function ProductSection<T extends TabItem>({
         }
         isMembershipOnly={p.metadata?.isMembershipOnly === true ? true : false}
         rank={index + 1}
+        isWishlisted={wishlistIds?.has(p.id ?? "") ?? false}
       />
     )
 
