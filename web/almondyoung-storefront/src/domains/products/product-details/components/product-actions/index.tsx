@@ -251,6 +251,13 @@ export default function ProductActions({
     return (v.inventory_quantity || 0) > 0
   })
 
+  const disabledLabel =
+    selectedItems.length === 0
+      ? "옵션을 선택해주세요"
+      : !allInStock
+        ? "품절"
+        : null
+
   // 장바구니 담기
   const handleAddToCart = () => {
     if (selectedItems.length === 0) return
@@ -489,24 +496,20 @@ export default function ProductActions({
           <Button
             variant="outline"
             onClick={handleAddToCart}
-            disabled={selectedItems.length === 0 || !allInStock || !!disabled}
+            disabled={!!disabledLabel || !!disabled}
             className="border-yellow-30 text-yellow-30 hover:text-primary h-12 w-full flex-1 cursor-pointer text-base hover:bg-transparent"
             data-testid="add-product-button"
           >
-            {(() => {
-              if (selectedItems.length === 0) return "옵션을 선택해주세요"
-              if (!allInStock) return "품절"
-              return "장바구니 담기"
-            })()}
+            {disabledLabel ?? "장바구니 담기"}
           </Button>
 
           <Button
             onClick={handleBuyNow}
-            disabled={selectedItems.length === 0 || !!disabled || isPending}
+            disabled={!!disabledLabel || !!disabled}
             className="h-12 w-full flex-1 cursor-pointer text-base"
             data-testid="buy-now-button"
           >
-            바로구매
+            {disabledLabel ?? "바로구매"}
           </Button>
         </div>
       </div>
