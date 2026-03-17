@@ -35,7 +35,19 @@ export default function ProductPrice({
       100
   )
 
-  if (isMembership)
+  // 할인이 없으면 가격만 표시
+  const hasDiscount = discount > 0
+
+  if (isMembership) {
+    // 할인 없으면 단순 가격만
+    if (!hasDiscount) {
+      return (
+        <span className="text-[16px] leading-none font-bold whitespace-nowrap text-black">
+          {price.calculated_price_number.toLocaleString()}원
+        </span>
+      )
+    }
+
     return (
       <>
         <div className="flex items-center gap-1 text-[13px] text-gray-400">
@@ -58,12 +70,28 @@ export default function ProductPrice({
         </div>
       </>
     )
+  }
+
+  // 비멤버십 - 할인 없으면 단순 가격만
+  if (!hasDiscount) {
+    return (
+      <span className="text-[15px] font-bold whitespace-nowrap text-black">
+        {price.original_price_number.toLocaleString()}원
+      </span>
+    )
+  }
 
   const membershipSavings = price.original_price_number - membershipPrice
 
   return (
     <>
       <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-1 text-[13px] text-gray-400">
+          <span className="shrink-0 font-bold">{discount}%</span>
+          <span className="min-w-0 truncate line-through">
+            {price.original_price_number.toLocaleString()}원
+          </span>
+        </div>
         <div className="flex flex-col gap-0.5 text-[#F2994A]">
           <ProductMembershipBadge size="sm" label="멤버십할인가" />
           <span className="text-[15px] font-bold whitespace-nowrap">

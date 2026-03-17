@@ -22,6 +22,7 @@ interface SearchPageClientProps {
   searchResult: SearchProductResult
   countryCode: string
   regionId?: string
+  wishlistIds?: string[]
 }
 
 function getProductSortPrice(
@@ -63,6 +64,7 @@ export function SearchPageClient({
   isLoggedIn,
   countryCode,
   regionId,
+  wishlistIds = [],
 }: SearchPageClientProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -366,8 +368,8 @@ export function SearchPageClient({
               product={product}
               isMembership={isMembership}
               isMembershipOnly={product.metadata?.isMembershipOnly === true}
-              isLoggedIn={isLoggedIn}
               countryCode={countryCode}
+              isWishlisted={wishlistIds.includes(product.id ?? "")}
             />
           ))}
         </div>

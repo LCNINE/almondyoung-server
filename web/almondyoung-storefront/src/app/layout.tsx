@@ -3,7 +3,6 @@ import { BottomNavigation } from "@/components/layout/nav/bottom-nav"
 import { FloatingButtons } from "@/components/shared/custom-buttons/floating-buttons"
 import { CartProvider } from "@/contexts/cart-context"
 import { UserProvider } from "@/contexts/user-context"
-import { WishlistProvider } from "@/contexts/wishlist-context"
 import "@/styles/globals.css"
 import { retrieveCart } from "@lib/api/medusa/cart"
 import { fetchMe } from "@lib/api/users/me"
@@ -45,8 +44,7 @@ export default async function RootLayout(props: { children: React.ReactNode }) {
       >
         <OverlayProvider>
           <UserProvider initialUser={user}>
-            <WishlistProvider>
-              <CartProvider initialCart={cart}>
+            <CartProvider initialCart={cart}>
                 <ThemeProvider
                   attribute="class"
                   defaultTheme="light"
@@ -63,8 +61,7 @@ export default async function RootLayout(props: { children: React.ReactNode }) {
                   </CustomThemeProvider>
                 </ThemeProvider>
                 <BottomNavigation />
-              </CartProvider>
-            </WishlistProvider>
+            </CartProvider>
           </UserProvider>
           <Footer />
           {renderSchemaTags()}

@@ -5,6 +5,7 @@ import { isMembershipGroup } from "@/lib/utils/membership-group"
 import { Pagination } from "../components/pagination"
 import ProductCard from "@/domains/products/components/product-card"
 import { SortOptions } from "../components/refinement-list/sort-products"
+import { getWishlist } from "@lib/api/users/wishlist"
 
 const PRODUCT_LIMIT = 12
 
@@ -74,6 +75,11 @@ export default async function PaginatedProducts({
 
   const customer = await retrieveCustomer().catch(() => null)
   const groups = customer?.groups ?? []
+
+  // 로그인한 경우에만 위시리스트 조회
+  const wishlist = customer ? await getWishlist().catch(() => []) : []
+  const wishlistIds = new Set(wishlist.map((item) => item.productId))
+
   return (
     <>
       <ul
@@ -90,6 +96,7 @@ export default async function PaginatedProducts({
                   p.metadata?.isMembershipOnly === true ||
                   p.metadata?.isMembershipOnly === "true"
                 }
+                isWishlisted={wishlistIds.has(p.id ?? "")}
               />
             </li>
           )

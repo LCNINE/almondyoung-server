@@ -4,6 +4,7 @@ import { listProducts } from "@lib/api/medusa/products"
 import { getRegion } from "@lib/api/medusa/regions"
 import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import { getMembershipGroupIdFromEnv } from "@/lib/utils/membership-group"
+import { getWishlist } from "@lib/api/users/wishlist"
 import type { HttpTypes } from "@medusajs/types"
 
 export interface SearchProductResult {
@@ -51,6 +52,10 @@ export async function SearchContainer({
   const isMembership = !!customer?.groups?.some(
     (group) => group.id === getMembershipGroupIdFromEnv()
   )
+
+  // 로그인한 경우에만 위시리스트 조회
+  const wishlist = customer ? await getWishlist().catch(() => []) : []
+  const wishlistIds = wishlist.map((item) => item.productId)
 
   let searchResult: SearchProductResult = {
     items: [],
@@ -126,6 +131,7 @@ export async function SearchContainer({
       regionId={region?.id}
       isMembership={isMembership}
       isLoggedIn={!!customer}
+      wishlistIds={wishlistIds}
     />
   )
 }
