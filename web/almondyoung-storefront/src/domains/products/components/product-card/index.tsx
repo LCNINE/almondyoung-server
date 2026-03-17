@@ -1,6 +1,7 @@
 "use client"
 
 import LocalizedClientLink from "@/components/shared/localized-client-link"
+import { ProductQuickActions } from "domains/products/components/product-quick-actions"
 import { getProductPrice } from "@/lib/utils/get-product-price"
 import { HttpTypes } from "@medusajs/types"
 import ProductPrice from "./price"
@@ -11,15 +12,21 @@ export default function ProductCard({
   isMembership,
   isMembershipOnly,
   rank,
+  isLoggedIn = false,
+  countryCode = "kr",
 }: {
   product: HttpTypes.StoreProduct
   isMembership: boolean
   isMembershipOnly: boolean
   rank?: number
+  isLoggedIn?: boolean
+  countryCode?: string
 }) {
   const { cheapestPrice } = getProductPrice({
     product,
   })
+
+  const isSingleOption = (product.variants?.length ?? 0) <= 1
 
   return (
     <LocalizedClientLink
@@ -27,12 +34,22 @@ export default function ProductCard({
       className="group cursor-pointer"
     >
       <div>
-        <Thumbnail
-          thumbnail={product.thumbnail}
-          images={product.images}
-          size="full"
-          rank={rank}
-        />
+        <div className="relative">
+          <Thumbnail
+            thumbnail={product.thumbnail}
+            images={product.images}
+            size="full"
+            rank={rank}
+          />
+          <ProductQuickActions
+            productId={product.id ?? ""}
+            productHandle={product.handle ?? ""}
+            variantId={product.variants?.[0]?.id}
+            isSingleOption={isSingleOption}
+            isLoggedIn={isLoggedIn}
+            countryCode={countryCode}
+          />
+        </div>
 
         <div className="mt-4">
           <h3 className="line-clamp-1 text-[14px] leading-tight text-gray-600">

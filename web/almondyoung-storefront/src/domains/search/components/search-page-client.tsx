@@ -1,30 +1,52 @@
 "use client"
 
-import { ProductGrid } from "@/components/products/product-grid"
+import ProductCard from "@/domains/products/components/product-card"
 import { Spinner } from "@/components/shared/spinner"
-import { useUser } from "@/contexts/user-context"
 import { useInfiniteScroll } from "@/hooks/ui/use-infinite-scroll"
-import { getListCacheSnapshot, useListCache } from "@/hooks/ui/use-list-cache"
 import CustomDropdown from "@components/dropdown"
 import { SearchHistory } from "@components/search/search-history"
 import { useSearchHistory } from "@hooks/ui/use-search-history"
 import { listProducts } from "@lib/api/medusa/products"
 import { searchProducts } from "@lib/api/pim/search"
-import type {
-  ProductCardProps,
-  SearchProductResult,
-} from "@lib/types/ui/product"
-import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
+import type { SearchProductResult } from "../containers/search-container"
+import type { HttpTypes } from "@medusajs/types"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { SearchEmptyState } from "./search-empty-state"
+import { getProductPrice } from "@/lib/utils/get-product-price"
 
 interface SearchPageClientProps {
   isMembership: boolean
+  isLoggedIn: boolean
   keyword: string
   searchResult: SearchProductResult
   countryCode: string
   regionId?: string
+}
+
+function getProductSortPrice(
+  product: HttpTypes.StoreProduct,
+  isMembership: boolean
+): number {
+  const { cheapestPrice } = getProductPrice({ product })
+  if (!cheapestPrice) return 0
+
+  const membershipPrice = product.variants?.[0]?.metadata
+    ?.membershipPrice as number
+
+  if (
+    isMembership &&
+    typeof membershipPrice === "number" &&
+    membershipPrice > 0
+  ) {
+    return membershipPrice
+  }
+
+  return (
+    cheapestPrice.original_price_number ||
+    cheapestPrice.calculated_price_number ||
+    0
+  )
 }
 
 const SORT_OPTIONS = [
@@ -33,20 +55,18 @@ const SORT_OPTIONS = [
   { id: "price_desc", label: "높은가격순" },
   { id: "newest", label: "최신순" },
 ]
-const CACHE_TTL_MS = 1000 * 60 * 30
 
 export function SearchPageClient({
   keyword,
   searchResult,
   isMembership,
+  isLoggedIn,
   countryCode,
   regionId,
 }: SearchPageClientProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { keywords: historyKeywords } = useSearchHistory()
-  const { user } = useUser()
-  const isLoggedIn = !!user
   const currentSort = normalizeSearchSort(searchParams.get("sort"))
   const currentSize = searchResult.pagination.size || 20
   const urlPage = Math.max(1, Number(searchParams.get("page")) || 1)
@@ -68,62 +88,14 @@ export function SearchPageClient({
     [searchParams]
   )
 
-  const cacheKey = useMemo(
-    () =>
-      [
-        "search-products",
-        countryCode,
-        regionId ?? "region-none",
-        keyword || "keyword-none",
-        currentSort,
-        String(currentSize),
-        categoryIds.join(",") || "category-none",
-        brands.join(",") || "brand-none",
-        minPrice?.toString() ?? "min-none",
-        maxPrice?.toString() ?? "max-none",
-        isMembership ? "membership" : "non-membership",
-      ].join("|"),
-    [
-      brands,
-      categoryIds,
-      countryCode,
-      currentSize,
-      currentSort,
-      isMembership,
-      keyword,
-      maxPrice,
-      minPrice,
-      regionId,
-    ]
+  const [items, setItems] = useState<HttpTypes.StoreProduct[]>(
+    searchResult.items
   )
-
-  const cachedSnapshot = useMemo(
-    () => getListCacheSnapshot<ProductCardProps>(cacheKey, CACHE_TTL_MS),
-    [cacheKey]
-  )
-
-  const [items, setItems] = useState<ProductCardProps[]>(() => {
-    if (cachedSnapshot?.items?.length) {
-      return cachedSnapshot.items
-    }
-    return searchResult.items
-  })
-  const [total, setTotal] = useState(() => {
-    if (cachedSnapshot) {
-      return cachedSnapshot.total
-    }
-    return searchResult.pagination.total
-  })
-  const [currentPage, setCurrentPage] = useState(() => {
-    if (cachedSnapshot) {
-      return Math.max(cachedSnapshot.currentPage, urlPage)
-    }
-    return urlPage
-  })
+  const [total, setTotal] = useState(searchResult.pagination.total)
+  const [currentPage, setCurrentPage] = useState(urlPage)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const isLoadingMoreRef = useRef(false)
   const isFetchingRef = useRef(false)
-  const isInfiniteScrollUpdateRef = useRef(false)
 
   const hasKeyword = keyword.length > 0
   const hasResults = items.length > 0
@@ -135,44 +107,25 @@ export function SearchPageClient({
       return items
     }
 
-    const getSortPrice = (item: ProductCardProps) => {
-      const regularPrice =
-        item.originalPrice > 0 ? item.originalPrice : item.price
-      const membershipPrice = item.debugPrices?.membershipPrice
-
-      if (
-        isMembership &&
-        typeof membershipPrice === "number" &&
-        membershipPrice > 0
-      ) {
-        return membershipPrice
-      }
-
-      return regularPrice
-    }
-
     const sorted = [...items]
     if (currentSort === "price_asc") {
       sorted.sort(
-        (a, b) => getSortPrice(a) - getSortPrice(b) || a.id.localeCompare(b.id)
+        (a, b) =>
+          getProductSortPrice(a, isMembership) -
+            getProductSortPrice(b, isMembership) ||
+          (a.id ?? "").localeCompare(b.id ?? "")
       )
       return sorted
     }
 
     sorted.sort(
-      (a, b) => getSortPrice(b) - getSortPrice(a) || a.id.localeCompare(b.id)
+      (a, b) =>
+        getProductSortPrice(b, isMembership) -
+          getProductSortPrice(a, isMembership) ||
+        (a.id ?? "").localeCompare(b.id ?? "")
     )
     return sorted
   }, [currentSort, isMembership, items])
-
-  useListCache({
-    cacheKey,
-    ttlMs: CACHE_TTL_MS,
-    items,
-    total,
-    currentPage,
-    scrollYToRestore: cachedSnapshot?.scrollY,
-  })
 
   const fetchSearchPage = useCallback(
     async (page: number) => {
@@ -195,7 +148,7 @@ export function SearchPageClient({
       const masterIds = searchData.items.map((item) => item.productId)
       if (masterIds.length === 0) {
         return {
-          items: [] as ProductCardProps[],
+          items: [] as HttpTypes.StoreProduct[],
           total: searchData.pagination.total,
         }
       }
@@ -217,9 +170,7 @@ export function SearchPageClient({
       )
 
       return {
-        items: mapStoreProductsToCardProps(sortedProducts, undefined, {
-          isMember: isMembership,
-        }),
+        items: sortedProducts,
         total: searchData.pagination.total,
       }
     },
@@ -228,7 +179,6 @@ export function SearchPageClient({
       categoryIds,
       currentSize,
       currentSort,
-      isMembership,
       keyword,
       maxPrice,
       minPrice,
@@ -237,14 +187,7 @@ export function SearchPageClient({
   )
 
   useEffect(() => {
-    // 이미 fetch 중이면 스킵
     if (isFetchingRef.current) {
-      return
-    }
-
-    // 무한 스크롤로 인한 URL 업데이트는 스킵
-    if (isInfiniteScrollUpdateRef.current) {
-      isInfiniteScrollUpdateRef.current = false
       return
     }
 
@@ -252,19 +195,6 @@ export function SearchPageClient({
       setItems([])
       setTotal(0)
       setCurrentPage(1)
-      isLoadingMoreRef.current = false
-      setIsLoadingMore(false)
-      return
-    }
-
-    const cached = getListCacheSnapshot<ProductCardProps>(
-      cacheKey,
-      CACHE_TTL_MS
-    )
-    if (cached?.items?.length) {
-      setItems(cached.items)
-      setTotal(cached.total)
-      setCurrentPage(Math.max(cached.currentPage, urlPage))
       isLoadingMoreRef.current = false
       setIsLoadingMore(false)
       return
@@ -312,7 +242,6 @@ export function SearchPageClient({
       cancelled = true
     }
   }, [
-    cacheKey,
     fetchSearchPage,
     hasKeyword,
     searchResult.items,
@@ -352,7 +281,6 @@ export function SearchPageClient({
       setItems((prev) => [...prev, ...next.items])
       setTotal(next.total)
       setCurrentPage(nextPage)
-      isInfiniteScrollUpdateRef.current = true
       setUrlPage(nextPage)
     } catch (error) {
       console.error("검색 상품 추가 로드 실패:", error)
@@ -431,13 +359,18 @@ export function SearchPageClient({
       </div>
 
       <section className="mb-8">
-        <ProductGrid
-          products={sortedItems}
-          showQuickActions
-          className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4"
-          countryCode={countryCode}
-          isLoggedIn={isLoggedIn}
-        />
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+          {sortedItems.map((product) => (
+            <ProductCard
+              key={product.id}
+              product={product}
+              isMembership={isMembership}
+              isMembershipOnly={product.metadata?.isMembershipOnly === true}
+              isLoggedIn={isLoggedIn}
+              countryCode={countryCode}
+            />
+          ))}
+        </div>
 
         <div ref={sentinelRef} className="h-10 w-full" />
 

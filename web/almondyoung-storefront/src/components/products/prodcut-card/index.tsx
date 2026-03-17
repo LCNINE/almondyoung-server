@@ -2,7 +2,7 @@ import { cn } from "@lib/utils"
 import { ProductThumbnail } from "./parts/product-thumbnail"
 import { ProductInfo } from "./parts/product-info"
 import { ProductRank } from "./parts/product-rank"
-import { ProductQuickActions } from "./parts/product-quick-actions"
+import { ProductQuickActions } from "domains/products/components/product-quick-actions"
 
 interface ProductCardProps {
   children: React.ReactNode

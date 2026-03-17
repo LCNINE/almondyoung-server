@@ -2,13 +2,19 @@ import { SearchPageClient } from "../components/search-page-client"
 import { searchProducts } from "@lib/api/pim/search"
 import { listProducts } from "@lib/api/medusa/products"
 import { getRegion } from "@lib/api/medusa/regions"
-import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
-import type {
-  ProductCardProps,
-  SearchProductResult,
-} from "@lib/types/ui/product"
 import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import { getMembershipGroupIdFromEnv } from "@/lib/utils/membership-group"
+import type { HttpTypes } from "@medusajs/types"
+
+export interface SearchProductResult {
+  items: HttpTypes.StoreProduct[]
+  pagination: {
+    page: number
+    size: number
+    total: number
+    totalPages: number
+  }
+}
 
 interface SearchContainerProps {
   searchParams: Promise<{
@@ -76,7 +82,7 @@ export async function SearchContainer({
         // 2. productId 목록 추출 (medusa에서 handle로 사용)
         const masterIds = searchData.items.map((item) => item.productId)
 
-        let items: ProductCardProps[] = []
+        let items: HttpTypes.StoreProduct[] = []
 
         if (masterIds.length > 0) {
           // 3. medusa에서 handle로 상품 조회
@@ -90,17 +96,10 @@ export async function SearchContainer({
 
           // 4. 검색 순서대로 정렬 (검색 관련도 유지)
           const orderMap = new Map(masterIds.map((id, idx) => [id, idx]))
-          const sortedProducts = [...medusaResult.response.products].sort(
-            (a, b) => {
-              const orderA = orderMap.get(a.handle ?? "") ?? Infinity
-              const orderB = orderMap.get(b.handle ?? "") ?? Infinity
-              return orderA - orderB
-            }
-          )
-
-          // 5. medusa 상품을 ProductCardProps로 변환
-          items = mapStoreProductsToCardProps(sortedProducts, undefined, {
-            isMember: isMembership,
+          items = [...medusaResult.response.products].sort((a, b) => {
+            const orderA = orderMap.get(a.handle ?? "") ?? Infinity
+            const orderB = orderMap.get(b.handle ?? "") ?? Infinity
+            return orderA - orderB
           })
         }
 
@@ -126,6 +125,7 @@ export async function SearchContainer({
       countryCode={countryCode}
       regionId={region?.id}
       isMembership={isMembership}
+      isLoggedIn={!!customer}
     />
   )
 }

@@ -9,6 +9,7 @@ import { Minus, Plus, ShoppingCart, Check } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
+import { Spinner } from "@/components/shared/spinner"
 
 interface ProductQuickActionsProps {
   productId: string
@@ -40,8 +41,12 @@ export function ProductQuickActions({
 }: ProductQuickActionsProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
-  const { isLoaded, isWishlisted, isPending: isWishlistPending, toggle } =
-    useWishlist()
+  const {
+    isLoaded,
+    isWishlisted,
+    isPending: isWishlistPending,
+    toggle,
+  } = useWishlist()
   const { addToCart, isLoading: isCartLoading } = useAddToCart()
 
   const [showQuantitySelector, setShowQuantitySelector] = useState(false)
@@ -214,7 +219,7 @@ export function ProductQuickActions({
                 onClick={handleAddToCart}
                 disabled={isCartLoading}
               >
-                {isCartLoading ? "..." : "담기"}
+                {isCartLoading ? <Spinner size="sm" color="white" /> : "담기"}
               </Button>
               <Button
                 variant="ghost"
