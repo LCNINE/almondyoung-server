@@ -5,7 +5,8 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { and, desc, eq } from 'drizzle-orm';
+import { PaginatedResponseDto } from '@app/shared';
+import { and, count, desc, eq } from 'drizzle-orm';
 import { WalletSchema, charges, paymentIntents, paymentMethods } from '../schema';
 import { ChargesService } from '../charges/charges.service';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
@@ -14,6 +15,7 @@ import {
   GatewayEventType,
   buildPaymentIntentEventPayload,
 } from '../messaging/gateway-event.builder';
+import { PendingBankTransferResponseDto } from './dto/pending-bank-transfer.dto';
 
 @Injectable()
 export class BankTransferAdminService {
@@ -25,8 +27,27 @@ export class BankTransferAdminService {
     private readonly stateTransitionService: StateTransitionService,
   ) {}
 
-  async getPendingTransfers(): Promise<Array<typeof paymentIntents.$inferSelect>> {
-    return this.dbService.db
+  async getPendingTransfers(
+    page = 1,
+    limit = 20,
+  ): Promise<PaginatedResponseDto<PendingBankTransferResponseDto>> {
+    const db = this.dbService.db;
+    const offset = (page - 1) * limit;
+
+    const condition = and(
+      eq(paymentIntents.status, 'REQUIRES_ACTION'),
+      eq(paymentMethods.type, 'BANK_TRANSFER'),
+    );
+
+    const [countResult] = await db
+      .select({ value: count() })
+      .from(paymentIntents)
+      .innerJoin(paymentMethods, eq(paymentIntents.paymentMethodId, paymentMethods.id))
+      .where(condition);
+
+    const total = countResult?.value ?? 0;
+
+    const rows = await db
       .select({
         id: paymentIntents.id,
         payableAmount: paymentIntents.payableAmount,
@@ -34,23 +55,28 @@ export class BankTransferAdminService {
         status: paymentIntents.status,
         userId: paymentIntents.userId,
         paymentMethodId: paymentIntents.paymentMethodId,
-        clientSecret: paymentIntents.clientSecret,
-        returnUrl: paymentIntents.returnUrl,
-        metadata: paymentIntents.metadata,
         expiresAt: paymentIntents.expiresAt,
-        version: paymentIntents.version,
         createdAt: paymentIntents.createdAt,
-        updatedAt: paymentIntents.updatedAt,
       })
       .from(paymentIntents)
       .innerJoin(paymentMethods, eq(paymentIntents.paymentMethodId, paymentMethods.id))
-      .where(
-        and(
-          eq(paymentIntents.status, 'REQUIRES_ACTION'),
-          eq(paymentMethods.type, 'BANK_TRANSFER'),
-        ),
-      )
-      .orderBy(desc(paymentIntents.createdAt));
+      .where(condition)
+      .orderBy(desc(paymentIntents.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    const data: PendingBankTransferResponseDto[] = rows.map((r) => ({
+      id: r.id,
+      payableAmount: r.payableAmount,
+      currency: r.currency,
+      status: r.status,
+      userId: r.userId,
+      paymentMethodId: r.paymentMethodId,
+      expiresAt: r.expiresAt,
+      createdAt: r.createdAt,
+    }));
+
+    return { data, total, page, limit };
   }
 
   async confirmDeposit(intentId: string, depositorNote?: string): Promise<void> {
