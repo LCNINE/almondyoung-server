@@ -8,7 +8,6 @@ interface OptionSelectProps {
   title: string
   disabled?: boolean
   disabledValues?: Set<string>
-  "data-testid"?: string
 }
 
 export default function OptionSelect({
@@ -18,14 +17,13 @@ export default function OptionSelect({
   title,
   disabled,
   disabledValues,
-  "data-testid": dataTestId,
 }: OptionSelectProps) {
   const filteredOptions = (option.values ?? []).map((v) => v.value)
 
   return (
     <div className="flex flex-col gap-y-3">
       <span className="text-sm font-medium">{title}</span>
-      <div className="flex flex-wrap gap-2" data-testid={dataTestId}>
+      <div className="flex flex-wrap gap-2">
         {filteredOptions.map((v) => {
           const isUnavailable = disabledValues?.has(v)
           return (
@@ -39,15 +37,14 @@ export default function OptionSelect({
                     v === current && !isUnavailable,
                   "border-gray-200 hover:border-gray-400":
                     v !== current && !isUnavailable,
-                  "pointer-events-none opacity-50": disabled || isUnavailable,
-                  "border-gray-100 text-gray-300 line-through":
-                    isUnavailable,
+                  "pointer-events-none": disabled || isUnavailable,
+                  "border-gray-200 bg-gray-100 text-gray-400": isUnavailable,
                 }
               )}
               disabled={disabled || isUnavailable}
               data-testid="option-button"
             >
-              {v}
+              {isUnavailable ? `${v} (품절)` : v}
             </button>
           )
         })}

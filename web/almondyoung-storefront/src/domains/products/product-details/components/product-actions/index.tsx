@@ -67,6 +67,13 @@ const getVariantLabel = (variant: HttpTypes.StoreProductVariant) => {
   )
 }
 
+// 재고 확인
+const isInStock = (v: HttpTypes.StoreProductVariant) => {
+  if (!v.manage_inventory) return true // 재고관리를 안하는 상품은 장바구니에 추가 가능
+  if (v.allow_backorder) return true // 백오더 가능한 상품은 장바구니에 추가 가능
+  return (v.inventory_quantity || 0) > 0 // 재고가 있는 상품은 장바구니에 추가 가능
+}
+
 export default function ProductActions({
   product,
   disabled,
@@ -103,6 +110,8 @@ export default function ProductActions({
     }
   }, [product.variants, isSimple])
 
+  const allInStock = selectedItems.every((item) => isInStock(item.variant))
+
   // 현재 선택된 옵션 기준으로, 각 옵션별 선택 불가능한 값 계산
   const disabledValuesMap = useMemo(() => {
     const map: Record<string, Set<string>> = {}
@@ -115,15 +124,17 @@ export default function ProductActions({
         // 현재 선택된 다른 옵션 + 이 값의 조합으로 variant가 존재하는지 확인
         const testOptions = { ...options, [option.id]: optValue.value }
 
-        const hasVariant = product.variants.some((v) => {
+        // 조합에 해당하는 variant 중 재고가 있는 것이 있는지 확인
+        const hasAvailableVariant = product.variants.some((v) => {
           const variantOptions = optionsAsKeymap(v.options)
           // testOptions에서 설정된 키만 비교 (아직 선택 안 된 옵션은 무시)
-          return Object.entries(testOptions).every(
+          const matchesOptions = Object.entries(testOptions).every(
             ([key, val]) => val === undefined || variantOptions?.[key] === val
           )
+          return matchesOptions && isInStock(v)
         })
 
-        if (!hasVariant) {
+        if (!hasAvailableVariant) {
           disabledSet.add(optValue.value)
         }
       }
@@ -170,7 +181,6 @@ export default function ProductActions({
         label: getVariantLabel(matchedVariant),
       },
     ])
-    setOptions({})
   }, [matchedVariant, isSimple, selectedItems])
 
   const setOptionValue = (optionId: string, value: string) => {
@@ -241,15 +251,6 @@ export default function ProductActions({
 
   const actionsRef = useRef<HTMLDivElement>(null)
   const inView = useIntersection(actionsRef, "0px")
-
-  // 재고 확인
-  const allInStock = selectedItems.every((item) => {
-    const v = item.variant
-
-    if (!v.manage_inventory) return true // 재고관리를 안하는 상품은 장바구니에 추가 가능
-    if (v.allow_backorder) return true // 백오더 가능한 상품은 장바구니에 추가 가능
-    return (v.inventory_quantity || 0) > 0 // 재고가 있는 상품은 장바구니에 추가 가능
-  })
 
   const disabledLabel =
     selectedItems.length === 0
