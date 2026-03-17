@@ -42,7 +42,7 @@ export default function ProductPrice({
     // 할인 없으면 단순 가격만
     if (!hasDiscount) {
       return (
-        <span className="text-[16px] leading-none font-bold whitespace-nowrap text-black">
+        <span className="text-foreground text-[16px] leading-none font-bold whitespace-nowrap">
           {price.calculated_price_number.toLocaleString()}원
         </span>
       )
@@ -75,7 +75,7 @@ export default function ProductPrice({
   // 비멤버십 - 할인 없으면 단순 가격만
   if (!hasDiscount) {
     return (
-      <span className="text-[15px] font-bold whitespace-nowrap text-black">
+      <span className="text-foreground text-[15px] font-bold whitespace-nowrap">
         {price.original_price_number.toLocaleString()}원
       </span>
     )

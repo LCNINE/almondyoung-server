@@ -52,7 +52,7 @@ export default function ProductCard({
         </div>
 
         <div className="mt-4">
-          <h3 className="line-clamp-1 text-[14px] leading-tight text-gray-600">
+          <h3 className="text-foreground line-clamp-1 text-[14px] leading-tight">
             {product.title}
           </h3>
 
