@@ -5,10 +5,12 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  HttpException,
   InternalServerErrorException,
   NotFoundException,
   Param,
   Patch,
+  Put,
   Query,
 } from '@nestjs/common';
 import {
@@ -23,12 +25,18 @@ import { AdminUsersListResponseDto } from './dto/admin-users-list.response.dto';
 import { GetUsersQueryDto } from './dto/get-users-query.dto';
 import { UsersService } from './users.service';
 import { UserConsent } from '../../consents/types/consent.type';
+import { ReplaceUserRolesDto, UserRolesResponseDto } from '../roles/dto/user-roles.dto';
+import { RolesService } from '../roles/roles.service';
+import { ApplicationException } from '@app/shared/filters/application.exception';
 
 @ApiTags('사용자 관리')
 @ApiBearerAuth('access-token')
 @Controller('admin/users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly rolesService: RolesService,
+  ) {}
 
   @Get()
   @RequireScopes('master', 'admin:users:read')
@@ -129,5 +137,34 @@ export class UsersController {
       throw new NotFoundException('해당 사용자를 찾을 수 없습니다.');
     }
     return updatedUser;
+  }
+
+  @ApiOperation({ summary: '사용자의 현재 역할 ID 조회' })
+  @ApiResponse({ status: 200, description: '역할 ID 목록 반환' })
+  @Get(':userId/roles')
+  @RequireScopes('master')
+  async getUserRoles(@Param('userId') userId: string): Promise<UserRolesResponseDto> {
+    try {
+      return await this.rolesService.getUserRoles(userId);
+    } catch (e: any) {
+      if (e instanceof ApplicationException) throw new HttpException(e.message, e.getHttpStatus());
+      throw new InternalServerErrorException(e.message);
+    }
+  }
+
+  @ApiOperation({ summary: '사용자 역할 전체 교체 (체크박스 저장)' })
+  @ApiResponse({ status: 200, description: '역할 교체 성공' })
+  @Put(':userId/roles')
+  @RequireScopes('master')
+  async replaceUserRoles(
+    @Param('userId') userId: string,
+    @Body() dto: ReplaceUserRolesDto,
+  ): Promise<void> {
+    try {
+      return await this.rolesService.replaceUserRoles(userId, dto);
+    } catch (e: any) {
+      if (e instanceof ApplicationException) throw new HttpException(e.message, e.getHttpStatus());
+      throw new InternalServerErrorException(e.message);
+    }
   }
 }

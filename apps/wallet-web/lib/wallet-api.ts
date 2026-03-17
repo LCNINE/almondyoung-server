@@ -10,6 +10,7 @@ export interface PaymentIntent {
   userId: string;
   returnUrl: string | null;
   expiresAt: string | null;
+  metadata?: Record<string, unknown>;
 }
 
 export interface PaymentMethod {

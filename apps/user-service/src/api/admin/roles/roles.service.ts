@@ -34,4 +34,16 @@ export class RolesService {
   replaceUserRoles(userId: string, dto: ReplaceUserRolesDto): Promise<void> {
     return this.manager.replaceUserRoles(userId, dto);
   }
+
+  addScopeToRole(roleId: string, scopeKey: string): Promise<void> {
+    return this.manager.addScopeToRole(roleId, scopeKey);
+  }
+
+  removeScopeFromRole(roleId: string, scopeKey: string): Promise<void> {
+    return this.manager.removeScopeFromRole(roleId, scopeKey);
+  }
+
+  getScopesForRole(roleId: string): Promise<string[]> {
+    return this.manager.getScopesForRole(roleId);
+  }
 }
