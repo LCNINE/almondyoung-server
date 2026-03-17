@@ -11,7 +11,10 @@ import { SubscriptionContractReader } from './subscription/subscription-contract
 import { SubscriptionCreator } from './subscription/subscription.creator';
 import { SubscriptionManager } from './subscription/subscription.manager';
 import { MembershipEventPublisher } from './membership-event.publisher';
-import { PaymentClientService } from './billing/payment-client.service';
+import {
+  PaymentClientService,
+  WalletPaymentIntentResponse,
+} from './billing/payment-client.service';
 
 /**
  * SubscriptionService (Business Layer)
@@ -40,6 +43,12 @@ interface BulkSubscriptionResponse {
   };
 }
 
+type CreateSubscriptionOptions = {
+  initialPaymentIntentId?: string;
+  initialPaymentAttemptId?: string;
+  initialWalletReferenceId?: string;
+};
+
 @Injectable()
 export class SubscriptionService {
   constructor(
@@ -66,7 +75,12 @@ export class SubscriptionService {
    *
    * ✅ 흐름만 표현: "기존 구독 확인 → 플랜 조회 → 구독 생성"
    */
-  async createSubscription(userId: string, planId: string, email: string) {
+  async createSubscription(
+    userId: string,
+    planId: string,
+    email: string,
+    options: CreateSubscriptionOptions = {},
+  ) {
     const existing = await this.entitlementService.getUserEntitlement(userId);
     if (existing) throw new ActiveSubscriptionExistsException();
 
@@ -77,6 +91,7 @@ export class SubscriptionService {
       userId,
       planDetails.plan,
       planDetails.tier,
+      options,
     );
 
     await this.membershipEventPublisher.publishStatusChanged({
@@ -139,7 +154,26 @@ export class SubscriptionService {
       );
     }
 
-    return this.createSubscription(userId, planId, email);
+    return this.createSubscription(userId, planId, email, {
+      initialPaymentIntentId: intentId,
+      initialWalletReferenceId: this.extractWalletReference(intent),
+    });
+  }
+
+  private extractWalletReference(
+    intent: WalletPaymentIntentResponse,
+  ): string | undefined {
+    const raw = intent as unknown as Record<string, unknown>;
+    const candidate = [
+      intent?.metadata?.paymentKey,
+      intent?.metadata?.providerTransactionId,
+      intent?.metadata?.transactionId,
+      raw.providerTransactionId,
+      raw.paymentKey,
+      raw.transactionId,
+    ].find((value) => typeof value === 'string' && value.length > 0);
+
+    return typeof candidate === 'string' ? candidate : undefined;
   }
 
   /**
