@@ -493,24 +493,50 @@ export default function ProductActions({
           className="flex w-full gap-x-3 border-t border-gray-200 bg-white p-4"
           data-testid="mobile-actions"
         >
-          <Button
-            variant="outline"
-            onClick={handleAddToCart}
-            disabled={!!disabledLabel || !!disabled}
-            className="border-yellow-30 text-yellow-30 hover:text-primary h-12 w-full flex-1 cursor-pointer text-base hover:bg-transparent"
-            data-testid="add-product-button"
-          >
-            {disabledLabel ?? "장바구니 담기"}
-          </Button>
+          {/* TODO: 재입고 알림 기능 추가 후 활성화
+          {!allInStock && selectedItems.length > 0 ? (
+            <Button
+              variant="default"
+              className="h-12 w-full cursor-pointer gap-2 text-base font-medium"
+              data-testid="restock-alert-button"
+            >
+              <Bell className="h-5 w-5" />
+              재입고 알림 받기
+            </Button>
+          ) : ( ... )} */}
 
-          <Button
-            onClick={handleBuyNow}
-            disabled={!!disabledLabel || !!disabled}
-            className="h-12 w-full flex-1 cursor-pointer text-base"
-            data-testid="buy-now-button"
-          >
-            {disabledLabel ?? "바로구매"}
-          </Button>
+          {/* 재입고 알림기능추가되면 품절버튼 삭제 */}
+          {!allInStock && selectedItems.length > 0 ? (
+            <Button
+              variant="default"
+              disabled
+              className="h-12 w-full cursor-pointer text-base font-medium"
+              data-testid="sold-out-button"
+            >
+              품절
+            </Button>
+          ) : (
+            <>
+              <Button
+                variant="outline"
+                onClick={handleAddToCart}
+                disabled={!!disabledLabel || !!disabled}
+                className="border-yellow-30 text-yellow-30 hover:text-primary h-12 w-full flex-1 cursor-pointer text-base hover:bg-transparent"
+                data-testid="add-product-button"
+              >
+                {disabledLabel ?? "장바구니 담기"}
+              </Button>
+
+              <Button
+                onClick={handleBuyNow}
+                disabled={!!disabledLabel || !!disabled}
+                className="h-12 w-full flex-1 cursor-pointer text-base"
+                data-testid="buy-now-button"
+              >
+                {disabledLabel ?? "바로구매"}
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
