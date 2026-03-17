@@ -129,6 +129,7 @@
     "db:push:membership": "./scripts/with-ipv4.sh drizzle-kit push --config apps/membership/drizzle.config.ts",
     "db:seed:membership": "cd apps/membership && npx tsx drizzle/seed.ts",
     "db:seed:membership:billing-test": "cd apps/membership && npx tsx drizzle/seed.ts",
+    "membership:backfill:last-payment-intent": "./scripts/with-ipv4.sh node apps/membership/scripts/backfill-last-payment-intent.js",
     "docs:generate": "ts-node --transpile-only scripts/generate-swagger-docs.ts",
     "docs:wms": "npm run docs:generate wms",
     "docs:membership": "npm run docs:generate membership",
