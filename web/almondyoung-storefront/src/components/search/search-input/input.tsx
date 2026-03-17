@@ -21,7 +21,16 @@ export const SearchInput = forwardRef<HTMLDivElement, SearchInputProps>(
             type="search"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            onKeyDown={(e) => onSearchKeyword(e.key)}
+            onKeyDown={(e) => {
+              // 한글 IME 조합 중에는 Enter 무시
+              // 이렇게해야 엔터한번에 검색됌
+              if (e.nativeEvent.isComposing) return
+              if (e.key === "Enter") {
+                e.stopPropagation()
+                e.preventDefault()
+              }
+              onSearchKeyword(e.key)
+            }}
             placeholder="오늘 뭐 살까? 아몬드영"
             className="w-full rounded-xl border-none bg-gray-100 py-4 pr-20 pl-5 text-sm font-normal transition-all placeholder:text-gray-400 focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-yellow-400 focus-visible:ring-offset-0"
           />
