@@ -70,15 +70,19 @@ export class TossPaymentProvider implements PaymentProvider {
     }
 
     const orderId = params.chargeId.replace(/-/g, '');
+    const meta = params.metadata ?? {};
     return {
       status: 'REQUIRES_ACTION',
       nextAction: {
         type: 'TOSS_CHECKOUT',
         orderId,
-        orderName: (params.metadata?.orderName as string) ?? '결제',
+        orderName: (meta.orderName as string) ?? '결제',
         clientKey: process.env.TOSS_CLIENT_KEY ?? '',
         amount: params.amount,
         currency: params.currency,
+        ...(meta.customerName ? { customerName: meta.customerName } : {}),
+        ...(meta.customerEmail ? { customerEmail: meta.customerEmail } : {}),
+        ...(meta.customerMobilePhone ? { customerMobilePhone: meta.customerMobilePhone } : {}),
       },
     };
   }

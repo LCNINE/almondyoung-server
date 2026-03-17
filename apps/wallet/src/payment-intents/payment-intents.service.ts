@@ -122,6 +122,7 @@ export class PaymentIntentsService {
               discountRefId: discount.discountRefId ?? null,
               kind: discount.kind,
               amount: discount.amount,
+              name: discount.name ?? null,
               metadata: {},
             });
           }
@@ -134,6 +135,7 @@ export class PaymentIntentsService {
               discountRefId: discount.discountRefId ?? null,
               kind: 'ORDER',
               amount: discount.amount,
+              name: discount.name ?? null,
               metadata: {},
             });
           }
@@ -178,13 +180,45 @@ export class PaymentIntentsService {
     return rows[0] ?? null;
   }
 
-  async findById(id: string): Promise<typeof paymentIntents.$inferSelect | null> {
+  async findById(id: string) {
     const rows = await this.dbService.db
       .select()
       .from(paymentIntents)
       .where(eq(paymentIntents.id, id))
       .limit(1);
-    return rows[0] ?? null;
+    const intent = rows[0] ?? null;
+    if (!intent) return null;
+
+    const [items, itemDiscounts, orderDiscounts] = await Promise.all([
+      this.dbService.db
+        .select()
+        .from(paymentIntentItems)
+        .where(eq(paymentIntentItems.intentId, id)),
+      this.dbService.db
+        .select()
+        .from(paymentIntentItemDiscounts)
+        .where(eq(paymentIntentItemDiscounts.intentId, id)),
+      this.dbService.db
+        .select()
+        .from(paymentIntentOrderDiscounts)
+        .where(eq(paymentIntentOrderDiscounts.intentId, id)),
+    ]);
+
+    const discountsByItemId = new Map<string, (typeof paymentIntentItemDiscounts.$inferSelect)[]>();
+    for (const d of itemDiscounts) {
+      const list = discountsByItemId.get(d.itemId) ?? [];
+      list.push(d);
+      discountsByItemId.set(d.itemId, list);
+    }
+
+    return {
+      ...intent,
+      items: items.map((item) => ({
+        ...item,
+        discounts: discountsByItemId.get(item.id) ?? [],
+      })),
+      orderDiscounts,
+    };
   }
 
   async findByIdOrThrow(id: string): Promise<typeof paymentIntents.$inferSelect> {

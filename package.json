@@ -139,6 +139,7 @@
     "docs:notification": "ts-node -r tsconfig-paths/register apps/notification/generate-swagger-docs.ts",
     "docs:serve": "npx itdoc serve",
     "seed": "ts-node -r tsconfig-paths/register src/database/seed-cli.ts",
+    "seed:user-service": "cd scripts/seed-data && ts-node run-user-service.ts",
     "gen:scope-types": "ts-node -r tsconfig-paths/register apps/user-service/database/generate-scope-types.ts",
     "start:dev": "npm run start:main:dev",
     "start:debug": "npm run start:main:debug",

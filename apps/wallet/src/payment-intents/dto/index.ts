@@ -32,6 +32,12 @@ export class ItemDiscountDto {
   @IsString()
   @MaxLength(128)
   discountRefId?: string;
+
+  @ApiPropertyOptional({ maxLength: 255 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  name?: string;
 }
 
 export class ItemDto {
@@ -91,6 +97,12 @@ export class OrderDiscountDto {
   @IsString()
   @MaxLength(128)
   discountRefId?: string;
+
+  @ApiPropertyOptional({ maxLength: 255 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  name?: string;
 }
 
 export class CreatePaymentIntentDto {
@@ -202,6 +214,75 @@ export class RefundByIntentResponseDto {
 
 // ─── Response ─────────────────────────────────────────────────────────────────
 
+export class ItemDiscountResponseDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  kind: string;
+
+  @ApiProperty()
+  amount: number;
+
+  @ApiPropertyOptional()
+  name: string | null;
+
+  @ApiPropertyOptional()
+  discountRefId: string | null;
+}
+
+export class PaymentIntentItemResponseDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  lineId: string;
+
+  @ApiProperty()
+  name: string;
+
+  @ApiPropertyOptional()
+  itemType: string | null;
+
+  @ApiProperty()
+  unitPrice: number;
+
+  @ApiProperty()
+  quantity: number;
+
+  @ApiProperty()
+  baseAmount: number;
+
+  @ApiProperty()
+  itemDiscountPerUnitTotal: number;
+
+  @ApiProperty()
+  itemDiscountFlatTotal: number;
+
+  @ApiProperty()
+  payableAmount: number;
+
+  @ApiProperty({ type: [ItemDiscountResponseDto] })
+  discounts: ItemDiscountResponseDto[];
+}
+
+export class OrderDiscountResponseDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  kind: string;
+
+  @ApiProperty()
+  amount: number;
+
+  @ApiPropertyOptional()
+  name: string | null;
+
+  @ApiPropertyOptional()
+  discountRefId: string | null;
+}
+
 export class PaymentIntentResponseDto {
   @ApiProperty()
   id: string;
@@ -232,6 +313,12 @@ export class PaymentIntentResponseDto {
 
   @ApiProperty()
   createdAt: Date;
+
+  @ApiPropertyOptional({ type: [PaymentIntentItemResponseDto] })
+  items?: PaymentIntentItemResponseDto[];
+
+  @ApiPropertyOptional({ type: [OrderDiscountResponseDto] })
+  orderDiscounts?: OrderDiscountResponseDto[];
 
   @ApiPropertyOptional()
   nextAction?: Record<string, unknown>;

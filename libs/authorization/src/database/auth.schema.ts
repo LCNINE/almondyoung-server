@@ -23,15 +23,11 @@ export const scopes = authSchema.table('scopes', {
 
 export const roleScopeMapping = authSchema.table('role_scope_mapping', {
   id: uuid('id').primaryKey().defaultRandom(),
-  roleId: uuid('role_id').notNull().references(() => roles.id, { onDelete: 'cascade' }),
+  roleName: varchar('role_name', { length: 100 }).notNull(),
   scopeId: uuid('scope_id').notNull().references(() => scopes.id, { onDelete: 'cascade' }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (table) => ({
-  uniqueMapping: uniqueIndex('role_scope_unique_idx').on(table.roleId, table.scopeId),
-}));
-
-export const rolesRelations = relations(roles, ({ many }) => ({
-  mappings: many(roleScopeMapping),
+  uniqueMapping: uniqueIndex('role_scope_unique_idx').on(table.roleName, table.scopeId),
 }));
 
 export const scopesRelations = relations(scopes, ({ many }) => ({
@@ -39,7 +35,6 @@ export const scopesRelations = relations(scopes, ({ many }) => ({
 }));
 
 export const roleScopeMappingRelations = relations(roleScopeMapping, ({ one }) => ({
-  role: one(roles, { fields: [roleScopeMapping.roleId], references: [roles.id] }),
   scope: one(scopes, { fields: [roleScopeMapping.scopeId], references: [scopes.id] }),
 }));
 
@@ -47,8 +42,6 @@ export const authorizationSchema = {
   roles,
   scopes,
   roleScopeMapping,
-  rolesRelations,
   scopesRelations,
   roleScopeMappingRelations,
 };
-
