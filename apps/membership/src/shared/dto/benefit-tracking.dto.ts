@@ -8,7 +8,7 @@ export const RecordDiscountSchema = z.object({
   userId: z.string(),
   orderDate: z.string().datetime(),
   membershipDiscountAmount: z.number().int().min(0),
-  tierId: z.string().uuid(),
+  tierId: z.string().uuid().optional(),
 });
 
 export class RecordDiscountDto extends createZodDto(RecordDiscountSchema) {}
