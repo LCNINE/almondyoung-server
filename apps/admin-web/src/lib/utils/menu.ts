@@ -334,6 +334,34 @@ export const mainMenus: MainMenu[] = [
     ],
   },
   {
+    id: 'payment-management',
+    title: '결제 관리',
+    icon: 'CreditCard',
+    defaultPath: '/payments',
+    children: [
+      {
+        id: 'payment-list',
+        title: '결제 내역',
+        path: '/payments',
+      },
+      {
+        id: 'refund-list',
+        title: '환불 내역',
+        path: '/payments/refunds',
+      },
+      {
+        id: 'bank-transfer-list',
+        title: '무통장입금 확인',
+        path: '/payments/bank-transfers',
+      },
+      {
+        id: 'points-management',
+        title: '포인트 관리',
+        path: '/payments/points',
+      },
+    ],
+  },
+  {
     id: 'membership',
     title: '멤버십 관리',
     icon: 'Crown',

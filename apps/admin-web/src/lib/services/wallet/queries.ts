@@ -1,0 +1,76 @@
+'use client';
+
+import { walletApi } from '@/lib/api/domains/wallet';
+import type { PaymentIntentListQuery, RefundListQuery } from '@/lib/types/dto/wallet';
+import { keepPreviousData, useQuery, useSuspenseQuery } from '@tanstack/react-query';
+import { walletQueryKeys } from './query-keys';
+
+// ── Payment Intents ────────────────────────────────────────────────────────
+
+export const usePaymentIntentList = (query: PaymentIntentListQuery) => {
+  return useQuery({
+    queryKey: walletQueryKeys.intentList(query),
+    queryFn: () => walletApi.listPaymentIntents(query),
+    staleTime: 30 * 1000,
+    placeholderData: keepPreviousData,
+  });
+};
+
+export const usePaymentIntentDetail = (id: string) => {
+  return useSuspenseQuery({
+    queryKey: walletQueryKeys.intentDetail(id),
+    queryFn: () => walletApi.getPaymentIntentDetail(id),
+    staleTime: 30 * 1000,
+  });
+};
+
+export const useStateTransitions = (id: string) => {
+  return useSuspenseQuery({
+    queryKey: walletQueryKeys.stateTransitions(id),
+    queryFn: () => walletApi.getStateTransitions(id),
+    staleTime: 30 * 1000,
+  });
+};
+
+// ── Refunds ────────────────────────────────────────────────────────────────
+
+export const useRefundList = (query: RefundListQuery) => {
+  return useQuery({
+    queryKey: walletQueryKeys.refundList(query),
+    queryFn: () => walletApi.listRefunds(query),
+    staleTime: 30 * 1000,
+    placeholderData: keepPreviousData,
+  });
+};
+
+// ── Bank Transfers ─────────────────────────────────────────────────────────
+
+export const usePendingBankTransfers = (page?: number, limit?: number) => {
+  return useQuery({
+    queryKey: walletQueryKeys.bankTransferList(page, limit),
+    queryFn: () => walletApi.listPendingBankTransfers(page, limit),
+    staleTime: 30 * 1000,
+    placeholderData: keepPreviousData,
+  });
+};
+
+// ── Points ─────────────────────────────────────────────────────────────────
+
+export const usePointsBalance = (userId: string) => {
+  return useQuery({
+    queryKey: walletQueryKeys.pointsBalance(userId),
+    queryFn: () => walletApi.getPointsBalance(userId),
+    staleTime: 30 * 1000,
+    enabled: !!userId,
+  });
+};
+
+export const usePointsEvents = (userId: string, page?: number, limit?: number) => {
+  return useQuery({
+    queryKey: walletQueryKeys.pointsEvents(userId, page, limit),
+    queryFn: () => walletApi.getPointsEvents(userId, page, limit),
+    staleTime: 30 * 1000,
+    enabled: !!userId,
+    placeholderData: keepPreviousData,
+  });
+};
