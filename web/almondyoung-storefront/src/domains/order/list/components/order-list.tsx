@@ -1,9 +1,15 @@
+"use client"
+
 import { PageTitle } from "@/components/shared/page-title"
+import { Button } from "@/components/ui/button"
 import OrderCard from "@components/orders/order-card/order-card"
 import OrderCardContent from "@components/orders/order-card/order-card-content"
-import { OrderFilter } from "./shared/order-filter"
-import { Package } from "lucide-react"
+import { OrderFilter, type FilterOptions } from "./shared/order-filter"
+import { getOrders } from "@/lib/api/medusa/orders"
+import { Package, Loader2 } from "lucide-react"
 import type { HttpTypes } from "@medusajs/types"
+import { useState, useMemo, useTransition } from "react"
+import { getYear } from "date-fns"
 
 interface OrderItem {
   orderId: string
@@ -25,8 +31,12 @@ interface OrderItem {
 
 interface OrderListClientProps {
   initialOrders: HttpTypes.StoreOrder[]
+  initialCount: number
+  initialLimit: number
   hasError?: boolean
 }
+
+const LOAD_MORE_LIMIT = 20
 
 const getKoreanOrderStatus = (order: HttpTypes.StoreOrder): string => {
   if (order.status === "canceled") return "취소됨"
@@ -92,9 +102,66 @@ const mapStoreOrderToOrderItem = (order: HttpTypes.StoreOrder): OrderItem => {
 
 export function OrderList({
   initialOrders,
+  initialCount,
+  initialLimit,
   hasError = false,
 }: OrderListClientProps) {
-  const orders: OrderItem[] = initialOrders.map(mapStoreOrderToOrderItem)
+  const [filter, setFilter] = useState<FilterOptions>({
+    year: "전체년도",
+    month: "전체",
+  })
+  const [rawOrders, setRawOrders] =
+    useState<HttpTypes.StoreOrder[]>(initialOrders)
+  const [totalCount, setTotalCount] = useState(initialCount)
+  const [isPending, startTransition] = useTransition()
+
+  const hasMore = rawOrders.length < totalCount
+
+  const allOrders: OrderItem[] = useMemo(
+    () => rawOrders.map(mapStoreOrderToOrderItem),
+    [rawOrders]
+  )
+
+  const orders = useMemo(() => {
+    return allOrders.filter((order) => {
+      const orderDateMatch = order.orderDate.match(/(\d+)월/)
+      const orderMonth = orderDateMatch ? parseInt(orderDateMatch[1]) : null
+
+      const originalOrder = rawOrders.find((o) => o.id === order.orderId)
+      const orderYear = originalOrder
+        ? getYear(new Date(originalOrder.created_at))
+        : null
+
+      const yearMatch =
+        filter.year === "전체년도" || String(orderYear) === filter.year
+
+      const monthMatch =
+        filter.month === "전체" ||
+        (orderMonth !== null && filter.month === `${orderMonth}월`)
+
+      return yearMatch && monthMatch
+    })
+  }, [allOrders, filter, rawOrders])
+
+  const handleFilterChange = (newFilter: FilterOptions) => {
+    setFilter(newFilter)
+  }
+
+  const handleLoadMore = () => {
+    startTransition(async () => {
+      const result = await getOrders({
+        limit: LOAD_MORE_LIMIT,
+        offset: rawOrders.length,
+      })
+
+      if (result?.orders) {
+        setRawOrders((prev) => [...prev, ...result.orders])
+        if (typeof result.count === "number") {
+          setTotalCount(result.count)
+        }
+      }
+    })
+  }
 
   if (hasError) {
     return (
@@ -104,7 +171,8 @@ export function OrderList({
     )
   }
 
-  if (orders.length === 0) {
+  // 원본 데이터가 없으면 필터 없이 빈 화면
+  if (allOrders.length === 0) {
     return (
       <div className="min-h-screen bg-white px-3 py-4 md:px-6">
         <PageTitle>주문 목록</PageTitle>
@@ -125,34 +193,69 @@ export function OrderList({
     <div className="min-h-screen bg-white px-3 py-4 md:px-6">
       <PageTitle>주문 목록</PageTitle>
       <section className="my-5">
-        <OrderFilter />
+        <OrderFilter onFilterChange={handleFilterChange} />
       </section>
-      <section className="space-y-6">
-        {orders.map((order) => (
-          <OrderCard
-            key={order.orderId}
-            orderId={order.orderId}
-            orderDate={order.orderDate}
-            orderNumber={order.orderNumber}
-          >
-            <OrderCardContent
+
+      {orders.length === 0 ? (
+        <div className="flex min-h-[300px] flex-col items-center justify-center gap-4">
+          <Package className="h-12 w-12 text-gray-300" />
+          <div className="text-center">
+            <p className="text-lg font-medium text-gray-600">
+              해당 기간에 주문 내역이 없습니다
+            </p>
+            <p className="mt-1 text-sm text-gray-400">
+              다른 기간을 선택해보세요
+            </p>
+          </div>
+        </div>
+      ) : (
+        <section className="space-y-6">
+          {orders.map((order) => (
+            <OrderCard
+              key={order.orderId}
               orderId={order.orderId}
-              status={order.status}
-              paymentStatus={order.paymentStatus}
-              deliveryInfo={order.deliveryInfo}
-              shippingNote={order.shippingNote}
-              productName={order.productName}
-              productImage={order.productImage}
-              price={order.price}
-              quantity={order.quantity}
-              options={order.options}
-              showInquiry={order.showInquiry}
-              orderItems={order.orderItems}
-              variantId={order.variantId}
-            />
-          </OrderCard>
-        ))}
-      </section>
+              orderDate={order.orderDate}
+              orderNumber={order.orderNumber}
+            >
+              <OrderCardContent
+                orderId={order.orderId}
+                status={order.status}
+                paymentStatus={order.paymentStatus}
+                deliveryInfo={order.deliveryInfo}
+                shippingNote={order.shippingNote}
+                productName={order.productName}
+                productImage={order.productImage}
+                price={order.price}
+                quantity={order.quantity}
+                options={order.options}
+                showInquiry={order.showInquiry}
+                orderItems={order.orderItems}
+                variantId={order.variantId}
+              />
+            </OrderCard>
+          ))}
+
+          {hasMore && (
+            <div className="flex justify-center pt-4 pb-8">
+              <Button
+                variant="outline"
+                onClick={handleLoadMore}
+                disabled={isPending}
+                className="w-full max-w-xs"
+              >
+                {isPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    불러오는 중...
+                  </>
+                ) : (
+                  `더 보기 (${rawOrders.length}/${totalCount})`
+                )}
+              </Button>
+            </div>
+          )}
+        </section>
+      )}
     </div>
   )
 }
