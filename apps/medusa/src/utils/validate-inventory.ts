@@ -51,7 +51,7 @@ export const validateInventoryForItems = async (
   const variantToInventoryMap = new Map<string, string>();
   for (const variantData of variantInventoryData) {
     if (variantData.inventory_items?.length) {
-      variantToInventoryMap.set(variantData.id, variantData.inventory_items[0].id);
+      variantToInventoryMap.set(variantData.id, variantData.inventory_items[0].inventory_item_id);
     }
   }
 
@@ -77,6 +77,7 @@ export const validateInventoryForItems = async (
         // variant에 연결된 inventory_item_id 조회
         const inventoryItemId = variantToInventoryMap.get(variant.id);
 
+
         if (!inventoryItemId) {
           errors.push(
             new MedusaError(
@@ -91,6 +92,7 @@ export const validateInventoryForItems = async (
         const levels = await inventoryService.listInventoryLevels({
           inventory_item_id: inventoryItemId,
         });
+
 
         if (!levels.length) {
           errors.push(
@@ -109,11 +111,12 @@ export const validateInventoryForItems = async (
         }, 0);
 
         if (totalAvailable < item.quantity) {
+          const message = totalAvailable === 0
+            ? `${productName}: 품절된 상품입니다.`
+            : `${productName}: 최대 ${totalAvailable}개까지 구매 가능합니다.`;
+          console.log('messagemessagemessagemessage', message);
           errors.push(
-            new MedusaError(
-              MedusaError.Types.NOT_ALLOWED,
-              `${productName}: 재고가 부족합니다 (요청: ${item.quantity}, 가능: ${totalAvailable})`,
-            ),
+            new MedusaError(MedusaError.Types.NOT_ALLOWED, message),
           );
         }
       } catch (error: any) {
