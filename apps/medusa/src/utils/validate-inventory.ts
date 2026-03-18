@@ -1,6 +1,5 @@
-import { MedusaError } from '@medusajs/framework/utils';
-import { WMS_MODULE } from '../modules/wms';
-import { WmsModuleService } from '../modules/wms/service';
+import { MedusaError, Modules, ContainerRegistrationKeys } from '@medusajs/framework/utils';
+import { IInventoryService, IProductModuleService } from '@medusajs/framework/types';
 
 export type ValidateInventoryInput = {
   items: {
@@ -9,10 +8,12 @@ export type ValidateInventoryInput = {
   }[];
   variants: {
     id: string;
-    sku: string;
+    sku?: string | null;
+    manage_inventory?: boolean;
+    allow_backorder?: boolean;
     product?: {
       title: string;
-    };
+    } | null;
   }[];
 };
 
@@ -20,48 +21,109 @@ export const validateInventoryForItems = async (
   input: ValidateInventoryInput,
   container: any,
 ) => {
-  const wmsService: WmsModuleService = container.resolve(WMS_MODULE);
-
   if (!input.variants?.length) return;
+
+  const inventoryService: IInventoryService = container.resolve(Modules.INVENTORY);
+  const productService: IProductModuleService = container.resolve(Modules.PRODUCT);
+  const query = container.resolve(ContainerRegistrationKeys.QUERY);
 
   const errors: MedusaError[] = [];
 
+  // variant 상세 정보 조회 (manage_inventory, allow_backorder 포함)
+  const variantIds = input.variants.map((v) => v.id);
+  const variantsWithInventoryInfo = await productService.listProductVariants(
+    { id: variantIds },
+    { select: ['id', 'manage_inventory', 'allow_backorder', 'title'] },
+  );
+
+  const variantMap = new Map(variantsWithInventoryInfo.map((v) => [v.id, v]));
+
+  // Query로 variant -> inventory_item 연결 조회
+  const { data: variantInventoryData } = await query.graph({
+    entity: 'product_variant',
+    fields: ['id', 'inventory_items.*'],
+    filters: {
+      id: variantIds,
+    },
+  });
+
+  // variant_id -> inventory_item_id 매핑
+  const variantToInventoryMap = new Map<string, string>();
+  for (const variantData of variantInventoryData) {
+    if (variantData.inventory_items?.length) {
+      variantToInventoryMap.set(variantData.id, variantData.inventory_items[0].inventory_item_id);
+    }
+  }
+
   await Promise.all(
     input.variants.map(async (variant) => {
-      const item = input.items.find((i) => i.variant_id === variant.id)!;
-      const skuId = variant.sku;
-      const productName = variant.product?.title || variant.id;
+      const item = input.items.find((i) => i.variant_id === variant.id);
+      if (!item) return;
 
-      if (!skuId) {
-        errors.push(
-          new MedusaError(
-            MedusaError.Types.INVALID_DATA,
-            `${productName}: SKU ID가 설정되지 않아 재고 확인이 불가능합니다`,
-          ),
-        );
+      const variantInfo = variantMap.get(variant.id);
+      const productName = variant.product?.title || variantInfo?.title || variant.id;
+
+      // manage_inventory가 false면 재고 체크 스킵
+      if (!variantInfo?.manage_inventory) {
+        return;
+      }
+
+      // allow_backorder가 true면 재고 체크 스킵
+      if (variantInfo?.allow_backorder) {
         return;
       }
 
       try {
-        const isAvailable = await wmsService.checkAvailableForCart(
-          skuId,
-          Number(item.quantity),
-        );
+        // variant에 연결된 inventory_item_id 조회
+        const inventoryItemId = variantToInventoryMap.get(variant.id);
 
-        if (!isAvailable) {
+
+        if (!inventoryItemId) {
           errors.push(
             new MedusaError(
               MedusaError.Types.NOT_ALLOWED,
-              `${productName}: 재고가 부족합니다`,
+              `${productName}: 재고 정보가 없습니다`,
             ),
           );
+          return;
         }
-      } catch (error) {
-        console.error('[validate-inventory] WMS 에러:', {
-          skuId,
+
+        // inventory level 조회
+        const levels = await inventoryService.listInventoryLevels({
+          inventory_item_id: inventoryItemId,
+        });
+
+
+        if (!levels.length) {
+          errors.push(
+            new MedusaError(
+              MedusaError.Types.NOT_ALLOWED,
+              `${productName}: 재고 정보가 없습니다`,
+            ),
+          );
+          return;
+        }
+
+        // 전체 location의 available quantity 합산
+        const totalAvailable = levels.reduce((sum, level) => {
+          const available = (level.stocked_quantity || 0) - (level.reserved_quantity || 0);
+          return sum + available;
+        }, 0);
+
+        if (totalAvailable < item.quantity) {
+          const message = totalAvailable === 0
+            ? `${productName}: 품절된 상품입니다.`
+            : `${productName}: 최대 ${totalAvailable}개까지 구매 가능합니다.`;
+          console.log('messagemessagemessagemessage', message);
+          errors.push(
+            new MedusaError(MedusaError.Types.NOT_ALLOWED, message),
+          );
+        }
+      } catch (error: any) {
+        console.error('[validate-inventory] 에러:', {
+          variantId: variant.id,
           productName,
           error: error.message,
-          type: error.type,
         });
 
         if (error instanceof MedusaError) {
@@ -70,7 +132,7 @@ export const validateInventoryForItems = async (
           errors.push(
             new MedusaError(
               MedusaError.Types.INVALID_DATA,
-              error.message || '재고 확인 중 오류가 발생했습니다',
+              `${productName}: 재고 확인 중 오류가 발생했습니다`,
             ),
           );
         }
