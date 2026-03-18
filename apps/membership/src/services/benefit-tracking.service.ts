@@ -50,7 +50,7 @@ export class BenefitTrackingService {
       orderId: dto.orderId,
       userId: dto.userId,
       membershipDiscountAmount: dto.membershipDiscountAmount,
-      tierId: dto.tierId,
+      tierId: dto.tierId ?? subscription.tierId,
       orderDate: dto.orderDate,
       subscriptionId: subscription.id,
       billingDate: subscription.billingDate,

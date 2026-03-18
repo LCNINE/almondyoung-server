@@ -247,6 +247,7 @@ export class SubscriptionService {
       userId: contract.userId,
       billingDate: new Date(contract.billingDate),
       type: subscriptionType as 'MONTHLY' | 'YEAR',
+      tierId: plan.tierId,
     };
   }
   /**
