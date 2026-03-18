@@ -1,0 +1,134 @@
+import { WALLET_SERVICE_BASE_URL } from '@/const';
+import {
+  PaymentIntentListItem,
+  PaymentIntentDetail,
+  PaymentIntentListQuery,
+  RefundDto,
+  RefundListQuery,
+  StateTransitionDto,
+  PendingBankTransferDto,
+  PointsBalanceDto,
+  PointsEventDto,
+  PaginatedResponse,
+} from '@/lib/types/dto/wallet';
+import { client } from '../../client';
+
+const BASE = WALLET_SERVICE_BASE_URL;
+
+function buildQueryString(query: Record<string, unknown>): string {
+  const params = new URLSearchParams();
+  Object.entries(query).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      params.append(key, String(value));
+    }
+  });
+  return params.toString();
+}
+
+export const walletApi = {
+  // ── Payment Intents ──────────────────────────────────────────────────────
+
+  listPaymentIntents: async (
+    query: PaymentIntentListQuery,
+  ): Promise<PaginatedResponse<PaymentIntentListItem>> => {
+    const qs = buildQueryString(query as Record<string, unknown>);
+    const res = await client.get(`${BASE}/v1/admin/payment-intents${qs ? `?${qs}` : ''}`);
+    return res.data;
+  },
+
+  getPaymentIntentDetail: async (id: string): Promise<PaymentIntentDetail> => {
+    const res = await client.get(`${BASE}/v1/admin/payment-intents/${id}`);
+    return res.data;
+  },
+
+  getStateTransitions: async (id: string): Promise<StateTransitionDto[]> => {
+    const res = await client.get(`${BASE}/v1/admin/payment-intents/${id}/state-transitions`);
+    return res.data;
+  },
+
+  captureIntent: async (id: string): Promise<void> => {
+    await client.post(`${BASE}/v1/admin/payment-intents/${id}/capture`);
+  },
+
+  cancelIntent: async (id: string): Promise<void> => {
+    await client.post(`${BASE}/v1/admin/payment-intents/${id}/cancel`);
+  },
+
+  refundIntent: async (
+    id: string,
+    dto: { chargeId: string; amount: number; reasonCode?: string; reasonMessage?: string },
+  ): Promise<void> => {
+    await client.post(`${BASE}/v1/admin/payment-intents/${id}/refund`, dto);
+  },
+
+  // ── Refunds ──────────────────────────────────────────────────────────────
+
+  listRefunds: async (
+    query: RefundListQuery,
+  ): Promise<PaginatedResponse<RefundDto>> => {
+    const qs = buildQueryString(query as Record<string, unknown>);
+    const res = await client.get(`${BASE}/v1/admin/refunds${qs ? `?${qs}` : ''}`);
+    return res.data;
+  },
+
+  // ── Bank Transfers ───────────────────────────────────────────────────────
+
+  listPendingBankTransfers: async (
+    page?: number,
+    limit?: number,
+  ): Promise<PaginatedResponse<PendingBankTransferDto>> => {
+    const qs = buildQueryString({ page, limit });
+    const res = await client.get(
+      `${BASE}/v1/admin/payment-intents/pending-bank-transfers${qs ? `?${qs}` : ''}`,
+    );
+    return res.data;
+  },
+
+  confirmBankTransfer: async (
+    id: string,
+    depositorNote?: string,
+  ): Promise<void> => {
+    await client.post(`${BASE}/v1/admin/payment-intents/${id}/bank-transfer-confirm`, {
+      depositorNote,
+    });
+  },
+
+  // ── Points ───────────────────────────────────────────────────────────────
+
+  getPointsBalance: async (userId: string): Promise<PointsBalanceDto> => {
+    const res = await client.get(`${BASE}/v1/admin/points/balance?user_id=${encodeURIComponent(userId)}`);
+    return res.data;
+  },
+
+  getPointsEvents: async (
+    userId: string,
+    page?: number,
+    limit?: number,
+  ): Promise<PaginatedResponse<PointsEventDto>> => {
+    const qs = buildQueryString({ userId, page, limit });
+    const res = await client.get(`${BASE}/v1/admin/points/events${qs ? `?${qs}` : ''}`);
+    return res.data;
+  },
+
+  earnPoints: async (
+    userId: string,
+    amount: number,
+    reasonCode?: string,
+  ): Promise<void> => {
+    await client.post(`${BASE}/v1/admin/points/earn`, { userId, amount, reasonCode });
+  },
+
+  cancelEarnPoints: async (
+    userId: string,
+    earnEventId: string,
+    amount?: number,
+    reasonCode?: string,
+  ): Promise<void> => {
+    await client.post(`${BASE}/v1/admin/points/earn-cancel`, {
+      userId,
+      earnEventId,
+      ...(amount !== undefined && { amount }),
+      ...(reasonCode && { reasonCode }),
+    });
+  },
+};
