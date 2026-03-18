@@ -7,8 +7,10 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PaymentIntentAdminService } from './payment-intent-admin.service';
 import { AdminRefundListQueryDto } from './dto';
+import { WalletAdminAuth } from '../wallet-admin-auth.decorator';
 
 @ApiTags('Admin - Refunds')
+@WalletAdminAuth()
 @Controller('v1/admin/refunds')
 export class RefundAdminController {
   constructor(private readonly service: PaymentIntentAdminService) {}

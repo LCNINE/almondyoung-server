@@ -11,13 +11,35 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
-import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 import { PaymentIntentAdminService } from './payment-intent-admin.service';
 import { BankTransferAdminService } from './bank-transfer-admin.service';
 import {
   AdminPaymentIntentListQueryDto,
   PendingBankTransferListQueryDto,
 } from './dto';
+import { WalletAdminAuth } from '../wallet-admin-auth.decorator';
+import { PaymentIntentsService } from '../payment-intents/payment-intents.service';
+import { RefundsService } from '../refunds/refunds.service';
+
+class AdminRefundDto {
+  @IsString()
+  @IsNotEmpty()
+  chargeId: string;
+
+  @IsInt()
+  @Min(1)
+  amount: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  reasonCode?: string;
+
+  @IsOptional()
+  @IsString()
+  reasonMessage?: string;
+}
 
 class BankTransferConfirmDto {
   @ApiPropertyOptional({
@@ -31,11 +53,14 @@ class BankTransferConfirmDto {
 }
 
 @ApiTags('Admin - Payment Intents')
+@WalletAdminAuth()
 @Controller('v1/admin/payment-intents')
 export class PaymentIntentAdminController {
   constructor(
     private readonly service: PaymentIntentAdminService,
     private readonly bankTransferService: BankTransferAdminService,
+    private readonly paymentIntentsService: PaymentIntentsService,
+    private readonly refundsService: RefundsService,
   ) {}
 
   @Get()
@@ -99,6 +124,59 @@ export class PaymentIntentAdminController {
     try {
       await this.bankTransferService.confirmDeposit(id, dto.depositorNote);
       return { status: 'SUCCEEDED' };
+    } catch (e: any) {
+      const msg = (e?.message ?? '').toLowerCase();
+      if (msg.includes('not found')) throw new NotFoundException(e.message);
+      if (msg.match(/already|invalid|failed|required|exceed/))
+        throw new BadRequestException(e.message);
+      throw new InternalServerErrorException(e.message);
+    }
+  }
+
+  @Post(':id/capture')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Capture a payment intent (admin)' })
+  async capture(@Param('id') id: string) {
+    try {
+      await this.paymentIntentsService.capture(id);
+      return { status: 'SUCCEEDED' };
+    } catch (e: any) {
+      const msg = (e?.message ?? '').toLowerCase();
+      if (msg.includes('not found')) throw new NotFoundException(e.message);
+      if (msg.match(/already|invalid|failed|required|exceed/))
+        throw new BadRequestException(e.message);
+      throw new InternalServerErrorException(e.message);
+    }
+  }
+
+  @Post(':id/cancel')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Cancel a payment intent (admin)' })
+  async cancel(@Param('id') id: string) {
+    try {
+      await this.paymentIntentsService.cancel(id);
+      return { status: 'SUCCEEDED' };
+    } catch (e: any) {
+      const msg = (e?.message ?? '').toLowerCase();
+      if (msg.includes('not found')) throw new NotFoundException(e.message);
+      if (msg.match(/already|invalid|failed|required|exceed/))
+        throw new BadRequestException(e.message);
+      throw new InternalServerErrorException(e.message);
+    }
+  }
+
+  @Post(':id/refund')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Refund a payment intent (admin)' })
+  async refund(@Param('id') id: string, @Body() dto: AdminRefundDto) {
+    try {
+      const refund = await this.refundsService.create({
+        chargeId: dto.chargeId,
+        amount: dto.amount,
+        reasonCode: dto.reasonCode,
+        reasonMessage: dto.reasonMessage,
+      });
+      return refund;
     } catch (e: any) {
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('not found')) throw new NotFoundException(e.message);
