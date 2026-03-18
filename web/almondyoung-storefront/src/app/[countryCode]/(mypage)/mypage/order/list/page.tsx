@@ -8,8 +8,10 @@ export const metadata: Metadata = {
   description: "주문 내역을 확인하세요",
 }
 
+const INITIAL_LIMIT = 20
+
 export default async function OrderListPage() {
-  const ordersData = await getOrders({ limit: 50, offset: 0 })
+  const ordersData = await getOrders({ limit: INITIAL_LIMIT, offset: 0 })
   return (
     <WithHeaderLayout
       config={{
@@ -22,6 +24,8 @@ export default async function OrderListPage() {
       <MypageLayout>
         <OrderList
           initialOrders={ordersData?.orders ?? []}
+          initialCount={ordersData?.count ?? 0}
+          initialLimit={INITIAL_LIMIT}
           hasError={ordersData === null}
         />
       </MypageLayout>

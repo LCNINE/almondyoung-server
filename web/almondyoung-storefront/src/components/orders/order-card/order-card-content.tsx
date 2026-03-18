@@ -1,13 +1,20 @@
 "use client"
 
-import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { CustomButton } from "@/components/shared/custom-buttons"
-import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
+import LocalizedClientLink from "@/components/shared/localized-client-link"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { useAddToCart } from "@/hooks/api/use-add-to-cart"
 import { captureOrderPayment } from "@/lib/api/medusa/orders"
+import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
+import { MoreVertical, Package, RotateCcw, ShoppingCart } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
-import { useAddToCart } from "@/hooks/api/use-add-to-cart"
 
 interface OrderCardContentProps {
   /** 주문 ID */
@@ -90,21 +97,21 @@ export default function OrderCardContent({
   const handleAddToCart = async () => {
     const result = await addToCart({ variantId })
     if (result.success) {
-      toast.success("장바구니에 담았습니다.")
+      toast.success("장바구니에 담았습니다.", {
+        action: {
+          label: "장바구니 보기",
+          onClick: () => router.push("/cart"),
+        },
+      })
     }
   }
 
   return (
     <div className="flex flex-col rounded-[5px] border border-gray-200 bg-white px-3 py-3.5 md:flex-row md:items-center md:gap-9 md:px-5">
-      {/* 좌측: 상품 정보 영역 - container */}
       <section className="flex-1 md:min-w-60">
-        {/* inner: 컨텐츠 그룹 */}
         <div className="space-y-5">
-          {/* 상태 정보 - inner */}
           <div className="space-y-1.5 md:space-y-0">
-            {/* 상태 헤더 - container */}
             <div className="flex items-start justify-between">
-              {/* inner: 상태 그룹 */}
               <div className="flex items-center gap-3">
                 <h3 className="text-xs font-bold text-black md:text-lg">
                   {status}
@@ -115,11 +122,6 @@ export default function OrderCardContent({
                   </span>
                 )}
               </div>
-
-              {/* 더보기 버튼 */}
-              {/* <button type="button" className="h-5 w-5" aria-label="더보기">
-                <MoreVertical className="h-5 w-5" />
-              </button> */}
             </div>
 
             {/* 모바일 전용 - 배송 노트 */}
@@ -141,14 +143,11 @@ export default function OrderCardContent({
               />
             </figure>
 
-            {/* 상품 상세 - container */}
             <div className="flex flex-1 flex-col gap-2">
               {/* 상품명 */}
               <h4 className="text-sm text-black md:text-base">{productName}</h4>
 
-              {/* 하단 정보 - container */}
               <div className="flex items-end justify-between">
-                {/* 가격/옵션 정보 - inner */}
                 <div className="min-w-28 flex-1 text-xs text-gray-500 md:text-sm">
                   <p>
                     {price} · {quantityText}
@@ -158,15 +157,15 @@ export default function OrderCardContent({
                   ))}
                 </div>
 
-                {/* 장바구니 버튼 */}
+                {/* 장바구니 버튼 - 데스크탑만 */}
                 <CustomButton
                   type="button"
-                  className="rounded-[3px]"
+                  className="hidden rounded-[3px] md:inline-flex"
                   onClick={handleAddToCart}
                   disabled={isAddingToCart}
                   isLoading={isAddingToCart}
                 >
-                  상품 담기
+                  다시 담기
                 </CustomButton>
               </div>
             </div>
@@ -180,10 +179,9 @@ export default function OrderCardContent({
         aria-hidden="true"
       />
 
-      {/* 우측: 액션 버튼 영역 - 조건부 렌더링 */}
-      {/* 모바일 버튼 (2개 가로) */}
+      {/* 모바일 버튼: 주요 액션 + 더보기 메뉴 */}
       <div className="mt-5 flex items-center gap-2.5 md:hidden">
-        {canConfirmPurchase && (
+        {canConfirmPurchase ? (
           <CustomButton
             type="button"
             variant="fill"
@@ -196,31 +194,59 @@ export default function OrderCardContent({
           >
             구매확정
           </CustomButton>
-        )}
-        <CustomButton
-          type="button"
-          variant="outline"
-          color="secondary"
-          size="lg"
-          className="flex-1"
-          fullWidth={true}
-        >
-          주문 취소 / 반품 신청
-        </CustomButton>
-        <LocalizedClientLink
-          href={`/mypage/order/track?orderId=${orderId}`}
-          className="flex-1"
-        >
-          <CustomButton
-            type="button"
-            variant="outline"
-            color="primary"
-            size="lg"
-            fullWidth={true}
+        ) : (
+          <LocalizedClientLink
+            href={`/mypage/order/track?orderId=${orderId}`}
+            className="flex-1"
           >
-            배송 조회
-          </CustomButton>
-        </LocalizedClientLink>
+            <CustomButton
+              type="button"
+              variant="outline"
+              color="secondary"
+              size="lg"
+              fullWidth={true}
+            >
+              배송 조회
+            </CustomButton>
+          </LocalizedClientLink>
+        )}
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-md border border-gray-300 bg-white transition hover:bg-gray-50"
+              aria-label="더보기"
+            >
+              <MoreVertical className="h-4 w-4 text-gray-600" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-40">
+            <DropdownMenuItem
+              className="flex cursor-pointer items-center gap-2"
+              onClick={handleAddToCart}
+              disabled={isAddingToCart}
+            >
+              <ShoppingCart className="h-4 w-4" />
+              다시 담기
+            </DropdownMenuItem>
+            {canConfirmPurchase && (
+              <DropdownMenuItem asChild>
+                <LocalizedClientLink
+                  href={`/mypage/order/track?orderId=${orderId}`}
+                  className="flex cursor-pointer items-center gap-2"
+                >
+                  <Package className="h-4 w-4" />
+                  배송 조회
+                </LocalizedClientLink>
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem className="flex cursor-pointer items-center gap-2">
+              <RotateCcw className="h-4 w-4" />
+              취소 / 반품 신청
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* 데스크탑 버튼 (3개 세로) */}
@@ -240,7 +266,7 @@ export default function OrderCardContent({
         <LocalizedClientLink href={`/mypage/order/track?orderId=${orderId}`}>
           <CustomButton
             variant="outline"
-            color="primary"
+            color="secondary"
             size="md"
             fullWidth={true}
           >

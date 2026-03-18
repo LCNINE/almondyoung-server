@@ -67,7 +67,8 @@ export async function getOrders(params?: {
   }
 
   const authHeaders = await getAuthHeaders()
-  if (!("authorization" in authHeaders)) return null
+
+  if (!authHeaders) return null
 
   const headers = { ...authHeaders }
 
@@ -109,7 +110,7 @@ export async function captureOrderPayment(
   items?: Array<{ productId: string; orderLineId: string }>
 ): Promise<{ success: boolean; message?: string }> {
   const authHeaders = await getAuthHeaders()
-  if (!("authorization" in authHeaders)) {
+  if (!authHeaders) {
     return {
       success: false,
       message: "로그인이 필요합니다.",
