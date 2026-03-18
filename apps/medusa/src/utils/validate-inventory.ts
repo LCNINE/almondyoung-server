@@ -56,6 +56,17 @@ export const validateInventoryForItems = async (
       }
 
       try {
+        // SKU가 없으면 재고 체크 불가
+        if (!variant.sku) {
+          errors.push(
+            new MedusaError(
+              MedusaError.Types.NOT_ALLOWED,
+              `${productName}: SKU가 설정되지 않아 재고 확인이 불가능합니다`,
+            ),
+          );
+          return;
+        }
+
         // variant에 연결된 inventory item 조회
         const inventoryItems = await inventoryService.listInventoryItems({
           sku: variant.sku,
