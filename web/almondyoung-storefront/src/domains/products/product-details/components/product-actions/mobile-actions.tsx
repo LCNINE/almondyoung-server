@@ -9,6 +9,7 @@ import { HttpTypes } from "@medusajs/types"
 import { Minus, Plus, ShoppingCart, X } from "lucide-react"
 import React, { useState } from "react"
 import ProductPrice from "../product-price"
+import OptionSelect from "./option-select"
 
 type SelectedItem = {
   variantId: string
@@ -25,7 +26,6 @@ type MobileActionsProps = {
   selectedItems: SelectedItem[]
   updateQuantity: (variantId: string, delta: number) => void
   removeItem: (variantId: string) => void
-  disabledValuesMap: Record<string, Set<string>>
   selectedValuesMap: Record<string, Set<string>>
   totalQuantity: number
   totalPrice: number
@@ -45,7 +45,6 @@ const MobileActions: React.FC<MobileActionsProps> = ({
   selectedItems,
   updateQuantity,
   removeItem,
-  disabledValuesMap,
   selectedValuesMap,
   totalQuantity,
   totalPrice,
@@ -148,51 +147,17 @@ const MobileActions: React.FC<MobileActionsProps> = ({
             {!isSimple && (
               <div className="flex flex-col gap-y-4 py-2">
                 {(product.options || []).map((option) => (
-                  <div key={option.id} className="flex flex-col gap-y-3">
-                    <span className="text-sm font-medium">
-                      {option.title} 선택
-                    </span>
-                    <div className="flex flex-wrap gap-2">
-                      {(option.values ?? []).map((optValue) => {
-                        const isUnavailable = disabledValuesMap[option.id]?.has(
-                          optValue.value
-                        )
-                        const isAlreadySelected =
-                          selectedValuesMap[option.id]?.has(optValue.value)
-                        const isCurrent = options[option.id] === optValue.value
-                        return (
-                          <button
-                            key={optValue.value}
-                            onClick={() =>
-                              setOptionValue(option.id, optValue.value)
-                            }
-                            disabled={isUnavailable || isPending}
-                            className={cn(
-                              "rounded-full border px-4 py-2 text-sm transition-colors",
-                              {
-                                // 현재 선택 중
-                                "border-primary bg-primary text-primary-foreground":
-                                  isCurrent && !isUnavailable,
-                                // 이미 선택된 항목
-                                "border-primary text-primary":
-                                  isAlreadySelected &&
-                                  !isCurrent &&
-                                  !isUnavailable,
-                                // 기본 상태
-                                "border-gray-200 hover:border-gray-400":
-                                  !isCurrent &&
-                                  !isAlreadySelected &&
-                                  !isUnavailable,
-                                "border-gray-100 text-gray-400": isUnavailable,
-                              }
-                            )}
-                          >
-                            {isUnavailable ? `${optValue.value} (품절)` : optValue.value}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
+                  <OptionSelect
+                    key={option.id}
+                    option={option}
+                    current={options[option.id]}
+                    updateOption={setOptionValue}
+                    title={`${option.title} 선택`}
+                    variants={product.variants}
+                    selectedOptions={options}
+                    selectedValues={selectedValuesMap[option.id]}
+                    disabled={isPending}
+                  />
                 ))}
               </div>
             )}
