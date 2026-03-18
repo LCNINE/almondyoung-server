@@ -2,6 +2,7 @@
 
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
@@ -24,6 +25,9 @@ import { toast } from "sonner"
 type ItemProps = {
   item: HttpTypes.StoreCartLineItem
   children: ReactElement
+  selected?: boolean
+  onSelectChange?: (checked: boolean) => void
+  selectDisabled?: boolean
 }
 
 type ItemChildProps = {
@@ -38,15 +42,27 @@ type ItemChildProps = {
   compareAtTotalPrice: number
   changeQuantity: (quantity: number) => Promise<void>
   handleDelete: () => Promise<void>
+  selected?: boolean
+  onSelectChange?: (checked: boolean) => void
+  selectDisabled?: boolean
 }
 
 type DesktopItemProps = Partial<ItemChildProps> & {
   type?: "full" | "preview"
+  selected?: boolean
+  onSelectChange?: (checked: boolean) => void
+  selectDisabled?: boolean
 }
 
 type MobileItemProps = Partial<ItemChildProps>
 
-function Item({ item, children }: ItemProps) {
+function Item({
+  item,
+  children,
+  selected,
+  onSelectChange,
+  selectDisabled,
+}: ItemProps) {
   const [updating, setUpdating] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -104,6 +120,9 @@ function Item({ item, children }: ItemProps) {
     compareAtTotalPrice,
     changeQuantity,
     handleDelete,
+    selected,
+    onSelectChange,
+    selectDisabled,
   } as ItemChildProps)
 }
 
@@ -120,6 +139,9 @@ function DesktopItem({
   compareAtTotalPrice,
   changeQuantity,
   handleDelete,
+  selected,
+  onSelectChange,
+  selectDisabled,
 }: DesktopItemProps) {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [inputQuantity, setInputQuantity] = useState("")
@@ -144,6 +166,16 @@ function DesktopItem({
 
   return (
     <TableRow className="w-full" data-testid="product-row">
+      {/* 체크박스 (full 모드만) */}
+      {type === "full" && (
+        <TableCell className="w-10 pl-0">
+          <Checkbox
+            checked={selected}
+            onCheckedChange={(checked) => onSelectChange?.(checked === true)}
+            disabled={selectDisabled}
+          />
+        </TableCell>
+      )}
       {/* 썸네일 */}
       <TableCell className="w-24 p-4 pl-0">
         <LocalizedClientLink
