@@ -81,7 +81,7 @@ export function OrderFilter({
         </Select>
 
         <Select value={month} onValueChange={handleMonthChange}>
-          <SelectTrigger className="h-6 w-14 rounded-[5px] border-zinc-300 px-2.5 text-xs font-medium text-gray-600">
+          <SelectTrigger className="h-6 w-16 rounded-[5px] border-zinc-300 px-2.5 text-xs font-medium text-gray-600">
             <SelectValue placeholder="월" />
           </SelectTrigger>
           <SelectContent>
