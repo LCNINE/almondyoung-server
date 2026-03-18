@@ -34,15 +34,28 @@ export default async function CheckoutSuccessPage({ params, searchParams }: Page
   const { orderId } = await searchParams
 
   const intent = await getIntent(intentId)
-  console.log("============== intent 정보 ==============")
-  console.log(intent)
-  console.log("=======================================")
+
+  console.log("============== 주문완료 페이지 디버그 ==============")
+  console.log("intentId:", intentId)
+  console.log("orderId (URL):", orderId)
+  console.log("intent.userId:", intent?.userId)
+  console.log("intent.metadata:", JSON.stringify(intent?.metadata))
+  console.log("================================================")
 
   if (!intent) {
     notFound()
   }
 
   const order = orderId ? await getOrder(orderId) : null
+
+  console.log("============== order 정보 ==============")
+  console.log("order.id:", order?.id)
+  console.log("order.display_id:", order?.display_id)
+  console.log("order.customer_id:", order?.customer_id)
+  console.log("order.email:", order?.email)
+  console.log("shipping_address.first_name:", order?.shipping_address?.first_name)
+  console.log("shipping_address.last_name:", order?.shipping_address?.last_name)
+  console.log("=========================================")
 
   return (
     <main className="flex min-h-screen w-full flex-col items-center gap-[41px] bg-[#f8f8f8] pb-20">

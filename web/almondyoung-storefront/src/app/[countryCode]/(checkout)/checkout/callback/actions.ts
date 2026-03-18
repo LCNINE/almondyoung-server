@@ -179,6 +179,12 @@ export async function processPaymentCallback(
     }
 
     const targetCartId = cartId || (await getCartId())
+    console.log("============== callback 디버그 ==============")
+    console.log("intentId:", intentId)
+    console.log("cartId (param):", cartId)
+    console.log("targetCartId:", targetCartId)
+    console.log("=============================================")
+
     if (targetCartId) {
       const headers = { ...(await getAuthHeaders()) }
       const sourceCartSelection = await getSourceCartSelection(
@@ -190,6 +196,16 @@ export async function processPaymentCallback(
       await ensureShippingMethod(targetCartId, headers)
 
       const cartRes = await sdk.store.cart.complete(targetCartId, {}, headers)
+
+      console.log("============== cart.complete 결과 ==============")
+      console.log("cartRes.type:", cartRes?.type)
+      if (cartRes?.type === "order") {
+        console.log("order.id:", cartRes.order.id)
+        console.log("order.display_id:", cartRes.order.display_id)
+        console.log("order.customer_id:", cartRes.order.customer_id)
+        console.log("order.email:", cartRes.order.email)
+      }
+      console.log("================================================")
 
       if (cartRes?.type === "order") {
         revalidateTag(await getCacheTag("orders"))
