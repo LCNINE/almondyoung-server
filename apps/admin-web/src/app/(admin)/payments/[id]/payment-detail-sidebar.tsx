@@ -1,0 +1,237 @@
+'use client';
+
+import { Suspense, useState } from 'react';
+import { Container } from '@/components/admin-ui-experimental/common/container/container';
+import { Header } from '@/components/admin-ui-experimental/common/header/header';
+import { Spinner } from '@/components/ui/spinner';
+import { Button } from '@/components/ui/button';
+import { usePaymentIntentDetail, useCaptureIntent, useCancelIntent, useRefundIntent } from '@/lib/services/wallet';
+import { PaymentMethodTypeCell } from '@/components/table/table-cells/wallet/payment-method-type-cell';
+import { toast } from 'sonner';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+
+function PaymentMethodInfo({ intentId }: { intentId: string }) {
+  const { data } = usePaymentIntentDetail(intentId);
+  const pm = data.paymentMethod;
+
+  return (
+    <Container className="divide-y">
+      <Header title="결제수단" />
+      <div className="p-4">
+        {pm ? (
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">유형</span>
+              <PaymentMethodTypeCell value={pm.type} />
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">표시명</span>
+              <span>{pm.displayName ?? '-'}</span>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">결제수단 없음</p>
+        )}
+      </div>
+    </Container>
+  );
+}
+
+function ActionButtons({ intentId }: { intentId: string }) {
+  const { data } = usePaymentIntentDetail(intentId);
+  const capture = useCaptureIntent(intentId);
+  const cancel = useCancelIntent(intentId);
+  const refund = useRefundIntent(intentId);
+
+  const [refundOpen, setRefundOpen] = useState(false);
+  const [refundChargeId, setRefundChargeId] = useState('');
+  const [refundAmount, setRefundAmount] = useState<number | ''>('');
+  const [refundReasonCode, setRefundReasonCode] = useState('');
+  const [refundReasonMessage, setRefundReasonMessage] = useState('');
+
+  const canCapture = data.status === 'AUTHORIZED';
+  const canCancel = ['CREATED', 'PROCESSING', 'REQUIRES_ACTION', 'AUTHORIZED', 'SUCCEEDED'].includes(data.status);
+  const canRefund = ['CAPTURED', 'SUCCEEDED'].includes(data.status);
+
+  const succeededCharges = data.charges.filter(
+    (c) => c.status === 'SUCCEEDED' && (c.operation === 'AUTHORIZE' || c.operation === 'CAPTURE'),
+  );
+
+  const handleCapture = async () => {
+    try {
+      await capture.mutateAsync();
+      toast.success('매입 처리 완료');
+    } catch {
+      toast.error('매입 처리 실패');
+    }
+  };
+
+  const handleCancel = async () => {
+    try {
+      await cancel.mutateAsync();
+      toast.success('취소 처리 완료');
+    } catch {
+      toast.error('취소 처리 실패');
+    }
+  };
+
+  const handleRefund = async () => {
+    if (!refundChargeId || !refundAmount) return;
+    try {
+      await refund.mutateAsync({
+        chargeId: refundChargeId,
+        amount: refundAmount as number,
+        reasonCode: refundReasonCode || undefined,
+        reasonMessage: refundReasonMessage || undefined,
+      });
+      toast.success('환불 처리 완료');
+      setRefundOpen(false);
+      setRefundChargeId('');
+      setRefundAmount('');
+      setRefundReasonCode('');
+      setRefundReasonMessage('');
+    } catch {
+      toast.error('환불 처리 실패');
+    }
+  };
+
+  const openRefundDialog = () => {
+    if (succeededCharges.length === 1) {
+      setRefundChargeId(succeededCharges[0]!.id);
+    }
+    setRefundOpen(true);
+  };
+
+  if (!canCapture && !canCancel && !canRefund) return null;
+
+  return (
+    <>
+      <Container className="divide-y">
+        <Header title="액션" />
+        <div className="p-4 space-y-2">
+          {canCapture && (
+            <Button
+              className="w-full"
+              onClick={handleCapture}
+              disabled={capture.isPending}
+            >
+              {capture.isPending ? '처리 중...' : '매입 (Capture)'}
+            </Button>
+          )}
+          {canRefund && (
+            <Button
+              className="w-full"
+              variant="outline"
+              onClick={openRefundDialog}
+            >
+              환불 (Refund)
+            </Button>
+          )}
+          {canCancel && (
+            <Button
+              className="w-full"
+              variant="destructive"
+              onClick={handleCancel}
+              disabled={cancel.isPending}
+            >
+              {cancel.isPending ? '처리 중...' : '취소 (Cancel)'}
+            </Button>
+          )}
+        </div>
+      </Container>
+
+      <Dialog open={refundOpen} onOpenChange={setRefundOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>환불 처리</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {succeededCharges.length > 1 && (
+              <div className="space-y-2">
+                <Label>Charge 선택</Label>
+                <select
+                  className="w-full border rounded p-2 text-sm"
+                  value={refundChargeId}
+                  onChange={(e) => setRefundChargeId(e.target.value)}
+                >
+                  <option value="">선택하세요</option>
+                  {succeededCharges.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.id.slice(0, 8)}... ({c.operation}, {c.amount.toLocaleString('ko-KR')}원)
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label>환불 금액</Label>
+              <Input
+                type="number"
+                min={1}
+                value={refundAmount}
+                onChange={(e) => setRefundAmount(e.target.value ? Number(e.target.value) : '')}
+                placeholder="환불 금액"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>사유 코드 (선택)</Label>
+              <Input
+                value={refundReasonCode}
+                onChange={(e) => setRefundReasonCode(e.target.value)}
+                placeholder="ADMIN_REFUND"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>사유 메시지 (선택)</Label>
+              <Input
+                value={refundReasonMessage}
+                onChange={(e) => setRefundReasonMessage(e.target.value)}
+                placeholder="관리자 환불 처리"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRefundOpen(false)}>
+              취소
+            </Button>
+            <Button
+              onClick={handleRefund}
+              disabled={refund.isPending || !refundChargeId || !refundAmount}
+            >
+              {refund.isPending ? '처리 중...' : '환불 실행'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function FallbackSpinner() {
+  return (
+    <div className="flex justify-center p-4">
+      <Spinner />
+    </div>
+  );
+}
+
+export function PaymentDetailSidebar({ intentId }: { intentId: string }) {
+  return (
+    <div className="flex w-full flex-col gap-y-3">
+      <Suspense fallback={<FallbackSpinner />}>
+        <PaymentMethodInfo intentId={intentId} />
+      </Suspense>
+      <Suspense fallback={<FallbackSpinner />}>
+        <ActionButtons intentId={intentId} />
+      </Suspense>
+    </div>
+  );
+}
