@@ -112,40 +112,7 @@ export default function ProductActions({
 
   const allInStock = selectedItems.every((item) => isInStock(item.variant))
 
-  // 현재 선택된 옵션 기준으로, 각 옵션별 선택 불가능한 값 계산
-  const disabledValuesMap = useMemo(() => {
-    const map: Record<string, Set<string>> = {}
-    if (!product.options || !product.variants) return map
-
-    for (const option of product.options) {
-      const disabledSet = new Set<string>()
-
-      for (const optValue of option.values ?? []) {
-        // 현재 선택된 다른 옵션 + 이 값의 조합으로 variant가 존재하는지 확인
-        const testOptions = { ...options, [option.id]: optValue.value }
-
-        // 조합에 해당하는 variant 중 재고가 있는 것이 있는지 확인
-        const hasAvailableVariant = product.variants.some((v) => {
-          const variantOptions = optionsAsKeymap(v.options)
-          // testOptions에서 설정된 키만 비교 (아직 선택 안 된 옵션은 무시)
-          const matchesOptions = Object.entries(testOptions).every(
-            ([key, val]) => val === undefined || variantOptions?.[key] === val
-          )
-          return matchesOptions && isInStock(v)
-        })
-
-        if (!hasAvailableVariant) {
-          disabledSet.add(optValue.value)
-        }
-      }
-
-      map[option.id] = disabledSet
-    }
-
-    return map
-  }, [product.options, product.variants, options])
-
-  // 이미 선택된 항목들의 옵션 값
+  // 이미 선택된 항목들의 옵션 값 (장바구니에 담긴 variant의 옵션 표시용)
   const selectedValuesMap = useMemo(() => {
     const map: Record<string, Set<string>> = {}
     if (!product.options) return map
@@ -363,9 +330,9 @@ export default function ProductActions({
                   current={options[option.id]}
                   updateOption={setOptionValue}
                   title={option.title ?? ""}
-                  disabledValues={disabledValuesMap[option.id]}
+                  variants={product.variants}
+                  selectedOptions={options}
                   selectedValues={selectedValuesMap[option.id]}
-                  data-testid="product-options"
                   disabled={!!disabled || isPending}
                 />
               </div>
@@ -573,7 +540,6 @@ export default function ProductActions({
         selectedItems={selectedItems}
         updateQuantity={updateQuantity}
         removeItem={removeItem}
-        disabledValuesMap={disabledValuesMap}
         selectedValuesMap={selectedValuesMap}
         totalQuantity={totalQuantity}
         totalPrice={totalPrice}
