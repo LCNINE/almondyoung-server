@@ -18,8 +18,7 @@ interface PageProps {
 }
 
 const resolveItemThumbnail = (item: HttpTypes.StoreOrderLineItem) => {
-  const rawThumbnail =
-    item.thumbnail ?? item.variant?.product?.thumbnail ?? ""
+  const rawThumbnail = item.thumbnail ?? item.variant?.product?.thumbnail ?? ""
 
   return getThumbnailUrl(rawThumbnail)
 }
@@ -29,7 +28,10 @@ const getIntentOrderId = (intent: IntentDto) => {
   return typeof orderId === "string" ? orderId : undefined
 }
 
-export default async function CheckoutSuccessPage({ params, searchParams }: PageProps) {
+export default async function CheckoutSuccessPage({
+  params,
+  searchParams,
+}: PageProps) {
   const { intentId, countryCode } = await params
   const { orderId } = await searchParams
 
@@ -46,15 +48,32 @@ export default async function CheckoutSuccessPage({ params, searchParams }: Page
     notFound()
   }
 
-  const order = orderId ? await getOrder(orderId) : null
+  const rawOrder = orderId ? await getOrder(orderId) : null
+
+  // 소유권 검증: intent의 이메일과 order의 이메일이 일치하는지 확인
+  const intentEmail = intent.metadata?.["customerEmail"]
+  const orderEmail = rawOrder?.email
+  const isOwnerMatch =
+    rawOrder && intentEmail && orderEmail && intentEmail === orderEmail
+
+  // 소유권이 일치하지 않으면 order 정보를 표시하지 않음 (보안)
+  const order = isOwnerMatch ? rawOrder : null
 
   console.log("============== order 정보 ==============")
-  console.log("order.id:", order?.id)
-  console.log("order.display_id:", order?.display_id)
-  console.log("order.customer_id:", order?.customer_id)
-  console.log("order.email:", order?.email)
-  console.log("shipping_address.first_name:", order?.shipping_address?.first_name)
-  console.log("shipping_address.last_name:", order?.shipping_address?.last_name)
+  console.log("order.id:", rawOrder?.id)
+  console.log("order.display_id:", rawOrder?.display_id)
+  console.log("order.customer_id:", rawOrder?.customer_id)
+  console.log("order.email:", rawOrder?.email)
+  console.log("intentEmail:", intentEmail)
+  console.log("isOwnerMatch:", isOwnerMatch)
+  console.log(
+    "shipping_address.first_name:",
+    rawOrder?.shipping_address?.first_name
+  )
+  console.log(
+    "shipping_address.last_name:",
+    rawOrder?.shipping_address?.last_name
+  )
   console.log("=========================================")
 
   return (
@@ -67,7 +86,11 @@ export default async function CheckoutSuccessPage({ params, searchParams }: Page
       </h1>
 
       {/* 주문 요약 카드 */}
-      <OrderSummaryCard intent={intent} order={order} countryCode={countryCode} />
+      <OrderSummaryCard
+        intent={intent}
+        order={order}
+        countryCode={countryCode}
+      />
 
       {/* 리뷰 유도 카드 */}
       <ReviewPromptCard />
@@ -84,7 +107,30 @@ async function OrderSummaryCard({
   order: HttpTypes.StoreOrder | null
   countryCode: string
 }) {
-  const address = order?.shipping_address
+  // todo: 소유권 불일치 문제 해결되면 지울것
+  // order가 없으면 (소유권 불일치 등) 간단한 안내 카드 표시,
+  if (!order) {
+    return (
+      <section className="w-full max-w-[816px] overflow-hidden rounded-[10px] border-[0.5px] border-[#d9d9d9] bg-white">
+        <div className="flex flex-col items-center gap-4 p-8">
+          <p className="text-lg text-black">
+            주문이 정상적으로 완료되었습니다.
+          </p>
+          <p className="text-sm text-gray-500">
+            주문 상세 내역은 마이페이지에서 확인하실 수 있습니다.
+          </p>
+          <Link
+            href={`/${countryCode}/mypage/order/list`}
+            className="mt-4 flex h-[60px] w-full items-center justify-center rounded-[5px] bg-[#fff7e5] text-center text-[19px] font-bold text-[#ffa500] transition-colors hover:bg-[#ffedcc]"
+          >
+            주문내역 보기
+          </Link>
+        </div>
+      </section>
+    )
+  }
+
+  const address = order.shipping_address
   const recipientName = address
     ? [address.first_name, address.last_name].filter(Boolean).join(" ")
     : null
@@ -95,7 +141,7 @@ async function OrderSummaryCard({
         address1: address.address_1,
       })
     : null
-  const items = order?.items ?? []
+  const items = order.items ?? []
   const firstItem = items[0]
   const firstThumbnail = firstItem ? resolveItemThumbnail(firstItem) : ""
 
@@ -105,11 +151,7 @@ async function OrderSummaryCard({
         <header className="flex items-center justify-between px-8 pt-8 pb-6">
           <h2 className="text-lg text-black">
             <span className="font-bold">주문번호 </span>
-            <span>
-              {order?.display_id
-                ? `#${order.display_id}`
-                : getIntentOrderId(intent) || intent.id}
-            </span>
+            <span>#{order.display_id}</span>
           </h2>
         </header>
 
@@ -149,9 +191,7 @@ async function OrderSummaryCard({
               ) : (
                 <div className="h-[99px] w-[99px] rounded-[5px] bg-gray-100" />
               )}
-              <p className="text-lg text-black">
-                주문상품 {items.length}건
-              </p>
+              <p className="text-lg text-black">주문상품 {items.length}건</p>
             </div>
             <ChevronDownIcon className="transition-transform group-open:rotate-180" />
           </summary>
@@ -195,21 +235,12 @@ async function OrderSummaryCard({
         </details>
 
         <div className="p-8">
-          {order ? (
-            <Link
-              href={`/${countryCode}/mypage/order/details?orderId=${order.id}`}
-              className="flex h-[60px] w-full items-center justify-center rounded-[5px] bg-[#fff7e5] text-center text-[19px] font-bold text-[#ffa500] transition-colors hover:bg-[#ffedcc]"
-            >
-              주문 상세보기
-            </Link>
-          ) : (
-            <button
-              type="button"
-              className="flex h-[60px] w-full items-center justify-center rounded-[5px] bg-[#fff7e5] text-center text-[19px] font-bold text-[#ffa500] transition-colors hover:bg-[#ffedcc]"
-            >
-              주문 상세보기
-            </button>
-          )}
+          <Link
+            href={`/${countryCode}/mypage/order/details?orderId=${order.id}`}
+            className="flex h-[60px] w-full items-center justify-center rounded-[5px] bg-[#fff7e5] text-center text-[19px] font-bold text-[#ffa500] transition-colors hover:bg-[#ffedcc]"
+          >
+            주문 상세보기
+          </Link>
         </div>
       </div>
     </section>
