@@ -8,12 +8,12 @@ export type ValidateInventoryInput = {
   }[];
   variants: {
     id: string;
-    sku?: string;
+    sku?: string | null;
     manage_inventory?: boolean;
     allow_backorder?: boolean;
     product?: {
       title: string;
-    };
+    } | null;
   }[];
 };
 
