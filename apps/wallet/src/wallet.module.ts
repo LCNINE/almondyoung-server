@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, Injectable, Module, UnauthorizedException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, ForbiddenException, Injectable, Module, UnauthorizedException } from '@nestjs/common';
 import {
   AUTH_CONFIG,
   AuthenticationService,
@@ -15,6 +15,7 @@ import { UGC_COMMAND_STREAM } from '@packages/event-contracts/streams';
 import { Observable, firstValueFrom, isObservable } from 'rxjs';
 import { validateWalletEnv } from './config/env';
 import { WALLET_JWT_AUTH_KEY } from './wallet-auth.decorator';
+import { WALLET_ADMIN_AUTH_KEY } from './wallet-admin-auth.decorator';
 import { HealthController } from './health.controller';
 import { walletSchema } from './schema';
 
@@ -122,6 +123,25 @@ class WalletAuthGuard implements CanActivate {
       context.getHandler(),
       context.getClass(),
     ]);
+
+    const isAdminAuth = this.reflector.getAllAndOverride<boolean>(WALLET_ADMIN_AUTH_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    if (isAdminAuth) {
+      // ── Admin path: JWT required, no API-key fallback ────────────────────
+      if (!(await this.tryJwtAuth(context, request))) {
+        throw new UnauthorizedException({ error: 'UNAUTHORIZED', message: 'Missing or invalid JWT cookie' });
+      }
+
+      const roles: string[] = (request.user as any)?.roles ?? [];
+      if (!roles.some((r) => r === 'admin' || r === 'master')) {
+        throw new ForbiddenException({ error: 'FORBIDDEN', message: 'Admin or master role required' });
+      }
+
+      return true;
+    }
 
     if (isJwtAuth) {
       // ── JWT cookie path (browser-facing endpoints) ──────────────────────

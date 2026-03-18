@@ -3,6 +3,7 @@ import { ApiOperation, ApiProperty, ApiPropertyOptional, ApiTags } from '@nestjs
 import { IsInt, IsNotEmpty, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 import { PaginationQueryDto } from '@app/shared';
 import { PointsAdminService } from './points-admin.service';
+import { WalletAdminAuth } from '../wallet-admin-auth.decorator';
 
 class EarnPointsDto {
   @ApiProperty({ description: 'User ID', maxLength: 128 })
@@ -51,6 +52,7 @@ class PointsEventListQueryDto extends PaginationQueryDto {
 }
 
 @ApiTags('Admin - Points')
+@WalletAdminAuth()
 @Controller('v1/admin/points')
 export class PointsAdminController {
   constructor(private readonly service: PointsAdminService) {}
