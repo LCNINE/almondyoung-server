@@ -1,4 +1,4 @@
-import { MedusaError, Modules } from '@medusajs/framework/utils';
+import { MedusaError, Modules, ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { IInventoryService, IProductModuleService } from '@medusajs/framework/types';
 
 export type ValidateInventoryInput = {
@@ -25,6 +25,7 @@ export const validateInventoryForItems = async (
 
   const inventoryService: IInventoryService = container.resolve(Modules.INVENTORY);
   const productService: IProductModuleService = container.resolve(Modules.PRODUCT);
+  const query = container.resolve(ContainerRegistrationKeys.QUERY);
 
   const errors: MedusaError[] = [];
 
@@ -36,6 +37,23 @@ export const validateInventoryForItems = async (
   );
 
   const variantMap = new Map(variantsWithInventoryInfo.map((v) => [v.id, v]));
+
+  // Query로 variant -> inventory_item 연결 조회
+  const { data: variantInventoryData } = await query.graph({
+    entity: 'product_variant',
+    fields: ['id', 'inventory_items.*'],
+    filters: {
+      id: variantIds,
+    },
+  });
+
+  // variant_id -> inventory_item_id 매핑
+  const variantToInventoryMap = new Map<string, string>();
+  for (const variantData of variantInventoryData) {
+    if (variantData.inventory_items?.length) {
+      variantToInventoryMap.set(variantData.id, variantData.inventory_items[0].id);
+    }
+  }
 
   await Promise.all(
     input.variants.map(async (variant) => {
@@ -56,17 +74,10 @@ export const validateInventoryForItems = async (
       }
 
       try {
-        // SKU가 없으면 재고 체크 스킵
-        if (!variant.sku) {
-          return;
-        }
+        // variant에 연결된 inventory_item_id 조회
+        const inventoryItemId = variantToInventoryMap.get(variant.id);
 
-        // variant에 연결된 inventory item 조회
-        const inventoryItems = await inventoryService.listInventoryItems({
-          sku: variant.sku,
-        });
-
-        if (!inventoryItems.length) {
+        if (!inventoryItemId) {
           errors.push(
             new MedusaError(
               MedusaError.Types.NOT_ALLOWED,
@@ -76,11 +87,9 @@ export const validateInventoryForItems = async (
           return;
         }
 
-        const inventoryItem = inventoryItems[0];
-
         // inventory level 조회
         const levels = await inventoryService.listInventoryLevels({
-          inventory_item_id: inventoryItem.id,
+          inventory_item_id: inventoryItemId,
         });
 
         if (!levels.length) {
