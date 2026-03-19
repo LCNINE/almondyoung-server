@@ -22,7 +22,7 @@ export class ProductRankingQuery {
     return this.dbService.db;
   }
 
-  async getProductRanking(categoryId?: string): Promise<ProductOrderMetricDto[]> {
+  async getProductRanking(categoryId?: string, limit: number = 10): Promise<ProductOrderMetricDto[]> {
     const startDate = this.toDateOnly(
       this.addUtcDays(new Date(), -(PRODUCT_RANKING_DAYS - 1)),
     );
@@ -53,7 +53,8 @@ export class ProductRankingQuery {
 
     const rows = await query
       .groupBy(aggProductOrderDaily.masterId)
-      .orderBy(sql`SUM(${aggProductOrderDaily.ordersCount}) DESC`);
+      .orderBy(sql`SUM(${aggProductOrderDaily.ordersCount}) DESC`)
+      .limit(limit);
 
     return rows.map((row) => ({
       masterId: row.masterId,
