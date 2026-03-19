@@ -19,7 +19,7 @@ export class AnalyticsService {
     throw new NotImplementedException('TODO: 뭘 리턴하게 할지 고민중');
   }
 
-  async getProductOrderMetrics(categoryId?: string): Promise<ProductOrderMetricDto[]> {
-    return this.productRankingQuery.getProductRanking(categoryId);
+  async getProductOrderMetrics(categoryId?: string, limit: number = 10): Promise<ProductOrderMetricDto[]> {
+    return this.productRankingQuery.getProductRanking(categoryId, limit);
   }
 }
