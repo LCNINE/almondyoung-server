@@ -6,6 +6,7 @@ export class ProductRankingQueryDto {
   @ApiPropertyOptional({
     description: 'Category id filter for product ranking.',
   })
+  @IsOptional()
   categoryId?: string;
 
   @ApiPropertyOptional({
