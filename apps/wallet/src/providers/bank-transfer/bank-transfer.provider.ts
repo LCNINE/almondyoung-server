@@ -16,6 +16,7 @@ import { WalletSchema, paymentMethods } from '../../schema';
 @Injectable()
 export class BankTransferPaymentProvider implements PaymentProvider {
   readonly providerType = 'BANK_TRANSFER';
+  readonly autoCapture = true;
 
   constructor(private readonly dbService: DbService<WalletSchema>) {}
 

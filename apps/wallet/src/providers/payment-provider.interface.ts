@@ -75,6 +75,7 @@ export type { PaymentMethod };
 
 export interface PaymentProvider {
   readonly providerType: string;
+  readonly autoCapture: boolean;
 
   /**
    * 이 provider 소속 결제수단 목록 반환.

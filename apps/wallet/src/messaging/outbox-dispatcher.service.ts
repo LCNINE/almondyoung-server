@@ -28,6 +28,7 @@ interface OutboxRow {
 export class OutboxDispatcherService {
   private static readonly MEDUSA_EVENT_TYPES = new Set([
     'payment.intent.succeeded',
+    'payment.intent.authorized',
     'payment.intent.captured',
     'payment.intent.canceled',
     'payment.intent.failed',
