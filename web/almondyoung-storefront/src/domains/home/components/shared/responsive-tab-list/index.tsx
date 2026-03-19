@@ -31,7 +31,7 @@ export function ResponsiveTabList({
   onTabChange,
 }: ResponsiveTabListProps) {
   return (
-    <div className="mb-3.5">
+    <div className="mb-8">
       {/* 모바일: Carousel */}
       <Carousel opts={CAROUSEL_OPTIONS} className="w-full md:hidden">
         <CarouselContent className="-ml-2">
