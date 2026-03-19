@@ -17,6 +17,7 @@ import { PointsLedgerService, PointsOperationResult } from './points-ledger.serv
 @Injectable()
 export class PointsPaymentProvider implements PaymentProvider {
   readonly providerType = 'POINTS';
+  readonly autoCapture = true;
 
   constructor(
     private readonly dbService: DbService<WalletSchema>,

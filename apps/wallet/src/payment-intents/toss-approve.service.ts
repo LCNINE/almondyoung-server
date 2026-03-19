@@ -9,6 +9,7 @@ import { eq } from 'drizzle-orm';
 import { WalletSchema, paymentIntents } from '../schema';
 import { Charge, PaymentIntent } from '../types';
 import { ChargesService } from '../charges/charges.service';
+import { AutoCaptureService } from './auto-capture.service';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
 import {
   GATEWAY_AGGREGATE_TYPE,
@@ -23,6 +24,7 @@ export class TossApproveService {
   constructor(
     private readonly dbService: DbService<WalletSchema>,
     private readonly chargesService: ChargesService,
+    private readonly autoCaptureService: AutoCaptureService,
     private readonly stateTransitionService: StateTransitionService,
   ) {}
 
@@ -112,6 +114,8 @@ export class TossApproveService {
         tx,
       );
     });
+
+    await this.autoCaptureService.attemptAutoCapture(charge.intentId, correlationId);
   }
 
   async finalizeFailure(charge: Charge, errorCode: string, correlationId: string): Promise<void> {
