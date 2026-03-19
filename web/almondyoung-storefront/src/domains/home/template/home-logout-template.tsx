@@ -3,7 +3,7 @@ import { UserDetail } from "@/lib/types/ui/user"
 import { Suspense } from "react"
 import { HeroBanner } from "../components/banner/hero-banner"
 import { HomeSection } from "../components/shared/home-section"
-import { CategoryBestSWrapper } from "./best-categories"
+import { CategoryBestProductsWrapper } from "./best-categories"
 import { ErrorBoundary } from "@/components/shared/error-boundary"
 
 /*
@@ -134,7 +134,7 @@ export async function HomeLogoutTemplate({
           fallback={<div>카테고리별 제품 섹션을 불러오지 못했어요.</div>}
         >
           <Suspense fallback={<CategoryBestSectionSkeleton />}>
-            <CategoryBestSWrapper countryCode={countryCode} />
+            <CategoryBestProductsWrapper countryCode={countryCode} />
           </Suspense>
         </ErrorBoundary>
       </HomeSection>
