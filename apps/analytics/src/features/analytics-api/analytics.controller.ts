@@ -53,6 +53,12 @@ export class AnalyticsController {
     required: false,
     description: 'Filter by category id.',
   })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    description: 'Maximum number of results to return (default: 10, max: 100).',
+    example: 10,
+  })
   @ApiResponse({
     status: 200,
     description: 'Product order metrics response.',
@@ -61,6 +67,6 @@ export class AnalyticsController {
   getProductOrderMetrics(
     @Query() query: ProductRankingQueryDto,
   ): Promise<ProductOrderMetricDto[]> {
-    return this.analyticsService.getProductOrderMetrics(query.categoryId);
+    return this.analyticsService.getProductOrderMetrics(query.categoryId, query.limit);
   }
 }
