@@ -8,6 +8,21 @@ import PaginatedProducts from "./paginated-products"
 import { ProductsSkeleton } from "../../../components/skeletons/products-skeleton"
 import { ErrorBoundary } from "@/components/shared/error-boundary"
 
+// 카테고리와 모든 하위 카테고리 ID를 재귀적으로 수집
+function collectCategoryIds(
+  category: HttpTypes.StoreProductCategory
+): string[] {
+  const ids: string[] = [category.id]
+
+  if (category.category_children?.length) {
+    for (const child of category.category_children) {
+      ids.push(...collectCategoryIds(child))
+    }
+  }
+
+  return ids
+}
+
 export function CategoryTemplate({
   sortBy,
   page,
@@ -56,7 +71,7 @@ export function CategoryTemplate({
               sortBy={sort}
               page={pageNumber}
               countryCode={countryCode}
-              categoryId={category?.id}
+              categoryIds={category ? collectCategoryIds(category) : undefined}
             />
           </Suspense>
         </ErrorBoundary>
