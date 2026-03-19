@@ -24,9 +24,7 @@ export const metadata: Metadata = getSEOTags({
     description: "미용 전문가를 위한 최저가 쇼핑몰",
   },
   extraTags: {
-    icons: {
-      icon: "/favicon.ico",
-    },
+    manifest: "/site.webmanifest",
   },
 })
 
