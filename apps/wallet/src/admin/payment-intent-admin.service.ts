@@ -54,10 +54,15 @@ export class PaymentIntentAdminService {
 
     const conditions = this.buildIntentConditions(query);
 
-    const [countResult] = await db
+    const countQuery = db
       .select({ value: count() })
-      .from(paymentIntents)
-      .where(and(...conditions));
+      .from(paymentIntents);
+
+    if (query.paymentMethodType) {
+      countQuery.leftJoin(paymentMethods, eq(paymentMethods.id, paymentIntents.paymentMethodId));
+    }
+
+    const [countResult] = await countQuery.where(and(...conditions));
 
     const total = countResult?.value ?? 0;
 
@@ -78,11 +83,7 @@ export class PaymentIntentAdminService {
         paymentMethodType: paymentMethods.type,
       })
       .from(paymentIntents)
-      .leftJoin(charges, and(
-        eq(charges.intentId, paymentIntents.id),
-        eq(charges.operation, 'AUTHORIZE'),
-      ))
-      .leftJoin(paymentMethods, eq(paymentMethods.id, charges.paymentMethodId))
+      .leftJoin(paymentMethods, eq(paymentMethods.id, paymentIntents.paymentMethodId))
       .where(and(...conditions))
       .orderBy(orderFn(sortColumn))
       .limit(limit)

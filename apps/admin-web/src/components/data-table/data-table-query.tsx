@@ -19,7 +19,7 @@ export function DataTableQuery({ filters, orderBy, search, prefix }: DataTableQu
   if (!hasFilters && !hasOrderBy && !search) return null
 
   return (
-    <div className="flex items-center justify-between gap-4 pb-4">
+    <div className="flex items-center justify-between gap-4 p-2">
       <div className="flex flex-1 flex-wrap items-center gap-2">
         {hasFilters && <DataTableFilter filters={filters} prefix={prefix} />}
       </div>
