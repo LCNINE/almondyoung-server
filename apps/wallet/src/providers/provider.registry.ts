@@ -36,6 +36,14 @@ export class ProviderRegistry {
     return provider;
   }
 
+  shouldAutoCapture(providerTypes: string[]): boolean {
+    if (providerTypes.length === 0) return false;
+    return providerTypes.every((type) => {
+      const provider = this.providers.get(type.trim().toUpperCase());
+      return provider?.autoCapture === true;
+    });
+  }
+
   private register(provider: PaymentProvider): void {
     this.providers.set(provider.providerType.toUpperCase(), provider);
   }

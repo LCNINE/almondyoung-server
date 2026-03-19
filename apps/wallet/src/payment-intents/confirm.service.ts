@@ -12,6 +12,7 @@ import { Charge, DbTx } from '../types';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { ChargesService } from '../charges/charges.service';
 import { ProviderRegistry } from '../providers/provider.registry';
+import { AutoCaptureService } from './auto-capture.service';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
 import {
   GATEWAY_AGGREGATE_TYPE,
@@ -42,6 +43,7 @@ export class ConfirmService {
     private readonly paymentMethodsService: PaymentMethodsService,
     private readonly chargesService: ChargesService,
     private readonly providerRegistry: ProviderRegistry,
+    private readonly autoCaptureService: AutoCaptureService,
     private readonly stateTransitionService: StateTransitionService,
   ) {}
 
@@ -539,6 +541,8 @@ export class ConfirmService {
         tx,
       );
     });
+
+    await this.autoCaptureService.attemptAutoCapture(intentId, correlationId);
   }
 
   private async handleProviderFailure(

@@ -16,6 +16,7 @@ import { WalletSchema, charges, paymentMethods } from '../../schema';
 @Injectable()
 export class TossPaymentProvider implements PaymentProvider {
   readonly providerType = 'TOSS';
+  readonly autoCapture = true;
 
   constructor(private readonly dbService: DbService<WalletSchema>) {}
 

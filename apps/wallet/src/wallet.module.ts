@@ -47,6 +47,7 @@ import { PaymentIntentsService } from './payment-intents/payment-intents.service
 import { PaymentIntentsController } from './payment-intents/payment-intents.controller';
 import { ConfirmService } from './payment-intents/confirm.service';
 import { CaptureService } from './payment-intents/capture.service';
+import { AutoCaptureService } from './payment-intents/auto-capture.service';
 import { CancelService } from './payment-intents/cancel.service';
 import { TossApproveService } from './payment-intents/toss-approve.service';
 
@@ -387,6 +388,7 @@ async function resolveCanActivate(
     PaymentIntentsService,
     ConfirmService,
     CaptureService,
+    AutoCaptureService,
     CancelService,
     TossApproveService,
 
