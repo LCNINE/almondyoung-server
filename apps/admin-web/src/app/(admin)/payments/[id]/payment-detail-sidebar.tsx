@@ -18,34 +18,42 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-function PaymentMethodInfo({ intentId }: { intentId: string }) {
+function PaymentMethodInfoContent({ intentId }: { intentId: string }) {
   const { data } = usePaymentIntentDetail(intentId);
   const pm = data.paymentMethod;
 
   return (
+    <div className="p-4">
+      {pm ? (
+        <div className="space-y-2 text-sm">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">유형</span>
+            <PaymentMethodTypeCell value={pm.type} />
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">표시명</span>
+            <span>{pm.displayName ?? '-'}</span>
+          </div>
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">결제수단 없음</p>
+      )}
+    </div>
+  );
+}
+
+function PaymentMethodInfo({ intentId }: { intentId: string }) {
+  return (
     <Container className="divide-y">
       <Header title="결제수단" />
-      <div className="p-4">
-        {pm ? (
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">유형</span>
-              <PaymentMethodTypeCell value={pm.type} />
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">표시명</span>
-              <span>{pm.displayName ?? '-'}</span>
-            </div>
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">결제수단 없음</p>
-        )}
-      </div>
+      <Suspense fallback={<div className="flex justify-center p-4"><Spinner /></div>}>
+        <PaymentMethodInfoContent intentId={intentId} />
+      </Suspense>
     </Container>
   );
 }
 
-function ActionButtons({ intentId }: { intentId: string }) {
+function ActionButtonsContent({ intentId }: { intentId: string }) {
   const { data } = usePaymentIntentDetail(intentId);
   const capture = useCaptureIntent(intentId);
   const cancel = useCancelIntent(intentId);
@@ -114,39 +122,36 @@ function ActionButtons({ intentId }: { intentId: string }) {
 
   return (
     <>
-      <Container className="divide-y">
-        <Header title="액션" />
-        <div className="p-4 space-y-2">
-          {canCapture && (
-            <Button
-              className="w-full"
-              onClick={handleCapture}
-              disabled={capture.isPending}
-            >
-              {capture.isPending ? '처리 중...' : '매입 (Capture)'}
-            </Button>
-          )}
-          {canRefund && (
-            <Button
-              className="w-full"
-              variant="outline"
-              onClick={openRefundDialog}
-            >
-              환불 (Refund)
-            </Button>
-          )}
-          {canCancel && (
-            <Button
-              className="w-full"
-              variant="destructive"
-              onClick={handleCancel}
-              disabled={cancel.isPending}
-            >
-              {cancel.isPending ? '처리 중...' : '취소 (Cancel)'}
-            </Button>
-          )}
-        </div>
-      </Container>
+      <div className="p-4 space-y-2">
+        {canCapture && (
+          <Button
+            className="w-full"
+            onClick={handleCapture}
+            disabled={capture.isPending}
+          >
+            {capture.isPending ? '처리 중...' : '매입 (Capture)'}
+          </Button>
+        )}
+        {canRefund && (
+          <Button
+            className="w-full"
+            variant="outline"
+            onClick={openRefundDialog}
+          >
+            환불 (Refund)
+          </Button>
+        )}
+        {canCancel && (
+          <Button
+            className="w-full"
+            variant="destructive"
+            onClick={handleCancel}
+            disabled={cancel.isPending}
+          >
+            {cancel.isPending ? '처리 중...' : '취소 (Cancel)'}
+          </Button>
+        )}
+      </div>
 
       <Dialog open={refundOpen} onOpenChange={setRefundOpen}>
         <DialogContent>
@@ -215,23 +220,22 @@ function ActionButtons({ intentId }: { intentId: string }) {
   );
 }
 
-function FallbackSpinner() {
+function ActionButtons({ intentId }: { intentId: string }) {
   return (
-    <div className="flex justify-center p-4">
-      <Spinner />
-    </div>
+    <Container className="divide-y">
+      <Header title="액션" />
+      <Suspense fallback={<div className="flex justify-center p-4"><Spinner /></div>}>
+        <ActionButtonsContent intentId={intentId} />
+      </Suspense>
+    </Container>
   );
 }
 
 export function PaymentDetailSidebar({ intentId }: { intentId: string }) {
   return (
     <div className="flex w-full flex-col gap-y-3">
-      <Suspense fallback={<FallbackSpinner />}>
-        <PaymentMethodInfo intentId={intentId} />
-      </Suspense>
-      <Suspense fallback={<FallbackSpinner />}>
-        <ActionButtons intentId={intentId} />
-      </Suspense>
+      <PaymentMethodInfo intentId={intentId} />
+      <ActionButtons intentId={intentId} />
     </div>
   );
 }
