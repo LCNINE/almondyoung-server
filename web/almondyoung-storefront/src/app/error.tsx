@@ -1,16 +1,13 @@
 "use client"
 
-import { Button } from "@/components/ui/button"
+import ErrorPageContent from "@/components/error-page"
 import {
   extractCountryCodeFromPath,
   normalizeRedirectPath,
   toLocalizedPath,
 } from "@/lib/utils/locale-path"
-import { Home, RefreshCw } from "lucide-react"
-import Image from "next/image"
 import { usePathname, useRouter } from "next/navigation"
 import { useEffect, useRef } from "react"
-import LostAlmondImage from "../assets/images/404-notfound.png"
 
 export default function Error({
   error,
@@ -29,7 +26,9 @@ export default function Error({
     hasTriedRef.current = true
 
     const tokenRefresh = async () => {
+      console.log("error,stack === ")
       console.log("error:", error.stack)
+      console.log("error,stack end ====")
       if (error.digest === "UNAUTHORIZED" || error.message === "UNAUTHORIZED") {
         const isMainPage = /^\/[a-z]{2}\/?$/.test(pathname)
         const countryCode = extractCountryCodeFromPath(pathname, "kr")
@@ -88,102 +87,16 @@ export default function Error({
     tokenRefresh()
   }, [error, reset, router, pathname])
 
+  // 401/UNAUTHORIZED 에러는 토큰 복구 처리 중이므로 빈 화면 표시
   if (error.digest === "UNAUTHORIZED" || error.message === "UNAUTHORIZED") {
     return <div className="flex min-h-screen items-center justify-center"></div>
-  } else {
-    return (
-      <div className="bg-background flex min-h-screen flex-col">
-        {/* Header */}
-        <header className="border-border bg-foreground border-b">
-          <div className="container mx-auto flex h-14 items-center px-4">
-            <span className="text-background text-lg font-bold tracking-tight">
-              ALMOND YOUNG
-            </span>
-          </div>
-        </header>
-
-        {/* Main Content */}
-        <main className="flex flex-1 items-center justify-center px-4 py-12">
-          <div className="w-full max-w-lg text-center">
-            {/* Illustration */}
-            <div className="mb-6">
-              <Image
-                src={LostAlmondImage}
-                alt="에러가 발생한 아몬드 캐릭터"
-                className="mx-auto h-48 w-48 object-contain"
-                width={192}
-                height={192}
-              />
-            </div>
-
-            {/* Error Title */}
-            <div className="mb-4" style={{ animationDelay: "0.1s" }}>
-              <span className="text-gold text-5xl font-bold">앗!</span>
-            </div>
-
-            {/* Message */}
-            <h1
-              className="text-foreground mb-3 text-xl font-semibold"
-              style={{ animationDelay: "0.2s" }}
-            >
-              뭔가 잘못됐어요!
-            </h1>
-
-            <p
-              className="text-muted-foreground mb-2 text-sm leading-relaxed"
-              style={{ animationDelay: "0.3s" }}
-            >
-              예상치 못한 오류가 발생했어요. 걱정 마세요!
-            </p>
-            <p
-              className="text-muted-foreground mb-8 text-sm"
-              style={{ animationDelay: "0.4s" }}
-            >
-              새로고침하거나 홈으로 돌아가 보세요!
-            </p>
-
-            {/* Action Buttons */}
-            <div
-              className="mx-auto mt-8 grid max-w-[320px] grid-cols-2 gap-3"
-              style={{ animationDelay: "0.5s" }}
-            >
-              {/* 홈으로 돌아가기: 시안의 메인 다크 브라운 배경색 적용 */}
-              <Button
-                variant="default"
-                size="lg"
-                className="flex h-16 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-none bg-[#4A4744] text-white transition-all hover:bg-[#3d3a37] active:scale-95"
-                onClick={() => (window.location.href = "/")}
-              >
-                <Home className="h-5 w-5 text-white" />
-                <span className="text-xs font-bold">홈으로</span>
-              </Button>
-
-              {/* 새로고침: 시안의 포인트 컬러(골드/옐로우) 적용 */}
-              <Button
-                variant="default"
-                size="lg"
-                className="group flex h-16 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-none bg-[#E9B93F] text-white transition-all hover:bg-[#d4a835] active:scale-95"
-                onClick={() => window.location.reload()}
-              >
-                <RefreshCw className="h-5 w-5 text-white transition-transform duration-500 group-hover:rotate-180" />
-                <span className="text-xs font-bold">새로고침</span>
-              </Button>
-            </div>
-
-            {/* Help Section */}
-            <div
-              className="bg-surface mt-10 rounded-lg p-4"
-              style={{ animationDelay: "0.7s" }}
-            >
-              <p className="text-muted-foreground text-xs">
-                문제가 계속된다면{" "}
-                <span className="text-foreground font-medium">고객센터</span>로
-                문의해 주세요.
-              </p>
-            </div>
-          </div>
-        </main>
-      </div>
-    )
   }
+
+  // 일반 에러
+  return (
+    <ErrorPageContent
+      onRetry={() => window.location.reload()}
+      onGoHome={() => (window.location.href = "/")}
+    />
+  )
 }
