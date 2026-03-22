@@ -65,6 +65,7 @@ export class AuthorizationModule {
         JwtAuthGuard,
         JwtAccessStrategy,
         PassportModule,
+        AUTHORIZATION_OPTIONS,
       ],
     };
   }

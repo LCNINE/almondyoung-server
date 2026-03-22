@@ -11,3 +11,5 @@ export * from './decorators/user.decorator';
 export * from './database/auth.schema';
 export * from './database/auth.types';
 export * from './constants';
+export * from './api/role-scope-api.module';
+export * from './guards/master-role.guard';
