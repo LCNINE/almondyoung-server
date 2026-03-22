@@ -1,5 +1,4 @@
-import { RequireScopes } from '@app/authorization';
-import { JwtPayload } from '@app/roles';
+import { RequireScopes, JwtPayload } from '@app/authorization';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import { Body, Controller, Post } from '@nestjs/common';
 import {

@@ -110,15 +110,6 @@
         "tsConfigPath": "apps/pim/tsconfig.app.json"
       }
     },
-    "roles": {
-      "type": "library",
-      "root": "libs/roles",
-      "entryFile": "index",
-      "sourceRoot": "libs/roles/src",
-      "compilerOptions": {
-        "tsConfigPath": "libs/roles/tsconfig.lib.json"
-      }
-    },
     "search": {
       "type": "application",
       "root": "apps/search",
