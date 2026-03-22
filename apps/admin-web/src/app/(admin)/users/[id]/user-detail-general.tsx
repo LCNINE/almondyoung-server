@@ -6,7 +6,7 @@ import { Header } from "@/components/admin-ui-experimental/common/header"
 import { Spinner } from '@/components/ui/spinner'
 import { useAdminUser } from '@/lib/services/users'
 
-function UserDetailGeneralContent({ userId }: { userId: string }) {
+export function UserDetailGeneralContent({ userId }: { userId: string }) {
   const { data } = useAdminUser(userId)
 
   const rows: { key: string; value: string | null }[] = [
