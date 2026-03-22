@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import {
   type PimSchema,
   productMasterVersions,
@@ -16,6 +16,10 @@ export class ProductApprovalService {
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.db.db;
+  }
+
+  private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction): Promise<T> {
+    return tx ? fn(tx) : this.db.db.transaction(fn);
   }
 
   async submitForApproval(productId: string, userId: string, tx?: DbTransaction) {
@@ -55,41 +59,51 @@ export class ProductApprovalService {
   }
 
   async approve(productId: string, userId: string, comment?: string, tx?: DbTransaction) {
-    const client = this.getClient(tx);
+    return this.inTx(async (trx) => {
+      const [product] = await trx
+        .select()
+        .from(productMasterVersions)
+        .where(eq(productMasterVersions.id, productId));
 
-    const [product] = await client
-      .select()
-      .from(productMasterVersions)
-      .where(eq(productMasterVersions.id, productId));
+      if (!product) {
+        throw new BadRequestException('Product not found');
+      }
 
-    if (!product) {
-      throw new BadRequestException('Product not found');
-    }
+      if (product.approvalStatus !== 'pending') {
+        throw new BadRequestException('Product is not pending approval');
+      }
 
-    if (product.approvalStatus !== 'pending') {
-      throw new BadRequestException('Product is not pending approval');
-    }
+      await trx
+        .update(productMasterVersions)
+        .set({ status: 'inactive', updatedAt: new Date() })
+        .where(
+          and(
+            eq(productMasterVersions.masterId, product.masterId),
+            eq(productMasterVersions.status, 'active'),
+          ),
+        );
 
-    const [updated] = await client
-      .update(productMasterVersions)
-      .set({
-        approvalStatus: 'approved',
-        approvedAt: new Date(),
+      const [updated] = await trx
+        .update(productMasterVersions)
+        .set({
+          approvalStatus: 'approved',
+          approvedAt: new Date(),
+          approvedBy: userId,
+          status: 'active',
+          updatedAt: new Date(),
+        })
+        .where(eq(productMasterVersions.id, productId))
+        .returning();
+
+      await this.addHistory({
+        versionId: productId,
+        status: 'approved',
+        comment: comment || 'Approved',
         approvedBy: userId,
-        status: 'active', // Activate product upon approval
-        updatedAt: new Date(),
-      })
-      .where(eq(productMasterVersions.id, productId))
-      .returning();
+      }, trx);
 
-    await this.addHistory({
-      versionId: productId,
-      status: 'approved',
-      comment: comment || 'Approved',
-      approvedBy: userId,
+      return updated;
     }, tx);
-
-    return updated;
   }
 
   async reject(productId: string, userId: string, reason: string, tx?: DbTransaction) {

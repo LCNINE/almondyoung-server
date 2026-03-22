@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { DbModule } from '@app/db';
 import { EventsModule, EventTraceApiModule } from '@app/events';
+import { AuthorizationModule } from '@app/authorization';
 import { PRODUCT_STREAM } from '@packages/event-contracts';
 import { validatePimEnv } from './config/env.validation';
 import { pimSchema } from './schema';
@@ -43,6 +44,10 @@ import { DashboardModule } from './analytics/dashboard/dashboard.module';
       enableDLQ: true,
     }),
     EventTraceApiModule,
+    AuthorizationModule.forRoot({
+      microserviceName: 'pim',
+      scopes: [],
+    }),
     // Core domain modules
     CategoriesModule,
     ProductsModule,
