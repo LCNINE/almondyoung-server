@@ -1,8 +1,5 @@
 import { InferSelectModel, InferInsertModel } from 'drizzle-orm';
-import { roles, scopes, roleScopeMapping } from './auth.schema';
-
-export type Role = InferSelectModel<typeof roles>;
-export type NewRole = InferInsertModel<typeof roles>;
+import { scopes, roleScopeMapping } from './auth.schema';
 
 export type Scope = InferSelectModel<typeof scopes>;
 export type NewScope = InferInsertModel<typeof scopes>;

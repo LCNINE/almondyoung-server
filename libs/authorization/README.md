@@ -91,7 +91,6 @@ DATABASE_URL="postgresql://..." npx drizzle-kit migrate
 
 이 명령은 PostgreSQL에 `auth` 스키마를 생성하고 다음 테이블을 만듭니다:
 
-- `auth.roles` - 역할 정의
 - `auth.scopes` - 권한 정의
 - `auth.role_scope_mapping` - 역할-권한 매핑
 
@@ -455,15 +454,7 @@ DELETE /admin/roles/:roleId/scopes/:scopeId
 
 ## 데이터베이스 스키마
 
-### auth.roles
-
-| 컬럼        | 타입        | 설명               |
-| ----------- | ----------- | ------------------ |
-| id          | uuid        | Primary Key        |
-| name        | varchar(50) | 역할 이름 (unique) |
-| description | text        | 설명               |
-| created_at  | timestamp   | 생성일시           |
-| updated_at  | timestamp   | 수정일시           |
+> **Note**: Role의 SoT는 user-service의 `public.roles` 테이블입니다. `auth` 스키마에는 role 테이블이 없으며, `role_scope_mapping`이 role name을 plain text로 직접 보유합니다.
 
 ### auth.scopes
 
@@ -478,14 +469,14 @@ DELETE /admin/roles/:roleId/scopes/:scopeId
 
 ### auth.role_scope_mapping
 
-| 컬럼       | 타입      | 설명                    |
-| ---------- | --------- | ----------------------- |
-| id         | uuid      | Primary Key             |
-| role_id    | uuid      | Foreign Key → roles.id  |
-| scope_id   | uuid      | Foreign Key → scopes.id |
-| created_at | timestamp | 생성일시                |
+| 컬럼       | 타입          | 설명                    |
+| ---------- | ------------- | ----------------------- |
+| id         | uuid          | Primary Key             |
+| role_name  | varchar(100)  | Role 이름 (plain text)  |
+| scope_id   | uuid          | Foreign Key → scopes.id |
+| created_at | timestamp     | 생성일시                |
 
-**Unique Constraint**: (role_id, scope_id)
+**Unique Constraint**: (role_name, scope_id)
 
 ## 실제 작동 예제
 
@@ -756,7 +747,6 @@ class ScopeGuard implements CanActivate {
 이 스크립트는:
 
 - ✅ `auth` 스키마 생성
-- ✅ `auth.roles` 테이블 생성
 - ✅ `auth.scopes` 테이블 생성
 - ✅ `auth.role_scope_mapping` 테이블 생성
 - ✅ 멱등성 보장 (여러 번 실행해도 안전)
