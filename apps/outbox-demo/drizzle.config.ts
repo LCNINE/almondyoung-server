@@ -9,10 +9,13 @@ export default defineConfig({
     'apps/outbox-demo/database/schemas/schema.ts',
     'libs/events/src/outbox/outbox.schema.ts',
     'libs/events/src/tracking/tracking.schema.ts',
+    'libs/authorization/src/database/auth.schema.ts',
   ],
   out: './database/migrations',
   dbCredentials: {
     url: process.env.DATABASE_URL || '',
   },
-  schemaFilter: ['public', 'event'],
+  schemaFilter: ['public', 'event', 'auth'],
+  verbose: true,
+  strict: true,
 });
