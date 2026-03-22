@@ -1,8 +1,0 @@
-{
-  "name": "@packages/auth-constants",
-  "version": "0.0.1",
-  "description": "Framework-independent authentication and authorization constants",
-  "private": true,
-  "main": "index.ts",
-  "types": "index.ts"
-}

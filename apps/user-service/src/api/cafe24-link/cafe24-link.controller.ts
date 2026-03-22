@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { Public } from '../../commons/decorator/public.decorator';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
-import { JwtPayload } from '@app/roles';
+import { JwtPayload } from '@app/authorization';
 import {
   ApiBearerAuth,
   ApiBody,

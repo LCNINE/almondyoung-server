@@ -1,5 +1,5 @@
 import 'fastify';
-import { JwtPayload } from '@app/roles';
+import { JwtPayload } from '@app/authorization';
 
 declare module 'fastify' {
   interface FastifyRequest {

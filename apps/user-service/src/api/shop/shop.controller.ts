@@ -1,5 +1,4 @@
-import { RequireScopes } from '@app/authorization';
-import { JwtPayload } from '@app/roles';
+import { RequireScopes, JwtPayload } from '@app/authorization';
 import { Body, Controller, Get, Patch, Post, Put } from '@nestjs/common';
 import {
   ApiBearerAuth,

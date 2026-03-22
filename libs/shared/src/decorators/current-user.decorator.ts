@@ -1,4 +1,4 @@
-import { JwtPayload } from '@app/roles';
+import { JwtPayload } from '@app/authorization';
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 import { FastifyRequest } from 'fastify';
 

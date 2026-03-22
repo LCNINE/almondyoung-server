@@ -2,7 +2,7 @@ import jwt, { JwtPayload } from 'jsonwebtoken';
 
 interface MyTokenPayload extends JwtPayload {
   sub: string;
-  scopes: string[];
+  roles: string[];
   email: string;
   login_id?: string;
   iat: number;

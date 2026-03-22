@@ -1,4 +1,4 @@
-import { JwtPayload } from '@app/roles';
+import { JwtPayload } from '@app/authorization';
 import {
   ExecutionContext,
   Injectable,
