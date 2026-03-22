@@ -11,5 +11,7 @@ export default defineConfig({
     url: process.env.DATABASE_URL || '',
   },
   schemaFilter: ['auth'],
+  verbose: true,
+  strict: true,
 });
 
