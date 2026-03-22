@@ -21,15 +21,6 @@ const authSchemaSql = `
 -- Create auth schema
 CREATE SCHEMA IF NOT EXISTS auth;
 
--- Create roles table
-CREATE TABLE IF NOT EXISTS auth.roles (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name varchar(50) NOT NULL UNIQUE,
-  description text,
-  created_at timestamp DEFAULT now() NOT NULL,
-  updated_at timestamp DEFAULT now() NOT NULL
-);
-
 -- Create scopes table
 CREATE TABLE IF NOT EXISTS auth.scopes (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -53,7 +44,7 @@ BEGIN
   END IF;
 END $$;
 
--- Create role_scope_mapping table with role_name (no FK to auth.roles)
+-- Create role_scope_mapping table with role_name (plain text, no FK)
 CREATE TABLE IF NOT EXISTS auth.role_scope_mapping (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   role_name varchar(100) NOT NULL,
@@ -78,7 +69,6 @@ async function main() {
     console.log('');
     console.log('📋 Created/Updated:');
     console.log('  - auth schema');
-    console.log('  - auth.roles table');
     console.log('  - auth.scopes table');
     console.log('  - auth.role_scope_mapping table (role_name based, no FK)');
   } catch (error) {
