@@ -10,8 +10,10 @@ import {
   HttpException,
   HttpStatus,
   Logger,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
+import { JwtAuthGuard, User } from '@app/authorization';
 import { ProductVersionsService } from '../services/product-versions.service';
 import { ProductMastersService } from '../services/product-masters.service';
 import {
@@ -100,10 +102,11 @@ export class ProductMasterVersionsController {
   }
 
   @Post()
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({
     summary: '새 Draft 버전 생성',
     description: `기존 버전을 기반으로 새로운 draft 버전을 생성합니다.
-    
+
     parentVersionId가 제공되지 않으면 현재 active 버전을 부모로 사용합니다.
     active 버전이 없는 경우 400 에러를 반환합니다.`,
   })
@@ -117,6 +120,7 @@ export class ProductMasterVersionsController {
   async createDraftVersion(
     @Param('masterId') masterId: string,
     @Body() dto: CreateDraftVersionDto,
+    @User() user: { userId: string },
   ) {
     let parentVersionId = dto.parentVersionId;
 
@@ -132,10 +136,9 @@ export class ProductMasterVersionsController {
       }
     }
 
-    const userId = '00000000-0000-0000-0000-000000000000';
     const version = await this.productVersionsService.createDraftVersion(
       parentVersionId,
-      userId,
+      user.userId,
       dto.copyMappings !== false,
     );
     return {
@@ -146,6 +149,7 @@ export class ProductMasterVersionsController {
   }
 
   @Put(':versionId')
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({
     summary: 'Draft 버전 수정',
     description: 'Draft 상태의 버전을 수정합니다. Active 또는 Inactive 상태의 버전은 수정할 수 없습니다.',
@@ -168,15 +172,13 @@ export class ProductMasterVersionsController {
     @Param('masterId') masterId: string,
     @Param('versionId') versionId: string,
     @Body() updateData: UpdateProductMasterDto,
+    @User() user: { userId: string },
   ) {
     try {
-      // TODO: JWT에서 실제 userId 추출
-      const userId = '00000000-0000-0000-0000-000000000000';
-
       // 권한 확인 (draft 상태인지, 소유자인지)
       const canModify = await this.productVersionsService.canUserModifyVersion(
         versionId,
-        userId,
+        user.userId,
       );
 
       if (!canModify) {

@@ -1,9 +1,11 @@
-import { Controller, Post, Get, Param, Body, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Get, Param, Body, HttpException, HttpStatus, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
+import { JwtAuthGuard, User } from '@app/authorization';
 import { ProductApprovalService } from './product-approval.service';
 import { SubmitForApprovalDto, ApproveProductDto, RejectProductDto } from './dto';
 
 @ApiTags('Product Approval')
+@UseGuards(JwtAuthGuard)
 @Controller('masters')
 export class ProductApprovalController {
   constructor(private approvalService: ProductApprovalService) {}
@@ -21,9 +23,10 @@ export class ProductApprovalController {
   async submitForApproval(
     @Param('id') productId: string,
     @Body() body: SubmitForApprovalDto,
+    @User() user: { userId: string },
   ) {
     try {
-      return await this.approvalService.submitForApproval(productId, body.userId);
+      return await this.approvalService.submitForApproval(productId, user.userId);
     } catch (error) {
       if (error.message.includes('not found')) {
         throw new HttpException('Product not found', HttpStatus.NOT_FOUND);
@@ -45,9 +48,10 @@ export class ProductApprovalController {
   async approve(
     @Param('id') productId: string,
     @Body() body: ApproveProductDto,
+    @User() user: { userId: string },
   ) {
     try {
-      return await this.approvalService.approve(productId, body.userId, body.comment);
+      return await this.approvalService.approve(productId, user.userId, body.comment);
     } catch (error) {
       if (error.message.includes('not found')) {
         throw new HttpException('Product not found', HttpStatus.NOT_FOUND);
@@ -69,9 +73,10 @@ export class ProductApprovalController {
   async reject(
     @Param('id') productId: string,
     @Body() body: RejectProductDto,
+    @User() user: { userId: string },
   ) {
     try {
-      return await this.approvalService.reject(productId, body.userId, body.reason);
+      return await this.approvalService.reject(productId, user.userId, body.reason);
     } catch (error) {
       if (error.message.includes('not found')) {
         throw new HttpException('Product not found', HttpStatus.NOT_FOUND);

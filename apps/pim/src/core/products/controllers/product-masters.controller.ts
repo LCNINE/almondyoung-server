@@ -11,7 +11,9 @@ import {
   HttpException,
   HttpStatus,
   HttpCode,
+  UseGuards,
 } from '@nestjs/common';
+import { JwtAuthGuard, User } from '@app/authorization';
 import { DateMapper } from '../../../common/mappers';
 import {
   ApiTags,
@@ -226,6 +228,7 @@ export class ProductMastersController {
   }
 
   @Delete(':masterId')
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({
     summary: '제품 마스터 소프트 삭제',
     description: `
@@ -247,12 +250,11 @@ export class ProductMastersController {
   @ApiResponse({ status: 500, description: '서버 오류' })
   async deleteMaster(
     @Param('masterId') masterId: string,
-    @Body('userId') userId?: string,
+    @User() user: { userId: string },
   ) {
-    const userIdToUse = userId || '00000000-0000-0000-0000-000000000000';
     const deleted = await this.productMastersService.deleteMaster(
       masterId,
-      userIdToUse,
+      user.userId,
     );
 
     return {
@@ -264,6 +266,7 @@ export class ProductMastersController {
   }
 
   @Post(':masterId/restore')
+  @UseGuards(JwtAuthGuard)
   @HttpCode(200)
   @ApiOperation({
     summary: '제품 마스터 복원',
@@ -279,9 +282,7 @@ export class ProductMastersController {
   @ApiResponse({ status: 500, description: '서버 오류' })
   async restore(
     @Param('masterId') masterId: string,
-    @Body('userId') userId?: string,
   ) {
-    const userIdToUse = userId || '00000000-0000-0000-0000-000000000000';
     const restored = await this.productMastersService.restoreMaster(
       masterId,
     );
@@ -320,6 +321,7 @@ export class ProductMastersController {
   }
 
   @Delete(':id/permanent')
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({
     summary: '제품 버전 영구 삭제',
     description: `
@@ -338,11 +340,9 @@ export class ProductMastersController {
   @ApiResponse({ status: 500, description: '서버 오류' })
   async hardDelete(
     @Param('id') id: string,
-    @Body('userId') userId: string,
+    @User() user: { userId: string },
   ): Promise<{ deleted: boolean }> {
-    // TODO: Get userId from JWT auth
-    const userIdToUse = userId || '00000000-0000-0000-0000-000000000000';
-    return await this.productMastersService.hardDelete(id, userIdToUse);
+    return await this.productMastersService.hardDelete(id, user.userId);
   }
 
   // NOTE: Price preview and pricing strategy endpoints have been removed.

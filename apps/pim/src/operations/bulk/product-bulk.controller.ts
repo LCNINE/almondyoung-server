@@ -1,9 +1,11 @@
-import { Controller, Post, Body, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Body, HttpException, HttpStatus, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
+import { JwtAuthGuard, User } from '@app/authorization';
 import { ProductBulkService } from './product-bulk.service';
 import { BulkUpdateDto, BulkDeleteDto, BulkRestoreDto } from './dto';
 
 @ApiTags('Product Bulk Operations')
+@UseGuards(JwtAuthGuard)
 @Controller('masters/bulk')
 export class ProductBulkController {
   constructor(private bulkService: ProductBulkService) { }
@@ -18,12 +20,10 @@ export class ProductBulkController {
   @ApiResponse({ status: 400, description: '잘못된 요청' })
   async bulkUpdate(
     @Body() dto: BulkUpdateDto,
-    @Body('userId') userId: string,
+    @User() user: { userId: string },
   ) {
     try {
-      // TODO: Get userId from JWT auth
-      const userIdToUse = userId || '00000000-0000-0000-0000-000000000000';
-      return await this.bulkService.bulkUpdate(dto, userIdToUse);
+      return await this.bulkService.bulkUpdate(dto, user.userId);
     } catch (error) {
       throw new HttpException(
         `Failed to bulk update: ${error.message}`,
@@ -42,12 +42,10 @@ export class ProductBulkController {
   @ApiResponse({ status: 400, description: '잘못된 요청' })
   async bulkDelete(
     @Body() dto: BulkDeleteDto,
-    @Body('userId') userId: string,
+    @User() user: { userId: string },
   ) {
     try {
-      // TODO: Get userId from JWT auth
-      const userIdToUse = userId || '00000000-0000-0000-0000-000000000000';
-      return await this.bulkService.bulkSoftDelete(dto, userIdToUse);
+      return await this.bulkService.bulkSoftDelete(dto, user.userId);
     } catch (error) {
       throw new HttpException(
         `Failed to bulk delete: ${error.message}`,
@@ -66,12 +64,10 @@ export class ProductBulkController {
   @ApiResponse({ status: 400, description: '잘못된 요청' })
   async bulkRestore(
     @Body() dto: BulkRestoreDto,
-    @Body('userId') userId: string,
+    @User() user: { userId: string },
   ) {
     try {
-      // TODO: Get userId from JWT auth
-      const userIdToUse = userId || '00000000-0000-0000-0000-000000000000';
-      return await this.bulkService.bulkRestore(dto, userIdToUse);
+      return await this.bulkService.bulkRestore(dto, user.userId);
     } catch (error) {
       throw new HttpException(
         `Failed to bulk restore: ${error.message}`,

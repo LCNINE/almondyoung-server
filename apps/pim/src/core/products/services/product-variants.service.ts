@@ -22,6 +22,7 @@ import {
 import { eq, and, or, like, ilike, count, asc, desc, sql, inArray, SQL, isNull } from 'drizzle-orm';
 import { UpdateProductVariantDto, UpdateVariantBulkDto } from '../dto';
 import { ProductVersionsService } from './product-versions.service';
+import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
 
 type VariantDetailKeysParam = { variantId: string, versionId: string } | { variantId: string, masterId: string };
 type VariantOptionsKeysParam = { variantId: string, versionId: string } | { variantId: string, masterId: string };
@@ -32,6 +33,7 @@ export class ProductVariantsService {
   constructor(
     @InjectDb() private readonly db: DbService<PimSchema>,
     private readonly productVersionsService: ProductVersionsService,
+    private readonly priceCacheService: VariantPriceCacheService,
   ) { }
 
   private getClient(tx?: DbTransaction) {
@@ -133,6 +135,12 @@ export class ProductVariantsService {
 
     const variantsWithPriceData: VariantWithPriceDto[] = [];
 
+    let priceMap = new Map<string, number>();
+    if (includePrice) {
+      const cachedPrices = await this.priceCacheService.getCachedPriceSetsByVersion(actualVersionId, tx);
+      priceMap = new Map(cachedPrices.map((p) => [p.variantId, p.basePrice]));
+    }
+
     for (const row of variants) {
       const variant = row.product_variants;
       let price = 0;
@@ -143,12 +151,7 @@ export class ProductVariantsService {
       }> = [];
 
       if (includePrice) {
-        try {
-          price = await this.calculateVariantPrice(variant.id, tx);
-        } catch (error) {
-          console.warn(`Failed to calculate price for variant ${variant.id}:`, error.message);
-          price = 0;
-        }
+        price = priceMap.get(variant.id) ?? 0;
       }
 
       // TODO: Update to use Display tables with masterId and version
