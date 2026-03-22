@@ -4,14 +4,6 @@ import { relations } from 'drizzle-orm';
 
 const authSchema = pgSchema('auth');
 
-export const roles = authSchema.table('roles', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  name: varchar('name', { length: 50 }).notNull().unique(),
-  description: text('description'),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
-
 export const scopes = authSchema.table('scopes', {
   id: uuid('id').primaryKey().defaultRandom(),
   key: varchar('key', { length: 100 }).notNull().unique(),
@@ -39,7 +31,6 @@ export const roleScopeMappingRelations = relations(roleScopeMapping, ({ one }) =
 }));
 
 export const authorizationSchema = {
-  roles,
   scopes,
   roleScopeMapping,
   scopesRelations,

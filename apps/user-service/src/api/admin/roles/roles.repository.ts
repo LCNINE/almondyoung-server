@@ -1,6 +1,5 @@
 import { DbService, InjectDb } from '@app/db';
 import {
-  roles as authRoles,
   scopes as authScopes,
   roleScopeMapping as authRoleScopeMapping,
 } from '@app/authorization';
@@ -54,7 +53,6 @@ export class RolesRepository {
       .insert(userServiceSchema.roles)
       .values(data)
       .returning();
-    await this.syncAuthRole(role.name, role.description ?? undefined);
     return role;
   }
 
@@ -68,10 +66,6 @@ export class RolesRepository {
   }
 
   async delete(roleId: string): Promise<void> {
-    const role = await this.findById(roleId);
-    if (role) {
-      await this.deleteAuthRole(role.name);
-    }
     await this.dbService.db
       .delete(userServiceSchema.roles)
       .where(eq(userServiceSchema.roles.roleId, roleId));
@@ -105,19 +99,6 @@ export class RolesRepository {
           .values(roleIds.map((roleId) => ({ userId, roleId })));
       }
     });
-  }
-
-  async syncAuthRole(roleName: string, description?: string): Promise<void> {
-    await this.dbService.db
-      .insert(authRoles)
-      .values({ name: roleName, description })
-      .onConflictDoNothing();
-  }
-
-  async deleteAuthRole(roleName: string): Promise<void> {
-    await this.dbService.db
-      .delete(authRoles)
-      .where(eq(authRoles.name, roleName));
   }
 
   async addScopeToRole(roleName: string, scopeKey: string): Promise<void> {

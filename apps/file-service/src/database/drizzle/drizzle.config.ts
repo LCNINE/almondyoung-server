@@ -10,14 +10,13 @@ export default defineConfig({
     'apps/file-service/src/database/schema.ts',
     'libs/events/src/outbox/outbox.schema.ts',
     'libs/events/src/tracking/tracking.schema.ts',
-    'libs/authorization/src/database/auth.schema.ts',
   ],
   out: 'apps/file-service/src/database/drizzle/migrations',
   dialect: 'postgresql',
   dbCredentials: {
     url: process.env.DATABASE_URL ?? '',
   },
-  schemaFilter: ['public', 'event', 'auth'],
+  schemaFilter: ['public', 'event'],
   verbose: true,
   strict: true,
 });
