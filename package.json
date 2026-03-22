@@ -334,7 +334,6 @@
       "^@app/auth-core(|/.*)$": "<rootDir>/libs/auth-core/src/$1",
       "^@app/db(|/.*)$": "<rootDir>/libs/db/src/$1",
       "^@app/events(|/.*)$": "<rootDir>/libs/events/src/$1",
-      "^@app/roles(|/.*)$": "<rootDir>/libs/roles/src/$1",
       "^@app/shared(|/.*)$": "<rootDir>/libs/shared/src/$1",
       "^@packages/event-contracts/(.*)$": "<rootDir>/packages/event-contracts/$1"
     },

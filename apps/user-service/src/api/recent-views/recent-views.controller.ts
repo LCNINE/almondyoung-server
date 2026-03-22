@@ -22,7 +22,7 @@ import {
 import { User } from 'apps/user-service/database/drizzle/schema';
 import { AddToRecentViewsDto } from './dto/recent-views.dto';
 import { RecentViewsService } from './recent-views.service';
-import { JwtPayload } from '@app/roles';
+import { JwtPayload } from '@app/authorization';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 
 @ApiTags('최근 본 상품')

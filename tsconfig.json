@@ -36,23 +36,11 @@
       "@app/events/*": [
         "libs/events/src/*"
       ],
-      "@app/roles": [
-        "libs/roles/src"
-      ],
-      "@app/roles/*": [
-        "libs/roles/src/*"
-      ],
       "@app/shared": [
         "libs/shared/src"
       ],
       "@app/shared/*": [
         "libs/shared/src/*"
-      ],
-      "@packages/auth-constants": [
-        "packages/auth-constants"
-      ],
-      "@packages/auth-constants/*": [
-        "packages/auth-constants/*"
       ],
       "@packages/domain-types": [
         "packages/domain-types"

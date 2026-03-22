@@ -7,7 +7,6 @@ import {
   AbstractAuthModuleProvider,
   MedusaError,
 } from '@medusajs/framework/utils';
-import { USER_SCOPES } from '@packages/auth-constants';
 import { jwtVerify } from '../../utils/jwt-verify';
 
 export class AuthProviderService extends AbstractAuthModuleProvider {
@@ -106,13 +105,10 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
         entity_id: payload.email,
       });
       // 메두사에서 'user'는 관리자 권한이 있는 사용자를 의미함
-      const actorType = payload.scopes?.some(
-        (role) =>
-          role === USER_SCOPES.MASTER.key ||
-          role === USER_SCOPES.ADMIN.ACCESS.key,
-      )
-        ? 'user'
-        : 'customer';
+      const isAdmin = payload.roles?.some(
+        (role) => role === 'master' || role === 'admin',
+      );
+      const actorType = isAdmin ? 'user' : 'customer';
 
       return {
         success: true,
@@ -123,7 +119,7 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
             user_id: authIdentity?.app_metadata?.user_id || payload.sub,
             customer_id: authIdentity?.app_metadata?.customer_id,
             email: payload.email,
-            scopes: [payload.scopes],
+            roles: payload.roles,
           },
           provider_identities: [
             {
@@ -131,7 +127,7 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
               provider: 'my-auth',
               entity_id: payload.email,
               provider_metadata: {
-                scopes: [payload.scopes],
+                roles: payload.roles,
               },
             },
           ],
