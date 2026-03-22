@@ -52,7 +52,7 @@ function BasicInfoContent({ intentId }: { intentId: string }) {
 function BasicInfo({ intentId }: { intentId: string }) {
   return (
     <Container className="divide-y">
-      <Header title="기본 정보" />
+      <Header title="결제 기본 정보" />
       <Suspense fallback={<div className="flex justify-center p-8"><Spinner /></div>}>
         <BasicInfoContent intentId={intentId} />
       </Suspense>

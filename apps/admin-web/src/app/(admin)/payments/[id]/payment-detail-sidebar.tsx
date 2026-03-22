@@ -7,6 +7,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
 import { usePaymentIntentDetail, useCaptureIntent, useCancelIntent, useRefundIntent } from '@/lib/services/wallet';
 import { PaymentMethodTypeCell } from '@/components/table/table-cells/wallet/payment-method-type-cell';
+import { UserDetailGeneralContent } from '@/app/(admin)/users/[id]/user-detail-general';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -231,9 +232,33 @@ function ActionButtons({ intentId }: { intentId: string }) {
   );
 }
 
+function UserInfoContent({ intentId }: { intentId: string }) {
+  const { data } = usePaymentIntentDetail(intentId);
+
+  if (!data.userId) return null;
+
+  return (
+    <Container className="divide-y">
+      <Header title="회원 기본 정보" />
+      <Suspense fallback={<div className="flex justify-center p-4"><Spinner /></div>}>
+        <UserDetailGeneralContent userId={data.userId} />
+      </Suspense>
+    </Container>
+  );
+}
+
+function UserInfo({ intentId }: { intentId: string }) {
+  return (
+    <Suspense fallback={<div className="flex justify-center p-4"><Spinner /></div>}>
+      <UserInfoContent intentId={intentId} />
+    </Suspense>
+  );
+}
+
 export function PaymentDetailSidebar({ intentId }: { intentId: string }) {
   return (
     <div className="flex w-full flex-col gap-y-3">
+      <UserInfo intentId={intentId} />
       <PaymentMethodInfo intentId={intentId} />
       <ActionButtons intentId={intentId} />
     </div>
