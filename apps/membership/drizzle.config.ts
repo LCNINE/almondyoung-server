@@ -8,15 +8,14 @@ export default defineConfig({
     'apps/membership/src/**/schema.ts',
     'libs/events/src/outbox/outbox.schema.ts',
     'libs/events/src/tracking/tracking.schema.ts',
+    'libs/authorization/src/database/auth.schema.ts',
   ],
   out: './drizzle',
   dialect: 'postgresql',
   dbCredentials: {
     url: process.env.DATABASE_URL || '',
   },
-  schemaFilter: ['public', 'event'],
-  verbose: true, // 상세한 로그 출력
+  schemaFilter: ['public', 'event', 'auth'],
+  verbose: true,
   strict: true,
-  // auth 스키마는 npm run migrate:auth로 관리 (README 권장 방법)
-  // drizzle-kit은 membership 서비스의 테이블만 관리
 });

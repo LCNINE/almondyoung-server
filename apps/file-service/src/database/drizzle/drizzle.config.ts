@@ -6,11 +6,18 @@ config({ path: join(__dirname, '../../../.env'), override: true });
 console.log('DATABASE_URL', process.env.DATABASE_URL);
 
 export default defineConfig({
-  schema: 'apps/file-service/src/database/schema.ts',
+  schema: [
+    'apps/file-service/src/database/schema.ts',
+    'libs/events/src/outbox/outbox.schema.ts',
+    'libs/events/src/tracking/tracking.schema.ts',
+    'libs/authorization/src/database/auth.schema.ts',
+  ],
   out: 'apps/file-service/src/database/drizzle/migrations',
   dialect: 'postgresql',
   dbCredentials: {
     url: process.env.DATABASE_URL ?? '',
   },
+  schemaFilter: ['public', 'event', 'auth'],
   verbose: true,
+  strict: true,
 });
