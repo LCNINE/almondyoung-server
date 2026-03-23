@@ -1,6 +1,4 @@
-console.log('[DEBUG] main.ts starting - before tracing import')
 import '@app/tracing'
-console.log('[DEBUG] main.ts - after tracing import')
 import { GlobalExceptionFilter } from '@app/shared/filters/http-exception.filter';
 import { ResponseInterceptor } from '@app/shared/interceptors/response.interceptor';
 import fastifyCookie from '@fastify/cookie';
