@@ -128,6 +128,15 @@
         "tsConfigPath": "libs/shared/tsconfig.lib.json"
       }
     },
+    "tracing": {
+      "type": "library",
+      "root": "libs/tracing",
+      "entryFile": "index",
+      "sourceRoot": "libs/tracing/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/tracing/tsconfig.lib.json"
+      }
+    },
     "test-auth-scope": {
       "type": "application",
       "root": "apps/test-auth-scope",
