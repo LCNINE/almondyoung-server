@@ -1,4 +1,5 @@
 // apps/membership/src/main.ts
+import '@app/tracing'
 import { NestFactory } from '@nestjs/core';
 import {
   FastifyAdapter,

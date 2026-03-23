@@ -42,6 +42,12 @@
       "@app/shared/*": [
         "libs/shared/src/*"
       ],
+      "@app/tracing": [
+        "libs/tracing/src"
+      ],
+      "@app/tracing/*": [
+        "libs/tracing/src/*"
+      ],
       "@packages/domain-types": [
         "packages/domain-types"
       ],

@@ -1,3 +1,4 @@
+import '@app/tracing'
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { FileServiceModule } from './file-service.module';
