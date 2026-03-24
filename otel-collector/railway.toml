@@ -1,0 +1,6 @@
+[build]
+dockerfilePath = "../Dockerfile.otel-collector"
+
+[deploy]
+healthcheckPath = "/"
+restartPolicyType = "ON_FAILURE"
