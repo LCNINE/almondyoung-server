@@ -1,5 +1,4 @@
 // apps/channel-adapter/src/main.ts
-import '@app/tracing'
 import { NestFactory } from '@nestjs/core';
 import { AdapterModule } from './adapter.module';
 import { ValidationPipe } from '@nestjs/common';
