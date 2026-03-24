@@ -32,7 +32,6 @@ connectors:
     dimensions:
       - name: http.method
       - name: http.status_code
-      - name: service.name
 
 service:
   pipelines:
