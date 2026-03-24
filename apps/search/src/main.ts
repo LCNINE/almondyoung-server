@@ -1,4 +1,3 @@
-import '@app/tracing'
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { EventsModule } from '@app/events';
