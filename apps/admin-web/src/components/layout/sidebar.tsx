@@ -73,9 +73,9 @@ export function Sidebar({ activeMenu, activeItem, onItemClick }: SidebarProps) {
                 level === 1 && 'text-sm ml-4',
                 level === 2 && 'text-sm ml-8',
                 isActive &&
-                'bg-blue-600 text-white hover:bg-blue-700 hover:text-white',
+                  'bg-blue-600 text-white hover:bg-blue-700 hover:text-white',
                 !isActive &&
-                'text-slate-300 hover:bg-slate-700 hover:text-white',
+                  'text-slate-300 hover:bg-slate-700 hover:text-white',
                 isComingSoon && 'text-slate-500'
               )}
               onClick={() => {
@@ -101,7 +101,7 @@ export function Sidebar({ activeMenu, activeItem, onItemClick }: SidebarProps) {
                   )}
                 </div>
                 {item.id === 'my-account' && (
-                  <Badge variant="outline" className="text-xs">
+                  <Badge variant="default" className="text-xs">
                     14
                   </Badge>
                 )}
@@ -142,7 +142,7 @@ export function Sidebar({ activeMenu, activeItem, onItemClick }: SidebarProps) {
               <span className="text-sm font-medium text-slate-300">
                 등록된 계정 수
               </span>
-              <Badge variant="outline">14</Badge>
+              <Badge variant="default">14</Badge>
             </div>
           </div>
         );
