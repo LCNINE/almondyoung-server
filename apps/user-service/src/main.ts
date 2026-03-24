@@ -1,4 +1,3 @@
-import '@app/tracing'
 import { GlobalExceptionFilter } from '@app/shared/filters/http-exception.filter';
 import { ResponseInterceptor } from '@app/shared/interceptors/response.interceptor';
 import fastifyCookie from '@fastify/cookie';

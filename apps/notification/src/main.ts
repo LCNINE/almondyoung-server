@@ -1,5 +1,4 @@
 // apps/notification/src/main.ts
-import '@app/tracing'
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
