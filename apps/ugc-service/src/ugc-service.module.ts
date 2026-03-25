@@ -20,7 +20,10 @@ const combinedSchema = { ...ugcServiceSchema, ...authorizationSchema };
     }),
     AuthorizationModule.forRoot({
       microserviceName: 'ugc-service',
-      scopes: [{ key: 'admin:ugc:modify', category: 'admin', description: '관리자 - UGC 관리 (리뷰 댓글, Q&A 답변)' }],
+      scopes: [
+        { key: 'admin:ugc:read', category: 'admin', description: '관리자 - UGC 조회 (리뷰, Q&A 목록 조회)' },
+        { key: 'admin:ugc:modify', category: 'admin', description: '관리자 - UGC 관리 (리뷰 댓글, Q&A 답변)' },
+      ],
     }),
     DbModule.forRoot({
       config: {
