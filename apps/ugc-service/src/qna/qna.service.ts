@@ -10,11 +10,12 @@ import { and, asc, count, desc, eq, inArray, lt, ne, type SQL } from 'drizzle-or
 import { answers, questionMedia, questions, type UgcServiceSchema } from '../db/schema';
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { UpdateQuestionDto } from './dto/update-question.dto';
-import { QuestionListQueryDto } from './dto/question-list-query.dto';
+import { QuestionListQueryDto, MyQuestionListQueryDto } from './dto/question-list-query.dto';
 import { CreateAnswerDto } from './dto/create-answer.dto';
 import { type AnswerEntity, type QuestionEntity, type QuestionWithDetailsEntity } from './types';
 import { PaginatedResponseDto } from '@app/shared/dto';
 import { MAX_QUESTION_MEDIA_COUNT } from './constants';
+import { isNotNull } from 'drizzle-orm';
 
 type DbTransaction = Parameters<Parameters<DbService<UgcServiceSchema>['db']['transaction']>[0]>[0];
 
@@ -121,7 +122,9 @@ export class QnaService {
         .values({
           userId,
           nickname: dto.nickname,
-          productId: dto.productId,
+          productId: dto.productId ?? null,
+          category: dto.category ?? null,
+          subCategory: dto.subCategory ?? null,
           title: dto.title,
           content: dto.content,
           isSecret: dto.isSecret ?? false,
@@ -257,7 +260,19 @@ export class QnaService {
       const limit = query.limit ?? 20;
       const offset = (page - 1) * limit;
 
-      const conditions: SQL[] = [eq(questions.productId, query.productId), ne(questions.status, 'deleted')];
+      const conditions: SQL[] = [ne(questions.status, 'deleted')];
+
+      // productId가 있으면 상품별 조회, 없으면 전체 조회 (productId가 있는 것만)
+      if (query.productId) {
+        conditions.push(eq(questions.productId, query.productId));
+      } else {
+        // productId가 없으면 상품 문의만 조회 (productId가 null이 아닌 것)
+        conditions.push(isNotNull(questions.productId));
+      }
+
+      if (query.category) {
+        conditions.push(eq(questions.category, query.category));
+      }
 
       const whereClause = and(...conditions);
 
@@ -287,6 +302,55 @@ export class QnaService {
             hideSecret: shouldHide,
           };
         }),
+        total,
+        page,
+        limit,
+      };
+    }, tx);
+  }
+
+  // ─── 내 문의 목록 ───
+
+  async listMyQuestions(
+    userId: string,
+    query: MyQuestionListQueryDto,
+    tx?: DbTransaction,
+  ): Promise<PaginatedResponseDto<QuestionWithDetailsEntity>> {
+    return this.inTx(async (tx) => {
+      const page = query.page ?? 1;
+      const limit = query.limit ?? 20;
+      const offset = (page - 1) * limit;
+
+      const conditions: SQL[] = [eq(questions.userId, userId), ne(questions.status, 'deleted')];
+
+      if (query.category) {
+        conditions.push(eq(questions.category, query.category));
+      }
+
+      const whereClause = and(...conditions);
+
+      const [{ count: total }] = await tx.select({ count: count() }).from(questions).where(whereClause);
+
+      const orderByClause = query.sort === 'oldest' ? asc(questions.createdAt) : desc(questions.createdAt);
+
+      const data = await tx
+        .select()
+        .from(questions)
+        .where(whereClause)
+        .orderBy(orderByClause)
+        .limit(limit)
+        .offset(offset);
+
+      const questionIds = data.map((q) => q.id);
+      const mediaMap = await this.fetchMediaFileIdsByQuestionIds(questionIds, tx);
+      const answerMap = await this.fetchAnswersByQuestionIds(questionIds, tx);
+
+      return {
+        data: data.map((q) => ({
+          ...q,
+          mediaFileIds: mediaMap.get(q.id) ?? [],
+          answer: answerMap.get(q.id) ?? null,
+        })),
         total,
         page,
         limit,

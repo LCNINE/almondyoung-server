@@ -127,13 +127,24 @@ export const reviewComments = pgTable(
 
 export const questionStatusEnum = pgEnum('question_status', ['active', 'answered', 'deleted']);
 
+export const questionCategoryEnum = pgEnum('question_category', [
+  'product',
+  'delivery',
+  'order',
+  'exchange',
+  'account',
+  'etc',
+]);
+
 export const questions = pgTable(
   'questions',
   {
     id: uuid('id').primaryKey().defaultRandom(),
     userId: uuid('user_id').notNull(),
     nickname: varchar('nickname', { length: 30 }).notNull(),
-    productId: uuid('product_id').notNull(),
+    productId: uuid('product_id'), // optional: 상품 문의일 때만
+    category: questionCategoryEnum('category'), // optional: 1:1 문의일 때 사용
+    subCategory: varchar('sub_category', { length: 50 }), // optional: 1:1 문의일 때 사용
     title: varchar('title', { length: 200 }).notNull(),
     content: text('content').notNull(),
     isSecret: boolean('is_secret').notNull().default(false),
@@ -145,6 +156,7 @@ export const questions = pgTable(
     index('questions_user_id').on(table.userId),
     index('questions_created_at').on(table.createdAt),
     index('questions_status').on(table.status),
+    index('questions_category').on(table.category),
   ],
 );
 
