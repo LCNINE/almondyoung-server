@@ -11,8 +11,14 @@ export class QuestionResponseDto {
   @ApiProperty({ description: '작성자 닉네임', example: '홍길동' })
   nickname: string;
 
-  @ApiProperty({ description: '상품 ID' })
-  productId: string;
+  @ApiPropertyOptional({ description: '상품 ID (상품 문의일 때만)', nullable: true })
+  productId: string | null;
+
+  @ApiPropertyOptional({ description: '문의 카테고리 (1:1 문의일 때만)', nullable: true })
+  category: string | null;
+
+  @ApiPropertyOptional({ description: '세부 문의 유형 (1:1 문의일 때만)', nullable: true })
+  subCategory: string | null;
 
   @ApiProperty({ description: '질문 제목' })
   title: string;
