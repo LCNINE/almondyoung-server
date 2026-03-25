@@ -1,22 +1,6 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Param,
-  Post,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiParam,
-  ApiResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { User } from 'apps/user-service/database/drizzle/schema';
 import { WishlistService } from './wishlist.service';
 import { AddToWishlistDto } from './dto/wishlist.dto';
@@ -26,7 +10,7 @@ import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 @ApiBearerAuth('access-token')
 @Controller('wishlist')
 export class WishlistController {
-  constructor(private readonly wishlistService: WishlistService) { }
+  constructor(private readonly wishlistService: WishlistService) {}
 
   @ApiOperation({
     summary: '상품 찜하기 토글',
@@ -66,17 +50,13 @@ export class WishlistController {
   @Post()
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)
-  async toggleWishlist(
-    @CurrentUser() user: User,
-    @Body() addToWishlistDto: AddToWishlistDto,
-  ) {
+  async toggleWishlist(@CurrentUser() user: User, @Body() addToWishlistDto: AddToWishlistDto) {
     return this.wishlistService.toggleWishlist(user.id, addToWishlistDto);
   }
 
   @ApiOperation({
     summary: '찜 목록 조회',
-    description:
-      '사용자의 전체 위시리스트를 조회합니다. 최신순으로 정렬됩니다.',
+    description: '사용자의 전체 위시리스트를 조회합니다. 최신순으로 정렬됩니다.',
   })
   @ApiResponse({
     status: 200,
@@ -100,7 +80,6 @@ export class WishlistController {
     return this.wishlistService.getWishlistByUserId(user.id);
   }
 
-
   @ApiOperation({
     summary: '찜 항목에서 해당 상품 조회',
     description: '사용자의 찜 목록에서 특정 상품을 조회합니다.',
@@ -110,10 +89,7 @@ export class WishlistController {
   @Get(':productId')
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)
-  async getWishlistByProductId(
-    @CurrentUser() user: User,
-    @Param('productId') productId: string,
-  ) {
+  async getWishlistByProductId(@CurrentUser() user: User, @Param('productId') productId: string) {
     return this.wishlistService.getWishlistByProductId(user.id, productId);
   }
 }

@@ -1,11 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import {
-  IsNotEmpty,
-  IsString,
-  Matches,
-  MaxLength,
-  MinLength,
-} from 'class-validator';
+import { IsNotEmpty, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 
 export class ChangePasswordDto {
   @ApiProperty({
@@ -25,12 +19,8 @@ export class ChangePasswordDto {
   @IsString({ message: '비밀번호는 문자열이어야 합니다.' })
   @MinLength(8, { message: '비밀번호는 최소 8자 이상이어야 합니다.' })
   @MaxLength(20, { message: '비밀번호는 최대 20자 이하여야 합니다.' })
-  @Matches(
-    /^(?=.*[a-zA-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).+$/,
-    {
-      message:
-        '비밀번호는 영문, 숫자, 특수문자를 각각 1개 이상 포함해야 합니다.',
-    },
-  )
+  @Matches(/^(?=.*[a-zA-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).+$/, {
+    message: '비밀번호는 영문, 숫자, 특수문자를 각각 1개 이상 포함해야 합니다.',
+  })
   newPassword: string;
 }

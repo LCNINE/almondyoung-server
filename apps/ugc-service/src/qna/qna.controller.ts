@@ -6,7 +6,7 @@ import { PaginatedResponseDto } from '@app/shared/dto';
 import { QnaService } from './qna.service';
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { UpdateQuestionDto } from './dto/update-question.dto';
-import { QuestionListQueryDto, MyQuestionListQueryDto } from './dto/question-list-query.dto';
+import { QuestionListQueryDto, MyQuestionListQueryDto, AdminQuestionListQueryDto } from './dto/question-list-query.dto';
 import { CreateAnswerDto } from './dto/create-answer.dto';
 import { AnswerResponseDto } from './dto/answer-response.dto';
 import { QuestionResponseDto } from './dto/question-response.dto';
@@ -37,7 +37,12 @@ export class QnaController {
   @OptionalAuth()
   @ApiOperation({ summary: '질문 목록 조회 (상품별)' })
   @ApiQuery({ name: 'productId', description: '상품 ID (UUID)', required: false, type: String })
-  @ApiQuery({ name: 'category', description: '문의 카테고리', required: false, enum: ['product', 'delivery', 'order', 'exchange', 'account', 'etc'] })
+  @ApiQuery({
+    name: 'category',
+    description: '문의 카테고리',
+    required: false,
+    enum: ['product', 'delivery', 'order', 'exchange', 'account', 'etc'],
+  })
   @ApiQuery({ name: 'sort', description: '정렬 옵션', required: false, enum: ['latest', 'oldest'] })
   @ApiQuery({ name: 'page', description: '페이지 번호', required: false, type: Number })
   @ApiQuery({ name: 'limit', description: '페이지당 아이템 수', required: false, type: Number })
@@ -55,7 +60,12 @@ export class QnaController {
 
   @Get('questions/me')
   @ApiOperation({ summary: '내 문의 목록 조회' })
-  @ApiQuery({ name: 'category', description: '문의 카테고리 필터', required: false, enum: ['product', 'delivery', 'order', 'exchange', 'account', 'etc'] })
+  @ApiQuery({
+    name: 'category',
+    description: '문의 카테고리 필터',
+    required: false,
+    enum: ['product', 'delivery', 'order', 'exchange', 'account', 'etc'],
+  })
   @ApiQuery({ name: 'sort', description: '정렬 옵션', required: false, enum: ['latest', 'oldest'] })
   @ApiQuery({ name: 'page', description: '페이지 번호', required: false, type: Number })
   @ApiQuery({ name: 'limit', description: '페이지당 아이템 수', required: false, type: Number })
@@ -118,6 +128,50 @@ export class QnaController {
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: '질문을 찾을 수 없음' })
   async deleteQuestion(@User('userId') userId: string, @Param('id') id: string): Promise<void> {
     await this.qnaService.deleteQuestion(userId, id);
+  }
+
+  // ─── 관리자용 조회 ───
+
+  @Get('admin/questions')
+  @RequireScopes('admin:ugc:read')
+  @ApiOperation({ summary: '전체 문의 목록 조회 (관리자)' })
+  @ApiQuery({
+    name: 'category',
+    description: '문의 카테고리 필터',
+    required: false,
+    enum: ['product', 'delivery', 'order', 'exchange', 'account', 'etc'],
+  })
+  @ApiQuery({
+    name: 'status',
+    description: '상태 필터',
+    required: false,
+    enum: ['active', 'answered', 'deleted'],
+  })
+  @ApiQuery({ name: 'sort', description: '정렬 옵션', required: false, enum: ['latest', 'oldest'] })
+  @ApiQuery({ name: 'q', description: '검색어 (제목, 내용, 닉네임)', required: false, type: String })
+  @ApiQuery({ name: 'page', description: '페이지 번호', required: false, type: Number })
+  @ApiQuery({ name: 'limit', description: '페이지당 아이템 수', required: false, type: Number })
+  @ApiOkResponsePaginated(QuestionResponseDto, { description: '전체 문의 목록 조회 성공' })
+  async listQuestionsForAdmin(
+    @Query() query: AdminQuestionListQueryDto,
+  ): Promise<PaginatedResponseDto<QuestionResponseDto>> {
+    const result = await this.qnaService.listAllForAdmin(query);
+    return {
+      ...result,
+      data: result.data.map((q) => QnaMapper.toQuestionResponse(q)),
+    };
+  }
+
+  @Get('admin/questions/:id')
+  @RequireScopes('admin:ugc:read')
+  @ApiOperation({ summary: '문의 상세 조회 (관리자)' })
+  @ApiParam({ name: 'id', description: '질문 ID (UUID)' })
+  @ApiResponse({ status: HttpStatus.OK, description: '문의 상세 조회 성공', type: QuestionResponseDto })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: '문의를 찾을 수 없음' })
+  async getQuestionForAdmin(@Param('id') id: string): Promise<QuestionResponseDto> {
+    // isAdmin=true로 비밀글도 볼 수 있음
+    const question = await this.qnaService.getQuestion(id, null, true);
+    return QnaMapper.toQuestionResponse(question);
   }
 
   // ─── 답변 (관리자) ───

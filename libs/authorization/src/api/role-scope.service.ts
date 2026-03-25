@@ -9,11 +9,7 @@ export class RoleScopeService {
     private readonly scopeReader: ScopeReader,
   ) {}
 
-  async updateMappings(
-    roleName: string,
-    add: string[],
-    remove: string[],
-  ): Promise<string[]> {
+  async updateMappings(roleName: string, add: string[], remove: string[]): Promise<string[]> {
     await Promise.all([
       ...add.map((key) => this.authorizationService.ensureScopeMapping(roleName, key)),
       ...remove.map((key) => this.authorizationService.removeScopeMapping(roleName, key)),

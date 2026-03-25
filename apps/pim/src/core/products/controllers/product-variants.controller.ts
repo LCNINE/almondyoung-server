@@ -1,21 +1,5 @@
-import {
-  Controller,
-  Get,
-  Put,
-  Body,
-  Param,
-  Query,
-  HttpException,
-  HttpStatus,
-} from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiParam,
-  ApiQuery,
-  ApiBody,
-} from '@nestjs/swagger';
+import { Controller, Get, Put, Body, Param, Query, HttpException, HttpStatus } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { ProductVariantsService } from '../services/product-variants.service';
 import {
   UpdateProductVariantDto,
@@ -32,9 +16,7 @@ import { ApiOkResponsePaginated } from '../../../common/decorators';
 @ApiTags('Product Variants')
 @Controller('variants')
 export class ProductVariantsController {
-  constructor(
-    private readonly productVariantsService: ProductVariantsService,
-  ) { }
+  constructor(private readonly productVariantsService: ProductVariantsService) {}
 
   @Get('masters/:masterId')
   @ApiOperation({
@@ -94,7 +76,6 @@ export class ProductVariantsController {
       filters,
     );
   }
-
 
   @Get('masters/:masterId/versions/:versionId')
   @ApiOperation({
@@ -157,7 +138,6 @@ export class ProductVariantsController {
     );
   }
 
-
   @Get(':id')
   @ApiOperation({
     summary: '제품 변형 상세 조회',
@@ -219,10 +199,7 @@ export class ProductVariantsController {
     @Param('id') id: string,
     @Body() updateDto: UpdateProductVariantDto,
   ): Promise<VariantUpdateResponseDto> {
-    const updatedVariant = await this.productVariantsService.updateVariant(
-      id,
-      updateDto,
-    );
+    const updatedVariant = await this.productVariantsService.updateVariant(id, updateDto);
     return {
       success: true,
       data: updatedVariant as any as VariantWithPriceDto,
@@ -242,30 +219,26 @@ export class ProductVariantsController {
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
   @ApiResponse({ status: 404, description: '일부 제품 변형을 찾을 수 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  async bulkUpdateVariants(
-    @Body() bulkUpdateDto: UpdateVariantBulkDto,
-  ): Promise<void> {
-    await this.productVariantsService.bulkUpdateVariants(
-      bulkUpdateDto,
-    );
+  async bulkUpdateVariants(@Body() bulkUpdateDto: UpdateVariantBulkDto): Promise<void> {
+    await this.productVariantsService.bulkUpdateVariants(bulkUpdateDto);
   }
 
   @Get(':id/price')
   @ApiOperation({
     summary: '제품 변형 가격 조회 (Deprecated)',
-    description: 'DEPRECATED: Use POST /products/:masterId/pricing/calculate instead. This endpoint has been moved to PricingController.',
+    description:
+      'DEPRECATED: Use POST /products/:masterId/pricing/calculate instead. This endpoint has been moved to PricingController.',
     deprecated: true,
   })
   @ApiParam({ name: 'id', description: '제품 변형 ID' })
   @ApiResponse({ status: 410, description: 'Endpoint moved. Use /products/:masterId/pricing/calculate' })
-  async getVariantPrice(
-    @Param('id') id: string,
-  ): Promise<never> {
+  async getVariantPrice(@Param('id') id: string): Promise<never> {
     throw new HttpException(
       {
         statusCode: HttpStatus.GONE,
         message: 'This endpoint has been moved to PricingController',
-        redirect: 'Use POST /products/:masterId/pricing/calculate with { variantId, quantity?, customerType? } in request body',
+        redirect:
+          'Use POST /products/:masterId/pricing/calculate with { variantId, quantity?, customerType? } in request body',
         alternativeEndpoint: 'GET /products/:masterId/pricing/price-set?variantId=:id for complete price information',
       },
       HttpStatus.GONE,
@@ -283,17 +256,11 @@ export class ProductVariantsController {
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터 (status 필수)' })
   @ApiResponse({ status: 404, description: '제품 변형을 찾을 수 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  async updateVariantStatus(
-    @Param('id') id: string,
-    @Body() statusDto: UpdateVariantStatusDto,
-  ): Promise<void> {
+  async updateVariantStatus(@Param('id') id: string, @Body() statusDto: UpdateVariantStatusDto): Promise<void> {
     if (!statusDto.status) {
       throw new HttpException('Status is required', HttpStatus.BAD_REQUEST);
     }
 
-    await this.productVariantsService.updateVariantStatus(
-      id,
-      statusDto.status,
-    );
+    await this.productVariantsService.updateVariantStatus(id, statusDto.status);
   }
 }

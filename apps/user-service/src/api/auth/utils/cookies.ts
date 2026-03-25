@@ -12,19 +12,14 @@ interface CookieEnvironment {
  * @param env - 환경 설정 객체
  * @returns Fastify 쿠키 옵션
  */
-export function getCookieOptions(
-  env: CookieEnvironment,
-): CookieSerializeOptions {
+export function getCookieOptions(env: CookieEnvironment): CookieSerializeOptions {
   const { isRailway, isProd, corsOrigin, cookieDomain } = env;
 
   // 프론트엔드가 로컬 개발 환경인지 확인
   const isLocalFrontend =
-    corsOrigin.includes('localhost') ||
-    corsOrigin.includes('127.0.0.1') ||
-    corsOrigin.startsWith('http://');
+    corsOrigin.includes('localhost') || corsOrigin.includes('127.0.0.1') || corsOrigin.startsWith('http://');
 
-  const normalizedCookieDomain =
-    cookieDomain && (cookieDomain.startsWith('.') ? cookieDomain : `.${cookieDomain}`);
+  const normalizedCookieDomain = cookieDomain && (cookieDomain.startsWith('.') ? cookieDomain : `.${cookieDomain}`);
 
   const cookieOptions: CookieSerializeOptions = {
     path: '/',
@@ -32,9 +27,7 @@ export function getCookieOptions(
     sameSite: isRailway && isLocalFrontend ? 'none' : 'lax', // Railway 환경이어도 프론트가 로컬이면 none
     secure: isRailway,
     // 프로덕션이고 로컬 프론트가 아닐 때만 domain 설정
-    ...(isProd && !isLocalFrontend
-      ? { domain: normalizedCookieDomain ?? `.${getDomain(corsOrigin)}` }
-      : {}),
+    ...(isProd && !isLocalFrontend ? { domain: normalizedCookieDomain ?? `.${getDomain(corsOrigin)}` } : {}),
   };
 
   return cookieOptions;
@@ -55,10 +48,7 @@ export function getDomain(url: string): string {
 /**
  * 디버깅용 쿠키 정보를 로깅합니다
  */
-export function logCookieDebugInfo(
-  env: CookieEnvironment,
-  cookieOptions: CookieSerializeOptions,
-): void {
+export function logCookieDebugInfo(env: CookieEnvironment, cookieOptions: CookieSerializeOptions): void {
   console.log('🍪 쿠키 설정 디버깅:', {
     environment: {
       isRailway: env.isRailway,

@@ -14,23 +14,15 @@ import { UserConsent } from './types/consent.type';
 
 @Injectable()
 export class ConsentsService {
-  constructor(
-    @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
-  ) { }
+  constructor(@InjectDb() private readonly dbService: DbService<UserServiceSchema>) {}
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.dbService.db;
   }
 
-  async getMyConsent(
-    userId: string,
-    tx?: DbTransaction,
-  ): Promise<UserConsent | null> {
+  async getMyConsent(userId: string, tx?: DbTransaction): Promise<UserConsent | null> {
     const db = this.getClient(tx);
-    const [consents] = await db
-      .select()
-      .from(userConsents)
-      .where(eq(userConsents.userId, userId));
+    const [consents] = await db.select().from(userConsents).where(eq(userConsents.userId, userId));
 
     if (!consents) {
       return null;
@@ -38,11 +30,7 @@ export class ConsentsService {
     return consents;
   }
 
-  async createConsent(
-    userId: string,
-    createConsentDto: CreateConsentDto,
-    tx?: DbTransaction,
-  ): Promise<void> {
+  async createConsent(userId: string, createConsentDto: CreateConsentDto, tx?: DbTransaction): Promise<void> {
     const db = this.getClient(tx);
 
     const existingConsent = await this.getMyConsent(userId, tx);
@@ -60,7 +48,7 @@ export class ConsentsService {
       ...createConsentDto,
     });
 
-    return
+    return;
   }
 
   // notification-service용: 마케팅 동의 여부만 확인
@@ -128,9 +116,7 @@ export class ConsentsService {
     }
 
     if (criteria.isMarketingEnabled !== undefined) {
-      conditions.push(
-        eq(userConsents.marketingConsent, criteria.isMarketingEnabled),
-      );
+      conditions.push(eq(userConsents.marketingConsent, criteria.isMarketingEnabled));
     }
 
     // 쿼리 실행 - 조건이 있으면 where 적용, 없으면 그대로
@@ -147,10 +133,7 @@ export class ConsentsService {
 
     // and 조건으로 결합
     const { and } = await import('drizzle-orm');
-    const results =
-      conditions.length > 0
-        ? await baseQuery.where(and(...conditions))
-        : await baseQuery;
+    const results = conditions.length > 0 ? await baseQuery.where(and(...conditions)) : await baseQuery;
 
     return {
       users: results.map((row) => ({

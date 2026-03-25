@@ -28,4 +28,4 @@ import { PurchaseOrderCronService } from './services/purchase-order-cron.service
   providers: [InboundService, PurchaseOrderService, PurchaseOrderCronService],
   exports: [InboundService, PurchaseOrderService],
 })
-export class InboundModule { }
+export class InboundModule {}

@@ -1,7 +1,4 @@
-import {
-  AuthenticatedMedusaRequest,
-  MedusaResponse,
-} from '@medusajs/framework/http';
+import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 
 /**
@@ -17,10 +14,7 @@ import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
  * - campaign 기간 내의 프로모션만 반환
  * - is_automatic=false인 프로모션만 반환 (코드 입력 필요한 쿠폰)
  */
-export async function GET(
-  req: AuthenticatedMedusaRequest,
-  res: MedusaResponse,
-) {
+export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   const customerId = req.auth_context?.actor_id;
 
   if (!customerId) {
@@ -85,12 +79,8 @@ export async function GET(
 
     // 캠페인 기간 검증
     if (promo.campaign) {
-      const startsAt = promo.campaign.starts_at
-        ? new Date(promo.campaign.starts_at)
-        : null;
-      const endsAt = promo.campaign.ends_at
-        ? new Date(promo.campaign.ends_at)
-        : null;
+      const startsAt = promo.campaign.starts_at ? new Date(promo.campaign.starts_at) : null;
+      const endsAt = promo.campaign.ends_at ? new Date(promo.campaign.ends_at) : null;
 
       if (startsAt && now < startsAt) {
         return false;
@@ -132,12 +122,10 @@ export async function GET(
   // 직접 발급된 프로모션 ID Set (중복 제거용)
   const assignedPromotionIds = new Set<string>();
   const customer = customers?.[0];
-  const assignedPromotions = (customer?.promotions || [])
-    .filter(isValidPromotion)
-    .map((promo: any) => {
-      assignedPromotionIds.add(promo.id);
-      return formatPromotion(promo, true);
-    });
+  const assignedPromotions = (customer?.promotions || []).filter(isValidPromotion).map((promo: any) => {
+    assignedPromotionIds.add(promo.id);
+    return formatPromotion(promo, true);
+  });
 
   // 일반 프로모션 (직접 발급된 것 제외, 중복 방지)
   const publicPromotions = (allPromotions || [])

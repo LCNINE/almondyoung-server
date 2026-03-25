@@ -5,7 +5,7 @@ export class UpdateSalesChannelDto {
   @ApiProperty({
     description: '채널 유형',
     enum: ['ONLINE', 'OFFLINE', 'MARKETPLACE', 'MOBILE_APP', 'SOCIAL_COMMERCE'],
-    required: false
+    required: false,
   })
   @IsOptional()
   @IsEnum(['ONLINE', 'OFFLINE', 'MARKETPLACE', 'MOBILE_APP', 'SOCIAL_COMMERCE'])
@@ -14,7 +14,7 @@ export class UpdateSalesChannelDto {
   @ApiProperty({
     description: '판매처 사이트',
     enum: ['medusa', 'naver', 'coupang', 'phone_order', 'other'],
-    required: false
+    required: false,
   })
   @IsOptional()
   @IsEnum(['medusa', 'naver', 'coupang', 'phone_order', 'other'])
@@ -29,7 +29,7 @@ export class UpdateSalesChannelDto {
     description: '판매 채널 이름',
     minLength: 1,
     maxLength: 255,
-    required: false
+    required: false,
   })
   @IsOptional()
   @IsString()
@@ -70,7 +70,7 @@ export class SetChannelActiveDto {
 export class ValidateChannelConfigDto {
   @ApiProperty({
     description: '채널 사이트 종류',
-    enum: ['medusa', 'naver', 'coupang', 'phone_order', 'other']
+    enum: ['medusa', 'naver', 'coupang', 'phone_order', 'other'],
   })
   @IsEnum(['medusa', 'naver', 'coupang', 'phone_order', 'other'])
   site: 'medusa' | 'naver' | 'coupang' | 'phone_order' | 'other';
@@ -79,4 +79,3 @@ export class ValidateChannelConfigDto {
   @IsOptional()
   config?: Record<string, any>;
 }
-

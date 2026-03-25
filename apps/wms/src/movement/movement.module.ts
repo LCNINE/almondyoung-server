@@ -8,19 +8,19 @@ import { MovementController } from './controllers/movement.controller';
 import { MovementService } from './services/movement.service';
 
 @Module({
-    imports: [
-        ConfigModule.forRoot(),
-        DbModule.forRoot({
-            config: {
-                connectionString: process.env.DATABASE_URL ?? '',
-            },
-            schema: wmsTables,
-        }),
-        InventoryModule,
-        SharedModule,
-    ],
-    controllers: [MovementController],
-    providers: [MovementService],
-    exports: [MovementService],
+  imports: [
+    ConfigModule.forRoot(),
+    DbModule.forRoot({
+      config: {
+        connectionString: process.env.DATABASE_URL ?? '',
+      },
+      schema: wmsTables,
+    }),
+    InventoryModule,
+    SharedModule,
+  ],
+  controllers: [MovementController],
+  providers: [MovementService],
+  exports: [MovementService],
 })
-export class MovementModule { }
+export class MovementModule {}

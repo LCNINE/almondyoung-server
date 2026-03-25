@@ -58,33 +58,37 @@ export class StateTransitionService {
     fromStatus?: PaymentIntentStatus,
     tx?: DbTx,
   ): Promise<TransitionResult<PaymentIntentStatus>> {
-    return inTx(this.dbService, async (trx) => {
-      const row = await this.lockIntent(intentId, trx);
-      if (!row) {
-        throw new Error(`INTENT_NOT_FOUND: ${intentId}`);
-      }
+    return inTx(
+      this.dbService,
+      async (trx) => {
+        const row = await this.lockIntent(intentId, trx);
+        if (!row) {
+          throw new Error(`INTENT_NOT_FOUND: ${intentId}`);
+        }
 
-      if (fromStatus && row.status !== fromStatus) {
-        throw this.buildStatusMismatchConflict('INTENT', intentId, fromStatus, row.status);
-      }
+        if (fromStatus && row.status !== fromStatus) {
+          throw this.buildStatusMismatchConflict('INTENT', intentId, fromStatus, row.status);
+        }
 
-      this.assertExpectedVersion('INTENT', intentId, context.expectedVersion, row.version);
-      assertTransitionAllowed('INTENT', row.status, toStatus);
+        this.assertExpectedVersion('INTENT', intentId, context.expectedVersion, row.version);
+        assertTransitionAllowed('INTENT', row.status, toStatus);
 
-      await trx
-        .update(paymentIntents)
-        .set({
-          status: toStatus,
-          version: sql`${paymentIntents.version} + 1`,
-          updatedAt: new Date(),
-        })
-        .where(eq(paymentIntents.id, intentId));
+        await trx
+          .update(paymentIntents)
+          .set({
+            status: toStatus,
+            version: sql`${paymentIntents.version} + 1`,
+            updatedAt: new Date(),
+          })
+          .where(eq(paymentIntents.id, intentId));
 
-      await this.appendTransition('INTENT', intentId, row.status, toStatus, context, trx);
-      await this.appendOutboxIfNeeded(context, trx);
+        await this.appendTransition('INTENT', intentId, row.status, toStatus, context, trx);
+        await this.appendOutboxIfNeeded(context, trx);
 
-      return { entityId: intentId, previousStatus: row.status, newStatus: toStatus };
-    }, tx);
+        return { entityId: intentId, previousStatus: row.status, newStatus: toStatus };
+      },
+      tx,
+    );
   }
 
   async transitionCharge(
@@ -94,31 +98,35 @@ export class StateTransitionService {
     fromStatus?: ChargeStatus,
     tx?: DbTx,
   ): Promise<TransitionResult<ChargeStatus>> {
-    return inTx(this.dbService, async (trx) => {
-      const row = await this.lockCharge(chargeId, trx);
-      if (!row) {
-        throw new Error(`CHARGE_NOT_FOUND: ${chargeId}`);
-      }
+    return inTx(
+      this.dbService,
+      async (trx) => {
+        const row = await this.lockCharge(chargeId, trx);
+        if (!row) {
+          throw new Error(`CHARGE_NOT_FOUND: ${chargeId}`);
+        }
 
-      if (fromStatus && row.status !== fromStatus) {
-        throw this.buildStatusMismatchConflict('CHARGE', chargeId, fromStatus, row.status);
-      }
+        if (fromStatus && row.status !== fromStatus) {
+          throw this.buildStatusMismatchConflict('CHARGE', chargeId, fromStatus, row.status);
+        }
 
-      assertTransitionAllowed('CHARGE', row.status, toStatus);
+        assertTransitionAllowed('CHARGE', row.status, toStatus);
 
-      await trx
-        .update(charges)
-        .set({
-          status: toStatus,
-          updatedAt: new Date(),
-        })
-        .where(eq(charges.id, chargeId));
+        await trx
+          .update(charges)
+          .set({
+            status: toStatus,
+            updatedAt: new Date(),
+          })
+          .where(eq(charges.id, chargeId));
 
-      await this.appendTransition('CHARGE', chargeId, row.status, toStatus, context, trx);
-      await this.appendOutboxIfNeeded(context, trx);
+        await this.appendTransition('CHARGE', chargeId, row.status, toStatus, context, trx);
+        await this.appendOutboxIfNeeded(context, trx);
 
-      return { entityId: chargeId, previousStatus: row.status, newStatus: toStatus };
-    }, tx);
+        return { entityId: chargeId, previousStatus: row.status, newStatus: toStatus };
+      },
+      tx,
+    );
   }
 
   async transitionRefund(
@@ -128,31 +136,35 @@ export class StateTransitionService {
     fromStatus?: RefundStatus,
     tx?: DbTx,
   ): Promise<TransitionResult<RefundStatus>> {
-    return inTx(this.dbService, async (trx) => {
-      const row = await this.lockRefund(refundId, trx);
-      if (!row) {
-        throw new Error(`REFUND_NOT_FOUND: ${refundId}`);
-      }
+    return inTx(
+      this.dbService,
+      async (trx) => {
+        const row = await this.lockRefund(refundId, trx);
+        if (!row) {
+          throw new Error(`REFUND_NOT_FOUND: ${refundId}`);
+        }
 
-      if (fromStatus && row.status !== fromStatus) {
-        throw this.buildStatusMismatchConflict('REFUND', refundId, fromStatus, row.status);
-      }
+        if (fromStatus && row.status !== fromStatus) {
+          throw this.buildStatusMismatchConflict('REFUND', refundId, fromStatus, row.status);
+        }
 
-      assertTransitionAllowed('REFUND', row.status, toStatus);
+        assertTransitionAllowed('REFUND', row.status, toStatus);
 
-      await trx
-        .update(refunds)
-        .set({
-          status: toStatus,
-          updatedAt: new Date(),
-        })
-        .where(eq(refunds.id, refundId));
+        await trx
+          .update(refunds)
+          .set({
+            status: toStatus,
+            updatedAt: new Date(),
+          })
+          .where(eq(refunds.id, refundId));
 
-      await this.appendTransition('REFUND', refundId, row.status, toStatus, context, trx);
-      await this.appendOutboxIfNeeded(context, trx);
+        await this.appendTransition('REFUND', refundId, row.status, toStatus, context, trx);
+        await this.appendOutboxIfNeeded(context, trx);
 
-      return { entityId: refundId, previousStatus: row.status, newStatus: toStatus };
-    }, tx);
+        return { entityId: refundId, previousStatus: row.status, newStatus: toStatus };
+      },
+      tx,
+    );
   }
 
   private async appendTransition(
@@ -199,10 +211,7 @@ export class StateTransitionService {
     return rows[0] ?? null;
   }
 
-  private async lockCharge(
-    chargeId: string,
-    tx: DbTx,
-  ): Promise<{ status: ChargeStatus } | null> {
+  private async lockCharge(chargeId: string, tx: DbTx): Promise<{ status: ChargeStatus } | null> {
     const rows = (await tx.execute(sql`
       select status
       from charges
@@ -212,10 +221,7 @@ export class StateTransitionService {
     return rows[0] ?? null;
   }
 
-  private async lockRefund(
-    refundId: string,
-    tx: DbTx,
-  ): Promise<{ status: RefundStatus } | null> {
+  private async lockRefund(refundId: string, tx: DbTx): Promise<{ status: RefundStatus } | null> {
     const rows = (await tx.execute(sql`
       select status
       from refunds

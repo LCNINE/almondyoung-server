@@ -33,12 +33,7 @@ export interface ProgressUpdate {
   lastProcessedMasterId?: string;
 }
 
-export type ErrorType =
-  | 'validation_error'
-  | 'medusa_api_error'
-  | 'network_error'
-  | 'db_error'
-  | 'unknown';
+export type ErrorType = 'validation_error' | 'medusa_api_error' | 'network_error' | 'db_error' | 'unknown';
 
 /**
  * MigrationSessionService - Manages migration progress tracking
@@ -79,19 +74,14 @@ export class MigrationSessionService {
   async loadSession(sessionId: string): Promise<MigrationSession | null> {
     console.log(`[MigrationSession] Loading session: ${sessionId}`);
 
-    const [session] = await this.db
-      .select()
-      .from(migrationProgress)
-      .where(eq(migrationProgress.sessionId, sessionId));
+    const [session] = await this.db.select().from(migrationProgress).where(eq(migrationProgress.sessionId, sessionId));
 
     if (!session) {
       console.warn(`[MigrationSession] Session not found: ${sessionId}`);
       return null;
     }
 
-    console.log(
-      `[MigrationSession] Loaded session: ${session.processedCount}/${session.totalMasters} processed`
-    );
+    console.log(`[MigrationSession] Loaded session: ${session.processedCount}/${session.totalMasters} processed`);
 
     return this.toSession(session);
   }
@@ -99,10 +89,7 @@ export class MigrationSessionService {
   /**
    * Update session progress after batch processing
    */
-  async updateProgress(
-    sessionId: string,
-    updates: ProgressUpdate
-  ): Promise<void> {
+  async updateProgress(sessionId: string, updates: ProgressUpdate): Promise<void> {
     await this.db
       .update(migrationProgress)
       .set({
@@ -117,7 +104,7 @@ export class MigrationSessionService {
       .where(eq(migrationProgress.sessionId, sessionId));
 
     console.log(
-      `[MigrationSession] Progress updated: ${updates.processedCount} processed, ${updates.successCount} success, ${updates.failedCount} failed`
+      `[MigrationSession] Progress updated: ${updates.processedCount} processed, ${updates.successCount} success, ${updates.failedCount} failed`,
     );
   }
 
@@ -163,7 +150,7 @@ export class MigrationSessionService {
     versionId: string,
     error: Error,
     errorType: ErrorType,
-    snapshot: PimProductSnapshot
+    snapshot: PimProductSnapshot,
   ): Promise<void> {
     await this.db.insert(migrationFailures).values({
       sessionId,
@@ -175,9 +162,7 @@ export class MigrationSessionService {
       snapshot: snapshot as any,
     });
 
-    console.error(
-      `[MigrationSession] Failure recorded: ${masterId} (${errorType}): ${error.message}`
-    );
+    console.error(`[MigrationSession] Failure recorded: ${masterId} (${errorType}): ${error.message}`);
   }
 
   /**
@@ -187,12 +172,7 @@ export class MigrationSessionService {
     return await this.db
       .select()
       .from(migrationFailures)
-      .where(
-        and(
-          eq(migrationFailures.sessionId, sessionId),
-          eq(migrationFailures.resolved, false)
-        )
-      );
+      .where(and(eq(migrationFailures.sessionId, sessionId), eq(migrationFailures.resolved, false)));
   }
 
   /**
@@ -212,10 +192,7 @@ export class MigrationSessionService {
    * Increment retry count for a failure
    */
   async incrementRetryCount(failureId: string, error: Error): Promise<void> {
-    const [failure] = await this.db
-      .select()
-      .from(migrationFailures)
-      .where(eq(migrationFailures.id, failureId));
+    const [failure] = await this.db.select().from(migrationFailures).where(eq(migrationFailures.id, failureId));
 
     if (!failure) return;
 

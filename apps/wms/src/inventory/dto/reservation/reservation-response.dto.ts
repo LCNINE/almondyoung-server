@@ -226,5 +226,3 @@ export class AvailableStockResponseDto {
   })
   byWarehouse: AvailableQuantityDto[];
 }
-
-

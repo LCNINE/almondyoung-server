@@ -4,10 +4,7 @@ export class BusinessLicensesHelper {
   constructor() {}
 
   // 메타 태그 추출 헬퍼
-  extractMetaContent(
-    $: ReturnType<typeof cheerio.load>,
-    property: string,
-  ): string {
+  extractMetaContent($: ReturnType<typeof cheerio.load>, property: string): string {
     return $(`meta[property="${property}"]`).attr('content') || '';
   }
 
@@ -17,19 +14,12 @@ export class BusinessLicensesHelper {
   }
 
   // 속성 추출 헬퍼
-  extractAttribute(
-    $: ReturnType<typeof cheerio.load>,
-    selector: string,
-    attribute: string,
-  ): string {
+  extractAttribute($: ReturnType<typeof cheerio.load>, selector: string, attribute: string): string {
     return $(selector).attr(attribute) || '';
   }
 
   // 테이블에서 th 텍스트로 td 값 찾기 헬퍼
-  extractTableValue(
-    $: ReturnType<typeof cheerio.load>,
-    thText: string,
-  ): string {
+  extractTableValue($: ReturnType<typeof cheerio.load>, thText: string): string {
     const thElement = $('th')
       .filter((_, el) => $(el).text().trim() === thText)
       .first();

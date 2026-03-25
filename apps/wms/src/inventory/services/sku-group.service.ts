@@ -10,7 +10,7 @@ import {
   SkuGroupMemberDto,
   SkuGroupMembersResponseDto,
   BulkAddSkusResponseDto,
-  BulkAddResultItemDto
+  BulkAddResultItemDto,
 } from '../dto/sku-groups/sku-group-response.dto';
 
 @Injectable()
@@ -18,7 +18,7 @@ export class SkuGroupService {
   constructor(
     @InjectTypedDb<typeof wmsSchema>()
     private readonly dbService: DbService<typeof wmsSchema>,
-  ) { }
+  ) {}
 
   private get db() {
     return this.dbService.db;
@@ -35,11 +35,7 @@ export class SkuGroupService {
       const groupCode = createDto.code || `G${Math.floor(100000 + Math.random() * 900000)}`;
 
       // Check code uniqueness
-      const [existingCode] = await tx
-        .select()
-        .from(skuGroups)
-        .where(eq(skuGroups.code, groupCode))
-        .limit(1);
+      const [existingCode] = await tx.select().from(skuGroups).where(eq(skuGroups.code, groupCode)).limit(1);
 
       if (existingCode) {
         throw new ConflictException(`Group code ${groupCode} already exists`);
@@ -74,21 +70,14 @@ export class SkuGroupService {
     return this.inTx(async (tx) => {
       const { skuGroups, skus } = wmsTables;
 
-      const [group] = await tx
-        .select()
-        .from(skuGroups)
-        .where(eq(skuGroups.id, groupId))
-        .limit(1);
+      const [group] = await tx.select().from(skuGroups).where(eq(skuGroups.id, groupId)).limit(1);
 
       if (!group) {
         throw new NotFoundException(`SKU group ${groupId} not found`);
       }
 
       // Count members
-      const [memberCountResult] = await tx
-        .select({ count: count() })
-        .from(skus)
-        .where(eq(skus.groupId, groupId));
+      const [memberCountResult] = await tx.select({ count: count() }).from(skus).where(eq(skus.groupId, groupId));
 
       const memberCount = Number(memberCountResult?.count ?? 0);
 
@@ -111,13 +100,10 @@ export class SkuGroupService {
     return this.inTx(async (tx) => {
       const { skuGroups, skus } = wmsTables;
 
-      const groups = await tx
-        .select()
-        .from(skuGroups)
-        .orderBy(desc(skuGroups.createdAt));
+      const groups = await tx.select().from(skuGroups).orderBy(desc(skuGroups.createdAt));
 
       // Get member counts for all groups in a single query
-      const groupIds = groups.map(g => g.id);
+      const groupIds = groups.map((g) => g.id);
 
       if (groupIds.length === 0) {
         return [];
@@ -127,15 +113,12 @@ export class SkuGroupService {
       const memberCounts: Record<string, number> = {};
 
       for (const group of groups) {
-        const [result] = await tx
-          .select({ count: count() })
-          .from(skus)
-          .where(eq(skus.groupId, group.id));
+        const [result] = await tx.select({ count: count() }).from(skus).where(eq(skus.groupId, group.id));
 
         memberCounts[group.id] = Number(result?.count ?? 0);
       }
 
-      return groups.map(group => ({
+      return groups.map((group) => ({
         id: group.id,
         name: group.name,
         code: group.code,
@@ -150,19 +133,11 @@ export class SkuGroupService {
   /**
    * Update SKU group
    */
-  async updateSkuGroup(
-    groupId: string,
-    updateDto: UpdateSkuGroupDto,
-    tx?: DbTx
-  ): Promise<SkuGroupResponseDto> {
+  async updateSkuGroup(groupId: string, updateDto: UpdateSkuGroupDto, tx?: DbTx): Promise<SkuGroupResponseDto> {
     return this.inTx(async (tx) => {
       const { skuGroups } = wmsTables;
 
-      const [existing] = await tx
-        .select()
-        .from(skuGroups)
-        .where(eq(skuGroups.id, groupId))
-        .limit(1);
+      const [existing] = await tx.select().from(skuGroups).where(eq(skuGroups.id, groupId)).limit(1);
 
       if (!existing) {
         throw new NotFoundException(`SKU group ${groupId} not found`);
@@ -187,20 +162,14 @@ export class SkuGroupService {
     return this.inTx(async (tx) => {
       const { skuGroups } = wmsTables;
 
-      const [group] = await tx
-        .select()
-        .from(skuGroups)
-        .where(eq(skuGroups.id, groupId))
-        .limit(1);
+      const [group] = await tx.select().from(skuGroups).where(eq(skuGroups.id, groupId)).limit(1);
 
       if (!group) {
         throw new NotFoundException(`SKU group ${groupId} not found`);
       }
 
       // Note: ON DELETE SET NULL will automatically set groupId to null for all members
-      await tx
-        .delete(skuGroups)
-        .where(eq(skuGroups.id, groupId));
+      await tx.delete(skuGroups).where(eq(skuGroups.id, groupId));
     }, tx);
   }
 
@@ -210,28 +179,20 @@ export class SkuGroupService {
   async addSkuToGroup(
     groupId: string,
     addDto: AddSkuToGroupDto,
-    tx?: DbTx
+    tx?: DbTx,
   ): Promise<{ success: boolean; skuId: string; groupId: string }> {
     return this.inTx(async (tx) => {
       const { skuGroups, skus } = wmsTables;
 
       // Validate group exists
-      const [group] = await tx
-        .select()
-        .from(skuGroups)
-        .where(eq(skuGroups.id, groupId))
-        .limit(1);
+      const [group] = await tx.select().from(skuGroups).where(eq(skuGroups.id, groupId)).limit(1);
 
       if (!group) {
         throw new NotFoundException(`SKU group ${groupId} not found`);
       }
 
       // Validate SKU exists
-      const [sku] = await tx
-        .select()
-        .from(skus)
-        .where(eq(skus.id, addDto.skuId))
-        .limit(1);
+      const [sku] = await tx.select().from(skus).where(eq(skus.id, addDto.skuId)).limit(1);
 
       if (!sku) {
         throw new NotFoundException(`SKU ${addDto.skuId} not found`);
@@ -260,7 +221,7 @@ export class SkuGroupService {
   async bulkAddSkusToGroup(
     groupId: string,
     bulkDto: BulkAddSkusToGroupDto,
-    tx?: DbTx
+    tx?: DbTx,
   ): Promise<BulkAddSkusResponseDto> {
     return this.inTx(async (tx) => {
       const results: BulkAddResultItemDto[] = [];
@@ -299,11 +260,7 @@ export class SkuGroupService {
     return this.inTx(async (tx) => {
       const { skus } = wmsTables;
 
-      const [sku] = await tx
-        .select()
-        .from(skus)
-        .where(eq(skus.id, skuId))
-        .limit(1);
+      const [sku] = await tx.select().from(skus).where(eq(skus.id, skuId)).limit(1);
 
       if (!sku) {
         throw new NotFoundException(`SKU ${skuId} not found`);
@@ -324,19 +281,12 @@ export class SkuGroupService {
   /**
    * Get all SKUs in a group
    */
-  async getGroupMembers(
-    groupId: string,
-    tx?: DbTx
-  ): Promise<SkuGroupMembersResponseDto> {
+  async getGroupMembers(groupId: string, tx?: DbTx): Promise<SkuGroupMembersResponseDto> {
     return this.inTx(async (tx) => {
       const { skuGroups, skus } = wmsTables;
 
       // Validate group exists
-      const [group] = await tx
-        .select()
-        .from(skuGroups)
-        .where(eq(skuGroups.id, groupId))
-        .limit(1);
+      const [group] = await tx.select().from(skuGroups).where(eq(skuGroups.id, groupId)).limit(1);
 
       if (!group) {
         throw new NotFoundException(`SKU group ${groupId} not found`);
@@ -355,7 +305,7 @@ export class SkuGroupService {
         .where(eq(skus.groupId, groupId))
         .orderBy(skus.createdAt);
 
-      const memberDtos: SkuGroupMemberDto[] = members.map(m => ({
+      const memberDtos: SkuGroupMemberDto[] = members.map((m) => ({
         id: m.id,
         name: m.name,
         code: m.code,
@@ -375,11 +325,7 @@ export class SkuGroupService {
   /**
    * Get ungrouped SKUs (groupId is null)
    */
-  async getUngroupedSkus(
-    limit: number = 50,
-    offset: number = 0,
-    tx?: DbTx
-  ): Promise<SkuGroupMemberDto[]> {
+  async getUngroupedSkus(limit: number = 50, offset: number = 0, tx?: DbTx): Promise<SkuGroupMemberDto[]> {
     return this.inTx(async (tx) => {
       const { skus } = wmsTables;
 
@@ -397,7 +343,7 @@ export class SkuGroupService {
         .limit(limit)
         .offset(offset);
 
-      return ungrouped.map(s => ({
+      return ungrouped.map((s) => ({
         id: s.id,
         name: s.name,
         code: s.code,
@@ -411,4 +357,3 @@ export class SkuGroupService {
     return tx ? fn(tx) : this.db.transaction(fn);
   }
 }
-

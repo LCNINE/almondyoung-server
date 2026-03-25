@@ -26,7 +26,6 @@ export class ChannelCategoryMapper {
    * Map array of entities to ChannelCategoryDto array
    */
   static toDtoArray(entities: Array<ChannelCategoryEntity & { channelCount?: number }>): ChannelCategoryDto[] {
-    return entities.map(e => this.toDto(e));
+    return entities.map((e) => this.toDto(e));
   }
 }
-

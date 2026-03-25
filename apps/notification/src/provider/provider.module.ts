@@ -26,4 +26,4 @@ import { AlertService } from '../shared/services/alert.service';
   ],
   exports: [ProviderManagerService],
 })
-export class ProviderModule { }
+export class ProviderModule {}

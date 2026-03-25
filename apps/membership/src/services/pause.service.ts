@@ -28,26 +28,13 @@ export class PauseService {
    *
    * ✅ 흐름만 표현: "권한 조회 → 일시정지 실행"
    */
-  async pauseSubscription(
-    userId: string,
-    email: string,
-    startDate: Date,
-    endDate: Date,
-    reason?: string,
-  ) {
-    const entitlement =
-      await this.pauseReader.findActiveNonPausedEntitlement(userId);
+  async pauseSubscription(userId: string, email: string, startDate: Date, endDate: Date, reason?: string) {
+    const entitlement = await this.pauseReader.findActiveNonPausedEntitlement(userId);
     if (!entitlement) {
       throw new Error('Active subscription not found');
     }
 
-    const result = await this.pauseManager.startPause(
-      userId,
-      entitlement,
-      startDate,
-      endDate,
-      reason,
-    );
+    const result = await this.pauseManager.startPause(userId, entitlement, startDate, endDate, reason);
 
     await this.membershipEventPublisher.publishStatusChanged({
       userId,

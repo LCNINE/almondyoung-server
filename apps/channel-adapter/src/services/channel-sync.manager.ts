@@ -29,7 +29,7 @@ export class ChannelSyncManager {
     private readonly db: DbService<typeof channelAdapterSchema>,
     private readonly inboxService: InboxService,
     private readonly adapterFactory: ChannelAdapterFactory,
-  ) { }
+  ) {}
 
   /**
    * Inbound 동기화 처리

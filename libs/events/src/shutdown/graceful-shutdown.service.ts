@@ -41,17 +41,11 @@ export class GracefulShutdownService implements OnApplicationShutdown {
 
     try {
       // Kafka 연결 종료 (타임아웃: 30초)
-      await Promise.race([
-        this.disconnectKafka(),
-        this.timeout(30000),
-      ]);
+      await Promise.race([this.disconnectKafka(), this.timeout(30000)]);
 
       this.logger.log('✅ Graceful shutdown completed');
     } catch (error) {
-      this.logger.error(
-        '❌ Graceful shutdown failed',
-        error instanceof Error ? error.stack : String(error),
-      );
+      this.logger.error('❌ Graceful shutdown failed', error instanceof Error ? error.stack : String(error));
       // 에러가 발생해도 종료는 계속 진행
     }
   }
@@ -72,10 +66,7 @@ export class GracefulShutdownService implements OnApplicationShutdown {
 
       this.logger.log('✅ Kafka client disconnected');
     } catch (error) {
-      this.logger.error(
-        'Failed to disconnect Kafka client',
-        error instanceof Error ? error.stack : String(error),
-      );
+      this.logger.error('Failed to disconnect Kafka client', error instanceof Error ? error.stack : String(error));
       throw error;
     }
   }
@@ -84,9 +75,7 @@ export class GracefulShutdownService implements OnApplicationShutdown {
    * 타임아웃 헬퍼
    */
   private timeout(ms: number): Promise<never> {
-    return new Promise((_, reject) =>
-      setTimeout(() => reject(new Error(`Shutdown timeout after ${ms}ms`)), ms),
-    );
+    return new Promise((_, reject) => setTimeout(() => reject(new Error(`Shutdown timeout after ${ms}ms`)), ms));
   }
 
   /**
@@ -96,4 +85,3 @@ export class GracefulShutdownService implements OnApplicationShutdown {
     await this.onApplicationShutdown('manual');
   }
 }
-

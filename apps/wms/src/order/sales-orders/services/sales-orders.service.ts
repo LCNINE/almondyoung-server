@@ -32,7 +32,7 @@ export class SalesOrdersService {
     private readonly productSkuMapping: ProductSkuMappingService,
     private readonly audit?: AuditService,
     private readonly metrics?: MetricsService,
-  ) { }
+  ) {}
 
   private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
     return tx ? fn(tx) : this.db.db.transaction(fn);
@@ -64,20 +64,24 @@ export class SalesOrdersService {
         })
         .returning();
 
-      await this.outbox?.enqueue({
-        eventType: ORDER_EVENTS.CREATED,
-        aggregateType: 'order',
-        aggregateId: order.id,
-        partitionKey: order.id,
-        payload: { orderId: order.id },
-      }, trx);
+      await this.outbox?.enqueue(
+        {
+          eventType: ORDER_EVENTS.CREATED,
+          aggregateType: 'order',
+          aggregateId: order.id,
+          partitionKey: order.id,
+          payload: { orderId: order.id },
+        },
+        trx,
+      );
 
       const lines = Array.isArray(dto.lines) ? dto.lines : [];
       if (lines.length > 0) {
         const values: SalesOrderLineInsert[] = [];
         for (const l of lines) {
           const policy = await this.policies.getVariantPolicy(l.variantId, trx);
-          const acceptanceByPolicy = !policy.inventoryManagement || policy.preStockSellable || policy.alwaysSellableZeroStock;
+          const acceptanceByPolicy =
+            !policy.inventoryManagement || policy.preStockSellable || policy.alwaysSellableZeroStock;
           values.push({
             salesOrderId: order.id,
             variantId: l.variantId,
@@ -113,7 +117,7 @@ export class SalesOrdersService {
           lineCount: lines.length,
         },
         undefined, // context - 실제로는 HTTP 요청에서 가져와야 함
-        trx
+        trx,
       );
 
       // 메트릭 기록
@@ -147,7 +151,16 @@ export class SalesOrdersService {
         })
         .where(eq(wmsTables.salesOrders.id, id));
       const updated = await this.getOne(id, trx);
-      await this.outbox?.enqueue({ eventType: ORDER_EVENTS.MODIFIED, aggregateType: 'order', aggregateId: id, partitionKey: id, payload: { orderId: id } }, trx);
+      await this.outbox?.enqueue(
+        {
+          eventType: ORDER_EVENTS.MODIFIED,
+          aggregateType: 'order',
+          aggregateId: id,
+          partitionKey: id,
+          payload: { orderId: id },
+        },
+        trx,
+      );
       return updated;
     }, tx);
   }
@@ -162,11 +175,7 @@ export class SalesOrdersService {
       // 2. 각 라인에 대해 매핑 스냅샷 생성 (warehouseId가 제공된 경우)
       if (warehouseId && lines.length > 0) {
         for (const line of lines) {
-          const snapshotId = await this.productSkuMapping.createSnapshotForVariant(
-            line.variantId,
-            warehouseId,
-            trx,
-          );
+          const snapshotId = await this.productSkuMapping.createSnapshotForVariant(line.variantId, warehouseId, trx);
 
           if (snapshotId) {
             await trx
@@ -175,9 +184,7 @@ export class SalesOrdersService {
               .where(eq(wmsTables.salesOrderLines.id, line.id));
           } else {
             // 매핑이 없는 경우 로그만 남기고 진행 (정책에 따라 에러 처리 가능)
-            this.logger.warn(
-              `No mapping found for variantId=${line.variantId} in warehouseId=${warehouseId}`,
-            );
+            this.logger.warn(`No mapping found for variantId=${line.variantId} in warehouseId=${warehouseId}`);
           }
         }
       }
@@ -191,13 +198,16 @@ export class SalesOrdersService {
       const updated = await this.getOne(id, trx);
 
       // 4. 이벤트 발행
-      await this.outbox?.enqueue({
-        eventType: ORDER_EVENTS.CONFIRMED,
-        aggregateType: 'order',
-        aggregateId: id,
-        partitionKey: id,
-        payload: { orderId: id, warehouseId },
-      }, trx);
+      await this.outbox?.enqueue(
+        {
+          eventType: ORDER_EVENTS.CONFIRMED,
+          aggregateType: 'order',
+          aggregateId: id,
+          partitionKey: id,
+          payload: { orderId: id, warehouseId },
+        },
+        trx,
+      );
 
       return updated;
     }, tx);
@@ -210,7 +220,7 @@ export class SalesOrdersService {
       try {
         // 1. 먼저 주문 상태 확인
         const salesOrder = await trx.query.salesOrders.findFirst({
-          where: eq(wmsTables.salesOrders.id, id)
+          where: eq(wmsTables.salesOrders.id, id),
         });
 
         if (!salesOrder) {
@@ -224,7 +234,7 @@ export class SalesOrdersService {
 
         // 2. 연관된 FO들 조회
         const fulfillmentOrders = await trx.query.fulfillmentOrders.findMany({
-          where: eq(wmsTables.fulfillmentOrders.salesOrderId, id)
+          where: eq(wmsTables.fulfillmentOrders.salesOrderId, id),
         });
 
         this.logger.log(`Found ${fulfillmentOrders.length} fulfillment orders for SO ${id}`);
@@ -237,12 +247,7 @@ export class SalesOrdersService {
 
           // 라이프사이클 서비스로 FO 예약 일괄 해제 위임
           try {
-            await this.reservationLifecycle.handleFulfillmentOrderStatusChange(
-              fo.id,
-              fo.status,
-              'canceled',
-              trx,
-            );
+            await this.reservationLifecycle.handleFulfillmentOrderStatusChange(fo.id, fo.status, 'canceled', trx);
           } catch (error) {
             this.logger.error(`Failed to release reservations for FO ${fo.id}:`, error);
             // 예약 해제 실패는 로그만 남기고 계속 진행
@@ -258,21 +263,21 @@ export class SalesOrdersService {
         }
 
         // 4. SO 상태를 취소로 업데이트
-        await trx
-          .update(wmsTables.salesOrders)
-          .set({ status: 'cancelled' })
-          .where(eq(wmsTables.salesOrders.id, id));
+        await trx.update(wmsTables.salesOrders).set({ status: 'cancelled' }).where(eq(wmsTables.salesOrders.id, id));
 
         const updated = await this.getOne(id, trx);
 
         // 5. 이벤트 발행
-        await this.outbox.enqueue({
-          eventType: ORDER_EVENTS.CANCELLED,
-          aggregateType: 'order',
-          aggregateId: id,
-          partitionKey: id,
-          payload: { orderId: id, cancelledFulfillmentOrderIds: fulfillmentOrders.map(fo => fo.id) }
-        }, trx);
+        await this.outbox.enqueue(
+          {
+            eventType: ORDER_EVENTS.CANCELLED,
+            aggregateType: 'order',
+            aggregateId: id,
+            partitionKey: id,
+            payload: { orderId: id, cancelledFulfillmentOrderIds: fulfillmentOrders.map((fo) => fo.id) },
+          },
+          trx,
+        );
 
         // 6. 감사 로그 기록
         await this.audit?.logResourceChange(
@@ -285,12 +290,11 @@ export class SalesOrdersService {
           { status: salesOrder.status },
           { status: 'cancelled' },
           undefined, // context
-          trx
+          trx,
         );
 
         this.logger.log(`Successfully cancelled sales order ${id} and ${fulfillmentOrders.length} fulfillment orders`);
         return updated;
-
       } catch (error) {
         this.logger.error(`Failed to cancel sales order ${id}:`, error);
         throw error;
@@ -362,10 +366,14 @@ export class SalesOrdersService {
       }
 
       // 1) 원본 SO의 FO/예약 해제 및 FO 취소
-      const sourceFOs = await trx.query.fulfillmentOrders.findMany({ where: (f, { inArray: ina }) => ina(wmsTables.fulfillmentOrders.salesOrderId, sourceIds) });
+      const sourceFOs = await trx.query.fulfillmentOrders.findMany({
+        where: (f, { inArray: ina }) => ina(wmsTables.fulfillmentOrders.salesOrderId, sourceIds),
+      });
       for (const fo of sourceFOs) {
-        const fois = await trx.query.fulfillmentOrderItems.findMany({ where: eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fo.id) });
-        const foiIds = fois.map(item => item.id);
+        const fois = await trx.query.fulfillmentOrderItems.findMany({
+          where: eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fo.id),
+        });
+        const foiIds = fois.map((item) => item.id);
         if (foiIds.length > 0) {
           // 예약 원장 release
           await trx
@@ -394,18 +402,30 @@ export class SalesOrdersService {
       // 3) 병합된 SO 기준 FO 재구성(옵션: warehouseId 전달 시 생성)
       if (this.fulfillments) {
         try {
-          await this.fulfillments.create({
-            salesOrderId: merged.id,
-            warehouseId: dto.warehouseId ?? undefined,
-            shippingAddress: merged.shippingAddress as any,
-            lines: []
-          }, trx);
+          await this.fulfillments.create(
+            {
+              salesOrderId: merged.id,
+              warehouseId: dto.warehouseId ?? undefined,
+              shippingAddress: merged.shippingAddress as any,
+              lines: [],
+            },
+            trx,
+          );
         } catch {
           // 생성 실패는 무시(후속 요청에서 생성 가능)
         }
       }
 
-      await this.outbox?.enqueue({ eventType: 'ORDER_MERGED', aggregateType: 'order', aggregateId: merged.id, partitionKey: merged.id, payload: { targetOrderId: merged.id, sourceOrderIds: sourceIds } }, trx);
+      await this.outbox?.enqueue(
+        {
+          eventType: 'ORDER_MERGED',
+          aggregateType: 'order',
+          aggregateId: merged.id,
+          partitionKey: merged.id,
+          payload: { targetOrderId: merged.id, sourceOrderIds: sourceIds },
+        },
+        trx,
+      );
       return merged;
     }, tx);
   }
@@ -414,11 +434,7 @@ export class SalesOrdersService {
     const db = tx ?? this.db.db;
 
     // 1. 주문 조회
-    const [order] = await db
-      .select()
-      .from(wmsTables.salesOrders)
-      .where(eq(wmsTables.salesOrders.id, id))
-      .limit(1);
+    const [order] = await db.select().from(wmsTables.salesOrders).where(eq(wmsTables.salesOrders.id, id)).limit(1);
 
     if (!order) {
       return null;
@@ -441,15 +457,10 @@ export class SalesOrdersService {
    * 채널 + 채널주문ID로 SO 조회
    * 멱등성 체크용
    */
-  async findByChannelOrderId(
-    salesChannel: 'medusa' | 'naver' | 'coupang' | '3pl',
-    channelOrderId: string,
-    tx?: DbTx,
-  ) {
+  async findByChannelOrderId(salesChannel: 'medusa' | 'naver' | 'coupang' | '3pl', channelOrderId: string, tx?: DbTx) {
     const db = tx ?? this.db.db;
     return db.query.salesOrders.findFirst({
-      where: (o, { eq, and }) =>
-        and(eq(o.salesChannel, salesChannel), eq(o.channelOrderId, channelOrderId)),
+      where: (o, { eq, and }) => and(eq(o.salesChannel, salesChannel), eq(o.channelOrderId, channelOrderId)),
     });
   }
 
@@ -475,10 +486,7 @@ export class SalesOrdersService {
       }
 
       // 1. 주문 목록 조회
-      let query = tx
-        .select()
-        .from(wmsTables.salesOrders)
-        .$dynamic();
+      let query = tx.select().from(wmsTables.salesOrders).$dynamic();
 
       if (conditions.length > 0) {
         query = query.where(and(...conditions));
@@ -516,7 +524,7 @@ export class SalesOrdersService {
         ...order,
         lines: linesByOrderId.get(order.id) || [],
       }));
-    }, tx)
+    }, tx);
   }
 
   /**
@@ -545,11 +553,7 @@ export class SalesOrdersService {
    * 이벤트 기반 SO 수정
    * OrderModifiedPayload.changes를 적용
    */
-  async updateFromEvent(
-    id: string,
-    changes: OrderModifiedPayload['changes'],
-    tx?: DbTx,
-  ) {
+  async updateFromEvent(id: string, changes: OrderModifiedPayload['changes'], tx?: DbTx) {
     return this.inTx(async (trx) => {
       const updateData: Partial<UpdateSalesOrderDto> = {};
 
@@ -575,19 +579,20 @@ export class SalesOrdersService {
 
       // items 변경은 라인 단위로 처리 (복잡한 로직은 향후 구현)
       if (changes.items && changes.items.length > 0) {
-        this.logger.warn(
-          `[updateFromEvent] Item changes detected but not yet implemented for order ${id}`,
-        );
+        this.logger.warn(`[updateFromEvent] Item changes detected but not yet implemented for order ${id}`);
       }
 
       const updated = await this.getOne(id, trx);
-      await this.outbox?.enqueue({
-        eventType: ORDER_EVENTS.MODIFIED,
-        aggregateType: 'order',
-        aggregateId: id,
-        partitionKey: id,
-        payload: { orderId: id, changes },
-      }, trx);
+      await this.outbox?.enqueue(
+        {
+          eventType: ORDER_EVENTS.MODIFIED,
+          aggregateType: 'order',
+          aggregateId: id,
+          partitionKey: id,
+          payload: { orderId: id, changes },
+        },
+        trx,
+      );
 
       return updated;
     }, tx);
@@ -611,7 +616,7 @@ export class SalesOrdersService {
    * 이벤트 OrderItem[]을 CreateSalesOrderLineDto[]로 변환
    */
   private convertOrderItems(items: OrderItem[]) {
-    return items.map(item => ({
+    return items.map((item) => ({
       variantId: item.variantId,
       productName: item.productName,
       quantity: item.quantity,
@@ -620,4 +625,3 @@ export class SalesOrdersService {
     }));
   }
 }
-

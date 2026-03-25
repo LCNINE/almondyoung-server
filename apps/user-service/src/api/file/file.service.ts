@@ -1,16 +1,5 @@
-import {
-  DeleteObjectCommand,
-  HeadObjectCommand,
-  PutObjectCommand,
-  S3Client,
-} from '@aws-sdk/client-s3';
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-  NotFoundException,
-  OnModuleInit,
-} from '@nestjs/common';
+import { DeleteObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { v4 as uuid } from 'uuid';
 import { S3_FOLDER_NAMES } from './constants';
@@ -31,11 +20,8 @@ export class FileService implements OnModuleInit {
 
   private initializeS3Client(): void {
     this.region = this.configService.getOrThrow<string>('AWS_REGION');
-    const accessKeyId =
-      this.configService.getOrThrow<string>('AWS_ACCESS_KEY_ID');
-    const secretAccessKey = this.configService.getOrThrow<string>(
-      'AWS_SECRET_ACCESS_KEY',
-    );
+    const accessKeyId = this.configService.getOrThrow<string>('AWS_ACCESS_KEY_ID');
+    const secretAccessKey = this.configService.getOrThrow<string>('AWS_SECRET_ACCESS_KEY');
     this.bucketName = this.configService.getOrThrow<string>('AWS_S3_BUCKET');
 
     this.s3Client = new S3Client({

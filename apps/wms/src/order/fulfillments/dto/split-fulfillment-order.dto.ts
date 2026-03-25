@@ -30,10 +30,10 @@ export class SplitFulfillmentOrderLineDto {
 }
 
 export class SplitFulfillmentOrderDto {
-  @ApiProperty({ 
+  @ApiProperty({
     description: 'Items to split',
     type: [SplitFulfillmentOrderItemDto],
-    required: false
+    required: false,
   })
   @IsArray()
   @ValidateNested({ each: true })
@@ -44,11 +44,11 @@ export class SplitFulfillmentOrderDto {
   /**
    * @deprecated Use items instead
    */
-  @ApiProperty({ 
+  @ApiProperty({
     description: 'Lines to split (deprecated, use items instead)',
     type: [SplitFulfillmentOrderLineDto],
     required: false,
-    deprecated: true
+    deprecated: true,
   })
   @IsArray()
   @ValidateNested({ each: true })
@@ -56,4 +56,3 @@ export class SplitFulfillmentOrderDto {
   @IsOptional()
   lines?: SplitFulfillmentOrderLineDto[];
 }
-

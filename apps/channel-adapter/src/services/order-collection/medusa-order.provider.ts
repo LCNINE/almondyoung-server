@@ -1,16 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
-import {
-  OrderCreatedPayload,
-  OrderItem,
-  ShippingAddress,
-} from '@packages/event-contracts/streams';
+import { OrderCreatedPayload, OrderItem, ShippingAddress } from '@packages/event-contracts/streams';
 import { MedusaClient } from '../../adapters/medusa/medusa.client';
-import {
-  ChannelOrderProvider,
-  FetchOrdersResult,
-  OrderFetchItem,
-} from './channel-order-provider.interface';
+import { ChannelOrderProvider, FetchOrdersResult, OrderFetchItem } from './channel-order-provider.interface';
 
 @Injectable()
 export class MedusaOrderProvider implements ChannelOrderProvider {
@@ -29,14 +21,10 @@ export class MedusaOrderProvider implements ChannelOrderProvider {
       const lineItems = order.items ?? [];
 
       // pimVariantId가 없는 line item이 하나라도 있으면 주문 전체 skip
-      const hasMissingMapping = lineItems.some(
-        (item) => !item.variant?.metadata?.pimVariantId,
-      );
+      const hasMissingMapping = lineItems.some((item) => !item.variant?.metadata?.pimVariantId);
 
       if (hasMissingMapping) {
-        this.logger.warn(
-          `Skipping Medusa order ${order.id}: one or more line items missing pimVariantId`,
-        );
+        this.logger.warn(`Skipping Medusa order ${order.id}: one or more line items missing pimVariantId`);
         skipped++;
         continue;
       }

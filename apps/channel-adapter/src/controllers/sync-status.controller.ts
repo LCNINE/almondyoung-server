@@ -1,13 +1,4 @@
-import {
-  Controller,
-  Get,
-  Query,
-  Param,
-  Logger,
-  HttpException,
-  HttpStatus,
-  NotFoundException,
-} from '@nestjs/common';
+import { Controller, Get, Query, Param, Logger, HttpException, HttpStatus, NotFoundException } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { SyncStatusService } from '../services/sync-status.service';
 import { DataType } from '../types';
@@ -37,12 +28,8 @@ export class SyncStatusController {
 
       const summary = {
         totalChannels: Object.keys(allStats).length,
-        activeChannels: Object.values(allStats).filter(
-          (s) => s.status === 'active',
-        ).length,
-        errorChannels: Object.values(allStats).filter(
-          (s) => s.status === 'error',
-        ).length,
+        activeChannels: Object.values(allStats).filter((s) => s.status === 'active').length,
+        errorChannels: Object.values(allStats).filter((s) => s.status === 'error').length,
       };
 
       return {
@@ -53,10 +40,7 @@ export class SyncStatusController {
       };
     } catch (error) {
       this.logger.error('전체 동기화 통계 조회 실패', error.stack);
-      throw new HttpException(
-        '전체 동기화 통계 조회 중 오류가 발생했습니다.',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('전체 동기화 통계 조회 중 오류가 발생했습니다.', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -66,17 +50,12 @@ export class SyncStatusController {
     try {
       this.logger.log(`📈 채널별 통계 조회: ${channel}`);
       if (!channel) {
-        throw new HttpException(
-          '조회할 채널(channel)은 필수 파라미터입니다.',
-          HttpStatus.BAD_REQUEST,
-        );
+        throw new HttpException('조회할 채널(channel)은 필수 파라미터입니다.', HttpStatus.BAD_REQUEST);
       }
 
       const stats = await this.syncStatusService.getChannelStats(channel);
       if (!stats) {
-        throw new NotFoundException(
-          `'${channel}' 채널의 통계 정보를 찾을 수 없습니다.`,
-        );
+        throw new NotFoundException(`'${channel}' 채널의 통계 정보를 찾을 수 없습니다.`);
       }
 
       return {
@@ -88,10 +67,7 @@ export class SyncStatusController {
     } catch (error) {
       this.logger.error(`채널 통계 조회 실패: ${channel}`, error.stack);
       if (error instanceof HttpException) throw error;
-      throw new HttpException(
-        '채널 통계 조회 중 오류가 발생했습니다.',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('채널 통계 조회 중 오류가 발생했습니다.', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -103,22 +79,13 @@ export class SyncStatusController {
     @Query('limit') limit: string = '50',
   ) {
     try {
-      this.logger.log(
-        `📜 동기화 히스토리 조회: ${channel}/${dataType} (limit: ${limit})`,
-      );
+      this.logger.log(`📜 동기화 히스토리 조회: ${channel}/${dataType} (limit: ${limit})`);
       if (!channel || !dataType) {
-        throw new HttpException(
-          '채널(channel)과 데이터 타입(dataType)은 필수입니다.',
-          HttpStatus.BAD_REQUEST,
-        );
+        throw new HttpException('채널(channel)과 데이터 타입(dataType)은 필수입니다.', HttpStatus.BAD_REQUEST);
       }
 
       const limitNum = Math.min(parseInt(limit) || 50, 200);
-      const history = await this.syncStatusService.getSyncHistory(
-        channel,
-        dataType,
-        limitNum,
-      );
+      const history = await this.syncStatusService.getSyncHistory(channel, dataType, limitNum);
 
       return {
         success: true,
@@ -128,15 +95,9 @@ export class SyncStatusController {
         timestamp: new Date().toISOString(),
       };
     } catch (error) {
-      this.logger.error(
-        `동기화 히스토리 조회 실패: ${channel}/${dataType}`,
-        error.stack,
-      );
+      this.logger.error(`동기화 히스토리 조회 실패: ${channel}/${dataType}`, error.stack);
       if (error instanceof HttpException) throw error;
-      throw new HttpException(
-        '동기화 히스토리 조회 중 오류가 발생했습니다.',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('동기화 히스토리 조회 중 오류가 발생했습니다.', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 }

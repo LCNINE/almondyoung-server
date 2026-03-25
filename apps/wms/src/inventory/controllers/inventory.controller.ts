@@ -1,4 +1,17 @@
-import { Controller, Get, Post, Put, Delete, Query, Param, Body, HttpCode, HttpStatus, Patch, BadRequestException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Query,
+  Param,
+  Body,
+  HttpCode,
+  HttpStatus,
+  Patch,
+  BadRequestException,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
 import { InventoryService } from '../services/inventory.service';
 import { StockEventService } from '../services/stock-event.service';
@@ -30,8 +43,8 @@ export class InventoryController {
     private readonly inventoryService: InventoryService,
     private readonly stockEventService: StockEventService,
     private readonly safetyStockService: SafetyStockService,
-    private readonly commandService: InventoryCommandService
-  ) { }
+    private readonly commandService: InventoryCommandService,
+  ) {}
 
   // ═══════════════════════════════════════════════════════════════
   // 재고 관리 API
@@ -40,7 +53,8 @@ export class InventoryController {
   @Get('/stocks')
   @ApiOperation({
     summary: '재고 현황 조회 (창고별 논리적 재고)',
-    description: '창고별 SKU 재고 현황을 조회합니다. 물리적 재고(onHand, defective, inTransfer)와 논리적 상태(reserved, available, inboundPending)를 포함합니다.'
+    description:
+      '창고별 SKU 재고 현황을 조회합니다. 물리적 재고(onHand, defective, inTransfer)와 논리적 상태(reserved, available, inboundPending)를 포함합니다.',
   })
   @ApiQuery({ name: 'warehouseId', required: true, description: '창고 ID (필수)' })
   @ApiQuery({ name: 'skuId', required: false, description: 'SKU ID 필터' })
@@ -60,9 +74,9 @@ export class InventoryController {
         skuId: { type: 'string' },
         totalRealQuantity: { type: 'number' },
         totalReservedQuantity: { type: 'number' },
-        totalAvailableQuantity: { type: 'number' }
-      }
-    }
+        totalAvailableQuantity: { type: 'number' },
+      },
+    },
   })
   async getTotalStockBySku(@Param('skuId') skuId: string) {
     return this.inventoryService.getTotalStockBySku(skuId);
@@ -87,8 +101,8 @@ export class InventoryController {
             movingQuantity: { type: 'number' },
             defectiveQuantity: { type: 'number' },
             returnPendingQuantity: { type: 'number' },
-            lastUpdated: { type: 'string', format: 'date-time' }
-          }
+            lastUpdated: { type: 'string', format: 'date-time' },
+          },
         },
         details: {
           type: 'array',
@@ -100,17 +114,14 @@ export class InventoryController {
               reservedQuantity: { type: 'number' },
               availableQuantity: { type: 'number' },
               location: { type: 'object' },
-              expiryDate: { type: 'string', format: 'date-time' }
-            }
-          }
-        }
-      }
-    }
+              expiryDate: { type: 'string', format: 'date-time' },
+            },
+          },
+        },
+      },
+    },
   })
-  async getStockBySkuAndWarehouse(
-    @Param('skuId') skuId: string,
-    @Param('warehouseId') warehouseId: string
-  ) {
+  async getStockBySkuAndWarehouse(@Param('skuId') skuId: string, @Param('warehouseId') warehouseId: string) {
     return this.inventoryService.getStockBySkuAndWarehouse(skuId, warehouseId);
   }
 
@@ -145,7 +156,7 @@ export class InventoryController {
   @Post('/stocks/entry-safe')
   @ApiOperation({
     summary: '안전한 재고 입고 (SKU ID 기반)',
-    description: '기존 SKU ID로만 재고를 입고합니다. 자동 SKU 생성을 하지 않아 데이터 무결성을 보장합니다.'
+    description: '기존 SKU ID로만 재고를 입고합니다. 자동 SKU 생성을 하지 않아 데이터 무결성을 보장합니다.',
   })
   @ApiResponse({ status: 201, description: '재고 입고가 성공적으로 처리되었습니다.' })
   @ApiResponse({ status: 400, description: 'SKU를 찾을 수 없거나 잘못된 요청입니다.' })
@@ -172,10 +183,10 @@ export class InventoryController {
           deltaQuantity: { type: 'number' },
           eventTimestamp: { type: 'string', format: 'date-time' },
           reason: { type: 'string' },
-          orderId: { type: 'string' }
-        }
-      }
-    }
+          orderId: { type: 'string' },
+        },
+      },
+    },
   })
   async getStockHistory(
     @Query('skuId') skuId: string,
@@ -192,10 +203,7 @@ export class InventoryController {
   @ApiParam({ name: 'skuId', description: 'SKU ID' })
   @ApiParam({ name: 'warehouseId', description: '창고 ID' })
   @ApiResponse({ status: 204, description: '재고 현황이 성공적으로 재구축되었습니다.' })
-  async rebuildStockSummary(
-    @Param('skuId') skuId: string,
-    @Param('warehouseId') warehouseId: string
-  ) {
+  async rebuildStockSummary(@Param('skuId') skuId: string, @Param('warehouseId') warehouseId: string) {
     await this.inventoryService.rebuildStockSummary(skuId, warehouseId);
   }
 
@@ -204,10 +212,7 @@ export class InventoryController {
   @ApiOperation({ summary: '재고 이벤트 취소 (반대 이벤트 생성)' })
   @ApiParam({ name: 'eventId', description: '취소할 이벤트 ID' })
   @ApiResponse({ status: 204, description: '이벤트가 성공적으로 취소되었습니다.' })
-  async cancelStockEvent(
-    @Param('eventId') eventId: string,
-    @Body('reason') reason: string
-  ) {
+  async cancelStockEvent(@Param('eventId') eventId: string, @Body('reason') reason: string) {
     await this.inventoryService.cancelStockEvent(eventId, reason);
   }
 
@@ -234,29 +239,27 @@ export class InventoryController {
         items: {
           type: 'array',
           items: { $ref: '#/components/schemas/SkuResponseDto' },
-          description: 'SKU 목록'
+          description: 'SKU 목록',
         },
         total: {
           type: 'number',
           description: '전체 결과 수',
-          example: 10
+          example: 10,
         },
         limit: {
           type: 'number',
           description: '페이지 크기',
-          example: 50
+          example: 50,
         },
         offset: {
           type: 'number',
           description: '페이지 오프셋',
-          example: 0
-        }
-      }
-    }
+          example: 0,
+        },
+      },
+    },
   })
-  async getDeletedSkus(
-    @Query() filters: DeletedSkuFiltersDto
-  ): Promise<{
+  async getDeletedSkus(@Query() filters: DeletedSkuFiltersDto): Promise<{
     items: SkuResponseDto[];
     total: number;
     limit: number;
@@ -303,29 +306,27 @@ export class InventoryController {
         items: {
           type: 'array',
           items: { $ref: '#/components/schemas/SkuResponseDto' },
-          description: 'SKU 목록'
+          description: 'SKU 목록',
         },
         total: {
           type: 'number',
           description: '전체 결과 수',
-          example: 150
+          example: 150,
         },
         limit: {
           type: 'number',
           description: '페이지 크기',
-          example: 50
+          example: 50,
         },
         offset: {
           type: 'number',
           description: '페이지 오프셋',
-          example: 0
-        }
-      }
-    }
+          example: 0,
+        },
+      },
+    },
   })
-  async searchInventoryAdvanced(
-    @Query() filters: AdvancedInventoryFiltersDto
-  ): Promise<{
+  async searchInventoryAdvanced(@Query() filters: AdvancedInventoryFiltersDto): Promise<{
     items: SkuResponseDto[];
     total: number;
     limit: number;
@@ -349,10 +350,7 @@ export class InventoryController {
   @ApiParam({ name: 'id', description: 'SKU ID' })
   @ApiResponse({ status: 200, description: 'SKU가 성공적으로 수정되었습니다.', type: SkuResponseDto })
   @ApiResponse({ status: 404, description: 'SKU를 찾을 수 없습니다.' })
-  async updateSku(
-    @Param('id') id: string,
-    @Body() updateSkuDto: UpdateSkuDto
-  ): Promise<SkuResponseDto> {
+  async updateSku(@Param('id') id: string, @Body() updateSkuDto: UpdateSkuDto): Promise<SkuResponseDto> {
     return this.inventoryService.updateSku(id, updateSkuDto);
   }
 
@@ -362,7 +360,7 @@ export class InventoryController {
   @ApiResponse({
     status: 200,
     description: 'SKU가 성공적으로 복구되었습니다.',
-    type: SkuResponseDto
+    type: SkuResponseDto,
   })
   @ApiResponse({ status: 404, description: '삭제된 SKU를 찾을 수 없습니다.' })
   async restoreSku(@Param('id') id: string): Promise<SkuResponseDto> {
@@ -387,10 +385,7 @@ export class InventoryController {
   @ApiResponse({ status: 201, description: '바코드가 성공적으로 추가되었습니다.', type: BarcodeDto })
   @ApiResponse({ status: 404, description: 'SKU를 찾을 수 없습니다.' })
   @ApiResponse({ status: 409, description: '이미 존재하는 바코드입니다.' })
-  async addBarcode(
-    @Param('id') id: string,
-    @Body() addBarcodeDto: AddBarcodeDto
-  ): Promise<BarcodeDto> {
+  async addBarcode(@Param('id') id: string, @Body() addBarcodeDto: AddBarcodeDto): Promise<BarcodeDto> {
     const barcode = await this.inventoryService.addBarcode(id, addBarcodeDto);
     return SkuBarcodeMapper.toDto(barcode);
   }
@@ -403,10 +398,7 @@ export class InventoryController {
   @ApiResponse({ status: 204, description: '바코드가 성공적으로 제거되었습니다.' })
   @ApiResponse({ status: 400, description: '기본 바코드는 제거할 수 없습니다.' })
   @ApiResponse({ status: 404, description: 'SKU 또는 바코드를 찾을 수 없습니다.' })
-  async removeBarcode(
-    @Param('id') id: string,
-    @Param('barcodeId') barcodeId: string
-  ): Promise<void> {
+  async removeBarcode(@Param('id') id: string, @Param('barcodeId') barcodeId: string): Promise<void> {
     return this.inventoryService.removeBarcode(id, barcodeId);
   }
 
@@ -436,7 +428,7 @@ export class InventoryController {
   @ApiResponse({ status: 200, description: '창고 목록을 반환합니다.' })
   async findAllWarehouses(): Promise<WarehouseDto[]> {
     const warehouses = await this.inventoryService.findAllWarehouses();
-    return warehouses.map(warehouse => WarehouseMapper.toDto(warehouse));
+    return warehouses.map((warehouse) => WarehouseMapper.toDto(warehouse));
   }
 
   @Get('/warehouses/:id')
@@ -492,10 +484,10 @@ export class InventoryController {
           currentStock: { type: 'number', description: '현재 재고' },
           safetyStock: { type: 'number', description: '안전 재고' },
           shortfall: { type: 'number', description: '부족량' },
-          warehouseId: { type: 'string', description: '창고 ID' }
-        }
-      }
-    }
+          warehouseId: { type: 'string', description: '창고 ID' },
+        },
+      },
+    },
   })
   async getSafetyStockWarnings(@Query('warehouseId') warehouseId?: string) {
     return this.safetyStockService.getBelowSafetyStock(warehouseId);
@@ -523,12 +515,12 @@ export class InventoryController {
               warehouseName: { type: 'string' },
               currentStock: { type: 'number' },
               isBelowSafety: { type: 'boolean' },
-              shortfall: { type: 'number' }
-            }
-          }
-        }
-      }
-    }
+              shortfall: { type: 'number' },
+            },
+          },
+        },
+      },
+    },
   })
   @ApiResponse({ status: 404, description: 'SKU not found' })
   async getSafetyStockStatus(@Param('skuId') skuId: string) {

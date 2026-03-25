@@ -23,14 +23,8 @@ export class UnifiedMasterWorkflow extends HttpSagaOrchestrator {
     private configService: ConfigService,
   ) {
     super(httpService);
-    this.pimBaseUrl = this.configService.get(
-      'PIM_SERVICE_URL',
-      'http://localhost:3001',
-    );
-    this.wmsBaseUrl = this.configService.get(
-      'WMS_SERVICE_URL',
-      'http://localhost:3002',
-    );
+    this.pimBaseUrl = this.configService.get('PIM_SERVICE_URL', 'http://localhost:3001');
+    this.wmsBaseUrl = this.configService.get('WMS_SERVICE_URL', 'http://localhost:3002');
   }
 
   async createUnifiedMaster(input: UnifiedMasterInput) {
@@ -52,32 +46,22 @@ export class UnifiedMasterWorkflow extends HttpSagaOrchestrator {
         );
       },
       compensate: async (rollback: { pimMasterId: string }) => {
-        await this.httpDelete(
-          `${this.pimBaseUrl}/api/masters/${rollback.pimMasterId}`,
-        );
+        await this.httpDelete(`${this.pimBaseUrl}/api/masters/${rollback.pimMasterId}`);
       },
     })
       .addStep({
         name: 'create-wms-master',
         execute: async (ctx: any) => {
-          const response = await this.httpPost<{ id: string }>(
-            `${this.wmsBaseUrl}/api/inventory/masters`,
-            {
-              name: input.name,
-              masterCode: `M-${ctx.pimMasterId.slice(0, 8)}`,
-              optionSchema: input.optionGroups,
-            },
-          );
+          const response = await this.httpPost<{ id: string }>(`${this.wmsBaseUrl}/api/inventory/masters`, {
+            name: input.name,
+            masterCode: `M-${ctx.pimMasterId.slice(0, 8)}`,
+            optionSchema: input.optionGroups,
+          });
 
-          return new StepResponse(
-            { wmsMasterId: response.id },
-            { wmsMasterId: response.id },
-          );
+          return new StepResponse({ wmsMasterId: response.id }, { wmsMasterId: response.id });
         },
         compensate: async (rollback: { wmsMasterId: string }) => {
-          await this.httpDelete(
-            `${this.wmsBaseUrl}/api/inventory/masters/${rollback.wmsMasterId}`,
-          );
+          await this.httpDelete(`${this.wmsBaseUrl}/api/inventory/masters/${rollback.wmsMasterId}`);
         },
       })
       .addStep({

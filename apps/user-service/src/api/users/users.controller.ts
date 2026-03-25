@@ -1,22 +1,6 @@
 import { RequireScopes, JwtPayload } from '@app/authorization';
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Param,
-  Patch,
-  Query,
-} from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiParam,
-  ApiQuery,
-  ApiResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Query } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { User } from 'apps/user-service/database/drizzle/schema';
 import { Public } from '../../commons/decorator/public.decorator';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -29,7 +13,7 @@ import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 @ApiBearerAuth()
 @Controller('users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) { }
+  constructor(private readonly usersService: UsersService) {}
 
   @ApiOperation({ summary: '이메일로 사용자 찾기' })
   @ApiResponse({
@@ -75,11 +59,7 @@ export class UsersController {
   @Patch('me')
   @RequireScopes('user:modify', 'master')
   @HttpCode(HttpStatus.OK)
-  async updateMyProfile(
-    @CurrentUser() user: JwtPayload,
-    @Body() updateUserDto: UpdateUserDto,
-  ) {
-
+  async updateMyProfile(@CurrentUser() user: JwtPayload, @Body() updateUserDto: UpdateUserDto) {
     await this.usersService.updateMyProfile(user.id, updateUserDto);
     return;
   }

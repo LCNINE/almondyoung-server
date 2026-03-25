@@ -1,9 +1,6 @@
 import { DbService, InjectDb } from '@app/db';
 import { Injectable, Logger } from '@nestjs/common';
-import {
-  userServiceSchema,
-  UserServiceSchema,
-} from 'apps/user-service/database/drizzle/schema';
+import { userServiceSchema, UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
 import { DbTransaction } from 'apps/user-service/src/commons/types';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from '../../users/users.service';
@@ -58,21 +55,10 @@ export class AuthService {
     return; // 추후 프론트엔드에서 메두사  http://localhost:9000/auth/user/my-auth/register 호출해서 메두사에도 등록해줘야함
   }
 
-  private async _createAccountWithTransaction(
-    createAccountDto: CreateAccountDto,
-    tx?: DbTransaction,
-  ) {
+  private async _createAccountWithTransaction(createAccountDto: CreateAccountDto, tx?: DbTransaction) {
     const client = this.getClient(tx);
 
-    const {
-      loginId,
-      password,
-      roleId,
-      phone_number,
-      email,
-      username,
-      nickname,
-    } = createAccountDto;
+    const { loginId, password, roleId, phone_number, email, username, nickname } = createAccountDto;
 
     const saltOrRounds = 10;
     const hash = await bcrypt.hash(password, saltOrRounds);
@@ -117,10 +103,7 @@ export class AuthService {
     const hash = await bcrypt.hash(newPassword, saltOrRounds);
 
     const client = this.getClient();
-    await client
-      .update(userServiceSchema.users)
-      .set({ password: hash })
-      .where(eq(userServiceSchema.users.id, user.id));
+    await client.update(userServiceSchema.users).set({ password: hash }).where(eq(userServiceSchema.users.id, user.id));
 
     return { message: '비밀번호가 변경되었습니다.' };
   }
@@ -139,12 +122,7 @@ export class AuthService {
       const client = this.getClient();
       await client
         .delete(userServiceSchema.users)
-        .where(
-          and(
-            isNotNull(userServiceSchema.users.deletedAt),
-            lt(userServiceSchema.users.deletedAt, limitDate),
-          ),
-        );
+        .where(and(isNotNull(userServiceSchema.users.deletedAt), lt(userServiceSchema.users.deletedAt, limitDate)));
 
       this.logger.log('유저 영구삭제 크론잡 완료');
     } catch (error) {

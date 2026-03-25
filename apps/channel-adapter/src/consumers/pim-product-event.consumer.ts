@@ -12,10 +12,10 @@ import type { ChannelAdapterSchema } from '../types';
 
 /**
  * PIM Product Event Consumer
- * 
+ *
  * PIM 서비스가 발행한 Product 이벤트를 수신하여 Inbox에 저장합니다.
  * InboxWorker가 비동기로 Medusa에 동기화 처리합니다.
- * 
+ *
  * - ProductMasterActiveVersionChanged: 상품 버전 활성화 변경 (발행/취소/롤백)
  */
 @Controller()
@@ -23,17 +23,15 @@ import type { ChannelAdapterSchema } from '../types';
 export class PimProductEventConsumer {
   private readonly logger = new Logger(PimProductEventConsumer.name);
 
-  constructor(
-    private readonly dbService: DbService<ChannelAdapterSchema>,
-  ) {
+  constructor(private readonly dbService: DbService<ChannelAdapterSchema>) {
     this.logger.log('PIM Product Event Consumer 초기화 완료');
   }
 
   /**
    * PIM ProductMasterActiveVersionChanged 이벤트 처리
-   * 
+   *
    * 이벤트를 Inbox에 저장하여 InboxWorker가 비동기로 처리하도록 함
-   * 
+   *
    * @param envelope 이벤트 메타데이터 (correlationId, timestamp 등)
    * @param payload 이벤트 페이로드
    */
@@ -64,9 +62,7 @@ export class PimProductEventConsumer {
         .limit(1);
 
       if (existing) {
-        this.logger.debug(
-          `[PIM] 이미 처리된 이벤트 스킵: ${idempotencyKey}`,
-        );
+        this.logger.debug(`[PIM] 이미 처리된 이벤트 스킵: ${idempotencyKey}`);
         return;
       }
 
@@ -99,18 +95,13 @@ export class PimProductEventConsumer {
       });
 
       const duration = Date.now() - startTime;
-      this.logger.log(
-        `[PIM] Inbox 저장 완료: ${masterId} (${duration}ms)`,
-      );
+      this.logger.log(`[PIM] Inbox 저장 완료: ${masterId} (${duration}ms)`);
     } catch (error) {
       const duration = Date.now() - startTime;
-      this.logger.error(
-        `[PIM] Inbox 저장 실패: ${masterId} (${duration}ms)`,
-        {
-          error: error.message,
-          stack: error.stack,
-        },
-      );
+      this.logger.error(`[PIM] Inbox 저장 실패: ${masterId} (${duration}ms)`, {
+        error: error.message,
+        stack: error.stack,
+      });
       throw error; // Re-throw to send to DLQ
     }
   }

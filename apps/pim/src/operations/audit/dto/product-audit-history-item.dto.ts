@@ -13,4 +13,3 @@ export class ProductAuditHistoryItemDto extends AuditLogItemDto {
   })
   changes?: Record<string, any> | null;
 }
-

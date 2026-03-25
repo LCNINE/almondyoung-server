@@ -139,8 +139,7 @@ export class LocalSignUpDto extends BaseSignUpDto {
     required: true,
   })
   @IsNotEmpty({ message: '생년월일은 필수 입력 항목입니다.' })
-  birthday: string
-
+  birthday: string;
 
   @ApiProperty({
     description: '휴대폰 번호',

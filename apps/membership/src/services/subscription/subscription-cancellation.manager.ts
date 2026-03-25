@@ -53,10 +53,7 @@ export class SubscriptionCancellationManager {
   /**
    * 환불 가능 여부 판단 (정책 기반)
    */
-  async checkRefundEligibility(
-    contract: Contract,
-    plan: Plan,
-  ): Promise<RefundEligibility> {
+  async checkRefundEligibility(contract: Contract, plan: Plan): Promise<RefundEligibility> {
     // 검증: 계약과 플랜 존재 확인
     if (!contract) {
       throw new Error('Contract not found');
@@ -89,10 +86,7 @@ export class SubscriptionCancellationManager {
       24, // 기본값: 24시간
     );
 
-    const hoursSinceCreation = differenceInHours(
-      new Date(),
-      contract.createdAt,
-    );
+    const hoursSinceCreation = differenceInHours(new Date(), contract.createdAt);
 
     if (hoursSinceCreation < refundWindowHours) {
       const isResubscription = await this.isRecentResubscription(contract);
@@ -117,9 +111,7 @@ export class SubscriptionCancellationManager {
             };
           } else {
             // 부분 환불
-            const usedAmount = await this.calculateUsedBenefitAmount(
-              contract.id,
-            );
+            const usedAmount = await this.calculateUsedBenefitAmount(contract.id);
             const refundAmount = Math.max(0, plan.price - usedAmount);
 
             return {
@@ -246,10 +238,7 @@ export class SubscriptionCancellationManager {
         .select({ endsAt: schema.subscriptionEntitlement.endsAt })
         .from(schema.subscriptionEntitlement)
         .where(
-          and(
-            eq(schema.subscriptionEntitlement.userId, userId),
-            eq(schema.subscriptionEntitlement.isCurrent, true),
-          ),
+          and(eq(schema.subscriptionEntitlement.userId, userId), eq(schema.subscriptionEntitlement.isCurrent, true)),
         )
         .limit(1);
 
@@ -425,10 +414,7 @@ export class SubscriptionCancellationManager {
   /**
    * 무료 체험 기간 확인 (정책 기반)
    */
-  private async isInTrialPeriod(
-    contract: Contract,
-    plan: Plan,
-  ): Promise<boolean> {
+  private async isInTrialPeriod(contract: Contract, plan: Plan): Promise<boolean> {
     // 정책에서 체험 기간 조회
     const trialDays = await this.policyService.getNumberPolicy(
       'TRIAL_DURATION_DAYS',
@@ -452,9 +438,7 @@ export class SubscriptionCancellationManager {
    */
   private async isRecentResubscription(contract: Contract): Promise<boolean> {
     // 이전 구독 이력이 있는지 확인
-    const allContracts = await this.contractReader.findContractsByUserId(
-      contract.userId,
-    );
+    const allContracts = await this.contractReader.findContractsByUserId(contract.userId);
 
     // 현재 계약 제외하고 이전 계약이 있으면 재구독
     return allContracts.length > 1;
@@ -481,9 +465,7 @@ export class SubscriptionCancellationManager {
   /**
    * 사용한 혜택 금액 계산
    */
-  private async calculateUsedBenefitAmount(
-    contractId: string,
-  ): Promise<number> {
+  private async calculateUsedBenefitAmount(contractId: string): Promise<number> {
     const usages = await this.dbService.db
       .select()
       .from(schema.membershipDiscountEvents)
@@ -500,11 +482,7 @@ export class SubscriptionCancellationManager {
   /**
    * Entitlement 종료
    */
-  private async terminateEntitlement(
-    tx: DrizzleTransaction,
-    userId: string,
-    batchId: string,
-  ): Promise<void> {
+  private async terminateEntitlement(tx: DrizzleTransaction, userId: string, batchId: string): Promise<void> {
     await tx
       .update(schema.subscriptionEntitlement)
       .set({
@@ -513,10 +491,7 @@ export class SubscriptionCancellationManager {
         closedBatchId: batchId,
       })
       .where(
-        and(
-          eq(schema.subscriptionEntitlement.userId, userId),
-          eq(schema.subscriptionEntitlement.isCurrent, true),
-        ),
+        and(eq(schema.subscriptionEntitlement.userId, userId), eq(schema.subscriptionEntitlement.isCurrent, true)),
       );
   }
 }

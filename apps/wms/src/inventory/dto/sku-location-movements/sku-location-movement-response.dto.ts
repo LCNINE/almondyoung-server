@@ -17,7 +17,7 @@ export class SkuLocationMovementResponseDto {
   toLocationId: string;
 
   @ApiProperty({ required: false })
-  quantity?: number | null
+  quantity?: number | null;
 
   @ApiProperty({ required: false })
   reason?: string;
@@ -37,4 +37,3 @@ export class SkuLocationMovementResponseDto {
   @ApiProperty()
   updatedAt: Date;
 }
-

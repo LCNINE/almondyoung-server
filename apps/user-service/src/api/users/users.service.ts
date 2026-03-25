@@ -9,24 +9,16 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { UserEvents } from '@packages/event-contracts/streams';
-import {
-  type UserServiceSchema
-} from 'apps/user-service/database/drizzle/schema';
+import { type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import * as schema from '../../../database/drizzle/schema';
-import {
-  roleScopeMapping as authRoleScopeMapping,
-  scopes as authScopes,
-} from '@app/authorization';
+import { roleScopeMapping as authRoleScopeMapping, scopes as authScopes } from '@app/authorization';
 import { AddressDto } from '../../commons/dto/address.dto';
 import { DbTransaction } from '../../commons/types';
 import { isValidUUID } from '../../commons/utils/is-valid-uuid';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserDetailsResponseDto } from './dto/user-details.response.dto';
-import {
-  UserRoleScopesResponseDto,
-  UserRolesResponse,
-} from './dto/user-role-scopes.response.dto';
+import { UserRoleScopesResponseDto, UserRolesResponse } from './dto/user-role-scopes.response.dto';
 
 @Injectable()
 export class UsersService {
@@ -36,7 +28,7 @@ export class UsersService {
     @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
     @InjectStreamPublisher('users.events.v1')
     private readonly eventPublisher: StreamPublisher<UserEvents>,
-  ) { }
+  ) {}
   private getClient(tx?: DbTransaction) {
     return tx ?? this.dbService.db;
   }
@@ -78,16 +70,12 @@ export class UsersService {
         throw error;
       }
 
-      throw new InternalServerErrorException(
-        error.message ?? '사용자 정보 조회 중 오류가 발생했습니다.',
-      );
+      throw new InternalServerErrorException(error.message ?? '사용자 정보 조회 중 오류가 발생했습니다.');
     }
   }
 
   // 사용자의 역할과 스코프 정보를 가져오는 메서드
-  private async getUserRolesAndScopes(
-    userId: string,
-  ): Promise<UserRoleScopesResponseDto[]> {
+  private async getUserRolesAndScopes(userId: string): Promise<UserRoleScopesResponseDto[]> {
     try {
       return await this.dbService.db
         .select({
@@ -101,28 +89,12 @@ export class UsersService {
           },
         })
         .from(schema.userRoleAssignments)
-        .where(
-          and(
-            eq(schema.userRoleAssignments.userId, userId),
-            isNull(schema.userRoleAssignments.expiresAt),
-          ),
-        )
-        .innerJoin(
-          schema.roles,
-          eq(schema.userRoleAssignments.roleId, schema.roles.roleId),
-        )
-        .innerJoin(
-          authRoleScopeMapping,
-          eq(authRoleScopeMapping.roleName, schema.roles.name),
-        )
-        .innerJoin(
-          authScopes,
-          eq(authRoleScopeMapping.scopeId, authScopes.id),
-        );
+        .where(and(eq(schema.userRoleAssignments.userId, userId), isNull(schema.userRoleAssignments.expiresAt)))
+        .innerJoin(schema.roles, eq(schema.userRoleAssignments.roleId, schema.roles.roleId))
+        .innerJoin(authRoleScopeMapping, eq(authRoleScopeMapping.roleName, schema.roles.name))
+        .innerJoin(authScopes, eq(authRoleScopeMapping.scopeId, authScopes.id));
     } catch (error) {
-      throw new InternalServerErrorException(
-        '사용자 권한 정보 조회 중 오류가 발생했습니다.',
-      );
+      throw new InternalServerErrorException('사용자 권한 정보 조회 중 오류가 발생했습니다.');
     }
   }
 
@@ -142,17 +114,12 @@ export class UsersService {
 
       return userData;
     } catch (error) {
-      throw new InternalServerErrorException(
-        '사용자 정보 조회 중 오류가 발생했습니다.',
-      );
+      throw new InternalServerErrorException('사용자 정보 조회 중 오류가 발생했습니다.');
     }
   }
 
   // 이메일로 사용자 찾기
-  async findUserByEmail(
-    email: string,
-    tx?: DbTransaction,
-  ): Promise<schema.UserWithoutPassword | null> {
+  async findUserByEmail(email: string, tx?: DbTransaction): Promise<schema.UserWithoutPassword | null> {
     const client = this.getClient(tx);
     try {
       const [users] = await client
@@ -175,17 +142,12 @@ export class UsersService {
       return users ?? null;
     } catch (error) {
       console.log('error:', error);
-      throw new InternalServerErrorException(
-        '이메일로 사용자 조회 중 오류가 발생했습니다.',
-      );
+      throw new InternalServerErrorException('이메일로 사용자 조회 중 오류가 발생했습니다.');
     }
   }
 
   // 휴대폰 번호로 사용자 찾기 (복수 가능)
-  async findUsersByPhoneNumber(
-    phoneNumber: string,
-    tx?: DbTransaction,
-  ): Promise<schema.User[]> {
+  async findUsersByPhoneNumber(phoneNumber: string, tx?: DbTransaction): Promise<schema.User[]> {
     const client = this.getClient(tx);
     try {
       const rows = await client
@@ -193,17 +155,12 @@ export class UsersService {
           user: schema.users,
         })
         .from(schema.users)
-        .innerJoin(
-          schema.profiles,
-          eq(schema.users.id, schema.profiles.userId),
-        )
+        .innerJoin(schema.profiles, eq(schema.users.id, schema.profiles.userId))
         .where(eq(schema.profiles.phoneNumber, phoneNumber));
 
       return rows.map((row) => row.user);
     } catch (error) {
-      throw new InternalServerErrorException(
-        '휴대폰 번호로 사용자 조회 중 오류가 발생했습니다.',
-      );
+      throw new InternalServerErrorException('휴대폰 번호로 사용자 조회 중 오류가 발생했습니다.');
     }
   }
 
@@ -218,9 +175,7 @@ export class UsersService {
 
       return users;
     } catch (error) {
-      throw new InternalServerErrorException(
-        '사용자명으로 사용자 조회 중 오류가 발생했습니다.',
-      );
+      throw new InternalServerErrorException('사용자명으로 사용자 조회 중 오류가 발생했습니다.');
     }
   }
 
@@ -228,17 +183,11 @@ export class UsersService {
   async findUserByNickname(nickname: string, tx?: DbTransaction): Promise<schema.User | null> {
     const client = this.getClient(tx);
     try {
-      const [users] = await client
-        .select()
-        .from(schema.users)
-        .where(eq(schema.users.nickname, nickname))
-        .limit(1);
+      const [users] = await client.select().from(schema.users).where(eq(schema.users.nickname, nickname)).limit(1);
 
       return users;
     } catch (error) {
-      throw new InternalServerErrorException(
-        '사용자명으로 사용자 조회 중 오류가 발생했습니다.',
-      );
+      throw new InternalServerErrorException('사용자명으로 사용자 조회 중 오류가 발생했습니다.');
     }
   }
 
@@ -246,17 +195,11 @@ export class UsersService {
   async findUserByLoginId(id: string, tx?: DbTransaction): Promise<schema.User | null> {
     const client = this.getClient(tx);
     try {
-      const [users] = await client
-        .select()
-        .from(schema.users)
-        .where(eq(schema.users.loginId, id))
-        .limit(1);
+      const [users] = await client.select().from(schema.users).where(eq(schema.users.loginId, id)).limit(1);
 
       return users;
     } catch (error) {
-      throw new InternalServerErrorException(
-        '로그인 ID로 사용자 조회 중 오류가 발생했습니다.',
-      );
+      throw new InternalServerErrorException('로그인 ID로 사용자 조회 중 오류가 발생했습니다.');
     }
   }
 
@@ -267,28 +210,14 @@ export class UsersService {
   }
 
   // 사용자 프로필 정보 업데이트
-  async updateMyProfile(
-    userId: string,
-    updateUserDto: UpdateUserDto,
-    tx?: DbTransaction,
-  ): Promise<void> {
-    const {
-      username,
-      nickname,
-      phoneNumber,
-      birthDate,
-      profileImageUrl,
-      address
-    } = updateUserDto;
+  async updateMyProfile(userId: string, updateUserDto: UpdateUserDto, tx?: DbTransaction): Promise<void> {
+    const { username, nickname, phoneNumber, birthDate, profileImageUrl, address } = updateUserDto;
 
     const client = this.getClient(tx);
 
     try {
       if (username || nickname) {
-        await client
-          .update(schema.users)
-          .set({ username, nickname })
-          .where(eq(schema.users.id, userId));
+        await client.update(schema.users).set({ username, nickname }).where(eq(schema.users.id, userId));
       }
 
       const profileData = {
@@ -315,7 +244,6 @@ export class UsersService {
           });
       }
 
-
       // 트랜잭션 컨텍스트(tx)가 주입된 경우, 커밋 이후 상위 레벨에서 이벤트를 발행하는 코드 작성.
       if (!tx) {
         await this.eventPublisher.publishEvent({
@@ -330,10 +258,7 @@ export class UsersService {
 
       return;
     } catch (error) {
-
-      throw new InternalServerErrorException(
-        '사용자 정보 업데이트 중 오류가 발생했습니다.',
-      );
+      throw new InternalServerErrorException('사용자 정보 업데이트 중 오류가 발생했습니다.');
     }
   }
 
@@ -351,9 +276,7 @@ export class UsersService {
       if (error instanceof NotFoundException) {
         throw error;
       }
-      throw new InternalServerErrorException(
-        '사용자 권한 정보를 불러오는 중 오류가 발생했습니다.',
-      );
+      throw new InternalServerErrorException('사용자 권한 정보를 불러오는 중 오류가 발생했습니다.');
     }
   }
 
@@ -374,9 +297,9 @@ export class UsersService {
         shop: extendedInfo.shop,
         profile: extendedInfo.profile
           ? {
-            ...extendedInfo.profile,
-            address: extendedInfo.profile.address as AddressDto | null,
-          }
+              ...extendedInfo.profile,
+              address: extendedInfo.profile.address as AddressDto | null,
+            }
           : null,
       };
     } catch (error) {
@@ -386,9 +309,7 @@ export class UsersService {
       }
 
       console.log('InternalServerErrorException:', error);
-      throw new InternalServerErrorException(
-        '사용자 상세 정보를 불러오는 중 오류가 발생했습니다.',
-      );
+      throw new InternalServerErrorException('사용자 상세 정보를 불러오는 중 오류가 발생했습니다.');
     }
   }
 
@@ -399,19 +320,11 @@ export class UsersService {
 
   async findByRoleName(roleName: string, tx?: DbTransaction) {
     const client = this.getClient(tx);
-    return await client
-      .select()
-      .from(schema.roles)
-      .where(eq(schema.roles.name, roleName))
-      .limit(1);
+    return await client.select().from(schema.roles).where(eq(schema.roles.name, roleName)).limit(1);
   }
 
   // 사용자에게 역할을 할당해줍니다.
-  async assignUserRole(
-    userId: string,
-    roleId: string,
-    tx?: DbTransaction,
-  ): Promise<void> {
+  async assignUserRole(userId: string, roleId: string, tx?: DbTransaction): Promise<void> {
     const client = this.getClient(tx);
 
     this.logger.debug('사용자-역할 할당 시작');
@@ -429,10 +342,7 @@ export class UsersService {
     return;
   }
 
-  async assignDefaultRoleToUser(
-    userId: string,
-    tx?: DbTransaction,
-  ): Promise<void> {
+  async assignDefaultRoleToUser(userId: string, tx?: DbTransaction): Promise<void> {
     const client = this.getClient(tx);
 
     const [role] = await this.findByRoleName('user', tx);

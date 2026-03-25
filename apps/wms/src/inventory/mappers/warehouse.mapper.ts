@@ -1,5 +1,5 @@
-import { Warehouse } from "apps/wms/database/schemas/wms-schema";
-import { WarehouseDto } from "../dto/inventory/warehouse.dto";
+import { Warehouse } from 'apps/wms/database/schemas/wms-schema';
+import { WarehouseDto } from '../dto/inventory/warehouse.dto';
 
 export class WarehouseMapper {
   static toDto(warehouse: Warehouse): WarehouseDto {

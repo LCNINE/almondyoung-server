@@ -18,7 +18,10 @@ export async function getTokenPayload(): Promise<TokenPayload | null> {
   if (!secret) throw new Error('AUTH_SECRET is not configured');
 
   try {
-    const { payload } = await jwtVerify(token, new TextEncoder().encode(secret));
+    const { payload } = await jwtVerify(
+      token,
+      new TextEncoder().encode(secret)
+    );
 
     return {
       sub: payload.sub as string,

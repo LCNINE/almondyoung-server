@@ -1,8 +1,15 @@
 'use client';
 
 import { walletApi } from '@/lib/api/domains/wallet';
-import type { PaymentIntentListQuery, RefundListQuery } from '@/lib/types/dto/wallet';
-import { keepPreviousData, useQuery, useSuspenseQuery } from '@tanstack/react-query';
+import type {
+  PaymentIntentListQuery,
+  RefundListQuery,
+} from '@/lib/types/dto/wallet';
+import {
+  keepPreviousData,
+  useQuery,
+  useSuspenseQuery,
+} from '@tanstack/react-query';
 import { walletQueryKeys } from './query-keys';
 
 // ── Payment Intents ────────────────────────────────────────────────────────
@@ -65,7 +72,11 @@ export const usePointsBalance = (userId: string) => {
   });
 };
 
-export const usePointsEvents = (userId: string, page?: number, limit?: number) => {
+export const usePointsEvents = (
+  userId: string,
+  page?: number,
+  limit?: number
+) => {
   return useQuery({
     queryKey: walletQueryKeys.pointsEvents(userId, page, limit),
     queryFn: () => walletApi.getPointsEvents(userId, page, limit),

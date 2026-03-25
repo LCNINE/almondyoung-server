@@ -13,12 +13,7 @@ import { ProductSkuMappingService } from '../../shared/services/product-sku-mapp
 import { CreateFulfillmentOrderDto } from '../dto/create-fulfillment-order.dto';
 import { SplitFulfillmentOrderDto } from '../dto/split-fulfillment-order.dto';
 import { AssignShipmentDto } from '../dto/assign-shipment.dto';
-import {
-  FulfillmentShippedPayload,
-  FulfillmentCancelledPayload,
-  Carrier,
-} from '@packages/event-contracts/streams';
-
+import { FulfillmentShippedPayload, FulfillmentCancelledPayload, Carrier } from '@packages/event-contracts/streams';
 
 @Injectable()
 export class FulfillmentsService {
@@ -33,16 +28,19 @@ export class FulfillmentsService {
     private readonly matchings?: MatchingsService,
     private readonly outbox?: OutboxService,
     private readonly audit?: AuditService,
-  ) { }
+  ) {}
 
   private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
     return tx ? fn(tx) : this.db.db.transaction(fn);
   }
 
-  private async determineModeFromSalesOrder(trx: DbTx, salesOrderId: string): Promise<'in_house' | '3pl' | 'drop_ship' | 'mixed'> {
+  private async determineModeFromSalesOrder(
+    trx: DbTx,
+    salesOrderId: string,
+  ): Promise<'in_house' | '3pl' | 'drop_ship' | 'mixed'> {
     type FulfillmentMode = 'in_house' | '3pl' | 'drop_ship';
     const lines = await trx.query.salesOrderLines.findMany({
-      where: (l, { eq: eqOp }) => eqOp(l.salesOrderId, salesOrderId)
+      where: (l, { eq: eqOp }) => eqOp(l.salesOrderId, salesOrderId),
     });
     if (lines.length === 0) return 'in_house';
 
@@ -70,7 +68,7 @@ export class FulfillmentsService {
         // 입력 검증
         if (dto.salesOrderId) {
           const salesOrder = await trx.query.salesOrders.findFirst({
-            where: eq(wmsTables.salesOrders.id, dto.salesOrderId)
+            where: eq(wmsTables.salesOrders.id, dto.salesOrderId),
           });
           if (!salesOrder) {
             throw new BadRequestException(`Sales order ${dto.salesOrderId} not found`);
@@ -82,7 +80,7 @@ export class FulfillmentsService {
 
         if (dto.warehouseId) {
           const warehouse = await trx.query.warehouses.findFirst({
-            where: eq(wmsTables.warehouses.id, dto.warehouseId)
+            where: eq(wmsTables.warehouses.id, dto.warehouseId),
           });
           if (!warehouse) {
             throw new BadRequestException(`Warehouse ${dto.warehouseId} not found`);
@@ -107,13 +105,16 @@ export class FulfillmentsService {
           throw new Error('Failed to create fulfillment order');
         }
 
-        await this.outbox?.enqueue({
-          eventType: FULFILLMENT_EVENTS.CREATED,
-          aggregateType: 'fulfillment',
-          aggregateId: fo.id,
-          partitionKey: fo.id,
-          payload: { fulfillmentOrderId: fo.id }
-        }, trx);
+        await this.outbox?.enqueue(
+          {
+            eventType: FULFILLMENT_EVENTS.CREATED,
+            aggregateType: 'fulfillment',
+            aggregateId: fo.id,
+            partitionKey: fo.id,
+            payload: { fulfillmentOrderId: fo.id },
+          },
+          trx,
+        );
 
         // dto.items (신규) 또는 dto.lines (deprecated) 처리
         const items = Array.isArray(dto.items) ? dto.items : [];
@@ -127,7 +128,7 @@ export class FulfillmentsService {
             }
 
             const sku = await trx.query.skus.findFirst({
-              where: eq(wmsTables.skus.id, item.skuId)
+              where: eq(wmsTables.skus.id, item.skuId),
             });
             if (!sku) {
               throw new BadRequestException(`SKU ${item.skuId} not found`);
@@ -159,7 +160,7 @@ export class FulfillmentsService {
             }
 
             const sku = await trx.query.skus.findFirst({
-              where: eq(wmsTables.skus.id, line.skuId)
+              where: eq(wmsTables.skus.id, line.skuId),
             });
             if (!sku) {
               throw new BadRequestException(`SKU ${line.skuId} not found`);
@@ -192,7 +193,7 @@ export class FulfillmentsService {
           }
 
           const soLines = await trx.query.salesOrderLines.findMany({
-            where: eq(wmsTables.salesOrderLines.salesOrderId, dto.salesOrderId)
+            where: eq(wmsTables.salesOrderLines.salesOrderId, dto.salesOrderId),
           });
 
           // fulfillmentOrderItems 데이터
@@ -271,14 +272,14 @@ export class FulfillmentsService {
         // 3PL: ownerId가 있으면 SKU.holderId 일치 검증
         if (fo.ownerId) {
           const fois = await trx.query.fulfillmentOrderItems.findMany({
-            where: eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fo.id)
+            where: eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fo.id),
           });
-          const skuIds = fois.map(item => item.skuId);
+          const skuIds = fois.map((item) => item.skuId);
           if (skuIds.length > 0) {
             const skuRows = await trx.query.skus.findMany({
-              where: (s, { inArray: ina }) => ina(s.id, skuIds) as ReturnType<typeof ina>
+              where: (s, { inArray: ina }) => ina(s.id, skuIds),
             });
-            const mismatched = skuRows.find(s => s.holderId !== fo.ownerId);
+            const mismatched = skuRows.find((s) => s.holderId !== fo.ownerId);
             if (mismatched) {
               throw new BadRequestException('SKU_HOLDER_MISMATCH_FOR_3PL');
             }
@@ -289,21 +290,26 @@ export class FulfillmentsService {
         const allFulfillable = await this.evaluateFulfillability(trx, fo.id, dto.warehouseId ?? null);
 
         if (allFulfillable) {
-          await trx.update(wmsTables.fulfillmentOrders)
+          await trx
+            .update(wmsTables.fulfillmentOrders)
             .set({ status: 'ready' })
             .where(eq(wmsTables.fulfillmentOrders.id, fo.id));
-          await this.outbox?.enqueue({
-            eventType: FULFILLMENT_EVENTS.READY,
-            aggregateType: 'fulfillment',
-            aggregateId: fo.id,
-            partitionKey: fo.id,
-            payload: { fulfillmentOrderId: fo.id }
-          }, trx);
+          await this.outbox?.enqueue(
+            {
+              eventType: FULFILLMENT_EVENTS.READY,
+              aggregateType: 'fulfillment',
+              aggregateId: fo.id,
+              partitionKey: fo.id,
+              payload: { fulfillmentOrderId: fo.id },
+            },
+            trx,
+          );
         }
 
-        this.logger.log(`Fulfillment order ${fo.id} created successfully with status: ${allFulfillable ? 'ready' : 'created'}`);
+        this.logger.log(
+          `Fulfillment order ${fo.id} created successfully with status: ${allFulfillable ? 'ready' : 'created'}`,
+        );
         return this.getOne(fo.id, trx);
-
       } catch (error) {
         this.logger.error(`Failed to create fulfillment order for SO ${dto.salesOrderId}:`, error);
         throw error;
@@ -317,7 +323,7 @@ export class FulfillmentsService {
    */
   private async evaluateFulfillability(trx: DbTx, foId: string, warehouseId: string | null): Promise<boolean> {
     const fo = await trx.query.fulfillmentOrders.findFirst({
-      where: eq(wmsTables.fulfillmentOrders.id, foId)
+      where: eq(wmsTables.fulfillmentOrders.id, foId),
     });
     if (!fo) return false;
 
@@ -328,7 +334,7 @@ export class FulfillmentsService {
     if (!warehouseId) return false;
 
     const items = await trx.query.fulfillmentOrderItems.findMany({
-      where: eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, foId)
+      where: eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, foId),
     });
 
     if (items.length === 0) return true;
@@ -337,9 +343,7 @@ export class FulfillmentsService {
       const onHand = await this.availability.getAvailableQuantity(item.skuId, warehouseId, trx);
 
       // variantId가 있으면 정책 조회, 없으면 기본 정책 사용
-      const policy = item.variantId
-        ? await this.policies.getVariantPolicy(item.variantId, trx)
-        : null;
+      const policy = item.variantId ? await this.policies.getVariantPolicy(item.variantId, trx) : null;
 
       const canFulfill = this.policies.evaluateFulfillability(
         {
@@ -407,36 +411,34 @@ export class FulfillmentsService {
             .where(eq(wmsTables.fulfillmentOrderItems.id, item.id));
 
           // 새 아이템 생성
-          const [newItem] = await trx.insert(wmsTables.fulfillmentOrderItems).values({
-            fulfillmentOrderId: newFo.id,
-            salesOrderId: item.salesOrderId,
-            salesOrderLineId: item.salesOrderLineId,
-            mappingSnapshotId: item.mappingSnapshotId,
-            variantId: item.variantId,
-            skuId: item.skuId,
-            qty: moveQty,
-            reservedQty: 0,
-            pickedQty: 0,
-            shippedQty: 0,
-            status: 'pending',
-          }).returning();
+          const [newItem] = await trx
+            .insert(wmsTables.fulfillmentOrderItems)
+            .values({
+              fulfillmentOrderId: newFo.id,
+              salesOrderId: item.salesOrderId,
+              salesOrderLineId: item.salesOrderLineId,
+              mappingSnapshotId: item.mappingSnapshotId,
+              variantId: item.variantId,
+              skuId: item.skuId,
+              qty: moveQty,
+              reservedQty: 0,
+              pickedQty: 0,
+              shippedQty: 0,
+              status: 'pending',
+            })
+            .returning();
 
           splitItems.push({
             fulfillmentOrderItemId: newItem.id,
             skuId: item.skuId,
             splitQuantity: moveQty,
-            originalQuantity: item.qty
+            originalQuantity: item.qty,
           });
         }
 
         // 예약 재분배 처리
         if (splitItems.length > 0) {
-          await this.reservationLifecycle.handleFulfillmentOrderSplit(
-            id,
-            newFo.id,
-            splitItems,
-            trx
-          );
+          await this.reservationLifecycle.handleFulfillmentOrderSplit(id, newFo.id, splitItems, trx);
         }
       }
       // 레거시 경로: dto.lines 사용 (deprecated)
@@ -471,36 +473,34 @@ export class FulfillmentsService {
             .where(eq(wmsTables.fulfillmentOrderItems.id, item.id));
 
           // 새 아이템 생성
-          const [newItem] = await trx.insert(wmsTables.fulfillmentOrderItems).values({
-            fulfillmentOrderId: newFo.id,
-            salesOrderId: item.salesOrderId,
-            salesOrderLineId: item.salesOrderLineId,
-            mappingSnapshotId: item.mappingSnapshotId,
-            variantId: item.variantId,
-            skuId: item.skuId,
-            qty: moveQty,
-            reservedQty: 0,
-            pickedQty: 0,
-            shippedQty: 0,
-            status: 'pending',
-          }).returning();
+          const [newItem] = await trx
+            .insert(wmsTables.fulfillmentOrderItems)
+            .values({
+              fulfillmentOrderId: newFo.id,
+              salesOrderId: item.salesOrderId,
+              salesOrderLineId: item.salesOrderLineId,
+              mappingSnapshotId: item.mappingSnapshotId,
+              variantId: item.variantId,
+              skuId: item.skuId,
+              qty: moveQty,
+              reservedQty: 0,
+              pickedQty: 0,
+              shippedQty: 0,
+              status: 'pending',
+            })
+            .returning();
 
           splitItems.push({
             fulfillmentOrderItemId: newItem.id,
             skuId: item.skuId,
             splitQuantity: moveQty,
-            originalQuantity: item.qty
+            originalQuantity: item.qty,
           });
         }
 
         // 예약 재분배 처리
         if (splitItems.length > 0) {
-          await this.reservationLifecycle.handleFulfillmentOrderSplit(
-            id,
-            newFo.id,
-            splitItems,
-            trx
-          );
+          await this.reservationLifecycle.handleFulfillmentOrderSplit(id, newFo.id, splitItems, trx);
         }
       }
 
@@ -522,7 +522,16 @@ export class FulfillmentsService {
         .update(wmsTables.fulfillmentOrders)
         .set({ status: 'labeled' })
         .where(eq(wmsTables.fulfillmentOrders.id, id));
-      await this.outbox?.enqueue({ eventType: FULFILLMENT_EVENTS.LABELLED, aggregateType: 'fulfillment', aggregateId: id, partitionKey: id, payload: { fulfillmentOrderId: id } }, trx);
+      await this.outbox?.enqueue(
+        {
+          eventType: FULFILLMENT_EVENTS.LABELLED,
+          aggregateType: 'fulfillment',
+          aggregateId: id,
+          partitionKey: id,
+          payload: { fulfillmentOrderId: id },
+        },
+        trx,
+      );
 
       return this.getOne(id, trx);
     }, tx);
@@ -578,13 +587,16 @@ export class FulfillmentsService {
         })),
       };
 
-      await this.outbox?.enqueue({
-        eventType: FULFILLMENT_EVENTS.SHIPPED,
-        aggregateType: 'fulfillment',
-        aggregateId: id,
-        partitionKey: fo.salesOrderId ?? id,
-        payload: shippedPayload,
-      }, trx);
+      await this.outbox?.enqueue(
+        {
+          eventType: FULFILLMENT_EVENTS.SHIPPED,
+          aggregateType: 'fulfillment',
+          aggregateId: id,
+          partitionKey: fo.salesOrderId ?? id,
+          payload: shippedPayload,
+        },
+        trx,
+      );
 
       return this.getOne(id, trx);
     }, tx);
@@ -624,13 +636,16 @@ export class FulfillmentsService {
         cancelledAt: new Date().toISOString(),
       };
 
-      await this.outbox?.enqueue({
-        eventType: FULFILLMENT_EVENTS.CANCELLED,
-        aggregateType: 'fulfillment',
-        aggregateId: id,
-        partitionKey: fo.salesOrderId ?? id,
-        payload: cancelledPayload,
-      }, trx);
+      await this.outbox?.enqueue(
+        {
+          eventType: FULFILLMENT_EVENTS.CANCELLED,
+          aggregateType: 'fulfillment',
+          aggregateId: id,
+          partitionKey: fo.salesOrderId ?? id,
+          payload: cancelledPayload,
+        },
+        trx,
+      );
 
       return this.getOne(id, trx);
     }, tx);
@@ -704,7 +719,7 @@ export class FulfillmentsService {
       .where(inArray(wmsTables.invoices.fulfillmentOrderId, fulfillmentOrderIds));
 
     // 4. Invoice를 Fulfillment Order ID별로 그룹화
-    const invoicesByFoId = new Map<string, typeof invoices[0]>();
+    const invoicesByFoId = new Map<string, (typeof invoices)[0]>();
     for (const invoice of invoices) {
       invoicesByFoId.set(invoice.fulfillmentOrderId, invoice);
     }
@@ -722,7 +737,7 @@ export class FulfillmentsService {
       if (!fo?.warehouseId) return { ready: false };
 
       const items = await trx.query.fulfillmentOrderItems.findMany({
-        where: eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderId)
+        where: eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderId),
       });
 
       if (items.length === 0) return { ready: true };
@@ -731,9 +746,7 @@ export class FulfillmentsService {
         const onHand = await this.availability.getAvailableQuantity(item.skuId, fo.warehouseId, trx);
 
         // variantId가 있으면 정책 조회, 없으면 기본 정책 사용
-        const policy = item.variantId
-          ? await this.policies.getVariantPolicy(item.variantId, trx)
-          : null;
+        const policy = item.variantId ? await this.policies.getVariantPolicy(item.variantId, trx) : null;
 
         const canFulfill = this.policies.evaluateFulfillability(
           {
@@ -751,5 +764,3 @@ export class FulfillmentsService {
     }, tx);
   }
 }
-
-

@@ -29,10 +29,12 @@ export const walletApi = {
   // ── Payment Intents ──────────────────────────────────────────────────────
 
   listPaymentIntents: async (
-    query: PaymentIntentListQuery,
+    query: PaymentIntentListQuery
   ): Promise<PaginatedResponse<PaymentIntentListItem>> => {
     const qs = buildQueryString(query as Record<string, unknown>);
-    const res = await client.get(`${BASE}/v1/admin/payment-intents${qs ? `?${qs}` : ''}`);
+    const res = await client.get(
+      `${BASE}/v1/admin/payment-intents${qs ? `?${qs}` : ''}`
+    );
     return res.data;
   },
 
@@ -42,7 +44,9 @@ export const walletApi = {
   },
 
   getStateTransitions: async (id: string): Promise<StateTransitionDto[]> => {
-    const res = await client.get(`${BASE}/v1/admin/payment-intents/${id}/state-transitions`);
+    const res = await client.get(
+      `${BASE}/v1/admin/payment-intents/${id}/state-transitions`
+    );
     return res.data;
   },
 
@@ -56,7 +60,12 @@ export const walletApi = {
 
   refundIntent: async (
     id: string,
-    dto: { chargeId: string; amount: number; reasonCode?: string; reasonMessage?: string },
+    dto: {
+      chargeId: string;
+      amount: number;
+      reasonCode?: string;
+      reasonMessage?: string;
+    }
   ): Promise<void> => {
     await client.post(`${BASE}/v1/admin/payment-intents/${id}/refund`, dto);
   },
@@ -64,10 +73,12 @@ export const walletApi = {
   // ── Refunds ──────────────────────────────────────────────────────────────
 
   listRefunds: async (
-    query: RefundListQuery,
+    query: RefundListQuery
   ): Promise<PaginatedResponse<RefundDto>> => {
     const qs = buildQueryString(query as Record<string, unknown>);
-    const res = await client.get(`${BASE}/v1/admin/refunds${qs ? `?${qs}` : ''}`);
+    const res = await client.get(
+      `${BASE}/v1/admin/refunds${qs ? `?${qs}` : ''}`
+    );
     return res.data;
   },
 
@@ -75,54 +86,65 @@ export const walletApi = {
 
   listPendingBankTransfers: async (
     page?: number,
-    limit?: number,
+    limit?: number
   ): Promise<PaginatedResponse<PendingBankTransferDto>> => {
     const qs = buildQueryString({ page, limit });
     const res = await client.get(
-      `${BASE}/v1/admin/payment-intents/pending-bank-transfers${qs ? `?${qs}` : ''}`,
+      `${BASE}/v1/admin/payment-intents/pending-bank-transfers${qs ? `?${qs}` : ''}`
     );
     return res.data;
   },
 
   confirmBankTransfer: async (
     id: string,
-    depositorNote?: string,
+    depositorNote?: string
   ): Promise<void> => {
-    await client.post(`${BASE}/v1/admin/payment-intents/${id}/bank-transfer-confirm`, {
-      depositorNote,
-    });
+    await client.post(
+      `${BASE}/v1/admin/payment-intents/${id}/bank-transfer-confirm`,
+      {
+        depositorNote,
+      }
+    );
   },
 
   // ── Points ───────────────────────────────────────────────────────────────
 
   getPointsBalance: async (userId: string): Promise<PointsBalanceDto> => {
-    const res = await client.get(`${BASE}/v1/admin/points/balance?user_id=${encodeURIComponent(userId)}`);
+    const res = await client.get(
+      `${BASE}/v1/admin/points/balance?user_id=${encodeURIComponent(userId)}`
+    );
     return res.data;
   },
 
   getPointsEvents: async (
     userId: string,
     page?: number,
-    limit?: number,
+    limit?: number
   ): Promise<PaginatedResponse<PointsEventDto>> => {
     const qs = buildQueryString({ userId, page, limit });
-    const res = await client.get(`${BASE}/v1/admin/points/events${qs ? `?${qs}` : ''}`);
+    const res = await client.get(
+      `${BASE}/v1/admin/points/events${qs ? `?${qs}` : ''}`
+    );
     return res.data;
   },
 
   earnPoints: async (
     userId: string,
     amount: number,
-    reasonCode?: string,
+    reasonCode?: string
   ): Promise<void> => {
-    await client.post(`${BASE}/v1/admin/points/earn`, { userId, amount, reasonCode });
+    await client.post(`${BASE}/v1/admin/points/earn`, {
+      userId,
+      amount,
+      reasonCode,
+    });
   },
 
   cancelEarnPoints: async (
     userId: string,
     earnEventId: string,
     amount?: number,
-    reasonCode?: string,
+    reasonCode?: string
   ): Promise<void> => {
     await client.post(`${BASE}/v1/admin/points/earn-cancel`, {
       userId,

@@ -27,4 +27,3 @@ export class PathBuilderService {
     return `users/${userId}/`;
   }
 }
-

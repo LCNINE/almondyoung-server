@@ -14,10 +14,7 @@ import { ApiOperation, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
 import { IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 import { PaymentIntentAdminService } from './payment-intent-admin.service';
 import { BankTransferAdminService } from './bank-transfer-admin.service';
-import {
-  AdminPaymentIntentListQueryDto,
-  PendingBankTransferListQueryDto,
-} from './dto';
+import { AdminPaymentIntentListQueryDto, PendingBankTransferListQueryDto } from './dto';
 import { WalletAdminAuth } from '../wallet-admin-auth.decorator';
 import { PaymentIntentsService } from '../payment-intents/payment-intents.service';
 import { RefundsService } from '../refunds/refunds.service';
@@ -79,10 +76,7 @@ export class PaymentIntentAdminController {
   })
   async getPendingTransfers(@Query() query: PendingBankTransferListQueryDto) {
     try {
-      return await this.bankTransferService.getPendingTransfers(
-        query.page,
-        query.limit,
-      );
+      return await this.bankTransferService.getPendingTransfers(query.page, query.limit);
     } catch (e: any) {
       throw new InternalServerErrorException(e.message);
     }
@@ -117,18 +111,14 @@ export class PaymentIntentAdminController {
   @Post(':id/bank-transfer-confirm')
   @HttpCode(200)
   @ApiOperation({ summary: 'Confirm bank transfer deposit (admin)' })
-  async confirmDeposit(
-    @Param('id') id: string,
-    @Body() dto: BankTransferConfirmDto,
-  ) {
+  async confirmDeposit(@Param('id') id: string, @Body() dto: BankTransferConfirmDto) {
     try {
       await this.bankTransferService.confirmDeposit(id, dto.depositorNote);
       return { status: 'SUCCEEDED' };
     } catch (e: any) {
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('not found')) throw new NotFoundException(e.message);
-      if (msg.match(/already|invalid|failed|required|exceed/))
-        throw new BadRequestException(e.message);
+      if (msg.match(/already|invalid|failed|required|exceed/)) throw new BadRequestException(e.message);
       throw new InternalServerErrorException(e.message);
     }
   }
@@ -143,8 +133,7 @@ export class PaymentIntentAdminController {
     } catch (e: any) {
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('not found')) throw new NotFoundException(e.message);
-      if (msg.match(/already|invalid|failed|required|exceed/))
-        throw new BadRequestException(e.message);
+      if (msg.match(/already|invalid|failed|required|exceed/)) throw new BadRequestException(e.message);
       throw new InternalServerErrorException(e.message);
     }
   }
@@ -159,8 +148,7 @@ export class PaymentIntentAdminController {
     } catch (e: any) {
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('not found')) throw new NotFoundException(e.message);
-      if (msg.match(/already|invalid|failed|required|exceed/))
-        throw new BadRequestException(e.message);
+      if (msg.match(/already|invalid|failed|required|exceed/)) throw new BadRequestException(e.message);
       throw new InternalServerErrorException(e.message);
     }
   }
@@ -180,8 +168,7 @@ export class PaymentIntentAdminController {
     } catch (e: any) {
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('not found')) throw new NotFoundException(e.message);
-      if (msg.match(/already|invalid|failed|required|exceed/))
-        throw new BadRequestException(e.message);
+      if (msg.match(/already|invalid|failed|required|exceed/)) throw new BadRequestException(e.message);
       throw new InternalServerErrorException(e.message);
     }
   }

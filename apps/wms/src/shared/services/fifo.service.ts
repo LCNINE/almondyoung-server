@@ -14,9 +14,7 @@ export interface FifoLocation {
 
 @Injectable()
 export class FifoService {
-  constructor(
-    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>
-  ) {}
+  constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
 
   private get db() {
     return this.dbService.db;
@@ -29,23 +27,18 @@ export class FifoService {
    * @param requiredQty 필요 수량
    * @returns 시간 순서로 정렬된 위치별 재고 정보
    */
-  async getPickingLocations(
-    skuId: string,
-    warehouseId: string,
-    requiredQty: number
-  ): Promise<FifoLocation[]> {
-
+  async getPickingLocations(skuId: string, warehouseId: string, requiredQty: number): Promise<FifoLocation[]> {
     // 해당 SKU의 재고가 있는 위치들 조회 (ON_HAND 상태만)
     const stockLedgers = await this.db.query.stockLedgers.findMany({
       where: and(
         eq(wmsTables.stockLedgers.skuId, skuId),
         eq(wmsTables.stockLedgers.warehouseId, warehouseId),
         eq(wmsTables.stockLedgers.stockState, 'ON_HAND'),
-        gt(wmsTables.stockLedgers.qty, 0)
+        gt(wmsTables.stockLedgers.qty, 0),
       ),
       with: {
-        location: true
-      }
+        location: true,
+      },
     });
 
     if (stockLedgers.length === 0) {
@@ -62,9 +55,9 @@ export class FifoService {
           eq(wmsTables.stockEvents.toWarehouseId, warehouseId),
           eq(wmsTables.stockEvents.toLocationId, ledger.locationId),
           eq(wmsTables.stockEvents.toState, 'ON_HAND'),
-          eq(wmsTables.stockEvents.eventStatus, 'POSTED')
+          eq(wmsTables.stockEvents.eventStatus, 'POSTED'),
         ),
-        orderBy: (events, { asc }) => [asc(events.occurredAt)]
+        orderBy: (events, { asc }) => [asc(events.occurredAt)],
       });
 
       if (oldestReceive) {
@@ -76,7 +69,7 @@ export class FifoService {
           warehouseId: ledger.warehouseId,
           qty: ledger.qty,
           fifoScore: Math.floor(daysSinceReceived * 100), // 일 단위를 100배 해서 정수로
-          lastReceivedAt: oldestReceive.occurredAt
+          lastReceivedAt: oldestReceive.occurredAt,
         });
       }
     }
@@ -112,9 +105,9 @@ export class FifoService {
         eq(wmsTables.stockEvents.skuId, skuId),
         eq(wmsTables.stockEvents.toLocationId, locationId),
         eq(wmsTables.stockEvents.toState, 'ON_HAND'),
-        eq(wmsTables.stockEvents.eventStatus, 'POSTED')
+        eq(wmsTables.stockEvents.eventStatus, 'POSTED'),
       ),
-      orderBy: (events, { asc }) => [asc(events.occurredAt)]
+      orderBy: (events, { asc }) => [asc(events.occurredAt)],
     });
 
     if (!oldestReceive) {
@@ -139,26 +132,25 @@ export class FifoService {
       where: and(
         eq(wmsTables.stockEvents.toWarehouseId, warehouseId),
         eq(wmsTables.stockEvents.toState, 'ON_HAND'),
-        eq(wmsTables.stockEvents.eventStatus, 'POSTED')
+        eq(wmsTables.stockEvents.eventStatus, 'POSTED'),
       ),
       columns: {
         skuId: true,
         toLocationId: true,
-        occurredAt: true
-      }
+        occurredAt: true,
+      },
     });
 
-    const oldStockLocations = oldStockCount.filter(
-      event => event.occurredAt < thirtyDaysAgo
-    );
+    const oldStockLocations = oldStockCount.filter((event) => event.occurredAt < thirtyDaysAgo);
 
     return {
       totalLocations: oldStockCount.length,
       oldStockLocations: oldStockLocations.length,
-      fifoCompliance: oldStockLocations.length === 0 ? 100 :
-        Math.max(0, 100 - (oldStockLocations.length / oldStockCount.length * 100)),
-      oldestStock: oldStockCount.length > 0 ?
-        Math.min(...oldStockCount.map(e => e.occurredAt.getTime())) : null
+      fifoCompliance:
+        oldStockLocations.length === 0
+          ? 100
+          : Math.max(0, 100 - (oldStockLocations.length / oldStockCount.length) * 100),
+      oldestStock: oldStockCount.length > 0 ? Math.min(...oldStockCount.map((e) => e.occurredAt.getTime())) : null,
     };
   }
 }

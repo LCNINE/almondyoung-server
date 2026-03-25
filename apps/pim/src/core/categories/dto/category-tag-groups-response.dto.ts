@@ -23,26 +23,26 @@ export class CategoryTagGroupItemDto {
   @ApiProperty({ description: '상속 여부 (조상 카테고리로부터 상속받은 것인지)' })
   isInherited: boolean;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: '상속 출처 카테고리 ID',
     nullable: true,
-    required: false
+    required: false,
   })
   inheritedFromCategoryId?: string | null;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: '상속 출처 카테고리 이름',
     nullable: true,
-    required: false
+    required: false,
   })
   inheritedFromCategoryName?: string | null;
 
   @ApiProperty({ description: '활성 상태' })
   isActive: boolean;
 
-  @ApiProperty({ 
-    description: '태그 값 목록', 
-    type: [TagValueItemDto] 
+  @ApiProperty({
+    description: '태그 값 목록',
+    type: [TagValueItemDto],
   })
   values: TagValueItemDto[];
 }
@@ -54,10 +54,9 @@ export class CategoryTagGroupsResponseDto {
   @ApiProperty({ description: '카테고리 이름' })
   categoryName: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: '태그 그룹 목록',
-    type: [CategoryTagGroupItemDto]
+    type: [CategoryTagGroupItemDto],
   })
   tagGroups: CategoryTagGroupItemDto[];
 }
-

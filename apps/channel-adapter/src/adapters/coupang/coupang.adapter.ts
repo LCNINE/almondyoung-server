@@ -1,18 +1,9 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { ChannelAdapter } from '../channel-adapter.interface';
 import { DataType, SyncResult, SyncToChannelPayload } from '../../types';
-import {
-  InternalOrderEvent,
-  InternalExchangeEvent,
-  InternalReturnEvent,
-  OrderQuery,
-} from '../../types';
+import { InternalOrderEvent, InternalExchangeEvent, InternalReturnEvent, OrderQuery } from '../../types';
 import { ChannelCommand, ChannelQuery } from '../../types';
-import {
-  CoupangOrderClient,
-  CoupangReturnClient,
-  CoupangExchangeClient,
-} from './clients';
+import { CoupangOrderClient, CoupangReturnClient, CoupangExchangeClient } from './clients';
 import {
   CoupangOrderSheet,
   CoupangDeliveryHistoryResponse,
@@ -63,9 +54,7 @@ export class CoupangAdapter implements ChannelAdapter {
       const createdAtFrom = `${yesterday.toISOString().split('T')[0]}+09:00`;
       const createdAtTo = `${now.toISOString().split('T')[0]}+09:00`;
 
-      console.log(
-        `📡 쿠팡 발주서 목록 조회 시작 (${createdAtFrom} ~ ${createdAtTo})`,
-      );
+      console.log(`📡 쿠팡 발주서 목록 조회 시작 (${createdAtFrom} ~ ${createdAtTo})`);
 
       // 3. 날짜 범위 검증
       if (!validateCoupangDateRange(createdAtFrom, createdAtTo)) {
@@ -73,24 +62,13 @@ export class CoupangAdapter implements ChannelAdapter {
       }
 
       // 4. 모든 상태의 발주서를 조회 (상태별로 분리 조회) - API 서비스 사용
-      const statuses = [
-        'ACCEPT',
-        'INSTRUCT',
-        'DEPARTURE',
-        'DELIVERING',
-        'FINAL_DELIVERY',
-      ] as const;
+      const statuses = ['ACCEPT', 'INSTRUCT', 'DEPARTURE', 'DELIVERING', 'FINAL_DELIVERY'] as const;
       const allOrderSheets: CoupangOrderSheet[] = [];
 
       for (const status of statuses) {
         console.log(`📋 ${status} 상태 발주서 조회 중...`);
 
-        const orderSheets =
-          await this.coupangOrderClient.getAllOrderSheetsByStatus(
-            createdAtFrom,
-            createdAtTo,
-            status,
-          );
+        const orderSheets = await this.coupangOrderClient.getAllOrderSheetsByStatus(createdAtFrom, createdAtTo, status);
 
         allOrderSheets.push(...orderSheets);
         console.log(`✅ ${status} 상태: ${orderSheets.length}건 조회됨`);
@@ -103,10 +81,7 @@ export class CoupangAdapter implements ChannelAdapter {
       }
 
       // 5. 쿠팡 발주서를 InternalOrderEvent로 변환
-      const events = this.transformCoupangOrderSheetsToInternal(
-        allOrderSheets,
-        dataType,
-      );
+      const events = this.transformCoupangOrderSheetsToInternal(allOrderSheets, dataType);
 
       // 6. 디버깅을 위한 첫 번째 발주서 출력
       if (allOrderSheets.length > 0) {
@@ -127,27 +102,20 @@ export class CoupangAdapter implements ChannelAdapter {
   /**
    * 🔍 쿠팡 발주서 단건 조회 (shipmentBoxId 기준) - findOrders에서 사용
    */
-  private async getSingleOrderSheet(
-    shipmentBoxId: string | number,
-  ): Promise<InternalOrderEvent> {
+  private async getSingleOrderSheet(shipmentBoxId: string | number): Promise<InternalOrderEvent> {
     try {
       console.log(`🔍 쿠팡 발주서 단건 조회 시작: ${shipmentBoxId}`);
 
       // 1. API 서비스를 통한 단건 조회 (네이버 스타일)
-      const response =
-        await this.coupangOrderClient.getSingleOrderSheet(shipmentBoxId);
+      const response = await this.coupangOrderClient.getSingleOrderSheet(shipmentBoxId);
 
       console.log(`✅ 쿠팡 발주서 단건 조회 성공: ${shipmentBoxId}`);
 
       // 2. 쿠팡 발주서를 InternalOrderEvent로 변환
-      const internalEvent = this.transformSingleCoupangOrderSheetToInternal(
-        response.data,
-      );
+      const internalEvent = this.transformSingleCoupangOrderSheetToInternal(response.data);
 
       // 3. 중요한 정보 로깅 (배송지 변경 확인용)
-      console.log(
-        `📍 수취인 정보: ${internalEvent.buyer?.name} (${internalEvent.buyer?.contact})`,
-      );
+      console.log(`📍 수취인 정보: ${internalEvent.buyer?.name} (${internalEvent.buyer?.contact})`);
       console.log(
         `📍 배송지: ${internalEvent.buyer?.address?.roadAddress} ${internalEvent.buyer?.address?.detailAddress}`,
       );
@@ -164,9 +132,7 @@ export class CoupangAdapter implements ChannelAdapter {
       switch (payload.dataType) {
         case 'products': {
           const productData = payload.payload;
-          console.log(
-            `📦 쿠팡 상품 정보 동기화: ${productData.name} (${productData.id})`,
-          );
+          console.log(`📦 쿠팡 상품 정보 동기화: ${productData.name} (${productData.id})`);
 
           // TODO: 쿠팡 상품 업데이트 API 구현
           return {
@@ -178,9 +144,7 @@ export class CoupangAdapter implements ChannelAdapter {
 
         case 'inventory': {
           const inventoryData = payload.payload;
-          console.log(
-            `📦 쿠팡 재고 정보 동기화: ${inventoryData.productId} (${inventoryData.stockQuantity}개)`,
-          );
+          console.log(`📦 쿠팡 재고 정보 동기화: ${inventoryData.productId} (${inventoryData.stockQuantity}개)`);
 
           // TODO: 쿠팡 재고 업데이트 API 구현
           return {
@@ -195,9 +159,7 @@ export class CoupangAdapter implements ChannelAdapter {
 
         case 'order_status': {
           const orderStatusData = payload.payload;
-          console.log(
-            `📦 쿠팡 주문 상태 동기화: ${orderStatusData.orderId} → ${orderStatusData.status}`,
-          );
+          console.log(`📦 쿠팡 주문 상태 동기화: ${orderStatusData.orderId} → ${orderStatusData.status}`);
 
           // TODO: 쿠팡 주문 상태 업데이트 API 구현
           return {
@@ -278,9 +240,7 @@ export class CoupangAdapter implements ChannelAdapter {
         default:
           return {
             success: false,
-            errors: [
-              { message: `쿠팡에서 지원하지 않는 명령: ${command.type}` },
-            ],
+            errors: [{ message: `쿠팡에서 지원하지 않는 명령: ${command.type}` }],
             failedCount: 1,
           };
       }
@@ -324,62 +284,41 @@ export class CoupangAdapter implements ChannelAdapter {
     }
   }
 
-  async transformToInternal(
-    externalData: any,
-    dataType: DataType,
-  ): Promise<InternalOrderEvent[]> {
+  async transformToInternal(externalData: any, dataType: DataType): Promise<InternalOrderEvent[]> {
     // TODO: 외부 응답 → InternalOrderEvent[] 매핑
     return [];
   }
 
-  async transformToExternal(
-    internalData: any,
-    dataType: DataType,
-  ): Promise<any> {
+  async transformToExternal(internalData: any, dataType: DataType): Promise<any> {
     return {};
   }
 
   /**
    * 🔍 쿠팡 발주서 단건 조회 (orderId 기준) - findOrders에서 사용
    */
-  private async getSingleOrderSheetByOrderId(
-    orderId: string | number,
-  ): Promise<InternalOrderEvent[]> {
+  private async getSingleOrderSheetByOrderId(orderId: string | number): Promise<InternalOrderEvent[]> {
     try {
       console.log(`🔍 쿠팡 발주서 단건 조회 (orderId) 시작: ${orderId}`);
 
       // 1. API 서비스를 통한 단건 조회 (네이버 스타일)
-      const response =
-        await this.coupangOrderClient.getSingleOrderSheetByOrderId(orderId);
+      const response = await this.coupangOrderClient.getSingleOrderSheetByOrderId(orderId);
 
-      console.log(
-        `✅ 쿠팡 발주서 단건 조회 (orderId) 성공: ${orderId} (${response.data?.length || 0}건)`,
-      );
+      console.log(`✅ 쿠팡 발주서 단건 조회 (orderId) 성공: ${orderId} (${response.data?.length || 0}건)`);
 
       // 2. 쿠팡 발주서들을 InternalOrderEvent 배열로 변환
-      const internalEvents = this.transformCoupangOrderSheetsToInternal(
-        response.data,
-        'orders',
-      );
+      const internalEvents = this.transformCoupangOrderSheetsToInternal(response.data, 'orders');
 
       // 3. 중요한 정보 로깅 (배송지 변경 확인용)
       if (internalEvents.length > 0) {
         const firstEvent = internalEvents[0];
-        console.log(
-          `📍 수취인 정보: ${firstEvent.buyer?.name} (${firstEvent.buyer?.contact})`,
-        );
-        console.log(
-          `📍 배송지: ${firstEvent.buyer?.address?.roadAddress} ${firstEvent.buyer?.address?.detailAddress}`,
-        );
+        console.log(`📍 수취인 정보: ${firstEvent.buyer?.name} (${firstEvent.buyer?.contact})`);
+        console.log(`📍 배송지: ${firstEvent.buyer?.address?.roadAddress} ${firstEvent.buyer?.address?.detailAddress}`);
         console.log(`📦 총 발주서 수: ${internalEvents.length}건`);
       }
 
       return internalEvents;
     } catch (error) {
-      console.error(
-        `❌ 쿠팡 발주서 단건 조회 (orderId) 실패 (${orderId}):`,
-        error,
-      );
+      console.error(`❌ 쿠팡 발주서 단건 조회 (orderId) 실패 (${orderId}):`, error);
       throw new Error(`쿠팡 발주서 단건 조회 (orderId) 실패: ${error.message}`);
     }
   }
@@ -403,9 +342,7 @@ export class CoupangAdapter implements ChannelAdapter {
 
         case 'channelProductOrderId':
           // 쿠팡은 productOrderId 개념이 없으므로 빈 배열 반환
-          console.warn(
-            `쿠팡은 'channelProductOrderId'를 사용한 조회를 지원하지 않습니다.`,
-          );
+          console.warn(`쿠팡은 'channelProductOrderId'를 사용한 조회를 지원하지 않습니다.`);
           return [];
 
         default:
@@ -423,26 +360,18 @@ export class CoupangAdapter implements ChannelAdapter {
    * @param shipmentBoxId 발주서 ID
    * @returns 배송상태 변경 히스토리 응답
    */
-  async getDeliveryHistory(
-    shipmentBoxId: string | number,
-  ): Promise<CoupangDeliveryHistoryResponse> {
+  async getDeliveryHistory(shipmentBoxId: string | number): Promise<CoupangDeliveryHistoryResponse> {
     try {
       console.log(`📋 쿠팡 배송상태 히스토리 조회 시작: ${shipmentBoxId}`);
 
       // API 서비스를 통한 배송상태 히스토리 조회
-      const response =
-        await this.coupangOrderClient.getDeliveryHistory(shipmentBoxId);
+      const response = await this.coupangOrderClient.getDeliveryHistory(shipmentBoxId);
 
-      console.log(
-        `✅ 쿠팡 배송상태 히스토리 조회 성공: ${shipmentBoxId} (${response.data?.histories?.length || 0}건)`,
-      );
+      console.log(`✅ 쿠팡 배송상태 히스토리 조회 성공: ${shipmentBoxId} (${response.data?.histories?.length || 0}건)`);
 
       return response;
     } catch (error) {
-      console.error(
-        `❌ 쿠팡 배송상태 히스토리 조회 실패 (${shipmentBoxId}):`,
-        error.message,
-      );
+      console.error(`❌ 쿠팡 배송상태 히스토리 조회 실패 (${shipmentBoxId}):`, error.message);
       throw new Error(`쿠팡 배송상태 히스토리 조회 실패: ${error.message}`);
     }
   }
@@ -490,8 +419,7 @@ export class CoupangAdapter implements ChannelAdapter {
           dispatch: orderSheet.invoiceNumber
             ? {
                 deliveryMethod: 'DELIVERY',
-                deliveryCompanyCode:
-                  orderSheet.deliveryCompanyName || 'UNKNOWN',
+                deliveryCompanyCode: orderSheet.deliveryCompanyName || 'UNKNOWN',
                 trackingNumber: orderSheet.invoiceNumber,
                 dispatchedAt: orderSheet.inTrasitDateTime,
               }
@@ -514,9 +442,7 @@ export class CoupangAdapter implements ChannelAdapter {
    * @param orderSheet 쿠팡 발주서 단건 데이터
    * @returns 변환된 내부 주문 이벤트
    */
-  private transformSingleCoupangOrderSheetToInternal(
-    orderSheet: CoupangOrderSheet,
-  ): InternalOrderEvent {
+  private transformSingleCoupangOrderSheetToInternal(orderSheet: CoupangOrderSheet): InternalOrderEvent {
     // 첫 번째 주문 상품을 대표로 사용 (단건 조회에서는 주로 전체 주문 정보가 중요)
     const firstOrderItem = orderSheet.orderItems[0];
 
@@ -573,27 +499,19 @@ export class CoupangAdapter implements ChannelAdapter {
    * 표준 명령: order.prepare → 쿠팡 API: acknowledgeOrdersheets
    * 내부 표준 orderIds를 쿠팡의 shipmentBoxIds로 번역
    */
-  private async executeOrderPrepare(command: {
-    type: 'order.prepare';
-    orderIds: string[];
-  }): Promise<SyncResult> {
+  private async executeOrderPrepare(command: { type: 'order.prepare'; orderIds: string[] }): Promise<SyncResult> {
     try {
       console.log('📦 쿠팡 주문 준비 처리 실행:', command);
 
       // 🔄 표준 orderIds → 쿠팡 shipmentBoxIds 번역
-      const shipmentBoxIds = await this.translateOrderIdsToShipmentBoxIds(
-        command.orderIds,
-      );
+      const shipmentBoxIds = await this.translateOrderIdsToShipmentBoxIds(command.orderIds);
 
       const response = await this.coupangOrderClient.acknowledgeOrdersheets({
         vendorId: this.getCoupangVendorId(),
         shipmentBoxIds,
       });
 
-      return this.transformCoupangResponseToSyncResult(
-        response,
-        'order.prepare',
-      );
+      return this.transformCoupangResponseToSyncResult(response, 'order.prepare');
     } catch (error) {
       console.error('❌ 쿠팡 주문 준비 처리 실패:', error);
       return {
@@ -630,10 +548,7 @@ export class CoupangAdapter implements ChannelAdapter {
         orderSheetInvoiceApplyDtos,
       });
 
-      return this.transformCoupangResponseToSyncResult(
-        response,
-        'dispatch.ship',
-      );
+      return this.transformCoupangResponseToSyncResult(response, 'dispatch.ship');
     } catch (error) {
       console.error('❌ 쿠팡 발송 처리 실패:', error);
       return {
@@ -655,21 +570,17 @@ export class CoupangAdapter implements ChannelAdapter {
     try {
       console.log('📝 쿠팡 송장 업데이트 실행:', command);
 
-      const orderSheetInvoiceApplyDtos =
-        await this.translateOrderToUpdateInvoiceDtos(
-          command.orderId,
-          command.tracking,
-        );
+      const orderSheetInvoiceApplyDtos = await this.translateOrderToUpdateInvoiceDtos(
+        command.orderId,
+        command.tracking,
+      );
 
       const response = await this.coupangOrderClient.updateInvoices({
         vendorId: this.getCoupangVendorId(),
         orderSheetInvoiceApplyDtos,
       });
 
-      return this.transformCoupangResponseToSyncResult(
-        response,
-        'dispatch.update_tracking',
-      );
+      return this.transformCoupangResponseToSyncResult(response, 'dispatch.update_tracking');
     } catch (error) {
       console.error('❌ 쿠팡 송장 업데이트 실패:', error);
       return {
@@ -693,9 +604,7 @@ export class CoupangAdapter implements ChannelAdapter {
       console.log('✅ 쿠팡 반품 승인 실행:', command);
 
       // 🔄 표준 claimId → 쿠팡 receiptId + cancelCount 번역
-      const coupangClaimInfo = await this.translateClaimIdToCoupangInfo(
-        command.claimId,
-      );
+      const coupangClaimInfo = await this.translateClaimIdToCoupangInfo(command.claimId);
 
       const response = await this.coupangReturnClient.approveReturnRequest({
         vendorId: this.getCoupangVendorId(),
@@ -728,19 +637,14 @@ export class CoupangAdapter implements ChannelAdapter {
     try {
       console.log('📦 쿠팡 반품상품 입고확인 실행:', command);
 
-      const coupangClaimInfo = await this.translateClaimIdToCoupangInfo(
-        command.claimId,
-      );
+      const coupangClaimInfo = await this.translateClaimIdToCoupangInfo(command.claimId);
 
       const response = await this.coupangReturnClient.confirmReturnReceipt({
         vendorId: this.getCoupangVendorId(),
         receiptId: coupangClaimInfo.receiptId,
       });
 
-      return this.transformCoupangResponseToSyncResult(
-        response,
-        'return.confirm_receipt',
-      );
+      return this.transformCoupangResponseToSyncResult(response, 'return.confirm_receipt');
     } catch (error) {
       console.error('❌ 쿠팡 반품상품 입고확인 실패:', error);
       return {
@@ -762,9 +666,7 @@ export class CoupangAdapter implements ChannelAdapter {
     try {
       console.log('⏹️ 쿠팡 출고중지 처리 실행:', command);
 
-      const coupangClaimInfo = await this.translateClaimIdToCoupangInfo(
-        command.claimId,
-      );
+      const coupangClaimInfo = await this.translateClaimIdToCoupangInfo(command.claimId);
 
       const response = await this.coupangReturnClient.stoppedShipment({
         vendorId: this.getCoupangVendorId(),
@@ -772,10 +674,7 @@ export class CoupangAdapter implements ChannelAdapter {
         cancelCount: coupangClaimInfo.cancelCount,
       });
 
-      return this.transformCoupangResponseToSyncResult(
-        response,
-        'return.process_shipment_stop',
-      );
+      return this.transformCoupangResponseToSyncResult(response, 'return.process_shipment_stop');
     } catch (error) {
       console.error('❌ 쿠팡 출고중지 처리 실패:', error);
       return {
@@ -789,9 +688,7 @@ export class CoupangAdapter implements ChannelAdapter {
   /**
    * 쿠팡 이미출고처리
    */
-  private async executeReturnCompletedShipment(
-    command: any,
-  ): Promise<SyncResult> {
+  private async executeReturnCompletedShipment(command: any): Promise<SyncResult> {
     try {
       console.log('🚛 쿠팡 이미출고처리 실행:', command);
 
@@ -802,10 +699,7 @@ export class CoupangAdapter implements ChannelAdapter {
         invoiceNumber: command.invoiceNumber,
       });
 
-      return this.transformCoupangResponseToSyncResult(
-        response,
-        'return.completed_shipment',
-      );
+      return this.transformCoupangResponseToSyncResult(response, 'return.completed_shipment');
     } catch (error) {
       console.error('❌ 쿠팡 이미출고처리 실패:', error);
       return {
@@ -819,9 +713,7 @@ export class CoupangAdapter implements ChannelAdapter {
   /**
    * 쿠팡 회수송장 등록
    */
-  private async executeReturnRegisterInvoice(
-    command: any,
-  ): Promise<SyncResult> {
+  private async executeReturnRegisterInvoice(command: any): Promise<SyncResult> {
     try {
       console.log('📋 쿠팡 회수송장 등록 실행:', command);
 
@@ -833,10 +725,7 @@ export class CoupangAdapter implements ChannelAdapter {
         regNumber: command.regNumber,
       });
 
-      return this.transformCoupangResponseToSyncResult(
-        response,
-        'return.register_invoice',
-      );
+      return this.transformCoupangResponseToSyncResult(response, 'return.register_invoice');
     } catch (error) {
       console.error('❌ 쿠팡 회수송장 등록 실패:', error);
       return {
@@ -850,19 +739,16 @@ export class CoupangAdapter implements ChannelAdapter {
   /**
    * 쿠팡 반품 철회 이력 기간별 조회
    */
-  private async executeReturnWithdrawalHistory(
-    command: any,
-  ): Promise<SyncResult> {
+  private async executeReturnWithdrawalHistory(command: any): Promise<SyncResult> {
     try {
       console.log('📊 쿠팡 반품 철회 이력 조회 실행:', command);
 
-      const response =
-        await this.coupangReturnClient.getReturnWithdrawalHistory({
-          dateFrom: command.dateFrom,
-          dateTo: command.dateTo,
-          pageIndex: command.pageIndex || 1,
-          sizePerPage: command.sizePerPage || 10,
-        });
+      const response = await this.coupangReturnClient.getReturnWithdrawalHistory({
+        dateFrom: command.dateFrom,
+        dateTo: command.dateTo,
+        pageIndex: command.pageIndex || 1,
+        sizePerPage: command.sizePerPage || 10,
+      });
 
       return {
         success: true,
@@ -882,16 +768,13 @@ export class CoupangAdapter implements ChannelAdapter {
   /**
    * 쿠팡 반품 철회 이력 접수번호로 조회
    */
-  private async executeReturnWithdrawalHistoryByIds(
-    command: any,
-  ): Promise<SyncResult> {
+  private async executeReturnWithdrawalHistoryByIds(command: any): Promise<SyncResult> {
     try {
       console.log('🔍 쿠팡 반품 철회 이력(ID) 조회 실행:', command);
 
-      const response =
-        await this.coupangReturnClient.getReturnWithdrawalHistoryByIds({
-          cancelIds: command.cancelIds,
-        });
+      const response = await this.coupangReturnClient.getReturnWithdrawalHistoryByIds({
+        cancelIds: command.cancelIds,
+      });
 
       return {
         success: true,
@@ -915,9 +798,7 @@ export class CoupangAdapter implements ChannelAdapter {
     try {
       console.log('📋 쿠팡 배송상태 히스토리 조회 실행:', command);
 
-      const response = await this.coupangOrderClient.getDeliveryHistory(
-        command.shipmentBoxId,
-      );
+      const response = await this.coupangOrderClient.getDeliveryHistory(command.shipmentBoxId);
 
       return {
         success: true,
@@ -954,16 +835,12 @@ export class CoupangAdapter implements ChannelAdapter {
    * });
    * ```
    */
-  private async executeReturnProcessAlreadyShipped(
-    command: any,
-  ): Promise<SyncResult> {
+  private async executeReturnProcessAlreadyShipped(command: any): Promise<SyncResult> {
     this.logger.log(`🔄 [쿠팡] 이미출고처리 실행: claimId=${command.claimId}`);
 
     try {
       // 1. 택배사 코드 변환 (표준 → 쿠팡)
-      const coupangCompanyCode = this.mapDeliveryCompanyCode(
-        command.tracking.companyCode,
-      );
+      const coupangCompanyCode = this.mapDeliveryCompanyCode(command.tracking.companyCode);
 
       // 2. API 호출
       const response = await this.coupangReturnClient.completedShipment({
@@ -975,9 +852,7 @@ export class CoupangAdapter implements ChannelAdapter {
 
       // 3. 결과 확인
       if (response.data.resultCode === 'SUCCESS') {
-        this.logger.log(
-          `✅ [쿠팡] 이미출고처리 성공: ${command.claimId} - ${response.data.resultMessage}`,
-        );
+        this.logger.log(`✅ [쿠팡] 이미출고처리 성공: ${command.claimId} - ${response.data.resultMessage}`);
         return {
           success: true,
           processedCount: 1,
@@ -986,10 +861,7 @@ export class CoupangAdapter implements ChannelAdapter {
         throw new Error(response.data.resultMessage);
       }
     } catch (error) {
-      this.logger.error(
-        `❌ [쿠팡] 이미출고처리 실패: ${command.claimId}`,
-        error.message,
-      );
+      this.logger.error(`❌ [쿠팡] 이미출고처리 실패: ${command.claimId}`, error.message);
       return {
         success: false,
         processedCount: 0,
@@ -1037,18 +909,12 @@ export class CoupangAdapter implements ChannelAdapter {
    * });
    * ```
    */
-  private async executeReturnRegisterCollectionInvoice(
-    command: any,
-  ): Promise<SyncResult> {
-    this.logger.log(
-      `🚚 [쿠팡] 회수송장 등록 실행: claimId=${command.claimId}, type=${command.collectionType}`,
-    );
+  private async executeReturnRegisterCollectionInvoice(command: any): Promise<SyncResult> {
+    this.logger.log(`🚚 [쿠팡] 회수송장 등록 실행: claimId=${command.claimId}, type=${command.collectionType}`);
 
     try {
       // 1. 택배사 코드 변환 (표준 → 쿠팡)
-      const coupangCompanyCode = this.mapDeliveryCompanyCode(
-        command.tracking.companyCode,
-      );
+      const coupangCompanyCode = this.mapDeliveryCompanyCode(command.tracking.companyCode);
 
       // 2. API 호출
       const response = await this.coupangReturnClient.registerReturnInvoice({
@@ -1060,9 +926,7 @@ export class CoupangAdapter implements ChannelAdapter {
 
       // 3. 결과 확인 (API 응답이 성공하면 code=200)
       if (response.code === 200) {
-        this.logger.log(
-          `✅ [쿠팡] 회수송장 등록 성공: ${command.claimId} - receiptId=${response.data.receiptId}`,
-        );
+        this.logger.log(`✅ [쿠팡] 회수송장 등록 성공: ${command.claimId} - receiptId=${response.data.receiptId}`);
         return {
           success: true,
           processedCount: 1,
@@ -1071,10 +935,7 @@ export class CoupangAdapter implements ChannelAdapter {
         throw new Error(response.message || '회수송장 등록 실패');
       }
     } catch (error) {
-      this.logger.error(
-        `❌ [쿠팡] 회수송장 등록 실패: ${command.claimId}`,
-        error.message,
-      );
+      this.logger.error(`❌ [쿠팡] 회수송장 등록 실패: ${command.claimId}`, error.message);
       return {
         success: false,
         processedCount: 0,
@@ -1105,9 +966,7 @@ export class CoupangAdapter implements ChannelAdapter {
       console.log('📦 쿠팡 교환 상품 입고확인 실행:', command);
 
       // 🔄 표준 claimId → 쿠팡 exchangeId 번역
-      const exchangeId = await this.translateClaimIdToExchangeId(
-        command.claimId,
-      );
+      const exchangeId = await this.translateClaimIdToExchangeId(command.claimId);
 
       const response = await this.coupangExchangeClient.confirmExchangeReceipt({
         vendorId: this.getCoupangVendorId(),
@@ -1142,14 +1001,10 @@ export class CoupangAdapter implements ChannelAdapter {
       console.log('🚫 쿠팡 교환 요청 거부 실행:', command);
 
       // 🔄 표준 claimId → 쿠팡 exchangeId 번역
-      const exchangeId = await this.translateClaimIdToExchangeId(
-        command.claimId,
-      );
+      const exchangeId = await this.translateClaimIdToExchangeId(command.claimId);
 
       // 🔄 표준 reason → 쿠팡 exchangeRejectCode 번역
-      const exchangeRejectCode = this.translateReasonToRejectCode(
-        command.reason,
-      );
+      const exchangeRejectCode = this.translateReasonToRejectCode(command.reason);
 
       const response = await this.coupangExchangeClient.rejectExchangeRequest({
         vendorId: this.getCoupangVendorId(),
@@ -1186,21 +1041,12 @@ export class CoupangAdapter implements ChannelAdapter {
       console.log('🚀 쿠팡 교환 송장 업로드 실행:', command);
 
       // 🔄 표준 claimId → 쿠팡 exchangeId 번역
-      const exchangeId = await this.translateClaimIdToExchangeId(
-        command.claimId,
-      );
+      const exchangeId = await this.translateClaimIdToExchangeId(command.claimId);
 
       // 🔄 표준 송장 정보 → 쿠팡 업로드 형식으로 번역
-      const invoiceItems = await this.translateExchangeInvoiceItems(
-        command.claimId,
-        command.tracking,
-        command.items,
-      );
+      const invoiceItems = await this.translateExchangeInvoiceItems(command.claimId, command.tracking, command.items);
 
-      const response = await this.coupangExchangeClient.uploadExchangeInvoice(
-        exchangeId,
-        invoiceItems,
-      );
+      const response = await this.coupangExchangeClient.uploadExchangeInvoice(exchangeId, invoiceItems);
 
       return {
         success: response.data.resultCode === 'SUCCESS',
@@ -1221,13 +1067,8 @@ export class CoupangAdapter implements ChannelAdapter {
   // == 조회 메서드들 (Query Methods)
   // =================================================================
 
-  private async queryDeliveryHistory(query: {
-    type: 'delivery.history';
-    orderId: string;
-  }): Promise<any> {
-    const shipmentBoxId = await this.translateOrderIdToShipmentBoxId(
-      query.orderId,
-    );
+  private async queryDeliveryHistory(query: { type: 'delivery.history'; orderId: string }): Promise<any> {
+    const shipmentBoxId = await this.translateOrderIdToShipmentBoxId(query.orderId);
     return await this.coupangOrderClient.getDeliveryHistory(shipmentBoxId);
   }
 
@@ -1266,19 +1107,16 @@ export class CoupangAdapter implements ChannelAdapter {
     sizePerPage?: number;
   }): Promise<InternalExchangeEvent[]> {
     // 🔄 쿠팡 API 호출
-    const coupangResponse =
-      await this.coupangExchangeClient.getExchangeRequests({
-        createdAtFrom: query.dateFrom,
-        createdAtTo: query.dateTo,
-        status: query.status,
-        orderId: query.orderId,
-        maxPerPage: query.sizePerPage || 10,
-      });
+    const coupangResponse = await this.coupangExchangeClient.getExchangeRequests({
+      createdAtFrom: query.dateFrom,
+      createdAtTo: query.dateTo,
+      status: query.status,
+      orderId: query.orderId,
+      maxPerPage: query.sizePerPage || 10,
+    });
 
     // 🎯 SSOT 원칙: 쿠팡 응답을 표준 내부 모델로 번역
-    return coupangResponse.data.map((coupangExchange) =>
-      this.mapCoupangExchangeToInternal(coupangExchange),
-    );
+    return coupangResponse.data.map((coupangExchange) => this.mapCoupangExchangeToInternal(coupangExchange));
   }
 
   // =================================================================
@@ -1289,9 +1127,7 @@ export class CoupangAdapter implements ChannelAdapter {
    * 🎯 핵심 번역 메서드: 쿠팡 교환 응답 → 표준 내부 교환 이벤트
    * SSOT 원칙에 따라 외부의 복잡한 구조를 내부의 단순하고 명확한 모델로 변환
    */
-  private mapCoupangExchangeToInternal(
-    coupangExchange: CoupangExchangeRequest,
-  ): InternalExchangeEvent {
+  private mapCoupangExchangeToInternal(coupangExchange: CoupangExchangeRequest): InternalExchangeEvent {
     return {
       eventId: `exchange_${coupangExchange.exchangeId}_${Date.now()}`,
       eventType: this.mapExchangeEventType(coupangExchange.exchangeStatus),
@@ -1306,9 +1142,7 @@ export class CoupangAdapter implements ChannelAdapter {
       externalOrderId: String(coupangExchange.orderId),
 
       // 📊 상태 번역 (쿠팡 → 표준)
-      status: this.mapCoupangExchangeStatusToInternal(
-        coupangExchange.exchangeStatus,
-      ),
+      status: this.mapCoupangExchangeStatusToInternal(coupangExchange.exchangeStatus),
 
       // 🎯 귀책사유 번역
       faultType: this.mapCoupangFaultTypeToInternal(coupangExchange.faultType),
@@ -1332,24 +1166,16 @@ export class CoupangAdapter implements ChannelAdapter {
         returnAddress: {
           customerName: coupangExchange.exchangeAddressDtoV1.returnCustomerName,
           address: `${coupangExchange.exchangeAddressDtoV1.returnAddress} ${coupangExchange.exchangeAddressDtoV1.returnAddressDetail}`,
-          phone:
-            coupangExchange.exchangeAddressDtoV1.returnPhone ||
-            coupangExchange.exchangeAddressDtoV1.returnMobile,
+          phone: coupangExchange.exchangeAddressDtoV1.returnPhone || coupangExchange.exchangeAddressDtoV1.returnMobile,
         },
         deliveryAddress: {
-          customerName:
-            coupangExchange.exchangeAddressDtoV1.deliveryCustomerName,
+          customerName: coupangExchange.exchangeAddressDtoV1.deliveryCustomerName,
           address: `${coupangExchange.exchangeAddressDtoV1.deliveryAddress} ${coupangExchange.exchangeAddressDtoV1.deliveryAddressDetail}`,
           phone:
-            coupangExchange.exchangeAddressDtoV1.deliveryPhone ||
-            coupangExchange.exchangeAddressDtoV1.deliveryMobile,
+            coupangExchange.exchangeAddressDtoV1.deliveryPhone || coupangExchange.exchangeAddressDtoV1.deliveryMobile,
         },
-        collectStatus: this.mapCoupangCollectStatusToInternal(
-          coupangExchange.collectStatus,
-        ),
-        deliveryStatus: this.mapCoupangDeliveryStatusToInternal(
-          coupangExchange.deliveryStatus,
-        ),
+        collectStatus: this.mapCoupangCollectStatusToInternal(coupangExchange.collectStatus),
+        deliveryStatus: this.mapCoupangDeliveryStatusToInternal(coupangExchange.deliveryStatus),
       },
 
       // ⏰ 타임스탬프
@@ -1377,9 +1203,7 @@ export class CoupangAdapter implements ChannelAdapter {
   /**
    * 쿠팡 교환 상태를 내부 표준 상태로 번역
    */
-  private mapCoupangExchangeStatusToInternal(
-    coupangStatus: string,
-  ): InternalExchangeEvent['status'] {
+  private mapCoupangExchangeStatusToInternal(coupangStatus: string): InternalExchangeEvent['status'] {
     const statusMapping: Record<string, InternalExchangeEvent['status']> = {
       RECEIPT: 'PENDING',
       PROGRESS: 'IN_PROGRESS',
@@ -1393,9 +1217,7 @@ export class CoupangAdapter implements ChannelAdapter {
   /**
    * 쿠팡 귀책사유를 내부 표준으로 번역
    */
-  private mapCoupangFaultTypeToInternal(
-    coupangFaultType: string,
-  ): InternalExchangeEvent['faultType'] {
+  private mapCoupangFaultTypeToInternal(coupangFaultType: string): InternalExchangeEvent['faultType'] {
     const faultMapping: Record<string, InternalExchangeEvent['faultType']> = {
       SELLER: 'SELLER',
       CUSTOMER: 'CUSTOMER',
@@ -1408,24 +1230,19 @@ export class CoupangAdapter implements ChannelAdapter {
   /**
    * 쿠팡 회수 상태를 내부 표준으로 번역
    */
-  private mapCoupangCollectStatusToInternal(
-    collectStatus: string,
-  ): 'PENDING' | 'COLLECTED' | 'COMPLETED' {
-    const statusMapping: Record<string, 'PENDING' | 'COLLECTED' | 'COMPLETED'> =
-      {
-        PENDING: 'PENDING',
-        COLLECTED: 'COLLECTED',
-        COMPLETED: 'COMPLETED',
-      };
+  private mapCoupangCollectStatusToInternal(collectStatus: string): 'PENDING' | 'COLLECTED' | 'COMPLETED' {
+    const statusMapping: Record<string, 'PENDING' | 'COLLECTED' | 'COMPLETED'> = {
+      PENDING: 'PENDING',
+      COLLECTED: 'COLLECTED',
+      COMPLETED: 'COMPLETED',
+    };
     return statusMapping[collectStatus] || 'PENDING';
   }
 
   /**
    * 쿠팡 배송 상태를 내부 표준으로 번역
    */
-  private mapCoupangDeliveryStatusToInternal(
-    deliveryStatus: string,
-  ): 'PENDING' | 'SHIPPED' | 'DELIVERED' {
+  private mapCoupangDeliveryStatusToInternal(deliveryStatus: string): 'PENDING' | 'SHIPPED' | 'DELIVERED' {
     const statusMapping: Record<string, 'PENDING' | 'SHIPPED' | 'DELIVERED'> = {
       PENDING: 'PENDING',
       SHIPPED: 'SHIPPED',
@@ -1437,9 +1254,7 @@ export class CoupangAdapter implements ChannelAdapter {
   /**
    * 쿠팡 교환 상태를 이벤트 타입으로 번역
    */
-  private mapExchangeEventType(
-    exchangeStatus: string,
-  ): InternalExchangeEvent['eventType'] {
+  private mapExchangeEventType(exchangeStatus: string): InternalExchangeEvent['eventType'] {
     const eventMapping: Record<string, InternalExchangeEvent['eventType']> = {
       RECEIPT: 'exchange_created',
       PROGRESS: 'exchange_updated',
@@ -1529,9 +1344,7 @@ export class CoupangAdapter implements ChannelAdapter {
    * 🔄 내부 표준 orderIds → 쿠팡 shipmentBoxIds 번역
    * 실제 구현에서는 DB 조회나 매핑 테이블을 사용
    */
-  private async translateOrderIdsToShipmentBoxIds(
-    orderIds: string[],
-  ): Promise<string[]> {
+  private async translateOrderIdsToShipmentBoxIds(orderIds: string[]): Promise<string[]> {
     // TODO: 실제 구현 - DB에서 내부 orderId → 쿠팡 shipmentBoxId 매핑 조회
     console.log('🔄 번역 중: orderIds → shipmentBoxIds', orderIds);
 
@@ -1542,12 +1355,8 @@ export class CoupangAdapter implements ChannelAdapter {
   /**
    * 🔄 내부 표준 orderId → 쿠팡 shipmentBoxId 번역 (단건)
    */
-  private async translateOrderIdToShipmentBoxId(
-    orderId: string,
-  ): Promise<string> {
-    const [shipmentBoxId] = await this.translateOrderIdsToShipmentBoxIds([
-      orderId,
-    ]);
+  private async translateOrderIdToShipmentBoxId(orderId: string): Promise<string> {
+    const [shipmentBoxId] = await this.translateOrderIdsToShipmentBoxIds([orderId]);
     return shipmentBoxId;
   }
 
@@ -1573,9 +1382,7 @@ export class CoupangAdapter implements ChannelAdapter {
 
       // 🔍 번역 결과 검증
       if (!receiptId || receiptId <= 0) {
-        throw new Error(
-          `클레임 ID를 쿠팡 receiptId로 번역할 수 없습니다: ${claimId}`,
-        );
+        throw new Error(`클레임 ID를 쿠팡 receiptId로 번역할 수 없습니다: ${claimId}`);
       }
 
       return {
@@ -1591,16 +1398,12 @@ export class CoupangAdapter implements ChannelAdapter {
   /**
    * 🔄 내부 표준 claimIds → 쿠팡 cancelIds 번역
    */
-  private async translateClaimIdsToCancelIds(
-    claimIds: string[],
-  ): Promise<number[]> {
+  private async translateClaimIdsToCancelIds(claimIds: string[]): Promise<number[]> {
     // TODO: 실제 구현 - 클레임 관리 시스템에서 매핑 조회
     console.log('🔄 번역 중: claimIds → cancelIds', claimIds);
 
     // 임시 구현
-    return claimIds.map(
-      (claimId) => parseInt(claimId.replace('CLAIM_', ''), 10) || 123456789,
-    );
+    return claimIds.map((claimId) => parseInt(claimId.replace('CLAIM_', ''), 10) || 123456789);
   }
 
   /**
@@ -1734,9 +1537,7 @@ export class CoupangAdapter implements ChannelAdapter {
 
       // 🔍 번역 결과 검증
       if (!exchangeId || exchangeId <= 0) {
-        throw new Error(
-          `클레임 ID를 쿠팡 exchangeId로 번역할 수 없습니다: ${claimId}`,
-        );
+        throw new Error(`클레임 ID를 쿠팡 exchangeId로 번역할 수 없습니다: ${claimId}`);
       }
 
       return exchangeId;
@@ -1805,17 +1606,10 @@ export class CoupangAdapter implements ChannelAdapter {
   /**
    * 쿠팡 API 응답을 SyncResult로 변환하는 헬퍼 메서드
    */
-  private transformCoupangResponseToSyncResult(
-    coupangResponse: any,
-    commandType: string,
-  ): SyncResult {
+  private transformCoupangResponseToSyncResult(coupangResponse: any, commandType: string): SyncResult {
     const responseList = coupangResponse.data?.responseList || [];
-    const successCount = responseList.filter(
-      (item: any) => item.succeed === true,
-    ).length;
-    const failedItems = responseList.filter(
-      (item: any) => item.succeed === false,
-    );
+    const successCount = responseList.filter((item: any) => item.succeed === true).length;
+    const failedItems = responseList.filter((item: any) => item.succeed === false);
 
     return {
       success: failedItems.length === 0,
@@ -1851,38 +1645,25 @@ export class CoupangAdapter implements ChannelAdapter {
           case 'PAID':
           case 'PROCESSING':
             // 새로운 주문 - 매핑 조회 후 OrderCreated 발행 또는 계류
-            const result = await this.orderEventPublisher.publishOrderConfirmed(
-              'coupang',
-              event,
-            );
+            const result = await this.orderEventPublisher.publishOrderConfirmed('coupang', event);
 
             if (result.published) {
               publishedCount++;
             } else if (result.unmappedItems && result.unmappedItems.length > 0) {
               // 미매핑 항목 → 계류 처리
-              await this.pendingOrderService.savePendingOrder(
-                'coupang',
-                event,
-                result.unmappedItems,
-              );
+              await this.pendingOrderService.savePendingOrder('coupang', event, result.unmappedItems);
               pendingCount++;
             }
             break;
 
           case 'CANCELLED':
             // 취소된 주문 - OrderCancelled 발행
-            await this.orderEventPublisher.publishOrderCancelled(
-              'coupang',
-              event,
-              event.reason ?? 'CUSTOMER_REQUEST',
-            );
+            await this.orderEventPublisher.publishOrderCancelled('coupang', event, event.reason ?? 'CUSTOMER_REQUEST');
             publishedCount++;
             break;
 
           default:
-            this.logger.debug(
-              `📋 [쿠팡] 이벤트 발행 스킵 (status=${event.status}): ${event.externalOrderId}`,
-            );
+            this.logger.debug(`📋 [쿠팡] 이벤트 발행 스킵 (status=${event.status}): ${event.externalOrderId}`);
         }
       } catch (error) {
         this.logger.error(
@@ -1893,10 +1674,7 @@ export class CoupangAdapter implements ChannelAdapter {
     }
 
     if (publishedCount > 0 || pendingCount > 0) {
-      this.logger.log(
-        `📤 [쿠팡] 주문 이벤트 처리 완료: ${publishedCount}건 발행, ${pendingCount}건 계류`,
-      );
+      this.logger.log(`📤 [쿠팡] 주문 이벤트 처리 완료: ${publishedCount}건 발행, ${pendingCount}건 계류`);
     }
   }
-
 }

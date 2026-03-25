@@ -8,13 +8,13 @@ export class SalesChannelDto {
   @ApiProperty({
     description: '채널 유형 (기본값: ONLINE)',
     enum: ['ONLINE', 'OFFLINE', 'MARKETPLACE', 'MOBILE_APP', 'SOCIAL_COMMERCE'],
-    default: 'ONLINE'
+    default: 'ONLINE',
   })
   type: string;
 
   @ApiProperty({
     description: '판매처 사이트',
-    enum: ['medusa', 'naver', 'coupang', 'phone_order', 'other']
+    enum: ['medusa', 'naver', 'coupang', 'phone_order', 'other'],
   })
   site: string;
 
@@ -25,7 +25,7 @@ export class SalesChannelDto {
     description: '판매처 분류 정보',
     type: ChannelCategoryDto,
     nullable: true,
-    required: false
+    required: false,
   })
   category?: ChannelCategoryDto | null;
 
@@ -43,9 +43,9 @@ export class SalesChannelDto {
         phone: '010-1234-5678',
         zipcode: '12345',
         address: '서울시 강남구',
-        detailAddress: '101호'
-      }
-    }
+        detailAddress: '101호',
+      },
+    },
   })
   config: Record<string, any>;
 
@@ -86,4 +86,3 @@ export class ChannelValidationResponseDto {
   @ApiProperty({ description: '검증 오류 목록', type: [String] })
   errors: string[];
 }
-

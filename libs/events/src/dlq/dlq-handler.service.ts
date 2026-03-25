@@ -156,15 +156,11 @@ export class DLQHandler {
 
     // 상태 확인
     if (dlqMessage.status === 'reprocessing') {
-      throw new Error(
-        `Message is already being reprocessed: ${dlqMessage.dlqMessageId}`,
-      );
+      throw new Error(`Message is already being reprocessed: ${dlqMessage.dlqMessageId}`);
     }
 
     if (dlqMessage.status === 'resolved') {
-      throw new Error(
-        `Message was already resolved: ${dlqMessage.dlqMessageId}`,
-      );
+      throw new Error(`Message was already resolved: ${dlqMessage.dlqMessageId}`);
     }
 
     try {
@@ -183,24 +179,18 @@ export class DLQHandler {
         }),
       );
 
-      this.logger.log(
-        `✅ DLQ message reprocessed: ${dlqMessage.dlqMessageId}`,
-        {
-          originalTopic: dlqMessage.originalTopic,
-          messageType: dlqMessage.originalMessage.messageType,
-          aggregateId: dlqMessage.originalMessage.source.aggregateId,
-        },
-      );
+      this.logger.log(`✅ DLQ message reprocessed: ${dlqMessage.dlqMessageId}`, {
+        originalTopic: dlqMessage.originalTopic,
+        messageType: dlqMessage.originalMessage.messageType,
+        aggregateId: dlqMessage.originalMessage.source.aggregateId,
+      });
 
       // TODO: DB 상태 업데이트
       // await this.markAsReprocessed(dlqMessage.dlqMessageId);
     } catch (error) {
-      this.logger.error(
-        `❌ Failed to reprocess DLQ message: ${dlqMessage.dlqMessageId}`,
-        {
-          error: error instanceof Error ? error.message : String(error),
-        },
-      );
+      this.logger.error(`❌ Failed to reprocess DLQ message: ${dlqMessage.dlqMessageId}`, {
+        error: error instanceof Error ? error.message : String(error),
+      });
 
       throw error;
     }
@@ -215,10 +205,7 @@ export class DLQHandler {
    *   reason: 'Fixed manually in database',
    * });
    */
-  async resolveDLQ(params: {
-    dlqMessageId: string;
-    reason: string;
-  }): Promise<void> {
+  async resolveDLQ(params: { dlqMessageId: string; reason: string }): Promise<void> {
     this.logger.log(`DLQ message resolved: ${params.dlqMessageId}`, {
       reason: params.reason,
     });

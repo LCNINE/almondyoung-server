@@ -7,9 +7,7 @@ import { EventChainService } from './event-chain.service';
 
 export const EVENT_TRACKING_SERVICE_NAME = 'EVENT_TRACKING_SERVICE_NAME';
 
-type DbTx = Parameters<
-  Parameters<PostgresJsDatabase<typeof trackingSchema>['transaction']>[0]
->[0];
+type DbTx = Parameters<Parameters<PostgresJsDatabase<typeof trackingSchema>['transaction']>[0]>[0];
 
 @Injectable()
 export class EventTrackingService {
@@ -70,10 +68,10 @@ export class EventTrackingService {
     const eventId = this.eventChainService.getEventId();
 
     if (!chainId || !eventId) {
-      this.logger.warn(
-        'trackEffect called without CLS chain context - skipping',
-        { resourceType: params.resourceType, resourceId: params.resourceId },
-      );
+      this.logger.warn('trackEffect called without CLS chain context - skipping', {
+        resourceType: params.resourceType,
+        resourceId: params.resourceId,
+      });
       return;
     }
 

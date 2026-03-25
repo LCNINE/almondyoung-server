@@ -31,7 +31,9 @@ export class ChannelProductMapper {
   /**
    * Map entity to ChannelProductWithChannelDto
    */
-  static toWithChannelDto(entity: ChannelProductEntity & { channel: SalesChannelEntity }): ChannelProductWithChannelDto {
+  static toWithChannelDto(
+    entity: ChannelProductEntity & { channel: SalesChannelEntity },
+  ): ChannelProductWithChannelDto {
     return {
       id: entity.id,
       masterId: entity.masterId,

@@ -5,4 +5,3 @@ export const HOLDER_CONSTANTS = {
     isOurAsset: true,
   },
 } as const;
-

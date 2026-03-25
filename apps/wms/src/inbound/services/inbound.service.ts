@@ -9,7 +9,16 @@ import { InventoryCommandService } from '../../inventory/services/inventory-comm
 import { LocationService } from '../../inventory/services/location.service';
 import { StockEventStore } from '../../inventory/repositories/stock-event.store';
 import { SimpleInboundDto, IndividualInboundDto, UpdateInboundLineMemoDto } from '../dto/simple-inbound.dto';
-import { CancelInboundDto, PutawayRequestDto, ReturnInboundDto, CreateInboundPlanDto, AddInboundPlanItemsDto, ReceiveFromPlanDto, ListPlanItemsQueryDto, InboundPendingListResponse } from '../dto/simple-inbound.dto';
+import {
+  CancelInboundDto,
+  PutawayRequestDto,
+  ReturnInboundDto,
+  CreateInboundPlanDto,
+  AddInboundPlanItemsDto,
+  ReceiveFromPlanDto,
+  ListPlanItemsQueryDto,
+  InboundPendingListResponse,
+} from '../dto/simple-inbound.dto';
 import { isSameSeoulDay, nowSeoul } from '../../shared/services/time.util';
 import { SupplierResponseDto } from '../../suppliers/dto/supplier-response.dto';
 
@@ -23,7 +32,7 @@ export class InboundService {
     private readonly commandService: InventoryCommandService,
     private readonly locationService: LocationService,
     private readonly eventStore: StockEventStore,
-  ) { }
+  ) {}
 
   private get db() {
     return this.dbService.db;
@@ -40,7 +49,8 @@ export class InboundService {
         where: eq(wmsTables.inboundReceiptLines.id, lineId),
       });
       if (!line) throw new NotFoundException('inbound line not found');
-      await tx.update(wmsTables.inboundReceiptLines)
+      await tx
+        .update(wmsTables.inboundReceiptLines)
         .set({ memo: dto.memo })
         .where(eq(wmsTables.inboundReceiptLines.id, lineId));
       return { success: true };
@@ -49,7 +59,7 @@ export class InboundService {
 
   private async getOnHandQuantity(
     tx: DbTx,
-    params: { skuId: string; warehouseId: string; locationId: string }
+    params: { skuId: string; warehouseId: string; locationId: string },
   ): Promise<number> {
     const row = await tx.query.stockLedgers.findFirst({
       where: and(
@@ -72,19 +82,25 @@ export class InboundService {
       if (!inboundZone) throw new BadRequestException('입고 기본존이 존재하지 않습니다.');
       const effectiveLocationId = inboundZone.id;
       // 회차(journal + receipt) 생성
-      const [journal] = await tx.insert(wmsTables.stockJournals).values({
-        sourceType: 'inbound',
-      }).returning();
+      const [journal] = await tx
+        .insert(wmsTables.stockJournals)
+        .values({
+          sourceType: 'inbound',
+        })
+        .returning();
 
-      const [receipt] = await tx.insert(wmsTables.inboundReceipts).values({
-        method: 'simple',
-        warehouseId,
-        locationId: effectiveLocationId,
-        occurredAt: new Date(),
-        status: 'posted',
-        totalQuantity: 0,
-        journalId: journal.id,
-      }).returning();
+      const [receipt] = await tx
+        .insert(wmsTables.inboundReceipts)
+        .values({
+          method: 'simple',
+          warehouseId,
+          locationId: effectiveLocationId,
+          occurredAt: new Date(),
+          status: 'posted',
+          totalQuantity: 0,
+          journalId: journal.id,
+        })
+        .returning();
 
       let totalQty = 0;
       const lines: InboundReceiptLine[] = [];
@@ -92,30 +108,37 @@ export class InboundService {
         const sku = await this.inventoryService.findSkuById(item.skuId, tx);
         if (!sku) throw new NotFoundException(`SKU ${item.skuId} not found`);
 
-        const { eventId } = await this.commandService.receive({
-          skuId: item.skuId,
-          toWarehouseId: warehouseId,
-          toLocationId: effectiveLocationId,
-          quantity: item.quantity,
-          occurredAt: new Date(),
-          reason: 'simple_inbound',
-          journalId: journal.id,
-        }, tx);
+        const { eventId } = await this.commandService.receive(
+          {
+            skuId: item.skuId,
+            toWarehouseId: warehouseId,
+            toLocationId: effectiveLocationId,
+            quantity: item.quantity,
+            occurredAt: new Date(),
+            reason: 'simple_inbound',
+            journalId: journal.id,
+          },
+          tx,
+        );
 
-        const [line] = await tx.insert(wmsTables.inboundReceiptLines).values({
-          receiptId: receipt.id,
-          skuId: item.skuId,
-          quantity: item.quantity,
-          originLocationId: effectiveLocationId,
-          eventId: eventId ?? null,
-          memo: item.memo,
-        }).returning();
+        const [line] = await tx
+          .insert(wmsTables.inboundReceiptLines)
+          .values({
+            receiptId: receipt.id,
+            skuId: item.skuId,
+            quantity: item.quantity,
+            originLocationId: effectiveLocationId,
+            eventId: eventId ?? null,
+            memo: item.memo,
+          })
+          .returning();
 
         lines.push(line);
         totalQty += item.quantity;
       }
 
-      const [updatedReceipt] = await tx.update(wmsTables.inboundReceipts)
+      const [updatedReceipt] = await tx
+        .update(wmsTables.inboundReceipts)
         .set({ totalQuantity: totalQty })
         .where(eq(wmsTables.inboundReceipts.id, receipt.id))
         .returning();
@@ -144,46 +167,59 @@ export class InboundService {
       if (!inboundZone) throw new BadRequestException('입고 기본존이 존재하지 않습니다.');
       const effectiveLocationId = inboundZone.id;
 
-      const [journal] = await tx.insert(wmsTables.stockJournals).values({
-        sourceType: 'inbound',
-      }).returning();
+      const [journal] = await tx
+        .insert(wmsTables.stockJournals)
+        .values({
+          sourceType: 'inbound',
+        })
+        .returning();
 
-      const [receipt] = await tx.insert(wmsTables.inboundReceipts).values({
-        method: 'simple_fullscan',
-        warehouseId,
-        locationId: effectiveLocationId,
-        occurredAt: new Date(),
-        status: 'posted',
-        totalQuantity: 0,
-        journalId: journal.id,
-      }).returning();
+      const [receipt] = await tx
+        .insert(wmsTables.inboundReceipts)
+        .values({
+          method: 'simple_fullscan',
+          warehouseId,
+          locationId: effectiveLocationId,
+          occurredAt: new Date(),
+          status: 'posted',
+          totalQuantity: 0,
+          journalId: journal.id,
+        })
+        .returning();
 
       let totalQty = 0;
       const lines: InboundReceiptLine[] = [];
       for (const item of items) {
         const sku = await this.inventoryService.findSkuById(item.skuId, tx);
         if (!sku) throw new NotFoundException(`SKU ${item.skuId} not found`);
-        const { eventId } = await this.commandService.receive({
-          skuId: item.skuId,
-          toWarehouseId: warehouseId,
-          toLocationId: effectiveLocationId,
-          quantity: item.quantity,
-          occurredAt: new Date(),
-          reason: 'simple_inbound_fullscan',
-          journalId: journal.id,
-        }, tx);
-        const [line] = await tx.insert(wmsTables.inboundReceiptLines).values({
-          receiptId: receipt.id,
-          skuId: item.skuId,
-          quantity: item.quantity,
-          originLocationId: effectiveLocationId,
-          eventId: eventId ?? null,
-          memo: item.memo,
-        }).returning();
+        const { eventId } = await this.commandService.receive(
+          {
+            skuId: item.skuId,
+            toWarehouseId: warehouseId,
+            toLocationId: effectiveLocationId,
+            quantity: item.quantity,
+            occurredAt: new Date(),
+            reason: 'simple_inbound_fullscan',
+            journalId: journal.id,
+          },
+          tx,
+        );
+        const [line] = await tx
+          .insert(wmsTables.inboundReceiptLines)
+          .values({
+            receiptId: receipt.id,
+            skuId: item.skuId,
+            quantity: item.quantity,
+            originLocationId: effectiveLocationId,
+            eventId: eventId ?? null,
+            memo: item.memo,
+          })
+          .returning();
         lines.push(line);
         totalQty += item.quantity;
       }
-      const [updatedReceipt] = await tx.update(wmsTables.inboundReceipts)
+      const [updatedReceipt] = await tx
+        .update(wmsTables.inboundReceipts)
         .set({ totalQuantity: totalQty })
         .where(eq(wmsTables.inboundReceipts.id, receipt.id))
         .returning();
@@ -212,43 +248,56 @@ export class InboundService {
         effectiveLocationId = inboundZone.id;
       }
 
-      const [journal] = await tx.insert(wmsTables.stockJournals).values({
-        sourceType: 'inbound',
-      }).returning();
+      const [journal] = await tx
+        .insert(wmsTables.stockJournals)
+        .values({
+          sourceType: 'inbound',
+        })
+        .returning();
 
-      const [receipt] = await tx.insert(wmsTables.inboundReceipts).values({
-        method: 'individual',
-        warehouseId,
-        locationId: effectiveLocationId,
-        occurredAt: new Date(),
-        status: 'posted',
-        totalQuantity: 0,
-        journalId: journal.id,
-      }).returning();
+      const [receipt] = await tx
+        .insert(wmsTables.inboundReceipts)
+        .values({
+          method: 'individual',
+          warehouseId,
+          locationId: effectiveLocationId,
+          occurredAt: new Date(),
+          status: 'posted',
+          totalQuantity: 0,
+          journalId: journal.id,
+        })
+        .returning();
 
       const sku = await this.inventoryService.findSkuById(skuId, tx);
       if (!sku) throw new NotFoundException(`SKU ${skuId} not found`);
 
-      const { eventId } = await this.commandService.receive({
-        skuId,
-        toWarehouseId: warehouseId,
-        toLocationId: effectiveLocationId,
-        quantity,
-        occurredAt: new Date(),
-        reason: 'individual_inbound',
-        journalId: journal.id,
-      }, tx);
+      const { eventId } = await this.commandService.receive(
+        {
+          skuId,
+          toWarehouseId: warehouseId,
+          toLocationId: effectiveLocationId,
+          quantity,
+          occurredAt: new Date(),
+          reason: 'individual_inbound',
+          journalId: journal.id,
+        },
+        tx,
+      );
 
-      const [line] = await tx.insert(wmsTables.inboundReceiptLines).values({
-        receiptId: receipt.id,
-        skuId,
-        quantity,
-        originLocationId: effectiveLocationId,
-        eventId: eventId ?? null,
-        memo: dto.memo,
-      }).returning();
+      const [line] = await tx
+        .insert(wmsTables.inboundReceiptLines)
+        .values({
+          receiptId: receipt.id,
+          skuId,
+          quantity,
+          originLocationId: effectiveLocationId,
+          eventId: eventId ?? null,
+          memo: dto.memo,
+        })
+        .returning();
 
-      await tx.update(wmsTables.inboundReceipts)
+      await tx
+        .update(wmsTables.inboundReceipts)
         .set({ totalQuantity: quantity })
         .where(eq(wmsTables.inboundReceipts.id, receipt.id));
 
@@ -326,7 +375,7 @@ export class InboundService {
         };
       }
 
-      const planIds = plansData.map(p => p.planId);
+      const planIds = plansData.map((p) => p.planId);
 
       // 2. pending items 조회 (SKU 정보 포함)
       const itemsData = await tx
@@ -340,15 +389,10 @@ export class InboundService {
         })
         .from(inboundPlanItems)
         .innerJoin(skus, eq(inboundPlanItems.skuId, skus.id))
-        .where(and(
-          inArray(inboundPlanItems.planId, planIds),
-          eq(inboundPlanItems.status, 'pending')
-        ));
+        .where(and(inArray(inboundPlanItems.planId, planIds), eq(inboundPlanItems.status, 'pending')));
 
       // 3. parent plans 조회 (있는 경우에만)
-      const parentPlanIds = plansData
-        .map(p => p.parentPlanId)
-        .filter(id => id !== null) as string[];
+      const parentPlanIds = plansData.map((p) => p.parentPlanId).filter((id) => id !== null);
 
       const parentPlansMap = new Map<string, { status: string }>();
       if (parentPlanIds.length > 0) {
@@ -360,14 +404,14 @@ export class InboundService {
           .from(inboundPlans)
           .where(inArray(inboundPlans.id, parentPlanIds));
 
-        parentPlansData.forEach(p => {
+        parentPlansData.forEach((p) => {
           parentPlansMap.set(p.id, { status: p.status });
         });
       }
 
       // 4. 데이터 조합
-      const inboundPending = plansData.map(plan => {
-        const planItems = itemsData.filter(item => item.planId === plan.planId);
+      const inboundPending = plansData.map((plan) => {
+        const planItems = itemsData.filter((item) => item.planId === plan.planId);
         const parentPlan = plan.parentPlanId ? parentPlansMap.get(plan.parentPlanId) : null;
 
         return {
@@ -380,33 +424,35 @@ export class InboundService {
           purchaseOrder: {
             id: plan.poId,
             type: plan.poType,
-            supplier: plan.supplierId ? SupplierResponseDto.fromDbRow({
-              id: plan.supplierId,
-              name: plan.supplierName!,
-              phone: plan.supplierPhone,
-              fax: plan.supplierFax,
-              email: plan.supplierEmail,
-              zipcode: plan.supplierZipcode,
-              address1: plan.supplierAddress1,
-              address2: plan.supplierAddress2,
-              businessRegNo: plan.supplierBusinessRegNo,
-              businessType: plan.supplierBusinessType,
-              ceoName: plan.supplierCeoName,
-              isDirectDelivery: plan.supplierIsDirectDelivery,
-              orderCutoffTime: plan.supplierOrderCutoffTime,
-              bankName: plan.supplierBankName,
-              bankAccountNo: plan.supplierBankAccountNo,
-              bankAccountHolder: plan.supplierBankAccountHolder,
-              paymentMethod: plan.supplierPaymentMethod,
-              description: plan.supplierDescription,
-              memo: plan.supplierMemo,
-              purchaseManagerId: plan.supplierPurchaseManagerId,
-              defaultWarehouseId: plan.supplierDefaultWarehouseId,
-              createdAt: plan.supplierCreatedAt!,
-              updatedAt: plan.supplierUpdatedAt!,
-            }) : undefined,
+            supplier: plan.supplierId
+              ? SupplierResponseDto.fromDbRow({
+                  id: plan.supplierId,
+                  name: plan.supplierName!,
+                  phone: plan.supplierPhone,
+                  fax: plan.supplierFax,
+                  email: plan.supplierEmail,
+                  zipcode: plan.supplierZipcode,
+                  address1: plan.supplierAddress1,
+                  address2: plan.supplierAddress2,
+                  businessRegNo: plan.supplierBusinessRegNo,
+                  businessType: plan.supplierBusinessType,
+                  ceoName: plan.supplierCeoName,
+                  isDirectDelivery: plan.supplierIsDirectDelivery,
+                  orderCutoffTime: plan.supplierOrderCutoffTime,
+                  bankName: plan.supplierBankName,
+                  bankAccountNo: plan.supplierBankAccountNo,
+                  bankAccountHolder: plan.supplierBankAccountHolder,
+                  paymentMethod: plan.supplierPaymentMethod,
+                  description: plan.supplierDescription,
+                  memo: plan.supplierMemo,
+                  purchaseManagerId: plan.supplierPurchaseManagerId,
+                  defaultWarehouseId: plan.supplierDefaultWarehouseId,
+                  createdAt: plan.supplierCreatedAt!,
+                  updatedAt: plan.supplierUpdatedAt!,
+                })
+              : undefined,
           },
-          items: planItems.map(item => ({
+          items: planItems.map((item) => ({
             skuId: item.skuId,
             skuName: item.skuName,
             skuCode: item.skuCode,
@@ -429,10 +475,18 @@ export class InboundService {
   }
 
   // 입고내역(현황) 조회 - (sku, quantity, occurredAt, method)
-  async listInboundReceipts(params: {
-    skuId?: string; warehouseId?: string; method?: 'individual' | 'simple' | 'simple_fullscan' | 'planned';
-    startDate?: string; endDate?: string; limit?: number; offset?: number;
-  }, tx?: DbTx) {
+  async listInboundReceipts(
+    params: {
+      skuId?: string;
+      warehouseId?: string;
+      method?: 'individual' | 'simple' | 'simple_fullscan' | 'planned';
+      startDate?: string;
+      endDate?: string;
+      limit?: number;
+      offset?: number;
+    },
+    tx?: DbTx,
+  ) {
     const { skuId, warehouseId, method, startDate, endDate, limit = 50, offset = 0 } = params;
 
     const rows = await this.db
@@ -450,14 +504,18 @@ export class InboundService {
         wmsTables.inboundReceiptLines,
         eq(wmsTables.inboundReceiptLines.receiptId, wmsTables.inboundReceipts.id),
       )
-      .where(and(
-        eq(wmsTables.inboundReceipts.status, 'posted'),
-        warehouseId ? eq(wmsTables.inboundReceipts.warehouseId, warehouseId) : undefined,
-        method ? eq(wmsTables.inboundReceipts.method, method) : undefined,
-        skuId ? eq(wmsTables.inboundReceiptLines.skuId, skuId) : undefined,
-        startDate ? gte(wmsTables.inboundReceipts.occurredAt, new Date(startDate)) : undefined,
-        endDate ? lte(wmsTables.inboundReceipts.occurredAt, new Date(new Date(endDate).setHours(23, 59, 59, 999))) : undefined,
-      ))
+      .where(
+        and(
+          eq(wmsTables.inboundReceipts.status, 'posted'),
+          warehouseId ? eq(wmsTables.inboundReceipts.warehouseId, warehouseId) : undefined,
+          method ? eq(wmsTables.inboundReceipts.method, method) : undefined,
+          skuId ? eq(wmsTables.inboundReceiptLines.skuId, skuId) : undefined,
+          startDate ? gte(wmsTables.inboundReceipts.occurredAt, new Date(startDate)) : undefined,
+          endDate
+            ? lte(wmsTables.inboundReceipts.occurredAt, new Date(new Date(endDate).setHours(23, 59, 59, 999)))
+            : undefined,
+        ),
+      )
       .orderBy(desc(wmsTables.inboundReceipts.occurredAt))
       .limit(limit)
       .offset(offset);
@@ -466,10 +524,19 @@ export class InboundService {
   }
 
   // 입고 작업 타임라인 조회
-  async listInboundWorkLogs(params: {
-    warehouseId?: string; skuId?: string; type?: 'INBOUND' | 'PUTAWAY' | 'RETURN' | 'CANCEL'; method?: 'individual' | 'simple' | 'simple_fullscan' | 'planned';
-    startDate?: string; endDate?: string; limit?: number; offset?: number;
-  }, tx?: DbTx) {
+  async listInboundWorkLogs(
+    params: {
+      warehouseId?: string;
+      skuId?: string;
+      type?: 'INBOUND' | 'PUTAWAY' | 'RETURN' | 'CANCEL';
+      method?: 'individual' | 'simple' | 'simple_fullscan' | 'planned';
+      startDate?: string;
+      endDate?: string;
+      limit?: number;
+      offset?: number;
+    },
+    tx?: DbTx,
+  ) {
     const { warehouseId, skuId, type, method, startDate, endDate, limit = 100, offset = 0 } = params;
 
     const logs = await this.db
@@ -490,14 +557,18 @@ export class InboundService {
         eventId: wmsTables.inboundWorkLogs.eventId,
       })
       .from(wmsTables.inboundWorkLogs)
-      .where(and(
-        warehouseId ? eq(wmsTables.inboundWorkLogs.warehouseId, warehouseId) : undefined,
-        skuId ? eq(wmsTables.inboundWorkLogs.skuId, skuId) : undefined,
-        type ? eq(wmsTables.inboundWorkLogs.type, type) : undefined,
-        method ? eq(wmsTables.inboundWorkLogs.method, method) : undefined,
-        startDate ? gte(wmsTables.inboundWorkLogs.timestamp, new Date(startDate)) : undefined,
-        endDate ? lte(wmsTables.inboundWorkLogs.timestamp, new Date(new Date(endDate).setHours(23, 59, 59, 999))) : undefined,
-      ))
+      .where(
+        and(
+          warehouseId ? eq(wmsTables.inboundWorkLogs.warehouseId, warehouseId) : undefined,
+          skuId ? eq(wmsTables.inboundWorkLogs.skuId, skuId) : undefined,
+          type ? eq(wmsTables.inboundWorkLogs.type, type) : undefined,
+          method ? eq(wmsTables.inboundWorkLogs.method, method) : undefined,
+          startDate ? gte(wmsTables.inboundWorkLogs.timestamp, new Date(startDate)) : undefined,
+          endDate
+            ? lte(wmsTables.inboundWorkLogs.timestamp, new Date(new Date(endDate).setHours(23, 59, 59, 999)))
+            : undefined,
+        ),
+      )
       .orderBy(desc(wmsTables.inboundWorkLogs.timestamp))
       .limit(limit)
       .offset(offset);
@@ -506,9 +577,17 @@ export class InboundService {
   }
 
   // 집계 입고현황: 라인 단위 결과 + 확정수량(취소/회송 반영)
-  async listInboundStatus(params: {
-    skuId?: string; warehouseId?: string; startDate?: string; endDate?: string; limit?: number; offset?: number;
-  }, tx?: DbTx) {
+  async listInboundStatus(
+    params: {
+      skuId?: string;
+      warehouseId?: string;
+      startDate?: string;
+      endDate?: string;
+      limit?: number;
+      offset?: number;
+    },
+    tx?: DbTx,
+  ) {
     const { skuId, warehouseId, startDate, endDate, limit = 50, offset = 0 } = params;
 
     const rows = await this.db
@@ -528,23 +607,27 @@ export class InboundService {
         wmsTables.inboundReceiptLines,
         eq(wmsTables.inboundReceiptLines.receiptId, wmsTables.inboundReceipts.id),
       )
-      .where(and(
-        eq(wmsTables.inboundReceipts.status, 'posted'),
-        warehouseId ? eq(wmsTables.inboundReceipts.warehouseId, warehouseId) : undefined,
-        skuId ? eq(wmsTables.inboundReceiptLines.skuId, skuId) : undefined,
-        startDate ? gte(wmsTables.inboundReceipts.occurredAt, new Date(startDate)) : undefined,
-        endDate ? lte(wmsTables.inboundReceipts.occurredAt, new Date(new Date(endDate).setHours(23, 59, 59, 999))) : undefined,
-      ))
+      .where(
+        and(
+          eq(wmsTables.inboundReceipts.status, 'posted'),
+          warehouseId ? eq(wmsTables.inboundReceipts.warehouseId, warehouseId) : undefined,
+          skuId ? eq(wmsTables.inboundReceiptLines.skuId, skuId) : undefined,
+          startDate ? gte(wmsTables.inboundReceipts.occurredAt, new Date(startDate)) : undefined,
+          endDate
+            ? lte(wmsTables.inboundReceipts.occurredAt, new Date(new Date(endDate).setHours(23, 59, 59, 999)))
+            : undefined,
+        ),
+      )
       .orderBy(desc(wmsTables.inboundReceipts.occurredAt))
       .limit(limit)
       .offset(offset);
 
     const items = rows
-      .map(r => {
+      .map((r) => {
         const confirmed = Math.max(0, (r.qtyReceived ?? 0) - (r.qtyReturned ?? 0));
         return { ...r, confirmedQty: confirmed };
       })
-      .filter(r => r.confirmedQty > 0);
+      .filter((r) => r.confirmedQty > 0);
 
     return { total: items.length, items };
   }
@@ -570,16 +653,19 @@ export class InboundService {
       const planType = dto.planType ?? 'destination';
       const requiresTransfer = dto.requiresTransfer ?? false;
 
-      const [plan] = await tx.insert(wmsTables.inboundPlans).values({
-        expectedDate: new Date(dto.expectedDate),
-        warehouseId: dto.warehouseId,
-        destinationWarehouseId,
-        linkedPurchaseOrderId: dto.linkedPurchaseOrderId,
-        planType,
-        requiresTransfer,
-        parentPlanId: dto.parentPlanId,
-        status: 'pending',
-      }).returning();
+      const [plan] = await tx
+        .insert(wmsTables.inboundPlans)
+        .values({
+          expectedDate: new Date(dto.expectedDate),
+          warehouseId: dto.warehouseId,
+          destinationWarehouseId,
+          linkedPurchaseOrderId: dto.linkedPurchaseOrderId,
+          planType,
+          requiresTransfer,
+          parentPlanId: dto.parentPlanId,
+          status: 'pending',
+        })
+        .returning();
 
       return plan;
     }, tx);
@@ -619,12 +705,16 @@ export class InboundService {
       })
       .from(wmsTables.inboundPlanItems)
       .leftJoin(wmsTables.inboundPlans, eq(wmsTables.inboundPlans.id, wmsTables.inboundPlanItems.planId))
-      .where(and(
-        warehouseId ? eq(wmsTables.inboundPlans.warehouseId, warehouseId) : undefined,
-        skuId ? eq(wmsTables.inboundPlanItems.skuId, skuId) : undefined,
-        startDate ? gte(wmsTables.inboundPlans.expectedDate, new Date(startDate)) : undefined,
-        endDate ? lte(wmsTables.inboundPlans.expectedDate, new Date(new Date(endDate).setHours(23, 59, 59, 999))) : undefined,
-      ))
+      .where(
+        and(
+          warehouseId ? eq(wmsTables.inboundPlans.warehouseId, warehouseId) : undefined,
+          skuId ? eq(wmsTables.inboundPlanItems.skuId, skuId) : undefined,
+          startDate ? gte(wmsTables.inboundPlans.expectedDate, new Date(startDate)) : undefined,
+          endDate
+            ? lte(wmsTables.inboundPlans.expectedDate, new Date(new Date(endDate).setHours(23, 59, 59, 999)))
+            : undefined,
+        ),
+      )
       .orderBy(desc(wmsTables.inboundPlans.expectedDate));
     return { total: rows.length, items: rows };
   }
@@ -632,7 +722,9 @@ export class InboundService {
   // 입고예정 아이템 기반 실입고 처리
   async receiveFromPlan(dto: ReceiveFromPlanDto, tx?: DbTx) {
     return this.inTx(async (tx) => {
-      const item = await tx.query.inboundPlanItems.findFirst({ where: eq(wmsTables.inboundPlanItems.id, dto.planItemId) });
+      const item = await tx.query.inboundPlanItems.findFirst({
+        where: eq(wmsTables.inboundPlanItems.id, dto.planItemId),
+      });
       if (!item) throw new NotFoundException('inbound plan item not found');
       const plan = await tx.query.inboundPlans.findFirst({ where: eq(wmsTables.inboundPlans.id, item.planId) });
       if (!plan) throw new NotFoundException('inbound plan not found');
@@ -647,29 +739,38 @@ export class InboundService {
       }
 
       // 회차(journal + receipt) 생성
-      const [journal] = await tx.insert(wmsTables.stockJournals).values({
-        sourceType: 'inbound',
-      }).returning();
-      const [receipt] = await tx.insert(wmsTables.inboundReceipts).values({
-        method: 'planned',
-        warehouseId: plan.warehouseId,
-        locationId: effectiveLocationId,
-        occurredAt: new Date(),
-        status: 'posted',
-        totalQuantity: 0,
-        journalId: journal.id,
-      }).returning();
+      const [journal] = await tx
+        .insert(wmsTables.stockJournals)
+        .values({
+          sourceType: 'inbound',
+        })
+        .returning();
+      const [receipt] = await tx
+        .insert(wmsTables.inboundReceipts)
+        .values({
+          method: 'planned',
+          warehouseId: plan.warehouseId,
+          locationId: effectiveLocationId,
+          occurredAt: new Date(),
+          status: 'posted',
+          totalQuantity: 0,
+          journalId: journal.id,
+        })
+        .returning();
 
       // 이벤트 생성 + 라인 생성
-      const { eventId } = await this.commandService.receive({
-        skuId: item.skuId,
-        toWarehouseId: plan.warehouseId,
-        toLocationId: effectiveLocationId,
-        quantity: dto.quantity,
-        occurredAt: new Date(),
-        reason: 'planned_inbound',
-        journalId: journal.id,
-      }, tx);
+      const { eventId } = await this.commandService.receive(
+        {
+          skuId: item.skuId,
+          toWarehouseId: plan.warehouseId,
+          toLocationId: effectiveLocationId,
+          quantity: dto.quantity,
+          occurredAt: new Date(),
+          reason: 'planned_inbound',
+          journalId: journal.id,
+        },
+        tx,
+      );
       await tx.insert(wmsTables.inboundReceiptLines).values({
         receiptId: receipt.id,
         skuId: item.skuId,
@@ -682,11 +783,13 @@ export class InboundService {
       // 예정 누계/상태 갱신
       const newReceived = (item.receivedQty ?? 0) + dto.quantity;
       const newStatus = newReceived >= item.expectedQty ? 'confirmed' : 'pending';
-      await tx.update(wmsTables.inboundPlanItems)
+      await tx
+        .update(wmsTables.inboundPlanItems)
         .set({ receivedQty: newReceived, status: newStatus })
         .where(eq(wmsTables.inboundPlanItems.id, item.id));
 
-      await tx.update(wmsTables.inboundReceipts)
+      await tx
+        .update(wmsTables.inboundReceipts)
         .set({ totalQuantity: dto.quantity })
         .where(eq(wmsTables.inboundReceipts.id, receipt.id));
 
@@ -728,9 +831,10 @@ export class InboundService {
       });
       if (!dest) throw new NotFoundException('destination location not found');
       if (!dest.isActive) throw new BadRequestException('destination location is inactive');
-      if (dest.warehouseId !== receipt.warehouseId) throw new BadRequestException('destination location must be in the same warehouse');
+      if (dest.warehouseId !== receipt.warehouseId)
+        throw new BadRequestException('destination location must be in the same warehouse');
 
-      const originAvailable = (line.quantity - line.putawayFromOriginQty - line.returnedQty - line.canceledQty);
+      const originAvailable = line.quantity - line.putawayFromOriginQty - line.returnedQty - line.canceledQty;
       if (dto.quantity <= 0 || dto.quantity > originAvailable) {
         throw new BadRequestException('quantity exceeds origin available');
       }
@@ -746,16 +850,20 @@ export class InboundService {
       }
 
       // 내부 이동: 원본 위치 → 목표 위치 (즉시)
-      const moveResult = await this.commandService.moveInternal({
-        skuId: line.skuId,
-        warehouseId: receipt.warehouseId,
-        fromLocationId: originLocationId,
-        toLocationId: dto.toLocationId,
-        quantity: dto.quantity,
-        reason: 'putaway_internal_move',
-      }, tx);
+      const moveResult = await this.commandService.moveInternal(
+        {
+          skuId: line.skuId,
+          warehouseId: receipt.warehouseId,
+          fromLocationId: originLocationId,
+          toLocationId: dto.toLocationId,
+          quantity: dto.quantity,
+          reason: 'putaway_internal_move',
+        },
+        tx,
+      );
 
-      await tx.update(wmsTables.inboundReceiptLines)
+      await tx
+        .update(wmsTables.inboundReceiptLines)
         .set({ putawayFromOriginQty: line.putawayFromOriginQty + dto.quantity })
         .where(eq(wmsTables.inboundReceiptLines.id, line.id));
 
@@ -791,7 +899,7 @@ export class InboundService {
       if ((line.putawayFromOriginQty ?? 0) > 0) {
         throw new BadRequestException('cannot return: putaway exists; move all back to origin first');
       }
-      const originAvailable = (line.quantity - line.putawayFromOriginQty - line.returnedQty - line.canceledQty);
+      const originAvailable = line.quantity - line.putawayFromOriginQty - line.returnedQty - line.canceledQty;
       if (dto.quantity <= 0 || dto.quantity > originAvailable) {
         throw new BadRequestException('quantity exceeds origin available');
       }
@@ -806,18 +914,22 @@ export class InboundService {
         throw new BadRequestException('insufficient on-hand at origin');
       }
 
-      const event = await this.eventStore.createEvent({
-        skuId: line.skuId,
-        fromWarehouseId: receipt.warehouseId,
-        fromLocationId: originLocationId,
-        fromState: 'ON_HAND',
-        transitionType: 'ADJUST_DOWN',
-        quantity: dto.quantity,
-        occurredAt: new Date(),
-        reason: 'RETURN',
-      }, tx);
+      const event = await this.eventStore.createEvent(
+        {
+          skuId: line.skuId,
+          fromWarehouseId: receipt.warehouseId,
+          fromLocationId: originLocationId,
+          fromState: 'ON_HAND',
+          transitionType: 'ADJUST_DOWN',
+          quantity: dto.quantity,
+          occurredAt: new Date(),
+          reason: 'RETURN',
+        },
+        tx,
+      );
 
-      await tx.update(wmsTables.inboundReceiptLines)
+      await tx
+        .update(wmsTables.inboundReceiptLines)
         .set({ returnedQty: line.returnedQty + dto.quantity })
         .where(eq(wmsTables.inboundReceiptLines.id, line.id));
 
@@ -892,7 +1004,8 @@ export class InboundService {
       const rev = await this.eventStore.reverseEvent(line.eventId, 'CANCEL', tx);
 
       // 라인 전량 취소 기록(감사 용도)
-      await tx.update(wmsTables.inboundReceiptLines)
+      await tx
+        .update(wmsTables.inboundReceiptLines)
         .set({ canceledQty: line.quantity })
         .where(eq(wmsTables.inboundReceiptLines.id, line.id));
 
@@ -913,9 +1026,10 @@ export class InboundService {
       const lines = await tx.query.inboundReceiptLines.findMany({
         where: eq(wmsTables.inboundReceiptLines.receiptId, line.receiptId),
       });
-      const allCanceled = lines.every(l => (l.canceledQty ?? 0) >= (l.quantity ?? 0));
+      const allCanceled = lines.every((l) => (l.canceledQty ?? 0) >= (l.quantity ?? 0));
       if (allCanceled) {
-        await tx.update(wmsTables.inboundReceipts)
+        await tx
+          .update(wmsTables.inboundReceipts)
           .set({ status: 'voided', totalQuantity: 0 })
           .where(eq(wmsTables.inboundReceipts.id, line.receiptId));
       }
@@ -934,16 +1048,16 @@ export class InboundService {
       skuId, // skuId 없으면 전체 조회
       warehouseId,
       startDate.toISOString().split('T')[0],
-      new Date().toISOString().split('T')[0]
+      new Date().toISOString().split('T')[0],
     );
 
     // 입고 관련 이벤트만 필터링 (transitionType=RECEIVE)
-    const inboundEvents = events.filter(e => e.transitionType === 'RECEIVE');
+    const inboundEvents = events.filter((e) => e.transitionType === 'RECEIVE');
 
     // 일별 집계
     const dailyStats: Record<string, { quantity: number; events: number }> = {};
 
-    inboundEvents.forEach(event => {
+    inboundEvents.forEach((event) => {
       const date = new Date(event.occurredAt).toISOString().split('T')[0];
       if (!dailyStats[date]) {
         dailyStats[date] = { quantity: 0, events: 0 };
@@ -982,9 +1096,7 @@ export class InboundService {
 
     // 예상 SKU와 다른 경우
     if (expectedSkuId && skuBarcode.skuId !== expectedSkuId) {
-      throw new BadRequestException(
-        `스캔한 SKU(${sku?.code})가 예상 SKU와 다릅니다.`
-      );
+      throw new BadRequestException(`스캔한 SKU(${sku?.code})가 예상 SKU와 다릅니다.`);
     }
 
     return {

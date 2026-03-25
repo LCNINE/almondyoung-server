@@ -17,9 +17,7 @@ export class BulkNotificationService {
     @InjectQueue('bulk-notification') private bulkNotificationQueue: Queue,
   ) {}
 
-  async createBulkNotification(
-    dto: CreateBulkNotificationDto,
-  ): Promise<{ campaignId: string; status: string }> {
+  async createBulkNotification(dto: CreateBulkNotificationDto): Promise<{ campaignId: string; status: string }> {
     this.logger.log(`Initiating bulk notification campaign creation: ${dto.name}`);
 
     // Get templateId if templateKey is provided
@@ -76,9 +74,7 @@ export class BulkNotificationService {
 
     // 3. Add to queue for processing
     // 딜레이가 음수가 되지 않도록 보정
-    const delayMs = dto.sendAt 
-      ? Math.max(0, new Date(dto.sendAt).getTime() - Date.now())
-      : 0;
+    const delayMs = dto.sendAt ? Math.max(0, new Date(dto.sendAt).getTime() - Date.now()) : 0;
 
     await this.bulkNotificationQueue.add(
       'process-bulk-campaign',
@@ -94,9 +90,7 @@ export class BulkNotificationService {
     );
 
     // Calculate next status
-    const nextStatus = dto.sendAt && new Date(dto.sendAt) > new Date() 
-      ? 'SCHEDULED' 
-      : 'PROCESSING';
+    const nextStatus = dto.sendAt && new Date(dto.sendAt) > new Date() ? 'SCHEDULED' : 'PROCESSING';
 
     await this.db.db
       .update(notificationTables.notificationCampaigns)
@@ -179,8 +173,8 @@ export class BulkNotificationService {
 
     const stats = {
       total: recipients.length,
-      sent: recipients.filter(r => r.status === 'SENT').length,
-      failed: recipients.filter(r => r.status === 'FAILED').length,
+      sent: recipients.filter((r) => r.status === 'SENT').length,
+      failed: recipients.filter((r) => r.status === 'FAILED').length,
     };
 
     return {

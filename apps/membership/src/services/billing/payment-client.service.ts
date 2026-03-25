@@ -110,19 +110,13 @@ export class PaymentClientService {
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
   ) {
-    this.paymentServerUrl = this.configService.get<string>(
-      'PAYMENT_SERVER_URL',
-      'http://localhost:5000',
-    );
+    this.paymentServerUrl = this.configService.get<string>('PAYMENT_SERVER_URL', 'http://localhost:5000');
   }
 
   async createMembershipCheckoutIntent(
     request: MembershipCheckoutIntentRequest,
   ): Promise<MembershipCheckoutIntentResponse> {
-    const walletApiUrl = this.configService.get<string>(
-      'WALLET_API_URL',
-      this.paymentServerUrl,
-    );
+    const walletApiUrl = this.configService.get<string>('WALLET_API_URL', this.paymentServerUrl);
     const walletApiKey = this.configService.get<string>('WALLET_API_KEY');
 
     if (!walletApiUrl) {
@@ -160,9 +154,7 @@ export class PaymentClientService {
 
       return { intentId: response.data.id };
     } catch (error) {
-      this.logger.error(
-        `Failed to create membership checkout intent: ${error.message}`,
-      );
+      this.logger.error(`Failed to create membership checkout intent: ${error.message}`);
       throw new Error(`Checkout intent creation failed: ${error.message}`);
     }
   }
@@ -171,13 +163,8 @@ export class PaymentClientService {
    * Wallet v1 payment intent 상태 조회 (서버간 API key 인증)
    * confirm-checkout-intent 흐름에서 결제 검증에 사용
    */
-  async getWalletPaymentIntent(
-    intentId: string,
-  ): Promise<WalletPaymentIntentResponse> {
-    const walletApiUrl = this.configService.get<string>(
-      'WALLET_API_URL',
-      this.paymentServerUrl,
-    );
+  async getWalletPaymentIntent(intentId: string): Promise<WalletPaymentIntentResponse> {
+    const walletApiUrl = this.configService.get<string>('WALLET_API_URL', this.paymentServerUrl);
     const walletApiKey = this.configService.get<string>('WALLET_API_KEY');
 
     if (!walletApiUrl) {
@@ -189,20 +176,15 @@ export class PaymentClientService {
 
     try {
       const response = await firstValueFrom(
-        this.httpService.get<WalletPaymentIntentResponse>(
-          `${walletApiUrl}/v1/payment-intents/${intentId}`,
-          {
-            headers: {
-              Authorization: `Bearer ${walletApiKey}`,
-            },
+        this.httpService.get<WalletPaymentIntentResponse>(`${walletApiUrl}/v1/payment-intents/${intentId}`, {
+          headers: {
+            Authorization: `Bearer ${walletApiKey}`,
           },
-        ),
+        }),
       );
       return response.data;
     } catch (error) {
-      this.logger.error(
-        `Failed to get wallet payment intent ${intentId}: ${error.message}`,
-      );
+      this.logger.error(`Failed to get wallet payment intent ${intentId}: ${error.message}`);
       if (error.response?.status === 404) {
         throw new Error(`Payment intent not found: ${intentId}`);
       }
@@ -214,50 +196,32 @@ export class PaymentClientService {
    * 결제 Intent 생성
    * @param request 결제 의도 요청 데이터
    */
-  async createPaymentIntent(
-    request: PaymentIntentRequest,
-  ): Promise<PaymentIntentResponse> {
+  async createPaymentIntent(request: PaymentIntentRequest): Promise<PaymentIntentResponse> {
     try {
-      this.logger.log(
-        `Creating payment intent for contract: ${request.metadata.contractId}`,
-      );
-      this.logger.debug(
-        `Payment intent request data: ${JSON.stringify(request)}`,
-      );
+      this.logger.log(`Creating payment intent for contract: ${request.metadata.contractId}`);
+      this.logger.debug(`Payment intent request data: ${JSON.stringify(request)}`);
 
       const response = await firstValueFrom(
-        this.httpService.post<PaymentIntentResponse>(
-          `${this.paymentServerUrl}/v2/payments/intents`,
-          request,
-          {
-            headers: {
-              'Content-Type': 'application/json',
-            },
+        this.httpService.post<PaymentIntentResponse>(`${this.paymentServerUrl}/v2/payments/intents`, request, {
+          headers: {
+            'Content-Type': 'application/json',
           },
-        ),
+        }),
       );
 
-      this.logger.log(
-        `Payment intent created successfully: ${response.data.id}`,
-      );
-      return response.data as PaymentIntentResponse;
+      this.logger.log(`Payment intent created successfully: ${response.data.id}`);
+      return response.data;
     } catch (error) {
       this.logger.error(`Failed to create payment intent: ${error.message}`);
       if (error.response) {
         this.logger.error(`Response status: ${error.response.status}`);
-        this.logger.error(
-          `Response data: ${JSON.stringify(error.response.data)}`,
-        );
+        this.logger.error(`Response data: ${JSON.stringify(error.response.data)}`);
 
         // Wallet v4 특정 에러 코드 처리
         if (error.response.status === 400) {
-          throw new Error(
-            `Invalid payment intent request: ${error.response.data?.message || error.message}`,
-          );
+          throw new Error(`Invalid payment intent request: ${error.response.data?.message || error.message}`);
         } else if (error.response.status === 404) {
-          throw new Error(
-            `Payment endpoint not found - check Wallet server version`,
-          );
+          throw new Error(`Payment endpoint not found - check Wallet server version`);
         } else if (error.response.status >= 500) {
           throw new Error(`Wallet server error: ${error.response.status}`);
         }
@@ -265,9 +229,7 @@ export class PaymentClientService {
 
       // 네트워크 에러 처리
       if (error.code === 'ECONNREFUSED') {
-        throw new Error(
-          `Cannot connect to Wallet server at ${this.paymentServerUrl}`,
-        );
+        throw new Error(`Cannot connect to Wallet server at ${this.paymentServerUrl}`);
       }
 
       throw new Error(`Payment intent creation failed: ${error.message}`);
@@ -279,19 +241,12 @@ export class PaymentClientService {
    * @param intentId 결제 Intent ID
    * @param request 결제 실행 요청 데이터
    */
-  async processPayment(
-    intentId: string,
-    request: PaymentProcessRequest,
-  ): Promise<PaymentProcessResponse> {
+  async processPayment(intentId: string, request: PaymentProcessRequest): Promise<PaymentProcessResponse> {
     try {
-      this.logger.log(
-        `Processing payment for intent: ${intentId} with provider: ${request.providerType}`,
-      );
+      this.logger.log(`Processing payment for intent: ${intentId} with provider: ${request.providerType}`);
 
       // 디버깅: 실제 전송되는 데이터 확인
-      this.logger.debug(
-        `Payment process request data: ${JSON.stringify(request)}`,
-      );
+      this.logger.debug(`Payment process request data: ${JSON.stringify(request)}`);
 
       const response = await firstValueFrom(
         this.httpService.post<PaymentProcessResponse>(
@@ -306,41 +261,26 @@ export class PaymentClientService {
       );
 
       // 디버깅: 실제 응답 데이터 확인
-      this.logger.debug(
-        `Payment process response data: ${JSON.stringify(response.data)}`,
-      );
+      this.logger.debug(`Payment process response data: ${JSON.stringify(response.data)}`);
 
-      this.logger.log(
-        `Payment processed: ${response.data.transactionId} with success: ${response.data.success}`,
-      );
-      return response.data as PaymentProcessResponse;
+      this.logger.log(`Payment processed: ${response.data.transactionId} with success: ${response.data.success}`);
+      return response.data;
     } catch (error) {
-      this.logger.error(
-        `Failed to process payment: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`Failed to process payment: ${error.message}`, error.stack);
 
       if (error.response) {
-        this.logger.error(
-          `Payment process response status: ${error.response.status}`,
-        );
-        this.logger.error(
-          `Payment process response data: ${JSON.stringify(error.response.data)}`,
-        );
+        this.logger.error(`Payment process response status: ${error.response.status}`);
+        this.logger.error(`Payment process response data: ${JSON.stringify(error.response.data)}`);
 
         // Wallet v4 결제 실행 특정 에러 처리
         if (error.response.status === 400) {
-          throw new Error(
-            `Invalid payment process request: ${error.response.data?.message || error.message}`,
-          );
+          throw new Error(`Invalid payment process request: ${error.response.data?.message || error.message}`);
         } else if (error.response.status === 404) {
           throw new Error(`Payment intent not found: ${intentId}`);
         } else if (error.response.status === 409) {
           throw new Error(`Payment already processed: ${intentId}`);
         } else if (error.response.status >= 500) {
-          throw new Error(
-            `Wallet server error during payment processing: ${error.response.status}`,
-          );
+          throw new Error(`Wallet server error during payment processing: ${error.response.status}`);
         }
       }
 
@@ -357,33 +297,25 @@ export class PaymentClientService {
       this.logger.log(`Getting default payment profile for user: ${userId}`);
 
       const response = await firstValueFrom(
-        this.httpService.get<PaymentProfile[]>(
-          `${this.paymentServerUrl}/v2/payments/profiles/hms-card`,
-          {
-            params: { customerId: userId, status: 'ACTIVE' }, // Wallet v4: customerId 사용
-            headers: {
-              'Content-Type': 'application/json',
-            },
+        this.httpService.get<PaymentProfile[]>(`${this.paymentServerUrl}/v2/payments/profiles/hms-card`, {
+          params: { customerId: userId, status: 'ACTIVE' }, // Wallet v4: customerId 사용
+          headers: {
+            'Content-Type': 'application/json',
           },
-        ),
+        }),
       );
 
-      const profiles = response.data as PaymentProfile[];
+      const profiles = response.data;
       if (!profiles || profiles.length === 0) {
         throw new Error(`No active payment profile found for user: ${userId}`);
       }
 
       const defaultProfile = profiles.find((p) => p.isDefault) || profiles[0];
-      this.logger.log(
-        `Found default payment profile: ${defaultProfile.id} for user: ${userId}`,
-      );
+      this.logger.log(`Found default payment profile: ${defaultProfile.id} for user: ${userId}`);
 
       return defaultProfile;
     } catch (error) {
-      this.logger.error(
-        `Failed to get payment profile for user ${userId}: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`Failed to get payment profile for user ${userId}: ${error.message}`, error.stack);
       throw new Error(`Payment profile retrieval failed: ${error.message}`);
     }
   }
@@ -395,17 +327,12 @@ export class PaymentClientService {
   async getPaymentIntent(intentId: string): Promise<PaymentIntentResponse> {
     try {
       const response = await firstValueFrom(
-        this.httpService.get<PaymentIntentResponse>(
-          `${this.paymentServerUrl}/v2/payments/intents/${intentId}`,
-        ),
+        this.httpService.get<PaymentIntentResponse>(`${this.paymentServerUrl}/v2/payments/intents/${intentId}`),
       );
 
-      return response.data as PaymentIntentResponse;
+      return response.data;
     } catch (error) {
-      this.logger.error(
-        `Failed to get payment intent ${intentId}: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`Failed to get payment intent ${intentId}: ${error.message}`, error.stack);
       throw new Error(`Payment intent retrieval failed: ${error.message}`);
     }
   }
@@ -417,17 +344,12 @@ export class PaymentClientService {
   async getPaymentAttempt(attemptId: string): Promise<PaymentProcessResponse> {
     try {
       const response = await firstValueFrom(
-        this.httpService.get<PaymentProcessResponse>(
-          `${this.paymentServerUrl}/v2/payments/attempts/${attemptId}`,
-        ),
+        this.httpService.get<PaymentProcessResponse>(`${this.paymentServerUrl}/v2/payments/attempts/${attemptId}`),
       );
 
-      return response.data as PaymentProcessResponse;
+      return response.data;
     } catch (error) {
-      this.logger.error(
-        `Failed to get payment attempt ${attemptId}: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`Failed to get payment attempt ${attemptId}: ${error.message}`, error.stack);
       throw new Error(`Payment attempt retrieval failed: ${error.message}`);
     }
   }

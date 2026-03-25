@@ -1,12 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
-import {
-  SearchSuggestionsResponseDto,
-  TrendingKeywordsResponseDto,
-} from './dto/search-keyword-response.dto';
-import {
-  SEARCH_KEYWORD_REPOSITORY,
-  SearchKeywordRepository,
-} from './search-keyword.repository';
+import { SearchSuggestionsResponseDto, TrendingKeywordsResponseDto } from './dto/search-keyword-response.dto';
+import { SEARCH_KEYWORD_REPOSITORY, SearchKeywordRepository } from './search-keyword.repository';
 import { compactText } from './utils/text.utils';
 
 @Injectable()
@@ -19,10 +13,7 @@ export class SearchKeywordService {
     private readonly repository: SearchKeywordRepository,
   ) {}
 
-  async recordSearchKeyword(
-    rawKeyword: string,
-    resultCount: number,
-  ): Promise<void> {
+  async recordSearchKeyword(rawKeyword: string, resultCount: number): Promise<void> {
     const keyword = this.normalizeDisplayKeyword(rawKeyword);
 
     if (!keyword) {
@@ -57,10 +48,7 @@ export class SearchKeywordService {
     };
   }
 
-  async suggestKeywords(
-    rawQuery: string,
-    size: number,
-  ): Promise<SearchSuggestionsResponseDto> {
+  async suggestKeywords(rawQuery: string, size: number): Promise<SearchSuggestionsResponseDto> {
     const query = this.normalizeDisplayKeyword(rawQuery);
     const prefix = this.normalizeKeyword(rawQuery);
 

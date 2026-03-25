@@ -7,14 +7,11 @@ export const authApi = {
     password: string,
     rememberMe?: boolean
   ): Promise<ApiResponse<string>> => {
-    const response = await client.post<ApiResponse<string>>(
-      'auth/signin',
-      {
-        loginId,
-        password,
-        rememberMe,
-      }
-    );
+    const response = await client.post<ApiResponse<string>>('auth/signin', {
+      loginId,
+      password,
+      rememberMe,
+    });
 
     return response.data;
   },

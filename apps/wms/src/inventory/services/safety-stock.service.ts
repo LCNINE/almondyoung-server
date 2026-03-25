@@ -16,9 +16,7 @@ export interface SafetyStockWarning {
 
 @Injectable()
 export class SafetyStockService {
-  constructor(
-    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
-  ) { }
+  constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
 
   private get db() {
     return this.dbService.db;
@@ -30,9 +28,7 @@ export class SafetyStockService {
   async getBelowSafetyStock(warehouseId?: string, tx?: DbTx): Promise<SafetyStockWarning[]> {
     return this.inTx(async (tx) => {
       // Build query conditions
-      const conditions = [
-        sql`COALESCE(${wmsViews.stockSummary.onHandQty}, 0)::int < ${wmsTables.skus.safetyStock}`
-      ];
+      const conditions = [sql`COALESCE(${wmsViews.stockSummary.onHandQty}, 0)::int < ${wmsTables.skus.safetyStock}`];
 
       if (warehouseId) {
         conditions.push(eq(wmsViews.stockSummary.warehouseId, warehouseId));
@@ -48,15 +44,12 @@ export class SafetyStockService {
           warehouseId: wmsViews.stockSummary.warehouseId,
         })
         .from(wmsTables.skus)
-        .leftJoin(
-          wmsViews.stockSummary,
-          eq(wmsTables.skus.id, wmsViews.stockSummary.skuId)
-        )
+        .leftJoin(wmsViews.stockSummary, eq(wmsTables.skus.id, wmsViews.stockSummary.skuId))
         .where(and(...conditions));
 
       const results = await query;
 
-      return results.map(row => ({
+      return results.map((row) => ({
         skuId: row.skuId,
         skuName: row.skuName,
         skuCode: row.skuCode,
@@ -81,10 +74,7 @@ export class SafetyStockService {
         .from(wmsTables.skus)
         .leftJoin(
           wmsViews.stockSummary,
-          and(
-            eq(wmsTables.skus.id, wmsViews.stockSummary.skuId),
-            eq(wmsViews.stockSummary.warehouseId, warehouseId)
-          )
+          and(eq(wmsTables.skus.id, wmsViews.stockSummary.skuId), eq(wmsViews.stockSummary.warehouseId, warehouseId)),
         )
         .where(eq(wmsTables.skus.id, skuId))
         .limit(1);
@@ -98,7 +88,10 @@ export class SafetyStockService {
   /**
    * Get safety stock status for a specific SKU across all warehouses
    */
-  async getSafetyStockStatus(skuId: string, tx?: DbTx): Promise<{
+  async getSafetyStockStatus(
+    skuId: string,
+    tx?: DbTx,
+  ): Promise<{
     skuId: string;
     skuName: string;
     skuCode: string;
@@ -143,7 +136,7 @@ export class SafetyStockService {
         skuName: sku.name,
         skuCode: sku.code,
         safetyStock: sku.safetyStock,
-        warehouses: stockByWarehouse.map(row => ({
+        warehouses: stockByWarehouse.map((row) => ({
           warehouseId: row.warehouseId,
           warehouseName: row.warehouseName ?? '',
           currentStock: row.currentStock,
@@ -158,4 +151,3 @@ export class SafetyStockService {
     return tx ? fn(tx) : this.db.transaction(fn);
   }
 }
-

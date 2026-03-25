@@ -132,17 +132,13 @@ describe('AuthService - signUp', () => {
       await service.signUp(baseSignUpDto, mockReply);
 
       expect(mockReply.status).toHaveBeenCalledWith(302);
-      expect(mockRedirect).toHaveBeenCalledWith(
-        expect.stringContaining('/callback/signup?redirect_to=/'),
-      );
+      expect(mockRedirect).toHaveBeenCalledWith(expect.stringContaining('/callback/signup?redirect_to=/'));
     });
 
     it('redirect_to 파라미터가 있으면 해당 경로로 리다이렉트해야 한다', async () => {
       await service.signUp(baseSignUpDto, mockReply, '/mypage');
 
-      expect(mockRedirect).toHaveBeenCalledWith(
-        expect.stringContaining('/callback/signup?redirect_to=/mypage'),
-      );
+      expect(mockRedirect).toHaveBeenCalledWith(expect.stringContaining('/callback/signup?redirect_to=/mypage'));
     });
 
     it('비밀번호를 bcrypt로 해싱해야 한다', async () => {
@@ -212,9 +208,7 @@ describe('AuthService - signUp', () => {
 
       // 리다이렉트 확인
       expect(mockReply.status).toHaveBeenCalledWith(302);
-      expect(mockRedirect).toHaveBeenCalledWith(
-        expect.stringContaining('/callback/signup?redirect_to=/'),
-      );
+      expect(mockRedirect).toHaveBeenCalledWith(expect.stringContaining('/callback/signup?redirect_to=/'));
     });
 
     it('프로필 생년월일을 업데이트해야 한다', async () => {
@@ -294,9 +288,7 @@ describe('AuthService - signUp', () => {
     it('ConflictException이 아닌 에러는 InternalServerErrorException으로 변환해야 한다', async () => {
       usersService.findUserByEmail.mockRejectedValue(new Error('DB connection failed'));
 
-      await expect(service.signUp(baseSignUpDto, mockReply)).rejects.toThrow(
-        InternalServerErrorException,
-      );
+      await expect(service.signUp(baseSignUpDto, mockReply)).rejects.toThrow(InternalServerErrorException);
     });
   });
 });

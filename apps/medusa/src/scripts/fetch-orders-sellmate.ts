@@ -27,16 +27,10 @@ function todayKST(): string {
   return new Date(Date.now() + KST_OFFSET_MS).toISOString().slice(0, 10);
 }
 function formatKST(date: Date): string {
-  return new Date(date.getTime() + KST_OFFSET_MS)
-    .toISOString()
-    .replace('T', ' ')
-    .slice(0, 19);
+  return new Date(date.getTime() + KST_OFFSET_MS).toISOString().replace('T', ' ').slice(0, 19);
 }
 function toDateStrKST(date: Date): string {
-  return new Date(date.getTime() + KST_OFFSET_MS)
-    .toISOString()
-    .slice(0, 10)
-    .replace(/-/g, '');
+  return new Date(date.getTime() + KST_OFFSET_MS).toISOString().slice(0, 10).replace(/-/g, '');
 }
 
 export default async function fetchOrdersForSellmate({ container }: ExecArgs) {
@@ -46,9 +40,7 @@ export default async function fetchOrdersForSellmate({ container }: ExecArgs) {
   const today = todayKST();
   const fromDate = kstStartOfDay(process.env.FROM_DATE ?? today);
   const toDate = kstEndOfDay(process.env.TO_DATE ?? today);
-  const statuses = (process.env.STATUS ?? 'pending')
-    .split(',')
-    .map((s) => s.trim());
+  const statuses = (process.env.STATUS ?? 'pending').split(',').map((s) => s.trim());
 
   logger.info(
     `[sellmate-fetch] 기간: ${formatKST(fromDate)} ~ ${formatKST(toDate)} (KST), 상태: ${statuses.join(', ')}`,
@@ -112,11 +104,11 @@ export default async function fetchOrdersForSellmate({ container }: ExecArgs) {
           items_count: sample.items?.length,
           first_item: sample.items?.[0]
             ? {
-              product_title: sample.items[0].product_title,
-              unit_price: sample.items[0].unit_price,
-              quantity: sample.items[0].quantity,
-              variant_options: sample.items[0].variant?.options,
-            }
+                product_title: sample.items[0].product_title,
+                unit_price: sample.items[0].unit_price,
+                quantity: sample.items[0].quantity,
+                variant_options: sample.items[0].variant?.options,
+              }
             : null,
         },
         null,
@@ -142,17 +134,13 @@ export default async function fetchOrdersForSellmate({ container }: ExecArgs) {
     },
     items: (order.items ?? []).map((item: any) => ({
       productTitle: item.product_title ?? '',
-      optionName: (item.variant?.options ?? [])
-        .map((o: any) => o.value)
-        .join(', '),
+      optionName: (item.variant?.options ?? []).map((o: any) => o.value).join(', '),
       unitPrice: item.unit_price ?? 0,
       quantity: item.detail?.quantity ?? 0,
     })),
   }));
 
-  const outputPath =
-    process.env.OUTPUT ??
-    path.join(process.cwd(), `sellmate-orders-${toDateStrKST(fromDate)}.json`);
+  const outputPath = process.env.OUTPUT ?? path.join(process.cwd(), `sellmate-orders-${toDateStrKST(fromDate)}.json`);
 
   fs.writeFileSync(outputPath, JSON.stringify(result, null, 2), 'utf-8');
   logger.info(`[sellmate-fetch] ${result.length}건 → ${outputPath}`);

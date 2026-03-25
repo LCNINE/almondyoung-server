@@ -17,8 +17,7 @@ export class AutoCaptureService {
 
   async attemptAutoCapture(intentId: string, correlationId: string): Promise<void> {
     try {
-      const authorizeCharges =
-        await this.chargesService.findAllSucceededAuthorizeByIntent(intentId);
+      const authorizeCharges = await this.chargesService.findAllSucceededAuthorizeByIntent(intentId);
 
       if (authorizeCharges.length === 0) return;
 
@@ -30,9 +29,7 @@ export class AutoCaptureService {
       }
 
       if (!this.providerRegistry.shouldAutoCapture(providerTypes)) {
-        this.logger.debug(
-          `Auto-capture skipped for intent ${intentId}: not all providers support autoCapture`,
-        );
+        this.logger.debug(`Auto-capture skipped for intent ${intentId}: not all providers support autoCapture`);
         return;
       }
 
@@ -40,9 +37,7 @@ export class AutoCaptureService {
       await this.captureService.capture(intentId, correlationId);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      this.logger.error(
-        `Auto-capture failed for intent ${intentId}, manual capture still possible: ${msg}`,
-      );
+      this.logger.error(`Auto-capture failed for intent ${intentId}, manual capture still possible: ${msg}`);
     }
   }
 }

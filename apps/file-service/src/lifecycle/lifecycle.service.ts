@@ -5,8 +5,7 @@ import { JwtPayload } from '../shared/types/jwt-payload.interface';
 
 @Injectable()
 export class LifecycleService {
-  constructor(private readonly fileRepository: FileRepository) { }
-
+  constructor(private readonly fileRepository: FileRepository) {}
 
   async deleteFile(fileId: string, user: JwtPayload): Promise<DeleteResponseDto> {
     const file = await this.fileRepository.findById(fileId);
@@ -38,4 +37,3 @@ export class LifecycleService {
     };
   }
 }
-

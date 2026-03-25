@@ -1,7 +1,12 @@
-export { DataTable } from './data-table'
-export { DataTableRoot } from './data-table-root'
-export { DataTableQuery } from './data-table-query'
-export { DataTableSearch } from './data-table-search'
-export { DataTableOrderBy } from './data-table-order-by'
-export { DataTableFilter, FilterChip, FilterProvider, useFilterContext } from './data-table-filter'
-export type { Filter, FilterOption } from './data-table-filter'
+export { DataTable } from './data-table';
+export { DataTableRoot } from './data-table-root';
+export { DataTableQuery } from './data-table-query';
+export { DataTableSearch } from './data-table-search';
+export { DataTableOrderBy } from './data-table-order-by';
+export {
+  DataTableFilter,
+  FilterChip,
+  FilterProvider,
+  useFilterContext,
+} from './data-table-filter';
+export type { Filter, FilterOption } from './data-table-filter';

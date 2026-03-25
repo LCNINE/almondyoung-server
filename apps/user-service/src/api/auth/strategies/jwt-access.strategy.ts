@@ -13,9 +13,7 @@ export class JwtAccessStrategy extends PassportStrategy(Strategy) {
     const jwtSecret = configService.get<string>('AUTH_SECRET');
 
     if (!jwtSecret) {
-      throw new Error(
-        'AUTH_SECRET 환경 변수가 설정되지 않았습니다. JWT 인증을 위해 이 환경 변수를 설정하세요.',
-      );
+      throw new Error('AUTH_SECRET 환경 변수가 설정되지 않았습니다. JWT 인증을 위해 이 환경 변수를 설정하세요.');
     }
 
     super({
@@ -32,10 +30,7 @@ export class JwtAccessStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(
-    req: any,
-    payload: { sub: string; email: string; roles: string[]; login_id?: string },
-  ) {
+  async validate(req: any, payload: { sub: string; email: string; roles: string[]; login_id?: string }) {
     // JWT payload 정보 반환
     return {
       id: payload.sub,

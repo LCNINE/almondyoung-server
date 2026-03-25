@@ -36,7 +36,7 @@ export class ProductSkuMappingService {
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly matchingsService: MatchingsService,
-  ) { }
+  ) {}
 
   private get db() {
     return this.dbService.db;
@@ -53,11 +53,13 @@ export class ProductSkuMappingService {
       const existing = await tx
         .select()
         .from(wmsTables.productSkuMappings)
-        .where(and(
-          eq(wmsTables.productSkuMappings.productId, productId),
-          eq(wmsTables.productSkuMappings.warehouseId, warehouseId),
-          eq(wmsTables.productSkuMappings.isActive, true)
-        ))
+        .where(
+          and(
+            eq(wmsTables.productSkuMappings.productId, productId),
+            eq(wmsTables.productSkuMappings.warehouseId, warehouseId),
+            eq(wmsTables.productSkuMappings.isActive, true),
+          ),
+        )
         .orderBy(desc(wmsTables.productSkuMappings.version))
         .limit(1);
 
@@ -78,7 +80,7 @@ export class ProductSkuMappingService {
           version: newVersion,
           warehouseId,
           isActive: true,
-          effectiveFrom: new Date()
+          effectiveFrom: new Date(),
         })
         .returning();
 
@@ -91,7 +93,9 @@ export class ProductSkuMappingService {
         qtyPerProduct: quantity,
       });
 
-      this.logger.log(`Created product-SKU mapping: productId=${productId}, version=${newVersion}, variantId=${variantId}, skuId=${skuId}`);
+      this.logger.log(
+        `Created product-SKU mapping: productId=${productId}, version=${newVersion}, variantId=${variantId}, skuId=${skuId}`,
+      );
     }, tx);
   }
 
@@ -100,11 +104,13 @@ export class ProductSkuMappingService {
       const rows = await tx
         .select()
         .from(wmsTables.productSkuMappings)
-        .where(and(
-          eq(wmsTables.productSkuMappings.productId, productId),
-          eq(wmsTables.productSkuMappings.warehouseId, warehouseId),
-          eq(wmsTables.productSkuMappings.isActive, true)
-        ))
+        .where(
+          and(
+            eq(wmsTables.productSkuMappings.productId, productId),
+            eq(wmsTables.productSkuMappings.warehouseId, warehouseId),
+            eq(wmsTables.productSkuMappings.isActive, true),
+          ),
+        )
         .orderBy(desc(wmsTables.productSkuMappings.version))
         .limit(1);
 
@@ -120,10 +126,10 @@ export class ProductSkuMappingService {
         id: mapping.id,
         productId: mapping.productId,
         version: mapping.version,
-        effectiveFrom: mapping.effectiveFrom!,
+        effectiveFrom: mapping.effectiveFrom,
         isActive: mapping.isActive,
         warehouseId: mapping.warehouseId,
-        mappings: items.map(i => ({
+        mappings: items.map((i) => ({
           variantId: i.variantId,
           skuId: i.skuId,
           quantity: i.qtyPerProduct,
@@ -156,7 +162,7 @@ export class ProductSkuMappingService {
         effectiveFrom: snapshot.createdAt, // 스냅샷 생성 시점을 유효 시점으로 간주
         isActive: true, // 스냅샷은 항상 유효한 기록임
         warehouseId: snapshot.warehouseId,
-        mappings: items.map(item => ({
+        mappings: items.map((item) => ({
           variantId: snapshot.variantId,
           skuId: item.skuId,
           quantity: item.qtyPerProduct,
@@ -165,7 +171,14 @@ export class ProductSkuMappingService {
     }, tx);
   }
 
-  async addVariantToMapping(productId: string, warehouseId: string, variantId: string, skuId: string, quantity = 1, tx?: DbTx): Promise<void> {
+  async addVariantToMapping(
+    productId: string,
+    warehouseId: string,
+    variantId: string,
+    skuId: string,
+    quantity = 1,
+    tx?: DbTx,
+  ): Promise<void> {
     await this.inTx(async (tx) => {
       const currentMapping = await this.getActiveMapping(productId, warehouseId, tx);
 
@@ -174,7 +187,7 @@ export class ProductSkuMappingService {
         return;
       }
 
-      const existingVariant = currentMapping.mappings.find(m => m.variantId === variantId);
+      const existingVariant = currentMapping.mappings.find((m) => m.variantId === variantId);
       if (existingVariant) {
         throw new BadRequestException(`Variant ${variantId} already exists in mapping for product ${productId}`);
       }
@@ -191,7 +204,7 @@ export class ProductSkuMappingService {
           version: currentMapping.version + 1,
           warehouseId,
           isActive: true,
-          effectiveFrom: new Date()
+          effectiveFrom: new Date(),
         })
         .returning();
 
@@ -200,15 +213,17 @@ export class ProductSkuMappingService {
       const allMappings = [...currentMapping.mappings, { variantId, skuId, quantity }];
 
       await tx.insert(wmsTables.productSkuMappingItems).values(
-        allMappings.map(m => ({
+        allMappings.map((m) => ({
           mappingId: newMapping.id,
           variantId: m.variantId,
           skuId: m.skuId,
           qtyPerProduct: m.quantity,
-        }))
+        })),
       );
 
-      this.logger.log(`Added variant ${variantId} to product ${productId} mapping, new version: ${currentMapping.version + 1}`);
+      this.logger.log(
+        `Added variant ${variantId} to product ${productId} mapping, new version: ${currentMapping.version + 1}`,
+      );
     }, tx);
   }
 
@@ -220,7 +235,7 @@ export class ProductSkuMappingService {
         throw new NotFoundException(`No active mapping found for product ${productId} in warehouse ${warehouseId}`);
       }
 
-      const variantExists = currentMapping.mappings.some(m => m.variantId === variantId);
+      const variantExists = currentMapping.mappings.some((m) => m.variantId === variantId);
       if (!variantExists) {
         throw new NotFoundException(`Variant ${variantId} not found in mapping for product ${productId}`);
       }
@@ -247,24 +262,26 @@ export class ProductSkuMappingService {
           version: currentMapping.version + 1,
           warehouseId,
           isActive: true,
-          effectiveFrom: new Date()
+          effectiveFrom: new Date(),
         })
         .returning();
 
       const newMapping = inserted[0];
 
-      const remainingMappings = currentMapping.mappings.filter(m => m.variantId !== variantId);
+      const remainingMappings = currentMapping.mappings.filter((m) => m.variantId !== variantId);
 
       await tx.insert(wmsTables.productSkuMappingItems).values(
-        remainingMappings.map(m => ({
+        remainingMappings.map((m) => ({
           mappingId: newMapping.id,
           variantId: m.variantId,
           skuId: m.skuId,
           qtyPerProduct: m.quantity,
-        }))
+        })),
       );
 
-      this.logger.log(`Removed variant ${variantId} from product ${productId} mapping, new version: ${currentMapping.version + 1}`);
+      this.logger.log(
+        `Removed variant ${variantId} from product ${productId} mapping, new version: ${currentMapping.version + 1}`,
+      );
     }, tx);
   }
 
@@ -273,15 +290,17 @@ export class ProductSkuMappingService {
       const mappings = await tx
         .select()
         .from(wmsTables.productSkuMappings)
-        .where(and(
-          eq(wmsTables.productSkuMappings.productId, productId),
-          eq(wmsTables.productSkuMappings.warehouseId, warehouseId)
-        ))
+        .where(
+          and(
+            eq(wmsTables.productSkuMappings.productId, productId),
+            eq(wmsTables.productSkuMappings.warehouseId, warehouseId),
+          ),
+        )
         .orderBy(desc(wmsTables.productSkuMappings.version));
 
       if (mappings.length === 0) return [];
 
-      const mappingIds = mappings.map(m => m.id);
+      const mappingIds = mappings.map((m) => m.id);
 
       const items = await tx
         .select()
@@ -294,14 +313,14 @@ export class ProductSkuMappingService {
         (grouped[it.mappingId] ||= []).push(it);
       }
 
-      return mappings.map(mapping => ({
+      return mappings.map((mapping) => ({
         id: mapping.id,
         productId: mapping.productId,
         version: mapping.version,
-        effectiveFrom: mapping.effectiveFrom!,
+        effectiveFrom: mapping.effectiveFrom,
         isActive: mapping.isActive,
         warehouseId: mapping.warehouseId,
-        mappings: (grouped[mapping.id] || []).map(i => ({
+        mappings: (grouped[mapping.id] || []).map((i) => ({
           variantId: i.variantId,
           skuId: i.skuId,
           quantity: i.qtyPerProduct,
@@ -310,7 +329,11 @@ export class ProductSkuMappingService {
     }, tx);
   }
 
-  async getSkuMappingForVariant(variantId: string, warehouseId: string, tx?: DbTx): Promise<{ skuId: string; quantity: number } | null> {
+  async getSkuMappingForVariant(
+    variantId: string,
+    warehouseId: string,
+    tx?: DbTx,
+  ): Promise<{ skuId: string; quantity: number } | null> {
     return this.inTx(async (tx) => {
       const rows = await tx
         .select({
@@ -320,13 +343,15 @@ export class ProductSkuMappingService {
         .from(wmsTables.productSkuMappingItems)
         .innerJoin(
           wmsTables.productSkuMappings,
-          eq(wmsTables.productSkuMappingItems.mappingId, wmsTables.productSkuMappings.id)
+          eq(wmsTables.productSkuMappingItems.mappingId, wmsTables.productSkuMappings.id),
         )
-        .where(and(
-          eq(wmsTables.productSkuMappingItems.variantId, variantId),
-          eq(wmsTables.productSkuMappings.warehouseId, warehouseId),
-          eq(wmsTables.productSkuMappings.isActive, true)
-        ))
+        .where(
+          and(
+            eq(wmsTables.productSkuMappingItems.variantId, variantId),
+            eq(wmsTables.productSkuMappings.warehouseId, warehouseId),
+            eq(wmsTables.productSkuMappings.isActive, true),
+          ),
+        )
         .orderBy(desc(wmsTables.productSkuMappings.version))
         .limit(1);
 
@@ -342,11 +367,7 @@ export class ProductSkuMappingService {
       if (!mapping || mapping.mappings.length === 0) return false;
 
       for (const mappingEntry of mapping.mappings) {
-        const rows = await tx
-          .select()
-          .from(wmsTables.skus)
-          .where(eq(wmsTables.skus.id, mappingEntry.skuId))
-          .limit(1);
+        const rows = await tx.select().from(wmsTables.skus).where(eq(wmsTables.skus.id, mappingEntry.skuId)).limit(1);
         if (!rows[0]) {
           this.logger.warn(`Invalid SKU reference in mapping: ${mappingEntry.skuId}`);
           return false;
@@ -359,17 +380,13 @@ export class ProductSkuMappingService {
 
   /**
    * SO 확정 시점에 variant의 현재 매핑 정보를 스냅샷으로 저장
-   * 
+   *
    * @param variantId - PIM variant ID
    * @param warehouseId - 출고 창고 ID
    * @param tx - 트랜잭션
    * @returns 생성된 스냅샷 ID 또는 매핑이 없으면 null
    */
-  async createSnapshotForVariant(
-    variantId: string,
-    warehouseId: string,
-    tx?: DbTx,
-  ): Promise<string | null> {
+  async createSnapshotForVariant(variantId: string, warehouseId: string, tx?: DbTx): Promise<string | null> {
     return this.inTx(async (tx) => {
       // 1. 현재 활성 매핑 조회
       const mappingInfo = await tx
@@ -403,11 +420,11 @@ export class ProductSkuMappingService {
           // Global Matching이 있으면 이를 기반으로 스냅샷 생성
           // 주의: Global Matching은 warehouseId 개념이 없으므로, 현재 요청된 warehouseId로 스냅샷을 생성함
           // 또한 productId 정보가 없으므로(variantId만 있음), productId는 null이거나 별도 조회가 필요할 수 있음.
-          // 현재 스키마상 productId가 필수라면 문제가 될 수 있으나, 
-          // product_sku_mapping_snapshots 테이블 정의를 확인해봐야 함. 
+          // 현재 스키마상 productId가 필수라면 문제가 될 수 있으나,
+          // product_sku_mapping_snapshots 테이블 정의를 확인해봐야 함.
           // (일단 productId는 null 허용이거나, variantId로 product를 찾을 수 있다고 가정)
 
-          // 여기서는 productId를 알 수 없으므로, 일단 null로 넣거나(스키마 허용시), 
+          // 여기서는 productId를 알 수 없으므로, 일단 null로 넣거나(스키마 허용시),
           // 또는 variantId를 통해 Product를 조회해야 함.
           // 하지만 성능상 일단 Global Matching의 첫 번째 SKU를 메인으로 잡고 스냅샷 생성.
 
@@ -424,9 +441,9 @@ export class ProductSkuMappingService {
               quantity: primaryLink.quantity,
               mappingId: null, // No specific mapping ID
               snapshotData: {
-                items: globalMatching.links.map(l => ({ skuId: l.skuId, qtyPerProduct: l.quantity })),
+                items: globalMatching.links.map((l) => ({ skuId: l.skuId, qtyPerProduct: l.quantity })),
                 capturedAt: new Date().toISOString(),
-                source: 'global_matching'
+                source: 'global_matching',
               },
             })
             .returning();
@@ -437,9 +454,7 @@ export class ProductSkuMappingService {
           return snapshot.id;
         }
 
-        this.logger.warn(
-          `No active mapping found for variantId=${variantId}, warehouseId=${warehouseId}`,
-        );
+        this.logger.warn(`No active mapping found for variantId=${variantId}, warehouseId=${warehouseId}`);
         return null;
       }
 
@@ -463,9 +478,7 @@ export class ProductSkuMappingService {
         })
         .returning();
 
-      this.logger.log(
-        `Created mapping snapshot for variantId=${variantId}: snapshotId=${snapshot.id}`,
-      );
+      this.logger.log(`Created mapping snapshot for variantId=${variantId}: snapshotId=${snapshot.id}`);
 
       return snapshot.id;
     }, tx);

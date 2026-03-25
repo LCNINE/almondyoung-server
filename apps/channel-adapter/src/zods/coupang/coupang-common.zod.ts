@@ -16,9 +16,7 @@ import { z } from 'zod';
 /**
  * 쿠팡 API 공통 응답 구조를 생성하는 제네릭 헬퍼 함수
  */
-export function createCoupangApiResponseSchema<T extends z.ZodTypeAny>(
-  dataSchema: T,
-) {
+export function createCoupangApiResponseSchema<T extends z.ZodTypeAny>(dataSchema: T) {
   return z.object({
     code: z.number(), // e.g. 200
     message: z.string(), // e.g. "OK"
@@ -110,9 +108,7 @@ export const ReceiverSchema = z.object({
 // =================================================================
 
 export type Currency = z.infer<typeof CurrencySchema>;
-export type CoupangDeliveryCompanyCode = z.infer<
-  typeof CoupangDeliveryCompanyCodeSchema
->;
+export type CoupangDeliveryCompanyCode = z.infer<typeof CoupangDeliveryCompanyCodeSchema>;
 export type CoupangOrderStatus = z.infer<typeof CoupangOrderStatusSchema>;
 export type Orderer = z.infer<typeof OrdererSchema>;
 export type Receiver = z.infer<typeof ReceiverSchema>;
@@ -145,20 +141,13 @@ export const COUPANG_STATUS_MAPPING = {
  * 쿠팡 상태를 내부 표준 상태로 매핑하는 함수
  */
 export function mapCoupangStatusToInternal(coupangStatus: string): string {
-  return (
-    COUPANG_STATUS_MAPPING[
-      coupangStatus as keyof typeof COUPANG_STATUS_MAPPING
-    ] || coupangStatus
-  );
+  return COUPANG_STATUS_MAPPING[coupangStatus as keyof typeof COUPANG_STATUS_MAPPING] || coupangStatus;
 }
 
 /**
  * 날짜 범위 검증 함수 (최대 31일)
  */
-export function validateCoupangDateRange(
-  createdAtFrom: string,
-  createdAtTo: string,
-): boolean {
+export function validateCoupangDateRange(createdAtFrom: string, createdAtTo: string): boolean {
   // ISO 형식 (YYYY-MM-DDTHH:mm) 또는 단순 날짜 (YYYY-MM-DD) 모두 처리
   const fromDate = new Date(createdAtFrom.split('T')[0]);
   const toDate = new Date(createdAtTo.split('T')[0]);

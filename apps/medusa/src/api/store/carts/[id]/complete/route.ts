@@ -1,8 +1,4 @@
-import {
-  MedusaRequest,
-  MedusaResponse,
-  prepareRetrieveQuery,
-} from '@medusajs/framework/http';
+import { MedusaRequest, MedusaResponse, prepareRetrieveQuery } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { completeCartWorkflow } from '@medusajs/medusa/core-flows';
 import { MedusaError } from '@medusajs/utils';
@@ -35,12 +31,14 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
     const cart = await refetchCart(
       cart_id,
       req.scope,
-      (await prepareRetrieveQuery(
-        {},
-        {
-          defaults: defaultStoreCartFields,
-        },
-      )).remoteQueryConfig.fields,
+      (
+        await prepareRetrieveQuery(
+          {},
+          {
+            defaults: defaultStoreCartFields,
+          },
+        )
+      ).remoteQueryConfig.fields,
     );
 
     if (!statusOKErrors.includes(error.type)) {

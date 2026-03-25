@@ -35,12 +35,7 @@ export class EventTraceReader {
     const chainRows = await this.db
       .selectDistinct({ chainId: event_resource_links.chainId })
       .from(event_resource_links)
-      .where(
-        and(
-          eq(event_resource_links.resourceType, resourceType),
-          eq(event_resource_links.resourceId, resourceId),
-        ),
-      );
+      .where(and(eq(event_resource_links.resourceType, resourceType), eq(event_resource_links.resourceId, resourceId)));
 
     if (chainRows.length === 0) {
       return [];
@@ -60,11 +55,7 @@ export class EventTraceReader {
   /**
    * 특정 resourceType에 속하는 고유 resourceId 목록을 페이지네이션해서 조회
    */
-  async findResourcesByType(
-    resourceType: string,
-    limit: number,
-    offset: number,
-  ): Promise<{ resourceId: string }[]> {
+  async findResourcesByType(resourceType: string, limit: number, offset: number): Promise<{ resourceId: string }[]> {
     const rows = await this.db
       .selectDistinct({ resourceId: event_resource_links.resourceId })
       .from(event_resource_links)

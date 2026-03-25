@@ -11,10 +11,10 @@ export class ScopeGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const requiredScopes = this.reflector.getAllAndOverride<string[]>(
-      REQUIRED_SCOPES_KEY,
-      [context.getHandler(), context.getClass()]
-    );
+    const requiredScopes = this.reflector.getAllAndOverride<string[]>(REQUIRED_SCOPES_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
 
     if (!requiredScopes || requiredScopes.length === 0) {
       return true;
@@ -33,7 +33,6 @@ export class ScopeGuard implements CanActivate {
       return true;
     }
 
-    return requiredScopes.some(scope => userScopes.has(scope));
+    return requiredScopes.some((scope) => userScopes.has(scope));
   }
 }
-

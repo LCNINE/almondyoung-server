@@ -24,37 +24,26 @@ export class ProductEventsConsumer {
     envelope: DomainEvent<ProductMasterActiveVersionChangedPayload>,
     @EventPayload() payload: ProductMasterActiveVersionChangedPayload,
   ): Promise<void> {
-    this.logger.log(
-      `ProductMasterActiveVersionChanged received: ${payload.masterId} (${payload.changeReason})`,
-    );
+    this.logger.log(`ProductMasterActiveVersionChanged received: ${payload.masterId} (${payload.changeReason})`);
 
     try {
       if (!payload.versionId || payload.changeReason === 'unpublished') {
         await this.productIndexService.deleteProduct(payload.masterId);
-        this.logger.debug(
-          `Product removed from index: ${payload.masterId} (${envelope.messageId})`,
-        );
+        this.logger.debug(`Product removed from index: ${payload.masterId} (${envelope.messageId})`);
         return;
       }
 
       if (!payload.snapshot) {
-        this.logger.warn(
-          `Snapshot missing for ${payload.masterId}, skipping indexing (${envelope.messageId})`,
-        );
+        this.logger.warn(`Snapshot missing for ${payload.masterId}, skipping indexing (${envelope.messageId})`);
         return;
       }
 
       const document = this.buildDocument(payload);
       await this.productIndexService.upsertProduct(payload.masterId, document);
 
-      this.logger.debug(
-        `Product indexed: ${payload.masterId}/${payload.versionId} (${envelope.messageId})`,
-      );
+      this.logger.debug(`Product indexed: ${payload.masterId}/${payload.versionId} (${envelope.messageId})`);
     } catch (error) {
-      this.logger.error(
-        `Failed to index product ${payload.masterId}: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`Failed to index product ${payload.masterId}: ${error.message}`, error.stack);
       throw error;
     }
   }
@@ -67,39 +56,23 @@ export class ProductEventsConsumer {
     this.logger.log(`ProductMasterDeleted received: ${payload.masterId}`);
     try {
       await this.productIndexService.deleteProduct(payload.masterId);
-      this.logger.debug(
-        `Product removed from index: ${payload.masterId} (${envelope.messageId})`,
-      );
+      this.logger.debug(`Product removed from index: ${payload.masterId} (${envelope.messageId})`);
     } catch (error) {
-      this.logger.error(
-        `Failed to delete product ${payload.masterId}: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`Failed to delete product ${payload.masterId}: ${error.message}`, error.stack);
       throw error;
     }
   }
 
-  private buildDocument(
-    payload: ProductMasterActiveVersionChangedPayload,
-  ): SearchProductDocument {
+  private buildDocument(payload: ProductMasterActiveVersionChangedPayload): SearchProductDocument {
     const snapshot = payload.snapshot as ProductSnapshot;
-    const categoryIds =
-      payload.categoryIds ??
-      snapshot.categories?.map((category) => category.id) ??
-      [];
+    const categoryIds = payload.categoryIds ?? snapshot.categories?.map((category) => category.id) ?? [];
     const categoryNames = snapshot.categories?.map((category) => category.name) ?? [];
     const basePrices = snapshot.variants
       .map((variant) => variant.basePrice)
-      .filter(
-        (price): price is number =>
-          typeof price === 'number' && Number.isFinite(price),
-      );
+      .filter((price): price is number => typeof price === 'number' && Number.isFinite(price));
     const membershipPrices = snapshot.variants
       .map((variant) => variant.membershipPrice)
-      .filter(
-        (price): price is number =>
-          typeof price === 'number' && Number.isFinite(price),
-      );
+      .filter((price): price is number => typeof price === 'number' && Number.isFinite(price));
 
     return {
       master_id: payload.masterId,
@@ -114,14 +87,11 @@ export class ProductEventsConsumer {
       tags: snapshot.tags ?? [],
       min_base_price: basePrices.length > 0 ? Math.min(...basePrices) : null,
       max_base_price: basePrices.length > 0 ? Math.max(...basePrices) : null,
-      min_membership_price:
-        membershipPrices.length > 0 ? Math.min(...membershipPrices) : null,
-      max_membership_price:
-        membershipPrices.length > 0 ? Math.max(...membershipPrices) : null,
+      min_membership_price: membershipPrices.length > 0 ? Math.min(...membershipPrices) : null,
+      max_membership_price: membershipPrices.length > 0 ? Math.max(...membershipPrices) : null,
       status: snapshot.status ?? 'active',
       changed_at: payload.changedAt,
       updated_at: payload.changedAt,
     };
   }
-
 }

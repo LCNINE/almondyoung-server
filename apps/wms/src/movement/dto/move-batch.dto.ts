@@ -1,5 +1,15 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsArray, ArrayMinSize, ValidateNested, IsUUID, IsOptional, IsString, IsInt, Min, IsDateString } from 'class-validator';
+import {
+  IsArray,
+  ArrayMinSize,
+  ValidateNested,
+  IsUUID,
+  IsOptional,
+  IsString,
+  IsInt,
+  Min,
+  IsDateString,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class MoveLineDto {
@@ -53,5 +63,3 @@ export class MoveBatchDto {
   @Type(() => MoveLineDto)
   lines!: MoveLineDto[];
 }
-
-

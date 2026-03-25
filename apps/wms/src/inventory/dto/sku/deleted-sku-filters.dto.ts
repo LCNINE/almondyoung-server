@@ -1,10 +1,4 @@
-import {
-  IsOptional,
-  IsString,
-  IsInt,
-  Min,
-  IsDateString,
-} from 'class-validator';
+import { IsOptional, IsString, IsInt, Min, IsDateString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
@@ -63,4 +57,3 @@ export class DeletedSkuFiltersDto {
   @IsOptional()
   offset?: number = 0;
 }
-

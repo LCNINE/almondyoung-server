@@ -58,15 +58,9 @@ describe('Payment Response Storage (Integration)', () => {
     }).compile();
 
     dbService = module.get<DbService<typeof walletSchema>>(DbService);
-    attemptRepo = module.get<PaymentAttemptRepository>(
-      PaymentAttemptRepository,
-    );
-    cmsResponseRepo = module.get<BnplCmsResponseRepository>(
-      BnplCmsResponseRepository,
-    );
-    settlementService = module.get<BnplSettlementService>(
-      BnplSettlementService,
-    );
+    attemptRepo = module.get<PaymentAttemptRepository>(PaymentAttemptRepository);
+    cmsResponseRepo = module.get<BnplCmsResponseRepository>(BnplCmsResponseRepository);
+    settlementService = module.get<BnplSettlementService>(BnplSettlementService);
     bnplAccountService = module.get<BnplAccountService>(BnplAccountService);
   });
 
@@ -243,7 +237,7 @@ describe('Payment Response Storage (Integration)', () => {
       );
 
       const attempt = await attemptRepo.findById(attemptId);
-      const errorMessage = attemptRepo.getErrorMessage(attempt!);
+      const errorMessage = attemptRepo.getErrorMessage(attempt);
 
       expect(errorMessage).toBe('Card declined by issuer');
     });
@@ -287,7 +281,7 @@ describe('Payment Response Storage (Integration)', () => {
       );
 
       const attempt = await attemptRepo.findById(attemptId);
-      const errorMessage = attemptRepo.getErrorMessage(attempt!);
+      const errorMessage = attemptRepo.getErrorMessage(attempt);
 
       expect(errorMessage).toBe('Invalid card number format');
     });
@@ -329,12 +323,7 @@ describe('Payment Response Storage (Integration)', () => {
         'AUTHORIZED',
       );
 
-      await bnplAccountService.createCreditEvent(
-        testUserId,
-        50000,
-        'order-bnpl-001',
-        intentId,
-      );
+      await bnplAccountService.createCreditEvent(testUserId, 50000, 'order-bnpl-001', intentId);
 
       // 2. 배치 생성
       const batch = await settlementService.createMonthlyBatch();
@@ -398,12 +387,7 @@ describe('Payment Response Storage (Integration)', () => {
         'AUTHORIZED',
       );
 
-      await bnplAccountService.createCreditEvent(
-        testUserId,
-        30000,
-        'order-retry-001',
-        intentId,
-      );
+      await bnplAccountService.createCreditEvent(testUserId, 30000, 'order-retry-001', intentId);
 
       // 2. 배치 생성
       const batch = await settlementService.createMonthlyBatch();
@@ -420,9 +404,7 @@ describe('Payment Response Storage (Integration)', () => {
       expect(attempt!.status).toBe('FAILED');
 
       // 5. 재시도
-      const newBatchId = await settlementService.retryFailedBatch(
-        batch.batchId,
-      );
+      const newBatchId = await settlementService.retryFailedBatch(batch.batchId);
       expect(newBatchId).toContain('_RETRY_1');
 
       // 6. 재시도 성공
@@ -438,9 +420,7 @@ describe('Payment Response Storage (Integration)', () => {
       // 8. 재시도 이력 확인
       const retryHistory = await cmsResponseRepo.findByBatchId(newBatchId);
       expect(retryHistory.length).toBeGreaterThanOrEqual(2);
-      expect(
-        retryHistory.some((h) => h.responseType === 'BATCH_RETRY_ATTEMPTED'),
-      ).toBe(true);
+      expect(retryHistory.some((h) => h.responseType === 'BATCH_RETRY_ATTEMPTED')).toBe(true);
     }, 10000); // 10초 타임아웃
   });
 
@@ -555,10 +535,7 @@ describe('Payment Response Storage (Integration)', () => {
     testUserId = 'test-user-' + Date.now();
 
     // BNPL 계정 생성
-    const account = await bnplAccountService.createBnplAccount(
-      testUserId,
-      1000000,
-    );
+    const account = await bnplAccountService.createBnplAccount(testUserId, 1000000);
     testAccountId = account.id;
   }
 });

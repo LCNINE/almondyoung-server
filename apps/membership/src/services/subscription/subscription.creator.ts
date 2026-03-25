@@ -66,8 +66,7 @@ export class SubscriptionCreator {
       );
 
       // 4. 실제 적용할 체험 기간 계산
-      const effectiveTrialDays =
-        isFirstTime || !trialReuseEnabled ? trialDays : 0;
+      const effectiveTrialDays = isFirstTime || !trialReuseEnabled ? trialDays : 0;
 
       // 5. 날짜 계산
       // - endsAt: 구독 종료일 (무료 체험 포함, 30일 플랜이면 30일)

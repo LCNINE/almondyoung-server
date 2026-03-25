@@ -9,7 +9,7 @@ import {
   productVariants,
   productMasterVariants,
   variantOptionValues,
-  pimSchema
+  pimSchema,
 } from '../../schema';
 import {
   DbTransaction,
@@ -18,7 +18,7 @@ import {
   ScopeType,
   OperationType,
   VariantPriceSet,
-  TieredPriceInfo
+  TieredPriceInfo,
 } from '../../types';
 import { PricingRuleEntity } from '../../schema.types';
 
@@ -27,19 +27,15 @@ export class PricingCalculatorService {
   constructor(
     @InjectTypedDb<typeof pimSchema>()
     private readonly dbService: DbService<typeof pimSchema>,
-  ) { }
+  ) {}
 
   private get db() {
     return this.dbService.db;
   }
 
-  private async inTx<T>(
-    fn: (tx: DbTransaction) => Promise<T>,
-    tx?: DbTransaction,
-  ): Promise<T> {
+  private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction): Promise<T> {
     return tx ? fn(tx) : this.db.transaction(fn);
   }
-
 
   async calculateVariantPriceByVersion(
     versionId: string,
@@ -73,16 +69,10 @@ export class PricingCalculatorService {
         );
 
       if (!mapping) {
-        throw new BadRequestException(
-          `Variant ${variantId} is not part of version ${versionId}`,
-        );
+        throw new BadRequestException(`Variant ${variantId} is not part of version ${versionId}`);
       }
 
-      const rules = await this.getRulesForVersion(
-        versionId,
-        undefined,
-        trx,
-      );
+      const rules = await this.getRulesForVersion(versionId, undefined, trx);
 
       let currentPrice = 0;
       const appliedRules: AppliedRuleInfo[] = [];
@@ -132,19 +122,11 @@ export class PricingCalculatorService {
       }
 
       if (customerType === 'membership' && quantity && quantity > 0) {
-        let bestTieredRule: typeof rules.tieredPriceRules[0] | null = null;
+        let bestTieredRule: (typeof rules.tieredPriceRules)[0] | null = null;
 
         for (const rule of rules.tieredPriceRules) {
-          if (
-            rule.minQuantity &&
-            rule.minQuantity <= quantity &&
-            (await this.matchesScope(variantId, rule, trx))
-          ) {
-            if (
-              !bestTieredRule ||
-              !bestTieredRule.minQuantity ||
-              rule.minQuantity > bestTieredRule.minQuantity
-            ) {
+          if (rule.minQuantity && rule.minQuantity <= quantity && (await this.matchesScope(variantId, rule, trx))) {
+            if (!bestTieredRule || !bestTieredRule.minQuantity || rule.minQuantity > bestTieredRule.minQuantity) {
               bestTieredRule = rule;
             }
           }
@@ -180,11 +162,7 @@ export class PricingCalculatorService {
     }, tx);
   }
 
-  async calculateVariantPriceSet(
-    versionId: string,
-    variantId: string,
-    tx?: DbTransaction,
-  ): Promise<VariantPriceSet> {
+  async calculateVariantPriceSet(versionId: string, variantId: string, tx?: DbTransaction): Promise<VariantPriceSet> {
     return this.inTx(async (trx) => {
       const [version] = await trx
         .select({
@@ -210,32 +188,14 @@ export class PricingCalculatorService {
         );
 
       if (!mapping) {
-        throw new BadRequestException(
-          `Variant ${variantId} is not part of version ${versionId}`,
-        );
+        throw new BadRequestException(`Variant ${variantId} is not part of version ${versionId}`);
       }
 
-      const baseResult = await this.calculateVariantPriceByVersion(
-        versionId,
-        variantId,
-        1,
-        'regular',
-        trx,
-      );
+      const baseResult = await this.calculateVariantPriceByVersion(versionId, variantId, 1, 'regular', trx);
 
-      const membershipResult = await this.calculateVariantPriceByVersion(
-        versionId,
-        variantId,
-        1,
-        'membership',
-        trx,
-      );
+      const membershipResult = await this.calculateVariantPriceByVersion(versionId, variantId, 1, 'membership', trx);
 
-      const rules = await this.getRulesForVersion(
-        versionId,
-        'tiered_price',
-        trx,
-      );
+      const rules = await this.getRulesForVersion(versionId, 'tiered_price', trx);
 
       const tieredPrices: TieredPriceInfo[] = [];
       const processedQuantities = new Set<number>();
@@ -296,9 +256,7 @@ export class PricingCalculatorService {
     tieredPriceRules: PricingRuleEntity[];
   }> {
     return this.inTx(async (trx) => {
-      const conditions: SQL[] = [
-        eq(productMasterPricingRules.versionId, versionId),
-      ];
+      const conditions: SQL[] = [eq(productMasterPricingRules.versionId, versionId)];
 
       if (layer) {
         conditions.push(eq(pricingRules.layer, layer));
@@ -318,28 +276,19 @@ export class PricingCalculatorService {
           updatedAt: pricingRules.updatedAt,
         })
         .from(pricingRules)
-        .innerJoin(
-          productMasterPricingRules,
-          eq(pricingRules.id, productMasterPricingRules.pricingRuleId),
-        )
+        .innerJoin(productMasterPricingRules, eq(pricingRules.id, productMasterPricingRules.pricingRuleId))
         .where(and(...conditions))
         .orderBy(asc(pricingRules.order));
 
       return {
         basePriceRules: allRules.filter((r) => r.layer === 'base_price'),
-        membershipPriceRules: allRules.filter(
-          (r) => r.layer === 'membership_price',
-        ),
+        membershipPriceRules: allRules.filter((r) => r.layer === 'membership_price'),
         tieredPriceRules: allRules.filter((r) => r.layer === 'tiered_price'),
       };
     }, tx);
   }
 
-  async matchesScope(
-    variantId: string,
-    rule: PricingRuleEntity,
-    tx?: DbTransaction,
-  ): Promise<boolean> {
+  async matchesScope(variantId: string, rule: PricingRuleEntity, tx?: DbTransaction): Promise<boolean> {
     return this.inTx(async (trx) => {
       switch (rule.scopeType) {
         case 'all_variants':
@@ -354,12 +303,8 @@ export class PricingCalculatorService {
             .from(variantOptionValues)
             .where(eq(variantOptionValues.variantId, variantId));
 
-          const variantOptionValueIds = variantOptions.map(
-            (vo) => vo.optionValueId,
-          );
-          return rule.scopeTargetIds.some((targetId) =>
-            variantOptionValueIds.includes(targetId),
-          );
+          const variantOptionValueIds = variantOptions.map((vo) => vo.optionValueId);
+          return rule.scopeTargetIds.some((targetId) => variantOptionValueIds.includes(targetId));
         }
 
         case 'variants': {
@@ -375,4 +320,3 @@ export class PricingCalculatorService {
     }, tx);
   }
 }
-

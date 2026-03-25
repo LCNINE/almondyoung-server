@@ -9,8 +9,7 @@ const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
 if (endpoint) {
   const sdk = new NodeSDK({
     resource: resourceFromAttributes({
-      [ATTR_SERVICE_NAME]:
-        process.env.OTEL_SERVICE_NAME ?? 'almondyoung-server',
+      [ATTR_SERVICE_NAME]: process.env.OTEL_SERVICE_NAME ?? 'almondyoung-server',
     }),
     traceExporter: new OTLPTraceExporter({
       url: `${endpoint}/v1/traces`,

@@ -23,18 +23,14 @@ export class CancelService {
 
   async cancel(intent: PaymentIntent, correlationId: string): Promise<void> {
     // 1. Cancel any active AUTHORIZE charge (DB only — no provider call needed for in-flight charges)
-    const activeCharge = await this.chargesService.findActiveByIntentAndOperation(
-      intent.id,
-      'AUTHORIZE',
-    );
+    const activeCharge = await this.chargesService.findActiveByIntentAndOperation(intent.id, 'AUTHORIZE');
     if (activeCharge) {
       await this.chargesService.updateStatus(activeCharge.id, 'CANCELED', {});
     }
 
     // 2. Cancel all SUCCEEDED AUTHORIZE charges via their respective providers
     //    (POINTS requires a hold-release call; TOSS/others require a refund/cancel API call)
-    const succeededAuthorizeCharges =
-      await this.chargesService.findAllSucceededAuthorizeByIntent(intent.id);
+    const succeededAuthorizeCharges = await this.chargesService.findAllSucceededAuthorizeByIntent(intent.id);
     for (const charge of succeededAuthorizeCharges) {
       const method = await this.paymentMethodsService.findById(charge.paymentMethodId);
       if (!method) continue;
@@ -61,27 +57,23 @@ export class CancelService {
 
     // 3. Transition intent → CANCELED + outbox event
     const now = new Date().toISOString();
-    await this.stateTransitionService.transitionIntent(
-      intent.id,
-      'CANCELED',
-      {
-        correlationId,
-        triggeredByType: 'USER',
-        reasonCode: 'USER_CANCELED',
-        outboxEvent: {
-          eventType: GatewayEventType.INTENT_CANCELED,
-          aggregateType: GATEWAY_AGGREGATE_TYPE,
-          aggregateId: intent.id,
-          payload: buildPaymentIntentEventPayload({
-            intentId: intent.id,
-            userId: intent.userId ?? '',
-            status: 'CANCELED',
-            payableAmount: intent.payableAmount,
-            currency: intent.currency,
-            occurredAt: now,
-          }),
-        },
+    await this.stateTransitionService.transitionIntent(intent.id, 'CANCELED', {
+      correlationId,
+      triggeredByType: 'USER',
+      reasonCode: 'USER_CANCELED',
+      outboxEvent: {
+        eventType: GatewayEventType.INTENT_CANCELED,
+        aggregateType: GATEWAY_AGGREGATE_TYPE,
+        aggregateId: intent.id,
+        payload: buildPaymentIntentEventPayload({
+          intentId: intent.id,
+          userId: intent.userId ?? '',
+          status: 'CANCELED',
+          payableAmount: intent.payableAmount,
+          currency: intent.currency,
+          occurredAt: now,
+        }),
       },
-    );
+    });
   }
 }

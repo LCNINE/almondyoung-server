@@ -82,9 +82,7 @@ export const MEMBERSHIP_POLICY_RULES: Record<string, PolicyRule> = {
 
       if (pauseStartDate && pauseEndDate) {
         const duration = Math.ceil(
-          (new Date(pauseEndDate).getTime() -
-            new Date(pauseStartDate).getTime()) /
-            (1000 * 60 * 60 * 24),
+          (new Date(pauseEndDate).getTime() - new Date(pauseStartDate).getTime()) / (1000 * 60 * 60 * 24),
         );
 
         if (duration < minDays) {
@@ -108,9 +106,7 @@ export const MEMBERSHIP_POLICY_RULES: Record<string, PolicyRule> = {
 
       if (pauseStartDate && pauseEndDate) {
         const duration = Math.ceil(
-          (new Date(pauseEndDate).getTime() -
-            new Date(pauseStartDate).getTime()) /
-            (1000 * 60 * 60 * 24),
+          (new Date(pauseEndDate).getTime() - new Date(pauseStartDate).getTime()) / (1000 * 60 * 60 * 24),
         );
 
         if (duration > maxDays) {
@@ -134,8 +130,7 @@ export const MEMBERSHIP_POLICY_RULES: Record<string, PolicyRule> = {
 
       if (lastPauseEndDate) {
         const daysSinceLastPause = Math.ceil(
-          (new Date().getTime() - new Date(lastPauseEndDate).getTime()) /
-            (1000 * 60 * 60 * 24),
+          (new Date().getTime() - new Date(lastPauseEndDate).getTime()) / (1000 * 60 * 60 * 24),
         );
 
         if (daysSinceLastPause < cooldownDays) {
@@ -160,8 +155,7 @@ export const MEMBERSHIP_POLICY_RULES: Record<string, PolicyRule> = {
 
       if (lastPlanChangeDate) {
         const daysSinceLastChange = Math.ceil(
-          (new Date().getTime() - new Date(lastPlanChangeDate).getTime()) /
-            (1000 * 60 * 60 * 24),
+          (new Date().getTime() - new Date(lastPlanChangeDate).getTime()) / (1000 * 60 * 60 * 24),
         );
 
         if (daysSinceLastChange < cooldownDays) {
@@ -198,15 +192,13 @@ export const MEMBERSHIP_POLICY_RULES: Record<string, PolicyRule> = {
       // ENTERPRISE 티어는 구독 시작 후 3개월 후에만 다운그레이드 가능
       if (tierCode === TierCode.ENTERPRISE && subscriptionStartDate) {
         const monthsSinceStart = Math.ceil(
-          (new Date().getTime() - new Date(subscriptionStartDate).getTime()) /
-            (1000 * 60 * 60 * 24 * 30),
+          (new Date().getTime() - new Date(subscriptionStartDate).getTime()) / (1000 * 60 * 60 * 24 * 30),
         );
 
         if (monthsSinceStart < 3) {
           return {
             isValid: false,
-            message:
-              'ENTERPRISE 티어는 구독 시작 후 3개월이 지나야 다운그레이드할 수 있습니다.',
+            message: 'ENTERPRISE 티어는 구독 시작 후 3개월이 지나야 다운그레이드할 수 있습니다.',
             code: 'DOWNGRADE_TOO_EARLY',
           };
         }
@@ -225,8 +217,7 @@ export const MEMBERSHIP_POLICY_RULES: Record<string, PolicyRule> = {
 
       if (subscriptionStartDate) {
         const daysSinceStart = Math.ceil(
-          (new Date().getTime() - new Date(subscriptionStartDate).getTime()) /
-            (1000 * 60 * 60 * 24),
+          (new Date().getTime() - new Date(subscriptionStartDate).getTime()) / (1000 * 60 * 60 * 24),
         );
 
         if (daysSinceStart < minDays) {
@@ -257,10 +248,7 @@ export const ACTION_POLICY_MAPPING: Record<MembershipAction, string[]> = {
   ],
   [MembershipAction.CHANGE_PLAN]: ['PLAN_CHANGE_COOLDOWN'],
   [MembershipAction.UPGRADE_PLAN]: ['PLAN_CHANGE_COOLDOWN'],
-  [MembershipAction.DOWNGRADE_PLAN]: [
-    'PLAN_CHANGE_COOLDOWN',
-    'DOWNGRADE_RESTRICTION',
-  ],
+  [MembershipAction.DOWNGRADE_PLAN]: ['PLAN_CHANGE_COOLDOWN', 'DOWNGRADE_RESTRICTION'],
   [MembershipAction.CANCEL_SUBSCRIPTION]: ['MIN_SUBSCRIPTION_PERIOD'],
 };
 
@@ -301,10 +289,7 @@ export class MembershipPolicy {
   /**
    * 특정 액션에 대한 정책 검증
    */
-  static validate(
-    action: MembershipAction,
-    context: MembershipPolicyContext,
-  ): PolicyValidationResult[] {
+  static validate(action: MembershipAction, context: MembershipPolicyContext): PolicyValidationResult[] {
     const applicablePolicies = ACTION_POLICY_MAPPING[action] || [];
     const results: PolicyValidationResult[] = [];
 
@@ -324,10 +309,7 @@ export class MembershipPolicy {
   /**
    * 첫 번째 위반 정책에서 에러 던지기
    */
-  static validateAndThrow(
-    action: MembershipAction,
-    context: MembershipPolicyContext,
-  ): void {
+  static validateAndThrow(action: MembershipAction, context: MembershipPolicyContext): void {
     const violations = this.validate(action, context);
     if (violations.length > 0) {
       throw new Error(violations[0].message || 'Policy violation');
@@ -359,9 +341,7 @@ export class MembershipPolicy {
    */
   static getActionPolicies(action: MembershipAction): PolicyRule[] {
     const policyNames = ACTION_POLICY_MAPPING[action] || [];
-    return policyNames
-      .map((name) => MEMBERSHIP_POLICY_RULES[name])
-      .filter(Boolean);
+    return policyNames.map((name) => MEMBERSHIP_POLICY_RULES[name]).filter(Boolean);
   }
 
   /**

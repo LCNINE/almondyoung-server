@@ -6,10 +6,7 @@ import { DbService } from '@app/db';
 import { SyncStatusService } from '../sync-status.service';
 import { InboxService } from '../inbox.service';
 import { ChannelType } from '../../adapters/channel-adapter.factory';
-import {
-  CHANNEL_ORDER_PROVIDER,
-  ChannelOrderProvider,
-} from './channel-order-provider.interface';
+import { CHANNEL_ORDER_PROVIDER, ChannelOrderProvider } from './channel-order-provider.interface';
 import { OrderModifiedPayload } from '@packages/event-contracts/streams';
 import { channelAdapterSchema, wmsOrderMappings } from '../../schema';
 
@@ -80,9 +77,7 @@ export class OrderPollerOrchestrator {
               .limit(1);
 
             if (!mapping[0]) {
-              this.logger.warn(
-                `OrderModified skip: no wmsOrderMappings for ${item.externalOrderId}`,
-              );
+              this.logger.warn(`OrderModified skip: no wmsOrderMappings for ${item.externalOrderId}`);
               continue;
             }
 
@@ -111,9 +106,7 @@ export class OrderPollerOrchestrator {
         }
 
         if (skipped > 0) {
-          this.logger.warn(
-            `[${provider.channel}] Skipped ${skipped} orders due to missing pimVariantId`,
-          );
+          this.logger.warn(`[${provider.channel}] Skipped ${skipped} orders due to missing pimVariantId`);
         }
 
         await this.syncStatusService.recordSyncComplete(channelType, 'orders', {
@@ -121,16 +114,12 @@ export class OrderPollerOrchestrator {
           processingTime: Date.now() - startTime,
         });
 
-        this.logger.log(
-          `[${provider.channel}] Polled ${orders.length} orders (skipped: ${skipped})`,
-        );
+        this.logger.log(`[${provider.channel}] Polled ${orders.length} orders (skipped: ${skipped})`);
       } catch (error) {
         await this.syncStatusService.recordSyncFailure(channelType, 'orders', {
           message: error.message,
         });
-        this.logger.error(
-          `[${provider.channel}] Order polling failed: ${error.message}`,
-        );
+        this.logger.error(`[${provider.channel}] Order polling failed: ${error.message}`);
       }
     }
   }

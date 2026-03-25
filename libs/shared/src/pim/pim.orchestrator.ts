@@ -10,10 +10,10 @@ export class PimOrchestrator {
       await this.pim.generateVariants(masterId);
       return { masterId };
     } catch (err) {
-      try { await this.pim.deleteMaster(masterId); } catch {}
+      try {
+        await this.pim.deleteMaster(masterId);
+      } catch {}
       throw err;
     }
   }
 }
-
-

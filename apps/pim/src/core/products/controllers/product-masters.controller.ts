@@ -15,14 +15,7 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard, User } from '@app/authorization';
 import { DateMapper } from '../../../common/mappers';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiParam,
-  ApiQuery,
-  ApiBody,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { ProductMastersService } from '../services/product-masters.service';
 import { ProductVersionsService } from '../services/product-versions.service';
 import { ZodValidationPipe } from '@app/shared';
@@ -31,7 +24,7 @@ import {
   ProductDto,
   ProductListItemDto,
   ProductListResponseDto,
-  ProductSummaryDto
+  ProductSummaryDto,
 } from '../dto/products/product-response.dto';
 import { ProductMapper } from '../mappers/product.mapper';
 import { DbService, InjectDb } from '@app/db';
@@ -47,7 +40,7 @@ export class ProductMastersController {
     @InjectDb() private readonly dbService: DbService<PimSchema>,
     private readonly productMastersService: ProductMastersService,
     private readonly productVersionsService: ProductVersionsService,
-  ) { }
+  ) {}
 
   @Post()
   @ApiOperation({
@@ -78,10 +71,7 @@ export class ProductMastersController {
       return ProductMapper.toDto(master, []);
     } catch (error) {
       console.error('Create master error:', error);
-      throw new HttpException(
-        `Failed to create master: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException(`Failed to create master: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -138,7 +128,8 @@ export class ProductMastersController {
     required: false,
     type: String,
     enum: ['active', 'active-or-inactive'],
-    description: '조회 모드: active(active 버전만), active-or-inactive(active 우선, 없으면 최신 inactive). 기본값: active',
+    description:
+      '조회 모드: active(active 버전만), active-or-inactive(active 우선, 없으면 최신 inactive). 기본값: active',
   })
   @ApiQuery({
     name: 'deleted',
@@ -175,7 +166,7 @@ export class ProductMastersController {
     const result = await this.productMastersService.getMasters(filters);
 
     return {
-      data: result.data.map(item => ProductMasterMapper.toProductSummary({ ...item.product, ...item.aggregate })),
+      data: result.data.map((item) => ProductMasterMapper.toProductSummary({ ...item.product, ...item.aggregate })),
       total: result.total,
       page: result.page,
       limit: result.limit,
@@ -187,7 +178,11 @@ export class ProductMastersController {
     summary: '삭제된 제품 마스터 목록 조회',
     description: '소프트 삭제된 제품 마스터 목록을 조회합니다.',
   })
-  @ApiResponse({ status: 200, description: '삭제된 제품 마스터 목록 조회 성공', type: [MasterProductWithPrimaryVersionDto] })
+  @ApiResponse({
+    status: 200,
+    description: '삭제된 제품 마스터 목록 조회 성공',
+    type: [MasterProductWithPrimaryVersionDto],
+  })
   @ApiResponse({ status: 500, description: '서버 오류' })
   async getDeleted(): Promise<MasterProductWithPrimaryVersionDto[]> {
     const deleted = await this.productMastersService.findDeleted();
@@ -224,7 +219,7 @@ export class ProductMastersController {
     }
 
     // 이미지 정보를 포함한 응답 반환
-    return masterDetail
+    return masterDetail;
   }
 
   @Delete(':masterId')
@@ -248,14 +243,8 @@ export class ProductMastersController {
   @ApiResponse({ status: 400, description: '이미 삭제된 Master' })
   @ApiResponse({ status: 404, description: 'Master를 찾을 수 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  async deleteMaster(
-    @Param('masterId') masterId: string,
-    @User() user: { userId: string },
-  ) {
-    const deleted = await this.productMastersService.deleteMaster(
-      masterId,
-      user.userId,
-    );
+  async deleteMaster(@Param('masterId') masterId: string, @User() user: { userId: string }) {
+    const deleted = await this.productMastersService.deleteMaster(masterId, user.userId);
 
     return {
       success: true,
@@ -280,12 +269,8 @@ export class ProductMastersController {
   @ApiResponse({ status: 400, description: 'Master가 삭제되지 않았음' })
   @ApiResponse({ status: 404, description: 'Master를 찾을 수 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  async restore(
-    @Param('masterId') masterId: string,
-  ) {
-    const restored = await this.productMastersService.restoreMaster(
-      masterId,
-    );
+  async restore(@Param('masterId') masterId: string) {
+    const restored = await this.productMastersService.restoreMaster(masterId);
 
     return {
       success: true,
@@ -338,10 +323,7 @@ export class ProductMastersController {
   @ApiResponse({ status: 200, description: '제품 마스터 영구 삭제 성공' })
   @ApiResponse({ status: 404, description: '제품 마스터를 찾을 수 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  async hardDelete(
-    @Param('id') id: string,
-    @User() user: { userId: string },
-  ): Promise<{ deleted: boolean }> {
+  async hardDelete(@Param('id') id: string, @User() user: { userId: string }): Promise<{ deleted: boolean }> {
     return await this.productMastersService.hardDelete(id, user.userId);
   }
 

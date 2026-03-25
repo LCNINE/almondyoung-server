@@ -8,4 +8,3 @@ import { ProductAuditService } from './product-audit.service';
   exports: [ProductAuditService],
 })
 export class AuditModule {}
-

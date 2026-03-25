@@ -6,7 +6,12 @@ const WALLET_API_KEY = process.env.WALLET_API_KEY ?? '';
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { userId, amount, currency = 'KRW', returnUrl } = body as {
+  const {
+    userId,
+    amount,
+    currency = 'KRW',
+    returnUrl,
+  } = body as {
     userId: string;
     amount: number;
     currency?: string;
@@ -19,10 +24,10 @@ export async function POST(req: NextRequest) {
   };
 
   // 1. Get payment methods — POINTS is auto-created by the wallet if not yet present
-  const methodsRes = await fetch(
-    `${WALLET_API_URL}/v1/payment-methods?user_id=${encodeURIComponent(userId)}`,
-    { headers, cache: 'no-store' },
-  );
+  const methodsRes = await fetch(`${WALLET_API_URL}/v1/payment-methods?user_id=${encodeURIComponent(userId)}`, {
+    headers,
+    cache: 'no-store',
+  });
   if (!methodsRes.ok) {
     const err = await methodsRes.json().catch(() => ({}));
     return NextResponse.json(err, { status: methodsRes.status });

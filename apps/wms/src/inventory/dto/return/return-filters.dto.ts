@@ -60,4 +60,3 @@ export class ReturnFiltersDto {
   @Min(0)
   offset?: number = 0;
 }
-

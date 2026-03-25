@@ -1,11 +1,4 @@
-import {
-  IsBoolean,
-  IsOptional,
-  IsString,
-  IsArray,
-  IsEnum,
-  ValidateNested,
-} from 'class-validator';
+import { IsBoolean, IsOptional, IsString, IsArray, IsEnum, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -174,4 +167,3 @@ export class UpdateTemplateConfigDto {
   @IsString()
   customCss?: string;
 }
-

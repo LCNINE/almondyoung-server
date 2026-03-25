@@ -1,26 +1,9 @@
 import { DbService, InjectDb } from '@app/db';
 import { InjectStreamPublisher, StreamPublisher } from '@app/events';
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { UserEvents } from '@packages/event-contracts';
-import {
-  userServiceSchema,
-  type UserServiceSchema,
-} from 'apps/user-service/database/drizzle/schema';
-import {
-  and,
-  asc,
-  count,
-  desc,
-  eq,
-  gte,
-  inArray,
-  isNotNull,
-  lte,
-} from 'drizzle-orm';
+import { userServiceSchema, type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
+import { and, asc, count, desc, eq, gte, inArray, isNotNull, lte } from 'drizzle-orm';
 import * as schema from '../../../../database/drizzle/schema';
 import { BusinessLicenseResponseDto } from '../../business-licenses/dto/business-license.response.dto';
 import { UsersService } from '../../users/users.service';
@@ -37,11 +20,9 @@ export class BusinessLicensesService {
     private readonly eventPublisher: StreamPublisher<UserEvents>,
 
     private readonly usersService: UsersService,
-  ) { }
+  ) {}
 
-  async getBusinessLicensesByUserId(
-    userId: string,
-  ): Promise<BusinessLicenseResponseDto | null> {
+  async getBusinessLicensesByUserId(userId: string): Promise<BusinessLicenseResponseDto | null> {
     const [result] = await this.dbService.db
       .select()
       .from(userServiceSchema.businessLicenses)
@@ -61,15 +42,7 @@ export class BusinessLicensesService {
     page: number;
     limit: number;
   }> {
-    const {
-      search,
-      sortBy,
-      sortOrder,
-      hasShopId,
-      status,
-      Daterange,
-      hasVerificationFile,
-    } = businessLicenseQueryDto;
+    const { search, sortBy, sortOrder, hasShopId, status, Daterange, hasVerificationFile } = businessLicenseQueryDto;
 
     const page = businessLicenseQueryDto.page || 1;
     const limit = Math.min(businessLicenseQueryDto.limit || 20, 100);
@@ -80,17 +53,10 @@ export class BusinessLicensesService {
     try {
       if (search) {
         if (search.businessNumber) {
-          whereConditions.push(
-            eq(schema.businessLicenses.businessNumber, search.businessNumber),
-          );
+          whereConditions.push(eq(schema.businessLicenses.businessNumber, search.businessNumber));
         }
         if (search.representativeName) {
-          whereConditions.push(
-            eq(
-              schema.businessLicenses.representativeName,
-              search.representativeName,
-            ),
-          );
+          whereConditions.push(eq(schema.businessLicenses.representativeName, search.representativeName));
         }
         if (search.id) {
           whereConditions.push(eq(schema.businessLicenses.id, search.id));
@@ -118,17 +84,12 @@ export class BusinessLicensesService {
       const whereClause = and(...whereConditions);
 
       // total count
-      const countQuery = this.dbService.db
-        .select({ count: count() })
-        .from(schema.businessLicenses)
-        .where(whereClause);
+      const countQuery = this.dbService.db.select({ count: count() }).from(schema.businessLicenses).where(whereClause);
       const [{ count: total }] = await countQuery;
 
       // data query
       const orderExpr =
-        sortBy === 'createdAt'
-          ? asc(schema.businessLicenses.createdAt)
-          : desc(schema.businessLicenses.createdAt);
+        sortBy === 'createdAt' ? asc(schema.businessLicenses.createdAt) : desc(schema.businessLicenses.createdAt);
 
       const dataQuery = this.dbService.db
         .select()
@@ -143,15 +104,11 @@ export class BusinessLicensesService {
       return { data, total, page, limit };
     } catch (error) {
       console.log('error::', error);
-      throw new BadRequestException(
-        '사업자 등록 정보를 조회하는 중 오류가 발생했습니다.',
-      );
+      throw new BadRequestException('사업자 등록 정보를 조회하는 중 오류가 발생했습니다.');
     }
   }
 
-  async getBusinessLicenseByBusinessLicenseId(
-    id: string,
-  ): Promise<BusinessLicenseResponseDto | null> {
+  async getBusinessLicenseByBusinessLicenseId(id: string): Promise<BusinessLicenseResponseDto | null> {
     try {
       const [query] = await this.dbService.db
         .select()
@@ -160,9 +117,7 @@ export class BusinessLicensesService {
 
       return query;
     } catch (error) {
-      throw new BadRequestException(
-        '해당 사업자 등록 정보를 찾을 수 없습니다.',
-      );
+      throw new BadRequestException('해당 사업자 등록 정보를 찾을 수 없습니다.');
     }
   }
 
@@ -171,7 +126,6 @@ export class BusinessLicensesService {
     updateBusinessLicenseDto: BusinessAdminUpdateDto,
   ): Promise<void> {
     try {
-
       const existingBusiness = await this.getBusinessLicenseByBusinessLicenseId(businessLicenseId);
 
       if (!existingBusiness) {
@@ -204,31 +158,24 @@ export class BusinessLicensesService {
       return;
     } catch (error) {
       console.log('error::', error);
-      throw new BadRequestException(
-        '사업자 등록 정보를 수정하는 중 오류가 발생했습니다.',
-      );
+      throw new BadRequestException('사업자 등록 정보를 수정하는 중 오류가 발생했습니다.');
     }
   }
 
   async deleteBusinessLicenseById(id: string): Promise<void> {
     try {
-      const existingBusinessLicense =
-        await this.getBusinessLicenseByBusinessLicenseId(id);
+      const existingBusinessLicense = await this.getBusinessLicenseByBusinessLicenseId(id);
 
       if (!existingBusinessLicense) {
         throw new NotFoundException('사업자 등록 정보를 찾을 수 없습니다.');
       }
 
-      await this.dbService.db
-        .delete(schema.businessLicenses)
-        .where(eq(schema.businessLicenses.id, id));
+      await this.dbService.db.delete(schema.businessLicenses).where(eq(schema.businessLicenses.id, id));
 
       return;
     } catch (error) {
       console.log('error::', error);
-      throw new BadRequestException(
-        error.message ?? '사업자 등록 정보를 삭제하는 중 오류가 발생했습니다.',
-      );
+      throw new BadRequestException(error.message ?? '사업자 등록 정보를 삭제하는 중 오류가 발생했습니다.');
     }
   }
 }

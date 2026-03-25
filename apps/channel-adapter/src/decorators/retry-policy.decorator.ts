@@ -22,20 +22,8 @@ export interface RetryPolicyOptions {
 export const DEFAULT_RETRY_POLICY: Readonly<RetryPolicyOptions> = {
   maxRetries: 3,
   backoffMs: [1000, 5000, 30000], // 1초, 5초, 30초
-  retryableErrorPatterns: [
-    /timeout/i,
-    /network/i,
-    /connection/i,
-    /temporary/i,
-    /rate.*limit/i,
-  ],
-  nonRetryableErrorPatterns: [
-    /unauthorized/i,
-    /forbidden/i,
-    /not.*found/i,
-    /bad.*request/i,
-    /invalid/i,
-  ],
+  retryableErrorPatterns: [/timeout/i, /network/i, /connection/i, /temporary/i, /rate.*limit/i],
+  nonRetryableErrorPatterns: [/unauthorized/i, /forbidden/i, /not.*found/i, /bad.*request/i, /invalid/i],
 };
 
 /**
@@ -48,11 +36,7 @@ export function RetryPolicy(options: Partial<RetryPolicyOptions> = {}) {
   const config: RetryPolicyOptions = { ...DEFAULT_RETRY_POLICY, ...options };
   const logger = new Logger('RetryPolicy');
 
-  return function (
-    target: any,
-    propertyKey: string,
-    descriptor: PropertyDescriptor,
-  ) {
+  return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
     const originalMethod = descriptor.value;
     const methodName = `${target.constructor.name}.${propertyKey}`;
 
@@ -74,37 +58,21 @@ export function RetryPolicy(options: Partial<RetryPolicyOptions> = {}) {
 
           // 재시도 가능한 에러인지 확인
           if (!isRetryableError(lastError, config)) {
-            logger.warn(
-              `🚫 [${methodName}] 재시도 불가능한 에러: ${lastError.message}`,
-            );
+            logger.warn(`🚫 [${methodName}] 재시도 불가능한 에러: ${lastError.message}`);
             throw lastError;
           }
 
           // 최대 재시도 횟수 초과 확인
           if (attempt >= config.maxRetries) {
-            logger.error(
-              `❌ [${methodName}] 최대 재시도 횟수 초과 (${config.maxRetries}회): ${lastError.message}`,
-            );
+            logger.error(`❌ [${methodName}] 최대 재시도 횟수 초과 (${config.maxRetries}회): ${lastError.message}`);
 
             // DLQ로 전송 시도
-            if (
-              config.dlqTopic &&
-              typeof (this as any).sendToDLQ === 'function'
-            ) {
+            if (config.dlqTopic && typeof this.sendToDLQ === 'function') {
               try {
-                await (this as any).sendToDLQ(
-                  config.dlqTopic,
-                  args[0],
-                  lastError,
-                  attempt,
-                );
-                logger.warn(
-                  `📤 [${methodName}] DLQ로 전송 완료: ${config.dlqTopic}`,
-                );
+                await this.sendToDLQ(config.dlqTopic, args[0], lastError, attempt);
+                logger.warn(`📤 [${methodName}] DLQ로 전송 완료: ${config.dlqTopic}`);
               } catch (dlqError: any) {
-                logger.error(
-                  `❌ [${methodName}] DLQ 전송 실패: ${dlqError.message}`,
-                );
+                logger.error(`❌ [${methodName}] DLQ 전송 실패: ${dlqError.message}`);
               }
             }
 
@@ -173,35 +141,15 @@ export const CHANNEL_RETRY_POLICIES = {
     maxRetries: 3,
     backoffMs: [2000, 10000, 60000] as const, // ✅ readonly 배열 허용
     dlqTopic: 'naver.dlq',
-    retryableErrorPatterns: [
-      /rate.*limit/i,
-      /too.*many.*requests/i,
-      /timeout/i,
-      /connection/i,
-    ] as const,
-    nonRetryableErrorPatterns: [
-      /unauthorized/i,
-      /invalid.*token/i,
-      /not.*found/i,
-    ] as const,
+    retryableErrorPatterns: [/rate.*limit/i, /too.*many.*requests/i, /timeout/i, /connection/i] as const,
+    nonRetryableErrorPatterns: [/unauthorized/i, /invalid.*token/i, /not.*found/i] as const,
   } satisfies Partial<RetryPolicyOptions>, // ✅ satisfies로 강제 형변환
   COUPANG: {
     maxRetries: 5,
     backoffMs: [1000, 3000, 10000, 30000, 120000] as const,
     dlqTopic: 'coupang.dlq',
-    retryableErrorPatterns: [
-      /rate.*limit/i,
-      /quota.*exceeded/i,
-      /timeout/i,
-      /connection/i,
-      /temporary/i,
-    ] as const,
-    nonRetryableErrorPatterns: [
-      /unauthorized/i,
-      /forbidden/i,
-      /invalid.*request/i,
-      /not.*found/i,
-    ] as const,
+    retryableErrorPatterns: [/rate.*limit/i, /quota.*exceeded/i, /timeout/i, /connection/i, /temporary/i] as const,
+    nonRetryableErrorPatterns: [/unauthorized/i, /forbidden/i, /invalid.*request/i, /not.*found/i] as const,
   } satisfies Partial<RetryPolicyOptions>,
   GENERAL: DEFAULT_RETRY_POLICY,
 } as const;
@@ -209,9 +157,6 @@ export const CHANNEL_RETRY_POLICIES = {
 /**
  * 채널별 재시도 정책을 적용하는 편의 데코레이터들
  */
-export const NaverRetryPolicy = () =>
-  RetryPolicy(CHANNEL_RETRY_POLICIES.NAVER as Partial<RetryPolicyOptions>);
-export const CoupangRetryPolicy = () =>
-  RetryPolicy(CHANNEL_RETRY_POLICIES.COUPANG as Partial<RetryPolicyOptions>);
-export const GeneralRetryPolicy = () =>
-  RetryPolicy(CHANNEL_RETRY_POLICIES.GENERAL);
+export const NaverRetryPolicy = () => RetryPolicy(CHANNEL_RETRY_POLICIES.NAVER as Partial<RetryPolicyOptions>);
+export const CoupangRetryPolicy = () => RetryPolicy(CHANNEL_RETRY_POLICIES.COUPANG as Partial<RetryPolicyOptions>);
+export const GeneralRetryPolicy = () => RetryPolicy(CHANNEL_RETRY_POLICIES.GENERAL);

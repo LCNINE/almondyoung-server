@@ -4,12 +4,7 @@
  * 재시도 로직 및 백오프 계산
  */
 
-import {
-  RetryPolicyConfig,
-  RetryContext,
-  BackoffStrategy,
-  DEFAULT_RETRY_POLICY,
-} from './retry-policy.types';
+import { RetryPolicyConfig, RetryContext, BackoffStrategy, DEFAULT_RETRY_POLICY } from './retry-policy.types';
 
 /**
  * 재시도 정책에 기본값 적용
@@ -31,10 +26,7 @@ export function normalizeRetryPolicy(
 /**
  * 에러가 재시도 가능한지 판단
  */
-export function isRetryableError(
-  error: Error,
-  policy: RetryPolicyConfig,
-): boolean {
+export function isRetryableError(error: Error, policy: RetryPolicyConfig): boolean {
   // nonRetryableErrors에 포함되면 재시도하지 않음
   if (policy.nonRetryableErrors) {
     for (const ErrorClass of policy.nonRetryableErrors) {
@@ -116,10 +108,7 @@ export function createRetryContext(): RetryContext {
 /**
  * 재시도 컨텍스트 업데이트
  */
-export function updateRetryContext(
-  context: RetryContext,
-  error: Error,
-): RetryContext {
+export function updateRetryContext(context: RetryContext, error: Error): RetryContext {
   return {
     attemptNumber: context.attemptNumber + 1,
     lastError: error,
@@ -132,4 +121,3 @@ export function updateRetryContext(
     ],
   };
 }
-

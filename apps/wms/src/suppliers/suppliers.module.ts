@@ -17,18 +17,8 @@ import { SupplierCategoriesService } from './services/supplier-categories.servic
       schema: wmsTables,
     }),
   ],
-  controllers: [
-    SuppliersController,
-    SupplierCategoriesController,
-  ],
-  providers: [
-    SuppliersService,
-    SupplierCategoriesService,
-  ],
-  exports: [
-    SuppliersService,
-    SupplierCategoriesService,
-  ],
+  controllers: [SuppliersController, SupplierCategoriesController],
+  providers: [SuppliersService, SupplierCategoriesService],
+  exports: [SuppliersService, SupplierCategoriesService],
 })
 export class SuppliersModule {}
-

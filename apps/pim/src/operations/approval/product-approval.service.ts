@@ -1,18 +1,12 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { and, eq } from 'drizzle-orm';
-import {
-  type PimSchema,
-  productMasterVersions,
-  productApprovalHistory,
-} from '../../schema';
+import { type PimSchema, productMasterVersions, productApprovalHistory } from '../../schema';
 import { DbTransaction, NewProductApprovalHistory } from '../../types';
 
 @Injectable()
 export class ProductApprovalService {
-  constructor(
-    @InjectDb() private readonly db: DbService<PimSchema>,
-  ) { }
+  constructor(@InjectDb() private readonly db: DbService<PimSchema>) {}
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.db.db;
@@ -25,10 +19,7 @@ export class ProductApprovalService {
   async submitForApproval(productId: string, userId: string, tx?: DbTransaction) {
     const client = this.getClient(tx);
 
-    const [product] = await client
-      .select()
-      .from(productMasterVersions)
-      .where(eq(productMasterVersions.id, productId));
+    const [product] = await client.select().from(productMasterVersions).where(eq(productMasterVersions.id, productId));
 
     if (!product) {
       throw new BadRequestException('Product not found');
@@ -48,22 +39,22 @@ export class ProductApprovalService {
       .where(eq(productMasterVersions.id, productId))
       .returning();
 
-    await this.addHistory({
-      versionId: productId,
-      status: 'pending',
-      comment: 'Submitted for approval',
-      approvedBy: userId,
-    }, tx);
+    await this.addHistory(
+      {
+        versionId: productId,
+        status: 'pending',
+        comment: 'Submitted for approval',
+        approvedBy: userId,
+      },
+      tx,
+    );
 
     return updated;
   }
 
   async approve(productId: string, userId: string, comment?: string, tx?: DbTransaction) {
     return this.inTx(async (trx) => {
-      const [product] = await trx
-        .select()
-        .from(productMasterVersions)
-        .where(eq(productMasterVersions.id, productId));
+      const [product] = await trx.select().from(productMasterVersions).where(eq(productMasterVersions.id, productId));
 
       if (!product) {
         throw new BadRequestException('Product not found');
@@ -76,12 +67,7 @@ export class ProductApprovalService {
       await trx
         .update(productMasterVersions)
         .set({ status: 'inactive', updatedAt: new Date() })
-        .where(
-          and(
-            eq(productMasterVersions.masterId, product.masterId),
-            eq(productMasterVersions.status, 'active'),
-          ),
-        );
+        .where(and(eq(productMasterVersions.masterId, product.masterId), eq(productMasterVersions.status, 'active')));
 
       const [updated] = await trx
         .update(productMasterVersions)
@@ -95,12 +81,15 @@ export class ProductApprovalService {
         .where(eq(productMasterVersions.id, productId))
         .returning();
 
-      await this.addHistory({
-        versionId: productId,
-        status: 'approved',
-        comment: comment || 'Approved',
-        approvedBy: userId,
-      }, trx);
+      await this.addHistory(
+        {
+          versionId: productId,
+          status: 'approved',
+          comment: comment || 'Approved',
+          approvedBy: userId,
+        },
+        trx,
+      );
 
       return updated;
     }, tx);
@@ -109,10 +98,7 @@ export class ProductApprovalService {
   async reject(productId: string, userId: string, reason: string, tx?: DbTransaction) {
     const client = this.getClient(tx);
 
-    const [product] = await client
-      .select()
-      .from(productMasterVersions)
-      .where(eq(productMasterVersions.id, productId));
+    const [product] = await client.select().from(productMasterVersions).where(eq(productMasterVersions.id, productId));
 
     if (!product) {
       throw new BadRequestException('Product not found');
@@ -132,12 +118,15 @@ export class ProductApprovalService {
       .where(eq(productMasterVersions.id, productId))
       .returning();
 
-    await this.addHistory({
-      versionId: productId,
-      status: 'rejected',
-      comment: reason,
-      approvedBy: userId,
-    }, tx);
+    await this.addHistory(
+      {
+        versionId: productId,
+        status: 'rejected',
+        comment: reason,
+        approvedBy: userId,
+      },
+      tx,
+    );
 
     return updated;
   }
@@ -145,10 +134,7 @@ export class ProductApprovalService {
   async getPendingApprovals(tx?: DbTransaction) {
     const client = this.getClient(tx);
 
-    return client
-      .select()
-      .from(productMasterVersions)
-      .where(eq(productMasterVersions.approvalStatus, 'pending'));
+    return client.select().from(productMasterVersions).where(eq(productMasterVersions.approvalStatus, 'pending'));
   }
 
   async getApprovalHistory(productId: string, tx?: DbTransaction) {
@@ -167,4 +153,3 @@ export class ProductApprovalService {
     await client.insert(productApprovalHistory).values(data);
   }
 }
-

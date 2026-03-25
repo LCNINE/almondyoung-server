@@ -16,10 +16,7 @@ import { PlanService } from '../../src/services/plan.service';
 import { PlanReader } from '../../src/services/plan/plan.reader';
 import { PlanManager } from '../../src/services/plan/plan.manager';
 import { MembershipPolicyService } from '../../src/services/membership-policy.service';
-import {
-  membershipSchema,
-  type MembershipSchema,
-} from '../../src/shared/schemas/entities/schema';
+import { membershipSchema, type MembershipSchema } from '../../src/shared/schemas/entities/schema';
 import * as schema from '../../src/shared/schemas/entities/schema';
 import { eq } from 'drizzle-orm';
 import { addDays } from 'date-fns';
@@ -79,14 +76,9 @@ describe('Subscription Cancellation Integration Tests', () => {
       ],
     }).compile();
 
-    cancellationService = module.get<SubscriptionCancellationService>(
-      SubscriptionCancellationService,
-    );
-    contractEventManager =
-      module.get<ContractEventManager>(ContractEventManager);
-    cancellationReasonReader = module.get<CancellationReasonReader>(
-      CancellationReasonReader,
-    );
+    cancellationService = module.get<SubscriptionCancellationService>(SubscriptionCancellationService);
+    contractEventManager = module.get<ContractEventManager>(ContractEventManager);
+    cancellationReasonReader = module.get<CancellationReasonReader>(CancellationReasonReader);
     refundEventHandler = module.get<RefundEventHandler>(RefundEventHandler);
     dbService = module.get<DbService<MembershipSchema>>(DbService);
 
@@ -218,18 +210,10 @@ describe('Subscription Cancellation Integration Tests', () => {
     it('✅ 계약 이벤트 조회', async () => {
       // 이벤트 추가
       await dbService.db.transaction(async (tx) => {
-        await contractEventManager.addEvent(
-          tx,
-          testContractId,
-          'CREATED',
-          { planId: testPlanId },
-          'USER',
-          testUserId,
-        );
+        await contractEventManager.addEvent(tx, testContractId, 'CREATED', { planId: testPlanId }, 'USER', testUserId);
       });
 
-      const events =
-        await contractEventManager.getContractEvents(testContractId);
+      const events = await contractEventManager.getContractEvents(testContractId);
 
       expect(events).toHaveLength(1);
       expect(events[0].eventType).toBe('CREATED');
@@ -238,11 +222,7 @@ describe('Subscription Cancellation Integration Tests', () => {
 
   describe('Task 3: 일반 구독 취소 (무료 체험 기간 중)', () => {
     it('✅ 무료 체험 기간 중 취소 - 전액 환불', async () => {
-      const result = await cancellationService.cancelSubscription(
-        testUserId,
-        'TRIAL_PERIOD',
-        '체험 기간 중 취소',
-      );
+      const result = await cancellationService.cancelSubscription(testUserId, 'TRIAL_PERIOD', '체험 기간 중 취소');
 
       expect(result.status).toBe('CANCELLED');
       if (result.type === 'IMMEDIATE_CANCELLATION') {
@@ -262,8 +242,7 @@ describe('Subscription Cancellation Integration Tests', () => {
       expect(contract.eligibleRefundAmount).toBe(9900);
 
       // 이벤트 확인
-      const events =
-        await contractEventManager.getContractEvents(testContractId);
+      const events = await contractEventManager.getContractEvents(testContractId);
       expect(events.length).toBeGreaterThanOrEqual(2); // CANCELLED, REFUND_REQUESTED
       expect(events.some((e) => e.eventType === 'CANCELLED')).toBe(true);
       expect(events.some((e) => e.eventType === 'REFUND_REQUESTED')).toBe(true);
@@ -279,10 +258,7 @@ describe('Subscription Cancellation Integration Tests', () => {
         })
         .where(eq(schema.subscriptionContracts.id, testContractId));
 
-      const result = await cancellationService.cancelSubscription(
-        testUserId,
-        'PRICE_TOO_HIGH',
-      );
+      const result = await cancellationService.cancelSubscription(testUserId, 'PRICE_TOO_HIGH');
 
       if (result.type === 'RECURRING_CANCELLATION') {
         expect(result.status).toBe('RECURRING_CANCELLED');
@@ -300,9 +276,9 @@ describe('Subscription Cancellation Integration Tests', () => {
       await cancellationService.cancelSubscription(testUserId, 'TRIAL_PERIOD');
 
       // 두 번째 취소 시도
-      await expect(
-        cancellationService.cancelSubscription(testUserId, 'TRIAL_PERIOD'),
-      ).rejects.toThrow('Contract already cancelled');
+      await expect(cancellationService.cancelSubscription(testUserId, 'TRIAL_PERIOD')).rejects.toThrow(
+        'Contract already cancelled',
+      );
     });
   });
 
@@ -322,8 +298,7 @@ describe('Subscription Cancellation Integration Tests', () => {
       expect(result.refundStatus).toBe('PENDING');
 
       // 이벤트 확인
-      const events =
-        await contractEventManager.getContractEvents(testContractId);
+      const events = await contractEventManager.getContractEvents(testContractId);
       const cancelEvent = events.find((e) => e.eventType === 'CANCELLED');
       expect(cancelEvent?.metadata).toMatchObject({
         isForced: true,
@@ -393,8 +368,7 @@ describe('Subscription Cancellation Integration Tests', () => {
       expect(contract.walletReferenceId).toBe('wallet-tx-123');
 
       // 이벤트 확인
-      const events =
-        await contractEventManager.getContractEvents(testContractId);
+      const events = await contractEventManager.getContractEvents(testContractId);
       expect(events.some((e) => e.eventType === 'REFUND_COMPLETED')).toBe(true);
     });
 
@@ -414,11 +388,8 @@ describe('Subscription Cancellation Integration Tests', () => {
       await refundEventHandler.handleRefundCompleted(event);
 
       // 이벤트가 중복 생성되지 않았는지 확인
-      const events =
-        await contractEventManager.getContractEvents(testContractId);
-      const refundCompletedEvents = events.filter(
-        (e) => e.eventType === 'REFUND_COMPLETED',
-      );
+      const events = await contractEventManager.getContractEvents(testContractId);
+      const refundCompletedEvents = events.filter((e) => e.eventType === 'REFUND_COMPLETED');
       expect(refundCompletedEvents).toHaveLength(1);
     });
 
@@ -430,8 +401,7 @@ describe('Subscription Cancellation Integration Tests', () => {
       });
 
       // 이벤트 확인
-      const events =
-        await contractEventManager.getContractEvents(testContractId);
+      const events = await contractEventManager.getContractEvents(testContractId);
       const failEvent = events.find((e) => e.eventType === 'REFUND_FAILED');
       expect(failEvent).toBeDefined();
       expect(failEvent?.metadata).toMatchObject({
@@ -467,8 +437,7 @@ describe('Subscription Cancellation Integration Tests', () => {
       });
 
       // 전체 이벤트 확인
-      const events =
-        await contractEventManager.getContractEvents(testContractId);
+      const events = await contractEventManager.getContractEvents(testContractId);
 
       expect(events.length).toBeGreaterThanOrEqual(3);
       expect(events.some((e) => e.eventType === 'CANCELLED')).toBe(true);
@@ -476,9 +445,7 @@ describe('Subscription Cancellation Integration Tests', () => {
       expect(events.some((e) => e.eventType === 'REFUND_COMPLETED')).toBe(true);
 
       // 시간 순서 확인
-      const sortedEvents = events.sort(
-        (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
-      );
+      const sortedEvents = events.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
       expect(sortedEvents[0].eventType).toBe('CANCELLED');
     });
   });
@@ -488,22 +455,16 @@ describe('Subscription Cancellation Integration Tests', () => {
 
     beforeAll(async () => {
       // 이미 module에서 주입된 서비스 사용
-      subscriptionService =
-        module.get<SubscriptionService>(SubscriptionService);
+      subscriptionService = module.get<SubscriptionService>(SubscriptionService);
     });
 
     it('✅ 첫 구독 시 무료 체험 적용 (7일)', async () => {
       const newUserId = 'trial-test-user-' + Date.now();
 
-      const result = await subscriptionService.createSubscription(
-        newUserId,
-        testPlanId,
-      );
+      const result = await subscriptionService.createSubscription(newUserId, testPlanId);
 
       // 이벤트 확인
-      const events = await contractEventManager.getContractEvents(
-        result.contractId,
-      );
+      const events = await contractEventManager.getContractEvents(result.contractId);
       const createdEvent = events.find((e) => e.eventType === 'CREATED');
 
       expect(createdEvent?.metadata).toMatchObject({
@@ -515,15 +476,11 @@ describe('Subscription Cancellation Integration Tests', () => {
       // Cleanup
       await dbService.db
         .delete(schema.subscriptionContractEvents)
-        .where(
-          eq(schema.subscriptionContractEvents.contractId, result.contractId),
-        );
+        .where(eq(schema.subscriptionContractEvents.contractId, result.contractId));
       await dbService.db
         .delete(schema.subscriptionEntitlement)
         .where(eq(schema.subscriptionEntitlement.userId, newUserId));
-      await dbService.db
-        .delete(schema.subscriptionContracts)
-        .where(eq(schema.subscriptionContracts.userId, newUserId));
+      await dbService.db.delete(schema.subscriptionContracts).where(eq(schema.subscriptionContracts.userId, newUserId));
     });
 
     it('✅ 재구독 시 무료 체험 미적용 (0일)', async () => {
@@ -533,22 +490,13 @@ describe('Subscription Cancellation Integration Tests', () => {
       await subscriptionService.createSubscription(newUserId, testPlanId);
 
       // 2. 취소
-      await cancellationService.cancelSubscription(
-        newUserId,
-        'TRIAL_PERIOD',
-        '체험 후 결정',
-      );
+      await cancellationService.cancelSubscription(newUserId, 'TRIAL_PERIOD', '체험 후 결정');
 
       // 3. 재구독
-      const secondResult = await subscriptionService.createSubscription(
-        newUserId,
-        testPlanId,
-      );
+      const secondResult = await subscriptionService.createSubscription(newUserId, testPlanId);
 
       // 이벤트 확인
-      const events = await contractEventManager.getContractEvents(
-        secondResult.contractId,
-      );
+      const events = await contractEventManager.getContractEvents(secondResult.contractId);
       const createdEvent = events.find((e) => e.eventType === 'CREATED');
 
       expect(createdEvent?.metadata).toMatchObject({
@@ -564,9 +512,7 @@ describe('Subscription Cancellation Integration Tests', () => {
       await dbService.db
         .delete(schema.subscriptionEntitlement)
         .where(eq(schema.subscriptionEntitlement.userId, newUserId));
-      await dbService.db
-        .delete(schema.subscriptionContracts)
-        .where(eq(schema.subscriptionContracts.userId, newUserId));
+      await dbService.db.delete(schema.subscriptionContracts).where(eq(schema.subscriptionContracts.userId, newUserId));
     }, 20000); // 타임아웃 20초
 
     it('✅ 여러 번 취소 후 재구독해도 무료 체험 미적용', async () => {
@@ -581,14 +527,9 @@ describe('Subscription Cancellation Integration Tests', () => {
       await cancellationService.cancelSubscription(newUserId, 'TRIAL_PERIOD');
 
       // 3차: 재구독
-      const thirdResult = await subscriptionService.createSubscription(
-        newUserId,
-        testPlanId,
-      );
+      const thirdResult = await subscriptionService.createSubscription(newUserId, testPlanId);
 
-      const events = await contractEventManager.getContractEvents(
-        thirdResult.contractId,
-      );
+      const events = await contractEventManager.getContractEvents(thirdResult.contractId);
       const createdEvent = events.find((e) => e.eventType === 'CREATED');
 
       expect(createdEvent?.metadata).toMatchObject({
@@ -603,9 +544,7 @@ describe('Subscription Cancellation Integration Tests', () => {
       await dbService.db
         .delete(schema.subscriptionEntitlement)
         .where(eq(schema.subscriptionEntitlement.userId, newUserId));
-      await dbService.db
-        .delete(schema.subscriptionContracts)
-        .where(eq(schema.subscriptionContracts.userId, newUserId));
+      await dbService.db.delete(schema.subscriptionContracts).where(eq(schema.subscriptionContracts.userId, newUserId));
     }, 30000); // 타임아웃 30초
   });
 });

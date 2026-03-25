@@ -113,4 +113,4 @@ import { OutboxService } from '../order/shared/services/outbox.service';
     HolderService,
   ],
 })
-export class InventoryModule { }
+export class InventoryModule {}

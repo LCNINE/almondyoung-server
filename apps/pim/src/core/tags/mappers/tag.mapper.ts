@@ -1,15 +1,11 @@
 import { DateMapper } from '../../../common/mappers';
-import {
-  TagGroupResponseDto,
-  TagValueItemDto,
-} from '../dto';
+import { TagGroupResponseDto, TagValueItemDto } from '../dto';
 import { TagGroupEntity, TagValueEntity } from '../../../schema.types';
 import { TagValueWithGroupNameDto } from '../dto/tag-value-with-group-name.dto';
 
 export type TagGroupWithValues = TagGroupEntity & {
   values: TagValueEntity[];
-}
-
+};
 
 export class TagMapper {
   static toGroupDto(entity: TagGroupWithValues): TagGroupResponseDto {
@@ -21,10 +17,9 @@ export class TagMapper {
       isActive: entity.isActive,
       createdAt: DateMapper.toNotNullString(entity.createdAt),
       updatedAt: DateMapper.toNotNullString(entity.updatedAt),
-      values: entity.values.map(v => TagMapper.toValueDto(v)),
+      values: entity.values.map((v) => TagMapper.toValueDto(v)),
     };
   }
-
 
   static toValueDto(entity: TagValueEntity): TagValueItemDto {
     return {

@@ -64,4 +64,3 @@ export class CreateBannerDto {
   @IsString()
   createdBy?: string;
 }
-

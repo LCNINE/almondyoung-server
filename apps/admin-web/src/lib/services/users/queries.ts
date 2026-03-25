@@ -1,6 +1,10 @@
 import { userApi } from '@/lib/api/domains/users';
 import { AdminUsersQuery } from '@/lib/types/dto/user';
-import { keepPreviousData, useQuery, useSuspenseQuery } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useQuery,
+  useSuspenseQuery,
+} from '@tanstack/react-query';
 import { usersQueryKeys } from './query-keys';
 
 export const useAdminUsers = (query: AdminUsersQuery) => {

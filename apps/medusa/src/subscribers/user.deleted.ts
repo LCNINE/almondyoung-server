@@ -28,9 +28,7 @@ export default async function handleUserDeleted({
   });
 
   if (customers.length === 0) {
-    logger.info(
-      `🧹 No customer found for user.deleted event: ${JSON.stringify(event.data)}`,
-    );
+    logger.info(`🧹 No customer found for user.deleted event: ${JSON.stringify(event.data)}`);
     return;
   }
 

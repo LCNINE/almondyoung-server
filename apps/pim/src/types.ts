@@ -43,16 +43,12 @@ export type VersionStatus = 'draft' | 'inactive' | 'active';
 
 export type ProductCategory = InferSelectModel<typeof productCategories>;
 export type NewProductCategory = InferInsertModel<typeof productCategories>;
-export type UpdateProductCategory = Partial<
-  Omit<NewProductCategory, 'id' | 'createdAt' | 'updatedAt'>
->;
+export type UpdateProductCategory = Partial<Omit<NewProductCategory, 'id' | 'createdAt' | 'updatedAt'>>;
 
 // ===== PRODUCT MASTERS (메타데이터만) 타입 =====
 export type ProductMaster = InferSelectModel<typeof productMasters>;
 export type NewProductMaster = InferInsertModel<typeof productMasters>;
-export type UpdateProductMaster = Partial<
-  Omit<NewProductMaster, 'id' | 'createdAt'>
->;
+export type UpdateProductMaster = Partial<Omit<NewProductMaster, 'id' | 'createdAt'>>;
 
 // ===== PRODUCT MASTER VERSIONS (버전별 상품 데이터) 타입 =====
 export type ProductMasterVersion = InferSelectModel<typeof productMasterVersions>;
@@ -74,15 +70,9 @@ export type ProductMasterWithVersion = ProductMaster & {
 };
 
 // ===== PRODUCT MASTER CATEGORIES (Junction Table) 타입 =====
-export type ProductMasterCategory = InferSelectModel<
-  typeof productMasterCategories
->;
-export type NewProductMasterCategory = InferInsertModel<
-  typeof productMasterCategories
->;
-export type UpdateProductMasterCategory = Partial<
-  Omit<NewProductMasterCategory, 'id' | 'createdAt'>
->;
+export type ProductMasterCategory = InferSelectModel<typeof productMasterCategories>;
+export type NewProductMasterCategory = InferInsertModel<typeof productMasterCategories>;
+export type UpdateProductMasterCategory = Partial<Omit<NewProductMasterCategory, 'id' | 'createdAt'>>;
 
 // ===== PRODUCT MASTER OPTION GROUPS (Mapping Table) 타입 =====
 export type ProductMasterOptionGroup = InferSelectModel<typeof productMasterOptionGroups>;
@@ -156,72 +146,48 @@ export interface RemoveOptionValuesDto {
 
 // ===== PRODUCT OPTION GROUPS 타입 =====
 export type ProductOptionGroup = InferSelectModel<typeof productOptionGroups>;
-export type NewProductOptionGroup = InferInsertModel<
-  typeof productOptionGroups
->;
-export type UpdateProductOptionGroup = Partial<
-  Omit<NewProductOptionGroup, 'id' | 'createdAt' | 'updatedAt'>
->;
+export type NewProductOptionGroup = InferInsertModel<typeof productOptionGroups>;
+export type UpdateProductOptionGroup = Partial<Omit<NewProductOptionGroup, 'id' | 'createdAt' | 'updatedAt'>>;
 
 // ===== PRODUCT OPTION VALUES 타입 =====
 export type ProductOptionValue = InferSelectModel<typeof productOptionValues>;
-export type NewProductOptionValue = InferInsertModel<
-  typeof productOptionValues
->;
-export type UpdateProductOptionValue = Partial<
-  Omit<NewProductOptionValue, 'id' | 'createdAt' | 'updatedAt'>
->;
+export type NewProductOptionValue = InferInsertModel<typeof productOptionValues>;
+export type UpdateProductOptionValue = Partial<Omit<NewProductOptionValue, 'id' | 'createdAt' | 'updatedAt'>>;
 
 // ===== PRODUCT VARIANTS 타입 =====
 export type ProductVariant = InferSelectModel<typeof productVariants>;
 export type NewProductVariant = InferInsertModel<typeof productVariants>;
-export type UpdateProductVariant = Partial<
-  Omit<NewProductVariant, 'id' | 'createdAt' | 'updatedAt'>
->;
+export type UpdateProductVariant = Partial<Omit<NewProductVariant, 'id' | 'createdAt' | 'updatedAt'>>;
 
 // ===== VARIANT OPTION VALUES 타입 =====
 export type VariantOptionValue = InferSelectModel<typeof variantOptionValues>;
-export type NewVariantOptionValue = InferInsertModel<
-  typeof variantOptionValues
->;
-export type UpdateVariantOptionValue = Partial<
-  Omit<NewVariantOptionValue, 'id' | 'createdAt' | 'updatedAt'>
->;
+export type NewVariantOptionValue = InferInsertModel<typeof variantOptionValues>;
+export type UpdateVariantOptionValue = Partial<Omit<NewVariantOptionValue, 'id' | 'createdAt' | 'updatedAt'>>;
 
 // ===== CHANNEL CATEGORIES 타입 =====
 export type ChannelCategory = InferSelectModel<typeof channelCategories>;
 export type NewChannelCategory = InferInsertModel<typeof channelCategories>;
-export type UpdateChannelCategory = Partial<
-  Omit<NewChannelCategory, 'id' | 'createdAt' | 'updatedAt'>
->;
+export type UpdateChannelCategory = Partial<Omit<NewChannelCategory, 'id' | 'createdAt' | 'updatedAt'>>;
 
 // ===== SALES CHANNELS 타입 =====
 export type SalesChannel = InferSelectModel<typeof salesChannels>;
 export type NewSalesChannel = InferInsertModel<typeof salesChannels>;
-export type UpdateSalesChannel = Partial<
-  Omit<NewSalesChannel, 'id' | 'createdAt' | 'updatedAt'>
->;
+export type UpdateSalesChannel = Partial<Omit<NewSalesChannel, 'id' | 'createdAt' | 'updatedAt'>>;
 
 // ===== CHANNEL PRODUCTS 타입 =====
 export type ChannelProduct = InferSelectModel<typeof channelProducts>;
 export type NewChannelProduct = InferInsertModel<typeof channelProducts>;
-export type UpdateChannelProduct = Partial<
-  Omit<NewChannelProduct, 'id' | 'createdAt' | 'updatedAt'>
->;
+export type UpdateChannelProduct = Partial<Omit<NewChannelProduct, 'id' | 'createdAt' | 'updatedAt'>>;
 
 // ===== CHANNEL VARIANT LISTINGS 타입 (채널 상품 ↔ Variant 매핑) =====
 export type ChannelVariantListing = InferSelectModel<typeof channelVariantListings>;
 export type NewChannelVariantListing = InferInsertModel<typeof channelVariantListings>;
-export type UpdateChannelVariantListing = Partial<
-  Omit<NewChannelVariantListing, 'id' | 'createdAt' | 'updatedAt'>
->;
+export type UpdateChannelVariantListing = Partial<Omit<NewChannelVariantListing, 'id' | 'createdAt' | 'updatedAt'>>;
 
 // ===== PRICING RULES 타입 =====
 export type PricingRule = InferSelectModel<typeof pricingRules>;
 export type NewPricingRule = InferInsertModel<typeof pricingRules>;
-export type UpdatePricingRule = Partial<
-  Omit<NewPricingRule, 'id' | 'createdAt' | 'updatedAt'>
->;
+export type UpdatePricingRule = Partial<Omit<NewPricingRule, 'id' | 'createdAt' | 'updatedAt'>>;
 
 export type ProductVariantPriceCache = InferSelectModel<typeof productVariantPriceCache>;
 export type NewProductVariantPriceCache = InferInsertModel<typeof productVariantPriceCache>;
@@ -235,13 +201,10 @@ export type ScopeType = 'all_variants' | 'with_option' | 'variants';
 // 연산 타입
 export type OperationType = 'offset' | 'scale' | 'override';
 
-
 // ===== PRODUCT IMAGES 타입 =====
 export type ProductImage = InferSelectModel<typeof productImages>;
 export type NewProductImage = InferInsertModel<typeof productImages>;
-export type UpdateProductImage = Partial<
-  Omit<NewProductImage, 'id' | 'createdAt'>
->;
+export type UpdateProductImage = Partial<Omit<NewProductImage, 'id' | 'createdAt'>>;
 
 // ===== 비즈니스 로직 DTO =====
 
@@ -419,16 +382,12 @@ export interface VariantPriceSet {
 // ===== TAG GROUPS 타입 =====
 export type TagGroup = InferSelectModel<typeof tagGroups>;
 export type NewTagGroup = InferInsertModel<typeof tagGroups>;
-export type UpdateTagGroup = Partial<
-  Omit<NewTagGroup, 'id' | 'createdAt' | 'updatedAt'>
->;
+export type UpdateTagGroup = Partial<Omit<NewTagGroup, 'id' | 'createdAt' | 'updatedAt'>>;
 
 // ===== TAG VALUES 타입 =====
 export type TagValue = InferSelectModel<typeof tagValues>;
 export type NewTagValue = InferInsertModel<typeof tagValues>;
-export type UpdateTagValue = Partial<
-  Omit<NewTagValue, 'id' | 'createdAt' | 'updatedAt'>
->;
+export type UpdateTagValue = Partial<Omit<NewTagValue, 'id' | 'createdAt' | 'updatedAt'>>;
 
 // ===== CATEGORY TAG GROUPS 타입 =====
 export type CategoryTagGroup = InferSelectModel<typeof categoryTagGroups>;
@@ -441,16 +400,12 @@ export type NewProductTagValue = InferInsertModel<typeof productTagValues>;
 // ===== BANNER GROUPS 타입 =====
 export type BannerGroup = InferSelectModel<typeof bannerGroups>;
 export type NewBannerGroup = InferInsertModel<typeof bannerGroups>;
-export type UpdateBannerGroup = Partial<
-  Omit<NewBannerGroup, 'id' | 'createdAt' | 'updatedAt'>
->;
+export type UpdateBannerGroup = Partial<Omit<NewBannerGroup, 'id' | 'createdAt' | 'updatedAt'>>;
 
 // ===== BANNERS 타입 =====
 export type Banner = InferSelectModel<typeof banners>;
 export type NewBanner = InferInsertModel<typeof banners>;
-export type UpdateBanner = Partial<
-  Omit<NewBanner, 'id' | 'createdAt' | 'updatedAt'>
->;
+export type UpdateBanner = Partial<Omit<NewBanner, 'id' | 'createdAt' | 'updatedAt'>>;
 
 // ===== VERSION MANAGEMENT DTO =====
 
@@ -482,5 +437,9 @@ export interface CreateDraftVersionDto {
 }
 
 // Re-export new DTOs
-export { ProductDto, ProductListItemDto, ProductListResponseDto } from './core/products/dto/products/product-response.dto';
+export {
+  ProductDto,
+  ProductListItemDto,
+  ProductListResponseDto,
+} from './core/products/dto/products/product-response.dto';
 export { ProductMasterMetadataDto } from './core/products/dto/products/product-master-metadata.dto';

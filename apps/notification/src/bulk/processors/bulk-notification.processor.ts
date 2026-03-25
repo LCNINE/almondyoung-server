@@ -19,9 +19,7 @@ export class BulkNotificationProcessor {
   ) {}
 
   @Process('process-bulk-campaign')
-  async handleProcessBulkCampaign(
-    job: Job<{ campaignId: string; targetGroupId: string }>,
-  ) {
+  async handleProcessBulkCampaign(job: Job<{ campaignId: string; targetGroupId: string }>) {
     const { campaignId, targetGroupId } = job.data;
     this.logger.log(`Processing bulk campaign job for campaignId: ${campaignId}`);
 
@@ -45,17 +43,19 @@ export class BulkNotificationProcessor {
 
       // 2. Resolve Audience - 프론트에서 이미 조인/필터링된 사용자 정보 사용
       let targetUsers: { userId: string; email?: string; phoneNumber?: string; isMarketingEnabled?: boolean }[] = [];
-      
+
       // 모든 타입에서 userList를 사용 (프론트에서 이미 조인/필터링된 정보)
       if (Array.isArray(targetGroup.userList) && targetGroup.userList.length > 0) {
-        targetUsers = (targetGroup.userList as any[]).map((user: any) => ({
+        targetUsers = targetGroup.userList.map((user: any) => ({
           userId: user.userId || user.id,
           email: user.email,
           phoneNumber: user.phoneNumber,
           isMarketingEnabled: user.isMarketingEnabled ?? true,
         }));
       } else {
-        this.logger.warn(`Target group ${targetGroupId} has empty userList - 프론트에서 사용자 정보를 users 배열로 전달해야 함`);
+        this.logger.warn(
+          `Target group ${targetGroupId} has empty userList - 프론트에서 사용자 정보를 users 배열로 전달해야 함`,
+        );
         targetUsers = [];
       }
 
@@ -97,7 +97,9 @@ export class BulkNotificationProcessor {
 
           // 사용 가능한 채널이 없으면 스킵
           if (channels.length === 0) {
-            this.logger.log(`No channels resolved for user ${user.userId} (allowed: ${allowedChannels.join(', ')}, hasEmail: ${!!user.email}, hasPhone: ${!!user.phoneNumber}), skipping`);
+            this.logger.log(
+              `No channels resolved for user ${user.userId} (allowed: ${allowedChannels.join(', ')}, hasEmail: ${!!user.email}, hasPhone: ${!!user.phoneNumber}), skipping`,
+            );
             continue;
           }
 
@@ -107,14 +109,20 @@ export class BulkNotificationProcessor {
                 userId: user.userId,
                 channels: [channel],
                 category: campaign.category as NotificationCategory,
-                templateKey: campaign.templateId ? (await this.db.db.query.templates.findFirst({ where: eq(notificationTables.templates.templateId, campaign.templateId) }))?.templateKey : undefined,
+                templateKey: campaign.templateId
+                  ? (
+                      await this.db.db.query.templates.findFirst({
+                        where: eq(notificationTables.templates.templateId, campaign.templateId),
+                      })
+                    )?.templateKey
+                  : undefined,
                 payload: {
                   // 기본 사용자 정보를 페이로드에 포함
                   userName: user.userId, // 실제로는 사용자 이름이 필요
                   userEmail: user.email,
                   userPhone: user.phoneNumber,
                   // campaign.payload는 metadata에서 가져옴
-                  ...(campaign.metadata as any)?.payload || {}
+                  ...((campaign.metadata as any)?.payload || {}),
                 },
                 metadata: {
                   campaignId: campaign.campaignId,
@@ -134,10 +142,9 @@ export class BulkNotificationProcessor {
                 status: 'SENT',
                 attemptedAt: new Date(),
               });
-
             } catch (error) {
               this.logger.error(`Failed to send ${channel} notification to user ${user.userId}:`, error);
-              
+
               // Record failed recipient for this channel
               await this.db.db.insert(notificationTables.campaignRecipients).values({
                 campaignId: campaign.campaignId,
@@ -149,7 +156,6 @@ export class BulkNotificationProcessor {
               });
             }
           }
-
         } catch (error) {
           this.logger.error(`Failed to process user ${user.userId}:`, error);
         }
@@ -158,24 +164,23 @@ export class BulkNotificationProcessor {
       // 4. Update campaign status
       await this.db.db
         .update(notificationTables.notificationCampaigns)
-        .set({ 
-          status: 'COMPLETED'
+        .set({
+          status: 'COMPLETED',
         })
         .where(eq(notificationTables.notificationCampaigns.campaignId, campaignId));
 
       this.logger.log(`Completed bulk campaign processing for campaignId: ${campaignId}`);
-
     } catch (error) {
       this.logger.error(`Failed to process bulk campaign ${campaignId}:`, error);
-      
+
       // Update campaign status to failed
       await this.db.db
         .update(notificationTables.notificationCampaigns)
-        .set({ 
-          status: 'FAILED'
+        .set({
+          status: 'FAILED',
         })
         .where(eq(notificationTables.notificationCampaigns.campaignId, campaignId));
-      
+
       throw error;
     }
   }

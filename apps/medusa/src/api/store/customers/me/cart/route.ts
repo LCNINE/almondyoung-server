@@ -1,12 +1,6 @@
-import {
-  AuthenticatedMedusaRequest,
-  MedusaResponse,
-} from '@medusajs/framework/http';
+import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
-import {
-  addToCartWorkflow,
-  transferCartCustomerWorkflow,
-} from '@medusajs/medusa/core-flows';
+import { addToCartWorkflow, transferCartCustomerWorkflow } from '@medusajs/medusa/core-flows';
 import { defaultStoreCartFields } from '../../../carts/query-config';
 
 /**
@@ -15,13 +9,7 @@ import { defaultStoreCartFields } from '../../../carts/query-config';
 async function getCustomerCart(query: any, customerId: string) {
   const { data: carts } = await query.graph({
     entity: 'cart',
-    fields: [
-      'id',
-      'customer_id',
-      'completed_at',
-      'updated_at',
-      ...defaultStoreCartFields,
-    ],
+    fields: ['id', 'customer_id', 'completed_at', 'updated_at', ...defaultStoreCartFields],
     filters: {
       customer_id: customerId,
       completed_at: null,
@@ -56,10 +44,7 @@ async function getCustomerCart(query: any, customerId: string) {
  * GET /store/customers/me/cart
  * 로그인한 고객의 미완료 카트를 조회합니다.
  */
-export async function GET(
-  req: AuthenticatedMedusaRequest,
-  res: MedusaResponse,
-) {
+export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   const customerId = req.auth_context?.actor_id;
 
   if (!customerId) {
@@ -93,10 +78,7 @@ export async function GET(
  * 반환:
  * - 병합된 고객 카트 (또는 기존 카트)
  */
-export async function POST(
-  req: AuthenticatedMedusaRequest,
-  res: MedusaResponse,
-) {
+export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   const customerId = req.auth_context?.actor_id;
 
   if (!customerId) {
@@ -118,13 +100,7 @@ export async function POST(
       // 게스트 카트 조회
       const { data: guestCarts } = await query.graph({
         entity: 'cart',
-        fields: [
-          'id',
-          'customer_id',
-          'items.id',
-          'items.variant_id',
-          'items.quantity',
-        ],
+        fields: ['id', 'customer_id', 'items.id', 'items.variant_id', 'items.quantity'],
         filters: {
           id: guestCartId,
           completed_at: null,
@@ -150,16 +126,11 @@ export async function POST(
 
       if (customerCart && guestCart?.items?.length > 0) {
         // 고객 카트에 이미 있는 variant_id 목록
-        const existingVariantIds = new Set(
-          (customerCart.items || []).map((item: any) => item.variant_id),
-        );
+        const existingVariantIds = new Set((customerCart.items || []).map((item: any) => item.variant_id));
 
         // 고객 카트에 없는 게스트 아이템만 필터링
         const itemsToAdd = guestCart.items
-          .filter(
-            (item: any) =>
-              item.variant_id && !existingVariantIds.has(item.variant_id),
-          )
+          .filter((item: any) => item.variant_id && !existingVariantIds.has(item.variant_id))
           .map((item: any) => ({
             variant_id: item.variant_id,
             quantity: item.quantity || 1,

@@ -46,10 +46,7 @@ export class WelcomeMembershipController {
   @Post('eligibility/:userId/purchased')
   @Public()
   @ApiOperation({ summary: '웰컴 멤버십 구매 완료 기록' })
-  async markPurchased(
-    @Param('userId') userId: string,
-    @Body() body: { orderId: string },
-  ) {
+  async markPurchased(@Param('userId') userId: string, @Body() body: { orderId: string }) {
     try {
       if (!body.orderId) throw new Error('orderId is required');
       await this.service.markPurchased(userId, body.orderId);

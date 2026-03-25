@@ -31,20 +31,17 @@ function createKafkaConfig() {
     sasl:
       process.env.KAFKA_API_KEY && process.env.KAFKA_API_SECRET
         ? {
-          mechanism: 'plain' as const,
-          username: process.env.KAFKA_API_KEY,
-          password: process.env.KAFKA_API_SECRET,
-        }
+            mechanism: 'plain' as const,
+            username: process.env.KAFKA_API_KEY,
+            password: process.env.KAFKA_API_SECRET,
+          }
         : undefined,
   };
 }
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
-  const app = await NestFactory.create<NestFastifyApplication>(
-    AnalyticsModule,
-    new FastifyAdapter(),
-  );
+  const app = await NestFactory.create<NestFastifyApplication>(AnalyticsModule, new FastifyAdapter());
 
   await app.register(fastifyCookie);
 
@@ -68,10 +65,7 @@ async function bootstrap() {
 
   const config = new DocumentBuilder()
     .setTitle('Analytics Service API')
-    .setDescription(
-      'Analytics Service API\n\n' +
-      'Provides aggregated metrics and statistics.',
-    )
+    .setDescription('Analytics Service API\n\n' + 'Provides aggregated metrics and statistics.')
     .setVersion('1.0.0')
     .build();
 
@@ -81,12 +75,15 @@ async function bootstrap() {
   });
 
   // YAML docs charset header for Swagger.
-  app.getHttpAdapter().getInstance().addHook('onSend', (request, reply, payload, done) => {
-    if (request.url === '/docs.yaml') {
-      reply.header('Content-Type', 'application/x-yaml; charset=utf-8');
-    }
-    done();
-  });
+  app
+    .getHttpAdapter()
+    .getInstance()
+    .addHook('onSend', (request, reply, payload, done) => {
+      if (request.url === '/docs.yaml') {
+        reply.header('Content-Type', 'application/x-yaml; charset=utf-8');
+      }
+      done();
+    });
 
   const kafkaConfig = createKafkaConfig();
   if (kafkaConfig) {

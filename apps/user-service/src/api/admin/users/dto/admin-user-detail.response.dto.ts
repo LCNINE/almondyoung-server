@@ -1,8 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import {
-  ProfileDto,
-  ShopInfoDto,
-} from '../../../users/dto/user-details.response.dto';
+import { ProfileDto, ShopInfoDto } from '../../../users/dto/user-details.response.dto';
 
 export class AdminUserDetailResponseDto {
   @ApiProperty()

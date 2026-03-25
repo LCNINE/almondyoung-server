@@ -1,12 +1,12 @@
-import { ExecArgs } from "@medusajs/framework/types";
-import { completeCartWorkflow } from "@medusajs/medusa/core-flows";
-import { ContainerRegistrationKeys } from "@medusajs/framework/utils";
+import { ExecArgs } from '@medusajs/framework/types';
+import { completeCartWorkflow } from '@medusajs/medusa/core-flows';
+import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 
 export default async function recoverCartComplete({ container, args }: ExecArgs) {
   const cartId = args[0];
 
   if (!cartId) {
-    throw new Error("Usage: medusa exec ./src/scripts/recover-cart-complete.ts <cart_id>");
+    throw new Error('Usage: medusa exec ./src/scripts/recover-cart-complete.ts <cart_id>');
   }
 
   const { errors, result } = await completeCartWorkflow(container).run({
@@ -20,7 +20,7 @@ export default async function recoverCartComplete({ container, args }: ExecArgs)
       action: e.action,
       handlerType: e.handlerType,
       message: e.error?.message,
-      type: (e.error as any)?.type,
+      type: e.error?.type,
       name: e.error?.name,
     }));
     console.log(JSON.stringify({ ok: false, cartId, errors: details }, null, 2));
@@ -29,16 +29,16 @@ export default async function recoverCartComplete({ container, args }: ExecArgs)
 
   const query = container.resolve(ContainerRegistrationKeys.QUERY);
   const { data: orders } = await query.graph({
-    entity: "order",
+    entity: 'order',
     fields: [
-      "id",
-      "status",
-      "email",
-      "created_at",
-      "customer_id",
-      "payment_collections.id",
-      "payment_collections.payments.id",
-      "payment_collections.payments.captures.id",
+      'id',
+      'status',
+      'email',
+      'created_at',
+      'customer_id',
+      'payment_collections.id',
+      'payment_collections.payments.id',
+      'payment_collections.payments.captures.id',
     ],
     filters: { id: result.id },
   });

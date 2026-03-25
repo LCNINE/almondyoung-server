@@ -30,14 +30,11 @@ export interface FOIScanResult {
   batchId?: string;
 }
 
-
 @Injectable()
 export class BarcodeService {
   private readonly logger = new Logger(BarcodeService.name);
 
-  constructor(
-    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>
-  ) {}
+  constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
 
   private get db() {
     return this.dbService.db;
@@ -54,7 +51,7 @@ export class BarcodeService {
     if (trimmed.startsWith('SKU-')) {
       return {
         type: 'sku',
-        id: trimmed.substring(4)
+        id: trimmed.substring(4),
       };
     }
 
@@ -62,7 +59,7 @@ export class BarcodeService {
     if (trimmed.startsWith('LOC-')) {
       return {
         type: 'location',
-        id: trimmed.substring(4)
+        id: trimmed.substring(4),
       };
     }
 
@@ -70,7 +67,7 @@ export class BarcodeService {
     if (trimmed.startsWith('FO-')) {
       return {
         type: 'fulfillment_order',
-        id: trimmed.substring(3)
+        id: trimmed.substring(3),
       };
     }
 
@@ -78,7 +75,7 @@ export class BarcodeService {
     if (trimmed.startsWith('FOI-')) {
       return {
         type: 'fulfillment_order_item',
-        id: trimmed.substring(4)
+        id: trimmed.substring(4),
       };
     }
 
@@ -87,13 +84,13 @@ export class BarcodeService {
     if (uuidRegex.test(trimmed)) {
       return {
         type: 'unknown',
-        id: trimmed
+        id: trimmed,
       };
     }
 
     return {
       type: 'unknown',
-      id: trimmed
+      id: trimmed,
     };
   }
 
@@ -112,7 +109,7 @@ export class BarcodeService {
       }
 
       const sku = await trx.query.skus.findFirst({
-        where: eq(wmsTables.skus.id, skuId)
+        where: eq(wmsTables.skus.id, skuId),
       });
 
       if (!sku) {
@@ -124,8 +121,8 @@ export class BarcodeService {
         where: and(
           eq(wmsTables.stockLedgers.skuId, skuId),
           eq(wmsTables.stockLedgers.warehouseId, warehouseId),
-          eq(wmsTables.stockLedgers.stockState, 'ON_HAND')
-        )
+          eq(wmsTables.stockLedgers.stockState, 'ON_HAND'),
+        ),
       });
 
       const availableQty = stockLedgers.reduce((sum, ledger) => sum + ledger.qty, 0);
@@ -139,7 +136,7 @@ export class BarcodeService {
         skuId: sku.id,
         skuName: sku.name,
         availableQty,
-        locationCode
+        locationCode,
       };
     }, tx);
   }
@@ -171,13 +168,10 @@ export class BarcodeService {
           batchId: wmsTables.fulfillmentOrders.batchId,
         })
         .from(wmsTables.fulfillmentOrderItems)
-        .innerJoin(
-          wmsTables.skus,
-          eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId)
-        )
+        .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId))
         .innerJoin(
           wmsTables.fulfillmentOrders,
-          eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId)
+          eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
         )
         .where(eq(wmsTables.fulfillmentOrderItems.id, foiId))
         .limit(1);
@@ -204,7 +198,10 @@ export class BarcodeService {
     }, tx);
   }
 
-  async scanFulfillmentOrder(barcode: string, tx?: DbTx): Promise<{
+  async scanFulfillmentOrder(
+    barcode: string,
+    tx?: DbTx,
+  ): Promise<{
     fulfillmentOrderId: string;
     status: string;
     totalItems: number;
@@ -255,13 +252,10 @@ export class BarcodeService {
           skuName: wmsTables.skus.name,
         })
         .from(wmsTables.fulfillmentOrderItems)
-        .innerJoin(
-          wmsTables.skus,
-          eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId)
-        )
+        .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId))
         .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fo.id));
 
-      const completedItems = itemRows.filter(r => r.pickedQty >= r.qty).length;
+      const completedItems = itemRows.filter((r) => r.pickedQty >= r.qty).length;
 
       this.logger.log(`FO scanned: ${fo.id} (${completedItems}/${itemRows.length} items completed)`);
 
@@ -271,7 +265,7 @@ export class BarcodeService {
         totalItems: itemRows.length,
         completedItems,
         batchId: fo.batchId ?? undefined,
-        items: itemRows.map(r => ({
+        items: itemRows.map((r) => ({
           foiId: r.id,
           skuName: r.skuName,
           requiredQty: r.qty,
@@ -319,14 +313,14 @@ export class BarcodeService {
       includetext?: boolean;
       textxalign?: 'left' | 'center' | 'right' | 'offleft' | 'offright' | 'justify';
       textsize?: number;
-    }
+    },
   ): Promise<string> {
     try {
       const barcodeTypeMap: Record<string, string> = {
-        'CODE128': 'code128',
-        'QR': 'qrcode',
-        'EAN13': 'ean13',
-        'CODE39': 'code39',
+        CODE128: 'code128',
+        QR: 'qrcode',
+        EAN13: 'ean13',
+        CODE39: 'code39',
       };
 
       const barcodeType = barcodeTypeMap[format] || 'code128';
@@ -371,7 +365,10 @@ export class BarcodeService {
   /**
    * SKU용 바코드 이미지 생성
    */
-  async generateSkuBarcodeImage(skuId: string, format: 'CODE128' | 'QR' = 'CODE128'): Promise<{
+  async generateSkuBarcodeImage(
+    skuId: string,
+    format: 'CODE128' | 'QR' = 'CODE128',
+  ): Promise<{
     barcodeValue: string;
     format: string;
     imageBase64: string;
@@ -389,7 +386,10 @@ export class BarcodeService {
   /**
    * Location용 바코드 이미지 생성
    */
-  async generateLocationBarcodeImage(locationCode: string, format: 'CODE128' | 'QR' = 'CODE128'): Promise<{
+  async generateLocationBarcodeImage(
+    locationCode: string,
+    format: 'CODE128' | 'QR' = 'CODE128',
+  ): Promise<{
     barcodeValue: string;
     format: string;
     imageBase64: string;
@@ -407,7 +407,10 @@ export class BarcodeService {
   /**
    * Fulfillment Order용 바코드 이미지 생성
    */
-  async generateFulfillmentOrderBarcodeImage(fulfillmentOrderId: string, format: 'CODE128' | 'QR' = 'CODE128'): Promise<{
+  async generateFulfillmentOrderBarcodeImage(
+    fulfillmentOrderId: string,
+    format: 'CODE128' | 'QR' = 'CODE128',
+  ): Promise<{
     barcodeValue: string;
     format: string;
     imageBase64: string;
@@ -426,13 +429,13 @@ export class BarcodeService {
    * 사용자 정의 바코드 이미지 생성
    */
   async generateCustomBarcodeImage(
-    value: string, 
+    value: string,
     format: 'CODE128' | 'QR' | 'EAN13' | 'CODE39' = 'CODE128',
     options?: {
       scale?: number;
       height?: number;
       includetext?: boolean;
-    }
+    },
   ): Promise<{
     barcodeValue: string;
     format: string;

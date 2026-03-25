@@ -31,7 +31,7 @@ export class TossWebhookRepository {
       )
       .limit(1);
 
-    return { inserted: false, id: existing[0]!.id };
+    return { inserted: false, id: existing[0].id };
   }
 
   async updateStatus(

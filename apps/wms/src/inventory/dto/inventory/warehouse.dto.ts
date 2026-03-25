@@ -1,5 +1,5 @@
-import { ApiProperty } from "@nestjs/swagger";
-import { warehouseTypeEnum } from "../../../../database/schemas/wms-schema";
+import { ApiProperty } from '@nestjs/swagger';
+import { warehouseTypeEnum } from '../../../../database/schemas/wms-schema';
 
 export class WarehouseDto {
   @ApiProperty({ description: '창고 ID' })
@@ -12,7 +12,7 @@ export class WarehouseDto {
   location: string | null;
 
   @ApiProperty({ description: '창고 타입', enum: warehouseTypeEnum.enumValues })
-  type: typeof warehouseTypeEnum.enumValues[number];
+  type: (typeof warehouseTypeEnum.enumValues)[number];
 
   @ApiProperty({ description: '생성일시' })
   createdAt: string;

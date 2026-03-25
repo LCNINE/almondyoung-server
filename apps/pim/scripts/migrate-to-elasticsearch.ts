@@ -5,9 +5,7 @@ import { register } from 'tsconfig-paths';
 import { resolve } from 'path';
 import { readFileSync } from 'fs';
 
-const tsConfig = JSON.parse(
-  readFileSync(resolve(__dirname, '../../../tsconfig.json'), 'utf8')
-);
+const tsConfig = JSON.parse(readFileSync(resolve(__dirname, '../../../tsconfig.json'), 'utf8'));
 
 register({
   baseUrl: resolve(__dirname, '../../../'),
@@ -27,7 +25,7 @@ import {
   productTagValues,
   tagValues,
   tagGroups,
-  type PimSchema
+  type PimSchema,
 } from '../src/schema';
 import { eq, and, isNull, sql } from 'drizzle-orm';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
@@ -107,7 +105,6 @@ async function bootstrap() {
     tables.forEach((row) => {
       console.log(`    - ${row.schemaname}.${row.tablename}`);
     });
-
   } catch (error: any) {
     console.error('  ❌ Failed to query tables:', error.message);
   }
@@ -128,12 +125,7 @@ async function bootstrap() {
         name: productMasterVersions.name,
       })
       .from(productMasterVersions)
-      .where(
-        and(
-          eq(productMasterVersions.status, 'active'),
-          isNull(productMasterVersions.deletedAt),
-        ),
-      );
+      .where(and(eq(productMasterVersions.status, 'active'), isNull(productMasterVersions.deletedAt)));
 
     console.log(`Found ${activeMasters.length} active product masters\n`);
 
@@ -149,11 +141,7 @@ async function bootstrap() {
 
     for (const master of activeMasters) {
       try {
-        const document = await buildElasticsearchDocument(
-          db,
-          master.id,
-          master.masterId,
-        );
+        const document = await buildElasticsearchDocument(db, master.id, master.masterId);
 
         await esService.getClient().index({
           index: 'pim_products',
@@ -167,9 +155,7 @@ async function bootstrap() {
         }
       } catch (error) {
         failed++;
-        console.error(
-          `  ❌ Failed to migrate product ${master.masterId}: ${error.message}`,
-        );
+        console.error(`  ❌ Failed to migrate product ${master.masterId}: ${error.message}`);
       }
     }
 
@@ -222,10 +208,7 @@ async function buildElasticsearchDocument(
         eq(productMasterVersions.id, productMasterCategories.versionId),
       ),
     )
-    .leftJoin(
-      productCategories,
-      eq(productMasterCategories.categoryId, productCategories.id),
-    )
+    .leftJoin(productCategories, eq(productMasterCategories.categoryId, productCategories.id))
     .where(eq(productMasterVersions.id, versionId))
     .limit(1);
 

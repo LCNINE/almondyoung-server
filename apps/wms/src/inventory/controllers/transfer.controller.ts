@@ -32,7 +32,7 @@ import { TransferJobMapper, TransferJobLineMapper } from '../mappers/transfer.ma
 @ApiTags('Inventory - Transfers')
 @Controller('inventory/transfers')
 export class TransferController {
-  constructor(private readonly transferService: TransferService) { }
+  constructor(private readonly transferService: TransferService) {}
 
   /**
    * 1. 창고 간/창고 내 이동 작업 생성
@@ -64,7 +64,7 @@ export class TransferController {
       return {
         jobId: result.jobId,
         journalId: result.journalId,
-        lines: result.lines.map(line => TransferJobLineMapper.toDto(line)),
+        lines: result.lines.map((line) => TransferJobLineMapper.toDto(line)),
       };
     } catch (error) {
       if (error.message?.includes('required') || error.message?.includes('At least')) {
@@ -267,12 +267,10 @@ export class TransferController {
     });
 
     return {
-      jobs: jobs.map(job => TransferJobMapper.toWithLineCountDto(job, job.lineCount)),
+      jobs: jobs.map((job) => TransferJobMapper.toWithLineCountDto(job, job.lineCount)),
       total: jobs.length,
       limit: parsedLimit,
       offset: parsedOffset,
     };
   }
 }
-
-

@@ -69,7 +69,7 @@ function parseArgs(): AnalyzeOptions {
   return {
     csvFile: path.resolve(csvFile),
     top,
-    outputDir: noFiles ? null : (outputDirRaw ? path.resolve(outputDirRaw) : null),
+    outputDir: noFiles ? null : outputDirRaw ? path.resolve(outputDirRaw) : null,
     noFiles,
   };
 }
@@ -173,9 +173,7 @@ function loadRows(csvFile: string): Row[] {
   const header = parsed[0];
   const expectedHeader = ['keyword', 'total', 'rank1', 'rank2', 'rank3', 'rank10', 'rank20'];
   if (!expectedHeader.every((col, i) => header[i] === col)) {
-    throw new Error(
-      `예상하지 못한 CSV 헤더입니다.\n  예상: ${expectedHeader.join(',')}\n  실제: ${header.join(',')}`,
-    );
+    throw new Error(`예상하지 못한 CSV 헤더입니다.\n  예상: ${expectedHeader.join(',')}\n  실제: ${header.join(',')}`);
   }
 
   const rows: Row[] = [];
@@ -259,9 +257,7 @@ function analyze(rows: Row[], top: number) {
       rank1Freq.set(r.rank1, (rank1Freq.get(r.rank1) ?? 0) + 1);
     }
   }
-  const topRank1 = [...rank1Freq.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, top);
+  const topRank1 = [...rank1Freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, top);
 
   // rank1 누락: total > 0인데 rank1이 비어있는 것 (데이터 이상)
   const rank1Missing = nonZero.filter((r) => r.rank1.length === 0);
@@ -270,9 +266,7 @@ function analyze(rows: Row[], top: number) {
   const singleResult = valid.filter((r) => r.total === 1);
 
   // 가장 많은 결과 (long-tail 반대)
-  const topByTotal = [...valid]
-    .sort((a, b) => b.total - a.total)
-    .slice(0, top);
+  const topByTotal = [...valid].sort((a, b) => b.total - a.total).slice(0, top);
 
   return {
     totalRows: rows.length,
@@ -310,7 +304,20 @@ function hr(char = '─', width = 60): string {
 }
 
 function printReport(stats: ReturnType<typeof analyze>, csvFile: string): void {
-  const { totalRows, errors, valid, zeroResults, singleResult, nonZero, bucketCounts, mean, percentiles, topRank1, rank1Missing, topByTotal } = stats;
+  const {
+    totalRows,
+    errors,
+    valid,
+    zeroResults,
+    singleResult,
+    nonZero,
+    bucketCounts,
+    mean,
+    percentiles,
+    topRank1,
+    rank1Missing,
+    topByTotal,
+  } = stats;
 
   console.log();
   console.log(hr('═'));
@@ -325,9 +332,15 @@ function printReport(stats: ReturnType<typeof analyze>, csvFile: string): void {
   console.log(`  전체 키워드:        ${totalRows.toLocaleString()}`);
   console.log(`  오류(ERROR):        ${errors.length.toLocaleString()}  (${pct(errors.length, totalRows)})`);
   console.log(`  유효 키워드:        ${valid.length.toLocaleString()}  (${pct(valid.length, totalRows)})`);
-  console.log(`  검색결과 없음(0):   ${zeroResults.length.toLocaleString()}  (${pct(zeroResults.length, valid.length)} of valid)`);
-  console.log(`  결과 1개(단일):     ${singleResult.length.toLocaleString()}  (${pct(singleResult.length, valid.length)} of valid)`);
-  console.log(`  결과 있음:          ${nonZero.length.toLocaleString()}  (${pct(nonZero.length, valid.length)} of valid)`);
+  console.log(
+    `  검색결과 없음(0):   ${zeroResults.length.toLocaleString()}  (${pct(zeroResults.length, valid.length)} of valid)`,
+  );
+  console.log(
+    `  결과 1개(단일):     ${singleResult.length.toLocaleString()}  (${pct(singleResult.length, valid.length)} of valid)`,
+  );
+  console.log(
+    `  결과 있음:          ${nonZero.length.toLocaleString()}  (${pct(nonZero.length, valid.length)} of valid)`,
+  );
 
   // ── 결과 수 분포 ──
   console.log();
@@ -350,7 +363,9 @@ function printReport(stats: ReturnType<typeof analyze>, csvFile: string): void {
   console.log(hr());
   console.log(`  평균(mean):  ${mean.toFixed(1)}`);
   console.log(`  중앙값(p50): ${percentiles.p50}`);
-  console.log(`  p25: ${percentiles.p25}   p75: ${percentiles.p75}   p90: ${percentiles.p90}   p95: ${percentiles.p95}   p99: ${percentiles.p99}`);
+  console.log(
+    `  p25: ${percentiles.p25}   p75: ${percentiles.p75}   p90: ${percentiles.p90}   p95: ${percentiles.p95}   p99: ${percentiles.p99}`,
+  );
 
   // ── rank1 노출 빈도 Top N ──
   console.log();
@@ -362,7 +377,9 @@ function printReport(stats: ReturnType<typeof analyze>, csvFile: string): void {
     for (let i = 0; i < topRank1.length; i++) {
       const [name, count] = topRank1[i];
       const pctStr = pct(count, nonZero.length);
-      console.log(`  ${String(i + 1).padStart(3)}. [${count.toString().padStart(5)}건 / ${pctStr.padStart(6)}]  ${name}`);
+      console.log(
+        `  ${String(i + 1).padStart(3)}. [${count.toString().padStart(5)}건 / ${pctStr.padStart(6)}]  ${name}`,
+      );
     }
   }
 
@@ -409,17 +426,29 @@ function writeDetailFiles(stats: ReturnType<typeof analyze>, outputDir: string, 
 
   // 검색결과 없는 키워드
   if (stats.zeroResults.length > 0) {
-    writeFile(outputDir, `${base}-zero-results.txt`, stats.zeroResults.map((r) => r.keyword));
+    writeFile(
+      outputDir,
+      `${base}-zero-results.txt`,
+      stats.zeroResults.map((r) => r.keyword),
+    );
   }
 
   // ERROR 키워드
   if (stats.errors.length > 0) {
-    writeFile(outputDir, `${base}-errors.txt`, stats.errors.map((r) => r.keyword));
+    writeFile(
+      outputDir,
+      `${base}-errors.txt`,
+      stats.errors.map((r) => r.keyword),
+    );
   }
 
   // 결과 1개 키워드
   if (stats.singleResult.length > 0) {
-    writeFile(outputDir, `${base}-single-result.txt`, stats.singleResult.map((r) => r.keyword));
+    writeFile(
+      outputDir,
+      `${base}-single-result.txt`,
+      stats.singleResult.map((r) => r.keyword),
+    );
   }
 
   // rank1 누락
@@ -463,8 +492,7 @@ async function main() {
   printReport(stats, options.csvFile);
 
   if (!options.noFiles) {
-    const outputDir =
-      options.outputDir ?? path.dirname(options.csvFile);
+    const outputDir = options.outputDir ?? path.dirname(options.csvFile);
     writeDetailFiles(stats, outputDir, options.csvFile);
   }
 }

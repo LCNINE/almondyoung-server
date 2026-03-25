@@ -1,12 +1,8 @@
-import {
-  AuthenticatedMedusaRequest,
-  MedusaResponse,
-} from '@medusajs/framework/http';
+import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys, MedusaError, Modules } from '@medusajs/framework/utils';
 import { confirmPurchaseWorkflow } from '../../../../../workflows/orders/workflows/confirm-purchase-workflow';
 
-const MEMBERSHIP_SERVICE_URL =
-  process.env.MEMBERSHIP_SERVICE_URL || 'http://localhost:3040';
+const MEMBERSHIP_SERVICE_URL = process.env.MEMBERSHIP_SERVICE_URL || 'http://localhost:3040';
 
 const WELCOME_MEMBERSHIP_TAG = 'welcome-membership';
 
@@ -18,10 +14,7 @@ async function markWelcomeMembershipPurchased(
 ) {
   try {
     const productModule = container.resolve(Modules.PRODUCT);
-    const products = await productModule.listProducts(
-      { id: productIds },
-      { relations: ['tags'] },
-    );
+    const products = await productModule.listProducts({ id: productIds }, { relations: ['tags'] });
     const hasWelcomeMembership = products.some((p: any) =>
       (p.tags ?? []).some((tag: any) => tag.value === WELCOME_MEMBERSHIP_TAG),
     );
@@ -32,23 +25,19 @@ async function markWelcomeMembershipPurchased(
     const customer = await customerModule.retrieveCustomer(customerId, {
       select: ['metadata'],
     });
-    const userId = (customer?.metadata as Record<string, unknown> | null)
-      ?.almond_user_id as string | undefined;
+    const userId = (customer?.metadata as Record<string, unknown> | null)?.almond_user_id as string | undefined;
 
     if (!userId) {
       console.warn('[WelcomeMembership] markPurchased: customer has no almond_user_id, skipping');
       return;
     }
 
-    await fetch(
-      `${MEMBERSHIP_SERVICE_URL}/welcome-membership/eligibility/${userId}/purchased`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId }),
-        signal: AbortSignal.timeout(5000),
-      },
-    );
+    await fetch(`${MEMBERSHIP_SERVICE_URL}/welcome-membership/eligibility/${userId}/purchased`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderId }),
+      signal: AbortSignal.timeout(5000),
+    });
   } catch (err) {
     // 구매 기록 실패는 주문 자체를 실패시키지 않음 (로그만)
     console.error('[WelcomeMembership] markPurchased failed:', err);
@@ -75,10 +64,7 @@ const getOrderPaymentRows = (order: OrderWithPayments) =>
     (payment): payment is { id: string; captures?: Array<{ id: string }> } => !!payment?.id,
   );
 
-export const POST = async (
-  req: AuthenticatedMedusaRequest,
-  res: MedusaResponse,
-) => {
+export const POST = async (req: AuthenticatedMedusaRequest, res: MedusaResponse) => {
   const orderId = req.params.id;
   const customerId = req.auth_context?.actor_id;
 
@@ -107,30 +93,21 @@ export const POST = async (
   const order = data?.[0] as OrderWithPayments | undefined;
 
   if (!order) {
-    throw new MedusaError(
-      MedusaError.Types.NOT_FOUND,
-      `Order ${orderId} was not found`,
-    );
+    throw new MedusaError(MedusaError.Types.NOT_FOUND, `Order ${orderId} was not found`);
   }
 
   if (order.customer_id !== customerId) {
-    throw new MedusaError(
-      MedusaError.Types.NOT_ALLOWED,
-      'You are not allowed to confirm purchase for this order',
-    );
+    throw new MedusaError(MedusaError.Types.NOT_ALLOWED, 'You are not allowed to confirm purchase for this order');
   }
 
   const payments = getOrderPaymentRows(order);
 
   if (!payments.length) {
-    throw new MedusaError(
-      MedusaError.Types.INVALID_DATA,
-      'No capturable payment found for this order',
-    );
+    throw new MedusaError(MedusaError.Types.INVALID_DATA, 'No capturable payment found for this order');
   }
 
   const uncapturedPaymentIds = payments
-    .filter((payment) => !(((payment.captures?.length ?? 0) > 0)))
+    .filter((payment) => !((payment.captures?.length ?? 0) > 0))
     .map((payment) => payment.id);
 
   // 결제 캡처 + 리뷰 자격 생성을 워크플로우로 트랜잭션 처리
@@ -163,8 +140,7 @@ export const POST = async (
   const updatedOrder = refreshed?.[0] as OrderWithPayments | undefined;
   const refreshedPayments = updatedOrder ? getOrderPaymentRows(updatedOrder) : [];
   const isCaptured =
-    refreshedPayments.length > 0 &&
-    refreshedPayments.every((payment) => ((payment.captures?.length ?? 0) > 0));
+    refreshedPayments.length > 0 && refreshedPayments.every((payment) => (payment.captures?.length ?? 0) > 0);
 
   return res.status(200).json({
     success: true,

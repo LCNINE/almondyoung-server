@@ -1,10 +1,6 @@
 import { DbService, InjectDb } from '@app/db';
 import { Inject, Injectable } from '@nestjs/common';
-import {
-  userServiceSchema,
-  userServiceEnums,
-  UserServiceSchema,
-} from 'apps/user-service/database/drizzle/schema';
+import { userServiceSchema, userServiceEnums, UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
 import { DbTransaction } from 'apps/user-service/src/commons/types';
 import { Twilio } from 'twilio';
 import { SendVerificationCodeDto } from '../dto/twilio.dto';
@@ -21,35 +17,23 @@ export class SendMessageService {
 
     private readonly lookupService: LookupService,
     private readonly expireExistingCodesService: ExpireExistingCodesService,
-  ) { }
+  ) {}
 
-  private async inTx<T>(
-    fn: (tx: DbTransaction) => Promise<T>,
-    tx?: DbTransaction,
-  ) {
+  private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction) {
     return tx ? fn(tx) : this.dbService.db.transaction(fn);
   }
 
-  async sendVerificationCode(
-    sendVerificationCodeDto: SendVerificationCodeDto,
-    tx?: DbTransaction,
-  ) {
-
+  async sendVerificationCode(sendVerificationCodeDto: SendVerificationCodeDto, tx?: DbTransaction) {
     const { phoneNumber, purpose } = sendVerificationCodeDto;
     const _purpose = purpose ?? 'phone_verify';
 
     return this.inTx(async (trx) => {
       // 1. 번호 검증 및 국제 형식 변환
-      const lookupResult = await this.lookupService.lookup(
-        sendVerificationCodeDto,
-      );
+      const lookupResult = await this.lookupService.lookup(sendVerificationCodeDto);
       const validatedPhoneNumber = lookupResult.phoneNumber; // +82 형식
 
       // 2. 기존 미검증 코드 만료 처리
-      await this.expireExistingCodesService.expireExistingCodes(
-        phoneNumber,
-        trx,
-      );
+      await this.expireExistingCodesService.expireExistingCodes(phoneNumber, trx);
 
       // 3. 인증 코드 생성
       const code = this.generateCode();

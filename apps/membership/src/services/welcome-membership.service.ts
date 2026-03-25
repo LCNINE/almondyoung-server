@@ -16,9 +16,7 @@ import {
  */
 @Injectable()
 export class WelcomeMembershipService {
-  constructor(
-    private readonly dbService: DbService<typeof membershipSchema>,
-  ) {}
+  constructor(private readonly dbService: DbService<typeof membershipSchema>) {}
 
   async getEligibility(userId: string): Promise<{
     eligible: boolean;
@@ -32,12 +30,7 @@ export class WelcomeMembershipService {
     const [entitlement] = await this.dbService.db
       .select({ id: subscriptionEntitlement.id })
       .from(subscriptionEntitlement)
-      .where(
-        and(
-          eq(subscriptionEntitlement.userId, userId),
-          eq(subscriptionEntitlement.isCurrent, true),
-        ),
-      )
+      .where(and(eq(subscriptionEntitlement.userId, userId), eq(subscriptionEntitlement.isCurrent, true)))
       .limit(1);
 
     const isActiveMember = !!entitlement;
@@ -95,10 +88,7 @@ export class WelcomeMembershipService {
         updatedAt: new Date(),
       })
       .where(
-        and(
-          eq(welcomeMembershipEligibility.userId, userId),
-          eq(welcomeMembershipEligibility.purchaseSource, 'medusa'),
-        ),
+        and(eq(welcomeMembershipEligibility.userId, userId), eq(welcomeMembershipEligibility.purchaseSource, 'medusa')),
       );
   }
 

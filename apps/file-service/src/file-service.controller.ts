@@ -6,7 +6,7 @@ import { FileServiceService } from './file-service.service';
 @ApiTags('Health')
 @Controller()
 export class FileServiceController {
-  constructor(private readonly fileServiceService: FileServiceService) { }
+  constructor(private readonly fileServiceService: FileServiceService) {}
 
   @Get()
   @Public()

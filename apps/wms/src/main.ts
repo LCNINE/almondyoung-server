@@ -2,10 +2,7 @@
 import './tracing';
 import 'reflect-metadata'; // 배포 에러로 넣었음 지훈
 import { NestFactory } from '@nestjs/core';
-import {
-  FastifyAdapter,
-  NestFastifyApplication,
-} from '@nestjs/platform-fastify';
+import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { WmsModule } from './wms.module';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
@@ -38,19 +35,16 @@ function createKafkaConfig() {
     sasl:
       process.env.KAFKA_API_KEY && process.env.KAFKA_API_SECRET
         ? {
-          mechanism: 'plain' as const,
-          username: process.env.KAFKA_API_KEY,
-          password: process.env.KAFKA_API_SECRET,
-        }
+            mechanism: 'plain' as const,
+            username: process.env.KAFKA_API_KEY,
+            password: process.env.KAFKA_API_SECRET,
+          }
         : undefined,
   };
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestFastifyApplication>(
-    WmsModule,
-    new FastifyAdapter(),
-  );
+  const app = await NestFactory.create<NestFastifyApplication>(WmsModule, new FastifyAdapter());
 
   // 쿠키 파서 등록 (JWT 토큰 인증을 위해 필요)
   await app.register(fastifyCookie);
@@ -102,13 +96,7 @@ async function bootstrap() {
   app.enableCors({
     origin: true,
     credentials: true,
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'Accept',
-      'Cookie',
-      'Set-Cookie',
-    ],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Cookie', 'Set-Cookie'],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     exposedHeaders: ['Set-Cookie'],
   });
@@ -133,12 +121,15 @@ async function bootstrap() {
   });
 
   // YAML 문서 charset 헤더 설정
-  app.getHttpAdapter().getInstance().addHook('onSend', (request, reply, payload, done) => {
-    if (request.url === '/docs.yaml') {
-      reply.header('Content-Type', 'application/x-yaml; charset=utf-8');
-    }
-    done();
-  });
+  app
+    .getHttpAdapter()
+    .getInstance()
+    .addHook('onSend', (request, reply, payload, done) => {
+      if (request.url === '/docs.yaml') {
+        reply.header('Content-Type', 'application/x-yaml; charset=utf-8');
+      }
+      done();
+    });
 
   await app.startAllMicroservices();
 

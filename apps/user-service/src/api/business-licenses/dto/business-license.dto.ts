@@ -1,12 +1,5 @@
 import { Transform } from 'class-transformer';
-import {
-  IsBoolean,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  Length,
-  ValidateIf
-} from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsOptional, IsString, Length, ValidateIf } from 'class-validator';
 
 // 사업자 생성 dto
 export class CreateBusinessLicenseDto {

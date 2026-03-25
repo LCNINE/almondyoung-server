@@ -1,15 +1,8 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ProductSearchQueryDto } from './dto/product-search-query.dto';
-import {
-  ProductSearchItemDto,
-  ProductSearchResponseDto,
-} from './dto/product-search-response.dto';
+import { ProductSearchItemDto, ProductSearchResponseDto } from './dto/product-search-response.dto';
 import { OpenSearchService } from './opensearch.service';
-import {
-  PRODUCTS_INDEX_MAPPINGS,
-  PRODUCTS_INDEX_SETTINGS,
-  SearchProductDocument,
-} from './types/product-document.type';
+import { PRODUCTS_INDEX_MAPPINGS, PRODUCTS_INDEX_SETTINGS, SearchProductDocument } from './types/product-document.type';
 import { compactText } from './utils/text.utils';
 
 type SearchStage = 'strict' | 'fallback';
@@ -20,16 +13,13 @@ export class ProductIndexService implements OnModuleInit {
   private readonly keywordResultPoolLimit = 5000;
   private initPromise: Promise<void> | null = null;
 
-  constructor(private readonly openSearchService: OpenSearchService) { }
+  constructor(private readonly openSearchService: OpenSearchService) {}
 
   async onModuleInit(): Promise<void> {
     await this.ensureProductsIndex();
   }
 
-  async upsertProduct(
-    masterId: string,
-    document: SearchProductDocument,
-  ): Promise<void> {
+  async upsertProduct(masterId: string, document: SearchProductDocument): Promise<void> {
     const client = this.openSearchService.getClient();
     const index = this.openSearchService.getProductsIndex();
     await this.ensureProductsIndex();
@@ -60,9 +50,7 @@ export class ProductIndexService implements OnModuleInit {
     }
   }
 
-  async searchProducts(
-    query: ProductSearchQueryDto,
-  ): Promise<ProductSearchResponseDto> {
+  async searchProducts(query: ProductSearchQueryDto): Promise<ProductSearchResponseDto> {
     const index = this.openSearchService.getProductsIndex();
     await this.ensureProductsIndex();
 
@@ -95,11 +83,7 @@ export class ProductIndexService implements OnModuleInit {
 
       const strictHits = strictResponse.body.hits.hits as any[];
       const fallbackHits = fallbackResponse.body.hits.hits as any[];
-      const mergedHits = this.mergeHitsWithPriority(
-        strictHits,
-        fallbackHits,
-        this.keywordResultPoolLimit,
-      );
+      const mergedHits = this.mergeHitsWithPriority(strictHits, fallbackHits, this.keywordResultPoolLimit);
 
       total = mergedHits.length;
       resultHits = mergedHits.slice(from, from + size);
@@ -203,11 +187,7 @@ export class ProductIndexService implements OnModuleInit {
     return typeof totalField === 'number' ? totalField : 0;
   }
 
-  private mergeHitsWithPriority(
-    primaryHits: any[],
-    secondaryHits: any[],
-    limit: number,
-  ): any[] {
+  private mergeHitsWithPriority(primaryHits: any[], secondaryHits: any[], limit: number): any[] {
     const merged: any[] = [];
     const seen = new Set<string>();
 
@@ -400,10 +380,7 @@ export class ProductIndexService implements OnModuleInit {
     };
   }
 
-  private resolveFallbackMinimumShouldMatch(
-    q: string,
-    compactQ: string,
-  ): string {
+  private resolveFallbackMinimumShouldMatch(q: string, compactQ: string): string {
     const termCount = q
       .trim()
       .split(/\s+/)
@@ -447,5 +424,4 @@ export class ProductIndexService implements OnModuleInit {
         return [{ updated_at: { order: 'desc' } }];
     }
   }
-
 }

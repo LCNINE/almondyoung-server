@@ -45,7 +45,7 @@ export class FulfillmentOrderTransactionService {
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly productSkuMappingService: ProductSkuMappingService,
-    private readonly reservationLifecycle: ReservationLifecycleService
+    private readonly reservationLifecycle: ReservationLifecycleService,
   ) {}
 
   private get db() {
@@ -66,14 +66,15 @@ export class FulfillmentOrderTransactionService {
     return this.inTx(async (trx) => {
       await this.validateItems(items, warehouseId, trx);
 
-      const [fulfillmentOrder] = await trx.insert(wmsTables.fulfillmentOrders)
+      const [fulfillmentOrder] = await trx
+        .insert(wmsTables.fulfillmentOrders)
         .values({
           warehouseId,
           fulfillmentMode,
           priority,
           status: 'created',
           totalItems: items.length,
-          totalQty: items.reduce((sum, item) => sum + item.qty, 0)
+          totalQty: items.reduce((sum, item) => sum + item.qty, 0),
         })
         .returning();
 
@@ -83,12 +84,14 @@ export class FulfillmentOrderTransactionService {
       for (const item of items) {
         const mappingSnapshot = await this.productSkuMappingService.getMappingSnapshot(
           await this.getActiveMappingId(item.productId, warehouseId, trx),
-          trx
+          trx,
         );
 
-        const variantMapping = mappingSnapshot.mappings.find(m => m.variantId === item.variantId);
+        const variantMapping = mappingSnapshot.mappings.find((m) => m.variantId === item.variantId);
         if (!variantMapping) {
-          throw new BadRequestException(`No SKU mapping found for variant ${item.variantId} in product ${item.productId}`);
+          throw new BadRequestException(
+            `No SKU mapping found for variant ${item.variantId} in product ${item.productId}`,
+          );
         }
 
         const requiredSkuQty = item.qty * variantMapping.quantity;
@@ -96,11 +99,12 @@ export class FulfillmentOrderTransactionService {
         const availableStock = await this.checkStockAvailability(variantMapping.skuId, warehouseId, trx);
         if (availableStock < requiredSkuQty) {
           throw new ConflictException(
-            `Insufficient stock for SKU ${variantMapping.skuId}. Required: ${requiredSkuQty}, Available: ${availableStock}`
+            `Insufficient stock for SKU ${variantMapping.skuId}. Required: ${requiredSkuQty}, Available: ${availableStock}`,
           );
         }
 
-        const [foItem] = await trx.insert(wmsTables.fulfillmentOrderItems)
+        const [foItem] = await trx
+          .insert(wmsTables.fulfillmentOrderItems)
           .values({
             fulfillmentOrderId: fulfillmentOrder.id,
             salesOrderId: item.salesOrderId,
@@ -110,11 +114,12 @@ export class FulfillmentOrderTransactionService {
             qty: item.qty,
             reservedQty: 0,
             pickedQty: 0,
-            shippedQty: 0
+            shippedQty: 0,
           })
           .returning();
 
-        const [reservation] = await trx.insert(wmsTables.stockReservations)
+        const [reservation] = await trx
+          .insert(wmsTables.stockReservations)
           .values({
             targetType: 'FULFILLMENT_ORDER',
             targetId: fulfillmentOrder.id,
@@ -122,11 +127,12 @@ export class FulfillmentOrderTransactionService {
             skuId: variantMapping.skuId,
             warehouseId,
             quantity: requiredSkuQty,
-            status: 'active'
+            status: 'active',
           })
           .returning();
 
-        await trx.update(wmsTables.fulfillmentOrderItems)
+        await trx
+          .update(wmsTables.fulfillmentOrderItems)
           .set({ reservedQty: requiredSkuQty })
           .where(eq(wmsTables.fulfillmentOrderItems.id, foItem.id));
 
@@ -137,32 +143,33 @@ export class FulfillmentOrderTransactionService {
           variantId: item.variantId,
           skuId: variantMapping.skuId,
           qty: item.qty,
-          reservedQty: requiredSkuQty
+          reservedQty: requiredSkuQty,
         });
 
         reservations.push({
           id: reservation.id,
           skuId: variantMapping.skuId,
           qty: requiredSkuQty,
-          foiId: foItem.id
+          foiId: foItem.id,
         });
       }
 
-      await trx.update(wmsTables.fulfillmentOrders)
+      await trx
+        .update(wmsTables.fulfillmentOrders)
         .set({
           status: 'pending',
-          totalReservedQty: reservations.reduce((sum, r) => sum + r.qty, 0)
+          totalReservedQty: reservations.reduce((sum, r) => sum + r.qty, 0),
         })
         .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrder.id));
 
       this.logger.log(
-        `Created FO ${fulfillmentOrder.id} with ${foItems.length} items, ${reservations.length} reservations`
+        `Created FO ${fulfillmentOrder.id} with ${foItems.length} items, ${reservations.length} reservations`,
       );
 
       return {
         fulfillmentOrderId: fulfillmentOrder.id,
         items: foItems,
-        reservations
+        reservations,
       };
     }, tx);
   }
@@ -185,11 +192,12 @@ export class FulfillmentOrderTransactionService {
       }
 
       // 1. FO 상태 업데이트
-      await trx.update(wmsTables.fulfillmentOrders)
+      await trx
+        .update(wmsTables.fulfillmentOrders)
         .set({
           status: 'canceled',
           canceledAt: new Date(),
-          totalReservedQty: 0
+          totalReservedQty: 0,
         })
         .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
 
@@ -198,7 +206,7 @@ export class FulfillmentOrderTransactionService {
         fulfillmentOrderId,
         fulfillmentOrder.status,
         'canceled',
-        trx
+        trx,
       );
 
       this.logger.log(`Canceled FO ${fulfillmentOrderId} and released reservations via lifecycle service`);
@@ -226,11 +234,12 @@ export class FulfillmentOrderTransactionService {
       }
 
       // 1. FO 상태 업데이트
-      await trx.update(wmsTables.fulfillmentOrders)
+      await trx
+        .update(wmsTables.fulfillmentOrders)
         .set({
           status: 'completed',
           updatedAt: new Date(),
-          totalReservedQty: 0
+          totalReservedQty: 0,
         })
         .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
 
@@ -239,7 +248,7 @@ export class FulfillmentOrderTransactionService {
         fulfillmentOrderId,
         fulfillmentOrder.status,
         'completed',
-        trx
+        trx,
       );
 
       this.logger.log(`Completed FO ${fulfillmentOrderId} and released reservations`);
@@ -263,11 +272,12 @@ export class FulfillmentOrderTransactionService {
       }
 
       // 1. FO 상태 업데이트
-      await trx.update(wmsTables.fulfillmentOrders)
+      await trx
+        .update(wmsTables.fulfillmentOrders)
         .set({
           status: 'shipped',
           shippedAt: new Date(),
-          totalReservedQty: 0
+          totalReservedQty: 0,
         })
         .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
 
@@ -276,16 +286,21 @@ export class FulfillmentOrderTransactionService {
         fulfillmentOrderId,
         fulfillmentOrder.status,
         'shipped',
-        trx
+        trx,
       );
 
       this.logger.log(`Shipped FO ${fulfillmentOrderId} and released reservations`);
     }, tx);
   }
 
-  async updateFulfillmentOrderPriority(fulfillmentOrderId: string, priority: 'normal' | 'high' | 'urgent', tx?: DbTx): Promise<void> {
+  async updateFulfillmentOrderPriority(
+    fulfillmentOrderId: string,
+    priority: 'normal' | 'high' | 'urgent',
+    tx?: DbTx,
+  ): Promise<void> {
     return this.inTx(async (trx) => {
-      const [updated] = await trx.update(wmsTables.fulfillmentOrders)
+      const [updated] = await trx
+        .update(wmsTables.fulfillmentOrders)
         .set({ priority, updatedAt: new Date() })
         .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId))
         .returning();
@@ -335,11 +350,12 @@ export class FulfillmentOrderTransactionService {
         throw new ConflictException(`Batch must be in created status. Current: ${batch.status}`);
       }
 
-      await trx.update(wmsTables.fulfillmentOrders)
+      await trx
+        .update(wmsTables.fulfillmentOrders)
         .set({
           status: 'allocated',
           batchId,
-          allocatedAt: new Date()
+          allocatedAt: new Date(),
         })
         .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
 
@@ -350,10 +366,11 @@ export class FulfillmentOrderTransactionService {
         .limit(1);
       const currentBatchItems = currentBatchItemsRows[0];
 
-      await trx.update(wmsTables.outboundBatches)
+      await trx
+        .update(wmsTables.outboundBatches)
         .set({
           totalItems: (currentBatchItems?.totalItems || 0) + (fulfillmentOrder.totalItems ?? 0),
-          totalQty: (currentBatchItems?.totalQty || 0) + (fulfillmentOrder.totalQty ?? 0)
+          totalQty: (currentBatchItems?.totalQty || 0) + (fulfillmentOrder.totalQty ?? 0),
         })
         .where(eq(wmsTables.outboundBatches.id, batchId));
 
@@ -379,10 +396,12 @@ export class FulfillmentOrderTransactionService {
 
       const mapping = await this.productSkuMappingService.getActiveMapping(item.productId, warehouseId, tx);
       if (!mapping) {
-        throw new BadRequestException(`No active mapping found for product ${item.productId} in warehouse ${warehouseId}`);
+        throw new BadRequestException(
+          `No active mapping found for product ${item.productId} in warehouse ${warehouseId}`,
+        );
       }
 
-      const hasVariant = mapping.mappings.some(m => m.variantId === item.variantId);
+      const hasVariant = mapping.mappings.some((m) => m.variantId === item.variantId);
       if (!hasVariant) {
         throw new BadRequestException(`Variant ${item.variantId} not found in product ${item.productId} mapping`);
       }
@@ -394,8 +413,8 @@ export class FulfillmentOrderTransactionService {
       where: and(
         eq(wmsTables.productSkuMappings.productId, productId),
         eq(wmsTables.productSkuMappings.warehouseId, warehouseId),
-        eq(wmsTables.productSkuMappings.isActive, true)
-      )
+        eq(wmsTables.productSkuMappings.isActive, true),
+      ),
     });
 
     if (!mapping) {
@@ -411,8 +430,8 @@ export class FulfillmentOrderTransactionService {
       where: and(
         eq(wmsTables.stockLedgers.skuId, skuId),
         eq(wmsTables.stockLedgers.warehouseId, warehouseId),
-        eq(wmsTables.stockLedgers.stockState, 'ON_HAND')
-      )
+        eq(wmsTables.stockLedgers.stockState, 'ON_HAND'),
+      ),
     });
 
     if (stockLedgers.length === 0) {
@@ -423,8 +442,8 @@ export class FulfillmentOrderTransactionService {
       where: and(
         eq(wmsTables.stockReservations.skuId, skuId),
         eq(wmsTables.stockReservations.warehouseId, warehouseId),
-        eq(wmsTables.stockReservations.status, 'active')
-      )
+        eq(wmsTables.stockReservations.status, 'active'),
+      ),
     });
 
     const totalOnHand = stockLedgers.reduce((sum, ledger) => sum + ledger.qty, 0);

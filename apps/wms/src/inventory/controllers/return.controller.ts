@@ -13,12 +13,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { ReturnService } from '../services/return.service';
-import {
-  CreateReturnDto,
-  ReceiveReturnDto,
-  InspectReturnDto,
-  ProcessReturnDto,
-} from '../dto/return/create-return.dto';
+import { CreateReturnDto, ReceiveReturnDto, InspectReturnDto, ProcessReturnDto } from '../dto/return/create-return.dto';
 import {
   ReturnDto,
   CreateReturnResponseDto,
@@ -35,7 +30,7 @@ import { Return } from 'apps/wms/database/schemas/wms-schema';
 @ApiTags('Inventory - Returns')
 @Controller('inventory/returns')
 export class ReturnController {
-  constructor(private readonly returnService: ReturnService) { }
+  constructor(private readonly returnService: ReturnService) {}
 
   /**
    * 1. 반품 요청 생성
@@ -65,7 +60,7 @@ export class ReturnController {
       });
       return {
         returnId,
-        items: items.map(item => ReturnItemMapper.toDto(item)),
+        items: items.map((item) => ReturnItemMapper.toDto(item)),
       };
     } catch (error) {
       if (error.message?.includes('required')) {
@@ -101,10 +96,7 @@ export class ReturnController {
     status: 400,
     description: '잘못된 상태 또는 수량 초과',
   })
-  async receiveReturn(
-    @Param('id') id: string,
-    @Body() dto: ReceiveReturnDto,
-  ): Promise<ReceiveReturnResponseDto> {
+  async receiveReturn(@Param('id') id: string, @Body() dto: ReceiveReturnDto): Promise<ReceiveReturnResponseDto> {
     try {
       return await this.returnService.receiveReturn({
         returnId: id,
@@ -147,10 +139,7 @@ export class ReturnController {
     status: 400,
     description: '잘못된 상태 또는 검사 수량 초과',
   })
-  async inspectReturn(
-    @Param('id') id: string,
-    @Body() dto: InspectReturnDto,
-  ): Promise<InspectReturnResponseDto> {
+  async inspectReturn(@Param('id') id: string, @Body() dto: InspectReturnDto): Promise<InspectReturnResponseDto> {
     try {
       return await this.returnService.inspectReturn({
         returnId: id,
@@ -195,10 +184,7 @@ export class ReturnController {
     status: 400,
     description: 'QC 미완료 또는 잘못된 처리 요청',
   })
-  async processReturn(
-    @Param('id') id: string,
-    @Body() dto: ProcessReturnDto,
-  ): Promise<ProcessReturnResponseDto> {
+  async processReturn(@Param('id') id: string, @Body() dto: ProcessReturnDto): Promise<ProcessReturnResponseDto> {
     try {
       return await this.returnService.processReturn({
         returnId: id,
@@ -269,12 +255,10 @@ export class ReturnController {
     });
 
     return {
-      returns: returns.map(returnEntity => ReturnMapper.toDto(returnEntity)),
+      returns: returns.map((returnEntity) => ReturnMapper.toDto(returnEntity)),
       total: returns.length,
       limit: filters.limit ?? 50,
       offset: filters.offset ?? 0,
     };
   }
 }
-
-

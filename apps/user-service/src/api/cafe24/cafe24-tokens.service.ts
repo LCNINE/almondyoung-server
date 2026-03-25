@@ -5,11 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { Interval } from '@nestjs/schedule';
 import { eq } from 'drizzle-orm';
 import { firstValueFrom } from 'rxjs';
-import {
-  cafe24Tokens,
-  type Cafe24Token,
-  type UserServiceSchema,
-} from '../../../database/drizzle/schema';
+import { cafe24Tokens, type Cafe24Token, type UserServiceSchema } from '../../../database/drizzle/schema';
 import { DbTransaction } from '../../commons/types';
 
 @Injectable()
@@ -51,9 +47,7 @@ export class Cafe24TokensService {
     const tokenUrl = this.buildTokenUrl(token.mallId);
 
     if (!clientId || !clientSecret) {
-      this.logger.warn(
-        'Cafe24 token refresh skipped: missing CAFE24_CLIENT_ID/CAFE24_CLIENT_SECRET',
-      );
+      this.logger.warn('Cafe24 token refresh skipped: missing CAFE24_CLIENT_ID/CAFE24_CLIENT_SECRET');
       return;
     }
 
@@ -62,10 +56,7 @@ export class Cafe24TokensService {
         grant_type: 'refresh_token',
         refresh_token: token.refreshToken,
       });
-      const basicAuth = Buffer.from(
-        `${clientId}:${clientSecret}`,
-        'utf8',
-      ).toString('base64');
+      const basicAuth = Buffer.from(`${clientId}:${clientSecret}`, 'utf8').toString('base64');
 
       const response = await firstValueFrom(
         this.httpService.post(tokenUrl, params.toString(), {
@@ -79,14 +70,8 @@ export class Cafe24TokensService {
       const data = response.data ?? {};
       const accessToken = data.access_token;
       const refreshToken = data.refresh_token ?? token.refreshToken;
-      const expiresAt = this.parseExpiresAt(
-        data.expires_at,
-        data.expires_in,
-        token.expiresAt,
-      );
-      const refreshTokenExpiresAt = this.parseDateValue(
-        data.refresh_token_expires_at,
-      );
+      const expiresAt = this.parseExpiresAt(data.expires_at, data.expires_in, token.expiresAt);
+      const refreshTokenExpiresAt = this.parseDateValue(data.refresh_token_expires_at);
       const now = new Date();
 
       if (!accessToken) {
@@ -119,9 +104,7 @@ export class Cafe24TokensService {
         })
         .where(eq(cafe24Tokens.id, token.id));
 
-      this.logger.error(
-        `Cafe24 token refresh failed (mallId=${token.mallId}): ${message}`,
-      );
+      this.logger.error(`Cafe24 token refresh failed (mallId=${token.mallId}): ${message}`);
     }
   }
 
@@ -134,11 +117,7 @@ export class Cafe24TokensService {
     return `https://${mallId}.cafe24api.com/api/v2/oauth/token`;
   }
 
-  private parseExpiresAt(
-    expiresAtValue: unknown,
-    expiresInValue: unknown,
-    fallback: Date,
-  ) {
+  private parseExpiresAt(expiresAtValue: unknown, expiresInValue: unknown, fallback: Date) {
     const parsed = this.parseDateValue(expiresAtValue);
     if (parsed) {
       return parsed;

@@ -1,10 +1,7 @@
 // apps/membership/src/main.ts
 import './tracing';
 import { NestFactory } from '@nestjs/core';
-import {
-  FastifyAdapter,
-  NestFastifyApplication,
-} from '@nestjs/platform-fastify';
+import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import fastifyCookie from '@fastify/cookie';
@@ -25,14 +22,8 @@ async function bootstrap(): Promise<void> {
 
   // 개발환경: Express, 운영환경: Fastify
   const app = isDev
-    ? await NestFactory.create<NestFastifyApplication>(
-      AppModule,
-      new FastifyAdapter(),
-    )
-    : await NestFactory.create<NestFastifyApplication>(
-      AppModule,
-      new FastifyAdapter(),
-    );
+    ? await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter())
+    : await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter());
 
   // 쿠키 파서 등록 (Fastify)
   await app.register(fastifyCookie);
@@ -57,13 +48,7 @@ async function bootstrap(): Promise<void> {
     origin: isDev ? true : ['http://localhost:8000', 'http://127.0.0.1:5000'],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     credentials: true,
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'Accept',
-      'Cookie',
-      'Set-Cookie',
-    ],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Cookie', 'Set-Cookie'],
     exposedHeaders: ['Set-Cookie'],
   });
 
@@ -97,12 +82,15 @@ async function bootstrap(): Promise<void> {
     });
 
     // YAML 문서 charset 헤더 설정
-    app.getHttpAdapter().getInstance().addHook('onSend', (request, reply, payload, done) => {
-      if (request.url === '/api/docs.yaml') {
-        reply.header('Content-Type', 'application/x-yaml; charset=utf-8');
-      }
-      done();
-    });
+    app
+      .getHttpAdapter()
+      .getInstance()
+      .addHook('onSend', (request, reply, payload, done) => {
+        if (request.url === '/api/docs.yaml') {
+          reply.header('Content-Type', 'application/x-yaml; charset=utf-8');
+        }
+        done();
+      });
   }
 
   app.useGlobalFilters(new GlobalExceptionFilter());

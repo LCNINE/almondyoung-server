@@ -1,5 +1,10 @@
 import { MovementJob, MovementJobLine } from 'apps/wms/database/schemas/wms-schema';
-import { TransferJobWithLinesDto, TransferJobLineDto, TransferJobWithLineCountDto, BaseTransferJobDto } from '../dto/transfer/transfer-response.dto';
+import {
+  TransferJobWithLinesDto,
+  TransferJobLineDto,
+  TransferJobWithLineCountDto,
+  BaseTransferJobDto,
+} from '../dto/transfer/transfer-response.dto';
 
 export class TransferJobLineMapper {
   static toDto(line: MovementJobLine): TransferJobLineDto {
@@ -42,7 +47,7 @@ export class TransferJobMapper {
       memo: job.memo,
       createdAt: job.createdAt.toISOString(),
       updatedAt: job.updatedAt.toISOString(),
-      lines: lines?.map(line => TransferJobLineMapper.toDto(line)),
+      lines: lines?.map((line) => TransferJobLineMapper.toDto(line)),
     };
   }
 
@@ -61,4 +66,3 @@ export class TransferJobMapper {
     };
   }
 }
-

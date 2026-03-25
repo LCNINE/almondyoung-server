@@ -26,27 +26,17 @@ export class PimApiService {
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
   ) {
-    this.baseUrl = this.configService.get(
-      'PIM_SERVICE_URL',
-      'http://localhost:3001',
-    );
+    this.baseUrl = this.configService.get('PIM_SERVICE_URL', 'http://localhost:3001');
   }
 
   async createMaster(dto: CreatePimMasterDto): Promise<PimMasterResponse> {
     this.logger.log(`Creating PIM master: ${dto.name}`);
-    const response = await firstValueFrom(
-      this.httpService.post<PimMasterResponse>(
-        `${this.baseUrl}/api/masters`,
-        dto,
-      ),
-    );
+    const response = await firstValueFrom(this.httpService.post<PimMasterResponse>(`${this.baseUrl}/api/masters`, dto));
     return response.data;
   }
 
   async deleteMaster(masterId: string): Promise<void> {
     this.logger.log(`Deleting PIM master: ${masterId}`);
-    await firstValueFrom(
-      this.httpService.delete(`${this.baseUrl}/api/masters/${masterId}`),
-    );
+    await firstValueFrom(this.httpService.delete(`${this.baseUrl}/api/masters/${masterId}`));
   }
 }

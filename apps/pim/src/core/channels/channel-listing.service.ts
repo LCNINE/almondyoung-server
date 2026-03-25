@@ -1,10 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import {
-  ChannelVariantListing,
-  NewChannelVariantListing,
-  DbTransaction,
-} from '../../types';
+import { ChannelVariantListing, NewChannelVariantListing, DbTransaction } from '../../types';
 import {
   type PimSchema,
   channelVariantListings,
@@ -42,9 +38,7 @@ export interface CreateChannelListingDto {
 
 @Injectable()
 export class ChannelListingService {
-  constructor(
-    @InjectDb() private readonly db: DbService<PimSchema>,
-  ) { }
+  constructor(@InjectDb() private readonly db: DbService<PimSchema>) {}
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.db.db;
@@ -71,18 +65,9 @@ export class ChannelListingService {
         isActive: channelVariantListings.isActive,
       })
       .from(channelVariantListings)
-      .innerJoin(
-        productVariants,
-        eq(channelVariantListings.variantId, productVariants.id),
-      )
-      .innerJoin(
-        productMasterVariants,
-        eq(productMasterVariants.variantId, productVariants.id),
-      )
-      .innerJoin(
-        productMasterVersions,
-        eq(productMasterVariants.versionId, productMasterVersions.id),
-      )
+      .innerJoin(productVariants, eq(channelVariantListings.variantId, productVariants.id))
+      .innerJoin(productMasterVariants, eq(productMasterVariants.variantId, productVariants.id))
+      .innerJoin(productMasterVersions, eq(productMasterVariants.versionId, productMasterVersions.id))
       .where(
         and(
           eq(channelVariantListings.salesChannelId, salesChannelId),
@@ -121,22 +106,10 @@ export class ChannelListingService {
         isActive: channelVariantListings.isActive,
       })
       .from(channelVariantListings)
-      .innerJoin(
-        productVariants,
-        eq(channelVariantListings.variantId, productVariants.id),
-      )
-      .innerJoin(
-        productMasterVariants,
-        eq(productMasterVariants.variantId, productVariants.id),
-      )
-      .innerJoin(
-        productMasterVersions,
-        eq(productMasterVariants.versionId, productMasterVersions.id),
-      )
-      .innerJoin(
-        salesChannels,
-        eq(channelVariantListings.salesChannelId, salesChannels.id),
-      )
+      .innerJoin(productVariants, eq(channelVariantListings.variantId, productVariants.id))
+      .innerJoin(productMasterVariants, eq(productMasterVariants.variantId, productVariants.id))
+      .innerJoin(productMasterVersions, eq(productMasterVariants.versionId, productMasterVersions.id))
+      .innerJoin(salesChannels, eq(channelVariantListings.salesChannelId, salesChannels.id))
       .where(
         and(
           eq(salesChannels.site, channelCode),
@@ -157,10 +130,7 @@ export class ChannelListingService {
   /**
    * 새 채널 매핑 생성
    */
-  async createListing(
-    dto: CreateChannelListingDto,
-    tx?: DbTransaction,
-  ): Promise<ChannelVariantListing> {
+  async createListing(dto: CreateChannelListingDto, tx?: DbTransaction): Promise<ChannelVariantListing> {
     const client = this.getClient(tx);
 
     // Variant 존재 확인
@@ -226,10 +196,7 @@ export class ChannelListingService {
   /**
    * Variant의 모든 채널 등록 현황 조회
    */
-  async getListingsByVariant(
-    variantId: string,
-    tx?: DbTransaction,
-  ): Promise<ChannelListingWithChannel[]> {
+  async getListingsByVariant(variantId: string, tx?: DbTransaction): Promise<ChannelListingWithChannel[]> {
     const client = this.getClient(tx);
 
     const result = await client
@@ -239,7 +206,7 @@ export class ChannelListingService {
       })
       .from(channelVariantListings)
       .innerJoin(salesChannels, eq(channelVariantListings.salesChannelId, salesChannels.id))
-      .where(eq(channelVariantListings.variantId, variantId))
+      .where(eq(channelVariantListings.variantId, variantId));
 
     return [...result].map(({ listing, channel }) => ({
       ...listing,
@@ -278,12 +245,7 @@ export class ChannelListingService {
       .from(channelVariantListings)
       .where(whereClause);
 
-    const data = await client
-      .select()
-      .from(channelVariantListings)
-      .where(whereClause)
-      .limit(limit)
-      .offset(offset);
+    const data = await client.select().from(channelVariantListings).where(whereClause).limit(limit).offset(offset);
 
     return {
       data,
@@ -321,19 +283,13 @@ export class ChannelListingService {
   async deleteListing(listingId: string, tx?: DbTransaction): Promise<void> {
     const client = this.getClient(tx);
 
-    await client
-      .delete(channelVariantListings)
-      .where(eq(channelVariantListings.id, listingId));
+    await client.delete(channelVariantListings).where(eq(channelVariantListings.id, listingId));
   }
 
   /**
    * 중복 매핑 확인
    */
-  async existsListing(
-    salesChannelId: string,
-    channelItemId: string,
-    tx?: DbTransaction,
-  ): Promise<boolean> {
+  async existsListing(salesChannelId: string, channelItemId: string, tx?: DbTransaction): Promise<boolean> {
     const client = this.getClient(tx);
 
     const result = await client
@@ -353,10 +309,7 @@ export class ChannelListingService {
   /**
    * 특정 매핑 조회
    */
-  async getListingById(
-    listingId: string,
-    tx?: DbTransaction,
-  ): Promise<ChannelVariantListing | null> {
+  async getListingById(listingId: string, tx?: DbTransaction): Promise<ChannelVariantListing | null> {
     const client = this.getClient(tx);
 
     const result = await client

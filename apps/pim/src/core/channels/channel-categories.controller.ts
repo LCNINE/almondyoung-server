@@ -1,21 +1,5 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Delete,
-  Body,
-  Param,
-  HttpException,
-  HttpStatus,
-} from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiParam,
-  ApiBody,
-} from '@nestjs/swagger';
+import { Controller, Get, Post, Put, Delete, Body, Param, HttpException, HttpStatus } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
 import { ChannelCategoriesService } from './channel-categories.service';
 import {
   CreateChannelCategoryDto,
@@ -28,7 +12,7 @@ import { ChannelCategoryMapper } from './mappers';
 @ApiTags('Channel Categories')
 @Controller('channels/categories')
 export class ChannelCategoriesController {
-  constructor(private readonly channelCategoriesService: ChannelCategoriesService) { }
+  constructor(private readonly channelCategoriesService: ChannelCategoriesService) {}
 
   @Get()
   @ApiOperation({
@@ -47,10 +31,7 @@ export class ChannelCategoriesController {
       const data = ChannelCategoryMapper.toDtoArray(entities);
       return { data };
     } catch (error) {
-      throw new HttpException(
-        'Failed to get categories',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to get categories', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -77,16 +58,10 @@ export class ChannelCategoriesController {
 
       return ChannelCategoryMapper.toDto(category);
     } catch (error) {
-      if (
-        error.message.includes('not found') ||
-        error.status === HttpStatus.NOT_FOUND
-      ) {
+      if (error.message.includes('not found') || error.status === HttpStatus.NOT_FOUND) {
         throw new HttpException('Category not found', HttpStatus.NOT_FOUND);
       }
-      throw new HttpException(
-        'Failed to get category',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to get category', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -103,15 +78,10 @@ export class ChannelCategoriesController {
   })
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  async createCategory(
-    @Body() createDto: CreateChannelCategoryDto,
-  ): Promise<ChannelCategoryDto> {
+  async createCategory(@Body() createDto: CreateChannelCategoryDto): Promise<ChannelCategoryDto> {
     try {
       if (!createDto.name) {
-        throw new HttpException(
-          'Category name is required',
-          HttpStatus.BAD_REQUEST,
-        );
+        throw new HttpException('Category name is required', HttpStatus.BAD_REQUEST);
       }
 
       const entity = await this.channelCategoriesService.create(createDto);
@@ -120,10 +90,7 @@ export class ChannelCategoriesController {
       if (error.message.includes('required')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
       }
-      throw new HttpException(
-        'Failed to create category',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to create category', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -159,10 +126,7 @@ export class ChannelCategoriesController {
       if (error.message.includes('required')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
       }
-      throw new HttpException(
-        'Failed to update category',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to update category', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -186,11 +150,7 @@ export class ChannelCategoriesController {
       if (error.message.includes('Cannot delete')) {
         throw new HttpException(error.message, HttpStatus.CONFLICT);
       }
-      throw new HttpException(
-        'Failed to delete category',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to delete category', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 }
-

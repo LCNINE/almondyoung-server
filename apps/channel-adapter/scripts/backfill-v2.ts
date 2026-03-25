@@ -45,9 +45,9 @@ interface BackfillOptions {
 function parseArgs(): BackfillOptions {
   const args = process.argv.slice(2);
 
-  const batchSizeArg = args.find(a => a.startsWith('--batch-size='));
-  const resumeArg = args.find(a => a.startsWith('--resume='));
-  const limitArg = args.find(a => a.startsWith('--limit='));
+  const batchSizeArg = args.find((a) => a.startsWith('--batch-size='));
+  const resumeArg = args.find((a) => a.startsWith('--resume='));
+  const limitArg = args.find((a) => a.startsWith('--limit='));
 
   return {
     batchSize: batchSizeArg ? parseInt(batchSizeArg.split('=')[1], 10) : 100,
@@ -60,18 +60,13 @@ function parseArgs(): BackfillOptions {
  * Validate environment variables
  */
 function validateEnv(): void {
-  const required = [
-    'PIM_SOURCE_DB_URL',
-    'DATABASE_URL',
-    'MEDUSA_API_URL',
-    'MEDUSA_API_KEY',
-  ];
+  const required = ['PIM_SOURCE_DB_URL', 'DATABASE_URL', 'MEDUSA_API_URL', 'MEDUSA_API_KEY'];
 
-  const missing = required.filter(key => !process.env[key]);
+  const missing = required.filter((key) => !process.env[key]);
 
   if (missing.length > 0) {
     console.error('❌ Missing required environment variables:');
-    missing.forEach(key => console.error(`   - ${key}`));
+    missing.forEach((key) => console.error(`   - ${key}`));
     process.exit(1);
   }
 }
@@ -141,7 +136,7 @@ async function main() {
   const mappingRepo = new PimMedusaMappingRepository({ db: channelDb } as any);
   const syncService = new PimMedusaSyncService(medusaClient, mappingRepo);
 
-  let startTime = Date.now();
+  const startTime = Date.now();
   let stopRequested = false;
   const requestStop = () => {
     if (!stopRequested) {
@@ -178,10 +173,7 @@ async function main() {
       console.log(`\n📊 Batch ${batchNumber}: Fetching ${session.batchSize} products from offset ${offset}...`);
 
       // Fetch batch
-      const snapshots = await snapshotBuilder.fetchActiveMasters(
-        session.batchSize,
-        offset
-      );
+      const snapshots = await snapshotBuilder.fetchActiveMasters(session.batchSize, offset);
 
       if (snapshots.length === 0) {
         console.log('✅ No more products to process');
@@ -207,7 +199,6 @@ async function main() {
           batchSuccess++;
           itemSucceeded = true;
           console.log(`  ✅ [${num}] ${snapshot.name} (${snapshot.masterId})`);
-
         } catch (error: any) {
           batchFailed++;
           const errorType = classifyError(error);
@@ -219,7 +210,7 @@ async function main() {
             snapshot.versionId,
             error,
             errorType,
-            snapshot
+            snapshot,
           );
 
           console.error(`  ❌ [${num}] ${snapshot.name} (${snapshot.masterId})`);
@@ -280,7 +271,7 @@ async function main() {
       batchNumber++;
 
       // Rate limiting (1 second between batches)
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
 
     // Complete session
@@ -288,9 +279,8 @@ async function main() {
 
     // Print final summary
     const duration = Date.now() - startTime;
-    const successRate = session.processedCount > 0
-      ? (session.successCount / session.processedCount * 100).toFixed(1)
-      : '0.0';
+    const successRate =
+      session.processedCount > 0 ? ((session.successCount / session.processedCount) * 100).toFixed(1) : '0.0';
 
     console.log(`\n${'='.repeat(60)}`);
     console.log('🎉 Migration completed successfully!\n');
@@ -309,7 +299,6 @@ async function main() {
     }
 
     process.exit(0);
-
   } catch (error: any) {
     console.error('\n❌ Migration failed:', error.message);
     console.error(error.stack);
@@ -324,7 +313,6 @@ async function main() {
     }
 
     process.exit(1);
-
   } finally {
     // Cleanup connections
     console.log('\n🧹 Cleaning up connections...');
@@ -334,7 +322,7 @@ async function main() {
 }
 
 // Run main function
-main().catch(error => {
+main().catch((error) => {
   console.error('Unhandled error:', error);
   process.exit(1);
 });

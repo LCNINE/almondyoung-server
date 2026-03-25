@@ -1,11 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
-import {
-  pointEventDetails,
-  pointEvents,
-  pointHolds,
-  pointHoldDetails,
-} from '../../schema';
+import { pointEventDetails, pointEvents, pointHolds, pointHoldDetails } from '../../schema';
 import { DbTx } from '../../types';
 
 export interface PointsOperationRequest {
@@ -22,12 +17,7 @@ export interface PointsOperationRequest {
 }
 
 export interface PointsOperationResult {
-  resultStatus:
-    | 'AUTHORIZED'
-    | 'CAPTURED'
-    | 'CANCELLED'
-    | 'REFUNDED'
-    | 'FAILED';
+  resultStatus: 'AUTHORIZED' | 'CAPTURED' | 'CANCELLED' | 'REFUNDED' | 'FAILED';
   providerTransactionId?: string;
   raw?: Record<string, unknown>;
 }
@@ -51,10 +41,7 @@ interface PointLegTotals {
 
 @Injectable()
 export class PointsLedgerService {
-  async authorize(
-    tx: DbTx,
-    req: PointsOperationRequest,
-  ): Promise<PointsOperationResult> {
+  async authorize(tx: DbTx, req: PointsOperationRequest): Promise<PointsOperationResult> {
     if (!req.attemptId) {
       return this.failedResult('AUTHORIZE', 'ATTEMPT_ID_REQUIRED');
     }
@@ -122,22 +109,15 @@ export class PointsLedgerService {
     };
   }
 
-  async capture(
-    tx: DbTx,
-    req: PointsOperationRequest,
-  ): Promise<PointsOperationResult> {
+  async capture(tx: DbTx, req: PointsOperationRequest): Promise<PointsOperationResult> {
     await this.acquireUserLock(tx, req.userId);
 
-    const existingCaptureEvent = await this.findEventByProviderIdempotencyKey(
-      tx,
-      req.idempotencyKey,
-    );
+    const existingCaptureEvent = await this.findEventByProviderIdempotencyKey(tx, req.idempotencyKey);
     if (existingCaptureEvent) {
       if (existingCaptureEvent.eventType === 'REDEEM') {
         return {
           resultStatus: 'CAPTURED',
-          providerTransactionId:
-            existingCaptureEvent.providerTransactionId ?? existingCaptureEvent.id,
+          providerTransactionId: existingCaptureEvent.providerTransactionId ?? existingCaptureEvent.id,
           raw: {
             providerType: 'POINTS',
             operation: 'CAPTURE',
@@ -267,10 +247,7 @@ export class PointsLedgerService {
     };
   }
 
-  async cancel(
-    tx: DbTx,
-    req: PointsOperationRequest,
-  ): Promise<PointsOperationResult> {
+  async cancel(tx: DbTx, req: PointsOperationRequest): Promise<PointsOperationResult> {
     await this.acquireUserLock(tx, req.userId);
 
     const existingByKey = await this.findHoldByCancelKey(tx, req.idempotencyKey);
@@ -333,22 +310,15 @@ export class PointsLedgerService {
     };
   }
 
-  async refund(
-    tx: DbTx,
-    req: PointsOperationRequest,
-  ): Promise<PointsOperationResult> {
+  async refund(tx: DbTx, req: PointsOperationRequest): Promise<PointsOperationResult> {
     await this.acquireUserLock(tx, req.userId);
 
-    const existingRefundEvent = await this.findEventByProviderIdempotencyKey(
-      tx,
-      req.idempotencyKey,
-    );
+    const existingRefundEvent = await this.findEventByProviderIdempotencyKey(tx, req.idempotencyKey);
     if (existingRefundEvent) {
       if (existingRefundEvent.eventType === 'REDEEM_CANCEL') {
         return {
           resultStatus: 'REFUNDED',
-          providerTransactionId:
-            existingRefundEvent.providerTransactionId ?? existingRefundEvent.id,
+          providerTransactionId: existingRefundEvent.providerTransactionId ?? existingRefundEvent.id,
           raw: {
             providerType: 'POINTS',
             operation: 'REFUND',
@@ -419,11 +389,7 @@ export class PointsLedgerService {
       .select({ id: pointEvents.id })
       .from(pointEvents)
       .where(
-        and(
-          eq(pointEvents.userId, req.userId),
-          eq(pointEvents.legId, req.legId),
-          eq(pointEvents.eventType, 'REDEEM'),
-        ),
+        and(eq(pointEvents.userId, req.userId), eq(pointEvents.legId, req.legId), eq(pointEvents.eventType, 'REDEEM')),
       )
       .orderBy(asc(pointEvents.createdAt))
       .limit(1);
@@ -642,17 +608,11 @@ export class PointsLedgerService {
     return remainingAmount === 0 ? allocations : null;
   }
 
-  private async readPointLegTotals(
-    tx: DbTx,
-    userId: string,
-    legId: string,
-  ): Promise<PointLegTotals> {
+  private async readPointLegTotals(tx: DbTx, userId: string, legId: string): Promise<PointLegTotals> {
     const rows = await tx
       .select({
-        redeemedAmount:
-          sql<number>`coalesce(sum(case when ${pointEvents.eventType} = 'REDEEM' then -${pointEvents.amount} else 0 end), 0)`,
-        refundedAmount:
-          sql<number>`coalesce(sum(case when ${pointEvents.eventType} = 'REDEEM_CANCEL' then ${pointEvents.amount} else 0 end), 0)`,
+        redeemedAmount: sql<number>`coalesce(sum(case when ${pointEvents.eventType} = 'REDEEM' then -${pointEvents.amount} else 0 end), 0)`,
+        refundedAmount: sql<number>`coalesce(sum(case when ${pointEvents.eventType} = 'REDEEM_CANCEL' then ${pointEvents.amount} else 0 end), 0)`,
       })
       .from(pointEvents)
       .where(and(eq(pointEvents.userId, userId), eq(pointEvents.legId, legId)));
@@ -663,11 +623,7 @@ export class PointsLedgerService {
     };
   }
 
-  private async readRedeemDetails(
-    tx: DbTx,
-    userId: string,
-    legId: string,
-  ): Promise<RedeemDetailRow[]> {
+  private async readRedeemDetails(tx: DbTx, userId: string, legId: string): Promise<RedeemDetailRow[]> {
     const rows = (await tx.execute(sql<RedeemDetailRow>`
       select
         d.id as "redeemDetailId",
@@ -688,10 +644,7 @@ export class PointsLedgerService {
     }));
   }
 
-  private async readRefundedAmountByRedeemDetailIds(
-    tx: DbTx,
-    redeemDetailIds: string[],
-  ): Promise<Map<string, number>> {
+  private async readRefundedAmountByRedeemDetailIds(tx: DbTx, redeemDetailIds: string[]): Promise<Map<string, number>> {
     if (redeemDetailIds.length === 0) return new Map();
 
     const rows = await tx

@@ -11,8 +11,8 @@ export class UploadFileDto {
   contextId: string;
 
   @ApiProperty({
-    description: 'Whether the file should be publicly accessible. ' +
-      'Required for contexts that allow both public and private.',
+    description:
+      'Whether the file should be publicly accessible. ' + 'Required for contexts that allow both public and private.',
     required: false,
     example: true,
   })
@@ -29,6 +29,4 @@ export class UploadFileDto {
   @IsOptional()
   @IsObject()
   metadata?: Record<string, any>;
-
 }
-

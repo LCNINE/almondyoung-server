@@ -3,10 +3,8 @@ import { StocktakingController } from './controllers/stocktaking.controller';
 import { StocktakingService } from './services/stocktaking.service';
 
 @Module({
-    controllers: [StocktakingController],
-    providers: [StocktakingService],
-    exports: [StocktakingService],
+  controllers: [StocktakingController],
+  providers: [StocktakingService],
+  exports: [StocktakingService],
 })
 export class StocktakingModule {}
-
-

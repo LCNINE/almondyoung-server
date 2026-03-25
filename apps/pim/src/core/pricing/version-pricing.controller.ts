@@ -31,12 +31,13 @@ export class VersionPricingController {
   constructor(
     private readonly pricingService: PricingService,
     private readonly calculatorService: PricingCalculatorService,
-  ) { }
+  ) {}
 
   @Get('rules')
   @ApiOperation({
     summary: 'Get pricing rules for a specific version',
-    description: 'Retrieve pricing rules for a specific product version. Works with any version status (draft, active, inactive).'
+    description:
+      'Retrieve pricing rules for a specific product version. Works with any version status (draft, active, inactive).',
   })
   @ApiParam({ name: 'versionId', description: 'Version ID' })
   @ApiResponse({
@@ -45,16 +46,14 @@ export class VersionPricingController {
     type: PricingRulesResponseDto,
   })
   @ApiResponse({ status: 404, description: 'Version not found' })
-  async getVersionRules(
-    @Param('versionId') versionId: string,
-  ): Promise<PricingRulesResponseDto> {
+  async getVersionRules(@Param('versionId') versionId: string): Promise<PricingRulesResponseDto> {
     return this.pricingService.getVersionRules(versionId);
   }
 
   @Put('rules')
   @ApiOperation({
     summary: 'Replace pricing rules for a draft version',
-    description: 'Replace all pricing rules for a draft version. Only draft versions can be modified.'
+    description: 'Replace all pricing rules for a draft version. Only draft versions can be modified.',
   })
   @ApiParam({ name: 'versionId', description: 'Version ID (must be draft)' })
   @ApiBody({ type: ReplacePricingRulesDto, description: 'Pricing rules to replace' })
@@ -73,10 +72,7 @@ export class VersionPricingController {
       return await this.pricingService.replaceVersionRules(versionId, dto);
     } catch (error) {
       if (error.message?.includes('not draft') || error.message?.includes('Only draft')) {
-        throw new HttpException(
-          'Only draft versions can be modified',
-          HttpStatus.BAD_REQUEST,
-        );
+        throw new HttpException('Only draft versions can be modified', HttpStatus.BAD_REQUEST);
       }
       throw error;
     }
@@ -86,7 +82,7 @@ export class VersionPricingController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary: 'Delete pricing rules for a draft version',
-    description: 'Delete all pricing rules for a draft version. Only draft versions can be modified.'
+    description: 'Delete all pricing rules for a draft version. Only draft versions can be modified.',
   })
   @ApiParam({ name: 'versionId', description: 'Version ID (must be draft)' })
   @ApiResponse({
@@ -95,17 +91,12 @@ export class VersionPricingController {
   })
   @ApiResponse({ status: 400, description: 'Version is not draft' })
   @ApiResponse({ status: 404, description: 'Version not found' })
-  async deleteVersionRules(
-    @Param('versionId') versionId: string,
-  ): Promise<void> {
+  async deleteVersionRules(@Param('versionId') versionId: string): Promise<void> {
     try {
       return await this.pricingService.deleteVersionRules(versionId);
     } catch (error) {
       if (error.message?.includes('not draft') || error.message?.includes('Only draft')) {
-        throw new HttpException(
-          'Only draft versions can be modified',
-          HttpStatus.BAD_REQUEST,
-        );
+        throw new HttpException('Only draft versions can be modified', HttpStatus.BAD_REQUEST);
       }
       throw error;
     }
@@ -114,7 +105,7 @@ export class VersionPricingController {
   @Post('calculate')
   @ApiOperation({
     summary: 'Calculate price for a variant in a specific version',
-    description: 'Calculate the price for a variant using the pricing rules of a specific version.'
+    description: 'Calculate the price for a variant using the pricing rules of a specific version.',
   })
   @ApiParam({ name: 'versionId', description: 'Version ID' })
   @ApiBody({ type: CalculatePriceRequestDto })
@@ -165,7 +156,7 @@ export class VersionPricingController {
   @Get('price-set')
   @ApiOperation({
     summary: 'Get complete price set for a variant in a specific version',
-    description: 'Get base, membership, and tiered prices for a variant using pricing rules from a specific version.'
+    description: 'Get base, membership, and tiered prices for a variant using pricing rules from a specific version.',
   })
   @ApiParam({ name: 'versionId', description: 'Version ID' })
   @ApiQuery({ name: 'variantId', description: 'Variant ID', required: true })
@@ -182,4 +173,3 @@ export class VersionPricingController {
     return this.pricingService.getVariantPriceSet(versionId, variantId);
   }
 }
-

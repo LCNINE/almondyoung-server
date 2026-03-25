@@ -11,8 +11,14 @@ export const useTracedResources = (
   offset = 0
 ) => {
   return useQuery({
-    queryKey: eventQueryKeys.tracedResources(resourceType, service, limit, offset),
-    queryFn: () => traceClient.getTracedResources(resourceType, { service, limit, offset }),
+    queryKey: eventQueryKeys.tracedResources(
+      resourceType,
+      service,
+      limit,
+      offset
+    ),
+    queryFn: () =>
+      traceClient.getTracedResources(resourceType, { service, limit, offset }),
     enabled: !!resourceType,
   });
 };
@@ -24,7 +30,8 @@ export const useResourceEvents = (
 ) => {
   return useQuery({
     queryKey: eventQueryKeys.resourceEvents(resourceType, resourceId, service),
-    queryFn: () => traceClient.getResourceEvents(resourceType, resourceId, { service }),
+    queryFn: () =>
+      traceClient.getResourceEvents(resourceType, resourceId, { service }),
     enabled: !!resourceType && !!resourceId,
   });
 };

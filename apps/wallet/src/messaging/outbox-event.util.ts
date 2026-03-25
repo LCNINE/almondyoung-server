@@ -9,9 +9,7 @@ export interface OutboxEventInput {
   payload: Record<string, unknown>;
 }
 
-export function buildOutboxInsertValues(
-  event: OutboxEventInput,
-): typeof outboxEvents.$inferInsert {
+export function buildOutboxInsertValues(event: OutboxEventInput): typeof outboxEvents.$inferInsert {
   assertOutboxEventInput(event);
 
   const now = new Date();

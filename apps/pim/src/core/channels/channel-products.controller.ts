@@ -1,23 +1,5 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Delete,
-  Body,
-  Param,
-  Query,
-  HttpException,
-  HttpStatus,
-} from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiParam,
-  ApiQuery,
-  ApiBody,
-} from '@nestjs/swagger';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpException, HttpStatus } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { ChannelProductsService } from './channel-products.service';
 import {
   CreateChannelProductDto,
@@ -37,9 +19,7 @@ import { ChannelProductMapper } from './mappers';
 @ApiTags('Channel Products')
 @Controller('channel-products')
 export class ChannelProductsController {
-  constructor(
-    private readonly channelProductsService: ChannelProductsService,
-  ) { }
+  constructor(private readonly channelProductsService: ChannelProductsService) {}
 
   @Post()
   @ApiOperation({
@@ -64,35 +44,22 @@ export class ChannelProductsController {
     description: '제품 마스터 또는 판매 채널을 찾을 수 없음',
   })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  async createChannelProduct(
-    @Body() createDto: CreateChannelProductDto,
-  ): Promise<ChannelProductDto> {
+  async createChannelProduct(@Body() createDto: CreateChannelProductDto): Promise<ChannelProductDto> {
     try {
       if (!createDto.masterId || !createDto.channelId) {
-        throw new HttpException(
-          'Master ID and Channel ID are required',
-          HttpStatus.BAD_REQUEST,
-        );
+        throw new HttpException('Master ID and Channel ID are required', HttpStatus.BAD_REQUEST);
       }
 
-      const entity = await this.channelProductsService.createChannelProduct(
-        createDto,
-      );
+      const entity = await this.channelProductsService.createChannelProduct(createDto);
       return ChannelProductMapper.toDto(entity);
     } catch (error) {
-      if (
-        error.message.includes('required') ||
-        error.message.includes('already exists')
-      ) {
+      if (error.message.includes('required') || error.message.includes('already exists')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
       }
       if (error.message.includes('not found')) {
         throw new HttpException(error.message, HttpStatus.NOT_FOUND);
       }
-      throw new HttpException(
-        'Failed to create channel product',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to create channel product', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -109,22 +76,15 @@ export class ChannelProductsController {
   })
   @ApiResponse({ status: 400, description: '잘못된 요청' })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  async getChannelProductsByMaster(
-    @Param('masterId') masterId: string,
-  ): Promise<ChannelProductWithChannelDto[]> {
+  async getChannelProductsByMaster(@Param('masterId') masterId: string): Promise<ChannelProductWithChannelDto[]> {
     try {
-      const channelProducts = await this.channelProductsService.getChannelProductsByMaster(
-        masterId,
-      )
-      return channelProducts.map(item => ChannelProductMapper.toWithChannelDto(item));
+      const channelProducts = await this.channelProductsService.getChannelProductsByMaster(masterId);
+      return channelProducts.map((item) => ChannelProductMapper.toWithChannelDto(item));
     } catch (error) {
       if (error.message.includes('required')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
       }
-      throw new HttpException(
-        'Failed to get channel products by master',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to get channel products by master', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -181,18 +141,12 @@ export class ChannelProductsController {
         limit: query.limit ? parseInt(query.limit) : undefined,
       };
 
-      return await this.channelProductsService.getChannelProductsByChannel(
-        channelId,
-        filters,
-      );
+      return await this.channelProductsService.getChannelProductsByChannel(channelId, filters);
     } catch (error) {
       if (error.message.includes('required')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
       }
-      throw new HttpException(
-        'Failed to get channel products by channel',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to get channel products by channel', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -212,34 +166,21 @@ export class ChannelProductsController {
   @ApiResponse({ status: 500, description: '서버 오류' })
   async getChannelProduct(@Param('id') id: string): Promise<ChannelProductDto> {
     try {
-      const channelProduct =
-        await this.channelProductsService.getChannelProduct(id);
+      const channelProduct = await this.channelProductsService.getChannelProduct(id);
 
       if (!channelProduct) {
-        throw new HttpException(
-          'Channel product not found',
-          HttpStatus.NOT_FOUND,
-        );
+        throw new HttpException('Channel product not found', HttpStatus.NOT_FOUND);
       }
 
       return ChannelProductMapper.toDto(channelProduct);
     } catch (error) {
-      if (
-        error.message === 'Channel product not found' ||
-        error.status === HttpStatus.NOT_FOUND
-      ) {
-        throw new HttpException(
-          'Channel product not found',
-          HttpStatus.NOT_FOUND,
-        );
+      if (error.message === 'Channel product not found' || error.status === HttpStatus.NOT_FOUND) {
+        throw new HttpException('Channel product not found', HttpStatus.NOT_FOUND);
       }
       if (error.message.includes('required')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
       }
-      throw new HttpException(
-        'Failed to get channel product',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to get channel product', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -266,23 +207,16 @@ export class ChannelProductsController {
     @Body() updateDto: UpdateChannelProductDto,
   ): Promise<ChannelProductDto> {
     try {
-      const channelProduct =
-        await this.channelProductsService.updateChannelProduct(id, updateDto);
+      const channelProduct = await this.channelProductsService.updateChannelProduct(id, updateDto);
       return ChannelProductMapper.toDto(channelProduct);
     } catch (error) {
       if (error.message.includes('not found')) {
-        throw new HttpException(
-          'Channel product not found',
-          HttpStatus.NOT_FOUND,
-        );
+        throw new HttpException('Channel product not found', HttpStatus.NOT_FOUND);
       }
       if (error.message.includes('required')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
       }
-      throw new HttpException(
-        'Failed to update channel product',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to update channel product', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -301,18 +235,12 @@ export class ChannelProductsController {
       await this.channelProductsService.deleteChannelProduct(id);
     } catch (error) {
       if (error.message.includes('not found')) {
-        throw new HttpException(
-          'Channel product not found',
-          HttpStatus.NOT_FOUND,
-        );
+        throw new HttpException('Channel product not found', HttpStatus.NOT_FOUND);
       }
       if (error.message.includes('required')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
       }
-      throw new HttpException(
-        'Failed to delete channel product',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to delete channel product', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -336,37 +264,21 @@ export class ChannelProductsController {
     @Param('channelId') channelId: string,
   ): Promise<MergedChannelProductDto> {
     try {
-      const mergedProduct =
-        await this.channelProductsService.getMergedChannelProduct(
-          masterId,
-          channelId,
-        );
+      const mergedProduct = await this.channelProductsService.getMergedChannelProduct(masterId, channelId);
 
       if (!mergedProduct) {
-        throw new HttpException(
-          'Channel product not found',
-          HttpStatus.NOT_FOUND,
-        );
+        throw new HttpException('Channel product not found', HttpStatus.NOT_FOUND);
       }
 
       return mergedProduct;
     } catch (error) {
-      if (
-        error.message === 'Channel product not found' ||
-        error.status === HttpStatus.NOT_FOUND
-      ) {
-        throw new HttpException(
-          'Channel product not found',
-          HttpStatus.NOT_FOUND,
-        );
+      if (error.message === 'Channel product not found' || error.status === HttpStatus.NOT_FOUND) {
+        throw new HttpException('Channel product not found', HttpStatus.NOT_FOUND);
       }
       if (error.message.includes('required')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
       }
-      throw new HttpException(
-        'Failed to get merged channel product',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to get merged channel product', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -381,16 +293,10 @@ export class ChannelProductsController {
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터 (name 필수)' })
   @ApiResponse({ status: 404, description: '채널 제품을 찾을 수 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  async overrideProductName(
-    @Param('id') id: string,
-    @Body() nameDto: OverrideProductNameDto,
-  ): Promise<void> {
+  async overrideProductName(@Param('id') id: string, @Body() nameDto: OverrideProductNameDto): Promise<void> {
     try {
       if (!nameDto.name) {
-        throw new HttpException(
-          'Product name is required',
-          HttpStatus.BAD_REQUEST,
-        );
+        throw new HttpException('Product name is required', HttpStatus.BAD_REQUEST);
       }
 
       await this.channelProductsService.overrideProductName(id, nameDto.name);
@@ -399,15 +305,9 @@ export class ChannelProductsController {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
       }
       if (error.message.includes('not found')) {
-        throw new HttpException(
-          'Channel product not found',
-          HttpStatus.NOT_FOUND,
-        );
+        throw new HttpException('Channel product not found', HttpStatus.NOT_FOUND);
       }
-      throw new HttpException(
-        'Failed to override product name',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to override product name', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -428,33 +328,21 @@ export class ChannelProductsController {
   })
   @ApiResponse({ status: 404, description: '채널 제품을 찾을 수 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  async setChannelProductActive(
-    @Param('id') id: string,
-    @Body() statusDto: SetChannelProductActiveDto,
-  ): Promise<void> {
+  async setChannelProductActive(@Param('id') id: string, @Body() statusDto: SetChannelProductActiveDto): Promise<void> {
     try {
       if (statusDto.isActive === undefined) {
         throw new HttpException('isActive is required', HttpStatus.BAD_REQUEST);
       }
 
-      await this.channelProductsService.setChannelProductActive(
-        id,
-        statusDto.isActive,
-      );
+      await this.channelProductsService.setChannelProductActive(id, statusDto.isActive);
     } catch (error) {
       if (error.message.includes('required')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
       }
       if (error.message.includes('not found')) {
-        throw new HttpException(
-          'Channel product not found',
-          HttpStatus.NOT_FOUND,
-        );
+        throw new HttpException('Channel product not found', HttpStatus.NOT_FOUND);
       }
-      throw new HttpException(
-        'Failed to set channel product status',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to set channel product status', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 }

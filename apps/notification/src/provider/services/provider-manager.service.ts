@@ -70,42 +70,75 @@ export class ProviderManagerService implements OnModuleInit, OnModuleDestroy {
     // });
     const dbProviders = [
       {
-        providerId: "a419caa1-b359-4647-9ab4-0a9b69e56310",
-        providerName: "FCM Push",
+        providerId: 'a419caa1-b359-4647-9ab4-0a9b69e56310',
+        providerName: 'FCM Push',
         isAvailable: true,
         channel: Channel.PUSH,
         priority: 10,
-        config: { "timeout": 30000, "clientId": "107487182970332379639", "projectId": "notification-service-a5dff", "privateKey": "", "clientEmail": "firebase-adminsdk-fbsvc@notification-service-a5dff.iam.gserviceaccount.com", "privateKeyId": "33b8b49babb281a4d4b89e19486ab856d2095649" }
-      }, {
-        providerId: "3b5056a7-d706-4525-b945-f70bff410589",
-        providerName: "Resend Email",
+        config: {
+          timeout: 30000,
+          clientId: '107487182970332379639',
+          projectId: 'notification-service-a5dff',
+          privateKey: '',
+          clientEmail: 'firebase-adminsdk-fbsvc@notification-service-a5dff.iam.gserviceaccount.com',
+          privateKeyId: '33b8b49babb281a4d4b89e19486ab856d2095649',
+        },
+      },
+      {
+        providerId: '3b5056a7-d706-4525-b945-f70bff410589',
+        providerName: 'Resend Email',
         isAvailable: true,
         channel: Channel.EMAIL,
         priority: 10,
-        config: { "apiKey": "re_L5T64k9X_PUJsu8kKModEQbJBQh1uvoUg", "baseUrl": "https://api.resend.com", "timeout": 30000, "fromName": "Almond Young", "fromEmail": "noreply@almondyoung.com", "maxRetries": 3, "retryDelay": 1000 }
-      }, {
-        providerId: "b093c040-9de2-4b42-8ace-861753e02658",
-        providerName: "Twilio SMS",
+        config: {
+          apiKey: 're_L5T64k9X_PUJsu8kKModEQbJBQh1uvoUg',
+          baseUrl: 'https://api.resend.com',
+          timeout: 30000,
+          fromName: 'Almond Young',
+          fromEmail: 'noreply@almondyoung.com',
+          maxRetries: 3,
+          retryDelay: 1000,
+        },
+      },
+      {
+        providerId: 'b093c040-9de2-4b42-8ace-861753e02658',
+        providerName: 'Twilio SMS',
         isAvailable: true,
         channel: Channel.SMS,
         priority: 10,
-        config: { "timeout": 30000, "authToken": "", "accountSid": "", "fromNumber": "+15856342856", "messagingServiceSid": "", "enableDeliveryReports": true }
-      }, {
-        providerId: "d490c11d-70f1-409c-a6af-a715d1d746ff",
-        providerName: "NHN KakaoTalk",
+        config: {
+          timeout: 30000,
+          authToken: '',
+          accountSid: '',
+          fromNumber: '+15856342856',
+          messagingServiceSid: '',
+          enableDeliveryReports: true,
+        },
+      },
+      {
+        providerId: 'd490c11d-70f1-409c-a6af-a715d1d746ff',
+        providerName: 'NHN KakaoTalk',
         isAvailable: true,
         channel: Channel.KAKAO,
         priority: 10,
-        config: { "apiUrl": "https://api-alimtalk.cloud.toast.com", "appKey": "56ySy3UiPmNhryr8", "timeout": 30000, "secretKey": "p2CCuK4jPYJLZvydoVNEykYKOZb6IvkV", "senderKey": "4bd6430a65cad17d327c758006e5cf4a773d82e6", "plusFriendId": "@아몬드영", "resendAppKey": "" }
-      }
-    ]
+        config: {
+          apiUrl: 'https://api-alimtalk.cloud.toast.com',
+          appKey: '56ySy3UiPmNhryr8',
+          timeout: 30000,
+          secretKey: 'p2CCuK4jPYJLZvydoVNEykYKOZb6IvkV',
+          senderKey: '4bd6430a65cad17d327c758006e5cf4a773d82e6',
+          plusFriendId: '@아몬드영',
+          resendAppKey: '',
+        },
+      },
+    ];
 
     for (const dbProvider of dbProviders) {
       try {
         const provider = this.providerFactory.create(
           dbProvider.providerName,
           dbProvider.providerId,
-          dbProvider.config as Record<string, any>
+          dbProvider.config as Record<string, any>,
         );
 
         if (!provider) {
@@ -127,7 +160,7 @@ export class ProviderManagerService implements OnModuleInit, OnModuleDestroy {
 
         this.providers.set(dbProvider.providerId, provider);
 
-        const channel = dbProvider.channel as Channel;
+        const channel = dbProvider.channel;
         if (!this.providersByChannel.has(channel)) {
           this.providersByChannel.set(channel, []);
         }
@@ -139,13 +172,16 @@ export class ProviderManagerService implements OnModuleInit, OnModuleDestroy {
           channel,
           isAvailable,
         });
-
       } catch (error: any) {
-        this.logger.error('Failed to load provider', {
-          providerId: dbProvider.providerId,
-          providerName: dbProvider.providerName,
-          error: error.message,
-        }, error.stack);
+        this.logger.error(
+          'Failed to load provider',
+          {
+            providerId: dbProvider.providerId,
+            providerName: dbProvider.providerName,
+            error: error.message,
+          },
+          error.stack,
+        );
 
         // Provider 상태를 ERROR로 업데이트
         await this.db
@@ -222,7 +258,7 @@ export class ProviderManagerService implements OnModuleInit, OnModuleDestroy {
     this.logger.error('All providers unavailable for channel', {
       channel,
       providerCount: providers.length,
-      providerIds: providers.map(p => p.getProviderId()),
+      providerIds: providers.map((p) => p.getProviderId()),
     });
 
     await this.alertService.createAlert({
@@ -232,7 +268,7 @@ export class ProviderManagerService implements OnModuleInit, OnModuleDestroy {
       message: `All ${providers.length} provider(s) for channel ${channel} are unavailable`,
       context: {
         channel,
-        attemptedProviders: providers.map(p => p.getProviderId()),
+        attemptedProviders: providers.map((p) => p.getProviderId()),
       },
     });
 
@@ -244,12 +280,9 @@ export class ProviderManagerService implements OnModuleInit, OnModuleDestroy {
     await this.performHealthChecks();
 
     // 주기적으로 실행
-    this.healthCheckInterval = setInterval(
-      async () => {
-        await this.performHealthChecks();
-      },
-      NOTIFICATION_CONSTANTS.HEALTH_CHECK_INTERVAL
-    );
+    this.healthCheckInterval = setInterval(async () => {
+      await this.performHealthChecks();
+    }, NOTIFICATION_CONSTANTS.HEALTH_CHECK_INTERVAL);
   }
 
   private async performHealthChecks() {
@@ -277,7 +310,7 @@ export class ProviderManagerService implements OnModuleInit, OnModuleDestroy {
         // });
 
         // const existingMetadata = existingProvider?.metadata || {};
-        // 
+        //
         // await this.db
         //     .update(notificationProviders)
         //     .set({
@@ -305,11 +338,15 @@ export class ProviderManagerService implements OnModuleInit, OnModuleDestroy {
           });
         }
       } catch (error: any) {
-        this.logger.error('Health check failed', {
-          providerId,
-          providerName: provider.getName(),
-          error: error.message,
-        }, error.stack);
+        this.logger.error(
+          'Health check failed',
+          {
+            providerId,
+            providerName: provider.getName(),
+            error: error.message,
+          },
+          error.stack,
+        );
 
         healthCheckResults.push({
           providerId,

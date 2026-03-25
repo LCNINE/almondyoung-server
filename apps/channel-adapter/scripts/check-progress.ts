@@ -24,7 +24,7 @@ import { eq, desc, sql } from 'drizzle-orm';
 function parseArgs(): { sessionId?: string; latest: boolean } {
   const args = process.argv.slice(2);
 
-  const sessionArg = args.find(a => a.startsWith('--session='));
+  const sessionArg = args.find((a) => a.startsWith('--session='));
   const latestFlag = args.includes('--latest');
 
   return {
@@ -39,11 +39,11 @@ function parseArgs(): { sessionId?: string; latest: boolean } {
 function validateEnv(): void {
   const required = ['DATABASE_URL'];
 
-  const missing = required.filter(key => !process.env[key]);
+  const missing = required.filter((key) => !process.env[key]);
 
   if (missing.length > 0) {
     console.error('❌ Missing required environment variables:');
-    missing.forEach(key => console.error(`   - ${key}`));
+    missing.forEach((key) => console.error(`   - ${key}`));
     process.exit(1);
   }
 }
@@ -145,21 +145,17 @@ async function main() {
     const failures = failureStats[0] || { total: 0, unresolved: 0, resolved: 0 };
 
     // Calculate statistics
-    const successRate = session.processedCount > 0
-      ? (session.successCount / session.processedCount * 100).toFixed(1)
-      : '0.0';
+    const successRate =
+      session.processedCount > 0 ? ((session.successCount / session.processedCount) * 100).toFixed(1) : '0.0';
 
-    const failureRate = session.processedCount > 0
-      ? (session.failedCount / session.processedCount * 100).toFixed(1)
-      : '0.0';
+    const failureRate =
+      session.processedCount > 0 ? ((session.failedCount / session.processedCount) * 100).toFixed(1) : '0.0';
 
     const duration = session.completedAt
       ? session.completedAt.getTime() - session.startedAt.getTime()
       : Date.now() - session.startedAt.getTime();
 
-    const avgTimePerProduct = session.processedCount > 0
-      ? Math.round(duration / session.processedCount)
-      : 0;
+    const avgTimePerProduct = session.processedCount > 0 ? Math.round(duration / session.processedCount) : 0;
 
     // Display session info
     console.log(`${'='.repeat(60)}`);
@@ -194,7 +190,7 @@ async function main() {
       console.log(`${'='.repeat(60)}`);
       console.log('⚡ Performance\n');
       console.log(`Avg Time/Product: ${avgTimePerProduct}ms`);
-      console.log(`Throughput:       ${(1000 / avgTimePerProduct * 60).toFixed(1)} products/min`);
+      console.log(`Throughput:       ${((1000 / avgTimePerProduct) * 60).toFixed(1)} products/min`);
       console.log();
     }
 
@@ -244,7 +240,6 @@ async function main() {
 
     await channelDbClient.end();
     process.exit(0);
-
   } catch (error: any) {
     console.error('\n❌ Check progress failed:', error.message);
     console.error(error.stack);
@@ -272,7 +267,7 @@ function getStatusEmoji(status: string): string {
 }
 
 // Run main function
-main().catch(error => {
+main().catch((error) => {
   console.error('Unhandled error:', error);
   process.exit(1);
 });

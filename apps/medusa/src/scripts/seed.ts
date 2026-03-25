@@ -56,9 +56,7 @@ export default async function seedData({ container }: ExecArgs) {
     input: {
       selector: { id: store.id },
       update: {
-        supported_currencies: [
-          { currency_code: 'krw', is_default: true },
-        ],
+        supported_currencies: [{ currency_code: 'krw', is_default: true }],
         default_sales_channel_id: defaultSalesChannel[0].id,
       },
     },
@@ -68,13 +66,8 @@ export default async function seedData({ container }: ExecArgs) {
   // ── 3. Region ─────────────────────────────────────────────────────────────
   // 이름이 아닌 국가 코드 기준으로 확인 (기존 리전 이름이 달라도 중복 생성 방지)
   logger.info('[seed] Region 확인 중...');
-  const allRegions = await regionModuleService.listRegions(
-    {},
-    { relations: ['countries'] },
-  );
-  const krRegionExists = allRegions.some((r) =>
-    r.countries?.some((c) => c.iso_2 === 'kr'),
-  );
+  const allRegions = await regionModuleService.listRegions({}, { relations: ['countries'] });
+  const krRegionExists = allRegions.some((r) => r.countries?.some((c) => c.iso_2 === 'kr'));
 
   if (!krRegionExists) {
     await createRegionsWorkflow(container).run({
@@ -117,9 +110,7 @@ export default async function seedData({ container }: ExecArgs) {
   });
 
   if (!existingApiKeys.length) {
-    const { result: apiKeyResult } = await createApiKeysWorkflow(
-      container,
-    ).run({
+    const { result: apiKeyResult } = await createApiKeysWorkflow(container).run({
       input: {
         api_keys: [{ title: 'Webshop', type: 'publishable', created_by: '' }],
       },

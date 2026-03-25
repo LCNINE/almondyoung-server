@@ -6,9 +6,7 @@ import { ChannelType } from '../adapters/channel-adapter.factory';
  * 환경변수로 오버라이드 가능:
  * ACTIVE_CHANNELS=naver_smartstore,coupang
  */
-export const ACTIVE_CHANNELS: ChannelType[] = (
-  process.env.ACTIVE_CHANNELS || 'naver_smartstore,coupang'
-)
+export const ACTIVE_CHANNELS: ChannelType[] = (process.env.ACTIVE_CHANNELS || 'naver_smartstore,coupang')
   .split(',')
   .map((ch) => ch.trim()) as ChannelType[];
 

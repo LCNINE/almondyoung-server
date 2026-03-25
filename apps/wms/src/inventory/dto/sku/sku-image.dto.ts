@@ -19,4 +19,3 @@ export class SkuImageDto {
   @ApiProperty({ description: 'Created at' })
   createdAt: Date;
 }
-

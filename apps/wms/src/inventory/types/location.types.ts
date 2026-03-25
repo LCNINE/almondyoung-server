@@ -13,7 +13,7 @@ export type SystemLocationRole = 'inbound_default' | 'return_default';
  */
 export interface LocationIdentifier {
   id: string;
-  code: string;  // 실제 표시되는 로케이션 코드
+  code: string; // 실제 표시되는 로케이션 코드
   type: LocationType;
   warehouseId: string;
 }
@@ -33,8 +33,8 @@ export interface LocationMetadata {
  */
 export interface LocationResponse {
   id: string;
-  code: string;           // A-01-01 또는 "입고기본존"
-  displayName: string;    // 사용자에게 보여줄 이름
+  code: string; // A-01-01 또는 "입고기본존"
+  displayName: string; // 사용자에게 보여줄 이름
   type: LocationType;
   warehouseId: string;
   isActive: boolean;

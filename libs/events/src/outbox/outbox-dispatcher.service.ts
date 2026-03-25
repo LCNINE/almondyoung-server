@@ -63,12 +63,7 @@ export class OutboxDispatcher {
           createdAt: outbox_events.createdAt,
         })
         .from(outbox_events)
-        .where(
-          and(
-            eq(outbox_events.status, 'PENDING'),
-            lt(outbox_events.retryCount, this.config.maxRetries)
-          )
-        )
+        .where(and(eq(outbox_events.status, 'PENDING'), lt(outbox_events.retryCount, this.config.maxRetries)))
         .orderBy(outbox_events.createdAt)
         .limit(this.config.batchSize)
         .for('update', { skipLocked: true });
@@ -79,10 +74,7 @@ export class OutboxDispatcher {
 
       const ids = result.map((e) => e.id);
 
-      await tx
-        .update(outbox_events)
-        .set({ status: 'PROCESSING' })
-        .where(inArray(outbox_events.id, ids));
+      await tx.update(outbox_events).set({ status: 'PROCESSING' }).where(inArray(outbox_events.id, ids));
 
       return result;
     });
@@ -126,9 +118,7 @@ export class OutboxDispatcher {
       })
       .where(eq(outbox_events.id, event.id));
 
-    this.logger.error(
-      `Event ${event.id} failed (${newRetryCount}/${this.config.maxRetries}): ${error.message}`,
-    );
+    this.logger.error(`Event ${event.id} failed (${newRetryCount}/${this.config.maxRetries}): ${error.message}`);
   }
 
   @Cron('0 2 * * *')
@@ -138,15 +128,9 @@ export class OutboxDispatcher {
 
     const result = await this.db
       .delete(outbox_events)
-      .where(
-        and(
-          eq(outbox_events.status, 'PUBLISHED'),
-          lt(outbox_events.publishedAt, cutoffDate)
-        )
-      )
+      .where(and(eq(outbox_events.status, 'PUBLISHED'), lt(outbox_events.publishedAt, cutoffDate)))
       .returning({ id: outbox_events.id });
 
     this.logger.log(`Cleaned up ${result.length} old outbox events`);
   }
 }
-

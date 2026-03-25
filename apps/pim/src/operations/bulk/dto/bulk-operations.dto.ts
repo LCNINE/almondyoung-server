@@ -38,4 +38,3 @@ export class BulkRestoreDto {
   @IsString({ each: true })
   productIds: string[];
 }
-

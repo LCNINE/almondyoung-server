@@ -119,7 +119,7 @@ export class RemoveOptionValuesDto {
   @ApiProperty({
     description: '삭제할 옵션 값 ID 목록',
     type: [String],
-    example: ['01234567-89ab-cdef-0123-456789abcdef']
+    example: ['01234567-89ab-cdef-0123-456789abcdef'],
   })
   @IsArray()
   @IsUUID(undefined, { each: true })
@@ -130,7 +130,7 @@ export class OptionDiffDto {
   @ApiProperty({
     description: '새로 추가할 옵션 그룹',
     type: [AddOptionDto],
-    required: false
+    required: false,
   })
   @IsOptional()
   @IsArray()
@@ -141,7 +141,7 @@ export class OptionDiffDto {
   @ApiProperty({
     description: '기존 옵션 그룹의 표시 정보 수정',
     type: [ModifyOptionDisplayDto],
-    required: false
+    required: false,
   })
   @IsOptional()
   @IsArray()
@@ -152,7 +152,7 @@ export class OptionDiffDto {
   @ApiProperty({
     description: '기존 옵션 그룹에 새 값 추가',
     type: [AddOptionValuesDto],
-    required: false
+    required: false,
   })
   @IsOptional()
   @IsArray()
@@ -163,7 +163,7 @@ export class OptionDiffDto {
   @ApiProperty({
     description: '기존 옵션 그룹에서 값 제거',
     type: [RemoveOptionValuesDto],
-    required: false
+    required: false,
   })
   @IsOptional()
   @IsArray()
@@ -174,11 +174,10 @@ export class OptionDiffDto {
   @ApiProperty({
     description: '제거할 옵션 그룹 ID 목록',
     type: [String],
-    required: false
+    required: false,
   })
   @IsOptional()
   @IsArray()
   @IsUUID(undefined, { each: true })
   remove?: string[];
 }
-

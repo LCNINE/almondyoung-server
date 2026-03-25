@@ -1,15 +1,9 @@
-import {
-  AuthIdentityDTO,
-  ProjectConfigOptions,
-} from '@medusajs/framework/types';
+import { AuthIdentityDTO, ProjectConfigOptions } from '@medusajs/framework/types';
 import { generateJwtToken } from '@medusajs/framework/utils';
 import { type Secret } from 'jsonwebtoken';
 
 export function generateJwtTokenForAuthIdentity(
-  {
-    authIdentity,
-    actorType,
-  }: { authIdentity: AuthIdentityDTO; actorType: string },
+  { authIdentity, actorType }: { authIdentity: AuthIdentityDTO; actorType: string },
   {
     secret,
     expiresIn,
@@ -22,9 +16,7 @@ export function generateJwtTokenForAuthIdentity(
 ) {
   const expiresIn_ = expiresIn ?? options?.expiresIn;
   const entityIdKey = `${actorType}_id`;
-  const entityId = authIdentity?.app_metadata?.[entityIdKey] as
-    | string
-    | undefined;
+  const entityId = authIdentity?.app_metadata?.[entityIdKey] as string | undefined;
 
   const token = generateJwtToken(
     {

@@ -1,13 +1,4 @@
-import {
-  IsOptional,
-  IsString,
-  IsEnum,
-  IsInt,
-  Min,
-  IsBoolean,
-  IsDateString,
-  IsUUID,
-} from 'class-validator';
+import { IsOptional, IsString, IsEnum, IsInt, Min, IsBoolean, IsDateString, IsUUID } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { StockTypeEnum, stockTypeValues } from 'apps/wms/database/schemas/enum-values';
@@ -188,4 +179,3 @@ export class AdvancedInventoryFiltersDto {
   @IsOptional()
   sortOrder?: 'asc' | 'desc';
 }
-

@@ -9,37 +9,31 @@ import { FCMProvider } from '../providers/push/fcm.provider';
 
 @Injectable()
 export class ProviderFactory {
-    constructor(
-        private readonly configService: ConfigService,
-    ) { }
+  constructor(private readonly configService: ConfigService) {}
 
-    create(
-        providerName: string,
-        providerId: string,
-        config: Record<string, any>
-    ): NotificationProvider | null {
-        const name = providerName.toLowerCase();
+  create(providerName: string, providerId: string, config: Record<string, any>): NotificationProvider | null {
+    const name = providerName.toLowerCase();
 
-        // Resend Email Provider
-        if (name.includes('resend')) {
-            return new ResendProvider(providerId, config, this.configService);
-        }
-
-        // Twilio SMS Provider
-        if (name.includes('twilio')) {
-            return new TwilioProvider(providerId, config, this.configService);
-        }
-
-        // NHN KakaoTalk Provider
-        if (name.includes('nhn') || name.includes('kakao')) {
-            return new NHNProvider(providerId, config, this.configService);
-        }
-
-        // Firebase FCM Push Provider
-        if (name.includes('fcm')) {
-            return new FCMProvider(providerId, config, this.configService);
-        }
-
-        return null;
+    // Resend Email Provider
+    if (name.includes('resend')) {
+      return new ResendProvider(providerId, config, this.configService);
     }
+
+    // Twilio SMS Provider
+    if (name.includes('twilio')) {
+      return new TwilioProvider(providerId, config, this.configService);
+    }
+
+    // NHN KakaoTalk Provider
+    if (name.includes('nhn') || name.includes('kakao')) {
+      return new NHNProvider(providerId, config, this.configService);
+    }
+
+    // Firebase FCM Push Provider
+    if (name.includes('fcm')) {
+      return new FCMProvider(providerId, config, this.configService);
+    }
+
+    return null;
+  }
 }

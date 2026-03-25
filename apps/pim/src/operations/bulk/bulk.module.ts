@@ -8,4 +8,3 @@ import { ProductBulkService } from './product-bulk.service';
   exports: [ProductBulkService],
 })
 export class BulkModule {}
-

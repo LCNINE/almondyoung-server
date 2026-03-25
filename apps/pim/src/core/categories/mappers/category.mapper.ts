@@ -11,10 +11,12 @@ export class CategoryMapper {
   /**
    * Map entity to CategoryResponseDto
    */
-  static toDto(entity: CategoryEntity & {
-    childCount?: number;
-    productCount?: number;
-  }): CategoryResponseDto {
+  static toDto(
+    entity: CategoryEntity & {
+      childCount?: number;
+      productCount?: number;
+    },
+  ): CategoryResponseDto {
     return {
       id: entity.id,
       name: entity.name,
@@ -36,24 +38,26 @@ export class CategoryMapper {
   /**
    * Map array of entities to CategoryResponseDto array
    */
-  static toDtoArray(entities: Array<CategoryEntity & {
-    childCount?: number;
-    productCount?: number;
-  }>): CategoryResponseDto[] {
-    return entities.map(e => this.toDto(e));
+  static toDtoArray(
+    entities: Array<
+      CategoryEntity & {
+        childCount?: number;
+        productCount?: number;
+      }
+    >,
+  ): CategoryResponseDto[] {
+    return entities.map((e) => this.toDto(e));
   }
 
   /**
    * Map category tag groups entity to DTO
    * Converts Date to ISO string for API response
    */
-  static toCategoryTagGroupsDto(
-    entity: CategoryTagGroupsEntity
-  ): CategoryTagGroupsResponseDto {
+  static toCategoryTagGroupsDto(entity: CategoryTagGroupsEntity): CategoryTagGroupsResponseDto {
     return {
       categoryId: entity.categoryId,
       categoryName: entity.categoryName,
-      tagGroups: entity.tagGroups.map(group => ({
+      tagGroups: entity.tagGroups.map((group) => ({
         id: group.id,
         name: group.name,
         description: group.description,
@@ -64,7 +68,7 @@ export class CategoryMapper {
         inheritedFromCategoryId: group.inheritedFromCategoryId,
         inheritedFromCategoryName: group.inheritedFromCategoryName,
         isActive: group.isActive,
-        values: group.values.map(value => ({
+        values: group.values.map((value) => ({
           id: value.id,
           groupId: value.groupId,
           name: value.name,

@@ -1,6 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { wmsTables, wmsSchema, auditEventTypeEnum, auditSeverityEnum, DbTx } from '../../../database/schemas/wms-schema';
+import {
+  wmsTables,
+  wmsSchema,
+  auditEventTypeEnum,
+  auditSeverityEnum,
+  DbTx,
+} from '../../../database/schemas/wms-schema';
 import { DbService } from '@app/db';
 import { nowSeoul } from './time.util';
 import { eq, gte, lte, desc, and } from 'drizzle-orm';
@@ -13,8 +19,8 @@ export interface AuditContext {
 }
 
 export interface AuditLogData {
-  eventType: typeof auditEventTypeEnum.enumValues[number];
-  severity?: typeof auditSeverityEnum.enumValues[number];
+  eventType: (typeof auditEventTypeEnum.enumValues)[number];
+  severity?: (typeof auditSeverityEnum.enumValues)[number];
   action: string;
   module: string;
   description?: string;
@@ -35,9 +41,7 @@ export interface AuditLogData {
 export class AuditService {
   private readonly logger = new Logger(AuditService.name);
 
-  constructor(
-    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
-  ) {}
+  constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
 
   private get db() {
     return this.dbService.db;
@@ -46,11 +50,7 @@ export class AuditService {
   /**
    * 감사 로그 기록 (데이터베이스에 영속화)
    */
-  async log(
-    data: AuditLogData,
-    context?: AuditContext,
-    tx?: DbTx
-  ): Promise<void> {
+  async log(data: AuditLogData, context?: AuditContext, tx?: DbTx): Promise<void> {
     try {
       const db = tx || this.db;
 
@@ -82,17 +82,13 @@ export class AuditService {
 
       // 로컬 로그도 함께 남김
       const logLevel = this.mapSeverityToLogLevel(data.severity || 'INFO');
-      this.logger[logLevel](
-        `[AUDIT] ${data.module}.${data.action} - ${data.description || data.eventType}`,
-        {
-          eventType: data.eventType,
-          resourceType: data.resourceType,
-          resourceId: data.resourceId,
-          userId: context?.userId,
-          correlationId: context?.correlationId,
-        }
-      );
-
+      this.logger[logLevel](`[AUDIT] ${data.module}.${data.action} - ${data.description || data.eventType}`, {
+        eventType: data.eventType,
+        resourceType: data.resourceType,
+        resourceId: data.resourceId,
+        userId: context?.userId,
+        correlationId: context?.correlationId,
+      });
     } catch (error) {
       // 감사 로그 실패는 시스템을 중단시키지 않음
       this.logger.error('Failed to write audit log:', error, {
@@ -111,23 +107,27 @@ export class AuditService {
     description: string,
     context?: AuditContext,
     metadata?: Record<string, any>,
-    tx?: DbTx
+    tx?: DbTx,
   ): Promise<void> {
-    await this.log({
-      eventType: 'USER_ACTION',
-      severity: 'INFO',
-      action,
-      module,
-      description,
-      metadata,
-    }, context, tx);
+    await this.log(
+      {
+        eventType: 'USER_ACTION',
+        severity: 'INFO',
+        action,
+        module,
+        description,
+        metadata,
+      },
+      context,
+      tx,
+    );
   }
 
   /**
    * 리소스 변경 감사 로그
    */
   async logResourceChange(
-    eventType: typeof auditEventTypeEnum.enumValues[number],
+    eventType: (typeof auditEventTypeEnum.enumValues)[number],
     action: string,
     module: string,
     resourceType: string,
@@ -136,20 +136,24 @@ export class AuditService {
     changesBefore?: Record<string, any>,
     changesAfter?: Record<string, any>,
     context?: AuditContext,
-    tx?: DbTx
+    tx?: DbTx,
   ): Promise<void> {
-    await this.log({
-      eventType,
-      severity: 'INFO',
-      action,
-      module,
-      resourceType,
-      resourceId,
-      resourceName,
-      changesBefore,
-      changesAfter,
-      description: `${resourceType} ${resourceId} ${action}`,
-    }, context, tx);
+    await this.log(
+      {
+        eventType,
+        severity: 'INFO',
+        action,
+        module,
+        resourceType,
+        resourceId,
+        resourceName,
+        changesBefore,
+        changesAfter,
+        description: `${resourceType} ${resourceId} ${action}`,
+      },
+      context,
+      tx,
+    );
   }
 
   /**
@@ -164,20 +168,24 @@ export class AuditService {
       resourceId?: string;
       metadata?: Record<string, any>;
     },
-    tx?: DbTx
+    tx?: DbTx,
   ): Promise<void> {
-    await this.log({
-      eventType: 'SYSTEM_ERROR',
-      severity: 'ERROR',
-      action,
-      module,
-      description: `Error in ${module}.${action}: ${error.message}`,
-      resourceType: context?.resourceType,
-      resourceId: context?.resourceId,
-      metadata: context?.metadata,
-      errorMessage: error.message,
-      stackTrace: error.stack,
-    }, context, tx);
+    await this.log(
+      {
+        eventType: 'SYSTEM_ERROR',
+        severity: 'ERROR',
+        action,
+        module,
+        description: `Error in ${module}.${action}: ${error.message}`,
+        resourceType: context?.resourceType,
+        resourceId: context?.resourceId,
+        metadata: context?.metadata,
+        errorMessage: error.message,
+        stackTrace: error.stack,
+      },
+      context,
+      tx,
+    );
   }
 
   /**
@@ -187,18 +195,22 @@ export class AuditService {
     eventType: 'SYSTEM_STARTUP' | 'SYSTEM_ERROR' | 'SYSTEM_WARNING',
     module: string,
     description: string,
-    severity: typeof auditSeverityEnum.enumValues[number] = 'INFO',
+    severity: (typeof auditSeverityEnum.enumValues)[number] = 'INFO',
     metadata?: Record<string, any>,
-    tx?: DbTx
+    tx?: DbTx,
   ): Promise<void> {
-    await this.log({
-      eventType,
-      severity,
-      action: 'system_event',
-      module,
-      description,
-      metadata,
-    }, undefined, tx);
+    await this.log(
+      {
+        eventType,
+        severity,
+        action: 'system_event',
+        module,
+        description,
+        metadata,
+      },
+      undefined,
+      tx,
+    );
   }
 
   /**
@@ -268,9 +280,7 @@ export class AuditService {
     }
 
     // 조건 적용
-    const finalQuery = conditions.length > 0
-      ? query.where(and(...conditions))
-      : query;
+    const finalQuery = conditions.length > 0 ? query.where(and(...conditions)) : query;
 
     return finalQuery
       .orderBy(desc(wmsTables.auditLogs.timestamp))

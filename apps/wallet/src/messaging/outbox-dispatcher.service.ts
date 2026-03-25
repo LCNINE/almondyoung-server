@@ -44,22 +44,10 @@ export class OutboxDispatcherService {
   private readonly medusaWebhookUrl: string | undefined;
 
   constructor(private readonly dbService: DbService<WalletSchema>) {
-    this.batchSize = this.readPositiveInt(
-      process.env.WALLET_OUTBOX_BATCH_SIZE,
-      DEFAULT_OUTBOX_BATCH_SIZE,
-    );
-    this.maxAttempts = this.readPositiveInt(
-      process.env.WALLET_OUTBOX_MAX_ATTEMPTS,
-      DEFAULT_OUTBOX_MAX_ATTEMPTS,
-    );
-    this.baseDelayMs = this.readPositiveInt(
-      process.env.WALLET_OUTBOX_BASE_DELAY_MS,
-      DEFAULT_OUTBOX_BASE_DELAY_MS,
-    );
-    this.maxDelayMs = this.readPositiveInt(
-      process.env.WALLET_OUTBOX_MAX_DELAY_MS,
-      DEFAULT_OUTBOX_MAX_DELAY_MS,
-    );
+    this.batchSize = this.readPositiveInt(process.env.WALLET_OUTBOX_BATCH_SIZE, DEFAULT_OUTBOX_BATCH_SIZE);
+    this.maxAttempts = this.readPositiveInt(process.env.WALLET_OUTBOX_MAX_ATTEMPTS, DEFAULT_OUTBOX_MAX_ATTEMPTS);
+    this.baseDelayMs = this.readPositiveInt(process.env.WALLET_OUTBOX_BASE_DELAY_MS, DEFAULT_OUTBOX_BASE_DELAY_MS);
+    this.maxDelayMs = this.readPositiveInt(process.env.WALLET_OUTBOX_MAX_DELAY_MS, DEFAULT_OUTBOX_MAX_DELAY_MS);
     this.processingTimeoutSeconds = this.readPositiveInt(
       process.env.WALLET_OUTBOX_PROCESSING_TIMEOUT_SECONDS,
       DEFAULT_OUTBOX_PROCESSING_TIMEOUT_SECONDS,
@@ -136,9 +124,7 @@ export class OutboxDispatcherService {
 
   private async processEvent(event: OutboxRow): Promise<void> {
     try {
-      const shouldDispatch =
-        this.medusaWebhookUrl &&
-        OutboxDispatcherService.MEDUSA_EVENT_TYPES.has(event.eventType);
+      const shouldDispatch = this.medusaWebhookUrl && OutboxDispatcherService.MEDUSA_EVENT_TYPES.has(event.eventType);
 
       if (shouldDispatch) {
         await this.dispatchToMedusa(event);
@@ -177,9 +163,7 @@ export class OutboxDispatcherService {
 
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(
-        `OUTBOX_MEDUSA_HTTP_ERROR: POST ${this.medusaWebhookUrl} returned ${res.status}: ${text}`,
-      );
+      throw new Error(`OUTBOX_MEDUSA_HTTP_ERROR: POST ${this.medusaWebhookUrl} returned ${res.status}: ${text}`);
     }
 
     this.logger.debug(
@@ -191,14 +175,8 @@ export class OutboxDispatcherService {
     const nextAttempts = event.attempts + 1;
     const isTerminalFailure = nextAttempts >= this.maxAttempts;
     const isDeadLetter = isTerminalFailure && this.deadLetterEnabled;
-    const nextStatus = isDeadLetter
-      ? 'DEAD_LETTER'
-      : isTerminalFailure
-        ? 'FAILED'
-        : 'PENDING';
-    const nextAttemptAt = isTerminalFailure
-      ? null
-      : new Date(Date.now() + this.calculateBackoffMs(nextAttempts));
+    const nextStatus = isDeadLetter ? 'DEAD_LETTER' : isTerminalFailure ? 'FAILED' : 'PENDING';
+    const nextAttemptAt = isTerminalFailure ? null : new Date(Date.now() + this.calculateBackoffMs(nextAttempts));
     const { errorCode, errorMessage } = this.toOutboxError(error);
 
     await this.dbService.db
@@ -233,12 +211,7 @@ export class OutboxDispatcherService {
         deadLetteredAt: null,
         deadLetterReason: null,
       })
-      .where(
-        and(
-          eq(outboxEvents.status, 'PROCESSING'),
-          lte(outboxEvents.updatedAt, threshold),
-        ),
-      )
+      .where(and(eq(outboxEvents.status, 'PROCESSING'), lte(outboxEvents.updatedAt, threshold)))
       .returning({ id: outboxEvents.id });
 
     if (rows.length > 0) {
@@ -254,9 +227,7 @@ export class OutboxDispatcherService {
   private toOutboxError(error: unknown): { errorCode: string; errorMessage: string } {
     if (error instanceof Error) {
       const [maybeCode] = error.message.split(':');
-      const errorCode = maybeCode.startsWith('OUTBOX_')
-        ? maybeCode
-        : 'OUTBOX_PUBLISH_FAILED';
+      const errorCode = maybeCode.startsWith('OUTBOX_') ? maybeCode : 'OUTBOX_PUBLISH_FAILED';
       return { errorCode, errorMessage: error.message };
     }
     return { errorCode: 'OUTBOX_PUBLISH_FAILED', errorMessage: String(error) };

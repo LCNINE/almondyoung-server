@@ -9,14 +9,7 @@ import {
   Res,
   BadRequestException,
 } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiConsumes,
-  ApiQuery,
-  ApiBody,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiConsumes, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { ProductCsvService } from './product-csv.service';
@@ -24,7 +17,7 @@ import { ProductCsvService } from './product-csv.service';
 @ApiTags('Product CSV')
 @Controller('products/csv')
 export class ProductCsvController {
-  constructor(private readonly csvService: ProductCsvService) { }
+  constructor(private readonly csvService: ProductCsvService) {}
 
   @Get('template')
   @ApiOperation({
@@ -49,10 +42,7 @@ export class ProductCsvController {
     const csv = this.csvService.generateTemplate();
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader(
-      'Content-Disposition',
-      'attachment; filename=product-import-template.csv',
-    );
+    res.setHeader('Content-Disposition', 'attachment; filename=product-import-template.csv');
     res.send(csv);
   }
 
@@ -98,10 +88,7 @@ export class ProductCsvController {
   })
   @ApiResponse({ status: 400, description: '파일이 없거나 userId가 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  async bulkImport(
-    @UploadedFile() file: Express.Multer.File,
-    @Body('userId') userId: string,
-  ) {
+  async bulkImport(@UploadedFile() file: Express.Multer.File, @Body('userId') userId: string) {
     if (!file) {
       throw new BadRequestException('No file uploaded');
     }
@@ -143,13 +130,8 @@ export class ProductCsvController {
     },
   })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  async exportProducts(
-    @Query('productIds') productIds: string,
-    @Res() res: Response,
-  ) {
-    const ids = productIds
-      ? productIds.split(',').filter(Boolean)
-      : undefined;
+  async exportProducts(@Query('productIds') productIds: string, @Res() res: Response) {
+    const ids = productIds ? productIds.split(',').filter(Boolean) : undefined;
     const csv = await this.csvService.exportProducts(ids);
 
     const filename = `products-export-${new Date().toISOString().split('T')[0]}.csv`;
@@ -158,4 +140,3 @@ export class ProductCsvController {
     res.send(csv);
   }
 }
-

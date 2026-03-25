@@ -1,39 +1,22 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import {
-  SalesChannel,
-  NewSalesChannel,
-  UpdateSalesChannel,
-  DbTransaction
-} from '../../types';
-import {
-  type PimSchema,
-  salesChannels,
-  channelProducts,
-  channelCategories,
-} from '../../schema';
+import { SalesChannel, NewSalesChannel, UpdateSalesChannel, DbTransaction } from '../../types';
+import { type PimSchema, salesChannels, channelProducts, channelCategories } from '../../schema';
 import { eq, and, or, like, ilike, count, asc, desc, sql, SQL } from 'drizzle-orm';
 import { ChannelCategoryEntity, SalesChannelEntity, SalesChannelInsert } from '../../schema.types';
 import { SalesChannelWithCategory } from './mappers/sales-channel.mapper';
 
 @Injectable()
 export class SalesChannelsService {
-  constructor(
-    @InjectDb() private readonly db: DbService<PimSchema>,
-  ) { }
+  constructor(@InjectDb() private readonly db: DbService<PimSchema>) {}
 
   private get client() {
     return this.db.db;
   }
 
-  private async inTx<T>(
-    fn: (tx: DbTransaction) => Promise<T>,
-    tx?: DbTransaction,
-  ): Promise<T> {
+  private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction): Promise<T> {
     return tx ? fn(tx) : this.client.transaction(fn);
   }
-
-
 
   async createChannel(data: NewSalesChannel, tx?: DbTransaction): Promise<SalesChannelWithCategory> {
     if (!data.site || !data.name) {
@@ -63,12 +46,9 @@ export class SalesChannelsService {
         isActive: data.isActive !== false,
         apiEndpoint: data.apiEndpoint || null,
         credentials: data.credentials || null,
-      }
+      };
 
-      const result = await tx
-        .insert(salesChannels)
-        .values(channelData)
-        .returning()
+      const result = await tx.insert(salesChannels).values(channelData).returning();
 
       if (result.length === 0) {
         throw new Error('Failed to create sales channel');
@@ -80,10 +60,7 @@ export class SalesChannelsService {
       }
 
       return channel;
-    }, tx)
-
-
-
+    }, tx);
   }
 
   async tryGetChannelById(channelId: string, tx?: DbTransaction): Promise<SalesChannelWithCategory | null> {
@@ -95,12 +72,12 @@ export class SalesChannelsService {
       const result = await tx
         .select({
           channel: salesChannels,
-          category: channelCategories
+          category: channelCategories,
         })
         .from(salesChannels)
         .leftJoin(channelCategories, eq(salesChannels.categoryId, channelCategories.id))
         .where(eq(salesChannels.id, channelId))
-        .limit(1)
+        .limit(1);
 
       if (result.length === 0) {
         return null;
@@ -110,18 +87,19 @@ export class SalesChannelsService {
         ...result[0].channel,
         category: result[0].category,
       };
-
-    }, tx)
+    }, tx);
   }
 
-
-  async getChannels(filters?: {
-    isActive?: boolean;
-    type?: string;
-    search?: string;
-    page?: number;
-    limit?: number;
-  }, tx?: DbTransaction): Promise<{
+  async getChannels(
+    filters?: {
+      isActive?: boolean;
+      type?: string;
+      search?: string;
+      page?: number;
+      limit?: number;
+    },
+    tx?: DbTransaction,
+  ): Promise<{
     data: SalesChannelWithCategory[];
     total: number;
     page: number;
@@ -144,9 +122,7 @@ export class SalesChannelsService {
       }
 
       const whereClause = whereConditions.length > 0 ? and(...whereConditions) : undefined;
-      const countQuery = tx
-        .select({ count: count() })
-        .from(salesChannels);
+      const countQuery = tx.select({ count: count() }).from(salesChannels);
 
       if (whereClause) {
         countQuery.where(whereClause);
@@ -156,7 +132,7 @@ export class SalesChannelsService {
       const dataQuery = tx
         .select({
           salesChannel: salesChannels,
-          category: channelCategories
+          category: channelCategories,
         })
         .from(salesChannels)
         .leftJoin(channelCategories, eq(salesChannels.categoryId, channelCategories.id))
@@ -175,13 +151,16 @@ export class SalesChannelsService {
       }));
 
       return { data, total, page, limit };
-    }, tx)
+    }, tx);
   }
 
-  async getActiveChannels(filters?: {
-    page?: number;
-    limit?: number;
-  }, tx?: DbTransaction): Promise<{
+  async getActiveChannels(
+    filters?: {
+      page?: number;
+      limit?: number;
+    },
+    tx?: DbTransaction,
+  ): Promise<{
     data: SalesChannelWithCategory[];
     total: number;
     page: number;
@@ -189,10 +168,14 @@ export class SalesChannelsService {
   }> {
     return this.inTx(async (tx) => {
       return this.getChannels({ isActive: true, ...filters }, tx);
-    }, tx)
+    }, tx);
   }
 
-  async updateChannel(channelId: string, data: UpdateSalesChannel, tx?: DbTransaction): Promise<SalesChannelWithCategory> {
+  async updateChannel(
+    channelId: string,
+    data: UpdateSalesChannel,
+    tx?: DbTransaction,
+  ): Promise<SalesChannelWithCategory> {
     if (!channelId) {
       throw new Error('Channel ID is required');
     }
@@ -214,11 +197,7 @@ export class SalesChannelsService {
         updatedAt: new Date(),
       };
 
-      const result = await tx
-        .update(salesChannels)
-        .set(updateData)
-        .where(eq(salesChannels.id, channelId))
-        .returning();
+      const result = await tx.update(salesChannels).set(updateData).where(eq(salesChannels.id, channelId)).returning();
 
       if (result.length === 0) {
         throw new Error(`Failed to update channel: ${channelId}`);
@@ -230,7 +209,7 @@ export class SalesChannelsService {
       }
 
       return channel;
-    }, tx)
+    }, tx);
   }
 
   async deleteChannel(channelId: string, tx?: DbTransaction): Promise<void> {
@@ -249,17 +228,16 @@ export class SalesChannelsService {
         .where(eq(channelProducts.channelId, channelId));
 
       if (relatedProducts[0].count > 0) {
-        throw new Error(`Cannot delete channel with existing products. Found ${relatedProducts[0].count} related products.`);
+        throw new Error(
+          `Cannot delete channel with existing products. Found ${relatedProducts[0].count} related products.`,
+        );
       }
-      const deleteResult = await tx
-        .delete(salesChannels)
-        .where(eq(salesChannels.id, channelId))
-        .returning();
+      const deleteResult = await tx.delete(salesChannels).where(eq(salesChannels.id, channelId)).returning();
 
       if (deleteResult.length === 0) {
         throw new Error(`Failed to delete channel: ${channelId}`);
       }
-    }, tx)
+    }, tx);
   }
 
   async setChannelActive(channelId: string, isActive: boolean, tx?: DbTransaction): Promise<SalesChannelWithCategory> {
@@ -270,9 +248,8 @@ export class SalesChannelsService {
     return this.inTx(async (tx) => {
       const updated = await this.updateChannel(channelId, { isActive }, tx);
       return updated;
-    }, tx)
+    }, tx);
   }
-
 
   //   async getChannelByType(type: string, tx?: DbTransaction): Promise<SalesChannelWithCategory | null> {
   //     if (!type) {
@@ -319,47 +296,50 @@ export class SalesChannelsService {
   //     };
   //   }
 
-    async validateChannelConfig(site: string, config: any): Promise<{
-      isValid: boolean;
-      errors: string[];
-    }> {
-      if (!site) {
-        return {
-          isValid: false,
-          errors: ['Channel type is required']
-        };
-      }
-
-      const errors: string[] = [];
-
-      switch (site) {
-        case 'medusa':
-          if (config && !config.baseUrl) {
-            errors.push('Medusa channel requires baseUrl in config');
-          }
-          break;
-
-        case 'coupang':
-          if (config && (!config.accessKey || !config.secretKey)) {
-            errors.push('Coupang channel requires accessKey and secretKey in config');
-          }
-          break;
-
-        case 'naver':
-          if (config && (!config.clientId || !config.clientSecret)) {
-            errors.push('SmartStore channel requires clientId and clientSecret in config');
-          }
-          break;
-
-        default:
-          if (!['medusa', 'naver', 'coupang', 'phone_order', 'other'].includes(site)) {
-            errors.push(`Unsupported channel type: ${site}. Supported types are: medusa, coupang, smartstore`);
-          }
-      }
-
+  async validateChannelConfig(
+    site: string,
+    config: any,
+  ): Promise<{
+    isValid: boolean;
+    errors: string[];
+  }> {
+    if (!site) {
       return {
-        isValid: errors.length === 0,
-        errors
+        isValid: false,
+        errors: ['Channel type is required'],
       };
     }
-} 
+
+    const errors: string[] = [];
+
+    switch (site) {
+      case 'medusa':
+        if (config && !config.baseUrl) {
+          errors.push('Medusa channel requires baseUrl in config');
+        }
+        break;
+
+      case 'coupang':
+        if (config && (!config.accessKey || !config.secretKey)) {
+          errors.push('Coupang channel requires accessKey and secretKey in config');
+        }
+        break;
+
+      case 'naver':
+        if (config && (!config.clientId || !config.clientSecret)) {
+          errors.push('SmartStore channel requires clientId and clientSecret in config');
+        }
+        break;
+
+      default:
+        if (!['medusa', 'naver', 'coupang', 'phone_order', 'other'].includes(site)) {
+          errors.push(`Unsupported channel type: ${site}. Supported types are: medusa, coupang, smartstore`);
+        }
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors,
+    };
+  }
+}

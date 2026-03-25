@@ -29,11 +29,7 @@ export class SubscriptionException extends HttpException {
  */
 export class SubscriptionNotFoundException extends SubscriptionException {
   constructor() {
-    super(
-      '활성 구독 계약이 없습니다.',
-      'SUBSCRIPTION_NOT_FOUND',
-      HttpStatus.NOT_FOUND,
-    );
+    super('활성 구독 계약이 없습니다.', 'SUBSCRIPTION_NOT_FOUND', HttpStatus.NOT_FOUND);
   }
 }
 
@@ -42,11 +38,7 @@ export class SubscriptionNotFoundException extends SubscriptionException {
  */
 export class EntitlementNotFoundException extends SubscriptionException {
   constructor() {
-    super(
-      '유효한 구독 권한이 없습니다.',
-      'ENTITLEMENT_NOT_FOUND',
-      HttpStatus.NOT_FOUND,
-    );
+    super('유효한 구독 권한이 없습니다.', 'ENTITLEMENT_NOT_FOUND', HttpStatus.NOT_FOUND);
   }
 }
 
@@ -64,11 +56,7 @@ export class PlanNotFoundException extends SubscriptionException {
  */
 export class ActiveSubscriptionExistsException extends SubscriptionException {
   constructor() {
-    super(
-      '이미 활성 구독이 존재합니다.',
-      'ACTIVE_SUBSCRIPTION_EXISTS',
-      HttpStatus.CONFLICT,
-    );
+    super('이미 활성 구독이 존재합니다.', 'ACTIVE_SUBSCRIPTION_EXISTS', HttpStatus.CONFLICT);
   }
 }
 

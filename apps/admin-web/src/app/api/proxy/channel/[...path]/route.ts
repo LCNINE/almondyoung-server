@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 import { forwardRequest } from '../../_lib/forward';
 
-const CHANNEL_ADAPTER_SERVICE_URL = process.env.CHANNEL_ADAPTER_SERVICE_URL ?? 'http://localhost:3070';
+const CHANNEL_ADAPTER_SERVICE_URL =
+  process.env.CHANNEL_ADAPTER_SERVICE_URL ?? 'http://localhost:3070';
 
 type Params = { params: Promise<{ path: string[] }> };
 

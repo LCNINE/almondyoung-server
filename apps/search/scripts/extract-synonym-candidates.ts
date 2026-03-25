@@ -43,20 +43,14 @@ function parseArgs(): ExtractOptions {
   }
 
   const positional = args.filter((arg) => !arg.startsWith('--'));
-  const benchmarkFile = path.resolve(
-    positional[0] ?? 'apps/search/benchmark-results-3.csv',
-  );
+  const benchmarkFile = path.resolve(positional[0] ?? 'apps/search/benchmark-results-3.csv');
 
   const getOption = (name: string): string | undefined => {
     const found = args.find((arg) => arg.startsWith(`${name}=`));
     return found ? found.slice(name.length + 1) : undefined;
   };
 
-  const parsePositiveInt = (
-    raw: string | undefined,
-    name: string,
-    defaultValue: number,
-  ): number => {
+  const parsePositiveInt = (raw: string | undefined, name: string, defaultValue: number): number => {
     if (raw === undefined) return defaultValue;
     const parsed = Number(raw);
     if (!Number.isInteger(parsed) || parsed < 1) {
@@ -65,11 +59,7 @@ function parseArgs(): ExtractOptions {
     return parsed;
   };
 
-  const parseNonNegativeInt = (
-    raw: string | undefined,
-    name: string,
-    defaultValue: number,
-  ): number => {
+  const parseNonNegativeInt = (raw: string | undefined, name: string, defaultValue: number): number => {
     if (raw === undefined) return defaultValue;
     const parsed = Number(raw);
     if (!Number.isInteger(parsed) || parsed < 0) {
@@ -78,11 +68,7 @@ function parseArgs(): ExtractOptions {
     return parsed;
   };
 
-  const parseUnitFloat = (
-    raw: string | undefined,
-    name: string,
-    defaultValue: number,
-  ): number => {
+  const parseUnitFloat = (raw: string | undefined, name: string, defaultValue: number): number => {
     if (raw === undefined) return defaultValue;
     const parsed = Number(raw);
     if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
@@ -100,8 +86,7 @@ function parseArgs(): ExtractOptions {
   const zeroFile = resolveZeroFile(benchmarkFile, zeroFileRaw);
 
   const outputFile = path.resolve(
-    getOption('--output-file') ??
-      benchmarkFile.replace(/\.csv$/i, '-synonym-candidates.csv'),
+    getOption('--output-file') ?? benchmarkFile.replace(/\.csv$/i, '-synonym-candidates.csv'),
   );
 
   return {
@@ -109,23 +94,11 @@ function parseArgs(): ExtractOptions {
     zeroFile,
     outputFile,
     sourceMode: sourceModeRaw,
-    lowThreshold: parseNonNegativeInt(
-      getOption('--low-threshold'),
-      '--low-threshold',
-      2,
-    ),
-    minCandidateTotal: parsePositiveInt(
-      getOption('--min-candidate-total'),
-      '--min-candidate-total',
-      3,
-    ),
+    lowThreshold: parseNonNegativeInt(getOption('--low-threshold'), '--low-threshold', 2),
+    minCandidateTotal: parsePositiveInt(getOption('--min-candidate-total'), '--min-candidate-total', 3),
     minScore: parseUnitFloat(getOption('--min-score'), '--min-score', 0.72),
     top: parsePositiveInt(getOption('--top'), '--top', 3),
-    maxEditDistance: parsePositiveInt(
-      getOption('--max-edit-distance'),
-      '--max-edit-distance',
-      2,
-    ),
+    maxEditDistance: parsePositiveInt(getOption('--max-edit-distance'), '--max-edit-distance', 2),
   };
 }
 
@@ -155,10 +128,7 @@ function printUsage(): void {
   );
 }
 
-function resolveZeroFile(
-  benchmarkFile: string,
-  explicit: string | undefined,
-): string | null {
+function resolveZeroFile(benchmarkFile: string, explicit: string | undefined): string | null {
   if (explicit !== undefined) {
     const resolved = path.resolve(explicit);
     return fs.existsSync(resolved) ? resolved : null;
@@ -239,19 +209,9 @@ function parseBenchmarkRows(csvFile: string): BenchmarkRow[] {
   }
 
   const header = parsed[0] ?? [];
-  const expected = [
-    'keyword',
-    'total',
-    'rank1',
-    'rank2',
-    'rank3',
-    'rank10',
-    'rank20',
-  ];
+  const expected = ['keyword', 'total', 'rank1', 'rank2', 'rank3', 'rank10', 'rank20'];
   if (!expected.every((value, idx) => header[idx] === value)) {
-    throw new Error(
-      `Unexpected benchmark header. expected=${expected.join(',')} actual=${header.join(',')}`,
-    );
+    throw new Error(`Unexpected benchmark header. expected=${expected.join(',')} actual=${header.join(',')}`);
   }
 
   const rows: BenchmarkRow[] = [];
@@ -330,10 +290,7 @@ function levenshteinDistance(a: string, b: string): number {
   return prev[b.length];
 }
 
-function resolveAllowedDistance(
-  maxLen: number,
-  baseMaxEditDistance: number,
-): number {
+function resolveAllowedDistance(maxLen: number, baseMaxEditDistance: number): number {
   if (maxLen <= 4) {
     return 1;
   }
@@ -374,17 +331,10 @@ function calculateCandidate(
   } else {
     const maxLen = Math.max(sourceCompact.length, candidateCompact.length);
     const distance = levenshteinDistance(sourceCompact, candidateCompact);
-    const allowedDistance = resolveAllowedDistance(
-      maxLen,
-      options.maxEditDistance,
-    );
+    const allowedDistance = resolveAllowedDistance(maxLen, options.maxEditDistance);
 
-    const contains =
-      sourceCompact.includes(candidateCompact) ||
-      candidateCompact.includes(sourceCompact);
-    const prefix =
-      sourceCompact.startsWith(candidateCompact) ||
-      candidateCompact.startsWith(sourceCompact);
+    const contains = sourceCompact.includes(candidateCompact) || candidateCompact.includes(sourceCompact);
+    const prefix = sourceCompact.startsWith(candidateCompact) || candidateCompact.startsWith(sourceCompact);
 
     if (distance > allowedDistance && !contains) {
       return null;
@@ -431,11 +381,7 @@ function escapeCSV(value: string): string {
   return value;
 }
 
-function inferSourceKeywords(
-  rows: BenchmarkRow[],
-  zeroKeywords: string[],
-  options: ExtractOptions,
-): string[] {
+function inferSourceKeywords(rows: BenchmarkRow[], zeroKeywords: string[], options: ExtractOptions): string[] {
   const set = new Set<string>();
 
   if (options.sourceMode === 'zero') {
@@ -501,16 +447,10 @@ function main(): void {
   for (const sourceKeyword of sourceKeywords) {
     const sourceRow = rowMap.get(sourceKeyword);
     const sourceTotal =
-      sourceRow && typeof sourceRow.total === 'number'
-        ? sourceRow.total
-        : sourceRow?.total === 'ERROR'
-          ? 'ERROR'
-          : '';
+      sourceRow && typeof sourceRow.total === 'number' ? sourceRow.total : sourceRow?.total === 'ERROR' ? 'ERROR' : '';
 
     const candidates = candidateRows
-      .map((candidateRow) =>
-        calculateCandidate(sourceKeyword, candidateRow, options),
-      )
+      .map((candidateRow) => calculateCandidate(sourceKeyword, candidateRow, options))
       .filter((candidate): candidate is Candidate => candidate !== null)
       .sort((a, b) => {
         if (b.score !== a.score) {

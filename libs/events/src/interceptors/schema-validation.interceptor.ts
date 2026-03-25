@@ -4,13 +4,7 @@
  * Consumer에서 수신한 메시지의 스키마를 검증
  */
 
-import {
-  Injectable,
-  NestInterceptor,
-  ExecutionContext,
-  CallHandler,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, NestInterceptor, ExecutionContext, CallHandler, Logger } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { KafkaContext } from '@nestjs/microservices';
 import { Reflector } from '@nestjs/core';
@@ -21,11 +15,7 @@ import {
   DEFAULT_SCHEMA_VALIDATION_OPTIONS,
   SchemaValidationError,
 } from '@packages/event-contracts/types';
-import {
-  validateSchemaOrThrow,
-  isZodSchema,
-  formatValidationErrors,
-} from '../validation/schema-validation.util';
+import { validateSchemaOrThrow, isZodSchema, formatValidationErrors } from '../validation/schema-validation.util';
 import { EVENT_TYPE_FILTER } from '../consumers/decorators';
 
 @Injectable()
@@ -45,16 +35,14 @@ export class SchemaValidationInterceptor implements NestInterceptor {
     };
 
     // topic -> StreamConfig 매핑
-    this.streamConfigMap = new Map(
-      streams.map((stream) => [stream.topic.topic, stream]),
-    );
+    this.streamConfigMap = new Map(streams.map((stream) => [stream.topic.topic, stream]));
   }
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
     if (context.getType() === 'http') {
       return next.handle();
     }
-    
+
     // 스키마 검증이 비활성화된 경우 바로 통과
     if (!this.validationOptions.validateOnConsume) {
       return next.handle();
@@ -78,9 +66,7 @@ export class SchemaValidationInterceptor implements NestInterceptor {
       if (!value) {
         throw new Error('Kafka message value is null or undefined');
       }
-      const jsonString: string = Buffer.isBuffer(value)
-        ? value.toString('utf-8')
-        : String(value);
+      const jsonString: string = Buffer.isBuffer(value) ? value.toString('utf-8') : String(value);
       const envelope = JSON.parse(jsonString) as MessageEnvelope;
 
       // 이벤트 타입별 스키마 검증
@@ -88,10 +74,7 @@ export class SchemaValidationInterceptor implements NestInterceptor {
       const eventConfig = streamConfig.events[eventType];
 
       if (!eventConfig) {
-        this.logger.warn(
-          `Event type not found in stream config: ${eventType}`,
-          { topic },
-        );
+        this.logger.warn(`Event type not found in stream config: ${eventType}`, { topic });
         return next.handle();
       }
 
@@ -104,11 +87,7 @@ export class SchemaValidationInterceptor implements NestInterceptor {
 
       // 스키마 검증 수행
       try {
-        validateSchemaOrThrow(
-          schema,
-          envelope.payload,
-          `${topic}.${eventType} (consumer)`,
-        );
+        validateSchemaOrThrow(schema, envelope.payload, `${topic}.${eventType} (consumer)`);
 
         this.logger.debug(`✅ Consumer schema validation passed: ${eventType}`, {
           topic,
@@ -116,22 +95,17 @@ export class SchemaValidationInterceptor implements NestInterceptor {
         });
       } catch (error) {
         if (error instanceof SchemaValidationError) {
-          this.logger.error(
-            `❌ Consumer schema validation failed: ${eventType}`,
-            {
-              topic,
-              messageId: envelope.messageId,
-              errors: formatValidationErrors(error.errors),
-            },
-          );
+          this.logger.error(`❌ Consumer schema validation failed: ${eventType}`, {
+            topic,
+            messageId: envelope.messageId,
+            errors: formatValidationErrors(error.errors),
+          });
 
           if (this.validationOptions.throwOnValidationError) {
             // 에러를 던지면 Exception Filter가 처리함 (DLQ로 전송)
             throw error;
           } else {
-            this.logger.warn(
-              `⚠️  Schema validation failed but throwOnValidationError is false`,
-            );
+            this.logger.warn(`⚠️  Schema validation failed but throwOnValidationError is false`);
           }
         } else {
           throw error;
@@ -155,4 +129,3 @@ export class SchemaValidationInterceptor implements NestInterceptor {
     return next.handle();
   }
 }
-

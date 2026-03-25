@@ -3,7 +3,13 @@ import * as os from 'os';
 import { HttpModule } from '@nestjs/axios';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ClsModule } from 'nestjs-cls';
-import { EventsModule, StreamPublisher, EventChainService, EventTrackingService, EventTraceApiModule } from '@app/events';
+import {
+  EventsModule,
+  StreamPublisher,
+  EventChainService,
+  EventTrackingService,
+  EventTraceApiModule,
+} from '@app/events';
 import { NaverSmartstoreAdapter } from './adapters/naver/naver-smartstore.adapter';
 import { CoupangAdapter } from './adapters/coupang/coupang.adapter';
 import { OrderEventPublisher } from './services/order-event.publisher';
@@ -15,7 +21,14 @@ import { SyncStatusController } from './controllers/sync-status.controller';
 import { ChannelAdapterService } from './services/channel-adapter.service';
 import { NullEventPublisher } from './services/null-event-publisher.service';
 import { DbModule } from '@app/db';
-import { CHANNEL_ADAPTER_STREAM, ORDER_STREAM, FULFILLMENT_STREAM, PRODUCT_STREAM, MEMBERSHIP_STREAM, USER_STREAM } from '@packages/event-contracts/streams';
+import {
+  CHANNEL_ADAPTER_STREAM,
+  ORDER_STREAM,
+  FULFILLMENT_STREAM,
+  PRODUCT_STREAM,
+  MEMBERSHIP_STREAM,
+  USER_STREAM,
+} from '@packages/event-contracts/streams';
 import { FulfillmentEventsConsumer } from './consumers/fulfillment-events.consumer';
 import { UserEventConsumer } from './consumers/user-event.consumer';
 import * as schema from './schema';
@@ -91,10 +104,10 @@ function createKafkaConfig() {
     sasl:
       process.env.KAFKA_API_KEY && process.env.KAFKA_API_SECRET
         ? {
-          mechanism: 'plain' as const,
-          username: process.env.KAFKA_API_KEY,
-          password: process.env.KAFKA_API_SECRET,
-        }
+            mechanism: 'plain' as const,
+            username: process.env.KAFKA_API_KEY,
+            password: process.env.KAFKA_API_SECRET,
+          }
         : undefined,
   };
 }
@@ -120,23 +133,23 @@ function createKafkaConfig() {
     // 운영 환경에서만 실제 EventsModule 활성화
     ...(process.env.NODE_ENV === 'production'
       ? [
-        EventsModule.forRoot({
-          streams: [
-            CHANNEL_ADAPTER_STREAM,
-            ORDER_STREAM,
-            FULFILLMENT_STREAM,
-            PRODUCT_STREAM,
-            MEMBERSHIP_STREAM,
-            USER_STREAM,
-          ],
-          serviceName: 'channel-adapter',
-          kafka: createKafkaConfig(),
-          validation: {
-            validateOnPublish: true,
-            throwOnValidationError: true,
-          },
-        }),
-      ]
+          EventsModule.forRoot({
+            streams: [
+              CHANNEL_ADAPTER_STREAM,
+              ORDER_STREAM,
+              FULFILLMENT_STREAM,
+              PRODUCT_STREAM,
+              MEMBERSHIP_STREAM,
+              USER_STREAM,
+            ],
+            serviceName: 'channel-adapter',
+            kafka: createKafkaConfig(),
+            validation: {
+              validateOnPublish: true,
+              throwOnValidationError: true,
+            },
+          }),
+        ]
       : []),
   ],
   controllers: [
@@ -218,20 +231,20 @@ function createKafkaConfig() {
     // 개발/테스트 환경: NullEventPublisher를 토큰으로 제공
     ...(process.env.NODE_ENV !== 'production'
       ? [
-        {
-          provide: 'STREAM_PUBLISHER_channel-adapter.events.v1',
-          useClass: NullEventPublisher,
-        },
-        {
-          provide: 'STREAM_PUBLISHER_orders.events.v1',
-          useClass: NullEventPublisher,
-        },
-        {
-          provide: 'STREAM_PUBLISHER_users.events.v1',
-          useClass: NullEventPublisher,
-        },
-      ]
+          {
+            provide: 'STREAM_PUBLISHER_channel-adapter.events.v1',
+            useClass: NullEventPublisher,
+          },
+          {
+            provide: 'STREAM_PUBLISHER_orders.events.v1',
+            useClass: NullEventPublisher,
+          },
+          {
+            provide: 'STREAM_PUBLISHER_users.events.v1',
+            useClass: NullEventPublisher,
+          },
+        ]
       : []),
   ],
 })
-export class AdapterModule { }
+export class AdapterModule {}

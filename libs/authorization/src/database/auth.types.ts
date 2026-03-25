@@ -31,4 +31,3 @@ export interface JwtPayload {
   roles: string[];
   login_id?: string;
 }
-

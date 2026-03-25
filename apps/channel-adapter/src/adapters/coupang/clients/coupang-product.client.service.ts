@@ -24,23 +24,13 @@ export class CoupangProductClient extends CoupangBaseClient {
    * @param quantity 변경할 재고 수량
    * @returns API 응답 데이터
    */
-  async updateStock(
-    vendorItemId: number,
-    quantity: number,
-  ): Promise<CoupangUpdateStockResponse> {
+  async updateStock(vendorItemId: number, quantity: number): Promise<CoupangUpdateStockResponse> {
     const config = this.getApiConfig();
     try {
-      this.logger.log(
-        `📦 쿠팡 재고 변경 요청: vendorItemId=${vendorItemId}, quantity=${quantity}`,
-      );
+      this.logger.log(`📦 쿠팡 재고 변경 요청: vendorItemId=${vendorItemId}, quantity=${quantity}`);
 
       const path = `/v2/providers/seller_api/apis/api/v1/marketplace/vendor-items/${vendorItemId}/quantities/${quantity}`;
-      const authorization = this.generateAuthHeader(
-        config.accessKey,
-        config.secretKey,
-        'PUT',
-        path,
-      );
+      const authorization = this.generateAuthHeader(config.accessKey, config.secretKey, 'PUT', path);
       const url = `${config.apiEndpoint}${path}`;
 
       const response = await firstValueFrom(

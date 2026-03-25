@@ -40,7 +40,7 @@ export class SkuResponseDto {
   @ApiProperty({
     description: '재고 유형',
     enum: ['physical', 'infinite', 'drop_shipped', 'consignment'],
-    default: 'physical'
+    default: 'physical',
   })
   stockType: 'physical' | 'infinite' | 'drop_shipped' | 'consignment';
 
@@ -60,8 +60,8 @@ export class SkuResponseDto {
     required: false,
     type: String,
     description: '옵션 식별자',
-    example: "M / 흰색",
-    nullable: true
+    example: 'M / 흰색',
+    nullable: true,
   })
   optionKey?: string | null;
 
@@ -141,7 +141,7 @@ export class SkuResponseDto {
   @ApiProperty({
     description: 'SKU images',
     type: [SkuImageDto],
-    required: false
+    required: false,
   })
   images?: SkuImageDto[];
 

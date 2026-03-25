@@ -1,23 +1,5 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Delete,
-  Body,
-  Param,
-  Query,
-  HttpStatus,
-  HttpCode,
-} from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiParam,
-  ApiQuery,
-  ApiBody,
-} from '@nestjs/swagger';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpStatus, HttpCode } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { TagsService } from './tags.service';
 import {
   CreateTagGroupDto,
@@ -39,8 +21,8 @@ import { TagValueWithGroupNameDto } from './dto/tag-value-with-group-name.dto';
 export class TagsController {
   constructor(
     @InjectDb() private readonly db: DbService<PimSchema>,
-    private readonly tagsService: TagsService
-  ) { }
+    private readonly tagsService: TagsService,
+  ) {}
 
   // ===== TAG GROUPS =====
 
@@ -59,9 +41,7 @@ export class TagsController {
     status: HttpStatus.BAD_REQUEST,
     description: '잘못된 요청',
   })
-  async createTagGroup(
-    @Body() dto: CreateTagGroupDto,
-  ): Promise<TagGroupResponseDto> {
+  async createTagGroup(@Body() dto: CreateTagGroupDto): Promise<TagGroupResponseDto> {
     const tagGroup = await this.tagsService.createTagGroup(dto);
     return TagMapper.toGroupDto(tagGroup);
   }
@@ -76,9 +56,7 @@ export class TagsController {
     description: '태그 그룹 목록 조회 성공',
     type: [TagGroupResponseDto],
   })
-  async listTagGroups(
-    @Query() query: TagGroupQueryDto,
-  ): Promise<TagGroupResponseDto[]> {
+  async listTagGroups(@Query() query: TagGroupQueryDto): Promise<TagGroupResponseDto[]> {
     const filters = query.isActive !== undefined ? { isActive: query.isActive } : undefined;
     const tagGroups = await this.tagsService.listTagGroups(filters);
     return tagGroups.map(TagMapper.toGroupDto);
@@ -108,7 +86,6 @@ export class TagsController {
     return TagMapper.toGroupDto(tagGroup);
   }
 
-
   @Put('groups/:id')
   @ApiOperation({
     summary: '태그 그룹 수정',
@@ -129,10 +106,7 @@ export class TagsController {
     status: HttpStatus.NOT_FOUND,
     description: '태그 그룹을 찾을 수 없음',
   })
-  async updateTagGroup(
-    @Param('id') id: string,
-    @Body() dto: UpdateTagGroupDto,
-  ): Promise<TagGroupResponseDto> {
+  async updateTagGroup(@Param('id') id: string, @Body() dto: UpdateTagGroupDto): Promise<TagGroupResponseDto> {
     return await this.db.db.transaction(async (tx) => {
       await this.tagsService.updateTagGroup(id, dto, tx);
       const tagGroup = await this.tagsService.getTagGroup(id, tx);
@@ -144,8 +118,7 @@ export class TagsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary: '태그 그룹 삭제',
-    description:
-      '특정 태그 그룹을 삭제합니다. 태그 값이 있는 경우 삭제할 수 없습니다.',
+    description: '특정 태그 그룹을 삭제합니다. 태그 값이 있는 경우 삭제할 수 없습니다.',
   })
   @ApiParam({
     name: 'id',
@@ -206,7 +179,6 @@ export class TagsController {
     });
   }
 
-
   @Get('values/:id')
   @ApiOperation({
     summary: '태그 값 단일 조회',
@@ -258,10 +230,7 @@ export class TagsController {
     status: HttpStatus.BAD_REQUEST,
     description: '중복된 태그 값',
   })
-  async updateTagValue(
-    @Param('id') id: string,
-    @Body() dto: UpdateTagValueDto,
-  ): Promise<TagValueWithGroupNameDto> {
+  async updateTagValue(@Param('id') id: string, @Body() dto: UpdateTagValueDto): Promise<TagValueWithGroupNameDto> {
     return await this.db.db.transaction(async (tx) => {
       await this.tagsService.updateTagValue(id, dto, tx);
       const tagValue = await this.tagsService.getTagValue(id, tx);
@@ -293,4 +262,3 @@ export class TagsController {
     return this.tagsService.deleteTagValue(id);
   }
 }
-

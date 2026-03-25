@@ -57,10 +57,10 @@ export class BannerMapper {
    * Map arrays to DTOs
    */
   static toDtoArray(entities: BannerEntity[]): BannerResponseDto[] {
-    return entities.map(e => this.toDto(e));
+    return entities.map((e) => this.toDto(e));
   }
 
   static toGroupDtoArray(entities: BannerGroupEntity[]): BannerGroupResponseDto[] {
-    return entities.map(e => this.toGroupDto(e));
+    return entities.map((e) => this.toGroupDto(e));
   }
 }

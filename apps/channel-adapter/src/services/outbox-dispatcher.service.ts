@@ -49,7 +49,7 @@ export class OutboxDispatcherService implements OnModuleInit {
     private readonly channelAdapterPublisher: StreamPublisher<ChannelAdapterEvents>,
     @InjectStreamPublisher(ORDER_STREAM.topic.topic)
     private readonly ordersPublisher: StreamPublisher<OrderEvents>,
-  ) { }
+  ) {}
 
   onModuleInit() {
     this.logger.log('OutboxDispatcher 초기화 완료');

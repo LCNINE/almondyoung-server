@@ -7,7 +7,8 @@ import { AdminUsersQuery } from '@/lib/types/dto/user';
  */
 export const usersQueryKeys = {
   all: ['users'] as const,
-  list: (query: AdminUsersQuery) => [...usersQueryKeys.all, 'list', query] as const,
+  list: (query: AdminUsersQuery) =>
+    [...usersQueryKeys.all, 'list', query] as const,
   user: (id: string) => [...usersQueryKeys.all, id] as const,
   userRolesById: (userId: string) =>
     [...usersQueryKeys.all, userId, 'roles'] as const,

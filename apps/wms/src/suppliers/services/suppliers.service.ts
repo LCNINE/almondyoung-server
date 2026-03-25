@@ -24,7 +24,7 @@ export class SuppliersService {
   constructor(
     @InjectTypedDb<typeof wmsSchema>()
     private readonly dbService: DbService<typeof wmsSchema>,
-  ) { }
+  ) {}
 
   private get db() {
     return this.dbService.db;
@@ -65,14 +65,12 @@ export class SuppliersService {
         .returning();
 
       if (dto.categoryIds && dto.categoryIds.length > 0) {
-        await trx
-          .insert(supplierCategoryMappings)
-          .values(
-            dto.categoryIds.map(categoryId => ({
-              supplierId: supplier.id,
-              categoryId,
-            }))
-          );
+        await trx.insert(supplierCategoryMappings).values(
+          dto.categoryIds.map((categoryId) => ({
+            supplierId: supplier.id,
+            categoryId,
+          })),
+        );
       }
 
       this.logger.log(`Created supplier ${supplier.id} with name "${supplier.name}"`);
@@ -85,11 +83,7 @@ export class SuppliersService {
     return this.inTx(async (trx) => {
       const { suppliers, supplierCategoryMappings } = wmsTables;
 
-      const [existing] = await trx
-        .select()
-        .from(suppliers)
-        .where(eq(suppliers.id, id))
-        .limit(1);
+      const [existing] = await trx.select().from(suppliers).where(eq(suppliers.id, id)).limit(1);
 
       if (!existing) {
         throw new NotFoundException(`Supplier with ID ${id} not found`);
@@ -117,25 +111,22 @@ export class SuppliersService {
           description: dto.description !== undefined ? dto.description : existing.description,
           memo: dto.memo !== undefined ? dto.memo : existing.memo,
           purchaseManagerId: dto.purchaseManagerId !== undefined ? dto.purchaseManagerId : existing.purchaseManagerId,
-          defaultWarehouseId: dto.defaultWarehouseId !== undefined ? dto.defaultWarehouseId : existing.defaultWarehouseId,
+          defaultWarehouseId:
+            dto.defaultWarehouseId !== undefined ? dto.defaultWarehouseId : existing.defaultWarehouseId,
           updatedAt: new Date(),
         })
         .where(eq(suppliers.id, id));
 
       if (dto.categoryIds !== undefined) {
-        await trx
-          .delete(supplierCategoryMappings)
-          .where(eq(supplierCategoryMappings.supplierId, id));
+        await trx.delete(supplierCategoryMappings).where(eq(supplierCategoryMappings.supplierId, id));
 
         if (dto.categoryIds.length > 0) {
-          await trx
-            .insert(supplierCategoryMappings)
-            .values(
-              dto.categoryIds.map(categoryId => ({
-                supplierId: id,
-                categoryId,
-              }))
-            );
+          await trx.insert(supplierCategoryMappings).values(
+            dto.categoryIds.map((categoryId) => ({
+              supplierId: id,
+              categoryId,
+            })),
+          );
         }
       }
 
@@ -149,10 +140,7 @@ export class SuppliersService {
     return this.inTx(async (trx) => {
       const { suppliers } = wmsTables;
 
-      const result = await trx
-        .delete(suppliers)
-        .where(eq(suppliers.id, id))
-        .returning();
+      const result = await trx.delete(suppliers).where(eq(suppliers.id, id)).returning();
 
       if (result.length === 0) {
         throw new NotFoundException(`Supplier with ID ${id} not found`);
@@ -166,11 +154,7 @@ export class SuppliersService {
     return this.inTx(async (trx) => {
       const { suppliers, supplierCategoryMappings, supplierCategories } = wmsTables;
 
-      const [supplier] = await trx
-        .select()
-        .from(suppliers)
-        .where(eq(suppliers.id, id))
-        .limit(1);
+      const [supplier] = await trx.select().from(suppliers).where(eq(suppliers.id, id)).limit(1);
 
       if (!supplier) {
         throw new NotFoundException(`Supplier with ID ${id} not found`);
@@ -183,10 +167,7 @@ export class SuppliersService {
           description: supplierCategories.description,
         })
         .from(supplierCategoryMappings)
-        .innerJoin(
-          supplierCategories,
-          eq(supplierCategoryMappings.categoryId, supplierCategories.id)
-        )
+        .innerJoin(supplierCategories, eq(supplierCategoryMappings.categoryId, supplierCategories.id))
         .where(eq(supplierCategoryMappings.supplierId, id));
 
       return this.mapToResponseDto(supplier, categories);
@@ -206,8 +187,8 @@ export class SuppliersService {
             like(suppliers.name, searchPattern),
             like(suppliers.phone, searchPattern),
             like(suppliers.email, searchPattern),
-            like(suppliers.businessRegNo, searchPattern)
-          )!
+            like(suppliers.businessRegNo, searchPattern),
+          )!,
         );
       }
 
@@ -221,8 +202,8 @@ export class SuppliersService {
           conditions.push(
             inArray(
               suppliers.id,
-              suppliersWithCategory.map(s => s.supplierId)
-            )
+              suppliersWithCategory.map((s) => s.supplierId),
+            ),
           );
         } else {
           return {
@@ -239,7 +220,7 @@ export class SuppliersService {
       }
 
       const limit = filters.limit || 50;
-      const offset = filters.offset !== undefined ? filters.offset : (filters.page ? (filters.page - 1) * limit : 0);
+      const offset = filters.offset !== undefined ? filters.offset : filters.page ? (filters.page - 1) * limit : 0;
 
       const [supplierList, countResult] = await Promise.all([
         trx
@@ -257,8 +238,8 @@ export class SuppliersService {
 
       const total = countResult[0]?.count || 0;
 
-      const supplierIds = supplierList.map(s => s.id);
-      let categoriesBySupplier: Record<string, { id: string, name: string, description: string | null }[]> = {};
+      const supplierIds = supplierList.map((s) => s.id);
+      let categoriesBySupplier: Record<string, { id: string; name: string; description: string | null }[]> = {};
 
       if (supplierIds.length > 0) {
         const allCategories = await trx
@@ -269,27 +250,27 @@ export class SuppliersService {
             categoryDescription: supplierCategories.description,
           })
           .from(supplierCategoryMappings)
-          .innerJoin(
-            supplierCategories,
-            eq(supplierCategoryMappings.categoryId, supplierCategories.id)
-          )
+          .innerJoin(supplierCategories, eq(supplierCategoryMappings.categoryId, supplierCategories.id))
           .where(inArray(supplierCategoryMappings.supplierId, supplierIds));
 
-        categoriesBySupplier = allCategories.reduce((acc, cat) => {
-          if (!acc[cat.supplierId]) {
-            acc[cat.supplierId] = [];
-          }
-          acc[cat.supplierId].push({
-            id: cat.categoryId,
-            name: cat.categoryName,
-            description: cat.categoryDescription,
-          });
-          return acc;
-        }, {} as Record<string, { id: string, name: string, description: string | null }[]>);
+        categoriesBySupplier = allCategories.reduce(
+          (acc, cat) => {
+            if (!acc[cat.supplierId]) {
+              acc[cat.supplierId] = [];
+            }
+            acc[cat.supplierId].push({
+              id: cat.categoryId,
+              name: cat.categoryName,
+              description: cat.categoryDescription,
+            });
+            return acc;
+          },
+          {} as Record<string, { id: string; name: string; description: string | null }[]>,
+        );
       }
 
-      const data = supplierList.map(supplier =>
-        this.mapToResponseDto(supplier, categoriesBySupplier[supplier.id] || [])
+      const data = supplierList.map((supplier) =>
+        this.mapToResponseDto(supplier, categoriesBySupplier[supplier.id] || []),
       );
 
       return {
@@ -305,13 +286,10 @@ export class SuppliersService {
     return this.inTx(async (trx) => {
       const { supplierCategories } = wmsTables;
 
-      const categories = await trx
-        .select()
-        .from(supplierCategories)
-        .orderBy(supplierCategories.name);
+      const categories = await trx.select().from(supplierCategories).orderBy(supplierCategories.name);
 
       return {
-        categories: categories.map(cat => ({
+        categories: categories.map((cat) => ({
           value: cat.id,
           label: cat.name,
         })),
@@ -326,8 +304,10 @@ export class SuppliersService {
     }, tx);
   }
 
-  private mapToResponseDto(supplier: Supplier, categories: { id: string, name: string, description: string | null }[]): SupplierResponseDto {
+  private mapToResponseDto(
+    supplier: Supplier,
+    categories: { id: string; name: string; description: string | null }[],
+  ): SupplierResponseDto {
     return SupplierResponseDto.fromDbRow(supplier, categories);
   }
 }
-

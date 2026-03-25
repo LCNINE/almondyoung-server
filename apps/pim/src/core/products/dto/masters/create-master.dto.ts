@@ -28,10 +28,10 @@ export type CreateMasterDto = z.infer<typeof CreateMasterSchema>;
 
 // Swagger documentation class - all fields optional for simplified creation
 export class CreateMasterDtoSwagger {
-  @ApiProperty({ 
-    description: '제품명 (미입력 시 "새 상품")', 
+  @ApiProperty({
+    description: '제품명 (미입력 시 "새 상품")',
     required: false,
-    example: '무선 이어폰'
+    example: '무선 이어폰',
   })
   name?: string;
 
@@ -78,18 +78,17 @@ export class CreateMasterDtoSwagger {
 
   // optionGroups removed - use PUT /masters/:id with optionDiff instead
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: '카테고리 ID 배열 (UUID)',
     type: [String],
     required: false,
-    example: ['550e8400-e29b-41d4-a716-446655440000']
+    example: ['550e8400-e29b-41d4-a716-446655440000'],
   })
   categoryIds?: string[];
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: '주 카테고리 ID (categoryIds 중 하나여야 함)',
-    required: false 
+    required: false,
   })
   primaryCategoryId?: string;
 }
-

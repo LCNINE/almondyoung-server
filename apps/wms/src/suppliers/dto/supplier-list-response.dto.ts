@@ -2,9 +2,9 @@ import { ApiProperty } from '@nestjs/swagger';
 import { SupplierResponseDto } from './supplier-response.dto';
 
 export class SupplierListResponseDto {
-  @ApiProperty({ 
-    description: 'List of suppliers', 
-    type: [SupplierResponseDto] 
+  @ApiProperty({
+    description: 'List of suppliers',
+    type: [SupplierResponseDto],
   })
   data: SupplierResponseDto[];
 
@@ -17,4 +17,3 @@ export class SupplierListResponseDto {
   @ApiProperty({ description: 'Items per page', minimum: 1, maximum: 100 })
   limit: number;
 }
-

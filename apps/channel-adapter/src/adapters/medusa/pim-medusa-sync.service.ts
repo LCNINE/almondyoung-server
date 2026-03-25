@@ -3,15 +3,8 @@ import { Injectable, Logger } from '@nestjs/common';
 // import { PimClient } from './pim.client';
 import { MedusaClient } from './medusa.client';
 import { PimMedusaMappingRepository } from './pim-medusa-mapping.repository';
-import {
-  transformPimToMedusa,
-  validatePimSnapshot,
-} from './transformers/pim-to-medusa.transformer';
-import type {
-  PimActiveVersionChangedEvent,
-  PimProductSnapshot,
-  MedusaProduct,
-} from '../../types';
+import { transformPimToMedusa, validatePimSnapshot } from './transformers/pim-to-medusa.transformer';
+import type { PimActiveVersionChangedEvent, PimProductSnapshot, MedusaProduct } from '../../types';
 // PIMCLIENT: Type import removed
 // import type { PimCategoryDetail } from './pim.client';
 import type { CategoryChangedPayload } from '@packages/event-contracts/streams/product.stream';
@@ -33,7 +26,7 @@ export class PimMedusaSyncService {
     // private readonly pimClient: PimClient,
     private readonly medusaClient: MedusaClient,
     private readonly mappingRepo: PimMedusaMappingRepository,
-  ) { }
+  ) {}
 
   // PIMCLIENT: This method is disabled because it calls PIM API (this.pimClient.getCategory)
   // PIMCLIENT: Use ensureMedusaCategoriesFromSnapshot() instead (event-driven approach)
@@ -67,9 +60,7 @@ export class PimMedusaSyncService {
   // }
 
   // PIM 태그 문자열을 Medusa에 보장 후 {id,value} 배열 반환
-  private async ensureMedusaTags(
-    tags: string[] | undefined,
-  ): Promise<Array<{ value: string; id: string }>> {
+  private async ensureMedusaTags(tags: string[] | undefined): Promise<Array<{ value: string; id: string }>> {
     if (!tags || tags.length === 0) {
       return [];
     }
@@ -299,10 +290,7 @@ export class PimMedusaSyncService {
   // }
 
   // 스냅샷 기반 동기화 (Phase 2 - PIM API 호출 없음)
-  async syncFromSnapshot(
-    snapshot: PimProductSnapshot,
-    options?: { skipCategorySync?: boolean },
-  ): Promise<SyncResult> {
+  async syncFromSnapshot(snapshot: PimProductSnapshot, options?: { skipCategorySync?: boolean }): Promise<SyncResult> {
     const { masterId, versionId } = snapshot;
 
     this.logger.log(`Syncing from event snapshot: ${masterId} (v${snapshot.version})`);
@@ -318,15 +306,11 @@ export class PimMedusaSyncService {
         : [];
       const medusaTags = await this.ensureMedusaTags(snapshot.tags);
 
-      const medusaTypeId = await this.medusaClient.ensureProductType(
-        snapshot.productType || 'Unknown',
-      );
+      const medusaTypeId = await this.medusaClient.ensureProductType(snapshot.productType || 'Unknown');
       const defaultSalesChannelId = await this.medusaClient.getDefaultSalesChannel();
 
       const medusaPayload = transformPimToMedusa(snapshot, {
-        ...(shouldSyncCategories
-          ? { categories: medusaCategories.map(({ id }) => ({ id })) }
-          : {}),
+        ...(shouldSyncCategories ? { categories: medusaCategories.map(({ id }) => ({ id })) } : {}),
         tags: medusaTags,
         type_id: medusaTypeId,
         sales_channels: [defaultSalesChannelId],
@@ -335,10 +319,7 @@ export class PimMedusaSyncService {
       const existingMapping = await this.mappingRepo.findByPimMasterId(masterId);
       const medusaProductId = existingMapping?.medusaProductId ?? undefined;
 
-      const { product, action } = await this.medusaClient.upsertProduct(
-        medusaPayload,
-        medusaProductId,
-      );
+      const { product, action } = await this.medusaClient.upsertProduct(medusaPayload, medusaProductId);
 
       this.logger.debug(`medusaCategories for ${product.id}: ${JSON.stringify(medusaCategories)}`);
 
@@ -353,8 +334,10 @@ export class PimMedusaSyncService {
             if (exists) {
               resolvedCategoryIds.push(cat.id);
             } else {
-              this.logger.warn(`Category ${cat.id} missing in Medusa, re-ensuring from snapshot (${cat.pimCategoryId})`);
-              const categorySnapshot = snapshot.categories?.find(c => c.id === cat.pimCategoryId);
+              this.logger.warn(
+                `Category ${cat.id} missing in Medusa, re-ensuring from snapshot (${cat.pimCategoryId})`,
+              );
+              const categorySnapshot = snapshot.categories?.find((c) => c.id === cat.pimCategoryId);
               if (categorySnapshot) {
                 const refreshedId = await this.medusaClient.ensureCategoryFromSnapshot(categorySnapshot);
                 resolvedCategoryIds.push(refreshedId);
@@ -367,17 +350,11 @@ export class PimMedusaSyncService {
 
         // 모든 카테고리를 한 번에 붙임 (개별 호출 시 덮어쓰기 문제 방지)
         if (resolvedCategoryIds.length > 0) {
-          await this.medusaClient.attachProductToCategories(
-            product.id,
-            resolvedCategoryIds,
-            { throwOnFailure: false },
-          );
+          await this.medusaClient.attachProductToCategories(product.id, resolvedCategoryIds, { throwOnFailure: false });
         }
       }
 
-      this.logger.log(
-        `Sync completed: ${masterId} → Medusa ${product.id} (${action})`,
-      );
+      this.logger.log(`Sync completed: ${masterId} → Medusa ${product.id} (${action})`);
 
       await this.syncPriceLists(snapshot, product.id, product.variants);
 
@@ -396,10 +373,7 @@ export class PimMedusaSyncService {
         action,
       };
     } catch (error) {
-      this.logger.error(
-        `Sync failed for master ${masterId}`,
-        error.stack,
-      );
+      this.logger.error(`Sync failed for master ${masterId}`, error.stack);
 
       try {
         await this.mappingRepo.recordFailure(masterId, {
@@ -427,7 +401,7 @@ export class PimMedusaSyncService {
       visibility: boolean;
       showOnMainCategory: boolean;
       thumbnail?: string;
-    }>
+    }>,
   ): Promise<Array<{ id: string; pimCategoryId: string }>> {
     const medusaIds: Array<{ id: string; pimCategoryId: string }> = [];
 
@@ -440,14 +414,10 @@ export class PimMedusaSyncService {
   }
 
   // 이벤트 기반 동기화(Kafka 컨슈머용 - unpublished는 draft로)
-  async handleActiveVersionChanged(
-    event: PimActiveVersionChangedEvent,
-  ): Promise<void> {
+  async handleActiveVersionChanged(event: PimActiveVersionChangedEvent): Promise<void> {
     const { masterId, versionId, changeReason, snapshot } = event;
 
-    this.logger.log(
-      `📨 PIM Event: ${masterId} (${changeReason}) - versionId: ${versionId ?? 'none'}`,
-    );
+    this.logger.log(`📨 PIM Event: ${masterId} (${changeReason}) - versionId: ${versionId ?? 'none'}`);
 
     switch (changeReason) {
       case 'published':
@@ -456,7 +426,7 @@ export class PimMedusaSyncService {
         if (!snapshot) {
           const error = new Error(
             `CRITICAL: Snapshot missing for ${changeReason} event (masterId: ${masterId}, versionId: ${versionId}). ` +
-            `PIM service MUST include snapshot in events. Fallback to PIM API is disabled to enforce MSA boundary.`
+              `PIM service MUST include snapshot in events. Fallback to PIM API is disabled to enforce MSA boundary.`,
           );
           this.logger.error(error.message);
           throw error;
@@ -465,9 +435,7 @@ export class PimMedusaSyncService {
         break;
 
       case 'unpublished':
-        this.logger.log(
-          `Master ${masterId} unpublished → Setting to draft in Medusa`,
-        );
+        this.logger.log(`Master ${masterId} unpublished → Setting to draft in Medusa`);
 
         const mapping = await this.mappingRepo.findByPimMasterId(masterId);
         if (!mapping || !mapping.medusaProductId) {
@@ -519,9 +487,7 @@ export class PimMedusaSyncService {
 
     // 1. 가격 데이터 수집
     for (const variant of snapshot.variants) {
-      const medusaVariant = medusaVariants.find(
-        (mv) => mv.metadata?.pimVariantId === variant.id
-      );
+      const medusaVariant = medusaVariants.find((mv) => mv.metadata?.pimVariantId === variant.id);
       if (!medusaVariant) continue;
 
       // 멤버십 가격
@@ -575,9 +541,7 @@ export class PimMedusaSyncService {
   /**
    * Handle CategoryChanged event from PIM
    */
-  async handleCategoryChanged(
-    event: CategoryChangedPayload,
-  ): Promise<SyncResult> {
+  async handleCategoryChanged(event: CategoryChangedPayload): Promise<SyncResult> {
     const { categoryId, changeType, category } = event;
 
     this.logger.log(`Processing CategoryChanged: ${categoryId} (${changeType})`);
@@ -607,9 +571,7 @@ export class PimMedusaSyncService {
         sortOrder: category.sortOrder,
       });
 
-      this.logger.log(
-        `Category synced to Medusa: PIM=${categoryId} → Medusa=${medusaCategoryId}`,
-      );
+      this.logger.log(`Category synced to Medusa: PIM=${categoryId} → Medusa=${medusaCategoryId}`);
 
       return {
         success: true,
@@ -618,14 +580,10 @@ export class PimMedusaSyncService {
         action: changeType === 'created' ? 'created' : 'updated',
       };
     } catch (error) {
-      this.logger.error(
-        `Failed to sync category ${categoryId} to Medusa`,
-        error.stack,
-      );
+      this.logger.error(`Failed to sync category ${categoryId} to Medusa`, error.stack);
       throw error;
     }
   }
-
 
   /**
    * Handle category deletion in Medusa
@@ -637,10 +595,7 @@ export class PimMedusaSyncService {
 
       if (existing?.id) {
         // Mark as inactive (soft delete)
-        await this.medusaClient['client'].post(
-          `/product-categories/${existing.id}`,
-          { is_active: false },
-        );
+        await this.medusaClient['client'].post(`/product-categories/${existing.id}`, { is_active: false });
 
         // Invalidate cache
         this.medusaClient['categoryCache'].delete(handle);
@@ -650,10 +605,7 @@ export class PimMedusaSyncService {
         this.logger.debug(`Category ${pimCategoryId} not found in Medusa`);
       }
     } catch (error) {
-      this.logger.error(
-        `Failed to delete category ${pimCategoryId} from Medusa`,
-        error.stack,
-      );
+      this.logger.error(`Failed to delete category ${pimCategoryId} from Medusa`, error.stack);
       throw error;
     }
   }

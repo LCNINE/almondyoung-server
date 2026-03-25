@@ -32,7 +32,7 @@ export class ReviewsService {
     @InjectDb() private readonly db: DbService<UgcServiceSchema>,
     private readonly rewardPolicyService: ReviewRewardPolicyService,
     private readonly rewardPublisher: ReviewRewardPublisher,
-  ) { }
+  ) {}
 
   private get client() {
     return this.db.db;
@@ -367,11 +367,7 @@ export class ReviewsService {
         })
         .where(eq(reviewEligibilities.id, eligibility.id));
 
-      rewardHolder.value = await this.rewardPolicyService.calculateReward(
-        dto.content.length,
-        mediaFileIds.length,
-        tx,
-      );
+      rewardHolder.value = await this.rewardPolicyService.calculateReward(dto.content.length, mediaFileIds.length, tx);
 
       return {
         ...review,
@@ -383,7 +379,7 @@ export class ReviewsService {
       };
     }, tx);
 
-    // TX 커밋 후 Kafka command 발행 
+    // TX 커밋 후 Kafka command 발행
     // 카프카 이벤트 발행 임시로 막음 : 리뷰 적립금 정책이 올바르게 자리잡을때까지 주석처리
     // const reward = rewardHolder.value;
     // if (reward) {
@@ -534,19 +530,13 @@ export class ReviewsService {
       if (query.type === 'photo') {
         conditions.push(
           exists(
-            tx
-              .select({ one: reviewMedia.reviewId })
-              .from(reviewMedia)
-              .where(eq(reviewMedia.reviewId, reviews.id)),
+            tx.select({ one: reviewMedia.reviewId }).from(reviewMedia).where(eq(reviewMedia.reviewId, reviews.id)),
           ),
         );
       } else if (query.type === 'text') {
         conditions.push(
           notExists(
-            tx
-              .select({ one: reviewMedia.reviewId })
-              .from(reviewMedia)
-              .where(eq(reviewMedia.reviewId, reviews.id)),
+            tx.select({ one: reviewMedia.reviewId }).from(reviewMedia).where(eq(reviewMedia.reviewId, reviews.id)),
           ),
         );
       }

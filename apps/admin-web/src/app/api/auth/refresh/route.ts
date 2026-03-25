@@ -6,8 +6,10 @@ const USER_SERVICE_BASE_URL =
 const ADMIN_DOMAIN = process.env.ADMIN_DOMAIN ?? 'admin.almondyoung-next.com';
 
 export async function POST(request: NextRequest) {
-  const adminAccessToken = request.cookies.get('admin_access_token')?.value ?? '';
-  const adminRefreshToken = request.cookies.get('admin_refresh_token')?.value ?? '';
+  const adminAccessToken =
+    request.cookies.get('admin_access_token')?.value ?? '';
+  const adminRefreshToken =
+    request.cookies.get('admin_refresh_token')?.value ?? '';
 
   const upstream = await fetch(`${USER_SERVICE_BASE_URL}/auth/restore-token`, {
     method: 'POST',

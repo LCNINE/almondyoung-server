@@ -12,12 +12,7 @@ import {
   InternalReturnEvent,
   ChannelAdapterSchema,
 } from './src/types';
-import {
-  eventLogs,
-  syncHistories,
-  processedEvents,
-  syncStatuses,
-} from './src/schema';
+import { eventLogs, syncHistories, processedEvents, syncStatuses } from './src/schema';
 import { eq, and } from 'drizzle-orm';
 
 /**
@@ -61,9 +56,7 @@ describe('🎯 Coupang Channel Adapter 실환경 통합 테스트', () => {
     }).compile();
 
     // 🔌 서비스 인스턴스 가져오기
-    channelAdapterService = app.get<ChannelAdapterService>(
-      ChannelAdapterService,
-    );
+    channelAdapterService = app.get<ChannelAdapterService>(ChannelAdapterService);
     syncStatusService = app.get<SyncStatusService>(SyncStatusService);
     dbService = app.get<DbService<ChannelAdapterSchema>>(DbService);
 
@@ -107,12 +100,7 @@ describe('🎯 Coupang Channel Adapter 실환경 통합 테스트', () => {
       const stockEventLogs = await dbService.db
         .select()
         .from(eventLogs)
-        .where(
-          and(
-            eq(eventLogs.eventType, 'inventory_sync'),
-            eq(eventLogs.status, 'completed'),
-          ),
-        )
+        .where(and(eq(eventLogs.eventType, 'inventory_sync'), eq(eventLogs.status, 'completed')))
         .limit(10);
 
       console.log(`📊 재고 동기화 이벤트 로그: ${stockEventLogs.length}건`);
@@ -122,10 +110,7 @@ describe('🎯 Coupang Channel Adapter 실환경 통합 테스트', () => {
 
       try {
         // 🚀 실제 쿠팡 API 폴링 (adapter-mock 서버 대상)
-        const pollResult = await channelAdapterService.poll(
-          'coupang',
-          'orders',
-        );
+        const pollResult = await channelAdapterService.poll('coupang', 'orders');
 
         expect(Array.isArray(pollResult)).toBe(true);
         console.log(`📋 폴링 결과: ${pollResult.length}건 주문 이벤트`);
@@ -140,10 +125,7 @@ describe('🎯 Coupang Channel Adapter 실환경 통합 테스트', () => {
 
         console.log(`📋 주문 이벤트 로그: ${orderEventLogs.length}건`);
       } catch (error) {
-        console.warn(
-          '⚠️ 주문 폴링 실패 (adapter-mock 서버 확인 필요):',
-          error.message,
-        );
+        console.warn('⚠️ 주문 폴링 실패 (adapter-mock 서버 확인 필요):', error.message);
         // adapter-mock 서버가 실행되지 않은 경우에도 테스트 계속 진행
       }
 
@@ -204,10 +186,7 @@ describe('🎯 Coupang Channel Adapter 실환경 통합 테스트', () => {
       };
 
       // 🚀 실제 교환 웹훅 처리
-      const exchangeResult = await channelAdapterService.incoming(
-        'coupang',
-        exchangeEvent,
-      );
+      const exchangeResult = await channelAdapterService.incoming('coupang', exchangeEvent);
       expect(Array.isArray(exchangeResult)).toBe(true);
       console.log('✅ 교환 요청 처리 완료');
 
@@ -243,10 +222,7 @@ describe('🎯 Coupang Channel Adapter 실환경 통합 테스트', () => {
       };
 
       // 🚀 실제 환불 웹훅 처리
-      const returnResult = await channelAdapterService.incoming(
-        'coupang',
-        returnEvent,
-      );
+      const returnResult = await channelAdapterService.incoming('coupang', returnEvent);
       expect(Array.isArray(returnResult)).toBe(true);
       console.log('✅ 환불 요청 처리 완료');
 
@@ -255,29 +231,22 @@ describe('🎯 Coupang Channel Adapter 실환경 통합 테스트', () => {
 
       try {
         // 🚀 실제 환불 승인 명령 (adapter-mock 서버 대상)
-        const returnApprovalResult = await channelAdapterService.command(
-          'coupang',
-          {
-            type: 'return.approve',
-            claimId: TEST_CLAIM_ID + '-RETURN',
-          },
-        );
+        const returnApprovalResult = await channelAdapterService.command('coupang', {
+          type: 'return.approve',
+          claimId: TEST_CLAIM_ID + '-RETURN',
+        });
 
         expect(returnApprovalResult.success).toBe(true);
         console.log('✅ 환불 승인 명령 실행 완료');
       } catch (error) {
-        console.warn(
-          '⚠️ 명령 실행 실패 (adapter-mock 서버 확인 필요):',
-          error.message,
-        );
+        console.warn('⚠️ 명령 실행 실패 (adapter-mock 서버 확인 필요):', error.message);
       }
 
       // ========== 7단계: 전체 통계 확인 ==========
       console.log('📊 7단계: 통계 확인');
 
       // ✅ 동기화 상태 확인
-      const coupangSyncStats =
-        await syncStatusService.getChannelStats('coupang');
+      const coupangSyncStats = await syncStatusService.getChannelStats('coupang');
       if (coupangSyncStats) {
         expect(coupangSyncStats.channel).toBe('coupang');
         console.log(
@@ -286,11 +255,7 @@ describe('🎯 Coupang Channel Adapter 실환경 통합 테스트', () => {
       }
 
       // ✅ 전체 이벤트 로그 개수 확인
-      const allEventLogs = await dbService.db
-        .select()
-        .from(eventLogs)
-        .orderBy(eventLogs.createdAt)
-        .limit(20);
+      const allEventLogs = await dbService.db.select().from(eventLogs).orderBy(eventLogs.createdAt).limit(20);
 
       console.log(`📋 전체 이벤트 로그: ${allEventLogs.length}건`);
 
@@ -329,17 +294,10 @@ describe('🎯 Coupang Channel Adapter 실환경 통합 테스트', () => {
       const stockEventLogsForDuplicate = await dbService.db
         .select()
         .from(eventLogs)
-        .where(
-          and(
-            eq(eventLogs.eventType, 'inventory_sync'),
-            eq(eventLogs.status, 'completed'),
-          ),
-        )
+        .where(and(eq(eventLogs.eventType, 'inventory_sync'), eq(eventLogs.status, 'completed')))
         .limit(20);
 
-      console.log(
-        `🔒 중복 이벤트 처리 방지 확인 완료: ${stockEventLogsForDuplicate.length}건 로그`,
-      );
+      console.log(`🔒 중복 이벤트 처리 방지 확인 완료: ${stockEventLogsForDuplicate.length}건 로그`);
     }, 30000);
   });
 
@@ -361,9 +319,7 @@ describe('🎯 Coupang Channel Adapter 실환경 통합 테스트', () => {
       const allChannelStats = await syncStatusService.getAllChannelStats();
 
       expect(typeof allChannelStats).toBe('object');
-      console.log(
-        `📊 전체 채널 동기화 상태: ${Object.keys(allChannelStats).length}개 채널`,
-      );
+      console.log(`📊 전체 채널 동기화 상태: ${Object.keys(allChannelStats).length}개 채널`);
 
       // 각 채널별 상태 출력
       for (const [channel, stats] of Object.entries(allChannelStats)) {
@@ -386,10 +342,7 @@ describe('🎯 Coupang Channel Adapter 실환경 통합 테스트', () => {
         expect(queryResult).toBeDefined();
         console.log('✅ 배송 이력 조회 성공:', typeof queryResult);
       } catch (error) {
-        console.warn(
-          '⚠️ 배송 이력 조회 실패 (adapter-mock 서버 확인 필요):',
-          error.message,
-        );
+        console.warn('⚠️ 배송 이력 조회 실패 (adapter-mock 서버 확인 필요):', error.message);
         // adapter-mock 서버 미실행 또는 인증 정보 미설정 시에도 테스트 통과
         expect(error).toBeDefined();
       }
@@ -411,10 +364,7 @@ describe('🎯 Coupang Channel Adapter 실환경 통합 테스트', () => {
         expect(commandResult.success).toBe(true);
         console.log('✅ 발송 처리 명령 실행 성공');
       } catch (error) {
-        console.warn(
-          '⚠️ 발송 처리 명령 실패 (adapter-mock 서버 확인 필요):',
-          error.message,
-        );
+        console.warn('⚠️ 발송 처리 명령 실패 (adapter-mock 서버 확인 필요):', error.message);
         // adapter-mock 서버 미실행 또는 인증 정보 미설정 시에도 테스트 통과
         expect(error).toBeDefined();
       }

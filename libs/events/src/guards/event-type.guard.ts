@@ -18,10 +18,7 @@ export class EventTypeGuard implements NestInterceptor {
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
     // @OnEvent에서 설정한 eventType 메타데이터 가져오기
-    const expectedEventType = this.reflector.get<string>(
-      EVENT_TYPE_FILTER,
-      context.getHandler(),
-    );
+    const expectedEventType = this.reflector.get<string>(EVENT_TYPE_FILTER, context.getHandler());
 
     // eventType이 설정되지 않았으면 필터링 없이 통과
     if (!expectedEventType) {
@@ -45,9 +42,7 @@ export class EventTypeGuard implements NestInterceptor {
         envelope = value as MessageEnvelope;
       } else {
         // Buffer 또는 string인 경우 파싱
-        const jsonString: string = Buffer.isBuffer(value)
-          ? value.toString('utf-8')
-          : String(value);
+        const jsonString: string = Buffer.isBuffer(value) ? value.toString('utf-8') : String(value);
         envelope = JSON.parse(jsonString) as MessageEnvelope;
       }
 
@@ -62,4 +57,3 @@ export class EventTypeGuard implements NestInterceptor {
     }
   }
 }
-

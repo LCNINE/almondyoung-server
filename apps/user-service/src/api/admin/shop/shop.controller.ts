@@ -20,9 +20,7 @@ export class ShopController {
     description: '사용자 상점 정보 조회 성공',
     type: ShopResponseDto,
   })
-  async getShopInfoByUserId(
-    @Param('userId') userId: string,
-  ): Promise<ShopResponseDto | null> {
+  async getShopInfoByUserId(@Param('userId') userId: string): Promise<ShopResponseDto | null> {
     return this.shopService.getShopInfoByUserId(userId);
   }
 }

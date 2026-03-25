@@ -76,15 +76,9 @@ export class Cafe24LinkService {
     }
   }
 
-  async issueSignupBootstrapData(
-    encryptedIdToken: string,
-    tx?: DbTransaction,
-  ): Promise<Cafe24SignupBootstrapResult> {
+  async issueSignupBootstrapData(encryptedIdToken: string, tx?: DbTransaction): Promise<Cafe24SignupBootstrapResult> {
     try {
-      const privacy = await this.fetchMemberPrivacyByEncryptedIdToken(
-        encryptedIdToken,
-        tx,
-      );
+      const privacy = await this.fetchMemberPrivacyByEncryptedIdToken(encryptedIdToken, tx);
 
       return {
         memberId: privacy.memberId,
@@ -93,17 +87,13 @@ export class Cafe24LinkService {
         prefill: {
           email: privacy.normalized.email,
           username: privacy.normalized.name,
-          birthday: privacy.normalized.birthDate
-            ? this.formatBirthDateForSignup(privacy.normalized.birthDate)
-            : null,
+          birthday: privacy.normalized.birthDate ? this.formatBirthDateForSignup(privacy.normalized.birthDate) : null,
           phoneNumber: privacy.normalized.phoneNumber,
         },
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.logger.warn(
-        `Cafe24 privacy prefill fetch failed during signup bootstrap: ${message}`,
-      );
+      this.logger.warn(`Cafe24 privacy prefill fetch failed during signup bootstrap: ${message}`);
 
       return {
         memberId: null,
@@ -119,15 +109,8 @@ export class Cafe24LinkService {
     }
   }
 
-  async fetchMemberInfo(
-    encryptedIdToken: string,
-    tx?: DbTransaction,
-  ) {
-    const { memberId, memberName } =
-      await this.fetchMemberPrivacyByEncryptedIdToken(
-        encryptedIdToken,
-        tx,
-      );
+  async fetchMemberInfo(encryptedIdToken: string, tx?: DbTransaction) {
+    const { memberId, memberName } = await this.fetchMemberPrivacyByEncryptedIdToken(encryptedIdToken, tx);
 
     return {
       memberId,
@@ -137,17 +120,11 @@ export class Cafe24LinkService {
 
   async getMigrationItems(userId: string, tx?: DbTransaction) {
     const keys: MigrationKey[] = ['email', 'name', 'birthday', 'phone'];
-    const results = await Promise.all(
-      keys.map((key) => this.lookupMigrationItem(userId, key, tx)),
-    );
+    const results = await Promise.all(keys.map((key) => this.lookupMigrationItem(userId, key, tx)));
     return results;
   }
 
-  async linkCafe24Account(
-    userId: string,
-    encryptedIdToken: string,
-    tx?: DbTransaction,
-  ) {
+  async linkCafe24Account(userId: string, encryptedIdToken: string, tx?: DbTransaction) {
     const client = this.getClient(tx);
     const payload = this.decodeTokenPayload(encryptedIdToken);
     const cafe24MemberId = this.extractMemberId(payload);
@@ -168,11 +145,7 @@ export class Cafe24LinkService {
       )
       .limit(1);
 
-    if (
-      existingByMember &&
-      existingByMember.cafe24MemberId === cafe24MemberId &&
-      existingByMember.userId !== userId
-    ) {
+    if (existingByMember && existingByMember.cafe24MemberId === cafe24MemberId && existingByMember.userId !== userId) {
       throw new BadRequestException('이미 다른 계정에 연결된 Cafe24 계정입니다.');
     }
 
@@ -198,11 +171,7 @@ export class Cafe24LinkService {
       .returning();
 
     // 이메일 조회 후 이벤트 발행
-    const [userRow] = await client
-      .select({ email: users.email })
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
+    const [userRow] = await client.select({ email: users.email }).from(users).where(eq(users.id, userId)).limit(1);
 
     if (userRow?.email) {
       try {
@@ -225,11 +194,7 @@ export class Cafe24LinkService {
     return link;
   }
 
-  async lookupMigrationItem(
-    userId: string,
-    key: MigrationKey,
-    tx?: DbTransaction,
-  ): Promise<MigrationItemResult> {
+  async lookupMigrationItem(userId: string, key: MigrationKey, tx?: DbTransaction): Promise<MigrationItemResult> {
     const client = this.getClient(tx);
     const link = await this.getCafe24LinkByUserId(userId, tx);
     const snapshot = await this.getOrFetchSnapshot(link, tx);
@@ -251,11 +216,7 @@ export class Cafe24LinkService {
     };
   }
 
-  async migrateItem(
-    userId: string,
-    key: MigrationKey,
-    tx?: DbTransaction,
-  ): Promise<MigrationItemResult> {
+  async migrateItem(userId: string, key: MigrationKey, tx?: DbTransaction): Promise<MigrationItemResult> {
     const client = this.getClient(tx);
     const link = await this.getCafe24LinkByUserId(userId, tx);
     const snapshot = await this.getOrFetchSnapshot(link, tx);
@@ -271,11 +232,7 @@ export class Cafe24LinkService {
 
   private async getCafe24AccessToken(mallId: string, tx?: DbTransaction) {
     const client = this.getClient(tx);
-    const [token] = await client
-      .select()
-      .from(cafe24Tokens)
-      .where(eq(cafe24Tokens.mallId, mallId))
-      .limit(1);
+    const [token] = await client.select().from(cafe24Tokens).where(eq(cafe24Tokens.mallId, mallId)).limit(1);
 
     if (!token) {
       throw new BadRequestException('Cafe24 access token이 없습니다.');
@@ -293,12 +250,7 @@ export class Cafe24LinkService {
     const [link] = await client
       .select()
       .from(cafe24Links)
-      .where(
-        and(
-          eq(cafe24Links.userId, userId),
-          isNull(cafe24Links.unlinkedAt),
-        ),
-      )
+      .where(and(eq(cafe24Links.userId, userId), isNull(cafe24Links.unlinkedAt)))
       .limit(1);
 
     if (!link) {
@@ -310,11 +262,7 @@ export class Cafe24LinkService {
 
   private async getOrFetchSnapshot(link: typeof cafe24Links.$inferSelect, tx?: DbTransaction) {
     const client = this.getClient(tx);
-    const [existing] = await client
-      .select()
-      .from(cafe24Snapshots)
-      .where(eq(cafe24Snapshots.linkId, link.id))
-      .limit(1);
+    const [existing] = await client.select().from(cafe24Snapshots).where(eq(cafe24Snapshots.linkId, link.id)).limit(1);
 
     if (existing) {
       return existing;
@@ -331,29 +279,17 @@ export class Cafe24LinkService {
     const [link] = await client
       .select()
       .from(cafe24Links)
-      .where(
-        and(
-          eq(cafe24Links.userId, userId),
-          isNull(cafe24Links.unlinkedAt),
-        ),
-      )
+      .where(and(eq(cafe24Links.userId, userId), isNull(cafe24Links.unlinkedAt)))
       .limit(1);
 
     if (!link) {
       throw new BadRequestException('연결된 Cafe24 계정이 없습니다.');
     }
 
-    await client
-      .update(cafe24Links)
-      .set({ unlinkedAt: now, updatedAt: now })
-      .where(eq(cafe24Links.id, link.id));
+    await client.update(cafe24Links).set({ unlinkedAt: now, updatedAt: now }).where(eq(cafe24Links.id, link.id));
 
     // 이메일 조회 후 이벤트 발행
-    const [userRow] = await client
-      .select({ email: users.email })
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
+    const [userRow] = await client.select({ email: users.email }).from(users).where(eq(users.id, userId)).limit(1);
 
     if (userRow?.email) {
       try {
@@ -402,12 +338,7 @@ export class Cafe24LinkService {
       })
       .from(cafe24Links)
       .innerJoin(users, eq(cafe24Links.userId, users.id))
-      .where(
-        and(
-          eq(cafe24Links.mallId, mallId),
-          isNull(cafe24Links.unlinkedAt),
-        ),
-      );
+      .where(and(eq(cafe24Links.mallId, mallId), isNull(cafe24Links.unlinkedAt)));
 
     return rows;
   }
@@ -417,24 +348,15 @@ export class Cafe24LinkService {
     const [link] = await client
       .select()
       .from(cafe24Links)
-      .where(
-        and(
-          eq(cafe24Links.userId, userId),
-          isNull(cafe24Links.unlinkedAt),
-        ),
-      )
+      .where(and(eq(cafe24Links.userId, userId), isNull(cafe24Links.unlinkedAt)))
       .limit(1);
 
     return link ?? null;
   }
 
-  private async fetchPrivacySnapshot(
-    link: typeof cafe24Links.$inferSelect,
-    tx?: DbTransaction,
-  ) {
+  private async fetchPrivacySnapshot(link: typeof cafe24Links.$inferSelect, tx?: DbTransaction) {
     const accessToken = await this.getCafe24AccessToken(link.mallId, tx);
-    const apiVersion =
-      this.configService.get<string>('CAFE24_API_VERSION') ?? '2025-12-01';
+    const apiVersion = this.configService.get<string>('CAFE24_API_VERSION') ?? '2025-12-01';
     const encodedMemberId = encodeURIComponent(link.cafe24MemberId);
     const url = `https://${link.mallId}.cafe24api.com/api/v2/admin/customersprivacy/${encodedMemberId}`;
 
@@ -481,10 +403,7 @@ export class Cafe24LinkService {
     return snapshot;
   }
 
-  private async fetchMemberPrivacyByEncryptedIdToken(
-    encryptedIdToken: string,
-    tx?: DbTransaction,
-  ) {
+  private async fetchMemberPrivacyByEncryptedIdToken(encryptedIdToken: string, tx?: DbTransaction) {
     const resolvedMallId = this.getCafe24MallId();
     const payload = this.decodeTokenPayload(encryptedIdToken);
 
@@ -494,8 +413,7 @@ export class Cafe24LinkService {
     }
 
     const accessToken = await this.getCafe24AccessToken(resolvedMallId, tx);
-    const apiVersion =
-      this.configService.get<string>('CAFE24_API_VERSION') ?? '2025-12-01';
+    const apiVersion = this.configService.get<string>('CAFE24_API_VERSION') ?? '2025-12-01';
     const encodedMemberId = encodeURIComponent(memberId);
     const url = `https://${resolvedMallId}.cafe24api.com/api/v2/admin/customersprivacy/${encodedMemberId}`;
 
@@ -564,10 +482,7 @@ export class Cafe24LinkService {
     return null;
   }
 
-  private async getUserAndProfile(
-    userId: string,
-    client: ReturnType<Cafe24LinkService['getClient']>,
-  ) {
+  private async getUserAndProfile(userId: string, client: ReturnType<Cafe24LinkService['getClient']>) {
     const [row] = await client
       .select({
         user: users,
@@ -585,19 +500,14 @@ export class Cafe24LinkService {
     return row;
   }
 
-  private getSnapshotValue(
-    snapshot: typeof cafe24Snapshots.$inferSelect,
-    key: MigrationKey,
-  ) {
+  private getSnapshotValue(snapshot: typeof cafe24Snapshots.$inferSelect, key: MigrationKey) {
     switch (key) {
       case 'email':
         return snapshot.email ?? null;
       case 'name':
         return snapshot.name ?? null;
       case 'birthday':
-        return snapshot.birthDate
-          ? snapshot.birthDate.toISOString().slice(0, 10)
-          : null;
+        return snapshot.birthDate ? snapshot.birthDate.toISOString().slice(0, 10) : null;
       case 'phone':
         return snapshot.phoneNumber ?? null;
       default:
@@ -615,9 +525,7 @@ export class Cafe24LinkService {
       case 'name':
         return data.user.username ?? null;
       case 'birthday':
-        return data.profile?.birthDate
-          ? data.profile.birthDate.toISOString().slice(0, 10)
-          : null;
+        return data.profile?.birthDate ? data.profile.birthDate.toISOString().slice(0, 10) : null;
       case 'phone':
         return data.profile?.phoneNumber ?? null;
       default:
@@ -625,11 +533,7 @@ export class Cafe24LinkService {
     }
   }
 
-  private compareValues(
-    key: MigrationKey,
-    userValue: string | null,
-    cafe24Value: string | null,
-  ) {
+  private compareValues(key: MigrationKey, userValue: string | null, cafe24Value: string | null) {
     if (!cafe24Value) {
       return false;
     }
@@ -664,17 +568,11 @@ export class Cafe24LinkService {
   ) {
     switch (key) {
       case 'email': {
-        await client
-          .update(users)
-          .set({ email: cafe24Value, updatedAt: new Date() })
-          .where(eq(users.id, userId));
+        await client.update(users).set({ email: cafe24Value, updatedAt: new Date() }).where(eq(users.id, userId));
         return;
       }
       case 'name': {
-        await client
-          .update(users)
-          .set({ username: cafe24Value, updatedAt: new Date() })
-          .where(eq(users.id, userId));
+        await client.update(users).set({ username: cafe24Value, updatedAt: new Date() }).where(eq(users.id, userId));
         return;
       }
       case 'birthday': {
@@ -682,13 +580,10 @@ export class Cafe24LinkService {
         if (!birthDate) {
           throw new BadRequestException('생년월일 형식이 올바르지 않습니다.');
         }
-        await client
-          .insert(profiles)
-          .values({ userId, birthDate })
-          .onConflictDoUpdate({
-            target: profiles.userId,
-            set: { birthDate },
-          });
+        await client.insert(profiles).values({ userId, birthDate }).onConflictDoUpdate({
+          target: profiles.userId,
+          set: { birthDate },
+        });
         return;
       }
       case 'phone': {
@@ -706,10 +601,7 @@ export class Cafe24LinkService {
     }
   }
 
-  private decodeEncryptedIdToken(
-    token: string,
-    serviceKey: string,
-  ): Record<string, unknown> {
+  private decodeEncryptedIdToken(token: string, serviceKey: string): Record<string, unknown> {
     const parts = token.split('.');
     if (parts.length !== 3) {
       throw new Error('Wrong number of segments');
@@ -728,14 +620,9 @@ export class Cafe24LinkService {
     }
 
     const data = `${headerB64}.${payloadB64}`;
-    const expected = createHmac('sha512', serviceKey)
-      .update(data)
-      .digest();
+    const expected = createHmac('sha512', serviceKey).update(data).digest();
 
-    if (
-      signature.length !== expected.length ||
-      !timingSafeEqual(signature, expected)
-    ) {
+    if (signature.length !== expected.length || !timingSafeEqual(signature, expected)) {
       throw new Error('Signature verification failed');
     }
 
@@ -771,11 +658,7 @@ export class Cafe24LinkService {
   }
 
   private extractMemberName(data: Record<string, any>) {
-    const customer =
-      data?.customersprivacy ??
-      data?.customer ??
-      data?.customer_privacy ??
-      data?.data;
+    const customer = data?.customersprivacy ?? data?.customer ?? data?.customer_privacy ?? data?.data;
     const candidate =
       customer?.name ||
       customer?.member_name ||

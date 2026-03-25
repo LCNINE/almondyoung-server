@@ -104,15 +104,17 @@ export const productMasters = pgTable(
     deletedAt: timestamp('deleted_at'),
     deletedBy: uuid('deleted_by'),
   },
-  (table) => [
-    index('idx_masters_created_at').on(table.createdAt),
-    index('idx_masters_deleted_at').on(table.deletedAt),
-  ],
+  (table) => [index('idx_masters_created_at').on(table.createdAt), index('idx_masters_deleted_at').on(table.deletedAt)],
 );
 
 // ===== 2.1. PRODUCT MASTER VERSIONS (판매상품 버전별 데이터) =====
 export const ProductMasterVersionStatusEnum = pgEnum('product_master_version_status', ['draft', 'inactive', 'active']);
-export const ProductMasterVersionApprovalStatusEnum = pgEnum('product_master_version_approval_status', ['draft', 'pending', 'approved', 'rejected']);
+export const ProductMasterVersionApprovalStatusEnum = pgEnum('product_master_version_approval_status', [
+  'draft',
+  'pending',
+  'approved',
+  'rejected',
+]);
 export const productMasterVersions = pgTable(
   'product_master_versions',
   {
@@ -126,9 +128,7 @@ export const productMasterVersions = pgTable(
       .references(() => productMasters.id, { onDelete: 'cascade' }),
     version: integer('version').notNull().default(1),
     parentVersionId: uuid('parent_version_id'),
-    status: ProductMasterVersionStatusEnum('status')
-      .notNull()
-      .default('draft'), // 'draft' | 'inactive' | 'active'
+    status: ProductMasterVersionStatusEnum('status').notNull().default('draft'), // 'draft' | 'inactive' | 'active'
     draftOwnerId: uuid('draft_owner_id'),
     // ===== VERSION MANAGEMENT FIELDS END =====
 
@@ -147,9 +147,7 @@ export const productMasterVersions = pgTable(
 
     // ===== Phase 1 NEW FIELDS START =====
     // Product Type
-    productType: varchar('product_type', { length: 50 })
-      .notNull()
-      .default('regular_sale'), // 'limited_edition' | 'regular_sale'
+    productType: varchar('product_type', { length: 50 }).notNull().default('regular_sale'), // 'limited_edition' | 'regular_sale'
 
     // Product Identification
     productCode: varchar('product_code', { length: 100 }).unique(),
@@ -178,9 +176,7 @@ export const productMasterVersions = pgTable(
     salesEndDate: timestamp('sales_end_date'),
 
     // Approval Workflow
-    approvalStatus: ProductMasterVersionApprovalStatusEnum('approval_status')
-      .notNull()
-      .default('draft'), // 'draft', 'pending', 'approved', 'rejected'
+    approvalStatus: ProductMasterVersionApprovalStatusEnum('approval_status').notNull().default('draft'), // 'draft', 'pending', 'approved', 'rejected'
     approvedAt: timestamp('approved_at'),
     approvedBy: uuid('approved_by'),
     rejectionReason: text('rejection_reason'),
@@ -238,7 +234,9 @@ export const productMasterCategories = pgTable(
     categoryId: uuid('category_id')
       .notNull()
       .references(() => productCategories.id, { onDelete: 'cascade' }),
-    versionId: uuid('version_id').notNull().references(() => productMasterVersions.id, { onDelete: 'cascade' }),
+    versionId: uuid('version_id')
+      .notNull()
+      .references(() => productMasterVersions.id, { onDelete: 'cascade' }),
     isPrimary: boolean('is_primary').default(false).notNull(), // 주 카테고리 여부
     createdAt: timestamp('created_at').defaultNow().notNull(),
     createdBy: uuid('created_by'),
@@ -264,19 +262,14 @@ export const productMasterOptionGroups = pgTable(
     optionGroupId: uuid('option_group_id')
       .notNull()
       .references(() => productOptionGroups.id, { onDelete: 'cascade' }),
-    versionId: uuid('version_id').notNull().references(() => productMasterVersions.id, { onDelete: 'cascade' }),
+    versionId: uuid('version_id')
+      .notNull()
+      .references(() => productMasterVersions.id, { onDelete: 'cascade' }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (table) => [
-    index('idx_master_option_groups_master_version').on(
-      table.masterId,
-      table.versionId,
-    ),
-    uniqueIndex('unique_master_option_group_version').on(
-      table.masterId,
-      table.optionGroupId,
-      table.versionId,
-    ),
+    index('idx_master_option_groups_master_version').on(table.masterId, table.versionId),
+    uniqueIndex('unique_master_option_group_version').on(table.masterId, table.optionGroupId, table.versionId),
   ],
 );
 
@@ -293,19 +286,14 @@ export const productMasterVariants = pgTable(
     variantId: uuid('variant_id')
       .notNull()
       .references(() => productVariants.id, { onDelete: 'cascade' }),
-    versionId: uuid('version_id').notNull().references(() => productMasterVersions.id, { onDelete: 'cascade' }),
+    versionId: uuid('version_id')
+      .notNull()
+      .references(() => productMasterVersions.id, { onDelete: 'cascade' }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (table) => [
-    index('idx_master_variants_master_version').on(
-      table.masterId,
-      table.versionId,
-    ),
-    uniqueIndex('unique_master_variant_version').on(
-      table.masterId,
-      table.variantId,
-      table.versionId,
-    ),
+    index('idx_master_variants_master_version').on(table.masterId, table.versionId),
+    uniqueIndex('unique_master_variant_version').on(table.masterId, table.variantId, table.versionId),
   ],
 );
 
@@ -322,19 +310,14 @@ export const productMasterPricingRules = pgTable(
     pricingRuleId: uuid('pricing_rule_id')
       .notNull()
       .references(() => pricingRules.id, { onDelete: 'cascade' }),
-    versionId: uuid('version_id').notNull().references(() => productMasterVersions.id, { onDelete: 'cascade' }),
+    versionId: uuid('version_id')
+      .notNull()
+      .references(() => productMasterVersions.id, { onDelete: 'cascade' }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (table) => [
-    index('idx_master_pricing_rules_master_version').on(
-      table.masterId,
-      table.versionId,
-    ),
-    uniqueIndex('unique_master_pricing_rule_version').on(
-      table.masterId,
-      table.pricingRuleId,
-      table.versionId,
-    ),
+    index('idx_master_pricing_rules_master_version').on(table.masterId, table.versionId),
+    uniqueIndex('unique_master_pricing_rule_version').on(table.masterId, table.pricingRuleId, table.versionId),
   ],
 );
 
@@ -351,7 +334,9 @@ export const productOptionGroupDisplays = pgTable(
     masterId: uuid('master_id')
       .notNull()
       .references(() => productMasters.id, { onDelete: 'cascade' }),
-    versionId: uuid('version_id').notNull().references(() => productMasterVersions.id, { onDelete: 'cascade' }),
+    versionId: uuid('version_id')
+      .notNull()
+      .references(() => productMasterVersions.id, { onDelete: 'cascade' }),
     locale: varchar('locale', { length: 10 }).notNull().default('ko-KR'),
     displayName: varchar('display_name', { length: 100 }).notNull(),
     description: text('description'),
@@ -359,18 +344,8 @@ export const productOptionGroupDisplays = pgTable(
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (table) => [
-    index('idx_option_group_displays_lookup').on(
-      table.optionGroupId,
-      table.masterId,
-      table.versionId,
-      table.locale,
-    ),
-    uniqueIndex('unique_option_group_display').on(
-      table.optionGroupId,
-      table.masterId,
-      table.versionId,
-      table.locale,
-    ),
+    index('idx_option_group_displays_lookup').on(table.optionGroupId, table.masterId, table.versionId, table.locale),
+    uniqueIndex('unique_option_group_display').on(table.optionGroupId, table.masterId, table.versionId, table.locale),
   ],
 );
 
@@ -387,7 +362,9 @@ export const productOptionValueDisplays = pgTable(
     masterId: uuid('master_id')
       .notNull()
       .references(() => productMasters.id, { onDelete: 'cascade' }),
-    versionId: uuid('version_id').notNull().references(() => productMasterVersions.id, { onDelete: 'cascade' }),
+    versionId: uuid('version_id')
+      .notNull()
+      .references(() => productMasterVersions.id, { onDelete: 'cascade' }),
     locale: varchar('locale', { length: 10 }).notNull().default('ko-KR'),
     displayName: varchar('display_name', { length: 100 }).notNull(),
     colorCode: varchar('color_code', { length: 7 }),
@@ -396,31 +373,18 @@ export const productOptionValueDisplays = pgTable(
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (table) => [
-    index('idx_option_value_displays_lookup').on(
-      table.optionValueId,
-      table.masterId,
-      table.versionId,
-      table.locale,
-    ),
-    uniqueIndex('unique_option_value_display').on(
-      table.optionValueId,
-      table.masterId,
-      table.versionId,
-      table.locale,
-    ),
+    index('idx_option_value_displays_lookup').on(table.optionValueId, table.masterId, table.versionId, table.locale),
+    uniqueIndex('unique_option_value_display').on(table.optionValueId, table.masterId, table.versionId, table.locale),
   ],
 );
 
 // ===== 3. PRODUCT OPTION GROUPS =====
-export const productOptionGroups = pgTable(
-  'product_option_groups',
-  {
-    id: uuid('id')
-      .primaryKey()
-      .$defaultFn(() => uuidv7()),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-  },
-);
+export const productOptionGroups = pgTable('product_option_groups', {
+  id: uuid('id')
+    .primaryKey()
+    .$defaultFn(() => uuidv7()),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
 
 // ===== 4. PRODUCT OPTION VALUES =====
 export const productOptionValues = pgTable(
@@ -434,9 +398,7 @@ export const productOptionValues = pgTable(
       .references(() => productOptionGroups.id, { onDelete: 'cascade' }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
-  (table) => [
-    index('idx_option_values_group').on(table.optionGroupId),
-  ],
+  (table) => [index('idx_option_values_group').on(table.optionGroupId)],
 );
 
 // ===== 5. PRODUCT VARIANTS (판매상품 품목) =====
@@ -484,10 +446,7 @@ export const variantOptionValues = pgTable(
   (table) => [
     index('idx_variant_options_variant').on(table.variantId),
     index('idx_variant_options_value').on(table.optionValueId),
-    uniqueIndex('unique_variant_option_values').on(
-      table.variantId,
-      table.optionValueId,
-    ),
+    uniqueIndex('unique_variant_option_values').on(table.variantId, table.optionValueId),
   ],
 );
 
@@ -504,9 +463,7 @@ export const channelCategories = pgTable(
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
-  (table) => [
-    index('idx_channel_categories_order').on(table.displayOrder),
-  ],
+  (table) => [index('idx_channel_categories_order').on(table.displayOrder)],
 );
 
 // ===== 8. SALES CHANNELS =====
@@ -572,23 +529,20 @@ export const channelProducts = pgTable(
 export const pricingRuleLayerEnum = pgEnum('pricing_rule_layer', ['base_price', 'membership_price', 'tiered_price']);
 export const pricingRuleScopeTypeEnum = pgEnum('pricing_rule_scope_type', ['all_variants', 'with_option', 'variants']);
 export const pricingRuleOperationTypeEnum = pgEnum('pricing_rule_operation_type', ['offset', 'scale', 'override']);
-export const pricingRules = pgTable(
-  'pricing_rules',
-  {
-    id: uuid('id')
-      .primaryKey()
-      .$defaultFn(() => uuidv7()),
-    layer: pricingRuleLayerEnum('layer').notNull(), // 'base_price', 'membership_price', 'tiered_price'
-    order: integer('order').notNull(), // 레이어 내 순서 (1부터 시작)
-    scopeType: pricingRuleScopeTypeEnum('scope_type').notNull(), // 'all_variants', 'with_option', 'variants'
-    scopeTargetIds: uuid('scope_target_ids').array(), // option_value_ids 또는 variant_ids
-    operationType: pricingRuleOperationTypeEnum('operation_type').notNull(), // 'offset', 'scale', 'override'
-    operationValue: bigint('operation_value', { mode: 'number' }).notNull(), // 원 단위 (scale은 1000배)
-    minQuantity: integer('min_quantity'), // tiered_price 레이어에서만 사용
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
-  },
-);
+export const pricingRules = pgTable('pricing_rules', {
+  id: uuid('id')
+    .primaryKey()
+    .$defaultFn(() => uuidv7()),
+  layer: pricingRuleLayerEnum('layer').notNull(), // 'base_price', 'membership_price', 'tiered_price'
+  order: integer('order').notNull(), // 레이어 내 순서 (1부터 시작)
+  scopeType: pricingRuleScopeTypeEnum('scope_type').notNull(), // 'all_variants', 'with_option', 'variants'
+  scopeTargetIds: uuid('scope_target_ids').array(), // option_value_ids 또는 variant_ids
+  operationType: pricingRuleOperationTypeEnum('operation_type').notNull(), // 'offset', 'scale', 'override'
+  operationValue: bigint('operation_value', { mode: 'number' }).notNull(), // 원 단위 (scale은 1000배)
+  minQuantity: integer('min_quantity'), // tiered_price 레이어에서만 사용
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
 
 // ===== 11. PRODUCT VARIANT PRICE CACHE (버전별 가격 캐시) =====
 export const productVariantPriceCache = pgTable(
@@ -614,13 +568,9 @@ export const productVariantPriceCache = pgTable(
   (table) => [
     index('idx_variant_price_cache_version').on(table.versionId),
     index('idx_variant_price_cache_variant').on(table.variantId),
-    uniqueIndex('unique_variant_price_cache_version_variant').on(
-      table.versionId,
-      table.variantId,
-    ),
+    uniqueIndex('unique_variant_price_cache_version_variant').on(table.versionId, table.variantId),
   ],
 );
-
 
 // ===== 12. PRODUCT IMAGES (상품 이미지) =====
 export const productImages = pgTable(
@@ -794,7 +744,9 @@ export const productTagValues = pgTable(
     masterId: uuid('master_id')
       .notNull()
       .references(() => productMasters.id, { onDelete: 'cascade' }),
-    versionId: uuid('version_id').notNull().references(() => productMasterVersions.id, { onDelete: 'cascade' }),
+    versionId: uuid('version_id')
+      .notNull()
+      .references(() => productMasterVersions.id, { onDelete: 'cascade' }),
     tagValueId: uuid('tag_value_id')
       .notNull()
       .references(() => tagValues.id, { onDelete: 'restrict' }),
@@ -843,10 +795,7 @@ export const channelVariantListings = pgTable(
   },
   (table) => [
     // 핵심 인덱스: 채널 + 채널아이템ID로 variant 조회 (매우 빈번)
-    uniqueIndex('uq_channel_variant_listing').on(
-      table.salesChannelId,
-      table.channelItemId,
-    ),
+    uniqueIndex('uq_channel_variant_listing').on(table.salesChannelId, table.channelItemId),
     // variant 기준 조회 (관리 UI용)
     index('idx_channel_listings_variant').on(table.variantId),
     // 채널 기준 조회 (동기화용)
@@ -903,9 +852,7 @@ export const banners = pgTable(
     pcImageFileId: uuid('pc_image_file_id').notNull(),
     mobileImageFileId: uuid('mobile_image_file_id').notNull(),
     linkUrl: text('link_url'),
-    linkedProductMasterIds: jsonb('linked_product_master_ids')
-      .$type<string[]>()
-      .default([]),
+    linkedProductMasterIds: jsonb('linked_product_master_ids').$type<string[]>().default([]),
     displayStartAt: timestamp('display_start_at'),
     displayEndAt: timestamp('display_end_at'),
     isActive: boolean('is_active').notNull().default(true),
@@ -961,92 +908,71 @@ export const pimSchema = {
 };
 
 // ===== RELATIONS =====
-export const productCategoriesRelations = relations(
-  productCategories,
-  ({ one, many }) => ({
-    parent: one(productCategories, {
-      fields: [productCategories.parentId],
-      references: [productCategories.id],
-    }),
-    children: many(productCategories),
-    productMasterCategories: many(productMasterCategories),
+export const productCategoriesRelations = relations(productCategories, ({ one, many }) => ({
+  parent: one(productCategories, {
+    fields: [productCategories.parentId],
+    references: [productCategories.id],
   }),
-);
+  children: many(productCategories),
+  productMasterCategories: many(productMasterCategories),
+}));
 
-export const productMastersRelations = relations(
-  productMasters,
-  ({ many }) => ({
-    versions: many(productMasterVersions),
-    productMasterCategories: many(productMasterCategories),
-    productMasterOptionGroups: many(productMasterOptionGroups),
-    productMasterVariants: many(productMasterVariants),
-    productMasterPricingRules: many(productMasterPricingRules),
-    channelProducts: many(channelProducts),
-    productImages: many(productImages),
-    productTagValues: many(productTagValues),
-  }),
-);
+export const productMastersRelations = relations(productMasters, ({ many }) => ({
+  versions: many(productMasterVersions),
+  productMasterCategories: many(productMasterCategories),
+  productMasterOptionGroups: many(productMasterOptionGroups),
+  productMasterVariants: many(productMasterVariants),
+  productMasterPricingRules: many(productMasterPricingRules),
+  channelProducts: many(channelProducts),
+  productImages: many(productImages),
+  productTagValues: many(productTagValues),
+}));
 
-export const productMasterVersionsRelations = relations(
-  productMasterVersions,
-  ({ one }) => ({
-    master: one(productMasters, {
-      fields: [productMasterVersions.masterId],
-      references: [productMasters.id],
-    }),
-    parentVersion: one(productMasterVersions, {
-      fields: [productMasterVersions.parentVersionId],
-      references: [productMasterVersions.id],
-    }),
+export const productMasterVersionsRelations = relations(productMasterVersions, ({ one }) => ({
+  master: one(productMasters, {
+    fields: [productMasterVersions.masterId],
+    references: [productMasters.id],
   }),
-);
+  parentVersion: one(productMasterVersions, {
+    fields: [productMasterVersions.parentVersionId],
+    references: [productMasterVersions.id],
+  }),
+}));
 
-export const productMasterCategoriesRelations = relations(
-  productMasterCategories,
-  ({ one }) => ({
-    master: one(productMasters, {
-      fields: [productMasterCategories.masterId],
-      references: [productMasters.id],
-    }),
-    category: one(productCategories, {
-      fields: [productMasterCategories.categoryId],
-      references: [productCategories.id],
-    }),
+export const productMasterCategoriesRelations = relations(productMasterCategories, ({ one }) => ({
+  master: one(productMasters, {
+    fields: [productMasterCategories.masterId],
+    references: [productMasters.id],
   }),
-);
+  category: one(productCategories, {
+    fields: [productMasterCategories.categoryId],
+    references: [productCategories.id],
+  }),
+}));
 
-export const channelCategoriesRelations = relations(
-  channelCategories,
-  ({ many }) => ({
-    channels: many(salesChannels),
-  }),
-);
+export const channelCategoriesRelations = relations(channelCategories, ({ many }) => ({
+  channels: many(salesChannels),
+}));
 
-export const salesChannelsRelations = relations(
-  salesChannels,
-  ({ one, many }) => ({
-    category: one(channelCategories, {
-      fields: [salesChannels.categoryId],
-      references: [channelCategories.id],
-    }),
-    channelProducts: many(channelProducts),
-    channelListings: many(channelVariantListings),
+export const salesChannelsRelations = relations(salesChannels, ({ one, many }) => ({
+  category: one(channelCategories, {
+    fields: [salesChannels.categoryId],
+    references: [channelCategories.id],
   }),
-);
+  channelProducts: many(channelProducts),
+  channelListings: many(channelVariantListings),
+}));
 
-export const channelProductsRelations = relations(
-  channelProducts,
-  ({ one }) => ({
-    master: one(productMasters, {
-      fields: [channelProducts.masterId],
-      references: [productMasters.id],
-    }),
-    channel: one(salesChannels, {
-      fields: [channelProducts.channelId],
-      references: [salesChannels.id],
-    }),
+export const channelProductsRelations = relations(channelProducts, ({ one }) => ({
+  master: one(productMasters, {
+    fields: [channelProducts.masterId],
+    references: [productMasters.id],
   }),
-);
+  channel: one(salesChannels, {
+    fields: [channelProducts.channelId],
+    references: [salesChannels.id],
+  }),
+}));
 
 export const tagGroupsRelations = relations(tagGroups, ({ many }) => ({
   values: many(tagValues),
@@ -1095,19 +1021,16 @@ export const productVariantsRelations = relations(productVariants, ({ many }) =>
   channelListings: many(channelVariantListings),
 }));
 
-export const channelVariantListingsRelations = relations(
-  channelVariantListings,
-  ({ one }) => ({
-    variant: one(productVariants, {
-      fields: [channelVariantListings.variantId],
-      references: [productVariants.id],
-    }),
-    channel: one(salesChannels, {
-      fields: [channelVariantListings.salesChannelId],
-      references: [salesChannels.id],
-    }),
+export const channelVariantListingsRelations = relations(channelVariantListings, ({ one }) => ({
+  variant: one(productVariants, {
+    fields: [channelVariantListings.variantId],
+    references: [productVariants.id],
   }),
-);
+  channel: one(salesChannels, {
+    fields: [channelVariantListings.salesChannelId],
+    references: [salesChannels.id],
+  }),
+}));
 
 // 스키마 타입 추출
 export type PimSchema = typeof pimSchema;

@@ -11,4 +11,3 @@ export * from './replace-tag-group-links.dto';
 export * from './move-products-to-category.dto';
 export * from './add-products-to-category.dto';
 export * from './update-visibility.dto';
-

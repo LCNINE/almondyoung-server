@@ -18,4 +18,3 @@ export class CreateChannelCategoryDto {
   @IsInt()
   displayOrder?: number;
 }
-

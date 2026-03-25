@@ -45,11 +45,7 @@ export class ProductApprovalController {
   @ApiResponse({ status: 200, description: '제품 승인 성공' })
   @ApiResponse({ status: 400, description: '잘못된 요청' })
   @ApiResponse({ status: 404, description: '제품을 찾을 수 없음' })
-  async approve(
-    @Param('id') productId: string,
-    @Body() body: ApproveProductDto,
-    @User() user: { userId: string },
-  ) {
+  async approve(@Param('id') productId: string, @Body() body: ApproveProductDto, @User() user: { userId: string }) {
     try {
       return await this.approvalService.approve(productId, user.userId, body.comment);
     } catch (error) {
@@ -70,11 +66,7 @@ export class ProductApprovalController {
   @ApiResponse({ status: 200, description: '제품 거부 성공' })
   @ApiResponse({ status: 400, description: '잘못된 요청' })
   @ApiResponse({ status: 404, description: '제품을 찾을 수 없음' })
-  async reject(
-    @Param('id') productId: string,
-    @Body() body: RejectProductDto,
-    @User() user: { userId: string },
-  ) {
+  async reject(@Param('id') productId: string, @Body() body: RejectProductDto, @User() user: { userId: string }) {
     try {
       return await this.approvalService.reject(productId, user.userId, body.reason);
     } catch (error) {
@@ -95,10 +87,7 @@ export class ProductApprovalController {
     try {
       return await this.approvalService.getPendingApprovals();
     } catch (error) {
-      throw new HttpException(
-        'Failed to get pending approvals',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to get pending approvals', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -113,11 +102,7 @@ export class ProductApprovalController {
     try {
       return await this.approvalService.getApprovalHistory(productId);
     } catch (error) {
-      throw new HttpException(
-        'Failed to get approval history',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to get approval history', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 }
-

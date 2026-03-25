@@ -47,7 +47,7 @@ export class ProductVersionsService {
     private readonly pricingValidator: PricingValidatorService,
     private readonly productReadAssembler: ProductReadAssembler,
     private readonly priceCacheService: VariantPriceCacheService,
-  ) { }
+  ) {}
 
   private get dbConn() {
     return this.db.db;
@@ -81,8 +81,8 @@ export class ProductVersionsService {
           name: version.name,
           parentVersionId: version.parentVersionId,
           children: [],
-          createdAt: version.createdAt!,
-          updatedAt: version.updatedAt!,
+          createdAt: version.createdAt,
+          updatedAt: version.updatedAt,
           draftOwnerId: version.draftOwnerId,
         };
         versionMap.set(version.id, node);
@@ -110,15 +110,12 @@ export class ProductVersionsService {
       const result = await tx
         .select()
         .from(productMasterVersions)
-        .innerJoin(
-          productMasters,
-          eq(productMasterVersions.masterId, productMasters.id)
-        )
+        .innerJoin(productMasters, eq(productMasterVersions.masterId, productMasters.id))
         .where(
           and(
             eq(productMasterVersions.masterId, masterId),
             eq(productMasterVersions.status, 'active'),
-            isNull(productMasters.deletedAt)
+            isNull(productMasters.deletedAt),
           ),
         )
         .limit(1);
@@ -167,7 +164,17 @@ export class ProductVersionsService {
 
       const nextVersion = (maxVersionResult[0]?.max || 0) + 1;
 
-      const { id, masterId, version, parentVersionId: _, status, draftOwnerId, createdAt, updatedAt, ...parentData } = parent;
+      const {
+        id,
+        masterId,
+        version,
+        parentVersionId: _,
+        status,
+        draftOwnerId,
+        createdAt,
+        updatedAt,
+        ...parentData
+      } = parent;
 
       const [newVersion] = await tx
         .insert(productMasterVersions)
@@ -188,9 +195,7 @@ export class ProductVersionsService {
         await this._copyMappings(tx, parent.masterId, parent.id, newVersion.id);
       }
 
-      this.logger.log(
-        `Created draft version ${newVersion.id} for master ${parent.masterId} from version ${parent.id}`,
-      );
+      this.logger.log(`Created draft version ${newVersion.id} for master ${parent.masterId} from version ${parent.id}`);
 
       return newVersion;
     }, tx);
@@ -200,17 +205,12 @@ export class ProductVersionsService {
    * Draft 버전을 Active로 Publish
    * 기존 Active 버전이 있으면 자동으로 Inactive로 전환됨
    */
-  async publishVersion(
-    versionId: string,
-    tx?: DbTransaction,
-  ): Promise<void> {
+  async publishVersion(versionId: string, tx?: DbTransaction): Promise<void> {
     return this.inTx(async (tx) => {
       const version = await this.getVersionById(versionId, tx);
 
       if (version.status !== 'draft' && version.status !== 'inactive') {
-        throw new BadRequestException(
-          'Only draft or inactive versions can be published',
-        );
+        throw new BadRequestException('Only draft or inactive versions can be published');
       }
 
       let previousActiveVersion: ProductMasterVersion | null = null;
@@ -226,12 +226,7 @@ export class ProductVersionsService {
       await tx
         .update(productMasterVersions)
         .set({ status: 'inactive' })
-        .where(
-          and(
-            eq(productMasterVersions.masterId, version.masterId),
-            eq(productMasterVersions.status, 'active'),
-          ),
-        );
+        .where(and(eq(productMasterVersions.masterId, version.masterId), eq(productMasterVersions.status, 'active')));
 
       // 가격 검증 (publish 시점)
       await this.pricingValidator.validateCalculatedPrices(versionId, tx);
@@ -246,32 +241,18 @@ export class ProductVersionsService {
         .where(eq(productMasterVersions.id, versionId));
 
       // 이벤트 발행: 추가/삭제된 variant
-      await this._publishVariantChangeEvents(
-        version,
-        previousActiveVersion,
-        tx,
-      );
+      await this._publishVariantChangeEvents(version, previousActiveVersion, tx);
 
-      await this._emitActiveVersionChangedEvent(
-        version,
-        previousActiveVersion,
-        'active',
-        tx,
-      );
+      await this._emitActiveVersionChangedEvent(version, previousActiveVersion, 'active', tx);
 
-      this.logger.log(
-        `Published version ${version.id} of master ${version.masterId} as active`,
-      );
+      this.logger.log(`Published version ${version.id} of master ${version.masterId} as active`);
     }, tx);
   }
 
   /**
    * Master의 Active 버전을 Inactive로 전환 (상품 비공개)
    */
-  async unpublishMaster(
-    masterId: string,
-    tx?: DbTransaction,
-  ): Promise<void> {
+  async unpublishMaster(masterId: string, tx?: DbTransaction): Promise<void> {
     return this.inTx(async (tx) => {
       const activeVersion = await this.getActiveVersion(masterId, tx);
 
@@ -281,19 +262,11 @@ export class ProductVersionsService {
         .set({ status: 'inactive', updatedAt: new Date() })
         .where(eq(productMasterVersions.id, activeVersion.id));
 
-      await this._emitActiveVersionChangedEvent(
-        activeVersion,
-        activeVersion,
-        'inactive',
-        tx,
-      );
+      await this._emitActiveVersionChangedEvent(activeVersion, activeVersion, 'inactive', tx);
 
-      this.logger.log(
-        `Unpublished master ${masterId} (version ${activeVersion.version} → inactive)`,
-      );
+      this.logger.log(`Unpublished master ${masterId} (version ${activeVersion.version} → inactive)`);
     }, tx);
   }
-
 
   async getDraftVersions(
     filters?: {
@@ -327,7 +300,6 @@ export class ProductVersionsService {
     }, tx);
   }
 
-
   /**
    * Active version 변경 이벤트 발행
    */
@@ -338,20 +310,15 @@ export class ProductVersionsService {
     tx: DbTransaction,
   ): Promise<void> {
     try {
-      const changeReason = targetStatus === 'inactive'
-        ? 'unpublished'
-        : previousActiveVersion
-          ? 'rollback'
-          : 'published';
+      const changeReason =
+        targetStatus === 'inactive' ? 'unpublished' : previousActiveVersion ? 'rollback' : 'published';
 
-      const snapshot = targetStatus === 'active'
-        ? await this._buildFullSnapshot(newVersion.masterId, newVersion.id, tx)
-        : null;
+      const snapshot =
+        targetStatus === 'active' ? await this._buildFullSnapshot(newVersion.masterId, newVersion.id, tx) : null;
 
-      const categoryIds = snapshot?.categories?.map(c => c.id) || [];
-      const primaryCategoryId = categoryIds.length > 0
-        ? await this.getPrimaryCategoryId(newVersion.masterId, newVersion.id, tx)
-        : null;
+      const categoryIds = snapshot?.categories?.map((c) => c.id) || [];
+      const primaryCategoryId =
+        categoryIds.length > 0 ? await this.getPrimaryCategoryId(newVersion.masterId, newVersion.id, tx) : null;
 
       await this.productPublisher.publishEvent({
         eventType: 'ProductMasterActiveVersionChanged',
@@ -373,36 +340,20 @@ export class ProductVersionsService {
         `📤 Published ProductMasterActiveVersionChanged: ${newVersion.masterId} (${changeReason}) with ${snapshot ? 'full snapshot' : 'no snapshot'}`,
       );
     } catch (error) {
-      this.logger.error(
-        `❌ Failed to publish ProductMasterActiveVersionChanged: ${newVersion.masterId}`,
-        error.stack,
-      );
+      this.logger.error(`❌ Failed to publish ProductMasterActiveVersionChanged: ${newVersion.masterId}`, error.stack);
     }
   }
 
-  private async getVersionCategoryIds(
-    masterId: string,
-    versionId: string,
-    tx: DbTransaction,
-  ): Promise<string[]> {
+  private async getVersionCategoryIds(masterId: string, versionId: string, tx: DbTransaction): Promise<string[]> {
     const rows = await tx
       .select({ categoryId: productMasterCategories.categoryId })
       .from(productMasterCategories)
-      .where(
-        and(
-          eq(productMasterCategories.masterId, masterId),
-          eq(productMasterCategories.versionId, versionId),
-        ),
-      );
+      .where(and(eq(productMasterCategories.masterId, masterId), eq(productMasterCategories.versionId, versionId)));
 
     return rows.map((row) => row.categoryId);
   }
 
-  private async getPrimaryCategoryId(
-    masterId: string,
-    versionId: string,
-    tx: DbTransaction,
-  ): Promise<string | null> {
+  private async getPrimaryCategoryId(masterId: string, versionId: string, tx: DbTransaction): Promise<string | null> {
     const [row] = await tx
       .select({ categoryId: productMasterCategories.categoryId })
       .from(productMasterCategories)
@@ -422,11 +373,7 @@ export class ProductVersionsService {
    * 전체 ProductSnapshot 빌드 (Phase 2)
    * 이벤트 페이로드에 포함할 모든 상품 데이터를 조회
    */
-  private async _buildFullSnapshot(
-    masterId: string,
-    versionId: string,
-    tx: DbTransaction,
-  ): Promise<ProductSnapshot> {
+  private async _buildFullSnapshot(masterId: string, versionId: string, tx: DbTransaction): Promise<ProductSnapshot> {
     const version = await tx.query.productMasterVersions.findFirst({
       where: eq(productMasterVersions.id, versionId),
     });
@@ -463,7 +410,7 @@ export class ProductVersionsService {
       description: version.description || undefined,
       descriptionHtml: version.descriptionHtml || undefined,
       thumbnail: version.thumbnail ? `${fileServiceUrl}/files/${version.thumbnail}` : undefined,
-      images: images.map(img => ({
+      images: images.map((img) => ({
         fileId: img.fileId,
         url: `${fileServiceUrl}/files/${img.fileId}`,
         isPrimary: img.isPrimary,
@@ -474,7 +421,7 @@ export class ProductVersionsService {
       seoKeywords: version.seoKeywords?.join(', ') || undefined,
       categories,
       brand: version.brand || undefined,
-      tags: tagRows.map(t => t.name),
+      tags: tagRows.map((t) => t.name),
       productType: version.productType || undefined,
       optionGroups,
       variants,
@@ -493,17 +440,19 @@ export class ProductVersionsService {
     masterId: string,
     versionId: string,
     tx: DbTransaction,
-  ): Promise<Array<{
-    id: string;
-    name: string;
-    slug: string;
-    path: string;
-    parentId: string | null;
-    isActive: boolean;
-    visibility: boolean;
-    showOnMainCategory: boolean;
-    thumbnail?: string;
-  }>> {
+  ): Promise<
+    Array<{
+      id: string;
+      name: string;
+      slug: string;
+      path: string;
+      parentId: string | null;
+      isActive: boolean;
+      visibility: boolean;
+      showOnMainCategory: boolean;
+      thumbnail?: string;
+    }>
+  > {
     const categoryRows = await tx
       .select({
         categoryId: productMasterCategories.categoryId,
@@ -513,12 +462,9 @@ export class ProductVersionsService {
 
     if (categoryRows.length === 0) return [];
 
-    const categoryIds = categoryRows.map(r => r.categoryId);
+    const categoryIds = categoryRows.map((r) => r.categoryId);
 
-    const categories = await tx
-      .select()
-      .from(productCategories)
-      .where(inArray(productCategories.id, categoryIds));
+    const categories = await tx.select().from(productCategories).where(inArray(productCategories.id, categoryIds));
 
     const fileServiceUrl = process.env.FILE_SERVICE_URL || '';
 
@@ -536,7 +482,7 @@ export class ProductVersionsService {
           showOnMainCategory: cat.displaySettings?.showOnMainCategory ?? false,
           thumbnail: cat.imageUrl ? `${fileServiceUrl}/files/${cat.imageUrl}` : undefined,
         };
-      })
+      }),
     );
 
     return categoriesWithPath;
@@ -545,10 +491,7 @@ export class ProductVersionsService {
   /**
    * 카테고리 경로 재귀적으로 구성
    */
-  private async _buildCategoryPath(
-    categoryId: string,
-    tx: DbTransaction,
-  ): Promise<string> {
+  private async _buildCategoryPath(categoryId: string, tx: DbTransaction): Promise<string> {
     const pathParts: string[] = [];
     let currentId: string | null = categoryId;
 
@@ -573,16 +516,18 @@ export class ProductVersionsService {
     masterId: string,
     versionId: string,
     tx: DbTransaction,
-  ): Promise<Array<{
-    id: string;
-    name: string;
-    values: Array<{
+  ): Promise<
+    Array<{
       id: string;
       name: string;
-      colorCode?: string;
-      imageUrl?: string;
-    }>;
-  }>> {
+      values: Array<{
+        id: string;
+        name: string;
+        colorCode?: string;
+        imageUrl?: string;
+      }>;
+    }>
+  > {
     const optionGroupRows = await tx
       .select({
         optionGroupId: productMasterOptionGroups.optionGroupId,
@@ -594,7 +539,7 @@ export class ProductVersionsService {
         and(
           eq(productMasterOptionGroups.optionGroupId, productOptionGroupDisplays.optionGroupId),
           eq(productOptionGroupDisplays.versionId, versionId),
-        )
+        ),
       )
       .where(eq(productMasterOptionGroups.masterId, masterId));
 
@@ -610,23 +555,19 @@ export class ProductVersionsService {
             imageUrl: productOptionValueDisplays.imageUrl,
           })
           .from(productOptionValueDisplays)
-          .where(
-            and(
-              eq(productOptionValueDisplays.versionId, versionId),
-            )
-          );
+          .where(and(eq(productOptionValueDisplays.versionId, versionId)));
 
         return {
           id: row.optionGroupId,
           name: row.displayName || row.optionGroupId,
-          values: valueRows.map(v => ({
+          values: valueRows.map((v) => ({
             id: v.id,
             name: v.name,
             colorCode: v.colorCode || undefined,
             imageUrl: v.imageUrl ? `${fileServiceUrl}/files/${v.imageUrl}` : undefined,
           })),
         };
-      })
+      }),
     );
 
     return optionGroups;
@@ -638,32 +579,34 @@ export class ProductVersionsService {
   private async _getVersionVariants(
     versionId: string,
     tx: DbTransaction,
-  ): Promise<Array<{
-    id: string;
-    variantName: string;
-    sku: string;
-    variantCode?: string;
-    isDefault: boolean;
-    status: string;
-    optionCombination?: Array<{
-      name: string;
-      value: string;
-    }>;
-    basePrice: number;
-    membershipPrice?: number;
-    tieredPrices?: Array<{
-      minQuantity: number;
-      price: number;
-    }>;
-    weight?: number;
-    length?: number;
-    width?: number;
-    height?: number;
-    originCountry?: string;
-    midCode?: string;
-    hsCode?: string;
-    material?: string;
-  }>> {
+  ): Promise<
+    Array<{
+      id: string;
+      variantName: string;
+      sku: string;
+      variantCode?: string;
+      isDefault: boolean;
+      status: string;
+      optionCombination?: Array<{
+        name: string;
+        value: string;
+      }>;
+      basePrice: number;
+      membershipPrice?: number;
+      tieredPrices?: Array<{
+        minQuantity: number;
+        price: number;
+      }>;
+      weight?: number;
+      length?: number;
+      width?: number;
+      height?: number;
+      originCountry?: string;
+      midCode?: string;
+      hsCode?: string;
+      material?: string;
+    }>
+  > {
     const variantRows = await tx
       .select({
         id: productVariants.id,
@@ -673,14 +616,11 @@ export class ProductVersionsService {
         status: productVariants.status,
       })
       .from(productMasterVariants)
-      .innerJoin(
-        productVariants,
-        eq(productMasterVariants.variantId, productVariants.id),
-      )
+      .innerJoin(productVariants, eq(productMasterVariants.variantId, productVariants.id))
       .where(eq(productMasterVariants.versionId, versionId));
 
     const cachedPrices = await this.priceCacheService.getCachedPriceSetsByVersion(versionId, tx);
-    const priceMap = new Map(cachedPrices.map(p => [p.variantId, p]));
+    const priceMap = new Map(cachedPrices.map((p) => [p.variantId, p]));
 
     const variants = await Promise.all(
       variantRows.map(async (variant) => {
@@ -692,10 +632,7 @@ export class ProductVersionsService {
             optionValueName: productOptionValueDisplays.displayName,
           })
           .from(variantOptionValues)
-          .innerJoin(
-            productOptionValues,
-            eq(variantOptionValues.optionValueId, productOptionValues.id),
-          )
+          .innerJoin(productOptionValues, eq(variantOptionValues.optionValueId, productOptionValues.id))
           .innerJoin(
             productOptionValueDisplays,
             and(
@@ -703,10 +640,7 @@ export class ProductVersionsService {
               eq(productOptionValueDisplays.versionId, versionId),
             ),
           )
-          .innerJoin(
-            productOptionGroups,
-            eq(productOptionValues.optionGroupId, productOptionGroups.id),
-          )
+          .innerJoin(productOptionGroups, eq(productOptionValues.optionGroupId, productOptionGroups.id))
           .innerJoin(
             productOptionGroupDisplays,
             and(
@@ -723,7 +657,7 @@ export class ProductVersionsService {
           variantCode: variant.variantCode || undefined,
           isDefault: variant.isDefault,
           status: variant.status,
-          optionCombination: optionValues.map(ov => ({
+          optionCombination: optionValues.map((ov) => ({
             name: ov.optionGroupName || '',
             value: ov.optionValueName || '',
           })),
@@ -731,7 +665,7 @@ export class ProductVersionsService {
           membershipPrice: priceData?.membershipPrice || undefined,
           tieredPrices: priceData?.tieredPrices || undefined,
         };
-      })
+      }),
     );
 
     return variants;
@@ -745,26 +679,12 @@ export class ProductVersionsService {
     oldVersion: ProductMasterVersion | null,
     tx: DbTransaction,
   ): Promise<void> {
-    const newVariantIds = await this.getVersionVariants(
-      newVersion.masterId,
-      newVersion.id,
-      tx,
-    );
+    const newVariantIds = await this.getVersionVariants(newVersion.masterId, newVersion.id, tx);
 
-    const oldVariantIds = oldVersion
-      ? await this.getVersionVariants(
-        oldVersion.masterId,
-        oldVersion.id,
-        tx,
-      )
-      : [];
+    const oldVariantIds = oldVersion ? await this.getVersionVariants(oldVersion.masterId, oldVersion.id, tx) : [];
 
-    const addedVariantIds = newVariantIds.filter(
-      (id) => !oldVariantIds.includes(id),
-    );
-    const deletedVariantIds = oldVariantIds.filter(
-      (id) => !newVariantIds.includes(id),
-    );
+    const addedVariantIds = newVariantIds.filter((id) => !oldVariantIds.includes(id));
+    const deletedVariantIds = oldVariantIds.filter((id) => !newVariantIds.includes(id));
 
     if (deletedVariantIds.length > 0) {
       this.logger.log(
@@ -773,9 +693,7 @@ export class ProductVersionsService {
     }
 
     if (addedVariantIds.length > 0) {
-      this.logger.log(
-        `VARIANT_ADDED event: ${addedVariantIds.length} variants added to master ${newVersion.masterId}`,
-      );
+      this.logger.log(`VARIANT_ADDED event: ${addedVariantIds.length} variants added to master ${newVersion.masterId}`);
     }
 
     if (addedVariantIds.length === 0 && deletedVariantIds.length === 0) {
@@ -783,11 +701,7 @@ export class ProductVersionsService {
     }
   }
 
-  async compareVersions(
-    versionId1: string,
-    versionId2: string,
-    tx?: DbTransaction,
-  ): Promise<VersionDiffDto[]> {
+  async compareVersions(versionId1: string, versionId2: string, tx?: DbTransaction): Promise<VersionDiffDto[]> {
     return this.inTx(async (tx) => {
       const [version1, version2] = await Promise.all([
         this.getVersionById(versionId1, tx),
@@ -973,60 +887,37 @@ export class ProductVersionsService {
     }, tx);
   }
 
-  async getVersionOptionGroups(
-    masterId: string,
-    versionId: string,
-    tx?: DbTransaction,
-  ): Promise<string[]> {
+  async getVersionOptionGroups(masterId: string, versionId: string, tx?: DbTransaction): Promise<string[]> {
     return this.inTx(async (tx) => {
       const mappings = await tx
         .select()
         .from(productMasterOptionGroups)
         .where(
-          and(
-            eq(productMasterOptionGroups.masterId, masterId),
-            eq(productMasterOptionGroups.versionId, versionId),
-          ),
+          and(eq(productMasterOptionGroups.masterId, masterId), eq(productMasterOptionGroups.versionId, versionId)),
         );
 
       return mappings.map((m) => m.optionGroupId);
     }, tx);
   }
 
-  async getVersionVariants(
-    masterId: string,
-    versionId: string,
-    tx?: DbTransaction,
-  ): Promise<string[]> {
+  async getVersionVariants(masterId: string, versionId: string, tx?: DbTransaction): Promise<string[]> {
     return this.inTx(async (tx) => {
       const mappings = await tx
         .select()
         .from(productMasterVariants)
-        .where(
-          and(
-            eq(productMasterVariants.masterId, masterId),
-            eq(productMasterVariants.versionId, versionId),
-          ),
-        );
+        .where(and(eq(productMasterVariants.masterId, masterId), eq(productMasterVariants.versionId, versionId)));
 
       return mappings.map((m) => m.variantId);
     }, tx);
   }
 
-  async getVersionPricingRules(
-    masterId: string,
-    versionId: string,
-    tx?: DbTransaction,
-  ): Promise<string[]> {
+  async getVersionPricingRules(masterId: string, versionId: string, tx?: DbTransaction): Promise<string[]> {
     return this.inTx(async (tx) => {
       const mappings = await tx
         .select()
         .from(productMasterPricingRules)
         .where(
-          and(
-            eq(productMasterPricingRules.masterId, masterId),
-            eq(productMasterPricingRules.versionId, versionId),
-          ),
+          and(eq(productMasterPricingRules.masterId, masterId), eq(productMasterPricingRules.versionId, versionId)),
         );
 
       return mappings.map((m) => m.pricingRuleId);
@@ -1043,10 +934,7 @@ export class ProductVersionsService {
       .select()
       .from(productMasterOptionGroups)
       .where(
-        and(
-          eq(productMasterOptionGroups.masterId, masterId),
-          eq(productMasterOptionGroups.versionId, fromVersionId),
-        ),
+        and(eq(productMasterOptionGroups.masterId, masterId), eq(productMasterOptionGroups.versionId, fromVersionId)),
       );
 
     if (optionGroups.length > 0) {
@@ -1119,12 +1007,7 @@ export class ProductVersionsService {
     const variants = await tx
       .select()
       .from(productMasterVariants)
-      .where(
-        and(
-          eq(productMasterVariants.masterId, masterId),
-          eq(productMasterVariants.versionId, fromVersionId),
-        ),
-      );
+      .where(and(eq(productMasterVariants.masterId, masterId), eq(productMasterVariants.versionId, fromVersionId)));
 
     if (variants.length > 0) {
       await tx.insert(productMasterVariants).values(
@@ -1142,10 +1025,7 @@ export class ProductVersionsService {
       .select()
       .from(productMasterPricingRules)
       .where(
-        and(
-          eq(productMasterPricingRules.masterId, masterId),
-          eq(productMasterPricingRules.versionId, fromVersionId),
-        ),
+        and(eq(productMasterPricingRules.masterId, masterId), eq(productMasterPricingRules.versionId, fromVersionId)),
       );
 
     if (pricingRules.length > 0) {
@@ -1164,16 +1044,13 @@ export class ProductVersionsService {
         tagValueId: productTagValues.tagValueId,
       })
       .from(productTagValues)
-      .innerJoin(
-        tagValues,
-        eq(productTagValues.tagValueId, tagValues.id)
-      )
+      .innerJoin(tagValues, eq(productTagValues.tagValueId, tagValues.id))
       .where(
         and(
           eq(productTagValues.masterId, masterId),
           eq(productTagValues.versionId, fromVersionId),
-          eq(tagValues.isActive, true)
-        )
+          eq(tagValues.isActive, true),
+        ),
       );
 
     if (tagValueMappings.length > 0) {
@@ -1182,7 +1059,7 @@ export class ProductVersionsService {
           masterId,
           versionId: toVersionId,
           tagValueId: tv.tagValueId,
-        }))
+        })),
       );
     }
 
@@ -1190,12 +1067,7 @@ export class ProductVersionsService {
     const categories = await tx
       .select()
       .from(productMasterCategories)
-      .where(
-        and(
-          eq(productMasterCategories.masterId, masterId),
-          eq(productMasterCategories.versionId, fromVersionId),
-        ),
-      );
+      .where(and(eq(productMasterCategories.masterId, masterId), eq(productMasterCategories.versionId, fromVersionId)));
 
     if (categories.length > 0) {
       await tx.insert(productMasterCategories).values(
@@ -1226,23 +1098,20 @@ export class ProductVersionsService {
           isPrimary: img.isPrimary,
           sortOrder: img.sortOrder,
           createdAt: new Date(),
-        }))
+        })),
       );
     }
 
     this.logger.log(
       `Copied mappings and displays from version ${fromVersionId} to ${toVersionId} for master ${masterId}: ` +
-      `${categories.length} categories, ${optionGroups.length} option groups, ${variants.length} variants, ${pricingRules.length} pricing rules, ${tagValueMappings.length} active tag values, ${images.length} images`,
+        `${categories.length} categories, ${optionGroups.length} option groups, ${variants.length} variants, ${pricingRules.length} pricing rules, ${tagValueMappings.length} active tag values, ${images.length} images`,
     );
   }
 
   /**
    * Draft 버전 삭제 (고아 variant도 정리)
    */
-  async deleteDraftVersion(
-    versionId: string,
-    tx?: DbTransaction,
-  ): Promise<void> {
+  async deleteDraftVersion(versionId: string, tx?: DbTransaction): Promise<void> {
     return this.inTx(async (tx) => {
       const version = await this.getVersionById(versionId, tx);
 
@@ -1255,10 +1124,7 @@ export class ProductVersionsService {
         .select({ variantId: productMasterVariants.variantId })
         .from(productMasterVariants)
         .where(
-          and(
-            eq(productMasterVariants.masterId, version.masterId),
-            eq(productMasterVariants.versionId, version.id),
-          ),
+          and(eq(productMasterVariants.masterId, version.masterId), eq(productMasterVariants.versionId, version.id)),
         );
 
       const variantIds = variantMappings.map((m) => m.variantId);
@@ -1295,20 +1161,12 @@ export class ProductVersionsService {
       await tx
         .delete(productMasterVariants)
         .where(
-          and(
-            eq(productMasterVariants.masterId, version.masterId),
-            eq(productMasterVariants.versionId, version.id),
-          ),
+          and(eq(productMasterVariants.masterId, version.masterId), eq(productMasterVariants.versionId, version.id)),
         );
 
       await tx
         .delete(productTagValues)
-        .where(
-          and(
-            eq(productTagValues.masterId, version.masterId),
-            eq(productTagValues.versionId, version.id)
-          )
-        );
+        .where(and(eq(productTagValues.masterId, version.masterId), eq(productTagValues.versionId, version.id)));
 
       // 3. 가격 규칙 매핑 삭제 (고아 정리 포함)
       const pricingRuleMappings = await tx
@@ -1331,17 +1189,11 @@ export class ProductVersionsService {
         );
 
       // 4. 버전 자체 삭제
-      await tx
-        .delete(productMasterVersions)
-        .where(eq(productMasterVersions.id, versionId));
+      await tx.delete(productMasterVersions).where(eq(productMasterVersions.id, versionId));
 
       // 5. 고아 variant 정리
       if (variantIds.length > 0) {
-        await this._cleanupOrphanedVariantsAfterDeletion(
-          version.masterId,
-          variantIds,
-          tx,
-        );
+        await this._cleanupOrphanedVariantsAfterDeletion(version.masterId, variantIds, tx);
       }
 
       // 6. 고아 pricing rules 정리
@@ -1352,9 +1204,7 @@ export class ProductVersionsService {
         );
       }
 
-      this.logger.log(
-        `Deleted draft version ${version.id} of master ${version.masterId}`,
-      );
+      this.logger.log(`Deleted draft version ${version.id} of master ${version.masterId}`);
     }, tx);
   }
 
@@ -1373,40 +1223,26 @@ export class ProductVersionsService {
       const remainingMappings = await tx
         .select({ versionId: productMasterVariants.versionId })
         .from(productMasterVariants)
-        .where(
-          and(
-            eq(productMasterVariants.masterId, masterId),
-            eq(productMasterVariants.variantId, variantId),
-          ),
-        );
+        .where(and(eq(productMasterVariants.masterId, masterId), eq(productMasterVariants.variantId, variantId)));
 
       if (remainingMappings.length === 0) {
         // 더 이상 참조하는 버전이 없으면 삭제
-        await tx
-          .delete(productVariants)
-          .where(eq(productVariants.id, variantId));
+        await tx.delete(productVariants).where(eq(productVariants.id, variantId));
 
         deletedCount++;
-        this.logger.log(
-          `Deleted orphaned variant entity: ${variantId} (no longer referenced after draft deletion)`,
-        );
+        this.logger.log(`Deleted orphaned variant entity: ${variantId} (no longer referenced after draft deletion)`);
       }
     }
 
     if (deletedCount > 0) {
-      this.logger.log(
-        `Cleaned up ${deletedCount} orphaned variant entities`,
-      );
+      this.logger.log(`Cleaned up ${deletedCount} orphaned variant entities`);
     }
   }
 
   /**
    * 고아 pricing rule 정리 (deleteDraftVersion용)
    */
-  private async _cleanupOrphanedPricingRules(
-    candidateRuleIds: string[],
-    tx: DbTransaction,
-  ): Promise<void> {
+  private async _cleanupOrphanedPricingRules(candidateRuleIds: string[], tx: DbTransaction): Promise<void> {
     if (candidateRuleIds.length === 0) {
       return;
     }
@@ -1420,18 +1256,13 @@ export class ProductVersionsService {
         .where(eq(productMasterPricingRules.pricingRuleId, ruleId));
 
       if (allMappings.length === 0) {
-        await tx
-          .delete(pricingRules)
-          .where(eq(pricingRules.id, ruleId));
+        await tx.delete(pricingRules).where(eq(pricingRules.id, ruleId));
         deletedCount++;
       }
     }
 
     if (deletedCount > 0) {
-      this.logger.log(
-        `Cleaned up ${deletedCount} orphaned pricing rules`,
-      );
+      this.logger.log(`Cleaned up ${deletedCount} orphaned pricing rules`);
     }
   }
-
 }

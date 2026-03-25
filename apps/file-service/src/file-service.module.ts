@@ -50,4 +50,4 @@ import { FILE_SERVICE_SCOPES } from './auth/file-service.scopes';
     },
   ],
 })
-export class FileServiceModule { }
+export class FileServiceModule {}

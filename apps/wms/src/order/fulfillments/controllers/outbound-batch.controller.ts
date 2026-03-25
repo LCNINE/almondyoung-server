@@ -1,12 +1,5 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, UsePipes } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiParam,
-  ApiQuery,
-  ApiBody,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { OutboundBatchService } from '../../shared/services/outbound-batch.service';
 import { ZodValidationPipe } from '@app/shared/pipes/zod-validation.pipe';
 import { z } from 'zod';
@@ -15,34 +8,43 @@ const CreateBatchSchema = z.object({
   warehouseId: z.string().uuid(),
   pickingMethod: z.enum(['individual', 'total_picking']),
   name: z.string().optional(),
-  scheduledPickingAt: z.string().datetime().optional().transform(s => s ? new Date(s) : undefined)
+  scheduledPickingAt: z
+    .string()
+    .datetime()
+    .optional()
+    .transform((s) => (s ? new Date(s) : undefined)),
 });
 
 const AddFulfillmentOrdersSchema = z.object({
-  fulfillmentOrderIds: z.array(z.string().uuid()).min(1)
+  fulfillmentOrderIds: z.array(z.string().uuid()).min(1),
 });
 
 @ApiTags('Outbound Batches')
 @Controller('outbound-batches')
 export class OutboundBatchController {
-  constructor(
-    private readonly outboundBatchService: OutboundBatchService
-  ) {}
+  constructor(private readonly outboundBatchService: OutboundBatchService) {}
 
   @Post()
-  @ApiOperation({ summary: '아웃바운드 배치 생성', description: '효율적인 피킹을 위해 여러 주문처리를 하나의 배치로 묶어 처리합니다.' })
+  @ApiOperation({
+    summary: '아웃바운드 배치 생성',
+    description: '효율적인 피킹을 위해 여러 주문처리를 하나의 배치로 묶어 처리합니다.',
+  })
   @ApiBody({
     description: '아웃바운드 배치 생성 데이터',
     schema: {
       type: 'object',
       properties: {
         warehouseId: { type: 'string', format: 'uuid', description: '창고 ID' },
-        pickingMethod: { type: 'string', enum: ['individual', 'total_picking'], description: '피킹 방식 (individual: 개별 피킹, total_picking: 일괄 피킹)' },
+        pickingMethod: {
+          type: 'string',
+          enum: ['individual', 'total_picking'],
+          description: '피킹 방식 (individual: 개별 피킹, total_picking: 일괄 피킹)',
+        },
         name: { type: 'string', description: '배치명 (선택사항)' },
-        scheduledPickingAt: { type: 'string', format: 'date-time', description: '예정 피킹 시간 (선택사항)' }
+        scheduledPickingAt: { type: 'string', format: 'date-time', description: '예정 피킹 시간 (선택사항)' },
       },
-      required: ['warehouseId', 'pickingMethod']
-    }
+      required: ['warehouseId', 'pickingMethod'],
+    },
   })
   @ApiResponse({ status: 201, description: '아웃바운드 배치 생성 성공' })
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
@@ -94,21 +96,18 @@ export class OutboundBatchController {
           type: 'array',
           items: { type: 'string', format: 'uuid' },
           description: '주문처리 ID 목록',
-          minItems: 1
-        }
+          minItems: 1,
+        },
       },
-      required: ['fulfillmentOrderIds']
-    }
+      required: ['fulfillmentOrderIds'],
+    },
   })
   @ApiResponse({ status: 200, description: '주문처리 배치 추가 성공' })
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
   @ApiResponse({ status: 404, description: '배치 또는 주문처리를 찾을 수 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })
   @UsePipes(new ZodValidationPipe(AddFulfillmentOrdersSchema))
-  async addFulfillmentOrders(
-    @Param('id') batchId: string,
-    @Body() dto: z.infer<typeof AddFulfillmentOrdersSchema>
-  ) {
+  async addFulfillmentOrders(@Param('id') batchId: string, @Body() dto: z.infer<typeof AddFulfillmentOrdersSchema>) {
     await this.outboundBatchService.addFulfillmentOrdersToBatch(batchId, dto.fulfillmentOrderIds);
     return { message: 'Fulfillment orders added to batch successfully' };
   }
@@ -121,10 +120,7 @@ export class OutboundBatchController {
   @ApiResponse({ status: 404, description: '배치 또는 주문처리를 찾을 수 없음' })
   @ApiResponse({ status: 400, description: '제거할 수 없는 상태' })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  async removeFulfillmentOrder(
-    @Param('id') batchId: string,
-    @Param('foId') fulfillmentOrderId: string
-  ) {
+  async removeFulfillmentOrder(@Param('id') batchId: string, @Param('foId') fulfillmentOrderId: string) {
     await this.outboundBatchService.removeFulfillmentOrderFromBatch(batchId, fulfillmentOrderId);
     return { message: 'Fulfillment order removed from batch successfully' };
   }
@@ -166,7 +162,10 @@ export class OutboundBatchController {
   }
 
   @Get('available/fulfillment-orders')
-  @ApiOperation({ summary: '가용 주문처리 조회', description: '배치에 추가할 수 있는 가용한 주문처리 목록을 조회합니다.' })
+  @ApiOperation({
+    summary: '가용 주문처리 조회',
+    description: '배치에 추가할 수 있는 가용한 주문처리 목록을 조회합니다.',
+  })
   @ApiQuery({ name: 'warehouseId', required: true, type: String, description: '창고 ID (필수)' })
   @ApiResponse({ status: 200, description: '가용 주문처리 목록 조회 성공' })
   @ApiResponse({ status: 400, description: 'warehouseId 필수' })

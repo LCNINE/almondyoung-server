@@ -37,4 +37,4 @@ import { TagReadLoader } from './loaders/tag-read.loader';
     ProductReadAssembler,
   ],
 })
-export class ProductsModule { }
+export class ProductsModule {}

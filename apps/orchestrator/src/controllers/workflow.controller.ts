@@ -1,9 +1,6 @@
 import { Controller, Post, Body, Logger } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
-import {
-  UnifiedMasterWorkflow,
-  UnifiedMasterInput,
-} from '../workflows/unified-master.workflow';
+import { UnifiedMasterWorkflow, UnifiedMasterInput } from '../workflows/unified-master.workflow';
 
 @ApiTags('Workflows')
 @Controller('workflows')
@@ -18,8 +15,7 @@ export class WorkflowController {
     this.logger.log(`📦 Unified Master Workflow 시작: ${input.name}`);
 
     try {
-      const result =
-        await this.unifiedMasterWorkflow.createUnifiedMaster(input);
+      const result = await this.unifiedMasterWorkflow.createUnifiedMaster(input);
       return {
         success: true,
         data: result,

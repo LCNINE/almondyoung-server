@@ -1,13 +1,6 @@
 import { Controller, Get, Post, Put, Body, Param, Query, UsePipes, Res } from '@nestjs/common';
 import { Response } from 'express';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiParam,
-  ApiQuery,
-  ApiBody,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { DirectShipService } from '../../shared/services/direct-ship.service';
 import { ZodValidationPipe } from '@app/shared/pipes/zod-validation.pipe';
 import { z } from 'zod';
@@ -15,25 +8,23 @@ import { DirectShipOrder } from '../../shared/services/direct-ship.service';
 
 const ForwardOrdersSchema = z.object({
   fulfillmentOrderIds: z.array(z.string().uuid()).min(1),
-  companyName: z.string().min(1)
+  companyName: z.string().min(1),
 });
 
 const CompleteOrdersSchema = z.object({
   fulfillmentOrderIds: z.array(z.string().uuid()).min(1),
-  completedBy: z.string().min(1)
+  completedBy: z.string().min(1),
 });
 
 const ExportOrdersSchema = z.object({
   companyName: z.string().min(1),
-  format: z.enum(['csv', 'xlsx']).default('csv')
+  format: z.enum(['csv', 'xlsx']).default('csv'),
 });
 
 @ApiTags('Direct Ship')
 @Controller('direct-ship')
 export class DirectShipController {
-  constructor(
-    private readonly directShipService: DirectShipService
-  ) { }
+  constructor(private readonly directShipService: DirectShipService) {}
 
   @Get('dashboard')
   @ApiOperation({ summary: '직송 대시보드', description: '직송 주문 대시보드 정보를 조회합니다.' })
@@ -52,18 +43,23 @@ export class DirectShipController {
   @Get('orders')
   @ApiOperation({ summary: '직송 주문 목록', description: '직송 주문 목록을 필터링과 함께 조회합니다.' })
   @ApiQuery({ name: 'companyName', required: false, description: '회사명 필터' })
-  @ApiQuery({ name: 'status', required: false, enum: ['pending', 'forwarded', 'completed', 'canceled'], description: '주문 상태 필터' })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: ['pending', 'forwarded', 'completed', 'canceled'],
+    description: '주문 상태 필터',
+  })
   @ApiQuery({ name: 'warehouseId', required: false, description: '창고 ID 필터' })
   @ApiResponse({ status: 200, description: '직송 주문 목록 조회 성공' })
   async getDirectShipOrders(
     @Query('companyName') companyName?: string,
     @Query('status') status?: 'pending' | 'forwarded' | 'completed' | 'canceled',
-    @Query('warehouseId') warehouseId?: string
+    @Query('warehouseId') warehouseId?: string,
   ) {
     return this.directShipService.getDirectShipOrders({
       companyName,
       status,
-      warehouseId
+      warehouseId,
     });
   }
 
@@ -86,16 +82,16 @@ export class DirectShipController {
       type: 'object',
       properties: {
         fulfillmentOrderIds: { type: 'array', items: { type: 'string' }, description: '주문처리 ID 목록' },
-        companyName: { type: 'string', description: '전달할 회사명' }
-      }
-    }
+        companyName: { type: 'string', description: '전달할 회사명' },
+      },
+    },
   })
   @ApiResponse({ status: 200, description: '주문 전달 성공' })
   @UsePipes(new ZodValidationPipe(ForwardOrdersSchema))
   async forwardOrders(@Body() dto: z.infer<typeof ForwardOrdersSchema>) {
     await this.directShipService.forwardOrdersToCompany(dto.fulfillmentOrderIds, dto.companyName);
     return {
-      message: `Successfully forwarded ${dto.fulfillmentOrderIds.length} orders to ${dto.companyName}`
+      message: `Successfully forwarded ${dto.fulfillmentOrderIds.length} orders to ${dto.companyName}`,
     };
   }
 
@@ -106,16 +102,16 @@ export class DirectShipController {
       type: 'object',
       properties: {
         fulfillmentOrderIds: { type: 'array', items: { type: 'string' }, description: '주문처리 ID 목록' },
-        completedBy: { type: 'string', description: '완료 처리자' }
-      }
-    }
+        completedBy: { type: 'string', description: '완료 처리자' },
+      },
+    },
   })
   @ApiResponse({ status: 200, description: '주문 완료 처리 성공' })
   @UsePipes(new ZodValidationPipe(CompleteOrdersSchema))
   async completeOrders(@Body() dto: z.infer<typeof CompleteOrdersSchema>) {
     await this.directShipService.markOrdersAsCompleted(dto.fulfillmentOrderIds, dto.completedBy);
     return {
-      message: `Successfully completed ${dto.fulfillmentOrderIds.length} orders`
+      message: `Successfully completed ${dto.fulfillmentOrderIds.length} orders`,
     };
   }
 
@@ -134,16 +130,13 @@ export class DirectShipController {
       type: 'object',
       properties: {
         companyName: { type: 'string', description: '회사명' },
-        format: { type: 'string', enum: ['csv', 'xlsx'], description: '파일 형식' }
-      }
-    }
+        format: { type: 'string', enum: ['csv', 'xlsx'], description: '파일 형식' },
+      },
+    },
   })
   @ApiResponse({ status: 200, description: '파일 내보내기 성공' })
   @UsePipes(new ZodValidationPipe(ExportOrdersSchema))
-  async exportOrdersFile(
-    @Body() dto: z.infer<typeof ExportOrdersSchema>,
-    @Res() res: Response
-  ) {
+  async exportOrdersFile(@Body() dto: z.infer<typeof ExportOrdersSchema>, @Res() res: Response) {
     const fileData = await this.directShipService.generateExportFile(dto.companyName, dto.format);
 
     res.setHeader('Content-Type', fileData.mimeType);
@@ -154,11 +147,11 @@ export class DirectShipController {
   @Get('companies/:companyName/orders')
   async getCompanyOrders(
     @Param('companyName') companyName: string,
-    @Query('status') status?: 'pending' | 'forwarded' | 'completed' | 'canceled'
+    @Query('status') status?: 'pending' | 'forwarded' | 'completed' | 'canceled',
   ) {
     return this.directShipService.getDirectShipOrders({
       companyName,
-      status
+      status,
     });
   }
 
@@ -169,11 +162,11 @@ export class DirectShipController {
     const summary = {
       companyName,
       totalOrders: orders.length,
-      pendingOrders: orders.filter(o => o.status === 'pending').length,
-      forwardedOrders: orders.filter(o => o.status === 'forwarded').length,
-      completedOrders: orders.filter(o => o.status === 'completed').length,
+      pendingOrders: orders.filter((o) => o.status === 'pending').length,
+      forwardedOrders: orders.filter((o) => o.status === 'forwarded').length,
+      completedOrders: orders.filter((o) => o.status === 'completed').length,
       totalItems: orders.reduce((sum, order) => sum + order.totalItems, 0),
-      lastOrderDate: orders.length > 0 ? orders[0].createdAt : null
+      lastOrderDate: orders.length > 0 ? orders[0].createdAt : null,
     };
 
     return summary;

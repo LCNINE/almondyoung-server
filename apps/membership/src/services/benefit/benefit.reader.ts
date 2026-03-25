@@ -4,12 +4,7 @@ import { eq, and, desc } from 'drizzle-orm';
 import * as schema from '../../shared/schemas/entities/schema';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import { differenceInDays, addDays } from 'date-fns';
-import {
-  calculateCycleStart,
-  calculateCycleEnd,
-  formatDate,
-  isCycleCompleted,
-} from '../../utils/cycle.utils';
+import { calculateCycleStart, calculateCycleEnd, formatDate, isCycleCompleted } from '../../utils/cycle.utils';
 
 export interface CurrentCycleBenefit {
   userId: string;
@@ -66,10 +61,7 @@ export class BenefitReader {
       .where(
         and(
           eq(schema.membershipCycleBenefits.userId, userId),
-          eq(
-            schema.membershipCycleBenefits.cycleStartDate,
-            formatDate(cycleStartDate),
-          ),
+          eq(schema.membershipCycleBenefits.cycleStartDate, formatDate(cycleStartDate)),
         ),
       )
       .limit(1);
@@ -108,10 +100,7 @@ export class BenefitReader {
   /**
    * 주기별 혜택 이력 조회
    */
-  async findCycleBenefitHistory(
-    userId: string,
-    limit: number = 12,
-  ): Promise<CycleBenefitHistory> {
+  async findCycleBenefitHistory(userId: string, limit: number = 12): Promise<CycleBenefitHistory> {
     const benefits = await this.db.db
       .select()
       .from(schema.membershipCycleBenefits)
@@ -127,10 +116,7 @@ export class BenefitReader {
       isCompleted: isCycleCompleted(new Date(b.cycleEndDate)),
     }));
 
-    const totalDiscountAllTime = benefits.reduce(
-      (sum, b) => sum + b.totalDiscountAmount,
-      0,
-    );
+    const totalDiscountAllTime = benefits.reduce((sum, b) => sum + b.totalDiscountAmount, 0);
 
     return {
       userId,

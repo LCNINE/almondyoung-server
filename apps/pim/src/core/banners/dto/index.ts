@@ -5,4 +5,3 @@ export * from './banners/create-banner.dto';
 export * from './banners/update-banner.dto';
 export * from './banners/banner-response.dto';
 export * from './banner-group-with-banners-response.dto';
-

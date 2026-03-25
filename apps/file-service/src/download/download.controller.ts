@@ -1,4 +1,16 @@
-import { Controller, Get, Head, Param, Query, ParseUUIDPipe, ParseIntPipe, DefaultValuePipe, Res, ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Head,
+  Param,
+  Query,
+  ParseUUIDPipe,
+  ParseIntPipe,
+  DefaultValuePipe,
+  Res,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
 import { RequireScopes, Public, User } from '@app/authorization';
 import { JwtPayload } from '../shared/types/jwt-payload.interface';
@@ -16,7 +28,7 @@ export class DownloadController {
   constructor(
     private readonly downloadService: DownloadService,
     private readonly fileRepository: FileRepository,
-  ) { }
+  ) {}
 
   @Get(':fileId/download')
   // @RequireScopes('file:read')
@@ -65,10 +77,7 @@ export class DownloadController {
   @ApiResponse({ status: 302, description: 'Redirects to S3 public URL' })
   @ApiResponse({ status: 403, description: 'File is not public' })
   @ApiResponse({ status: 404, description: 'File not found or inactive' })
-  async servePublicFile(
-    @Param('fileId', ParseUUIDPipe) fileId: string,
-    @Res() res: Response,
-  ) {
+  async servePublicFile(@Param('fileId', ParseUUIDPipe) fileId: string, @Res() res: Response) {
     const file = await this.fileRepository.findById(fileId);
 
     if (!file) {
@@ -102,4 +111,3 @@ export class DownloadController {
     return { exists: true };
   }
 }
-

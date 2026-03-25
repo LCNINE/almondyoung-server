@@ -18,4 +18,3 @@ export class RejectProductDto {
   @IsString()
   reason: string;
 }
-

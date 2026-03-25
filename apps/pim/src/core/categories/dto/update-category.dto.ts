@@ -1,64 +1,74 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional, IsBoolean, IsInt, Min, MaxLength, IsUrl, IsArray, ValidateNested } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsBoolean,
+  IsInt,
+  Min,
+  MaxLength,
+  IsUrl,
+  IsArray,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { CategoryTagGroupLinkDto } from './category-tag-group-link.dto';
 
 export class UpdateCategoryDto {
-  @ApiProperty({ 
+  @ApiProperty({
     description: '카테고리 이름',
     minLength: 1,
     maxLength: 255,
     required: false,
-    example: '전자제품'
+    example: '전자제품',
   })
   @IsOptional()
   @IsString()
   @MaxLength(255)
   name?: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: '카테고리 설명',
     required: false,
-    example: '다양한 전자제품을 판매합니다'
+    example: '다양한 전자제품을 판매합니다',
   })
   @IsOptional()
   @IsString()
   description?: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: 'URL 슬러그',
     required: false,
-    example: 'electronics'
+    example: 'electronics',
   })
   @IsOptional()
   @IsString()
   @MaxLength(255)
   slug?: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: '카테고리 이미지 URL',
     required: false,
-    example: 'https://example.com/image.jpg'
+    example: 'https://example.com/image.jpg',
   })
   @IsOptional()
   @IsUrl()
   imageUrl?: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: '정렬 순서',
     minimum: 0,
     required: false,
-    example: 0
+    example: 0,
   })
   @IsOptional()
   @IsInt()
   @Min(0)
   sortOrder?: number;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: '활성 상태',
     required: false,
-    example: true
+    example: true,
   })
   @IsOptional()
   @IsBoolean()
@@ -75,4 +85,3 @@ export class UpdateCategoryDto {
   @Type(() => CategoryTagGroupLinkDto)
   tagGroupLinks?: CategoryTagGroupLinkDto[];
 }
-

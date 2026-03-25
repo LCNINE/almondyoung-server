@@ -7,4 +7,3 @@ export const FILE_SERVICE_SCOPES: ScopeDefinition[] = [
     description: 'Read and download files (admin only)',
   },
 ];
-

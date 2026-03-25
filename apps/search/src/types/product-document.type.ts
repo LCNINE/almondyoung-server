@@ -7,7 +7,7 @@ export const PRODUCT_SEARCH_SYNONYMS: string[] = [
   '브러시,브러쉬',
   '롯드,로드,롯뜨,로뜨,롣드,롣뜨',
   '1회용,일회용',
-  '가모,래쉬'
+  '가모,래쉬',
 ];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

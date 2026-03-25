@@ -1,7 +1,18 @@
 import { Controller, Post, Body, Get, Query, Param } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { InboundService } from '../services/inbound.service';
-import { SimpleInboundDto, IndividualInboundDto, PutawayRequestDto, ReturnInboundDto, CancelInboundDto, CreateInboundPlanDto, AddInboundPlanItemsDto, ListPlanItemsQueryDto, ReceiveFromPlanDto, UpdateInboundLineMemoDto } from '../dto/simple-inbound.dto';
+import {
+  SimpleInboundDto,
+  IndividualInboundDto,
+  PutawayRequestDto,
+  ReturnInboundDto,
+  CancelInboundDto,
+  CreateInboundPlanDto,
+  AddInboundPlanItemsDto,
+  ListPlanItemsQueryDto,
+  ReceiveFromPlanDto,
+  UpdateInboundLineMemoDto,
+} from '../dto/simple-inbound.dto';
 import { IndividualInboundResponseDto, SimpleInboundResponseDto } from '../dto/inbound-response.dto';
 import { InboundReceiptMapper } from '../mappers/inbound.mapper';
 
@@ -18,7 +29,11 @@ export class InboundController {
 
   @Post('simple-fullscan')
   @ApiOperation({ summary: '전수조사 간편입고 - (서버는 간편입고와 동일 처리, 기록만 구분)' })
-  @ApiResponse({ status: 201, description: '전수조사 간편입고가 성공적으로 처리되었습니다.', type: SimpleInboundResponseDto })
+  @ApiResponse({
+    status: 201,
+    description: '전수조사 간편입고가 성공적으로 처리되었습니다.',
+    type: SimpleInboundResponseDto,
+  })
   async simpleInboundFullscan(@Body() dto: SimpleInboundDto) {
     const result = await this.inboundService.simpleInboundFullscan(dto);
     return InboundReceiptMapper.toSimpleResponseDto(result.receipt, result.lines);
@@ -33,13 +48,17 @@ export class InboundController {
 
   @Post('individual')
   @ApiOperation({ summary: '개별입고 - 단일 SKU를 지정(옵션) 로케로 입고' })
-  @ApiResponse({ status: 201, description: '개별입고가 성공적으로 처리되었습니다.', type: IndividualInboundResponseDto })
+  @ApiResponse({
+    status: 201,
+    description: '개별입고가 성공적으로 처리되었습니다.',
+    type: IndividualInboundResponseDto,
+  })
   async individualInbound(@Body() dto: IndividualInboundDto) {
     const result = await this.inboundService.individualInbound(dto);
     return InboundReceiptMapper.toIndividualResponseDto(result.receipt, result.line);
   }
 
-  constructor(private readonly inboundService: InboundService) { }
+  constructor(private readonly inboundService: InboundService) {}
 
   @Get('pending')
   @ApiOperation({ summary: '입고 예정 목록 조회' })
@@ -58,13 +77,9 @@ export class InboundController {
   async getInboundHistory(
     @Query('skuId') skuId?: string,
     @Query('warehouseId') warehouseId?: string,
-    @Query('days') days?: string
+    @Query('days') days?: string,
   ) {
-    return this.inboundService.getInboundHistory(
-      skuId,
-      warehouseId,
-      days ? parseInt(days, 10) : 30
-    );
+    return this.inboundService.getInboundHistory(skuId, warehouseId, days ? parseInt(days, 10) : 30);
   }
 
   @Post('verify-barcode')
@@ -73,10 +88,7 @@ export class InboundController {
   @ApiResponse({ status: 404, description: '바코드에 해당하는 SKU를 찾을 수 없습니다.' })
   @ApiResponse({ status: 400, description: '스캔한 SKU가 예상 SKU와 다릅니다.' })
   async verifyInboundByBarcode(@Body() dto: { barcode: string; expectedSkuId?: string }) {
-    return this.inboundService.verifyInboundByBarcode(
-      dto.barcode,
-      dto.expectedSkuId
-    );
+    return this.inboundService.verifyInboundByBarcode(dto.barcode, dto.expectedSkuId);
   }
 
   @Get('receipts')
@@ -98,8 +110,11 @@ export class InboundController {
     @Query('offset') offset?: string,
   ) {
     return this.inboundService.listInboundReceipts({
-      skuId, warehouseId, method,
-      startDate, endDate,
+      skuId,
+      warehouseId,
+      method,
+      startDate,
+      endDate,
       limit: limit ? parseInt(limit, 10) : undefined,
       offset: offset ? parseInt(offset, 10) : undefined,
     });
@@ -126,9 +141,12 @@ export class InboundController {
     @Query('offset') offset?: string,
   ) {
     return this.inboundService.listInboundWorkLogs({
-      warehouseId, skuId,
-      type, method,
-      startDate, endDate,
+      warehouseId,
+      skuId,
+      type,
+      method,
+      startDate,
+      endDate,
       limit: limit ? parseInt(limit, 10) : undefined,
       offset: offset ? parseInt(offset, 10) : undefined,
     });
@@ -151,7 +169,10 @@ export class InboundController {
     @Query('offset') offset?: string,
   ) {
     return this.inboundService.listInboundStatus({
-      skuId, warehouseId, startDate, endDate,
+      skuId,
+      warehouseId,
+      startDate,
+      endDate,
       limit: limit ? parseInt(limit, 10) : undefined,
       offset: offset ? parseInt(offset, 10) : undefined,
     });
@@ -197,9 +218,7 @@ export class InboundController {
   @ApiQuery({ name: 'endDate', required: false })
   @ApiQuery({ name: 'warehouseId', required: false })
   @ApiQuery({ name: 'skuId', required: false })
-  async listPlanItems(
-    @Query() query: ListPlanItemsQueryDto,
-  ) {
+  async listPlanItems(@Query() query: ListPlanItemsQueryDto) {
     return this.inboundService.listInboundPlanItems(query);
   }
 

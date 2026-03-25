@@ -63,7 +63,7 @@ export class PickingProcessService {
 
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
-    private readonly barcodeService: BarcodeService
+    private readonly barcodeService: BarcodeService,
   ) {}
 
   private get db() {
@@ -100,7 +100,7 @@ export class PickingProcessService {
         .from(wmsTables.fulfillmentOrderItems)
         .innerJoin(
           wmsTables.fulfillmentOrders,
-          eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId)
+          eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
         )
         .where(eq(wmsTables.fulfillmentOrders.batchId, batchId));
 
@@ -117,7 +117,7 @@ export class PickingProcessService {
             totalQty: 0,
             pickedQty: 0,
             remainingQty: 0,
-            foiDetails: []
+            foiDetails: [],
           });
         }
 
@@ -133,12 +133,13 @@ export class PickingProcessService {
           salesOrderLineId: row.salesOrderLineId,
           requiredQty: row.qty,
           pickedQty: row.pickedQty,
-          remainingQty: row.qty - row.pickedQty
+          remainingQty: row.qty - row.pickedQty,
         });
       }
 
-      return Array.from(skuOperations.values())
-        .sort((a, b) => (a.locationCode || '').localeCompare(b.locationCode || ''));
+      return Array.from(skuOperations.values()).sort((a, b) =>
+        (a.locationCode || '').localeCompare(b.locationCode || ''),
+      );
     }, tx);
   }
 
@@ -151,7 +152,7 @@ export class PickingProcessService {
 
     await this.inTx(async (trx) => {
       const batch = await trx.query.outboundBatches.findFirst({
-        where: eq(wmsTables.outboundBatches.id, batchId)
+        where: eq(wmsTables.outboundBatches.id, batchId),
       });
 
       if (!batch) {
@@ -167,12 +168,13 @@ export class PickingProcessService {
           eq(wmsTables.fulfillmentOrderItems.skuId, skuId),
           inArray(
             wmsTables.fulfillmentOrderItems.fulfillmentOrderId,
-            trx.select({ id: wmsTables.fulfillmentOrders.id })
+            trx
+              .select({ id: wmsTables.fulfillmentOrders.id })
               .from(wmsTables.fulfillmentOrders)
-              .where(eq(wmsTables.fulfillmentOrders.batchId, batchId))
-          )
+              .where(eq(wmsTables.fulfillmentOrders.batchId, batchId)),
+          ),
         ),
-        orderBy: wmsTables.fulfillmentOrderItems.createdAt
+        orderBy: wmsTables.fulfillmentOrderItems.createdAt,
       });
 
       if (fulfillmentOrderItems.length === 0) {
@@ -185,7 +187,7 @@ export class PickingProcessService {
 
       if (pickedQty > totalRemaining) {
         throw new BadRequestException(
-          `Picked quantity ${pickedQty} exceeds remaining quantity ${totalRemaining} for SKU ${skuId}`
+          `Picked quantity ${pickedQty} exceeds remaining quantity ${totalRemaining} for SKU ${skuId}`,
         );
       }
 
@@ -197,26 +199,27 @@ export class PickingProcessService {
         const itemRemaining = item.qty - item.pickedQty;
         if (itemRemaining <= 0) continue;
 
-          const toPickForItem = Math.min(remainingToDistribute, itemRemaining);
+        const toPickForItem = Math.min(remainingToDistribute, itemRemaining);
 
-        await trx.update(wmsTables.fulfillmentOrderItems)
+        await trx
+          .update(wmsTables.fulfillmentOrderItems)
           .set({
             pickedQty: item.pickedQty + toPickForItem,
-            updatedAt: new Date()
+            updatedAt: new Date(),
           })
           .where(eq(wmsTables.fulfillmentOrderItems.id, item.id));
 
         remainingToDistribute -= toPickForItem;
 
         this.logger.debug(
-          `Updated FOI ${item.id}: picked ${toPickForItem}, total picked: ${item.pickedQty + toPickForItem}/${item.qty}`
+          `Updated FOI ${item.id}: picked ${toPickForItem}, total picked: ${item.pickedQty + toPickForItem}/${item.qty}`,
         );
       }
 
       this.logger.log(
         `Picked ${pickedQty} units of SKU ${skuId} for batch ${batchId}` +
-        (pickerUserId ? ` by user ${pickerUserId}` : '') +
-        (locationCode ? ` from location ${locationCode}` : '')
+          (pickerUserId ? ` by user ${pickerUserId}` : '') +
+          (locationCode ? ` from location ${locationCode}` : ''),
       );
     }, tx);
   }
@@ -243,7 +246,7 @@ export class PickingProcessService {
         .from(wmsTables.fulfillmentOrderItems)
         .innerJoin(
           wmsTables.fulfillmentOrders,
-          eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId)
+          eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
         )
         .where(eq(wmsTables.fulfillmentOrders.batchId, batchId));
 
@@ -258,7 +261,7 @@ export class PickingProcessService {
         group.picked += item.pickedQty;
       }
 
-      const completedSkus = Array.from(skuGroups.values()).filter(group => group.picked >= group.total).length;
+      const completedSkus = Array.from(skuGroups.values()).filter((group) => group.picked >= group.total).length;
       const totalItems = items.reduce((sum, item) => sum + item.qty, 0);
       const pickedItems = items.reduce((sum, item) => sum + item.pickedQty, 0);
 
@@ -269,7 +272,7 @@ export class PickingProcessService {
         totalItems,
         pickedItems,
         remainingItems: totalItems - pickedItems,
-        completionPercentage: totalItems > 0 ? Math.round((pickedItems / totalItems) * 100) : 0
+        completionPercentage: totalItems > 0 ? Math.round((pickedItems / totalItems) * 100) : 0,
       };
     }, tx);
   }
@@ -292,7 +295,8 @@ export class PickingProcessService {
       }
 
       if (fo.status === 'allocated') {
-        await trx.update(wmsTables.fulfillmentOrders)
+        await trx
+          .update(wmsTables.fulfillmentOrders)
           .set({ status: 'picking' })
           .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
       }
@@ -306,30 +310,25 @@ export class PickingProcessService {
           skuName: wmsTables.skus.name,
         })
         .from(wmsTables.fulfillmentOrderItems)
-        .innerJoin(
-          wmsTables.skus,
-          eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId)
-        )
+        .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId))
         .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderId));
 
-      const completedItems = itemRows.filter(i => i.pickedQty >= i.qty).length;
+      const completedItems = itemRows.filter((i) => i.pickedQty >= i.qty).length;
 
       return {
         fulfillmentOrderId,
-        items: itemRows.map(item => ({
+        items: itemRows.map((item) => ({
           foiId: item.id,
           skuId: item.skuId,
           skuName: item.skuName,
           requiredQty: item.qty,
           pickedQty: item.pickedQty,
           locationCode: undefined, // TODO: Get from location service
-          isCompleted: item.pickedQty >= item.qty
+          isCompleted: item.pickedQty >= item.qty,
         })),
         totalItems: itemRows.length,
         completedItems,
-        completionPercentage: itemRows.length > 0
-          ? Math.round((completedItems / itemRows.length) * 100)
-          : 0
+        completionPercentage: itemRows.length > 0 ? Math.round((completedItems / itemRows.length) * 100) : 0,
       };
     }, tx);
   }
@@ -349,7 +348,7 @@ export class PickingProcessService {
         .from(wmsTables.fulfillmentOrderItems)
         .innerJoin(
           wmsTables.fulfillmentOrders,
-          eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId)
+          eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
         )
         .where(eq(wmsTables.fulfillmentOrderItems.id, foiId))
         .limit(1);
@@ -366,14 +365,15 @@ export class PickingProcessService {
       const newPickedQty = item.pickedQty + pickedQty;
       if (newPickedQty > item.qty) {
         throw new BadRequestException(
-          `Picked quantity ${newPickedQty} exceeds required quantity ${item.qty} for item ${foiId}`
+          `Picked quantity ${newPickedQty} exceeds required quantity ${item.qty} for item ${foiId}`,
         );
       }
 
-      await trx.update(wmsTables.fulfillmentOrderItems)
+      await trx
+        .update(wmsTables.fulfillmentOrderItems)
         .set({
           pickedQty: newPickedQty,
-          updatedAt: new Date()
+          updatedAt: new Date(),
         })
         .where(eq(wmsTables.fulfillmentOrderItems.id, foiId));
 
@@ -392,17 +392,16 @@ export class PickingProcessService {
         throw new NotFoundException(`Fulfillment order ${fulfillmentOrderId} not found`);
       }
 
-      const incompleteItems = items.filter(item => item.pickedQty < item.qty);
+      const incompleteItems = items.filter((item) => item.pickedQty < item.qty);
       if (incompleteItems.length > 0) {
-        throw new ConflictException(
-          `Cannot complete picking with ${incompleteItems.length} incomplete items`
-        );
+        throw new ConflictException(`Cannot complete picking with ${incompleteItems.length} incomplete items`);
       }
 
-      await trx.update(wmsTables.fulfillmentOrders)
+      await trx
+        .update(wmsTables.fulfillmentOrders)
         .set({
           status: 'picked',
-          updatedAt: new Date()
+          updatedAt: new Date(),
         })
         .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
 
@@ -417,7 +416,7 @@ export class PickingProcessService {
         .from(wmsTables.fulfillmentOrderItems)
         .innerJoin(
           wmsTables.fulfillmentOrders,
-          eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId)
+          eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
         )
         .where(eq(wmsTables.fulfillmentOrderItems.id, foiId))
         .limit(1);
@@ -431,10 +430,11 @@ export class PickingProcessService {
         throw new ConflictException(`Cannot reset picking for FO in status: ${item.foStatus}`);
       }
 
-      await trx.update(wmsTables.fulfillmentOrderItems)
+      await trx
+        .update(wmsTables.fulfillmentOrderItems)
         .set({
           pickedQty: 0,
-          updatedAt: new Date()
+          updatedAt: new Date(),
         })
         .where(eq(wmsTables.fulfillmentOrderItems.id, foiId));
 
@@ -444,12 +444,16 @@ export class PickingProcessService {
 
   // 바코드 스캔 통합 메서드들
 
-  async scanBarcode(barcode: string, context: {
-    batchId?: string;
-    fulfillmentOrderId?: string;
-    warehouseId: string;
-    pickerUserId?: string;
-  }, tx?: DbTx): Promise<{
+  async scanBarcode(
+    barcode: string,
+    context: {
+      batchId?: string;
+      fulfillmentOrderId?: string;
+      warehouseId: string;
+      pickerUserId?: string;
+    },
+    tx?: DbTx,
+  ): Promise<{
     type: string;
     data: any;
     actions: string[];
@@ -479,7 +483,11 @@ export class PickingProcessService {
     }, tx);
   }
 
-  private async handleSkuScan(skuResult: SkuScanResult, context: any, tx?: DbTx): Promise<{
+  private async handleSkuScan(
+    skuResult: SkuScanResult,
+    context: any,
+    tx?: DbTx,
+  ): Promise<{
     type: string;
     data: any;
     actions: string[];
@@ -492,19 +500,19 @@ export class PickingProcessService {
         return {
           type: 'sku_info',
           data: skuResult,
-          actions: ['view_stock', 'search_in_batches']
+          actions: ['view_stock', 'search_in_batches'],
         };
       }
 
       // 배치에서 해당 SKU 피킹 작업 찾기
       const operations = await this.getPickingOperations(batchId, trx);
-      const skuOperation = operations.find(op => op.skuId === skuId);
+      const skuOperation = operations.find((op) => op.skuId === skuId);
 
       if (!skuOperation) {
         return {
           type: 'sku_not_in_batch',
           data: { ...skuResult, batchId },
-          actions: ['view_stock']
+          actions: ['view_stock'],
         };
       }
 
@@ -513,14 +521,18 @@ export class PickingProcessService {
         data: {
           ...skuResult,
           batchId,
-          operation: skuOperation
+          operation: skuOperation,
         },
-        actions: ['pick_quantity', 'view_foi_details']
+        actions: ['pick_quantity', 'view_foi_details'],
       };
     }, tx);
   }
 
-  private async handleFOIScan(foiResult: FOIScanResult, context: any, tx?: DbTx): Promise<{
+  private async handleFOIScan(
+    foiResult: FOIScanResult,
+    context: any,
+    tx?: DbTx,
+  ): Promise<{
     type: string;
     data: any;
     actions: string[];
@@ -532,7 +544,7 @@ export class PickingProcessService {
         return {
           type: 'foi_completed',
           data: foiResult,
-          actions: ['view_details']
+          actions: ['view_details'],
         };
       }
 
@@ -542,7 +554,7 @@ export class PickingProcessService {
         return {
           type: 'foi_wrong_order',
           data: foiResult,
-          actions: ['view_details']
+          actions: ['view_details'],
         };
       }
 
@@ -550,19 +562,23 @@ export class PickingProcessService {
         return {
           type: 'foi_wrong_batch',
           data: foiResult,
-          actions: ['view_details']
+          actions: ['view_details'],
         };
       }
 
       return {
         type: 'foi_pick_ready',
         data: foiResult,
-        actions
+        actions,
       };
     }, tx);
   }
 
-  private async handleFOScan(foResult: any, context: any, tx?: DbTx): Promise<{
+  private async handleFOScan(
+    foResult: any,
+    context: any,
+    tx?: DbTx,
+  ): Promise<{
     type: string;
     data: any;
     actions: string[];
@@ -573,7 +589,7 @@ export class PickingProcessService {
       return {
         type: 'fo_completed',
         data: foResult,
-        actions: ['view_details', 'start_packing']
+        actions: ['view_details', 'start_packing'],
       };
     }
 
@@ -581,18 +597,22 @@ export class PickingProcessService {
       return {
         type: 'fo_not_ready',
         data: foResult,
-        actions: ['view_details']
+        actions: ['view_details'],
       };
     }
 
     return {
       type: 'fo_pick_ready',
       data: foResult,
-      actions: ['start_individual_picking', 'view_items']
+      actions: ['start_individual_picking', 'view_items'],
     };
   }
 
-  private async handleLocationScan(locationCode: string, context: any, tx?: DbTx): Promise<{
+  private async handleLocationScan(
+    locationCode: string,
+    context: any,
+    tx?: DbTx,
+  ): Promise<{
     type: string;
     data: any;
     actions: string[];
@@ -604,14 +624,14 @@ export class PickingProcessService {
         return {
           type: 'location_access_denied',
           data: { locationCode },
-          actions: []
+          actions: [],
         };
       }
 
       return {
         type: 'location_accessed',
         data: { locationCode },
-        actions: ['view_location_stock', 'scan_next_item']
+        actions: ['view_location_stock', 'scan_next_item'],
       };
     }, tx);
   }
@@ -626,7 +646,7 @@ export class PickingProcessService {
       pickerUserId?: string;
       locationCode?: string;
     },
-    tx?: DbTx
+    tx?: DbTx,
   ): Promise<{
     success: boolean;
     message: string;
@@ -637,20 +657,22 @@ export class PickingProcessService {
 
       if (parsed.type === 'sku' && context.batchId) {
         // 토탈피킹: SKU 바코드로 배치 피킹
-        await this.pickItem({
-          batchId: context.batchId,
-          skuId: parsed.id,
-          pickedQty,
-          locationCode: context.locationCode,
-          pickerUserId: context.pickerUserId
-        }, trx);
+        await this.pickItem(
+          {
+            batchId: context.batchId,
+            skuId: parsed.id,
+            pickedQty,
+            locationCode: context.locationCode,
+            pickerUserId: context.pickerUserId,
+          },
+          trx,
+        );
 
         return {
           success: true,
           message: `Picked ${pickedQty} units of SKU in batch`,
-          data: { skuId: parsed.id, pickedQty }
+          data: { skuId: parsed.id, pickedQty },
         };
-
       } else if (parsed.type === 'fulfillment_order_item') {
         // 개별피킹: FOI 바코드로 직접 피킹
         await this.pickIndividualItem(parsed.id, pickedQty, trx);
@@ -658,9 +680,8 @@ export class PickingProcessService {
         return {
           success: true,
           message: `Picked ${pickedQty} units for specific order item`,
-          data: { foiId: parsed.id, pickedQty }
+          data: { foiId: parsed.id, pickedQty },
         };
-
       } else {
         throw new BadRequestException(`Invalid barcode for picking: ${barcode}`);
       }
@@ -675,19 +696,19 @@ export class PickingProcessService {
       case 'sku':
         return {
           barcode: this.barcodeService.generateSkuBarcode(request.id),
-          label: `SKU-${request.id}`
+          label: `SKU-${request.id}`,
         };
 
       case 'foi':
         return {
           barcode: this.barcodeService.generateFulfillmentOrderItemBarcode(request.id),
-          label: `FOI-${request.id}`
+          label: `FOI-${request.id}`,
         };
 
       case 'fo':
         return {
           barcode: this.barcodeService.generateFulfillmentOrderBarcode(request.id),
-          label: `FO-${request.id}`
+          label: `FO-${request.id}`,
         };
 
       default:

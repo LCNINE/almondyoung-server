@@ -10,7 +10,7 @@ import { JwtPayload } from '../shared/types/jwt-payload.interface';
 @ApiSecurity('cookie')
 @Controller('files')
 export class LifecycleController {
-  constructor(private readonly lifecycleService: LifecycleService) { }
+  constructor(private readonly lifecycleService: LifecycleService) {}
 
   @Delete(':fileId')
   // @RequireScopes('file:read')
@@ -26,4 +26,3 @@ export class LifecycleController {
     return this.lifecycleService.deleteFile(fileId, user);
   }
 }
-

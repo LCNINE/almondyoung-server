@@ -41,7 +41,7 @@ import {
   invoiceStatusEnum,
   auditEventTypeEnum,
   auditSeverityEnum,
-} from "./wms-schema";
+} from './wms-schema';
 
 export const returnStatusValues = returnStatusEnum.enumValues;
 export type ReturnStatusEnum = (typeof returnStatusValues)[number];

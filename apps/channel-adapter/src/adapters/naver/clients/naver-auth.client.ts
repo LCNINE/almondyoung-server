@@ -50,9 +50,7 @@ export class NaverAuthService extends NaverBaseClient {
     if (!salt.startsWith('$2a$') && !salt.startsWith('$2b$')) {
       // Mock 환경: 유효한 bcrypt salt 생성
       salt = bcrypt.genSaltSync(10);
-      this.logger.debug(
-        `Mock 환경: bcrypt salt 생성됨 ${salt.substring(0, 10)}...`,
-      );
+      this.logger.debug(`Mock 환경: bcrypt salt 생성됨 ${salt.substring(0, 10)}...`);
     }
 
     // 3. bcrypt 해싱
@@ -68,11 +66,9 @@ export class NaverAuthService extends NaverBaseClient {
       ['type', 'SELF'],
     ]);
     const res = await firstValueFrom(
-      this.http.post<NaverTokenResponse>(
-        `${this.apiBaseUrl}/oauth2/token`,
-        params,
-        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
-      ),
+      this.http.post<NaverTokenResponse>(`${this.apiBaseUrl}/oauth2/token`, params, {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      }),
     );
 
     this.logger.log('✅ 액세스 토큰 발급 성공');

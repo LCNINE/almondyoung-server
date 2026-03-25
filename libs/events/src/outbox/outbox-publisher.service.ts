@@ -29,7 +29,7 @@ export class OutboxPublisher {
       timestamp: now.toISOString(),
       occurredAt: now.toISOString(),
       source: {
-        service: 'unknown',  // OutboxDispatcher에서 발행 시 설정됨
+        service: 'unknown', // OutboxDispatcher에서 발행 시 설정됨
         aggregateType: params.aggregateType,
         aggregateId: params.aggregateId,
       },
@@ -52,4 +52,3 @@ export class OutboxPublisher {
     });
   }
 }
-

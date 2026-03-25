@@ -6,7 +6,6 @@ import { eq, inArray } from 'drizzle-orm';
 import { DeliveryProvider, DeliveryRequest } from './delivery-provider.interface';
 import { GoodsflowDeliveryProvider } from './goodsflow-delivery.provider';
 
-
 export interface IssueInvoiceRequest {
   fulfillmentOrderId: string;
   carrierCode: string;
@@ -44,9 +43,7 @@ export class InvoiceService {
   private readonly logger = new Logger(InvoiceService.name);
   private readonly deliveryProviders: Map<string, DeliveryProvider>;
 
-  constructor(
-    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>
-  ) {
+  constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {
     this.deliveryProviders = new Map();
     this.deliveryProviders.set('goodsflow', new GoodsflowDeliveryProvider());
   }
@@ -80,26 +77,29 @@ export class InvoiceService {
           foiId: wmsTables.fulfillmentOrderItems.id,
           salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
           productName: wmsTables.skus.name,
-          quantity: wmsTables.fulfillmentOrderItems.qty
+          quantity: wmsTables.fulfillmentOrderItems.qty,
         })
         .from(wmsTables.fulfillmentOrderItems)
         .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId))
         .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderId));
 
-      const salesOrderLineIds = foiRows.map(row => row.salesOrderLineId).filter((id): id is string => id !== null);
-      const salesOrderLines = salesOrderLineIds.length === 0 ? [] : await trx
-        .select({ id: wmsTables.salesOrderLines.id, unitPrice: wmsTables.salesOrderLines.unitPrice })
-        .from(wmsTables.salesOrderLines)
-        .where(inArray(wmsTables.salesOrderLines.id, salesOrderLineIds));
+      const salesOrderLineIds = foiRows.map((row) => row.salesOrderLineId).filter((id): id is string => id !== null);
+      const salesOrderLines =
+        salesOrderLineIds.length === 0
+          ? []
+          : await trx
+              .select({ id: wmsTables.salesOrderLines.id, unitPrice: wmsTables.salesOrderLines.unitPrice })
+              .from(wmsTables.salesOrderLines)
+              .where(inArray(wmsTables.salesOrderLines.id, salesOrderLineIds));
 
-      const priceMap = new Map(salesOrderLines.map(line => [line.id, line.unitPrice]));
+      const priceMap = new Map(salesOrderLines.map((line) => [line.id, line.unitPrice]));
 
       if (fulfillmentOrder.status !== 'picked') {
         throw new ConflictException(`Cannot issue invoice for FO in status: ${fulfillmentOrder.status}`);
       }
 
       const existingInvoice = await trx.query.invoices.findFirst({
-        where: eq(wmsTables.invoices.fulfillmentOrderId, fulfillmentOrderId)
+        where: eq(wmsTables.invoices.fulfillmentOrderId, fulfillmentOrderId),
       });
 
       if (existingInvoice) {
@@ -124,22 +124,22 @@ export class InvoiceService {
           senderName: request.senderName,
           senderPhone: request.senderPhone,
           deliveryMessage: request.deliveryMessage,
-          items: foiRows.map(row => ({
+          items: foiRows.map((row) => ({
             productName: row.productName,
             quantity: row.quantity,
-            price: (row.salesOrderLineId && priceMap.get(row.salesOrderLineId)) || 0
-          }))
+            price: (row.salesOrderLineId && priceMap.get(row.salesOrderLineId)) || 0,
+          })),
         };
 
         const response = await provider.issueInvoice(deliveryRequest);
         invoiceNumber = response.invoiceNumber;
         goodsflowServiceId = response.serviceId;
-
       } else {
         invoiceNumber = this.generateInvoiceNumber();
       }
 
-      const [invoice] = await trx.insert(wmsTables.invoices)
+      const [invoice] = await trx
+        .insert(wmsTables.invoices)
         .values({
           fulfillmentOrderId,
           invoiceNumber,
@@ -147,13 +147,14 @@ export class InvoiceService {
           issueMethod,
           goodsflowServiceId,
           status: 'issued',
-          issuedAt: new Date()
+          issuedAt: new Date(),
         })
         .returning();
 
-      await trx.update(wmsTables.fulfillmentOrders)
+      await trx
+        .update(wmsTables.fulfillmentOrders)
         .set({
-          status: 'invoiced'
+          status: 'invoiced',
         })
         .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
 
@@ -177,7 +178,7 @@ export class InvoiceService {
         throw new NotFoundException('Some invoices not found');
       }
 
-      const goodsflowInvoices = invoices.filter(inv => inv.issueMethod === 'goodsflow' && inv.goodsflowServiceId);
+      const goodsflowInvoices = invoices.filter((inv) => inv.issueMethod === 'goodsflow' && inv.goodsflowServiceId);
 
       if (goodsflowInvoices.length === 0) {
         throw new BadRequestException('No Goodsflow invoices to print');
@@ -188,20 +189,26 @@ export class InvoiceService {
         throw new BadRequestException('Goodsflow provider not configured');
       }
 
-      const serviceIds = goodsflowInvoices.map(inv => inv.goodsflowServiceId!);
+      const serviceIds = goodsflowInvoices.map((inv) => inv.goodsflowServiceId!);
       const printResponse = await provider.generatePrintUri(serviceIds);
 
-      await trx.update(wmsTables.invoices)
+      await trx
+        .update(wmsTables.invoices)
         .set({
           status: 'printed',
-          printedAt: new Date()
+          printedAt: new Date(),
         })
-        .where(inArray(wmsTables.invoices.id, goodsflowInvoices.map(inv => inv.id)));
+        .where(
+          inArray(
+            wmsTables.invoices.id,
+            goodsflowInvoices.map((inv) => inv.id),
+          ),
+        );
 
       this.logger.log(`Generated print URI for ${goodsflowInvoices.length} invoices`);
 
       return {
-        printUri: printResponse.printUri
+        printUri: printResponse.printUri,
       };
     }, tx);
   }
@@ -224,7 +231,7 @@ export class InvoiceService {
         .from(wmsTables.invoices)
         .where(eq(wmsTables.invoices.id, invoiceId))
         .limit(1)
-        .then(rows => rows[0]);
+        .then((rows) => rows[0]);
 
       if (!invoice) {
         throw new NotFoundException(`Invoice ${invoiceId} not found`);
@@ -238,17 +245,19 @@ export class InvoiceService {
         throw new ConflictException(`Cannot ship invoice in status: ${invoice.status}`);
       }
 
-      await trx.update(wmsTables.invoices)
+      await trx
+        .update(wmsTables.invoices)
         .set({
           status: 'shipped',
-          shippedAt: new Date()
+          shippedAt: new Date(),
         })
         .where(eq(wmsTables.invoices.id, invoiceId));
 
-      await trx.update(wmsTables.fulfillmentOrders)
+      await trx
+        .update(wmsTables.fulfillmentOrders)
         .set({
           status: 'shipped',
-          shippedAt: new Date()
+          shippedAt: new Date(),
         })
         .where(eq(wmsTables.fulfillmentOrders.id, invoice.fulfillmentOrderId));
 
@@ -274,7 +283,7 @@ export class InvoiceService {
         .from(wmsTables.invoices)
         .where(eq(wmsTables.invoices.id, invoiceId))
         .limit(1)
-        .then(rows => rows[0]);
+        .then((rows) => rows[0]);
 
       if (!invoice) {
         throw new NotFoundException(`Invoice ${invoiceId} not found`);
@@ -295,15 +304,17 @@ export class InvoiceService {
         }
       }
 
-      await trx.update(wmsTables.invoices)
+      await trx
+        .update(wmsTables.invoices)
         .set({
-          status: 'canceled'
+          status: 'canceled',
         })
         .where(eq(wmsTables.invoices.id, invoiceId));
 
-      await trx.update(wmsTables.fulfillmentOrders)
+      await trx
+        .update(wmsTables.fulfillmentOrders)
         .set({
-          status: 'picked'
+          status: 'picked',
         })
         .where(eq(wmsTables.fulfillmentOrders.id, invoice.fulfillmentOrderId));
 
@@ -329,7 +340,7 @@ export class InvoiceService {
         .from(wmsTables.invoices)
         .where(eq(wmsTables.invoices.id, invoiceId))
         .limit(1)
-        .then(rows => rows[0]);
+        .then((rows) => rows[0]);
 
       if (!invoice) {
         throw new NotFoundException(`Invoice ${invoiceId} not found`);
@@ -346,7 +357,7 @@ export class InvoiceService {
         issuedAt: invoice.issuedAt ?? undefined,
         printedAt: invoice.printedAt ?? undefined,
         shippedAt: invoice.shippedAt ?? undefined,
-        items: []
+        items: [],
       };
     }, tx);
   }
@@ -354,7 +365,7 @@ export class InvoiceService {
   async trackInvoice(invoiceId: string, tx?: DbTx) {
     return this.inTx(async (trx) => {
       const invoice = await trx.query.invoices.findFirst({
-        where: eq(wmsTables.invoices.id, invoiceId)
+        where: eq(wmsTables.invoices.id, invoiceId),
       });
 
       if (!invoice) {

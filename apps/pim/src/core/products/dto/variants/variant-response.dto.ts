@@ -66,4 +66,3 @@ export class VariantPriceResponseDto {
   @ApiProperty({ description: '계산된 가격' })
   price: number;
 }
-

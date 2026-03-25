@@ -200,7 +200,11 @@ export class HealthService {
   /**
    * 비즈니스 로직 헬스체크
    */
-  private async checkBusinessLogic(): Promise<{ status: 'healthy' | 'unhealthy'; responseTime: number; details?: any }> {
+  private async checkBusinessLogic(): Promise<{
+    status: 'healthy' | 'unhealthy';
+    responseTime: number;
+    details?: any;
+  }> {
     const startTime = Date.now();
 
     try {

@@ -30,10 +30,7 @@ class CoupangSyncTester {
     const httpService = new HttpService();
     const naverAdapter = new NaverSmartstoreAdapter(httpService);
     const coupangAdapter = new CoupangAdapter(httpService);
-    const adapterFactory = new ChannelAdapterFactory(
-      naverAdapter,
-      coupangAdapter,
-    );
+    const adapterFactory = new ChannelAdapterFactory(naverAdapter, coupangAdapter);
 
     this.orchestrator = new AdapterOrchestrationService(adapterFactory);
 
@@ -49,27 +46,19 @@ class CoupangSyncTester {
     try {
       // 환경변수 설정 (실제 쿠팡 API 사용)
       // 실제 쿠팡 API 키가 없으므로 테스트용 값 사용
-      process.env.COUPANG_VENDOR_ID =
-        process.env.COUPANG_VENDOR_ID || 'A00012345';
-      process.env.COUPANG_ACCESS_KEY =
-        process.env.COUPANG_ACCESS_KEY || 'test-access-key';
-      process.env.COUPANG_SECRET_KEY =
-        process.env.COUPANG_SECRET_KEY || 'test-secret-key';
+      process.env.COUPANG_VENDOR_ID = process.env.COUPANG_VENDOR_ID || 'A00012345';
+      process.env.COUPANG_ACCESS_KEY = process.env.COUPANG_ACCESS_KEY || 'test-access-key';
+      process.env.COUPANG_SECRET_KEY = process.env.COUPANG_SECRET_KEY || 'test-secret-key';
       process.env.COUPANG_API_ENDPOINT = 'https://api-gateway.coupang.com';
 
       console.log('🔧 환경변수 설정 완료:');
       console.log(`  - COUPANG_VENDOR_ID: ${process.env.COUPANG_VENDOR_ID}`);
-      console.log(
-        `  - COUPANG_API_ENDPOINT: ${process.env.COUPANG_API_ENDPOINT}`,
-      );
+      console.log(`  - COUPANG_API_ENDPOINT: ${process.env.COUPANG_API_ENDPOINT}`);
       console.log('');
 
       // 쿠팡 발주서 동기화 실행
       console.log('📡 쿠팡 발주서 동기화 실행...');
-      const events = await this.orchestrator.pollAndPublish(
-        'coupang',
-        'orders',
-      );
+      const events = await this.orchestrator.pollAndPublish('coupang', 'orders');
 
       console.log('\n📊 동기화 결과:');
       console.log(`  - 총 이벤트 수: ${events.length}건`);
@@ -79,9 +68,7 @@ class CoupangSyncTester {
         const firstEvent = events[0];
         console.log(`  - 채널 타입: ${firstEvent.channelType}`);
         console.log(`  - 외부 주문 ID: ${firstEvent.externalOrderId}`);
-        console.log(
-          `  - 외부 상품 주문 ID: ${firstEvent.externalProductOrderId}`,
-        );
+        console.log(`  - 외부 상품 주문 ID: ${firstEvent.externalProductOrderId}`);
         console.log(`  - 상태: ${firstEvent.status}`);
         console.log(`  - 수량: ${firstEvent.quantity}`);
         console.log(`  - 가격: ${firstEvent.priceAmount.toLocaleString()}원`);
@@ -93,9 +80,7 @@ class CoupangSyncTester {
           console.log(`  - 이름: ${firstEvent.buyer.name}`);
           console.log(`  - 연락처: ${firstEvent.buyer.contact}`);
           if (firstEvent.buyer.address) {
-            console.log(
-              `  - 주소: ${firstEvent.buyer.address.roadAddress} ${firstEvent.buyer.address.detailAddress}`,
-            );
+            console.log(`  - 주소: ${firstEvent.buyer.address.roadAddress} ${firstEvent.buyer.address.detailAddress}`);
             console.log(`  - 우편번호: ${firstEvent.buyer.address.postalCode}`);
           }
         }
@@ -111,8 +96,7 @@ class CoupangSyncTester {
         // 상태별 분포 통계
         const statusDistribution: Record<string, number> = {};
         events.forEach((event) => {
-          statusDistribution[event.status] =
-            (statusDistribution[event.status] || 0) + 1;
+          statusDistribution[event.status] = (statusDistribution[event.status] || 0) + 1;
         });
 
         console.log('\n📈 상태별 분포:');

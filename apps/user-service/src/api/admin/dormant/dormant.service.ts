@@ -5,10 +5,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { and, eq, inArray, isNotNull, isNull, lt } from 'drizzle-orm';
 import * as schema from '../../../../database/drizzle/schema';
-import {
-  userServiceSchema,
-  type UserServiceSchema,
-} from '../../../../database/drizzle/schema';
+import { userServiceSchema, type UserServiceSchema } from '../../../../database/drizzle/schema';
 
 @Injectable()
 export class DormantService {
@@ -28,9 +25,7 @@ export class DormantService {
       const dormantCount = await this.markDormantUsersAndNotify();
       const deletedCount = await this.permanentDelete();
 
-      this.logger.log(
-        `휴면 계정 전환/삭제 완료 - 휴면 전환: ${dormantCount}건, 영구 삭제: ${deletedCount}건`,
-      );
+      this.logger.log(`휴면 계정 전환/삭제 완료 - 휴면 전환: ${dormantCount}건, 영구 삭제: ${deletedCount}건`);
     } catch (error) {
       this.logger.error('휴면 계정 처리 중 오류 발생', error);
     }
@@ -50,14 +45,8 @@ export class DormantService {
           email: schema.users.email,
         })
         .from(schema.users)
-        .innerJoin(
-          schema.userRoleAssignments,
-          eq(schema.userRoleAssignments.userId, schema.users.id),
-        )
-        .innerJoin(
-          schema.roles,
-          eq(schema.roles.roleId, schema.userRoleAssignments.roleId),
-        )
+        .innerJoin(schema.userRoleAssignments, eq(schema.userRoleAssignments.userId, schema.users.id))
+        .innerJoin(schema.roles, eq(schema.roles.roleId, schema.userRoleAssignments.roleId))
         .where(
           and(
             lt(schema.users.lastActivityAt, oneMinuteAgo),
@@ -78,12 +67,7 @@ export class DormantService {
         .set({
           deletedAt: new Date(),
         })
-        .where(
-          and(
-            inArray(schema.users.id, userIds),
-            isNull(schema.users.deletedAt),
-          ),
-        );
+        .where(and(inArray(schema.users.id, userIds), isNull(schema.users.deletedAt)));
 
       // 각 사용자에 대해 휴면 계정 전환이 되었다는 안내 이벤트 발행
       for (const user of targetUsers) {
@@ -98,10 +82,7 @@ export class DormantService {
             },
           });
         } catch (error) {
-          this.logger.error(
-            `휴면 계정 전환 이벤트 발행 실패 (사용자 ID: ${user.id})`,
-            error,
-          );
+          this.logger.error(`휴면 계정 전환 이벤트 발행 실패 (사용자 ID: ${user.id})`, error);
         }
       }
 
@@ -128,12 +109,7 @@ export class DormantService {
       const targetUsers = await this.dbService.db
         .select({ id: schema.users.id })
         .from(schema.users)
-        .where(
-          and(
-            isNotNull(schema.users.deletedAt),
-            lt(schema.users.deletedAt, twoYearsAgo),
-          ),
-        )
+        .where(and(isNotNull(schema.users.deletedAt), lt(schema.users.deletedAt, twoYearsAgo)))
         .limit(batchSize);
 
       if (targetUsers.length === 0) {
@@ -142,9 +118,7 @@ export class DormantService {
 
       const userIds = targetUsers.map((user) => user.id);
 
-      await this.dbService.db
-        .delete(schema.users)
-        .where(inArray(schema.users.id, userIds));
+      await this.dbService.db.delete(schema.users).where(inArray(schema.users.id, userIds));
 
       // 각 사용자에 대해 영구 삭제가 되었다는 안내 이벤트 발행
       for (const user of targetUsers) {

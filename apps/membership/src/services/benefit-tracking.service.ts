@@ -5,10 +5,7 @@ import { BenefitManager } from './benefit/benefit.manager';
 import { RecordDiscountDto } from '../shared/dto/benefit-tracking.dto';
 
 // 하위 호환성을 위한 타입 export
-export type {
-  CurrentCycleBenefit,
-  CycleBenefitHistory,
-} from './benefit/benefit.reader';
+export type { CurrentCycleBenefit, CycleBenefitHistory } from './benefit/benefit.reader';
 
 /**
  * 혜택 추적 서비스 (Business Layer)
@@ -34,9 +31,7 @@ export class BenefitTrackingService {
    * ✅ 흐름만 표현: "구독 조회 → 혜택 기록"
    */
   async recordDiscount(dto: RecordDiscountDto): Promise<void> {
-    const subscription = await this.subscriptionService.getActiveSubscription(
-      dto.userId,
-    );
+    const subscription = await this.subscriptionService.getActiveSubscription(dto.userId);
 
     if (!subscription) {
       this.logger.warn('No active subscription', {
@@ -79,18 +74,13 @@ export class BenefitTrackingService {
    * ✅ 흐름만 표현: "구독 조회 → 혜택 조회"
    */
   async getCurrentCycleBenefit(userId: string) {
-    const subscription =
-      await this.subscriptionService.getActiveSubscription(userId);
+    const subscription = await this.subscriptionService.getActiveSubscription(userId);
 
     if (!subscription) {
       throw new Error('NO_ACTIVE_SUBSCRIPTION');
     }
 
-    return this.benefitReader.findCurrentCycleBenefit(
-      userId,
-      subscription.billingDate,
-      subscription.type,
-    );
+    return this.benefitReader.findCurrentCycleBenefit(userId, subscription.billingDate, subscription.type);
   }
 
   /**

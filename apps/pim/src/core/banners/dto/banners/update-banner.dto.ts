@@ -63,4 +63,3 @@ export class UpdateBannerDto {
   @IsString()
   updatedBy?: string;
 }
-

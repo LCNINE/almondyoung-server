@@ -1,10 +1,6 @@
 import { BadRequestException, GoneException, Injectable, NotFoundException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import {
-  ProductVariant,
-  UpdateProductVariant,
-  DbTransaction
-} from '../../../types';
+import { ProductVariant, UpdateProductVariant, DbTransaction } from '../../../types';
 import { ProductVariantMapper } from '../mappers';
 import { VariantWithPriceDto } from '../dto/variants/variant-response.dto';
 import {
@@ -17,16 +13,15 @@ import {
   productOptionValues,
   productOptionGroupDisplays,
   productOptionValueDisplays,
-  variantOptionValues
+  variantOptionValues,
 } from '../../../schema';
 import { eq, and, or, like, ilike, count, asc, desc, sql, inArray, SQL, isNull } from 'drizzle-orm';
 import { UpdateProductVariantDto, UpdateVariantBulkDto } from '../dto';
 import { ProductVersionsService } from './product-versions.service';
 import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
 
-type VariantDetailKeysParam = { variantId: string, versionId: string } | { variantId: string, masterId: string };
-type VariantOptionsKeysParam = { variantId: string, versionId: string } | { variantId: string, masterId: string };
-
+type VariantDetailKeysParam = { variantId: string; versionId: string } | { variantId: string; masterId: string };
+type VariantOptionsKeysParam = { variantId: string; versionId: string } | { variantId: string; masterId: string };
 
 @Injectable()
 export class ProductVariantsService {
@@ -34,7 +29,7 @@ export class ProductVariantsService {
     @InjectDb() private readonly db: DbService<PimSchema>,
     private readonly productVersionsService: ProductVersionsService,
     private readonly priceCacheService: VariantPriceCacheService,
-  ) { }
+  ) {}
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.db.db;
@@ -44,13 +39,17 @@ export class ProductVariantsService {
     return tx ? fn(tx) : this.db.db.transaction(fn);
   }
 
-
-  async getVariantsByMaster(masterId: string, versionId?: string, filters?: {
-    status?: string;
-    includePrice?: boolean;
-    page?: number;
-    limit?: number;
-  }, tx?: DbTransaction): Promise<{
+  async getVariantsByMaster(
+    masterId: string,
+    versionId?: string,
+    filters?: {
+      status?: string;
+      includePrice?: boolean;
+      page?: number;
+      limit?: number;
+    },
+    tx?: DbTransaction,
+  ): Promise<{
     data: VariantWithPriceDto[];
     total: number;
     page: number;
@@ -73,20 +72,14 @@ export class ProductVariantsService {
       const [activeVersion] = await client
         .select({ id: productMasterVersions.id })
         .from(productMasterVersions)
-        .where(
-          and(
-            eq(productMasterVersions.masterId, masterId),
-            eq(productMasterVersions.status, 'active'),
-          ),
-        )
+        .where(and(eq(productMasterVersions.masterId, masterId), eq(productMasterVersions.status, 'active')))
         .limit(1);
 
       if (!activeVersion) {
         throw new NotFoundException(`No active version found for master ${masterId}`);
       }
       actualVersionId = activeVersion.id;
-    }
-    else {
+    } else {
       const [version] = await client
         .select({ id: productMasterVersions.id })
         .from(productMasterVersions)
@@ -113,10 +106,7 @@ export class ProductVariantsService {
     const countQuery = client
       .select({ count: count() })
       .from(productMasterVariants)
-      .innerJoin(
-        productVariants,
-        eq(productMasterVariants.variantId, productVariants.id),
-      )
+      .innerJoin(productVariants, eq(productMasterVariants.variantId, productVariants.id))
       .where(whereClause);
 
     const [{ count: total }] = await countQuery;
@@ -124,10 +114,7 @@ export class ProductVariantsService {
     const variants = await client
       .select()
       .from(productMasterVariants)
-      .innerJoin(
-        productVariants,
-        eq(productMasterVariants.variantId, productVariants.id),
-      )
+      .innerJoin(productVariants, eq(productMasterVariants.variantId, productVariants.id))
       .where(whereClause)
       .orderBy(asc(productVariants.displayOrder), asc(productVariants.createdAt))
       .limit(limit)
@@ -167,19 +154,24 @@ export class ProductVariantsService {
         .innerJoin(productOptionGroups, eq(productOptionValues.optionGroupId, productOptionGroups.id))
         .where(eq(variantOptionValues.variantId, variant.id));
 
-      variantsWithPriceData.push(ProductVariantMapper.toWithPriceDto({
-        ...variant,
-        versionId: actualVersionId,
-        masterId: row.product_master_variants.masterId,
-        optionValues
-      }, price));
+      variantsWithPriceData.push(
+        ProductVariantMapper.toWithPriceDto(
+          {
+            ...variant,
+            versionId: actualVersionId,
+            masterId: row.product_master_variants.masterId,
+            optionValues,
+          },
+          price,
+        ),
+      );
     }
 
     return {
       data: variantsWithPriceData,
       total,
       page,
-      limit
+      limit,
     };
   }
 
@@ -191,7 +183,8 @@ export class ProductVariantsService {
 
       if ('versionId' in keys) {
         versionId = keys.versionId;
-        const [version] = await tx.select({ masterId: productMasterVersions.masterId })
+        const [version] = await tx
+          .select({ masterId: productMasterVersions.masterId })
           .from(productMasterVersions)
           .where(eq(productMasterVersions.id, versionId))
           .limit(1);
@@ -201,8 +194,7 @@ export class ProductVariantsService {
         }
 
         masterId = version.masterId;
-      }
-      else {
+      } else {
         const activeVersion = await this.productVersionsService.getActiveVersion(keys.masterId, tx);
         versionId = activeVersion.id;
         masterId = keys.masterId;
@@ -210,11 +202,7 @@ export class ProductVariantsService {
 
       const variantId = keys.variantId;
 
-      const [variant] = await tx
-        .select()
-        .from(productVariants)
-        .where(eq(productVariants.id, variantId))
-        .limit(1);
+      const [variant] = await tx.select().from(productVariants).where(eq(productVariants.id, variantId)).limit(1);
 
       if (!variant) {
         throw new NotFoundException(`Variant ${variantId} not found`);
@@ -230,10 +218,7 @@ export class ProductVariantsService {
           createdAt: productOptionValues.createdAt,
         })
         .from(variantOptionValues)
-        .innerJoin(
-          productOptionValues,
-          eq(variantOptionValues.optionValueId, productOptionValues.id),
-        )
+        .innerJoin(productOptionValues, eq(variantOptionValues.optionValueId, productOptionValues.id))
         .innerJoin(
           productOptionValueDisplays,
           and(
@@ -242,10 +227,7 @@ export class ProductVariantsService {
             eq(productOptionValueDisplays.locale, 'ko-KR'),
           ),
         )
-        .innerJoin(
-          productOptionGroups,
-          eq(productOptionValues.optionGroupId, productOptionGroups.id),
-        )
+        .innerJoin(productOptionGroups, eq(productOptionValues.optionGroupId, productOptionGroups.id))
         .innerJoin(
           productOptionGroupDisplays,
           and(
@@ -255,11 +237,7 @@ export class ProductVariantsService {
           ),
         )
         .where(eq(variantOptionValues.variantId, variantId))
-        .orderBy(
-          asc(productOptionGroupDisplays.sortOrder),
-          asc(productOptionValueDisplays.sortOrder),
-        );
-
+        .orderBy(asc(productOptionGroupDisplays.sortOrder), asc(productOptionValueDisplays.sortOrder));
 
       let price: number;
       try {
@@ -269,35 +247,43 @@ export class ProductVariantsService {
         price = 0;
       }
 
-      return ProductVariantMapper.toWithPriceDto({
-        ...variant,
-        masterId,
-        versionId,
-        optionValues
-      }, price);
-    }, tx)
-
+      return ProductVariantMapper.toWithPriceDto(
+        {
+          ...variant,
+          masterId,
+          versionId,
+          optionValues,
+        },
+        price,
+      );
+    }, tx);
   }
 
-  async getVariantOptions(keys: VariantOptionsKeysParam, tx?: DbTransaction): Promise<Array<{
-    optionGroup: {
-      id: string;
-      displayName: string;
-      sortOrder: number | null;
-    };
-    optionValue: {
-      id: string;
-      displayName: string;
-      sortOrder: number | null;
-    };
-  }>> {
+  async getVariantOptions(
+    keys: VariantOptionsKeysParam,
+    tx?: DbTransaction,
+  ): Promise<
+    Array<{
+      optionGroup: {
+        id: string;
+        displayName: string;
+        sortOrder: number | null;
+      };
+      optionValue: {
+        id: string;
+        displayName: string;
+        sortOrder: number | null;
+      };
+    }>
+  > {
     return await this.inTx(async (tx) => {
       let versionId: string;
       let masterId: string;
 
       if ('versionId' in keys) {
         versionId = keys.versionId;
-        const [version] = await tx.select({ masterId: productMasterVersions.masterId })
+        const [version] = await tx
+          .select({ masterId: productMasterVersions.masterId })
           .from(productMasterVersions)
           .where(eq(productMasterVersions.id, versionId))
           .limit(1);
@@ -307,8 +293,7 @@ export class ProductVariantsService {
         }
 
         masterId = version.masterId;
-      }
-      else {
+      } else {
         const activeVersion = await this.productVersionsService.getActiveVersion(keys.masterId, tx);
         versionId = activeVersion.id;
         masterId = keys.masterId;
@@ -316,26 +301,22 @@ export class ProductVariantsService {
 
       const variantId = keys.variantId;
 
-
       // Display 테이블을 통해 optionInfo 조회
       const optionInfo = await tx
         .select({
           optionGroup: {
             id: productOptionGroups.id,
             displayName: productOptionGroupDisplays.displayName,
-            sortOrder: productOptionGroupDisplays.sortOrder
+            sortOrder: productOptionGroupDisplays.sortOrder,
           },
           optionValue: {
             id: productOptionValues.id,
             displayName: productOptionValueDisplays.displayName,
             sortOrder: productOptionValueDisplays.sortOrder,
-          }
+          },
         })
         .from(variantOptionValues)
-        .innerJoin(
-          productOptionValues,
-          eq(variantOptionValues.optionValueId, productOptionValues.id),
-        )
+        .innerJoin(productOptionValues, eq(variantOptionValues.optionValueId, productOptionValues.id))
         .innerJoin(
           productOptionValueDisplays,
           and(
@@ -344,10 +325,7 @@ export class ProductVariantsService {
             eq(productOptionValueDisplays.locale, 'ko-KR'),
           ),
         )
-        .innerJoin(
-          productOptionGroups,
-          eq(productOptionValues.optionGroupId, productOptionGroups.id),
-        )
+        .innerJoin(productOptionGroups, eq(productOptionValues.optionGroupId, productOptionGroups.id))
         .innerJoin(
           productOptionGroupDisplays,
           and(
@@ -357,15 +335,11 @@ export class ProductVariantsService {
           ),
         )
         .where(eq(variantOptionValues.variantId, variantId))
-        .orderBy(
-          asc(productOptionGroupDisplays.sortOrder),
-          asc(productOptionValueDisplays.sortOrder),
-        );
+        .orderBy(asc(productOptionGroupDisplays.sortOrder), asc(productOptionValueDisplays.sortOrder));
 
       return optionInfo;
-    }, tx)
+    }, tx);
   }
-
 
   async updateVariantStatus(variantId: string, status: string, tx?: DbTransaction): Promise<void> {
     if (!variantId) {
@@ -392,7 +366,7 @@ export class ProductVariantsService {
       .update(productVariants)
       .set({
         status,
-        updatedAt: new Date()
+        updatedAt: new Date(),
       })
       .where(eq(productVariants.id, variantId));
   }
@@ -418,8 +392,8 @@ export class ProductVariantsService {
       .from(productVariants)
       .where(inArray(productVariants.id, variantIds));
 
-    const existingIds = existingVariants.map(v => v.id);
-    const missingIds = variantIds.filter(id => !existingIds.includes(id));
+    const existingIds = existingVariants.map((v) => v.id);
+    const missingIds = variantIds.filter((id) => !existingIds.includes(id));
 
     if (missingIds.length > 0) {
       throw new NotFoundException(`Variants not found: ${missingIds.join(', ')}`);
@@ -429,7 +403,7 @@ export class ProductVariantsService {
       .update(productVariants)
       .set({
         status,
-        updatedAt: new Date()
+        updatedAt: new Date(),
       })
       .where(inArray(productVariants.id, variantIds));
   }
@@ -474,54 +448,64 @@ export class ProductVariantsService {
     const existingVariants = await client
       .select({ id: productVariants.id })
       .from(productVariants)
-      .where(inArray(productVariants.id, data.updates.map(u => u.id)));
+      .where(
+        inArray(
+          productVariants.id,
+          data.updates.map((u) => u.id),
+        ),
+      );
 
-    const existingIds = existingVariants.map(v => v.id);
-    const missingIds = data.updates.map(u => u.id).filter(id => !existingIds.includes(id));
+    const existingIds = existingVariants.map((v) => v.id);
+    const missingIds = data.updates.map((u) => u.id).filter((id) => !existingIds.includes(id));
 
     if (missingIds.length > 0) {
       throw new NotFoundException(`Variants not found: ${missingIds.join(', ')}`);
     }
 
     const validStatuses = ['active', 'inactive'];
-    if (data.updates.map(u => u.status).some(status => status && !validStatuses.includes(status))) {
-      throw new BadRequestException(`Invalid status: ${data.updates.map(u => u.status).join(', ')}. Valid statuses are: ${validStatuses.join(', ')}`);
+    if (data.updates.map((u) => u.status).some((status) => status && !validStatuses.includes(status))) {
+      throw new BadRequestException(
+        `Invalid status: ${data.updates.map((u) => u.status).join(', ')}. Valid statuses are: ${validStatuses.join(', ')}`,
+      );
     }
 
-    if (data.updates.map(u => u.displayOrder).some(displayOrder => displayOrder !== undefined && displayOrder < 0)) {
+    if (
+      data.updates.map((u) => u.displayOrder).some((displayOrder) => displayOrder !== undefined && displayOrder < 0)
+    ) {
       throw new BadRequestException('Display order must be non-negative');
     }
 
-    const updateData = data.updates.map(u => ({
+    const updateData = data.updates.map((u) => ({
       ...u,
-      updatedAt: new Date()
+      updatedAt: new Date(),
     }));
 
     for (const update of updateData) {
-      await client
-        .update(productVariants)
-        .set(update)
-        .where(eq(productVariants.id, update.id));
+      await client.update(productVariants).set(update).where(eq(productVariants.id, update.id));
     }
   }
-
 
   async calculateVariantPrice(variantId: string, tx?: DbTransaction): Promise<number> {
     // NOTE: This method has been moved to PricingCalculatorService
     // Use PricingCalculatorService.calculateVariantPrice() instead
-    throw new GoneException('calculateVariantPrice has been moved to PricingCalculatorService. Use the new pricing API.');
+    throw new GoneException(
+      'calculateVariantPrice has been moved to PricingCalculatorService. Use the new pricing API.',
+    );
   }
 
   async calculateVariantPrices(variantIds: string[], tx?: DbTransaction): Promise<Record<string, number>> {
     // NOTE: This method has been moved to PricingCalculatorService
-    throw new GoneException('calculateVariantPrices has been moved to PricingCalculatorService. Use the new pricing API.');
+    throw new GoneException(
+      'calculateVariantPrices has been moved to PricingCalculatorService. Use the new pricing API.',
+    );
   }
 
   async calculateAllVariantPrices(masterId: string, tx?: DbTransaction): Promise<Record<string, number>> {
     // NOTE: This method has been moved to PricingCalculatorService
-    throw new GoneException('calculateAllVariantPrices has been moved to PricingCalculatorService. Use the new pricing API.');
+    throw new GoneException(
+      'calculateAllVariantPrices has been moved to PricingCalculatorService. Use the new pricing API.',
+    );
   }
-
 
   async existsVariant(variantId: string, tx?: DbTransaction): Promise<boolean> {
     if (!variantId) {
@@ -538,7 +522,6 @@ export class ProductVariantsService {
     return result[0].count > 0;
   }
 
-
   async getActiveVariants(masterId: string, versionId?: string, tx?: DbTransaction): Promise<ProductVariant[]> {
     if (!masterId) {
       throw new BadRequestException('Master ID is required');
@@ -550,18 +533,14 @@ export class ProductVariantsService {
       if (!versionId) {
         const targetVersion = await this.productVersionsService.getActiveVersion(masterId, tx);
         targetVersionId = targetVersion.id;
-      }
-      else {
+      } else {
         targetVersionId = versionId;
       }
 
       const results = await tx
         .select()
         .from(productMasterVariants)
-        .innerJoin(
-          productVariants,
-          eq(productMasterVariants.variantId, productVariants.id),
-        )
+        .innerJoin(productVariants, eq(productMasterVariants.variantId, productVariants.id))
         .where(
           and(
             eq(productMasterVariants.masterId, masterId),
@@ -571,10 +550,9 @@ export class ProductVariantsService {
         )
         .orderBy(asc(productVariants.displayOrder));
 
-      return results.map(r => r.product_variants);
-    }, tx)
+      return results.map((r) => r.product_variants);
+    }, tx);
   }
-
 
   async updateDisplayOrder(variantId: string, displayOrder: number, tx?: DbTransaction): Promise<void> {
     if (!variantId) {
@@ -596,8 +574,8 @@ export class ProductVariantsService {
       .update(productVariants)
       .set({
         displayOrder,
-        updatedAt: new Date()
+        updatedAt: new Date(),
       })
       .where(eq(productVariants.id, variantId));
   }
-} 
+}

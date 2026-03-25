@@ -13,7 +13,6 @@ export const testRecords = pgTable('test_records', {
 export type TestRecord = typeof testRecords.$inferSelect;
 export type NewTestRecord = typeof testRecords.$inferInsert;
 
-
 export const outboxDemoSchema = {
   testRecords,
   ...outboxSchema,

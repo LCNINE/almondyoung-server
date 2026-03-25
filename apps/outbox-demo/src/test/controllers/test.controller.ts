@@ -1,4 +1,15 @@
-import { Controller, Post, Get, Delete, Body, Param, ParseIntPipe, HttpException, HttpStatus, NotFoundException } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Delete,
+  Body,
+  Param,
+  ParseIntPipe,
+  HttpException,
+  HttpStatus,
+  NotFoundException,
+} from '@nestjs/common';
 import { TestService } from '../services/test.service';
 import { CreateTestRecordDto } from '../dto/create-test-record.dto';
 
@@ -22,10 +33,7 @@ export class TestController {
         message: 'Test record created and event saved to outbox',
       };
     } catch (error) {
-      throw new HttpException(
-        `Failed to create test record: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException(`Failed to create test record: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -81,10 +89,7 @@ export class TestController {
       if (error.message.includes('not found')) {
         throw new NotFoundException(`Test record with id ${id} not found`);
       }
-      throw new HttpException(
-        `Failed to delete test record: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException(`Failed to delete test record: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 }

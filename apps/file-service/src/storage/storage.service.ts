@@ -27,4 +27,3 @@ export class StorageService {
     return provider.signedUrl.getSignedUrl(request);
   }
 }
-

@@ -41,9 +41,7 @@ export class AlmondAuthClient {
   async getMembershipStatus(cafe24MemberId: string): Promise<boolean> {
     const url = `${this.getBaseUrl()}/member/cafe24/subscription/${encodeURIComponent(cafe24MemberId)}`;
     try {
-      const response = await firstValueFrom(
-        this.httpService.get<{ success: boolean; data: { active: boolean } }>(url),
-      );
+      const response = await firstValueFrom(this.httpService.get<{ success: boolean; data: { active: boolean } }>(url));
       return response.data?.data?.active ?? false;
     } catch (error) {
       const status = error?.response?.status;

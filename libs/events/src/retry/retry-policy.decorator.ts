@@ -5,11 +5,7 @@
  */
 
 import { SetMetadata } from '@nestjs/common';
-import {
-  RETRY_POLICY_METADATA,
-  DISABLE_DLQ_METADATA,
-  RetryPolicyConfig,
-} from './retry-policy.types';
+import { RETRY_POLICY_METADATA, DISABLE_DLQ_METADATA, RetryPolicyConfig } from './retry-policy.types';
 
 /**
  * 이벤트 핸들러의 재시도 정책 지정
@@ -22,8 +18,7 @@ import {
  *   // 실패 시 자동으로 DLQ로 전송
  * }
  */
-export const RetryPolicy = (config: RetryPolicyConfig = {}) =>
-  SetMetadata(RETRY_POLICY_METADATA, config);
+export const RetryPolicy = (config: RetryPolicyConfig = {}) => SetMetadata(RETRY_POLICY_METADATA, config);
 
 /**
  * DLQ 전송 비활성화
@@ -39,4 +34,3 @@ export const RetryPolicy = (config: RetryPolicyConfig = {}) =>
  * }
  */
 export const DisableDLQ = () => SetMetadata(DISABLE_DLQ_METADATA, true);
-

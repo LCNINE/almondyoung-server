@@ -26,7 +26,7 @@ interface JwtPayload {
 @ApiSecurity('cookie')
 @Controller('files')
 export class UploadController {
-  constructor(private readonly uploadService: UploadService) { }
+  constructor(private readonly uploadService: UploadService) {}
 
   @Post('upload')
   @HttpCode(200)

@@ -1,17 +1,26 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsUUID, IsEnum, IsOptional, IsDateString, IsNumber, IsPositive, IsArray, ValidateNested } from 'class-validator';
+import {
+  IsUUID,
+  IsEnum,
+  IsOptional,
+  IsDateString,
+  IsNumber,
+  IsPositive,
+  IsArray,
+  ValidateNested,
+} from 'class-validator';
 import { SupplierResponseDto } from '../../suppliers/dto/supplier-response.dto';
 
 export enum PurchaseOrderType {
   DOMESTIC = 'domestic',
-  FOREIGN = 'foreign'
+  FOREIGN = 'foreign',
 }
 
 export enum PurchaseOrderStatus {
   CREATED = 'created',
   CONFIRMED = 'confirmed',
-  RECEIVED = 'received'
+  RECEIVED = 'received',
 }
 
 export class CreatePurchaseOrderLineDto {
@@ -109,8 +118,6 @@ export class AddToCartDto {
   @IsUUID()
   supplierId?: string;
 }
-
-
 
 export class UpdateCartItemDto {
   @ApiProperty({ description: '수량' })

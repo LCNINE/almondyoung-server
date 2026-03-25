@@ -58,7 +58,7 @@ export class TestProviderResponseDto {
   @ApiProperty({
     enum: Channel,
     description: '채널',
-    example: 'EMAIL', 
+    example: 'EMAIL',
   })
   channel: Channel;
 

@@ -46,6 +46,4 @@ export const CycleBenefitHistorySchema = z.object({
   totalDiscountAllTime: z.number().int(),
 });
 
-export class CycleBenefitHistoryDto extends createZodDto(
-  CycleBenefitHistorySchema,
-) {}
+export class CycleBenefitHistoryDto extends createZodDto(CycleBenefitHistorySchema) {}

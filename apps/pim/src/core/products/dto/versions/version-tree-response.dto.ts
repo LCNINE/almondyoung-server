@@ -45,4 +45,3 @@ export class VersionTreeResponseDto {
   })
   draftOwnerId?: string | null;
 }
-

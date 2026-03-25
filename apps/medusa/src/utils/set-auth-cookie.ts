@@ -10,11 +10,7 @@ interface SetAuthCookieOptions {
   httpOnly?: boolean;
 }
 
-export const setAuthCookie = (
-  res: Response,
-  token: string,
-  options: SetAuthCookieOptions = {},
-): void => {
+export const setAuthCookie = (res: Response, token: string, options: SetAuthCookieOptions = {}): void => {
   const {
     maxAge = TWO_WEEKS_IN_MS,
     secure = process.env.NODE_ENV === 'production',

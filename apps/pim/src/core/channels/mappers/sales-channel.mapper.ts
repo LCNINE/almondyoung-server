@@ -10,7 +10,7 @@ import { ChannelCategoryMapper } from './channel-category.mapper';
 
 export type SalesChannelWithCategory = SalesChannelEntity & {
   category: ChannelCategoryEntity | null;
-}
+};
 
 export class SalesChannelMapper {
   /**
@@ -38,6 +38,6 @@ export class SalesChannelMapper {
    * Map array of entities to SalesChannelDto array
    */
   static toDtoArray(entities: Array<SalesChannelWithCategory>): SalesChannelDto[] {
-    return entities.map(e => this.toDto(e));
+    return entities.map((e) => this.toDto(e));
   }
 }

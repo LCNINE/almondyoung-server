@@ -1,6 +1,13 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { wmsTables, wmsSchema, DbTx, LocationRack, LocationColumn, Location } from '../../../database/schemas/wms-schema';
+import {
+  wmsTables,
+  wmsSchema,
+  DbTx,
+  LocationRack,
+  LocationColumn,
+  Location,
+} from '../../../database/schemas/wms-schema';
 import { TypedDatabase, DbService } from '@app/db';
 import { eq, and, like, desc, asc, count, sql } from 'drizzle-orm';
 import {
@@ -8,14 +15,9 @@ import {
   CreateRackDto,
   CreateZoneLocationDto,
   AddCustomBinDto,
-  LocationCreateResultDto
+  LocationCreateResultDto,
 } from '../dto/location-create.dto';
-import {
-  UpdateLocationDto,
-  UpdateColumnDto,
-  UpdateRackDto,
-  ExtendRackBinsDto
-} from '../dto/location-update.dto';
+import { UpdateLocationDto, UpdateColumnDto, UpdateRackDto, ExtendRackBinsDto } from '../dto/location-update.dto';
 import { LocationQueryDto } from '../dto/location-query.dto';
 import { SystemLocationRole } from '../types';
 import { SYSTEM_LOCATION_DEFAULTS } from '../constants/warehouse.constants';
@@ -25,9 +27,7 @@ import { StandardLocationResponseDto, ZoneLocationResponseDto } from '../dto';
 export class LocationService {
   private readonly logger = new Logger(LocationService.name);
 
-  constructor(
-    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
-  ) { }
+  constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
 
   private get db() {
     return this.dbService.db;
@@ -46,12 +46,7 @@ export class LocationService {
         const [exists] = await trx
           .select()
           .from(wmsTables.locations)
-          .where(
-            and(
-              eq(wmsTables.locations.warehouseId, warehouseId),
-              eq(wmsTables.locations.systemRole, role)
-            )
-          )
+          .where(and(eq(wmsTables.locations.warehouseId, warehouseId), eq(wmsTables.locations.systemRole, role)))
           .limit(1);
 
         if (!exists) {
@@ -76,10 +71,7 @@ export class LocationService {
   async getSystemLocationByRole(warehouseId: string, role: SystemLocationRole, tx?: DbTx) {
     const db = tx ?? this.db;
     const loc = await db.query.locations.findFirst({
-      where: and(
-        eq(wmsTables.locations.warehouseId, warehouseId),
-        eq(wmsTables.locations.systemRole, role)
-      ),
+      where: and(eq(wmsTables.locations.warehouseId, warehouseId), eq(wmsTables.locations.systemRole, role)),
     });
     if (!loc) {
       throw new NotFoundException(`System location not found for role ${role} in warehouse ${warehouseId}`);
@@ -87,18 +79,18 @@ export class LocationService {
     return loc;
   }
 
-
-
   async createColumn(warehouseId: string, dto: CreateColumnDto) {
     this.logger.log(`Creating column ${dto.columnName} for warehouse ${warehouseId}`);
 
     const existing = await this.db
       .select()
       .from(wmsTables.locationColumns)
-      .where(and(
-        eq(wmsTables.locationColumns.warehouseId, warehouseId),
-        eq(wmsTables.locationColumns.columnName, dto.columnName)
-      ))
+      .where(
+        and(
+          eq(wmsTables.locationColumns.warehouseId, warehouseId),
+          eq(wmsTables.locationColumns.columnName, dto.columnName),
+        ),
+      )
       .limit(1);
 
     if (existing.length > 0) {
@@ -148,8 +140,6 @@ export class LocationService {
     return updated;
   }
 
-
-
   async createRack(warehouseId: string, dto: CreateRackDto): Promise<LocationCreateResultDto> {
     this.logger.log(`Creating rack ${dto.columnName}-${dto.rackNumber} for warehouse ${warehouseId}`);
 
@@ -157,10 +147,12 @@ export class LocationService {
       const [column] = await tx
         .select()
         .from(wmsTables.locationColumns)
-        .where(and(
-          eq(wmsTables.locationColumns.warehouseId, warehouseId),
-          eq(wmsTables.locationColumns.columnName, dto.columnName)
-        ))
+        .where(
+          and(
+            eq(wmsTables.locationColumns.warehouseId, warehouseId),
+            eq(wmsTables.locationColumns.columnName, dto.columnName),
+          ),
+        )
         .limit(1);
 
       if (!column) {
@@ -170,10 +162,9 @@ export class LocationService {
       const existing = await tx
         .select()
         .from(wmsTables.locationRacks)
-        .where(and(
-          eq(wmsTables.locationRacks.columnId, column.id),
-          eq(wmsTables.locationRacks.rackNumber, dto.rackNumber)
-        ))
+        .where(
+          and(eq(wmsTables.locationRacks.columnId, column.id), eq(wmsTables.locationRacks.rackNumber, dto.rackNumber)),
+        )
         .limit(1);
 
       if (existing.length > 0) {
@@ -224,20 +215,22 @@ export class LocationService {
       }
 
       if (dto.binSettings.customBins && dto.binSettings.customBins.length > 0) {
-        const customLocations: Array<typeof wmsTables.locations.$inferInsert> = dto.binSettings.customBins.map(customBinName => {
-          const locationCode = `${dto.columnName}-${dto.rackNumber.toString().padStart(2, '0')}-${customBinName}`;
-          createdLocationCodes.push(locationCode);
+        const customLocations: Array<typeof wmsTables.locations.$inferInsert> = dto.binSettings.customBins.map(
+          (customBinName) => {
+            const locationCode = `${dto.columnName}-${dto.rackNumber.toString().padStart(2, '0')}-${customBinName}`;
+            createdLocationCodes.push(locationCode);
 
-          return {
-            warehouseId,
-            code: locationCode,
-            locationType: 'standard',
-            rackId: rack.id,
-            binIdentifier: customBinName,
-            displayName: locationCode,
-            isActive: true,
-          };
-        });
+            return {
+              warehouseId,
+              code: locationCode,
+              locationType: 'standard',
+              rackId: rack.id,
+              binIdentifier: customBinName,
+              displayName: locationCode,
+              isActive: true,
+            };
+          },
+        );
 
         await tx.insert(wmsTables.locations).values(customLocations);
       }
@@ -252,8 +245,6 @@ export class LocationService {
     });
   }
 
-
-
   async createZoneLocation(warehouseId: string, dto: CreateZoneLocationDto) {
     this.logger.log(`Creating zone location ${dto.code} for warehouse ${warehouseId}`);
 
@@ -261,14 +252,18 @@ export class LocationService {
       const existing = await tx
         .select()
         .from(wmsTables.locations)
-        .where(and(
-          eq(wmsTables.locations.warehouseId, warehouseId),
-          eq(wmsTables.locations.displayName, dto.displayName || dto.code)
-        ))
+        .where(
+          and(
+            eq(wmsTables.locations.warehouseId, warehouseId),
+            eq(wmsTables.locations.displayName, dto.displayName || dto.code),
+          ),
+        )
         .limit(1);
 
       if (existing.length > 0) {
-        throw new BadRequestException(`Zone location "${dto.displayName || dto.code}" already exists in this warehouse`);
+        throw new BadRequestException(
+          `Zone location "${dto.displayName || dto.code}" already exists in this warehouse`,
+        );
       }
 
       let locationCode = dto.code;
@@ -277,11 +272,13 @@ export class LocationService {
         const [countResult] = await tx
           .select({ count: count() })
           .from(wmsTables.locations)
-          .where(and(
-            eq(wmsTables.locations.warehouseId, warehouseId),
-            eq(wmsTables.locations.locationType, 'zone'),
-            like(wmsTables.locations.code, 'zone-%')
-          ));
+          .where(
+            and(
+              eq(wmsTables.locations.warehouseId, warehouseId),
+              eq(wmsTables.locations.locationType, 'zone'),
+              like(wmsTables.locations.code, 'zone-%'),
+            ),
+          );
 
         const zoneNumber = (countResult?.count || 0) + 1;
         locationCode = `zone-${zoneNumber}`;
@@ -308,8 +305,6 @@ export class LocationService {
     });
   }
 
-
-
   async getLocations(warehouseId: string, query: LocationQueryDto) {
     const { page = 1, limit = 20, sortBy = 'code', sortOrder = 'asc' } = query;
     const offset = (page - 1) * limit;
@@ -321,14 +316,8 @@ export class LocationService {
         column: wmsTables.locationColumns,
       })
       .from(wmsTables.locations)
-      .leftJoin(
-        wmsTables.locationRacks,
-        eq(wmsTables.locations.rackId, wmsTables.locationRacks.id)
-      )
-      .leftJoin(
-        wmsTables.locationColumns,
-        eq(wmsTables.locationRacks.columnId, wmsTables.locationColumns.id)
-      );
+      .leftJoin(wmsTables.locationRacks, eq(wmsTables.locations.rackId, wmsTables.locationRacks.id))
+      .leftJoin(wmsTables.locationColumns, eq(wmsTables.locationRacks.columnId, wmsTables.locationColumns.id));
 
     const conditions = [eq(wmsTables.locations.warehouseId, warehouseId)];
 
@@ -346,17 +335,18 @@ export class LocationService {
     }
     if (query.search) {
       conditions.push(
-        sql`(${wmsTables.locations.code} ILIKE ${'%' + query.search + '%'} OR ${wmsTables.locations.displayName} ILIKE ${'%' + query.search + '%'})`
+        sql`(${wmsTables.locations.code} ILIKE ${'%' + query.search + '%'} OR ${wmsTables.locations.displayName} ILIKE ${'%' + query.search + '%'})`,
       );
     }
 
-    const orderByColumn = sortBy === 'columnName'
-      ? wmsTables.locationColumns.columnName
-      : sortBy === 'rackNumber'
-        ? wmsTables.locationRacks.rackNumber
-        : sortBy === 'createdAt'
-          ? wmsTables.locations.createdAt
-          : wmsTables.locations.code;
+    const orderByColumn =
+      sortBy === 'columnName'
+        ? wmsTables.locationColumns.columnName
+        : sortBy === 'rackNumber'
+          ? wmsTables.locationRacks.rackNumber
+          : sortBy === 'createdAt'
+            ? wmsTables.locations.createdAt
+            : wmsTables.locations.code;
 
     const orderDirection = sortOrder === 'desc' ? desc : asc;
 
@@ -369,20 +359,14 @@ export class LocationService {
     const [{ total }] = await this.db
       .select({ total: count() })
       .from(wmsTables.locations)
-      .leftJoin(
-        wmsTables.locationRacks,
-        eq(wmsTables.locations.rackId, wmsTables.locationRacks.id)
-      )
-      .leftJoin(
-        wmsTables.locationColumns,
-        eq(wmsTables.locationRacks.columnId, wmsTables.locationColumns.id)
-      )
+      .leftJoin(wmsTables.locationRacks, eq(wmsTables.locations.rackId, wmsTables.locationRacks.id))
+      .leftJoin(wmsTables.locationColumns, eq(wmsTables.locationRacks.columnId, wmsTables.locationColumns.id))
       .where(and(...conditions));
 
     const totalPages = Math.ceil(total / limit);
 
     return {
-      items: items.map(item => ({
+      items: items.map((item) => ({
         ...item.location,
         columnName: item.column?.columnName,
         rackNumber: item.rack?.rackNumber,
@@ -409,9 +393,8 @@ export class LocationService {
       }
 
       return result;
-    }, tx)
+    }, tx);
   }
-
 
   async updateLocation(locationId: string, dto: UpdateLocationDto) {
     // 시스템 로케이션 보호: 허용 필드만 수정
@@ -472,8 +455,6 @@ export class LocationService {
     return updated;
   }
 
-
-
   async addCustomBin(warehouseId: string, dto: AddCustomBinDto) {
     this.logger.log(`Adding custom bin ${dto.customBinName} to rack ${dto.columnName}-${dto.rackNumber}`);
 
@@ -486,15 +467,14 @@ export class LocationService {
           column: wmsTables.locationColumns,
         })
         .from(wmsTables.locationRacks)
-        .innerJoin(
-          wmsTables.locationColumns,
-          eq(wmsTables.locationRacks.columnId, wmsTables.locationColumns.id)
+        .innerJoin(wmsTables.locationColumns, eq(wmsTables.locationRacks.columnId, wmsTables.locationColumns.id))
+        .where(
+          and(
+            eq(wmsTables.locationColumns.warehouseId, warehouseId),
+            eq(wmsTables.locationColumns.columnName, dto.columnName),
+            eq(wmsTables.locationRacks.rackNumber, dto.rackNumber),
+          ),
         )
-        .where(and(
-          eq(wmsTables.locationColumns.warehouseId, warehouseId),
-          eq(wmsTables.locationColumns.columnName, dto.columnName),
-          eq(wmsTables.locationRacks.rackNumber, dto.rackNumber)
-        ))
         .limit(1);
 
       if (!rackResult) {
@@ -506,10 +486,7 @@ export class LocationService {
       const existing = await tx
         .select()
         .from(wmsTables.locations)
-        .where(and(
-          eq(wmsTables.locations.warehouseId, warehouseId),
-          eq(wmsTables.locations.code, locationCode)
-        ))
+        .where(and(eq(wmsTables.locations.warehouseId, warehouseId), eq(wmsTables.locations.code, locationCode)))
         .limit(1);
 
       if (existing.length > 0) {
@@ -535,8 +512,12 @@ export class LocationService {
     });
   }
 
-  async getRacks(warehouseId: string, columnName?: string, isActive?: boolean, tx?: DbTx)
-    : Promise<(LocationRack & { column: LocationColumn })[]> {
+  async getRacks(
+    warehouseId: string,
+    columnName?: string,
+    isActive?: boolean,
+    tx?: DbTx,
+  ): Promise<(LocationRack & { column: LocationColumn })[]> {
     const conditions = [eq(wmsTables.locationColumns.warehouseId, warehouseId)];
 
     if (columnName) {
@@ -550,17 +531,14 @@ export class LocationService {
       const result = await tx
         .select()
         .from(wmsTables.locationRacks)
-        .innerJoin(
-          wmsTables.locationColumns,
-          eq(wmsTables.locationRacks.columnId, wmsTables.locationColumns.id)
-        )
+        .innerJoin(wmsTables.locationColumns, eq(wmsTables.locationRacks.columnId, wmsTables.locationColumns.id))
         .where(and(...conditions));
 
-      return result.map(row => ({
+      return result.map((row) => ({
         ...row.location_racks,
         column: row.location_columns,
       }));
-    }, tx)
+    }, tx);
   }
 
   // 삭제 보호: 시스템 로케이션은 삭제 금지
@@ -579,9 +557,7 @@ export class LocationService {
       throw new BadRequestException('System location cannot be deleted');
     }
 
-    await this.db.delete(wmsTables.locations)
-      .where(eq(wmsTables.locations.id, locationId));
+    await this.db.delete(wmsTables.locations).where(eq(wmsTables.locations.id, locationId));
     return { success: true };
   }
-
 }

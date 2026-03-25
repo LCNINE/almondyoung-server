@@ -64,9 +64,7 @@ async function runWithPgDirect(params: {
   await client.connect();
 
   try {
-    logger.info(
-      `[fix-price-list-rule] Using DATABASE_URL: ${maskDatabaseUrl(databaseUrl)}`,
-    );
+    logger.info(`[fix-price-list-rule] Using DATABASE_URL: ${maskDatabaseUrl(databaseUrl)}`);
 
     const countResult = await client.query<{ count: string }>(
       `SELECT COUNT(*)::text AS count
@@ -83,9 +81,7 @@ async function runWithPgDirect(params: {
     }
 
     if (dryRun) {
-      logger.info(
-        `[fix-price-list-rule] DRY_RUN enabled. ${targetCount} row(s) would be updated.`,
-      );
+      logger.info(`[fix-price-list-rule] DRY_RUN enabled. ${targetCount} row(s) would be updated.`);
       return;
     }
 
@@ -114,19 +110,13 @@ async function runWithMedusaManager(params: {
   const { logger, manager, priceListId, dryRun } = params;
 
   const knex =
-    typeof manager?.getKnex === 'function'
-      ? manager.getKnex()
-      : manager?.getDriver?.()?.getConnection?.()?.getKnex?.();
+    typeof manager?.getKnex === 'function' ? manager.getKnex() : manager?.getDriver?.()?.getConnection?.()?.getKnex?.();
 
   if (!knex) {
-    throw new Error(
-      '[fix-price-list-rule] Failed to resolve knex instance from manager.',
-    );
+    throw new Error('[fix-price-list-rule] Failed to resolve knex instance from manager.');
   }
 
-  logger.info(
-    '[fix-price-list-rule] DATABASE_URL not provided. Using Medusa container DB connection.',
-  );
+  logger.info('[fix-price-list-rule] DATABASE_URL not provided. Using Medusa container DB connection.');
 
   const baseQuery = knex('price_list_rule')
     .where({ attribute: OLD_ATTRIBUTE })
@@ -146,9 +136,7 @@ async function runWithMedusaManager(params: {
   }
 
   if (dryRun) {
-    logger.info(
-      `[fix-price-list-rule] DRY_RUN enabled. ${targetCount} row(s) would be updated.`,
-    );
+    logger.info(`[fix-price-list-rule] DRY_RUN enabled. ${targetCount} row(s) would be updated.`);
     return;
   }
 
@@ -157,14 +145,10 @@ async function runWithMedusaManager(params: {
     updated_at: knex.fn.now(),
   });
 
-  logger.info(
-    `[fix-price-list-rule] Done. Updated ${targetCount} active price_list_rule row(s).`,
-  );
+  logger.info(`[fix-price-list-rule] Done. Updated ${targetCount} active price_list_rule row(s).`);
 }
 
-export default async function fixPriceListRuleCustomerGroupAttribute({
-  container,
-}: ExecArgs) {
+export default async function fixPriceListRuleCustomerGroupAttribute({ container }: ExecArgs) {
   const logger = container.resolve(ContainerRegistrationKeys.LOGGER);
 
   const { databaseUrl, priceListId, dryRun } = getScriptOptions();

@@ -106,9 +106,7 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
       ],
     }).compile();
 
-    service = module.get<SubscriptionCancellationService>(
-      SubscriptionCancellationService,
-    );
+    service = module.get<SubscriptionCancellationService>(SubscriptionCancellationService);
   });
 
   afterEach(() => {
@@ -125,9 +123,9 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
       mockContractReader.findContractsByUserId.mockResolvedValue([]);
 
       // When & Then
-      await expect(
-        service.cancelSubscription(userId, email, 'NO_LONGER_NEEDED'),
-      ).rejects.toThrow('Active subscription not found');
+      await expect(service.cancelSubscription(userId, email, 'NO_LONGER_NEEDED')).rejects.toThrow(
+        'Active subscription not found',
+      );
     });
 
     it('무료체험 중 취소 시 즉시 취소 + 환불을 반환해야 함', async () => {
@@ -177,12 +175,7 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
       });
 
       // When
-      const result = await service.cancelSubscription(
-        userId,
-        email,
-        'TRIAL_PERIOD',
-        '체험 후 결정',
-      );
+      const result = await service.cancelSubscription(userId, email, 'TRIAL_PERIOD', '체험 후 결정');
 
       // Then
       expect(result.type).toBe('IMMEDIATE_CANCELLATION');
@@ -241,17 +234,11 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
         currentPeriodEndsAt: '2025-11-15',
         autoRenewal: false,
         refundEligible: false,
-        message:
-          '정기결제가 중단되었습니다. 현재 구독은 2025-11-15까지 유효합니다.',
+        message: '정기결제가 중단되었습니다. 현재 구독은 2025-11-15까지 유효합니다.',
       });
 
       // When
-      const result = await service.cancelSubscription(
-        userId,
-        email,
-        'NO_LONGER_NEEDED',
-        '더 이상 필요하지 않음',
-      );
+      const result = await service.cancelSubscription(userId, email, 'NO_LONGER_NEEDED', '더 이상 필요하지 않음');
 
       // Then
       expect(result.type).toBe('RECURRING_CANCELLATION');

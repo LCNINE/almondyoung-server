@@ -94,12 +94,10 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
     }
 
     if (error instanceof MedusaError) {
-      return res
-        .status(error.type === MedusaError.Types.INVALID_DATA ? 400 : 500)
-        .json({
-          error: error.message,
-          type: error.type,
-        });
+      return res.status(error.type === MedusaError.Types.INVALID_DATA ? 400 : 500).json({
+        error: error.message,
+        type: error.type,
+      });
     }
     return res.status(500).json({ error: 'Internal server error' });
   }

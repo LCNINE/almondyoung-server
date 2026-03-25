@@ -1,13 +1,7 @@
-import {
-  AuthenticatedMedusaRequest,
-  MedusaResponse,
-} from '@medusajs/framework/http';
+import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { MedusaError } from '@medusajs/framework/utils';
 
-export const GET = async (
-  req: AuthenticatedMedusaRequest,
-  res: MedusaResponse,
-) => {
+export const GET = async (req: AuthenticatedMedusaRequest, res: MedusaResponse) => {
   const { almondUserId } = req.params;
 
   const query = req.scope.resolve('query');
@@ -24,10 +18,7 @@ export const GET = async (
   const customer = customers[0];
 
   if (!customer) {
-    throw new MedusaError(
-      MedusaError.Types.NOT_FOUND,
-      `Customer with almond_user_id=${almondUserId} not found`,
-    );
+    throw new MedusaError(MedusaError.Types.NOT_FOUND, `Customer with almond_user_id=${almondUserId} not found`);
   }
 
   res.json({ customer });

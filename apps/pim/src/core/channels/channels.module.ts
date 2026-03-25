@@ -17,17 +17,7 @@ import { ProductsModule } from '../products/products.module';
     ChannelCategoriesController,
     ChannelListingController,
   ],
-  providers: [
-    SalesChannelsService,
-    ChannelProductsService,
-    ChannelCategoriesService,
-    ChannelListingService,
-  ],
-  exports: [
-    SalesChannelsService,
-    ChannelProductsService,
-    ChannelCategoriesService,
-    ChannelListingService,
-  ],
+  providers: [SalesChannelsService, ChannelProductsService, ChannelCategoriesService, ChannelListingService],
+  exports: [SalesChannelsService, ChannelProductsService, ChannelCategoriesService, ChannelListingService],
 })
 export class ChannelsModule {}

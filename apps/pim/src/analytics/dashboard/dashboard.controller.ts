@@ -17,7 +17,8 @@ export class DashboardController {
   @Get('metrics')
   @ApiOperation({
     summary: '대시보드 메트릭 조회',
-    description: '제품 통계 정보를 조회합니다. 전체 제품 수, 오늘 등록 제품 수, 상태별/승인상태별 제품 수 등을 포함합니다.',
+    description:
+      '제품 통계 정보를 조회합니다. 전체 제품 수, 오늘 등록 제품 수, 상태별/승인상태별 제품 수 등을 포함합니다.',
   })
   @ApiResponse({
     status: 200,
@@ -32,17 +33,15 @@ export class DashboardController {
     try {
       return await this.dashboardService.getMetrics();
     } catch (error) {
-      throw new HttpException(
-        `Failed to get dashboard metrics: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException(`Failed to get dashboard metrics: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
   @Get('top-products')
   @ApiOperation({
     summary: '상위 제품 목록 조회',
-    description: '활성화된 제품 중 상위 N개를 조회합니다. 현재는 최근 등록순이며, 향후 주문 서비스 연동 시 판매량 기준으로 변경됩니다.',
+    description:
+      '활성화된 제품 중 상위 N개를 조회합니다. 현재는 최근 등록순이며, 향후 주문 서비스 연동 시 판매량 기준으로 변경됩니다.',
   })
   @ApiQuery({
     name: 'limit',
@@ -67,7 +66,7 @@ export class DashboardController {
   async getTopProducts(@Query() query: TopProductsQueryDto): Promise<TopProductItemDto[]> {
     try {
       const limit = query.limit || 5;
-      
+
       if (limit < 1 || limit > 100) {
         throw new Error('Limit must be between 1 and 100');
       }
@@ -77,17 +76,15 @@ export class DashboardController {
       if (error.message.includes('must be between')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
       }
-      throw new HttpException(
-        `Failed to get top products: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException(`Failed to get top products: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
   @Get('sales-trends')
   @ApiOperation({
     summary: '매출 트렌드 조회',
-    description: '지정된 기간 동안의 매출 트렌드 데이터를 조회합니다. 현재는 주문 서비스 연동 대기중으로 빈 구조를 반환합니다.',
+    description:
+      '지정된 기간 동안의 매출 트렌드 데이터를 조회합니다. 현재는 주문 서비스 연동 대기중으로 빈 구조를 반환합니다.',
   })
   @ApiQuery({
     name: 'days',
@@ -112,7 +109,7 @@ export class DashboardController {
   async getSalesTrends(@Query() query: SalesTrendsQueryDto): Promise<SalesTrendResponseDto> {
     try {
       const days = query.days || 30;
-      
+
       if (days < 1 || days > 365) {
         throw new Error('Days must be between 1 and 365');
       }
@@ -122,11 +119,7 @@ export class DashboardController {
       if (error.message.includes('must be between')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
       }
-      throw new HttpException(
-        `Failed to get sales trends: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException(`Failed to get sales trends: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 }
-

@@ -110,10 +110,7 @@ describe('EntitlementService - Lazy Expiration', () => {
 
       // Then
       expect(result).toBe(false);
-      expect(mockManager.expireEntitlement).toHaveBeenCalledWith(
-        'entitlement_001',
-        userId,
-      );
+      expect(mockManager.expireEntitlement).toHaveBeenCalledWith('entitlement_001', userId);
     });
 
     it('만료 처리 시 Manager의 expireEntitlement를 호출해야 함', async () => {
@@ -134,10 +131,7 @@ describe('EntitlementService - Lazy Expiration', () => {
       await service.checkAndUpdateSubscription(userId);
 
       // Then
-      expect(mockManager.expireEntitlement).toHaveBeenCalledWith(
-        'entitlement_001',
-        userId,
-      );
+      expect(mockManager.expireEntitlement).toHaveBeenCalledWith('entitlement_001', userId);
     });
   });
 });

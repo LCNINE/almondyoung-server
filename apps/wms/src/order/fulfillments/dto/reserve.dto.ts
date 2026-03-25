@@ -11,4 +11,3 @@ export class ReserveDto {
   @Min(1)
   quantity: number;
 }
-

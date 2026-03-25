@@ -34,7 +34,9 @@ export class ChannelListingMapper {
   /**
    * Map entity to ChannelListingWithChannelDto
    */
-  static toWithChannelDto(entity: ChannelVariantListingEntity & { channel: SalesChannelEntity }): ChannelListingWithChannelDto {
+  static toWithChannelDto(
+    entity: ChannelVariantListingEntity & { channel: SalesChannelEntity },
+  ): ChannelListingWithChannelDto {
     return {
       id: entity.id,
       channelItemId: entity.channelItemId,

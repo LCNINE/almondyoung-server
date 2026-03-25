@@ -61,20 +61,20 @@ export class CreateFulfillmentOrderDto {
   @IsOptional()
   ownerId?: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: 'Shipping address',
     type: AddressDto,
-    required: false
+    required: false,
   })
   @ValidateNested()
   @Type(() => AddressDto)
   @IsOptional()
   shippingAddress?: AddressDto;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: 'Order items (with full tracking info)',
     type: [CreateFulfillmentOrderItemDto],
-    required: false
+    required: false,
   })
   @IsArray()
   @ValidateNested({ each: true })
@@ -85,11 +85,11 @@ export class CreateFulfillmentOrderDto {
   /**
    * @deprecated Use items instead
    */
-  @ApiProperty({ 
+  @ApiProperty({
     description: 'Order lines (deprecated, use items instead)',
     type: [CreateFulfillmentOrderLineDto],
     required: false,
-    deprecated: true
+    deprecated: true,
   })
   @IsArray()
   @ValidateNested({ each: true })
@@ -97,4 +97,3 @@ export class CreateFulfillmentOrderDto {
   @IsOptional()
   lines?: CreateFulfillmentOrderLineDto[];
 }
-

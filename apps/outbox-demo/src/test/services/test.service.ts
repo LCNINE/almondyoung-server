@@ -13,7 +13,7 @@ export class TestService {
   constructor(
     private readonly dbService: DbService<OutboxDemoSchema>,
     private readonly outboxPublisher: OutboxPublisher,
-  ) { }
+  ) {}
 
   private get db() {
     return this.dbService.db;
@@ -48,22 +48,25 @@ export class TestService {
       this.logger.log(`✅ Test record created: id=${record.id}`);
 
       // 2. Outbox에 이벤트 저장 (발행 대기열) - 새 구현 사용
-      await this.outboxPublisher.saveEvent({
-        topic: 'test.events.v1',
-        eventType: 'TestRecordCreated',
-        aggregateType: 'TestRecord',
-        aggregateId: record.id.toString(),
-        payload: {
-          id: record.id,
-          name: record.name,
-          description: record.description,
-          status: record.status,
-          createdAt: record.createdAt.toISOString(),
+      await this.outboxPublisher.saveEvent(
+        {
+          topic: 'test.events.v1',
+          eventType: 'TestRecordCreated',
+          aggregateType: 'TestRecord',
+          aggregateId: record.id.toString(),
+          payload: {
+            id: record.id,
+            name: record.name,
+            description: record.description,
+            status: record.status,
+            createdAt: record.createdAt.toISOString(),
+          },
+          metadata: {
+            source: 'outbox-demo',
+          },
         },
-        metadata: {
-          source: 'outbox-demo',
-        },
-      }, tx);
+        tx,
+      );
 
       this.logger.log(`📦 Outbox event created for record id=${record.id}`);
 
@@ -96,16 +99,19 @@ export class TestService {
       this.logger.log(`✅ Test record deleted: id=${id}`);
 
       // 2. Outbox에 삭제 이벤트 저장 - 새 구현 사용
-      await this.outboxPublisher.saveEvent({
-        topic: 'test.events.v1',
-        eventType: 'TestRecordDeleted',
-        aggregateType: 'TestRecord',
-        aggregateId: record.id.toString(),
-        payload: {
-          id: record.id,
-          deletedAt: new Date().toISOString(),
+      await this.outboxPublisher.saveEvent(
+        {
+          topic: 'test.events.v1',
+          eventType: 'TestRecordDeleted',
+          aggregateType: 'TestRecord',
+          aggregateId: record.id.toString(),
+          payload: {
+            id: record.id,
+            deletedAt: new Date().toISOString(),
+          },
         },
-      }, tx);
+        tx,
+      );
 
       this.logger.log(`📦 Outbox event created for deletion id=${id}`);
 
@@ -117,10 +123,7 @@ export class TestService {
    * 모든 테스트 레코드 조회
    */
   async getAllTestRecords() {
-    const records = await this.db
-      .select()
-      .from(testRecords)
-      .orderBy(testRecords.createdAt);
+    const records = await this.db.select().from(testRecords).orderBy(testRecords.createdAt);
 
     return records;
   }
@@ -129,10 +132,7 @@ export class TestService {
    * 특정 테스트 레코드 조회
    */
   async getTestRecordById(id: number) {
-    const [record] = await this.db
-      .select()
-      .from(testRecords)
-      .where(eq(testRecords.id, id));
+    const [record] = await this.db.select().from(testRecords).where(eq(testRecords.id, id));
 
     return record;
   }

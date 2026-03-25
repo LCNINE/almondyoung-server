@@ -7,14 +7,13 @@ export class AssignShipmentDto {
   @IsNotEmpty()
   trackingNo: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: 'Estimated time of arrival',
     required: false,
     type: String,
-    format: 'date-time'
+    format: 'date-time',
   })
   @IsDateString()
   @IsOptional()
   eta?: string;
 }
-

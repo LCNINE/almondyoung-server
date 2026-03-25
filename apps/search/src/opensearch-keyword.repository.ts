@@ -13,9 +13,7 @@ import {
 } from './types/query-keyword-document.type';
 
 @Injectable()
-export class OpenSearchKeywordRepository
-  implements SearchKeywordRepository, OnModuleInit
-{
+export class OpenSearchKeywordRepository implements SearchKeywordRepository, OnModuleInit {
   private readonly logger = new Logger(OpenSearchKeywordRepository.name);
   private initPromise: Promise<void> | null = null;
 
@@ -45,10 +43,7 @@ export class OpenSearchKeywordRepository
     });
   }
 
-  async getTrendingKeywords(options: {
-    size: number;
-    windowHours: number;
-  }): Promise<TrendingKeyword[]> {
+  async getTrendingKeywords(options: { size: number; windowHours: number }): Promise<TrendingKeyword[]> {
     const client = this.openSearchService.getClient();
     const index = this.openSearchService.getQueryEventsIndex();
     await this.ensureQueryEventsIndex();
@@ -207,22 +202,14 @@ export class OpenSearchKeywordRepository
     return Array.isArray(buckets) ? buckets : [];
   }
 
-  private toKeywordRows(
-    buckets: any[],
-    size: number,
-  ): TrendingKeyword[] {
+  private toKeywordRows(buckets: any[], size: number): TrendingKeyword[] {
     const rows = buckets
       .map((bucket) => {
         const hit = bucket?.latest?.hits?.hits?.[0]?._source;
         const key = typeof bucket?.key === 'string' ? bucket.key : '';
-        const keyword =
-          typeof hit?.keyword === 'string' && hit.keyword.length > 0
-            ? hit.keyword
-            : key;
-        const lastSearchedAt =
-          typeof hit?.searched_at === 'string' ? hit.searched_at : '';
-        const count =
-          typeof bucket?.doc_count === 'number' ? bucket.doc_count : 0;
+        const keyword = typeof hit?.keyword === 'string' && hit.keyword.length > 0 ? hit.keyword : key;
+        const lastSearchedAt = typeof hit?.searched_at === 'string' ? hit.searched_at : '';
+        const count = typeof bucket?.doc_count === 'number' ? bucket.doc_count : 0;
 
         if (!key || !keyword || count <= 0) {
           return null;

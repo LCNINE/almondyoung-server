@@ -4,15 +4,15 @@ import { wmsTables, wmsSchema } from '../../../database/schemas/wms-schema';
 type StockSummaryRow = typeof wmsSchema.stockSummary.$inferSelect;
 
 export type StockUpdateData = Pick<
-    StockSummaryRow,
-    | 'onHandQty'
-    | 'availableQty'
-    | 'reservedQty'
-    | 'inboundPendingQty'
-    | 'onOrderQty'
-    | 'inTransferQty'
-    | 'defectiveQty'
-    | 'transferPendingQty'
+  StockSummaryRow,
+  | 'onHandQty'
+  | 'availableQty'
+  | 'reservedQty'
+  | 'inboundPendingQty'
+  | 'onOrderQty'
+  | 'inTransferQty'
+  | 'defectiveQty'
+  | 'transferPendingQty'
 >;
 
 // TransitionType derived strictly from DB enum
@@ -22,27 +22,27 @@ export type TransitionType = (typeof wmsTables.stockEvents.transitionType.enumVa
 export type EventType = TransitionType;
 
 export type Op =
-    | '+'        // base + delta
-    | 'abs+'     // base + abs(delta)
-    | 'max0-';   // max(0, base - delta)
+  | '+' // base + delta
+  | 'abs+' // base + abs(delta)
+  | 'max0-'; // max(0, base - delta)
 
 export type Field = keyof StockUpdateData;
 
 export interface Rule {
-    fields: Partial<Record<Field, Op>>;
-    custom?: (args: CalcArgs) => Partial<StockUpdateData>;
-    validate?: (args: CalcArgs) => void; // optional
-    description?: string; // optional
+  fields: Partial<Record<Field, Op>>;
+  custom?: (args: CalcArgs) => Partial<StockUpdateData>;
+  validate?: (args: CalcArgs) => void; // optional
+  description?: string; // optional
 }
 
 export interface CalcArgs {
-    existing: StockUpdateData;
-    delta: number;
-    eventType: EventType;
-    fromWarehouseId?: string;
-    toWarehouseId?: string;
+  existing: StockUpdateData;
+  delta: number;
+  eventType: EventType;
+  fromWarehouseId?: string;
+  toWarehouseId?: string;
 }
 
 export interface ApplyRuleOptions {
-    onNegative?: 'clamp' | 'throw' | 'log-and-clamp';
+  onNegative?: 'clamp' | 'throw' | 'log-and-clamp';
 }

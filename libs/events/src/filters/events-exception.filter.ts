@@ -7,24 +7,13 @@
  * 3. Kafka offset commit
  */
 
-import {
-  Catch,
-  ArgumentsHost,
-  Logger,
-  Injectable,
-  Inject,
-  Optional,
-} from '@nestjs/common';
+import { Catch, ArgumentsHost, Logger, Injectable, Inject, Optional } from '@nestjs/common';
 import { BaseRpcExceptionFilter } from '@nestjs/microservices';
 import { KafkaContext } from '@nestjs/microservices';
 import { Reflector } from '@nestjs/core';
 import { DLQHandler } from '../dlq/dlq-handler.service';
 import { MessageEnvelope } from '@packages/event-contracts/types';
-import {
-  RETRY_POLICY_METADATA,
-  DISABLE_DLQ_METADATA,
-  RetryPolicyConfig,
-} from '../retry/retry-policy.types';
+import { RETRY_POLICY_METADATA, DISABLE_DLQ_METADATA, RetryPolicyConfig } from '../retry/retry-policy.types';
 import {
   normalizeRetryPolicy,
   isRetryableError,
@@ -59,8 +48,7 @@ export class EventsExceptionFilter extends BaseRpcExceptionFilter {
     const handler = (host as any).getHandler ? (host as any).getHandler() : { name: 'UnknownHandler' };
 
     // 핸들러의 재시도 정책 조회
-    const retryPolicyConfig =
-      this.reflector.get<RetryPolicyConfig>(RETRY_POLICY_METADATA, handler) || {};
+    const retryPolicyConfig = this.reflector.get<RetryPolicyConfig>(RETRY_POLICY_METADATA, handler) || {};
     const disableDLQ = this.reflector.get<boolean>(DISABLE_DLQ_METADATA, handler) || false;
 
     const retryPolicy = normalizeRetryPolicy(retryPolicyConfig);
@@ -76,26 +64,20 @@ export class EventsExceptionFilter extends BaseRpcExceptionFilter {
     // 재시도 컨텍스트 생성
     const retryContext = createRetryContext();
 
-    this.logger.error(
-      `Event handler failed: ${handler.name}`,
-      {
-        error: exception.message,
-        stack: exception.stack,
-        errorType: exception.name,
-        topic: kafkaContext.getTopic(),
-        partition: kafkaContext.getPartition(),
-        offset: kafkaContext.getMessage().offset,
-      },
-    );
+    this.logger.error(`Event handler failed: ${handler.name}`, {
+      error: exception.message,
+      stack: exception.stack,
+      errorType: exception.name,
+      topic: kafkaContext.getTopic(),
+      partition: kafkaContext.getPartition(),
+      offset: kafkaContext.getMessage().offset,
+    });
 
     // 재시도 로직
     let lastError = exception;
     let shouldRetry = isRetryableError(exception, retryPolicy);
 
-    while (
-      shouldRetry &&
-      retryContext.attemptNumber < retryPolicy.maxRetries
-    ) {
+    while (shouldRetry && retryContext.attemptNumber < retryPolicy.maxRetries) {
       // 백오프 대기
       const delay = calculateBackoffDelay(
         retryContext.attemptNumber + 1,
@@ -119,13 +101,10 @@ export class EventsExceptionFilter extends BaseRpcExceptionFilter {
         const result = await this.retryHandler(host);
 
         // 성공!
-        this.logger.log(
-          `✅ Retry succeeded on attempt ${retryContext.attemptNumber + 1}`,
-          {
-            handler: handler.name,
-            topic: kafkaContext.getTopic(),
-          },
-        );
+        this.logger.log(`✅ Retry succeeded on attempt ${retryContext.attemptNumber + 1}`, {
+          handler: handler.name,
+          topic: kafkaContext.getTopic(),
+        });
 
         return result;
       } catch (retryError) {
@@ -136,13 +115,10 @@ export class EventsExceptionFilter extends BaseRpcExceptionFilter {
         shouldRetry = isRetryableError(lastError, retryPolicy);
 
         if (!shouldRetry) {
-          this.logger.warn(
-            `Non-retryable error encountered: ${lastError.name}`,
-            {
-              handler: handler.name,
-              topic: kafkaContext.getTopic(),
-            },
-          );
+          this.logger.warn(`Non-retryable error encountered: ${lastError.name}`, {
+            handler: handler.name,
+            topic: kafkaContext.getTopic(),
+          });
           break;
         }
       }
@@ -150,42 +126,28 @@ export class EventsExceptionFilter extends BaseRpcExceptionFilter {
 
     // 모든 재시도 실패 → DLQ 처리
     if (!disableDLQ && this.dlqHandler) {
-      await this.sendToDLQ(
-        kafkaContext,
-        lastError,
-        handler.name,
-        retryContext.attemptHistory,
-      );
+      await this.sendToDLQ(kafkaContext, lastError, handler.name, retryContext.attemptHistory);
     } else if (disableDLQ) {
-      this.logger.warn(
-        `DLQ disabled for handler: ${handler.name}. Discarding message.`,
-        {
-          topic: kafkaContext.getTopic(),
-          offset: kafkaContext.getMessage().offset,
-        },
-      );
+      this.logger.warn(`DLQ disabled for handler: ${handler.name}. Discarding message.`, {
+        topic: kafkaContext.getTopic(),
+        offset: kafkaContext.getMessage().offset,
+      });
     } else {
-      this.logger.error(
-        `DLQHandler not available. Cannot send message to DLQ.`,
-        {
-          handler: handler.name,
-          topic: kafkaContext.getTopic(),
-        },
-      );
+      this.logger.error(`DLQHandler not available. Cannot send message to DLQ.`, {
+        handler: handler.name,
+        topic: kafkaContext.getTopic(),
+      });
     }
 
     // 에러를 다시 던지면 Kafka offset commit이 안됨
     // 따라서 여기서 에러를 삼켜야 함 (DLQ로 보냈으므로)
     // 하지만 로그는 남김
-    this.logger.error(
-      `❌ Handler failed after ${retryContext.attemptNumber} retries: ${handler.name}`,
-      {
-        error: lastError.message,
-        topic: kafkaContext.getTopic(),
-        partition: kafkaContext.getPartition(),
-        offset: kafkaContext.getMessage().offset,
-      },
-    );
+    this.logger.error(`❌ Handler failed after ${retryContext.attemptNumber} retries: ${handler.name}`, {
+      error: lastError.message,
+      topic: kafkaContext.getTopic(),
+      partition: kafkaContext.getPartition(),
+      offset: kafkaContext.getMessage().offset,
+    });
 
     // Kafka에게 메시지 처리 완료 알림 (offset commit)
     // 에러를 던지지 않으면 NestJS가 자동으로 commit함
@@ -227,9 +189,7 @@ export class EventsExceptionFilter extends BaseRpcExceptionFilter {
     try {
       // 원본 메시지 파싱
       const value = message.value;
-      const jsonString: string = Buffer.isBuffer(value)
-        ? value.toString('utf-8')
-        : String(value || '{}');
+      const jsonString: string = Buffer.isBuffer(value) ? value.toString('utf-8') : String(value || '{}');
       const envelope = JSON.parse(jsonString) as MessageEnvelope;
 
       await this.dlqHandler.sendToDLQ({
@@ -245,24 +205,18 @@ export class EventsExceptionFilter extends BaseRpcExceptionFilter {
         },
       });
 
-      this.logger.log(
-        `📤 Message sent to DLQ after ${attemptHistory.length} failed attempts`,
-        {
-          topic,
-          messageType: envelope.messageType,
-          aggregateId: envelope.source.aggregateId,
-        },
-      );
+      this.logger.log(`📤 Message sent to DLQ after ${attemptHistory.length} failed attempts`, {
+        topic,
+        messageType: envelope.messageType,
+        aggregateId: envelope.source.aggregateId,
+      });
     } catch (dlqError) {
-      this.logger.error(
-        `❌ CRITICAL: Failed to send message to DLQ`,
-        {
-          originalError: error.message,
-          dlqError: dlqError instanceof Error ? dlqError.message : String(dlqError),
-          topic,
-          offset: message.offset,
-        },
-      );
+      this.logger.error(`❌ CRITICAL: Failed to send message to DLQ`, {
+        originalError: error.message,
+        dlqError: dlqError instanceof Error ? dlqError.message : String(dlqError),
+        topic,
+        offset: message.offset,
+      });
 
       // DLQ 전송 실패는 치명적이므로 에러를 던짐
       // 이 경우 Kafka가 메시지를 다시 전달할 것임
@@ -270,4 +224,3 @@ export class EventsExceptionFilter extends BaseRpcExceptionFilter {
     }
   }
 }
-

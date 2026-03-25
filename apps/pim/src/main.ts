@@ -2,20 +2,14 @@ import './tracing';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
-import {
-  FastifyAdapter,
-  NestFastifyApplication,
-} from '@nestjs/platform-fastify';
+import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { PimModule } from './pim.module';
 import fastifyMultipart from '@fastify/multipart';
 import fastifyCookie from '@fastify/cookie';
 import { GlobalExceptionFilter } from '@app/shared';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestFastifyApplication>(
-    PimModule,
-    new FastifyAdapter(),
-  );
+  const app = await NestFactory.create<NestFastifyApplication>(PimModule, new FastifyAdapter());
 
   await app.register(fastifyCookie);
 
@@ -48,7 +42,7 @@ async function bootstrap() {
     .setTitle('PIM API')
     .setDescription(
       '상품 정보 관리 시스템 (Product Information Management) API\n\n' +
-      '제품 마스터, 변형, 카테고리, 판매 채널, 채널별 제품 정보를 관리하는 API입니다.',
+        '제품 마스터, 변형, 카테고리, 판매 채널, 채널별 제품 정보를 관리하는 API입니다.',
     )
     .setVersion('1.0.0')
     .addTag('PIM Health', '서비스 헬스체크')
@@ -74,12 +68,15 @@ async function bootstrap() {
   });
 
   // YAML 문서 charset 헤더 설정
-  app.getHttpAdapter().getInstance().addHook('onSend', (request, reply, payload, done) => {
-    if (request.url === '/docs.yaml') {
-      reply.header('Content-Type', 'application/x-yaml; charset=utf-8');
-    }
-    done();
-  });
+  app
+    .getHttpAdapter()
+    .getInstance()
+    .addHook('onSend', (request, reply, payload, done) => {
+      if (request.url === '/docs.yaml') {
+        reply.header('Content-Type', 'application/x-yaml; charset=utf-8');
+      }
+      done();
+    });
 
   // Railway는 PORT 환경변수를 제공하므로 우선 사용
   const port = process.env.PORT ?? 3020;

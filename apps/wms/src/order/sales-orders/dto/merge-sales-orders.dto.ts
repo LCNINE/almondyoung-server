@@ -5,10 +5,10 @@ import { CustomerDto } from '../../shared/dto/customer.dto';
 import { AddressDto } from '../../shared/dto/address.dto';
 
 export class MergeSalesOrdersDto {
-  @ApiProperty({ 
+  @ApiProperty({
     description: 'Source order IDs to merge',
     type: [String],
-    minItems: 2
+    minItems: 2,
   })
   @IsArray()
   @ArrayMinSize(2)
@@ -25,20 +25,20 @@ export class MergeSalesOrdersDto {
   @IsOptional()
   salesChannel?: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: 'Customer information',
     type: CustomerDto,
-    required: false
+    required: false,
   })
   @ValidateNested()
   @Type(() => CustomerDto)
   @IsOptional()
   customer?: CustomerDto;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: 'Shipping address',
     type: AddressDto,
-    required: false
+    required: false,
   })
   @ValidateNested()
   @Type(() => AddressDto)
@@ -65,4 +65,3 @@ export class MergeSalesOrdersDto {
   @IsOptional()
   warehouseId?: string;
 }
-

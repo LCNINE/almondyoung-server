@@ -87,11 +87,9 @@ interface CreateCustomerBusinessLicenseDto {
   metadata?: any;
 }
 
-interface UpdateCustomerBusinessLicenseDto
-  extends Partial<CreateCustomerBusinessLicenseDto> {}
+interface UpdateCustomerBusinessLicenseDto extends Partial<CreateCustomerBusinessLicenseDto> {}
 
-interface UpdateCustomerBusinessLicenseWithReviewDto
-  extends UpdateCustomerBusinessLicenseDto {
+interface UpdateCustomerBusinessLicenseWithReviewDto extends UpdateCustomerBusinessLicenseDto {
   status?: CustomerBusinessLicenseStatus;
   reviewComment?: string;
 }

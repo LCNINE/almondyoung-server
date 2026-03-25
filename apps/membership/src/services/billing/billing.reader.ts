@@ -62,10 +62,7 @@ export class BillingReader {
       .innerJoin(
         schema.subscriptionEntitlement,
         and(
-          eq(
-            schema.subscriptionEntitlement.userId,
-            schema.subscriptionContracts.userId,
-          ),
+          eq(schema.subscriptionEntitlement.userId, schema.subscriptionContracts.userId),
           eq(schema.subscriptionEntitlement.isCurrent, true),
         ),
       )

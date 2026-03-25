@@ -4,11 +4,7 @@ import { DbService } from '@app/db';
 import { eq, and, asc, SQL } from 'drizzle-orm';
 import { pricingRules, productMasterVersions, productMasterPricingRules, pimSchema } from '../../schema';
 import { DbTransaction, PricingRule, VariantPriceSet } from '../../types';
-import {
-  ReplacePricingRulesDto,
-  PricingRulesResponseDto,
-  PricingRuleResponseDto,
-} from './dto';
+import { ReplacePricingRulesDto, PricingRulesResponseDto, PricingRuleResponseDto } from './dto';
 import { PricingMapper } from './mappers';
 import { PricingValidatorService } from './pricing-validator.service';
 import { PricingCalculatorService } from './pricing-calculator.service';
@@ -23,23 +19,17 @@ export class PricingService {
     private readonly dbService: DbService<typeof pimSchema>,
     private readonly validatorService: PricingValidatorService,
     private readonly calculatorService: PricingCalculatorService,
-  ) { }
+  ) {}
 
   private get db() {
     return this.dbService.db;
   }
 
-  private async inTx<T>(
-    fn: (tx: DbTransaction) => Promise<T>,
-    tx?: DbTransaction,
-  ): Promise<T> {
+  private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction): Promise<T> {
     return tx ? fn(tx) : this.db.transaction(fn);
   }
 
-  async getVersionRules(
-    versionId: string,
-    tx?: DbTransaction,
-  ): Promise<PricingRulesResponseDto> {
+  async getVersionRules(versionId: string, tx?: DbTransaction): Promise<PricingRulesResponseDto> {
     return this.inTx(async (trx) => {
       // version 존재 여부 확인
       const [version] = await trx
@@ -67,23 +57,16 @@ export class PricingService {
           updatedAt: pricingRules.updatedAt,
         })
         .from(pricingRules)
-        .innerJoin(
-          productMasterPricingRules,
-          eq(pricingRules.id, productMasterPricingRules.pricingRuleId),
-        )
+        .innerJoin(productMasterPricingRules, eq(pricingRules.id, productMasterPricingRules.pricingRuleId))
         .where(eq(productMasterPricingRules.versionId, versionId))
         .orderBy(asc(pricingRules.layer), asc(pricingRules.order));
 
       return {
-        basePriceRules: allRules
-          .filter((r) => r.layer === 'base_price')
-          .map((r) => PricingMapper.toRuleDto(r)),
+        basePriceRules: allRules.filter((r) => r.layer === 'base_price').map((r) => PricingMapper.toRuleDto(r)),
         membershipPriceRules: allRules
           .filter((r) => r.layer === 'membership_price')
           .map((r) => PricingMapper.toRuleDto(r)),
-        tieredPriceRules: allRules
-          .filter((r) => r.layer === 'tiered_price')
-          .map((r) => PricingMapper.toRuleDto(r)),
+        tieredPriceRules: allRules.filter((r) => r.layer === 'tiered_price').map((r) => PricingMapper.toRuleDto(r)),
       };
     }, tx);
   }
@@ -113,12 +96,7 @@ export class PricingService {
       }
 
       // validation (masterId는 version에서 가져온 것 사용)
-      const validatedRules = await this.validatorService.validateRuleSet(
-        version.masterId,
-        versionId,
-        rulesDto,
-        trx,
-      );
+      const validatedRules = await this.validatorService.validateRuleSet(version.masterId, versionId, rulesDto, trx);
 
       // 매핑된 pricingRule ID 조회 (versionId만 사용)
       const mappedRuleIds = await trx
@@ -127,9 +105,7 @@ export class PricingService {
         .where(eq(productMasterPricingRules.versionId, versionId));
 
       // 기존 매핑 삭제 (versionId만 사용)
-      await trx
-        .delete(productMasterPricingRules)
-        .where(eq(productMasterPricingRules.versionId, versionId));
+      await trx.delete(productMasterPricingRules).where(eq(productMasterPricingRules.versionId, versionId));
 
       // 고아 rules 정리
       if (mappedRuleIds.length > 0) {
@@ -139,7 +115,7 @@ export class PricingService {
         );
       }
 
-      const rulesToInsert: typeof pricingRules.$inferInsert[] = [];
+      const rulesToInsert: (typeof pricingRules.$inferInsert)[] = [];
 
       for (const rule of validatedRules.basePriceRules) {
         rulesToInsert.push({
@@ -147,9 +123,7 @@ export class PricingService {
           order: rule.order,
           scopeType: rule.scopeType,
           scopeTargetIds:
-            rule.scopeType === 'all_variants'
-              ? null
-              : ('scopeTargetIds' in rule ? rule.scopeTargetIds : null),
+            rule.scopeType === 'all_variants' ? null : 'scopeTargetIds' in rule ? rule.scopeTargetIds : null,
           operationType: rule.operationType,
           operationValue: rule.operationValue,
           minQuantity: null,
@@ -162,9 +136,7 @@ export class PricingService {
           order: rule.order,
           scopeType: rule.scopeType,
           scopeTargetIds:
-            rule.scopeType === 'all_variants'
-              ? null
-              : ('scopeTargetIds' in rule ? rule.scopeTargetIds : null),
+            rule.scopeType === 'all_variants' ? null : 'scopeTargetIds' in rule ? rule.scopeTargetIds : null,
           operationType: rule.operationType,
           operationValue: rule.operationValue,
           minQuantity: null,
@@ -177,9 +149,7 @@ export class PricingService {
           order: rule.order,
           scopeType: rule.scopeType,
           scopeTargetIds:
-            rule.scopeType === 'all_variants'
-              ? null
-              : ('scopeTargetIds' in rule ? rule.scopeTargetIds : null),
+            rule.scopeType === 'all_variants' ? null : 'scopeTargetIds' in rule ? rule.scopeTargetIds : null,
           operationType: rule.operationType,
           operationValue: rule.operationValue,
           minQuantity: rule.minQuantity,
@@ -204,10 +174,7 @@ export class PricingService {
     }, tx);
   }
 
-  async deleteVersionRules(
-    versionId: string,
-    tx?: DbTransaction,
-  ): Promise<void> {
+  async deleteVersionRules(versionId: string, tx?: DbTransaction): Promise<void> {
     return this.inTx(async (trx) => {
       // draft 상태 검증
       const [version] = await trx
@@ -231,9 +198,7 @@ export class PricingService {
         .where(eq(productMasterPricingRules.versionId, versionId));
 
       // 기존 매핑 삭제 (versionId만 사용)
-      await trx
-        .delete(productMasterPricingRules)
-        .where(eq(productMasterPricingRules.versionId, versionId));
+      await trx.delete(productMasterPricingRules).where(eq(productMasterPricingRules.versionId, versionId));
 
       // 고아 rules 정리
       if (mappedRuleIds.length > 0) {
@@ -245,17 +210,9 @@ export class PricingService {
     }, tx);
   }
 
-  async getVariantPriceSet(
-    versionId: string,
-    variantId: string,
-    tx?: DbTransaction,
-  ): Promise<VariantPriceSet> {
+  async getVariantPriceSet(versionId: string, variantId: string, tx?: DbTransaction): Promise<VariantPriceSet> {
     return this.inTx(async (trx) => {
-      return this.calculatorService.calculateVariantPriceSet(
-        versionId,
-        variantId,
-        trx,
-      );
+      return this.calculatorService.calculateVariantPriceSet(versionId, variantId, trx);
     }, tx);
   }
 
@@ -264,10 +221,7 @@ export class PricingService {
    * - 다른 버전이 참조하지 않는 경우만 삭제
    * - Variants 정리 로직과 동일한 패턴
    */
-  private async _cleanupOrphanedPricingRules(
-    candidateRuleIds: string[],
-    tx: DbTransaction,
-  ): Promise<void> {
+  private async _cleanupOrphanedPricingRules(candidateRuleIds: string[], tx: DbTransaction): Promise<void> {
     if (candidateRuleIds.length === 0) {
       return;
     }
@@ -283,18 +237,13 @@ export class PricingService {
 
       // 2. 아무도 참조하지 않으면 삭제
       if (allMappings.length === 0) {
-        await tx
-          .delete(pricingRules)
-          .where(eq(pricingRules.id, ruleId));
+        await tx.delete(pricingRules).where(eq(pricingRules.id, ruleId));
         deletedCount++;
       }
     }
 
     if (deletedCount > 0) {
-      this.logger.log(
-        `Cleaned up ${deletedCount} orphaned pricing rules out of ${candidateRuleIds.length} candidates`,
-      );
+      this.logger.log(`Cleaned up ${deletedCount} orphaned pricing rules out of ${candidateRuleIds.length} candidates`);
     }
   }
 }
-

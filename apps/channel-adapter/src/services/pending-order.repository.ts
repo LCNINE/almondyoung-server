@@ -22,7 +22,7 @@ import { eq, and, inArray, sql } from 'drizzle-orm';
 export class PendingOrderRepository {
   private readonly logger = new Logger(PendingOrderRepository.name);
 
-  constructor(private readonly db: DbService<typeof channelAdapterSchema>) { }
+  constructor(private readonly db: DbService<typeof channelAdapterSchema>) {}
 
   /**
    * 계류 주문 저장
@@ -44,9 +44,7 @@ export class PendingOrderRepository {
       })
       .returning();
 
-    this.logger.debug(
-      `⏸️ 계류 주문 저장: ${data.channel}/${data.externalOrderId}`,
-    );
+    this.logger.debug(`⏸️ 계류 주문 저장: ${data.channel}/${data.externalOrderId}`);
 
     return inserted;
   }
@@ -55,11 +53,7 @@ export class PendingOrderRepository {
    * ID로 계류 주문 조회
    */
   async findById(id: string): Promise<PendingOrder | null> {
-    const result = await this.db.db
-      .select()
-      .from(pendingOrders)
-      .where(eq(pendingOrders.id, id))
-      .limit(1);
+    const result = await this.db.db.select().from(pendingOrders).where(eq(pendingOrders.id, id)).limit(1);
 
     return result[0] || null;
   }
@@ -67,19 +61,11 @@ export class PendingOrderRepository {
   /**
    * 채널 + 외부 주문 ID로 조회
    */
-  async findByChannelOrder(
-    channel: string,
-    externalOrderId: string,
-  ): Promise<PendingOrder | null> {
+  async findByChannelOrder(channel: string, externalOrderId: string): Promise<PendingOrder | null> {
     const result = await this.db.db
       .select()
       .from(pendingOrders)
-      .where(
-        and(
-          eq(pendingOrders.channel, channel),
-          eq(pendingOrders.externalOrderId, externalOrderId),
-        ),
-      )
+      .where(and(eq(pendingOrders.channel, channel), eq(pendingOrders.externalOrderId, externalOrderId)))
       .limit(1);
 
     return result[0] || null;
@@ -180,10 +166,7 @@ export class PendingOrderRepository {
   /**
    * 미매핑 항목 업데이트 (일부 항목만 매핑된 경우)
    */
-  async updateUnmappedItems(
-    id: string,
-    unmappedItems: UnmappedItem[],
-  ): Promise<void> {
+  async updateUnmappedItems(id: string, unmappedItems: UnmappedItem[]): Promise<void> {
     await this.db.db
       .update(pendingOrders)
       .set({
@@ -210,10 +193,7 @@ export class PendingOrderRepository {
     const deletedRows = await this.db.db
       .delete(pendingOrders)
       .where(
-        and(
-          eq(pendingOrders.status, 'completed'),
-          sql`${pendingOrders.processedAt} < ${cutoffDate.toISOString()}`,
-        ),
+        and(eq(pendingOrders.status, 'completed'), sql`${pendingOrders.processedAt} < ${cutoffDate.toISOString()}`),
       )
       .returning({ id: pendingOrders.id });
 
@@ -258,15 +238,9 @@ export class PendingOrderRepository {
     const result = await this.db.db
       .select({ id: pendingOrders.id })
       .from(pendingOrders)
-      .where(
-        and(
-          eq(pendingOrders.channel, channel),
-          eq(pendingOrders.externalOrderId, externalOrderId),
-        ),
-      )
+      .where(and(eq(pendingOrders.channel, channel), eq(pendingOrders.externalOrderId, externalOrderId)))
       .limit(1);
 
     return result.length > 0;
   }
 }
-

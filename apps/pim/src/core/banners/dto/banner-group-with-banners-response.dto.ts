@@ -9,4 +9,3 @@ export class BannerGroupWithBannersResponseDto extends BannerGroupResponseDto {
   })
   banners: BannerResponseDto[];
 }
-

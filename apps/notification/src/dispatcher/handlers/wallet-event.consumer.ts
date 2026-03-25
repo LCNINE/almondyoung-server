@@ -28,34 +28,34 @@ import { SendNotificationDto } from '../dto/send-notification.dto';
 
 /**
  * Payment Service 이벤트 컨슈머
- * 
+ *
  * payment/wallet 서비스가 발행한 이벤트를 수신하여 알림을 발송합니다.
- * 
+ *
  * ⚠️ Outbox 패턴 참고:
  * - 각 MSA 서비스는 `publishEvent`를 직접 호출하지 않고 `outbox.service.enqueue()`를 사용합니다.
  * - Outbox에 저장된 이벤트는 OutboxDispatcher가 주기적으로 폴링하여 Kafka로 발행합니다.
  * - Outbox에 기록이 있으면 중복 발행을 방지합니다.
  * - 이 컨슈머는 소비자(consumer)이므로 Outbox 패턴과 직접 관련 없지만, 참고용으로 명시합니다.
- * 
+ *
  * Payment 이벤트:
  * - PaymentAuthorized: 결제 승인
  * - PaymentCaptured: 결제 완료
  * - PaymentFailed: 결제 실패
  * - PaymentCancelled: 결제 취소
- * 
+ *
  * Refund 이벤트:
  * - PaymentRefundRequest: 환불 요청 (SoT)
  * - PaymentRefundCompleted: 환불 완료 (SoT)
  * - RefundApproved: 환불 승인
  * - RefundRejected: 환불 거부
  * - RefundFailed: 환불 실패
- * 
+ *
  * Point 이벤트:
  * - PointsEarned: 포인트 적립
  * - PointsRedeemed: 포인트 사용
  * - PointsCancelled: 포인트 취소
  * - PointsExpired: 포인트 만료
- * 
+ *
  * Tax Invoice 이벤트:
  * - TaxInvoiceIssued: 세금계산서 발행
  * - TaxInvoiceFailed: 세금계산서 발행 실패
@@ -70,7 +70,7 @@ export class WalletEventConsumer {
   constructor(
     private readonly notificationDispatcherService: NotificationDispatcherService,
     private readonly eventMappingService: EventMappingService,
-  ) { }
+  ) {}
 
   // ===== Payment 이벤트 =====
 
@@ -79,7 +79,9 @@ export class WalletEventConsumer {
     @EventEnvelope() envelope: DomainEvent<PaymentAuthorizedPayload>,
     @EventPayload() payload: PaymentAuthorizedPayload,
   ) {
-    this.logger.log(`[Event] Received PaymentAuthorized: ${payload.intentId} (correlationId: ${envelope.correlationId})`);
+    this.logger.log(
+      `[Event] Received PaymentAuthorized: ${payload.intentId} (correlationId: ${envelope.correlationId})`,
+    );
     try {
       const eventMapping = await this.eventMappingService.getEventMapping('PAYMENT_AUTHORIZED');
       if (!eventMapping || !eventMapping.isActive) {
@@ -118,7 +120,9 @@ export class WalletEventConsumer {
     @EventEnvelope() envelope: DomainEvent<PaymentCapturedPayload>,
     @EventPayload() payload: PaymentCapturedPayload,
   ) {
-    this.logger.log(`[Event] Received PaymentCaptured: ${payload.paymentId} (correlationId: ${envelope.correlationId})`);
+    this.logger.log(
+      `[Event] Received PaymentCaptured: ${payload.paymentId} (correlationId: ${envelope.correlationId})`,
+    );
     try {
       const eventMapping = await this.eventMappingService.getEventMapping('PAYMENT_CAPTURED');
       if (!eventMapping || !eventMapping.isActive) {
@@ -195,7 +199,9 @@ export class WalletEventConsumer {
     @EventEnvelope() envelope: DomainEvent<PaymentCancelledPayload>,
     @EventPayload() payload: PaymentCancelledPayload,
   ) {
-    this.logger.log(`[Event] Received PaymentCancelled: ${payload.intentId} (correlationId: ${envelope.correlationId})`);
+    this.logger.log(
+      `[Event] Received PaymentCancelled: ${payload.intentId} (correlationId: ${envelope.correlationId})`,
+    );
     try {
       const eventMapping = await this.eventMappingService.getEventMapping('PAYMENT_CANCELLED');
       if (!eventMapping || !eventMapping.isActive) {
@@ -236,7 +242,9 @@ export class WalletEventConsumer {
     @EventEnvelope() envelope: DomainEvent<PaymentRefundRequestPayload>,
     @EventPayload() payload: PaymentRefundRequestPayload,
   ) {
-    this.logger.log(`[Event] Received PaymentRefundRequest: ${payload.refundId} (correlationId: ${envelope.correlationId})`);
+    this.logger.log(
+      `[Event] Received PaymentRefundRequest: ${payload.refundId} (correlationId: ${envelope.correlationId})`,
+    );
     try {
       const eventMapping = await this.eventMappingService.getEventMapping('REFUND_REQUESTED');
       if (!eventMapping || !eventMapping.isActive) {
@@ -273,7 +281,9 @@ export class WalletEventConsumer {
     @EventEnvelope() envelope: DomainEvent<PaymentRefundCompletedPayload>,
     @EventPayload() payload: PaymentRefundCompletedPayload,
   ) {
-    this.logger.log(`[Event] Received PaymentRefundCompleted: ${payload.refundId} (correlationId: ${envelope.correlationId})`);
+    this.logger.log(
+      `[Event] Received PaymentRefundCompleted: ${payload.refundId} (correlationId: ${envelope.correlationId})`,
+    );
     try {
       const eventMapping = await this.eventMappingService.getEventMapping('REFUND_COMPLETED');
       if (!eventMapping || !eventMapping.isActive) {
@@ -586,7 +596,9 @@ export class WalletEventConsumer {
     @EventEnvelope() envelope: DomainEvent<TaxInvoiceIssuedPayload>,
     @EventPayload() payload: TaxInvoiceIssuedPayload,
   ) {
-    this.logger.log(`[Event] Received TaxInvoiceIssued: ${payload.invoiceId} (correlationId: ${envelope.correlationId})`);
+    this.logger.log(
+      `[Event] Received TaxInvoiceIssued: ${payload.invoiceId} (correlationId: ${envelope.correlationId})`,
+    );
     try {
       const eventMapping = await this.eventMappingService.getEventMapping('TAX_INVOICE_ISSUED');
       if (!eventMapping || !eventMapping.isActive) {
@@ -626,7 +638,9 @@ export class WalletEventConsumer {
     @EventEnvelope() envelope: DomainEvent<TaxInvoiceFailedPayload>,
     @EventPayload() payload: TaxInvoiceFailedPayload,
   ) {
-    this.logger.log(`[Event] Received TaxInvoiceFailed: ${payload.invoiceId} (correlationId: ${envelope.correlationId})`);
+    this.logger.log(
+      `[Event] Received TaxInvoiceFailed: ${payload.invoiceId} (correlationId: ${envelope.correlationId})`,
+    );
     try {
       const eventMapping = await this.eventMappingService.getEventMapping('TAX_INVOICE_FAILED');
       if (!eventMapping || !eventMapping.isActive) {
@@ -664,7 +678,9 @@ export class WalletEventConsumer {
     @EventEnvelope() envelope: DomainEvent<TaxInvoiceCancelledPayload>,
     @EventPayload() payload: TaxInvoiceCancelledPayload,
   ) {
-    this.logger.log(`[Event] Received TaxInvoiceCancelled: ${payload.invoiceId} (correlationId: ${envelope.correlationId})`);
+    this.logger.log(
+      `[Event] Received TaxInvoiceCancelled: ${payload.invoiceId} (correlationId: ${envelope.correlationId})`,
+    );
     try {
       const eventMapping = await this.eventMappingService.getEventMapping('TAX_INVOICE_CANCELLED');
       if (!eventMapping || !eventMapping.isActive) {

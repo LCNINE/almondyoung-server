@@ -22,10 +22,7 @@ export class FirebaseMembershipSyncService {
    * @param cafe24MemberId - Cafe24 회원 ID
    * @param active - 멤버십 활성 여부
    */
-  async syncByFirebase(
-    cafe24MemberId: string,
-    active: boolean,
-  ): Promise<void> {
+  async syncByFirebase(cafe24MemberId: string, active: boolean): Promise<void> {
     const membershipGroupId = process.env.MEDUSA_MEMBERSHIP_GROUP_ID;
 
     if (!membershipGroupId) {
@@ -40,16 +37,16 @@ export class FirebaseMembershipSyncService {
       .limit(1);
 
     if (!mapping) {
-      this.logger.log(
-        `cafe24MemberId=${cafe24MemberId} 매핑 없음. Medusa 동기화 건너뜁니다.`,
-      );
-      await this.eventTrackingService.trackEffect({
-        resourceType: 'FirebaseMembership',
-        resourceId: cafe24MemberId,
-        action: 'SKIPPED',
-        description: 'cafe24_member_mappings 매핑 없음',
-        eventType: 'FirebaseMembershipSync',
-      }).catch((e) => this.logger.warn(`trackEffect 실패: ${e?.message}`));
+      this.logger.log(`cafe24MemberId=${cafe24MemberId} 매핑 없음. Medusa 동기화 건너뜁니다.`);
+      await this.eventTrackingService
+        .trackEffect({
+          resourceType: 'FirebaseMembership',
+          resourceId: cafe24MemberId,
+          action: 'SKIPPED',
+          description: 'cafe24_member_mappings 매핑 없음',
+          eventType: 'FirebaseMembershipSync',
+        })
+        .catch((e) => this.logger.warn(`trackEffect 실패: ${e?.message}`));
       return;
     }
 
@@ -57,44 +54,44 @@ export class FirebaseMembershipSyncService {
 
     const customer = await this.medusaClient.findCustomerByAlmondUserId(almondUserId);
     if (!customer) {
-      this.logger.log(
-        `Medusa 고객 없음 (almondUserId=${almondUserId}, cafe24MemberId=${cafe24MemberId}). 건너뜁니다.`,
-      );
-      await this.eventTrackingService.trackEffect({
-        resourceType: 'FirebaseMembership',
-        resourceId: cafe24MemberId,
-        action: 'SKIPPED',
-        description: `Medusa 고객 없음 (almondUserId=${almondUserId})`,
-        eventType: 'FirebaseMembershipSync',
-      }).catch((e) => this.logger.warn(`trackEffect 실패: ${e?.message}`));
+      this.logger.log(`Medusa 고객 없음 (almondUserId=${almondUserId}, cafe24MemberId=${cafe24MemberId}). 건너뜁니다.`);
+      await this.eventTrackingService
+        .trackEffect({
+          resourceType: 'FirebaseMembership',
+          resourceId: cafe24MemberId,
+          action: 'SKIPPED',
+          description: `Medusa 고객 없음 (almondUserId=${almondUserId})`,
+          eventType: 'FirebaseMembershipSync',
+        })
+        .catch((e) => this.logger.warn(`trackEffect 실패: ${e?.message}`));
       return;
     }
 
     try {
       if (active) {
         await this.medusaClient.addCustomerToGroup(customer.id, membershipGroupId);
-        this.logger.log(
-          `멤버십 그룹 추가: customerId=${customer.id}, cafe24MemberId=${cafe24MemberId}`,
-        );
-        await this.eventTrackingService.trackEffect({
-          resourceType: 'MedusaCustomer',
-          resourceId: customer.id,
-          action: 'SYNCED',
-          description: `멤버십 그룹 추가 (cafe24MemberId=${cafe24MemberId})`,
-          eventType: 'FirebaseMembershipSync',
-        }).catch((e) => this.logger.warn(`trackEffect 실패: ${e?.message}`));
+        this.logger.log(`멤버십 그룹 추가: customerId=${customer.id}, cafe24MemberId=${cafe24MemberId}`);
+        await this.eventTrackingService
+          .trackEffect({
+            resourceType: 'MedusaCustomer',
+            resourceId: customer.id,
+            action: 'SYNCED',
+            description: `멤버십 그룹 추가 (cafe24MemberId=${cafe24MemberId})`,
+            eventType: 'FirebaseMembershipSync',
+          })
+          .catch((e) => this.logger.warn(`trackEffect 실패: ${e?.message}`));
       } else {
         await this.medusaClient.removeCustomerFromGroup(customer.id, membershipGroupId);
-        this.logger.log(
-          `멤버십 그룹 제거: customerId=${customer.id}, cafe24MemberId=${cafe24MemberId}`,
-        );
-        await this.eventTrackingService.trackEffect({
-          resourceType: 'MedusaCustomer',
-          resourceId: customer.id,
-          action: 'SYNCED',
-          description: `멤버십 그룹 제거 (cafe24MemberId=${cafe24MemberId})`,
-          eventType: 'FirebaseMembershipSync',
-        }).catch((e) => this.logger.warn(`trackEffect 실패: ${e?.message}`));
+        this.logger.log(`멤버십 그룹 제거: customerId=${customer.id}, cafe24MemberId=${cafe24MemberId}`);
+        await this.eventTrackingService
+          .trackEffect({
+            resourceType: 'MedusaCustomer',
+            resourceId: customer.id,
+            action: 'SYNCED',
+            description: `멤버십 그룹 제거 (cafe24MemberId=${cafe24MemberId})`,
+            eventType: 'FirebaseMembershipSync',
+          })
+          .catch((e) => this.logger.warn(`trackEffect 실패: ${e?.message}`));
       }
     } catch (error) {
       this.logger.error(

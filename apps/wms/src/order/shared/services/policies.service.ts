@@ -5,7 +5,7 @@ import { nowSeoul } from '../../../shared/services/time.util';
 
 @Injectable()
 export class PoliciesService {
-  constructor(private readonly db: DbService<typeof wmsSchema>) { }
+  constructor(private readonly db: DbService<typeof wmsSchema>) {}
 
   async getVariantPolicy(variantId: string, tx?: DbTx) {
     const db = tx ?? this.db.db;
@@ -33,25 +33,31 @@ export class PoliciesService {
     return policy;
   }
 
-  evaluateAcceptance(policy: {
-    inventoryManagement: boolean;
-    preStockSellable: boolean;
-    alwaysSellableZeroStock: boolean;
-  }, onHandQty: number, requestedQty: number): boolean {
+  evaluateAcceptance(
+    policy: {
+      inventoryManagement: boolean;
+      preStockSellable: boolean;
+      alwaysSellableZeroStock: boolean;
+    },
+    onHandQty: number,
+    requestedQty: number,
+  ): boolean {
     if (!policy.inventoryManagement) return true;
     if (policy.preStockSellable) return true;
     if (policy.alwaysSellableZeroStock) return true;
     return onHandQty >= requestedQty;
   }
 
-  evaluateFulfillability(policy: {
-    inventoryManagement: boolean;
-    preStockSellable: boolean;
-    alwaysSellableZeroStock: boolean;
-  }, onHandQty: number, requestedQty: number): boolean {
+  evaluateFulfillability(
+    policy: {
+      inventoryManagement: boolean;
+      preStockSellable: boolean;
+      alwaysSellableZeroStock: boolean;
+    },
+    onHandQty: number,
+    requestedQty: number,
+  ): boolean {
     if (!policy.inventoryManagement) return true;
     return onHandQty >= requestedQty;
   }
 }
-
-

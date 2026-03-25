@@ -54,7 +54,7 @@ export class SupplierPaymentInfoDto {
   @ApiProperty({
     description: 'Payment method (e.g., prepaid, postpaid, monthly)',
     required: false,
-    nullable: true
+    nullable: true,
   })
   paymentMethod: string | null;
 }
@@ -81,7 +81,7 @@ export class SupplierResponseDto {
     description: 'Contact information',
     type: SupplierContactDto,
     required: false,
-    nullable: true
+    nullable: true,
   })
   contact: SupplierContactDto | null;
 
@@ -89,7 +89,7 @@ export class SupplierResponseDto {
     description: 'Address information',
     type: SupplierAddressDto,
     required: false,
-    nullable: true
+    nullable: true,
   })
   address: SupplierAddressDto | null;
 
@@ -97,7 +97,7 @@ export class SupplierResponseDto {
     description: 'Business information',
     type: SupplierBusinessInfoDto,
     required: false,
-    nullable: true
+    nullable: true,
   })
   businessInfo: SupplierBusinessInfoDto | null;
 
@@ -105,7 +105,7 @@ export class SupplierResponseDto {
     description: 'Purchase settings',
     type: SupplierPurchaseSettingsDto,
     required: false,
-    nullable: true
+    nullable: true,
   })
   purchaseSettings: SupplierPurchaseSettingsDto | null;
 
@@ -113,7 +113,7 @@ export class SupplierResponseDto {
     description: 'Payment information',
     type: SupplierPaymentInfoDto,
     required: false,
-    nullable: true
+    nullable: true,
   })
   paymentInfo: SupplierPaymentInfoDto | null;
 
@@ -132,7 +132,7 @@ export class SupplierResponseDto {
   @ApiProperty({
     description: 'Supplier categories',
     type: [SupplierCategoryInfoDto],
-    required: false
+    required: false,
   })
   categories: SupplierCategoryInfoDto[];
 
@@ -174,54 +174,51 @@ export class SupplierResponseDto {
       createdAt: Date;
       updatedAt: Date;
     },
-    categories: Array<{ id: string; name: string; description: string | null }> = []
+    categories: Array<{ id: string; name: string; description: string | null }> = [],
   ): SupplierResponseDto {
     const contact: SupplierContactDto | null =
       supplier.phone || supplier.fax || supplier.email
         ? {
-          phone: supplier.phone,
-          fax: supplier.fax,
-          email: supplier.email,
-        }
+            phone: supplier.phone,
+            fax: supplier.fax,
+            email: supplier.email,
+          }
         : null;
 
     const address: SupplierAddressDto | null =
       supplier.zipcode || supplier.address1 || supplier.address2
         ? {
-          zipcode: supplier.zipcode,
-          address1: supplier.address1,
-          address2: supplier.address2,
-        }
+            zipcode: supplier.zipcode,
+            address1: supplier.address1,
+            address2: supplier.address2,
+          }
         : null;
 
     const businessInfo: SupplierBusinessInfoDto | null =
       supplier.businessRegNo || supplier.businessType || supplier.ceoName
         ? {
-          businessRegNo: supplier.businessRegNo,
-          businessType: supplier.businessType,
-          ceoName: supplier.ceoName,
-        }
+            businessRegNo: supplier.businessRegNo,
+            businessType: supplier.businessType,
+            ceoName: supplier.ceoName,
+          }
         : null;
 
     const purchaseSettings: SupplierPurchaseSettingsDto | null =
       supplier.isDirectDelivery !== null || supplier.orderCutoffTime
         ? {
-          isDirectDelivery: supplier.isDirectDelivery,
-          orderCutoffTime: supplier.orderCutoffTime,
-        }
+            isDirectDelivery: supplier.isDirectDelivery,
+            orderCutoffTime: supplier.orderCutoffTime,
+          }
         : null;
 
     const paymentInfo: SupplierPaymentInfoDto | null =
-      supplier.bankName ||
-        supplier.bankAccountNo ||
-        supplier.bankAccountHolder ||
-        supplier.paymentMethod
+      supplier.bankName || supplier.bankAccountNo || supplier.bankAccountHolder || supplier.paymentMethod
         ? {
-          bankName: supplier.bankName,
-          bankAccountNo: supplier.bankAccountNo,
-          bankAccountHolder: supplier.bankAccountHolder,
-          paymentMethod: supplier.paymentMethod,
-        }
+            bankName: supplier.bankName,
+            bankAccountNo: supplier.bankAccountNo,
+            bankAccountHolder: supplier.bankAccountHolder,
+            paymentMethod: supplier.paymentMethod,
+          }
         : null;
 
     return {
@@ -236,7 +233,7 @@ export class SupplierResponseDto {
       memo: supplier.memo,
       purchaseManagerId: supplier.purchaseManagerId,
       defaultWarehouseId: supplier.defaultWarehouseId,
-      categories: categories.map(cat => ({
+      categories: categories.map((cat) => ({
         id: cat.id,
         name: cat.name,
         description: cat.description,
@@ -246,4 +243,3 @@ export class SupplierResponseDto {
     };
   }
 }
-

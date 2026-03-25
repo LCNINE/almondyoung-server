@@ -1,4 +1,4 @@
-import { z } from "@medusajs/framework/zod";
+import { z } from '@medusajs/framework/zod';
 
 export const createSelectParams = () => {
   return z.object({
@@ -11,47 +11,45 @@ export const createFindParams = ({
   limit,
   order,
 }: {
-  offset?: number
-  limit?: number
-  order?: string
+  offset?: number;
+  limit?: number;
+  order?: string;
 } = {}) => {
-  const selectParams = createSelectParams()
+  const selectParams = createSelectParams();
 
   return selectParams.merge(
     z.object({
       offset: z.preprocess(
         (val) => {
-          if (val && typeof val === "string") {
-            return parseInt(val)
+          if (val && typeof val === 'string') {
+            return parseInt(val);
           }
-          return val
+          return val;
         },
         z
           .number()
           .optional()
-          .default(offset ?? 0)
+          .default(offset ?? 0),
       ),
       limit: z.preprocess(
         (val) => {
-          if (val && typeof val === "string") {
-            return parseInt(val)
+          if (val && typeof val === 'string') {
+            return parseInt(val);
           }
-          return val
+          return val;
         },
         z
           .number()
           .optional()
-          .default(limit ?? 20)
+          .default(limit ?? 20),
       ),
-      order: order
-        ? z.string().optional().default(order)
-        : z.string().optional(),
+      order: order ? z.string().optional().default(order) : z.string().optional(),
       with_deleted: z.preprocess((val) => {
-        if (val && typeof val === "string") {
-          return val === "true" ? true : val === "false" ? false : val
+        if (val && typeof val === 'string') {
+          return val === 'true' ? true : val === 'false' ? false : val;
         }
-        return val
+        return val;
       }, z.boolean().optional()),
-    })
-  )
-}
+    }),
+  );
+};

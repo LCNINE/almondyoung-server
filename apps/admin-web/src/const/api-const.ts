@@ -31,6 +31,10 @@ const CHANNEL_ADAPTER_SERVICE_BASE_URL = isServer
   ? (process.env.CHANNEL_ADAPTER_SERVICE_URL ?? 'http://localhost:3070')
   : '/proxy/channel';
 
+const UGC_SERVICE_BASE_URL = isServer
+  ? (process.env.UGC_SERVICE_URL ?? 'http://localhost:3031')
+  : '/proxy/ugc';
+
 export {
   PIM_BASE_URL,
   WMS_BASE_URL,
@@ -39,4 +43,5 @@ export {
   MEMBERSHIP_SERVICE_BASE_URL,
   NOTIFICATION_SERVICE_BASE_URL,
   CHANNEL_ADAPTER_SERVICE_BASE_URL,
+  UGC_SERVICE_BASE_URL,
 };

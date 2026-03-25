@@ -55,9 +55,7 @@ export interface AllocationResult {
 export class AllocationStrategyService {
   private readonly logger = new Logger(AllocationStrategyService.name);
 
-  constructor(
-    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
-  ) {}
+  constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
 
   private get db() {
     return this.dbService.db;
@@ -75,15 +73,11 @@ export class AllocationStrategyService {
       const strategy = request.strategy || 'FIFO';
 
       this.logger.log(
-        `Allocating ${request.requestedQuantity} units of SKU ${request.skuId} using ${strategy} strategy`
+        `Allocating ${request.requestedQuantity} units of SKU ${request.skuId} using ${strategy} strategy`,
       );
 
       // 1. 사용 가능한 위치 조회
-      const availableLocations = await this.getAvailableLocations(
-        request.skuId,
-        request.warehouseId,
-        trx
-      );
+      const availableLocations = await this.getAvailableLocations(request.skuId, request.warehouseId, trx);
 
       if (availableLocations.length === 0) {
         throw new ConflictException(`No available stock for SKU ${request.skuId}`);
@@ -121,12 +115,12 @@ export class AllocationStrategyService {
 
       if (isPartial && !request.allowPartial) {
         throw new ConflictException(
-          `Insufficient stock. Requested: ${request.requestedQuantity}, Available: ${totalAllocated}`
+          `Insufficient stock. Requested: ${request.requestedQuantity}, Available: ${totalAllocated}`,
         );
       }
 
       this.logger.log(
-        `Allocated ${totalAllocated}/${request.requestedQuantity} units across ${allocations.length} locations`
+        `Allocated ${totalAllocated}/${request.requestedQuantity} units across ${allocations.length} locations`,
       );
 
       return {
@@ -148,7 +142,7 @@ export class AllocationStrategyService {
     skuId: string,
     requestedQuantity: number,
     warehouseId?: string,
-    tx?: DbTx
+    tx?: DbTx,
   ): Promise<AllocationResult> {
     return this.allocateStock(
       {
@@ -158,7 +152,7 @@ export class AllocationStrategyService {
         strategy: 'FIFO',
         allowPartial: false,
       },
-      tx
+      tx,
     );
   }
 
@@ -170,7 +164,7 @@ export class AllocationStrategyService {
     requestedQuantity: number,
     preferredLocationIds: string[],
     warehouseId?: string,
-    tx?: DbTx
+    tx?: DbTx,
   ): Promise<AllocationResult> {
     return this.allocateStock(
       {
@@ -181,7 +175,7 @@ export class AllocationStrategyService {
         strategy: 'LOCATION_PRIORITY',
         allowPartial: false,
       },
-      tx
+      tx,
     );
   }
 
@@ -192,7 +186,7 @@ export class AllocationStrategyService {
     skuId: string,
     requestedQuantity: number,
     allowPartial: boolean = true,
-    tx?: DbTx
+    tx?: DbTx,
   ): Promise<AllocationResult> {
     return this.allocateStock(
       {
@@ -201,7 +195,7 @@ export class AllocationStrategyService {
         strategy: 'MULTI_WAREHOUSE',
         allowPartial,
       },
-      tx
+      tx,
     );
   }
 
@@ -212,7 +206,7 @@ export class AllocationStrategyService {
     skuId: string,
     requestedQuantity: number,
     warehouseId?: string,
-    tx?: DbTx
+    tx?: DbTx,
   ): Promise<AllocationResult> {
     return this.allocateStock(
       {
@@ -222,7 +216,7 @@ export class AllocationStrategyService {
         strategy: 'CLOSEST_EXPIRY',
         allowPartial: false,
       },
-      tx
+      tx,
     );
   }
 
@@ -232,7 +226,7 @@ export class AllocationStrategyService {
   private async getAvailableLocations(
     skuId: string,
     warehouseId: string | undefined,
-    tx: DbTx
+    tx: DbTx,
   ): Promise<AvailableLocation[]> {
     const { stockLedgers, stockReservations, locations, warehouses } = wmsTables;
 
@@ -273,8 +267,8 @@ export class AllocationStrategyService {
         and(
           eq(stockReservations.skuId, skuId),
           eq(stockReservations.status, 'confirmed'),
-          warehouseId ? eq(stockReservations.warehouseId, warehouseId) : undefined
-        )
+          warehouseId ? eq(stockReservations.warehouseId, warehouseId) : undefined,
+        ),
       )
       .groupBy(stockReservations.warehouseId);
 
@@ -304,7 +298,7 @@ export class AllocationStrategyService {
 
     for (const ledger of ledgerResults) {
       const reservedInWarehouse = reservedMap.get(ledger.warehouseId) || 0;
-      
+
       // 간단한 비례 배분 (실제로는 더 정교한 로직 필요)
       const totalInWarehouse = ledgerResults
         .filter((l) => l.warehouseId === ledger.warehouseId)
@@ -338,10 +332,7 @@ export class AllocationStrategyService {
   /**
    * 전략에 따라 위치 정렬
    */
-  private sortLocationsByStrategy(
-    locations: AvailableLocation[],
-    strategy: AllocationStrategy
-  ): AvailableLocation[] {
+  private sortLocationsByStrategy(locations: AvailableLocation[], strategy: AllocationStrategy): AvailableLocation[] {
     const sorted = [...locations];
 
     switch (strategy) {
@@ -388,10 +379,7 @@ export class AllocationStrategyService {
   /**
    * 선호 위치를 최우선으로 배치
    */
-  private prioritizeLocations(
-    locations: AvailableLocation[],
-    preferredLocationIds: string[]
-  ): AvailableLocation[] {
+  private prioritizeLocations(locations: AvailableLocation[], preferredLocationIds: string[]): AvailableLocation[] {
     const preferred: AvailableLocation[] = [];
     const others: AvailableLocation[] = [];
 
@@ -409,20 +397,13 @@ export class AllocationStrategyService {
   /**
    * 특정 SKU의 총 할당 가능 수량 조회
    */
-  async getTotalAvailableQuantity(
-    skuId: string,
-    warehouseId?: string,
-    tx?: DbTx
-  ): Promise<number> {
+  async getTotalAvailableQuantity(skuId: string, warehouseId?: string, tx?: DbTx): Promise<number> {
     const db = tx ?? this.db;
 
     const { stockLedgers, stockReservations } = wmsTables;
 
     // 1. ON_HAND 재고
-    const onHandConditions = [
-      eq(stockLedgers.skuId, skuId),
-      eq(stockLedgers.stockState, 'ON_HAND'),
-    ];
+    const onHandConditions = [eq(stockLedgers.skuId, skuId), eq(stockLedgers.stockState, 'ON_HAND')];
 
     if (warehouseId) {
       onHandConditions.push(eq(stockLedgers.warehouseId, warehouseId));
@@ -436,10 +417,7 @@ export class AllocationStrategyService {
     const onHand = Number(onHandResult[0]?.total || 0);
 
     // 2. 예약된 수량
-    const reservedConditions = [
-      eq(stockReservations.skuId, skuId),
-      eq(stockReservations.status, 'confirmed'),
-    ];
+    const reservedConditions = [eq(stockReservations.skuId, skuId), eq(stockReservations.status, 'confirmed')];
 
     if (warehouseId) {
       reservedConditions.push(eq(stockReservations.warehouseId, warehouseId));
@@ -460,7 +438,7 @@ export class AllocationStrategyService {
    */
   async getAvailableQuantityByWarehouse(
     skuId: string,
-    tx?: DbTx
+    tx?: DbTx,
   ): Promise<Array<{ warehouseId: string; warehouseName: string; availableQuantity: number }>> {
     const db = tx ?? this.db;
 
@@ -513,5 +491,3 @@ export class AllocationStrategyService {
     });
   }
 }
-
-

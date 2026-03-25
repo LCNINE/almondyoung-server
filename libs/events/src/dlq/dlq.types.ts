@@ -9,8 +9,8 @@ import { MessageEnvelope } from '@packages/event-contracts/types';
  */
 export interface DLQMessage<TPayload = unknown> {
   // DLQ 식별 정보
-  dlqMessageId: string;                // DLQ 메시지 고유 ID
-  dlqTopic: string;                    // DLQ 토픽 이름
+  dlqMessageId: string; // DLQ 메시지 고유 ID
+  dlqTopic: string; // DLQ 토픽 이름
 
   // 원본 메시지 정보
   originalTopic: string;
@@ -28,8 +28,8 @@ export interface DLQMessage<TPayload = unknown> {
 
   // 처리 컨텍스트
   context: {
-    consumer: string;                  // Consumer 이름
-    retryCount: number;                // 재시도 횟수
+    consumer: string; // Consumer 이름
+    retryCount: number; // 재시도 횟수
     attemptHistory: Array<{
       attemptedAt: string;
       error: string;
@@ -37,7 +37,7 @@ export interface DLQMessage<TPayload = unknown> {
   };
 
   // 타임스탬프
-  failedAt: string;                    // ISO 8601
+  failedAt: string; // ISO 8601
 
   // 재처리 상태
   status: 'pending' | 'reprocessing' | 'reprocessed' | 'resolved';

@@ -9,10 +9,10 @@ export type DbTx = Parameters<Parameters<PostgresJsDatabase<typeof outboxSchema>
 export type OutboxStatus = 'PENDING' | 'PROCESSING' | 'PUBLISHED' | 'FAILED';
 
 export interface OutboxConfig {
-  dispatchIntervalMs?: number;  // 기본값: 5000
-  batchSize?: number;           // 기본값: 100
-  maxRetries?: number;          // 기본값: 5
-  cleanupDays?: number;         // 기본값: 7
+  dispatchIntervalMs?: number; // 기본값: 5000
+  batchSize?: number; // 기본값: 100
+  maxRetries?: number; // 기본값: 5
+  cleanupDays?: number; // 기본값: 7
 }
 
 export interface SaveEventParams {
@@ -25,4 +25,3 @@ export interface SaveEventParams {
   causationId?: string;
   metadata?: Record<string, unknown>;
 }
-

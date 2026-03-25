@@ -6,7 +6,7 @@ import { StructuredLogger } from '../../shared/utils/logger.utils';
 
 /**
  * NHN 카카오 알림톡 템플릿 API 연동 서비스
- * 
+ *
  * NHN Cloud API 문서: https://docs.nhncloud.com/ko/Notification/KakaoTalk/ko/api-guide-v2.3/
  */
 @Injectable()
@@ -20,7 +20,7 @@ export class NHNTemplateService {
 
   constructor(private readonly configService: ConfigService) {
     this.logger = new StructuredLogger(new Logger(NHNTemplateService.name));
-    
+
     this.appKey = this.configService.get<string>('NHN_APP_KEY')!;
     this.secretKey = this.configService.get<string>('NHN_SECRET_KEY')!;
     this.senderKey = this.configService.get<string>('NHN_SENDER_KEY')!;
@@ -48,7 +48,7 @@ export class NHNTemplateService {
           message: error.message,
         });
         throw error;
-      }
+      },
     );
   }
 
@@ -85,7 +85,7 @@ export class NHNTemplateService {
   }) {
     const response = await this.client.post(
       `/alimtalk/v2.3/appkeys/${this.appKey}/senders/${this.senderKey}/templates`,
-      templateData
+      templateData,
     );
     return response.data;
   }
@@ -93,28 +93,31 @@ export class NHNTemplateService {
   /**
    * 템플릿 수정
    */
-  async updateTemplate(templateCode: string, templateData: {
-    templateName: string;
-    templateContent: string;
-    templateMessageType?: string;
-    templateEmphasizeType?: string;
-    templateExtra?: string;
-    templateTitle?: string;
-    templateSubtitle?: string;
-    templateHeader?: string;
-    templateItem?: any;
-    templateItemHighlight?: any;
-    templateRepresentLink?: any;
-    templateImageName?: string;
-    templateImageUrl?: string;
-    securityFlag?: boolean;
-    categoryCode?: string;
-    buttons?: any[];
-    quickReplies?: any[];
-  }) {
+  async updateTemplate(
+    templateCode: string,
+    templateData: {
+      templateName: string;
+      templateContent: string;
+      templateMessageType?: string;
+      templateEmphasizeType?: string;
+      templateExtra?: string;
+      templateTitle?: string;
+      templateSubtitle?: string;
+      templateHeader?: string;
+      templateItem?: any;
+      templateItemHighlight?: any;
+      templateRepresentLink?: any;
+      templateImageName?: string;
+      templateImageUrl?: string;
+      securityFlag?: boolean;
+      categoryCode?: string;
+      buttons?: any[];
+      quickReplies?: any[];
+    },
+  ) {
     const response = await this.client.put(
       `/alimtalk/v2.3/appkeys/${this.appKey}/senders/${this.senderKey}/templates/${templateCode}`,
-      templateData
+      templateData,
     );
     return response.data;
   }
@@ -124,7 +127,7 @@ export class NHNTemplateService {
    */
   async deleteTemplate(templateCode: string) {
     const response = await this.client.delete(
-      `/alimtalk/v2.3/appkeys/${this.appKey}/senders/${this.senderKey}/templates/${templateCode}`
+      `/alimtalk/v2.3/appkeys/${this.appKey}/senders/${this.senderKey}/templates/${templateCode}`,
     );
     return response.data;
   }
@@ -174,7 +177,7 @@ export class NHNTemplateService {
   }> {
     try {
       const template = await this.getTemplate(templateCode);
-      
+
       if (!template) {
         return {
           status: 'PENDING',
@@ -185,10 +188,10 @@ export class NHNTemplateService {
       // NHN 상태 코드를 우리 상태로 매핑
       // TSC01: 요청, TSC02: 검수 중, TSC03: 승인, TSC04: 반려
       const statusMap: Record<string, 'PENDING' | 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'INACTIVE'> = {
-        'TSC01': 'REQUESTED',
-        'TSC02': 'REQUESTED',
-        'TSC03': 'APPROVED',
-        'TSC04': 'REJECTED',
+        TSC01: 'REQUESTED',
+        TSC02: 'REQUESTED',
+        TSC03: 'APPROVED',
+        TSC04: 'REJECTED',
       };
 
       const status = statusMap[template.status] || 'PENDING';
@@ -218,16 +221,12 @@ export class NHNTemplateService {
     const form = new FormData();
     form.append('file', file, filename);
 
-    const response = await this.client.post(
-      `/alimtalk/v2.3/appkeys/${this.appKey}/template-image`,
-      form,
-      {
-        headers: {
-          ...form.getHeaders(),
-          'X-Secret-Key': this.secretKey,
-        },
-      }
-    );
+    const response = await this.client.post(`/alimtalk/v2.3/appkeys/${this.appKey}/template-image`, form, {
+      headers: {
+        ...form.getHeaders(),
+        'X-Secret-Key': this.secretKey,
+      },
+    });
     return response.data;
   }
 
@@ -247,7 +246,7 @@ export class NHNTemplateService {
           ...form.getHeaders(),
           'X-Secret-Key': this.secretKey,
         },
-      }
+      },
     );
     return response.data;
   }
@@ -258,9 +257,8 @@ export class NHNTemplateService {
   async addComment(templateCode: string, comment: string) {
     const response = await this.client.post(
       `/alimtalk/v2.3/appkeys/${this.appKey}/senders/${this.senderKey}/templates/${templateCode}/comments`,
-      { comment }
+      { comment },
     );
     return response.data;
   }
 }
-

@@ -8,17 +8,7 @@ import { VariantPriceCacheService } from './variant-price-cache.service';
 
 @Module({
   controllers: [VersionPricingController, MasterPricingController],
-  providers: [
-    PricingService,
-    PricingCalculatorService,
-    PricingValidatorService,
-    VariantPriceCacheService,
-  ],
-  exports: [
-    PricingService,
-    PricingCalculatorService,
-    PricingValidatorService,
-    VariantPriceCacheService,
-  ],
+  providers: [PricingService, PricingCalculatorService, PricingValidatorService, VariantPriceCacheService],
+  exports: [PricingService, PricingCalculatorService, PricingValidatorService, VariantPriceCacheService],
 })
 export class PricingModule {}

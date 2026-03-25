@@ -43,9 +43,7 @@ export class OrderEventPublisher {
   /**
    * 채널 타입을 SalesChannel로 매핑
    */
-  private mapChannelToSalesChannel(
-    channel: 'naver_smartstore' | 'coupang' | string,
-  ): SalesChannel {
+  private mapChannelToSalesChannel(channel: 'naver_smartstore' | 'coupang' | string): SalesChannel {
     switch (channel) {
       case 'naver_smartstore':
         return 'naver';
@@ -70,14 +68,10 @@ export class OrderEventPublisher {
     const channelCode = this.channelListingClient.getChannelCodeFromType(channel);
 
     // 채널 상품 ID 추출
-    const channelProductId =
-      orderEvent.externalProductOrderId ?? orderEvent.externalOrderId;
+    const channelProductId = orderEvent.externalProductOrderId ?? orderEvent.externalOrderId;
 
     // 매핑 조회
-    const listing = await this.channelListingClient.lookupByChannelCode(
-      channelCode,
-      channelProductId,
-    );
+    const listing = await this.channelListingClient.lookupByChannelCode(channelCode, channelProductId);
 
     if (!listing) {
       // 매핑 없음 → 계류 필요
@@ -89,9 +83,7 @@ export class OrderEventPublisher {
         },
       ];
 
-      this.logger.warn(
-        `⏸️ 미매핑 주문 계류: ${orderEvent.externalOrderId} - ${channelProductId}`,
-      );
+      this.logger.warn(`⏸️ 미매핑 주문 계류: ${orderEvent.externalOrderId} - ${channelProductId}`);
 
       return {
         published: false,
@@ -117,8 +109,7 @@ export class OrderEventPublisher {
     const salesChannel = this.mapChannelToSalesChannel(channel);
     const orderId = uuidv4();
 
-    const channelProductId =
-      orderEvent.externalProductOrderId ?? orderEvent.externalOrderId;
+    const channelProductId = orderEvent.externalProductOrderId ?? orderEvent.externalOrderId;
 
     const items: OrderItem[] = [
       {
@@ -166,10 +157,11 @@ export class OrderEventPublisher {
       payload,
     });
 
-    this.logger.log(
-      `📤 [OrderCreated] Published: ${orderEvent.externalOrderId} from ${channel}`,
-      { orderId, salesChannel, variantId: listing.variantId },
-    );
+    this.logger.log(`📤 [OrderCreated] Published: ${orderEvent.externalOrderId} from ${channel}`, {
+      orderId,
+      salesChannel,
+      variantId: listing.variantId,
+    });
   }
 
   /**
@@ -191,10 +183,7 @@ export class OrderEventPublisher {
     const fallbackMapper = async (channelProductId: string) => {
       return this.channelListingClient.lookupByChannelCode(channelCode, channelProductId);
     };
-    const items: OrderItem[] = await this.transformOrderItems(
-      orderEvent,
-      variantIdMapper ?? fallbackMapper,
-    );
+    const items: OrderItem[] = await this.transformOrderItems(orderEvent, variantIdMapper ?? fallbackMapper);
 
     // 배송 주소 변환
     const shippingAddress: ShippingAddress = {
@@ -228,10 +217,11 @@ export class OrderEventPublisher {
       payload,
     });
 
-    this.logger.log(
-      `📤 [OrderCreated] Published: ${orderEvent.externalOrderId} from ${channel}`,
-      { orderId, salesChannel, itemCount: items.length },
-    );
+    this.logger.log(`📤 [OrderCreated] Published: ${orderEvent.externalOrderId} from ${channel}`, {
+      orderId,
+      salesChannel,
+      itemCount: items.length,
+    });
   }
 
   /**
@@ -261,10 +251,10 @@ export class OrderEventPublisher {
       payload,
     });
 
-    this.logger.log(
-      `📤 [OrderCancelled] Published: ${orderEvent.externalOrderId} from ${channel}`,
-      { reason, cancelledBy },
-    );
+    this.logger.log(`📤 [OrderCancelled] Published: ${orderEvent.externalOrderId} from ${channel}`, {
+      reason,
+      cancelledBy,
+    });
   }
 
   /**
@@ -298,10 +288,10 @@ export class OrderEventPublisher {
       payload,
     });
 
-    this.logger.log(
-      `📤 [OrderModified] Published: ${orderEvent.externalOrderId} from ${channel}`,
-      { modifiedBy, hasAddressChange: !!changes.shippingAddress },
-    );
+    this.logger.log(`📤 [OrderModified] Published: ${orderEvent.externalOrderId} from ${channel}`, {
+      modifiedBy,
+      hasAddressChange: !!changes.shippingAddress,
+    });
   }
 
   /**
@@ -314,8 +304,7 @@ export class OrderEventPublisher {
     orderEvent: InternalOrderEvent,
     variantIdMapper?: (channelProductId: string) => Promise<LookupVariantResult | string | null>,
   ): Promise<OrderItem[]> {
-    const channelProductId =
-      orderEvent.externalProductOrderId ?? orderEvent.externalOrderId;
+    const channelProductId = orderEvent.externalProductOrderId ?? orderEvent.externalOrderId;
 
     // variantId 매핑 시도
     let skuId = channelProductId;
@@ -339,15 +328,10 @@ export class OrderEventPublisher {
             productName = mapped.productName;
           }
         } else {
-          this.logger.warn(
-            `⚠️ variantId 매핑 실패: ${channelProductId}, 채널 ID 사용`,
-          );
+          this.logger.warn(`⚠️ variantId 매핑 실패: ${channelProductId}, 채널 ID 사용`);
         }
       } catch (error) {
-        this.logger.error(
-          `❌ variantId 매핑 오류: ${channelProductId}`,
-          error.message,
-        );
+        this.logger.error(`❌ variantId 매핑 오류: ${channelProductId}`, error.message);
       }
     }
 
@@ -377,7 +361,10 @@ export class OrderEventPublisher {
   private mapCancelReason(
     reason: string,
   ): 'CUSTOMER_REQUEST' | 'OUT_OF_STOCK' | 'PAYMENT_FAILED' | 'ADMIN_CANCEL' | 'TIMEOUT' {
-    const reasonMap: Record<string, 'CUSTOMER_REQUEST' | 'OUT_OF_STOCK' | 'PAYMENT_FAILED' | 'ADMIN_CANCEL' | 'TIMEOUT'> = {
+    const reasonMap: Record<
+      string,
+      'CUSTOMER_REQUEST' | 'OUT_OF_STOCK' | 'PAYMENT_FAILED' | 'ADMIN_CANCEL' | 'TIMEOUT'
+    > = {
       CUSTOMER_REQUEST: 'CUSTOMER_REQUEST',
       OUT_OF_STOCK: 'OUT_OF_STOCK',
       PAYMENT_FAILED: 'PAYMENT_FAILED',

@@ -17,5 +17,3 @@ export function isSameSeoulDay(a: Date | string | number, b: Date | string | num
 export function nowSeoul(): Date {
   return toSeoulTime(new Date());
 }
-
-

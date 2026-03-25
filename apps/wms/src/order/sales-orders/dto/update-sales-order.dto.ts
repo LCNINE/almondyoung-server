@@ -8,7 +8,7 @@ export class UpdateSalesOrderDto {
   @ApiProperty({
     description: 'Customer information',
     type: CustomerDto,
-    required: false
+    required: false,
   })
   @ValidateNested()
   @Type(() => CustomerDto)
@@ -18,7 +18,7 @@ export class UpdateSalesOrderDto {
   @ApiProperty({
     description: 'Shipping address',
     type: AddressDto,
-    required: false
+    required: false,
   })
   @ValidateNested()
   @Type(() => AddressDto)
@@ -39,7 +39,7 @@ export class UpdateSalesOrderDto {
     description: 'Processed at',
     required: false,
     type: String,
-    format: 'date-time'
+    format: 'date-time',
   })
   @IsDateString()
   @IsOptional()
@@ -48,10 +48,9 @@ export class UpdateSalesOrderDto {
   @ApiProperty({
     description: 'Memo',
     required: false,
-    example: '기타 메모 내용'
+    example: '기타 메모 내용',
   })
   @IsString()
   @IsOptional()
   memo?: string;
 }
-

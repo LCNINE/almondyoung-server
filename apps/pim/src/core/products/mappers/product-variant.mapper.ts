@@ -1,8 +1,5 @@
 import { DateMapper } from '../../../common/mappers';
-import {
-  ProductVariantDto,
-  VariantWithPriceDto,
-} from '../dto/variants/variant-response.dto';
+import { ProductVariantDto, VariantWithPriceDto } from '../dto/variants/variant-response.dto';
 import { ProductVariantEntity } from '../../../schema.types';
 
 /**

@@ -13,8 +13,7 @@ export class WmsController {
   @Public()
   @ApiOperation({
     summary: 'WMS \uc11c\ube44\uc2a4 \uc0c1\ud0dc \ud655\uc778',
-    description:
-      'WMS \uc11c\ube44\uc2a4\uc758 \uae30\ubcf8 \uc0c1\ud0dc\ub97c \ud655\uc778\ud569\ub2c8\ub2e4.',
+    description: 'WMS \uc11c\ube44\uc2a4\uc758 \uae30\ubcf8 \uc0c1\ud0dc\ub97c \ud655\uc778\ud569\ub2c8\ub2e4.',
   })
   @ApiResponse({
     status: 200,

@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
@@ -67,9 +63,7 @@ export class PaymentIntentsService {
     }
 
     const clientSecret = randomBytes(32).toString('hex');
-    const expiresAt = new Date(
-      Date.now() + DEFAULT_INTENT_EXPIRY_MINUTES * 60 * 1000,
-    );
+    const expiresAt = new Date(Date.now() + DEFAULT_INTENT_EXPIRY_MINUTES * 60 * 1000);
     const now = new Date().toISOString();
 
     return this.dbService.db.transaction(async (tx) => {
@@ -156,7 +150,7 @@ export class PaymentIntentsService {
             currency: intent.currency,
             occurredAt: now,
             extra: {
-              medusa_session_id: (intent.metadata as Record<string, unknown>)?.medusa_session_id,
+              medusa_session_id: intent.metadata?.medusa_session_id,
             },
           }),
         }),
@@ -168,10 +162,7 @@ export class PaymentIntentsService {
 
   // userId가 null인 intent를 jwtUserId로 원자적으로 claim한다.
   // 다른 요청이 먼저 claim했으면 null 반환 — 호출자가 다시 읽어서 소유권 체크.
-  async claimIntent(
-    id: string,
-    userId: string,
-  ): Promise<typeof paymentIntents.$inferSelect | null> {
+  async claimIntent(id: string, userId: string): Promise<typeof paymentIntents.$inferSelect | null> {
     const rows = await this.dbService.db
       .update(paymentIntents)
       .set({ userId, updatedAt: new Date() })
@@ -181,27 +172,14 @@ export class PaymentIntentsService {
   }
 
   async findById(id: string) {
-    const rows = await this.dbService.db
-      .select()
-      .from(paymentIntents)
-      .where(eq(paymentIntents.id, id))
-      .limit(1);
+    const rows = await this.dbService.db.select().from(paymentIntents).where(eq(paymentIntents.id, id)).limit(1);
     const intent = rows[0] ?? null;
     if (!intent) return null;
 
     const [items, itemDiscounts, orderDiscounts] = await Promise.all([
-      this.dbService.db
-        .select()
-        .from(paymentIntentItems)
-        .where(eq(paymentIntentItems.intentId, id)),
-      this.dbService.db
-        .select()
-        .from(paymentIntentItemDiscounts)
-        .where(eq(paymentIntentItemDiscounts.intentId, id)),
-      this.dbService.db
-        .select()
-        .from(paymentIntentOrderDiscounts)
-        .where(eq(paymentIntentOrderDiscounts.intentId, id)),
+      this.dbService.db.select().from(paymentIntentItems).where(eq(paymentIntentItems.intentId, id)),
+      this.dbService.db.select().from(paymentIntentItemDiscounts).where(eq(paymentIntentItemDiscounts.intentId, id)),
+      this.dbService.db.select().from(paymentIntentOrderDiscounts).where(eq(paymentIntentOrderDiscounts.intentId, id)),
     ]);
 
     const discountsByItemId = new Map<string, (typeof paymentIntentItemDiscounts.$inferSelect)[]>();
@@ -232,10 +210,7 @@ export class PaymentIntentsService {
     return intent;
   }
 
-  async confirm(
-    intentId: string,
-    dto: ConfirmPaymentIntentDto,
-  ): Promise<{ nextAction?: Record<string, unknown> }> {
+  async confirm(intentId: string, dto: ConfirmPaymentIntentDto): Promise<{ nextAction?: Record<string, unknown> }> {
     await this.findByIdOrThrow(intentId);
     const correlationId = `confirm:${intentId}:${Date.now()}`;
     return this.confirmService.confirm(
@@ -248,13 +223,7 @@ export class PaymentIntentsService {
   async tossApprove(intentId: string, dto: TossApproveDto): Promise<void> {
     await this.findByIdOrThrow(intentId);
     const correlationId = `toss-approve:${intentId}:${Date.now()}`;
-    await this.tossApproveService.approve(
-      intentId,
-      dto.paymentKey,
-      dto.orderId,
-      dto.amount,
-      correlationId,
-    );
+    await this.tossApproveService.approve(intentId, dto.paymentKey, dto.orderId, dto.amount, correlationId);
   }
 
   async capture(intentId: string): Promise<void> {

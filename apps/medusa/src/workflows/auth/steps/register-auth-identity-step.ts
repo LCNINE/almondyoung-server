@@ -1,7 +1,4 @@
-import {
-  AuthenticationInput,
-  IAuthModuleService,
-} from '@medusajs/framework/types';
+import { AuthenticationInput, IAuthModuleService } from '@medusajs/framework/types';
 import { Modules } from '@medusajs/framework/utils';
 import { createStep, StepResponse } from '@medusajs/framework/workflows-sdk';
 
@@ -12,16 +9,10 @@ type RegisterAuthIdentityInput = {
 
 export const registerAuthIdentityStep = createStep(
   'register-auth-identity',
-  async (
-    { authProvider, authData }: RegisterAuthIdentityInput,
-    { container },
-  ) => {
+  async ({ authProvider, authData }: RegisterAuthIdentityInput, { container }) => {
     const authService = container.resolve<IAuthModuleService>(Modules.AUTH);
 
-    const { success, authIdentity, error } = await authService.register(
-      authProvider,
-      authData,
-    );
+    const { success, authIdentity, error } = await authService.register(authProvider, authData);
 
     if (!success || !authIdentity) {
       throw new Error(error || 'Registration failed');

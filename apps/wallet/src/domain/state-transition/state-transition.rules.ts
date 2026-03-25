@@ -1,13 +1,6 @@
-import type {
-  ChargeStatus,
-  PaymentIntentStatus,
-  PaymentStateEntityType,
-  RefundStatus,
-} from '../../schema';
+import type { ChargeStatus, PaymentIntentStatus, PaymentStateEntityType, RefundStatus } from '../../schema';
 
-type TransitionRules<TStatus extends string> = Partial<
-  Record<TStatus, readonly TStatus[]>
->;
+type TransitionRules<TStatus extends string> = Partial<Record<TStatus, readonly TStatus[]>>;
 
 // Intent state machine:
 // CREATED → PROCESSING → AUTHORIZED (terminal-ish: capture pending)
@@ -60,11 +53,7 @@ export const STATE_TRANSITION_RULES: EntityTransitionRules = {
   REFUND: refundTransitionRules,
 };
 
-export function canTransition(
-  entityType: PaymentStateEntityType,
-  fromStatus: string,
-  toStatus: string,
-): boolean {
+export function canTransition(entityType: PaymentStateEntityType, fromStatus: string, toStatus: string): boolean {
   const entityRules = STATE_TRANSITION_RULES[entityType] as TransitionRules<string>;
   const allowedNext = entityRules[fromStatus] ?? [];
   return allowedNext.includes(toStatus);
@@ -76,8 +65,6 @@ export function assertTransitionAllowed(
   toStatus: string,
 ): void {
   if (!canTransition(entityType, fromStatus, toStatus)) {
-    throw new Error(
-      `STATE_TRANSITION_NOT_ALLOWED: ${entityType} ${fromStatus} -> ${toStatus}`,
-    );
+    throw new Error(`STATE_TRANSITION_NOT_ALLOWED: ${entityType} ${fromStatus} -> ${toStatus}`);
   }
 }

@@ -11,7 +11,7 @@ export class FulfillmentReservationsFacade {
   constructor(
     private readonly db: DbService<typeof wmsSchema>,
     private readonly unified: UnifiedReservationService,
-  ) { }
+  ) {}
 
   private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
     return tx ? fn(tx) : this.db.db.transaction(fn);
@@ -39,14 +39,17 @@ export class FulfillmentReservationsFacade {
         throw new BadRequestException(`FO ${fo.id} has no warehouseId`);
       }
 
-      const reservation = await this.unified.reserveStock({
-        targetType: 'FULFILLMENT_ORDER',
-        targetId: fo.id,
-        skuId: foi.skuId,
-        warehouseId: fo.warehouseId,
-        quantity: dto.quantity,
-        reason: 'Fulfillment order item reservation',
-      }, trx);
+      const reservation = await this.unified.reserveStock(
+        {
+          targetType: 'FULFILLMENT_ORDER',
+          targetId: fo.id,
+          skuId: foi.skuId,
+          warehouseId: fo.warehouseId,
+          quantity: dto.quantity,
+          reason: 'Fulfillment order item reservation',
+        },
+        trx,
+      );
 
       // FOI 예약 수량 업데이트
       await trx
@@ -123,7 +126,10 @@ export class FulfillmentReservationsFacade {
   /**
    * 예약 이전: FOI 간 quantity 이동
    */
-  async transferReservation(dto: { fromFulfillmentOrderItemId: string; toFulfillmentOrderItemId: string; quantity: number }, tx?: DbTx) {
+  async transferReservation(
+    dto: { fromFulfillmentOrderItemId: string; toFulfillmentOrderItemId: string; quantity: number },
+    tx?: DbTx,
+  ) {
     return this.inTx(async (trx) => {
       const from = await trx.query.fulfillmentOrderItems.findFirst({
         where: eq(wmsTables.fulfillmentOrderItems.id, dto.fromFulfillmentOrderItemId),
@@ -134,8 +140,12 @@ export class FulfillmentReservationsFacade {
       if (!from || !to) {
         throw new BadRequestException('Invalid FOI id(s)');
       }
-      const fromFo = await trx.query.fulfillmentOrders.findFirst({ where: eq(wmsTables.fulfillmentOrders.id, from.fulfillmentOrderId) });
-      const toFo = await trx.query.fulfillmentOrders.findFirst({ where: eq(wmsTables.fulfillmentOrders.id, to.fulfillmentOrderId) });
+      const fromFo = await trx.query.fulfillmentOrders.findFirst({
+        where: eq(wmsTables.fulfillmentOrders.id, from.fulfillmentOrderId),
+      });
+      const toFo = await trx.query.fulfillmentOrders.findFirst({
+        where: eq(wmsTables.fulfillmentOrders.id, to.fulfillmentOrderId),
+      });
       if (!fromFo || !toFo || !toFo.warehouseId) {
         throw new BadRequestException('Invalid FO(s) or target FO has no warehouse');
       }
@@ -144,14 +154,17 @@ export class FulfillmentReservationsFacade {
       }
 
       // 1) 타겟에 예약 생성 (가용성 체크 포함)
-      await this.unified.reserveStock({
-        targetType: 'FULFILLMENT_ORDER',
-        targetId: toFo.id,
-        skuId: to.skuId,
-        warehouseId: toFo.warehouseId,
-        quantity: dto.quantity,
-        reason: `Transfer from FOI ${from.id} to ${to.id}`,
-      }, trx);
+      await this.unified.reserveStock(
+        {
+          targetType: 'FULFILLMENT_ORDER',
+          targetId: toFo.id,
+          skuId: to.skuId,
+          warehouseId: toFo.warehouseId,
+          quantity: dto.quantity,
+          reason: `Transfer from FOI ${from.id} to ${to.id}`,
+        },
+        trx,
+      );
 
       // 2) 소스에서 동일 SKU 예약 해제 (수량만큼)
       await this.unreserve({ fulfillmentOrderItemId: from.id, quantity: dto.quantity }, trx);
@@ -171,5 +184,3 @@ export class FulfillmentReservationsFacade {
     }, tx);
   }
 }
-
-

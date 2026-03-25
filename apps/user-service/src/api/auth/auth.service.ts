@@ -56,7 +56,7 @@ export class AuthService {
     private readonly consentsService: ConsentsService,
     private readonly tokensService: TokensService,
     private readonly cafe24LinkService: Cafe24LinkService,
-  ) { }
+  ) {}
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.dbService.db;
@@ -67,7 +67,6 @@ export class AuthService {
 
     return isProd ? this.configService.getOrThrow('FRONTEND_URL') : 'http://localhost:8000';
   }
-
 
   private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction) {
     return tx ? fn(tx) : this.dbService.db.transaction(fn);
@@ -81,7 +80,7 @@ export class AuthService {
     signUpDto: LocalSignUpDto,
     @Res() reply: FastifyReply,
     redirect_to?: string,
-  ): Promise<{ userId: string, message: string }> {
+  ): Promise<{ userId: string; message: string }> {
     const {
       email,
       username,
@@ -139,10 +138,14 @@ export class AuthService {
           .returning();
 
         // 유저 프로필에 생년월일 업데이트
-        await this.usersService.updateMyProfile(user.id, {
-          birthDate: birthday,
-          phoneNumber,
-        }, client);
+        await this.usersService.updateMyProfile(
+          user.id,
+          {
+            birthDate: birthday,
+            phoneNumber,
+          },
+          client,
+        );
 
         // 유저 동의 항목 생성
         await client.insert(userServiceSchema.userConsents).values({
@@ -156,14 +159,10 @@ export class AuthService {
         });
 
         if (encryptedIdToken) {
-          await this.cafe24LinkService.linkCafe24Account(
-            user.id,
-            encryptedIdToken,
-            tx,
-          );
+          await this.cafe24LinkService.linkCafe24Account(user.id, encryptedIdToken, tx);
         }
 
-        return { userId: user.id, message: '회원가입 성공' }
+        return { userId: user.id, message: '회원가입 성공' };
       });
     } catch (error) {
       if (error instanceof ConflictException || error instanceof BadRequestException) {
@@ -174,12 +173,8 @@ export class AuthService {
     }
   }
 
-  async bootstrapCafe24Signup(
-    encryptedIdToken: string,
-  ) {
-    return this.cafe24LinkService.issueSignupBootstrapData(
-      encryptedIdToken,
-    );
+  async bootstrapCafe24Signup(encryptedIdToken: string) {
+    return this.cafe24LinkService.issueSignupBootstrapData(encryptedIdToken);
   }
 
   // 회원가입 이메일 인증 완료 처리
@@ -386,7 +381,6 @@ export class AuthService {
       return existingUser;
     };
 
-
     if (tx) {
       const result = await processSignIn(tx);
       return reply.status(302).redirect(this.getSocialRedirectUrl(provider, result.user.id));
@@ -521,7 +515,9 @@ export class AuthService {
 
         const cookieDomain = this.configService.get<string>('COOKIE_DOMAIN');
         const normalizedCookieDomain = cookieDomain
-          ? cookieDomain.startsWith('.') ? cookieDomain : `.${cookieDomain}`
+          ? cookieDomain.startsWith('.')
+            ? cookieDomain
+            : `.${cookieDomain}`
           : `.${getDomain(this.frontendUrl)}`;
 
         // 쿠키 삭제
@@ -677,7 +673,6 @@ export class AuthService {
 
     const user = await this.usersService.findUserById(userId, client);
 
-
     return await this.setAccessToken(user, reply, client);
   }
 
@@ -759,10 +754,7 @@ export class AuthService {
       .where(
         and(
           eq(userServiceSchema.phoneVerifications.phoneNumber, phoneNumber),
-          eq(
-            userServiceSchema.phoneVerifications.purpose,
-            userServiceEnums.phoneVerificationPurposeEnum.enumValues[0],
-          ),
+          eq(userServiceSchema.phoneVerifications.purpose, userServiceEnums.phoneVerificationPurposeEnum.enumValues[0]),
           eq(userServiceSchema.phoneVerifications.isVerified, true),
           eq(userServiceSchema.phoneVerifications.isExpired, false),
           gt(userServiceSchema.phoneVerifications.expiresAt, new Date()),
@@ -807,10 +799,7 @@ export class AuthService {
     const saltOrRounds = 10;
     const hash = await bcrypt.hash(newPassword, saltOrRounds);
 
-    await client
-      .update(userServiceSchema.users)
-      .set({ password: hash })
-      .where(eq(userServiceSchema.users.id, userId));
+    await client.update(userServiceSchema.users).set({ password: hash }).where(eq(userServiceSchema.users.id, userId));
   }
 
   async checkPassword(password: string, userId: string, tx?: DbTransaction): Promise<void> {
@@ -851,9 +840,9 @@ export class AuthService {
   }
 
   /**
- * PIN 재설정을 위한 verification token 발급
- * 로그인 비밀번호를 검증한 후, PIN_RESET scope를 가진 JWT 토큰을 발급합니다.
- */
+   * PIN 재설정을 위한 verification token 발급
+   * 로그인 비밀번호를 검증한 후, PIN_RESET scope를 가진 JWT 토큰을 발급합니다.
+   */
   async verifyPasswordAndIssuePinResetToken(
     password: string,
     userId: string,

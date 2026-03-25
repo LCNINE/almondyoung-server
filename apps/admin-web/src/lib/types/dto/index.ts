@@ -12,3 +12,4 @@ export * from './customers';
 export * from './auth';
 export * from './user';
 export * from './shop';
+export * from './qna';

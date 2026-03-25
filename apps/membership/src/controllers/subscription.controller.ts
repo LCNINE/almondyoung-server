@@ -12,14 +12,7 @@ import {
   BadRequestException,
   InternalServerErrorException,
 } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiSecurity,
-  ApiQuery,
-  ApiBody,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiSecurity, ApiQuery, ApiBody } from '@nestjs/swagger';
 // import { AuthGuard } from '@nestjs/passport'; // 실제 AuthGuard 대신 DevAuthGuard를 사용합니다.
 import { SubscriptionService } from '../services/subscription.service';
 import { SubscriptionCancellationService } from '../services/subscription-cancellation.service';
@@ -81,8 +74,7 @@ export class SubscriptionController {
   @Get('current')
   @ApiOperation({
     summary: '현재 구독 상태 조회',
-    description:
-      '사용자의 현재 활성 구독 정보를 플랜 및 티어 정보와 함께 조회합니다.',
+    description: '사용자의 현재 활성 구독 정보를 플랜 및 티어 정보와 함께 조회합니다.',
   })
   @ApiQuery({
     name: 'userId',
@@ -155,19 +147,14 @@ export class SubscriptionController {
       throw new BadRequestException('email이 필요합니다');
     }
 
-    return this.subscriptionService.createSubscription(
-      userId,
-      createSubscriptionDto.planId,
-      email,
-    );
+    return this.subscriptionService.createSubscription(userId, createSubscriptionDto.planId, email);
   }
 
   @Post('checkout-intent')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: '멤버십 최초 결제용 checkout intent 생성',
-    description:
-      '플랜 가격을 membership 서비스에서 검증한 뒤 wallet v1 payment-intent를 생성합니다.',
+    description: '플랜 가격을 membership 서비스에서 검증한 뒤 wallet v1 payment-intent를 생성합니다.',
   })
   @ApiBody({ type: CreateCheckoutIntentRequestDto })
   @ApiResponse({
@@ -198,12 +185,7 @@ export class SubscriptionController {
       throw new BadRequestException('userId가 필요합니다');
     }
 
-    return this.subscriptionService.createCheckoutIntent(
-      userId,
-      dto.planId,
-      dto.returnUrl,
-      user?.email,
-    );
+    return this.subscriptionService.createCheckoutIntent(userId, dto.planId, dto.returnUrl, user?.email);
   }
 
   /**
@@ -215,8 +197,7 @@ export class SubscriptionController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: '결제 완료 후 구독 확정',
-    description:
-      'wallet payment intent를 검증하고 구독을 생성합니다. JWT 불필요 (API key 기반 검증).',
+    description: 'wallet payment intent를 검증하고 구독을 생성합니다. JWT 불필요 (API key 기반 검증).',
   })
   @ApiBody({ type: ConfirmCheckoutIntentRequestDto })
   @ApiResponse({
@@ -273,10 +254,7 @@ export class SubscriptionController {
     @Body(new ZodValidationPipe(UpgradeSubscriptionRequestSchema))
     upgradeSubscriptionDto: UpgradeSubscriptionRequest,
   ) {
-    return this.subscriptionService.upgradeSubscription(
-      userId,
-      upgradeSubscriptionDto.newPlanId,
-    );
+    return this.subscriptionService.upgradeSubscription(userId, upgradeSubscriptionDto.newPlanId);
   }
 
   /**
@@ -312,10 +290,7 @@ export class SubscriptionController {
     downgradeSubscriptionDto: DowngradeSubscriptionRequest,
   ) {
     // 참고: 서비스 로직에 downgradeSubscription 메소드가 필요합니다.
-    return this.subscriptionService.upgradeSubscription(
-      userId,
-      downgradeSubscriptionDto.newPlanId,
-    );
+    return this.subscriptionService.upgradeSubscription(userId, downgradeSubscriptionDto.newPlanId);
   }
 
   /**

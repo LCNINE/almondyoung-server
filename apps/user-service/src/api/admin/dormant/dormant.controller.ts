@@ -1,11 +1,6 @@
 import { RequireScopes } from '@app/authorization';
 import { Controller, Post } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { DormantService } from './dormant.service';
 
 @ApiTags('Admin/Dormant')

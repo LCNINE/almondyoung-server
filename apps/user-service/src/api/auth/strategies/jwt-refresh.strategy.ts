@@ -7,10 +7,7 @@ import { TokensService } from '../../tokens/tokens.service';
 import { UsersService } from '../../users/users.service';
 
 @Injectable()
-export class JwtRefreshStrategy extends PassportStrategy(
-  Strategy,
-  'jwt-refresh',
-) {
+export class JwtRefreshStrategy extends PassportStrategy(Strategy, 'jwt-refresh') {
   private readonly logger = new Logger(JwtRefreshStrategy.name);
 
   constructor(
@@ -36,10 +33,7 @@ export class JwtRefreshStrategy extends PassportStrategy(
     });
   }
 
-  async validate(
-    req: FastifyRequest,
-    payload: { sub: string; roles: string[] },
-  ) {
+  async validate(req: FastifyRequest, payload: { sub: string; roles: string[] }) {
     const refreshToken = req.cookies?.refreshToken;
 
     if (!refreshToken) {

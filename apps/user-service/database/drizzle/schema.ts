@@ -21,17 +21,9 @@ import {
 /*───────────────────────────
  * ENUM DECLARATIONS
  *──────────────────────────*/
-export const tokenTypeEnum = pgEnum('token_type', [
-  'access',
-  'refresh',
-  'verification',
-]);
+export const tokenTypeEnum = pgEnum('token_type', ['access', 'refresh', 'verification']);
 
-export const providerTypeEnum = pgEnum('provider_type', [
-  'kakao',
-  'google',
-  'naver',
-]);
+export const providerTypeEnum = pgEnum('provider_type', ['kakao', 'google', 'naver']);
 
 export const shopTypeEnum = pgEnum('shop_type', ['solo', 'small', 'large']);
 
@@ -71,9 +63,7 @@ export const userConsents = pgTable('user_consents', {
   // 필수 동의 항목들
   isOver14: boolean('is_over_14').notNull().default(false), // 만 14세 이상
   termsOfService: boolean('terms_of_service').notNull().default(false), // 서비스 이용약관 동의
-  electronicTransaction: boolean('electronic_transaction')
-    .notNull()
-    .default(false), // 전자금융거래 이용약관 동의
+  electronicTransaction: boolean('electronic_transaction').notNull().default(false), // 전자금융거래 이용약관 동의
   privacyPolicy: boolean('privacy_policy').notNull().default(false), // 개인정보 수집 및 이용 동의
   thirdPartySharing: boolean('third_party_sharing').notNull().default(false), // 개인정보 제3자 제공 동의
   marketingConsent: boolean('marketing_consent').notNull().default(false), // 마케팅 동의
@@ -339,7 +329,6 @@ export const businessLicenses = pgTable(
   }),
 );
 
-
 // ==================== 번호 인증 테이블 ====================
 export const phoneVerifications = pgTable(
   'phone_verifications',
@@ -365,14 +354,10 @@ export const phoneVerifications = pgTable(
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (table) => ({
-    phoneNumberIdx: index('phone_verifications_phone_number_idx').on(
-      table.phoneNumber,
-    ),
+    phoneNumberIdx: index('phone_verifications_phone_number_idx').on(table.phoneNumber),
     purposeIdx: index('phone_verifications_purpose_idx').on(table.purpose),
   }),
 );
-
-
 
 /**
  * 블랙리스트 관리 테이블
@@ -448,19 +433,16 @@ export const rolesRelations = relations(roles, ({ many }) => ({
   userRoles: many(userRoleAssignments),
 }));
 
-export const userRoleAssignmentsRelations = relations(
-  userRoleAssignments,
-  ({ one }) => ({
-    user: one(users, {
-      fields: [userRoleAssignments.userId],
-      references: [users.id],
-    }),
-    role: one(roles, {
-      fields: [userRoleAssignments.roleId],
-      references: [roles.roleId],
-    }),
+export const userRoleAssignmentsRelations = relations(userRoleAssignments, ({ one }) => ({
+  user: one(users, {
+    fields: [userRoleAssignments.userId],
+    references: [users.id],
   }),
-);
+  role: one(roles, {
+    fields: [userRoleAssignments.roleId],
+    references: [roles.roleId],
+  }),
+}));
 
 export const profilesRelations = relations(profiles, ({ one }) => ({
   user: one(users, {
@@ -498,29 +480,23 @@ export const userWishlistRelations = relations(wishlist, ({ one }) => ({
   }),
 }));
 
-export const userRecentViewsRelations = relations(
-  userRecentViews,
-  ({ one }) => ({
-    user: one(users, {
-      fields: [userRecentViews.userId],
-      references: [users.id],
-    }),
+export const userRecentViewsRelations = relations(userRecentViews, ({ one }) => ({
+  user: one(users, {
+    fields: [userRecentViews.userId],
+    references: [users.id],
   }),
-);
+}));
 
-export const businessLicensesRelations = relations(
-  businessLicenses,
-  ({ one }) => ({
-    user: one(users, {
-      fields: [businessLicenses.userId],
-      references: [users.id],
-    }),
-    shop: one(shops, {
-      fields: [businessLicenses.shopId],
-      references: [shops.id],
-    }),
+export const businessLicensesRelations = relations(businessLicenses, ({ one }) => ({
+  user: one(users, {
+    fields: [businessLicenses.userId],
+    references: [users.id],
   }),
-);
+  shop: one(shops, {
+    fields: [businessLicenses.shopId],
+    references: [shops.id],
+  }),
+}));
 
 export const blacklistsRelations = relations(blacklists, ({ one }) => ({
   user: one(users, {
@@ -604,7 +580,6 @@ export const userServiceSchema = {
 export type UserServiceSchema = typeof userServiceSchema;
 export type UserServiceTables = typeof userServiceTables;
 export type UserServiceEnums = typeof userServiceEnums;
-
 
 export type User = typeof users.$inferSelect;
 export type UserWithoutPassword = Omit<User, 'password'>;

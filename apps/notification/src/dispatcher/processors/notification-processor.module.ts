@@ -7,12 +7,11 @@ import { BullModule } from '@nestjs/bull';
 import { NotificationProcessor } from './notification.processor';
 
 @Module({
-    imports: [
-        BullModule.registerQueue({
-            name: 'notification',
-        }),
-    ],
-    providers: [NotificationProcessor],
+  imports: [
+    BullModule.registerQueue({
+      name: 'notification',
+    }),
+  ],
+  providers: [NotificationProcessor],
 })
-export class NotificationProcessorModule { }
-
+export class NotificationProcessorModule {}

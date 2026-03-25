@@ -52,4 +52,3 @@ export class BatchUploadResponseDto {
   })
   total: number;
 }
-

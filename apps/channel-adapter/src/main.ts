@@ -38,10 +38,10 @@ function createKafkaConfig() {
     sasl:
       process.env.KAFKA_API_KEY && process.env.KAFKA_API_SECRET
         ? {
-          mechanism: 'plain' as const,
-          username: process.env.KAFKA_API_KEY,
-          password: process.env.KAFKA_API_SECRET,
-        }
+            mechanism: 'plain' as const,
+            username: process.env.KAFKA_API_KEY,
+            password: process.env.KAFKA_API_SECRET,
+          }
         : undefined,
   };
 }
@@ -57,9 +57,7 @@ async function bootstrap() {
   // Swagger API 문서 설정
   const config = new DocumentBuilder()
     .setTitle('아몬드영 채널 어댑터 API')
-    .setDescription(
-      '판매채널(네이버 스마트스토어, 쿠팡 등)과 내부 시스템 간의 데이터 동기화 및 이벤트 중계를 위한 API',
-    )
+    .setDescription('판매채널(네이버 스마트스토어, 쿠팡 등)과 내부 시스템 간의 데이터 동기화 및 이벤트 중계를 위한 API')
     .setVersion('1.0.0')
     .addTag('adapter', '채널 어댑터 핵심 기능')
     .addTag('sync-status', '동기화 상태 및 통계')

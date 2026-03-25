@@ -53,11 +53,11 @@ async function waitForServer(maxAttempts = 30, delay = 1000): Promise<void> {
     } catch {
       // 서버가 아직 준비되지 않음
       if (i < maxAttempts - 1) {
-        await new Promise(resolve => setTimeout(resolve, delay));
+        await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
   }
-  throw new Error(`서버가 ${maxAttempts * delay / 1000}초 내에 시작되지 않았습니다`);
+  throw new Error(`서버가 ${(maxAttempts * delay) / 1000}초 내에 시작되지 않았습니다`);
 }
 
 async function generateSwaggerDocs() {
@@ -70,7 +70,7 @@ async function generateSwaggerDocs() {
     console.log('⏳ 서버 준비 대기 중...');
     await waitForServer(30, 2000);
     console.log('✅ 서버 준비 완료');
-    
+
     const document = await fetchSwaggerFromServer();
     console.log('✅ Swagger 문서 가져오기 성공');
 
@@ -159,7 +159,6 @@ async function generateSwaggerDocs() {
     console.log('\n💡 사용법:');
     console.log(`   - HTML 파일을 브라우저에서 열어보세요: file://${htmlPath}`);
     console.log(`   - 또는 로컬 서버로 제공: npx serve ${outputDir}`);
-
   } catch (error) {
     console.error('❌ 문서 생성 중 오류 발생:', error);
     if (error instanceof Error) {
@@ -179,4 +178,3 @@ if (require.main === module) {
 }
 
 export { generateSwaggerDocs };
-

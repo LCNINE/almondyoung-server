@@ -3,19 +3,11 @@ import * as schema from './entities/schema';
 
 // ====== 멤버십 혜택 추적 타입 ======
 
-export type MembershipCycleBenefit = InferSelectModel<
-  typeof schema.membershipCycleBenefits
->;
-export type NewMembershipCycleBenefit = InferInsertModel<
-  typeof schema.membershipCycleBenefits
->;
+export type MembershipCycleBenefit = InferSelectModel<typeof schema.membershipCycleBenefits>;
+export type NewMembershipCycleBenefit = InferInsertModel<typeof schema.membershipCycleBenefits>;
 
-export type MembershipDiscountEvent = InferSelectModel<
-  typeof schema.membershipDiscountEvents
->;
-export type NewMembershipDiscountEvent = InferInsertModel<
-  typeof schema.membershipDiscountEvents
->;
+export type MembershipDiscountEvent = InferSelectModel<typeof schema.membershipDiscountEvents>;
+export type NewMembershipDiscountEvent = InferInsertModel<typeof schema.membershipDiscountEvents>;
 
 // ====== 활성 구독 정보 타입 ======
 

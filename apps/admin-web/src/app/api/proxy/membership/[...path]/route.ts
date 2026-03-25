@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 import { forwardRequest } from '../../_lib/forward';
 
-const MEMBERSHIP_SERVICE_URL = process.env.MEMBERSHIP_SERVICE_URL ?? 'http://localhost:3050';
+const MEMBERSHIP_SERVICE_URL =
+  process.env.MEMBERSHIP_SERVICE_URL ?? 'http://localhost:3050';
 
 type Params = { params: Promise<{ path: string[] }> };
 

@@ -1,9 +1,4 @@
-import {
-  ArgumentsHost,
-  Catch,
-  ExceptionFilter,
-  HttpException,
-} from '@nestjs/common';
+import { ArgumentsHost, Catch, ExceptionFilter, HttpException } from '@nestjs/common';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { ApplicationException } from './application.exception';
 
@@ -42,10 +37,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     // 3. 일반 Error 처리
     else if (exception instanceof Error) {
       console.error('Unhandled error:', exception);
-      message =
-        process.env.NODE_ENV === 'production'
-          ? '서버 오류가 발생했습니다'
-          : exception.message;
+      message = process.env.NODE_ENV === 'production' ? '서버 오류가 발생했습니다' : exception.message;
       devMessage = `${exception.name}: ${exception.message} - ${request.method} ${request.url}`;
     }
     // 4. 알 수 없는 에러
@@ -66,11 +58,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     };
 
     // 개발 환경에서 스택 트레이스 추가
-    if (
-      process.env.NODE_ENV !== 'production' &&
-      exception instanceof Error &&
-      exception.stack
-    ) {
+    if (process.env.NODE_ENV !== 'production' && exception instanceof Error && exception.stack) {
       errorObject['stack'] = exception.stack;
     }
 
@@ -102,9 +90,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     }
 
     if (errorResponse?.message) {
-      return Array.isArray(errorResponse.message)
-        ? errorResponse.message[0]
-        : errorResponse.message;
+      return Array.isArray(errorResponse.message) ? errorResponse.message[0] : errorResponse.message;
     }
 
     return '서버 오류가 발생했습니다';

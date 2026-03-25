@@ -55,9 +55,7 @@ describe('SearchController', () => {
   describe('search', () => {
     it('delegates to SearchService', async () => {
       const query = { q: '글루', page: 1, size: 20 };
-      await expect(searchController.search(query as any)).resolves.toEqual(
-        mockResponse,
-      );
+      await expect(searchController.search(query as any)).resolves.toEqual(mockResponse);
       expect(searchService.searchProducts).toHaveBeenCalledWith(query);
     });
   });
@@ -65,9 +63,7 @@ describe('SearchController', () => {
   describe('getTrendingKeywords', () => {
     it('delegates to SearchService', async () => {
       const query = { size: 5 };
-      await expect(
-        searchController.getTrendingKeywords(query as any),
-      ).resolves.toEqual(mockTrendingResponse);
+      await expect(searchController.getTrendingKeywords(query as any)).resolves.toEqual(mockTrendingResponse);
       expect(searchService.getTrendingKeywords).toHaveBeenCalledWith(query);
     });
   });
@@ -75,9 +71,7 @@ describe('SearchController', () => {
   describe('suggestKeywords', () => {
     it('delegates to SearchService', async () => {
       const query = { q: '선', size: 5 };
-      await expect(searchController.suggestKeywords(query as any)).resolves.toEqual(
-        mockSuggestionsResponse,
-      );
+      await expect(searchController.suggestKeywords(query as any)).resolves.toEqual(mockSuggestionsResponse);
       expect(searchService.suggestKeywords).toHaveBeenCalledWith(query);
     });
   });

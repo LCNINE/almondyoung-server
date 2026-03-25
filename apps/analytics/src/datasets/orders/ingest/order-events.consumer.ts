@@ -38,11 +38,7 @@ export class OrderEventsConsumer {
   ) {
     this.logger.log(`OrderCreated received: ${payload.orderId}`);
     await this.inTx(async (tx) => {
-      const seeds = await this.orderFactsService.recordOrderCreated(
-        envelope,
-        payload,
-        tx,
-      );
+      const seeds = await this.orderFactsService.recordOrderCreated(envelope, payload, tx);
       await this.orderAggregatesService.applyOrderCreated(seeds, tx);
     });
     this.logger.debug(`OrderCreated processed: ${payload.orderId} (${envelope.messageId})`);

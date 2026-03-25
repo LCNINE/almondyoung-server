@@ -365,146 +365,146 @@ export interface InternalReturnEvent {
 export type ChannelCommand =
   // 주문 관리 (Order Management)
   | {
-    type: 'order.prepare'; // 주문 준비 (네이버: order.confirm, 쿠팡: order.acknowledge)
-    orderIds: string[]; // 내부 표준 주문 ID들
-  }
+      type: 'order.prepare'; // 주문 준비 (네이버: order.confirm, 쿠팡: order.acknowledge)
+      orderIds: string[]; // 내부 표준 주문 ID들
+    }
   | {
-    type: 'order.cancel'; // 주문 취소
-    orderId: string;
-    reason?: string;
-  }
+      type: 'order.cancel'; // 주문 취소
+      orderId: string;
+      reason?: string;
+    }
 
   // 발송 관리 (Dispatch Management)
   | {
-    type: 'dispatch.ship'; // 발송 처리 (네이버/쿠팡: dispatch.confirm)
-    orderId: string;
-    items?: Array<{ orderItemId: string; quantity: number }>;
-    tracking: { companyCode: string; number: string };
-    dispatchedAt?: string;
-  }
+      type: 'dispatch.ship'; // 발송 처리 (네이버/쿠팡: dispatch.confirm)
+      orderId: string;
+      items?: Array<{ orderItemId: string; quantity: number }>;
+      tracking: { companyCode: string; number: string };
+      dispatchedAt?: string;
+    }
   | {
-    type: 'dispatch.update_tracking'; // 송장 정보 업데이트 (쿠팡: dispatch.update)
-    orderId: string;
-    tracking: { companyCode: string; number: string };
-  }
+      type: 'dispatch.update_tracking'; // 송장 정보 업데이트 (쿠팡: dispatch.update)
+      orderId: string;
+      tracking: { companyCode: string; number: string };
+    }
   | {
-    type: 'dispatch.delay'; // 발송 지연
-    orderId: string;
-    delayedUntil: string;
-    reason: string;
-  }
+      type: 'dispatch.delay'; // 발송 지연
+      orderId: string;
+      delayedUntil: string;
+      reason: string;
+    }
 
   // 반품 관리 (Return Management)
   | {
-    type: 'return.approve'; // 반품 승인 (네이버/쿠팡 공통)
-    claimId: string; // 내부 표준 클레임 ID
-    items?: Array<{ orderItemId: string; quantity: number }>;
-  }
+      type: 'return.approve'; // 반품 승인 (네이버/쿠팡 공통)
+      claimId: string; // 내부 표준 클레임 ID
+      items?: Array<{ orderItemId: string; quantity: number }>;
+    }
   | {
-    type: 'return.confirm_receipt'; // 반품 상품 입고 확인
-    claimId: string;
-  }
+      type: 'return.confirm_receipt'; // 반품 상품 입고 확인
+      claimId: string;
+    }
   | {
-    type: 'return.process_shipment_stop'; // 출고중지 처리
-    claimId: string;
-    reason?: string;
-  }
+      type: 'return.process_shipment_stop'; // 출고중지 처리
+      claimId: string;
+      reason?: string;
+    }
   | {
-    type: 'return.process_already_shipped'; // 이미출고 처리
-    claimId: string;
-    tracking: { companyCode: string; number: string };
-  }
+      type: 'return.process_already_shipped'; // 이미출고 처리
+      claimId: string;
+      tracking: { companyCode: string; number: string };
+    }
   | {
-    type: 'return.register_collection_invoice'; // 회수송장 등록
-    claimId: string;
-    collectionType: 'RETURN' | 'EXCHANGE';
-    tracking: { companyCode: string; number: string };
-  }
+      type: 'return.register_collection_invoice'; // 회수송장 등록
+      claimId: string;
+      collectionType: 'RETURN' | 'EXCHANGE';
+      tracking: { companyCode: string; number: string };
+    }
   | {
-    type: 'return.hold'; // 반품 보류
-    claimId: string;
-    reason?: string;
-  }
+      type: 'return.hold'; // 반품 보류
+      claimId: string;
+      reason?: string;
+    }
   | {
-    type: 'return.release_hold'; // 반품 보류 해제
-    claimId: string;
-  }
+      type: 'return.release_hold'; // 반품 보류 해제
+      claimId: string;
+    }
   | {
-    type: 'return.reject'; // 반품 거부
-    claimId: string;
-    reason: string;
-  }
+      type: 'return.reject'; // 반품 거부
+      claimId: string;
+      reason: string;
+    }
 
   // 교환 관리 (Exchange Management)
   | {
-    type: 'exchange.confirm_pickup'; // 교환 회수 완료
-    claimId: string;
-  }
+      type: 'exchange.confirm_pickup'; // 교환 회수 완료
+      claimId: string;
+    }
   | {
-    type: 'exchange.reship'; // 교환 재발송
-    claimId: string;
-    tracking: { companyCode: string; number: string };
-  }
+      type: 'exchange.reship'; // 교환 재발송
+      claimId: string;
+      tracking: { companyCode: string; number: string };
+    }
   | {
-    type: 'exchange.confirm_receipt'; // 교환 상품 입고 확인
-    claimId: string;
-  }
+      type: 'exchange.confirm_receipt'; // 교환 상품 입고 확인
+      claimId: string;
+    }
   | {
-    type: 'exchange.reject'; // 교환 거부
-    claimId: string;
-    reason: string;
-  }
+      type: 'exchange.reject'; // 교환 거부
+      claimId: string;
+      reason: string;
+    }
   | {
-    type: 'exchange.upload_invoice'; // 교환 재발송 송장 업로드
-    claimId: string;
-    tracking: { companyCode: string; number: string };
-    items?: Array<{ itemId: string; shipmentBoxId: string }>;
-  }
+      type: 'exchange.upload_invoice'; // 교환 재발송 송장 업로드
+      claimId: string;
+      tracking: { companyCode: string; number: string };
+      items?: Array<{ itemId: string; shipmentBoxId: string }>;
+    }
   | {
-    type: 'exchange.hold'; // 교환 보류
-    claimId: string;
-    reason?: string;
-  }
+      type: 'exchange.hold'; // 교환 보류
+      claimId: string;
+      reason?: string;
+    }
   | {
-    type: 'exchange.release_hold'; // 교환 보류 해제
-    claimId: string;
-  };
+      type: 'exchange.release_hold'; // 교환 보류 해제
+      claimId: string;
+    };
 
 // 조회 명령 (Query Commands)
 
 export type ChannelQuery =
   | {
-    type: 'delivery.history'; // 배송 히스토리 조회
-    orderId: string;
-  }
+      type: 'delivery.history'; // 배송 히스토리 조회
+      orderId: string;
+    }
   | {
-    type: 'return.withdrawal_history'; // 반품 철회 이력 조회
-    dateFrom: string;
-    dateTo: string;
-    pageIndex?: number;
-    sizePerPage?: number;
-  }
+      type: 'return.withdrawal_history'; // 반품 철회 이력 조회
+      dateFrom: string;
+      dateTo: string;
+      pageIndex?: number;
+      sizePerPage?: number;
+    }
   | {
-    type: 'return.withdrawal_history_by_claims'; // 특정 클레임들의 철회 이력
-    claimIds: string[];
-  }
+      type: 'return.withdrawal_history_by_claims'; // 특정 클레임들의 철회 이력
+      claimIds: string[];
+    }
   | {
-    type: 'exchange.requests'; // 교환 요청 목록 조회
-    dateFrom: string;
-    dateTo: string;
-    status?: 'RECEIPT' | 'PROGRESS' | 'SUCCESS' | 'REJECT' | 'CANCEL';
-    orderId?: number;
-    pageIndex?: number;
-    sizePerPage?: number;
-  }
+      type: 'exchange.requests'; // 교환 요청 목록 조회
+      dateFrom: string;
+      dateTo: string;
+      status?: 'RECEIPT' | 'PROGRESS' | 'SUCCESS' | 'REJECT' | 'CANCEL';
+      orderId?: number;
+      pageIndex?: number;
+      sizePerPage?: number;
+    }
   | {
-    type: 'order.status'; // 주문 상태 조회
-    orderId: string;
-  }
+      type: 'order.status'; // 주문 상태 조회
+      orderId: string;
+    }
   | {
-    type: 'claim.details'; // 클레임 상세 정보
-    claimId: string;
-  };
+      type: 'claim.details'; // 클레임 상세 정보
+      claimId: string;
+    };
 
 // PIM-Medusa 동기화 타입
 

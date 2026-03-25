@@ -1,20 +1,6 @@
 import { RequireScopes } from '@app/authorization';
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  Put,
-  Query,
-} from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiParam,
-  ApiResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { Body, Controller, Delete, Get, Param, Put, Query } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { BusinessLicenseResponseDto } from '../../business-licenses/dto/business-license.response.dto';
 import { BusinessLicensesService } from './business-licenses.service';
 import { BusinessAdminUpdateDto } from './dto/business-updeta.dto';
@@ -24,9 +10,7 @@ import { BusinessLicenseQueryDto } from './dto/pagination-query-dto';
 @ApiBearerAuth('access-token')
 @Controller('admin/business-licenses')
 export class BusinessLicensesController {
-  constructor(
-    private readonly businessLicensesService: BusinessLicensesService,
-  ) { }
+  constructor(private readonly businessLicensesService: BusinessLicensesService) {}
 
   @Get('/user/:userId')
   @ApiOperation({
@@ -38,9 +22,7 @@ export class BusinessLicensesController {
   @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
   @ApiResponse({ status: 403, description: '권한 없음' })
   @RequireScopes('user:read')
-  async getBusinessLicensesByUserId(
-    @Param('userId') userId: string,
-  ): Promise<BusinessLicenseResponseDto | null> {
+  async getBusinessLicensesByUserId(@Param('userId') userId: string): Promise<BusinessLicenseResponseDto | null> {
     return this.businessLicensesService.getBusinessLicensesByUserId(userId);
   }
 
@@ -51,9 +33,7 @@ export class BusinessLicensesController {
     description: '사업자 등록 신청 목록을 페이지네이션하여 조회합니다.',
   })
   @ApiResponse({ status: 200, description: '사업자 등록 목록 조회 성공' })
-  async getBusinessLicenses(
-    @Query() businessLicenseQueryDto: BusinessLicenseQueryDto,
-  ) {
+  async getBusinessLicenses(@Query() businessLicenseQueryDto: BusinessLicenseQueryDto) {
     return this.businessLicensesService.getBusinessLicenses({
       businessLicenseQueryDto,
     });
@@ -69,9 +49,7 @@ export class BusinessLicensesController {
   @ApiParam({ name: 'id', description: '사업자 등록 ID' })
   @ApiResponse({ status: 200, description: '사업자 등록 상세 조회 성공' })
   async getBusinessLicenseById(@Param('id') id: string) {
-    return this.businessLicensesService.getBusinessLicenseByBusinessLicenseId(
-      id,
-    );
+    return this.businessLicensesService.getBusinessLicenseByBusinessLicenseId(id);
   }
 
   @Put(':businessId')
@@ -88,11 +66,7 @@ export class BusinessLicensesController {
     @Body()
     updateBusinessLicenseDto: BusinessAdminUpdateDto,
   ) {
-
-    return this.businessLicensesService.updateBusinessLicenseByBusinessId(
-      businessId,
-      updateBusinessLicenseDto,
-    );
+    return this.businessLicensesService.updateBusinessLicenseByBusinessId(businessId, updateBusinessLicenseDto);
   }
 
   @Delete(':id')

@@ -63,7 +63,10 @@ const globalConfig = {
 // Request interceptor: 전체 URL을 사용하는 경우 baseURL 무시 및 withCredentials 설정
 client.interceptors.request.use((config) => {
   // URL이 http:// 또는 https://로 시작하면 baseURL을 무시
-  if (config.url && (config.url.startsWith('http://') || config.url.startsWith('https://'))) {
+  if (
+    config.url &&
+    (config.url.startsWith('http://') || config.url.startsWith('https://'))
+  ) {
     config.baseURL = '';
     // 외부 API 요청인 경우 withCredentials를 false로 설정 (CORS 이슈 방지)
     // 필요시 서버에서 특정 origin을 명시적으로 허용하도록 수정해야 함

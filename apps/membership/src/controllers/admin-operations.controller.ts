@@ -14,13 +14,7 @@ import {
   HttpException,
   Logger,
 } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiParam,
-  ApiBody,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
 import { AdminOperationsService } from '../services/admin-operations.service';
 import { SubscriptionCancellationService } from '../services/subscription-cancellation.service';
 import { ContractEventManager } from '../services/subscription/contract-event.manager';
@@ -77,14 +71,8 @@ export class AdminOperationsController {
     this.logger.error(`❌ ${operation} 실패${contextInfo}:`, error.message);
 
     // CTO 스타일: 에러 메시지 패턴 기반 HTTP 응답 변환
-    if (
-      error.message.includes('not found') ||
-      error.message.includes('찾을 수 없')
-    ) {
-      throw new HttpException(
-        `요청한 리소스를 찾을 수 없습니다.`,
-        HttpStatus.NOT_FOUND,
-      );
+    if (error.message.includes('not found') || error.message.includes('찾을 수 없')) {
+      throw new HttpException(`요청한 리소스를 찾을 수 없습니다.`, HttpStatus.NOT_FOUND);
     }
 
     if (
@@ -95,17 +83,11 @@ export class AdminOperationsController {
       error.message.includes('exceeds') ||
       error.message.includes('required')
     ) {
-      throw new HttpException(
-        `잘못된 요청입니다: ${error.message}`,
-        HttpStatus.BAD_REQUEST,
-      );
+      throw new HttpException(`잘못된 요청입니다: ${error.message}`, HttpStatus.BAD_REQUEST);
     }
 
     // 기타 모든 오류는 500으로 처리
-    throw new HttpException(
-      `${operation} 중 오류가 발생했습니다.`,
-      HttpStatus.INTERNAL_SERVER_ERROR,
-    );
+    throw new HttpException(`${operation} 중 오류가 발생했습니다.`, HttpStatus.INTERNAL_SERVER_ERROR);
   }
 
   // ===================================================================
@@ -130,10 +112,7 @@ export class AdminOperationsController {
     type: ErrorResponseDto,
   })
   @UseGuards(JwtAuthGuard)
-  async createTier(
-    @User('userId') userId: string,
-    @Body() dto: CreateTierRequestDto,
-  ) {
+  async createTier(@User('userId') userId: string, @Body() dto: CreateTierRequestDto) {
     try {
       const adminId = userId;
       this.logger.log(`티어 생성 요청: ${dto.code} (관리자: ${adminId})`);
@@ -184,20 +163,12 @@ export class AdminOperationsController {
     type: ErrorResponseDto,
   })
   @UseGuards(JwtAuthGuard)
-  async updateTier(
-    @User('userId') userId: string,
-    @Param('tierId') tierId: string,
-    @Body() dto: UpdateTierRequestDto,
-  ) {
+  async updateTier(@User('userId') userId: string, @Param('tierId') tierId: string, @Body() dto: UpdateTierRequestDto) {
     try {
       const adminId = userId;
       this.logger.log(`티어 수정 요청: ${tierId} (관리자: ${adminId})`);
 
-      const result = await this.adminOperationsService.updateTier(
-        tierId,
-        dto,
-        adminId,
-      );
+      const result = await this.adminOperationsService.updateTier(tierId, dto, adminId);
 
       this.logger.log(`✅ 티어 수정 성공: ${tierId}`);
 
@@ -247,9 +218,7 @@ export class AdminOperationsController {
   ) {
     try {
       const adminId = userId;
-      this.logger.log(
-        `플랜 생성 요청: 티어 ${dto.tierId} (관리자: ${adminId})`,
-      );
+      this.logger.log(`플랜 생성 요청: 티어 ${dto.tierId} (관리자: ${adminId})`);
 
       const result = await this.adminOperationsService.createPlan(dto, adminId);
 
@@ -297,20 +266,12 @@ export class AdminOperationsController {
     type: ErrorResponseDto,
   })
   @UseGuards(JwtAuthGuard)
-  async updatePlan(
-    @User('userId') userId: string,
-    @Param('planId') planId: string,
-    @Body() dto: UpdatePlanRequestDto,
-  ) {
+  async updatePlan(@User('userId') userId: string, @Param('planId') planId: string, @Body() dto: UpdatePlanRequestDto) {
     try {
       const adminId = userId;
       this.logger.log(`플랜 수정 요청: ${planId} (관리자: ${adminId})`);
 
-      const result = await this.adminOperationsService.updatePlan(
-        planId,
-        dto,
-        adminId,
-      );
+      const result = await this.adminOperationsService.updatePlan(planId, dto, adminId);
 
       this.logger.log(`✅ 플랜 수정 성공: ${planId}`);
 
@@ -365,11 +326,7 @@ export class AdminOperationsController {
       const adminId = userId;
       this.logger.log(`플랜 비활성화 요청: ${planId} (관리자: ${adminId})`);
 
-      const result = await this.adminOperationsService.deactivatePlan(
-        planId,
-        dto,
-        adminId,
-      );
+      const result = await this.adminOperationsService.deactivatePlan(planId, dto, adminId);
 
       this.logger.log(`✅ 플랜 비활성화 성공: ${planId}`);
 
@@ -416,20 +373,12 @@ export class AdminOperationsController {
     type: ErrorResponseDto,
   })
   @UseGuards(JwtAuthGuard)
-  async adjustUserEntitlement(
-    @User('userId') userId: string,
-    @Body() dto: ExtendEntitlementRequestDto,
-  ) {
+  async adjustUserEntitlement(@User('userId') userId: string, @Body() dto: ExtendEntitlementRequestDto) {
     try {
       const adminId = userId;
-      this.logger.log(
-        `구독 기간 조정 요청: ${dto.userId} (${dto.days}일, 관리자: ${adminId})`,
-      );
+      this.logger.log(`구독 기간 조정 요청: ${dto.userId} (${dto.days}일, 관리자: ${adminId})`);
 
-      const result = await this.adminOperationsService.adjustUserEntitlement(
-        dto,
-        adminId,
-      );
+      const result = await this.adminOperationsService.adjustUserEntitlement(dto, adminId);
 
       this.logger.log(`✅ 구독 기간 조정 성공: ${dto.userId}`);
 
@@ -472,12 +421,9 @@ export class AdminOperationsController {
     try {
       this.logger.log(`사용자 일시정지 이력 조회 요청: ${userId}`);
 
-      const pauseHistory =
-        await this.adminOperationsService.getUserPauseHistory(userId);
+      const pauseHistory = await this.adminOperationsService.getUserPauseHistory(userId);
 
-      this.logger.log(
-        `✅ 사용자 일시정지 이력 조회 성공: ${userId} → ${pauseHistory.length}건`,
-      );
+      this.logger.log(`✅ 사용자 일시정지 이력 조회 성공: ${userId} → ${pauseHistory.length}건`);
 
       return {
         success: true,
@@ -572,12 +518,9 @@ export class AdminOperationsController {
     try {
       this.logger.log(`계약 이벤트 이력 조회 - contractId: ${contractId}`);
 
-      const events =
-        await this.contractEventManager.getContractEvents(contractId);
+      const events = await this.contractEventManager.getContractEvents(contractId);
 
-      this.logger.log(
-        `✅ 계약 이벤트 이력 조회 성공 - contractId: ${contractId}, events: ${events.length}`,
-      );
+      this.logger.log(`✅ 계약 이벤트 이력 조회 성공 - contractId: ${contractId}, events: ${events.length}`);
 
       return {
         contractId,
@@ -595,8 +538,7 @@ export class AdminOperationsController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: '강제 구독 취소 (어드민)',
-    description:
-      '정책을 무시하고 구독을 강제로 취소합니다. 환불 금액을 직접 지정할 수 있습니다.',
+    description: '정책을 무시하고 구독을 강제로 취소합니다. 환불 금액을 직접 지정할 수 있습니다.',
   })
   @ApiParam({
     name: 'contractId',
@@ -663,9 +605,7 @@ export class AdminOperationsController {
   @Post('subscriptions/bulk')
   async getBulkMemberships(@Body() dto: GetBulkSubscriptionsRequestDto) {
     try {
-      const result = await this.subscriptionService.getBulkSubscriptions(
-        dto.id,
-      );
+      const result = await this.subscriptionService.getBulkSubscriptions(dto.id);
       return result;
     } catch (error) {
       this.handleError(error, '여러 사용자의 구독 정보 일괄 조회');

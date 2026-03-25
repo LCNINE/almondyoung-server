@@ -1,12 +1,5 @@
-import {
-  AuthenticatedMedusaRequest,
-  MedusaResponse,
-} from '@medusajs/framework/http';
-import {
-  ContainerRegistrationKeys,
-  Modules,
-  MedusaError,
-} from '@medusajs/framework/utils';
+import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
+import { ContainerRegistrationKeys, Modules, MedusaError } from '@medusajs/framework/utils';
 
 interface AssignPromotionsBody {
   promotion_ids: string[];
@@ -20,10 +13,7 @@ interface RemovePromotionsBody {
  * GET /admin/customers/:id/promotions
  * 특정 고객에게 할당된 프로모션 목록을 조회합니다.
  */
-export async function GET(
-  req: AuthenticatedMedusaRequest,
-  res: MedusaResponse,
-) {
+export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   const customerId = req.params.id;
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
 
@@ -77,18 +67,12 @@ export async function GET(
  * POST /admin/customers/:id/promotions
  * 고객에게 쿠폰(Promotion)을 발급합니다.
  */
-export async function POST(
-  req: AuthenticatedMedusaRequest,
-  res: MedusaResponse,
-) {
+export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   const customerId = req.params.id;
   const { promotion_ids } = req.body as AssignPromotionsBody;
 
   if (!promotion_ids || !Array.isArray(promotion_ids) || promotion_ids.length === 0) {
-    throw new MedusaError(
-      MedusaError.Types.INVALID_DATA,
-      'promotion_ids is required and must be a non-empty array',
-    );
+    throw new MedusaError(MedusaError.Types.INVALID_DATA, 'promotion_ids is required and must be a non-empty array');
   }
 
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
@@ -115,10 +99,7 @@ export async function POST(
   if (!promotions || promotions.length !== promotion_ids.length) {
     const foundIds = promotions?.map((p: any) => p.id) || [];
     const missingIds = promotion_ids.filter((id) => !foundIds.includes(id));
-    throw new MedusaError(
-      MedusaError.Types.NOT_FOUND,
-      `Promotions not found: ${missingIds.join(', ')}`,
-    );
+    throw new MedusaError(MedusaError.Types.NOT_FOUND, `Promotions not found: ${missingIds.join(', ')}`);
   }
 
   // Create links between customer and promotions
@@ -141,18 +122,12 @@ export async function POST(
  * DELETE /admin/customers/:id/promotions
  * 고객에게서 쿠폰(Promotion)을 제거합니다.
  */
-export async function DELETE(
-  req: AuthenticatedMedusaRequest,
-  res: MedusaResponse,
-) {
+export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   const customerId = req.params.id;
   const { promotion_ids } = req.body as RemovePromotionsBody;
 
   if (!promotion_ids || !Array.isArray(promotion_ids) || promotion_ids.length === 0) {
-    throw new MedusaError(
-      MedusaError.Types.INVALID_DATA,
-      'promotion_ids is required and must be a non-empty array',
-    );
+    throw new MedusaError(MedusaError.Types.INVALID_DATA, 'promotion_ids is required and must be a non-empty array');
   }
 
   const remoteLink = req.scope.resolve(ContainerRegistrationKeys.REMOTE_LINK);

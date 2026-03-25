@@ -160,7 +160,7 @@ async function searchProducts(baseUrl: string, keyword: string): Promise<SearchR
     throw new Error(`HTTP ${response.status} for keyword "${keyword}"`);
   }
 
-  const data = (await response.json()) as any;
+  const data = await response.json();
 
   const total: number =
     typeof data?.pagination?.total === 'number'
@@ -178,11 +178,7 @@ async function searchProducts(baseUrl: string, keyword: string): Promise<SearchR
   return { total, items };
 }
 
-async function runWithConcurrency<T>(
-  items: T[],
-  concurrency: number,
-  fn: (item: T) => Promise<void>,
-): Promise<void> {
+async function runWithConcurrency<T>(items: T[], concurrency: number, fn: (item: T) => Promise<void>): Promise<void> {
   const queue = [...items];
   const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
     while (queue.length > 0) {

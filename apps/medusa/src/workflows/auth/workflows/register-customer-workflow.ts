@@ -1,8 +1,5 @@
 import { AuthenticationInput } from '@medusajs/framework/types';
-import {
-  createWorkflow,
-  WorkflowResponse,
-} from '@medusajs/framework/workflows-sdk';
+import { createWorkflow, WorkflowResponse } from '@medusajs/framework/workflows-sdk';
 import { createCustomerAccountWorkflow } from '@medusajs/medusa/core-flows';
 import { registerAuthIdentityStep } from '../steps/register-auth-identity-step';
 

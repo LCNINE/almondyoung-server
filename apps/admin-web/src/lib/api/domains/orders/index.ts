@@ -6,14 +6,14 @@ import { fulfillmentOrder } from './fulfillment-order.client';
 import { matchingClient } from '../inventory/matching.client';
 
 export const orders = {
-    // Sales Orders Management
-    salesOrders,
+  // Sales Orders Management
+  salesOrders,
 
-    // Fulfillment Orders Management
-    fulfillmentOrder,
+  // Fulfillment Orders Management
+  fulfillmentOrder,
 
-    // Matching Management (moved from inventory to orders for compatibility)
-    matching: matchingClient,
+  // Matching Management (moved from inventory to orders for compatibility)
+  matching: matchingClient,
 };
 
 // 기존 호환성을 위한 별도 export

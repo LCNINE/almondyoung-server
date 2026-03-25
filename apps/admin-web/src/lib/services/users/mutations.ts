@@ -15,9 +15,12 @@ export const useReplaceUserRoles = (userId: string) => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (dto: ReplaceUserRolesDto) => userApi.replaceUserRoles(userId, dto),
+    mutationFn: (dto: ReplaceUserRolesDto) =>
+      userApi.replaceUserRoles(userId, dto),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: usersQueryKeys.userRolesById(userId) });
+      queryClient.invalidateQueries({
+        queryKey: usersQueryKeys.userRolesById(userId),
+      });
     },
   });
 };

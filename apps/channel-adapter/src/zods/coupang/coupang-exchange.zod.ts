@@ -19,24 +19,18 @@ export const GetExchangeRequestsParamsSchema = z
     createdAtFrom: z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2})?$/, {
-        message:
-          'createdAtFrom은 yyyy-MM-dd 또는 yyyy-MM-ddTHH:mm:ss 형식이어야 합니다.',
+        message: 'createdAtFrom은 yyyy-MM-dd 또는 yyyy-MM-ddTHH:mm:ss 형식이어야 합니다.',
       })
       // 필요하면 transform 제거
       .transform((val) => val),
     createdAtTo: z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2})?$/, {
-        message:
-          'createdAtTo는 yyyy-MM-dd 또는 yyyy-MM-ddTHH:mm:ss 형식이어야 합니다.',
+        message: 'createdAtTo는 yyyy-MM-dd 또는 yyyy-MM-ddTHH:mm:ss 형식이어야 합니다.',
       })
       .transform((val) => val),
-    status: z
-      .enum(['RECEIPT', 'PROGRESS', 'SUCCESS', 'REJECT', 'CANCEL'])
-      .optional(),
-    orderId: z
-      .union([z.string().regex(/^\d+$/).transform(Number), z.number()])
-      .optional(),
+    status: z.enum(['RECEIPT', 'PROGRESS', 'SUCCESS', 'REJECT', 'CANCEL']).optional(),
+    orderId: z.union([z.string().regex(/^\d+$/).transform(Number), z.number()]).optional(),
     nextToken: z.string().optional(),
     maxPerPage: z
       .union([z.number(), z.string().transform(Number)])
@@ -277,9 +271,7 @@ export const CoupangUploadExchangeInvoiceItemSchema = z.object({
 });
 
 // 요청 Body가 배열 형태임
-export const CoupangUploadExchangeInvoiceRequestSchema = z.array(
-  CoupangUploadExchangeInvoiceItemSchema,
-);
+export const CoupangUploadExchangeInvoiceRequestSchema = z.array(CoupangUploadExchangeInvoiceItemSchema);
 
 export const CoupangUploadExchangeInvoiceResponseSchema = z.object({
   code: z.string(), // "200"
@@ -294,33 +286,15 @@ export const CoupangUploadExchangeInvoiceResponseSchema = z.object({
 // == 타입 추출 (Type Exports)
 // =================================================================
 
-export type GetExchangeRequestsParams = z.infer<
-  typeof GetExchangeRequestsParamsSchema
->;
-export type CoupangExchangeRequest = z.infer<
-  typeof CoupangExchangeRequestSchema
->;
-export type GetExchangeRequestsResponse = z.infer<
-  typeof GetExchangeRequestsResponseSchema
->;
+export type GetExchangeRequestsParams = z.infer<typeof GetExchangeRequestsParamsSchema>;
+export type CoupangExchangeRequest = z.infer<typeof CoupangExchangeRequestSchema>;
+export type GetExchangeRequestsResponse = z.infer<typeof GetExchangeRequestsResponseSchema>;
 
-export type CoupangConfirmExchangeReceiptRequest = z.infer<
-  typeof CoupangConfirmExchangeReceiptRequestSchema
->;
-export type CoupangConfirmExchangeReceiptResponse = z.infer<
-  typeof CoupangConfirmExchangeReceiptResponseSchema
->;
+export type CoupangConfirmExchangeReceiptRequest = z.infer<typeof CoupangConfirmExchangeReceiptRequestSchema>;
+export type CoupangConfirmExchangeReceiptResponse = z.infer<typeof CoupangConfirmExchangeReceiptResponseSchema>;
 
-export type CoupangRejectExchangeRequest = z.infer<
-  typeof CoupangRejectExchangeRequestSchema
->;
-export type CoupangRejectExchangeResponse = z.infer<
-  typeof CoupangRejectExchangeResponseSchema
->;
+export type CoupangRejectExchangeRequest = z.infer<typeof CoupangRejectExchangeRequestSchema>;
+export type CoupangRejectExchangeResponse = z.infer<typeof CoupangRejectExchangeResponseSchema>;
 
-export type CoupangUploadExchangeInvoiceRequest = z.infer<
-  typeof CoupangUploadExchangeInvoiceRequestSchema
->;
-export type CoupangUploadExchangeInvoiceResponse = z.infer<
-  typeof CoupangUploadExchangeInvoiceResponseSchema
->;
+export type CoupangUploadExchangeInvoiceRequest = z.infer<typeof CoupangUploadExchangeInvoiceRequestSchema>;
+export type CoupangUploadExchangeInvoiceResponse = z.infer<typeof CoupangUploadExchangeInvoiceResponseSchema>;

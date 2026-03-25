@@ -1,21 +1,7 @@
 // apps/notification/src/shared/controllers/webhook.controller.ts
-import {
-  Controller,
-  Post,
-  Body,
-  Headers,
-  HttpCode,
-  Req,
-  BadRequestException,
-} from '@nestjs/common';
+import { Controller, Post, Body, Headers, HttpCode, Req, BadRequestException } from '@nestjs/common';
 import { Request } from 'express';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiHeader,
-  ApiBody,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiHeader, ApiBody } from '@nestjs/swagger';
 import { WebhookService } from '../services/webhook.service';
 import { ResendWebhookEvent } from '../../provider/providers/email/resend-webhook.dto';
 
@@ -27,7 +13,7 @@ interface RequestWithRawBody extends Request {
 @ApiTags('webhooks')
 @Controller('webhooks')
 export class WebhookController {
-  constructor(private readonly webhookService: WebhookService) { }
+  constructor(private readonly webhookService: WebhookService) {}
 
   @Post('resend')
   @HttpCode(200)
@@ -101,7 +87,6 @@ export class WebhookController {
       },
     },
   })
-
   @ApiResponse({ status: 200, description: '웹훅 처리 성공' })
   @ApiResponse({ status: 400, description: '잘못된 웹훅 헤더' })
   async handleResend(
@@ -150,11 +135,7 @@ export class WebhookController {
   })
   @ApiResponse({ status: 200, description: '웹훅 처리 성공' })
   @ApiResponse({ status: 401, description: '웹훅 서명 검증 실패' })
-  async handleTwilio(
-    @Req() req: Request,
-    @Body() data: any,
-    @Headers('X-Twilio-Signature') signature?: string,
-  ) {
+  async handleTwilio(@Req() req: Request, @Body() data: any, @Headers('X-Twilio-Signature') signature?: string) {
     const requestUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
     await this.webhookService.handleTwilioWebhook(data, signature, requestUrl);
     return { received: true };

@@ -1,15 +1,10 @@
 import { Controller, Get, Post, Body, Query, HttpStatus } from '@nestjs/common';
 import { BenefitTrackingService } from '../services/benefit-tracking.service';
-import {
-  RecordDiscountDto,
-  CycleBenefitDto,
-} from '../shared/dto/benefit-tracking.dto';
+import { RecordDiscountDto, CycleBenefitDto } from '../shared/dto/benefit-tracking.dto';
 
 @Controller('membership/benefits')
 export class BenefitTrackingController {
-  constructor(
-    private readonly benefitTrackingService: BenefitTrackingService,
-  ) {}
+  constructor(private readonly benefitTrackingService: BenefitTrackingService) {}
 
   /**
    * 내부 API: 혜택 기록
@@ -55,9 +50,7 @@ export class BenefitTrackingController {
    * 사용자에게 "지금 이 주기 동안 얼마나 절약했는지" 보여주기
    */
   @Get('current')
-  async getCurrentCycleBenefit(
-    @Query('userId') userId: string,
-  ): Promise<CycleBenefitDto> {
+  async getCurrentCycleBenefit(@Query('userId') userId: string): Promise<CycleBenefitDto> {
     try {
       return await this.benefitTrackingService.getCurrentCycleBenefit(userId);
     } catch (error: any) {
@@ -73,13 +66,7 @@ export class BenefitTrackingController {
    * 사용자의 전체 혜택 히스토리 (최근 N개 주기)
    */
   @Get('history')
-  async getCycleBenefitHistory(
-    @Query('userId') userId: string,
-    @Query('limit') limit?: number,
-  ) {
-    return this.benefitTrackingService.getCycleBenefitHistory(
-      userId,
-      limit || 12,
-    );
+  async getCycleBenefitHistory(@Query('userId') userId: string, @Query('limit') limit?: number) {
+    return this.benefitTrackingService.getCycleBenefitHistory(userId, limit || 12);
   }
 }

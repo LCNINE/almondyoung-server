@@ -73,15 +73,12 @@ interface OptionGroupRow {
  * Total: 4 queries for 100 products (vs 100+ API calls)
  */
 export class PimSnapshotBuilder {
-  constructor(private readonly pimDb: postgres.Sql) { }
+  constructor(private readonly pimDb: postgres.Sql) {}
 
   /**
    * Fetch active product masters with full snapshots
    */
-  async fetchActiveMasters(
-    limit: number,
-    offset: number
-  ): Promise<PimProductSnapshot[]> {
+  async fetchActiveMasters(limit: number, offset: number): Promise<PimProductSnapshot[]> {
     console.log(`[PimSnapshotBuilder] Fetching ${limit} masters from offset ${offset}...`);
 
     // Step 1: Query active masters + versions
@@ -95,8 +92,8 @@ export class PimSnapshotBuilder {
     console.log(`[PimSnapshotBuilder] Found ${masters.length} masters`);
 
     // Extract IDs for batch queries
-    const masterIds = masters.map(m => m.master_id);
-    const versionIds = masters.map(m => m.version_id);
+    const masterIds = masters.map((m) => m.master_id);
+    const versionIds = masters.map((m) => m.version_id);
 
     // Step 2-4: Batch query related data
     const [categories, variants, optionGroups] = await Promise.all([
@@ -105,7 +102,9 @@ export class PimSnapshotBuilder {
       this.queryOptionGroups(masterIds, versionIds),
     ]);
 
-    console.log(`[PimSnapshotBuilder] Fetched: ${categories.length} categories, ${variants.length} variants, ${optionGroups.length} option values`);
+    console.log(
+      `[PimSnapshotBuilder] Fetched: ${categories.length} categories, ${variants.length} variants, ${optionGroups.length} option values`,
+    );
 
     // Step 5: Assemble snapshots
     return this.assembleSnapshots(masters, categories, variants, optionGroups);
@@ -145,10 +144,7 @@ export class PimSnapshotBuilder {
   /**
    * Query categories for given masters (batch)
    */
-  private async queryCategories(
-    masterIds: string[],
-    versionIds: string[]
-  ): Promise<CategoryRow[]> {
+  private async queryCategories(masterIds: string[], versionIds: string[]): Promise<CategoryRow[]> {
     if (masterIds.length === 0) return [];
 
     return await this.pimDb<CategoryRow[]>`
@@ -174,10 +170,7 @@ export class PimSnapshotBuilder {
   /**
    * Query variants for given masters (batch)
    */
-  private async queryVariants(
-    masterIds: string[],
-    versionIds: string[]
-  ): Promise<VariantRow[]> {
+  private async queryVariants(masterIds: string[], versionIds: string[]): Promise<VariantRow[]> {
     if (masterIds.length === 0) return [];
 
     return await this.pimDb<VariantRow[]>`
@@ -242,10 +235,7 @@ export class PimSnapshotBuilder {
   /**
    * Query option groups for given masters (batch)
    */
-  private async queryOptionGroups(
-    masterIds: string[],
-    versionIds: string[]
-  ): Promise<OptionGroupRow[]> {
+  private async queryOptionGroups(masterIds: string[], versionIds: string[]): Promise<OptionGroupRow[]> {
     if (masterIds.length === 0) return [];
 
     return await this.pimDb<OptionGroupRow[]>`
@@ -284,13 +274,13 @@ export class PimSnapshotBuilder {
     masters: MasterRow[],
     categories: CategoryRow[],
     variants: VariantRow[],
-    optionGroups: OptionGroupRow[]
+    optionGroups: OptionGroupRow[],
   ): PimProductSnapshot[] {
-    return masters.map(master => {
+    return masters.map((master) => {
       // Group categories by masterId
       const masterCategories = categories
-        .filter(c => c.master_id === master.master_id)
-        .map(c => ({
+        .filter((c) => c.master_id === master.master_id)
+        .map((c) => ({
           id: c.category_id,
           name: c.name,
           slug: c.slug,
@@ -304,8 +294,8 @@ export class PimSnapshotBuilder {
 
       // Group variants by masterId
       const masterVariants = variants
-        .filter(v => v.master_id === master.master_id)
-        .map(v => ({
+        .filter((v) => v.master_id === master.master_id)
+        .map((v) => ({
           id: v.variant_id,
           variantName: v.variant_name,
           variantCode: v.variant_code,
@@ -319,15 +309,15 @@ export class PimSnapshotBuilder {
         }));
 
       // Group option groups by masterId
-      const masterOptions = optionGroups.filter(o => o.master_id === master.master_id);
+      const masterOptions = optionGroups.filter((o) => o.master_id === master.master_id);
       const groupedOptions = new Map<string, any>();
 
-      masterOptions.forEach(opt => {
+      masterOptions.forEach((opt) => {
         if (!groupedOptions.has(opt.option_group_id)) {
           groupedOptions.set(opt.option_group_id, {
             id: opt.option_group_id,
             name: opt.option_group_name || opt.option_group_id,
-            values: []
+            values: [],
           });
         }
 
@@ -356,7 +346,7 @@ export class PimSnapshotBuilder {
         brand: master.brand,
         productType: master.product_type,
         categories: masterCategories,
-        categoryIds: masterCategories.map(c => c.id),
+        categoryIds: masterCategories.map((c) => c.id),
         variants: masterVariants,
         optionGroups: Array.from(groupedOptions.values()),
         status: master.status as any,

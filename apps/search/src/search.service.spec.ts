@@ -45,15 +45,12 @@ describe('SearchService', () => {
   });
 
   it('records keyword when q exists and page is first page', async () => {
-    await expect(
-      service.searchProducts({ q: '선크림', page: 1, size: 20 } as any),
-    ).resolves.toEqual(mockSearchResponse);
+    await expect(service.searchProducts({ q: '선크림', page: 1, size: 20 } as any)).resolves.toEqual(
+      mockSearchResponse,
+    );
 
     expect(productIndexService.searchProducts).toHaveBeenCalled();
-    expect(searchKeywordService.recordSearchKeyword).toHaveBeenCalledWith(
-      '선크림',
-      3,
-    );
+    expect(searchKeywordService.recordSearchKeyword).toHaveBeenCalledWith('선크림', 3);
   });
 
   it('does not record keyword when q is empty', async () => {

@@ -30,4 +30,3 @@ export interface CsvImportResult {
   errors: CsvValidationError[];
   products?: any[];
 }
-

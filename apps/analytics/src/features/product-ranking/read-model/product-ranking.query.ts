@@ -2,11 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { sql, and } from 'drizzle-orm';
-import {
-  aggProductOrderDaily,
-  analyticsSchema,
-  dimProductCategories,
-} from '../../../schema';
+import { aggProductOrderDaily, analyticsSchema, dimProductCategories } from '../../../schema';
 import { ProductOrderMetricDto } from '../api/dto';
 
 const PRODUCT_RANKING_DAYS = 90;
@@ -23,9 +19,7 @@ export class ProductRankingQuery {
   }
 
   async getProductRanking(categoryId?: string, limit: number = 10): Promise<ProductOrderMetricDto[]> {
-    const startDate = this.toDateOnly(
-      this.addUtcDays(new Date(), -(PRODUCT_RANKING_DAYS - 1)),
-    );
+    const startDate = this.toDateOnly(this.addUtcDays(new Date(), -(PRODUCT_RANKING_DAYS - 1)));
 
     const baseWhere = sql`${aggProductOrderDaily.aggDate} >= ${startDate}::date`;
 
@@ -65,11 +59,7 @@ export class ProductRankingQuery {
   }
 
   private addUtcDays(date: Date, days: number): Date {
-    const utc = new Date(Date.UTC(
-      date.getUTCFullYear(),
-      date.getUTCMonth(),
-      date.getUTCDate(),
-    ));
+    const utc = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
     utc.setUTCDate(utc.getUTCDate() + days);
     return utc;
   }

@@ -34,11 +34,7 @@ type CheckResult = {
   error?: string;
 };
 
-async function mapLimit<T, R>(
-  items: T[],
-  limit: number,
-  worker: (item: T, index: number) => Promise<R>,
-): Promise<R[]> {
+async function mapLimit<T, R>(items: T[], limit: number, worker: (item: T, index: number) => Promise<R>): Promise<R[]> {
   const results: R[] = [];
   let index = 0;
   const executing: Promise<void>[] = [];
@@ -52,7 +48,7 @@ async function mapLimit<T, R>(
       })
       .catch((err) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        results[currentIndex] = err as any;
+        results[currentIndex] = err;
       })
       .then(() => {
         executing.splice(executing.indexOf(p), 1);
@@ -89,12 +85,11 @@ async function main() {
 
   const masterIds = await pim.getAllActiveMasters();
   const sliced =
-    sliceLimit !== undefined
-      ? masterIds.slice(sliceOffset, sliceOffset + sliceLimit)
-      : masterIds.slice(sliceOffset);
+    sliceLimit !== undefined ? masterIds.slice(sliceOffset, sliceOffset + sliceLimit) : masterIds.slice(sliceOffset);
 
   console.log(
-    `Total active masters from PIM channel: ${masterIds.length}. Checking ${sliced.length} (offset=${sliceOffset}${sliceLimit !== undefined ? `, limit=${sliceLimit}` : ''
+    `Total active masters from PIM channel: ${masterIds.length}. Checking ${sliced.length} (offset=${sliceOffset}${
+      sliceLimit !== undefined ? `, limit=${sliceLimit}` : ''
     }).`,
   );
 
@@ -152,16 +147,44 @@ async function main() {
   console.log(`Medusa errors: ${medusaErrors.length}`);
 
   if (missing.length) {
-    console.log('Missing handles:', missing.slice(0, 20).map((r) => r.masterId).join(', '), missing.length > 20 ? '...' : '');
+    console.log(
+      'Missing handles:',
+      missing
+        .slice(0, 20)
+        .map((r) => r.masterId)
+        .join(', '),
+      missing.length > 20 ? '...' : '',
+    );
   }
   if (mismatched.length) {
-    console.log('Variant mismatch handles:', mismatched.slice(0, 20).map((r) => r.masterId).join(', '), mismatched.length > 20 ? '...' : '');
+    console.log(
+      'Variant mismatch handles:',
+      mismatched
+        .slice(0, 20)
+        .map((r) => r.masterId)
+        .join(', '),
+      mismatched.length > 20 ? '...' : '',
+    );
   }
   if (pimErrors.length) {
-    console.log('PIM errors:', pimErrors.slice(0, 5).map((r) => `${r.masterId} (${r.error})`).join(', '), pimErrors.length > 5 ? '...' : '');
+    console.log(
+      'PIM errors:',
+      pimErrors
+        .slice(0, 5)
+        .map((r) => `${r.masterId} (${r.error})`)
+        .join(', '),
+      pimErrors.length > 5 ? '...' : '',
+    );
   }
   if (medusaErrors.length) {
-    console.log('Medusa errors:', medusaErrors.slice(0, 5).map((r) => `${r.masterId} (${r.error})`).join(', '), medusaErrors.length > 5 ? '...' : '');
+    console.log(
+      'Medusa errors:',
+      medusaErrors
+        .slice(0, 5)
+        .map((r) => `${r.masterId} (${r.error})`)
+        .join(', '),
+      medusaErrors.length > 5 ? '...' : '',
+    );
   }
 
   const targetsForDelete = [...missing, ...mismatched].filter((r) => r.medusaProductId);
@@ -181,9 +204,7 @@ async function main() {
   if (resyncAfterDelete) {
     const toResyncIds = [...missing, ...mismatched].map((r) => r.masterId);
     if (toResyncIds.length) {
-      console.log(
-        `Resync requested. Run migrate-pim-to-medusa with --masters=${toResyncIds.join(',')}`,
-      );
+      console.log(`Resync requested. Run migrate-pim-to-medusa with --masters=${toResyncIds.join(',')}`);
     }
   }
 }
