@@ -2,11 +2,12 @@ import { ExecutionContext, Injectable, Logger, UnauthorizedException } from '@ne
 import { Reflector } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { IS_OPTIONAL_AUTH_KEY } from '../decorators/optional-auth.decorator';
 
 /**
  * JWT Authentication Guard
  * Protects routes requiring authentication
- * Skips authentication for routes marked with @Public()
+ * Skips authentication for routes marked with @Public() or @OptionalAuth()
  */
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
@@ -22,7 +23,12 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       context.getClass(),
     ]);
 
-    if (isPublic) {
+    const isOptionalAuth = this.reflector.getAllAndOverride<boolean>(IS_OPTIONAL_AUTH_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    if (isPublic || isOptionalAuth) {
       return true;
     }
 
