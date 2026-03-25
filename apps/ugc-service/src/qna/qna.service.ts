@@ -331,14 +331,14 @@ export class QnaService {
 
       // 상태 필터 (기본값: 삭제된 것 제외)
       if (query.status) {
-        conditions.push(eq(questions.status, query.status));
+        conditions.push(eq(questions.status, query.status as QuestionStatus));
       } else {
-        conditions.push(ne(questions.status, 'deleted'));
+        conditions.push(ne(questions.status, 'deleted' as QuestionStatus));
       }
 
       // 카테고리 필터
       if (query.category) {
-        conditions.push(eq(questions.category, query.category));
+        conditions.push(eq(questions.category, query.category as QuestionCategory));
       }
 
       // 검색어 (제목, 내용, 닉네임)
