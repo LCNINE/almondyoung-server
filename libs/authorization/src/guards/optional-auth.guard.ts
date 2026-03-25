@@ -9,12 +9,16 @@ import { AuthGuard } from '@nestjs/passport';
 @Injectable()
 export class OptionalAuthGuard extends AuthGuard('jwt') {
   handleRequest(err: any, user: any) {
-    // 에러가 있거나 user가 없어도 통과, user만 반환 (없으면 null)
     return user || null;
   }
 
-  canActivate(context: ExecutionContext) {
-    // 토큰 파싱 시도
-    return super.canActivate(context);
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    // 토큰 파싱 시도, 실패해도 통과
+    try {
+      await super.canActivate(context);
+    } catch {
+      // 토큰이 없거나 유효하지 않아도 무시
+    }
+    return true;
   }
 }
