@@ -80,6 +80,7 @@ export const MENU_SECTIONS: MenuSection[] = [
       // { label: "적립금", icon: "💰", path: "/mypage/point" },
       // { label: "결제수단", icon: "💳", path: "/mypage/payment" },
       { label: "리뷰 관리", icon: "⭐", path: "/mypage/reviews" },
+      { label: "내 문의 내역", icon: "❓", path: "/mypage/inquiries" },
       { label: "다운로드", icon: "📥", path: "/mypage/download" },
     ],
   },
@@ -161,6 +162,12 @@ export const SIDEBAR_MENU_ITEMS = [
     label: "리뷰관리",
     hasSubMenu: false,
     path: "/mypage/reviews",
+  },
+  {
+    id: "inquiries",
+    label: "내 문의 내역",
+    hasSubMenu: false,
+    path: "/mypage/inquiries",
   },
   {
     id: "membership",
