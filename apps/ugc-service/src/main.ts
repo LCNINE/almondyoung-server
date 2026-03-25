@@ -1,3 +1,4 @@
+import './tracing';
 import { NestFactory } from '@nestjs/core';
 import { UgcServiceModule } from './ugc-service.module';
 import { ValidationPipe } from '@nestjs/common';
