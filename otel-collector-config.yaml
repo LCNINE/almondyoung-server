@@ -30,7 +30,7 @@ exporters:
     headers:
       Authorization: "Basic ${GRAFANA_TRACES_AUTH}"
 
-  loki:
+  otlphttp/logs:
     endpoint: ${GRAFANA_LOGS_ENDPOINT}
     headers:
       Authorization: "Basic ${GRAFANA_LOGS_AUTH}"
@@ -53,4 +53,4 @@ service:
     logs:
       receivers: [otlp]
       processors: [memory_limiter, batch]
-      exporters: [loki]
+      exporters: [otlphttp/logs]
