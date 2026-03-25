@@ -6,39 +6,80 @@ import {
   CreateQuestionDto,
   UpdateQuestionDto,
   QuestionListQueryDto,
+  MyQuestionListQueryDto,
   CreateAnswerDto,
   AnswerResponseDto,
   QnaSummaryResponseDto,
 } from "@/lib/types/dto/ugc"
 import { api } from "../api"
+import { getAccessToken } from "@/lib/data/cookies"
 
 // ─── 질문 ───
 
 /**
- * 상품별 질문 목록 조회
+ * 질문 목록 조회 (상품별 또는 전체)
+ * 로그인 시 본인 비밀글은 내용이 보임
  */
 export const getQuestionsByProductId = async ({
   productId,
+  category,
   sort,
   page,
   limit,
 }: QuestionListQueryDto): Promise<
   PaginatedResponseDto<QuestionResponseDto>
 > => {
-  const params: Record<string, string> = {
-    productId,
-  }
+  const params: Record<string, string> = {}
 
+  if (productId) params.productId = productId
+  if (category) params.category = category
   if (sort) params.sort = sort
   if (page) params.page = String(page)
   if (limit) params.limit = String(limit)
 
   const queryString = new URLSearchParams(params).toString()
 
-  return await api("ugc", `/qna/questions?${queryString}`, {
-    method: "GET",
-    withAuth: false,
-  })
+  // 토큰이 있으면 인증 포함 (본인 비밀글 확인 가능)
+  const accessToken = await getAccessToken()
+
+  return await api(
+    "ugc",
+    `/qna/questions${queryString ? `?${queryString}` : ""}`,
+    {
+      method: "GET",
+      withAuth: !!accessToken,
+    }
+  )
+}
+
+/**
+ * 내 문의 목록 조회
+ */
+export const getMyQuestions = async ({
+  category,
+  sort,
+  page,
+  limit,
+}: MyQuestionListQueryDto = {}): Promise<
+  PaginatedResponseDto<QuestionResponseDto>
+> => {
+  const params: Record<string, string> = {}
+
+  if (category) params.category = category
+  if (sort) params.sort = sort
+  if (page) params.page = String(page)
+  if (limit) params.limit = String(limit)
+
+  const queryString = new URLSearchParams(params).toString()
+
+  return await api(
+    "ugc",
+    `/qna/questions/me${queryString ? `?${queryString}` : ""}`,
+    {
+      method: "GET",
+      withAuth: true,
+    }
+  )
 }
 
 /**

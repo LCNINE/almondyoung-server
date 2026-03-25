@@ -2,8 +2,9 @@
 
 import { useEffect, useState, useTransition } from "react"
 import Image from "next/image"
-import { ChevronRight } from "lucide-react"
+import { ChevronRight, Lock } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
@@ -13,10 +14,15 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { useUser } from "@/contexts/user-context"
 import { createQuestion, updateQuestion } from "@/lib/api/ugc/qna"
+import { uploadFile } from "@/lib/api/file/upload"
 import type { Question } from "@/lib/types/ui/ugc"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
-import Link from "next/link"
+import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { toast } from "sonner"
+import {
+  ImageUpload,
+  type ImagePreview,
+} from "@/domains/cs/components/inquiry/image-upload"
 
 const MAX_LENGTH = 250
 
@@ -43,23 +49,58 @@ export function QnaInquiryDialog({
   const isEditMode = !!editQuestion
 
   const [content, setContent] = useState("")
+  const [isSecret, setIsSecret] = useState(true)
+  const [images, setImages] = useState<ImagePreview[]>([])
+  const [isUploading, setIsUploading] = useState(false)
   const [isPending, startTransition] = useTransition()
 
   useEffect(() => {
     if (open && editQuestion) {
       setContent(editQuestion.content)
+      setIsSecret(editQuestion.isSecret)
     }
   }, [open, editQuestion])
 
+  const isBusy = isPending || isUploading
+
+  const uploadImages = async (): Promise<string[]> => {
+    const results = await Promise.all(
+      images.map((img) => {
+        const formData = new FormData()
+        formData.append("file", img.file)
+        formData.append("contextId", "cs-inquiry")
+        formData.append("isPublic", isSecret ? "false" : "true")
+        return uploadFile(formData)
+      })
+    )
+    return results.map((r) => r.id)
+  }
+
   const handleSubmit = () => {
-    if (!content.trim() || isPending) return
+    if (!content.trim() || isBusy) return
 
     startTransition(async () => {
       try {
+        let mediaFileIds: string[] | undefined
+
+        if (images.length > 0) {
+          setIsUploading(true)
+          try {
+            mediaFileIds = await uploadImages()
+          } catch {
+            setIsUploading(false)
+            toast.error("이미지 업로드에 실패했습니다. 다시 시도해주세요.")
+            return
+          }
+          setIsUploading(false)
+        }
+
         if (isEditMode) {
           await updateQuestion(editQuestion.id, {
             title: content.slice(0, 50),
             content,
+            isSecret,
+            mediaFileIds,
           })
         } else {
           await createQuestion({
@@ -67,9 +108,13 @@ export function QnaInquiryDialog({
             nickname: user?.nickname ?? "",
             title: content.slice(0, 50),
             content,
+            isSecret,
+            mediaFileIds,
           })
         }
         setContent("")
+        setIsSecret(true)
+        setImages([])
         onOpenChange(false)
         onSuccess?.()
       } catch (error: unknown) {
@@ -95,6 +140,8 @@ export function QnaInquiryDialog({
   const handleOpenChange = (value: boolean) => {
     if (!value) {
       setContent("")
+      setIsSecret(true)
+      setImages([])
     }
     onOpenChange(value)
   }
@@ -131,13 +178,12 @@ export function QnaInquiryDialog({
           className="mb-4 flex w-full items-center justify-between rounded-lg px-4 py-3"
           asChild
         >
-          {/* todo: 1:1 문의 링크 추가 */}
-          <Link href={`#`}>
+          <LocalizedClientLink href={`/cs?tab=inquiry&productId=${productId}`}>
             <span className="text-[13px] text-gray-600">
               배송·반품·교환 문의는 1:1 문의로 남겨주세요.
             </span>
             <ChevronRight className="h-4 w-4 text-gray-400" />
-          </Link>
+          </LocalizedClientLink>
         </Button>
 
         {/* 문의 입력 */}
@@ -153,6 +199,7 @@ export function QnaInquiryDialog({
               }
             }}
             className="min-h-[180px] resize-none rounded-lg border-gray-200 text-[14px] placeholder:text-gray-400"
+            disabled={isBusy}
           />
           <span className="absolute right-3 bottom-3 text-xs text-gray-400">
             {content.length}
@@ -160,6 +207,28 @@ export function QnaInquiryDialog({
             {MAX_LENGTH}
           </span>
         </div>
+
+        {/* 이미지 첨부 (신규 작성 시에만) */}
+        {!isEditMode && (
+          <div className="mb-4">
+            <ImageUpload
+              images={images}
+              onImagesChange={setImages}
+              disabled={isBusy}
+            />
+          </div>
+        )}
+
+        {/* 비밀글 체크박스 */}
+        <label className="mb-4 flex cursor-pointer items-center gap-2">
+          <Checkbox
+            checked={isSecret}
+            onCheckedChange={(checked) => setIsSecret(checked === true)}
+            disabled={isBusy}
+          />
+          <Lock className="h-4 w-4 text-gray-500" />
+          <span className="text-[14px] text-gray-700">비밀글로 문의하기</span>
+        </label>
 
         {/* 안내 문구 */}
         <ul className="mb-6 text-[12px] leading-relaxed text-gray-500">
@@ -182,10 +251,10 @@ export function QnaInquiryDialog({
         {/* 등록 버튼 */}
         <Button
           className="h-[52px] w-full rounded-lg text-[16px] font-medium"
-          disabled={!content.trim() || isPending}
+          disabled={!content.trim() || isBusy}
           onClick={handleSubmit}
         >
-          {isPending
+          {isBusy
             ? isEditMode
               ? "수정 중..."
               : "등록 중..."

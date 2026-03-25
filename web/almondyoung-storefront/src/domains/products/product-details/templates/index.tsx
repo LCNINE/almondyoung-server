@@ -1,7 +1,7 @@
+import { QnaList } from "@/components/qna/qna-list"
 import { ErrorBoundary } from "@/components/shared/error-boundary"
 import {
   ProductDetailInfoSkeleton,
-  ProductQnaSkeleton,
   ProductReviewSkeleton,
 } from "@/components/skeletons/product-detail-skeletons"
 import { Customer } from "@/lib/types/ui/medusa"
@@ -17,7 +17,6 @@ import { SectionTabPanel } from "../components/section-nav"
 import { ProductSummary } from "../components/product-summary"
 import ProductActionsWrapper from "./product-actions-wrappers/product-actions-wrapper"
 import { ProductDetailInfoWrapper } from "./product-actions-wrappers/product-detail-info-wrapper"
-import { QnaSectionWrapper } from "./product-actions-wrappers/qna-section-wrapper"
 import { ReviewSectionWrapper } from "./product-actions-wrappers/review-section-wrapper"
 import { SectionTabsWrapper } from "./product-actions-wrappers/section-tabs-wrapper"
 
@@ -92,13 +91,13 @@ export function ProductTemplate({
                 </ErrorBoundary>
               </SectionTabPanel>
 
-              {/* Q&A Tab Panel */}
+              {/* Q&A Tab Panel - 클라이언트 lazy loading */}
               <SectionTabPanel value="qna">
-                <ErrorBoundary fallback={<div>Q&A를 불러오지 못했습니다.</div>}>
-                  <Suspense fallback={<ProductQnaSkeleton />}>
-                    <QnaSectionWrapper product={product} />
-                  </Suspense>
-                </ErrorBoundary>
+                <QnaList
+                  productId={product.metadata?.pimMasterId as string}
+                  productName={product.title ?? ""}
+                  productThumbnail={product.thumbnail ?? null}
+                />
               </SectionTabPanel>
             </SectionTabsWrapper>
           </main>
