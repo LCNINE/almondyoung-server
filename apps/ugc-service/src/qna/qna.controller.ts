@@ -6,7 +6,7 @@ import { PaginatedResponseDto } from '@app/shared/dto';
 import { QnaService } from './qna.service';
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { UpdateQuestionDto } from './dto/update-question.dto';
-import { QuestionListQueryDto } from './dto/question-list-query.dto';
+import { QuestionListQueryDto, MyQuestionListQueryDto } from './dto/question-list-query.dto';
 import { CreateAnswerDto } from './dto/create-answer.dto';
 import { AnswerResponseDto } from './dto/answer-response.dto';
 import { QuestionResponseDto } from './dto/question-response.dto';
@@ -35,8 +35,9 @@ export class QnaController {
 
   @Get('questions')
   @Public()
-  @ApiOperation({ summary: '질문 목록 조회' })
-  @ApiQuery({ name: 'productId', description: '상품 ID (UUID)', required: true, type: String })
+  @ApiOperation({ summary: '질문 목록 조회 (상품별)' })
+  @ApiQuery({ name: 'productId', description: '상품 ID (UUID)', required: false, type: String })
+  @ApiQuery({ name: 'category', description: '문의 카테고리', required: false, enum: ['product', 'delivery', 'order', 'exchange', 'account', 'etc'] })
   @ApiQuery({ name: 'sort', description: '정렬 옵션', required: false, enum: ['latest', 'oldest'] })
   @ApiQuery({ name: 'page', description: '페이지 번호', required: false, type: Number })
   @ApiQuery({ name: 'limit', description: '페이지당 아이템 수', required: false, type: Number })
@@ -49,6 +50,24 @@ export class QnaController {
     return {
       ...result,
       data: result.data.map((q) => QnaMapper.toQuestionResponse(q, { hideSecret: q.hideSecret })),
+    };
+  }
+
+  @Get('questions/me')
+  @ApiOperation({ summary: '내 문의 목록 조회' })
+  @ApiQuery({ name: 'category', description: '문의 카테고리 필터', required: false, enum: ['product', 'delivery', 'order', 'exchange', 'account', 'etc'] })
+  @ApiQuery({ name: 'sort', description: '정렬 옵션', required: false, enum: ['latest', 'oldest'] })
+  @ApiQuery({ name: 'page', description: '페이지 번호', required: false, type: Number })
+  @ApiQuery({ name: 'limit', description: '페이지당 아이템 수', required: false, type: Number })
+  @ApiOkResponsePaginated(QuestionResponseDto, { description: '내 문의 목록 조회 성공' })
+  async listMyQuestions(
+    @User('userId') userId: string,
+    @Query() query: MyQuestionListQueryDto,
+  ): Promise<PaginatedResponseDto<QuestionResponseDto>> {
+    const result = await this.qnaService.listMyQuestions(userId, query);
+    return {
+      ...result,
+      data: result.data.map((q) => QnaMapper.toQuestionResponse(q)),
     };
   }
 
