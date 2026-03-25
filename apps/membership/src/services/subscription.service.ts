@@ -221,7 +221,7 @@ export class SubscriptionService {
     const plan = await this.contractReader.findPlan(contract.planId);
     if (!plan) return null;
 
-    const subscriptionType = plan.durationDays === 30 ? 'MONTHLY' : 'YEAR';
+    const subscriptionType: 'MONTHLY' | 'YEAR' = plan.durationDays === 30 ? 'MONTHLY' : 'YEAR';
 
     return {
       id: contract.id,
