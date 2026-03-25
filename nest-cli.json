@@ -5,7 +5,8 @@
   "defaultLibraryPrefix": "@app",
   "compilerOptions": {
     "deleteOutDir": true,
-
+    "webpack": true,
+    "webpackConfigPath": "webpack.config.js",
     "tsConfigPath": "apps/almondyoung-server/tsconfig.app.json"
   },
   "monorepo": true,
