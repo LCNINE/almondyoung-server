@@ -8,41 +8,49 @@ receivers:
 
 processors:
   batch:
-    timeout: 1s
+    timeout: 5s
     send_batch_size: 1024
+  probabilistic_sampler:
+    sampling_percentage: 10
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 400
+    spike_limit_mib: 100
 
 exporters:
-  # Jaeger로 트레이스 전송
-  otlp/jaeger:
-    endpoint: ${JAEGER_ENDPOINT}
-    tls:
-      insecure: true
+  prometheusremotewrite:
+    endpoint: ${GRAFANA_METRICS_ENDPOINT}
+    headers:
+      Authorization: "Basic ${GRAFANA_METRICS_AUTH}"
+    resource_to_telemetry_conversion:
+      enabled: true
 
-  # Prometheus가 scrape할 수 있도록 메트릭 노출
-  prometheus:
-    endpoint: 0.0.0.0:8889
-    namespace: otel
+  otlphttp/traces:
+    endpoint: ${GRAFANA_TRACES_ENDPOINT}
+    headers:
+      Authorization: "Basic ${GRAFANA_TRACES_AUTH}"
 
-connectors:
-  # 트레이스에서 메트릭 자동 생성 (요청 수, 지연시간 등)
-  spanmetrics:
-    histogram:
-      explicit:
-        buckets: [5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s]
-    dimensions:
-      - name: http.method
-      - name: http.status_code
+  loki:
+    endpoint: ${GRAFANA_LOGS_ENDPOINT}
+    headers:
+      Authorization: "Basic ${GRAFANA_LOGS_AUTH}"
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
 
 service:
+  extensions: [health_check]
   pipelines:
-    # 트레이스 파이프라인
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [prometheusremotewrite]
     traces:
       receivers: [otlp]
-      processors: [batch]
-      exporters: [otlp/jaeger, spanmetrics]
-
-    # 메트릭 파이프라인 (spanmetrics에서 생성된 메트릭)
-    metrics:
-      receivers: [spanmetrics]
-      processors: [batch]
-      exporters: [prometheus]
+      processors: [memory_limiter, probabilistic_sampler, batch]
+      exporters: [otlphttp/traces]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [loki]
