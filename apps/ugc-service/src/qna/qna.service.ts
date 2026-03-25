@@ -14,7 +14,7 @@ import { QuestionListQueryDto, MyQuestionListQueryDto } from './dto/question-lis
 import { CreateAnswerDto } from './dto/create-answer.dto';
 import { type AnswerEntity, type QuestionEntity, type QuestionWithDetailsEntity } from './types';
 import { PaginatedResponseDto } from '@app/shared/dto';
-import { MAX_QUESTION_MEDIA_COUNT } from './constants';
+import { MAX_QUESTION_MEDIA_COUNT, type QuestionStatus, type QuestionCategory } from './constants';
 import { isNotNull } from 'drizzle-orm';
 
 type DbTransaction = Parameters<Parameters<DbService<UgcServiceSchema>['db']['transaction']>[0]>[0];
@@ -315,8 +315,8 @@ export class QnaService {
     query: {
       page?: number;
       limit?: number;
-      category?: string;
-      status?: string;
+      category?: QuestionCategory;
+      status?: QuestionStatus;
       sort?: string;
       q?: string;
     },
