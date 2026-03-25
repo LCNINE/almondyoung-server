@@ -8,6 +8,8 @@ export * from './strategies/jwt-access.strategy';
 export * from './decorators/require-scopes.decorator';
 export * from './decorators/public.decorator';
 export * from './decorators/user.decorator';
+export * from './decorators/optional-auth.decorator';
+export * from './guards/optional-auth.guard';
 export * from './database/auth.schema';
 export * from './database/auth.types';
 export * from './constants';

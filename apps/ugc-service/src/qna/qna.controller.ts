@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { Public, RequireScopes, User } from '@app/authorization';
+import { OptionalAuth, Public, RequireScopes, User } from '@app/authorization';
 import { ApiOkResponsePaginated } from '@app/shared/decorators/api-paginated-response.decorator';
 import { PaginatedResponseDto } from '@app/shared/dto';
 import { QnaService } from './qna.service';
@@ -34,7 +34,7 @@ export class QnaController {
   }
 
   @Get('questions')
-  @Public()
+  @OptionalAuth()
   @ApiOperation({ summary: '질문 목록 조회 (상품별)' })
   @ApiQuery({ name: 'productId', description: '상품 ID (UUID)', required: false, type: String })
   @ApiQuery({ name: 'category', description: '문의 카테고리', required: false, enum: ['product', 'delivery', 'order', 'exchange', 'account', 'etc'] })
@@ -84,7 +84,7 @@ export class QnaController {
   }
 
   @Get('questions/:id')
-  @Public()
+  @OptionalAuth()
   @ApiOperation({ summary: '질문 상세 조회' })
   @ApiParam({ name: 'id', description: '질문 ID (UUID)' })
   @ApiResponse({ status: HttpStatus.OK, description: '질문 상세 조회 성공', type: QuestionResponseDto })
