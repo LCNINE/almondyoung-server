@@ -11,10 +11,10 @@
 
 상품은 2계층으로 관리된다.
 
-| 테이블 | 역할 | 주요 필드 |
-|--------|------|-----------|
-| `product_masters` | 상품 메타 컨테이너 | `id`, `createdAt`, `createdBy`, `deletedAt`, `deletedBy` |
-| `product_master_versions` | 실제 상품 데이터 (버전별) | 이름, 설명, 브랜드, SEO, 가격 관련, 승인 상태 등 모든 필드 |
+| 테이블                       | 역할              | 주요 필드                                                    |
+| ------------------------- | --------------- | -------------------------------------------------------- |
+| `product_masters`         | 상품 메타 컨테이너      | `id`, `createdAt`, `createdBy`, `deletedAt`, `deletedBy` |
+| `product_master_versions` | 실제 상품 데이터 (버전별) | 이름, 설명, 브랜드, SEO, 가격 관련, 승인 상태 등 모든 필드                   |
 
 - **Master당 active 버전은 최대 1개**
 - 버전 상태: `draft` → `inactive` / `active`
@@ -25,35 +25,35 @@
 
 ### 1.2 상품과 직접 관계를 갖는 엔티티
 
-| 엔티티 | 테이블 | 관계 | 버전별 관리 |
-|--------|--------|------|-------------|
-| 카테고리 | `product_master_categories` | M:N (junction) | O (`versionId`) |
-| 옵션 그룹 | `product_option_groups` + `product_master_option_groups` | M:N | O (`versionId`) |
-| 옵션 그룹 Display | `product_option_group_displays` | 1:N (locale별) | O (`masterId`, `versionId`, `locale`) |
-| 옵션 값 | `product_option_values` + `variant_option_values` | M:N | 옵션 그룹에 종속 |
-| 옵션 값 Display | `product_option_value_displays` | 1:N (locale별) | O (`masterId`, `versionId`, `locale`) |
-| Variant | `product_variants` + `product_master_variants` | M:N (junction) | O (`versionId`) |
-| 이미지 | `product_images` | 1:N | O (`versionId`) |
-| 가격 규칙 | `pricing_rules` + `product_master_pricing_rules` | M:N (junction) | O (`versionId`) |
-| 태그 값 | `product_tag_values` | M:N | O (`masterId`, `versionId`) |
-| 채널 상품 | `channel_products` | M:N | X (master 수준) |
-| 채널 리스팅 | `channel_variant_listings` | 1:N | X (variant 수준) |
+| 엔티티           | 테이블                                                      | 관계             | 버전별 관리                                |
+| ------------- | -------------------------------------------------------- | -------------- | ------------------------------------- |
+| 카테고리          | `product_master_categories`                              | M:N (junction) | O (`versionId`)                       |
+| 옵션 그룹         | `product_option_groups` + `product_master_option_groups` | M:N            | O (`versionId`)                       |
+| 옵션 그룹 Display | `product_option_group_displays`                          | 1:N (locale별)  | O (`masterId`, `versionId`, `locale`) |
+| 옵션 값          | `product_option_values` + `variant_option_values`        | M:N            | 옵션 그룹에 종속                             |
+| 옵션 값 Display  | `product_option_value_displays`                          | 1:N (locale별)  | O (`masterId`, `versionId`, `locale`) |
+| Variant       | `product_variants` + `product_master_variants`           | M:N (junction) | O (`versionId`)                       |
+| 이미지           | `product_images`                                         | 1:N            | O (`versionId`)                       |
+| 가격 규칙         | `pricing_rules` + `product_master_pricing_rules`         | M:N (junction) | O (`versionId`)                       |
+| 태그 값          | `product_tag_values`                                     | M:N            | O (`masterId`, `versionId`)           |
+| 채널 상품         | `channel_products`                                       | M:N            | X (master 수준)                         |
+| 채널 리스팅        | `channel_variant_listings`                               | 1:N            | X (variant 수준)                        |
 
 핵심: **채널 관련을 제외한 거의 모든 관계가 버전별로 관리**된다.
 
 ### 1.3 부가 엔티티
 
-| 엔티티 | 테이블 | 설명 |
-|--------|--------|------|
-| 카테고리 | `product_categories` | 계층형 (self-referencing `parentId`) |
-| 태그 그룹/값 | `tag_groups`, `tag_values` | 카테고리에 연결 가능 (`category_tag_groups`) |
-| 판매 채널 | `sales_channels` | 네이버, 쿠팡 등 |
-| 채널 카테고리 | `channel_categories` | 채널 그룹핑 |
-| 승인 이력 | `product_approval_history` | 승인/반려 기록 |
-| 감사 로그 | `product_audit_log` | 모든 변경 추적 |
-| 가격 캐시 | `product_variant_price_cache` | 버전+variant별 계산된 가격 |
-| 배너 | `banner_groups`, `banners` | 마케팅 배너 |
-| 프로모션 | `promotions`, `promotion_products` | 타임세일 (미구현) |
+| 엔티티     | 테이블                                | 설명                                  |
+| ------- | ---------------------------------- | ----------------------------------- |
+| 카테고리    | `product_categories`               | 계층형 (self-referencing `parentId`)   |
+| 태그 그룹/값 | `tag_groups`, `tag_values`         | 카테고리에 연결 가능 (`category_tag_groups`) |
+| 판매 채널   | `sales_channels`                   | 네이버, 쿠팡 등                           |
+| 채널 카테고리 | `channel_categories`               | 채널 그룹핑                              |
+| 승인 이력   | `product_approval_history`         | 승인/반려 기록                            |
+| 감사 로그   | `product_audit_log`                | 모든 변경 추적                            |
+| 가격 캐시   | `product_variant_price_cache`      | 버전+variant별 계산된 가격                  |
+| 배너      | `banner_groups`, `banners`         | 마케팅 배너                              |
+| 프로모션    | `promotions`, `promotion_products` | 타임세일 (미구현)                          |
 
 ---
 
@@ -61,172 +61,172 @@
 
 ### 2.1 Product Masters (`/masters`)
 
-| Method | Path | 설명 | 파일 |
-|--------|------|------|------|
-| `POST` | `/masters` | Master + Draft v1 생성 | `product-masters.controller.ts:73` |
-| `GET` | `/masters` | 상품 목록 (pagination, filter) | `product-masters.controller.ts:151` |
-| `GET` | `/masters/deleted` | 삭제된 상품 목록 | `product-masters.controller.ts:190` |
-| `GET` | `/masters/:id` | Active 버전 상세 조회 | `product-masters.controller.ts:217` |
-| `DELETE` | `/masters/:masterId` | Soft delete | `product-masters.controller.ts:248` |
-| `POST` | `/masters/:masterId/restore` | 삭제 복원 | `product-masters.controller.ts:280` |
-| `PATCH` | `/masters/:masterId/unpublish` | Active → Inactive | `product-masters.controller.ts:313` |
-| `DELETE` | `/masters/:id/permanent` | 영구 삭제 | `product-masters.controller.ts:339` |
+| Method   | Path                           | 설명                         | 파일                                  |
+| -------- | ------------------------------ | -------------------------- | ----------------------------------- |
+| `POST`   | `/masters`                     | Master + Draft v1 생성       | `product-masters.controller.ts:73`  |
+| `GET`    | `/masters`                     | 상품 목록 (pagination, filter) | `product-masters.controller.ts:151` |
+| `GET`    | `/masters/deleted`             | 삭제된 상품 목록                  | `product-masters.controller.ts:190` |
+| `GET`    | `/masters/:id`                 | Active 버전 상세 조회            | `product-masters.controller.ts:217` |
+| `DELETE` | `/masters/:masterId`           | Soft delete                | `product-masters.controller.ts:248` |
+| `POST`   | `/masters/:masterId/restore`   | 삭제 복원                      | `product-masters.controller.ts:280` |
+| `PATCH`  | `/masters/:masterId/unpublish` | Active → Inactive          | `product-masters.controller.ts:313` |
+| `DELETE` | `/masters/:id/permanent`       | 영구 삭제                      | `product-masters.controller.ts:339` |
 
 ### 2.2 Product Versions (`/masters/:masterId/versions`)
 
-| Method | Path | 설명 | 파일 |
-|--------|------|------|------|
-| `GET` | `/masters/:masterId/versions` | 버전 트리 조회 | `product-master-versions.controller.ts:47` |
-| `GET` | `/masters/:masterId/versions/active` | Active 버전 조회 | `product-master-versions.controller.ts:65` |
-| `GET` | `/masters/:masterId/versions/:versionId` | 특정 버전 상세 | `product-master-versions.controller.ts:86` |
-| `POST` | `/masters/:masterId/versions` | 새 Draft 생성 | `product-master-versions.controller.ts:117` |
-| `PUT` | `/masters/:masterId/versions/:versionId` | Draft 수정 | `product-master-versions.controller.ts:167` |
-| `PATCH` | `/masters/:masterId/versions/:versionId/publish` | Publish (Active 전환) | `product-master-versions.controller.ts:231` |
-| `GET` | `/masters/:masterId/versions/:versionId/compare/:compareVersionId` | 버전 비교 | `product-master-versions.controller.ts:268` |
-| `DELETE` | `/masters/:masterId/versions/:versionId` | Draft 삭제 | `product-master-versions.controller.ts:300` |
+| Method   | Path                                                               | 설명                  | 파일                                          |
+| -------- | ------------------------------------------------------------------ | ------------------- | ------------------------------------------- |
+| `GET`    | `/masters/:masterId/versions`                                      | 버전 트리 조회            | `product-master-versions.controller.ts:47`  |
+| `GET`    | `/masters/:masterId/versions/active`                               | Active 버전 조회        | `product-master-versions.controller.ts:65`  |
+| `GET`    | `/masters/:masterId/versions/:versionId`                           | 특정 버전 상세            | `product-master-versions.controller.ts:86`  |
+| `POST`   | `/masters/:masterId/versions`                                      | 새 Draft 생성          | `product-master-versions.controller.ts:117` |
+| `PUT`    | `/masters/:masterId/versions/:versionId`                           | Draft 수정            | `product-master-versions.controller.ts:167` |
+| `PATCH`  | `/masters/:masterId/versions/:versionId/publish`                   | Publish (Active 전환) | `product-master-versions.controller.ts:231` |
+| `GET`    | `/masters/:masterId/versions/:versionId/compare/:compareVersionId` | 버전 비교               | `product-master-versions.controller.ts:268` |
+| `DELETE` | `/masters/:masterId/versions/:versionId`                           | Draft 삭제            | `product-master-versions.controller.ts:300` |
 
 ### 2.3 Variants (`/variants`)
 
-| Method | Path | 설명 | 파일 |
-|--------|------|------|------|
-| `GET` | `/variants/masters/:masterId` | Master의 variant 목록 (pagination) | `product-variants.controller.ts` |
-| `GET` | `/variants/masters/:masterId/versions/:versionId` | 특정 버전의 variant 목록 | `product-variants.controller.ts` |
+| Method | Path                                              | 설명                              | 파일                               |
+| ------ | ------------------------------------------------- | ------------------------------- | -------------------------------- |
+| `GET`  | `/variants/masters/:masterId`                     | Master의 variant 목록 (pagination) | `product-variants.controller.ts` |
+| `GET`  | `/variants/masters/:masterId/versions/:versionId` | 특정 버전의 variant 목록               | `product-variants.controller.ts` |
 
 ### 2.4 Pricing — Master 레벨 (`/masters/:masterId/pricing`)
 
-| Method | Path | 설명 | 파일 |
-|--------|------|------|------|
-| `GET` | `/masters/:masterId/pricing/rules` | Active 버전의 가격 규칙 조회 | `master-pricing.controller.ts:72` |
-| `POST` | `/masters/:masterId/pricing/calculate` | 가격 계산 | `master-pricing.controller.ts:101` |
-| `GET` | `/masters/:masterId/pricing/price-set` | 가격 세트 조회 | `master-pricing.controller.ts:161` |
+| Method | Path                                   | 설명                  | 파일                                 |
+| ------ | -------------------------------------- | ------------------- | ---------------------------------- |
+| `GET`  | `/masters/:masterId/pricing/rules`     | Active 버전의 가격 규칙 조회 | `master-pricing.controller.ts:72`  |
+| `POST` | `/masters/:masterId/pricing/calculate` | 가격 계산               | `master-pricing.controller.ts:101` |
+| `GET`  | `/masters/:masterId/pricing/price-set` | 가격 세트 조회            | `master-pricing.controller.ts:161` |
 
 ### 2.5 Pricing — Version 레벨 (`/versions/:versionId/pricing`)
 
-| Method | Path | 설명 | 파일 |
-|--------|------|------|------|
-| `GET` | `/versions/:versionId/pricing/rules` | 버전별 가격 규칙 조회 | `version-pricing.controller.ts:48` |
-| `PUT` | `/versions/:versionId/pricing/rules` | 가격 규칙 전체 교체 (draft만) | `version-pricing.controller.ts:68` |
-| `DELETE` | `/versions/:versionId/pricing/rules` | 가격 규칙 전체 삭제 (draft만) | `version-pricing.controller.ts:98` |
-| `POST` | `/versions/:versionId/pricing/calculate` | 가격 계산 | `version-pricing.controller.ts:127` |
-| `GET` | `/versions/:versionId/pricing/price-set` | 가격 세트 조회 | `version-pricing.controller.ts:178` |
+| Method   | Path                                     | 설명                   | 파일                                  |
+| -------- | ---------------------------------------- | -------------------- | ----------------------------------- |
+| `GET`    | `/versions/:versionId/pricing/rules`     | 버전별 가격 규칙 조회         | `version-pricing.controller.ts:48`  |
+| `PUT`    | `/versions/:versionId/pricing/rules`     | 가격 규칙 전체 교체 (draft만) | `version-pricing.controller.ts:68`  |
+| `DELETE` | `/versions/:versionId/pricing/rules`     | 가격 규칙 전체 삭제 (draft만) | `version-pricing.controller.ts:98`  |
+| `POST`   | `/versions/:versionId/pricing/calculate` | 가격 계산                | `version-pricing.controller.ts:127` |
+| `GET`    | `/versions/:versionId/pricing/price-set` | 가격 세트 조회             | `version-pricing.controller.ts:178` |
 
 ### 2.6 Categories (`/categories`)
 
-| Method | Path | 설명 |
-|--------|------|------|
-| `POST` | `/categories` | 카테고리 생성 |
-| `GET` | `/categories` | 카테고리 트리 |
-| `GET` | `/categories/:id` | 카테고리 상세 |
-| `PUT` | `/categories/:id` | 카테고리 수정 |
-| `DELETE` | `/categories/:id` | 카테고리 삭제 |
-| `GET` | `/categories/:id/path` | Root까지 경로 |
-| `PATCH` | `/categories/:id/display-settings` | 표시 설정 |
-| `PATCH` | `/categories/:id/seo-config` | SEO 설정 |
-| `PATCH` | `/categories/:id/template-config` | 템플릿 설정 |
-| `GET` | `/categories/:id/tag-groups` | 연결된 태그 그룹 |
-| `POST` | `/categories/:id/tag-groups` | 태그 그룹 연결 |
-| `POST` | `/categories/:id/products/move` | 상품 이동 |
-| `POST` | `/categories/:id/products/add` | 상품 추가 |
+| Method   | Path                               | 설명        |
+| -------- | ---------------------------------- | --------- |
+| `POST`   | `/categories`                      | 카테고리 생성   |
+| `GET`    | `/categories`                      | 카테고리 트리   |
+| `GET`    | `/categories/:id`                  | 카테고리 상세   |
+| `PUT`    | `/categories/:id`                  | 카테고리 수정   |
+| `DELETE` | `/categories/:id`                  | 카테고리 삭제   |
+| `GET`    | `/categories/:id/path`             | Root까지 경로 |
+| `PATCH`  | `/categories/:id/display-settings` | 표시 설정     |
+| `PATCH`  | `/categories/:id/seo-config`       | SEO 설정    |
+| `PATCH`  | `/categories/:id/template-config`  | 템플릿 설정    |
+| `GET`    | `/categories/:id/tag-groups`       | 연결된 태그 그룹 |
+| `POST`   | `/categories/:id/tag-groups`       | 태그 그룹 연결  |
+| `POST`   | `/categories/:id/products/move`    | 상품 이동     |
+| `POST`   | `/categories/:id/products/add`     | 상품 추가     |
 
 ### 2.7 Tags (`/tags`)
 
-| Method | Path | 설명 |
-|--------|------|------|
-| `POST` | `/tags/groups` | 태그 그룹 생성 |
-| `GET` | `/tags/groups` | 태그 그룹 목록 |
-| `GET` | `/tags/groups/:id` | 태그 그룹 상세 (값 포함) |
-| `PUT` | `/tags/groups/:id` | 태그 그룹 수정 |
-| `DELETE` | `/tags/groups/:id` | 태그 그룹 삭제 |
-| `POST` | `/tags/groups/:id/values` | 태그 값 생성 |
-| `GET` | `/tags/groups/:id/values` | 태그 값 목록 |
-| `PUT` | `/tags/values/:id` | 태그 값 수정 |
-| `DELETE` | `/tags/values/:id` | 태그 값 삭제 |
+| Method   | Path                      | 설명              |
+| -------- | ------------------------- | --------------- |
+| `POST`   | `/tags/groups`            | 태그 그룹 생성        |
+| `GET`    | `/tags/groups`            | 태그 그룹 목록        |
+| `GET`    | `/tags/groups/:id`        | 태그 그룹 상세 (값 포함) |
+| `PUT`    | `/tags/groups/:id`        | 태그 그룹 수정        |
+| `DELETE` | `/tags/groups/:id`        | 태그 그룹 삭제        |
+| `POST`   | `/tags/groups/:id/values` | 태그 값 생성         |
+| `GET`    | `/tags/groups/:id/values` | 태그 값 목록         |
+| `PUT`    | `/tags/values/:id`        | 태그 값 수정         |
+| `DELETE` | `/tags/values/:id`        | 태그 값 삭제         |
 
 ### 2.8 Sales Channels (`/channels`)
 
-| Method | Path | 설명 |
-|--------|------|------|
-| `POST` | `/channels` | 채널 생성 |
-| `GET` | `/channels` | 채널 목록 |
-| `GET` | `/channels/:id` | 채널 상세 |
-| `PUT` | `/channels/:id` | 채널 수정 |
-| `DELETE` | `/channels/:id` | 채널 삭제 |
-| `POST` | `/channels/:id/set-active` | 활성/비활성 |
-| `POST` | `/channels/validate` | 설정 검증 |
+| Method   | Path                       | 설명     |
+| -------- | -------------------------- | ------ |
+| `POST`   | `/channels`                | 채널 생성  |
+| `GET`    | `/channels`                | 채널 목록  |
+| `GET`    | `/channels/:id`            | 채널 상세  |
+| `PUT`    | `/channels/:id`            | 채널 수정  |
+| `DELETE` | `/channels/:id`            | 채널 삭제  |
+| `POST`   | `/channels/:id/set-active` | 활성/비활성 |
+| `POST`   | `/channels/validate`       | 설정 검증  |
 
 ### 2.9 Channel Products (`/channel-products`)
 
-| Method | Path | 설명 |
-|--------|------|------|
-| `POST` | `/channel-products` | 채널-상품 연결 |
-| `GET` | `/channel-products/masters/:masterId` | Master의 채널 상품 |
-| `GET` | `/channel-products/channels/:channelId` | 채널별 상품 |
-| `GET` | `/channel-products/:id` | 상세 |
-| `PUT` | `/channel-products/:id` | 수정 |
-| `DELETE` | `/channel-products/:id` | 연결 해제 |
-| `PATCH` | `/channel-products/:id/override-name` | 채널별 이름 오버라이드 |
-| `PATCH` | `/channel-products/:id/set-active` | 활성/비활성 |
+| Method   | Path                                    | 설명            |
+| -------- | --------------------------------------- | ------------- |
+| `POST`   | `/channel-products`                     | 채널-상품 연결      |
+| `GET`    | `/channel-products/masters/:masterId`   | Master의 채널 상품 |
+| `GET`    | `/channel-products/channels/:channelId` | 채널별 상품        |
+| `GET`    | `/channel-products/:id`                 | 상세            |
+| `PUT`    | `/channel-products/:id`                 | 수정            |
+| `DELETE` | `/channel-products/:id`                 | 연결 해제         |
+| `PATCH`  | `/channel-products/:id/override-name`   | 채널별 이름 오버라이드  |
+| `PATCH`  | `/channel-products/:id/set-active`      | 활성/비활성        |
 
 ### 2.10 Channel Listings (`/channel-listings`)
 
-| Method | Path | 설명 |
-|--------|------|------|
-| `GET` | `/channel-listings/lookup` | 채널 아이템 ID로 variant 조회 |
-| `POST` | `/channel-listings` | 리스팅 생성 |
-| `GET` | `/channel-listings` | 전체 목록 |
-| `GET` | `/channel-listings/variants/:variantId` | Variant별 리스팅 |
-| `GET` | `/channel-listings/channels/:channelId` | 채널별 리스팅 |
-| `GET` | `/channel-listings/:id` | 상세 |
-| `PUT` | `/channel-listings/:id` | 수정 |
-| `DELETE` | `/channel-listings/:id` | 삭제 |
-| `PATCH` | `/channel-listings/:id/set-active` | 활성/비활성 |
+| Method   | Path                                    | 설명                    |
+| -------- | --------------------------------------- | --------------------- |
+| `GET`    | `/channel-listings/lookup`              | 채널 아이템 ID로 variant 조회 |
+| `POST`   | `/channel-listings`                     | 리스팅 생성                |
+| `GET`    | `/channel-listings`                     | 전체 목록                 |
+| `GET`    | `/channel-listings/variants/:variantId` | Variant별 리스팅          |
+| `GET`    | `/channel-listings/channels/:channelId` | 채널별 리스팅               |
+| `GET`    | `/channel-listings/:id`                 | 상세                    |
+| `PUT`    | `/channel-listings/:id`                 | 수정                    |
+| `DELETE` | `/channel-listings/:id`                 | 삭제                    |
+| `PATCH`  | `/channel-listings/:id/set-active`      | 활성/비활성                |
 
 ### 2.11 Approval (`/masters`)
 
-| Method | Path | 설명 |
-|--------|------|------|
-| `POST` | `/masters/:id/submit-approval` | 승인 요청 (draft → pending) |
-| `POST` | `/masters/:id/approve` | 승인 (pending → approved+active) |
-| `POST` | `/masters/:id/reject` | 반려 |
-| `GET` | `/masters/pending-approval` | 승인 대기 목록 |
-| `GET` | `/masters/:id/approval-history` | 승인 이력 |
+| Method | Path                            | 설명                             |
+| ------ | ------------------------------- | ------------------------------ |
+| `POST` | `/masters/:id/submit-approval`  | 승인 요청 (draft → pending)        |
+| `POST` | `/masters/:id/approve`          | 승인 (pending → approved+active) |
+| `POST` | `/masters/:id/reject`           | 반려                             |
+| `GET`  | `/masters/pending-approval`     | 승인 대기 목록                       |
+| `GET`  | `/masters/:id/approval-history` | 승인 이력                          |
 
 ### 2.12 Bulk Operations (`/masters/bulk`)
 
-| Method | Path | 설명 |
-|--------|------|------|
-| `POST` | `/masters/bulk/update` | 일괄 수정 |
-| `POST` | `/masters/bulk/delete` | 일괄 삭제 |
+| Method | Path                    | 설명    |
+| ------ | ----------------------- | ----- |
+| `POST` | `/masters/bulk/update`  | 일괄 수정 |
+| `POST` | `/masters/bulk/delete`  | 일괄 삭제 |
 | `POST` | `/masters/bulk/restore` | 일괄 복원 |
 
 ### 2.13 CSV Import (`/products/csv`)
 
-| Method | Path | 설명 |
-|--------|------|------|
-| `GET` | `/products/csv/template` | CSV 템플릿 다운로드 |
-| `POST` | `/products/csv/bulk-import` | CSV 일괄 등록 |
+| Method | Path                        | 설명           |
+| ------ | --------------------------- | ------------ |
+| `GET`  | `/products/csv/template`    | CSV 템플릿 다운로드 |
+| `POST` | `/products/csv/bulk-import` | CSV 일괄 등록    |
 
 ### 2.14 Audit (`/`)
 
-| Method | Path | 설명 |
-|--------|------|------|
-| `GET` | `/masters/:id/audit-history` | 상품별 감사 로그 |
-| `GET` | `/audit-logs` | 전체 감사 로그 |
+| Method | Path                         | 설명        |
+| ------ | ---------------------------- | --------- |
+| `GET`  | `/masters/:id/audit-history` | 상품별 감사 로그 |
+| `GET`  | `/audit-logs`                | 전체 감사 로그  |
 
 ### 2.15 Banners (`/banners`, `/banner-groups`)
 
-| Method | Path | 설명 |
-|--------|------|------|
-| `POST` | `/banner-groups` | 배너 그룹 생성 |
-| `GET` | `/banner-groups` | 배너 그룹 목록 |
-| `GET` | `/banner-groups/:id` | 배너 그룹 상세 |
-| `PUT` | `/banner-groups/:id` | 배너 그룹 수정 |
-| `DELETE` | `/banner-groups/:id` | 배너 그룹 삭제 |
-| `POST` | `/banners` | 배너 생성 |
-| `GET` | `/banners/by-group/:bannerGroupId` | 그룹별 배너 목록 |
-| `GET` | `/banners/:id` | 배너 상세 |
-| `PUT` | `/banners/:id` | 배너 수정 |
-| `DELETE` | `/banners/:id` | 배너 삭제 |
+| Method   | Path                               | 설명        |
+| -------- | ---------------------------------- | --------- |
+| `POST`   | `/banner-groups`                   | 배너 그룹 생성  |
+| `GET`    | `/banner-groups`                   | 배너 그룹 목록  |
+| `GET`    | `/banner-groups/:id`               | 배너 그룹 상세  |
+| `PUT`    | `/banner-groups/:id`               | 배너 그룹 수정  |
+| `DELETE` | `/banner-groups/:id`               | 배너 그룹 삭제  |
+| `POST`   | `/banners`                         | 배너 생성     |
+| `GET`    | `/banners/by-group/:bannerGroupId` | 그룹별 배너 목록 |
+| `GET`    | `/banners/:id`                     | 배너 상세     |
+| `PUT`    | `/banners/:id`                     | 배너 수정     |
+| `DELETE` | `/banners/:id`                     | 배너 삭제     |
 
 ---
 
@@ -291,21 +291,21 @@ Draft ──submit──> Pending ──approve──> Approved (+ Active)
 
 가격은 `pricing_rules` 테이블에 정의된 규칙들이 순서대로 적용되어 결정된다.
 
-| 계층 (`layer`) | 용도 | 적용 순서 |
-|----------------|------|-----------|
-| `base_price` | 기본 가격 설정 | 1순위 |
-| `membership_price` | 멤버십 할인 | 2순위 (base 위에 적용) |
-| `tiered_price` | 수량별 단가 (도매) | 3순위 |
+| 계층 (`layer`)       | 용도          | 적용 순서            |
+| ------------------ | ----------- | ---------------- |
+| `base_price`       | 기본 가격 설정    | 1순위              |
+| `membership_price` | 멤버십 할인      | 2순위 (base 위에 적용) |
+| `tiered_price`     | 수량별 단가 (도매) | 3순위              |
 
 ### 4.2 규칙 구성
 
-| 필드 | 값 | 설명 |
-|------|-----|------|
-| `scopeType` | `all_variants` / `with_option` / `variants` | 적용 범위 |
-| `scopeTargetIds` | `string[]` | `with_option`이면 옵션값 ID, `variants`면 variant ID |
-| `operationType` | `offset` / `scale` / `override` | offset: 고정값 가감, scale: 배율(1000=1x), override: 대체 |
-| `operationValue` | `number` | 연산에 사용할 값 |
-| `minQuantity` | `number \| null` | `tiered_price` 계층에서만 사용 |
+| 필드               | 값                                           | 설명                                               |
+| ---------------- | ------------------------------------------- | ------------------------------------------------ |
+| `scopeType`      | `all_variants` / `with_option` / `variants` | 적용 범위                                            |
+| `scopeTargetIds` | `string[]`                                  | `with_option`이면 옵션값 ID, `variants`면 variant ID   |
+| `operationType`  | `offset` / `scale` / `override`             | offset: 고정값 가감, scale: 배율(1000=1x), override: 대체 |
+| `operationValue` | `number`                                    | 연산에 사용할 값                                        |
+| `minQuantity`    | `number \| null`                            | `tiered_price` 계층에서만 사용                          |
 
 ### 4.3 가격 캐시
 
@@ -391,6 +391,7 @@ Draft ──submit──> Pending ──approve──> Approved (+ Active)
 `GET /masters/:id` 응답 (**매퍼 미적용**, 내부 DTO 그대로 반환):
 
 `ProductDetailDto` 타입 (`types.ts:318-327`):
+
 ```typescript
 interface ProductDetailDto extends ProductMasterVersion {
   images: ProductImage[];
@@ -431,6 +432,7 @@ interface ProductDetailDto extends ProductMasterVersion {
 #### ~~ISSUE-03: 모든 쓰기 API에서 userId 하드코딩~~ ✅ 해결됨 (2026-03-23)
 
 **위치** (전수 목록):
+
 - `product-master-versions.controller.ts:135` — `createDraftVersion()`
 - `product-master-versions.controller.ts:174` — `updateVersion()`
 - `product-masters.controller.ts:252` — `deleteMaster()`
@@ -452,6 +454,7 @@ const userIdToUse = userId || '00000000-0000-0000-0000-000000000000';
 ```
 
 **영향**:
+
 1. 감사 로그(`product_audit_log`)의 `userId`가 전부 더미 값
 2. `draftOwnerId`가 의미 없어서 draft 소유자 확인 불가
 3. Bulk API는 Body에서 userId를 받아 위조 가능
@@ -482,6 +485,7 @@ const [product] = await client
 **영향**: Master ID를 넘기면 해당 version을 찾지 못해 "Product not found" 에러. API 문서를 보고 호출하면 무조건 실패.
 
 **수정 방향**: 두 가지 중 택일:
+
 1. Controller 문서를 "Version ID"로 수정
 2. Service에서 Master ID를 받아 active/latest draft 버전을 찾아서 처리하도록 변경 (관리자 UX 관점에서 이 쪽이 더 자연스러움)
 
@@ -634,18 +638,18 @@ async hardDelete(@Param('id') id: string, ...) {
 
 ## 7. 문제 수정 우선순위 요약
 
-| 순위 | Issue | 설명 | 난이도 |
-|------|-------|------|--------|
-| **P0** | ISSUE-01 | Variant 가격 항상 0 | 낮음 |
-| **P0** | ISSUE-02 | 승인 시 active 중복 | 중간 |
-| **P0** | ISSUE-03 | userId 하드코딩 | 중간 |
-| **P0** | ISSUE-04 | 승인 API ID 혼동 | 낮음 |
-| **P1** | ISSUE-05 | Master Detail 매퍼 미적용 | 낮음 |
-| **P1** | ISSUE-06 | 목록 정렬 옵션 없음 | 낮음 |
-| **P1** | ISSUE-07 | channelProducts 빈 배열 | 중간 |
-| **P1** | ISSUE-08 | Variant 옵션 Display TODO | 중간 |
-| **P1** | ISSUE-09 | hardDelete ID 혼동 | 낮음 |
-| **P2** | ISSUE-10 | Bulk가 active만 대상 | 낮음 |
-| **P2** | ISSUE-11 | Bulk updateData any 타입 | 낮음 |
-| **P2** | ISSUE-12 | 태그 페이지네이션 없음 | 낮음 |
-| **P2** | ISSUE-13 | 가격 규칙 개별 수정 불가 | 낮음 |
+| 순위     | Issue    | 설명                      | 난이도 |
+| ------ | -------- | ----------------------- | --- |
+| **P0** | ISSUE-01 | Variant 가격 항상 0         | 낮음  |
+| **P0** | ISSUE-02 | 승인 시 active 중복          | 중간  |
+| **P0** | ISSUE-03 | userId 하드코딩             | 중간  |
+| **P0** | ISSUE-04 | 승인 API ID 혼동            | 낮음  |
+| **P1** | ISSUE-05 | Master Detail 매퍼 미적용    | 낮음  |
+| **P1** | ISSUE-06 | 목록 정렬 옵션 없음             | 낮음  |
+| **P1** | ISSUE-07 | channelProducts 빈 배열    | 중간  |
+| **P1** | ISSUE-08 | Variant 옵션 Display TODO | 중간  |
+| **P1** | ISSUE-09 | hardDelete ID 혼동        | 낮음  |
+| **P2** | ISSUE-10 | Bulk가 active만 대상        | 낮음  |
+| **P2** | ISSUE-11 | Bulk updateData any 타입  | 낮음  |
+| **P2** | ISSUE-12 | 태그 페이지네이션 없음            | 낮음  |
+| **P2** | ISSUE-13 | 가격 규칙 개별 수정 불가          | 낮음  |
