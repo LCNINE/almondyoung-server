@@ -69,7 +69,7 @@ export function QnaInquiryDialog({
         const formData = new FormData()
         formData.append("file", img.file)
         formData.append("contextId", "cs-inquiry")
-        formData.append("isPublic", isSecret ? "false" : "true")
+        formData.append("isPublic", "true")
         return uploadFile(formData)
       })
     )

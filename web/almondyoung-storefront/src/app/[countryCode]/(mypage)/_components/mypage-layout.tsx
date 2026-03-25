@@ -8,7 +8,7 @@ interface MypageLayoutProps {
 
 export default function MypageLayout({ children }: MypageLayoutProps) {
   return (
-    <main className="md:bg-muted w-full bg-white">
+    <main className="w-full bg-white">
       <div className="container mx-auto max-w-[1360px]">
         <div className="inner md:px-[40px] md:py-10">
           <MypageBreadcrumb />
