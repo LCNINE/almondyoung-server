@@ -8,7 +8,7 @@ import { BulkUpdateDto, BulkDeleteDto, BulkRestoreDto } from './dto';
 @UseGuards(JwtAuthGuard)
 @Controller('masters/bulk')
 export class ProductBulkController {
-  constructor(private bulkService: ProductBulkService) { }
+  constructor(private bulkService: ProductBulkService) {}
 
   @Post('update')
   @ApiOperation({
@@ -18,17 +18,11 @@ export class ProductBulkController {
   @ApiBody({ type: BulkUpdateDto })
   @ApiResponse({ status: 200, description: '일괄 수정 성공' })
   @ApiResponse({ status: 400, description: '잘못된 요청' })
-  async bulkUpdate(
-    @Body() dto: BulkUpdateDto,
-    @User() user: { userId: string },
-  ) {
+  async bulkUpdate(@Body() dto: BulkUpdateDto, @User() user: { userId: string }) {
     try {
       return await this.bulkService.bulkUpdate(dto, user.userId);
     } catch (error) {
-      throw new HttpException(
-        `Failed to bulk update: ${error.message}`,
-        HttpStatus.BAD_REQUEST,
-      );
+      throw new HttpException(`Failed to bulk update: ${error.message}`, HttpStatus.BAD_REQUEST);
     }
   }
 
@@ -40,17 +34,11 @@ export class ProductBulkController {
   @ApiBody({ type: BulkDeleteDto })
   @ApiResponse({ status: 200, description: '일괄 삭제 성공' })
   @ApiResponse({ status: 400, description: '잘못된 요청' })
-  async bulkDelete(
-    @Body() dto: BulkDeleteDto,
-    @User() user: { userId: string },
-  ) {
+  async bulkDelete(@Body() dto: BulkDeleteDto, @User() user: { userId: string }) {
     try {
       return await this.bulkService.bulkSoftDelete(dto, user.userId);
     } catch (error) {
-      throw new HttpException(
-        `Failed to bulk delete: ${error.message}`,
-        HttpStatus.BAD_REQUEST,
-      );
+      throw new HttpException(`Failed to bulk delete: ${error.message}`, HttpStatus.BAD_REQUEST);
     }
   }
 
@@ -62,18 +50,11 @@ export class ProductBulkController {
   @ApiBody({ type: BulkRestoreDto })
   @ApiResponse({ status: 200, description: '일괄 복원 성공' })
   @ApiResponse({ status: 400, description: '잘못된 요청' })
-  async bulkRestore(
-    @Body() dto: BulkRestoreDto,
-    @User() user: { userId: string },
-  ) {
+  async bulkRestore(@Body() dto: BulkRestoreDto, @User() user: { userId: string }) {
     try {
       return await this.bulkService.bulkRestore(dto, user.userId);
     } catch (error) {
-      throw new HttpException(
-        `Failed to bulk restore: ${error.message}`,
-        HttpStatus.BAD_REQUEST,
-      );
+      throw new HttpException(`Failed to bulk restore: ${error.message}`, HttpStatus.BAD_REQUEST);
     }
   }
 }
-

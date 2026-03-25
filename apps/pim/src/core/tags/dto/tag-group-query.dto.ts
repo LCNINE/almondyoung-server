@@ -14,4 +14,3 @@ export class TagGroupQueryDto {
   @IsBoolean()
   isActive?: boolean;
 }
-

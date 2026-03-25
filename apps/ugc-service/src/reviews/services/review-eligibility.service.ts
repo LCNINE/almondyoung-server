@@ -15,7 +15,7 @@ export class ReviewEligibilityService {
 
   private readonly logger = new Logger(ReviewEligibilityService.name);
 
-  constructor(@InjectDb() private readonly db: DbService<UgcServiceSchema>) { }
+  constructor(@InjectDb() private readonly db: DbService<UgcServiceSchema>) {}
 
   private get client() {
     return this.db.db;
@@ -25,10 +25,7 @@ export class ReviewEligibilityService {
     return tx ? fn(tx) : this.client.transaction(fn);
   }
 
-  async create(
-    dto: CreateReviewEligibilityDto,
-    tx?: DbTransaction,
-  ): Promise<ReviewEligibilityEntity[]> {
+  async create(dto: CreateReviewEligibilityDto, tx?: DbTransaction): Promise<ReviewEligibilityEntity[]> {
     return this.inTx(async (tx) => {
       const now = new Date();
       const expiresAt = new Date(
@@ -46,11 +43,7 @@ export class ReviewEligibilityService {
         sourceEventId: `order:${dto.orderId}:${item.orderLineId}`,
       }));
 
-      const created = await tx
-        .insert(reviewEligibilities)
-        .values(values)
-        .onConflictDoNothing()
-        .returning();
+      const created = await tx.insert(reviewEligibilities).values(values).onConflictDoNothing().returning();
 
       this.logger.log(
         `[create] Created ${created.length} eligibilities for orderId=${dto.orderId}, userId=${dto.userId}`,

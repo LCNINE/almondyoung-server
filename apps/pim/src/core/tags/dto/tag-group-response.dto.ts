@@ -26,4 +26,3 @@ export class TagGroupResponseDto {
   @ApiProperty({ description: '태그 값 목록', type: [TagValueItemDto] })
   values: TagValueItemDto[];
 }
-

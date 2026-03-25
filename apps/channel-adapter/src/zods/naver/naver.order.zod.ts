@@ -39,22 +39,18 @@ export const DispatchProductOrderSchema = z.object({
     .regex(/^[a-zA-Z0-9\-]+$/, '송장 번호는 영문, 숫자, 하이픈만 가능합니다'),
 
   /** 배송일 */
-  dispatchDate: z.iso
-    .datetime({ message: '올바른 ISO 8601 날짜 형식이어야 합니다' })
-    .refine(
-      (date) => {
-        // 네이버 API 정책: 배송일은 30일 전부터 현재까지만 가능
-        const dispatchDate = new Date(date);
-        const now = new Date();
-        const thirtyDaysAgo = new Date(
-          now.getTime() - 30 * 24 * 60 * 60 * 1000,
-        );
-        return dispatchDate >= thirtyDaysAgo && dispatchDate <= now;
-      },
-      {
-        message: '배송일은 30일 전부터 현재까지만 가능합니다',
-      },
-    ),
+  dispatchDate: z.iso.datetime({ message: '올바른 ISO 8601 날짜 형식이어야 합니다' }).refine(
+    (date) => {
+      // 네이버 API 정책: 배송일은 30일 전부터 현재까지만 가능
+      const dispatchDate = new Date(date);
+      const now = new Date();
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      return dispatchDate >= thirtyDaysAgo && dispatchDate <= now;
+    },
+    {
+      message: '배송일은 30일 전부터 현재까지만 가능합니다',
+    },
+  ),
 });
 
 export type DispatchProductOrder = z.infer<typeof DispatchProductOrderSchema>;
@@ -94,14 +90,9 @@ export const ChangeHopeDeliveryBodySchema = z.object({
     .regex(/^\d{4}$/, 'HHMM 형식이 아닙니다')
     .optional(),
   region: z.string().min(1).max(30).optional(),
-  changeReason: z
-    .string()
-    .min(1)
-    .max(300, '변경 사유는 300자를 넘을 수 없습니다'),
+  changeReason: z.string().min(1).max(300, '변경 사유는 300자를 넘을 수 없습니다'),
 });
-export type ChangeHopeDeliveryBody = z.infer<
-  typeof ChangeHopeDeliveryBodySchema
->;
+export type ChangeHopeDeliveryBody = z.infer<typeof ChangeHopeDeliveryBodySchema>;
 
 /**
  * 발송 지연 Body 스키마
@@ -134,9 +125,7 @@ export const QueryProductOrdersParamsSchema = z.object({
   page: z.number().int().min(1).optional(),
   quantityClaimCompatibility: z.boolean().optional(),
 });
-export type QueryProductOrdersParams = z.infer<
-  typeof QueryProductOrdersParamsSchema
->;
+export type QueryProductOrdersParams = z.infer<typeof QueryProductOrdersParamsSchema>;
 
 // =================================================================
 // == 3. 주문 응답 스키마
@@ -167,11 +156,8 @@ const NaverLastChangedStatusesDataSchema = z.object({
     })
     .optional(),
 });
-export const NaverLastChangedStatusResponseSchema =
-  createNaverApiResponseSchema(NaverLastChangedStatusesDataSchema);
-export type NaverLastChangedStatusResponse = z.infer<
-  typeof NaverLastChangedStatusResponseSchema
->;
+export const NaverLastChangedStatusResponseSchema = createNaverApiResponseSchema(NaverLastChangedStatusesDataSchema);
+export type NaverLastChangedStatusResponse = z.infer<typeof NaverLastChangedStatusResponseSchema>;
 
 /**
  * 상품 주문 상세 구조체 (Type)
@@ -205,19 +191,12 @@ const ProductOrderInfoSchema = z.object({
  * 상품 주문 상세 내역 응답 (getOrderDetails, queryProductOrders)
  * (from naver-api.zod.ts)
  */
-export const NaverProductOrderDetailsResponseSchema =
-  createNaverApiResponseSchema(z.array(ProductOrderInfoSchema));
-export type NaverProductOrderDetailsResponse = z.infer<
-  typeof NaverProductOrderDetailsResponseSchema
->;
+export const NaverProductOrderDetailsResponseSchema = createNaverApiResponseSchema(z.array(ProductOrderInfoSchema));
+export type NaverProductOrderDetailsResponse = z.infer<typeof NaverProductOrderDetailsResponseSchema>;
 
 /**
  * 주문번호로 상품 주문번호 목록 응답 (getProductOrderIdsByOrderId)
  * (from naver-api.zod.ts)
  */
-export const NaverProductOrderIdsResponseSchema = createNaverApiResponseSchema(
-  z.array(z.string()),
-);
-export type NaverProductOrderIdsResponse = z.infer<
-  typeof NaverProductOrderIdsResponseSchema
->;
+export const NaverProductOrderIdsResponseSchema = createNaverApiResponseSchema(z.array(z.string()));
+export type NaverProductOrderIdsResponse = z.infer<typeof NaverProductOrderIdsResponseSchema>;

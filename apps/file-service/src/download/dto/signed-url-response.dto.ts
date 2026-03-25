@@ -13,4 +13,3 @@ export class SignedUrlResponseDto {
   })
   expiresAt: Date;
 }
-

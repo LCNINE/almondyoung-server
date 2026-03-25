@@ -7,12 +7,7 @@ import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { DbModule } from '@app/db';
 import { EventsModule } from '@app/events';
-import {
-  AuthorizationModule,
-  JwtAuthGuard,
-  ScopeGuard,
-  authorizationSchema,
-} from '@app/authorization';
+import { AuthorizationModule, JwtAuthGuard, ScopeGuard, authorizationSchema } from '@app/authorization';
 import { PRODUCT_STREAM } from '@packages/event-contracts';
 import { validatePimEnv } from '../config/env.validation';
 import { pimSchema } from '../schema';

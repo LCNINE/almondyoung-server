@@ -12,10 +12,7 @@
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
 import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
-import {
-  FulfillmentShippedPayload,
-  FulfillmentCancelledPayload,
-} from '@packages/event-contracts/streams';
+import { FulfillmentShippedPayload, FulfillmentCancelledPayload } from '@packages/event-contracts/streams';
 import { MessageEnvelope } from '@packages/event-contracts/types';
 import { ChannelAdapterFactory } from '../adapters/channel-adapter.factory';
 
@@ -26,9 +23,7 @@ type SalesChannel = 'naver' | 'coupang' | 'medusa' | '3pl';
 export class FulfillmentEventsConsumer {
   private readonly logger = new Logger(FulfillmentEventsConsumer.name);
 
-  constructor(
-    private readonly channelAdapterFactory: ChannelAdapterFactory,
-  ) {
+  constructor(private readonly channelAdapterFactory: ChannelAdapterFactory) {
     this.logger.log('🚚 FulfillmentEventsConsumer 초기화 완료');
   }
 
@@ -42,14 +37,11 @@ export class FulfillmentEventsConsumer {
     @EventPayload() payload: FulfillmentShippedPayload,
     @EventEnvelope() envelope: MessageEnvelope<FulfillmentShippedPayload>,
   ) {
-    this.logger.log(
-      `🚚 [FulfillmentShipped] Received: fulfillmentId=${payload.fulfillmentId}`,
-      {
-        correlationId: envelope.correlationId,
-        orderId: payload.orderId,
-        trackingNumber: payload.trackingInfo?.trackingNumber,
-      },
-    );
+    this.logger.log(`🚚 [FulfillmentShipped] Received: fulfillmentId=${payload.fulfillmentId}`, {
+      correlationId: envelope.correlationId,
+      orderId: payload.orderId,
+      trackingNumber: payload.trackingInfo?.trackingNumber,
+    });
 
     try {
       // 1. 채널 정보 추출 (payload에서 salesChannel 직접 사용 불가 - orderId로 조회 필요)
@@ -57,14 +49,9 @@ export class FulfillmentEventsConsumer {
       // 현재는 모든 채널에 전파하는 방식으로 구현
       await this.syncShipmentToChannels(payload);
 
-      this.logger.log(
-        `✅ [FulfillmentShipped] Processed: fulfillmentId=${payload.fulfillmentId}`,
-      );
+      this.logger.log(`✅ [FulfillmentShipped] Processed: fulfillmentId=${payload.fulfillmentId}`);
     } catch (error) {
-      this.logger.error(
-        `❌ [FulfillmentShipped] Failed: fulfillmentId=${payload.fulfillmentId}`,
-        error.stack,
-      );
+      this.logger.error(`❌ [FulfillmentShipped] Failed: fulfillmentId=${payload.fulfillmentId}`, error.stack);
       throw error;
     }
   }
@@ -79,27 +66,19 @@ export class FulfillmentEventsConsumer {
     @EventPayload() payload: FulfillmentCancelledPayload,
     @EventEnvelope() envelope: MessageEnvelope<FulfillmentCancelledPayload>,
   ) {
-    this.logger.log(
-      `❌ [FulfillmentCancelled] Received: fulfillmentId=${payload.fulfillmentId}`,
-      {
-        correlationId: envelope.correlationId,
-        orderId: payload.orderId,
-        reason: payload.reason,
-      },
-    );
+    this.logger.log(`❌ [FulfillmentCancelled] Received: fulfillmentId=${payload.fulfillmentId}`, {
+      correlationId: envelope.correlationId,
+      orderId: payload.orderId,
+      reason: payload.reason,
+    });
 
     try {
       // 취소 상태를 채널에 전파
       await this.syncCancellationToChannels(payload);
 
-      this.logger.log(
-        `✅ [FulfillmentCancelled] Processed: fulfillmentId=${payload.fulfillmentId}`,
-      );
+      this.logger.log(`✅ [FulfillmentCancelled] Processed: fulfillmentId=${payload.fulfillmentId}`);
     } catch (error) {
-      this.logger.error(
-        `❌ [FulfillmentCancelled] Failed: fulfillmentId=${payload.fulfillmentId}`,
-        error.stack,
-      );
+      this.logger.error(`❌ [FulfillmentCancelled] Failed: fulfillmentId=${payload.fulfillmentId}`, error.stack);
       throw error;
     }
   }
@@ -107,13 +86,8 @@ export class FulfillmentEventsConsumer {
   /**
    * 출고 정보를 채널들에 동기화
    */
-  private async syncShipmentToChannels(
-    payload: FulfillmentShippedPayload,
-  ): Promise<void> {
-    const channels: Array<'naver_smartstore' | 'coupang'> = [
-      'naver_smartstore',
-      'coupang',
-    ];
+  private async syncShipmentToChannels(payload: FulfillmentShippedPayload): Promise<void> {
+    const channels: Array<'naver_smartstore' | 'coupang'> = ['naver_smartstore', 'coupang'];
 
     const syncPromises = channels.map(async (channel) => {
       try {
@@ -131,23 +105,16 @@ export class FulfillmentEventsConsumer {
         });
 
         if (result.success) {
-          this.logger.log(
-            `✅ [${channel}] 송장 정보 동기화 성공: ${payload.orderId}`,
-            { trackingNumber: payload.trackingInfo.trackingNumber },
-          );
+          this.logger.log(`✅ [${channel}] 송장 정보 동기화 성공: ${payload.orderId}`, {
+            trackingNumber: payload.trackingInfo.trackingNumber,
+          });
         } else {
-          this.logger.warn(
-            `⚠️ [${channel}] 송장 정보 동기화 실패: ${payload.orderId}`,
-            { errors: result.errors },
-          );
+          this.logger.warn(`⚠️ [${channel}] 송장 정보 동기화 실패: ${payload.orderId}`, { errors: result.errors });
         }
 
         return result;
       } catch (error) {
-        this.logger.error(
-          `❌ [${channel}] 송장 정보 동기화 오류: ${payload.orderId}`,
-          error.message,
-        );
+        this.logger.error(`❌ [${channel}] 송장 정보 동기화 오류: ${payload.orderId}`, error.message);
         return { success: false, errors: [{ message: error.message }] };
       }
     });
@@ -158,13 +125,8 @@ export class FulfillmentEventsConsumer {
   /**
    * 취소 정보를 채널들에 동기화
    */
-  private async syncCancellationToChannels(
-    payload: FulfillmentCancelledPayload,
-  ): Promise<void> {
-    const channels: Array<'naver_smartstore' | 'coupang'> = [
-      'naver_smartstore',
-      'coupang',
-    ];
+  private async syncCancellationToChannels(payload: FulfillmentCancelledPayload): Promise<void> {
+    const channels: Array<'naver_smartstore' | 'coupang'> = ['naver_smartstore', 'coupang'];
 
     const syncPromises = channels.map(async (channel) => {
       try {
@@ -178,22 +140,14 @@ export class FulfillmentEventsConsumer {
         });
 
         if (result.success) {
-          this.logger.log(
-            `✅ [${channel}] 취소 상태 동기화 성공: ${payload.orderId}`,
-          );
+          this.logger.log(`✅ [${channel}] 취소 상태 동기화 성공: ${payload.orderId}`);
         } else {
-          this.logger.warn(
-            `⚠️ [${channel}] 취소 상태 동기화 실패: ${payload.orderId}`,
-            { errors: result.errors },
-          );
+          this.logger.warn(`⚠️ [${channel}] 취소 상태 동기화 실패: ${payload.orderId}`, { errors: result.errors });
         }
 
         return result;
       } catch (error) {
-        this.logger.error(
-          `❌ [${channel}] 취소 상태 동기화 오류: ${payload.orderId}`,
-          error.message,
-        );
+        this.logger.error(`❌ [${channel}] 취소 상태 동기화 오류: ${payload.orderId}`, error.message);
         return { success: false, errors: [{ message: error.message }] };
       }
     });
@@ -201,4 +155,3 @@ export class FulfillmentEventsConsumer {
     await Promise.allSettled(syncPromises);
   }
 }
-

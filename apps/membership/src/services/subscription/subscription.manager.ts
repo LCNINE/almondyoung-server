@@ -203,11 +203,7 @@ export class SubscriptionManager {
         .where(eq(schema.subscriptionContracts.id, contract.id));
 
       // 3. 권한 종료
-      await this.entitlementManager.terminateActiveEntitlement(
-        tx,
-        userId,
-        batch.id,
-      );
+      await this.entitlementManager.terminateActiveEntitlement(tx, userId, batch.id);
 
       return {
         cancelledAt: now,

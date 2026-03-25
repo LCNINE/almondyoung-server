@@ -46,16 +46,13 @@ export class ProductReadAssembler {
     private readonly priceCacheService: VariantPriceCacheService,
     private readonly optionReadLoader: OptionReadLoader,
     private readonly tagReadLoader: TagReadLoader,
-  ) { }
+  ) {}
 
   private get client() {
     return this.db.db;
   }
 
-  private async inTx<T>(
-    fn: (tx: DbTransaction) => Promise<T>,
-    tx?: DbTransaction,
-  ): Promise<T> {
+  private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction): Promise<T> {
     return tx ? fn(tx) : this.client.transaction(fn);
   }
 
@@ -99,50 +96,39 @@ export class ProductReadAssembler {
         imagesPromise,
       ]);
 
-      const cachedPrices = await this.priceCacheService.getCachedPriceSetsByVersion(
-        versionId,
-        tx,
-      );
+      const cachedPrices = await this.priceCacheService.getCachedPriceSetsByVersion(versionId, tx);
       const priceMap = new Map(cachedPrices.map((p) => [p.variantId, p]));
 
       const variantsWithOptions: VariantReadModel[] = include.variants
         ? await Promise.all(
-          variants.map(async (v) => {
-            const optionValues = await this.optionReadLoader.getVariantOptionValues(
-              tx,
-              v.id,
-              versionId,
-              locale,
-            );
-            const priceSet = priceMap.get(v.id);
-            if (!priceSet && version.status === 'active') {
-              this.logger.warn(`No cached price found for active variant ${v.id} in version ${versionId}`);
-            }
+            variants.map(async (v) => {
+              const optionValues = await this.optionReadLoader.getVariantOptionValues(tx, v.id, versionId, locale);
+              const priceSet = priceMap.get(v.id);
+              if (!priceSet && version.status === 'active') {
+                this.logger.warn(`No cached price found for active variant ${v.id} in version ${versionId}`);
+              }
 
-            return {
-              ...v,
-              optionValues,
-              price: priceSet?.basePrice,
-              priceSet: priceSet
-                ? {
-                  basePrice: priceSet.basePrice,
-                  membershipPrice: priceSet.membershipPrice,
-                  tieredPrices: priceSet.tieredPrices,
-                }
-                : undefined,
-            };
-          })
-        )
+              return {
+                ...v,
+                optionValues,
+                price: priceSet?.basePrice,
+                priceSet: priceSet
+                  ? {
+                      basePrice: priceSet.basePrice,
+                      membershipPrice: priceSet.membershipPrice,
+                      tieredPrices: priceSet.tieredPrices,
+                    }
+                  : undefined,
+              };
+            }),
+          )
         : [];
 
-      const primaryImage = images.find(img => img.isPrimary);
+      const primaryImage = images.find((img) => img.isPrimary);
       const thumbnail = primaryImage ? primaryImage.fileId : null;
       const priceSummary =
         include.priceSummary && version.status !== 'draft'
-          ? (await this.priceCacheService.getPriceSummariesByVersionIds(
-            [versionId],
-            tx,
-          )).get(versionId) ?? null
+          ? ((await this.priceCacheService.getPriceSummariesByVersionIds([versionId], tx)).get(versionId) ?? null)
           : null;
 
       const channelProducts: ProductDetailDto['channelProducts'] = [];
@@ -171,10 +157,7 @@ export class ProductReadAssembler {
     }, tx);
   }
 
-  async getPrimaryImagesByVersionIds(
-    versionIds: string[],
-    tx?: DbTransaction,
-  ): Promise<Map<string, string>> {
+  async getPrimaryImagesByVersionIds(versionIds: string[], tx?: DbTransaction): Promise<Map<string, string>> {
     return this.inTx(async (tx) => {
       if (versionIds.length === 0) {
         return new Map();
@@ -186,28 +169,17 @@ export class ProductReadAssembler {
           fileId: productImages.fileId,
         })
         .from(productImages)
-        .where(
-          and(
-            inArray(productImages.versionId, versionIds),
-            eq(productImages.isPrimary, true)
-          )
-        );
+        .where(and(inArray(productImages.versionId, versionIds), eq(productImages.isPrimary, true)));
 
-      return new Map(primaryImages.map(img => [img.versionId, img.fileId]));
+      return new Map(primaryImages.map((img) => [img.versionId, img.fileId]));
     }, tx);
   }
 
-  async getImagesByVersionId(
-    versionId: string,
-    tx?: DbTransaction,
-  ): Promise<ProductImage[]> {
+  async getImagesByVersionId(versionId: string, tx?: DbTransaction): Promise<ProductImage[]> {
     return this.inTx(async (tx) => this._fetchImages(versionId, tx), tx);
   }
 
-  private async getVersionById(
-    versionId: string,
-    tx: DbTransaction,
-  ): Promise<ProductMasterVersion> {
+  private async getVersionById(versionId: string, tx: DbTransaction): Promise<ProductMasterVersion> {
     const [version] = await tx
       .select()
       .from(productMasterVersions)
@@ -221,22 +193,16 @@ export class ProductReadAssembler {
     return version;
   }
 
-  private async getActiveVersion(
-    masterId: string,
-    tx: DbTransaction,
-  ): Promise<ProductMasterVersion> {
+  private async getActiveVersion(masterId: string, tx: DbTransaction): Promise<ProductMasterVersion> {
     const result = await tx
       .select()
       .from(productMasterVersions)
-      .innerJoin(
-        productMasters,
-        eq(productMasterVersions.masterId, productMasters.id)
-      )
+      .innerJoin(productMasters, eq(productMasterVersions.masterId, productMasters.id))
       .where(
         and(
           eq(productMasterVersions.masterId, masterId),
           eq(productMasterVersions.status, 'active'),
-          isNull(productMasters.deletedAt)
+          isNull(productMasters.deletedAt),
         ),
       )
       .limit(1);
@@ -248,38 +214,22 @@ export class ProductReadAssembler {
     return result[0].product_master_versions;
   }
 
-  private async _fetchVariants(
-    masterId: string,
-    versionId: string,
-    tx: DbTransaction,
-  ): Promise<ProductVariant[]> {
+  private async _fetchVariants(masterId: string, versionId: string, tx: DbTransaction): Promise<ProductVariant[]> {
     const variantResults = await tx
       .select()
       .from(productMasterVariants)
-      .innerJoin(
-        productVariants,
-        eq(productMasterVariants.variantId, productVariants.id),
-      )
-      .where(
-        and(
-          eq(productMasterVariants.masterId, masterId),
-          eq(productMasterVariants.versionId, versionId),
-        ),
-      )
+      .innerJoin(productVariants, eq(productMasterVariants.variantId, productVariants.id))
+      .where(and(eq(productMasterVariants.masterId, masterId), eq(productMasterVariants.versionId, versionId)))
       .orderBy(asc(productVariants.displayOrder));
 
     return variantResults.map((r) => r.product_variants);
   }
 
-  private async _fetchImages(
-    versionId: string,
-    tx: DbTransaction,
-  ): Promise<ProductImage[]> {
+  private async _fetchImages(versionId: string, tx: DbTransaction): Promise<ProductImage[]> {
     return await tx
       .select()
       .from(productImages)
       .where(eq(productImages.versionId, versionId))
       .orderBy(desc(productImages.isPrimary), asc(productImages.sortOrder));
   }
-
 }

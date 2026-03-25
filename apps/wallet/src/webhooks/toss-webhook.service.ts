@@ -93,7 +93,6 @@ export class TossWebhookService {
       }
       await this.tossApproveService.finalizeApproval(charge, paymentKey, correlationId);
       await this.repository.updateStatus(receiptId, 'PROCESSED', { processedAt: new Date() });
-
     } else if (['ABORTED', 'EXPIRED', 'CANCELED'].includes(tossStatus)) {
       if (charge.status !== 'REQUIRES_ACTION') {
         this.logger.log(`Charge already processed: chargeId=${chargeId} status=${charge.status}`);
@@ -102,7 +101,6 @@ export class TossWebhookService {
       }
       await this.tossApproveService.finalizeFailure(charge, tossStatus, correlationId);
       await this.repository.updateStatus(receiptId, 'PROCESSED', { processedAt: new Date() });
-
     } else {
       this.logger.log(`Unhandled toss status: ${tossStatus} for chargeId=${chargeId}`);
       await this.repository.updateStatus(receiptId, 'IGNORED_DUPLICATE');

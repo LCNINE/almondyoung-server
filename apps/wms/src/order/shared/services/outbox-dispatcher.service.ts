@@ -47,7 +47,7 @@ export class OutboxDispatcherService implements OnModuleInit {
     private readonly fulfillmentPublisher: StreamPublisher<FulfillmentEvents>,
     @InjectStreamPublisher(INVENTORY_STREAM.topic.topic)
     private readonly inventoryPublisher: StreamPublisher<InventoryEvents>,
-  ) { }
+  ) {}
 
   onModuleInit() {
     this.logger.log('📤 OutboxDispatcher 초기화 완료 ✅ (Fulfillment + Inventory)');
@@ -125,16 +125,11 @@ export class OutboxDispatcherService implements OnModuleInit {
           await this.publishEvent(event);
           processedCount++;
         } catch (error) {
-          this.logger.error(
-            `이벤트 발행 실패: ${event.id} (${event.event_type})`,
-            error,
-          );
+          this.logger.error(`이벤트 발행 실패: ${event.id} (${event.event_type})`, error);
         }
       }
 
-      this.logger.log(
-        `✅ Outbox 이벤트 발행 완료: ${processedCount}/${events.length}개`,
-      );
+      this.logger.log(`✅ Outbox 이벤트 발행 완료: ${processedCount}/${events.length}개`);
     } catch (error) {
       this.logger.error('Outbox dispatch 실행 중 오류:', error);
     } finally {
@@ -193,9 +188,7 @@ export class OutboxDispatcherService implements OnModuleInit {
         .set({
           status: isFinalFailure ? 'failed' : 'pending',
           attempts: newAttempts,
-          nextAttemptAt: isFinalFailure
-            ? undefined
-            : this.calculateNextAttempt(newAttempts),
+          nextAttemptAt: isFinalFailure ? undefined : this.calculateNextAttempt(newAttempts),
         })
         .where(eq(wmsTables.outboxEvents.id, event.id));
 
@@ -205,9 +198,7 @@ export class OutboxDispatcherService implements OnModuleInit {
       );
 
       if (isFinalFailure) {
-        this.logger.error(
-          `🚨 최종 실패: ${event.id} (${event.event_type}) - 수동 처리 필요`,
-        );
+        this.logger.error(`🚨 최종 실패: ${event.id} (${event.event_type}) - 수동 처리 필요`);
       }
 
       throw error;
@@ -243,10 +234,7 @@ export class OutboxDispatcherService implements OnModuleInit {
       })
       .where(
         eventIds
-          ? and(
-            eq(wmsTables.outboxEvents.status, 'failed'),
-            inArray(wmsTables.outboxEvents.id, eventIds),
-          )
+          ? and(eq(wmsTables.outboxEvents.status, 'failed'), inArray(wmsTables.outboxEvents.id, eventIds))
           : eq(wmsTables.outboxEvents.status, 'failed'),
       )
       .returning({ id: wmsTables.outboxEvents.id });

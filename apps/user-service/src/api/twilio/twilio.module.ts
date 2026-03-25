@@ -44,4 +44,4 @@ import { VerifyCodeService } from './services/verify-code.service';
   ],
   exports: [],
 })
-export class TwilioModule { }
+export class TwilioModule {}

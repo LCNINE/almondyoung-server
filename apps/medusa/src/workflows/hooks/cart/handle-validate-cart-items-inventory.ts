@@ -1,12 +1,6 @@
-import {
-  addToCartWorkflow,
-  createCartWorkflow,
-} from '@medusajs/medusa/core-flows';
+import { addToCartWorkflow, createCartWorkflow } from '@medusajs/medusa/core-flows';
 import { validateInventoryForItems } from '../../../utils/validate-inventory';
-import {
-  AddToCartWorkflowInputDTO,
-  CreateCartWorkflowInputDTO,
-} from '@medusajs/framework/types';
+import { AddToCartWorkflowInputDTO, CreateCartWorkflowInputDTO } from '@medusajs/framework/types';
 import { MedusaError, Modules } from '@medusajs/framework/utils';
 import type { IProductModuleService, ICartModuleService, ICustomerModuleService } from '@medusajs/framework/types';
 
@@ -18,18 +12,13 @@ type ValidItem = {
 }[];
 
 // 웰컴 멤버십 설정
-const MEMBERSHIP_SERVICE_URL =
-  process.env.MEMBERSHIP_SERVICE_URL || 'http://localhost:3040';
+const MEMBERSHIP_SERVICE_URL = process.env.MEMBERSHIP_SERVICE_URL || 'http://localhost:3040';
 const WELCOME_MEMBERSHIP_TAG = 'welcome-membership';
 
 /**
  * 웰컴 멤버십 상품 구매 자격 검증
  */
-const validateWelcomeMembership = async (
-  input: AddToCartWorkflowInputDTO,
-  container: any,
-  variants: any[],
-) => {
+const validateWelcomeMembership = async (input: AddToCartWorkflowInputDTO, container: any, variants: any[]) => {
   const hasWelcomeMembershipItem = variants.some((variant) => {
     const tags: Array<{ value: string }> = variant.product?.tags ?? [];
     return tags.some((tag) => tag.value === WELCOME_MEMBERSHIP_TAG);
@@ -44,10 +33,7 @@ const validateWelcomeMembership = async (
   });
 
   if (!cart?.customer_id) {
-    throw new MedusaError(
-      MedusaError.Types.NOT_ALLOWED,
-      '웰컴 멤버십 상품은 로그인 후 구매하실 수 있습니다.',
-    );
+    throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '웰컴 멤버십 상품은 로그인 후 구매하실 수 있습니다.');
   }
 
   // Medusa customer → almond user_id 매핑
@@ -67,38 +53,26 @@ const validateWelcomeMembership = async (
   let eligible = true;
   let reason: string | undefined;
   try {
-    const response = await fetch(
-      `${MEMBERSHIP_SERVICE_URL}/welcome-membership/eligibility/${userId}`,
-      { signal: AbortSignal.timeout(5000) },
-    );
+    const response = await fetch(`${MEMBERSHIP_SERVICE_URL}/welcome-membership/eligibility/${userId}`, {
+      signal: AbortSignal.timeout(5000),
+    });
 
     if (response.ok) {
       const data = (await response.json()) as { eligible: boolean; reason?: string };
       eligible = data.eligible;
       reason = data.reason;
     } else {
-      console.warn(
-        `[WelcomeMembership] eligibility check failed (${response.status}), failing open`,
-      );
+      console.warn(`[WelcomeMembership] eligibility check failed (${response.status}), failing open`);
     }
   } catch (err) {
-    console.warn(
-      `[WelcomeMembership] eligibility check error, failing open:`,
-      err,
-    );
+    console.warn(`[WelcomeMembership] eligibility check error, failing open:`, err);
   }
 
   if (!eligible) {
     if (reason === 'not_a_member') {
-      throw new MedusaError(
-        MedusaError.Types.NOT_ALLOWED,
-        '웰컴 멤버십 상품은 멤버십 회원만 구매하실 수 있습니다.',
-      );
+      throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '웰컴 멤버십 상품은 멤버십 회원만 구매하실 수 있습니다.');
     }
-    throw new MedusaError(
-      MedusaError.Types.NOT_ALLOWED,
-      '이미 웰컴 멤버십 상품 구매 이력이 있습니다.',
-    );
+    throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '이미 웰컴 멤버십 상품 구매 이력이 있습니다.');
   }
 };
 
@@ -107,10 +81,7 @@ const validateWelcomeMembership = async (
  * - 재고 검증
  * - 웰컴 멤버십 자격 검증 (addToCart만)
  */
-const handleValidateCartItemsInventory = async (
-  { input }: { input: CartInput },
-  { container },
-) => {
+const handleValidateCartItemsInventory = async ({ input }: { input: CartInput }, { container }) => {
   if (!input.items?.length) return;
 
   const validItems = input.items as ValidItem;
@@ -126,18 +97,11 @@ const handleValidateCartItemsInventory = async (
   );
 
   // 1. 재고 검증
-  await validateInventoryForItems(
-    { items: validItems, variants },
-    container,
-  );
+  await validateInventoryForItems({ items: validItems, variants }, container);
 
   // 2. 웰컴 멤버십 자격 검증 (addToCart인 경우만 - cart_id가 있음)
   if ('cart_id' in input && input.cart_id) {
-    await validateWelcomeMembership(
-      input as AddToCartWorkflowInputDTO,
-      container,
-      variants,
-    );
+    await validateWelcomeMembership(input, container, variants);
   }
 };
 

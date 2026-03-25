@@ -12,6 +12,16 @@ export const quickActions = [
   { label: '파트너사', icon: 'Building2', color: 'text-purple-600' },
 ];
 
-export const recentOrders: { order: string; customer: string; amount: string; status: string }[] = [];
+export const recentOrders: {
+  order: string;
+  customer: string;
+  amount: string;
+  status: string;
+}[] = [];
 
-export const systemNotifications: { title: string; message: string; time: string; type: 'info' | 'warning' | 'error' }[] = [];
+export const systemNotifications: {
+  title: string;
+  message: string;
+  time: string;
+  type: 'info' | 'warning' | 'error';
+}[] = [];

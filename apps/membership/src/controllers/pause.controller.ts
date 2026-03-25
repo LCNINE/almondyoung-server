@@ -11,13 +11,7 @@ import {
   HttpException,
   Logger,
 } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiSecurity,
-  ApiBody,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiSecurity, ApiBody } from '@nestjs/swagger';
 import { PauseService } from '../services/pause.service';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
 import { ZodValidationPipe } from '../shared/pipes/zod-validation.pipe';
@@ -28,15 +22,8 @@ import {
   ResumeSubscriptionRequest,
 } from '../shared/schemas';
 
-import {
-  PauseHistoryResponseDto,
-  PauseOperationResponseDto,
-  ErrorResponseDto,
-} from '../shared/dto/response.dto';
-import {
-  PauseSubscriptionRequestDto,
-  ResumeSubscriptionRequestDto,
-} from '../shared/dto/request.dto';
+import { PauseHistoryResponseDto, PauseOperationResponseDto, ErrorResponseDto } from '../shared/dto/response.dto';
+import { PauseSubscriptionRequestDto, ResumeSubscriptionRequestDto } from '../shared/dto/request.dto';
 import { FastifyRequest } from 'fastify';
 import { JwtAuthGuard, User } from '@app/authorization';
 /**
@@ -119,32 +106,16 @@ export class PauseController {
       this.logger.error(`❌ 구독 일시정지 실패 (${userId}):`, error.message);
 
       // CTO 스타일: 에러 메시지 패턴 기반 HTTP 응답 변환
-      if (
-        error.message.includes('not found') ||
-        error.message.includes('찾을 수 없')
-      ) {
-        throw new HttpException(
-          '일시정지할 수 있는 활성 구독을 찾을 수 없습니다.',
-          HttpStatus.NOT_FOUND,
-        );
+      if (error.message.includes('not found') || error.message.includes('찾을 수 없')) {
+        throw new HttpException('일시정지할 수 있는 활성 구독을 찾을 수 없습니다.', HttpStatus.NOT_FOUND);
       }
 
-      if (
-        error.message.includes('already') ||
-        error.message.includes('invalid') ||
-        error.message.includes('잘못된')
-      ) {
-        throw new HttpException(
-          '일시정지 요청이 유효하지 않습니다.',
-          HttpStatus.BAD_REQUEST,
-        );
+      if (error.message.includes('already') || error.message.includes('invalid') || error.message.includes('잘못된')) {
+        throw new HttpException('일시정지 요청이 유효하지 않습니다.', HttpStatus.BAD_REQUEST);
       }
 
       // 기타 모든 오류는 500으로 처리
-      throw new HttpException(
-        '구독 일시정지 중 오류가 발생했습니다.',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('구독 일시정지 중 오류가 발생했습니다.', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -210,32 +181,16 @@ export class PauseController {
       this.logger.error(`❌ 구독 재개 실패 (${userId}):`, error.message);
 
       // CTO 스타일: 에러 메시지 패턴 기반 HTTP 응답 변환
-      if (
-        error.message.includes('not found') ||
-        error.message.includes('찾을 수 없')
-      ) {
-        throw new HttpException(
-          '재개할 수 있는 일시정지된 구독을 찾을 수 없습니다.',
-          HttpStatus.NOT_FOUND,
-        );
+      if (error.message.includes('not found') || error.message.includes('찾을 수 없')) {
+        throw new HttpException('재개할 수 있는 일시정지된 구독을 찾을 수 없습니다.', HttpStatus.NOT_FOUND);
       }
 
-      if (
-        error.message.includes('already') ||
-        error.message.includes('invalid') ||
-        error.message.includes('잘못된')
-      ) {
-        throw new HttpException(
-          '구독 재개 요청이 유효하지 않습니다.',
-          HttpStatus.BAD_REQUEST,
-        );
+      if (error.message.includes('already') || error.message.includes('invalid') || error.message.includes('잘못된')) {
+        throw new HttpException('구독 재개 요청이 유효하지 않습니다.', HttpStatus.BAD_REQUEST);
       }
 
       // 기타 모든 오류는 500으로 처리
-      throw new HttpException(
-        '구독 재개 중 오류가 발생했습니다.',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('구독 재개 중 오류가 발생했습니다.', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -265,9 +220,7 @@ export class PauseController {
 
       const history = await this.pauseService.getPauseHistory(userId);
 
-      this.logger.log(
-        `✅ 일시정지 이력 조회 성공: ${userId} → ${history.length}건`,
-      );
+      this.logger.log(`✅ 일시정지 이력 조회 성공: ${userId} → ${history.length}건`);
 
       return {
         success: true,
@@ -280,37 +233,19 @@ export class PauseController {
         },
       };
     } catch (error) {
-      this.logger.error(
-        `❌ 일시정지 이력 조회 실패 (${userId}):`,
-        error.message,
-      );
+      this.logger.error(`❌ 일시정지 이력 조회 실패 (${userId}):`, error.message);
 
       // CTO 스타일: 에러 메시지 패턴 기반 HTTP 응답 변환
-      if (
-        error.message.includes('not found') ||
-        error.message.includes('찾을 수 없')
-      ) {
-        throw new HttpException(
-          '사용자의 일시정지 이력을 찾을 수 없습니다.',
-          HttpStatus.NOT_FOUND,
-        );
+      if (error.message.includes('not found') || error.message.includes('찾을 수 없')) {
+        throw new HttpException('사용자의 일시정지 이력을 찾을 수 없습니다.', HttpStatus.NOT_FOUND);
       }
 
-      if (
-        error.message.includes('invalid') ||
-        error.message.includes('잘못된')
-      ) {
-        throw new HttpException(
-          '잘못된 사용자 정보입니다.',
-          HttpStatus.BAD_REQUEST,
-        );
+      if (error.message.includes('invalid') || error.message.includes('잘못된')) {
+        throw new HttpException('잘못된 사용자 정보입니다.', HttpStatus.BAD_REQUEST);
       }
 
       // 기타 모든 오류는 500으로 처리
-      throw new HttpException(
-        '일시정지 이력 조회 중 오류가 발생했습니다.',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('일시정지 이력 조회 중 오류가 발생했습니다.', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 }

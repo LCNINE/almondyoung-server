@@ -1,14 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Inject, Injectable, ConflictException, Logger } from '@nestjs/common';
-import {
-  IDEMPOTENCY_REPOSITORY,
-  IdempotencyTx,
-  IdempotencyRepository,
-} from './idempotency.repository';
-import {
-  IdempotencyKeyRecord,
-  NewIdempotencyKeyRecord,
-} from './idempotency.schema';
+import { IDEMPOTENCY_REPOSITORY, IdempotencyTx, IdempotencyRepository } from './idempotency.repository';
+import { IdempotencyKeyRecord, NewIdempotencyKeyRecord } from './idempotency.schema';
 
 const DEFAULT_IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60;
 const MAX_USER_ID_LENGTH = 64;
@@ -51,9 +44,7 @@ export class IdempotencyService {
     private readonly repository: IdempotencyRepository,
   ) {}
 
-  async beginHttpRequest(
-    input: BeginHttpIdempotencyRequestInput,
-  ): Promise<IdempotencyDecision> {
+  async beginHttpRequest(input: BeginHttpIdempotencyRequestInput): Promise<IdempotencyDecision> {
     return this.beginRequest({
       scope: 'HTTP',
       operation: input.operation,
@@ -65,9 +56,7 @@ export class IdempotencyService {
     });
   }
 
-  async beginCommandRequest(
-    input: BeginCommandIdempotencyRequestInput,
-  ): Promise<IdempotencyDecision> {
+  async beginCommandRequest(input: BeginCommandIdempotencyRequestInput): Promise<IdempotencyDecision> {
     const actorId = 'wallet-command-consumer';
     const requestPath = `/commands/${input.operation}`;
     return this.beginRequest({
@@ -81,11 +70,7 @@ export class IdempotencyService {
     });
   }
 
-  async completeSuccess(
-    recordId: string,
-    responseCode: number,
-    responseBody: unknown,
-  ): Promise<void> {
+  async completeSuccess(recordId: string, responseCode: number, responseBody: unknown): Promise<void> {
     const now = new Date();
 
     await this.repository.runInTransaction(async (tx) => {
@@ -97,18 +82,12 @@ export class IdempotencyService {
       });
 
       if (!updated) {
-        this.logger.warn(
-          `Idempotency record not in PENDING state during completeSuccess: recordId=${recordId}`,
-        );
+        this.logger.warn(`Idempotency record not in PENDING state during completeSuccess: recordId=${recordId}`);
       }
     });
   }
 
-  async completeFailure(
-    recordId: string,
-    responseCode: number,
-    responseBody: unknown,
-  ): Promise<void> {
+  async completeFailure(recordId: string, responseCode: number, responseBody: unknown): Promise<void> {
     const now = new Date();
 
     await this.repository.runInTransaction(async (tx) => {
@@ -120,9 +99,7 @@ export class IdempotencyService {
       });
 
       if (!updated) {
-        this.logger.warn(
-          `Idempotency record not in PENDING state during completeFailure: recordId=${recordId}`,
-        );
+        this.logger.warn(`Idempotency record not in PENDING state during completeFailure: recordId=${recordId}`);
       }
     });
   }
@@ -207,8 +184,7 @@ export class IdempotencyService {
     if (existing.requestHash !== params.requestHash) {
       throw new ConflictException({
         error: 'IDEMPOTENCY_KEY_HASH_MISMATCH',
-        message:
-          'Idempotency key is already associated with a different request body',
+        message: 'Idempotency key is already associated with a different request body',
       });
     }
 
@@ -235,9 +211,7 @@ export class IdempotencyService {
       return {
         kind: 'REPLAY',
         responseCode: existing.responseCode ?? 200,
-        responseBody: existing.responseBody
-          ? JSON.parse(existing.responseBody)
-          : null,
+        responseBody: existing.responseBody ? JSON.parse(existing.responseBody) : null,
       };
     }
 
@@ -257,22 +231,15 @@ export class IdempotencyService {
       return {
         kind: 'REPLAY',
         responseCode: existing.responseCode ?? 500,
-        responseBody: existing.responseBody
-          ? JSON.parse(existing.responseBody)
-          : null,
+        responseBody: existing.responseBody ? JSON.parse(existing.responseBody) : null,
       };
     }
 
-    throw new Error(
-      `IDEMPOTENCY_UNKNOWN_STATUS: recordId=${params.recordId}, status=${existing.status}`,
-    );
+    throw new Error(`IDEMPOTENCY_UNKNOWN_STATUS: recordId=${params.recordId}, status=${existing.status}`);
   }
 
   private buildRecordId(actorId: string, idempotencyKey: string): string {
-    return createHash('sha256')
-      .update(`${actorId}:${idempotencyKey}`)
-      .digest('hex')
-      .slice(0, 64);
+    return createHash('sha256').update(`${actorId}:${idempotencyKey}`).digest('hex').slice(0, 64);
   }
 
   private hashRequestBody(body: unknown): string {

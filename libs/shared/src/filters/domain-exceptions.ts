@@ -70,4 +70,3 @@ export class ForbiddenError extends ApplicationException {
     return HttpStatus.FORBIDDEN;
   }
 }
-

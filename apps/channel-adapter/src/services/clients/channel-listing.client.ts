@@ -45,22 +45,16 @@ export class ChannelListingClient {
   /**
    * 채널 코드 + 채널 상품 ID로 Variant 조회
    */
-  async lookupByChannelCode(
-    channelCode: string,
-    channelItemId: string,
-  ): Promise<LookupVariantResult | null> {
+  async lookupByChannelCode(channelCode: string, channelItemId: string): Promise<LookupVariantResult | null> {
     try {
       const response = await firstValueFrom(
-        this.httpService.get<LookupVariantResult | null>(
-          `${this.pimBaseUrl}/channel-listings/lookup`,
-          {
-            params: {
-              channelCode,
-              channelItemId,
-            },
-            timeout: 5000,
+        this.httpService.get<LookupVariantResult | null>(`${this.pimBaseUrl}/channel-listings/lookup`, {
+          params: {
+            channelCode,
+            channelItemId,
           },
-        ),
+          timeout: 5000,
+        }),
       );
 
       if (response.status === 204 || !response.data) {
@@ -73,10 +67,7 @@ export class ChannelListingClient {
         return null;
       }
 
-      this.logger.error(
-        `❌ 채널 매핑 조회 실패: ${channelCode}/${channelItemId}`,
-        error.message,
-      );
+      this.logger.error(`❌ 채널 매핑 조회 실패: ${channelCode}/${channelItemId}`, error.message);
       throw error;
     }
   }
@@ -84,22 +75,16 @@ export class ChannelListingClient {
   /**
    * 판매 채널 ID + 채널 상품 ID로 Variant 조회
    */
-  async lookupBySalesChannelId(
-    salesChannelId: string,
-    channelItemId: string,
-  ): Promise<LookupVariantResult | null> {
+  async lookupBySalesChannelId(salesChannelId: string, channelItemId: string): Promise<LookupVariantResult | null> {
     try {
       const response = await firstValueFrom(
-        this.httpService.get<LookupVariantResult | null>(
-          `${this.pimBaseUrl}/channel-listings/lookup`,
-          {
-            params: {
-              salesChannelId,
-              channelItemId,
-            },
-            timeout: 5000,
+        this.httpService.get<LookupVariantResult | null>(`${this.pimBaseUrl}/channel-listings/lookup`, {
+          params: {
+            salesChannelId,
+            channelItemId,
           },
-        ),
+          timeout: 5000,
+        }),
       );
 
       if (response.status === 204 || !response.data) {
@@ -112,10 +97,7 @@ export class ChannelListingClient {
         return null;
       }
 
-      this.logger.error(
-        `❌ 채널 매핑 조회 실패: ${salesChannelId}/${channelItemId}`,
-        error.message,
-      );
+      this.logger.error(`❌ 채널 매핑 조회 실패: ${salesChannelId}/${channelItemId}`, error.message);
       throw error;
     }
   }
@@ -123,10 +105,7 @@ export class ChannelListingClient {
   /**
    * 여러 채널 상품 ID 일괄 조회
    */
-  async lookupBatch(
-    channelCode: string,
-    channelItemIds: string[],
-  ): Promise<Map<string, LookupVariantResult | null>> {
+  async lookupBatch(channelCode: string, channelItemIds: string[]): Promise<Map<string, LookupVariantResult | null>> {
     const results = new Map<string, LookupVariantResult | null>();
 
     // 병렬 조회 (최대 10개씩)
@@ -158,14 +137,9 @@ export class ChannelListingClient {
         }),
       );
 
-      this.logger.debug(
-        `✅ 채널 매핑 생성: ${request.channelItemId} → ${request.variantId}`,
-      );
+      this.logger.debug(`✅ 채널 매핑 생성: ${request.channelItemId} → ${request.variantId}`);
     } catch (error: any) {
-      this.logger.error(
-        `❌ 채널 매핑 생성 실패: ${request.channelItemId}`,
-        error.message,
-      );
+      this.logger.error(`❌ 채널 매핑 생성 실패: ${request.channelItemId}`, error.message);
       throw error;
     }
   }
@@ -173,9 +147,7 @@ export class ChannelListingClient {
   /**
    * 채널 코드를 채널 타입으로 변환
    */
-  getChannelCodeFromType(
-    channel: 'naver_smartstore' | 'coupang' | 'medusa',
-  ): string {
+  getChannelCodeFromType(channel: 'naver_smartstore' | 'coupang' | 'medusa'): string {
     switch (channel) {
       case 'naver_smartstore':
         return 'naver';

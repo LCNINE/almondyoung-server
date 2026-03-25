@@ -1,5 +1,16 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsUUID, IsNotEmpty, IsOptional, IsString, IsArray, IsNumber, Min, ValidateNested, ArrayMinSize, IsDateString } from 'class-validator';
+import {
+  IsUUID,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsArray,
+  IsNumber,
+  Min,
+  ValidateNested,
+  ArrayMinSize,
+  IsDateString,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { CustomerDto } from '../../shared/dto/customer.dto';
 import { AddressDto } from '../../shared/dto/address.dto';
@@ -47,19 +58,19 @@ export class CreateSalesOrderDto {
   @IsNotEmpty()
   salesChannel: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: 'Customer information',
     type: CustomerDto,
-    required: false
+    required: false,
   })
   @ValidateNested()
   @Type(() => CustomerDto)
   @IsOptional()
   customer?: CustomerDto;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: 'Shipping address',
-    type: AddressDto
+    type: AddressDto,
   })
   @ValidateNested()
   @Type(() => AddressDto)
@@ -85,20 +96,20 @@ export class CreateSalesOrderDto {
   @IsOptional()
   mergeGroupId?: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: 'Order date',
     required: false,
     type: String,
-    format: 'date-time'
+    format: 'date-time',
   })
   @IsDateString()
   @IsOptional()
   orderDate?: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: 'Order lines',
     type: [CreateSalesOrderLineDto],
-    minItems: 1
+    minItems: 1,
   })
   @IsArray()
   @ArrayMinSize(1)
@@ -106,4 +117,3 @@ export class CreateSalesOrderDto {
   @Type(() => CreateSalesOrderLineDto)
   lines: CreateSalesOrderLineDto[];
 }
-

@@ -1,13 +1,4 @@
-import {
-  Body,
-  Controller,
-  ForbiddenException,
-  Get,
-  HttpCode,
-  Param,
-  Post,
-  Req,
-} from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, HttpCode, Param, Post, Req } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PaymentIntentsService } from './payment-intents.service';
 import { RefundsService } from '../refunds/refunds.service';
@@ -46,9 +37,7 @@ export class PaymentIntentsController {
   @Get(':id')
   @WalletJwtAuth()
   @ApiOperation({ summary: 'Get a payment intent' })
-  async findOne(
-    @Param('id') id: string,
-  ): Promise<PaymentIntentResponseDto> {
+  async findOne(@Param('id') id: string): Promise<PaymentIntentResponseDto> {
     const intent = await this.service.findByIdOrThrow(id);
     return this.toResponse(intent);
   }
@@ -74,10 +63,7 @@ export class PaymentIntentsController {
   @Post(':id/toss-approve')
   @HttpCode(200)
   @ApiOperation({ summary: 'Approve Toss payment after checkout (API-key authenticated)' })
-  async tossApprove(
-    @Param('id') id: string,
-    @Body() dto: TossApproveDto,
-  ): Promise<PaymentIntentResponseDto> {
+  async tossApprove(@Param('id') id: string, @Body() dto: TossApproveDto): Promise<PaymentIntentResponseDto> {
     await this.service.tossApprove(id, dto);
     const updated = await this.service.findByIdOrThrow(id);
     return this.toResponse(updated);
@@ -86,9 +72,7 @@ export class PaymentIntentsController {
   @Post(':id/capture')
   @HttpCode(200)
   @ApiOperation({ summary: 'Capture an authorized payment intent (API-key authenticated, merchant backend)' })
-  async capture(
-    @Param('id') id: string,
-  ): Promise<PaymentIntentResponseDto> {
+  async capture(@Param('id') id: string): Promise<PaymentIntentResponseDto> {
     await this.service.capture(id);
     const intent = await this.service.findByIdOrThrow(id);
     return this.toResponse(intent);
@@ -98,10 +82,7 @@ export class PaymentIntentsController {
   @HttpCode(200)
   @WalletJwtAuth()
   @ApiOperation({ summary: 'Cancel a payment intent' })
-  async cancel(
-    @Param('id') id: string,
-    @Req() req: AuthenticatedRequest,
-  ): Promise<PaymentIntentResponseDto> {
+  async cancel(@Param('id') id: string, @Req() req: AuthenticatedRequest): Promise<PaymentIntentResponseDto> {
     if (req.jwtUserId) {
       await this.claimOrVerify(id, req.jwtUserId);
     }
@@ -114,10 +95,7 @@ export class PaymentIntentsController {
   @Post(':id/refund')
   @HttpCode(200)
   @ApiOperation({ summary: 'Refund a payment intent (API-key authenticated)' })
-  async refund(
-    @Param('id') id: string,
-    @Body() dto: RefundByIntentDto,
-  ): Promise<RefundByIntentResponseDto> {
+  async refund(@Param('id') id: string, @Body() dto: RefundByIntentDto): Promise<RefundByIntentResponseDto> {
     await this.service.findByIdOrThrow(id);
     const refunds = await this.refundsService.createByIntent(id, dto);
     return { intentId: id, refunds: refunds.map((r) => this.toRefundResponse(r)) };

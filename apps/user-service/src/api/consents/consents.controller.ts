@@ -1,18 +1,6 @@
 import { RequireScopes, JwtPayload } from '@app/authorization';
-import {
-  Body,
-  Controller,
-  Get,
-  NotFoundException,
-  Param,
-  Post,
-} from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { Body, Controller, Get, NotFoundException, Param, Post } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { ConsentsService } from './consents.service';
 import { CreateConsentDto } from './dto/consent-dto';
 import { UserConsent } from './types/consent.type';
@@ -36,9 +24,7 @@ export class ConsentsController {
   })
   @Get()
   @RequireScopes('user:read')
-  async getMyConsent(
-    @CurrentUser() user: JwtPayload,
-  ): Promise<UserConsent | null> {
+  async getMyConsent(@CurrentUser() user: JwtPayload): Promise<UserConsent | null> {
     return await this.consentsService.getMyConsent(user.id);
   }
 
@@ -49,10 +35,7 @@ export class ConsentsController {
   })
   @Post()
   @RequireScopes('user:modify')
-  async createConsent(
-    @CurrentUser() user: JwtPayload,
-    @Body() createConsentDto: CreateConsentDto,
-  ): Promise<void> {
+  async createConsent(@CurrentUser() user: JwtPayload, @Body() createConsentDto: CreateConsentDto): Promise<void> {
     return this.consentsService.createConsent(user.id, createConsentDto);
   }
 
@@ -72,11 +55,8 @@ export class ConsentsController {
   })
   @Get('marketing/:userId')
   @RequireScopes('master', 'admin:users:read')
-  async getMarketingConsent(
-    @Param('userId') userId: string,
-  ): Promise<{ isMarketingEnabled: boolean }> {
-    const isMarketingEnabled =
-      await this.consentsService.getUserMarketingConsent(userId);
+  async getMarketingConsent(@Param('userId') userId: string): Promise<{ isMarketingEnabled: boolean }> {
+    const isMarketingEnabled = await this.consentsService.getUserMarketingConsent(userId);
     return { isMarketingEnabled };
   }
 

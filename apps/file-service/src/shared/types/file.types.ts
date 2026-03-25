@@ -11,4 +11,3 @@ export type NewFileReference = InferInsertModel<typeof fileReferences>;
 export type FileContext = InferSelectModel<typeof fileContexts>;
 export type NewFileContext = InferInsertModel<typeof fileContexts>;
 export type UpdateFileContext = Partial<Omit<NewFileContext, 'id' | 'createdAt'>>;
-

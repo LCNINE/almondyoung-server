@@ -12,14 +12,7 @@ import {
   Patch,
   HttpCode,
 } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiParam,
-  ApiQuery,
-  ApiBody,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { ProductCategoriesService } from './categories.service';
 import {
   CreateCategoryDto,
@@ -42,9 +35,7 @@ import { CategoryMapper } from './mappers';
 @ApiTags('Categories')
 @Controller('categories')
 export class ProductCategoriesController {
-  constructor(
-    private readonly productCategoriesService: ProductCategoriesService,
-  ) { }
+  constructor(private readonly productCategoriesService: ProductCategoriesService) {}
 
   @Post()
   @ApiOperation({
@@ -59,12 +50,8 @@ export class ProductCategoriesController {
   })
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
   @ApiResponse({ status: 409, description: '이미 존재하는 카테고리명' })
-  async createCategory(
-    @Body() createCategoryDto: CreateCategoryDto,
-  ): Promise<CategoryResponseDto> {
-    return this.productCategoriesService.createCategory(
-      createCategoryDto,
-    );
+  async createCategory(@Body() createCategoryDto: CreateCategoryDto): Promise<CategoryResponseDto> {
+    return this.productCategoriesService.createCategory(createCategoryDto);
   }
 
   @Put(':id')
@@ -85,17 +72,13 @@ export class ProductCategoriesController {
     @Param('id') id: string,
     @Body() updateCategoryDto: UpdateCategoryDto,
   ): Promise<CategoryResponseDto> {
-    return this.productCategoriesService.updateCategory(
-      id,
-      updateCategoryDto,
-    );
+    return this.productCategoriesService.updateCategory(id, updateCategoryDto);
   }
 
   @Delete(':id')
   @ApiOperation({
     summary: '카테고리 삭제',
-    description:
-      '카테고리를 삭제합니다. 해당 카테고리의 제품들을 다른 카테고리로 이동할 수 있습니다.',
+    description: '카테고리를 삭제합니다. 해당 카테고리의 제품들을 다른 카테고리로 이동할 수 있습니다.',
   })
   @ApiParam({ name: 'id', description: '삭제할 카테고리 ID' })
   @ApiQuery({
@@ -109,10 +92,7 @@ export class ProductCategoriesController {
     status: 400,
     description: '하위 카테고리가 존재하여 삭제할 수 없음',
   })
-  async deleteCategory(
-    @Param('id') id: string,
-    @Query('moveProductsTo') moveProductsTo?: string,
-  ): Promise<void> {
+  async deleteCategory(@Param('id') id: string, @Query('moveProductsTo') moveProductsTo?: string): Promise<void> {
     return this.productCategoriesService.deleteCategory(id, moveProductsTo);
   }
 
@@ -128,12 +108,8 @@ export class ProductCategoriesController {
     type: CategoryDetailResponseDto,
   })
   @ApiResponse({ status: 404, description: '카테고리를 찾을 수 없음' })
-  async getCategoryById(
-    @Param('id') id: string,
-  ): Promise<CategoryDetailResponseDto> {
-    return this.productCategoriesService.getCategoryById(
-      id,
-    );
+  async getCategoryById(@Param('id') id: string): Promise<CategoryDetailResponseDto> {
+    return this.productCategoriesService.getCategoryById(id);
   }
 
   @Get()
@@ -152,9 +128,7 @@ export class ProductCategoriesController {
     description: '카테고리 트리 조회 성공',
     type: CategoryTreeResponseDto,
   })
-  async getCategoryTree(
-    @Query('maxDepth') maxDepth?: number,
-  ): Promise<CategoryTreeResponseDto> {
+  async getCategoryTree(@Query('maxDepth') maxDepth?: number): Promise<CategoryTreeResponseDto> {
     return this.productCategoriesService.getCategoryTree(maxDepth);
   }
 
@@ -170,12 +144,8 @@ export class ProductCategoriesController {
     type: [CategoryResponseDto],
   })
   @ApiResponse({ status: 404, description: '부모 카테고리를 찾을 수 없음' })
-  async getChildCategories(
-    @Param('id') id: string,
-  ): Promise<CategoryResponseDto[]> {
-    return this.productCategoriesService.getChildCategories(
-      id,
-    );
+  async getChildCategories(@Param('id') id: string): Promise<CategoryResponseDto[]> {
+    return this.productCategoriesService.getChildCategories(id);
   }
 
   @Get(':id/path')
@@ -190,12 +160,8 @@ export class ProductCategoriesController {
     type: CategoryPathResponseDto,
   })
   @ApiResponse({ status: 404, description: '카테고리를 찾을 수 없음' })
-  async getCategoryPath(
-    @Param('id') id: string,
-  ): Promise<CategoryPathResponseDto> {
-    return this.productCategoriesService.getCategoryPath(
-      id,
-    );
+  async getCategoryPath(@Param('id') id: string): Promise<CategoryPathResponseDto> {
+    return this.productCategoriesService.getCategoryPath(id);
   }
 
   @Put(':id/move')
@@ -223,10 +189,7 @@ export class ProductCategoriesController {
     @Param('id') id: string,
     @Query('newParentId') newParentId?: string,
   ): Promise<CategoryResponseDto> {
-    return this.productCategoriesService.moveCategory(
-      id,
-      newParentId,
-    );
+    return this.productCategoriesService.moveCategory(id, newParentId);
   }
 
   @Put(':id/products')
@@ -251,16 +214,10 @@ export class ProductCategoriesController {
     @Body() dto: MoveProductsToCategoryDto,
   ): Promise<{ message: string; movedCount: number }> {
     if (!dto.versionIds || dto.versionIds.length === 0) {
-      throw new HttpException(
-        'versionIds are required',
-        HttpStatus.BAD_REQUEST,
-      );
+      throw new HttpException('versionIds are required', HttpStatus.BAD_REQUEST);
     }
 
-    await this.productCategoriesService.moveProductsToCategory(
-      dto.versionIds,
-      categoryId,
-    );
+    await this.productCategoriesService.moveProductsToCategory(dto.versionIds, categoryId);
 
     return {
       message: 'Products moved successfully',
@@ -292,16 +249,10 @@ export class ProductCategoriesController {
     @Body() dto: AddProductsToCategoryDto,
   ): Promise<{ message: string; addedCount: number }> {
     if (!dto.versionIds || dto.versionIds.length === 0) {
-      throw new HttpException(
-        'versionIds are required',
-        HttpStatus.BAD_REQUEST,
-      );
+      throw new HttpException('versionIds are required', HttpStatus.BAD_REQUEST);
     }
 
-    await this.productCategoriesService.addProductsToCategory(
-      dto.versionIds,
-      categoryId,
-    );
+    await this.productCategoriesService.addProductsToCategory(dto.versionIds, categoryId);
 
     return {
       message: 'Products added successfully',
@@ -328,10 +279,7 @@ export class ProductCategoriesController {
     @Param('id') categoryId: string,
     @Body() dto: UpdateDisplaySettingsDto,
   ): Promise<CategoryResponseDto> {
-    return this.productCategoriesService.updateDisplaySettings(
-      categoryId,
-      dto,
-    );
+    return this.productCategoriesService.updateDisplaySettings(categoryId, dto);
   }
 
   @Patch(':id/seo')
@@ -351,10 +299,7 @@ export class ProductCategoriesController {
     @Param('id') categoryId: string,
     @Body() dto: UpdateSeoConfigDto,
   ): Promise<CategoryResponseDto> {
-    return this.productCategoriesService.updateSeoConfig(
-      categoryId,
-      dto,
-    );
+    return this.productCategoriesService.updateSeoConfig(categoryId, dto);
   }
 
   @Patch(':id/template')
@@ -374,10 +319,7 @@ export class ProductCategoriesController {
     @Param('id') categoryId: string,
     @Body() dto: UpdateTemplateConfigDto,
   ): Promise<CategoryResponseDto> {
-    return this.productCategoriesService.updateTemplateConfig(
-      categoryId,
-      dto,
-    );
+    return this.productCategoriesService.updateTemplateConfig(categoryId, dto);
   }
 
   @Patch(':id/visibility')
@@ -397,10 +339,7 @@ export class ProductCategoriesController {
     @Param('id') categoryId: string,
     @Body() dto: UpdateVisibilityDto,
   ): Promise<CategoryResponseDto> {
-    return this.productCategoriesService.updateVisibility(
-      categoryId,
-      dto.visible,
-    );
+    return this.productCategoriesService.updateVisibility(categoryId, dto.visible);
   }
 
   // ===== TAG GROUP MANAGEMENT =====
@@ -436,10 +375,7 @@ export class ProductCategoriesController {
     @Param('categoryId') categoryId: string,
     @Body() dto: ReplaceTagGroupLinksDto,
   ): Promise<void> {
-    await this.productCategoriesService.replaceTagGroupLinks(
-      categoryId,
-      dto.links,
-    );
+    await this.productCategoriesService.replaceTagGroupLinks(categoryId, dto.links);
   }
 
   @Get(':categoryId/tag-groups')
@@ -461,9 +397,7 @@ export class ProductCategoriesController {
     status: HttpStatus.NOT_FOUND,
     description: '카테고리를 찾을 수 없음',
   })
-  async getCategoryTagGroups(
-    @Param('categoryId') categoryId: string,
-  ): Promise<CategoryTagGroupsResponseDto> {
+  async getCategoryTagGroups(@Param('categoryId') categoryId: string): Promise<CategoryTagGroupsResponseDto> {
     const entity = await this.productCategoriesService.getCategoryTagGroups(categoryId);
     return CategoryMapper.toCategoryTagGroupsDto(entity);
   }

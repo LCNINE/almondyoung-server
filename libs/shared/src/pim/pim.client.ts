@@ -1,7 +1,11 @@
 import { PimClientPort } from './pim.port';
 
 export class PimHttpClient implements PimClientPort {
-  constructor(private readonly baseURL: string, private readonly apiKey?: string, private readonly timeoutMs: number = 10000) {}
+  constructor(
+    private readonly baseURL: string,
+    private readonly apiKey?: string,
+    private readonly timeoutMs: number = 10000,
+  ) {}
 
   private async withRetry<T>(fn: () => Promise<T>, retries = 2, baseDelayMs = 300): Promise<T> {
     let attempt = 0;
@@ -11,7 +15,7 @@ export class PimHttpClient implements PimClientPort {
         return await fn();
       } catch (err: any) {
         lastErr = err;
-        const status = (err as any)?.status;
+        const status = err?.status;
         const retryable = !status || (status >= 500 && status < 600);
         if (!retryable || attempt === retries) break;
         const delay = baseDelayMs * Math.pow(2, attempt);
@@ -47,11 +51,13 @@ export class PimHttpClient implements PimClientPort {
   }
 
   async createMaster(input: any, idempotencyKey?: string): Promise<{ masterId: string }> {
-    const data = await this.withRetry(() => this.request<{ id?: string; masterId?: string }>('/masters', {
-      method: 'POST',
-      body: JSON.stringify(input),
-      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } as any : undefined,
-    }));
+    const data = await this.withRetry(() =>
+      this.request<{ id?: string; masterId?: string }>('/masters', {
+        method: 'POST',
+        body: JSON.stringify(input),
+        headers: idempotencyKey ? ({ 'Idempotency-Key': idempotencyKey } as any) : undefined,
+      }),
+    );
     return { masterId: data.id || (data.masterId as string) };
   }
 
@@ -67,5 +73,3 @@ export class PimHttpClient implements PimClientPort {
     await this.withRetry(() => this.request<void>(`/masters/${masterId}`, { method: 'DELETE' }));
   }
 }
-
-

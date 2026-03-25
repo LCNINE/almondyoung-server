@@ -180,10 +180,7 @@ export const updateChannelProductName = async (
   id: string,
   data: UpdateChannelProductNameDto
 ): Promise<void> => {
-  await client.put(
-    `${PIM_BASE_URL}/channel-products/${id}/name`,
-    data
-  );
+  await client.put(`${PIM_BASE_URL}/channel-products/${id}/name`, data);
 };
 
 /**
@@ -194,10 +191,7 @@ export const updateChannelProductStatus = async (
   id: string,
   data: UpdateChannelProductStatusDto
 ): Promise<void> => {
-  await client.put(
-    `${PIM_BASE_URL}/channel-products/${id}/status`,
-    data
-  );
+  await client.put(`${PIM_BASE_URL}/channel-products/${id}/status`, data);
 };
 
 // 채널별 제품 클라이언트 객체

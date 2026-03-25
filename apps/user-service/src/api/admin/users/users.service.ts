@@ -44,36 +44,25 @@ export class UsersService {
       const limit = Math.min(filters?.limit || 20, 100);
       const offset = (page - 1) * limit;
       const sortBy = filters?.sort || 'createdAt';
-      const sortOrder = (filters?.order || 'desc') as 'asc' | 'desc';
+      const sortOrder = filters?.order || 'desc';
 
       const conditions = [] as any[];
       if (filters?.userId) conditions.push(eq(schema.users.id, filters.userId));
-      if (filters?.username)
-        conditions.push(eq(schema.users.username, filters.username));
-      if (filters?.email)
-        conditions.push(eq(schema.users.email, filters.email));
+      if (filters?.username) conditions.push(eq(schema.users.username, filters.username));
+      if (filters?.email) conditions.push(eq(schema.users.email, filters.email));
       if (filters?.roleName) {
         const roleName = filters.roleName.trim();
         if (roleName.length > 0) {
           const userIdsByRoleQuery = client
             .select({ userId: schema.userRoleAssignments.userId })
             .from(schema.userRoleAssignments)
-            .innerJoin(
-              schema.roles,
-              eq(schema.userRoleAssignments.roleId, schema.roles.roleId),
-            )
-            .where(
-              and(
-                eq(schema.roles.name, roleName),
-                isNull(schema.userRoleAssignments.expiresAt),
-              ),
-            );
+            .innerJoin(schema.roles, eq(schema.userRoleAssignments.roleId, schema.roles.roleId))
+            .where(and(eq(schema.roles.name, roleName), isNull(schema.userRoleAssignments.expiresAt)));
           conditions.push(inArray(schema.users.id, userIdsByRoleQuery));
         }
       }
 
-      const whereClause =
-        conditions.length > 0 ? and(...conditions) : undefined;
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
       // total count
       const countQuery = client.select({ count: count() }).from(schema.users);
@@ -83,10 +72,7 @@ export class UsersService {
       const [{ count: total }] = await countQuery;
 
       // data query
-      const orderExpr =
-        sortOrder === 'asc'
-          ? asc((schema.users as any)[sortBy])
-          : desc((schema.users as any)[sortBy]);
+      const orderExpr = sortOrder === 'asc' ? asc((schema.users as any)[sortBy]) : desc((schema.users as any)[sortBy]);
 
       const dataQuery = client
         .select({
@@ -120,15 +106,9 @@ export class UsersService {
                 roleName: schema.roles.name,
               })
               .from(schema.userRoleAssignments)
-              .innerJoin(
-                schema.roles,
-                eq(schema.userRoleAssignments.roleId, schema.roles.roleId),
-              )
+              .innerJoin(schema.roles, eq(schema.userRoleAssignments.roleId, schema.roles.roleId))
               .where(
-                and(
-                  inArray(schema.userRoleAssignments.userId, userIds),
-                  isNull(schema.userRoleAssignments.expiresAt),
-                ),
+                and(inArray(schema.userRoleAssignments.userId, userIds), isNull(schema.userRoleAssignments.expiresAt)),
               )
           : [];
 
@@ -146,9 +126,7 @@ export class UsersService {
 
       return { data, total, page, limit };
     } catch (error) {
-      throw new BadRequestException(
-        error.message ?? '사용자 조회 중 오류가 발생했습니다.',
-      );
+      throw new BadRequestException(error.message ?? '사용자 조회 중 오류가 발생했습니다.');
     }
   }
 
@@ -183,23 +161,13 @@ export class UsersService {
     const roleRows = await client
       .select({ roleName: schema.roles.name })
       .from(schema.userRoleAssignments)
-      .innerJoin(
-        schema.roles,
-        eq(schema.userRoleAssignments.roleId, schema.roles.roleId),
-      )
-      .where(
-        and(
-          eq(schema.userRoleAssignments.userId, userId),
-          isNull(schema.userRoleAssignments.expiresAt),
-        ),
-      );
+      .innerJoin(schema.roles, eq(schema.userRoleAssignments.roleId, schema.roles.roleId))
+      .where(and(eq(schema.userRoleAssignments.userId, userId), isNull(schema.userRoleAssignments.expiresAt)));
 
     return {
       ...user,
       roles: roleRows.map((r) => r.roleName),
-      profile: user.profile
-        ? { ...user.profile, address: user.profile.address as AddressDto | null }
-        : null,
+      profile: user.profile ? { ...user.profile, address: user.profile.address as AddressDto | null } : null,
     };
   }
 
@@ -230,15 +198,9 @@ export class UsersService {
     return result ?? null;
   }
 
-  async getUserConsentByUserId(
-    userId: string,
-    tx?: DbTransaction,
-  ): Promise<UserConsent | null> {
+  async getUserConsentByUserId(userId: string, tx?: DbTransaction): Promise<UserConsent | null> {
     const client = this.getClient(tx);
-    const [result] = await client
-      .select()
-      .from(schema.userConsents)
-      .where(eq(schema.userConsents.userId, userId));
+    const [result] = await client.select().from(schema.userConsents).where(eq(schema.userConsents.userId, userId));
     return result ?? null;
   }
 
@@ -260,11 +222,7 @@ export class UsersService {
       .from(schema.userConsents)
       .limit(limit)
       .offset((page - 1) * limit)
-      .orderBy(
-        order === 'asc'
-          ? asc(schema.userConsents[sortBy])
-          : desc(schema.userConsents[sortBy]),
-      );
+      .orderBy(order === 'asc' ? asc(schema.userConsents[sortBy]) : desc(schema.userConsents[sortBy]));
     return result;
   }
 }

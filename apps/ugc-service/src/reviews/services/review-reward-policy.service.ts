@@ -46,10 +46,7 @@ export class ReviewRewardPolicyService {
     const reviewType: 'TEXT' | 'PHOTO' = mediaCount > 0 ? 'PHOTO' : 'TEXT';
 
     const matched = policies.find(
-      (p) =>
-        p.reviewType === reviewType &&
-        contentLength >= p.minContentLength &&
-        mediaCount >= p.minMediaCount,
+      (p) => p.reviewType === reviewType && contentLength >= p.minContentLength && mediaCount >= p.minMediaCount,
     );
 
     if (!matched) {

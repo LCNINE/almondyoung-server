@@ -4,7 +4,6 @@ import { DbService } from '@app/db';
 import { sql, and, eq, gt } from 'drizzle-orm';
 import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
 
-
 export interface SkuLocationInfo {
   locationId: string;
   locationCode: string;
@@ -18,21 +17,22 @@ export interface SkuLocationInfo {
 
 @Injectable()
 export class InventoryQueryService {
-  constructor(
-    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
-  ) {}
+  constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
 
   private get db() {
     return this.dbService.db;
   }
 
-  async getAvailableOnHand(filter: { skuId: string; warehouseId?: string; locationId?: string }, tx?: DbTx): Promise<number> {
+  async getAvailableOnHand(
+    filter: { skuId: string; warehouseId?: string; locationId?: string },
+    tx?: DbTx,
+  ): Promise<number> {
     const db = tx ?? this.db;
     const where = and(
       eq(wmsTables.stockLedgers.skuId, filter.skuId),
       filter.warehouseId ? eq(wmsTables.stockLedgers.warehouseId, filter.warehouseId) : undefined,
       filter.locationId ? eq(wmsTables.stockLedgers.locationId, filter.locationId) : undefined,
-      eq(wmsTables.stockLedgers.stockState, 'ON_HAND')
+      eq(wmsTables.stockLedgers.stockState, 'ON_HAND'),
     );
     const [row] = await db
       .select({ qty: sql<number>`coalesce(sum(${wmsTables.stockLedgers.qty}),0)` })
@@ -56,12 +56,12 @@ export class InventoryQueryService {
         eq(wmsTables.stockLedgers.skuId, skuId),
         eq(wmsTables.stockLedgers.warehouseId, warehouseId),
         eq(wmsTables.stockLedgers.stockState, 'ON_HAND'),
-        gt(wmsTables.stockLedgers.qty, 0)
-      )
+        gt(wmsTables.stockLedgers.qty, 0),
+      ),
     });
 
     // TODO: Join with locations table when relations are properly set up
-    return stockLedgers.map(ledger => ({
+    return stockLedgers.map((ledger) => ({
       locationId: ledger.locationId,
       locationCode: `LOC-${ledger.locationId.slice(-8)}`, // Simple fallback until location relation is fixed
       warehouseId: ledger.warehouseId,
@@ -69,9 +69,7 @@ export class InventoryQueryService {
       zone: undefined, // Will be populated when location relation is available
       aisle: undefined,
       bay: undefined,
-      level: undefined
+      level: undefined,
     }));
   }
 }
-
-

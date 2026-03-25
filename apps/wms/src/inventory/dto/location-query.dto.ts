@@ -7,7 +7,7 @@ export class LocationQueryDto {
   @ApiPropertyOptional({
     description: '로케이션 타입 필터',
     enum: ['standard', 'zone'],
-    example: 'standard'
+    example: 'standard',
   })
   @IsOptional()
   @IsEnum(['standard', 'zone'])
@@ -39,7 +39,7 @@ export class LocationQueryDto {
   @ApiPropertyOptional({
     description: '페이지 번호 (1부터 시작)',
     example: 1,
-    default: 1
+    default: 1,
   })
   @IsOptional()
   @Transform(({ value }) => parseInt(value) || 1)
@@ -50,7 +50,7 @@ export class LocationQueryDto {
   @ApiPropertyOptional({
     description: '페이지당 항목 수',
     example: 20,
-    default: 20
+    default: 20,
   })
   @IsOptional()
   @Transform(({ value }) => parseInt(value) || 20)
@@ -62,7 +62,7 @@ export class LocationQueryDto {
   @ApiPropertyOptional({
     description: '정렬 필드',
     enum: ['code', 'createdAt', 'columnName', 'rackNumber'],
-    example: 'code'
+    example: 'code',
   })
   @IsOptional()
   @IsEnum(['code', 'createdAt', 'columnName', 'rackNumber'])
@@ -71,7 +71,7 @@ export class LocationQueryDto {
   @ApiPropertyOptional({
     description: '정렬 순서',
     enum: ['asc', 'desc'],
-    example: 'asc'
+    example: 'asc',
   })
   @IsOptional()
   @IsEnum(['asc', 'desc'])

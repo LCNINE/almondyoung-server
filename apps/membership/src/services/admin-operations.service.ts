@@ -57,11 +57,7 @@ export class AdminOperationsService {
     return this.planService.updatePlan(planId, dto, adminId);
   }
 
-  async deactivatePlan(
-    planId: string,
-    dto: DeactivatePlanRequest,
-    adminId: string,
-  ) {
+  async deactivatePlan(planId: string, dto: DeactivatePlanRequest, adminId: string) {
     return this.planService.deactivatePlan(planId, dto.reason, adminId);
   }
 
@@ -106,12 +102,7 @@ export class AdminOperationsService {
    * @param adminId - 관리자 ID
    */
   async adjustUserEntitlement(dto: ExtendEntitlementRequest, adminId: string) {
-    return await this.entitlementService.adjustEntitlement(
-      dto.userId,
-      dto.days,
-      dto.reason,
-      adminId,
-    );
+    return await this.entitlementService.adjustEntitlement(dto.userId, dto.days, dto.reason, adminId);
   }
 
   /**

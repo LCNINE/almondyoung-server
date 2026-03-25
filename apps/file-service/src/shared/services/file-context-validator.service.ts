@@ -10,9 +10,7 @@ export class FileContextValidator {
     const { allowPublic, allowPrivate } = context;
 
     if (!allowPublic && !allowPrivate) {
-      throw new BadRequestException(
-        `${context.name} does not allow any uploads`,
-      );
+      throw new BadRequestException(`${context.name} does not allow any uploads`);
     }
 
     if (allowPublic && !allowPrivate) {
@@ -26,30 +24,21 @@ export class FileContextValidator {
     return { required: true };
   }
 
-  resolveIsPublic(
-    context: FileContext,
-    requestedIsPublic?: boolean,
-  ): boolean {
+  resolveIsPublic(context: FileContext, requestedIsPublic?: boolean): boolean {
     const policy = this.getPublicAccessPolicy(context);
 
     if (policy.required && requestedIsPublic === undefined) {
-      throw new BadRequestException(
-        `${context.name} requires explicit isPublic value`,
-      );
+      throw new BadRequestException(`${context.name} requires explicit isPublic value`);
     }
 
     const isPublic = requestedIsPublic ?? policy.default!;
 
     if (isPublic && !context.allowPublic) {
-      throw new BadRequestException(
-        `${context.name} does not allow public uploads`,
-      );
+      throw new BadRequestException(`${context.name} does not allow public uploads`);
     }
 
     if (!isPublic && !context.allowPrivate) {
-      throw new BadRequestException(
-        `${context.name} does not allow private uploads`,
-      );
+      throw new BadRequestException(`${context.name} does not allow private uploads`);
     }
 
     return isPublic;
@@ -88,15 +77,13 @@ export class FileContextValidator {
       return;
     }
 
-    const isAllowed = context.allowedMimeTypes.some(pattern =>
-      this.matchesMimeType(mimeType, pattern),
-    );
+    const isAllowed = context.allowedMimeTypes.some((pattern) => this.matchesMimeType(mimeType, pattern));
 
     if (!isAllowed) {
       throw new BadRequestException(
         `Invalid file type for ${context.name}. ` +
-        `Allowed: ${context.allowedMimeTypes.join(', ')}. ` +
-        `Got: ${mimeType}`,
+          `Allowed: ${context.allowedMimeTypes.join(', ')}. ` +
+          `Got: ${mimeType}`,
       );
     }
   }
@@ -109,18 +96,14 @@ export class FileContextValidator {
       return true;
     }
 
-    return context.allowedMimeTypes.some(pattern =>
-      this.matchesMimeType(mimeType, pattern),
-    );
+    return context.allowedMimeTypes.some((pattern) => this.matchesMimeType(mimeType, pattern));
   }
 
   validateFileSize(context: FileContext, size: number): void {
     if (size > context.maxFileSize) {
       throw new BadRequestException(
-        `File size too large for ${context.name}. ` +
-        `Max: ${(context.maxFileSize / 1024 / 1024).toFixed(1)}MB`,
+        `File size too large for ${context.name}. ` + `Max: ${(context.maxFileSize / 1024 / 1024).toFixed(1)}MB`,
       );
     }
   }
 }
-

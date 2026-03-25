@@ -43,4 +43,3 @@ export class CreateTagGroupDto {
   @IsBoolean()
   isActive?: boolean;
 }
-

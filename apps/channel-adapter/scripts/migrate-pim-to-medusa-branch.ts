@@ -39,7 +39,11 @@ interface Args {
 function parseArgs(): Args {
   const args = process.argv.slice(2);
   const getValue = (name: string): string | undefined =>
-    args.find((v) => v.startsWith(`--${name}=`))?.split('=').slice(1).join('=');
+    args
+      .find((v) => v.startsWith(`--${name}=`))
+      ?.split('=')
+      .slice(1)
+      .join('=');
 
   const batchSize = Number(getValue('batch-size') || '100');
   const limitRaw = getValue('limit');
@@ -79,12 +83,14 @@ async function needsInventoryBackfill(
   medusaDb: postgres.Sql,
   handle: string,
 ): Promise<{ needsBackfill: boolean; reason: string }> {
-  const rows = await medusaDb<{
-    product_id: string;
-    variant_cnt: number;
-    managed_true_cnt: number;
-    linked_cnt: number;
-  }[]>`
+  const rows = await medusaDb<
+    {
+      product_id: string;
+      variant_cnt: number;
+      managed_true_cnt: number;
+      linked_cnt: number;
+    }[]
+  >`
     SELECT
       p.id AS product_id,
       COUNT(v.variant_id)::int AS variant_cnt,
@@ -170,10 +176,10 @@ async function main(): Promise<void> {
   const syncService = new PimMedusaSyncService(medusaClient, mappingRepo);
   const medusaDbClient = options.onlyMissingInventory
     ? postgres(process.env.MEDUSA_DB_URL!, {
-      max: 3,
-      idle_timeout: 20,
-      connect_timeout: 10,
-    })
+        max: 3,
+        idle_timeout: 20,
+        connect_timeout: 10,
+      })
     : null;
 
   let offset = options.offset;

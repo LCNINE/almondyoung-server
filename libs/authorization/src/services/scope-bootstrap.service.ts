@@ -18,13 +18,8 @@ export class ScopeBootstrapService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    this.logger.log(
-      `Initializing scopes for ${this.options.microserviceName}...`,
-    );
-    await this.authService.ensureScopesExist(
-      this.options.microserviceName,
-      this.options.scopes,
-    );
+    this.logger.log(`Initializing scopes for ${this.options.microserviceName}...`);
+    await this.authService.ensureScopesExist(this.options.microserviceName, this.options.scopes);
     this.logger.log('Scope initialization complete');
   }
 }

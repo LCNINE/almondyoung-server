@@ -1,28 +1,12 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Delete,
-  Param,
-  Body,
-  HttpCode,
-  HttpStatus,
-} from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, Body, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { SupplierCategoriesService } from '../services/supplier-categories.service';
-import {
-  CreateSupplierCategoryDto,
-  UpdateSupplierCategoryDto,
-  SupplierCategoryResponseDto,
-} from '../dto';
+import { CreateSupplierCategoryDto, UpdateSupplierCategoryDto, SupplierCategoryResponseDto } from '../dto';
 
 @ApiTags('Supplier Categories')
 @Controller('supplier-categories')
 export class SupplierCategoriesController {
-  constructor(
-    private readonly supplierCategoriesService: SupplierCategoriesService,
-  ) {}
+  constructor(private readonly supplierCategoriesService: SupplierCategoriesService) {}
 
   @Get()
   @ApiOperation({ summary: 'Get all supplier categories' })
@@ -62,9 +46,7 @@ export class SupplierCategoriesController {
     status: 400,
     description: 'Invalid input data',
   })
-  async createCategory(
-    @Body() createDto: CreateSupplierCategoryDto,
-  ): Promise<SupplierCategoryResponseDto> {
+  async createCategory(@Body() createDto: CreateSupplierCategoryDto): Promise<SupplierCategoryResponseDto> {
     return this.supplierCategoriesService.createCategory(createDto);
   }
 
@@ -107,4 +89,3 @@ export class SupplierCategoriesController {
     return this.supplierCategoriesService.deleteCategory(id);
   }
 }
-

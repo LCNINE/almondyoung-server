@@ -12,18 +12,16 @@ const IssueInvoiceSchema = z.object({
   senderName: z.string().optional(),
   senderPhone: z.string().optional(),
   deliveryMessage: z.string().optional(),
-  issueMethod: z.enum(['goodsflow', 'direct', 'self']).default('goodsflow')
+  issueMethod: z.enum(['goodsflow', 'direct', 'self']).default('goodsflow'),
 });
 
 const PrintInvoicesSchema = z.object({
-  invoiceIds: z.array(z.string().uuid()).min(1)
+  invoiceIds: z.array(z.string().uuid()).min(1),
 });
 
 @Controller('invoices')
 export class InvoiceController {
-  constructor(
-    private readonly invoiceService: InvoiceService
-  ) {}
+  constructor(private readonly invoiceService: InvoiceService) {}
 
   @Post()
   @UsePipes(new ZodValidationPipe(IssueInvoiceSchema))

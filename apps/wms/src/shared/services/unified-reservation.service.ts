@@ -44,9 +44,7 @@ export interface ReservationSummary {
 export class UnifiedReservationService {
   private readonly logger = new Logger(UnifiedReservationService.name);
 
-  constructor(
-    private readonly db: DbService<typeof wmsSchema>,
-  ) { }
+  constructor(private readonly db: DbService<typeof wmsSchema>) {}
 
   private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> {
     return tx ? fn(tx) : this.db.db.transaction(fn);
@@ -61,9 +59,7 @@ export class UnifiedReservationService {
       const availableStock = await this.getAvailableStock(dto.skuId, dto.warehouseId, trx);
 
       if (availableStock < dto.quantity) {
-        throw new ConflictException(
-          `Insufficient stock. Available: ${availableStock}, Requested: ${dto.quantity}`
-        );
+        throw new ConflictException(`Insufficient stock. Available: ${availableStock}, Requested: ${dto.quantity}`);
       }
 
       // 2. 예약 생성
@@ -97,7 +93,7 @@ export class UnifiedReservationService {
         .update(wmsTables.stockReservations)
         .set({
           status: 'released',
-          updatedAt: new Date()
+          updatedAt: new Date(),
         })
         .where(eq(wmsTables.stockReservations.id, id))
         .returning();
@@ -117,7 +113,7 @@ export class UnifiedReservationService {
     fromReservationId: string,
     toTargetType: 'FULFILLMENT_ORDER' | 'MOVEMENT_TASK',
     toTargetId: string,
-    tx?: DbTx
+    tx?: DbTx,
   ): Promise<Reservation> {
     return this.inTx(async (trx) => {
       // 기존 예약 해제
@@ -125,7 +121,7 @@ export class UnifiedReservationService {
 
       // 기존 예약 정보 조회
       const oldReservation = await trx.query.stockReservations.findFirst({
-        where: eq(wmsTables.stockReservations.id, fromReservationId)
+        where: eq(wmsTables.stockReservations.id, fromReservationId),
       });
 
       if (!oldReservation) {
@@ -133,19 +129,20 @@ export class UnifiedReservationService {
       }
 
       // 새 예약 생성
-      const newReservation = await this.reserveStock({
-        targetType: toTargetType,
-        targetId: toTargetId,
-        skuId: oldReservation.skuId,
-        warehouseId: oldReservation.warehouseId,
-        quantity: oldReservation.quantity,
-        fulfillmentOrderItemId: oldReservation.fulfillmentOrderItemId || undefined,
-        reason: `Transferred from ${oldReservation.targetType}:${oldReservation.targetId}`,
-      }, trx);
-
-      this.logger.log(
-        `Transferred reservation ${fromReservationId} to ${toTargetType}:${toTargetId}`
+      const newReservation = await this.reserveStock(
+        {
+          targetType: toTargetType,
+          targetId: toTargetId,
+          skuId: oldReservation.skuId,
+          warehouseId: oldReservation.warehouseId,
+          quantity: oldReservation.quantity,
+          fulfillmentOrderItemId: oldReservation.fulfillmentOrderItemId || undefined,
+          reason: `Transferred from ${oldReservation.targetType}:${oldReservation.targetId}`,
+        },
+        trx,
       );
+
+      this.logger.log(`Transferred reservation ${fromReservationId} to ${toTargetType}:${toTargetId}`);
 
       return newReservation;
     }, tx);
@@ -154,19 +151,15 @@ export class UnifiedReservationService {
   /**
    * 특정 Target의 예약 현황 조회 (FO/Task가 어떤 SKU를 예약했는지)
    */
-  async getReservationsByTarget(
-    targetType: string,
-    targetId: string,
-    tx?: DbTx
-  ): Promise<Reservation[]> {
+  async getReservationsByTarget(targetType: string, targetId: string, tx?: DbTx): Promise<Reservation[]> {
     const db = tx ?? this.db.db;
 
     const reservations = await db.query.stockReservations.findMany({
       where: and(
         eq(wmsTables.stockReservations.targetType, targetType),
         eq(wmsTables.stockReservations.targetId, targetId),
-        eq(wmsTables.stockReservations.status, 'confirmed')
-      )
+        eq(wmsTables.stockReservations.status, 'confirmed'),
+      ),
     });
 
     return reservations satisfies Reservation[];
@@ -175,16 +168,12 @@ export class UnifiedReservationService {
   /**
    * 특정 SKU의 예약 현황 조회 (SKU가 어떤 FO/Task에 묶여있는지)
    */
-  async getReservationsBySku(
-    skuId: string,
-    warehouseId?: string,
-    tx?: DbTx
-  ): Promise<Reservation[]> {
+  async getReservationsBySku(skuId: string, warehouseId?: string, tx?: DbTx): Promise<Reservation[]> {
     const db = tx ?? this.db.db;
 
     const conditions = [
       eq(wmsTables.stockReservations.skuId, skuId),
-      eq(wmsTables.stockReservations.status, 'confirmed')
+      eq(wmsTables.stockReservations.status, 'confirmed'),
     ];
 
     if (warehouseId) {
@@ -192,7 +181,7 @@ export class UnifiedReservationService {
     }
 
     const reservations = await db.query.stockReservations.findMany({
-      where: and(...conditions)
+      where: and(...conditions),
     });
 
     return reservations satisfies Reservation[];
@@ -207,11 +196,13 @@ export class UnifiedReservationService {
     const result = await db
       .select({ totalReserved: sum(wmsTables.stockReservations.quantity) })
       .from(wmsTables.stockReservations)
-      .where(and(
-        eq(wmsTables.stockReservations.skuId, skuId),
-        eq(wmsTables.stockReservations.warehouseId, warehouseId),
-        eq(wmsTables.stockReservations.status, 'confirmed')
-      ));
+      .where(
+        and(
+          eq(wmsTables.stockReservations.skuId, skuId),
+          eq(wmsTables.stockReservations.warehouseId, warehouseId),
+          eq(wmsTables.stockReservations.status, 'confirmed'),
+        ),
+      );
 
     return Number(result[0]?.totalReserved || 0);
   }
@@ -225,8 +216,8 @@ export class UnifiedReservationService {
     const reservations = await db.query.stockReservations.findMany({
       where: and(
         eq(wmsTables.stockReservations.warehouseId, warehouseId),
-        eq(wmsTables.stockReservations.status, 'confirmed')
-      )
+        eq(wmsTables.stockReservations.status, 'confirmed'),
+      ),
     });
 
     // SKU별로 그룹화
@@ -240,7 +231,7 @@ export class UnifiedReservationService {
           skuId: reservation.skuId,
           warehouseId: reservation.warehouseId,
           totalReserved: 0,
-          byTarget: []
+          byTarget: [],
         });
       }
 
@@ -249,7 +240,7 @@ export class UnifiedReservationService {
       item.byTarget.push({
         targetType: reservation.targetType,
         targetId: reservation.targetId,
-        quantity: reservation.quantity
+        quantity: reservation.quantity,
       });
     }
 
@@ -266,11 +257,13 @@ export class UnifiedReservationService {
     const onHandResult = await db
       .select({ quantity: sum(wmsTables.stockLedgers.qty) })
       .from(wmsTables.stockLedgers)
-      .where(and(
-        eq(wmsTables.stockLedgers.skuId, skuId),
-        eq(wmsTables.stockLedgers.warehouseId, warehouseId),
-        eq(wmsTables.stockLedgers.stockState, 'ON_HAND')
-      ));
+      .where(
+        and(
+          eq(wmsTables.stockLedgers.skuId, skuId),
+          eq(wmsTables.stockLedgers.warehouseId, warehouseId),
+          eq(wmsTables.stockLedgers.stockState, 'ON_HAND'),
+        ),
+      );
 
     const onHand = Number(onHandResult[0]?.quantity || 0);
 
@@ -291,13 +284,15 @@ export class UnifiedReservationService {
         .update(wmsTables.stockReservations)
         .set({
           status: 'released',
-          updatedAt: now
+          updatedAt: now,
         })
-        .where(and(
-          eq(wmsTables.stockReservations.status, 'confirmed'),
-          isNotNull(wmsTables.stockReservations.timeoutAt),
-          lt(wmsTables.stockReservations.timeoutAt, now)
-        ))
+        .where(
+          and(
+            eq(wmsTables.stockReservations.status, 'confirmed'),
+            isNotNull(wmsTables.stockReservations.timeoutAt),
+            lt(wmsTables.stockReservations.timeoutAt, now),
+          ),
+        )
         .returning();
 
       this.logger.log(`Released ${result.length} expired reservations`);

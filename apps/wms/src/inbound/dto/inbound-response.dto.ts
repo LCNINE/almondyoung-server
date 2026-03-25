@@ -165,4 +165,3 @@ export class SimpleInboundResponseDto extends BaseInboundReceiptDto {
   })
   lines: InboundReceiptLineDto[];
 }
-

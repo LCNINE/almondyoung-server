@@ -12,7 +12,7 @@ export class DownloadService {
     private readonly storageService: StorageService,
     private readonly fileRepository: FileRepository,
     private readonly authorizationService: AuthorizationService,
-  ) { }
+  ) {}
 
   /**
    * Check if user has permission to access the file
@@ -101,4 +101,3 @@ export class DownloadService {
     return response;
   }
 }
-

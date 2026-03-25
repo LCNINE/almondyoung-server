@@ -43,4 +43,3 @@ export class UpdateTagGroupDto {
   @IsBoolean()
   isActive?: boolean;
 }
-

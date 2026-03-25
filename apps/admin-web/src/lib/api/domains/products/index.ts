@@ -8,20 +8,20 @@ import { channelProducts } from './channel-products.client';
 import { channels } from './channels.client';
 
 export const products = {
-    // Categories Management (PIM API)
-    categories,
+  // Categories Management (PIM API)
+  categories,
 
-    // Product Masters Management (PIM API)
-    masters,
+  // Product Masters Management (PIM API)
+  masters,
 
-    // Product Variants Management (PIM API)
-    variants,
+  // Product Variants Management (PIM API)
+  variants,
 
-    // Sales Channels Management (PIM API)
-    channels,
+  // Sales Channels Management (PIM API)
+  channels,
 
-    // Channel Products Management (PIM API)
-    channelProducts,
+  // Channel Products Management (PIM API)
+  channelProducts,
 };
 
 // 기존 호환성을 위한 별도 export

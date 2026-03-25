@@ -49,4 +49,4 @@ import { MetricsController } from './controllers/metrics.controller';
     TemplateVariableMapperService,
   ],
 })
-export class SharedModule { }
+export class SharedModule {}

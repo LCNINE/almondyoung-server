@@ -15,11 +15,9 @@ export class OpenSearchService implements OnModuleInit {
       this.configService.get<string>('ELASTICSEARCH_NODE') ||
       'http://localhost:9200';
     const username =
-      this.configService.get<string>('OPENSEARCH_USERNAME') ||
-      this.configService.get<string>('ELASTICSEARCH_USERNAME');
+      this.configService.get<string>('OPENSEARCH_USERNAME') || this.configService.get<string>('ELASTICSEARCH_USERNAME');
     const password =
-      this.configService.get<string>('OPENSEARCH_PASSWORD') ||
-      this.configService.get<string>('ELASTICSEARCH_PASSWORD');
+      this.configService.get<string>('OPENSEARCH_PASSWORD') || this.configService.get<string>('ELASTICSEARCH_PASSWORD');
 
     this.client = new Client({
       node,
@@ -44,17 +42,11 @@ export class OpenSearchService implements OnModuleInit {
   }
 
   getProductsIndex(): string {
-    return (
-      this.configService.get<string>('SEARCH_PRODUCTS_INDEX') ||
-      DEFAULT_PRODUCTS_INDEX
-    );
+    return this.configService.get<string>('SEARCH_PRODUCTS_INDEX') || DEFAULT_PRODUCTS_INDEX;
   }
 
   getQueryEventsIndex(): string {
-    return (
-      this.configService.get<string>('SEARCH_QUERY_EVENTS_INDEX') ||
-      DEFAULT_QUERY_EVENTS_INDEX
-    );
+    return this.configService.get<string>('SEARCH_QUERY_EVENTS_INDEX') || DEFAULT_QUERY_EVENTS_INDEX;
   }
 
   async ping(): Promise<boolean> {

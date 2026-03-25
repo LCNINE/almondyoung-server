@@ -8,13 +8,7 @@ import { PathBuilderService } from './path-builder.service';
 
 @Module({
   imports: [ConfigModule],
-  providers: [
-    S3StorageProvider,
-    LocalStorageProvider,
-    StorageProviderRegistry,
-    StorageService,
-    PathBuilderService,
-  ],
+  providers: [S3StorageProvider, LocalStorageProvider, StorageProviderRegistry, StorageService, PathBuilderService],
   exports: [StorageService, PathBuilderService],
 })
-export class StorageModule { }
+export class StorageModule {}

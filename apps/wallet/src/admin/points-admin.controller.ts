@@ -66,11 +66,7 @@ export class PointsAdminController {
   @Get('events')
   @ApiOperation({ summary: 'Get point events for a user (paginated)' })
   async getEvents(@Query() query: PointsEventListQueryDto) {
-    return this.service.getEventsPaginated(
-      query.userId,
-      query.page ?? 1,
-      query.limit ?? 20,
-    );
+    return this.service.getEventsPaginated(query.userId, query.page ?? 1, query.limit ?? 20);
   }
 
   @Post('earn')
@@ -84,11 +80,6 @@ export class PointsAdminController {
   @HttpCode(201)
   @ApiOperation({ summary: 'Cancel an EARN event (admin)' })
   async earnCancel(@Body() dto: EarnCancelDto) {
-    return this.service.earnCancel(
-      dto.userId,
-      dto.earnEventId,
-      dto.amount,
-      dto.reasonCode,
-    );
+    return this.service.earnCancel(dto.userId, dto.earnEventId, dto.amount, dto.reasonCode);
   }
 }

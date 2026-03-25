@@ -54,7 +54,7 @@ describeAPI(
   },
   global.__APP__,
   (apiDoc) => {
-    let mockedDate = new Date('2023-10-01T00:00:00Z');
+    const mockedDate = new Date('2023-10-01T00:00:00Z');
 
     beforeEach(() => {
       MockDate.set(mockedDate);
@@ -104,7 +104,7 @@ describeAPI(
   },
   global.__APP__,
   (apiDoc) => {
-    let mockedDate = new Date('2023-10-01T00:00:00Z');
+    const mockedDate = new Date('2023-10-01T00:00:00Z');
 
     beforeEach(() => {
       MockDate.set(mockedDate);
@@ -254,7 +254,7 @@ describeAPI(
   },
   global.__APP__,
   (apiDoc) => {
-    let mockedDate = new Date('2023-10-01T00:00:00Z');
+    const mockedDate = new Date('2023-10-01T00:00:00Z');
 
     beforeEach(() => {
       MockDate.set(mockedDate);
@@ -401,7 +401,7 @@ describeAPI(
   },
   global.__APP__,
   (apiDoc) => {
-    let mockedDate = new Date('2023-10-01T00:00:00Z');
+    const mockedDate = new Date('2023-10-01T00:00:00Z');
 
     beforeEach(() => {
       MockDate.set(mockedDate);
@@ -458,7 +458,7 @@ describeAPI(
   },
   global.__APP__,
   (apiDoc) => {
-    let mockedDate = new Date('2023-10-01T00:00:00Z');
+    const mockedDate = new Date('2023-10-01T00:00:00Z');
 
     beforeEach(() => {
       MockDate.set(mockedDate);
@@ -517,7 +517,7 @@ describeAPI(
   },
   global.__APP__,
   (apiDoc) => {
-    let mockedDate = new Date('2023-10-01T00:00:00Z');
+    const mockedDate = new Date('2023-10-01T00:00:00Z');
 
     beforeEach(() => {
       MockDate.set(mockedDate);

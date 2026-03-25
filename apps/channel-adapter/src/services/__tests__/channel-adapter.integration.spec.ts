@@ -64,9 +64,7 @@ describe('ChannelAdapterService (Integration)', () => {
           provide: ChannelAdapterFactory,
           useValue: {
             getAdapter: jest.fn().mockReturnValue(mockAdapter),
-            getSupportedChannels: jest
-              .fn()
-              .mockReturnValue(['naver_smartstore', 'coupang']),
+            getSupportedChannels: jest.fn().mockReturnValue(['naver_smartstore', 'coupang']),
           },
         },
         {
@@ -119,9 +117,7 @@ describe('ChannelAdapterService (Integration)', () => {
       expect(mockAdapter.syncFromChannel).toHaveBeenCalledWith('orders');
 
       // DB에 저장되었는지 확인
-      const histories = await dbService.db
-        .select()
-        .from(channelAdapterSchema.syncHistories);
+      const histories = await dbService.db.select().from(channelAdapterSchema.syncHistories);
 
       expect(histories.length).toBeGreaterThan(0);
     });
@@ -144,9 +140,7 @@ describe('ChannelAdapterService (Integration)', () => {
       expect(mockAdapter.syncToChannel).toHaveBeenCalledWith(payload);
 
       // 동기화 로그 확인
-      const histories = await dbService.db
-        .select()
-        .from(channelAdapterSchema.syncHistories);
+      const histories = await dbService.db.select().from(channelAdapterSchema.syncHistories);
 
       expect(histories.length).toBeGreaterThan(0);
     });
@@ -156,9 +150,7 @@ describe('ChannelAdapterService (Integration)', () => {
     it('1. 빈 이벤트 배열로 동기화 시 에러를 던져야 한다', async () => {
       mockAdapter.syncFromChannel.mockResolvedValue([]);
 
-      await expect(
-        service.poll('naver_smartstore', 'orders'),
-      ).rejects.toThrow();
+      await expect(service.poll('naver_smartstore', 'orders')).rejects.toThrow();
     });
 
     it('2. 유효한 이벤트는 정상 처리되어야 한다', async () => {
@@ -204,9 +196,9 @@ describe('ChannelAdapterService (Integration)', () => {
         orderId: 'ORDER-004',
       } as any;
 
-      await expect(
-        commandManager.execute('naver_smartstore', invalidCommand),
-      ).rejects.toThrow('Tracking information required');
+      await expect(commandManager.execute('naver_smartstore', invalidCommand)).rejects.toThrow(
+        'Tracking information required',
+      );
     });
 
     it('3. orderIds가 빈 배열이면 에러를 던져야 한다', async () => {
@@ -215,9 +207,7 @@ describe('ChannelAdapterService (Integration)', () => {
         orderIds: [],
       };
 
-      await expect(
-        commandManager.execute('naver_smartstore', invalidCommand),
-      ).rejects.toThrow('Order IDs required');
+      await expect(commandManager.execute('naver_smartstore', invalidCommand)).rejects.toThrow('Order IDs required');
     });
   });
 
@@ -238,9 +228,7 @@ describe('ChannelAdapterService (Integration)', () => {
     });
 
     it('2. 일부 채널 실패 시에도 다른 채널은 계속 처리되어야 한다', async () => {
-      mockAdapter.executeCommand
-        .mockResolvedValueOnce({ success: true })
-        .mockRejectedValueOnce(new Error('API Error'));
+      mockAdapter.executeCommand.mockResolvedValueOnce({ success: true }).mockRejectedValueOnce(new Error('API Error'));
 
       const command = {
         type: 'order.prepare' as const,
@@ -258,9 +246,7 @@ describe('ChannelAdapterService (Integration)', () => {
 
   describe('에러 처리', () => {
     it('1. Service에서 발생한 에러는 명확한 메시지와 함께 전파되어야 한다', async () => {
-      mockAdapter.syncFromChannel.mockRejectedValue(
-        new Error('Channel API Error'),
-      );
+      mockAdapter.syncFromChannel.mockRejectedValue(new Error('Channel API Error'));
 
       await expect(service.poll('naver_smartstore', 'orders')).rejects.toThrow(
         'Failed to poll orders from naver_smartstore',
@@ -294,9 +280,7 @@ describe('ChannelAdapterService (Integration)', () => {
       expect(commandResult.success).toBe(true);
 
       // 3. DB 확인
-      const histories = await dbService.db
-        .select()
-        .from(channelAdapterSchema.syncHistories);
+      const histories = await dbService.db.select().from(channelAdapterSchema.syncHistories);
 
       expect(histories.length).toBeGreaterThan(0);
     });

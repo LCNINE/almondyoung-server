@@ -146,5 +146,3 @@ export class MoveWithinWarehouseDto {
   @IsString()
   memo?: string;
 }
-
-

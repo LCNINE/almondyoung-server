@@ -38,26 +38,15 @@ export const CreatePlanRequestSchema = z.object({
   tierId: z.uuid({ error: '유효한 티어 ID여야 합니다' }),
   price: z.number().min(0, { error: '가격은 0 이상이어야 합니다' }),
   durationDays: z.number().min(1, { error: '기간은 1일 이상이어야 합니다' }),
-  currency: z
-    .string()
-    .length(3, { error: '통화 코드는 3자리여야 합니다' })
-    .default('KRW')
-    .optional(),
-  trialDays: z
-    .number()
-    .min(0, { error: '무료 체험 기간은 0 이상이어야 합니다' })
-    .default(0)
-    .optional(),
+  currency: z.string().length(3, { error: '통화 코드는 3자리여야 합니다' }).default('KRW').optional(),
+  trialDays: z.number().min(0, { error: '무료 체험 기간은 0 이상이어야 합니다' }).default(0).optional(),
 });
 
 export const UpdatePlanRequestSchema = z.object({
   price: z.number().min(0, '가격은 0 이상이어야 합니다').optional(),
   durationDays: z.number().min(1, '기간은 1일 이상이어야 합니다').optional(),
   currency: z.string().length(3, '통화 코드는 3자리여야 합니다').optional(),
-  trialDays: z
-    .number()
-    .min(0, '무료 체험 기간은 0 이상이어야 합니다')
-    .optional(),
+  trialDays: z.number().min(0, '무료 체험 기간은 0 이상이어야 합니다').optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -88,9 +77,7 @@ export const UpgradeSubscriptionRequestSchema = z.object({
 
 export const DowngradeSubscriptionRequestSchema = z.object({
   newPlanId: z.uuid({ error: '유효한 UUID 형식이어야 합니다' }),
-  effectiveDate: z.iso
-    .datetime({ error: '유효한 날짜 형식이어야 합니다' })
-    .optional(),
+  effectiveDate: z.iso.datetime({ error: '유효한 날짜 형식이어야 합니다' }).optional(),
 });
 
 export const PauseSubscriptionRequestSchema = z
@@ -108,9 +95,7 @@ export const CancelSubscriptionRequestSchema = z.object({
   reasonCode: z.string(),
   reasonText: z.string().optional(),
   reason: z.string().optional(), // 하위 호환성
-  effectiveDate: z.iso
-    .datetime({ error: '유효한 날짜 형식이어야 합니다' })
-    .optional(),
+  effectiveDate: z.iso.datetime({ error: '유효한 날짜 형식이어야 합니다' }).optional(),
 });
 
 export const ResumeSubscriptionRequestSchema = z.object({
@@ -127,30 +112,14 @@ export type UpdateTierRequest = z.infer<typeof UpdateTierRequestSchema>;
 export type CreatePlanRequest = z.infer<typeof CreatePlanRequestSchema>;
 export type UpdatePlanRequest = z.infer<typeof UpdatePlanRequestSchema>;
 export type DeactivatePlanRequest = z.infer<typeof DeactivatePlanRequestSchema>;
-export type CreateSubscriptionRequest = z.infer<
-  typeof CreateSubscriptionRequestSchema
->;
-export type CreateCheckoutIntentRequest = z.infer<
-  typeof CreateCheckoutIntentRequestSchema
->;
-export type ConfirmCheckoutIntentRequest = z.infer<
-  typeof ConfirmCheckoutIntentRequestSchema
->;
-export type UpgradeSubscriptionRequest = z.infer<
-  typeof UpgradeSubscriptionRequestSchema
->;
-export type DowngradeSubscriptionRequest = z.infer<
-  typeof DowngradeSubscriptionRequestSchema
->;
-export type PauseSubscriptionRequest = z.infer<
-  typeof PauseSubscriptionRequestSchema
->;
-export type ResumeSubscriptionRequest = z.infer<
-  typeof ResumeSubscriptionRequestSchema
->;
-export type CancelSubscriptionRequest = z.infer<
-  typeof CancelSubscriptionRequestSchema
->;
+export type CreateSubscriptionRequest = z.infer<typeof CreateSubscriptionRequestSchema>;
+export type CreateCheckoutIntentRequest = z.infer<typeof CreateCheckoutIntentRequestSchema>;
+export type ConfirmCheckoutIntentRequest = z.infer<typeof ConfirmCheckoutIntentRequestSchema>;
+export type UpgradeSubscriptionRequest = z.infer<typeof UpgradeSubscriptionRequestSchema>;
+export type DowngradeSubscriptionRequest = z.infer<typeof DowngradeSubscriptionRequestSchema>;
+export type PauseSubscriptionRequest = z.infer<typeof PauseSubscriptionRequestSchema>;
+export type ResumeSubscriptionRequest = z.infer<typeof ResumeSubscriptionRequestSchema>;
+export type CancelSubscriptionRequest = z.infer<typeof CancelSubscriptionRequestSchema>;
 
 // =================================================================
 // Policy Management - 정책 관리 요청 검증용
@@ -183,11 +152,9 @@ export const POLICY_RULE_TYPES = [
  * 정책 규칙 값에 대한 기본 스키마
  * 각 정책 타입별로 더 구체적인 검증이 필요할 수 있습니다
  */
-const PolicyRuleValueSchema = z
-  .record(z.string(), z.unknown())
-  .refine((value) => Object.keys(value).length > 0, {
-    message: '정책 값은 최소 하나의 속성을 가져야 합니다',
-  });
+const PolicyRuleValueSchema = z.record(z.string(), z.unknown()).refine((value) => Object.keys(value).length > 0, {
+  message: '정책 값은 최소 하나의 속성을 가져야 합니다',
+});
 
 export const CreatePolicyRequestSchema = z
   .object({
@@ -196,12 +163,8 @@ export const CreatePolicyRequestSchema = z
     }),
     ruleValue: PolicyRuleValueSchema,
     tierId: z.uuid({ error: '유효한 티어 ID여야 합니다' }).optional(),
-    validFrom: z.iso
-      .datetime({ error: '유효한 날짜 형식이어야 합니다' })
-      .optional(),
-    validUntil: z.iso
-      .datetime({ error: '유효한 날짜 형식이어야 합니다' })
-      .optional(),
+    validFrom: z.iso.datetime({ error: '유효한 날짜 형식이어야 합니다' }).optional(),
+    validUntil: z.iso.datetime({ error: '유효한 날짜 형식이어야 합니다' }).optional(),
   })
   .refine(
     (data) => {
@@ -220,12 +183,8 @@ export const UpdatePolicyRequestSchema = z
   .object({
     ruleValue: PolicyRuleValueSchema.optional(),
     isActive: z.boolean().optional(),
-    validFrom: z.iso
-      .datetime({ error: '유효한 날짜 형식이어야 합니다' })
-      .optional(),
-    validUntil: z.iso
-      .datetime({ error: '유효한 날짜 형식이어야 합니다' })
-      .optional(),
+    validFrom: z.iso.datetime({ error: '유효한 날짜 형식이어야 합니다' }).optional(),
+    validUntil: z.iso.datetime({ error: '유효한 날짜 형식이어야 합니다' }).optional(),
   })
   .refine(
     (data) => {
@@ -242,42 +201,29 @@ export const UpdatePolicyRequestSchema = z
 
 export const PolicyValidationRequestSchema = z.object({
   userId: z.uuid({ error: '유효한 사용자 ID여야 합니다' }),
-  action: z
-    .string()
-    .min(1, { error: '액션은 필수입니다' })
-    .max(100, { error: '액션은 100자 이하여야 합니다' }),
+  action: z.string().min(1, { error: '액션은 필수입니다' }).max(100, { error: '액션은 100자 이하여야 합니다' }),
   context: z.record(z.string(), z.unknown(), {
     error: '컨텍스트는 객체 형태여야 합니다',
   }),
-  policyIds: z
-    .array(z.string().uuid({ error: '유효한 정책 ID여야 합니다' }))
-    .optional(),
+  policyIds: z.array(z.string().uuid({ error: '유효한 정책 ID여야 합니다' })).optional(),
 });
 
 export const BulkPolicyValidationRequestSchema = z.object({
-  requests: z
-    .array(PolicyValidationRequestSchema)
-    .min(1, '최소 1개의 요청이 필요합니다'),
+  requests: z.array(PolicyValidationRequestSchema).min(1, '최소 1개의 요청이 필요합니다'),
 });
 
 export const GetPoliciesQuerySchema = z.object({
   ruleType: z.enum(POLICY_RULE_TYPES).optional(),
   tierId: z.uuid({ error: '유효한 티어 ID여야 합니다' }).optional(),
   isActive: z.boolean().optional(),
-  page: z
-    .number()
-    .min(1, { error: '페이지는 1 이상이어야 합니다' })
-    .default(1)
-    .optional(),
+  page: z.number().min(1, { error: '페이지는 1 이상이어야 합니다' }).default(1).optional(),
   limit: z.number().min(1).max(100).default(20).optional(),
 });
 
 export const GetApplicablePoliciesQuerySchema = z.object({
   tierId: z.uuid({ error: '유효한 티어 ID여야 합니다' }).optional(),
   subscriptionId: z.uuid().optional(),
-  currentDate: z.iso
-    .datetime({ error: '유효한 날짜 형식이어야 합니다' })
-    .optional(),
+  currentDate: z.iso.datetime({ error: '유효한 날짜 형식이어야 합니다' }).optional(),
 });
 
 // =================================================================
@@ -286,35 +232,20 @@ export const GetApplicablePoliciesQuerySchema = z.object({
 
 export const ExtendEntitlementRequestSchema = z.object({
   userId: z.uuid('유효한 사용자 ID여야 합니다'),
-  days: z
-    .number()
-    .int()
-    .min(-365, '최대 365일까지 차감 가능합니다')
-    .max(365, '최대 365일까지 연장 가능합니다'),
-  reason: z
-    .string()
-    .min(1, '사유는 필수입니다')
-    .max(500, '사유는 500자 이하여야 합니다'),
+  days: z.number().int().min(-365, '최대 365일까지 차감 가능합니다').max(365, '최대 365일까지 연장 가능합니다'),
+  reason: z.string().min(1, '사유는 필수입니다').max(500, '사유는 500자 이하여야 합니다'),
 });
 
 // Policy Management Request Types
 export type CreatePolicyRequest = z.infer<typeof CreatePolicyRequestSchema>;
 export type UpdatePolicyRequest = z.infer<typeof UpdatePolicyRequestSchema>;
-export type PolicyValidationRequest = z.infer<
-  typeof PolicyValidationRequestSchema
->;
-export type BulkPolicyValidationRequest = z.infer<
-  typeof BulkPolicyValidationRequestSchema
->;
+export type PolicyValidationRequest = z.infer<typeof PolicyValidationRequestSchema>;
+export type BulkPolicyValidationRequest = z.infer<typeof BulkPolicyValidationRequestSchema>;
 export type GetPoliciesQuery = z.infer<typeof GetPoliciesQuerySchema>;
-export type GetApplicablePoliciesQuery = z.infer<
-  typeof GetApplicablePoliciesQuerySchema
->;
+export type GetApplicablePoliciesQuery = z.infer<typeof GetApplicablePoliciesQuerySchema>;
 
 // Entitlement Management Request Types
-export type ExtendEntitlementRequest = z.infer<
-  typeof ExtendEntitlementRequestSchema
->;
+export type ExtendEntitlementRequest = z.infer<typeof ExtendEntitlementRequestSchema>;
 
 // Force Cancel Subscription (Admin)
 export const ForceCancelSubscriptionRequestSchema = z.object({
@@ -322,13 +253,8 @@ export const ForceCancelSubscriptionRequestSchema = z.object({
   refundType: z.enum(['FULL', 'PARTIAL', 'NONE'], {
     error: '유효한 환불 타입이어야 합니다',
   }),
-  refundAmount: z
-    .number()
-    .min(0, { error: '환불 금액은 0 이상이어야 합니다' })
-    .optional(),
+  refundAmount: z.number().min(0, { error: '환불 금액은 0 이상이어야 합니다' }).optional(),
   adminNote: z.string().optional(),
 });
 
-export type ForceCancelSubscriptionRequest = z.infer<
-  typeof ForceCancelSubscriptionRequestSchema
->;
+export type ForceCancelSubscriptionRequest = z.infer<typeof ForceCancelSubscriptionRequestSchema>;

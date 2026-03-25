@@ -37,10 +37,7 @@ export interface PointsBalance {
  * cookieHeader: Next.js 서버 컴포넌트에서 호출 시 `cookies().toString()` 값을 전달.
  * 브라우저 클라이언트에서 호출 시 생략하면 credentials: 'include' 사용.
  */
-export async function getPaymentIntent(
-  intentId: string,
-  cookieHeader?: string,
-): Promise<PaymentIntent> {
+export async function getPaymentIntent(intentId: string, cookieHeader?: string): Promise<PaymentIntent> {
   const headers: Record<string, string> = {};
   if (cookieHeader) headers['Cookie'] = cookieHeader;
 
@@ -131,9 +128,7 @@ export async function approveToss(
   return res.json();
 }
 
-export async function cancelPaymentIntent(
-  intentId: string,
-): Promise<void> {
+export async function cancelPaymentIntent(intentId: string): Promise<void> {
   const res = await fetchWithRefresh(`${BASE_URL}/v1/payment-intents/${intentId}/cancel`, {
     method: 'POST',
     headers: {

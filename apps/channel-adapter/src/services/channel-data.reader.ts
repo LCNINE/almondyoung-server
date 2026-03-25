@@ -1,16 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import {
-  ChannelAdapterFactory,
-  ChannelType,
-} from '../adapters/channel-adapter.factory';
-import {
-  InternalOrderEvent,
-  DataType,
-  SyncToChannelPayload,
-  SyncResult,
-  OrderQuery,
-  ChannelQuery,
-} from '../types';
+import { ChannelAdapterFactory, ChannelType } from '../adapters/channel-adapter.factory';
+import { InternalOrderEvent, DataType, SyncToChannelPayload, SyncResult, OrderQuery, ChannelQuery } from '../types';
 
 /**
  * 채널 데이터 조회 전담 클래스
@@ -41,10 +31,7 @@ export class ChannelDataReader {
    * @param dataType - 데이터 타입 (orders, claims, inventory 등)
    * @returns 내부 표준 이벤트 배열
    */
-  async fetchFromChannel(
-    channel: ChannelType,
-    dataType: DataType,
-  ): Promise<InternalOrderEvent[]> {
+  async fetchFromChannel(channel: ChannelType, dataType: DataType): Promise<InternalOrderEvent[]> {
     this.logger.log(`📡 [${channel}] ${dataType} 데이터 조회 시작`);
 
     const adapter = this.adapterFactory.getAdapter(channel);
@@ -61,10 +48,7 @@ export class ChannelDataReader {
    * @param payload - 웹훅 페이로드
    * @returns 내부 표준 이벤트 배열
    */
-  async processWebhook(
-    channel: ChannelType,
-    payload: any,
-  ): Promise<InternalOrderEvent[]> {
+  async processWebhook(channel: ChannelType, payload: any): Promise<InternalOrderEvent[]> {
     this.logger.log(`📨 [${channel}] 웹훅 이벤트 수신`);
 
     const adapter = this.adapterFactory.getAdapter(channel);
@@ -81,10 +65,7 @@ export class ChannelDataReader {
    * @param payload - 전송할 데이터
    * @returns 동기화 결과
    */
-  async sendToChannel(
-    channel: ChannelType,
-    payload: SyncToChannelPayload,
-  ): Promise<SyncResult> {
+  async sendToChannel(channel: ChannelType, payload: SyncToChannelPayload): Promise<SyncResult> {
     this.logger.log(`📤 [${channel}] ${payload.dataType} 전송 시작`);
 
     const adapter = this.adapterFactory.getAdapter(channel);
@@ -103,10 +84,7 @@ export class ChannelDataReader {
    * @param query - 조회 쿼리
    * @returns 내부 표준 이벤트 배열
    */
-  async findOrders(
-    channel: ChannelType,
-    query: OrderQuery,
-  ): Promise<InternalOrderEvent[]> {
+  async findOrders(channel: ChannelType, query: OrderQuery): Promise<InternalOrderEvent[]> {
     this.logger.log(`🔍 [${channel}] 주문 조회: ${query.by} = ${query.id}`);
 
     const adapter = this.adapterFactory.getAdapter(channel);

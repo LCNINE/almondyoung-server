@@ -31,10 +31,7 @@ export class SendVerificationCodeDto {
   })
   @IsString({ message: '용도는 문자열이어야 합니다.' })
   @IsOptional()
-  purpose?: typeof userServiceEnums.phoneVerificationPurposeEnum.enumValues[number] = 'phone_verify';
+  purpose?: (typeof userServiceEnums.phoneVerificationPurposeEnum.enumValues)[number] = 'phone_verify';
 }
 
-export class LookupDto extends PickType(SendVerificationCodeDto, [
-  'phoneNumber',
-  'countryCode',
-] as const) { }
+export class LookupDto extends PickType(SendVerificationCodeDto, ['phoneNumber', 'countryCode'] as const) {}

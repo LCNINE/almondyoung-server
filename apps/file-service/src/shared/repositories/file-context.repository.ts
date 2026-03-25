@@ -19,20 +19,13 @@ export class FileContextRepository {
   }
 
   async findById(id: string): Promise<FileContext | undefined> {
-    const [context] = await this.db
-      .select()
-      .from(fileContexts)
-      .where(eq(fileContexts.id, id))
-      .limit(1);
+    const [context] = await this.db.select().from(fileContexts).where(eq(fileContexts.id, id)).limit(1);
     return context;
   }
 
   async findAll(activeOnly = true): Promise<FileContext[]> {
     const conditions = activeOnly ? eq(fileContexts.isActive, true) : undefined;
-    return this.db
-      .select()
-      .from(fileContexts)
-      .where(conditions);
+    return this.db.select().from(fileContexts).where(conditions);
   }
 
   async update(id: string, data: UpdateFileContext): Promise<FileContext> {
@@ -44,4 +37,3 @@ export class FileContextRepository {
     return updated;
   }
 }
-

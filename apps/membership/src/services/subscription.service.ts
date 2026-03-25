@@ -11,10 +11,7 @@ import { SubscriptionContractReader } from './subscription/subscription-contract
 import { SubscriptionCreator } from './subscription/subscription.creator';
 import { SubscriptionManager } from './subscription/subscription.manager';
 import { MembershipEventPublisher } from './membership-event.publisher';
-import {
-  PaymentClientService,
-  WalletPaymentIntentResponse,
-} from './billing/payment-client.service';
+import { PaymentClientService, WalletPaymentIntentResponse } from './billing/payment-client.service';
 
 /**
  * SubscriptionService (Business Layer)
@@ -75,12 +72,7 @@ export class SubscriptionService {
    *
    * ✅ 흐름만 표현: "기존 구독 확인 → 플랜 조회 → 구독 생성"
    */
-  async createSubscription(
-    userId: string,
-    planId: string,
-    email: string,
-    options: CreateSubscriptionOptions = {},
-  ) {
+  async createSubscription(userId: string, planId: string, email: string, options: CreateSubscriptionOptions = {}) {
     const existing = await this.entitlementService.getUserEntitlement(userId);
     if (existing) throw new ActiveSubscriptionExistsException();
 
@@ -135,13 +127,10 @@ export class SubscriptionService {
    * JWT 없이 wallet API key로 intent를 검증하고 구독을 생성합니다.
    */
   async confirmCheckoutIntent(intentId: string) {
-    const intent =
-      await this.paymentClientService.getWalletPaymentIntent(intentId);
+    const intent = await this.paymentClientService.getWalletPaymentIntent(intentId);
 
     if (intent.status !== 'AUTHORIZED' && intent.status !== 'CAPTURED') {
-      throw new SubscriptionBadRequestException(
-        `결제가 완료되지 않았습니다. (status: ${intent.status})`,
-      );
+      throw new SubscriptionBadRequestException(`결제가 완료되지 않았습니다. (status: ${intent.status})`);
     }
 
     const userId = intent.metadata?.userId;
@@ -149,9 +138,7 @@ export class SubscriptionService {
     const email = (intent.metadata?.email as string) ?? '';
 
     if (!userId || !planId) {
-      throw new SubscriptionBadRequestException(
-        'payment intent metadata에 userId 또는 planId가 없습니다.',
-      );
+      throw new SubscriptionBadRequestException('payment intent metadata에 userId 또는 planId가 없습니다.');
     }
 
     return this.createSubscription(userId, planId, email, {
@@ -160,9 +147,7 @@ export class SubscriptionService {
     });
   }
 
-  private extractWalletReference(
-    intent: WalletPaymentIntentResponse,
-  ): string | undefined {
+  private extractWalletReference(intent: WalletPaymentIntentResponse): string | undefined {
     const raw = intent as unknown as Record<string, unknown>;
     const candidate = [
       intent?.metadata?.paymentKey,
@@ -207,11 +192,7 @@ export class SubscriptionService {
     const current = await this.entitlementService.getUserEntitlement(userId);
     if (!current) throw new SubscriptionNotFoundException();
 
-    await this.subscriptionManager.voidSubscription(
-      userId,
-      current.contract,
-      reason,
-    );
+    await this.subscriptionManager.voidSubscription(userId, current.contract, reason);
 
     return {
       cancelledAt: new Date(),
@@ -246,7 +227,7 @@ export class SubscriptionService {
       id: contract.id,
       userId: contract.userId,
       billingDate: new Date(contract.billingDate),
-      type: subscriptionType as 'MONTHLY' | 'YEAR',
+      type: subscriptionType,
       tierId: plan.tierId,
     };
   }
@@ -257,8 +238,7 @@ export class SubscriptionService {
    */
 
   async getBulkSubscriptions(userIds: string[]) {
-    const entitlementMap =
-      await this.entitlementService.getBulkUserEntitlements(userIds);
+    const entitlementMap = await this.entitlementService.getBulkUserEntitlements(userIds);
 
     return userIds.map((userId) => {
       const data = entitlementMap.get(userId);

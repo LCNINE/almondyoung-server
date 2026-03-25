@@ -1,30 +1,8 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Query,
-  Param,
-  Delete,
-  BadRequestException,
-  UsePipes,
-} from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiQuery,
-  ApiParam,
-} from '@nestjs/swagger';
+import { Controller, Get, Post, Body, Query, Param, Delete, BadRequestException, UsePipes } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
 import { ZodValidationPipe } from 'nestjs-zod';
 import { ChannelType } from '../adapters/channel-adapter.factory';
-import {
-  DataType,
-  ChannelCommand,
-  ChannelQuery,
-  SyncToChannelPayload,
-  OrderQuery,
-} from '../types';
+import { DataType, ChannelCommand, ChannelQuery, SyncToChannelPayload, OrderQuery } from '../types';
 import { ChannelAdapterService } from '../services/channel-adapter.service';
 import {
   PollResponseDto,
@@ -39,9 +17,7 @@ import {
 @Controller('adapter')
 @UsePipes(ZodValidationPipe)
 export class ChannelAdapterController {
-  constructor(
-    private readonly channelAdapterService: ChannelAdapterService,
-  ) {}
+  constructor(private readonly channelAdapterService: ChannelAdapterService) {}
 
   // ═══════════════════════════════════════════════════════════════
   // 기본 API
@@ -75,10 +51,7 @@ export class ChannelAdapterController {
     enum: ['orders', 'order_status', 'claims', 'inventory', 'products'],
   })
   @ApiResponse({ status: 200, description: '폴링 성공', type: PollResponseDto })
-  async poll(
-    @Query('channel') channel: ChannelType,
-    @Query('type') dataType: DataType,
-  ): Promise<PollResponseDto> {
+  async poll(@Query('channel') channel: ChannelType, @Query('type') dataType: DataType): Promise<PollResponseDto> {
     const result = await this.channelAdapterService.poll(channel, dataType);
     return {
       success: true,
@@ -167,10 +140,7 @@ export class ChannelAdapterController {
     @Param('queryType') queryType: 'ordersheet' | 'ordersheet-by-orderid',
     @Param('identifier') identifier: string,
   ) {
-    const query: OrderQuery = this.mapQueryTypeToOrderQuery(
-      queryType,
-      identifier,
-    );
+    const query: OrderQuery = this.mapQueryTypeToOrderQuery(queryType, identifier);
     const orders = await this.channelAdapterService.findOrders(channel, query);
 
     return {
@@ -217,10 +187,7 @@ export class ChannelAdapterController {
       sizePerPage: pageSize ? parseInt(pageSize) : 10,
     };
 
-    const result = await this.channelAdapterService.query(
-      channel,
-      channelQuery,
-    );
+    const result = await this.channelAdapterService.query(channel, channelQuery);
 
     return {
       success: true,
@@ -256,10 +223,7 @@ export class ChannelAdapterController {
   // Helper Methods
   // ═══════════════════════════════════════════════════════════════
 
-  private mapQueryTypeToOrderQuery(
-    queryType: 'ordersheet' | 'ordersheet-by-orderid',
-    identifier: string,
-  ): OrderQuery {
+  private mapQueryTypeToOrderQuery(queryType: 'ordersheet' | 'ordersheet-by-orderid', identifier: string): OrderQuery {
     switch (queryType) {
       case 'ordersheet':
         return { by: 'channelShipmentId', id: identifier };

@@ -1,23 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { 
-  ChannelCategory,
-  NewChannelCategory,
-  UpdateChannelCategory,
-  DbTransaction 
-} from '../../types';
-import { 
-  type PimSchema,
-  channelCategories,
-  salesChannels
-} from '../../schema';
+import { ChannelCategory, NewChannelCategory, UpdateChannelCategory, DbTransaction } from '../../types';
+import { type PimSchema, channelCategories, salesChannels } from '../../schema';
 import { eq, count, asc, sql } from 'drizzle-orm';
 
 @Injectable()
 export class ChannelCategoriesService {
-  constructor(
-    @InjectDb() private readonly db: DbService<PimSchema>,
-  ) {}
+  constructor(@InjectDb() private readonly db: DbService<PimSchema>) {}
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.db.db;
@@ -27,30 +16,27 @@ export class ChannelCategoriesService {
     if (!data.name) {
       throw new Error('Category name is required');
     }
-    
+
     const client = this.getClient(tx);
-    
+
     const categoryData = {
       name: data.name,
       description: data.description || null,
       displayOrder: data.displayOrder ?? 0,
     };
-    
-    const result = await client
-      .insert(channelCategories)
-      .values(categoryData)
-      .returning();
-    
+
+    const result = await client.insert(channelCategories).values(categoryData).returning();
+
     if (result.length === 0) {
       throw new Error('Failed to create category');
     }
-    
+
     return result[0];
   }
 
   async findAll(tx?: DbTransaction): Promise<Array<ChannelCategory & { channelCount?: number }>> {
     const client = this.getClient(tx);
-    
+
     const results = await client
       .select({
         id: channelCategories.id,
@@ -69,10 +55,10 @@ export class ChannelCategoriesService {
         channelCategories.description,
         channelCategories.displayOrder,
         channelCategories.createdAt,
-        channelCategories.updatedAt
+        channelCategories.updatedAt,
       )
       .orderBy(asc(channelCategories.displayOrder), asc(channelCategories.name));
-    
+
     return results;
   }
 
@@ -80,14 +66,11 @@ export class ChannelCategoriesService {
     if (!id) {
       throw new Error('Category ID is required');
     }
-    
+
     const client = this.getClient(tx);
-    
-    const result = await client
-      .select()
-      .from(channelCategories)
-      .where(eq(channelCategories.id, id));
-    
+
+    const result = await client.select().from(channelCategories).where(eq(channelCategories.id, id));
+
     return result.length > 0 ? result[0] : null;
   }
 
@@ -95,29 +78,29 @@ export class ChannelCategoriesService {
     if (!id) {
       throw new Error('Category ID is required');
     }
-    
+
     const client = this.getClient(tx);
-    
+
     const existing = await this.findById(id, tx);
     if (!existing) {
       throw new Error(`Category not found: ${id}`);
     }
-    
+
     const updateData = {
       ...data,
       updatedAt: new Date(),
     };
-    
+
     const result = await client
       .update(channelCategories)
       .set(updateData)
       .where(eq(channelCategories.id, id))
       .returning();
-    
+
     if (result.length === 0) {
       throw new Error(`Failed to update category: ${id}`);
     }
-    
+
     return result[0];
   }
 
@@ -125,26 +108,25 @@ export class ChannelCategoriesService {
     if (!id) {
       throw new Error('Category ID is required');
     }
-    
+
     const client = this.getClient(tx);
-    
+
     const existing = await this.findById(id, tx);
     if (!existing) {
       throw new Error(`Category not found: ${id}`);
     }
-    
+
     const relatedChannels = await client
       .select({ count: count() })
       .from(salesChannels)
       .where(eq(salesChannels.categoryId, id));
-    
+
     if (relatedChannels[0].count > 0) {
-      throw new Error(`Cannot delete category with existing channels. Found ${relatedChannels[0].count} related channels.`);
+      throw new Error(
+        `Cannot delete category with existing channels. Found ${relatedChannels[0].count} related channels.`,
+      );
     }
-    
-    await client
-      .delete(channelCategories)
-      .where(eq(channelCategories.id, id));
+
+    await client.delete(channelCategories).where(eq(channelCategories.id, id));
   }
 }
-

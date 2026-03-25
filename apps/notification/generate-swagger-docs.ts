@@ -6,7 +6,7 @@ import * as http from 'http';
 
 async function generateSwaggerDocs() {
   console.log('🚀 Notification Service Swagger 문서 생성 중...');
-  
+
   try {
     // Swagger 문서 생성용 더미 환경 변수 설정 (모듈 로드 전에 설정)
     process.env.GENERATE_SWAGGER = 'true'; // Swagger 생성 모드 플래그 (검증 스킵)
@@ -16,38 +16,40 @@ async function generateSwaggerDocs() {
     process.env.REDIS_HOST = process.env.REDIS_HOST || 'localhost';
     process.env.REDIS_PORT = process.env.REDIS_PORT || '6379';
     process.env.PORT = '5001';
-    
+
     console.log('📝 환경 변수 설정 완료');
     console.log('📦 NotificationModule 로드 중...');
-    
+
     // 모듈을 동적으로 로드하기 전에 환경 변수 설정
     const { NotificationModule } = await import('./src/notification.module');
-    
+
     console.log('✅ NotificationModule 로드 완료');
     console.log('🏗️  NestFactory로 앱 인스턴스 생성 중...');
-    
+
     // 앱 인스턴스 생성 (실제 서버 시작 없이, 타임아웃 설정)
     const createAppPromise = NestFactory.create(NotificationModule, {
       logger: false, // 로그 비활성화
     });
-    
+
     // 타임아웃 설정 (90초) - DB/Redis 연결 대기
     const timeoutPromise = new Promise((_, reject) => {
       setTimeout(() => reject(new Error('앱 생성 타임아웃 (90초)')), 90000);
     });
-    
+
     let app;
     try {
-      app = await Promise.race([createAppPromise, timeoutPromise]) as any;
+      app = (await Promise.race([createAppPromise, timeoutPromise])) as any;
     } catch (error) {
       if (error instanceof Error && error.message.includes('타임아웃')) {
         console.error('⚠️  타임아웃 발생: DB/Redis 연결이 필요할 수 있습니다.');
-        console.error('💡 PostgreSQL을 실행하거나 서버를 실행한 후 http://localhost:5001/api/docs-json 에서 문서를 가져오세요');
+        console.error(
+          '💡 PostgreSQL을 실행하거나 서버를 실행한 후 http://localhost:5001/api/docs-json 에서 문서를 가져오세요',
+        );
         throw error;
       }
       throw error;
     }
-    
+
     console.log('✅ 앱 인스턴스 생성 완료');
 
     // Swagger 설정 (main.ts와 동일)
@@ -81,7 +83,7 @@ async function generateSwaggerDocs() {
     console.log('📄 Swagger 문서 생성 중...');
     const document = SwaggerModule.createDocument(app, config);
     console.log('✅ Swagger 문서 생성 완료');
-    
+
     // 출력 디렉토리 생성
     const outputDir = path.join(__dirname, 'docs');
     if (!fs.existsSync(outputDir)) {
@@ -100,7 +102,7 @@ async function generateSwaggerDocs() {
 
     // HTML 파일로 저장
     const htmlPath = path.join(outputDir, 'swagger.html');
-    
+
     // Swagger UI HTML 템플릿 생성 (스펙을 인라인으로 포함)
     const swaggerHtml = `
 <!DOCTYPE html>
@@ -170,7 +172,6 @@ async function generateSwaggerDocs() {
     console.log('\n💡 사용법:');
     console.log(`   - HTML 파일을 브라우저에서 열어보세요: file://${htmlPath}`);
     console.log(`   - 또는 로컬 서버로 제공: npx serve ${outputDir}`);
-
   } catch (error) {
     console.error('❌ 문서 생성 중 오류 발생:', error);
     if (error instanceof Error) {

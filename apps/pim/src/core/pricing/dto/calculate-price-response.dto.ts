@@ -4,24 +4,24 @@ export class AppliedRuleDto {
   @ApiProperty({ description: 'Rule ID' })
   ruleId: string;
 
-  @ApiProperty({ 
-    description: 'Layer', 
-    enum: ['base_price', 'membership_price', 'tiered_price'] 
+  @ApiProperty({
+    description: 'Layer',
+    enum: ['base_price', 'membership_price', 'tiered_price'],
   })
   layer: 'base_price' | 'membership_price' | 'tiered_price';
 
   @ApiProperty({ description: 'Order' })
   order: number;
 
-  @ApiProperty({ 
-    description: 'Scope type', 
-    enum: ['all_variants', 'with_option', 'variants'] 
+  @ApiProperty({
+    description: 'Scope type',
+    enum: ['all_variants', 'with_option', 'variants'],
   })
   scopeType: 'all_variants' | 'with_option' | 'variants';
 
-  @ApiProperty({ 
-    description: 'Operation type', 
-    enum: ['offset', 'scale', 'override'] 
+  @ApiProperty({
+    description: 'Operation type',
+    enum: ['offset', 'scale', 'override'],
   })
   operationType: 'offset' | 'scale' | 'override';
 
@@ -42,15 +42,15 @@ export class PriceBreakdownDto {
   @ApiProperty({ description: 'Price after base_price layer' })
   afterBasePrice: number;
 
-  @ApiProperty({ 
-    description: 'Price after membership_price layer', 
-    required: false 
+  @ApiProperty({
+    description: 'Price after membership_price layer',
+    required: false,
   })
   afterMembershipPrice?: number;
 
-  @ApiProperty({ 
-    description: 'Price after tiered_price layer', 
-    required: false 
+  @ApiProperty({
+    description: 'Price after tiered_price layer',
+    required: false,
   })
   afterTieredPrice?: number;
 }
@@ -62,21 +62,21 @@ export class CalculatePriceResponseDto {
   @ApiProperty({ description: 'Final unit price' })
   price: number;
 
-  @ApiProperty({ 
-    description: 'Total price (price * quantity)', 
-    required: false 
+  @ApiProperty({
+    description: 'Total price (price * quantity)',
+    required: false,
   })
   totalPrice?: number;
 
-  @ApiProperty({ 
-    description: 'Applied rules', 
-    type: [AppliedRuleDto] 
+  @ApiProperty({
+    description: 'Applied rules',
+    type: [AppliedRuleDto],
   })
   appliedRules: AppliedRuleDto[];
 
-  @ApiProperty({ 
-    description: 'Price breakdown by layer', 
-    type: PriceBreakdownDto 
+  @ApiProperty({
+    description: 'Price breakdown by layer',
+    type: PriceBreakdownDto,
   })
   priceBreakdown: PriceBreakdownDto;
 }
@@ -96,10 +96,9 @@ export class VariantPriceSetDto {
   @ApiProperty({ description: 'Membership price' })
   membershipPrice: number;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: 'Tiered prices for bulk purchases',
-    type: [TieredPriceDto]
+    type: [TieredPriceDto],
   })
   tieredPrices: TieredPriceDto[];
 }
-

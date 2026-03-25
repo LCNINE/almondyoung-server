@@ -16,9 +16,7 @@ export interface MatchingContext {
 }
 
 export abstract class MatchingStrategy {
-  constructor(
-    protected readonly dbService: DbService<typeof wmsSchema>
-  ) { }
+  constructor(protected readonly dbService: DbService<typeof wmsSchema>) {}
 
   protected get db() {
     return this.dbService.db;

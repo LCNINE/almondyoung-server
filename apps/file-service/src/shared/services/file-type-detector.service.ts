@@ -49,4 +49,3 @@ export class FileTypeDetector {
     return this.normalizeMimeType(mimeType);
   }
 }
-

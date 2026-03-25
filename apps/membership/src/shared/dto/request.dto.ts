@@ -30,61 +30,29 @@ import {
 
 // ===== Admin Operations Request DTOs =====
 
-export class CreateTierRequestDto extends createZodDto(
-  CreateTierRequestSchema,
-) {}
-export class UpdateTierRequestDto extends createZodDto(
-  UpdateTierRequestSchema,
-) {}
-export class CreatePlanRequestDto extends createZodDto(
-  CreatePlanRequestSchema,
-) {}
-export class UpdatePlanRequestDto extends createZodDto(
-  UpdatePlanRequestSchema,
-) {}
-export class DeactivatePlanRequestDto extends createZodDto(
-  DeactivatePlanRequestSchema,
-) {}
-export class ExtendEntitlementRequestDto extends createZodDto(
-  ExtendEntitlementRequestSchema,
-) {}
+export class CreateTierRequestDto extends createZodDto(CreateTierRequestSchema) {}
+export class UpdateTierRequestDto extends createZodDto(UpdateTierRequestSchema) {}
+export class CreatePlanRequestDto extends createZodDto(CreatePlanRequestSchema) {}
+export class UpdatePlanRequestDto extends createZodDto(UpdatePlanRequestSchema) {}
+export class DeactivatePlanRequestDto extends createZodDto(DeactivatePlanRequestSchema) {}
+export class ExtendEntitlementRequestDto extends createZodDto(ExtendEntitlementRequestSchema) {}
 
 // ===== Subscription Operations Request DTOs =====
 
-export class CreateSubscriptionRequestDto extends createZodDto(
-  CreateSubscriptionRequestSchema,
-) {}
-export class CreateCheckoutIntentRequestDto extends createZodDto(
-  CreateCheckoutIntentRequestSchema,
-) {}
-export class ConfirmCheckoutIntentRequestDto extends createZodDto(
-  ConfirmCheckoutIntentRequestSchema,
-) {}
-export class UpgradeSubscriptionRequestDto extends createZodDto(
-  UpgradeSubscriptionRequestSchema,
-) {}
-export class DowngradeSubscriptionRequestDto extends createZodDto(
-  DowngradeSubscriptionRequestSchema,
-) {}
-export class CancelSubscriptionRequestDto extends createZodDto(
-  CancelSubscriptionRequestSchema,
-) {}
+export class CreateSubscriptionRequestDto extends createZodDto(CreateSubscriptionRequestSchema) {}
+export class CreateCheckoutIntentRequestDto extends createZodDto(CreateCheckoutIntentRequestSchema) {}
+export class ConfirmCheckoutIntentRequestDto extends createZodDto(ConfirmCheckoutIntentRequestSchema) {}
+export class UpgradeSubscriptionRequestDto extends createZodDto(UpgradeSubscriptionRequestSchema) {}
+export class DowngradeSubscriptionRequestDto extends createZodDto(DowngradeSubscriptionRequestSchema) {}
+export class CancelSubscriptionRequestDto extends createZodDto(CancelSubscriptionRequestSchema) {}
 
 // ===== Pause Operations Request DTOs =====
 
-export class PauseSubscriptionRequestDto extends createZodDto(
-  PauseSubscriptionRequestSchema,
-) {}
-export class ResumeSubscriptionRequestDto extends createZodDto(
-  ResumeSubscriptionRequestSchema,
-) {}
+export class PauseSubscriptionRequestDto extends createZodDto(PauseSubscriptionRequestSchema) {}
+export class ResumeSubscriptionRequestDto extends createZodDto(ResumeSubscriptionRequestSchema) {}
 
 // ===== Admin Cancellation Operations Request DTOs =====
 
-export class ForceCancelSubscriptionRequestDto extends createZodDto(
-  ForceCancelSubscriptionRequestSchema,
-) {}
+export class ForceCancelSubscriptionRequestDto extends createZodDto(ForceCancelSubscriptionRequestSchema) {}
 
-export class GetBulkSubscriptionsRequestDto extends createZodDto(
-  GetBulkSubscriptionsRequestSchema,
-) {}
+export class GetBulkSubscriptionsRequestDto extends createZodDto(GetBulkSubscriptionsRequestSchema) {}

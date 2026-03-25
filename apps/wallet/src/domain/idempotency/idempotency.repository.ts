@@ -18,28 +18,12 @@ export interface IdempotencyRepository {
   runInTransaction<T>(callback: (tx: IdempotencyTx) => Promise<T>): Promise<T>;
   findByIdForUpdate(tx: IdempotencyTx, recordId: string): Promise<IdempotencyKeyRecord | null>;
   insert(tx: IdempotencyTx, record: NewIdempotencyKeyRecord): Promise<void>;
-  update(
-    tx: IdempotencyTx,
-    recordId: string,
-    patch: UpdateIdempotencyKeyRecord,
-  ): Promise<void>;
-  updateIfPending(
-    tx: IdempotencyTx,
-    recordId: string,
-    patch: UpdateIdempotencyKeyRecord,
-  ): Promise<boolean>;
-  updateIfExpired(
-    tx: IdempotencyTx,
-    recordId: string,
-    now: Date,
-    patch: UpdateIdempotencyKeyRecord,
-  ): Promise<boolean>;
+  update(tx: IdempotencyTx, recordId: string, patch: UpdateIdempotencyKeyRecord): Promise<void>;
+  updateIfPending(tx: IdempotencyTx, recordId: string, patch: UpdateIdempotencyKeyRecord): Promise<boolean>;
+  updateIfExpired(tx: IdempotencyTx, recordId: string, now: Date, patch: UpdateIdempotencyKeyRecord): Promise<boolean>;
 }
 
-type RawIdempotencyKeyRecord = Omit<
-  IdempotencyKeyRecord,
-  'createdAt' | 'updatedAt' | 'expiresAt'
-> & {
+type RawIdempotencyKeyRecord = Omit<IdempotencyKeyRecord, 'createdAt' | 'updatedAt' | 'expiresAt'> & {
   createdAt: Date | string | number | null;
   updatedAt: Date | string | number | null;
   expiresAt: Date | string | number | null;
@@ -53,10 +37,7 @@ export class DrizzleIdempotencyRepository implements IdempotencyRepository {
     return this.dbService.db.transaction(async (tx) => callback(tx));
   }
 
-  async findByIdForUpdate(
-    tx: IdempotencyTx,
-    recordId: string,
-  ): Promise<IdempotencyKeyRecord | null> {
+  async findByIdForUpdate(tx: IdempotencyTx, recordId: string): Promise<IdempotencyKeyRecord | null> {
     const rows = (await tx.execute(sql`
       select
         id,
@@ -91,31 +72,15 @@ export class DrizzleIdempotencyRepository implements IdempotencyRepository {
     await tx.insert(idempotencyKeys).values(record);
   }
 
-  async update(
-    tx: IdempotencyTx,
-    recordId: string,
-    patch: UpdateIdempotencyKeyRecord,
-  ): Promise<void> {
-    await tx
-      .update(idempotencyKeys)
-      .set(patch)
-      .where(eq(idempotencyKeys.id, recordId));
+  async update(tx: IdempotencyTx, recordId: string, patch: UpdateIdempotencyKeyRecord): Promise<void> {
+    await tx.update(idempotencyKeys).set(patch).where(eq(idempotencyKeys.id, recordId));
   }
 
-  async updateIfPending(
-    tx: IdempotencyTx,
-    recordId: string,
-    patch: UpdateIdempotencyKeyRecord,
-  ): Promise<boolean> {
+  async updateIfPending(tx: IdempotencyTx, recordId: string, patch: UpdateIdempotencyKeyRecord): Promise<boolean> {
     const rows = await tx
       .update(idempotencyKeys)
       .set(patch)
-      .where(
-        and(
-          eq(idempotencyKeys.id, recordId),
-          eq(idempotencyKeys.status, 'PENDING'),
-        ),
-      )
+      .where(and(eq(idempotencyKeys.id, recordId), eq(idempotencyKeys.status, 'PENDING')))
       .returning({ id: idempotencyKeys.id });
 
     return rows.length > 0;
@@ -130,23 +95,14 @@ export class DrizzleIdempotencyRepository implements IdempotencyRepository {
     const rows = await tx
       .update(idempotencyKeys)
       .set(patch)
-      .where(
-        and(
-          eq(idempotencyKeys.id, recordId),
-          lte(idempotencyKeys.expiresAt, now),
-        ),
-      )
+      .where(and(eq(idempotencyKeys.id, recordId), lte(idempotencyKeys.expiresAt, now)))
       .returning({ id: idempotencyKeys.id });
 
     return rows.length > 0;
   }
 }
 
-function normalizeTimestamp(
-  input: Date | string | number | null,
-  fieldName: string,
-  recordId: string,
-): Date {
+function normalizeTimestamp(input: Date | string | number | null, fieldName: string, recordId: string): Date {
   const parsed = input instanceof Date ? input : new Date(input ?? Number.NaN);
 
   if (Number.isNaN(parsed.getTime())) {

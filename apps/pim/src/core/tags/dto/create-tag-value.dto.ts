@@ -41,4 +41,3 @@ export class CreateTagValueDto {
   @IsBoolean()
   isActive?: boolean;
 }
-

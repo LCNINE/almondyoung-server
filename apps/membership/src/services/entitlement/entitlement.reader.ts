@@ -28,12 +28,7 @@ export class EntitlementReader {
     const [entitlement] = await this.dbService.db
       .select()
       .from(schema.subscriptionEntitlement)
-      .where(
-        and(
-          eq(schema.subscriptionEntitlement.userId, userId),
-          eq(schema.subscriptionEntitlement.isCurrent, true),
-        ),
-      )
+      .where(and(eq(schema.subscriptionEntitlement.userId, userId), eq(schema.subscriptionEntitlement.isCurrent, true)))
       .limit(1);
 
     return entitlement || null;
@@ -71,17 +66,11 @@ export class EntitlementReader {
       .innerJoin(
         schema.subscriptionContracts,
         and(
-          eq(
-            schema.subscriptionEntitlement.userId,
-            schema.subscriptionContracts.userId,
-          ),
+          eq(schema.subscriptionEntitlement.userId, schema.subscriptionContracts.userId),
           eq(schema.subscriptionContracts.isVoided, false),
         ),
       )
-      .innerJoin(
-        schema.plan,
-        eq(schema.subscriptionContracts.planId, schema.plan.id),
-      )
+      .innerJoin(schema.plan, eq(schema.subscriptionContracts.planId, schema.plan.id))
       .innerJoin(schema.tiers, eq(schema.plan.tierId, schema.tiers.id))
       .where(
         and(
@@ -121,17 +110,11 @@ export class EntitlementReader {
       .innerJoin(
         schema.subscriptionContracts,
         and(
-          eq(
-            schema.subscriptionEntitlement.userId,
-            schema.subscriptionContracts.userId,
-          ),
+          eq(schema.subscriptionEntitlement.userId, schema.subscriptionContracts.userId),
           eq(schema.subscriptionContracts.isVoided, false),
         ),
       )
-      .innerJoin(
-        schema.plan,
-        eq(schema.subscriptionContracts.planId, schema.plan.id),
-      )
+      .innerJoin(schema.plan, eq(schema.subscriptionContracts.planId, schema.plan.id))
       .innerJoin(schema.tiers, eq(schema.plan.tierId, schema.tiers.id))
       .where(
         and(

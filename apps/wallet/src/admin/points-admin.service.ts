@@ -37,9 +37,7 @@ export class PointsAdminService {
     const reservedRows = await db
       .select({ amount: sql<number>`coalesce(sum(${pointHolds.amount}), 0)` })
       .from(pointHolds)
-      .where(
-        and(eq(pointHolds.userId, userId), eq(pointHolds.status, 'AUTHORIZED')),
-      );
+      .where(and(eq(pointHolds.userId, userId), eq(pointHolds.status, 'AUTHORIZED')));
 
     const confirmed = Number(confirmedRows[0]?.amount ?? 0);
     const reserved = Number(reservedRows[0]?.amount ?? 0);
@@ -68,18 +66,11 @@ export class PointsAdminService {
     return rows;
   }
 
-  async getEventsPaginated(
-    userId: string,
-    page: number,
-    limit: number,
-  ): Promise<PaginatedResponseDto<PointsEventRow>> {
+  async getEventsPaginated(userId: string, page: number, limit: number): Promise<PaginatedResponseDto<PointsEventRow>> {
     const db = this.dbService.db;
     const offset = (page - 1) * limit;
 
-    const [countResult] = await db
-      .select({ value: count() })
-      .from(pointEvents)
-      .where(eq(pointEvents.userId, userId));
+    const [countResult] = await db.select({ value: count() }).from(pointEvents).where(eq(pointEvents.userId, userId));
 
     const total = countResult?.value ?? 0;
 
@@ -162,9 +153,7 @@ export class PointsAdminService {
       throw new NotFoundException(`Point event ${earnEventId} not found`);
     }
     if (originalEvent.eventType !== 'EARN') {
-      throw new BadRequestException(
-        `Event ${earnEventId} is not an EARN event (got ${originalEvent.eventType})`,
-      );
+      throw new BadRequestException(`Event ${earnEventId} is not an EARN event (got ${originalEvent.eventType})`);
     }
     if (originalEvent.userId !== userId) {
       throw new BadRequestException(`Event ${earnEventId} does not belong to user ${userId}`);

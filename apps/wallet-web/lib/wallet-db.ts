@@ -1,29 +1,13 @@
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import {
-  boolean,
-  integer,
-  jsonb,
-  pgEnum,
-  pgTable,
-  text,
-  timestamp,
-  uuid,
-  varchar,
-} from 'drizzle-orm/pg-core';
+import { boolean, integer, jsonb, pgEnum, pgTable, text, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
 
 const client = postgres(process.env.DATABASE_URL ?? '');
 export const db = drizzle(client);
 
 // ─── Enums (read-only 조회용) ─────────────────────────────────────────────────
 
-export const paymentMethodTypeEnum = pgEnum('payment_method_type', [
-  'POINTS',
-  'CARD',
-  'BANK_TRANSFER',
-  'BNPL',
-  'TOSS',
-]);
+export const paymentMethodTypeEnum = pgEnum('payment_method_type', ['POINTS', 'CARD', 'BANK_TRANSFER', 'BNPL', 'TOSS']);
 
 export const paymentIntentStatusEnum = pgEnum('payment_intent_status', [
   'CREATED',
@@ -34,12 +18,7 @@ export const paymentIntentStatusEnum = pgEnum('payment_intent_status', [
   'CANCELED',
 ]);
 
-export const chargeOperationEnum = pgEnum('charge_operation', [
-  'AUTHORIZE',
-  'CAPTURE',
-  'CANCEL',
-  'REFUND',
-]);
+export const chargeOperationEnum = pgEnum('charge_operation', ['AUTHORIZE', 'CAPTURE', 'CANCEL', 'REFUND']);
 
 export const chargeStatusEnum = pgEnum('charge_status', [
   'CREATED',
@@ -51,17 +30,9 @@ export const chargeStatusEnum = pgEnum('charge_status', [
   'REQUIRES_ACTION',
 ]);
 
-export const refundStatusEnum = pgEnum('refund_status', [
-  'PENDING',
-  'SUCCEEDED',
-  'FAILED',
-]);
+export const refundStatusEnum = pgEnum('refund_status', ['PENDING', 'SUCCEEDED', 'FAILED']);
 
-export const paymentStateEntityTypeEnum = pgEnum('payment_state_entity_type', [
-  'INTENT',
-  'CHARGE',
-  'REFUND',
-]);
+export const paymentStateEntityTypeEnum = pgEnum('payment_state_entity_type', ['INTENT', 'CHARGE', 'REFUND']);
 
 export const paymentStateTriggerTypeEnum = pgEnum('payment_state_trigger_type', [
   'SYSTEM',
@@ -79,18 +50,9 @@ export const outboxStatusEnum = pgEnum('wallet_outbox_status', [
   'DEAD_LETTER',
 ]);
 
-export const pointEventTypeEnum = pgEnum('point_event_type', [
-  'EARN',
-  'REDEEM',
-  'EARN_CANCEL',
-  'REDEEM_CANCEL',
-]);
+export const pointEventTypeEnum = pgEnum('point_event_type', ['EARN', 'REDEEM', 'EARN_CANCEL', 'REDEEM_CANCEL']);
 
-export const pointHoldStatusEnum = pgEnum('point_hold_status', [
-  'AUTHORIZED',
-  'CAPTURED',
-  'CANCELLED',
-]);
+export const pointHoldStatusEnum = pgEnum('point_hold_status', ['AUTHORIZED', 'CAPTURED', 'CANCELLED']);
 
 // ─── Tables (조회 전용 — 제약 생략) ───────────────────────────────────────────
 

@@ -7,15 +7,11 @@ export type DrizzleView = View<any>;
 
 export type DrizzleSchema = Record<string, DrizzleTable | DrizzleRelations | DrizzleView>;
 
-export type TypedDatabase<TSchema extends DrizzleSchema> =
-  PostgresJsDatabase<TSchema>;
+export type TypedDatabase<TSchema extends DrizzleSchema> = PostgresJsDatabase<TSchema>;
 
 export type TableNames<TSchema extends DrizzleSchema> = keyof TSchema & string;
 
-export type SchemaTable<
-  TSchema extends DrizzleSchema,
-  TTableName extends TableNames<TSchema>,
-> = TSchema[TTableName];
+export type SchemaTable<TSchema extends DrizzleSchema, TTableName extends TableNames<TSchema>> = TSchema[TTableName];
 
 export interface DbEnvironmentConfig {
   DB_HOST: string;

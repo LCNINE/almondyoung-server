@@ -29,8 +29,7 @@ export abstract class NaverBaseClient {
   private getApiBaseUrl(): string {
     // Mock 서버 사용 시
     if (process.env.NAVER_USE_MOCK_SERVER === 'true') {
-      const mockUrl =
-        process.env.ADAPTER_MOCK_BASE_URL || 'http://localhost:3001';
+      const mockUrl = process.env.ADAPTER_MOCK_BASE_URL || 'http://localhost:3001';
       this.logger.log(`🔧 네이버 Mock 서버 사용: ${mockUrl}`);
       return `${mockUrl}/naver`;
     }

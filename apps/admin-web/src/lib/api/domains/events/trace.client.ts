@@ -56,7 +56,8 @@ export async function getTracedResources(
   const params = new URLSearchParams();
   if (options.service) params.set('service', options.service);
   if (options.limit !== undefined) params.set('limit', String(options.limit));
-  if (options.offset !== undefined) params.set('offset', String(options.offset));
+  if (options.offset !== undefined)
+    params.set('offset', String(options.offset));
 
   const qs = params.toString();
   const res = await client.get(

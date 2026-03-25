@@ -4,9 +4,7 @@ import { TestController } from './controllers/test.controller';
 
 @Module({
   controllers: [TestController],
-  providers: [
-    TestService,
-  ],
+  providers: [TestService],
   exports: [TestService],
 })
 export class TestModule {}

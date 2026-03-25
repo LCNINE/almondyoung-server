@@ -1,7 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { LocationType, SystemLocationRole } from '../types';
 
-
 export class BaseLocationResponseDto {
   @ApiProperty({ description: '로케이션 ID' })
   id: string;
@@ -15,7 +14,7 @@ export class BaseLocationResponseDto {
   @ApiProperty({
     description: '로케이션 타입',
     enum: ['standard', 'zone'],
-    example: 'standard'
+    example: 'standard',
   })
   locationType: LocationType;
 
@@ -109,7 +108,7 @@ export class LocationRackResponseDto {
   columnId: string;
 
   @ApiProperty({ description: '열', type: LocationColumnResponseDto })
-  column: LocationColumnResponseDto
+  column: LocationColumnResponseDto;
 
   @ApiProperty({ description: '랙 번호', example: 1 })
   rackNumber: number;
@@ -145,7 +144,7 @@ export class LocationRackResponseDto {
 export class LocationListResponseDto {
   @ApiProperty({
     description: '로케이션 목록',
-    type: [BaseLocationResponseDto]
+    type: [BaseLocationResponseDto],
   })
   items: BaseLocationResponseDto[];
 

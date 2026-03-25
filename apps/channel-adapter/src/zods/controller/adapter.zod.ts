@@ -5,19 +5,9 @@ import { createZodDto } from 'nestjs-zod';
 // 기본 타입 스키마
 // ═══════════════════════════════════════════════════════════════
 
-export const ChannelTypeSchema = z.enum([
-  'naver_smartstore',
-  'coupang',
-  'medusa',
-]);
+export const ChannelTypeSchema = z.enum(['naver_smartstore', 'coupang', 'medusa']);
 
-export const DataTypeSchema = z.enum([
-  'orders',
-  'order_status',
-  'claims',
-  'inventory',
-  'products',
-]);
+export const DataTypeSchema = z.enum(['orders', 'order_status', 'claims', 'inventory', 'products']);
 
 // ═══════════════════════════════════════════════════════════════
 // 요청/응답 스키마
@@ -146,9 +136,7 @@ export const CommandResponseSchema = z.object({
 export const ExchangeRequestsQuerySchema = z.object({
   dateFrom: z.string(),
   dateTo: z.string(),
-  status: z
-    .enum(['RECEIPT', 'PROGRESS', 'SUCCESS', 'REJECT', 'CANCEL'])
-    .optional(),
+  status: z.enum(['RECEIPT', 'PROGRESS', 'SUCCESS', 'REJECT', 'CANCEL']).optional(),
   orderId: z.string().optional(),
   pageSize: z.string().optional(),
 });
@@ -208,24 +196,14 @@ export const WmsOrderResponseSchema = z.object({
 
 export class PollQueryDto extends createZodDto(PollQuerySchema) {}
 export class PollResponseDto extends createZodDto(PollResponseSchema) {}
-export class SyncToChannelPayloadDto extends createZodDto(
-  SyncToChannelPayloadSchema,
-) {}
+export class SyncToChannelPayloadDto extends createZodDto(SyncToChannelPayloadSchema) {}
 export class SyncResponseDto extends createZodDto(SyncResponseSchema) {}
 export class CommandResponseDto extends createZodDto(CommandResponseSchema) {}
-export class ExchangeRequestsQueryDto extends createZodDto(
-  ExchangeRequestsQuerySchema,
-) {}
-export class ExchangeRequestsResponseDto extends createZodDto(
-  ExchangeRequestsResponseSchema,
-) {}
+export class ExchangeRequestsQueryDto extends createZodDto(ExchangeRequestsQuerySchema) {}
+export class ExchangeRequestsResponseDto extends createZodDto(ExchangeRequestsResponseSchema) {}
 export class WmsOrderRequestDto extends createZodDto(WmsOrderRequestSchema) {}
-export class WmsOrderCancelRequestDto extends createZodDto(
-  WmsOrderCancelRequestSchema,
-) {}
-export class WmsExchangeRequestDto extends createZodDto(
-  WmsExchangeRequestSchema,
-) {}
+export class WmsOrderCancelRequestDto extends createZodDto(WmsOrderCancelRequestSchema) {}
+export class WmsExchangeRequestDto extends createZodDto(WmsExchangeRequestSchema) {}
 export class WmsOrderResponseDto extends createZodDto(WmsOrderResponseSchema) {}
 // NOTE: DLQ DTO 클래스 제거됨 (DlqMonitoringService 제거에 따라)
 // - DlqStatusResponseDto

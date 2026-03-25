@@ -16,11 +16,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/s
 import { JwtAuthGuard, User } from '@app/authorization';
 import { ProductVersionsService } from '../services/product-versions.service';
 import { ProductMastersService } from '../services/product-masters.service';
-import {
-  CreateDraftVersionDto,
-  VersionTreeResponseDto,
-  VersionDiffItemDto,
-} from '../dto/versions';
+import { CreateDraftVersionDto, VersionTreeResponseDto, VersionDiffItemDto } from '../dto/versions';
 import { UpdateProductMasterDto } from '../dto';
 import { ProductVersionMapper } from '../mappers/product-version.mapper';
 
@@ -32,7 +28,7 @@ export class ProductMasterVersionsController {
   constructor(
     private readonly productVersionsService: ProductVersionsService,
     private readonly productMastersService: ProductMastersService,
-  ) { }
+  ) {}
 
   @Get()
   @ApiOperation({
@@ -46,9 +42,7 @@ export class ProductMasterVersionsController {
     type: [VersionTreeResponseDto],
   })
   @ApiResponse({ status: 404, description: '버전을 찾을 수 없음' })
-  async getVersionTree(
-    @Param('masterId') masterId: string,
-  ): Promise<VersionTreeResponseDto[]> {
+  async getVersionTree(@Param('masterId') masterId: string): Promise<VersionTreeResponseDto[]> {
     const tree = await this.productVersionsService.getVersionTree(masterId);
     return tree.map((node) => this._mapToResponseDto(node));
   }
@@ -76,7 +70,8 @@ export class ProductMasterVersionsController {
   @Get(':versionId')
   @ApiOperation({
     summary: '특정 버전 조회',
-    description: 'Version ID로 특정 버전을 조회합니다. 모든 상태(draft, active, inactive)의 버전을 조회할 수 있습니다. 태그, 이미지, 옵션, 변형 정보를 포함합니다.',
+    description:
+      'Version ID로 특정 버전을 조회합니다. 모든 상태(draft, active, inactive)의 버전을 조회할 수 있습니다. 태그, 이미지, 옵션, 변형 정보를 포함합니다.',
   })
   @ApiParam({ name: 'masterId', description: 'Master ID' })
   @ApiParam({ name: 'versionId', description: 'Version ID' })
@@ -85,17 +80,11 @@ export class ProductMasterVersionsController {
     description: '버전 상세 조회 성공 (태그, 이미지, 옵션, 변형 포함)',
   })
   @ApiResponse({ status: 404, description: '버전을 찾을 수 없음' })
-  async getVersionById(
-    @Param('masterId') masterId: string,
-    @Param('versionId') versionId: string,
-  ) {
+  async getVersionById(@Param('masterId') masterId: string, @Param('versionId') versionId: string) {
     const versionDetail = await this.productVersionsService.getVersionDetail(versionId);
 
     if (versionDetail.masterId !== masterId) {
-      throw new HttpException(
-        'Version does not belong to the specified master',
-        HttpStatus.BAD_REQUEST,
-      );
+      throw new HttpException('Version does not belong to the specified master', HttpStatus.BAD_REQUEST);
     }
 
     return ProductVersionMapper.toDetailResponseDto(versionDetail);
@@ -176,10 +165,7 @@ export class ProductMasterVersionsController {
   ) {
     try {
       // 권한 확인 (draft 상태인지, 소유자인지)
-      const canModify = await this.productVersionsService.canUserModifyVersion(
-        versionId,
-        user.userId,
-      );
+      const canModify = await this.productVersionsService.canUserModifyVersion(versionId, user.userId);
 
       if (!canModify) {
         throw new HttpException(
@@ -188,10 +174,7 @@ export class ProductMasterVersionsController {
         );
       }
 
-      const updatedVersion = await this.productMastersService.updateVersion(
-        versionId,
-        updateData,
-      );
+      const updatedVersion = await this.productMastersService.updateVersion(versionId, updateData);
 
       const versionDetail = await this.productVersionsService.getVersionDetail(updatedVersion.id);
       return ProductVersionMapper.toDetailResponseDto(versionDetail);
@@ -210,17 +193,15 @@ export class ProductMasterVersionsController {
       if (error.message.includes('required')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
       }
-      throw new HttpException(
-        `Failed to update version: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException(`Failed to update version: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
   @Patch(':versionId/publish')
   @ApiOperation({
     summary: '버전 Publish',
-    description: 'Draft 또는 Inactive 버전을 Active 상태로 변경합니다. Inactive 버전을 활성화하면 이전 버전으로 롤백할 수 있습니다. 기존 Active 버전이 있으면 자동으로 Inactive로 전환됩니다.',
+    description:
+      'Draft 또는 Inactive 버전을 Active 상태로 변경합니다. Inactive 버전을 활성화하면 이전 버전으로 롤백할 수 있습니다. 기존 Active 버전이 있으면 자동으로 Inactive로 전환됩니다.',
   })
   @ApiParam({ name: 'masterId', description: 'Master ID' })
   @ApiParam({ name: 'versionId', description: 'Version ID (Draft 또는 Inactive 상태여야 함)' })
@@ -230,10 +211,7 @@ export class ProductMasterVersionsController {
   })
   @ApiResponse({ status: 404, description: '버전을 찾을 수 없음' })
   @ApiResponse({ status: 400, description: 'Draft 또는 Inactive 상태가 아닌 버전은 publish할 수 없음' })
-  async publishVersion(
-    @Param('masterId') masterId: string,
-    @Param('versionId') versionId: string,
-  ) {
+  async publishVersion(@Param('masterId') masterId: string, @Param('versionId') versionId: string) {
     try {
       await this.productVersionsService.publishVersion(versionId);
       return { message: 'Version published successfully' };
@@ -245,10 +223,7 @@ export class ProductMasterVersionsController {
       if (error.message.includes('Only draft or inactive')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
       }
-      throw new HttpException(
-        `Failed to publish version: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException(`Failed to publish version: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -282,10 +257,7 @@ export class ProductMasterVersionsController {
       if (error.message.includes('Cannot compare')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
       }
-      throw new HttpException(
-        `Failed to compare versions: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException(`Failed to compare versions: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -299,10 +271,7 @@ export class ProductMasterVersionsController {
   @ApiResponse({ status: 200, description: 'Draft 버전 삭제 성공' })
   @ApiResponse({ status: 400, description: 'Draft가 아닌 버전은 삭제 불가' })
   @ApiResponse({ status: 404, description: '버전을 찾을 수 없음' })
-  async deleteDraftVersion(
-    @Param('masterId') masterId: string,
-    @Param('versionId') versionId: string,
-  ) {
+  async deleteDraftVersion(@Param('masterId') masterId: string, @Param('versionId') versionId: string) {
     try {
       await this.productVersionsService.deleteDraftVersion(versionId);
       return {
@@ -317,10 +286,7 @@ export class ProductMasterVersionsController {
       if (error.message.includes('Only draft')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
       }
-      throw new HttpException(
-        `Failed to delete draft version: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException(`Failed to delete draft version: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -339,4 +305,3 @@ export class ProductMasterVersionsController {
     };
   }
 }
-

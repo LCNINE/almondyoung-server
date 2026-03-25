@@ -3,9 +3,7 @@ import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { DbService } from '@app/db';
 import { DomainEvent } from '@packages/event-contracts/types';
-import type {
-  MembershipStatusChangedPayload,
-} from '@packages/event-contracts/streams/membership.stream';
+import type { MembershipStatusChangedPayload } from '@packages/event-contracts/streams/membership.stream';
 import { processedEvents, inboxEvents } from '../schema';
 import { eq } from 'drizzle-orm';
 import type { ChannelAdapterSchema } from '../types';
@@ -21,9 +19,7 @@ import type { ChannelAdapterSchema } from '../types';
 export class MembershipEventConsumer {
   private readonly logger = new Logger(MembershipEventConsumer.name);
 
-  constructor(
-    private readonly dbService: DbService<ChannelAdapterSchema>,
-  ) {
+  constructor(private readonly dbService: DbService<ChannelAdapterSchema>) {
     this.logger.log('Membership Event Consumer 초기화 완료');
   }
 
@@ -51,9 +47,7 @@ export class MembershipEventConsumer {
         .limit(1);
 
       if (existing) {
-        this.logger.debug(
-          `[Membership] 이미 처리된 이벤트 스킵: ${idempotencyKey}`,
-        );
+        this.logger.debug(`[Membership] 이미 처리된 이벤트 스킵: ${idempotencyKey}`);
         return;
       }
 
@@ -84,18 +78,13 @@ export class MembershipEventConsumer {
       });
 
       const duration = Date.now() - startTime;
-      this.logger.log(
-        `[Membership] Inbox 저장 완료: ${userId} (${duration}ms)`,
-      );
+      this.logger.log(`[Membership] Inbox 저장 완료: ${userId} (${duration}ms)`);
     } catch (error) {
       const duration = Date.now() - startTime;
-      this.logger.error(
-        `[Membership] Inbox 저장 실패: ${userId} (${duration}ms)`,
-        {
-          error: error.message,
-          stack: error.stack,
-        },
-      );
+      this.logger.error(`[Membership] Inbox 저장 실패: ${userId} (${duration}ms)`, {
+        error: error.message,
+        stack: error.stack,
+      });
       throw error;
     }
   }

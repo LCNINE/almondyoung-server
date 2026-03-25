@@ -1,13 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import {
-  PricingRulesSetInput,
-  BasePriceRule,
-  MembershipPriceRule,
-  TieredPriceRule,
-} from './pricing-rule.schema';
+import { PricingRulesSetInput, BasePriceRule, MembershipPriceRule, TieredPriceRule } from './pricing-rule.schema';
 import { IsArray, IsInt, Min, IsEnum, IsOptional, IsUUID, ValidateNested } from 'class-validator';
-
 
 export enum PricingLayer {
   BASE_PRICE = 'base_price',

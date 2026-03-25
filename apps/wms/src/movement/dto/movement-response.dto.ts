@@ -230,4 +230,3 @@ export class MovementHistoryResponseDto {
   })
   total: number;
 }
-

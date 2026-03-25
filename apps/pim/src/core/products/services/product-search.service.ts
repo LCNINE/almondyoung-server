@@ -1,20 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { and, or, eq, gte, lte, like, isNull, desc, asc, inArray, sql, SQL } from 'drizzle-orm';
-import {
-  type PimSchema,
-  productMasters,
-  productMasterVersions,
-  productMasterCategories,
-} from '../../../schema';
+import { type PimSchema, productMasters, productMasterVersions, productMasterCategories } from '../../../schema';
 import { ProductQueryDto } from '../dto';
 import { DbTransaction } from '../../../types';
 
 @Injectable()
 export class ProductSearchService {
-  constructor(
-    @InjectDb() private readonly db: DbService<PimSchema>,
-  ) { }
+  constructor(@InjectDb() private readonly db: DbService<PimSchema>) {}
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.db.db;
@@ -99,10 +92,7 @@ export class ProductSearchService {
     query: ProductQueryDto,
     conditions: SQL[],
   ) {
-    const categoryCondition = inArray(
-      productMasterCategories.categoryId,
-      query.categoryIds!,
-    );
+    const categoryCondition = inArray(productMasterCategories.categoryId, query.categoryIds!);
 
     // Main query
     const page = query.page || 1;
@@ -112,15 +102,12 @@ export class ProductSearchService {
     const results = await client
       .select()
       .from(productMasterVersions)
-      .innerJoin(
-        productMasters,
-        eq(productMasterVersions.masterId, productMasters.id)
-      )
+      .innerJoin(productMasters, eq(productMasterVersions.masterId, productMasters.id))
       .innerJoin(
         productMasterCategories,
         and(
           eq(productMasterCategories.masterId, productMasterVersions.masterId),
-          eq(productMasterCategories.versionId, productMasterVersions.id)
+          eq(productMasterCategories.versionId, productMasterVersions.id),
         ),
       )
       .where(and(...conditions, categoryCondition))
@@ -132,15 +119,12 @@ export class ProductSearchService {
     const [{ count }] = await client
       .select({ count: sql<number>`count(distinct ${productMasterVersions.id})` })
       .from(productMasterVersions)
-      .innerJoin(
-        productMasters,
-        eq(productMasterVersions.masterId, productMasters.id)
-      )
+      .innerJoin(productMasters, eq(productMasterVersions.masterId, productMasters.id))
       .innerJoin(
         productMasterCategories,
         and(
           eq(productMasterCategories.masterId, productMasterVersions.masterId),
-          eq(productMasterCategories.versionId, productMasterVersions.id)
+          eq(productMasterCategories.versionId, productMasterVersions.id),
         ),
       )
       .where(and(...conditions, categoryCondition));
@@ -161,10 +145,7 @@ export class ProductSearchService {
     const results = await client
       .select()
       .from(productMasterVersions)
-      .innerJoin(
-        productMasters,
-        eq(productMasterVersions.masterId, productMasters.id)
-      )
+      .innerJoin(productMasters, eq(productMasterVersions.masterId, productMasters.id))
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(this.getSortOrder(query))
       .limit(limit)
@@ -174,10 +155,7 @@ export class ProductSearchService {
     const [{ count }] = await client
       .select({ count: sql<number>`count(*)` })
       .from(productMasterVersions)
-      .innerJoin(
-        productMasters,
-        eq(productMasterVersions.masterId, productMasters.id)
-      )
+      .innerJoin(productMasters, eq(productMasterVersions.masterId, productMasters.id))
       .where(conditions.length > 0 ? and(...conditions) : undefined);
 
     return this.buildPaginationResponse(results, query, Number(count));
@@ -241,4 +219,3 @@ export class ProductSearchService {
     }
   }
 }
-

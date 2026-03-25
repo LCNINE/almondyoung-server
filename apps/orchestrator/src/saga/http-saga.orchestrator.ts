@@ -19,9 +19,7 @@ export class HttpSagaOrchestrator {
   /**
    * Step 추가
    */
-  addStep<TInput, TOutput, TRollback>(
-    step: SagaStep<TInput, TOutput, TRollback>,
-  ): this {
+  addStep<TInput, TOutput, TRollback>(step: SagaStep<TInput, TOutput, TRollback>): this {
     this.steps.push(step);
     return this;
   }
@@ -29,9 +27,7 @@ export class HttpSagaOrchestrator {
   /**
    * 워크플로우 실행
    */
-  async execute<TContext extends SagaContext>(
-    initialContext: TContext,
-  ): Promise<TContext> {
+  async execute<TContext extends SagaContext>(initialContext: TContext): Promise<TContext> {
     try {
       let context = { ...initialContext };
 
@@ -52,10 +48,7 @@ export class HttpSagaOrchestrator {
       this.logger.log('✅ [Saga] All steps completed successfully');
       return context;
     } catch (error) {
-      this.logger.error(
-        '❌ [Saga] Error occurred, initiating rollback...',
-        error,
-      );
+      this.logger.error('❌ [Saga] Error occurred, initiating rollback...', error);
       await this.rollback();
       throw error;
     }
@@ -75,10 +68,7 @@ export class HttpSagaOrchestrator {
         this.logger.log(`🔙 [Saga] Compensating: ${step.name}`);
         await step.compensate(rollbackData, {});
       } catch (error) {
-        this.logger.error(
-          `❌ [Saga] Compensation failed for ${step.name}:`,
-          error.message,
-        );
+        this.logger.error(`❌ [Saga] Compensation failed for ${step.name}:`, error.message);
         // Best-effort rollback: 실패해도 계속 진행
       }
     }

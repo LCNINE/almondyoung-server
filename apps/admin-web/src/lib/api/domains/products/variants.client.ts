@@ -108,10 +108,7 @@ export const updateVariantStatus = async (
   id: string,
   data: UpdateVariantStatusDto
 ): Promise<void> => {
-  await client.put(
-    `${PIM_BASE_URL}/variants/${id}/status`,
-    data
-  );
+  await client.put(`${PIM_BASE_URL}/variants/${id}/status`, data);
 };
 
 // 제품 변형 클라이언트 객체

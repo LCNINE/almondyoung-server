@@ -38,13 +38,13 @@ export class CategoryDetailResponseDto {
   @ApiProperty({
     description: '부모 카테고리 정보',
     type: CategoryResponseDto,
-    required: false
+    required: false,
   })
   parent?: CategoryResponseDto;
 
   @ApiProperty({
     description: '하위 카테고리 목록',
-    type: [CategoryResponseDto]
+    type: [CategoryResponseDto],
   })
   children: CategoryResponseDto[];
 
@@ -57,4 +57,3 @@ export class CategoryDetailResponseDto {
   @ApiProperty({ description: '썸네일 이미지 URL', required: false, nullable: true })
   thumbnail?: string | null;
 }
-

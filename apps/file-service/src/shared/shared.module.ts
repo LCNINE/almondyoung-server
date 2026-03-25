@@ -9,4 +9,3 @@ import { FileTypeDetector } from './services/file-type-detector.service';
   exports: [FileRepository, FileContextRepository, FileContextValidator, FileTypeDetector],
 })
 export class SharedModule {}
-

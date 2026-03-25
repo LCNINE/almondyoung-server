@@ -2,16 +2,13 @@ import { Controller, Post, Body, Get, Param, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { MovementService } from '../services/movement.service';
 import { MoveBatchDto } from '../dto/move-batch.dto';
-import {
-  MovementJobWithLinesDto,
-  MovementHistoryResponseDto,
-} from '../dto/movement-response.dto';
+import { MovementJobWithLinesDto, MovementHistoryResponseDto } from '../dto/movement-response.dto';
 import { MovementJobMapper, MovementJobLineMapper, MovementWorkLogMapper } from '../mappers/movement.mapper';
 
 @ApiTags('Movement')
 @Controller('movement')
 export class MovementController {
-  constructor(private readonly movementService: MovementService) { }
+  constructor(private readonly movementService: MovementService) {}
 
   @Post('move')
   @ApiOperation({ summary: '동일 창고 내 즉시 이동(배치)' })
@@ -60,7 +57,7 @@ export class MovementController {
     });
 
     return {
-      logs: logs.map(log => MovementWorkLogMapper.toDto(log)),
+      logs: logs.map((log) => MovementWorkLogMapper.toDto(log)),
       days: parsedDays,
       total: logs.length,
     };

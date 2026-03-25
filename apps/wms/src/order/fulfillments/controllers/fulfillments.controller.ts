@@ -1,12 +1,5 @@
 import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiParam,
-  ApiQuery,
-  ApiBody,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { FulfillmentsService } from '../services/fulfillments.service';
 import { FulfillmentReservationsFacade } from '../../shared/services/fulfillment-reservations.facade';
 import { CreateFulfillmentOrderDto } from '../dto/create-fulfillment-order.dto';
@@ -23,7 +16,7 @@ export class FulfillmentsController {
   constructor(
     private readonly service: FulfillmentsService,
     private readonly reservations: FulfillmentReservationsFacade,
-  ) { }
+  ) {}
 
   @Post()
   @ApiOperation({ summary: '주문처리 생성', description: '새로운 주문처리(Fulfillment)를 생성합니다.' })
@@ -79,7 +72,10 @@ export class FulfillmentsController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: '주문처리 상세 조회', description: '특정 주문처리의 상세 정보를 조회합니다. Invoice 정보가 포함됩니다.' })
+  @ApiOperation({
+    summary: '주문처리 상세 조회',
+    description: '특정 주문처리의 상세 정보를 조회합니다. Invoice 정보가 포함됩니다.',
+  })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
   @ApiResponse({ status: 200, description: '주문처리 상세 조회 성공', type: FulfillmentOrderResponseDto })
   @ApiResponse({ status: 404, description: '주문처리를 찾을 수 없음' })
@@ -89,7 +85,10 @@ export class FulfillmentsController {
   }
 
   @Get()
-  @ApiOperation({ summary: '주문처리 목록 조회', description: '주문처리 목록을 페이지네이션과 함께 조회합니다. 각 주문의 Invoice 정보가 포함됩니다.' })
+  @ApiOperation({
+    summary: '주문처리 목록 조회',
+    description: '주문처리 목록을 페이지네이션과 함께 조회합니다. 각 주문의 Invoice 정보가 포함됩니다.',
+  })
   @ApiQuery({ name: 'limit', required: false, type: String, description: '조회할 아이템 수 (기본값: 20)' })
   @ApiQuery({ name: 'offset', required: false, type: String, description: '건너뛸 아이템 수 (기본값: 0)' })
   @ApiResponse({ status: 200, description: '주문처리 목록 조회 성공', type: [FulfillmentOrderResponseDto] })
@@ -144,5 +143,3 @@ export class FulfillmentsController {
     return this.reservations.transferReservation(dto);
   }
 }
-
-

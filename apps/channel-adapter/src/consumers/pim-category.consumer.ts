@@ -23,9 +23,7 @@ import type { ChannelAdapterSchema } from '../types';
 export class PimCategoryConsumer {
   private readonly logger = new Logger(PimCategoryConsumer.name);
 
-  constructor(
-    private readonly dbService: DbService<ChannelAdapterSchema>,
-  ) {
+  constructor(private readonly dbService: DbService<ChannelAdapterSchema>) {
     this.logger.log('PIM Category Event Consumer 초기화 완료');
   }
 
@@ -61,9 +59,7 @@ export class PimCategoryConsumer {
         .limit(1);
 
       if (existing) {
-        this.logger.debug(
-          `[PIM] 이미 처리된 이벤트 스킵: ${idempotencyKey}`,
-        );
+        this.logger.debug(`[PIM] 이미 처리된 이벤트 스킵: ${idempotencyKey}`);
         return;
       }
 
@@ -96,18 +92,13 @@ export class PimCategoryConsumer {
       });
 
       const duration = Date.now() - startTime;
-      this.logger.log(
-        `[PIM] Inbox 저장 완료: ${categoryId} (${duration}ms)`,
-      );
+      this.logger.log(`[PIM] Inbox 저장 완료: ${categoryId} (${duration}ms)`);
     } catch (error) {
       const duration = Date.now() - startTime;
-      this.logger.error(
-        `[PIM] Inbox 저장 실패: ${categoryId} (${duration}ms)`,
-        {
-          error: error.message,
-          stack: error.stack,
-        },
-      );
+      this.logger.error(`[PIM] Inbox 저장 실패: ${categoryId} (${duration}ms)`, {
+        error: error.message,
+        stack: error.stack,
+      });
       throw error; // Re-throw to send to DLQ
     }
   }

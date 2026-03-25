@@ -67,11 +67,7 @@ export const factOrderItems = pgTable(
     createdAt: timestamp('created_at').defaultNow(),
   },
   (table) => [
-    uniqueIndex('uq_fact_order_items_order_item').on(
-      table.orderKey,
-      table.salesChannel,
-      table.orderItemId,
-    ),
+    uniqueIndex('uq_fact_order_items_order_item').on(table.orderKey, table.salesChannel, table.orderItemId),
     index('idx_fact_order_items_master').on(table.masterId),
     index('idx_fact_order_items_occurred_at').on(table.occurredAt),
     index('idx_fact_order_items_order_key').on(table.orderKey),
@@ -93,11 +89,7 @@ export const aggProductOrderDaily = pgTable(
     updatedAt: timestamp('updated_at').defaultNow(),
   },
   (table) => [
-    uniqueIndex('uq_agg_product_order_daily').on(
-      table.aggDate,
-      table.masterId,
-      table.salesChannel,
-    ),
+    uniqueIndex('uq_agg_product_order_daily').on(table.aggDate, table.masterId, table.salesChannel),
     index('idx_agg_product_order_daily_date').on(table.aggDate),
     index('idx_agg_product_order_daily_master').on(table.masterId),
     index('idx_agg_product_order_daily_channel').on(table.salesChannel),
@@ -161,10 +153,7 @@ export const dimProductCategories = pgTable(
     updatedAt: timestamp('updated_at').defaultNow(),
   },
   (table) => [
-    uniqueIndex('uq_dim_product_categories_master_category').on(
-      table.masterId,
-      table.categoryId,
-    ),
+    uniqueIndex('uq_dim_product_categories_master_category').on(table.masterId, table.categoryId),
     index('idx_dim_product_categories_master').on(table.masterId),
     index('idx_dim_product_categories_category').on(table.categoryId),
     index('idx_dim_product_categories_primary').on(table.isPrimary),

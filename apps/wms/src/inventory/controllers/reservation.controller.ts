@@ -1,4 +1,17 @@
-import { Controller, Post, Get, Patch, Delete, Body, Param, Query, HttpCode, HttpStatus, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  Query,
+  HttpCode,
+  HttpStatus,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { UnifiedReservationService } from '../../shared/services/unified-reservation.service';
 import { AllocationStrategyService } from '../services/allocation-strategy.service';
@@ -86,10 +99,7 @@ export class ReservationController {
     status: 404,
     description: '예약을 찾을 수 없음',
   })
-  async releaseReservation(
-    @Param('id') id: string,
-    @Body() dto?: ReleaseReservationDto,
-  ): Promise<void> {
+  async releaseReservation(@Param('id') id: string, @Body() dto?: ReleaseReservationDto): Promise<void> {
     try {
       await this.unifiedReservation.releaseReservation(id);
     } catch (error) {
@@ -128,10 +138,7 @@ export class ReservationController {
     @Query('targetType') targetType: string,
     @Query('targetId') targetId: string,
   ): Promise<ReservationDto[]> {
-    const reservations = await this.unifiedReservation.getReservationsByTarget(
-      targetType,
-      targetId,
-    );
+    const reservations = await this.unifiedReservation.getReservationsByTarget(targetType, targetId);
 
     return reservations as ReservationDto[];
   }
@@ -164,10 +171,7 @@ export class ReservationController {
     @Param('skuId') skuId: string,
     @Query('warehouseId') warehouseId?: string,
   ): Promise<ReservationDto[]> {
-    const reservations = await this.unifiedReservation.getReservationsBySku(
-      skuId,
-      warehouseId,
-    );
+    const reservations = await this.unifiedReservation.getReservationsBySku(skuId, warehouseId);
 
     return reservations as ReservationDto[];
   }
@@ -190,9 +194,7 @@ export class ReservationController {
     description: '예약 통계',
     type: [ReservationSummaryDto],
   })
-  async getReservationSummary(
-    @Param('warehouseId') warehouseId: string,
-  ): Promise<ReservationSummaryDto[]> {
+  async getReservationSummary(@Param('warehouseId') warehouseId: string): Promise<ReservationSummaryDto[]> {
     const summary = await this.unifiedReservation.getReservationSummary(warehouseId);
 
     return summary as ReservationSummaryDto[];
@@ -265,10 +267,7 @@ export class ReservationController {
   ): Promise<AvailableStockResponseDto> {
     if (warehouseId) {
       // 특정 창고의 할당 가능 수량
-      const totalAvailable = await this.allocationStrategy.getTotalAvailableQuantity(
-        skuId,
-        warehouseId,
-      );
+      const totalAvailable = await this.allocationStrategy.getTotalAvailableQuantity(skuId, warehouseId);
 
       return {
         skuId,
@@ -323,5 +322,3 @@ export class ReservationController {
     };
   }
 }
-
-

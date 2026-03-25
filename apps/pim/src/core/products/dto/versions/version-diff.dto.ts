@@ -10,4 +10,3 @@ export class VersionDiffItemDto {
   @ApiProperty({ description: '새 값' })
   newValue: any;
 }
-

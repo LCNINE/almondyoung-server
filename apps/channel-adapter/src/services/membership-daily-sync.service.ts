@@ -36,23 +36,16 @@ export class MembershipDailySyncService {
         this.dbService.db.select().from(cafe24MemberMappings),
       ]);
 
-      this.logger.log(
-        `정합성 확인: 활성 멤버=${activeCafe24Ids.length}명, 연동 유저=${allMappings.length}명`,
-      );
+      this.logger.log(`정합성 확인: 활성 멤버=${activeCafe24Ids.length}명, 연동 유저=${allMappings.length}명`);
 
       const activeSet = new Set(activeCafe24Ids);
 
       for (const { cafe24MemberId } of allMappings) {
         const shouldBeActive = activeSet.has(cafe24MemberId);
         try {
-          await this.firebaseMembershipSyncService.syncByFirebase(
-            cafe24MemberId,
-            shouldBeActive,
-          );
+          await this.firebaseMembershipSyncService.syncByFirebase(cafe24MemberId, shouldBeActive);
         } catch (err) {
-          this.logger.error(
-            `cafe24MemberId=${cafe24MemberId} 동기화 실패: ${err?.message}`,
-          );
+          this.logger.error(`cafe24MemberId=${cafe24MemberId} 동기화 실패: ${err?.message}`);
         }
         await sleep(200);
       }

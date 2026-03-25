@@ -25,11 +25,7 @@ describe('AuthController', () => {
                 accessToken: 'test-token',
               }),
             ),
-            signIn: jest
-              .fn()
-              .mockImplementation((dto) =>
-                Promise.resolve({ accessToken: 'test-token' }),
-              ),
+            signIn: jest.fn().mockImplementation((dto) => Promise.resolve({ accessToken: 'test-token' })),
             signOut: jest.fn().mockResolvedValue('로그아웃'),
             refreshToken: jest.fn().mockResolvedValue('토큰 갱신'),
           },

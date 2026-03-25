@@ -18,9 +18,7 @@ export class ReviewEligibilityController {
   @Post()
   @Public()
   @ApiOperation({ summary: '구매확정 후 리뷰 작성 자격 등록 (내부 호출)' })
-  async create(
-    @Body() dto: CreateReviewEligibilityDto,
-  ): Promise<ReviewEligibilityResponseDto[]> {
+  async create(@Body() dto: CreateReviewEligibilityDto): Promise<ReviewEligibilityResponseDto[]> {
     const created = await this.eligibilityService.create(dto);
     return created.map((e) => ReviewMapper.toEligibilityResponse(e));
   }

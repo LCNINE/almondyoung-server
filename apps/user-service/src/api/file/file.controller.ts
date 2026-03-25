@@ -1,21 +1,10 @@
 import { RequireScopes, JwtPayload } from '@app/authorization';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import { Body, Controller, Post } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiBody,
-  ApiConsumes,
-  ApiOperation,
-  ApiParam,
-  ApiResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { DeleteFileDto } from './dto/delete-file.dto';
 import { FileService } from './file.service';
-import {
-  FastifyFile,
-  FastifyFileInterceptor,
-} from './interceptors/fastify-file.interceptor';
+import { FastifyFile, FastifyFileInterceptor } from './interceptors/fastify-file.interceptor';
 import { ValidatedFile } from './interfaces/validated-file.interface';
 import { FileValidatorPipe } from './pipes/file-validator.pipe';
 
@@ -45,10 +34,7 @@ export class FileController {
       },
     },
   })
-  async uploadFile(
-    @FastifyFile(FileValidatorPipe) file: ValidatedFile,
-    @CurrentUser() user: JwtPayload,
-  ) {
+  async uploadFile(@FastifyFile(FileValidatorPipe) file: ValidatedFile, @CurrentUser() user: JwtPayload) {
     return this.fileService.uploadFile(file, user.id);
   }
 
@@ -91,10 +77,7 @@ export class FileController {
     status: 404,
     description: '파일을 찾을 수 없습니다.',
   })
-  async deleteFile(
-    @Body() deleteFileDto: DeleteFileDto,
-    @CurrentUser() user: JwtPayload,
-  ) {
+  async deleteFile(@Body() deleteFileDto: DeleteFileDto, @CurrentUser() user: JwtPayload) {
     const key = `${deleteFileDto.folderName}/${user.id}/${deleteFileDto.fileName}`;
     await this.fileService.deleteFile(key);
   }

@@ -70,10 +70,7 @@ export class SavingsService {
    * @param yearMonth - 조회할 년월 (YYYY-MM 형식)
    * @returns 특정 월 절약액 정보
    */
-  async getMonthSavings(
-    userId: string,
-    yearMonth: string,
-  ): Promise<MonthlySavingsDto> {
+  async getMonthSavings(userId: string, yearMonth: string): Promise<MonthlySavingsDto> {
     // YYYY-MM 형식 검증
     if (!/^\d{4}-\d{2}$/.test(yearMonth)) {
       throw new Error('Invalid yearMonth format. Use YYYY-MM');
@@ -98,20 +95,12 @@ export class SavingsService {
    * @param endDate - 종료일
    * @returns 기간별 절약액 정보 (월별 breakdown 포함)
    */
-  async getRangeSavings(
-    userId: string,
-    startDate: Date,
-    endDate: Date,
-  ): Promise<RangeSavingsDto> {
+  async getRangeSavings(userId: string, startDate: Date, endDate: Date): Promise<RangeSavingsDto> {
     if (startDate > endDate) {
       throw new Error('startDate must be before or equal to endDate');
     }
 
-    const result = await this.savingsReader.getRangeSavings(
-      userId,
-      startDate,
-      endDate,
-    );
+    const result = await this.savingsReader.getRangeSavings(userId, startDate, endDate);
 
     return {
       userId,

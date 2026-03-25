@@ -99,11 +99,7 @@ export class MembershipPolicyService {
    * 2. 기본 정책 테이블
    * 3. 기본값
    */
-  async getPolicyValue<T = PolicyValue>(
-    ruleType: PolicyRuleType,
-    tierId?: string,
-    defaultValue?: T,
-  ): Promise<T> {
+  async getPolicyValue<T = PolicyValue>(ruleType: PolicyRuleType, tierId?: string, defaultValue?: T): Promise<T> {
     // 1. 티어별 오버라이드 확인
     if (tierId && TIER_POLICY_OVERRIDES[tierId]?.[ruleType]) {
       this.logger.debug('Using tier-specific policy', {
@@ -159,9 +155,7 @@ export class MembershipPolicyService {
         expectedType: 'number',
         actualType: typeof value[key],
       });
-      throw new Error(
-        `Policy value for key '${key}' is not a number: ${ruleType}`,
-      );
+      throw new Error(`Policy value for key '${key}' is not a number: ${ruleType}`);
     }
 
     return value[key];
@@ -189,9 +183,7 @@ export class MembershipPolicyService {
         expectedType: 'boolean',
         actualType: typeof value[key],
       });
-      throw new Error(
-        `Policy value for key '${key}' is not a boolean: ${ruleType}`,
-      );
+      throw new Error(`Policy value for key '${key}' is not a boolean: ${ruleType}`);
     }
 
     return value[key];
@@ -202,11 +194,7 @@ export class MembershipPolicyService {
    *
    * 주의: 서버 재시작 시 초기화됨
    */
-  updatePolicy(
-    ruleType: PolicyRuleType,
-    value: PolicyValue,
-    tierId?: string,
-  ): void {
+  updatePolicy(ruleType: PolicyRuleType, value: PolicyValue, tierId?: string): void {
     if (tierId) {
       if (!TIER_POLICY_OVERRIDES[tierId]) {
         TIER_POLICY_OVERRIDES[tierId] = {};

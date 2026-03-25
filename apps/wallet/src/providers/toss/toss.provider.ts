@@ -27,11 +27,7 @@ export class TossPaymentProvider implements PaymentProvider {
         .select()
         .from(paymentMethods)
         .where(
-          and(
-            eq(paymentMethods.userId, userId),
-            eq(paymentMethods.type, 'TOSS'),
-            eq(paymentMethods.isDeleted, false),
-          ),
+          and(eq(paymentMethods.userId, userId), eq(paymentMethods.type, 'TOSS'), eq(paymentMethods.isDeleted, false)),
         );
 
       if (existing.length > 0) return existing;
@@ -106,24 +102,21 @@ export class TossPaymentProvider implements PaymentProvider {
 
     const secretKey = process.env.TOSS_SECRET_KEY ?? '';
     const auth = Buffer.from(`${secretKey}:`).toString('base64');
-    const res = await fetch(
-      `https://api.tosspayments.com/v1/payments/${paymentKey}/cancels`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Basic ${auth}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ cancelReason: '고객 요청', cancelAmount: params.amount }),
+    const res = await fetch(`https://api.tosspayments.com/v1/payments/${paymentKey}/cancels`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${auth}`,
+        'Content-Type': 'application/json',
       },
-    );
+      body: JSON.stringify({ cancelReason: '고객 요청', cancelAmount: params.amount }),
+    });
 
     if (res.ok) return { status: 'SUCCEEDED' };
     const err = await res.json().catch(() => ({}));
     return {
       status: 'FAILED',
-      errorCode: (err as any).code,
-      errorMessage: (err as any).message,
+      errorCode: err.code,
+      errorMessage: err.message,
     };
   }
 
@@ -141,20 +134,17 @@ export class TossPaymentProvider implements PaymentProvider {
 
     const secretKey = process.env.TOSS_SECRET_KEY ?? '';
     const auth = Buffer.from(`${secretKey}:`).toString('base64');
-    const res = await fetch(
-      `https://api.tosspayments.com/v1/payments/${paymentKey}/cancels`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Basic ${auth}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          cancelReason: params.reasonCode ?? '고객 요청',
-          cancelAmount: params.amount,
-        }),
+    const res = await fetch(`https://api.tosspayments.com/v1/payments/${paymentKey}/cancels`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${auth}`,
+        'Content-Type': 'application/json',
       },
-    );
+      body: JSON.stringify({
+        cancelReason: params.reasonCode ?? '고객 요청',
+        cancelAmount: params.amount,
+      }),
+    });
 
     if (res.ok) {
       return { status: 'SUCCEEDED', providerRefundId: paymentKey };

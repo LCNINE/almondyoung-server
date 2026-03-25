@@ -8,9 +8,7 @@ export interface DbModuleOptions<TSchema extends Record<string, unknown>> {
 
 @Module({})
 export class DbModule {
-  static forRoot<TSchema extends Record<string, unknown>>(
-    options: DbModuleOptions<TSchema>,
-  ): DynamicModule {
+  static forRoot<TSchema extends Record<string, unknown>>(options: DbModuleOptions<TSchema>): DynamicModule {
     return {
       module: DbModule,
       providers: [

@@ -1,9 +1,5 @@
 import { z } from 'zod';
-import {
-  createCoupangApiResponseSchema,
-  CurrencySchema,
-  CoupangDeliveryCompanyCodeSchema,
-} from './coupang-common.zod';
+import { createCoupangApiResponseSchema, CurrencySchema, CoupangDeliveryCompanyCodeSchema } from './coupang-common.zod';
 
 /**
  * 쿠팡 반품/취소 관련 Zod 스키마
@@ -46,31 +42,19 @@ export const CoupangReturnReceiptSchema = z.object({
 
 export const GetReturnRequestsParamsSchema = z
   .object({
-    searchType: z
-      .literal('timeFrame')
-      .optional()
-      .describe("searchType은 'timeFrame' 값만 가능합니다."),
+    searchType: z.literal('timeFrame').optional().describe("searchType은 'timeFrame' 값만 가능합니다."),
 
     createdAtFrom: z
       .string()
       .optional()
-      .refine(
-        (val) => !val || typeof val === 'string',
-        'createdAtFrom은 문자열이어야 합니다.',
-      ),
+      .refine((val) => !val || typeof val === 'string', 'createdAtFrom은 문자열이어야 합니다.'),
 
     createdAtTo: z
       .string()
       .optional()
-      .refine(
-        (val) => !val || typeof val === 'string',
-        'createdAtTo는 문자열이어야 합니다.',
-      ),
+      .refine((val) => !val || typeof val === 'string', 'createdAtTo는 문자열이어야 합니다.'),
 
-    status: z
-      .enum(['RU', 'UC', 'CC', 'PR'])
-      .optional()
-      .describe("status는 'RU', 'UC', 'CC', 'PR' 중 하나여야 합니다."),
+    status: z.enum(['RU', 'UC', 'CC', 'PR']).optional().describe("status는 'RU', 'UC', 'CC', 'PR' 중 하나여야 합니다."),
 
     cancelType: z
       .enum(['RETURN', 'CANCEL'])
@@ -85,19 +69,13 @@ export const GetReturnRequestsParamsSchema = z
       .int()
       .optional()
       .default(50)
-      .refine(
-        (val) => val === undefined || Number.isInteger(val),
-        'maxPerPage는 숫자여야 합니다.',
-      ),
+      .refine((val) => val === undefined || Number.isInteger(val), 'maxPerPage는 숫자여야 합니다.'),
 
     orderId: z
       .number()
       .int()
       .optional()
-      .refine(
-        (val) => val === undefined || Number.isInteger(val),
-        'orderId는 숫자여야 합니다.',
-      ),
+      .refine((val) => val === undefined || Number.isInteger(val), 'orderId는 숫자여야 합니다.'),
   })
   .superRefine((data, ctx) => {
     // --- 교차 필드 검증 ---
@@ -106,8 +84,7 @@ export const GetReturnRequestsParamsSchema = z
     if (data.cancelType === 'CANCEL' && data.status) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message:
-          "cancelType이 'CANCEL'일 경우 status 파라미터는 사용할 수 없습니다.",
+        message: "cancelType이 'CANCEL'일 경우 status 파라미터는 사용할 수 없습니다.",
         path: ['status'],
       });
     }
@@ -123,15 +100,10 @@ export const GetReturnRequestsParamsSchema = z
 
     // 3️⃣ searchType이 'timeFrame'일 경우 특정 필드 금지
     if (data.searchType === 'timeFrame') {
-      if (
-        data.nextToken ||
-        (data.maxPerPage && data.maxPerPage !== 50) ||
-        data.orderId
-      ) {
+      if (data.nextToken || (data.maxPerPage && data.maxPerPage !== 50) || data.orderId) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message:
-            "searchType이 'timeFrame'일 경우 nextToken, maxPerPage, orderId는 지원하지 않습니다.",
+          message: "searchType이 'timeFrame'일 경우 nextToken, maxPerPage, orderId는 지원하지 않습니다.",
           path: ['searchType'],
         });
       }
@@ -149,8 +121,7 @@ export const GetReturnRequestsParamsSchema = z
       if (!isValid) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message:
-            'createdAtFrom의 날짜 형식이 searchType과 일치하지 않습니다.',
+          message: 'createdAtFrom의 날짜 형식이 searchType과 일치하지 않습니다.',
           path: ['createdAtFrom'],
         });
       }
@@ -223,8 +194,7 @@ export const CoupangSingleReturnRequestSchema = z.object({
   returnShippingCharge: CurrencySchema, // 예상 반품배송비
 });
 
-export const GetSingleReturnRequestResponseSchema =
-  createCoupangApiResponseSchema(CoupangSingleReturnRequestSchema);
+export const GetSingleReturnRequestResponseSchema = createCoupangApiResponseSchema(CoupangSingleReturnRequestSchema);
 
 // =================================================================
 // == 출고중지 처리 스키마 (Stopped Shipment)
@@ -236,13 +206,12 @@ export const CoupangStoppedShipmentRequestSchema = z.object({
   cancelCount: z.number().int().positive(), // 취소 수량
 });
 
-export const CoupangStoppedShipmentResponseSchema =
-  createCoupangApiResponseSchema(
-    z.object({
-      resultCode: z.enum(['SUCCESS', 'FAIL']),
-      resultMessage: z.string(),
-    }),
-  );
+export const CoupangStoppedShipmentResponseSchema = createCoupangApiResponseSchema(
+  z.object({
+    resultCode: z.enum(['SUCCESS', 'FAIL']),
+    resultMessage: z.string(),
+  }),
+);
 
 // =================================================================
 // == 이미출고 처리 스키마 (Completed Shipment)
@@ -255,13 +224,12 @@ export const CoupangCompletedShipmentRequestSchema = z.object({
   invoiceNumber: z.string().min(1), // 송장번호
 });
 
-export const CoupangCompletedShipmentResponseSchema =
-  createCoupangApiResponseSchema(
-    z.object({
-      resultCode: z.enum(['SUCCESS', 'FAIL']),
-      resultMessage: z.string(),
-    }),
-  );
+export const CoupangCompletedShipmentResponseSchema = createCoupangApiResponseSchema(
+  z.object({
+    resultCode: z.enum(['SUCCESS', 'FAIL']),
+    resultMessage: z.string(),
+  }),
+);
 
 // =================================================================
 // == 반품상품 입고확인 스키마 (Confirm Return Receipt)
@@ -272,13 +240,12 @@ export const CoupangConfirmReturnReceiptRequestSchema = z.object({
   receiptId: z.number().int().positive(), // 접수번호
 });
 
-export const CoupangConfirmReturnReceiptResponseSchema =
-  createCoupangApiResponseSchema(
-    z.object({
-      resultCode: z.enum(['SUCCESS', 'FAIL']),
-      resultMessage: z.string(),
-    }),
-  );
+export const CoupangConfirmReturnReceiptResponseSchema = createCoupangApiResponseSchema(
+  z.object({
+    resultCode: z.enum(['SUCCESS', 'FAIL']),
+    resultMessage: z.string(),
+  }),
+);
 
 // =================================================================
 // == 반품요청 승인 스키마 (Approve Return Request)
@@ -375,8 +342,9 @@ export const CoupangRegisterReturnInvoiceDataSchema = z.object({
   returnExchangeDeliveryType: z.enum(['RETURN', 'EXCHANGE']),
 });
 
-export const CoupangRegisterReturnInvoiceResponseSchema =
-  createCoupangApiResponseSchema(CoupangRegisterReturnInvoiceDataSchema);
+export const CoupangRegisterReturnInvoiceResponseSchema = createCoupangApiResponseSchema(
+  CoupangRegisterReturnInvoiceDataSchema,
+);
 
 // =================================================================
 // == 타입 추출 (Type Exports)
@@ -384,69 +352,31 @@ export const CoupangRegisterReturnInvoiceResponseSchema =
 
 export type CoupangReturnItem = z.infer<typeof CoupangReturnItemSchema>;
 export type CoupangReturnReceipt = z.infer<typeof CoupangReturnReceiptSchema>;
-export type GetReturnRequestsParams = z.infer<
-  typeof GetReturnRequestsParamsSchema
->;
-export type GetReturnRequestsResponse = z.infer<
-  typeof GetReturnRequestsResponseSchema
->;
+export type GetReturnRequestsParams = z.infer<typeof GetReturnRequestsParamsSchema>;
+export type GetReturnRequestsResponse = z.infer<typeof GetReturnRequestsResponseSchema>;
 
 export type SingleReturnItem = z.infer<typeof SingleReturnItemSchema>;
 export type ReturnDeliveryDto = z.infer<typeof ReturnDeliveryDtoSchema>;
-export type CoupangSingleReturnRequest = z.infer<
-  typeof CoupangSingleReturnRequestSchema
->;
-export type GetSingleReturnRequestResponse = z.infer<
-  typeof GetSingleReturnRequestResponseSchema
->;
+export type CoupangSingleReturnRequest = z.infer<typeof CoupangSingleReturnRequestSchema>;
+export type GetSingleReturnRequestResponse = z.infer<typeof GetSingleReturnRequestResponseSchema>;
 
-export type CoupangStoppedShipmentRequest = z.infer<
-  typeof CoupangStoppedShipmentRequestSchema
->;
-export type CoupangStoppedShipmentResponse = z.infer<
-  typeof CoupangStoppedShipmentResponseSchema
->;
-export type CoupangCompletedShipmentRequest = z.infer<
-  typeof CoupangCompletedShipmentRequestSchema
->;
-export type CoupangCompletedShipmentResponse = z.infer<
-  typeof CoupangCompletedShipmentResponseSchema
->;
+export type CoupangStoppedShipmentRequest = z.infer<typeof CoupangStoppedShipmentRequestSchema>;
+export type CoupangStoppedShipmentResponse = z.infer<typeof CoupangStoppedShipmentResponseSchema>;
+export type CoupangCompletedShipmentRequest = z.infer<typeof CoupangCompletedShipmentRequestSchema>;
+export type CoupangCompletedShipmentResponse = z.infer<typeof CoupangCompletedShipmentResponseSchema>;
 
-export type CoupangConfirmReturnReceiptRequest = z.infer<
-  typeof CoupangConfirmReturnReceiptRequestSchema
->;
-export type CoupangConfirmReturnReceiptResponse = z.infer<
-  typeof CoupangConfirmReturnReceiptResponseSchema
->;
+export type CoupangConfirmReturnReceiptRequest = z.infer<typeof CoupangConfirmReturnReceiptRequestSchema>;
+export type CoupangConfirmReturnReceiptResponse = z.infer<typeof CoupangConfirmReturnReceiptResponseSchema>;
 
-export type CoupangApproveReturnRequest = z.infer<
-  typeof CoupangApproveReturnRequestSchema
->;
-export type CoupangApproveReturnResponse = z.infer<
-  typeof CoupangApproveReturnResponseSchema
->;
+export type CoupangApproveReturnRequest = z.infer<typeof CoupangApproveReturnRequestSchema>;
+export type CoupangApproveReturnResponse = z.infer<typeof CoupangApproveReturnResponseSchema>;
 
-export type GetReturnWithdrawalHistoryParams = z.infer<
-  typeof GetReturnWithdrawalHistoryParamsSchema
->;
-export type CoupangReturnWithdrawalItem = z.infer<
-  typeof CoupangReturnWithdrawalItemSchema
->;
-export type GetReturnWithdrawalHistoryResponse = z.infer<
-  typeof GetReturnWithdrawalHistoryResponseSchema
->;
+export type GetReturnWithdrawalHistoryParams = z.infer<typeof GetReturnWithdrawalHistoryParamsSchema>;
+export type CoupangReturnWithdrawalItem = z.infer<typeof CoupangReturnWithdrawalItemSchema>;
+export type GetReturnWithdrawalHistoryResponse = z.infer<typeof GetReturnWithdrawalHistoryResponseSchema>;
 
-export type GetReturnWithdrawalHistoryByIdsRequest = z.infer<
-  typeof GetReturnWithdrawalHistoryByIdsRequestSchema
->;
-export type GetReturnWithdrawalHistoryByIdsResponse = z.infer<
-  typeof GetReturnWithdrawalHistoryByIdsResponseSchema
->;
+export type GetReturnWithdrawalHistoryByIdsRequest = z.infer<typeof GetReturnWithdrawalHistoryByIdsRequestSchema>;
+export type GetReturnWithdrawalHistoryByIdsResponse = z.infer<typeof GetReturnWithdrawalHistoryByIdsResponseSchema>;
 
-export type CoupangRegisterReturnInvoiceRequest = z.infer<
-  typeof CoupangRegisterReturnInvoiceRequestSchema
->;
-export type CoupangRegisterReturnInvoiceResponse = z.infer<
-  typeof CoupangRegisterReturnInvoiceResponseSchema
->;
+export type CoupangRegisterReturnInvoiceRequest = z.infer<typeof CoupangRegisterReturnInvoiceRequestSchema>;
+export type CoupangRegisterReturnInvoiceResponse = z.infer<typeof CoupangRegisterReturnInvoiceResponseSchema>;

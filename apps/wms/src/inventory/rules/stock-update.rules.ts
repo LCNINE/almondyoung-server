@@ -1,9 +1,6 @@
 import { Rule, CalcArgs, ApplyRuleOptions, StockUpdateData, EventType, Field } from './stock-rule.types';
 import { wmsTables, wmsSchema } from '../../../database/schemas/wms-schema';
 
-
-
-
 // IN: deltaQuantity > 0 (재고 증가)
 // OUT: deltaQuantity < 0 (재고 감소)
 // MOVE: 부호로 IN/OUT 판단
@@ -13,52 +10,54 @@ export const STOCK_RULES: Readonly<Record<EventType, Rule>> = {
   // 기본 흐름
   RECEIVE: {
     fields: { onHandQty: '+', availableQty: '+' },
-    description: '입고'
+    description: '입고',
   },
   SHIP: {
     fields: { onHandQty: '+', availableQty: '+' },
-    description: '출고 - 예약 없이 직접 출고'
+    description: '출고 - 예약 없이 직접 출고',
   },
   MOVE: {
     fields: { onHandQty: '+', availableQty: '+' },
-    description: '이동 (창고내/창고간)'
+    description: '이동 (창고내/창고간)',
   },
 
   // 품질 관리 (불량품 전용)
   MARK_DEFECT: {
     fields: { availableQty: '+' },
     custom: ({ existing, delta }) => ({
-      defectiveQty: existing.defectiveQty + Math.abs(delta)
+      defectiveQty: existing.defectiveQty + Math.abs(delta),
     }),
-    description: '불량 지정'
+    description: '불량 지정',
   },
   REWORK_GOOD: {
     fields: { availableQty: '+' },
     custom: ({ existing, delta }) => ({
-      defectiveQty: existing.defectiveQty - Math.abs(delta)
+      defectiveQty: existing.defectiveQty - Math.abs(delta),
     }),
-    description: '불량 양품화'
+    description: '불량 양품화',
   },
   SCRAP: {
     fields: { onHandQty: '+' },
     custom: ({ existing, delta, eventType }) => {
       // DEFECTIVE에서 오는 경우 defectiveQuantity 감소
       const fromDefective = existing.defectiveQty > 0;
-      return fromDefective ? {
-        defectiveQty: existing.defectiveQty - Math.abs(delta)
-      } : {};
+      return fromDefective
+        ? {
+            defectiveQty: existing.defectiveQty - Math.abs(delta),
+          }
+        : {};
     },
-    description: '폐기'
+    description: '폐기',
   },
 
   // 수동 조정 (reason 필드로 상세 사유 기록)
   ADJUST_UP: {
     fields: { onHandQty: '+', availableQty: '+' },
-    description: '재고 증가 (입고 정정, 발견, 출고 취소 등)'
+    description: '재고 증가 (입고 정정, 발견, 출고 취소 등)',
   },
   ADJUST_DOWN: {
     fields: { onHandQty: '+', availableQty: '+' },
-    description: '재고 감소 (입고 취소, 감모, 운송 분실/파손 등)'
+    description: '재고 감소 (입고 취소, 감모, 운송 분실/파손 등)',
   },
 } as const;
 
@@ -66,7 +65,7 @@ export const STOCK_RULES: Readonly<Record<EventType, Rule>> = {
 export function applyRule(
   args: CalcArgs,
   rule: Rule,
-  opts: ApplyRuleOptions = { onNegative: 'clamp' }
+  opts: ApplyRuleOptions = { onNegative: 'clamp' },
 ): Partial<StockUpdateData> {
   const { existing, delta } = args;
   const next: Partial<StockUpdateData> = {};
@@ -105,10 +104,7 @@ export function applyRule(
 }
 
 // 음수 값 처리
-function handleNegative(
-  update: Partial<StockUpdateData>,
-  { onNegative }: ApplyRuleOptions
-): Partial<StockUpdateData> {
+function handleNegative(update: Partial<StockUpdateData>, { onNegative }: ApplyRuleOptions): Partial<StockUpdateData> {
   for (const [keyName, value] of Object.entries(update)) {
     if (typeof value !== 'number' || value >= 0) continue;
 
@@ -135,7 +131,7 @@ function handleNegative(
 // 유틸리티: 규칙 검증 (테스트용)
 export function validateRules(): void {
   const eventTypes = wmsTables.stockEvents.transitionType.enumValues;
-  const missingRules = eventTypes.filter(type => !STOCK_RULES[type as EventType]);
+  const missingRules = eventTypes.filter((type) => !STOCK_RULES[type]);
 
   if (missingRules.length > 0) {
     throw new Error(`Missing rules for event types: ${missingRules.join(', ')}`);

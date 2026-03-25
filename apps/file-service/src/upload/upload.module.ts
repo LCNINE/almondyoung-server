@@ -9,4 +9,4 @@ import { StorageModule } from '../storage/storage.module';
   controllers: [UploadController],
   providers: [UploadService],
 })
-export class UploadModule { }
+export class UploadModule {}

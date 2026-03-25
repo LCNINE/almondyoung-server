@@ -57,20 +57,15 @@ export class FulfillmentEventConsumer {
     backoffMs: [2000, 10000, 60000], // 이행 정보는 더 긴 간격으로 재시도
     dlqTopic: 'channel-adapter.fulfillment.dlq',
   })
-  async handleFulfillmentUpdated(
-    event: FulfillmentUpdatedEvent,
-  ): Promise<void> {
+  async handleFulfillmentUpdated(event: FulfillmentUpdatedEvent): Promise<void> {
     const startTime = Date.now();
 
-    this.logger.log(
-      `🚚 [WMS] 이행 상태 업데이트 이벤트 수신: ${event.orderId} → ${event.status}`,
-      {
-        fulfillmentNo: event.fulfillmentNo,
-        trackingNo: event.trackingNo,
-        carrier: event.carrier,
-        eventVersion: event.eventVersion,
-      },
-    );
+    this.logger.log(`🚚 [WMS] 이행 상태 업데이트 이벤트 수신: ${event.orderId} → ${event.status}`, {
+      fulfillmentNo: event.fulfillmentNo,
+      trackingNo: event.trackingNo,
+      carrier: event.carrier,
+      eventVersion: event.eventVersion,
+    });
 
     try {
       // 2. 이행 정보 검증 및 변환
@@ -80,32 +75,23 @@ export class FulfillmentEventConsumer {
       await this.processByStatus(event, fulfillmentData);
 
       // 4. 모든 채널에 이행 상태 동기화
-      const syncSuccess = await this.syncFulfillmentToAllChannels(
-        event,
-        fulfillmentData,
-      );
+      const syncSuccess = await this.syncFulfillmentToAllChannels(event, fulfillmentData);
 
       // 5. 동기화 성공한 경우에만 멱등키 처리 완료 마킹
 
       const duration = Date.now() - startTime;
-      this.logger.log(
-        `✅ [WMS] 이행 상태 업데이트 처리 완료: ${event.orderId} (${duration}ms)`,
-        {
-          status: event.status,
-          fulfillmentNo: event.fulfillmentNo,
-        },
-      );
+      this.logger.log(`✅ [WMS] 이행 상태 업데이트 처리 완료: ${event.orderId} (${duration}ms)`, {
+        status: event.status,
+        fulfillmentNo: event.fulfillmentNo,
+      });
     } catch (error) {
       const duration = Date.now() - startTime;
 
-      this.logger.error(
-        `❌ [WMS] 이행 상태 업데이트 처리 실패: ${event.orderId} (${duration}ms)`,
-        {
-          error: error.message,
-          status: event.status,
-          fulfillmentNo: event.fulfillmentNo,
-        },
-      );
+      this.logger.error(`❌ [WMS] 이행 상태 업데이트 처리 실패: ${event.orderId} (${duration}ms)`, {
+        error: error.message,
+        status: event.status,
+        fulfillmentNo: event.fulfillmentNo,
+      });
 
       // 실패 마킹 (재시도 횟수 증가)
 
@@ -142,9 +128,7 @@ export class FulfillmentEventConsumer {
    * @param wmsStatus WMS 이행 상태
    * @returns 내부 표준 상태
    */
-  private mapWmsStatusToInternal(
-    wmsStatus: FulfillmentUpdatedEvent['status'],
-  ): string {
+  private mapWmsStatusToInternal(wmsStatus: FulfillmentUpdatedEvent['status']): string {
     const statusMap = {
       PREPARING: 'PREPARING',
       SHIPPED: 'SHIPPED',
@@ -180,10 +164,7 @@ export class FulfillmentEventConsumer {
    * @param event 원본 이벤트
    * @param fulfillmentData 변환된 이행 데이터
    */
-  private async processByStatus(
-    event: FulfillmentUpdatedEvent,
-    fulfillmentData: any,
-  ): Promise<void> {
+  private async processByStatus(event: FulfillmentUpdatedEvent, fulfillmentData: any): Promise<void> {
     switch (event.status) {
       case 'SHIPPED':
         await this.handleShippedStatus(event, fulfillmentData);
@@ -209,10 +190,7 @@ export class FulfillmentEventConsumer {
   /**
    * 출고 완료 상태 처리
    */
-  private async handleShippedStatus(
-    event: FulfillmentUpdatedEvent,
-    fulfillmentData: any,
-  ): Promise<void> {
+  private async handleShippedStatus(event: FulfillmentUpdatedEvent, fulfillmentData: any): Promise<void> {
     this.logger.log(`📦 [WMS] 출고 완료 처리: ${event.orderId}`, {
       trackingNo: event.trackingNo,
       carrier: event.carrier,
@@ -226,10 +204,7 @@ export class FulfillmentEventConsumer {
   /**
    * 배송 완료 상태 처리
    */
-  private async handleDeliveredStatus(
-    event: FulfillmentUpdatedEvent,
-    fulfillmentData: any,
-  ): Promise<void> {
+  private async handleDeliveredStatus(event: FulfillmentUpdatedEvent, fulfillmentData: any): Promise<void> {
     this.logger.log(`🎯 [WMS] 배송 완료 처리: ${event.orderId}`, {
       deliveredAt: event.deliveredAt,
     });
@@ -241,10 +216,7 @@ export class FulfillmentEventConsumer {
   /**
    * 반품 처리
    */
-  private async handleReturnedStatus(
-    event: FulfillmentUpdatedEvent,
-    fulfillmentData: any,
-  ): Promise<void> {
+  private async handleReturnedStatus(event: FulfillmentUpdatedEvent, fulfillmentData: any): Promise<void> {
     this.logger.log(`↩️ [WMS] 반품 처리: ${event.orderId}`, {
       fulfillmentNo: event.fulfillmentNo,
     });
@@ -256,10 +228,7 @@ export class FulfillmentEventConsumer {
   /**
    * 준비 중 상태 처리
    */
-  private async handlePreparingStatus(
-    event: FulfillmentUpdatedEvent,
-    fulfillmentData: any,
-  ): Promise<void> {
+  private async handlePreparingStatus(event: FulfillmentUpdatedEvent, fulfillmentData: any): Promise<void> {
     this.logger.log(`⏳ [WMS] 출고 준비 중: ${event.orderId}`, {
       fulfillmentNo: event.fulfillmentNo,
     });
@@ -274,10 +243,7 @@ export class FulfillmentEventConsumer {
    * @param fulfillmentData 변환된 이행 데이터
    * @returns 동기화 성공 여부
    */
-  private async syncFulfillmentToAllChannels(
-    event: FulfillmentUpdatedEvent,
-    fulfillmentData: any,
-  ): Promise<boolean> {
+  private async syncFulfillmentToAllChannels(event: FulfillmentUpdatedEvent, fulfillmentData: any): Promise<boolean> {
     const channels = ['naver_smartstore', 'coupang'] as const; // 메두사 제외
     const syncResults: Array<{
       channel: string;
@@ -285,34 +251,24 @@ export class FulfillmentEventConsumer {
       error?: string;
     }> = [];
 
-    this.logger.log(
-      `🌐 [WMS] 전체 채널 이행 상태 동기화 시작: ${event.orderId} → ${event.status}`,
-    );
+    this.logger.log(`🌐 [WMS] 전체 채널 이행 상태 동기화 시작: ${event.orderId} → ${event.status}`);
 
     // 병렬로 모든 채널에 동기화
     const syncPromises = channels.map(async (channel) => {
       try {
-        const result = await this.channelAdapterService.syncToChannelOrAll(
-          channel,
-          {
-            dataType: 'order_status',
-            payload: fulfillmentData,
-          },
-        );
+        const result = await this.channelAdapterService.syncToChannelOrAll(channel, {
+          dataType: 'order_status',
+          payload: fulfillmentData,
+        });
 
         syncResults.push({ channel, success: result.success });
 
         if (result.success) {
-          this.logger.log(
-            `✅ [${channel}] 이행 상태 동기화 성공: ${event.orderId}`,
-          );
+          this.logger.log(`✅ [${channel}] 이행 상태 동기화 성공: ${event.orderId}`);
         } else {
-          this.logger.warn(
-            `⚠️ [${channel}] 이행 상태 동기화 실패: ${event.orderId}`,
-            {
-              errors: result.errors,
-            },
-          );
+          this.logger.warn(`⚠️ [${channel}] 이행 상태 동기화 실패: ${event.orderId}`, {
+            errors: result.errors,
+          });
         }
       } catch (error) {
         syncResults.push({
@@ -321,27 +277,20 @@ export class FulfillmentEventConsumer {
           error: error.message,
         });
 
-        this.logger.error(
-          `❌ [${channel}] 이행 상태 동기화 오류: ${event.orderId}`,
-          error.message,
-        );
+        this.logger.error(`❌ [${channel}] 이행 상태 동기화 오류: ${event.orderId}`, error.message);
       }
     });
 
     await Promise.all(syncPromises);
 
     // ✅ 필수 채널 목록 (env 기반)
-    const required = (
-      process.env.ADAPTER_REQUIRED_CHANNELS ?? 'coupang,naver_smartstore'
-    )
+    const required = (process.env.ADAPTER_REQUIRED_CHANNELS ?? 'coupang,naver_smartstore')
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean);
 
     // ✅ 필수 채널이 모두 성공했는지 판단
-    const ok = required.every((req) =>
-      syncResults.some((r) => r.channel === req && r.success === true),
-    );
+    const ok = required.every((req) => syncResults.some((r) => r.channel === req && r.success === true));
 
     const successCount = syncResults.filter((r) => r.success).length;
     const totalCount = syncResults.length;
@@ -380,10 +329,7 @@ export class FulfillmentEventConsumer {
       consumer: 'FulfillmentEventConsumer',
     };
 
-    this.logger.error(
-      `📤 [DLQ] 이행 이벤트 DLQ 전송: ${originalEvent.orderId} → ${dlqTopic}`,
-      { dlqMessage },
-    );
+    this.logger.error(`📤 [DLQ] 이행 이벤트 DLQ 전송: ${originalEvent.orderId} → ${dlqTopic}`, { dlqMessage });
 
     // TODO: 실제 Kafka DLQ 전송 로직 구현
     // await this.kafkaProducer.send({

@@ -19,4 +19,3 @@ export class UpdateChannelCategoryDto {
   @IsInt()
   displayOrder?: number;
 }
-

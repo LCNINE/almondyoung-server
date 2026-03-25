@@ -14,7 +14,5 @@ export const FULFILLMENT_EVENTS = {
   CANCELLED: 'FulfillmentCancelled',
 } as const;
 
-export type OrderEvent = typeof ORDER_EVENTS[keyof typeof ORDER_EVENTS];
-export type FulfillmentEvent = typeof FULFILLMENT_EVENTS[keyof typeof FULFILLMENT_EVENTS];
-
-
+export type OrderEvent = (typeof ORDER_EVENTS)[keyof typeof ORDER_EVENTS];
+export type FulfillmentEvent = (typeof FULFILLMENT_EVENTS)[keyof typeof FULFILLMENT_EVENTS];

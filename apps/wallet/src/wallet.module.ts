@@ -1,10 +1,12 @@
-import { CanActivate, ExecutionContext, ForbiddenException, Injectable, Module, UnauthorizedException } from '@nestjs/common';
 import {
-  AUTH_CONFIG,
-  AuthenticationService,
-  JwtAccessStrategy,
-  JwtAuthGuard,
-} from '@app/authorization';
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Injectable,
+  Module,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { AUTH_CONFIG, AuthenticationService, JwtAccessStrategy, JwtAuthGuard } from '@app/authorization';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR, Reflector } from '@nestjs/core';
 import { PassportModule } from '@nestjs/passport';
@@ -21,10 +23,7 @@ import { walletSchema } from './schema';
 
 // Domain
 import { StateTransitionService } from './domain/state-transition/state-transition.service';
-import {
-  DrizzleIdempotencyRepository,
-  IDEMPOTENCY_REPOSITORY,
-} from './domain/idempotency/idempotency.repository';
+import { DrizzleIdempotencyRepository, IDEMPOTENCY_REPOSITORY } from './domain/idempotency/idempotency.repository';
 import { IdempotencyService } from './domain/idempotency/idempotency.service';
 import { HttpIdempotencyInterceptor } from './domain/idempotency/http-idempotency.interceptor';
 
@@ -111,10 +110,7 @@ class WalletAuthGuard implements CanActivate {
     const type = context.getType<'http'>();
     if (type !== 'http') return true;
 
-    const isPublic = this.reflector.getAllAndOverride<boolean>('isPublic', [
-      context.getHandler(),
-      context.getClass(),
-    ]);
+    const isPublic = this.reflector.getAllAndOverride<boolean>('isPublic', [context.getHandler(), context.getClass()]);
     if (isPublic) return true;
 
     const http = context.switchToHttp();
@@ -163,10 +159,7 @@ class WalletAuthGuard implements CanActivate {
     return true;
   }
 
-  private async tryJwtAuth(
-    context: ExecutionContext,
-    request: AuthenticatedRequest,
-  ): Promise<boolean> {
+  private async tryJwtAuth(context: ExecutionContext, request: AuthenticatedRequest): Promise<boolean> {
     const originalAuthHeader = getHeader(request.headers, 'authorization');
     const cookieToken = getAccessTokenFromRequest(request);
     const injectedAuthHeader = cookieToken ? `Bearer ${cookieToken}` : null;
@@ -262,10 +255,7 @@ function setHeader(
   headers[lower] = value;
 }
 
-function getHeader(
-  headers: Record<string, string | string[] | undefined>,
-  name: string,
-): string | undefined {
+function getHeader(headers: Record<string, string | string[] | undefined>, name: string): string | undefined {
   const lowerName = name.toLowerCase();
   const direct = headers[name] ?? headers[lowerName] ?? headers[name.toUpperCase()];
   if (direct !== undefined) {
@@ -295,9 +285,7 @@ function parseCookieValue(cookieHeader: string, name: string): string | null {
   }
 }
 
-async function resolveCanActivate(
-  result: boolean | Promise<boolean> | unknown,
-): Promise<boolean> {
+async function resolveCanActivate(result: boolean | Promise<boolean> | unknown): Promise<boolean> {
   if (typeof result === 'boolean') {
     return result;
   }
@@ -409,4 +397,4 @@ async function resolveCanActivate(
     ExpirationJob,
   ],
 })
-export class WalletModule { }
+export class WalletModule {}

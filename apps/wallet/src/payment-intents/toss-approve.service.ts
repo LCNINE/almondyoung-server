@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  NotFoundException,
-  UnprocessableEntityException,
-} from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { eq } from 'drizzle-orm';
 import { WalletSchema, paymentIntents } from '../schema';
@@ -38,10 +33,7 @@ export class TossApproveService {
     this.logger.log(`approve called: intentId=${intentId} orderId=${orderId} amount=${amount}`);
 
     // 1. Find the REQUIRES_ACTION AUTHORIZE charge
-    const charge = await this.chargesService.findActiveByIntentAndOperation(
-      intentId,
-      'AUTHORIZE',
-    );
+    const charge = await this.chargesService.findActiveByIntentAndOperation(intentId, 'AUTHORIZE');
     this.logger.log(`charge found: ${JSON.stringify({ id: charge?.id, status: charge?.status })}`);
     if (!charge || charge.status !== 'REQUIRES_ACTION') {
       throw new UnprocessableEntityException({
@@ -82,12 +74,7 @@ export class TossApproveService {
     const now = new Date().toISOString();
 
     await this.dbService.db.transaction(async (tx) => {
-      await this.chargesService.updateStatus(
-        charge.id,
-        'SUCCEEDED',
-        { providerTransactionId: paymentKey },
-        tx,
-      );
+      await this.chargesService.updateStatus(charge.id, 'SUCCEEDED', { providerTransactionId: paymentKey }, tx);
 
       await this.stateTransitionService.transitionIntent(
         intent.id,
@@ -106,7 +93,7 @@ export class TossApproveService {
               payableAmount: intent.payableAmount,
               currency: intent.currency,
               occurredAt: now,
-              extra: { medusa_session_id: (intent.metadata as Record<string, unknown>)?.medusa_session_id },
+              extra: { medusa_session_id: intent.metadata?.medusa_session_id },
             }),
           },
         },

@@ -40,7 +40,11 @@ function parseArgs(): Args {
   const args: Args = {};
   for (const item of raw) {
     if (item.startsWith('--masters=')) {
-      args.masters = item.replace('--masters=', '').split(',').map((s) => s.trim()).filter(Boolean);
+      args.masters = item
+        .replace('--masters=', '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
     }
     if (item.startsWith('--limit=')) {
       args.limit = parseInt(item.replace('--limit=', ''), 10);

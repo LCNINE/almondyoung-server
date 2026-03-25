@@ -38,4 +38,3 @@ export class ProductImagesDto {
   })
   additional: ProductImageDto[];
 }
-

@@ -1,11 +1,6 @@
 import { RequireScopes, JwtPayload } from '@app/authorization';
 import { Body, Controller, Get, Patch, Post, Put } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CreateShopInfoDto } from './dto/create-shop-info.dto';
 import { ShopService } from './shop.service';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
@@ -14,7 +9,7 @@ import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 @ApiBearerAuth('access-token')
 @Controller('shop')
 export class ShopController {
-  constructor(private readonly shopService: ShopService) { }
+  constructor(private readonly shopService: ShopService) {}
 
   @ApiOperation({ summary: '상점 정보 조회' })
   @ApiResponse({ status: 200, description: '상점 정보 조회 성공' })
@@ -28,10 +23,7 @@ export class ShopController {
   @ApiResponse({ status: 201, description: '상점 정보 생성 성공' })
   @Post('info')
   @RequireScopes('user:modify', 'master')
-  createShopInfo(
-    @Body() createShopDto: CreateShopInfoDto,
-    @CurrentUser() user: JwtPayload,
-  ) {
+  createShopInfo(@Body() createShopDto: CreateShopInfoDto, @CurrentUser() user: JwtPayload) {
     return this.shopService.createShopInfo(createShopDto, user.id);
   }
 
@@ -39,18 +31,13 @@ export class ShopController {
   @ApiResponse({ status: 200, description: '상점 정보 수정 성공' })
   @Put('info')
   @RequireScopes('user:modify', 'master')
-  updateShopInfo(
-    @Body() updateShopDto: CreateShopInfoDto,
-    @CurrentUser() user: JwtPayload,
-  ) {
+  updateShopInfo(@Body() updateShopDto: CreateShopInfoDto, @CurrentUser() user: JwtPayload) {
     return this.shopService.updateShopInfo(updateShopDto, user.id);
   }
-
 
   @Patch('remind')
   @RequireScopes('user:modify', 'master')
   async updateRemindAt(@CurrentUser() user: JwtPayload) {
     return this.shopService.updateRemindAt(user.id);
   }
-
 }

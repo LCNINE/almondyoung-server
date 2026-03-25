@@ -106,7 +106,10 @@ export class OrderDiscountDto {
 }
 
 export class CreatePaymentIntentDto {
-  @ApiPropertyOptional({ description: 'User ID (optional — first JWT-authenticated GET will claim the intent)', maxLength: 128 })
+  @ApiPropertyOptional({
+    description: 'User ID (optional — first JWT-authenticated GET will claim the intent)',
+    maxLength: 128,
+  })
   @IsOptional()
   @IsString()
   @MaxLength(128)
@@ -152,7 +155,9 @@ export class CreatePaymentIntentDto {
 // ─── Confirm Intent ───────────────────────────────────────────────────────────
 
 export class ConfirmPaymentIntentDto {
-  @ApiPropertyOptional({ description: 'Payment method ID to use for this payment (not required if pointsToApply covers the full amount)' })
+  @ApiPropertyOptional({
+    description: 'Payment method ID to use for this payment (not required if pointsToApply covers the full amount)',
+  })
   @IsOptional()
   @IsString()
   @IsNotEmpty()

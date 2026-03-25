@@ -40,8 +40,6 @@ describe('Membership Subscription E2E Test', () => {
     await app.close();
   });
 
-
-
   // ===================================================================
   // 📝 1단계: 관리자 설정 - 티어, 플랜, 정책 생성
   // ===================================================================
@@ -57,7 +55,7 @@ describe('Membership Subscription E2E Test', () => {
       console.log('📋 Tier creation response:', {
         status: response.status,
         body: response.body,
-        text: response.text
+        text: response.text,
       });
 
       if (response.status !== 201) {
@@ -81,7 +79,7 @@ describe('Membership Subscription E2E Test', () => {
       console.log('📋 Plan creation response:', {
         status: response.status,
         body: response.body,
-        text: response.text
+        text: response.text,
       });
 
       if (response.status !== 201) {
@@ -104,7 +102,7 @@ describe('Membership Subscription E2E Test', () => {
       console.log('📋 Policy creation response:', {
         status: response.status,
         body: response.body,
-        text: response.text
+        text: response.text,
       });
 
       if (response.status === 201) {
@@ -138,7 +136,7 @@ describe('Membership Subscription E2E Test', () => {
       console.log('📋 Subscription creation response:', {
         status: response.status,
         body: response.body,
-        text: response.text
+        text: response.text,
       });
 
       if (response.status !== 201) {
@@ -150,7 +148,7 @@ describe('Membership Subscription E2E Test', () => {
       console.log('✅ Subscription Created:', response.body);
 
       // 구독 생성 후 잠시 대기 (비동기 처리 완료를 위해)
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 2000));
 
       // 구독 상태 즉시 확인
       const statusResponse = await request(app.getHttpServer())
@@ -161,7 +159,9 @@ describe('Membership Subscription E2E Test', () => {
 
       // entitlement가 제대로 생성되었는지 확인
       if (Object.keys(statusResponse.body).length === 0) {
-        throw new Error('Subscription was created but no active entitlement found. This indicates a problem with entitlement creation.');
+        throw new Error(
+          'Subscription was created but no active entitlement found. This indicates a problem with entitlement creation.',
+        );
       }
     });
 
@@ -195,10 +195,10 @@ describe('Membership Subscription E2E Test', () => {
         .get('/subscriptions/current')
         .set('x-user-id', userJourneyData.ids.userId)
         .expect(200);
-      
+
       const originalEndsAt = beforePause.body.entitlement?.endsAt;
       console.log('🔍 Original subscription ends at:', originalEndsAt);
-      
+
       console.log('🔍 Sending pause request:', userJourneyData.pauseRequest);
 
       const response = await request(app.getHttpServer())
@@ -209,7 +209,7 @@ describe('Membership Subscription E2E Test', () => {
       console.log('📋 Pause response:', {
         status: response.status,
         body: response.body,
-        text: response.text
+        text: response.text,
       });
 
       if (response.status !== 200) {
@@ -223,10 +223,10 @@ describe('Membership Subscription E2E Test', () => {
         .get('/subscriptions/current')
         .set('x-user-id', userJourneyData.ids.userId)
         .expect(200);
-      
+
       const newEndsAt = afterPause.body.entitlement?.endsAt;
       console.log('🔍 Extended subscription ends at:', newEndsAt);
-      
+
       // 구독 기간이 연장되었는지 확인
       if (originalEndsAt && newEndsAt) {
         const originalDate = new Date(originalEndsAt);
@@ -243,16 +243,16 @@ describe('Membership Subscription E2E Test', () => {
         .expect(200);
 
       console.log('📋 Pause history with voids:', pauseHistory.body);
-      
+
       expect(pauseHistory.body.pauseHistory).toHaveLength(1);
       const pauseRecord = pauseHistory.body.pauseHistory[0];
-      
+
       // pauseEntitlementVoids 데이터 검증
       expect(pauseRecord.voidId).toBeDefined();
       expect(pauseRecord.originalEndsAt).toBe(originalEndsAt);
       expect(pauseRecord.adjustedEndsAt).toBe(newEndsAt);
       expect(pauseRecord.entitlementId).toBeDefined();
-      
+
       console.log('✅ pauseEntitlementVoids data verified:', {
         voidId: pauseRecord.voidId,
         originalEndsAt: pauseRecord.originalEndsAt,
@@ -271,7 +271,7 @@ describe('Membership Subscription E2E Test', () => {
       console.log('📋 Resume response:', {
         status: response.status,
         body: response.body,
-        text: response.text
+        text: response.text,
       });
 
       if (response.status !== 200) {
@@ -294,7 +294,7 @@ describe('Membership Subscription E2E Test', () => {
       console.log('📋 Cancel response:', {
         status: response.status,
         body: response.body,
-        text: response.text
+        text: response.text,
       });
 
       if (response.status !== 200) {
@@ -318,7 +318,7 @@ describe('Membership Subscription E2E Test', () => {
       const extendRequest = {
         userId: userJourneyData.ids.userId,
         days: 30,
-        reason: 'E2E Test - Extend 30 days'
+        reason: 'E2E Test - Extend 30 days',
       };
 
       const response = await request(app.getHttpServer())
@@ -338,7 +338,7 @@ describe('Membership Subscription E2E Test', () => {
       const reduceRequest = {
         userId: userJourneyData.ids.userId,
         days: -7,
-        reason: 'E2E Test - Reduce 7 days'
+        reason: 'E2E Test - Reduce 7 days',
       };
 
       const response = await request(app.getHttpServer())
@@ -368,7 +368,7 @@ describe('Membership Subscription E2E Test', () => {
           .set('x-user-id', userJourneyData.ids.userId)
           .send(newSubscriptionRequest)
           .expect(201);
-        
+
         console.log('✅ New subscription created for multiple pause test');
       } else {
         console.log('✅ Using existing active subscription for multiple pause test');
@@ -378,7 +378,7 @@ describe('Membership Subscription E2E Test', () => {
       const firstPauseRequest = {
         startDate: new Date().toISOString(),
         endDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(), // 5일
-        reason: 'First pause test'
+        reason: 'First pause test',
       };
 
       await request(app.getHttpServer())
@@ -398,7 +398,7 @@ describe('Membership Subscription E2E Test', () => {
       const secondPauseRequest = {
         startDate: new Date().toISOString(),
         endDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(), // 3일
-        reason: 'Second pause test'
+        reason: 'Second pause test',
       };
 
       const secondPauseResponse = await request(app.getHttpServer())
@@ -423,17 +423,17 @@ describe('Membership Subscription E2E Test', () => {
         .expect(200);
 
       console.log('📋 Multiple pause history:', pauseHistory.body);
-      
+
       // 최소 1개의 일시정지 이력이 있어야 함 (첫 번째는 성공)
       expect(pauseHistory.body.pauseHistory.length).toBeGreaterThanOrEqual(1);
       expect(pauseHistory.body.totalPauses).toBeGreaterThanOrEqual(1);
-      
+
       // 첫 번째 일시정지에 대한 pauseEntitlementVoids 데이터 확인
-      const pausesWithVoids = pauseHistory.body.pauseHistory.filter(p => p.voidId);
+      const pausesWithVoids = pauseHistory.body.pauseHistory.filter((p) => p.voidId);
       expect(pausesWithVoids.length).toBeGreaterThanOrEqual(1);
-      
+
       console.log('✅ pauseEntitlementVoids records verified for policy-compliant pauses');
-      
+
       // 정책 시스템이 올바르게 작동하는지 확인
       if (secondPauseResponse.status === 400) {
         console.log('✅ Policy system working correctly - prevented unauthorized pause');

@@ -11,35 +11,28 @@ import type { ICartModuleService, IProductModuleService } from '@medusajs/framew
  */
 const WELCOME_MEMBERSHIP_TAG = 'welcome-membership';
 
-updateLineItemInCartWorkflow.hooks.validate(
-  async ({ input, cart }, { container }) => {
-    const newQuantity = input.update?.quantity;
-    if (!newQuantity || Number(newQuantity) <= 1) return;
+updateLineItemInCartWorkflow.hooks.validate(async ({ input, cart }, { container }) => {
+  const newQuantity = input.update?.quantity;
+  if (!newQuantity || Number(newQuantity) <= 1) return;
 
-    // cart.items에서 해당 line item의 variant_id 조회
-    const lineItem = (cart as any).items?.find(
-      (item: any) => item.id === input.item_id,
-    );
-    const variantId = lineItem?.variant_id;
+  // cart.items에서 해당 line item의 variant_id 조회
+  const lineItem = cart.items?.find((item: any) => item.id === input.item_id);
+  const variantId = lineItem?.variant_id;
 
-    if (!variantId) {
-      // cart에 items가 없는 경우 cartModule로 fallback
-      const cartModule = container.resolve<ICartModuleService>(Modules.CART);
-      const fetchedItem = await cartModule.retrieveLineItem(input.item_id, {
-        select: ['variant_id'],
-      });
-      if (!fetchedItem?.variant_id) return;
-      return checkVariantTag(fetchedItem.variant_id, container);
-    }
+  if (!variantId) {
+    // cart에 items가 없는 경우 cartModule로 fallback
+    const cartModule = container.resolve<ICartModuleService>(Modules.CART);
+    const fetchedItem = await cartModule.retrieveLineItem(input.item_id, {
+      select: ['variant_id'],
+    });
+    if (!fetchedItem?.variant_id) return;
+    return checkVariantTag(fetchedItem.variant_id, container);
+  }
 
-    return checkVariantTag(variantId, container);
-  },
-);
+  return checkVariantTag(variantId, container);
+});
 
-async function checkVariantTag(
-  variantId: string,
-  container: any,
-): Promise<void> {
+async function checkVariantTag(variantId: string, container: any): Promise<void> {
   const productModule = container.resolve(Modules.PRODUCT) as IProductModuleService;
   const variants = await productModule.listProductVariants(
     { id: [variantId] },
@@ -52,9 +45,6 @@ async function checkVariantTag(
   });
 
   if (isWelcomeMembership) {
-    throw new MedusaError(
-      MedusaError.Types.NOT_ALLOWED,
-      '웰컴 멤버십 상품은 1인당 1개 구매 가능합니다.',
-    );
+    throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '웰컴 멤버십 상품은 1인당 1개 구매 가능합니다.');
   }
 }

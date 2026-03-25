@@ -1,9 +1,4 @@
-import {
-  S3Client,
-  PutObjectCommand,
-  DeleteObjectCommand,
-  GetObjectCommand,
-} from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -21,15 +16,14 @@ import {
 } from '../storage-provider.interface';
 
 @Injectable()
-export class S3StorageProvider
-  implements StorageUploadPort, StorageDeletePort, StorageSignedUrlPort {
+export class S3StorageProvider implements StorageUploadPort, StorageDeletePort, StorageSignedUrlPort {
   private readonly logger = new Logger(S3StorageProvider.name);
   private s3Client: S3Client;
   private publicBucket: string;
   private privateBucket: string;
   private region: string;
 
-  constructor(private readonly configService: ConfigService) { }
+  constructor(private readonly configService: ConfigService) {}
 
   onModuleInit() {
     const storageProvider = this.configService.get<string>('STORAGE_PROVIDER', 'S3');
@@ -40,12 +34,8 @@ export class S3StorageProvider
 
   private initializeS3Client(): void {
     this.region = this.configService.getOrThrow<string>('AWS_REGION');
-    const accessKeyId = this.configService.getOrThrow<string>(
-      'AWS_ACCESS_KEY_ID',
-    );
-    const secretAccessKey = this.configService.getOrThrow<string>(
-      'AWS_SECRET_ACCESS_KEY',
-    );
+    const accessKeyId = this.configService.getOrThrow<string>('AWS_ACCESS_KEY_ID');
+    const secretAccessKey = this.configService.getOrThrow<string>('AWS_SECRET_ACCESS_KEY');
     this.publicBucket = this.configService.getOrThrow<string>('AWS_S3_PUBLIC_BUCKET');
     this.privateBucket = this.configService.getOrThrow<string>('AWS_S3_PRIVATE_BUCKET');
 
@@ -137,13 +127,13 @@ export class S3StorageProvider
       const command =
         request.operation === 'put'
           ? new PutObjectCommand({
-            Bucket: bucket,
-            Key: request.key,
-          })
+              Bucket: bucket,
+              Key: request.key,
+            })
           : new GetObjectCommand({
-            Bucket: bucket,
-            Key: request.key,
-          });
+              Bucket: bucket,
+              Key: request.key,
+            });
 
       const signedUrl = await getSignedUrl(this.s3Client, command, {
         expiresIn: request.expiresIn,

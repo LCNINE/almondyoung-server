@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { and, eq } from 'drizzle-orm';
 import { WalletSchema, paymentMethods } from '../schema';
@@ -45,9 +42,7 @@ export class PaymentMethodsService {
   }
 
   async findAllByUserId(userId: string): Promise<PaymentMethod[]> {
-    const results = await Promise.all(
-      this.providerRegistry.all().map((p) => p.getUserMethods(userId)),
-    );
+    const results = await Promise.all(this.providerRegistry.all().map((p) => p.getUserMethods(userId)));
     return results.flat();
   }
 
@@ -57,11 +52,7 @@ export class PaymentMethodsService {
       .select()
       .from(paymentMethods)
       .where(
-        and(
-          eq(paymentMethods.userId, userId),
-          eq(paymentMethods.type, 'POINTS'),
-          eq(paymentMethods.isDeleted, false),
-        ),
+        and(eq(paymentMethods.userId, userId), eq(paymentMethods.type, 'POINTS'), eq(paymentMethods.isDeleted, false)),
       )
       .limit(1);
 
@@ -105,7 +96,7 @@ export class PaymentMethodsService {
     await provider.deleteMethod({
       userId: method.userId,
       paymentMethodId: id,
-      providerData: method.providerData as Record<string, unknown>,
+      providerData: method.providerData,
     });
 
     await this.dbService.db

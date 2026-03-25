@@ -29,6 +29,6 @@ export class PricingMapper {
    * Map array of entities to PricingRuleResponseDto array
    */
   static toRuleDtoArray(entities: Array<PricingRuleEntity & { masterId?: string }>): PricingRuleResponseDto[] {
-    return entities.map(e => this.toRuleDto(e));
+    return entities.map((e) => this.toRuleDto(e));
   }
 }

@@ -5,7 +5,10 @@ import { SalesOrdersController } from './sales-orders/controllers/sales-orders.c
 import { SalesOrdersService } from './sales-orders/services/sales-orders.service';
 import { FulfillmentsController } from './fulfillments/controllers/fulfillments.controller';
 import { FulfillmentsService } from './fulfillments/services/fulfillments.service';
-import { FulfillmentOrderController, ProductSkuMappingController } from './fulfillments/controllers/fulfillment-order.controller';
+import {
+  FulfillmentOrderController,
+  ProductSkuMappingController,
+} from './fulfillments/controllers/fulfillment-order.controller';
 import { OutboundBatchController } from './fulfillments/controllers/outbound-batch.controller';
 import { InvoiceController } from './fulfillments/controllers/invoice.controller';
 import { PickingController } from './fulfillments/controllers/picking.controller';
@@ -64,11 +67,14 @@ function createKafkaConfig() {
       initialRetryTime: 300,
     },
     ssl: process.env.KAFKA_API_KEY ? true : false,
-    sasl: process.env.KAFKA_API_KEY && process.env.KAFKA_API_SECRET ? {
-      mechanism: 'plain' as const,
-      username: process.env.KAFKA_API_KEY,
-      password: process.env.KAFKA_API_SECRET,
-    } : undefined,
+    sasl:
+      process.env.KAFKA_API_KEY && process.env.KAFKA_API_SECRET
+        ? {
+            mechanism: 'plain' as const,
+            username: process.env.KAFKA_API_KEY,
+            password: process.env.KAFKA_API_SECRET,
+          }
+        : undefined,
   };
 }
 
@@ -103,9 +109,37 @@ function createKafkaConfig() {
     // Event Consumers
     OrderEventsConsumer,
   ],
-  providers: [SalesOrdersService, FulfillmentsService, FulfillmentOrderTransactionService, ProductSkuMappingService, OutboundBatchService, InvoiceService, PickingProcessService, DirectShipService, InspectionService, ConsolidationService, GoodsflowDeliveryProvider, BarcodeService, FulfillmentReservationsFacade, PoliciesService, AvailabilityService, MatchingsService, OutboxService, OutboxDispatcherService],
-  exports: [SalesOrdersService, FulfillmentsService, FulfillmentOrderTransactionService, ProductSkuMappingService, OutboundBatchService, InvoiceService, PickingProcessService, MatchingsService, OutboxService, OutboxDispatcherService],
+  providers: [
+    SalesOrdersService,
+    FulfillmentsService,
+    FulfillmentOrderTransactionService,
+    ProductSkuMappingService,
+    OutboundBatchService,
+    InvoiceService,
+    PickingProcessService,
+    DirectShipService,
+    InspectionService,
+    ConsolidationService,
+    GoodsflowDeliveryProvider,
+    BarcodeService,
+    FulfillmentReservationsFacade,
+    PoliciesService,
+    AvailabilityService,
+    MatchingsService,
+    OutboxService,
+    OutboxDispatcherService,
+  ],
+  exports: [
+    SalesOrdersService,
+    FulfillmentsService,
+    FulfillmentOrderTransactionService,
+    ProductSkuMappingService,
+    OutboundBatchService,
+    InvoiceService,
+    PickingProcessService,
+    MatchingsService,
+    OutboxService,
+    OutboxDispatcherService,
+  ],
 })
-export class OrderModule { }
-
-
+export class OrderModule {}

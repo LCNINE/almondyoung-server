@@ -73,20 +73,17 @@ const basePricingRuleSchema = z
   });
 
 // Layer별 스키마 (타입 추론을 위해 분리)
-export const basePriceRuleSchema = basePricingRuleSchema.refine(
-  (data) => data.layer === 'base_price',
-  { message: 'Must be base_price layer' },
-);
+export const basePriceRuleSchema = basePricingRuleSchema.refine((data) => data.layer === 'base_price', {
+  message: 'Must be base_price layer',
+});
 
-export const membershipPriceRuleSchema = basePricingRuleSchema.refine(
-  (data) => data.layer === 'membership_price',
-  { message: 'Must be membership_price layer' },
-);
+export const membershipPriceRuleSchema = basePricingRuleSchema.refine((data) => data.layer === 'membership_price', {
+  message: 'Must be membership_price layer',
+});
 
-export const tieredPriceRuleSchema = basePricingRuleSchema.refine(
-  (data) => data.layer === 'tiered_price',
-  { message: 'Must be tiered_price layer' },
-);
+export const tieredPriceRuleSchema = basePricingRuleSchema.refine((data) => data.layer === 'tiered_price', {
+  message: 'Must be tiered_price layer',
+});
 
 // 전체 규칙 union
 export const pricingRuleSchema = basePricingRuleSchema;
@@ -211,9 +208,7 @@ export function isBasePriceRule(rule: PricingRuleInput): rule is NarrowedBasePri
   return rule.layer === 'base_price';
 }
 
-export function isMembershipPriceRule(
-  rule: PricingRuleInput,
-): rule is NarrowedMembershipPriceRule {
+export function isMembershipPriceRule(rule: PricingRuleInput): rule is NarrowedMembershipPriceRule {
   return rule.layer === 'membership_price';
 }
 
@@ -222,40 +217,28 @@ export function isTieredPriceRule(rule: PricingRuleInput): rule is NarrowedTiere
 }
 
 // Scope type guards
-export function hasAllVariantsScope(
-  rule: PricingRuleInput,
-): rule is PricingRuleInput & AllVariantsScope {
+export function hasAllVariantsScope(rule: PricingRuleInput): rule is PricingRuleInput & AllVariantsScope {
   return rule.scopeType === 'all_variants';
 }
 
-export function hasWithOptionScope(
-  rule: PricingRuleInput,
-): rule is PricingRuleInput & WithOptionScope {
+export function hasWithOptionScope(rule: PricingRuleInput): rule is PricingRuleInput & WithOptionScope {
   return rule.scopeType === 'with_option';
 }
 
-export function hasVariantsScope(
-  rule: PricingRuleInput,
-): rule is PricingRuleInput & VariantsScope {
+export function hasVariantsScope(rule: PricingRuleInput): rule is PricingRuleInput & VariantsScope {
   return rule.scopeType === 'variants';
 }
 
 // Operation type guards
-export function hasOffsetOperation(
-  rule: PricingRuleInput,
-): rule is PricingRuleInput & OffsetOperation {
+export function hasOffsetOperation(rule: PricingRuleInput): rule is PricingRuleInput & OffsetOperation {
   return rule.operationType === 'offset';
 }
 
-export function hasScaleOperation(
-  rule: PricingRuleInput,
-): rule is PricingRuleInput & ScaleOperation {
+export function hasScaleOperation(rule: PricingRuleInput): rule is PricingRuleInput & ScaleOperation {
   return rule.operationType === 'scale';
 }
 
-export function hasOverrideOperation(
-  rule: PricingRuleInput,
-): rule is PricingRuleInput & OverrideOperation {
+export function hasOverrideOperation(rule: PricingRuleInput): rule is PricingRuleInput & OverrideOperation {
   return rule.operationType === 'override';
 }
 
@@ -264,15 +247,10 @@ export function hasOverrideOperation(
 // ============================================================================
 
 // 특정 조합 체크 예시
-export function isBaseOffsetRule(
-  rule: PricingRuleInput,
-): rule is NarrowedBasePriceRule & OffsetOperation {
+export function isBaseOffsetRule(rule: PricingRuleInput): rule is NarrowedBasePriceRule & OffsetOperation {
   return isBasePriceRule(rule) && hasOffsetOperation(rule);
 }
 
-export function hasScopeTargets(
-  rule: PricingRuleInput,
-): rule is PricingRuleInput & (WithOptionScope | VariantsScope) {
+export function hasScopeTargets(rule: PricingRuleInput): rule is PricingRuleInput & (WithOptionScope | VariantsScope) {
   return rule.scopeType !== 'all_variants';
 }
-

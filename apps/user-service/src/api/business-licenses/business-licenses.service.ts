@@ -1,27 +1,18 @@
 import { DbService, InjectDb } from '@app/db';
 import { HttpService } from '@nestjs/axios';
-import {
-  BadRequestException,
-  HttpStatus,
-  Injectable,
-  NotFoundException
-} from '@nestjs/common';
+import { BadRequestException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as cheerio from 'cheerio';
 import { and, eq } from 'drizzle-orm';
 import { firstValueFrom } from 'rxjs';
-import {
-  BusinessLicense,
-  businessLicenses,
-  type UserServiceSchema,
-} from '../../../database/drizzle/schema';
+import { BusinessLicense, businessLicenses, type UserServiceSchema } from '../../../database/drizzle/schema';
 import { BusinessLicensesHelper } from './business-licenses.helper';
 import {
   CreateBusinessLicenseDto,
   FetchBusinessLicenseDto,
-  UpdateBusinessLicenseDto
+  UpdateBusinessLicenseDto,
 } from './dto/business-license.dto';
-import { BusinessLicenseResponseDto, } from './dto/business-license.response.dto';
+import { BusinessLicenseResponseDto } from './dto/business-license.response.dto';
 import { BusinessLicenseException } from './exceptions/business.exceptions';
 
 @Injectable()
@@ -32,12 +23,9 @@ export class BusinessLicensesService {
     private readonly httpService: HttpService,
     private readonly businessLicensesHelper: BusinessLicensesHelper,
     private readonly configService: ConfigService,
-  ) { }
+  ) {}
 
-  async createBusinessLicense(
-    userId: string,
-    data: CreateBusinessLicenseDto,
-  ): Promise<void> {
+  async createBusinessLicense(userId: string, data: CreateBusinessLicenseDto): Promise<void> {
     try {
       const hasFileUrl = !!data.fileUrl;
       const hasBusinessInfo = data.businessNumber && data.representativeName;
@@ -65,7 +53,7 @@ export class BusinessLicensesService {
           businessNumber: null,
           representativeName: null,
           status: 'under_review',
-          fileUrl: data.fileUrl
+          fileUrl: data.fileUrl,
         });
       } else {
         await this.dbService.db.insert(businessLicenses).values({
@@ -88,9 +76,7 @@ export class BusinessLicensesService {
     }
   }
 
-  async getMyBusinessLicense(
-    userId: string,
-  ): Promise<BusinessLicenseResponseDto | null> {
+  async getMyBusinessLicense(userId: string): Promise<BusinessLicenseResponseDto | null> {
     const [result] = await this.dbService.db
       .select()
       .from(businessLicenses)
@@ -102,15 +88,11 @@ export class BusinessLicensesService {
   /**
    * 사업자 정보 외부 조회
    */
-  async fetchBusinessLicense(
-    fetchBusinessLicenseDto: FetchBusinessLicenseDto,
-  ): Promise<void> {
+  async fetchBusinessLicense(fetchBusinessLicenseDto: FetchBusinessLicenseDto): Promise<void> {
     const { businessNumber, representativeName } = fetchBusinessLicenseDto;
 
     const baseUrl = this.configService.get<string>('BIZNO_URL');
-    const response = await firstValueFrom(
-      this.httpService.get(`${baseUrl}/${businessNumber}`),
-    );
+    const response = await firstValueFrom(this.httpService.get(`${baseUrl}/${businessNumber}`));
 
     const $ = cheerio.load(response.data);
 
@@ -136,7 +118,6 @@ export class BusinessLicensesService {
     data: UpdateBusinessLicenseDto,
     userId: string,
   ): Promise<void> {
-
     try {
       const existingBusiness = await this.findBusinessLicenseByUserId(userId);
 
@@ -153,16 +134,11 @@ export class BusinessLicensesService {
       return;
     } catch (error) {
       console.log('error::', error);
-      throw new BadRequestException(
-        '사업자 등록 정보를 수정하는 중 오류가 발생했습니다.',
-      );
+      throw new BadRequestException('사업자 등록 정보를 수정하는 중 오류가 발생했습니다.');
     }
   }
 
-  async removeBusinessLicense(
-    businessLicenseId: string,
-    userId: string,
-  ): Promise<void> {
+  async removeBusinessLicense(businessLicenseId: string, userId: string): Promise<void> {
     const existingBusiness = await this.findBusinessLicenseByUserId(userId);
 
     if (!existingBusiness) {
@@ -176,17 +152,10 @@ export class BusinessLicensesService {
       .set({
         deletedAt: new Date(),
       })
-      .where(
-        and(
-          eq(businessLicenses.id, businessLicenseId),
-          eq(businessLicenses.userId, userId),
-        ),
-      );
+      .where(and(eq(businessLicenses.id, businessLicenseId), eq(businessLicenses.userId, userId)));
   }
 
-  private async findBusinessLicenseByUserId(
-    userId: string,
-  ): Promise<BusinessLicense | null> {
+  private async findBusinessLicenseByUserId(userId: string): Promise<BusinessLicense | null> {
     const [result] = await this.dbService.db
       .select()
       .from(businessLicenses)
@@ -197,9 +166,7 @@ export class BusinessLicensesService {
   }
 
   // 이미 사업자 등록 정보가 존재하는지 체크
-  private async checkDuplicateBusinessLicense(
-    userId: string,
-  ): Promise<boolean> {
+  private async checkDuplicateBusinessLicense(userId: string): Promise<boolean> {
     const [result] = await this.dbService.db
       .select()
       .from(businessLicenses)
@@ -209,22 +176,13 @@ export class BusinessLicensesService {
     return result ? true : false;
   }
 
-  private async validateOwnership(
-    businessLicense: BusinessLicense,
-    userId: string,
-  ): Promise<void> {
+  private async validateOwnership(businessLicense: BusinessLicense, userId: string): Promise<void> {
     if (businessLicense.userId !== userId) {
-      throw new BadRequestException(
-        '해당 사업자 등록 정보에 대한 권한이 없습니다.',
-      );
+      throw new BadRequestException('해당 사업자 등록 정보에 대한 권한이 없습니다.');
     }
   }
 
-  private async updateApprovedLicense(
-    businessLicenseId: string,
-    data: UpdateBusinessLicenseDto,
-  ): Promise<void> {
-
+  private async updateApprovedLicense(businessLicenseId: string, data: UpdateBusinessLicenseDto): Promise<void> {
     // 외부 사업자 조회 결과, true일때 status를 approved로 변경
     if (data.externalBusinessStatus) {
       await this.dbService.db
@@ -236,7 +194,7 @@ export class BusinessLicensesService {
         })
         .where(eq(businessLicenses.id, businessLicenseId));
 
-      return
+      return;
     }
     // 외부 사업자 조회 결과, false일때 혹은 새롭게 첨부한 파일이 있을 때 status를 under_review로 변
     else if (!data.externalBusinessStatus || data.fileUrl) {

@@ -29,4 +29,3 @@ export class TagGroupDetailResponseDto {
   })
   values: TagValueItemDto[];
 }
-

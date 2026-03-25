@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { eq } from 'drizzle-orm';
 import { WalletSchema, refunds, paymentIntents } from '../schema';
@@ -12,11 +7,7 @@ import { ChargesService } from '../charges/charges.service';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { ProviderRegistry } from '../providers/provider.registry';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
-import {
-  GATEWAY_AGGREGATE_TYPE,
-  GatewayEventType,
-  buildRefundEventPayload,
-} from '../messaging/gateway-event.builder';
+import { GATEWAY_AGGREGATE_TYPE, GatewayEventType, buildRefundEventPayload } from '../messaging/gateway-event.builder';
 import { CreateRefundDto } from './dto';
 
 @Injectable()
@@ -104,16 +95,16 @@ export class RefundsService {
         idempotencyKey,
         correlationId,
         reasonCode: dto.reasonCode,
-        providerData: method.providerData as Record<string, unknown>,
+        providerData: method.providerData,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error(`Provider refund threw: refundId=${refund.id}, error=${message}`);
-      await this.stateTransitionService.transitionRefund(
-        refund.id,
-        'FAILED',
-        { correlationId, reasonCode: 'PROVIDER_EXCEPTION', reasonMessage: message },
-      );
+      await this.stateTransitionService.transitionRefund(refund.id, 'FAILED', {
+        correlationId,
+        reasonCode: 'PROVIDER_EXCEPTION',
+        reasonMessage: message,
+      });
       return this.findByIdOrThrow(refund.id);
     }
 
@@ -160,21 +151,14 @@ export class RefundsService {
       });
     } else if (providerResult.status === 'PENDING') {
       // Refund is processing asynchronously
-      await this.dbService.db
-        .update(refunds)
-        .set({ updatedAt: new Date() })
-        .where(eq(refunds.id, refund.id));
+      await this.dbService.db.update(refunds).set({ updatedAt: new Date() }).where(eq(refunds.id, refund.id));
     } else {
       // FAILED
-      await this.stateTransitionService.transitionRefund(
-        refund.id,
-        'FAILED',
-        {
-          correlationId,
-          reasonCode: providerResult.errorCode ?? 'REFUND_FAILED',
-          reasonMessage: providerResult.errorMessage,
-        },
-      );
+      await this.stateTransitionService.transitionRefund(refund.id, 'FAILED', {
+        correlationId,
+        reasonCode: providerResult.errorCode ?? 'REFUND_FAILED',
+        reasonMessage: providerResult.errorMessage,
+      });
     }
 
     return this.findByIdOrThrow(refund.id);
@@ -203,11 +187,9 @@ export class RefundsService {
     let remaining = dto.amount;
     const results: Refund[] = [];
     for (let i = 0; i < refundableCharges.length; i++) {
-      const charge = refundableCharges[i]!;
+      const charge = refundableCharges[i];
       const isLast = i === refundableCharges.length - 1;
-      const share = isLast
-        ? remaining
-        : Math.round(dto.amount * (charge.amount / totalAvailable));
+      const share = isLast ? remaining : Math.round(dto.amount * (charge.amount / totalAvailable));
       if (share <= 0) continue;
       const refund = await this.create({
         chargeId: charge.id,
@@ -222,11 +204,7 @@ export class RefundsService {
   }
 
   async findByIdOrThrow(id: string): Promise<Refund> {
-    const rows = await this.dbService.db
-      .select()
-      .from(refunds)
-      .where(eq(refunds.id, id))
-      .limit(1);
+    const rows = await this.dbService.db.select().from(refunds).where(eq(refunds.id, id)).limit(1);
 
     const refund = rows[0];
     if (!refund) {

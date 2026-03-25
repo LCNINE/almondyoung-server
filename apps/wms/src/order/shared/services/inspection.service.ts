@@ -61,9 +61,7 @@ export interface ForceShipmentRequest {
 export class InspectionService {
   private readonly logger = new Logger(InspectionService.name);
 
-  constructor(
-    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>
-  ) {}
+  constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
 
   private get db() {
     return this.dbService.db;
@@ -73,11 +71,14 @@ export class InspectionService {
     return tx ? fn(tx) : this.db.transaction(fn);
   }
 
-  async startInspectionSession(request: {
-    fulfillmentOrderId: string;
-    type: 'individual' | 'batch';
-    inspectorUserId: string;
-  }, tx?: DbTx): Promise<InspectionSession> {
+  async startInspectionSession(
+    request: {
+      fulfillmentOrderId: string;
+      type: 'individual' | 'batch';
+      inspectorUserId: string;
+    },
+    tx?: DbTx,
+  ): Promise<InspectionSession> {
     const { fulfillmentOrderId, type, inspectorUserId } = request;
 
     return this.inTx(async (trx) => {
@@ -110,13 +111,10 @@ export class InspectionService {
           pickedQty: wmsTables.fulfillmentOrderItems.pickedQty,
         })
         .from(wmsTables.fulfillmentOrderItems)
-        .innerJoin(
-          wmsTables.skus,
-          eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId)
-        )
+        .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId))
         .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderId));
 
-      const items: InspectionItem[] = itemRows.map(row => ({
+      const items: InspectionItem[] = itemRows.map((row) => ({
         foiId: row.id,
         salesOrderId: row.salesOrderId,
         salesOrderLineId: row.salesOrderLineId,
@@ -129,7 +127,7 @@ export class InspectionService {
         rejectedQty: 0,
         status: 'pending',
         issues: [],
-        lastInspectedAt: undefined
+        lastInspectedAt: undefined,
       }));
 
       const sessionId = `INS-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
@@ -144,13 +142,14 @@ export class InspectionService {
         completedItems: 0,
         issues: 0,
         startedAt: new Date(),
-        items
+        items,
       };
 
-      await trx.update(wmsTables.fulfillmentOrders)
+      await trx
+        .update(wmsTables.fulfillmentOrders)
         .set({
           status: 'inspecting',
-          updatedAt: new Date()
+          updatedAt: new Date(),
         })
         .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
 
@@ -159,21 +158,24 @@ export class InspectionService {
     }, tx);
   }
 
-  async inspectItem(request: {
-    sessionId: string;
-    foiId: string;
-    inspectedQty: number;
-    approvedQty: number;
-    rejectedQty?: number;
-    issues?: Array<{
-      type: InspectionIssue['type'];
-      severity: InspectionIssue['severity'];
-      description: string;
-      qty?: number;
-      photos?: string[];
-    }>;
-    inspectorUserId: string;
-  }, tx?: DbTx): Promise<InspectionItem> {
+  async inspectItem(
+    request: {
+      sessionId: string;
+      foiId: string;
+      inspectedQty: number;
+      approvedQty: number;
+      rejectedQty?: number;
+      issues?: Array<{
+        type: InspectionIssue['type'];
+        severity: InspectionIssue['severity'];
+        description: string;
+        qty?: number;
+        photos?: string[];
+      }>;
+      inspectorUserId: string;
+    },
+    tx?: DbTx,
+  ): Promise<InspectionItem> {
     const { sessionId, foiId, inspectedQty, approvedQty, rejectedQty = 0, issues = [], inspectorUserId } = request;
 
     if (inspectedQty !== approvedQty + rejectedQty) {
@@ -195,12 +197,9 @@ export class InspectionService {
         .from(wmsTables.fulfillmentOrderItems)
         .innerJoin(
           wmsTables.fulfillmentOrders,
-          eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId)
+          eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
         )
-        .innerJoin(
-          wmsTables.skus,
-          eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId)
-        )
+        .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId))
         .where(eq(wmsTables.fulfillmentOrderItems.id, foiId))
         .limit(1);
 
@@ -224,13 +223,14 @@ export class InspectionService {
         status = 'approved';
       }
 
-      await trx.update(wmsTables.fulfillmentOrderItems)
+      await trx
+        .update(wmsTables.fulfillmentOrderItems)
         .set({
-          updatedAt: new Date()
+          updatedAt: new Date(),
         })
         .where(eq(wmsTables.fulfillmentOrderItems.id, foiId));
 
-      const inspectionIssues: InspectionIssue[] = issues.map(issue => ({
+      const inspectionIssues: InspectionIssue[] = issues.map((issue) => ({
         id: `ISS-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
         foiId,
         type: issue.type,
@@ -239,10 +239,12 @@ export class InspectionService {
         qty: issue.qty,
         inspectorUserId,
         reportedAt: new Date(),
-        photos: issue.photos
+        photos: issue.photos,
       }));
 
-      this.logger.log(`Inspected FOI ${foiId}: ${approvedQty} approved, ${rejectedQty} rejected, ${inspectionIssues.length} issues`);
+      this.logger.log(
+        `Inspected FOI ${foiId}: ${approvedQty} approved, ${rejectedQty} rejected, ${inspectionIssues.length} issues`,
+      );
 
       return {
         foiId,
@@ -257,7 +259,7 @@ export class InspectionService {
         rejectedQty,
         status,
         issues: inspectionIssues,
-        lastInspectedAt: new Date()
+        lastInspectedAt: new Date(),
       };
     }, tx);
   }
@@ -281,7 +283,7 @@ export class InspectionService {
         .from(wmsTables.fulfillmentOrderItems)
         .innerJoin(
           wmsTables.fulfillmentOrders,
-          eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId)
+          eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
         )
         .where(eq(wmsTables.fulfillmentOrderItems.id, foiId))
         .limit(1);
@@ -299,16 +301,17 @@ export class InspectionService {
         throw new BadRequestException(`Force quantity ${forceQty} exceeds required quantity ${foi.qty}`);
       }
 
-      await trx.update(wmsTables.fulfillmentOrderItems)
+      await trx
+        .update(wmsTables.fulfillmentOrderItems)
         .set({
           shippedQty: forceQty,
-          updatedAt: new Date()
+          updatedAt: new Date(),
         })
         .where(eq(wmsTables.fulfillmentOrderItems.id, foiId));
 
       this.logger.warn(
         `FORCED SHIPMENT: FOI ${foiId} - Qty: ${forceQty}, Reason: ${reason}, Authorized by: ${authorizedBy}` +
-        (note ? `, Note: ${note}` : '')
+          (note ? `, Note: ${note}` : ''),
       );
     }, tx);
   }
@@ -322,7 +325,7 @@ export class InspectionService {
         .from(wmsTables.fulfillmentOrderItems)
         .innerJoin(
           wmsTables.fulfillmentOrders,
-          eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId)
+          eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
         )
         .where(eq(wmsTables.fulfillmentOrderItems.id, foiId))
         .limit(1);
@@ -336,9 +339,10 @@ export class InspectionService {
         throw new ConflictException(`Cannot reset inspection for FO in status: ${foi.foStatus}`);
       }
 
-      await trx.update(wmsTables.fulfillmentOrderItems)
+      await trx
+        .update(wmsTables.fulfillmentOrderItems)
         .set({
-          updatedAt: new Date()
+          updatedAt: new Date(),
         })
         .where(eq(wmsTables.fulfillmentOrderItems.id, foiId));
 
@@ -346,25 +350,33 @@ export class InspectionService {
     }, tx);
   }
 
-  async getInspectionHistory(foiId: string, tx?: DbTx): Promise<Array<{
-    inspectorUserId: string;
-    inspectedQty: number;
-    approvedQty: number;
-    rejectedQty: number;
-    issues: number;
-    timestamp: Date;
-  }>> {
+  async getInspectionHistory(
+    foiId: string,
+    tx?: DbTx,
+  ): Promise<
+    Array<{
+      inspectorUserId: string;
+      inspectedQty: number;
+      approvedQty: number;
+      rejectedQty: number;
+      issues: number;
+      timestamp: Date;
+    }>
+  > {
     // TODO: Implement inspection history tracking
     // For now, return empty array
     return [];
   }
 
-  async getQualityMetrics(filters?: {
-    warehouseId?: string;
-    dateFrom?: Date;
-    dateTo?: Date;
-    inspectorUserId?: string;
-  }, tx?: DbTx): Promise<{
+  async getQualityMetrics(
+    filters?: {
+      warehouseId?: string;
+      dateFrom?: Date;
+      dateTo?: Date;
+      inspectorUserId?: string;
+    },
+    tx?: DbTx,
+  ): Promise<{
     totalInspections: number;
     approvalRate: number;
     rejectionRate: number;
@@ -389,7 +401,7 @@ export class InspectionService {
       rejectionRate: 0,
       avgInspectionTime: 0,
       commonIssues: [],
-      inspectorPerformance: []
+      inspectorPerformance: [],
     };
   }
 
@@ -404,21 +416,22 @@ export class InspectionService {
         .from(wmsTables.fulfillmentOrderItems)
         .innerJoin(
           wmsTables.fulfillmentOrders,
-          eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId)
+          eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
         )
         .where(inArray(wmsTables.fulfillmentOrderItems.id, foiIds));
 
-      const validFois = rows.filter(r => r.foStatus === 'inspecting' && r.pickedQty > 0);
+      const validFois = rows.filter((r) => r.foStatus === 'inspecting' && r.pickedQty > 0);
 
       if (validFois.length === 0) {
         throw new BadRequestException('No valid items found for bulk approval');
       }
 
       for (const foi of validFois) {
-        await trx.update(wmsTables.fulfillmentOrderItems)
+        await trx
+          .update(wmsTables.fulfillmentOrderItems)
           .set({
             shippedQty: foi.pickedQty,
-            updatedAt: new Date()
+            updatedAt: new Date(),
           })
           .where(eq(wmsTables.fulfillmentOrderItems.id, foi.id));
       }
@@ -428,7 +441,10 @@ export class InspectionService {
     }, tx);
   }
 
-  async getInspectionSummary(fulfillmentOrderId: string, tx?: DbTx): Promise<{
+  async getInspectionSummary(
+    fulfillmentOrderId: string,
+    tx?: DbTx,
+  ): Promise<{
     totalItems: number;
     pendingItems: number;
     inspectedItems: number;
@@ -458,7 +474,7 @@ export class InspectionService {
         .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderId));
 
       const totalItems = itemRows.length;
-      const approvedItems = itemRows.filter(r => (r.shippedQty ?? 0) > 0).length;
+      const approvedItems = itemRows.filter((r) => (r.shippedQty ?? 0) > 0).length;
       const pendingItems = totalItems - approvedItems;
 
       return {
@@ -469,7 +485,7 @@ export class InspectionService {
         rejectedItems: 0,
         partialItems: 0,
         totalIssues: 0,
-        canComplete: pendingItems === 0
+        canComplete: pendingItems === 0,
       };
     }, tx);
   }

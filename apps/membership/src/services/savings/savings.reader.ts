@@ -47,10 +47,7 @@ export class SavingsReader {
    * @param yearMonth - 조회할 년월 (YYYY-MM 형식)
    * @returns 월별 절약액 및 주문 건수
    */
-  async getMonthSavings(
-    userId: string,
-    yearMonth: string,
-  ): Promise<MonthlySavingsResult> {
+  async getMonthSavings(userId: string, yearMonth: string): Promise<MonthlySavingsResult> {
     const targetDate = parseISO(`${yearMonth}-01`);
     const startDate = startOfMonth(targetDate);
     const endDate = endOfMonth(targetDate);
@@ -65,11 +62,7 @@ export class SavingsReader {
         and(
           eq(schema.membershipDiscountEvents.userId, userId),
           eq(schema.membershipDiscountEvents.isCancelled, false),
-          between(
-            schema.membershipDiscountEvents.orderDate,
-            startDate,
-            endDate,
-          ),
+          between(schema.membershipDiscountEvents.orderDate, startDate, endDate),
         ),
       );
 
@@ -91,11 +84,7 @@ export class SavingsReader {
    * @param endDate - 종료일
    * @returns 기간별 절약액, 주문 건수, 월별 breakdown
    */
-  async getRangeSavings(
-    userId: string,
-    startDate: Date,
-    endDate: Date,
-  ): Promise<RangeSavingsResult> {
+  async getRangeSavings(userId: string, startDate: Date, endDate: Date): Promise<RangeSavingsResult> {
     // 전체 합계
     const totalResult = await this.dbService.db
       .select({
@@ -107,11 +96,7 @@ export class SavingsReader {
         and(
           eq(schema.membershipDiscountEvents.userId, userId),
           eq(schema.membershipDiscountEvents.isCancelled, false),
-          between(
-            schema.membershipDiscountEvents.orderDate,
-            startDate,
-            endDate,
-          ),
+          between(schema.membershipDiscountEvents.orderDate, startDate, endDate),
         ),
       );
 
@@ -127,19 +112,11 @@ export class SavingsReader {
         and(
           eq(schema.membershipDiscountEvents.userId, userId),
           eq(schema.membershipDiscountEvents.isCancelled, false),
-          between(
-            schema.membershipDiscountEvents.orderDate,
-            startDate,
-            endDate,
-          ),
+          between(schema.membershipDiscountEvents.orderDate, startDate, endDate),
         ),
       )
-      .groupBy(
-        sql`TO_CHAR(${schema.membershipDiscountEvents.orderDate}, 'YYYY-MM')`,
-      )
-      .orderBy(
-        sql`TO_CHAR(${schema.membershipDiscountEvents.orderDate}, 'YYYY-MM')`,
-      );
+      .groupBy(sql`TO_CHAR(${schema.membershipDiscountEvents.orderDate}, 'YYYY-MM')`)
+      .orderBy(sql`TO_CHAR(${schema.membershipDiscountEvents.orderDate}, 'YYYY-MM')`);
 
     return {
       totalSavings: Number(totalResult[0]?.totalSavings ?? 0),

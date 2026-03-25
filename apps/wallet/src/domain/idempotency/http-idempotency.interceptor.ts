@@ -64,11 +64,7 @@ export class HttpIdempotencyInterceptor implements NestInterceptor {
       mergeMap((responseBody) =>
         from(
           Promise.resolve(
-            this.idempotencyService.completeSuccess(
-              decision.recordId,
-              reply.statusCode || 200,
-              responseBody,
-            ),
+            this.idempotencyService.completeSuccess(decision.recordId, reply.statusCode || 200, responseBody),
           ),
         ).pipe(mergeMap(() => of(responseBody))),
       ),
@@ -103,10 +99,7 @@ function readHeaderValue(request: FastifyRequest, header: string): string | unde
 
 function resolveActorId(request: FastifyRequest & { user?: Record<string, unknown> }): string {
   const user = request.user;
-  const userActor =
-    toStringIfSet(user?.sub) ??
-    toStringIfSet(user?.userId) ??
-    toStringIfSet(user?.id);
+  const userActor = toStringIfSet(user?.sub) ?? toStringIfSet(user?.userId) ?? toStringIfSet(user?.id);
   if (userActor) {
     return userActor;
   }

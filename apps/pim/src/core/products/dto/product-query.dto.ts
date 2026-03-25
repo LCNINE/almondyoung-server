@@ -67,4 +67,3 @@ export class ProductQueryDto {
   @IsBoolean()
   includeDeleted?: boolean = false;
 }
-

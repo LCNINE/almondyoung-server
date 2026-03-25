@@ -66,4 +66,4 @@ import { DashboardModule } from './analytics/dashboard/dashboard.module';
   controllers: [PimController],
   providers: [PimService],
 })
-export class PimModule { }
+export class PimModule {}

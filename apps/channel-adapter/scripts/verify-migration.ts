@@ -36,16 +36,13 @@ function parseArgs(): { detailed: boolean } {
  * Validate environment variables
  */
 function validateEnv(): void {
-  const required = [
-    'PIM_SOURCE_DB_URL',
-    'DATABASE_URL',
-  ];
+  const required = ['PIM_SOURCE_DB_URL', 'DATABASE_URL'];
 
-  const missing = required.filter(key => !process.env[key]);
+  const missing = required.filter((key) => !process.env[key]);
 
   if (missing.length > 0) {
     console.error('❌ Missing required environment variables:');
-    missing.forEach(key => console.error(`   - ${key}`));
+    missing.forEach((key) => console.error(`   - ${key}`));
     process.exit(1);
   }
 }
@@ -111,7 +108,7 @@ async function main() {
 
     // Calculate difference
     const difference = pimCount - syncedCount;
-    const syncRate = pimCount > 0 ? (syncedCount / pimCount * 100).toFixed(2) : '0.00';
+    const syncRate = pimCount > 0 ? ((syncedCount / pimCount) * 100).toFixed(2) : '0.00';
 
     // Display results
     console.log(`${'='.repeat(60)}`);
@@ -189,12 +186,10 @@ async function main() {
         .from(pimMedusaMappings)
         .where(eq(pimMedusaMappings.syncStatus, 'synced'));
 
-      const syncedMasterIdSet = new Set(syncedMasterIds.map(m => m.masterId));
+      const syncedMasterIdSet = new Set(syncedMasterIds.map((m) => m.masterId));
 
       // Find missing masters
-      const missingMasters = pimMasterIds
-        .filter(m => !syncedMasterIdSet.has(m.master_id))
-        .slice(0, 50); // Limit to first 50
+      const missingMasters = pimMasterIds.filter((m) => !syncedMasterIdSet.has(m.master_id)).slice(0, 50); // Limit to first 50
 
       if (missingMasters.length > 0) {
         console.log(`${'='.repeat(60)}`);
@@ -212,11 +207,9 @@ async function main() {
 
       // Find extra masters (if difference < 0)
       if (difference < 0) {
-        const pimMasterIdSet = new Set(pimMasterIds.map(m => m.master_id));
+        const pimMasterIdSet = new Set(pimMasterIds.map((m) => m.master_id));
 
-        const extraMasters = syncedMasterIds
-          .filter(m => !pimMasterIdSet.has(m.masterId))
-          .slice(0, 50);
+        const extraMasters = syncedMasterIds.filter((m) => !pimMasterIdSet.has(m.masterId)).slice(0, 50);
 
         if (extraMasters.length > 0) {
           console.log(`${'='.repeat(60)}`);
@@ -236,12 +229,10 @@ async function main() {
     }
 
     process.exit(difference === 0 && failedCount === 0 && pendingCount === 0 ? 0 : 1);
-
   } catch (error: any) {
     console.error('\n❌ Verification failed:', error.message);
     console.error(error.stack);
     process.exit(1);
-
   } finally {
     // Cleanup connections
     console.log('🧹 Cleaning up connections...');
@@ -251,7 +242,7 @@ async function main() {
 }
 
 // Run main function
-main().catch(error => {
+main().catch((error) => {
   console.error('Unhandled error:', error);
   process.exit(1);
 });

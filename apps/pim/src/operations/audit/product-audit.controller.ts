@@ -1,21 +1,12 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiParam,
-  ApiQuery,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { ProductAuditService } from './product-audit.service';
-import {
-  AuditLogItemDto,
-  ProductAuditHistoryItemDto,
-} from './dto';
+import { AuditLogItemDto, ProductAuditHistoryItemDto } from './dto';
 
 @ApiTags('Product Audit')
 @Controller('products/audit')
 export class ProductAuditController {
-  constructor(private readonly auditService: ProductAuditService) { }
+  constructor(private readonly auditService: ProductAuditService) {}
 
   @Get(':id')
   @ApiOperation({
@@ -51,9 +42,7 @@ export class ProductAuditController {
     type: [AuditLogItemDto],
   })
   async getRecentAuditLogs(@Query('limit') limit?: string) {
-    return this.auditService.getRecentAuditLogs(
-      limit ? parseInt(limit) : 100,
-    );
+    return this.auditService.getRecentAuditLogs(limit ? parseInt(limit) : 100);
   }
 
   @Get('by-user/:userId')
@@ -74,14 +63,8 @@ export class ProductAuditController {
     description: '사용자별 감사 로그 조회 성공',
     type: [AuditLogItemDto],
   })
-  async getAuditLogsByUser(
-    @Param('userId') userId: string,
-    @Query('limit') limit?: string,
-  ) {
-    return this.auditService.getAuditLogsByUser(
-      userId,
-      limit ? parseInt(limit) : 100,
-    );
+  async getAuditLogsByUser(@Param('userId') userId: string, @Query('limit') limit?: string) {
+    return this.auditService.getAuditLogsByUser(userId, limit ? parseInt(limit) : 100);
   }
 
   @Get('by-action/:action')
@@ -105,14 +88,7 @@ export class ProductAuditController {
     description: '액션별 감사 로그 조회 성공',
     type: [AuditLogItemDto],
   })
-  async getAuditLogsByAction(
-    @Param('action') action: string,
-    @Query('limit') limit?: string,
-  ) {
-    return this.auditService.getAuditLogsByAction(
-      action,
-      limit ? parseInt(limit) : 100,
-    );
+  async getAuditLogsByAction(@Param('action') action: string, @Query('limit') limit?: string) {
+    return this.auditService.getAuditLogsByAction(action, limit ? parseInt(limit) : 100);
   }
 }
-

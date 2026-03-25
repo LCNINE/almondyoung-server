@@ -52,3 +52,37 @@ export class MyQuestionListQueryDto extends PaginationQueryDto {
   @IsIn(QUESTION_SORT_OPTIONS)
   sort?: QuestionSortOption;
 }
+
+// 관리자용 전체 문의 조회
+export class AdminQuestionListQueryDto extends PaginationQueryDto {
+  @ApiPropertyOptional({
+    description: '문의 카테고리 필터',
+    enum: QUESTION_CATEGORIES,
+  })
+  @IsOptional()
+  @IsIn(QUESTION_CATEGORIES)
+  category?: QuestionCategory;
+
+  @ApiPropertyOptional({
+    description: '상태 필터',
+    enum: ['active', 'answered', 'deleted'],
+  })
+  @IsOptional()
+  @IsIn(['active', 'answered', 'deleted'])
+  status?: 'active' | 'answered' | 'deleted';
+
+  @ApiPropertyOptional({
+    description: '정렬 옵션',
+    enum: QUESTION_SORT_OPTIONS,
+    default: 'latest',
+  })
+  @IsOptional()
+  @IsIn(QUESTION_SORT_OPTIONS)
+  sort?: QuestionSortOption;
+
+  @ApiPropertyOptional({
+    description: '검색어 (제목, 내용, 닉네임)',
+  })
+  @IsOptional()
+  q?: string;
+}

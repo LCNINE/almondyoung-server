@@ -54,22 +54,14 @@ export class EntitlementManager {
   /**
    * 권한 연장/차감
    */
-  async adjustEntitlement(
-    userId: string,
-    days: number,
-    reason: string,
-    adminId: string,
-  ): Promise<Entitlement> {
+  async adjustEntitlement(userId: string, days: number, reason: string, adminId: string): Promise<Entitlement> {
     return await this.dbService.db.transaction(async (tx) => {
       // 1. 활성 권한 조회
       const [activeEntitlement] = await tx
         .select()
         .from(schema.subscriptionEntitlement)
         .where(
-          and(
-            eq(schema.subscriptionEntitlement.userId, userId),
-            eq(schema.subscriptionEntitlement.isCurrent, true),
-          ),
+          and(eq(schema.subscriptionEntitlement.userId, userId), eq(schema.subscriptionEntitlement.isCurrent, true)),
         )
         .limit(1);
 
@@ -84,16 +76,11 @@ export class EntitlementManager {
 
       // 3. 검증: 차감으로 인해 종료일이 과거가 되는 경우 방지
       if (newEndDate < today && days < 0) {
-        const maxReducibleDays = Math.floor(
-          (currentEndDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
-        );
-        throw new Error(
-          `최대 ${maxReducibleDays}일까지만 차감할 수 있습니다. 현재 구독이 즉시 만료됩니다.`,
-        );
+        const maxReducibleDays = Math.floor((currentEndDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        throw new Error(`최대 ${maxReducibleDays}일까지만 차감할 수 있습니다. 현재 구독이 즉시 만료됩니다.`);
       }
 
-      const eventType =
-        days > 0 ? 'ENTITLEMENT_EXTENDED' : 'ENTITLEMENT_REDUCED';
+      const eventType = days > 0 ? 'ENTITLEMENT_EXTENDED' : 'ENTITLEMENT_REDUCED';
 
       // 4. 이벤트 배치 생성
       const [eventBatch] = await tx
@@ -135,10 +122,7 @@ export class EntitlementManager {
   /**
    * 권한 만료 처리 (Lazy Expiration)
    */
-  async expireEntitlement(
-    entitlementId: string,
-    userId: string,
-  ): Promise<void> {
+  async expireEntitlement(entitlementId: string, userId: string): Promise<void> {
     await this.dbService.db.transaction(async (tx) => {
       // 1. 이벤트 배치 생성
       const [batch] = await tx
@@ -163,12 +147,7 @@ export class EntitlementManager {
       const [contract] = await tx
         .select({ id: schema.subscriptionContracts.id })
         .from(schema.subscriptionContracts)
-        .where(
-          and(
-            eq(schema.subscriptionContracts.userId, userId),
-            eq(schema.subscriptionContracts.status, 'ACTIVE'),
-          ),
-        )
+        .where(and(eq(schema.subscriptionContracts.userId, userId), eq(schema.subscriptionContracts.status, 'ACTIVE')))
         .limit(1);
 
       if (contract) {
@@ -191,19 +170,12 @@ export class EntitlementManager {
   /**
    * 활성 권한 종료 (public - 다른 Manager에서 사용)
    */
-  async terminateActiveEntitlement(
-    tx: DrizzleTransaction,
-    userId: string,
-    closedBatchId: string,
-  ): Promise<void> {
+  async terminateActiveEntitlement(tx: DrizzleTransaction, userId: string, closedBatchId: string): Promise<void> {
     const activeEntitlements = await tx
       .select({ id: schema.subscriptionEntitlement.id })
       .from(schema.subscriptionEntitlement)
       .where(
-        and(
-          eq(schema.subscriptionEntitlement.userId, userId),
-          eq(schema.subscriptionEntitlement.isCurrent, true),
-        ),
+        and(eq(schema.subscriptionEntitlement.userId, userId), eq(schema.subscriptionEntitlement.isCurrent, true)),
       );
 
     if (activeEntitlements.length > 0) {

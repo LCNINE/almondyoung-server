@@ -16,4 +16,3 @@ export class SupplierCategoryResponseDto {
   @ApiProperty({ description: 'Updated at' })
   updatedAt: string;
 }
-

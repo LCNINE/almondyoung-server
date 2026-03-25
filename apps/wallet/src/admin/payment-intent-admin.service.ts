@@ -1,17 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { PaginatedResponseDto } from '@app/shared';
-import {
-  and,
-  asc,
-  count,
-  desc,
-  eq,
-  gte,
-  inArray,
-  lte,
-  sql,
-} from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import {
   PaymentIntentStatus,
   WalletSchema,
@@ -54,9 +44,7 @@ export class PaymentIntentAdminService {
 
     const conditions = this.buildIntentConditions(query);
 
-    const countQuery = db
-      .select({ value: count() })
-      .from(paymentIntents);
+    const countQuery = db.select({ value: count() }).from(paymentIntents);
 
     if (query.paymentMethodType) {
       countQuery.leftJoin(paymentMethods, eq(paymentMethods.id, paymentIntents.paymentMethodId));
@@ -66,10 +54,7 @@ export class PaymentIntentAdminService {
 
     const total = countResult?.value ?? 0;
 
-    const sortColumn =
-      query.sort === 'payableAmount'
-        ? paymentIntents.payableAmount
-        : paymentIntents.createdAt;
+    const sortColumn = query.sort === 'payableAmount' ? paymentIntents.payableAmount : paymentIntents.createdAt;
     const orderFn = query.order === 'asc' ? asc : desc;
 
     const rows = await db
@@ -102,16 +87,10 @@ export class PaymentIntentAdminService {
     return { data, total, page, limit };
   }
 
-  async getPaymentIntentDetail(
-    id: string,
-  ): Promise<AdminPaymentIntentDetailResponseDto> {
+  async getPaymentIntentDetail(id: string): Promise<AdminPaymentIntentDetailResponseDto> {
     const db = this.dbService.db;
 
-    const [intent] = await db
-      .select()
-      .from(paymentIntents)
-      .where(eq(paymentIntents.id, id))
-      .limit(1);
+    const [intent] = await db.select().from(paymentIntents).where(eq(paymentIntents.id, id)).limit(1);
 
     if (!intent) {
       throw new Error('Payment intent not found');
@@ -162,22 +141,16 @@ export class PaymentIntentAdminService {
       .from(paymentIntentOrderDiscounts)
       .where(eq(paymentIntentOrderDiscounts.intentId, id));
 
-    const orderDiscounts: OrderDiscountResponseDto[] = orderDiscountRows.map(
-      (d) => ({
-        id: d.id,
-        kind: d.kind,
-        amount: d.amount,
-        name: d.name ?? null,
-        discountRefId: d.discountRefId ?? null,
-      }),
-    );
+    const orderDiscounts: OrderDiscountResponseDto[] = orderDiscountRows.map((d) => ({
+      id: d.id,
+      kind: d.kind,
+      amount: d.amount,
+      name: d.name ?? null,
+      discountRefId: d.discountRefId ?? null,
+    }));
 
     // Charges
-    const chargeRows = await db
-      .select()
-      .from(charges)
-      .where(eq(charges.intentId, id))
-      .orderBy(asc(charges.createdAt));
+    const chargeRows = await db.select().from(charges).where(eq(charges.intentId, id)).orderBy(asc(charges.createdAt));
 
     const chargeData: AdminChargeResponseDto[] = chargeRows.map((c) => ({
       id: c.id,
@@ -194,11 +167,7 @@ export class PaymentIntentAdminService {
     }));
 
     // Refunds
-    const refundRows = await db
-      .select()
-      .from(refunds)
-      .where(eq(refunds.intentId, id))
-      .orderBy(asc(refunds.createdAt));
+    const refundRows = await db.select().from(refunds).where(eq(refunds.intentId, id)).orderBy(asc(refunds.createdAt));
 
     const refundData: RefundResponseDto[] = refundRows.map((r) => ({
       id: r.id,
@@ -259,9 +228,7 @@ export class PaymentIntentAdminService {
     };
   }
 
-  async listRefunds(
-    query: AdminRefundListQueryDto,
-  ): Promise<PaginatedResponseDto<RefundResponseDto>> {
+  async listRefunds(query: AdminRefundListQueryDto): Promise<PaginatedResponseDto<RefundResponseDto>> {
     const db = this.dbService.db;
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
@@ -299,9 +266,7 @@ export class PaymentIntentAdminService {
     return { data, total, page, limit };
   }
 
-  async getStateTransitions(
-    intentId: string,
-  ): Promise<StateTransitionResponseDto[]> {
+  async getStateTransitions(intentId: string): Promise<StateTransitionResponseDto[]> {
     const db = this.dbService.db;
 
     // Verify intent exists
@@ -316,42 +281,27 @@ export class PaymentIntentAdminService {
     }
 
     // Get charge IDs and refund IDs for this intent
-    const chargeRows = await db
-      .select({ id: charges.id })
-      .from(charges)
-      .where(eq(charges.intentId, intentId));
+    const chargeRows = await db.select({ id: charges.id }).from(charges).where(eq(charges.intentId, intentId));
 
-    const refundRows = await db
-      .select({ id: refunds.id })
-      .from(refunds)
-      .where(eq(refunds.intentId, intentId));
+    const refundRows = await db.select({ id: refunds.id }).from(refunds).where(eq(refunds.intentId, intentId));
 
     const chargeIds = chargeRows.map((c) => c.id);
     const refundIds = refundRows.map((r) => r.id);
 
     // Build entity conditions for state transitions
     const entityConditions = [
-      and(
-        eq(paymentStateTransitions.entityType, 'INTENT'),
-        eq(paymentStateTransitions.entityId, intentId),
-      ),
+      and(eq(paymentStateTransitions.entityType, 'INTENT'), eq(paymentStateTransitions.entityId, intentId)),
     ];
 
     if (chargeIds.length > 0) {
       entityConditions.push(
-        and(
-          eq(paymentStateTransitions.entityType, 'CHARGE'),
-          inArray(paymentStateTransitions.entityId, chargeIds),
-        ),
+        and(eq(paymentStateTransitions.entityType, 'CHARGE'), inArray(paymentStateTransitions.entityId, chargeIds)),
       );
     }
 
     if (refundIds.length > 0) {
       entityConditions.push(
-        and(
-          eq(paymentStateTransitions.entityType, 'REFUND'),
-          inArray(paymentStateTransitions.entityId, refundIds),
-        ),
+        and(eq(paymentStateTransitions.entityType, 'REFUND'), inArray(paymentStateTransitions.entityId, refundIds)),
       );
     }
 
@@ -368,12 +318,12 @@ export class PaymentIntentAdminService {
         occurredAt: paymentStateTransitions.occurredAt,
       })
       .from(paymentStateTransitions)
-      .where(sql`(${sql.join(
-        entityConditions.map(
-          (c) => sql`(${c})`,
-        ),
-        sql` OR `,
-      )})`)
+      .where(
+        sql`(${sql.join(
+          entityConditions.map((c) => sql`(${c})`),
+          sql` OR `,
+        )})`,
+      )
       .orderBy(asc(paymentStateTransitions.occurredAt));
 
     return rows.map((r) => ({
@@ -393,12 +343,7 @@ export class PaymentIntentAdminService {
     const conditions: ReturnType<typeof eq>[] = [];
 
     if (query.status && query.status.length > 0) {
-      conditions.push(
-        inArray(
-          paymentIntents.status,
-          query.status as PaymentIntentStatus[],
-        ),
-      );
+      conditions.push(inArray(paymentIntents.status, query.status as PaymentIntentStatus[]));
     }
 
     if (query.userId) {
@@ -406,9 +351,7 @@ export class PaymentIntentAdminService {
     }
 
     if (query.paymentMethodType) {
-      conditions.push(
-        eq(paymentMethods.type, query.paymentMethodType as any),
-      );
+      conditions.push(eq(paymentMethods.type, query.paymentMethodType as any));
     }
 
     if (query.dateFrom) {

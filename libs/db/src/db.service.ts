@@ -13,9 +13,9 @@ export interface DbConfig {
 }
 
 @Injectable()
-export class DbService<
-  TSchema extends DrizzleSchema = Record<string, never>,
-> implements OnModuleDestroy, OnApplicationShutdown {
+export class DbService<TSchema extends DrizzleSchema = Record<string, never>>
+  implements OnModuleDestroy, OnApplicationShutdown
+{
   private _db: PostgresJsDatabase<TSchema>;
   private _client: postgres.Sql | null = null;
 

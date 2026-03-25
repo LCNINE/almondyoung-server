@@ -9,7 +9,7 @@ import {
   productMasterVersions,
   productMasterOptionGroups,
   productMasterVariants,
-  pimSchema
+  pimSchema,
 } from '../../schema';
 import { DbTransaction } from '../../types';
 import {
@@ -17,7 +17,7 @@ import {
   pricingRulesSetSchema,
   hasWithOptionScope,
   hasVariantsScope,
-  PricingRuleInput
+  PricingRuleInput,
 } from './dto';
 import { PricingCalculatorService } from './pricing-calculator.service';
 
@@ -27,16 +27,13 @@ export class PricingValidatorService {
     @InjectTypedDb<typeof pimSchema>()
     private readonly dbService: DbService<typeof pimSchema>,
     private readonly calculatorService: PricingCalculatorService,
-  ) { }
+  ) {}
 
   private get db() {
     return this.dbService.db;
   }
 
-  private async inTx<T>(
-    fn: (tx: DbTransaction) => Promise<T>,
-    tx?: DbTransaction,
-  ): Promise<T> {
+  private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction): Promise<T> {
     return tx ? fn(tx) : this.db.transaction(fn);
   }
 
@@ -47,17 +44,11 @@ export class PricingValidatorService {
     tx?: DbTransaction,
   ): Promise<ValidatedPricingRulesSet> {
     return this.inTx(async (trx) => {
-      console.error(
-        'RAW rulesDto:',
-        JSON.stringify(rulesDto, null, 2),
-      );
+      console.error('RAW rulesDto:', JSON.stringify(rulesDto, null, 2));
 
       const parseResult = pricingRulesSetSchema.safeParse(rulesDto);
       if (!parseResult.success) {
-        console.error(
-          'pricingRulesSetSchema issues:',
-          JSON.stringify(parseResult.error.issues, null, 2),
-        );
+        console.error('pricingRulesSetSchema issues:', JSON.stringify(parseResult.error.issues, null, 2));
 
         throw new BadRequestException({
           message: 'Invalid pricing rules structure',
@@ -93,20 +84,11 @@ export class PricingValidatorService {
   }
 
   private collectAllRules(rulesSet: ValidatedPricingRulesSet): PricingRuleInput[] {
-    return [
-      ...rulesSet.basePriceRules,
-      ...rulesSet.membershipPriceRules,
-      ...rulesSet.tieredPriceRules,
-    ];
+    return [...rulesSet.basePriceRules, ...rulesSet.membershipPriceRules, ...rulesSet.tieredPriceRules];
   }
 
-  private collectTargetIds(
-    rules: PricingRuleInput[],
-    scopeGuard: (rule: PricingRuleInput) => boolean,
-  ): string[] {
-    const targetIds = rules
-      .filter(scopeGuard)
-      .flatMap((rule) => rule.scopeTargetIds || []);
+  private collectTargetIds(rules: PricingRuleInput[], scopeGuard: (rule: PricingRuleInput) => boolean): string[] {
+    const targetIds = rules.filter(scopeGuard).flatMap((rule) => rule.scopeTargetIds || []);
 
     return [...new Set(targetIds)];
   }
@@ -123,14 +105,8 @@ export class PricingValidatorService {
         masterId: productMasterOptionGroups.masterId,
       })
       .from(productOptionValues)
-      .innerJoin(
-        productOptionGroups,
-        eq(productOptionValues.optionGroupId, productOptionGroups.id),
-      )
-      .innerJoin(
-        productMasterOptionGroups,
-        eq(productOptionGroups.id, productMasterOptionGroups.optionGroupId),
-      )
+      .innerJoin(productOptionGroups, eq(productOptionValues.optionGroupId, productOptionGroups.id))
+      .innerJoin(productMasterOptionGroups, eq(productOptionGroups.id, productMasterOptionGroups.optionGroupId))
       .where(
         and(
           eq(productMasterOptionGroups.masterId, masterId),
@@ -166,10 +142,7 @@ export class PricingValidatorService {
         masterId: productMasterVariants.masterId,
       })
       .from(productVariants)
-      .innerJoin(
-        productMasterVariants,
-        eq(productVariants.id, productMasterVariants.variantId),
-      )
+      .innerJoin(productMasterVariants, eq(productVariants.id, productMasterVariants.variantId))
       .where(
         and(
           eq(productMasterVariants.masterId, masterId),
@@ -193,11 +166,7 @@ export class PricingValidatorService {
     );
   }
 
-  private validateFoundIds(
-    requestedIds: string[],
-    foundIds: string[],
-    errorMessagePrefix: string,
-  ): void {
+  private validateFoundIds(requestedIds: string[], foundIds: string[], errorMessagePrefix: string): void {
     const foundSet = new Set(foundIds);
     const missingIds = requestedIds.filter((id) => !foundSet.has(id));
 
@@ -217,29 +186,17 @@ export class PricingValidatorService {
 
     if (invalidItems.length > 0) {
       const invalidIds = invalidItems.map(getId).join(', ');
-      throw new BadRequestException(
-        `${errorMessagePrefix} ${expectedMasterId}: ${invalidIds}`,
-      );
+      throw new BadRequestException(`${errorMessagePrefix} ${expectedMasterId}: ${invalidIds}`);
     }
   }
 
-  async validateCalculatedPrices(
-    versionId: string,
-    tx?: DbTransaction,
-  ): Promise<void> {
+  async validateCalculatedPrices(versionId: string, tx?: DbTransaction): Promise<void> {
     return this.inTx(async (trx) => {
       const variants = await trx
         .select({ id: productVariants.id })
         .from(productMasterVariants)
-        .innerJoin(
-          productVariants,
-          eq(productMasterVariants.variantId, productVariants.id),
-        )
-        .where(
-          and(
-            eq(productMasterVariants.versionId, versionId),
-          ),
-        );
+        .innerJoin(productVariants, eq(productMasterVariants.variantId, productVariants.id))
+        .where(and(eq(productMasterVariants.versionId, versionId)));
 
       if (variants.length === 0) {
         return;
@@ -258,29 +215,22 @@ export class PricingValidatorService {
           );
 
           if (baseResult.price < 0) {
-            errors.push(
-              `Variant ${variant.id}: base price is ${baseResult.price} (must be >= 0)`,
-            );
+            errors.push(`Variant ${variant.id}: base price is ${baseResult.price} (must be >= 0)`);
           }
 
-          const membershipResult =
-            await this.calculatorService.calculateVariantPriceByVersion(
-              versionId,
-              variant.id,
-              undefined,
-              'membership',
-              trx,
-            );
+          const membershipResult = await this.calculatorService.calculateVariantPriceByVersion(
+            versionId,
+            variant.id,
+            undefined,
+            'membership',
+            trx,
+          );
 
           if (membershipResult.price < 0) {
-            errors.push(
-              `Variant ${variant.id}: membership price is ${membershipResult.price} (must be >= 0)`,
-            );
+            errors.push(`Variant ${variant.id}: membership price is ${membershipResult.price} (must be >= 0)`);
           }
         } catch (error) {
-          errors.push(
-            `Variant ${variant.id}: price calculation failed - ${error.message}`,
-          );
+          errors.push(`Variant ${variant.id}: price calculation failed - ${error.message}`);
         }
       }
 
@@ -292,4 +242,3 @@ export class PricingValidatorService {
     }, tx);
   }
 }
-

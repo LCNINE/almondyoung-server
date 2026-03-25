@@ -1,7 +1,4 @@
-import {
-  validateAndTransformBody,
-  validateAndTransformQuery,
-} from '@medusajs/framework';
+import { validateAndTransformBody, validateAndTransformQuery } from '@medusajs/framework';
 import { MiddlewareRoute } from '@medusajs/framework/http';
 import * as queryConfig from './query-config';
 import { AdminCreatePaymentRefund, AdminGetPaymentParams } from './validators';

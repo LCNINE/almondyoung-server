@@ -3,10 +3,7 @@ import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { DbService } from '@app/db';
 import { DomainEvent } from '@packages/event-contracts/types';
-import type {
-  Cafe24LinkedPayload,
-  Cafe24UnlinkedPayload,
-} from '@packages/event-contracts/streams/user.stream';
+import type { Cafe24LinkedPayload, Cafe24UnlinkedPayload } from '@packages/event-contracts/streams/user.stream';
 import { processedEvents, inboxEvents, cafe24MemberMappings } from '../schema';
 import { eq } from 'drizzle-orm';
 import type { ChannelAdapterSchema } from '../types';
@@ -22,9 +19,7 @@ import type { ChannelAdapterSchema } from '../types';
 export class UserEventConsumer {
   private readonly logger = new Logger(UserEventConsumer.name);
 
-  constructor(
-    private readonly dbService: DbService<ChannelAdapterSchema>,
-  ) {}
+  constructor(private readonly dbService: DbService<ChannelAdapterSchema>) {}
 
   @OnEvent('users.events.v1', 'Cafe24Linked')
   async onCafe24Linked(
@@ -76,7 +71,8 @@ export class UserEventConsumer {
         createdAt: new Date(),
       });
 
-      await db.insert(cafe24MemberMappings)
+      await db
+        .insert(cafe24MemberMappings)
         .values({ cafe24MemberId, userId, email, createdAt: new Date(), updatedAt: new Date() })
         .onConflictDoUpdate({
           target: cafe24MemberMappings.cafe24MemberId,
@@ -140,8 +136,7 @@ export class UserEventConsumer {
         createdAt: new Date(),
       });
 
-      await db.delete(cafe24MemberMappings)
-        .where(eq(cafe24MemberMappings.cafe24MemberId, cafe24MemberId));
+      await db.delete(cafe24MemberMappings).where(eq(cafe24MemberMappings.cafe24MemberId, cafe24MemberId));
 
       this.logger.log(`[User] Cafe24Unlinked Inbox 저장 완료: userId=${userId}`);
     } catch (error) {

@@ -1,1 +1,1 @@
-export { EmailVerifiedCell } from './email-verified-cell'
+export { EmailVerifiedCell } from './email-verified-cell';

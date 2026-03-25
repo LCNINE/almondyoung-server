@@ -4,8 +4,7 @@ import { ContainerRegistrationKeys } from '@medusajs/utils';
 import { randomUUID } from 'crypto';
 import { StepResponse } from '@medusajs/workflows-sdk';
 
-export const initiateAlmondPaymentSessionStepId =
-  'initiate-almond-payment-session';
+export const initiateAlmondPaymentSessionStepId = 'initiate-almond-payment-session';
 
 type InitiateAlmondPaymentSessionInput = {
   cart: {
@@ -24,10 +23,7 @@ type InitiateAlmondPaymentSessionInput = {
  */
 export const initiateAlmondPaymentSessionStep = createStep(
   initiateAlmondPaymentSessionStepId,
-  async (
-    { cart, payment_collection }: InitiateAlmondPaymentSessionInput,
-    { container },
-  ) => {
+  async ({ cart, payment_collection }: InitiateAlmondPaymentSessionInput, { container }) => {
     const logger = container.resolve<Logger>(ContainerRegistrationKeys.LOGGER);
 
     // 결제 세션 생성에 필요한 데이터 준비

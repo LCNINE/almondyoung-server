@@ -15,17 +15,13 @@ export class MembershipEventPublisher {
     private readonly publisher: StreamPublisher<MembershipEvents>,
   ) {}
 
-  async publishStatusChanged(
-    payload: MembershipStatusChangedPayload,
-  ): Promise<void> {
+  async publishStatusChanged(payload: MembershipStatusChangedPayload): Promise<void> {
     await this.publisher.publishEvent({
       eventType: 'MembershipStatusChanged',
       aggregateId: payload.userId,
       payload,
     });
 
-    this.logger.log(
-      `MembershipStatusChanged published: ${payload.userId} → ${payload.status}`,
-    );
+    this.logger.log(`MembershipStatusChanged published: ${payload.userId} → ${payload.status}`);
   }
 }

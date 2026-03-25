@@ -5,7 +5,7 @@ import { ProductRankingQuery } from '../product-ranking/read-model/product-ranki
 
 @Injectable()
 export class AnalyticsService {
-  constructor(private readonly productRankingQuery: ProductRankingQuery) { }
+  constructor(private readonly productRankingQuery: ProductRankingQuery) {}
 
   getHealth(): AnalyticsHealthDto {
     return {

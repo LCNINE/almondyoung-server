@@ -40,9 +40,7 @@ export class RoleScopeController {
 
   @Get('role-scopes/:roleName')
   @ApiOperation({ summary: '특정 role에 매핑된 scope 목록 조회' })
-  async getScopesByRole(
-    @Param('roleName') roleName: string,
-  ): Promise<RoleScopesResponseDto> {
+  async getScopesByRole(@Param('roleName') roleName: string): Promise<RoleScopesResponseDto> {
     try {
       const scopeKeys = await this.scopeReader.getScopesByRole(roleName);
       return { roleName, scopes: scopeKeys };
@@ -58,17 +56,12 @@ export class RoleScopeController {
     @Body() dto: UpdateRoleScopesDto,
   ): Promise<RoleScopesResponseDto> {
     try {
-      const updatedScopes = await this.roleScopeService.updateMappings(
-        roleName,
-        dto.add ?? [],
-        dto.remove ?? [],
-      );
+      const updatedScopes = await this.roleScopeService.updateMappings(roleName, dto.add ?? [], dto.remove ?? []);
       return { roleName, scopes: updatedScopes };
     } catch (e: any) {
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('not found')) throw new NotFoundException(e.message);
-      if (msg.match(/already|invalid|failed|required|exceed/))
-        throw new BadRequestException(e.message);
+      if (msg.match(/already|invalid|failed|required|exceed/)) throw new BadRequestException(e.message);
       throw new InternalServerErrorException(e.message);
     }
   }

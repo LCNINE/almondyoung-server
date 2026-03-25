@@ -110,9 +110,7 @@ describe('SubscriptionService - Layer Refactoring', () => {
         contractId: 'contract_001',
         entitlementId: 'entitlement_001',
       });
-      expect(
-        mockSubscriptionCreator.createNewSubscription,
-      ).toHaveBeenCalledWith(
+      expect(mockSubscriptionCreator.createNewSubscription).toHaveBeenCalledWith(
         userId,
         { id: planId, price: 10000, durationDays: 30 },
         { id: 'tier_001', code: 'PREMIUM' },
@@ -132,9 +130,7 @@ describe('SubscriptionService - Layer Refactoring', () => {
       });
 
       // When & Then
-      await expect(
-        service.createSubscription(userId, planId, email),
-      ).rejects.toThrow();
+      await expect(service.createSubscription(userId, planId, email)).rejects.toThrow();
     });
   });
 

@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  UnprocessableEntityException,
-} from '@nestjs/common';
+import { Injectable, Logger, UnprocessableEntityException } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { eq } from 'drizzle-orm';
 import { WalletSchema, paymentIntents } from '../schema';
@@ -11,7 +7,11 @@ import { PaymentMethodsService } from '../payment-methods/payment-methods.servic
 import { ChargesService } from '../charges/charges.service';
 import { ProviderRegistry } from '../providers/provider.registry';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
-import { GATEWAY_AGGREGATE_TYPE, GatewayEventType, buildPaymentIntentEventPayload } from '../messaging/gateway-event.builder';
+import {
+  GATEWAY_AGGREGATE_TYPE,
+  GatewayEventType,
+  buildPaymentIntentEventPayload,
+} from '../messaging/gateway-event.builder';
 
 @Injectable()
 export class CaptureService {
@@ -27,8 +27,7 @@ export class CaptureService {
 
   async capture(intentId: string, correlationId: string): Promise<void> {
     // Find all SUCCEEDED AUTHORIZE charges (ordered by createdAt asc; POINTS always first)
-    const authorizeCharges =
-      await this.chargesService.findAllSucceededAuthorizeByIntent(intentId);
+    const authorizeCharges = await this.chargesService.findAllSucceededAuthorizeByIntent(intentId);
 
     if (authorizeCharges.length === 0) {
       throw new UnprocessableEntityException({
@@ -64,7 +63,7 @@ export class CaptureService {
           userId,
           status: 'CAPTURED',
           payableAmount: totalCaptured,
-          currency: authorizeCharges[0]!.currency,
+          currency: authorizeCharges[0].currency,
           occurredAt: now,
         }),
       },
@@ -77,13 +76,9 @@ export class CaptureService {
     intentId: string,
     correlationId: string,
   ): Promise<void> {
-    const method = await this.paymentMethodsService.findById(
-      authorizeCharge.paymentMethodId,
-    );
+    const method = await this.paymentMethodsService.findById(authorizeCharge.paymentMethodId);
     if (!method) {
-      this.logger.error(
-        `Payment method not found for charge: ${authorizeCharge.id}`,
-      );
+      this.logger.error(`Payment method not found for charge: ${authorizeCharge.id}`);
       return;
     }
 
@@ -94,10 +89,7 @@ export class CaptureService {
       currency: authorizeCharge.currency,
       operation: 'CAPTURE',
       status: 'CREATED',
-      providerIdempotencyKey: this.chargesService.generateIdempotencyKey(
-        authorizeCharge.id,
-        'CAPTURE',
-      ),
+      providerIdempotencyKey: this.chargesService.generateIdempotencyKey(authorizeCharge.id, 'CAPTURE'),
       requestPayload: { intentId, authorizeChargeId: authorizeCharge.id },
     });
 
@@ -114,7 +106,7 @@ export class CaptureService {
         currency: captureCharge.currency,
         idempotencyKey: captureCharge.providerIdempotencyKey,
         correlationId,
-        providerData: method.providerData as Record<string, unknown>,
+        providerData: method.providerData,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -143,9 +135,7 @@ export class CaptureService {
     }
   }
 
-  private async getIntentInfo(
-    intentId: string,
-  ): Promise<{ userId: string | null } | null> {
+  private async getIntentInfo(intentId: string): Promise<{ userId: string | null } | null> {
     const rows = await this.dbService.db
       .select({ userId: paymentIntents.userId })
       .from(paymentIntents)

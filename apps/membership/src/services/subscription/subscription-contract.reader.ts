@@ -18,12 +18,7 @@ export class SubscriptionContractReader {
     const [contract] = await this.dbService.db
       .select()
       .from(schema.subscriptionContracts)
-      .where(
-        and(
-          eq(schema.subscriptionContracts.userId, userId),
-          eq(schema.subscriptionContracts.status, 'ACTIVE'),
-        ),
-      )
+      .where(and(eq(schema.subscriptionContracts.userId, userId), eq(schema.subscriptionContracts.status, 'ACTIVE')))
       .limit(1);
 
     return contract || null;
@@ -46,11 +41,7 @@ export class SubscriptionContractReader {
    * 플랜 조회
    */
   async findPlan(planId: string): Promise<Plan | null> {
-    const [plan] = await this.dbService.db
-      .select()
-      .from(schema.plan)
-      .where(eq(schema.plan.id, planId))
-      .limit(1);
+    const [plan] = await this.dbService.db.select().from(schema.plan).where(eq(schema.plan.id, planId)).limit(1);
 
     return plan || null;
   }
@@ -58,9 +49,7 @@ export class SubscriptionContractReader {
   /**
    * 계약과 플랜 함께 조회
    */
-  async findContractWithPlan(
-    userId: string,
-  ): Promise<{ contract: Contract; plan: Plan } | null> {
+  async findContractWithPlan(userId: string): Promise<{ contract: Contract; plan: Plan } | null> {
     const contract = await this.findActiveContract(userId);
     if (!contract) return null;
 

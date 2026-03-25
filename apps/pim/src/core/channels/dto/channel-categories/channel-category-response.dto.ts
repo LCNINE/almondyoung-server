@@ -27,4 +27,3 @@ export class ChannelCategoryListResponseDto {
   @ApiProperty({ description: '분류 목록', type: [ChannelCategoryDto] })
   data: ChannelCategoryDto[];
 }
-

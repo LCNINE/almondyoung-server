@@ -5,5 +5,5 @@
 // 예: 고객 정보 조회, 고객 관리, 고객 통계 등
 
 export const customers = {
-    // TODO: 고객 관련 API 구현 예정
+  // TODO: 고객 관련 API 구현 예정
 };

@@ -17,4 +17,3 @@ export class CustomerDto {
   @IsOptional()
   phone?: string;
 }
-

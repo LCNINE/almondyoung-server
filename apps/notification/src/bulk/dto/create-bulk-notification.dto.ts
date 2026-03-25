@@ -12,11 +12,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  Channel,
-  NotificationCategory,
-  NotificationPriority,
-} from '../../shared/enums';
+import { Channel, NotificationCategory, NotificationPriority } from '../../shared/enums';
 
 class UserInfoDto {
   @ApiProperty({

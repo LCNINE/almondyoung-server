@@ -9,10 +9,7 @@ import fastifySession from '@fastify/session';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
-import {
-  FastifyAdapter,
-  NestFastifyApplication,
-} from '@nestjs/platform-fastify';
+import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { AppModule } from './app.module';
 import { FILE_SIZE_LIMIT } from './constants/file.constants';
 
@@ -30,9 +27,7 @@ async function bootstrap() {
 
   const corsOrigins =
     process.env.NODE_ENV === 'production'
-      ? (process.env.CORS_ORIGIN_DOMAINS?.split(',').map((origin) =>
-        origin.trim(),
-      ) ?? [])
+      ? (process.env.CORS_ORIGIN_DOMAINS?.split(',').map((origin) => origin.trim()) ?? [])
       : ['http://localhost:8000', 'https://almondyoung-storefront.vercel.app'];
 
   logger.log('CORS:', corsOrigins);
@@ -42,23 +37,17 @@ async function bootstrap() {
       process.env.NODE_ENV === 'production'
         ? corsOrigins
         : [
-          'http://localhost:8000',
-          'http://localhost:3000',
-          'http://localhost:9000',
-          'http://127.0.0.1:3000',
-          'https://almondyoung-storefront.vercel.app',
-          'https://api-gateway-development-10ed.up.railway.app/*',
-          'https://medusa-dev.up.railway.app',
-        ],
+            'http://localhost:8000',
+            'http://localhost:3000',
+            'http://localhost:9000',
+            'http://127.0.0.1:3000',
+            'https://almondyoung-storefront.vercel.app',
+            'https://api-gateway-development-10ed.up.railway.app/*',
+            'https://medusa-dev.up.railway.app',
+          ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'Accept',
-      'Cookie',
-      'Set-Cookie',
-    ],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Cookie', 'Set-Cookie'],
     exposedHeaders: ['Set-Cookie'],
   });
 

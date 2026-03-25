@@ -1,10 +1,5 @@
 import { z } from 'zod';
-import {
-  DeliveryMethodSchema,
-  HoldbackReasonSchema,
-  ReturnReasonSchema,
-  CancelReasonSchema,
-} from './naver-core.zod';
+import { DeliveryMethodSchema, HoldbackReasonSchema, ReturnReasonSchema, CancelReasonSchema } from './naver-core.zod';
 
 // =================================================================
 // == 1. 교환 (Exchange) Body 스키마
@@ -17,16 +12,12 @@ export const ExchangeRedeliveryBodySchema = z.object({
   reDeliveryCompany: z.string().min(1, '재배송 택배사는 필수입니다'),
   reDeliveryTrackingNumber: z.string().min(1, '재배송 송장번호는 필수입니다'),
 });
-export type ExchangeRedeliveryBody = z.infer<
-  typeof ExchangeRedeliveryBodySchema
->;
+export type ExchangeRedeliveryBody = z.infer<typeof ExchangeRedeliveryBodySchema>;
 
 /** 교환 보류 Body */
 export const HoldExchangeBodySchema = z.object({
   holdbackClassType: HoldbackReasonSchema,
-  holdbackExchangeDetailReason: z
-    .string()
-    .min(1, '교환 보류 상세 사유는 필수입니다'),
+  holdbackExchangeDetailReason: z.string().min(1, '교환 보류 상세 사유는 필수입니다'),
   extraExchangeFeeAmount: z.number().int().optional(),
 });
 export type HoldExchangeBody = z.infer<typeof HoldExchangeBodySchema>;
@@ -45,9 +36,7 @@ export type RejectExchangeBody = z.infer<typeof RejectExchangeBodySchema>;
 /** 반품 보류 Body */
 export const HoldReturnBodySchema = z.object({
   holdbackClassType: HoldbackReasonSchema,
-  holdbackReturnDetailReason: z
-    .string()
-    .min(1, '반품 보류 상세 사유는 필수입니다'),
+  holdbackReturnDetailReason: z.string().min(1, '반품 보류 상세 사유는 필수입니다'),
   extraReturnFeeAmount: z.number().int().optional(),
 });
 export type HoldReturnBody = z.infer<typeof HoldReturnBodySchema>;

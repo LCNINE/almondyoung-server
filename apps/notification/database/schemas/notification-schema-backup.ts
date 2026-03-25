@@ -1,45 +1,65 @@
 // apps/notification/database/schemas/notification-schema.ts
-import { pgTable, pgEnum, uuid, varchar, text, jsonb, timestamp, integer, boolean, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  pgEnum,
+  uuid,
+  varchar,
+  text,
+  jsonb,
+  timestamp,
+  integer,
+  boolean,
+  index,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 export const channelEnum = pgEnum('channel', ['EMAIL', 'SMS', 'KAKAO', 'PUSH']);
 export const languageEnum = pgEnum('language', ['ko', 'en']);
 export const notificationStatusEnum = pgEnum('notification_status', [
-    'PENDING',
-    'PROCESSING',
-    'SENT',
-    'DELIVERED',
-    'FAILED',
-    'CANCELLED',
-    'RETRYING'
+  'PENDING',
+  'PROCESSING',
+  'SENT',
+  'DELIVERED',
+  'FAILED',
+  'CANCELLED',
+  'RETRYING',
 ]);
 export const providerStatusEnum = pgEnum('provider_status', ['ACTIVE', 'INACTIVE', 'ERROR']);
-export const campaignStatusEnum = pgEnum('campaign_status', ['DRAFT', 'SCHEDULED', 'PROCESSING', 'COMPLETED', 'CANCELLED']);
+export const campaignStatusEnum = pgEnum('campaign_status', [
+  'DRAFT',
+  'SCHEDULED',
+  'PROCESSING',
+  'COMPLETED',
+  'CANCELLED',
+]);
 export const targetTypeEnum = pgEnum('target_type', ['all', 'filter', 'excel', 'search']);
 export const membershipTypeEnum = pgEnum('membership_type', ['general', 'premium']);
 export const devicePlatformEnum = pgEnum('device_platform', ['ios', 'android', 'web']);
 
 // 알림 카테고리 - notification-rules.mdc에 맞게 수정
 export const notificationCategoryEnum = pgEnum('notification_category', [
-    'INFORMATIONAL',    // 정보성 알림 (동의 없이 발송 가능)
-    'MARKETING',        // 마케팅/프로모션 (동의 필요)
-    'TRANSACTIONAL',    // 거래 관련 (주문, 결제 등)
-    'SYSTEM',          // 시스템 알림 (비밀번호 변경 등)
-    'ADMIN',           // 관리자 알림
-    'OPERATIONAL',     // 운영 알림 (점검 등)
-    'CUSTOMER_SERVICE' // 고객 서비스 (문의 답변 등)
+  'INFORMATIONAL', // 정보성 알림 (동의 없이 발송 가능)
+  'MARKETING', // 마케팅/프로모션 (동의 필요)
+  'TRANSACTIONAL', // 거래 관련 (주문, 결제 등)
+  'SYSTEM', // 시스템 알림 (비밀번호 변경 등)
+  'ADMIN', // 관리자 알림
+  'OPERATIONAL', // 운영 알림 (점검 등)
+  'CUSTOMER_SERVICE', // 고객 서비스 (문의 답변 등)
 ]);
 
 // 알림 우선순위
 export const notificationPriorityEnum = pgEnum('notification_priority', [
-    'URGENT',    // 긴급 (즉시 발송)
-    'HIGH',      // 높음
-    'NORMAL',    // 보통
-    'LOW'        // 낮음
+  'URGENT', // 긴급 (즉시 발송)
+  'HIGH', // 높음
+  'NORMAL', // 보통
+  'LOW', // 낮음
 ]);
 
 // 템플릿 테이블
-export const templates = pgTable('templates', {
+export const templates = pgTable(
+  'templates',
+  {
     templateId: uuid('template_id').defaultRandom().primaryKey(),
     templateKey: varchar('template_key', { length: 100 }).notNull(),
     name: varchar('name', { length: 255 }).notNull(),
@@ -51,13 +71,17 @@ export const templates = pgTable('templates', {
     metadata: jsonb('metadata').$type<Record<string, any>>(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
-}, (table) => ({
+  },
+  (table) => ({
     templateKeyIdx: index('idx_template_key_active').on(table.templateKey, table.isActive),
     categoryIdx: index('idx_template_category').on(table.category),
-}));
+  }),
+);
 
 // 알림 발송 테이블
-export const notifications = pgTable('notifications', {
+export const notifications = pgTable(
+  'notifications',
+  {
     notificationId: uuid('notification_id').defaultRandom().primaryKey(),
     correlationId: varchar('correlation_id', { length: 100 }),
     userId: varchar('user_id', { length: 100 }).notNull(),
@@ -81,20 +105,20 @@ export const notifications = pgTable('notifications', {
     metadata: jsonb('metadata').$type<Record<string, any>>(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
-}, (table) => ({
-    userStatusIdx: index('idx_user_status_created').on(
-        table.userId,
-        table.status,
-        table.createdAt
-    ),
+  },
+  (table) => ({
+    userStatusIdx: index('idx_user_status_created').on(table.userId, table.status, table.createdAt),
     statusSendAtIdx: index('idx_status_send_at').on(table.status, table.sendAt),
     statusRetryIdx: index('idx_status_retry').on(table.status, table.nextRetryAt),
     campaignIdx: index('idx_campaign').on(table.campaignId),
     categoryPriorityIdx: index('idx_category_priority').on(table.category, table.priority),
-}));
+  }),
+);
 
 // 대량 발송 캠페인 테이블
-export const notificationCampaigns = pgTable('notification_campaigns', {
+export const notificationCampaigns = pgTable(
+  'notification_campaigns',
+  {
     campaignId: uuid('campaign_id').defaultRandom().primaryKey(),
     name: varchar('name', { length: 255 }).notNull(),
     description: text('description'),
@@ -112,14 +136,18 @@ export const notificationCampaigns = pgTable('notification_campaigns', {
     approvedAt: timestamp('approved_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
-}, (table) => ({
+  },
+  (table) => ({
     statusIdx: index('idx_campaign_status').on(table.status),
     sendAtIdx: index('idx_campaign_send_at').on(table.sendAt),
     categoryIdx: index('idx_campaign_category').on(table.category),
-}));
+  }),
+);
 
 // 캠페인 타겟 그룹 테이블
-export const campaignTargetGroups = pgTable('campaign_target_groups', {
+export const campaignTargetGroups = pgTable(
+  'campaign_target_groups',
+  {
     groupId: uuid('group_id').defaultRandom().primaryKey(),
     campaignId: uuid('campaign_id').notNull(),
     name: varchar('name', { length: 255 }).notNull(),
@@ -128,12 +156,16 @@ export const campaignTargetGroups = pgTable('campaign_target_groups', {
     userList: jsonb('user_list'),
     userCount: integer('user_count').default(0),
     createdAt: timestamp('created_at').defaultNow().notNull(),
-}, (table) => ({
+  },
+  (table) => ({
     campaignIdx: index('idx_campaign_target').on(table.campaignId),
-}));
+  }),
+);
 
 // 대량 발송 수신자 테이블
-export const campaignRecipients = pgTable('campaign_recipients', {
+export const campaignRecipients = pgTable(
+  'campaign_recipients',
+  {
     recipientId: uuid('recipient_id').defaultRandom().primaryKey(),
     campaignId: uuid('campaign_id').notNull(),
     userId: varchar('user_id', { length: 100 }).notNull(),
@@ -142,12 +174,16 @@ export const campaignRecipients = pgTable('campaign_recipients', {
     errorMessage: text('error_message'),
     attemptedAt: timestamp('attempted_at').notNull(),
     metadata: jsonb('metadata'),
-}, (table) => ({
+  },
+  (table) => ({
     campaignUserIdx: index('idx_campaign_user').on(table.campaignId, table.userId),
-}));
+  }),
+);
 
 // 사용자 정보 캐시 테이블
-export const userProfiles = pgTable('user_profiles', {
+export const userProfiles = pgTable(
+  'user_profiles',
+  {
     userId: varchar('user_id', { length: 100 }).primaryKey(),
     email: varchar('email', { length: 255 }),
     phoneNumber: varchar('phone_number', { length: 20 }),
@@ -157,15 +193,19 @@ export const userProfiles = pgTable('user_profiles', {
     deviceInfo: jsonb('device_info').$type<DeviceInfo>(),
     metadata: jsonb('metadata'),
     syncedAt: timestamp('synced_at').defaultNow().notNull(),
-}, (table) => ({
+  },
+  (table) => ({
     membershipIdx: index('idx_membership_type').on(table.membershipType),
     emailIdx: index('idx_email').on(table.email),
     phoneIdx: index('idx_phone').on(table.phoneNumber),
     pushTokenIdx: index('idx_push_token').on(table.pushToken),
-}));
+  }),
+);
 
 // FCM 토큰 관리 테이블
-export const fcmTokens = pgTable('fcm_tokens', {
+export const fcmTokens = pgTable(
+  'fcm_tokens',
+  {
     tokenId: uuid('token_id').defaultRandom().primaryKey(),
     userId: varchar('user_id', { length: 100 }).notNull(),
     token: varchar('token', { length: 500 }).notNull(),
@@ -182,30 +222,38 @@ export const fcmTokens = pgTable('fcm_tokens', {
     metadata: jsonb('metadata'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
-}, (table) => ({
+  },
+  (table) => ({
     userIdIdx: index('idx_fcm_user_id').on(table.userId),
     tokenIdx: uniqueIndex('idx_fcm_token').on(table.token),
     userDeviceIdx: uniqueIndex('idx_user_device').on(table.userId, table.deviceId),
     activeTokensIdx: index('idx_active_tokens').on(table.userId, table.isActive),
     platformIdx: index('idx_fcm_platform').on(table.platform),
-}));
+  }),
+);
 
 // FCM 주제 구독 관리 테이블
-export const fcmTopicSubscriptions = pgTable('fcm_topic_subscriptions', {
+export const fcmTopicSubscriptions = pgTable(
+  'fcm_topic_subscriptions',
+  {
     subscriptionId: uuid('subscription_id').defaultRandom().primaryKey(),
     userId: varchar('user_id', { length: 100 }).notNull(),
     tokenId: uuid('token_id'),
     topic: varchar('topic', { length: 255 }).notNull(),
     subscribedAt: timestamp('subscribed_at').defaultNow().notNull(),
     metadata: jsonb('metadata'),
-}, (table) => ({
+  },
+  (table) => ({
     userTopicIdx: uniqueIndex('idx_user_topic').on(table.userId, table.topic),
     tokenTopicIdx: index('idx_token_topic').on(table.tokenId, table.topic),
     topicIdx: index('idx_topic').on(table.topic),
-}));
+  }),
+);
 
 // 사용자 알림 설정 테이블
-export const userNotificationSettings = pgTable('user_notification_settings', {
+export const userNotificationSettings = pgTable(
+  'user_notification_settings',
+  {
     settingId: uuid('setting_id').defaultRandom().primaryKey(),
     userId: varchar('user_id', { length: 100 }).unique().notNull(),
     // 마케팅 알림 수신 동의 (모든 채널 통합)
@@ -218,12 +266,16 @@ export const userNotificationSettings = pgTable('user_notification_settings', {
     settings: jsonb('settings').$type<GeneralSettings>(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
-}, (table) => ({
+  },
+  (table) => ({
     userIdx: uniqueIndex('idx_user_notification_settings').on(table.userId),
-}));
+  }),
+);
 
 // 알림 프로바이더 테이블
-export const notificationProviders = pgTable('notification_providers', {
+export const notificationProviders = pgTable(
+  'notification_providers',
+  {
     providerId: uuid('provider_id').defaultRandom().primaryKey(),
     channel: channelEnum('channel').notNull(),
     providerName: varchar('provider_name', { length: 50 }).notNull(),
@@ -235,16 +287,16 @@ export const notificationProviders = pgTable('notification_providers', {
     metadata: jsonb('metadata'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
-}, (table) => ({
-    channelActiveIdx: index('idx_channel_active_priority').on(
-        table.channel,
-        table.isActive,
-        table.priority
-    ),
-}));
+  },
+  (table) => ({
+    channelActiveIdx: index('idx_channel_active_priority').on(table.channel, table.isActive, table.priority),
+  }),
+);
 
 // 이벤트 구독 테이블
-export const notificationEvents = pgTable('notification_events', {
+export const notificationEvents = pgTable(
+  'notification_events',
+  {
     eventId: uuid('event_id').defaultRandom().primaryKey(),
     eventKey: varchar('event_key', { length: 100 }).unique().notNull(),
     description: text('description').notNull(),
@@ -256,14 +308,18 @@ export const notificationEvents = pgTable('notification_events', {
     isActive: boolean('is_active').default(true).notNull(),
     metadata: jsonb('metadata'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
-    name: varchar("name", { length: 255 }).notNull(),
+    name: varchar('name', { length: 255 }).notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
-}, (table) => ({
+  },
+  (table) => ({
     eventKeyActiveIdx: index('idx_event_key_active').on(table.eventKey, table.isActive),
-}));
+  }),
+);
 
 // 발송 결과 수신 테이블
-export const receipts = pgTable('receipts', {
+export const receipts = pgTable(
+  'receipts',
+  {
     receiptId: uuid('receipt_id').defaultRandom().primaryKey(),
     notificationId: uuid('notification_id'),
     campaignId: uuid('campaign_id'),
@@ -273,14 +329,18 @@ export const receipts = pgTable('receipts', {
     latencyMs: integer('latency_ms'),
     metadata: jsonb('metadata'),
     timestamp: timestamp('timestamp').defaultNow().notNull(),
-}, (table) => ({
+  },
+  (table) => ({
     notificationIdx: index('idx_receipt_notification').on(table.notificationId),
     campaignIdx: index('idx_receipt_campaign').on(table.campaignId),
     timestampIdx: index('idx_receipt_timestamp').on(table.timestamp),
-}));
+  }),
+);
 
 // 알림 로그 테이블
-export const notificationLogs = pgTable('notification_logs', {
+export const notificationLogs = pgTable(
+  'notification_logs',
+  {
     logId: uuid('log_id').defaultRandom().primaryKey(),
     notificationId: uuid('notification_id'),
     campaignId: uuid('campaign_id'),
@@ -294,15 +354,19 @@ export const notificationLogs = pgTable('notification_logs', {
     latencyMs: integer('latency_ms'),
     metadata: jsonb('metadata'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
-}, (table) => ({
+  },
+  (table) => ({
     userCreatedIdx: index('idx_log_user_created').on(table.userId, table.createdAt),
     eventCreatedIdx: index('idx_log_event_created').on(table.eventKey, table.createdAt),
     campaignIdx: index('idx_log_campaign').on(table.campaignId),
     createdIdx: index('idx_log_created').on(table.createdAt),
-}));
+  }),
+);
 
 // 운영 알림 테이블
-export const alerts = pgTable('alerts', {
+export const alerts = pgTable(
+  'alerts',
+  {
     alertId: uuid('alert_id').defaultRandom().primaryKey(),
     type: varchar('type', { length: 50 }).notNull(),
     severity: varchar('severity', { length: 20 }).notNull(),
@@ -314,132 +378,141 @@ export const alerts = pgTable('alerts', {
     resolvedBy: varchar('resolved_by', { length: 100 }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
-}, (table) => ({
+  },
+  (table) => ({
     unresolvedIdx: index('idx_alert_unresolved').on(table.isResolved, table.createdAt),
-}));
+  }),
+);
 
 // Types
 export type Channel = 'EMAIL' | 'SMS' | 'KAKAO' | 'PUSH';
 export type Language = 'ko' | 'en';
-export type NotificationCategory = 'INFORMATIONAL' | 'MARKETING' | 'TRANSACTIONAL' | 'SYSTEM' | 'ADMIN' | 'OPERATIONAL' | 'CUSTOMER_SERVICE';
+export type NotificationCategory =
+  | 'INFORMATIONAL'
+  | 'MARKETING'
+  | 'TRANSACTIONAL'
+  | 'SYSTEM'
+  | 'ADMIN'
+  | 'OPERATIONAL'
+  | 'CUSTOMER_SERVICE';
 export type NotificationPriority = 'URGENT' | 'HIGH' | 'NORMAL' | 'LOW';
 export type DevicePlatform = 'ios' | 'android' | 'web';
 
 // Interfaces
 export interface DeviceInfo {
-    platform?: DevicePlatform;
-    deviceId?: string;
-    deviceModel?: string;
-    osVersion?: string;
-    appVersion?: string;
-    lastActiveAt?: Date;
+  platform?: DevicePlatform;
+  deviceId?: string;
+  deviceModel?: string;
+  osVersion?: string;
+  appVersion?: string;
+  lastActiveAt?: Date;
 }
 
 export interface PushSettings {
-    sound?: boolean;
-    vibration?: boolean;
-    showPreview?: boolean;
-    quietHours?: {
-        enabled: boolean;
-        startTime?: string;
-        endTime?: string;
-    };
+  sound?: boolean;
+  vibration?: boolean;
+  showPreview?: boolean;
+  quietHours?: {
+    enabled: boolean;
+    startTime?: string;
+    endTime?: string;
+  };
 }
 
 export interface GeneralSettings {
-    timezone?: string;
-    locale?: string;
-    [key: string]: any;
+  timezone?: string;
+  locale?: string;
+  [key: string]: any;
 }
 
 export interface ChannelContent {
-    ko?: {
-        subject?: string;
-        body: string;
-        metadata?: Record<string, any>;
-    };
-    en?: {
-        subject?: string;
-        body: string;
-        metadata?: Record<string, any>;
-    };
-}
-
-export interface TemplateContents {
-    EMAIL?: ChannelContent;
-    SMS?: ChannelContent;
-    KAKAO?: ChannelContent;
-    PUSH?: ChannelContent;
-}
-
-export interface VariableSchema {
-    [key: string]: {
-        type: 'string' | 'number' | 'boolean' | 'object' | 'array';
-        required?: boolean;
-        description?: string;
-    }
-}
-
-export interface RenderedContent {
+  ko?: {
     subject?: string;
     body: string;
     metadata?: Record<string, any>;
+  };
+  en?: {
+    subject?: string;
+    body: string;
+    metadata?: Record<string, any>;
+  };
+}
+
+export interface TemplateContents {
+  EMAIL?: ChannelContent;
+  SMS?: ChannelContent;
+  KAKAO?: ChannelContent;
+  PUSH?: ChannelContent;
+}
+
+export interface VariableSchema {
+  [key: string]: {
+    type: 'string' | 'number' | 'boolean' | 'object' | 'array';
+    required?: boolean;
+    description?: string;
+  };
+}
+
+export interface RenderedContent {
+  subject?: string;
+  body: string;
+  metadata?: Record<string, any>;
 }
 
 export interface ErrorDetails {
-    message: string;
-    stack?: string;
-    timestamp: Date;
+  message: string;
+  stack?: string;
+  timestamp: Date;
 }
 
 export interface CampaignContent {
-    EMAIL?: {
-        subject?: string;
-        body: string;
-        metadata?: Record<string, any>;
-    };
-    SMS?: {
-        subject?: string;
-        body: string;
-        metadata?: Record<string, any>;
-    };
-    KAKAO?: {
-        subject?: string;
-        body: string;
-        metadata?: Record<string, any>;
-    };
-    PUSH?: {
-        subject?: string;
-        body: string;
-        metadata?: Record<string, any>;
-    };
+  EMAIL?: {
+    subject?: string;
+    body: string;
+    metadata?: Record<string, any>;
+  };
+  SMS?: {
+    subject?: string;
+    body: string;
+    metadata?: Record<string, any>;
+  };
+  KAKAO?: {
+    subject?: string;
+    body: string;
+    metadata?: Record<string, any>;
+  };
+  PUSH?: {
+    subject?: string;
+    body: string;
+    metadata?: Record<string, any>;
+  };
 }
 
 export interface CampaignStats {
-    sent: number;
-    delivered: number;
-    failed: number;
-    opened: number;
-    clicked: number;
-    [key: string]: number;
+  sent: number;
+  delivered: number;
+  failed: number;
+  opened: number;
+  clicked: number;
+  [key: string]: number;
 }
 
 // Export tables
 export const notificationTables = {
-    templates,
-    notifications,
-    notificationCampaigns,
-    campaignTargetGroups,
-    campaignRecipients,
-    userProfiles,
-    userNotificationSettings,
-    notificationProviders,
-    notificationEvents,
-    receipts,
-    notificationLogs,
-    alerts,
-    fcmTokens,
-    fcmTopicSubscriptions,
+  templates,
+  notifications,
+  notificationCampaigns,
+  campaignTargetGroups,
+  campaignRecipients,
+  userProfiles,
+  userNotificationSettings,
+  notificationProviders,
+  notificationEvents,
+  receipts,
+  notificationLogs,
+  alerts,
+  fcmTokens,
+  fcmTopicSubscriptions,
 };
 
 // Export types

@@ -18,22 +18,16 @@ import { ProductDimensionsService } from '../dimensions/product-dimensions.servi
 export class ProductEventsConsumer {
   private readonly logger = new Logger(ProductEventsConsumer.name);
 
-  constructor(
-    private readonly productDimensionsService: ProductDimensionsService,
-  ) {}
+  constructor(private readonly productDimensionsService: ProductDimensionsService) {}
 
   @OnEvent('products.events.v1', 'ProductVariantCreated')
   async onVariantCreated(
     @EventEnvelope() envelope: DomainEvent<ProductVariantCreatedPayload>,
     @EventPayload() payload: ProductVariantCreatedPayload,
   ) {
-    this.logger.log(
-      `ProductVariantCreated received: ${payload.masterId}/${payload.variantId}`,
-    );
+    this.logger.log(`ProductVariantCreated received: ${payload.masterId}/${payload.variantId}`);
     await this.productDimensionsService.recordVariantCreated(payload);
-    this.logger.debug(
-      `ProductVariantCreated processed: ${payload.variantId} (${envelope.messageId})`,
-    );
+    this.logger.debug(`ProductVariantCreated processed: ${payload.variantId} (${envelope.messageId})`);
   }
 
   @OnEvent('products.events.v1', 'ProductVariantUpdated')
@@ -41,13 +35,9 @@ export class ProductEventsConsumer {
     @EventEnvelope() envelope: DomainEvent<ProductVariantUpdatedPayload>,
     @EventPayload() payload: ProductVariantUpdatedPayload,
   ) {
-    this.logger.log(
-      `ProductVariantUpdated received: ${payload.masterId}/${payload.variantId}`,
-    );
+    this.logger.log(`ProductVariantUpdated received: ${payload.masterId}/${payload.variantId}`);
     await this.productDimensionsService.recordVariantUpdated(payload);
-    this.logger.debug(
-      `ProductVariantUpdated processed: ${payload.variantId} (${envelope.messageId})`,
-    );
+    this.logger.debug(`ProductVariantUpdated processed: ${payload.variantId} (${envelope.messageId})`);
   }
 
   @OnEvent('products.events.v1', 'ProductVariantDeleted')
@@ -55,13 +45,9 @@ export class ProductEventsConsumer {
     @EventEnvelope() envelope: DomainEvent<ProductVariantDeletedPayload>,
     @EventPayload() payload: ProductVariantDeletedPayload,
   ) {
-    this.logger.log(
-      `ProductVariantDeleted received: ${payload.masterId}/${payload.variantId}`,
-    );
+    this.logger.log(`ProductVariantDeleted received: ${payload.masterId}/${payload.variantId}`);
     await this.productDimensionsService.recordVariantDeleted(payload);
-    this.logger.debug(
-      `ProductVariantDeleted processed: ${payload.variantId} (${envelope.messageId})`,
-    );
+    this.logger.debug(`ProductVariantDeleted processed: ${payload.variantId} (${envelope.messageId})`);
   }
 
   @OnEvent('products.events.v1', 'ProductInventoryManagementChanged')
@@ -69,13 +55,9 @@ export class ProductEventsConsumer {
     @EventEnvelope() envelope: DomainEvent<ProductInventoryManagementChangedPayload>,
     @EventPayload() payload: ProductInventoryManagementChangedPayload,
   ) {
-    this.logger.log(
-      `ProductInventoryManagementChanged received: ${payload.masterId}`,
-    );
+    this.logger.log(`ProductInventoryManagementChanged received: ${payload.masterId}`);
     await this.productDimensionsService.recordInventoryManagementChanged(payload);
-    this.logger.debug(
-      `ProductInventoryManagementChanged processed: ${payload.masterId} (${envelope.messageId})`,
-    );
+    this.logger.debug(`ProductInventoryManagementChanged processed: ${payload.masterId} (${envelope.messageId})`);
   }
 
   @OnEvent('products.events.v1', 'ProductMasterActiveVersionChanged')
@@ -83,13 +65,9 @@ export class ProductEventsConsumer {
     @EventEnvelope() envelope: DomainEvent<ProductMasterActiveVersionChangedPayload>,
     @EventPayload() payload: ProductMasterActiveVersionChangedPayload,
   ) {
-    this.logger.log(
-      `ProductMasterActiveVersionChanged received: ${payload.masterId}`,
-    );
+    this.logger.log(`ProductMasterActiveVersionChanged received: ${payload.masterId}`);
     await this.productDimensionsService.recordMasterActiveVersionChanged(payload);
-    this.logger.debug(
-      `ProductMasterActiveVersionChanged processed: ${payload.masterId} (${envelope.messageId})`,
-    );
+    this.logger.debug(`ProductMasterActiveVersionChanged processed: ${payload.masterId} (${envelope.messageId})`);
   }
 
   @OnEvent('products.events.v1', 'ProductMasterDeleted')
@@ -99,8 +77,6 @@ export class ProductEventsConsumer {
   ) {
     this.logger.log(`ProductMasterDeleted received: ${payload.masterId}`);
     await this.productDimensionsService.recordMasterDeleted(payload);
-    this.logger.debug(
-      `ProductMasterDeleted processed: ${payload.masterId} (${envelope.messageId})`,
-    );
+    this.logger.debug(`ProductMasterDeleted processed: ${payload.masterId} (${envelope.messageId})`);
   }
 }

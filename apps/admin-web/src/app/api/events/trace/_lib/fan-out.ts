@@ -1,13 +1,33 @@
 import { cookies } from 'next/headers';
 
 export const TRACKED_SERVICES = [
-  { name: 'user-service',    envKey: 'USER_SERVICE_URL',            default: 'http://localhost:3030' },
-  { name: 'channel-adapter', envKey: 'CHANNEL_ADAPTER_SERVICE_URL', default: 'http://localhost:3070' },
-  { name: 'pim',             envKey: 'PIM_SERVICE_URL',             default: 'http://localhost:3020' },
-  { name: 'membership',      envKey: 'MEMBERSHIP_SERVICE_URL',      default: 'http://localhost:3050' },
-  { name: 'wallet',          envKey: 'WALLET_SERVICE_URL',          default: 'http://localhost:3040' },
-  { name: 'wms',             envKey: 'WMS_SERVICE_URL',             default: 'http://localhost:3010' },
-  { name: 'notification',    envKey: 'NOTIFICATION_SERVICE_URL',    default: 'http://localhost:3060' },
+  {
+    name: 'user-service',
+    envKey: 'USER_SERVICE_URL',
+    default: 'http://localhost:3030',
+  },
+  {
+    name: 'channel-adapter',
+    envKey: 'CHANNEL_ADAPTER_SERVICE_URL',
+    default: 'http://localhost:3070',
+  },
+  { name: 'pim', envKey: 'PIM_SERVICE_URL', default: 'http://localhost:3020' },
+  {
+    name: 'membership',
+    envKey: 'MEMBERSHIP_SERVICE_URL',
+    default: 'http://localhost:3050',
+  },
+  {
+    name: 'wallet',
+    envKey: 'WALLET_SERVICE_URL',
+    default: 'http://localhost:3040',
+  },
+  { name: 'wms', envKey: 'WMS_SERVICE_URL', default: 'http://localhost:3010' },
+  {
+    name: 'notification',
+    envKey: 'NOTIFICATION_SERVICE_URL',
+    default: 'http://localhost:3060',
+  },
 ] as const;
 
 export type ServiceName = (typeof TRACKED_SERVICES)[number]['name'];
@@ -59,12 +79,19 @@ export async function fanOut<T>(
   return results.map((result, i) => {
     const svc = targets[i];
     if (result.status === 'fulfilled') {
-      return { name: result.value.name, status: 'fulfilled', data: result.value.data };
+      return {
+        name: result.value.name,
+        status: 'fulfilled',
+        data: result.value.data,
+      };
     }
     return {
       name: svc.name,
       status: 'rejected',
-      error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+      error:
+        result.reason instanceof Error
+          ? result.reason.message
+          : String(result.reason),
     };
   });
 }

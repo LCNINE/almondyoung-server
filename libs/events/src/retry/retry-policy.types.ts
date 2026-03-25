@@ -69,12 +69,9 @@ export interface RetryContext {
 /**
  * 기본 재시도 정책
  */
-export const DEFAULT_RETRY_POLICY: Required<
-  Omit<RetryPolicyConfig, 'retryableErrors' | 'nonRetryableErrors'>
-> = {
+export const DEFAULT_RETRY_POLICY: Required<Omit<RetryPolicyConfig, 'retryableErrors' | 'nonRetryableErrors'>> = {
   maxRetries: 3,
   backoff: 'exponential',
   initialDelayMs: 1000,
   maxDelayMs: 30000,
 };
-

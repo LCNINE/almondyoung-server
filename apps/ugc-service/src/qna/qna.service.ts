@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { and, asc, count, desc, eq, inArray, lt, ne, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, lt, ne, sql, type SQL } from 'drizzle-orm';
 import { answers, questionMedia, questions, type UgcServiceSchema } from '../db/schema';
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { UpdateQuestionDto } from './dto/update-question.dto';
@@ -302,6 +302,77 @@ export class QnaService {
             hideSecret: shouldHide,
           };
         }),
+        total,
+        page,
+        limit,
+      };
+    }, tx);
+  }
+
+  // ─── 관리자용 전체 문의 목록 ───
+
+  async listAllForAdmin(
+    query: {
+      page?: number;
+      limit?: number;
+      category?: string;
+      status?: string;
+      sort?: string;
+      q?: string;
+    },
+    tx?: DbTransaction,
+  ): Promise<PaginatedResponseDto<QuestionWithDetailsEntity>> {
+    return this.inTx(async (tx) => {
+      const page = query.page ?? 1;
+      const limit = query.limit ?? 20;
+      const offset = (page - 1) * limit;
+
+      const conditions: SQL[] = [];
+
+      // 상태 필터 (기본값: 삭제된 것 제외)
+      if (query.status) {
+        conditions.push(eq(questions.status, query.status));
+      } else {
+        conditions.push(ne(questions.status, 'deleted'));
+      }
+
+      // 카테고리 필터
+      if (query.category) {
+        conditions.push(eq(questions.category, query.category));
+      }
+
+      // 검색어 (제목, 내용, 닉네임)
+      if (query.q) {
+        const searchTerm = `%${query.q}%`;
+        conditions.push(
+          sql`(${questions.title} ILIKE ${searchTerm} OR ${questions.content} ILIKE ${searchTerm} OR ${questions.nickname} ILIKE ${searchTerm})`,
+        );
+      }
+
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const [{ count: total }] = await tx.select({ count: count() }).from(questions).where(whereClause);
+
+      const orderByClause = query.sort === 'oldest' ? asc(questions.createdAt) : desc(questions.createdAt);
+
+      const data = await tx
+        .select()
+        .from(questions)
+        .where(whereClause)
+        .orderBy(orderByClause)
+        .limit(limit)
+        .offset(offset);
+
+      const questionIds = data.map((q) => q.id);
+      const mediaMap = await this.fetchMediaFileIdsByQuestionIds(questionIds, tx);
+      const answerMap = await this.fetchAnswersByQuestionIds(questionIds, tx);
+
+      return {
+        data: data.map((q) => ({
+          ...q,
+          mediaFileIds: mediaMap.get(q.id) ?? [],
+          answer: answerMap.get(q.id) ?? null,
+        })),
         total,
         page,
         limit,

@@ -36,16 +36,13 @@ export abstract class CoupangBaseClient {
   protected getApiBaseUrl(): string {
     // Mock 서버 사용 시
     if (process.env.COUPANG_USE_MOCK_SERVER === 'true') {
-      const mockUrl =
-        process.env.ADAPTER_MOCK_BASE_URL || 'http://localhost:3001';
+      const mockUrl = process.env.ADAPTER_MOCK_BASE_URL || 'http://localhost:3001';
       this.logger.log(`🔧 쿠팡 Mock 서버 사용: ${mockUrl}`);
       return `${mockUrl}/coupang`;
     }
 
     // 실제 쿠팡 API 사용
-    return (
-      process.env.COUPANG_API_ENDPOINT || 'https://api-gateway.coupang.com'
-    );
+    return process.env.COUPANG_API_ENDPOINT || 'https://api-gateway.coupang.com';
   }
 
   /**
@@ -75,18 +72,10 @@ export abstract class CoupangBaseClient {
     path: string,
     queryString: string = '',
   ): string {
-    const datetime =
-      new Date()
-        .toISOString()
-        .slice(2, 19)
-        .replace(/:/g, '')
-        .replace(/-/g, '') + 'Z';
+    const datetime = new Date().toISOString().slice(2, 19).replace(/:/g, '').replace(/-/g, '') + 'Z';
 
     const message = datetime + method + path + queryString;
-    const signature = crypto
-      .createHmac('sha256', secretKey)
-      .update(message)
-      .digest('hex');
+    const signature = crypto.createHmac('sha256', secretKey).update(message).digest('hex');
 
     return `CEA algorithm=HmacSHA256, access-key=${accessKey}, signed-date=${datetime}, signature=${signature}`;
   }

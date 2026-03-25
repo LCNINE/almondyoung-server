@@ -38,16 +38,11 @@ export class UgcCommandConsumer {
     } catch (error) {
       // unique constraint violation → 이미 처리된 리뷰, 정상 ack
       if (error?.code === '23505') {
-        this.logger.warn(
-          `[Event] Duplicate EarnPointsRequested ignored: reviewId=${payload.reviewId}`,
-        );
+        this.logger.warn(`[Event] Duplicate EarnPointsRequested ignored: reviewId=${payload.reviewId}`);
         return;
       }
 
-      this.logger.error(
-        `[Event] Failed to process EarnPointsRequested: reviewId=${payload.reviewId}`,
-        error.stack,
-      );
+      this.logger.error(`[Event] Failed to process EarnPointsRequested: reviewId=${payload.reviewId}`, error.stack);
       throw error;
     }
   }

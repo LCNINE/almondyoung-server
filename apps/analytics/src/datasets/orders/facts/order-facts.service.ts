@@ -85,11 +85,7 @@ export class OrderFactsService {
           })),
         )
         .onConflictDoNothing({
-          target: [
-            factOrderItems.orderKey,
-            factOrderItems.salesChannel,
-            factOrderItems.orderItemId,
-          ],
+          target: [factOrderItems.orderKey, factOrderItems.salesChannel, factOrderItems.orderItemId],
         })
         .returning({
           masterId: factOrderItems.masterId,
@@ -101,10 +97,7 @@ export class OrderFactsService {
 
       const aggregated = new Map<string, number>();
       for (const item of insertedItems) {
-        aggregated.set(
-          item.masterId,
-          (aggregated.get(item.masterId) ?? 0) + (item.quantity ?? 0),
-        );
+        aggregated.set(item.masterId, (aggregated.get(item.masterId) ?? 0) + (item.quantity ?? 0));
       }
 
       return [...aggregated.entries()].map(([masterId, quantitySold]) => ({
@@ -116,9 +109,7 @@ export class OrderFactsService {
       }));
     }, tx);
 
-    this.logger.debug(
-      `OrderCreated persisted: ${payload.orderId} (${payload.salesChannel})`,
-    );
+    this.logger.debug(`OrderCreated persisted: ${payload.orderId} (${payload.salesChannel})`);
 
     return seeds;
   }

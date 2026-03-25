@@ -213,8 +213,8 @@ export const pendingOrders = pgTable(
 
 // ⚠️ IMPORTANT: This is the INBOX pattern (event reception/processing)
 // NOT to be confused with the shared Outbox pattern (libs/events/src/outbox/)
-// 
-// Purpose: 
+//
+// Purpose:
 // - Receives events from Kafka and stores them immediately (fast ACK)
 // - Separate worker processes them asynchronously (slow external API calls)
 // - Prevents Kafka consumer timeout during long-running operations

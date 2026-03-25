@@ -16,37 +16,37 @@ import { HealthController } from './controllers/health.controller';
 import { BarcodeGenerationController } from './controllers/barcode-generation.controller';
 
 @Module({
-    imports: [
-        ConfigModule.forRoot(),
-        DbModule.forRoot({
-            config: {
-                connectionString: process.env.DATABASE_URL ?? '',
-            },
-            schema: wmsTables,
-        }),
-    ],
-    controllers: [MetricsController, HealthController, BarcodeGenerationController],
-    providers: [
-        BarcodeService,
-        FifoService,
-        TransactionService,
-        AuditService,
-        MetricsService,
-        HealthService,
-        // StockAvailabilityService,
-        UnifiedReservationService,
-        ReservationLifecycleService,
-    ],
-    exports: [
-        BarcodeService,
-        FifoService,
-        TransactionService,
-        AuditService,
-        MetricsService,
-        HealthService,
-        // StockAvailabilityService,
-        UnifiedReservationService,
-        ReservationLifecycleService,
-    ],
+  imports: [
+    ConfigModule.forRoot(),
+    DbModule.forRoot({
+      config: {
+        connectionString: process.env.DATABASE_URL ?? '',
+      },
+      schema: wmsTables,
+    }),
+  ],
+  controllers: [MetricsController, HealthController, BarcodeGenerationController],
+  providers: [
+    BarcodeService,
+    FifoService,
+    TransactionService,
+    AuditService,
+    MetricsService,
+    HealthService,
+    // StockAvailabilityService,
+    UnifiedReservationService,
+    ReservationLifecycleService,
+  ],
+  exports: [
+    BarcodeService,
+    FifoService,
+    TransactionService,
+    AuditService,
+    MetricsService,
+    HealthService,
+    // StockAvailabilityService,
+    UnifiedReservationService,
+    ReservationLifecycleService,
+  ],
 })
-export class SharedModule { }
+export class SharedModule {}

@@ -2,19 +2,11 @@ import { InferInsertModel, InferSelectModel } from 'drizzle-orm';
 import * as schema from './entities/schema';
 import { PlanInfo, Tier, TierInfo } from './plan.type';
 
-export type SubscriptionContract = InferSelectModel<
-  typeof schema.subscriptionContracts
->;
-export type NewSubscriptionContract = InferInsertModel<
-  typeof schema.subscriptionContracts
->;
+export type SubscriptionContract = InferSelectModel<typeof schema.subscriptionContracts>;
+export type NewSubscriptionContract = InferInsertModel<typeof schema.subscriptionContracts>;
 
-export type SubscriptionEntitlement = InferSelectModel<
-  typeof schema.subscriptionEntitlement
->;
-export type NewSubscriptionEntitlement = InferInsertModel<
-  typeof schema.subscriptionEntitlement
->;
+export type SubscriptionEntitlement = InferSelectModel<typeof schema.subscriptionEntitlement>;
+export type NewSubscriptionEntitlement = InferInsertModel<typeof schema.subscriptionEntitlement>;
 
 export type EventBatch = InferSelectModel<typeof schema.eventBatches>;
 export type NewEventBatch = InferInsertModel<typeof schema.eventBatches>;
@@ -48,12 +40,8 @@ export type CancelSubscriptionInput = {
   effectiveDate?: string;
 };
 
-export type SubscriptionEntiltment = InferSelectModel<
-  typeof schema.subscriptionEntitlement
->;
-export type NewSubscriptionEntiltment = InferInsertModel<
-  typeof schema.subscriptionEntitlement
->;
+export type SubscriptionEntiltment = InferSelectModel<typeof schema.subscriptionEntitlement>;
+export type NewSubscriptionEntiltment = InferInsertModel<typeof schema.subscriptionEntitlement>;
 
 type TierForApiResponse = Omit<Tier, 'createdAt' | 'updatedAt'> & {
   createdAt: string;

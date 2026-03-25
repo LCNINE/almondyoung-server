@@ -1,5 +1,15 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsUUID, IsString, MinLength, MaxLength, IsBoolean, IsOptional, IsArray, ArrayMaxSize, IsIn } from 'class-validator';
+import {
+  IsUUID,
+  IsString,
+  MinLength,
+  MaxLength,
+  IsBoolean,
+  IsOptional,
+  IsArray,
+  ArrayMaxSize,
+  IsIn,
+} from 'class-validator';
 import { MAX_QUESTION_MEDIA_COUNT, QUESTION_CATEGORIES, type QuestionCategory } from '../constants';
 
 export class CreateQuestionDto {

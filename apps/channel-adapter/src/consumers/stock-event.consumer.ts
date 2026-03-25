@@ -30,10 +30,7 @@ export class StockEventConsumer {
       const currentStock = await this.calculateCurrentStock(event);
 
       // 3. 전체 채널에 재고 동기화
-      const syncSuccess = await this.syncStockToAllChannels(
-        event,
-        currentStock,
-      );
+      const syncSuccess = await this.syncStockToAllChannels(event, currentStock);
 
       this.logger.log(`✅ 처리 완료: ${event.sku}`, {
         duration: Date.now() - startTime,
@@ -47,37 +44,27 @@ export class StockEventConsumer {
     }
   }
 
-  private async calculateCurrentStock(
-    event: StockChangedEvent,
-  ): Promise<number> {
+  private async calculateCurrentStock(event: StockChangedEvent): Promise<number> {
     this.logger.debug(`📊 재고 계산: ${event.sku}`);
     return Math.max(0, event.deltaQty);
   }
 
-  private async syncStockToAllChannels(
-    event: StockChangedEvent,
-    currentStock: number,
-  ): Promise<boolean> {
+  private async syncStockToAllChannels(event: StockChangedEvent, currentStock: number): Promise<boolean> {
     const all = ['naver_smartstore', 'coupang'] as const;
-    const required = (process.env.REQUIRED_CHANNELS?.split(',') ?? [
-      'coupang',
-    ]) as Array<(typeof all)[number]>;
+    const required = (process.env.REQUIRED_CHANNELS?.split(',') ?? ['coupang']) as Array<(typeof all)[number]>;
 
     const results = await Promise.all(
       all.map(async (channel) => {
         try {
-          const res = await this.channelAdapterService.syncToChannelOrAll(
-            channel,
-            {
-              dataType: 'inventory',
-              payload: {
-                productId: event.sku,
-                stockQuantity: currentStock,
-                isOptionProduct: false,
-                warehouseId: event.warehouseId,
-              },
+          const res = await this.channelAdapterService.syncToChannelOrAll(channel, {
+            dataType: 'inventory',
+            payload: {
+              productId: event.sku,
+              stockQuantity: currentStock,
+              isOptionProduct: false,
+              warehouseId: event.warehouseId,
             },
-          );
+          });
           return { channel, success: res.success };
         } catch (e: any) {
           return { channel, success: false, error: e.message };
@@ -85,15 +72,12 @@ export class StockEventConsumer {
       }),
     );
 
-    const successByChannel = Object.fromEntries(
-      results.map((r) => [r.channel, r.success]),
-    );
+    const successByChannel = Object.fromEntries(results.map((r) => [r.channel, r.success]));
     const requiredOk = required.every((ch) => successByChannel[ch]);
 
     // 로그만 남기고 멱등 마킹 기준은 requiredOk로
     const failures = results.filter((r) => !r.success).map((r) => r.channel);
-    if (failures.length)
-      this.logger.warn(`⚠️ 일부 실패: ${failures.join(', ')}`);
+    if (failures.length) this.logger.warn(`⚠️ 일부 실패: ${failures.join(', ')}`);
 
     return requiredOk;
   }

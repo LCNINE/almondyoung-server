@@ -58,8 +58,7 @@ export class BillingManager {
         // 2. 결제 프로필 확인/조회
         let paymentProfileId = contract.paymentProfileId;
         if (!paymentProfileId) {
-          const defaultProfile =
-            await this.paymentClient.getDefaultPaymentProfile(contract.userId);
+          const defaultProfile = await this.paymentClient.getDefaultPaymentProfile(contract.userId);
           paymentProfileId = defaultProfile.id;
 
           // 계약에 프로필 ID 저장
@@ -82,27 +81,16 @@ export class BillingManager {
         });
 
         // 4. 결제 실행
-        this.logger.debug(
-          `Payment profile ID type and value: ${typeof paymentProfileId}, ${paymentProfileId}`,
-        );
+        this.logger.debug(`Payment profile ID type and value: ${typeof paymentProfileId}, ${paymentProfileId}`);
 
-        const paymentResult = await this.paymentClient.processPayment(
-          paymentIntent.id,
-          {
-            providerType: 'HMS_CARD',
-            profileId: paymentProfileId,
-          },
-        );
+        const paymentResult = await this.paymentClient.processPayment(paymentIntent.id, {
+          providerType: 'HMS_CARD',
+          profileId: paymentProfileId,
+        });
 
         // 5. 결제 결과 처리
         if (paymentResult.success) {
-          await this.handleSuccessfulBilling(
-            tx,
-            contract,
-            paymentIntent,
-            paymentResult,
-            plan,
-          );
+          await this.handleSuccessfulBilling(tx, contract, paymentIntent, paymentResult, plan);
           return {
             contractId: contract.id,
             success: true,
@@ -110,12 +98,7 @@ export class BillingManager {
             paymentAttemptId: paymentResult.transactionId,
           };
         } else {
-          await this.handleFailedBilling(
-            tx,
-            contract,
-            paymentIntent,
-            paymentResult,
-          );
+          await this.handleFailedBilling(tx, contract, paymentIntent, paymentResult);
           return {
             contractId: contract.id,
             success: false,
@@ -126,9 +109,7 @@ export class BillingManager {
           };
         }
       } catch (error) {
-        this.logger.error(
-          `Error processing billing for contract ${contract.id}: ${error.message}`,
-        );
+        this.logger.error(`Error processing billing for contract ${contract.id}: ${error.message}`);
         throw error;
       }
     });
@@ -167,9 +148,7 @@ export class BillingManager {
     );
 
     // 3. Dunning 큐에서 제거
-    await tx
-      .delete(schema.membershipDunningQueue)
-      .where(eq(schema.membershipDunningQueue.contractId, contract.id));
+    await tx.delete(schema.membershipDunningQueue).where(eq(schema.membershipDunningQueue.contractId, contract.id));
 
     this.logger.log(
       `Billing successful for contract ${contract.id}, next billing: ${format(nextBillingDate, 'yyyy-MM-dd')}`,
@@ -179,12 +158,7 @@ export class BillingManager {
   /**
    * 결제 실패 처리
    */
-  private async handleFailedBilling(
-    tx: DrizzleTransaction,
-    contract: any,
-    paymentIntent: any,
-    paymentResult: any,
-  ) {
+  private async handleFailedBilling(tx: DrizzleTransaction, contract: any, paymentIntent: any, paymentResult: any) {
     const retryCount = (contract.billingRetryCount || 0) + 1;
     const maxRetries = 3;
 
@@ -228,9 +202,7 @@ export class BillingManager {
         `Billing failed for contract ${contract.id}, scheduled retry ${retryCount}/${maxRetries} at ${format(nextRetryAt, 'yyyy-MM-dd')}`,
       );
     } else {
-      this.logger.error(
-        `Billing failed for contract ${contract.id}, max retries exceeded`,
-      );
+      this.logger.error(`Billing failed for contract ${contract.id}, max retries exceeded`);
 
       // TODO: 구독 일시정지 또는 취소 처리
       // TODO: 사용자 알림 발송

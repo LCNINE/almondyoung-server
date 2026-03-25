@@ -12,7 +12,7 @@ export class JwtKakaoStrategy extends PassportStrategy(Strategy, 'kakao') {
 
     if (!clientID || !clientSecret || !callbackURL) {
       throw new Error(
-        'Kakao OAuth 환경 변수가 설정되지 않았습니다. KAKAO_CLIENT_ID, KAKAO_CLIENT_SECRET, KAKAO_CALLBACK_URL을 설정하세요.'
+        'Kakao OAuth 환경 변수가 설정되지 않았습니다. KAKAO_CLIENT_ID, KAKAO_CLIENT_SECRET, KAKAO_CALLBACK_URL을 설정하세요.',
       );
     }
 

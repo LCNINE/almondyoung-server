@@ -33,27 +33,17 @@ class NaverApiTester {
     this.clientId = process.env.NAVER_CLIENT_ID || '';
     this.clientSecret = process.env.NAVER_CLIENT_SECRET || '';
     this.accountId = process.env.NAVER_ACCOUNT_ID || '';
-    this.apiEndpoint =
-      process.env.NAVER_API_ENDPOINT ||
-      'https://api.commerce.naver.com/external/v1';
+    this.apiEndpoint = process.env.NAVER_API_ENDPOINT || 'https://api.commerce.naver.com/external/v1';
 
     console.log('🔧 환경변수 확인:');
-    console.log(
-      `   NAVER_CLIENT_ID: ${this.clientId ? '✅ 설정됨' : '❌ 누락'}`,
-    );
-    console.log(
-      `   NAVER_CLIENT_SECRET: ${this.clientSecret ? '✅ 설정됨' : '❌ 누락'}`,
-    );
-    console.log(
-      `   NAVER_ACCOUNT_ID: ${this.accountId ? '✅ 설정됨' : '❌ 누락'}`,
-    );
+    console.log(`   NAVER_CLIENT_ID: ${this.clientId ? '✅ 설정됨' : '❌ 누락'}`);
+    console.log(`   NAVER_CLIENT_SECRET: ${this.clientSecret ? '✅ 설정됨' : '❌ 누락'}`);
+    console.log(`   NAVER_ACCOUNT_ID: ${this.accountId ? '✅ 설정됨' : '❌ 누락'}`);
     console.log(`   NAVER_API_ENDPOINT: ${this.apiEndpoint}`);
     console.log('');
 
     if (!this.clientId || !this.clientSecret) {
-      throw new Error(
-        '❌ NAVER_CLIENT_ID 또는 NAVER_CLIENT_SECRET이 설정되지 않았습니다.',
-      );
+      throw new Error('❌ NAVER_CLIENT_ID 또는 NAVER_CLIENT_SECRET이 설정되지 않았습니다.');
     }
   }
 
@@ -94,9 +84,7 @@ class NaverApiTester {
       params.append('scope', '상품주문.조회 상품주문.처리');
 
       console.log('📤 토큰 발급 요청 전송...');
-      console.log(
-        `   URL: https://api.commerce.naver.com/external/v1/oauth2/token`,
-      );
+      console.log(`   URL: https://api.commerce.naver.com/external/v1/oauth2/token`);
       console.log(`   Body: ${params.toString()}`);
 
       // 4. API 호출
@@ -113,9 +101,7 @@ class NaverApiTester {
       );
 
       console.log('✅ 토큰 발급 성공!');
-      console.log(
-        `   Access Token: ${response.data.access_token.substring(0, 20)}...`,
-      );
+      console.log(`   Access Token: ${response.data.access_token.substring(0, 20)}...`);
       console.log(`   Token Type: ${response.data.token_type}`);
       console.log(`   Expires In: ${response.data.expires_in}초`);
       console.log(`   Scope: ${response.data.scope || 'N/A'}`);
@@ -147,22 +133,17 @@ class NaverApiTester {
     try {
       console.log('\n🧪 토큰 유효성 테스트 - 주문 상태 변경 목록 조회...');
 
-      const response = await axios.get(
-        `${this.apiEndpoint}/product-orders/last-changed-statuses`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          params: {
-            lastChangedFrom: new Date(
-              Date.now() - 24 * 60 * 60 * 1000,
-            ).toISOString(), // 24시간 전
-            lastChangedTo: new Date().toISOString(),
-          },
-          timeout: 10000,
+      const response = await axios.get(`${this.apiEndpoint}/product-orders/last-changed-statuses`, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
         },
-      );
+        params: {
+          lastChangedFrom: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(), // 24시간 전
+          lastChangedTo: new Date().toISOString(),
+        },
+        timeout: 10000,
+      });
 
       console.log('✅ API 호출 성공!');
       console.log(`   Response Status: ${response.status}`);

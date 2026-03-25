@@ -1,27 +1,16 @@
 import { DbService, InjectDb } from '@app/db';
-import {
-  scopes as authScopes,
-  roleScopeMapping as authRoleScopeMapping,
-} from '@app/authorization';
+import { scopes as authScopes, roleScopeMapping as authRoleScopeMapping } from '@app/authorization';
 import { Injectable } from '@nestjs/common';
-import {
-  userServiceSchema,
-  type UserServiceSchema,
-} from 'apps/user-service/database/drizzle/schema';
+import { userServiceSchema, type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
 import { and, eq, inArray } from 'drizzle-orm';
 import { CreateRoleDto, RoleResponseDto, UpdateRoleDto } from './dto/roles.dto';
 
 @Injectable()
 export class RolesRepository {
-  constructor(
-    @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
-  ) {}
+  constructor(@InjectDb() private readonly dbService: DbService<UserServiceSchema>) {}
 
   async findAll(): Promise<RoleResponseDto[]> {
-    return this.dbService.db
-      .select()
-      .from(userServiceSchema.roles)
-      .orderBy(userServiceSchema.roles.createdAt);
+    return this.dbService.db.select().from(userServiceSchema.roles).orderBy(userServiceSchema.roles.createdAt);
   }
 
   async findById(roleId: string): Promise<RoleResponseDto | null> {
@@ -49,10 +38,7 @@ export class RolesRepository {
   }
 
   async create(data: CreateRoleDto): Promise<RoleResponseDto> {
-    const [role] = await this.dbService.db
-      .insert(userServiceSchema.roles)
-      .values(data)
-      .returning();
+    const [role] = await this.dbService.db.insert(userServiceSchema.roles).values(data).returning();
     return role;
   }
 
@@ -66,9 +52,7 @@ export class RolesRepository {
   }
 
   async delete(roleId: string): Promise<void> {
-    await this.dbService.db
-      .delete(userServiceSchema.roles)
-      .where(eq(userServiceSchema.roles.roleId, roleId));
+    await this.dbService.db.delete(userServiceSchema.roles).where(eq(userServiceSchema.roles.roleId, roleId));
   }
 
   async findUserRoles(userId: string): Promise<RoleResponseDto[]> {
@@ -94,9 +78,7 @@ export class RolesRepository {
         .delete(userServiceSchema.userRoleAssignments)
         .where(eq(userServiceSchema.userRoleAssignments.userId, userId));
       if (roleIds.length > 0) {
-        await trx
-          .insert(userServiceSchema.userRoleAssignments)
-          .values(roleIds.map((roleId) => ({ userId, roleId })));
+        await trx.insert(userServiceSchema.userRoleAssignments).values(roleIds.map((roleId) => ({ userId, roleId })));
       }
     });
   }
@@ -109,10 +91,7 @@ export class RolesRepository {
 
     if (!scope) throw new Error(`Scope '${scopeKey}' not found`);
 
-    await this.dbService.db
-      .insert(authRoleScopeMapping)
-      .values({ roleName, scopeId: scope.id })
-      .onConflictDoNothing();
+    await this.dbService.db.insert(authRoleScopeMapping).values({ roleName, scopeId: scope.id }).onConflictDoNothing();
   }
 
   async removeScopeFromRole(roleName: string, scopeKey: string): Promise<void> {
@@ -125,10 +104,7 @@ export class RolesRepository {
 
     await this.dbService.db
       .delete(authRoleScopeMapping)
-      .where(and(
-        eq(authRoleScopeMapping.roleName, roleName),
-        eq(authRoleScopeMapping.scopeId, scope.id),
-      ));
+      .where(and(eq(authRoleScopeMapping.roleName, roleName), eq(authRoleScopeMapping.scopeId, scope.id)));
   }
 
   async getScopesForRole(roleName: string): Promise<string[]> {
@@ -138,6 +114,6 @@ export class RolesRepository {
       .innerJoin(authScopes, eq(authRoleScopeMapping.scopeId, authScopes.id))
       .where(eq(authRoleScopeMapping.roleName, roleName));
 
-    return result.map(r => r.scopeKey);
+    return result.map((r) => r.scopeKey);
   }
 }

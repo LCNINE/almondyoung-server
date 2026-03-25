@@ -16,4 +16,3 @@ export class ProductTagDto {
   @ApiProperty({ description: '표시 순서', minimum: 0 })
   displayOrder: number;
 }
-

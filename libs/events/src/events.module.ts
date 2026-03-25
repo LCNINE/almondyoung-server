@@ -4,14 +4,7 @@
  * Stream 기반 이벤트 시스템을 위한 NestJS 모듈
  */
 
-import {
-  DynamicModule,
-  Global,
-  Inject,
-  Module,
-  OnApplicationShutdown,
-  Logger,
-} from '@nestjs/common';
+import { DynamicModule, Global, Inject, Module, OnApplicationShutdown, Logger } from '@nestjs/common';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ClsModule } from 'nestjs-cls';
@@ -24,12 +17,7 @@ import { EventChainService } from './tracking/event-chain.service';
 import { EventTrackingService } from './tracking/event-tracking.service';
 import { EventTraceReader } from './tracking/event-trace.reader';
 import { EventTraceController } from './tracking/event-trace.controller';
-import {
-  KafkaConfig,
-  StreamConfig,
-  StreamEventTypes,
-  getDLQTopicName,
-} from '@packages/event-contracts/types';
+import { KafkaConfig, StreamConfig, StreamEventTypes, getDLQTopicName } from '@packages/event-contracts/types';
 import { SchemaValidationOptions } from '@packages/event-contracts/types';
 import { OutboxConfig } from './outbox/outbox.types';
 import { OutboxPublisher } from './outbox/outbox-publisher.service';
@@ -90,8 +78,7 @@ export class EventsModule {
   static forRoot(options: EventsModuleOptions): DynamicModule {
     // Kafka 설정 (환경변수 또는 명시적)
     const kafka = options.kafka || this.createKafkaConfigFromEnv();
-    const serviceName =
-      options.serviceName || process.env.SERVICE_NAME || 'unknown-service';
+    const serviceName = options.serviceName || process.env.SERVICE_NAME || 'unknown-service';
     const enableDLQ = options.enableDLQ ?? true;
 
     // 각 stream별 StreamPublisher 제공자 생성
@@ -117,12 +104,12 @@ export class EventsModule {
     // DLQ Handler 제공자 (DLQ가 활성화된 경우에만)
     const dlqProvider = enableDLQ
       ? {
-        provide: DLQHandler,
-        useFactory: (kafkaClient: any) => {
-          return new DLQHandler(kafkaClient);
-        },
-        inject: ['KAFKA_CLIENT'],
-      }
+          provide: DLQHandler,
+          useFactory: (kafkaClient: any) => {
+            return new DLQHandler(kafkaClient);
+          },
+          inject: ['KAFKA_CLIENT'],
+        }
       : null;
 
     // Graceful Shutdown Service
@@ -138,41 +125,37 @@ export class EventsModule {
     const enableOutbox = options.enableOutbox ?? false;
     const outboxProviders = enableOutbox
       ? [
-        {
-          provide: OutboxPublisher,
-          useClass: OutboxPublisher,
-        },
-        {
-          provide: OutboxDispatcher,
-          useFactory: (
-            dbService: DbService,
-            kafkaClient: any,
-            eventChainService: EventChainService,
-            eventTrackingService: EventTrackingService,
-          ) => {
-            // topic -> StreamPublisher 매핑 생성
-            const publisherMap = new Map<string, StreamPublisher>();
-            options.streams.forEach((stream) => {
-              const publisher = new StreamPublisher(
-                kafkaClient,
-                stream,
-                serviceName,
-                options.validation,
-                eventChainService,
-                eventTrackingService,
-              );
-              publisherMap.set(stream.topic.topic, publisher);
-            });
-
-            return new OutboxDispatcher(
-              dbService,
-              publisherMap,
-              options.outbox,
-            );
+          {
+            provide: OutboxPublisher,
+            useClass: OutboxPublisher,
           },
-          inject: [DbService, 'KAFKA_CLIENT', EventChainService, EventTrackingService],
-        },
-      ]
+          {
+            provide: OutboxDispatcher,
+            useFactory: (
+              dbService: DbService,
+              kafkaClient: any,
+              eventChainService: EventChainService,
+              eventTrackingService: EventTrackingService,
+            ) => {
+              // topic -> StreamPublisher 매핑 생성
+              const publisherMap = new Map<string, StreamPublisher>();
+              options.streams.forEach((stream) => {
+                const publisher = new StreamPublisher(
+                  kafkaClient,
+                  stream,
+                  serviceName,
+                  options.validation,
+                  eventChainService,
+                  eventTrackingService,
+                );
+                publisherMap.set(stream.topic.topic, publisher);
+              });
+
+              return new OutboxDispatcher(dbService, publisherMap, options.outbox);
+            },
+            inject: [DbService, 'KAFKA_CLIENT', EventChainService, EventTrackingService],
+          },
+        ]
       : [];
 
     const trackingProviders = [
@@ -246,23 +229,19 @@ export class EventsModule {
     // DLQ Handler 제공자
     const dlqProvider = enableAutoDLQ
       ? {
-        provide: DLQHandler,
-        useFactory: (kafkaClient: any) => {
-          return new DLQHandler(kafkaClient);
-        },
-        inject: ['KAFKA_CLIENT'],
-      }
+          provide: DLQHandler,
+          useFactory: (kafkaClient: any) => {
+            return new DLQHandler(kafkaClient);
+          },
+          inject: ['KAFKA_CLIENT'],
+        }
       : null;
 
     // Schema Validation Interceptor 제공자
     const interceptorProvider = {
       provide: APP_INTERCEPTOR,
       useFactory: (reflector: any) => {
-        return new SchemaValidationInterceptor(
-          reflector,
-          options.streams,
-          options.validation,
-        );
+        return new SchemaValidationInterceptor(reflector, options.streams, options.validation);
       },
       inject: ['Reflector'],
     };
@@ -313,9 +292,7 @@ export class EventsModule {
         ]),
       ],
       providers,
-      exports: providers
-        .filter((p) => p.provide !== APP_INTERCEPTOR)
-        .map((p) => p.provide),
+      exports: providers.filter((p) => p.provide !== APP_INTERCEPTOR).map((p) => p.provide),
     };
   }
 
@@ -379,9 +356,7 @@ export class EventsModule {
    * 환경변수에서 KafkaConfig 생성 (헬퍼 메서드)
    */
   private static createKafkaConfigFromEnv(): KafkaConfig {
-    const brokers = (process.env.KAFKA_BROKERS || '')
-      .split(',')
-      .map((b) => b.trim());
+    const brokers = (process.env.KAFKA_BROKERS || '').split(',').map((b) => b.trim());
 
     const config: KafkaConfig = {
       clientId: process.env.KAFKA_CLIENT_ID || process.env.SERVICE_NAME || '',
@@ -397,8 +372,7 @@ export class EventsModule {
     // Confluent Cloud / SASL 설정
     // KAFKA_API_KEY/SECRET (신규 표준) 또는 KAFKA_SASL_USERNAME/PASSWORD (하위 호환)
     const apiKey = process.env.KAFKA_API_KEY || process.env.KAFKA_SASL_USERNAME;
-    const apiSecret =
-      process.env.KAFKA_API_SECRET || process.env.KAFKA_SASL_PASSWORD;
+    const apiSecret = process.env.KAFKA_API_SECRET || process.env.KAFKA_SASL_PASSWORD;
 
     if (apiKey && apiSecret) {
       config.ssl = true;
@@ -440,7 +414,7 @@ export class EventsModule {
 
   /**
    * Outbox 스키마 export (앱에서 병합할 수 있도록)
-   * 
+   *
    * @example
    * const combinedSchema = {
    *   ...wmsSchema,
@@ -462,5 +436,4 @@ export class EventsModule {
 /**
  * Publisher 주입 데코레이터 (단축)
  */
-export const InjectStreamPublisher =
-  EventsModule.InjectStreamPublisher.bind(EventsModule);
+export const InjectStreamPublisher = EventsModule.InjectStreamPublisher.bind(EventsModule);

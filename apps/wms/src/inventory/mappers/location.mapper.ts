@@ -1,5 +1,10 @@
-import { LocationColumnResponseDto, LocationRackResponseDto, ZoneLocationResponseDto, StandardLocationResponseDto } from "../dto";
-import { LocationColumn, LocationRack, Location } from "../../../database/schemas/wms-schema";
+import {
+  LocationColumnResponseDto,
+  LocationRackResponseDto,
+  ZoneLocationResponseDto,
+  StandardLocationResponseDto,
+} from '../dto';
+import { LocationColumn, LocationRack, Location } from '../../../database/schemas/wms-schema';
 
 export class LocationMapper {
   static toLocationRackResponseDto(rack: LocationRack & { column: LocationColumn }): LocationRackResponseDto {
@@ -17,7 +22,7 @@ export class LocationMapper {
       isActive: rack.isActive,
       createdAt: rack.createdAt.toISOString(),
       updatedAt: rack.updatedAt.toISOString(),
-    }
+    };
   }
 
   static toLocationColumnResponseDto(column: LocationColumn): LocationColumnResponseDto {
@@ -29,7 +34,7 @@ export class LocationMapper {
       isActive: column.isActive,
       createdAt: column.createdAt.toISOString(),
       updatedAt: column.updatedAt.toISOString(),
-    }
+    };
   }
 
   static toLocationResponseDto(location: Location): StandardLocationResponseDto | ZoneLocationResponseDto {

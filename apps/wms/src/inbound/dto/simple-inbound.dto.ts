@@ -1,5 +1,16 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsUUID, IsNotEmpty, IsArray, ValidateNested, IsNumber, Min, IsOptional, IsDateString, IsString, MaxLength } from 'class-validator';
+import {
+  IsUUID,
+  IsNotEmpty,
+  IsArray,
+  ValidateNested,
+  IsNumber,
+  Min,
+  IsOptional,
+  IsDateString,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { SupplierResponseDto } from '../../suppliers/dto/supplier-response.dto';
 
@@ -127,7 +138,7 @@ export class CreateInboundPlanDto {
     description: '계획 타입 (source: 중국창고, destination: 최종창고)',
     enum: ['source', 'destination'],
     required: false,
-    default: 'destination'
+    default: 'destination',
   })
   @IsOptional()
   @IsString()
@@ -226,8 +237,8 @@ export interface InboundPendingResponse {
   expectedDate: Date | null;
 
   // 연관 정보
-  isLinkedPlan: boolean;           // destination plan 여부
-  sourcePlanStatus?: string;       // 중국 plan 상태 (destination plan인 경우)
+  isLinkedPlan: boolean; // destination plan 여부
+  sourcePlanStatus?: string; // 중국 plan 상태 (destination plan인 경우)
 
   // 발주 정보
   purchaseOrder: {
@@ -257,5 +268,3 @@ export interface InboundPendingListResponse {
   totalPendingQuantity: number;
   pendingPlans: InboundPendingResponse[];
 }
-
-

@@ -13,10 +13,7 @@ import { PlanService } from '../../src/services/plan.service';
 import { PlanReader } from '../../src/services/plan/plan.reader';
 import { PlanManager } from '../../src/services/plan/plan.manager';
 import { PaymentClientService } from '../../src/services/billing/payment-client.service';
-import {
-  membershipSchema,
-  type MembershipSchema,
-} from '../../src/shared/schemas/entities/schema';
+import { membershipSchema, type MembershipSchema } from '../../src/shared/schemas/entities/schema';
 import * as schema from '../../src/shared/schemas/entities/schema';
 import { eq, and } from 'drizzle-orm';
 import { addDays, format } from 'date-fns';
@@ -92,9 +89,7 @@ describe('Recurring Billing & Pause Integration Tests', () => {
       ],
     }).compile();
 
-    recurringBillingService = module.get<RecurringBillingService>(
-      RecurringBillingService,
-    );
+    recurringBillingService = module.get<RecurringBillingService>(RecurringBillingService);
     billingReader = module.get<BillingReader>(BillingReader);
     billingManager = module.get<BillingManager>(BillingManager);
     pauseService = module.get<PauseService>(PauseService);
@@ -284,9 +279,7 @@ describe('Recurring Billing & Pause Integration Tests', () => {
 
       const contract = await billingReader.findContractById(testContractId);
 
-      await expect(
-        billingManager.processSingleBilling(contract!),
-      ).rejects.toThrow('Plan is not active');
+      await expect(billingManager.processSingleBilling(contract!)).rejects.toThrow('Plan is not active');
 
       // 플랜 다시 활성화 (다른 테스트 영향 방지)
       await dbService.db
@@ -358,13 +351,7 @@ describe('Recurring Billing & Pause Integration Tests', () => {
       const originalNextBillingDate = contract.nextBillingDate;
 
       // 일시정지 실행
-      const result = await pauseManager.startPause(
-        testUserId,
-        entitlement,
-        startDate,
-        endDate,
-        '여행 중',
-      );
+      const result = await pauseManager.startPause(testUserId, entitlement, startDate, endDate, '여행 중');
 
       expect(result.pauseDurationDays).toBe(30);
 
@@ -380,9 +367,7 @@ describe('Recurring Billing & Pause Integration Tests', () => {
         );
 
       expect(updatedEntitlement.pausedAt).not.toBeNull();
-      expect(updatedEntitlement.endsAt).toBe(
-        format(addDays(new Date(originalEndsAt), 30), 'yyyy-MM-dd'),
-      );
+      expect(updatedEntitlement.endsAt).toBe(format(addDays(new Date(originalEndsAt), 30), 'yyyy-MM-dd'));
 
       // Contract 확인
       const [updatedContract] = await dbService.db
@@ -407,12 +392,7 @@ describe('Recurring Billing & Pause Integration Tests', () => {
           ),
         );
 
-      await pauseManager.startPause(
-        testUserId,
-        entitlement,
-        new Date(),
-        addDays(new Date(), 30),
-      );
+      await pauseManager.startPause(testUserId, entitlement, new Date(), addDays(new Date(), 30));
 
       // 결제 대상 조회
       const today = format(new Date(), 'yyyy-MM-dd');
@@ -434,12 +414,7 @@ describe('Recurring Billing & Pause Integration Tests', () => {
           ),
         );
 
-      await pauseManager.startPause(
-        testUserId,
-        entitlement,
-        new Date(),
-        addDays(new Date(), 30),
-      );
+      await pauseManager.startPause(testUserId, entitlement, new Date(), addDays(new Date(), 30));
 
       // 2. 재개
       const [pausedEntitlement] = await dbService.db
@@ -495,12 +470,7 @@ describe('Recurring Billing & Pause Integration Tests', () => {
           ),
         );
 
-      await pauseManager.startPause(
-        testUserId,
-        entitlement1,
-        new Date(),
-        addDays(new Date(), 15),
-      );
+      await pauseManager.startPause(testUserId, entitlement1, new Date(), addDays(new Date(), 15));
 
       // 3. 일시정지 중 결제 대상 확인
       const today = format(new Date(), 'yyyy-MM-dd');

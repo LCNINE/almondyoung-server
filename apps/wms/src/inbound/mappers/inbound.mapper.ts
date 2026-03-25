@@ -42,24 +42,17 @@ export class InboundReceiptMapper {
     };
   }
 
-  static toIndividualResponseDto(
-    receipt: InboundReceipt,
-    line: InboundReceiptLine,
-  ): IndividualInboundResponseDto {
+  static toIndividualResponseDto(receipt: InboundReceipt, line: InboundReceiptLine): IndividualInboundResponseDto {
     return {
       ...InboundReceiptMapper.toBaseDto(receipt),
       line: InboundReceiptLineMapper.toDto(line),
     };
   }
 
-  static toSimpleResponseDto(
-    receipt: InboundReceipt,
-    lines: InboundReceiptLine[],
-  ): SimpleInboundResponseDto {
+  static toSimpleResponseDto(receipt: InboundReceipt, lines: InboundReceiptLine[]): SimpleInboundResponseDto {
     return {
       ...InboundReceiptMapper.toBaseDto(receipt),
       lines: lines.map((line) => InboundReceiptLineMapper.toDto(line)),
     };
   }
 }
-

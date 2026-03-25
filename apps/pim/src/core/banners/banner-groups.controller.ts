@@ -1,23 +1,5 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Delete,
-  Body,
-  Param,
-  Query,
-  HttpException,
-  HttpStatus,
-} from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiParam,
-  ApiQuery,
-  ApiBody,
-} from '@nestjs/swagger';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpException, HttpStatus } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { BannersService } from './banners.service';
 import {
   CreateBannerGroupDto,
@@ -43,27 +25,21 @@ export class BannerGroupsController {
     type: BannerGroupResponseDto,
   })
   @ApiResponse({ status: 400, description: '잘못된 요청 또는 중복된 코드' })
-  async createBannerGroup(
-    @Body() dto: CreateBannerGroupDto,
-  ): Promise<BannerGroupResponseDto> {
+  async createBannerGroup(@Body() dto: CreateBannerGroupDto): Promise<BannerGroupResponseDto> {
     try {
       return await this.bannersService.createBannerGroup(dto);
     } catch (error) {
       if (error.message.includes('already exists')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
       }
-      throw new HttpException(
-        `Failed to create banner group: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException(`Failed to create banner group: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
   @Get()
   @ApiOperation({
     summary: '배너 그룹 목록 조회',
-    description:
-      '배너 그룹 목록을 조회합니다. 카테고리로 필터링 가능합니다.',
+    description: '배너 그룹 목록을 조회합니다. 카테고리로 필터링 가능합니다.',
   })
   @ApiQuery({
     name: 'category',
@@ -75,24 +51,18 @@ export class BannerGroupsController {
     description: '배너 그룹 목록 조회 성공',
     type: [BannerGroupResponseDto],
   })
-  async listBannerGroups(
-    @Query('category') category?: string,
-  ): Promise<BannerGroupResponseDto[]> {
+  async listBannerGroups(@Query('category') category?: string): Promise<BannerGroupResponseDto[]> {
     try {
       return await this.bannersService.listBannerGroups(category);
     } catch (error) {
-      throw new HttpException(
-        `Failed to list banner groups: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException(`Failed to list banner groups: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
   @Get('by-code/:code')
   @ApiOperation({
     summary: '배너 그룹 조회 (코드)',
-    description:
-      '코드로 배너 그룹과 활성화된 배너 목록을 조회합니다. 프론트엔드에서 사용됩니다.',
+    description: '코드로 배너 그룹과 활성화된 배너 목록을 조회합니다. 프론트엔드에서 사용됩니다.',
   })
   @ApiParam({ name: 'code', description: '배너 그룹 코드', example: 'AY2312' })
   @ApiResponse({
@@ -101,19 +71,14 @@ export class BannerGroupsController {
     type: BannerGroupWithBannersResponseDto,
   })
   @ApiResponse({ status: 404, description: '배너 그룹을 찾을 수 없음' })
-  async getBannerGroupByCode(
-    @Param('code') code: string,
-  ): Promise<BannerGroupWithBannersResponseDto> {
+  async getBannerGroupByCode(@Param('code') code: string): Promise<BannerGroupWithBannersResponseDto> {
     try {
       return await this.bannersService.getBannerGroupByCode(code);
     } catch (error) {
       if (error.message.includes('not found')) {
         throw new HttpException(error.message, HttpStatus.NOT_FOUND);
       }
-      throw new HttpException(
-        `Failed to get banner group: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException(`Failed to get banner group: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -129,19 +94,14 @@ export class BannerGroupsController {
     type: BannerGroupResponseDto,
   })
   @ApiResponse({ status: 404, description: '배너 그룹을 찾을 수 없음' })
-  async getBannerGroupById(
-    @Param('id') id: string,
-  ): Promise<BannerGroupResponseDto> {
+  async getBannerGroupById(@Param('id') id: string): Promise<BannerGroupResponseDto> {
     try {
       return await this.bannersService.getBannerGroupById(id);
     } catch (error) {
       if (error.message.includes('not found')) {
         throw new HttpException(error.message, HttpStatus.NOT_FOUND);
       }
-      throw new HttpException(
-        `Failed to get banner group: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException(`Failed to get banner group: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -158,20 +118,14 @@ export class BannerGroupsController {
     type: BannerGroupResponseDto,
   })
   @ApiResponse({ status: 404, description: '배너 그룹을 찾을 수 없음' })
-  async updateBannerGroup(
-    @Param('id') id: string,
-    @Body() dto: UpdateBannerGroupDto,
-  ): Promise<BannerGroupResponseDto> {
+  async updateBannerGroup(@Param('id') id: string, @Body() dto: UpdateBannerGroupDto): Promise<BannerGroupResponseDto> {
     try {
       return await this.bannersService.updateBannerGroup(id, dto);
     } catch (error) {
       if (error.message.includes('not found')) {
         throw new HttpException(error.message, HttpStatus.NOT_FOUND);
       }
-      throw new HttpException(
-        `Failed to update banner group: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException(`Failed to update banner group: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -195,11 +149,7 @@ export class BannerGroupsController {
       if (error.message.includes('not found')) {
         throw new HttpException(error.message, HttpStatus.NOT_FOUND);
       }
-      throw new HttpException(
-        `Failed to delete banner group: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException(`Failed to delete banner group: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 }
-

@@ -62,7 +62,10 @@ export function buildGraph(
   }
 
   // STEP 4 — Collect resource nodes
-  const nodeMap = new Map<string, { links: TraceLink[]; latestCreatedAt: string }>();
+  const nodeMap = new Map<
+    string,
+    { links: TraceLink[]; latestCreatedAt: string }
+  >();
   for (const link of filteredLinks) {
     const nodeKey = `${link.resourceType}:${link.resourceId}`;
     const existing = nodeMap.get(nodeKey);

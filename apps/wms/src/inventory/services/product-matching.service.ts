@@ -58,14 +58,15 @@ export class ProductMatchingService {
   private getStrategy(strategyType: string): MatchingStrategy {
     const strategy = this.strategies.get(strategyType);
     if (!strategy) {
-      throw new BadRequestException(
-        `Unsupported strategy: ${strategyType}. Only 'void' and 'variant' are supported.`
-      );
+      throw new BadRequestException(`Unsupported strategy: ${strategyType}. Only 'void' and 'variant' are supported.`);
     }
     return strategy;
   }
 
-  async handleManualMatchingRequest(payload: PimProductPayload, tx?: DbTx): Promise<{ created: number; skipped: number }> {
+  async handleManualMatchingRequest(
+    payload: PimProductPayload,
+    tx?: DbTx,
+  ): Promise<{ created: number; skipped: number }> {
     if (!payload || !payload.masterId || !Array.isArray(payload.variants)) {
       throw new BadRequestException('Invalid payload: masterId and variants array are required');
     }
@@ -96,22 +97,26 @@ export class ProductMatchingService {
             continue;
           }
 
-          const [newProductMatching] = await trx.insert(wmsTables.productMatchings).values({
-            variantId: variant.id,
-            masterId: payload.masterId,
-            status: 'pending',
-            priority: 'high',
-            strategy: null,
-            isResolved: false,
-          }).returning();
+          const [newProductMatching] = await trx
+            .insert(wmsTables.productMatchings)
+            .values({
+              variantId: variant.id,
+              masterId: payload.masterId,
+              status: 'pending',
+              priority: 'high',
+              strategy: null,
+              isResolved: false,
+            })
+            .returning();
 
           if (!newProductMatching) {
             throw new Error(`Product matching entry creation failed for variant ${variant.id}`);
           }
 
-          this.logger.log(`Product matching pending created for variant ${variant.id}, matchingId: ${newProductMatching.id}`);
+          this.logger.log(
+            `Product matching pending created for variant ${variant.id}, matchingId: ${newProductMatching.id}`,
+          );
           created++;
-
         } catch (error) {
           this.logger.error(`Failed to create manual matching for variant ${variant.id}:`, error);
           skipped++;
@@ -123,7 +128,10 @@ export class ProductMatchingService {
     }, tx);
   }
 
-  async handleAutomaticMatchingRequest(payload: PimProductPayload, tx?: DbTx): Promise<{ created: number; skipped: number }> {
+  async handleAutomaticMatchingRequest(
+    payload: PimProductPayload,
+    tx?: DbTx,
+  ): Promise<{ created: number; skipped: number }> {
     this.logger.log(`Handling automatic matching from PIM event for master ID: ${payload.masterId}`);
     return this.inTx(async (trx) => {
       let created = 0;
@@ -172,17 +180,20 @@ export class ProductMatchingService {
             continue;
           }
 
-          const [newProductMatching] = await trx.insert(wmsTables.productMatchings).values({
-            variantId: variant.id,
-            masterId: payload.masterId,
-            status: 'matched',
-            priority: 'normal',
-            strategy: 'variant',
-            isResolved: true,
-            inventoryManagement: true,
-            preStockSellable: true,
-            alwaysSellableZeroStock: false,
-          }).returning();
+          const [newProductMatching] = await trx
+            .insert(wmsTables.productMatchings)
+            .values({
+              variantId: variant.id,
+              masterId: payload.masterId,
+              status: 'matched',
+              priority: 'normal',
+              strategy: 'variant',
+              isResolved: true,
+              inventoryManagement: true,
+              preStockSellable: true,
+              alwaysSellableZeroStock: false,
+            })
+            .returning();
 
           if (!newProductMatching) {
             throw new Error(`Product matching entry(matched) 생성에 실패했습니다. (variantId: ${variant.id})`);
@@ -193,28 +204,33 @@ export class ProductMatchingService {
           const mappings: SkuQuantityMapping[] = [];
 
           for (const component of variant.components) {
-            const newStock = await this.stockEventService.createStockEntryBySkuId({
-              skuId: component.skuId,
-              variantId: variant.id,
-              warehouseId,
-              quantity: 0,
-              stockType: 'physical',
-              reason: `auto_matching_for_variant_${variant.id}`,
-            }, trx);
+            const newStock = await this.stockEventService.createStockEntryBySkuId(
+              {
+                skuId: component.skuId,
+                variantId: variant.id,
+                warehouseId,
+                quantity: 0,
+                stockType: 'physical',
+                reason: `auto_matching_for_variant_${variant.id}`,
+              },
+              trx,
+            );
 
             mappings.push({
               skuId: newStock.skuId,
-              quantity: 1
+              quantity: 1,
             });
           }
 
           const context: MatchingContext = {
             variantId: variant.id,
-            productMatchingId: newProductMatching.id
+            productMatchingId: newProductMatching.id,
           };
           await strategy.create(context, mappings, trx);
 
-          this.logger.log(`Auto-matched variant ${variant.id} with ${variant.components.length} SKUs using variant strategy.`);
+          this.logger.log(
+            `Auto-matched variant ${variant.id} with ${variant.components.length} SKUs using variant strategy.`,
+          );
           created++;
         } catch (error) {
           this.logger.error(`Failed to auto-match variant ${variant.id}:`, error);
@@ -236,33 +252,32 @@ export class ProductMatchingService {
           .where(eq(wmsTables.productMatchings.status, status))
           .orderBy(asc(wmsTables.productMatchings.createdAt));
       }
-      return trx
-        .select()
-        .from(wmsTables.productMatchings)
-        .orderBy(asc(wmsTables.productMatchings.createdAt));
+      return trx.select().from(wmsTables.productMatchings).orderBy(asc(wmsTables.productMatchings.createdAt));
     }, tx);
 
-    const matchingsWithDetails = await Promise.all(matchings.map(async (matching) => {
-      if (matching.strategy && matching.status === 'matched') {
-        try {
-          const strategy = this.getStrategy(matching.strategy);
-          const context: MatchingContext = {
-            variantId: matching.variantId,
-            productMatchingId: matching.id
-          };
-          const skuMappings = await strategy.lookup(context);
+    const matchingsWithDetails = await Promise.all(
+      matchings.map(async (matching) => {
+        if (matching.strategy && matching.status === 'matched') {
+          try {
+            const strategy = this.getStrategy(matching.strategy);
+            const context: MatchingContext = {
+              variantId: matching.variantId,
+              productMatchingId: matching.id,
+            };
+            const skuMappings = await strategy.lookup(context);
 
-          return {
-            ...matching,
-            skuMappings
-          };
-        } catch (error) {
-          this.logger.error(`Failed to lookup mappings for matching ${matching.id}:`, error);
-          return matching;
+            return {
+              ...matching,
+              skuMappings,
+            };
+          } catch (error) {
+            this.logger.error(`Failed to lookup mappings for matching ${matching.id}:`, error);
+            return matching;
+          }
         }
-      }
-      return matching;
-    }));
+        return matching;
+      }),
+    );
 
     return matchingsWithDetails;
   }
@@ -274,10 +289,7 @@ export class ProductMatchingService {
       const [row] = await trx
         .select()
         .from(wmsTables.productMatchings)
-        .where(and(
-          eq(wmsTables.productMatchings.id, matchingId),
-          eq(wmsTables.productMatchings.isResolved, false)
-        ))
+        .where(and(eq(wmsTables.productMatchings.id, matchingId), eq(wmsTables.productMatchings.isResolved, false)))
         .limit(1);
       return row;
     }, tx);
@@ -287,31 +299,38 @@ export class ProductMatchingService {
     }
 
     if (ignore) {
-      const [updatedMatching] = await this.inTx(async (trx) => trx.update(wmsTables.productMatchings).set({
-        status: 'ignored',
-        strategy: 'void',
-        isResolved: true,
-        inventoryManagement: false,
-        preStockSellable: true,
-        alwaysSellableZeroStock: false,
-        updatedAt: new Date(),
-      }).where(eq(wmsTables.productMatchings.id, matchingId)).returning(), tx).then(r => r);
+      const [updatedMatching] = await this.inTx(
+        async (trx) =>
+          trx
+            .update(wmsTables.productMatchings)
+            .set({
+              status: 'ignored',
+              strategy: 'void',
+              isResolved: true,
+              inventoryManagement: false,
+              preStockSellable: true,
+              alwaysSellableZeroStock: false,
+              updatedAt: new Date(),
+            })
+            .where(eq(wmsTables.productMatchings.id, matchingId))
+            .returning(),
+        tx,
+      ).then((r) => r);
       this.logger.log(`Product matching ${matchingId} resolved as 'ignored' with void strategy.`);
       return updatedMatching;
-
     } else if ((skuIds && skuIds.length > 0) || (skuMappings && skuMappings.length > 0)) {
       return this.inTx(async (trx) => {
         let mappings: SkuQuantityMapping[];
 
         if (skuMappings && skuMappings.length > 0) {
-          mappings = skuMappings.map(mapping => ({
+          mappings = skuMappings.map((mapping) => ({
             skuId: mapping.skuId,
-            quantity: mapping.quantity || 1
+            quantity: mapping.quantity || 1,
           }));
         } else if (skuIds && skuIds.length > 0) {
-          mappings = skuIds.map(skuId => ({
+          mappings = skuIds.map((skuId) => ({
             skuId,
-            quantity: 1
+            quantity: 1,
           }));
         } else {
           throw new BadRequestException('SKU 매핑 정보가 없습니다.');
@@ -320,7 +339,7 @@ export class ProductMatchingService {
         const matchingStrategy = this.getStrategy(strategy);
         const context: MatchingContext = {
           variantId: productMatching.variantId,
-          productMatchingId: productMatching.id
+          productMatchingId: productMatching.id,
         };
 
         const isValid = await matchingStrategy.validate(context, mappings);
@@ -336,20 +355,24 @@ export class ProductMatchingService {
           alwaysSellableZeroStock: stockPolicy?.alwaysSellableZeroStock ?? false,
         };
 
-        const [updatedMatching] = await trx.update(wmsTables.productMatchings).set({
-          status: 'matched',
-          strategy: strategy,
-          isResolved: true,
-          ...finalStockPolicy,
-          updatedAt: new Date(),
-        }).where(eq(wmsTables.productMatchings.id, matchingId)).returning();
+        const [updatedMatching] = await trx
+          .update(wmsTables.productMatchings)
+          .set({
+            status: 'matched',
+            strategy: strategy,
+            isResolved: true,
+            ...finalStockPolicy,
+            updatedAt: new Date(),
+          })
+          .where(eq(wmsTables.productMatchings.id, matchingId))
+          .returning();
 
         const totalSkus = mappings.length;
         const totalQuantity = mappings.reduce((sum, m) => sum + m.quantity, 0);
         this.logger.log(
           `Product matching ${matchingId} resolved as 'matched' with ${strategy} strategy. ` +
-          `SKUs: ${totalSkus}, Total Quantity: ${totalQuantity}, ` +
-          `Stock Policy: ${JSON.stringify(finalStockPolicy)}`
+            `SKUs: ${totalSkus}, Total Quantity: ${totalQuantity}, ` +
+            `Stock Policy: ${JSON.stringify(finalStockPolicy)}`,
         );
         return updatedMatching;
       }, tx);
@@ -359,16 +382,18 @@ export class ProductMatchingService {
   }
 
   async setMatchingPriority(matchingId: string, priority: 'normal' | 'high', tx?: DbTx) {
-    const [updatedMatching] = await this.inTx(async (trx) => trx.update(wmsTables.productMatchings)
-      .set({
-        priority: priority,
-        updatedAt: new Date(),
-      })
-      .where(and(
-        eq(wmsTables.productMatchings.id, matchingId),
-        eq(wmsTables.productMatchings.isResolved, false)
-      ))
-      .returning(), tx).then(r => r);
+    const [updatedMatching] = await this.inTx(
+      async (trx) =>
+        trx
+          .update(wmsTables.productMatchings)
+          .set({
+            priority: priority,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(wmsTables.productMatchings.id, matchingId), eq(wmsTables.productMatchings.isResolved, false)))
+          .returning(),
+      tx,
+    ).then((r) => r);
 
     if (!updatedMatching) {
       throw new NotFoundException(`Product matching with ID ${matchingId} not found or already resolved.`);
@@ -403,56 +428,69 @@ export class ProductMatchingService {
         const strategy = this.getStrategy(productMatching.strategy);
         const context: MatchingContext = {
           variantId: productMatching.variantId,
-          productMatchingId: productMatching.id
+          productMatchingId: productMatching.id,
         };
         await strategy.delete(context, trx);
 
-        await trx.delete(wmsTables.productMatchings)
-          .where(eq(wmsTables.productMatchings.id, productMatching.id));
+        await trx.delete(wmsTables.productMatchings).where(eq(wmsTables.productMatchings.id, productMatching.id));
 
-        this.logger.log(`Deleted product matching and links for variantId: ${variantId} using ${productMatching.strategy} strategy`);
+        this.logger.log(
+          `Deleted product matching and links for variantId: ${variantId} using ${productMatching.strategy} strategy`,
+        );
       }, tx);
     } else {
-      await this.inTx(async (trx) => trx.delete(wmsTables.productMatchings)
-        .where(eq(wmsTables.productMatchings.id, productMatching.id)), tx);
+      await this.inTx(
+        async (trx) =>
+          trx.delete(wmsTables.productMatchings).where(eq(wmsTables.productMatchings.id, productMatching.id)),
+        tx,
+      );
 
       this.logger.log(`Deleted ${productMatching.status} product matching for variantId: ${variantId}`);
     }
   }
 
-  async createNewSkuForMatching(variantId: string, skuData: {
-    name: string;
-    inventoryManagement: boolean;
-    alwaysSellableZeroStock?: boolean;
-    skuGroupId?: string;
-  }, tx?: DbTx) {
+  async createNewSkuForMatching(
+    variantId: string,
+    skuData: {
+      name: string;
+      inventoryManagement: boolean;
+      alwaysSellableZeroStock?: boolean;
+      skuGroupId?: string;
+    },
+    tx?: DbTx,
+  ) {
     return this.inTx(async (trx) => {
       const productMatching = await trx.query.productMatchings.findFirst({
-        where: eq(wmsTables.productMatchings.variantId, variantId)
+        where: eq(wmsTables.productMatchings.variantId, variantId),
       });
 
       if (!productMatching) {
         throw new NotFoundException(`No product matching found for variant: ${variantId}`);
       }
 
-      const newSku = await this.inventoryService.createSku({
-        name: skuData.name,
-        source: SkuCreationSource.MANUAL_MATCHING,
-        ...(skuData.skuGroupId && { skuGroupId: skuData.skuGroupId }),
-        ...(productMatching.skuGroupId && !skuData.skuGroupId &&
-          { skuGroupId: productMatching.skuGroupId }),
-      }, trx);
+      const newSku = await this.inventoryService.createSku(
+        {
+          name: skuData.name,
+          source: SkuCreationSource.MANUAL_MATCHING,
+          ...(skuData.skuGroupId && { skuGroupId: skuData.skuGroupId }),
+          ...(productMatching.skuGroupId && !skuData.skuGroupId && { skuGroupId: productMatching.skuGroupId }),
+        },
+        trx,
+      );
 
       if (skuData.inventoryManagement) {
         const warehouseId = this.inventoryService.getDefaultWarehouseId();
-        await this.stockEventService.createStockEntryBySkuId({
-          skuId: newSku.id,
-          variantId,
-          warehouseId,
-          quantity: 0,
-          stockType: 'physical',
-          reason: `manual_matching_for_variant_${variantId}`,
-        }, trx);
+        await this.stockEventService.createStockEntryBySkuId(
+          {
+            skuId: newSku.id,
+            variantId,
+            warehouseId,
+            quantity: 0,
+            stockType: 'physical',
+            reason: `manual_matching_for_variant_${variantId}`,
+          },
+          trx,
+        );
       }
 
       return newSku;
@@ -482,15 +520,16 @@ export class ProductMatchingService {
         const oldStrategy = this.getStrategy(productMatching.strategy);
         const context: MatchingContext = {
           variantId: productMatching.variantId,
-          productMatchingId: productMatching.id
+          productMatchingId: productMatching.id,
         };
         await oldStrategy.delete(context, trx);
       }
 
-      await trx.update(wmsTables.productMatchings)
+      await trx
+        .update(wmsTables.productMatchings)
         .set({
           strategy: newStrategy,
-          updatedAt: new Date()
+          updatedAt: new Date(),
         })
         .where(eq(wmsTables.productMatchings.id, matchingId));
 
@@ -504,26 +543,27 @@ export class ProductMatchingService {
       optionName: string;
       optionValue: string;
       skuId: string;
-    }>
-    , tx?: DbTx) {
+    }>,
+    tx?: DbTx,
+  ) {
     // DEPRECATED: Option matching strategy is no longer supported
     throw new BadRequestException(
-      'Option matching strategy is deprecated. Please use variant strategy with 1D optionKey instead.'
+      'Option matching strategy is deprecated. Please use variant strategy with 1D optionKey instead.',
     );
   }
 
   async getSkusForVariant(
     variantId: string,
-    selectedOptions?: Array<{ optionName: string; optionValue: string }>
-    , tx?: DbTx): Promise<SkuQuantityMapping[]> {
+    selectedOptions?: Array<{ optionName: string; optionValue: string }>,
+    tx?: DbTx,
+  ): Promise<SkuQuantityMapping[]> {
     const productMatching = await this.inTx(async (trx) => {
       const [row] = await trx
         .select()
         .from(wmsTables.productMatchings)
-        .where(and(
-          eq(wmsTables.productMatchings.variantId, variantId),
-          eq(wmsTables.productMatchings.status, 'matched')
-        ))
+        .where(
+          and(eq(wmsTables.productMatchings.variantId, variantId), eq(wmsTables.productMatchings.status, 'matched')),
+        )
         .limit(1);
       return row;
     }, tx);
@@ -536,13 +576,16 @@ export class ProductMatchingService {
     const context: MatchingContext = {
       variantId: productMatching.variantId,
       productMatchingId: productMatching.id,
-      optionData: selectedOptions
+      optionData: selectedOptions,
     };
 
     return strategy.lookup(context);
   }
 
-  async getStockPolicyForVariant(variantId: string, tx?: DbTx): Promise<{
+  async getStockPolicyForVariant(
+    variantId: string,
+    tx?: DbTx,
+  ): Promise<{
     inventoryManagement: boolean;
     preStockSellable: boolean;
     alwaysSellableZeroStock: boolean;
@@ -573,15 +616,21 @@ export class ProductMatchingService {
       inventoryManagement?: boolean;
       preStockSellable?: boolean;
       alwaysSellableZeroStock?: boolean;
-    }
-    , tx?: DbTx) {
-    const [updated] = await this.inTx(async (trx) => trx.update(wmsTables.productMatchings)
-      .set({
-        ...stockPolicy,
-        updatedAt: new Date(),
-      })
-      .where(eq(wmsTables.productMatchings.id, matchingId))
-      .returning(), tx).then(r => r);
+    },
+    tx?: DbTx,
+  ) {
+    const [updated] = await this.inTx(
+      async (trx) =>
+        trx
+          .update(wmsTables.productMatchings)
+          .set({
+            ...stockPolicy,
+            updatedAt: new Date(),
+          })
+          .where(eq(wmsTables.productMatchings.id, matchingId))
+          .returning(),
+      tx,
+    ).then((r) => r);
 
     if (!updated) {
       throw new NotFoundException(`Product matching with ID ${matchingId} not found.`);

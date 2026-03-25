@@ -16,7 +16,7 @@ export class DashboardService {
   constructor(
     @InjectTypedDb<typeof pimSchema>()
     private readonly dbService: DbService<typeof pimSchema>,
-  ) { }
+  ) {}
 
   private get db() {
     return this.dbService.db;
@@ -38,12 +38,7 @@ export class DashboardService {
     const [{ totalProducts }] = await this.db
       .select({ totalProducts: sql<number>`count(*)` })
       .from(productMasterVersions)
-      .where(
-        and(
-          isNull(productMasterVersions.deletedAt),
-          eq(productMasterVersions.status, 'active')
-        )
-      );
+      .where(and(isNull(productMasterVersions.deletedAt), eq(productMasterVersions.status, 'active')));
 
     // 2. 상태별 제품 수
     const productsByStatus = await this.db
@@ -52,12 +47,7 @@ export class DashboardService {
         count: sql<number>`count(*)`,
       })
       .from(productMasterVersions)
-      .where(
-        and(
-          isNull(productMasterVersions.deletedAt),
-          eq(productMasterVersions.status, 'active')
-        )
-      )
+      .where(and(isNull(productMasterVersions.deletedAt), eq(productMasterVersions.status, 'active')))
       .groupBy(productMasterVersions.status);
 
     // 3. 승인 상태별 제품 수
@@ -67,12 +57,7 @@ export class DashboardService {
         count: sql<number>`count(*)`,
       })
       .from(productMasterVersions)
-      .where(
-        and(
-          isNull(productMasterVersions.deletedAt),
-          eq(productMasterVersions.status, 'active')
-        )
-      )
+      .where(and(isNull(productMasterVersions.deletedAt), eq(productMasterVersions.status, 'active')))
       .groupBy(productMasterVersions.approvalStatus);
 
     // 4. 오늘 등록된 제품 수
@@ -115,7 +100,7 @@ export class DashboardService {
    * 상위 제품 목록 조회
    * - 활성화된 제품 중 최근 등록순으로 조회
    * - 향후 주문 서비스 연동 시 실제 판매량 기준으로 변경 가능
-   * 
+   *
    * @param limit 조회할 제품 수 (기본값: 5)
    */
   async getTopProducts(limit = 5): Promise<TopProductItemDto[]> {
@@ -153,7 +138,7 @@ export class DashboardService {
    * 매출 트렌드 조회
    * - 향후 주문 서비스 연동 시 구현
    * - 현재는 구조만 반환
-   * 
+   *
    * @param days 조회할 기간 (일 단위, 기본값: 30)
    */
   async getSalesTrends(days = 30): Promise<SalesTrendResponseDto> {
@@ -161,12 +146,12 @@ export class DashboardService {
     // const endDate = new Date();
     // const startDate = new Date();
     // startDate.setDate(startDate.getDate() - days);
-    // 
+    //
     // const salesData = await this.orderClient.getSalesByDateRange({
     //   startDate,
     //   endDate,
     // });
-    // 
+    //
     // return {
     //   labels: salesData.map(d => d.date),
     //   data: salesData.map(d => d.totalAmount),
@@ -179,4 +164,3 @@ export class DashboardService {
     };
   }
 }
-

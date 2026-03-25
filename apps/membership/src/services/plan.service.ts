@@ -1,14 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PlanReader } from './plan/plan.reader';
 import { PlanManager } from './plan/plan.manager';
-import type {
-  CreateTierInput,
-  UpdateTierInput,
-  CreatePlanInput,
-  UpdatePlanInput,
-  Plan,
-  Tier,
-} from '../shared/schemas';
+import type { CreateTierInput, UpdateTierInput, CreatePlanInput, UpdatePlanInput, Plan, Tier } from '../shared/schemas';
 
 // 하위 호환성을 위한 타입 export
 export type { PlanWithTier, TierWithPlans } from './plan/plan.reader';
@@ -94,12 +87,8 @@ export class PlanService {
     if (await this.planReader.existsByTierCode(createTierInput.code)) {
       throw new Error(`Tier code already exists: ${createTierInput.code}`);
     }
-    if (
-      await this.planReader.existsByPriorityLevel(createTierInput.priorityLevel)
-    ) {
-      throw new Error(
-        `Priority level already exists: ${createTierInput.priorityLevel}`,
-      );
+    if (await this.planReader.existsByPriorityLevel(createTierInput.priorityLevel)) {
+      throw new Error(`Priority level already exists: ${createTierInput.priorityLevel}`);
     }
 
     return this.planManager.createTier(createTierInput, adminId);
@@ -110,11 +99,7 @@ export class PlanService {
    *
    * ✅ 흐름만 표현: "티어 조회 → 중복 검증 → 티어 수정"
    */
-  async updateTier(
-    tierId: string,
-    updateTierInput: UpdateTierInput,
-    adminId: string,
-  ) {
+  async updateTier(tierId: string, updateTierInput: UpdateTierInput, adminId: string) {
     // 티어 존재 확인
     const existingTier = await this.planReader.findTierById(tierId);
     if (!existingTier) {
@@ -122,18 +107,9 @@ export class PlanService {
     }
 
     // 우선순위 변경 시 중복 검증
-    if (
-      updateTierInput.priorityLevel &&
-      updateTierInput.priorityLevel !== existingTier.priorityLevel
-    ) {
-      if (
-        await this.planReader.existsByPriorityLevel(
-          updateTierInput.priorityLevel,
-        )
-      ) {
-        throw new Error(
-          `Priority level already exists: ${updateTierInput.priorityLevel}`,
-        );
+    if (updateTierInput.priorityLevel && updateTierInput.priorityLevel !== existingTier.priorityLevel) {
+      if (await this.planReader.existsByPriorityLevel(updateTierInput.priorityLevel)) {
+        throw new Error(`Priority level already exists: ${updateTierInput.priorityLevel}`);
       }
     }
 
@@ -160,11 +136,7 @@ export class PlanService {
    *
    * ✅ 흐름만 표현: "플랜 조회 → 플랜 수정"
    */
-  async updatePlan(
-    planId: string,
-    updatePlanInput: UpdatePlanInput,
-    adminId: string,
-  ) {
+  async updatePlan(planId: string, updatePlanInput: UpdatePlanInput, adminId: string) {
     // 플랜 존재 확인
     const existingPlan = await this.planReader.findPlanByIdAny(planId);
     if (!existingPlan) {

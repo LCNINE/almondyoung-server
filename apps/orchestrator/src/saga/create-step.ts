@@ -1,9 +1,4 @@
-import {
-  SagaStep,
-  StepFunction,
-  CompensateFunction,
-  StepResponse,
-} from './saga.types';
+import { SagaStep, StepFunction, CompensateFunction, StepResponse } from './saga.types';
 
 export function createStep<TInput, TOutput, TRollback = any>(
   name: string,

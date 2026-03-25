@@ -12,9 +12,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
     const regionService = req.scope.resolve(Modules.REGION);
-    const region = await regionService.createRegions(
-      req.validatedBody as CreateRegionDTO,
-    );
+    const region = await regionService.createRegions(req.validatedBody as CreateRegionDTO);
 
     res.json({ region });
   } catch (error) {

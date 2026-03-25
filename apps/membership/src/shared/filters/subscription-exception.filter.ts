@@ -1,11 +1,4 @@
-import {
-  ExceptionFilter,
-  Catch,
-  ArgumentsHost,
-  HttpException,
-  HttpStatus,
-  Logger,
-} from '@nestjs/common';
+import { ExceptionFilter, Catch, ArgumentsHost, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import type { Response, Request } from 'express';
 import { SubscriptionException } from '../exceptions/subscription.exceptions';
 
@@ -39,15 +32,11 @@ export class SubscriptionExceptionFilter implements ExceptionFilter {
     const status = exception.getStatus();
     const exceptionResponse = exception.getResponse() as Record<string, any>;
 
-    this.logger.error(
-      `Subscription Exception: ${exception.message}`,
-      exception.stack,
-      {
-        url: request.url,
-        method: request.method,
-        code: exception.code,
-      },
-    );
+    this.logger.error(`Subscription Exception: ${exception.message}`, exception.stack, {
+      url: request.url,
+      method: request.method,
+      code: exception.code,
+    });
 
     const errorResponse: ErrorResponse = {
       statusCode: status,
@@ -92,8 +81,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       message:
         typeof exceptionResponse === 'string'
           ? exceptionResponse
-          : (exceptionResponse as Record<string, any>)?.message ||
-            exception.message,
+          : (exceptionResponse as Record<string, any>)?.message || exception.message,
     };
 
     response.status(status).json(errorResponse);

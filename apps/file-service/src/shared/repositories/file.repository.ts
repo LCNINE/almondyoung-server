@@ -12,26 +12,19 @@ export class FileRepository {
   constructor(
     @InjectTypedDb<FileServiceDb>()
     private readonly dbService: DbService<FileServiceDb>,
-  ) { }
+  ) {}
 
   private get db() {
     return this.dbService.db;
   }
 
   async create(data: NewUpload) {
-    const [file] = await this.db
-      .insert(uploads)
-      .values(data)
-      .returning();
+    const [file] = await this.db.insert(uploads).values(data).returning();
     return file;
   }
 
   async findById(id: string) {
-    const [file] = await this.db
-      .select()
-      .from(uploads)
-      .where(eq(uploads.id, id))
-      .limit(1);
+    const [file] = await this.db.select().from(uploads).where(eq(uploads.id, id)).limit(1);
     return file;
   }
 
@@ -62,24 +55,15 @@ export class FileRepository {
   }
 
   async hardDelete(id: string) {
-    await this.db
-      .delete(uploads)
-      .where(eq(uploads.id, id));
+    await this.db.delete(uploads).where(eq(uploads.id, id));
   }
 
   async addReference(data: NewFileReference) {
-    const [ref] = await this.db
-      .insert(fileReferences)
-      .values(data)
-      .returning();
+    const [ref] = await this.db.insert(fileReferences).values(data).returning();
     return ref;
   }
 
   async findReferences(uploadId: string) {
-    return this.db
-      .select()
-      .from(fileReferences)
-      .where(eq(fileReferences.uploadId, uploadId));
+    return this.db.select().from(fileReferences).where(eq(fileReferences.uploadId, uploadId));
   }
 }
-

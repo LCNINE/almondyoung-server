@@ -1,42 +1,18 @@
-import {
-  BadRequestException,
-  Body,
-  Controller,
-  Get,
-  NotFoundException,
-  Param,
-  Post,
-  Query,
-} from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, NotFoundException, Param, Post, Query } from '@nestjs/common';
 import { Public } from '../../commons/decorator/public.decorator';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import { JwtPayload } from '@app/authorization';
-import {
-  ApiBearerAuth,
-  ApiBody,
-  ApiOperation,
-  ApiResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Cafe24LinkService } from './cafe24-link.service';
-import {
-  Cafe24MemberInfoRequestDto,
-  Cafe24MemberInfoResponseDto,
-} from './dto/member-info.dto';
-import {
-  Cafe24MigrationItemDto,
-  Cafe24MigrationListResponseDto,
-} from './dto/migration.dto';
-import {
-  Cafe24LinkRequestDto,
-  Cafe24LinkResponseDto,
-} from './dto/link.dto';
+import { Cafe24MemberInfoRequestDto, Cafe24MemberInfoResponseDto } from './dto/member-info.dto';
+import { Cafe24MigrationItemDto, Cafe24MigrationListResponseDto } from './dto/migration.dto';
+import { Cafe24LinkRequestDto, Cafe24LinkResponseDto } from './dto/link.dto';
 
 @ApiTags('Cafe24 Link')
 @ApiBearerAuth('access-token')
 @Controller('cafe24')
 export class Cafe24LinkController {
-  constructor(private readonly cafe24LinkService: Cafe24LinkService) { }
+  constructor(private readonly cafe24LinkService: Cafe24LinkService) {}
 
   @Post('member-info')
   @Public()
@@ -55,9 +31,7 @@ export class Cafe24LinkController {
     @Body()
     body: Cafe24MemberInfoRequestDto,
   ): Promise<Cafe24MemberInfoResponseDto> {
-    return this.cafe24LinkService.fetchMemberInfo(
-      body.encryptedIdToken,
-    );
+    return this.cafe24LinkService.fetchMemberInfo(body.encryptedIdToken);
   }
 
   @Post('link')
@@ -75,17 +49,13 @@ export class Cafe24LinkController {
     @Body() body: Cafe24LinkRequestDto & { encrypted_id_token?: string },
     @CurrentUser() user: JwtPayload,
   ): Promise<Cafe24LinkResponseDto> {
-    const encryptedIdToken =
-      body.encryptedIdToken ?? body.encrypted_id_token;
+    const encryptedIdToken = body.encryptedIdToken ?? body.encrypted_id_token;
 
     if (!encryptedIdToken) {
       throw new BadRequestException('암호화 id 토큰이 필요합니다.');
     }
 
-    const link = await this.cafe24LinkService.linkCafe24Account(
-      user.id,
-      encryptedIdToken,
-    );
+    const link = await this.cafe24LinkService.linkCafe24Account(user.id, encryptedIdToken);
 
     return {
       linkId: link.id,
@@ -105,9 +75,7 @@ export class Cafe24LinkController {
     description: '연결 정보 조회 성공',
     type: Cafe24LinkResponseDto,
   })
-  async getLinkedCafe24Account(
-    @CurrentUser() user: JwtPayload,
-  ): Promise<Cafe24LinkResponseDto | null> {
+  async getLinkedCafe24Account(@CurrentUser() user: JwtPayload): Promise<Cafe24LinkResponseDto | null> {
     const link = await this.cafe24LinkService.getLinkedCafe24Account(user.id);
     if (!link) {
       return null;
@@ -131,9 +99,7 @@ export class Cafe24LinkController {
     description: '연결 해제 성공',
     type: Cafe24LinkResponseDto,
   })
-  async unlinkCafe24Account(
-    @CurrentUser() user: JwtPayload,
-  ): Promise<Cafe24LinkResponseDto> {
+  async unlinkCafe24Account(@CurrentUser() user: JwtPayload): Promise<Cafe24LinkResponseDto> {
     const link = await this.cafe24LinkService.unlinkCafe24Account(user.id);
 
     return {
@@ -154,9 +120,7 @@ export class Cafe24LinkController {
     description: '이관 항목 조회 성공',
     type: Cafe24MigrationListResponseDto,
   })
-  async getMigrationItems(
-    @CurrentUser() user: JwtPayload,
-  ): Promise<Cafe24MigrationListResponseDto> {
+  async getMigrationItems(@CurrentUser() user: JwtPayload): Promise<Cafe24MigrationListResponseDto> {
     const items = await this.cafe24LinkService.getMigrationItems(user.id);
     return { items };
   }
@@ -171,15 +135,9 @@ export class Cafe24LinkController {
     description: '이관 항목 조회 성공',
     type: Cafe24MigrationItemDto,
   })
-  async getMigrationItem(
-    @Param('key') key: string,
-    @CurrentUser() user: JwtPayload,
-  ): Promise<Cafe24MigrationItemDto> {
+  async getMigrationItem(@Param('key') key: string, @CurrentUser() user: JwtPayload): Promise<Cafe24MigrationItemDto> {
     this.assertMigrationKey(key);
-    return this.cafe24LinkService.lookupMigrationItem(
-      user.id,
-      key as any,
-    );
+    return this.cafe24LinkService.lookupMigrationItem(user.id, key as any);
   }
 
   @Post('migration/:key')

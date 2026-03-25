@@ -1,15 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Delete,
-  Param,
-  Body,
-  Query,
-  HttpCode,
-  HttpStatus,
-} from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, Body, Query, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
 import { SuppliersService } from '../services/suppliers.service';
 import {
@@ -28,11 +17,11 @@ export class SuppliersController {
 
   @Get()
   @ApiOperation({ summary: 'Get suppliers list or filter options' })
-  @ApiQuery({ 
-    name: 'type', 
-    required: false, 
+  @ApiQuery({
+    name: 'type',
+    required: false,
     enum: ['filter-options'],
-    description: 'Special query type: "filter-options" returns filter dropdown options' 
+    description: 'Special query type: "filter-options" returns filter dropdown options',
   })
   @ApiQuery({ name: 'search', required: false, description: 'Search by name, phone, email, etc.' })
   @ApiQuery({ name: 'categoryId', required: false, description: 'Filter by category ID' })
@@ -102,10 +91,7 @@ export class SuppliersController {
     status: 400,
     description: 'Invalid input data',
   })
-  async updateSupplier(
-    @Param('id') id: string,
-    @Body() updateDto: UpdateSupplierDto,
-  ): Promise<SupplierResponseDto> {
+  async updateSupplier(@Param('id') id: string, @Body() updateDto: UpdateSupplierDto): Promise<SupplierResponseDto> {
     return this.suppliersService.updateSupplier(id, updateDto);
   }
 
@@ -125,4 +111,3 @@ export class SuppliersController {
     return this.suppliersService.deleteSupplier(id);
   }
 }
-

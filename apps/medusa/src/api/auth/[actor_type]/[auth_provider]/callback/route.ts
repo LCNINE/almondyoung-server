@@ -1,13 +1,5 @@
-import {
-  AuthenticationInput,
-  ConfigModule,
-  IAuthModuleService,
-} from '@medusajs/framework/types';
-import {
-  ContainerRegistrationKeys,
-  MedusaError,
-  Modules,
-} from '@medusajs/framework/utils';
+import { AuthenticationInput, ConfigModule, IAuthModuleService } from '@medusajs/framework/types';
+import { ContainerRegistrationKeys, MedusaError, Modules } from '@medusajs/framework/utils';
 import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { generateJwtTokenForAuthIdentity } from '../../../../../utils/generate-jwt-token';
 import { setAuthCookie } from '../../../../../utils/set-auth-cookie';
@@ -15,9 +7,7 @@ import { jwtVerify } from '../../../../../utils/jwt-verify';
 import { registerCustomerWorkflow } from '../../../../../workflows/auth/workflows/register-customer-workflow';
 import { registerUserWorkflow } from '../../../../../workflows/auth/workflows/register-user-workflow';
 
-const normalizeRecord = (
-  input: unknown,
-): Record<string, string> | undefined => {
+const normalizeRecord = (input: unknown): Record<string, string> | undefined => {
   if (!input || typeof input !== 'object') {
     return undefined;
   }
@@ -66,9 +56,7 @@ const extractUserServiceToken = (req: MedusaRequest): string | undefined => {
 
   const cookies = req.headers?.cookie;
   if (cookies) {
-    const tokenCookie = cookies
-      .split(';')
-      .find((cookie) => cookie.trim().startsWith('accessToken='));
+    const tokenCookie = cookies.split(';').find((cookie) => cookie.trim().startsWith('accessToken='));
     if (tokenCookie) {
       return tokenCookie.split('=')[1];
     }
@@ -88,8 +76,7 @@ const extractUserServiceToken = (req: MedusaRequest): string | undefined => {
   return undefined;
 };
 
-const shouldAutoRegister = (error?: string) =>
-  typeof error === 'string' && error.toLowerCase().includes('not found');
+const shouldAutoRegister = (error?: string) => typeof error === 'string' && error.toLowerCase().includes('not found');
 
 // 구글(Google) 같은 서드파티(Third-Party) 인증 서비스에서 인증이 끝난 후,
 // 해당 서비스가 사용자를 다시 프론트엔드(스토어프론트)로 리디렉션할 때 전달받은 쿼리 파라미터(예: code, state 등)를
@@ -108,18 +95,13 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   const { actor_type, auth_provider } = req.params;
   const { redirect_to = process.env.FRONTEND_URL } = req.query;
 
-  const config: ConfigModule = req.scope.resolve(
-    ContainerRegistrationKeys.CONFIG_MODULE,
-  );
+  const config: ConfigModule = req.scope.resolve(ContainerRegistrationKeys.CONFIG_MODULE);
 
   const service: IAuthModuleService = req.scope.resolve(Modules.AUTH);
 
   const authData = buildAuthData(req);
 
-  let { success, error, authIdentity } = await service.authenticate(
-    auth_provider,
-    authData,
-  );
+  let { success, error, authIdentity } = await service.authenticate(auth_provider, authData);
 
   if (success && authIdentity) {
     const actorType = authIdentity?.app_metadata?.actor_type || actor_type;
@@ -145,17 +127,11 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     const userServiceToken = extractUserServiceToken(req);
 
     if (!userServiceToken) {
-      throw new MedusaError(
-        MedusaError.Types.UNAUTHORIZED,
-        error || 'Authentication failed',
-      );
+      throw new MedusaError(MedusaError.Types.UNAUTHORIZED, error || 'Authentication failed');
     }
 
     if (!process.env.AUTH_SECRET) {
-      throw new MedusaError(
-        MedusaError.Types.UNAUTHORIZED,
-        'AUTH_SECRET is not defined',
-      );
+      throw new MedusaError(MedusaError.Types.UNAUTHORIZED, 'AUTH_SECRET is not defined');
     }
 
     const payload = jwtVerify(userServiceToken, process.env.AUTH_SECRET);
@@ -209,10 +185,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
       }
     }
 
-    ({ success, error, authIdentity } = await service.authenticate(
-      auth_provider,
-      authData,
-    ));
+    ({ success, error, authIdentity } = await service.authenticate(auth_provider, authData));
 
     if (success && authIdentity) {
       const actorType = authIdentity?.app_metadata?.actor_type || actor_type;
@@ -233,10 +206,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     }
   }
 
-  throw new MedusaError(
-    MedusaError.Types.UNAUTHORIZED,
-    error || 'Authentication failed',
-  );
+  throw new MedusaError(MedusaError.Types.UNAUTHORIZED, error || 'Authentication failed');
 };
 
 export const POST = async (req: MedusaRequest, res: MedusaResponse) => {

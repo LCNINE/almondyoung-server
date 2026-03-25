@@ -1,12 +1,5 @@
-import {
-  AuthIdentityProviderService,
-  AuthenticationInput,
-  AuthenticationResponse,
-} from '@medusajs/framework/types';
-import {
-  AbstractAuthModuleProvider,
-  MedusaError,
-} from '@medusajs/framework/utils';
+import { AuthIdentityProviderService, AuthenticationInput, AuthenticationResponse } from '@medusajs/framework/types';
+import { AbstractAuthModuleProvider, MedusaError } from '@medusajs/framework/utils';
 import { jwtVerify } from '../../utils/jwt-verify';
 
 export class AuthProviderService extends AbstractAuthModuleProvider {
@@ -67,9 +60,7 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
         // 쿠키에서 토큰 조회
         const cookies = data?.headers?.cookie;
         if (cookies) {
-          const tokenCookie = cookies
-            .split(';')
-            .find((cookie) => cookie.trim().startsWith('accessToken='));
+          const tokenCookie = cookies.split(';').find((cookie) => cookie.trim().startsWith('accessToken='));
           if (tokenCookie) {
             almond_token = tokenCookie.split('=')[1];
           }
@@ -98,16 +89,14 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
         };
       }
 
-      const payload = jwtVerify(almond_token, process.env.AUTH_SECRET!);
+      const payload = jwtVerify(almond_token, process.env.AUTH_SECRET);
 
       // authIdentityProviderService를 사용하여 인증 정보 조회
       const authIdentity = await authIdentityProviderService.retrieve({
         entity_id: payload.email,
       });
       // 메두사에서 'user'는 관리자 권한이 있는 사용자를 의미함
-      const isAdmin = payload.roles?.some(
-        (role) => role === 'master' || role === 'admin',
-      );
+      const isAdmin = payload.roles?.some((role) => role === 'master' || role === 'admin');
       const actorType = isAdmin ? 'user' : 'customer';
 
       return {

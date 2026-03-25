@@ -1,9 +1,4 @@
-import {
-  createWorkflow,
-  WorkflowResponse,
-  createStep,
-  StepResponse,
-} from '@medusajs/framework/workflows-sdk';
+import { createWorkflow, WorkflowResponse, createStep, StepResponse } from '@medusajs/framework/workflows-sdk';
 import { Modules } from '@medusajs/framework/utils';
 import type { AdminCreateProduct, IProductModuleService } from '@medusajs/framework/types';
 

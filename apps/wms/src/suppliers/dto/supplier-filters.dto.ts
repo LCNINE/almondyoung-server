@@ -40,4 +40,3 @@ export class SupplierFiltersDto {
   @Min(0)
   offset?: number;
 }
-

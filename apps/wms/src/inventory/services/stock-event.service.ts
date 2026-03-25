@@ -22,7 +22,7 @@ export class StockEventService {
     private readonly commandService: InventoryCommandService,
     private readonly unifiedReservation: UnifiedReservationService,
     private readonly allocationStrategy: AllocationStrategyService,
-  ) { }
+  ) {}
 
   private get db() {
     return this.dbService.db;
@@ -32,7 +32,6 @@ export class StockEventService {
     return tx ? fn(tx) : this.db.transaction(fn);
   }
 
-
   /**
    * 안전한 SKU ID 기반 재고 입고 처리
    * - 자동 SKU 생성 없음
@@ -40,22 +39,12 @@ export class StockEventService {
    * - 데이터 무결성 보장
    */
   async createStockEntryBySkuId(dto: CreateStockEntryBySkuIdDto, tx?: DbTx) {
-    const {
-      skuId,
-      variantId,
-      warehouseId,
-      locationId,
-      quantity,
-      stockType,
-      reason,
-      subBarcode,
-      packingUnit
-    } = dto;
+    const { skuId, variantId, warehouseId, locationId, quantity, stockType, reason, subBarcode, packingUnit } = dto;
 
     return this.inTx(async (executor) => {
       // SKU ID로 직접 조회, 자동 생성 없음
       const sku = await executor.query.skus.findFirst({
-        where: eq(wmsTables.skus.id, skuId)
+        where: eq(wmsTables.skus.id, skuId),
       });
 
       if (!sku) {
@@ -67,24 +56,30 @@ export class StockEventService {
       }
 
       // 재고 이벤트 생성
-      await this.commandService.receive({
-        skuId: sku.id,
-        toWarehouseId: warehouseId,
-        toLocationId: locationId ?? null,
-        quantity,
-        occurredAt: new Date(),
-        idempotencyKey: undefined,
-        reason: reason || `stock_entry_${variantId ? `for_variant_${variantId}` : 'manual'}`,
-      }, executor);
+      await this.commandService.receive(
+        {
+          skuId: sku.id,
+          toWarehouseId: warehouseId,
+          toLocationId: locationId ?? null,
+          quantity,
+          occurredAt: new Date(),
+          idempotencyKey: undefined,
+          reason: reason || `stock_entry_${variantId ? `for_variant_${variantId}` : 'manual'}`,
+        },
+        executor,
+      );
 
       // 서브 바코드가 있으면 바코드 테이블에 추가
       if (subBarcode) {
-        await executor.insert(wmsTables.skuBarcodes).values({
-          skuId: sku.id,
-          barcode: subBarcode,
-          isPrimary: false,
-          packingUnit: packingUnit || null,
-        }).onConflictDoNothing();
+        await executor
+          .insert(wmsTables.skuBarcodes)
+          .values({
+            skuId: sku.id,
+            barcode: subBarcode,
+            isPrimary: false,
+            packingUnit: packingUnit || null,
+          })
+          .onConflictDoNothing();
       }
 
       this.logger.log(`안전한 재고 입고 완료: SKU ${sku.id}, 수량: ${quantity}, 창고: ${warehouseId}`);
@@ -94,12 +89,7 @@ export class StockEventService {
   }
 
   // 재고 출고 처리 (보류)
-  async processStockOut(
-    stockId: string,
-    quantity: number,
-    orderId?: string,
-    reason?: string
-  ) {
+  async processStockOut(stockId: string, quantity: number, orderId?: string, reason?: string) {
     throw new BadRequestException('processStockOut: transition-based 구현 대기');
   }
 
@@ -114,20 +104,23 @@ export class StockEventService {
     targetType: 'FULFILLMENT_ORDER' | 'MOVEMENT_TASK',
     targetId: string,
     reason?: string,
-    tx?: DbTx
+    tx?: DbTx,
   ) {
     this.logger.log(`Reserving ${quantity} units of SKU ${skuId} for ${targetType}:${targetId}`);
 
     return this.inTx(async (executor) => {
       // UnifiedReservationService를 활용한 예약 생성
-      const reservation = await this.unifiedReservation.reserveStock({
-        targetType,
-        targetId,
-        skuId,
-        warehouseId,
-        quantity,
-        reason,
-      }, executor);
+      const reservation = await this.unifiedReservation.reserveStock(
+        {
+          targetType,
+          targetId,
+          skuId,
+          warehouseId,
+          quantity,
+          reason,
+        },
+        executor,
+      );
 
       this.logger.log(`Successfully reserved: ${reservation.id}`);
 
@@ -139,11 +132,7 @@ export class StockEventService {
    * 재고 예약 해제
    * @deprecated Use UnifiedReservationService.releaseReservation() directly
    */
-  async releaseReservation(
-    reservationId: string,
-    reason?: string,
-    tx?: DbTx
-  ) {
+  async releaseReservation(reservationId: string, reason?: string, tx?: DbTx) {
     this.logger.log(`Releasing reservation: ${reservationId}`);
 
     return this.inTx(async (executor) => {
@@ -155,7 +144,7 @@ export class StockEventService {
 
   /**
    * 창고 간 재고 이동
-   * 
+   *
    * 프로세스:
    * 1. 출발 창고에서 transferShip (ON_HAND → IN_TRANSFER)
    * 2. 도착 창고에서 transferReceive (IN_TRANSFER → ON_HAND)
@@ -168,10 +157,10 @@ export class StockEventService {
     toLocationId: string,
     quantity: number,
     reason?: string,
-    tx?: DbTx
+    tx?: DbTx,
   ) {
     this.logger.log(
-      `Transferring ${quantity} units of SKU ${skuId} from ${fromWarehouseId}/${fromLocationId} to ${toWarehouseId}/${toLocationId}`
+      `Transferring ${quantity} units of SKU ${skuId} from ${fromWarehouseId}/${fromLocationId} to ${toWarehouseId}/${toLocationId}`,
     );
 
     return this.inTx(async (executor) => {
@@ -180,26 +169,32 @@ export class StockEventService {
       }
 
       // 1. 출발지에서 재고 차감 및 IN_TRANSFER 상태로 전환
-      const shipEvent = await this.commandService.transferShip({
-        skuId,
-        fromWarehouseId,
-        fromLocationId,
-        quantity,
-        reason: reason || `Transfer to warehouse ${toWarehouseId}`,
-      }, executor);
+      const shipEvent = await this.commandService.transferShip(
+        {
+          skuId,
+          fromWarehouseId,
+          fromLocationId,
+          quantity,
+          reason: reason || `Transfer to warehouse ${toWarehouseId}`,
+        },
+        executor,
+      );
 
       this.logger.log(`Transfer ship event created: ${shipEvent.eventId}`);
 
       // 2. 도착지에서 재고 입고 및 ON_HAND 상태로 전환
-      const receiveEvent = await this.commandService.transferReceive({
-        skuId,
-        fromWarehouseId,
-        fromLocationId,
-        toWarehouseId,
-        toLocationId,
-        quantity,
-        reason: reason || `Transfer from warehouse ${fromWarehouseId}`,
-      }, executor);
+      const receiveEvent = await this.commandService.transferReceive(
+        {
+          skuId,
+          fromWarehouseId,
+          fromLocationId,
+          toWarehouseId,
+          toLocationId,
+          quantity,
+          reason: reason || `Transfer from warehouse ${fromWarehouseId}`,
+        },
+        executor,
+      );
 
       this.logger.log(`Transfer receive event created: ${receiveEvent.eventId}`);
 
@@ -212,7 +207,7 @@ export class StockEventService {
 
   /**
    * 재고 손실 처리 (파손, 분실 등)
-   * 
+   *
    * ON_HAND 재고를 감소시킵니다.
    */
   async processDamage(
@@ -221,7 +216,7 @@ export class StockEventService {
     locationId: string,
     quantity: number,
     reason: string,
-    tx?: DbTx
+    tx?: DbTx,
   ) {
     this.logger.log(`Processing damage: ${quantity} units of SKU ${skuId} at ${warehouseId}/${locationId}`);
 
@@ -235,13 +230,16 @@ export class StockEventService {
       }
 
       // ADJUST_DOWN 이벤트로 재고 감소
-      const event = await this.commandService.adjustDown({
-        skuId,
-        warehouseId,
-        locationId,
-        quantity,
-        reason: `DAMAGE: ${reason}`,
-      }, executor);
+      const event = await this.commandService.adjustDown(
+        {
+          skuId,
+          warehouseId,
+          locationId,
+          quantity,
+          reason: `DAMAGE: ${reason}`,
+        },
+        executor,
+      );
 
       this.logger.log(`Damage processed: event ${event.eventId}`);
 
@@ -251,7 +249,7 @@ export class StockEventService {
 
   /**
    * 재고 반품 처리
-   * 
+   *
    * 반품된 상품을 지정된 위치(또는 기본 반품 위치)에 입고합니다.
    */
   async processReturn(
@@ -261,7 +259,7 @@ export class StockEventService {
     orderId: string,
     locationId?: string,
     reason?: string,
-    tx?: DbTx
+    tx?: DbTx,
   ) {
     this.logger.log(`Processing return: ${quantity} units of SKU ${skuId} for order ${orderId}`);
 
@@ -278,13 +276,13 @@ export class StockEventService {
         const returnLocation = await executor.query.locations.findFirst({
           where: and(
             eq(wmsTables.locations.warehouseId, warehouseId),
-            eq(wmsTables.locations.systemRole, 'return_default')
-          )
+            eq(wmsTables.locations.systemRole, 'return_default'),
+          ),
         });
 
         if (!returnLocation) {
           throw new BadRequestException(
-            `No return location found for warehouse ${warehouseId}. Please specify locationId.`
+            `No return location found for warehouse ${warehouseId}. Please specify locationId.`,
           );
         }
 
@@ -292,13 +290,16 @@ export class StockEventService {
       }
 
       // RECEIVE 이벤트로 반품 입고
-      const event = await this.commandService.receive({
-        skuId,
-        toWarehouseId: warehouseId,
-        toLocationId: targetLocationId,
-        quantity,
-        reason: `RETURN: Order ${orderId}${reason ? ` - ${reason}` : ''}`,
-      }, executor);
+      const event = await this.commandService.receive(
+        {
+          skuId,
+          toWarehouseId: warehouseId,
+          toLocationId: targetLocationId,
+          quantity,
+          reason: `RETURN: Order ${orderId}${reason ? ` - ${reason}` : ''}`,
+        },
+        executor,
+      );
 
       this.logger.log(`Return processed: event ${event.eventId}`);
 
