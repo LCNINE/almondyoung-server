@@ -38,9 +38,7 @@ export class ChannelAdapterFactory {
     private readonly naver: NaverSmartstoreAdapter,
     private readonly coupang: CoupangAdapter,
   ) {
-    this.logger.log(
-      `📦 채널 어댑터 팩토리 초기화 완료 (${this.getSupportedChannels().length}개 채널)`,
-    );
+    this.logger.log(`📦 채널 어댑터 팩토리 초기화 완료 (${this.getSupportedChannels().length}개 채널)`);
   }
 
   /**

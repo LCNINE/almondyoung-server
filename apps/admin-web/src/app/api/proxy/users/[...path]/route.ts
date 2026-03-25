@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 import { forwardRequest } from '../../_lib/forward';
 
-const USER_SERVICE_URL = process.env.USER_SERVICE_URL ?? 'http://localhost:3030';
+const USER_SERVICE_URL =
+  process.env.USER_SERVICE_URL ?? 'http://localhost:3030';
 
 type Params = { params: Promise<{ path: string[] }> };
 

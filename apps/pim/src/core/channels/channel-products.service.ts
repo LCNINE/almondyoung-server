@@ -8,25 +8,8 @@ import {
   ProductMasterVersion,
   DbTransaction,
 } from '../../types';
-import {
-  type PimSchema,
-  channelProducts,
-  salesChannels,
-  productMasterVersions,
-} from '../../schema';
-import {
-  eq,
-  and,
-  or,
-  like,
-  ilike,
-  count,
-  asc,
-  desc,
-  sql,
-  inArray,
-  SQL,
-} from 'drizzle-orm';
+import { type PimSchema, channelProducts, salesChannels, productMasterVersions } from '../../schema';
+import { eq, and, or, like, ilike, count, asc, desc, sql, inArray, SQL } from 'drizzle-orm';
 import { ChannelProductWithChannelDto } from './dto';
 import { ChannelProductMapper } from './mappers';
 import { ChannelProductEntity, SalesChannelEntity } from '../../schema.types';
@@ -37,16 +20,13 @@ export class ChannelProductsService {
   constructor(
     @InjectDb() private readonly db: DbService<PimSchema>,
     private readonly productReadAssembler: ProductReadAssembler,
-  ) { }
+  ) {}
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.db.db;
   }
 
-  async createChannelProduct(
-    data: CreateChannelProductDto,
-    tx?: DbTransaction,
-  ): Promise<ChannelProduct> {
+  async createChannelProduct(data: CreateChannelProductDto, tx?: DbTransaction): Promise<ChannelProduct> {
     if (!data.masterId || !data.channelId) {
       throw new Error('Master ID and Channel ID are required');
     }
@@ -57,12 +37,7 @@ export class ChannelProductsService {
     const masterExists = await client
       .select({ id: productMasterVersions.masterId })
       .from(productMasterVersions)
-      .where(
-        and(
-          eq(productMasterVersions.masterId, data.masterId),
-          eq(productMasterVersions.status, 'active')
-        )
-      );
+      .where(and(eq(productMasterVersions.masterId, data.masterId), eq(productMasterVersions.status, 'active')));
 
     if (masterExists.length === 0) {
       throw new Error(`Master not found or no active version: ${data.masterId}`);
@@ -79,15 +54,9 @@ export class ChannelProductsService {
     }
 
     // 3. 중복 확인
-    const alreadyExists = await this.existsChannelProduct(
-      data.masterId,
-      data.channelId,
-      tx,
-    );
+    const alreadyExists = await this.existsChannelProduct(data.masterId, data.channelId, tx);
     if (alreadyExists) {
-      throw new Error(
-        `Channel product already exists for master ${data.masterId} and channel ${data.channelId}`,
-      );
+      throw new Error(`Channel product already exists for master ${data.masterId} and channel ${data.channelId}`);
     }
 
     // 4. 채널 상품 생성
@@ -99,10 +68,7 @@ export class ChannelProductsService {
       channelSpecificData: data.channelSpecificData || null,
     };
 
-    const result = await client
-      .insert(channelProducts)
-      .values(channelProductData)
-      .returning();
+    const result = await client.insert(channelProducts).values(channelProductData).returning();
 
     if (result.length === 0) {
       throw new Error('Failed to create channel product');
@@ -111,20 +77,14 @@ export class ChannelProductsService {
     return result[0];
   }
 
-  async getChannelProduct(
-    channelProductId: string,
-    tx?: DbTransaction,
-  ): Promise<ChannelProduct | null> {
+  async getChannelProduct(channelProductId: string, tx?: DbTransaction): Promise<ChannelProduct | null> {
     if (!channelProductId) {
       throw new Error('Channel Product ID is required');
     }
 
     const client = this.getClient(tx);
 
-    const result = await client
-      .select()
-      .from(channelProducts)
-      .where(eq(channelProducts.id, channelProductId));
+    const result = await client.select().from(channelProducts).where(eq(channelProducts.id, channelProductId));
 
     return result.length > 0 ? result[0] : null;
   }
@@ -203,8 +163,7 @@ export class ChannelProductsService {
     }
 
     // WHERE 조건 결합
-    const whereClause =
-      whereConditions.length > 0 ? and(...whereConditions) : undefined;
+    const whereClause = whereConditions.length > 0 ? and(...whereConditions) : undefined;
 
     // 1. 전체 개수 조회
     const countQuery = client
@@ -212,10 +171,7 @@ export class ChannelProductsService {
       .from(channelProducts)
       .innerJoin(
         productMasterVersions,
-        and(
-          eq(channelProducts.masterId, productMasterVersions.masterId),
-          eq(productMasterVersions.status, 'active'),
-        ),
+        and(eq(channelProducts.masterId, productMasterVersions.masterId), eq(productMasterVersions.status, 'active')),
       );
 
     if (whereClause) {
@@ -258,10 +214,7 @@ export class ChannelProductsService {
       .from(channelProducts)
       .innerJoin(
         productMasterVersions,
-        and(
-          eq(channelProducts.masterId, productMasterVersions.masterId),
-          eq(productMasterVersions.status, 'active'),
-        ),
+        and(eq(channelProducts.masterId, productMasterVersions.masterId), eq(productMasterVersions.status, 'active')),
       )
       .orderBy(desc(channelProducts.createdAt))
       .limit(limit)
@@ -274,13 +227,10 @@ export class ChannelProductsService {
     const rawData = await dataQuery;
 
     // product_images에서 primary 이미지 조회 (thumbnail용)
-    const versionIds = rawData.map(item => item.versionId);
-    const thumbnailMap = await this.productReadAssembler.getPrimaryImagesByVersionIds(
-      versionIds,
-      tx,
-    );
+    const versionIds = rawData.map((item) => item.versionId);
+    const thumbnailMap = await this.productReadAssembler.getPrimaryImagesByVersionIds(versionIds, tx);
 
-    const data = rawData.map(item => ({
+    const data = rawData.map((item) => ({
       ...item,
       master: {
         ...item.master,
@@ -340,10 +290,7 @@ export class ChannelProductsService {
     return result[0];
   }
 
-  async deleteChannelProduct(
-    channelProductId: string,
-    tx?: DbTransaction,
-  ): Promise<void> {
+  async deleteChannelProduct(channelProductId: string, tx?: DbTransaction): Promise<void> {
     if (!channelProductId) {
       throw new Error('Channel Product ID is required');
     }
@@ -357,9 +304,7 @@ export class ChannelProductsService {
     }
 
     // 2. 삭제 실행
-    await client
-      .delete(channelProducts)
-      .where(eq(channelProducts.id, channelProductId));
+    await client.delete(channelProducts).where(eq(channelProducts.id, channelProductId));
   }
 
   async getMergedChannelProduct(
@@ -403,17 +348,9 @@ export class ChannelProductsService {
       .from(channelProducts)
       .innerJoin(
         productMasterVersions,
-        and(
-          eq(channelProducts.masterId, productMasterVersions.masterId),
-          eq(productMasterVersions.status, 'active')
-        ),
+        and(eq(channelProducts.masterId, productMasterVersions.masterId), eq(productMasterVersions.status, 'active')),
       )
-      .where(
-        and(
-          eq(channelProducts.masterId, masterId),
-          eq(channelProducts.channelId, channelId),
-        ),
-      );
+      .where(and(eq(channelProducts.masterId, masterId), eq(channelProducts.channelId, channelId)));
 
     if (result.length === 0) {
       return null; // 채널 상품이 존재하지 않음
@@ -422,10 +359,7 @@ export class ChannelProductsService {
     const data = result[0];
 
     // product_images에서 이미지 조회
-    const images = await this.productReadAssembler.getImagesByVersionId(
-      data.versionId,
-      tx,
-    );
+    const images = await this.productReadAssembler.getImagesByVersionId(data.versionId, tx);
 
     // 2. 데이터 병합 로직
     return {
@@ -434,17 +368,13 @@ export class ChannelProductsService {
       channelId: data.channelProduct.channelId,
       name: data.channelProduct.name ?? data.master.name, // 채널 상품 이름 우선, 없으면 원본
       description: data.master.description ?? '',
-      images: images.map(img => img.fileId), // product_images에서 가져온 fileId 배열
+      images: images.map((img) => img.fileId), // product_images에서 가져온 fileId 배열
       isActive: data.channelProduct.isActive ?? true,
       channelSpecificData: data.channelProduct.channelSpecificData,
     };
   }
 
-  async overrideProductName(
-    channelProductId: string,
-    name: string,
-    tx?: DbTransaction,
-  ): Promise<void> {
+  async overrideProductName(channelProductId: string, name: string, tx?: DbTransaction): Promise<void> {
     if (!channelProductId) {
       throw new Error('Channel Product ID is required');
     }
@@ -471,11 +401,7 @@ export class ChannelProductsService {
       .where(eq(channelProducts.id, channelProductId));
   }
 
-  async setChannelProductActive(
-    channelProductId: string,
-    isActive: boolean,
-    tx?: DbTransaction,
-  ): Promise<void> {
+  async setChannelProductActive(channelProductId: string, isActive: boolean, tx?: DbTransaction): Promise<void> {
     if (!channelProductId) {
       throw new Error('Channel Product ID is required');
     }
@@ -498,11 +424,7 @@ export class ChannelProductsService {
       .where(eq(channelProducts.id, channelProductId));
   }
 
-  async setChannelSpecificData(
-    channelProductId: string,
-    data: any,
-    tx?: DbTransaction,
-  ): Promise<void> {
+  async setChannelSpecificData(channelProductId: string, data: any, tx?: DbTransaction): Promise<void> {
     if (!channelProductId) {
       throw new Error('Channel Product ID is required');
     }
@@ -525,11 +447,7 @@ export class ChannelProductsService {
       .where(eq(channelProducts.id, channelProductId));
   }
 
-  async existsChannelProduct(
-    masterId: string,
-    channelId: string,
-    tx?: DbTransaction,
-  ): Promise<boolean> {
+  async existsChannelProduct(masterId: string, channelId: string, tx?: DbTransaction): Promise<boolean> {
     if (!masterId || !channelId) {
       return false;
     }
@@ -539,12 +457,7 @@ export class ChannelProductsService {
     const result = await client
       .select({ count: count() })
       .from(channelProducts)
-      .where(
-        and(
-          eq(channelProducts.masterId, masterId),
-          eq(channelProducts.channelId, channelId),
-        ),
-      );
+      .where(and(eq(channelProducts.masterId, masterId), eq(channelProducts.channelId, channelId)));
 
     return result[0].count > 0;
   }
@@ -572,12 +485,7 @@ export class ChannelProductsService {
     const masterExists = await client
       .select({ id: productMasterVersions.masterId })
       .from(productMasterVersions)
-      .where(
-        and(
-          eq(productMasterVersions.masterId, masterId),
-          eq(productMasterVersions.status, 'active')
-        )
-      );
+      .where(and(eq(productMasterVersions.masterId, masterId), eq(productMasterVersions.status, 'active')));
 
     if (masterExists.length === 0) {
       errors.push(`Master not found or no active version: ${masterId}`);
@@ -597,16 +505,10 @@ export class ChannelProductsService {
       if (settings.name && settings.name.length > 255) {
         errors.push('Product name is too long (max 255 characters)');
       }
-      if (
-        settings.isActive !== undefined &&
-        typeof settings.isActive !== 'boolean'
-      ) {
+      if (settings.isActive !== undefined && typeof settings.isActive !== 'boolean') {
         errors.push('isActive must be a boolean value');
       }
-      if (
-        settings.channelSpecificData &&
-        JSON.stringify(settings.channelSpecificData).length > 10000
-      ) {
+      if (settings.channelSpecificData && JSON.stringify(settings.channelSpecificData).length > 10000) {
         errors.push('Channel specific data is too large (max 10KB)');
       }
     }
@@ -659,17 +561,13 @@ export class ChannelProductsService {
       switch (channelInfo.type) {
         case 'coupang':
           if (productData.name && productData.name.length > 100) {
-            violations.push(
-              'Coupang product name must be 100 characters or less',
-            );
+            violations.push('Coupang product name must be 100 characters or less');
           }
           break;
 
         case 'smartstore':
           if (productData.name && productData.name.length > 80) {
-            violations.push(
-              'SmartStore product name must be 80 characters or less',
-            );
+            violations.push('SmartStore product name must be 80 characters or less');
           }
           break;
 
@@ -734,12 +632,7 @@ export class ChannelProductsService {
       const masterExists = await txn
         .select({ id: productMasterVersions.masterId })
         .from(productMasterVersions)
-        .where(
-          and(
-            eq(productMasterVersions.masterId, masterId),
-            eq(productMasterVersions.status, 'active')
-          )
-        );
+        .where(and(eq(productMasterVersions.masterId, masterId), eq(productMasterVersions.status, 'active')));
 
       if (masterExists.length === 0) {
         throw new Error(`Master not found or no active version: ${masterId}`);
@@ -754,9 +647,7 @@ export class ChannelProductsService {
         .where(inArray(salesChannels.id, uniqueChannelIds));
 
       const existingChannelIds = existingChannels.map((ch: any) => ch.id);
-      const missingChannelIds = uniqueChannelIds.filter(
-        (id) => !existingChannelIds.includes(id),
-      );
+      const missingChannelIds = uniqueChannelIds.filter((id) => !existingChannelIds.includes(id));
 
       if (missingChannelIds.length > 0) {
         throw new Error(`Channels not found: ${missingChannelIds.join(', ')}`);
@@ -766,24 +657,15 @@ export class ChannelProductsService {
       const existingChannelProducts = await txn
         .select({ channelId: channelProducts.channelId })
         .from(channelProducts)
-        .where(
-          and(
-            eq(channelProducts.masterId, masterId),
-            inArray(channelProducts.channelId, uniqueChannelIds),
-          ),
-        );
+        .where(and(eq(channelProducts.masterId, masterId), inArray(channelProducts.channelId, uniqueChannelIds)));
 
-      const existingChannelProductIds = existingChannelProducts.map(
-        (cp: any) => cp.channelId,
-      );
+      const existingChannelProductIds = existingChannelProducts.map((cp: any) => cp.channelId);
       const duplicateChannelIds = channelConfigs
         .map((config) => config.channelId)
         .filter((id) => existingChannelProductIds.includes(id));
 
       if (duplicateChannelIds.length > 0) {
-        throw new Error(
-          `Channel products already exist for channels: ${duplicateChannelIds.join(', ')}`,
-        );
+        throw new Error(`Channel products already exist for channels: ${duplicateChannelIds.join(', ')}`);
       }
 
       const channelProductsData = channelConfigs.map((config) => ({
@@ -794,10 +676,7 @@ export class ChannelProductsService {
         channelSpecificData: config.channelSpecificData || null,
       }));
 
-      const result = await txn
-        .insert(channelProducts)
-        .values(channelProductsData)
-        .returning();
+      const result = await txn.insert(channelProducts).values(channelProductsData).returning();
 
       return result;
     };
@@ -811,10 +690,7 @@ export class ChannelProductsService {
     }
   }
 
-  async getActiveProductCountByChannel(
-    channelId: string,
-    tx?: DbTransaction,
-  ): Promise<number> {
+  async getActiveProductCountByChannel(channelId: string, tx?: DbTransaction): Promise<number> {
     if (!channelId) {
       throw new Error('Channel ID is required');
     }
@@ -824,12 +700,7 @@ export class ChannelProductsService {
     const result = await client
       .select({ count: count() })
       .from(channelProducts)
-      .where(
-        and(
-          eq(channelProducts.channelId, channelId),
-          eq(channelProducts.isActive, true),
-        ),
-      );
+      .where(and(eq(channelProducts.channelId, channelId), eq(channelProducts.isActive, true)));
 
     return result[0].count;
   }

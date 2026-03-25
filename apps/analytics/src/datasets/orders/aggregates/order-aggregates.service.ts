@@ -23,10 +23,7 @@ export class OrderAggregatesService {
     return tx ? fn(tx) : this.db.transaction(fn);
   }
 
-  async applyOrderCreated(
-    seeds: OrderAggregateSeed[],
-    tx?: DbTx,
-  ): Promise<void> {
+  async applyOrderCreated(seeds: OrderAggregateSeed[], tx?: DbTx): Promise<void> {
     if (seeds.length === 0) {
       return;
     }
@@ -73,11 +70,7 @@ export class OrderAggregatesService {
             updatedAt: now,
           })
           .onConflictDoUpdate({
-            target: [
-              aggProductOrderDaily.aggDate,
-              aggProductOrderDaily.masterId,
-              aggProductOrderDaily.salesChannel,
-            ],
+            target: [aggProductOrderDaily.aggDate, aggProductOrderDaily.masterId, aggProductOrderDaily.salesChannel],
             set: {
               ordersCount: sql`${aggProductOrderDaily.ordersCount} + ${increment.ordersCount}`,
               quantitySold: sql`${aggProductOrderDaily.quantitySold} + ${increment.quantitySold}`,
@@ -87,8 +80,6 @@ export class OrderAggregatesService {
       }
     }, tx);
 
-    this.logger.debug(
-      `OrderCreated aggregates updated: ${increments.size} rows`,
-    );
+    this.logger.debug(`OrderCreated aggregates updated: ${increments.size} rows`);
   }
 }

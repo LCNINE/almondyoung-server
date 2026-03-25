@@ -11,10 +11,7 @@ export type PauseSubscriptionInput = {
 export type ResumeSubscriptionInput = {
   reason?: string;
 };
-export type PauseHistoryItem = Pick<
-  SubscriptionPause,
-  'id' | 'eventType' | 'reason'
-> & {
+export type PauseHistoryItem = Pick<SubscriptionPause, 'id' | 'eventType' | 'reason'> & {
   createdAt: string;
   startsAt?: string;
   endsAt?: string;

@@ -10,7 +10,7 @@ export class ProductAuditService {
   constructor(
     @InjectTypedDb<typeof pimSchema>()
     private readonly dbService: DbService<typeof pimSchema>,
-  ) { }
+  ) {}
 
   private get db() {
     return this.dbService.db;
@@ -31,11 +31,7 @@ export class ProductAuditService {
    * Get recent audit logs (all products)
    */
   async getRecentAuditLogs(limit = 100) {
-    return this.db
-      .select()
-      .from(productAuditLog)
-      .orderBy(desc(productAuditLog.timestamp))
-      .limit(limit);
+    return this.db.select().from(productAuditLog).orderBy(desc(productAuditLog.timestamp)).limit(limit);
   }
 
   /**
@@ -66,11 +62,7 @@ export class ProductAuditService {
    * Manually log an audit entry
    */
   async logAuditEntry(entry: NewProductAuditLog) {
-    const [logged] = await this.db
-      .insert(productAuditLog)
-      .values(entry)
-      .returning();
+    const [logged] = await this.db.insert(productAuditLog).values(entry).returning();
     return logged;
   }
 }
-

@@ -27,33 +27,23 @@ export class AuthModule {
     const naverClientSecret = process.env.NAVER_CLIENT_SECRET;
     const naverCallbackUrl = process.env.NAVER_CALLBACK_URL;
 
-    const hasKakaoConfig =
-      kakaoClientId && kakaoClientSecret && kakaoCallbackUrl;
+    const hasKakaoConfig = kakaoClientId && kakaoClientSecret && kakaoCallbackUrl;
 
-    const hasNaverConfig =
-      naverClientId && naverClientSecret && naverCallbackUrl;
+    const hasNaverConfig = naverClientId && naverClientSecret && naverCallbackUrl;
 
     if (hasKakaoConfig) {
       console.log('✅ Kakao OAuth Strategy 활성화');
     } else {
-      console.warn(
-        '⚠️  Kakao OAuth 환경 변수가 설정되지 않아 Kakao 로그인이 비활성화됩니다.',
-      );
+      console.warn('⚠️  Kakao OAuth 환경 변수가 설정되지 않아 Kakao 로그인이 비활성화됩니다.');
     }
 
     if (hasNaverConfig) {
       console.log('✅ Naver OAuth Strategy 활성화');
     } else {
-      console.warn(
-        '⚠️  Naver OAuth 환경 변수가 설정되지 않아 Naver 로그인이 비활성화됩니다.',
-      );
+      console.warn('⚠️  Naver OAuth 환경 변수가 설정되지 않아 Naver 로그인이 비활성화됩니다.');
     }
 
-    const providers: Provider[] = [
-      AuthService,
-      JwtAccessStrategy,
-      JwtRefreshStrategy,
-    ];
+    const providers: Provider[] = [AuthService, JwtAccessStrategy, JwtRefreshStrategy];
 
     // Kakao 설정이 있을 때만 Strategy 추가
     if (hasKakaoConfig) {
@@ -77,10 +67,7 @@ export class AuthModule {
           useFactory: async (configService: ConfigService) => ({
             secret: configService.get('JWT_VERIFICATION_TOKEN_SECRET'),
             signOptions: {
-              expiresIn: configService.get(
-                'JWT_ACCESS_TOKEN_EXPIRATION',
-                '15m',
-              ),
+              expiresIn: configService.get('JWT_ACCESS_TOKEN_EXPIRATION', '15m'),
             },
           }),
           inject: [ConfigService],

@@ -1,8 +1,7 @@
 import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
 import { type SubscriberConfig, type SubscriberArgs } from '@medusajs/medusa';
 
-const MEMBERSHIP_SERVICE_URL =
-  process.env.MEMBERSHIP_SERVICE_URL || 'http://localhost:3040';
+const MEMBERSHIP_SERVICE_URL = process.env.MEMBERSHIP_SERVICE_URL || 'http://localhost:3040';
 
 type OrderItem = {
   id: string;
@@ -18,24 +17,15 @@ type OrderData = {
   items?: OrderItem[];
 };
 
-async function getAlmondUserId(
-  customerId: string,
-  container: any,
-): Promise<string | null> {
+async function getAlmondUserId(customerId: string, container: any): Promise<string | null> {
   const customerModule = container.resolve(Modules.CUSTOMER);
   const customer = await customerModule.retrieveCustomer(customerId, {
     select: ['metadata'],
   });
-  return (
-    ((customer?.metadata as Record<string, unknown> | null)
-      ?.almond_user_id as string | undefined) ?? null
-  );
+  return ((customer?.metadata as Record<string, unknown> | null)?.almond_user_id as string | undefined) ?? null;
 }
 
-async function getOrderWithPricing(
-  orderId: string,
-  container: any,
-): Promise<OrderData | null> {
+async function getOrderWithPricing(orderId: string, container: any): Promise<OrderData | null> {
   const query = container.resolve(ContainerRegistrationKeys.QUERY);
   const { data } = await query.graph({
     entity: 'order',
@@ -63,10 +53,7 @@ function calculateMembershipDiscount(items: OrderItem[]): number {
   }, 0);
 }
 
-export default async function handleMembershipBenefitOrder({
-  event,
-  container,
-}: SubscriberArgs<{ id: string }>) {
+export default async function handleMembershipBenefitOrder({ event, container }: SubscriberArgs<{ id: string }>) {
   const logger = container.resolve('logger');
   const orderId = event.data.id;
   const eventName = event.name;
@@ -87,9 +74,7 @@ export default async function handleMembershipBenefitOrder({
 
       const userId = await getAlmondUserId(customerId, container);
       if (!userId) {
-        logger.warn(
-          `[MembershipBenefit] Customer ${customerId} has no almond_user_id, skipping`,
-        );
+        logger.warn(`[MembershipBenefit] Customer ${customerId} has no almond_user_id, skipping`);
         return;
       }
 
@@ -116,15 +101,10 @@ export default async function handleMembershipBenefitOrder({
         signal: AbortSignal.timeout(5000),
       });
 
-      logger.info(
-        `[MembershipBenefit] Cancelled benefit for order ${orderId}`,
-      );
+      logger.info(`[MembershipBenefit] Cancelled benefit for order ${orderId}`);
     }
   } catch (err) {
-    logger.error(
-      `[MembershipBenefit] ${eventName} handler error for order ${orderId}:`,
-      err,
-    );
+    logger.error(`[MembershipBenefit] ${eventName} handler error for order ${orderId}:`, err);
   }
 }
 

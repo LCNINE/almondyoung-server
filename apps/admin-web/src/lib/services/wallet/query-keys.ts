@@ -1,4 +1,7 @@
-import type { PaymentIntentListQuery, RefundListQuery } from '@/lib/types/dto/wallet';
+import type {
+  PaymentIntentListQuery,
+  RefundListQuery,
+} from '@/lib/types/dto/wallet';
 
 export const walletQueryKeys = {
   all: ['wallet'] as const,
@@ -7,8 +10,7 @@ export const walletQueryKeys = {
   intents: () => [...walletQueryKeys.all, 'intents'] as const,
   intentList: (query: PaymentIntentListQuery) =>
     [...walletQueryKeys.intents(), 'list', query] as const,
-  intentDetail: (id: string) =>
-    [...walletQueryKeys.intents(), id] as const,
+  intentDetail: (id: string) => [...walletQueryKeys.intents(), id] as const,
   stateTransitions: (id: string) =>
     [...walletQueryKeys.intents(), id, 'state-transitions'] as const,
 

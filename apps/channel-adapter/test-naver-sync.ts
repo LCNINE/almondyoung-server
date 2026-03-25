@@ -27,21 +27,15 @@ class NaverSyncTester {
     this.adapter = new NaverSmartstoreAdapter(naverApiService);
 
     console.log('🔧 환경변수 확인:');
-    console.log(
-      `   NAVER_CLIENT_ID: ${process.env.NAVER_CLIENT_ID ? '✅ 설정됨' : '❌ 누락'}`,
-    );
-    console.log(
-      `   NAVER_CLIENT_SECRET: ${process.env.NAVER_CLIENT_SECRET ? '✅ 설정됨' : '❌ 누락'}`,
-    );
+    console.log(`   NAVER_CLIENT_ID: ${process.env.NAVER_CLIENT_ID ? '✅ 설정됨' : '❌ 누락'}`);
+    console.log(`   NAVER_CLIENT_SECRET: ${process.env.NAVER_CLIENT_SECRET ? '✅ 설정됨' : '❌ 누락'}`);
     console.log(
       `   NAVER_API_ENDPOINT: ${process.env.NAVER_API_ENDPOINT || 'https://api.commerce.naver.com/external/v1'}`,
     );
     console.log('');
 
     if (!process.env.NAVER_CLIENT_ID || !process.env.NAVER_CLIENT_SECRET) {
-      throw new Error(
-        '❌ NAVER_CLIENT_ID 또는 NAVER_CLIENT_SECRET이 설정되지 않았습니다.',
-      );
+      throw new Error('❌ NAVER_CLIENT_ID 또는 NAVER_CLIENT_SECRET이 설정되지 않았습니다.');
     }
   }
 
@@ -63,9 +57,7 @@ class NaverSyncTester {
 
         console.log('\n📊 이벤트 요약:');
         events.forEach((event, index) => {
-          console.log(
-            `   ${index + 1}. ${event.externalOrderId} - ${event.status} (${event.lastChangedType})`,
-          );
+          console.log(`   ${index + 1}. ${event.externalOrderId} - ${event.status} (${event.lastChangedType})`);
         });
       }
 
@@ -75,10 +67,7 @@ class NaverSyncTester {
 
       if (error.response) {
         console.error('   HTTP Status:', error.response.status);
-        console.error(
-          '   Response Data:',
-          JSON.stringify(error.response.data, null, 2),
-        );
+        console.error('   Response Data:', JSON.stringify(error.response.data, null, 2));
       }
 
       throw error;

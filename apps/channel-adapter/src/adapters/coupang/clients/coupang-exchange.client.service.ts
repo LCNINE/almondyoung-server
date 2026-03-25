@@ -37,16 +37,11 @@ export class CoupangExchangeClient extends CoupangBaseClient {
    * @param params 조회 기간 및 필터 정보
    * @returns API 응답 데이터
    */
-  async getExchangeRequests(
-    params: GetExchangeRequestsParams,
-  ): Promise<GetExchangeRequestsResponse> {
+  async getExchangeRequests(params: GetExchangeRequestsParams): Promise<GetExchangeRequestsResponse> {
     const parsedParams = GetExchangeRequestsParamsSchema.safeParse(params);
     if (!parsedParams.success) {
       const flattenedErrors = parsedParams.error.flatten();
-      this.logger.error(
-        '❌ 교환요청 목록 조회 파라미터 검증 실패:',
-        flattenedErrors,
-      );
+      this.logger.error('❌ 교환요청 목록 조회 파라미터 검증 실패:', flattenedErrors);
       throw new BadRequestException({
         message: '교환요청 목록 조회 입력값 유효성 검사에 실패했습니다.',
         errors: flattenedErrors.fieldErrors,
@@ -61,26 +56,16 @@ export class CoupangExchangeClient extends CoupangBaseClient {
         createdAtFrom: parsedParams.data.createdAtFrom,
         createdAtTo: parsedParams.data.createdAtTo,
       };
-      if (parsedParams.data.status)
-        queryParams.status = parsedParams.data.status;
-      if (parsedParams.data.orderId)
-        queryParams.orderId = String(parsedParams.data.orderId);
-      if (parsedParams.data.nextToken)
-        queryParams.nextToken = parsedParams.data.nextToken;
-      if (parsedParams.data.maxPerPage)
-        queryParams.maxPerPage = String(parsedParams.data.maxPerPage);
+      if (parsedParams.data.status) queryParams.status = parsedParams.data.status;
+      if (parsedParams.data.orderId) queryParams.orderId = String(parsedParams.data.orderId);
+      if (parsedParams.data.nextToken) queryParams.nextToken = parsedParams.data.nextToken;
+      if (parsedParams.data.maxPerPage) queryParams.maxPerPage = String(parsedParams.data.maxPerPage);
 
       const query = new URLSearchParams(queryParams).toString();
       this.logger.log(`🔍 쿠팡 교환요청 목록 조회 요청: ${query}`);
 
       const path = `/v2/providers/openapi/apis/api/v4/vendors/${config.vendorId}/exchangeRequests`;
-      const authorization = this.generateAuthHeader(
-        config.accessKey,
-        config.secretKey,
-        'GET',
-        path,
-        query,
-      );
+      const authorization = this.generateAuthHeader(config.accessKey, config.secretKey, 'GET', path, query);
       const url = `${config.apiEndpoint}${path}?${query}`;
 
       const response = await firstValueFrom(
@@ -92,9 +77,7 @@ export class CoupangExchangeClient extends CoupangBaseClient {
         }),
       );
 
-      this.logger.log(
-        `👍 교환요청 목록 조회 성공: ${response.data.data.length}건`,
-      );
+      this.logger.log(`👍 교환요청 목록 조회 성공: ${response.data.data.length}건`);
       return response.data;
     } catch (error) {
       if (error.response) {
@@ -116,14 +99,10 @@ export class CoupangExchangeClient extends CoupangBaseClient {
   async confirmExchangeReceipt(
     payload: CoupangConfirmExchangeReceiptRequest,
   ): Promise<CoupangConfirmExchangeReceiptResponse> {
-    const parsedReq =
-      CoupangConfirmExchangeReceiptRequestSchema.safeParse(payload);
+    const parsedReq = CoupangConfirmExchangeReceiptRequestSchema.safeParse(payload);
     if (!parsedReq.success) {
       const flattenedErrors = parsedReq.error.flatten();
-      this.logger.error(
-        '❌ 교환상품 입고확인 파라미터 검증 실패:',
-        flattenedErrors,
-      );
+      this.logger.error('❌ 교환상품 입고확인 파라미터 검증 실패:', flattenedErrors);
       throw new BadRequestException({
         message: '교환상품 입고확인 입력값 유효성 검사에 실패했습니다.',
         errors: flattenedErrors.fieldErrors,
@@ -137,30 +116,19 @@ export class CoupangExchangeClient extends CoupangBaseClient {
       this.logger.log(`🚚 쿠팡 교환상품 입고확인 처리 요청: ${exchangeId}`);
 
       const path = `/v2/providers/openapi/apis/api/v4/vendors/${config.vendorId}/exchangeRequests/${exchangeId}/receiveConfirmation`;
-      const authorization = this.generateAuthHeader(
-        config.accessKey,
-        config.secretKey,
-        'PATCH',
-        path,
-      );
+      const authorization = this.generateAuthHeader(config.accessKey, config.secretKey, 'PATCH', path);
       const url = `${config.apiEndpoint}${path}`;
 
       const response = await firstValueFrom(
-        this.http.patch<CoupangConfirmExchangeReceiptResponse>(
-          url,
-          parsedReq.data,
-          {
-            headers: {
-              Authorization: authorization,
-              'Content-Type': 'application/json',
-            },
+        this.http.patch<CoupangConfirmExchangeReceiptResponse>(url, parsedReq.data, {
+          headers: {
+            Authorization: authorization,
+            'Content-Type': 'application/json',
           },
-        ),
+        }),
       );
 
-      this.logger.log(
-        `👍 교환상품 입고확인 처리 성공: ${exchangeId} - ${response.data.message}`,
-      );
+      this.logger.log(`👍 교환상품 입고확인 처리 성공: ${exchangeId} - ${response.data.message}`);
       return response.data;
     } catch (error) {
       if (error.response) {
@@ -168,9 +136,7 @@ export class CoupangExchangeClient extends CoupangBaseClient {
           `❌ 쿠팡 교환상품 입고확인 처리 실패: ${error.response.status} - ${error.response.data?.error?.message || error.message}`,
         );
       } else {
-        this.logger.error(
-          `❌ 쿠팡 교환상품 입고확인 처리 실패: ${error.message}`,
-        );
+        this.logger.error(`❌ 쿠팡 교환상품 입고확인 처리 실패: ${error.message}`);
       }
       throw new Error(`쿠팡 교환상품 입고확인 처리 실패: ${error.message}`);
     }
@@ -181,16 +147,11 @@ export class CoupangExchangeClient extends CoupangBaseClient {
    * @param payload 거부할 exchangeId와 거부 코드
    * @returns API 응답 데이터
    */
-  async rejectExchangeRequest(
-    payload: CoupangRejectExchangeRequest,
-  ): Promise<CoupangRejectExchangeResponse> {
+  async rejectExchangeRequest(payload: CoupangRejectExchangeRequest): Promise<CoupangRejectExchangeResponse> {
     const parsedReq = CoupangRejectExchangeRequestSchema.safeParse(payload);
     if (!parsedReq.success) {
       const flattenedErrors = parsedReq.error.flatten();
-      this.logger.error(
-        '❌ 교환요청 거부 파라미터 검증 실패:',
-        flattenedErrors,
-      );
+      this.logger.error('❌ 교환요청 거부 파라미터 검증 실패:', flattenedErrors);
       throw new BadRequestException({
         message: '교환요청 거부 입력값 유효성 검사에 실패했습니다.',
         errors: flattenedErrors.fieldErrors,
@@ -204,12 +165,7 @@ export class CoupangExchangeClient extends CoupangBaseClient {
       this.logger.log(`🚫 쿠팡 교환요청 거부 처리 요청: ${exchangeId}`);
 
       const path = `/v2/providers/openapi/apis/api/v4/vendors/${config.vendorId}/exchangeRequests/${exchangeId}/rejection`;
-      const authorization = this.generateAuthHeader(
-        config.accessKey,
-        config.secretKey,
-        'PATCH',
-        path,
-      );
+      const authorization = this.generateAuthHeader(config.accessKey, config.secretKey, 'PATCH', path);
       const url = `${config.apiEndpoint}${path}`;
 
       const response = await firstValueFrom(
@@ -221,9 +177,7 @@ export class CoupangExchangeClient extends CoupangBaseClient {
         }),
       );
 
-      this.logger.log(
-        `👍 교환요청 거부 처리 완료: ${exchangeId} - ${response.data.data.resultMessage}`,
-      );
+      this.logger.log(`👍 교환요청 거부 처리 완료: ${exchangeId} - ${response.data.data.resultMessage}`);
       return response.data;
     } catch (error) {
       if (error.response) {
@@ -247,14 +201,10 @@ export class CoupangExchangeClient extends CoupangBaseClient {
     exchangeId: number | string,
     payload: CoupangUploadExchangeInvoiceRequest,
   ): Promise<CoupangUploadExchangeInvoiceResponse> {
-    const parsedReq =
-      CoupangUploadExchangeInvoiceRequestSchema.safeParse(payload);
+    const parsedReq = CoupangUploadExchangeInvoiceRequestSchema.safeParse(payload);
     if (!parsedReq.success) {
       const flattenedErrors = parsedReq.error.flatten();
-      this.logger.error(
-        '❌ 교환상품 송장업로드 파라미터 검증 실패:',
-        flattenedErrors,
-      );
+      this.logger.error('❌ 교환상품 송장업로드 파라미터 검증 실패:', flattenedErrors);
       throw new BadRequestException({
         message: '교환상품 송장업로드 입력값 유효성 검사에 실패했습니다.',
         errors: flattenedErrors.fieldErrors,
@@ -267,30 +217,19 @@ export class CoupangExchangeClient extends CoupangBaseClient {
       this.logger.log(`🚀 쿠팡 교환상품 송장업로드 처리 요청: ${exchangeId}`);
 
       const path = `/v2/providers/openapi/apis/api/v4/vendors/${config.vendorId}/exchangeRequests/${exchangeId}/invoices`;
-      const authorization = this.generateAuthHeader(
-        config.accessKey,
-        config.secretKey,
-        'POST',
-        path,
-      );
+      const authorization = this.generateAuthHeader(config.accessKey, config.secretKey, 'POST', path);
       const url = `${config.apiEndpoint}${path}`;
 
       const response = await firstValueFrom(
-        this.http.post<CoupangUploadExchangeInvoiceResponse>(
-          url,
-          parsedReq.data,
-          {
-            headers: {
-              Authorization: authorization,
-              'Content-Type': 'application/json',
-            },
+        this.http.post<CoupangUploadExchangeInvoiceResponse>(url, parsedReq.data, {
+          headers: {
+            Authorization: authorization,
+            'Content-Type': 'application/json',
           },
-        ),
+        }),
       );
 
-      this.logger.log(
-        `👍 교환상품 송장업로드 처리 완료: ${exchangeId} - ${response.data.data.resultMessage}`,
-      );
+      this.logger.log(`👍 교환상품 송장업로드 처리 완료: ${exchangeId} - ${response.data.data.resultMessage}`);
       return response.data;
     } catch (error) {
       if (error.response) {
@@ -298,9 +237,7 @@ export class CoupangExchangeClient extends CoupangBaseClient {
           `❌ 쿠팡 교환상품 송장업로드 처리 실패: ${error.response.status} - ${error.response.data?.error?.message || error.message}`,
         );
       } else {
-        this.logger.error(
-          `❌ 쿠팡 교환상품 송장업로드 처리 실패: ${error.message}`,
-        );
+        this.logger.error(`❌ 쿠팡 교환상품 송장업로드 처리 실패: ${error.message}`);
       }
       throw new Error(`쿠팡 교환상품 송장업로드 처리 실패: ${error.message}`);
     }

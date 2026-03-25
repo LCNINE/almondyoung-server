@@ -22,8 +22,12 @@ export async function POST(request: NextRequest) {
 
   // user-service가 Set-Cookie로 accessToken/refreshToken을 내려줬을 경우 파싱
   const setCookieHeader = upstream.headers.get('set-cookie') ?? '';
-  const accessTokenMatch = setCookieHeader.match(/(?:^|,\s*)accessToken=([^;,]+)/);
-  const refreshTokenMatch = setCookieHeader.match(/(?:^|,\s*)refreshToken=([^;,]+)/);
+  const accessTokenMatch = setCookieHeader.match(
+    /(?:^|,\s*)accessToken=([^;,]+)/
+  );
+  const refreshTokenMatch = setCookieHeader.match(
+    /(?:^|,\s*)refreshToken=([^;,]+)/
+  );
 
   // body에서도 fallback 추출 (일부 구현은 body로 내려주기도 함)
   const accessToken = accessTokenMatch?.[1] ?? data?.data?.accessToken ?? '';

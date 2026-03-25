@@ -1,27 +1,13 @@
-import {
-  AuthenticationInput,
-  ConfigModule,
-  IAuthModuleService,
-} from '@medusajs/framework/types';
-import {
-  ContainerRegistrationKeys,
-  MedusaError,
-  Modules,
-} from '@medusajs/framework/utils';
-import {
-  AuthenticatedMedusaRequest,
-  MedusaRequest,
-  MedusaResponse,
-} from '@medusajs/framework/http';
+import { AuthenticationInput, ConfigModule, IAuthModuleService } from '@medusajs/framework/types';
+import { ContainerRegistrationKeys, MedusaError, Modules } from '@medusajs/framework/utils';
+import { AuthenticatedMedusaRequest, MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { generateJwtTokenForAuthIdentity } from '../../../../utils/generate-jwt-token';
 import { setAuthCookie } from '../../../../utils/set-auth-cookie';
 import { jwtVerify } from '../../../../utils/jwt-verify';
 import { registerCustomerWorkflow } from '../../../../workflows/auth/workflows/register-customer-workflow';
 import { registerUserWorkflow } from '../../../../workflows/auth/workflows/register-user-workflow';
 
-const normalizeRecord = (
-  input: unknown,
-): Record<string, string> | undefined => {
+const normalizeRecord = (input: unknown): Record<string, string> | undefined => {
   if (!input || typeof input !== 'object') {
     return undefined;
   }
@@ -53,9 +39,7 @@ const normalizeRecord = (
   return Object.keys(record).length ? record : undefined;
 };
 
-const buildAuthData = (
-  req: MedusaRequest | AuthenticatedMedusaRequest,
-): AuthenticationInput => ({
+const buildAuthData = (req: MedusaRequest | AuthenticatedMedusaRequest): AuthenticationInput => ({
   url: req.url,
   headers: normalizeRecord(req.headers),
   query: normalizeRecord(req.query),
@@ -63,9 +47,7 @@ const buildAuthData = (
   protocol: req.protocol,
 });
 
-const extractUserServiceToken = (
-  req: MedusaRequest | AuthenticatedMedusaRequest,
-): string | undefined => {
+const extractUserServiceToken = (req: MedusaRequest | AuthenticatedMedusaRequest): string | undefined => {
   const authHeader = req.headers?.authorization;
 
   if (authHeader?.startsWith('Bearer ')) {
@@ -74,9 +56,7 @@ const extractUserServiceToken = (
 
   const cookies = req.headers?.cookie;
   if (cookies) {
-    const tokenCookie = cookies
-      .split(';')
-      .find((cookie) => cookie.trim().startsWith('accessToken='));
+    const tokenCookie = cookies.split(';').find((cookie) => cookie.trim().startsWith('accessToken='));
     if (tokenCookie) {
       return tokenCookie.split('=')[1];
     }
@@ -96,26 +76,19 @@ const extractUserServiceToken = (
   return undefined;
 };
 
-const shouldAutoRegister = (error?: string) =>
-  typeof error === 'string' && error.toLowerCase().includes('not found');
+const shouldAutoRegister = (error?: string) => typeof error === 'string' && error.toLowerCase().includes('not found');
 
-export const GET = async (
-  req: AuthenticatedMedusaRequest,
-  res: MedusaResponse,
-) => {
+export const GET = async (req: AuthenticatedMedusaRequest, res: MedusaResponse) => {
   try {
     const { actor_type, auth_provider } = req.params;
 
-    const config: ConfigModule = req.scope.resolve(
-      ContainerRegistrationKeys.CONFIG_MODULE,
-    );
+    const config: ConfigModule = req.scope.resolve(ContainerRegistrationKeys.CONFIG_MODULE);
 
     const service: IAuthModuleService = req.scope.resolve(Modules.AUTH);
 
     const authData = buildAuthData(req);
 
-    let { success, error, authIdentity, location } =
-      await service.authenticate(auth_provider, authData);
+    let { success, error, authIdentity, location } = await service.authenticate(auth_provider, authData);
 
     if (location) {
       return res.status(200).json({ location });
@@ -124,14 +97,8 @@ export const GET = async (
     if (success && authIdentity) {
       const { http } = config.projectConfig;
 
-      if (
-        !http?.jwtSecret ||
-        (typeof http.jwtSecret === 'string' && http.jwtSecret.trim() === '')
-      ) {
-        throw new MedusaError(
-          MedusaError.Types.INVALID_DATA,
-          'JWT secret is not configured',
-        );
+      if (!http?.jwtSecret || (typeof http.jwtSecret === 'string' && http.jwtSecret.trim() === '')) {
+        throw new MedusaError(MedusaError.Types.INVALID_DATA, 'JWT secret is not configured');
       }
 
       const token = generateJwtTokenForAuthIdentity(
@@ -158,17 +125,11 @@ export const GET = async (
       const userServiceToken = extractUserServiceToken(req);
 
       if (!userServiceToken) {
-        throw new MedusaError(
-          MedusaError.Types.UNAUTHORIZED,
-          error || 'Authentication failed',
-        );
+        throw new MedusaError(MedusaError.Types.UNAUTHORIZED, error || 'Authentication failed');
       }
 
       if (!process.env.AUTH_SECRET) {
-        throw new MedusaError(
-          MedusaError.Types.UNAUTHORIZED,
-          'AUTH_SECRET is not defined',
-        );
+        throw new MedusaError(MedusaError.Types.UNAUTHORIZED, 'AUTH_SECRET is not defined');
       }
 
       const payload = jwtVerify(userServiceToken, process.env.AUTH_SECRET);
@@ -222,10 +183,7 @@ export const GET = async (
         }
       }
 
-      ({ success, error, authIdentity, location } = await service.authenticate(
-        auth_provider,
-        authData,
-      ));
+      ({ success, error, authIdentity, location } = await service.authenticate(auth_provider, authData));
 
       if (location) {
         return res.status(200).json({ location });
@@ -234,14 +192,8 @@ export const GET = async (
       if (success && authIdentity) {
         const { http } = config.projectConfig;
 
-        if (
-          !http?.jwtSecret ||
-          (typeof http.jwtSecret === 'string' && http.jwtSecret.trim() === '')
-        ) {
-          throw new MedusaError(
-            MedusaError.Types.INVALID_DATA,
-            'JWT secret is not configured',
-          );
+        if (!http?.jwtSecret || (typeof http.jwtSecret === 'string' && http.jwtSecret.trim() === '')) {
+          throw new MedusaError(MedusaError.Types.INVALID_DATA, 'JWT secret is not configured');
         }
 
         const token = generateJwtTokenForAuthIdentity(
@@ -264,27 +216,19 @@ export const GET = async (
       }
     }
 
-    throw new MedusaError(
-      MedusaError.Types.UNAUTHORIZED,
-      error || 'Authentication failed',
-    );
+    throw new MedusaError(MedusaError.Types.UNAUTHORIZED, error || 'Authentication failed');
   } catch (error) {
     console.error(`/auth/[actor_type]/[auth_provider] 에러`, error);
     if (error instanceof MedusaError) {
-      return res
-        .status(error.type === MedusaError.Types.UNAUTHORIZED ? 401 : 500)
-        .json({
-          error: error.message,
-          type: error.type,
-        });
+      return res.status(error.type === MedusaError.Types.UNAUTHORIZED ? 401 : 500).json({
+        error: error.message,
+        type: error.type,
+      });
     }
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
 
-export const POST = async (
-  req: AuthenticatedMedusaRequest,
-  res: MedusaResponse,
-) => {
+export const POST = async (req: AuthenticatedMedusaRequest, res: MedusaResponse) => {
   await GET(req, res);
 };

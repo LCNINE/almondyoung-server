@@ -7,7 +7,7 @@ import { z } from 'zod';
 const StartInspectionSchema = z.object({
   fulfillmentOrderId: z.string().uuid(),
   type: z.enum(['individual', 'batch']),
-  inspectorUserId: z.string()
+  inspectorUserId: z.string(),
 });
 
 const InspectItemSchema = z.object({
@@ -16,14 +16,18 @@ const InspectItemSchema = z.object({
   inspectedQty: z.number().int().min(0),
   approvedQty: z.number().int().min(0),
   rejectedQty: z.number().int().min(0).default(0),
-  issues: z.array(z.object({
-    type: z.enum(['quantity_mismatch', 'quality_issue', 'damage', 'wrong_item', 'other']),
-    severity: z.enum(['minor', 'major', 'critical']),
-    description: z.string(),
-    qty: z.number().int().min(0).optional(),
-    photos: z.array(z.string()).optional()
-  })).default([]),
-  inspectorUserId: z.string()
+  issues: z
+    .array(
+      z.object({
+        type: z.enum(['quantity_mismatch', 'quality_issue', 'damage', 'wrong_item', 'other']),
+        severity: z.enum(['minor', 'major', 'critical']),
+        description: z.string(),
+        qty: z.number().int().min(0).optional(),
+        photos: z.array(z.string()).optional(),
+      }),
+    )
+    .default([]),
+  inspectorUserId: z.string(),
 });
 
 const ForceShipmentSchema = z.object({
@@ -31,25 +35,23 @@ const ForceShipmentSchema = z.object({
   reason: z.string().min(1),
   authorizedBy: z.string().min(1),
   forceQty: z.number().int().positive(),
-  note: z.string().optional()
+  note: z.string().optional(),
 });
 
 const BulkApproveSchema = z.object({
   foiIds: z.array(z.string().uuid()).min(1),
-  inspectorUserId: z.string()
+  inspectorUserId: z.string(),
 });
 
 const CompleteSessionSchema = z.object({
   sessionId: z.string(),
-  inspectorUserId: z.string()
+  inspectorUserId: z.string(),
 });
 
 @ApiTags('Inspection')
 @Controller('inspection')
 export class InspectionController {
-  constructor(
-    private readonly inspectionService: InspectionService
-  ) {}
+  constructor(private readonly inspectionService: InspectionService) {}
 
   @Post('sessions')
   @ApiOperation({ summary: '품질검사 세션 시작', description: '주문처리에 대한 품질검사 세션을 시작합니다.' })
@@ -60,10 +62,10 @@ export class InspectionController {
       properties: {
         fulfillmentOrderId: { type: 'string', format: 'uuid', description: '주문처리 ID' },
         type: { type: 'string', enum: ['individual', 'batch'], description: '검사 타입' },
-        inspectorUserId: { type: 'string', description: '검사자 사용자 ID' }
+        inspectorUserId: { type: 'string', description: '검사자 사용자 ID' },
       },
-      required: ['fulfillmentOrderId', 'type', 'inspectorUserId']
-    }
+      required: ['fulfillmentOrderId', 'type', 'inspectorUserId'],
+    },
   })
   @ApiResponse({ status: 201, description: '품질검사 세션 시작 성공' })
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
@@ -82,10 +84,10 @@ export class InspectionController {
       type: 'object',
       properties: {
         sessionId: { type: 'string', description: '세션 ID' },
-        inspectorUserId: { type: 'string', description: '검사자 사용자 ID' }
+        inspectorUserId: { type: 'string', description: '검사자 사용자 ID' },
       },
-      required: ['sessionId', 'inspectorUserId']
-    }
+      required: ['sessionId', 'inspectorUserId'],
+    },
   })
   @ApiResponse({ status: 200, description: '품질검사 세션 완료 성공' })
   @ApiResponse({ status: 404, description: '품질검사 세션을 찾을 수 없음' })
@@ -93,7 +95,7 @@ export class InspectionController {
   @UsePipes(new ZodValidationPipe(CompleteSessionSchema))
   async completeInspectionSession(
     @Param('sessionId') sessionId: string,
-    @Body() dto: z.infer<typeof CompleteSessionSchema>
+    @Body() dto: z.infer<typeof CompleteSessionSchema>,
   ) {
     await this.inspectionService.completeInspectionSession(sessionId, dto.inspectorUserId);
     return { message: 'Inspection session completed successfully' };
@@ -121,14 +123,14 @@ export class InspectionController {
               severity: { type: 'string', enum: ['minor', 'major', 'critical'] },
               description: { type: 'string' },
               qty: { type: 'number', minimum: 0 },
-              photos: { type: 'array', items: { type: 'string' } }
-            }
-          }
+              photos: { type: 'array', items: { type: 'string' } },
+            },
+          },
         },
-        inspectorUserId: { type: 'string', description: '검사자 사용자 ID' }
+        inspectorUserId: { type: 'string', description: '검사자 사용자 ID' },
       },
-      required: ['sessionId', 'foiId', 'inspectedQty', 'approvedQty', 'inspectorUserId']
-    }
+      required: ['sessionId', 'foiId', 'inspectedQty', 'approvedQty', 'inspectorUserId'],
+    },
   })
   @ApiResponse({ status: 200, description: '상품 품질검사 완료' })
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
@@ -150,10 +152,10 @@ export class InspectionController {
         reason: { type: 'string', minLength: 1, description: '강제 배송 사유' },
         authorizedBy: { type: 'string', minLength: 1, description: '승인자' },
         forceQty: { type: 'number', minimum: 1, description: '강제 배송 수량' },
-        note: { type: 'string', description: '추가 메모' }
+        note: { type: 'string', description: '추가 메모' },
       },
-      required: ['foiId', 'reason', 'authorizedBy', 'forceQty']
-    }
+      required: ['foiId', 'reason', 'authorizedBy', 'forceQty'],
+    },
   })
   @ApiResponse({ status: 200, description: '강제 배송 승인 성공' })
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
@@ -173,10 +175,7 @@ export class InspectionController {
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
   @ApiResponse({ status: 404, description: '주문처리 아이템을 찾을 수 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  async resetInspection(
-    @Param('foiId') foiId: string,
-    @Query('inspectorUserId') inspectorUserId: string
-  ) {
+  async resetInspection(@Param('foiId') foiId: string, @Query('inspectorUserId') inspectorUserId: string) {
     if (!inspectorUserId) {
       throw new Error('inspectorUserId is required');
     }
@@ -195,12 +194,12 @@ export class InspectionController {
           type: 'array',
           items: { type: 'string', format: 'uuid' },
           minItems: 1,
-          description: '승인할 주문처리 아이템 ID 목록'
+          description: '승인할 주문처리 아이템 ID 목록',
         },
-        inspectorUserId: { type: 'string', description: '검사자 사용자 ID' }
+        inspectorUserId: { type: 'string', description: '검사자 사용자 ID' },
       },
-      required: ['foiIds', 'inspectorUserId']
-    }
+      required: ['foiIds', 'inspectorUserId'],
+    },
   })
   @ApiResponse({ status: 200, description: '일괄 승인 성공' })
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
@@ -210,7 +209,7 @@ export class InspectionController {
     const approvedCount = await this.inspectionService.bulkApprove(dto.foiIds, dto.inspectorUserId);
     return {
       message: `Successfully approved ${approvedCount} items`,
-      approvedCount
+      approvedCount,
     };
   }
 
@@ -246,13 +245,13 @@ export class InspectionController {
     @Query('warehouseId') warehouseId?: string,
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
-    @Query('inspectorUserId') inspectorUserId?: string
+    @Query('inspectorUserId') inspectorUserId?: string,
   ) {
     const filters = {
       warehouseId,
       dateFrom: dateFrom ? new Date(dateFrom) : undefined,
       dateTo: dateTo ? new Date(dateTo) : undefined,
-      inspectorUserId
+      inspectorUserId,
     };
 
     return this.inspectionService.getQualityMetrics(filters);

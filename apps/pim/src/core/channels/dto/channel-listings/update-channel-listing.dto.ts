@@ -41,4 +41,3 @@ export class UpdateChannelListingDto {
   @MaxLength(1000)
   channelProductUrl?: string;
 }
-

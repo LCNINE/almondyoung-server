@@ -65,9 +65,7 @@ export interface DirectShipDashboard {
 export class DirectShipService {
   private readonly logger = new Logger(DirectShipService.name);
 
-  constructor(
-    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>
-  ) {}
+  constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
 
   private get db() {
     return this.dbService.db;
@@ -78,7 +76,7 @@ export class DirectShipService {
     status?: 'pending' | 'forwarded' | 'completed' | 'canceled';
     warehouseId?: string;
   }): Promise<DirectShipOrder[]> {
-    let whereConditions = [eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'drop_ship')];
+    const whereConditions = [eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'drop_ship')];
 
     if (filters?.companyName) {
       whereConditions.push(eq(wmsTables.fulfillmentOrders.ownerId, filters.companyName));
@@ -98,13 +96,13 @@ export class DirectShipService {
       with: {
         items: {
           with: {
-            sku: true
-          }
-        }
-      }
+            sku: true,
+          },
+        },
+      },
     });
 
-    return fulfillmentOrders.map(fo => ({
+    return fulfillmentOrders.map((fo) => ({
       fulfillmentOrderId: fo.id,
       salesOrderId: fo.items[0]?.salesOrderId || '',
       companyName: fo.ownerId || 'Unknown',
@@ -116,14 +114,14 @@ export class DirectShipService {
       createdAt: fo.createdAt,
       forwardedAt: fo.allocatedAt ?? undefined,
       completedAt: fo.shippedAt ?? undefined,
-      items: fo.items.map(item => ({
+      items: fo.items.map((item) => ({
         foiId: item.id,
         salesOrderLineId: item.salesOrderLineId,
         skuId: item.skuId,
         skuName: item.sku.name,
         qty: item.qty,
-        supplierSku: undefined // TODO: Get from supplier mapping
-      }))
+        supplierSku: undefined, // TODO: Get from supplier mapping
+      })),
     }));
   }
 
@@ -147,25 +145,28 @@ export class DirectShipService {
       where: and(
         inArray(wmsTables.fulfillmentOrders.id, fulfillmentOrderIds),
         eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'drop_ship'),
-        eq(wmsTables.fulfillmentOrders.status, 'pending')
-      )
+        eq(wmsTables.fulfillmentOrders.status, 'pending'),
+      ),
     });
 
     if (fulfillmentOrders.length !== fulfillmentOrderIds.length) {
       throw new BadRequestException('Some orders are not available for forwarding');
     }
 
-    const invalidOrders = fulfillmentOrders.filter(fo => fo.ownerId && fo.ownerId !== companyName);
+    const invalidOrders = fulfillmentOrders.filter((fo) => fo.ownerId && fo.ownerId !== companyName);
     if (invalidOrders.length > 0) {
-      throw new BadRequestException(`Orders belong to different company: ${invalidOrders.map(fo => fo.id).join(', ')}`);
+      throw new BadRequestException(
+        `Orders belong to different company: ${invalidOrders.map((fo) => fo.id).join(', ')}`,
+      );
     }
 
     await this.db.transaction(async (tx) => {
-      await tx.update(wmsTables.fulfillmentOrders)
+      await tx
+        .update(wmsTables.fulfillmentOrders)
         .set({
           status: 'forwarded',
           allocatedAt: new Date(),
-          ownerId: companyName
+          ownerId: companyName,
         })
         .where(inArray(wmsTables.fulfillmentOrders.id, fulfillmentOrderIds));
 
@@ -178,8 +179,8 @@ export class DirectShipService {
       where: and(
         inArray(wmsTables.fulfillmentOrders.id, fulfillmentOrderIds),
         eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'drop_ship'),
-        eq(wmsTables.fulfillmentOrders.status, 'forwarded')
-      )
+        eq(wmsTables.fulfillmentOrders.status, 'forwarded'),
+      ),
     });
 
     if (fulfillmentOrders.length !== fulfillmentOrderIds.length) {
@@ -189,18 +190,20 @@ export class DirectShipService {
     await this.db.transaction(async (tx) => {
       // Mark all FOIs as shipped
       for (const fo of fulfillmentOrders) {
-        await tx.update(wmsTables.fulfillmentOrderItems)
+        await tx
+          .update(wmsTables.fulfillmentOrderItems)
           .set({
             shippedQty: wmsTables.fulfillmentOrderItems.qty,
-            updatedAt: new Date()
+            updatedAt: new Date(),
           })
           .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fo.id));
       }
 
-      await tx.update(wmsTables.fulfillmentOrders)
+      await tx
+        .update(wmsTables.fulfillmentOrders)
         .set({
           status: 'completed',
-          shippedAt: new Date()
+          shippedAt: new Date(),
         })
         .where(inArray(wmsTables.fulfillmentOrders.id, fulfillmentOrderIds));
 
@@ -211,44 +214,50 @@ export class DirectShipService {
   async exportOrdersForCompany(companyName: string, format: 'json' | 'csv' = 'json'): Promise<DirectShipExportData> {
     const orders = await this.getDirectShipOrders({
       companyName,
-      status: 'pending'
+      status: 'pending',
     });
 
     const exportData: DirectShipExportData = {
       companyName,
-      orders: orders.flatMap(order =>
-        order.items.map(item => ({
+      orders: orders.flatMap((order) =>
+        order.items.map((item) => ({
           salesOrderId: order.salesOrderId,
           salesOrderLineId: item.salesOrderLineId,
           productName: item.skuName,
           quantity: item.qty,
           supplierSku: item.supplierSku,
-          customerInfo: undefined // TODO: Get from order data
-        }))
+          customerInfo: undefined, // TODO: Get from order data
+        })),
       ),
       totalOrders: orders.length,
       totalItems: orders.reduce((sum, order) => sum + order.totalItems, 0),
-      exportedAt: new Date()
+      exportedAt: new Date(),
     };
 
     this.logger.log(`Exported ${exportData.totalOrders} orders for company: ${companyName}`);
     return exportData;
   }
 
-  async generateExportFile(companyName: string, format: 'csv' | 'xlsx' = 'csv'): Promise<{
+  async generateExportFile(
+    companyName: string,
+    format: 'csv' | 'xlsx' = 'csv',
+  ): Promise<{
     fileName: string;
     content: Buffer;
     mimeType: string;
   }> {
     const exportData = await this.exportOrdersForCompany(companyName, 'json');
-    const timestamp = new Date().toISOString().slice(0, 16).replace(/[:\-T]/g, '');
+    const timestamp = new Date()
+      .toISOString()
+      .slice(0, 16)
+      .replace(/[:\-T]/g, '');
 
     if (format === 'csv') {
       const csvContent = this.generateCSVContent(exportData);
       return {
         fileName: `직배주문_${companyName}_${timestamp}.csv`,
         content: Buffer.from('\uFEFF' + csvContent, 'utf8'), // Add BOM for proper Korean display
-        mimeType: 'text/csv; charset=utf-8'
+        mimeType: 'text/csv; charset=utf-8',
       };
     } else {
       // TODO: Implement XLSX generation
@@ -258,25 +267,23 @@ export class DirectShipService {
 
   private generateCSVContent(exportData: DirectShipExportData): string {
     const headers = ['판매주문ID', '주문라인ID', '상품명', '수량', '공급사SKU'];
-    const rows = exportData.orders.map(order => [
+    const rows = exportData.orders.map((order) => [
       order.salesOrderId,
       order.salesOrderLineId,
       order.productName,
       order.quantity.toString(),
-      order.supplierSku || ''
+      order.supplierSku || '',
     ]);
 
-    return [headers, ...rows]
-      .map(row => row.map(cell => `"${cell}"`).join(','))
-      .join('\n');
+    return [headers, ...rows].map((row) => row.map((cell) => `"${cell}"`).join(',')).join('\n');
   }
 
   async getDashboard(): Promise<DirectShipDashboard> {
     const allOrders = await this.getDirectShipOrders();
 
-    const pendingOrders = allOrders.filter(o => o.status === 'pending').length;
-    const forwardedOrders = allOrders.filter(o => o.status === 'forwarded').length;
-    const completedOrders = allOrders.filter(o => o.status === 'completed').length;
+    const pendingOrders = allOrders.filter((o) => o.status === 'pending').length;
+    const forwardedOrders = allOrders.filter((o) => o.status === 'forwarded').length;
+    const completedOrders = allOrders.filter((o) => o.status === 'completed').length;
 
     const companySummary = new Map<string, { pending: number; forwarded: number; completed: number }>();
 
@@ -291,15 +298,13 @@ export class DirectShipService {
       else if (order.status === 'completed') summary.completed++;
     }
 
-    const recentActivity = allOrders
-      .slice(0, 10)
-      .map(order => ({
-        fulfillmentOrderId: order.fulfillmentOrderId,
-        salesOrderId: order.salesOrderId,
-        companyName: order.companyName,
-        action: this.getRecentAction(order),
-        timestamp: this.getRecentTimestamp(order)
-      }));
+    const recentActivity = allOrders.slice(0, 10).map((order) => ({
+      fulfillmentOrderId: order.fulfillmentOrderId,
+      salesOrderId: order.salesOrderId,
+      companyName: order.companyName,
+      action: this.getRecentAction(order),
+      timestamp: this.getRecentTimestamp(order),
+    }));
 
     return {
       pendingOrders,
@@ -310,24 +315,28 @@ export class DirectShipService {
         companyName,
         pendingCount: summary.pending,
         forwardedCount: summary.forwarded,
-        completedCount: summary.completed
+        completedCount: summary.completed,
       })),
-      recentActivity
+      recentActivity,
     };
   }
 
-  async getCompanyList(): Promise<Array<{
-    companyName: string;
-    orderCount: number;
-    lastOrderDate?: Date;
-  }>> {
+  async getCompanyList(): Promise<
+    Array<{
+      companyName: string;
+      orderCount: number;
+      lastOrderDate?: Date;
+    }>
+  > {
     const ordersByCompany = await this.getDirectShipOrdersByCompany();
 
-    return Array.from(ordersByCompany.entries()).map(([companyName, orders]) => ({
-      companyName,
-      orderCount: orders.length,
-      lastOrderDate: orders.length > 0 ? orders[0].createdAt : undefined
-    })).sort((a, b) => b.orderCount - a.orderCount);
+    return Array.from(ordersByCompany.entries())
+      .map(([companyName, orders]) => ({
+        companyName,
+        orderCount: orders.length,
+        lastOrderDate: orders.length > 0 ? orders[0].createdAt : undefined,
+      }))
+      .sort((a, b) => b.orderCount - a.orderCount);
   }
 
   private mapFOStatusToDirectShipStatus(foStatus: string): 'pending' | 'forwarded' | 'completed' | 'canceled' {

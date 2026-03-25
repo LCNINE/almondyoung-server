@@ -56,9 +56,7 @@ async function bootstrap() {
     await app.startAllMicroservices();
     logger.log('Kafka consumer connected (products.events.v1).');
   } else {
-    logger.warn(
-      'Kafka consumer disabled: missing KAFKA_CLIENT_ID_PREFIX or KAFKA_BROKERS.',
-    );
+    logger.warn('Kafka consumer disabled: missing KAFKA_CLIENT_ID_PREFIX or KAFKA_BROKERS.');
   }
 
   const port = parseInt(process.env.PORT || '3000', 10);

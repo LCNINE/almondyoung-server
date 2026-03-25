@@ -1,23 +1,5 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Delete,
-  Body,
-  Param,
-  Query,
-  HttpException,
-  HttpStatus,
-} from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiParam,
-  ApiQuery,
-  ApiBody,
-} from '@nestjs/swagger';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpException, HttpStatus } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { ChannelListingService } from './channel-listing.service';
 import {
   CreateChannelListingDto,
@@ -70,36 +52,21 @@ export class ChannelListingController {
     @Query('channelItemId') channelItemId?: string,
   ): Promise<LookupChannelListingResponseDto | null> {
     if (!channelItemId) {
-      throw new HttpException(
-        'channelItemId is required',
-        HttpStatus.BAD_REQUEST,
-      );
+      throw new HttpException('channelItemId is required', HttpStatus.BAD_REQUEST);
     }
 
     if (!salesChannelId && !channelCode) {
-      throw new HttpException(
-        'Either salesChannelId or channelCode is required',
-        HttpStatus.BAD_REQUEST,
-      );
+      throw new HttpException('Either salesChannelId or channelCode is required', HttpStatus.BAD_REQUEST);
     }
 
     try {
       if (salesChannelId) {
-        return await this.channelListingService.lookupVariant(
-          salesChannelId,
-          channelItemId,
-        );
+        return await this.channelListingService.lookupVariant(salesChannelId, channelItemId);
       } else {
-        return await this.channelListingService.lookupVariantByChannelCode(
-          channelCode!,
-          channelItemId,
-        );
+        return await this.channelListingService.lookupVariantByChannelCode(channelCode!, channelItemId);
       }
     } catch (error) {
-      throw new HttpException(
-        'Failed to lookup variant',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to lookup variant', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -116,20 +83,12 @@ export class ChannelListingController {
   })
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
   @ApiResponse({ status: 409, description: '이미 동일한 매핑이 존재함' })
-  async create(
-    @Body() dto: CreateChannelListingDto,
-  ): Promise<ChannelListingDto> {
+  async create(@Body() dto: CreateChannelListingDto): Promise<ChannelListingDto> {
     try {
-      const exists = await this.channelListingService.existsListing(
-        dto.salesChannelId,
-        dto.channelItemId,
-      );
+      const exists = await this.channelListingService.existsListing(dto.salesChannelId, dto.channelItemId);
 
       if (exists) {
-        throw new HttpException(
-          `Mapping already exists for channel item: ${dto.channelItemId}`,
-          HttpStatus.CONFLICT,
-        );
+        throw new HttpException(`Mapping already exists for channel item: ${dto.channelItemId}`, HttpStatus.CONFLICT);
       }
 
       const listing = await this.channelListingService.createListing(dto);
@@ -141,10 +100,7 @@ export class ChannelListingController {
       if (error.message.includes('not found')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
       }
-      throw new HttpException(
-        'Failed to create channel listing',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to create channel listing', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -159,17 +115,12 @@ export class ChannelListingController {
     description: '채널 등록 현황 조회 성공',
     type: [ChannelListingWithChannelDto],
   })
-  async getByVariant(
-    @Param('variantId') variantId: string,
-  ): Promise<ChannelListingWithChannelDto[]> {
+  async getByVariant(@Param('variantId') variantId: string): Promise<ChannelListingWithChannelDto[]> {
     try {
       const listings = await this.channelListingService.getListingsByVariant(variantId);
-      return listings.map(listing => ChannelListingMapper.toWithChannelDto(listing));
+      return listings.map((listing) => ChannelListingMapper.toWithChannelDto(listing));
     } catch (error) {
-      throw new HttpException(
-        'Failed to get channel listings',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to get channel listings', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -190,10 +141,7 @@ export class ChannelListingController {
       const listing = await this.channelListingService.getListingById(id);
 
       if (!listing) {
-        throw new HttpException(
-          'Channel listing not found',
-          HttpStatus.NOT_FOUND,
-        );
+        throw new HttpException('Channel listing not found', HttpStatus.NOT_FOUND);
       }
 
       return ChannelListingMapper.toDto(listing);
@@ -201,10 +149,7 @@ export class ChannelListingController {
       if (error.status === HttpStatus.NOT_FOUND) {
         throw error;
       }
-      throw new HttpException(
-        'Failed to get channel listing',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to get channel listing', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -221,18 +166,12 @@ export class ChannelListingController {
     type: ChannelListingDto,
   })
   @ApiResponse({ status: 404, description: '매핑을 찾을 수 없음' })
-  async update(
-    @Param('id') id: string,
-    @Body() dto: UpdateChannelListingDto,
-  ): Promise<ChannelListingDto> {
+  async update(@Param('id') id: string, @Body() dto: UpdateChannelListingDto): Promise<ChannelListingDto> {
     try {
       const updated = await this.channelListingService.updateListing(id, dto);
 
       if (!updated) {
-        throw new HttpException(
-          'Channel listing not found',
-          HttpStatus.NOT_FOUND,
-        );
+        throw new HttpException('Channel listing not found', HttpStatus.NOT_FOUND);
       }
 
       return ChannelListingMapper.toDto(updated);
@@ -240,10 +179,7 @@ export class ChannelListingController {
       if (error.status === HttpStatus.NOT_FOUND) {
         throw error;
       }
-      throw new HttpException(
-        'Failed to update channel listing',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to update channel listing', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -258,10 +194,7 @@ export class ChannelListingController {
     try {
       await this.channelListingService.deactivateListing(id);
     } catch (error) {
-      throw new HttpException(
-        'Failed to deactivate channel listing',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to deactivate channel listing', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -276,10 +209,7 @@ export class ChannelListingController {
     try {
       await this.channelListingService.activateListing(id);
     } catch (error) {
-      throw new HttpException(
-        'Failed to activate channel listing',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to activate channel listing', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -294,11 +224,7 @@ export class ChannelListingController {
     try {
       await this.channelListingService.deleteListing(id);
     } catch (error) {
-      throw new HttpException(
-        'Failed to delete channel listing',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to delete channel listing', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 }
-

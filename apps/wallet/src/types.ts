@@ -24,32 +24,20 @@ export type DbTransaction = DbTx;
 
 export type PaymentMethod = InferSelectModel<typeof paymentMethods>;
 export type NewPaymentMethod = InferInsertModel<typeof paymentMethods>;
-export type UpdatePaymentMethod = Partial<
-  Omit<NewPaymentMethod, 'id' | 'createdAt' | 'updatedAt'>
->;
+export type UpdatePaymentMethod = Partial<Omit<NewPaymentMethod, 'id' | 'createdAt' | 'updatedAt'>>;
 
 export type PaymentIntent = InferSelectModel<typeof paymentIntents>;
 export type NewPaymentIntent = InferInsertModel<typeof paymentIntents>;
-export type UpdatePaymentIntent = Partial<
-  Omit<NewPaymentIntent, 'id' | 'createdAt' | 'updatedAt'>
->;
+export type UpdatePaymentIntent = Partial<Omit<NewPaymentIntent, 'id' | 'createdAt' | 'updatedAt'>>;
 
 export type PaymentIntentItem = InferSelectModel<typeof paymentIntentItems>;
 export type NewPaymentIntentItem = InferInsertModel<typeof paymentIntentItems>;
 
-export type PaymentIntentItemDiscount = InferSelectModel<
-  typeof paymentIntentItemDiscounts
->;
-export type NewPaymentIntentItemDiscount = InferInsertModel<
-  typeof paymentIntentItemDiscounts
->;
+export type PaymentIntentItemDiscount = InferSelectModel<typeof paymentIntentItemDiscounts>;
+export type NewPaymentIntentItemDiscount = InferInsertModel<typeof paymentIntentItemDiscounts>;
 
-export type PaymentIntentOrderDiscount = InferSelectModel<
-  typeof paymentIntentOrderDiscounts
->;
-export type NewPaymentIntentOrderDiscount = InferInsertModel<
-  typeof paymentIntentOrderDiscounts
->;
+export type PaymentIntentOrderDiscount = InferSelectModel<typeof paymentIntentOrderDiscounts>;
+export type NewPaymentIntentOrderDiscount = InferInsertModel<typeof paymentIntentOrderDiscounts>;
 
 export type Charge = InferSelectModel<typeof charges>;
 export type NewCharge = InferInsertModel<typeof charges>;
@@ -64,9 +52,7 @@ export type NewPaymentStateTransition = InferInsertModel<typeof paymentStateTran
 
 export type OutboxEvent = InferSelectModel<typeof outboxEvents>;
 export type NewOutboxEvent = InferInsertModel<typeof outboxEvents>;
-export type UpdateOutboxEvent = Partial<
-  Omit<NewOutboxEvent, 'id' | 'createdAt' | 'updatedAt'>
->;
+export type UpdateOutboxEvent = Partial<Omit<NewOutboxEvent, 'id' | 'createdAt' | 'updatedAt'>>;
 
 export type ProviderWebhookReceipt = InferSelectModel<typeof providerWebhookReceipts>;
 export type NewProviderWebhookReceipt = InferInsertModel<typeof providerWebhookReceipts>;

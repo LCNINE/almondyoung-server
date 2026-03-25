@@ -1,11 +1,5 @@
 import { Controller, Get, Post, Patch, Body, Param, Query } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiParam,
-  ApiQuery,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { SalesOrdersService } from '../services/sales-orders.service';
 import { CreateSalesOrderDto } from '../dto/create-sales-order.dto';
 import { UpdateSalesOrderDto } from '../dto/update-sales-order.dto';
@@ -16,7 +10,7 @@ import { SalesOrderFilterDto } from '../dto/sales-order-filter.dto';
 @ApiTags('Sales Orders')
 @Controller('sales-orders')
 export class SalesOrdersController {
-  constructor(private readonly service: SalesOrdersService) { }
+  constructor(private readonly service: SalesOrdersService) {}
 
   @Post()
   @ApiOperation({ summary: '판매 주문 생성', description: '새로운 판매 주문을 생성합니다.' })
@@ -74,5 +68,3 @@ export class SalesOrdersController {
     return this.service.list(query);
   }
 }
-
-

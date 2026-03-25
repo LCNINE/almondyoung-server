@@ -62,11 +62,11 @@ export const CoupangOrderSheetListResponseSchema = z.object({
   nextToken: z.string().optional(), // 다음 페이지 토큰
 });
 
-export const CoupangSingleOrderSheetResponseSchema =
-  createCoupangApiResponseSchema(CoupangOrderSheetSchema);
+export const CoupangSingleOrderSheetResponseSchema = createCoupangApiResponseSchema(CoupangOrderSheetSchema);
 
-export const CoupangOrderSheetByOrderIdResponseSchema =
-  createCoupangApiResponseSchema(z.array(CoupangOrderSheetSchema));
+export const CoupangOrderSheetByOrderIdResponseSchema = createCoupangApiResponseSchema(
+  z.array(CoupangOrderSheetSchema),
+);
 
 // =================================================================
 // == 상품준비중 처리 스키마 (Acknowledge Order Sheets)
@@ -77,20 +77,19 @@ export const CoupangAcknowledgeOrdersheetsRequestSchema = z.object({
   shipmentBoxIds: z.array(z.string()).min(1).max(50), // 배송번호 목록 (최대 50개)
 });
 
-export const CoupangAcknowledgeOrdersheetsResponseSchema =
-  createCoupangApiResponseSchema(
-    z.object({
-      responseCode: z.number(), // 전체 처리 결과 코드
-      responseList: z.array(
-        z.object({
-          shipmentBoxId: z.number(),
-          succeed: z.boolean(),
-          resultCode: z.string(),
-          resultMessage: z.string(),
-        }),
-      ),
-    }),
-  );
+export const CoupangAcknowledgeOrdersheetsResponseSchema = createCoupangApiResponseSchema(
+  z.object({
+    responseCode: z.number(), // 전체 처리 결과 코드
+    responseList: z.array(
+      z.object({
+        shipmentBoxId: z.number(),
+        succeed: z.boolean(),
+        resultCode: z.string(),
+        resultMessage: z.string(),
+      }),
+    ),
+  }),
+);
 
 // =================================================================
 // == 송장 업로드 스키마 (Upload Invoice)
@@ -108,60 +107,54 @@ export const OrderSheetInvoiceApplyDtoSchema = z.object({
 
 export const CoupangUploadInvoiceRequestSchema = z.object({
   vendorId: z.string().regex(/^A\d{8}$/), // 판매자 ID
-  orderSheetInvoiceApplyDtos: z
-    .array(OrderSheetInvoiceApplyDtoSchema)
-    .min(1)
-    .max(100), // 송장 업로드 대상 목록 (최대 100개)
+  orderSheetInvoiceApplyDtos: z.array(OrderSheetInvoiceApplyDtoSchema).min(1).max(100), // 송장 업로드 대상 목록 (최대 100개)
 });
 
-export const CoupangUploadInvoiceResponseSchema =
-  createCoupangApiResponseSchema(
-    z.object({
-      responseCode: z.number(), // 전체 처리 결과 코드
-      responseList: z.array(
-        z.object({
-          shipmentBoxId: z.number(),
-          succeed: z.boolean(),
-          resultCode: z.string(),
-          resultMessage: z.string(),
-        }),
-      ),
-    }),
-  );
+export const CoupangUploadInvoiceResponseSchema = createCoupangApiResponseSchema(
+  z.object({
+    responseCode: z.number(), // 전체 처리 결과 코드
+    responseList: z.array(
+      z.object({
+        shipmentBoxId: z.number(),
+        succeed: z.boolean(),
+        resultCode: z.string(),
+        resultMessage: z.string(),
+      }),
+    ),
+  }),
+);
 
 // =================================================================
 // == 송장 업데이트 스키마 (Update Invoice)
 // =================================================================
 
-export const OrderSheetUpdateInvoiceDtoSchema =
-  OrderSheetInvoiceApplyDtoSchema.omit({
-    splitShipping: true,
-    preSplitShipped: true,
-  }).extend({
-    splitShipping: z.union([z.boolean(), z.string()]), // "False"/"True"도 가능
-    preSplitShipped: z.union([z.boolean(), z.string()]),
-  });
+export const OrderSheetUpdateInvoiceDtoSchema = OrderSheetInvoiceApplyDtoSchema.omit({
+  splitShipping: true,
+  preSplitShipped: true,
+}).extend({
+  splitShipping: z.union([z.boolean(), z.string()]), // "False"/"True"도 가능
+  preSplitShipped: z.union([z.boolean(), z.string()]),
+});
 
 export const CoupangUpdateInvoiceRequestSchema = z.object({
   vendorId: z.string().min(1), // 판매자 ID
   orderSheetInvoiceApplyDtos: z.array(OrderSheetUpdateInvoiceDtoSchema).min(1), // 송장 업데이트 대상 목록
 });
 
-export const CoupangUpdateInvoiceResponseSchema =
-  createCoupangApiResponseSchema(
-    z.object({
-      responseCode: z.number(), // 전체 처리 결과 코드
-      responseList: z.array(
-        z.object({
-          shipmentBoxId: z.number(),
-          succeed: z.boolean(),
-          resultCode: z.string(),
-          resultMessage: z.string(),
-          retryRequired: z.boolean(),
-        }),
-      ),
-    }),
-  );
+export const CoupangUpdateInvoiceResponseSchema = createCoupangApiResponseSchema(
+  z.object({
+    responseCode: z.number(), // 전체 처리 결과 코드
+    responseList: z.array(
+      z.object({
+        shipmentBoxId: z.number(),
+        succeed: z.boolean(),
+        resultCode: z.string(),
+        resultMessage: z.string(),
+        retryRequired: z.boolean(),
+      }),
+    ),
+  }),
+);
 
 // =================================================================
 // == 배송 히스토리 스키마 (Delivery History)
@@ -179,13 +172,12 @@ export const CoupangDeliveryHistoryItemSchema = z.object({
   changedAt: z.string(), // 상태 변경 일시
 });
 
-export const CoupangDeliveryHistoryResponseSchema =
-  createCoupangApiResponseSchema(
-    z.object({
-      shipmentBoxId: z.number(), // 발주서 ID
-      histories: z.array(CoupangDeliveryHistoryItemSchema), // 히스토리 목록
-    }),
-  );
+export const CoupangDeliveryHistoryResponseSchema = createCoupangApiResponseSchema(
+  z.object({
+    shipmentBoxId: z.number(), // 발주서 ID
+    histories: z.array(CoupangDeliveryHistoryItemSchema), // 히스토리 목록
+  }),
+);
 
 // =================================================================
 // == 타입 추출 (Type Exports)
@@ -193,49 +185,21 @@ export const CoupangDeliveryHistoryResponseSchema =
 
 export type OrderItem = z.infer<typeof OrderItemSchema>;
 export type CoupangOrderSheet = z.infer<typeof CoupangOrderSheetSchema>;
-export type CoupangOrderSheetListResponse = z.infer<
-  typeof CoupangOrderSheetListResponseSchema
->;
-export type CoupangSingleOrderSheetResponse = z.infer<
-  typeof CoupangSingleOrderSheetResponseSchema
->;
-export type CoupangOrderSheetByOrderIdResponse = z.infer<
-  typeof CoupangOrderSheetByOrderIdResponseSchema
->;
+export type CoupangOrderSheetListResponse = z.infer<typeof CoupangOrderSheetListResponseSchema>;
+export type CoupangSingleOrderSheetResponse = z.infer<typeof CoupangSingleOrderSheetResponseSchema>;
+export type CoupangOrderSheetByOrderIdResponse = z.infer<typeof CoupangOrderSheetByOrderIdResponseSchema>;
 
-export type CoupangAcknowledgeOrdersheetsRequest = z.infer<
-  typeof CoupangAcknowledgeOrdersheetsRequestSchema
->;
-export type CoupangAcknowledgeOrdersheetsResponse = z.infer<
-  typeof CoupangAcknowledgeOrdersheetsResponseSchema
->;
+export type CoupangAcknowledgeOrdersheetsRequest = z.infer<typeof CoupangAcknowledgeOrdersheetsRequestSchema>;
+export type CoupangAcknowledgeOrdersheetsResponse = z.infer<typeof CoupangAcknowledgeOrdersheetsResponseSchema>;
 
-export type OrderSheetInvoiceApplyDto = z.infer<
-  typeof OrderSheetInvoiceApplyDtoSchema
->;
-export type CoupangUploadInvoiceRequest = z.infer<
-  typeof CoupangUploadInvoiceRequestSchema
->;
-export type CoupangUploadInvoiceResponse = z.infer<
-  typeof CoupangUploadInvoiceResponseSchema
->;
+export type OrderSheetInvoiceApplyDto = z.infer<typeof OrderSheetInvoiceApplyDtoSchema>;
+export type CoupangUploadInvoiceRequest = z.infer<typeof CoupangUploadInvoiceRequestSchema>;
+export type CoupangUploadInvoiceResponse = z.infer<typeof CoupangUploadInvoiceResponseSchema>;
 
-export type OrderSheetUpdateInvoiceDto = z.infer<
-  typeof OrderSheetUpdateInvoiceDtoSchema
->;
-export type CoupangUpdateInvoiceRequest = z.infer<
-  typeof CoupangUpdateInvoiceRequestSchema
->;
-export type CoupangUpdateInvoiceResponse = z.infer<
-  typeof CoupangUpdateInvoiceResponseSchema
->;
+export type OrderSheetUpdateInvoiceDto = z.infer<typeof OrderSheetUpdateInvoiceDtoSchema>;
+export type CoupangUpdateInvoiceRequest = z.infer<typeof CoupangUpdateInvoiceRequestSchema>;
+export type CoupangUpdateInvoiceResponse = z.infer<typeof CoupangUpdateInvoiceResponseSchema>;
 
-export type CoupangDeliveryHistoryRequest = z.infer<
-  typeof CoupangDeliveryHistoryRequestSchema
->;
-export type CoupangDeliveryHistoryItem = z.infer<
-  typeof CoupangDeliveryHistoryItemSchema
->;
-export type CoupangDeliveryHistoryResponse = z.infer<
-  typeof CoupangDeliveryHistoryResponseSchema
->;
+export type CoupangDeliveryHistoryRequest = z.infer<typeof CoupangDeliveryHistoryRequestSchema>;
+export type CoupangDeliveryHistoryItem = z.infer<typeof CoupangDeliveryHistoryItemSchema>;
+export type CoupangDeliveryHistoryResponse = z.infer<typeof CoupangDeliveryHistoryResponseSchema>;

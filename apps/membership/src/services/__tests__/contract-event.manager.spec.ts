@@ -186,10 +186,7 @@ describe('ContractEventManager', () => {
 
       mockDbService.db.orderBy.mockResolvedValue(mockEvents);
 
-      const result = await service.getEventsByType(
-        'contract-123',
-        'REFUND_REQUESTED',
-      );
+      const result = await service.getEventsByType('contract-123', 'REFUND_REQUESTED');
 
       expect(result).toEqual(mockEvents);
       expect(mockDbService.db.where).toHaveBeenCalled();

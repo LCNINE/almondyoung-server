@@ -28,10 +28,7 @@ export function calculateCycleStart(billingDate: Date, orderDate: Date): Date {
  * @param cycleStartDate - 주기 시작일
  * @returns 주기 번호 (첫 번째 주기 = 1)
  */
-export function calculateCycleNumber(
-  billingDate: Date,
-  cycleStartDate: Date,
-): number {
+export function calculateCycleNumber(billingDate: Date, cycleStartDate: Date): number {
   const daysSinceStart = differenceInDays(cycleStartDate, billingDate);
   return Math.floor(daysSinceStart / 30) + 1;
 }

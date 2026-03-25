@@ -15,7 +15,7 @@ import { SendNotificationDto } from '../dto/send-notification.dto';
 
 /**
  * User Service 이벤트 컨슈머
- * 
+ *
  * user-service가 발행한 이벤트를 수신하여 알림을 발송합니다.
  * - UserVerification: 회원가입 이메일 인증
  * - UserFindId: ID 찾기
@@ -110,7 +110,9 @@ export class UserEventConsumer {
     @EventEnvelope() envelope: DomainEvent<UserResetPasswordPayload>,
     @EventPayload() payload: UserResetPasswordPayload,
   ) {
-    this.logger.log(`[Event] Received UserResetPassword: ${payload.phoneNumber} (correlationId: ${envelope.correlationId})`);
+    this.logger.log(
+      `[Event] Received UserResetPassword: ${payload.phoneNumber} (correlationId: ${envelope.correlationId})`,
+    );
     try {
       const eventMapping = await this.eventMappingService.getEventMapping('USER_RESET_PASSWORD');
       if (!eventMapping || !eventMapping.isActive) {

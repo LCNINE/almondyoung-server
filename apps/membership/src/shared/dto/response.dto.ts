@@ -173,54 +173,26 @@ const ErrorResponseSchema = z.object({
 // ===== Export DTOs using nestjs-zod =====
 
 // Plan Controller DTOs
-export class PlansListResponseDto extends createZodDto(
-  PlansListResponseSchema,
-) {}
-export class PlanDetailsResponseDto extends createZodDto(
-  PlanDetailsResponseSchema,
-) {}
-export class TiersListResponseDto extends createZodDto(
-  TiersListResponseSchema,
-) {}
-export class TierPlansResponseDto extends createZodDto(
-  TierPlansResponseSchema,
-) {}
-export class TierBenefitsResponseDto extends createZodDto(
-  TierBenefitsResponseSchema,
-) {}
+export class PlansListResponseDto extends createZodDto(PlansListResponseSchema) {}
+export class PlanDetailsResponseDto extends createZodDto(PlanDetailsResponseSchema) {}
+export class TiersListResponseDto extends createZodDto(TiersListResponseSchema) {}
+export class TierPlansResponseDto extends createZodDto(TierPlansResponseSchema) {}
+export class TierBenefitsResponseDto extends createZodDto(TierBenefitsResponseSchema) {}
 
 // Subscription Controller DTOs
-export class SubscriptionDetailsResponseDto extends createZodDto(
-  SubscriptionDetailsResponseSchema,
-) {}
-export class SubscriptionHistoryResponseDto extends createZodDto(
-  SubscriptionHistoryResponseSchema,
-) {}
+export class SubscriptionDetailsResponseDto extends createZodDto(SubscriptionDetailsResponseSchema) {}
+export class SubscriptionHistoryResponseDto extends createZodDto(SubscriptionHistoryResponseSchema) {}
 
 // Pause Controller DTOs
-export class PauseHistoryResponseDto extends createZodDto(
-  PauseHistoryResponseSchema,
-) {}
-export class PauseOperationResponseDto extends createZodDto(
-  PauseOperationResponseSchema,
-) {}
+export class PauseHistoryResponseDto extends createZodDto(PauseHistoryResponseSchema) {}
+export class PauseOperationResponseDto extends createZodDto(PauseOperationResponseSchema) {}
 
 // Admin Controller DTOs
-export class AdminTierResponseDto extends createZodDto(
-  AdminTierResponseSchema,
-) {}
-export class AdminPlanResponseDto extends createZodDto(
-  AdminPlanResponseSchema,
-) {}
-export class AdminUserPauseHistoryResponseDto extends createZodDto(
-  AdminUserPauseHistoryResponseSchema,
-) {}
-export class AdminEntitlementResponseDto extends createZodDto(
-  AdminEntitlementResponseSchema,
-) {}
-export class AdminBillingTestResponseDto extends createZodDto(
-  AdminBillingTestResponseSchema,
-) {}
+export class AdminTierResponseDto extends createZodDto(AdminTierResponseSchema) {}
+export class AdminPlanResponseDto extends createZodDto(AdminPlanResponseSchema) {}
+export class AdminUserPauseHistoryResponseDto extends createZodDto(AdminUserPauseHistoryResponseSchema) {}
+export class AdminEntitlementResponseDto extends createZodDto(AdminEntitlementResponseSchema) {}
+export class AdminBillingTestResponseDto extends createZodDto(AdminBillingTestResponseSchema) {}
 
 // Error Response DTO
 export class ErrorResponseDto extends createZodDto(ErrorResponseSchema) {}
@@ -237,9 +209,7 @@ const CancellationResultSchema = z.object({
   message: z.string().optional(),
 });
 
-export class CancellationResultDto extends createZodDto(
-  CancellationResultSchema,
-) {}
+export class CancellationResultDto extends createZodDto(CancellationResultSchema) {}
 
 const CancellationReasonSchema = z.object({
   code: z.string(),
@@ -252,9 +222,7 @@ const CancellationReasonsResponseSchema = z.object({
   reasons: z.array(CancellationReasonSchema),
 });
 
-export class CancellationReasonsResponseDto extends createZodDto(
-  CancellationReasonsResponseSchema,
-) {}
+export class CancellationReasonsResponseDto extends createZodDto(CancellationReasonsResponseSchema) {}
 
 const ContractEventSchema = z.object({
   id: z.number(),
@@ -273,6 +241,4 @@ const ContractEventsResponseSchema = z.object({
   events: z.array(ContractEventSchema),
 });
 
-export class ContractEventsResponseDto extends createZodDto(
-  ContractEventsResponseSchema,
-) {}
+export class ContractEventsResponseDto extends createZodDto(ContractEventsResponseSchema) {}

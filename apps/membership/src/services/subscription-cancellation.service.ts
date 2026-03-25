@@ -60,11 +60,8 @@ export class SubscriptionCancellationService {
     const data = await this.contractReader.findContractWithPlan(userId);
     if (!data) {
       // ACTIVE 계약이 없으면 취소된 계약이 있는지 확인
-      const allContracts =
-        await this.contractReader.findContractsByUserId(userId);
-      const hasCancelledContract = allContracts.some(
-        (c) => c.status === 'CANCELLED',
-      );
+      const allContracts = await this.contractReader.findContractsByUserId(userId);
+      const hasCancelledContract = allContracts.some((c) => c.status === 'CANCELLED');
 
       if (hasCancelledContract) {
         throw new Error('Contract already cancelled');
@@ -73,10 +70,7 @@ export class SubscriptionCancellationService {
       throw new Error('Active subscription not found');
     }
 
-    const eligibility = await this.cancellationManager.checkRefundEligibility(
-      data.contract,
-      data.plan,
-    );
+    const eligibility = await this.cancellationManager.checkRefundEligibility(data.contract, data.plan);
 
     const result = eligibility.eligible
       ? await this.cancellationManager.cancelImmediately(
@@ -87,12 +81,7 @@ export class SubscriptionCancellationService {
           reasonText,
           eligibility,
         )
-      : await this.cancellationManager.cancelRecurringPayment(
-          userId,
-          data.contract,
-          reasonCode,
-          reasonText,
-        );
+      : await this.cancellationManager.cancelRecurringPayment(userId, data.contract, reasonCode, reasonText);
 
     if (result.type === 'IMMEDIATE_CANCELLATION') {
       await this.membershipEventPublisher.publishStatusChanged({
@@ -135,10 +124,7 @@ export class SubscriptionCancellationService {
     const plan = await this.contractReader.findPlan(contract.planId);
     if (!plan) throw new Error('Plan not found');
 
-    const eligibility = await this.cancellationManager.checkRefundEligibility(
-      contract,
-      plan,
-    );
+    const eligibility = await this.cancellationManager.checkRefundEligibility(contract, plan);
     return eligibility.amount;
   }
 

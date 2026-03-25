@@ -34,9 +34,6 @@ describe('SearchController (e2e)', () => {
   });
 
   it('/search/products (GET)', () => {
-    return request(app.getHttpServer())
-      .get('/search/products?q=글루')
-      .expect(200)
-      .expect(mockResponse);
+    return request(app.getHttpServer()).get('/search/products?q=글루').expect(200).expect(mockResponse);
   });
 });

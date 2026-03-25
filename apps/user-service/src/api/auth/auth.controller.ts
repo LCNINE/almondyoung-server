@@ -22,10 +22,7 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { Public } from '../../commons/decorator/public.decorator';
 import { ProviderType } from '../../commons/types';
 import { AuthService } from './auth.service';
-import {
-  Cafe24SignupBootstrapRequestDto,
-  Cafe24SignupBootstrapResponseDto,
-} from './dto/cafe24-signup-bootstrap.dto';
+import { Cafe24SignupBootstrapRequestDto, Cafe24SignupBootstrapResponseDto } from './dto/cafe24-signup-bootstrap.dto';
 import { ChangePasswordDto } from './dto/change-pw.dto';
 import { FindUserIdDto } from './dto/find-userid.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
@@ -40,7 +37,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
-  ) { }
+  ) {}
 
   @ApiOperation({ summary: '회원가입' })
   @ApiResponse({ status: 201, description: '회원가입 성공, 스토어프론트의 /callback/signup 경로로 리다이렉트' })
@@ -81,9 +78,7 @@ export class AuthController {
       throw new BadRequestException('암호화 id 토큰이 필요합니다.');
     }
 
-    const result = await this.authService.bootstrapCafe24Signup(
-      encryptedIdToken,
-    );
+    const result = await this.authService.bootstrapCafe24Signup(encryptedIdToken);
 
     return {
       memberId: result.memberId,
@@ -165,9 +160,7 @@ export class AuthController {
   @ApiResponse({ status: 200, description: '비밀번호 재설정 성공' })
   @Post('reset-password')
   @Public()
-  async resetPassword(
-    @Body(ValidationPipe) { token, password }: ResetPasswordDto,
-  ): Promise<void> {
+  async resetPassword(@Body(ValidationPipe) { token, password }: ResetPasswordDto): Promise<void> {
     return this.authService.resetPassword(token, password);
   }
 
@@ -291,7 +284,6 @@ export class AuthController {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
       return res.status(302).redirect(`${frontendUrl}/login?errorMessage=${encodeURIComponent(errorMessage)}`);
-
     }
   }
 

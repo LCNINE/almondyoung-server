@@ -4,5 +4,3 @@ export interface PimClientPort {
   generateVariants(masterId: string): Promise<void>;
   deleteMaster(masterId: string): Promise<void>;
 }
-
-

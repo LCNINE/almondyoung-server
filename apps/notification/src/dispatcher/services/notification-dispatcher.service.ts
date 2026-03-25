@@ -11,13 +11,7 @@ import {
   notificationEvents,
 } from '../../../database/schemas/notification-schema';
 import { SendNotificationDto } from '../dto/send-notification.dto';
-import {
-  Channel,
-  Language,
-  NotificationCategory,
-  NotificationPriority,
-  NotificationStatus,
-} from '../../shared/enums';
+import { Channel, Language, NotificationCategory, NotificationPriority, NotificationStatus } from '../../shared/enums';
 import { TemplateVariableMapperService } from '../../shared/services/template-variable-mapper.service';
 import { ProviderManagerService } from '../../provider/services/provider-manager.service';
 import { getContactForChannel, UserProfile } from '../../shared/utils/contact.utils';
@@ -44,7 +38,7 @@ export class NotificationDispatcherService {
     @Optional() @InjectQueue('notification') private readonly notificationQueue: Queue | null,
     private readonly variableMapper: TemplateVariableMapperService,
     private readonly providerManager: ProviderManagerService,
-  ) { }
+  ) {}
 
   /**
    * 공통 알림 발송 진입점
@@ -71,9 +65,7 @@ export class NotificationDispatcherService {
       });
 
       if (!template) {
-        this.logger.warn(
-          `[Dispatcher] Template not found for templateKey=${dto.templateKey}`,
-        );
+        this.logger.warn(`[Dispatcher] Template not found for templateKey=${dto.templateKey}`);
       }
     }
 
@@ -98,25 +90,20 @@ export class NotificationDispatcherService {
       if (!finalVariables && template?.variablesSchema && payload) {
         // variables가 없고 템플릿 스키마가 있으면 자동 추출
         this.logger.debug(`[Dispatcher] Auto-extracting variables from payload for template ${dto.templateKey}`);
-        finalVariables = this.variableMapper.extractVariablesFromPayload(
-          payload,
-          template.variablesSchema
-        );
+        finalVariables = this.variableMapper.extractVariablesFromPayload(payload, template.variablesSchema);
       } else if (!finalVariables && payload && template) {
         // 스키마가 없으면 경고 (의도된 동작일 수 있음)
-        this.logger.warn(`[Dispatcher] No variables provided and no schema found for template ${dto.templateKey}, using payload as-is`);
+        this.logger.warn(
+          `[Dispatcher] No variables provided and no schema found for template ${dto.templateKey}, using payload as-is`,
+        );
         finalVariables = payload;
       }
 
       // 채널별 변수 매핑
-      const channelVariables = this.variableMapper.mapVariablesForChannel(
-        channel,
-        finalVariables || {},
-        {
-          kakaoTemplateCode: template?.kakaoTemplateCode,
-          providerTemplateId: template?.providerTemplateId,
-        }
-      );
+      const channelVariables = this.variableMapper.mapVariablesForChannel(channel, finalVariables || {}, {
+        kakaoTemplateCode: template?.kakaoTemplateCode,
+        providerTemplateId: template?.providerTemplateId,
+      });
 
       const renderedContent = this.renderContent({
         channel,
@@ -196,7 +183,13 @@ export class NotificationDispatcherService {
             error: error.message,
           });
           // 큐 추가 실패 시 직접 발송
-          await this.sendNotificationDirectly(inserted.notificationId, channel, renderedContent, channelMetadata, payload);
+          await this.sendNotificationDirectly(
+            inserted.notificationId,
+            channel,
+            renderedContent,
+            channelMetadata,
+            payload,
+          );
         }
       } else {
         // Redis가 없으면 직접 발송
@@ -204,7 +197,13 @@ export class NotificationDispatcherService {
           notificationId: inserted.notificationId,
           channel,
         });
-        await this.sendNotificationDirectly(inserted.notificationId, channel, renderedContent, channelMetadata, payload);
+        await this.sendNotificationDirectly(
+          inserted.notificationId,
+          channel,
+          renderedContent,
+          channelMetadata,
+          payload,
+        );
       }
     }
 
@@ -362,10 +361,7 @@ export class NotificationDispatcherService {
   /**
    * 특정 유저의 알림 목록 조회
    */
-  async getUserNotifications(
-    userId: string,
-    limit = 50,
-  ): Promise<Notification[]> {
+  async getUserNotifications(userId: string, limit = 50): Promise<Notification[]> {
     const db = this.db.db;
 
     const rows = await db.query.notifications.findMany({
@@ -397,32 +393,21 @@ export class NotificationDispatcherService {
     });
 
     const mapping = await db.query.notificationEvents.findFirst({
-      where: and(
-        eq(notificationEvents.eventKey, eventData.eventKey),
-        eq(notificationEvents.isActive, true),
-      ),
+      where: and(eq(notificationEvents.eventKey, eventData.eventKey), eq(notificationEvents.isActive, true)),
     });
 
     if (!mapping) {
-      this.logger.warn(
-        `[Dispatcher] No active notification event mapping for key=${eventData.eventKey}`,
-      );
-      throw new NotFoundException(
-        `Notification event mapping not found for key ${eventData.eventKey}`,
-      );
+      this.logger.warn(`[Dispatcher] No active notification event mapping for key=${eventData.eventKey}`);
+      throw new NotFoundException(`Notification event mapping not found for key ${eventData.eventKey}`);
     }
 
-    const channels: Channel[] = (eventData.channels?.length
-      ? eventData.channels
-      : (mapping.defaultChannels ?? [])) as Channel[];
+    const channels: Channel[] = (
+      eventData.channels?.length ? eventData.channels : (mapping.defaultChannels ?? [])
+    ) as Channel[];
 
     if (!channels.length) {
-      this.logger.warn(
-        `[Dispatcher] No channels resolved for eventKey=${eventData.eventKey}`,
-      );
-      throw new BadRequestException(
-        'No channels specified for notification event',
-      );
+      this.logger.warn(`[Dispatcher] No channels resolved for eventKey=${eventData.eventKey}`);
+      throw new BadRequestException('No channels specified for notification event');
     }
 
     const dto: SendNotificationDto = {
@@ -468,8 +453,7 @@ export class NotificationDispatcherService {
     body: string;
     metadata?: Record<string, any>;
   } {
-    const { channel, language, template, contentOverride, variables, payload } =
-      params;
+    const { channel, language, template, contentOverride, variables, payload } = params;
 
     let subject: string | undefined;
     let body: string | undefined;
@@ -494,11 +478,8 @@ export class NotificationDispatcherService {
       }
       // 레거시 구조 시도: contents.EMAIL.ko
       else {
-        const channelContents = template.contents[channel] as any | undefined;
-        langBlock =
-          channelContents?.[language] ??
-          channelContents?.['ko'] ??
-          channelContents?.['en'];
+        const channelContents = template.contents[channel];
+        langBlock = channelContents?.[language] ?? channelContents?.['ko'] ?? channelContents?.['en'];
       }
 
       if (langBlock) {
@@ -517,8 +498,7 @@ export class NotificationDispatcherService {
     // 템플릿 시스템을 사용하는 채널(KAKAO, EMAIL)은 Provider에서 처리하므로
     // 여기서는 템플릿 시스템이 없는 채널(SMS, PUSH)만 치환
     const usesProviderTemplate =
-      (channel === 'KAKAO' && template?.kakaoTemplateCode) ||
-      (channel === 'EMAIL' && template?.providerTemplateId);
+      (channel === 'KAKAO' && template?.kakaoTemplateCode) || (channel === 'EMAIL' && template?.providerTemplateId);
 
     if (!usesProviderTemplate) {
       // 템플릿 시스템을 사용하지 않는 경우만 텍스트 치환

@@ -160,4 +160,3 @@ export class SalesTrendsQueryDto {
   @Min(1)
   days?: number = 30;
 }
-

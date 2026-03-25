@@ -49,10 +49,10 @@ export class NullEventPublisher {
     payload: ExtractPayloadType<ChannelAdapterEvents[K]>;
     metadata?: Record<string, unknown>;
   }): Promise<void> {
-    this.logger.debug(
-      `🔇 [NullEventPublisher] 이벤트 발행 스킵: ${String(params.eventType)}`,
-      { aggregateId: params.aggregateId, payload: params.payload },
-    );
+    this.logger.debug(`🔇 [NullEventPublisher] 이벤트 발행 스킵: ${String(params.eventType)}`, {
+      aggregateId: params.aggregateId,
+      payload: params.payload,
+    });
 
     // 아무 동작도 하지 않음 (Null Object Pattern)
     return Promise.resolve();
@@ -70,10 +70,7 @@ export class NullEventPublisher {
       metadata?: Record<string, unknown>;
     }>,
   ): Promise<void> {
-    this.logger.debug(
-      `🔇 [NullEventPublisher] 배치 이벤트 발행 스킵: ${events.length}건`,
-      events,
-    );
+    this.logger.debug(`🔇 [NullEventPublisher] 배치 이벤트 발행 스킵: ${events.length}건`, events);
 
     return Promise.resolve();
   }

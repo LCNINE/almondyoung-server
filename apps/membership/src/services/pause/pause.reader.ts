@@ -44,10 +44,7 @@ export class PauseReader {
         endsAt: schema.pauseEventDetails.endsAt,
       })
       .from(schema.pauseEvents)
-      .leftJoin(
-        schema.pauseEventDetails,
-        eq(schema.pauseEvents.id, schema.pauseEventDetails.pauseEventId),
-      )
+      .leftJoin(schema.pauseEventDetails, eq(schema.pauseEvents.id, schema.pauseEventDetails.pauseEventId))
       .where(eq(schema.pauseEvents.userId, userId))
       .orderBy(desc(schema.pauseEvents.createdAt));
 
@@ -59,10 +56,7 @@ export class PauseReader {
    */
   async findPausedEntitlement(userId: string) {
     return this.dbService.db.query.subscriptionEntitlement.findFirst({
-      where: and(
-        eq(schema.subscriptionEntitlement.userId, userId),
-        eq(schema.subscriptionEntitlement.isCurrent, true),
-      ),
+      where: and(eq(schema.subscriptionEntitlement.userId, userId), eq(schema.subscriptionEntitlement.isCurrent, true)),
     });
   }
 

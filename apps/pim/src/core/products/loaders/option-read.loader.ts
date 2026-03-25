@@ -26,10 +26,7 @@ export class OptionReadLoader {
         createdAt: productOptionGroups.createdAt,
       })
       .from(productMasterOptionGroups)
-      .innerJoin(
-        productOptionGroups,
-        eq(productMasterOptionGroups.optionGroupId, productOptionGroups.id),
-      )
+      .innerJoin(productOptionGroups, eq(productMasterOptionGroups.optionGroupId, productOptionGroups.id))
       .innerJoin(
         productOptionGroupDisplays,
         and(
@@ -39,15 +36,10 @@ export class OptionReadLoader {
           eq(productOptionGroupDisplays.locale, locale),
         ),
       )
-      .where(
-        and(
-          eq(productMasterOptionGroups.masterId, masterId),
-          eq(productMasterOptionGroups.versionId, versionId),
-        ),
-      )
+      .where(and(eq(productMasterOptionGroups.masterId, masterId), eq(productMasterOptionGroups.versionId, versionId)))
       .orderBy(asc(productOptionGroupDisplays.sortOrder));
 
-    const optionGroupIds = optionGroupResults.map(g => g.id);
+    const optionGroupIds = optionGroupResults.map((g) => g.id);
 
     if (optionGroupIds.length === 0) {
       return [];
@@ -72,10 +64,7 @@ export class OptionReadLoader {
         ),
       )
       .where(inArray(productOptionValues.optionGroupId, optionGroupIds))
-      .orderBy(
-        asc(productOptionValues.optionGroupId),
-        asc(productOptionValueDisplays.sortOrder),
-      );
+      .orderBy(asc(productOptionValues.optionGroupId), asc(productOptionValueDisplays.sortOrder));
 
     const valuesByGroup = new Map<string, OptionValueReadModel[]>();
     for (const v of allValues) {
@@ -84,7 +73,7 @@ export class OptionReadLoader {
       valuesByGroup.set(v.optionGroupId, list);
     }
 
-    return optionGroupResults.map(group => ({
+    return optionGroupResults.map((group) => ({
       ...group,
       values: valuesByGroup.get(group.id) ?? [],
     }));
@@ -106,10 +95,7 @@ export class OptionReadLoader {
         createdAt: productOptionValues.createdAt,
       })
       .from(variantOptionValues)
-      .innerJoin(
-        productOptionValues,
-        eq(variantOptionValues.optionValueId, productOptionValues.id),
-      )
+      .innerJoin(productOptionValues, eq(variantOptionValues.optionValueId, productOptionValues.id))
       .innerJoin(
         productOptionValueDisplays,
         and(
@@ -118,10 +104,7 @@ export class OptionReadLoader {
           eq(productOptionValueDisplays.locale, locale),
         ),
       )
-      .innerJoin(
-        productOptionGroups,
-        eq(productOptionValues.optionGroupId, productOptionGroups.id),
-      )
+      .innerJoin(productOptionGroups, eq(productOptionValues.optionGroupId, productOptionGroups.id))
       .innerJoin(
         productOptionGroupDisplays,
         and(
@@ -131,10 +114,7 @@ export class OptionReadLoader {
         ),
       )
       .where(eq(variantOptionValues.variantId, variantId))
-      .orderBy(
-        asc(productOptionGroupDisplays.sortOrder),
-        asc(productOptionValueDisplays.sortOrder),
-      );
+      .orderBy(asc(productOptionGroupDisplays.sortOrder), asc(productOptionValueDisplays.sortOrder));
 
     return optionValues;
   }

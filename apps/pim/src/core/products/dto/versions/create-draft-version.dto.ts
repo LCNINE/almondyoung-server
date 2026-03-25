@@ -20,4 +20,3 @@ export class CreateDraftVersionDto {
   @IsOptional()
   copyMappings?: boolean;
 }
-

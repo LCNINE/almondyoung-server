@@ -57,10 +57,7 @@ export interface PricingResult {
   payableAmount: number;
 }
 
-export function calculatePricing(
-  items: ItemInput[],
-  orderDiscounts: OrderDiscountInput[] = [],
-): PricingResult {
+export function calculatePricing(items: ItemInput[], orderDiscounts: OrderDiscountInput[] = []): PricingResult {
   const calculatedItems: CalculatedItem[] = items.map((item) => {
     const baseAmount = item.unitPrice * item.quantity;
     const discounts = item.discounts ?? [];
@@ -68,17 +65,12 @@ export function calculatePricing(
     const perUnitDiscountSum = discounts
       .filter((d) => d.kind === 'ITEM_PER_UNIT')
       .reduce((sum, d) => sum + d.amount, 0);
-    const flatDiscountSum = discounts
-      .filter((d) => d.kind === 'ITEM_FLAT')
-      .reduce((sum, d) => sum + d.amount, 0);
+    const flatDiscountSum = discounts.filter((d) => d.kind === 'ITEM_FLAT').reduce((sum, d) => sum + d.amount, 0);
 
     const itemDiscountPerUnitTotal = perUnitDiscountSum * item.quantity;
     const itemDiscountFlatTotal = flatDiscountSum;
 
-    const payableAmount = Math.max(
-      0,
-      baseAmount - itemDiscountPerUnitTotal - itemDiscountFlatTotal,
-    );
+    const payableAmount = Math.max(0, baseAmount - itemDiscountPerUnitTotal - itemDiscountFlatTotal);
 
     return {
       lineId: item.lineId,

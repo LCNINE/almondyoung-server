@@ -2,11 +2,11 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsString, IsOptional, IsEnum, IsBoolean, IsUrl, IsUUID, MaxLength, MinLength } from 'class-validator';
 
 export class CreateSalesChannelDto {
-  @ApiProperty({ 
+  @ApiProperty({
     description: '채널 유형',
     enum: ['ONLINE', 'OFFLINE', 'MARKETPLACE', 'MOBILE_APP', 'SOCIAL_COMMERCE'],
     default: 'ONLINE',
-    required: false
+    required: false,
   })
   @IsOptional()
   @IsEnum(['ONLINE', 'OFFLINE', 'MARKETPLACE', 'MOBILE_APP', 'SOCIAL_COMMERCE'])
@@ -14,7 +14,7 @@ export class CreateSalesChannelDto {
 
   @ApiProperty({
     description: '판매처 사이트 (필수)',
-    enum: ['medusa', 'naver', 'coupang', 'phone_order', 'other']
+    enum: ['medusa', 'naver', 'coupang', 'phone_order', 'other'],
   })
   @IsEnum(['medusa', 'naver', 'coupang', 'phone_order', 'other'])
   site: string;
@@ -24,10 +24,10 @@ export class CreateSalesChannelDto {
   @IsUUID()
   categoryId?: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: '판매 채널 이름',
     minLength: 1,
-    maxLength: 255
+    maxLength: 255,
   })
   @IsString()
   @MinLength(1)
@@ -57,4 +57,3 @@ export class CreateSalesChannelDto {
   @IsOptional()
   credentials?: Record<string, any>;
 }
-

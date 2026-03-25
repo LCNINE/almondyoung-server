@@ -37,16 +37,8 @@ import { WalletEventConsumer } from './handlers/wallet-event.consumer';
     // NotificationDispatcherService에서 직접 발송하도록 처리합니다.
     // ...(process.env.REDIS_HOST ? [NotificationProcessorModule] : []),
   ],
-  controllers: [
-    NotificationController,
-    EventController,
-    UserEventConsumer,
-    OrderEventConsumer,
-    WalletEventConsumer,
-  ],
-  providers: [
-    NotificationDispatcherService,
-  ],
+  controllers: [NotificationController, EventController, UserEventConsumer, OrderEventConsumer, WalletEventConsumer],
+  providers: [NotificationDispatcherService],
   exports: [NotificationDispatcherService],
 })
-export class DispatcherModule { }
+export class DispatcherModule {}

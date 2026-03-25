@@ -6,9 +6,8 @@ import { and, or, eq, lte, gte, isNull } from 'drizzle-orm';
 import { sql } from 'drizzle-orm/sql';
 import { StockStateEnum } from 'apps/wms/database/schemas/enum-values';
 
-
 // TransitionType alias for strong typing
-type TransitionType = typeof wmsTables.stockEvents.$inferInsert['transitionType'];
+type TransitionType = (typeof wmsTables.stockEvents.$inferInsert)['transitionType'];
 
 type CreateEventInput = {
   journalId?: string;
@@ -20,12 +19,12 @@ type CreateEventInput = {
   toWarehouseId?: string | null;
   toLocationId?: string | null;
 
-  fromState?: typeof wmsTables.stockEvents.$inferInsert['fromState'] | null;
-  toState?: typeof wmsTables.stockEvents.$inferInsert['toState'] | null;
+  fromState?: (typeof wmsTables.stockEvents.$inferInsert)['fromState'] | null;
+  toState?: (typeof wmsTables.stockEvents.$inferInsert)['toState'] | null;
 
-  transitionType: typeof wmsTables.stockEvents.$inferInsert['transitionType'];
-  quantity: number;                   // 항상 양수
-  occurredAt: Date;                   // 비즈니스 발생시각
+  transitionType: (typeof wmsTables.stockEvents.$inferInsert)['transitionType'];
+  quantity: number; // 항상 양수
+  occurredAt: Date; // 비즈니스 발생시각
   idempotencyKey?: string;
   reason?: string;
 };
@@ -34,9 +33,7 @@ type CreateEventInput = {
 export class StockEventStore {
   private readonly logger = new Logger(StockEventStore.name);
 
-  constructor(
-    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
-  ) { }
+  constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
 
   private get db() {
     return this.dbService.db;
@@ -104,7 +101,6 @@ export class StockEventStore {
     }, tx);
   }
 
-
   /** 내부용: 레저 가/감산 (음수 금지 정책은 여기서 체크 가능) */
   private async applyProjection(
     tx: DbTx,
@@ -118,7 +114,7 @@ export class StockEventStore {
       toState: StockStateEnum | null;
       quantity: number;
     },
-    options?: { forbidNegative?: boolean }
+    options?: { forbidNegative?: boolean },
   ) {
     const now = new Date();
 
@@ -135,13 +131,15 @@ export class StockEventStore {
           qty: sql`${wmsTables.stockLedgers.qty} - ${params.quantity}`,
           updatedAt: now,
         })
-        .where(and(
-          eq(wmsTables.stockLedgers.skuId, params.skuId),
-          eq(wmsTables.stockLedgers.warehouseId, params.fromWarehouseId),
-          eq(wmsTables.stockLedgers.locationId, params.fromLocationId),
-          eq(wmsTables.stockLedgers.stockState, params.fromState),
-          gte(wmsTables.stockLedgers.qty, params.quantity),
-        ))
+        .where(
+          and(
+            eq(wmsTables.stockLedgers.skuId, params.skuId),
+            eq(wmsTables.stockLedgers.warehouseId, params.fromWarehouseId),
+            eq(wmsTables.stockLedgers.locationId, params.fromLocationId),
+            eq(wmsTables.stockLedgers.stockState, params.fromState),
+            gte(wmsTables.stockLedgers.qty, params.quantity),
+          ),
+        )
         .returning();
 
       if (!decreased || decreased.length === 0) {
@@ -184,24 +182,16 @@ export class StockEventStore {
   // -----------------------------
 
   /** 이벤트 이력 (SKU 중심, 특정 창고의 from/to 모두 포함) */
-  async getEventHistory(
-    skuId?: string,
-    warehouseId?: string,
-    startDate?: string,
-    endDate?: string
-  ) {
-    const where = (e: typeof wmsTables.stockEvents) => and(
-      skuId ? eq(e.skuId, skuId) : undefined,
-      warehouseId
-        ? or(eq(e.fromWarehouseId, warehouseId), eq(e.toWarehouseId, warehouseId))
-        : undefined,
-      startDate ? gte(e.occurredAt, new Date(startDate)) : undefined,
-      endDate
-        ? lte(e.occurredAt, new Date(new Date(endDate).setHours(23, 59, 59, 999)))
-        : undefined,
-      eq(e.eventStatus, 'POSTED'),
-      isNull(e.voidedByEventId)
-    );
+  async getEventHistory(skuId?: string, warehouseId?: string, startDate?: string, endDate?: string) {
+    const where = (e: typeof wmsTables.stockEvents) =>
+      and(
+        skuId ? eq(e.skuId, skuId) : undefined,
+        warehouseId ? or(eq(e.fromWarehouseId, warehouseId), eq(e.toWarehouseId, warehouseId)) : undefined,
+        startDate ? gte(e.occurredAt, new Date(startDate)) : undefined,
+        endDate ? lte(e.occurredAt, new Date(new Date(endDate).setHours(23, 59, 59, 999))) : undefined,
+        eq(e.eventStatus, 'POSTED'),
+        isNull(e.voidedByEventId),
+      );
 
     return this.db.query.stockEvents.findMany({
       where,
@@ -211,7 +201,11 @@ export class StockEventStore {
 
   /** 특정 시점(as-of)의 수량 (그레인=창고/로케/상태) */
   async calculateQuantityAsOf(params: {
-    skuId: string; warehouseId: string; locationId: string; state: typeof wmsTables.stockLedgers.$inferSelect['stockState']; at: Date;
+    skuId: string;
+    warehouseId: string;
+    locationId: string;
+    state: (typeof wmsTables.stockLedgers.$inferSelect)['stockState'];
+    at: Date;
   }): Promise<number> {
     const { skuId, warehouseId, locationId, state, at } = params;
 
@@ -234,31 +228,32 @@ export class StockEventStore {
         `,
       })
       .from(wmsTables.stockEvents)
-      .where(and(
-        eq(wmsTables.stockEvents.skuId, skuId),
-        lte(wmsTables.stockEvents.occurredAt, at),
-        eq(wmsTables.stockEvents.eventStatus, 'POSTED'),
-        isNull(wmsTables.stockEvents.voidedByEventId),
-      ));
+      .where(
+        and(
+          eq(wmsTables.stockEvents.skuId, skuId),
+          lte(wmsTables.stockEvents.occurredAt, at),
+          eq(wmsTables.stockEvents.eventStatus, 'POSTED'),
+          isNull(wmsTables.stockEvents.voidedByEventId),
+        ),
+      );
 
     return row?.qtyAsOf ?? 0;
   }
 
   /** 이벤트 통계 (전이 타입별 카운트/합계) */
-  async getEventStatistics(params: {
-    skuId: string; warehouseId?: string; startDate?: Date; endDate?: Date;
-  }) {
+  async getEventStatistics(params: { skuId: string; warehouseId?: string; startDate?: Date; endDate?: Date }) {
     const { skuId, warehouseId, startDate, endDate } = params;
 
     const events = await this.db.query.stockEvents.findMany({
-      where: (e, { and, or, eq, gte, lte, isNull }) => and(
-        eq(e.skuId, skuId),
-        warehouseId ? or(eq(e.fromWarehouseId, warehouseId), eq(e.toWarehouseId, warehouseId)) : undefined,
-        startDate ? gte(e.occurredAt, startDate) : undefined,
-        endDate ? lte(e.occurredAt, endDate) : undefined,
-        eq(e.eventStatus, 'POSTED'),
-        isNull(e.voidedByEventId),
-      ),
+      where: (e, { and, or, eq, gte, lte, isNull }) =>
+        and(
+          eq(e.skuId, skuId),
+          warehouseId ? or(eq(e.fromWarehouseId, warehouseId), eq(e.toWarehouseId, warehouseId)) : undefined,
+          startDate ? gte(e.occurredAt, startDate) : undefined,
+          endDate ? lte(e.occurredAt, endDate) : undefined,
+          eq(e.eventStatus, 'POSTED'),
+          isNull(e.voidedByEventId),
+        ),
     });
 
     const byType: Record<string, { count: number; totalQty: number }> = {};
@@ -282,8 +277,11 @@ export class StockEventStore {
     return this.db.query.stockEvents.findMany({
       where: (e, { or, eq, isNull }) =>
         warehouseId
-          ? and(or(eq(e.fromWarehouseId, warehouseId), eq(e.toWarehouseId, warehouseId)),
-            eq(e.eventStatus, 'POSTED'), isNull(e.voidedByEventId))
+          ? and(
+              or(eq(e.fromWarehouseId, warehouseId), eq(e.toWarehouseId, warehouseId)),
+              eq(e.eventStatus, 'POSTED'),
+              isNull(e.voidedByEventId),
+            )
           : and(eq(e.eventStatus, 'POSTED'), isNull(e.voidedByEventId)),
       orderBy: (e, { desc }) => [desc(e.occurredAt)],
       limit,
@@ -309,28 +307,31 @@ export class StockEventStore {
       }
 
       // 전이 타입 역매핑
-      const reverseType = this.getReversalType(original.transitionType as TransitionType);
+      const reverseType = this.getReversalType(original.transitionType);
 
-      const [rev] = await trx.insert(wmsTables.stockEvents).values({
-        journalId: original.journalId,
-        skuId: original.skuId,
+      const [rev] = await trx
+        .insert(wmsTables.stockEvents)
+        .values({
+          journalId: original.journalId,
+          skuId: original.skuId,
 
-        // 방향 반전: to → from, from → to
-        fromWarehouseId: original.toWarehouseId,
-        fromLocationId: original.toLocationId,
-        toWarehouseId: original.fromWarehouseId,
-        toLocationId: original.fromLocationId,
+          // 방향 반전: to → from, from → to
+          fromWarehouseId: original.toWarehouseId,
+          fromLocationId: original.toLocationId,
+          toWarehouseId: original.fromWarehouseId,
+          toLocationId: original.fromLocationId,
 
-        fromState: original.toState,
-        toState: original.fromState,
-        transitionType: reverseType,
+          fromState: original.toState,
+          toState: original.fromState,
+          transitionType: reverseType,
 
-        quantity: original.quantity,
-        occurredAt: new Date(),
-        eventStatus: 'POSTED',
-        reversalOfEventId: original.id,
-        reason: `REVERSAL of ${original.id}: ${reason}`,
-      }).returning();
+          quantity: original.quantity,
+          occurredAt: new Date(),
+          eventStatus: 'POSTED',
+          reversalOfEventId: original.id,
+          reason: `REVERSAL of ${original.id}: ${reason}`,
+        })
+        .returning();
 
       await this.applyProjection(trx, {
         skuId: rev.skuId,

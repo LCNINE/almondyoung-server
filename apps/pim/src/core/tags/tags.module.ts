@@ -8,4 +8,3 @@ import { TagsService } from './tags.service';
   exports: [TagsService],
 })
 export class TagsModule {}
-

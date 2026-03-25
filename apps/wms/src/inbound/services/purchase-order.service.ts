@@ -15,7 +15,7 @@ import {
   CartItemResponse,
   StockReorderSuggestion,
   PurchaseOrderStatus,
-  PurchaseOrderType
+  PurchaseOrderType,
 } from '../dto/purchase-order.dto';
 import { SubmitForAuditDto, ApprovePoDto, RejectPoDto } from '../dto/purchase-order/audit-po.dto';
 import { TransactionService } from '../../shared/services/transaction.service';
@@ -28,7 +28,7 @@ export class PurchaseOrderService {
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly transactionService: TransactionService,
-  ) { }
+  ) {}
 
   private get db() {
     return this.dbService.db;
@@ -66,12 +66,12 @@ export class PurchaseOrderService {
       const purchaseOrderLines = await trx
         .insert(wmsTables.purchaseOrderLines)
         .values(
-          createDto.lines.map(line => ({
+          createDto.lines.map((line) => ({
             poId: purchaseOrder.id,
             skuId: line.skuId,
             quantity: line.quantity,
             unitPrice: line.unitPrice || null,
-          }))
+          })),
         )
         .returning();
 
@@ -84,7 +84,11 @@ export class PurchaseOrderService {
   /**
    * 장바구니에서 발주 생성
    */
-  async createPurchaseOrderFromCart(createDto: CreatePurchaseOrderFromCartDto, userId: string, tx?: DbTx): Promise<PurchaseOrderResponse> {
+  async createPurchaseOrderFromCart(
+    createDto: CreatePurchaseOrderFromCartDto,
+    userId: string,
+    tx?: DbTx,
+  ): Promise<PurchaseOrderResponse> {
     return this.inTx(async (trx) => {
       const cartItems = await trx
         .select({
@@ -94,16 +98,18 @@ export class PurchaseOrderService {
           type: wmsTables.purchaseOrderCart.type,
         })
         .from(wmsTables.purchaseOrderCart)
-        .where(and(
-          inArray(wmsTables.purchaseOrderCart.id, createDto.cartItemIds),
-          eq(wmsTables.purchaseOrderCart.createdBy, userId)
-        ));
+        .where(
+          and(
+            inArray(wmsTables.purchaseOrderCart.id, createDto.cartItemIds),
+            eq(wmsTables.purchaseOrderCart.createdBy, userId),
+          ),
+        );
 
       if (cartItems.length !== createDto.cartItemIds.length) {
-        throw new BadRequestException('Some cart items not found or you don\'t have permission to access them');
+        throw new BadRequestException("Some cart items not found or you don't have permission to access them");
       }
 
-      const types = [...new Set(cartItems.map(item => item.type))];
+      const types = [...new Set(cartItems.map((item) => item.type))];
       if (types.length > 1) {
         throw new BadRequestException('All cart items must have the same purchase order type');
       }
@@ -125,22 +131,22 @@ export class PurchaseOrderService {
         })
         .returning();
 
-      await trx
-        .insert(wmsTables.purchaseOrderLines)
-        .values(
-          cartItems.map(item => ({
-            poId: purchaseOrder.id,
-            skuId: item.skuId,
-            quantity: item.quantity,
-            unitPrice: null,
-          }))
-        );
+      await trx.insert(wmsTables.purchaseOrderLines).values(
+        cartItems.map((item) => ({
+          poId: purchaseOrder.id,
+          skuId: item.skuId,
+          quantity: item.quantity,
+          unitPrice: null,
+        })),
+      );
 
       await trx
         .delete(wmsTables.purchaseOrderCart)
         .where(inArray(wmsTables.purchaseOrderCart.id, createDto.cartItemIds));
 
-      this.logger.log(`Created purchase order ${purchaseOrder.id} from ${cartItems.length} cart items for user ${userId}`);
+      this.logger.log(
+        `Created purchase order ${purchaseOrder.id} from ${cartItems.length} cart items for user ${userId}`,
+      );
 
       return this.getPurchaseOrderById(purchaseOrder.id, trx);
     }, tx);
@@ -151,8 +157,9 @@ export class PurchaseOrderService {
    */
   async updatePurchaseOrderStatus(
     poId: string,
-    updateDto: UpdatePurchaseOrderStatusDto
-    , tx?: DbTx): Promise<PurchaseOrderResponse> {
+    updateDto: UpdatePurchaseOrderStatusDto,
+    tx?: DbTx,
+  ): Promise<PurchaseOrderResponse> {
     return this.inTx(async (trx) => {
       const [existingPO] = await trx
         .select()
@@ -192,7 +199,7 @@ export class PurchaseOrderService {
   async updatePurchaseOrderLines(
     poId: string,
     updateDto: UpdatePurchaseOrderLinesDto,
-    tx?: DbTx
+    tx?: DbTx,
   ): Promise<PurchaseOrderResponse> {
     return this.inTx(async (trx) => {
       // 1. PO 존재 및 상태 확인
@@ -208,27 +215,21 @@ export class PurchaseOrderService {
 
       // 2. received 상태는 수정 불가
       if (po.status === 'received') {
-        throw new BadRequestException(
-          'Cannot modify purchase order lines after fully received'
-        );
+        throw new BadRequestException('Cannot modify purchase order lines after fully received');
       }
 
       // 3. 기존 라인 삭제
-      await trx
-        .delete(wmsTables.purchaseOrderLines)
-        .where(eq(wmsTables.purchaseOrderLines.poId, poId));
+      await trx.delete(wmsTables.purchaseOrderLines).where(eq(wmsTables.purchaseOrderLines.poId, poId));
 
       // 4. 새 라인 삽입
-      await trx
-        .insert(wmsTables.purchaseOrderLines)
-        .values(
-          updateDto.lines.map(line => ({
-            poId,
-            skuId: line.skuId,
-            quantity: line.quantity,
-            unitPrice: line.unitPrice ?? null,
-          }))
-        );
+      await trx.insert(wmsTables.purchaseOrderLines).values(
+        updateDto.lines.map((line) => ({
+          poId,
+          skuId: line.skuId,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice ?? null,
+        })),
+      );
 
       // 5. confirmed 상태면 inbound_plan_items도 업데이트 시도
       if (po.status === 'confirmed') {
@@ -245,11 +246,7 @@ export class PurchaseOrderService {
    * confirmed 상태 PO의 inbound_plan_items 동기화
    * - pending 상태 items만 업데이트 (이미 입고 시작된 건은 건드리지 않음)
    */
-  private async syncInboundPlanItems(
-    tx: DbTx,
-    poId: string,
-    newLines: UpdatePurchaseOrderLineDto[]
-  ): Promise<void> {
+  private async syncInboundPlanItems(tx: DbTx, poId: string, newLines: UpdatePurchaseOrderLineDto[]): Promise<void> {
     // 1. 해당 PO의 모든 plan 조회
     const plans = await tx
       .select()
@@ -260,25 +257,18 @@ export class PurchaseOrderService {
       // 2. pending 상태 items만 삭제
       await tx
         .delete(wmsTables.inboundPlanItems)
-        .where(
-          and(
-            eq(wmsTables.inboundPlanItems.planId, plan.id),
-            eq(wmsTables.inboundPlanItems.status, 'pending')
-          )
-        );
+        .where(and(eq(wmsTables.inboundPlanItems.planId, plan.id), eq(wmsTables.inboundPlanItems.status, 'pending')));
 
       // 3. 새 items 삽입
-      await tx
-        .insert(wmsTables.inboundPlanItems)
-        .values(
-          newLines.map(line => ({
-            planId: plan.id,
-            skuId: line.skuId,
-            expectedQty: line.quantity,
-            receivedQty: 0,
-            status: 'pending' as const,
-          }))
-        );
+      await tx.insert(wmsTables.inboundPlanItems).values(
+        newLines.map((line) => ({
+          planId: plan.id,
+          skuId: line.skuId,
+          expectedQty: line.quantity,
+          receivedQty: 0,
+          status: 'pending' as const,
+        })),
+      );
     }
 
     this.logger.log(`Synced inbound plan items for ${plans.length} plans`);
@@ -343,7 +333,7 @@ export class PurchaseOrderService {
         .from(wmsTables.purchaseOrderLines)
         .where(eq(wmsTables.purchaseOrderLines.poId, poId));
 
-      const sourceItems = poLines.map(line => ({
+      const sourceItems = poLines.map((line) => ({
         planId: sourcePlan.id,
         skuId: line.skuId,
         expectedQty: line.quantity,
@@ -351,7 +341,7 @@ export class PurchaseOrderService {
         status: 'pending' as const,
       }));
 
-      const destinationItems = poLines.map(line => ({
+      const destinationItems = poLines.map((line) => ({
         planId: destinationPlan.id,
         skuId: line.skuId,
         expectedQty: line.quantity,
@@ -359,13 +349,11 @@ export class PurchaseOrderService {
         status: 'pending' as const,
       }));
 
-      await tx.insert(wmsTables.inboundPlanItems).values([
-        ...sourceItems,
-        ...destinationItems
-      ]);
+      await tx.insert(wmsTables.inboundPlanItems).values([...sourceItems, ...destinationItems]);
 
-      this.logger.log(`Created dual inbound plans: source=${sourcePlan.id}, destination=${destinationPlan.id} for PO ${poId}`);
-
+      this.logger.log(
+        `Created dual inbound plans: source=${sourcePlan.id}, destination=${destinationPlan.id} for PO ${poId}`,
+      );
     } else {
       // 국내 발주는 기존 로직 유지 (destination plan만 생성)
       const [plan] = await tx
@@ -390,17 +378,15 @@ export class PurchaseOrderService {
         .from(wmsTables.purchaseOrderLines)
         .where(eq(wmsTables.purchaseOrderLines.poId, poId));
 
-      await tx
-        .insert(wmsTables.inboundPlanItems)
-        .values(
-          poLines.map(line => ({
-            planId: plan.id,
-            skuId: line.skuId,
-            expectedQty: line.quantity,
-            receivedQty: 0,
-            status: 'pending' as const,
-          }))
-        );
+      await tx.insert(wmsTables.inboundPlanItems).values(
+        poLines.map((line) => ({
+          planId: plan.id,
+          skuId: line.skuId,
+          expectedQty: line.quantity,
+          receivedQty: 0,
+          status: 'pending' as const,
+        })),
+      );
 
       this.logger.log(`Created single inbound plan ${plan.id} for domestic PO ${poId}`);
     }
@@ -420,7 +406,7 @@ export class PurchaseOrderService {
     }
     if (!supplier.defaultWarehouseId) {
       throw new BadRequestException(
-        `Supplier ${supplierId} does not have a default warehouse configured. Please set a default warehouse for this supplier.`
+        `Supplier ${supplierId} does not have a default warehouse configured. Please set a default warehouse for this supplier.`,
       );
     }
     return supplier.defaultWarehouseId;
@@ -457,12 +443,15 @@ export class PurchaseOrderService {
         .leftJoin(wmsTables.skus, eq(wmsTables.purchaseOrderLines.skuId, wmsTables.skus.id))
         .where(eq(wmsTables.purchaseOrderLines.poId, poId));
 
-      const supplier = po.supplierId ? (() => trx
-        .select()
-        .from(wmsTables.suppliers)
-        .where(eq(wmsTables.suppliers.id, po.supplierId))
-        .limit(1)
-        .then(rows => rows[0]))() : undefined;
+      const supplier = po.supplierId
+        ? (() =>
+            trx
+              .select()
+              .from(wmsTables.suppliers)
+              .where(eq(wmsTables.suppliers.id, po.supplierId))
+              .limit(1)
+              .then((rows) => rows[0]))()
+        : undefined;
 
       const supplierRow = await supplier;
 
@@ -472,9 +461,9 @@ export class PurchaseOrderService {
         supplierId: po.supplierId,
         expectedArrival: po.expectedArrival,
         status: po.status as PurchaseOrderStatus,
-        createdAt: po.createdAt!,
-        updatedAt: po.updatedAt!,
-        lines: lines.map(line => ({
+        createdAt: po.createdAt,
+        updatedAt: po.updatedAt,
+        lines: lines.map((line) => ({
           skuId: line.skuId,
           quantity: line.quantity,
           unitPrice: line.unitPrice,
@@ -483,7 +472,7 @@ export class PurchaseOrderService {
             barcode: line.skuBarcode ?? '',
           },
         })),
-        supplier: supplierRow ? SupplierResponseDto.fromDbRow(supplierRow) : undefined
+        supplier: supplierRow ? SupplierResponseDto.fromDbRow(supplierRow) : undefined,
       };
     }, tx);
   }
@@ -495,8 +484,9 @@ export class PurchaseOrderService {
     status?: PurchaseOrderStatus,
     type?: PurchaseOrderType,
     limit = 50,
-    offset = 0
-    , tx?: DbTx): Promise<PurchaseOrderResponse[]> {
+    offset = 0,
+    tx?: DbTx,
+  ): Promise<PurchaseOrderResponse[]> {
     const conditions: SQL[] = [];
 
     if (status) {
@@ -507,41 +497,49 @@ export class PurchaseOrderService {
       conditions.push(eq(wmsTables.purchaseOrders.type, type));
     }
 
-    const purchaseOrders = await this.inTx(async (trx) => trx
-      .select()
-      .from(wmsTables.purchaseOrders)
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(desc(wmsTables.purchaseOrders.createdAt))
-      .limit(limit)
-      .offset(offset)
-      , tx);
+    const purchaseOrders = await this.inTx(
+      async (trx) =>
+        trx
+          .select()
+          .from(wmsTables.purchaseOrders)
+          .where(conditions.length > 0 ? and(...conditions) : undefined)
+          .orderBy(desc(wmsTables.purchaseOrders.createdAt))
+          .limit(limit)
+          .offset(offset),
+      tx,
+    );
     const results = [] as PurchaseOrderResponse[];
     for (const po of purchaseOrders) {
-      const lines = await this.inTx(async (trx) => trx
-        .select({
-          skuId: wmsTables.purchaseOrderLines.skuId,
-          quantity: wmsTables.purchaseOrderLines.quantity,
-          unitPrice: wmsTables.purchaseOrderLines.unitPrice,
-          skuName: wmsTables.skus.name,
-          skuBarcode: sql<string>`(
+      const lines = await this.inTx(
+        async (trx) =>
+          trx
+            .select({
+              skuId: wmsTables.purchaseOrderLines.skuId,
+              quantity: wmsTables.purchaseOrderLines.quantity,
+              unitPrice: wmsTables.purchaseOrderLines.unitPrice,
+              skuName: wmsTables.skus.name,
+              skuBarcode: sql<string>`(
                       SELECT barcode FROM sku_barcodes 
                       WHERE sku_id = ${wmsTables.skus.id} AND is_primary = true 
                       LIMIT 1
                     )`,
-        })
-        .from(wmsTables.purchaseOrderLines)
-        .leftJoin(wmsTables.skus, eq(wmsTables.purchaseOrderLines.skuId, wmsTables.skus.id))
-        .where(eq(wmsTables.purchaseOrderLines.poId, po.id))
-        , tx);
+            })
+            .from(wmsTables.purchaseOrderLines)
+            .leftJoin(wmsTables.skus, eq(wmsTables.purchaseOrderLines.skuId, wmsTables.skus.id))
+            .where(eq(wmsTables.purchaseOrderLines.poId, po.id)),
+        tx,
+      );
 
-      const supplier = po.supplierId ? await this.inTx(async (trx) => {
-        const [row] = await trx
-          .select()
-          .from(wmsTables.suppliers)
-          .where(eq(wmsTables.suppliers.id, po.supplierId!))
-          .limit(1);
-        return row;
-      }, tx) : undefined;
+      const supplier = po.supplierId
+        ? await this.inTx(async (trx) => {
+            const [row] = await trx
+              .select()
+              .from(wmsTables.suppliers)
+              .where(eq(wmsTables.suppliers.id, po.supplierId!))
+              .limit(1);
+            return row;
+          }, tx)
+        : undefined;
 
       results.push({
         id: po.id,
@@ -549,9 +547,9 @@ export class PurchaseOrderService {
         supplierId: po.supplierId,
         expectedArrival: po.expectedArrival,
         status: po.status as PurchaseOrderStatus,
-        createdAt: po.createdAt!,
-        updatedAt: po.updatedAt!,
-        lines: lines.map(line => ({
+        createdAt: po.createdAt,
+        updatedAt: po.updatedAt,
+        lines: lines.map((line) => ({
           skuId: line.skuId,
           quantity: line.quantity,
           unitPrice: line.unitPrice,
@@ -576,37 +574,46 @@ export class PurchaseOrderService {
       const [row] = await trx
         .select()
         .from(wmsTables.purchaseOrderCart)
-        .where(and(
-          eq(wmsTables.purchaseOrderCart.skuId, addDto.skuId),
-          eq(wmsTables.purchaseOrderCart.type, addDto.type),
-          eq(wmsTables.purchaseOrderCart.createdBy, userId)
-        ))
+        .where(
+          and(
+            eq(wmsTables.purchaseOrderCart.skuId, addDto.skuId),
+            eq(wmsTables.purchaseOrderCart.type, addDto.type),
+            eq(wmsTables.purchaseOrderCart.createdBy, userId),
+          ),
+        )
         .limit(1);
       return row;
     }, tx);
 
     if (existingItem) {
-      await this.inTx(async (trx) => trx
-        .update(wmsTables.purchaseOrderCart)
-        .set({
-          quantity: existingItem.quantity + addDto.quantity,
-          supplierId: addDto.supplierId || existingItem.supplierId,
-          updatedAt: new Date(),
-        })
-        .where(eq(wmsTables.purchaseOrderCart.id, existingItem.id))
-        , tx);
+      await this.inTx(
+        async (trx) =>
+          trx
+            .update(wmsTables.purchaseOrderCart)
+            .set({
+              quantity: existingItem.quantity + addDto.quantity,
+              supplierId: addDto.supplierId || existingItem.supplierId,
+              updatedAt: new Date(),
+            })
+            .where(eq(wmsTables.purchaseOrderCart.id, existingItem.id)),
+        tx,
+      );
       return this.getCartItemById(existingItem.id, userId, tx);
     } else {
-      const [cartItem] = await this.inTx(async (trx) => trx
-        .insert(wmsTables.purchaseOrderCart)
-        .values({
-          skuId: addDto.skuId,
-          quantity: addDto.quantity,
-          type: addDto.type,
-          supplierId: addDto.supplierId,
-          createdBy: userId,
-        })
-        .returning(), tx);
+      const [cartItem] = await this.inTx(
+        async (trx) =>
+          trx
+            .insert(wmsTables.purchaseOrderCart)
+            .values({
+              skuId: addDto.skuId,
+              quantity: addDto.quantity,
+              type: addDto.type,
+              supplierId: addDto.supplierId,
+              createdBy: userId,
+            })
+            .returning(),
+        tx,
+      );
 
       return this.getCartItemById(cartItem.id, userId, tx);
     }
@@ -615,15 +622,17 @@ export class PurchaseOrderService {
   /**
    * 장바구니 아이템 수정
    */
-  async updateCartItem(itemId: string, userId: string, updateDto: UpdateCartItemDto, tx?: DbTx): Promise<CartItemResponse> {
+  async updateCartItem(
+    itemId: string,
+    userId: string,
+    updateDto: UpdateCartItemDto,
+    tx?: DbTx,
+  ): Promise<CartItemResponse> {
     const existingItem = await this.inTx(async (trx) => {
       const [row] = await trx
         .select()
         .from(wmsTables.purchaseOrderCart)
-        .where(and(
-          eq(wmsTables.purchaseOrderCart.id, itemId),
-          eq(wmsTables.purchaseOrderCart.createdBy, userId)
-        ))
+        .where(and(eq(wmsTables.purchaseOrderCart.id, itemId), eq(wmsTables.purchaseOrderCart.createdBy, userId)))
         .limit(1);
       return row;
     }, tx);
@@ -632,15 +641,18 @@ export class PurchaseOrderService {
       throw new NotFoundException(`Cart item with ID ${itemId} not found or you don't have permission to modify it`);
     }
 
-    await this.inTx(async (trx) => trx
-      .update(wmsTables.purchaseOrderCart)
-      .set({
-        quantity: updateDto.quantity,
-        supplierId: updateDto.supplierId ?? existingItem.supplierId,
-        updatedAt: new Date(),
-      })
-      .where(eq(wmsTables.purchaseOrderCart.id, itemId))
-      , tx);
+    await this.inTx(
+      async (trx) =>
+        trx
+          .update(wmsTables.purchaseOrderCart)
+          .set({
+            quantity: updateDto.quantity,
+            supplierId: updateDto.supplierId ?? existingItem.supplierId,
+            updatedAt: new Date(),
+          })
+          .where(eq(wmsTables.purchaseOrderCart.id, itemId)),
+      tx,
+    );
     return this.getCartItemById(itemId, userId, tx);
   }
 
@@ -648,13 +660,14 @@ export class PurchaseOrderService {
    * 장바구니에서 아이템 제거
    */
   async removeFromCart(itemId: string, userId: string, tx?: DbTx): Promise<void> {
-    const result = await this.inTx(async (trx) => trx
-      .delete(wmsTables.purchaseOrderCart)
-      .where(and(
-        eq(wmsTables.purchaseOrderCart.id, itemId),
-        eq(wmsTables.purchaseOrderCart.createdBy, userId)
-      ))
-      .returning(), tx);
+    const result = await this.inTx(
+      async (trx) =>
+        trx
+          .delete(wmsTables.purchaseOrderCart)
+          .where(and(eq(wmsTables.purchaseOrderCart.id, itemId), eq(wmsTables.purchaseOrderCart.createdBy, userId)))
+          .returning(),
+      tx,
+    );
 
     if (result.length === 0) {
       throw new NotFoundException(`Cart item with ID ${itemId} not found or you don't have permission to delete it`);
@@ -672,41 +685,47 @@ export class PurchaseOrderService {
       conditions.push(eq(wmsTables.purchaseOrderCart.type, type));
     }
 
-    const cartItems = await this.inTx(async (trx) => trx
-      .select({
-        id: wmsTables.purchaseOrderCart.id,
-        skuId: wmsTables.purchaseOrderCart.skuId,
-        quantity: wmsTables.purchaseOrderCart.quantity,
-        type: wmsTables.purchaseOrderCart.type,
-        supplierId: wmsTables.purchaseOrderCart.supplierId,
-        supplierName: wmsTables.suppliers.name,
-        createdAt: wmsTables.purchaseOrderCart.createdAt,
-        updatedAt: wmsTables.purchaseOrderCart.updatedAt,
-        skuName: wmsTables.skus.name,
-        skuBarcode: sql<string>`(
+    const cartItems = await this.inTx(
+      async (trx) =>
+        trx
+          .select({
+            id: wmsTables.purchaseOrderCart.id,
+            skuId: wmsTables.purchaseOrderCart.skuId,
+            quantity: wmsTables.purchaseOrderCart.quantity,
+            type: wmsTables.purchaseOrderCart.type,
+            supplierId: wmsTables.purchaseOrderCart.supplierId,
+            supplierName: wmsTables.suppliers.name,
+            createdAt: wmsTables.purchaseOrderCart.createdAt,
+            updatedAt: wmsTables.purchaseOrderCart.updatedAt,
+            skuName: wmsTables.skus.name,
+            skuBarcode: sql<string>`(
                   SELECT barcode FROM sku_barcodes 
                   WHERE sku_id = ${wmsTables.skus.id} AND is_primary = true 
                   LIMIT 1
                 )`,
-      })
-      .from(wmsTables.purchaseOrderCart)
-      .leftJoin(wmsTables.skus, eq(wmsTables.purchaseOrderCart.skuId, wmsTables.skus.id))
-      .leftJoin(wmsTables.suppliers, eq(wmsTables.purchaseOrderCart.supplierId, wmsTables.suppliers.id))
-      .where(and(...conditions))
-      .orderBy(desc(wmsTables.purchaseOrderCart.createdAt))
-      , tx);
+          })
+          .from(wmsTables.purchaseOrderCart)
+          .leftJoin(wmsTables.skus, eq(wmsTables.purchaseOrderCart.skuId, wmsTables.skus.id))
+          .leftJoin(wmsTables.suppliers, eq(wmsTables.purchaseOrderCart.supplierId, wmsTables.suppliers.id))
+          .where(and(...conditions))
+          .orderBy(desc(wmsTables.purchaseOrderCart.createdAt)),
+      tx,
+    );
 
-    return cartItems.map(item => ({
+    return cartItems.map((item) => ({
       id: item.id,
       skuId: item.skuId,
       quantity: item.quantity,
       type: item.type as PurchaseOrderType,
-      supplier: item.supplierId && item.supplierName ? {
-        id: item.supplierId,
-        name: item.supplierName,
-      } : null,
-      createdAt: item.createdAt!,
-      updatedAt: item.updatedAt!,
+      supplier:
+        item.supplierId && item.supplierName
+          ? {
+              id: item.supplierId,
+              name: item.supplierName,
+            }
+          : null,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
       sku: {
         name: item.skuName ?? '',
         barcode: item.skuBarcode ?? '',
@@ -739,10 +758,7 @@ export class PurchaseOrderService {
         .from(wmsTables.purchaseOrderCart)
         .leftJoin(wmsTables.skus, eq(wmsTables.purchaseOrderCart.skuId, wmsTables.skus.id))
         .leftJoin(wmsTables.suppliers, eq(wmsTables.purchaseOrderCart.supplierId, wmsTables.suppliers.id))
-        .where(and(
-          eq(wmsTables.purchaseOrderCart.id, itemId),
-          eq(wmsTables.purchaseOrderCart.createdBy, userId)
-        ))
+        .where(and(eq(wmsTables.purchaseOrderCart.id, itemId), eq(wmsTables.purchaseOrderCart.createdBy, userId)))
         .limit(1);
       return row;
     }, tx);
@@ -756,12 +772,15 @@ export class PurchaseOrderService {
       skuId: item.skuId,
       quantity: item.quantity,
       type: item.type as PurchaseOrderType,
-      supplier: item.supplierId && item.supplierName ? {
-        id: item.supplierId,
-        name: item.supplierName,
-      } : null,
-      createdAt: item.createdAt!,
-      updatedAt: item.updatedAt!,
+      supplier:
+        item.supplierId && item.supplierName
+          ? {
+              id: item.supplierId,
+              name: item.supplierName,
+            }
+          : null,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
       sku: {
         name: item.skuName ?? '',
         barcode: item.skuBarcode ?? '',
@@ -778,10 +797,7 @@ export class PurchaseOrderService {
       conditions.push(eq(wmsTables.purchaseOrderCart.type, type));
     }
 
-    await this.inTx(async (trx) => trx
-      .delete(wmsTables.purchaseOrderCart)
-      .where(and(...conditions))
-      , tx);
+    await this.inTx(async (trx) => trx.delete(wmsTables.purchaseOrderCart).where(and(...conditions)), tx);
 
     this.logger.log(`Cleared cart${type ? ` for type ${type}` : ''} for user ${userId}`);
   }
@@ -828,7 +844,7 @@ export class PurchaseOrderService {
     const results = await this.inTx(async (trx) => trx.execute(query), tx);
     const rows = results as unknown as ReorderSuggestionRow[];
 
-    return rows.map(row => ({
+    return rows.map((row) => ({
       skuId: row.sku_id,
       skuName: row.sku_name,
       currentStock: row.current_stock,
@@ -849,7 +865,7 @@ export class PurchaseOrderService {
     poId: string,
     dto: SubmitForAuditDto,
     userId?: string,
-    tx?: DbTx
+    tx?: DbTx,
   ): Promise<{
     id: string;
     auditStatus: string;
@@ -870,9 +886,7 @@ export class PurchaseOrderService {
 
       // Validate current status
       if (po.auditStatus !== 'draft') {
-        throw new BadRequestException(
-          `Cannot submit: current audit status is ${po.auditStatus}, expected 'draft'`
-        );
+        throw new BadRequestException(`Cannot submit: current audit status is ${po.auditStatus}, expected 'draft'`);
       }
 
       // Update status
@@ -903,7 +917,7 @@ export class PurchaseOrderService {
     poId: string,
     dto: ApprovePoDto,
     userId?: string,
-    tx?: DbTx
+    tx?: DbTx,
   ): Promise<{
     id: string;
     auditStatus: string;
@@ -925,7 +939,7 @@ export class PurchaseOrderService {
       // Validate current status
       if (po.auditStatus !== 'pending_audit') {
         throw new BadRequestException(
-          `Cannot approve: current audit status is ${po.auditStatus}, expected 'pending_audit'`
+          `Cannot approve: current audit status is ${po.auditStatus}, expected 'pending_audit'`,
         );
       }
 
@@ -957,7 +971,7 @@ export class PurchaseOrderService {
     poId: string,
     dto: RejectPoDto,
     userId?: string,
-    tx?: DbTx
+    tx?: DbTx,
   ): Promise<{
     id: string;
     auditStatus: string;
@@ -980,7 +994,7 @@ export class PurchaseOrderService {
       // Validate current status
       if (po.auditStatus !== 'pending_audit') {
         throw new BadRequestException(
-          `Cannot reject: current audit status is ${po.auditStatus}, expected 'pending_audit'`
+          `Cannot reject: current audit status is ${po.auditStatus}, expected 'pending_audit'`,
         );
       }
 

@@ -1,9 +1,6 @@
 import { DbService, InjectDb } from '@app/db';
 import { Injectable } from '@nestjs/common';
-import {
-  userServiceSchema,
-  UserServiceSchema,
-} from 'apps/user-service/database/drizzle/schema';
+import { userServiceSchema, UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
 import { DbTransaction } from 'apps/user-service/src/commons/types';
 import { and, desc, eq, gt } from 'drizzle-orm';
 import { VerifyCodeDto } from '../dto/verify-code.dto';
@@ -16,9 +13,7 @@ import { HttpStatus } from '@nestjs/common';
  */
 @Injectable()
 export class VerifyCodeService {
-  constructor(
-    @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
-  ) { }
+  constructor(@InjectDb() private readonly dbService: DbService<UserServiceSchema>) {}
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.dbService.db;
@@ -35,11 +30,7 @@ export class VerifyCodeService {
     }
 
     // 가장 최근의 유효한 코드만 조회
-    const verification = await this.findValidVerification(
-      phoneNumber,
-      code,
-      tx,
-    );
+    const verification = await this.findValidVerification(phoneNumber, code, tx);
 
     if (!verification) {
       throw new TwilioException({
@@ -67,8 +58,7 @@ export class VerifyCodeService {
         })
         .where(eq(userServiceSchema.phoneVerifications.id, verification.id));
 
-      const remainingAttempts =
-        verification.maxAttempts - verification.attempts - 1;
+      const remainingAttempts = verification.maxAttempts - verification.attempts - 1;
 
       throw new TwilioException({
         message: `인증 코드가 일치하지 않습니다 (${remainingAttempts}회 남음)`,
@@ -90,11 +80,7 @@ export class VerifyCodeService {
   }
 
   // 이미 인증된 코드인지 확인
-  private async alreadyVerified(
-    phoneNumber: string,
-    code: string,
-    tx?: DbTransaction,
-  ) {
+  private async alreadyVerified(phoneNumber: string, code: string, tx?: DbTransaction) {
     const client = this.getClient(tx);
 
     const [alreadyVerified] = await client
@@ -114,11 +100,7 @@ export class VerifyCodeService {
   }
 
   // 유효한 인증 코드 조회
-  private async findValidVerification(
-    phoneNumber: string,
-    code: string,
-    tx?: DbTransaction,
-  ) {
+  private async findValidVerification(phoneNumber: string, code: string, tx?: DbTransaction) {
     const client = this.getClient(tx);
 
     const [verification] = await client

@@ -29,10 +29,7 @@ export const categoriesClient = {
     return response.data;
   },
 
-  update: async (
-    id: UUID,
-    dto: UpdateCategoryDto
-  ): Promise<CategoryDto> => {
+  update: async (id: UUID, dto: UpdateCategoryDto): Promise<CategoryDto> => {
     const response = await client.put(`${PIM_BASE_URL}/categories/${id}`, dto);
     return response.data;
   },
@@ -117,7 +114,9 @@ export const getCategory = async (id: string): Promise<CategoryDto> => {
 export const getCategoryChildren = async (
   id: string
 ): Promise<CategoryDto[]> => {
-  const response = await client.get(`${PIM_BASE_URL}/categories/${id}/children`);
+  const response = await client.get(
+    `${PIM_BASE_URL}/categories/${id}/children`
+  );
   return response.data;
 };
 

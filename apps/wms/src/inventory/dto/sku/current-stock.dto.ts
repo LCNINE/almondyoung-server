@@ -37,4 +37,3 @@ export class CurrentStockDto {
   @ApiProperty({ description: '마지막 계산 시간' })
   lastCalculatedAt: Date;
 }
-

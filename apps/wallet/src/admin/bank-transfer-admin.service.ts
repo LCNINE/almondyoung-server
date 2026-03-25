@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  NotFoundException,
-  UnprocessableEntityException,
-} from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { PaginatedResponseDto } from '@app/shared';
 import { and, count, desc, eq } from 'drizzle-orm';
@@ -27,17 +22,11 @@ export class BankTransferAdminService {
     private readonly stateTransitionService: StateTransitionService,
   ) {}
 
-  async getPendingTransfers(
-    page = 1,
-    limit = 20,
-  ): Promise<PaginatedResponseDto<PendingBankTransferResponseDto>> {
+  async getPendingTransfers(page = 1, limit = 20): Promise<PaginatedResponseDto<PendingBankTransferResponseDto>> {
     const db = this.dbService.db;
     const offset = (page - 1) * limit;
 
-    const condition = and(
-      eq(paymentIntents.status, 'REQUIRES_ACTION'),
-      eq(paymentMethods.type, 'BANK_TRANSFER'),
-    );
+    const condition = and(eq(paymentIntents.status, 'REQUIRES_ACTION'), eq(paymentMethods.type, 'BANK_TRANSFER'));
 
     const [countResult] = await db
       .select({ value: count() })
@@ -83,10 +72,7 @@ export class BankTransferAdminService {
     this.logger.log(`confirmDeposit called: intentId=${intentId} depositorNote=${depositorNote}`);
 
     // 1. Find the REQUIRES_ACTION AUTHORIZE charge
-    const charge = await this.chargesService.findActiveByIntentAndOperation(
-      intentId,
-      'AUTHORIZE',
-    );
+    const charge = await this.chargesService.findActiveByIntentAndOperation(intentId, 'AUTHORIZE');
     this.logger.log(`charge found: ${JSON.stringify({ id: charge?.id, status: charge?.status })}`);
     if (!charge || charge.status !== 'REQUIRES_ACTION') {
       throw new UnprocessableEntityException({

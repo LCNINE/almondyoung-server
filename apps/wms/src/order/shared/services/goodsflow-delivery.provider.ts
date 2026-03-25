@@ -1,5 +1,11 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
-import { DeliveryProvider, DeliveryRequest, DeliveryResponse, PrintResponse, TrackingResponse } from './delivery-provider.interface';
+import {
+  DeliveryProvider,
+  DeliveryRequest,
+  DeliveryResponse,
+  PrintResponse,
+  TrackingResponse,
+} from './delivery-provider.interface';
 
 export interface GoodsflowConfig {
   apiUrl: string;
@@ -17,7 +23,7 @@ export class GoodsflowDeliveryProvider extends DeliveryProvider {
     this.config = {
       apiUrl: process.env.GOODSFLOW_API_URL || 'https://api.goodsflow.com',
       apiKey: process.env.GOODSFLOW_API_KEY || '',
-      centerCode: process.env.GOODSFLOW_CENTER_CODE || ''
+      centerCode: process.env.GOODSFLOW_CENTER_CODE || '',
     };
 
     if (!this.config.apiKey || !this.config.centerCode) {
@@ -36,11 +42,11 @@ export class GoodsflowDeliveryProvider extends DeliveryProvider {
         sender_phone: request.senderPhone || '02-1234-5678',
         carrier_code: request.carrierCode,
         delivery_message: request.deliveryMessage || '',
-        items: request.items.map(item => ({
+        items: request.items.map((item) => ({
           product_name: item.productName,
           quantity: item.quantity,
-          price: item.price
-        }))
+          price: item.price,
+        })),
       };
 
       const response = await this.makeRequest('/v1/invoices', 'POST', payload);
@@ -51,9 +57,8 @@ export class GoodsflowDeliveryProvider extends DeliveryProvider {
         serviceId: response.service_id,
         invoiceNumber: response.invoice_number,
         carrierCode: response.carrier_code,
-        estimatedDeliveryDate: response.estimated_delivery_date
+        estimatedDeliveryDate: response.estimated_delivery_date,
       };
-
     } catch (error) {
       this.logger.error('Failed to issue invoice via Goodsflow:', error);
       throw new BadRequestException('Failed to issue invoice');
@@ -63,7 +68,7 @@ export class GoodsflowDeliveryProvider extends DeliveryProvider {
   async generatePrintUri(serviceIds: string[]): Promise<PrintResponse> {
     try {
       const payload = {
-        service_ids: serviceIds
+        service_ids: serviceIds,
       };
 
       const response = await this.makeRequest('/v1/invoices/print', 'POST', payload);
@@ -72,9 +77,8 @@ export class GoodsflowDeliveryProvider extends DeliveryProvider {
 
       return {
         printUri: response.print_uri,
-        expiresAt: response.expires_at ? new Date(response.expires_at) : undefined
+        expiresAt: response.expires_at ? new Date(response.expires_at) : undefined,
       };
-
     } catch (error) {
       this.logger.error('Failed to generate print URI via Goodsflow:', error);
       throw new BadRequestException('Failed to generate print URI');
@@ -91,9 +95,8 @@ export class GoodsflowDeliveryProvider extends DeliveryProvider {
         status: this.mapGoodsflowStatus(response.status),
         location: response.location,
         timestamp: new Date(response.timestamp),
-        description: response.description
+        description: response.description,
       };
-
     } catch (error) {
       this.logger.error(`Failed to track delivery ${serviceId} via Goodsflow:`, error);
       throw new BadRequestException('Failed to track delivery');
@@ -104,7 +107,6 @@ export class GoodsflowDeliveryProvider extends DeliveryProvider {
     try {
       await this.makeRequest(`/v1/invoices/${serviceId}/cancel`, 'POST');
       this.logger.log(`Canceled invoice ${serviceId} via Goodsflow`);
-
     } catch (error) {
       this.logger.error(`Failed to cancel invoice ${serviceId} via Goodsflow:`, error);
       throw new BadRequestException('Failed to cancel invoice');
@@ -115,14 +117,14 @@ export class GoodsflowDeliveryProvider extends DeliveryProvider {
     const url = `${this.config.apiUrl}${endpoint}`;
     const headers = {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${this.config.apiKey}`,
-      'X-Center-Code': this.config.centerCode
+      Authorization: `Bearer ${this.config.apiKey}`,
+      'X-Center-Code': this.config.centerCode,
     };
 
     const options: RequestInit = {
       method,
       headers,
-      ...(data && { body: JSON.stringify(data) })
+      ...(data && { body: JSON.stringify(data) }),
     };
 
     const response = await fetch(url, options);

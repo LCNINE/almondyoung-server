@@ -2,12 +2,7 @@
 
 import * as postgresPkg from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import {
-  salesChannels,
-  channelProducts,
-  productMasters,
-  productMasterVersions,
-} from '../src/schema';
+import { salesChannels, channelProducts, productMasters, productMasterVersions } from '../src/schema';
 import { eq, sql } from 'drizzle-orm';
 
 async function main() {
@@ -31,11 +26,7 @@ async function main() {
 
   try {
     console.log('🔍 Finding or creating Medusa sales channel (site=medusa)...');
-    const existingChannels = await db
-      .select()
-      .from(salesChannels)
-      .where(eq(salesChannels.site, 'medusa'))
-      .limit(1);
+    const existingChannels = await db.select().from(salesChannels).where(eq(salesChannels.site, 'medusa')).limit(1);
 
     let medusaChannelId: string;
 
@@ -55,9 +46,7 @@ async function main() {
       console.log(`✅ Created Medusa channel: ${medusaChannelId}`);
     } else {
       medusaChannelId = existingChannels[0].id;
-      console.log(
-        `ℹ️  Medusa channel already exists: ${medusaChannelId} (${existingChannels[0].name})`,
-      );
+      console.log(`ℹ️  Medusa channel already exists: ${medusaChannelId} (${existingChannels[0].name})`);
 
       if (!existingChannels[0].isActive) {
         const [updated] = await db
@@ -66,9 +55,7 @@ async function main() {
           .where(eq(salesChannels.id, medusaChannelId))
           .returning();
 
-        console.log(
-          `   ↳ Channel was inactive, set to active at ${updated.updatedAt.toISOString()}`,
-        );
+        console.log(`   ↳ Channel was inactive, set to active at ${updated.updatedAt.toISOString()}`);
       }
     }
 
@@ -96,13 +83,9 @@ async function main() {
       .where(eq(channelProducts.channelId, medusaChannelId));
 
     const mappedMasterIds = new Set(existingMappings.map((row) => row.masterId));
-    const missingMasterIds = activeMasterIds.filter(
-      (id) => !mappedMasterIds.has(id),
-    );
+    const missingMasterIds = activeMasterIds.filter((id) => !mappedMasterIds.has(id));
 
-    console.log(
-      `   Already mapped: ${mappedMasterIds.size}, to add: ${missingMasterIds.length}`,
-    );
+    console.log(`   Already mapped: ${mappedMasterIds.size}, to add: ${missingMasterIds.length}`);
 
     if (missingMasterIds.length === 0) {
       console.log('✅ All active masters are already linked to Medusa.');
@@ -130,14 +113,9 @@ async function main() {
     });
 
     console.log('\n✅ Done linking active masters to Medusa channel.');
-    console.log(
-      `   Total now mapped (existing + new): ${mappedMasterIds.size + inserted}`,
-    );
+    console.log(`   Total now mapped (existing + new): ${mappedMasterIds.size + inserted}`);
   } catch (error: any) {
-    console.error(
-      '❌ Failed to set up Medusa channel mappings:',
-      error?.message || error,
-    );
+    console.error('❌ Failed to set up Medusa channel mappings:', error?.message || error);
     if (error?.stack) {
       console.error(error.stack);
     }

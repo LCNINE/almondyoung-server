@@ -20,4 +20,3 @@ export class AuditLogItemDto {
   })
   createdAt: string;
 }
-

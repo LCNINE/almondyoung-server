@@ -39,8 +39,8 @@ export const USER_SCOPES = {
 type ExtractKeys<T> = T extends { key: infer K }
   ? K
   : T extends object
-  ? { [K in keyof T]: ExtractKeys<T[K]> }[keyof T]
-  : never;
+    ? { [K in keyof T]: ExtractKeys<T[K]> }[keyof T]
+    : never;
 
 // UserScope 타입 정의
 export type UserScope = ExtractKeys<typeof USER_SCOPES>;

@@ -39,14 +39,9 @@ export class RecurringBillingService {
       const successCount = results.filter((r) => r.success).length;
       const failureCount = results.filter((r) => !r.success).length;
 
-      this.logger.log(
-        `Daily billing completed - Success: ${successCount}, Failed: ${failureCount}`,
-      );
+      this.logger.log(`Daily billing completed - Success: ${successCount}, Failed: ${failureCount}`);
     } catch (error) {
-      this.logger.error(
-        `Daily billing scheduler failed: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`Daily billing scheduler failed: ${error.message}`, error.stack);
     }
   }
 
@@ -72,10 +67,7 @@ export class RecurringBillingService {
         // 결제 간격 조절 (API 부하 방지)
         await this.sleep(1000); // 1초 대기
       } catch (error) {
-        this.logger.error(
-          `Failed to process billing for contract ${contract.id}: ${error.message}`,
-          error.stack,
-        );
+        this.logger.error(`Failed to process billing for contract ${contract.id}: ${error.message}`, error.stack);
 
         // 에러 타입별 분류
         let errorCode = 'UNKNOWN_ERROR';
@@ -119,18 +111,14 @@ export class RecurringBillingService {
     for (const item of dunningItems) {
       try {
         // Reader로 계약 조회
-        const contract = await this.billingReader.findContractById(
-          item.contractId,
-        );
+        const contract = await this.billingReader.findContractById(item.contractId);
 
         if (contract) {
           // Manager로 결제 처리
           await this.billingManager.processSingleBilling(contract);
         }
       } catch (error) {
-        this.logger.error(
-          `Failed to process dunning item ${item.id}: ${error.message}`,
-        );
+        this.logger.error(`Failed to process dunning item ${item.id}: ${error.message}`);
       }
     }
   }

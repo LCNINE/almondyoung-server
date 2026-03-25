@@ -14,15 +14,10 @@ import { ProductMatchingService } from '../services/product-matching.service';
 export class ProductEventConsumer {
   private readonly logger = new Logger(ProductEventConsumer.name);
 
-  constructor(
-    private readonly productMatchingService: ProductMatchingService,
-  ) {}
+  constructor(private readonly productMatchingService: ProductMatchingService) {}
 
   @OnEvent('products.events.v1', 'ProductVariantCreated')
-  async onProductVariantCreated(
-    @EventPayload() payload: ProductVariantCreatedPayload,
-    @EventEnvelope() envelope: any,
-  ) {
+  async onProductVariantCreated(@EventPayload() payload: ProductVariantCreatedPayload, @EventEnvelope() envelope: any) {
     this.logger.log(
       `[Event] Received ProductVariantCreated: ${payload.variantId} (correlationId: ${envelope.correlationId})`,
     );
@@ -62,20 +57,13 @@ export class ProductEventConsumer {
         });
 
         if (result.skipped > 0) {
-          this.logger.log(
-            `[Event] Matching already exists for ${payload.variantId} (likely created by orchestrator)`,
-          );
+          this.logger.log(`[Event] Matching already exists for ${payload.variantId} (likely created by orchestrator)`);
         } else {
-          this.logger.log(
-            `[Event] Created ${result.created} matching-pending record(s)`,
-          );
+          this.logger.log(`[Event] Created ${result.created} matching-pending record(s)`);
         }
       }
     } catch (error) {
-      this.logger.error(
-        `[Event] Failed to handle ProductVariantCreated: ${payload.variantId}`,
-        error.stack,
-      );
+      this.logger.error(`[Event] Failed to handle ProductVariantCreated: ${payload.variantId}`, error.stack);
       // Re-throw to send to DLQ
       throw error;
     }
@@ -120,35 +108,23 @@ export class ProductEventConsumer {
         );
       }
     } catch (error) {
-      this.logger.error(
-        `[Event] Failed to handle ProductInventoryManagementChanged: ${payload.masterId}`,
-        error.stack,
-      );
+      this.logger.error(`[Event] Failed to handle ProductInventoryManagementChanged: ${payload.masterId}`, error.stack);
       throw error;
     }
   }
 
   @OnEvent('products.events.v1', 'ProductVariantDeleted')
-  async onProductVariantDeleted(
-    @EventPayload() payload: ProductVariantDeletedPayload,
-    @EventEnvelope() envelope: any,
-  ) {
+  async onProductVariantDeleted(@EventPayload() payload: ProductVariantDeletedPayload, @EventEnvelope() envelope: any) {
     this.logger.log(
       `[Event] Received ProductVariantDeleted: ${payload.variantId} (correlationId: ${envelope.correlationId})`,
     );
 
     try {
       // TODO: Implement matching deletion or status change
-      this.logger.warn(
-        `[Event] ProductVariantDeleted handler not implemented yet for ${payload.variantId}`,
-      );
+      this.logger.warn(`[Event] ProductVariantDeleted handler not implemented yet for ${payload.variantId}`);
     } catch (error) {
-      this.logger.error(
-        `[Event] Failed to handle ProductVariantDeleted: ${payload.variantId}`,
-        error.stack,
-      );
+      this.logger.error(`[Event] Failed to handle ProductVariantDeleted: ${payload.variantId}`, error.stack);
       throw error;
     }
   }
 }
-

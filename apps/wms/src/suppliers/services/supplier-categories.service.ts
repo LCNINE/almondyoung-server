@@ -3,16 +3,12 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx, SupplierCategory } from '../../../database/schemas/wms-schema';
 import { eq } from 'drizzle-orm';
-import { 
-  CreateSupplierCategoryDto, 
-  UpdateSupplierCategoryDto,
-  SupplierCategoryResponseDto 
-} from '../dto';
+import { CreateSupplierCategoryDto, UpdateSupplierCategoryDto, SupplierCategoryResponseDto } from '../dto';
 
 @Injectable()
 export class SupplierCategoriesService {
   constructor(
-    @InjectTypedDb<typeof wmsSchema>() 
+    @InjectTypedDb<typeof wmsSchema>()
     private readonly dbService: DbService<typeof wmsSchema>,
   ) {}
 
@@ -44,11 +40,7 @@ export class SupplierCategoriesService {
     return this.inTx(async (trx) => {
       const { supplierCategories } = wmsTables;
 
-      const [existing] = await trx
-        .select()
-        .from(supplierCategories)
-        .where(eq(supplierCategories.id, id))
-        .limit(1);
+      const [existing] = await trx.select().from(supplierCategories).where(eq(supplierCategories.id, id)).limit(1);
 
       if (!existing) {
         throw new NotFoundException(`Supplier category with ID ${id} not found`);
@@ -72,10 +64,7 @@ export class SupplierCategoriesService {
     return this.inTx(async (trx) => {
       const { supplierCategories } = wmsTables;
 
-      const result = await trx
-        .delete(supplierCategories)
-        .where(eq(supplierCategories.id, id))
-        .returning();
+      const result = await trx.delete(supplierCategories).where(eq(supplierCategories.id, id)).returning();
 
       if (result.length === 0) {
         throw new NotFoundException(`Supplier category with ID ${id} not found`);
@@ -87,11 +76,7 @@ export class SupplierCategoriesService {
     return this.inTx(async (trx) => {
       const { supplierCategories } = wmsTables;
 
-      const [category] = await trx
-        .select()
-        .from(supplierCategories)
-        .where(eq(supplierCategories.id, id))
-        .limit(1);
+      const [category] = await trx.select().from(supplierCategories).where(eq(supplierCategories.id, id)).limit(1);
 
       if (!category) {
         throw new NotFoundException(`Supplier category with ID ${id} not found`);
@@ -105,12 +90,9 @@ export class SupplierCategoriesService {
     return this.inTx(async (trx) => {
       const { supplierCategories } = wmsTables;
 
-      const categories = await trx
-        .select()
-        .from(supplierCategories)
-        .orderBy(supplierCategories.name);
+      const categories = await trx.select().from(supplierCategories).orderBy(supplierCategories.name);
 
-      return categories.map(cat => this.mapToResponseDto(cat));
+      return categories.map((cat) => this.mapToResponseDto(cat));
     }, tx);
   }
 
@@ -124,4 +106,3 @@ export class SupplierCategoriesService {
     };
   }
 }
-

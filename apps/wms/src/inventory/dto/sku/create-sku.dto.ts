@@ -1,4 +1,14 @@
-import { IsString, IsNotEmpty, IsOptional, IsUUID, IsNumber, IsEnum, IsArray, MaxLength, ValidateNested } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsUUID,
+  IsNumber,
+  IsEnum,
+  IsArray,
+  MaxLength,
+  ValidateNested,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
@@ -14,7 +24,11 @@ export class CreateSkuDto {
   @IsOptional()
   skuGroupId?: string;
 
-  @ApiProperty({ description: 'Holder ID (재고 보유자 ID)', example: 'a1b2c3d4-e5f6-7890-1234-567890abcdef', required: false })
+  @ApiProperty({
+    description: 'Holder ID (재고 보유자 ID)',
+    example: 'a1b2c3d4-e5f6-7890-1234-567890abcdef',
+    required: false,
+  })
   @IsUUID()
   @IsOptional()
   holderId?: string;
@@ -28,7 +42,7 @@ export class CreateSkuDto {
     description: '옵션 식별자 (1차원 문자열)',
     required: false,
     type: String,
-    example: "S / 검정",
+    example: 'S / 검정',
   })
   @IsOptional()
   @IsString()
@@ -49,7 +63,7 @@ export class CreateSkuDto {
     description: '재고 유형 (사입/직배/무제한/위탁)',
     enum: ['physical', 'infinite', 'drop_shipped', 'consignment'],
     default: 'physical',
-    required: false
+    required: false,
   })
   @IsEnum(['physical', 'infinite', 'drop_shipped', 'consignment'])
   @IsOptional()
@@ -182,7 +196,7 @@ export class CreateSkuDto {
   @ApiProperty({
     description: 'File Service upload IDs for images',
     type: [String],
-    required: false
+    required: false,
   })
   @IsArray()
   @IsUUID('4', { each: true })

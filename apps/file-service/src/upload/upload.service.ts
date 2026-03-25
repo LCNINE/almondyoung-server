@@ -20,7 +20,7 @@ export class UploadService {
     private readonly fileContextRepository: FileContextRepository,
     private readonly contextValidator: FileContextValidator,
     private readonly fileTypeDetector: FileTypeDetector,
-  ) { }
+  ) {}
 
   async uploadFile(file: Express.Multer.File, dto: UploadFileDto, userId: string): Promise<UploadResponseDto> {
     if (!file) {
@@ -50,15 +50,13 @@ export class UploadService {
         if (!clientValid) {
           this.logger.warn(
             `Client MIME type not in whitelist - ` +
-            `Client: ${normalizedClientMimeType} (original: ${file.mimetype}), Detected: ${detectedMimeType}. ` +
-            `File: ${file.originalname}, User: ${userId}, Context: ${context.id}`
+              `Client: ${normalizedClientMimeType} (original: ${file.mimetype}), Detected: ${detectedMimeType}. ` +
+              `File: ${file.originalname}, User: ${userId}, Context: ${context.id}`,
           );
         }
       } else {
         this.contextValidator.validateMimeType(context, normalizedClientMimeType);
-        this.logger.debug(
-          `Using client Content-Type (normalized): ${normalizedClientMimeType}`
-        );
+        this.logger.debug(`Using client Content-Type (normalized): ${normalizedClientMimeType}`);
       }
 
       const isPublic = this.contextValidator.resolveIsPublic(context, dto.isPublic);

@@ -61,4 +61,3 @@ export class CreateBannerGroupDto {
   @IsString()
   createdBy?: string;
 }
-

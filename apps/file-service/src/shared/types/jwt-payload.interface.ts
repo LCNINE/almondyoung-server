@@ -7,5 +7,5 @@ export interface JwtPayload {
   email: string;
   roles: string[];
   scopes?: string[];
-  [key: string]: any;  // 기타 payload 필드
+  [key: string]: any; // 기타 payload 필드
 }

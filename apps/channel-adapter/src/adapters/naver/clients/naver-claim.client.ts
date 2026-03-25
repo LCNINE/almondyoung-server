@@ -60,17 +60,11 @@ export class NaverClaimClient extends NaverBaseClient {
    * @param productOrderId 상품 주문 번호
    * @returns API 응답 데이터
    */
-  async approveExchangeCollection(
-    productOrderId: string,
-  ): Promise<NaverClaimProcessResponse> {
+  async approveExchangeCollection(productOrderId: string): Promise<NaverClaimProcessResponse> {
     const token = await this.authService.getAccessToken(); // 🔑 인증 서비스 사용
     const url = `${this.apiBaseUrl}/pay-order/seller/product-orders/${productOrderId}/claim/exchange/collect/approve`;
     const response = await firstValueFrom(
-      this.http.post<NaverClaimProcessResponse>(
-        url,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } },
-      ),
+      this.http.post<NaverClaimProcessResponse>(url, {}, { headers: { Authorization: `Bearer ${token}` } }),
     );
     return response.data;
   }
@@ -91,10 +85,7 @@ export class NaverClaimClient extends NaverBaseClient {
     const parsedBody = ExchangeRedeliveryBodySchema.safeParse(body);
     if (!parsedBody.success) {
       const flattenedErrors = parsedBody.error.flatten();
-      this.logger.error(
-        '❌ 교환 재배송 요청 파라미터 검증 실패:',
-        flattenedErrors,
-      );
+      this.logger.error('❌ 교환 재배송 요청 파라미터 검증 실패:', flattenedErrors);
       throw new BadRequestException({
         message: '교환 재배송 요청 입력값 유효성 검사에 실패했습니다.',
         errors: flattenedErrors.fieldErrors,
@@ -117,20 +108,14 @@ export class NaverClaimClient extends NaverBaseClient {
    * @param body 교환 보류 사유 정보
    * @returns API 응답 데이터
    */
-  async holdExchange(
-    productOrderId: string,
-    body: HoldExchangeBody,
-  ): Promise<NaverClaimProcessResponse> {
+  async holdExchange(productOrderId: string, body: HoldExchangeBody): Promise<NaverClaimProcessResponse> {
     const token = await this.authService.getAccessToken(); // 🔑 인증 서비스 사용
 
     // 🎯 Zod 검증 추가
     const parsedBody = HoldExchangeBodySchema.safeParse(body);
     if (!parsedBody.success) {
       const flattenedErrors = parsedBody.error.flatten();
-      this.logger.error(
-        '❌ 교환 보류 요청 파라미터 검증 실패:',
-        flattenedErrors,
-      );
+      this.logger.error('❌ 교환 보류 요청 파라미터 검증 실패:', flattenedErrors);
       throw new BadRequestException({
         message: '교환 보류 요청 입력값 유효성 검사에 실패했습니다.',
         errors: flattenedErrors.fieldErrors,
@@ -151,17 +136,11 @@ export class NaverClaimClient extends NaverBaseClient {
    * @param productOrderId 상품 주문 번호
    * @returns API 응답 데이터
    */
-  async releaseExchangeHold(
-    productOrderId: string,
-  ): Promise<NaverClaimProcessResponse> {
+  async releaseExchangeHold(productOrderId: string): Promise<NaverClaimProcessResponse> {
     const token = await this.authService.getAccessToken(); // 🔑 인증 서비스 사용
     const url = `${this.apiBaseUrl}/pay-order/seller/product-orders/${productOrderId}/claim/exchange/holdback/release`;
     const response = await firstValueFrom(
-      this.http.post<NaverClaimProcessResponse>(
-        url,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } },
-      ),
+      this.http.post<NaverClaimProcessResponse>(url, {}, { headers: { Authorization: `Bearer ${token}` } }),
     );
     return response.data;
   }
@@ -171,20 +150,14 @@ export class NaverClaimClient extends NaverBaseClient {
    * @param body 교환 거부 사유
    * @returns API 응답 데이터
    */
-  async rejectExchange(
-    productOrderId: string,
-    body: RejectExchangeBody,
-  ): Promise<NaverClaimProcessResponse> {
+  async rejectExchange(productOrderId: string, body: RejectExchangeBody): Promise<NaverClaimProcessResponse> {
     const token = await this.authService.getAccessToken(); // 🔑 인증 서비스 사용
 
     // 🎯 Zod 검증 추가
     const parsedBody = RejectExchangeBodySchema.safeParse(body);
     if (!parsedBody.success) {
       const flattenedErrors = parsedBody.error.flatten();
-      this.logger.error(
-        '❌ 교환 거부 요청 파라미터 검증 실패:',
-        flattenedErrors,
-      );
+      this.logger.error('❌ 교환 거부 요청 파라미터 검증 실패:', flattenedErrors);
       throw new BadRequestException({
         message: '교환 거부 요청 입력값 유효성 검사에 실패했습니다.',
         errors: flattenedErrors.fieldErrors,
@@ -209,17 +182,11 @@ export class NaverClaimClient extends NaverBaseClient {
    * @param productOrderId 상품 주문 번호
    * @returns API 응답 데이터
    */
-  async approveReturn(
-    productOrderId: string,
-  ): Promise<NaverClaimProcessResponse> {
+  async approveReturn(productOrderId: string): Promise<NaverClaimProcessResponse> {
     const token = await this.authService.getAccessToken(); // 🔑 인증 서비스 사용
     const url = `${this.apiBaseUrl}/pay-order/seller/product-orders/${productOrderId}/claim/return/approve`;
     const response = await firstValueFrom(
-      this.http.post<NaverClaimProcessResponse>(
-        url,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } },
-      ),
+      this.http.post<NaverClaimProcessResponse>(url, {}, { headers: { Authorization: `Bearer ${token}` } }),
     );
     return response.data;
   }
@@ -230,20 +197,14 @@ export class NaverClaimClient extends NaverBaseClient {
    * @param body 반품 보류 사유 정보
    * @returns API 응답 데이터
    */
-  async holdReturn(
-    productOrderId: string,
-    body: HoldReturnBody,
-  ): Promise<NaverClaimProcessResponse> {
+  async holdReturn(productOrderId: string, body: HoldReturnBody): Promise<NaverClaimProcessResponse> {
     const token = await this.authService.getAccessToken(); // 🔑 인증 서비스 사용
 
     // 🎯 Zod 검증 추가
     const parsedBody = HoldReturnBodySchema.safeParse(body);
     if (!parsedBody.success) {
       const flattenedErrors = parsedBody.error.flatten();
-      this.logger.error(
-        '❌ 반품 보류 요청 파라미터 검증 실패:',
-        flattenedErrors,
-      );
+      this.logger.error('❌ 반품 보류 요청 파라미터 검증 실패:', flattenedErrors);
       throw new BadRequestException({
         message: '반품 보류 요청 입력값 유효성 검사에 실패했습니다.',
         errors: flattenedErrors.fieldErrors,
@@ -264,17 +225,11 @@ export class NaverClaimClient extends NaverBaseClient {
    * @param productOrderId 상품 주문 번호
    * @returns API 응답 데이터
    */
-  async releaseReturnHold(
-    productOrderId: string,
-  ): Promise<NaverClaimProcessResponse> {
+  async releaseReturnHold(productOrderId: string): Promise<NaverClaimProcessResponse> {
     const token = await this.authService.getAccessToken(); // 🔑 인증 서비스 사용
     const url = `${this.apiBaseUrl}/pay-order/seller/product-orders/${productOrderId}/claim/return/holdback/release`;
     const response = await firstValueFrom(
-      this.http.post<NaverClaimProcessResponse>(
-        url,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } },
-      ),
+      this.http.post<NaverClaimProcessResponse>(url, {}, { headers: { Authorization: `Bearer ${token}` } }),
     );
     return response.data;
   }
@@ -284,20 +239,14 @@ export class NaverClaimClient extends NaverBaseClient {
    * @param body 반품 거부 사유
    * @returns API 응답 데이터
    */
-  async rejectReturn(
-    productOrderId: string,
-    body: RejectReturnBody,
-  ): Promise<NaverClaimProcessResponse> {
+  async rejectReturn(productOrderId: string, body: RejectReturnBody): Promise<NaverClaimProcessResponse> {
     const token = await this.authService.getAccessToken(); // 🔑 인증 서비스 사용
 
     // 🎯 Zod 검증 추가
     const parsedBody = RejectReturnBodySchema.safeParse(body);
     if (!parsedBody.success) {
       const flattenedErrors = parsedBody.error.flatten();
-      this.logger.error(
-        '❌ 반품 거부 요청 파라미터 검증 실패:',
-        flattenedErrors,
-      );
+      this.logger.error('❌ 반품 거부 요청 파라미터 검증 실패:', flattenedErrors);
       throw new BadRequestException({
         message: '반품 거부 요청 입력값 유효성 검사에 실패했습니다.',
         errors: flattenedErrors.fieldErrors,
@@ -320,10 +269,7 @@ export class NaverClaimClient extends NaverBaseClient {
    * @param body 반품 요청 정보
    * @returns API 응답 데이터
    */
-  async requestReturn(
-    productOrderId: string,
-    body: RequestReturnBody,
-  ): Promise<NaverClaimProcessResponse> {
+  async requestReturn(productOrderId: string, body: RequestReturnBody): Promise<NaverClaimProcessResponse> {
     const token = await this.authService.getAccessToken(); // 🔑 인증 서비스 사용
 
     // 🎯 Zod 검증 추가
@@ -355,17 +301,11 @@ export class NaverClaimClient extends NaverBaseClient {
    * @param productOrderId 상품 주문 번호
    * @returns API 응답 데이터
    */
-  async approveCancel(
-    productOrderId: string,
-  ): Promise<NaverClaimProcessResponse> {
+  async approveCancel(productOrderId: string): Promise<NaverClaimProcessResponse> {
     const token = await this.authService.getAccessToken(); // 🔑 인증 서비스 사용
     const url = `${this.apiBaseUrl}/pay-order/seller/product-orders/${productOrderId}/claim/cancel/approve`;
     const response = await firstValueFrom(
-      this.http.post<NaverClaimProcessResponse>(
-        url,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } },
-      ),
+      this.http.post<NaverClaimProcessResponse>(url, {}, { headers: { Authorization: `Bearer ${token}` } }),
     );
     return response.data;
   }
@@ -375,10 +315,7 @@ export class NaverClaimClient extends NaverBaseClient {
    * @param body 취소 요청 정보
    * @returns API 응답 데이터
    */
-  async requestCancel(
-    productOrderId: string,
-    body: RequestCancelBody,
-  ): Promise<NaverClaimProcessResponse> {
+  async requestCancel(productOrderId: string, body: RequestCancelBody): Promise<NaverClaimProcessResponse> {
     const token = await this.authService.getAccessToken(); // 🔑 인증 서비스 사용
 
     // 🎯 Zod 검증 추가

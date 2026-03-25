@@ -35,10 +35,9 @@ export default async function seedShipping({ container }: ExecArgs) {
 
   // ── 1. Stock Location ────────────────────────────────────────────────────
   logger.info('[seed-shipping] Stock location 확인 중...');
-  const existingLocations =
-    await stockLocationModuleService.listStockLocations({
-      name: STOCK_LOCATION_NAME,
-    });
+  const existingLocations = await stockLocationModuleService.listStockLocations({
+    name: STOCK_LOCATION_NAME,
+  });
 
   let stockLocation;
   if (existingLocations.length) {
@@ -82,8 +81,7 @@ export default async function seedShipping({ container }: ExecArgs) {
 
   // ── 3. Shipping Profile ──────────────────────────────────────────────────
   logger.info('[seed-shipping] Shipping profile 확인 중...');
-  const existingProfiles =
-    await fulfillmentModuleService.listShippingProfiles({ type: 'default' });
+  const existingProfiles = await fulfillmentModuleService.listShippingProfiles({ type: 'default' });
 
   let shippingProfile;
   if (existingProfiles.length) {
@@ -131,9 +129,7 @@ export default async function seedShipping({ container }: ExecArgs) {
     fields: ['id', 'fulfillment_sets.id'],
     filters: { id: stockLocation.id },
   });
-  const setLinked = locationWithSets[0]?.fulfillment_sets?.some(
-    (s: { id: string }) => s.id === fulfillmentSet.id,
-  );
+  const setLinked = locationWithSets[0]?.fulfillment_sets?.some((s: { id: string }) => s.id === fulfillmentSet.id);
 
   if (!setLinked) {
     await link.create({

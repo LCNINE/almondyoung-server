@@ -101,20 +101,20 @@ export class ConsolidationService {
         addressMatch: 'exact',
         customerMatch: true,
         serviceMatch: true,
-        timeWindow: 24
+        timeWindow: 24,
       },
       constraints: {
         maxOrdersPerGroup: 5,
         maxTotalWeight: 30,
         maxTotalVolume: 0.1, // m³
         maxTotalValue: 1000000,
-        requireSamePriority: false
+        requireSamePriority: false,
       },
       actions: {
         autoConsolidate: true,
         notifyForReview: false,
-        applyShippingDiscount: true
-      }
+        applyShippingDiscount: true,
+      },
     },
     {
       id: 'same-address-different-customer',
@@ -125,20 +125,20 @@ export class ConsolidationService {
         addressMatch: 'exact',
         customerMatch: false,
         serviceMatch: true,
-        timeWindow: 12
+        timeWindow: 12,
       },
       constraints: {
         maxOrdersPerGroup: 3,
         maxTotalWeight: 20,
         maxTotalVolume: 0.05,
         maxTotalValue: 500000,
-        requireSamePriority: true
+        requireSamePriority: true,
       },
       actions: {
         autoConsolidate: false,
         notifyForReview: true,
-        applyShippingDiscount: false
-      }
+        applyShippingDiscount: false,
+      },
     },
     {
       id: 'nearby-same-customer',
@@ -150,26 +150,26 @@ export class ConsolidationService {
         customerMatch: true,
         serviceMatch: true,
         timeWindow: 48,
-        maxDistance: 5
+        maxDistance: 5,
       },
       constraints: {
         maxOrdersPerGroup: 3,
         maxTotalWeight: 25,
         maxTotalVolume: 0.08,
         maxTotalValue: 800000,
-        requireSamePriority: false
+        requireSamePriority: false,
       },
       actions: {
         autoConsolidate: false,
         notifyForReview: true,
-        applyShippingDiscount: true
-      }
-    }
+        applyShippingDiscount: true,
+      },
+    },
   ];
 
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
-    private readonly fulfillmentOrderTransactionService: FulfillmentOrderTransactionService
+    private readonly fulfillmentOrderTransactionService: FulfillmentOrderTransactionService,
   ) {}
 
   private get db() {
@@ -183,11 +183,11 @@ export class ConsolidationService {
         eq(wmsTables.fulfillmentOrders.warehouseId, warehouseId),
         eq(wmsTables.fulfillmentOrders.status, 'pending'),
         isNull(wmsTables.fulfillmentOrders.batchId),
-        eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'in_house') // Exclude direct ship
+        eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'in_house'), // Exclude direct ship
       ),
       with: {
-        items: true
-      }
+        items: true,
+      },
     });
 
     const candidates: ConsolidationCandidate[] = [];
@@ -220,7 +220,7 @@ export class ConsolidationService {
             address: `${Math.floor(Math.random() * 999) + 1} Test Street`,
             city: ['서울', '부산', '인천', '대구', '광주'][Math.floor(Math.random() * 5)],
             postalCode: `${Math.floor(Math.random() * 90000) + 10000}`,
-            phone: '010-1234-5678'
+            phone: '010-1234-5678',
           },
           deliveryService: ['standard', 'express', 'same_day'][Math.floor(Math.random() * 3)],
           priority: fo.priority,
@@ -228,7 +228,7 @@ export class ConsolidationService {
           totalItems: items.length,
           totalWeight: Math.random() * 10 + 1,
           totalValue: Math.random() * 200000 + 50000,
-          items: items.map(item => ({
+          items: items.map((item) => ({
             salesOrderLineId: item.salesOrderLineId,
             productId: `PROD-${item.skuId.slice(-6)}`,
             variantId: `VAR-${item.skuId.slice(-4)}`,
@@ -237,11 +237,11 @@ export class ConsolidationService {
             dimensions: {
               length: Math.random() * 30 + 10,
               width: Math.random() * 20 + 10,
-              height: Math.random() * 15 + 5
-            }
+              height: Math.random() * 15 + 5,
+            },
           })),
           warehouseId,
-          createdAt: fo.createdAt!
+          createdAt: fo.createdAt,
         };
 
         candidates.push(candidate);
@@ -254,16 +254,16 @@ export class ConsolidationService {
 
   async generateConsolidationGroups(
     candidates: ConsolidationCandidate[],
-    rules: ConsolidationRule[] = this.defaultRules
+    rules: ConsolidationRule[] = this.defaultRules,
   ): Promise<ConsolidationGroup[]> {
     const groups: ConsolidationGroup[] = [];
     const processed = new Set<string | null>();
 
     // Sort rules by priority
-    const sortedRules = rules.filter(r => r.enabled).sort((a, b) => a.priority - b.priority);
+    const sortedRules = rules.filter((r) => r.enabled).sort((a, b) => a.priority - b.priority);
 
     for (const rule of sortedRules) {
-      const availableCandidates = candidates.filter(c => !processed.has(c.salesOrderId));
+      const availableCandidates = candidates.filter((c) => !processed.has(c.salesOrderId));
 
       for (let i = 0; i < availableCandidates.length; i++) {
         const primaryCandidate = availableCandidates[i];
@@ -307,7 +307,7 @@ export class ConsolidationService {
   private matchesCriteria(
     primary: ConsolidationCandidate,
     candidate: ConsolidationCandidate,
-    rule: ConsolidationRule
+    rule: ConsolidationRule,
   ): boolean {
     // Check time window
     const timeDiff = Math.abs(candidate.createdAt.getTime() - primary.createdAt.getTime());
@@ -341,7 +341,7 @@ export class ConsolidationService {
   private matchesAddress(
     addr1: ConsolidationCandidate['shippingAddress'],
     addr2: ConsolidationCandidate['shippingAddress'],
-    matchType: 'exact' | 'fuzzy' | 'postal_code' | 'city'
+    matchType: 'exact' | 'fuzzy' | 'postal_code' | 'city',
   ): boolean {
     switch (matchType) {
       case 'exact':
@@ -355,7 +355,7 @@ export class ConsolidationService {
         return (
           addr1.city === addr2.city &&
           (addr1.postalCode === addr2.postalCode ||
-           Math.abs(parseInt(addr1.postalCode) - parseInt(addr2.postalCode)) < 100)
+            Math.abs(parseInt(addr1.postalCode) - parseInt(addr2.postalCode)) < 100)
         );
       default:
         return false;
@@ -364,20 +364,22 @@ export class ConsolidationService {
 
   private createConsolidationGroup(
     candidates: ConsolidationCandidate[],
-    rule: ConsolidationRule
+    rule: ConsolidationRule,
   ): ConsolidationGroup | null {
     const totalWeight = candidates.reduce((sum, c) => sum + (c.totalWeight || 0), 0);
     const totalValue = candidates.reduce((sum, c) => sum + (c.totalValue || 0), 0);
     const totalItems = candidates.reduce((sum, c) => sum + c.totalItems, 0);
 
     // Check constraints
-    if (totalWeight > rule.constraints.maxTotalWeight ||
-        totalValue > rule.constraints.maxTotalValue ||
-        totalItems > rule.constraints.maxOrdersPerGroup * 10) {
+    if (
+      totalWeight > rule.constraints.maxTotalWeight ||
+      totalValue > rule.constraints.maxTotalValue ||
+      totalItems > rule.constraints.maxOrdersPerGroup * 10
+    ) {
       return null;
     }
 
-    const earliestSla = new Date(Math.min(...candidates.map(c => c.slaDeadline.getTime())));
+    const earliestSla = new Date(Math.min(...candidates.map((c) => c.slaDeadline.getTime())));
     const primary = candidates[0];
 
     const groupId = `CON-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
@@ -392,15 +394,15 @@ export class ConsolidationService {
       estimatedSavings: {
         shippingCost: (candidates.length - 1) * 3000, // ₩3,000 per additional order
         packagingReduction: candidates.length * 500, // ₩500 per order
-        efficiencyGain: candidates.length * 1000 // ₩1,000 efficiency gain per order
+        efficiencyGain: candidates.length * 1000, // ₩1,000 efficiency gain per order
       },
       constraints: {
         maxWeight: rule.constraints.maxTotalWeight,
         maxVolume: rule.constraints.maxTotalVolume,
         maxItems: totalItems,
-        slaDeadline: earliestSla
+        slaDeadline: earliestSla,
       },
-      recommendation: rule.actions.autoConsolidate ? 'auto_consolidate' : 'manual_review'
+      recommendation: rule.actions.autoConsolidate ? 'auto_consolidate' : 'manual_review',
     };
   }
 
@@ -408,7 +410,7 @@ export class ConsolidationService {
     const parts = [
       rule.criteria.customerMatch ? candidate.customerId : 'MIXED',
       candidate.shippingAddress.postalCode,
-      candidate.deliveryService
+      candidate.deliveryService,
     ];
     return parts.join('-');
   }
@@ -456,11 +458,15 @@ export class ConsolidationService {
     // Mock response for now
     return {
       fulfillmentOrderId: `FO-CONSOLIDATED-${Date.now()}`,
-      consolidatedOrders: [`SO-${Date.now()}-1`, `SO-${Date.now()}-2`]
+      consolidatedOrders: [`SO-${Date.now()}-1`, `SO-${Date.now()}-2`],
     };
   }
 
-  async getConsolidationReport(warehouseId: string, dateFrom?: Date, dateTo?: Date): Promise<{
+  async getConsolidationReport(
+    warehouseId: string,
+    dateFrom?: Date,
+    dateTo?: Date,
+  ): Promise<{
     period: { from: Date; to: Date };
     summary: {
       totalCandidates: number;
@@ -492,7 +498,7 @@ export class ConsolidationService {
         groupsGenerated: 34,
         autoConsolidated: 18,
         manuallyReviewed: 16,
-        totalSavings: 234000
+        totalSavings: 234000,
       },
       performance: {
         consolidationRate: 0.22, // 22% of candidates were consolidated
@@ -500,9 +506,9 @@ export class ConsolidationService {
         topReasons: [
           { reason: 'same_address', count: 12, savings: 98000 },
           { reason: 'same_customer_nearby', count: 8, savings: 67000 },
-          { reason: 'same_service_zone', count: 14, savings: 69000 }
-        ]
-      }
+          { reason: 'same_service_zone', count: 14, savings: 69000 },
+        ],
+      },
     };
   }
 }

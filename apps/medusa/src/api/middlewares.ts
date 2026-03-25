@@ -11,9 +11,7 @@ const timingMiddleware = (req: any, res: any, next: any) => {
     const duration = Date.now() - start;
     // 300ms 이상 걸리는 요청만 로깅 (눈에 띄게 느린 요청)
     if (duration > 300) {
-      console.log(
-        `[SLOW] ${method} ${path} - ${duration}ms (status: ${res.statusCode})`,
-      );
+      console.log(`[SLOW] ${method} ${path} - ${duration}ms (status: ${res.statusCode})`);
     }
   });
 

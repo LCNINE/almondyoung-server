@@ -16,5 +16,3 @@ export class ProductMasterMetadataDto {
   @ApiProperty({ description: '삭제자', nullable: true })
   deletedBy: string | null;
 }
-
-

@@ -11,14 +11,7 @@ import {
   HttpStatus,
   HttpCode,
 } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiParam,
-  ApiQuery,
-  ApiBody,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { SalesChannelsService } from './sales-channels.service';
 import {
   CreateSalesChannelDto,
@@ -36,13 +29,12 @@ import { SalesChannelMapper } from './mappers';
 @ApiTags('Sales Channels')
 @Controller('channels')
 export class SalesChannelsController {
-  constructor(private readonly salesChannelsService: SalesChannelsService) { }
+  constructor(private readonly salesChannelsService: SalesChannelsService) {}
 
   @Post()
   @ApiOperation({
     summary: '판매 채널 생성',
-    description:
-      '새로운 판매 채널(온라인 쇼핑몰, 오프라인 매장 등)을 생성합니다.',
+    description: '새로운 판매 채널(온라인 쇼핑몰, 오프라인 매장 등)을 생성합니다.',
   })
   @ApiBody({ type: CreateSalesChannelDto, description: '판매 채널 생성 정보' })
   @ApiResponse({
@@ -55,32 +47,19 @@ export class SalesChannelsController {
     description: '잘못된 요청 데이터 (type, name 필수)',
   })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  async createChannel(
-    @Body() createDto: CreateSalesChannelDto,
-  ): Promise<SalesChannelDto> {
+  async createChannel(@Body() createDto: CreateSalesChannelDto): Promise<SalesChannelDto> {
     try {
       if (!createDto.type || !createDto.name) {
-        throw new HttpException(
-          'Channel type and name are required',
-          HttpStatus.BAD_REQUEST,
-        );
+        throw new HttpException('Channel type and name are required', HttpStatus.BAD_REQUEST);
       }
 
-      const entity = await this.salesChannelsService.createChannel(
-        createDto,
-      );
+      const entity = await this.salesChannelsService.createChannel(createDto);
       return SalesChannelMapper.toDto(entity);
     } catch (error) {
-      if (
-        error.message.includes('required') ||
-        error.message.includes('already exists')
-      ) {
+      if (error.message.includes('required') || error.message.includes('already exists')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
       }
-      throw new HttpException(
-        'Failed to create channel',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to create channel', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -148,10 +127,7 @@ export class SalesChannelsController {
         data: SalesChannelMapper.toDtoArray(result.data),
       };
     } catch (error) {
-      throw new HttpException(
-        'Failed to get channels',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to get channels', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -172,10 +148,7 @@ export class SalesChannelsController {
         data: SalesChannelMapper.toDtoArray(data),
       };
     } catch (error) {
-      throw new HttpException(
-        'Failed to get active channels',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to get active channels', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -203,19 +176,13 @@ export class SalesChannelsController {
 
       return SalesChannelMapper.toDto(channel);
     } catch (error) {
-      if (
-        error.message === 'Channel not found' ||
-        error.status === HttpStatus.NOT_FOUND
-      ) {
+      if (error.message === 'Channel not found' || error.status === HttpStatus.NOT_FOUND) {
         throw new HttpException('Channel not found', HttpStatus.NOT_FOUND);
       }
       if (error.message.includes('required')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
       }
-      throw new HttpException(
-        'Failed to get channel',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to get channel', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -237,30 +204,18 @@ export class SalesChannelsController {
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
   @ApiResponse({ status: 404, description: '판매 채널을 찾을 수 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  async updateChannel(
-    @Param('id') id: string,
-    @Body() updateDto: UpdateSalesChannelDto,
-  ): Promise<SalesChannelDto> {
+  async updateChannel(@Param('id') id: string, @Body() updateDto: UpdateSalesChannelDto): Promise<SalesChannelDto> {
     try {
-      const entity = await this.salesChannelsService.updateChannel(
-        id,
-        updateDto,
-      );
+      const entity = await this.salesChannelsService.updateChannel(id, updateDto);
       return SalesChannelMapper.toDto(entity);
     } catch (error) {
       if (error.message.includes('not found')) {
         throw new HttpException('Channel not found', HttpStatus.NOT_FOUND);
       }
-      if (
-        error.message.includes('required') ||
-        error.message.includes('already exists')
-      ) {
+      if (error.message.includes('required') || error.message.includes('already exists')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
       }
-      throw new HttpException(
-        'Failed to update channel',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to update channel', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -288,10 +243,7 @@ export class SalesChannelsController {
       if (error.message.includes('required')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
       }
-      throw new HttpException(
-        'Failed to delete channel',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to delete channel', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -309,10 +261,7 @@ export class SalesChannelsController {
   })
   @ApiResponse({ status: 404, description: '판매 채널을 찾을 수 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  async setChannelActive(
-    @Param('id') id: string,
-    @Body() statusDto: SetChannelActiveDto,
-  ): Promise<void> {
+  async setChannelActive(@Param('id') id: string, @Body() statusDto: SetChannelActiveDto): Promise<void> {
     try {
       if (statusDto.isActive === undefined) {
         throw new HttpException('isActive is required', HttpStatus.BAD_REQUEST);
@@ -326,10 +275,7 @@ export class SalesChannelsController {
       if (error.message.includes('not found')) {
         throw new HttpException('Channel not found', HttpStatus.NOT_FOUND);
       }
-      throw new HttpException(
-        'Failed to set channel status',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to set channel status', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -395,15 +341,10 @@ export class SalesChannelsController {
   })
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터 (type 필수)' })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  async validateChannelConfig(
-    @Body() configDto: ValidateChannelConfigDto,
-  ): Promise<ChannelValidationResponseDto> {
+  async validateChannelConfig(@Body() configDto: ValidateChannelConfigDto): Promise<ChannelValidationResponseDto> {
     try {
       if (!configDto.site) {
-        throw new HttpException(
-          'Channel type is required',
-          HttpStatus.BAD_REQUEST,
-        );
+        throw new HttpException('Channel type is required', HttpStatus.BAD_REQUEST);
       }
 
       return (await this.salesChannelsService.validateChannelConfig(
@@ -414,10 +355,7 @@ export class SalesChannelsController {
       if (error.message.includes('required')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
       }
-      throw new HttpException(
-        'Failed to validate channel config',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to validate channel config', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 }

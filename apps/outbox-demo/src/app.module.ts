@@ -7,7 +7,6 @@ import { TestModule } from './test/test.module';
 import { TEST_STREAM } from '@packages/event-contracts/streams/test.stream';
 import { outboxDemoSchema } from '../database/schemas/schema';
 
-
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -35,4 +34,4 @@ import { outboxDemoSchema } from '../database/schemas/schema';
     TestModule,
   ],
 })
-export class AppModule { }
+export class AppModule {}

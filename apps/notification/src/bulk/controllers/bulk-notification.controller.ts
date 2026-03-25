@@ -12,22 +12,22 @@ export class BulkNotificationController {
   constructor(private readonly bulkNotificationService: BulkNotificationService) {}
 
   @Post()
-  @ApiOperation({ 
-    summary: '대량 알림 발송', 
-    description: '다수의 사용자에게 동시에 알림을 발송하는 캠페인을 시작합니다.' 
+  @ApiOperation({
+    summary: '대량 알림 발송',
+    description: '다수의 사용자에게 동시에 알림을 발송하는 캠페인을 시작합니다.',
   })
   @ApiBody({ type: CreateBulkNotificationDto, description: '대량 알림 발송 정보' })
-  @ApiResponse({ 
-    status: 201, 
+  @ApiResponse({
+    status: 201,
     description: '대량 알림 캠페인 시작 성공',
     schema: {
       type: 'object',
       properties: {
         message: { type: 'string', example: 'Bulk notification campaign initiated' },
         campaignId: { type: 'string', example: 'campaign_123456789' },
-        status: { type: 'string', example: 'PROCESSING' }
-      }
-    }
+        status: { type: 'string', example: 'PROCESSING' },
+      },
+    },
   })
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
   @ApiResponse({ status: 500, description: '서버 오류' })
@@ -38,11 +38,17 @@ export class BulkNotificationController {
   }
 
   @Get()
-  @ApiOperation({ 
-    summary: '캠페인 목록 조회', 
-    description: '대량 알림 캠페인 목록을 조회합니다.' 
+  @ApiOperation({
+    summary: '캠페인 목록 조회',
+    description: '대량 알림 캠페인 목록을 조회합니다.',
   })
-  @ApiQuery({ name: 'status', required: false, type: [String], description: '상태 필터 (예: PROCESSING,COMPLETED)', example: 'PROCESSING,COMPLETED' })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    type: [String],
+    description: '상태 필터 (예: PROCESSING,COMPLETED)',
+    example: 'PROCESSING,COMPLETED',
+  })
   @ApiQuery({ name: 'category', required: false, type: String, description: '카테고리 필터', example: 'MARKETING' })
   @ApiQuery({ name: 'createdBy', required: false, type: String, description: '생성자 필터', example: 'admin-user-123' })
   @ApiQuery({ name: 'limit', required: false, type: Number, description: '페이지 크기', example: 50 })
@@ -67,9 +73,9 @@ export class BulkNotificationController {
   }
 
   @Get(':campaignId')
-  @ApiOperation({ 
-    summary: '캠페인 상세 조회', 
-    description: '특정 캠페인의 상세 정보를 조회합니다.' 
+  @ApiOperation({
+    summary: '캠페인 상세 조회',
+    description: '특정 캠페인의 상세 정보를 조회합니다.',
   })
   @ApiParam({ name: 'campaignId', description: '캠페인 ID', example: 'campaign_123456789' })
   @ApiResponse({ status: 200, description: '캠페인 상세 조회 성공' })
@@ -79,9 +85,9 @@ export class BulkNotificationController {
   }
 
   @Post(':campaignId/cancel')
-  @ApiOperation({ 
-    summary: '캠페인 취소', 
-    description: '진행 중이거나 예약된 캠페인을 취소합니다.' 
+  @ApiOperation({
+    summary: '캠페인 취소',
+    description: '진행 중이거나 예약된 캠페인을 취소합니다.',
   })
   @ApiParam({ name: 'campaignId', description: '캠페인 ID', example: 'campaign_123456789' })
   @ApiResponse({ status: 200, description: '캠페인 취소 성공' })
@@ -92,9 +98,9 @@ export class BulkNotificationController {
   }
 
   @Get(':campaignId/recipients')
-  @ApiOperation({ 
-    summary: '캠페인 수신자 목록 조회', 
-    description: '특정 캠페인의 수신자 목록을 조회합니다.' 
+  @ApiOperation({
+    summary: '캠페인 수신자 목록 조회',
+    description: '특정 캠페인의 수신자 목록을 조회합니다.',
   })
   @ApiParam({ name: 'campaignId', description: '캠페인 ID', example: 'campaign_123456789' })
   @ApiQuery({ name: 'status', required: false, type: String, description: '상태 필터', example: 'SENT' })

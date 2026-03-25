@@ -52,12 +52,7 @@ export class PauseManager {
     reason?: string,
   ): Promise<PauseResult> {
     // 정책 기반 검증
-    await this.validatePauseRequest(
-      userId,
-      startDate,
-      endDate,
-      entitlement.tierId,
-    );
+    await this.validatePauseRequest(userId, startDate, endDate, entitlement.tierId);
 
     return this.dbService.db.transaction(async (tx: DrizzleTransaction) => {
       const now = new Date();
@@ -72,9 +67,7 @@ export class PauseManager {
         .returning();
 
       // 2. 일시정지 기간 계산
-      const pauseDurationDays = Math.ceil(
-        (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24),
-      );
+      const pauseDurationDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
 
       // 3. 기존 권한 종료일에 일시정지 기간만큼 연장
       const originalEndsAt = new Date(entitlement.endsAt);
@@ -89,17 +82,12 @@ export class PauseManager {
 
       if (contract && contract.nextBillingDate) {
         const originalNextBillingDate = new Date(contract.nextBillingDate);
-        const adjustedNextBillingDate = addDays(
-          originalNextBillingDate,
-          pauseDurationDays,
-        );
+        const adjustedNextBillingDate = addDays(originalNextBillingDate, pauseDurationDays);
 
         await tx
           .update(schema.subscriptionContracts)
           .set({
-            nextBillingDate: adjustedNextBillingDate
-              .toISOString()
-              .split('T')[0],
+            nextBillingDate: adjustedNextBillingDate.toISOString().split('T')[0],
           })
           .where(eq(schema.subscriptionContracts.id, contract.id));
       }
@@ -217,12 +205,7 @@ export class PauseManager {
   /**
    * 일시정지 요청 검증 (정책 기반)
    */
-  private async validatePauseRequest(
-    userId: string,
-    startDate: Date,
-    endDate: Date,
-    tierId: string,
-  ): Promise<void> {
+  private async validatePauseRequest(userId: string, startDate: Date, endDate: Date, tierId: string): Promise<void> {
     // 1. 최소/최대 기간 확인
     const minDays = await this.policyService.getNumberPolicy(
       'MIN_PAUSE_DURATION_DAYS',
@@ -282,18 +265,13 @@ export class PauseManager {
               userId,
               period: period.name,
             });
-            throw new Error(
-              `${period.name} 기간에는 일시정지할 수 없습니다: ${period.reason}`,
-            );
+            throw new Error(`${period.name} 기간에는 일시정지할 수 없습니다: ${period.reason}`);
           }
         }
       }
     } catch (error) {
       // 블랙아웃 정책이 없으면 무시
-      if (
-        error instanceof Error &&
-        error.message.includes('Policy not found')
-      ) {
+      if (error instanceof Error && error.message.includes('Policy not found')) {
         this.logger.debug('No blackout policy found, skipping check');
       } else {
         throw error;
@@ -316,9 +294,7 @@ export class PauseManager {
         pauseCount,
         maxPausesPerYear,
       });
-      throw new Error(
-        `연간 최대 ${maxPausesPerYear}회까지만 일시정지 가능합니다`,
-      );
+      throw new Error(`연간 최대 ${maxPausesPerYear}회까지만 일시정지 가능합니다`);
     }
 
     this.logger.log('Pause request validated', {
@@ -339,8 +315,6 @@ export class PauseManager {
       .from(schema.pauseEvents)
       .where(eq(schema.pauseEvents.userId, userId));
 
-    return events.filter(
-      (e) => e.eventType === 'START' && e.effectiveAt >= yearStart,
-    ).length;
+    return events.filter((e) => e.eventType === 'START' && e.effectiveAt >= yearStart).length;
   }
 }

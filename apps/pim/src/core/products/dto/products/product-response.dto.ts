@@ -128,7 +128,6 @@ export class ProductListResponseDto {
   total: number;
 }
 
-
 export class MasterProductWithPrimaryVersionDto extends ProductMasterEntity {
   @ApiProperty({ description: '주 버전', type: ProductVersionDto, nullable: true })
   primaryVersion: ProductVersionDto | null;
@@ -171,5 +170,4 @@ export class ProductSummaryDto {
     nullable: true,
   })
   priceSummary: PriceSummaryDto | null;
-
 }

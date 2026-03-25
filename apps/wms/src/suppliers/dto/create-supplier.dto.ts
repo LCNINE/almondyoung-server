@@ -90,9 +90,9 @@ export class CreateSupplierDto {
   @MaxLength(100)
   bankAccountHolder?: string;
 
-  @ApiProperty({ 
-    description: 'Payment method (e.g., prepaid, postpaid, monthly)', 
-    required: false 
+  @ApiProperty({
+    description: 'Payment method (e.g., prepaid, postpaid, monthly)',
+    required: false,
   })
   @IsOptional()
   @IsString()
@@ -120,14 +120,13 @@ export class CreateSupplierDto {
   @IsUUID()
   defaultWarehouseId?: string;
 
-  @ApiProperty({ 
-    description: 'Category IDs to associate with supplier', 
+  @ApiProperty({
+    description: 'Category IDs to associate with supplier',
     type: [String],
-    required: false 
+    required: false,
   })
   @IsOptional()
   @IsArray()
   @IsUUID('4', { each: true })
   categoryIds?: string[];
 }
-

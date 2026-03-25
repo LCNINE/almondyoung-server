@@ -2,10 +2,7 @@ import './tracing';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import {
-  FastifyAdapter,
-  NestFastifyApplication,
-} from '@nestjs/platform-fastify';
+import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import fastifyCookie from '@fastify/cookie';
 import fastifyCors from '@fastify/cors';
 import { WalletModule } from './wallet.module';
@@ -66,10 +63,7 @@ function isOriginAllowed(origin: string | undefined, allowedOrigins: string[]): 
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestFastifyApplication>(
-    WalletModule,
-    new FastifyAdapter(),
-  );
+  const app = await NestFactory.create<NestFastifyApplication>(WalletModule, new FastifyAdapter());
 
   app.connectMicroservice(
     EventsModule.forConsumer({
@@ -85,15 +79,10 @@ async function bootstrap() {
     origin: isDev
       ? true
       : (origin, callback) => {
-        callback(null, isOriginAllowed(origin, allowedOrigins));
-      },
+          callback(null, isOriginAllowed(origin, allowedOrigins));
+        },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'Idempotency-Key',
-      'X-Client-Secret',
-    ],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'X-Client-Secret'],
     credentials: true,
   });
   await app.register(fastifyCookie);
@@ -120,12 +109,15 @@ async function bootstrap() {
     yamlDocumentUrl: '/docs.yaml',
   });
 
-  app.getHttpAdapter().getInstance().addHook('onSend', (_request: any, reply: any, _payload: any, done: any) => {
-    if (_request.url === '/docs.yaml') {
-      reply.header('Content-Type', 'application/x-yaml; charset=utf-8');
-    }
-    done();
-  });
+  app
+    .getHttpAdapter()
+    .getInstance()
+    .addHook('onSend', (_request: any, reply: any, _payload: any, done: any) => {
+      if (_request.url === '/docs.yaml') {
+        reply.header('Content-Type', 'application/x-yaml; charset=utf-8');
+      }
+      done();
+    });
 
   const port = Number(process.env.PORT ?? 3000);
   await app.startAllMicroservices();

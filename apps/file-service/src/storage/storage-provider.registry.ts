@@ -1,9 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import {
-  StorageProviderHandle,
-  StorageProviderType,
-} from './storage-provider.interface';
+import { StorageProviderHandle, StorageProviderType } from './storage-provider.interface';
 import { S3StorageProvider } from './providers/s3-storage.provider';
 import { LocalStorageProvider } from './providers/local-storage.provider';
 
@@ -16,10 +13,7 @@ export class StorageProviderRegistry {
     private readonly s3Provider: S3StorageProvider,
     private readonly localProvider: LocalStorageProvider,
   ) {
-    this.activeProvider = this.configService.get<StorageProviderType>(
-      'STORAGE_PROVIDER',
-      StorageProviderType.S3,
-    );
+    this.activeProvider = this.configService.get<StorageProviderType>('STORAGE_PROVIDER', StorageProviderType.S3);
   }
 
   getActive(): StorageProviderHandle {
@@ -53,4 +47,3 @@ export class StorageProviderRegistry {
     }
   }
 }
-

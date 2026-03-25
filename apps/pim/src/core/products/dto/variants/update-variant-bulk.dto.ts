@@ -10,7 +10,7 @@ class BulkUpdateItemDto {
   @ApiProperty({
     description: '제품 변형 이름',
     minLength: 1,
-    required: false
+    required: false,
   })
   @IsOptional()
   @IsString()
@@ -37,11 +37,10 @@ export class UpdateVariantBulkDto {
   @ApiProperty({
     description: '수정할 변형 정보 배열',
     type: [BulkUpdateItemDto],
-    minItems: 1
+    minItems: 1,
   })
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => BulkUpdateItemDto)
   updates: BulkUpdateItemDto[];
 }
-

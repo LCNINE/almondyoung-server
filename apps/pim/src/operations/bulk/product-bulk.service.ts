@@ -1,19 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { and, eq, inArray } from 'drizzle-orm';
-import {
-  type PimSchema,
-  productMasterVersions,
-  productAuditLog,
-} from '../../schema';
+import { type PimSchema, productMasterVersions, productAuditLog } from '../../schema';
 import { BulkUpdateDto, BulkDeleteDto, BulkRestoreDto } from './dto';
 import { DbTransaction } from '../../types';
 
 @Injectable()
 export class ProductBulkService {
-  constructor(
-    @InjectDb() private readonly db: DbService<PimSchema>,
-  ) { }
+  constructor(@InjectDb() private readonly db: DbService<PimSchema>) {}
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.db.db;
@@ -35,12 +29,7 @@ export class ProductBulkService {
     const updated = await client
       .update(productMasterVersions)
       .set(updateData)
-      .where(
-        and(
-          inArray(productMasterVersions.id, dto.productIds),
-          eq(productMasterVersions.status, 'active')
-        )
-      )
+      .where(and(inArray(productMasterVersions.id, dto.productIds), eq(productMasterVersions.status, 'active')))
       .returning();
 
     // Log bulk update
@@ -70,12 +59,7 @@ export class ProductBulkService {
         deletedBy: userId,
         updatedAt: new Date(),
       })
-      .where(
-        and(
-          inArray(productMasterVersions.id, dto.productIds),
-          eq(productMasterVersions.status, 'active')
-        )
-      )
+      .where(and(inArray(productMasterVersions.id, dto.productIds), eq(productMasterVersions.status, 'active')))
       .returning();
 
     // Log bulk delete
@@ -105,12 +89,7 @@ export class ProductBulkService {
         deletedBy: null,
         updatedAt: new Date(),
       })
-      .where(
-        and(
-          inArray(productMasterVersions.id, dto.productIds),
-          eq(productMasterVersions.status, 'active')
-        )
-      )
+      .where(and(inArray(productMasterVersions.id, dto.productIds), eq(productMasterVersions.status, 'active')))
       .returning();
 
     // Log bulk restore
@@ -130,4 +109,3 @@ export class ProductBulkService {
     };
   }
 }
-

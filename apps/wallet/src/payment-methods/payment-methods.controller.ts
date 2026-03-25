@@ -1,14 +1,4 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  HttpCode,
-  Param,
-  Post,
-  Req,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Req, UnauthorizedException } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PaymentMethodsService } from './payment-methods.service';
 import { CreatePaymentMethodDto, PaymentMethodResponseDto } from './dto';
@@ -23,9 +13,7 @@ export class PaymentMethodsController {
   @Post()
   @HttpCode(201)
   @ApiOperation({ summary: 'Register a payment method (API-key authenticated, merchant backend)' })
-  async create(
-    @Body() dto: CreatePaymentMethodDto,
-  ): Promise<PaymentMethodResponseDto> {
+  async create(@Body() dto: CreatePaymentMethodDto): Promise<PaymentMethodResponseDto> {
     const method = await this.service.create(dto);
     return this.toResponse(method);
   }
@@ -33,9 +21,7 @@ export class PaymentMethodsController {
   @Get()
   @WalletJwtAuth()
   @ApiOperation({ summary: 'List payment methods for the authenticated user' })
-  async findAll(
-    @Req() req: AuthenticatedRequest,
-  ): Promise<PaymentMethodResponseDto[]> {
+  async findAll(@Req() req: AuthenticatedRequest): Promise<PaymentMethodResponseDto[]> {
     // JWT path: userId comes from JWT claim
     // API-key path: userId comes from query param (merchant-side lookup)
     const userId = req.jwtUserId ?? this.getUserIdFromQuery(req);

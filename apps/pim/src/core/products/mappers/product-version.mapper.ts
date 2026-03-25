@@ -91,7 +91,7 @@ export class ProductVersionMapper {
       draftOwnerId: detail.draftOwnerId,
       createdAt: DateMapper.toNotNullString(detail.createdAt),
       updatedAt: DateMapper.toNotNullString(detail.updatedAt),
-      images: detail.images.map(img => ProductImageMapper.toDto(img)),
+      images: detail.images.map((img) => ProductImageMapper.toDto(img)),
       optionGroups: detail.optionGroups,
       variants: detail.variants,
       channelProducts: detail.channelProducts,

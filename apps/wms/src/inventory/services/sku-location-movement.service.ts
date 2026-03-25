@@ -6,7 +6,10 @@ import { eq, and, gte, lte, desc, sql, SQL } from 'drizzle-orm';
 import { CreateSkuLocationMovementDto } from '../dto/sku-location-movements/create-sku-location-movement.dto';
 import { SkuLocationMovementResponseDto } from '../dto/sku-location-movements/sku-location-movement-response.dto';
 import { BulkMoveSkuLocationDto, BulkMoveResultDto } from '../dto/sku-location-movements/bulk-move-sku-location.dto';
-import { MoveSkuByIdentifierDto, BulkMoveByIdentifierDto } from '../dto/sku-location-movements/move-sku-by-identifier.dto';
+import {
+  MoveSkuByIdentifierDto,
+  BulkMoveByIdentifierDto,
+} from '../dto/sku-location-movements/move-sku-by-identifier.dto';
 
 export interface MovementStatistics {
   totalMovements: number;
@@ -39,7 +42,7 @@ export class SkuLocationMovementService {
   constructor(
     @InjectTypedDb<typeof wmsSchema>()
     private readonly dbService: DbService<typeof wmsSchema>,
-  ) { }
+  ) {}
 
   private get db() {
     return this.dbService.db;
@@ -48,55 +51,34 @@ export class SkuLocationMovementService {
   /**
    * Record a SKU location movement
    */
-  async recordMovement(
-    dto: CreateSkuLocationMovementDto,
-    tx?: DbTx
-  ): Promise<SkuLocationMovementResponseDto> {
+  async recordMovement(dto: CreateSkuLocationMovementDto, tx?: DbTx): Promise<SkuLocationMovementResponseDto> {
     return this.inTx(async (tx) => {
       const { skuLocationMovements, skus, locations } = wmsTables;
 
       // Validate: from and to locations must be different
       if (dto.fromLocationId === dto.toLocationId) {
-        throw new BadRequestException(
-          'From and To locations must be different'
-        );
+        throw new BadRequestException('From and To locations must be different');
       }
 
       // Validate SKU exists
-      const sku = await tx
-        .select()
-        .from(skus)
-        .where(eq(skus.id, dto.skuId))
-        .limit(1);
+      const sku = await tx.select().from(skus).where(eq(skus.id, dto.skuId)).limit(1);
 
       if (!sku[0]) {
         throw new NotFoundException(`SKU with ID ${dto.skuId} not found`);
       }
 
       // Validate from location exists
-      const fromLocation = await tx
-        .select()
-        .from(locations)
-        .where(eq(locations.id, dto.fromLocationId))
-        .limit(1);
+      const fromLocation = await tx.select().from(locations).where(eq(locations.id, dto.fromLocationId)).limit(1);
 
       if (!fromLocation[0]) {
-        throw new NotFoundException(
-          `From location with ID ${dto.fromLocationId} not found`
-        );
+        throw new NotFoundException(`From location with ID ${dto.fromLocationId} not found`);
       }
 
       // Validate to location exists
-      const toLocation = await tx
-        .select()
-        .from(locations)
-        .where(eq(locations.id, dto.toLocationId))
-        .limit(1);
+      const toLocation = await tx.select().from(locations).where(eq(locations.id, dto.toLocationId)).limit(1);
 
       if (!toLocation[0]) {
-        throw new NotFoundException(
-          `To location with ID ${dto.toLocationId} not found`
-        );
+        throw new NotFoundException(`To location with ID ${dto.toLocationId} not found`);
       }
 
       // Validate quantity if provided
@@ -131,7 +113,7 @@ export class SkuLocationMovementService {
     skuId: string,
     limit: number = 50,
     offset: number = 0,
-    tx?: DbTx
+    tx?: DbTx,
   ): Promise<{
     movements: SkuLocationMovementResponseDto[];
     total: number;
@@ -155,7 +137,7 @@ export class SkuLocationMovementService {
         .where(eq(skuLocationMovements.skuId, skuId));
 
       return {
-        movements: movements.map(m => this.mapToResponseDto(m)),
+        movements: movements.map((m) => this.mapToResponseDto(m)),
         total: Number(countResult[0]?.count ?? 0),
       };
     }, tx);
@@ -169,7 +151,7 @@ export class SkuLocationMovementService {
     direction: 'from' | 'to' | 'both' = 'both',
     limit: number = 50,
     offset: number = 0,
-    tx?: DbTx
+    tx?: DbTx,
   ): Promise<{
     movements: SkuLocationMovementResponseDto[];
     total: number;
@@ -204,7 +186,7 @@ export class SkuLocationMovementService {
         .where(whereClause);
 
       return {
-        movements: movements.map(m => this.mapToResponseDto(m)),
+        movements: movements.map((m) => this.mapToResponseDto(m)),
         total: Number(countResult[0]?.count ?? 0),
       };
     }, tx);
@@ -215,7 +197,7 @@ export class SkuLocationMovementService {
    */
   async getMovementsByFilters(
     filters: MovementFilters,
-    tx?: DbTx
+    tx?: DbTx,
   ): Promise<{
     movements: SkuLocationMovementResponseDto[];
     total: number;
@@ -268,7 +250,7 @@ export class SkuLocationMovementService {
         .where(whereClause);
 
       return {
-        movements: movements.map(m => this.mapToResponseDto(m)),
+        movements: movements.map((m) => this.mapToResponseDto(m)),
         total: Number(countResult[0]?.count ?? 0),
       };
     }, tx);
@@ -277,11 +259,7 @@ export class SkuLocationMovementService {
   /**
    * Get movement statistics
    */
-  async getMovementStatistics(
-    startDate?: Date,
-    endDate?: Date,
-    tx?: DbTx
-  ): Promise<MovementStatistics> {
+  async getMovementStatistics(startDate?: Date, endDate?: Date, tx?: DbTx): Promise<MovementStatistics> {
     return this.inTx(async (tx) => {
       const { skuLocationMovements, skus, locations } = wmsTables;
 
@@ -317,7 +295,7 @@ export class SkuLocationMovementService {
         .orderBy(desc(sql<number>`count(*)`))
         .limit(10);
 
-      const mostMovedSkus = mostMovedSkusRaw.map(row => ({
+      const mostMovedSkus = mostMovedSkusRaw.map((row) => ({
         skuId: row.skuId,
         skuName: row.skuName,
         movementCount: Number(row.movementCount),
@@ -352,13 +330,13 @@ export class SkuLocationMovementService {
         .limit(5);
 
       const mostActiveLocations = [
-        ...mostActiveFromRaw.map(row => ({
+        ...mostActiveFromRaw.map((row) => ({
           locationId: row.locationId,
           locationCode: row.locationCode,
           movementCount: Number(row.movementCount),
           direction: 'from' as const,
         })),
-        ...mostActiveToRaw.map(row => ({
+        ...mostActiveToRaw.map((row) => ({
           locationId: row.locationId,
           locationCode: row.locationCode,
           movementCount: Number(row.movementCount),
@@ -377,10 +355,7 @@ export class SkuLocationMovementService {
   /**
    * Get recent movements (last N movements)
    */
-  async getRecentMovements(
-    limit: number = 20,
-    tx?: DbTx
-  ): Promise<SkuLocationMovementResponseDto[]> {
+  async getRecentMovements(limit: number = 20, tx?: DbTx): Promise<SkuLocationMovementResponseDto[]> {
     return this.inTx(async (tx) => {
       const { skuLocationMovements } = wmsTables;
 
@@ -390,7 +365,7 @@ export class SkuLocationMovementService {
         .orderBy(desc(skuLocationMovements.movementTimestamp))
         .limit(limit);
 
-      return movements.map(m => this.mapToResponseDto(m));
+      return movements.map((m) => this.mapToResponseDto(m));
     }, tx);
   }
 
@@ -401,11 +376,7 @@ export class SkuLocationMovementService {
     return this.inTx(async (tx) => {
       const { skuLocationMovements } = wmsTables;
 
-      const result = await tx
-        .select()
-        .from(skuLocationMovements)
-        .where(eq(skuLocationMovements.id, id))
-        .limit(1);
+      const result = await tx.select().from(skuLocationMovements).where(eq(skuLocationMovements.id, id)).limit(1);
 
       if (!result[0]) {
         throw new NotFoundException(`Movement with ID ${id} not found`);
@@ -419,10 +390,7 @@ export class SkuLocationMovementService {
    * Bulk record multiple SKU location movements
    * Processes each movement independently - partial success is allowed
    */
-  async bulkRecordMovements(
-    dto: BulkMoveSkuLocationDto,
-    tx?: DbTx
-  ): Promise<BulkMoveResultDto> {
+  async bulkRecordMovements(dto: BulkMoveSkuLocationDto, tx?: DbTx): Promise<BulkMoveResultDto> {
     return this.inTx(async (tx) => {
       const results: Array<{
         success: boolean;
@@ -467,30 +435,28 @@ export class SkuLocationMovementService {
    * Move SKU using identifier (UUID or barcode)
    * Resolves the SKU first, then records the movement
    */
-  async moveSkuByIdentifier(
-    dto: MoveSkuByIdentifierDto,
-    tx?: DbTx
-  ): Promise<SkuLocationMovementResponseDto> {
+  async moveSkuByIdentifier(dto: MoveSkuByIdentifierDto, tx?: DbTx): Promise<SkuLocationMovementResponseDto> {
     return this.inTx(async (tx) => {
       // Resolve SKU
       const resolvedSku = await this.resolveSkuIdentifier(dto.skuIdentifier, tx);
 
       if (!resolvedSku) {
-        throw new NotFoundException(
-          `SKU with identifier ${dto.skuIdentifier} not found`
-        );
+        throw new NotFoundException(`SKU with identifier ${dto.skuIdentifier} not found`);
       }
 
       // Record movement using resolved SKU ID
-      return this.recordMovement({
-        skuId: resolvedSku.id,
-        barcode: resolvedSku.barcode || '',
-        fromLocationId: dto.fromLocationId,
-        toLocationId: dto.toLocationId,
-        quantity: dto.quantity,
-        reason: dto.reason,
-        movedBy: dto.movedBy,
-      }, tx);
+      return this.recordMovement(
+        {
+          skuId: resolvedSku.id,
+          barcode: resolvedSku.barcode || '',
+          fromLocationId: dto.fromLocationId,
+          toLocationId: dto.toLocationId,
+          quantity: dto.quantity,
+          reason: dto.reason,
+          movedBy: dto.movedBy,
+        },
+        tx,
+      );
     }, tx);
   }
 
@@ -498,10 +464,7 @@ export class SkuLocationMovementService {
    * Bulk move SKUs using identifiers (UUID or barcode)
    * Each SKU is resolved first, then movement is recorded
    */
-  async bulkMoveByIdentifier(
-    dto: BulkMoveByIdentifierDto,
-    tx?: DbTx
-  ): Promise<BulkMoveResultDto> {
+  async bulkMoveByIdentifier(dto: BulkMoveByIdentifierDto, tx?: DbTx): Promise<BulkMoveResultDto> {
     return this.inTx(async (tx) => {
       const results: Array<{
         success: boolean;
@@ -548,7 +511,7 @@ export class SkuLocationMovementService {
    */
   private async resolveSkuIdentifier(
     identifier: string,
-    tx: DbTx
+    tx: DbTx,
   ): Promise<{ id: string; barcode: string | null } | null> {
     const { skus, skuBarcodes } = wmsTables;
 
@@ -564,10 +527,7 @@ export class SkuLocationMovementService {
           barcode: skuBarcodes.barcode,
         })
         .from(skus)
-        .leftJoin(skuBarcodes, and(
-          eq(skus.id, skuBarcodes.skuId),
-          eq(skuBarcodes.isPrimary, true)
-        ))
+        .leftJoin(skuBarcodes, and(eq(skus.id, skuBarcodes.skuId), eq(skuBarcodes.isPrimary, true)))
         .where(eq(skus.id, identifier))
         .limit(1);
 
@@ -589,10 +549,12 @@ export class SkuLocationMovementService {
       .where(eq(skuBarcodes.barcode, identifier))
       .limit(1);
 
-    return barcodeResult[0] ? {
-      id: barcodeResult[0].skuId,
-      barcode: barcodeResult[0].barcode,
-    } : null;
+    return barcodeResult[0]
+      ? {
+          id: barcodeResult[0].skuId,
+          barcode: barcodeResult[0].barcode,
+        }
+      : null;
   }
 
   /**
@@ -619,4 +581,3 @@ export class SkuLocationMovementService {
     return tx ? fn(tx) : this.db.transaction(fn);
   }
 }
-

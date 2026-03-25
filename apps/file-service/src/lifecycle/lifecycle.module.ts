@@ -9,4 +9,3 @@ import { SharedModule } from '../shared/shared.module';
   providers: [LifecycleService],
 })
 export class LifecycleModule {}
-

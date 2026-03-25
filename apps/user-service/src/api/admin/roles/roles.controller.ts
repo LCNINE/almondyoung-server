@@ -11,12 +11,7 @@ import {
   Patch,
   Post,
 } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { AddScopeToRoleDto, CreateRoleDto, RoleResponseDto, UpdateRoleDto } from './dto/roles.dto';
 import { RolesService } from './roles.service';
 
@@ -56,10 +51,7 @@ export class RolesController {
   @ApiResponse({ status: 200, description: '역할 수정 성공' })
   @Patch(':roleId')
   @RequireScopes('master')
-  async updateRole(
-    @Param('roleId') roleId: string,
-    @Body() dto: UpdateRoleDto,
-  ): Promise<RoleResponseDto> {
+  async updateRole(@Param('roleId') roleId: string, @Body() dto: UpdateRoleDto): Promise<RoleResponseDto> {
     try {
       return await this.rolesService.updateRole(roleId, dto);
     } catch (e: any) {
@@ -98,10 +90,7 @@ export class RolesController {
   @ApiResponse({ status: 201, description: '스코프 추가 성공' })
   @Post(':roleId/scopes')
   @RequireScopes('master')
-  async addScopeToRole(
-    @Param('roleId') roleId: string,
-    @Body() dto: AddScopeToRoleDto,
-  ): Promise<void> {
+  async addScopeToRole(@Param('roleId') roleId: string, @Body() dto: AddScopeToRoleDto): Promise<void> {
     try {
       return await this.rolesService.addScopeToRole(roleId, dto.scopeKey);
     } catch (e: any) {
@@ -114,10 +103,7 @@ export class RolesController {
   @ApiResponse({ status: 200, description: '스코프 제거 성공' })
   @Delete(':roleId/scopes/:scopeKey')
   @RequireScopes('master')
-  async removeScopeFromRole(
-    @Param('roleId') roleId: string,
-    @Param('scopeKey') scopeKey: string,
-  ): Promise<void> {
+  async removeScopeFromRole(@Param('roleId') roleId: string, @Param('scopeKey') scopeKey: string): Promise<void> {
     try {
       return await this.rolesService.removeScopeFromRole(roleId, scopeKey);
     } catch (e: any) {

@@ -8,9 +8,7 @@ import type * as schema from '../schemas/entities/schema';
 /**
  * Type-safe database transaction interface
  */
-export type DatabaseTransaction = Parameters<
-  Parameters<PostgresJsDatabase<typeof schema>['transaction']>[0]
->[0];
+export type DatabaseTransaction = Parameters<Parameters<PostgresJsDatabase<typeof schema>['transaction']>[0]>[0];
 
 /**
  * Type-safe database instance

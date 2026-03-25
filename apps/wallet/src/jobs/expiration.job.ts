@@ -19,10 +19,7 @@ export class ExpirationJob {
   ) {
     const raw = process.env.WALLET_EXPIRATION_BATCH_SIZE;
     const parsed = Number(raw);
-    this.batchSize =
-      Number.isFinite(parsed) && parsed > 0
-        ? Math.floor(parsed)
-        : DEFAULT_EXPIRATION_BATCH_SIZE;
+    this.batchSize = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : DEFAULT_EXPIRATION_BATCH_SIZE;
   }
 
   @Cron(process.env.WALLET_EXPIRATION_CRON ?? DEFAULT_EXPIRATION_CRON)
@@ -63,15 +60,11 @@ export class ExpirationJob {
 
     for (const intent of dueIntents) {
       try {
-        await this.stateTransitionService.transitionIntent(
-          intent.id,
-          'CANCELED',
-          {
-            correlationId: `expiration:${intent.id}`,
-            reasonCode: 'INTENT_EXPIRED',
-            reasonMessage: 'Payment intent expired',
-          },
-        );
+        await this.stateTransitionService.transitionIntent(intent.id, 'CANCELED', {
+          correlationId: `expiration:${intent.id}`,
+          reasonCode: 'INTENT_EXPIRED',
+          reasonMessage: 'Payment intent expired',
+        });
         expired++;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

@@ -12,4 +12,3 @@ export class CreateSupplierCategoryDto {
   @IsString()
   description?: string;
 }
-

@@ -13,12 +13,7 @@ import {
   Put,
   Query,
 } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { UpdateUserDto } from '../../users/dto/update-user.dto';
 import { AdminUserDetailResponseDto } from './dto/admin-user-detail.response.dto';
 import { AdminUsersListResponseDto } from './dto/admin-users-list.response.dto';
@@ -87,12 +82,9 @@ export class UsersController {
   })
   @ApiResponse({
     status: 200,
-    description:
-      '해당 사용자 동의 정보 조회 성공(null일시 해당 사용자가 아직 약관에 동의하지 않은 상태입니다.)',
+    description: '해당 사용자 동의 정보 조회 성공(null일시 해당 사용자가 아직 약관에 동의하지 않은 상태입니다.)',
   })
-  async getUserConsent(
-    @Param('userId') userId: string,
-  ): Promise<UserConsent | null> {
+  async getUserConsent(@Param('userId') userId: string): Promise<UserConsent | null> {
     return await this.usersService.getUserConsentByUserId(userId);
   }
 
@@ -107,9 +99,7 @@ export class UsersController {
     description: '사용자 상세 정보 조회 성공',
     type: AdminUserDetailResponseDto,
   })
-  async getUserById(
-    @Param('userId') userId: string,
-  ): Promise<AdminUserDetailResponseDto> {
+  async getUserById(@Param('userId') userId: string): Promise<AdminUserDetailResponseDto> {
     try {
       return await this.usersService.getUserById(userId);
     } catch (e: any) {
@@ -124,14 +114,8 @@ export class UsersController {
   @Patch(':userId')
   @RequireScopes('master', 'admin:users:modify')
   @HttpCode(HttpStatus.OK)
-  async updateUser(
-    @Param('userId') userId: string,
-    @Body() updateUserDto: UpdateUserDto,
-  ) {
-    const updatedUser = await this.usersService.updateUser(
-      userId,
-      updateUserDto,
-    );
+  async updateUser(@Param('userId') userId: string, @Body() updateUserDto: UpdateUserDto) {
+    const updatedUser = await this.usersService.updateUser(userId, updateUserDto);
 
     if (!updatedUser) {
       throw new NotFoundException('해당 사용자를 찾을 수 없습니다.');
@@ -156,10 +140,7 @@ export class UsersController {
   @ApiResponse({ status: 200, description: '역할 교체 성공' })
   @Put(':userId/roles')
   @RequireScopes('master')
-  async replaceUserRoles(
-    @Param('userId') userId: string,
-    @Body() dto: ReplaceUserRolesDto,
-  ): Promise<void> {
+  async replaceUserRoles(@Param('userId') userId: string, @Body() dto: ReplaceUserRolesDto): Promise<void> {
     try {
       return await this.rolesService.replaceUserRoles(userId, dto);
     } catch (e: any) {

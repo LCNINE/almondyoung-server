@@ -1,9 +1,6 @@
-import { ExecArgs } from "@medusajs/framework/types";
-import { ContainerRegistrationKeys } from "@medusajs/framework/utils";
-import {
-  addToCartWorkflow,
-  createCartWorkflow,
-} from "@medusajs/medusa/core-flows";
+import { ExecArgs } from '@medusajs/framework/types';
+import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
+import { addToCartWorkflow, createCartWorkflow } from '@medusajs/medusa/core-flows';
 
 type InputArgs = {
   customerId: string;
@@ -15,18 +12,17 @@ type InputArgs = {
 };
 
 function parseArgs(args: string[]): InputArgs {
-  const [customerId, variantId, quantityRaw, regionId, salesChannelId, email] =
-    args;
+  const [customerId, variantId, quantityRaw, regionId, salesChannelId, email] = args;
 
   if (!customerId || !variantId || !quantityRaw || !regionId) {
     throw new Error(
-      "Usage: medusa exec ./src/scripts/add-item-to-customer-cart.ts <customer_id> <variant_id> <quantity> <region_id> [sales_channel_id] [email]",
+      'Usage: medusa exec ./src/scripts/add-item-to-customer-cart.ts <customer_id> <variant_id> <quantity> <region_id> [sales_channel_id] [email]',
     );
   }
 
   const quantity = Number(quantityRaw);
   if (!Number.isInteger(quantity) || quantity < 1) {
-    throw new Error("quantity must be a positive integer");
+    throw new Error('quantity must be a positive integer');
   }
 
   return {
@@ -39,16 +35,13 @@ function parseArgs(args: string[]): InputArgs {
   };
 }
 
-export default async function addItemToCustomerCart({
-  container,
-  args,
-}: ExecArgs) {
+export default async function addItemToCustomerCart({ container, args }: ExecArgs) {
   const input = parseArgs(args);
   const query = container.resolve(ContainerRegistrationKeys.QUERY);
 
   const { data: carts } = await query.graph({
-    entity: "cart",
-    fields: ["id", "customer_id", "completed_at", "updated_at", "email"],
+    entity: 'cart',
+    fields: ['id', 'customer_id', 'completed_at', 'updated_at', 'email'],
     filters: {
       customer_id: input.customerId,
       completed_at: null,
@@ -79,7 +72,7 @@ export default async function addItemToCustomerCart({
         JSON.stringify(
           {
             ok: false,
-            step: "create_cart",
+            step: 'create_cart',
             errors: (errors || []).map((e) => e.error?.message || e.action),
           },
           null,
@@ -105,7 +98,7 @@ export default async function addItemToCustomerCart({
       JSON.stringify(
         {
           ok: false,
-          step: "add_item",
+          step: 'add_item',
           cartId,
           errors: addErrors.map((e) => e.error?.message || e.action),
         },
@@ -117,22 +110,22 @@ export default async function addItemToCustomerCart({
   }
 
   const { data: cartsAfter } = await query.graph({
-    entity: "cart",
+    entity: 'cart',
     fields: [
-      "id",
-      "email",
-      "customer_id",
-      "updated_at",
-      "items.id",
-      "items.variant_id",
-      "items.quantity",
-      "items.title",
-      "items.subtitle",
+      'id',
+      'email',
+      'customer_id',
+      'updated_at',
+      'items.id',
+      'items.variant_id',
+      'items.quantity',
+      'items.title',
+      'items.subtitle',
     ],
     filters: { id: cartId },
   });
 
-  const cart = cartsAfter?.[0] as any;
+  const cart = cartsAfter?.[0];
 
   console.log(
     JSON.stringify(

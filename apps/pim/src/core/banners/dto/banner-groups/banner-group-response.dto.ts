@@ -34,7 +34,12 @@ export class BannerGroupResponseDto {
   @ApiProperty({ description: '정렬 순서' })
   sortOrder: number;
 
-  @ApiProperty({ description: '삭제 시간 (ISO 8601 형식)', required: false, nullable: true, example: '2025-12-05T10:30:00.000Z' })
+  @ApiProperty({
+    description: '삭제 시간 (ISO 8601 형식)',
+    required: false,
+    nullable: true,
+    example: '2025-12-05T10:30:00.000Z',
+  })
   deletedAt: string | null;
 
   @ApiProperty({ description: '생성 시간 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
@@ -43,4 +48,3 @@ export class BannerGroupResponseDto {
   @ApiProperty({ description: '수정 시간 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
   updatedAt: string;
 }
-

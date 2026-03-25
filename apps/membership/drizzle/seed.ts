@@ -193,16 +193,11 @@ async function createSubscriptionContracts(userIds: string[], planId: string) {
       billingRetryCount: scenario.billingRetryCount,
     });
 
-    console.log(
-      `   ✓ 계약 생성: ${scenario.name} - 결제일: ${scenario.nextBillingDate}`,
-    );
+    console.log(`   ✓ 계약 생성: ${scenario.name} - 결제일: ${scenario.nextBillingDate}`);
   }
 }
 
-async function createSubscriptionEntitlements(
-  userIds: string[],
-  tierId: string,
-) {
+async function createSubscriptionEntitlements(userIds: string[], tierId: string) {
   const today = new Date();
 
   for (let i = 0; i < TEST_SCENARIOS.length; i++) {
@@ -219,9 +214,7 @@ async function createSubscriptionEntitlements(
       pausedAt: null,
     });
 
-    console.log(
-      `   ✓ 권한 생성: ${scenario.name} - 만료일: ${format(addDays(today, 1), 'yyyy-MM-dd')}`,
-    );
+    console.log(`   ✓ 권한 생성: ${scenario.name} - 만료일: ${format(addDays(today, 1), 'yyyy-MM-dd')}`);
   }
 }
 
@@ -248,9 +241,7 @@ async function createDunningQueue() {
         lastErrorMessage: '이전 결제 실패 - 재시도 예정',
       });
 
-      console.log(
-        `   ✓ Dunning 큐 생성: ${scenario.name} - 다음 재시도: ${format(nextRetryAt, 'yyyy-MM-dd HH:mm')}`,
-      );
+      console.log(`   ✓ Dunning 큐 생성: ${scenario.name} - 다음 재시도: ${format(nextRetryAt, 'yyyy-MM-dd HH:mm')}`);
     }
   }
 }

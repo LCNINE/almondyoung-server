@@ -6,11 +6,7 @@
 
 import { Logger } from '@nestjs/common';
 import { z } from 'zod';
-import {
-  ZodSchema,
-  SchemaValidationError,
-  ValidationResult,
-} from '@packages/event-contracts/types';
+import { ZodSchema, SchemaValidationError, ValidationResult } from '@packages/event-contracts/types';
 
 const logger = new Logger('SchemaValidation');
 
@@ -21,10 +17,7 @@ const logger = new Logger('SchemaValidation');
  * @param data - 검증할 데이터
  * @returns 검증 결과
  */
-export function validateSchema<T>(
-  schema: ZodSchema<T>,
-  data: unknown,
-): ValidationResult<T> {
+export function validateSchema<T>(schema: ZodSchema<T>, data: unknown): ValidationResult<T> {
   try {
     const result = schema.safeParse(data);
 
@@ -50,8 +43,7 @@ export function validateSchema<T>(
         {
           code: 'custom',
           path: [],
-          message:
-            error instanceof Error ? error.message : 'Unknown validation error',
+          message: error instanceof Error ? error.message : 'Unknown validation error',
         },
       ],
     };
@@ -67,17 +59,11 @@ export function validateSchema<T>(
  * @returns 검증된 데이터
  * @throws SchemaValidationError
  */
-export function validateSchemaOrThrow<T>(
-  schema: ZodSchema<T>,
-  data: unknown,
-  context?: string,
-): T {
+export function validateSchemaOrThrow<T>(schema: ZodSchema<T>, data: unknown, context?: string): T {
   const result = validateSchema(schema, data);
 
   if (!result.success) {
-    const errorMessage = context
-      ? `Schema validation failed for ${context}`
-      : 'Schema validation failed';
+    const errorMessage = context ? `Schema validation failed for ${context}` : 'Schema validation failed';
 
     throw new SchemaValidationError(errorMessage, result.errors!, data);
   }
@@ -100,11 +86,7 @@ export function formatValidationErrors(errors: z.ZodIssue[]): string {
 /**
  * 스키마 검증 에러 로깅
  */
-export function logValidationError(
-  context: string,
-  errors: z.ZodIssue[],
-  payload: unknown,
-): void {
+export function logValidationError(context: string, errors: z.ZodIssue[], payload: unknown): void {
   logger.error(`❌ ${context}`, {
     errors: formatValidationErrors(errors),
     payload: JSON.stringify(payload, null, 2),
@@ -124,4 +106,3 @@ export function isZodSchema(value: unknown): value is ZodSchema {
     'safeParse' in value
   );
 }
-

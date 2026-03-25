@@ -1,4 +1,3 @@
-
 const tsNode = require('ts-node');
 const tsConfigPaths = require('tsconfig-paths');
 

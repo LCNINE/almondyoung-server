@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 import { forwardRequest } from '../../_lib/forward';
 
-const NOTIFICATION_SERVICE_URL = process.env.NOTIFICATION_SERVICE_URL ?? 'http://localhost:3060';
+const NOTIFICATION_SERVICE_URL =
+  process.env.NOTIFICATION_SERVICE_URL ?? 'http://localhost:3060';
 
 type Params = { params: Promise<{ path: string[] }> };
 

@@ -131,15 +131,15 @@ export function useSalesOrderRows(query: SalesOrdersQuery) {
 
     const skuMap =
       skuMapQuery.data &&
-        typeof skuMapQuery.data === 'object' &&
-        !Array.isArray(skuMapQuery.data)
+      typeof skuMapQuery.data === 'object' &&
+      !Array.isArray(skuMapQuery.data)
         ? (skuMapQuery.data as Record<string, any>)
         : ({} as Record<string, any>);
     const userMap = userMapQuery.data ?? {};
 
     const items = listQuery.data.data.map((listItem: any) => {
       const detail = detailMap.get(listItem.id);
-      const detailExt = detail as any;
+      const detailExt = detail;
 
       const customerId = detail?.customerId ?? listItem.customerId;
       const userInfo = customerId ? userMap[customerId] : undefined;
@@ -166,13 +166,13 @@ export function useSalesOrderRows(query: SalesOrdersQuery) {
       if (detail?.lines) {
         row.lines = detail.lines.map((item: any, idx: number) => {
           const sku = item.skuId ? skuMap[item.skuId] : undefined;
-          const skuExt = sku as any;
+          const skuExt = sku;
 
           const optionName = sku?.optionKey
             ? Object.entries(sku.optionKey)
-              .map(([, value]) => `${value}`)
-              .join(', ')
-            : skuExt?.optionName ?? item.optionName;
+                .map(([, value]) => `${value}`)
+                .join(', ')
+            : (skuExt?.optionName ?? item.optionName);
 
           const allocated = Number(item?.allocatedQuantity ?? 0);
           const quantity = Number(item?.quantity ?? 0);

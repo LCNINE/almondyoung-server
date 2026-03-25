@@ -15,4 +15,3 @@ export class TransferReservationDto {
   @Min(1)
   quantity: number;
 }
-

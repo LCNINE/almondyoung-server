@@ -42,9 +42,7 @@ export const uploads = pgTable(
 
     filePath: text('file_path').notNull(),
     url: text('url').notNull(),
-    storageProvider: varchar('storage_provider', { length: 20 })
-      .default('s3')
-      .notNull(),
+    storageProvider: varchar('storage_provider', { length: 20 }).default('s3').notNull(),
 
     status: varchar('status', { length: 20 }).default('active').notNull(),
 
@@ -98,17 +96,8 @@ export const fileReferences = pgTable(
   },
   (table) => [
     index('idx_file_refs_upload').on(table.uploadId),
-    index('idx_file_refs_entity').on(
-      table.serviceType,
-      table.entityType,
-      table.entityId,
-    ),
-    uniqueIndex('unique_file_reference').on(
-      table.uploadId,
-      table.serviceType,
-      table.entityType,
-      table.entityId,
-    ),
+    index('idx_file_refs_entity').on(table.serviceType, table.entityType, table.entityId),
+    uniqueIndex('unique_file_reference').on(table.uploadId, table.serviceType, table.entityType, table.entityId),
   ],
 );
 

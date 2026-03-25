@@ -12,4 +12,3 @@ export const PIM_SCOPES: ScopeDefinition[] = [
   { key: 'brand:read', category: 'brand', description: '브랜드 조회' },
   { key: 'brand:write', category: 'brand', description: '브랜드 생성/수정' },
 ];
-

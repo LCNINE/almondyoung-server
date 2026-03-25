@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 import { forwardRequest } from '../../_lib/forward';
 
-const WALLET_SERVICE_URL = process.env.WALLET_SERVICE_URL ?? 'http://localhost:3040';
+const WALLET_SERVICE_URL =
+  process.env.WALLET_SERVICE_URL ?? 'http://localhost:3040';
 
 type Params = { params: Promise<{ path: string[] }> };
 

@@ -34,9 +34,7 @@ config({
   path: join(process.cwd(), 'apps', 'user-service', '.env'),
 });
 
-const staticRoot = existsSync(join(__dirname, 'static'))
-  ? join(__dirname, 'static')
-  : join(__dirname, '..', 'static');
+const staticRoot = existsSync(join(__dirname, 'static')) ? join(__dirname, 'static') : join(__dirname, '..', 'static');
 // Kafka 설정 생성 함수
 function createKafkaConfig() {
   // 필수 환경변수 검증
@@ -68,10 +66,10 @@ function createKafkaConfig() {
     sasl:
       process.env.KAFKA_API_KEY && process.env.KAFKA_API_SECRET
         ? {
-          mechanism: 'plain' as const,
-          username: process.env.KAFKA_API_KEY,
-          password: process.env.KAFKA_API_SECRET,
-        }
+            mechanism: 'plain' as const,
+            username: process.env.KAFKA_API_KEY,
+            password: process.env.KAFKA_API_SECRET,
+          }
         : undefined,
   };
 }
@@ -90,9 +88,7 @@ function createKafkaConfig() {
     }),
     DbModule.forRoot({
       config: {
-        connectionString:
-          process.env.DATABASE_URL ||
-          'postgres://postgres:postgres@localhost:5432/postgres',
+        connectionString: process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/postgres',
       },
       schema: userServiceSchema,
     }),
@@ -133,7 +129,6 @@ function createKafkaConfig() {
       },
     }),
 
-
     ScheduleModule.forRoot(),
     AuthorizationModule.forRoot({
       microserviceName: 'user-service',
@@ -172,4 +167,4 @@ function createKafkaConfig() {
     },
   ],
 })
-export class AppModule { }
+export class AppModule {}

@@ -9,22 +9,11 @@ import { ClientKafka } from '@nestjs/microservices';
 import { CompressionTypes } from 'kafkajs';
 import { firstValueFrom } from 'rxjs';
 import { v7 } from 'uuid';
-import {
-  DomainEvent,
-  DomainCommand,
-  MessageEnvelope,
-} from '@packages/event-contracts/types';
+import { DomainEvent, DomainCommand, MessageEnvelope } from '@packages/event-contracts/types';
 import { StreamConfig, StreamEventTypes, EventType } from '@packages/event-contracts/types';
 import { generateMessageId } from '../utils/message-id.util';
-import {
-  SchemaValidationOptions,
-  DEFAULT_SCHEMA_VALIDATION_OPTIONS,
-} from '@packages/event-contracts/types';
-import {
-  validateSchemaOrThrow,
-  logValidationError,
-  isZodSchema,
-} from '../validation/schema-validation.util';
+import { SchemaValidationOptions, DEFAULT_SCHEMA_VALIDATION_OPTIONS } from '@packages/event-contracts/types';
+import { validateSchemaOrThrow, logValidationError, isZodSchema } from '../validation/schema-validation.util';
 import { EventChainService } from '../tracking/event-chain.service';
 import { EventTrackingService } from '../tracking/event-tracking.service';
 
@@ -37,10 +26,7 @@ export interface CausedByResource {
 /**
  * 이벤트 발행 파라미터 (타입 안전 버전)
  */
-export interface PublishEventParams<
-  TEventKey extends string,
-  TPayload,
-> {
+export interface PublishEventParams<TEventKey extends string, TPayload> {
   eventType: TEventKey;
   aggregateId: string;
   payload: TPayload;
@@ -56,25 +42,20 @@ export interface PublishEventParams<
 /**
  * 커맨드 발행 파라미터 (타입 안전 버전)
  */
-export interface PublishCommandParams<
-  TCommandKey extends string,
-  TPayload,
-> {
+export interface PublishCommandParams<TCommandKey extends string, TPayload> {
   commandType: TCommandKey;
   aggregateId: string;
   payload: TPayload;
 
   // 선택 사항
-  expiresIn?: number;                  // ms
+  expiresIn?: number; // ms
   correlationId?: string;
   causationId?: string;
   metadata?: Record<string, unknown>;
 }
 
 @Injectable()
-export class StreamPublisher<
-  TEvents extends StreamEventTypes = StreamEventTypes,
-> {
+export class StreamPublisher<TEvents extends StreamEventTypes = StreamEventTypes> {
   private readonly logger: Logger;
   private readonly validationOptions: Required<SchemaValidationOptions>;
 
@@ -86,9 +67,7 @@ export class StreamPublisher<
     private readonly eventChainService?: EventChainService,
     private readonly eventTrackingService?: EventTrackingService,
   ) {
-    this.logger = new Logger(
-      `StreamPublisher:${streamConfig.topic.topic}`,
-    );
+    this.logger = new Logger(`StreamPublisher:${streamConfig.topic.topic}`);
     this.validationOptions = {
       ...DEFAULT_SCHEMA_VALIDATION_OPTIONS,
       ...validationOptions,
@@ -106,10 +85,9 @@ export class StreamPublisher<
    * });
    */
   async publishEvent<K extends keyof TEvents & string>(
-    params: PublishEventParams<
-      K,
-      TEvents[K] extends EventType<any, infer TPayload> ? TPayload : never
-    > & { causedBy?: CausedByResource },
+    params: PublishEventParams<K, TEvents[K] extends EventType<any, infer TPayload> ? TPayload : never> & {
+      causedBy?: CausedByResource;
+    },
   ): Promise<void> {
     const messageId = generateMessageId();
     const now = new Date();
@@ -117,19 +95,14 @@ export class StreamPublisher<
     // 스키마 검증 (활성화된 경우)
     let validatedPayload = params.payload;
     if (this.validationOptions.validateOnPublish) {
-      validatedPayload = this.validatePayload(
-        String(params.eventType),
-        params.payload,
-      );
+      validatedPayload = this.validatePayload(String(params.eventType), params.payload);
     }
 
     // chainId: CLS에서 읽거나 새 UUID v7 생성
     const chainId = this.eventChainService?.getChainId() ?? v7();
 
     // Envelope 생성
-    const envelope: DomainEvent<
-      TEvents[K] extends EventType<any, infer TPayload> ? TPayload : never
-    > = {
+    const envelope: DomainEvent<TEvents[K] extends EventType<any, infer TPayload> ? TPayload : never> = {
       messageId,
       messageType: String(params.eventType),
       messageVersion: 1,
@@ -164,9 +137,7 @@ export class StreamPublisher<
           eventType: envelope.messageType,
           ...params.causedBy,
         })
-        .catch((err) =>
-          this.logger.warn('Failed to track cause', err?.message),
-        );
+        .catch((err) => this.logger.warn('Failed to track cause', err?.message));
     }
   }
 
@@ -180,12 +151,7 @@ export class StreamPublisher<
    * ]);
    */
   async publishEvents<K extends keyof TEvents & string>(
-    events: Array<
-      PublishEventParams<
-        K,
-        TEvents[K] extends EventType<any, infer TPayload> ? TPayload : never
-      >
-    >,
+    events: Array<PublishEventParams<K, TEvents[K] extends EventType<any, infer TPayload> ? TPayload : never>>,
   ): Promise<void> {
     await Promise.all(events.map((event) => this.publishEvent(event)));
   }
@@ -202,17 +168,12 @@ export class StreamPublisher<
    * });
    */
   async publishCommand<K extends keyof TEvents & string>(
-    params: PublishCommandParams<
-      K,
-      TEvents[K] extends EventType<any, infer TPayload> ? TPayload : never
-    >,
+    params: PublishCommandParams<K, TEvents[K] extends EventType<any, infer TPayload> ? TPayload : never>,
   ): Promise<void> {
     const messageId = generateMessageId();
     const now = new Date();
 
-    const envelope: DomainCommand<
-      TEvents[K] extends EventType<any, infer TPayload> ? TPayload : never
-    > = {
+    const envelope: DomainCommand<TEvents[K] extends EventType<any, infer TPayload> ? TPayload : never> = {
       messageId,
       messageType: String(params.commandType),
       messageVersion: 1,
@@ -232,9 +193,7 @@ export class StreamPublisher<
       payload: params.payload,
       metadata: params.metadata,
 
-      expiresAt: params.expiresIn
-        ? new Date(Date.now() + params.expiresIn).toISOString()
-        : undefined,
+      expiresAt: params.expiresIn ? new Date(Date.now() + params.expiresIn).toISOString() : undefined,
     };
 
     await this.sendMessage(envelope, params.aggregateId);
@@ -243,18 +202,15 @@ export class StreamPublisher<
   /**
    * Kafka로 메시지 전송 (내부 메서드)
    */
-  private async sendMessage(
-    envelope: MessageEnvelope,
-    partitionKey: string,
-  ): Promise<void> {
+  private async sendMessage(envelope: MessageEnvelope, partitionKey: string): Promise<void> {
     const topic = this.streamConfig.topic.topic;
 
     try {
       await firstValueFrom(
         this.kafkaClient.emit(topic, {
-          key: partitionKey,               // 파티션 키 (순서 보장)
+          key: partitionKey, // 파티션 키 (순서 보장)
           value: JSON.stringify(envelope),
-          compression: CompressionTypes.GZIP,  // 압축
+          compression: CompressionTypes.GZIP, // 압축
           headers: {
             'message-id': envelope.messageId,
             'message-type': envelope.messageType,
@@ -262,7 +218,7 @@ export class StreamPublisher<
             'aggregate-type': envelope.source.aggregateType,
             'aggregate-id': envelope.source.aggregateId,
             'correlation-id': envelope.correlationId,
-            'timestamp': envelope.timestamp,
+            timestamp: envelope.timestamp,
           },
         }),
       );
@@ -273,21 +229,18 @@ export class StreamPublisher<
         correlationId: envelope.correlationId,
       });
     } catch (error) {
-      this.logger.error(
-        `❌ Failed to publish ${envelope.messageKind}: ${envelope.messageType}`,
-        {
-          error: error instanceof Error ? error.message : String(error),
-          messageId: envelope.messageId,
-          aggregateId: envelope.source.aggregateId,
-        },
-      );
+      this.logger.error(`❌ Failed to publish ${envelope.messageKind}: ${envelope.messageType}`, {
+        error: error instanceof Error ? error.message : String(error),
+        messageId: envelope.messageId,
+        aggregateId: envelope.source.aggregateId,
+      });
       throw error;
     }
   }
 
   /**
    * Raw MessageEnvelope 발행 (Outbox 패턴용)
-   * 
+   *
    * Outbox에 저장된 envelope를 그대로 Kafka로 발행
    */
   async publishRawEnvelope(envelope: MessageEnvelope, partitionKey: string): Promise<void> {
@@ -329,11 +282,7 @@ export class StreamPublisher<
 
     try {
       // 스키마 검증 수행
-      const validatedPayload = validateSchemaOrThrow(
-        schema,
-        payload,
-        `${this.streamConfig.topic.topic}.${eventType}`,
-      );
+      const validatedPayload = validateSchemaOrThrow(schema, payload, `${this.streamConfig.topic.topic}.${eventType}`);
 
       this.logger.debug(`✅ Schema validation passed: ${eventType}`);
 
@@ -344,9 +293,7 @@ export class StreamPublisher<
         throw error;
       } else {
         // 경고만 로깅하고 원본 payload 반환
-        this.logger.warn(
-          `⚠️  Schema validation failed but throwOnValidationError is false: ${eventType}`,
-        );
+        this.logger.warn(`⚠️  Schema validation failed but throwOnValidationError is false: ${eventType}`);
         return payload;
       }
     }

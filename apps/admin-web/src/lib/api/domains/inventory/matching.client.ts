@@ -4,21 +4,21 @@
 import { WMS_BASE_URL } from '@/const';
 import { client } from '../../client';
 import type {
-    MatchingsQuery,
-    MatchingsResponseDto,
-    MatchingDto,
-    ResolveMatchingDto,
-    ResolveMatchingResponseDto,
-    ResolveOptionMatchingDto,
-    SetMatchingPriorityDto,
-    SetMatchingPriorityResponseDto,
-    ChangeStrategyDto,
-    ChangeStrategyResponseDto,
-    StockPolicyDto,
-    UpdateStockPolicyResponseDto,
-    VariantMatchingDto,
-    VariantSkuLookupDto,
-    VariantSkuLookupResponseDto,
+  MatchingsQuery,
+  MatchingsResponseDto,
+  MatchingDto,
+  ResolveMatchingDto,
+  ResolveMatchingResponseDto,
+  ResolveOptionMatchingDto,
+  SetMatchingPriorityDto,
+  SetMatchingPriorityResponseDto,
+  ChangeStrategyDto,
+  ChangeStrategyResponseDto,
+  StockPolicyDto,
+  UpdateStockPolicyResponseDto,
+  VariantMatchingDto,
+  VariantSkuLookupDto,
+  VariantSkuLookupResponseDto,
 } from '@/lib/types/dto/orders';
 
 /**
@@ -26,16 +26,16 @@ import type {
  * GET /wms/matchings
  */
 export const getMatchings = async (
-    query: MatchingsQuery = {}
+  query: MatchingsQuery = {}
 ): Promise<MatchingsResponseDto> => {
-    const params = new URLSearchParams();
+  const params = new URLSearchParams();
 
-    if (query.status) params.append('status', query.status);
+  if (query.status) params.append('status', query.status);
 
-    const response = await client.get(
-        `${WMS_BASE_URL}/wms/matchings?${params.toString()}`
-    );
-    return response.data;
+  const response = await client.get(
+    `${WMS_BASE_URL}/wms/matchings?${params.toString()}`
+  );
+  return response.data;
 };
 
 /**
@@ -43,14 +43,14 @@ export const getMatchings = async (
  * PATCH /wms/matchings/{id}/resolve
  */
 export const resolveMatching = async (
-    id: string,
-    data: ResolveMatchingDto
+  id: string,
+  data: ResolveMatchingDto
 ): Promise<ResolveMatchingResponseDto> => {
-    const response = await client.patch(
-        `${WMS_BASE_URL}/wms/matchings/${id}/resolve`,
-        data
-    );
-    return response.data;
+  const response = await client.patch(
+    `${WMS_BASE_URL}/wms/matchings/${id}/resolve`,
+    data
+  );
+  return response.data;
 };
 
 /**
@@ -58,14 +58,14 @@ export const resolveMatching = async (
  * PATCH /wms/matchings/{id}/resolve-options
  */
 export const resolveOptionMatching = async (
-    id: string,
-    data: ResolveOptionMatchingDto
+  id: string,
+  data: ResolveOptionMatchingDto
 ): Promise<ResolveMatchingResponseDto> => {
-    const response = await client.patch(
-        `${WMS_BASE_URL}/wms/matchings/${id}/resolve-options`,
-        data
-    );
-    return response.data;
+  const response = await client.patch(
+    `${WMS_BASE_URL}/wms/matchings/${id}/resolve-options`,
+    data
+  );
+  return response.data;
 };
 
 /**
@@ -73,14 +73,14 @@ export const resolveOptionMatching = async (
  * PATCH /wms/matchings/{id}/priority
  */
 export const setMatchingPriority = async (
-    id: string,
-    data: SetMatchingPriorityDto
+  id: string,
+  data: SetMatchingPriorityDto
 ): Promise<SetMatchingPriorityResponseDto> => {
-    const response = await client.patch(
-        `${WMS_BASE_URL}/wms/matchings/${id}/priority`,
-        data
-    );
-    return response.data;
+  const response = await client.patch(
+    `${WMS_BASE_URL}/wms/matchings/${id}/priority`,
+    data
+  );
+  return response.data;
 };
 
 /**
@@ -88,14 +88,14 @@ export const setMatchingPriority = async (
  * PATCH /wms/matchings/{id}/strategy
  */
 export const changeMatchingStrategy = async (
-    id: string,
-    data: ChangeStrategyDto
+  id: string,
+  data: ChangeStrategyDto
 ): Promise<ChangeStrategyResponseDto> => {
-    const response = await client.patch(
-        `${WMS_BASE_URL}/wms/matchings/${id}/strategy`,
-        data
-    );
-    return response.data;
+  const response = await client.patch(
+    `${WMS_BASE_URL}/wms/matchings/${id}/strategy`,
+    data
+  );
+  return response.data;
 };
 
 /**
@@ -103,14 +103,14 @@ export const changeMatchingStrategy = async (
  * PATCH /wms/matchings/{id}/stock-policy
  */
 export const updateMatchingStockPolicy = async (
-    id: string,
-    data: StockPolicyDto
+  id: string,
+  data: StockPolicyDto
 ): Promise<UpdateStockPolicyResponseDto> => {
-    const response = await client.patch(
-        `${WMS_BASE_URL}/wms/matchings/${id}/stock-policy`,
-        data
-    );
-    return response.data;
+  const response = await client.patch(
+    `${WMS_BASE_URL}/wms/matchings/${id}/stock-policy`,
+    data
+  );
+  return response.data;
 };
 
 /**
@@ -118,12 +118,12 @@ export const updateMatchingStockPolicy = async (
  * GET /wms/matchings/variants/{variantId}/stock-policy
  */
 export const getVariantStockPolicy = async (
-    variantId: string
+  variantId: string
 ): Promise<StockPolicyDto> => {
-    const response = await client.get(
-        `${WMS_BASE_URL}/wms/matchings/variants/${variantId}/stock-policy`
-    );
-    return response.data;
+  const response = await client.get(
+    `${WMS_BASE_URL}/wms/matchings/variants/${variantId}/stock-policy`
+  );
+  return response.data;
 };
 
 /**
@@ -131,14 +131,14 @@ export const getVariantStockPolicy = async (
  * POST /wms/matchings/variants/{variantId}/sku-lookup
  */
 export const getVariantSkuLookup = async (
-    variantId: string,
-    data: VariantSkuLookupDto
+  variantId: string,
+  data: VariantSkuLookupDto
 ): Promise<VariantSkuLookupResponseDto[]> => {
-    const response = await client.post(
-        `${WMS_BASE_URL}/wms/matchings/variants/${variantId}/sku-lookup`,
-        data
-    );
-    return response.data;
+  const response = await client.post(
+    `${WMS_BASE_URL}/wms/matchings/variants/${variantId}/sku-lookup`,
+    data
+  );
+  return response.data;
 };
 
 /**
@@ -146,10 +146,12 @@ export const getVariantSkuLookup = async (
  * GET /wms/matchings/{variantId}
  */
 export const getVariantMatching = async (
-    variantId: string
+  variantId: string
 ): Promise<VariantMatchingDto> => {
-    const response = await client.get(`${WMS_BASE_URL}/wms/matchings/${variantId}`);
-    return response.data;
+  const response = await client.get(
+    `${WMS_BASE_URL}/wms/matchings/${variantId}`
+  );
+  return response.data;
 };
 
 /**
@@ -157,38 +159,31 @@ export const getVariantMatching = async (
  * PUT /wms/matchings/{variantId}
  */
 export const updateVariantMatching = async (
-    variantId: string,
-    data: Partial<VariantMatchingDto>
+  variantId: string,
+  data: Partial<VariantMatchingDto>
 ): Promise<VariantMatchingDto> => {
-    const response = await client.put(
-        `${WMS_BASE_URL}/wms/matchings/${variantId}`,
-        data
-    );
-    return response.data;
+  const response = await client.put(
+    `${WMS_BASE_URL}/wms/matchings/${variantId}`,
+    data
+  );
+  return response.data;
 };
 
 // 매칭 클라이언트 객체
 export const matchingClient = {
-    // 조회
-    getMatchings,
-    getVariantMatching,
-    getVariantStockPolicy,
-    getVariantSkuLookup,
+  // 조회
+  getMatchings,
+  getVariantMatching,
+  getVariantStockPolicy,
+  getVariantSkuLookup,
 
-    // 매칭 해소
-    resolveMatching,
-    resolveOptionMatching,
+  // 매칭 해소
+  resolveMatching,
+  resolveOptionMatching,
 
-    // 설정 변경
-    setMatchingPriority,
-    changeMatchingStrategy,
-    updateMatchingStockPolicy,
-    updateVariantMatching,
+  // 설정 변경
+  setMatchingPriority,
+  changeMatchingStrategy,
+  updateMatchingStockPolicy,
+  updateVariantMatching,
 };
-
-
-
-
-
-
-

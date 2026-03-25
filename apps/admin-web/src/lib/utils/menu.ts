@@ -301,8 +301,16 @@ export const mainMenus: MainMenu[] = [
         children: [
           { id: 'product-dashboard', title: '대시보드' },
           { id: 'product-list', title: '목록', path: '/mall/products-list' },
-          { id: 'product-registration', title: '등록', path: '/mall/product-registration' },
-          { id: 'product-category', title: '분류/카테고리', path: '/mall/categories' },
+          {
+            id: 'product-registration',
+            title: '등록',
+            path: '/mall/product-registration',
+          },
+          {
+            id: 'product-category',
+            title: '분류/카테고리',
+            path: '/mall/categories',
+          },
           { id: 'product-display', title: '진열' },
           { id: 'deleted-products', title: '휴지통(삭제상품 관리)' },
         ],

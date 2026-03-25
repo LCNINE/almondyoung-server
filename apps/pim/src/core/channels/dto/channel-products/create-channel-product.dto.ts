@@ -35,4 +35,3 @@ export class CreateChannelProductDto {
   @IsOptional()
   channelSpecificData?: Record<string, any>;
 }
-

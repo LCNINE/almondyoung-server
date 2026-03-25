@@ -31,7 +31,7 @@ import { eq, and } from 'drizzle-orm';
 function parseArgs(): { sessionId?: string; all: boolean } {
   const args = process.argv.slice(2);
 
-  const sessionArg = args.find(a => a.startsWith('--session='));
+  const sessionArg = args.find((a) => a.startsWith('--session='));
   const allFlag = args.includes('--all');
 
   return {
@@ -44,17 +44,13 @@ function parseArgs(): { sessionId?: string; all: boolean } {
  * Validate environment variables
  */
 function validateEnv(): void {
-  const required = [
-    'DATABASE_URL',
-    'MEDUSA_API_URL',
-    'MEDUSA_API_KEY',
-  ];
+  const required = ['DATABASE_URL', 'MEDUSA_API_URL', 'MEDUSA_API_KEY'];
 
-  const missing = required.filter(key => !process.env[key]);
+  const missing = required.filter((key) => !process.env[key]);
 
   if (missing.length > 0) {
     console.error('❌ Missing required environment variables:');
-    missing.forEach(key => console.error(`   - ${key}`));
+    missing.forEach((key) => console.error(`   - ${key}`));
     process.exit(1);
   }
 }
@@ -104,17 +100,9 @@ async function main() {
       failures = await channelDb
         .select()
         .from(migrationFailures)
-        .where(
-          and(
-            eq(migrationFailures.sessionId, options.sessionId),
-            eq(migrationFailures.resolved, false)
-          )
-        );
+        .where(and(eq(migrationFailures.sessionId, options.sessionId), eq(migrationFailures.resolved, false)));
     } else {
-      failures = await channelDb
-        .select()
-        .from(migrationFailures)
-        .where(eq(migrationFailures.resolved, false));
+      failures = await channelDb.select().from(migrationFailures).where(eq(migrationFailures.resolved, false));
     }
 
     if (failures.length === 0) {
@@ -145,7 +133,6 @@ async function main() {
 
         successCount++;
         console.log(`  ✅ Success\n`);
-
       } catch (error: any) {
         stillFailedCount++;
 
@@ -156,7 +143,7 @@ async function main() {
       }
 
       // Rate limiting
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
 
     // Print summary
@@ -173,7 +160,6 @@ async function main() {
 
     await channelDbClient.end();
     process.exit(0);
-
   } catch (error: any) {
     console.error('\n❌ Retry failed:', error.message);
     console.error(error.stack);
@@ -183,7 +169,7 @@ async function main() {
 }
 
 // Run main function
-main().catch(error => {
+main().catch((error) => {
   console.error('Unhandled error:', error);
   process.exit(1);
 });

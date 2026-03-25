@@ -10,8 +10,8 @@ export class MatchingsService {
 
   constructor(
     @InjectTypedDb<typeof wmsSchema>()
-    private readonly dbService: DbService<typeof wmsSchema>
-  ) { }
+    private readonly dbService: DbService<typeof wmsSchema>,
+  ) {}
 
   private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
     return tx ? fn(tx) : this.dbService.db.transaction(fn);
@@ -21,9 +21,11 @@ export class MatchingsService {
     return await this.inTx(async (tx) => {
       const matching = await tx.query.productMatchings.findFirst({ where: (m, { eq }) => eq(m.variantId, variantId) });
       if (!matching) return null;
-      const links = await tx.query.productVariantSkuLinks.findMany({ where: (l, { eq }) => eq(l.productMatchingId, matching.id) });
+      const links = await tx.query.productVariantSkuLinks.findMany({
+        where: (l, { eq }) => eq(l.productMatchingId, matching.id),
+      });
       return { ...matching, links };
-    }, tx)
+    }, tx);
   }
 
   async upsert(variantId: string, dto: UpsertMatchingDto, tx?: DbTx) {
@@ -44,17 +46,27 @@ export class MatchingsService {
       };
       let matchingId: string;
       if (existing) {
-        const [row] = await trx.update(wmsTables.productMatchings).set(base).where(eq(wmsTables.productMatchings.variantId, variantId)).returning();
+        const [row] = await trx
+          .update(wmsTables.productMatchings)
+          .set(base)
+          .where(eq(wmsTables.productMatchings.variantId, variantId))
+          .returning();
         matchingId = row.id;
         // 기존 링크 제거 후 재작성(간단화)
-        await trx.delete(wmsTables.productVariantSkuLinks).where(eq(wmsTables.productVariantSkuLinks.productMatchingId, matchingId));
+        await trx
+          .delete(wmsTables.productVariantSkuLinks)
+          .where(eq(wmsTables.productVariantSkuLinks.productMatchingId, matchingId));
       } else {
         const [row] = await trx.insert(wmsTables.productMatchings).values(base).returning();
         matchingId = row.id;
       }
       if (Array.isArray(dto.links) && dto.links.length > 0) {
         await trx.insert(wmsTables.productVariantSkuLinks).values(
-          dto.links.map(l => ({ productMatchingId: matchingId, skuId: l.skuId, quantity: Math.max(1, l.quantity) })),
+          dto.links.map((l) => ({
+            productMatchingId: matchingId,
+            skuId: l.skuId,
+            quantity: Math.max(1, l.quantity),
+          })),
         );
       }
 
@@ -86,28 +98,32 @@ export class MatchingsService {
         .where(inArray(wmsTables.productMatchings.masterId, masterIds))
         .groupBy(wmsTables.productMatchings.masterId);
 
-      const statsMap = results.reduce((acc, stat) => {
-        if (stat.masterId) {
-          acc[stat.masterId] = {
-            totalVariants: stat.totalVariants,
-            matchedVariants: stat.matchedVariants,
-            pendingVariants: stat.pendingVariants,
-            ignoredVariants: stat.ignoredVariants,
-            matchingRate: stat.totalVariants > 0
-              ? Math.round((stat.matchedVariants / stat.totalVariants) * 100)
-              : 0,
-          };
-        }
-        return acc;
-      }, {} as Record<string, {
-        totalVariants: number;
-        matchedVariants: number;
-        pendingVariants: number;
-        ignoredVariants: number;
-        matchingRate: number;
-      }>);
+      const statsMap = results.reduce(
+        (acc, stat) => {
+          if (stat.masterId) {
+            acc[stat.masterId] = {
+              totalVariants: stat.totalVariants,
+              matchedVariants: stat.matchedVariants,
+              pendingVariants: stat.pendingVariants,
+              ignoredVariants: stat.ignoredVariants,
+              matchingRate: stat.totalVariants > 0 ? Math.round((stat.matchedVariants / stat.totalVariants) * 100) : 0,
+            };
+          }
+          return acc;
+        },
+        {} as Record<
+          string,
+          {
+            totalVariants: number;
+            matchedVariants: number;
+            pendingVariants: number;
+            ignoredVariants: number;
+            matchingRate: number;
+          }
+        >,
+      );
 
-      return masterIds.map(masterId => ({
+      return masterIds.map((masterId) => ({
         masterId,
         ...(statsMap[masterId] || {
           totalVariants: 0,
@@ -120,5 +136,3 @@ export class MatchingsService {
     }, tx);
   }
 }
-
-

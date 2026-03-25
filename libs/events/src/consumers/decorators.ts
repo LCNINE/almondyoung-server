@@ -4,12 +4,7 @@
  * Stream 기반 이벤트 핸들러 데코레이터
  */
 
-import {
-  applyDecorators,
-  SetMetadata,
-  createParamDecorator,
-  ExecutionContext,
-} from '@nestjs/common';
+import { applyDecorators, SetMetadata, createParamDecorator, ExecutionContext } from '@nestjs/common';
 import { EventPattern, Payload, Ctx } from '@nestjs/microservices';
 import { KafkaContext } from '@nestjs/microservices';
 import { MessageEnvelope, DomainEvent, DomainCommand } from '@packages/event-contracts/types';
@@ -41,7 +36,7 @@ export const EVENT_TYPE_FILTER = 'EVENT_TYPE_FILTER';
 export function StreamEventHandler(
   topic: string,
   options?: {
-    eventTypes?: string[];             // 관심 있는 이벤트 타입 필터
+    eventTypes?: string[]; // 관심 있는 이벤트 타입 필터
   },
 ) {
   return applyDecorators(
@@ -79,10 +74,7 @@ export function StreamEventHandler(
  * }
  */
 export function OnEvent(topic: string, eventType: string) {
-  return applyDecorators(
-    EventPattern(topic),
-    SetMetadata(EVENT_TYPE_FILTER, eventType),
-  );
+  return applyDecorators(EventPattern(topic), SetMetadata(EVENT_TYPE_FILTER, eventType));
 }
 
 /**
@@ -95,27 +87,25 @@ export function OnEvent(topic: string, eventType: string) {
  *   console.log(envelope.payload);
  * }
  */
-export const EventEnvelope = createParamDecorator(
-  (data: unknown, ctx: ExecutionContext): MessageEnvelope => {
-    const kafkaCtx = ctx.switchToRpc().getContext<KafkaContext>();
-    const message = kafkaCtx.getMessage();
-    const value = message.value;
+export const EventEnvelope = createParamDecorator((data: unknown, ctx: ExecutionContext): MessageEnvelope => {
+  const kafkaCtx = ctx.switchToRpc().getContext<KafkaContext>();
+  const message = kafkaCtx.getMessage();
+  const value = message.value;
 
-    // null 체크
-    if (!value) {
-      throw new Error('Kafka message value is null or undefined');
-    }
+  // null 체크
+  if (!value) {
+    throw new Error('Kafka message value is null or undefined');
+  }
 
-    // 이미 객체면 그대로 반환 (NestJS가 자동 파싱한 경우)
-    if (typeof value === 'object' && !Buffer.isBuffer(value)) {
-      return value as MessageEnvelope;
-    }
+  // 이미 객체면 그대로 반환 (NestJS가 자동 파싱한 경우)
+  if (typeof value === 'object' && !Buffer.isBuffer(value)) {
+    return value as MessageEnvelope;
+  }
 
-    // Buffer 또는 string인 경우 파싱
-    const jsonString: string = Buffer.isBuffer(value) ? value.toString('utf-8') : String(value);
-    return JSON.parse(jsonString) as MessageEnvelope;
-  },
-);
+  // Buffer 또는 string인 경우 파싱
+  const jsonString: string = Buffer.isBuffer(value) ? value.toString('utf-8') : String(value);
+  return JSON.parse(jsonString) as MessageEnvelope;
+});
 
 /**
  * Envelope에서 payload만 추출하는 파라미터 데코레이터
@@ -126,30 +116,28 @@ export const EventEnvelope = createParamDecorator(
  *   console.log(payload.customerId);
  * }
  */
-export const EventPayload = createParamDecorator(
-  (data: unknown, ctx: ExecutionContext): any => {
-    const kafkaCtx = ctx.switchToRpc().getContext<KafkaContext>();
-    const message = kafkaCtx.getMessage();
-    const value = message.value;
+export const EventPayload = createParamDecorator((data: unknown, ctx: ExecutionContext): any => {
+  const kafkaCtx = ctx.switchToRpc().getContext<KafkaContext>();
+  const message = kafkaCtx.getMessage();
+  const value = message.value;
 
-    if (!value) {
-      throw new Error('Kafka message value is null or undefined');
-    }
+  if (!value) {
+    throw new Error('Kafka message value is null or undefined');
+  }
 
-    let envelope: MessageEnvelope;
+  let envelope: MessageEnvelope;
 
-    // 이미 객체면 그대로 사용 (NestJS가 자동 파싱한 경우)
-    if (typeof value === 'object' && !Buffer.isBuffer(value)) {
-      envelope = value as MessageEnvelope;
-    } else {
-      // Buffer 또는 string인 경우 파싱
-      const jsonString: string = Buffer.isBuffer(value) ? value.toString('utf-8') : String(value);
-      envelope = JSON.parse(jsonString) as MessageEnvelope;
-    }
+  // 이미 객체면 그대로 사용 (NestJS가 자동 파싱한 경우)
+  if (typeof value === 'object' && !Buffer.isBuffer(value)) {
+    envelope = value as MessageEnvelope;
+  } else {
+    // Buffer 또는 string인 경우 파싱
+    const jsonString: string = Buffer.isBuffer(value) ? value.toString('utf-8') : String(value);
+    envelope = JSON.parse(jsonString) as MessageEnvelope;
+  }
 
-    return envelope.payload;
-  },
-);
+  return envelope.payload;
+});
 
 /**
  * Kafka Context를 추출하는 파라미터 데코레이터
@@ -209,24 +197,22 @@ export const EventMetadata = createParamDecorator(
  *   console.log('Correlation ID:', headers['correlation-id']);
  * }
  */
-export const EventHeaders = createParamDecorator(
-  (data: unknown, ctx: ExecutionContext): Record<string, string> => {
-    const kafkaCtx = ctx.switchToRpc().getContext<KafkaContext>();
-    const message = kafkaCtx.getMessage();
-    const headers = message.headers || {};
+export const EventHeaders = createParamDecorator((data: unknown, ctx: ExecutionContext): Record<string, string> => {
+  const kafkaCtx = ctx.switchToRpc().getContext<KafkaContext>();
+  const message = kafkaCtx.getMessage();
+  const headers = message.headers || {};
 
-    // Buffer를 string으로 변환
-    const stringHeaders: Record<string, string> = {};
-    for (const [key, value] of Object.entries(headers)) {
-      if (Buffer.isBuffer(value)) {
-        stringHeaders[key] = value.toString('utf-8');
-      } else if (typeof value === 'string') {
-        stringHeaders[key] = value;
-      } else {
-        stringHeaders[key] = String(value);
-      }
+  // Buffer를 string으로 변환
+  const stringHeaders: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (Buffer.isBuffer(value)) {
+      stringHeaders[key] = value.toString('utf-8');
+    } else if (typeof value === 'string') {
+      stringHeaders[key] = value;
+    } else {
+      stringHeaders[key] = String(value);
     }
+  }
 
-    return stringHeaders;
-  },
-);
+  return stringHeaders;
+});

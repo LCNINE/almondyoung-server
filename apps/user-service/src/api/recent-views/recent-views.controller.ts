@@ -1,24 +1,6 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Param,
-  Post,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiParam,
-  ApiQuery,
-  ApiResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { User } from 'apps/user-service/database/drizzle/schema';
 import { AddToRecentViewsDto } from './dto/recent-views.dto';
 import { RecentViewsService } from './recent-views.service';
@@ -53,14 +35,8 @@ export class RecentViewsController {
   @Post()
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)
-  async addToRecentViews(
-    @CurrentUser() user: JwtPayload,
-    @Body() addToRecentViewsDto: AddToRecentViewsDto,
-  ) {
-    return this.recentViewsService.addToRecentViews(
-      user.id,
-      addToRecentViewsDto,
-    );
+  async addToRecentViews(@CurrentUser() user: JwtPayload, @Body() addToRecentViewsDto: AddToRecentViewsDto) {
+    return this.recentViewsService.addToRecentViews(user.id, addToRecentViewsDto);
   }
 
   @ApiOperation({
@@ -91,14 +67,8 @@ export class RecentViewsController {
   @Get()
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)
-  async getRecentViews(
-    @CurrentUser() user: JwtPayload,
-    @Query('limit') limit?: string,
-  ) {
-    return this.recentViewsService.getRecentViews(
-      user.id,
-      limit ? parseInt(limit) : 20,
-    );
+  async getRecentViews(@CurrentUser() user: JwtPayload, @Query('limit') limit?: string) {
+    return this.recentViewsService.getRecentViews(user.id, limit ? parseInt(limit) : 20);
   }
 
   @ApiOperation({
@@ -121,13 +91,7 @@ export class RecentViewsController {
   @Delete(':recentViewId')
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)
-  async removeFromRecentViews(
-    @CurrentUser() user: JwtPayload,
-    @Param('recentViewId') recentViewId: string,
-  ) {
-    return this.recentViewsService.removeRecentViewByUserIdAndRecentViewId(
-      user.id,
-      recentViewId,
-    );
+  async removeFromRecentViews(@CurrentUser() user: JwtPayload, @Param('recentViewId') recentViewId: string) {
+    return this.recentViewsService.removeRecentViewByUserIdAndRecentViewId(user.id, recentViewId);
   }
 }

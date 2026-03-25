@@ -29,4 +29,3 @@ export class SetChannelProductActiveDto {
   @IsBoolean()
   isActive: boolean;
 }
-

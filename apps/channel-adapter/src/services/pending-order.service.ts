@@ -30,19 +30,11 @@ export class PendingOrderService {
     unmappedItems: UnmappedItem[],
   ): Promise<PendingOrder> {
     // 이미 존재하는지 확인
-    const exists = await this.pendingOrderRepository.exists(
-      channel,
-      orderEvent.externalOrderId,
-    );
+    const exists = await this.pendingOrderRepository.exists(channel, orderEvent.externalOrderId);
 
     if (exists) {
-      this.logger.warn(
-        `⚠️ 이미 계류 중인 주문: ${channel}/${orderEvent.externalOrderId}`,
-      );
-      const existing = await this.pendingOrderRepository.findByChannelOrder(
-        channel,
-        orderEvent.externalOrderId,
-      );
+      this.logger.warn(`⚠️ 이미 계류 중인 주문: ${channel}/${orderEvent.externalOrderId}`);
+      const existing = await this.pendingOrderRepository.findByChannelOrder(channel, orderEvent.externalOrderId);
       return existing!;
     }
 
@@ -58,8 +50,7 @@ export class PendingOrderService {
    * 특정 채널 상품 ID가 매핑된 후 관련 계류 주문 재처리
    */
   async retryPendingOrdersForItem(channelItemId: string): Promise<number> {
-    const pendingOrders =
-      await this.pendingOrderRepository.findByUnmappedItem(channelItemId);
+    const pendingOrders = await this.pendingOrderRepository.findByUnmappedItem(channelItemId);
 
     if (pendingOrders.length === 0) {
       this.logger.debug(`재처리할 계류 주문 없음: ${channelItemId}`);
@@ -82,9 +73,7 @@ export class PendingOrderService {
       }
     }
 
-    this.logger.log(
-      `✅ 채널 상품 ${channelItemId} 매핑 후 ${processedCount}/${pendingOrders.length}건 재처리 완료`,
-    );
+    this.logger.log(`✅ 채널 상품 ${channelItemId} 매핑 후 ${processedCount}/${pendingOrders.length}건 재처리 완료`);
 
     return processedCount;
   }
@@ -106,7 +95,7 @@ export class PendingOrderService {
    * 계류 주문 재처리
    */
   private async retryOrder(order: PendingOrder): Promise<boolean> {
-    const rawEvent = order.rawOrderEvent as unknown as InternalOrderEvent;
+    const rawEvent = order.rawOrderEvent as InternalOrderEvent;
     const channel = order.channel as 'naver_smartstore' | 'coupang';
     const channelCode = this.channelListingClient.getChannelCodeFromType(channel);
 
@@ -118,10 +107,7 @@ export class PendingOrderService {
       const stillUnmapped: UnmappedItem[] = [];
 
       for (const item of order.unmappedItems) {
-        const listing = await this.channelListingClient.lookupByChannelCode(
-          channelCode,
-          item.channelItemId,
-        );
+        const listing = await this.channelListingClient.lookupByChannelCode(channelCode, item.channelItemId);
 
         if (!listing) {
           stillUnmapped.push(item);
@@ -130,34 +116,20 @@ export class PendingOrderService {
 
       if (stillUnmapped.length > 0) {
         // 아직 미매핑 항목이 있음 → 다시 계류 상태로
-        await this.pendingOrderRepository.updateUnmappedItems(
-          order.id,
-          stillUnmapped,
-        );
-        await this.pendingOrderRepository.markAsFailed(
-          order.id,
-          `Still ${stillUnmapped.length} unmapped items`,
-        );
+        await this.pendingOrderRepository.updateUnmappedItems(order.id, stillUnmapped);
+        await this.pendingOrderRepository.markAsFailed(order.id, `Still ${stillUnmapped.length} unmapped items`);
         return false;
       }
 
       // 모든 항목이 매핑됨 → 이벤트 발행
-      const result = await this.orderEventPublisher.publishOrderConfirmed(
-        channel,
-        rawEvent,
-      );
+      const result = await this.orderEventPublisher.publishOrderConfirmed(channel, rawEvent);
 
       if (result.published) {
         await this.pendingOrderRepository.markAsProcessed(order.id);
-        this.logger.log(
-          `✅ 계류 주문 처리 완료: ${order.channel}/${order.externalOrderId}`,
-        );
+        this.logger.log(`✅ 계류 주문 처리 완료: ${order.channel}/${order.externalOrderId}`);
         return true;
       } else {
-        await this.pendingOrderRepository.markAsFailed(
-          order.id,
-          result.pendingReason || 'Failed to publish',
-        );
+        await this.pendingOrderRepository.markAsFailed(order.id, result.pendingReason || 'Failed to publish');
         return false;
       }
     } catch (error) {
@@ -177,22 +149,14 @@ export class PendingOrderService {
   /**
    * 계류 중인 주문 목록 조회
    */
-  async getPendingOrders(options?: {
-    channel?: string;
-    limit?: number;
-    offset?: number;
-  }): Promise<PendingOrder[]> {
+  async getPendingOrders(options?: { channel?: string; limit?: number; offset?: number }): Promise<PendingOrder[]> {
     return await this.pendingOrderRepository.findByStatus('pending_mapping', options);
   }
 
   /**
    * 실패한 주문 목록 조회
    */
-  async getFailedOrders(options?: {
-    channel?: string;
-    limit?: number;
-    offset?: number;
-  }): Promise<PendingOrder[]> {
+  async getFailedOrders(options?: { channel?: string; limit?: number; offset?: number }): Promise<PendingOrder[]> {
     return await this.pendingOrderRepository.findByStatus('failed', options);
   }
 
@@ -203,4 +167,3 @@ export class PendingOrderService {
     return await this.pendingOrderRepository.cleanupCompleted(olderThanDays);
   }
 }
-

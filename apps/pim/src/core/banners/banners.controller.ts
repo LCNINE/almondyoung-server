@@ -1,29 +1,7 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Delete,
-  Body,
-  Param,
-  Query,
-  HttpException,
-  HttpStatus,
-} from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiParam,
-  ApiQuery,
-  ApiBody,
-} from '@nestjs/swagger';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpException, HttpStatus } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { BannersService } from './banners.service';
-import {
-  CreateBannerDto,
-  UpdateBannerDto,
-  BannerResponseDto,
-} from './dto';
+import { CreateBannerDto, UpdateBannerDto, BannerResponseDto } from './dto';
 
 @ApiTags('Banners')
 @Controller('banners')
@@ -43,19 +21,14 @@ export class BannersController {
   })
   @ApiResponse({ status: 400, description: '잘못된 요청' })
   @ApiResponse({ status: 404, description: '배너 그룹을 찾을 수 없음' })
-  async createBanner(
-    @Body() dto: CreateBannerDto,
-  ): Promise<BannerResponseDto> {
+  async createBanner(@Body() dto: CreateBannerDto): Promise<BannerResponseDto> {
     try {
       return await this.bannersService.createBanner(dto);
     } catch (error) {
       if (error.message.includes('not found')) {
         throw new HttpException(error.message, HttpStatus.NOT_FOUND);
       }
-      throw new HttpException(
-        `Failed to create banner: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException(`Failed to create banner: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -81,15 +54,9 @@ export class BannersController {
     @Query('includeInactive') includeInactive?: boolean,
   ): Promise<BannerResponseDto[]> {
     try {
-      return await this.bannersService.listBannersByGroupId(
-        bannerGroupId,
-        includeInactive === true,
-      );
+      return await this.bannersService.listBannersByGroupId(bannerGroupId, includeInactive === true);
     } catch (error) {
-      throw new HttpException(
-        `Failed to list banners: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException(`Failed to list banners: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -112,10 +79,7 @@ export class BannersController {
       if (error.message.includes('not found')) {
         throw new HttpException(error.message, HttpStatus.NOT_FOUND);
       }
-      throw new HttpException(
-        `Failed to get banner: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException(`Failed to get banner: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -132,20 +96,14 @@ export class BannersController {
     type: BannerResponseDto,
   })
   @ApiResponse({ status: 404, description: '배너를 찾을 수 없음' })
-  async updateBanner(
-    @Param('id') id: string,
-    @Body() dto: UpdateBannerDto,
-  ): Promise<BannerResponseDto> {
+  async updateBanner(@Param('id') id: string, @Body() dto: UpdateBannerDto): Promise<BannerResponseDto> {
     try {
       return await this.bannersService.updateBanner(id, dto);
     } catch (error) {
       if (error.message.includes('not found')) {
         throw new HttpException(error.message, HttpStatus.NOT_FOUND);
       }
-      throw new HttpException(
-        `Failed to update banner: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException(`Failed to update banner: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -158,10 +116,7 @@ export class BannersController {
   @ApiQuery({ name: 'deletedBy', required: false, description: '삭제자 ID' })
   @ApiResponse({ status: 200, description: '배너 삭제 성공' })
   @ApiResponse({ status: 404, description: '배너를 찾을 수 없음' })
-  async deleteBanner(
-    @Param('id') id: string,
-    @Query('deletedBy') deletedBy?: string,
-  ): Promise<{ message: string }> {
+  async deleteBanner(@Param('id') id: string, @Query('deletedBy') deletedBy?: string): Promise<{ message: string }> {
     try {
       await this.bannersService.deleteBanner(id, deletedBy);
       return { message: 'Banner deleted successfully' };
@@ -169,11 +124,7 @@ export class BannersController {
       if (error.message.includes('not found')) {
         throw new HttpException(error.message, HttpStatus.NOT_FOUND);
       }
-      throw new HttpException(
-        `Failed to delete banner: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException(`Failed to delete banner: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 }
-

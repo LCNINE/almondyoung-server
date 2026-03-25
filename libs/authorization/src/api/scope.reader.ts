@@ -29,12 +29,7 @@ export class ScopeReader {
       .select({ scopeKey: scopes.key })
       .from(roleScopeMapping)
       .innerJoin(scopes, eq(roleScopeMapping.scopeId, scopes.id))
-      .where(
-        and(
-          eq(roleScopeMapping.roleName, roleName),
-          eq(scopes.microserviceName, this.options.microserviceName),
-        ),
-      );
+      .where(and(eq(roleScopeMapping.roleName, roleName), eq(scopes.microserviceName, this.options.microserviceName)));
 
     return result.map((r) => r.scopeKey);
   }

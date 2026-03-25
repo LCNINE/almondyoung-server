@@ -3,12 +3,7 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { eq, inArray, InferInsertModel, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
-import {
-  productMasterVersions,
-  productMasterVariants,
-  productVariantPriceCache,
-  pimSchema,
-} from '../../schema';
+import { productMasterVersions, productMasterVariants, productVariantPriceCache, pimSchema } from '../../schema';
 import { DbTransaction, PriceSummary } from '../../types';
 import { PricingCalculatorService } from './pricing-calculator.service';
 import { NewProductVariantPriceCache } from '../../types';
@@ -26,23 +21,17 @@ export class VariantPriceCacheService {
     @InjectTypedDb<typeof pimSchema>()
     private readonly dbService: DbService<typeof pimSchema>,
     private readonly calculatorService: PricingCalculatorService,
-  ) { }
+  ) {}
 
   private get db() {
     return this.dbService.db;
   }
 
-  private async inTx<T>(
-    fn: (tx: DbTransaction) => Promise<T>,
-    tx?: DbTransaction,
-  ): Promise<T> {
+  private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction): Promise<T> {
     return tx ? fn(tx) : this.db.transaction(fn);
   }
 
-  async cachePricesForVersion(
-    versionId: string,
-    tx?: DbTransaction,
-  ): Promise<number> {
+  async cachePricesForVersion(versionId: string, tx?: DbTransaction): Promise<number> {
     return this.inTx(async (trx) => {
       const [version] = await trx
         .select({ id: productMasterVersions.id })
@@ -64,11 +53,7 @@ export class VariantPriceCacheService {
 
       const rows: NewProductVariantPriceCache[] = [];
       for (const { variantId } of variants) {
-        const priceSet = await this.calculatorService.calculateVariantPriceSet(
-          versionId,
-          variantId,
-          trx,
-        );
+        const priceSet = await this.calculatorService.calculateVariantPriceSet(versionId, variantId, trx);
 
         rows.push({
           id: uuidv7(),
@@ -85,20 +70,14 @@ export class VariantPriceCacheService {
         .insert(productVariantPriceCache)
         .values(rows)
         .onConflictDoNothing({
-          target: [
-            productVariantPriceCache.versionId,
-            productVariantPriceCache.variantId,
-          ],
+          target: [productVariantPriceCache.versionId, productVariantPriceCache.variantId],
         });
 
       return rows.length;
     }, tx);
   }
 
-  async getCachedPriceSetsByVersion(
-    versionId: string,
-    tx?: DbTransaction,
-  ): Promise<CachedPriceSet[]> {
+  async getCachedPriceSetsByVersion(versionId: string, tx?: DbTransaction): Promise<CachedPriceSet[]> {
     return this.inTx(async (trx) => {
       return trx
         .select({
@@ -112,10 +91,7 @@ export class VariantPriceCacheService {
     }, tx);
   }
 
-  async getPriceSummariesByVersionIds(
-    versionIds: string[],
-    tx?: DbTransaction,
-  ): Promise<Map<string, PriceSummary>> {
+  async getPriceSummariesByVersionIds(versionIds: string[], tx?: DbTransaction): Promise<Map<string, PriceSummary>> {
     return this.inTx(async (trx) => {
       if (versionIds.length === 0) {
         return new Map();

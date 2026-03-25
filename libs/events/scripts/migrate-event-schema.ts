@@ -4,14 +4,14 @@ import * as postgres from 'postgres';
 
 function getDatabaseUrl(): string {
   const url = process.argv[2] || process.env.DATABASE_URL;
-  
+
   if (!url) {
     console.error('❌ DATABASE_URL is required');
     console.error('Usage: npm run migrate:event <database-url>');
     console.error('   or: DATABASE_URL=<url> npm run migrate:event');
     process.exit(1);
   }
-  
+
   return url;
 }
 
@@ -100,5 +100,3 @@ async function main() {
 }
 
 main();
-
-

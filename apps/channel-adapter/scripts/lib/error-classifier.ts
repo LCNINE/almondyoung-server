@@ -3,11 +3,11 @@ import type { PimMedusaSyncService } from '../../src/adapters/medusa/pim-medusa-
 import type { PimProductSnapshot } from '../../src/types';
 
 export type ErrorType =
-  | 'validation_error'    // Snapshot validation failed (DON'T retry)
-  | 'medusa_api_error'    // Medusa API error (retry with backoff)
-  | 'network_error'       // Timeout/connection issues (retry with backoff)
-  | 'db_error'            // Database operation failed (retry once)
-  | 'unknown';            // Unexpected error (retry cautiously)
+  | 'validation_error' // Snapshot validation failed (DON'T retry)
+  | 'medusa_api_error' // Medusa API error (retry with backoff)
+  | 'network_error' // Timeout/connection issues (retry with backoff)
+  | 'db_error' // Database operation failed (retry once)
+  | 'unknown'; // Unexpected error (retry cautiously)
 
 export interface SyncResult {
   success: boolean;
@@ -42,14 +42,12 @@ export function classifyError(error: any): ErrorType {
   }
 
   // Check error message for network keywords
-  if (error.message?.toLowerCase().includes('timeout') ||
-      error.message?.toLowerCase().includes('connection')) {
+  if (error.message?.toLowerCase().includes('timeout') || error.message?.toLowerCase().includes('connection')) {
     return 'network_error';
   }
 
   // Database errors (retry once)
-  if (error.message?.toLowerCase().includes('database') ||
-      error.message?.toLowerCase().includes('query')) {
+  if (error.message?.toLowerCase().includes('database') || error.message?.toLowerCase().includes('query')) {
     return 'db_error';
   }
 
@@ -107,7 +105,7 @@ export function getRetryDelay(attempt: number, errorType: ErrorType): number {
 export async function syncWithRetry(
   snapshot: PimProductSnapshot,
   syncService: PimMedusaSyncService,
-  maxRetries: number = 3
+  maxRetries: number = 3,
 ): Promise<SyncResult> {
   let lastError: Error | null = null;
 
@@ -131,15 +129,12 @@ export async function syncWithRetry(
 
       // If success=false but no error thrown, return as-is
       return result;
-
     } catch (error: any) {
       lastError = error;
       const errorType = classifyError(error);
 
       // Log error
-      console.error(
-        `  ⚠️  Attempt ${attempt} failed for ${snapshot.masterId}: ${error.message} (${errorType})`
-      );
+      console.error(`  ⚠️  Attempt ${attempt} failed for ${snapshot.masterId}: ${error.message} (${errorType})`);
 
       // Don't retry validation errors
       if (!shouldRetry(errorType)) {
@@ -155,14 +150,12 @@ export async function syncWithRetry(
       // Calculate delay and wait
       const delay = getRetryDelay(attempt, errorType);
       console.log(`  ⏳ Waiting ${delay}ms before retry...`);
-      await new Promise(resolve => setTimeout(resolve, delay));
+      await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
 
   // All retries failed
-  const finalError = new Error(
-    `Failed after ${maxRetries} attempts: ${lastError?.message}`
-  );
+  const finalError = new Error(`Failed after ${maxRetries} attempts: ${lastError?.message}`);
   finalError.stack = lastError?.stack;
   throw finalError;
 }

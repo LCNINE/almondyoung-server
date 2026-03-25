@@ -10,7 +10,7 @@ export class ProductMapper {
     priceSummary: PriceSummaryDto | null = null,
   ): ProductDto {
     // thumbnail은 product_images에서 isPrimary=true인 이미지의 fileId 사용
-    const primaryImage = images.find(img => img.isPrimary);
+    const primaryImage = images.find((img) => img.isPrimary);
     const thumbnail = primaryImage ? primaryImage.fileId : null;
 
     return {
@@ -49,4 +49,3 @@ export class ProductMapper {
     };
   }
 }
-

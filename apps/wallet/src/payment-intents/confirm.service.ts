@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { eq, sql } from 'drizzle-orm';
 import { WalletSchema, paymentIntents } from '../schema';
@@ -87,11 +81,7 @@ export class ConfirmService {
     }
 
     // 3. Cancel any active AUTHORIZE charge (stale from previous attempt)
-    const existingActive = await this.chargesService.findActiveByIntentAndOperation(
-      intentId,
-      'AUTHORIZE',
-      tx,
-    );
+    const existingActive = await this.chargesService.findActiveByIntentAndOperation(intentId, 'AUTHORIZE', tx);
     if (existingActive) {
       await this.cancelStaleCharge(existingActive.id, correlationId, tx);
     }
@@ -111,11 +101,7 @@ export class ConfirmService {
 
     // 6. Determine mode
     const mode: PaymentMode =
-      pointsAmount > 0 && externalAmount === 0
-        ? 'points-only'
-        : pointsAmount === 0
-          ? 'external-only'
-          : 'composite';
+      pointsAmount > 0 && externalAmount === 0 ? 'points-only' : pointsAmount === 0 ? 'external-only' : 'composite';
 
     // 7. Resolve method IDs
     // userId는 controller의 claimOrVerify에서 반드시 설정된 후 confirm이 호출되어야 함
@@ -131,10 +117,7 @@ export class ConfirmService {
     let externalMethodId: string | null = null;
 
     if (mode !== 'external-only') {
-      const pointsMethod = await this.paymentMethodsService.findOrCreatePointsMethod(
-        intentUserId,
-        tx,
-      );
+      const pointsMethod = await this.paymentMethodsService.findOrCreatePointsMethod(intentUserId, tx);
       pointsMethodId = pointsMethod.id;
     }
 
@@ -218,7 +201,7 @@ export class ConfirmService {
       pointsAmount,
       externalMethodId,
       externalAmount,
-      metadata: (intent.metadata as Record<string, unknown>) ?? {},
+      metadata: intent.metadata ?? {},
     };
   }
 
@@ -232,18 +215,10 @@ export class ConfirmService {
     }
 
     // Phase 2a-1: Cancel any stale SUCCEEDED POINTS hold from a previous attempt
-    await this.cancelSucceededPointsHold(
-      intentId,
-      phase1.userId,
-      phase1.currency,
-      correlationId,
-    );
+    await this.cancelSucceededPointsHold(intentId, phase1.userId, phase1.currency, correlationId);
 
     // Phase 2a-2: Find the POINTS charge created in Phase 1 (still CREATED = active)
-    const pointsCharge = await this.chargesService.findActiveByIntentAndOperation(
-      intentId,
-      'AUTHORIZE',
-    );
+    const pointsCharge = await this.chargesService.findActiveByIntentAndOperation(intentId, 'AUTHORIZE');
     if (!pointsCharge) {
       this.logger.warn(`No active POINTS charge found for intent ${intentId}`);
       return {};
@@ -251,10 +226,7 @@ export class ConfirmService {
 
     // Phase 2a-3: Run POINTS provider authorize (always synchronous: SUCCEEDED or FAILED)
     const pointsProvider = this.providerRegistry.getProviderOrThrow('POINTS');
-    const pointsIdempotencyKey = this.chargesService.generateIdempotencyKey(
-      pointsCharge.id,
-      'AUTHORIZE',
-    );
+    const pointsIdempotencyKey = this.chargesService.generateIdempotencyKey(pointsCharge.id, 'AUTHORIZE');
 
     let pointsResult: Awaited<ReturnType<typeof pointsProvider.authorize>>;
     try {
@@ -271,13 +243,7 @@ export class ConfirmService {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`POINTS authorize threw: intentId=${intentId}, error=${msg}`);
-      await this.handleProviderFailure(
-        intentId,
-        pointsCharge.id,
-        'PROVIDER_EXCEPTION',
-        msg,
-        correlationId,
-      );
+      await this.handleProviderFailure(intentId, pointsCharge.id, 'PROVIDER_EXCEPTION', msg, correlationId);
       return {};
     }
 
@@ -323,10 +289,7 @@ export class ConfirmService {
     const method = await this.paymentMethodsService.findById(phase1.externalMethodId!);
     if (!method) return {};
 
-    const charge = await this.chargesService.findActiveByIntentAndOperation(
-      intentId,
-      'AUTHORIZE',
-    );
+    const charge = await this.chargesService.findActiveByIntentAndOperation(intentId, 'AUTHORIZE');
     if (!charge) return {};
 
     const provider = this.providerRegistry.getProviderOrThrow(method.type);
@@ -343,7 +306,7 @@ export class ConfirmService {
         currency: charge.currency,
         idempotencyKey,
         correlationId,
-        providerData: method.providerData as Record<string, unknown>,
+        providerData: method.providerData,
         metadata: phase1.metadata,
       });
     } catch (err) {
@@ -417,10 +380,7 @@ export class ConfirmService {
     if (!method) return {};
 
     const provider = this.providerRegistry.getProviderOrThrow(method.type);
-    const idempotencyKey = this.chargesService.generateIdempotencyKey(
-      externalCharge.id,
-      'AUTHORIZE',
-    );
+    const idempotencyKey = this.chargesService.generateIdempotencyKey(externalCharge.id, 'AUTHORIZE');
 
     let result: Awaited<ReturnType<typeof provider.authorize>>;
     try {
@@ -433,24 +393,17 @@ export class ConfirmService {
         currency: externalCharge.currency,
         idempotencyKey,
         correlationId,
-        providerData: method.providerData as Record<string, unknown>,
+        providerData: method.providerData,
         metadata: phase1.metadata,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      this.logger.error(
-        `External provider authorize threw: intentId=${intentId}, error=${msg}`,
-      );
+      this.logger.error(`External provider authorize threw: intentId=${intentId}, error=${msg}`);
       await this.chargesService.updateStatus(externalCharge.id, 'FAILED', {
         errorCode: 'PROVIDER_EXCEPTION',
         errorMessage: msg,
       });
-      await this.cancelSucceededPointsHold(
-        intentId,
-        phase1.userId,
-        phase1.currency,
-        correlationId,
-      );
+      await this.cancelSucceededPointsHold(intentId, phase1.userId, phase1.currency, correlationId);
       await this.stateTransitionService.transitionIntent(intentId, 'CREATED', {
         correlationId,
         reasonCode: 'CONFIRM_FAILED',
@@ -485,12 +438,7 @@ export class ConfirmService {
         errorMessage: result.errorMessage ?? 'External authorization failed',
         responsePayload: result.raw,
       });
-      await this.cancelSucceededPointsHold(
-        intentId,
-        phase1.userId,
-        phase1.currency,
-        correlationId,
-      );
+      await this.cancelSucceededPointsHold(intentId, phase1.userId, phase1.currency, correlationId);
       await this.stateTransitionService.transitionIntent(intentId, 'CREATED', {
         correlationId,
         reasonCode: 'CONFIRM_FAILED',
@@ -511,12 +459,7 @@ export class ConfirmService {
   ): Promise<void> {
     const now = new Date().toISOString();
     await this.dbService.db.transaction(async (tx) => {
-      await this.chargesService.updateStatus(
-        chargeId,
-        'SUCCEEDED',
-        { providerTransactionId, responsePayload },
-        tx,
-      );
+      await this.chargesService.updateStatus(chargeId, 'SUCCEEDED', { providerTransactionId, responsePayload }, tx);
       await this.stateTransitionService.transitionIntent(
         intentId,
         'AUTHORIZED',
@@ -553,12 +496,7 @@ export class ConfirmService {
     correlationId: string,
   ): Promise<void> {
     await this.dbService.db.transaction(async (tx) => {
-      await this.chargesService.updateStatus(
-        chargeId,
-        'FAILED',
-        { errorCode, errorMessage },
-        tx,
-      );
+      await this.chargesService.updateStatus(chargeId, 'FAILED', { errorCode, errorMessage }, tx);
       await this.stateTransitionService.transitionIntent(
         intentId,
         'CREATED',
@@ -573,11 +511,7 @@ export class ConfirmService {
     });
   }
 
-  private async cancelStaleCharge(
-    chargeId: string,
-    _correlationId: string,
-    tx: DbTx,
-  ): Promise<void> {
+  private async cancelStaleCharge(chargeId: string, _correlationId: string, tx: DbTx): Promise<void> {
     try {
       await this.chargesService.updateStatus(chargeId, 'CANCELED', {}, tx);
     } catch (err) {
@@ -592,8 +526,7 @@ export class ConfirmService {
     currency: string,
     correlationId: string,
   ): Promise<void> {
-    const stalePointsCharge =
-      await this.chargesService.findSucceededPointsAuthorizeByIntent(intentId);
+    const stalePointsCharge = await this.chargesService.findSucceededPointsAuthorizeByIntent(intentId);
     if (!stalePointsCharge) return;
 
     const pointsProvider = this.providerRegistry.getProviderOrThrow('POINTS');
@@ -610,16 +543,11 @@ export class ConfirmService {
       });
       await this.chargesService.updateStatus(stalePointsCharge.id, 'CANCELED', {});
     } catch (err) {
-      this.logger.error(
-        `Failed to cancel POINTS hold for intent ${intentId}: ${err}`,
-      );
+      this.logger.error(`Failed to cancel POINTS hold for intent ${intentId}: ${err}`);
     }
   }
 
-  private async lockIntent(
-    intentId: string,
-    tx: DbTx,
-  ): Promise<typeof paymentIntents.$inferSelect | null> {
+  private async lockIntent(intentId: string, tx: DbTx): Promise<typeof paymentIntents.$inferSelect | null> {
     const [row] = await tx
       .select()
       .from(paymentIntents)

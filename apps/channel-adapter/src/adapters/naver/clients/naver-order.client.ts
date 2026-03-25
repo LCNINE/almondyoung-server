@@ -58,9 +58,7 @@ export class NaverOrderClient extends NaverBaseClient {
    * @param productOrderIds 발주 확인할 상품 주문 번호 배열
    * @returns API 응답 데이터
    */
-  async confirmOrders(
-    productOrderIds: string[],
-  ): Promise<NaverClaimProcessResponse> {
+  async confirmOrders(productOrderIds: string[]): Promise<NaverClaimProcessResponse> {
     const token = await this.authService.getAccessToken(); // 🔑 인증 서비스 사용
     const url = `${this.apiBaseUrl}/pay-order/seller/product-orders/confirm`;
     const response = await firstValueFrom(
@@ -77,21 +75,14 @@ export class NaverOrderClient extends NaverBaseClient {
    * @param dispatchProductOrders 발송 처리할 주문 정보 배열
    * @returns API 응답 데이터
    */
-  async dispatchOrders(
-    dispatchProductOrders: DispatchProductOrder[],
-  ): Promise<NaverClaimProcessResponse> {
+  async dispatchOrders(dispatchProductOrders: DispatchProductOrder[]): Promise<NaverClaimProcessResponse> {
     const token = await this.authService.getAccessToken(); // 🔑 인증 서비스 사용
 
     // 🎯 Zod 검증 추가 (배열 요소별 검증)
-    const parsedOrders = z
-      .array(DispatchProductOrderSchema)
-      .safeParse(dispatchProductOrders);
+    const parsedOrders = z.array(DispatchProductOrderSchema).safeParse(dispatchProductOrders);
     if (!parsedOrders.success) {
       const flattenedErrors = parsedOrders.error.flatten();
-      this.logger.error(
-        '❌ 발송 처리 요청 파라미터 검증 실패:',
-        flattenedErrors,
-      );
+      this.logger.error('❌ 발송 처리 요청 파라미터 검증 실패:', flattenedErrors);
       throw new BadRequestException({
         message: '발송 처리 요청 입력값 유효성 검사에 실패했습니다.',
         errors: flattenedErrors.fieldErrors,
@@ -115,20 +106,14 @@ export class NaverOrderClient extends NaverBaseClient {
    * @param body 발송 지연 사유 정보
    * @returns API 응답 데이터
    */
-  async delayDispatch(
-    productOrderId: string,
-    body: DelayDispatchBody,
-  ): Promise<NaverClaimProcessResponse> {
+  async delayDispatch(productOrderId: string, body: DelayDispatchBody): Promise<NaverClaimProcessResponse> {
     const token = await this.authService.getAccessToken(); // 🔑 인증 서비스 사용
 
     // 🎯 Zod 검증 추가
     const parsedBody = DelayDispatchBodySchema.safeParse(body);
     if (!parsedBody.success) {
       const flattenedErrors = parsedBody.error.flatten();
-      this.logger.error(
-        '❌ 발송 지연 요청 파라미터 검증 실패:',
-        flattenedErrors,
-      );
+      this.logger.error('❌ 발송 지연 요청 파라미터 검증 실패:', flattenedErrors);
       throw new BadRequestException({
         message: '발송 지연 요청 입력값 유효성 검사에 실패했습니다.',
         errors: flattenedErrors.fieldErrors,
@@ -150,20 +135,14 @@ export class NaverOrderClient extends NaverBaseClient {
    * @param body 배송 희망일 변경 정보
    * @returns API 응답 데이터
    */
-  async changeHopeDelivery(
-    productOrderId: string,
-    body: ChangeHopeDeliveryBody,
-  ): Promise<NaverClaimProcessResponse> {
+  async changeHopeDelivery(productOrderId: string, body: ChangeHopeDeliveryBody): Promise<NaverClaimProcessResponse> {
     const token = await this.authService.getAccessToken(); // 🔑 인증 서비스 사용
 
     // 🎯 Zod 검증 추가
     const parsedBody = ChangeHopeDeliveryBodySchema.safeParse(body);
     if (!parsedBody.success) {
       const flattenedErrors = parsedBody.error.flatten();
-      this.logger.error(
-        '❌ 배송 희망일 변경 요청 파라미터 검증 실패:',
-        flattenedErrors,
-      );
+      this.logger.error('❌ 배송 희망일 변경 요청 파라미터 검증 실패:', flattenedErrors);
       throw new BadRequestException({
         message: '배송 희망일 변경 요청 입력값 유효성 검사에 실패했습니다.',
         errors: flattenedErrors.fieldErrors,
@@ -189,9 +168,7 @@ export class NaverOrderClient extends NaverBaseClient {
    * @param lastChangedFrom 조회 시작 시각 (ISO 8601 형식)
    * @returns API 응답 데이터
    */
-  async getLastChangedStatuses(
-    lastChangedFrom: string,
-  ): Promise<NaverLastChangedStatusResponse> {
+  async getLastChangedStatuses(lastChangedFrom: string): Promise<NaverLastChangedStatusResponse> {
     const token = await this.authService.getAccessToken(); // 🔑 인증 서비스 사용
     const url = `${this.apiBaseUrl}/pay-order/seller/product-orders/last-changed-statuses`;
     const response = await firstValueFrom(
@@ -207,9 +184,7 @@ export class NaverOrderClient extends NaverBaseClient {
    * @param productOrderIds 조회할 상품 주문 번호 배열
    * @returns API 응답 데이터
    */
-  async getOrderDetails(
-    productOrderIds: string[],
-  ): Promise<NaverProductOrderDetailsResponse> {
+  async getOrderDetails(productOrderIds: string[]): Promise<NaverProductOrderDetailsResponse> {
     const token = await this.authService.getAccessToken(); // 🔑 인증 서비스 사용
     const url = `${this.apiBaseUrl}/pay-order/seller/product-orders/query`;
     const response = await firstValueFrom(
@@ -226,9 +201,7 @@ export class NaverOrderClient extends NaverBaseClient {
    * @param params 조회 조건을 담은 객체
    * @returns API 응답 데이터
    */
-  async queryProductOrders(
-    params: QueryProductOrdersParams,
-  ): Promise<NaverProductOrderDetailsResponse> {
+  async queryProductOrders(params: QueryProductOrdersParams): Promise<NaverProductOrderDetailsResponse> {
     const token = await this.authService.getAccessToken(); // 🔑 인증 서비스 사용
 
     // TODO: QueryProductOrdersParamsSchema Zod 검증은 원본 파일에 없었으나, 추가 고려
@@ -251,9 +224,7 @@ export class NaverOrderClient extends NaverBaseClient {
    * @param orderId 조회할 주문 번호
    * @returns API 응답 데이터
    */
-  async getProductOrderIdsByOrderId(
-    orderId: string,
-  ): Promise<NaverProductOrderIdsResponse> {
+  async getProductOrderIdsByOrderId(orderId: string): Promise<NaverProductOrderIdsResponse> {
     const token = await this.authService.getAccessToken(); // 🔑 인증 서비스 사용
     const url = `${this.apiBaseUrl}/pay-order/seller/orders/${orderId}/product-order-ids`;
     const response = await firstValueFrom(

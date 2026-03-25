@@ -1,12 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ChannelType } from '../adapters/channel-adapter.factory';
-import {
-  DataType,
-  InternalOrderEvent,
-  SyncResult,
-  SyncToChannelPayload,
-  OrderQuery,
-} from '../types';
+import { DataType, InternalOrderEvent, SyncResult, SyncToChannelPayload, OrderQuery } from '../types';
 import { ChannelCommand, ChannelQuery } from '../types';
 import { ChannelDataReader } from './channel-data.reader';
 import { ChannelSyncManager } from './channel-sync.manager';
@@ -66,25 +60,17 @@ export class ChannelAdapterService {
    * const inventoryEvents = await channelAdapter.poll('coupang', 'inventory');
    * ```
    */
-  async poll(
-    channel: ChannelType,
-    dataType: DataType,
-  ): Promise<InternalOrderEvent[]> {
+  async poll(channel: ChannelType, dataType: DataType): Promise<InternalOrderEvent[]> {
     try {
       // 1. 채널에서 데이터 가져오기
-      const events = await this.channelReader.fetchFromChannel(
-        channel,
-        dataType,
-      );
+      const events = await this.channelReader.fetchFromChannel(channel, dataType);
 
       // 2. 동기화 처리 (검증 + 저장 + 이벤트)
       await this.syncManager.processInboundSync(events, channel, dataType);
 
       return events;
     } catch (error) {
-      throw new Error(
-        `Failed to poll ${dataType} from ${channel}: ${error.message}`,
-      );
+      throw new Error(`Failed to poll ${dataType} from ${channel}: ${error.message}`);
     }
   }
 
@@ -108,10 +94,7 @@ export class ChannelAdapterService {
    * const naverEvents = await channelAdapter.incoming('naver_smartstore', webhookPayload);
    * ```
    */
-  async incoming(
-    channel: ChannelType,
-    payload: any,
-  ): Promise<InternalOrderEvent[]> {
+  async incoming(channel: ChannelType, payload: any): Promise<InternalOrderEvent[]> {
     return await this.channelReader.processWebhook(channel, payload);
   }
 
@@ -144,10 +127,7 @@ export class ChannelAdapterService {
    * });
    * ```
    */
-  async command(
-    channel: ChannelType,
-    cmd: ChannelCommand,
-  ): Promise<SyncResult> {
+  async command(channel: ChannelType, cmd: ChannelCommand): Promise<SyncResult> {
     return await this.commandManager.execute(channel, cmd);
   }
 
@@ -246,10 +226,7 @@ export class ChannelAdapterService {
    * });
    * ```
    */
-  async syncToChannel(
-    channel: ChannelType,
-    payload: SyncToChannelPayload,
-  ): Promise<SyncResult> {
+  async syncToChannel(channel: ChannelType, payload: SyncToChannelPayload): Promise<SyncResult> {
     try {
       // 1. 채널에 데이터 전송
       const result = await this.channelReader.sendToChannel(channel, payload);
@@ -259,9 +236,7 @@ export class ChannelAdapterService {
 
       return result;
     } catch (error) {
-      throw new Error(
-        `Failed to sync ${payload.dataType} to ${channel}: ${error.message}`,
-      );
+      throw new Error(`Failed to sync ${payload.dataType} to ${channel}: ${error.message}`);
     }
   }
 
@@ -276,10 +251,7 @@ export class ChannelAdapterService {
    * @param query - 조회 쿼리
    * @returns 내부 표준 이벤트 배열
    */
-  async findOrders(
-    channel: ChannelType,
-    query: OrderQuery,
-  ): Promise<InternalOrderEvent[]> {
+  async findOrders(channel: ChannelType, query: OrderQuery): Promise<InternalOrderEvent[]> {
     return await this.channelReader.findOrders(channel, query);
   }
 
@@ -311,10 +283,7 @@ export class ChannelAdapterService {
    * @param payload - 동기화할 데이터
    * @returns 동기화 결과
    */
-  async syncToChannelOrAll(
-    channelOrAll: ChannelType | 'all',
-    payload: SyncToChannelPayload,
-  ): Promise<SyncResult> {
+  async syncToChannelOrAll(channelOrAll: ChannelType | 'all', payload: SyncToChannelPayload): Promise<SyncResult> {
     if (channelOrAll === 'all') {
       return await this.syncToAllChannelsInternal(payload);
     } else {
@@ -328,17 +297,13 @@ export class ChannelAdapterService {
    * @param payload - 동기화할 데이터
    * @returns 통합 동기화 결과
    */
-  private async syncToAllChannelsInternal(
-    payload: SyncToChannelPayload,
-  ): Promise<SyncResult> {
+  private async syncToAllChannelsInternal(payload: SyncToChannelPayload): Promise<SyncResult> {
     const channels = ChannelsConfig.getActiveChannels();
 
     this.logger.log(`🌐 모든 채널 ${payload.dataType} 동기화 시작`);
 
     // 병렬 처리로 성능 개선
-    const settledResults = await Promise.allSettled(
-      channels.map((channel) => this.syncToChannel(channel, payload)),
-    );
+    const settledResults = await Promise.allSettled(channels.map((channel) => this.syncToChannel(channel, payload)));
 
     const results: SyncResult[] = settledResults.map((settled) => {
       if (settled.status === 'fulfilled') {
@@ -352,14 +317,8 @@ export class ChannelAdapterService {
       }
     });
 
-    const totalProcessed = results.reduce(
-      (sum, r) => sum + (r.processedCount || 0),
-      0,
-    );
-    const totalFailed = results.reduce(
-      (sum, r) => sum + (r.failedCount || 0),
-      0,
-    );
+    const totalProcessed = results.reduce((sum, r) => sum + (r.processedCount || 0), 0);
+    const totalFailed = results.reduce((sum, r) => sum + (r.failedCount || 0), 0);
     const allErrors = results.flatMap((r) => r.errors || []);
     const overallSuccess = results.every((r) => r.success);
 
@@ -370,9 +329,7 @@ export class ChannelAdapterService {
       errors: allErrors.length > 0 ? allErrors : undefined,
     };
 
-    this.logger.log(
-      `🎯 모든 채널 ${payload.dataType} 동기화 완료: ${totalProcessed}건 성공, ${totalFailed}건 실패`,
-    );
+    this.logger.log(`🎯 모든 채널 ${payload.dataType} 동기화 완료: ${totalProcessed}건 성공, ${totalFailed}건 실패`);
 
     return consolidatedResult;
   }

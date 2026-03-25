@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  NestInterceptor,
-  ExecutionContext,
-  CallHandler,
-} from '@nestjs/common';
+import { Injectable, NestInterceptor, ExecutionContext, CallHandler } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { KafkaContext } from '@nestjs/microservices';
 import { v7 } from 'uuid';
@@ -28,9 +23,7 @@ export class ChainContextInterceptor implements NestInterceptor {
       const value = message.value;
 
       if (value) {
-        const jsonString = Buffer.isBuffer(value)
-          ? value.toString('utf-8')
-          : String(value);
+        const jsonString = Buffer.isBuffer(value) ? value.toString('utf-8') : String(value);
         const envelope = JSON.parse(jsonString) as MessageEnvelope;
 
         const chainId = envelope.chainId ?? v7();

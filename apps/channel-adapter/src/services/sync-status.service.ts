@@ -1,12 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ChannelType } from '../adapters/channel-adapter.factory';
-import {
-  DataType,
-  NewSyncStatus,
-  SyncStatus,
-  UpdateSyncStatus,
-  ChannelAdapterSchema,
-} from '../types';
+import { DataType, NewSyncStatus, SyncStatus, UpdateSyncStatus, ChannelAdapterSchema } from '../types';
 import { eq, and } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { channelAdapterSchema } from '../schema';
@@ -47,10 +41,7 @@ export class SyncStatusService {
    * @param dataType 데이터 타입
    * @returns 동기화 세션 ID
    */
-  async recordSyncStart(
-    channel: ChannelType,
-    dataType: DataType,
-  ): Promise<string> {
+  async recordSyncStart(channel: ChannelType, dataType: DataType): Promise<string> {
     const sessionId = `${channel}_${dataType}_${Date.now()}`;
 
     try {
@@ -63,10 +54,7 @@ export class SyncStatusService {
       this.logger.debug(`🚀 동기화 시작 기록: ${sessionId}`);
       return sessionId;
     } catch (error) {
-      this.logger.error(
-        `❌ 동기화 시작 기록 실패: ${sessionId}`,
-        error.message,
-      );
+      this.logger.error(`❌ 동기화 시작 기록 실패: ${sessionId}`, error.message);
       throw new Error(`동기화 시작 기록 실패: ${error.message}`);
     }
   }
@@ -95,9 +83,7 @@ export class SyncStatusService {
       const newTotalSyncs = (currentStats?.totalSyncs || 0) + 1;
       const newAvgProcessingTime = currentStats
         ? Math.round(
-            ((currentStats.avgProcessingTimeMs || 0) *
-              (currentStats.totalSyncs || 0) +
-              result.processingTime) /
+            ((currentStats.avgProcessingTimeMs || 0) * (currentStats.totalSyncs || 0) + result.processingTime) /
               newTotalSyncs,
           )
         : result.processingTime;
@@ -117,10 +103,7 @@ export class SyncStatusService {
         `✅ 동기화 완료 기록: ${channel}/${dataType} - ${result.eventCount}건 (${result.processingTime}ms)`,
       );
     } catch (error) {
-      this.logger.error(
-        `❌ 동기화 완료 기록 실패: ${channel}/${dataType}`,
-        error.message,
-      );
+      this.logger.error(`❌ 동기화 완료 기록 실패: ${channel}/${dataType}`, error.message);
       throw new Error(`동기화 완료 기록 실패: ${error.message}`);
     }
   }
@@ -150,9 +133,7 @@ export class SyncStatusService {
       const newAvgProcessingTime =
         currentStats && error.processingTime
           ? Math.round(
-              ((currentStats.avgProcessingTimeMs || 0) *
-                (currentStats.totalSyncs || 0) +
-                error.processingTime) /
+              ((currentStats.avgProcessingTimeMs || 0) * (currentStats.totalSyncs || 0) + error.processingTime) /
                 newTotalSyncs,
             )
           : currentStats?.avgProcessingTimeMs || 0;
@@ -167,14 +148,9 @@ export class SyncStatusService {
         lastErrorMessage: error.message,
       });
 
-      this.logger.warn(
-        `❌ 동기화 실패 기록: ${channel}/${dataType} - ${error.message}`,
-      );
+      this.logger.warn(`❌ 동기화 실패 기록: ${channel}/${dataType} - ${error.message}`);
     } catch (dbError) {
-      this.logger.error(
-        `❌ 동기화 실패 기록 중 DB 오류: ${channel}/${dataType}`,
-        dbError.message,
-      );
+      this.logger.error(`❌ 동기화 실패 기록 중 DB 오류: ${channel}/${dataType}`, dbError.message);
       throw new Error(`동기화 실패 기록 중 DB 오류: ${dbError.message}`);
     }
   }
@@ -212,18 +188,13 @@ export class SyncStatusService {
    */
   async getAllChannelStats(): Promise<Record<string, ChannelStats>> {
     try {
-      const allRecords = await this.db.db
-        .select()
-        .from(channelAdapterSchema.syncStatuses);
+      const allRecords = await this.db.db.select().from(channelAdapterSchema.syncStatuses);
 
       const result: Record<string, ChannelStats> = {};
       const channelGroups = this.groupRecordsByChannel(allRecords);
 
       for (const [channel, records] of channelGroups.entries()) {
-        result[channel] = this.aggregateChannelStats(
-          channel as ChannelType,
-          records,
-        );
+        result[channel] = this.aggregateChannelStats(channel as ChannelType, records);
       }
 
       return result;
@@ -240,10 +211,7 @@ export class SyncStatusService {
    * @param dataType 데이터 타입
    * @returns 동기화 상태 레코드
    */
-  async getSyncStatus(
-    channel: ChannelType,
-    dataType: DataType,
-  ): Promise<SyncStatus | null> {
+  async getSyncStatus(channel: ChannelType, dataType: DataType): Promise<SyncStatus | null> {
     try {
       const [record] = await this.db.db
         .select()
@@ -258,10 +226,7 @@ export class SyncStatusService {
 
       return record || null;
     } catch (error) {
-      this.logger.error(
-        `❌ 동기화 상태 조회 실패: ${channel}/${dataType}`,
-        error.message,
-      );
+      this.logger.error(`❌ 동기화 상태 조회 실패: ${channel}/${dataType}`, error.message);
       throw new Error(`동기화 상태 조회 실패: ${error.message}`);
     }
   }
@@ -312,15 +277,10 @@ export class SyncStatusService {
           ...updates,
         };
 
-        await this.db.db
-          .insert(channelAdapterSchema.syncStatuses)
-          .values(newRecord);
+        await this.db.db.insert(channelAdapterSchema.syncStatuses).values(newRecord);
       }
     } catch (error) {
-      this.logger.error(
-        `❌ sync_statuses upsert 실패: ${channel}/${dataType}`,
-        error.message,
-      );
+      this.logger.error(`❌ sync_statuses upsert 실패: ${channel}/${dataType}`, error.message);
       throw new Error(`sync_statuses upsert 실패: ${error.message}`);
     }
   }
@@ -328,10 +288,7 @@ export class SyncStatusService {
   /**
    * sync_statuses 테이블에서 레코드 조회 (내부용)
    */
-  private async getSyncStatusRecord(
-    channel: ChannelType,
-    dataType: DataType,
-  ): Promise<SyncStatus | null> {
+  private async getSyncStatusRecord(channel: ChannelType, dataType: DataType): Promise<SyncStatus | null> {
     try {
       const [record] = await this.db.db
         .select()
@@ -346,10 +303,7 @@ export class SyncStatusService {
 
       return record || null;
     } catch (error) {
-      this.logger.error(
-        `❌ sync_statuses 레코드 조회 실패: ${channel}/${dataType}`,
-        error.message,
-      );
+      this.logger.error(`❌ sync_statuses 레코드 조회 실패: ${channel}/${dataType}`, error.message);
       return null;
     }
   }
@@ -357,19 +311,10 @@ export class SyncStatusService {
   /**
    * 채널별 통계 집계
    */
-  private aggregateChannelStats(
-    channel: ChannelType,
-    records: SyncStatus[],
-  ): ChannelStats {
+  private aggregateChannelStats(channel: ChannelType, records: SyncStatus[]): ChannelStats {
     const totalSyncs = records.reduce((sum, r) => sum + (r.totalSyncs || 0), 0);
-    const successfulSyncs = records.reduce(
-      (sum, r) => sum + (r.successfulSyncs || 0),
-      0,
-    );
-    const failedSyncs = records.reduce(
-      (sum, r) => sum + (r.failedSyncs || 0),
-      0,
-    );
+    const successfulSyncs = records.reduce((sum, r) => sum + (r.successfulSyncs || 0), 0);
+    const failedSyncs = records.reduce((sum, r) => sum + (r.failedSyncs || 0), 0);
 
     // 가장 최근 동기화 시각
     const lastSyncAt = records.reduce(
@@ -384,10 +329,7 @@ export class SyncStatusService {
     // 평균 처리 시간 (가중 평균)
     const avgProcessingTime =
       records.length > 0
-        ? Math.round(
-            records.reduce((sum, r) => sum + (r.avgProcessingTimeMs || 0), 0) /
-              records.length,
-          )
+        ? Math.round(records.reduce((sum, r) => sum + (r.avgProcessingTimeMs || 0), 0) / records.length)
         : 0;
 
     // 마지막 이벤트 수 (가장 최근 동기화의 이벤트 수)
@@ -424,9 +366,7 @@ export class SyncStatusService {
   /**
    * 레코드들을 채널별로 그룹화
    */
-  private groupRecordsByChannel(
-    records: SyncStatus[],
-  ): Map<string, SyncStatus[]> {
+  private groupRecordsByChannel(records: SyncStatus[]): Map<string, SyncStatus[]> {
     const groups = new Map<string, SyncStatus[]>();
 
     for (const record of records) {
@@ -447,11 +387,7 @@ export class SyncStatusService {
    * @param limit 조회 제한 (기본값: 50)
    * @returns 동기화 히스토리 배열
    */
-  async getSyncHistory(
-    channel: ChannelType,
-    dataType: DataType,
-    limit: number = 50,
-  ): Promise<SyncStatus[]> {
+  async getSyncHistory(channel: ChannelType, dataType: DataType, limit: number = 50): Promise<SyncStatus[]> {
     try {
       const history = await this.db.db
         .select()
@@ -465,16 +401,11 @@ export class SyncStatusService {
         .orderBy(channelAdapterSchema.syncStatuses.updatedAt)
         .limit(limit);
 
-      this.logger.debug(
-        `📋 동기화 히스토리 조회: ${channel}/${dataType} - ${history.length}건`,
-      );
+      this.logger.debug(`📋 동기화 히스토리 조회: ${channel}/${dataType} - ${history.length}건`);
 
       return history;
     } catch (error) {
-      this.logger.error(
-        `❌ 동기화 히스토리 조회 실패: ${channel}/${dataType}`,
-        error.message,
-      );
+      this.logger.error(`❌ 동기화 히스토리 조회 실패: ${channel}/${dataType}`, error.message);
       throw new Error(`동기화 히스토리 조회 실패: ${error.message}`);
     }
   }

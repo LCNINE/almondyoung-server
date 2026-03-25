@@ -22,10 +22,7 @@ export interface SuggestedKeyword {
 
 export interface SearchKeywordRepository {
   record(record: SearchKeywordRecord): Promise<void>;
-  getTrendingKeywords(options: {
-    size: number;
-    windowHours: number;
-  }): Promise<TrendingKeyword[]>;
+  getTrendingKeywords(options: { size: number; windowHours: number }): Promise<TrendingKeyword[]>;
   getSuggestions(options: {
     prefix: string;
     compactPrefix: string;

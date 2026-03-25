@@ -1,19 +1,17 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Param,
-  Body,
-  Query,
-  HttpCode,
-  HttpStatus,
-} from '@nestjs/common';
+import { Controller, Get, Post, Param, Body, Query, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiProperty } from '@nestjs/swagger';
-import { SkuLocationMovementService, MovementStatistics, MovementFilters } from '../services/sku-location-movement.service';
+import {
+  SkuLocationMovementService,
+  MovementStatistics,
+  MovementFilters,
+} from '../services/sku-location-movement.service';
 import { CreateSkuLocationMovementDto } from '../dto/sku-location-movements/create-sku-location-movement.dto';
 import { SkuLocationMovementResponseDto } from '../dto/sku-location-movements/sku-location-movement-response.dto';
 import { BulkMoveSkuLocationDto, BulkMoveResultDto } from '../dto/sku-location-movements/bulk-move-sku-location.dto';
-import { MoveSkuByIdentifierDto, BulkMoveByIdentifierDto } from '../dto/sku-location-movements/move-sku-by-identifier.dto';
+import {
+  MoveSkuByIdentifierDto,
+  BulkMoveByIdentifierDto,
+} from '../dto/sku-location-movements/move-sku-by-identifier.dto';
 import { Type } from 'class-transformer';
 import { IsOptional, IsInt, Min, IsEnum, IsDateString } from 'class-validator';
 
@@ -62,9 +60,7 @@ class MovementQueryDto {
 @ApiTags('SKU Location Movements')
 @Controller('inventory/location-movements')
 export class SkuLocationMovementController {
-  constructor(
-    private readonly skuLocationMovementService: SkuLocationMovementService
-  ) { }
+  constructor(private readonly skuLocationMovementService: SkuLocationMovementService) {}
 
   // DEPRECATED: 이동예정 기능을 추가해야 할 때 깨울 예정
 
@@ -396,4 +392,3 @@ export class SkuLocationMovementController {
   //     );
   //   }
 }
-

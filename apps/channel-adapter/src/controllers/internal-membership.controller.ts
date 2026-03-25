@@ -1,13 +1,4 @@
-import {
-  Body,
-  Controller,
-  HttpCode,
-  HttpStatus,
-  Logger,
-  Post,
-  UnauthorizedException,
-  Headers,
-} from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Logger, Post, UnauthorizedException, Headers } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DbService } from '@app/db';
 import { InboxService } from '../services/inbox.service';
@@ -86,9 +77,7 @@ export class InternalMembershipController {
    */
   @Post('run-daily-sync')
   @HttpCode(HttpStatus.OK)
-  async runDailySync(
-    @Headers('authorization') authorization: string,
-  ): Promise<{ processed: number }> {
+  async runDailySync(@Headers('authorization') authorization: string): Promise<{ processed: number }> {
     this.verifyInternalKey(authorization);
     this.logger.log('멤버십 일일 정합성 수동 실행 요청');
     return this.membershipDailySyncService.runManually();
@@ -103,9 +92,7 @@ export class InternalMembershipController {
    */
   @Post('backfill-mappings')
   @HttpCode(HttpStatus.OK)
-  async backfillMappings(
-    @Headers('authorization') authorization: string,
-  ): Promise<{ upserted: number }> {
+  async backfillMappings(@Headers('authorization') authorization: string): Promise<{ upserted: number }> {
     this.verifyInternalKey(authorization);
     this.logger.log('cafe24_member_mappings 백필 시작');
 
@@ -113,7 +100,8 @@ export class InternalMembershipController {
     const db = this.dbService.db;
 
     for (const { cafe24MemberId, userId, email } of links) {
-      await db.insert(cafe24MemberMappings)
+      await db
+        .insert(cafe24MemberMappings)
         .values({ cafe24MemberId, userId, email, createdAt: new Date(), updatedAt: new Date() })
         .onConflictDoUpdate({
           target: cafe24MemberMappings.cafe24MemberId,

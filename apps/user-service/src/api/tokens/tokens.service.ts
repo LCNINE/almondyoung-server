@@ -1,10 +1,6 @@
 import { DbService, InjectDb } from '@app/db';
 import { Injectable, Logger } from '@nestjs/common';
-import {
-  userServiceEnums,
-  userServiceSchema,
-  type UserServiceSchema,
-} from 'apps/user-service/database/drizzle/schema';
+import { userServiceEnums, userServiceSchema, type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
 import { and, eq, sql } from 'drizzle-orm';
 import { DbTransaction } from '../../commons/types';
 
@@ -12,9 +8,7 @@ import { DbTransaction } from '../../commons/types';
 export class TokensService {
   private readonly logger = new Logger(TokensService.name);
 
-  constructor(
-    @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
-  ) {}
+  constructor(@InjectDb() private readonly dbService: DbService<UserServiceSchema>) {}
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.dbService.db;
@@ -28,11 +22,7 @@ export class TokensService {
    * @returns 유효한 토큰 정보
    * @throws Error 토큰이 유효하지 않은 경우
    */
-  async validateAccessToken(
-    userId: string,
-    tokenValue: string,
-    tx?: DbTransaction,
-  ) {
+  async validateAccessToken(userId: string, tokenValue: string, tx?: DbTransaction) {
     const client = this.getClient(tx);
 
     const [token] = await client
@@ -76,11 +66,7 @@ export class TokensService {
    * @returns 유효한 토큰 정보
    * @throws Error 토큰이 유효하지 않은 경우
    */
-  async validateRefreshToken(
-    userId: string,
-    tokenValue: string,
-    tx?: DbTransaction,
-  ) {
+  async validateRefreshToken(userId: string, tokenValue: string, tx?: DbTransaction) {
     const client = this.getClient(tx);
 
     const [token] = await client
@@ -123,22 +109,13 @@ export class TokensService {
    * @param tx 트랜잭션 객체 (선택)
    * @returns 토큰 정보 또는 null
    */
-  async findTokenByUserIdAndType(
-    userId: string,
-    tokenType: 'refresh' | 'verification',
-    tx?: DbTransaction,
-  ) {
+  async findTokenByUserIdAndType(userId: string, tokenType: 'refresh' | 'verification', tx?: DbTransaction) {
     const client = this.getClient(tx);
 
     const [token] = await client
       .select()
       .from(userServiceSchema.tokens)
-      .where(
-        and(
-          eq(userServiceSchema.tokens.userId, userId),
-          eq(userServiceSchema.tokens.type, tokenType),
-        ),
-      )
+      .where(and(eq(userServiceSchema.tokens.userId, userId), eq(userServiceSchema.tokens.type, tokenType)))
       .limit(1);
 
     return token || null;
@@ -150,11 +127,7 @@ export class TokensService {
    * @param tokenType 토큰 타입
    * @param tx 트랜잭션 객체 (선택)
    */
-  async revokeToken(
-    userId: string,
-    tokenType: 'refresh' | 'verification',
-    tx?: DbTransaction,
-  ) {
+  async revokeToken(userId: string, tokenType: 'refresh' | 'verification', tx?: DbTransaction) {
     const client = this.getClient(tx);
 
     await client
@@ -163,12 +136,7 @@ export class TokensService {
         isRevoked: true,
         updatedAt: new Date(),
       })
-      .where(
-        and(
-          eq(userServiceSchema.tokens.userId, userId),
-          eq(userServiceSchema.tokens.type, tokenType),
-        ),
-      );
+      .where(and(eq(userServiceSchema.tokens.userId, userId), eq(userServiceSchema.tokens.type, tokenType)));
 
     this.logger.log(`Token revoked: userId=${userId}, tokenType=${tokenType}`);
   }
@@ -179,21 +147,12 @@ export class TokensService {
    * @param tokenType 토큰 타입
    * @param tx 트랜잭션 객체 (선택)
    */
-  async deleteToken(
-    userId: string,
-    tokenType: 'refresh' | 'verification',
-    tx?: DbTransaction,
-  ) {
+  async deleteToken(userId: string, tokenType: 'refresh' | 'verification', tx?: DbTransaction) {
     const client = this.getClient(tx);
 
     await client
       .delete(userServiceSchema.tokens)
-      .where(
-        and(
-          eq(userServiceSchema.tokens.userId, userId),
-          eq(userServiceSchema.tokens.type, tokenType),
-        ),
-      );
+      .where(and(eq(userServiceSchema.tokens.userId, userId), eq(userServiceSchema.tokens.type, tokenType)));
 
     this.logger.log(`Token deleted: userId=${userId}, tokenType=${tokenType}`);
   }
@@ -206,9 +165,7 @@ export class TokensService {
   async deleteAllTokens(userId: string, tx?: DbTransaction) {
     const client = this.getClient(tx);
 
-    await client
-      .delete(userServiceSchema.tokens)
-      .where(eq(userServiceSchema.tokens.userId, userId));
+    await client.delete(userServiceSchema.tokens).where(eq(userServiceSchema.tokens.userId, userId));
 
     this.logger.log(`All tokens deleted for userId=${userId}`);
   }
@@ -221,13 +178,7 @@ export class TokensService {
    * @param expiresAt 만료 시간
    * @param tx 트랜잭션 객체 (선택)
    */
-  async saveAccessToken(
-    userId: string,
-    tokenValue: string,
-    scopes: string[],
-    expiresAt: Date,
-    tx?: DbTransaction,
-  ) {
+  async saveAccessToken(userId: string, tokenValue: string, scopes: string[], expiresAt: Date, tx?: DbTransaction) {
     const client = this.getClient(tx);
 
     // UPSERT: 기존 토큰이 있으면 업데이트, 없으면 삽입
@@ -241,10 +192,7 @@ export class TokensService {
         expiresAt,
       })
       .onConflictDoUpdate({
-        target: [
-          userServiceSchema.tokens.userId,
-          userServiceSchema.tokens.type,
-        ],
+        target: [userServiceSchema.tokens.userId, userServiceSchema.tokens.type],
         set: {
           value: tokenValue,
           scopes: scopes.join(','),
@@ -286,10 +234,7 @@ export class TokensService {
         autoLogin,
       })
       .onConflictDoUpdate({
-        target: [
-          userServiceSchema.tokens.userId,
-          userServiceSchema.tokens.type,
-        ],
+        target: [userServiceSchema.tokens.userId, userServiceSchema.tokens.type],
         set: {
           value: tokenValue,
           scopes: roles.join(','),
@@ -309,12 +254,7 @@ export class TokensService {
    * @param expiresAt 만료 시간
    * @param tx 트랜잭션 객체 (선택)
    */
-  async saveVerificationToken(
-    userId: string,
-    tokenValue: string,
-    expiresAt: Date,
-    tx?: DbTransaction,
-  ) {
+  async saveVerificationToken(userId: string, tokenValue: string, expiresAt: Date, tx?: DbTransaction) {
     const client = this.getClient(tx);
 
     // upsert: 존재하면 업데이트, 없으면 삽입
@@ -328,10 +268,7 @@ export class TokensService {
         expiresAt,
       })
       .onConflictDoUpdate({
-        target: [
-          userServiceSchema.tokens.userId,
-          userServiceSchema.tokens.type,
-        ],
+        target: [userServiceSchema.tokens.userId, userServiceSchema.tokens.type],
         set: {
           value: tokenValue,
           expiresAt: expiresAt,
@@ -350,9 +287,7 @@ export class TokensService {
   async deleteTokenByValue(tokenValue: string, tx?: DbTransaction) {
     const client = this.getClient(tx);
 
-    await client
-      .delete(userServiceSchema.tokens)
-      .where(eq(userServiceSchema.tokens.value, tokenValue));
+    await client.delete(userServiceSchema.tokens).where(eq(userServiceSchema.tokens.value, tokenValue));
 
     this.logger.log(`Token deleted by value`);
   }

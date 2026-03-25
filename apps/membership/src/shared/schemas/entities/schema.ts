@@ -30,16 +30,8 @@ export const subscriptionChangeTypeEnum = pgEnum('subscription_change_type', [
   'RENEWAL',
   'INITIAL',
 ]);
-export const eventPublishStatusEnum = pgEnum('event_publish_status', [
-  'PENDING',
-  'PUBLISHED',
-  'FAILED',
-]);
-export const pauseStatusEnum = pgEnum('pause_status', [
-  'ACTIVE',
-  'ENDED',
-  'CANCELLED',
-]);
+export const eventPublishStatusEnum = pgEnum('event_publish_status', ['PENDING', 'PUBLISHED', 'FAILED']);
+export const pauseStatusEnum = pgEnum('pause_status', ['ACTIVE', 'ENDED', 'CANCELLED']);
 /**
  * Policy rule type enumeration for subscription management system.
  * Defines various policy types that can be applied to subscriptions, plans, and users.
@@ -95,12 +87,8 @@ export const tiers = pgTable('tiers', {
   id: uuid('id').primaryKey().defaultRandom(),
   code: text('code').notNull().unique(),
   priorityLevel: integer('priority_level').notNull().unique(),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
 /**
@@ -116,12 +104,8 @@ export const plan = pgTable('plan', {
   currency: text('currency').notNull().default('KRW'),
   trialDays: integer('trial_days').default(0),
   isActive: boolean('is_active').notNull().default(true),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
 /**
@@ -147,9 +131,7 @@ export const subscriptionContracts = pgTable(
     paymentProfileId: text('payment_profile_id'), // 저장된 결제 프로필 ID
     isPastDue: boolean('is_past_due').notNull().default(false), // 연체 상태
     billingRetryCount: integer('billing_retry_count').notNull().default(0), // 현재 재시도 횟수
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     // 취소 및 환불 관련 필드
     status: text('status').notNull().default('ACTIVE'), // 'ACTIVE', 'CANCELLED', 'EXPIRED'
     cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
@@ -167,9 +149,7 @@ export const subscriptionContracts = pgTable(
     }),
     recurringCancellationReasonCode: text('recurring_cancellation_reason_code'),
     autoRenewal: boolean('auto_renewal').notNull().default(true),
-    updatedAt: timestamp('updated_at', { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index('idx_subscription_billing_date').on(table.billingDate)],
 );
@@ -185,9 +165,7 @@ export const subscriptionEntitlement = pgTable('subscription_entitlement', {
     .references(() => tiers.id),
   startsAt: date('starts_at').notNull(),
   endsAt: date('ends_at').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   closedAt: timestamp('closed_at', { withTimezone: true }),
   isCurrent: boolean('is_current').notNull().default(true),
   sourceBatchId: uuid('source_batch_id').references(() => eventBatches.id),
@@ -203,9 +181,7 @@ export const eventBatches = pgTable('event_batches', {
   type: text('type').notNull(),
   adminId: text('admin_id'),
   effectiveDate: date('effective_date').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
 /**
@@ -217,12 +193,8 @@ export const cancellationReasons = pgTable('cancellation_reasons', {
   category: text('category').notNull(),
   sortOrder: integer('sort_order').notNull().default(0),
   isActive: boolean('is_active').notNull().default(true),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
 /**
@@ -241,9 +213,7 @@ export const subscriptionContractEvents = pgTable(
     batchId: uuid('batch_id').references(() => eventBatches.id),
     causedBy: text('caused_by').notNull(),
     causedByUserId: text('caused_by_user_id'),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     index('idx_contract_events_contract_id').on(table.contractId),
@@ -260,16 +230,12 @@ export const pauseEvents = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     userId: varchar('user_id').notNull(), // 유저 FK
-    entitlementId: uuid('entitlement_id').references(
-      () => subscriptionEntitlement.id,
-    ), // 권한 FK
+    entitlementId: uuid('entitlement_id').references(() => subscriptionEntitlement.id), // 권한 FK
     eventType: text('event_type').notNull(), // START, EXTEND, CANCEL 등
     effectiveAt: timestamp('effective_at', { withTimezone: true }).notNull(), // 적용일
     previousEventId: uuid('previous_event_id').references(() => pauseEvents.id), // 연장·취소 시 원본 이벤트
     reason: text('reason'),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     index('idx_pause_events_user').on(table.userId),
@@ -298,9 +264,7 @@ export const pauseEventDetails = pgTable(
       .references(() => pauseEventDetails.id),
     startsAt: date('starts_at').notNull(), // 일시정지 시작일
     endsAt: date('ends_at').notNull(), // 일시정지 종료일
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     index('idx_pause_event_details_user').on(table.userId),
@@ -332,40 +296,34 @@ export const planRelations = relations(plan, ({ one, many }) => ({
   contracts: many(subscriptionContracts),
 }));
 
-export const subscriptionContractsRelations = relations(
-  subscriptionContracts,
-  ({ one, many }) => ({
-    plan: one(plan, {
-      fields: [subscriptionContracts.planId],
-      references: [plan.id],
-    }),
-    // 정기결제 Dunning 관계 (선택적)
-    dunningQueue: one(membershipDunningQueue, {
-      fields: [subscriptionContracts.id],
-      references: [membershipDunningQueue.contractId],
-    }),
-    billingEvents: many(billingEvents),
+export const subscriptionContractsRelations = relations(subscriptionContracts, ({ one, many }) => ({
+  plan: one(plan, {
+    fields: [subscriptionContracts.planId],
+    references: [plan.id],
   }),
-);
+  // 정기결제 Dunning 관계 (선택적)
+  dunningQueue: one(membershipDunningQueue, {
+    fields: [subscriptionContracts.id],
+    references: [membershipDunningQueue.contractId],
+  }),
+  billingEvents: many(billingEvents),
+}));
 
-export const subscriptionEntitlementRelations = relations(
-  subscriptionEntitlement,
-  ({ one, many }) => ({
-    tier: one(tiers, {
-      fields: [subscriptionEntitlement.tierId],
-      references: [tiers.id],
-    }),
-    sourceBatch: one(eventBatches, {
-      fields: [subscriptionEntitlement.sourceBatchId],
-      references: [eventBatches.id],
-    }),
-    closedBatch: one(eventBatches, {
-      fields: [subscriptionEntitlement.closedBatchId],
-      references: [eventBatches.id],
-    }),
-    pauseEventDetails: many(pauseEventDetails),
+export const subscriptionEntitlementRelations = relations(subscriptionEntitlement, ({ one, many }) => ({
+  tier: one(tiers, {
+    fields: [subscriptionEntitlement.tierId],
+    references: [tiers.id],
   }),
-);
+  sourceBatch: one(eventBatches, {
+    fields: [subscriptionEntitlement.sourceBatchId],
+    references: [eventBatches.id],
+  }),
+  closedBatch: one(eventBatches, {
+    fields: [subscriptionEntitlement.closedBatchId],
+    references: [eventBatches.id],
+  }),
+  pauseEventDetails: many(pauseEventDetails),
+}));
 
 export const eventBatchesRelations = relations(eventBatches, ({ many }) => ({
   sourceEntitlements: many(subscriptionEntitlement, {
@@ -388,23 +346,20 @@ export const pauseEventsRelations = relations(pauseEvents, ({ one, many }) => ({
   eventDetails: many(pauseEventDetails),
 }));
 
-export const pauseEventDetailsRelations = relations(
-  pauseEventDetails,
-  ({ one }) => ({
-    pauseEvent: one(pauseEvents, {
-      fields: [pauseEventDetails.pauseEventId],
-      references: [pauseEvents.id],
-    }),
-    entitlement: one(subscriptionEntitlement, {
-      fields: [pauseEventDetails.entitlementId],
-      references: [subscriptionEntitlement.id],
-    }),
-    originalDetail: one(pauseEventDetails, {
-      fields: [pauseEventDetails.originalDetailId],
-      references: [pauseEventDetails.id],
-    }),
+export const pauseEventDetailsRelations = relations(pauseEventDetails, ({ one }) => ({
+  pauseEvent: one(pauseEvents, {
+    fields: [pauseEventDetails.pauseEventId],
+    references: [pauseEvents.id],
   }),
-);
+  entitlement: one(subscriptionEntitlement, {
+    fields: [pauseEventDetails.entitlementId],
+    references: [subscriptionEntitlement.id],
+  }),
+  originalDetail: one(pauseEventDetails, {
+    fields: [pauseEventDetails.originalDetailId],
+    references: [pauseEventDetails.id],
+  }),
+}));
 
 // =================================================================
 // 정기결제 Dunning 관리 (선택적)
@@ -424,12 +379,8 @@ export const membershipDunningQueue = pgTable('membership_dunning_queue', {
   maxAttempts: integer('max_attempts').notNull().default(3),
   lastErrorCode: text('last_error_code'),
   lastErrorMessage: text('last_error_message'),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
 /**
@@ -447,23 +398,18 @@ export const billingEvents = pgTable(
     amount: integer('amount'),
     errorCode: text('error_code'),
     errorMessage: text('error_message'),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index('idx_billing_events_contract').on(table.contractId)],
 );
 
 // Dunning Queue Relations
-export const membershipDunningQueueRelations = relations(
-  membershipDunningQueue,
-  ({ one }) => ({
-    contract: one(subscriptionContracts, {
-      fields: [membershipDunningQueue.contractId],
-      references: [subscriptionContracts.id],
-    }),
+export const membershipDunningQueueRelations = relations(membershipDunningQueue, ({ one }) => ({
+  contract: one(subscriptionContracts, {
+    fields: [membershipDunningQueue.contractId],
+    references: [subscriptionContracts.id],
   }),
-);
+}));
 
 // Billing Events Relations
 export const billingEventsRelations = relations(billingEvents, ({ one }) => ({
@@ -483,12 +429,8 @@ export const subscriptionPolicies = pgTable('subscription_policies', {
   isActive: boolean('is_active').default(true).notNull(),
   validFrom: date('valid_from'),
   validUntil: date('valid_until'),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
 // =================================================================
@@ -508,12 +450,8 @@ export const membershipCycleBenefits = pgTable(
     orderCount: integer('order_count').notNull().default(0),
     subscriptionId: varchar('subscription_id').notNull(),
     cycleNumber: integer('cycle_number').notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     primaryKey({ columns: [table.userId, table.cycleStartDate] }),
@@ -538,9 +476,7 @@ export const membershipDiscountEvents = pgTable(
     orderDate: timestamp('order_date', { withTimezone: true }).notNull(),
     isCancelled: boolean('is_cancelled').notNull().default(false),
     cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     index('idx_events_user_cycle').on(table.userId, table.cycleStartDate),
@@ -550,29 +486,23 @@ export const membershipDiscountEvents = pgTable(
 );
 
 // Relations for Benefits Tracking
-export const membershipCycleBenefitsRelations = relations(
-  membershipCycleBenefits,
-  ({ one }) => ({
-    subscription: one(subscriptionContracts, {
-      fields: [membershipCycleBenefits.subscriptionId],
-      references: [subscriptionContracts.id],
-    }),
+export const membershipCycleBenefitsRelations = relations(membershipCycleBenefits, ({ one }) => ({
+  subscription: one(subscriptionContracts, {
+    fields: [membershipCycleBenefits.subscriptionId],
+    references: [subscriptionContracts.id],
   }),
-);
+}));
 
-export const membershipDiscountEventsRelations = relations(
-  membershipDiscountEvents,
-  ({ one }) => ({
-    subscription: one(subscriptionContracts, {
-      fields: [membershipDiscountEvents.subscriptionId],
-      references: [subscriptionContracts.id],
-    }),
-    tier: one(tiers, {
-      fields: [membershipDiscountEvents.tierId],
-      references: [tiers.id],
-    }),
+export const membershipDiscountEventsRelations = relations(membershipDiscountEvents, ({ one }) => ({
+  subscription: one(subscriptionContracts, {
+    fields: [membershipDiscountEvents.subscriptionId],
+    references: [subscriptionContracts.id],
   }),
-);
+  tier: one(tiers, {
+    fields: [membershipDiscountEvents.tierId],
+    references: [tiers.id],
+  }),
+}));
 
 // =================================================================
 // 웰컴 멤버십 구매 자격 테이블
@@ -599,9 +529,7 @@ export const welcomeMembershipEligibility = pgTable(
     computedAt: timestamp('computed_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [
-    index('idx_wm_eligibility_has_purchased').on(table.hasPurchased),
-  ],
+  (table) => [index('idx_wm_eligibility_has_purchased').on(table.hasPurchased)],
 );
 
 // ===============================

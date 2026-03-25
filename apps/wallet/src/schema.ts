@@ -18,13 +18,7 @@ import { idempotencyKeys } from './domain/idempotency/idempotency.schema';
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
-export const paymentMethodTypeEnum = pgEnum('payment_method_type', [
-  'POINTS',
-  'CARD',
-  'BANK_TRANSFER',
-  'BNPL',
-  'TOSS',
-]);
+export const paymentMethodTypeEnum = pgEnum('payment_method_type', ['POINTS', 'CARD', 'BANK_TRANSFER', 'BNPL', 'TOSS']);
 
 export const paymentIntentStatusEnum = pgEnum('payment_intent_status', [
   'CREATED',
@@ -37,12 +31,7 @@ export const paymentIntentStatusEnum = pgEnum('payment_intent_status', [
   'CANCELED',
 ]);
 
-export const chargeOperationEnum = pgEnum('charge_operation', [
-  'AUTHORIZE',
-  'CAPTURE',
-  'CANCEL',
-  'REFUND',
-]);
+export const chargeOperationEnum = pgEnum('charge_operation', ['AUTHORIZE', 'CAPTURE', 'CANCEL', 'REFUND']);
 
 export const chargeStatusEnum = pgEnum('charge_status', [
   'CREATED',
@@ -54,17 +43,9 @@ export const chargeStatusEnum = pgEnum('charge_status', [
   'REQUIRES_ACTION',
 ]);
 
-export const refundStatusEnum = pgEnum('refund_status', [
-  'PENDING',
-  'SUCCEEDED',
-  'FAILED',
-]);
+export const refundStatusEnum = pgEnum('refund_status', ['PENDING', 'SUCCEEDED', 'FAILED']);
 
-export const paymentStateEntityTypeEnum = pgEnum('payment_state_entity_type', [
-  'INTENT',
-  'CHARGE',
-  'REFUND',
-]);
+export const paymentStateEntityTypeEnum = pgEnum('payment_state_entity_type', ['INTENT', 'CHARGE', 'REFUND']);
 
 export const paymentStateTriggerTypeEnum = pgEnum('payment_state_trigger_type', [
   'SYSTEM',
@@ -82,23 +63,16 @@ export const outboxStatusEnum = pgEnum('wallet_outbox_status', [
   'DEAD_LETTER',
 ]);
 
-export const providerWebhookReceiptStatusEnum = pgEnum(
-  'provider_webhook_receipt_status',
-  ['RECEIVED', 'PROCESSED', 'IGNORED_DUPLICATE', 'FAILED'],
-);
-
-export const pointEventTypeEnum = pgEnum('point_event_type', [
-  'EARN',
-  'REDEEM',
-  'EARN_CANCEL',
-  'REDEEM_CANCEL',
+export const providerWebhookReceiptStatusEnum = pgEnum('provider_webhook_receipt_status', [
+  'RECEIVED',
+  'PROCESSED',
+  'IGNORED_DUPLICATE',
+  'FAILED',
 ]);
 
-export const pointHoldStatusEnum = pgEnum('point_hold_status', [
-  'AUTHORIZED',
-  'CAPTURED',
-  'CANCELLED',
-]);
+export const pointEventTypeEnum = pgEnum('point_event_type', ['EARN', 'REDEEM', 'EARN_CANCEL', 'REDEEM_CANCEL']);
+
+export const pointHoldStatusEnum = pgEnum('point_hold_status', ['AUTHORIZED', 'CAPTURED', 'CANCELLED']);
 
 export const paymentIntentItemTypeEnum = pgEnum('payment_intent_item_type', [
   'PRODUCT',
@@ -107,15 +81,12 @@ export const paymentIntentItemTypeEnum = pgEnum('payment_intent_item_type', [
   'OTHER',
 ]);
 
-export const paymentIntentItemDiscountKindEnum = pgEnum(
-  'payment_intent_item_discount_kind',
-  ['ITEM_PER_UNIT', 'ITEM_FLAT'],
-);
+export const paymentIntentItemDiscountKindEnum = pgEnum('payment_intent_item_discount_kind', [
+  'ITEM_PER_UNIT',
+  'ITEM_FLAT',
+]);
 
-export const paymentIntentOrderDiscountKindEnum = pgEnum(
-  'payment_intent_order_discount_kind',
-  ['ORDER'],
-);
+export const paymentIntentOrderDiscountKindEnum = pgEnum('payment_intent_order_discount_kind', ['ORDER']);
 
 // ─── Tables ──────────────────────────────────────────────────────────────────
 
@@ -162,10 +133,7 @@ export const paymentIntents = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    check(
-      'payment_intents_payable_amount_non_negative',
-      sql`${table.payableAmount} >= 0`,
-    ),
+    check('payment_intents_payable_amount_non_negative', sql`${table.payableAmount} >= 0`),
     uniqueIndex('uq_payment_intents_client_secret').on(table.clientSecret),
     index('idx_payment_intents_status_expires_at').on(table.status, table.expiresAt),
     index('idx_payment_intents_user_created_at').on(table.userId, table.createdAt),
@@ -186,9 +154,7 @@ export const paymentIntentItems = pgTable(
     unitPrice: integer('unit_price').notNull(),
     quantity: integer('quantity').notNull(),
     baseAmount: integer('base_amount').notNull(),
-    itemDiscountPerUnitTotal: integer('item_discount_per_unit_total')
-      .notNull()
-      .default(0),
+    itemDiscountPerUnitTotal: integer('item_discount_per_unit_total').notNull().default(0),
     itemDiscountFlatTotal: integer('item_discount_flat_total').notNull().default(0),
     payableAmount: integer('payable_amount').notNull(),
     metadata: jsonb('metadata')
@@ -202,18 +168,9 @@ export const paymentIntentItems = pgTable(
     check('payment_intent_items_unit_price_non_negative', sql`${table.unitPrice} >= 0`),
     check('payment_intent_items_quantity_positive', sql`${table.quantity} > 0`),
     check('payment_intent_items_base_amount_non_negative', sql`${table.baseAmount} >= 0`),
-    check(
-      'payment_intent_items_discount_per_unit_non_negative',
-      sql`${table.itemDiscountPerUnitTotal} >= 0`,
-    ),
-    check(
-      'payment_intent_items_discount_flat_non_negative',
-      sql`${table.itemDiscountFlatTotal} >= 0`,
-    ),
-    check(
-      'payment_intent_items_payable_amount_non_negative',
-      sql`${table.payableAmount} >= 0`,
-    ),
+    check('payment_intent_items_discount_per_unit_non_negative', sql`${table.itemDiscountPerUnitTotal} >= 0`),
+    check('payment_intent_items_discount_flat_non_negative', sql`${table.itemDiscountFlatTotal} >= 0`),
+    check('payment_intent_items_payable_amount_non_negative', sql`${table.payableAmount} >= 0`),
     uniqueIndex('uq_payment_intent_items_intent_line').on(table.intentId, table.lineId),
     index('idx_payment_intent_items_intent_created_at').on(table.intentId, table.createdAt),
   ],
@@ -299,9 +256,7 @@ export const charges = pgTable(
     uniqueIndex('uq_charges_provider_idempotency_key').on(table.providerIdempotencyKey),
     uniqueIndex('uq_charges_active_intent_operation')
       .on(table.intentId, table.operation)
-      .where(
-        sql`${table.status} in ('CREATED', 'PENDING', 'REQUIRES_ACTION')`,
-      ),
+      .where(sql`${table.status} in ('CREATED', 'PENDING', 'REQUIRES_ACTION')`),
     index('idx_charges_intent_created_at').on(table.intentId, table.createdAt),
     index('idx_charges_status_created_at').on(table.status, table.createdAt),
   ],
@@ -353,15 +308,8 @@ export const paymentStateTransitions = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('idx_payment_state_transitions_entity').on(
-      table.entityType,
-      table.entityId,
-      table.occurredAt,
-    ),
-    index('idx_payment_state_transitions_correlation').on(
-      table.correlationId,
-      table.occurredAt,
-    ),
+    index('idx_payment_state_transitions_entity').on(table.entityType, table.entityId, table.occurredAt),
+    index('idx_payment_state_transitions_correlation').on(table.correlationId, table.occurredAt),
   ],
 );
 
@@ -388,14 +336,8 @@ export const outboxEvents = pgTable(
   },
   (table) => [
     uniqueIndex('uq_outbox_events_message_id').on(table.messageId),
-    index('idx_outbox_events_status_next_attempt_at').on(
-      table.status,
-      table.nextAttemptAt,
-    ),
-    index('idx_outbox_events_partition_created_at').on(
-      table.partitionKey,
-      table.createdAt,
-    ),
+    index('idx_outbox_events_status_next_attempt_at').on(table.status, table.nextAttemptAt),
+    index('idx_outbox_events_partition_created_at').on(table.partitionKey, table.createdAt),
   ],
 );
 
@@ -415,14 +357,8 @@ export const providerWebhookReceipts = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex('uq_provider_webhook_receipts_provider_event').on(
-      table.providerType,
-      table.providerEventId,
-    ),
-    index('idx_provider_webhook_receipts_status_received_at').on(
-      table.status,
-      table.receivedAt,
-    ),
+    uniqueIndex('uq_provider_webhook_receipts_provider_event').on(table.providerType, table.providerEventId),
+    index('idx_provider_webhook_receipts_status_received_at').on(table.status, table.receivedAt),
   ],
 );
 
@@ -457,15 +393,9 @@ export const pointEvents = pgTable(
         (${table.eventType} in ('REDEEM', 'EARN_CANCEL') and ${table.amount} < 0)
       )`,
     ),
-    uniqueIndex('uq_point_events_provider_idempotency_key').on(
-      table.providerIdempotencyKey,
-    ),
+    uniqueIndex('uq_point_events_provider_idempotency_key').on(table.providerIdempotencyKey),
     index('idx_point_events_user_created_at').on(table.userId, table.createdAt),
-    index('idx_point_events_intent_leg_created_at').on(
-      table.intentId,
-      table.legId,
-      table.createdAt,
-    ),
+    index('idx_point_events_intent_leg_created_at').on(table.intentId, table.legId, table.createdAt),
   ],
 );
 
@@ -479,12 +409,8 @@ export const pointEventDetails = pgTable(
     userId: varchar('user_id', { length: 128 }).notNull(),
     eventType: pointEventTypeEnum('event_type').notNull(),
     amount: integer('amount').notNull(),
-    earnedEventDetailId: uuid('earned_event_detail_id').references(
-      (): AnyPgColumn => pointEventDetails.id,
-    ),
-    originalEventDetailId: uuid('original_event_detail_id').references(
-      (): AnyPgColumn => pointEventDetails.id,
-    ),
+    earnedEventDetailId: uuid('earned_event_detail_id').references((): AnyPgColumn => pointEventDetails.id),
+    originalEventDetailId: uuid('original_event_detail_id').references((): AnyPgColumn => pointEventDetails.id),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
@@ -502,10 +428,7 @@ export const pointEventDetails = pgTable(
       table.earnedEventDetailId,
       table.createdAt,
     ),
-    index('idx_point_event_details_point_event_created_at').on(
-      table.pointEventId,
-      table.createdAt,
-    ),
+    index('idx_point_event_details_point_event_created_at').on(table.pointEventId, table.createdAt),
   ],
 );
 
@@ -536,9 +459,7 @@ export const pointHolds = pgTable(
   },
   (table) => [
     check('point_holds_amount_positive', sql`${table.amount} > 0`),
-    uniqueIndex('uq_point_holds_authorize_provider_idempotency_key').on(
-      table.authorizeProviderIdempotencyKey,
-    ),
+    uniqueIndex('uq_point_holds_authorize_provider_idempotency_key').on(table.authorizeProviderIdempotencyKey),
     uniqueIndex('uq_point_holds_capture_provider_idempotency_key')
       .on(table.captureProviderIdempotencyKey)
       .where(sql`${table.captureProviderIdempotencyKey} is not null`),
@@ -548,11 +469,7 @@ export const pointHolds = pgTable(
     uniqueIndex('uq_point_holds_leg_authorized')
       .on(table.legId)
       .where(sql`${table.status} = 'AUTHORIZED'`),
-    index('idx_point_holds_user_status_created_at').on(
-      table.userId,
-      table.status,
-      table.createdAt,
-    ),
+    index('idx_point_holds_user_status_created_at').on(table.userId, table.status, table.createdAt),
     index('idx_point_holds_leg_created_at').on(table.legId, table.createdAt),
   ],
 );
@@ -572,10 +489,7 @@ export const pointHoldDetails = pgTable(
   },
   (table) => [
     check('point_hold_details_amount_positive', sql`${table.amount} > 0`),
-    uniqueIndex('uq_point_hold_details_hold_earned_detail').on(
-      table.holdId,
-      table.earnedEventDetailId,
-    ),
+    uniqueIndex('uq_point_hold_details_hold_earned_detail').on(table.holdId, table.earnedEventDetailId),
     index('idx_point_hold_details_earned_event_detail_id').on(table.earnedEventDetailId),
   ],
 );
@@ -587,19 +501,14 @@ export type PaymentIntentStatus = (typeof paymentIntentStatusEnum.enumValues)[nu
 export type ChargeOperation = (typeof chargeOperationEnum.enumValues)[number];
 export type ChargeStatus = (typeof chargeStatusEnum.enumValues)[number];
 export type RefundStatus = (typeof refundStatusEnum.enumValues)[number];
-export type PaymentStateEntityType =
-  (typeof paymentStateEntityTypeEnum.enumValues)[number];
-export type PaymentStateTriggerType =
-  (typeof paymentStateTriggerTypeEnum.enumValues)[number];
+export type PaymentStateEntityType = (typeof paymentStateEntityTypeEnum.enumValues)[number];
+export type PaymentStateTriggerType = (typeof paymentStateTriggerTypeEnum.enumValues)[number];
 export type OutboxStatus = (typeof outboxStatusEnum.enumValues)[number];
 export type PointEventType = (typeof pointEventTypeEnum.enumValues)[number];
 export type PointHoldStatus = (typeof pointHoldStatusEnum.enumValues)[number];
-export type PaymentIntentItemType =
-  (typeof paymentIntentItemTypeEnum.enumValues)[number];
-export type PaymentIntentItemDiscountKind =
-  (typeof paymentIntentItemDiscountKindEnum.enumValues)[number];
-export type PaymentIntentOrderDiscountKind =
-  (typeof paymentIntentOrderDiscountKindEnum.enumValues)[number];
+export type PaymentIntentItemType = (typeof paymentIntentItemTypeEnum.enumValues)[number];
+export type PaymentIntentItemDiscountKind = (typeof paymentIntentItemDiscountKindEnum.enumValues)[number];
+export type PaymentIntentOrderDiscountKind = (typeof paymentIntentOrderDiscountKindEnum.enumValues)[number];
 
 // ─── Schema object ────────────────────────────────────────────────────────────
 

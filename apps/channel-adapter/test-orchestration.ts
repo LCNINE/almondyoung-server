@@ -53,10 +53,7 @@ class OrchestrationTester {
     const coupangAdapter = new CoupangAdapter(httpService);
     const factory = new ChannelAdapterFactory(naverAdapter, coupangAdapter);
 
-    this.orchestrator = new AdapterOrchestrationService(
-      factory,
-      new SyncStatusService(),
-    );
+    this.orchestrator = new AdapterOrchestrationService(factory, new SyncStatusService());
     this.channelAdapter = new ChannelAdapterService(this.orchestrator);
 
     this.logger.log('🏗️ 오케스트레이션 테스터 초기화 완료');
@@ -73,10 +70,7 @@ class OrchestrationTester {
 
     try {
       // 1. ChannelAdapterService를 통한 폴링 테스트
-      const events = await this.channelAdapter.poll(
-        'naver_smartstore',
-        'orders',
-      );
+      const events = await this.channelAdapter.poll('naver_smartstore', 'orders');
 
       this.logger.log(`✅ 폴링 테스트 성공: ${events.length}건의 이벤트 수신`);
 
@@ -96,13 +90,8 @@ class OrchestrationTester {
       }
 
       // 2. 직접 오케스트레이터를 통한 폴링 테스트
-      const directEvents = await this.orchestrator.pollAndPublish(
-        'naver_smartstore',
-        'orders',
-      );
-      this.logger.log(
-        `✅ 직접 오케스트레이터 폴링 성공: ${directEvents.length}건`,
-      );
+      const directEvents = await this.orchestrator.pollAndPublish('naver_smartstore', 'orders');
+      this.logger.log(`✅ 직접 오케스트레이터 폴링 성공: ${directEvents.length}건`);
     } catch (error) {
       this.logger.error('❌ 폴링 테스트 실패:', error.message);
       throw error;
@@ -127,14 +116,9 @@ class OrchestrationTester {
       };
 
       // 1. ChannelAdapterService를 통한 웹훅 처리
-      const events = await this.channelAdapter.incoming(
-        'naver_smartstore',
-        mockNaverWebhook,
-      );
+      const events = await this.channelAdapter.incoming('naver_smartstore', mockNaverWebhook);
 
-      this.logger.log(
-        `✅ 웹훅 처리 테스트 성공: ${events.length}건의 이벤트 생성`,
-      );
+      this.logger.log(`✅ 웹훅 처리 테스트 성공: ${events.length}건의 이벤트 생성`);
 
       if (events.length > 0) {
         this.logger.log('📋 변환된 이벤트:');
@@ -148,10 +132,7 @@ class OrchestrationTester {
         timestamp: new Date().toISOString(),
       };
 
-      const coupangEvents = await this.channelAdapter.incoming(
-        'coupang',
-        mockCoupangWebhook,
-      );
+      const coupangEvents = await this.channelAdapter.incoming('coupang', mockCoupangWebhook);
       this.logger.log(`✅ 쿠팡 웹훅 처리 성공: ${coupangEvents.length}건`);
     } catch (error) {
       this.logger.error('❌ 웹훅 처리 테스트 실패:', error.message);
@@ -180,13 +161,8 @@ class OrchestrationTester {
         dispatchedAt: new Date().toISOString(),
       };
 
-      const dispatchResult = await this.channelAdapter.command(
-        'naver_smartstore',
-        dispatchCommand,
-      );
-      this.logger.log(
-        `✅ 네이버 발송처리 명령 테스트: ${dispatchResult.success ? '성공' : '실패'}`,
-      );
+      const dispatchResult = await this.channelAdapter.command('naver_smartstore', dispatchCommand);
+      this.logger.log(`✅ 네이버 발송처리 명령 테스트: ${dispatchResult.success ? '성공' : '실패'}`);
 
       // 2. 쿠팡 취소승인 명령 테스트
       const cancelCommand = {
@@ -194,22 +170,12 @@ class OrchestrationTester {
         orderId: 'COUPANG_ORDER_001',
       };
 
-      const cancelResult = await this.channelAdapter.command(
-        'coupang',
-        cancelCommand,
-      );
-      this.logger.log(
-        `✅ 쿠팡 취소승인 명령 테스트: ${cancelResult.success ? '성공' : '실패'}`,
-      );
+      const cancelResult = await this.channelAdapter.command('coupang', cancelCommand);
+      this.logger.log(`✅ 쿠팡 취소승인 명령 테스트: ${cancelResult.success ? '성공' : '실패'}`);
 
       // 3. 직접 오케스트레이터를 통한 명령 실행
-      const directResult = await this.orchestrator.execute(
-        'naver_smartstore',
-        dispatchCommand,
-      );
-      this.logger.log(
-        `✅ 직접 오케스트레이터 명령 실행: ${directResult.success ? '성공' : '실패'}`,
-      );
+      const directResult = await this.orchestrator.execute('naver_smartstore', dispatchCommand);
+      this.logger.log(`✅ 직접 오케스트레이터 명령 실행: ${directResult.success ? '성공' : '실패'}`);
     } catch (error) {
       this.logger.error('❌ 명령 실행 테스트 실패:', error.message);
       throw error;
@@ -231,22 +197,16 @@ class OrchestrationTester {
 
       results.forEach((result) => {
         if (result.success) {
-          this.logger.log(
-            `  ✅ ${result.channel}: ${result.events.length}건 동기화 성공`,
-          );
+          this.logger.log(`  ✅ ${result.channel}: ${result.events.length}건 동기화 성공`);
         } else {
-          this.logger.warn(
-            `  ⚠️ ${result.channel}: 동기화 실패 - ${result.error}`,
-          );
+          this.logger.warn(`  ⚠️ ${result.channel}: 동기화 실패 - ${result.error}`);
         }
       });
 
       const totalEvents = results.reduce((sum, r) => sum + r.events.length, 0);
       const successCount = results.filter((r) => r.success).length;
 
-      this.logger.log(
-        `📊 동기화 요약: ${successCount}/${results.length}개 채널 성공, 총 ${totalEvents}건 이벤트`,
-      );
+      this.logger.log(`📊 동기화 요약: ${successCount}/${results.length}개 채널 성공, 총 ${totalEvents}건 이벤트`);
     } catch (error) {
       this.logger.error('❌ 전체 채널 동기화 테스트 실패:', error.message);
       throw error;
@@ -261,9 +221,7 @@ class OrchestrationTester {
 
     try {
       const status = await this.channelAdapter.getHealthStatus();
-      this.logger.log(
-        `✅ 헬스체크 성공: ${status.isHealthy ? '정상' : '비정상'}`,
-      );
+      this.logger.log(`✅ 헬스체크 성공: ${status.isHealthy ? '정상' : '비정상'}`);
       console.log('서비스 상태:', JSON.stringify(status, null, 2));
     } catch (error) {
       this.logger.error('❌ 헬스체크 테스트 실패:', error.message);
@@ -275,13 +233,7 @@ class OrchestrationTester {
    * InternalOrderEvent 구조 유효성 검증
    */
   private validateInternalOrderEvent(event: any): boolean {
-    const requiredFields = [
-      'channelType',
-      'externalOrderId',
-      'status',
-      'quantity',
-      'priceAmount',
-    ];
+    const requiredFields = ['channelType', 'externalOrderId', 'status', 'quantity', 'priceAmount'];
 
     return requiredFields.every((field) => event[field] !== undefined);
   }

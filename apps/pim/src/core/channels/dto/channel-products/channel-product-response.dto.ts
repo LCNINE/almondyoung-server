@@ -144,4 +144,3 @@ export class MergedChannelProductDto {
   @ApiProperty({ description: '채널별 특화 데이터', required: false })
   channelSpecificData?: Record<string, any>;
 }
-

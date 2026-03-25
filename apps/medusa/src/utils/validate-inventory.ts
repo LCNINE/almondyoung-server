@@ -17,10 +17,7 @@ export type ValidateInventoryInput = {
   }[];
 };
 
-export const validateInventoryForItems = async (
-  input: ValidateInventoryInput,
-  container: any,
-) => {
+export const validateInventoryForItems = async (input: ValidateInventoryInput, container: any) => {
   if (!input.variants?.length) return;
 
   const inventoryService: IInventoryService = container.resolve(Modules.INVENTORY);
@@ -77,14 +74,8 @@ export const validateInventoryForItems = async (
         // variant에 연결된 inventory_item_id 조회
         const inventoryItemId = variantToInventoryMap.get(variant.id);
 
-
         if (!inventoryItemId) {
-          errors.push(
-            new MedusaError(
-              MedusaError.Types.NOT_ALLOWED,
-              `${productName}: 재고 정보가 없습니다`,
-            ),
-          );
+          errors.push(new MedusaError(MedusaError.Types.NOT_ALLOWED, `${productName}: 재고 정보가 없습니다`));
           return;
         }
 
@@ -93,14 +84,8 @@ export const validateInventoryForItems = async (
           inventory_item_id: inventoryItemId,
         });
 
-
         if (!levels.length) {
-          errors.push(
-            new MedusaError(
-              MedusaError.Types.NOT_ALLOWED,
-              `${productName}: 재고 정보가 없습니다`,
-            ),
-          );
+          errors.push(new MedusaError(MedusaError.Types.NOT_ALLOWED, `${productName}: 재고 정보가 없습니다`));
           return;
         }
 
@@ -111,13 +96,12 @@ export const validateInventoryForItems = async (
         }, 0);
 
         if (totalAvailable < item.quantity) {
-          const message = totalAvailable === 0
-            ? `${productName}: 품절된 상품입니다.`
-            : `${productName}: 최대 ${totalAvailable}개까지 구매 가능합니다.`;
+          const message =
+            totalAvailable === 0
+              ? `${productName}: 품절된 상품입니다.`
+              : `${productName}: 최대 ${totalAvailable}개까지 구매 가능합니다.`;
           console.log('messagemessagemessagemessage', message);
-          errors.push(
-            new MedusaError(MedusaError.Types.NOT_ALLOWED, message),
-          );
+          errors.push(new MedusaError(MedusaError.Types.NOT_ALLOWED, message));
         }
       } catch (error: any) {
         console.error('[validate-inventory] 에러:', {
@@ -130,10 +114,7 @@ export const validateInventoryForItems = async (
           errors.push(error);
         } else {
           errors.push(
-            new MedusaError(
-              MedusaError.Types.INVALID_DATA,
-              `${productName}: 재고 확인 중 오류가 발생했습니다`,
-            ),
+            new MedusaError(MedusaError.Types.INVALID_DATA, `${productName}: 재고 확인 중 오류가 발생했습니다`),
           );
         }
       }

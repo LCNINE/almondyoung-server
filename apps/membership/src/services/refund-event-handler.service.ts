@@ -32,9 +32,7 @@ export class RefundEventHandler {
    * Wallet에서 환불 완료 이벤트 수신
    */
   async handleRefundCompleted(event: RefundCompletedEvent): Promise<void> {
-    this.logger.log(
-      `환불 완료 이벤트 수신 - contractId: ${event.contractId}, amount: ${event.amount}`,
-    );
+    this.logger.log(`환불 완료 이벤트 수신 - contractId: ${event.contractId}, amount: ${event.amount}`);
 
     try {
       await this.dbService.db.transaction(async (tx) => {
@@ -51,9 +49,7 @@ export class RefundEventHandler {
 
         // 멱등성 체크: 이미 환불 완료된 경우 스킵
         if (contract.refundCompleted) {
-          this.logger.log(
-            `환불 이미 완료됨 (멱등성) - contractId: ${event.contractId}`,
-          );
+          this.logger.log(`환불 이미 완료됨 (멱등성) - contractId: ${event.contractId}`);
           return;
         }
 
@@ -82,9 +78,7 @@ export class RefundEventHandler {
           })
           .where(eq(schema.subscriptionContracts.id, event.contractId));
 
-        this.logger.log(
-          `✅ 환불 완료 처리 성공 - contractId: ${event.contractId}`,
-        );
+        this.logger.log(`✅ 환불 완료 처리 성공 - contractId: ${event.contractId}`);
       });
     } catch (error: any) {
       // DB 쿼리 에러를 명확한 에러로 변환
@@ -99,9 +93,7 @@ export class RefundEventHandler {
    * Wallet에서 환불 실패 이벤트 수신
    */
   async handleRefundFailed(event: RefundFailedEvent): Promise<void> {
-    this.logger.log(
-      `환불 실패 이벤트 수신 - contractId: ${event.contractId}, error: ${event.errorMessage}`,
-    );
+    this.logger.log(`환불 실패 이벤트 수신 - contractId: ${event.contractId}, error: ${event.errorMessage}`);
 
     try {
       await this.dbService.db.transaction(async (tx) => {
@@ -137,9 +129,7 @@ export class RefundEventHandler {
           })
           .where(eq(schema.subscriptionContracts.id, event.contractId));
 
-        this.logger.warn(
-          `⚠️ 환불 실패 처리 완료 - contractId: ${event.contractId}`,
-        );
+        this.logger.warn(`⚠️ 환불 실패 처리 완료 - contractId: ${event.contractId}`);
 
         // 3. 알림 발송 (추후 구현)
         // TODO: 어드민에게 환불 실패 알림 발송

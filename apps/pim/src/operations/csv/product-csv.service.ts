@@ -3,11 +3,7 @@ import * as Papa from 'papaparse';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { pimSchema, productMasters, productMasterVersions, productAuditLog } from '../../schema';
-import {
-  ProductCsvRow,
-  CsvValidationError,
-  CsvImportResult,
-} from './dto';
+import { ProductCsvRow, CsvValidationError, CsvImportResult } from './dto';
 import { NewProductMaster, NewProductMasterVersion } from '../../types';
 import { inArray, isNull } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
@@ -17,7 +13,7 @@ export class ProductCsvService {
   constructor(
     @InjectTypedDb<typeof pimSchema>()
     private readonly dbService: DbService<typeof pimSchema>,
-  ) { }
+  ) {}
 
   private get db() {
     return this.dbService.db;
@@ -93,13 +89,8 @@ export class ProductCsvService {
       }
 
       // Validate productType
-      if (
-        row.productType &&
-        !['regular_sale', 'limited_edition'].includes(row.productType)
-      ) {
-        errors.push(
-          'Product type must be one of: regular_sale, limited_edition',
-        );
+      if (row.productType && !['regular_sale', 'limited_edition'].includes(row.productType)) {
+        errors.push('Product type must be one of: regular_sale, limited_edition');
       }
 
       // Validate ageRestriction
@@ -139,10 +130,7 @@ export class ProductCsvService {
   /**
    * Import products from CSV data
    */
-  async importProducts(
-    csvData: ProductCsvRow[],
-    userId: string,
-  ): Promise<CsvImportResult> {
+  async importProducts(csvData: ProductCsvRow[], userId: string): Promise<CsvImportResult> {
     const { valid, invalid } = this.validateCsvData(csvData);
 
     if (valid.length === 0) {
@@ -230,15 +218,9 @@ export class ProductCsvService {
     let products;
 
     if (productIds && productIds.length > 0) {
-      products = await this.db
-        .select()
-        .from(productMasters)
-        .where(inArray(productMasters.id, productIds));
+      products = await this.db.select().from(productMasters).where(inArray(productMasters.id, productIds));
     } else {
-      products = await this.db
-        .select()
-        .from(productMasters)
-        .where(isNull(productMasters.deletedAt));
+      products = await this.db.select().from(productMasters).where(isNull(productMasters.deletedAt));
     }
 
     // Transform to CSV-friendly format
@@ -297,4 +279,3 @@ export class ProductCsvService {
     return Papa.unparse(template);
   }
 }
-

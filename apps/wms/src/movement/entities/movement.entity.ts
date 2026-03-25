@@ -1,1 +1,1 @@
-export class Movement { }
+export class Movement {}

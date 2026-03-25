@@ -1,12 +1,4 @@
-import {
-  Controller,
-  Get,
-  Param,
-  UseFilters,
-  HttpException,
-  HttpStatus,
-  Logger,
-} from '@nestjs/common';
+import { Controller, Get, Param, UseFilters, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { PlanService } from '../services/plan.service';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
@@ -37,11 +29,7 @@ export class PlanController {
   /**
    * 파라미터 유효성 검증 헬퍼 메서드
    */
-  private validateParam(
-    value: string,
-    schema: z.ZodSchema<string>,
-    paramName: string,
-  ): string {
+  private validateParam(value: string, schema: z.ZodSchema<string>, paramName: string): string {
     try {
       return schema.parse(value);
     } catch (error) {
@@ -56,19 +44,19 @@ export class PlanController {
    * 모든 활성 플랜 목록 조회
    */
   @Get('plans')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: '모든 활성 플랜 목록 조회',
-    description: '활성화된 모든 구독 플랜을 티어 정보와 함께 조회합니다.'
+    description: '활성화된 모든 구독 플랜을 티어 정보와 함께 조회합니다.',
   })
-  @ApiResponse({ 
-    status: 200, 
+  @ApiResponse({
+    status: 200,
     description: '플랜 목록 조회 성공',
-    type: PlansListResponseDto
+    type: PlansListResponseDto,
   })
-  @ApiResponse({ 
-    status: 500, 
+  @ApiResponse({
+    status: 500,
     description: '서버 오류',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
   async getAllPlans() {
     try {
@@ -91,31 +79,16 @@ export class PlanController {
       this.logger.error('❌ 플랜 목록 조회 실패:', error.message);
 
       // CTO 스타일: 에러 메시지 패턴 기반 HTTP 응답 변환
-      if (
-        error.message.includes('not found') ||
-        error.message.includes('찾을 수 없')
-      ) {
-        throw new HttpException(
-          '플랜 목록을 찾을 수 없습니다.',
-          HttpStatus.NOT_FOUND,
-        );
+      if (error.message.includes('not found') || error.message.includes('찾을 수 없')) {
+        throw new HttpException('플랜 목록을 찾을 수 없습니다.', HttpStatus.NOT_FOUND);
       }
 
-      if (
-        error.message.includes('invalid') ||
-        error.message.includes('잘못된')
-      ) {
-        throw new HttpException(
-          '잘못된 플랜 조회 요청입니다.',
-          HttpStatus.BAD_REQUEST,
-        );
+      if (error.message.includes('invalid') || error.message.includes('잘못된')) {
+        throw new HttpException('잘못된 플랜 조회 요청입니다.', HttpStatus.BAD_REQUEST);
       }
 
       // 기타 모든 오류는 500으로 처리
-      throw new HttpException(
-        '플랜 목록 조회 중 오류가 발생했습니다.',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('플랜 목록 조회 중 오류가 발생했습니다.', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -123,29 +96,29 @@ export class PlanController {
    * 특정 플랜 상세 조회
    */
   @Get('plans/:planId')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: '특정 플랜 상세 조회',
-    description: '플랜 ID로 특정 플랜의 상세 정보를 티어 정보와 함께 조회합니다.'
+    description: '플랜 ID로 특정 플랜의 상세 정보를 티어 정보와 함께 조회합니다.',
   })
-  @ApiParam({ 
-    name: 'planId', 
+  @ApiParam({
+    name: 'planId',
     description: '플랜 UUID',
-    example: '123e4567-e89b-12d3-a456-426614174000'
+    example: '123e4567-e89b-12d3-a456-426614174000',
   })
-  @ApiResponse({ 
-    status: 200, 
+  @ApiResponse({
+    status: 200,
     description: '플랜 상세 조회 성공',
-    type: PlanDetailsResponseDto
+    type: PlanDetailsResponseDto,
   })
-  @ApiResponse({ 
-    status: 400, 
+  @ApiResponse({
+    status: 400,
     description: '잘못된 플랜 ID',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
-  @ApiResponse({ 
-    status: 404, 
+  @ApiResponse({
+    status: 404,
     description: '플랜을 찾을 수 없음',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
   async getPlanDetails(@Param('planId') planId: string) {
     try {
@@ -171,31 +144,16 @@ export class PlanController {
       this.logger.error(`❌ 플랜 상세 조회 실패 (${planId}):`, error.message);
 
       // CTO 스타일: 에러 메시지 패턴 기반 HTTP 응답 변환
-      if (
-        error.message.includes('not found') ||
-        error.message.includes('찾을 수 없')
-      ) {
-        throw new HttpException(
-          `플랜을 찾을 수 없습니다: ${planId}`,
-          HttpStatus.NOT_FOUND,
-        );
+      if (error.message.includes('not found') || error.message.includes('찾을 수 없')) {
+        throw new HttpException(`플랜을 찾을 수 없습니다: ${planId}`, HttpStatus.NOT_FOUND);
       }
 
-      if (
-        error.message.includes('invalid') ||
-        error.message.includes('잘못된')
-      ) {
-        throw new HttpException(
-          '잘못된 플랜 ID입니다.',
-          HttpStatus.BAD_REQUEST,
-        );
+      if (error.message.includes('invalid') || error.message.includes('잘못된')) {
+        throw new HttpException('잘못된 플랜 ID입니다.', HttpStatus.BAD_REQUEST);
       }
 
       // 기타 모든 오류는 500으로 처리
-      throw new HttpException(
-        '플랜 상세 조회 중 오류가 발생했습니다.',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('플랜 상세 조회 중 오류가 발생했습니다.', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -203,19 +161,19 @@ export class PlanController {
    * 모든 티어 목록 조회
    */
   @Get('tiers')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: '모든 티어 목록 조회',
-    description: '우선순위 순으로 정렬된 모든 구독 티어를 조회합니다.'
+    description: '우선순위 순으로 정렬된 모든 구독 티어를 조회합니다.',
   })
-  @ApiResponse({ 
-    status: 200, 
+  @ApiResponse({
+    status: 200,
     description: '티어 목록 조회 성공',
-    type: TiersListResponseDto
+    type: TiersListResponseDto,
   })
-  @ApiResponse({ 
-    status: 500, 
+  @ApiResponse({
+    status: 500,
     description: '서버 오류',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
   async getAllTiers() {
     try {
@@ -238,31 +196,16 @@ export class PlanController {
       this.logger.error('❌ 티어 목록 조회 실패:', error.message);
 
       // CTO 스타일: 에러 메시지 패턴 기반 HTTP 응답 변환
-      if (
-        error.message.includes('not found') ||
-        error.message.includes('찾을 수 없')
-      ) {
-        throw new HttpException(
-          '티어 목록을 찾을 수 없습니다.',
-          HttpStatus.NOT_FOUND,
-        );
+      if (error.message.includes('not found') || error.message.includes('찾을 수 없')) {
+        throw new HttpException('티어 목록을 찾을 수 없습니다.', HttpStatus.NOT_FOUND);
       }
 
-      if (
-        error.message.includes('invalid') ||
-        error.message.includes('잘못된')
-      ) {
-        throw new HttpException(
-          '잘못된 티어 조회 요청입니다.',
-          HttpStatus.BAD_REQUEST,
-        );
+      if (error.message.includes('invalid') || error.message.includes('잘못된')) {
+        throw new HttpException('잘못된 티어 조회 요청입니다.', HttpStatus.BAD_REQUEST);
       }
 
       // 기타 모든 오류는 500으로 처리
-      throw new HttpException(
-        '티어 목록 조회 중 오류가 발생했습니다.',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('티어 목록 조회 중 오류가 발생했습니다.', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -270,29 +213,29 @@ export class PlanController {
    * 특정 티어의 모든 플랜 조회
    */
   @Get('tiers/:tierId/plans')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: '특정 티어의 모든 플랜 조회',
-    description: '티어 ID로 해당 티어에 속한 모든 활성 플랜을 조회합니다.'
+    description: '티어 ID로 해당 티어에 속한 모든 활성 플랜을 조회합니다.',
   })
-  @ApiParam({ 
-    name: 'tierId', 
+  @ApiParam({
+    name: 'tierId',
     description: '티어 UUID',
-    example: '123e4567-e89b-12d3-a456-426614174000'
+    example: '123e4567-e89b-12d3-a456-426614174000',
   })
-  @ApiResponse({ 
-    status: 200, 
+  @ApiResponse({
+    status: 200,
     description: '티어별 플랜 조회 성공',
-    type: TierPlansResponseDto
+    type: TierPlansResponseDto,
   })
-  @ApiResponse({ 
-    status: 400, 
+  @ApiResponse({
+    status: 400,
     description: '잘못된 티어 ID',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
-  @ApiResponse({ 
-    status: 404, 
+  @ApiResponse({
+    status: 404,
     description: '티어를 찾을 수 없음',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
   async getPlansByTier(@Param('tierId') tierId: string) {
     try {
@@ -303,9 +246,7 @@ export class PlanController {
 
       const plans = await this.planService.getPlansByTier(validatedTierId);
 
-      this.logger.log(
-        `✅ 티어별 플랜 조회 성공: ${tierId} → ${plans.length}건 조회됨`,
-      );
+      this.logger.log(`✅ 티어별 플랜 조회 성공: ${tierId} → ${plans.length}건 조회됨`);
 
       return {
         success: true,
@@ -321,31 +262,16 @@ export class PlanController {
       this.logger.error(`❌ 티어별 플랜 조회 실패 (${tierId}):`, error.message);
 
       // CTO 스타일: 에러 메시지 패턴 기반 HTTP 응답 변환
-      if (
-        error.message.includes('not found') ||
-        error.message.includes('찾을 수 없')
-      ) {
-        throw new HttpException(
-          `티어를 찾을 수 없습니다: ${tierId}`,
-          HttpStatus.NOT_FOUND,
-        );
+      if (error.message.includes('not found') || error.message.includes('찾을 수 없')) {
+        throw new HttpException(`티어를 찾을 수 없습니다: ${tierId}`, HttpStatus.NOT_FOUND);
       }
 
-      if (
-        error.message.includes('invalid') ||
-        error.message.includes('잘못된')
-      ) {
-        throw new HttpException(
-          '잘못된 티어 ID입니다.',
-          HttpStatus.BAD_REQUEST,
-        );
+      if (error.message.includes('invalid') || error.message.includes('잘못된')) {
+        throw new HttpException('잘못된 티어 ID입니다.', HttpStatus.BAD_REQUEST);
       }
 
       // 기타 모든 오류는 500으로 처리
-      throw new HttpException(
-        '티어별 플랜 조회 중 오류가 발생했습니다.',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('티어별 플랜 조회 중 오류가 발생했습니다.', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -353,29 +279,29 @@ export class PlanController {
    * 티어별 혜택 조회
    */
   @Get('tiers/:tierId/benefits')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: '티어별 혜택 조회',
-    description: '티어 정보와 해당 티어의 모든 플랜을 함께 조회합니다.'
+    description: '티어 정보와 해당 티어의 모든 플랜을 함께 조회합니다.',
   })
-  @ApiParam({ 
-    name: 'tierId', 
+  @ApiParam({
+    name: 'tierId',
     description: '티어 UUID',
-    example: '123e4567-e89b-12d3-a456-426614174000'
+    example: '123e4567-e89b-12d3-a456-426614174000',
   })
-  @ApiResponse({ 
-    status: 200, 
+  @ApiResponse({
+    status: 200,
     description: '티어별 혜택 조회 성공',
-    type: TierBenefitsResponseDto
+    type: TierBenefitsResponseDto,
   })
-  @ApiResponse({ 
-    status: 400, 
+  @ApiResponse({
+    status: 400,
     description: '잘못된 티어 ID',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
-  @ApiResponse({ 
-    status: 404, 
+  @ApiResponse({
+    status: 404,
     description: '티어를 찾을 수 없음',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
   async getTierBenefits(@Param('tierId') tierId: string) {
     try {
@@ -384,8 +310,7 @@ export class PlanController {
       // Zod로 tierId 유효성 검증
       const validatedTierId = this.validateParam(tierId, uuidSchema, 'tierId');
 
-      const tierWithPlans =
-        await this.planService.getTierWithPlans(validatedTierId);
+      const tierWithPlans = await this.planService.getTierWithPlans(validatedTierId);
 
       this.logger.log(`✅ 티어별 혜택 조회 성공: ${tierId}`);
 
@@ -402,31 +327,16 @@ export class PlanController {
       this.logger.error(`❌ 티어별 혜택 조회 실패 (${tierId}):`, error.message);
 
       // CTO 스타일: 에러 메시지 패턴 기반 HTTP 응답 변환
-      if (
-        error.message.includes('not found') ||
-        error.message.includes('찾을 수 없')
-      ) {
-        throw new HttpException(
-          `티어를 찾을 수 없습니다: ${tierId}`,
-          HttpStatus.NOT_FOUND,
-        );
+      if (error.message.includes('not found') || error.message.includes('찾을 수 없')) {
+        throw new HttpException(`티어를 찾을 수 없습니다: ${tierId}`, HttpStatus.NOT_FOUND);
       }
 
-      if (
-        error.message.includes('invalid') ||
-        error.message.includes('잘못된')
-      ) {
-        throw new HttpException(
-          '잘못된 티어 ID입니다.',
-          HttpStatus.BAD_REQUEST,
-        );
+      if (error.message.includes('invalid') || error.message.includes('잘못된')) {
+        throw new HttpException('잘못된 티어 ID입니다.', HttpStatus.BAD_REQUEST);
       }
 
       // 기타 모든 오류는 500으로 처리
-      throw new HttpException(
-        '티어별 혜택 조회 중 오류가 발생했습니다.',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('티어별 혜택 조회 중 오류가 발생했습니다.', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 }

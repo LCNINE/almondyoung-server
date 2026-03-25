@@ -32,7 +32,7 @@ export class AuthorizationService {
       .innerJoin(scopes, eq(roleScopeMapping.scopeId, scopes.id))
       .where(inArray(roleScopeMapping.roleName, roleNames));
 
-    const scopeSet = new Set(result.map(r => r.scopeKey));
+    const scopeSet = new Set(result.map((r) => r.scopeKey));
     this.scopeCache.set(cacheKey, scopeSet);
 
     return scopeSet;
@@ -44,59 +44,44 @@ export class AuthorizationService {
   }
 
   async ensureScopesExist(microserviceName: string, scopeDefs: ScopeDefinition[]) {
-    const existingScopes = await this.db
-      .select()
-      .from(scopes)
-      .where(eq(scopes.microserviceName, microserviceName));
+    const existingScopes = await this.db.select().from(scopes).where(eq(scopes.microserviceName, microserviceName));
 
-    const existingKeys = new Set(existingScopes.map(s => s.key));
-    const newScopes = scopeDefs.filter(def => !existingKeys.has(def.key));
+    const existingKeys = new Set(existingScopes.map((s) => s.key));
+    const newScopes = scopeDefs.filter((def) => !existingKeys.has(def.key));
 
     if (newScopes.length > 0) {
       await this.db.insert(scopes).values(
-        newScopes.map(def => ({
+        newScopes.map((def) => ({
           key: def.key,
           category: def.category,
           description: def.description,
           microserviceName,
-        }))
+        })),
       );
       this.logger.log(`Registered ${newScopes.length} new scopes for ${microserviceName}`);
     }
   }
 
   async ensureScopeMapping(roleName: string, scopeKey: string): Promise<void> {
-    const [scope] = await this.db
-      .select({ id: scopes.id })
-      .from(scopes)
-      .where(eq(scopes.key, scopeKey));
+    const [scope] = await this.db.select({ id: scopes.id }).from(scopes).where(eq(scopes.key, scopeKey));
 
     if (!scope) {
       throw new Error(`Scope '${scopeKey}' not found`);
     }
 
-    await this.db
-      .insert(roleScopeMapping)
-      .values({ roleName, scopeId: scope.id })
-      .onConflictDoNothing();
+    await this.db.insert(roleScopeMapping).values({ roleName, scopeId: scope.id }).onConflictDoNothing();
 
     this.invalidateCache();
   }
 
   async removeScopeMapping(roleName: string, scopeKey: string): Promise<void> {
-    const [scope] = await this.db
-      .select({ id: scopes.id })
-      .from(scopes)
-      .where(eq(scopes.key, scopeKey));
+    const [scope] = await this.db.select({ id: scopes.id }).from(scopes).where(eq(scopes.key, scopeKey));
 
     if (!scope) return;
 
     await this.db
       .delete(roleScopeMapping)
-      .where(and(
-        eq(roleScopeMapping.roleName, roleName),
-        eq(roleScopeMapping.scopeId, scope.id),
-      ));
+      .where(and(eq(roleScopeMapping.roleName, roleName), eq(roleScopeMapping.scopeId, scope.id)));
 
     this.invalidateCache();
   }
@@ -108,7 +93,7 @@ export class AuthorizationService {
       .innerJoin(scopes, eq(roleScopeMapping.scopeId, scopes.id))
       .where(eq(roleScopeMapping.roleName, roleName));
 
-    return result.map(r => r.scopeKey);
+    return result.map((r) => r.scopeKey);
   }
 
   /**
@@ -135,7 +120,7 @@ export class AuthorizationService {
       return true;
     }
 
-    return requiredScopes.some(scope => userScopes.has(scope));
+    return requiredScopes.some((scope) => userScopes.has(scope));
   }
 
   /**
@@ -153,7 +138,7 @@ export class AuthorizationService {
       return true;
     }
 
-    return requiredScopes.every(scope => userScopes.has(scope));
+    return requiredScopes.every((scope) => userScopes.has(scope));
   }
 
   /**

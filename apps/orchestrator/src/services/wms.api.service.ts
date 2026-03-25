@@ -31,44 +31,25 @@ export class WmsApiService {
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
   ) {
-    this.baseUrl = this.configService.get(
-      'WMS_SERVICE_URL',
-      'http://localhost:3002',
-    );
+    this.baseUrl = this.configService.get('WMS_SERVICE_URL', 'http://localhost:3002');
   }
 
   async createMaster(dto: CreateWmsMasterDto): Promise<WmsMasterResponse> {
     this.logger.log(`Creating WMS master: ${dto.name}`);
     const response = await firstValueFrom(
-      this.httpService.post<WmsMasterResponse>(
-        `${this.baseUrl}/api/inventory/masters`,
-        dto,
-      ),
+      this.httpService.post<WmsMasterResponse>(`${this.baseUrl}/api/inventory/masters`, dto),
     );
     return response.data;
   }
 
   async deleteMaster(masterId: string): Promise<void> {
     this.logger.log(`Deleting WMS master: ${masterId}`);
-    await firstValueFrom(
-      this.httpService.delete(
-        `${this.baseUrl}/api/inventory/masters/${masterId}`,
-      ),
-    );
+    await firstValueFrom(this.httpService.delete(`${this.baseUrl}/api/inventory/masters/${masterId}`));
   }
 
-  async createProductMatching(
-    dto: CreateProductMatchingDto,
-  ): Promise<{ id: string }> {
-    this.logger.log(
-      `Creating product matching: ${dto.variantId} -> ${dto.masterId}`,
-    );
-    const response = await firstValueFrom(
-      this.httpService.post<{ id: string }>(
-        `${this.baseUrl}/api/matchings`,
-        dto,
-      ),
-    );
+  async createProductMatching(dto: CreateProductMatchingDto): Promise<{ id: string }> {
+    this.logger.log(`Creating product matching: ${dto.variantId} -> ${dto.masterId}`);
+    const response = await firstValueFrom(this.httpService.post<{ id: string }>(`${this.baseUrl}/api/matchings`, dto));
     return response.data;
   }
 }

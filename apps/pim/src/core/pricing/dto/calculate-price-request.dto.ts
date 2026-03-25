@@ -6,21 +6,21 @@ export class CalculatePriceRequestDto {
   @IsString()
   variantId: string;
 
-  @ApiProperty({ 
-    description: 'Quantity', 
+  @ApiProperty({
+    description: 'Quantity',
     required: false,
-    minimum: 1 
+    minimum: 1,
   })
   @IsOptional()
   @IsInt()
   @Min(1)
   quantity?: number;
 
-  @ApiProperty({ 
-    description: 'Customer type', 
+  @ApiProperty({
+    description: 'Customer type',
     enum: ['regular', 'membership'],
     required: false,
-    default: 'regular'
+    default: 'regular',
   })
   @IsOptional()
   @IsEnum(['regular', 'membership'])
@@ -32,12 +32,11 @@ export class GetPriceSetRequestDto {
   @IsString()
   variantId: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: 'Version ID (optional, defaults to active)',
-    required: false
+    required: false,
   })
   @IsOptional()
   @IsString()
   versionId?: string;
 }
-

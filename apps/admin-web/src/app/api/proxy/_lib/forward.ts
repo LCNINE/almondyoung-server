@@ -13,8 +13,14 @@ export async function forwardRequest(
   const url = `${targetBaseUrl}/${targetPath}${search}`;
 
   const headers = new Headers();
-  headers.set('Content-Type', request.headers.get('Content-Type') ?? 'application/json');
-  headers.set('Cookie', `accessToken=${accessToken}; refreshToken=${refreshToken}`);
+  headers.set(
+    'Content-Type',
+    request.headers.get('Content-Type') ?? 'application/json'
+  );
+  headers.set(
+    'Cookie',
+    `accessToken=${accessToken}; refreshToken=${refreshToken}`
+  );
 
   const hasBody = !['GET', 'HEAD', 'DELETE'].includes(request.method);
   const body = hasBody ? await request.arrayBuffer() : undefined;
@@ -30,7 +36,8 @@ export async function forwardRequest(
   return new NextResponse(data, {
     status: upstream.status,
     headers: {
-      'Content-Type': upstream.headers.get('Content-Type') ?? 'application/json',
+      'Content-Type':
+        upstream.headers.get('Content-Type') ?? 'application/json',
     },
   });
 }

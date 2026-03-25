@@ -1,10 +1,5 @@
 import { DateMapper } from '../../../common/mappers';
-import {
-  ProductMasterDto,
-  OptionGroupDto,
-  OptionValueDto,
-  VariantDto,
-} from '../dto/masters/master-response.dto';
+import { ProductMasterDto, OptionGroupDto, OptionValueDto, VariantDto } from '../dto/masters/master-response.dto';
 import { PriceSummaryDto, ProductSummaryDto } from '../dto/products/product-response.dto';
 import {
   ProductMasterVersionEntity,
@@ -56,7 +51,7 @@ export class ProductMasterMapper {
       variantCount: number;
       thumbnail?: string | null; // product_images에서 가져온 primary 이미지 fileId
       priceSummary?: PriceSummaryDto | null;
-    }
+    },
   ): ProductSummaryDto {
     // thumbnail은 product_images에서 가져온 값 사용
     return {
@@ -77,7 +72,14 @@ export class ProductMasterMapper {
   /**
    * Map entity to OptionGroupDto
    */
-  static toOptionGroupDto(entity: ProductOptionGroupEntity & { displayName?: string; sortOrder?: number; isRequired?: boolean; values?: ProductOptionValueEntity[] }): OptionGroupDto {
+  static toOptionGroupDto(
+    entity: ProductOptionGroupEntity & {
+      displayName?: string;
+      sortOrder?: number;
+      isRequired?: boolean;
+      values?: ProductOptionValueEntity[];
+    },
+  ): OptionGroupDto {
     return {
       id: entity.id,
       displayName: entity.displayName ?? '',
@@ -91,7 +93,9 @@ export class ProductMasterMapper {
   /**
    * Map entity to OptionValueDto
    */
-  static toOptionValueDto(entity: ProductOptionValueEntity & { value?: string; displayName?: string; sortOrder?: number; isActive?: boolean }): OptionValueDto {
+  static toOptionValueDto(
+    entity: ProductOptionValueEntity & { value?: string; displayName?: string; sortOrder?: number; isActive?: boolean },
+  ): OptionValueDto {
     return {
       id: entity.id,
       value: entity.value ?? '',

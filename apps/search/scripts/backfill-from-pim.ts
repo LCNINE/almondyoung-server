@@ -63,11 +63,7 @@ function parseArgs(): BackfillOptions {
     return found ? found.substring(name.length + 1) : undefined;
   };
 
-  const parsePositiveInt = (
-    rawValue: string | undefined,
-    name: string,
-    defaultValue: number,
-  ): number => {
+  const parsePositiveInt = (rawValue: string | undefined, name: string, defaultValue: number): number => {
     if (rawValue === undefined) {
       return defaultValue;
     }
@@ -79,25 +75,21 @@ function parseArgs(): BackfillOptions {
     return parsed;
   };
 
-  const batchSize = parsePositiveInt(
-    getOptionValue('--batch-size'),
-    '--batch-size',
-    300,
-  );
+  const batchSize = parsePositiveInt(getOptionValue('--batch-size'), '--batch-size', 300);
   if (batchSize < 1) {
     throw new Error('--batch-size must be >= 1');
   }
 
   const offset = parsePositiveInt(getOptionValue('--offset'), '--offset', 0);
   const limitRaw = getOptionValue('--limit');
-  const limit =
-    limitRaw === undefined
-      ? undefined
-      : parsePositiveInt(limitRaw, '--limit', 0);
+  const limit = limitRaw === undefined ? undefined : parsePositiveInt(limitRaw, '--limit', 0);
 
   const mastersRaw = getOptionValue('--masters');
   const masters = mastersRaw
-    ? mastersRaw.split(',').map((s) => s.trim()).filter(Boolean)
+    ? mastersRaw
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
     : undefined;
 
   return {
@@ -157,10 +149,7 @@ function toThumbnailUrl(fileIdOrUrl: string | null, fileServiceUrl: string): str
     return null;
   }
 
-  if (
-    fileIdOrUrl.startsWith('http://') ||
-    fileIdOrUrl.startsWith('https://')
-  ) {
+  if (fileIdOrUrl.startsWith('http://') || fileIdOrUrl.startsWith('https://')) {
     return fileIdOrUrl;
   }
 
@@ -168,20 +157,14 @@ function toThumbnailUrl(fileIdOrUrl: string | null, fileServiceUrl: string): str
     return fileServiceUrl ? `${fileServiceUrl}${fileIdOrUrl}` : fileIdOrUrl;
   }
 
-  return fileServiceUrl
-    ? `${fileServiceUrl}/files/${fileIdOrUrl}`
-    : `/files/${fileIdOrUrl}`;
+  return fileServiceUrl ? `${fileServiceUrl}/files/${fileIdOrUrl}` : `/files/${fileIdOrUrl}`;
 }
 
 function compactText(value: string): string {
   return value.replace(/\s+/g, '');
 }
 
-async function ensureIndex(
-  client: Client,
-  index: string,
-  recreateIndex: boolean,
-): Promise<void> {
+async function ensureIndex(client: Client, index: string, recreateIndex: boolean): Promise<void> {
   const exists = (await client.indices.exists({ index })).body;
 
   if (exists && recreateIndex) {
@@ -211,9 +194,7 @@ async function fetchActiveVersionCount(db: PimDb, masterIds?: string[]) {
         eq(productMasterVersions.status, 'active'),
         isNull(productMasterVersions.deletedAt),
         isNull(productMasters.deletedAt),
-        masterIds && masterIds.length > 0
-          ? inArray(productMasterVersions.masterId, masterIds)
-          : undefined,
+        masterIds && masterIds.length > 0 ? inArray(productMasterVersions.masterId, masterIds) : undefined,
       ),
     );
 
@@ -244,23 +225,15 @@ async function fetchActiveVersionsBatch(
         eq(productMasterVersions.status, 'active'),
         isNull(productMasterVersions.deletedAt),
         isNull(productMasters.deletedAt),
-        masterIds && masterIds.length > 0
-          ? inArray(productMasterVersions.masterId, masterIds)
-          : undefined,
+        masterIds && masterIds.length > 0 ? inArray(productMasterVersions.masterId, masterIds) : undefined,
       ),
     )
-    .orderBy(
-      asc(productMasterVersions.updatedAt),
-      asc(productMasterVersions.id),
-    )
+    .orderBy(asc(productMasterVersions.updatedAt), asc(productMasterVersions.id))
     .limit(batchSize)
     .offset(offset);
 }
 
-async function fetchCategoryMap(
-  db: PimDb,
-  versionIds: string[],
-): Promise<Map<string, CategoryMapValue>> {
+async function fetchCategoryMap(db: PimDb, versionIds: string[]): Promise<Map<string, CategoryMapValue>> {
   if (versionIds.length === 0) {
     return new Map();
   }
@@ -272,10 +245,7 @@ async function fetchCategoryMap(
       categoryName: productCategories.name,
     })
     .from(productMasterCategories)
-    .leftJoin(
-      productCategories,
-      eq(productMasterCategories.categoryId, productCategories.id),
-    )
+    .leftJoin(productCategories, eq(productMasterCategories.categoryId, productCategories.id))
     .where(inArray(productMasterCategories.versionId, versionIds));
 
   const map = new Map<string, { ids: Set<string>; names: Set<string> }>();
@@ -303,10 +273,7 @@ async function fetchCategoryMap(
   return result;
 }
 
-async function fetchTagMap(
-  db: PimDb,
-  versionIds: string[],
-): Promise<Map<string, string[]>> {
+async function fetchTagMap(db: PimDb, versionIds: string[]): Promise<Map<string, string[]>> {
   if (versionIds.length === 0) {
     return new Map();
   }
@@ -340,10 +307,7 @@ async function fetchTagMap(
   return result;
 }
 
-async function fetchPriceMap(
-  db: PimDb,
-  versionIds: string[],
-): Promise<Map<string, PriceSummary>> {
+async function fetchPriceMap(db: PimDb, versionIds: string[]): Promise<Map<string, PriceSummary>> {
   if (versionIds.length === 0) {
     return new Map();
   }
@@ -363,14 +327,10 @@ async function fetchPriceMap(
   const map = new Map<string, PriceSummary>();
   for (const row of rows) {
     map.set(row.versionId, {
-      minBasePrice:
-        row.minBasePrice === null ? null : Number(row.minBasePrice),
-      maxBasePrice:
-        row.maxBasePrice === null ? null : Number(row.maxBasePrice),
-      minMembershipPrice:
-        row.minMembershipPrice === null ? null : Number(row.minMembershipPrice),
-      maxMembershipPrice:
-        row.maxMembershipPrice === null ? null : Number(row.maxMembershipPrice),
+      minBasePrice: row.minBasePrice === null ? null : Number(row.minBasePrice),
+      maxBasePrice: row.maxBasePrice === null ? null : Number(row.maxBasePrice),
+      minMembershipPrice: row.minMembershipPrice === null ? null : Number(row.minMembershipPrice),
+      maxMembershipPrice: row.maxMembershipPrice === null ? null : Number(row.maxMembershipPrice),
     });
   }
 
@@ -463,14 +423,9 @@ async function main() {
 
   const options = parseArgs();
   const pimSourceDbUrl = requireEnv('PIM_SOURCE_DB_URL');
-  const opensearchNode =
-    process.env.OPENSEARCH_NODE ||
-    process.env.ELASTICSEARCH_NODE ||
-    'http://localhost:9200';
-  const opensearchUsername =
-    process.env.OPENSEARCH_USERNAME || process.env.ELASTICSEARCH_USERNAME;
-  const opensearchPassword =
-    process.env.OPENSEARCH_PASSWORD || process.env.ELASTICSEARCH_PASSWORD;
+  const opensearchNode = process.env.OPENSEARCH_NODE || process.env.ELASTICSEARCH_NODE || 'http://localhost:9200';
+  const opensearchUsername = process.env.OPENSEARCH_USERNAME || process.env.ELASTICSEARCH_USERNAME;
+  const opensearchPassword = process.env.OPENSEARCH_PASSWORD || process.env.ELASTICSEARCH_PASSWORD;
   const productsIndex = process.env.SEARCH_PRODUCTS_INDEX || DEFAULT_PRODUCTS_INDEX;
   const fileServiceUrl = normalizeBaseUrl(process.env.FILE_SERVICE_URL || '');
 
@@ -531,9 +486,7 @@ async function main() {
       }
 
       const remaining =
-        options.limit === undefined
-          ? options.batchSize
-          : Math.min(options.batchSize, options.limit - processed);
+        options.limit === undefined ? options.batchSize : Math.min(options.batchSize, options.limit - processed);
 
       if (remaining <= 0) {
         break;
@@ -551,13 +504,7 @@ async function main() {
         fetchPriceMap(pimDb, versionIds),
       ]);
 
-      const documents = buildDocuments(
-        batch,
-        categoryMap,
-        tagMap,
-        priceMap,
-        fileServiceUrl,
-      );
+      const documents = buildDocuments(batch, categoryMap, tagMap, priceMap, fileServiceUrl);
 
       if (options.dryRun) {
         success += documents.length;
@@ -570,9 +517,7 @@ async function main() {
       processed += batch.length;
       offset += batch.length;
 
-      console.log(
-        `Batch done: processed=${processed}, success=${success}, failed=${failed}`,
-      );
+      console.log(`Batch done: processed=${processed}, success=${success}, failed=${failed}`);
     }
 
     if (!options.dryRun) {

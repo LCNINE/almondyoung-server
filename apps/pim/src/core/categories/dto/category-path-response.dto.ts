@@ -18,13 +18,12 @@ export class CategoryPathResponseDto {
   @ApiProperty({ description: '카테고리 ID' })
   categoryId: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: '루트부터 현재 카테고리까지의 경로',
-    type: [CategoryPathInfoDto]
+    type: [CategoryPathInfoDto],
   })
   path: CategoryPathInfoDto[];
 
   @ApiProperty({ description: '전체 경로 문자열 (예: /전자제품/컴퓨터/노트북)' })
   fullPath: string;
 }
-

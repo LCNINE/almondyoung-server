@@ -8,4 +8,3 @@ import { ProductApprovalService } from './product-approval.service';
   exports: [ProductApprovalService],
 })
 export class ApprovalModule {}
-

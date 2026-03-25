@@ -10,12 +10,7 @@ import {
   ProductVariantDeletedPayload,
   ProductVariantUpdatedPayload,
 } from '@packages/event-contracts/streams/product.stream';
-import {
-  analyticsSchema,
-  dimProductCategories,
-  dimProductMasters,
-  dimProductVariants,
-} from '../../../schema';
+import { analyticsSchema, dimProductCategories, dimProductMasters, dimProductVariants } from '../../../schema';
 import { DbTx } from '../../../db.types';
 
 type MasterPatch = {
@@ -60,10 +55,7 @@ export class ProductDimensionsService {
     return tx ? fn(tx) : this.db.transaction(fn);
   }
 
-  async recordVariantCreated(
-    payload: ProductVariantCreatedPayload,
-    tx?: DbTx,
-  ): Promise<void> {
+  async recordVariantCreated(payload: ProductVariantCreatedPayload, tx?: DbTx): Promise<void> {
     const eventAt = this.parseDate(payload.createdAt);
     await this.inTx(async (executor) => {
       await this.upsertMaster(
@@ -94,10 +86,7 @@ export class ProductDimensionsService {
     }, tx);
   }
 
-  async recordVariantUpdated(
-    payload: ProductVariantUpdatedPayload,
-    tx?: DbTx,
-  ): Promise<void> {
+  async recordVariantUpdated(payload: ProductVariantUpdatedPayload, tx?: DbTx): Promise<void> {
     const eventAt = this.parseDate(payload.updatedAt);
     await this.inTx(async (executor) => {
       await this.upsertVariant(
@@ -114,10 +103,7 @@ export class ProductDimensionsService {
     }, tx);
   }
 
-  async recordVariantDeleted(
-    payload: ProductVariantDeletedPayload,
-    tx?: DbTx,
-  ): Promise<void> {
+  async recordVariantDeleted(payload: ProductVariantDeletedPayload, tx?: DbTx): Promise<void> {
     const eventAt = this.parseDate(payload.deletedAt);
     await this.inTx(async (executor) => {
       await this.upsertVariant(
@@ -134,10 +120,7 @@ export class ProductDimensionsService {
     }, tx);
   }
 
-  async recordInventoryManagementChanged(
-    payload: ProductInventoryManagementChangedPayload,
-    tx?: DbTx,
-  ): Promise<void> {
+  async recordInventoryManagementChanged(payload: ProductInventoryManagementChangedPayload, tx?: DbTx): Promise<void> {
     const eventAt = this.parseDate(payload.changedAt);
     await this.inTx(async (executor) => {
       await this.upsertMaster(
@@ -165,10 +148,7 @@ export class ProductDimensionsService {
     }, tx);
   }
 
-  async recordMasterActiveVersionChanged(
-    payload: ProductMasterActiveVersionChangedPayload,
-    tx?: DbTx,
-  ): Promise<void> {
+  async recordMasterActiveVersionChanged(payload: ProductMasterActiveVersionChangedPayload, tx?: DbTx): Promise<void> {
     const eventAt = this.parseDate(payload.changedAt);
     await this.inTx(async (executor) => {
       await this.upsertMaster(
@@ -194,10 +174,7 @@ export class ProductDimensionsService {
     }, tx);
   }
 
-  async recordMasterDeleted(
-    payload: ProductMasterDeletedPayload,
-    tx?: DbTx,
-  ): Promise<void> {
+  async recordMasterDeleted(payload: ProductMasterDeletedPayload, tx?: DbTx): Promise<void> {
     const eventAt = this.parseDate(payload.deletedAt);
     await this.inTx(async (executor) => {
       await this.upsertMaster(
@@ -210,16 +187,11 @@ export class ProductDimensionsService {
         executor,
       );
 
-      await executor
-        .delete(dimProductCategories)
-        .where(eq(dimProductCategories.masterId, payload.masterId));
+      await executor.delete(dimProductCategories).where(eq(dimProductCategories.masterId, payload.masterId));
     }, tx);
   }
 
-  private async upsertMaster(
-    patch: MasterPatch,
-    tx: DbTx,
-  ): Promise<void> {
+  private async upsertMaster(patch: MasterPatch, tx: DbTx): Promise<void> {
     const now = new Date();
     const eventAt = patch.eventAt ?? now;
     const values = {
@@ -259,19 +231,13 @@ export class ProductDimensionsService {
       set.deletedAt = patch.deletedAt ?? null;
     }
 
-    await tx
-      .insert(dimProductMasters)
-      .values(values)
-      .onConflictDoUpdate({
-        target: dimProductMasters.masterId,
-        set,
-      });
+    await tx.insert(dimProductMasters).values(values).onConflictDoUpdate({
+      target: dimProductMasters.masterId,
+      set,
+    });
   }
 
-  private async upsertVariant(
-    patch: VariantPatch,
-    tx: DbTx,
-  ): Promise<void> {
+  private async upsertVariant(patch: VariantPatch, tx: DbTx): Promise<void> {
     const now = new Date();
     const eventAt = patch.eventAt ?? now;
     const values = {
@@ -323,13 +289,10 @@ export class ProductDimensionsService {
       set.deletedAt = patch.deletedAt ?? null;
     }
 
-    await tx
-      .insert(dimProductVariants)
-      .values(values)
-      .onConflictDoUpdate({
-        target: dimProductVariants.variantId,
-        set,
-      });
+    await tx.insert(dimProductVariants).values(values).onConflictDoUpdate({
+      target: dimProductVariants.variantId,
+      set,
+    });
   }
 
   private async replaceMasterCategories(
@@ -338,9 +301,7 @@ export class ProductDimensionsService {
     primaryCategoryId: string | null,
     tx: DbTx,
   ): Promise<void> {
-    await tx
-      .delete(dimProductCategories)
-      .where(eq(dimProductCategories.masterId, masterId));
+    await tx.delete(dimProductCategories).where(eq(dimProductCategories.masterId, masterId));
 
     if (categoryIds.length === 0) {
       return;

@@ -7,9 +7,7 @@ import { z } from 'zod';
 /**
  * 공통 응답 구조체 (Data 포함)
  */
-export function createNaverApiResponseSchema<T extends z.ZodTypeAny>(
-  dataSchema: T,
-) {
+export function createNaverApiResponseSchema<T extends z.ZodTypeAny>(dataSchema: T) {
   return z.object({
     timestamp: z.string().datetime(),
     traceId: z.string(),
@@ -20,9 +18,7 @@ export function createNaverApiResponseSchema<T extends z.ZodTypeAny>(
 /**
  * 공통 응답 구조체 (Data Optional)
  */
-export function createNaverApiResponseSchemaOptional<T extends z.ZodTypeAny>(
-  dataSchema: T,
-) {
+export function createNaverApiResponseSchemaOptional<T extends z.ZodTypeAny>(dataSchema: T) {
   return z.object({
     timestamp: z.string().datetime(),
     traceId: z.string(),
@@ -47,20 +43,14 @@ export const ClaimProcessResponseDataSchema = z.object({
   successProductOrderIds: z.array(z.string()),
   failProductOrderInfos: z.array(FailProductOrderInfoSchema),
 });
-export type ClaimProcessResponseData = z.infer<
-  typeof ClaimProcessResponseDataSchema
->;
+export type ClaimProcessResponseData = z.infer<typeof ClaimProcessResponseDataSchema>;
 
 /**
  * 주문-클레임 처리 API의 공통 응답 래퍼 구조체 (data가 optional일 수 있음)
  * (approveCancel, approveReturn 등)
  */
-export const NaverClaimProcessResponseSchema = createNaverApiResponseSchema(
-  ClaimProcessResponseDataSchema.optional(),
-);
-export type NaverClaimProcessResponse = z.infer<
-  typeof NaverClaimProcessResponseSchema
->;
+export const NaverClaimProcessResponseSchema = createNaverApiResponseSchema(ClaimProcessResponseDataSchema.optional());
+export type NaverClaimProcessResponse = z.infer<typeof NaverClaimProcessResponseSchema>;
 
 // =================================================================
 // == 2. 공통 상수 (Enum)

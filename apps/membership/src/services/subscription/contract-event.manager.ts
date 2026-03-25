@@ -77,10 +77,7 @@ export class ContractEventManager {
   /**
    * 특정 타입 이벤트 조회
    */
-  async getEventsByType(
-    contractId: string,
-    eventType: string,
-  ): Promise<ContractEvent[]> {
+  async getEventsByType(contractId: string, eventType: string): Promise<ContractEvent[]> {
     const events = await this.dbService.db
       .select()
       .from(schema.subscriptionContractEvents)

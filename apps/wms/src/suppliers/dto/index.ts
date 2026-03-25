@@ -7,4 +7,3 @@ export * from './supplier-list-response.dto';
 export * from './supplier-categories/supplier-category-response.dto';
 export * from './supplier-categories/create-supplier-category.dto';
 export * from './supplier-categories/update-supplier-category.dto';
-

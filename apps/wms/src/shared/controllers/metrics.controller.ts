@@ -17,8 +17,7 @@ export class MetricsController {
   })
   @ApiResponse({
     status: 200,
-    description:
-      '\uba54\ud2b8\ub9ad \ub370\uc774\ud130 \uc81c\uacf5 \uc131\uacf5',
+    description: '\uba54\ud2b8\ub9ad \ub370\uc774\ud130 \uc81c\uacf5 \uc131\uacf5',
     content: { 'text/plain': { schema: { type: 'string' } } },
   })
   @ApiResponse({

@@ -1,18 +1,16 @@
-import { Controller, Get, Logger, Param, Query } from "@nestjs/common";
-import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from "@nestjs/swagger";
-import { ProductVersionsService } from "../services/product-versions.service";
-import { ApiOkResponsePaginated } from "apps/pim/src/common/decorators/api-paginated-response.decorator";
-import { ProductVersionDto } from "../dto/entities/master-version.entity";
-import { PaginationQueryDto } from "apps/pim/src/common";
+import { Controller, Get, Logger, Param, Query } from '@nestjs/common';
+import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ProductVersionsService } from '../services/product-versions.service';
+import { ApiOkResponsePaginated } from 'apps/pim/src/common/decorators/api-paginated-response.decorator';
+import { ProductVersionDto } from '../dto/entities/master-version.entity';
+import { PaginationQueryDto } from 'apps/pim/src/common';
 
 @ApiTags('Product Versions Without Master')
 @Controller('versions')
 export class ProductVersionsController {
   private readonly logger = new Logger(ProductVersionsController.name);
 
-  constructor(
-    private readonly productVersionsService: ProductVersionsService
-  ) { }
+  constructor(private readonly productVersionsService: ProductVersionsService) {}
 
   @Get('draft')
   @ApiOperation({

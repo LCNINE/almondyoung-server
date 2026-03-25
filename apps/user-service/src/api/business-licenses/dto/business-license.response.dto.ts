@@ -1,6 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
 
-
 export class BusinessLicenseResponseDto {
   @ApiProperty({
     description: '사업자 등록 정보 ID',

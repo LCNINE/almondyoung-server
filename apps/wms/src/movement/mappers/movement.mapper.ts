@@ -48,7 +48,7 @@ export class MovementJobMapper {
       memo: job.memo,
       createdAt: job.createdAt.toISOString(),
       updatedAt: job.updatedAt.toISOString(),
-      lines: lines.map(line => MovementJobLineMapper.toDto(line)),
+      lines: lines.map((line) => MovementJobLineMapper.toDto(line)),
     };
   }
 }
@@ -71,4 +71,3 @@ export class MovementWorkLogMapper {
     };
   }
 }
-

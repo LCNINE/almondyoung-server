@@ -4,18 +4,16 @@ import { ZodValidationPipe } from '@app/shared/pipes/zod-validation.pipe';
 import { z } from 'zod';
 
 const AutoConsolidateSchema = z.object({
-  groupId: z.string()
+  groupId: z.string(),
 });
 
 const FindCandidatesSchema = z.object({
-  warehouseId: z.string().uuid()
+  warehouseId: z.string().uuid(),
 });
 
 @Controller('consolidation')
 export class ConsolidationController {
-  constructor(
-    private readonly consolidationService: ConsolidationService
-  ) {}
+  constructor(private readonly consolidationService: ConsolidationService) {}
 
   @Get('candidates/:warehouseId')
   async findConsolidationCandidates(@Param('warehouseId') warehouseId: string) {
@@ -33,13 +31,18 @@ export class ConsolidationController {
       summary: {
         totalCandidates: candidates.length,
         groupsFound: groups.length,
-        autoConsolidateRecommended: groups.filter(g => g.recommendation === 'auto_consolidate').length,
-        manualReviewRequired: groups.filter(g => g.recommendation === 'manual_review').length,
-        estimatedTotalSavings: groups.reduce((sum, g) =>
-          sum + g.estimatedSavings.shippingCost + g.estimatedSavings.packagingReduction + g.estimatedSavings.efficiencyGain, 0
-        )
+        autoConsolidateRecommended: groups.filter((g) => g.recommendation === 'auto_consolidate').length,
+        manualReviewRequired: groups.filter((g) => g.recommendation === 'manual_review').length,
+        estimatedTotalSavings: groups.reduce(
+          (sum, g) =>
+            sum +
+            g.estimatedSavings.shippingCost +
+            g.estimatedSavings.packagingReduction +
+            g.estimatedSavings.efficiencyGain,
+          0,
+        ),
       },
-      groups
+      groups,
     };
   }
 
@@ -49,7 +52,7 @@ export class ConsolidationController {
     const result = await this.consolidationService.autoConsolidate(groupId);
     return {
       message: 'Auto-consolidation completed successfully',
-      ...result
+      ...result,
     };
   }
 
@@ -57,12 +60,12 @@ export class ConsolidationController {
   async getConsolidationReport(
     @Param('warehouseId') warehouseId: string,
     @Query('dateFrom') dateFrom?: string,
-    @Query('dateTo') dateTo?: string
+    @Query('dateTo') dateTo?: string,
   ) {
     return this.consolidationService.getConsolidationReport(
       warehouseId,
       dateFrom ? new Date(dateFrom) : undefined,
-      dateTo ? new Date(dateTo) : undefined
+      dateTo ? new Date(dateTo) : undefined,
     );
   }
 
@@ -81,13 +84,13 @@ export class ConsolidationController {
             addressMatch: 'exact',
             customerMatch: true,
             serviceMatch: true,
-            timeWindow: 24
+            timeWindow: 24,
           },
           constraints: {
             maxOrdersPerGroup: 5,
             maxTotalWeight: 30,
-            maxTotalValue: 1000000
-          }
+            maxTotalValue: 1000000,
+          },
         },
         {
           id: 'same-address-different-customer',
@@ -100,13 +103,13 @@ export class ConsolidationController {
             addressMatch: 'exact',
             customerMatch: false,
             serviceMatch: true,
-            timeWindow: 12
+            timeWindow: 12,
           },
           constraints: {
             maxOrdersPerGroup: 3,
             maxTotalWeight: 20,
-            maxTotalValue: 500000
-          }
+            maxTotalValue: 500000,
+          },
         },
         {
           id: 'nearby-same-customer',
@@ -120,15 +123,15 @@ export class ConsolidationController {
             customerMatch: true,
             serviceMatch: true,
             timeWindow: 48,
-            maxDistance: 5
+            maxDistance: 5,
           },
           constraints: {
             maxOrdersPerGroup: 3,
             maxTotalWeight: 25,
-            maxTotalValue: 800000
-          }
-        }
-      ]
+            maxTotalValue: 800000,
+          },
+        },
+      ],
     };
   }
 
@@ -137,8 +140,8 @@ export class ConsolidationController {
     const candidates = await this.consolidationService.findConsolidationCandidates(warehouseId);
     const groups = await this.consolidationService.generateConsolidationGroups(candidates);
 
-    const autoConsolidateGroups = groups.filter(g => g.recommendation === 'auto_consolidate');
-    const manualReviewGroups = groups.filter(g => g.recommendation === 'manual_review');
+    const autoConsolidateGroups = groups.filter((g) => g.recommendation === 'auto_consolidate');
+    const manualReviewGroups = groups.filter((g) => g.recommendation === 'manual_review');
 
     return {
       warehouseId,
@@ -146,33 +149,45 @@ export class ConsolidationController {
       opportunities: {
         immediate: {
           count: autoConsolidateGroups.length,
-          potentialSavings: autoConsolidateGroups.reduce((sum, g) =>
-            sum + g.estimatedSavings.shippingCost + g.estimatedSavings.packagingReduction + g.estimatedSavings.efficiencyGain, 0
+          potentialSavings: autoConsolidateGroups.reduce(
+            (sum, g) =>
+              sum +
+              g.estimatedSavings.shippingCost +
+              g.estimatedSavings.packagingReduction +
+              g.estimatedSavings.efficiencyGain,
+            0,
           ),
-          groups: autoConsolidateGroups.slice(0, 5) // Top 5 for preview
+          groups: autoConsolidateGroups.slice(0, 5), // Top 5 for preview
         },
         reviewRequired: {
           count: manualReviewGroups.length,
-          potentialSavings: manualReviewGroups.reduce((sum, g) =>
-            sum + g.estimatedSavings.shippingCost + g.estimatedSavings.packagingReduction + g.estimatedSavings.efficiencyGain, 0
+          potentialSavings: manualReviewGroups.reduce(
+            (sum, g) =>
+              sum +
+              g.estimatedSavings.shippingCost +
+              g.estimatedSavings.packagingReduction +
+              g.estimatedSavings.efficiencyGain,
+            0,
           ),
-          groups: manualReviewGroups.slice(0, 5) // Top 5 for preview
-        }
+          groups: manualReviewGroups.slice(0, 5), // Top 5 for preview
+        },
       },
-      recommendations: this.generateRecommendations(groups)
+      recommendations: this.generateRecommendations(groups),
     };
   }
 
   @Get('savings/projection/:warehouseId')
-  async getSavingsProjection(
-    @Param('warehouseId') warehouseId: string,
-    @Query('days') days: number = 30
-  ) {
+  async getSavingsProjection(@Param('warehouseId') warehouseId: string, @Query('days') days: number = 30) {
     const candidates = await this.consolidationService.findConsolidationCandidates(warehouseId);
     const groups = await this.consolidationService.generateConsolidationGroups(candidates);
 
-    const dailyAvgSavings = groups.reduce((sum, g) =>
-      sum + g.estimatedSavings.shippingCost + g.estimatedSavings.packagingReduction + g.estimatedSavings.efficiencyGain, 0
+    const dailyAvgSavings = groups.reduce(
+      (sum, g) =>
+        sum +
+        g.estimatedSavings.shippingCost +
+        g.estimatedSavings.packagingReduction +
+        g.estimatedSavings.efficiencyGain,
+      0,
     );
 
     const projectedSavings = dailyAvgSavings * days;
@@ -185,27 +200,27 @@ export class ConsolidationController {
         candidateOrders: candidates.length,
         consolidationGroups: groups.length,
         consolidationRate: Math.round(consolidationRate * 100),
-        dailySavings: Math.round(dailyAvgSavings)
+        dailySavings: Math.round(dailyAvgSavings),
       },
       projection: {
         totalSavings: Math.round(projectedSavings),
         shippingCostSavings: Math.round(projectedSavings * 0.6),
         packagingSavings: Math.round(projectedSavings * 0.2),
         efficiencyGains: Math.round(projectedSavings * 0.2),
-        carbonFootprintReduction: Math.round(groups.length * 0.5) // kg CO2 saved per day
+        carbonFootprintReduction: Math.round(groups.length * 0.5), // kg CO2 saved per day
       },
       breakdown: {
         autoConsolidation: Math.round(projectedSavings * 0.7),
-        manualReview: Math.round(projectedSavings * 0.3)
-      }
+        manualReview: Math.round(projectedSavings * 0.3),
+      },
     };
   }
 
   private generateRecommendations(groups: ConsolidationGroup[]): string[] {
     const recommendations: string[] = [];
 
-    const autoGroups = groups.filter(g => g.recommendation === 'auto_consolidate').length;
-    const manualGroups = groups.filter(g => g.recommendation === 'manual_review').length;
+    const autoGroups = groups.filter((g) => g.recommendation === 'auto_consolidate').length;
+    const manualGroups = groups.filter((g) => g.recommendation === 'manual_review').length;
 
     if (autoGroups > 0) {
       recommendations.push(`${autoGroups}개의 주문 그룹을 즉시 자동 합배송할 수 있습니다`);
@@ -220,8 +235,10 @@ export class ConsolidationController {
     }
 
     // Add operational recommendations
-    const highValueGroups = groups.filter(g =>
-      g.estimatedSavings.shippingCost + g.estimatedSavings.packagingReduction + g.estimatedSavings.efficiencyGain > 10000
+    const highValueGroups = groups.filter(
+      (g) =>
+        g.estimatedSavings.shippingCost + g.estimatedSavings.packagingReduction + g.estimatedSavings.efficiencyGain >
+        10000,
     ).length;
 
     if (highValueGroups > 0) {

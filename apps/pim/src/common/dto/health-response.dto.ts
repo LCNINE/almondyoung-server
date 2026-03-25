@@ -13,4 +13,3 @@ export class PimHealthResponseDto {
   })
   service: string;
 }
-

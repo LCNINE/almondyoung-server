@@ -67,10 +67,7 @@ export class PlanReader {
    * 모든 티어 조회 (우선순위 순)
    */
   async findAllTiers(): Promise<Tier[]> {
-    return this.dbService.db
-      .select()
-      .from(schema.tiers)
-      .orderBy(schema.tiers.priorityLevel);
+    return this.dbService.db.select().from(schema.tiers).orderBy(schema.tiers.priorityLevel);
   }
 
   /**
@@ -80,9 +77,7 @@ export class PlanReader {
     return this.dbService.db
       .select()
       .from(schema.plan)
-      .where(
-        and(eq(schema.plan.tierId, tierId), eq(schema.plan.isActive, true)),
-      )
+      .where(and(eq(schema.plan.tierId, tierId), eq(schema.plan.isActive, true)))
       .orderBy(desc(schema.plan.createdAt));
   }
 
@@ -90,11 +85,7 @@ export class PlanReader {
    * 티어와 해당 플랜 목록 조회
    */
   async findTierWithPlans(tierId: string): Promise<TierWithPlans | null> {
-    const tier = await this.dbService.db
-      .select()
-      .from(schema.tiers)
-      .where(eq(schema.tiers.id, tierId))
-      .limit(1);
+    const tier = await this.dbService.db.select().from(schema.tiers).where(eq(schema.tiers.id, tierId)).limit(1);
 
     if (!tier.length) {
       return null;
@@ -138,11 +129,7 @@ export class PlanReader {
    * 티어 ID로 조회
    */
   async findTierById(tierId: string): Promise<Tier | null> {
-    const [tier] = await this.dbService.db
-      .select()
-      .from(schema.tiers)
-      .where(eq(schema.tiers.id, tierId))
-      .limit(1);
+    const [tier] = await this.dbService.db.select().from(schema.tiers).where(eq(schema.tiers.id, tierId)).limit(1);
 
     return tier || null;
   }
@@ -151,11 +138,7 @@ export class PlanReader {
    * 플랜 ID로 조회 (활성 여부 무관)
    */
   async findPlanByIdAny(planId: string): Promise<Plan | null> {
-    const [plan] = await this.dbService.db
-      .select()
-      .from(schema.plan)
-      .where(eq(schema.plan.id, planId))
-      .limit(1);
+    const [plan] = await this.dbService.db.select().from(schema.plan).where(eq(schema.plan.id, planId)).limit(1);
 
     return plan || null;
   }

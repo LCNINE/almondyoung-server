@@ -15,7 +15,7 @@ export class PurchaseOrderCronService {
   constructor(
     @InjectTypedDb<typeof wmsSchema>()
     private readonly dbService: DbService<typeof wmsSchema>,
-    private readonly purchaseOrderService: PurchaseOrderService
+    private readonly purchaseOrderService: PurchaseOrderService,
   ) {}
 
   private get db() {
@@ -43,8 +43,8 @@ export class PurchaseOrderCronService {
         .where(
           and(
             eq(wmsTables.purchaseOrders.status, 'created'),
-            sql`DATE(${wmsTables.purchaseOrders.expectedArrival}) = ${todayDateOnly}`
-          )
+            sql`DATE(${wmsTables.purchaseOrders.expectedArrival}) = ${todayDateOnly}`,
+          ),
         );
 
       if (ordersToConfirm.length === 0) {
@@ -62,23 +62,14 @@ export class PurchaseOrderCronService {
           });
           successCount++;
         } catch (error) {
-          this.logger.error(
-            `Failed to confirm PO ${po.id}: ${error.message}`,
-            error.stack
-          );
+          this.logger.error(`Failed to confirm PO ${po.id}: ${error.message}`, error.stack);
           failCount++;
         }
       }
 
-      this.logger.log(
-        `Auto-confirm completed: ${successCount} succeeded, ${failCount} failed`
-      );
+      this.logger.log(`Auto-confirm completed: ${successCount} succeeded, ${failCount} failed`);
     } catch (error) {
-      this.logger.error(
-        `Auto-confirm job failed: ${error.message}`,
-        error.stack
-      );
+      this.logger.error(`Auto-confirm job failed: ${error.message}`, error.stack);
     }
   }
 }
-

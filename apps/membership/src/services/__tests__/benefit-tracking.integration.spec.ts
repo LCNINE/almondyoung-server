@@ -4,10 +4,7 @@ import { SubscriptionService } from '../subscription.service';
 import { PlanService } from '../plan.service';
 import { EntitlementService } from '../entitlement.service';
 import { DbModule, DbService } from '@app/db';
-import {
-  membershipSchema,
-  type MembershipSchema,
-} from '../../shared/schemas/entities/schema';
+import { membershipSchema, type MembershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
 import { eq } from 'drizzle-orm';
 
@@ -43,12 +40,7 @@ describe('BenefitTrackingService (Integration)', () => {
           schema: membershipSchema,
         }),
       ],
-      providers: [
-        BenefitTrackingService,
-        SubscriptionService,
-        PlanService,
-        EntitlementService,
-      ],
+      providers: [BenefitTrackingService, SubscriptionService, PlanService, EntitlementService],
     }).compile();
 
     service = module.get<BenefitTrackingService>(BenefitTrackingService);
@@ -188,9 +180,7 @@ describe('BenefitTrackingService (Integration)', () => {
       const events = await dbService.db
         .select()
         .from(schema.membershipDiscountEvents)
-        .where(
-          eq(schema.membershipDiscountEvents.orderId, 'test-order-no-sub'),
-        );
+        .where(eq(schema.membershipDiscountEvents.orderId, 'test-order-no-sub'));
 
       expect(events).toHaveLength(0);
     });
@@ -199,9 +189,7 @@ describe('BenefitTrackingService (Integration)', () => {
       const nonExistentOrderId = 'non-existent-order';
 
       // DB에 없는 주문 취소 시 에러
-      await expect(
-        service.cancelDiscount(nonExistentOrderId),
-      ).rejects.toThrow();
+      await expect(service.cancelDiscount(nonExistentOrderId)).rejects.toThrow();
     });
 
     it('이미 취소된 주문을 다시 취소하면 멱등성이 보장되어야 한다', async () => {

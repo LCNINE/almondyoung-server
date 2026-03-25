@@ -8,7 +8,7 @@ import { InventoryCommandService } from './inventory-command.service';
 
 /**
  * 창고 간/창고 내 재고 이동 서비스
- * 
+ *
  * movementJobs 및 movementJobLines 테이블을 활용하여
  * 계획된 이동 작업을 생성하고 실행합니다.
  */
@@ -20,7 +20,7 @@ export class TransferService {
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly stockEventService: StockEventService,
     private readonly commandService: InventoryCommandService,
-  ) { }
+  ) {}
 
   private get db() {
     return this.dbService.db;
@@ -33,22 +33,23 @@ export class TransferService {
   /**
    * 창고 간 이동 작업 생성
    */
-  async createTransferJob(params: {
-    fromWarehouseId: string;
-    toWarehouseId: string;
-    items: Array<{
-      skuId: string;
-      fromLocationId: string;
-      toLocationId: string;
-      quantity: number;
-    }>;
-    actorId?: string;
-    memo?: string;
-  }, tx?: DbTx) {
+  async createTransferJob(
+    params: {
+      fromWarehouseId: string;
+      toWarehouseId: string;
+      items: Array<{
+        skuId: string;
+        fromLocationId: string;
+        toLocationId: string;
+        quantity: number;
+      }>;
+      actorId?: string;
+      memo?: string;
+    },
+    tx?: DbTx,
+  ) {
     return this.inTx(async (trx) => {
-      this.logger.log(
-        `Creating transfer job from warehouse ${params.fromWarehouseId} to ${params.toWarehouseId}`
-      );
+      this.logger.log(`Creating transfer job from warehouse ${params.fromWarehouseId} to ${params.toWarehouseId}`);
 
       if (params.items.length === 0) {
         throw new BadRequestException('At least one item is required for transfer');
@@ -81,7 +82,7 @@ export class TransferService {
       this.logger.log(`Movement job created: ${movementJob.id}`);
 
       // 각 아이템에 대한 라인 생성 (아직 실행 안함)
-      const lines: typeof wmsTables.movementJobLines.$inferSelect[] = [];
+      const lines: (typeof wmsTables.movementJobLines.$inferSelect)[] = [];
       for (const item of params.items) {
         const [line] = await trx
           .insert(wmsTables.movementJobLines)
@@ -98,7 +99,7 @@ export class TransferService {
         lines.push(line);
 
         this.logger.log(
-          `Created transfer line: SKU ${item.skuId}, Qty ${item.quantity}, ${item.fromLocationId} → ${item.toLocationId}`
+          `Created transfer line: SKU ${item.skuId}, Qty ${item.quantity}, ${item.fromLocationId} → ${item.toLocationId}`,
         );
       }
 
@@ -113,9 +114,12 @@ export class TransferService {
   /**
    * 창고 간 이동 작업 실행
    */
-  async executeTransferJob(params: {
-    jobId: string;
-  }, tx?: DbTx) {
+  async executeTransferJob(
+    params: {
+      jobId: string;
+    },
+    tx?: DbTx,
+  ) {
     return this.inTx(async (trx) => {
       this.logger.log(`Executing transfer job ${params.jobId}`);
 
@@ -153,9 +157,7 @@ export class TransferService {
 
       const isInterWarehouse = fromLocation.warehouseId !== toLocation.warehouseId;
 
-      this.logger.log(
-        `Transfer type: ${isInterWarehouse ? 'Inter-warehouse' : 'Intra-warehouse'}`
-      );
+      this.logger.log(`Transfer type: ${isInterWarehouse ? 'Inter-warehouse' : 'Intra-warehouse'}`);
 
       // 각 라인 실행
       for (const line of lines) {
@@ -173,7 +175,7 @@ export class TransferService {
             line.toLocationId,
             line.quantity,
             line.memo || undefined,
-            trx
+            trx,
           );
 
           // Line 업데이트: 첫 번째 이벤트 ID 기록
@@ -198,19 +200,22 @@ export class TransferService {
           });
 
           this.logger.log(
-            `Executed inter-warehouse transfer for line ${line.id}: ${result.shipEventId} / ${result.receiveEventId}`
+            `Executed inter-warehouse transfer for line ${line.id}: ${result.shipEventId} / ${result.receiveEventId}`,
           );
         } else {
           // 창고 내 이동: moveInternal 사용
-          const result = await this.commandService.moveInternal({
-            skuId: line.skuId,
-            warehouseId: fromLocation.warehouseId,
-            fromLocationId: line.fromLocationId,
-            toLocationId: line.toLocationId,
-            quantity: line.quantity,
-            reason: line.memo || 'Internal movement',
-            journalId: movementJob.journalId ?? undefined,
-          }, trx);
+          const result = await this.commandService.moveInternal(
+            {
+              skuId: line.skuId,
+              warehouseId: fromLocation.warehouseId,
+              fromLocationId: line.fromLocationId,
+              toLocationId: line.toLocationId,
+              quantity: line.quantity,
+              reason: line.memo || 'Internal movement',
+              journalId: movementJob.journalId ?? undefined,
+            },
+            trx,
+          );
 
           // Line 업데이트
           await trx
@@ -233,9 +238,7 @@ export class TransferService {
             eventId: result.eventId,
           });
 
-          this.logger.log(
-            `Executed intra-warehouse move for line ${line.id}: ${result.eventId}`
-          );
+          this.logger.log(`Executed intra-warehouse move for line ${line.id}: ${result.eventId}`);
         }
       }
 
@@ -251,33 +254,41 @@ export class TransferService {
   /**
    * 창고 내 간편 이동 (단일 아이템)
    */
-  async moveWithinWarehouse(params: {
-    skuId: string;
-    warehouseId: string;
-    fromLocationId: string;
-    toLocationId: string;
-    quantity: number;
-    actorId?: string;
-    memo?: string;
-  }, tx?: DbTx) {
+  async moveWithinWarehouse(
+    params: {
+      skuId: string;
+      warehouseId: string;
+      fromLocationId: string;
+      toLocationId: string;
+      quantity: number;
+      actorId?: string;
+      memo?: string;
+    },
+    tx?: DbTx,
+  ) {
     return this.inTx(async (trx) => {
       this.logger.log(
-        `Moving SKU ${params.skuId} within warehouse ${params.warehouseId}: ${params.fromLocationId} → ${params.toLocationId}`
+        `Moving SKU ${params.skuId} within warehouse ${params.warehouseId}: ${params.fromLocationId} → ${params.toLocationId}`,
       );
 
       // Job 생성
-      const { jobId, journalId } = await this.createTransferJob({
-        fromWarehouseId: params.warehouseId,
-        toWarehouseId: params.warehouseId,
-        items: [{
-          skuId: params.skuId,
-          fromLocationId: params.fromLocationId,
-          toLocationId: params.toLocationId,
-          quantity: params.quantity,
-        }],
-        actorId: params.actorId,
-        memo: params.memo,
-      }, trx);
+      const { jobId, journalId } = await this.createTransferJob(
+        {
+          fromWarehouseId: params.warehouseId,
+          toWarehouseId: params.warehouseId,
+          items: [
+            {
+              skuId: params.skuId,
+              fromLocationId: params.fromLocationId,
+              toLocationId: params.toLocationId,
+              quantity: params.quantity,
+            },
+          ],
+          actorId: params.actorId,
+          memo: params.memo,
+        },
+        trx,
+      );
 
       // 즉시 실행
       await this.executeTransferJob({ jobId }, trx);
@@ -316,11 +327,14 @@ export class TransferService {
   /**
    * 이동 작업 목록 조회
    */
-  async listTransferJobs(filters: {
-    warehouseId?: string;
-    limit?: number;
-    offset?: number;
-  }, tx?: DbTx): Promise<(MovementJob & { lineCount: number })[]> {
+  async listTransferJobs(
+    filters: {
+      warehouseId?: string;
+      limit?: number;
+      offset?: number;
+    },
+    tx?: DbTx,
+  ): Promise<(MovementJob & { lineCount: number })[]> {
     const db = tx ?? this.db;
 
     const conditions: SQL[] = [];
@@ -367,8 +381,8 @@ export class TransferService {
       where: eq(wmsTables.movementJobLines.jobId, jobId),
     });
 
-    const executedLines = lines.filter(line => line.eventId !== null);
-    const pendingLines = lines.filter(line => line.eventId === null);
+    const executedLines = lines.filter((line) => line.eventId !== null);
+    const pendingLines = lines.filter((line) => line.eventId === null);
 
     return {
       jobId,
@@ -379,5 +393,3 @@ export class TransferService {
     };
   }
 }
-
-

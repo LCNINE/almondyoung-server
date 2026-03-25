@@ -39,8 +39,7 @@ export class ReturnMapper {
       disposeQuantity: returnEntity.disposeQuantity ?? 0,
       createdAt: returnEntity.createdAt.toISOString(),
       updatedAt: returnEntity.updatedAt.toISOString(),
-      items: returnItems?.map(item => ReturnItemMapper.toDto(item)),
+      items: returnItems?.map((item) => ReturnItemMapper.toDto(item)),
     };
   }
 }
-

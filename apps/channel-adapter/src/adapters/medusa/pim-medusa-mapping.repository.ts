@@ -4,20 +4,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { eq } from 'drizzle-orm';
 import { pimMedusaMappings } from '../../schema';
-import type {
-  PimMedusaMapping,
-  NewPimMedusaMapping,
-  UpdatePimMedusaMapping,
-  ChannelAdapterSchema,
-} from '../../types';
+import type { PimMedusaMapping, NewPimMedusaMapping, UpdatePimMedusaMapping, ChannelAdapterSchema } from '../../types';
 
 @Injectable()
 export class PimMedusaMappingRepository {
   private readonly logger = new Logger(PimMedusaMappingRepository.name);
 
-  constructor(
-    private readonly dbService: DbService<ChannelAdapterSchema>,
-  ) { }
+  constructor(private readonly dbService: DbService<ChannelAdapterSchema>) {}
 
   // pim master id로 매핑 조회
   async findByPimMasterId(pimMasterId: string): Promise<PimMedusaMapping | null> {
@@ -43,20 +36,14 @@ export class PimMedusaMappingRepository {
 
   // 매핑 생성
   async create(data: NewPimMedusaMapping): Promise<PimMedusaMapping> {
-    const [mapping] = await this.dbService.db
-      .insert(pimMedusaMappings)
-      .values(data)
-      .returning();
+    const [mapping] = await this.dbService.db.insert(pimMedusaMappings).values(data).returning();
 
     this.logger.log(`Created mapping: ${data.pimMasterId} → ${data.medusaProductId}`);
     return mapping;
   }
 
   // 매핑 업데이트
-  async update(
-    pimMasterId: string,
-    data: UpdatePimMedusaMapping,
-  ): Promise<PimMedusaMapping> {
+  async update(pimMasterId: string, data: UpdatePimMedusaMapping): Promise<PimMedusaMapping> {
     const [mapping] = await this.dbService.db
       .update(pimMedusaMappings)
       .set({
@@ -148,10 +135,7 @@ export class PimMedusaMappingRepository {
   }
 
   // 동일 버전 중복 처리 방지: 이미 반영된 버전이면 skip
-  async shouldProcessVersionId(
-    pimMasterId: string,
-    newVersionId: string,
-  ): Promise<boolean> {
+  async shouldProcessVersionId(pimMasterId: string, newVersionId: string): Promise<boolean> {
     const existing = await this.findByPimMasterId(pimMasterId);
 
     if (!existing || !existing.pimVersionId) {
@@ -160,9 +144,7 @@ export class PimMedusaMappingRepository {
     }
 
     if (newVersionId === existing.pimVersionId) {
-      this.logger.warn(
-        `Skipping duplicate event: ${pimMasterId} (versionId: ${newVersionId})`,
-      );
+      this.logger.warn(`Skipping duplicate event: ${pimMasterId} (versionId: ${newVersionId})`);
       return false;
     }
 

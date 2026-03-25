@@ -24,23 +24,17 @@ import { BannerMapper } from './mappers';
 
 @Injectable()
 export class BannersService {
-  constructor(@InjectDb() private readonly db: DbService<PimSchema>) { }
+  constructor(@InjectDb() private readonly db: DbService<PimSchema>) {}
 
   private get client() {
     return this.db.db;
   }
 
-  private async inTx<T>(
-    fn: (tx: DbTransaction) => Promise<T>,
-    tx?: DbTransaction,
-  ): Promise<T> {
+  private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction): Promise<T> {
     return tx ? fn(tx) : this.client.transaction(fn);
   }
 
-  async createBannerGroup(
-    dto: CreateBannerGroupDto,
-    tx?: DbTransaction,
-  ): Promise<BannerGroupResponseDto> {
+  async createBannerGroup(dto: CreateBannerGroupDto, tx?: DbTransaction): Promise<BannerGroupResponseDto> {
     return this.inTx(async (tx) => {
       const existingGroup = await tx
         .select()
@@ -54,29 +48,18 @@ export class BannersService {
 
       const newBannerGroup: NewBannerGroup = dto;
 
-      const [createdGroup] = await tx
-        .insert(pimSchema.bannerGroups)
-        .values(newBannerGroup)
-        .returning();
+      const [createdGroup] = await tx.insert(pimSchema.bannerGroups).values(newBannerGroup).returning();
 
       return BannerMapper.toGroupDto(createdGroup);
     }, tx);
   }
 
-  async getBannerGroupById(
-    id: string,
-    tx?: DbTransaction,
-  ): Promise<BannerGroupResponseDto> {
+  async getBannerGroupById(id: string, tx?: DbTransaction): Promise<BannerGroupResponseDto> {
     return this.inTx(async (tx) => {
       const [group] = await tx
         .select()
         .from(pimSchema.bannerGroups)
-        .where(
-          and(
-            eq(pimSchema.bannerGroups.id, id),
-            isNull(pimSchema.bannerGroups.deletedAt),
-          ),
-        )
+        .where(and(eq(pimSchema.bannerGroups.id, id), isNull(pimSchema.bannerGroups.deletedAt)))
         .limit(1);
 
       if (!group) {
@@ -87,20 +70,12 @@ export class BannersService {
     }, tx);
   }
 
-  async getBannerGroupByCode(
-    code: string,
-    tx?: DbTransaction,
-  ): Promise<BannerGroupWithBannersResponseDto> {
+  async getBannerGroupByCode(code: string, tx?: DbTransaction): Promise<BannerGroupWithBannersResponseDto> {
     return this.inTx(async (tx) => {
       const [group] = await tx
         .select()
         .from(pimSchema.bannerGroups)
-        .where(
-          and(
-            eq(pimSchema.bannerGroups.code, code),
-            isNull(pimSchema.bannerGroups.deletedAt),
-          ),
-        )
+        .where(and(eq(pimSchema.bannerGroups.code, code), isNull(pimSchema.bannerGroups.deletedAt)))
         .limit(1);
 
       if (!group) {
@@ -116,14 +91,8 @@ export class BannersService {
             eq(pimSchema.banners.bannerGroupId, group.id),
             isNull(pimSchema.banners.deletedAt),
             eq(pimSchema.banners.isActive, true),
-            or(
-              isNull(pimSchema.banners.displayStartAt),
-              lte(pimSchema.banners.displayStartAt, now),
-            ),
-            or(
-              isNull(pimSchema.banners.displayEndAt),
-              gt(pimSchema.banners.displayEndAt, now),
-            )
+            or(isNull(pimSchema.banners.displayStartAt), lte(pimSchema.banners.displayStartAt, now)),
+            or(isNull(pimSchema.banners.displayEndAt), gt(pimSchema.banners.displayEndAt, now)),
           ),
         )
         .orderBy(pimSchema.banners.sortOrder);
@@ -135,10 +104,7 @@ export class BannersService {
     }, tx);
   }
 
-  async listBannerGroups(
-    category?: string,
-    tx?: DbTransaction,
-  ): Promise<BannerGroupResponseDto[]> {
+  async listBannerGroups(category?: string, tx?: DbTransaction): Promise<BannerGroupResponseDto[]> {
     return this.inTx(async (tx) => {
       const conditions: SQL[] = [isNull(pimSchema.bannerGroups.deletedAt)];
 
@@ -156,11 +122,7 @@ export class BannersService {
     }, tx);
   }
 
-  async updateBannerGroup(
-    id: string,
-    dto: UpdateBannerGroupDto,
-    tx?: DbTransaction,
-  ): Promise<BannerGroupResponseDto> {
+  async updateBannerGroup(id: string, dto: UpdateBannerGroupDto, tx?: DbTransaction): Promise<BannerGroupResponseDto> {
     return this.inTx(async (tx) => {
       const updateData = {
         ...dto,
@@ -170,12 +132,7 @@ export class BannersService {
       const [updatedGroup] = await tx
         .update(pimSchema.bannerGroups)
         .set(updateData)
-        .where(
-          and(
-            eq(pimSchema.bannerGroups.id, id),
-            isNull(pimSchema.bannerGroups.deletedAt),
-          ),
-        )
+        .where(and(eq(pimSchema.bannerGroups.id, id), isNull(pimSchema.bannerGroups.deletedAt)))
         .returning();
 
       if (!updatedGroup) {
@@ -186,33 +143,19 @@ export class BannersService {
     }, tx);
   }
 
-  async deleteBannerGroup(
-    id: string,
-    deletedBy?: string,
-    tx?: DbTransaction,
-  ): Promise<void> {
+  async deleteBannerGroup(id: string, deletedBy?: string, tx?: DbTransaction): Promise<void> {
     return this.inTx(async (tx) => {
       const now = new Date();
 
       await tx
         .update(pimSchema.banners)
         .set({ deletedAt: now, deletedBy, updatedAt: now })
-        .where(
-          and(
-            eq(pimSchema.banners.bannerGroupId, id),
-            isNull(pimSchema.banners.deletedAt),
-          ),
-        );
+        .where(and(eq(pimSchema.banners.bannerGroupId, id), isNull(pimSchema.banners.deletedAt)));
 
       const [deletedGroup] = await tx
         .update(pimSchema.bannerGroups)
         .set({ deletedAt: now, deletedBy, updatedAt: now })
-        .where(
-          and(
-            eq(pimSchema.bannerGroups.id, id),
-            isNull(pimSchema.bannerGroups.deletedAt),
-          ),
-        )
+        .where(and(eq(pimSchema.bannerGroups.id, id), isNull(pimSchema.bannerGroups.deletedAt)))
         .returning();
 
       if (!deletedGroup) {
@@ -221,20 +164,12 @@ export class BannersService {
     }, tx);
   }
 
-  async createBanner(
-    dto: CreateBannerDto,
-    tx?: DbTransaction,
-  ): Promise<BannerResponseDto> {
+  async createBanner(dto: CreateBannerDto, tx?: DbTransaction): Promise<BannerResponseDto> {
     return this.inTx(async (tx) => {
       const [group] = await tx
         .select()
         .from(pimSchema.bannerGroups)
-        .where(
-          and(
-            eq(pimSchema.bannerGroups.id, dto.bannerGroupId),
-            isNull(pimSchema.bannerGroups.deletedAt),
-          ),
-        )
+        .where(and(eq(pimSchema.bannerGroups.id, dto.bannerGroupId), isNull(pimSchema.bannerGroups.deletedAt)))
         .limit(1);
 
       if (!group) {
@@ -243,36 +178,23 @@ export class BannersService {
 
       const newBanner: NewBanner = {
         ...dto,
-        displayStartAt: dto.displayStartAt
-          ? new Date(dto.displayStartAt)
-          : null,
+        displayStartAt: dto.displayStartAt ? new Date(dto.displayStartAt) : null,
         displayEndAt: dto.displayEndAt ? new Date(dto.displayEndAt) : null,
         linkedProductMasterIds: dto.linkedProductMasterIds || [],
       };
 
-      const [createdBanner] = await tx
-        .insert(pimSchema.banners)
-        .values(newBanner)
-        .returning();
+      const [createdBanner] = await tx.insert(pimSchema.banners).values(newBanner).returning();
 
       return BannerMapper.toDto(createdBanner);
     }, tx);
   }
 
-  async getBannerById(
-    id: string,
-    tx?: DbTransaction,
-  ): Promise<BannerResponseDto> {
+  async getBannerById(id: string, tx?: DbTransaction): Promise<BannerResponseDto> {
     return this.inTx(async (tx) => {
       const [banner] = await tx
         .select()
         .from(pimSchema.banners)
-        .where(
-          and(
-            eq(pimSchema.banners.id, id),
-            isNull(pimSchema.banners.deletedAt),
-          ),
-        )
+        .where(and(eq(pimSchema.banners.id, id), isNull(pimSchema.banners.deletedAt)))
         .limit(1);
 
       if (!banner) {
@@ -308,17 +230,11 @@ export class BannersService {
     }, tx);
   }
 
-  async updateBanner(
-    id: string,
-    dto: UpdateBannerDto,
-    tx?: DbTransaction,
-  ): Promise<BannerResponseDto> {
+  async updateBanner(id: string, dto: UpdateBannerDto, tx?: DbTransaction): Promise<BannerResponseDto> {
     return this.inTx(async (tx) => {
       const updateData = {
         ...dto,
-        displayStartAt: dto.displayStartAt
-          ? new Date(dto.displayStartAt)
-          : undefined,
+        displayStartAt: dto.displayStartAt ? new Date(dto.displayStartAt) : undefined,
         displayEndAt: dto.displayEndAt ? new Date(dto.displayEndAt) : undefined,
         updatedAt: new Date(),
       };
@@ -326,12 +242,7 @@ export class BannersService {
       const [updatedBanner] = await tx
         .update(pimSchema.banners)
         .set(updateData)
-        .where(
-          and(
-            eq(pimSchema.banners.id, id),
-            isNull(pimSchema.banners.deletedAt),
-          ),
-        )
+        .where(and(eq(pimSchema.banners.id, id), isNull(pimSchema.banners.deletedAt)))
         .returning();
 
       if (!updatedBanner) {
@@ -342,23 +253,14 @@ export class BannersService {
     }, tx);
   }
 
-  async deleteBanner(
-    id: string,
-    deletedBy?: string,
-    tx?: DbTransaction,
-  ): Promise<void> {
+  async deleteBanner(id: string, deletedBy?: string, tx?: DbTransaction): Promise<void> {
     return this.inTx(async (tx) => {
       const now = new Date();
 
       const [deletedBanner] = await tx
         .update(pimSchema.banners)
         .set({ deletedAt: now, deletedBy, updatedAt: now })
-        .where(
-          and(
-            eq(pimSchema.banners.id, id),
-            isNull(pimSchema.banners.deletedAt),
-          ),
-        )
+        .where(and(eq(pimSchema.banners.id, id), isNull(pimSchema.banners.deletedAt)))
         .returning();
 
       if (!deletedBanner) {
@@ -367,4 +269,3 @@ export class BannersService {
     }, tx);
   }
 }
-

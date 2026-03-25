@@ -3,9 +3,7 @@ import z from 'zod';
 // 명령 검증용 Zod 스키마들
 export const OrderConfirmCommandSchema = z.object({
   type: z.literal('order.confirm'),
-  productOrderIds: z
-    .array(z.string())
-    .min(1, '최소 1개의 상품 주문 번호가 필요합니다'),
+  productOrderIds: z.array(z.string()).min(1, '최소 1개의 상품 주문 번호가 필요합니다'),
 });
 
 export const DispatchDelayCommandSchema = z.object({

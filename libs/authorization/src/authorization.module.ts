@@ -3,10 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PassportModule } from '@nestjs/passport';
 import { AuthorizationService } from './services/authorization.service';
 import { AuthenticationService } from './services/authentication.service';
-import {
-  ScopeBootstrapService,
-  AuthorizationModuleOptions,
-} from './services/scope-bootstrap.service';
+import { ScopeBootstrapService, AuthorizationModuleOptions } from './services/scope-bootstrap.service';
 import { ScopeGuard } from './guards/scope.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { JwtAccessStrategy } from './strategies/jwt-access.strategy';
@@ -33,20 +30,12 @@ export class AuthorizationModule {
           useFactory: (configService: ConfigService) => {
             const secret = configService.get<string>('AUTH_SECRET');
             if (!secret) {
-              throw new Error(
-                'AUTH_SECRET is not defined in environment variables',
-              );
+              throw new Error('AUTH_SECRET is not defined in environment variables');
             }
             return {
               secret,
-              issuer: configService.get<string>(
-                'JWT_ISSUER',
-                'almondyoung-auth',
-              ),
-              audience: configService.get<string>(
-                'JWT_AUDIENCE',
-                'almondyoung',
-              ),
+              issuer: configService.get<string>('JWT_ISSUER', 'almondyoung-auth'),
+              audience: configService.get<string>('JWT_AUDIENCE', 'almondyoung'),
             };
           },
           inject: [ConfigService],

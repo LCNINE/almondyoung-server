@@ -25,4 +25,3 @@ export class TagValueWithGroupNameDto {
   @ApiProperty({ description: '수정일시' })
   updatedAt: string;
 }
-

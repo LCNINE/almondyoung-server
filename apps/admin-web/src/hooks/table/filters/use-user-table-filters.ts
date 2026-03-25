@@ -1,4 +1,4 @@
-import type { Filter } from '@/components/data-table'
+import type { Filter } from '@/components/data-table';
 
 export function useUserTableFilters(): Filter[] {
   return [
@@ -12,5 +12,5 @@ export function useUserTableFilters(): Filter[] {
         { label: '일반', value: 'user' },
       ],
     },
-  ]
+  ];
 }

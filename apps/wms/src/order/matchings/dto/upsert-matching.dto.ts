@@ -1,15 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import {
-  IsArray,
-  IsBoolean,
-  IsInt,
-  IsOptional,
-  IsPositive,
-  IsString,
-  IsUUID,
-  ValidateNested,
-} from 'class-validator';
+import { IsArray, IsBoolean, IsInt, IsOptional, IsPositive, IsString, IsUUID, ValidateNested } from 'class-validator';
 
 export class MatchingLinkDto {
   @ApiProperty({
@@ -91,4 +82,3 @@ export class UpsertMatchingDto {
   @Type(() => MatchingPolicyDto)
   policy?: MatchingPolicyDto;
 }
-

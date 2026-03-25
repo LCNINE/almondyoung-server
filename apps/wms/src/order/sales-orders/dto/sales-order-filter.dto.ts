@@ -1,7 +1,12 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsString, IsEnum, IsDateString, IsInt, Min } from 'class-validator';
 import { Transform } from 'class-transformer';
-import { OrderStatusEnum, orderStatusValues, SalesChannelEnum, salesChannelValues } from 'apps/wms/database/schemas/enum-values';
+import {
+  OrderStatusEnum,
+  orderStatusValues,
+  SalesChannelEnum,
+  salesChannelValues,
+} from 'apps/wms/database/schemas/enum-values';
 
 export class SalesOrderFilterDto {
   @ApiPropertyOptional({ description: '조회 시작일 (YYYY-MM-DD)' })

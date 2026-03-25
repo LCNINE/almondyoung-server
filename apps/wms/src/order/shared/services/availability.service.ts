@@ -16,20 +16,24 @@ export class AvailabilityService {
       const [onHand] = await trx
         .select({ qty: sum(wmsTables.stockLedgers.qty) })
         .from(wmsTables.stockLedgers)
-        .where(and(
-          eq(wmsTables.stockLedgers.skuId, skuId),
-          eq(wmsTables.stockLedgers.warehouseId, warehouseId),
-          eq(wmsTables.stockLedgers.stockState, 'ON_HAND')
-        ));
+        .where(
+          and(
+            eq(wmsTables.stockLedgers.skuId, skuId),
+            eq(wmsTables.stockLedgers.warehouseId, warehouseId),
+            eq(wmsTables.stockLedgers.stockState, 'ON_HAND'),
+          ),
+        );
 
       const [reserved] = await trx
         .select({ qty: sum(wmsTables.stockReservations.quantity) })
         .from(wmsTables.stockReservations)
-        .where(and(
-          eq(wmsTables.stockReservations.skuId, skuId),
-          eq(wmsTables.stockReservations.warehouseId, warehouseId),
-          eq(wmsTables.stockReservations.status, 'confirmed')
-        ));
+        .where(
+          and(
+            eq(wmsTables.stockReservations.skuId, skuId),
+            eq(wmsTables.stockReservations.warehouseId, warehouseId),
+            eq(wmsTables.stockReservations.status, 'confirmed'),
+          ),
+        );
 
       const onHandQty = Number(onHand?.qty ?? 0);
       const reservedQty = Number(reserved?.qty ?? 0);
@@ -37,5 +41,3 @@ export class AvailabilityService {
     }, tx);
   }
 }
-
-

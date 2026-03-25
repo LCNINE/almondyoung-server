@@ -9,5 +9,4 @@ interface MyTokenPayload extends JwtPayload {
   exp: number;
 }
 
-export const jwtVerify = (almond_token: string, secret: string) =>
-  jwt.verify(almond_token, secret) as MyTokenPayload;
+export const jwtVerify = (almond_token: string, secret: string) => jwt.verify(almond_token, secret) as MyTokenPayload;

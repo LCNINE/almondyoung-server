@@ -54,8 +54,8 @@ export const createPlanRequestData = (tierId: string): CreatePlanRequest => ({
 export const createPausePolicyRequestData = (): CreatePolicyRequest => {
   // 중복을 피하기 위해 더 다양한 정책 타입 중 하나를 랜덤 선택
   const policyTypes = [
-    'MIN_PAUSE_DURATION_DAYS', 
-    'MAX_PAUSE_DURATION_DAYS', 
+    'MIN_PAUSE_DURATION_DAYS',
+    'MAX_PAUSE_DURATION_DAYS',
     'PAUSE_COOLDOWN_DAYS',
     'PLAN_CHANGE_COOLDOWN_DAYS',
     'NEW_USER_GRACE_PERIOD',
@@ -66,11 +66,11 @@ export const createPausePolicyRequestData = (): CreatePolicyRequest => {
     'VIP_USER_BENEFITS',
     'PROMOTIONAL_PERIODS',
     'SEASONAL_RESTRICTIONS',
-    'SPECIAL_EVENT_RULES'
+    'SPECIAL_EVENT_RULES',
   ] as const;
-  
+
   const selectedType = policyTypes[Math.floor(Math.random() * policyTypes.length)];
-  
+
   const ruleValues = {
     MIN_PAUSE_DURATION_DAYS: { days: 1 },
     MAX_PAUSE_DURATION_DAYS: { days: 90 },
@@ -154,16 +154,19 @@ export const reduceEntitlementRequestData = (userId: string, days: number = -7):
 export const generateUniqueTierCode = (): string => {
   const baseCodes = ['BASIC', 'STANDARD', 'PREMIUM', 'VIP', 'ENTERPRISE'];
   const suffixes = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
-  
+
   const baseCode = baseCodes[Math.floor(Math.random() * baseCodes.length)];
   const suffix = suffixes[Math.floor(Math.random() * suffixes.length)];
   const timestamp = Date.now().toString().slice(-3); // 마지막 3자리만 사용
-  
+
   // 숫자를 문자로 변환 (0->A, 1->B, ..., 9->J)
-  const timestampLetters = timestamp.split('').map(digit => 
-    String.fromCharCode(65 + parseInt(digit)) // 0->A, 1->B, ..., 9->J
-  ).join('');
-  
+  const timestampLetters = timestamp
+    .split('')
+    .map(
+      (digit) => String.fromCharCode(65 + parseInt(digit)), // 0->A, 1->B, ..., 9->J
+    )
+    .join('');
+
   // 20자 제한을 고려하여 코드 생성 (예: STANDARD_A_ABC)
   return `${baseCode}_${suffix}_${timestampLetters}`;
 };
@@ -171,7 +174,10 @@ export const generateUniqueTierCode = (): string => {
 /**
  * 다양한 가격대 플랜 데이터 생성기
  */
-export const createVariedPlanRequestData = (tierId: string, planType: 'monthly' | 'yearly' | 'weekly' = 'monthly'): CreatePlanRequest => {
+export const createVariedPlanRequestData = (
+  tierId: string,
+  planType: 'monthly' | 'yearly' | 'weekly' = 'monthly',
+): CreatePlanRequest => {
   const planConfigs = {
     weekly: { price: 2500, durationDays: 7, trialDays: 1 },
     monthly: { price: 10000, durationDays: 30, trialDays: 7 },
@@ -179,7 +185,7 @@ export const createVariedPlanRequestData = (tierId: string, planType: 'monthly' 
   };
 
   const config = planConfigs[planType];
-  
+
   return {
     tierId,
     price: config.price,
@@ -193,7 +199,7 @@ export const createVariedPlanRequestData = (tierId: string, planType: 'monthly' 
  * 다양한 정책 타입 데이터 생성기
  */
 export const createPolicyRequestData = (
-  policyType: 'MAX_PAUSES_PER_YEAR' | 'MIN_PAUSE_DURATION_DAYS' | 'MAX_PAUSE_DURATION_DAYS' = 'MAX_PAUSES_PER_YEAR'
+  policyType: 'MAX_PAUSES_PER_YEAR' | 'MIN_PAUSE_DURATION_DAYS' | 'MAX_PAUSE_DURATION_DAYS' = 'MAX_PAUSES_PER_YEAR',
 ): CreatePolicyRequest => {
   const policyConfigs = {
     MAX_PAUSES_PER_YEAR: { limit: 2 },

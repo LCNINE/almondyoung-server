@@ -4,12 +4,7 @@ import { eq, and, sql } from 'drizzle-orm';
 import * as schema from '../../shared/schemas/entities/schema';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import { DrizzleTransaction } from '../../shared/schemas/types';
-import {
-  calculateCycleStart,
-  calculateCycleEnd,
-  calculateCycleNumber,
-  formatDate,
-} from '../../utils/cycle.utils';
+import { calculateCycleStart, calculateCycleEnd, calculateCycleNumber, formatDate } from '../../utils/cycle.utils';
 
 export interface RecordDiscountInput {
   orderId: string;
@@ -84,10 +79,7 @@ export class BenefitManager {
           cycleNumber,
         })
         .onConflictDoUpdate({
-          target: [
-            schema.membershipCycleBenefits.userId,
-            schema.membershipCycleBenefits.cycleStartDate,
-          ],
+          target: [schema.membershipCycleBenefits.userId, schema.membershipCycleBenefits.cycleStartDate],
           set: {
             totalDiscountAmount: sql`${schema.membershipCycleBenefits.totalDiscountAmount} + ${input.membershipDiscountAmount}`,
             orderCount: sql`${schema.membershipCycleBenefits.orderCount} + 1`,
@@ -136,10 +128,7 @@ export class BenefitManager {
         .where(
           and(
             eq(schema.membershipCycleBenefits.userId, event.userId),
-            eq(
-              schema.membershipCycleBenefits.cycleStartDate,
-              event.cycleStartDate,
-            ),
+            eq(schema.membershipCycleBenefits.cycleStartDate, event.cycleStartDate),
           ),
         );
 

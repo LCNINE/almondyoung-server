@@ -1,11 +1,5 @@
 import { Controller, Get, Post, Put, Body, Param, Query, UsePipes } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiParam,
-  ApiBody,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
 import { PickingProcessService } from '../../shared/services/picking-process.service';
 import { ZodValidationPipe } from '@app/shared/pipes/zod-validation.pipe';
 import { z } from 'zod';
@@ -15,11 +9,11 @@ const PickItemSchema = z.object({
   skuId: z.string().uuid(),
   pickedQty: z.number().int().positive(),
   locationCode: z.string().optional(),
-  pickerUserId: z.string().optional()
+  pickerUserId: z.string().optional(),
 });
 
 const PickIndividualItemSchema = z.object({
-  pickedQty: z.number().int().positive()
+  pickedQty: z.number().int().positive(),
 });
 
 const ScanBarcodeSchema = z.object({
@@ -27,7 +21,7 @@ const ScanBarcodeSchema = z.object({
   batchId: z.string().uuid().optional(),
   fulfillmentOrderId: z.string().uuid().optional(),
   warehouseId: z.string().uuid(),
-  pickerUserId: z.string().optional()
+  pickerUserId: z.string().optional(),
 });
 
 const PickByBarcodeSchema = z.object({
@@ -37,20 +31,18 @@ const PickByBarcodeSchema = z.object({
   fulfillmentOrderId: z.string().uuid().optional(),
   warehouseId: z.string().uuid(),
   pickerUserId: z.string().optional(),
-  locationCode: z.string().optional()
+  locationCode: z.string().optional(),
 });
 
 const GenerateBarcodeSchema = z.object({
   type: z.enum(['sku', 'foi', 'fo']),
-  id: z.string().uuid()
+  id: z.string().uuid(),
 });
 
 @ApiTags('Picking')
 @Controller('picking')
 export class PickingController {
-  constructor(
-    private readonly pickingProcessService: PickingProcessService
-  ) {}
+  constructor(private readonly pickingProcessService: PickingProcessService) {}
 
   @Get('batches/:batchId/operations')
   @ApiOperation({ summary: '배치별 피킹 작업 조회', description: '특정 배치의 피킹 작업 목록을 조회합니다.' })
@@ -83,10 +75,10 @@ export class PickingController {
         skuId: { type: 'string', format: 'uuid', description: 'SKU ID' },
         pickedQty: { type: 'number', description: '피킹된 수량' },
         locationCode: { type: 'string', description: '위치 코드 (선택사항)' },
-        pickerUserId: { type: 'string', description: '피커 사용자 ID (선택사항)' }
+        pickerUserId: { type: 'string', description: '피커 사용자 ID (선택사항)' },
       },
-      required: ['batchId', 'skuId', 'pickedQty']
-    }
+      required: ['batchId', 'skuId', 'pickedQty'],
+    },
   })
   @ApiResponse({ status: 200, description: '아이템 피킹 성공' })
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
@@ -127,20 +119,17 @@ export class PickingController {
     schema: {
       type: 'object',
       properties: {
-        pickedQty: { type: 'number', description: '피킹된 수량' }
+        pickedQty: { type: 'number', description: '피킹된 수량' },
       },
-      required: ['pickedQty']
-    }
+      required: ['pickedQty'],
+    },
   })
   @ApiResponse({ status: 200, description: '개별 아이템 피킹 성공' })
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
   @ApiResponse({ status: 404, description: '주문처리 라인을 찾을 수 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })
   @UsePipes(new ZodValidationPipe(PickIndividualItemSchema))
-  async pickIndividualItem(
-    @Param('foiId') foiId: string,
-    @Body() dto: z.infer<typeof PickIndividualItemSchema>
-  ) {
+  async pickIndividualItem(@Param('foiId') foiId: string, @Body() dto: z.infer<typeof PickIndividualItemSchema>) {
     await this.pickingProcessService.pickIndividualItem(foiId, dto.pickedQty);
     return { message: 'Individual item picked successfully' };
   }
@@ -182,10 +171,10 @@ export class PickingController {
         batchId: { type: 'string', format: 'uuid', description: '배치 ID (선택사항)' },
         fulfillmentOrderId: { type: 'string', format: 'uuid', description: '주문처리 ID (선택사항)' },
         warehouseId: { type: 'string', format: 'uuid', description: '창고 ID' },
-        pickerUserId: { type: 'string', description: '피커 사용자 ID (선택사항)' }
+        pickerUserId: { type: 'string', description: '피커 사용자 ID (선택사항)' },
       },
-      required: ['barcode', 'warehouseId']
-    }
+      required: ['barcode', 'warehouseId'],
+    },
   })
   @ApiResponse({ status: 200, description: '바코드 스캔 성공' })
   @ApiResponse({ status: 400, description: '잘못된 바코드 또는 요청 데이터' })
@@ -197,7 +186,7 @@ export class PickingController {
       batchId: dto.batchId,
       fulfillmentOrderId: dto.fulfillmentOrderId,
       warehouseId: dto.warehouseId,
-      pickerUserId: dto.pickerUserId
+      pickerUserId: dto.pickerUserId,
     });
   }
 
@@ -214,10 +203,10 @@ export class PickingController {
         fulfillmentOrderId: { type: 'string', format: 'uuid', description: '주문처리 ID (선택사항)' },
         warehouseId: { type: 'string', format: 'uuid', description: '창고 ID' },
         pickerUserId: { type: 'string', description: '피커 사용자 ID (선택사항)' },
-        locationCode: { type: 'string', description: '위치 코드 (선택사항)' }
+        locationCode: { type: 'string', description: '위치 코드 (선택사항)' },
       },
-      required: ['barcode', 'pickedQty', 'warehouseId']
-    }
+      required: ['barcode', 'pickedQty', 'warehouseId'],
+    },
   })
   @ApiResponse({ status: 200, description: '바코드 피킹 성공' })
   @ApiResponse({ status: 400, description: '잘못된 바코드 또는 요청 데이터' })
@@ -230,7 +219,7 @@ export class PickingController {
       fulfillmentOrderId: dto.fulfillmentOrderId,
       warehouseId: dto.warehouseId,
       pickerUserId: dto.pickerUserId,
-      locationCode: dto.locationCode
+      locationCode: dto.locationCode,
     });
   }
 
@@ -241,11 +230,15 @@ export class PickingController {
     schema: {
       type: 'object',
       properties: {
-        type: { type: 'string', enum: ['sku', 'foi', 'fo'], description: '바코드 타입 (sku: SKU, foi: 주문처리라인, fo: 주문처리)' },
-        id: { type: 'string', format: 'uuid', description: '대상 ID' }
+        type: {
+          type: 'string',
+          enum: ['sku', 'foi', 'fo'],
+          description: '바코드 타입 (sku: SKU, foi: 주문처리라인, fo: 주문처리)',
+        },
+        id: { type: 'string', format: 'uuid', description: '대상 ID' },
       },
-      required: ['type', 'id']
-    }
+      required: ['type', 'id'],
+    },
   })
   @ApiResponse({ status: 200, description: '바코드 생성 성공' })
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
@@ -255,7 +248,7 @@ export class PickingController {
   async generateBarcode(@Body() dto: z.infer<typeof GenerateBarcodeSchema>) {
     return this.pickingProcessService.getBarcodeForPicking({
       type: dto.type,
-      id: dto.id
+      id: dto.id,
     });
   }
 }

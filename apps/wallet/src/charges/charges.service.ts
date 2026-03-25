@@ -10,10 +10,7 @@ export class ChargesService {
 
   async create(data: NewCharge, tx?: DbTx): Promise<Charge> {
     const db = tx ?? this.dbService.db;
-    const rows = await (db as typeof this.dbService.db)
-      .insert(charges)
-      .values(data)
-      .returning();
+    const rows = await (db as typeof this.dbService.db).insert(charges).values(data).returning();
     const charge = rows[0];
     if (!charge) throw new Error('CHARGE_INSERT_FAILED');
     return charge;
@@ -21,11 +18,7 @@ export class ChargesService {
 
   async findById(id: string, tx?: DbTx): Promise<Charge | null> {
     const db = tx ?? this.dbService.db;
-    const rows = await (db as typeof this.dbService.db)
-      .select()
-      .from(charges)
-      .where(eq(charges.id, id))
-      .limit(1);
+    const rows = await (db as typeof this.dbService.db).select().from(charges).where(eq(charges.id, id)).limit(1);
     return rows[0] ?? null;
   }
 
@@ -49,48 +42,27 @@ export class ChargesService {
     return rows[0] ?? null;
   }
 
-  async findSucceededAuthorizeByIntent(
-    intentId: string,
-    tx?: DbTx,
-  ): Promise<Charge | null> {
+  async findSucceededAuthorizeByIntent(intentId: string, tx?: DbTx): Promise<Charge | null> {
     const db = tx ?? this.dbService.db;
     const rows = await (db as typeof this.dbService.db)
       .select()
       .from(charges)
-      .where(
-        and(
-          eq(charges.intentId, intentId),
-          eq(charges.operation, 'AUTHORIZE'),
-          eq(charges.status, 'SUCCEEDED'),
-        ),
-      )
+      .where(and(eq(charges.intentId, intentId), eq(charges.operation, 'AUTHORIZE'), eq(charges.status, 'SUCCEEDED')))
       .orderBy(desc(charges.createdAt))
       .limit(1);
     return rows[0] ?? null;
   }
 
-  async findAllSucceededAuthorizeByIntent(
-    intentId: string,
-    tx?: DbTx,
-  ): Promise<Charge[]> {
+  async findAllSucceededAuthorizeByIntent(intentId: string, tx?: DbTx): Promise<Charge[]> {
     const db = tx ?? this.dbService.db;
     return (db as typeof this.dbService.db)
       .select()
       .from(charges)
-      .where(
-        and(
-          eq(charges.intentId, intentId),
-          eq(charges.operation, 'AUTHORIZE'),
-          eq(charges.status, 'SUCCEEDED'),
-        ),
-      )
+      .where(and(eq(charges.intentId, intentId), eq(charges.operation, 'AUTHORIZE'), eq(charges.status, 'SUCCEEDED')))
       .orderBy(asc(charges.createdAt));
   }
 
-  async findSucceededPointsAuthorizeByIntent(
-    intentId: string,
-    tx?: DbTx,
-  ): Promise<Charge | null> {
+  async findSucceededPointsAuthorizeByIntent(intentId: string, tx?: DbTx): Promise<Charge | null> {
     const db = tx ?? this.dbService.db;
     const rows = await (db as typeof this.dbService.db)
       .select({ charge: charges })
@@ -115,13 +87,7 @@ export class ChargesService {
     const captured = await (db as typeof this.dbService.db)
       .select()
       .from(charges)
-      .where(
-        and(
-          eq(charges.intentId, intentId),
-          eq(charges.operation, 'CAPTURE'),
-          eq(charges.status, 'SUCCEEDED'),
-        ),
-      )
+      .where(and(eq(charges.intentId, intentId), eq(charges.operation, 'CAPTURE'), eq(charges.status, 'SUCCEEDED')))
       .orderBy(asc(charges.createdAt));
 
     if (captured.length > 0) return captured;
@@ -130,13 +96,7 @@ export class ChargesService {
     return (db as typeof this.dbService.db)
       .select()
       .from(charges)
-      .where(
-        and(
-          eq(charges.intentId, intentId),
-          eq(charges.operation, 'AUTHORIZE'),
-          eq(charges.status, 'SUCCEEDED'),
-        ),
-      )
+      .where(and(eq(charges.intentId, intentId), eq(charges.operation, 'AUTHORIZE'), eq(charges.status, 'SUCCEEDED')))
       .orderBy(asc(charges.createdAt));
   }
 
@@ -157,16 +117,10 @@ export class ChargesService {
       .set({
         status,
         updatedAt: new Date(),
-        ...(extra?.providerTransactionId !== undefined
-          ? { providerTransactionId: extra.providerTransactionId }
-          : {}),
+        ...(extra?.providerTransactionId !== undefined ? { providerTransactionId: extra.providerTransactionId } : {}),
         ...(extra?.errorCode !== undefined ? { errorCode: extra.errorCode } : {}),
-        ...(extra?.errorMessage !== undefined
-          ? { errorMessage: extra.errorMessage }
-          : {}),
-        ...(extra?.responsePayload !== undefined
-          ? { responsePayload: extra.responsePayload }
-          : {}),
+        ...(extra?.errorMessage !== undefined ? { errorMessage: extra.errorMessage } : {}),
+        ...(extra?.responsePayload !== undefined ? { responsePayload: extra.responsePayload } : {}),
       })
       .where(eq(charges.id, id));
   }

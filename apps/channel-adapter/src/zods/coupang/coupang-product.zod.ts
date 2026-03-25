@@ -22,6 +22,4 @@ export const CoupangUpdateStockResponseSchema = z.object({
 // == 타입 추출 (Type Exports)
 // =================================================================
 
-export type CoupangUpdateStockResponse = z.infer<
-  typeof CoupangUpdateStockResponseSchema
->;
+export type CoupangUpdateStockResponse = z.infer<typeof CoupangUpdateStockResponseSchema>;

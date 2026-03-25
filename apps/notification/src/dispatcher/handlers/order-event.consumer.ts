@@ -2,10 +2,7 @@
 import { Controller, Logger, UseFilters, UseInterceptors } from '@nestjs/common';
 import { OnEvent, EventPayload, EventEnvelope, EventsExceptionFilter } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
-import {
-  OrderCreatedPayload,
-  OrderPaymentCompletedPayload,
-} from '@packages/event-contracts/streams/orders.stream';
+import { OrderCreatedPayload, OrderPaymentCompletedPayload } from '@packages/event-contracts/streams/orders.stream';
 import { DomainEvent } from '@packages/event-contracts/types';
 import { NotificationDispatcherService } from '../services/notification-dispatcher.service';
 import { EventMappingService } from '../../shared/services/event-mapping.service';
@@ -14,7 +11,7 @@ import { SendNotificationDto } from '../dto/send-notification.dto';
 
 /**
  * Order Service 이벤트 컨슈머
- * 
+ *
  * order/medusa 서비스가 발행한 이벤트를 수신하여 알림을 발송합니다.
  * - OrderCreated: 주문 생성
  * - OrderPaymentCompleted: 결제 완료
@@ -72,7 +69,9 @@ export class OrderEventConsumer {
     @EventEnvelope() envelope: DomainEvent<OrderPaymentCompletedPayload>,
     @EventPayload() payload: OrderPaymentCompletedPayload,
   ) {
-    this.logger.log(`[Event] Received OrderPaymentCompleted: ${payload.orderId} (correlationId: ${envelope.correlationId})`);
+    this.logger.log(
+      `[Event] Received OrderPaymentCompleted: ${payload.orderId} (correlationId: ${envelope.correlationId})`,
+    );
     try {
       const eventMapping = await this.eventMappingService.getEventMapping('PAYMENT_COMPLETED');
       if (!eventMapping || !eventMapping.isActive) {
@@ -105,4 +104,3 @@ export class OrderEventConsumer {
     }
   }
 }
-
