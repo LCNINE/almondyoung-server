@@ -1,4 +1,4 @@
-import { applyDecorators, UseGuards } from '@nestjs/common';
+import { applyDecorators, SetMetadata, UseGuards } from '@nestjs/common';
 import { OptionalAuthGuard } from '../guards/optional-auth.guard';
 
 /**
@@ -7,4 +7,7 @@ import { OptionalAuthGuard } from '../guards/optional-auth.guard';
  * - 토큰이 있으면 파싱하여 @User() 데코레이터로 userId 사용 가능
  * - 토큰이 없거나 유효하지 않아도 요청 통과
  */
-export const OptionalAuth = () => applyDecorators(UseGuards(OptionalAuthGuard));
+export const IS_OPTIONAL_AUTH_KEY = 'isOptionalAuth';
+
+export const OptionalAuth = () =>
+  applyDecorators(SetMetadata(IS_OPTIONAL_AUTH_KEY, true), UseGuards(OptionalAuthGuard));
