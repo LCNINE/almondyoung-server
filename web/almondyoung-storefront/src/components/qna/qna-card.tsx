@@ -17,6 +17,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
+import { Lock } from "lucide-react"
 
 import type { Question } from "@/lib/types/ui/ugc"
 import { cn } from "@/lib/utils"
@@ -68,16 +69,21 @@ export function QnaCard({
                 question.answer && "cursor-pointer"
               )}
             >
-              <Badge
-                variant={isAnswered ? "default" : "secondary"}
-                className={
-                  isAnswered
-                    ? "bg-gray-900 text-white hover:bg-gray-900"
-                    : "bg-gray-100 text-gray-500 hover:bg-gray-100"
-                }
-              >
-                {isAnswered ? "답변완료" : "답변대기"}
-              </Badge>
+              <div className="flex items-center gap-1.5">
+                <Badge
+                  variant={isAnswered ? "default" : "secondary"}
+                  className={
+                    isAnswered
+                      ? "bg-gray-900 text-white hover:bg-gray-900"
+                      : "bg-gray-100 text-gray-500 hover:bg-gray-100"
+                  }
+                >
+                  {isAnswered ? "답변완료" : "답변대기"}
+                </Badge>
+                {question.isSecret && (
+                  <Lock className="h-3.5 w-3.5 text-gray-400" />
+                )}
+              </div>
               <p className="mt-2 text-[15px] leading-relaxed text-gray-900">
                 {question.title}
               </p>

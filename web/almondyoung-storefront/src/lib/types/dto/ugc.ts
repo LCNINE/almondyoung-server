@@ -126,11 +126,21 @@ interface RewardPolicyResponseDto {
 
 type QuestionStatus = "active" | "answered" | "deleted"
 
+type QuestionCategory =
+  | "product"
+  | "delivery"
+  | "order"
+  | "exchange"
+  | "account"
+  | "etc"
+
 interface QuestionResponseDto {
   id: string
   userId: string
   nickname: string
-  productId: string
+  productId: string | null
+  category: QuestionCategory | null
+  subCategory: string | null
   title: string
   content: string
   isSecret: boolean
@@ -151,8 +161,10 @@ interface AnswerResponseDto {
 }
 
 interface CreateQuestionDto {
-  productId: string
   nickname: string
+  productId?: string
+  category?: QuestionCategory
+  subCategory?: string
   title: string
   content: string
   isSecret?: boolean
@@ -167,7 +179,15 @@ interface UpdateQuestionDto {
 }
 
 interface QuestionListQueryDto {
-  productId: string
+  productId?: string
+  category?: QuestionCategory
+  sort?: QnaSortOption
+  page?: number
+  limit?: number
+}
+
+interface MyQuestionListQueryDto {
+  category?: QuestionCategory
   sort?: QnaSortOption
   page?: number
   limit?: number
@@ -200,8 +220,10 @@ export type {
   CreateQuestionDto,
   UpdateQuestionDto,
   QuestionListQueryDto,
+  MyQuestionListQueryDto,
   CreateAnswerDto,
   QuestionStatus,
+  QuestionCategory,
   QnaSummaryResponseDto,
   RewardPolicyResponseDto,
   ReviewRewardType,

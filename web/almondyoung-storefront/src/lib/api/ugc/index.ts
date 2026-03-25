@@ -19,4 +19,5 @@ export {
   createAnswer,
   updateAnswer,
   deleteAnswer,
+  getMyQuestions,
 } from "./qna"

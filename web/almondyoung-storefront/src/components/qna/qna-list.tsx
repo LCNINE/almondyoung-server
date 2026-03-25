@@ -10,7 +10,7 @@ import { useUser } from "@/contexts/user-context"
 import { siteConfig } from "@/lib/config/site"
 import { getPathWithoutCountry } from "@/lib/utils/get-path-without-country"
 import { useParams, useRouter } from "next/navigation"
-import { useCallback, useState, useTransition } from "react"
+import { useCallback, useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
 import { QnaCard } from "./qna-card"
 import { QnaInquiryDialog } from "./qna-inquiry-dialog"
@@ -19,33 +19,24 @@ type Props = {
   productId: string
   productName: string
   productThumbnail: string | null
-  totalQuestions: number
-  initialQuestions: Question[]
 }
 
 const ITEMS_PER_PAGE = 10
 
-export function QnaList({
-  productId,
-  productName,
-  productThumbnail,
-  totalQuestions,
-  initialQuestions,
-}: Props) {
+export function QnaList({ productId, productName, productThumbnail }: Props) {
   const { user } = useUser()
   const router = useRouter()
   const { countryCode } = useParams()
 
-  const [questions, setQuestions] =
-    useState<Question[]>(initialQuestions)
-  const [isLoading, setIsLoading] = useState(false)
+  const [questions, setQuestions] = useState<Question[]>([])
+  const [isLoading, setIsLoading] = useState(true)
   const [currentPage, setCurrentPage] = useState(1)
-  const [total, setTotal] = useState(totalQuestions)
+  const [total, setTotal] = useState(0)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [isInquiryOpen, setIsInquiryOpen] = useState(false)
-  const [editQuestion, setEditQuestion] = useState<
-    Question | undefined
-  >(undefined)
+  const [editQuestion, setEditQuestion] = useState<Question | undefined>(
+    undefined
+  )
   const [isDeleting, startDeleteTransition] = useTransition()
 
   const totalPages = Math.ceil(total / ITEMS_PER_PAGE)
@@ -74,6 +65,10 @@ export function QnaList({
     },
     [productId]
   )
+
+  useEffect(() => {
+    fetchQuestions(1)
+  }, [fetchQuestions])
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page)
@@ -137,18 +132,35 @@ export function QnaList({
         <Button
           variant="outline"
           className="h-[42px] flex-1 cursor-pointer rounded-lg text-[15px] font-medium"
+          onClick={() => {
+            if (!user) {
+              const path = getPathWithoutCountry(countryCode as string)
+
+              router.push(
+                `/${countryCode}${siteConfig.auth.loginUrl}?redirect_to=${encodeURIComponent(path)}`
+              )
+              return
+            }
+
+            router.push(`/${countryCode}/cs?tab=inquiry&productId=${productId}`)
+          }}
         >
           배송·반품·교환 문의
         </Button>
       </div>
 
       {/* 안내 문구 */}
-      <div className="py-3 text-center">
+      <button
+        className="w-full cursor-pointer py-3 text-center"
+        onClick={() => {
+          router.push(`/${countryCode}/cs?tab=inquiry&productId=${productId}`)
+        }}
+      >
         <p className="text-sm text-gray-500">
           배송·반품·교환 문의와 답변은 1:1 문의에서 확인해 보세요{" "}
           <span className="text-gray-400">&gt;</span>
         </p>
-      </div>
+      </button>
 
       {/* Q&A 목록 */}
       {isLoading ? (
