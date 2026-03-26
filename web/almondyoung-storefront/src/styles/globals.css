@@ -171,7 +171,7 @@ input[type="search"]::-webkit-search-results-decoration {
   --gray-20: #c6c6c6;
   --gray-30: #aeaeb2;
   --gray-40: #8e8e93;
-  --gray-50: #636366;
+  --gray-50: #f9fafb;
   --gray-60: #48484a;
   --gray-70: #363639;
   --gray-80: #2c2c2e;
@@ -236,6 +236,7 @@ input[type="search"]::-webkit-search-results-decoration {
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+  --gray-50: #1f2937;
 }
 
 /* 블랙프라이데이 테마 */
