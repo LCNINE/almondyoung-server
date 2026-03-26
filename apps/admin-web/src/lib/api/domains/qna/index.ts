@@ -19,7 +19,6 @@ function buildQueryString(query: QnaListQuery): string {
   return params.toString();
 }
 
-// UGC 서비스는 ApiResponse wrapper 없이 직접 응답을 반환합니다
 export const qnaApi = {
   // 질문 목록 조회 (관리자용 - 비밀글 포함 전체 조회)
   getQuestions: async (query: QnaListQuery): Promise<QnaListResponse> => {
