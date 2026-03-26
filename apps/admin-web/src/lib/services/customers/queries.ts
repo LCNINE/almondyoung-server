@@ -1,7 +1,7 @@
 // src/lib/services/customers/queries.ts
 'use client';
 
-import { customerApi } from '@/lib/api/domains';
+import { customerApi, CustomerListQuery } from '@/lib/api/domains/customer';
 import { CustomerBusinessLicenseQueryDto } from '@/lib/types';
 import { useQuery } from '@tanstack/react-query';
 import { customerQueryKeys } from './query-keys';
@@ -11,6 +11,14 @@ export const useCustomers = () => {
   return useQuery({
     queryKey: customerQueryKeys.all,
     queryFn: () => customerApi.getCustomers(),
+  });
+};
+
+// 고객 목록 조회 (페이지네이션 지원)
+export const useCustomersWithPagination = (query: CustomerListQuery) => {
+  return useQuery({
+    queryKey: customerQueryKeys.list(query),
+    queryFn: () => customerApi.getCustomersWithPagination(query),
   });
 };
 

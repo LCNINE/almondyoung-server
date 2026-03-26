@@ -31,7 +31,7 @@ export default function RootLayout({
             <Toaster />
             <ReactQueryDevtools
               initialIsOpen={false}
-              buttonPosition="bottom-right"
+              buttonPosition="bottom-left"
             />
           </TooltipProvider>
         </QueryProvider>

@@ -1,7 +1,7 @@
 import { DbService, InjectDb } from '@app/db';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
-import { and, asc, count, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, count, desc, eq, ilike, inArray, isNull, or } from 'drizzle-orm';
 import * as schema from '../../../../database/drizzle/schema';
 import { AdminUserDetailResponseDto } from './dto/admin-user-detail.response.dto';
 import { UpdateUserDto } from '../../users/dto/update-user.dto';
@@ -23,11 +23,9 @@ export class UsersService {
   }
 
   async getUsers(filters: {
+    q?: string;
     page?: number;
     limit?: number;
-    userId?: string;
-    username?: string;
-    email?: string;
     roleName?: string;
     sort?: 'createdAt' | 'username' | 'email' | 'lastActivityAt';
     order?: 'asc' | 'desc';
@@ -47,9 +45,16 @@ export class UsersService {
       const sortOrder = filters?.order || 'desc';
 
       const conditions = [] as any[];
-      if (filters?.userId) conditions.push(eq(schema.users.id, filters.userId));
-      if (filters?.username) conditions.push(eq(schema.users.username, filters.username));
-      if (filters?.email) conditions.push(eq(schema.users.email, filters.email));
+      if (filters?.q) {
+        const searchTerm = `%${filters.q}%`;
+        conditions.push(
+          or(
+            ilike(schema.users.username, searchTerm),
+            ilike(schema.users.email, searchTerm),
+            ilike(schema.users.loginId, searchTerm),
+          ),
+        );
+      }
       if (filters?.roleName) {
         const roleName = filters.roleName.trim();
         if (roleName.length > 0) {

@@ -3,6 +3,13 @@ import { Type } from 'class-transformer';
 import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class GetUsersQueryDto {
+  @ApiPropertyOptional({
+    description: '통합 검색어 (사용자명, 이메일, 로그인ID에서 검색)',
+  })
+  @IsOptional()
+  @IsString()
+  q?: string;
+
   @ApiPropertyOptional({ description: '페이지 번호', minimum: 1, default: 1 })
   @IsOptional()
   @Type(() => Number)
@@ -22,21 +29,6 @@ export class GetUsersQueryDto {
   @Min(1)
   @Max(100)
   limit?: number;
-
-  @ApiPropertyOptional({ description: '사용자 ID' })
-  @IsOptional()
-  @IsString()
-  userId?: string;
-
-  @ApiPropertyOptional({ description: '사용자 이름' })
-  @IsOptional()
-  @IsString()
-  username?: string;
-
-  @ApiPropertyOptional({ description: '사용자 이메일' })
-  @IsOptional()
-  @IsString()
-  email?: string;
 
   @ApiPropertyOptional({
     description: '역할 이름 필터 (예: admin, master, user)',
