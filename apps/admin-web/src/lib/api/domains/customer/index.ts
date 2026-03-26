@@ -13,13 +13,59 @@ import { client } from '../../client';
 
 // User Service API 클라이언트
 
+export interface CustomerListQuery {
+  page?: number;
+  limit?: number;
+  q?: string;
+  sort?: 'createdAt' | 'username' | 'email' | 'lastActivityAt';
+  order?: 'asc' | 'desc';
+}
+
+export interface CustomerListItem {
+  id: string;
+  loginId: string;
+  username: string;
+  nickname: string | null;
+  email: string;
+  isEmailVerified: boolean;
+  lastActivityAt: string | null;
+  deletedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  roles: string[];
+}
+
+export interface CustomerListResponse {
+  data: CustomerListItem[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
 export const customerApi = {
   // 사용자들 조회
   getCustomers: async (): Promise<ApiResponse<User[]>> => {
     const response = await client.get<ApiResponse<User[]>>(
-      `${USER_SERVICE_BASE_URL}/users`
+      `${USER_SERVICE_BASE_URL}/admin/users`
     );
     return response.data;
+  },
+
+  // 고객 목록 조회 (페이지네이션 지원)
+  getCustomersWithPagination: async (
+    query: CustomerListQuery
+  ): Promise<CustomerListResponse> => {
+    const params = new URLSearchParams();
+    Object.entries(query).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        params.append(key, String(value));
+      }
+    });
+    const qs = params.toString();
+    const response = await client.get<ApiResponse<CustomerListResponse>>(
+      `${USER_SERVICE_BASE_URL}/admin/users${qs ? `?${qs}` : ''}`
+    );
+    return response.data.data;
   },
 
   // 사용자id로 사용자 정보 조회
@@ -27,7 +73,7 @@ export const customerApi = {
     id: string
   ): Promise<ApiResponse<CustomerProfile>> => {
     const response = await client.get<ApiResponse<CustomerProfile>>(
-      `${USER_SERVICE_BASE_URL}/users/detail/${id}`
+      `${USER_SERVICE_BASE_URL}/admin/users/${id}`
     );
     return response.data;
   },
@@ -50,7 +96,7 @@ export const customerApi = {
     sortOrder?: 'asc' | 'desc';
   }): Promise<ApiResponse<CustomerConsent[]>> => {
     const response = await client.get<ApiResponse<CustomerConsent[]>>(
-      `${USER_SERVICE_BASE_URL}/users/consents`,
+      `${USER_SERVICE_BASE_URL}/admin/users/consents`,
       { params: query }
     );
 
@@ -62,7 +108,7 @@ export const customerApi = {
     query: CustomerBusinessLicenseQueryDto
   ): Promise<ApiResponse<CustomerBusinessLicense[]>> => {
     const response = await client.get<ApiResponse<CustomerBusinessLicense[]>>(
-      `${USER_SERVICE_BASE_URL}/users/business-licenses`,
+      `${USER_SERVICE_BASE_URL}/admin/users/business-licenses`,
       { params: query }
     );
     return response.data;

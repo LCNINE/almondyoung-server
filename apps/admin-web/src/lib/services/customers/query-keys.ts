@@ -7,6 +7,9 @@
 export const customerQueryKeys = {
   all: ['customers'] as const,
 
+  list: (query: object) =>
+    [...customerQueryKeys.all, 'list', query] as const,
+
   detailById: (id: string) =>
     [...customerQueryKeys.all, 'detailById', id] as const,
   detailByEmail: (email: string) =>
