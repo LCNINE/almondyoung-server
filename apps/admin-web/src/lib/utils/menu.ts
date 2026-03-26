@@ -420,31 +420,60 @@ export function getActiveMenuAndItem(currentPath: string): {
   menuId: string | null;
   itemId: string | null;
 } {
-  for (const menu of mainMenus) {
-    function findItemByPath(
-      items: MenuItem[],
-      targetPath: string
-    ): MenuItem | null {
+  // 정확한 경로 매칭을 찾는 함수
+  function findExactMatch(
+    items: MenuItem[],
+    targetPath: string
+  ): MenuItem | null {
+    for (const item of items) {
+      if (item.path === targetPath) return item;
+      if (item.children) {
+        const found = findExactMatch(item.children, targetPath);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
+  // 하위 경로 매칭을 찾는 함수 (가장 긴 경로 우선)
+  function findPrefixMatch(
+    items: MenuItem[],
+    targetPath: string
+  ): MenuItem | null {
+    let bestMatch: MenuItem | null = null;
+    let bestMatchLength = 0;
+
+    function search(items: MenuItem[]) {
       for (const item of items) {
-        // 정확한 경로 매칭
-        if (item.path === targetPath) return item;
-
-        // 하위 경로 매칭 (발주처 관련 페이지들)
         if (item.path && targetPath.startsWith(item.path + '/')) {
-          return item;
+          if (item.path.length > bestMatchLength) {
+            bestMatch = item;
+            bestMatchLength = item.path.length;
+          }
         }
-
         if (item.children) {
-          const found = findItemByPath(item.children, targetPath);
-          if (found) return found;
+          search(item.children);
         }
       }
-      return null;
     }
 
-    const foundItem = findItemByPath(menu.children, currentPath);
-    if (foundItem) {
-      return { menuId: menu.id, itemId: foundItem.id };
+    search(items);
+    return bestMatch;
+  }
+
+  // 1단계: 정확한 경로 매칭 먼저 시도
+  for (const menu of mainMenus) {
+    const exactMatch = findExactMatch(menu.children, currentPath);
+    if (exactMatch) {
+      return { menuId: menu.id, itemId: exactMatch.id };
+    }
+  }
+
+  // 2단계: 하위 경로 매칭 시도 (가장 긴 경로 우선)
+  for (const menu of mainMenus) {
+    const prefixMatch = findPrefixMatch(menu.children, currentPath);
+    if (prefixMatch) {
+      return { menuId: menu.id, itemId: prefixMatch.id };
     }
   }
 
