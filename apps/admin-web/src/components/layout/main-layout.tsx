@@ -4,10 +4,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
-import { Breadcrumb } from '@/components/common/breadcrumb';
+import { usePathname } from 'next/navigation';
 import { Header } from './header';
-import { Sidebar } from './sidebar';
+import { AppSidebar } from './app-sidebar';
+import { SidebarProvider } from '@/components/ui/sidebar';
 import { type MenuItem, getActiveMenuAndItem } from '@/lib/utils/menu';
 
 interface MainLayoutProps {
@@ -15,7 +15,6 @@ interface MainLayoutProps {
 }
 
 export function MainLayout({ children }: MainLayoutProps) {
-  const router = useRouter();
   const pathname = usePathname();
   const [activeMenu, setActiveMenu] = useState('company');
   const [activeItem, setActiveItem] = useState<string | undefined>();
@@ -35,9 +34,6 @@ export function MainLayout({ children }: MainLayoutProps) {
 
   const handleItemClick = (item: MenuItem) => {
     setActiveItem(item.id);
-    if (item.path) {
-      router.push(item.path);
-    }
   };
 
   // 로그인 페이지와 모바일 전용 페이지는 PC 레이아웃 제외
@@ -56,21 +52,16 @@ export function MainLayout({ children }: MainLayoutProps) {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50">
-      {/* 헤더 */}
-      <Header activeMenu={activeMenu} onMenuChange={handleMenuChange} />
-      {/* 사이드바 + 메인 */}
-      <div className="flex flex-1">
-        <Sidebar
-          activeMenu={activeMenu}
-          activeItem={activeItem}
-          onItemClick={handleItemClick}
-        />
-        <main className="flex-1 bg-white overflow-y-auto">
-          {/* <Breadcrumb /> */}
-          {children}
-        </main>
+    <SidebarProvider defaultOpen={true}>
+      <AppSidebar
+        activeMenu={activeMenu}
+        activeItem={activeItem}
+        onItemClick={handleItemClick}
+      />
+      <div className="flex flex-col flex-1 min-w-0">
+        <Header activeMenu={activeMenu} onMenuChange={handleMenuChange} />
+        <main className="flex-1 bg-white overflow-y-auto">{children}</main>
       </div>
-    </div>
+    </SidebarProvider>
   );
 }

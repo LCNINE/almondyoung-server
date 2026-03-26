@@ -23,10 +23,8 @@ import {
   BarChart3,
   Boxes,
   Building2,
-  ChevronDown,
   Crown,
   Headphones,
-  Home,
   Loader2,
   LogOut,
   Package,
@@ -154,11 +152,6 @@ export function Header({ activeMenu, onMenuChange }: HeaderProps) {
   return (
     <header className="bg-white border-b border-gray-200 shadow-sm">
       <div className="flex items-center justify-between px-6 py-4">
-        {/* 로고 */}
-        <div className="flex items-center space-x-4">
-          <h1 className="text-xl font-bold text-gray-900">LCNINE</h1>
-        </div>
-
         {/* 메인 메뉴 */}
         <nav className="flex items-center space-x-3">
           {mainMenus.map((menu) => {
@@ -271,46 +264,33 @@ export function Header({ activeMenu, onMenuChange }: HeaderProps) {
         </nav>
 
         {/* 사용자 정보 */}
-        <div className="flex items-center space-x-4">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-gray-700 hover:text-blue-600"
-          >
-            <Home className="w-4 h-4 mr-2" />홈
-          </Button>
-
+        <div className="flex items-center">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
-                className="flex items-center space-x-2 text-gray-700 hover:text-blue-600"
+                size="icon"
+                className="rounded-full"
+                disabled={isSigningOut}
               >
-                <Avatar className="w-8 h-8">
-                  <AvatarImage src="/placeholder-avatar.jpg" />
-                  <AvatarFallback className="bg-blue-100 text-blue-600">
-                    {getUserDisplayName().charAt(0).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-
-                <div className="text-left">
-                  {isSigningOut ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <>
-                      <div className="text-sm font-medium">
-                        {getUserDisplayName()}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {getUserRole()}
-                      </div>
-                    </>
-                  )}
-                </div>
-                <ChevronDown className="w-4 h-4" />
+                {isSigningOut ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Avatar className="w-8 h-8">
+                    <AvatarImage src="/placeholder-avatar.jpg" />
+                    <AvatarFallback className="bg-blue-100 text-blue-600 text-sm">
+                      {getUserDisplayName().charAt(0).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                )}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
+              <div className="px-2 py-1.5 text-sm">
+                <div className="font-medium">{getUserDisplayName()}</div>
+                <div className="text-xs text-gray-500">{getUserRole()}</div>
+              </div>
+              <DropdownMenuSeparator />
               <DropdownMenuItem>
                 <User className="mr-2 h-4 w-4" />
                 프로필 설정

@@ -29,7 +29,10 @@ export default function RootLayout({
             <MainLayout>{children}</MainLayout>
             <AuthExpiredHandler />
             <Toaster />
-            <ReactQueryDevtools initialIsOpen={false} buttonPosition='top-right' />
+            <ReactQueryDevtools
+              initialIsOpen={false}
+              buttonPosition="bottom-right"
+            />
           </TooltipProvider>
         </QueryProvider>
       </body>
