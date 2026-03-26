@@ -38,6 +38,11 @@ export const mainMenus: MainMenu[] = [
               { id: 'attendance', title: '출퇴근', isComingSoon: true },
             ],
           },
+          {
+            id: 'admin-accounts',
+            title: '관리자 계정',
+            path: '/users',
+          },
         ],
       },
       {
