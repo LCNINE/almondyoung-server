@@ -497,18 +497,29 @@ export class QnaService {
         throw new ConflictException('Answer already exists for this question');
       }
 
-      const [answer] = await tx
-        .insert(answers)
-        .values({
-          questionId,
-          adminUserId,
-          content: dto.content,
-        })
-        .returning();
+      try {
+        const [answer] = await tx
+          .insert(answers)
+          .values({
+            questionId,
+            adminUserId,
+            content: dto.content,
+          })
+          .returning();
 
-      await tx.update(questions).set({ status: 'answered', updatedAt: new Date() }).where(eq(questions.id, questionId));
+        await tx
+          .update(questions)
+          .set({ status: 'answered', updatedAt: new Date() })
+          .where(eq(questions.id, questionId));
 
-      return answer;
+        return answer;
+      } catch (error: unknown) {
+        // Race condition: 다른 관리자가 먼저 답변을 등록한 경우
+        if (error instanceof Error && error.message.includes('unique')) {
+          throw new ConflictException('Answer already exists for this question');
+        }
+        throw error;
+      }
     }, tx);
   }
 

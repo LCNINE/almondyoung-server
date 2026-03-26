@@ -24,6 +24,15 @@ export const useAdminUser = (id: string) => {
   });
 };
 
+export const useOptionalAdminUser = (id: string | null | undefined) => {
+  return useQuery({
+    queryKey: usersQueryKeys.user(id ?? ''),
+    queryFn: () => userApi.getUserById(id!),
+    staleTime: 30 * 1000,
+    enabled: !!id,
+  });
+};
+
 export const useUserRoles = (userId: string) => {
   return useSuspenseQuery({
     queryKey: usersQueryKeys.userRolesById(userId),
