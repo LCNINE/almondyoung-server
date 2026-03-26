@@ -35,6 +35,10 @@ const UGC_SERVICE_BASE_URL = isServer
   ? (process.env.UGC_SERVICE_URL ?? 'http://localhost:3031')
   : '/proxy/ugc';
 
+const FILE_SERVICE_BASE_URL = isServer
+  ? (process.env.FILE_SERVICE_URL ?? 'http://localhost:3000')
+  : '/api/proxy/file'; // file-service같은경우 /api/를 붙여야 이미지 호출이 가능했습니다.
+
 export {
   PIM_BASE_URL,
   WMS_BASE_URL,
@@ -44,4 +48,5 @@ export {
   NOTIFICATION_SERVICE_BASE_URL,
   CHANNEL_ADAPTER_SERVICE_BASE_URL,
   UGC_SERVICE_BASE_URL,
+  FILE_SERVICE_BASE_URL,
 };
