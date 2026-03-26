@@ -10,7 +10,7 @@
   "prettier.bracketSpacing": true,
   "prettier.arrowParens": "avoid",
   "prettier.endOfLine": "lf",
-  "files.autoSave": "afterDelay",
+  "files.autoSave": "off",
   "[typescript]": {
     "editor.defaultFormatter": "vscode.typescript-language-features"
   },
