@@ -17,7 +17,7 @@ export async function MyInquiriesTemplate({ searchParams }: Props) {
   })
 
   return (
-    <div className="bg-white md:p-6">
+    <div className="min-h-screen bg-white px-3 py-4 md:px-6">
       <h1 className="mb-6 hidden text-xl font-bold text-gray-900 md:block">
         내 문의 내역
       </h1>

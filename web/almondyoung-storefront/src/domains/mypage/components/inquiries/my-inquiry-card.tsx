@@ -76,10 +76,7 @@ export function MyInquiryCard({
     <Collapsible open={isExpanded} onOpenChange={onToggle}>
       <div className="py-5">
         <CollapsibleTrigger asChild>
-          <button
-            type="button"
-            className="w-full cursor-pointer text-left"
-          >
+          <button type="button" className="w-full cursor-pointer text-left">
             <div className="flex items-center gap-2">
               <Badge
                 variant={isAnswered ? "default" : "secondary"}
@@ -153,12 +150,14 @@ export function MyInquiryCard({
 
             {/* 답변 */}
             {question.answer && (
-              <div className="border-t border-gray-100 pt-4">
-                <p className="mb-2 text-sm font-semibold text-gray-900">답변</p>
+              <div className="mt-4 border-l-2 border-gray-900 pl-4">
+                <p className="mb-2 text-sm font-semibold text-gray-900">
+                  답변
+                </p>
                 <p className="text-sm leading-relaxed whitespace-pre-line text-gray-700">
                   {question.answer.content}
                 </p>
-                <p className="mt-2 text-xs text-gray-400">
+                <p className="mt-3 text-xs text-gray-400">
                   {formatDate(question.answer.createdAt)}
                 </p>
               </div>

@@ -14,10 +14,14 @@ export default function MypageLayout({ children }: MypageLayoutProps) {
           <MypageBreadcrumb />
           <div className="flex flex-row gap-8">
             <aside className="hidden w-[280px] shrink-0 lg:block">
-              <MypageSidebar />
+              <div className="sticky top-10">
+                <MypageSidebar />
+              </div>
             </aside>
 
-            <section className="content-area min-w-0 w-full flex-1">{children}</section>
+            <section className="content-area w-full min-w-0 flex-1">
+              {children}
+            </section>
           </div>
         </div>
       </div>
