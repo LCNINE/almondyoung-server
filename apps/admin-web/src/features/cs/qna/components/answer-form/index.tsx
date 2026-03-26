@@ -23,6 +23,7 @@ import {
   useUpdateAnswer,
   useDeleteAnswer,
 } from '@/lib/services/qna';
+import { useOptionalAdminUser } from '@/lib/services/users';
 import { toast } from 'sonner';
 
 function AnswerFormContent({ questionId }: { questionId: string }) {
@@ -33,6 +34,8 @@ function AnswerFormContent({ questionId }: { questionId: string }) {
 
   const [content, setContent] = useState(question.answer?.content ?? '');
   const hasAnswer = question.answer !== null;
+
+  const { data: adminUser } = useOptionalAdminUser(question.answer?.adminUserId);
 
   const handleSubmit = async () => {
     if (!content.trim()) {
@@ -48,7 +51,25 @@ function AnswerFormContent({ questionId }: { questionId: string }) {
         await createAnswer.mutateAsync({ content });
         toast.success('답변이 등록되었습니다.');
       }
-    } catch (error) {
+    } catch (error: unknown) {
+      const status =
+        error &&
+        typeof error === 'object' &&
+        'response' in error &&
+        typeof (error as { response?: unknown }).response === 'object' &&
+        (error as { response?: { status?: number } }).response?.status;
+
+      if (status === 409) {
+        toast.error('이미 다른 관리자가 답변을 등록했습니다.', {
+          description: '페이지를 새로고침하여 확인해주세요.',
+          action: {
+            label: '새로고침',
+            onClick: () => window.location.reload(),
+          },
+        });
+        return;
+      }
+
       toast.error(
         hasAnswer ? '답변 수정에 실패했습니다.' : '답변 등록에 실패했습니다.'
       );
@@ -71,9 +92,14 @@ function AnswerFormContent({ questionId }: { questionId: string }) {
   return (
     <div className="p-4 space-y-4">
       {hasAnswer && (
-        <div className="text-xs text-muted-foreground">
-          마지막 수정:{' '}
-          {new Date(question.answer!.updatedAt).toLocaleString('ko-KR')}
+        <div className="text-xs text-muted-foreground space-y-1">
+          <div>
+            답변자: {adminUser?.nickname ?? adminUser?.username ?? '-'}
+          </div>
+          <div>
+            마지막 수정:{' '}
+            {new Date(question.answer!.updatedAt).toLocaleString('ko-KR')}
+          </div>
         </div>
       )}
       <Textarea
