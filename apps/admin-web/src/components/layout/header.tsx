@@ -89,10 +89,9 @@ export function Header({ activeMenu, onMenuChange }: HeaderProps) {
 
   // 헤더 메뉴 클릭 시 첫 번째 페이지로 이동
   const handleMenuClick = (menuId: string) => {
-    console.log('Header menu clicked:', menuId); // 디버깅용
     onMenuChange(menuId);
     const firstPath = getFirstPagePath(menuId);
-    console.log('First path:', firstPath); // 디버깅용
+
     if (firstPath) {
       router.push(firstPath);
     }
@@ -109,7 +108,10 @@ export function Header({ activeMenu, onMenuChange }: HeaderProps) {
   // 로그아웃 처리
   const handleLogout = async () => {
     try {
-      signout(undefined, {
+      await signout(undefined, {
+        onSuccess: () => {
+          window.location.href = '/login';
+        },
         onError: (error) => {
           console.error('Logout failed:', error);
           toast.error('로그아웃에 실패했습니다.');
@@ -177,8 +179,8 @@ export function Header({ activeMenu, onMenuChange }: HeaderProps) {
                     isActive
                       ? 'text-blue-600 hover:text-blue-700'
                       : isHovered
-                      ? 'text-blue-600 hover:text-blue-700'
-                      : 'text-gray-600 hover:text-blue-600'
+                        ? 'text-blue-600 hover:text-blue-700'
+                        : 'text-gray-600 hover:text-blue-600'
                   }`}
                   onClick={() => handleMenuClick(menu.id)}
                 >
