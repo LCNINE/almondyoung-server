@@ -1,6 +1,6 @@
 "use client"
 
-import { useSearchParams } from "next/navigation"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { InquiryForm } from "./inquiry-form"
 
 interface InquiryProps {
@@ -8,8 +8,14 @@ interface InquiryProps {
 }
 
 export function Inquiry({ product }: InquiryProps) {
+  const router = useRouter()
+  const { countryCode } = useParams<{ countryCode: string }>()
   const searchParams = useSearchParams()
   const productId = product?.id ?? searchParams.get("productId") ?? undefined
+
+  const handleSuccess = () => {
+    router.push(`/${countryCode}/mypage/inquiries`)
+  }
 
   return (
     <div className="px-4 py-6">
@@ -21,7 +27,11 @@ export function Inquiry({ product }: InquiryProps) {
       </div>
 
       <div className="rounded-lg border border-gray-200 bg-white p-4">
-        <InquiryForm productId={productId} productTitle={product?.title} />
+        <InquiryForm
+          productId={productId}
+          productTitle={product?.title}
+          onSuccess={handleSuccess}
+        />
       </div>
 
       <div className="mt-6 border-t border-gray-100 pt-4">
