@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense } from 'react';
+import React, { Suspense, useState } from 'react';
 import { Container } from '@/components/admin-ui-experimental/common/container';
 import { Header } from '@/components/admin-ui-experimental/common/header';
 import { Spinner } from '@/components/ui/spinner';
@@ -12,10 +12,38 @@ import {
   QuestionStatus,
 } from '@/lib/types/dto/qna';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
+import {
+  Carousel,
+  CarouselContent,
+  CarouselItem,
+  CarouselPrevious,
+  CarouselNext,
+  type CarouselApi,
+} from '@/components/ui/carousel';
 import { LockIcon } from 'lucide-react';
+import { FILE_SERVICE_BASE_URL } from '@/const/api-const';
+import Image from 'next/image';
 
 function QuestionDetailContent({ questionId }: { questionId: string }) {
   const { data } = useQuestion(questionId);
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const [carouselApi, setCarouselApi] = useState<CarouselApi>();
+
+  const imageUrls = data.mediaFileIds.map(
+    (fileId) => `${FILE_SERVICE_BASE_URL}/files/public/${fileId}`
+  );
+
+  const handleImageClick = (index: number) => {
+    setSelectedIndex(index);
+  };
+
+  // 캐러셀이 열릴 때 선택한 이미지로 이동
+  React.useEffect(() => {
+    if (carouselApi && selectedIndex !== null) {
+      carouselApi.scrollTo(selectedIndex);
+    }
+  }, [carouselApi, selectedIndex]);
 
   const rows: { key: string; value: React.ReactNode }[] = [
     { key: '작성자', value: data.nickname },
@@ -53,42 +81,77 @@ function QuestionDetailContent({ questionId }: { questionId: string }) {
   ];
 
   return (
-    <div className="divide-y">
-      <div className="p-4">
+    <article className="divide-y">
+      <header className="p-4">
         <h2 className="text-lg font-semibold">{data.title}</h2>
-      </div>
-      <div>
+      </header>
+      <dl>
         {rows.map(({ key, value }) => (
           <div key={key} className="grid grid-cols-3 p-3">
-            <div className="text-sm font-medium text-gray-500">{key}</div>
-            <div className="col-span-2 text-sm">{value ?? '-'}</div>
+            <dt className="text-sm font-medium text-gray-500">{key}</dt>
+            <dd className="col-span-2 text-sm">{value ?? '-'}</dd>
           </div>
         ))}
-      </div>
-      <div className="p-4">
-        <div className="text-sm font-medium text-gray-500 mb-2">문의 내용</div>
-        <div className="whitespace-pre-wrap text-sm bg-gray-50 p-4 rounded-md">
+      </dl>
+      <section className="p-4">
+        <h3 className="text-sm font-medium text-gray-500 mb-2">문의 내용</h3>
+        <p className="whitespace-pre-wrap text-sm bg-gray-50 p-4 rounded-md">
           {data.content}
-        </div>
-      </div>
-      {data.mediaFileIds.length > 0 && (
-        <div className="p-4">
-          <div className="text-sm font-medium text-gray-500 mb-2">
-            첨부파일 ({data.mediaFileIds.length}개)
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {data.mediaFileIds.map((fileId) => (
-              <span
-                key={fileId}
-                className="text-xs bg-gray-100 px-2 py-1 rounded"
-              >
-                {fileId.slice(0, 8)}...
-              </span>
+        </p>
+      </section>
+      {imageUrls.length > 0 && (
+        <section className="p-4">
+          <h3 className="text-sm font-medium text-gray-500 mb-2">
+            첨부파일 ({imageUrls.length}개)
+          </h3>
+          <ul className="flex flex-wrap gap-3">
+            {imageUrls.map((url, index) => (
+              <li key={url}>
+                <button
+                  type="button"
+                  onClick={() => handleImageClick(index)}
+                  className="cursor-pointer"
+                >
+                  <Image
+                    width={96}
+                    height={96}
+                    src={url}
+                    alt={`첨부 이미지 ${index + 1}`}
+                    className="aspect-square object-cover rounded-md border hover:opacity-80 transition-opacity"
+                  />
+                </button>
+              </li>
             ))}
-          </div>
-        </div>
+          </ul>
+        </section>
       )}
-    </div>
+
+      <Dialog
+        open={selectedIndex !== null}
+        onOpenChange={() => setSelectedIndex(null)}
+      >
+        <DialogContent className="max-w-2xl p-4">
+          <Carousel setApi={setCarouselApi} className="w-full">
+            <CarouselContent>
+              {imageUrls.map((url, index) => (
+                <CarouselItem key={url}>
+                  <div className="relative flex h-[70vh] w-full items-center justify-center">
+                    <Image
+                      fill
+                      src={url}
+                      alt={`첨부 이미지 ${index + 1}`}
+                      className="object-contain"
+                    />
+                  </div>
+                </CarouselItem>
+              ))}
+            </CarouselContent>
+            <CarouselPrevious className="left-2" />
+            <CarouselNext className="right-2" />
+          </Carousel>
+        </DialogContent>
+      </Dialog>
+    </article>
   );
 }
 

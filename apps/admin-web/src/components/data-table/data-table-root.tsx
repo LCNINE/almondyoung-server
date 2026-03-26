@@ -1,19 +1,24 @@
-'use client'
+'use client';
 
-import { flexRender, type Row, type RowData, type Table as TanstackTable } from '@tanstack/react-table'
-import { useRouter } from 'next/navigation'
-import { Table } from '@/components/admin-ui-experimental/common/table/table'
-import { Skeleton } from '@/components/ui/skeleton'
+import {
+  flexRender,
+  type Row,
+  type RowData,
+  type Table as TanstackTable,
+} from '@tanstack/react-table';
+import { useRouter } from 'next/navigation';
+import { Table } from '@/components/admin-ui-experimental/common/table/table';
+import { Skeleton } from '@/components/ui/skeleton';
 
 type DataTableRootProps<TData extends RowData> = {
-  table: TanstackTable<TData>
-  isLoading?: boolean
-  isFetching?: boolean
-  noRecords?: { message: string }
-  navigateTo?: (row: Row<TData>) => string
-  pageSize: number
-  count: number
-}
+  table: TanstackTable<TData>;
+  isLoading?: boolean;
+  isFetching?: boolean;
+  noRecords?: { message: string };
+  navigateTo?: (row: Row<TData>) => string;
+  pageSize: number;
+  count: number;
+};
 
 export function DataTableRoot<TData extends RowData>({
   table,
@@ -24,12 +29,12 @@ export function DataTableRoot<TData extends RowData>({
   pageSize,
   count,
 }: DataTableRootProps<TData>) {
-  const router = useRouter()
+  const router = useRouter();
 
-  const { pageIndex } = table.getState().pagination
-  const pageCount = table.getPageCount()
+  const { pageIndex } = table.getState().pagination;
+  const pageCount = table.getPageCount();
 
-  const rows = table.getRowModel().rows
+  const rows = table.getRowModel().rows;
 
   return (
     <div>
@@ -39,14 +44,17 @@ export function DataTableRoot<TData extends RowData>({
             <Table.Row key={headerGroup.id}>
               {headerGroup.headers.map((header) => (
                 <Table.Head key={header.id}>
-                  {flexRender(header.column.columnDef.header, header.getContext())}
+                  {flexRender(
+                    header.column.columnDef.header,
+                    header.getContext()
+                  )}
                 </Table.Head>
               ))}
             </Table.Row>
           ))}
         </Table.Header>
         <Table.Body>
-          {(isLoading || isFetching) ? (
+          {isLoading || isFetching ? (
             Array.from({ length: pageSize }).map((_, i) => (
               <Table.Row key={`skeleton-${i}`}>
                 {table.getAllColumns().map((col) => (
@@ -67,7 +75,7 @@ export function DataTableRoot<TData extends RowData>({
             </Table.Row>
           ) : (
             rows.map((row) => {
-              const href = navigateTo ? navigateTo(row) : undefined
+              const href = navigateTo ? navigateTo(row) : undefined;
               return (
                 <Table.Row
                   key={row.id}
@@ -76,11 +84,14 @@ export function DataTableRoot<TData extends RowData>({
                 >
                   {row.getVisibleCells().map((cell) => (
                     <Table.Cell key={cell.id}>
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext()
+                      )}
                     </Table.Cell>
                   ))}
                 </Table.Row>
-              )
+              );
             })
           )}
         </Table.Body>
@@ -97,5 +108,5 @@ export function DataTableRoot<TData extends RowData>({
         goPage={(idx) => table.setPageIndex(idx)}
       />
     </div>
-  )
+  );
 }
