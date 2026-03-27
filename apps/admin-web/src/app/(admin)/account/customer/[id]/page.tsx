@@ -1,7 +1,12 @@
 import { TwoColumnPage } from '@/components/admin-ui-experimental/layout';
-import { CustomerDetailGeneral } from './customer-detail-general';
-import { CustomerDetailShop } from './customer-detail-shop';
+import { CustomerDetailGeneral } from './_components/customer-detail-general';
+import { CustomerDetailShop } from './_components/customer-detail-shop';
+import { CustomerBlacklist } from './_components/customer-blacklist';
 
+/**
+ * user-service 고객 목록 페이지입니다.
+ * medusa-customer이랑 헷갈리시지 않도록 주의해주세요.
+ */
 export default async function CustomerDetailPage({
   params,
 }: {
@@ -15,7 +20,7 @@ export default async function CustomerDetailPage({
         <CustomerDetailShop userId={id} />
       </TwoColumnPage>
       <TwoColumnPage>
-        <div></div>
+        <CustomerBlacklist userId={id} />
         <div></div>
       </TwoColumnPage>
     </div>

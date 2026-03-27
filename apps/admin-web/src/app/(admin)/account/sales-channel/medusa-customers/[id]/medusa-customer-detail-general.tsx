@@ -5,16 +5,7 @@ import { Container } from '@/components/admin-ui-experimental/common/container';
 import { Header } from '@/components/admin-ui-experimental/common/header';
 import { Spinner } from '@/components/ui/spinner';
 import { useMedusaCustomerById } from '@/lib/services/medusa-customers';
-
-function formatDate(date: string | Date | null | undefined): string {
-  if (!date) return '-';
-  const d = typeof date === 'string' ? new Date(date) : date;
-  return d.toLocaleDateString('ko-KR', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
-}
+import { formatDate } from '@/lib/utils/date';
 
 function formatName(firstName: string | null, lastName: string | null): string {
   const first = firstName ?? '';
