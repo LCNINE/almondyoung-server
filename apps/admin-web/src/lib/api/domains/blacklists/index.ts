@@ -14,6 +14,11 @@ export interface BlacklistResponse {
   updatedAt: string;
   deletedAt: string | null;
   deletedBy: string | null;
+  user?: {
+    username: string;
+    nickname: string;
+    email: string;
+  } | null;
 }
 
 export interface BlacklistCreateDto {
@@ -29,7 +34,29 @@ export interface BlacklistListResponse {
   limit: number;
 }
 
+export interface BlacklistListQuery {
+  page?: number;
+  limit?: number;
+  userId?: string;
+}
+
 export const blacklistApi = {
+  // 블랙리스트 목록 조회
+  getBlacklists: async (
+    query?: BlacklistListQuery
+  ): Promise<BlacklistListResponse> => {
+    const params = new URLSearchParams();
+    if (query?.page) params.append('page', String(query.page));
+    if (query?.limit) params.append('limit', String(query.limit));
+    if (query?.userId) params.append('userId', query.userId);
+
+    const response = await client.get<ApiResponse<BlacklistListResponse>>(
+      `${USER_SERVICE_BASE_URL}/admin/blacklists`,
+      { params }
+    );
+    return response.data.data;
+  },
+
   // 블랙리스트 조회 (사용자 ID로)
   getBlacklistByUserId: async (
     userId: string
