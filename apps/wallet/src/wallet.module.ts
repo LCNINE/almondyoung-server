@@ -32,6 +32,8 @@ import { PointsPaymentProvider } from './providers/points/points.provider';
 import { PointsLedgerService } from './providers/points/points-ledger.service';
 import { TossPaymentProvider } from './providers/toss/toss.provider';
 import { BankTransferPaymentProvider } from './providers/bank-transfer/bank-transfer.provider';
+import { NicepayAuthService } from './providers/nicepay/nicepay-auth.service';
+import { NicepayPaymentProvider } from './providers/nicepay/nicepay.provider';
 import { ProviderRegistry } from './providers/provider.registry';
 
 // Methods
@@ -49,6 +51,7 @@ import { CaptureService } from './payment-intents/capture.service';
 import { AutoCaptureService } from './payment-intents/auto-capture.service';
 import { CancelService } from './payment-intents/cancel.service';
 import { TossApproveService } from './payment-intents/toss-approve.service';
+import { NicepayApproveService } from './payment-intents/nicepay-approve.service';
 
 // Refunds
 import { RefundsService } from './refunds/refunds.service';
@@ -366,6 +369,8 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     PointsPaymentProvider,
     TossPaymentProvider,
     BankTransferPaymentProvider,
+    NicepayAuthService,
+    NicepayPaymentProvider,
     ProviderRegistry,
 
     // Methods / Charges
@@ -379,6 +384,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     AutoCaptureService,
     CancelService,
     TossApproveService,
+    NicepayApproveService,
 
     // Refunds
     RefundsService,

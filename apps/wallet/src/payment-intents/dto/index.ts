@@ -189,6 +189,35 @@ export class TossApproveDto {
   amount: number;
 }
 
+// ─── NicePay Approve ──────────────────────────────────────────────────────────
+
+export class NicepayApproveDto {
+  @ApiProperty({ description: 'NicePay transaction ID (tid)' })
+  @IsString()
+  @IsNotEmpty()
+  tid: string;
+
+  @ApiProperty({ description: 'Merchant order ID (chargeId without dashes)' })
+  @IsString()
+  @IsNotEmpty()
+  orderId: string;
+
+  @ApiProperty({ minimum: 1 })
+  @IsInt()
+  @Min(1)
+  amount: number;
+
+  @ApiProperty({ description: 'Transaction datetime (ISO 8601)' })
+  @IsString()
+  @IsNotEmpty()
+  ediDate: string;
+
+  @ApiProperty({ description: 'Tamper-check signature: hex(sha256(tid+amount+ediDate+secretKey))' })
+  @IsString()
+  @IsNotEmpty()
+  signature: string;
+}
+
 // ─── Refund by Intent ─────────────────────────────────────────────────────────
 
 export class RefundByIntentDto {
