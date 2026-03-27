@@ -31,6 +31,8 @@ function getMethodIcon(type: string): ReactNode {
   switch (type) {
     case 'TOSS':
       return <Smartphone className="h-5 w-5" />;
+    case 'NICEPAY':
+      return <CreditCard className="h-5 w-5" />;
     case 'CARD':
       return <CreditCard className="h-5 w-5" />;
     case 'BALANCE':
@@ -38,6 +40,20 @@ function getMethodIcon(type: string): ReactNode {
     default:
       return <CreditCard className="h-5 w-5" />;
   }
+}
+
+function loadNicepayScript(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (typeof window !== 'undefined' && (window as { AUTHNICE?: unknown }).AUTHNICE) {
+      resolve();
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://pay.nicepay.co.kr/v1/js/';
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('NicePay SDK 로드 실패'));
+    document.head.appendChild(script);
+  });
 }
 
 function formatAmount(amount: number, currency: string): string {
@@ -114,6 +130,23 @@ export function PayForm({ intent, methods, pointsBalance }: Props) {
           ...(na.customerMobilePhone ? { customerMobilePhone: na.customerMobilePhone as string } : {}),
         });
         return; // requestPayment redirects
+      }
+
+      if (result.status === 'REQUIRES_ACTION' && result.nextAction?.type === 'NICEPAY_CHECKOUT') {
+        const na = result.nextAction;
+        await loadNicepayScript();
+        const returnUrl = `${window.location.origin}/api/nicepay-return?intentId=${intent.id}`;
+        (window as { AUTHNICE?: { requestPay: (opts: Record<string, unknown>) => void } }).AUTHNICE?.requestPay({
+          clientId: na.clientKey as string,
+          method: 'card',
+          orderId: na.orderId as string,
+          amount: na.amount as number,
+          goodsName: na.goodsName as string,
+          returnUrl,
+          ...(na.buyerName ? { buyerName: na.buyerName as string } : {}),
+          ...(na.buyerEmail ? { buyerEmail: na.buyerEmail as string } : {}),
+        });
+        return; // requestPay redirects
       }
 
       if (result.returnUrl) {

@@ -128,6 +128,30 @@ export async function approveToss(
   return res.json();
 }
 
+export async function approveNicepay(
+  intentId: string,
+  tid: string,
+  orderId: string,
+  amount: number,
+  ediDate: string,
+  signature: string,
+): Promise<{ status: string; returnUrl: string | null }> {
+  const res = await fetch(`${BASE_URL}/v1/payment-intents/${intentId}/nicepay-approve`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${process.env.WALLET_API_KEY ?? ''}`,
+      'Idempotency-Key': crypto.randomUUID(),
+    },
+    body: JSON.stringify({ tid, orderId, amount, ediDate, signature }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.message ?? `NicePay approve failed (${res.status})`);
+  }
+  return res.json();
+}
+
 export async function cancelPaymentIntent(intentId: string): Promise<void> {
   const res = await fetchWithRefresh(`${BASE_URL}/v1/payment-intents/${intentId}/cancel`, {
     method: 'POST',
