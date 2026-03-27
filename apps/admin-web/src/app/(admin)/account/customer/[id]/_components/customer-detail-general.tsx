@@ -5,15 +5,7 @@ import { Container } from '@/components/admin-ui-experimental/common/container';
 import { Header } from '@/components/admin-ui-experimental/common/header';
 import { Spinner } from '@/components/ui/spinner';
 import { useCustomerById } from '@/lib/services/customers';
-
-function formatDate(dateString: string | null | undefined): string {
-  if (!dateString) return '-';
-  return new Date(dateString).toLocaleDateString('ko-KR', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
-}
+import { formatDate } from '@/lib/utils/date';
 
 export function CustomerDetailGeneralContent({
   customerId,

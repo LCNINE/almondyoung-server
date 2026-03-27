@@ -68,8 +68,25 @@ export class BlacklistsService {
     // 해당 블랙리스트에있는 사용자가 있는지 조회
     const existingBlacklist = await this.getBlacklistByUserId(blacklistsCreateDto.userId, tx);
 
-    if (existingBlacklist?.deletedAt) {
+    // 이미 활성화된 블랙리스트가 있는 경우 에러
+    if (existingBlacklist && !existingBlacklist.deletedAt) {
       throw new BlacklistsAlreadyExistsException('해당 유저의 블랙리스트 정보가 이미 존재합니다.');
+    }
+
+    // 이전에 해제된 블랙리스트가 있는 경우 재활성화
+    if (existingBlacklist && existingBlacklist.deletedAt) {
+      await client
+        .update(userServiceSchema.blacklists)
+        .set({
+          reason: blacklistsCreateDto.reason,
+          internalNote: blacklistsCreateDto.internalNote ?? null,
+          createdBy: adminId,
+          deletedAt: null,
+          deletedBy: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(userServiceSchema.blacklists.userId, blacklistsCreateDto.userId));
+      return;
     }
 
     await client
