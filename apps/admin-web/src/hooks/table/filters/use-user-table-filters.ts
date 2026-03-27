@@ -9,7 +9,6 @@ export function useUserTableFilters(): Filter[] {
       options: [
         { label: '관리자', value: 'admin' },
         { label: '마스터', value: 'master' },
-        { label: '일반', value: 'user' },
       ],
     },
   ];
