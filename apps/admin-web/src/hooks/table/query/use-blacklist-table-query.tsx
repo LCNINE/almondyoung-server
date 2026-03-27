@@ -10,14 +10,15 @@ export const useBlacklistTableQuery = ({
   prefix,
   pageSize = 20,
 }: UseBlacklistTableQueryProps) => {
-  const queryObject = useQueryParams(['page', 'userId'], prefix);
+  const queryObject = useQueryParams(['page', 'userId', 'q'], prefix);
 
-  const { page, userId } = queryObject;
+  const { page, userId, q } = queryObject;
 
   const searchParams: BlacklistListQuery = {
     limit: pageSize,
     page: page ? Number(page) : 1,
     userId,
+    q,
   };
 
   return { searchParams, raw: queryObject };

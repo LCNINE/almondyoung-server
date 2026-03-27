@@ -2,7 +2,7 @@ import { DbService, InjectDb } from '@app/db';
 import { Injectable } from '@nestjs/common';
 import { userServiceSchema, type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
 import { DbTransaction } from 'apps/user-service/src/commons/types';
-import { and, count, eq } from 'drizzle-orm';
+import { and, count, eq, ilike, or } from 'drizzle-orm';
 
 import { BlacklistsCreateDto } from './dto/blacklists-create.dto';
 import { BlacklistsResponseDto } from './dto/blacklists-response.dto';
@@ -17,7 +17,7 @@ export class BlacklistsService {
   }
 
   async getBlacklists(
-    filters: { page?: number; limit?: number; userId?: string },
+    filters: { page?: number; limit?: number; userId?: string; q?: string },
     tx?: DbTransaction,
   ): Promise<{
     data: (BlacklistsResponseDto & { user: { username: string; nickname: string; email: string } | null })[];
@@ -35,10 +35,26 @@ export class BlacklistsService {
     if (filters?.userId) {
       whereConditions.push(eq(userServiceSchema.blacklists.userId, filters.userId));
     }
+    if (filters?.q) {
+      const searchTerm = `%${filters.q}%`;
+      whereConditions.push(
+        or(
+          ilike(userServiceSchema.users.username, searchTerm),
+          ilike(userServiceSchema.users.nickname, searchTerm),
+          ilike(userServiceSchema.users.email, searchTerm),
+          ilike(userServiceSchema.blacklists.reason, searchTerm),
+        ),
+      );
+    }
 
-    const whereClause = and(...whereConditions);
+    const whereClause = whereConditions.length > 0 ? and(...whereConditions) : undefined;
 
-    const countQuery = client.select({ count: count() }).from(userServiceSchema.blacklists).where(whereClause);
+    // count 쿼리도 조인해서 검색 조건 적용
+    const countQuery = client
+      .select({ count: count() })
+      .from(userServiceSchema.blacklists)
+      .leftJoin(userServiceSchema.users, eq(userServiceSchema.blacklists.userId, userServiceSchema.users.id))
+      .where(whereClause);
 
     const [{ count: total }] = await countQuery;
 

@@ -38,6 +38,7 @@ export interface BlacklistListQuery {
   page?: number;
   limit?: number;
   userId?: string;
+  q?: string;
 }
 
 export const blacklistApi = {
@@ -49,6 +50,7 @@ export const blacklistApi = {
     if (query?.page) params.append('page', String(query.page));
     if (query?.limit) params.append('limit', String(query.limit));
     if (query?.userId) params.append('userId', query.userId);
+    if (query?.q) params.append('q', query.q);
 
     const response = await client.get<ApiResponse<BlacklistListResponse>>(
       `${USER_SERVICE_BASE_URL}/admin/blacklists`,
