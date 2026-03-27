@@ -5,21 +5,12 @@ import { Container } from "@/components/admin-ui-experimental/common/container"
 import { Header } from "@/components/admin-ui-experimental/common/header"
 import { Spinner } from '@/components/ui/spinner'
 import { useShopInfoByUserId } from '@/lib/services/customers'
+import { formatDate } from '@/lib/utils/date'
 
 const shopTypeLabels: Record<string, string> = {
   solo: '1인 샵',
   small: '소규모 샵',
   large: '대형 샵',
-}
-
-function formatDate(date: Date | string | null | undefined): string {
-  if (!date) return '-'
-  const d = typeof date === 'string' ? new Date(date) : date
-  return d.toLocaleDateString('ko-KR', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  })
 }
 
 export function CustomerDetailShopContent({ userId }: { userId: string }) {
