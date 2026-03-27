@@ -20,10 +20,11 @@ export class BlacklistsController {
   @ApiQuery({ name: 'page', description: '페이지', required: false })
   @ApiQuery({ name: 'limit', description: '페이지 크기', required: false })
   @ApiQuery({ name: 'userId', description: '사용자 ID', required: false })
+  @ApiQuery({ name: 'q', description: '검색어 (사용자명, 이메일)', required: false })
   @ApiResponse({ status: 200, description: '블랙리스트 조회 성공' })
   @Get()
   @RequireScopes('master', 'admin:users:read')
-  async getBlacklists(@Query() query: { page?: string; limit?: string; userId?: string }): Promise<{
+  async getBlacklists(@Query() query: { page?: string; limit?: string; userId?: string; q?: string }): Promise<{
     data: BlacklistsResponseDto[];
     total: number;
     page: number;
@@ -33,6 +34,7 @@ export class BlacklistsController {
       page: query.page ? parseInt(query.page) : undefined,
       limit: query.limit ? parseInt(query.limit) : undefined,
       userId: query.userId,
+      q: query.q,
     };
 
     return await this.blacklistsService.getBlacklists(filters);
