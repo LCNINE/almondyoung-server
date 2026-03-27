@@ -5,6 +5,7 @@ import { RefundsService } from '../refunds/refunds.service';
 import {
   ConfirmPaymentIntentDto,
   CreatePaymentIntentDto,
+  NicepayApproveDto,
   PaymentIntentResponseDto,
   RefundByIntentDto,
   RefundByIntentResponseDto,
@@ -65,6 +66,15 @@ export class PaymentIntentsController {
   @ApiOperation({ summary: 'Approve Toss payment after checkout (API-key authenticated)' })
   async tossApprove(@Param('id') id: string, @Body() dto: TossApproveDto): Promise<PaymentIntentResponseDto> {
     await this.service.tossApprove(id, dto);
+    const updated = await this.service.findByIdOrThrow(id);
+    return this.toResponse(updated);
+  }
+
+  @Post(':id/nicepay-approve')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Approve NicePay payment after checkout (API-key authenticated)' })
+  async nicepayApprove(@Param('id') id: string, @Body() dto: NicepayApproveDto): Promise<PaymentIntentResponseDto> {
+    await this.service.nicepayApprove(id, dto);
     const updated = await this.service.findByIdOrThrow(id);
     return this.toResponse(updated);
   }

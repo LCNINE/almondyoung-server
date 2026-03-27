@@ -3,6 +3,7 @@ import { PaymentProvider } from './payment-provider.interface';
 import { PointsPaymentProvider } from './points/points.provider';
 import { TossPaymentProvider } from './toss/toss.provider';
 import { BankTransferPaymentProvider } from './bank-transfer/bank-transfer.provider';
+import { NicepayPaymentProvider } from './nicepay/nicepay.provider';
 
 @Injectable()
 export class ProviderRegistry {
@@ -12,10 +13,12 @@ export class ProviderRegistry {
     pointsProvider: PointsPaymentProvider,
     tossProvider: TossPaymentProvider,
     bankTransferProvider: BankTransferPaymentProvider,
+    nicepayProvider: NicepayPaymentProvider,
   ) {
     this.register(pointsProvider);
     this.register(tossProvider);
     this.register(bankTransferProvider);
+    this.register(nicepayProvider);
   }
 
   all(): PaymentProvider[] {
