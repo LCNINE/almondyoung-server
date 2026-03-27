@@ -39,6 +39,10 @@ const FILE_SERVICE_BASE_URL = isServer
   ? (process.env.FILE_SERVICE_URL ?? 'http://localhost:3000')
   : '/api/proxy/file'; // file-service같은경우 /api/를 붙여야 이미지 호출이 가능했습니다.
 
+const MEDUSA_BASE_URL = isServer
+  ? (process.env.MEDUSA_API_URL ?? 'http://localhost:9000')
+  : '/proxy/medusa';
+
 export {
   PIM_BASE_URL,
   WMS_BASE_URL,
@@ -49,4 +53,5 @@ export {
   CHANNEL_ADAPTER_SERVICE_BASE_URL,
   UGC_SERVICE_BASE_URL,
   FILE_SERVICE_BASE_URL,
+  MEDUSA_BASE_URL,
 };
