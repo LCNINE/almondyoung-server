@@ -20,7 +20,7 @@ export class BlacklistsService {
     filters: { page?: number; limit?: number; userId?: string },
     tx?: DbTransaction,
   ): Promise<{
-    data: BlacklistsResponseDto[];
+    data: (BlacklistsResponseDto & { user: { username: string; nickname: string; email: string } | null })[];
     total: number;
     page: number;
     limit: number;
@@ -42,7 +42,28 @@ export class BlacklistsService {
 
     const [{ count: total }] = await countQuery;
 
-    const dataQuery = client.select().from(userServiceSchema.blacklists).where(whereClause).limit(limit).offset(offset);
+    const dataQuery = client
+      .select({
+        id: userServiceSchema.blacklists.id,
+        userId: userServiceSchema.blacklists.userId,
+        reason: userServiceSchema.blacklists.reason,
+        internalNote: userServiceSchema.blacklists.internalNote,
+        createdBy: userServiceSchema.blacklists.createdBy,
+        createdAt: userServiceSchema.blacklists.createdAt,
+        updatedAt: userServiceSchema.blacklists.updatedAt,
+        deletedAt: userServiceSchema.blacklists.deletedAt,
+        deletedBy: userServiceSchema.blacklists.deletedBy,
+        user: {
+          username: userServiceSchema.users.username,
+          nickname: userServiceSchema.users.nickname,
+          email: userServiceSchema.users.email,
+        },
+      })
+      .from(userServiceSchema.blacklists)
+      .leftJoin(userServiceSchema.users, eq(userServiceSchema.blacklists.userId, userServiceSchema.users.id))
+      .where(whereClause)
+      .limit(limit)
+      .offset(offset);
 
     const data = await dataQuery;
 
