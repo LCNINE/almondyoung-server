@@ -21,6 +21,7 @@ import {
   useCreateBlacklist,
   useDeleteBlacklist,
 } from '@/lib/services/blacklists';
+import { useOptionalAdminUser } from '@/lib/services/users/queries';
 import { formatDateTime } from '@/lib/utils/date';
 import { AlertCircle, Shield, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -174,6 +175,10 @@ function BlacklistRemoveDialog({
 export function CustomerBlacklistContent({ userId }: { userId: string }) {
   const { data, isLoading, error, refetch } = useBlacklistByUserId(userId);
 
+  const blacklist = data?.data;
+  const { data: createdByAdmin } = useOptionalAdminUser(blacklist?.createdBy);
+  const { data: deletedByAdmin } = useOptionalAdminUser(blacklist?.deletedBy);
+
   if (isLoading) {
     return (
       <div className="flex justify-center p-4">
@@ -182,8 +187,12 @@ export function CustomerBlacklistContent({ userId }: { userId: string }) {
     );
   }
 
-  const blacklist = data?.data;
   const isBlacklisted = !!blacklist && !blacklist.deletedAt;
+
+  const getAdminName = (admin: typeof createdByAdmin) => {
+    if (!admin) return '-';
+    return admin.nickname || admin.username || admin.email || '-';
+  };
 
   if (error || !blacklist) {
     return (
@@ -200,10 +209,12 @@ export function CustomerBlacklistContent({ userId }: { userId: string }) {
   if (!isBlacklisted) {
     return (
       <div className="p-4">
-        <div className="mb-4 text-sm text-gray-500">
-          이전에 블랙리스트였으나 해제되었습니다.
-          <div className="mt-1 text-xs text-gray-400">
-            해제일: {formatDateTime(blacklist.deletedAt)}
+        <div className="mb-4 space-y-1 text-sm text-gray-500">
+          <div>이전에 블랙리스트였으나 해제되었습니다.</div>
+          <div className="text-xs text-gray-400">사유: {blacklist.reason}</div>
+          <div className="text-xs text-gray-400">
+            해제일: {formatDateTime(blacklist.deletedAt)} (
+            {getAdminName(deletedByAdmin)})
           </div>
         </div>
         <BlacklistAddDialog userId={userId} onSuccess={() => refetch()} />
@@ -215,6 +226,7 @@ export function CustomerBlacklistContent({ userId }: { userId: string }) {
     { key: '사유', value: blacklist.reason },
     { key: '내부 메모', value: blacklist.internalNote },
     { key: '등록일', value: formatDateTime(blacklist.createdAt) },
+    { key: '등록자', value: getAdminName(createdByAdmin) },
   ];
 
   return (
