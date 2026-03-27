@@ -11,7 +11,8 @@ const PAGE_SIZE = 20;
 
 export function UserTable() {
   const { searchParams: query } = useUserTableQuery({ pageSize: PAGE_SIZE });
-  const { data, isLoading, isFetching } = useAdminUsers(query);
+  const adminQuery = { ...query, roleName: 'admin,master' };
+  const { data, isLoading, isFetching } = useAdminUsers(adminQuery);
   const columns = useUserTableColumns();
   const filters = useUserTableFilters();
 
