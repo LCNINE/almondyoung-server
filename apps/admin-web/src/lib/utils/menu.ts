@@ -78,6 +78,13 @@ export const mainMenus: MainMenu[] = [
         id: 'sales-channel',
         title: '판매처 관리(채널정보)',
         path: '/account/sales-channel',
+        children: [
+          {
+            id: 'medusa-customers',
+            title: '메두사 고객',
+            path: '/account/sales-channel/medusa-customers',
+          },
+        ],
       },
       {
         id: 'supplier',
