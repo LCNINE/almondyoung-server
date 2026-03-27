@@ -9,7 +9,7 @@ export class ReplaceUserRolesDto {
     type: [String],
   })
   @IsArray()
-  @IsUUID('4', { each: true })
+  @IsUUID('all', { each: true })
   roleIds: string[];
 }
 

@@ -3,12 +3,35 @@ import { useMemo } from 'react'
 import { AdminUserDto } from '@/lib/types/dto/user'
 import { IdCell, DateCell } from '@/components/table/table-cells/common'
 import { EmailVerifiedCell } from '@/components/table/table-cells/user'
+import { Checkbox } from '@/components/ui/checkbox'
 
 const columnHelper = createColumnHelper<AdminUserDto>()
 
 export const useUserTableColumns = () => {
   return useMemo(
     () => [
+      columnHelper.display({
+        id: 'select',
+        header: ({ table }) => (
+          <Checkbox
+            checked={
+              table.getIsAllPageRowsSelected() ||
+              (table.getIsSomePageRowsSelected() && 'indeterminate')
+            }
+            onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+            aria-label="전체 선택"
+            onClick={(e) => e.stopPropagation()}
+          />
+        ),
+        cell: ({ row }) => (
+          <Checkbox
+            checked={row.getIsSelected()}
+            onCheckedChange={(value) => row.toggleSelected(!!value)}
+            aria-label="행 선택"
+            onClick={(e) => e.stopPropagation()}
+          />
+        ),
+      }),
       columnHelper.accessor('id', {
         header: 'ID',
         cell: ({ getValue }) => <IdCell value={getValue()} />,
