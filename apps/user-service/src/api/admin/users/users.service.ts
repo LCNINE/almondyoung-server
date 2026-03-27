@@ -56,13 +56,16 @@ export class UsersService {
         );
       }
       if (filters?.roleName) {
-        const roleName = filters.roleName.trim();
-        if (roleName.length > 0) {
+        const roleNames = filters.roleName
+          .split(',')
+          .map((r) => r.trim())
+          .filter((r) => r.length > 0);
+        if (roleNames.length > 0) {
           const userIdsByRoleQuery = client
             .select({ userId: schema.userRoleAssignments.userId })
             .from(schema.userRoleAssignments)
             .innerJoin(schema.roles, eq(schema.userRoleAssignments.roleId, schema.roles.roleId))
-            .where(and(eq(schema.roles.name, roleName), isNull(schema.userRoleAssignments.expiresAt)));
+            .where(and(inArray(schema.roles.name, roleNames), isNull(schema.userRoleAssignments.expiresAt)));
           conditions.push(inArray(schema.users.id, userIdsByRoleQuery));
         }
       }
