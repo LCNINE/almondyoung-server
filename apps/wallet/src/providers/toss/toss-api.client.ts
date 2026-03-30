@@ -1,0 +1,102 @@
+import { Injectable, Logger } from '@nestjs/common';
+
+export interface TossConfirmResponse {
+  paymentKey: string;
+  orderId: string;
+  status: string;
+  [key: string]: unknown;
+}
+
+export interface TossCancelResponse {
+  paymentKey: string;
+  cancels: Array<{ cancelAmount: number; cancelReason: string }>;
+  [key: string]: unknown;
+}
+
+export interface TossBillingKeyResponse {
+  billingKey: string;
+  customerKey: string;
+  cardCompany: string;
+  cardNumber: string;
+  method: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export interface TossBillingConfirmResponse {
+  paymentKey: string;
+  orderId: string;
+  status: string;
+  [key: string]: unknown;
+}
+
+export interface TossApiError {
+  code: string;
+  message: string;
+}
+
+export type TossApiResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; error: TossApiError; statusCode: number };
+
+@Injectable()
+export class TossApiClient {
+  private readonly logger = new Logger(TossApiClient.name);
+  private readonly baseUrl = 'https://api.tosspayments.com/v1';
+
+  private get auth(): string {
+    const secretKey = process.env.TOSS_SECRET_KEY ?? '';
+    return Buffer.from(`${secretKey}:`).toString('base64');
+  }
+
+  async confirmPayment(paymentKey: string, amount: number, orderId: string): Promise<TossApiResult<TossConfirmResponse>> {
+    return this.post<TossConfirmResponse>('/payments/confirm', { paymentKey, orderId, amount });
+  }
+
+  async cancelPayment(paymentKey: string, cancelReason: string, cancelAmount?: number): Promise<TossApiResult<TossCancelResponse>> {
+    const body: Record<string, unknown> = { cancelReason };
+    if (cancelAmount !== undefined) body.cancelAmount = cancelAmount;
+    return this.post<TossCancelResponse>(`/payments/${paymentKey}/cancels`, body);
+  }
+
+  async issueBillingKey(authKey: string, customerKey: string): Promise<TossApiResult<TossBillingKeyResponse>> {
+    return this.post<TossBillingKeyResponse>('/billing/authorizations/issue', { authKey, customerKey });
+  }
+
+  async confirmBilling(
+    billingKey: string,
+    amount: number,
+    orderId: string,
+    customerKey: string,
+    orderName?: string,
+  ): Promise<TossApiResult<TossBillingConfirmResponse>> {
+    return this.post<TossBillingConfirmResponse>(`/billing/${billingKey}`, {
+      customerKey,
+      amount,
+      orderId,
+      orderName: orderName ?? '정기결제',
+    });
+  }
+
+  private async post<T>(path: string, body: Record<string, unknown>): Promise<TossApiResult<T>> {
+    const url = `${this.baseUrl}${path}`;
+    this.logger.debug(`POST ${url}`);
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${this.auth}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (res.ok) {
+      const data = (await res.json()) as T;
+      return { ok: true, data };
+    }
+
+    const error = await res.json().catch(() => ({ code: 'UNKNOWN', message: 'Unknown error' }));
+    this.logger.error(`Toss API error: ${res.status} ${JSON.stringify(error)}`);
+    return { ok: false, error: { code: error.code ?? 'UNKNOWN', message: error.message ?? '' }, statusCode: res.status };
+  }
+}

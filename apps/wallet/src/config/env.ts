@@ -29,6 +29,12 @@ export const walletEnvSchema = z.object({
   NICEPAY_CLIENT_KEY: z.string().min(1).optional(),
   NICEPAY_SECRET_KEY: z.string().min(1).optional(),
   WALLET_MEDUSA_WEBHOOK_URL: z.string().url().optional(),
+  // 효성 FMS (CMS)
+  HYOSUNG_CMS_API_URL: z.string().url().optional(),
+  HYOSUNG_CMS_ADD_URL: z.string().url().optional(),
+  HYOSUNG_CMS_SW_KEY: z.string().min(1).optional(),
+  HYOSUNG_CMS_CUST_KEY: z.string().min(1).optional(),
+  HYOSUNG_CMS_CUST_ID: z.string().min(1).optional(),
 });
 
 export type WalletEnvConfig = z.infer<typeof walletEnvSchema>;
