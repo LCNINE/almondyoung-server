@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PaymentProvider } from './payment-provider.interface';
 import { PointsPaymentProvider } from './points/points.provider';
 import { TossPaymentProvider } from './toss/toss.provider';
+import { TossBillingProvider } from './toss/toss-billing.provider';
 import { BankTransferPaymentProvider } from './bank-transfer/bank-transfer.provider';
 import { NicepayPaymentProvider } from './nicepay/nicepay.provider';
 
@@ -21,11 +22,15 @@ export class ProviderRegistry {
     tossProvider: TossPaymentProvider,
     bankTransferProvider: BankTransferPaymentProvider,
     nicepayProvider: NicepayPaymentProvider,
+    @Optional() tossBillingProvider?: TossBillingProvider,
   ) {
     this.register(pointsProvider, { kind: 'ledger' });
     this.register(tossProvider, { kind: 'gateway' });
     this.register(bankTransferProvider, { kind: 'gateway' });
     this.register(nicepayProvider, { kind: 'gateway' });
+    if (tossBillingProvider) {
+      this.register(tossBillingProvider, { kind: 'gateway' });
+    }
   }
 
   all(): PaymentProvider[] {
