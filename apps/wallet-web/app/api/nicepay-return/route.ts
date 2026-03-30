@@ -62,8 +62,8 @@ export async function POST(request: Request) {
     }
 
     return Response.redirect(`${origin}/pay/${intentId}`);
-  } catch {
-    const msg = encodeURIComponent('승인 처리 중 오류가 발생했습니다.');
+  } catch (err) {
+    const msg = encodeURIComponent(err instanceof Error ? err.message : '승인 처리 중 오류가 발생했습니다.');
     return Response.redirect(`${failBase}&msg=${msg}`);
   }
 }
