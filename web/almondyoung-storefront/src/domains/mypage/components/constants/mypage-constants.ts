@@ -117,12 +117,12 @@ export const SIDEBAR_MENU_ITEMS = [
   //   hasSubMenu: false,
   //   path: "/mypage/rebuy",
   // },
-  // {
-  //   id: "recent",
-  //   label: "최근 본 상품",
-  //   hasSubMenu: false,
-  //   path: "/mypage/recent",
-  // },
+  {
+    id: "recent",
+    label: "최근 본 상품",
+    hasSubMenu: false,
+    path: "/mypage/recent",
+  },
   {
     id: "shopSettings",
     label: "맞춤설정",

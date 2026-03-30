@@ -1,5 +1,6 @@
 import { ProductTemplate } from "@/domains/products/product-details/templates"
 import { retrieveCustomer } from "@/lib/api/medusa/customer"
+import { addToRecentViews } from "@/lib/api/users/recent-views"
 import { Customer } from "@/lib/types/ui/medusa"
 import { listProducts } from "@lib/api/medusa/products"
 import { getRegion } from "@lib/api/medusa/regions"
@@ -59,6 +60,11 @@ export default async function Page(props: Props) {
   }
 
   const customer = await retrieveCustomer()
+
+  // 로그인한 사용자만 최근 본 상품 기록
+  if (customer) {
+    addToRecentViews(pricedProduct.id).catch(() => {})
+  }
 
   return (
     <div className="md:bg-muted/50 min-h-screen bg-white">
