@@ -5,6 +5,7 @@ import { TossPaymentProvider } from './toss/toss.provider';
 import { TossBillingProvider } from './toss/toss-billing.provider';
 import { BankTransferPaymentProvider } from './bank-transfer/bank-transfer.provider';
 import { NicepayPaymentProvider } from './nicepay/nicepay.provider';
+import { CmsBatchProvider } from '../cms/cms-batch.provider';
 
 export type ProviderKind = 'gateway' | 'ledger';
 
@@ -23,6 +24,7 @@ export class ProviderRegistry {
     bankTransferProvider: BankTransferPaymentProvider,
     nicepayProvider: NicepayPaymentProvider,
     @Optional() tossBillingProvider?: TossBillingProvider,
+    @Optional() cmsBatchProvider?: CmsBatchProvider,
   ) {
     this.register(pointsProvider, { kind: 'ledger' });
     this.register(tossProvider, { kind: 'gateway' });
@@ -30,6 +32,9 @@ export class ProviderRegistry {
     this.register(nicepayProvider, { kind: 'gateway' });
     if (tossBillingProvider) {
       this.register(tossBillingProvider, { kind: 'gateway' });
+    }
+    if (cmsBatchProvider) {
+      this.register(cmsBatchProvider, { kind: 'gateway' });
     }
   }
 

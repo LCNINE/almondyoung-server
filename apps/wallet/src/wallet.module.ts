@@ -92,6 +92,15 @@ import { CheckoutSessionExpirationService } from './checkout/checkout-session-ex
 // Toss Billing Provider
 import { TossBillingProvider } from './providers/toss/toss-billing.provider';
 
+// CMS
+import { CmsApiClient } from './cms/cms-api.client';
+import { CmsMemberService } from './cms/cms-member.service';
+import { CmsMemberPollerService } from './cms/cms-member-poller.service';
+import { CmsAgreementService } from './cms/cms-agreement.service';
+import { CmsAgreementController } from './cms/cms-agreement.controller';
+import { CmsBatchProvider } from './cms/cms-batch.provider';
+import { CmsSettlementPollerService } from './cms/cms-settlement-poller.service';
+
 // Consumers
 import { UgcCommandConsumer } from './consumers/ugc-command.consumer';
 
@@ -355,6 +364,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     BillingMethodController,
     BillingAgreementController,
     CheckoutSessionController,
+    CmsAgreementController,
     UgcCommandConsumer,
   ],
   providers: [
@@ -424,6 +434,14 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     // Checkout
     CheckoutSessionService,
     CheckoutSessionExpirationService,
+
+    // CMS
+    CmsApiClient,
+    CmsMemberService,
+    CmsMemberPollerService,
+    CmsAgreementService,
+    CmsBatchProvider,
+    CmsSettlementPollerService,
 
     // Webhooks
     TossWebhookService,
