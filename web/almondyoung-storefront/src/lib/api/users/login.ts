@@ -6,7 +6,7 @@ import { getCacheTag, setTokenCookies } from "@lib/data/cookies"
 import { revalidatePath, revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
 import { api } from "../api"
-import { ApiNetworkError, HttpApiError } from "../api-error"
+import type { HttpApiError } from "../api-error"
 import { medusaSignin } from "../medusa/signin"
 
 // 반환 타입 정의
@@ -40,32 +40,35 @@ export async function login(
   } catch (error) {
     console.error("User service login error:`", error)
 
-    if (error instanceof HttpApiError) {
-      if (error.status === 400 || error.status === 401) {
+    if (error instanceof Error) {
+      if (error.name === "ApiNetworkError") {
+        return {
+          success: false,
+          error: "서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요",
+          code: "NETWORK_ERROR",
+        }
+      }
+
+      const httpError = error as HttpApiError
+      if (httpError.status === 400 || httpError.status === 401) {
         return {
           success: false,
           error: "아이디 또는 비밀번호가 일치하지 않습니다",
           code: "INVALID_CREDENTIALS",
         }
       }
-      if (error.status === 429) {
+      if (httpError.status === 429) {
         return {
           success: false,
           error: "너무 많은 시도가 있었습니다. 잠시 후 다시 시도해주세요",
           code: "TOO_MANY_ATTEMPTS",
         }
       }
-      return {
-        success: false,
-        error: error.message || "로그인 중 오류가 발생했습니다",
-      }
-    }
-
-    if (error instanceof ApiNetworkError) {
-      return {
-        success: false,
-        error: "서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요",
-        code: "NETWORK_ERROR",
+      if (httpError.status) {
+        return {
+          success: false,
+          error: error.message || "로그인 중 오류가 발생했습니다",
+        }
       }
     }
 
