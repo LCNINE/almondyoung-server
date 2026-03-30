@@ -207,12 +207,17 @@ export class NicepayApproveDto {
   @Min(1)
   amount: number;
 
-  @ApiPropertyOptional({ description: 'Transaction datetime (ISO 8601)' })
-  @IsOptional()
+  @ApiProperty({ description: 'Authentication token from NicePay' })
   @IsString()
-  ediDate?: string;
+  @IsNotEmpty()
+  authToken: string;
 
-  @ApiProperty({ description: 'Tamper-check signature: hex(sha256(tid+amount+ediDate+secretKey))' })
+  @ApiProperty({ description: 'NicePay client key (clientId)' })
+  @IsString()
+  @IsNotEmpty()
+  clientId: string;
+
+  @ApiProperty({ description: 'Tamper-check signature: hex(sha256(authToken+clientId+amount+secretKey))' })
   @IsString()
   @IsNotEmpty()
   signature: string;
