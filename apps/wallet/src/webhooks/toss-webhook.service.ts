@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { ChargesService } from '../charges/charges.service';
 import { TossApproveService } from '../payment-intents/toss-approve.service';
+import { BillingMethodService } from '../billing/billing-method.service';
 import { TossWebhookRepository } from './toss-webhook.repository';
 import { TossWebhookBodyDto } from './dto';
 
@@ -28,11 +29,52 @@ export class TossWebhookService {
     private readonly repository: TossWebhookRepository,
     private readonly chargesService: ChargesService,
     private readonly tossApproveService: TossApproveService,
+    private readonly billingMethodService: BillingMethodService,
   ) {}
 
   async handle(dto: TossWebhookBodyDto): Promise<void> {
-    if (dto.eventType !== 'PAYMENT_STATUS_CHANGED') return;
-    await this.handlePaymentStatusChanged(dto);
+    if (dto.eventType === 'PAYMENT_STATUS_CHANGED') {
+      await this.handlePaymentStatusChanged(dto);
+      return;
+    }
+
+    if (dto.eventType === 'BILLING_DELETED') {
+      await this.handleBillingDeleted(dto);
+      return;
+    }
+  }
+
+  private async handleBillingDeleted(dto: TossWebhookBodyDto): Promise<void> {
+    const billingKey = dto.data.billingKey as string;
+    if (!billingKey) {
+      this.logger.warn('BILLING_DELETED webhook missing billingKey');
+      return;
+    }
+
+    const providerEventId = `billing_deleted:${billingKey}`;
+    const { inserted, id: receiptId } = await this.repository.insertOrIgnore({
+      providerType: 'TOSS',
+      providerEventId,
+      payloadHash: sha256hex(JSON.stringify(dto)),
+      status: 'RECEIVED',
+      receivedAt: new Date(),
+    });
+
+    if (!inserted) {
+      this.logger.log(`Duplicate BILLING_DELETED webhook ignored: billingKey=${billingKey}`);
+      return;
+    }
+
+    try {
+      await this.billingMethodService.handleBillingDeletedWebhook(billingKey);
+      await this.repository.updateStatus(receiptId, 'PROCESSED', { processedAt: new Date() });
+    } catch (e: any) {
+      this.logger.error(`Failed to handle BILLING_DELETED: ${e.message}`);
+      await this.repository.updateStatus(receiptId, 'FAILED', {
+        errorCode: 'BILLING_DELETED_HANDLING_FAILED',
+        errorMessage: e.message,
+      });
+    }
   }
 
   private async handlePaymentStatusChanged(dto: TossWebhookBodyDto): Promise<void> {

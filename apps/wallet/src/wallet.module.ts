@@ -78,6 +78,20 @@ import { TossWebhookController } from './webhooks/toss-webhook.controller';
 import { TossWebhookService } from './webhooks/toss-webhook.service';
 import { TossWebhookRepository } from './webhooks/toss-webhook.repository';
 
+// Billing
+import { BillingMethodService } from './billing/billing-method.service';
+import { BillingMethodController } from './billing/billing-method.controller';
+import { BillingAgreementService } from './billing/billing-agreement.service';
+import { BillingAgreementController } from './billing/billing-agreement.controller';
+
+// Checkout
+import { CheckoutSessionService } from './checkout/checkout-session.service';
+import { CheckoutSessionController } from './checkout/checkout-session.controller';
+import { CheckoutSessionExpirationService } from './checkout/checkout-session-expiration.service';
+
+// Toss Billing Provider
+import { TossBillingProvider } from './providers/toss/toss-billing.provider';
+
 // Consumers
 import { UgcCommandConsumer } from './consumers/ugc-command.consumer';
 
@@ -338,6 +352,9 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     RefundAdminController,
     PointsController,
     TossWebhookController,
+    BillingMethodController,
+    BillingAgreementController,
+    CheckoutSessionController,
     UgcCommandConsumer,
   ],
   providers: [
@@ -376,6 +393,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     BankTransferPaymentProvider,
     NicepayAuthService,
     NicepayPaymentProvider,
+    TossBillingProvider,
     ProviderRegistry,
 
     // Methods / Charges
@@ -398,6 +416,14 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     PointsAdminService,
     BankTransferAdminService,
     PaymentIntentAdminService,
+
+    // Billing
+    BillingMethodService,
+    BillingAgreementService,
+
+    // Checkout
+    CheckoutSessionService,
+    CheckoutSessionExpirationService,
 
     // Webhooks
     TossWebhookService,
