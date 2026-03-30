@@ -35,7 +35,7 @@ export async function POST(request: Request) {
   const orderId = formData.get('orderId') as string | null;
   const rawAmount = formData.get('amount');
   const amount = rawAmount ? Number(rawAmount) : NaN;
-  const ediDate = formData.get('ediDate') as string | null;
+  const ediDate = (formData.get('ediDate') as string | null) ?? '';
   const signature = formData.get('signature') as string | null;
 
   // 인증 단계 실패
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
     return Response.redirect(`${failBase}&msg=${msg}&code=${code}`);
   }
 
-  if (!tid || !orderId || isNaN(amount) || !ediDate || !signature) {
+  if (!tid || !orderId || isNaN(amount) || !signature) {
     return Response.redirect(failBase);
   }
 

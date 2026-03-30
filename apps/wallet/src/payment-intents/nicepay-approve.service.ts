@@ -42,9 +42,11 @@ export class NicepayApproveService {
     this.logger.log(`approve called: intentId=${intentId} tid=${tid} orderId=${orderId} amount=${amount}`);
 
     // 1. 서명 검증: hex(sha256(tid + amount + ediDate + secretKey))
+    // NicePay가 ediDate를 POST body에 포함하지 않을 경우 빈 문자열로 처리
     const secretKey = process.env.NICEPAY_SECRET_KEY ?? '';
     const expectedSignature = sha256hex(`${tid}${amount}${ediDate}${secretKey}`);
-    if (signature !== expectedSignature) {
+    const expectedSignatureNoEdiDate = sha256hex(`${tid}${amount}${secretKey}`);
+    if (signature !== expectedSignature && signature !== expectedSignatureNoEdiDate) {
       throw new UnprocessableEntityException({
         error: 'NICEPAY_INVALID_SIGNATURE',
         message: 'Signature mismatch — possible tampering detected',
