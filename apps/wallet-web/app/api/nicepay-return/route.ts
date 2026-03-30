@@ -29,8 +29,8 @@ export async function POST(request: Request) {
     return Response.redirect(failBase);
   }
 
-  const resultCode = formData.get('resultCode') as string | null;
-  const resultMsg = formData.get('resultMsg') as string | null;
+  const resultCode = (formData.get('authResultCode') ?? formData.get('resultCode')) as string | null;
+  const resultMsg = (formData.get('authResultMsg') ?? formData.get('resultMsg')) as string | null;
   const tid = formData.get('tid') as string | null;
   const orderId = formData.get('orderId') as string | null;
   const rawAmount = formData.get('amount');
@@ -41,7 +41,8 @@ export async function POST(request: Request) {
   // 인증 단계 실패
   if (resultCode !== '0000') {
     const msg = encodeURIComponent(resultMsg ?? '결제 인증에 실패했습니다.');
-    return Response.redirect(`${failBase}&msg=${msg}`);
+    const code = encodeURIComponent(resultCode ?? 'UNKNOWN');
+    return Response.redirect(`${failBase}&msg=${msg}&code=${code}`);
   }
 
   if (!tid || !orderId || isNaN(amount) || !ediDate || !signature) {
