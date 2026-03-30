@@ -11,7 +11,7 @@ import { buildReturnUrl } from '@/lib/return-url';
  *   - intentId: wallet payment intent ID (returnUrl에 포함시켜 전달)
  *
  * NicePay POST form fields:
- *   - resultCode, resultMsg, tid, orderId, amount, ediDate, signature
+ *   - authResultCode, authResultMsg, tid, orderId, amount, authToken, clientId, signature
  */
 export async function POST(request: Request) {
   const url = new URL(request.url);
@@ -35,7 +35,8 @@ export async function POST(request: Request) {
   const orderId = formData.get('orderId') as string | null;
   const rawAmount = formData.get('amount');
   const amount = rawAmount ? Number(rawAmount) : NaN;
-  const ediDate = (formData.get('ediDate') as string | null) ?? '';
+  const authToken = formData.get('authToken') as string | null;
+  const clientId = formData.get('clientId') as string | null;
   const signature = formData.get('signature') as string | null;
 
   // 인증 단계 실패
@@ -45,12 +46,12 @@ export async function POST(request: Request) {
     return Response.redirect(`${failBase}&msg=${msg}&code=${code}`);
   }
 
-  if (!tid || !orderId || isNaN(amount) || !signature) {
+  if (!tid || !orderId || isNaN(amount) || !authToken || !clientId || !signature) {
     return Response.redirect(failBase);
   }
 
   try {
-    const result = await approveNicepay(intentId, tid, orderId, amount, ediDate, signature);
+    const result = await approveNicepay(intentId, tid, orderId, amount, authToken, clientId, signature);
 
     if (result.returnUrl) {
       return Response.redirect(

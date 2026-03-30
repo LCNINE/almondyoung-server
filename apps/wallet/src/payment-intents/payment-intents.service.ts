@@ -236,7 +236,8 @@ export class PaymentIntentsService {
       dto.tid,
       dto.orderId,
       dto.amount,
-      dto.ediDate ?? '',
+      dto.authToken,
+      dto.clientId,
       dto.signature,
       correlationId,
     );
