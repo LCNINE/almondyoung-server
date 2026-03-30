@@ -18,7 +18,7 @@ import { idempotencyKeys } from './domain/idempotency/idempotency.schema';
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
-export const paymentMethodTypeEnum = pgEnum('payment_method_type', ['POINTS', 'CARD', 'BANK_TRANSFER', 'BNPL', 'TOSS', 'NICEPAY']);
+export const paymentMethodTypeEnum = pgEnum('payment_method_type', ['POINTS', 'CARD', 'BANK_TRANSFER', 'BNPL', 'TOSS', 'NICEPAY', 'TOSS_BILLING', 'CMS_BATCH']);
 
 export const paymentIntentStatusEnum = pgEnum('payment_intent_status', [
   'CREATED',
@@ -29,6 +29,8 @@ export const paymentIntentStatusEnum = pgEnum('payment_intent_status', [
   'SUCCEEDED',
   'FAILED',
   'CANCELED',
+  'PENDING_SETTLEMENT',
+  'PARTIALLY_CAPTURED',
 ]);
 
 export const chargeOperationEnum = pgEnum('charge_operation', ['AUTHORIZE', 'CAPTURE', 'CANCEL', 'REFUND']);
@@ -88,6 +90,18 @@ export const paymentIntentItemDiscountKindEnum = pgEnum('payment_intent_item_dis
 
 export const paymentIntentOrderDiscountKindEnum = pgEnum('payment_intent_order_discount_kind', ['ORDER']);
 
+export const intentPurposeEnum = pgEnum('intent_purpose', ['PURCHASE', 'SUBSCRIPTION', 'REPAYMENT', 'PAYOUT']);
+
+export const checkoutSessionStatusEnum = pgEnum('checkout_session_status', ['PENDING', 'COMPLETED', 'EXPIRED', 'CANCELED']);
+
+export const billingMethodStatusEnum = pgEnum('billing_method_status', ['ACTIVE', 'REVOKED', 'DELETED', 'EXPIRED']);
+
+export const billingAgreementStatusEnum = pgEnum('billing_agreement_status', ['ACTIVE', 'SUSPENDED', 'REVOKED']);
+
+export const cmsMemberStatusEnum = pgEnum('cms_member_status', ['PENDING', 'REGISTERED', 'FAILED', 'DELETED']);
+
+export const cmsWithdrawalStatusEnum = pgEnum('cms_withdrawal_status', ['REQUESTED', 'PROCESSING', 'SUCCEEDED', 'FAILED', 'DELETED']);
+
 // ─── Tables ──────────────────────────────────────────────────────────────────
 
 export const paymentMethods = pgTable(
@@ -119,6 +133,7 @@ export const paymentIntents = pgTable(
     payableAmount: integer('payable_amount').notNull(),
     currency: varchar('currency', { length: 3 }).notNull(),
     status: paymentIntentStatusEnum('status').notNull(),
+    purpose: intentPurposeEnum('purpose').notNull().default('PURCHASE'),
     userId: varchar('user_id', { length: 128 }),
     paymentMethodId: uuid('payment_method_id').references(() => paymentMethods.id),
     clientSecret: varchar('client_secret', { length: 64 }).notNull(),
@@ -494,6 +509,141 @@ export const pointHoldDetails = pgTable(
   ],
 );
 
+// ─── Billing / Checkout / CMS Tables ─────────────────────────────────────────
+
+export const billingMethods = pgTable(
+  'billing_methods',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: varchar('user_id', { length: 128 }).notNull(),
+    providerType: varchar('provider_type', { length: 64 }).notNull(),
+    billingKey: text('billing_key'),
+    customerKey: varchar('customer_key', { length: 128 }),
+    cmsMemberId: varchar('cms_member_id', { length: 20 }),
+    displayName: varchar('display_name', { length: 255 }),
+    method: jsonb('method').$type<Record<string, unknown>>(),
+    status: billingMethodStatusEnum('status').notNull().default('ACTIVE'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_billing_methods_user_id').on(table.userId),
+    index('idx_billing_methods_user_provider_status').on(table.userId, table.providerType, table.status),
+  ],
+);
+
+export const billingAgreements = pgTable(
+  'billing_agreements',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: varchar('user_id', { length: 128 }).notNull(),
+    billingMethodId: uuid('billing_method_id').notNull().references(() => billingMethods.id),
+    subscriberRef: varchar('subscriber_ref', { length: 255 }).notNull(),
+    subscriberType: varchar('subscriber_type', { length: 64 }).notNull(),
+    status: billingAgreementStatusEnum('status').notNull().default('ACTIVE'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('uq_billing_agreements_subscriber').on(table.subscriberType, table.subscriberRef),
+    index('idx_billing_agreements_user_id').on(table.userId),
+    index('idx_billing_agreements_billing_method_id').on(table.billingMethodId),
+  ],
+);
+
+export const checkoutSessions = pgTable(
+  'checkout_sessions',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: varchar('user_id', { length: 128 }).notNull(),
+    amount: integer('amount').notNull(),
+    currency: varchar('currency', { length: 3 }).notNull(),
+    purpose: intentPurposeEnum('purpose').notNull(),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+    successUrl: text('success_url').notNull(),
+    cancelUrl: text('cancel_url').notNull(),
+    allowComposite: boolean('allow_composite').notNull().default(false),
+    intentId: uuid('intent_id').references(() => paymentIntents.id),
+    status: checkoutSessionStatusEnum('status').notNull().default('PENDING'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_checkout_sessions_user_status').on(table.userId, table.status),
+    index('idx_checkout_sessions_status_expires_at').on(table.status, table.expiresAt),
+  ],
+);
+
+export const cmsMembers = pgTable(
+  'cms_members',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    billingMethodId: uuid('billing_method_id').notNull().references(() => billingMethods.id),
+    userId: varchar('user_id', { length: 128 }).notNull(),
+    cmsMemberId: varchar('cms_member_id', { length: 20 }).notNull(),
+    paymentCompany: varchar('payment_company', { length: 3 }).notNull(),
+    payerName: varchar('payer_name', { length: 15 }).notNull(),
+    payerNumber: varchar('payer_number', { length: 10 }).notNull(),
+    status: cmsMemberStatusEnum('status').notNull().default('PENDING'),
+    resultCode: varchar('result_code', { length: 16 }),
+    resultMessage: text('result_message'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('uq_cms_members_cms_member_id').on(table.cmsMemberId),
+    index('idx_cms_members_billing_method_id').on(table.billingMethodId),
+    index('idx_cms_members_user_id').on(table.userId),
+    index('idx_cms_members_status').on(table.status),
+  ],
+);
+
+export const cmsWithdrawals = pgTable(
+  'cms_withdrawals',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    cmsMemberId: varchar('cms_member_id', { length: 20 }).notNull(),
+    transactionId: varchar('transaction_id', { length: 30 }).notNull(),
+    chargeId: uuid('charge_id').notNull().references(() => charges.id),
+    intentId: uuid('intent_id').notNull().references(() => paymentIntents.id),
+    paymentDate: varchar('payment_date', { length: 8 }).notNull(),
+    amount: integer('amount').notNull(),
+    status: cmsWithdrawalStatusEnum('status').notNull().default('REQUESTED'),
+    resultCode: varchar('result_code', { length: 16 }),
+    resultMessage: text('result_message'),
+    actualAmount: integer('actual_amount'),
+    fee: integer('fee'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('uq_cms_withdrawals_transaction_id').on(table.transactionId),
+    index('idx_cms_withdrawals_intent_id').on(table.intentId),
+    index('idx_cms_withdrawals_status_payment_date').on(table.status, table.paymentDate),
+  ],
+);
+
+export const cmsAgreements = pgTable(
+  'cms_agreements',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    cmsMemberId: varchar('cms_member_id', { length: 20 }).notNull(),
+    agreementKey: varchar('agreement_key', { length: 64 }),
+    fileType: varchar('file_type', { length: 16 }).notNull(),
+    fileExtension: varchar('file_extension', { length: 8 }).notNull(),
+    status: varchar('status', { length: 32 }).notNull(),
+    resultCode: varchar('result_code', { length: 16 }),
+    resultMessage: text('result_message'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_cms_agreements_cms_member_id').on(table.cmsMemberId),
+  ],
+);
+
 // ─── Type exports ─────────────────────────────────────────────────────────────
 
 export type PaymentMethodType = (typeof paymentMethodTypeEnum.enumValues)[number];
@@ -509,6 +659,12 @@ export type PointHoldStatus = (typeof pointHoldStatusEnum.enumValues)[number];
 export type PaymentIntentItemType = (typeof paymentIntentItemTypeEnum.enumValues)[number];
 export type PaymentIntentItemDiscountKind = (typeof paymentIntentItemDiscountKindEnum.enumValues)[number];
 export type PaymentIntentOrderDiscountKind = (typeof paymentIntentOrderDiscountKindEnum.enumValues)[number];
+export type IntentPurpose = (typeof intentPurposeEnum.enumValues)[number];
+export type CheckoutSessionStatus = (typeof checkoutSessionStatusEnum.enumValues)[number];
+export type BillingMethodStatus = (typeof billingMethodStatusEnum.enumValues)[number];
+export type BillingAgreementStatus = (typeof billingAgreementStatusEnum.enumValues)[number];
+export type CmsMemberStatus = (typeof cmsMemberStatusEnum.enumValues)[number];
+export type CmsWithdrawalStatus = (typeof cmsWithdrawalStatusEnum.enumValues)[number];
 
 // ─── Schema object ────────────────────────────────────────────────────────────
 
@@ -528,6 +684,12 @@ export const walletSchema = {
   pointHolds,
   pointHoldDetails,
   idempotencyKeys,
+  billingMethods,
+  billingAgreements,
+  checkoutSessions,
+  cmsMembers,
+  cmsWithdrawals,
+  cmsAgreements,
 };
 
 export { idempotencyKeys };

@@ -30,6 +30,7 @@ import { HttpIdempotencyInterceptor } from './domain/idempotency/http-idempotenc
 // Providers
 import { PointsPaymentProvider } from './providers/points/points.provider';
 import { PointsLedgerService } from './providers/points/points-ledger.service';
+import { TossApiClient } from './providers/toss/toss-api.client';
 import { TossPaymentProvider } from './providers/toss/toss.provider';
 import { BankTransferPaymentProvider } from './providers/bank-transfer/bank-transfer.provider';
 import { NicepayAuthService } from './providers/nicepay/nicepay-auth.service';
@@ -367,6 +368,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     // Providers
     PointsLedgerService,
     PointsPaymentProvider,
+    TossApiClient,
     TossPaymentProvider,
     BankTransferPaymentProvider,
     NicepayAuthService,
