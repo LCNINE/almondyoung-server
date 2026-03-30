@@ -25,8 +25,7 @@ export default function ProductPrice({
   const subtotal = unitPrice * quantity
 
   const hasDiscount =
-    selectedPrice.percentage_diff &&
-    Number(selectedPrice.percentage_diff) > 0
+    selectedPrice.percentage_diff && Number(selectedPrice.percentage_diff) > 0
 
   return (
     <div className="relative flex flex-col">

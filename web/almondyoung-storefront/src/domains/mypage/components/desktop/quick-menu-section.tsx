@@ -8,21 +8,21 @@ export function QuickMenuSection() {
       icon: <Package size={32} className="text-amber-500" />,
       href: "/kr/mypage/order/list",
     },
-    // {
-    //   label: "찜한상품",
-    //   icon: <Heart size={32} className="text-amber-500" />,
-    //   href: "/kr/mypage/wish",
-    // },
-    // {
-    //   label: "자주산상품",
-    //   icon: <ShoppingBag size={32} className="text-amber-500" />,
-    //   href: "/kr/mypage/rebuy",
-    // },
-    // {
-    //   label: "최근 본 상품",
-    //   icon: <Eye size={32} className="text-amber-500" />,
-    //   href: "/kr/mypage/recent",
-    // },
+    {
+      label: "찜한상품",
+      icon: <Heart size={32} className="text-amber-500" />,
+      href: "/kr/mypage/wish",
+    },
+    {
+      label: "자주산상품",
+      icon: <ShoppingBag size={32} className="text-amber-500" />,
+      href: "/kr/mypage/rebuy",
+    },
+    {
+      label: "최근 본 상품",
+      icon: <Eye size={32} className="text-amber-500" />,
+      href: "/kr/mypage/recent",
+    },
   ]
 
   return (

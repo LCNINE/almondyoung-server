@@ -105,12 +105,12 @@ export const SIDEBAR_MENU_ITEMS = [
     hasSubMenu: false,
     path: "/mypage/order/legacy",
   },
-  // {
-  //   id: "wishlist",
-  //   label: "찜한 상품",
-  //   hasSubMenu: false,
-  //   path: "/mypage/wish",
-  // },
+  {
+    id: "wishlist",
+    label: "찜한 상품",
+    hasSubMenu: false,
+    path: "/mypage/wish",
+  },
   // {
   //   id: "frequent",
   //   label: "자주 산 상품",
