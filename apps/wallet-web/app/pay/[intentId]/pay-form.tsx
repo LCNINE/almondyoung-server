@@ -143,6 +143,10 @@ export function PayForm({ intent, methods, pointsBalance }: Props) {
           amount: na.amount as number,
           goodsName: na.goodsName as string,
           returnUrl,
+          fnError: (result: Record<string, unknown>) => {
+            setError((result?.errorMsg as string) ?? '결제 요청 중 오류가 발생했습니다.');
+            setLoading(false);
+          },
           ...(na.buyerName ? { buyerName: na.buyerName as string } : {}),
           ...(na.buyerEmail ? { buyerEmail: na.buyerEmail as string } : {}),
         });
