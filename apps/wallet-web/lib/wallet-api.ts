@@ -133,7 +133,8 @@ export async function approveNicepay(
   tid: string,
   orderId: string,
   amount: number,
-  ediDate: string,
+  authToken: string,
+  clientId: string,
   signature: string,
 ): Promise<{ status: string; returnUrl: string | null }> {
   const res = await fetch(`${BASE_URL}/v1/payment-intents/${intentId}/nicepay-approve`, {
@@ -143,7 +144,7 @@ export async function approveNicepay(
       Authorization: `Bearer ${process.env.WALLET_API_KEY ?? ''}`,
       'Idempotency-Key': crypto.randomUUID(),
     },
-    body: JSON.stringify({ tid, orderId, amount, ediDate, signature }),
+    body: JSON.stringify({ tid, orderId, amount, authToken, clientId, signature }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
