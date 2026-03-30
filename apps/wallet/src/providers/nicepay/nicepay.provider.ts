@@ -104,7 +104,10 @@ export class NicepayPaymentProvider implements PaymentProvider {
 
     const orderId = params.chargeId.replace(/-/g, '');
     const authorization = await this.nicepayAuth.getAuthHeader();
-    const res = await fetch(`https://api.nicepay.co.kr/v1/payments/${tid}/cancel`, {
+    const apiBase = (process.env.NICEPAY_CLIENT_KEY ?? '').startsWith('S2_')
+      ? 'https://sandbox-api.nicepay.co.kr'
+      : 'https://api.nicepay.co.kr';
+    const res = await fetch(`${apiBase}/v1/payments/${tid}/cancel`, {
       method: 'POST',
       headers: {
         Authorization: authorization,
@@ -141,7 +144,10 @@ export class NicepayPaymentProvider implements PaymentProvider {
 
     const orderId = params.chargeId.replace(/-/g, '');
     const authorization = await this.nicepayAuth.getAuthHeader();
-    const res = await fetch(`https://api.nicepay.co.kr/v1/payments/${tid}/cancel`, {
+    const apiBase2 = (process.env.NICEPAY_CLIENT_KEY ?? '').startsWith('S2_')
+      ? 'https://sandbox-api.nicepay.co.kr'
+      : 'https://api.nicepay.co.kr';
+    const res = await fetch(`${apiBase2}/v1/payments/${tid}/cancel`, {
       method: 'POST',
       headers: {
         Authorization: authorization,

@@ -81,7 +81,10 @@ export class NicepayApproveService {
 
     // 5. 나이스페이 승인 API 호출: POST /v1/payments/{tid}
     const authorization = await this.nicepayAuth.getAuthHeader();
-    const res = await fetch(`https://api.nicepay.co.kr/v1/payments/${tid}`, {
+    const apiBase = (process.env.NICEPAY_CLIENT_KEY ?? '').startsWith('S2_')
+      ? 'https://sandbox-api.nicepay.co.kr'
+      : 'https://api.nicepay.co.kr';
+    const res = await fetch(`${apiBase}/v1/payments/${tid}`, {
       method: 'POST',
       headers: {
         Authorization: authorization,

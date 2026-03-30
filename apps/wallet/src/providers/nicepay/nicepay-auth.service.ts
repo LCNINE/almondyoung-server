@@ -6,6 +6,11 @@ export class NicepayAuthService {
   private cachedToken: string | null = null;
   private tokenExpiry = 0;
 
+  private getApiBase(): string {
+    const clientId = process.env.NICEPAY_CLIENT_KEY ?? '';
+    return clientId.startsWith('S2_') ? 'https://sandbox-api.nicepay.co.kr' : 'https://api.nicepay.co.kr';
+  }
+
   async getAuthHeader(): Promise<string> {
     if (this.cachedToken && this.tokenExpiry > Date.now()) {
       return `Bearer ${this.cachedToken}`;
@@ -15,7 +20,7 @@ export class NicepayAuthService {
     const secretKey = process.env.NICEPAY_SECRET_KEY ?? '';
     const basicAuth = Buffer.from(`${clientId}:${secretKey}`).toString('base64');
 
-    const res = await fetch('https://api.nicepay.co.kr/v1/access-token', {
+    const res = await fetch(`${this.getApiBase()}/v1/access-token`, {
       method: 'POST',
       headers: {
         Authorization: `Basic ${basicAuth}`,
