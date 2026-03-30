@@ -13,7 +13,7 @@ import { PassportModule } from '@nestjs/passport';
 import { ScheduleModule } from '@nestjs/schedule';
 import { DbModule } from '@app/db';
 import { EventsModule, EventTraceApiModule } from '@app/events';
-import { UGC_COMMAND_STREAM } from '@packages/event-contracts/streams';
+import { UGC_COMMAND_STREAM, PAYMENT_STREAM } from '@packages/event-contracts/streams';
 import { Observable, firstValueFrom, isObservable } from 'rxjs';
 import { validateWalletEnv } from './config/env';
 import { WALLET_JWT_AUTH_KEY } from './wallet-auth.decorator';
@@ -317,6 +317,9 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
       schema: walletSchema,
     }),
     ScheduleModule.forRoot(),
+    EventsModule.forRoot({
+      streams: [PAYMENT_STREAM],
+    }),
     EventsModule.forConsumerModule({
       streams: [UGC_COMMAND_STREAM],
       groupId: process.env.KAFKA_GROUP_ID || 'wallet-consumer',

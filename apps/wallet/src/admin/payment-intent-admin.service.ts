@@ -2,6 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { PaginatedResponseDto } from '@app/shared';
 import { and, asc, count, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
+import { StateTransitionService } from '../domain/state-transition/state-transition.service';
+import {
+  GATEWAY_AGGREGATE_TYPE,
+  GatewayEventType,
+  buildPaymentIntentEventPayload,
+} from '../messaging/gateway-event.builder';
 import {
   PaymentIntentStatus,
   WalletSchema,
@@ -32,7 +38,10 @@ import {
 
 @Injectable()
 export class PaymentIntentAdminService {
-  constructor(private readonly dbService: DbService<WalletSchema>) {}
+  constructor(
+    private readonly dbService: DbService<WalletSchema>,
+    private readonly stateTransitionService: StateTransitionService,
+  ) {}
 
   async listPaymentIntents(
     query: AdminPaymentIntentListQueryDto,
@@ -337,6 +346,58 @@ export class PaymentIntentAdminService {
       correlationId: r.correlationId,
       occurredAt: r.occurredAt,
     }));
+  }
+
+  async resolvePartiallyCapture(
+    intentId: string,
+    action: 'CAPTURED' | 'CANCELED',
+    reason?: string,
+  ): Promise<void> {
+    const db = this.dbService.db;
+
+    const [intent] = await db
+      .select({ id: paymentIntents.id, status: paymentIntents.status, userId: paymentIntents.userId, payableAmount: paymentIntents.payableAmount, currency: paymentIntents.currency })
+      .from(paymentIntents)
+      .where(eq(paymentIntents.id, intentId))
+      .limit(1);
+
+    if (!intent) {
+      throw new Error('Payment intent not found');
+    }
+
+    if (intent.status !== 'PARTIALLY_CAPTURED') {
+      throw new Error(`Invalid status: intent must be PARTIALLY_CAPTURED, got ${intent.status}`);
+    }
+
+    const correlationId = `admin:resolve:${intentId}:${Date.now()}`;
+    const now = new Date().toISOString();
+
+    const eventType = action === 'CAPTURED' ? GatewayEventType.INTENT_CAPTURED : GatewayEventType.INTENT_CANCELED;
+
+    await this.stateTransitionService.transitionIntent(
+      intentId,
+      action,
+      {
+        correlationId,
+        reasonCode: action === 'CAPTURED' ? 'ADMIN_MANUAL_CAPTURE' : 'ADMIN_MANUAL_CANCEL',
+        reasonMessage: reason ?? `Admin manual resolution: ${action}`,
+        triggeredByType: 'ADMIN',
+        outboxEvent: {
+          eventType,
+          aggregateType: GATEWAY_AGGREGATE_TYPE,
+          aggregateId: intentId,
+          payload: buildPaymentIntentEventPayload({
+            intentId,
+            userId: intent.userId ?? '',
+            status: action,
+            payableAmount: intent.payableAmount,
+            currency: intent.currency,
+            occurredAt: now,
+          }),
+        },
+      },
+      'PARTIALLY_CAPTURED',
+    );
   }
 
   private buildIntentConditions(query: AdminPaymentIntentListQueryDto) {
