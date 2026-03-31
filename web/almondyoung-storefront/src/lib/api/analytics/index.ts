@@ -1,5 +1,8 @@
 import { api } from "../api"
-import { ProductRankingDto } from "@lib/types/dto/analytics"
+import type {
+  ProductRankingDto,
+  FrequentlyPurchasedDto,
+} from "@lib/types/dto/analytics"
 
 type BestProductRankingsParams = {
   categoryId?: string
@@ -28,6 +31,33 @@ export const getBestProductRankings = async ({
       withAuth: false,
       next: {
         tags: ["best-products", categoryId || "all"],
+      },
+    }
+  )
+
+  return data
+}
+
+/**
+ * 자주 산 상품 목록 조회
+ * @param limit 조회할 최대 개수 (기본값: 20, 최대: 100)
+ */
+export const getFrequentlyPurchased = async (
+  limit: number = 20
+): Promise<FrequentlyPurchasedDto[]> => {
+  const params = new URLSearchParams()
+  if (limit) params.set("limit", String(limit))
+
+  const queryString = params.toString()
+
+  const data = await api<FrequentlyPurchasedDto[]>(
+    "anly",
+    `/frequently-purchased${queryString ? `?${queryString}` : ""}`,
+    {
+      method: "GET",
+      withAuth: true,
+      next: {
+        tags: ["frequently-purchased"],
       },
     }
   )
