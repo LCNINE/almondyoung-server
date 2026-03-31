@@ -42,6 +42,7 @@ RUN echo "===== Build output structure =====" && \
 
 # 5) medusa-config.js와 src 디렉토리를 .medusa/server에 복사
 RUN cp /app/apps/medusa/medusa-config.js /app/apps/medusa/.medusa/server/medusa-config.js && \
+    cp /app/apps/medusa/instrumentation.ts /app/apps/medusa/.medusa/server/instrumentation.ts && \
     cp -r /app/apps/medusa/src /app/apps/medusa/.medusa/server/src
 
 # DEBUG: 복사 후 확인
