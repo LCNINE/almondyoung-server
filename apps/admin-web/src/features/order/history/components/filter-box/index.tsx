@@ -42,12 +42,10 @@ export default function FilterBox() {
                         onChange={(e) => setLocal({ ...local, channel: e.target.value || undefined })}
                     >
                         <option value="">전체</option>
-                        <option value="own">자사몰</option>
-                        <option value="naver">네이버 스마트스토어</option>
-                        <option value="coupang">쿠팡</option>
-                        <option value="phone">전화주문</option>
-                        <option value="exchange">단순교환</option>
-                        <option value="sample">샘플발송</option>
+                        <option value="medusa">자사몰</option>
+                        <option value="naver" disabled>네이버 스마트스토어 (준비중)</option>
+                        <option value="coupang" disabled>쿠팡 (준비중)</option>
+                        <option value="3pl" disabled>3PL (준비중)</option>
                     </select>
                 </div>
 
@@ -107,9 +105,9 @@ export default function FilterBox() {
                     <div className="text-sm font-medium mb-1">주문선택(상태)</div>
                     <div className="flex gap-3 flex-wrap">
                         {[
-                            { v: 'created', l: '주문 미확정(기본)' },
+                            { v: 'pending', l: '주문 미확정(기본)' },
                             { v: 'confirmed', l: '주문 확정' },
-                            { v: 'canceled', l: '취소' },
+                            { v: 'cancelled', l: '취소' },
                             { v: 'all', l: '전체' },
                         ].map((o) => (
                             <label key={o.v} className="flex items-center gap-1 text-sm">

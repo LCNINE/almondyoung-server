@@ -30,7 +30,7 @@ export type SalesOrderRow = {
   address?: string;
   channel?: string;
   sellerName?: string;
-  status: 'created' | 'confirmed' | 'canceled' | 'shipped' | string;
+  status: 'pending' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled' | 'timeout' | string;
   lines: OrderLine[];
   memo?: string;
   workLogs?: { at: string; by: string; label: string }[];
