@@ -2,7 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DbService } from '@app/db';
 import { inboxEvents } from '../../schema';
-import { eq, and, lte } from 'drizzle-orm';
+import { eq, and, lte, notInArray } from 'drizzle-orm';
 import { v7 } from 'uuid';
 import { PimMedusaSyncService } from './pim-medusa-sync.service';
 import { MembershipMedusaSyncService } from './membership-medusa-sync.service';
@@ -74,10 +74,21 @@ export class InboxWorkerService implements OnModuleInit {
   private async processInboxBatch(): Promise<void> {
     try {
       // 1. pending 상태이면서 nextAttemptAt이 지난 이벤트 조회
+      // Order events (OrderCreated, OrderModified, OrderCancelled) are handled by
+      // OutboxDispatcherService which publishes them to Kafka. Exclude them here
+      // to avoid marking them as published before they reach Kafka.
+      const ORDER_EVENT_TYPES = ['OrderCreated', 'OrderModified', 'OrderCancelled'];
+
       const events = await this.dbService.db
         .select()
         .from(inboxEvents)
-        .where(and(eq(inboxEvents.status, 'pending'), lte(inboxEvents.nextAttemptAt, new Date())))
+        .where(
+          and(
+            eq(inboxEvents.status, 'pending'),
+            lte(inboxEvents.nextAttemptAt, new Date()),
+            notInArray(inboxEvents.eventType, ORDER_EVENT_TYPES),
+          ),
+        )
         .orderBy(inboxEvents.createdAt)
         .limit(this.batchSize);
 
