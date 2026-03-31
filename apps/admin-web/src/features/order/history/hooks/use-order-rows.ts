@@ -244,15 +244,12 @@ export function useCreatePickingLists() {
       for (let i = 0; i < orderIds.length; i += BATCH_SIZE) {
         const batchOrderIds = orderIds.slice(i, i + BATCH_SIZE);
 
-        // 현재는 주문 id만으로 배치를 만들고, 주문처리 추가는 후속 단계라 가정
         const batch = await createBatch.mutateAsync({
           warehouseId: 'WH001',
           pickingMethod: 'batch',
           name: `피킹리스트-${new Date().toISOString().slice(0, 10)}-${i + 1}`,
         });
-
-        // TODO: 필요 시 batch.id에 fulfillment orders 추가 로직 연결
-        void batchOrderIds;
+        void batchOrderIds; // TODO: batch.id에 fulfillment orders 추가 로직 연결 필요
 
         batches.push(batch);
       }
@@ -266,28 +263,3 @@ export function useCreatePickingLists() {
   });
 }
 
-/* ──────────────────────────────────────────────────────────────────────────────
-  대안) useUser/useUserDetails 훅을 꼭 사용하고 싶다면 useQueries 기반으로:
-  - 장점: 클라이언트 접근을 이 훅들로 일원화
-  - 단점: 쿼리 개수가 사용자 수만큼 증가(오버헤드), 구현 복잡도↑
-
-  import { useQueries } from '@tanstack/react-query';
-  import { useUser, useUserDetails } from '@/lib/services/users';
-
-  // 사용예시(개략):
-  const userBasicQueries = useQueries({
-    queries: userIds.map((id) => ({
-      queryKey: ['user', 'by-id', id],
-      queryFn: () => users.getUser(id), // 또는 useUser 내부 로직과 동일
-      staleTime: 60_000,
-    })),
-  });
-  const userDetailQueries = useQueries({
-    queries: userIds.map((id) => ({
-      queryKey: ['user', 'details', id],
-      queryFn: () => users.getUserDetails(id),
-      staleTime: 60_000,
-    })),
-  });
-  // 이후 두 결과를 머지해 userMap 구성
-────────────────────────────────────────────────────────────────────────────── */
