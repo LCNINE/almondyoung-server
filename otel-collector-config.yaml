@@ -25,15 +25,20 @@ exporters:
     resource_to_telemetry_conversion:
       enabled: true
 
-  otlp_http/traces:
+  otlp/traces:
     endpoint: ${GRAFANA_TRACES_ENDPOINT}
     headers:
       Authorization: "Basic ${GRAFANA_TRACES_AUTH}"
+    tls:
+      insecure: false
 
   otlp_http/logs:
     endpoint: ${GRAFANA_LOGS_ENDPOINT}
     headers:
       Authorization: "Basic ${GRAFANA_LOGS_AUTH}"
+
+  debug:
+    verbosity: detailed
 
 extensions:
   health_check:
@@ -49,7 +54,7 @@ service:
     traces:
       receivers: [otlp]
       processors: [memory_limiter, batch]
-      exporters: [otlp_http/traces]
+      exporters: [otlp/traces, debug]
     logs:
       receivers: [otlp]
       processors: [memory_limiter, batch]
