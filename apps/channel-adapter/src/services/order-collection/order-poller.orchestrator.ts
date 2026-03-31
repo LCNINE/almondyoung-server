@@ -77,7 +77,7 @@ export class OrderPollerOrchestrator {
               .limit(1);
 
             if (!mapping[0]) {
-              this.logger.warn(`OrderModified skip: no wmsOrderMappings for ${item.externalOrderId}`);
+              this.logger.debug(`OrderModified skip: no wmsOrderMappings for ${item.externalOrderId}`);
               continue;
             }
 
