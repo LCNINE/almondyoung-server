@@ -3,6 +3,7 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { useOrderHistoryFilter } from '../../contexts/filter.context';
+import type { SalesOrdersQuery } from '@/lib/types/dto/orders';
 import { useConfirmSalesOrder } from '@/lib/services/orders';
 import { useSalesOrderRows, useCreatePickingLists } from '../../hooks/use-order-rows';
 import { useDataTable } from '@/hooks/use-data-table';
@@ -20,16 +21,15 @@ const PAGE_SIZE = 50;
 
 const safeLines = (r: SalesOrderRow) => (Array.isArray(r?.lines) ? r.lines : []);
 
-function buildQueryFromFilter(filter: ReturnType<typeof useOrderHistoryFilter>['filter']) {
+function buildQueryFromFilter(filter: ReturnType<typeof useOrderHistoryFilter>['filter']): SalesOrdersQuery {
     return {
         status: filter.status === 'all' ? undefined : filter.status,
-        channel: filter.channel || undefined,
-        sellerId: filter.sellerId || undefined,
-        keyword: filter.keyword || undefined,
-        dateFrom: filter.dateFrom,
-        dateTo: filter.dateTo,
-        sort: '-createdAt',
-    } as any;
+        channel: filter.channel as SalesOrdersQuery['channel'] | undefined,
+        startDate: filter.dateFrom,
+        endDate: filter.dateTo,
+        limit: 100,
+        offset: 0,
+    };
 }
 
 export default function OrderTable() {
@@ -45,7 +45,7 @@ export default function OrderTable() {
         let items = data?.items ?? [];
 
         if (filter.status === 'all' && !filter.includeConfirmedWhenAll) {
-            items = items.filter((r) => r.status !== 'confirmed' && r.status !== 'shipped');
+            items = items.filter((r) => r.status !== 'confirmed' && r.status !== 'shipped' && r.status !== 'processing');
         }
 
         if (filter.type !== 'all') {

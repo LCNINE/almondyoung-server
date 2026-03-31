@@ -4,10 +4,11 @@
 import { createContext, useContext, useMemo, useState } from 'react';
 import dayjs from 'dayjs';
 
+/** WMS order_status enum 값과 일치 */
 export type OrderStatus =
-    | 'created'          // 미확정(기본)
+    | 'pending'          // 미확정(기본) — WMS: pending
     | 'confirmed'        // 확정
-    | 'canceled'         // 취소
+    | 'cancelled'        // 취소
     | 'all';
 
 export type OrderTypeFilter =
@@ -49,7 +50,7 @@ export const OrderHistoryFilterProvider: React.FC<{ children: React.ReactNode }>
     const today = dayjs().format('YYYY-MM-DD');
 
     const [filter, setFilterState] = useState<OrderHistoryFilter>({
-        status: 'created',      // 기본: 주문 미확정
+        status: 'pending',      // 기본: 주문 미확정
         type: 'all',
         dateFrom: today,
         dateTo: today,

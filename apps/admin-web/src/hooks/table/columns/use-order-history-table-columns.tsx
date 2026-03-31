@@ -167,17 +167,26 @@ export const useOrderHistoryTableColumns = (handlers: OrderHistoryColumnHandlers
           return (
             <div className="whitespace-nowrap">
               <div className="text-xs">
-                {r.status === 'created' && (
+                {r.status === 'pending' && (
                   <span className="text-orange-600 font-medium">미확정</span>
                 )}
                 {r.status === 'confirmed' && (
                   <span className="text-blue-600 font-medium">확정</span>
                 )}
-                {r.status === 'canceled' && (
-                  <span className="text-gray-500">취소</span>
+                {r.status === 'processing' && (
+                  <span className="text-indigo-600 font-medium">처리중</span>
                 )}
                 {r.status === 'shipped' && (
                   <span className="text-green-600 font-medium">발송완료</span>
+                )}
+                {r.status === 'delivered' && (
+                  <span className="text-green-800 font-medium">배송완료</span>
+                )}
+                {r.status === 'cancelled' && (
+                  <span className="text-gray-500">취소</span>
+                )}
+                {r.status === 'timeout' && (
+                  <span className="text-red-400">타임아웃</span>
                 )}
               </div>
               {r.isFullyAllocated && (
@@ -238,7 +247,7 @@ export const useOrderHistoryTableColumns = (handlers: OrderHistoryColumnHandlers
               >
                 주문추가
               </button>
-              {r.status === 'created' && (
+              {r.status === 'pending' && (
                 <button
                   className="h-7 px-2 rounded bg-blue-600 text-white hover:bg-blue-700 text-xs disabled:opacity-50"
                   disabled={isConfirmPending}

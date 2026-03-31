@@ -4,14 +4,15 @@
 import type { UUID } from './common';
 
 // ===== 공통 타입 =====
+/** WMS 실제 enum 값과 일치 */
 export type SalesOrderStatus =
-  | 'created'
+  | 'pending'
   | 'confirmed'
-  | 'picking'
+  | 'processing'
   | 'shipped'
   | 'delivered'
-  | 'canceled'
-  | 'returned';
+  | 'cancelled'
+  | 'timeout';
 export type FulfillmentStatus = 'created' | 'shipped' | 'canceled';
 export type PurchaseOrderStatus =
   | 'created'
@@ -485,13 +486,12 @@ export interface AllocateInventoryResponse {
 }
 
 // ===== 쿼리 타입들 =====
+/** WMS SalesOrderFilterDto와 일치 */
 export interface SalesOrdersQuery {
   status?: SalesOrderStatus;
-  salesChannelId?: string;
-  customerId?: string;
-  warehouseId?: string;
+  channel?: 'medusa' | 'naver' | 'coupang' | '3pl';
   startDate?: string;
   endDate?: string;
-  limit: number; // 필수
-  offset: number; // 필수
+  limit?: number;
+  offset?: number;
 }

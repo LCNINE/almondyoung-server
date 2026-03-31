@@ -72,17 +72,17 @@ export class SalesOrderAdapter {
   }
 
   get status() {
-    const SALES_ORDER_STATUS_KR = {
-      created: '주문 생성',
+    const SALES_ORDER_STATUS_KR: Record<string, string> = {
+      pending: '주문 생성',
       confirmed: '출고 지시',
-      picking: '출고 작업중',
+      processing: '출고 작업중',
       shipped: '배송중',
       delivered: '출고완료',
-      canceled: '출고 취소됨',
-      returned: '반품',
-    } as const;
+      cancelled: '출고 취소됨',
+      timeout: '타임아웃',
+    };
 
-    return SALES_ORDER_STATUS_KR[this._status];
+    return SALES_ORDER_STATUS_KR[this._status] ?? this._status;
   }
 
   get salesChannel() {
