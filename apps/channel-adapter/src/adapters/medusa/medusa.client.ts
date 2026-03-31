@@ -887,7 +887,7 @@ export class MedusaClient {
   /**
    * 결제 완료된 Medusa 주문 목록 조회 (증분 처리)
    *
-   * - payment_status: 'captured' (결제 완료된 주문만)
+   * - payment_status: 'captured' | 'completed' (결제 완료된 주문만)
    * - updated_at[gt]: since (신규 + 변경 주문 모두 포함하는 증분 처리)
    * - line_items.variant.metadata, line_items.variant.product.metadata 포함
    */
@@ -926,7 +926,7 @@ export class MedusaClient {
         limit,
         offset,
         fields,
-        payment_status: ['captured'],
+        payment_status: ['captured', 'completed'],
       };
 
       if (params.since) {
