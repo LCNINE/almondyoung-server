@@ -8,7 +8,9 @@ export function register() {
     return;
   }
 
-  const exporter = new OTLPTraceExporter({ url: endpoint });
+  const exporter = new OTLPTraceExporter({
+    url: `${endpoint.replace(/\/+$/, '')}/v1/traces`,
+  });
 
   registerOtel({
     serviceName: process.env.OTEL_SERVICE_NAME ?? 'almond-young-medusa',
