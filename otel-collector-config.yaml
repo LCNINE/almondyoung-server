@@ -48,7 +48,7 @@ service:
       exporters: [prometheusremotewrite]
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, probabilistic_sampler, batch]
+      processors: [memory_limiter, batch]
       exporters: [otlp_http/traces]
     logs:
       receivers: [otlp]
