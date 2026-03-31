@@ -130,8 +130,8 @@ function createKafkaConfig() {
       schema: { ...channelAdapterSchema },
     }),
     EventTraceApiModule,
-    // 운영 환경에서만 실제 EventsModule 활성화
-    ...(process.env.NODE_ENV === 'production'
+    // Kafka 환경변수가 있으면 실제 EventsModule 활성화 (로컬 개발 환경 제외)
+    ...(process.env.KAFKA_BROKERS
       ? [
           EventsModule.forRoot({
             streams: [
@@ -228,8 +228,8 @@ function createKafkaConfig() {
     EventChainService,
     EventTrackingService,
 
-    // 개발/테스트 환경: NullEventPublisher를 토큰으로 제공
-    ...(process.env.NODE_ENV !== 'production'
+    // Kafka 환경변수 없을 때(로컬): NullEventPublisher로 DI 채우기
+    ...(!process.env.KAFKA_BROKERS
       ? [
           {
             provide: 'STREAM_PUBLISHER_channel-adapter.events.v1',
