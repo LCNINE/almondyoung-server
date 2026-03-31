@@ -52,6 +52,7 @@ export const factOrderItems = pgTable(
     orderId: varchar('order_id', { length: 255 }),
     externalOrderId: varchar('external_order_id', { length: 255 }),
     salesChannel: varchar('sales_channel', { length: 50 }).notNull(),
+    customerId: varchar('customer_id', { length: 255 }),
     orderItemId: varchar('order_item_id', { length: 255 }).notNull(),
     masterId: varchar('master_id', { length: 255 }).notNull(),
     versionId: varchar('version_id', { length: 255 }),
@@ -71,6 +72,7 @@ export const factOrderItems = pgTable(
     index('idx_fact_order_items_master').on(table.masterId),
     index('idx_fact_order_items_occurred_at').on(table.occurredAt),
     index('idx_fact_order_items_order_key').on(table.orderKey),
+    index('idx_fact_order_items_customer').on(table.customerId),
   ],
 );
 
@@ -160,10 +162,35 @@ export const dimProductCategories = pgTable(
   ],
 );
 
+export const aggUserProductPurchase = pgTable(
+  'agg_user_product_purchase',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    customerId: varchar('customer_id', { length: 255 }).notNull(),
+    masterId: varchar('master_id', { length: 255 }).notNull(),
+    channelProductId: varchar('channel_product_id', { length: 255 }),
+    purchaseCount: integer('purchase_count').notNull().default(0),
+    totalQuantity: integer('total_quantity').notNull().default(0),
+    lastPurchasedAt: timestamp('last_purchased_at'),
+    firstPurchasedAt: timestamp('first_purchased_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uq_agg_user_product').on(table.customerId, table.masterId),
+    index('idx_agg_user_product_customer').on(table.customerId),
+    index('idx_agg_user_product_master').on(table.masterId),
+    index('idx_agg_user_product_count').on(table.purchaseCount),
+  ],
+);
+
 export const analyticsSchema = {
   factOrderEvents,
   factOrderItems,
   aggProductOrderDaily,
+  aggUserProductPurchase,
   dimProductMasters,
   dimProductVariants,
   dimProductCategories,

@@ -70,6 +70,7 @@ export class OrderFactsService {
             orderId: payload.orderId,
             externalOrderId: payload.externalOrderId,
             salesChannel: payload.salesChannel,
+            customerId: payload.customerId,
             orderItemId: item.orderItemId,
             masterId: item.masterId,
             versionId: item.versionId,

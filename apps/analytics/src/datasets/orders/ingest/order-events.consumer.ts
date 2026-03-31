@@ -5,6 +5,7 @@ import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { OrderCreatedPayload } from '@packages/event-contracts/streams/orders.stream';
 import { DomainEvent } from '@packages/event-contracts/types';
 import { OrderAggregatesService } from '../aggregates/order-aggregates.service';
+import { UserPurchaseAggregatesService } from '../aggregates/user-purchase-aggregates.service';
 import { OrderFactsService } from '../facts/order-facts.service';
 import { DbTx } from '../../../db.types';
 import { analyticsSchema } from '../../../schema';
@@ -21,6 +22,7 @@ export class OrderEventsConsumer {
     private readonly dbService: DbService<typeof analyticsSchema>,
     private readonly orderFactsService: OrderFactsService,
     private readonly orderAggregatesService: OrderAggregatesService,
+    private readonly userPurchaseAggregatesService: UserPurchaseAggregatesService,
   ) {}
 
   private get db() {
@@ -40,6 +42,12 @@ export class OrderEventsConsumer {
     await this.inTx(async (tx) => {
       const seeds = await this.orderFactsService.recordOrderCreated(envelope, payload, tx);
       await this.orderAggregatesService.applyOrderCreated(seeds, tx);
+      await this.userPurchaseAggregatesService.applyOrderCreated(
+        payload.customerId,
+        payload.items,
+        new Date(payload.createdAt),
+        tx,
+      );
     });
     this.logger.debug(`OrderCreated processed: ${payload.orderId} (${envelope.messageId})`);
   }

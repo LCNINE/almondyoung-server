@@ -1,13 +1,19 @@
-import { Controller, Get, Query } from '@nestjs/common';
-import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Controller, Get, Query, UseGuards, UnauthorizedException, InternalServerErrorException } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { JwtAuthGuard, User } from '@app/authorization';
 import { AnalyticsService } from './analytics.service';
 import { AnalyticsHealthDto, AnalyticsSummaryDto } from './dto';
 import { ProductOrderMetricDto, ProductRankingQueryDto } from '../product-ranking/api/dto';
+import { FrequentlyPurchasedDto, FrequentlyPurchasedQueryDto } from '../user-purchase/api/dto';
+import { UserPurchaseQuery } from '../user-purchase/read-model/user-purchase.query';
 
 @ApiTags('Analytics')
 @Controller()
 export class AnalyticsController {
-  constructor(private readonly analyticsService: AnalyticsService) {}
+  constructor(
+    private readonly analyticsService: AnalyticsService,
+    private readonly userPurchaseQuery: UserPurchaseQuery,
+  ) { }
 
   @Get('health')
   @ApiOperation({
@@ -60,5 +66,35 @@ export class AnalyticsController {
   })
   getProductOrderMetrics(@Query() query: ProductRankingQueryDto): Promise<ProductOrderMetricDto[]> {
     return this.analyticsService.getProductOrderMetrics(query.categoryId, query.limit);
+  }
+
+  @Get('frequently-purchased')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: '자주 산 상품 목록 조회',
+    description: '로그인한 사용자가 자주 구매한 상품 목록을 반환합니다.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '자주 산 상품 목록',
+    type: [FrequentlyPurchasedDto],
+  })
+  @ApiResponse({
+    status: 401,
+    description: '인증 필요',
+  })
+  async getFrequentlyPurchased(
+    @User() user: { userId: string },
+    @Query() query: FrequentlyPurchasedQueryDto,
+  ): Promise<FrequentlyPurchasedDto[]> {
+    try {
+      return await this.userPurchaseQuery.getFrequentlyPurchased(user.userId, query.limit);
+    } catch (e) {
+      const msg = ((e as Error)?.message ?? '').toLowerCase();
+      if (msg.includes('not found')) throw new UnauthorizedException((e as Error).message);
+
+      throw new InternalServerErrorException((e as Error).message);
+    }
   }
 }
