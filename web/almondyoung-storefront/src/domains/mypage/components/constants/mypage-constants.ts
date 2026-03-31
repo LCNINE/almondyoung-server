@@ -111,12 +111,12 @@ export const SIDEBAR_MENU_ITEMS = [
     hasSubMenu: false,
     path: "/mypage/wish",
   },
-  // {
-  //   id: "frequent",
-  //   label: "자주 산 상품",
-  //   hasSubMenu: false,
-  //   path: "/mypage/rebuy",
-  // },
+  {
+    id: "frequent",
+    label: "자주 산 상품",
+    hasSubMenu: false,
+    path: "/mypage/rebuy",
+  },
   {
     id: "recent",
     label: "최근 본 상품",
