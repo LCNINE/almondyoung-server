@@ -38,7 +38,7 @@ function calculateMinPrice(product: ProductWithVariants): number | null {
     if (!variant.prices) continue;
 
     const basePrices = variant.prices.filter(
-      (p) => p.currency_code === KRW_CURRENCY_CODE && !p.price_list_id,
+      (p) => p.currency_code.toUpperCase() === KRW_CURRENCY_CODE && !p.price_list_id,
     );
 
     for (const price of basePrices) {
