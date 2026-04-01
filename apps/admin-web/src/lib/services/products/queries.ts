@@ -29,6 +29,7 @@ import type {
   MergedChannelProductDto,
   MatchingTableRowDto,
 } from '@/lib/types/dto/products';
+import type { BatchVariantInfo } from '@/lib/api/domains/products/variants.client';
 
 // ===== 카테고리 관련 쿼리 =====
 
@@ -148,6 +149,25 @@ export const useVariant = (id: string) => {
     enabled: !!id,
     staleTime: 30 * 1000,
     gcTime: 5 * 60 * 1000,
+  });
+};
+
+/**
+ * Variant 일괄 조회 (PIM batch endpoint)
+ * 매칭 페이지 등에서 N+1 방지용
+ */
+export const useVariantsBatch = (ids: string[]) => {
+  return useQuery({
+    queryKey: productQueryKeys.variantsBatch(ids),
+    queryFn: () => products.variants.getBatch(ids),
+    enabled: ids.length > 0,
+    staleTime: 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+    select: (data: BatchVariantInfo[]) => {
+      const map = new Map<string, BatchVariantInfo>();
+      data.forEach((v) => map.set(v.id, v));
+      return map;
+    },
   });
 };
 
