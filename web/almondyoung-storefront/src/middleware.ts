@@ -133,11 +133,20 @@ export async function middleware(request: NextRequest) {
 
   // if one of the country codes is in the url and the cache id is set, return next
 
+  // prefetch 요청에 traceparent sampled=0 설정 → OTel trace 수집 제외
+  const isPrefetch = request.headers.get("Next-Router-Prefetch") === "1"
+
   // 제목 추출코드
   if (urlHasCountryCode && cacheIdCookie) {
     // pathname을 헤더에 추가하여 layout에서 사용 가능하도록 설정
     const requestHeaders = new Headers(request.headers)
     requestHeaders.set("x-pathname", request.nextUrl.pathname)
+
+    if (isPrefetch && !request.headers.has("traceparent")) {
+      const traceId = crypto.randomUUID().replace(/-/g, "")
+      const spanId = traceId.substring(0, 16)
+      requestHeaders.set("traceparent", `00-${traceId}-${spanId}-00`)
+    }
 
     return NextResponse.next({
       request: {
@@ -151,6 +160,12 @@ export async function middleware(request: NextRequest) {
     // pathname을 헤더에 추가하여 layout에서 사용 가능하도록 설정
     const requestHeaders = new Headers(request.headers)
     requestHeaders.set("x-pathname", request.nextUrl.pathname)
+
+    if (isPrefetch && !request.headers.has("traceparent")) {
+      const traceId = crypto.randomUUID().replace(/-/g, "")
+      const spanId = traceId.substring(0, 16)
+      requestHeaders.set("traceparent", `00-${traceId}-${spanId}-00`)
+    }
 
     const nextResponse = NextResponse.next({
       request: {

@@ -8,6 +8,10 @@ import {
   type Link,
   SamplingDecision,
 } from "@opentelemetry/api"
+import {
+  ParentBasedSampler,
+  AlwaysOffSampler,
+} from "@opentelemetry/sdk-trace-base"
 
 const DROP_PREFIXES = ["/_next/image", "/_next/static", "/favicon.ico"]
 
@@ -29,6 +33,7 @@ class AppSampler implements Sampler {
       return { decision: SamplingDecision.NOT_RECORD }
     }
 
+
     return { decision: SamplingDecision.RECORD_AND_SAMPLED }
   }
 
@@ -47,7 +52,11 @@ export function register() {
     traceExporter: new OTLPHttpJsonTraceExporter({
       url: `${endpoint}/v1/traces`,
     }),
-    traceSampler: new AppSampler(),
+    traceSampler: new ParentBasedSampler({
+      root: new AppSampler(),
+      remoteParentSampled: new AppSampler(),
+      remoteParentNotSampled: new AlwaysOffSampler(),
+    }),
     instrumentationConfig: {
       fetch: {
         propagateContextUrls: [/.*/],
