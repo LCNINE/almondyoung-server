@@ -51,8 +51,8 @@ export function ProductTemplate({
                 brand={(product.metadata?.brand as string) ?? ""}
                 productName={product.title ?? ""}
                 productId={product.id}
+                pimMasterId={product.metadata?.pimMasterId as string}
                 countryCode={countryCode}
-                handle={product.handle}
               >
                 <ProductPreviewPrice
                   hasMembership={isMembershipGroup(customer?.groups)}
@@ -108,8 +108,8 @@ export function ProductTemplate({
                 brand={(product.metadata?.brand as string) ?? ""}
                 productName={product.title ?? ""}
                 productId={product.id}
+                pimMasterId={product.metadata?.pimMasterId as string}
                 countryCode={countryCode}
-                handle={product.handle}
               />
             </div>
 

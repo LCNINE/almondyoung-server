@@ -3,12 +3,12 @@ import { Rating } from "../../../components/rating"
 import { RatingSummary } from "@/lib/types/ui/ugc"
 
 interface Props {
-  handle: string
+  productId: string
 }
 
-export async function RatingActionsWrapper({ handle }: Props) {
+export async function RatingActionsWrapper({ productId }: Props) {
   const ratingSummary: RatingSummary | null = await getRatingSummary(
-    handle
+    productId
   ).catch((e) => {
     console.error(e)
     return null
