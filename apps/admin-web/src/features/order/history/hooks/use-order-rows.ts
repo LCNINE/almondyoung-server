@@ -186,11 +186,11 @@ export function useSalesOrderRows(query: SalesOrdersQuery) {
             id: `${row.id}-L${idx + 1}`,
             skuId: item.skuId,
             variantId: item.variantId,
-            productName: sku?.name ?? item.productName ?? item.skuId,
+            productName: sku?.name ?? item.productName ?? item.variantId,
             optionName: optionName ?? '단일상품',
             quantity,
             imageUrl: skuExt?.imageUrl ?? item.imageUrl,
-            isMatched: !!item.skuId,
+            isMatched: !!item.productMatchingId,
             isReadyToShip: allocated >= quantity,
             isDirect: !!item.isDirect,
           };
