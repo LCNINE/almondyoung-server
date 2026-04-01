@@ -1,5 +1,6 @@
 "use server"
 
+import { cache } from "react"
 import { api } from "../api"
 import type { ProductDetailDto } from "@lib/types/dto/pim"
 
@@ -15,15 +16,15 @@ export const getProductByMasterId = async (masterId: string) => {
   return result
 }
 
-export const getProductDetailByMasterId = async (
-  masterId: string
-): Promise<ProductDetailDto> => {
-  return await api("pim", `/masters/${masterId}`, {
-    method: "GET",
-    withAuth: false,
-    next: { tags: [`pim-detail-${masterId}`] },
-  })
-}
+export const getProductDetailByMasterId = cache(
+  async (masterId: string): Promise<ProductDetailDto> => {
+    return await api("pim", `/masters/${masterId}`, {
+      method: "GET",
+      withAuth: false,
+      next: { tags: [`pim-detail-${masterId}`] },
+    })
+  }
+)
 
 /**
  * 여러 masterId로 제품 정보를 조회합니다.

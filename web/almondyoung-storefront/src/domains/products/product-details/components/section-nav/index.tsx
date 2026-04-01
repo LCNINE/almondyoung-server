@@ -12,14 +12,14 @@ const triggerClassName =
   "flex-1 cursor-pointer !rounded-none !border-0 !border-b-2 !border-b-transparent !bg-transparent px-4 py-3 text-sm font-bold text-[#666666] !shadow-none transition-colors focus-visible:!ring-0 focus-visible:!outline-none !after:hidden data-[state=active]:!border-0 data-[state=active]:!border-b-2 data-[state=active]:!border-b-[#f29219] data-[state=active]:!bg-transparent data-[state=active]:!text-[#f29219] data-[state=active]:!shadow-none data-[state=inactive]:hover:text-[#333333] lg:text-base"
 
 interface SectionTabsProps {
-  reviewCount?: number
-  qnaCount?: number
+  reviewCountSlot?: React.ReactNode
+  qnaCountSlot?: React.ReactNode
   children: React.ReactNode
 }
 
 export function SectionTabs({
-  reviewCount,
-  qnaCount,
+  reviewCountSlot,
+  qnaCountSlot,
   children,
 }: SectionTabsProps) {
   const pathname = usePathname()
@@ -76,20 +76,12 @@ export function SectionTabs({
         </TabsTrigger>
         <TabsTrigger value="review" className={triggerClassName}>
           리뷰
-          {reviewCount && reviewCount > 0 && (
-            <span className="ml-0.5 text-[0.65em] tabular-nums opacity-80">
-              {reviewCount.toLocaleString()}
-            </span>
-          )}
+          {reviewCountSlot}
         </TabsTrigger>
 
         <TabsTrigger value="qna" className={triggerClassName}>
           Q&A
-          {qnaCount != null && qnaCount > 0 && (
-            <span className="ml-0.5 text-[0.65em] tabular-nums opacity-80">
-              {qnaCount.toLocaleString()}
-            </span>
-          )}
+          {qnaCountSlot}
         </TabsTrigger>
       </TabsList>
       {children}
