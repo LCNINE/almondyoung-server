@@ -1,5 +1,6 @@
 "use server"
 
+import { cache } from "react"
 import { PaginatedResponseDto } from "@/lib/types/common/pagination"
 import {
   QuestionResponseDto,
@@ -85,15 +86,15 @@ export const getMyQuestions = async ({
 /**
  * 상품별 Q&A 요약 조회
  */
-export const getQnaSummary = async (
-  productId: string
-): Promise<QnaSummaryResponseDto> => {
-  return await api("ugc", `/qna/questions/summary`, {
-    method: "GET",
-    params: { productId },
-    withAuth: false,
-  })
-}
+export const getQnaSummary = cache(
+  async (productId: string): Promise<QnaSummaryResponseDto> => {
+    return await api("ugc", `/qna/questions/summary`, {
+      method: "GET",
+      params: { productId },
+      withAuth: false,
+    })
+  }
+)
 
 /**
  * 질문 상세 조회
