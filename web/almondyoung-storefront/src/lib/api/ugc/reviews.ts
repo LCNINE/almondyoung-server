@@ -1,4 +1,5 @@
 "use server"
+import { cache } from "react"
 import { revalidateTag } from "next/cache"
 import {
   ReviewResponseDto,
@@ -47,16 +48,16 @@ export const getReviewsByProductId = async ({
 /**
  * 상품별 레이팅 요약 조회
  */
-export const getRatingSummary = async (
-  productId: string
-): Promise<RatingSummaryResponseDto> => {
-  return await api("ugc", `/reviews/rating-summary`, {
-    method: "GET",
-    params: { productId },
-    withAuth: false,
-    next: { tags: [`rating-summary-${productId}`] },
-  })
-}
+export const getRatingSummary = cache(
+  async (productId: string): Promise<RatingSummaryResponseDto> => {
+    return await api("ugc", `/reviews/rating-summary`, {
+      method: "GET",
+      params: { productId },
+      withAuth: false,
+      next: { tags: [`rating-summary-${productId}`] },
+    })
+  }
+)
 
 /**
  * 내 리뷰 목록 조회
