@@ -15,15 +15,20 @@ export class ProductMatchingController {
 
   @Get()
   @ApiOperation({ summary: '매칭 대기 목록 조회' })
-  @ApiQuery({
-    name: 'status',
-    enum: matchingStatusEnum.enumValues,
-    required: false,
-    description: '매칭 상태 필터 (pending, matched, ignored)',
-  })
+  @ApiQuery({ name: 'status', enum: matchingStatusEnum.enumValues, required: false })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'offset', required: false, type: Number })
   @ApiResponse({ status: 200, description: '매칭 대기 목록을 반환합니다.' })
-  async getMatchingPendings(@Query('status') status?: (typeof matchingStatusEnum.enumValues)[number]) {
-    return this.productMatchingService.getMatchingPendings(status);
+  async getMatchingPendings(
+    @Query('status') status?: (typeof matchingStatusEnum.enumValues)[number],
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    return this.productMatchingService.getMatchingPendings(
+      status,
+      limit ? parseInt(limit, 10) : 50,
+      offset ? parseInt(offset, 10) : 0,
+    );
   }
 
   @Patch(':id/resolve')
