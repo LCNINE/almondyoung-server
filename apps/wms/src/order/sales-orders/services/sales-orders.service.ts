@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../../../database/schemas/wms-schema';
-import { eq, inArray, desc, and, gte, lte, type InferInsertModel, type SQL } from 'drizzle-orm';
+import { eq, inArray, desc, and, gte, lte, count, type InferInsertModel, type SQL } from 'drizzle-orm';
 import { PoliciesService } from '../../shared/services/policies.service';
 import { FulfillmentsService } from '../../fulfillments/services/fulfillments.service';
 import { ORDER_EVENTS } from '../../shared/events';
@@ -485,32 +485,39 @@ export class SalesOrdersService {
         conditions.push(eq(wmsTables.salesOrders.status, params.status));
       }
 
-      // 1. 주문 목록 조회
-      let query = tx.select().from(wmsTables.salesOrders).$dynamic();
+      const where = conditions.length > 0 ? and(...conditions) : undefined;
+      const limit = params.limit ?? 20;
+      const offset = params.offset ?? 0;
 
-      if (conditions.length > 0) {
-        query = query.where(and(...conditions));
-      }
+      // 1. 전체 건수 조회
+      const [{ total }] = await tx
+        .select({ total: count() })
+        .from(wmsTables.salesOrders)
+        .where(where);
 
-      const orders = await query
-        .limit(params.limit ?? 20)
-        .offset(params.offset ?? 0)
+      // 2. 주문 목록 조회
+      const orders = await tx
+        .select()
+        .from(wmsTables.salesOrders)
+        .where(where)
+        .limit(limit)
+        .offset(offset)
         .orderBy(desc(wmsTables.salesOrders.createdAt));
 
       if (orders.length === 0) {
-        return [];
+        return { data: [], total, page: Math.floor(offset / limit) + 1, limit, totalPages: Math.ceil(total / limit) };
       }
 
-      // 2. 주문 ID 목록 추출
+      // 3. 주문 ID 목록 추출
       const orderIds = orders.map((o) => o.id);
 
-      // 3. 주문 라인 조회
+      // 4. 주문 라인 조회
       const lines = await tx
         .select()
         .from(wmsTables.salesOrderLines)
         .where(inArray(wmsTables.salesOrderLines.salesOrderId, orderIds));
 
-      // 4. 주문 라인을 주문별로 그룹화
+      // 5. 주문 라인을 주문별로 그룹화
       const linesByOrderId = new Map<string, typeof lines>();
       for (const line of lines) {
         if (!linesByOrderId.has(line.salesOrderId)) {
@@ -519,11 +526,13 @@ export class SalesOrdersService {
         linesByOrderId.get(line.salesOrderId)!.push(line);
       }
 
-      // 5. 주문에 라인 정보 추가
-      return orders.map((order) => ({
+      // 6. 주문에 라인 정보 추가하여 페이지네이션 응답 반환
+      const data = orders.map((order) => ({
         ...order,
         lines: linesByOrderId.get(order.id) || [],
       }));
+
+      return { data, total, page: Math.floor(offset / limit) + 1, limit, totalPages: Math.ceil(total / limit) };
     }, tx);
   }
 
