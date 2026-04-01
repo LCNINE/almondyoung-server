@@ -2,7 +2,7 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
 import { TypedDatabase, DbService } from '@app/db';
-import { and, eq, asc } from 'drizzle-orm';
+import { and, eq, asc, desc, count, inArray } from 'drizzle-orm';
 import { InventoryService } from './inventory.service';
 import { StockEventService } from './stock-event.service';
 import { ResolveMatchingDto } from '../dto/product-matching/resolve-matching.dto';
@@ -243,43 +243,115 @@ export class ProductMatchingService {
     }, tx);
   }
 
-  async getMatchingPendings(status?: 'pending' | 'matched' | 'ignored', tx?: DbTx) {
-    const matchings = await this.inTx(async (trx) => {
-      if (status) {
-        return trx
-          .select()
-          .from(wmsTables.productMatchings)
-          .where(eq(wmsTables.productMatchings.status, status))
-          .orderBy(asc(wmsTables.productMatchings.createdAt));
+  async getMatchingPendings(
+    status?: 'pending' | 'matched' | 'ignored',
+    limit = 50,
+    offset = 0,
+    tx?: DbTx,
+  ) {
+    return this.inTx(async (trx) => {
+      const where = status ? eq(wmsTables.productMatchings.status, status) : undefined;
+
+      // 1. 전체 건수
+      const [{ total }] = await trx
+        .select({ total: count() })
+        .from(wmsTables.productMatchings)
+        .where(where);
+
+      // 2. 페이지네이션 매칭 목록
+      const matchings = await trx
+        .select()
+        .from(wmsTables.productMatchings)
+        .where(where)
+        .orderBy(asc(wmsTables.productMatchings.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+      if (matchings.length === 0) {
+        return { data: [], total, page: Math.floor(offset / limit) + 1, limit };
       }
-      return trx.select().from(wmsTables.productMatchings).orderBy(asc(wmsTables.productMatchings.createdAt));
-    }, tx);
 
-    const matchingsWithDetails = await Promise.all(
-      matchings.map(async (matching) => {
-        if (matching.strategy && matching.status === 'matched') {
-          try {
-            const strategy = this.getStrategy(matching.strategy);
-            const context: MatchingContext = {
-              variantId: matching.variantId,
-              productMatchingId: matching.id,
-            };
-            const skuMappings = await strategy.lookup(context);
+      const variantIds = matchings.map((m) => m.variantId);
+      const matchingIds = matchings.map((m) => m.id);
 
-            return {
-              ...matching,
-              skuMappings,
-            };
-          } catch (error) {
-            this.logger.error(`Failed to lookup mappings for matching ${matching.id}:`, error);
-            return matching;
-          }
+      // 3. variantId 기준으로 최신 주문 라인 + 주문 정보 배치 조회
+      const orderLines = await trx
+        .select({
+          variantId: wmsTables.salesOrderLines.variantId,
+          productName: wmsTables.salesOrderLines.productName,
+          quantity: wmsTables.salesOrderLines.quantity,
+          salesOrderId: wmsTables.salesOrderLines.salesOrderId,
+          lineCreatedAt: wmsTables.salesOrderLines.createdAt,
+          salesChannel: wmsTables.salesOrders.salesChannel,
+          channelOrderId: wmsTables.salesOrders.channelOrderId,
+          customerName: wmsTables.salesOrders.customerName,
+          customerPhone: wmsTables.salesOrders.customerPhone,
+          orderDate: wmsTables.salesOrders.orderDate,
+        })
+        .from(wmsTables.salesOrderLines)
+        .innerJoin(wmsTables.salesOrders, eq(wmsTables.salesOrderLines.salesOrderId, wmsTables.salesOrders.id))
+        .where(inArray(wmsTables.salesOrderLines.variantId, variantIds))
+        .orderBy(desc(wmsTables.salesOrderLines.createdAt));
+
+      // variant당 가장 최근 주문 라인만 유지
+      const latestOrderByVariant = new Map<string, (typeof orderLines)[0]>();
+      for (const line of orderLines) {
+        if (!latestOrderByVariant.has(line.variantId)) {
+          latestOrderByVariant.set(line.variantId, line);
         }
-        return matching;
-      }),
-    );
+      }
 
-    return matchingsWithDetails;
+      // 4. SKU 정보 배치 조회 (matched 매칭만)
+      const skuLinks = await trx
+        .select({
+          productMatchingId: wmsTables.productVariantSkuLinks.productMatchingId,
+          skuId: wmsTables.productVariantSkuLinks.skuId,
+          quantity: wmsTables.productVariantSkuLinks.quantity,
+          skuName: wmsTables.skus.name,
+          skuCode: wmsTables.skus.code,
+        })
+        .from(wmsTables.productVariantSkuLinks)
+        .innerJoin(wmsTables.skus, eq(wmsTables.productVariantSkuLinks.skuId, wmsTables.skus.id))
+        .where(inArray(wmsTables.productVariantSkuLinks.productMatchingId, matchingIds));
+
+      const skusByMatchingId = new Map<string, (typeof skuLinks)>();
+      for (const link of skuLinks) {
+        if (!skusByMatchingId.has(link.productMatchingId)) {
+          skusByMatchingId.set(link.productMatchingId, []);
+        }
+        skusByMatchingId.get(link.productMatchingId)!.push(link);
+      }
+
+      // 5. 머지
+      const data = matchings.map((matching) => {
+        const orderLine = latestOrderByVariant.get(matching.variantId);
+        const matchedSkus = (skusByMatchingId.get(matching.id) ?? []).map((s) => ({
+          skuId: s.skuId,
+          skuName: s.skuName,
+          skuCode: s.skuCode,
+          quantity: s.quantity,
+        }));
+
+        return {
+          ...matching,
+          order: orderLine
+            ? {
+                salesOrderId: orderLine.salesOrderId,
+                salesChannel: orderLine.salesChannel,
+                channelOrderId: orderLine.channelOrderId,
+                productName: orderLine.productName,
+                quantity: orderLine.quantity,
+                recipient: orderLine.customerName ?? '',
+                customerPhone: orderLine.customerPhone ?? '',
+                orderDate: orderLine.orderDate?.toISOString() ?? '',
+              }
+            : null,
+          matchedSkus,
+        };
+      });
+
+      return { data, total, page: Math.floor(offset / limit) + 1, limit };
+    }, tx);
   }
 
   async resolveMatchingPending(matchingId: string, resolveDto: ResolveMatchingDto, tx?: DbTx) {
