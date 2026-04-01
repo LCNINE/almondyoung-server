@@ -19,7 +19,7 @@
  * - 롤리킹 지정 상품: 비멤버에게는 상품 노출하되 멤버십가(metadata) 제거
  */
 import type { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
-import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
+import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
 import { PRODUCT_SORT_MODULE } from '../../../modules/product-sort';
 import ProductSortModuleService from '../../../modules/product-sort/service';
 
@@ -38,7 +38,12 @@ type ProductMetadata = {
 };
 
 type ProductVariant = {
+  id: string;
   metadata?: Record<string, unknown> | null;
+  calculated_price?: {
+    calculated_amount?: number | null;
+    [key: string]: unknown;
+  } | null;
   [key: string]: unknown;
 };
 
@@ -50,20 +55,19 @@ type ProductData = {
   [key: string]: unknown;
 };
 
-type StoreProductsResponse = {
-  products: ProductData[];
-  count: number;
-  offset?: number;
-  limit?: number;
-};
-
 type MemberState = {
   customerId?: string;
   isMember: boolean;
 };
 
+type QueryFilters = {
+  id?: string[];
+  categories?: { id: string[] };
+  collection_id?: string[];
+  status?: string;
+};
+
 const DEFAULT_LIMIT = 12;
-const SCAN_BATCH_SIZE = 200;
 
 const VALID_SORT_TYPES = new Set<SortType>(['price_asc', 'price_desc', 'sales_desc', 'created_at']);
 
@@ -83,6 +87,12 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
 const toNumber = (value: unknown, fallback: number): number => {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+};
+
+const toStringArray = (value: unknown): string[] => {
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value)) return value.filter((v): v is string => typeof v === 'string');
+  return [];
 };
 
 const isMembershipOnlyProduct = (product: ProductData): boolean => {
@@ -117,110 +127,6 @@ const sanitizeProductForNonMember = (product: ProductData): ProductData => {
     : product.variants;
 
   return { ...product, variants };
-};
-
-const getRequestOrigin = (req: AuthenticatedMedusaRequest): string => {
-  const forwardedProtoHeader = req.headers['x-forwarded-proto'];
-  const forwardedProto =
-    typeof forwardedProtoHeader === 'string' ? forwardedProtoHeader.split(',')[0]?.trim() : undefined;
-  const protocol = forwardedProto || req.protocol || 'http';
-  const host = req.headers.host;
-
-  if (!host) {
-    throw new Error('host header is missing');
-  }
-
-  return `${protocol}://${host}`;
-};
-
-const createForwardHeaders = (req: AuthenticatedMedusaRequest): Headers => {
-  const headers = new Headers();
-
-  for (const [key, value] of Object.entries(req.headers || {})) {
-    if (value == null) {
-      continue;
-    }
-
-    if (typeof value === 'string') {
-      headers.set(key, value);
-      continue;
-    }
-
-    if (Array.isArray(value)) {
-      const valid = value.filter((item): item is string => typeof item === 'string');
-      if (valid.length > 0) {
-        headers.set(key, valid.join(','));
-      }
-    }
-  }
-
-  headers.delete('host');
-  return headers;
-};
-
-const appendQueryParam = (searchParams: URLSearchParams, key: string, value: unknown): void => {
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    searchParams.append(key, String(value));
-  }
-};
-
-const createBaseSearchParams = (req: AuthenticatedMedusaRequest): URLSearchParams => {
-  const searchParams = new URLSearchParams();
-  const excludeKeys = new Set(['sort', 'limit', 'offset']);
-
-  for (const [key, value] of Object.entries(req.query || {})) {
-    if (value == null || excludeKeys.has(key)) {
-      continue;
-    }
-
-    if (Array.isArray(value)) {
-      value.forEach((item) => appendQueryParam(searchParams, key, item));
-      continue;
-    }
-
-    appendQueryParam(searchParams, key, value);
-  }
-
-  return searchParams;
-};
-
-const parseStoreProductsResponse = (payload: unknown): StoreProductsResponse => {
-  if (!isRecord(payload)) {
-    return { products: [], count: 0 };
-  }
-
-  const rawProducts = payload.products;
-  const rawCount = payload.count;
-  const rawOffset = payload.offset;
-  const rawLimit = payload.limit;
-
-  return {
-    products: Array.isArray(rawProducts) ? rawProducts.filter((item): item is ProductData => isRecord(item)) : [],
-    count: typeof rawCount === 'number' ? rawCount : 0,
-    offset: typeof rawOffset === 'number' ? rawOffset : undefined,
-    limit: typeof rawLimit === 'number' ? rawLimit : undefined,
-  };
-};
-
-const fetchStoreProducts = async (
-  req: AuthenticatedMedusaRequest,
-  searchParams: URLSearchParams,
-): Promise<StoreProductsResponse> => {
-  const origin = getRequestOrigin(req);
-  const url = new URL('/store/products', origin);
-  url.search = searchParams.toString();
-
-  const response = await fetch(url.toString(), {
-    method: 'GET',
-    headers: createForwardHeaders(req),
-  });
-
-  if (!response.ok) {
-    throw new Error(`상품 조회 실패: ${response.status}`);
-  }
-
-  const data: unknown = await response.json();
-  return parseStoreProductsResponse(data);
 };
 
 const resolveMemberState = async (req: AuthenticatedMedusaRequest): Promise<MemberState> => {
@@ -317,6 +223,197 @@ const sortProducts = (
   });
 };
 
+const buildQueryFilters = (req: AuthenticatedMedusaRequest): QueryFilters => {
+  const filters: QueryFilters = {
+    status: 'published',
+  };
+
+  const categoryIds = toStringArray(req.query.category_id);
+  if (categoryIds.length > 0) {
+    filters.categories = { id: categoryIds };
+  }
+
+  const collectionIds = toStringArray(req.query.collection_id);
+  if (collectionIds.length > 0) {
+    filters.collection_id = collectionIds;
+  }
+
+  const productIds = toStringArray(req.query.id);
+  if (productIds.length > 0) {
+    filters.id = productIds;
+  }
+
+  return filters;
+};
+
+const fetchProductsViaQuery = async (
+  req: AuthenticatedMedusaRequest,
+  filters: QueryFilters,
+  limit: number,
+  offset: number,
+): Promise<{ products: ProductData[]; count: number }> => {
+  const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
+  const regionId = req.query.region_id as string | undefined;
+
+  const fields = [
+    'id',
+    'title',
+    'handle',
+    'subtitle',
+    'description',
+    'status',
+    'thumbnail',
+    'created_at',
+    'updated_at',
+    'metadata',
+    'tags.*',
+    'images.*',
+    'variants.*',
+    'variants.prices.*',
+    'variants.images.*',
+    'variants.options.*',
+    'categories.*',
+    'collection.*',
+  ];
+
+  const graphResult: unknown = await query.graph({
+    entity: 'product',
+    fields,
+    filters,
+    pagination: {
+      skip: offset,
+      take: limit,
+      order: { created_at: 'DESC' },
+    },
+  });
+
+  const data = isRecord(graphResult) ? graphResult.data : [];
+  const products = Array.isArray(data) ? (data as ProductData[]) : [];
+
+  // count 조회 (별도 쿼리)
+  const countResult: unknown = await query.graph({
+    entity: 'product',
+    fields: ['id'],
+    filters,
+  });
+  const countData = isRecord(countResult) ? countResult.data : [];
+  const count = Array.isArray(countData) ? countData.length : 0;
+
+  // calculated_price 계산 (region_id가 있는 경우)
+  if (regionId && products.length > 0) {
+    const pricingModule = req.scope.resolve(Modules.PRICING);
+    const variantIds = products.flatMap((p) => p.variants?.map((v) => v.id) ?? []).filter(Boolean);
+
+    if (variantIds.length > 0) {
+      try {
+        const calculatedPrices = await pricingModule.calculatePrices(
+          { id: variantIds },
+          { context: { region_id: regionId } },
+        );
+
+        const priceMap = new Map<string, { calculated_amount: number | null }>();
+        for (const price of calculatedPrices) {
+          if (price.id) {
+            const amount = price.calculated_amount != null ? Number(price.calculated_amount) : null;
+            priceMap.set(price.id, { calculated_amount: amount });
+          }
+        }
+
+        for (const product of products) {
+          if (product.variants) {
+            for (const variant of product.variants) {
+              const calcPrice = priceMap.get(variant.id);
+              if (calcPrice) {
+                variant.calculated_price = calcPrice;
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error('[products-sorted] 가격 계산 실패:', error);
+      }
+    }
+  }
+
+  return { products, count };
+};
+
+const fetchAllProductsViaQuery = async (
+  req: AuthenticatedMedusaRequest,
+  filters: QueryFilters,
+): Promise<ProductData[]> => {
+  const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
+  const regionId = req.query.region_id as string | undefined;
+
+  const fields = [
+    'id',
+    'title',
+    'handle',
+    'subtitle',
+    'description',
+    'status',
+    'thumbnail',
+    'created_at',
+    'updated_at',
+    'metadata',
+    'tags.*',
+    'images.*',
+    'variants.*',
+    'variants.prices.*',
+    'variants.images.*',
+    'variants.options.*',
+    'categories.*',
+    'collection.*',
+  ];
+
+  const graphResult: unknown = await query.graph({
+    entity: 'product',
+    fields,
+    filters,
+  });
+
+  const data = isRecord(graphResult) ? graphResult.data : [];
+  const products = Array.isArray(data) ? (data as ProductData[]) : [];
+
+  // calculated_price 계산 (region_id가 있는 경우)
+  if (regionId && products.length > 0) {
+    const pricingModule = req.scope.resolve(Modules.PRICING);
+    const variantIds = products.flatMap((p) => p.variants?.map((v) => v.id) ?? []).filter(Boolean);
+
+    if (variantIds.length > 0) {
+      try {
+        const calculatedPrices = await pricingModule.calculatePrices(
+          { id: variantIds },
+          { context: { region_id: regionId } },
+        );
+
+        const priceMap = new Map<string, { calculated_amount: number | null }>();
+        for (const price of calculatedPrices) {
+          if (price.id) {
+            const amount = price.calculated_amount != null ? Number(price.calculated_amount) : null;
+            priceMap.set(price.id, { calculated_amount: amount });
+          }
+        }
+
+        for (const product of products) {
+          if (product.variants) {
+            for (const variant of product.variants) {
+              const calcPrice = priceMap.get(variant.id);
+              if (calcPrice) {
+                variant.calculated_price = calcPrice;
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error('[products-sorted] 가격 계산 실패:', error);
+      }
+    }
+  }
+
+  return products;
+};
+
 export const GET = async (req: AuthenticatedMedusaRequest, res: MedusaResponse) => {
   const sortParam = req.query.sort as string | undefined;
   const hasSort = sortParam && VALID_SORT_TYPES.has(sortParam as SortType);
@@ -333,92 +430,43 @@ export const GET = async (req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     const { customerId, isMember } = await resolveMemberState(req);
     logger.info(`[products-sorted] customerId=${customerId}, isMember=${isMember}`);
 
-    const baseSearchParams = createBaseSearchParams(req);
+    const filters = buildQueryFilters(req);
 
     // 정렬 없이 멤버십 필터링만 (기존 membership-products 동작)
     if (!sortType) {
       if (isMember) {
-        baseSearchParams.set('limit', String(requestedLimit));
-        baseSearchParams.set('offset', String(requestedOffset));
-
-        const response = await fetchStoreProducts(req, baseSearchParams);
+        const { products, count } = await fetchProductsViaQuery(req, filters, requestedLimit, requestedOffset);
 
         return res.json({
-          products: response.products,
-          count: response.count,
+          products,
+          count,
           offset: requestedOffset,
           limit: requestedLimit,
         });
       }
 
-      // 비멤버: 전체 스캔 후 필터링
-      const scanParams = new URLSearchParams(baseSearchParams);
-      scanParams.set('limit', String(SCAN_BATCH_SIZE));
-      scanParams.set('offset', '0');
+      // 비멤버: 전체 조회 후 필터링
+      const allProducts = await fetchAllProductsViaQuery(req, filters);
+      const filteredProducts = applyMembershipFilter(allProducts, isMember);
 
-      const pagedProducts: ProductData[] = [];
-      let visibleTotal = 0;
-      let seenVisible = 0;
-      let rawOffset = 0;
-      let rawCount = Number.POSITIVE_INFINITY;
-
-      while (rawOffset < rawCount) {
-        scanParams.set('offset', String(rawOffset));
-        const batchResponse = await fetchStoreProducts(req, scanParams);
-        rawCount = batchResponse.count;
-
-        if (batchResponse.products.length === 0) break;
-
-        const visibleBatch = applyMembershipFilter(batchResponse.products, isMember);
-
-        for (const product of visibleBatch) {
-          if (seenVisible >= requestedOffset && pagedProducts.length < requestedLimit) {
-            pagedProducts.push(product);
-          }
-          seenVisible += 1;
-        }
-
-        visibleTotal += visibleBatch.length;
-        rawOffset += batchResponse.products.length;
-      }
+      const pagedProducts = filteredProducts.slice(requestedOffset, requestedOffset + requestedLimit);
 
       return res.json({
         products: pagedProducts,
-        count: visibleTotal,
+        count: filteredProducts.length,
         offset: requestedOffset,
         limit: requestedLimit,
       });
     }
 
-    // 정렬 있음: 전체 스캔 → 멤버십 필터링 → 정렬 → 페이징
-    const scanParams = new URLSearchParams(baseSearchParams);
-    scanParams.set('limit', String(SCAN_BATCH_SIZE));
-    scanParams.set('offset', '0');
-
-    const allProducts: ProductData[] = [];
-    let rawOffset = 0;
-    let rawCount = Number.POSITIVE_INFINITY;
-
-    while (rawOffset < rawCount) {
-      scanParams.set('offset', String(rawOffset));
-      const batchResponse = await fetchStoreProducts(req, scanParams);
-      rawCount = batchResponse.count;
-
-      if (batchResponse.products.length === 0) break;
-
-      allProducts.push(...batchResponse.products);
-      rawOffset += batchResponse.products.length;
-    }
-
-    // 멤버십 필터링 적용
+    // 정렬 있음: 전체 조회 → 멤버십 필터링 → 정렬 → 페이징
+    const allProducts = await fetchAllProductsViaQuery(req, filters);
     const filteredProducts = applyMembershipFilter(allProducts, isMember);
 
     // 정렬 키 조회
     const productIds = filteredProducts.map((p) => p.id);
     const sortKeys =
-      productIds.length > 0
-        ? await productSortModule.listProductSortKeys({ product_id: productIds })
-        : [];
+      productIds.length > 0 ? await productSortModule.listProductSortKeys({ product_id: productIds }) : [];
 
     const sortKeysMap = new Map<string, ProductSortKeyData>();
     for (const key of sortKeys) {
