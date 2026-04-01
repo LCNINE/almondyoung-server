@@ -152,7 +152,12 @@ export function useSalesOrderRows(query: SalesOrdersQuery) {
         receiverName:
           detailExt?.receiverName ?? userInfo?.username ?? customerId ?? '',
         phone: detailExt?.receiverPhone ?? userInfo?.phone,
-        address: detailExt?.shippingAddress,
+        address: (() => {
+          const sa = detailExt?.shippingAddress;
+          if (!sa) return undefined;
+          if (typeof sa === 'string') return sa;
+          return `${sa.roadAddress ?? ''} ${sa.detailAddress ?? ''}`.trim();
+        })(),
         channel: detailExt?.channel ?? listItem.channel ?? 'own',
         sellerName: detailExt?.sellerName ?? listItem.sellerName,
         status: listItem.status,
