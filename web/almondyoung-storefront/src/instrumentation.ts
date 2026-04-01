@@ -48,5 +48,10 @@ export function register() {
       url: `${endpoint}/v1/traces`,
     }),
     traceSampler: new AppSampler(),
+    instrumentationConfig: {
+      fetch: {
+        propagateContextUrls: [/.*/],
+      },
+    },
   })
 }
