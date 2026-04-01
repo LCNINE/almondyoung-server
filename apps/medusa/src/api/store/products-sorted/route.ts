@@ -1,4 +1,5 @@
 import type { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
+import type { RemoteQueryFunction } from '@medusajs/framework/types';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { PRODUCT_SORT_MODULE } from '../../../modules/product-sort';
 import type { ProductSortModuleService } from '../../../modules/product-sort/service';
@@ -154,6 +155,32 @@ const buildSortKeyOrder = (sort: SortOption): { field: string; direction: 'ASC' 
   }
 };
 
+const fetchProductIdsByCategory = async (
+  query: RemoteQueryFunction,
+  categoryIds: string[],
+  collectionIds: string[],
+): Promise<string[] | null> => {
+  if (categoryIds.length === 0 && collectionIds.length === 0) {
+    return null;
+  }
+
+  const filters: Record<string, unknown> = {};
+  if (categoryIds.length > 0) {
+    filters.category_id = categoryIds;
+  }
+  if (collectionIds.length > 0) {
+    filters.collection_id = collectionIds;
+  }
+
+  const { data: products } = await query.graph({
+    entity: 'product',
+    fields: ['id'],
+    filters,
+  });
+
+  return (products as Array<{ id: string }>).map((p) => p.id);
+};
+
 /**
  * GET /store/products-sorted
  *
@@ -188,7 +215,7 @@ export const GET = async (req: AuthenticatedMedusaRequest, res: MedusaResponse) 
 
   try {
     const { isMember } = await resolveMemberState(req);
-    const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
+    const query = req.scope.resolve<RemoteQueryFunction>(ContainerRegistrationKeys.QUERY);
     const sortKeyOrder = buildSortKeyOrder(sort);
 
     let sortedProductIds: string[] = [];
@@ -201,7 +228,25 @@ export const GET = async (req: AuthenticatedMedusaRequest, res: MedusaResponse) 
         [sortKeyOrder.field]: sortKeyOrder.direction,
       };
 
-      const allSortKeys = await productSortService.listProductSortKeys({}, { order: orderConfig });
+      // 카테고리/컬렉션 필터가 있으면 해당 상품 ID 먼저 조회
+      const categoryFilteredIds = await fetchProductIdsByCategory(query, categoryIds, collectionIds);
+
+      // 정렬 키 조회 (필터 조건 적용)
+      const sortKeyFilters: Record<string, unknown> = {};
+      if (categoryFilteredIds !== null) {
+        if (categoryFilteredIds.length === 0) {
+          // 카테고리에 상품이 없으면 빈 결과 반환
+          return res.json({
+            products: [],
+            count: 0,
+            offset: requestedOffset,
+            limit: requestedLimit,
+          });
+        }
+        sortKeyFilters.product_id = categoryFilteredIds;
+      }
+
+      const allSortKeys = await productSortService.listProductSortKeys(sortKeyFilters, { order: orderConfig });
 
       const allProductIds = allSortKeys.map((sk) => sk.product_id);
 
