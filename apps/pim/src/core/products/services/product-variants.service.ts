@@ -507,6 +507,93 @@ export class ProductVariantsService {
     );
   }
 
+  async findByIds(ids: string[]): Promise<
+    {
+      id: string;
+      variantName?: string;
+      variantCode?: string;
+      masterId: string;
+      masterName: string;
+      optionLabel?: string;
+    }[]
+  > {
+    if (!ids.length) return [];
+    const client = this.db.db;
+
+    const rows = await client
+      .select({
+        variantId: productVariants.id,
+        variantName: productVariants.variantName,
+        variantCode: productVariants.variantCode,
+        masterId: productMasterVariants.masterId,
+        versionId: productMasterVariants.versionId,
+        masterName: productMasterVersions.name,
+      })
+      .from(productVariants)
+      .innerJoin(productMasterVariants, eq(productMasterVariants.variantId, productVariants.id))
+      .innerJoin(
+        productMasterVersions,
+        and(eq(productMasterVersions.id, productMasterVariants.versionId), eq(productMasterVersions.status, 'active')),
+      )
+      .where(inArray(productVariants.id, ids));
+
+    if (!rows.length) return [];
+
+    // 변형이 여러 active 버전에 속할 경우 첫 번째만 사용
+    const variantMap = new Map<string, (typeof rows)[0]>();
+    for (const row of rows) {
+      if (!variantMap.has(row.variantId)) variantMap.set(row.variantId, row);
+    }
+    const uniqueRows = Array.from(variantMap.values());
+    const variantIds = uniqueRows.map((r) => r.variantId);
+    const versionIds = [...new Set(uniqueRows.map((r) => r.versionId))];
+
+    // 옵션 표시명 일괄 조회
+    const optionRows = await client
+      .select({
+        variantId: variantOptionValues.variantId,
+        displayName: productOptionValueDisplays.displayName,
+        groupSortOrder: productOptionGroupDisplays.sortOrder,
+        valueSortOrder: productOptionValueDisplays.sortOrder,
+      })
+      .from(variantOptionValues)
+      .innerJoin(productOptionValues, eq(variantOptionValues.optionValueId, productOptionValues.id))
+      .innerJoin(
+        productOptionValueDisplays,
+        and(
+          eq(productOptionValues.id, productOptionValueDisplays.optionValueId),
+          inArray(productOptionValueDisplays.versionId, versionIds),
+          eq(productOptionValueDisplays.locale, 'ko-KR'),
+        ),
+      )
+      .innerJoin(productOptionGroups, eq(productOptionValues.optionGroupId, productOptionGroups.id))
+      .innerJoin(
+        productOptionGroupDisplays,
+        and(
+          eq(productOptionGroups.id, productOptionGroupDisplays.optionGroupId),
+          inArray(productOptionGroupDisplays.versionId, versionIds),
+          eq(productOptionGroupDisplays.locale, 'ko-KR'),
+        ),
+      )
+      .where(inArray(variantOptionValues.variantId, variantIds))
+      .orderBy(asc(productOptionGroupDisplays.sortOrder), asc(productOptionValueDisplays.sortOrder));
+
+    const optionMap = new Map<string, string[]>();
+    for (const opt of optionRows) {
+      if (!optionMap.has(opt.variantId)) optionMap.set(opt.variantId, []);
+      optionMap.get(opt.variantId)!.push(opt.displayName);
+    }
+
+    return uniqueRows.map((row) => ({
+      id: row.variantId,
+      variantName: row.variantName ?? undefined,
+      variantCode: row.variantCode ?? undefined,
+      masterId: row.masterId,
+      masterName: row.masterName,
+      optionLabel: optionMap.get(row.variantId)?.join(', '),
+    }));
+  }
+
   async existsVariant(variantId: string, tx?: DbTransaction): Promise<boolean> {
     if (!variantId) {
       return false;

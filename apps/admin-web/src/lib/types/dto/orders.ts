@@ -137,6 +137,8 @@ export interface MatchingDto {
 // 매칭 목록 조회 쿼리
 export interface MatchingsQuery {
   status?: MatchingStatus; // 매칭 상태 필터
+  limit?: number;
+  offset?: number;
 }
 
 // 매칭 목록 응답
