@@ -11,4 +11,11 @@ type ReviewSortOption = "latest" | "oldest" | "rating_high" | "rating_low"
 
 type QnaSortOption = "latest" | "oldest"
 
-export type { ReviewRatingFilter, ReviewSortOption, QnaSortOption }
+type ProductSortOption = "created_at" | "price_asc" | "price_desc" | "sales_desc"
+
+export type {
+  ReviewRatingFilter,
+  ReviewSortOption,
+  QnaSortOption,
+  ProductSortOption,
+}

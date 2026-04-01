@@ -1,5 +1,6 @@
 import { retrieveCustomer } from "@/lib/api/medusa/customer"
-import { listProducts } from "@/lib/api/medusa/products"
+import { listProductsSorted } from "@/lib/api/medusa/products"
+import type { ProductSortOption } from "@/lib/types/common/filter"
 import { getRegion } from "@/lib/api/medusa/regions"
 import { isMembershipGroup } from "@/lib/utils/membership-group"
 import { Pagination } from "../components/pagination"
@@ -8,14 +9,6 @@ import { SortOptions } from "../components/refinement-list/sort-products"
 import { getWishlist } from "@lib/api/users/wishlist"
 
 const PRODUCT_LIMIT = 12
-
-type PaginatedProductsParams = {
-  limit: number
-  collection_id?: string[]
-  category_id?: string[]
-  id?: string[]
-  order?: string
-}
 
 export default async function PaginatedProducts({
   sortBy,
@@ -32,44 +25,23 @@ export default async function PaginatedProducts({
   productsIds?: string[]
   countryCode: string
 }) {
-  const queryParams: PaginatedProductsParams = {
-    limit: 12,
-  }
-
-  if (collectionId) {
-    queryParams["collection_id"] = [collectionId]
-  }
-
-  if (categoryIds?.length) {
-    queryParams["category_id"] = categoryIds
-  }
-
-  if (productsIds) {
-    queryParams["id"] = productsIds
-  }
-
-  // sortBy를 서버 order 파라미터로 변환
-  if (sortBy === "created_at") {
-    queryParams["order"] = "-created_at" // 최신순 (내림차순)
-  } else if (sortBy === "price_asc") {
-    queryParams["order"] = "+variants.calculated_price.calculated_amount"
-  } else if (sortBy === "price_desc") {
-    queryParams["order"] = "-variants.calculated_price.calculated_amount"
-  }
-
   const region = await getRegion(countryCode)
 
   if (!region) {
     return null
   }
 
-  const {
-    response: { products, count },
-  } = await listProducts({
+  const { response } = await listProductsSorted({
     pageParam: page,
-    queryParams,
+    sort: (sortBy as ProductSortOption) || "created_at",
     countryCode,
+    categoryIds,
+    collectionIds: collectionId ? [collectionId] : undefined,
+    productIds: productsIds,
+    limit: PRODUCT_LIMIT,
   })
+
+  const { products, count } = response
 
   const totalPages = Math.ceil(count / PRODUCT_LIMIT)
 
