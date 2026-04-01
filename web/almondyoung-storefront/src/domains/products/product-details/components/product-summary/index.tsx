@@ -8,8 +8,8 @@ interface Props {
   brand: string
   productName: string
   productId: string
+  pimMasterId: string
   countryCode: string
-  handle: string
   children?: React.ReactNode
 }
 
@@ -17,8 +17,8 @@ export function ProductSummary({
   brand,
   productName,
   productId,
+  pimMasterId,
   countryCode,
-  handle,
   children,
 }: Props) {
   return (
@@ -51,7 +51,7 @@ export function ProductSummary({
       </header>
 
       <Suspense fallback={<RatingSkeleton />}>
-        <RatingActionsWrapper handle={handle} />
+        <RatingActionsWrapper productId={pimMasterId} />
       </Suspense>
 
       {children}

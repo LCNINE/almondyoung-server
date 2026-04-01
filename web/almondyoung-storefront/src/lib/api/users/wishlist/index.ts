@@ -1,5 +1,6 @@
 "use server"
 
+import { cache } from "react"
 import { revalidateTag } from "next/cache"
 import type { WishlistResponse } from "@lib/types/dto/users"
 import { api } from "../../api"
@@ -40,18 +41,18 @@ export const toggleWishlist = async (
 /**
  * 위시리스트에 상품이 있는지 확인합니다
  */
-export const getWishlistByProductId = async (
-  productId: string
-): Promise<WishlistResponse | null> => {
-  const [data] = await api<WishlistResponse[]>(
-    "users",
-    `/wishlist/${productId}`,
-    {
-      method: "GET",
-      withAuth: true,
-      next: { tags: ["wishlist"] },
-    }
-  )
+export const getWishlistByProductId = cache(
+  async (productId: string): Promise<WishlistResponse | null> => {
+    const [data] = await api<WishlistResponse[]>(
+      "users",
+      `/wishlist/${productId}`,
+      {
+        method: "GET",
+        withAuth: true,
+        next: { tags: ["wishlist"] },
+      }
+    )
 
-  return data || null
-}
+    return data || null
+  }
+)
