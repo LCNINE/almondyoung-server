@@ -31,6 +31,8 @@ export const getMatchings = async (
   const params = new URLSearchParams();
 
   if (query.status) params.append('status', query.status);
+  if (query.limit !== undefined) params.append('limit', String(query.limit));
+  if (query.offset !== undefined) params.append('offset', String(query.offset));
 
   const response = await client.get(
     `${WMS_BASE_URL}/wms/matchings?${params.toString()}`

@@ -10,9 +10,9 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { InventoryMatchingDialog } from './InventoryMatchingDialog';
 import { ProductRegistrationDialog } from './ProductRegistrationDialog';
 // API 훅 import
-import { useVariant } from '@/lib/services/products';
-import { useMaster } from '@/lib/services/products';
+import { useVariantsBatch } from '@/lib/services/products';
 import { useSku, useSkusByIds } from '@/lib/services/inventory';
+import type { BatchVariantInfo } from '@/lib/api/domains/products/variants.client';
 import {
   getSalesChannelLabel,
   getMatchingStatusColor,
@@ -29,73 +29,13 @@ interface MatchingTableProps {
   error: Error | null;
 }
 
-// 상품명과 옵션을 분리하는 유틸리티 함수
-function parseProductNameAndOption(
-  variantName: string,
-  masterName?: string
-): { productName: string; option: string } {
-  if (!variantName) {
-    return { productName: '상품명 없음', option: '단일 상품' };
-  }
-
-  // 마스터명이 있으면 마스터명을 기본 상품명으로 사용
-  const baseProductName = masterName || variantName;
-
-  // variantName에서 옵션 부분 추출
-  if (variantName.includes(' - ')) {
-    const parts = variantName.split(' - ');
-    const productName = masterName || parts[0];
-    let option = parts[1];
-
-    // 옵션을 더 명확하게 표시
-    if (option.includes('ml')) {
-      option = `용량: ${option}`;
-    } else if (option.includes('컬러') || option.includes('색상')) {
-      // 이미 컬러나 색상이 포함되어 있으면 그대로 사용
-    } else if (option.includes(',')) {
-      // 여러 옵션이 있는 경우
-      const optionParts = option.split(',');
-      option = optionParts
-        .map((part, index) => {
-          const trimmed = part.trim();
-          if (trimmed.includes('ml')) {
-            return `용량: ${trimmed}`;
-          } else if (trimmed.includes('개')) {
-            return `수량: ${trimmed}`;
-          } else {
-            return `옵션${index + 1}: ${trimmed}`;
-          }
-        })
-        .join(', ');
-    } else {
-      // 단일 옵션인 경우
-      if (option.includes('개')) {
-        option = `수량: ${option}`;
-      } else if (option.includes('ml') || option.includes('L')) {
-        option = `용량: ${option}`;
-      } else if (option.includes('세트') || option.includes('SET')) {
-        option = `구성: ${option}`;
-      } else {
-        option = `옵션: ${option}`;
-      }
-    }
-
-    return { productName, option };
-  }
-
-  // "-"가 없으면 전체를 상품명으로 사용하고, 정말 옵션이 없는 상품만 "단일 상품"으로 표시
-  if (variantName.includes('일회용') || variantName.includes('단일') || variantName.includes('기본')) {
-    return { productName: baseProductName, option: '단일 상품' };
-  }
-
-  return { productName: baseProductName, option: '옵션 없음' };
-}
 
 // 매칭 행 컴포넌트
 function MatchingRow({
   matching,
   index,
   totalCount,
+  variantInfo,
   onInventoryMatching,
   onProductRegistration,
   onRematch,
@@ -107,6 +47,7 @@ function MatchingRow({
   matching: MatchingDto;
   index: number;
   totalCount: number;
+  variantInfo?: BatchVariantInfo;
   onInventoryMatching: (matching: MatchingDto) => void;
   onProductRegistration: (matching: MatchingDto) => void;
   onRematch: (matching: MatchingDto) => void;
@@ -115,9 +56,9 @@ function MatchingRow({
   onRowSelect: (id: string, checked: boolean) => void;
   isSelected: boolean;
 }) {
-  // 🔹 API 훅으로 variant, master 정보 가져오기
-  const { data: variant } = useVariant(matching.variantId);
-  const { data: master } = useMaster(variant?.masterId || '');
+
+  // variantInfo는 부모에서 배치 조회한 결과
+  const variant = variantInfo;
 
   // 매칭된 SKU 정보 (새로운 API 구조)
   const matchedSkus = matching.matchedSkus || [];
@@ -156,11 +97,9 @@ function MatchingRow({
   const orderNumber = orderMeta.salesOrderId;
   const sellerName = getSalesChannelLabel(orderMeta.salesChannel);
 
-  // 🔹 상품명과 옵션을 올바르게 분리 - variant.name을 우선 사용
-  const { productName, option } = parseProductNameAndOption(
-    variant?.name || orderMeta.productName || '상품명 없음',
-    master?.name
-  );
+  // 🔹 상품명과 옵션: PIM 배치 조회 결과 우선 사용
+  const productName = variant?.masterName || orderMeta.productName || '상품명 없음';
+  const option = variant?.optionLabel || variant?.variantName || '단일 상품';
 
   const quantity = orderMeta.quantity ?? 0;
   const salesAmount = orderMeta.salesAmount || 0;
@@ -347,6 +286,10 @@ export function MatchingTable({ data, isLoading, error }: MatchingTableProps) {
   const [showProductDialog, setShowProductDialog] = useState(false);
   const [currentMatching, setCurrentMatching] = useState<MatchingDto | null>(null);
 
+  // 전체 variantId 일괄 조회 (N+1 방지)
+  const variantIds = useMemo(() => [...new Set(data.map((m) => m.variantId).filter(Boolean))], [data]);
+  const { data: variantMap } = useVariantsBatch(variantIds);
+
   const handleRowSelect = (id: string, checked: boolean) => {
     const newSelected = new Set(selectedRows);
     if (checked) {
@@ -432,6 +375,7 @@ export function MatchingTable({ data, isLoading, error }: MatchingTableProps) {
                   matching={matching}
                   index={index}
                   totalCount={data.length}
+                  variantInfo={variantMap?.get(matching.variantId)}
                   onInventoryMatching={handleInventoryMatching}
                   onProductRegistration={handleProductRegistration}
                   onRematch={handleRematch}
