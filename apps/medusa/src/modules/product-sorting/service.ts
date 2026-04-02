@@ -26,10 +26,13 @@ type ListOptions = {
   skip?: number;
 };
 
-// MedusaService가 런타임에 생성하는 메서드 타입 정의
+type ProductSortIndexFilter = Omit<Partial<ProductSortIndexRecord>, 'product_id'> & {
+  product_id?: string | { $in: string[] };
+};
+
 interface GeneratedMethods {
   listProductSortIndices(
-    filters: Partial<ProductSortIndexRecord>,
+    filters: ProductSortIndexFilter,
     options?: ListOptions,
   ): Promise<ProductSortIndexRecord[]>;
   createProductSortIndices(data: Partial<ProductSortIndexRecord>): Promise<ProductSortIndexRecord>;

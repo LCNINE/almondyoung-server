@@ -15,9 +15,13 @@ type ProductSortIndexRecord = {
   currency_code: string;
 };
 
+type ProductSortIndexFilter = Omit<Partial<ProductSortIndexRecord>, 'product_id'> & {
+  product_id?: string | { $in: string[] };
+};
+
 interface ProductSortingService {
   listProductSortIndices(
-    filters: Partial<ProductSortIndexRecord>,
+    filters: ProductSortIndexFilter,
     options?: { order?: Record<string, 'ASC' | 'DESC'>; take?: number; skip?: number },
   ): Promise<ProductSortIndexRecord[]>;
 }
@@ -32,6 +36,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const limit = parseInt(req.query.limit as string) || 20;
     const offset = parseInt(req.query.offset as string) || 0;
     const currencyCode = (req.query.currency_code as string) || 'krw';
+    const categoryHandle = (req.query.category_handle as string) || '';
+    const collectionHandle = (req.query.collection_handle as string) || '';
 
     const validSortFields: SortBy[] = ['min_price', 'max_price', 'sales_count', 'view_count'];
     if (!validSortFields.includes(sortBy)) {
@@ -40,14 +46,41 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       });
     }
 
-    const sortIndexes = await sortingService.listProductSortIndices(
-      { currency_code: currencyCode },
-      {
-        order: { [sortBy]: order === 'desc' ? 'DESC' : 'ASC' },
-        take: limit,
-        skip: offset,
-      },
-    );
+    // 카테고리/컬렉션 필터가 있으면 해당 상품 ID들을 먼저 조회
+    let categoryProductIds: string[] | null = null;
+    if (categoryHandle || collectionHandle) {
+      const categoryFilters: Record<string, unknown> = {};
+      if (categoryHandle) {
+        categoryFilters.categories = { handle: categoryHandle };
+      }
+      if (collectionHandle) {
+        categoryFilters.collection = { handle: collectionHandle };
+      }
+
+      const { data: categoryProducts } = await query.graph({
+        entity: 'product',
+        fields: ['id'],
+        filters: categoryFilters,
+      });
+
+      categoryProductIds = categoryProducts.map((p: { id: string }) => p.id);
+
+      if (categoryProductIds.length === 0) {
+        return res.json({ products: [], count: 0 });
+      }
+    }
+
+    // 정렬 인덱스 필터 구성
+    const sortIndexFilter: ProductSortIndexFilter = { currency_code: currencyCode };
+    if (categoryProductIds) {
+      sortIndexFilter.product_id = { $in: categoryProductIds };
+    }
+
+    const sortIndexes = await sortingService.listProductSortIndices(sortIndexFilter, {
+      order: { [sortBy]: order === 'desc' ? 'DESC' : 'ASC' },
+      take: limit,
+      skip: offset,
+    });
 
     const productIds = sortIndexes.map((s) => s.product_id);
 
