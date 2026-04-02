@@ -121,6 +121,11 @@ export const useResolveMatching = () => {
       queryClient.invalidateQueries({
         queryKey: orderQueryKeys.variantMatchings(),
       });
+
+      // 주문 라인 매칭 현황 전체 무효화
+      queryClient.invalidateQueries({
+        queryKey: orderQueryKeys.matchings,
+      });
     },
   });
 };
