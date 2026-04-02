@@ -1,5 +1,8 @@
 import { ProductTemplate } from "@/domains/products/product-details/templates"
 import { retrieveCustomer } from "@/lib/api/medusa/customer"
+import { getProductDetailByMasterId } from "@/lib/api/pim/products"
+import { getQnaSummary } from "@/lib/api/ugc"
+import { getRatingSummary } from "@/lib/api/ugc/reviews"
 import { addToRecentViews } from "@/lib/api/users/recent-views"
 import { Customer } from "@/lib/types/ui/medusa"
 import { listProducts } from "@lib/api/medusa/products"
@@ -50,16 +53,26 @@ export default async function Page(props: Props) {
     notFound()
   }
 
-  const pricedProduct = await listProducts({
-    countryCode: params.countryCode,
-    queryParams: { handle: params.handle },
-  }).then(({ response }) => response.products[0])
+  const [pricedProduct, customer] = await Promise.all([
+    listProducts({
+      countryCode: params.countryCode,
+      queryParams: { handle: params.handle },
+    }).then(({ response }) => response.products[0]),
+    retrieveCustomer(),
+  ])
 
   if (!pricedProduct) {
     notFound()
   }
 
-  const customer = await retrieveCustomer()
+  // 캐시 프라이밍 — 자식 컴포넌트들이 사용할 데이터를 미리 fetch 시작
+  // React.cache()에 의해 동일 render 내 중복 호출은 이 Promise를 재사용
+  const pimMasterId = pricedProduct.metadata?.pimMasterId as string
+  if (pimMasterId) {
+    getRatingSummary(pimMasterId).catch(() => {})
+    getQnaSummary(pimMasterId).catch(() => {})
+    getProductDetailByMasterId(pimMasterId).catch(() => {})
+  }
 
   // 로그인한 사용자만 최근 본 상품 기록
   if (customer) {
