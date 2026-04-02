@@ -7,7 +7,7 @@ export default defineLink(
   ProductSortModule.linkable.productSortKey,
   {
     database: {
-      table: 'product_product_sort_key',
+      table: 'product_sort_key_link',
     },
   },
 );
