@@ -152,6 +152,47 @@ export interface MatchingsResponseDto {
   hasPrev: boolean;
 }
 
+// ===== 주문 라인 매칭 현황 =====
+
+export interface OrderLineMatchedSku {
+  skuId: string;
+  skuName: string;
+  skuCode?: string;
+  quantity: number;
+}
+
+// 주문 라인 하나 + 매칭 상태
+export interface OrderLineDto {
+  id: string;                        // sales_order_lines.id
+  variantId: string;
+  productName: string;               // 채널 상품명
+  quantity: number;
+  unitPrice?: number;
+  totalPrice?: number;
+  salesOrderId: string;
+  channelOrderId: string;
+  salesChannel: string;
+  customerName?: string;
+  customerPhone?: string;
+  orderDate: string;
+  matchingId?: string;               // product_matchings.id (null이면 PIM 미등록)
+  matchingStatus?: MatchingStatus;   // null이면 PIM 미등록
+  matchedSkus: OrderLineMatchedSku[];
+}
+
+export interface OrderLinesResponseDto {
+  data: OrderLineDto[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface OrderLinesQuery {
+  matchingStatus?: MatchingStatus | 'unregistered';
+  limit?: number;
+  offset?: number;
+}
+
 // Variant별 매칭 조회
 export interface VariantMatchingDto {
   variantId: string;

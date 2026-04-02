@@ -38,6 +38,7 @@ export {
   useMatchedMatchings,
   useIgnoredMatchings,
   useMatchingsWithOrders,
+  useOrderLines,
 
   // 기존 매칭 관련 (호환성)
   useProductMatchings,
