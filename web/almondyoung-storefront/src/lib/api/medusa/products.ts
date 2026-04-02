@@ -3,7 +3,7 @@
 import { sdk } from "@/lib/config/medusa"
 import { getAuthHeaders, getCacheOptions } from "@lib/data/cookies"
 import type { HttpTypes } from "@medusajs/types"
-import type { ProductSortOption } from "@/lib/types/common/filter"
+import type { ProductSortBy, ProductSortOrder } from "@/lib/types/common/filter"
 import { getRegion, retrieveRegion } from "./regions"
 
 export const listProducts = async ({
@@ -88,25 +88,26 @@ export const listProducts = async ({
  * 정렬된 상품 목록 조회 API
  * 서버의 /store/products-sorted 엔드포인트를 호출합니다.
  *
- * @param sort - 정렬 옵션 (created_at, price_asc, price_desc, sales_desc)
+ * @param sortBy - 정렬 기준 (min_price, max_price, sales_count)
+ * @param order - 정렬 순서 (asc, desc)
  */
 export const listProductsSorted = async ({
   pageParam = 1,
-  sort = "created_at",
+  sortBy = "min_price",
+  order = "asc",
   countryCode,
   regionId,
-  categoryIds,
-  collectionIds,
-  productIds,
+  categoryId,
+  collectionId,
   limit = 12,
 }: {
   pageParam?: number
-  sort?: ProductSortOption
+  sortBy?: ProductSortBy
+  order?: ProductSortOrder
   countryCode?: string
   regionId?: string
-  categoryIds?: string[]
-  collectionIds?: string[]
-  productIds?: string[]
+  categoryId?: string[]
+  collectionId?: string
   limit?: number
 }): Promise<{
   response: { products: HttpTypes.StoreProduct[]; count: number }
@@ -144,32 +145,25 @@ export const listProductsSorted = async ({
 
   // 쿼리 파라미터 구성
   const query: Record<string, string | string[]> = {
-    sort,
+    sort_by: sortBy,
+    order,
     limit: String(limit),
     offset: String(offset),
-    region_id: region.id,
-    fields:
-      "*variants.calculated_price,+variants.inventory_quantity,*variants.images,+metadata,+tags,",
+    currency_code: region.currency_code,
   }
 
-  if (categoryIds?.length) {
-    query.category_id = categoryIds
+  if (categoryId) {
+    query.category_id = categoryId
   }
 
-  if (collectionIds?.length) {
-    query.collection_id = collectionIds
-  }
-
-  if (productIds?.length) {
-    query.id = productIds
+  if (collectionId) {
+    query.collection_id = collectionId
   }
 
   return sdk.client
     .fetch<{
       products: HttpTypes.StoreProduct[]
       count: number
-      offset?: number
-      limit?: number
     }>(`/store/products-sorted`, {
       method: "GET",
       query,

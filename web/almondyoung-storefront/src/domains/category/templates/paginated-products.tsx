@@ -1,5 +1,5 @@
 import { retrieveCustomer } from "@/lib/api/medusa/customer"
-import { listProducts } from "@/lib/api/medusa/products"
+import { listProducts, listProductsSorted } from "@/lib/api/medusa/products"
 import { getRegion } from "@/lib/api/medusa/regions"
 import { isMembershipGroup } from "@/lib/utils/membership-group"
 import { Pagination } from "../components/pagination"
@@ -30,16 +30,34 @@ export default async function PaginatedProducts({
     return null
   }
 
-  const { response } = await listProducts({
-    pageParam: page,
-    countryCode,
-    queryParams: {
-      limit: PRODUCT_LIMIT,
-      category_id: categoryIds,
-      collection_id: collectionId ? [collectionId] : undefined,
-      id: productsIds,
-    },
-  })
+  const isSorted =
+    sortBy === "price_asc" || sortBy === "price_desc" || sortBy === "sales_desc"
+
+  const { response } = isSorted
+    ? await listProductsSorted({
+        pageParam: page,
+        sortBy:
+          sortBy === "price_asc"
+            ? "min_price"
+            : sortBy === "price_desc"
+              ? "max_price"
+              : "sales_count",
+        order: sortBy === "price_asc" ? "asc" : "desc",
+        countryCode,
+        categoryId: categoryIds,
+        collectionId,
+        limit: PRODUCT_LIMIT,
+      })
+    : await listProducts({
+        pageParam: page,
+        countryCode,
+        queryParams: {
+          limit: PRODUCT_LIMIT,
+          category_id: categoryIds,
+          collection_id: collectionId ? [collectionId] : undefined,
+          id: productsIds,
+        },
+      })
 
   const { products, count } = response
 
