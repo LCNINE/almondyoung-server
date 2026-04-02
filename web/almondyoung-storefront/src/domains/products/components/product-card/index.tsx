@@ -52,6 +52,15 @@ export default function ProductCard({
         </div>
 
         <div className="mt-4">
+          {/* TODO: 임시 디버그 - 카테고리 확인용 */}
+          {product.categories && (
+            <div className="mb-1 text-[10px] text-blue-500">
+              {(product.categories as any[])
+                .map((c) => c.name || c.handle)
+                .join(" > ")}
+            </div>
+          )}
+
           <h3 className="text-foreground line-clamp-1 text-[14px] leading-tight">
             {product.title}
           </h3>
