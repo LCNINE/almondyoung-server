@@ -2,7 +2,7 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
 import { TypedDatabase, DbService } from '@app/db';
-import { and, eq, desc, count, inArray, isNull } from 'drizzle-orm';
+import { and, eq, desc, count, inArray, isNull, or, ne, gte, lte, ilike, SQL } from 'drizzle-orm';
 import { InventoryService } from './inventory.service';
 import { StockEventService } from './stock-event.service';
 import { ResolveMatchingDto } from '../dto/product-matching/resolve-matching.dto';
@@ -244,21 +244,67 @@ export class ProductMatchingService {
   }
 
   async getOrderLines(
-    matchingStatus?: 'pending' | 'matched' | 'ignored' | 'unregistered',
-    limit = 50,
-    offset = 0,
+    params: {
+      matchingStatus?: 'pending' | 'matched' | 'ignored' | 'unregistered';
+      excludeMatched?: boolean;
+      salesChannel?: string;
+      startDate?: string;
+      endDate?: string;
+      keyword?: string;
+      keywordType?: 'productName' | 'orderNumber' | 'customerName';
+      limit?: number;
+      offset?: number;
+    },
     tx?: DbTx,
   ) {
+    const { matchingStatus, excludeMatched, salesChannel, startDate, endDate, keyword, keywordType } = params;
+    const limit = params.limit ?? 50;
+    const offset = params.offset ?? 0;
+
     return this.inTx(async (trx) => {
       const { salesOrderLines, salesOrders, productMatchings, productVariantSkuLinks, skus } = wmsTables;
 
-      // WHERE 조건 (LEFT JOIN 기반 매칭 상태 필터)
-      const where =
-        matchingStatus === 'unregistered'
-          ? isNull(productMatchings.id)
-          : matchingStatus
-            ? eq(productMatchings.status, matchingStatus)
-            : undefined;
+      // WHERE 조건 조립
+      const conditions: SQL<unknown>[] = [];
+
+      // 매칭 상태 필터
+      if (matchingStatus === 'unregistered') {
+        conditions.push(isNull(productMatchings.id));
+      } else if (matchingStatus) {
+        conditions.push(eq(productMatchings.status, matchingStatus));
+      } else if (excludeMatched) {
+        const cond = or(isNull(productMatchings.id), ne(productMatchings.status, 'matched'));
+        if (cond) conditions.push(cond);
+      }
+
+      // 판매처 필터
+      if (salesChannel) {
+        conditions.push(eq(salesOrders.salesChannel, salesChannel as (typeof salesOrders.salesChannel)['_']['data']));
+      }
+
+      // 날짜 필터
+      if (startDate) {
+        conditions.push(gte(salesOrders.orderDate, new Date(startDate)));
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        conditions.push(lte(salesOrders.orderDate, end));
+      }
+
+      // 키워드 필터
+      if (keyword) {
+        if (keywordType === 'orderNumber') {
+          conditions.push(ilike(salesOrders.channelOrderId, `%${keyword}%`));
+        } else if (keywordType === 'customerName') {
+          conditions.push(ilike(salesOrders.customerName, `%${keyword}%`));
+        } else {
+          // 기본: 상품명 검색
+          conditions.push(ilike(salesOrderLines.productName, `%${keyword}%`));
+        }
+      }
+
+      const where = conditions.length > 0 ? and(...conditions) : undefined;
 
       // 1. 전체 건수
       const [{ total }] = await trx

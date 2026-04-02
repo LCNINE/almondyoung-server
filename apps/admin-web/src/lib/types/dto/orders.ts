@@ -189,6 +189,12 @@ export interface OrderLinesResponseDto {
 
 export interface OrderLinesQuery {
   matchingStatus?: MatchingStatus | 'unregistered';
+  excludeMatched?: boolean;
+  salesChannel?: string;
+  startDate?: string;
+  endDate?: string;
+  keyword?: string;
+  keywordType?: 'productName' | 'orderNumber' | 'customerName';
   limit?: number;
   offset?: number;
 }

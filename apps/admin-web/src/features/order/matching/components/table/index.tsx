@@ -7,6 +7,7 @@ import type { OrderLineDto } from '@/lib/types/dto/orders';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ProductRegistrationDialog } from './ProductRegistrationDialog';
+import { InventoryMatchingDialog } from './InventoryMatchingDialog';
 import { useVariantsBatch } from '@/lib/services/products';
 import type { BatchVariantInfo } from '@/lib/api/domains/products/variants.client';
 import { SalesChannelMark } from '@/components/common/sales-channel-mark';
@@ -23,16 +24,14 @@ type SalesChannelType = 'almondyoung' | 'coupang' | 'naver_smartstore' | 'phone_
 function toChannelType(salesChannel: string): SalesChannelType {
   switch (salesChannel) {
     case 'medusa':
-    case 'online':
       return 'almondyoung';
     case 'coupang':
-    case 'marketplace':
       return 'coupang';
+    case 'naver':
     case 'naver_smartstore':
-    case 'smartstore':
       return 'naver_smartstore';
+    case '3pl':
     case 'phone_order':
-    case 'direct':
       return 'phone_order';
     default:
       return 'other';
@@ -59,12 +58,11 @@ function OrderLineRow({
   onInventoryMatching: (line: OrderLineDto) => void;
   onProductRegistration: (line: OrderLineDto) => void;
 }) {
-  // 상품명: PIM masterName 우선, 없으면 채널 상품명
   const displayName = variantInfo?.masterName || line.productName || '상품명 없음';
   const optionLabel = variantInfo?.optionLabel || variantInfo?.variantName || '';
 
   const renderMatchingCell = () => {
-    // PIM 미등록 (matchingId 없음)
+    // PIM 미등록
     if (!line.matchingId) {
       return (
         <div className="space-y-2">
@@ -81,7 +79,7 @@ function OrderLineRow({
     }
 
     // 매칭 대기
-    if (line.matchingStatus === 'pending') {
+    if (!line.matchingStatus || line.matchingStatus === 'pending') {
       return (
         <div className="space-y-2">
           <div className="text-sm text-red-500 font-medium">매칭 재고상품 없음</div>
@@ -97,23 +95,27 @@ function OrderLineRow({
     }
 
     // 매칭 완료
-    if (line.matchingStatus === 'matched' && line.matchedSkus.length > 0) {
+    if (line.matchingStatus === 'matched') {
       return (
         <div className="space-y-2">
-          {line.matchedSkus.map((sku) => (
-            <div key={sku.skuId} className="text-sm">
-              <div className="text-green-600 font-medium">
-                {sku.skuName}
-                {sku.quantity > 1 && <span className="ml-1">×{sku.quantity}</span>}
+          {line.matchedSkus.length > 0 ? (
+            line.matchedSkus.map((sku) => (
+              <div key={sku.skuId} className="text-sm">
+                <div className="text-green-600 font-medium">
+                  {sku.skuName}
+                  {sku.quantity > 1 && <span className="ml-1">×{sku.quantity}</span>}
+                </div>
+                {sku.skuCode && (
+                  <div className="text-gray-500 text-xs">바코드: {sku.skuCode}</div>
+                )}
+                <div className="text-gray-500 text-xs">
+                  주문수량 × {sku.quantity} = {line.quantity * sku.quantity}
+                </div>
               </div>
-              {sku.skuCode && (
-                <div className="text-gray-500 text-xs">바코드: {sku.skuCode}</div>
-              )}
-              <div className="text-gray-500 text-xs">
-                주문수량 × {sku.quantity} = {line.quantity * sku.quantity}
-              </div>
-            </div>
-          ))}
+            ))
+          ) : (
+            <div className="text-sm text-gray-400">매칭된 재고 없음</div>
+          )}
           <div className="flex gap-1 mt-1">
             <Button size="sm" variant="outline" onClick={() => onInventoryMatching(line)}>
               재매칭
@@ -129,7 +131,12 @@ function OrderLineRow({
     // 무시됨
     if (line.matchingStatus === 'ignored') {
       return (
-        <div className="text-sm text-gray-500">재고 불필요 상품</div>
+        <div className="space-y-2">
+          <div className="text-sm text-gray-500">재고 불필요 상품</div>
+          <Button size="sm" variant="outline" onClick={() => onInventoryMatching(line)}>
+            재매칭
+          </Button>
+        </div>
       );
     }
 
@@ -161,7 +168,7 @@ function OrderLineRow({
             {line.totalPrice !== undefined && (
               <> &nbsp;판매금액: {line.totalPrice.toLocaleString()}원</>
             )}
-            {line.customerName && <> &nbsp;수령자: {line.customerName}</>}
+            {line.customerName && <> &nbsp;수령자/주문자: {line.customerName}</>}
           </div>
         </div>
       </td>
@@ -174,9 +181,9 @@ function OrderLineRow({
 export function MatchingTable({ data, isLoading, error }: MatchingTableProps) {
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [showProductDialog, setShowProductDialog] = useState(false);
+  const [showInventoryDialog, setShowInventoryDialog] = useState(false);
   const [currentLine, setCurrentLine] = useState<OrderLineDto | null>(null);
 
-  // variantId 일괄 조회 (N+1 방지)
   const variantIds = useMemo(
     () => [...new Set(data.map((l) => l.variantId).filter(Boolean))],
     [data],
@@ -190,16 +197,23 @@ export function MatchingTable({ data, isLoading, error }: MatchingTableProps) {
   };
 
   const handleInventoryMatching = (line: OrderLineDto) => {
-    window.open(
-      `/dialog/inventory-matching?matchingId=${line.matchingId}&variantId=${line.variantId}`,
-      '_blank',
-      'width=1200,height=800,scrollbars=yes,resizable=yes',
-    );
+    setCurrentLine(line);
+    setShowInventoryDialog(true);
   };
 
   const handleProductRegistration = (line: OrderLineDto) => {
     setCurrentLine(line);
     setShowProductDialog(true);
+  };
+
+  const handleCloseInventoryDialog = () => {
+    setShowInventoryDialog(false);
+    setCurrentLine(null);
+  };
+
+  const handleCloseProductDialog = () => {
+    setShowProductDialog(false);
+    setCurrentLine(null);
   };
 
   if (error) {
@@ -249,7 +263,7 @@ export function MatchingTable({ data, isLoading, error }: MatchingTableProps) {
             ) : data.length === 0 ? (
               <tr>
                 <td colSpan={5} className="px-4 py-12 text-center text-gray-400 text-sm">
-                  데이터가 없습니다.
+                  데이터가 없습니다. 검색 조건을 변경하거나 검색 버튼을 눌러주세요.
                 </td>
               </tr>
             ) : (
@@ -271,16 +285,19 @@ export function MatchingTable({ data, isLoading, error }: MatchingTableProps) {
         </table>
       </div>
 
-      {showProductDialog && currentLine && (
-        <ProductRegistrationDialog
-          isOpen={showProductDialog}
-          matching={currentLine as any}
-          onClose={() => {
-            setShowProductDialog(false);
-            setCurrentLine(null);
-          }}
-        />
-      )}
+      {/* 재고 생성/매칭 다이얼로그 */}
+      <InventoryMatchingDialog
+        isOpen={showInventoryDialog}
+        line={currentLine}
+        onClose={handleCloseInventoryDialog}
+      />
+
+      {/* 상품 등록 다이얼로그 */}
+      <ProductRegistrationDialog
+        isOpen={showProductDialog}
+        line={currentLine}
+        onClose={handleCloseProductDialog}
+      />
     </div>
   );
 }
