@@ -23,6 +23,10 @@ interface ProductSortingService {
     filters: ProductSortIndexFilter,
     options?: { order?: Record<string, 'ASC' | 'DESC'>; take?: number; skip?: number },
   ): Promise<ProductSortIndexRecord[]>;
+  listAndCountProductSortIndices(
+    filters: ProductSortIndexFilter,
+    options?: { order?: Record<string, 'ASC' | 'DESC'>; take?: number; skip?: number },
+  ): Promise<[ProductSortIndexRecord[], number]>;
 }
 
 // category_id 파라미터를 배열로 파싱
@@ -85,11 +89,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       sortIndexFilter.product_id = { $in: categoryProductIds };
     }
 
-    const sortIndexes = await sortingService.listProductSortIndices(sortIndexFilter, {
-      order: { [sortBy]: order === 'desc' ? 'DESC' : 'ASC' },
-      take: limit,
-      skip: offset,
-    });
+    const [sortIndexes, totalCount] = await sortingService.listAndCountProductSortIndices(
+      sortIndexFilter,
+      {
+        order: { [sortBy]: order === 'desc' ? 'DESC' : 'ASC' },
+        take: limit,
+        skip: offset,
+      },
+    );
 
     const productIds = sortIndexes.map((s) => s.product_id);
 
@@ -124,7 +131,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const productMap = new Map(products.map((p: { id: string }) => [p.id, p]));
     const sorted = productIds.map((id) => productMap.get(id)).filter(Boolean);
 
-    res.json({ products: sorted, count: sorted.length });
+    res.json({ products: sorted, count: totalCount });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[ProductSorting] API Error:', error);
