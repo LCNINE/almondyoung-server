@@ -35,6 +35,10 @@ interface GeneratedMethods {
     filters: ProductSortIndexFilter,
     options?: ListOptions,
   ): Promise<ProductSortIndexRecord[]>;
+  listAndCountProductSortIndices(
+    filters: ProductSortIndexFilter,
+    options?: ListOptions,
+  ): Promise<[ProductSortIndexRecord[], number]>;
   createProductSortIndices(data: Partial<ProductSortIndexRecord>): Promise<ProductSortIndexRecord>;
   updateProductSortIndices(data: Partial<ProductSortIndexRecord> & { id: string }): Promise<ProductSortIndexRecord>;
 }
