@@ -121,32 +121,40 @@ export default async function initProductSortKeys({ container }: ExecArgs) {
       );
     }
 
-    // 2. 기존 ProductSortKey에 대해 누락된 링크 생성
+    // 2. 기존 ProductSortKey에 대해 누락된 링크 일괄 생성
     logger.info('[init-product-sort-keys] 기존 ProductSortKey 링크 확인 중...');
     let linkedCount = 0;
 
-    for (const [productId, sortKey] of existingKeyMap) {
+    const existingProductIdList = Array.from(existingKeyMap.keys());
+
+    // 배치로 링크 확인
+    const { data: linkedProducts } = await query.graph({
+      entity: 'product',
+      fields: ['id', 'product_sort_key.id'],
+      filters: { id: existingProductIdList },
+    });
+
+    const alreadyLinkedIds = new Set(
+      (linkedProducts as Array<{ id: string; product_sort_key?: { id: string } }>)
+        .filter((p) => p.product_sort_key?.id)
+        .map((p) => p.id),
+    );
+
+    // 링크 없는 것들만 일괄 생성
+    const linksToCreate = existingProductIdList
+      .filter((productId) => !alreadyLinkedIds.has(productId))
+      .map((productId) => ({
+        [Modules.PRODUCT]: { product_id: productId },
+        [PRODUCT_SORT_MODULE]: { product_sort_key_id: existingKeyMap.get(productId)!.id },
+      }));
+
+    if (linksToCreate.length > 0) {
       try {
-        // 링크가 이미 있는지 확인
-        const { data: linkedProducts } = await query.graph({
-          entity: 'product',
-          fields: ['id', 'product_sort_key.id'],
-          filters: { id: productId },
-        });
-
-        const linkedProduct = linkedProducts?.[0] as { id: string; product_sort_key?: { id: string } } | undefined;
-
-        if (!linkedProduct?.product_sort_key) {
-          // 링크 생성
-          await link.create({
-            [Modules.PRODUCT]: { product_id: productId },
-            [PRODUCT_SORT_MODULE]: { product_sort_key_id: sortKey.id },
-          });
-          linkedCount++;
-        }
+        await link.create(linksToCreate);
+        linkedCount = linksToCreate.length;
       } catch (error) {
-        logger.error(`[init-product-sort-keys] 링크 생성 실패 (${productId}):`, error);
-        errors++;
+        logger.error('[init-product-sort-keys] 링크 일괄 생성 실패:', error);
+        errors += linksToCreate.length;
       }
     }
 

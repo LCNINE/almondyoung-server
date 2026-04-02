@@ -135,7 +135,7 @@ async function fetchFilteredProducts(
 
   type ProductWithSortKey = {
     id: string;
-    created_at?: string;
+    created_at?: string | Date;
     product_sort_key?: { price_sort_key?: number | null; sales_sort_key?: number | null };
   };
 
@@ -145,7 +145,7 @@ async function fetchFilteredProducts(
   return { ids: sorted.map((p) => p.id), total: sorted.length };
 }
 
-function sortInMemory<T extends { id: string; created_at?: string; product_sort_key?: { price_sort_key?: number | null; sales_sort_key?: number | null } }>(
+function sortInMemory<T extends { id: string; created_at?: string | Date; product_sort_key?: { price_sort_key?: number | null; sales_sort_key?: number | null } }>(
   products: T[],
   sort: SortOption,
 ): T[] {
@@ -168,9 +168,9 @@ function sortInMemory<T extends { id: string; created_at?: string; product_sort_
       }
       default: {
         // created_at DESC
-        const aDate = a.created_at ?? '';
-        const bDate = b.created_at ?? '';
-        return bDate.localeCompare(aDate);
+        const aDate = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const bDate = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return bDate - aDate;
       }
     }
   });
