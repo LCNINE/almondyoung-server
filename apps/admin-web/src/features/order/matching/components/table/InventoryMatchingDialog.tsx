@@ -10,10 +10,11 @@ import {
   FormSelect,
   FormLayout
 } from '@/components/common';
-import { MatchingDto } from '@/lib/types/dto/orders';
+import { OrderLineDto } from '@/lib/types/dto/orders';
 import { useResolveMatching } from '@/lib/services/orders';
 import { useCreateChannelProduct } from '@/lib/services/products';
 import { useSkuSearch } from '@/lib/services/inventory';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useVariant, useMaster } from '@/lib/services/products';
 import {
   useWarehouses,
@@ -55,14 +56,14 @@ function useDebounced<T>(value: T, delay = 350) {
   return v;
 }
 
-interface ProductRegistrationDialogProps {
+interface InventoryMatchingDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  matching: MatchingDto | null;
+  line: OrderLineDto | null;
 }
 
-/** 외부채널 매칭용 상품 등록 다이얼로그 */
-export function ProductRegistrationDialog({ isOpen, onClose, matching }: ProductRegistrationDialogProps) {
+/** 재고 생성/매칭 다이얼로그 (자동/수동/안함) */
+export function InventoryMatchingDialog({ isOpen, onClose, line }: InventoryMatchingDialogProps) {
   const resolveMatching = useResolveMatching();
   const createChannelProduct = useCreateChannelProduct();
   const createInventoryMatching = useCreateInventoryMatching();
@@ -135,17 +136,15 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
   const createHolder = useCreateHolder();
 
   // 판매 상품 정보 조회
-  const { data: variant } = useVariant(matching?.variantId || '');
+  const { data: variant } = useVariant(line?.variantId || '');
   const { data: master } = useMaster(variant?.masterId || '');
 
   /** 폼 초기화 */
   useEffect(() => {
-    if (!matching) return;
-
-    const order = matching.order ?? ({} as any);
+    if (!line) return;
 
     // 기본값 설정
-    setCitizenProductName(order?.productName || '');
+    setCitizenProductName(line?.productName || '');
     setProductType('일반상품');
     setSupplierId('');
     setStockOwnerId('');
@@ -171,7 +170,7 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
     setSkuSearch('');
     setSearchType('name');
     setShowNotice(true);
-  }, [matching, variant]);
+  }, [line, variant]);
 
   const isSaving = createChannelProduct.isPending || resolveMatching.isPending || createInventoryMatching.isPending;
 
@@ -318,7 +317,7 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
 
   /** 저장 */
   const onSave = async () => {
-    if (!matching) return;
+    if (!line) return;
 
     try {
       if (activeTab === 'auto') {
@@ -356,7 +355,7 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
 
         // 자동 매칭 전략 사용
         await resolveMatching.mutateAsync({
-          id: matching.id,
+          id: line.matchingId!,
           data: {
             ignore: false,
             strategy: 'variant',
@@ -378,10 +377,10 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
 
         if (skuMappings.length > 0) {
           await resolveMatching.mutateAsync({
-            id: matching.id,
+            id: line.matchingId!,
             data: {
               ignore: false,
-              strategy: 'option',
+              strategy: 'variant',
               stockPolicy: {
                 inventoryManagement: true,
                 preStockSellable: true,
@@ -399,7 +398,7 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
       } else if (activeTab === 'none') {
         // 재고 사용 안함
         await resolveMatching.mutateAsync({
-          id: matching.id,
+          id: line.matchingId!,
           data: {
             ignore: false,
             strategy: 'void',
@@ -420,16 +419,17 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
     }
   };
 
-  if (!matching) return null;
+  if (!line) return null;
 
   // 검색 결과 필터링 (서버에서 이미 필터링되므로 클라이언트에서는 추가 필터링 불필요)
   const filteredSkuResults = skuResults || [];
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border">
-      <div className="px-6 py-4 border-b">
-        <h1 className="text-xl font-semibold">재고 생성</h1>
-      </div>
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto p-0">
+      <DialogHeader className="px-6 py-4 border-b">
+        <DialogTitle>재고 생성</DialogTitle>
+      </DialogHeader>
 
       {/* 탭 네비게이션 */}
       <div className="flex border-b -mx-6 px-6">
@@ -996,8 +996,7 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
         isLoading={searchingHolders}
         onSearch={handleHolderSearch}
       />
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
-
-export { ProductRegistrationDialog as InventoryMatchingDialog };

@@ -1,82 +1,75 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useMatchingFilter } from '../contexts/filter.context';
 import { useOrderLines } from '@/lib/services/orders';
-import { useActiveChannels } from '@/lib/services/products';
 import { FilterBox } from '../components/filter-box';
 import { MatchingTable } from '../components/table';
 
+const CATEGORY_TO_CHANNEL: Record<string, string> = {
+  medusa: 'medusa',
+  naver: 'naver',
+  naver_smartstore: 'naver',
+  coupang: 'coupang',
+  '3pl': '3pl',
+  phone_order: '3pl',
+};
+
+// keywordType 매핑 (filter context → server param)
+const KEYWORD_TYPE_MAP: Record<string, 'productName' | 'orderNumber' | 'customerName'> = {
+  sellerProductName: 'productName',
+  orderNumber: 'orderNumber',
+  customerName: 'customerName',
+};
+
 export default function MatchingTemplate() {
-  const { filters } = useMatchingFilter();
-  const { data: channels } = useActiveChannels();
+  const { appliedFilters } = useMatchingFilter();
   const [offset, setOffset] = useState(0);
   const limit = 50;
 
-  // 서버에는 상태 필터 없이 전체 조회 (unregistered 포함)
-  // excludeMatched는 클라이언트 필터에서 처리
-  const { data: response, isLoading, error } = useOrderLines({
-    limit,
-    offset,
-  });
+  // appliedFilters가 바뀌면 페이지 초기화
+  useEffect(() => {
+    setOffset(0);
+  }, [appliedFilters]);
 
-  const allLines = response?.data ?? [];
+  const serverQuery = useMemo(() => {
+    const salesChannel =
+      appliedFilters.sellerCategory && appliedFilters.sellerCategory !== 'all'
+        ? CATEGORY_TO_CHANNEL[appliedFilters.sellerCategory] ?? appliedFilters.sellerCategory
+        : undefined;
 
-  // 클라이언트 사이드 필터 (채널, 날짜, 키워드)
-  const filtered = useMemo(() => {
-    const kw = (filters.keyword || '').trim().toLowerCase();
+    let startDate: string | undefined;
+    let endDate: string | undefined;
 
-    let wantedChannel: string | undefined;
-    if (filters.sellerCategory && filters.sellerCategory !== 'all') {
-      wantedChannel = filters.sellerCategory;
+    if (appliedFilters.dateType === 'today') {
+      const today = new Date().toISOString().slice(0, 10);
+      startDate = today;
+      endDate = today;
+    } else if (appliedFilters.dateType === 'custom') {
+      startDate = appliedFilters.startDate;
+      endDate = appliedFilters.endDate;
     }
-    if (filters.seller && filters.seller !== 'all') {
-      const ch = (channels as any[])?.find((c: any) => c.id === filters.seller);
-      if (ch?.type) wantedChannel = ch.type;
-    }
 
-    const start = filters.startDate ? new Date(filters.startDate) : undefined;
-    const end = filters.endDate ? new Date(filters.endDate) : undefined;
-    const today = new Date();
+    return {
+      excludeMatched: appliedFilters.excludeMatched || undefined,
+      salesChannel,
+      startDate,
+      endDate,
+      keyword: appliedFilters.keyword || undefined,
+      keywordType: appliedFilters.keyword
+        ? KEYWORD_TYPE_MAP[appliedFilters.keywordType]
+        : undefined,
+      limit,
+      offset,
+    };
+  }, [appliedFilters, offset]);
 
-    return allLines.filter((line) => {
-      // 매칭된 것 제외 (matched 제외)
-      if (filters.excludeMatched && line.matchingStatus === 'matched') return false;
+  const { data: response, isLoading, error } = useOrderLines(serverQuery);
 
-      // 판매처 필터
-      if (wantedChannel && line.salesChannel !== wantedChannel) return false;
+  const lines = response?.data ?? [];
 
-      // 날짜 필터
-      if (filters.dateType === 'today') {
-        const od = new Date(line.orderDate);
-        if (
-          od.getFullYear() !== today.getFullYear() ||
-          od.getMonth() !== today.getMonth() ||
-          od.getDate() !== today.getDate()
-        ) return false;
-      } else if (filters.dateType === 'custom' && (start || end)) {
-        const od = new Date(line.orderDate);
-        if (start && od < new Date(start.getFullYear(), start.getMonth(), start.getDate())) return false;
-        if (end && od > new Date(end.getFullYear(), end.getMonth(), end.getDate(), 23, 59, 59)) return false;
-      }
-
-      // 키워드 필터
-      if (kw) {
-        if (filters.keywordType === 'sellerProductName') {
-          if (!line.productName?.toLowerCase().includes(kw)) return false;
-        } else if (filters.keywordType === 'orderNumber') {
-          if (!line.channelOrderId?.toLowerCase().includes(kw)) return false;
-        } else if (filters.keywordType === 'customerName') {
-          if (!line.customerName?.toLowerCase().includes(kw)) return false;
-        }
-      }
-
-      return true;
-    });
-  }, [allLines, filters, channels]);
-
-  const pendingCount = filtered.filter(
+  const pendingCount = lines.filter(
     (l) => !l.matchingStatus || l.matchingStatus === 'pending',
   ).length;
 
@@ -92,11 +85,13 @@ export default function MatchingTemplate() {
       <FilterBox />
 
       <div className="bg-gray-50 p-4 rounded-lg">
-        <h2 className="text-lg font-semibold">매칭대기 {pendingCount}건</h2>
+        <h2 className="text-lg font-semibold">
+          매칭대기 {response ? pendingCount : '-'}건
+        </h2>
       </div>
 
       <MatchingTable
-        data={filtered}
+        data={lines}
         isLoading={isLoading}
         error={error as Error | null}
       />

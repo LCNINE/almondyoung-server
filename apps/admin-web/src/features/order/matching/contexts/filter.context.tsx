@@ -6,11 +6,11 @@ import React, { createContext, useContext, useState, ReactNode } from 'react';
 
 export interface MatchingFilter {
   // 판매처 필터
-  sellerCategory?: string;
+  sellerCategory?: string; // WMS salesChannelEnum: medusa | naver | coupang | 3pl
   seller?: string;
 
   // 주문일자 필터
-  dateType: 'order' | 'today' | 'custom';
+  dateType: 'today' | 'custom';
   startDate?: string;
   endDate?: string;
 
@@ -25,15 +25,17 @@ export interface MatchingFilter {
 }
 
 interface MatchingFilterContextType {
-  filters: MatchingFilter;
+  filters: MatchingFilter;          // draft (UI state)
+  appliedFilters: MatchingFilter;   // applied (actual query state)
   setFilters: (filters: Partial<MatchingFilter>) => void;
+  applySearch: () => void;
   resetFilters: () => void;
 }
 
 const defaultFilters: MatchingFilter = {
   dateType: 'custom',
   keywordType: 'sellerProductName',
-  excludeMatched: true, // 기본값: 매칭된 것 제외
+  excludeMatched: true,
   showCanceledOrders: false,
   excludeShipped: false,
 };
@@ -42,17 +44,23 @@ const MatchingFilterContext = createContext<MatchingFilterContextType | undefine
 
 export function FilterProvider({ children }: { children: ReactNode }) {
   const [filters, setFiltersState] = useState<MatchingFilter>(defaultFilters);
+  const [appliedFilters, setAppliedFilters] = useState<MatchingFilter>(defaultFilters);
 
   const setFilters = (newFilters: Partial<MatchingFilter>) => {
     setFiltersState(prev => ({ ...prev, ...newFilters }));
   };
 
+  const applySearch = () => {
+    setAppliedFilters({ ...filters });
+  };
+
   const resetFilters = () => {
     setFiltersState(defaultFilters);
+    setAppliedFilters(defaultFilters);
   };
 
   return (
-    <MatchingFilterContext.Provider value={{ filters, setFilters, resetFilters }}>
+    <MatchingFilterContext.Provider value={{ filters, appliedFilters, setFilters, applySearch, resetFilters }}>
       {children}
     </MatchingFilterContext.Provider>
   );

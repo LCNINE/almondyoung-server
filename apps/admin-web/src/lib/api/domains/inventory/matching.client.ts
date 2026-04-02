@@ -52,6 +52,12 @@ export const getOrderLines = async (
   const params = new URLSearchParams();
 
   if (query.matchingStatus) params.append('matchingStatus', query.matchingStatus);
+  if (query.excludeMatched) params.append('excludeMatched', 'true');
+  if (query.salesChannel) params.append('salesChannel', query.salesChannel);
+  if (query.startDate) params.append('startDate', query.startDate);
+  if (query.endDate) params.append('endDate', query.endDate);
+  if (query.keyword) params.append('keyword', query.keyword);
+  if (query.keywordType) params.append('keywordType', query.keywordType);
   if (query.limit !== undefined) params.append('limit', String(query.limit));
   if (query.offset !== undefined) params.append('offset', String(query.offset));
 
