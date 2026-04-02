@@ -51,7 +51,7 @@ export default function ProductCard({
           />
         </div>
 
-        <div className="mt-4">
+        <div className="mt-4 min-h-20">
           <h3 className="text-foreground line-clamp-1 text-[14px] leading-tight">
             {product.title}
           </h3>
