@@ -12,7 +12,7 @@ import {
 import { deleteLineItems } from "@/lib/api/medusa/cart"
 import { HttpTypes } from "@medusajs/types"
 import { Loader2 } from "lucide-react"
-import { useState, useTransition } from "react"
+import { useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
 
 import Item from "../components/item"
@@ -31,7 +31,9 @@ export default function Items({ cart }: ItemsProps) {
   })
 
   const allSelected =
-    sortedItems && sortedItems.length > 0 && selectedIds.size === sortedItems.length
+    sortedItems &&
+    sortedItems.length > 0 &&
+    selectedIds.size === sortedItems.length
 
   const handleSelectAll = (checked: boolean) => {
     if (checked && sortedItems) {
@@ -66,6 +68,10 @@ export default function Items({ cart }: ItemsProps) {
       }
     })
   }
+
+  useEffect(() => {
+    setSelectedIds(new Set(sortedItems?.map((item) => item.id) ?? []))
+  }, [])
 
   return (
     <>
