@@ -8,8 +8,11 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 
-// TODO: 인기순도 추가 필요
-export type SortOptions = "created_at" | "price_asc" | "price_desc"
+export type SortOptions =
+  | "created_at"
+  | "price_asc"
+  | "price_desc"
+  | "sales_desc"
 
 type SortProductsProps = {
   sortBy: SortOptions
@@ -18,6 +21,7 @@ type SortProductsProps = {
 
 const sortOptions = [
   { value: "created_at", label: "최신순" },
+  { value: "sales_desc", label: "인기순" },
   { value: "price_asc", label: "낮은가격순" },
   { value: "price_desc", label: "높은가격순" },
 ]
