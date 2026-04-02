@@ -26,7 +26,7 @@ import {
   useCreateHolder,
   useCreateInventoryMatching,
 } from '@/lib/services/inventory';
-import { PRODUCT_TYPES, STOCK_OWNER_OPTIONS } from '@/lib/mock/data/inventory';
+import { PRODUCT_TYPES } from '@/lib/mock/data/inventory';
 import { Search, Trash2, ArrowRight, X, Loader2, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { SearchDialog } from './SearchDialog';
@@ -426,13 +426,13 @@ export function InventoryMatchingDialog({ isOpen, onClose, line }: InventoryMatc
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto p-0">
-      <DialogHeader className="px-6 py-4 border-b">
+      <DialogContent className="max-w-5xl max-h-[90vh] p-0 flex flex-col">
+      <DialogHeader className="px-6 py-4 border-b shrink-0">
         <DialogTitle>재고 생성</DialogTitle>
       </DialogHeader>
 
       {/* 탭 네비게이션 */}
-      <div className="flex border-b -mx-6 px-6">
+      <div className="flex border-b px-0 shrink-0">
         <button
           onClick={() => setActiveTab('auto')}
           className={cn(
@@ -469,7 +469,7 @@ export function InventoryMatchingDialog({ isOpen, onClose, line }: InventoryMatc
       </div>
 
       {/* 컨텐츠 영역 */}
-      <div className="flex-1 overflow-y-auto px-6">
+      <div className="flex-1 min-h-0 overflow-y-auto px-6">
         {/* ─────────── 자동 매칭 ─────────── */}
         {activeTab === 'auto' && (
           <div className="space-y-6 py-6">
@@ -536,7 +536,7 @@ export function InventoryMatchingDialog({ isOpen, onClose, line }: InventoryMatc
                 <div className="flex gap-2">
                   <div className="flex-1">
                     <FormSelect
-                      options={STOCK_OWNER_OPTIONS}
+                      options={holders?.map((h: any) => ({ value: h.id, label: h.name })) || []}
                       value={stockOwnerId}
                       onValueChange={setStockOwnerId}
                       placeholder="재고소유 선택"
@@ -958,7 +958,7 @@ export function InventoryMatchingDialog({ isOpen, onClose, line }: InventoryMatc
       </div>
 
       {/* Footer - 저장 버튼 */}
-      <div className="border-t p-4 flex justify-center">
+      <div className="border-t p-4 flex justify-center shrink-0">
         <Button
           onClick={onSave}
           className={cn(
