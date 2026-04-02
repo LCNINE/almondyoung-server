@@ -10,6 +10,7 @@ import { ProductRegistrationDialog } from './ProductRegistrationDialog';
 import { useVariantsBatch } from '@/lib/services/products';
 import type { BatchVariantInfo } from '@/lib/api/domains/products/variants.client';
 import { SalesChannelMark } from '@/components/common/sales-channel-mark';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface MatchingTableProps {
   data: OrderLineDto[];
@@ -201,14 +202,6 @@ export function MatchingTable({ data, isLoading, error }: MatchingTableProps) {
     setShowProductDialog(true);
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500">로딩 중...</div>
-      </div>
-    );
-  }
-
   if (error) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -216,6 +209,8 @@ export function MatchingTable({ data, isLoading, error }: MatchingTableProps) {
       </div>
     );
   }
+
+  const SKELETON_ROWS = 10;
 
   return (
     <div className="bg-white rounded-lg shadow">
@@ -238,7 +233,20 @@ export function MatchingTable({ data, isLoading, error }: MatchingTableProps) {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {data.length === 0 ? (
+            {isLoading ? (
+              Array.from({ length: SKELETON_ROWS }).map((_, i) => (
+                <tr key={`skeleton-${i}`}>
+                  <td className="px-4 py-4"><Skeleton className="h-4 w-4" /></td>
+                  <td className="px-4 py-4"><Skeleton className="h-4 w-6" /></td>
+                  <td className="px-4 py-4"><Skeleton className="h-6 w-24" /></td>
+                  <td className="px-4 py-4">
+                    <Skeleton className="h-4 w-48 mb-2" />
+                    <Skeleton className="h-3 w-32" />
+                  </td>
+                  <td className="px-4 py-4"><Skeleton className="h-8 w-24" /></td>
+                </tr>
+              ))
+            ) : data.length === 0 ? (
               <tr>
                 <td colSpan={5} className="px-4 py-12 text-center text-gray-400 text-sm">
                   데이터가 없습니다.
