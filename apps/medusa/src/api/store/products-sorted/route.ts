@@ -1,5 +1,5 @@
 import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
-import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
+import { ContainerRegistrationKeys, isPresent, QueryContext } from '@medusajs/framework/utils';
 import { PRODUCT_SORTING_MODULE } from '../../../modules/product-sorting';
 
 type SortBy = 'min_price' | 'max_price' | 'sales_count' | 'view_count';
@@ -88,10 +88,28 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       return res.json({ products: [], count: 0 });
     }
 
+    // pricing context 구성 (Medusa 방식)
+    const context: Record<string, unknown> = {};
+    const pricingContext = (req as any).pricingContext ?? { currency_code: currencyCode };
+    if (isPresent(pricingContext)) {
+      context['variants'] = {
+        calculated_price: QueryContext(pricingContext),
+      };
+    }
+
     const { data: products } = await query.graph({
       entity: 'product',
-      fields: ['id', 'title', 'handle', 'thumbnail', 'variants.*', 'images.*'],
+      fields: [
+        'id',
+        'title',
+        'handle',
+        'thumbnail',
+        'variants.*',
+        'variants.calculated_price.*',
+        'images.*',
+      ],
       filters: { id: productIds },
+      context,
     });
 
     const productMap = new Map(products.map((p: { id: string }) => [p.id, p]));
