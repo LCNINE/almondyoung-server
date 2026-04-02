@@ -1,6 +1,5 @@
 import { retrieveCustomer } from "@/lib/api/medusa/customer"
-import { listProductsSorted } from "@/lib/api/medusa/products"
-import type { ProductSortOption } from "@/lib/types/common/filter"
+import { listProducts } from "@/lib/api/medusa/products"
 import { getRegion } from "@/lib/api/medusa/regions"
 import { isMembershipGroup } from "@/lib/utils/membership-group"
 import { Pagination } from "../components/pagination"
@@ -31,14 +30,15 @@ export default async function PaginatedProducts({
     return null
   }
 
-  const { response } = await listProductsSorted({
+  const { response } = await listProducts({
     pageParam: page,
-    sort: (sortBy as ProductSortOption) || "created_at",
     countryCode,
-    categoryIds,
-    collectionIds: collectionId ? [collectionId] : undefined,
-    productIds: productsIds,
-    limit: PRODUCT_LIMIT,
+    queryParams: {
+      limit: PRODUCT_LIMIT,
+      category_id: categoryIds,
+      collection_id: collectionId ? [collectionId] : undefined,
+      id: productsIds,
+    },
   })
 
   const { products, count } = response
