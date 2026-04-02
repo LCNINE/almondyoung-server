@@ -2,7 +2,7 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys, isPresent, QueryContext } from '@medusajs/framework/utils';
 import { PRODUCT_SORTING_MODULE } from '../../../modules/product-sorting';
 
-type SortBy = 'min_price' | 'max_price' | 'sales_count' | 'view_count';
+type SortBy = 'min_price' | 'max_price' | 'sales_count';
 type SortOrder = 'asc' | 'desc';
 
 type ProductSortIndexRecord = {
@@ -11,7 +11,6 @@ type ProductSortIndexRecord = {
   min_price: number;
   max_price: number;
   sales_count: number;
-  view_count: number;
   currency_code: string;
 };
 
@@ -39,7 +38,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const categoryHandle = (req.query.category_handle as string) || '';
     const collectionHandle = (req.query.collection_handle as string) || '';
 
-    const validSortFields: SortBy[] = ['min_price', 'max_price', 'sales_count', 'view_count'];
+    const validSortFields: SortBy[] = ['min_price', 'max_price', 'sales_count'];
     if (!validSortFields.includes(sortBy)) {
       return res.status(400).json({
         message: `Invalid sort_by field. Must be one of: ${validSortFields.join(', ')}`,
