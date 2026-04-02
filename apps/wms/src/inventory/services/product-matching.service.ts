@@ -2,7 +2,7 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
 import { TypedDatabase, DbService } from '@app/db';
-import { and, eq, asc, desc, count, inArray } from 'drizzle-orm';
+import { and, eq, desc, count, inArray, isNull } from 'drizzle-orm';
 import { InventoryService } from './inventory.service';
 import { StockEventService } from './stock-event.service';
 import { ResolveMatchingDto } from '../dto/product-matching/resolve-matching.dto';
@@ -243,78 +243,81 @@ export class ProductMatchingService {
     }, tx);
   }
 
-  async getMatchingPendings(
-    status?: 'pending' | 'matched' | 'ignored',
+  async getOrderLines(
+    matchingStatus?: 'pending' | 'matched' | 'ignored' | 'unregistered',
     limit = 50,
     offset = 0,
     tx?: DbTx,
   ) {
     return this.inTx(async (trx) => {
-      const where = status ? eq(wmsTables.productMatchings.status, status) : undefined;
+      const { salesOrderLines, salesOrders, productMatchings, productVariantSkuLinks, skus } = wmsTables;
+
+      // WHERE 조건 (LEFT JOIN 기반 매칭 상태 필터)
+      const where =
+        matchingStatus === 'unregistered'
+          ? isNull(productMatchings.id)
+          : matchingStatus
+            ? eq(productMatchings.status, matchingStatus)
+            : undefined;
 
       // 1. 전체 건수
       const [{ total }] = await trx
         .select({ total: count() })
-        .from(wmsTables.productMatchings)
+        .from(salesOrderLines)
+        .innerJoin(salesOrders, eq(salesOrderLines.salesOrderId, salesOrders.id))
+        .leftJoin(productMatchings, eq(salesOrderLines.variantId, productMatchings.variantId))
         .where(where);
 
-      // 2. 페이지네이션 매칭 목록
-      const matchings = await trx
-        .select()
-        .from(wmsTables.productMatchings)
+      // 2. 페이지네이션 주문 라인 조회
+      const rows = await trx
+        .select({
+          lineId: salesOrderLines.id,
+          variantId: salesOrderLines.variantId,
+          productName: salesOrderLines.productName,
+          quantity: salesOrderLines.quantity,
+          unitPrice: salesOrderLines.unitPrice,
+          totalPrice: salesOrderLines.totalPrice,
+          lineStatus: salesOrderLines.status,
+          lineCreatedAt: salesOrderLines.createdAt,
+          salesOrderId: salesOrders.id,
+          channelOrderId: salesOrders.channelOrderId,
+          salesChannel: salesOrders.salesChannel,
+          customerName: salesOrders.customerName,
+          customerPhone: salesOrders.customerPhone,
+          orderDate: salesOrders.orderDate,
+          matchingId: productMatchings.id,
+          matchingStatus: productMatchings.status,
+        })
+        .from(salesOrderLines)
+        .innerJoin(salesOrders, eq(salesOrderLines.salesOrderId, salesOrders.id))
+        .leftJoin(productMatchings, eq(salesOrderLines.variantId, productMatchings.variantId))
         .where(where)
-        .orderBy(asc(wmsTables.productMatchings.createdAt))
+        .orderBy(desc(salesOrderLines.createdAt))
         .limit(limit)
         .offset(offset);
 
-      if (matchings.length === 0) {
+      if (rows.length === 0) {
         return { data: [], total, page: Math.floor(offset / limit) + 1, limit };
       }
 
-      const variantIds = matchings.map((m) => m.variantId);
-      const matchingIds = matchings.map((m) => m.id);
+      // 3. 매칭된 SKU 배치 조회
+      const matchingIds = rows.map((r) => r.matchingId).filter((id): id is string => id !== null);
+      const skuLinks =
+        matchingIds.length > 0
+          ? await trx
+              .select({
+                productMatchingId: productVariantSkuLinks.productMatchingId,
+                skuId: productVariantSkuLinks.skuId,
+                quantity: productVariantSkuLinks.quantity,
+                skuName: skus.name,
+                skuCode: skus.code,
+              })
+              .from(productVariantSkuLinks)
+              .innerJoin(skus, eq(productVariantSkuLinks.skuId, skus.id))
+              .where(inArray(productVariantSkuLinks.productMatchingId, matchingIds))
+          : [];
 
-      // 3. variantId 기준으로 최신 주문 라인 + 주문 정보 배치 조회
-      const orderLines = await trx
-        .select({
-          variantId: wmsTables.salesOrderLines.variantId,
-          productName: wmsTables.salesOrderLines.productName,
-          quantity: wmsTables.salesOrderLines.quantity,
-          salesOrderId: wmsTables.salesOrderLines.salesOrderId,
-          lineCreatedAt: wmsTables.salesOrderLines.createdAt,
-          salesChannel: wmsTables.salesOrders.salesChannel,
-          channelOrderId: wmsTables.salesOrders.channelOrderId,
-          customerName: wmsTables.salesOrders.customerName,
-          customerPhone: wmsTables.salesOrders.customerPhone,
-          orderDate: wmsTables.salesOrders.orderDate,
-        })
-        .from(wmsTables.salesOrderLines)
-        .innerJoin(wmsTables.salesOrders, eq(wmsTables.salesOrderLines.salesOrderId, wmsTables.salesOrders.id))
-        .where(inArray(wmsTables.salesOrderLines.variantId, variantIds))
-        .orderBy(desc(wmsTables.salesOrderLines.createdAt));
-
-      // variant당 가장 최근 주문 라인만 유지
-      const latestOrderByVariant = new Map<string, (typeof orderLines)[0]>();
-      for (const line of orderLines) {
-        if (!latestOrderByVariant.has(line.variantId)) {
-          latestOrderByVariant.set(line.variantId, line);
-        }
-      }
-
-      // 4. SKU 정보 배치 조회 (matched 매칭만)
-      const skuLinks = await trx
-        .select({
-          productMatchingId: wmsTables.productVariantSkuLinks.productMatchingId,
-          skuId: wmsTables.productVariantSkuLinks.skuId,
-          quantity: wmsTables.productVariantSkuLinks.quantity,
-          skuName: wmsTables.skus.name,
-          skuCode: wmsTables.skus.code,
-        })
-        .from(wmsTables.productVariantSkuLinks)
-        .innerJoin(wmsTables.skus, eq(wmsTables.productVariantSkuLinks.skuId, wmsTables.skus.id))
-        .where(inArray(wmsTables.productVariantSkuLinks.productMatchingId, matchingIds));
-
-      const skusByMatchingId = new Map<string, (typeof skuLinks)>();
+      const skusByMatchingId = new Map<string, (typeof skuLinks)[0][]>();
       for (const link of skuLinks) {
         if (!skusByMatchingId.has(link.productMatchingId)) {
           skusByMatchingId.set(link.productMatchingId, []);
@@ -322,33 +325,31 @@ export class ProductMatchingService {
         skusByMatchingId.get(link.productMatchingId)!.push(link);
       }
 
-      // 5. 머지
-      const data = matchings.map((matching) => {
-        const orderLine = latestOrderByVariant.get(matching.variantId);
-        const matchedSkus = (skusByMatchingId.get(matching.id) ?? []).map((s) => ({
-          skuId: s.skuId,
-          skuName: s.skuName,
-          skuCode: s.skuCode,
-          quantity: s.quantity,
-        }));
-
-        return {
-          ...matching,
-          order: orderLine
-            ? {
-                salesOrderId: orderLine.salesOrderId,
-                salesChannel: orderLine.salesChannel,
-                channelOrderId: orderLine.channelOrderId,
-                productName: orderLine.productName,
-                quantity: orderLine.quantity,
-                recipient: orderLine.customerName ?? '',
-                customerPhone: orderLine.customerPhone ?? '',
-                orderDate: orderLine.orderDate?.toISOString() ?? '',
-              }
-            : null,
-          matchedSkus,
-        };
-      });
+      // 4. 최종 응답 조립
+      const data = rows.map((row) => ({
+        id: row.lineId,
+        variantId: row.variantId,
+        productName: row.productName,
+        quantity: row.quantity,
+        unitPrice: row.unitPrice ?? undefined,
+        totalPrice: row.totalPrice ?? undefined,
+        salesOrderId: row.salesOrderId,
+        channelOrderId: row.channelOrderId,
+        salesChannel: row.salesChannel,
+        customerName: row.customerName ?? undefined,
+        customerPhone: row.customerPhone ?? undefined,
+        orderDate: row.orderDate.toISOString(),
+        matchingId: row.matchingId ?? undefined,
+        matchingStatus: row.matchingStatus ?? undefined,
+        matchedSkus: row.matchingId
+          ? (skusByMatchingId.get(row.matchingId) ?? []).map((s) => ({
+              skuId: s.skuId,
+              skuName: s.skuName,
+              skuCode: s.skuCode ?? undefined,
+              quantity: s.quantity,
+            }))
+          : [],
+      }));
 
       return { data, total, page: Math.floor(offset / limit) + 1, limit };
     }, tx);

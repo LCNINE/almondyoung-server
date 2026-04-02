@@ -12,6 +12,7 @@ import type {
   StockPolicyDto,
   VariantSkuLookupDto,
   VariantSkuLookupResponseDto,
+  OrderLinesQuery,
 } from '@/lib/types/dto/orders';
 
 // 주문 관련 쿼리
@@ -326,6 +327,19 @@ export const useIgnoredMatchings = (
 export const useMatchingsWithOrders = (query: MatchingsQuery = {}) => {
   return useMatchings({
     ...query,
+  });
+};
+
+/**
+ * 주문 라인별 매칭 현황 조회
+ * sales_order_lines 기반
+ */
+export const useOrderLines = (query: OrderLinesQuery = {}) => {
+  return useQuery({
+    queryKey: orderQueryKeys.orderLines(query),
+    queryFn: () => orders.matching.getOrderLines(query),
+    staleTime: 30 * 1000,
+    gcTime: 5 * 60 * 1000,
   });
 };
 

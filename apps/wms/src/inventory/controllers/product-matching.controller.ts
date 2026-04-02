@@ -13,19 +13,24 @@ import { matchingStatusEnum } from '../../../database/schemas/wms-schema';
 export class ProductMatchingController {
   constructor(private readonly productMatchingService: ProductMatchingService) {}
 
-  @Get()
-  @ApiOperation({ summary: '매칭 대기 목록 조회' })
-  @ApiQuery({ name: 'status', enum: matchingStatusEnum.enumValues, required: false })
+  @Get('order-lines')
+  @ApiOperation({ summary: '주문 라인별 매칭 현황 조회' })
+  @ApiQuery({
+    name: 'matchingStatus',
+    required: false,
+    enum: [...matchingStatusEnum.enumValues, 'unregistered'],
+    description: 'unregistered = PIM 미등록 상품',
+  })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'offset', required: false, type: Number })
-  @ApiResponse({ status: 200, description: '매칭 대기 목록을 반환합니다.' })
-  async getMatchingPendings(
-    @Query('status') status?: (typeof matchingStatusEnum.enumValues)[number],
+  @ApiResponse({ status: 200, description: '주문 라인별 매칭 현황을 반환합니다.' })
+  async getOrderLines(
+    @Query('matchingStatus') matchingStatus?: 'pending' | 'matched' | 'ignored' | 'unregistered',
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ) {
-    return this.productMatchingService.getMatchingPendings(
-      status,
+    return this.productMatchingService.getOrderLines(
+      matchingStatus,
       limit ? parseInt(limit, 10) : 50,
       offset ? parseInt(offset, 10) : 0,
     );

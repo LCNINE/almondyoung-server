@@ -27,6 +27,8 @@ export const orderQueryKeys = {
   matchingLists: () => [...orderQueryKeys.matchings, 'list'] as const,
   matchingList: (query: Record<string, any>) =>
     [...orderQueryKeys.matchingLists(), query] as const,
+  orderLines: (query: Record<string, any>) =>
+    [...orderQueryKeys.matchings, 'order-lines', query] as const,
   matchingDetails: () => [...orderQueryKeys.matchings, 'detail'] as const,
   matchingDetail: (id: string) =>
     [...orderQueryKeys.matchingDetails(), id] as const,
