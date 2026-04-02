@@ -1,8 +1,8 @@
 import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
-import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
+import { ContainerRegistrationKeys, isPresent, QueryContext } from '@medusajs/framework/utils';
 import { PRODUCT_SORTING_MODULE } from '../../../modules/product-sorting';
 
-type SortBy = 'min_price' | 'max_price' | 'sales_count' | 'view_count';
+type SortBy = 'min_price' | 'max_price' | 'sales_count';
 type SortOrder = 'asc' | 'desc';
 
 type ProductSortIndexRecord = {
@@ -11,15 +11,26 @@ type ProductSortIndexRecord = {
   min_price: number;
   max_price: number;
   sales_count: number;
-  view_count: number;
   currency_code: string;
+};
+
+type ProductSortIndexFilter = Omit<Partial<ProductSortIndexRecord>, 'product_id'> & {
+  product_id?: string | { $in: string[] };
 };
 
 interface ProductSortingService {
   listProductSortIndices(
-    filters: Partial<ProductSortIndexRecord>,
+    filters: ProductSortIndexFilter,
     options?: { order?: Record<string, 'ASC' | 'DESC'>; take?: number; skip?: number },
   ): Promise<ProductSortIndexRecord[]>;
+}
+
+// category_id 파라미터를 배열로 파싱
+function parseCategoryIds(param: unknown): string[] {
+  if (!param) return [];
+  if (Array.isArray(param)) return param.filter((id) => typeof id === 'string' && id);
+  if (typeof param === 'string' && param) return [param];
+  return [];
 }
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
@@ -32,22 +43,53 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const limit = parseInt(req.query.limit as string) || 20;
     const offset = parseInt(req.query.offset as string) || 0;
     const currencyCode = (req.query.currency_code as string) || 'krw';
+    const categoryIds = parseCategoryIds(req.query.category_id);
+    const collectionId = (req.query.collection_id as string) || '';
 
-    const validSortFields: SortBy[] = ['min_price', 'max_price', 'sales_count', 'view_count'];
+    const validSortFields: SortBy[] = ['min_price', 'max_price', 'sales_count'];
     if (!validSortFields.includes(sortBy)) {
       return res.status(400).json({
         message: `Invalid sort_by field. Must be one of: ${validSortFields.join(', ')}`,
       });
     }
 
-    const sortIndexes = await sortingService.listProductSortIndices(
-      { currency_code: currencyCode },
-      {
-        order: { [sortBy]: order === 'desc' ? 'DESC' : 'ASC' },
-        take: limit,
-        skip: offset,
-      },
-    );
+    // 카테고리/컬렉션 필터가 있으면 해당 상품 ID들을 먼저 조회
+    let categoryProductIds: string[] | null = null;
+    if (categoryIds.length > 0 || collectionId) {
+      const categoryFilters: Record<string, unknown> = {};
+
+      if (categoryIds.length > 0) {
+        categoryFilters.categories = { id: categoryIds };
+      }
+
+      if (collectionId) {
+        categoryFilters.collection_id = collectionId;
+      }
+
+      const { data: categoryProducts } = await query.graph({
+        entity: 'product',
+        fields: ['id'],
+        filters: categoryFilters,
+      });
+
+      categoryProductIds = categoryProducts.map((p: { id: string }) => p.id);
+
+      if (categoryProductIds.length === 0) {
+        return res.json({ products: [], count: 0 });
+      }
+    }
+
+    // 정렬 인덱스 필터 구성
+    const sortIndexFilter: ProductSortIndexFilter = { currency_code: currencyCode };
+    if (categoryProductIds) {
+      sortIndexFilter.product_id = { $in: categoryProductIds };
+    }
+
+    const sortIndexes = await sortingService.listProductSortIndices(sortIndexFilter, {
+      order: { [sortBy]: order === 'desc' ? 'DESC' : 'ASC' },
+      take: limit,
+      skip: offset,
+    });
 
     const productIds = sortIndexes.map((s) => s.product_id);
 
@@ -55,10 +97,28 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       return res.json({ products: [], count: 0 });
     }
 
+    // pricing context 구성
+    const context: Record<string, unknown> = {};
+    const pricingContext = (req as any).pricingContext ?? { currency_code: currencyCode };
+    if (isPresent(pricingContext)) {
+      context['variants'] = {
+        calculated_price: QueryContext(pricingContext),
+      };
+    }
+
     const { data: products } = await query.graph({
       entity: 'product',
-      fields: ['id', 'title', 'handle', 'thumbnail', 'variants.*', 'images.*'],
+      fields: [
+        'id',
+        'title',
+        'handle',
+        'thumbnail',
+        'variants.*',
+        'variants.calculated_price.*',
+        'images.*',
+      ],
       filters: { id: productIds },
+      context,
     });
 
     const productMap = new Map(products.map((p: { id: string }) => [p.id, p]));
