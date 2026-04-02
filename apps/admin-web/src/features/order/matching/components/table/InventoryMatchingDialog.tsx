@@ -77,10 +77,14 @@ export function InventoryMatchingDialog({ isOpen, onClose, line }: InventoryMatc
 
   // 필수 필드 검증
   const isFormValid = () => {
+    if (!line?.matchingId) return false; // matchingId 없으면 저장 불가
     if (activeTab === 'auto') {
-      return productType && supplierId && stockOwnerId && warehouseId && citizenProductName;
+      return !!(productType && supplierId && stockOwnerId && warehouseId && citizenProductName);
     }
-    return true; // 수동/무시는 별도 검증
+    if (activeTab === 'manual') {
+      return linkedSkus.length > 0;
+    }
+    return true; // none 탭
   };
 
   // 자동 매칭 상태
@@ -139,12 +143,14 @@ export function InventoryMatchingDialog({ isOpen, onClose, line }: InventoryMatc
   const { data: variant } = useVariant(line?.variantId || '');
   const { data: master } = useMaster(variant?.masterId || '');
 
-  /** 폼 초기화 */
+  /** Effect 1 — line이 바뀔 때 전체 리셋 (line 기반 기본값) */
   useEffect(() => {
     if (!line) return;
 
-    // 기본값 설정
-    setCitizenProductName(line?.productName || '');
+    const baseName = line.productName || '';
+    const basePrice = line.unitPrice ?? 0;
+
+    setCitizenProductName(baseName);
     setProductType('일반상품');
     setSupplierId('');
     setStockOwnerId('');
@@ -159,24 +165,59 @@ export function InventoryMatchingDialog({ isOpen, onClose, line }: InventoryMatc
     setMemo2('');
     setMemo3('');
     setMemo4('');
-
-    // variant에서 원가 가져오기
-    if (variant?.price) {
-      setCostPrice(String(variant.price));
-    }
-
+    setCostPrice(basePrice ? String(basePrice) : '');
+    setOptionRows([
+      { id: crypto.randomUUID(), name: baseName, image: null, price: basePrice },
+      { id: crypto.randomUUID(), name: '', image: null, price: 0 },
+      { id: crypto.randomUUID(), name: '', image: null, price: 0 },
+      { id: crypto.randomUUID(), name: '', image: null, price: 0 },
+    ]);
     setActiveTab('auto');
     setLinkedSkus([]);
-    setSkuSearch('');
+    setSkuSearch(baseName); // 수동 탭 검색 프리필
     setSearchType('name');
     setShowNotice(true);
-  }, [line, variant]);
+  }, [line?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Effect 2 — PIM 데이터 로드 완료 시 프리필 업데이트 */
+  useEffect(() => {
+    if (!line || (!variant && !master)) return;
+
+    // 마스터명 - variant 이름 조합 (VariantDto.name = 전체 variant 이름)
+    const richName = master?.name || null;
+    const richPrice = variant?.price ?? null;
+
+    if (richName) {
+      setCitizenProductName(richName);
+      setSkuSearch(richName);
+      setOptionRows((prev) => {
+        const next = [...prev];
+        // 첫 번째 행만 업데이트 (아직 사용자가 수정 안 했을 경우)
+        if (next[0]) {
+          next[0] = { ...next[0], name: richName };
+        }
+        return next;
+      });
+    }
+    if (richPrice != null) {
+      setCostPrice(String(richPrice));
+      setOptionRows((prev) => {
+        const next = [...prev];
+        if (next[0]) {
+          next[0] = { ...next[0], price: richPrice };
+        }
+        return next;
+      });
+    }
+  }, [variant?.id, master?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isSaving = createChannelProduct.isPending || resolveMatching.isPending || createInventoryMatching.isPending;
 
-  // 판매 상품명 (마스터명 - 옵션명)
-  const sellingProductName = master?.name || '상품명 없음';
-  const sellingProductOption = variant?.name?.split(' - ').slice(1).join(' - ') || '베이직';
+  // 판매 상품명 (마스터명 / 옵션명)
+  const sellingProductName = master?.name || line?.productName || '상품명 없음';
+  const sellingProductOption = variant?.name && master?.name && variant.name !== master.name
+    ? variant.name.replace(master.name, '').replace(/^[\s\-]+/, '')
+    : variant?.name || '';
 
   /** 수동 매칭 - SKU 추가 */
   const handleAddSku = (skuId: string, skuName: string) => {
@@ -318,12 +359,22 @@ export function InventoryMatchingDialog({ isOpen, onClose, line }: InventoryMatc
   /** 저장 */
   const onSave = async () => {
     if (!line) return;
+    if (!line.matchingId) {
+      alert('매칭 레코드가 없습니다. 관리자에게 문의하세요.');
+      return;
+    }
 
     try {
       if (activeTab === 'auto') {
-        // 자동 매칭 - 재고 매칭 생성
+        // 자동 매칭 - 재고 SKU 생성 후 매칭 연결
         if (!supplierId || !stockOwnerId || !warehouseId) {
           alert('필수 필드를 모두 입력해주세요.');
+          return;
+        }
+
+        const filledOptions = optionRows.filter(row => row.name.trim());
+        if (filledOptions.length === 0) {
+          alert('최소 1개 이상의 옵션을 입력해주세요.');
           return;
         }
 
@@ -338,7 +389,7 @@ export function InventoryMatchingDialog({ isOpen, onClose, line }: InventoryMatc
           importCertificate,
           optionDetail,
           costPrice: Number(costPrice) || 0,
-          options: optionRows.filter(row => row.name.trim()).map(row => ({
+          options: filledOptions.map(row => ({
             name: row.name,
             image: row.image || undefined,
             price: row.price,
@@ -351,11 +402,12 @@ export function InventoryMatchingDialog({ isOpen, onClose, line }: InventoryMatc
           memo4,
         };
 
-        await createInventoryMatching.mutateAsync(inventoryMatchingData);
+        // 1) SKU 생성
+        const result = await createInventoryMatching.mutateAsync(inventoryMatchingData);
 
-        // 자동 매칭 전략 사용
+        // 2) 생성된 SKU로 매칭 해소
         await resolveMatching.mutateAsync({
-          id: line.matchingId!,
+          id: line.matchingId,
           data: {
             ignore: false,
             strategy: 'variant',
@@ -364,6 +416,10 @@ export function InventoryMatchingDialog({ isOpen, onClose, line }: InventoryMatc
               preStockSellable: true,
               alwaysSellableZeroStock: false,
             },
+            skuMappings: result.skuMappings.map(s => ({
+              skuId: s.skuId,
+              quantity: s.quantity,
+            })),
             isGift: false,
           },
         });
@@ -377,7 +433,7 @@ export function InventoryMatchingDialog({ isOpen, onClose, line }: InventoryMatc
 
         if (skuMappings.length > 0) {
           await resolveMatching.mutateAsync({
-            id: line.matchingId!,
+            id: line.matchingId,
             data: {
               ignore: false,
               strategy: 'variant',
@@ -430,6 +486,13 @@ export function InventoryMatchingDialog({ isOpen, onClose, line }: InventoryMatc
       <DialogHeader className="px-6 py-4 border-b shrink-0">
         <DialogTitle>재고 생성</DialogTitle>
       </DialogHeader>
+
+      {/* matchingId 없는 경우 경고 */}
+      {!line.matchingId && (
+        <div className="mx-6 mt-4 shrink-0 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          이 주문의 매칭 레코드가 없습니다. PIM에서 상품 이벤트가 누락되었을 수 있습니다. 관리자에게 문의하세요.
+        </div>
+      )}
 
       {/* 탭 네비게이션 */}
       <div className="flex border-b px-0 shrink-0">
@@ -849,7 +912,7 @@ export function InventoryMatchingDialog({ isOpen, onClose, line }: InventoryMatc
                 />
                 <div className="flex-1 relative">
                   <FormInput
-                    placeholder="노몬드 속눈썹 펌지 100매 (5cm x 0.5cm)"
+                    placeholder="재고 상품명으로 검색"
                     value={skuSearch}
                     onChange={(e) => setSkuSearch(e.target.value)}
                     className="pr-10"
