@@ -4,6 +4,8 @@ import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { PRODUCT_SORT_MODULE } from '../../../modules/product-sort';
 import type { ProductSortModuleService } from '../../../modules/product-sort/service';
 
+type ProductRecord = Record<string, unknown> & { id: string };
+
 type SortOption = 'price_asc' | 'price_desc' | 'sales_desc' | 'created_at';
 
 const DEFAULT_LIMIT = 12;
@@ -53,8 +55,8 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     return res.json({ products: [], count: totalCount, offset, limit });
   }
 
-  // 상품 상세 조회
-  const products = await fetchProductDetails(query, paginatedIds);
+  // 상품 상세 조회 (/store/products 내부 호출)
+  const products = await fetchProductDetails(req, paginatedIds);
 
   return res.json({
     products,
@@ -176,41 +178,75 @@ function sortInMemory<T extends { id: string; created_at?: string | Date; produc
   });
 }
 
+// ============ Internal API Call Helpers ============
+
+function getRequestOrigin(req: MedusaRequest): string {
+  const forwardedProtoHeader = req.headers['x-forwarded-proto'];
+  const forwardedProto =
+    typeof forwardedProtoHeader === 'string' ? forwardedProtoHeader.split(',')[0]?.trim() : undefined;
+  const protocol = forwardedProto || req.protocol || 'http';
+  const host = req.headers.host;
+
+  if (!host) {
+    throw new Error('host header is missing');
+  }
+
+  return `${protocol}://${host}`;
+}
+
+function createForwardHeaders(req: MedusaRequest): Headers {
+  const headers = new Headers();
+
+  for (const [key, value] of Object.entries(req.headers || {})) {
+    if (value == null) continue;
+
+    if (typeof value === 'string') {
+      headers.set(key, value);
+      continue;
+    }
+
+    if (Array.isArray(value)) {
+      const valid = value.filter((item): item is string => typeof item === 'string');
+      if (valid.length > 0) {
+        headers.set(key, valid.join(','));
+      }
+    }
+  }
+
+  headers.delete('host');
+  return headers;
+}
+
 /**
- * 상품 상세 조회 (정렬 순서 유지)
+ * 상품 상세 조회 (정렬 순서 유지) - /store/products 내부 호출
  */
-async function fetchProductDetails(query: RemoteQueryFunction, productIds: string[]): Promise<unknown[]> {
-  const { data } = await query.graph({
-    entity: 'product',
-    fields: [
-      'id',
-      'title',
-      'handle',
-      'subtitle',
-      'description',
-      'thumbnail',
-      'status',
-      'metadata',
-      'created_at',
-      'updated_at',
-      'variants.*',
-      'variants.prices.*',
-      'images.*',
-      'options.*',
-      'options.values.*',
-      'tags.*',
-      'type.*',
-      'collection.*',
-      'categories.*',
-    ],
-    filters: { id: productIds },
+async function fetchProductDetails(req: MedusaRequest, productIds: string[]): Promise<ProductRecord[]> {
+  const origin = getRequestOrigin(req);
+  const url = new URL('/store/products', origin);
+
+  // id[] 파라미터로 전달
+  for (const id of productIds) {
+    url.searchParams.append('id[]', id);
+  }
+  url.searchParams.set('limit', String(productIds.length));
+
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: createForwardHeaders(req),
   });
 
+  if (!response.ok) {
+    throw new Error(`상품 조회 실패: ${response.status}`);
+  }
+
+  const data = (await response.json()) as { products?: ProductRecord[] };
+  const products = data.products ?? [];
+
   // 정렬 순서 유지
-  const productMap = new Map<string, unknown>();
-  for (const p of data as { id: string }[]) {
+  const productMap = new Map<string, ProductRecord>();
+  for (const p of products) {
     productMap.set(p.id, p);
   }
 
-  return productIds.map((id) => productMap.get(id)).filter(Boolean);
+  return productIds.map((id) => productMap.get(id)).filter((p): p is ProductRecord => p != null);
 }
