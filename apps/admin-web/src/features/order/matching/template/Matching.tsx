@@ -7,7 +7,6 @@ import { useOrderLines } from '@/lib/services/orders';
 import { useActiveChannels } from '@/lib/services/products';
 import { FilterBox } from '../components/filter-box';
 import { MatchingTable } from '../components/table';
-import type { MatchingStatus } from '@/lib/types/dto/orders';
 
 export default function MatchingTemplate() {
   const { filters } = useMatchingFilter();
@@ -15,14 +14,9 @@ export default function MatchingTemplate() {
   const [offset, setOffset] = useState(0);
   const limit = 50;
 
-  // 매칭 상태 필터 변환
-  const matchingStatus = useMemo((): MatchingStatus | 'unregistered' | undefined => {
-    if (filters.excludeMatched) return 'pending';
-    return undefined;
-  }, [filters.excludeMatched]);
-
+  // 서버에는 상태 필터 없이 전체 조회 (unregistered 포함)
+  // excludeMatched는 클라이언트 필터에서 처리
   const { data: response, isLoading, error } = useOrderLines({
-    matchingStatus,
     limit,
     offset,
   });
@@ -47,6 +41,9 @@ export default function MatchingTemplate() {
     const today = new Date();
 
     return allLines.filter((line) => {
+      // 매칭된 것 제외 (matched 제외)
+      if (filters.excludeMatched && line.matchingStatus === 'matched') return false;
+
       // 판매처 필터
       if (wantedChannel && line.salesChannel !== wantedChannel) return false;
 
@@ -79,7 +76,9 @@ export default function MatchingTemplate() {
     });
   }, [allLines, filters, channels]);
 
-  const pendingCount = filtered.filter((l) => !l.matchingStatus || l.matchingStatus === 'pending').length;
+  const pendingCount = filtered.filter(
+    (l) => !l.matchingStatus || l.matchingStatus === 'pending',
+  ).length;
 
   return (
     <div className="space-y-6">
