@@ -1,5 +1,4 @@
 // src/features/order/matching/components/table/index.tsx
-/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
 import React, { useMemo, useState } from 'react';
@@ -10,8 +9,10 @@ import { ProductRegistrationDialog } from './ProductRegistrationDialog';
 import { InventoryMatchingDialog } from './InventoryMatchingDialog';
 import { useVariantsBatch } from '@/lib/services/products';
 import type { BatchVariantInfo } from '@/lib/api/domains/products/variants.client';
-import { SalesChannelMark } from '@/components/common/sales-channel-mark';
+import { SalesChannelMark, type SalesChannelType } from '@/components/common/sales-channel-mark';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useResolveMatching } from '@/lib/services/orders';
+import { RefreshCw } from 'lucide-react';
 
 interface MatchingTableProps {
   data: OrderLineDto[];
@@ -19,27 +20,154 @@ interface MatchingTableProps {
   error: Error | null;
 }
 
-type SalesChannelType = 'almondyoung' | 'coupang' | 'naver_smartstore' | 'phone_order' | 'other';
-
+// WMS salesChannelEnum → SalesChannelType
 function toChannelType(salesChannel: string): SalesChannelType {
   switch (salesChannel) {
-    case 'medusa':
-      return 'almondyoung';
-    case 'coupang':
-      return 'coupang';
-    case 'naver':
-    case 'naver_smartstore':
-      return 'naver_smartstore';
-    case '3pl':
-    case 'phone_order':
-      return 'phone_order';
-    default:
-      return 'other';
+    case 'medusa': return 'almondyoung';
+    case 'naver': return 'naver_smartstore';
+    case 'coupang': return 'coupang';
+    case '3pl': return 'phone_order';
+    default: return 'other';
   }
 }
 
-// 행 컴포넌트
-function OrderLineRow({
+// ────────────────────────────────────────────────────────────
+// 매칭 셀 렌더 (오른쪽 칼럼 전체 내용)
+// ────────────────────────────────────────────────────────────
+function MatchingContent({
+  line,
+  onInventoryMatching,
+  onProductRegistration,
+  onIgnore,
+  isIgnoring,
+}: {
+  line: OrderLineDto;
+  onInventoryMatching: (line: OrderLineDto) => void;
+  onProductRegistration: (line: OrderLineDto) => void;
+  onIgnore: (matchingId: string) => void;
+  isIgnoring: boolean;
+}) {
+  // 외부채널 + PIM 미등록 → 상품 생성 필요
+  if (!line.matchingId && line.salesChannel !== 'medusa') {
+    return (
+      <div className="flex items-center gap-3 py-1">
+        <span className="text-red-500 font-bold text-sm">상품 없음</span>
+        <Button
+          size="sm"
+          onClick={() => onProductRegistration(line)}
+          className="bg-gray-800 hover:bg-gray-900 text-white h-7 px-3 text-xs"
+        >
+          상품 생성
+        </Button>
+      </div>
+    );
+  }
+
+  // 매칭 대기 (matchingId 없거나 pending)
+  if (!line.matchingId || !line.matchingStatus || line.matchingStatus === 'pending') {
+    return (
+      <div className="flex items-center gap-3 py-1">
+        <span className="text-red-500 font-bold text-sm">매칭 재고상품 없음</span>
+        <Button
+          size="sm"
+          onClick={() => onInventoryMatching(line)}
+          className="bg-orange-500 hover:bg-orange-600 text-white h-7 px-3 text-xs flex items-center gap-1"
+        >
+          <RefreshCw className="w-3 h-3" />
+          재고매칭
+        </Button>
+      </div>
+    );
+  }
+
+  // 매칭 완료 (matched)
+  if (line.matchingStatus === 'matched') {
+    return (
+      <div className="space-y-0">
+        {/* 각 SKU 행 */}
+        {line.matchedSkus.map((sku) => (
+          <div key={sku.skuId} className="py-1 border-b border-gray-100 last:border-b-0">
+            {/* SKU 이름 + 버튼 */}
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm font-medium text-gray-800">
+                {sku.skuName}
+                {sku.quantity > 1 && (
+                  <span className="text-gray-500 ml-1 text-xs">(수량: ×{sku.quantity})</span>
+                )}
+              </span>
+              <div className="flex items-center gap-1 shrink-0">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onInventoryMatching(line)}
+                  className="h-6 px-2 text-xs flex items-center gap-1"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  재매칭
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onInventoryMatching(line)}
+                  className="h-6 px-2 text-xs"
+                >
+                  매칭수정
+                </Button>
+              </div>
+            </div>
+            {/* 바코드/수량 정보 */}
+            <div className="text-xs text-gray-500 mt-0.5">
+              • 주문수량 × {sku.quantity} = {line.quantity * sku.quantity}
+              {sku.skuCode && <span className="ml-2">[바코드: {sku.skuCode}]</span>}
+            </div>
+          </div>
+        ))}
+        {/* 매칭삭제 + 가격 */}
+        <div className="flex items-center gap-3 pt-1.5">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => line.matchingId && onIgnore(line.matchingId)}
+            disabled={isIgnoring}
+            className="h-6 px-2 text-xs text-gray-600 border-gray-300"
+          >
+            매칭삭제
+          </Button>
+          {line.unitPrice != null && (
+            <span className="text-xs text-gray-500">
+              판매가: {line.unitPrice.toLocaleString()}원
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // 무시됨 (ignored / 재고사용 안함)
+  if (line.matchingStatus === 'ignored') {
+    return (
+      <div className="flex items-center gap-3 py-1">
+        <span className="text-gray-500 text-sm">재고사용 안함 상품</span>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => onInventoryMatching(line)}
+          className="h-7 px-3 text-xs flex items-center gap-1"
+        >
+          <RefreshCw className="w-3 h-3" />
+          재매칭
+        </Button>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+// ────────────────────────────────────────────────────────────
+// 행 컴포넌트 — Fragment로 2개의 <tr> 반환
+// ────────────────────────────────────────────────────────────
+function OrderLineRows({
   line,
   index,
   totalCount,
@@ -48,6 +176,8 @@ function OrderLineRow({
   onRowSelect,
   onInventoryMatching,
   onProductRegistration,
+  onIgnore,
+  isIgnoring,
 }: {
   line: OrderLineDto;
   index: number;
@@ -57,132 +187,103 @@ function OrderLineRow({
   onRowSelect: (id: string, checked: boolean) => void;
   onInventoryMatching: (line: OrderLineDto) => void;
   onProductRegistration: (line: OrderLineDto) => void;
+  onIgnore: (matchingId: string) => void;
+  isIgnoring: boolean;
 }) {
   const displayName = variantInfo?.masterName || line.productName || '상품명 없음';
   const optionLabel = variantInfo?.optionLabel || variantInfo?.variantName || '';
 
-  const renderMatchingCell = () => {
-    // PIM 미등록
-    if (!line.matchingId) {
-      return (
-        <div className="space-y-2">
-          <div className="text-sm text-red-500 font-medium">상품 없음</div>
-          <Button
-            size="sm"
-            className="bg-red-500 hover:bg-red-600 text-white"
-            onClick={() => onProductRegistration(line)}
-          >
-            상품 생성
-          </Button>
-        </div>
-      );
-    }
-
-    // 매칭 대기
-    if (!line.matchingStatus || line.matchingStatus === 'pending') {
-      return (
-        <div className="space-y-2">
-          <div className="text-sm text-red-500 font-medium">매칭 재고상품 없음</div>
-          <Button
-            size="sm"
-            className="bg-yellow-500 hover:bg-yellow-600 text-white"
-            onClick={() => onInventoryMatching(line)}
-          >
-            재고매칭
-          </Button>
-        </div>
-      );
-    }
-
-    // 매칭 완료
-    if (line.matchingStatus === 'matched') {
-      return (
-        <div className="space-y-2">
-          {line.matchedSkus.length > 0 ? (
-            line.matchedSkus.map((sku) => (
-              <div key={sku.skuId} className="text-sm">
-                <div className="text-green-600 font-medium">
-                  {sku.skuName}
-                  {sku.quantity > 1 && <span className="ml-1">×{sku.quantity}</span>}
-                </div>
-                {sku.skuCode && (
-                  <div className="text-gray-500 text-xs">바코드: {sku.skuCode}</div>
-                )}
-                <div className="text-gray-500 text-xs">
-                  주문수량 × {sku.quantity} = {line.quantity * sku.quantity}
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className="text-sm text-gray-400">매칭된 재고 없음</div>
-          )}
-          <div className="flex gap-1 mt-1">
-            <Button size="sm" variant="outline" onClick={() => onInventoryMatching(line)}>
-              재매칭
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => onInventoryMatching(line)}>
-              매칭수정
-            </Button>
-          </div>
-        </div>
-      );
-    }
-
-    // 무시됨
-    if (line.matchingStatus === 'ignored') {
-      return (
-        <div className="space-y-2">
-          <div className="text-sm text-gray-500">재고 불필요 상품</div>
-          <Button size="sm" variant="outline" onClick={() => onInventoryMatching(line)}>
-            재매칭
-          </Button>
-        </div>
-      );
-    }
-
-    return null;
-  };
-
   return (
-    <tr className="hover:bg-gray-50 border-b">
-      <td className="px-4 py-4">
-        <Checkbox
-          checked={isSelected}
-          onCheckedChange={(checked) => onRowSelect(line.id, !!checked)}
-        />
-      </td>
-      <td className="px-4 py-4 text-sm text-gray-900 text-center">{totalCount - index}</td>
-      <td className="px-4 py-4">
-        <SalesChannelMark channel={toChannelType(line.salesChannel)} size="sm" className="max-w-[120px]" />
-      </td>
-      <td className="px-4 py-4">
-        <div className="space-y-1">
-          <div className="font-medium text-sm">{displayName}</div>
-          {optionLabel && <div className="text-sm text-gray-500">- {optionLabel}</div>}
-          <div className="text-xs text-gray-400 mt-1">
-            주문번호:{' '}
-            <span className="text-blue-600 underline cursor-pointer">{line.channelOrderId}</span>
+    <>
+      {/* ── 메인 행 ── */}
+      <tr className="bg-white">
+        {/* 체크박스 + 번호 (rowspan=2) */}
+        <td
+          rowSpan={2}
+          className="px-3 py-3 border-b border-gray-200 align-top w-12"
+        >
+          <div className="flex flex-col items-center gap-1.5">
+            <Checkbox
+              checked={isSelected}
+              onCheckedChange={(checked) => onRowSelect(line.id, !!checked)}
+            />
+            <span className="text-xs text-gray-500 font-medium">
+              {totalCount - index}
+            </span>
           </div>
-          <div className="text-xs text-gray-500">
-            수량: {line.quantity}개
-            {line.totalPrice !== undefined && (
-              <> &nbsp;판매금액: {line.totalPrice.toLocaleString()}원</>
+        </td>
+
+        {/* 채널 마크 (rowspan=2) */}
+        <td
+          rowSpan={2}
+          className="px-3 py-3 border-b border-gray-200 align-top w-[130px]"
+        >
+          <SalesChannelMark
+            channel={toChannelType(line.salesChannel)}
+            size="sm"
+          />
+        </td>
+
+        {/* 상품명 + 옵션 */}
+        <td className="px-4 pt-3 pb-1 align-top">
+          <div className="font-medium text-sm text-gray-900 leading-snug">
+            {displayName}
+          </div>
+          {optionLabel && (
+            <div className="text-xs text-gray-500 mt-0.5">- {optionLabel}</div>
+          )}
+        </td>
+
+        {/* 매칭 셀 (rowspan=2) */}
+        <td
+          rowSpan={2}
+          className="px-4 py-3 border-b border-gray-200 align-top w-[380px] border-l border-l-gray-100"
+        >
+          <MatchingContent
+            line={line}
+            onInventoryMatching={onInventoryMatching}
+            onProductRegistration={onProductRegistration}
+            onIgnore={onIgnore}
+            isIgnoring={isIgnoring}
+          />
+        </td>
+      </tr>
+
+      {/* ── 주문 상세 행 ── */}
+      <tr className="bg-white">
+        <td className="px-4 pb-3 pt-1 border-b border-gray-200 align-top">
+          <div className="text-xs">
+            <span className="text-gray-400">주문번호</span>{' '}
+            <span className="text-blue-600 underline cursor-pointer hover:text-blue-800">
+              {line.channelOrderId}
+            </span>
+          </div>
+          <div className="text-xs text-gray-500 mt-0.5 space-x-2">
+            <span>수량: {line.quantity}개</span>
+            {line.totalPrice != null && (
+              <span>판매금액: {line.totalPrice.toLocaleString()}원</span>
             )}
-            {line.customerName && <> &nbsp;수령자/주문자: {line.customerName}</>}
+            {line.customerName && (
+              <span>수령자/주문자: {line.customerName}</span>
+            )}
           </div>
-        </div>
-      </td>
-      <td className="px-4 py-4">{renderMatchingCell()}</td>
-    </tr>
+        </td>
+      </tr>
+    </>
   );
 }
 
+// ────────────────────────────────────────────────────────────
 // 메인 테이블 컴포넌트
+// ────────────────────────────────────────────────────────────
 export function MatchingTable({ data, isLoading, error }: MatchingTableProps) {
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
-  const [showProductDialog, setShowProductDialog] = useState(false);
   const [showInventoryDialog, setShowInventoryDialog] = useState(false);
+  const [showProductDialog, setShowProductDialog] = useState(false);
   const [currentLine, setCurrentLine] = useState<OrderLineDto | null>(null);
+
+  const resolveMatching = useResolveMatching();
+  const isIgnoring = resolveMatching.isPending;
 
   const variantIds = useMemo(
     () => [...new Set(data.map((l) => l.variantId).filter(Boolean))],
@@ -206,69 +307,101 @@ export function MatchingTable({ data, isLoading, error }: MatchingTableProps) {
     setShowProductDialog(true);
   };
 
-  const handleCloseInventoryDialog = () => {
-    setShowInventoryDialog(false);
-    setCurrentLine(null);
-  };
-
-  const handleCloseProductDialog = () => {
-    setShowProductDialog(false);
-    setCurrentLine(null);
+  const handleIgnore = async (matchingId: string) => {
+    if (!confirm('현재 매칭을 삭제하고 재고사용 안함으로 변경하시겠습니까?')) return;
+    await resolveMatching.mutateAsync({
+      id: matchingId,
+      data: {
+        ignore: true,
+        strategy: 'void',
+        stockPolicy: {
+          inventoryManagement: false,
+          preStockSellable: true,
+          alwaysSellableZeroStock: false,
+        },
+        isGift: false,
+      },
+    });
   };
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-red-500">오류가 발생했습니다: {error.message}</div>
+      <div className="flex items-center justify-center h-64 border rounded-lg bg-white">
+        <div className="text-red-500 text-sm">오류가 발생했습니다: {error.message}</div>
       </div>
     );
   }
 
-  const SKELETON_ROWS = 10;
+  const SKELETON_ROWS = 8;
 
   return (
-    <div className="bg-white rounded-lg shadow">
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-4 py-3 w-10">
+        <table className="min-w-full border-collapse">
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-200">
+              <th className="px-3 py-3 w-12">
                 <Checkbox
                   checked={selectedRows.size === data.length && data.length > 0}
                   onCheckedChange={(checked) => {
-                    setSelectedRows(checked ? new Set(data.map((l) => l.id)) : new Set());
+                    setSelectedRows(
+                      checked ? new Set(data.map((l) => l.id)) : new Set(),
+                    );
                   }}
                 />
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-12">번호</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-32">판매처명</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">판매처상품명</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-56">매칭상품명/수량</th>
+              <th className="px-3 py-3 text-center text-xs font-medium text-gray-600 w-[130px]">
+                판매처명
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-600">
+                판매처상품명
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 w-[380px] border-l border-l-gray-100">
+                매칭상품명 / 수량
+              </th>
             </tr>
           </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
+          <tbody>
             {isLoading ? (
               Array.from({ length: SKELETON_ROWS }).map((_, i) => (
-                <tr key={`skeleton-${i}`}>
-                  <td className="px-4 py-4"><Skeleton className="h-4 w-4" /></td>
-                  <td className="px-4 py-4"><Skeleton className="h-4 w-6" /></td>
-                  <td className="px-4 py-4"><Skeleton className="h-6 w-24" /></td>
-                  <td className="px-4 py-4">
-                    <Skeleton className="h-4 w-48 mb-2" />
-                    <Skeleton className="h-3 w-32" />
-                  </td>
-                  <td className="px-4 py-4"><Skeleton className="h-8 w-24" /></td>
-                </tr>
+                <React.Fragment key={`skeleton-${i}`}>
+                  <tr className="bg-white">
+                    <td rowSpan={2} className="px-3 py-3 border-b border-gray-200 align-top w-12">
+                      <Skeleton className="h-4 w-4 mx-auto mb-1" />
+                      <Skeleton className="h-3 w-4 mx-auto" />
+                    </td>
+                    <td rowSpan={2} className="px-3 py-3 border-b border-gray-200 align-top">
+                      <Skeleton className="h-8 w-24 mx-auto" />
+                    </td>
+                    <td className="px-4 pt-3 pb-1">
+                      <Skeleton className="h-4 w-48 mb-1" />
+                      <Skeleton className="h-3 w-24" />
+                    </td>
+                    <td rowSpan={2} className="px-4 py-3 border-b border-gray-200 align-top w-[380px]">
+                      <Skeleton className="h-6 w-32 mb-2" />
+                      <Skeleton className="h-6 w-20" />
+                    </td>
+                  </tr>
+                  <tr className="bg-white">
+                    <td className="px-4 pb-3 pt-1 border-b border-gray-200">
+                      <Skeleton className="h-3 w-36 mb-1" />
+                      <Skeleton className="h-3 w-48" />
+                    </td>
+                  </tr>
+                </React.Fragment>
               ))
             ) : data.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-12 text-center text-gray-400 text-sm">
-                  데이터가 없습니다. 검색 조건을 변경하거나 검색 버튼을 눌러주세요.
+                <td
+                  colSpan={4}
+                  className="px-4 py-16 text-center text-gray-400 text-sm"
+                >
+                  데이터가 없습니다. 필터 조건을 설정하고 검색 버튼을 눌러주세요.
                 </td>
               </tr>
             ) : (
               data.map((line, index) => (
-                <OrderLineRow
+                <OrderLineRows
                   key={line.id}
                   line={line}
                   index={index}
@@ -278,6 +411,8 @@ export function MatchingTable({ data, isLoading, error }: MatchingTableProps) {
                   onRowSelect={handleRowSelect}
                   onInventoryMatching={handleInventoryMatching}
                   onProductRegistration={handleProductRegistration}
+                  onIgnore={handleIgnore}
+                  isIgnoring={isIgnoring}
                 />
               ))
             )}
@@ -289,14 +424,20 @@ export function MatchingTable({ data, isLoading, error }: MatchingTableProps) {
       <InventoryMatchingDialog
         isOpen={showInventoryDialog}
         line={currentLine}
-        onClose={handleCloseInventoryDialog}
+        onClose={() => {
+          setShowInventoryDialog(false);
+          setCurrentLine(null);
+        }}
       />
 
-      {/* 상품 등록 다이얼로그 */}
+      {/* 외부채널 상품 등록 다이얼로그 */}
       <ProductRegistrationDialog
         isOpen={showProductDialog}
         line={currentLine}
-        onClose={handleCloseProductDialog}
+        onClose={() => {
+          setShowProductDialog(false);
+          setCurrentLine(null);
+        }}
       />
     </div>
   );
