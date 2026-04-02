@@ -12,6 +12,11 @@ type VariantEventData = {
   product_id?: string;
 };
 
+type PriceEventData = {
+  id: string;
+  variant_id?: string;
+};
+
 type PriceAmount = {
   amount: number;
   currency_code: string;
@@ -37,6 +42,22 @@ async function getProductIdFromVariant(variantId: string, container: any): Promi
       select: ['product_id'],
     });
     return variant?.product_id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function getProductIdFromPrice(priceId: string, container: any): Promise<string | null> {
+  const query = container.resolve(ContainerRegistrationKeys.QUERY);
+  try {
+    const { data } = await query.graph({
+      entity: 'price',
+      fields: ['id', 'price_set.variant.product_id'],
+      filters: { id: priceId },
+    });
+
+    const price = data?.[0] as { price_set?: { variant?: { product_id?: string } } } | undefined;
+    return price?.price_set?.variant?.product_id ?? null;
   } catch {
     return null;
   }
@@ -115,7 +136,7 @@ async function upsertProductSortKey(
 export default async function handleSyncProductSortKey({
   event,
   container,
-}: SubscriberArgs<ProductEventData | VariantEventData>) {
+}: SubscriberArgs<ProductEventData | VariantEventData | PriceEventData>) {
   const logger = container.resolve('logger');
   const eventName = event.name;
 
@@ -127,6 +148,9 @@ export default async function handleSyncProductSortKey({
     } else if (eventName.startsWith('product-variant.')) {
       const variantData = event.data as VariantEventData;
       productId = variantData.product_id ?? (await getProductIdFromVariant(variantData.id, container)) ?? undefined;
+    } else if (eventName.startsWith('price.')) {
+      const priceData = event.data as PriceEventData;
+      productId = (await getProductIdFromPrice(priceData.id, container)) ?? undefined;
     }
 
     if (!productId) {
@@ -150,6 +174,9 @@ export const config: SubscriberConfig = {
     'product.updated',
     'product-variant.created',
     'product-variant.updated',
+    'price.created',
+    'price.updated',
+    'price.deleted',
   ],
   context: {
     subscriberId: 'sync-product-sort-key-handler',
