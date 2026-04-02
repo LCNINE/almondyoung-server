@@ -88,7 +88,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       return res.json({ products: [], count: 0 });
     }
 
-    // pricing context 구성 (Medusa 방식)
+    // pricing context 구성
     const context: Record<string, unknown> = {};
     const pricingContext = (req as any).pricingContext ?? { currency_code: currencyCode };
     if (isPresent(pricingContext)) {
