@@ -25,6 +25,14 @@ interface ProductSortingService {
   ): Promise<ProductSortIndexRecord[]>;
 }
 
+// category_id 파라미터를 배열로 파싱
+function parseCategoryIds(param: unknown): string[] {
+  if (!param) return [];
+  if (Array.isArray(param)) return param.filter((id) => typeof id === 'string' && id);
+  if (typeof param === 'string' && param) return [param];
+  return [];
+}
+
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
     const sortingService = req.scope.resolve<ProductSortingService>(PRODUCT_SORTING_MODULE);
@@ -35,8 +43,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const limit = parseInt(req.query.limit as string) || 20;
     const offset = parseInt(req.query.offset as string) || 0;
     const currencyCode = (req.query.currency_code as string) || 'krw';
-    const categoryHandle = (req.query.category_handle as string) || '';
-    const collectionHandle = (req.query.collection_handle as string) || '';
+    const categoryIds = parseCategoryIds(req.query.category_id);
+    const collectionId = (req.query.collection_id as string) || '';
 
     const validSortFields: SortBy[] = ['min_price', 'max_price', 'sales_count'];
     if (!validSortFields.includes(sortBy)) {
@@ -47,13 +55,15 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     // 카테고리/컬렉션 필터가 있으면 해당 상품 ID들을 먼저 조회
     let categoryProductIds: string[] | null = null;
-    if (categoryHandle || collectionHandle) {
+    if (categoryIds.length > 0 || collectionId) {
       const categoryFilters: Record<string, unknown> = {};
-      if (categoryHandle) {
-        categoryFilters.categories = { handle: categoryHandle };
+
+      if (categoryIds.length > 0) {
+        categoryFilters.categories = { id: categoryIds };
       }
-      if (collectionHandle) {
-        categoryFilters.collection = { handle: collectionHandle };
+
+      if (collectionId) {
+        categoryFilters.collection_id = collectionId;
       }
 
       const { data: categoryProducts } = await query.graph({
