@@ -3,13 +3,33 @@ import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
 import { PRODUCT_SORTING_MODULE } from '../modules/product-sorting';
 import type ProductSortingModuleService from '../modules/product-sorting/service';
 
-export default async function syncProductSortIndex({ container, args }: ExecArgs) {
+type ProductWithVariants = {
+  id: string;
+  variants?: Array<{
+    id: string;
+    price_set?: { id: string };
+  }>;
+};
+
+function parseArgs(args: string[]): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const arg of args) {
+    const [key, value] = arg.split('=');
+    if (key && value) {
+      result[key.replace(/^--?/, '')] = value;
+    }
+  }
+  return result;
+}
+
+export default async function syncProductSortIndex({ container, args = [] }: ExecArgs) {
   const sortingService = container.resolve<ProductSortingModuleService>(PRODUCT_SORTING_MODULE);
   const query = container.resolve(ContainerRegistrationKeys.QUERY);
   const pricingModule = container.resolve(Modules.PRICING);
 
-  const currencyCode = args?.currency_code || 'krw';
-  const batchSize = parseInt(args?.batch_size) || 100;
+  const parsedArgs = parseArgs(args);
+  const currencyCode = parsedArgs.currency_code || 'krw';
+  const batchSize = parseInt(parsedArgs.batch_size || '100', 10);
 
   console.log(`[ProductSorting] Starting full sync with currency: ${currencyCode}, batch_size: ${batchSize}`);
 
@@ -32,8 +52,8 @@ export default async function syncProductSortIndex({ container, args }: ExecArgs
         break;
       }
 
-      for (const product of products) {
-        const variants = (product as any).variants || [];
+      for (const product of products as ProductWithVariants[]) {
+        const variants = product.variants || [];
         const priceSetIds: string[] = [];
 
         for (const variant of variants) {
@@ -87,8 +107,9 @@ export default async function syncProductSortIndex({ container, args }: ExecArgs
 
     console.log(`[ProductSorting] ✅ Full sync completed!`);
     console.log(`[ProductSorting] Synced: ${totalSynced}, Skipped (no price): ${totalSkipped}`);
-  } catch (error: any) {
-    console.error(`[ProductSorting] ❌ Sync failed: ${error.message}`);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[ProductSorting] ❌ Sync failed: ${message}`);
     throw error;
   }
 }

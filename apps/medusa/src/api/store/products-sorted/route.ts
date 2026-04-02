@@ -1,14 +1,30 @@
 import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { PRODUCT_SORTING_MODULE } from '../../../modules/product-sorting';
-import type ProductSortingModuleService from '../../../modules/product-sorting/service';
 
 type SortBy = 'min_price' | 'max_price' | 'sales_count' | 'view_count';
 type SortOrder = 'asc' | 'desc';
 
+type ProductSortIndexRecord = {
+  id: string;
+  product_id: string;
+  min_price: number;
+  max_price: number;
+  sales_count: number;
+  view_count: number;
+  currency_code: string;
+};
+
+interface ProductSortingService {
+  listProductSortIndices(
+    filters: Partial<ProductSortIndexRecord>,
+    options?: { order?: Record<string, 'ASC' | 'DESC'>; take?: number; skip?: number },
+  ): Promise<ProductSortIndexRecord[]>;
+}
+
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
-    const sortingService = req.scope.resolve<ProductSortingModuleService>(PRODUCT_SORTING_MODULE);
+    const sortingService = req.scope.resolve<ProductSortingService>(PRODUCT_SORTING_MODULE);
     const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
 
     const sortBy = (req.query.sort_by as SortBy) || 'min_price';
@@ -24,7 +40,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       });
     }
 
-    const sortIndexes = await (sortingService as any).listProductSortIndices(
+    const sortIndexes = await sortingService.listProductSortIndices(
       { currency_code: currencyCode },
       {
         order: { [sortBy]: order === 'desc' ? 'DESC' : 'ASC' },
@@ -33,7 +49,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       },
     );
 
-    const productIds = sortIndexes.map((s: any) => s.product_id);
+    const productIds = sortIndexes.map((s) => s.product_id);
 
     if (productIds.length === 0) {
       return res.json({ products: [], count: 0 });
@@ -45,12 +61,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       filters: { id: productIds },
     });
 
-    const productMap = new Map(products.map((p: any) => [p.id, p]));
-    const sorted = productIds.map((id: string) => productMap.get(id)).filter(Boolean);
+    const productMap = new Map(products.map((p: { id: string }) => [p.id, p]));
+    const sorted = productIds.map((id) => productMap.get(id)).filter(Boolean);
 
     res.json({ products: sorted, count: sorted.length });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[ProductSorting] API Error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: message });
   }
 }
