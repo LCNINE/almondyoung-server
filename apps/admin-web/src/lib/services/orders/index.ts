@@ -6,6 +6,7 @@ export * from './query-keys';
 
 // 쿼리 훅들 (기존 WMS hooks에서 주문 관련만 추출)
 export {
+  useOrderStats,
   useSalesOrders,
   useSalesOrder,
   useSalesOrderItems,

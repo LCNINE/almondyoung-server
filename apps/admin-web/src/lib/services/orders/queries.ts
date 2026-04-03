@@ -1,7 +1,7 @@
 // src/lib/services/orders/queries.ts
 'use client';
 
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { orderQueryKeys } from './query-keys';
 import { orders } from '@/lib/api/domains';
 import type {
@@ -204,10 +204,24 @@ export const useFulfillmentMetrics = () => {
   });
 };
 
+export const useOrderStats = () => {
+  return useQuery({
+    queryKey: orderQueryKeys.orderStats,
+    queryFn: () => orders.salesOrders.getStats(),
+    staleTime: 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
+  });
+};
+
 // 누락된 함수들 추가 (임시 구현)
 export const useConfirmSalesOrder = () => {
+  const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => Promise.resolve({ id, confirmed: true }),
+    mutationFn: (id: string) => orders.salesOrders.confirmSalesOrder(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.orderStats });
+    },
   });
 };
 
