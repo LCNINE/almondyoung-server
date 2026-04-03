@@ -1,46 +1,93 @@
 // src/features/order/history/template/index.tsx
 'use client';
 
-import { usePermission } from '@/hooks/use-permission';
+import { useState } from 'react';
+import { useOrderStats } from '@/lib/services/orders';
 import FilterBox from '../components/filter-box';
 import OrderTable from '../components/table';
 import { OrderHistoryFilterProvider } from '../contexts/filter.context';
+import dayjs from 'dayjs';
+
+function StatCard({
+    label,
+    value,
+    color,
+}: {
+    label: string;
+    value: number | undefined;
+    color?: 'blue' | 'red' | 'green' | 'default';
+}) {
+    const textColor =
+        color === 'blue' ? 'text-blue-600' :
+        color === 'red' ? 'text-red-500' :
+        color === 'green' ? 'text-green-600' :
+        'text-gray-800';
+
+    return (
+        <div className="flex flex-col items-center justify-center rounded-xl border bg-white shadow-sm px-4 py-3 min-w-[100px] flex-1">
+            <span className="text-xs text-gray-500 mb-1 whitespace-nowrap">{label}</span>
+            <span className={`text-2xl font-bold ${textColor}`}>
+                {value != null ? value.toLocaleString() : '-'}
+            </span>
+        </div>
+    );
+}
+
+function OrderStatusSection() {
+    const [collapsed, setCollapsed] = useState(false);
+    const { data: stats, isLoading } = useOrderStats();
+
+    return (
+        <div className="rounded-xl border bg-white p-4 mb-4">
+            {/* 헤더 */}
+            <div className="flex items-start gap-4 mb-3">
+                <div>
+                    <button
+                        onClick={() => setCollapsed((c) => !c)}
+                        className="flex items-center gap-1 text-base font-bold text-gray-800 hover:opacity-80"
+                    >
+                        주문 현황 {collapsed ? '▼' : '▲'}
+                    </button>
+                    <p className="text-xs text-gray-400 mt-0.5">최근 14일</p>
+                    <p className="text-xs text-gray-600 mt-0.5">
+                        오늘 주문수 :{' '}
+                        <span className="font-medium">
+                            {isLoading ? '...' : (stats?.todayCount ?? 0).toLocaleString()}
+                        </span>
+                    </p>
+                </div>
+                {!collapsed && (
+                    <div className="flex gap-2 flex-wrap flex-1">
+                        <StatCard label="출고요청" value={stats?.outboundRequested} color="blue" />
+                        <StatCard label="직배송"   value={stats?.directShip} />
+                        <StatCard label="출고불가" value={stats?.cannotShip} color="red" />
+                        <StatCard label="부분출고" value={stats?.partialOutbound} color="red" />
+                        <StatCard label="매칭대기" value={stats?.waitingMatching} />
+                        <StatCard label="출고완료" value={stats?.outboundComplete} color="green" />
+                    </div>
+                )}
+            </div>
+            {collapsed && (
+                <button
+                    onClick={() => setCollapsed(false)}
+                    className="text-xs text-gray-400 hover:text-gray-600"
+                >
+                    주문 현황 ▼
+                </button>
+            )}
+        </div>
+    );
+}
 
 export default function OrderHistoryTemplate() {
-  const { hasScope } = usePermission();
+    return (
+        <div className="p-4 md:p-6 space-y-4">
+            <OrderStatusSection />
 
-  
-
-  return (
-    <div className="p-4 md:p-6 space-y-4">
-      <h1 className="text-xl font-semibold">주문 내역</h1>
-      <p className="text-sm text-gray-600">
-        모든 주문 내역을 확인하고, 이 페이지에서 주문 확정 및 출고지시까지
-        처리할 수 있습니다.
-      </p>
-
-      <OrderHistoryFilterProvider>
-        <FilterBox />
-        <OrderTable />
-      </OrderHistoryFilterProvider>
-
-      <section className="text-xs text-gray-500">
-        <h2 className="font-medium text-gray-700 mb-1">중요 노티스</h2>
-        <ul className="list-disc pl-5 space-y-1">
-          <li>
-            출고지시 시 피킹리스트 생성은 자동화 대상입니다. (상품 수 1개인
-            주문은 단일 피킹리스트로 묶는 등)
-          </li>
-          <li>
-            양쪽 랙 동선 최적화, 3PL 주문은 별도 처리 가능하도록 설계되어야
-            합니다.
-          </li>
-          <li>
-            직배송 선택 시, 자동으로 부분출고로 분리된 직배송 상품을 별도
-            조회합니다.
-          </li>
-        </ul>
-      </section>
-    </div>
-  );
+            <OrderHistoryFilterProvider>
+                <FilterBox />
+                <OrderTable />
+            </OrderHistoryFilterProvider>
+        </div>
+    );
 }

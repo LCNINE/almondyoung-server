@@ -64,4 +64,7 @@ export const orderQueryKeys = {
   metrics: ['metrics'] as const,
   orderMetrics: ['metrics', 'orders'] as const,
   fulfillmentMetrics: ['metrics', 'fulfillments'] as const,
+
+  // 통계
+  orderStats: ['orders', 'stats'] as const,
 } as const;
