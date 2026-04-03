@@ -29,13 +29,6 @@ interface ProductSortingService {
   ): Promise<[ProductSortIndexRecord[], number]>;
 }
 
-// category_id 파라미터를 배열로 파싱
-function parseCategoryIds(param: unknown): string[] {
-  if (!param) return [];
-  if (Array.isArray(param)) return param.filter((id) => typeof id === 'string' && id);
-  if (typeof param === 'string' && param) return [param];
-  return [];
-}
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
@@ -47,7 +40,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const limit = parseInt(req.query.limit as string) || 20;
     const offset = parseInt(req.query.offset as string) || 0;
     const currencyCode = (req.query.currency_code as string) || 'krw';
-    const categoryIds = parseCategoryIds(req.query.category_id);
+    const categoryIds = req.query.category_id as string[];
     const collectionId = (req.query.collection_id as string) || '';
 
     const validSortFields: SortBy[] = ['min_price', 'max_price', 'sales_count'];
