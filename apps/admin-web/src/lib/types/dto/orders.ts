@@ -534,6 +534,17 @@ export interface AllocateInventoryResponse {
   allocatedQuantity: number;
 }
 
+// ===== 주문 통계 =====
+export interface OrderStatsDto {
+  todayCount: number;
+  outboundRequested: number;
+  directShip: number;
+  cannotShip: number;
+  partialOutbound: number;
+  waitingMatching: number;
+  outboundComplete: number;
+}
+
 // ===== 쿼리 타입들 =====
 /** WMS SalesOrderFilterDto와 일치 */
 export interface SalesOrdersQuery {
