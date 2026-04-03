@@ -183,29 +183,36 @@ export function InventoryMatchingDialog({ isOpen, onClose, line }: InventoryMatc
   useEffect(() => {
     if (!line || (!variant && !master)) return;
 
-    // 마스터명 - variant 이름 조합 (VariantDto.name = 전체 variant 이름)
-    const richName = master?.name || null;
+    // optionKey 값들을 조합해 옵션 라벨 생성 (e.g. { 색상: "레드", 사이즈: "L" } → "레드 / L")
+    const optionLabel = variant?.optionKey && Object.keys(variant.optionKey).length > 0
+      ? Object.values(variant.optionKey).join(' / ')
+      : null;
+
+    const masterName = master?.name || null;
     const richPrice = variant?.price ?? null;
 
-    if (richName) {
-      setCitizenProductName(richName);
-      setSkuSearch(richName);
+    // 사입상품명 = 마스터명 (옵션 제외 상품 기본명)
+    if (masterName) {
+      setCitizenProductName(masterName);
+      // 수동 탭 검색: 마스터명으로 (옵션 포함 전체명보다 마스터명이 더 넓은 검색)
+      setSkuSearch(masterName);
+    }
+
+    // 옵션 첫 번째 행 = 옵션 라벨 (없으면 마스터명)
+    const firstRowName = optionLabel || masterName || '';
+    if (firstRowName) {
       setOptionRows((prev) => {
         const next = [...prev];
-        // 첫 번째 행만 업데이트 (아직 사용자가 수정 안 했을 경우)
-        if (next[0]) {
-          next[0] = { ...next[0], name: richName };
-        }
+        if (next[0]) next[0] = { ...next[0], name: firstRowName };
         return next;
       });
     }
+
     if (richPrice != null) {
       setCostPrice(String(richPrice));
       setOptionRows((prev) => {
         const next = [...prev];
-        if (next[0]) {
-          next[0] = { ...next[0], price: richPrice };
-        }
+        if (next[0]) next[0] = { ...next[0], price: richPrice };
         return next;
       });
     }
@@ -213,11 +220,14 @@ export function InventoryMatchingDialog({ isOpen, onClose, line }: InventoryMatc
 
   const isSaving = createChannelProduct.isPending || resolveMatching.isPending || createInventoryMatching.isPending;
 
-  // 판매 상품명 (마스터명 / 옵션명)
+  // 수동 탭 판매 상품 카드용 표시명
   const sellingProductName = master?.name || line?.productName || '상품명 없음';
-  const sellingProductOption = variant?.name && master?.name && variant.name !== master.name
-    ? variant.name.replace(master.name, '').replace(/^[\s\-]+/, '')
-    : variant?.name || '';
+  // optionKey → 사람이 읽기 좋은 라벨
+  const sellingProductOption = variant?.optionKey && Object.keys(variant.optionKey).length > 0
+    ? Object.entries(variant.optionKey).map(([k, v]) => `${k}: ${v}`).join(', ')
+    : variant?.name && master?.name && variant.name !== master.name
+      ? variant.name.replace(master.name, '').replace(/^[\s\-]+/, '')
+      : '';
 
   /** 수동 매칭 - SKU 추가 */
   const handleAddSku = (skuId: string, skuName: string) => {
@@ -487,9 +497,23 @@ export function InventoryMatchingDialog({ isOpen, onClose, line }: InventoryMatc
         <DialogTitle>재고 생성</DialogTitle>
       </DialogHeader>
 
+      {/* 매칭 대상 상품 정보 */}
+      <div className="px-6 py-3 bg-gray-50 border-b shrink-0 flex items-center gap-3">
+        <div className="text-xs text-gray-500 shrink-0">매칭 대상</div>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-sm font-medium text-gray-900 truncate">{sellingProductName}</span>
+          {sellingProductOption && (
+            <span className="text-xs text-gray-500 bg-white border border-gray-200 rounded px-2 py-0.5 shrink-0">
+              {sellingProductOption}
+            </span>
+          )}
+        </div>
+        <div className="ml-auto shrink-0 text-xs text-gray-400">수량 {line.quantity}개</div>
+      </div>
+
       {/* matchingId 없는 경우 경고 */}
       {!line.matchingId && (
-        <div className="mx-6 mt-4 shrink-0 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="mx-6 mt-3 shrink-0 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           이 주문의 매칭 레코드가 없습니다. PIM에서 상품 이벤트가 누락되었을 수 있습니다. 관리자에게 문의하세요.
         </div>
       )}
@@ -820,9 +844,11 @@ export function InventoryMatchingDialog({ isOpen, onClose, line }: InventoryMatc
                     <div className="text-sm font-medium">
                       {sellingProductName}
                     </div>
-                    <div className="text-xs text-gray-500 mt-1">
-                      - 타입 : {sellingProductOption}
-                    </div>
+                    {sellingProductOption && (
+                      <div className="text-xs text-gray-500 mt-1">
+                        옵션: {sellingProductOption}
+                      </div>
+                    )}
                     <div className="flex justify-end mt-2">
                       <Button
                         size="sm"
