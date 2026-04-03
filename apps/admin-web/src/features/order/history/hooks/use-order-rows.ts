@@ -150,8 +150,8 @@ export function useSalesOrderRows(query: SalesOrdersQuery) {
         orderDate: listItem.createdAt,
         customerName: userInfo?.username ?? customerId ?? '',
         receiverName:
-          detailExt?.receiverName ?? userInfo?.username ?? customerId ?? '',
-        phone: detailExt?.receiverPhone ?? userInfo?.phone,
+          detailExt?.customerName ?? userInfo?.username ?? customerId ?? '',
+        phone: detailExt?.customerPhone ?? userInfo?.phone,
         address: (() => {
           const sa = detailExt?.shippingAddress;
           if (!sa) return undefined;
