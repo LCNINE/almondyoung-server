@@ -142,10 +142,20 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
 
   async cancelPayment(input: CancelPaymentInput): Promise<CancelPaymentOutput> {
     const { intentId } = input.data as unknown as WalletSessionData;
-    await this.walletFetch(`/v1/payment-intents/${intentId}/cancel`, {
-      method: 'POST',
-      body: JSON.stringify({}),
-    });
+    try {
+      await this.walletFetch(`/v1/payment-intents/${intentId}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+    } catch (err: any) {
+      // Intent가 이미 terminal 상태(CAPTURED, FAILED 등)인 경우 취소 불가 → no-op으로 처리
+      // 장바구니 수정 시 Medusa가 기존 payment session을 삭제하려 할 때 발생하는 케이스
+      const msg = (err?.message ?? '') as string;
+      if (msg.includes('INTENT_NOT_CANCELABLE') || msg.includes('cannot be canceled')) {
+        return { data: input.data };
+      }
+      throw err;
+    }
     return { data: input.data };
   }
 
@@ -183,8 +193,15 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
       return { data: context.data };
     }
 
-    // cancel existing intent
-    await this.walletFetch(`/v1/payment-intents/${prevData.intentId}/cancel`, { method: 'POST' });
+    // cancel existing intent (이미 terminal 상태면 무시)
+    try {
+      await this.walletFetch(`/v1/payment-intents/${prevData.intentId}/cancel`, { method: 'POST' });
+    } catch (err: any) {
+      const msg = (err?.message ?? '') as string;
+      if (!msg.includes('INTENT_NOT_CANCELABLE') && !msg.includes('cannot be canceled')) {
+        throw err;
+      }
+    }
 
     // create new intent — userId는 wallet-web에서 첫 GET 요청 시 자동 claim됨
     const intent = await this.walletFetch<{ id: string }>('/v1/payment-intents', {
