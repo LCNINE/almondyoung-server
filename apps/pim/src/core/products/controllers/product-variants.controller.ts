@@ -138,6 +138,20 @@ export class ProductVariantsController {
     );
   }
 
+  @Get('batch')
+  @ApiOperation({
+    summary: 'Variant 일괄 조회',
+    description: '쉼표로 구분된 variant ID 목록으로 마스터 이름 및 옵션 정보를 일괄 조회합니다.',
+  })
+  @ApiQuery({ name: 'ids', required: true, type: String, description: '쉼표로 구분된 variant ID 목록' })
+  @ApiResponse({ status: 200, description: 'Variant 일괄 조회 성공' })
+  async getVariantsBatch(@Query('ids') idsStr: string) {
+    if (!idsStr) return [];
+    const ids = idsStr.split(',').filter(Boolean);
+    if (!ids.length) return [];
+    return this.productVariantsService.findByIds(ids);
+  }
+
   @Get(':id')
   @ApiOperation({
     summary: '제품 변형 상세 조회',

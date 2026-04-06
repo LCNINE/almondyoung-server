@@ -111,6 +111,25 @@ export const updateVariantStatus = async (
   await client.put(`${PIM_BASE_URL}/variants/${id}/status`, data);
 };
 
+export type BatchVariantInfo = {
+  id: string;
+  variantName?: string;
+  variantCode?: string;
+  masterId: string;
+  masterName: string;
+  optionLabel?: string;
+};
+
+/**
+ * Variant 일괄 조회
+ * GET /variants/batch?ids=id1,id2,...
+ */
+export const getVariantsBatch = async (ids: string[]): Promise<BatchVariantInfo[]> => {
+  if (!ids.length) return [];
+  const response = await client.get(`${PIM_BASE_URL}/variants/batch?ids=${ids.join(',')}`);
+  return response.data;
+};
+
 // 제품 변형 클라이언트 객체
 export const variants = {
   getByMaster: variantsClient.byMaster,
@@ -119,4 +138,5 @@ export const variants = {
   bulkUpdate: bulkUpdateVariants,
   getPrice: getVariantPrice,
   updateStatus: updateVariantStatus,
+  getBatch: getVariantsBatch,
 };

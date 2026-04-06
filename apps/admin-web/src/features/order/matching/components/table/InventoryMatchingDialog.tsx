@@ -10,10 +10,11 @@ import {
   FormSelect,
   FormLayout
 } from '@/components/common';
-import { MatchingDto } from '@/lib/types/dto/orders';
+import { OrderLineDto } from '@/lib/types/dto/orders';
 import { useResolveMatching } from '@/lib/services/orders';
 import { useCreateChannelProduct } from '@/lib/services/products';
 import { useSkuSearch } from '@/lib/services/inventory';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useVariant, useMaster } from '@/lib/services/products';
 import {
   useWarehouses,
@@ -25,7 +26,7 @@ import {
   useCreateHolder,
   useCreateInventoryMatching,
 } from '@/lib/services/inventory';
-import { PRODUCT_TYPES, STOCK_OWNER_OPTIONS } from '@/lib/mock/data/inventory';
+import { PRODUCT_TYPES } from '@/lib/mock/data/inventory';
 import { Search, Trash2, ArrowRight, X, Loader2, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { SearchDialog } from './SearchDialog';
@@ -55,14 +56,14 @@ function useDebounced<T>(value: T, delay = 350) {
   return v;
 }
 
-interface ProductRegistrationDialogProps {
+interface InventoryMatchingDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  matching: MatchingDto | null;
+  line: OrderLineDto | null;
 }
 
-/** 외부채널 매칭용 상품 등록 다이얼로그 */
-export function ProductRegistrationDialog({ isOpen, onClose, matching }: ProductRegistrationDialogProps) {
+/** 재고 생성/매칭 다이얼로그 (자동/수동/안함) */
+export function InventoryMatchingDialog({ isOpen, onClose, line }: InventoryMatchingDialogProps) {
   const resolveMatching = useResolveMatching();
   const createChannelProduct = useCreateChannelProduct();
   const createInventoryMatching = useCreateInventoryMatching();
@@ -76,10 +77,14 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
 
   // 필수 필드 검증
   const isFormValid = () => {
+    if (!line?.matchingId) return false; // matchingId 없으면 저장 불가
     if (activeTab === 'auto') {
-      return productType && supplierId && stockOwnerId && warehouseId && citizenProductName;
+      return !!(productType && supplierId && stockOwnerId && warehouseId && citizenProductName);
     }
-    return true; // 수동/무시는 별도 검증
+    if (activeTab === 'manual') {
+      return linkedSkus.length > 0;
+    }
+    return true; // none 탭
   };
 
   // 자동 매칭 상태
@@ -135,17 +140,17 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
   const createHolder = useCreateHolder();
 
   // 판매 상품 정보 조회
-  const { data: variant } = useVariant(matching?.variantId || '');
+  const { data: variant } = useVariant(line?.variantId || '');
   const { data: master } = useMaster(variant?.masterId || '');
 
-  /** 폼 초기화 */
+  /** Effect 1 — line이 바뀔 때 전체 리셋 (line 기반 기본값) */
   useEffect(() => {
-    if (!matching) return;
+    if (!line) return;
 
-    const order = matching.order ?? ({} as any);
+    const baseName = line.productName || '';
+    const basePrice = line.unitPrice ?? 0;
 
-    // 기본값 설정
-    setCitizenProductName(order?.productName || '');
+    setCitizenProductName(baseName);
     setProductType('일반상품');
     setSupplierId('');
     setStockOwnerId('');
@@ -160,24 +165,69 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
     setMemo2('');
     setMemo3('');
     setMemo4('');
-
-    // variant에서 원가 가져오기
-    if (variant?.price) {
-      setCostPrice(String(variant.price));
-    }
-
+    setCostPrice(basePrice ? String(basePrice) : '');
+    setOptionRows([
+      { id: crypto.randomUUID(), name: baseName, image: null, price: basePrice },
+      { id: crypto.randomUUID(), name: '', image: null, price: 0 },
+      { id: crypto.randomUUID(), name: '', image: null, price: 0 },
+      { id: crypto.randomUUID(), name: '', image: null, price: 0 },
+    ]);
     setActiveTab('auto');
     setLinkedSkus([]);
-    setSkuSearch('');
+    setSkuSearch(baseName); // 수동 탭 검색 프리필
     setSearchType('name');
     setShowNotice(true);
-  }, [matching, variant]);
+  }, [line?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Effect 2 — PIM 데이터 로드 완료 시 프리필 업데이트 */
+  useEffect(() => {
+    if (!line || (!variant && !master)) return;
+
+    // optionKey 값들을 조합해 옵션 라벨 생성 (e.g. { 색상: "레드", 사이즈: "L" } → "레드 / L")
+    const optionLabel = variant?.optionKey && Object.keys(variant.optionKey).length > 0
+      ? Object.values(variant.optionKey).join(' / ')
+      : null;
+
+    const masterName = master?.name || null;
+    const richPrice = variant?.price ?? null;
+
+    // 사입상품명 = 마스터명 (옵션 제외 상품 기본명)
+    if (masterName) {
+      setCitizenProductName(masterName);
+      // 수동 탭 검색: 마스터명으로 (옵션 포함 전체명보다 마스터명이 더 넓은 검색)
+      setSkuSearch(masterName);
+    }
+
+    // 옵션 첫 번째 행 = 옵션 라벨 (없으면 마스터명)
+    const firstRowName = optionLabel || masterName || '';
+    if (firstRowName) {
+      setOptionRows((prev) => {
+        const next = [...prev];
+        if (next[0]) next[0] = { ...next[0], name: firstRowName };
+        return next;
+      });
+    }
+
+    if (richPrice != null) {
+      setCostPrice(String(richPrice));
+      setOptionRows((prev) => {
+        const next = [...prev];
+        if (next[0]) next[0] = { ...next[0], price: richPrice };
+        return next;
+      });
+    }
+  }, [variant?.id, master?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isSaving = createChannelProduct.isPending || resolveMatching.isPending || createInventoryMatching.isPending;
 
-  // 판매 상품명 (마스터명 - 옵션명)
-  const sellingProductName = master?.name || '상품명 없음';
-  const sellingProductOption = variant?.name?.split(' - ').slice(1).join(' - ') || '베이직';
+  // 수동 탭 판매 상품 카드용 표시명
+  const sellingProductName = master?.name || line?.productName || '상품명 없음';
+  // optionKey → 사람이 읽기 좋은 라벨
+  const sellingProductOption = variant?.optionKey && Object.keys(variant.optionKey).length > 0
+    ? Object.entries(variant.optionKey).map(([k, v]) => `${k}: ${v}`).join(', ')
+    : variant?.name && master?.name && variant.name !== master.name
+      ? variant.name.replace(master.name, '').replace(/^[\s\-]+/, '')
+      : '';
 
   /** 수동 매칭 - SKU 추가 */
   const handleAddSku = (skuId: string, skuName: string) => {
@@ -318,13 +368,23 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
 
   /** 저장 */
   const onSave = async () => {
-    if (!matching) return;
+    if (!line) return;
+    if (!line.matchingId) {
+      alert('매칭 레코드가 없습니다. 관리자에게 문의하세요.');
+      return;
+    }
 
     try {
       if (activeTab === 'auto') {
-        // 자동 매칭 - 재고 매칭 생성
+        // 자동 매칭 - 재고 SKU 생성 후 매칭 연결
         if (!supplierId || !stockOwnerId || !warehouseId) {
           alert('필수 필드를 모두 입력해주세요.');
+          return;
+        }
+
+        const filledOptions = optionRows.filter(row => row.name.trim());
+        if (filledOptions.length === 0) {
+          alert('최소 1개 이상의 옵션을 입력해주세요.');
           return;
         }
 
@@ -339,7 +399,7 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
           importCertificate,
           optionDetail,
           costPrice: Number(costPrice) || 0,
-          options: optionRows.filter(row => row.name.trim()).map(row => ({
+          options: filledOptions.map(row => ({
             name: row.name,
             image: row.image || undefined,
             price: row.price,
@@ -352,11 +412,12 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
           memo4,
         };
 
-        await createInventoryMatching.mutateAsync(inventoryMatchingData);
+        // 1) SKU 생성
+        const result = await createInventoryMatching.mutateAsync(inventoryMatchingData);
 
-        // 자동 매칭 전략 사용
+        // 2) 생성된 SKU로 매칭 해소
         await resolveMatching.mutateAsync({
-          id: matching.id,
+          id: line.matchingId,
           data: {
             ignore: false,
             strategy: 'variant',
@@ -365,6 +426,10 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
               preStockSellable: true,
               alwaysSellableZeroStock: false,
             },
+            skuMappings: result.skuMappings.map(s => ({
+              skuId: s.skuId,
+              quantity: s.quantity,
+            })),
             isGift: false,
           },
         });
@@ -378,10 +443,10 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
 
         if (skuMappings.length > 0) {
           await resolveMatching.mutateAsync({
-            id: matching.id,
+            id: line.matchingId,
             data: {
               ignore: false,
-              strategy: 'option',
+              strategy: 'variant',
               stockPolicy: {
                 inventoryManagement: true,
                 preStockSellable: true,
@@ -399,7 +464,7 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
       } else if (activeTab === 'none') {
         // 재고 사용 안함
         await resolveMatching.mutateAsync({
-          id: matching.id,
+          id: line.matchingId!,
           data: {
             ignore: false,
             strategy: 'void',
@@ -420,19 +485,41 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
     }
   };
 
-  if (!matching) return null;
+  if (!line) return null;
 
   // 검색 결과 필터링 (서버에서 이미 필터링되므로 클라이언트에서는 추가 필터링 불필요)
   const filteredSkuResults = skuResults || [];
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border">
-      <div className="px-6 py-4 border-b">
-        <h1 className="text-xl font-semibold">재고 생성</h1>
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-5xl max-h-[90vh] p-0 flex flex-col">
+      <DialogHeader className="px-6 py-4 border-b shrink-0">
+        <DialogTitle>재고 생성</DialogTitle>
+      </DialogHeader>
+
+      {/* 매칭 대상 상품 정보 */}
+      <div className="px-6 py-3 bg-gray-50 border-b shrink-0 flex items-center gap-3">
+        <div className="text-xs text-gray-500 shrink-0">매칭 대상</div>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-sm font-medium text-gray-900 truncate">{sellingProductName}</span>
+          {sellingProductOption && (
+            <span className="text-xs text-gray-500 bg-white border border-gray-200 rounded px-2 py-0.5 shrink-0">
+              {sellingProductOption}
+            </span>
+          )}
+        </div>
+        <div className="ml-auto shrink-0 text-xs text-gray-400">수량 {line.quantity}개</div>
       </div>
 
+      {/* matchingId 없는 경우 경고 */}
+      {!line.matchingId && (
+        <div className="mx-6 mt-3 shrink-0 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          이 주문의 매칭 레코드가 없습니다. PIM에서 상품 이벤트가 누락되었을 수 있습니다. 관리자에게 문의하세요.
+        </div>
+      )}
+
       {/* 탭 네비게이션 */}
-      <div className="flex border-b -mx-6 px-6">
+      <div className="flex border-b px-0 shrink-0">
         <button
           onClick={() => setActiveTab('auto')}
           className={cn(
@@ -469,7 +556,7 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
       </div>
 
       {/* 컨텐츠 영역 */}
-      <div className="flex-1 overflow-y-auto px-6">
+      <div className="flex-1 min-h-0 overflow-y-auto px-6">
         {/* ─────────── 자동 매칭 ─────────── */}
         {activeTab === 'auto' && (
           <div className="space-y-6 py-6">
@@ -536,7 +623,7 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
                 <div className="flex gap-2">
                   <div className="flex-1">
                     <FormSelect
-                      options={STOCK_OWNER_OPTIONS}
+                      options={holders?.map((h: any) => ({ value: h.id, label: h.name })) || []}
                       value={stockOwnerId}
                       onValueChange={setStockOwnerId}
                       placeholder="재고소유 선택"
@@ -757,9 +844,11 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
                     <div className="text-sm font-medium">
                       {sellingProductName}
                     </div>
-                    <div className="text-xs text-gray-500 mt-1">
-                      - 타입 : {sellingProductOption}
-                    </div>
+                    {sellingProductOption && (
+                      <div className="text-xs text-gray-500 mt-1">
+                        옵션: {sellingProductOption}
+                      </div>
+                    )}
                     <div className="flex justify-end mt-2">
                       <Button
                         size="sm"
@@ -849,7 +938,7 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
                 />
                 <div className="flex-1 relative">
                   <FormInput
-                    placeholder="노몬드 속눈썹 펌지 100매 (5cm x 0.5cm)"
+                    placeholder="재고 상품명으로 검색"
                     value={skuSearch}
                     onChange={(e) => setSkuSearch(e.target.value)}
                     className="pr-10"
@@ -958,7 +1047,7 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
       </div>
 
       {/* Footer - 저장 버튼 */}
-      <div className="border-t p-4 flex justify-center">
+      <div className="border-t p-4 flex justify-center shrink-0">
         <Button
           onClick={onSave}
           className={cn(
@@ -996,8 +1085,7 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
         isLoading={searchingHolders}
         onSearch={handleHolderSearch}
       />
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
-
-export { ProductRegistrationDialog as InventoryMatchingDialog };

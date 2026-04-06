@@ -6,6 +6,7 @@
 import { useState, useEffect } from 'react';
 import { getMenuById, type MenuItem } from '@/lib/utils/menu';
 import { Badge } from '@/components/ui/badge';
+import { useOrderStats } from '@/lib/services/orders';
 import {
   Sidebar,
   SidebarContent,
@@ -71,6 +72,8 @@ export function AppSidebar({
     );
   };
 
+  const { data: orderStats } = useOrderStats();
+
   // 특별한 정보 표시 (예: 주문/출고관리)
   const getMenuInfo = () => {
     switch (activeMenu) {
@@ -82,7 +85,7 @@ export function AppSidebar({
                 오늘 주문수
               </span>
               <Badge variant="default" className="bg-sidebar-primary">
-                567
+                {orderStats?.todayCount ?? '-'}
               </Badge>
             </div>
           </div>
