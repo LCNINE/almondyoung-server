@@ -89,7 +89,7 @@ export function EditOrderModal({ order, onClose }: Props) {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {editedOrder.lines.map((line, idx) => (
+                                    {editedOrder.lines.map((line: any, idx: number) => (
                                         <tr key={line.id} className="border-t">
                                             <td className="p-3">{line.productName}</td>
                                             <td className="p-3">{line.optionName ?? '단일상품'}</td>
@@ -110,7 +110,7 @@ export function EditOrderModal({ order, onClose }: Props) {
                                                 <button
                                                     className="text-red-600 hover:text-red-700 text-sm"
                                                     onClick={() => {
-                                                        const newLines = editedOrder.lines.filter((_, i) => i !== idx);
+                                                        const newLines = editedOrder.lines.filter((_: any, i: number) => i !== idx);
                                                         setEditedOrder({ ...editedOrder, lines: newLines });
                                                     }}
                                                 >
