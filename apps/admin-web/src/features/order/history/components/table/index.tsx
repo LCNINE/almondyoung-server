@@ -11,6 +11,7 @@ import { useSalesOrderRows, useCreatePickingLists } from '../../hooks/use-order-
 import type { OrderLineRow } from '../../hooks/use-order-rows';
 import { MergedDataTable } from '@/components/common/merged-data-table';
 import type { MergedTableColumn } from '@/components/common/merged-data-table';
+import { Table } from '@/components/admin-ui-experimental/common/table/table';
 
 import SplitOrderModal from '../modals/split-order-modal';
 import { EditOrderModal } from '../modals/edit-order-modal';
@@ -27,7 +28,7 @@ function buildQuery(filter: ReturnType<typeof useOrderHistoryFilter>['filter']):
         limit: 200,
         offset: 0,
     };
-}
+} 
 
 /* ── 상태 배지 ────────────────────────────────────────────── */
 function StatusBadge({ row }: { row: OrderLineRow }) {
@@ -115,10 +116,8 @@ export default function OrderTable() {
     /* 선택 상태 (groupKey = orderId 기준) */
     const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
 
-    const isOrderSelectable = useCallback(
-        (r: OrderLineRow) => r.isOrderFullyAllocated && r.orderStatus === 'confirmed',
-        [],
-    );
+    const isOrderSelectable = (r: OrderLineRow) => 
+        r.isOrderFullyAllocated && r.orderStatus === 'confirmed';
 
     /* 모달 상태 */
     const [showSplitModal, setShowSplitModal] = useState<null | OrderLineRow>(null);
@@ -139,7 +138,7 @@ export default function OrderTable() {
         }
     }, [confirmMut]);
 
-    const handleSelectedOutbound = async () => {
+    const handleSelectedOutbound = useCallback(async () => {
         if (!selectedOrderIds.size) return;
         try {
             const batches = await createPickingLists.mutateAsync([...selectedOrderIds]);
@@ -148,9 +147,9 @@ export default function OrderTable() {
         } catch {
             toast.error('출고지시 처리 중 오류가 발생했습니다.');
         }
-    };
+    }, [selectedOrderIds, createPickingLists]);
 
-    const handleBulkOutbound = async () => {
+    const handleBulkOutbound = useCallback(async () => {
         const readyIds = [...new Set(
             rows.filter(isOrderSelectable).map((r) => r.orderId),
         )];
@@ -161,12 +160,12 @@ export default function OrderTable() {
         } catch {
             toast.error('일괄 출고지시 처리 중 오류가 발생했습니다.');
         }
-    };
+    }, [rows, createPickingLists]);
 
     /* 페이지네이션 */
-    const [page, setPage] = useState(1);
-    const totalPages = Math.ceil(rows.length / PAGE_SIZE);
-    const pageRows = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+    const [page, setPage] = useState(0); // 0-based index (DataTable 방식)
+    const totalPages = useMemo(() => Math.ceil(rows.length / PAGE_SIZE), [rows.length]);
+    const pageRows = useMemo(() => rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [rows, page]);
 
     /* 컬럼 정의 */
     const columns: MergedTableColumn<OrderLineRow>[] = useMemo(() => [
@@ -247,14 +246,14 @@ export default function OrderTable() {
             width: '88px',
             render: (_, r) => (
                 <div className="flex flex-col gap-1">
-                    <button className="h-7 px-2 rounded border hover:bg-gray-50 whitespace-nowrap text-xs" onClick={() => setShowEditModal(r)}>입력확인</button>
-                    <button className="h-7 px-2 rounded border hover:bg-gray-50 whitespace-nowrap text-xs" onClick={() => setShowAddModal(r)}>주문추가</button>
-                    <button className="h-7 px-2 rounded border hover:bg-gray-50 whitespace-nowrap text-xs" onClick={() => setShowQuantityModal(r)}>수량나누기</button>
+                    <button className="h-7 px-2 rounded border hover:bg-gray-50 whitespace-nowrap text-xs" onClick={(e) => { e.stopPropagation(); setShowEditModal(r); }}>입력확인</button>
+                    <button className="h-7 px-2 rounded border hover:bg-gray-50 whitespace-nowrap text-xs" onClick={(e) => { e.stopPropagation(); setShowAddModal(r); }}>주문추가</button>
+                    <button className="h-7 px-2 rounded border hover:bg-gray-50 whitespace-nowrap text-xs" onClick={(e) => { e.stopPropagation(); setShowQuantityModal(r); }}>수량나누기</button>
                     {r.orderStatus === 'pending' && (
                         <button
                             className="h-7 px-2 rounded bg-blue-600 text-white hover:bg-blue-700 whitespace-nowrap text-xs disabled:opacity-50"
                             disabled={confirmMut.isPending}
-                            onClick={() => handleConfirm(r.orderId)}
+                            onClick={(e) => { e.stopPropagation(); handleConfirm(r.orderId); }}
                         >
                             주문확정
                         </button>
@@ -301,7 +300,7 @@ export default function OrderTable() {
                     </span>
                     <button
                         className="h-6 px-2 rounded border border-red-400 text-red-500 hover:bg-red-50 text-[11px] w-fit"
-                        onClick={() => setShowSplitModal(r)}
+                        onClick={(e) => { e.stopPropagation(); setShowSplitModal(r); }}
                     >
                         나누기
                     </button>
@@ -317,13 +316,12 @@ export default function OrderTable() {
                     : (
                         <button
                             className="h-7 px-2 rounded border hover:bg-gray-50 whitespace-nowrap text-xs"
-                            onClick={() => console.log('메모추가', r.orderId)}
+                            onClick={(e) => { e.stopPropagation(); console.log('메모추가', r.orderId); }}
                         >
                             메모추가
                         </button>
                     ),
         },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     ], [confirmMut.isPending, handleConfirm]);
 
     return (
@@ -359,36 +357,38 @@ export default function OrderTable() {
                 </div>
 
                 {/* 테이블 */}
-                {isLoading ? (
-                    <div className="p-8 text-center text-gray-400">불러오는 중...</div>
-                ) : (
-                    <MergedDataTable<OrderLineRow>
-                        data={pageRows}
-                        columns={columns as MergedTableColumn<OrderLineRow>[]}
-                        rowKey="rowId"
-                        groupKey="orderId"
-                        selectable
-                        mergeCheckbox
-                        selectedRowKeys={selectedOrderIds}
-                        onSelectedRowKeysChange={setSelectedOrderIds}
-                        isRowSelectable={isOrderSelectable}
-                        selectedRowClassName="bg-orange-50"
-                        emptyMessage={'조회된 주문이 없습니다. "검색" 버튼을 눌러 조회하세요.'}
-                        className="p-0"
-                        getRowClassName={(r) =>
-                            r.orderStatus === 'cancelled' ? 'opacity-50' : ''
-                        }
-                    />
-                )}
+                <MergedDataTable<OrderLineRow>
+                    data={pageRows}
+                    columns={columns as MergedTableColumn<OrderLineRow>[]}
+                    rowKey="rowId"
+                    groupKey="orderId"
+                    selectable
+                    mergeCheckbox
+                    selectedRowKeys={selectedOrderIds}
+                    onSelectedRowKeysChange={setSelectedOrderIds}
+                    isRowSelectable={isOrderSelectable}
+                    selectedRowClassName="bg-orange-50"
+                    emptyMessage={'조회된 주문이 없습니다. "검색" 버튼을 눌러 조회하세요.'}
+                    className="p-0"
+                    loading={isLoading}
+                    isFetching={isFetching}
+                    getRowClassName={(r) =>
+                        r.orderStatus === 'cancelled' ? 'opacity-50' : ''
+                    }
+                />
 
-                {/* 페이지네이션 */}
-                {totalPages > 1 && (
-                    <div className="flex items-center justify-center gap-2 p-3 border-t text-sm">
-                        <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className="px-2 py-1 rounded border disabled:opacity-40">◀</button>
-                        <span>{page} / {totalPages}</span>
-                        <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="px-2 py-1 rounded border disabled:opacity-40">▶</button>
-                    </div>
-                )}
+                {/* 페이지네이션 - DataTable과 동일한 방식 */}
+                <Table.Pagination
+                    count={rows.length}
+                    pageSize={PAGE_SIZE}
+                    pageIndex={page}
+                    pageCount={totalPages}
+                    canPreviousPage={page > 0}
+                    canNextPage={page < totalPages - 1}
+                    previousPage={() => setPage((p) => Math.max(0, p - 1))}
+                    nextPage={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                    goPage={(idx) => setPage(idx)}
+                />
             </div>
 
             {showSplitModal && <SplitOrderModal order={showSplitModal as any} onClose={() => setShowSplitModal(null)} />}
