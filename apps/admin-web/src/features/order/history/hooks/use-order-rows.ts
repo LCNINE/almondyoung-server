@@ -1,265 +1,333 @@
 // src/features/order/history/hooks/use-order-rows.ts
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { useMemo } from 'react';
 import { customerApi, orders } from '@/lib/api/domains';
 import { useSkusByIds } from '@/lib/services/inventory';
 import { useCreateOutboundBatch } from '@/lib/services/orders';
 import type { SalesOrdersQuery } from '@/lib/types/dto/orders';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-// UI 타입
-export type OrderLine = {
-  id: string;
-  productName: string;
-  optionName?: string;
-  quantity: number;
-  imageUrl?: string;
-  isMatched?: boolean;
-  isReadyToShip?: boolean;
-  isDirect?: boolean;
-  skuId?: string;
-  variantId?: string;
+/** 테이블에서 1행 = 주문 라인 1개 */
+export type OrderLineRow = {
+    rowId: string;           // `${orderId}-${lineId}`
+    rowSeq: number;          // 화면 표시 순번 (1부터)
+    orderId: string;
+    lineId: string;
+    lineIndex: number;       // 해당 주문 내 라인 순서 (1부터)
+    orderLineCount: number;  // 해당 주문의 전체 라인 수 (rowspan 계산용)
+    isFirstOfOrder: boolean; // 동일 주문의 첫 번째 라인 여부 (셀 병합 기준)
+
+    // 주문 헤더
+    orderNo: string;
+    orderDate: string;
+    channel: string;
+    phone?: string;
+    customerName?: string;   // 주문자
+    receiverName?: string;   // 수령자
+    address?: string;
+    totalAmount?: number;
+    shippingFee?: number;
+    orderStatus: string;
+    memo?: string;
+    workLogs?: { at: string; by: string; label: string }[];
+
+    // 라인
+    variantId: string;
+    productName: string;
+    optionName?: string;
+    quantity: number;
+    unitPrice?: number;
+    totalPrice?: number;
+    imageUrl?: string;
+    skuId?: string;
+
+    // 매칭/재고 상태
+    isMatched: boolean;
+    lineStatus: string;    // pending / matched / stock_deducted / stock_unavailable / cancelled
+    isReadyToShip: boolean;
+    isUnavailable: boolean;
+    isDirect: boolean;
+
+    // 주문 완전출고 여부 (행 선택 기준)
+    isOrderFullyAllocated: boolean;
+
+    // 전체 주문 라인들 (모달에서 사용)
+    lines: Array<{
+        id: string;
+        variantId: string;
+        productName: string;
+        optionName?: string;
+        quantity: number;
+        unitPrice?: number;
+        totalPrice?: number;
+        skuId?: string;
+        status: string;
+    }>;
 };
 
-export type SalesOrderRow = {
-  id: string;
-  orderNo: string;
-  orderDate: string;
-  customerName: string;
-  receiverName: string;
-  phone?: string;
-  address?: string;
-  channel?: string;
-  sellerName?: string;
-  status: 'pending' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled' | 'timeout' | string;
-  lines: OrderLine[];
-  memo?: string;
-  workLogs?: { at: string; by: string; label: string }[];
-  directShipInvoiceNo?: string;
-  fulfillmentOrderId?: string;
-  isFullyAllocated?: boolean;
-};
-
-/**
- * 주문 목록 + 상세 + SKU + 사용자(username/phone)까지 조합한 UI 모델
- */
-export function useSalesOrderRows(query: SalesOrdersQuery) {
-  // 1) 목록
-  const listQuery = useQuery({
-    queryKey: ['sales-orders', 'list-view', query],
-    queryFn: () => orders.salesOrders.getSalesOrders(query),
-    staleTime: 30 * 1000,
-  });
-
-  // 2) 상세 병렬 (최대 20건)
-  const orderIds =
-    listQuery.data?.data.map((i: any) => i.id).slice(0, 20) ?? [];
-  const detailQueries = useQuery({
-    queryKey: ['sales-orders', 'details', orderIds],
-    enabled: orderIds.length > 0,
-    staleTime: 30 * 1000,
-    queryFn: async () => {
-      if (!orderIds.length) return [];
-      const details = await Promise.all(
-        orderIds.map((id: string) =>
-          orders.salesOrders.getSalesOrder(id).catch(() => null)
-        )
-      );
-      return details;
-    },
-  });
-
-  // 3) SKU 맵
-  const allSkuIds = new Set<string>();
-  detailQueries.data?.forEach((detail) => {
-    detail?.lines?.forEach((item: any) => {
-      if (item?.skuId) allSkuIds.add(item.skuId);
-    });
-  });
-  const skuIds = Array.from(allSkuIds);
-  const skuMapQuery = useSkusByIds(skuIds);
-
-  // 3.5) 사용자 맵 (username/phone)
-  const allCustomerIds = new Set<string>();
-  listQuery.data?.data?.forEach((li: any) => {
-    if (li?.customerId) allCustomerIds.add(li.customerId);
-  });
-  detailQueries.data?.forEach((d: any) => {
-    if (d?.customerId) allCustomerIds.add(d.customerId);
-  });
-  const userIds = Array.from(allCustomerIds);
-
-  const userMapQuery = useQuery({
-    queryKey: ['users', 'basic-map', userIds.sort().join(',')],
-    enabled: userIds.length > 0,
-    staleTime: 60 * 1000,
-    queryFn: async () => {
-      if (!userIds.length)
-        return {} as Record<string, { username?: string; phone?: string }>;
-      const results = await Promise.all(
-        userIds.map(async (uid) => {
-          try {
-            // username은 getUser, phone은 getUserDetails(profile)에서 확보
-            const user = await customerApi.getCustomerById(uid);
-
-            return [
-              uid,
-              {
-                username: user.data.username ?? uid,
-                phone: user.data.phoneNumber,
-              },
-            ] as const;
-          } catch {
-            return [uid, { username: uid }] as const;
-          }
-        })
-      );
-      const map: Record<string, { username?: string; phone?: string }> = {};
-      results.forEach(([id, info]) => (map[id] = info));
-      return map;
-    },
-  });
-
-  // 4) 변환
-  const transformedData = () => {
-    if (!listQuery.data) return { items: [], total: 0 };
-
-    // 상세를 id→detail 맵으로(인덱스 의존 제거)
-    const detailMap = new Map<string, any>();
-    detailQueries.data?.forEach((d: any) => {
-      if (d?.id) detailMap.set(d.id, d);
+export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
+    // 1) 목록
+    const listQuery = useQuery({
+        queryKey: ['sales-orders', 'list-view', query],
+        queryFn: () => orders.salesOrders.getSalesOrders(query),
+        staleTime: 30 * 1000,
     });
 
-    const skuMap =
-      skuMapQuery.data &&
-      typeof skuMapQuery.data === 'object' &&
-      !Array.isArray(skuMapQuery.data)
-        ? (skuMapQuery.data as Record<string, any>)
-        : ({} as Record<string, any>);
-    const userMap = userMapQuery.data ?? {};
+    // 2) 상세 병렬 (최대 50건)
+    const orderIds = listQuery.data?.data.map((i: any) => i.id).slice(0, 50) ?? [];
+    const detailQueries = useQuery({
+        queryKey: ['sales-orders', 'details', orderIds],
+        enabled: orderIds.length > 0,
+        staleTime: 30 * 1000,
+        queryFn: async () => {
+            if (!orderIds.length) return [];
+            const details = await Promise.all(
+                orderIds.map((id: string) =>
+                    orders.salesOrders.getSalesOrder(id).catch(() => null)
+                )
+            );
+            return details;
+        },
+    });
 
-    const items = listQuery.data.data.map((listItem: any) => {
-      const detail = detailMap.get(listItem.id);
-      const detailExt = detail;
-
-      const customerId = detail?.customerId ?? listItem.customerId;
-      const userInfo = customerId ? userMap[customerId] : undefined;
-
-      const row: SalesOrderRow = {
-        id: listItem.id,
-        orderNo: String(listItem.id).replace('SO', 'ORD'),
-        orderDate: listItem.createdAt,
-        customerName: userInfo?.username ?? customerId ?? '',
-        receiverName:
-          detailExt?.receiverName ?? userInfo?.username ?? customerId ?? '',
-        phone: detailExt?.receiverPhone ?? userInfo?.phone,
-        address: detailExt?.shippingAddress,
-        channel: detailExt?.channel ?? listItem.channel ?? 'own',
-        sellerName: detailExt?.sellerName ?? listItem.sellerName,
-        status: listItem.status,
-        memo: detail?.memo,
-        workLogs: detailExt?.workLogs ?? [],
-        directShipInvoiceNo: detailExt?.directShipInvoiceNo,
-        fulfillmentOrderId: detailExt?.fulfillmentOrderId,
-        lines: [],
-      };
-
-      if (detail?.lines) {
-        row.lines = detail.lines.map((item: any, idx: number) => {
-          const sku = item.skuId ? skuMap[item.skuId] : undefined;
-          const skuExt = sku;
-
-          const optionName = sku?.optionKey
-            ? Object.entries(sku.optionKey)
-                .map(([, value]) => `${value}`)
-                .join(', ')
-            : (skuExt?.optionName ?? item.optionName);
-
-          const allocated = Number(item?.allocatedQuantity ?? 0);
-          const quantity = Number(item?.quantity ?? 0);
-
-          const line: OrderLine = {
-            id: `${row.id}-L${idx + 1}`,
-            skuId: item.skuId,
-            variantId: item.variantId,
-            productName: sku?.name ?? item.productName ?? item.skuId,
-            optionName: optionName ?? '단일상품',
-            quantity,
-            imageUrl: skuExt?.imageUrl ?? item.imageUrl,
-            isMatched: !!item.skuId,
-            isReadyToShip: allocated >= quantity,
-            isDirect: !!item.isDirect,
-          };
-
-          return line;
+    // 3) SKU 맵
+    const allSkuIds = new Set<string>();
+    detailQueries.data?.forEach((detail) => {
+        detail?.lines?.forEach((item: any) => {
+            if (item?.skuId) allSkuIds.add(item.skuId);
         });
-      }
+    });
+    const skuMapQuery = useSkusByIds(Array.from(allSkuIds));
 
-      row.isFullyAllocated =
-        row.lines.length > 0 && row.lines.every((l) => l.isReadyToShip);
+    // 4) 사용자 맵
+    const allCustomerIds = new Set<string>();
+    listQuery.data?.data?.forEach((li: any) => { if (li?.customerId) allCustomerIds.add(li.customerId); });
+    detailQueries.data?.forEach((d: any) => { if (d?.customerId) allCustomerIds.add(d.customerId); });
+    const userIds = Array.from(allCustomerIds);
 
-      return row;
+    const userMapQuery = useQuery({
+        queryKey: ['users', 'basic-map', [...userIds].sort().join(',')],
+        enabled: userIds.length > 0,
+        staleTime: 60 * 1000,
+        queryFn: async () => {
+            if (!userIds.length) return {} as Record<string, { username?: string; phone?: string }>;
+            const results = await Promise.all(
+                userIds.map(async (uid) => {
+                    try {
+                        const user = await customerApi.getCustomerById(uid);
+                        return [uid, { username: user.data.username ?? uid, phone: user.data.phoneNumber }] as const;
+                    } catch {
+                        return [uid, { username: uid }] as const;
+                    }
+                })
+            );
+            const map: Record<string, { username?: string; phone?: string }> = {};
+            results.forEach(([id, info]) => (map[id] = info));
+            return map;
+        },
     });
 
-    return { ...listQuery.data, items };
-  };
+    // 5) 변환 → flat per-line rows
+    const transformedData = useMemo((): { items: OrderLineRow[]; total: number } => {
+        if (!listQuery.data) return { items: [], total: 0 };
 
-  return {
-    data: transformedData(),
-    isLoading:
-      listQuery.isLoading ||
-      detailQueries.isLoading ||
-      skuMapQuery.isLoading ||
-      userMapQuery.isLoading,
-    isFetching:
-      listQuery.isFetching ||
-      detailQueries.isFetching ||
-      skuMapQuery.isFetching ||
-      userMapQuery.isFetching,
-    error:
-      listQuery.error ||
-      detailQueries.error ||
-      skuMapQuery.error ||
-      userMapQuery.error,
-    refetch: () => {
-      listQuery.refetch();
-      detailQueries.refetch();
-      skuMapQuery.refetch();
-      userMapQuery.refetch();
-    },
-  };
+        const detailMap = new Map<string, any>();
+        detailQueries.data?.forEach((d: any) => { if (d?.id) detailMap.set(d.id, d); });
+
+        const skuMap =
+            skuMapQuery.data && typeof skuMapQuery.data === 'object' && !Array.isArray(skuMapQuery.data)
+                ? (skuMapQuery.data as Record<string, any>)
+                : ({} as Record<string, any>);
+        const userMap = userMapQuery.data ?? {};
+
+        const lineRows: OrderLineRow[] = [];
+
+        listQuery.data.data.forEach((listItem: any) => {
+            const detail = detailMap.get(listItem.id);
+            const customerId = detail?.customerId ?? listItem.customerId;
+            const userInfo = customerId ? userMap[customerId] : undefined;
+
+            // 주문자 정보 (고객)
+            const customerName = detail?.customerName ?? userInfo?.username ?? customerId ?? '';
+            
+            // 수령자 정보 (shippingAddress에서 추출)
+            const shippingAddress = detail?.shippingAddress;
+            const receiverName = shippingAddress?.recipientName ?? customerName;
+            const phone = shippingAddress?.phone ?? detail?.customerPhone ?? userInfo?.phone;
+            
+            const address = (() => {
+                const sa = detail?.shippingAddress;
+                if (!sa) return undefined;
+                if (typeof sa === 'string') return sa;
+                return `${sa.roadAddress ?? ''} ${sa.detailAddress ?? ''}`.trim();
+            })();
+
+            const lines: any[] = detail?.lines ?? [];
+
+            // 주문의 모든 라인이 stock_deducted인지 확인
+            const isOrderFullyAllocated =
+                lines.length > 0 &&
+                lines.every((l: any) => l.status === 'stock_deducted');
+
+            const orderLineCount = lines.length || 1;
+
+            lines.forEach((line: any, idx: number) => {
+                const sku = line.skuId ? skuMap[line.skuId] : undefined;
+                const optionName = sku?.optionKey
+                    ? Object.entries(sku.optionKey).map(([, v]) => `${v}`).join(', ')
+                    : (sku?.optionName ?? line.optionName);
+
+                const lineStatus: string = line.status ?? 'pending';
+                const isMatched = !!line.productMatchingId;
+                const isReadyToShip = lineStatus === 'stock_deducted';
+                const isUnavailable = lineStatus === 'stock_unavailable';
+
+                const row: OrderLineRow = {
+                    rowId: `${listItem.id}-${line.id ?? idx}`,
+                    rowSeq: 0, // 아래에서 재계산
+                    orderId: listItem.id,
+                    lineId: line.id ?? `${listItem.id}-line-${idx}`,
+                    lineIndex: idx + 1,
+                    orderLineCount,
+                    isFirstOfOrder: idx === 0,
+
+                    orderNo: listItem.channelOrderId ?? String(listItem.id),
+                    orderDate: listItem.orderDate ?? listItem.createdAt,
+                    channel: listItem.salesChannel ?? detail?.salesChannel ?? 'medusa',
+                    phone,
+                    customerName,
+                    receiverName,
+                    address,
+                    totalAmount: detail?.totalAmount ?? listItem.totalAmount,
+                    shippingFee: detail?.shippingFee ?? 0,
+                    orderStatus: listItem.status,
+                    memo: detail?.memo,
+                    workLogs: detail?.workLogs ?? [],
+
+                    variantId: line.variantId,
+                    productName: sku?.name ?? line.productName ?? line.variantId,
+                    optionName: optionName ?? undefined,
+                    quantity: Number(line.quantity ?? 1),
+                    unitPrice: line.unitPrice ?? undefined,
+                    totalPrice: line.totalPrice ?? undefined,
+                    imageUrl: sku?.imageUrl ?? line.imageUrl,
+                    skuId: line.skuId,
+
+                    isMatched,
+                    lineStatus,
+                    isReadyToShip,
+                    isUnavailable,
+                    isDirect: !!line.isDirect,
+
+                    isOrderFullyAllocated,
+
+                    // 전체 주문 라인들 추가
+                    lines: lines.map((l: any) => ({
+                        id: l.id,
+                        variantId: l.variantId,
+                        productName: l.skuId && skuMap[l.skuId] ? skuMap[l.skuId].name : l.productName,
+                        optionName: l.skuId && skuMap[l.skuId]?.optionKey
+                            ? Object.entries(skuMap[l.skuId].optionKey).map(([, v]) => `${v}`).join(', ')
+                            : l.optionName,
+                        quantity: Number(l.quantity ?? 1),
+                        unitPrice: l.unitPrice,
+                        totalPrice: l.totalPrice,
+                        skuId: l.skuId,
+                        status: l.status ?? 'pending',
+                    })),
+                };
+                lineRows.push(row);
+            });
+
+            // 라인이 없는 주문도 1행으로 표시
+            if (lines.length === 0) {
+                lineRows.push({
+                    rowId: `${listItem.id}-empty`,
+                    rowSeq: 0,
+                    orderId: listItem.id,
+                    lineId: `${listItem.id}-empty`,
+                    lineIndex: 1,
+                    orderLineCount: 1,
+                    isFirstOfOrder: true,
+                    orderNo: listItem.channelOrderId ?? String(listItem.id),
+                    orderDate: listItem.orderDate ?? listItem.createdAt,
+                    channel: listItem.salesChannel ?? 'medusa',
+                    phone,
+                    customerName,
+                    receiverName,
+                    address,
+                    totalAmount: listItem.totalAmount,
+                    shippingFee: 0,
+                    orderStatus: listItem.status,
+                    memo: undefined,
+                    workLogs: [],
+                    variantId: '',
+                    productName: '(상품 정보 없음)',
+                    quantity: 0,
+                    isMatched: false,
+                    lineStatus: 'pending',
+                    isReadyToShip: false,
+                    isUnavailable: false,
+                    isDirect: false,
+                    isOrderFullyAllocated: false,
+                    lines: [], // 빈 배열
+                });
+            }
+        });
+
+        // rowSeq: 최신순(내림차순) → top row = 전체 건수, bottom = 1
+        const total = lineRows.length;
+        lineRows.forEach((r, idx) => { r.rowSeq = total - idx; });
+
+        return { items: lineRows, total };
+    }, [listQuery.data, detailQueries.data, skuMapQuery.data, userMapQuery.data]);
+
+    return {
+        data: transformedData,
+        isLoading:
+            listQuery.isLoading || detailQueries.isLoading || skuMapQuery.isLoading || userMapQuery.isLoading,
+        isFetching:
+            listQuery.isFetching || detailQueries.isFetching || skuMapQuery.isFetching || userMapQuery.isFetching,
+        error: listQuery.error || detailQueries.error || skuMapQuery.error || userMapQuery.error,
+        refetch: () => {
+            listQuery.refetch();
+            detailQueries.refetch();
+            skuMapQuery.refetch();
+            userMapQuery.refetch();
+        },
+    };
 }
 
-/**
- * 주문을 피킹리스트로 변환
- */
+/** 주문을 피킹리스트로 변환 */
 export function useCreatePickingLists() {
-  const queryClient = useQueryClient();
-  const createBatch = useCreateOutboundBatch();
+    const queryClient = useQueryClient();
+    const createBatch = useCreateOutboundBatch();
 
-  return useMutation({
-    mutationFn: async (orderIds: string[]) => {
-      const batches = [];
-      const BATCH_SIZE = 20;
+    return useMutation({
+        mutationFn: async (orderIds: string[]) => {
+            const batches = [];
+            const BATCH_SIZE = 20;
 
-      for (let i = 0; i < orderIds.length; i += BATCH_SIZE) {
-        const batchOrderIds = orderIds.slice(i, i + BATCH_SIZE);
+            for (let i = 0; i < orderIds.length; i += BATCH_SIZE) {
+                const batchOrderIds = orderIds.slice(i, i + BATCH_SIZE);
+                const batch = await createBatch.mutateAsync({
+                    warehouseId: 'WH001',
+                    pickingMethod: 'batch',
+                    name: `피킹리스트-${new Date().toISOString().slice(0, 10)}-${i + 1}`,
+                });
+                void batchOrderIds;
+                batches.push(batch);
+            }
 
-        const batch = await createBatch.mutateAsync({
-          warehouseId: 'WH001',
-          pickingMethod: 'batch',
-          name: `피킹리스트-${new Date().toISOString().slice(0, 10)}-${i + 1}`,
-        });
-        void batchOrderIds; // TODO: batch.id에 fulfillment orders 추가 로직 연결 필요
-
-        batches.push(batch);
-      }
-
-      return batches;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
-      queryClient.invalidateQueries({ queryKey: ['outbound-batches'] });
-    },
-  });
+            return batches;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
+            queryClient.invalidateQueries({ queryKey: ['outbound-batches'] });
+        },
+    });
 }
 
+// 하위 호환 - 모달 컴포넌트가 참조하는 타입 (as any 캐스팅으로 전달되므로 느슨하게 유지)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type SalesOrderRow = any;

@@ -245,6 +245,13 @@ export class PaymentIntentsService {
 
   async capture(intentId: string): Promise<void> {
     const intent = await this.findByIdOrThrow(intentId);
+
+    // 이미 캡처된 경우 멱등적 처리 (no-op)
+    // wallet auto-capture와 Medusa cart.complete()의 capturePaymentWorkflow가 동시에 실행될 수 있음
+    if (intent.status === 'CAPTURED') {
+      return;
+    }
+
     if (!['AUTHORIZED', 'SUCCEEDED'].includes(intent.status)) {
       throw new BadRequestException({
         error: 'INTENT_NOT_CAPTURABLE',

@@ -137,6 +137,8 @@ export interface MatchingDto {
 // 매칭 목록 조회 쿼리
 export interface MatchingsQuery {
   status?: MatchingStatus; // 매칭 상태 필터
+  limit?: number;
+  offset?: number;
 }
 
 // 매칭 목록 응답
@@ -148,6 +150,53 @@ export interface MatchingsResponseDto {
   totalPages: number;
   hasNext: boolean;
   hasPrev: boolean;
+}
+
+// ===== 주문 라인 매칭 현황 =====
+
+export interface OrderLineMatchedSku {
+  skuId: string;
+  skuName: string;
+  skuCode?: string;
+  quantity: number;
+}
+
+// 주문 라인 하나 + 매칭 상태
+export interface OrderLineDto {
+  id: string;                        // sales_order_lines.id
+  variantId: string;
+  productName: string;               // 채널 상품명
+  quantity: number;
+  unitPrice?: number;
+  totalPrice?: number;
+  salesOrderId: string;
+  channelOrderId: string;
+  salesChannel: string;
+  customerName?: string;
+  customerPhone?: string;
+  orderDate: string;
+  matchingId?: string;               // product_matchings.id (null이면 PIM 미등록)
+  matchingStatus?: MatchingStatus;   // null이면 PIM 미등록
+  matchedSkus: OrderLineMatchedSku[];
+}
+
+export interface OrderLinesResponseDto {
+  data: OrderLineDto[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface OrderLinesQuery {
+  matchingStatus?: MatchingStatus | 'unregistered';
+  excludeMatched?: boolean;
+  salesChannel?: string;
+  startDate?: string;
+  endDate?: string;
+  keyword?: string;
+  keywordType?: 'productName' | 'orderNumber' | 'customerName';
+  limit?: number;
+  offset?: number;
 }
 
 // Variant별 매칭 조회
@@ -483,6 +532,17 @@ export interface AllocateInventoryDto {
 export interface AllocateInventoryResponse {
   id: string;
   allocatedQuantity: number;
+}
+
+// ===== 주문 통계 =====
+export interface OrderStatsDto {
+  todayCount: number;
+  outboundRequested: number;
+  directShip: number;
+  cannotShip: number;
+  partialOutbound: number;
+  waitingMatching: number;
+  outboundComplete: number;
 }
 
 // ===== 쿼리 타입들 =====

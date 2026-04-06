@@ -120,7 +120,14 @@ export class OrderEventsConsumer {
 
     try {
       await this.inTx(async (tx) => {
-        // 1. 멱등성 체크: 이미 처리된 이벤트면 스킵
+        // 1. SO 조회 (order_events FK 제약 때문에 멱등성 체크 전에 먼저 확인)
+        const salesOrder = await this.salesOrdersService.getOne(payload.orderId, tx);
+        if (!salesOrder) {
+          this.logger.warn(`[OrderConfirmed] Sales order not found, skipping: ${payload.orderId}`);
+          return;
+        }
+
+        // 2. 멱등성 체크: 이미 처리된 이벤트면 스킵
         const alreadyProcessed = await this.checkAndRecordEvent(
           envelope.messageId,
           payload.orderId,
@@ -129,13 +136,6 @@ export class OrderEventsConsumer {
           tx,
         );
         if (alreadyProcessed) return;
-
-        // 2. SO 조회
-        const salesOrder = await this.salesOrdersService.getOne(payload.orderId, tx);
-        if (!salesOrder) {
-          this.logger.warn(`[OrderConfirmed] Sales order not found: ${payload.orderId}`);
-          return;
-        }
 
         // 3. 상태 확인 - 이미 confirmed 이상이면 스킵
         if (salesOrder.status !== 'pending') {
@@ -165,7 +165,14 @@ export class OrderEventsConsumer {
 
     try {
       await this.inTx(async (tx) => {
-        // 1. 멱등성 체크
+        // 1. SO 조회 (order_events FK 제약 때문에 멱등성 체크 전에 먼저 확인)
+        const salesOrder = await this.salesOrdersService.getOne(payload.orderId, tx);
+        if (!salesOrder) {
+          this.logger.warn(`[OrderCancelled] Sales order not found, skipping: ${payload.orderId}`);
+          return;
+        }
+
+        // 2. 멱등성 체크
         const alreadyProcessed = await this.checkAndRecordEvent(
           envelope.messageId,
           payload.orderId,
@@ -174,13 +181,6 @@ export class OrderEventsConsumer {
           tx,
         );
         if (alreadyProcessed) return;
-
-        // 2. SO 조회
-        const salesOrder = await this.salesOrdersService.getOne(payload.orderId, tx);
-        if (!salesOrder) {
-          this.logger.warn(`[OrderCancelled] Sales order not found: ${payload.orderId}`);
-          return;
-        }
 
         // 3. 이미 취소된 상태면 스킵
         if (salesOrder.status === 'cancelled') {
@@ -208,7 +208,14 @@ export class OrderEventsConsumer {
 
     try {
       await this.inTx(async (tx) => {
-        // 1. 멱등성 체크
+        // 1. SO 조회 (order_events FK 제약 때문에 멱등성 체크 전에 먼저 확인)
+        const salesOrder = await this.salesOrdersService.getOne(payload.orderId, tx);
+        if (!salesOrder) {
+          this.logger.warn(`[OrderModified] Sales order not found, skipping: ${payload.orderId}`);
+          return;
+        }
+
+        // 2. 멱등성 체크
         const alreadyProcessed = await this.checkAndRecordEvent(
           envelope.messageId,
           payload.orderId,
@@ -217,13 +224,6 @@ export class OrderEventsConsumer {
           tx,
         );
         if (alreadyProcessed) return;
-
-        // 2. SO 조회
-        const salesOrder = await this.salesOrdersService.getOne(payload.orderId, tx);
-        if (!salesOrder) {
-          this.logger.warn(`[OrderModified] Sales order not found: ${payload.orderId}`);
-          return;
-        }
 
         // 3. 수정 불가 상태 확인 (processing, shipped, cancelled는 수정 불가)
         const nonModifiableStatuses = ['processing', 'shipped', 'cancelled'];

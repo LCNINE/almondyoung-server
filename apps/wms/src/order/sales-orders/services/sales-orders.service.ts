@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../../../database/schemas/wms-schema';
-import { eq, inArray, desc, and, gte, lte, type InferInsertModel, type SQL } from 'drizzle-orm';
+import { eq, inArray, desc, and, gte, lte, count, isNull, type InferInsertModel, type SQL } from 'drizzle-orm';
 import { PoliciesService } from '../../shared/services/policies.service';
 import { FulfillmentsService } from '../../fulfillments/services/fulfillments.service';
 import { ORDER_EVENTS } from '../../shared/events';
@@ -485,32 +485,39 @@ export class SalesOrdersService {
         conditions.push(eq(wmsTables.salesOrders.status, params.status));
       }
 
-      // 1. 주문 목록 조회
-      let query = tx.select().from(wmsTables.salesOrders).$dynamic();
+      const where = conditions.length > 0 ? and(...conditions) : undefined;
+      const limit = params.limit ?? 20;
+      const offset = params.offset ?? 0;
 
-      if (conditions.length > 0) {
-        query = query.where(and(...conditions));
-      }
+      // 1. 전체 건수 조회
+      const [{ total }] = await tx
+        .select({ total: count() })
+        .from(wmsTables.salesOrders)
+        .where(where);
 
-      const orders = await query
-        .limit(params.limit ?? 20)
-        .offset(params.offset ?? 0)
+      // 2. 주문 목록 조회
+      const orders = await tx
+        .select()
+        .from(wmsTables.salesOrders)
+        .where(where)
+        .limit(limit)
+        .offset(offset)
         .orderBy(desc(wmsTables.salesOrders.createdAt));
 
       if (orders.length === 0) {
-        return [];
+        return { data: [], total, page: Math.floor(offset / limit) + 1, limit, totalPages: Math.ceil(total / limit) };
       }
 
-      // 2. 주문 ID 목록 추출
+      // 3. 주문 ID 목록 추출
       const orderIds = orders.map((o) => o.id);
 
-      // 3. 주문 라인 조회
+      // 4. 주문 라인 조회
       const lines = await tx
         .select()
         .from(wmsTables.salesOrderLines)
         .where(inArray(wmsTables.salesOrderLines.salesOrderId, orderIds));
 
-      // 4. 주문 라인을 주문별로 그룹화
+      // 5. 주문 라인을 주문별로 그룹화
       const linesByOrderId = new Map<string, typeof lines>();
       for (const line of lines) {
         if (!linesByOrderId.has(line.salesOrderId)) {
@@ -519,12 +526,124 @@ export class SalesOrdersService {
         linesByOrderId.get(line.salesOrderId)!.push(line);
       }
 
-      // 5. 주문에 라인 정보 추가
-      return orders.map((order) => ({
+      // 6. 주문에 라인 정보 추가하여 페이지네이션 응답 반환
+      const data = orders.map((order) => ({
         ...order,
         lines: linesByOrderId.get(order.id) || [],
       }));
+
+      return { data, total, page: Math.floor(offset / limit) + 1, limit, totalPages: Math.ceil(total / limit) };
     }, tx);
+  }
+
+  /**
+   * 최근 14일 주문 현황 통계
+   *
+   * - 오늘 주문수    : orderDate = 오늘 하루
+   * - 출고요청       : status = 'confirmed' (관리자 확정, 창고 처리 대기)
+   * - 직배송         : FO.fulfillmentMode = 'drop_ship' (창고 경유 없이 직접 발송)
+   * - 출고불가       : confirmed 주문 중 라인 status = 'stock_unavailable' (재고 부족)
+   * - 부분출고       : 출고불가 주문 중 stock_deducted 라인도 있는 것 (일부만 재고 있음)
+   * - 매칭대기       : pending 주문 중 productMatchingId IS NULL (SKU 매핑 미완)
+   * - 출고완료       : status IN ('processing','shipped','delivered')
+   */
+  async getStats() {
+    const db = this.db.db;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
+
+    const fourteenDaysAgo = new Date();
+    fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 13);
+    fourteenDaysAgo.setHours(0, 0, 0, 0);
+
+    // ── 1. 오늘 전체 주문수 ─────────────────────────────────────────
+    const [todayResult] = await db
+      .select({ cnt: count() })
+      .from(wmsTables.salesOrders)
+      .where(and(gte(wmsTables.salesOrders.orderDate, today), lte(wmsTables.salesOrders.orderDate, todayEnd)));
+
+    // ── 2. 최근 14일 상태별 카운트 (단순 status 기반) ──────────────
+    const statusCounts = await db
+      .select({ status: wmsTables.salesOrders.status, cnt: count() })
+      .from(wmsTables.salesOrders)
+      .where(gte(wmsTables.salesOrders.orderDate, fourteenDaysAgo))
+      .groupBy(wmsTables.salesOrders.status);
+
+    const byStatus = (s: string) => Number(statusCounts.find((r) => r.status === s)?.cnt ?? 0);
+
+    // ── 3. 매칭대기: pending 주문 중 미매칭 라인 있는 주문 고유 ID 집합
+    //      (pending 상태에서만 의미 있음 – confirmed 시 mappingSnapshot으로 확정됨)
+    const waitingMatchRows = await db
+      .select({ id: wmsTables.salesOrders.id })
+      .from(wmsTables.salesOrders)
+      .innerJoin(wmsTables.salesOrderLines, eq(wmsTables.salesOrderLines.salesOrderId, wmsTables.salesOrders.id))
+      .where(
+        and(
+          gte(wmsTables.salesOrders.orderDate, fourteenDaysAgo),
+          eq(wmsTables.salesOrders.status, 'pending'),
+          isNull(wmsTables.salesOrderLines.productMatchingId),
+        ),
+      )
+      .groupBy(wmsTables.salesOrders.id);
+
+    // ── 4. 출고불가: confirmed 주문 중 stock_unavailable 라인 있는 주문
+    const cannotShipRows = await db
+      .select({ id: wmsTables.salesOrders.id })
+      .from(wmsTables.salesOrders)
+      .innerJoin(wmsTables.salesOrderLines, eq(wmsTables.salesOrderLines.salesOrderId, wmsTables.salesOrders.id))
+      .where(
+        and(
+          gte(wmsTables.salesOrders.orderDate, fourteenDaysAgo),
+          eq(wmsTables.salesOrders.status, 'confirmed'),
+          eq(wmsTables.salesOrderLines.status, 'stock_unavailable'),
+        ),
+      )
+      .groupBy(wmsTables.salesOrders.id);
+
+    // ── 5. 부분출고: 출고불가 집합 중, stock_deducted 라인도 있는 주문
+    //      (일부 라인은 재고 차감 완료, 일부는 재고 부족)
+    let partialOutboundCount = 0;
+    if (cannotShipRows.length > 0) {
+      const cannotShipOrderIds = cannotShipRows.map((r) => r.id);
+      const deductedRows = await db
+        .select({ id: wmsTables.salesOrders.id })
+        .from(wmsTables.salesOrders)
+        .innerJoin(wmsTables.salesOrderLines, eq(wmsTables.salesOrderLines.salesOrderId, wmsTables.salesOrders.id))
+        .where(
+          and(
+            inArray(wmsTables.salesOrders.id, cannotShipOrderIds),
+            eq(wmsTables.salesOrderLines.status, 'stock_deducted'),
+          ),
+        )
+        .groupBy(wmsTables.salesOrders.id);
+      partialOutboundCount = deductedRows.length;
+    }
+
+    // ── 6. 직배송: fulfillmentMode = 'drop_ship' 인 FO가 있는 주문 (최근 14일)
+    const directShipRows = await db
+      .select({ id: wmsTables.fulfillmentOrders.id })
+      .from(wmsTables.fulfillmentOrders)
+      .innerJoin(
+        wmsTables.salesOrders,
+        and(
+          eq(wmsTables.salesOrders.id, wmsTables.fulfillmentOrders.salesOrderId),
+          gte(wmsTables.salesOrders.orderDate, fourteenDaysAgo),
+        ),
+      )
+      .where(eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'drop_ship'));
+
+    return {
+      todayCount:         Number(todayResult.cnt),
+      outboundRequested:  byStatus('confirmed'),
+      directShip:         directShipRows.length,
+      cannotShip:         cannotShipRows.length,
+      partialOutbound:    partialOutboundCount,
+      waitingMatching:    waitingMatchRows.length,
+      outboundComplete:   byStatus('processing') + byStatus('shipped') + byStatus('delivered'),
+    };
   }
 
   /**
