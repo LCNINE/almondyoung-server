@@ -1,12 +1,16 @@
 // src/features/order/history/modals/split-quantity-modal.tsx
+// TODO: WMS API 추가 필요 - POST /sales-orders/:id/split 또는 PATCH /sales-orders/:id/lines
 'use client';
 
 import { useState } from 'react';
 import { toast } from 'sonner';
-import type { SalesOrderRow } from '@/features/order/history/hooks/use-order-rows';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { splitQuantity } from '@/lib/services/orders';
+import { orderQueryKeys } from '@/lib/services/orders';
+import type { OrderLineRow } from '@/features/order/history/hooks/use-order-rows';
 
 interface Props {
-    order: SalesOrderRow;
+    order: OrderLineRow;
     onClose: () => void;
 }
 
@@ -20,6 +24,24 @@ export function SplitQuantityModal({ order, onClose }: Props) {
             splitQty: 0,
         }))
     );
+    
+    const queryClient = useQueryClient();
+
+    const splitMutation = useMutation({
+        mutationFn: splitQuantity,
+        onSuccess: (result) => {
+            if (result.success) {
+                toast.success('수량이 분리되었습니다.');
+                queryClient.invalidateQueries({ queryKey: orderQueryKeys.orders });
+                onClose();
+            } else {
+                toast.error(result.error || '수량 분리 중 오류가 발생했습니다.');
+            }
+        },
+        onError: (error: any) => {
+            toast.error(error.message || '수량 분리 중 오류가 발생했습니다.');
+        },
+    });
 
     const handleSplit = async () => {
         const itemsToSplit = splitData.filter((item: any) => item.splitQty > 0);
@@ -29,25 +51,33 @@ export function SplitQuantityModal({ order, onClose }: Props) {
             return;
         }
 
-        try {
-            // TODO: API 연동
-            console.log('Split quantities:', {
-                orderId: order.id,
-                splits: itemsToSplit,
-            });
-
-            toast.success('수량이 분리되었습니다.');
-            onClose();
-        } catch (error) {
-            toast.error('수량 분리 중 오류가 발생했습니다.');
+        // 모든 라인이 완전히 분리되는 경우 방지
+        const allFullySplit = splitData.every((item: any) => item.keepQty === 0);
+        if (allFullySplit) {
+            toast.error('최소 1개 상품의 수량은 원본 주문에 남겨야 합니다.');
+            return;
         }
+
+        splitMutation.mutate({
+            orderId: order.orderId,
+            splits: itemsToSplit.map((item: any) => ({
+                lineId: item.lineId,
+                splitQty: item.splitQty,
+            })),
+            originalOrder: order,
+        });
     };
 
     return (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-xl w-full max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
                 <div className="px-6 py-4 border-b flex items-center justify-between">
-                    <h2 className="text-lg font-semibold">수량 나누기</h2>
+                    <div>
+                        <h2 className="text-lg font-semibold">수량 나누기</h2>
+                        <p className="text-xs text-amber-600 mt-1">
+                            WMS API 추가 필요 (PATCH /sales-orders/:id/lines)
+                        </p>
+                    </div>
                     <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
                         ✕
                     </button>
@@ -118,15 +148,17 @@ export function SplitQuantityModal({ order, onClose }: Props) {
                 <div className="px-6 py-4 border-t flex justify-end gap-3">
                     <button
                         onClick={onClose}
-                        className="px-4 py-2 border rounded-md hover:bg-gray-50"
+                        disabled={splitMutation.isPending}
+                        className="px-4 py-2 border rounded-md hover:bg-gray-50 disabled:opacity-50"
                     >
                         취소
                     </button>
                     <button
                         onClick={handleSplit}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                        disabled={splitMutation.isPending}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
                     >
-                        수량 분리
+                        {splitMutation.isPending ? '처리 중...' : '수량 분리'}
                     </button>
                 </div>
             </div>

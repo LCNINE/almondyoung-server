@@ -8,12 +8,13 @@ export type QuickDateOption = 'today' | 'yesterday' | 'week' | 'month' | '3m' | 
 
 /** 구분 필터 - 재고/매칭 상태 기반 */
 export type OrderTypeFilter =
-    | 'all'        // 전체 (기본)
-    | 'hold'       // 출고불가
-    | 'partial'    // 부분출고
-    | 'ready'      // 완전출고
-    | 'unmatched'  // 매칭안됨
-    | 'direct';    // 직배송
+    | 'pending'     // 주문 미확정 (기본값)
+    | 'all'         // 전체
+    | 'hold'        // 출고불가
+    | 'partial'     // 부분출고
+    | 'ready'       // 완전출고
+    | 'unmatched'   // 매칭안됨
+    | 'direct';     // 직배송
 
 export type KeywordType = '통합검색' | '주문번호' | '수령자' | '연락처' | '상품명';
 
@@ -47,7 +48,7 @@ export const OrderHistoryFilterProvider: React.FC<{ children: React.ReactNode }>
     const today = dayjs().format('YYYY-MM-DD');
 
     const [filter, setFilterState] = useState<OrderHistoryFilter>({
-        type: 'all',
+        type: 'pending', // 주문 미확정이 기본값
         quickDate: 'today',
         dateFrom: today,
         dateTo: today,

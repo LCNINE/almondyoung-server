@@ -1,83 +1,97 @@
-// src/features/order/history/modals/edit-order-modal.tsx
+// src/features/order/history/components/modals/edit-order-modal.tsx
+// TODO: WMS API 추가 필요 - PATCH /sales-orders/:id/lines
+// 현재는 WMS API 제약으로 주문 내용 수정 불가능
 'use client';
 
 import { useState } from 'react';
-import { toast } from 'sonner';
-import type { SalesOrderRow } from '@/features/order/history/hooks/use-order-rows';
+import type { OrderLineRow } from '@/features/order/history/hooks/use-order-rows';
 
 interface Props {
-    order: SalesOrderRow;
+    order: OrderLineRow;
     onClose: () => void;
 }
 
 export function EditOrderModal({ order, onClose }: Props) {
-    const [editedOrder, setEditedOrder] = useState(order);
-
-    const handleSave = async () => {
-        try {
-            // TODO: API 연동
-            console.log('Update order:', editedOrder);
-            toast.success('주문 정보가 수정되었습니다.');
-            onClose();
-        } catch (error) {
-            toast.error('주문 수정 중 오류가 발생했습니다.');
-        }
-    };
+    const [editedOrder] = useState(order);
 
     return (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-xl w-full max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
                 <div className="px-6 py-4 border-b flex items-center justify-between">
-                    <h2 className="text-lg font-semibold">입력확인 / 수정</h2>
+                    <div>
+                        <h2 className="text-lg font-semibold">입력확인</h2>
+                        <p className="text-xs text-gray-500 mt-1">
+                            주문 내용을 확인합니다.
+                        </p>
+                        <p className="text-xs text-amber-600 mt-1">
+                            ⚠️ 주문 내용 수정은 WMS API 추가 후 지원 예정 (PATCH /sales-orders/:id/lines)
+                        </p>
+                    </div>
                     <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
                         ✕
                     </button>
                 </div>
 
                 <div className="flex-1 overflow-auto p-6">
-                    <div className="grid grid-cols-2 gap-6 mb-6">
-                        <div>
-                            <label className="block text-sm font-medium mb-2">수령자명</label>
-                            <input
-                                type="text"
-                                value={editedOrder.receiverName}
-                                onChange={(e) => setEditedOrder({ ...editedOrder, receiverName: e.target.value })}
-                                className="w-full px-3 py-2 border rounded-md"
-                            />
+                    <div className="mb-6">
+                        <h3 className="text-sm font-medium mb-3">기본 정보</h3>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm mb-1">주문번호</label>
+                                <input
+                                    type="text"
+                                    value={editedOrder.orderNo}
+                                    disabled
+                                    className="w-full px-3 py-2 border rounded-md bg-gray-50"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm mb-1">주문 상태</label>
+                                <input
+                                    type="text"
+                                    value={editedOrder.orderStatus}
+                                    disabled
+                                    className="w-full px-3 py-2 border rounded-md bg-gray-50"
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="mb-6">
+                        <h3 className="text-sm font-medium mb-3">수령자 정보</h3>
+                        <div className="grid grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label className="block text-sm mb-1">수령자명</label>
+                                <input
+                                    type="text"
+                                    value={editedOrder.receiverName ?? ''}
+                                    disabled
+                                    className="w-full px-3 py-2 border rounded-md bg-gray-50"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm mb-1">연락처</label>
+                                <input
+                                    type="text"
+                                    value={editedOrder.phone ?? ''}
+                                    disabled
+                                    className="w-full px-3 py-2 border rounded-md bg-gray-50"
+                                />
+                            </div>
                         </div>
                         <div>
-                            <label className="block text-sm font-medium mb-2">연락처</label>
+                            <label className="block text-sm mb-1">배송 주소</label>
                             <input
                                 type="text"
-                                value={editedOrder.phone ?? ''}
-                                onChange={(e) => setEditedOrder({ ...editedOrder, phone: e.target.value })}
-                                className="w-full px-3 py-2 border rounded-md"
+                                value={editedOrder.address ?? ''}
+                                disabled
+                                className="w-full px-3 py-2 border rounded-md bg-gray-50"
                             />
                         </div>
                     </div>
 
                     <div className="mb-6">
-                        <label className="block text-sm font-medium mb-2">배송 주소</label>
-                        <input
-                            type="text"
-                            value={editedOrder.address ?? ''}
-                            onChange={(e) => setEditedOrder({ ...editedOrder, address: e.target.value })}
-                            className="w-full px-3 py-2 border rounded-md"
-                        />
-                    </div>
-
-                    <div className="mb-6">
-                        <label className="block text-sm font-medium mb-2">메모</label>
-                        <textarea
-                            value={editedOrder.memo ?? ''}
-                            onChange={(e) => setEditedOrder({ ...editedOrder, memo: e.target.value })}
-                            className="w-full px-3 py-2 border rounded-md"
-                            rows={3}
-                        />
-                    </div>
-
-                    <div>
-                        <h3 className="text-sm font-medium mb-2">상품 목록</h3>
+                        <h3 className="text-sm font-medium mb-3">주문 상품</h3>
                         <div className="border rounded-lg overflow-hidden">
                             <table className="w-full text-sm">
                                 <thead className="bg-gray-50">
@@ -85,37 +99,17 @@ export function EditOrderModal({ order, onClose }: Props) {
                                         <th className="p-3 text-left">상품명</th>
                                         <th className="p-3 text-left">옵션</th>
                                         <th className="p-3 text-center">수량</th>
-                                        <th className="p-3 text-center">작업</th>
+                                        <th className="p-3 text-center">가격</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {editedOrder.lines.map((line: any, idx: number) => (
+                                    {editedOrder.lines.map((line: any) => (
                                         <tr key={line.id} className="border-t">
                                             <td className="p-3">{line.productName}</td>
                                             <td className="p-3">{line.optionName ?? '단일상품'}</td>
-                                            <td className="p-3">
-                                                <input
-                                                    type="number"
-                                                    value={line.quantity}
-                                                    onChange={(e) => {
-                                                        const newLines = [...editedOrder.lines];
-                                                        newLines[idx] = { ...line, quantity: parseInt(e.target.value) || 0 };
-                                                        setEditedOrder({ ...editedOrder, lines: newLines });
-                                                    }}
-                                                    className="w-20 px-2 py-1 border rounded text-center"
-                                                    min="1"
-                                                />
-                                            </td>
+                                            <td className="p-3 text-center">{line.quantity}</td>
                                             <td className="p-3 text-center">
-                                                <button
-                                                    className="text-red-600 hover:text-red-700 text-sm"
-                                                    onClick={() => {
-                                                        const newLines = editedOrder.lines.filter((_: any, i: number) => i !== idx);
-                                                        setEditedOrder({ ...editedOrder, lines: newLines });
-                                                    }}
-                                                >
-                                                    삭제
-                                                </button>
+                                                {line.unitPrice ? `${line.unitPrice.toLocaleString()}원` : '-'}
                                             </td>
                                         </tr>
                                     ))}
@@ -123,20 +117,23 @@ export function EditOrderModal({ order, onClose }: Props) {
                             </table>
                         </div>
                     </div>
+
+                    {editedOrder.memo && (
+                        <div className="mb-6">
+                            <h3 className="text-sm font-medium mb-3">메모</h3>
+                            <div className="w-full px-3 py-2 border rounded-md bg-gray-50 text-gray-700">
+                                {editedOrder.memo}
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 <div className="px-6 py-4 border-t flex justify-end gap-3">
                     <button
                         onClick={onClose}
-                        className="px-4 py-2 border rounded-md hover:bg-gray-50"
-                    >
-                        취소
-                    </button>
-                    <button
-                        onClick={handleSave}
                         className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
                     >
-                        저장
+                        확인
                     </button>
                 </div>
             </div>

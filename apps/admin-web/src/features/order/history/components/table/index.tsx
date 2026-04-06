@@ -6,7 +6,6 @@ import dayjs from 'dayjs';
 import { toast } from 'sonner';
 import { useOrderHistoryFilter } from '../../contexts/filter.context';
 import type { SalesOrdersQuery } from '@/lib/types/dto/orders';
-import { useConfirmSalesOrder } from '@/lib/services/orders';
 import { useSalesOrderRows, useCreatePickingLists } from '../../hooks/use-order-rows';
 import type { OrderLineRow } from '../../hooks/use-order-rows';
 import { MergedDataTable } from '@/components/common/merged-data-table';
@@ -17,6 +16,7 @@ import SplitOrderModal from '../modals/split-order-modal';
 import { EditOrderModal } from '../modals/edit-order-modal';
 import { SplitQuantityModal } from '../modals/split-quantity-modal';
 import { AddOrderItemModal } from '../modals/add-order-item-modal';
+import { MemoModal } from '../modals/memo-modal';
 
 const PAGE_SIZE = 50;
 
@@ -79,6 +79,7 @@ export default function OrderTable() {
         if (filter.type !== 'all') {
             items = items.filter((r) => {
                 switch (filter.type) {
+                    case 'pending':   return r.orderStatus === 'pending';
                     case 'hold':      return r.isUnavailable;
                     case 'partial':   return r.isReadyToShip && !r.isOrderFullyAllocated;
                     case 'ready':     return r.isOrderFullyAllocated;
@@ -124,39 +125,55 @@ export default function OrderTable() {
     const [showEditModal, setShowEditModal] = useState<null | OrderLineRow>(null);
     const [showQuantityModal, setShowQuantityModal] = useState<null | OrderLineRow>(null);
     const [showAddModal, setShowAddModal] = useState<null | OrderLineRow>(null);
+    const [showMemoModal, setShowMemoModal] = useState<null | OrderLineRow>(null);
 
     /* 액션 */
-    const confirmMut = useConfirmSalesOrder();
     const createPickingLists = useCreatePickingLists();
-
-    const handleConfirm = useCallback(async (orderId: string) => {
-        try {
-            await confirmMut.mutateAsync(orderId);
-            toast.success('주문이 확정되었습니다.');
-        } catch {
-            toast.error('주문 확정 중 오류가 발생했습니다.');
-        }
-    }, [confirmMut]);
 
     const handleSelectedOutbound = useCallback(async () => {
         if (!selectedOrderIds.size) return;
+        
+        // 3PL 주문 필터링 (피킹리스트 불필요)
+        const orderIdsToProcess = [...selectedOrderIds].filter((orderId) => {
+            const order = rows.find((r) => r.orderId === orderId);
+            return order && order.channel !== '3pl';
+        });
+
+        const excludedCount = selectedOrderIds.size - orderIdsToProcess.length;
+
+        if (orderIdsToProcess.length === 0) {
+            toast.info('출고 가능한 주문이 없습니다. (3PL 주문은 제외됩니다)');
+            return;
+        }
+
         try {
-            const batches = await createPickingLists.mutateAsync([...selectedOrderIds]);
-            toast.success(`${selectedOrderIds.size}건 → ${batches.length}개 피킹리스트 생성`);
+            const batches = await createPickingLists.mutateAsync(orderIdsToProcess);
+            const msg = excludedCount > 0 
+                ? `${orderIdsToProcess.length}건 → ${batches.length}개 피킹리스트 생성 (3PL ${excludedCount}건 제외)`
+                : `${orderIdsToProcess.length}건 → ${batches.length}개 피킹리스트 생성`;
+            toast.success(msg);
             setSelectedOrderIds(new Set());
         } catch {
             toast.error('출고지시 처리 중 오류가 발생했습니다.');
         }
-    }, [selectedOrderIds, createPickingLists]);
+    }, [selectedOrderIds, rows, createPickingLists]);
 
     const handleBulkOutbound = useCallback(async () => {
+        // 완전출고 가능하고 confirmed 상태인 주문만 (3PL 제외)
         const readyIds = [...new Set(
-            rows.filter(isOrderSelectable).map((r) => r.orderId),
+            rows
+                .filter((r) => isOrderSelectable(r) && r.channel !== '3pl')
+                .map((r) => r.orderId)
         )];
-        if (!readyIds.length) { toast.info('출고 가능한 주문이 없습니다.'); return; }
+        
+        if (!readyIds.length) { 
+            toast.info('출고 가능한 주문이 없습니다. (3PL 주문은 제외됩니다)'); 
+            return; 
+        }
+
         try {
             const batches = await createPickingLists.mutateAsync(readyIds);
-            toast.success(`${readyIds.length}건 → ${batches.length}개 피킹리스트 생성`);
+            toast.success(`${readyIds.length}건 → ${batches.length}개 피킹리스트 생성 (각 최대 20개)`);
         } catch {
             toast.error('일괄 출고지시 처리 중 오류가 발생했습니다.');
         }
@@ -249,15 +266,6 @@ export default function OrderTable() {
                     <button className="h-7 px-2 rounded border hover:bg-gray-50 whitespace-nowrap text-xs" onClick={(e) => { e.stopPropagation(); setShowEditModal(r); }}>입력확인</button>
                     <button className="h-7 px-2 rounded border hover:bg-gray-50 whitespace-nowrap text-xs" onClick={(e) => { e.stopPropagation(); setShowAddModal(r); }}>주문추가</button>
                     <button className="h-7 px-2 rounded border hover:bg-gray-50 whitespace-nowrap text-xs" onClick={(e) => { e.stopPropagation(); setShowQuantityModal(r); }}>수량나누기</button>
-                    {r.orderStatus === 'pending' && (
-                        <button
-                            className="h-7 px-2 rounded bg-blue-600 text-white hover:bg-blue-700 whitespace-nowrap text-xs disabled:opacity-50"
-                            disabled={confirmMut.isPending}
-                            onClick={(e) => { e.stopPropagation(); handleConfirm(r.orderId); }}
-                        >
-                            주문확정
-                        </button>
-                    )}
                 </div>
             ),
         },
@@ -316,22 +324,31 @@ export default function OrderTable() {
                     : (
                         <button
                             className="h-7 px-2 rounded border hover:bg-gray-50 whitespace-nowrap text-xs"
-                            onClick={(e) => { e.stopPropagation(); console.log('메모추가', r.orderId); }}
+                            onClick={(e) => { e.stopPropagation(); setShowMemoModal(r); }}
                         >
                             메모추가
                         </button>
                     ),
         },
-    ], [confirmMut.isPending, handleConfirm]);
+    ], []);
 
     return (
         <>
             <div className="rounded-xl border bg-white">
                 {/* 헤더 액션 바 */}
                 <div className="flex items-center justify-between p-3 border-b gap-2 flex-wrap">
-                    <div className="text-sm font-medium">
-                        총 <b>{rows.length}</b>건
-                        {isFetching && <span className="text-xs text-gray-400 ml-2">(갱신 중)</span>}
+                    <div className="flex items-center gap-4">
+                        <div className="text-sm font-medium">
+                            총 <b className="text-blue-600">{rows.length}</b>건
+                        </div>
+                        {isFetching && (
+                            <span className="text-xs text-gray-400">(갱신 중)</span>
+                        )}
+                        {filter.type === 'pending' && (
+                            <span className="text-xs text-amber-600 font-medium">
+                                미확정 주문만 표시 중
+                            </span>
+                        )}
                     </div>
                     <div className="flex gap-2 flex-wrap">
                         <button
@@ -391,10 +408,11 @@ export default function OrderTable() {
                 />
             </div>
 
-            {showSplitModal && <SplitOrderModal order={showSplitModal as any} onClose={() => setShowSplitModal(null)} />}
-            {showEditModal && <EditOrderModal order={showEditModal as any} onClose={() => setShowEditModal(null)} />}
-            {showQuantityModal && <SplitQuantityModal order={showQuantityModal as any} onClose={() => setShowQuantityModal(null)} />}
-            {showAddModal && <AddOrderItemModal order={showAddModal as any} onClose={() => setShowAddModal(null)} />}
+            {showSplitModal && <SplitOrderModal order={showSplitModal} onClose={() => setShowSplitModal(null)} />}
+            {showEditModal && <EditOrderModal order={showEditModal} onClose={() => setShowEditModal(null)} />}
+            {showQuantityModal && <SplitQuantityModal order={showQuantityModal} onClose={() => setShowQuantityModal(null)} />}
+            {showAddModal && <AddOrderItemModal order={showAddModal} onClose={() => setShowAddModal(null)} />}
+            {showMemoModal && <MemoModal order={showMemoModal} onClose={() => setShowMemoModal(null)} />}
         </>
     );
 }

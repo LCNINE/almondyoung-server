@@ -27,9 +27,10 @@ const CHANNELS: { label: string; value: string }[] = [
 const KEYWORD_TYPES: KeywordType[] = ['통합검색', '주문번호', '수령자', '연락처', '상품명'];
 
 const TYPE_OPTIONS: { value: OrderTypeFilter; label: string }[] = [
-    { value: 'hold',      label: '출고불가' },
-    { value: 'partial',   label: '부분출고' },
+    { value: 'pending',   label: '주문 미확정' },
     { value: 'ready',     label: '완전출고' },
+    { value: 'partial',   label: '부분출고' },
+    { value: 'hold',      label: '출고불가' },
     { value: 'unmatched', label: '매칭안됨' },
     { value: 'direct',    label: '직배송' },
     { value: 'all',       label: '전체' },
