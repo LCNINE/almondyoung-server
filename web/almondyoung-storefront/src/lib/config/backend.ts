@@ -89,6 +89,16 @@ const getLegacyGatewayBaseUrl = (service: BackendService) => {
 }
 
 export const getBackendBaseUrl = (service: BackendService) => {
+  // TODO: 임시 땜빵 - users 서비스만 development로 우회
+  if (service === "users") {
+    const isServer = typeof window === "undefined"
+    const usersUrl = isServer
+      ? process.env.USERS_SERVICE_URL
+      : process.env.NEXT_PUBLIC_USERS_SERVICE_URL
+
+    if (usersUrl) return usersUrl
+  }
+
   if (!isRailwayBackend()) {
     return LOCAL_SERVICE_URLS[service]
   }
