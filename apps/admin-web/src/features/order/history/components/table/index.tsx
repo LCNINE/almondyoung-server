@@ -121,11 +121,12 @@ export default function OrderTable() {
         r.isOrderFullyAllocated && r.orderStatus === 'confirmed';
 
     /* 모달 상태 */
-    const [showSplitModal, setShowSplitModal] = useState<null | OrderLineRow>(null);
-    const [showEditModal, setShowEditModal] = useState<null | OrderLineRow>(null);
-    const [showQuantityModal, setShowQuantityModal] = useState<null | OrderLineRow>(null);
-    const [showAddModal, setShowAddModal] = useState<null | OrderLineRow>(null);
-    const [showMemoModal, setShowMemoModal] = useState<null | OrderLineRow>(null);
+    const [showSplitModal, setShowSplitModal] = useState(false);
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [showQuantityModal, setShowQuantityModal] = useState(false);
+    const [showAddModal, setShowAddModal] = useState(false);
+    const [showMemoModal, setShowMemoModal] = useState(false);
+    const [selectedOrder, setSelectedOrder] = useState<OrderLineRow | null>(null);
 
     /* 액션 */
     const createPickingLists = useCreatePickingLists();
@@ -263,9 +264,9 @@ export default function OrderTable() {
             width: '88px',
             render: (_, r) => (
                 <div className="flex flex-col gap-1">
-                    <button className="h-7 px-2 rounded border hover:bg-gray-50 whitespace-nowrap text-xs" onClick={(e) => { e.stopPropagation(); setShowEditModal(r); }}>입력확인</button>
-                    <button className="h-7 px-2 rounded border hover:bg-gray-50 whitespace-nowrap text-xs" onClick={(e) => { e.stopPropagation(); setShowAddModal(r); }}>주문추가</button>
-                    <button className="h-7 px-2 rounded border hover:bg-gray-50 whitespace-nowrap text-xs" onClick={(e) => { e.stopPropagation(); setShowQuantityModal(r); }}>수량나누기</button>
+                    <button className="h-7 px-2 rounded border hover:bg-gray-50 whitespace-nowrap text-xs" onClick={(e) => { e.stopPropagation(); setSelectedOrder(r); setShowEditModal(true); }}>입력확인</button>
+                    <button className="h-7 px-2 rounded border hover:bg-gray-50 whitespace-nowrap text-xs" onClick={(e) => { e.stopPropagation(); setSelectedOrder(r); setShowAddModal(true); }}>주문추가</button>
+                    <button className="h-7 px-2 rounded border hover:bg-gray-50 whitespace-nowrap text-xs" onClick={(e) => { e.stopPropagation(); setSelectedOrder(r); setShowQuantityModal(true); }}>수량나누기</button>
                 </div>
             ),
         },
@@ -308,7 +309,7 @@ export default function OrderTable() {
                     </span>
                     <button
                         className="h-6 px-2 rounded border border-red-400 text-red-500 hover:bg-red-50 text-[11px] w-fit"
-                        onClick={(e) => { e.stopPropagation(); setShowSplitModal(r); }}
+                        onClick={(e) => { e.stopPropagation(); setSelectedOrder(r); setShowSplitModal(true); }}
                     >
                         나누기
                     </button>
@@ -324,7 +325,7 @@ export default function OrderTable() {
                     : (
                         <button
                             className="h-7 px-2 rounded border hover:bg-gray-50 whitespace-nowrap text-xs"
-                            onClick={(e) => { e.stopPropagation(); setShowMemoModal(r); }}
+                            onClick={(e) => { e.stopPropagation(); setSelectedOrder(r); setShowMemoModal(true); }}
                         >
                             메모추가
                         </button>
@@ -408,11 +409,11 @@ export default function OrderTable() {
                 />
             </div>
 
-            {showSplitModal && <SplitOrderModal order={showSplitModal} onClose={() => setShowSplitModal(null)} />}
-            {showEditModal && <EditOrderModal order={showEditModal} onClose={() => setShowEditModal(null)} />}
-            {showQuantityModal && <SplitQuantityModal order={showQuantityModal} onClose={() => setShowQuantityModal(null)} />}
-            {showAddModal && <AddOrderItemModal order={showAddModal} onClose={() => setShowAddModal(null)} />}
-            {showMemoModal && <MemoModal order={showMemoModal} onClose={() => setShowMemoModal(null)} />}
+            {selectedOrder && <SplitOrderModal order={selectedOrder} open={showSplitModal} onOpenChange={setShowSplitModal} />}
+            {selectedOrder && <EditOrderModal order={selectedOrder} open={showEditModal} onOpenChange={setShowEditModal} />}
+            {selectedOrder && <SplitQuantityModal order={selectedOrder} open={showQuantityModal} onOpenChange={setShowQuantityModal} />}
+            {selectedOrder && <AddOrderItemModal order={selectedOrder} open={showAddModal} onOpenChange={setShowAddModal} />}
+            {selectedOrder && <MemoModal order={selectedOrder} open={showMemoModal} onOpenChange={setShowMemoModal} />}
         </>
     );
 }
