@@ -147,9 +147,14 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
             const customerId = detail?.customerId ?? listItem.customerId;
             const userInfo = customerId ? userMap[customerId] : undefined;
 
-            const receiverName = detail?.customerName ?? userInfo?.username ?? customerId ?? '';
-            const customerName = userInfo?.username ?? receiverName;
-            const phone = detail?.customerPhone ?? userInfo?.phone;
+            // 주문자 정보 (고객)
+            const customerName = detail?.customerName ?? userInfo?.username ?? customerId ?? '';
+            
+            // 수령자 정보 (shippingAddress에서 추출)
+            const shippingAddress = detail?.shippingAddress;
+            const receiverName = shippingAddress?.recipientName ?? customerName;
+            const phone = shippingAddress?.phone ?? detail?.customerPhone ?? userInfo?.phone;
+            
             const address = (() => {
                 const sa = detail?.shippingAddress;
                 if (!sa) return undefined;

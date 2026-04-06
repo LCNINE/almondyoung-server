@@ -2,19 +2,30 @@
 // TODO: WMS API 추가 필요 - POST /sales-orders/:id/split 또는 PATCH /sales-orders/:id/lines
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { splitQuantity } from '@/lib/services/orders';
 import { orderQueryKeys } from '@/lib/services/orders';
+import {
+    FocusModal,
+    FocusModalContent,
+    FocusModalHeader,
+    FocusModalBody,
+    FocusModalFooter,
+    FocusModalTitle,
+} from '@/components/common/focus-modal';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import type { OrderLineRow } from '@/features/order/history/hooks/use-order-rows';
 
 interface Props {
     order: OrderLineRow;
-    onClose: () => void;
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
 }
 
-export function SplitQuantityModal({ order, onClose }: Props) {
+export function SplitQuantityModal({ order, open, onOpenChange }: Props) {
     const [splitData, setSplitData] = useState(
         order.lines.map((line: any) => ({
             lineId: line.id,
@@ -24,6 +35,20 @@ export function SplitQuantityModal({ order, onClose }: Props) {
             splitQty: 0,
         }))
     );
+
+    useEffect(() => {
+        if (open) {
+            setSplitData(
+                order.lines.map((line: any) => ({
+                    lineId: line.id,
+                    productName: line.productName,
+                    originalQty: line.quantity,
+                    keepQty: line.quantity,
+                    splitQty: 0,
+                }))
+            );
+        }
+    }, [open, order.orderId, order.lines]);
     
     const queryClient = useQueryClient();
 
@@ -33,7 +58,7 @@ export function SplitQuantityModal({ order, onClose }: Props) {
             if (result.success) {
                 toast.success('수량이 분리되었습니다.');
                 queryClient.invalidateQueries({ queryKey: orderQueryKeys.orders });
-                onClose();
+                onOpenChange(false);
             } else {
                 toast.error(result.error || '수량 분리 중 오류가 발생했습니다.');
             }
@@ -69,21 +94,18 @@ export function SplitQuantityModal({ order, onClose }: Props) {
     };
 
     return (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl w-full max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
-                <div className="px-6 py-4 border-b flex items-center justify-between">
-                    <div>
-                        <h2 className="text-lg font-semibold">수량 나누기</h2>
+        <FocusModal open={open} onOpenChange={onOpenChange}>
+            <FocusModalContent>
+                <FocusModalHeader>
+                    <div className="flex-1">
+                        <FocusModalTitle>수량 나누기</FocusModalTitle>
                         <p className="text-xs text-amber-600 mt-1">
                             WMS API 추가 필요 (PATCH /sales-orders/:id/lines)
                         </p>
                     </div>
-                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-                        ✕
-                    </button>
-                </div>
+                </FocusModalHeader>
 
-                <div className="flex-1 overflow-auto p-6">
+                <FocusModalBody className="p-6">
                     <div className="mb-4 p-4 bg-blue-50 rounded-lg">
                         <p className="text-sm text-blue-800">
                             상품별 수량을 새로운 주문으로 분리합니다.
@@ -107,7 +129,7 @@ export function SplitQuantityModal({ order, onClose }: Props) {
                                         <td className="p-3">{item.productName}</td>
                                         <td className="p-3 text-center font-medium">{item.originalQty}</td>
                                         <td className="p-3 text-center">
-                                            <input
+                                            <Input
                                                 type="number"
                                                 value={item.keepQty}
                                                 onChange={(e) => {
@@ -117,13 +139,13 @@ export function SplitQuantityModal({ order, onClose }: Props) {
                                                     newData[idx] = { ...item, keepQty, splitQty };
                                                     setSplitData(newData);
                                                 }}
-                                                className="w-20 px-2 py-1 border rounded text-center"
+                                                className="w-20 text-center mx-auto"
                                                 min="0"
                                                 max={item.originalQty}
                                             />
                                         </td>
                                         <td className="p-3 text-center">
-                                            <input
+                                            <Input
                                                 type="number"
                                                 value={item.splitQty}
                                                 onChange={(e) => {
@@ -133,7 +155,7 @@ export function SplitQuantityModal({ order, onClose }: Props) {
                                                     newData[idx] = { ...item, keepQty, splitQty };
                                                     setSplitData(newData);
                                                 }}
-                                                className="w-20 px-2 py-1 border rounded text-center"
+                                                className="w-20 text-center mx-auto"
                                                 min="0"
                                                 max={item.originalQty}
                                             />
@@ -143,25 +165,24 @@ export function SplitQuantityModal({ order, onClose }: Props) {
                             </tbody>
                         </table>
                     </div>
-                </div>
+                </FocusModalBody>
 
-                <div className="px-6 py-4 border-t flex justify-end gap-3">
-                    <button
-                        onClick={onClose}
+                <FocusModalFooter>
+                    <Button
+                        variant="outline"
+                        onClick={() => onOpenChange(false)}
                         disabled={splitMutation.isPending}
-                        className="px-4 py-2 border rounded-md hover:bg-gray-50 disabled:opacity-50"
                     >
                         취소
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                         onClick={handleSplit}
                         disabled={splitMutation.isPending}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
                     >
                         {splitMutation.isPending ? '처리 중...' : '수량 분리'}
-                    </button>
-                </div>
-            </div>
-        </div>
+                    </Button>
+                </FocusModalFooter>
+            </FocusModalContent>
+        </FocusModal>
     );
 }
