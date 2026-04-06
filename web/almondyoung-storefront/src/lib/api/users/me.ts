@@ -28,6 +28,12 @@ const fetchMeInternal = async (): Promise<UserDetail> => {
       ])
     }
 
+    if (error instanceof HttpApiError && error.status === 503) {
+      // 서버 일시 장애 - 비로그인처럼 처리하되 토큰은 유지
+      console.warn("Users service temporarily unavailable (503)")
+      return null as unknown as UserDetail
+    }
+
     throw error
   }
 }
