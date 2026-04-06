@@ -1,0 +1,327 @@
+/// <reference path="./.sst/platform/config.d.ts" />
+
+export default $config({
+  app(input) {
+    return {
+      name: "almondyoung-server",
+      removal: input?.stage === "production" ? "retain" : "remove",
+      protect: ["production"].includes(input?.stage),
+      home: "aws",
+      providers: {
+        aws: { region: "ap-northeast-2" },
+      },
+    };
+  },
+  async run() {
+    const vpc = new sst.aws.Vpc("Vpc");
+    const cluster = new sst.aws.Cluster("Cluster", { vpc });
+
+    const isDev = $app.stage !== "production";
+
+    // ─── Domain helper ───
+    const domain = (slug: string) =>
+      isDev ? `${slug}.dev.almondyoung-next.com` : `${slug}.almondyoung-next.com`;
+    const url = (slug: string) => `https://${domain(slug)}`;
+
+    // ─── Shared secrets ───
+    const kafkaApiKey = new sst.Secret("KafkaApiKey");
+    const kafkaApiSecret = new sst.Secret("KafkaApiSecret");
+    const authSecret = new sst.Secret("AuthSecret");
+    const awsS3AccessKeyId = new sst.Secret("AwsS3AccessKeyId");
+    const awsS3SecretAccessKey = new sst.Secret("AwsS3SecretAccessKey");
+
+    // ─── Per-service database URLs ───
+    const userServiceDatabaseUrl = new sst.Secret("UserServiceDatabaseUrl");
+    const analyticsDatabaseUrl = new sst.Secret("AnalyticsDatabaseUrl");
+    const channelAdapterDatabaseUrl = new sst.Secret("ChannelAdapterDatabaseUrl");
+    const membershipDatabaseUrl = new sst.Secret("MembershipDatabaseUrl");
+    const notificationDatabaseUrl = new sst.Secret("NotificationDatabaseUrl");
+    const pimDatabaseUrl = new sst.Secret("PimDatabaseUrl");
+    const ugcDatabaseUrl = new sst.Secret("UgcDatabaseUrl");
+    const wmsDatabaseUrl = new sst.Secret("WmsDatabaseUrl");
+    const walletDatabaseUrl = new sst.Secret("WalletDatabaseUrl");
+    const fileServiceDatabaseUrl = new sst.Secret("FileServiceDatabaseUrl");
+
+    // ─── User Service secrets ───
+    const kakaoClientId = new sst.Secret("KakaoClientId");
+    const kakaoClientSecret = new sst.Secret("KakaoClientSecret");
+    const jwtRefreshSecret = new sst.Secret("JwtRefreshSecret");
+    const jwtVerificationTokenSecret = new sst.Secret("JwtVerificationTokenSecret");
+    const twilioAccountSid = new sst.Secret("TwilioAccountSid");
+    const twilioAuthToken = new sst.Secret("TwilioAuthToken");
+    const cafe24ClientId = new sst.Secret("Cafe24ClientId");
+    const cafe24ClientSecret = new sst.Secret("Cafe24ClientSecret");
+    const cafe24ServiceKey = new sst.Secret("Cafe24ServiceKey");
+
+    // ─── Channel Adapter secrets ───
+    const channelAdapterInternalKey = new sst.Secret("ChannelAdapterInternalKey");
+    const medusaApiKey = new sst.Secret("MedusaApiKey");
+
+    // ─── Notification secrets ───
+    const nhnAppKey = new sst.Secret("NhnAppKey");
+    const nhnSecretKey = new sst.Secret("NhnSecretKey");
+    const nhnSenderKey = new sst.Secret("NhnSenderKey");
+    const resendApiKey = new sst.Secret("ResendApiKey");
+    const resendWebhookSecret = new sst.Secret("ResendWebhookSecret");
+
+    // ─── Wallet secrets ───
+    const tossClientKey = new sst.Secret("TossClientKey");
+    const tossSecretKey = new sst.Secret("TossSecretKey");
+    const nicepayClientKey = new sst.Secret("NicepayClientKey");
+    const nicepaySecretKey = new sst.Secret("NicepaySecretKey");
+    const walletApiKey = new sst.Secret("WalletApiKey");
+    const custKey = new sst.Secret("CustKey");
+    const swKey = new sst.Secret("SwKey");
+
+    // ─── PIM secrets ───
+    const elasticsearchPassword = new sst.Secret("ElasticsearchPassword");
+
+    // ─── Common env builders ───
+    const kafkaEnv = (prefix: string, groupId: string) => ({
+      KAFKA_BROKERS: "pkc-e82om.ap-northeast-2.aws.confluent.cloud:9092",
+      KAFKA_API_KEY: kafkaApiKey.value,
+      KAFKA_API_SECRET: kafkaApiSecret.value,
+      KAFKA_CLIENT_ID_PREFIX: prefix,
+      KAFKA_GROUP_ID: groupId,
+    });
+
+    const baseEnv = (serviceName: string) => ({
+      NODE_ENV: "production",
+      OTEL_SERVICE_NAME: serviceName,
+    });
+
+    // ─── Service helper ───
+    const createService = (
+      name: string,
+      opts: {
+        dockerfile: string;
+        domainSlug: string;
+        port: number;
+        environment: Record<string, $util.Output<string> | string>;
+      },
+    ) =>
+      new sst.aws.Service(name, {
+        cluster,
+        loadBalancer: {
+          domain: domain(opts.domainSlug),
+          rules: [
+            { listen: "80/http", redirect: "443/https" },
+            { listen: "443/https", forward: `${opts.port}/http` },
+          ],
+        },
+        image: {
+          context: ".",
+          dockerfile: opts.dockerfile,
+        },
+        environment: {
+          ...baseEnv(opts.domainSlug),
+          PORT: String(opts.port),
+          ...opts.environment,
+        },
+      });
+
+    // ═══════════════════════════════════════════
+    //  Services
+    // ═══════════════════════════════════════════
+
+    createService("UserService", {
+      dockerfile: "apps/user-service/Dockerfile",
+      domainSlug: "user",
+      port: 3000,
+      environment: {
+        DATABASE_URL: userServiceDatabaseUrl.value,
+        ...kafkaEnv("user-service", "user-service"),
+        AUTH_SECRET: authSecret.value,
+        JWT_REFRESH_SECRET: jwtRefreshSecret.value,
+        JWT_VERIFICATION_TOKEN_SECRET: jwtVerificationTokenSecret.value,
+        COOKIE_DOMAIN: ".almondyoung-next.com",
+        FRONTEND_URL: url("www"),
+        SIGNUP_CALLBACK_URL: `${url("www")}/callback/signup`,
+        USER_SERVICE_URL: url("user"),
+        REDIRECT_URL_WHITELIST: [
+          "http://localhost:8000/callback/signup",
+          "http://localhost:8000/",
+          "http://localhost:8000",
+          `${url("user")}/`,
+          `${url("www")}/`,
+          "http://localhost:8080/",
+        ].join(","),
+        KAKAO_CLIENT_ID: kakaoClientId.value,
+        KAKAO_CLIENT_SECRET: kakaoClientSecret.value,
+        KAKAO_CALLBACK_URL: `${url("user")}/auth/kakao/callback`,
+        TWILIO_ACCOUNT_SID: twilioAccountSid.value,
+        TWILIO_AUTH_TOKEN: twilioAuthToken.value,
+        TWILIO_PHONE_NUMBER: "+15856342856",
+        CAFE24_CLIENT_ID: cafe24ClientId.value,
+        CAFE24_CLIENT_SECRET: cafe24ClientSecret.value,
+        CAFE24_SERVICE_KEY: cafe24ServiceKey.value,
+        BIZNO_URL: "https://bizno.net/article",
+        CORS_ORIGIN_DOMAINS: [
+          url("www"),
+          url("medusa"),
+          "http://localhost:8000",
+          "https://almondyoung.com",
+          "https://www.almondyoung.com",
+        ].join(","),
+        AWS_ACCESS_KEY_ID: awsS3AccessKeyId.value,
+        AWS_SECRET_ACCESS_KEY: awsS3SecretAccessKey.value,
+        AWS_REGION: "ap-northeast-2",
+        AWS_S3_BUCKET: "almondyoung",
+        CAFE24_MALL_ID: "lcnine",
+      },
+    });
+
+    createService("Analytics", {
+      dockerfile: "apps/analytics/Dockerfile",
+      domainSlug: "analytics",
+      port: 3040,
+      environment: {
+        DATABASE_URL: analyticsDatabaseUrl.value,
+        ...kafkaEnv("analytics", "analytics-group"),
+        AUTH_SECRET: authSecret.value,
+      },
+    });
+
+    createService("ChannelAdapter", {
+      dockerfile: "apps/channel-adapter/Dockerfile",
+      domainSlug: "channel-adapter",
+      port: 3000,
+      environment: {
+        DATABASE_URL: channelAdapterDatabaseUrl.value,
+        ...kafkaEnv("channel-adapter", "channel-adapter-group"),
+        CHANNEL_ADAPTER_INTERNAL_KEY: channelAdapterInternalKey.value,
+        MEDUSA_API_KEY: medusaApiKey.value,
+        MEDUSA_API_URL: url("medusa"),
+        MEDUSA_MEMBERSHIP_GROUP_ID: "cusgroup_01KFZ12A1M344F6HKGDV35J28A",
+        ALMOND_AUTH_URL: "https://asia-northeast3-almond-auth.cloudfunctions.net/api",
+        USER_SERVICE_URL: url("user"),
+        PIM_API_URL: url("pim"),
+        NAVER_API_ENDPOINT: "https://dummy.com",
+        NAVER_CLIENT_ID: "1",
+        NAVER_CLIENT_SECRET: "1",
+        COUPANG_ACCESS_KEY: "1",
+        COUPANG_SECRET_KEY: "1",
+        COUPANG_VENDOR_ID: "1",
+        SKIP_VARIANTS_WITHOUT_PRICE: "true",
+      },
+    });
+
+    createService("Membership", {
+      dockerfile: "apps/membership/Dockerfile",
+      domainSlug: "membership",
+      port: 3000,
+      environment: {
+        DATABASE_URL: membershipDatabaseUrl.value,
+        ...kafkaEnv("membership", "membership-group"),
+        WALLET_API_KEY: walletApiKey.value,
+        WALLET_API_URL: url("wallet"),
+      },
+    });
+
+    createService("Notification", {
+      dockerfile: "apps/notification/Dockerfile",
+      domainSlug: "notification",
+      port: 3000,
+      environment: {
+        DATABASE_URL: notificationDatabaseUrl.value,
+        ...kafkaEnv("notification", "notification-group"),
+        NHN_API_URL: "https://api-alimtalk.cloud.toast.com",
+        NHN_APP_KEY: nhnAppKey.value,
+        NHN_SECRET_KEY: nhnSecretKey.value,
+        NHN_SENDER_KEY: nhnSenderKey.value,
+        NHN_PLUS_FRIEND_ID: "@아몬드영",
+        RESEND_API_KEY: resendApiKey.value,
+        RESEND_BASE_URL: "https://api.resend.com",
+        RESEND_FROM: "noreply@mail.almondyoung-next.com",
+        RESEND_FROM_NAME: "아몬드영",
+        RESEND_WEBHOOK_SECRET: resendWebhookSecret.value,
+      },
+    });
+
+    createService("Pim", {
+      dockerfile: "apps/pim/Dockerfile",
+      domainSlug: "pim",
+      port: 3000,
+      environment: {
+        DATABASE_URL: pimDatabaseUrl.value,
+        ...kafkaEnv("pim", "pim-group"),
+        AUTH_SECRET: authSecret.value,
+        ELASTICSEARCH_NODE: "https://elasticsearch-demo.up.railway.app",
+        ELASTICSEARCH_USERNAME: "elastic",
+        ELASTICSEARCH_PASSWORD: elasticsearchPassword.value,
+      },
+    });
+
+    createService("UgcService", {
+      dockerfile: "apps/ugc-service/Dockerfile",
+      domainSlug: "ugc",
+      port: 3030,
+      environment: {
+        DATABASE_URL: ugcDatabaseUrl.value,
+        ...kafkaEnv("ugc-service", "ugc-service-group"),
+        AUTH_SECRET: authSecret.value,
+        JWT_ISSUER: "almondyoung-auth",
+      },
+    });
+
+    createService("Wms", {
+      dockerfile: "apps/wms/Dockerfile",
+      domainSlug: "wms",
+      port: 3000,
+      environment: {
+        DATABASE_URL: wmsDatabaseUrl.value,
+        ...kafkaEnv("wms", "wms-group"),
+        AUTH_SECRET: authSecret.value,
+      },
+    });
+
+    createService("Wallet", {
+      dockerfile: "apps/wallet/Dockerfile",
+      domainSlug: "wallet",
+      port: 3000,
+      environment: {
+        DATABASE_URL: walletDatabaseUrl.value,
+        ...kafkaEnv("wallet", "wallet-group"),
+        AUTH_SECRET: authSecret.value,
+        USER_JWT_SECRET: authSecret.value,
+        TOSS_CLIENT_KEY: tossClientKey.value,
+        TOSS_SECRET_KEY: tossSecretKey.value,
+        NICEPAY_CLIENT_KEY: nicepayClientKey.value,
+        NICEPAY_SECRET_KEY: nicepaySecretKey.value,
+        WALLET_API_KEY: walletApiKey.value,
+        CUST_KEY: custKey.value,
+        SW_KEY: swKey.value,
+        SERVICE_NAME: "wallet",
+        CORS_ORIGINS: "*.almondyoung-next.com",
+        WALLET_MEDUSA_WEBHOOK_URL: `${url("medusa")}/hooks/payment/pp_almond-payment_almond-payment`,
+      },
+    });
+
+    createService("FileService", {
+      dockerfile: "apps/file-service/Dockerfile",
+      domainSlug: "file",
+      port: 3000,
+      environment: {
+        DATABASE_URL: fileServiceDatabaseUrl.value,
+        ...kafkaEnv("file-service", "file-service-group"),
+        AUTH_SECRET: authSecret.value,
+        AWS_ACCESS_KEY_ID: awsS3AccessKeyId.value,
+        AWS_SECRET_ACCESS_KEY: awsS3SecretAccessKey.value,
+        AWS_REGION: "ap-northeast-2",
+        AWS_S3_PUBLIC_BUCKET: "almondyoung-demo",
+        AWS_S3_PRIVATE_BUCKET: "almondyoung-demo",
+        STORAGE_PROVIDER: "S3",
+      },
+    });
+
+    createService("Search", {
+      dockerfile: "apps/search/Dockerfile",
+      domainSlug: "search",
+      port: 3000,
+      environment: {
+        OPENSEARCH_NODE: "https://opensearch-demo.up.railway.app",
+        SEARCH_PRODUCTS_INDEX: "search_products",
+      },
+    });
+  },
+});
