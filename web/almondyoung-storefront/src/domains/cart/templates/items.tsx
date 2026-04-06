@@ -12,48 +12,27 @@ import {
 import { deleteLineItems } from "@/lib/api/medusa/cart"
 import { HttpTypes } from "@medusajs/types"
 import { Loader2 } from "lucide-react"
-import { useEffect, useState, useTransition } from "react"
+import { useTransition } from "react"
 import { toast } from "sonner"
 
 import Item from "../components/item"
 
 type ItemsProps = {
-  cart?: HttpTypes.StoreCart
+  items: HttpTypes.StoreCartLineItem[]
+  selectedIds: Set<string>
+  allSelected: boolean
+  onSelectAll: (checked: boolean) => void
+  onSelectItem: (itemId: string, checked: boolean) => void
 }
 
-export default function Items({ cart }: ItemsProps) {
-  const items = cart?.items
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+export default function Items({
+  items,
+  selectedIds,
+  allSelected,
+  onSelectAll,
+  onSelectItem,
+}: ItemsProps) {
   const [isPending, startTransition] = useTransition()
-
-  const sortedItems = items?.sort((a, b) => {
-    return (a.created_at ?? "") > (b.created_at ?? "") ? -1 : 1
-  })
-
-  const allSelected =
-    sortedItems &&
-    sortedItems.length > 0 &&
-    selectedIds.size === sortedItems.length
-
-  const handleSelectAll = (checked: boolean) => {
-    if (checked && sortedItems) {
-      setSelectedIds(new Set(sortedItems.map((item) => item.id)))
-    } else {
-      setSelectedIds(new Set())
-    }
-  }
-
-  const handleSelectItem = (itemId: string, checked: boolean) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev)
-      if (checked) {
-        next.add(itemId)
-      } else {
-        next.delete(itemId)
-      }
-      return next
-    })
-  }
 
   const handleDeleteSelected = () => {
     if (selectedIds.size === 0) return
@@ -61,7 +40,6 @@ export default function Items({ cart }: ItemsProps) {
     startTransition(async () => {
       try {
         await deleteLineItems(Array.from(selectedIds))
-        setSelectedIds(new Set())
         toast.success(`${selectedIds.size}개 상품이 삭제되었습니다.`)
       } catch {
         toast.error("삭제에 실패했습니다. 다시 시도해주세요.")
@@ -69,14 +47,10 @@ export default function Items({ cart }: ItemsProps) {
     })
   }
 
-  useEffect(() => {
-    setSelectedIds(new Set(sortedItems?.map((item) => item.id) ?? []))
-  }, [])
-
   return (
     <>
       {/* 선택 삭제 */}
-      {sortedItems && sortedItems.length > 0 && (
+      {items && items.length > 0 && (
         <div className="flex justify-end border-b pb-3">
           <Button
             variant="outline"
@@ -94,13 +68,13 @@ export default function Items({ cart }: ItemsProps) {
 
       {/* 모바일: 카드 리스트 */}
       <div className="md:hidden">
-        {sortedItems?.map((item) => (
+        {items?.map((item) => (
           <div key={item.id} className="flex items-start gap-2">
             <div className="pt-5">
               <Checkbox
                 checked={selectedIds.has(item.id)}
                 onCheckedChange={(checked) =>
-                  handleSelectItem(item.id, checked === true)
+                  onSelectItem(item.id, checked === true)
                 }
                 disabled={isPending}
               />
@@ -122,7 +96,7 @@ export default function Items({ cart }: ItemsProps) {
               <TableHead className="w-10 pl-0">
                 <Checkbox
                   checked={allSelected}
-                  onCheckedChange={handleSelectAll}
+                  onCheckedChange={onSelectAll}
                   disabled={isPending}
                 />
               </TableHead>
@@ -136,12 +110,12 @@ export default function Items({ cart }: ItemsProps) {
           </TableHeader>
 
           <TableBody>
-            {sortedItems?.map((item) => (
+            {items?.map((item) => (
               <Item
                 key={item.id}
                 item={item}
                 selected={selectedIds.has(item.id)}
-                onSelectChange={(checked) => handleSelectItem(item.id, checked)}
+                onSelectChange={(checked) => onSelectItem(item.id, checked)}
                 selectDisabled={isPending}
               >
                 <Item.Desktop />
