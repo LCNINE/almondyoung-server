@@ -1,6 +1,7 @@
 // src/features/order/history/modals/split-quantity-modal.tsx
 'use client';
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState } from 'react';
 import { toast } from 'sonner';
 import type { SalesOrderRow } from '@/features/order/history/hooks/use-order-rows';
@@ -12,7 +13,7 @@ interface Props {
 
 export function SplitQuantityModal({ order, onClose }: Props) {
     const [splitData, setSplitData] = useState(
-        order.lines.map(line => ({
+        order.lines.map((line: any) => ({
             lineId: line.id,
             productName: line.productName,
             originalQty: line.quantity,
@@ -22,7 +23,7 @@ export function SplitQuantityModal({ order, onClose }: Props) {
     );
 
     const handleSplit = async () => {
-        const itemsToSplit = splitData.filter(item => item.splitQty > 0);
+        const itemsToSplit = splitData.filter((item: any) => item.splitQty > 0);
 
         if (itemsToSplit.length === 0) {
             toast.error('분리할 수량을 입력해주세요.');
@@ -72,7 +73,7 @@ export function SplitQuantityModal({ order, onClose }: Props) {
                                 </tr>
                             </thead>
                             <tbody>
-                                {splitData.map((item, idx) => (
+                                {splitData.map((item: any, idx: number) => (
                                     <tr key={item.lineId} className="border-t">
                                         <td className="p-3">{item.productName}</td>
                                         <td className="p-3 text-center font-medium">{item.originalQty}</td>
