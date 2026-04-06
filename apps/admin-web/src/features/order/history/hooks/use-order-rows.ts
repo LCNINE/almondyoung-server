@@ -50,6 +50,19 @@ export type OrderLineRow = {
 
     // 주문 완전출고 여부 (행 선택 기준)
     isOrderFullyAllocated: boolean;
+
+    // 전체 주문 라인들 (모달에서 사용)
+    lines: Array<{
+        id: string;
+        variantId: string;
+        productName: string;
+        optionName?: string;
+        quantity: number;
+        unitPrice?: number;
+        totalPrice?: number;
+        skuId?: string;
+        status: string;
+    }>;
 };
 
 export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
@@ -202,6 +215,21 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
                     isDirect: !!line.isDirect,
 
                     isOrderFullyAllocated,
+
+                    // 전체 주문 라인들 추가
+                    lines: lines.map((l: any) => ({
+                        id: l.id,
+                        variantId: l.variantId,
+                        productName: l.skuId && skuMap[l.skuId] ? skuMap[l.skuId].name : l.productName,
+                        optionName: l.skuId && skuMap[l.skuId]?.optionKey
+                            ? Object.entries(skuMap[l.skuId].optionKey).map(([, v]) => `${v}`).join(', ')
+                            : l.optionName,
+                        quantity: Number(l.quantity ?? 1),
+                        unitPrice: l.unitPrice,
+                        totalPrice: l.totalPrice,
+                        skuId: l.skuId,
+                        status: l.status ?? 'pending',
+                    })),
                 };
                 lineRows.push(row);
             });
@@ -237,6 +265,7 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
                     isUnavailable: false,
                     isDirect: false,
                     isOrderFullyAllocated: false,
+                    lines: [], // 빈 배열
                 });
             }
         });
