@@ -1,7 +1,6 @@
 // src/features/order/history/components/modals/split-order-modal.tsx
 'use client';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState } from 'react';
 import { toast } from 'sonner';
 import type { SalesOrderRow } from '@/features/order/history/hooks/use-order-rows';
