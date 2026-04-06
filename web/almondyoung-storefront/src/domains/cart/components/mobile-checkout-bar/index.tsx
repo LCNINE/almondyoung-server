@@ -1,13 +1,13 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { ChevronUp } from "lucide-react"
+import { ChevronUp, Loader2 } from "lucide-react"
 import { AnimatePresence, motion } from "framer-motion"
 
 import { Button } from "@/components/ui/button"
 import { HttpTypes } from "@medusajs/types"
-import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { formatPrice } from "@/lib/utils/price-utils"
+
 import PriceErrorNotice from "../price-error-notice"
 import { calculateCartDiscount } from "../../utils/calculate-discount"
 
@@ -15,27 +15,35 @@ type MobileCheckoutBarProps = {
   cart: HttpTypes.StoreCart & {
     promotions: HttpTypes.StorePromotion[]
   }
+  selectedIds: Set<string>
+  onCheckout: () => void
+  isPendingCheckout: boolean
 }
 
-function getCheckoutStep(cart: HttpTypes.StoreCart) {
-  if (!cart?.shipping_address?.address_1 || !cart.email) {
-    return "address"
-  } else if (cart?.shipping_methods?.length === 0) {
-    return "delivery"
-  } else {
-    return "payment"
-  }
-}
-
-export default function MobileCheckoutBar({ cart }: MobileCheckoutBarProps) {
+export default function MobileCheckoutBar({
+  cart,
+  selectedIds,
+  onCheckout,
+  isPendingCheckout,
+}: MobileCheckoutBarProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [showScrollFade, setShowScrollFade] = useState(false)
-  const step = getCheckoutStep(cart)
+
+  const selectedCount = selectedIds.size
   const isTotalValid = cart.total !== null && cart.total !== undefined
   const hasError = !isTotalValid
 
-  const { originalTotal, membershipDiscount, itemCount } =
-    calculateCartDiscount(cart.items)
+  // 선택된 아이템만으로 할인 계산
+  const selectedItems =
+    cart.items?.filter((item) => selectedIds.has(item.id)) ?? []
+  const { originalTotal, membershipDiscount } =
+    calculateCartDiscount(selectedItems)
+
+  // 선택된 아이템의 합계 계산
+  const selectedTotal = selectedItems.reduce(
+    (sum, item) => sum + (item.total ?? 0),
+    0
+  )
 
   useEffect(() => {
     const handleScroll = () => {
@@ -60,11 +68,13 @@ export default function MobileCheckoutBar({ cart }: MobileCheckoutBarProps) {
     }
   }, [])
 
+  const isDisabled = hasError || selectedCount === 0 || isPendingCheckout
+
   return (
     <div className="fixed inset-x-0 bottom-0 z-99 border-t bg-white lg:hidden">
       {/* 스크롤 페이드 인디케이터 */}
       <div
-        className={`pointer-events-none absolute inset-x-0 -top-12 h-12 bg-gradient-to-t from-white to-transparent transition-opacity duration-300 ${
+        className={`pointer-events-none absolute inset-x-0 -top-12 h-12 bg-linear-to-t from-white to-transparent transition-opacity duration-300 ${
           showScrollFade ? "opacity-100" : "opacity-0"
         }`}
       />
@@ -121,7 +131,7 @@ export default function MobileCheckoutBar({ cart }: MobileCheckoutBarProps) {
           <>
             <div className="mb-3 flex items-center justify-between">
               {/* 왼쪽: 할인 금액 */}
-              {membershipDiscount > 0 ? (
+              {membershipDiscount > 0 && selectedCount > 0 ? (
                 <button
                   onClick={() => setIsExpanded(!isExpanded)}
                   className={`flex cursor-pointer items-center gap-1 rounded-full px-2 py-1 text-sm font-medium transition-colors ${
@@ -144,31 +154,46 @@ export default function MobileCheckoutBar({ cart }: MobileCheckoutBarProps) {
 
               {/* 오른쪽: 가격 */}
               <div className="flex flex-col items-end">
-                <div className="flex items-baseline gap-2">
-                  {membershipDiscount > 0 && (
-                    <span className="text-sm text-gray-400 line-through">
-                      {formatPrice(originalTotal)}원
+                {selectedCount > 0 ? (
+                  <>
+                    <div className="flex items-baseline gap-2">
+                      {membershipDiscount > 0 && (
+                        <span className="text-sm text-gray-400 line-through">
+                          {formatPrice(originalTotal)}원
+                        </span>
+                      )}
+                      <span className="text-xl font-bold">
+                        {formatPrice(selectedTotal)}원
+                      </span>
+                    </div>
+                    <span className="text-xs text-gray-500">
+                      배송비{" "}
+                      {cart.shipping_total != null
+                        ? `${formatPrice(cart.shipping_total)}원`
+                        : "-"}
                     </span>
-                  )}
-                  <span className="text-xl font-bold">
-                    {formatPrice(cart.total)}원
+                  </>
+                ) : (
+                  <span className="text-sm text-muted-foreground">
+                    상품을 선택해주세요
                   </span>
-                </div>
-                <span className="text-xs text-gray-500">
-                  배송비{" "}
-                  {cart.shipping_total != null
-                    ? `${formatPrice(cart.shipping_total)}원`
-                    : "-"}
-                </span>
+                )}
               </div>
             </div>
 
             {/* 구매 버튼 */}
-            <LocalizedClientLink href={"/checkout?step=" + step}>
-              <Button className="h-12 w-full">
-                총 {itemCount}개 상품 구매하기
-              </Button>
-            </LocalizedClientLink>
+            <Button
+              className="h-12 w-full"
+              disabled={isDisabled}
+              onClick={onCheckout}
+            >
+              {isPendingCheckout && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              {selectedCount > 0
+                ? `총 ${selectedCount}개 상품 구매하기`
+                : "구매하기"}
+            </Button>
           </>
         )}
       </div>

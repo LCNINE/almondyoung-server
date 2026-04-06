@@ -4,31 +4,30 @@ import { Button } from "@/components/ui/button"
 import { HttpTypes } from "@medusajs/types"
 import CartTotals from "@/components/shared/cart-totals"
 import Divider from "@/components/shared/divider"
-import LocalizedClientLink from "@/components/shared/localized-client-link"
+import { Loader2 } from "lucide-react"
+
 import PriceErrorNotice from "../components/price-error-notice"
 
 type SummaryProps = {
   cart: HttpTypes.StoreCart & {
     promotions: HttpTypes.StorePromotion[]
   }
+  selectedCount: number
+  onCheckout: () => void
+  isPendingCheckout: boolean
 }
 
-function getCheckoutStep(cart: HttpTypes.StoreCart) {
-  if (!cart?.shipping_address?.address_1 || !cart.email) {
-    return "address"
-  } else if (cart?.shipping_methods?.length === 0) {
-    return "delivery"
-  } else {
-    return "payment"
-  }
-}
-
-const Summary = ({ cart }: SummaryProps) => {
-  const step = getCheckoutStep(cart)
-
+export default function Summary({
+  cart,
+  selectedCount,
+  onCheckout,
+  isPendingCheckout,
+}: SummaryProps) {
   // 필수 금액 값이 유효한지 체크
   const isTotalValid = cart.total !== null && cart.total !== undefined
   const hasError = !isTotalValid
+
+  const isDisabled = hasError || selectedCount === 0 || isPendingCheckout
 
   return (
     <div className="flex flex-col gap-y-4">
@@ -39,20 +38,23 @@ const Summary = ({ cart }: SummaryProps) => {
 
       {hasError && <PriceErrorNotice />}
 
-      {hasError ? (
-        <Button className="h-10 w-full" disabled>
-          구매하기
-        </Button>
-      ) : (
-        <LocalizedClientLink
-          href={"/checkout?step=" + step}
-          data-testid="checkout-button"
-        >
-          <Button className="h-10 w-full">구매하기</Button>
-        </LocalizedClientLink>
+      {selectedCount === 0 && !hasError && (
+        <p className="text-sm text-muted-foreground">
+          구매할 상품을 선택해주세요.
+        </p>
       )}
+
+      <Button
+        className="h-10 w-full"
+        disabled={isDisabled}
+        onClick={onCheckout}
+        data-testid="checkout-button"
+      >
+        {isPendingCheckout && (
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        )}
+        {selectedCount > 0 ? `${selectedCount}개 상품 구매하기` : "구매하기"}
+      </Button>
     </div>
   )
 }
-
-export default Summary
