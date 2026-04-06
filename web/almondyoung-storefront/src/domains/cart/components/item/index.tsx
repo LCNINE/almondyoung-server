@@ -19,7 +19,13 @@ import { formatPrice } from "@/lib/utils/price-utils"
 import { HttpTypes } from "@medusajs/types"
 import { Loader2, Minus, Plus, Trash2 } from "lucide-react"
 import Image from "next/image"
-import { cloneElement, ReactElement, useState } from "react"
+import {
+  cloneElement,
+  ReactElement,
+  useOptimistic,
+  useState,
+  useTransition,
+} from "react"
 import { toast } from "sonner"
 
 type ItemProps = {
@@ -32,7 +38,6 @@ type ItemProps = {
 
 type ItemChildProps = {
   item: HttpTypes.StoreCartLineItem
-  updating: boolean
   deleting: boolean
   error: string | null
   unitPrice: number
@@ -63,25 +68,29 @@ function Item({
   onSelectChange,
   selectDisabled,
 }: ItemProps) {
-  const [updating, setUpdating] = useState(false)
+  const [optimisticQuantity, setOptimisticQuantity] = useOptimistic(
+    item.quantity
+  )
+  const [, startTransition] = useTransition()
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const changeQuantity = async (quantity: number) => {
+  const changeQuantity = (quantity: number) => {
     if (quantity < 1) return
     setError(null)
-    setUpdating(true)
 
-    try {
-      await updateLineItem({ lineId: item.id, quantity })
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "수량 변경에 실패했습니다"
-      toast.error(message)
-      setError(message)
-    } finally {
-      setUpdating(false)
-    }
+    startTransition(async () => {
+      setOptimisticQuantity(quantity) // 즉시 UI 반영
+
+      try {
+        await updateLineItem({ lineId: item.id, quantity })
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "수량 변경에 실패했습니다"
+        toast.error(message)
+        setError(message)
+      }
+    })
   }
 
   const handleDelete = async () => {
@@ -97,7 +106,7 @@ function Item({
 
   const unitPrice = item.unit_price ?? 0
   const compareAtUnitPrice = item.compare_at_unit_price
-  const totalPrice = unitPrice * item.quantity
+  const totalPrice = unitPrice * optimisticQuantity
 
   // 할인율 계산 (compare_at_unit_price가 있고, unit_price보다 클 때만)
   const discountPercentage =
@@ -105,12 +114,13 @@ function Item({
       ? Math.round((1 - unitPrice / compareAtUnitPrice) * 100)
       : 0
   const compareAtTotalPrice = compareAtUnitPrice
-    ? compareAtUnitPrice * item.quantity
+    ? compareAtUnitPrice * optimisticQuantity
     : 0
 
+  const optimisticItem = { ...item, quantity: optimisticQuantity }
+
   return cloneElement(children, {
-    item,
-    updating,
+    item: optimisticItem,
     deleting,
     error,
     unitPrice,
@@ -129,7 +139,6 @@ function Item({
 function DesktopItem({
   item,
   type = "full",
-  updating,
   deleting,
   error,
   unitPrice,
@@ -218,72 +227,65 @@ function DesktopItem({
       {/* 수량 선택 (full 모드만) */}
       {type === "full" && (
         <TableCell>
-          <div className="border-input relative flex h-9 items-center rounded-lg border bg-white">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-full w-9 rounded-l-lg rounded-r-none"
-                onClick={() => changeQuantity?.(item.quantity - 1)}
-                disabled={updating || item.quantity <= 1}
-              >
-                <Minus className="h-4 w-4" />
-              </Button>
-              <button
-                type="button"
-                onClick={handleOpenModal}
-                className="hover:bg-gray-10 h-full w-10 cursor-pointer text-center text-sm font-medium"
-                disabled={updating}
-                data-testid="product-quantity-input"
-              >
-                {item.quantity}
-              </button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-full w-9 rounded-l-none rounded-r-lg"
-                onClick={() => changeQuantity?.(item.quantity + 1)}
-                disabled={updating}
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
-              {updating && (
-                <div className="bg-background/80 absolute inset-0 flex items-center justify-center rounded-lg">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                </div>
-              )}
-            </div>
+          <div className="border-input flex h-9 items-center rounded-lg border bg-white">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-full w-9 rounded-l-lg rounded-r-none"
+              onClick={() => changeQuantity?.(item.quantity - 1)}
+              disabled={item.quantity <= 1}
+            >
+              <Minus className="h-4 w-4" />
+            </Button>
+            <button
+              type="button"
+              onClick={handleOpenModal}
+              className="hover:bg-gray-10 h-full w-10 cursor-pointer text-center text-sm font-medium"
+              data-testid="product-quantity-input"
+            >
+              {item.quantity}
+            </button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-full w-9 rounded-l-none rounded-r-lg"
+              onClick={() => changeQuantity?.(item.quantity + 1)}
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
 
-            <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-              <DialogContent showCloseButton={false} className="max-w-xs">
-                <DialogHeader>
-                  <DialogTitle className="text-center">
-                    수량을 입력해주세요
-                  </DialogTitle>
-                </DialogHeader>
-                <Input
-                  type="number"
-                  min={1}
-                  value={inputQuantity}
-                  onChange={(e) => setInputQuantity(e.target.value)}
-                  className="focus:border-primary focus:ring-primary h-12 [appearance:textfield] text-center text-lg [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                  autoFocus
-                />
-                <DialogFooter className="grid grid-cols-2 gap-3">
-                  <Button
-                    variant="outline"
-                    className="h-11"
-                    onClick={() => setIsModalOpen(false)}
-                  >
-                    취소
-                  </Button>
-                  <Button className="h-11" onClick={handleConfirm}>
-                    확인
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+          <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+            <DialogContent showCloseButton={false} className="max-w-xs">
+              <DialogHeader>
+                <DialogTitle className="text-center">
+                  수량을 입력해주세요
+                </DialogTitle>
+              </DialogHeader>
+              <Input
+                type="number"
+                min={1}
+                value={inputQuantity}
+                onChange={(e) => setInputQuantity(e.target.value)}
+                className="focus:border-primary focus:ring-primary h-12 [appearance:textfield] text-center text-lg [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                autoFocus
+              />
+              <DialogFooter className="grid grid-cols-2 gap-3">
+                <Button
+                  variant="outline"
+                  className="h-11"
+                  onClick={() => setIsModalOpen(false)}
+                >
+                  취소
+                </Button>
+                <Button className="h-11" onClick={handleConfirm}>
+                  확인
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
           {error && (
             <p
               className="text-destructive mt-1 text-xs"
@@ -368,7 +370,6 @@ function DesktopItem({
 
 function MobileItem({
   item,
-  updating,
   deleting,
   totalPrice,
   discountPercentage,
@@ -451,14 +452,14 @@ function MobileItem({
 
         {/* 하단: 수량 + 가격 */}
         <div className="mt-auto flex items-center justify-between pt-2">
-          <div className="border-input relative flex h-8 items-center rounded-lg border bg-white">
+          <div className="border-input flex h-8 items-center rounded-lg border bg-white">
             <Button
               type="button"
               variant="ghost"
               size="icon"
               className="h-full w-8 rounded-l-lg rounded-r-none"
               onClick={() => changeQuantity?.(item.quantity - 1)}
-              disabled={updating || item.quantity <= 1}
+              disabled={item.quantity <= 1}
             >
               <Minus className="h-4 w-4" />
             </Button>
@@ -466,7 +467,6 @@ function MobileItem({
               type="button"
               onClick={handleOpenModal}
               className="h-full w-8 text-center text-sm font-medium hover:bg-gray-50"
-              disabled={updating}
             >
               {item.quantity}
             </button>
@@ -476,15 +476,9 @@ function MobileItem({
               size="icon"
               className="h-full w-8 rounded-l-none rounded-r-lg"
               onClick={() => changeQuantity?.(item.quantity + 1)}
-              disabled={updating}
             >
               <Plus className="h-4 w-4" />
             </Button>
-            {updating && (
-              <div className="bg-background/80 absolute inset-0 flex items-center justify-center rounded-lg">
-                <Loader2 className="h-4 w-4 animate-spin" />
-              </div>
-            )}
           </div>
 
           <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
