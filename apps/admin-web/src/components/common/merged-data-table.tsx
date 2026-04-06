@@ -3,7 +3,9 @@
 'use client';
 
 import React, { useState, useMemo, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils/cn';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import { Table } from '@/components/admin-ui-experimental/common/table/table';
@@ -32,8 +34,12 @@ type BaseProps<T> = {
     groupKey: keyof T | ((row: T) => string);
     className?: string;
     loading?: boolean;
+    /** 데이터 갱신 중 여부 (loading과 동일하게 스켈레톤 표시) */
+    isFetching?: boolean;
     emptyMessage?: string;
     getRowClassName?: (row: T, globalIndex: number) => string;
+    /** 행 클릭 시 이동할 URL (DataTable과 동일) */
+    navigateTo?: (row: T) => string;
 };
 
 type WithSelection<T> = BaseProps<T> & {
@@ -76,6 +82,8 @@ type RowMeta<T> = {
 export function MergedDataTable<T extends Record<string, unknown>>(
     props: MergedDataTableProps<T>,
 ) {
+    const router = useRouter();
+    
     const {
         data,
         columns,
@@ -83,8 +91,10 @@ export function MergedDataTable<T extends Record<string, unknown>>(
         groupKey,
         className,
         loading = false,
+        isFetching = false,
         emptyMessage = '데이터가 없습니다.',
         getRowClassName,
+        navigateTo,
     } = props;
 
     const {
@@ -208,14 +218,6 @@ export function MergedDataTable<T extends Record<string, unknown>>(
     };
 
     /* ── 렌더 ──────────────────────────────────────────── */
-    if (loading) {
-        return (
-            <div className={cn('flex items-center justify-center h-32', className)}>
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
-            </div>
-        );
-    }
-
     return (
         <div className={className}>
             <Table>
@@ -261,7 +263,23 @@ export function MergedDataTable<T extends Record<string, unknown>>(
                     </Table.Row>
                 </Table.Header>
                 <Table.Body>
-                    {rows.length === 0 ? (
+                    {loading || isFetching ? (
+                        // 스켈레톤 로딩 (DataTable 방식 참고)
+                        Array.from({ length: 10 }).map((_, i) => (
+                            <Table.Row key={`skeleton-${i}`}>
+                                {selectable && (
+                                    <Table.Cell>
+                                        <Skeleton className="h-4 w-4 mx-auto" />
+                                    </Table.Cell>
+                                )}
+                                {columns.map((col) => (
+                                    <Table.Cell key={col.key}>
+                                        <Skeleton className="h-4 w-full" />
+                                    </Table.Cell>
+                                ))}
+                            </Table.Row>
+                        ))
+                    ) : rows.length === 0 ? (
                         <Table.Row>
                             <Table.Cell
                                 colSpan={columns.length + (selectable ? 1 : 0)}
@@ -279,6 +297,7 @@ export function MergedDataTable<T extends Record<string, unknown>>(
                             const canSelect =
                                 !isRowSelectable || isRowSelectable(row);
                             const rowClass = getRowClassName?.(row, globalIndex) ?? '';
+                            const href = navigateTo ? navigateTo(row) : undefined;
 
                             return (
                                 <Table.Row
@@ -286,13 +305,17 @@ export function MergedDataTable<T extends Record<string, unknown>>(
                                     className={cn(
                                         isSelected && selectedRowClassName,
                                         rowClass,
+                                        'hover:bg-muted/50 transition-colors',
+                                        href && 'cursor-pointer',
                                     )}
+                                    onClick={href ? () => router.push(href) : undefined}
                                 >
                                     {/* 체크박스 셀: mergeCheckbox=true이면 첫 행만(rowspan), 아니면 매 행 */}
                                     {selectable && (mergeCheckbox ? isFirst : true) && (
                                         <td
                                             rowSpan={mergeCheckbox ? span : 1}
                                             className="h-10 px-2 align-middle text-center border-b"
+                                            onClick={(e) => e.stopPropagation()}
                                         >
                                             <div className="flex justify-center items-center">
                                                 <Checkbox
@@ -353,7 +376,6 @@ export function MergedDataTable<T extends Record<string, unknown>>(
 export function useMergedTableSelection<T extends Record<string, unknown>>(
     data: T[],
     groupKey: keyof T | ((row: T) => string),
-    isGroupSelectable?: (firstRow: T) => boolean,
 ) {
     const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
 
@@ -371,8 +393,6 @@ export function useMergedTableSelection<T extends Record<string, unknown>>(
     );
 
     const clearSelection = () => setSelectedKeys(new Set());
-
-    void isGroupSelectable; // 외부에서 allSelectableKeys 계산 시 사용
 
     return {
         selectionProps: {

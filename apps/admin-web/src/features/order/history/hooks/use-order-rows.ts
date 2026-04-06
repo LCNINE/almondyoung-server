@@ -1,5 +1,6 @@
 // src/features/order/history/hooks/use-order-rows.ts
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { useMemo } from 'react';
 import { customerApi, orders } from '@/lib/api/domains';
 import { useSkusByIds } from '@/lib/services/inventory';
 import { useCreateOutboundBatch } from '@/lib/services/orders';
@@ -92,7 +93,7 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
     const userIds = Array.from(allCustomerIds);
 
     const userMapQuery = useQuery({
-        queryKey: ['users', 'basic-map', userIds.sort().join(',')],
+        queryKey: ['users', 'basic-map', [...userIds].sort().join(',')],
         enabled: userIds.length > 0,
         staleTime: 60 * 1000,
         queryFn: async () => {
@@ -114,7 +115,7 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
     });
 
     // 5) 변환 → flat per-line rows
-    const transformedData = (): { items: OrderLineRow[]; total: number } => {
+    const transformedData = useMemo((): { items: OrderLineRow[]; total: number } => {
         if (!listQuery.data) return { items: [], total: 0 };
 
         const detailMap = new Map<string, any>();
@@ -245,10 +246,10 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
         lineRows.forEach((r, idx) => { r.rowSeq = total - idx; });
 
         return { items: lineRows, total };
-    };
+    }, [listQuery.data, detailQueries.data, skuMapQuery.data, userMapQuery.data]);
 
     return {
-        data: transformedData(),
+        data: transformedData,
         isLoading:
             listQuery.isLoading || detailQueries.isLoading || skuMapQuery.isLoading || userMapQuery.isLoading,
         isFetching:
