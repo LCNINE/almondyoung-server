@@ -1,18 +1,39 @@
 // src/features/order/history/components/modals/split-order-modal.tsx
+// TODO: WMS API 추가 필요 - POST /sales-orders/:id/split
 'use client';
 
 import { useState } from 'react';
 import { toast } from 'sonner';
-import type { SalesOrderRow } from '@/features/order/history/hooks/use-order-rows';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { splitOrder } from '@/lib/services/orders';
+import { orderQueryKeys } from '@/lib/services/orders';
+import type { OrderLineRow } from '@/features/order/history/hooks/use-order-rows';
 
 interface Props {
-    order: SalesOrderRow;
+    order: OrderLineRow;
     onClose: () => void;
 }
 
 export default function SplitOrderModal({ order, onClose }: Props) {
     const [selectedLines, setSelectedLines] = useState<Set<string>>(new Set());
     const [recipientSuffix, setRecipientSuffix] = useState('-2');
+    const queryClient = useQueryClient();
+
+    const splitMutation = useMutation({
+        mutationFn: splitOrder,
+        onSuccess: (result) => {
+            if (result.success) {
+                toast.success('주문이 분리되었습니다.');
+                queryClient.invalidateQueries({ queryKey: orderQueryKeys.orders });
+                onClose();
+            } else {
+                toast.error(result.error || '주문 분리 중 오류가 발생했습니다.');
+            }
+        },
+        onError: (error: any) => {
+            toast.error(error.message || '주문 분리 중 오류가 발생했습니다.');
+        },
+    });
 
     const handleSplit = async () => {
         if (selectedLines.size === 0) {
@@ -25,26 +46,23 @@ export default function SplitOrderModal({ order, onClose }: Props) {
             return;
         }
 
-        try {
-            // TODO: API 연동
-            console.log('Split order:', {
-                orderId: order.id,
-                lineIds: Array.from(selectedLines),
-                newRecipientName: order.receiverName + recipientSuffix,
-            });
-
-            toast.success('주문이 분리되었습니다.');
-            onClose();
-        } catch (error) {
-            toast.error('주문 분리 중 오류가 발생했습니다.');
-        }
+        splitMutation.mutate({
+            orderId: order.orderId,
+            selectedLineIds: Array.from(selectedLines),
+            originalOrder: order,
+        });
     };
 
     return (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-xl w-full max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
                 <div className="px-6 py-4 border-b flex items-center justify-between">
-                    <h2 className="text-lg font-semibold">배송 나누기</h2>
+                    <div>
+                        <h2 className="text-lg font-semibold">배송 나누기</h2>
+                        <p className="text-xs text-amber-600 mt-1">
+                            WMS API 추가 필요 (POST /sales-orders/:id/split)
+                        </p>
+                    </div>
                     <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
                         ✕
                     </button>
@@ -151,15 +169,17 @@ export default function SplitOrderModal({ order, onClose }: Props) {
                 <div className="px-6 py-4 border-t flex justify-end gap-3">
                     <button
                         onClick={onClose}
-                        className="px-4 py-2 border rounded-md hover:bg-gray-50"
+                        disabled={splitMutation.isPending}
+                        className="px-4 py-2 border rounded-md hover:bg-gray-50 disabled:opacity-50"
                     >
                         취소
                     </button>
                     <button
                         onClick={handleSplit}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                        disabled={splitMutation.isPending || selectedLines.size === 0}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                        주문 분리
+                        {splitMutation.isPending ? '처리 중...' : '주문 분리'}
                     </button>
                 </div>
             </div>
