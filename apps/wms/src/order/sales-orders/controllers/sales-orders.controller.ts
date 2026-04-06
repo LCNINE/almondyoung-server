@@ -52,6 +52,13 @@ export class SalesOrdersController {
     return this.service.merge(dto);
   }
 
+  @Get('stats')
+  @ApiOperation({ summary: '주문 현황 통계', description: '최근 14일 주문 현황 통계를 조회합니다.' })
+  @ApiResponse({ status: 200, description: '통계 조회 성공' })
+  getStats() {
+    return this.service.getStats();
+  }
+
   @Get(':id')
   @ApiOperation({ summary: '판매 주문 조회', description: 'ID로 판매 주문을 조회합니다. 주문 라인 정보가 포함됩니다.' })
   @ApiParam({ name: 'id', description: '판매 주문 ID' })

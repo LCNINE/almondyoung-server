@@ -19,6 +19,8 @@ import type {
   VariantMatchingDto,
   VariantSkuLookupDto,
   VariantSkuLookupResponseDto,
+  OrderLinesQuery,
+  OrderLinesResponseDto,
 } from '@/lib/types/dto/orders';
 
 /**
@@ -31,9 +33,36 @@ export const getMatchings = async (
   const params = new URLSearchParams();
 
   if (query.status) params.append('status', query.status);
+  if (query.limit !== undefined) params.append('limit', String(query.limit));
+  if (query.offset !== undefined) params.append('offset', String(query.offset));
 
   const response = await client.get(
     `${WMS_BASE_URL}/wms/matchings?${params.toString()}`
+  );
+  return response.data;
+};
+
+/**
+ * 주문 라인별 매칭 현황 조회
+ * GET /wms/matchings/order-lines
+ */
+export const getOrderLines = async (
+  query: OrderLinesQuery = {}
+): Promise<OrderLinesResponseDto> => {
+  const params = new URLSearchParams();
+
+  if (query.matchingStatus) params.append('matchingStatus', query.matchingStatus);
+  if (query.excludeMatched) params.append('excludeMatched', 'true');
+  if (query.salesChannel) params.append('salesChannel', query.salesChannel);
+  if (query.startDate) params.append('startDate', query.startDate);
+  if (query.endDate) params.append('endDate', query.endDate);
+  if (query.keyword) params.append('keyword', query.keyword);
+  if (query.keywordType) params.append('keywordType', query.keywordType);
+  if (query.limit !== undefined) params.append('limit', String(query.limit));
+  if (query.offset !== undefined) params.append('offset', String(query.offset));
+
+  const response = await client.get(
+    `${WMS_BASE_URL}/wms/matchings/order-lines?${params.toString()}`
   );
   return response.data;
 };
@@ -173,6 +202,7 @@ export const updateVariantMatching = async (
 export const matchingClient = {
   // 조회
   getMatchings,
+  getOrderLines,
   getVariantMatching,
   getVariantStockPolicy,
   getVariantSkuLookup,

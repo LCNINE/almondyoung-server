@@ -2,7 +2,7 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
 import { TypedDatabase, DbService } from '@app/db';
-import { and, eq, asc } from 'drizzle-orm';
+import { and, eq, desc, count, inArray, isNull, or, ne, gte, lte, ilike, SQL } from 'drizzle-orm';
 import { InventoryService } from './inventory.service';
 import { StockEventService } from './stock-event.service';
 import { ResolveMatchingDto } from '../dto/product-matching/resolve-matching.dto';
@@ -243,43 +243,162 @@ export class ProductMatchingService {
     }, tx);
   }
 
-  async getMatchingPendings(status?: 'pending' | 'matched' | 'ignored', tx?: DbTx) {
-    const matchings = await this.inTx(async (trx) => {
-      if (status) {
-        return trx
-          .select()
-          .from(wmsTables.productMatchings)
-          .where(eq(wmsTables.productMatchings.status, status))
-          .orderBy(asc(wmsTables.productMatchings.createdAt));
+  async getOrderLines(
+    params: {
+      matchingStatus?: 'pending' | 'matched' | 'ignored' | 'unregistered';
+      excludeMatched?: boolean;
+      salesChannel?: string;
+      startDate?: string;
+      endDate?: string;
+      keyword?: string;
+      keywordType?: 'productName' | 'orderNumber' | 'customerName';
+      limit?: number;
+      offset?: number;
+    },
+    tx?: DbTx,
+  ) {
+    const { matchingStatus, excludeMatched, salesChannel, startDate, endDate, keyword, keywordType } = params;
+    const limit = params.limit ?? 50;
+    const offset = params.offset ?? 0;
+
+    return this.inTx(async (trx) => {
+      const { salesOrderLines, salesOrders, productMatchings, productVariantSkuLinks, skus } = wmsTables;
+
+      // WHERE 조건 조립
+      const conditions: SQL<unknown>[] = [];
+
+      // 매칭 상태 필터
+      if (matchingStatus === 'unregistered') {
+        conditions.push(isNull(productMatchings.id));
+      } else if (matchingStatus) {
+        conditions.push(eq(productMatchings.status, matchingStatus));
+      } else if (excludeMatched) {
+        const cond = or(isNull(productMatchings.id), ne(productMatchings.status, 'matched'));
+        if (cond) conditions.push(cond);
       }
-      return trx.select().from(wmsTables.productMatchings).orderBy(asc(wmsTables.productMatchings.createdAt));
-    }, tx);
 
-    const matchingsWithDetails = await Promise.all(
-      matchings.map(async (matching) => {
-        if (matching.strategy && matching.status === 'matched') {
-          try {
-            const strategy = this.getStrategy(matching.strategy);
-            const context: MatchingContext = {
-              variantId: matching.variantId,
-              productMatchingId: matching.id,
-            };
-            const skuMappings = await strategy.lookup(context);
+      // 판매처 필터
+      if (salesChannel) {
+        conditions.push(eq(salesOrders.salesChannel, salesChannel as (typeof salesOrders.salesChannel)['_']['data']));
+      }
 
-            return {
-              ...matching,
-              skuMappings,
-            };
-          } catch (error) {
-            this.logger.error(`Failed to lookup mappings for matching ${matching.id}:`, error);
-            return matching;
-          }
+      // 날짜 필터
+      if (startDate) {
+        conditions.push(gte(salesOrders.orderDate, new Date(startDate)));
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        conditions.push(lte(salesOrders.orderDate, end));
+      }
+
+      // 키워드 필터
+      if (keyword) {
+        if (keywordType === 'orderNumber') {
+          conditions.push(ilike(salesOrders.channelOrderId, `%${keyword}%`));
+        } else if (keywordType === 'customerName') {
+          conditions.push(ilike(salesOrders.customerName, `%${keyword}%`));
+        } else {
+          // 기본: 상품명 검색
+          conditions.push(ilike(salesOrderLines.productName, `%${keyword}%`));
         }
-        return matching;
-      }),
-    );
+      }
 
-    return matchingsWithDetails;
+      const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+      // 1. 전체 건수
+      const [{ total }] = await trx
+        .select({ total: count() })
+        .from(salesOrderLines)
+        .innerJoin(salesOrders, eq(salesOrderLines.salesOrderId, salesOrders.id))
+        .leftJoin(productMatchings, eq(salesOrderLines.variantId, productMatchings.variantId))
+        .where(where);
+
+      // 2. 페이지네이션 주문 라인 조회
+      const rows = await trx
+        .select({
+          lineId: salesOrderLines.id,
+          variantId: salesOrderLines.variantId,
+          productName: salesOrderLines.productName,
+          quantity: salesOrderLines.quantity,
+          unitPrice: salesOrderLines.unitPrice,
+          totalPrice: salesOrderLines.totalPrice,
+          lineStatus: salesOrderLines.status,
+          lineCreatedAt: salesOrderLines.createdAt,
+          salesOrderId: salesOrders.id,
+          channelOrderId: salesOrders.channelOrderId,
+          salesChannel: salesOrders.salesChannel,
+          customerName: salesOrders.customerName,
+          customerPhone: salesOrders.customerPhone,
+          orderDate: salesOrders.orderDate,
+          matchingId: productMatchings.id,
+          matchingStatus: productMatchings.status,
+        })
+        .from(salesOrderLines)
+        .innerJoin(salesOrders, eq(salesOrderLines.salesOrderId, salesOrders.id))
+        .leftJoin(productMatchings, eq(salesOrderLines.variantId, productMatchings.variantId))
+        .where(where)
+        .orderBy(desc(salesOrderLines.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+      if (rows.length === 0) {
+        return { data: [], total, page: Math.floor(offset / limit) + 1, limit };
+      }
+
+      // 3. 매칭된 SKU 배치 조회
+      const matchingIds = rows.map((r) => r.matchingId).filter((id): id is string => id !== null);
+      const skuLinks =
+        matchingIds.length > 0
+          ? await trx
+              .select({
+                productMatchingId: productVariantSkuLinks.productMatchingId,
+                skuId: productVariantSkuLinks.skuId,
+                quantity: productVariantSkuLinks.quantity,
+                skuName: skus.name,
+                skuCode: skus.code,
+              })
+              .from(productVariantSkuLinks)
+              .innerJoin(skus, eq(productVariantSkuLinks.skuId, skus.id))
+              .where(inArray(productVariantSkuLinks.productMatchingId, matchingIds))
+          : [];
+
+      const skusByMatchingId = new Map<string, (typeof skuLinks)[0][]>();
+      for (const link of skuLinks) {
+        if (!skusByMatchingId.has(link.productMatchingId)) {
+          skusByMatchingId.set(link.productMatchingId, []);
+        }
+        skusByMatchingId.get(link.productMatchingId)!.push(link);
+      }
+
+      // 4. 최종 응답 조립
+      const data = rows.map((row) => ({
+        id: row.lineId,
+        variantId: row.variantId,
+        productName: row.productName,
+        quantity: row.quantity,
+        unitPrice: row.unitPrice ?? undefined,
+        totalPrice: row.totalPrice ?? undefined,
+        salesOrderId: row.salesOrderId,
+        channelOrderId: row.channelOrderId,
+        salesChannel: row.salesChannel,
+        customerName: row.customerName ?? undefined,
+        customerPhone: row.customerPhone ?? undefined,
+        orderDate: row.orderDate.toISOString(),
+        matchingId: row.matchingId ?? undefined,
+        matchingStatus: row.matchingStatus ?? undefined,
+        matchedSkus: row.matchingId
+          ? (skusByMatchingId.get(row.matchingId) ?? []).map((s) => ({
+              skuId: s.skuId,
+              skuName: s.skuName,
+              skuCode: s.skuCode ?? undefined,
+              quantity: s.quantity,
+            }))
+          : [],
+      }));
+
+      return { data, total, page: Math.floor(offset / limit) + 1, limit };
+    }, tx);
   }
 
   async resolveMatchingPending(matchingId: string, resolveDto: ResolveMatchingDto, tx?: DbTx) {

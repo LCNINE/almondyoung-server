@@ -64,6 +64,7 @@ async function bootstrap() {
       done();
     });
 
+  app.setGlobalPrefix('wms');
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
   // 전역 예외 필터 (Fastify 호환) - Guard 에러를 제대로 처리하기 위해 필수!

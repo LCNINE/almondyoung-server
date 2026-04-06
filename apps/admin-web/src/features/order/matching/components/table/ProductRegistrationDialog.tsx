@@ -17,7 +17,7 @@ import {
   FormLayout
 } from '@/components/common';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { MatchingDto } from '@/lib/types/dto/orders';
+import { OrderLineDto } from '@/lib/types/dto/orders';
 import { useResolveMatching } from '@/lib/services/orders';
 import { useCreateChannelProduct } from '@/lib/services/products';
 import { useSkus } from '@/lib/services/inventory';
@@ -49,11 +49,11 @@ function useDebounced<T>(value: T, delay = 350) {
 interface ProductRegistrationDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  matching: MatchingDto | null;
+  line: OrderLineDto | null;
 }
 
 /** 외부채널 매칭용 상품 등록 다이얼로그 */
-export function ProductRegistrationDialog({ isOpen, onClose, matching }: ProductRegistrationDialogProps) {
+export function ProductRegistrationDialog({ isOpen, onClose, line }: ProductRegistrationDialogProps) {
   const resolveMatching = useResolveMatching();
   const createChannelProduct = useCreateChannelProduct();
 
@@ -73,24 +73,21 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
   // 현재 “재고연결”을 눌러 편집중인 옵션 인덱스
   const [linkingIndex, setLinkingIndex] = useState<number | null>(null);
 
-  /** 폼 초기화 — 매칭이 바뀔 때 */
+  /** 폼 초기화 — line이 바뀔 때 */
   useEffect(() => {
-    if (!matching) return;
+    if (!line) return;
 
-    // 판매처/주문 기본값
-    const order = matching.order ?? ({} as any);
+    setSalesChannel(line.salesChannel || '');
+    setProductName(line.productName || '');
+    setSalesPrice(line.totalPrice ? String(line.totalPrice) : '');
 
-    setSalesChannel(order?.salesChannel || '');
-    setProductName(order?.productName || '');
-    setSalesPrice(order?.salesAmount ? String(order.salesAmount) : '');
-
-    // 외부채널/미등록인 경우 단일 옵션 기본 생성
+    // 단일 옵션 기본 생성
     const initialOptions: LocalOption[] = [
       {
         id: crypto.randomUUID(),
-        name: order?.optionName || '단일 옵션',
-        quantity: order?.quantity ?? 1,
-        price: order?.salesAmount ?? 0,
+        name: '단일 옵션',
+        quantity: line.quantity ?? 1,
+        price: line.totalPrice ?? 0,
         status: '판매',
       },
     ];
@@ -98,7 +95,7 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
     setActiveTab('opts');
     setSkuSearch('');
     setLinkingIndex(null);
-  }, [matching]);
+  }, [line]);
 
   const isSaving = createChannelProduct.isPending || resolveMatching.isPending;
 
@@ -136,7 +133,7 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
    *  2) 옵션에 연결된 skuId -> WMS 매칭 resolve (strategy: option)
    */
   const onSave = async () => {
-    if (!matching) return;
+    if (!line) return;
 
     // 옵션 검증
     const invalid = options.some((o) => !o.name || o.quantity <= 0);
@@ -149,8 +146,8 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
       // 1) 채널상품 생성 (스키마가 유동적일 수 있어 안전한 필드만 전송)
       //    CreateChannelProductDto의 상세를 몰라도, 대부분 서버에서 무시 가능한 확장 필드로 설계되어 있음.
       const channelProductDto: any = {
-        channelId: matching.order?.salesChannel || salesChannel || 'other',
-        externalProductCode: matching.order?.channelOrderId ?? '',
+        channelId: line.salesChannel || salesChannel || 'other',
+        externalProductCode: line.channelOrderId ?? '',
         name: productName,
         useOrderName,
         basePrice: Number(salesPrice) || 0,
@@ -160,12 +157,11 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
           price: o.price,
           status: o.status === '판매' ? 'active' : 'inactive',
           quantityPerUnit: o.quantity,
-          linkedSkuId: o.skuId, // 있으면 사용
+          linkedSkuId: o.skuId,
         })),
-        // 참고정보(서버에서 기록만 할 수 있도록)
         _meta: {
           from: 'external-matching-dialog',
-          orderId: (matching.order && 'id' in matching.order) ? matching.order.id : matching.id,
+          orderId: line.salesOrderId,
         },
       };
       try {
@@ -182,10 +178,10 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
 
       if (skuMappings.length > 0) {
         await resolveMatching.mutateAsync({
-          id: matching.id,
+          id: line.matchingId!,
           data: {
             ignore: false,
-            strategy: 'option', // 옵션 구성 기반
+            strategy: 'variant',
             stockPolicy: {
               inventoryManagement: true,
               preStockSellable: true,
@@ -198,7 +194,7 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
       } else {
         // 재고연결 없으면 “재고사용 안함” 또는 자동전략 중 택1
         await resolveMatching.mutateAsync({
-          id: matching.id,
+          id: line.matchingId!,
           data: {
             ignore: false,
             strategy: 'void', // 우선 재고 미사용으로 저장 (필요 시 'variant'로 교체)
@@ -228,7 +224,7 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
     }
   }, [salesChannel]);
 
-  if (!matching) return null;
+  if (!line) return null;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -264,7 +260,7 @@ export function ProductRegistrationDialog({ isOpen, onClose, matching }: Product
               </FormField>
               <FormField label="판매처 상품코드">
                 <FormInput
-                  value={matching.order?.channelOrderId || ''}
+                  value={line.channelOrderId || ''}
                   readOnly
                 />
               </FormField>

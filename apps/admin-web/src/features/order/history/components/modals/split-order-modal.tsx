@@ -1,18 +1,57 @@
 // src/features/order/history/components/modals/split-order-modal.tsx
+// TODO: WMS API 추가 필요 - POST /sales-orders/:id/split
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
-import type { SalesOrderRow } from '@/features/order/history/hooks/use-order-rows';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { splitOrder } from '@/lib/services/orders';
+import { orderQueryKeys } from '@/lib/services/orders';
+import {
+    FocusModal,
+    FocusModalContent,
+    FocusModalHeader,
+    FocusModalBody,
+    FocusModalFooter,
+    FocusModalTitle,
+} from '@/components/common/focus-modal';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import type { OrderLineRow } from '@/features/order/history/hooks/use-order-rows';
 
 interface Props {
-    order: SalesOrderRow;
-    onClose: () => void;
+    order: OrderLineRow;
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
 }
 
-export default function SplitOrderModal({ order, onClose }: Props) {
+export default function SplitOrderModal({ order, open, onOpenChange }: Props) {
     const [selectedLines, setSelectedLines] = useState<Set<string>>(new Set());
     const [recipientSuffix, setRecipientSuffix] = useState('-2');
+    const queryClient = useQueryClient();
+
+    useEffect(() => {
+        if (open) {
+            setSelectedLines(new Set());
+            setRecipientSuffix('-2');
+        }
+    }, [open, order.orderId]);
+
+    const splitMutation = useMutation({
+        mutationFn: splitOrder,
+        onSuccess: (result) => {
+            if (result.success) {
+                toast.success('주문이 분리되었습니다.');
+                queryClient.invalidateQueries({ queryKey: orderQueryKeys.orders });
+                onOpenChange(false);
+            } else {
+                toast.error(result.error || '주문 분리 중 오류가 발생했습니다.');
+            }
+        },
+        onError: (error: any) => {
+            toast.error(error.message || '주문 분리 중 오류가 발생했습니다.');
+        },
+    });
 
     const handleSplit = async () => {
         if (selectedLines.size === 0) {
@@ -25,32 +64,26 @@ export default function SplitOrderModal({ order, onClose }: Props) {
             return;
         }
 
-        try {
-            // TODO: API 연동
-            console.log('Split order:', {
-                orderId: order.id,
-                lineIds: Array.from(selectedLines),
-                newRecipientName: order.receiverName + recipientSuffix,
-            });
-
-            toast.success('주문이 분리되었습니다.');
-            onClose();
-        } catch (error) {
-            toast.error('주문 분리 중 오류가 발생했습니다.');
-        }
+        splitMutation.mutate({
+            orderId: order.orderId,
+            selectedLineIds: Array.from(selectedLines),
+            originalOrder: order,
+        });
     };
 
     return (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl w-full max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
-                <div className="px-6 py-4 border-b flex items-center justify-between">
-                    <h2 className="text-lg font-semibold">배송 나누기</h2>
-                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-                        ✕
-                    </button>
-                </div>
+        <FocusModal open={open} onOpenChange={onOpenChange}>
+            <FocusModalContent>
+                <FocusModalHeader>
+                    <div className="flex-1">
+                        <FocusModalTitle>배송 나누기</FocusModalTitle>
+                        <p className="text-xs text-amber-600 mt-1">
+                            WMS API 추가 필요 (POST /sales-orders/:id/split)
+                        </p>
+                    </div>
+                </FocusModalHeader>
 
-                <div className="flex-1 overflow-auto p-6">
+                <FocusModalBody className="p-6">
                     <div className="mb-4 p-4 bg-amber-50 rounded-lg">
                         <p className="text-sm text-amber-800">
                             한 바구니에 담긴 주문을 나누는 기능입니다. 나뉜 주문은 동일한 주문번호를 가지며,
@@ -78,7 +111,7 @@ export default function SplitOrderModal({ order, onClose }: Props) {
                                                 type="checkbox"
                                                 onChange={(e) => {
                                                     if (e.target.checked) {
-                                                        setSelectedLines(new Set(order.lines.map(l => l.id)));
+                                                        setSelectedLines(new Set(order.lines.map((l: any) => l.id)));
                                                     } else {
                                                         setSelectedLines(new Set());
                                                     }
@@ -88,11 +121,10 @@ export default function SplitOrderModal({ order, onClose }: Props) {
                                         <th className="p-3 text-left">상품명</th>
                                         <th className="p-3 text-left">옵션</th>
                                         <th className="p-3 text-center">수량</th>
-                                        <th className="p-3 text-left">상태</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {order.lines.map((line) => (
+                                    {order.lines.map((line: any) => (
                                         <tr key={line.id} className="border-t">
                                             <td className="p-3">
                                                 <input
@@ -112,14 +144,6 @@ export default function SplitOrderModal({ order, onClose }: Props) {
                                             <td className="p-3">{line.productName}</td>
                                             <td className="p-3">{line.optionName ?? '단일상품'}</td>
                                             <td className="p-3 text-center">{line.quantity}</td>
-                                            <td className="p-3">
-                                                {line.isDirect && (
-                                                    <span className="text-xs text-indigo-600">직배송</span>
-                                                )}
-                                                {line.isReadyToShip && (
-                                                    <span className="text-xs text-emerald-600 ml-2">출고가능</span>
-                                                )}
-                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -130,39 +154,40 @@ export default function SplitOrderModal({ order, onClose }: Props) {
                     <div className="mb-6">
                         <h3 className="text-sm font-medium mb-2">새 주문 수령자명</h3>
                         <div className="flex items-center gap-2">
-                            <input
+                            <Input
                                 type="text"
                                 value={order.receiverName}
                                 disabled
-                                className="flex-1 px-3 py-2 border rounded-md bg-gray-50"
+                                className="flex-1 bg-gray-50"
                             />
                             <span>+</span>
-                            <input
+                            <Input
                                 type="text"
                                 value={recipientSuffix}
                                 onChange={(e) => setRecipientSuffix(e.target.value)}
                                 placeholder="-2"
-                                className="w-20 px-3 py-2 border rounded-md"
+                                className="w-20"
                             />
                         </div>
                     </div>
-                </div>
+                </FocusModalBody>
 
-                <div className="px-6 py-4 border-t flex justify-end gap-3">
-                    <button
-                        onClick={onClose}
-                        className="px-4 py-2 border rounded-md hover:bg-gray-50"
+                <FocusModalFooter>
+                    <Button
+                        variant="outline"
+                        onClick={() => onOpenChange(false)}
+                        disabled={splitMutation.isPending}
                     >
                         취소
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                         onClick={handleSplit}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                        disabled={splitMutation.isPending || selectedLines.size === 0}
                     >
-                        주문 분리
-                    </button>
-                </div>
-            </div>
-        </div>
+                        {splitMutation.isPending ? '처리 중...' : '주문 분리'}
+                    </Button>
+                </FocusModalFooter>
+            </FocusModalContent>
+        </FocusModal>
     );
 }

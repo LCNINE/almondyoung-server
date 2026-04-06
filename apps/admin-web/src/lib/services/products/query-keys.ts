@@ -26,6 +26,8 @@ export const productQueryKeys = {
   variant: (id: string) => [...productQueryKeys.variants, id] as const,
   variantPrice: (id: string) =>
     [...productQueryKeys.variant(id), 'price'] as const,
+  variantsBatch: (ids: string[]) =>
+    [...productQueryKeys.variants, 'batch', ids.slice().sort().join(',')] as const,
 
   // 판매 채널 관련
   channels: ['channels'] as const,

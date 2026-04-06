@@ -4,36 +4,34 @@
 import { createContext, useContext, useMemo, useState } from 'react';
 import dayjs from 'dayjs';
 
-/** WMS order_status enum 값과 일치 */
-export type OrderStatus =
-    | 'pending'          // 미확정(기본) — WMS: pending
-    | 'confirmed'        // 확정
-    | 'cancelled'        // 취소
-    | 'all';
+export type QuickDateOption = 'today' | 'yesterday' | 'week' | 'month' | '3m' | 'custom';
 
+/** 구분 필터 - 재고/매칭 상태 기반 */
 export type OrderTypeFilter =
-    | 'all'
-    | 'ready'            // 완전출고 가능
-    | 'partial'          // 부분출고
-    | 'hold'             // 출고불가
-    | 'unmatched'        // 미매칭
-    | 'direct';          // 직배송
+    | 'pending'     // 주문 미확정 (기본값)
+    | 'all'         // 전체
+    | 'hold'        // 출고불가
+    | 'partial'     // 부분출고
+    | 'ready'       // 완전출고
+    | 'unmatched'   // 매칭안됨
+    | 'direct';     // 직배송
+
+export type KeywordType = '통합검색' | '주문번호' | '수령자' | '연락처' | '상품명';
 
 export interface OrderHistoryFilter {
-    status: OrderStatus;
     type: OrderTypeFilter;
-    channel?: string;         // 판매 채널
-    sellerId?: string;        // 판매처
-    keyword?: string;         // 주문번호/수취인/연락처 통합검색
-    dateFrom: string;         // YYYY-MM-DD
-    dateTo: string;           // YYYY-MM-DD
-    includeConfirmedWhenAll?: boolean; // 전체선택 시 확정/발송건 포함 여부
+    channelCategory?: string;   // 판매처 분류
+    channel?: string;           // 판매처 (medusa/naver/coupang/3pl)
+    quickDate: QuickDateOption;
+    dateFrom: string;           // YYYY-MM-DD
+    dateTo: string;             // YYYY-MM-DD
+    keywordType: KeywordType;
+    keyword?: string;
 }
 
 type Ctx = {
     filter: OrderHistoryFilter;
     setFilter: (p: Partial<OrderHistoryFilter>) => void;
-    // 검색 트리거(“검색” 버튼 눌렀을 때만 쿼리 발사)
     searchToken: number;
     triggerSearch: () => void;
 };
@@ -50,11 +48,11 @@ export const OrderHistoryFilterProvider: React.FC<{ children: React.ReactNode }>
     const today = dayjs().format('YYYY-MM-DD');
 
     const [filter, setFilterState] = useState<OrderHistoryFilter>({
-        status: 'pending',      // 기본: 주문 미확정
-        type: 'all',
+        type: 'pending', // 주문 미확정이 기본값
+        quickDate: 'today',
         dateFrom: today,
         dateTo: today,
-        includeConfirmedWhenAll: false,
+        keywordType: '통합검색',
     });
 
     const [searchToken, setSearchToken] = useState(0);

@@ -98,7 +98,8 @@ export const getChannels = async (
  */
 export const getActiveChannels = async (): Promise<ChannelDto[]> => {
   const response = await client.get(`${PIM_BASE_URL}/channels/active`);
-  return response.data;
+  // API가 paginated 응답 { data: [] } 형태로 반환
+  return Array.isArray(response.data) ? response.data : (response.data?.data ?? []);
 };
 
 /**

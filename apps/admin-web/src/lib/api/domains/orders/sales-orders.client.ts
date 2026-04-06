@@ -9,6 +9,7 @@ import type {
   CreateSalesOrderResponseDto,
   MergeSalesOrdersDto,
   MergeSalesOrdersResponseDto,
+  OrderStatsDto,
   SalesOrderDto,
   SalesOrdersQuery,
   SalesOrdersResponseDto,
@@ -89,6 +90,12 @@ export const salesOrders = {
     const response = await client.post(
       `${WMS_BASE_URL}/wms/sales-orders/${encodeURIComponent(id)}/cancel`
     );
+    return response.data;
+  },
+
+  // 주문 현황 통계
+  getStats: async (): Promise<OrderStatsDto> => {
+    const response = await client.get(`${WMS_BASE_URL}/wms/sales-orders/stats`);
     return response.data;
   },
 

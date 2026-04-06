@@ -1,7 +1,7 @@
 // src/lib/services/orders/queries.ts
 'use client';
 
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { orderQueryKeys } from './query-keys';
 import { orders } from '@/lib/api/domains';
 import type {
@@ -12,6 +12,7 @@ import type {
   StockPolicyDto,
   VariantSkuLookupDto,
   VariantSkuLookupResponseDto,
+  OrderLinesQuery,
 } from '@/lib/types/dto/orders';
 
 // 주문 관련 쿼리
@@ -203,10 +204,24 @@ export const useFulfillmentMetrics = () => {
   });
 };
 
+export const useOrderStats = () => {
+  return useQuery({
+    queryKey: orderQueryKeys.orderStats,
+    queryFn: () => orders.salesOrders.getStats(),
+    staleTime: 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
+  });
+};
+
 // 누락된 함수들 추가 (임시 구현)
 export const useConfirmSalesOrder = () => {
+  const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => Promise.resolve({ id, confirmed: true }),
+    mutationFn: (id: string) => orders.salesOrders.confirmSalesOrder(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.orderStats });
+    },
   });
 };
 
@@ -326,6 +341,19 @@ export const useIgnoredMatchings = (
 export const useMatchingsWithOrders = (query: MatchingsQuery = {}) => {
   return useMatchings({
     ...query,
+  });
+};
+
+/**
+ * 주문 라인별 매칭 현황 조회
+ * sales_order_lines 기반
+ */
+export const useOrderLines = (query: OrderLinesQuery = {}) => {
+  return useQuery({
+    queryKey: orderQueryKeys.orderLines(query),
+    queryFn: () => orders.matching.getOrderLines(query),
+    staleTime: 30 * 1000,
+    gcTime: 5 * 60 * 1000,
   });
 };
 
