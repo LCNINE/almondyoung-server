@@ -394,3 +394,6 @@ dist
 apps/medusa/docs/llms_full.md
 !packages/hms-api-wrapper/dist/
 !packages/hms-api-wrapper/dist/**
+
+# sst
+.sst
