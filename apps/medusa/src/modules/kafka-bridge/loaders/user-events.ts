@@ -31,16 +31,25 @@ export default async function userEventsLoader({ container }: LoaderOptions) {
     brokers: kafkaBrokers.split(','),
     ...(kafkaApiKey &&
       kafkaApiSecret && {
-        ssl: true,
-        sasl: {
-          mechanism: 'plain' as const,
-          username: kafkaApiKey,
-          password: kafkaApiSecret,
-        },
-      }),
+      ssl: true,
+      sasl: {
+        mechanism: 'plain' as const,
+        username: kafkaApiKey,
+        password: kafkaApiSecret,
+      },
+    }),
   });
 
-  consumer = kafka.consumer({ groupId: `${kafkaGroupId}-user-events` });
+  consumer = kafka.consumer({
+    groupId: `${kafkaGroupId}-user-events`,
+    sessionTimeout: 45000, // 45초 
+    heartbeatInterval: 10000,
+    rebalanceTimeout: 60000,
+    retry: {
+      initialRetryTime: 300,
+      retries: 10,
+    },
+  });
 
   try {
     await consumer.connect();
