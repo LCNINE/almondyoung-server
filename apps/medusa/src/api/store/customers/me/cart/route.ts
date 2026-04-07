@@ -2,6 +2,7 @@ import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { addToCartWorkflow, transferCartCustomerWorkflow } from '@medusajs/medusa/core-flows';
 import { defaultStoreCartFields } from '../../../carts/query-config';
+import { autoFillShipping } from './auto-fill-shipping';
 
 /**
  * 고객 카트 조회 헬퍼
@@ -54,13 +55,27 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   }
 
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
-  const customerCart = await getCustomerCart(query, customerId);
+  let customerCart = await getCustomerCart(query, customerId);
 
   if (!customerCart) {
     return res.status(200).json({
       cart: null,
       message: 'No active cart found for this customer',
     });
+  }
+
+  // 배송지 및 배송 메모 자동 채우기 (기존 고객 카트 복구 시)
+  try {
+    await autoFillShipping(req.scope, {
+      id: customerCart.id,
+      customer_id: customerCart.customer_id,
+      shipping_address: customerCart.shipping_address,
+      metadata: customerCart.metadata,
+    });
+    // 업데이트가 있었을 수 있으므로 카트를 다시 조회
+    customerCart = await getCustomerCart(query, customerId);
+  } catch (error) {
+    console.error('[GET /store/customers/me/cart] autoFillShipping failed:', error);
   }
 
   return res.status(200).json({
@@ -160,6 +175,20 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       cart: null,
       message: 'No active cart found for this customer',
     });
+  }
+
+  // 배송지 및 배송 메모 자동 채우기
+  try {
+    await autoFillShipping(req.scope, {
+      id: customerCart.id,
+      customer_id: customerCart.customer_id,
+      shipping_address: customerCart.shipping_address,
+      metadata: customerCart.metadata,
+    });
+    // 업데이트가 있었을 수 있으므로 카트를 다시 조회
+    customerCart = await getCustomerCart(query, customerId);
+  } catch (error) {
+    console.error('[POST /store/customers/me/cart] autoFillShipping failed:', error);
   }
 
   return res.status(200).json({
