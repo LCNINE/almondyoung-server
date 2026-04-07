@@ -71,7 +71,7 @@ export async function updatePhoneNumberAction(
     await api("users", "/users/me", {
       method: "PATCH",
       body: {
-        phoneNumber: phoneNumber.replace(/\D/g, ""),
+        phoneNumber,
       },
       withAuth: true,
     })
