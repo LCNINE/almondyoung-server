@@ -1,12 +1,30 @@
-import { MedusaError } from '@medusajs/framework/utils';
+import { MedusaError, Modules } from '@medusajs/framework/utils';
 import { completeCartWorkflow } from '@medusajs/medusa/core-flows';
 import { getVariantAvailability, ContainerRegistrationKeys } from '@medusajs/framework/utils';
+import { ICartModuleService } from '@medusajs/framework/types';
 
-// getVariantAvailability의 첫 번째 인자 타입 추론 (패키지 간 타입 충돌 방지)
 type QueryParam = Parameters<typeof getVariantAvailability>[0];
 
 completeCartWorkflow.hooks.validate(async ({ cart }, { container }) => {
   const query = container.resolve<QueryParam>(ContainerRegistrationKeys.QUERY);
+
+  // cart.email이 없고 customer_id가 있으면 customer.email로 자동 채우기
+  if (!cart.email && cart.customer_id) {
+    const { data: customers } = await query.graph({
+      entity: 'customer',
+      fields: ['id', 'email'],
+      filters: { id: cart.customer_id },
+    });
+
+    const customer = customers?.[0];
+
+    if (customer?.email) {
+      const cartService = container.resolve<ICartModuleService>(Modules.CART);
+      await cartService.updateCarts(cart.id, { email: customer.email });
+      // cart 객체도 업데이트 (이후 로직에서 사용될 수 있으므로)
+      cart.email = customer.email;
+    }
+  }
 
   const { data: carts } = await query.graph(
     {
