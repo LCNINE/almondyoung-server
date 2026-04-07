@@ -128,9 +128,6 @@ module.exports = defineConfig({
     {
       resolve: './src/modules/product-sorting',
     },
-    {
-      resolve: './src/modules/kafka-bridge',
-    },
   ],
   admin: {
     // Custom Vite config is needed because the admin bundler sometimes
