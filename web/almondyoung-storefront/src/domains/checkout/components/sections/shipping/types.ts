@@ -3,6 +3,8 @@ import { HttpTypes, StoreCartAddress } from "@medusajs/types"
 export interface ShippingMemo {
   type: string
   custom: string
+  hasEntrance: boolean
+  entrancePassword: string
 }
 
 export interface ShippingSectionProps {
