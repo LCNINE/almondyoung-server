@@ -55,21 +55,32 @@ export default function CheckoutTemplate({
     [cart.items, selectedIds]
   )
 
-  // 가격 계산
+  // 가격 계산 - 선택된 아이템 기준
   const cartTotals: CartTotals = useMemo(() => {
-    const { currency_code, item_subtotal, discount_subtotal, total } =
-      getCartTotals(cart)
+    const { currency_code } = getCartTotals(cart)
+
+    // 선택된 아이템 기준 상품 금액 계산
+    const item_subtotal = selectedItems.reduce((acc, item) => {
+      return acc + (item.unit_price ?? 0) * (item.quantity ?? 0)
+    }, 0)
+
+    // 선택된 아이템 기준 프로모션 할인 계산
+    const discount_subtotal = selectedItems.reduce((acc, item) => {
+      const originalPrice = (item.unit_price ?? 0) * (item.quantity ?? 0)
+      const discountedPrice = item.subtotal ?? originalPrice
+      return acc + Math.max(0, originalPrice - discountedPrice)
+    }, 0)
+
     const membershipDiscount =
       isMembership && selectedItems.length > 0
         ? calculateMembershipDiscount(selectedItems)
         : 0
-    // Membership price-list is already reflected in Medusa unit_price/total.
-    // Keep membershipDiscount for UI breakdown only, and trust Medusa total for final amount.
+
     const totalDiscount = discount_subtotal
-    const finalTotal =
-      typeof total === "number"
-        ? total
-        : Math.max(0, item_subtotal + shipping.amount - totalDiscount)
+    const finalTotal = Math.max(
+      0,
+      item_subtotal + shipping.amount - totalDiscount
+    )
 
     return {
       currency_code,
@@ -81,7 +92,7 @@ export default function CheckoutTemplate({
       totalDiscount,
       finalTotal,
     }
-  }, [cart, shipping, selectedItems])
+  }, [cart, shipping, selectedItems, isMembership])
 
   const [isPaymentDetailsOpen, setIsPaymentDetailsOpen] = useState(true)
   const [loading, setLoading] = useState(false)
