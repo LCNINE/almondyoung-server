@@ -30,10 +30,24 @@ export interface UserEmailVerifiedPayload {
   name: string;
 }
 
+export interface UserUpdatedAddressPayload {
+  address_1: string;
+  address_2?: string;
+  city: string;
+  country_code: string;
+  postal_code: string;
+  province?: string;
+  is_default_shipping?: boolean;
+}
+
 export interface UserUpdatedPayload {
   userId: string;
-  email?: string;
-  name?: string;
+  username?: string;
+  nickname?: string;
+  phoneNumber?: string;
+  birthDate?: string;
+  profileImageUrl?: string;
+  address?: UserUpdatedAddressPayload | null;
 }
 
 export interface UserDeletedPayload {
@@ -105,10 +119,24 @@ const UserEmailVerifiedSchema = z.object({
   name: z.string().min(1),
 });
 
+const UserUpdatedAddressSchema = z.object({
+  address_1: z.string().min(1),
+  address_2: z.string().optional(),
+  city: z.string().min(1),
+  country_code: z.string().min(1),
+  postal_code: z.string().min(1),
+  province: z.string().optional(),
+  is_default_shipping: z.boolean().optional(),
+});
+
 const UserUpdatedSchema = z.object({
   userId: z.string().min(1),
-  email: z.string().email().optional(),
-  name: z.string().min(1).optional(),
+  username: z.string().min(1).optional(),
+  nickname: z.string().optional(),
+  phoneNumber: z.string().optional(),
+  birthDate: z.string().optional(),
+  profileImageUrl: z.string().optional(),
+  address: UserUpdatedAddressSchema.nullable().optional(),
 });
 
 const UserDeletedSchema = z.object({

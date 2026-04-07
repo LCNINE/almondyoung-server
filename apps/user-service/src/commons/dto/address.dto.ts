@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsOptional, IsString } from 'class-validator';
 
 export class AddressDto {
   @ApiProperty({ description: '주소 1 (기본주소)' })
@@ -27,4 +27,9 @@ export class AddressDto {
   @IsString()
   @IsOptional()
   province?: string;
+
+  @ApiProperty({ description: '기본 배송지 여부', example: true, required: false })
+  @IsBoolean()
+  @IsOptional()
+  is_default_shipping?: boolean;
 }
