@@ -1,19 +1,15 @@
 "use client"
 
-// import { PinRequiredModal } from "@/domains/checkout/components/modals/pin-required-modal"
-// import { PinVerifyModal } from "@/domains/checkout/components/modals/pin-verify-modal"
 import { DiscountSection } from "@/domains/checkout/components/sections/discount"
 import { OrderProductsSection } from "@/domains/checkout/components/sections/order-products-shipping"
 import { PaymentTotalSection } from "@/domains/checkout/components/sections/payment-total"
 import { ShippingSection } from "@/domains/checkout/components/sections/shipping"
 import type { ShippingMemo } from "@/domains/checkout/components/sections/shipping/types"
-// import { usePinStatus } from "@/hooks/api/use-pin-status"
 import { initiatePaymentSession, updateCart } from "@/lib/api/medusa/cart"
 import { CartResponseDto } from "@/lib/types/dto/medusa"
 import type { PointBalanceDto } from "@/lib/types/dto/wallet"
 import type { CartTotals, ShippingInfo } from "@/lib/types/ui/cart"
 import type { Promotion } from "@/lib/types/ui/promotion"
-import { TaxInvoiceType } from "@/lib/types/ui/wallet"
 import { buildPaymentItems } from "@/lib/utils/build-payment-items"
 import { setCheckoutCartByIntent } from "@/lib/utils/checkout-intent-map"
 import {
@@ -37,7 +33,6 @@ interface CheckoutTemplateProps {
   shipping: ShippingInfo
   promotions: Promotion[]
   pointBalance: PointBalanceDto
-  taxInvoice: TaxInvoiceType
 }
 
 export default function CheckoutTemplate({
@@ -47,19 +42,10 @@ export default function CheckoutTemplate({
   checkoutCartId,
   shipping,
   promotions,
-  taxInvoice,
 }: CheckoutTemplateProps) {
   const router = useRouter()
   const params = useParams()
   const countryCode = params.countryCode as string
-
-  // // PIN 상태 조회
-  // const { pinStatus, fetchPinStatus } = usePinStatus()
-
-  // //  PIN 상태 미리 조회
-  // useEffect(() => {
-  //   fetchPinStatus()
-  // }, [fetchPinStatus])
 
   // 선택된 상품 ID (기본값: 전체 선택)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(
@@ -100,20 +86,16 @@ export default function CheckoutTemplate({
     }
   }, [cart, shipping, selectedItems])
 
-  const [cashReceiptOption, setCashReceiptOption] = useState("noapply")
-  const [taxInvoiceOption, setTaxInvoiceOption] = useState(
-    taxInvoice?.defaultEnabled ? "apply" : "noapply"
-  )
   const [isPaymentDetailsOpen, setIsPaymentDetailsOpen] = useState(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // const [pinRequiredModalOpen, setPinRequiredModalOpen] = useState(false)
-  // const [pinVerifyModalOpen, setPinVerifyModalOpen] = useState(false)
 
   // 배송 메모 상태
   const [shippingMemo, setShippingMemo] = useState<ShippingMemo>(() => ({
     type: (cart?.metadata?.shipping_memo_type as string) || "",
     custom: (cart?.metadata?.shipping_memo_custom as string) || "",
+    hasEntrance: (cart?.metadata?.has_entrance as boolean) || false,
+    entrancePassword: (cart?.metadata?.entrance_password as string) || "",
   }))
 
   const handleShippingMemoChange = useCallback((memo: ShippingMemo) => {
@@ -123,6 +105,17 @@ export default function CheckoutTemplate({
   const handlePayment = async () => {
     if (!cart?.shipping_address?.address_1) {
       return toast.error("배송지를 설정해주세요.")
+    }
+    if (!shippingMemo.type) {
+      return toast.error("배송 메모를 선택해주세요.")
+    }
+    // 문 앞 선택 + 공동현관 있음 체크 시 비밀번호 필수
+    if (
+      shippingMemo.type === "door" &&
+      shippingMemo.hasEntrance &&
+      !shippingMemo.entrancePassword.trim()
+    ) {
+      return toast.error("공동현관 비밀번호를 입력해주세요.")
     }
     processPayment()
   }
@@ -139,6 +132,12 @@ export default function CheckoutTemplate({
             shipping_memo_type: shippingMemo.type,
             shipping_memo_custom:
               shippingMemo.type === "other" ? shippingMemo.custom : "",
+            has_entrance:
+              shippingMemo.type === "door" ? shippingMemo.hasEntrance : false,
+            entrance_password:
+              shippingMemo.type === "door" && shippingMemo.hasEntrance
+                ? shippingMemo.entrancePassword
+                : "",
           },
         },
         checkoutCartId
@@ -188,7 +187,7 @@ export default function CheckoutTemplate({
       <PCHeader />
 
       <div className="container mx-auto max-w-[1360px] px-4 lg:px-[40px] lg:py-8">
-        <MobileHeader onClose={() => router.back()} />
+        <MobileHeader onClose={() => router.push(`/${countryCode}/cart`)} />
 
         <div className="lg:flex lg:w-full lg:justify-between lg:gap-9">
           {/* 왼쪽 섹션 */}

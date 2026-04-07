@@ -6,11 +6,9 @@ import { ShippingAddressModal } from "../../../../../components/address"
 import { ShippingAddressSelectorModal } from "./address-selector-modal"
 import {
   AddressDisplay,
-  AddressLoadingState,
   EmptyAddressState,
   ShippingMemoSelector,
 } from "./components"
-import { useAutoFillShipping } from "./hooks/use-auto-fill-shipping"
 import type { EditAddressState, ShippingSectionProps } from "./types"
 import { formatAddress, isValidAddress } from "./utils"
 
@@ -26,10 +24,6 @@ export const ShippingSection = ({
   const [modalMode, setModalMode] = useState<"create" | "edit">("create")
   const [editAddressState, setEditAddressState] =
     useState<EditAddressState | null>(null)
-
-  // 배송지 자동 채움
-  // todo: 메두사 백엔드에서 하도록 변경해야됌 그리고, 배송메모도 마찬가지임 (메두사 카트에 담을때 훅(스텝)걸어서)
-  const { isAutoFilling } = useAutoFillShipping({ cartId, shippingAddress })
 
   // 배송지 정보 파싱
   const isValid = useMemo(
@@ -78,31 +72,7 @@ export const ShippingSection = ({
     }
   }, [])
 
-  const handleMemoTypeChange = useCallback(
-    (value: string) => {
-      onShippingMemoChange({
-        type: value,
-        custom: value === "other" ? shippingMemo.custom : "",
-      })
-    },
-    [onShippingMemoChange, shippingMemo.custom]
-  )
-
-  const handleCustomMemoChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      onShippingMemoChange({
-        type: "other",
-        custom: e.target.value,
-      })
-    },
-    [onShippingMemoChange]
-  )
-
   const renderContent = () => {
-    if (isAutoFilling) {
-      return <AddressLoadingState />
-    }
-
     if (!isValid) {
       return (
         <EmptyAddressState
@@ -125,10 +95,8 @@ export const ShippingSection = ({
           onChangeClick={() => setIsSelectorOpen(true)}
         />
         <ShippingMemoSelector
-          selectedMemoType={shippingMemo.type}
-          customMemo={shippingMemo.custom}
-          onMemoTypeChange={handleMemoTypeChange}
-          onCustomMemoChange={handleCustomMemoChange}
+          shippingMemo={shippingMemo}
+          onShippingMemoChange={onShippingMemoChange}
         />
       </>
     )

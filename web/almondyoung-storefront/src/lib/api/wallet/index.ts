@@ -255,7 +255,9 @@ export async function createIntent({ data }: { data: CreateIntentRequestDto }) {
       cache: "no-store",
     })
   } catch (v1Error) {
-    console.warn("[wallet/createIntent] v1 auth path failed, trying legacy path")
+    console.warn(
+      "[wallet/createIntent] v1 auth path failed, trying legacy path"
+    )
     try {
       const legacyPayload = {
         customerId: data.userId,
@@ -503,23 +505,10 @@ export async function getPointBalance(): Promise<PointBalanceDto> {
  * @returns
  */
 export async function getTaxInvoice(): Promise<TaxInvoiceDto> {
-  // TODO: 임시 mock 객체 사용
-  return {
-    userId: crypto.randomUUID(),
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    defaultEnabled: 1,
-    defaultBusinessInfo: {
-      name: "테스트 사업자",
-      businessNumber: "1234567890",
-      address: "서울특별시 강남구 역삼동 123-456",
-      ownerName: "테스트 대표자",
-    }
-  }
-  // return await api<TaxInvoiceDto>("wallet", "/tax-invoices/preferences", {
-  //   method: "GET",
-  //   withAuth: true,
-  // })
+  return await api<TaxInvoiceDto>("wallet", "/tax-invoices/preferences", {
+    method: "GET",
+    withAuth: true,
+  })
 }
 
 /**

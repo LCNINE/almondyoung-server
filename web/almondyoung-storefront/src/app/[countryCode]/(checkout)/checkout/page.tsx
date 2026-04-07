@@ -3,7 +3,6 @@ import {
   ensureCorrectShippingMethod,
   retrieveCart,
 } from "@/lib/api/medusa/cart"
-import { listCartPaymentMethods } from "@/lib/api/medusa/payment"
 import { getMyPromotions } from "@/lib/api/medusa/promotion"
 import { getPointBalance, getTaxInvoice } from "@/lib/api/wallet"
 import { CartResponseDto } from "@/lib/types/dto/medusa"
@@ -54,20 +53,16 @@ async function CheckoutManager({ cartId }: { cartId?: string }) {
     await ensureCorrectShippingMethod(cart)
   cart = updatedCart as CartResponseDto["cart"]
 
-  const [paymentMethods, promotionsResponse] = await Promise.all([
-    listCartPaymentMethods(cart.region?.id ?? ""),
-    getMyPromotions({ limit: 100 }).catch(() => ({
+  const promotionsResponse = await getMyPromotions({ limit: 100 }).catch(
+    () => ({
       promotions: [],
       count: 0,
       offset: 0,
       limit: 100,
-    })),
-  ])
+    })
+  )
 
-  const [pointBalance, taxInvoice] = await Promise.all([
-    getPointBalance(),
-    getTaxInvoice(),
-  ])
+  const [pointBalance] = await Promise.all([getPointBalance()])
 
   // 배송료 정보
   const shippingMethod = shippingMethods?.[0]
@@ -92,7 +87,6 @@ async function CheckoutManager({ cartId }: { cartId?: string }) {
       shipping={shipping}
       promotions={promotionsResponse.promotions}
       pointBalance={pointBalance}
-      taxInvoice={taxInvoice}
     />
   )
 }

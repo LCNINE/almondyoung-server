@@ -1,7 +1,6 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
-import { Skeleton } from "@/components/ui/skeleton"
 import { MapPin } from "lucide-react"
 
 interface EmptyAddressStateProps {
@@ -34,20 +33,6 @@ export function EmptyAddressState({
         <Button type="button" onClick={onAddNew}>
           새 배송지 추가
         </Button>
-      </div>
-    </div>
-  )
-}
-
-/**
- * 자동 배송지 채움 중 로딩 상태
- */
-export function AddressLoadingState() {
-  return (
-    <div className="flex flex-col items-center justify-center py-8 lg:py-12">
-      <div className="mb-4 flex flex-col items-center gap-3">
-        <Skeleton className="h-10 w-10 rounded-full" />
-        <Skeleton className="h-4 w-40" />
       </div>
     </div>
   )
