@@ -6,6 +6,7 @@ import { Public } from '../../commons/decorator/public.decorator';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserRolesResponse } from './dto/user-role-scopes.response.dto';
 import { UserResponseDto } from './dto/user.response.dto';
+import { UserDetailsResponseDto } from './dto/user-details.response.dto';
 import { UsersService } from './users.service';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 
@@ -13,7 +14,7 @@ import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 @ApiBearerAuth()
 @Controller('users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(private readonly usersService: UsersService) { }
 
   @ApiOperation({ summary: '이메일로 사용자 찾기' })
   @ApiResponse({
@@ -52,6 +53,18 @@ export class UsersController {
   @HttpCode(HttpStatus.OK)
   async getMe(@CurrentUser() user: JwtPayload): Promise<UserResponseDto> {
     return this.usersService.findUserById(user.id);
+  }
+
+  @ApiOperation({ summary: '현재 사용자 프로필 상세 조회 (전화번호, 주소, 상점 정보 포함)' })
+  @ApiResponse({
+    status: 200,
+    description: '프로필 상세 조회 성공',
+    type: UserDetailsResponseDto,
+  })
+  @Get('me/profile')
+  @HttpCode(HttpStatus.OK)
+  async getMyProfile(@CurrentUser() user: JwtPayload): Promise<UserDetailsResponseDto> {
+    return this.usersService.getUserDetails(user.id);
   }
 
   @ApiOperation({ summary: '내 프로필 정보 수정' })
