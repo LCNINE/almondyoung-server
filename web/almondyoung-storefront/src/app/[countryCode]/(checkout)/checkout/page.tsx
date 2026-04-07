@@ -3,16 +3,15 @@ import {
   ensureCorrectShippingMethod,
   retrieveCart,
 } from "@/lib/api/medusa/cart"
+import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import { getMyPromotions } from "@/lib/api/medusa/promotion"
-import { getPointBalance, getTaxInvoice } from "@/lib/api/wallet"
+import { getPointBalance } from "@/lib/api/wallet"
 import { CartResponseDto } from "@/lib/types/dto/medusa"
 import type { ShippingInfo } from "@/lib/types/ui/cart"
+import { getMembershipGroupIdFromEnv } from "@/lib/utils/membership-group"
 import ProtectedRoute from "@components/protected-route"
-import { fetchMe } from "@lib/api/users/me"
 import CheckoutTemplate from "domains/checkout/templates/checkout-template"
 import { notFound } from "next/navigation"
-import { retrieveCustomer } from "@/lib/api/medusa/customer"
-import { getMembershipGroupIdFromEnv } from "@/lib/utils/membership-group"
 
 export default async function CheckoutPage({
   searchParams,
@@ -29,7 +28,6 @@ export default async function CheckoutPage({
 }
 
 async function CheckoutManager({ cartId }: { cartId?: string }) {
-  const currentUser = await fetchMe()
   let cart = (await retrieveCart(
     cartId,
     "*items, *items.product, *items.product.tags, *items.variant, *region, *customer, *shipping_methods, +item_subtotal, +shipping_total, +total, +payment_collection.id, +currency_code",
@@ -76,7 +74,6 @@ async function CheckoutManager({ cartId }: { cartId?: string }) {
 
   return (
     <CheckoutTemplate
-      user={currentUser}
       isMembership={
         !!customer?.groups?.some(
           (group) => group.id === getMembershipGroupIdFromEnv()

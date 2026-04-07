@@ -16,7 +16,6 @@ import {
   calculateMembershipDiscount,
   getCartTotals,
 } from "@/lib/utils/price-utils"
-import type { UserDetail } from "@lib/types/ui/user"
 import { MobileCTA, PCFixedCTA } from "domains/checkout/components/cta"
 import { MobileHeader, PCHeader } from "domains/checkout/components/header"
 import { MobileOrderSummary } from "domains/checkout/components/order-summary"
@@ -26,7 +25,6 @@ import { useCallback, useMemo, useState } from "react"
 import { toast } from "sonner"
 
 interface CheckoutTemplateProps {
-  user: UserDetail
   isMembership: boolean
   cart: CartResponseDto["cart"]
   checkoutCartId: string
@@ -36,7 +34,6 @@ interface CheckoutTemplateProps {
 }
 
 export default function CheckoutTemplate({
-  user,
   isMembership,
   cart,
   checkoutCartId,
