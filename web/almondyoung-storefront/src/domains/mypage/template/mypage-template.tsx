@@ -34,18 +34,14 @@ import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import type { CustomerGroupRef } from "@/lib/utils/membership-group"
 import { isMembershipGroup } from "@/lib/utils/membership-group"
 
-export async function MyPageTemplate() {
+export async function MyPageTemplate({ countryCode }: { countryCode: string }) {
   const [currentUser, { isAdmin }, pointBalance] = await Promise.all([
     fetchMe(),
     checkAdminScope(),
     getPointBalance().catch(() => ({ balance: 0, withdrawable: 0 })),
   ])
 
-  const headersList = await headers()
-  const pathname = headersList.get("x-pathname") || ""
-  const countryCode = pathname.split("/")[1] || "kr"
-
-  const isPayLaterBannerEnabled = false
+  const isPayLaterBannerEnabled = false // bnpl 기능 미연결로 임시 비활성화
 
   const [customer, cart] = await Promise.all([
     retrieveCustomer().catch(() => null),

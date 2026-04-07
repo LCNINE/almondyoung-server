@@ -1,5 +1,6 @@
 "use client"
 
+import CustomPhoneInput from "@/components/shared/inputs/phone-input"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -9,31 +10,27 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import CustomPhoneInput from "@/components/shared/inputs/phone-input"
+import { Skeleton } from "@/components/ui/skeleton"
 import useTwilio from "@/domains/payment/components/hooks/use-twilio"
+import { getMyProfile } from "@/lib/api/users/profile"
 import { getCleanKoreanNumber } from "@/lib/utils/format-phone-number"
-import { updatePhoneNumberAction } from "../actions/profile"
-import { Phone } from "lucide-react"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { Check, Phone } from "lucide-react"
+import { useCallback, useEffect, useRef, useState, useTransition } from "react"
 import { toast } from "sonner"
-
-interface PhoneChangeSectionProps {
-  currentPhone: string
-  onPhoneChanged: (phone: string) => void
-}
+import { updatePhoneNumberAction } from "../actions/profile"
 
 type Step = "display" | "input" | "verify"
 
-export function PhoneChangeSection({
-  currentPhone,
-  onPhoneChanged,
-}: PhoneChangeSectionProps) {
+export function PhoneSection() {
   const [step, setStep] = useState<Step>("display")
+  const [currentPhone, setCurrentPhone] = useState<string | null>(null)
   const [newPhone, setNewPhone] = useState("")
   const [countryCode, setCountryCode] = useState("KR")
   const [verificationCode, setVerificationCode] = useState("")
-  const [isUpdating, setIsUpdating] = useState(false)
   const codeInputRef = useRef<HTMLInputElement>(null)
+  const prevPending = useRef(false)
+  const [isPending, startTransition] = useTransition()
+  const [isUpdating, startUpdateTransition] = useTransition()
 
   const {
     sendTwilioMessage,
@@ -43,42 +40,39 @@ export function PhoneChangeSection({
     isCodeVerifyPending,
     isCodeVerified,
     timer,
+    reset: resetTwilio,
   } = useTwilio()
 
-  // 인증번호 발송 완료 시 verify 단계로
-  const prevPending = useRef(false)
+  const normalizedNewPhone = newPhone.replace(/\D/g, "")
+  const isSameNumber = normalizedNewPhone === currentPhone
+
   useEffect(() => {
-    if (prevPending.current && !isCodeSendPending && isCodeSent) {
-      setStep("verify")
-    }
-    prevPending.current = isCodeSendPending
-  }, [isCodeSendPending, isCodeSent])
+    startTransition(async () => {
+      try {
+        const profile = await getMyProfile()
+        setCurrentPhone(
+          getCleanKoreanNumber(profile?.profile?.phoneNumber ?? "")
+        )
+      } catch {
+        toast.error("전화번호를 불러오는데 실패했습니다.")
+      }
+    })
+  }, [])
 
-  // verify 단계 진입 시 포커스
-  useEffect(() => {
-    if (step === "verify" && !isCodeVerified) {
-      codeInputRef.current?.focus()
-    }
-  }, [step, isCodeVerified])
-
-  // 인증 성공 후 번호 변경 버튼 클릭 시 서버에 업데이트
-  const handleChangePhone = useCallback(async () => {
-    setIsUpdating(true)
-    const result = await updatePhoneNumberAction(newPhone)
-    setIsUpdating(false)
-
-    if (result.success) {
-      toast.success("휴대폰 번호가 변경되었습니다.")
-      onPhoneChanged(newPhone.replace(/\D/g, ""))
-      handleReset()
-    } else {
-      toast.error(result.error || "휴대폰 번호 변경에 실패했습니다.")
-    }
-  }, [newPhone, onPhoneChanged])
+  const handleReset = useCallback(() => {
+    setStep("display")
+    setNewPhone("")
+    setVerificationCode("")
+    resetTwilio()
+  }, [resetTwilio])
 
   const handleSendCode = useCallback(() => {
     if (!newPhone) {
       toast.error("휴대폰 번호를 입력해주세요.")
+      return
+    }
+    if (isSameNumber) {
+      toast.error("현재 번호와 동일한 번호입니다.")
       return
     }
     sendTwilioMessage({
@@ -86,12 +80,19 @@ export function PhoneChangeSection({
       phoneNumber: newPhone,
       purpose: "phone_verify",
     })
-  }, [newPhone, countryCode, sendTwilioMessage])
+  }, [newPhone, countryCode, sendTwilioMessage, isSameNumber])
+
+  useEffect(() => {
+    if (prevPending.current && !isCodeSendPending && isCodeSent) {
+      setStep("verify")
+    }
+    prevPending.current = isCodeSendPending
+  }, [isCodeSendPending, isCodeSent])
 
   const handleVerifyCode = useCallback(() => {
-    if (verificationCode.length !== 6) return
+    if (verificationCode.length !== 6 || timer <= 0) return
     verifyCode({ phoneNumber: newPhone, code: verificationCode })
-  }, [verificationCode, newPhone, verifyCode])
+  }, [verificationCode, newPhone, verifyCode, timer])
 
   const handleResend = useCallback(() => {
     if (timer > 0) {
@@ -107,15 +108,33 @@ export function PhoneChangeSection({
     codeInputRef.current?.focus()
   }, [timer, countryCode, newPhone, sendTwilioMessage])
 
-  const handleReset = useCallback(() => {
-    setStep("display")
-    setNewPhone("")
-    setVerificationCode("")
-  }, [])
+  useEffect(() => {
+    if (step === "verify" && !isCodeVerified) {
+      codeInputRef.current?.focus()
+    }
+  }, [step, isCodeVerified])
 
-  const displayPhone = currentPhone
-    ? getCleanKoreanNumber(currentPhone)
-    : "등록된 번호 없음"
+  const handleChangePhone = useCallback(() => {
+    startUpdateTransition(async () => {
+      try {
+        const result = await updatePhoneNumberAction(newPhone)
+
+        if (result.success) {
+          toast.success("휴대폰 번호가 변경되었습니다.")
+          setCurrentPhone(newPhone.replace(/\D/g, ""))
+          handleReset()
+        } else {
+          toast.error(result.error || "휴대폰 번호 변경에 실패했습니다.")
+        }
+      } catch (error: unknown) {
+        const err = error as Error & { digest?: string }
+        if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") {
+          throw error
+        }
+        toast.error("휴대폰 번호 변경에 실패했습니다.")
+      }
+    })
+  }, [newPhone, handleReset])
 
   return (
     <Card>
@@ -126,27 +145,31 @@ export function PhoneChangeSection({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {/* 기본 표시 */}
         {step === "display" && (
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="grid size-9 place-items-center rounded-full bg-gray-100">
                 <Phone className="size-4 text-gray-500" />
               </div>
-              <span className="text-sm font-medium">{displayPhone}</span>
+              {isPending ? (
+                <Skeleton className="h-5 w-28" />
+              ) : (
+                <span className="text-sm font-medium">{currentPhone}</span>
+              )}
             </div>
+
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={() => setStep("input")}
+              disabled={isPending}
             >
               번호 변경
             </Button>
           </div>
         )}
 
-        {/* 번호 입력 */}
         {step === "input" && (
           <div className="space-y-4">
             <CustomPhoneInput
@@ -159,6 +182,11 @@ export function PhoneChangeSection({
               countryCode={countryCode}
               placeholder="새 휴대폰 번호"
             />
+            {isSameNumber && (
+              <p className="text-xs text-amber-600">
+                현재 번호와 동일한 번호입니다.
+              </p>
+            )}
 
             <div className="flex gap-2">
               <Button
@@ -172,7 +200,7 @@ export function PhoneChangeSection({
               <Button
                 type="button"
                 size="sm"
-                disabled={!newPhone || isCodeSendPending}
+                disabled={!newPhone || isCodeSendPending || isSameNumber}
                 onClick={handleSendCode}
               >
                 {isCodeSendPending ? "발송 중..." : "인증번호 받기"}
@@ -181,7 +209,6 @@ export function PhoneChangeSection({
           </div>
         )}
 
-        {/* 인증번호 입력 */}
         {step === "verify" && !isCodeVerified && (
           <div className="space-y-4">
             <p className="text-muted-foreground text-sm">
@@ -205,7 +232,9 @@ export function PhoneChangeSection({
                 type="button"
                 className="h-11 shrink-0 px-4"
                 disabled={
-                  verificationCode.length !== 6 || isCodeVerifyPending
+                  verificationCode.length !== 6 ||
+                  isCodeVerifyPending ||
+                  timer <= 0
                 }
                 onClick={handleVerifyCode}
               >
@@ -244,24 +273,11 @@ export function PhoneChangeSection({
           </div>
         )}
 
-        {/* 인증 완료 - 번호 변경 확인 */}
         {step === "verify" && isCodeVerified && (
           <div className="space-y-4">
             <div className="flex items-center gap-2">
               <div className="grid size-5 place-items-center rounded-full bg-green-500">
-                <svg
-                  className="size-3 text-white"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={3}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M5 13l4 4L19 7"
-                  />
-                </svg>
+                <Check className="size-3 text-white" strokeWidth={3} />
               </div>
               <p className="text-sm font-medium text-green-600">
                 인증이 완료되었습니다.

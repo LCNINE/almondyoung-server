@@ -19,13 +19,11 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { useUser } from "@/contexts/user-context"
 import type { UserDetail } from "@lib/types/ui/user"
 import { toLocalizedPath } from "@lib/utils/locale-path"
-import { useActionState, useEffect, useMemo, useState, useTransition } from "react"
+import { useActionState, useEffect, useMemo, useTransition } from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
-import { useParams } from "next/navigation"
 import { profileSchema, type ProfileSchema } from "../../schemas/profile-schema"
 import {
   updateProfileAction,
@@ -33,7 +31,7 @@ import {
   type ProfileActionState,
 } from "../actions/profile"
 import { AddressBookSection } from "./address-book-section"
-import { PhoneChangeSection } from "./phone-change-section"
+import { PhoneSection } from "./phone-section"
 
 const INPUT_CLASSNAME =
   "h-11 rounded-md border border-gray-300 px-4 text-sm aria-[invalid=true]:border-red-500"
@@ -49,14 +47,11 @@ function RequiredLabel({ children }: { children: React.ReactNode }) {
 
 interface ProfileEditProps {
   userData: UserDetail
+  countryCode: string
 }
 
-export function ProfileEdit({ userData }: ProfileEditProps) {
+export function ProfileEdit({ userData, countryCode }: ProfileEditProps) {
   const [isWithdrawPending, startWithdrawTransition] = useTransition()
-  const params = useParams<{ countryCode?: string }>()
-  const currentCountryCode =
-    typeof params.countryCode === "string" ? params.countryCode : "kr"
-  const { setUser } = useUser()
 
   const initialValues = useMemo(() => {
     const birthDate = userData.profile?.birthDate
@@ -72,10 +67,6 @@ export function ProfileEdit({ userData }: ProfileEditProps) {
       birthday: birthdayStr,
     }
   }, [userData])
-
-  const [currentPhone, setCurrentPhone] = useState(
-    userData.profile?.phoneNumber || ""
-  )
 
   const [state, formAction, isPending] = useActionState<
     ProfileActionState,
@@ -110,8 +101,8 @@ export function ProfileEdit({ userData }: ProfileEditProps) {
     startWithdrawTransition(async () => {
       try {
         await withdrawUserAction()
-        setUser(null)
-        window.location.replace(toLocalizedPath(currentCountryCode, "/"))
+
+        window.location.replace(toLocalizedPath(countryCode, "/"))
       } catch (error) {
         const message =
           error instanceof Error && error.message
@@ -245,10 +236,7 @@ export function ProfileEdit({ userData }: ProfileEditProps) {
       </Card>
 
       {/* 휴대폰 번호 변경 */}
-      <PhoneChangeSection
-        currentPhone={currentPhone}
-        onPhoneChanged={setCurrentPhone}
-      />
+      <PhoneSection />
 
       <Separator />
 

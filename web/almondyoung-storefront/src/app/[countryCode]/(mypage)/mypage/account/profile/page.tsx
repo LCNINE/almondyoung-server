@@ -10,7 +10,13 @@ export const metadata: Metadata = {
   description: "회원정보를 수정하세요",
 }
 
-export default async function AccountProfilePage() {
+export default async function AccountProfilePage({
+  params,
+}: {
+  params: { countryCode: string }
+}) {
+  const { countryCode } = await params
+
   const userData = await fetchMe()
 
   return (
@@ -25,7 +31,7 @@ export default async function AccountProfilePage() {
       <MypageLayout>
         <div className="bg-white px-3 py-4 md:min-h-screen md:px-6">
           <PageTitle>회원정보 수정</PageTitle>
-          <ProfileEdit userData={userData} />
+          <ProfileEdit userData={userData} countryCode={countryCode} />
         </div>
       </MypageLayout>
     </WithHeaderLayout>
