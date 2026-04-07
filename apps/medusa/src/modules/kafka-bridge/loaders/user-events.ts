@@ -40,16 +40,7 @@ export default async function userEventsLoader({ container }: LoaderOptions) {
     }),
   });
 
-  consumer = kafka.consumer({
-    groupId: `${kafkaGroupId}-user-events`,
-    sessionTimeout: 45000, // 45초 
-    heartbeatInterval: 10000,
-    rebalanceTimeout: 60000,
-    retry: {
-      initialRetryTime: 300,
-      retries: 10,
-    },
-  });
+  consumer = kafka.consumer({ groupId: `${kafkaGroupId}-user-events` });
 
   try {
     await consumer.connect();
