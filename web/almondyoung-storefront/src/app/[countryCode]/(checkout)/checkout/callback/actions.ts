@@ -158,12 +158,14 @@ export async function processPaymentCallback(
     if (mode === "membership" && planId) {
       try {
         await createSubscription(planId)
+        revalidateTag(await getCacheTag("carts"))
         return {
           success: true,
           redirectUrl: `/${countryCode}/mypage/membership/subscribe/success`,
         }
       } catch (error: any) {
         if (error instanceof HttpApiError && error.status === 409) {
+          revalidateTag(await getCacheTag("carts"))
           return {
             success: true,
             redirectUrl: `/${countryCode}/mypage/membership/subscribe/success`,
