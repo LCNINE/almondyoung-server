@@ -1,6 +1,28 @@
 import { AbstractEventBusModuleService } from "@medusajs/framework/utils"
 import { EventBusTypes, InternalModuleDeclaration } from "@medusajs/types"
-import { Kafka, Producer, Consumer, SASLOptions, logLevel } from "kafkajs"
+import { Kafka, Producer, Consumer, SASLOptions, logLevel, LogEntry } from "kafkajs"
+
+// 무시할 메시지 패턴
+const IGNORED_MESSAGES = [
+  "This server does not host this topic-partition",
+  "The group is rebalancing",
+]
+
+const customLogger = () => {
+  return ({ level, log }: LogEntry) => {
+    const { message } = log
+    // 무시할 메시지는 출력하지 않음
+    if (IGNORED_MESSAGES.some((ignored) => message?.includes(ignored))) {
+      return
+    }
+    // 나머지는 정상 출력
+    if (level === logLevel.ERROR) {
+      console.error("[Kafka]", message)
+    } else if (level === logLevel.WARN) {
+      console.warn("[Kafka]", message)
+    }
+  }
+}
 
 type KafkaEventOptions = {
   brokers: string[]
@@ -34,7 +56,8 @@ class MyKafkaEventService extends AbstractEventBusModuleService {
       brokers: moduleOptions.brokers,
       ssl: moduleOptions.ssl,
       sasl: moduleOptions.sasl as SASLOptions,
-      logLevel: logLevel.NOTHING, // 로그 완전히 끔
+      logLevel: logLevel.ERROR,
+      logCreator: customLogger,
     })
 
     this.producer_ = this.kafka_.producer()
