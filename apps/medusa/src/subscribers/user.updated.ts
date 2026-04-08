@@ -3,8 +3,13 @@ import type { Query } from "@medusajs/framework"
 import { updateCustomersWorkflow } from "@medusajs/medusa/core-flows"
 
 type UserUpdatedEvent = {
-  eventType: string
-  aggregateId: string
+  messageType: string
+  messageKind: string
+  source: {
+    service: string
+    aggregateType: string
+    aggregateId: string
+  }
   payload: {
     userId: string
     username?: string
@@ -19,10 +24,8 @@ export default async function userUpdatedHandler({
   event: { data },
   container,
 }: SubscriberArgs<UserUpdatedEvent>) {
-  console.log("[user.updated] Event received:", JSON.stringify(data, null, 2))
-
   // UserUpdated 이벤트만 처리
-  if (data.eventType !== "UserUpdated") {
+  if (data.messageType !== "UserUpdated") {
     return
   }
 
