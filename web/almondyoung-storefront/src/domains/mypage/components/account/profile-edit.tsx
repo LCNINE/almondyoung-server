@@ -236,7 +236,7 @@ export function ProfileEdit({ userData, countryCode }: ProfileEditProps) {
       </Card>
 
       {/* 휴대폰 번호 변경 */}
-      <PhoneSection />
+      <PhoneSection initialPhoneNumber={userData.profile?.phoneNumber ?? null} />
 
       <Separator />
 

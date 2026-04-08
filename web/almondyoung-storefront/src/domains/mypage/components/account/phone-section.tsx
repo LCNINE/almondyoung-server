@@ -10,9 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Skeleton } from "@/components/ui/skeleton"
 import useTwilio from "@/domains/payment/components/hooks/use-twilio"
-import { getMyProfile } from "@/lib/api/users/profile"
 import { getCleanKoreanNumber } from "@/lib/utils/format-phone-number"
 import { Check, Phone } from "lucide-react"
 import { useCallback, useEffect, useRef, useState, useTransition } from "react"
@@ -21,15 +19,20 @@ import { updatePhoneNumberAction } from "../actions/profile"
 
 type Step = "display" | "input" | "verify"
 
-export function PhoneSection() {
+interface PhoneSectionProps {
+  initialPhoneNumber: string | null
+}
+
+export function PhoneSection({ initialPhoneNumber }: PhoneSectionProps) {
   const [step, setStep] = useState<Step>("display")
-  const [currentPhone, setCurrentPhone] = useState<string | null>(null)
+  const [currentPhone, setCurrentPhone] = useState<string>(
+    getCleanKoreanNumber(initialPhoneNumber ?? "")
+  )
   const [newPhone, setNewPhone] = useState("")
   const [countryCode, setCountryCode] = useState("KR")
   const [verificationCode, setVerificationCode] = useState("")
   const codeInputRef = useRef<HTMLInputElement>(null)
   const prevPending = useRef(false)
-  const [isPending, startTransition] = useTransition()
   const [isUpdating, startUpdateTransition] = useTransition()
 
   const {
@@ -45,19 +48,6 @@ export function PhoneSection() {
 
   const normalizedNewPhone = newPhone.replace(/\D/g, "")
   const isSameNumber = normalizedNewPhone === currentPhone
-
-  useEffect(() => {
-    startTransition(async () => {
-      try {
-        const profile = await getMyProfile()
-        setCurrentPhone(
-          getCleanKoreanNumber(profile?.profile?.phoneNumber ?? "")
-        )
-      } catch {
-        toast.error("전화번호를 불러오는데 실패했습니다.")
-      }
-    })
-  }, [])
 
   const handleReset = useCallback(() => {
     setStep("display")
@@ -151,11 +141,9 @@ export function PhoneSection() {
               <div className="grid size-9 place-items-center rounded-full bg-gray-100">
                 <Phone className="size-4 text-gray-500" />
               </div>
-              {isPending ? (
-                <Skeleton className="h-5 w-28" />
-              ) : (
-                <span className="text-sm font-medium">{currentPhone}</span>
-              )}
+              <span className="text-sm font-medium">
+                {currentPhone || "등록된 번호가 없습니다"}
+              </span>
             </div>
 
             <Button
@@ -163,7 +151,6 @@ export function PhoneSection() {
               variant="outline"
               size="sm"
               onClick={() => setStep("input")}
-              disabled={isPending}
             >
               번호 변경
             </Button>

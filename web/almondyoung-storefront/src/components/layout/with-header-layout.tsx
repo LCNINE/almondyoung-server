@@ -80,9 +80,13 @@ export function WithHeaderLayout({ children, config }: WithHeaderLayoutProps) {
       )}
 
       {showMobileSubBackHeader && (
-        <div className="block md:hidden">
-          <MobileSubBackHeader title={mobileSubBackHeaderTitle} />
-        </div>
+        <>
+          <div className="block md:hidden">
+            <MobileSubBackHeader title={mobileSubBackHeaderTitle} />
+          </div>
+          {/* 모바일에서 fixed 헤더 높이만큼 여백 */}
+          <div className="h-12 md:hidden" />
+        </>
       )}
 
       {/* 페이지 콘텐츠 */}

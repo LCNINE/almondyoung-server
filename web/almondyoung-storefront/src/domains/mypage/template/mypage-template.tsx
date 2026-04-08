@@ -1,38 +1,37 @@
-import { Suspense } from "react"
-import { headers } from "next/headers"
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { AdminAccessButton } from "@/components/admin/admin-access-button"
 import { checkAdminScope } from "@lib/api/admin/inventory"
 import { fetchMe } from "@lib/api/users/me"
 import { getPointBalance } from "@lib/api/wallet"
 import type { UserDetail } from "@lib/types/ui/user"
+import { Suspense } from "react"
 
-import { UserProfileSection } from "../components/desktop/user-profile-section"
 import { QuickMenuSection } from "../components/desktop/quick-menu-section"
+import { UserProfileSection } from "../components/desktop/user-profile-section"
 
-import { MobileHeader } from "../components/mobile/mobile-header"
-import { QuickLinks } from "../components/mobile/quick-links"
-import { MenuList } from "../components/mobile/menu-list"
-import PayLaterBanner from "../components/mobile/paylater-banner"
 import { MENU_SECTIONS } from "../components/constants/mypage-constants"
+import { MenuList } from "../components/mobile/menu-list"
+import { MobileHeader } from "../components/mobile/mobile-header"
+import PayLaterBanner from "../components/mobile/paylater-banner"
+import { QuickLinks } from "../components/mobile/quick-links"
 
-import { ShippingItemsWrapper } from "./wrappers/shipping-items-wrapper"
 import { PaymentInfoWrapper } from "./wrappers/payment-info-wrapper"
-import { SavingsBannerWrapper } from "./wrappers/savings-banner-wrapper"
 import { PointsBannerWrapper } from "./wrappers/points-banner-wrapper"
+import { SavingsBannerWrapper } from "./wrappers/savings-banner-wrapper"
+import { ShippingItemsWrapper } from "./wrappers/shipping-items-wrapper"
 import { ShippingStatusWrapper } from "./wrappers/shipping-status-wrapper"
 
-import {
-  ShippingItemsSkeleton,
-  PaymentInfoSkeleton,
-  SavingsBannerSkeleton,
-  PointsBannerSkeleton,
-  ShippingStatusSkeleton,
-} from "../components/shared/mypage-skeletons"
 import { retrieveCart } from "@/lib/api/medusa/cart"
 import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import type { CustomerGroupRef } from "@/lib/utils/membership-group"
 import { isMembershipGroup } from "@/lib/utils/membership-group"
+import {
+  PaymentInfoSkeleton,
+  PointsBannerSkeleton,
+  SavingsBannerSkeleton,
+  ShippingItemsSkeleton,
+  ShippingStatusSkeleton,
+} from "../components/shared/mypage-skeletons"
 
 export async function MyPageTemplate({ countryCode }: { countryCode: string }) {
   const [currentUser, { isAdmin }, pointBalance] = await Promise.all([
