@@ -128,6 +128,15 @@ module.exports = defineConfig({
     {
       resolve: './src/modules/product-sorting',
     },
+    {
+      resolve: './src/modules/events',
+      options: {
+        brokers: process.env.KAFKA_BROKERS?.split(',') || ['localhost:9092'],
+        clientId: process.env.KAFKA_CLIENT_ID || 'medusa-event-bus',
+        groupId: process.env.KAFKA_GROUP_ID || 'medusa-consumer-group',
+        topics: process.env.KAFKA_TOPICS?.split(',') || ['users.events.v1'],
+      },
+    },
   ],
   admin: {
     // Custom Vite config is needed because the admin bundler sometimes

@@ -1,0 +1,101 @@
+import { AbstractEventBusModuleService } from "@medusajs/framework/utils"
+import { EventBusTypes, InternalModuleDeclaration } from "@medusajs/types"
+import { Kafka, Producer, Consumer } from "kafkajs"
+
+type KafkaEventOptions = {
+  brokers: string[]
+  clientId: string
+  groupId?: string
+  topics?: string[]
+}
+
+class MyKafkaEventService extends AbstractEventBusModuleService {
+  protected producer_: Producer
+  protected consumer_: Consumer
+  protected options_: KafkaEventOptions
+  protected kafka_: Kafka
+
+  constructor(
+    cradle: Record<string, unknown>,
+    moduleOptions: KafkaEventOptions,
+    moduleDeclaration: InternalModuleDeclaration
+  ) {
+    super(cradle, moduleOptions, moduleDeclaration)
+    this.options_ = moduleOptions
+
+    this.kafka_ = new Kafka({
+      clientId: moduleOptions.clientId,
+      brokers: moduleOptions.brokers,
+    })
+
+    this.producer_ = this.kafka_.producer()
+    this.consumer_ = this.kafka_.consumer({
+      groupId: moduleOptions.groupId || "medusa-consumer-group",
+    })
+
+    this.initializeKafka()
+  }
+
+  private async initializeKafka(): Promise<void> {
+    try {
+      await this.producer_.connect()
+      console.log("Kafka producer connected")
+
+      await this.consumer_.connect()
+      console.log("Kafka consumer connected")
+
+      const topics = this.options_.topics || ["user.updated"]
+      await this.consumer_.subscribe({
+        topics,
+        fromBeginning: false,
+      })
+
+      await this.consumer_.run({
+        eachMessage: async ({ topic, message }) => {
+          if (!message.value) return
+
+          try {
+            const data = JSON.parse(message.value.toString())
+            console.log(`Received Kafka message from topic: ${topic}`, data)
+
+            // 내부 subscriber들에게 이벤트 전달
+            const subscribers = this.eventToSubscribersMap.get(topic) || []
+            for (const { subscriber } of subscribers) {
+              await subscriber({ name: topic, data })
+            }
+          } catch (err) {
+            console.error(`Failed to process Kafka message from ${topic}:`, err)
+          }
+        },
+      })
+
+      console.log(`Kafka consumer subscribed to topics: ${topics.join(", ")}`)
+    } catch (err) {
+      console.error("Kafka initialization failed:", err)
+    }
+  }
+
+  async emit<T>(
+    data: EventBusTypes.Message<T> | EventBusTypes.Message<T>[],
+    _options?: Record<string, unknown>
+  ): Promise<void> {
+    const events = Array.isArray(data) ? data : [data]
+
+    for (const event of events) {
+      await this.producer_.send({
+        topic: event.name,
+        messages: [{ value: JSON.stringify(event.data) }],
+      })
+    }
+  }
+
+  async releaseGroupedEvents(_eventGroupId: string): Promise<void> {
+    // grouped events 지원 시 구현
+  }
+
+  async clearGroupedEvents(_eventGroupId: string): Promise<void> {
+    // grouped events 지원 시 구현
+  }
+}
+
+export default MyKafkaEventService
