@@ -18,7 +18,7 @@ export default function MobileSubBackHeader({ title }: SubPageHeaderProps) {
   }
 
   return (
-    <header className="flex w-full items-center border-b-[0.5px] border-gray-200 bg-white px-3.5 py-3">
+    <header className="fixed top-0 left-0 z-50 flex w-full items-center border-b-[0.5px] border-gray-200 bg-white px-3.5 py-3">
       {/* 좌측: 뒤로가기 버튼 */}
       <div className="flex flex-1 justify-start">
         <button

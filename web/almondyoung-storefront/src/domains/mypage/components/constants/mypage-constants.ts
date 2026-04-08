@@ -181,6 +181,12 @@ export const SIDEBAR_MENU_ITEMS = [
     hasSubMenu: false,
     path: "https://almondyoung.com/myshop#",
   },
+  {
+    id: "point",
+    label: "적립금",
+    hasSubMenu: false,
+    path: "/mypage/point",
+  },
   // {
   //   id: "payment",
   //   label: "결제수단 · 적립금",

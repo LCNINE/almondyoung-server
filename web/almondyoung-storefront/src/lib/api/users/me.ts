@@ -6,13 +6,13 @@ import {
   removeMedusaAuthToken,
   removeRefreshToken,
 } from "@lib/data/cookies"
-import type { UserDetail } from "@lib/types/ui/user"
 import { api } from "../api"
 import { HttpApiError } from "../api-error"
+import type { UserBaseType } from "@/lib/types/common/users"
 
-const fetchMeInternal = async (): Promise<UserDetail> => {
+const fetchMeInternal = async (): Promise<UserBaseType> => {
   try {
-    const result = await api<UserDetail>("users", "/users/me", {
+    const result = await api<UserBaseType>("users", "/users/me", {
       cache: "no-store",
       withAuth: true,
     })
@@ -31,7 +31,7 @@ const fetchMeInternal = async (): Promise<UserDetail> => {
     if (error instanceof HttpApiError && error.status === 503) {
       // 서버 일시 장애 - 비로그인처럼 처리하되 토큰은 유지
       console.warn("Users service temporarily unavailable (503)")
-      return null as unknown as UserDetail
+      return null as unknown as UserBaseType
     }
 
     throw error

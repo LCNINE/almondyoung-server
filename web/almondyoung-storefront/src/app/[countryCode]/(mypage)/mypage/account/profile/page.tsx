@@ -1,9 +1,9 @@
-import { WithHeaderLayout } from "@components/layout"
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { PageTitle } from "@/components/shared/page-title"
 import { ProfileEdit } from "@/domains/mypage/components/account/profile-edit"
+import { getMyProfile } from "@/lib/api/users/profile"
+import { WithHeaderLayout } from "@components/layout"
 import { Metadata } from "next"
-import { fetchMe } from "@/lib/api/users/me"
 
 export const metadata: Metadata = {
   title: "회원정보 수정",
@@ -17,7 +17,7 @@ export default async function AccountProfilePage({
 }) {
   const { countryCode } = await params
 
-  const userData = await fetchMe()
+  const userData = await getMyProfile()
 
   return (
     <WithHeaderLayout
