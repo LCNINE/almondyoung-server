@@ -7,8 +7,6 @@ import { refreshCartItemsWorkflow } from '@medusajs/medusa/core-flows';
  *
  * 고객의 활성 카트 라인 아이템 가격 재계산
  * 멤버십 그룹 변경 후 Price List 기반 가격 반영
- *
- * compare_at_unit_price를 직접 보정(unit_price만 갱신돼서)
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const { customerId } = req.params;
@@ -32,6 +30,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       'items.unit_price',
       'items.compare_at_unit_price',
       'items.quantity',
+      'updated_at',
     ],
     filters: {
       customer_id: customerId,
@@ -39,7 +38,14 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     },
   });
 
-  const activeCarts = (carts || []).filter((cart: any) => cart.items?.length > 0);
+  const activeCarts = (carts || [])
+    .filter((cart: any) => cart.items?.length > 0)
+    .sort((a: any, b: any) => {
+      const dateA = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+      const dateB = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+      return dateB - dateA;
+    })
+    .slice(0, 3);
 
   if (activeCarts.length === 0) {
     return res.status(200).json({
@@ -76,7 +82,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 }
 
 /**
- * compare_at_unit_price를 직접 보정
+ * compare_at_unit_price 직접 보정
  */
 async function fixCompareAtPrices(scope: any, cart: any): Promise<void> {
   const query = scope.resolve(ContainerRegistrationKeys.QUERY);
