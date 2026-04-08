@@ -13,18 +13,10 @@ export class MembershipMedusaSyncService {
     private readonly eventTrackingService: EventTrackingService,
   ) { }
 
-  /**
-   * 고객 그룹 변경 후 기존 장바구니의 라인 아이템 가격을 재계산
-   * Price List 기반 멤버십 가격이 즉시 반영되도록
-   */
-  private async refreshCartPricesAfterGroupChange(customerId: string, userId: string): Promise<void> {
-    try {
-      await this.medusaClient.refreshCustomerCartPrices(customerId);
-    } catch (e) {
-      this.logger.warn(
-        `Cart price refresh failed after group change (customerId=${customerId}, userId=${userId}): ${(e as Error)?.message}`,
-      );
-    }
+  /** 그룹 변경 후 카트 가격 재계산 트리거.즉시 리턴됨. */
+  private refreshCartPricesAfterGroupChange(customerId: string, userId: string): void {
+    this.medusaClient.refreshCustomerCartPrices(customerId);
+    this.logger.log(`Cart price refresh triggered (fire-and-forget) for customerId=${customerId}, userId=${userId}`);
   }
 
   /**
@@ -76,7 +68,7 @@ export class MembershipMedusaSyncService {
 
       if (addStatuses.has(status)) {
         await this.medusaClient.addCustomerToGroup(customer.id, membershipGroupId);
-        await this.refreshCartPricesAfterGroupChange(customer.id, userId);
+        this.refreshCartPricesAfterGroupChange(customer.id, userId);
         await this.eventTrackingService
           .trackEffect({
             resourceType: 'MedusaCustomer',
@@ -91,7 +83,7 @@ export class MembershipMedusaSyncService {
 
       if (removeStatuses.has(status)) {
         await this.medusaClient.removeCustomerFromGroup(customer.id, membershipGroupId);
-        await this.refreshCartPricesAfterGroupChange(customer.id, userId);
+        this.refreshCartPricesAfterGroupChange(customer.id, userId);
         await this.eventTrackingService
           .trackEffect({
             resourceType: 'MedusaCustomer',
