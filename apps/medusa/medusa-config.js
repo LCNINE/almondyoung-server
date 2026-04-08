@@ -135,6 +135,12 @@ module.exports = defineConfig({
         clientId: process.env.KAFKA_CLIENT_ID || 'medusa-event-bus',
         groupId: process.env.KAFKA_GROUP_ID || 'medusa-consumer-group',
         topics: process.env.KAFKA_TOPICS?.split(',') || ['users.events.v1'],
+        sasl: process.env.KAFKA_API_KEY ? {
+          mechanism: 'plain',
+          username: process.env.KAFKA_API_KEY,
+          password: process.env.KAFKA_API_SECRET,
+        } : undefined,
+        ssl: !!process.env.KAFKA_API_KEY,
       },
     },
   ],
