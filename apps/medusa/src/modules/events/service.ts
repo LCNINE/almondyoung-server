@@ -1,6 +1,6 @@
 import { AbstractEventBusModuleService } from "@medusajs/framework/utils"
 import { EventBusTypes, InternalModuleDeclaration } from "@medusajs/types"
-import { Kafka, Producer, Consumer, SASLOptions } from "kafkajs"
+import { Kafka, Producer, Consumer, SASLOptions, logLevel } from "kafkajs"
 
 type KafkaEventOptions = {
   brokers: string[]
@@ -34,6 +34,7 @@ class MyKafkaEventService extends AbstractEventBusModuleService {
       brokers: moduleOptions.brokers,
       ssl: moduleOptions.ssl,
       sasl: moduleOptions.sasl as SASLOptions,
+      logLevel: logLevel.NOTHING, // 로그 완전히 끔
     })
 
     this.producer_ = this.kafka_.producer()
