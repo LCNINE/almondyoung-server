@@ -1,12 +1,40 @@
 import { AbstractEventBusModuleService } from "@medusajs/framework/utils"
 import { EventBusTypes, InternalModuleDeclaration } from "@medusajs/types"
-import { Kafka, Producer, Consumer } from "kafkajs"
+import { Kafka, Producer, Consumer, SASLOptions, logLevel, LogEntry } from "kafkajs"
+
+// 무시할 메시지 패턴
+const IGNORED_MESSAGES = [
+  "This server does not host this topic-partition",
+  "The group is rebalancing",
+]
+
+const customLogger = () => {
+  return ({ level, log }: LogEntry) => {
+    const { message } = log
+    // 무시할 메시지는 출력하지 않음
+    if (IGNORED_MESSAGES.some((ignored) => message?.includes(ignored))) {
+      return
+    }
+    // 나머지는 정상 출력
+    if (level === logLevel.ERROR) {
+      console.error("[Kafka]", message)
+    } else if (level === logLevel.WARN) {
+      console.warn("[Kafka]", message)
+    }
+  }
+}
 
 type KafkaEventOptions = {
   brokers: string[]
   clientId: string
   groupId?: string
   topics?: string[]
+  sasl?: {
+    mechanism: "plain"
+    username: string
+    password: string
+  }
+  ssl?: boolean
 }
 
 class MyKafkaEventService extends AbstractEventBusModuleService {
@@ -26,6 +54,10 @@ class MyKafkaEventService extends AbstractEventBusModuleService {
     this.kafka_ = new Kafka({
       clientId: moduleOptions.clientId,
       brokers: moduleOptions.brokers,
+      ssl: moduleOptions.ssl,
+      sasl: moduleOptions.sasl as SASLOptions,
+      logLevel: logLevel.ERROR,
+      logCreator: customLogger,
     })
 
     this.producer_ = this.kafka_.producer()
@@ -81,6 +113,14 @@ class MyKafkaEventService extends AbstractEventBusModuleService {
   ): Promise<void> {
     const events = Array.isArray(data) ? data : [data]
 
+    // Medusa 내부 이벤트는 Kafka로 발행하지 않음 (구독 중인 외부 토픽만 발행)
+    const externalTopics = this.options_.topics || []
+    const externalEvents = events.filter((e) => externalTopics.includes(e.name))
+
+    if (externalEvents.length === 0) {
+      return
+    }
+
     try {
       await this.producer_.connect()
     } catch (connectErr) {
@@ -91,7 +131,7 @@ class MyKafkaEventService extends AbstractEventBusModuleService {
       return
     }
 
-    for (const event of events) {
+    for (const event of externalEvents) {
       try {
         await this.producer_.send({
           topic: event.name,
