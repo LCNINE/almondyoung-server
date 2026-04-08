@@ -6,12 +6,8 @@ import React from "react"
 
 type CartItem = {
   quantity: number
+  unit_price: number
   compare_at_unit_price?: number | null
-  variant?: {
-    metadata?: {
-      membershipPrice?: number
-    } | null
-  } | null
 }
 
 type CartTotalsProps = {
