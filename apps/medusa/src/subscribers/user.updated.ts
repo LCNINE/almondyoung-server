@@ -24,8 +24,6 @@ export default async function userUpdatedHandler({
   event: { data },
   container,
 }: SubscriberArgs<UserUpdatedEvent>) {
-  console.log("[user.updated] Event received:", JSON.stringify(data, null, 2))
-
   // UserUpdated 이벤트만 처리
   if (data.messageType !== "UserUpdated") {
     return
