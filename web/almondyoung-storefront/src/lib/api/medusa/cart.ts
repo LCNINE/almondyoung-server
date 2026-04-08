@@ -1266,3 +1266,27 @@ export async function listCartOptions() {
     cache: "force-cache",
   })
 }
+
+/**
+ * 멤버십 가입 후 카트 가격 재계산. 가입 시에만 사용 (해지 시 호출 금지).
+ * 해지 시에는 채널 어댑터가 그룹 제거 후 알아서 갱신해줌.
+ * 여기서 호출하면 그룹 제거 전이라 멤버십가가 그대로 남음.
+ */
+export async function refreshCartPrices(): Promise<boolean> {
+  try {
+    const headers = (await getAuthHeaders()) ?? undefined
+    const result = await sdk.client.fetch<{ refreshed: boolean }>(
+      "/store/customers/me/refresh-cart-prices",
+      { method: "POST", headers }
+    )
+
+    if (result.refreshed) {
+      const cartCacheTag = await getCacheTag("carts")
+      revalidateTag(cartCacheTag)
+    }
+
+    return result.refreshed
+  } catch {
+    return false
+  }
+}
