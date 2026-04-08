@@ -1,21 +1,20 @@
-import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
+import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
 import { refreshCartItemsWorkflow } from '@medusajs/medusa/core-flows';
 
 /**
- * 고객 카트 가격 재계산. 채널 어댑터가 멤버십 그룹 변경 후 fire-and-forget으로 호출.
+ * 카트 가격 재계산 (Store용). 프론트엔드에서 멤버십 가입 결제 콜백 시 호출.
+ * Admin 버전과 동일 로직이지만 auth_context에서 customerId를 가져옴.
  *
- * 카트는 아이템 추가 시점 가격이 lock-in → 그룹 바뀌어도 자동 갱신 안 됨.
- * 1) refreshCartItemsWorkflow로 unit_price 갱신
- * 2) fixCompareAtPrices로 compare_at_unit_price 보정 (코어가 안 해줘서 직접 처리)
- *
- * 최신 카트 1개만 처리.
+ * 해지 시에는 호출하면 안 됨 — 채널 어댑터의 removeCustomerFromGroup보다
+ * 먼저 실행되면 아직 멤버십 그룹이라 멤버십가가 그대로 나옴.
+ * 해지는 채널 어댑터 fire-and-forget에만 의존.
  */
-export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const { customerId } = req.params;
+export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
+  const customerId = req.auth_context.actor_id;
 
   if (!customerId) {
-    return res.status(400).json({ message: 'customerId is required' });
+    return res.status(401).json({ message: 'Unauthorized' });
   }
 
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
@@ -41,52 +40,32 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     },
   });
 
-  const activeCarts = (carts || [])
+  const activeCart = (carts || [])
     .filter((cart: any) => cart.items?.length > 0)
     .sort((a: any, b: any) => {
       const dateA = a.updated_at ? new Date(a.updated_at).getTime() : 0;
       const dateB = b.updated_at ? new Date(b.updated_at).getTime() : 0;
       return dateB - dateA;
-    })
-    .slice(0, 1);
+    })[0];
 
-  if (activeCarts.length === 0) {
-    return res.status(200).json({
-      success: true,
-      refreshed: false,
-      message: 'No active cart with items found for this customer',
+  if (!activeCart) {
+    return res.status(200).json({ refreshed: false });
+  }
+
+  try {
+    await refreshCartItemsWorkflow(req.scope).run({
+      input: { cart_id: activeCart.id, force_refresh: true },
     });
+
+    await fixCompareAtPrices(req.scope, activeCart);
+
+    return res.status(200).json({ refreshed: true, cart_id: activeCart.id });
+  } catch (error: any) {
+    console.error(`[store/refresh-cart-prices] Failed:`, error?.message);
+    return res.status(500).json({ refreshed: false, message: 'Failed to refresh cart prices' });
   }
-
-  const refreshedCartIds: string[] = [];
-
-  for (const cart of activeCarts) {
-    try {
-      await refreshCartItemsWorkflow(req.scope).run({
-        input: {
-          cart_id: cart.id,
-          force_refresh: true,
-        },
-      });
-
-      await fixCompareAtPrices(req.scope, cart);
-
-      refreshedCartIds.push(cart.id);
-    } catch (error: any) {
-      console.error(`[refresh-cart-prices] Failed to refresh cart ${cart.id}:`, error?.message);
-    }
-  }
-
-  return res.status(200).json({
-    success: true,
-    refreshed: refreshedCartIds.length > 0,
-    refreshed_cart_ids: refreshedCartIds,
-  });
 }
 
-/**
- * compare_at_unit_price 보정.
- */
 async function fixCompareAtPrices(scope: any, cart: any): Promise<void> {
   const query = scope.resolve(ContainerRegistrationKeys.QUERY);
   const pricingModule = scope.resolve(Modules.PRICING);
