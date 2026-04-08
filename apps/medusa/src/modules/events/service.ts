@@ -89,6 +89,14 @@ class MyKafkaEventService extends AbstractEventBusModuleService {
   ): Promise<void> {
     const events = Array.isArray(data) ? data : [data]
 
+    // Medusa 내부 이벤트는 Kafka로 발행하지 않음 (구독 중인 외부 토픽만 발행)
+    const externalTopics = this.options_.topics || []
+    const externalEvents = events.filter((e) => externalTopics.includes(e.name))
+
+    if (externalEvents.length === 0) {
+      return
+    }
+
     try {
       await this.producer_.connect()
     } catch (connectErr) {
@@ -99,7 +107,7 @@ class MyKafkaEventService extends AbstractEventBusModuleService {
       return
     }
 
-    for (const event of events) {
+    for (const event of externalEvents) {
       try {
         await this.producer_.send({
           topic: event.name,
