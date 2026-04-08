@@ -1115,4 +1115,18 @@ export class MedusaClient {
       throw new Error(`Medusa removeCustomerFromGroup failed: ${fetchError.message}`);
     }
   }
+
+  async refreshCustomerCartPrices(customerId: string): Promise<void> {
+    try {
+      await this.sdk.client.fetch(`/admin/customers/${customerId}/refresh-cart-prices`, {
+        method: 'POST',
+      });
+      this.logger.log(`Refreshed cart prices for customer ${customerId}`);
+    } catch (error) {
+      const fetchError = error as FetchError;
+      this.logger.warn(
+        `Failed to refresh cart prices for customer ${customerId}: ${fetchError.message} (status=${fetchError.status})`,
+      );
+    }
+  }
 }
