@@ -81,11 +81,28 @@ class MyKafkaEventService extends AbstractEventBusModuleService {
   ): Promise<void> {
     const events = Array.isArray(data) ? data : [data]
 
+    try {
+      await this.producer_.connect()
+    } catch (connectErr) {
+      console.warn(
+        "[KafkaEventService] Producer connect failed; events will not be published:",
+        connectErr instanceof Error ? connectErr.message : connectErr
+      )
+      return
+    }
+
     for (const event of events) {
-      await this.producer_.send({
-        topic: event.name,
-        messages: [{ value: JSON.stringify(event.data) }],
-      })
+      try {
+        await this.producer_.send({
+          topic: event.name,
+          messages: [{ value: JSON.stringify(event.data) }],
+        })
+      } catch (sendErr) {
+        console.warn(
+          `[KafkaEventService] emit failed for topic "${event.name}":`,
+          sendErr instanceof Error ? sendErr.message : sendErr
+        )
+      }
     }
   }
 
