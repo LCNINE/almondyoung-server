@@ -10,6 +10,8 @@ import {
 } from "@/components/ui/dialog"
 import Link from "next/link"
 import { Form } from "@/components/ui/form"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Gift } from "lucide-react"
 import { zodResolver } from "@hookform/resolvers/zod"
 import type { Cafe24SignupBootstrapData } from "@lib/api/users/auth/signup-cafe24"
 import { createUser } from "@lib/api/users/auth/signup-base"
@@ -179,7 +181,8 @@ export function SignupForm({ mode, cafe24Bootstrap }: SignupFormProps) {
   }
 
   const handleSignupClick = async () => {
-    const shouldRequirePhoneVerification = !isCafe24Mode
+    // TODO: 테스트 후 다시 활성화 필요
+    const shouldRequirePhoneVerification = false // !isCafe24Mode
     const isPhoneVerified = form.getValues("isPhoneVerified")
 
     if (shouldRequirePhoneVerification && !isPhoneVerified) {
@@ -262,46 +265,80 @@ export function SignupForm({ mode, cafe24Bootstrap }: SignupFormProps) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>약관 동의 안내</DialogTitle>
-            <p className="text-muted-foreground text-sm">
-              가입을 계속하시면{" "}
-              <Link
-                href="/kr/terms"
-                target="_blank"
-                className="text-primary underline underline-offset-2"
-                onClick={(e) => e.stopPropagation()}
-              >
-                이용약관
-              </Link>
-              ,{" "}
-              <Link
-                href="/kr/terms"
-                target="_blank"
-                className="text-primary underline underline-offset-2"
-                onClick={(e) => e.stopPropagation()}
-              >
-                전자금융거래 약관
-              </Link>
-              ,{" "}
-              <Link
-                href="/kr/privacy"
-                target="_blank"
-                className="text-primary underline underline-offset-2"
-                onClick={(e) => e.stopPropagation()}
-              >
-                개인정보 수집 및 이용
-              </Link>
-              ,{" "}
-              <Link
-                href="/kr/privacy"
-                target="_blank"
-                className="text-primary underline underline-offset-2"
-                onClick={(e) => e.stopPropagation()}
-              >
-                개인정보 제3자 제공
-              </Link>
-              에 동의한 것으로 간주됩니다.
+            <p className="text-muted-foreground text-left text-xs whitespace-nowrap">
+              가입을 계속하시면 아래 약관에 동의한 것으로 간주됩니다.
             </p>
+            <ul className="text-muted-foreground mt-2 space-y-1 text-left text-sm">
+              <li>
+                •{" "}
+                <Link
+                  href="/kr/terms"
+                  target="_blank"
+                  className="text-primary underline underline-offset-2"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  이용약관
+                </Link>
+              </li>
+              <li>
+                •{" "}
+                <Link
+                  href="/kr/terms"
+                  target="_blank"
+                  className="text-primary underline underline-offset-2"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  전자금융거래 약관
+                </Link>
+              </li>
+              <li>
+                •{" "}
+                <Link
+                  href="/kr/privacy"
+                  target="_blank"
+                  className="text-primary underline underline-offset-2"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  개인정보 수집 및 이용
+                </Link>
+              </li>
+              <li>
+                •{" "}
+                <Link
+                  href="/kr/privacy"
+                  target="_blank"
+                  className="text-primary underline underline-offset-2"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  개인정보 제3자 제공
+                </Link>
+              </li>
+            </ul>
           </DialogHeader>
+
+          <div
+            className="flex cursor-pointer items-start space-x-3 rounded-lg border border-zinc-200 bg-zinc-50 p-4"
+            onClick={() =>
+              form.setValue("marketingConsent", !form.watch("marketingConsent"))
+            }
+          >
+            <Checkbox
+              checked={form.watch("marketingConsent")}
+              onCheckedChange={(checked) =>
+                form.setValue("marketingConsent", !!checked)
+              }
+            />
+            <div className="space-y-1 leading-none">
+              <span className="flex items-center gap-1.5 text-sm font-medium">
+                <Gift className="text-primary h-4 w-4" />
+                이벤트 및 혜택 알림 수신 (선택)
+              </span>
+              <p className="text-xs text-zinc-500">
+                신규 상품, 할인 쿠폰, 이벤트 등 다양한 혜택 정보를 받아보실 수
+                있습니다.
+              </p>
+            </div>
+          </div>
 
           <DialogFooter className="flex gap-2">
             <CustomButton
