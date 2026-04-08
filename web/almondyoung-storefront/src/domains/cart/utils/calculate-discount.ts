@@ -13,8 +13,8 @@ type DiscountResult = {
 }
 
 /**
- * compare_at_unit_price와 unit_price 차이로 멤버십 할인을 계산합니다.
- * unit_price가 이미 정가로 복원되면 compare_at이 남아있어도 할인 = 0이 됩니다.
+ * 멤버십 할인 = compare_at_unit_price - unit_price.
+ * metadata.membershipPrice 방식은 해지 후에도 할인이 남는 버그가 있어서 변경함.
  */
 export function calculateCartDiscount(
   items: CartItem[] | HttpTypes.StoreCartLineItem[] | undefined

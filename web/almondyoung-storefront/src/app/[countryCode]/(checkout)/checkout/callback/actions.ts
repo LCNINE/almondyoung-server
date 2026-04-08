@@ -10,6 +10,7 @@ import {
   removeCartId,
 } from "@/lib/data/cookies"
 import { revalidateTag } from "next/cache"
+import { refreshCartPrices } from "@/lib/api/medusa/cart"
 
 async function ensureShippingMethod(
   cartId: string,
@@ -158,6 +159,7 @@ export async function processPaymentCallback(
     if (mode === "membership" && planId) {
       try {
         await createSubscription(planId)
+        await refreshCartPrices().catch(() => {})
         revalidateTag(await getCacheTag("carts"))
         return {
           success: true,
@@ -165,6 +167,7 @@ export async function processPaymentCallback(
         }
       } catch (error: any) {
         if (error instanceof HttpApiError && error.status === 409) {
+          await refreshCartPrices().catch(() => {})
           revalidateTag(await getCacheTag("carts"))
           return {
             success: true,

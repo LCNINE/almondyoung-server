@@ -25,7 +25,7 @@ export const metadata: Metadata = {
 
 // 멤버십 가입 완료 페이지
 export default async function MembershipSuccessScreen() {
-  // 멤버십 가입으로 인해 장바구니 가격이 변경되었을 수 있으므로 캐시 무효화
+  // 가격 재계산은 콜백에서 처리 완료. 캐시만 날림.
   const cartCacheTag = await getCacheTag("carts")
   if (cartCacheTag) {
     revalidateTag(cartCacheTag)

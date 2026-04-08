@@ -149,6 +149,7 @@ export default function SubscriberSection({
           try {
             setIsCancelling(true)
             await cancelSubscription(reasonCode, reasonText)
+            // 카트 가격 갱신은 채널 어댑터가 그룹 제거 후 처리함 (여기서 하면 타이밍 안 맞음)
             setOpen(false)
             router.push("/kr/mypage/membership")
           } catch (error) {
