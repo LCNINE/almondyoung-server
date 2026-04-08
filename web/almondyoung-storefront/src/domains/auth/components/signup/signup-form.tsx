@@ -181,8 +181,7 @@ export function SignupForm({ mode, cafe24Bootstrap }: SignupFormProps) {
   }
 
   const handleSignupClick = async () => {
-    // TODO: 테스트 후 다시 활성화 필요
-    const shouldRequirePhoneVerification = false // !isCafe24Mode
+    const shouldRequirePhoneVerification = !isCafe24Mode
     const isPhoneVerified = form.getValues("isPhoneVerified")
 
     if (shouldRequirePhoneVerification && !isPhoneVerified) {
