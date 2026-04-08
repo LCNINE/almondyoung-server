@@ -1116,17 +1116,23 @@ export class MedusaClient {
     }
   }
 
+  /**
+   * 카트 가격 재계산 (fire-and-forget).
+   * 카트는 아이템 추가 시점 가격이 lock-in되므로, 멤버십 그룹 변경 후 수동 갱신 필요.
+   * ~15초 걸려서 await하면 타임아웃 나므로 응답 안 기다림.
+   * 반드시 addCustomerToGroup/removeCustomerFromGroup 완료 후 호출할 것.
+   */
   async refreshCustomerCartPrices(customerId: string): Promise<void> {
-    try {
-      await this.sdk.client.fetch(`/admin/customers/${customerId}/refresh-cart-prices`, {
+    this.sdk.client
+      .fetch(`/admin/customers/${customerId}/refresh-cart-prices`, {
         method: 'POST',
+      })
+      .then(() => this.logger.log(`Refreshed cart prices for customer ${customerId}`))
+      .catch((error) => {
+        const fetchError = error as FetchError;
+        this.logger.warn(
+          `Failed to refresh cart prices for customer ${customerId}: ${fetchError.message} (status=${fetchError.status})`,
+        );
       });
-      this.logger.log(`Refreshed cart prices for customer ${customerId}`);
-    } catch (error) {
-      const fetchError = error as FetchError;
-      this.logger.warn(
-        `Failed to refresh cart prices for customer ${customerId}: ${fetchError.message} (status=${fetchError.status})`,
-      );
-    }
   }
 }
