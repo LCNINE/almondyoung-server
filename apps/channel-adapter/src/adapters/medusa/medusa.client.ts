@@ -49,6 +49,7 @@ export class MedusaClient {
   private readonly logger = new Logger(MedusaClient.name);
   private readonly sdk: Medusa;
   private readonly apiUrl: string;
+  private readonly apiKey: string;
   private readonly categoryCache = new Map<string, MedusaProduct['id']>(); // key: handle
   private readonly tagCache = new Map<string, string>(); // key: value
   private readonly typeCache = new Map<string, string>(); // key: value
@@ -58,6 +59,7 @@ export class MedusaClient {
 
   constructor(private readonly configService: ConfigService) {
     this.apiUrl = this.configService.get<string>('MEDUSA_API_URL') || '';
+    this.apiKey = this.configService.get<string>('MEDUSA_API_KEY') || '';
 
     if (!this.apiUrl) {
       throw new Error('MEDUSA_API_URL is not set. Cannot initialize Medusa SDK.');
@@ -1123,9 +1125,12 @@ export class MedusaClient {
    * 반드시 addCustomerToGroup/removeCustomerFromGroup 완료 후 호출할 것.
    */
   async refreshCustomerCartPrices(customerId: string): Promise<void> {
+    // sdk.client.fetch()는 커스텀 라우트에 admin 인증을 안 넣어줘서 직접 Basic auth 추가
+    const encodedKey = Buffer.from(`${this.apiKey}:`).toString('base64');
     this.sdk.client
       .fetch(`/admin/customers/${customerId}/refresh-cart-prices`, {
         method: 'POST',
+        headers: { Authorization: `Basic ${encodedKey}` },
       })
       .then(() => this.logger.log(`Refreshed cart prices for customer ${customerId}`))
       .catch((error) => {
