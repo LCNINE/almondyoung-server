@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import {
   SubscriptionNotFoundException,
   ActiveSubscriptionExistsException,
@@ -48,6 +48,8 @@ type CreateSubscriptionOptions = {
 
 @Injectable()
 export class SubscriptionService {
+  private readonly logger = new Logger(SubscriptionService.name);
+
   constructor(
     private readonly entitlementService: EntitlementService,
     private readonly planService: PlanService,
@@ -56,7 +58,7 @@ export class SubscriptionService {
     private readonly subscriptionManager: SubscriptionManager,
     private readonly membershipEventPublisher: MembershipEventPublisher,
     private readonly paymentClientService: PaymentClientService,
-  ) {}
+  ) { }
 
   /**
    * 현재 구독 상태 조회
@@ -86,7 +88,8 @@ export class SubscriptionService {
       options,
     );
 
-    await this.membershipEventPublisher.publishStatusChanged({
+    // 실패 시 로그만 남기고 구독 생성 자체는 성공으로 처리
+    this.membershipEventPublisher.publishStatusChanged({
       userId,
       email,
       status: 'ACTIVE',
@@ -94,7 +97,12 @@ export class SubscriptionService {
       contractId: result.contractId,
       planId: planDetails.plan.id,
       tierId: planDetails.tier.id,
-    });
+    }).catch((err: Error) =>
+      this.logger.error(
+        `MembershipStatusChanged Kafka 발행 실패 (userId=${userId}): ${err?.message}`,
+        err?.stack,
+      )
+    );
 
     return result;
   }
