@@ -1121,22 +1121,26 @@ export class MedusaClient {
   /**
    * 카트 가격 재계산 (fire-and-forget).
    * 카트는 아이템 추가 시점 가격이 lock-in되므로, 멤버십 그룹 변경 후 수동 갱신 필요.
-   * ~15초 걸려서 await하면 타임아웃 나므로 응답 안 기다림.
    * 반드시 addCustomerToGroup/removeCustomerFromGroup 완료 후 호출할 것.
    */
   async refreshCustomerCartPrices(customerId: string): Promise<void> {
-    // sdk.client.fetch()는 커스텀 라우트에 admin 인증을 안 넣어줘서 직접 Basic auth 추가
+    // sdk.client.fetch()가 커스텀 라우트에 admin 인증 헤더를 제대로 안 넘겨서
+    // 네이티브 fetch로 직접 호출
     const encodedKey = Buffer.from(`${this.apiKey}:`).toString('base64');
-    this.sdk.client
-      .fetch(`/admin/customers/${customerId}/refresh-cart-prices`, {
-        method: 'POST',
-        headers: { Authorization: `Basic ${encodedKey}` },
-      })
-      .then(() => this.logger.log(`Refreshed cart prices for customer ${customerId}`))
+    const url = `${this.apiUrl}/admin/customers/${customerId}/refresh-cart-prices`;
+    fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${encodedKey}`,
+        'Content-Type': 'application/json',
+      },
+    })
+      .then((res) =>
+        this.logger.log(`Refreshed cart prices for customer ${customerId} (status=${res.status})`),
+      )
       .catch((error) => {
-        const fetchError = error as FetchError;
         this.logger.warn(
-          `Failed to refresh cart prices for customer ${customerId}: ${fetchError.message} (status=${fetchError.status})`,
+          `Failed to refresh cart prices for customer ${customerId}: ${error?.message}`,
         );
       });
   }
