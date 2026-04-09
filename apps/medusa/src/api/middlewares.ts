@@ -35,6 +35,10 @@ export default defineMiddlewares({
       middlewares: [authenticate('customer', ['session', 'bearer'])],
     },
     {
+      matcher: '/store/customers/me/refresh-cart-prices',
+      middlewares: [authenticate('customer', ['session', 'bearer'])],
+    },
+    {
       matcher: '/store/orders/:id/confirm-purchase',
       middlewares: [authenticate('customer', ['session', 'bearer'])],
     },

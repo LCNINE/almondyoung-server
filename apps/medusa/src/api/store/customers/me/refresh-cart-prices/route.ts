@@ -3,12 +3,9 @@ import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
 import { refreshCartItemsWorkflow } from '@medusajs/medusa/core-flows';
 
 /**
- * 카트 가격 재계산 (Store용). 프론트엔드에서 멤버십 가입 결제 콜백 시 호출.
- * Admin 버전과 동일 로직이지만 auth_context에서 customerId를 가져옴.
- *
- * 해지 시에는 호출하면 안 됨 — 채널 어댑터의 removeCustomerFromGroup보다
- * 먼저 실행되면 아직 멤버십 그룹이라 멤버십가가 그대로 나옴.
- * 해지는 채널 어댑터 fire-and-forget에만 의존.
+ * 카트 가격 재계산 (Store용). Admin 버전과 동일 로직, auth_context에서 customerId 가져옴.
+ * 가입: 결제 콜백에서 바로 호출.
+ * 해지: 채널 어댑터가 그룹 제거(~2-3초)한 뒤 호출해야 정가가 나옴.
  */
 export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   const customerId = req.auth_context.actor_id;
