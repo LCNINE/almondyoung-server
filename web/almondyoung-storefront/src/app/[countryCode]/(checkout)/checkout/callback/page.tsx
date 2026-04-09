@@ -65,6 +65,17 @@ export default function CallbackPage() {
           removeCheckoutCartByIntent(paymentIntentId)
           removePendingPaymentMode()
           if (res.ok || res.status === 409) {
+            // SameSite=Strict 쿠키는 크로스도메인 리다이렉트 시 전송되지 않음
+            // ProtectedRoute(fetchMe)가 accessToken 없이 실패하는 것을 방지하기 위해
+            // 성공 페이지 진입 전에 refreshToken으로 accessToken을 복구
+            try {
+              await fetch("/api/auth/restore-token", {
+                method: "POST",
+                credentials: "include",
+              })
+            } catch {
+              // 복구 실패해도 성공 페이지로 이동 (error.tsx가 처리)
+            }
             router.replace(
               `/${countryCode}/mypage/membership/subscribe/success`
             )
