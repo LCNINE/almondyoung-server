@@ -71,10 +71,15 @@ export default function MembershipCheckoutTemplate({
       const walletWebUrl =
         process.env.NEXT_PUBLIC_WALLET_WEB_URL || "http://localhost:3200"
       window.location.href = `${walletWebUrl}/pay/${intentId}`
-    } catch (error) {
+    } catch (error: unknown) {
+      const err = error as Error & { digest?: string }
+      // UNAUTHORIZED는 re-throw → error.tsx에서 토큰 복구 처리
+      if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") {
+        throw error
+      }
       console.error("멤버십 결제 요청 실패:", error)
       toast.error(
-        error instanceof Error ? error.message : "결제 요청에 실패했습니다."
+        err instanceof Error ? err.message : "결제 요청에 실패했습니다."
       )
       setLoading(false)
     }

@@ -1267,18 +1267,28 @@ export async function listCartOptions() {
   })
 }
 
+/** 카트 캐시만 무효화. 해지 시 사용 (Medusa DB 갱신은 채널 어댑터가 처리). */
+export async function invalidateCartCache(): Promise<void> {
+  const cartCacheTag = await getCacheTag("carts")
+  revalidateTag(cartCacheTag)
+}
+
 /**
- * 멤버십 가입 후 카트 가격 재계산. 가입 시에만 사용 (해지 시 호출 금지).
- * 해지 시에는 채널 어댑터가 그룹 제거 후 알아서 갱신해줌.
- * 여기서 호출하면 그룹 제거 전이라 멤버십가가 그대로 남음.
+ * 카트 가격 재계산 + 캐시 무효화.
+ * 가입: 결제 콜백에서 바로 호출.
+ * 해지: 채널 어댑터가 그룹 제거할 시간(~3초) 확보 후 호출해야 함.
  */
 export async function refreshCartPrices(): Promise<boolean> {
   try {
     const headers = (await getAuthHeaders()) ?? undefined
+    console.log("[refreshCartPrices] 호출됨, headers:", headers ? "있음" : "없음")
+
     const result = await sdk.client.fetch<{ refreshed: boolean }>(
       "/store/customers/me/refresh-cart-prices",
       { method: "POST", headers }
     )
+
+    console.log("[refreshCartPrices] 결과:", JSON.stringify(result))
 
     if (result.refreshed) {
       const cartCacheTag = await getCacheTag("carts")
@@ -1286,7 +1296,8 @@ export async function refreshCartPrices(): Promise<boolean> {
     }
 
     return result.refreshed
-  } catch {
+  } catch (error) {
+    console.error("[refreshCartPrices] 실패:", error)
     return false
   }
 }

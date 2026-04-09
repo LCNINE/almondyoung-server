@@ -12,7 +12,7 @@ import type {
 } from "@lib/types/dto/membership"
 import type { PlanWithTier } from "@lib/types/membership"
 import { api } from "../api"
-import { HttpApiError } from "../api-error"
+import { ApiAuthError, HttpApiError } from "../api-error"
 import type {
   MonthlySavingsDto,
   RangeSavingsDto,
@@ -235,6 +235,10 @@ export async function createMembershipCheckoutIntent(
       }
     )
   } catch (error) {
+    // UNAUTHORIZED는 re-throw → error.tsx에서 토큰 복구 처리
+    if (error instanceof ApiAuthError) {
+      throw error
+    }
     // 500 에러: 백엔드 버그로 ACTIVE_SUBSCRIPTION_EXISTS가 500으로 내려오는 경우 대응
     if (error instanceof HttpApiError && error.status === 500) {
       const activeSubscription = await getCurrentSubscription().catch(
@@ -248,6 +252,9 @@ export async function createMembershipCheckoutIntent(
     if (error instanceof HttpApiError && error.status === 409) {
       throw new Error("이미 활성 구독이 존재합니다.")
     }
-    throw error
+    // 기타 에러: plain Error로 변환하여 Next.js Server Action 직렬화 문제 방지
+    throw new Error(
+      error instanceof Error ? error.message : "멤버십 결제 준비에 실패했습니다."
+    )
   }
 }

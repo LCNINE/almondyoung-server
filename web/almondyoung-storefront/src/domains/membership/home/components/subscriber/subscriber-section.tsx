@@ -8,6 +8,7 @@ import MembershipPlanCard from "../membership-benefit-card"
 import MembershipStatusSection from "domains/membership/components/status-selection"
 import MemberDetails from "./member-details"
 import { cancelSubscription } from "@/lib/api/membership"
+import { refreshCartPrices } from "@/lib/api/medusa/cart"
 import type {
   CancellationReasonDto,
   CycleBenefitDto,
@@ -149,9 +150,12 @@ export default function SubscriberSection({
           try {
             setIsCancelling(true)
             await cancelSubscription(reasonCode, reasonText)
-            // 카트 가격 갱신은 채널 어댑터가 그룹 제거 후 처리함 (여기서 하면 타이밍 안 맞음)
             setOpen(false)
             router.push("/kr/mypage/membership")
+            // 채널 어댑터가 그룹 제거(~2-3초)할 시간 확보 후 가격 재계산
+            setTimeout(() => {
+              refreshCartPrices().catch(() => {})
+            }, 3000)
           } catch (error) {
             console.error("멤버십 해지 실패:", error)
           } finally {
