@@ -1105,6 +1105,17 @@ export class MedusaClient {
     }
   }
 
+  async updateCustomerMetadata(customerId: string, metadata: Record<string, unknown>): Promise<void> {
+    try {
+      await this.sdk.admin.customer.update(customerId, { metadata });
+      this.logger.log(`Updated metadata for customer ${customerId}: ${JSON.stringify(metadata)}`);
+    } catch (error) {
+      const fetchError = error as FetchError;
+      this.logger.warn(`Failed to update metadata for customer ${customerId}: ${fetchError.message}`);
+      throw error;
+    }
+  }
+
   async removeCustomerFromGroup(customerId: string, groupId: string): Promise<void> {
     try {
       await this.sdk.admin.customer.batchCustomerGroups(customerId, {
