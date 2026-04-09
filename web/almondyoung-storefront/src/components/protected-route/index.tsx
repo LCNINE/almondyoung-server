@@ -14,12 +14,14 @@ export default async function ProtectedRoute({
 
   const headersList = await headers()
   const pathname = headersList.get("x-pathname")
+  console.log("pathname::::::", pathname)
 
   try {
-    const isMainPage = pathname && /^\/[a-z]{2}\/?$/.test(pathname)
+    const isMainPage = !pathname || /^\/[a-z]{2}\/?$/.test(pathname)
 
-    // 메인페이지이면서 리프레시토큰이 없으면 에러 무시
-    if (isMainPage && !refreshToken) {
+    // 메인페이지이거나 리프레시토큰이 없으면 에러 무시
+    // (pathname이 null인 경우도 메인페이지로 간주 - Edge 초기화 이슈 대응)
+    if (isMainPage || !refreshToken) {
       await fetchMe().catch(() => null)
     } else {
       await fetchMe()
