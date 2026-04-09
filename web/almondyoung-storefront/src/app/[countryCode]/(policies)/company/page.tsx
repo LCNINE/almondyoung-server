@@ -28,7 +28,7 @@ export default function CompanyPage() {
             </div>
             <div className="flex gap-2">
               <dt className="text-foreground w-32 shrink-0 font-medium">대표자</dt>
-              <dd>김정희</dd>
+              <dd>권흥철</dd>
             </div>
             <div className="flex gap-2">
               <dt className="text-foreground w-32 shrink-0 font-medium">사업자등록번호</dt>
