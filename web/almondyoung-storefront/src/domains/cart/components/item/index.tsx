@@ -19,13 +19,7 @@ import { formatPrice } from "@/lib/utils/price-utils"
 import { HttpTypes } from "@medusajs/types"
 import { Loader2, Minus, Plus, Trash2 } from "lucide-react"
 import Image from "next/image"
-import {
-  cloneElement,
-  ReactElement,
-  useOptimistic,
-  useState,
-  useTransition,
-} from "react"
+import { cloneElement, ReactElement, useState, useTransition } from "react"
 import { toast } from "sonner"
 
 type ItemProps = {
@@ -39,13 +33,14 @@ type ItemProps = {
 type ItemChildProps = {
   item: HttpTypes.StoreCartLineItem
   deleting: boolean
+  isPending: boolean
   error: string | null
   unitPrice: number
   compareAtUnitPrice: number | null | undefined
   totalPrice: number
   discountPercentage: number
   compareAtTotalPrice: number
-  changeQuantity: (quantity: number) => Promise<void>
+  changeQuantity: (quantity: number) => void
   handleDelete: () => Promise<void>
   selected?: boolean
   onSelectChange?: (checked: boolean) => void
@@ -54,9 +49,6 @@ type ItemChildProps = {
 
 type DesktopItemProps = Partial<ItemChildProps> & {
   type?: "full" | "preview"
-  selected?: boolean
-  onSelectChange?: (checked: boolean) => void
-  selectDisabled?: boolean
 }
 
 type MobileItemProps = Partial<ItemChildProps>
@@ -68,10 +60,7 @@ function Item({
   onSelectChange,
   selectDisabled,
 }: ItemProps) {
-  const [optimisticQuantity, setOptimisticQuantity] = useOptimistic(
-    item.quantity
-  )
-  const [, startTransition] = useTransition()
+  const [isPending, startTransition] = useTransition()
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -80,8 +69,6 @@ function Item({
     setError(null)
 
     startTransition(async () => {
-      setOptimisticQuantity(quantity) // 즉시 UI 반영
-
       try {
         await updateLineItem({ lineId: item.id, quantity })
       } catch (err) {
@@ -106,7 +93,7 @@ function Item({
 
   const unitPrice = item.unit_price ?? 0
   const compareAtUnitPrice = item.compare_at_unit_price
-  const totalPrice = unitPrice * optimisticQuantity
+  const totalPrice = unitPrice * item.quantity
 
   // 할인율 계산 (compare_at_unit_price가 있고, unit_price보다 클 때만)
   const discountPercentage =
@@ -114,14 +101,13 @@ function Item({
       ? Math.round((1 - unitPrice / compareAtUnitPrice) * 100)
       : 0
   const compareAtTotalPrice = compareAtUnitPrice
-    ? compareAtUnitPrice * optimisticQuantity
+    ? compareAtUnitPrice * item.quantity
     : 0
 
-  const optimisticItem = { ...item, quantity: optimisticQuantity }
-
   return cloneElement(children, {
-    item: optimisticItem,
+    item,
     deleting,
+    isPending,
     error,
     unitPrice,
     compareAtUnitPrice,
@@ -140,6 +126,7 @@ function DesktopItem({
   item,
   type = "full",
   deleting,
+  isPending,
   error,
   unitPrice,
   compareAtUnitPrice,
@@ -234,17 +221,22 @@ function DesktopItem({
               size="icon"
               className="h-full w-9 rounded-l-lg rounded-r-none"
               onClick={() => changeQuantity?.(item.quantity - 1)}
-              disabled={item.quantity <= 1}
+              disabled={item.quantity <= 1 || isPending}
             >
               <Minus className="h-4 w-4" />
             </Button>
             <button
               type="button"
               onClick={handleOpenModal}
-              className="hover:bg-gray-10 h-full w-10 cursor-pointer text-center text-sm font-medium"
+              disabled={isPending}
+              className="hover:bg-gray-10 h-full w-10 cursor-pointer text-center text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
               data-testid="product-quantity-input"
             >
-              {item.quantity}
+              {isPending ? (
+                <Loader2 className="mx-auto h-4 w-4 animate-spin" />
+              ) : (
+                item.quantity
+              )}
             </button>
             <Button
               type="button"
@@ -252,6 +244,7 @@ function DesktopItem({
               size="icon"
               className="h-full w-9 rounded-l-none rounded-r-lg"
               onClick={() => changeQuantity?.(item.quantity + 1)}
+              disabled={isPending}
             >
               <Plus className="h-4 w-4" />
             </Button>
@@ -371,6 +364,7 @@ function DesktopItem({
 function MobileItem({
   item,
   deleting,
+  isPending,
   totalPrice,
   discountPercentage,
   changeQuantity,
@@ -459,16 +453,21 @@ function MobileItem({
               size="icon"
               className="h-full w-8 rounded-l-lg rounded-r-none"
               onClick={() => changeQuantity?.(item.quantity - 1)}
-              disabled={item.quantity <= 1}
+              disabled={item.quantity <= 1 || isPending}
             >
               <Minus className="h-4 w-4" />
             </Button>
             <button
               type="button"
               onClick={handleOpenModal}
-              className="h-full w-8 text-center text-sm font-medium hover:bg-gray-50"
+              disabled={isPending}
+              className="h-full w-8 text-center text-sm font-medium hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {item.quantity}
+              {isPending ? (
+                <Loader2 className="mx-auto h-4 w-4 animate-spin" />
+              ) : (
+                item.quantity
+              )}
             </button>
             <Button
               type="button"
@@ -476,6 +475,7 @@ function MobileItem({
               size="icon"
               className="h-full w-8 rounded-l-none rounded-r-lg"
               onClick={() => changeQuantity?.(item.quantity + 1)}
+              disabled={isPending}
             >
               <Plus className="h-4 w-4" />
             </Button>
