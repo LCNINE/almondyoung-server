@@ -8,7 +8,7 @@ import {
   getPendingPaymentMode,
   removePendingPaymentMode,
 } from "@/lib/utils/checkout-intent-map"
-import { processPaymentCallback } from "./actions"
+import { processPaymentCallback, revalidateMembershipSuccess } from "./actions"
 
 export default function CallbackPage() {
   const router = useRouter()
@@ -76,6 +76,7 @@ export default function CallbackPage() {
             } catch {
               // 복구 실패해도 성공 페이지로 이동 (error.tsx가 처리)
             }
+            revalidateMembershipSuccess().catch(() => { })
             router.replace(
               `/${countryCode}/mypage/membership/subscribe/success`
             )

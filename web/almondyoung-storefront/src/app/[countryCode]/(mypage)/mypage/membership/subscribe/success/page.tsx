@@ -1,8 +1,6 @@
 import type { Metadata } from "next"
 import Image from "next/image"
 import Link from "next/link"
-import { revalidateTag } from "next/cache"
-import { getCacheTag } from "@/lib/data/cookies"
 
 const IconChevronLeft = () => (
   <svg
@@ -24,13 +22,7 @@ export const metadata: Metadata = {
 }
 
 // 멤버십 가입 완료 페이지
-export default async function MembershipSuccessScreen() {
-  // 가격 재계산은 콜백에서 처리 완료. 캐시만 날림.
-  const cartCacheTag = await getCacheTag("carts")
-  if (cartCacheTag) {
-    revalidateTag(cartCacheTag)
-  }
-
+export default function MembershipSuccessScreen() {
   return (
     <div className="flex min-h-screen flex-col bg-white">
       <div className="mx-auto flex w-full flex-1 flex-col px-6">
