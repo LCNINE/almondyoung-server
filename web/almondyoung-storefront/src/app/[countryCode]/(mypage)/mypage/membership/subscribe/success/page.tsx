@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import Image from "next/image"
 import Link from "next/link"
+import { CartRefresher } from "./cart-refresher"
 
 const IconChevronLeft = () => (
   <svg
@@ -25,6 +26,7 @@ export const metadata: Metadata = {
 export default function MembershipSuccessScreen() {
   return (
     <div className="flex min-h-screen flex-col bg-white">
+      <CartRefresher />
       <div className="mx-auto flex w-full flex-1 flex-col px-6">
         <header className="flex w-full shrink-0 items-center border-b border-gray-200 px-3 py-4 md:px-6 md:py-3">
           <div className="flex-1">
