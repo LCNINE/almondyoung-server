@@ -52,11 +52,13 @@ export class MembershipMedusaSyncService {
 
       // almond_user_id로 찾은 고객의 이메일이 멤버십 이메일과 다르면 유령 고객
       // (동일 almond_user_id를 가진 비활성/구버전 고객이 먼저 조회될 수 있음)
+      let ghostCustomerId: string | null = null;
       if (customer && customer.email !== email) {
         this.logger.warn(
           `almond_user_id(${userId})로 찾은 고객(${customer.id}, email=${customer.email})이 ` +
           `멤버십 이메일(${email})과 불일치 → 유령 고객으로 판단, email fallback 사용`,
         );
+        ghostCustomerId = customer.id;
         customer = null;
       }
 
@@ -72,12 +74,20 @@ export class MembershipMedusaSyncService {
           this.logger.log(
             `email fallback 성공: customerId=${customer.id} (userId=${userId}). metadata 자동 복구 중...`,
           );
-          // 자동 복구: 이후 조회에서 almond_user_id로 바로 찾을 수 있도록 metadata 갱신
+          // 자동 복구: 올바른 고객에 almond_user_id 추가
           this.medusaClient
             .updateCustomerMetadata(customer.id, { almond_user_id: userId })
             .catch((e) =>
               this.logger.warn(`almond_user_id metadata 자동 복구 실패: ${e?.message}`),
             );
+          // 유령 고객의 almond_user_id 제거 (중복 조회 방지)
+          if (ghostCustomerId) {
+            this.medusaClient
+              .clearCustomerMetadataKey(ghostCustomerId, 'almond_user_id')
+              .catch((e) =>
+                this.logger.warn(`유령 고객 almond_user_id 제거 실패 (ghostId=${ghostCustomerId}): ${e?.message}`),
+              );
+          }
         }
       }
 
