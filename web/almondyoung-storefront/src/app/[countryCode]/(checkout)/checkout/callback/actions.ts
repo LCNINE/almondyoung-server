@@ -98,8 +98,8 @@ async function getSourceCartSelection(
         : null
     const sourceLineItemIds = Array.isArray(metadata?.source_line_item_ids)
       ? metadata.source_line_item_ids.filter(
-          (id): id is string => typeof id === "string" && id.length > 0
-        )
+        (id): id is string => typeof id === "string" && id.length > 0
+      )
       : []
 
     if (
@@ -159,7 +159,7 @@ export async function processPaymentCallback(
     if (mode === "membership" && planId) {
       try {
         await createSubscription(planId)
-        await refreshCartPrices().catch(() => {})
+        await refreshCartPrices().catch(() => { })
         revalidateTag(await getCacheTag("carts"))
         return {
           success: true,
@@ -167,7 +167,7 @@ export async function processPaymentCallback(
         }
       } catch (error: any) {
         if (error instanceof HttpApiError && error.status === 409) {
-          await refreshCartPrices().catch(() => {})
+          await refreshCartPrices().catch(() => { })
           revalidateTag(await getCacheTag("carts"))
           return {
             success: true,
@@ -250,5 +250,13 @@ export async function processPaymentCallback(
           ? `/${countryCode}/mypage/membership/subscribe/fail?code=CALLBACK_ERROR&message=${encodeURIComponent(errorMessage)}`
           : `/${countryCode}/checkout/fail?code=CALLBACK_ERROR&message=${encodeURIComponent(errorMessage)}`,
     }
+  }
+}
+
+//멤버십 결제 성공 후 카트 캐시 무효화
+export async function revalidateMembershipSuccess(): Promise<void> {
+  const cartCacheTag = await getCacheTag("carts")
+  if (cartCacheTag) {
+    revalidateTag(cartCacheTag)
   }
 }
