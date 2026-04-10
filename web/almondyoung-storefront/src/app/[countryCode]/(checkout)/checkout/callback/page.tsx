@@ -23,7 +23,6 @@ export default function CallbackPage() {
     // URL에 mode가 없으면 sessionStorage fallback (returnUrl에 쿼리가 있을 때 wallet이 URL을 깨뜨리는 문제 대응)
     const pendingMode = getPendingPaymentMode()
     const mode = searchParams.get("mode") ?? pendingMode?.mode ?? null
-    const planId = searchParams.get("planId") ?? pendingMode?.planId ?? null
 
     // 하위 호환: 기존 흐름의 cartId 쿼리가 있으면 우선 사용
     const cartIdFromQuery = searchParams.get("cartId")
@@ -98,7 +97,7 @@ export default function CallbackPage() {
       return
     }
 
-    processPaymentCallback(countryCode, paymentIntentId, mode, planId, cartId).then(
+    processPaymentCallback(countryCode, paymentIntentId, mode, cartId).then(
       (result) => {
         removeCheckoutCartByIntent(paymentIntentId)
         removePendingPaymentMode()

@@ -1,7 +1,5 @@
 "use server"
 
-import { createSubscription } from "@/lib/api/membership"
-import { HttpApiError } from "@/lib/api/api-error"
 import { sdk } from "@/lib/config/medusa"
 import {
   getAuthHeaders,
@@ -10,7 +8,6 @@ import {
   removeCartId,
 } from "@/lib/data/cookies"
 import { revalidateTag } from "next/cache"
-import { refreshCartPrices } from "@/lib/api/medusa/cart"
 
 async function ensureShippingMethod(
   cartId: string,
@@ -152,37 +149,9 @@ export async function processPaymentCallback(
   countryCode: string,
   intentId: string,
   mode?: string | null,
-  planId?: string | null,
   cartId?: string | null
 ): Promise<ProcessPaymentResult> {
   try {
-    if (mode === "membership" && planId) {
-      try {
-        await createSubscription(planId)
-        await refreshCartPrices().catch(() => { })
-        revalidateTag(await getCacheTag("carts"))
-        return {
-          success: true,
-          redirectUrl: `/${countryCode}/mypage/membership/subscribe/success`,
-        }
-      } catch (error: any) {
-        if (error instanceof HttpApiError && error.status === 409) {
-          await refreshCartPrices().catch(() => { })
-          revalidateTag(await getCacheTag("carts"))
-          return {
-            success: true,
-            redirectUrl: `/${countryCode}/mypage/membership/subscribe/success`,
-          }
-        }
-        const message =
-          error instanceof Error ? error.message : "멤버십 가입 처리 실패"
-        return {
-          success: false,
-          redirectUrl: `/${countryCode}/mypage/membership/subscribe/fail?code=SUBSCRIBE_FAILED&message=${encodeURIComponent(message)}`,
-        }
-      }
-    }
-
     const targetCartId = cartId || (await getCartId())
     console.log("============== callback 디버그 ==============")
     console.log("intentId:", intentId)
