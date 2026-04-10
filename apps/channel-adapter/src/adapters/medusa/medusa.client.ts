@@ -1116,6 +1116,18 @@ export class MedusaClient {
     }
   }
 
+  // 고객 metadata에서 특정 key만 제거 (null로 설정하면 Medusa가 해당 key를 삭제함)
+  async clearCustomerMetadataKey(customerId: string, key: string): Promise<void> {
+    try {
+      await this.sdk.admin.customer.update(customerId, { metadata: { [key]: null } });
+      this.logger.log(`Cleared metadata key '${key}' for customer ${customerId}`);
+    } catch (error) {
+      const fetchError = error as FetchError;
+      this.logger.warn(`Failed to clear metadata key '${key}' for customer ${customerId}: ${fetchError.message}`);
+      throw error;
+    }
+  }
+
   async removeCustomerFromGroup(customerId: string, groupId: string): Promise<void> {
     try {
       await this.sdk.admin.customer.batchCustomerGroups(customerId, {
