@@ -38,8 +38,14 @@ export class AccountLinkingController {
     return isProd ? this.configService.getOrThrow('FRONTEND_URL') : 'http://localhost:8000';
   }
 
-  private getLinkResultRedirectUrl(success: boolean, provider: string, error?: string): string {
-    const url = new URL('/mypage/settings', this.frontendUrl);
+  private getLinkResultRedirectUrl(
+    success: boolean,
+    provider: string,
+    redirectTo?: string,
+    error?: string,
+  ): string {
+    const path = redirectTo || '/mypage/account/profile';
+    const url = new URL(path, this.frontendUrl);
     url.searchParams.set('link_result', success ? 'success' : 'error');
     url.searchParams.set('provider', provider);
     if (error) {
@@ -57,10 +63,10 @@ export class AccountLinkingController {
   @RequireScopes('user:modify')
   async startKakaoLink(
     @CurrentUser() user: JwtPayload,
-    @Query() _query: StartLinkingDto,
+    @Query() query: StartLinkingDto,
     @Res() res: FastifyReply,
   ): Promise<void> {
-    const state = await this.accountLinkingService.generateLinkingState(user.id);
+    const state = await this.accountLinkingService.generateLinkingState(user.id, query.redirectTo);
 
     const kakaoAuthUrl = new URL('https://kauth.kakao.com/oauth/authorize');
     kakaoAuthUrl.searchParams.set('client_id', this.configService.getOrThrow('KAKAO_CLIENT_ID'));
@@ -81,6 +87,7 @@ export class AccountLinkingController {
     @Res() res: FastifyReply,
   ): Promise<void> {
     const provider = ProviderType.KAKAO;
+    let redirectTo: string | undefined;
 
     try {
       const { state, ...socialProfile } = req.user;
@@ -89,14 +96,15 @@ export class AccountLinkingController {
         throw new UnauthorizedException('Missing state parameter');
       }
 
-      const { userId } = await this.accountLinkingService.verifyLinkingState(state);
+      const result = await this.accountLinkingService.verifyLinkingState(state);
+      redirectTo = result.redirectTo;
 
-      await this.accountLinkingService.linkSocialAccount(userId, provider, socialProfile);
+      await this.accountLinkingService.linkSocialAccount(result.userId, provider, socialProfile);
 
-      res.status(302).redirect(this.getLinkResultRedirectUrl(true, provider));
+      res.status(302).redirect(this.getLinkResultRedirectUrl(true, provider, redirectTo));
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      res.status(302).redirect(this.getLinkResultRedirectUrl(false, provider, errorMessage));
+      res.status(302).redirect(this.getLinkResultRedirectUrl(false, provider, redirectTo, errorMessage));
     }
   }
 
@@ -109,10 +117,10 @@ export class AccountLinkingController {
   @RequireScopes('user:modify')
   async startNaverLink(
     @CurrentUser() user: JwtPayload,
-    @Query() _query: StartLinkingDto,
+    @Query() query: StartLinkingDto,
     @Res() res: FastifyReply,
   ): Promise<void> {
-    const state = await this.accountLinkingService.generateLinkingState(user.id);
+    const state = await this.accountLinkingService.generateLinkingState(user.id, query.redirectTo);
 
     const naverAuthUrl = new URL('https://nid.naver.com/oauth2.0/authorize');
     naverAuthUrl.searchParams.set('client_id', this.configService.getOrThrow('NAVER_CLIENT_ID'));
@@ -133,6 +141,7 @@ export class AccountLinkingController {
     @Res() res: FastifyReply,
   ): Promise<void> {
     const provider = ProviderType.NAVER;
+    let redirectTo: string | undefined;
 
     try {
       const { state, ...socialProfile } = req.user;
@@ -141,14 +150,15 @@ export class AccountLinkingController {
         throw new UnauthorizedException('Missing state parameter');
       }
 
-      const { userId } = await this.accountLinkingService.verifyLinkingState(state);
+      const result = await this.accountLinkingService.verifyLinkingState(state);
+      redirectTo = result.redirectTo;
 
-      await this.accountLinkingService.linkSocialAccount(userId, provider, socialProfile);
+      await this.accountLinkingService.linkSocialAccount(result.userId, provider, socialProfile);
 
-      res.status(302).redirect(this.getLinkResultRedirectUrl(true, provider));
+      res.status(302).redirect(this.getLinkResultRedirectUrl(true, provider, redirectTo));
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      res.status(302).redirect(this.getLinkResultRedirectUrl(false, provider, errorMessage));
+      res.status(302).redirect(this.getLinkResultRedirectUrl(false, provider, redirectTo, errorMessage));
     }
   }
 
