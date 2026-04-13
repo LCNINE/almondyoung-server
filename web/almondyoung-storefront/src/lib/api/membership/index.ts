@@ -10,7 +10,7 @@ import type {
   SubscriptionDetailsDto,
   SubscriptionHistoryItemDto,
 } from "@lib/types/dto/membership"
-import type { PlanWithTier } from "@lib/types/membership"
+import type { PlanWithTier, PlansListResponse } from "@lib/types/membership"
 import { api } from "../api"
 import { ApiAuthError, HttpApiError } from "../api-error"
 import type {
@@ -133,13 +133,13 @@ export async function getCycleBenefitHistory(
 /**
  * 멤버십 플랜 목록 조회
  */
-export async function getPlans() {
-  const result = await api<PlanWithTier[]>("membership", `/plans`, {
+export async function getPlans(): Promise<PlanWithTier[]> {
+  const result = await api<PlansListResponse>("membership", `/plans`, {
     method: "GET",
-    withAuth: true,
+    withAuth: false,
     cache: "no-store",
   })
-  return result
+  return result.data ?? []
 }
 
 /**
