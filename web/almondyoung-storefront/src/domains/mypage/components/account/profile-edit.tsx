@@ -20,6 +20,7 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { zodResolver } from "@hookform/resolvers/zod"
 import type { UserDetail } from "@lib/types/ui/user"
+import type { SocialIdentitiesState } from "@/lib/types/ui/social-identity"
 import { toLocalizedPath } from "@lib/utils/locale-path"
 import { useActionState, useEffect, useMemo, useTransition } from "react"
 import { useForm } from "react-hook-form"
@@ -32,6 +33,7 @@ import {
 } from "../actions/profile"
 import { AddressBookSection } from "./address-book-section"
 import { PhoneSection } from "./phone-section"
+import { SocialLinkSection } from "./social-link-section"
 
 const INPUT_CLASSNAME =
   "h-11 rounded-md border border-gray-300 px-4 text-sm aria-[invalid=true]:border-red-500"
@@ -48,9 +50,14 @@ function RequiredLabel({ children }: { children: React.ReactNode }) {
 interface ProfileEditProps {
   userData: UserDetail
   countryCode: string
+  identitiesState: SocialIdentitiesState
 }
 
-export function ProfileEdit({ userData, countryCode }: ProfileEditProps) {
+export function ProfileEdit({
+  userData,
+  countryCode,
+  identitiesState,
+}: ProfileEditProps) {
   const [isWithdrawPending, startWithdrawTransition] = useTransition()
 
   const initialValues = useMemo(() => {
@@ -234,6 +241,9 @@ export function ProfileEdit({ userData, countryCode }: ProfileEditProps) {
           </Form>
         </CardContent>
       </Card>
+
+      {/* 소셜 계정 연동 */}
+      <SocialLinkSection identitiesState={identitiesState} />
 
       {/* 휴대폰 번호 변경 */}
       <PhoneSection initialPhoneNumber={userData.profile?.phoneNumber ?? null} />
