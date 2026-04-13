@@ -14,7 +14,6 @@ export default async function ProtectedRoute({
 
   const headersList = await headers()
   const pathname = headersList.get("x-pathname")
-  console.log("pathname::::::", pathname)
 
   try {
     const isMainPage = !pathname || /^\/[a-z]{2}\/?$/.test(pathname)
