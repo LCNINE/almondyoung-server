@@ -96,6 +96,18 @@ export interface Cafe24UnlinkedPayload {
   unlinkedAt: string; // ISO 8601
 }
 
+export interface SocialIdentityLinkedPayload {
+  userId: string;
+  provider: 'kakao' | 'naver' | 'google';
+  linkedAt: string; // ISO 8601
+}
+
+export interface SocialIdentityUnlinkedPayload {
+  userId: string;
+  provider: 'kakao' | 'naver' | 'google';
+  unlinkedAt: string; // ISO 8601
+}
+
 // ===== Zod 스키마 정의 =====
 
 const UserCreatedSchema = z.object({
@@ -185,6 +197,18 @@ const Cafe24UnlinkedSchema = z.object({
   unlinkedAt: z.string().datetime(),
 });
 
+const SocialIdentityLinkedSchema = z.object({
+  userId: z.string().min(1),
+  provider: z.enum(['kakao', 'naver', 'google']),
+  linkedAt: z.string().datetime(),
+});
+
+const SocialIdentityUnlinkedSchema = z.object({
+  userId: z.string().min(1),
+  provider: z.enum(['kakao', 'naver', 'google']),
+  unlinkedAt: z.string().datetime(),
+});
+
 // ===== Stream Config (타입 안전 버전) =====
 
 export const USER_STREAM = stream({
@@ -204,6 +228,8 @@ export const USER_STREAM = stream({
     BusinessLicenseApproved: event<'BusinessLicenseApproved', BusinessLicenseApprovedPayload>('BusinessLicenseApproved', BusinessLicenseApprovedSchema),
     Cafe24Linked: event<'Cafe24Linked', Cafe24LinkedPayload>('Cafe24Linked', Cafe24LinkedSchema),
     Cafe24Unlinked: event<'Cafe24Unlinked', Cafe24UnlinkedPayload>('Cafe24Unlinked', Cafe24UnlinkedSchema),
+    SocialIdentityLinked: event<'SocialIdentityLinked', SocialIdentityLinkedPayload>('SocialIdentityLinked', SocialIdentityLinkedSchema),
+    SocialIdentityUnlinked: event<'SocialIdentityUnlinked', SocialIdentityUnlinkedPayload>('SocialIdentityUnlinked', SocialIdentityUnlinkedSchema),
   },
 });
 
