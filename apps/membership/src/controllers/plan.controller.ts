@@ -1,5 +1,6 @@
 import { Controller, Get, Param, UseFilters, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
+import { Public } from '@app/authorization';
 import { PlanService } from '../services/plan.service';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
 import {
@@ -43,6 +44,7 @@ export class PlanController {
   /**
    * 모든 활성 플랜 목록 조회
    */
+  @Public()
   @Get('plans')
   @ApiOperation({
     summary: '모든 활성 플랜 목록 조회',
