@@ -131,12 +131,12 @@ export async function getCycleBenefitHistory(
 }
 
 /**
- * 멤버십 플랜 목록 조회 (공개 API, 인증 불필요)
+ * 멤버십 플랜 목록 조회
  */
 export async function getPlans() {
   const result = await api<PlanWithTier[]>("membership", `/plans`, {
     method: "GET",
-    withAuth: false,
+    withAuth: true,
     cache: "no-store",
   })
   return result
