@@ -46,13 +46,14 @@ export class AccountLinkingService {
   /**
    * OAuth state 토큰 생성 (CSRF 방지)
    */
-  async generateLinkingState(userId: string): Promise<string> {
+  async generateLinkingState(userId: string, redirectTo?: string): Promise<string> {
     const nonce = randomBytes(16).toString('hex');
 
     const payload: Omit<LinkingStatePayload, 'iat' | 'exp'> = {
       userId,
       nonce,
       purpose: 'link',
+      redirectTo,
     };
 
     const state = await this.jwtService.signAsync(payload, {
@@ -60,14 +61,14 @@ export class AccountLinkingService {
       expiresIn: LINKING_STATE_EXPIRATION,
     });
 
-    this.logger.debug(`Linking state generated for user: ${userId}`);
+    this.logger.debug(`Linking state generated for user: ${userId}, redirectTo: ${redirectTo}`);
     return state;
   }
 
   /**
    * OAuth state 토큰 검증
    */
-  async verifyLinkingState(state: string): Promise<{ userId: string }> {
+  async verifyLinkingState(state: string): Promise<{ userId: string; redirectTo?: string }> {
     const payload = await this.jwtService.verifyAsync<LinkingStatePayload>(state, {
       secret: this.configService.getOrThrow<string>('AUTH_SECRET'),
     });
@@ -76,7 +77,7 @@ export class AccountLinkingService {
       throw new Error('Invalid state token purpose');
     }
 
-    return { userId: payload.userId };
+    return { userId: payload.userId, redirectTo: payload.redirectTo };
   }
 
   /**

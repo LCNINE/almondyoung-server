@@ -8,6 +8,7 @@ export interface LinkingStatePayload {
   userId: string;
   nonce: string;
   purpose: 'link';
+  redirectTo?: string;
   iat: number;
   exp: number;
 }
