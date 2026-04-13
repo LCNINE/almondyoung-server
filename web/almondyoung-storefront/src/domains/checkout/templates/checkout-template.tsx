@@ -133,6 +133,12 @@ export default function CheckoutTemplate({
       setLoading(true)
       setError(null)
 
+      if (selectedItems.length === 0) {
+        setError("결제할 상품이 없습니다. 장바구니로 돌아가 상품을 선택해주세요.")
+        setLoading(false)
+        return
+      }
+
       // 결제 전 배송 메모 저장
       await updateCart(
         {
