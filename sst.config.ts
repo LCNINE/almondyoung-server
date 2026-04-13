@@ -13,14 +13,31 @@ export default $config({
     };
   },
   async run() {
-    const vpc = new sst.aws.Vpc("Vpc");
-    const cluster = new sst.aws.Cluster("Cluster", { vpc });
-
     const isDev = $app.stage !== "production";
 
+    const vpc = new sst.aws.Vpc("Vpc", {
+      bastion: isDev,
+    });
+    const cluster = new sst.aws.Cluster("Cluster", { vpc });
+
+    // ─── Database ───
+    const db = new sst.aws.Postgres("Db", {
+      vpc,
+      scaling: { min: "0.5 ACU", max: "2 ACU" },
+    });
+
+    const dbUrl = (dbName: string) =>
+      $interpolate`postgresql://${db.username}:${db.password}@${db.host}:${db.port}/${dbName}?sslmode=require`;
+
+    // ─── Redis (ElastiCache Serverless) ───
+    const redis = new sst.aws.Redis("Redis", { vpc });
+    const redisUrl = (dbIndex: number) =>
+      $interpolate`redis://${redis.host}:${redis.port}/${dbIndex}`;
+
     // ─── Domain helper ───
+    const baseDomain = "lcnine-dev.com";
     const domain = (slug: string) =>
-      isDev ? `${slug}.dev.almondyoung-next.com` : `${slug}.almondyoung-next.com`;
+      isDev ? `${slug}.dev.${baseDomain}` : `${slug}.${baseDomain}`;
     const url = (slug: string) => `https://${domain(slug)}`;
 
     // ─── Shared secrets ───
@@ -29,18 +46,6 @@ export default $config({
     const authSecret = new sst.Secret("AuthSecret");
     const awsS3AccessKeyId = new sst.Secret("AwsS3AccessKeyId");
     const awsS3SecretAccessKey = new sst.Secret("AwsS3SecretAccessKey");
-
-    // ─── Per-service database URLs ───
-    const userServiceDatabaseUrl = new sst.Secret("UserServiceDatabaseUrl");
-    const analyticsDatabaseUrl = new sst.Secret("AnalyticsDatabaseUrl");
-    const channelAdapterDatabaseUrl = new sst.Secret("ChannelAdapterDatabaseUrl");
-    const membershipDatabaseUrl = new sst.Secret("MembershipDatabaseUrl");
-    const notificationDatabaseUrl = new sst.Secret("NotificationDatabaseUrl");
-    const pimDatabaseUrl = new sst.Secret("PimDatabaseUrl");
-    const ugcDatabaseUrl = new sst.Secret("UgcDatabaseUrl");
-    const wmsDatabaseUrl = new sst.Secret("WmsDatabaseUrl");
-    const walletDatabaseUrl = new sst.Secret("WalletDatabaseUrl");
-    const fileServiceDatabaseUrl = new sst.Secret("FileServiceDatabaseUrl");
 
     // ─── User Service secrets ───
     const kakaoClientId = new sst.Secret("KakaoClientId");
@@ -76,6 +81,10 @@ export default $config({
     // ─── PIM secrets ───
     const elasticsearchPassword = new sst.Secret("ElasticsearchPassword");
 
+    // ─── Medusa secrets ───
+    const medusaJwtSecret = new sst.Secret("MedusaJwtSecret");
+    const medusaCookieSecret = new sst.Secret("MedusaCookieSecret");
+
     // ─── Common env builders ───
     const kafkaEnv = (prefix: string, groupId: string) => ({
       KAFKA_BROKERS: "pkc-e82om.ap-northeast-2.aws.confluent.cloud:9092",
@@ -98,10 +107,13 @@ export default $config({
         domainSlug: string;
         port: number;
         environment: Record<string, $util.Output<string> | string>;
+        buildArgs?: Record<string, $util.Output<string> | string>;
+        link?: sst.Linkable[];
       },
     ) =>
       new sst.aws.Service(name, {
         cluster,
+        link: opts.link,
         loadBalancer: {
           domain: domain(opts.domainSlug),
           rules: [
@@ -112,6 +124,7 @@ export default $config({
         image: {
           context: ".",
           dockerfile: opts.dockerfile,
+          args: opts.buildArgs,
         },
         environment: {
           ...baseEnv(opts.domainSlug),
@@ -128,13 +141,14 @@ export default $config({
       dockerfile: "apps/user-service/Dockerfile",
       domainSlug: "user",
       port: 3000,
+      link: [db],
       environment: {
-        DATABASE_URL: userServiceDatabaseUrl.value,
+        DATABASE_URL: dbUrl("user_service"),
         ...kafkaEnv("user-service", "user-service"),
         AUTH_SECRET: authSecret.value,
         JWT_REFRESH_SECRET: jwtRefreshSecret.value,
         JWT_VERIFICATION_TOKEN_SECRET: jwtVerificationTokenSecret.value,
-        COOKIE_DOMAIN: ".almondyoung-next.com",
+        COOKIE_DOMAIN: `.${baseDomain}`,
         FRONTEND_URL: url("www"),
         SIGNUP_CALLBACK_URL: `${url("www")}/callback/signup`,
         USER_SERVICE_URL: url("user"),
@@ -175,8 +189,9 @@ export default $config({
       dockerfile: "apps/analytics/Dockerfile",
       domainSlug: "analytics",
       port: 3040,
+      link: [db],
       environment: {
-        DATABASE_URL: analyticsDatabaseUrl.value,
+        DATABASE_URL: dbUrl("analytics"),
         ...kafkaEnv("analytics", "analytics-group"),
         AUTH_SECRET: authSecret.value,
       },
@@ -186,8 +201,9 @@ export default $config({
       dockerfile: "apps/channel-adapter/Dockerfile",
       domainSlug: "channel-adapter",
       port: 3000,
+      link: [db],
       environment: {
-        DATABASE_URL: channelAdapterDatabaseUrl.value,
+        DATABASE_URL: dbUrl("channel_adapter"),
         ...kafkaEnv("channel-adapter", "channel-adapter-group"),
         CHANNEL_ADAPTER_INTERNAL_KEY: channelAdapterInternalKey.value,
         MEDUSA_API_KEY: medusaApiKey.value,
@@ -210,8 +226,9 @@ export default $config({
       dockerfile: "apps/membership/Dockerfile",
       domainSlug: "membership",
       port: 3000,
+      link: [db],
       environment: {
-        DATABASE_URL: membershipDatabaseUrl.value,
+        DATABASE_URL: dbUrl("membership"),
         ...kafkaEnv("membership", "membership-group"),
         WALLET_API_KEY: walletApiKey.value,
         WALLET_API_URL: url("wallet"),
@@ -222,8 +239,9 @@ export default $config({
       dockerfile: "apps/notification/Dockerfile",
       domainSlug: "notification",
       port: 3000,
+      link: [db],
       environment: {
-        DATABASE_URL: notificationDatabaseUrl.value,
+        DATABASE_URL: dbUrl("notification"),
         ...kafkaEnv("notification", "notification-group"),
         NHN_API_URL: "https://api-alimtalk.cloud.toast.com",
         NHN_APP_KEY: nhnAppKey.value,
@@ -232,7 +250,7 @@ export default $config({
         NHN_PLUS_FRIEND_ID: "@아몬드영",
         RESEND_API_KEY: resendApiKey.value,
         RESEND_BASE_URL: "https://api.resend.com",
-        RESEND_FROM: "noreply@mail.almondyoung-next.com",
+        RESEND_FROM: `noreply@mail.${baseDomain}`,
         RESEND_FROM_NAME: "아몬드영",
         RESEND_WEBHOOK_SECRET: resendWebhookSecret.value,
       },
@@ -242,8 +260,9 @@ export default $config({
       dockerfile: "apps/pim/Dockerfile",
       domainSlug: "pim",
       port: 3000,
+      link: [db],
       environment: {
-        DATABASE_URL: pimDatabaseUrl.value,
+        DATABASE_URL: dbUrl("pim"),
         ...kafkaEnv("pim", "pim-group"),
         AUTH_SECRET: authSecret.value,
         ELASTICSEARCH_NODE: "https://elasticsearch-demo.up.railway.app",
@@ -256,8 +275,9 @@ export default $config({
       dockerfile: "apps/ugc-service/Dockerfile",
       domainSlug: "ugc",
       port: 3030,
+      link: [db],
       environment: {
-        DATABASE_URL: ugcDatabaseUrl.value,
+        DATABASE_URL: dbUrl("ugc"),
         ...kafkaEnv("ugc-service", "ugc-service-group"),
         AUTH_SECRET: authSecret.value,
         JWT_ISSUER: "almondyoung-auth",
@@ -268,8 +288,9 @@ export default $config({
       dockerfile: "apps/wms/Dockerfile",
       domainSlug: "wms",
       port: 3000,
+      link: [db],
       environment: {
-        DATABASE_URL: wmsDatabaseUrl.value,
+        DATABASE_URL: dbUrl("wms"),
         ...kafkaEnv("wms", "wms-group"),
         AUTH_SECRET: authSecret.value,
       },
@@ -279,8 +300,9 @@ export default $config({
       dockerfile: "apps/wallet/Dockerfile",
       domainSlug: "wallet",
       port: 3000,
+      link: [db],
       environment: {
-        DATABASE_URL: walletDatabaseUrl.value,
+        DATABASE_URL: dbUrl("wallet"),
         ...kafkaEnv("wallet", "wallet-group"),
         AUTH_SECRET: authSecret.value,
         USER_JWT_SECRET: authSecret.value,
@@ -292,7 +314,7 @@ export default $config({
         CUST_KEY: custKey.value,
         SW_KEY: swKey.value,
         SERVICE_NAME: "wallet",
-        CORS_ORIGINS: "*.almondyoung-next.com",
+        CORS_ORIGINS: `*.${baseDomain}`,
         WALLET_MEDUSA_WEBHOOK_URL: `${url("medusa")}/hooks/payment/pp_almond-payment_almond-payment`,
       },
     });
@@ -301,8 +323,9 @@ export default $config({
       dockerfile: "apps/file-service/Dockerfile",
       domainSlug: "file",
       port: 3000,
+      link: [db],
       environment: {
-        DATABASE_URL: fileServiceDatabaseUrl.value,
+        DATABASE_URL: dbUrl("file_service"),
         ...kafkaEnv("file-service", "file-service-group"),
         AUTH_SECRET: authSecret.value,
         AWS_ACCESS_KEY_ID: awsS3AccessKeyId.value,
@@ -321,6 +344,52 @@ export default $config({
       environment: {
         OPENSEARCH_NODE: "https://opensearch-demo.up.railway.app",
         SEARCH_PRODUCTS_INDEX: "search_products",
+      },
+    });
+
+    createService("Medusa", {
+      dockerfile: "apps/medusa/Dockerfile",
+      domainSlug: "medusa",
+      port: 9000,
+      link: [db, redis],
+      buildArgs: {
+        VITE_USER_SERVICE_URL: url("user"),
+      },
+      environment: {
+        DATABASE_URL: dbUrl("medusa"),
+        REDIS_URL: redisUrl(0),
+        CACHE_REDIS_URL: redisUrl(1),
+        MEDUSA_FF_CACHING: "true",
+        // Auth
+        JWT_SECRET: medusaJwtSecret.value,
+        COOKIE_SECRET: medusaCookieSecret.value,
+        JWT_EXPIRES_IN: "30d",
+        AUTH_SECRET: authSecret.value,
+        MEDUSA_API_KEY: medusaApiKey.value,
+        // CORS
+        STORE_CORS: [url("www"), "https://almondyoung.com", "https://www.almondyoung.com"].join(","),
+        ADMIN_CORS: [url("medusa"), "http://localhost:9000"].join(","),
+        AUTH_CORS: [url("medusa"), url("www"), "https://almondyoung.com", "https://www.almondyoung.com"].join(","),
+        // Internal service URLs
+        FRONTEND_URL: url("www"),
+        USER_SERVICE_URL: url("user"),
+        MEDUSA_BACKEND_URL: url("medusa"),
+        WALLET_BASE_URL: url("wallet"),
+        WALLET_API_KEY: walletApiKey.value,
+        WMS_API_URL: url("wms"),
+        ALMOND_PAYMENT_ENDPOINT: url("wallet"),
+        MEMBERSHIP_SERVICE_URL: url("membership"),
+        UGC_SERVICE_URL: url("ugc"),
+        MEDUSA_MEMBERSHIP_GROUP_ID: "cusgroup_01KFZ12A1M344F6HKGDV35J28A",
+        // S3
+        S3_FILE_URL: "https://almondyoung-medusa-digital-asset.s3.ap-northeast-2.amazonaws.com",
+        S3_ACCESS_KEY_ID: awsS3AccessKeyId.value,
+        S3_SECRET_ACCESS_KEY: awsS3SecretAccessKey.value,
+        S3_REGION: "ap-northeast-2",
+        S3_BUCKET: "almondyoung-medusa-digital-asset",
+        // Admin & logging
+        MEDUSA_ADMIN_ONBOARDING_TYPE: "default",
+        LOG_LEVEL: "debug",
       },
     });
   },

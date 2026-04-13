@@ -6,7 +6,20 @@
 
 declare module "sst" {
   export interface Resource {
+    "Analytics": {
+      "service": string
+      "type": "sst.aws.Service"
+      "url": string
+    }
     "AuthSecret": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "AwsS3AccessKeyId": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "AwsS3SecretAccessKey": {
       "type": "sst.sst.Secret"
       "value": string
     }
@@ -21,6 +34,36 @@ declare module "sst" {
     "Cafe24ServiceKey": {
       "type": "sst.sst.Secret"
       "value": string
+    }
+    "ChannelAdapter": {
+      "service": string
+      "type": "sst.aws.Service"
+      "url": string
+    }
+    "ChannelAdapterInternalKey": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "CustKey": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "Db": {
+      "database": string
+      "host": string
+      "password": string
+      "port": number
+      "type": "sst.aws.Postgres"
+      "username": string
+    }
+    "ElasticsearchPassword": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "FileService": {
+      "service": string
+      "type": "sst.aws.Service"
+      "url": string
     }
     "JwtRefreshSecret": {
       "type": "sst.sst.Secret"
@@ -46,6 +89,90 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
+    "Medusa": {
+      "service": string
+      "type": "sst.aws.Service"
+      "url": string
+    }
+    "MedusaApiKey": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "MedusaCookieSecret": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "MedusaJwtSecret": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "Membership": {
+      "service": string
+      "type": "sst.aws.Service"
+      "url": string
+    }
+    "NhnAppKey": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "NhnSecretKey": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "NhnSenderKey": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "NicepayClientKey": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "NicepaySecretKey": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "Notification": {
+      "service": string
+      "type": "sst.aws.Service"
+      "url": string
+    }
+    "Pim": {
+      "service": string
+      "type": "sst.aws.Service"
+      "url": string
+    }
+    "Redis": {
+      "host": string
+      "password": string
+      "port": number
+      "type": "sst.aws.Redis"
+      "username": string
+    }
+    "ResendApiKey": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "ResendWebhookSecret": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "Search": {
+      "service": string
+      "type": "sst.aws.Service"
+      "url": string
+    }
+    "SwKey": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "TossClientKey": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "TossSecretKey": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
     "TwilioAccountSid": {
       "type": "sst.sst.Secret"
       "value": string
@@ -54,17 +181,33 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
+    "UgcService": {
+      "service": string
+      "type": "sst.aws.Service"
+      "url": string
+    }
     "UserService": {
       "service": string
       "type": "sst.aws.Service"
       "url": string
     }
-    "UserServiceDatabaseUrl": {
+    "Vpc": {
+      "bastion": string
+      "type": "sst.aws.Vpc"
+    }
+    "Wallet": {
+      "service": string
+      "type": "sst.aws.Service"
+      "url": string
+    }
+    "WalletApiKey": {
       "type": "sst.sst.Secret"
       "value": string
     }
-    "Vpc": {
-      "type": "sst.aws.Vpc"
+    "Wms": {
+      "service": string
+      "type": "sst.aws.Service"
+      "url": string
     }
   }
 }
