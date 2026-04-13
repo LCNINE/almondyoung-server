@@ -16,8 +16,9 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+COPY package*.json ./
 COPY tsconfig*.json ./
+COPY nest-cli.json ./
 COPY libs/ ./libs/
 COPY packages/ ./packages/
 COPY apps/channel-adapter/ ./apps/channel-adapter/

@@ -1,7 +1,8 @@
 import { defineConfig } from 'drizzle-kit';
 import * as dotenv from 'dotenv';
 
-dotenv.config({ path: 'apps/outbox-demo/.env', override: true });
+dotenv.config({ path: 'apps/outbox-demo/.env' });
+console.log('DATABASE_URL', process.env.DATABASE_URL);
 
 export default defineConfig({
   dialect: 'postgresql',

@@ -19,8 +19,9 @@ RUN npm ci --omit=dev && npm cache clean --force
 # === 빌드 단계 ===
 FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+COPY package*.json ./
 COPY tsconfig*.json ./
+COPY nest-cli.json ./
 COPY libs/ ./libs/
 COPY packages/ ./packages/
 COPY apps/pim/ ./apps/pim/

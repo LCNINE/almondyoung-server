@@ -18,14 +18,12 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+COPY package*.json ./
 COPY tsconfig*.json ./
+COPY nest-cli.json ./
 COPY libs/ ./libs/
 COPY packages/ ./packages/
 COPY apps/wallet/ ./apps/wallet/
-
-# Ensure local file dependency is installed in node_modules for build-time TS resolution.
-RUN npm i --no-save ./packages/hms-api-wrapper
 
 RUN npm run build:wallet
 

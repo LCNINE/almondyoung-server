@@ -22,6 +22,8 @@
     "build:user-service": "nest build user-service",
     "build:wallet": "nest build wallet",
     "build:wms": "nest build wms",
+    "db:setup": "npx tsx scripts/seeding/index.ts",
+    "db:setup:ci": "npx tsx scripts/seeding/index.ts --yes",
     "db:generate.wms": "npm run db:generate:wms",
     "db:generate:analytics": "drizzle-kit generate --config apps/analytics/drizzle.config.ts",
     "db:generate:file-service": "drizzle-kit generate --config apps/file-service/src/database/drizzle/drizzle.config.ts",

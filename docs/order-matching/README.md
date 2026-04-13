@@ -11,3 +11,4 @@
 | [앱 책임 범위](./03-responsibilities.md) | order-matching 앱이 하는 일과 하지 않는 일 |
 | [앱 간 통신](./04-integration.md) | 이벤트 흐름, 다른 앱과의 관계 |
 | [기존 코드 마이그레이션](./05-migration-from-existing.md) | WMS/PIM의 매칭 코드 제거 계획 |
+| [주문 취소 및 변경](./06-cancellation-and-modification.md) | 취소/변경 흐름, 중간 상태, race condition 대응 |

@@ -1,7 +1,8 @@
 import { defineConfig } from 'drizzle-kit';
 import { config } from 'dotenv';
 
-config({ path: './apps/pim/.env', override: true });
+config({ path: './apps/pim/.env' });
+console.log('DATABASE_URL', process.env.DATABASE_URL);
 
 export default defineConfig({
   schema: [
