@@ -1,7 +1,8 @@
 import { defineConfig } from 'drizzle-kit';
 import { config } from 'dotenv';
 import { join } from 'path';
-config({ path: join(__dirname, '.env'), override: true });
+config({ path: join(__dirname, '.env') });
+console.log('DATABASE_URL', process.env.DATABASE_URL);
 
 export default defineConfig({
   schema: [
