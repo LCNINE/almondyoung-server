@@ -38,12 +38,29 @@ export function LoginForm() {
     resolver: zodResolver(signinSchema),
     mode: "onChange",
     defaultValues: {
-      loginId: loadCredentials().loginId || "",
+      loginId: "",
       password: "",
-      rememberMe: loadCredentials().rememberMe || false,
-      loginIdRemember: loadCredentials().loginIdRemember || false,
+      rememberMe: false,
+      loginIdRemember: false,
     },
   })
+
+  useEffect(() => {
+    const credentials = loadCredentials()
+    if (
+      credentials.loginId ||
+      credentials.rememberMe ||
+      credentials.loginIdRemember
+    ) {
+      form.reset({
+        loginId: credentials.loginId,
+        password: "",
+        rememberMe: credentials.rememberMe,
+        loginIdRemember: credentials.loginIdRemember,
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // 소셜 로그인 에러 처리
   useEffect(() => {
@@ -208,11 +225,8 @@ export function LoginForm() {
           </CustomButton>
         </div>
 
-        <LegacyAccountMigrationCard variant="login" />
-
         <div className="flex w-full flex-col gap-2">
-          {/* TODO: 아몬드영 도메인 제대로 연결되면 다시 활성화할것, 기능테스트는 다 했음 */}
-          {/* <div className="relative w-full">
+          <div className="relative w-full">
             <SocialLoginBtn
               label="kakao"
               handleLogin={() => {
@@ -244,7 +258,9 @@ export function LoginForm() {
               }}
               src={"/images/NAVER_login_Light_KR_green_center_H48.png"}
             />
-          </div> */}
+          </div>
+
+          <LegacyAccountMigrationCard variant="login" />
         </div>
       </form>
     </Form>
