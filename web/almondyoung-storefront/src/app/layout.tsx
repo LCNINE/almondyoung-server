@@ -3,9 +3,9 @@ import { BottomNavigation } from "@/components/layout/nav/bottom-nav"
 import { FloatingButtons } from "@/components/shared/custom-buttons/floating-buttons"
 import { CartProvider } from "@/contexts/cart-context"
 import { UserProvider } from "@/contexts/user-context"
+import { getMyProfile } from "@/lib/api/users/profile"
 import "@/styles/globals.css"
 import { retrieveCart } from "@lib/api/medusa/cart"
-import { fetchMe } from "@lib/api/users/me"
 import { CustomThemeProvider } from "@lib/providers/custom-theme-provider"
 import { ThemeProvider } from "@lib/providers/theme-provider"
 import { getSEOTags, renderSchemaTags } from "@lib/seo"
@@ -29,8 +29,8 @@ export const metadata: Metadata = getSEOTags({
 })
 
 export default async function RootLayout(props: { children: React.ReactNode }) {
-  const [user, cart] = await Promise.all([
-    fetchMe().catch(() => null),
+  const [userDetailInfo, cart] = await Promise.all([
+    getMyProfile().catch(() => null),
     retrieveCart(undefined, undefined, "no-store").catch(() => null),
   ])
 
@@ -41,24 +41,24 @@ export default async function RootLayout(props: { children: React.ReactNode }) {
         className="overflow-x-clip [scrollbar-gutter:stable_both-edges]"
       >
         <OverlayProvider>
-          <UserProvider initialUser={user}>
+          <UserProvider initialUser={userDetailInfo}>
             <CartProvider initialCart={cart}>
-                <ThemeProvider
-                  attribute="class"
-                  defaultTheme="light"
-                  enableSystem={false}
-                  disableTransitionOnChange
-                >
-                  <CustomThemeProvider>
-                    <div className="relative">
-                      {props.children}
+              <ThemeProvider
+                attribute="class"
+                defaultTheme="light"
+                enableSystem={false}
+                disableTransitionOnChange
+              >
+                <CustomThemeProvider>
+                  <div className="relative">
+                    {props.children}
 
-                      <FloatingButtons />
-                    </div>
-                    <Toaster />
-                  </CustomThemeProvider>
-                </ThemeProvider>
-                <BottomNavigation />
+                    <FloatingButtons />
+                  </div>
+                  <Toaster />
+                </CustomThemeProvider>
+              </ThemeProvider>
+              <BottomNavigation />
             </CartProvider>
           </UserProvider>
           <Footer />
