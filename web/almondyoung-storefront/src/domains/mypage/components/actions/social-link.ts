@@ -4,7 +4,6 @@ import { unlinkIdentity } from "@/lib/api/users/auth/identities"
 import { getBackendBaseUrl } from "@/lib/config/backend"
 import { ApiAuthError, HttpApiError } from "@lib/api/api-error"
 import { getAccessToken } from "@lib/data/cookies"
-import { revalidateTag } from "next/cache"
 import type { SocialProviderDto } from "@/lib/types/dto/social-identity"
 
 export interface LinkActionResult {
@@ -42,7 +41,6 @@ export async function linkSocialAccountAction(
       }
     }
 
-    // 401 에러는 throw해서 error.tsx로 전파 → 토큰 복구 처리
     if (response.status === 401) {
       throw new ApiAuthError()
     }
@@ -71,9 +69,6 @@ export async function unlinkSocialAccountAction(
 ): Promise<UnlinkActionResult> {
   try {
     await unlinkIdentity(provider)
-
-    revalidateTag("social-identities")
-
     return { success: true }
   } catch (error) {
     if (error instanceof HttpApiError) {
