@@ -1,14 +1,16 @@
-import { CategorySheet } from "@/components/category/sheet"
+import { MegaMenu } from "@/components/category/mega-menu"
 import { CategoryNavigation } from "@/components/layout/nav/category-nav"
 import { SearchCombobox } from "@/components/search/search-combobox"
 import { SearchSheet } from "@/components/search/search-sheet"
+import { listCategories } from "@/lib/api/medusa/categories"
 import { FIXED_CATEGORIES } from "@/lib/constants/categories"
-import { Menu } from "lucide-react"
 import { Logo } from "./logo"
 import { AccountMenu } from "./user-actions"
 
-export function MainHeader() {
+export async function MainHeader() {
   const mainCategories = FIXED_CATEGORIES
+
+  const categories = await listCategories({ parent_category_id: "null" })
 
   return (
     <header className="bg-header-background overflow-visible">
@@ -29,23 +31,12 @@ export function MainHeader() {
         </div>
 
         {/* 하단 섹션 */}
-        <nav
-          aria-label="메인 카테고리"
-          className="flex items-center gap-[clamp(0.5rem,2vw,1.75rem)] md:pt-2 md:pb-4"
-        >
-          {/* 햄버거 메뉴 */}
-          <div className="hidden md:block">
-            <CategorySheet
-              trigger={
-                <button className="flex h-10 w-10 items-center justify-center rounded-md transition-colors hover:bg-white/10">
-                  <Menu className="h-7 w-7 text-white" />
-                </button>
-              }
-            />
-          </div>
+        <div className="flex items-center gap-[clamp(0.5rem,2vw,1.75rem)] md:pt-2 md:pb-4">
+          {/* 데스크탑: 메가메뉴 */}
+          <MegaMenu categories={categories} />
 
           <CategoryNavigation mainCategories={mainCategories} />
-        </nav>
+        </div>
       </div>
 
       <SearchSheet />
