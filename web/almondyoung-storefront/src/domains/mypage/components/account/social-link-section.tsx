@@ -22,7 +22,8 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Link2, Link2Off, Loader2 } from "lucide-react"
 import { toast } from "sonner"
-import { useTransition } from "react"
+import { useState, useTransition } from "react"
+import { useRouter } from "next/navigation"
 import {
   linkSocialAccountAction,
   unlinkSocialAccountAction,
@@ -69,7 +70,10 @@ interface SocialLinkSectionProps {
 }
 
 export function SocialLinkSection({ identitiesState }: SocialLinkSectionProps) {
+  const router = useRouter()
   const [isPending, startTransition] = useTransition()
+  const [redirectingProvider, setRedirectingProvider] =
+    useState<SocialProvider | null>(null)
 
   const socialAccounts: SocialAccountDisplay[] = ALL_PROVIDERS.map(
     (provider) => {
@@ -97,7 +101,9 @@ export function SocialLinkSection({ identitiesState }: SocialLinkSectionProps) {
         const result = await linkSocialAccountAction(provider, redirectTo)
 
         if (result.success && result.redirectUrl) {
+          setRedirectingProvider(provider)
           window.location.href = result.redirectUrl
+          return
         } else if (!result.success) {
           toast.error(result.error || "연동 시작 중 오류가 발생했습니다.")
         }
@@ -120,6 +126,7 @@ export function SocialLinkSection({ identitiesState }: SocialLinkSectionProps) {
 
         if (result.success) {
           toast.success(`${info.label} 계정 연동이 해제되었습니다.`)
+          router.refresh()
         } else {
           toast.error(result.error || "연동 해제 중 오류가 발생했습니다.")
         }
@@ -232,10 +239,16 @@ export function SocialLinkSection({ identitiesState }: SocialLinkSectionProps) {
                     size="sm"
                     className="gap-1.5"
                     onClick={() => handleLink(account.provider)}
-                    disabled={isPending}
+                    disabled={isPending || redirectingProvider !== null}
                   >
-                    <Link2 className="size-3.5" />
-                    연동하기
+                    {redirectingProvider === account.provider ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Link2 className="size-3.5" />
+                    )}
+                    {redirectingProvider === account.provider
+                      ? "연동 중..."
+                      : "연동하기"}
                   </Button>
                 )}
               </div>
