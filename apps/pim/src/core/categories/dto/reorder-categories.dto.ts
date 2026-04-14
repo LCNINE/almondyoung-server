@@ -7,7 +7,7 @@ export class ReorderCategoriesDto {
     example: '550e8400-e29b-41d4-a716-446655440000',
   })
   @IsOptional()
-  @IsUUID('4')
+  @IsUUID()
   parentId?: string | null;
 
   @ApiProperty({
@@ -17,6 +17,6 @@ export class ReorderCategoriesDto {
   })
   @IsArray()
   @ArrayNotEmpty()
-  @IsUUID('4', { each: true })
+  @IsUUID(undefined, { each: true })
   categoryIds: string[];
 }
