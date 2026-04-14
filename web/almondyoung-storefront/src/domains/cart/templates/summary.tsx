@@ -4,7 +4,9 @@ import { Button } from "@/components/ui/button"
 import { HttpTypes } from "@medusajs/types"
 import CartTotals from "@/components/shared/cart-totals"
 import Divider from "@/components/shared/divider"
+import { buildCartSummaryTotals } from "@/domains/cart/utils/build-cart-summary-totals"
 import { Loader2 } from "lucide-react"
+import { useMemo } from "react"
 
 import PriceErrorNotice from "../components/price-error-notice"
 
@@ -12,17 +14,23 @@ type SummaryProps = {
   cart: HttpTypes.StoreCart & {
     promotions: HttpTypes.StorePromotion[]
   }
-  selectedCount: number
+  selectedIds: Set<string>
   onCheckout: () => void
   isPendingCheckout: boolean
 }
 
 export default function Summary({
   cart,
-  selectedCount,
+  selectedIds,
   onCheckout,
   isPendingCheckout,
 }: SummaryProps) {
+  const selectedCount = selectedIds.size
+  const totalsPreview = useMemo(
+    () => buildCartSummaryTotals(cart, selectedIds),
+    [cart, selectedIds]
+  )
+
   // 필수 금액 값이 유효한지 체크
   const isTotalValid = cart.total !== null && cart.total !== undefined
   const hasError = !isTotalValid
@@ -34,7 +42,7 @@ export default function Summary({
       <h2 className="text-2xl font-semibold">주문 예상 금액</h2>
 
       <Divider />
-      <CartTotals totals={cart} />
+      <CartTotals totals={totalsPreview} />
 
       {hasError && <PriceErrorNotice />}
 
