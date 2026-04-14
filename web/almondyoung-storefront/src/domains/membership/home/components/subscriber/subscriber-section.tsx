@@ -9,6 +9,23 @@ import MembershipStatusSection from "domains/membership/components/status-select
 import MemberDetails from "./member-details"
 import { cancelSubscription } from "@/lib/api/membership"
 import { refreshCartPrices } from "@/lib/api/medusa/cart"
+
+// 해지 후 그룹이 제거될 때까지 폴링
+function pollCartRefreshUntilGroupRemoved(
+  intervalMs = 3_000,
+  maxDurationMs = 30_000,
+): void {
+  const startedAt = Date.now()
+  const poll = () => {
+    setTimeout(async () => {
+      const result = await refreshCartPrices().catch(() => null)
+      // false → 그룹 제거 완료, null → 카트 없음: 둘 다 종료
+      if (!result || result.hasMembershipGroup !== true) return
+      if (Date.now() - startedAt < maxDurationMs) poll()
+    }, intervalMs)
+  }
+  poll()
+}
 import type {
   CancellationReasonDto,
   CycleBenefitDto,
@@ -77,17 +94,17 @@ export default function SubscriberSection({
   const yearlyPlan = plans.find((plan) => plan.plan.durationDays === 365)
   const yearlyMonthlyPrice = yearlyPlan
     ? Math.round(
-        yearlyPlan.plan.price / Math.max(1, yearlyPlan.plan.durationDays / 30)
-      )
+      yearlyPlan.plan.price / Math.max(1, yearlyPlan.plan.durationDays / 30)
+    )
     : null
   const discountRate =
     yearlyPlan && monthlyPlan
       ? Math.max(
-          0,
-          Math.round(
-            (1 - yearlyPlan.plan.price / (monthlyPlan.plan.price * 12)) * 100
-          )
+        0,
+        Math.round(
+          (1 - yearlyPlan.plan.price / (monthlyPlan.plan.price * 12)) * 100
         )
+      )
       : null
 
   return (
@@ -152,10 +169,8 @@ export default function SubscriberSection({
             await cancelSubscription(reasonCode, reasonText)
             setOpen(false)
             router.push("/kr/mypage/membership")
-            // 채널 어댑터가 그룹 제거(~2-3초)할 시간 확보 후 가격 재계산
-            setTimeout(() => {
-              refreshCartPrices().catch(() => {})
-            }, 3000)
+            // hasMembershipGroup === false가 될 때까지 3초 간격 폴링 (최대 30초)
+            pollCartRefreshUntilGroupRemoved()
           } catch (error) {
             console.error("멤버십 해지 실패:", error)
           } finally {
