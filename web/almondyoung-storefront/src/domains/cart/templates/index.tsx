@@ -5,7 +5,7 @@ import { CartHeader } from "@/domains/cart/components/header"
 import { createCheckoutCartFromLineItems } from "@/lib/api/medusa/cart"
 import { HttpTypes } from "@medusajs/types"
 import { useParams, useRouter } from "next/navigation"
-import { useCallback, useEffect, useState, useTransition } from "react"
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
 
 import Items from "./items"
 import MobileCheckoutBar from "../components/mobile-checkout-bar"
@@ -20,10 +20,14 @@ export default function CartTemplate({ cart }: Props) {
   const params = useParams()
   const countryCode = (params.countryCode as string) || "kr"
 
-  const items = cart?.items ?? []
-  const sortedItems = [...items].sort((a, b) => {
-    return (a.created_at ?? "") > (b.created_at ?? "") ? -1 : 1
-  })
+  const cartItems = cart?.items
+  const sortedItems = useMemo(
+    () =>
+      [...(cartItems ?? [])].sort((a, b) =>
+        (a.created_at ?? "") > (b.created_at ?? "") ? -1 : 1
+      ),
+    [cartItems]
+  )
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => {
     return new Set(sortedItems.map((item) => item.id))
@@ -31,7 +35,9 @@ export default function CartTemplate({ cart }: Props) {
   const [isPendingCheckout, startCheckoutTransition] = useTransition()
 
   const allSelected =
-    sortedItems.length > 0 && selectedIds.size === sortedItems.length
+    sortedItems.length > 0 &&
+    sortedItems.every((item) => selectedIds.has(item.id)) &&
+    selectedIds.size === sortedItems.length
 
   const handleSelectAll = useCallback(
     (checked: boolean) => {
@@ -59,8 +65,13 @@ export default function CartTemplate({ cart }: Props) {
   const goToCheckout = useCallback(() => {
     if (selectedIds.size === 0) return
 
-    // 전체 선택 → 기존 카트로 바로 이동
-    if (selectedIds.size === sortedItems.length) {
+    const isEveryLineSelected =
+      sortedItems.length > 0 &&
+      sortedItems.every((item) => selectedIds.has(item.id)) &&
+      selectedIds.size === sortedItems.length
+
+    // 현재 카트의 모든 라인이 정확히 선택된 경우에만 기존 카트로 이동
+    if (isEveryLineSelected) {
       router.push(`/${countryCode}/checkout`)
       return
     }
@@ -79,7 +90,7 @@ export default function CartTemplate({ cart }: Props) {
         toast.error("주문 진행에 실패했습니다. 다시 시도해주세요.")
       }
     })
-  }, [selectedIds, sortedItems.length, countryCode, router])
+  }, [selectedIds, sortedItems, countryCode, router])
 
   // 아이템이 변경되면 (삭제 등) 선택 상태 동기화
   useEffect(() => {
@@ -93,7 +104,7 @@ export default function CartTemplate({ cart }: Props) {
       })
       return next
     })
-  }, [sortedItems.length])
+  }, [sortedItems])
 
   return (
     <>
