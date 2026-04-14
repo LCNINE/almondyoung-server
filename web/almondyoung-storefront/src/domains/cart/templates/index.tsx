@@ -136,7 +136,7 @@ export default function CartTemplate({ cart }: Props) {
                           promotions: HttpTypes.StorePromotion[]
                         }
                       }
-                      selectedCount={selectedIds.size}
+                      selectedIds={selectedIds}
                       onCheckout={goToCheckout}
                       isPendingCheckout={isPendingCheckout}
                     />
