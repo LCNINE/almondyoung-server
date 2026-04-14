@@ -4,8 +4,10 @@ import { refreshCartItemsWorkflow } from '@medusajs/medusa/core-flows';
 
 /**
  * 카트 가격 재계산 (Store용). Admin 버전과 동일 로직, auth_context에서 customerId 가져옴.
- * 가입: 결제 콜백에서 바로 호출.
- * 해지: 채널 어댑터가 그룹 제거(~2-3초)한 뒤 호출해야 정가가 나옴.
+ * hasMembershipGroup: 현재 고객이 멤버십 그룹에 속해 있는지 여부.
+ *   - true:  멤버십 그룹 반영 완료 → 프론트 폴링 종료 조건
+ *   - false: 아직 미반영 → 프론트가 재시도
+ *   - null:  활성 카트 없음 → 폴링 불필요
  */
 export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   const customerId = req.auth_context.actor_id;
@@ -46,8 +48,13 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     })[0];
 
   if (!activeCart) {
-    return res.status(200).json({ refreshed: false });
+    return res.status(200).json({ refreshed: false, hasMembershipGroup: null });
   }
+
+  const membershipGroupId = process.env.MEDUSA_MEMBERSHIP_GROUP_ID;
+  const hasMembershipGroup = membershipGroupId
+    ? (activeCart.customer?.groups ?? []).some((g: any) => g.id === membershipGroupId)
+    : null;
 
   try {
     await refreshCartItemsWorkflow(req.scope).run({
@@ -56,10 +63,10 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
 
     await fixCompareAtPrices(req.scope, activeCart);
 
-    return res.status(200).json({ refreshed: true, cart_id: activeCart.id });
+    return res.status(200).json({ refreshed: true, cart_id: activeCart.id, hasMembershipGroup });
   } catch (error: any) {
     console.error(`[store/refresh-cart-prices] Failed:`, error?.message);
-    return res.status(500).json({ refreshed: false, message: 'Failed to refresh cart prices' });
+    return res.status(500).json({ refreshed: false, hasMembershipGroup, message: 'Failed to refresh cart prices' });
   }
 }
 
