@@ -1275,31 +1275,41 @@ export async function invalidateCartCache(): Promise<void> {
   revalidateTag(cartCacheTag)
 }
 
-/**
- * 카트 가격 재계산 + 캐시 무효화.
- * 가입: 결제 콜백에서 바로 호출.
- * 해지: 채널 어댑터가 그룹 제거할 시간(~3초) 확보 후 호출해야 함.
- */
-export async function refreshCartPrices(): Promise<boolean> {
+export type CartRefreshResult = {
+  refreshed: boolean
+  /** 현재 고객이 멤버십 그룹에 속해 있는지 여부
+   *  - true:  그룹 반영 완료
+   *  - false: 아직 미반영
+   *  - null:  활성 카트 없음 (폴링 불필요)
+   */
+  hasMembershipGroup: boolean | null
+}
+
+
+// 카트 가격 재계산 + 캐시 무효화
+export async function refreshCartPrices(): Promise<CartRefreshResult> {
   try {
     const headers = (await getAuthHeaders()) ?? undefined
     console.log("[refreshCartPrices] 호출됨, headers:", headers ? "있음" : "없음")
 
-    const result = await sdk.client.fetch<{ refreshed: boolean }>(
-      "/store/customers/me/refresh-cart-prices",
-      { method: "POST", headers }
-    )
+    const result = await sdk.client.fetch<{
+      refreshed: boolean
+      hasMembershipGroup?: boolean | null
+    }>("/store/customers/me/refresh-cart-prices", { method: "POST", headers })
 
     console.log("[refreshCartPrices] 결과:", JSON.stringify(result))
 
-    if (result.refreshed) {
-      const cartCacheTag = await getCacheTag("carts")
-      revalidateTag(cartCacheTag)
+    return {
+      refreshed: Boolean(result.refreshed),
+      hasMembershipGroup: result.hasMembershipGroup ?? null,
     }
-
-    return result.refreshed
   } catch (error) {
     console.error("[refreshCartPrices] 실패:", error)
-    return false
+    return { refreshed: false, hasMembershipGroup: null }
+  } finally {
+    const cartCacheTag = await getCacheTag("carts")
+    if (cartCacheTag) {
+      revalidateTag(cartCacheTag)
+    }
   }
 }
