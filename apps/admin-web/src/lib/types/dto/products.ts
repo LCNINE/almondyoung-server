@@ -28,7 +28,10 @@ export interface CategoryDto {
   id: string;
   name: string;
   description?: string;
+  slug?: string;
   parentId?: string | null;
+  level?: number;
+  sortOrder?: number;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
