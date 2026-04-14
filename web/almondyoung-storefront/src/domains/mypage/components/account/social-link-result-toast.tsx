@@ -27,22 +27,25 @@ export function SocialLinkResultToast() {
 
     const providerLabel = provider ? PROVIDER_LABEL[provider] || provider : ""
 
-    if (linkResult === "success") {
-      toast.success(`${providerLabel} 계정이 연동되었습니다.`)
+    const handleResult = async () => {
+      if (linkResult === "success") {
+        toast.success(`${providerLabel} 계정이 연동되었습니다.`)
+        router.refresh()
+      } else if (linkResult === "error") {
+        const errorMessage = error
+          ? decodeURIComponent(error)
+          : "소셜 계정 연동 중 오류가 발생했습니다."
+        toast.error(errorMessage)
+      }
 
-      router.refresh()
-    } else if (linkResult === "error") {
-      const errorMessage = error
-        ? decodeURIComponent(error)
-        : "소셜 계정 연동 중 오류가 발생했습니다."
-      toast.error(errorMessage)
+      const url = new URL(window.location.href)
+      url.searchParams.delete("link_result")
+      url.searchParams.delete("provider")
+      url.searchParams.delete("error")
+      router.replace(url.pathname + url.search, { scroll: false })
     }
 
-    const url = new URL(window.location.href)
-    url.searchParams.delete("link_result")
-    url.searchParams.delete("provider")
-    url.searchParams.delete("error")
-    router.replace(url.pathname + url.search, { scroll: false })
+    handleResult()
   }, [searchParams, router])
 
   return null

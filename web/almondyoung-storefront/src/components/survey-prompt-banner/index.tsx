@@ -45,6 +45,11 @@ export function SurveyPromptBanner({
     setIsLoading(false)
 
     if (result.success) {
+      sessionStorage.setItem(STORAGE_KEY, "true")
+      setIsVisible(false)
+    } else {
+      // API 실패해도 현재 세션에서는 숨김
+      sessionStorage.setItem(STORAGE_KEY, "true")
       setIsVisible(false)
     }
   }
@@ -98,11 +103,11 @@ export function SurveyPromptBanner({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={handleDismiss}
+                onClick={handleRemindLater}
                 disabled={isLoading}
                 className="h-auto rounded-full bg-gray-100 px-3 py-1.5 text-[12px] text-gray-600 hover:bg-gray-200"
               >
-                닫기
+                {isLoading ? "처리 중..." : "닫기"}
               </Button>
               <CustomButton
                 asChild
