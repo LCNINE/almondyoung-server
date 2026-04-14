@@ -19,7 +19,7 @@ export default async function Home({
   params: { countryCode: string }
 }) {
   const { countryCode } = await params
-  const userDetailInfo = await getMyProfile()
+  const userDetailInfo = await getMyProfile().catch(() => null)
   const showSurvey: boolean = shouldShowSurvey(userDetailInfo)
 
   return (
