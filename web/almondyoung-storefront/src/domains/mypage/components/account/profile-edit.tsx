@@ -61,11 +61,10 @@ export function ProfileEdit({
   const [isWithdrawPending, startWithdrawTransition] = useTransition()
 
   const initialValues = useMemo(() => {
-    const birthDate = userData.profile?.birthDate
-      ? new Date(userData.profile.birthDate)
-      : null
-    const birthdayStr = birthDate
-      ? `${birthDate.getFullYear()}${String(birthDate.getMonth() + 1).padStart(2, "0")}${String(birthDate.getDate()).padStart(2, "0")}`
+    // birthDate가 "YYYY-MM-DD" 형식이면 직접 파싱 (타임존 영향 없이)
+    const birthDateStr = userData.profile?.birthDate
+    const birthdayStr = birthDateStr
+      ? birthDateStr.replace(/-/g, "").slice(0, 8)
       : ""
 
     return {

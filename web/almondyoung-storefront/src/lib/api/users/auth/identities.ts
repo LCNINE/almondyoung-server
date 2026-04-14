@@ -12,7 +12,7 @@ export async function getIdentities(): Promise<IdentitiesResponseDto> {
   return api<IdentitiesResponseDto>("users", "/auth/identities", {
     method: "GET",
     withAuth: true,
-    next: { tags: ["social-identities"] },
+    cache: "no-store",
   })
 }
 
