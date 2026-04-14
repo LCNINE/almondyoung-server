@@ -297,7 +297,8 @@ export async function createCheckoutCartFromLineItems(params: {
 
   const sourceCart = await retrieveCart(
     undefined,
-    "id,region_id,*items,*items.variant"
+    "id,region_id,*items,*items.variant",
+    "no-store"
   )
 
   if (!sourceCart?.id) {
@@ -411,7 +412,8 @@ export async function createShippingPreviewCartFromLineItems(params: {
 
   const sourceCart = await retrieveCart(
     undefined,
-    "id,region_id,*items,*items.variant"
+    "id,region_id,*items,*items.variant",
+    "no-store"
   )
 
   if (!sourceCart?.id) {

@@ -62,7 +62,10 @@ export const OrderProductsSection = ({
     )
   }
 
-  const allSelected = selectedIds.size === products.length
+  const allSelected =
+    products.length > 0 &&
+    products.every((item) => selectedIds.has(item.id)) &&
+    selectedIds.size === products.length
   const someSelected = selectedIds.size > 0
 
   const toggleAll = () => {

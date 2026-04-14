@@ -159,15 +159,15 @@ export default function CheckoutTemplate({
 
       const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback`
 
-      const items = cart.items ?? []
-      const firstTitle = items[0]?.title ?? "상품"
+      const payLineItems = selectedItems
+      const firstTitle = payLineItems[0]?.title ?? "상품"
       const orderName =
-        items.length <= 1
+        payLineItems.length <= 1
           ? `아몬드영 - ${firstTitle}`
-          : `아몬드영 - ${firstTitle} 외 ${items.length - 1}개`
+          : `아몬드영 - ${firstTitle} 외 ${payLineItems.length - 1}개`
 
       const paymentItems = buildPaymentItems(
-        cart.items ?? [],
+        payLineItems,
         cart.shipping_methods
       )
 
