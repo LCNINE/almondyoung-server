@@ -8,7 +8,7 @@ import { ALL_SCOPES } from './platform/auth/merged-scopes';
 import { AppController } from './app.controller';
 
 import { CatalogModule } from './modules/catalog/catalog.module';
-// Phase 3: import { InventoryModule } from './modules/inventory/inventory.module';
+import { InventoryModule } from './modules/inventory/inventory.module';
 // Phase 4: import { ProductMatchingModule } from './modules/product-matching/product-matching.module';
 // Phase 5: import { SalesOrderModule } from './modules/sales-order/sales-order.module';
 // Phase 6: import { FulfillmentModule } from './modules/fulfillment/fulfillment.module';
@@ -33,7 +33,7 @@ import { CatalogModule } from './modules/catalog/catalog.module';
     // EventsModule.forRoot은 각 BC 모듈 내부에서 등록 (Catalog: PRODUCT_STREAM)
 
     CatalogModule,
-    // Phase 3: InventoryModule,
+    InventoryModule,
     // Phase 4: ProductMatchingModule,
     // Phase 5: SalesOrderModule,
     // Phase 6: FulfillmentModule,
