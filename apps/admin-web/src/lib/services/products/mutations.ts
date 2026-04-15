@@ -10,6 +10,7 @@ import type {
   CreateCategoryDto,
   UpdateCategoryDto,
   MoveCategoryDto,
+  ReorderCategoriesDto,
   CreateMasterDto,
   UpdateMasterDto,
   UpdatePricingStrategyDto,
@@ -101,6 +102,23 @@ export const useMoveCategory = () => {
       });
       queryClient.invalidateQueries({
         queryKey: productQueryKeys.category(variables.id),
+      });
+    },
+  });
+};
+
+/**
+ * 카테고리 순서 변경
+ */
+export const useReorderCategories = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data: ReorderCategoriesDto) =>
+      products.categories.reorder(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.categories,
       });
     },
   });
