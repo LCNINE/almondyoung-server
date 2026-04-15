@@ -295,7 +295,6 @@ export class MedusaClient {
         };
         try {
           await this.sdk.admin.productCategory.update(existing.id, updatePayload);
-          console.log('메두사 업데이트됨 ::', updatePayload);
         } catch (err) {
           const fetchError = err as FetchError;
           this.logger.warn(
