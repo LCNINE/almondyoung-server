@@ -13,7 +13,7 @@ import { PassportModule } from '@nestjs/passport';
 import { ScheduleModule } from '@nestjs/schedule';
 import { DbModule } from '@app/db';
 import { EventsModule, EventTraceApiModule } from '@app/events';
-import { UGC_COMMAND_STREAM, PAYMENT_STREAM } from '@packages/event-contracts/streams';
+import { UGC_COMMAND_STREAM, WALLET_COMMAND_STREAM, PAYMENT_STREAM } from '@packages/event-contracts/streams';
 import { Observable, firstValueFrom, isObservable } from 'rxjs';
 import { validateWalletEnv } from './config/env';
 import { WALLET_JWT_AUTH_KEY } from './wallet-auth.decorator';
@@ -103,6 +103,7 @@ import { CmsSettlementPollerService } from './cms/cms-settlement-poller.service'
 
 // Consumers
 import { UgcCommandConsumer } from './consumers/ugc-command.consumer';
+import { BillingChargeConsumer } from './consumers/billing-charge.consumer';
 
 export { WALLET_JWT_AUTH_KEY, WalletJwtAuth } from './wallet-auth.decorator';
 
@@ -344,7 +345,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
       streams: [PAYMENT_STREAM],
     }),
     EventsModule.forConsumerModule({
-      streams: [UGC_COMMAND_STREAM],
+      streams: [UGC_COMMAND_STREAM, WALLET_COMMAND_STREAM],
       groupId: process.env.KAFKA_GROUP_ID || 'wallet-consumer',
       enableAutoDLQ: true,
       validation: { validateOnConsume: false },
@@ -366,6 +367,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     CheckoutSessionController,
     CmsAgreementController,
     UgcCommandConsumer,
+    BillingChargeConsumer,
   ],
   providers: [
     {
