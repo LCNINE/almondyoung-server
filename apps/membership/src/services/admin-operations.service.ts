@@ -11,8 +11,6 @@ import {
   CreatePlanRequest,
   UpdatePlanRequest,
   DeactivatePlanRequest,
-  CreatePolicyRequest,
-  UpdatePolicyRequest,
   ExtendEntitlementRequest,
 } from '../shared/schemas';
 
@@ -121,5 +119,21 @@ export class AdminOperationsService {
    */
   async getMembersList(query: AdminMembersQuery) {
     return this.adminMembersReader.findAllWithDetails(query);
+  }
+
+  async getMemberDetail(userId: string) {
+    return this.adminMembersReader.findDetailByUserId(userId);
+  }
+
+  async getMemberBillingEvents(contractId: string) {
+    return this.adminMembersReader.findBillingEventsByContractId(contractId);
+  }
+
+  async getMemberContractEvents(contractId: string) {
+    return this.adminMembersReader.findContractEventsByContractId(contractId);
+  }
+
+  async setAutoRenewal(contractId: string, autoRenewal: boolean) {
+    return this.adminMembersReader.updateAutoRenewal(contractId, autoRenewal);
   }
 }
