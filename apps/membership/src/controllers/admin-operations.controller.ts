@@ -11,9 +11,9 @@ import {
   HttpStatus,
   HttpCode,
   UseGuards,
-  Req,
   HttpException,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
 import { AdminOperationsService } from '../services/admin-operations.service';
@@ -28,7 +28,6 @@ import {
   AdminPlanResponseDto,
   AdminUserPauseHistoryResponseDto,
   AdminEntitlementResponseDto,
-  AdminBillingTestResponseDto,
   ErrorResponseDto,
   CancellationResultDto,
   ContractEventsResponseDto,
@@ -43,7 +42,6 @@ import {
   ForceCancelSubscriptionRequestDto,
   GetBulkSubscriptionsRequestDto,
 } from '../shared/dto/request.dto';
-import { FastifyRequest } from 'fastify';
 import { JwtAuthGuard, User } from '@app/authorization';
 import { SubscriptionService } from '../services/subscription.service';
 /**
@@ -644,6 +642,78 @@ export class AdminOperationsController {
       return result;
     } catch (error) {
       this.handleError(error, '멤버십 회원 목록 조회');
+    }
+  }
+
+  /**
+   * 멤버십 회원 상세 조회
+   *
+   * GET /admin/members/:userId
+   */
+  @Get('members/:userId')
+  @ApiOperation({ summary: '멤버십 회원 상세 조회' })
+  @UseGuards(JwtAuthGuard)
+  async getMemberDetail(@Param('userId') userId: string) {
+    try {
+      const result = await this.adminOperationsService.getMemberDetail(userId);
+      if (!result) {
+        throw new NotFoundException(`멤버십 회원을 찾을 수 없습니다: ${userId}`);
+      }
+      return { success: true, data: result };
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error;
+      this.handleError(error, '멤버십 회원 상세 조회', userId);
+    }
+  }
+
+  /**
+   * 멤버십 결제 이벤트 조회
+   *
+   * GET /admin/billing-events?contractId=xxx
+   */
+  @Get('billing-events')
+  @ApiOperation({ summary: '멤버십 결제 이벤트 조회' })
+  @UseGuards(JwtAuthGuard)
+  async getMemberBillingEvents(@Query('contractId') contractId: string) {
+    try {
+      const result = await this.adminOperationsService.getMemberBillingEvents(contractId);
+      return { success: true, data: result };
+    } catch (error) {
+      this.handleError(error, '멤버십 결제 이벤트 조회', contractId);
+    }
+  }
+
+  /**
+   * 멤버십 계약 이벤트(로그) 조회
+   *
+   * GET /admin/contract-events?contractId=xxx
+   */
+  @Get('contract-events')
+  @ApiOperation({ summary: '멤버십 계약 이벤트 로그 조회' })
+  @UseGuards(JwtAuthGuard)
+  async getMemberContractEvents(@Query('contractId') contractId: string) {
+    try {
+      const result = await this.adminOperationsService.getMemberContractEvents(contractId);
+      return { success: true, data: result };
+    } catch (error) {
+      this.handleError(error, '멤버십 계약 이벤트 로그 조회', contractId);
+    }
+  }
+
+  /**
+   * 자동 연장 설정 변경
+   *
+   * PUT /admin/contracts/:contractId/auto-renewal
+   */
+  @Put('contracts/:contractId/auto-renewal')
+  @ApiOperation({ summary: '자동 연장 설정 변경' })
+  @UseGuards(JwtAuthGuard)
+  async setAutoRenewal(@Param('contractId') contractId: string, @Body('autoRenewal') autoRenewal: boolean) {
+    try {
+      await this.adminOperationsService.setAutoRenewal(contractId, autoRenewal);
+      return { success: true, data: { contractId, autoRenewal } };
+    } catch (error) {
+      this.handleError(error, '자동 연장 설정 변경', contractId);
     }
   }
 }
