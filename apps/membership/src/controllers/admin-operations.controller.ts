@@ -6,6 +6,7 @@ import {
   Get,
   Body,
   Param,
+  Query,
   UseFilters,
   HttpStatus,
   HttpCode,
@@ -609,6 +610,40 @@ export class AdminOperationsController {
       return result;
     } catch (error) {
       this.handleError(error, '여러 사용자의 구독 정보 일괄 조회');
+    }
+  }
+
+  /**
+   * 멤버십 회원 목록 조회 (관리자 어드민용)
+   *
+   * GET /admin/members?page=1&limit=20&status=ACTIVE&q=userId&dateFrom=&dateTo=
+   */
+  @Get('members')
+  @ApiOperation({
+    summary: '멤버십 회원 목록 조회',
+    description: '멤버십을 한 번이라도 구독했던 회원 목록을 페이지네이션 및 필터와 함께 조회합니다.',
+  })
+  @UseGuards(JwtAuthGuard)
+  async getMembersList(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('status') status?: string,
+    @Query('q') q?: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+  ) {
+    try {
+      const result = await this.adminOperationsService.getMembersList({
+        page: page ? Number(page) : 1,
+        limit: limit ? Number(limit) : 20,
+        status,
+        q,
+        dateFrom,
+        dateTo,
+      });
+      return result;
+    } catch (error) {
+      this.handleError(error, '멤버십 회원 목록 조회');
     }
   }
 }
