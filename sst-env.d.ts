@@ -161,6 +161,10 @@ declare module "sst" {
       "type": "sst.aws.Service"
       "url": string
     }
+    "SharedAlb": {
+      "type": "sst.aws.Alb"
+      "url": string
+    }
     "SwKey": {
       "type": "sst.sst.Secret"
       "value": string

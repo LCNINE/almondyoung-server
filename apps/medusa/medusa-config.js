@@ -10,6 +10,9 @@ module.exports = defineConfig({
     databaseUrl: process.env.DATABASE_URL,
     // Neon serverless DB용 connection pool 최적화
     databaseDriverOptions: {
+      connection: {
+        ssl: { rejectUnauthorized: false },
+      },
       pool: {
         min: 2,
         max: 10,
@@ -39,7 +42,8 @@ module.exports = defineConfig({
             id: 'caching-redis',
             is_default: true,
             options: {
-              redisUrl: process.env.CACHE_REDIS_URL,
+              redisUrl: process.env.REDIS_URL,
+              namespace: '{medusa-cache}',
             },
           },
         ],
@@ -129,18 +133,44 @@ module.exports = defineConfig({
       resolve: './src/modules/product-sorting',
     },
     {
-      resolve: './src/modules/events',
+      resolve: '@medusajs/medusa/event-bus-redis',
       options: {
-        brokers: process.env.KAFKA_BROKERS?.split(',') || ['localhost:9092'],
-        clientId: process.env.KAFKA_CLIENT_ID || 'medusa-event-bus',
-        groupId: process.env.KAFKA_GROUP_ID || 'medusa-consumer-group',
-        topics: process.env.KAFKA_TOPICS?.split(',') || ['users.events.v1'],
-        sasl: process.env.KAFKA_API_KEY ? {
-          mechanism: 'plain',
-          username: process.env.KAFKA_API_KEY,
-          password: process.env.KAFKA_API_SECRET,
-        } : undefined,
-        ssl: !!process.env.KAFKA_API_KEY,
+        redisUrl: process.env.REDIS_URL,
+        queueOptions: {
+          prefix: '{medusa-events}',
+        },
+        workerOptions: {
+          prefix: '{medusa-events}',
+        },
+      },
+    },
+    {
+      resolve: '@medusajs/medusa/workflow-engine-redis',
+      options: {
+        redis: {
+          redisUrl: process.env.REDIS_URL,
+        },
+        queueOptions: {
+          prefix: '{medusa-wf}',
+        },
+        workerOptions: {
+          prefix: '{medusa-wf}',
+        },
+      },
+    },
+    {
+      resolve: '@medusajs/medusa/locking',
+      options: {
+        providers: [
+          {
+            resolve: '@medusajs/medusa/locking-redis',
+            id: 'locking-redis',
+            is_default: true,
+            options: {
+              redisUrl: process.env.REDIS_URL,
+            },
+          },
+        ],
       },
     },
   ],
