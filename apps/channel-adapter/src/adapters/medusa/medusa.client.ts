@@ -295,6 +295,7 @@ export class MedusaClient {
         };
         try {
           await this.sdk.admin.productCategory.update(existing.id, updatePayload);
+          console.log('메두사 업데이트됨 ::', updatePayload);
         } catch (err) {
           const fetchError = err as FetchError;
           this.logger.warn(
@@ -1158,13 +1159,9 @@ export class MedusaClient {
         'Content-Type': 'application/json',
       },
     })
-      .then((res) =>
-        this.logger.log(`Refreshed cart prices for customer ${customerId} (status=${res.status})`),
-      )
+      .then((res) => this.logger.log(`Refreshed cart prices for customer ${customerId} (status=${res.status})`))
       .catch((error) => {
-        this.logger.warn(
-          `Failed to refresh cart prices for customer ${customerId}: ${error?.message}`,
-        );
+        this.logger.warn(`Failed to refresh cart prices for customer ${customerId}: ${error?.message}`);
       });
   }
 }

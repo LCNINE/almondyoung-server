@@ -60,6 +60,13 @@ export const categoriesClient = {
     const response = await client.put(`${PIM_BASE_URL}${url}`);
     return response.data;
   },
+
+  reorder: async (dto: {
+    parentId?: string | null;
+    categoryIds: string[];
+  }): Promise<void> => {
+    await client.post(`${PIM_BASE_URL}/categories/reorder`, dto);
+  },
 };
 
 /**
@@ -158,4 +165,5 @@ export const categories = {
   getChildren: categoriesClient.children,
   getPath: categoriesClient.path,
   move: categoriesClient.move,
+  reorder: categoriesClient.reorder,
 };
