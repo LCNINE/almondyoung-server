@@ -45,29 +45,88 @@ export class CaptureService {
     }
     const userId = intentInfo.userId ?? '';
 
+    const results: { charge: Charge; succeeded: boolean }[] = [];
+
     for (const authorizeCharge of authorizeCharges) {
-      await this.captureOneLeg(authorizeCharge, userId, intentId, correlationId);
+      const succeeded = await this.captureOneLeg(authorizeCharge, userId, intentId, correlationId);
+      results.push({ charge: authorizeCharge, succeeded });
     }
+
+    const succeededCount = results.filter((r) => r.succeeded).length;
+    const totalCount = results.length;
 
     const now = new Date().toISOString();
     const totalCaptured = authorizeCharges.reduce((s, c) => s + c.amount, 0);
-    await this.stateTransitionService.transitionIntent(intentId, 'CAPTURED', {
-      correlationId,
-      reasonCode: 'CAPTURE_SUCCEEDED',
-      outboxEvent: {
-        eventType: GatewayEventType.INTENT_CAPTURED,
-        aggregateType: GATEWAY_AGGREGATE_TYPE,
-        aggregateId: intentId,
-        payload: buildPaymentIntentEventPayload({
-          intentId,
-          userId,
-          status: 'CAPTURED',
-          payableAmount: totalCaptured,
-          currency: authorizeCharges[0].currency,
-          occurredAt: now,
-        }),
-      },
-    });
+
+    if (succeededCount === totalCount) {
+      // All succeeded → CAPTURED
+      await this.stateTransitionService.transitionIntent(intentId, 'CAPTURED', {
+        correlationId,
+        reasonCode: 'CAPTURE_SUCCEEDED',
+        outboxEvent: {
+          eventType: GatewayEventType.INTENT_CAPTURED,
+          aggregateType: GATEWAY_AGGREGATE_TYPE,
+          aggregateId: intentId,
+          payload: buildPaymentIntentEventPayload({
+            intentId,
+            userId,
+            status: 'CAPTURED',
+            payableAmount: totalCaptured,
+            currency: authorizeCharges[0].currency,
+            occurredAt: now,
+          }),
+        },
+      });
+    } else if (succeededCount > 0) {
+      // Partial success → PARTIALLY_CAPTURED + 운영 알림
+      await this.stateTransitionService.transitionIntent(intentId, 'PARTIALLY_CAPTURED', {
+        correlationId,
+        reasonCode: 'CAPTURE_PARTIAL',
+        reasonMessage: `${succeededCount}/${totalCount} charges captured successfully. Manual resolution required.`,
+        outboxEvent: {
+          eventType: 'payment.intent.partially_captured',
+          aggregateType: GATEWAY_AGGREGATE_TYPE,
+          aggregateId: intentId,
+          payload: buildPaymentIntentEventPayload({
+            intentId,
+            userId,
+            status: 'PARTIALLY_CAPTURED',
+            payableAmount: totalCaptured,
+            currency: authorizeCharges[0].currency,
+            occurredAt: now,
+            extra: {
+              succeededCount,
+              totalCount,
+              failedChargeIds: results.filter((r) => !r.succeeded).map((r) => r.charge.id),
+            },
+          }),
+        },
+      });
+
+      this.logger.error(
+        `PARTIALLY_CAPTURED: intentId=${intentId}, succeeded=${succeededCount}/${totalCount}. Manual resolution required.`,
+      );
+    } else {
+      // All failed → FAILED
+      await this.stateTransitionService.transitionIntent(intentId, 'FAILED', {
+        correlationId,
+        reasonCode: 'CAPTURE_FAILED',
+        reasonMessage: 'All capture attempts failed',
+        outboxEvent: {
+          eventType: GatewayEventType.INTENT_FAILED,
+          aggregateType: GATEWAY_AGGREGATE_TYPE,
+          aggregateId: intentId,
+          payload: buildPaymentIntentEventPayload({
+            intentId,
+            userId,
+            status: 'FAILED',
+            payableAmount: totalCaptured,
+            currency: authorizeCharges[0].currency,
+            occurredAt: now,
+          }),
+        },
+      });
+    }
   }
 
   private async captureOneLeg(
@@ -75,11 +134,11 @@ export class CaptureService {
     userId: string,
     intentId: string,
     correlationId: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const method = await this.paymentMethodsService.findById(authorizeCharge.paymentMethodId);
     if (!method) {
       this.logger.error(`Payment method not found for charge: ${authorizeCharge.id}`);
-      return;
+      return false;
     }
 
     const captureCharge = await this.chargesService.create({
@@ -117,7 +176,7 @@ export class CaptureService {
         errorCode: 'PROVIDER_EXCEPTION',
         errorMessage: msg,
       });
-      return;
+      return false;
     }
 
     if (providerResult.status === 'SUCCEEDED') {
@@ -126,12 +185,14 @@ export class CaptureService {
           providerResult.providerTransactionId ?? authorizeCharge.providerTransactionId ?? undefined,
         responsePayload: providerResult.raw,
       });
+      return true;
     } else {
       await this.chargesService.updateStatus(captureCharge.id, 'FAILED', {
         errorCode: providerResult.errorCode ?? 'CAPTURE_FAILED',
         errorMessage: providerResult.errorMessage ?? 'Capture failed',
         responsePayload: providerResult.raw,
       });
+      return false;
     }
   }
 

@@ -28,7 +28,16 @@ export const walletEnvSchema = z.object({
   TOSS_CLIENT_KEY: z.string().min(1).optional(),
   NICEPAY_CLIENT_KEY: z.string().min(1).optional(),
   NICEPAY_SECRET_KEY: z.string().min(1).optional(),
-  WALLET_MEDUSA_WEBHOOK_URL: z.string().url().optional(),
+  // Kafka
+  KAFKA_BROKERS: z.string().optional(),
+  KAFKA_CLIENT_ID: z.string().optional(),
+  KAFKA_GROUP_ID: z.string().optional(),
+  // 효성 FMS (CMS)
+  HYOSUNG_CMS_API_URL: z.string().url().optional(),
+  HYOSUNG_CMS_ADD_URL: z.string().url().optional(),
+  HYOSUNG_CMS_SW_KEY: z.string().min(1).optional(),
+  HYOSUNG_CMS_CUST_KEY: z.string().min(1).optional(),
+  HYOSUNG_CMS_CUST_ID: z.string().min(1).optional(),
 });
 
 export type WalletEnvConfig = z.infer<typeof walletEnvSchema>;

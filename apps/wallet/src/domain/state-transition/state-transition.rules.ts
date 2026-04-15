@@ -8,16 +8,23 @@ type TransitionRules<TStatus extends string> = Partial<Record<TStatus, readonly 
 //                      → REQUIRES_ACTION → PROCESSING
 //                                        → AUTHORIZED (terminal-ish, e.g. Toss confirm)
 //                                        → CREATED (back-transition on confirm failure)
+//                      → PENDING_SETTLEMENT (CMS batch: awaiting async result)
 //                      → CREATED (back-transition on confirm failure)
 //                      → CANCELED (terminal)
-// AUTHORIZED → CAPTURED (terminal) | CANCELED (terminal)
+// PENDING_SETTLEMENT → AUTHORIZED (poll: withdrawal succeeded)
+//                    → FAILED (poll: withdrawal failed)
+//                    → CANCELED (admin/system cancel)
+// AUTHORIZED → CAPTURED (terminal) | PARTIALLY_CAPTURED | CANCELED (terminal)
+// PARTIALLY_CAPTURED → CAPTURED (admin resolve) | CANCELED (admin cancel)
 // SUCCEEDED → CAPTURED | CANCELED  (backward compat: legacy data)
 // CREATED → CANCELED
 const paymentIntentTransitionRules: TransitionRules<PaymentIntentStatus> = {
   CREATED: ['PROCESSING', 'CANCELED'],
-  PROCESSING: ['AUTHORIZED', 'FAILED', 'REQUIRES_ACTION', 'CREATED', 'CANCELED'],
+  PROCESSING: ['AUTHORIZED', 'FAILED', 'REQUIRES_ACTION', 'PENDING_SETTLEMENT', 'CREATED', 'CANCELED'],
   REQUIRES_ACTION: ['PROCESSING', 'AUTHORIZED', 'FAILED', 'CREATED', 'CANCELED'],
-  AUTHORIZED: ['CAPTURED', 'CANCELED'],
+  PENDING_SETTLEMENT: ['AUTHORIZED', 'FAILED', 'CANCELED'],
+  AUTHORIZED: ['CAPTURED', 'PARTIALLY_CAPTURED', 'CANCELED'],
+  PARTIALLY_CAPTURED: ['CAPTURED', 'CANCELED'],
   SUCCEEDED: ['CAPTURED', 'CANCELED'], // backward compat: existing SUCCEEDED records
 };
 

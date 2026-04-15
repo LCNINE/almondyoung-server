@@ -1,8 +1,13 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { DbService } from '@app/db';
 import { and, eq, inArray, lte, sql } from 'drizzle-orm';
 import { WalletSchema, outboxEvents } from '../schema';
+import { StreamPublisher } from '@app/events';
+import { MessageEnvelope } from '@packages/event-contracts/types';
+import { EventsModule } from '@app/events';
+
+const PAYMENT_EVENTS_TOPIC = 'payments.events.v1';
 
 const DEFAULT_OUTBOX_DISPATCH_CRON = '*/5 * * * * *';
 const DEFAULT_OUTBOX_BATCH_SIZE = 100;
@@ -26,14 +31,6 @@ interface OutboxRow {
 
 @Injectable()
 export class OutboxDispatcherService {
-  private static readonly MEDUSA_EVENT_TYPES = new Set([
-    'payment.intent.succeeded',
-    'payment.intent.authorized',
-    'payment.intent.captured',
-    'payment.intent.canceled',
-    'payment.intent.failed',
-  ]);
-
   private readonly logger = new Logger(OutboxDispatcherService.name);
   private readonly batchSize: number;
   private readonly maxAttempts: number;
@@ -41,9 +38,13 @@ export class OutboxDispatcherService {
   private readonly maxDelayMs: number;
   private readonly processingTimeoutSeconds: number;
   private readonly deadLetterEnabled: boolean;
-  private readonly medusaWebhookUrl: string | undefined;
 
-  constructor(private readonly dbService: DbService<WalletSchema>) {
+  constructor(
+    private readonly dbService: DbService<WalletSchema>,
+    @Optional()
+    @Inject(EventsModule.getPublisherToken(PAYMENT_EVENTS_TOPIC))
+    private readonly publisher?: StreamPublisher,
+  ) {
     this.batchSize = this.readPositiveInt(process.env.WALLET_OUTBOX_BATCH_SIZE, DEFAULT_OUTBOX_BATCH_SIZE);
     this.maxAttempts = this.readPositiveInt(process.env.WALLET_OUTBOX_MAX_ATTEMPTS, DEFAULT_OUTBOX_MAX_ATTEMPTS);
     this.baseDelayMs = this.readPositiveInt(process.env.WALLET_OUTBOX_BASE_DELAY_MS, DEFAULT_OUTBOX_BASE_DELAY_MS);
@@ -56,7 +57,6 @@ export class OutboxDispatcherService {
       process.env.WALLET_OUTBOX_DEAD_LETTER_ENABLED,
       DEFAULT_OUTBOX_DEAD_LETTER_ENABLED,
     );
-    this.medusaWebhookUrl = process.env.WALLET_MEDUSA_WEBHOOK_URL?.trim() || undefined;
   }
 
   @Cron(process.env.WALLET_OUTBOX_DISPATCH_CRON ?? DEFAULT_OUTBOX_DISPATCH_CRON)
@@ -124,15 +124,7 @@ export class OutboxDispatcherService {
 
   private async processEvent(event: OutboxRow): Promise<void> {
     try {
-      const shouldDispatch = this.medusaWebhookUrl && OutboxDispatcherService.MEDUSA_EVENT_TYPES.has(event.eventType);
-
-      if (shouldDispatch) {
-        await this.dispatchToMedusa(event);
-      } else {
-        this.logger.debug(
-          `Outbox event log-only: id=${event.id}, eventType=${event.eventType}, aggregateId=${event.aggregateId}`,
-        );
-      }
+      await this.dispatchToKafka(event);
 
       await this.dbService.db
         .update(outboxEvents)
@@ -152,22 +144,34 @@ export class OutboxDispatcherService {
     }
   }
 
-  private async dispatchToMedusa(event: OutboxRow): Promise<void> {
-    const body = JSON.stringify({ ...event.payload, type: event.eventType });
-
-    const res = await fetch(this.medusaWebhookUrl!, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body,
-    });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`OUTBOX_MEDUSA_HTTP_ERROR: POST ${this.medusaWebhookUrl} returned ${res.status}: ${text}`);
+  private async dispatchToKafka(event: OutboxRow): Promise<void> {
+    if (!this.publisher) {
+      this.logger.debug(
+        `Outbox event log-only (no publisher): id=${event.id}, eventType=${event.eventType}, aggregateId=${event.aggregateId}`,
+      );
+      return;
     }
 
+    const envelope: MessageEnvelope = {
+      messageId: event.messageId,
+      messageType: event.eventType,
+      messageVersion: 1,
+      messageKind: 'event',
+      correlationId: event.messageId,
+      timestamp: new Date().toISOString(),
+      occurredAt: typeof event.createdAt === 'string' ? event.createdAt : event.createdAt.toISOString(),
+      source: {
+        service: 'wallet',
+        aggregateType: event.aggregateType,
+        aggregateId: event.aggregateId,
+      },
+      payload: event.payload,
+    };
+
+    await this.publisher.publishRawEnvelope(envelope, event.partitionKey);
+
     this.logger.debug(
-      `Outbox dispatched to Medusa: id=${event.id}, eventType=${event.eventType}, status=${res.status}`,
+      `Outbox dispatched to Kafka: id=${event.id}, eventType=${event.eventType}, partitionKey=${event.partitionKey}`,
     );
   }
 

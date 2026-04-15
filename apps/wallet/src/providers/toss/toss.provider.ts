@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import {
   ChargeParams,
   ChargeResult,
@@ -12,13 +12,18 @@ import {
   ValidateMethodParams,
 } from '../payment-provider.interface';
 import { WalletSchema, charges, paymentMethods } from '../../schema';
+import { TossApiClient } from './toss-api.client';
+import { and } from 'drizzle-orm';
 
 @Injectable()
 export class TossPaymentProvider implements PaymentProvider {
   readonly providerType = 'TOSS';
   readonly autoCapture = true;
 
-  constructor(private readonly dbService: DbService<WalletSchema>) {}
+  constructor(
+    private readonly dbService: DbService<WalletSchema>,
+    private readonly tossApi: TossApiClient,
+  ) {}
 
   async getUserMethods(userId: string): Promise<PaymentMethod[]> {
     return this.dbService.db.transaction(async (tx) => {
@@ -89,72 +94,35 @@ export class TossPaymentProvider implements PaymentProvider {
   }
 
   async cancel(params: ChargeParams): Promise<ChargeResult> {
-    const rows = await this.dbService.db
-      .select({ providerTransactionId: charges.providerTransactionId })
-      .from(charges)
-      .where(eq(charges.id, params.chargeId))
-      .limit(1);
-
-    const paymentKey = rows[0]?.providerTransactionId;
+    const paymentKey = await this.getPaymentKey(params.chargeId);
     if (!paymentKey) {
       return { status: 'FAILED', errorCode: 'TOSS_PAYMENT_KEY_NOT_FOUND' };
     }
 
-    const secretKey = process.env.TOSS_SECRET_KEY ?? '';
-    const auth = Buffer.from(`${secretKey}:`).toString('base64');
-    const res = await fetch(`https://api.tosspayments.com/v1/payments/${paymentKey}/cancels`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Basic ${auth}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ cancelReason: '고객 요청', cancelAmount: params.amount }),
-    });
-
-    if (res.ok) return { status: 'SUCCEEDED' };
-    const err = await res.json().catch(() => ({}));
-    return {
-      status: 'FAILED',
-      errorCode: err.code,
-      errorMessage: err.message,
-    };
+    const result = await this.tossApi.cancelPayment(paymentKey, '고객 요청', params.amount);
+    if (result.ok) return { status: 'SUCCEEDED' };
+    return { status: 'FAILED', errorCode: result.error.code, errorMessage: result.error.message };
   }
 
   async refund(params: RefundParams): Promise<RefundResult> {
-    const rows = await this.dbService.db
-      .select({ providerTransactionId: charges.providerTransactionId })
-      .from(charges)
-      .where(eq(charges.id, params.chargeId))
-      .limit(1);
-
-    const paymentKey = rows[0]?.providerTransactionId;
+    const paymentKey = await this.getPaymentKey(params.chargeId);
     if (!paymentKey) {
       return { status: 'FAILED', errorCode: 'TOSS_PAYMENT_KEY_NOT_FOUND' };
     }
 
-    const secretKey = process.env.TOSS_SECRET_KEY ?? '';
-    const auth = Buffer.from(`${secretKey}:`).toString('base64');
-    const res = await fetch(`https://api.tosspayments.com/v1/payments/${paymentKey}/cancels`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Basic ${auth}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        cancelReason: params.reasonCode ?? '고객 요청',
-        cancelAmount: params.amount,
-      }),
-    });
-
-    if (res.ok) {
+    const result = await this.tossApi.cancelPayment(paymentKey, params.reasonCode ?? '고객 요청', params.amount);
+    if (result.ok) {
       return { status: 'SUCCEEDED', providerRefundId: paymentKey };
     }
+    return { status: 'FAILED', errorCode: result.error.code, errorMessage: result.error.message };
+  }
 
-    const err = await res.json().catch(() => ({}));
-    return {
-      status: 'FAILED',
-      errorCode: err.code,
-      errorMessage: err.message,
-    };
+  private async getPaymentKey(chargeId: string): Promise<string | undefined> {
+    const rows = await this.dbService.db
+      .select({ providerTransactionId: charges.providerTransactionId })
+      .from(charges)
+      .where(eq(charges.id, chargeId))
+      .limit(1);
+    return rows[0]?.providerTransactionId ?? undefined;
   }
 }

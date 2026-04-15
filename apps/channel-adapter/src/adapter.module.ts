@@ -28,9 +28,11 @@ import {
   PRODUCT_STREAM,
   MEMBERSHIP_STREAM,
   USER_STREAM,
+  PAYMENT_STREAM,
 } from '@packages/event-contracts/streams';
 import { FulfillmentEventsConsumer } from './consumers/fulfillment-events.consumer';
 import { UserEventConsumer } from './consumers/user-event.consumer';
+import { PaymentEventsConsumer } from './consumers/payment-events.consumer';
 import * as schema from './schema';
 import { channelAdapterSchema } from './schema';
 import {
@@ -141,6 +143,7 @@ function createKafkaConfig() {
               PRODUCT_STREAM,
               MEMBERSHIP_STREAM,
               USER_STREAM,
+              PAYMENT_STREAM,
             ],
             serviceName: 'channel-adapter',
             kafka: createKafkaConfig(),
@@ -161,6 +164,7 @@ function createKafkaConfig() {
     PimCategoryConsumer,
     MembershipEventConsumer,
     UserEventConsumer,
+    PaymentEventsConsumer,
   ],
   providers: [
     ChannelAdapterService,
@@ -241,6 +245,10 @@ function createKafkaConfig() {
           },
           {
             provide: 'STREAM_PUBLISHER_users.events.v1',
+            useClass: NullEventPublisher,
+          },
+          {
+            provide: 'STREAM_PUBLISHER_payments.events.v1',
             useClass: NullEventPublisher,
           },
         ]
