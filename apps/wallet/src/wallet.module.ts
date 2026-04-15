@@ -13,7 +13,7 @@ import { PassportModule } from '@nestjs/passport';
 import { ScheduleModule } from '@nestjs/schedule';
 import { DbModule } from '@app/db';
 import { EventsModule, EventTraceApiModule } from '@app/events';
-import { UGC_COMMAND_STREAM } from '@packages/event-contracts/streams';
+import { UGC_COMMAND_STREAM, WALLET_COMMAND_STREAM, PAYMENT_STREAM } from '@packages/event-contracts/streams';
 import { Observable, firstValueFrom, isObservable } from 'rxjs';
 import { validateWalletEnv } from './config/env';
 import { WALLET_JWT_AUTH_KEY } from './wallet-auth.decorator';
@@ -30,6 +30,7 @@ import { HttpIdempotencyInterceptor } from './domain/idempotency/http-idempotenc
 // Providers
 import { PointsPaymentProvider } from './providers/points/points.provider';
 import { PointsLedgerService } from './providers/points/points-ledger.service';
+import { TossApiClient } from './providers/toss/toss-api.client';
 import { TossPaymentProvider } from './providers/toss/toss.provider';
 import { BankTransferPaymentProvider } from './providers/bank-transfer/bank-transfer.provider';
 import { NicepayAuthService } from './providers/nicepay/nicepay-auth.service';
@@ -77,8 +78,32 @@ import { TossWebhookController } from './webhooks/toss-webhook.controller';
 import { TossWebhookService } from './webhooks/toss-webhook.service';
 import { TossWebhookRepository } from './webhooks/toss-webhook.repository';
 
+// Billing
+import { BillingMethodService } from './billing/billing-method.service';
+import { BillingMethodController } from './billing/billing-method.controller';
+import { BillingAgreementService } from './billing/billing-agreement.service';
+import { BillingAgreementController } from './billing/billing-agreement.controller';
+
+// Checkout
+import { CheckoutSessionService } from './checkout/checkout-session.service';
+import { CheckoutSessionController } from './checkout/checkout-session.controller';
+import { CheckoutSessionExpirationService } from './checkout/checkout-session-expiration.service';
+
+// Toss Billing Provider
+import { TossBillingProvider } from './providers/toss/toss-billing.provider';
+
+// CMS
+import { CmsApiClient } from './cms/cms-api.client';
+import { CmsMemberService } from './cms/cms-member.service';
+import { CmsMemberPollerService } from './cms/cms-member-poller.service';
+import { CmsAgreementService } from './cms/cms-agreement.service';
+import { CmsAgreementController } from './cms/cms-agreement.controller';
+import { CmsBatchProvider } from './cms/cms-batch.provider';
+import { CmsSettlementPollerService } from './cms/cms-settlement-poller.service';
+
 // Consumers
 import { UgcCommandConsumer } from './consumers/ugc-command.consumer';
+import { BillingChargeConsumer } from './consumers/billing-charge.consumer';
 
 export { WALLET_JWT_AUTH_KEY, WalletJwtAuth } from './wallet-auth.decorator';
 
@@ -316,8 +341,11 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
       schema: walletSchema,
     }),
     ScheduleModule.forRoot(),
+    EventsModule.forRoot({
+      streams: [PAYMENT_STREAM],
+    }),
     EventsModule.forConsumerModule({
-      streams: [UGC_COMMAND_STREAM],
+      streams: [UGC_COMMAND_STREAM, WALLET_COMMAND_STREAM],
       groupId: process.env.KAFKA_GROUP_ID || 'wallet-consumer',
       enableAutoDLQ: true,
       validation: { validateOnConsume: false },
@@ -334,7 +362,12 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     RefundAdminController,
     PointsController,
     TossWebhookController,
+    BillingMethodController,
+    BillingAgreementController,
+    CheckoutSessionController,
+    CmsAgreementController,
     UgcCommandConsumer,
+    BillingChargeConsumer,
   ],
   providers: [
     {
@@ -367,10 +400,12 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     // Providers
     PointsLedgerService,
     PointsPaymentProvider,
+    TossApiClient,
     TossPaymentProvider,
     BankTransferPaymentProvider,
     NicepayAuthService,
     NicepayPaymentProvider,
+    TossBillingProvider,
     ProviderRegistry,
 
     // Methods / Charges
@@ -393,6 +428,22 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     PointsAdminService,
     BankTransferAdminService,
     PaymentIntentAdminService,
+
+    // Billing
+    BillingMethodService,
+    BillingAgreementService,
+
+    // Checkout
+    CheckoutSessionService,
+    CheckoutSessionExpirationService,
+
+    // CMS
+    CmsApiClient,
+    CmsMemberService,
+    CmsMemberPollerService,
+    CmsAgreementService,
+    CmsBatchProvider,
+    CmsSettlementPollerService,
 
     // Webhooks
     TossWebhookService,

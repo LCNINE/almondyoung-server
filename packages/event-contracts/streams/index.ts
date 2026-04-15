@@ -35,3 +35,6 @@ export * from './inventory.stream';
 
 // UGC Stream
 export * from './ugc.stream';
+
+// Wallet Command Stream
+export * from './wallet-command.stream';
