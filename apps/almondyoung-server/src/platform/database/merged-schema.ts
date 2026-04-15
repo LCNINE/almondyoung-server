@@ -13,11 +13,11 @@ import { catalogSchema } from '../../modules/catalog/schema/catalog.schema';
 // Phase 3: Inventory (WMS 전체 스키마 포함 — Phase 4/5/6에서 BC별 분리 예정)
 import { inventorySchema } from '../../modules/inventory/schema/inventory.schema';
 
-// Phase 4: Product Matching
-// import { matchingSchema } from '../../modules/product-matching/schema/matching.schema';
+// Phase 4: Product Matching — 테이블은 inventorySchema에 포함 (FK 참조로 분리 불가)
 
-// Phase 5: Sales Order
-// import { salesOrderSchema } from '../../modules/sales-order/schema/sales-order.schema';
+// Phase 5: Sales Order — 테이블은 inventorySchema에 포함
+//   (product_matchings, product_sku_mapping_snapshots 등과의 FK 참조로 분리 불가)
+//   sales_orders, sales_order_lines, order_events, merge_groups → inventorySchema 내 포함됨
 
 // Phase 6: Fulfillment
 // import { fulfillmentSchema } from '../../modules/fulfillment/schema/fulfillment.schema';
@@ -28,7 +28,7 @@ import { inventorySchema } from '../../modules/inventory/schema/inventory.schema
 export const mergedSchema = {
   ...catalogSchema,
   ...inventorySchema,
-  // Phase 4+: ...matchingSchema,
+  // Phase 4: matchingSchema tables already in inventorySchema
   // Phase 5+: ...salesOrderSchema,
   // Phase 6+: ...fulfillmentSchema,
   // Phase 6+: ...EventsModule.outboxSchema,
