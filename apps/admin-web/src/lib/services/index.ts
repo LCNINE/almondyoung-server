@@ -4,3 +4,4 @@ export * from './inventory';
 export * from './orders';
 export * from './products';
 export * from './roles';
+export * from './membership';

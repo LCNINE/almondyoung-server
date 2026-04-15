@@ -22,6 +22,7 @@ import { CancellationReasonReader } from './services/subscription/cancellation-r
 import { SubscriptionCreator } from './services/subscription/subscription.creator';
 import { SubscriptionManager } from './services/subscription/subscription.manager';
 import { EntitlementReader } from './services/entitlement/entitlement.reader';
+import { AdminMembersReader } from './services/admin/admin-members.reader';
 import { EntitlementManager } from './services/entitlement/entitlement.manager';
 import { PauseReader } from './services/pause/pause.reader';
 import { PauseManager } from './services/pause/pause.manager';
@@ -102,6 +103,7 @@ import { JwtAuthGuard } from '@app/authorization';
     // Implementation Layer (Readers & Managers)
     EntitlementReader,
     EntitlementManager,
+    AdminMembersReader,
     ContractEventManager,
     SubscriptionContractReader,
     SubscriptionCreator,

@@ -385,12 +385,13 @@ export const mainMenus: MainMenu[] = [
     id: 'membership',
     title: '멤버십 관리',
     icon: 'Crown',
+    defaultPath: '/membership/members',
     children: [
       {
         id: 'member-management',
         title: '멤버십 회원 관리',
         children: [
-          { id: 'member-inquiry', title: '회원 조회' },
+          { id: 'member-inquiry', title: '회원 조회', path: '/membership/members' },
           { id: 'payment-history', title: '결제 내역 조회' },
           { id: 'cancellation-history', title: '해지 내역 조회' },
         ],
