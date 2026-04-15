@@ -10,8 +10,8 @@
 // Phase 2: Catalog
 import { catalogSchema } from '../../modules/catalog/schema/catalog.schema';
 
-// Phase 3: Inventory
-// import { inventorySchema } from '../../modules/inventory/schema/inventory.schema';
+// Phase 3: Inventory (WMS 전체 스키마 포함 — Phase 4/5/6에서 BC별 분리 예정)
+import { inventorySchema } from '../../modules/inventory/schema/inventory.schema';
 
 // Phase 4: Product Matching
 // import { matchingSchema } from '../../modules/product-matching/schema/matching.schema';
@@ -27,7 +27,7 @@ import { catalogSchema } from '../../modules/catalog/schema/catalog.schema';
 
 export const mergedSchema = {
   ...catalogSchema,
-  // Phase 3+: ...inventorySchema,
+  ...inventorySchema,
   // Phase 4+: ...matchingSchema,
   // Phase 5+: ...salesOrderSchema,
   // Phase 6+: ...fulfillmentSchema,
