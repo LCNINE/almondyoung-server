@@ -929,14 +929,26 @@ export class ProductCategoriesService {
       }
 
       // 3. sortOrder 업데이트
+      const updatedCategories: ProductCategory[] = [];
       for (let i = 0; i < categoryIds.length; i++) {
-        await txn
+        const [updatedCategory] = await txn
           .update(pimSchema.productCategories)
           .set({
             sortOrder: i,
             updatedAt: new Date(),
           })
-          .where(eq(pimSchema.productCategories.id, categoryIds[i]));
+          .where(eq(pimSchema.productCategories.id, categoryIds[i]))
+          .returning();
+
+        if (updatedCategory) {
+          updatedCategories.push(updatedCategory);
+        }
+      }
+
+      // 4. 각 카테고리에 대해 CategoryChanged 이벤트 발행
+      for (const category of updatedCategories) {
+        const snapshot = this.buildCategorySnapshot(category);
+        await this.publishCategoryEvent(category.id, 'updated', snapshot);
       }
     };
 
@@ -974,6 +986,10 @@ export class ProductCategoriesService {
       })
       .where(eq(pimSchema.productCategories.id, categoryId))
       .returning();
+
+    // Publish CategoryChanged event
+    const snapshot = this.buildCategorySnapshot(updatedCategory);
+    await this.publishCategoryEvent(categoryId, 'updated', snapshot);
 
     const responseDto: CategoryResponseDto = CategoryMapper.toDto(updatedCategory);
     return responseDto;
