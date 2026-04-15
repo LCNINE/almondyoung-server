@@ -261,7 +261,10 @@ export class MedusaClient {
 
     let parentMedusaId: string | undefined;
     if (categorySnapshot.parentId) {
-      const existingParent = await this.findCategoryByCandidateHandles(categorySnapshot.parentId);
+      // handle(UUID 또는 slug)로 먼저 조회, 없으면 metadata.pimCategoryId로 fallback
+      const existingParent =
+        (await this.findCategoryByCandidateHandles(categorySnapshot.parentId)) ||
+        (await this.findCategoryByPimId(categorySnapshot.parentId));
       if (existingParent?.id) {
         parentMedusaId = existingParent.id;
       } else {
