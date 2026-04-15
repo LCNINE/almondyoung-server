@@ -4,6 +4,7 @@ import { createColumnHelper } from '@tanstack/react-table';
 import { useMemo } from 'react';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { AdminMemberListItem } from '@/lib/api/domains/membership';
 
 const columnHelper = createColumnHelper<AdminMemberListItem>();
@@ -39,7 +40,11 @@ function getPlanLabel(durationDays: number): string {
   return `${durationDays}일`;
 }
 
-export const useMembershipMemberTableColumns = () => {
+type UseColumnsOptions = {
+  onEdit?: (row: AdminMemberListItem) => void;
+};
+
+export const useMembershipMemberTableColumns = ({ onEdit }: UseColumnsOptions = {}) => {
   return useMemo(
     () => [
       columnHelper.accessor('userId', {
@@ -51,12 +56,17 @@ export const useMembershipMemberTableColumns = () => {
               href={`/account/customer/${userId}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-primary hover:underline font-medium text-xs"
+              className="font-medium text-primary text-xs hover:underline"
             >
               {userId}
             </Link>
           );
         },
+      }),
+      columnHelper.display({
+        id: 'name',
+        header: '성명',
+        cell: () => <span className="text-sm text-muted-foreground">-</span>,
       }),
       columnHelper.display({
         id: 'remainingDays',
@@ -91,14 +101,28 @@ export const useMembershipMemberTableColumns = () => {
       }),
       columnHelper.display({
         id: 'subscriptionPeriod',
-        header: '구독 시작 ~ 종료 배열',
+        header: '구독 시작 ~ 종료',
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">
             {formatDateRange(row.original.startsAt, row.original.endsAt)}
           </span>
         ),
       }),
+      columnHelper.display({
+        id: 'actions',
+        header: '관리',
+        cell: ({ row }) => (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs"
+            onClick={() => onEdit?.(row.original)}
+          >
+            수정
+          </Button>
+        ),
+      }),
     ],
-    [],
+    [onEdit],
   );
 };
