@@ -259,14 +259,21 @@ export class MedusaClient {
       pimShowOnMainCategory: categorySnapshot.showOnMainCategory,
     };
 
-    let parentMedusaId: string | undefined;
-    if (categorySnapshot.parentId) {
+    // parentMedusaId: null이면 부모 제거, undefined면 찾지 못함
+    let parentMedusaId: string | null | undefined;
+    this.logger.log(`[DEBUG] ensureCategoryFromSnapshot - PIM category: ${categorySnapshot.id}, PIM parentId: ${categorySnapshot.parentId ?? 'null'}`);
+    if (categorySnapshot.parentId === null) {
+      // 명시적으로 부모 없음 - Medusa에 null 전달하여 부모 제거
+      parentMedusaId = null;
+      this.logger.log(`[DEBUG] PIM parentId is null - will remove parent in Medusa`);
+    } else if (categorySnapshot.parentId) {
       // handle(UUID 또는 slug)로 먼저 조회, 없으면 metadata.pimCategoryId로 fallback
       const existingParent =
         (await this.findCategoryByCandidateHandles(categorySnapshot.parentId)) ||
         (await this.findCategoryByPimId(categorySnapshot.parentId));
       if (existingParent?.id) {
         parentMedusaId = existingParent.id;
+        this.logger.log(`[DEBUG] Found Medusa parent: ${parentMedusaId} for PIM parentId: ${categorySnapshot.parentId}`);
       } else {
         this.logger.warn(`Parent category ${categorySnapshot.parentId} not found in Medusa, creating without parent`);
       }
@@ -296,8 +303,10 @@ export class MedusaClient {
             ...pimMetadata,
           },
         };
+        this.logger.log(`[DEBUG] Updating Medusa category ${existing.id} with parent_category_id: ${parentMedusaId ?? 'undefined'}`);
         try {
           await this.sdk.admin.productCategory.update(existing.id, updatePayload);
+          this.logger.log(`[DEBUG] Successfully updated Medusa category ${existing.id}`);
         } catch (err) {
           const fetchError = err as FetchError;
           this.logger.warn(
@@ -310,12 +319,13 @@ export class MedusaClient {
       }
     }
 
+    // 생성 시에는 parent_category_id가 null이면 undefined로 변환 (API 스펙)
     const payload = {
       name: categorySnapshot.name,
       handle: preferredHandle,
       is_internal: false,
       is_active: isActive,
-      parent_category_id: parentMedusaId,
+      parent_category_id: parentMedusaId ?? undefined,
       ...(categorySnapshot.thumbnail && { thumbnail: categorySnapshot.thumbnail }),
       ...(categorySnapshot.sortOrder != null && { rank: categorySnapshot.sortOrder }),
       metadata: {
