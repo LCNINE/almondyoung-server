@@ -4,6 +4,7 @@ import { SubscriptionService } from './subscription.service';
 import { SubscriptionCancellationService } from './subscription-cancellation.service';
 import { EntitlementService } from './entitlement.service';
 import { PauseService } from './pause.service';
+import { AdminMembersReader, AdminMembersQuery } from './admin/admin-members.reader';
 import {
   CreateTierRequest,
   UpdateTierRequest,
@@ -33,6 +34,7 @@ export class AdminOperationsService {
     private readonly cancellationService: SubscriptionCancellationService,
     private readonly entitlementService: EntitlementService,
     private readonly pauseService: PauseService,
+    private readonly adminMembersReader: AdminMembersReader,
   ) {}
 
   // =================================================================
@@ -112,5 +114,12 @@ export class AdminOperationsService {
    */
   async getUserPauseHistory(userId: string) {
     return this.pauseService.getPauseHistory(userId);
+  }
+
+  /**
+   * 관리자 멤버십 회원 목록 조회 (페이지네이션 + 필터)
+   */
+  async getMembersList(query: AdminMembersQuery) {
+    return this.adminMembersReader.findAllWithDetails(query);
   }
 }
