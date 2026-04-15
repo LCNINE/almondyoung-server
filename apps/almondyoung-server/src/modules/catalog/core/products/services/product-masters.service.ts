@@ -1,4 +1,4 @@
-import { Injectable, Logger, forwardRef, Inject, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, forwardRef, Inject, Optional, NotFoundException, BadRequestException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { InjectStreamPublisher, StreamPublisher } from '@app/events';
 import { PRODUCT_STREAM, ProductEvents } from '@packages/event-contracts';
@@ -44,6 +44,7 @@ import { ProductVersionDto } from '../dto/entities/master-version.entity';
 import { MasterProductWithPrimaryVersionDto } from '../dto/products/product-response.dto';
 import { ProductMasterVersionEntity } from 'apps/pim/src/schema.types';
 import { ProductReadAssembler } from '../assemblers/product-read.assembler';
+import { ProductMatchingService } from '../../../../product-matching/services/product-matching.service';
 
 type VersionOptionValueDisplay = {
   optionValueId: string;
@@ -92,6 +93,9 @@ export class ProductMastersService {
     private readonly productReadAssembler: ProductReadAssembler,
     private readonly pricingCalculatorService: PricingCalculatorService,
     private readonly priceCacheService: VariantPriceCacheService,
+
+    @Optional()
+    private readonly productMatchingService: ProductMatchingService | null,
   ) {}
 
   private get client() {
@@ -140,7 +144,24 @@ export class ProductMastersService {
     } catch (error) {
       this.logger.error(`❌ Failed to publish ProductVariantCreated: ${variant.id}`, error.stack);
       // 이벤트 발행 실패해도 트랜잭션은 커밋
-      // Orchestrator가 WMS에 직접 요청하므로 복원력 보장
+    }
+
+    // Product Matching BC 직접 호출 (Phase 4)
+    if (this.productMatchingService) {
+      try {
+        await this.productMatchingService.handleVariantCreated({
+          masterId: version.masterId,
+          productName: version.name,
+          variantId: variant.id,
+          variantName: variant.variantName ?? undefined,
+          inventoryManagement: true,
+          preStockSellable: false,
+          alwaysSellableZeroStock: false,
+        });
+      } catch (error) {
+        this.logger.error(`❌ Failed to create product matching for variant: ${variant.id}`, error.stack);
+        // 매칭 생성 실패해도 트랜잭션은 커밋 (복원력 보장)
+      }
     }
   }
 

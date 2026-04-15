@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { ProductMastersController } from './controllers/product-masters.controller';
 import { ProductVariantsController } from './controllers/product-variants.controller';
 import { ProductMasterVersionsController } from './controllers/product-master-versions.controller';
@@ -11,9 +11,10 @@ import { ProductVersionsController } from './controllers/product-versions.contro
 import { ProductReadAssembler } from './assemblers/product-read.assembler';
 import { OptionReadLoader } from './loaders/option-read.loader';
 import { TagReadLoader } from './loaders/tag-read.loader';
+import { ProductMatchingModule } from '../../../product-matching/product-matching.module';
 
 @Module({
-  imports: [PricingModule],
+  imports: [PricingModule, forwardRef(() => ProductMatchingModule)],
   controllers: [
     ProductMastersController,
     ProductVariantsController,

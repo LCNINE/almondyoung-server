@@ -9,8 +9,8 @@ import { AppController } from './app.controller';
 
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
-// Phase 4: import { ProductMatchingModule } from './modules/product-matching/product-matching.module';
-// Phase 5: import { SalesOrderModule } from './modules/sales-order/sales-order.module';
+import { ProductMatchingModule } from './modules/product-matching/product-matching.module';
+import { SalesOrderModule } from './modules/sales-order/sales-order.module';
 // Phase 6: import { FulfillmentModule } from './modules/fulfillment/fulfillment.module';
 
 @Module({
@@ -34,8 +34,8 @@ import { InventoryModule } from './modules/inventory/inventory.module';
 
     CatalogModule,
     InventoryModule,
-    // Phase 4: ProductMatchingModule,
-    // Phase 5: SalesOrderModule,
+    ProductMatchingModule,
+    SalesOrderModule,
     // Phase 6: FulfillmentModule,
   ],
   controllers: [AppController],
