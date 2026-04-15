@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:22-alpine
 
 # Build-time env for Vite-powered admin bundle
 ARG VITE_USER_SERVICE_URL
@@ -67,4 +67,4 @@ EXPOSE 9000
 
 # 외부 인프라는 환경 변수로 주입 (DATABASE_URL, REDIS_URL, KAFKA_BROKERS 등)
 # .medusa/server 디렉토리에서 실행
-CMD ["sh", "-c", "yarn medusa exec ./src/scripts/seed.ts && yarn medusa exec ./src/scripts/seed-shipping.ts && yarn start"]
+CMD ["sh", "-c", "yarn medusa db:migrate && yarn start"]
