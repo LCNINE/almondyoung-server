@@ -2,7 +2,13 @@ import { DbService } from '@app/db';
 import { InferInsertModel, InferSelectModel } from 'drizzle-orm';
 import {
   WalletSchema,
+  billingAgreements,
+  billingMethods,
   charges,
+  checkoutSessions,
+  cmsAgreements,
+  cmsMembers,
+  cmsWithdrawals,
   outboxEvents,
   paymentIntentItemDiscounts,
   paymentIntentItems,
@@ -69,3 +75,27 @@ export type UpdatePointHold = Partial<Omit<NewPointHold, 'id' | 'createdAt' | 'u
 
 export type PointHoldDetail = InferSelectModel<typeof pointHoldDetails>;
 export type NewPointHoldDetail = InferInsertModel<typeof pointHoldDetails>;
+
+export type BillingMethod = InferSelectModel<typeof billingMethods>;
+export type NewBillingMethod = InferInsertModel<typeof billingMethods>;
+export type UpdateBillingMethod = Partial<Omit<NewBillingMethod, 'id' | 'createdAt' | 'updatedAt'>>;
+
+export type BillingAgreement = InferSelectModel<typeof billingAgreements>;
+export type NewBillingAgreement = InferInsertModel<typeof billingAgreements>;
+export type UpdateBillingAgreement = Partial<Omit<NewBillingAgreement, 'id' | 'createdAt' | 'updatedAt'>>;
+
+export type CheckoutSession = InferSelectModel<typeof checkoutSessions>;
+export type NewCheckoutSession = InferInsertModel<typeof checkoutSessions>;
+export type UpdateCheckoutSession = Partial<Omit<NewCheckoutSession, 'id' | 'createdAt' | 'updatedAt'>>;
+
+export type CmsMember = InferSelectModel<typeof cmsMembers>;
+export type NewCmsMember = InferInsertModel<typeof cmsMembers>;
+export type UpdateCmsMember = Partial<Omit<NewCmsMember, 'id' | 'createdAt' | 'updatedAt'>>;
+
+export type CmsWithdrawal = InferSelectModel<typeof cmsWithdrawals>;
+export type NewCmsWithdrawal = InferInsertModel<typeof cmsWithdrawals>;
+export type UpdateCmsWithdrawal = Partial<Omit<NewCmsWithdrawal, 'id' | 'createdAt' | 'updatedAt'>>;
+
+export type CmsAgreementRecord = InferSelectModel<typeof cmsAgreements>;
+export type NewCmsAgreementRecord = InferInsertModel<typeof cmsAgreements>;
+export type UpdateCmsAgreementRecord = Partial<Omit<NewCmsAgreementRecord, 'id' | 'createdAt' | 'updatedAt'>>;

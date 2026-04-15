@@ -11,7 +11,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
-import { IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { IsEnum, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 import { PaymentIntentAdminService } from './payment-intent-admin.service';
 import { BankTransferAdminService } from './bank-transfer-admin.service';
 import { AdminPaymentIntentListQueryDto, PendingBankTransferListQueryDto } from './dto';
@@ -36,6 +36,16 @@ class AdminRefundDto {
   @IsOptional()
   @IsString()
   reasonMessage?: string;
+}
+
+class AdminResolveDto {
+  @IsEnum(['CAPTURED', 'CANCELED'])
+  action: 'CAPTURED' | 'CANCELED';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
 }
 
 class BankTransferConfirmDto {
@@ -145,6 +155,24 @@ export class PaymentIntentAdminController {
     try {
       await this.paymentIntentsService.cancel(id);
       return { status: 'SUCCEEDED' };
+    } catch (e: any) {
+      const msg = (e?.message ?? '').toLowerCase();
+      if (msg.includes('not found')) throw new NotFoundException(e.message);
+      if (msg.match(/already|invalid|failed|required|exceed/)) throw new BadRequestException(e.message);
+      throw new InternalServerErrorException(e.message);
+    }
+  }
+
+  @Post(':id/resolve')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Resolve a PARTIALLY_CAPTURED payment intent (admin)',
+    description: 'Manually transition a PARTIALLY_CAPTURED intent to CAPTURED or CANCELED.',
+  })
+  async resolve(@Param('id') id: string, @Body() dto: AdminResolveDto) {
+    try {
+      await this.service.resolvePartiallyCapture(id, dto.action, dto.reason);
+      return { status: dto.action };
     } catch (e: any) {
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('not found')) throw new NotFoundException(e.message);

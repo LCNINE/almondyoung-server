@@ -11,6 +11,7 @@ import {
   GatewayEventType,
   buildPaymentIntentEventPayload,
 } from '../messaging/gateway-event.builder';
+import { TossApiClient } from '../providers/toss/toss-api.client';
 
 @Injectable()
 export class TossApproveService {
@@ -21,6 +22,7 @@ export class TossApproveService {
     private readonly chargesService: ChargesService,
     private readonly autoCaptureService: AutoCaptureService,
     private readonly stateTransitionService: StateTransitionService,
+    private readonly tossApi: TossApiClient,
   ) {}
 
   async approve(
@@ -43,30 +45,19 @@ export class TossApproveService {
     }
 
     // 2. Call Toss API confirm
-    const secretKey = process.env.TOSS_SECRET_KEY ?? '';
-    const auth = Buffer.from(`${secretKey}:`).toString('base64');
-    const tossRes = await fetch('https://api.tosspayments.com/v1/payments/confirm', {
-      method: 'POST',
-      headers: {
-        Authorization: `Basic ${auth}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ paymentKey, orderId, amount }),
-    });
+    const result = await this.tossApi.confirmPayment(paymentKey, amount, orderId);
+    this.logger.log(`Toss API confirm response: ok=${result.ok}`);
 
-    this.logger.log(`Toss API confirm response: status=${tossRes.status}`);
-    if (!tossRes.ok) {
-      const err = await tossRes.json().catch(() => ({}));
-      this.logger.error(`Toss API confirm failed: ${JSON.stringify(err)}`);
-      await this.finalizeFailure(charge, err.code ?? 'TOSS_CONFIRM_FAILED', correlationId);
+    if (!result.ok) {
+      this.logger.error(`Toss API confirm failed: ${JSON.stringify(result.error)}`);
+      await this.finalizeFailure(charge, result.error.code ?? 'TOSS_CONFIRM_FAILED', correlationId);
       throw new UnprocessableEntityException({
-        error: err.code ?? 'TOSS_CONFIRM_FAILED',
-        message: err.message,
+        error: result.error.code ?? 'TOSS_CONFIRM_FAILED',
+        message: result.error.message,
       });
     }
 
-    const tossData = await tossRes.json();
-    await this.finalizeApproval(charge, tossData.paymentKey, correlationId);
+    await this.finalizeApproval(charge, result.data.paymentKey, correlationId);
   }
 
   async finalizeApproval(charge: Charge, paymentKey: string, correlationId: string): Promise<void> {
