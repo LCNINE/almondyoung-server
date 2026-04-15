@@ -294,9 +294,7 @@ export class MedusaClient {
           },
         };
         try {
-          console.log('메두사 업데이트 요청 ::', { id: existing.id, updatePayload });
-          const response = await this.sdk.admin.productCategory.update(existing.id, updatePayload);
-          console.log('메두사 업데이트 응답 ::', JSON.stringify(response, null, 2));
+          await this.sdk.admin.productCategory.update(existing.id, updatePayload);
         } catch (err) {
           const fetchError = err as FetchError;
           this.logger.warn(
