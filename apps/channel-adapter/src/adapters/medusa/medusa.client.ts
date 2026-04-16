@@ -318,11 +318,11 @@ export class MedusaClient {
           },
         };
         this.logger.log(
-          `[DEBUG] Updating Medusa category ${existing.id} with parent_category_id: ${parentMedusaId ?? 'undefined'}`,
+          `[DEBUG] Updating Medusa category ${existing.id} with payload: ${JSON.stringify(updatePayload)}`,
         );
         try {
-          await this.sdk.admin.productCategory.update(existing.id, updatePayload);
-          this.logger.log(`[DEBUG] Successfully updated Medusa category ${existing.id}`);
+          const updateResult = await this.sdk.admin.productCategory.update(existing.id, updatePayload);
+          this.logger.log(`[DEBUG] Successfully updated Medusa category ${existing.id}, result rank: ${updateResult?.product_category?.rank}`);
         } catch (err) {
           const fetchError = err as FetchError;
           this.logger.warn(
