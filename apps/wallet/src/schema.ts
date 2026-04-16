@@ -18,7 +18,7 @@ import { idempotencyKeys } from './domain/idempotency/idempotency.schema';
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
-export const paymentMethodTypeEnum = pgEnum('payment_method_type', ['POINTS', 'CARD', 'BANK_TRANSFER', 'BNPL', 'TOSS', 'NICEPAY', 'TOSS_BILLING', 'CMS_BATCH']);
+export const paymentMethodTypeEnum = pgEnum('payment_method_type', ['POINTS', 'CARD', 'BANK_TRANSFER', 'BNPL', 'TOSS', 'NICEPAY', 'TOSS_BILLING', 'NICEPAY_BILLING', 'CMS_BATCH']);
 
 export const paymentIntentStatusEnum = pgEnum('payment_intent_status', [
   'CREATED',

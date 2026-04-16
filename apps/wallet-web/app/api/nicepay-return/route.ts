@@ -1,4 +1,4 @@
-import { approveNicepay, getPaymentIntent } from '@/lib/wallet-api';
+import { approveNicepay } from '@/lib/wallet-api';
 import { buildReturnUrl } from '@/lib/return-url';
 
 /**
@@ -51,18 +51,14 @@ export async function POST(request: Request) {
   }
 
   try {
-    const [result, intent] = await Promise.all([
-      approveNicepay(intentId, tid, orderId, amount, authToken, clientId, signature),
-      // NicePay 콜백은 서버-서버 POST라 쿠키가 없으므로 API key로 조회
-      getPaymentIntent(intentId, undefined, process.env.WALLET_API_KEY).catch(() => null),
-    ]);
+    const result = await approveNicepay(intentId, tid, orderId, amount, authToken, clientId, signature);
 
     if (result.returnUrl) {
       const successUrl = buildReturnUrl(result.returnUrl, {
         payment_intent_id: intentId,
         status: 'succeeded',
       });
-      if (intent?.metadata?.billingMode === 'recurring') {
+      if (result.metadata?.billingMode === 'recurring') {
         return Response.redirect(`${origin}/pay/${intentId}/billing-setup?provider=NICEPAY&returnUrl=${encodeURIComponent(successUrl)}`);
       }
       return Response.redirect(successUrl);
