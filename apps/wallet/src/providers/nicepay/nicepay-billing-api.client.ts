@@ -59,11 +59,6 @@ export class NicepayBillingApiClient {
 
   constructor(private readonly nicepayAuth: NicepayAuthService) {}
 
-  private getApiBase(): string {
-    const clientKey = process.env.NICEPAY_CLIENT_KEY ?? '';
-    return clientKey.startsWith('S2_') ? 'https://sandbox-api.nicepay.co.kr' : 'https://api.nicepay.co.kr';
-  }
-
   async issueBillingKey(
     encData: string,
     orderId: string,
@@ -121,8 +116,18 @@ export class NicepayBillingApiClient {
     return this.post<NicepayBillingExpireResponse>(`/v1/subscribe/${bid}/expire`, { orderId, ediDate, signData });
   }
 
+  async cancelPayment(
+    tid: string,
+    orderId: string,
+    amount?: number,
+  ): Promise<NicepayBillingApiResult<Record<string, unknown>>> {
+    const body: Record<string, unknown> = { reason: '정기결제 취소', orderId };
+    if (amount !== undefined) body.cancelAmt = amount;
+    return this.post<Record<string, unknown>>(`/v1/payments/${tid}/cancel`, body);
+  }
+
   private async post<T>(path: string, body: Record<string, unknown>): Promise<NicepayBillingApiResult<T>> {
-    const url = `${this.getApiBase()}${path}`;
+    const url = `${this.nicepayAuth.getApiBase()}${path}`;
     this.logger.debug(`POST ${url}`);
 
     const authorization = await this.nicepayAuth.getAuthHeader();

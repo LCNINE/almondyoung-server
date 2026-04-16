@@ -19,6 +19,7 @@ import {
   ShoppingBag,
   ChevronRight,
   Coins,
+  RefreshCw,
 } from 'lucide-react';
 
 interface Props {
@@ -76,6 +77,8 @@ export function PayForm({ intent, methods, pointsBalance }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const isRecurring = intent.metadata?.billingMode === 'recurring';
+  const selectedMethod = externalMethods.find((m) => m.id === selectedMethodId);
   const maxPoints = Math.min(availablePoints, intent.payableAmount);
   const remainingAmount = intent.payableAmount - (usePoints ? pointsAmount : 0);
 
@@ -154,12 +157,20 @@ export function PayForm({ intent, methods, pointsBalance }: Props) {
       }
 
       if (result.returnUrl) {
-        router.replace(
-          buildReturnUrl(result.returnUrl, {
-            payment_intent_id: intent.id,
-            status: 'succeeded',
-          }),
-        );
+        const successUrl = buildReturnUrl(result.returnUrl, {
+          payment_intent_id: intent.id,
+          status: 'succeeded',
+        });
+        // 이미 빌링키가 있는 결제수단(_BILLING)으로 결제한 경우 billing-setup 불필요
+        const alreadyHasBillingKey = selectedMethod?.type.endsWith('_BILLING') ?? false;
+        if (isRecurring && !alreadyHasBillingKey) {
+          // remaining > 0이면 실제 PG 결제가 발생했으므로 해당 PG의 빌링 등록 흐름으로 연결
+          const provider = remaining > 0 ? (selectedMethod?.type ?? '') : '';
+          const providerParam = provider ? `&provider=${provider}` : '';
+          router.replace(`/pay/${intent.id}/billing-setup?returnUrl=${encodeURIComponent(successUrl)}${providerParam}`);
+        } else {
+          router.replace(successUrl);
+        }
       } else {
         router.replace(`/pay/${intent.id}`);
       }
@@ -220,6 +231,12 @@ export function PayForm({ intent, methods, pointsBalance }: Props) {
                   <p className="text-sm font-medium">
                     {intent.metadata.orderName}
                   </p>
+                )}
+                {isRecurring && (
+                  <div className="flex items-center gap-1.5 rounded-md bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-700">
+                    <RefreshCw className="h-3 w-3" />
+                    정기결제 · 매월 자동갱신
+                  </div>
                 )}
                 <Separator />
                 <div>

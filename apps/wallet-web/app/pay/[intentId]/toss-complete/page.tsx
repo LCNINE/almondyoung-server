@@ -1,6 +1,7 @@
 import { isRedirectError } from 'next/dist/client/components/redirect-error';
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { approveToss } from '@/lib/wallet-api';
+import { approveToss, getPaymentIntent } from '@/lib/wallet-api';
 import { buildReturnUrl } from '@/lib/return-url';
 
 interface Props {
@@ -20,15 +21,24 @@ export default async function TossCompletePage({ params, searchParams }: Props) 
   }
 
   try {
-    const result = await approveToss(intentId, paymentKey, orderId, Number(amount));
+    const cookieStore = await cookies();
+    const cookieHeader = cookieStore.toString();
+
+    const [result, intent] = await Promise.all([
+      approveToss(intentId, paymentKey, orderId, Number(amount)),
+      getPaymentIntent(intentId, cookieHeader).catch(() => null),
+    ]);
     console.log('[toss-complete] approveToss result:', result);
+
     if (result.returnUrl) {
-      redirect(
-        buildReturnUrl(result.returnUrl, {
-          payment_intent_id: intentId,
-          status: 'succeeded',
-        }),
-      );
+      const successUrl = buildReturnUrl(result.returnUrl, {
+        payment_intent_id: intentId,
+        status: 'succeeded',
+      });
+      if (intent?.metadata?.billingMode === 'recurring') {
+        redirect(`/pay/${intentId}/billing-setup?provider=TOSS&returnUrl=${encodeURIComponent(successUrl)}`);
+      }
+      redirect(successUrl);
     }
     redirect(`/pay/${intentId}`);
   } catch (e) {

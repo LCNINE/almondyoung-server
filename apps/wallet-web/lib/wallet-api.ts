@@ -33,13 +33,29 @@ export interface PointsBalance {
   available: number;
 }
 
+export interface BillingMethod {
+  id: string;
+  userId: string;
+  providerType: string;
+  displayName: string | null;
+  method: Record<string, unknown> | null;
+  status: string;
+  expiresAt: string | null;
+  createdAt: string;
+}
+
 /**
  * cookieHeader: Next.js 서버 컴포넌트에서 호출 시 `cookies().toString()` 값을 전달.
  * 브라우저 클라이언트에서 호출 시 생략하면 credentials: 'include' 사용.
  */
-export async function getPaymentIntent(intentId: string, cookieHeader?: string): Promise<PaymentIntent> {
+export async function getPaymentIntent(
+  intentId: string,
+  cookieHeader?: string,
+  apiKey?: string,
+): Promise<PaymentIntent> {
   const headers: Record<string, string> = {};
   if (cookieHeader) headers['Cookie'] = cookieHeader;
+  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
 
   const res = await fetch(`${BASE_URL}/v1/payment-intents/${intentId}`, {
     headers,
@@ -151,6 +167,59 @@ export async function approveNicepay(
     throw new Error(body?.message ?? `NicePay approve failed (${res.status})`);
   }
   return res.json();
+}
+
+export async function getBillingMethods(cookieHeader?: string): Promise<BillingMethod[]> {
+  const headers: Record<string, string> = {};
+  if (cookieHeader) headers['Cookie'] = cookieHeader;
+
+  const res = await fetch(`${BASE_URL}/v1/billing-methods`, {
+    headers,
+    credentials: cookieHeader ? undefined : 'include',
+    cache: 'no-store',
+  });
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function issueNicepayBillingKey(
+  encData: string,
+  orderId: string,
+  cookieHeader: string,
+  encMode?: string,
+): Promise<void> {
+  const payload: Record<string, string> = { encData, orderId };
+  if (encMode) payload['encMode'] = encMode;
+  const res = await fetch(`${BASE_URL}/v1/billing-methods/nicepay`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
+    body: JSON.stringify(payload),
+    cache: 'no-store',
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.message ?? `NicePay billing key issuance failed (${res.status})`);
+  }
+}
+
+export async function issueTossBillingKey(
+  authKey: string,
+  customerKey: string,
+  cookieHeader: string,
+): Promise<void> {
+  const res = await fetch(`${BASE_URL}/v1/billing-methods/toss`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: cookieHeader,
+    },
+    body: JSON.stringify({ authKey, customerKey }),
+    cache: 'no-store',
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.message ?? `Toss billing key issuance failed (${res.status})`);
+  }
 }
 
 export async function cancelPaymentIntent(intentId: string): Promise<void> {
