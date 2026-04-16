@@ -29,7 +29,6 @@ import {
   MoveProductsToCategoryDto,
   AddProductsToCategoryDto,
   UpdateVisibilityDto,
-  ReorderCategoriesDto,
 } from './dto';
 import { CategoryMapper } from './mappers';
 
@@ -74,25 +73,6 @@ export class ProductCategoriesController {
     @Body() updateCategoryDto: UpdateCategoryDto,
   ): Promise<CategoryResponseDto> {
     return this.productCategoriesService.updateCategory(id, updateCategoryDto);
-  }
-
-  @Post('reorder')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({
-    summary: '카테고리 순서 변경',
-    description: '동일 부모 내 카테고리들의 순서를 일괄 변경합니다.',
-  })
-  @ApiBody({ type: ReorderCategoriesDto, description: '카테고리 순서 변경 정보' })
-  @ApiResponse({
-    status: 204,
-    description: '카테고리 순서 변경 성공',
-  })
-  @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
-  @ApiResponse({ status: 404, description: '부모 카테고리를 찾을 수 없음' })
-  async reorderCategories(@Body() dto: ReorderCategoriesDto): Promise<void> {
-    // parentId가 null이면 빈 문자열로 전달 (루트 카테고리 처리)
-    const parentId = dto.parentId ?? '';
-    return this.productCategoriesService.reorderCategories(parentId, dto.categoryIds);
   }
 
   @Delete(':id')
