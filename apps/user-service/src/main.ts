@@ -56,7 +56,7 @@ async function bootstrap() {
   await app.register(fastifyCookie);
 
   await app.register(fastifySession, {
-    secret: configService.get('KAKAO_CLIENT_SECRET') as string,
+    secret: configService.getOrThrow<string>('AUTH_SECRET'),
     cookieName: 'sessionId',
     saveUninitialized: false,
     cookie: {

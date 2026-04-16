@@ -7,6 +7,11 @@ export const almondyoungEnvSchema = z.object({
   // Database
   DATABASE_URL: z.string().url(),
 
+  // Auth
+  AUTH_SECRET: z.string().min(1),
+  JWT_ISSUER: z.string().optional(),
+  JWT_AUDIENCE: z.string().optional(),
+
   // Kafka
   KAFKA_CLIENT_ID_PREFIX: z.string().optional(),
   KAFKA_BROKERS: z.string().optional(),

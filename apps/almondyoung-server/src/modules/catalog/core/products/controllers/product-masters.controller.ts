@@ -28,7 +28,7 @@ import {
 } from '../dto/products/product-response.dto';
 import { ProductMapper } from '../mappers/product.mapper';
 import { DbService, InjectDb } from '@app/db';
-import { PimSchema } from 'apps/pim/src/schema';
+import { PimSchema } from '../../../schema/catalog.schema';
 import { PaginatedResponseDto } from '../../../common/dto';
 import { ApiOkResponsePaginated } from '../../../common/decorators';
 import { ProductMasterMapper } from '../mappers';

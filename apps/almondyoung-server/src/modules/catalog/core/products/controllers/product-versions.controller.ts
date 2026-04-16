@@ -1,9 +1,9 @@
 import { Controller, Get, Logger, Param, Query } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { ProductVersionsService } from '../services/product-versions.service';
-import { ApiOkResponsePaginated } from 'apps/pim/src/common/decorators/api-paginated-response.decorator';
+import { ApiOkResponsePaginated } from '../../../common/decorators';
 import { ProductVersionDto } from '../dto/entities/master-version.entity';
-import { PaginationQueryDto } from 'apps/pim/src/common';
+import { PaginationQueryDto } from '../../../common/dto';
 
 @ApiTags('Product Versions Without Master')
 @Controller('versions')

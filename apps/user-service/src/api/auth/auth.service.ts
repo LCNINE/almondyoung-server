@@ -8,6 +8,7 @@ import {
   InternalServerErrorException,
   Logger,
   NotFoundException,
+  Optional,
   Res,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -55,7 +56,7 @@ export class AuthService {
     private readonly eventPublisher: StreamPublisher<UserEvents>,
     private readonly consentsService: ConsentsService,
     private readonly tokensService: TokensService,
-    private readonly cafe24LinkService: Cafe24LinkService,
+    @Optional() private readonly cafe24LinkService?: Cafe24LinkService,
   ) {}
 
   private getClient(tx?: DbTransaction) {
@@ -158,7 +159,7 @@ export class AuthService {
           marketingConsent,
         });
 
-        if (encryptedIdToken) {
+        if (encryptedIdToken && this.cafe24LinkService) {
           await this.cafe24LinkService.linkCafe24Account(user.id, encryptedIdToken, tx);
         }
 
@@ -174,6 +175,9 @@ export class AuthService {
   }
 
   async bootstrapCafe24Signup(encryptedIdToken: string) {
+    if (!this.cafe24LinkService) {
+      throw new BadRequestException('Cafe24 연동이 비활성화되어 있습니다.');
+    }
     return this.cafe24LinkService.issueSignupBootstrapData(encryptedIdToken);
   }
 

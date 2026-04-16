@@ -1,4 +1,4 @@
-import { ProductMasterVersionEntity } from 'apps/pim/src/schema.types';
+import { ProductMasterVersionEntity } from '../../../schema/catalog.schema.types';
 import { DateMapper } from '../../../common/mappers';
 import { ProductImageDto } from '../dto/products/product-image.dto';
 import { PriceSummaryDto, ProductDto, ProductListItemDto } from '../dto/products/product-response.dto';

@@ -2,13 +2,13 @@ import chalk from 'chalk';
 import { confirm } from '@inquirer/prompts';
 import { Sql } from 'postgres';
 import { createAdminConnection } from '../lib/db-connection';
-import { SERVICE_REGISTRY } from '../lib/service-registry';
+import { getServiceRegistry } from '../lib/service-registry';
 import { DatabaseCheckResult } from '../lib/types';
 import { Logger } from '../lib/logger';
 
 const logger = new Logger('DB Creation');
 
-export async function runDatabaseCreation(options: { yes: boolean }): Promise<string[]> {
+export async function runDatabaseCreation(options: { yes: boolean; deployment?: string }): Promise<string[]> {
   console.log(chalk.bold.cyan('\nPhase 1: Database Creation'));
   console.log(chalk.cyan('─'.repeat(40)));
 
@@ -17,7 +17,8 @@ export async function runDatabaseCreation(options: { yes: boolean }): Promise<st
   try {
     adminSql = createAdminConnection();
 
-    const databases = [...new Set(SERVICE_REGISTRY.map((s) => s.database))];
+    const registry = getServiceRegistry(options.deployment);
+    const databases = [...new Set(registry.map((s) => s.database))];
     const results: DatabaseCheckResult[] = [];
 
     for (const dbName of databases) {

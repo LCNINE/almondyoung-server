@@ -39,6 +39,8 @@ export class AuthModule {
     const hasNaverConfig = naverClientId && naverClientSecret && naverCallbackUrl;
     const hasNaverLinkConfig = naverClientId && naverClientSecret && naverLinkCallbackUrl;
 
+    const hasCafe24Config = !!process.env.CAFE24_SERVICE_KEY;
+
     if (hasKakaoConfig) {
       console.log('✅ Kakao OAuth Strategy 활성화');
     } else {
@@ -112,7 +114,7 @@ export class AuthModule {
         DbModule,
         EventsModule,
         ConsentsModule,
-        Cafe24LinkModule,
+        ...(hasCafe24Config ? [Cafe24LinkModule] : []),
       ],
       providers,
       controllers,
