@@ -6,7 +6,7 @@ export class NicepayAuthService {
   private cachedToken: string | null = null;
   private tokenExpiry = 0;
 
-  private getApiBase(): string {
+  getApiBase(): string {
     const clientId = process.env.NICEPAY_CLIENT_KEY ?? '';
     return clientId.startsWith('S2_') ? 'https://sandbox-api.nicepay.co.kr' : 'https://api.nicepay.co.kr';
   }

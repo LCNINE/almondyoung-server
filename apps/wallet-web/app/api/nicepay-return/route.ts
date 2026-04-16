@@ -1,11 +1,11 @@
-import { approveNicepay } from '@/lib/wallet-api';
+import { approveNicepay, getPaymentIntent } from '@/lib/wallet-api';
 import { buildReturnUrl } from '@/lib/return-url';
 
 /**
  * NicePay 서버승인 콜백 엔드포인트.
  *
- * NicePay JS SDK(AUTHNICE.requestPay)는 인증 완료 후 이 URL로 form POST 합니다.
- * 서버가 서명을 검증하고 승인 API를 호출한 뒤 결과에 따라 리다이렉트합니다.
+ * NicePay JS SDK(AUTHNICE.requestPay)는 인증 완료 후 이 URL로 form POST
+ * 서버가 서명을 검증하고 승인 API를 호출한 뒤 결과에 따라 리다이렉트
  *
  * Query params:
  *   - intentId: wallet payment intent ID (returnUrl에 포함시켜 전달)
@@ -51,15 +51,21 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await approveNicepay(intentId, tid, orderId, amount, authToken, clientId, signature);
+    const [result, intent] = await Promise.all([
+      approveNicepay(intentId, tid, orderId, amount, authToken, clientId, signature),
+      // NicePay 콜백은 서버-서버 POST라 쿠키가 없으므로 API key로 조회
+      getPaymentIntent(intentId, undefined, process.env.WALLET_API_KEY).catch(() => null),
+    ]);
 
     if (result.returnUrl) {
-      return Response.redirect(
-        buildReturnUrl(result.returnUrl, {
-          payment_intent_id: intentId,
-          status: 'succeeded',
-        }),
-      );
+      const successUrl = buildReturnUrl(result.returnUrl, {
+        payment_intent_id: intentId,
+        status: 'succeeded',
+      });
+      if (intent?.metadata?.billingMode === 'recurring') {
+        return Response.redirect(`${origin}/pay/${intentId}/billing-setup?provider=NICEPAY&returnUrl=${encodeURIComponent(successUrl)}`);
+      }
+      return Response.redirect(successUrl);
     }
 
     return Response.redirect(`${origin}/pay/${intentId}`);

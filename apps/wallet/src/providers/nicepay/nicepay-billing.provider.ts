@@ -12,7 +12,6 @@ import {
   ValidateMethodParams,
 } from '../payment-provider.interface';
 import { WalletSchema, charges } from '../../schema';
-import { NicepayAuthService } from './nicepay-auth.service';
 import { NicepayBillingApiClient } from './nicepay-billing-api.client';
 import { BillingMethodService } from '../../billing/billing-method.service';
 
@@ -25,7 +24,6 @@ export class NicepayBillingProvider implements PaymentProvider {
 
   constructor(
     private readonly dbService: DbService<WalletSchema>,
-    private readonly nicepayAuth: NicepayAuthService,
     private readonly nicepayBillingApi: NicepayBillingApiClient,
     private readonly billingMethodService: BillingMethodService,
   ) {}
@@ -123,36 +121,11 @@ export class NicepayBillingProvider implements PaymentProvider {
   }
 
   private async cancelByTid(tid: string, amount: number | undefined, chargeId: string): Promise<ChargeResult> {
-    const authorization = await this.nicepayAuth.getAuthHeader();
-    const apiBase = (process.env.NICEPAY_CLIENT_KEY ?? '').startsWith('S2_')
-      ? 'https://sandbox-api.nicepay.co.kr'
-      : 'https://api.nicepay.co.kr';
-
     const orderId = chargeId.replace(/-/g, '');
-    const body: Record<string, unknown> = { reason: '정기결제 취소', orderId };
-    if (amount !== undefined) body.cancelAmt = amount;
-
-    const res = await fetch(`${apiBase}/v1/payments/${tid}/cancel`, {
-      method: 'POST',
-      headers: {
-        Authorization: authorization,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
-
-    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
-
-    if (res.ok && data['resultCode'] === '0000') {
-      return { status: 'SUCCEEDED' };
-    }
-
-    this.logger.error(`NicePay billing cancel failed: ${res.status} ${JSON.stringify(data)}`);
-    return {
-      status: 'FAILED',
-      errorCode: data['resultCode'] as string | undefined,
-      errorMessage: data['resultMsg'] as string | undefined,
-    };
+    const result = await this.nicepayBillingApi.cancelPayment(tid, orderId, amount);
+    if (result.ok) return { status: 'SUCCEEDED' };
+    this.logger.error(`NicePay billing cancel failed: ${result.statusCode} ${result.resultCode} ${result.resultMsg}`);
+    return { status: 'FAILED', errorCode: result.resultCode, errorMessage: result.resultMsg };
   }
 
   private async getProviderTransactionId(chargeId: string): Promise<string | undefined> {
