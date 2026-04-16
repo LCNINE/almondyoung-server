@@ -220,7 +220,8 @@ export async function getRangeSavings(
  */
 export async function createMembershipCheckoutIntent(
   planId: string,
-  returnUrl: string
+  returnUrl: string,
+  billingMode: "one_time" | "recurring" = "one_time"
 ): Promise<{ intentId: string }> {
   try {
     return await api<{ intentId: string }>(
@@ -228,7 +229,7 @@ export async function createMembershipCheckoutIntent(
       "/subscriptions/checkout-intent",
       {
         method: "POST",
-        body: { planId, returnUrl },
+        body: { planId, returnUrl, billingMode },
         withAuth: true,
         cache: "no-store",
       }

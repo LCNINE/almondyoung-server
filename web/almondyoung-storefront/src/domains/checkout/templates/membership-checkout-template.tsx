@@ -9,9 +9,14 @@ import { MobileCTA, PCFixedCTA } from "domains/checkout/components/cta"
 import { MobileHeader, PCHeader } from "domains/checkout/components/header"
 import { MobileOrderSummary } from "domains/checkout/components/order-summary"
 import { PaymentDetailSidebar } from "domains/checkout/components/payment-detail-sidebar"
+import { Switch } from "@/components/ui/switch"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Label } from "@/components/ui/label"
 import { useParams, useRouter } from "next/navigation"
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
+
+type BillingMode = "one_time" | "recurring"
 
 interface MembershipCheckoutTemplateProps {
   user: UserDetail
@@ -32,6 +37,8 @@ export default function MembershipCheckoutTemplate({
 
   const [loading, setLoading] = useState(false)
   const [isPaymentDetailsOpen, setIsPaymentDetailsOpen] = useState(true)
+  const [billingMode, setBillingMode] = useState<BillingMode>("one_time")
+  const [agreed, setAgreed] = useState(false)
 
   const totals: CartTotals = useMemo(
     () => ({
@@ -48,10 +55,10 @@ export default function MembershipCheckoutTemplate({
   )
 
   const handlePayment = async () => {
-    await processPayment()
-  }
-
-  const processPayment = async () => {
+    if (!agreed) {
+      toast.error("결제 및 환불 정책에 동의해주세요.")
+      return
+    }
     try {
       setLoading(true)
 
@@ -59,21 +66,15 @@ export default function MembershipCheckoutTemplate({
         throw new Error("로그인이 필요합니다.")
       }
 
-      // returnUrl에 쿼리파라미터를 포함하면 wallet이 ?payment_intent_id=...를 붙일 때 URL이 깨짐
-      // mode/planId는 sessionStorage에 저장 후 callback에서 읽음
       const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback`
-      const { intentId } = await createMembershipCheckoutIntent(
-        planId,
-        returnUrl
-      )
-      setPendingPaymentMode("membership", { planId })
+      const { intentId } = await createMembershipCheckoutIntent(planId, returnUrl, billingMode)
+      setPendingPaymentMode("membership", { planId, billingMode })
 
       const walletWebUrl =
         process.env.NEXT_PUBLIC_WALLET_WEB_URL || "http://localhost:3200"
       window.location.href = `${walletWebUrl}/pay/${intentId}`
     } catch (error: unknown) {
       const err = error as Error & { digest?: string }
-      // UNAUTHORIZED는 re-throw → error.tsx에서 토큰 복구 처리
       if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") {
         throw error
       }
@@ -95,18 +96,98 @@ export default function MembershipCheckoutTemplate({
         <div className="lg:flex lg:w-full lg:justify-between lg:gap-9">
           {/* 왼쪽 섹션 */}
           <div className="lg:max-w-[820px] lg:min-w-[420px] lg:flex-1">
-            <section className="mb-6 rounded-[10px] border border-gray-200 bg-white p-6">
+            {/* 멤버십 플랜 요약 */}
+            <section className="mb-4 rounded-[10px] border border-gray-200 bg-white p-6">
               <h2 className="text-lg font-bold text-gray-900">멤버십 플랜</h2>
               <div className="mt-3 flex items-baseline justify-between">
                 <div>
                   <p className="text-sm text-gray-500">선택한 플랜</p>
-                  <p className="text-lg font-semibold text-gray-900">
-                    {planName}
-                  </p>
+                  <p className="text-lg font-semibold text-gray-900">{planName}</p>
                 </div>
                 <p className="text-xl font-bold text-[#F29219]">
                   {price.toLocaleString()}원
                 </p>
+              </div>
+            </section>
+
+            {/* 결제 방식 선택 */}
+            <section className="mb-4 rounded-[10px] border border-gray-200 bg-white p-6">
+              <h2 className="mb-4 text-base font-bold text-gray-900">결제 방식</h2>
+              <div className="flex items-center justify-between rounded-lg border border-gray-100 bg-gray-50 px-4 py-3">
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">
+                    {billingMode === "recurring" ? "정기결제 (자동갱신)" : "1회 결제"}
+                  </p>
+                  <p className="mt-0.5 text-xs text-gray-500">
+                    {billingMode === "recurring"
+                      ? "매월 자동으로 결제됩니다"
+                      : "이번 달만 결제, 자동갱신 없음"}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-400">1회</span>
+                  <Switch
+                    checked={billingMode === "recurring"}
+                    onCheckedChange={(checked) => {
+                      setBillingMode(checked ? "recurring" : "one_time")
+                      // 모드 변경 시 정책 텍스트가 바뀌므로 재동의 필요
+                      setAgreed(false)
+                    }}
+                  />
+                  <span className="text-xs text-gray-400">정기</span>
+                </div>
+              </div>
+            </section>
+
+            {/* 결제 정책 */}
+            <section className="mb-4 rounded-[10px] border border-gray-200 bg-white p-6">
+              <h2 className="mb-3 text-base font-bold text-gray-900">결제 안내</h2>
+
+              {billingMode === "one_time" ? (
+                <div className="space-y-2 text-sm text-gray-600">
+                  <p className="font-medium text-gray-800">📌 1회 결제 (자동결제 없음)</p>
+                  <ul className="ml-4 list-disc space-y-1 text-gray-600">
+                    <li>1회 결제로, 자동결제는 진행되지 않습니다.</li>
+                    <li>결제 즉시 이용이 시작되며, <span className="font-medium text-gray-800">이용 시작 후 환불은 불가</span>합니다.</li>
+                    <li>결제한 기간 동안 서비스 이용이 가능합니다.</li>
+                  </ul>
+                </div>
+              ) : (
+                <div className="space-y-2 text-sm text-gray-600">
+                  <p className="font-medium text-gray-800">🔄 정기결제 (매월 자동갱신)</p>
+                  <ul className="ml-4 list-disc space-y-1 text-gray-600">
+                    <li>매월 같은 날 자동으로 결제됩니다.</li>
+                    <li>언제든지 <span className="font-medium text-gray-800">다음 결제일 전</span>에 해지할 수 있습니다.</li>
+                    <li>해지 시 남은 기간은 그대로 이용 가능합니다.</li>
+                    <li><span className="font-medium text-gray-800">이용 시작 후 환불은 불가</span>합니다.</li>
+                  </ul>
+                </div>
+              )}
+
+              {/* 환불 정책 공통 */}
+              <div className="mt-4 rounded-lg bg-gray-50 p-3 text-xs text-gray-500">
+                <p className="mb-1 font-semibold text-gray-600">[환불 정책]</p>
+                <ul className="space-y-0.5">
+                  <li>· 단순 변심에 의한 환불은 불가합니다.</li>
+                  <li>· 서비스 장애, 기술적 오류 등으로 정상적인 이용이 어려운 경우, 이용하지 못한 기간에 대해 일부 환불이 진행될 수 있습니다.</li>
+                  <li>· 환불 여부 및 금액은 내부 정책에 따라 산정됩니다.</li>
+                </ul>
+              </div>
+
+              {/* 동의 체크박스 */}
+              <div className="mt-4 flex items-start gap-2">
+                <Checkbox
+                  id="policy-agree"
+                  checked={agreed}
+                  onCheckedChange={(checked) => setAgreed(checked === true)}
+                  className="mt-0.5"
+                />
+                <Label
+                  htmlFor="policy-agree"
+                  className="cursor-pointer text-sm leading-snug text-gray-700"
+                >
+                  결제 및 환불 정책을 확인하였으며 이에 동의합니다.
+                </Label>
               </div>
             </section>
 
@@ -125,8 +206,13 @@ export default function MembershipCheckoutTemplate({
         </div>
       </div>
 
-      <PCFixedCTA onPayment={handlePayment} loading={loading} totals={totals} />
-      <MobileCTA onPayment={handlePayment} loading={loading} />
+      <PCFixedCTA
+        onPayment={handlePayment}
+        loading={loading}
+        totals={totals}
+        disabled={!agreed}
+      />
+      <MobileCTA onPayment={handlePayment} loading={loading} disabled={!agreed} />
     </main>
   )
 }
