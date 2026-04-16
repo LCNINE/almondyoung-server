@@ -1,8 +1,37 @@
 import { z } from 'zod';
 
 export const almondyoungEnvSchema = z.object({
-  // Server Configuration
+  // Server
   PORT: z.string().regex(/^\d+$/).optional(),
+
+  // Database
+  DATABASE_URL: z.string().url(),
+
+  // Auth
+  AUTH_SECRET: z.string().min(1),
+  JWT_ISSUER: z.string().optional(),
+  JWT_AUDIENCE: z.string().optional(),
+
+  // Kafka
+  KAFKA_CLIENT_ID_PREFIX: z.string().optional(),
+  KAFKA_BROKERS: z.string().optional(),
+  KAFKA_GROUP_ID: z.string().optional(),
+  KAFKA_API_KEY: z.string().optional(),
+  KAFKA_API_SECRET: z.string().optional(),
+
+  // Elasticsearch (Catalog)
+  ELASTICSEARCH_NODE: z.string().url().optional(),
+  ELASTICSEARCH_USERNAME: z.string().optional(),
+  ELASTICSEARCH_PASSWORD: z.string().optional(),
+
+  // Goodsflow (Fulfillment)
+  GOODSFLOW_API_URL: z.string().url().optional(),
+  GOODSFLOW_API_KEY: z.string().optional(),
+  GOODSFLOW_CENTER_CODE: z.string().optional(),
+
+  // OpenTelemetry
+  OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
+  OTEL_SERVICE_NAME: z.string().optional(),
 });
 
 export type AlmondyoungEnvConfig = z.infer<typeof almondyoungEnvSchema>;

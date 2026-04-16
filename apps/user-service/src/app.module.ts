@@ -8,7 +8,6 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { USER_STREAM } from '@packages/event-contracts/streams';
 import { config } from 'dotenv';
 import { existsSync } from 'fs';
-import * as os from 'os';
 import { join } from 'path';
 import { userServiceSchema as baseUserServiceSchema } from '../database/drizzle/schema';
 import { AdminModule } from './api/admin/admin.module';
@@ -21,6 +20,7 @@ import { FileModule } from './api/file/file.module';
 import { RecentViewsModule } from './api/recent-views/recent-views.module';
 import { ShopModule } from './api/shop/shop.module';
 import { TwilioModule } from './api/twilio/twilio.module';
+import { createKafkaConfigFromEnv } from '@app/events';
 import { UsersModule } from './api/users/users.module';
 import { WishlistModule } from './api/wishlist/wishlist.module';
 import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
@@ -30,49 +30,32 @@ import { ServeStaticModule } from '@nestjs/serve-static';
 
 const userServiceSchema = { ...baseUserServiceSchema, ...authorizationSchema };
 
+// ─── Optional modules (enabled only when env vars are present) ───
+const optionalModules: any[] = [];
+
+if (process.env.CAFE24_CLIENT_ID) {
+  optionalModules.push(Cafe24Module);
+} else {
+  console.warn('⚠️  CAFE24_CLIENT_ID가 설정되지 않아 Cafe24 토큰 관리가 비활성화됩니다.');
+}
+
+if (process.env.CAFE24_SERVICE_KEY) {
+  optionalModules.push(Cafe24LinkModule);
+} else {
+  console.warn('⚠️  CAFE24_SERVICE_KEY가 설정되지 않아 Cafe24 계정 연동이 비활성화됩니다.');
+}
+
+if (process.env.TWILIO_ACCOUNT_SID) {
+  optionalModules.push(TwilioModule);
+} else {
+  console.warn('⚠️  TWILIO_ACCOUNT_SID가 설정되지 않아 SMS 인증이 비활성화됩니다.');
+}
+
 config({
   path: join(process.cwd(), 'apps', 'user-service', '.env'),
 });
 
 const staticRoot = existsSync(join(__dirname, 'static')) ? join(__dirname, 'static') : join(__dirname, '..', 'static');
-// Kafka 설정 생성 함수
-function createKafkaConfig() {
-  // 필수 환경변수 검증
-  const prefix = process.env.KAFKA_CLIENT_ID_PREFIX;
-
-  if (!prefix) {
-    throw new Error('KAFKA_CLIENT_ID_PREFIX 환경변수가 필요합니다.');
-  }
-
-  const brokers = process.env.KAFKA_BROKERS;
-  if (!brokers) {
-    throw new Error('KAFKA_BROKERS 환경변수가 필요합니다.');
-  }
-
-  const groupId = process.env.KAFKA_GROUP_ID;
-  if (!groupId) {
-    throw new Error('KAFKA_GROUP_ID 환경변수가 필요합니다.');
-  }
-
-  return {
-    clientId: `${prefix}_${os.hostname()}`,
-    brokers: brokers.split(','),
-    groupId,
-    retry: {
-      retries: 5,
-      initialRetryTime: 300,
-    },
-    ssl: process.env.KAFKA_API_KEY ? true : false,
-    sasl:
-      process.env.KAFKA_API_KEY && process.env.KAFKA_API_SECRET
-        ? {
-            mechanism: 'plain' as const,
-            username: process.env.KAFKA_API_KEY,
-            password: process.env.KAFKA_API_SECRET,
-          }
-        : undefined,
-  };
-}
 
 @Module({
   imports: [
@@ -95,7 +78,7 @@ function createKafkaConfig() {
     EventsModule.forRoot({
       streams: [USER_STREAM],
       serviceName: 'user-service',
-      kafka: createKafkaConfig(),
+      kafka: createKafkaConfigFromEnv()!,
       validation: {
         validateOnPublish: true,
         throwOnValidationError: true,
@@ -145,8 +128,7 @@ function createKafkaConfig() {
     }),
     AuthModule.register(),
     UsersModule,
-    Cafe24Module,
-    Cafe24LinkModule,
+    ...optionalModules,
     ShopModule,
     ConsentsModule,
     WishlistModule,
@@ -154,7 +136,6 @@ function createKafkaConfig() {
     FileModule,
     BusinessLicensesModule,
     AdminModule,
-    TwilioModule,
   ],
   providers: [
     {

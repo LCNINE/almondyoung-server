@@ -4,9 +4,10 @@
  * Unified Interactive Database Setup & Seeding System
  *
  * Usage:
- *   npx tsx scripts/seeding/index.ts --stage dev           # interactive
- *   npx tsx scripts/seeding/index.ts --stage dev --yes     # non-interactive (CI)
- *   npx tsx scripts/seeding/index.ts --stage production    # production stage
+ *   npx tsx scripts/seeding/index.ts --stage dev                      # interactive (root deployment)
+ *   npx tsx scripts/seeding/index.ts --stage dev --yes                # non-interactive (CI)
+ *   npx tsx scripts/seeding/index.ts --stage dev --deployment df      # df deployment (monolithic)
+ *   npx tsx scripts/seeding/index.ts --stage production               # production stage
  *
  * The script wraps itself in `sst shell --stage <stage>` automatically.
  * If already inside sst shell (SST_RESOURCE_App exists), it runs directly.
@@ -24,17 +25,20 @@ import { SetupReport, SeedApplyResult } from './lib/types';
 function parseArgs(argv: string[]) {
   const args = argv.slice(2);
   let stage: string | undefined;
+  let deployment: string | undefined;
   let yes = false;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--stage' && args[i + 1]) {
       stage = args[++i];
+    } else if (args[i] === '--deployment' && args[i + 1]) {
+      deployment = args[++i];
     } else if (args[i] === '--yes' || args[i] === '--non-interactive') {
       yes = true;
     }
   }
 
-  return { stage, yes };
+  return { stage, deployment, yes };
 }
 
 // ─── SST shell re-exec ─────────────────────────────────────────
@@ -43,15 +47,19 @@ function isInsideSstShell(): boolean {
   return Object.keys(process.env).some((k) => k.startsWith('SST_RESOURCE_'));
 }
 
-function reExecViaSstShell(stage: string): never {
-  // Re-run this same script inside sst shell, forwarding all args
+function reExecViaSstShell(stage: string, deployment?: string): never {
+  // Determine cwd: for named deployments, run sst from deployments/<name>/
+  const sstCwd = deployment ? `deployments/${deployment}` : undefined;
+
   const args = process.argv.slice(2).join(' ');
+  const cwdLabel = sstCwd ? ` (cwd: ${sstCwd})` : '';
   const cmd = `sst shell --stage ${stage} -- npx tsx ${process.argv[1]} ${args}`;
-  console.log(chalk.gray(`  $ ${cmd}\n`));
+  console.log(chalk.gray(`  $ ${cmd}${cwdLabel}\n`));
 
   const child = spawn('sst', ['shell', '--stage', stage, '--', 'npx', 'tsx', process.argv[1], ...process.argv.slice(2)], {
     stdio: 'inherit',
     env: process.env,
+    cwd: sstCwd,
   });
 
   child.on('exit', (code) => process.exit(code ?? 1));
@@ -114,22 +122,26 @@ async function main() {
       // Re-exec with the selected stage appended
       process.argv.push('--stage', parsed.stage);
     }
-    reExecViaSstShell(parsed.stage);
+    reExecViaSstShell(parsed.stage, parsed.deployment);
     return; // unreachable, but makes TS happy
   }
 
   // We're inside sst shell — run the actual setup
   const startTime = Date.now();
   const isNonInteractive = parsed.yes;
+  const deployment = parsed.deployment;
 
   console.log(chalk.bold.cyan('\n=== Almondyoung Database Setup ==='));
   console.log(chalk.gray(`  ${new Date().toISOString()}`));
   console.log(chalk.gray(`  Stage: ${parsed.stage ?? process.env.SST_STAGE ?? '(unknown)'}`));
+  if (deployment) {
+    console.log(chalk.gray(`  Deployment: ${deployment}`));
+  }
   if (isNonInteractive) {
     console.log(chalk.yellow('  Running in non-interactive mode (--yes)'));
   }
 
-  const options = { yes: isNonInteractive };
+  const options = { yes: isNonInteractive, deployment };
   let databasesCreated: string[] = [];
   let schemasSynced: string[] = [];
   let seedResults: SeedApplyResult[] = [];
