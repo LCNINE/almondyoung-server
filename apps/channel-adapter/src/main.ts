@@ -134,9 +134,13 @@ async function bootstrap() {
   console.log(`Current NODE_ENV: ${process.env.NODE_ENV}`);
   // 테스트 환경을 제외하고 Kafka Consumer 연결 (dev/prod)
   if (process.env.NODE_ENV !== 'test') {
+    // 로컬 개발 시 별도 Consumer Group 사용 (Railway와 파티션 충돌 방지)
+    const isLocal = !process.env.RAILWAY_ENVIRONMENT;
+    const groupId = isLocal ? 'channel-adapter-consumer-local' : 'channel-adapter-consumer';
+
     const consumerOptions = EventsModule.forConsumer({
       streams: [FULFILLMENT_STREAM, PRODUCT_STREAM, MEMBERSHIP_STREAM],
-      groupId: 'channel-adapter-consumer',
+      groupId,
       kafka: createKafkaConfig(),
     });
 

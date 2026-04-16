@@ -55,11 +55,7 @@ export interface CategoryPathResponseDto {
 
 export interface MoveCategoryDto {
   newParentId?: string | null;
-}
-
-export interface ReorderCategoriesDto {
-  parentId?: string | null;
-  categoryIds: string[];
+  sortOrder?: number;
 }
 
 // ===== 제품 마스터 관련 =====

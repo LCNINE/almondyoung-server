@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Move } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -12,6 +13,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useMoveCategory } from '@/lib/services/products/mutations';
 import type { Category } from '@/lib/types/ui/products';
 
 type CategoryMoveButtonProps = {
@@ -21,18 +23,27 @@ type CategoryMoveButtonProps = {
 export function CategoryMoveButton({ category }: CategoryMoveButtonProps) {
   const [open, setOpen] = useState(false);
   const [newParentId, setNewParentId] = useState('');
+  const moveCategory = useMoveCategory();
 
   const handleMove = async () => {
-    console.log('카테고리 이동:', category.id, newParentId);
-    // TODO: 실제 API 호출
-    setOpen(false);
+    try {
+      await moveCategory.mutateAsync({
+        id: category.id,
+        newParentId: newParentId.trim() || undefined,
+      });
+      toast.success('카테고리가 이동되었습니다.');
+      setOpen(false);
+      setNewParentId('');
+    } catch (error) {
+      toast.error('카테고리 이동에 실패했습니다.');
+    }
   };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <button
-          className="p-1 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded"
+          className="p-1 text-purple-600 rounded hover:text-purple-800 hover:bg-purple-50"
           onClick={(e) => e.stopPropagation()}
           aria-label="이동"
         >
@@ -45,7 +56,7 @@ export function CategoryMoveButton({ category }: CategoryMoveButtonProps) {
         </DialogHeader>
         <div className="space-y-4">
           <div>
-            <p className="text-sm text-gray-600 mb-2">
+            <p className="mb-2 text-sm text-gray-600">
               이동할 카테고리: <strong>{category.name}</strong>
             </p>
           </div>
@@ -68,7 +79,9 @@ export function CategoryMoveButton({ category }: CategoryMoveButtonProps) {
             >
               취소
             </Button>
-            <Button onClick={handleMove}>이동</Button>
+            <Button onClick={handleMove} disabled={moveCategory.isPending}>
+              {moveCategory.isPending ? '이동 중...' : '이동'}
+            </Button>
           </div>
         </div>
       </DialogContent>
