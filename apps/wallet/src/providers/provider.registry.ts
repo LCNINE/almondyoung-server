@@ -1,10 +1,11 @@
-import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PaymentProvider } from './payment-provider.interface';
 import { PointsPaymentProvider } from './points/points.provider';
 import { TossPaymentProvider } from './toss/toss.provider';
 import { TossBillingProvider } from './toss/toss-billing.provider';
 import { BankTransferPaymentProvider } from './bank-transfer/bank-transfer.provider';
 import { NicepayPaymentProvider } from './nicepay/nicepay.provider';
+import { NicepayBillingProvider } from './nicepay/nicepay-billing.provider';
 import { CmsBatchProvider } from '../cms/cms-batch.provider';
 
 export type ProviderKind = 'gateway' | 'ledger';
@@ -24,6 +25,7 @@ export class ProviderRegistry {
     bankTransferProvider: BankTransferPaymentProvider,
     nicepayProvider: NicepayPaymentProvider,
     @Optional() tossBillingProvider?: TossBillingProvider,
+    @Optional() nicepayBillingProvider?: NicepayBillingProvider,
     @Optional() cmsBatchProvider?: CmsBatchProvider,
   ) {
     this.register(pointsProvider, { kind: 'ledger' });
@@ -32,6 +34,9 @@ export class ProviderRegistry {
     this.register(nicepayProvider, { kind: 'gateway' });
     if (tossBillingProvider) {
       this.register(tossBillingProvider, { kind: 'gateway' });
+    }
+    if (nicepayBillingProvider) {
+      this.register(nicepayBillingProvider, { kind: 'gateway' });
     }
     if (cmsBatchProvider) {
       this.register(cmsBatchProvider, { kind: 'gateway' });

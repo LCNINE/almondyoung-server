@@ -15,7 +15,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { WalletJwtAuth } from '../wallet-auth.decorator';
 import { AuthenticatedRequest } from '../wallet.module';
 import { BillingMethodService } from './billing-method.service';
-import { BillingMethodResponseDto, IssueTossBillingKeyDto, RegisterCmsBillingMethodDto } from './dto';
+import { BillingMethodResponseDto, IssueNicepayBillingKeyDto, IssueTossBillingKeyDto, RegisterCmsBillingMethodDto } from './dto';
 import { BillingMethod } from '../types';
 
 @ApiTags('Billing Methods')
@@ -34,6 +34,30 @@ export class BillingMethodController {
     const userId = req.jwtUserId!;
     try {
       const method = await this.service.issueTossBillingKey(userId, dto.authKey, dto.customerKey);
+      return this.toResponse(method);
+    } catch (e: any) {
+      const msg = (e?.message ?? '').toLowerCase();
+      if (msg.includes('failed')) throw new BadRequestException(e.message);
+      throw new InternalServerErrorException(e.message);
+    }
+  }
+
+  @Post('nicepay')
+  @HttpCode(201)
+  @WalletJwtAuth()
+  @ApiOperation({ summary: 'NicePay 빌링키 발급 (POST /v1/subscribe/regist)' })
+  async issueNicepayBillingKey(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: IssueNicepayBillingKeyDto,
+  ): Promise<BillingMethodResponseDto> {
+    const userId = req.jwtUserId!;
+    try {
+      const method = await this.service.issueNicepayBillingKey(userId, dto.encData, dto.orderId, {
+        encMode: dto.encMode,
+        buyerName: dto.buyerName,
+        buyerEmail: dto.buyerEmail,
+        buyerTel: dto.buyerTel,
+      });
       return this.toResponse(method);
     } catch (e: any) {
       const msg = (e?.message ?? '').toLowerCase();

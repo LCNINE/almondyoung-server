@@ -92,6 +92,10 @@ import { CheckoutSessionExpirationService } from './checkout/checkout-session-ex
 // Toss Billing Provider
 import { TossBillingProvider } from './providers/toss/toss-billing.provider';
 
+// NicePay Billing Provider
+import { NicepayBillingApiClient } from './providers/nicepay/nicepay-billing-api.client';
+import { NicepayBillingProvider } from './providers/nicepay/nicepay-billing.provider';
+
 // CMS
 import { CmsApiClient } from './cms/cms-api.client';
 import { CmsMemberService } from './cms/cms-member.service';
@@ -405,6 +409,8 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     BankTransferPaymentProvider,
     NicepayAuthService,
     NicepayPaymentProvider,
+    NicepayBillingApiClient,
+    NicepayBillingProvider,
     TossBillingProvider,
     ProviderRegistry,
 
