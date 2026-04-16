@@ -112,6 +112,7 @@ export class SubscriptionService {
     planId: string,
     returnUrl: string,
     email?: string,
+    billingMode?: 'one_time' | 'recurring',
   ): Promise<{ intentId: string }> {
     const existing = await this.entitlementService.getUserEntitlement(userId);
     if (existing) throw new ActiveSubscriptionExistsException();
@@ -127,6 +128,7 @@ export class SubscriptionService {
       returnUrl,
       currency: planDetails.plan.currency ?? 'KRW',
       email,
+      billingMode,
     });
   }
 
