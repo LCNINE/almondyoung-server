@@ -2,7 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DbService } from '@app/db';
 import { inboxEvents } from '../../schema';
-import { eq, and, lte, notInArray } from 'drizzle-orm';
+import { eq, and, lte, notInArray, gt, inArray } from 'drizzle-orm';
 import { v7 } from 'uuid';
 import { PimMedusaSyncService } from './pim-medusa-sync.service';
 import { MembershipMedusaSyncService } from './membership-medusa-sync.service';
@@ -117,11 +117,41 @@ export class InboxWorkerService implements OnModuleInit {
   private async doProcessInboxEvent(event: any): Promise<void> {
     const eventId = event.id;
     const eventType = event.eventType;
+    const aggregateId = event.aggregateId;
 
     try {
       this.logger.debug(`Processing inbox event: ${eventId} (type: ${eventType})`);
 
-      // 상태를 processing으로 변경 (동시성 제어)
+      //  aggregateId + eventType의 더 최신 이벤트가 있으면 현재 이벤트 스킵
+      const [newerEvent] = await this.dbService.db
+        .select({ id: inboxEvents.id })
+        .from(inboxEvents)
+        .where(
+          and(
+            eq(inboxEvents.aggregateId, aggregateId),
+            eq(inboxEvents.eventType, eventType),
+            gt(inboxEvents.createdAt, event.createdAt),
+            inArray(inboxEvents.status, ['pending', 'processing']),
+          ),
+        )
+        .limit(1);
+
+      if (newerEvent) {
+        // 더 최신 이벤트가 있으므로 현재 이벤트는 스킵
+        await this.dbService.db
+          .update(inboxEvents)
+          .set({
+            status: 'published',
+            publishedAt: new Date(),
+            errorMessage: `Superseded by newer event (aggregateId: ${aggregateId})`,
+          })
+          .where(eq(inboxEvents.id, eventId));
+
+        this.logger.log(`Inbox event superseded: ${eventId} (newer event exists for ${aggregateId})`);
+        return;
+      }
+
+      // 상태를 processing으로 변경 (동시 처리 방지)
       await this.dbService.db.update(inboxEvents).set({ status: 'processing' }).where(eq(inboxEvents.id, eventId));
 
       // Route based on event type
