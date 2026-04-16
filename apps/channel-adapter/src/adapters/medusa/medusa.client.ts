@@ -139,10 +139,18 @@ export class MedusaClient {
   private async findCategoryByPimId(pimCategoryId: string): Promise<HttpTypes.AdminProductCategory | null> {
     try {
       // 카테고리가 많을 수 있으므로 충분히 큰 limit 사용
+      // metadata 필드를 명시적으로 요청해야 반환됨
       const { product_categories } = await this.sdk.admin.productCategory.list({
         limit: 1000,
+        fields: '+metadata',
       });
-      return product_categories?.find((c) => (c.metadata as any)?.pimCategoryId === pimCategoryId) || null;
+      const found = product_categories?.find((c) => (c.metadata as any)?.pimCategoryId === pimCategoryId) || null;
+      if (found) {
+        this.logger.debug(
+          `findCategoryByPimId: found category ${found.id} (handle: ${found.handle}) for pimCategoryId: ${pimCategoryId}`,
+        );
+      }
+      return found;
     } catch (error) {
       const fetchError = error as FetchError;
       this.logger.warn(`Medusa findCategoryByPimId failed for ${pimCategoryId}: ${fetchError.message}`);
@@ -270,23 +278,24 @@ export class MedusaClient {
       parentMedusaId = null;
       this.logger.log(`[DEBUG] PIM parentId is null - will remove parent in Medusa`);
     } else if (categorySnapshot.parentId) {
-      // handle(UUID 또는 slug)로 먼저 조회, 없으면 metadata.pimCategoryId로 fallback
+      // pimCategoryId(metadata)로 먼저 조회, 없으면 handle로 fallback
       const existingParent =
-        (await this.findCategoryByCandidateHandles(categorySnapshot.parentId)) ||
-        (await this.findCategoryByPimId(categorySnapshot.parentId));
+        (await this.findCategoryByPimId(categorySnapshot.parentId)) ||
+        (await this.findCategoryByCandidateHandles(categorySnapshot.parentId));
       if (existingParent?.id) {
         parentMedusaId = existingParent.id;
         this.logger.log(
-          `[DEBUG] Found Medusa parent: ${parentMedusaId} for PIM parentId: ${categorySnapshot.parentId}`,
+          `[DEBUG] Found Medusa parent: ${parentMedusaId} (handle: ${existingParent.handle}) for PIM parentId: ${categorySnapshot.parentId}`,
         );
       } else {
         this.logger.warn(`Parent category ${categorySnapshot.parentId} not found in Medusa, creating without parent`);
       }
     }
 
+    // pimCategoryId(metadata)로 먼저 조회, 없으면 handle로 fallback
     const existing =
-      (await this.findCategoryByCandidateHandles(preferredHandle, legacyHandle)) ||
-      (await this.findCategoryByPimId(categorySnapshot.id));
+      (await this.findCategoryByPimId(categorySnapshot.id)) ||
+      (await this.findCategoryByCandidateHandles(preferredHandle, legacyHandle));
     if (existing?.id) {
       const verified = await this.getCategoryById(existing.id);
       if (!verified) {
@@ -309,11 +318,11 @@ export class MedusaClient {
           },
         };
         this.logger.log(
-          `[DEBUG] Updating Medusa category ${existing.id} with parent_category_id: ${parentMedusaId ?? 'undefined'}`,
+          `[DEBUG] Updating Medusa category ${existing.id} with payload: ${JSON.stringify(updatePayload)}`,
         );
         try {
-          await this.sdk.admin.productCategory.update(existing.id, updatePayload);
-          this.logger.log(`[DEBUG] Successfully updated Medusa category ${existing.id}`);
+          const updateResult = await this.sdk.admin.productCategory.update(existing.id, updatePayload);
+          this.logger.log(`[DEBUG] Successfully updated Medusa category ${existing.id}, result rank: ${updateResult?.product_category?.rank}`);
         } catch (err) {
           const fetchError = err as FetchError;
           this.logger.warn(
