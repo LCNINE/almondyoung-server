@@ -10,6 +10,9 @@ export * from '@packages/event-contracts/types';
 // Module
 export * from './events.module';
 
+// Kafka Config Builder
+export { createKafkaConfigFromEnv } from './kafka-config.util';
+
 // Publisher
 export * from './publishers/stream-publisher.service';
 

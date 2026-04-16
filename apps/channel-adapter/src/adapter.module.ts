@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import * as os from 'os';
 import { HttpModule } from '@nestjs/axios';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ClsModule } from 'nestjs-cls';
@@ -9,6 +8,7 @@ import {
   EventChainService,
   EventTrackingService,
   EventTraceApiModule,
+  createKafkaConfigFromEnv,
 } from '@app/events';
 import { NaverSmartstoreAdapter } from './adapters/naver/naver-smartstore.adapter';
 import { CoupangAdapter } from './adapters/coupang/coupang.adapter';
@@ -76,44 +76,6 @@ import { CHANNEL_ORDER_PROVIDER } from './services/order-collection/channel-orde
 import { MedusaOrderProvider } from './services/order-collection/medusa-order.provider';
 import { OrderPollerOrchestrator } from './services/order-collection/order-poller.orchestrator';
 
-// Kafka 설정 생성 함수 (운영 환경 전용)
-function createKafkaConfig() {
-  // 필수 환경변수 검증
-  const prefix = process.env.KAFKA_CLIENT_ID_PREFIX;
-  if (!prefix) {
-    throw new Error('KAFKA_CLIENT_ID_PREFIX 환경변수가 필요합니다.');
-  }
-
-  const brokers = process.env.KAFKA_BROKERS;
-  if (!brokers) {
-    throw new Error('KAFKA_BROKERS 환경변수가 필요합니다.');
-  }
-
-  const groupId = process.env.KAFKA_GROUP_ID;
-  if (!groupId) {
-    throw new Error('KAFKA_GROUP_ID 환경변수가 필요합니다.');
-  }
-
-  return {
-    clientId: `${prefix}_${os.hostname()}`,
-    brokers: brokers.split(','),
-    groupId,
-    retry: {
-      retries: 5,
-      initialRetryTime: 300,
-    },
-    ssl: process.env.KAFKA_API_KEY ? true : false,
-    sasl:
-      process.env.KAFKA_API_KEY && process.env.KAFKA_API_SECRET
-        ? {
-            mechanism: 'plain' as const,
-            username: process.env.KAFKA_API_KEY,
-            password: process.env.KAFKA_API_SECRET,
-          }
-        : undefined,
-  };
-}
-
 @Module({
   imports: [
     ClsModule.forRoot({ global: true, middleware: { mount: false } }),
@@ -146,7 +108,7 @@ function createKafkaConfig() {
               PAYMENT_STREAM,
             ],
             serviceName: 'channel-adapter',
-            kafka: createKafkaConfig(),
+            kafka: createKafkaConfigFromEnv()!,
             validation: {
               validateOnPublish: true,
               throwOnValidationError: true,
