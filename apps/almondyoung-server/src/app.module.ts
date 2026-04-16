@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { DbModule } from '@app/db';
 import { AuthorizationModule } from '@app/authorization';
 import { validateAlmondyoungEnv } from './config/env.validation';
@@ -20,10 +20,10 @@ import { FulfillmentModule } from './modules/fulfillment/fulfillment.module';
       validate: validateAlmondyoungEnv,
       envFilePath: ['.env', 'apps/almondyoung-server/.env'],
     }),
-    DbModule.forRoot({
-      config: {
-        connectionString: process.env.DATABASE_URL ?? '',
-      },
+    DbModule.forRootAsync({
+      useFactory: (configService: ConfigService) => ({
+        connectionString: configService.get<string>('DATABASE_URL') ?? '',
+      }),
       schema: mergedSchema,
     }),
     AuthorizationModule.forRoot({

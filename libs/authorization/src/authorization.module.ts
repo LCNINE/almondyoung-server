@@ -1,5 +1,5 @@
 import { Module, DynamicModule, Global } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { PassportModule } from '@nestjs/passport';
 import { AuthorizationService } from './services/authorization.service';
 import { AuthenticationService } from './services/authentication.service';
@@ -19,7 +19,7 @@ export class AuthorizationModule {
   static forRoot(options: AuthorizationModuleOptions): DynamicModule {
     return {
       module: AuthorizationModule,
-      imports: [PassportModule.register({ defaultStrategy: 'jwt' })],
+      imports: [ConfigModule, PassportModule.register({ defaultStrategy: 'jwt' })],
       providers: [
         {
           provide: AUTHORIZATION_OPTIONS,

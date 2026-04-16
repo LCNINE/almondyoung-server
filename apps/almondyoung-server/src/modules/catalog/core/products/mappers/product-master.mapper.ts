@@ -10,7 +10,7 @@ import {
   ChannelProductEntity,
 } from '../../../schema/catalog.schema.types';
 import { ProductImageDto } from '../dto/products/product-image.dto';
-import { ProductMasterWithVersion } from 'apps/pim/src/types';
+import { ProductMasterWithVersion } from '../../../catalog.types';
 
 /**
  * Mapper for ProductMaster DTOs

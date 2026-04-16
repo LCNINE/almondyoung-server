@@ -1,8 +1,9 @@
 import chalk from 'chalk';
 import { checkbox, input, password } from '@inquirer/prompts';
 import { buildDatabaseUrl } from '../lib/db-connection';
+import { getServiceRegistry } from '../lib/service-registry';
 import { Logger } from '../lib/logger';
-import { SeedCheckResult, SeedApplyResult, SeedCheckItem } from '../lib/types';
+import { SeedCheckResult, SeedApplyResult, SeedCheckItem, ServiceConfig } from '../lib/types';
 import { SeedStep } from '../steps/base-seed-step';
 import { WmsSeedStep } from '../steps/wms.seed-step';
 import { PimSeedStep } from '../steps/pim.seed-step';
@@ -13,7 +14,7 @@ import { NotificationSeedStep } from '../steps/notification.seed-step';
 
 const logger = new Logger('Seeding');
 
-async function collectConfig(options: { yes: boolean }) {
+async function collectConfig(options: { yes: boolean; deployment?: string }) {
   // Admin password
   let adminPassword: string;
   if (options.yes) {
@@ -66,21 +67,68 @@ function printCheckResult(result: SeedCheckResult): void {
   }
 }
 
-export async function runSeeding(options: { yes: boolean }): Promise<SeedApplyResult[]> {
+/**
+ * Registry 기반으로 seed step 목록을 생성.
+ * - 서비스가 registry에 있고 hasSeedStep=true인 경우만 생성
+ * - almondyoung-server가 hasSeedStep=true인 경우 (df 배포) WMS/PIM 시딩을 해당 DB로 연결
+ */
+function buildSeedSteps(
+  registry: ServiceConfig[],
+  config: Awaited<ReturnType<typeof collectConfig>>,
+): SeedStep[] {
+  const steps: SeedStep[] = [];
+  const registryMap = new Map(registry.map((s) => [s.name, s]));
+
+  // almondyoung-server가 hasSeedStep=true면 WMS/PIM이 흡수된 것 (df 배포)
+  const ayEntry = registryMap.get('almondyoung-server');
+  if (ayEntry?.hasSeedStep) {
+    const coreDbUrl = buildDatabaseUrl(ayEntry.database);
+    steps.push(new WmsSeedStep(coreDbUrl));
+    steps.push(new PimSeedStep(coreDbUrl));
+  } else {
+    // Root 배포: WMS/PIM이 별도 서비스
+    const wmsEntry = registryMap.get('wms');
+    if (wmsEntry?.hasSeedStep) {
+      steps.push(new WmsSeedStep(buildDatabaseUrl(wmsEntry.database)));
+    }
+    const pimEntry = registryMap.get('pim');
+    if (pimEntry?.hasSeedStep) {
+      steps.push(new PimSeedStep(buildDatabaseUrl(pimEntry.database)));
+    }
+  }
+
+  const userEntry = registryMap.get('user-service');
+  if (userEntry?.hasSeedStep) {
+    steps.push(new UserServiceSeedStep(buildDatabaseUrl(userEntry.database), config.adminPassword));
+  }
+
+  const membershipEntry = registryMap.get('membership');
+  if (membershipEntry?.hasSeedStep) {
+    steps.push(new MembershipSeedStep(buildDatabaseUrl(membershipEntry.database)));
+  }
+
+  const fileEntry = registryMap.get('file-service');
+  if (fileEntry?.hasSeedStep) {
+    steps.push(new FileServiceSeedStep(buildDatabaseUrl(fileEntry.database), config.fileService));
+  }
+
+  const notifEntry = registryMap.get('notification');
+  if (notifEntry?.hasSeedStep) {
+    steps.push(new NotificationSeedStep(buildDatabaseUrl(notifEntry.database), config.notification));
+  }
+
+  return steps;
+}
+
+export async function runSeeding(options: { yes: boolean; deployment?: string }): Promise<SeedApplyResult[]> {
   console.log(chalk.bold.cyan('\nPhase 3: Seed Data'));
   console.log(chalk.cyan('─'.repeat(40)));
 
   const config = await collectConfig(options);
+  const registry = getServiceRegistry(options.deployment);
 
-  // Create all seed steps
-  const steps: SeedStep[] = [
-    new WmsSeedStep(buildDatabaseUrl('wms')),
-    new PimSeedStep(buildDatabaseUrl('pim')),
-    new UserServiceSeedStep(buildDatabaseUrl('user_service'), config.adminPassword),
-    new MembershipSeedStep(buildDatabaseUrl('membership')),
-    new FileServiceSeedStep(buildDatabaseUrl('file_service'), config.fileService),
-    new NotificationSeedStep(buildDatabaseUrl('notification'), config.notification),
-  ];
+  // Create seed steps based on registry
+  const steps = buildSeedSteps(registry, config);
 
   try {
     // Phase 1: Check all

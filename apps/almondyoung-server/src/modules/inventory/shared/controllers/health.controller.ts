@@ -4,7 +4,7 @@ import { Public } from '@app/authorization';
 import { HealthService } from '../services/health.service';
 
 @ApiTags('Health')
-@Controller('health')
+@Controller('inventory/health')
 export class HealthController {
   constructor(private readonly healthService: HealthService) {}
 

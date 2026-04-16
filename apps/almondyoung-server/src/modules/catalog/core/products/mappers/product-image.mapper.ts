@@ -1,4 +1,4 @@
-import { ProductImageEntity } from 'apps/pim/src/schema.types';
+import { ProductImageEntity } from '../../../schema/catalog.schema.types';
 import { DateMapper } from '../../../common/mappers';
 import { ProductImageDto } from '../dto/products/product-image.dto';
 

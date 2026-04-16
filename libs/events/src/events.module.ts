@@ -353,39 +353,12 @@ export class EventsModule {
   }
 
   /**
-   * 환경변수에서 KafkaConfig 생성 (헬퍼 메서드)
+   * @deprecated Use createKafkaConfigFromEnv() from kafka-config.util.ts directly
    */
   private static createKafkaConfigFromEnv(): KafkaConfig {
-    const brokers = (process.env.KAFKA_BROKERS || '').split(',').map((b) => b.trim());
-
-    const config: KafkaConfig = {
-      clientId: process.env.KAFKA_CLIENT_ID || process.env.SERVICE_NAME || '',
-      brokers,
-      retry: {
-        retries: 5,
-        initialRetryTime: 300,
-        multiplier: 2,
-        maxRetryTime: 30000,
-      },
-    };
-
-    // Confluent Cloud / SASL 설정
-    // KAFKA_API_KEY/SECRET (신규 표준) 또는 KAFKA_SASL_USERNAME/PASSWORD (하위 호환)
-    const apiKey = process.env.KAFKA_API_KEY || process.env.KAFKA_SASL_USERNAME;
-    const apiSecret = process.env.KAFKA_API_SECRET || process.env.KAFKA_SASL_PASSWORD;
-
-    if (apiKey && apiSecret) {
-      config.ssl = true;
-      config.sasl = {
-        mechanism: 'plain',
-        username: apiKey,
-        password: apiSecret,
-      };
-    } else if (process.env.KAFKA_SSL === 'true') {
-      config.ssl = true;
-    }
-
-    return config;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { createKafkaConfigFromEnv: buildConfig } = require('./kafka-config.util');
+    return buildConfig() as KafkaConfig;
   }
 
   /**

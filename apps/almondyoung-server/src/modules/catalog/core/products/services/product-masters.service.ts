@@ -42,7 +42,7 @@ import { VariantPriceCacheService } from '../../pricing/variant-price-cache.serv
 import { v7 as uuidv7 } from 'uuid';
 import { ProductVersionDto } from '../dto/entities/master-version.entity';
 import { MasterProductWithPrimaryVersionDto } from '../dto/products/product-response.dto';
-import { ProductMasterVersionEntity } from 'apps/pim/src/schema.types';
+import { ProductMasterVersionEntity } from '../../../schema/catalog.schema.types';
 import { ProductReadAssembler } from '../assemblers/product-read.assembler';
 import { ProductMatchingService } from '../../../../product-matching/services/product-matching.service';
 

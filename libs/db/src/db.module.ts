@@ -1,8 +1,14 @@
 import { Module, DynamicModule } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { DbService, DbConfig, DB_CONNECTION, DB_SCHEMA } from './db.service';
 
 export interface DbModuleOptions<TSchema extends Record<string, unknown>> {
   config: DbConfig;
+  schema: TSchema;
+}
+
+export interface DbModuleAsyncOptions<TSchema extends Record<string, unknown>> {
+  useFactory: (configService: ConfigService) => DbConfig;
   schema: TSchema;
 }
 
@@ -26,7 +32,31 @@ export class DbModule {
         },
       ],
       exports: [DbService],
-      global: true, // 각 마이크로서비스에서 명시적으로 import하도록
+      global: true,
+    };
+  }
+
+  static forRootAsync<TSchema extends Record<string, unknown>>(options: DbModuleAsyncOptions<TSchema>): DynamicModule {
+    return {
+      module: DbModule,
+      imports: [ConfigModule],
+      providers: [
+        {
+          provide: DB_CONNECTION,
+          useFactory: options.useFactory,
+          inject: [ConfigService],
+        },
+        {
+          provide: DB_SCHEMA,
+          useValue: options.schema,
+        },
+        {
+          provide: DbService,
+          useClass: DbService,
+        },
+      ],
+      exports: [DbService],
+      global: true,
     };
   }
 }
