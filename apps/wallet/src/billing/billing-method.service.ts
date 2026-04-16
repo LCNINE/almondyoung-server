@@ -106,10 +106,15 @@ export class BillingMethodService {
       }
     }
 
-    await this.dbService.db
+    const updated = await this.dbService.db
       .update(billingMethods)
       .set({ status: 'REVOKED', updatedAt: new Date() })
-      .where(eq(billingMethods.id, billingMethodId));
+      .where(and(eq(billingMethods.id, billingMethodId), eq(billingMethods.status, 'ACTIVE')))
+      .returning({ id: billingMethods.id });
+
+    if (updated.length === 0) {
+      throw new Error('billing method not found or already inactive');
+    }
   }
 
   async getBillingKey(billingMethodId: string): Promise<string> {
