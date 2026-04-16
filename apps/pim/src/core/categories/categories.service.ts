@@ -355,12 +355,30 @@ export class ProductCategoriesService {
       const newLevel = newParentCategory ? newParentCategory.level + 1 : 0;
       const newPath = newParentCategory ? `${newParentCategory.path}/${categoryId}` : categoryId;
 
+      // 새 부모 아래의 최대 sortOrder 조회하여 마지막에 배치 (자기 자신 제외)
+      const [maxSortOrderResult] = await txn
+        .select({
+          maxSortOrder: sql<number>`COALESCE(MAX(${pimSchema.productCategories.sortOrder}), -1)`,
+        })
+        .from(pimSchema.productCategories)
+        .where(
+          and(
+            newParentId
+              ? eq(pimSchema.productCategories.parentId, newParentId)
+              : isNull(pimSchema.productCategories.parentId),
+            sql`${pimSchema.productCategories.id} != ${categoryId}`,
+          ),
+        );
+
+      const newSortOrder = (maxSortOrderResult?.maxSortOrder ?? -1) + 1;
+
       const [updatedCategory] = await txn
         .update(pimSchema.productCategories)
         .set({
           parentId: newParentId || null,
           level: newLevel,
           path: newPath,
+          sortOrder: newSortOrder,
           updatedAt: new Date(),
         })
         .where(eq(pimSchema.productCategories.id, categoryId))
