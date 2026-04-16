@@ -322,17 +322,6 @@ export function CategoryTable() {
           )}
         </Table.Body>
       </Table>
-      <Table.Pagination
-        count={flattenedCategories.length}
-        pageSize={PAGE_SIZE}
-        pageIndex={pageIndex}
-        pageCount={pageCount}
-        canPreviousPage={table.getCanPreviousPage()}
-        canNextPage={table.getCanNextPage()}
-        previousPage={() => table.previousPage()}
-        nextPage={() => table.nextPage()}
-        goPage={(idx) => table.setPageIndex(idx)}
-      />
     </div>
   );
 }
