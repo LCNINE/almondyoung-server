@@ -60,6 +60,7 @@ export interface MembershipCheckoutIntentRequest {
   returnUrl: string;
   currency?: string;
   email?: string;
+  billingMode?: 'one_time' | 'recurring';
 }
 
 export interface WalletPaymentIntentResponse {
@@ -140,6 +141,7 @@ export class PaymentClientService {
               planId: request.planId,
               userId: request.userId,
               ...(request.email ? { email: request.email } : {}),
+              ...(request.billingMode ? { billingMode: request.billingMode } : {}),
             },
           },
           {

@@ -185,7 +185,7 @@ export class SubscriptionController {
       throw new BadRequestException('userId가 필요합니다');
     }
 
-    return this.subscriptionService.createCheckoutIntent(userId, dto.planId, dto.returnUrl, user?.email);
+    return this.subscriptionService.createCheckoutIntent(userId, dto.planId, dto.returnUrl, user?.email, dto.billingMode);
   }
 
   /**

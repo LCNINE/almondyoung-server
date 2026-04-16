@@ -65,6 +65,7 @@ export const CreateSubscriptionRequestSchema = z.object({
 export const CreateCheckoutIntentRequestSchema = z.object({
   planId: z.string().min(1, { error: 'planId는 필수입니다' }),
   returnUrl: z.url({ error: '유효한 returnUrl이어야 합니다' }),
+  billingMode: z.enum(['one_time', 'recurring']).optional(),
 });
 
 export const ConfirmCheckoutIntentRequestSchema = z.object({
