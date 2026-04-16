@@ -1,7 +1,7 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger, NotFoundException } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
-import { eq, inArray, sql, and, desc } from 'drizzle-orm';
+import { eq, inArray, sql, and, desc, isNull } from 'drizzle-orm';
 import { UpsertMatchingDto } from '../dto/upsert-matching.dto';
 
 @Injectable()
@@ -169,6 +169,95 @@ export class ProductSkuMappingService {
 
       this.logger.log(`Created mapping snapshot for variantId=${variantId}: snapshotId=${snapshot.id}`);
       return snapshot.id;
+    }, tx);
+  }
+
+  async getActiveMapping(
+    productId: string,
+    warehouseId: string,
+    tx?: DbTx,
+  ): Promise<{
+    id: string;
+    productId: string;
+    warehouseId: string;
+    version: number;
+    isActive: boolean;
+    mappings: Array<{ variantId: string; skuId: string; quantity: number }>;
+  } | null> {
+    return this.inTx(async (trx) => {
+      const mappings = await trx
+        .select()
+        .from(wmsTables.productSkuMappings)
+        .where(
+          and(
+            eq(wmsTables.productSkuMappings.productId, productId),
+            eq(wmsTables.productSkuMappings.warehouseId, warehouseId),
+            eq(wmsTables.productSkuMappings.isActive, true),
+          ),
+        )
+        .orderBy(desc(wmsTables.productSkuMappings.version))
+        .limit(1);
+
+      const mapping = mappings[0];
+      if (!mapping) return null;
+
+      const items = await trx
+        .select()
+        .from(wmsTables.productSkuMappingItems)
+        .where(eq(wmsTables.productSkuMappingItems.mappingId, mapping.id));
+
+      return {
+        id: mapping.id,
+        productId: mapping.productId,
+        warehouseId: mapping.warehouseId,
+        version: mapping.version,
+        isActive: mapping.isActive,
+        mappings: items.map((item) => ({
+          variantId: item.variantId,
+          skuId: item.skuId,
+          quantity: item.qtyPerProduct,
+        })),
+      };
+    }, tx);
+  }
+
+  async getMappingSnapshot(
+    snapshotId: string,
+    tx?: DbTx,
+  ): Promise<{
+    id: string;
+    productId: string;
+    version: number;
+    effectiveFrom: Date;
+    isActive: boolean;
+    warehouseId: string;
+    mappings: Array<{ variantId: string; skuId: string; quantity: number }>;
+  }> {
+    return this.inTx(async (trx) => {
+      const snapshots = await trx
+        .select()
+        .from(wmsTables.productSkuMappingSnapshots)
+        .where(eq(wmsTables.productSkuMappingSnapshots.id, snapshotId))
+        .limit(1);
+      const snapshot = snapshots[0];
+      if (!snapshot) {
+        throw new NotFoundException(`Mapping snapshot with ID ${snapshotId} not found`);
+      }
+      const data = snapshot.snapshotData as { items: Array<{ skuId: string; qtyPerProduct: number }> };
+      const items = data?.items || [];
+      return {
+        id: snapshot.id,
+        productId: snapshot.productId,
+        version: snapshot.sourceVersion,
+        effectiveFrom: snapshot.createdAt,
+        isActive: true,
+        warehouseId: snapshot.warehouseId,
+        mappings: items.map((item) => ({
+          variantId: snapshot.variantId,
+          skuId: item.skuId,
+          quantity: item.qtyPerProduct,
+        })),
+      };
     }, tx);
   }
 

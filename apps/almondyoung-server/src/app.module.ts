@@ -11,7 +11,7 @@ import { CatalogModule } from './modules/catalog/catalog.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { ProductMatchingModule } from './modules/product-matching/product-matching.module';
 import { SalesOrderModule } from './modules/sales-order/sales-order.module';
-// Phase 6: import { FulfillmentModule } from './modules/fulfillment/fulfillment.module';
+import { FulfillmentModule } from './modules/fulfillment/fulfillment.module';
 
 @Module({
   imports: [
@@ -36,7 +36,7 @@ import { SalesOrderModule } from './modules/sales-order/sales-order.module';
     InventoryModule,
     ProductMatchingModule,
     SalesOrderModule,
-    // Phase 6: FulfillmentModule,
+    FulfillmentModule,
   ],
   controllers: [AppController],
   providers: [],
