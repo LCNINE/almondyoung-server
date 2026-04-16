@@ -408,7 +408,7 @@ export class BillingChargeConsumer {
       .insert(paymentMethods)
       .values({
         userId,
-        type: providerType as 'TOSS_BILLING' | 'CMS_BATCH',
+        type: providerType as 'TOSS_BILLING' | 'NICEPAY_BILLING' | 'CMS_BATCH',
         displayName: null,
         isReusable: true,
         isDeleted: false,

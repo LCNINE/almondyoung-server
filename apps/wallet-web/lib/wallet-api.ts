@@ -48,14 +48,9 @@ export interface BillingMethod {
  * cookieHeader: Next.js 서버 컴포넌트에서 호출 시 `cookies().toString()` 값을 전달.
  * 브라우저 클라이언트에서 호출 시 생략하면 credentials: 'include' 사용.
  */
-export async function getPaymentIntent(
-  intentId: string,
-  cookieHeader?: string,
-  apiKey?: string,
-): Promise<PaymentIntent> {
+export async function getPaymentIntent(intentId: string, cookieHeader?: string): Promise<PaymentIntent> {
   const headers: Record<string, string> = {};
   if (cookieHeader) headers['Cookie'] = cookieHeader;
-  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
 
   const res = await fetch(`${BASE_URL}/v1/payment-intents/${intentId}`, {
     headers,
@@ -127,7 +122,7 @@ export async function approveToss(
   paymentKey: string,
   orderId: string,
   amount: number,
-): Promise<{ status: string; returnUrl: string | null }> {
+): Promise<{ status: string; returnUrl: string | null; metadata?: Record<string, unknown> }> {
   const res = await fetch(`${BASE_URL}/v1/payment-intents/${intentId}/toss-approve`, {
     method: 'POST',
     headers: {
@@ -152,7 +147,7 @@ export async function approveNicepay(
   authToken: string,
   clientId: string,
   signature: string,
-): Promise<{ status: string; returnUrl: string | null }> {
+): Promise<{ status: string; returnUrl: string | null; metadata?: Record<string, unknown> }> {
   const res = await fetch(`${BASE_URL}/v1/payment-intents/${intentId}/nicepay-approve`, {
     method: 'POST',
     headers: {
