@@ -5,39 +5,9 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { GlobalExceptionFilter } from '@app/shared';
 import fastifyCookie from '@fastify/cookie';
-import { EventsModule } from '@app/events';
+import { EventsModule, createKafkaConfigFromEnv } from '@app/events';
 import { ORDER_STREAM } from '@packages/event-contracts';
-import * as os from 'os';
 import { AnalyticsModule } from './analytics.module';
-
-function createKafkaConfig() {
-  const prefix = process.env.KAFKA_CLIENT_ID_PREFIX;
-  const brokers = process.env.KAFKA_BROKERS;
-
-  if (!prefix || !brokers) {
-    return null;
-  }
-
-  return {
-    clientId: `${prefix}_${os.hostname()}`,
-    brokers: brokers.split(','),
-    retry: {
-      retries: 5,
-      initialRetryTime: 300,
-      multiplier: 2,
-      maxRetryTime: 30000,
-    },
-    ssl: process.env.KAFKA_API_KEY ? true : false,
-    sasl:
-      process.env.KAFKA_API_KEY && process.env.KAFKA_API_SECRET
-        ? {
-            mechanism: 'plain' as const,
-            username: process.env.KAFKA_API_KEY,
-            password: process.env.KAFKA_API_SECRET,
-          }
-        : undefined,
-  };
-}
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -85,7 +55,7 @@ async function bootstrap() {
       done();
     });
 
-  const kafkaConfig = createKafkaConfig();
+  const kafkaConfig = createKafkaConfigFromEnv();
   if (kafkaConfig) {
     const consumerOptions = EventsModule.forConsumer({
       streams: [ORDER_STREAM],
@@ -97,7 +67,7 @@ async function bootstrap() {
     await app.startAllMicroservices();
     logger.log('Kafka consumer connected (orders.events.v1).');
   } else {
-    logger.warn('Kafka consumer disabled: missing KAFKA_CLIENT_ID_PREFIX or KAFKA_BROKERS.');
+    logger.warn('Kafka consumer disabled: KAFKA_BROKERS not set.');
   }
 
   const port = process.env.PORT ?? 3040;
