@@ -947,26 +947,14 @@ export class ProductCategoriesService {
       }
 
       // 3. sortOrder 업데이트
-      const updatedCategories: ProductCategory[] = [];
       for (let i = 0; i < categoryIds.length; i++) {
-        const [updatedCategory] = await txn
+        await txn
           .update(pimSchema.productCategories)
           .set({
             sortOrder: i,
             updatedAt: new Date(),
           })
-          .where(eq(pimSchema.productCategories.id, categoryIds[i]))
-          .returning();
-
-        if (updatedCategory) {
-          updatedCategories.push(updatedCategory);
-        }
-      }
-
-      // 4. 각 카테고리에 대해 CategoryChanged 이벤트 발행
-      for (const category of updatedCategories) {
-        const snapshot = this.buildCategorySnapshot(category);
-        await this.publishCategoryEvent(category.id, 'updated', snapshot);
+          .where(eq(pimSchema.productCategories.id, categoryIds[i]));
       }
     };
 
@@ -976,41 +964,6 @@ export class ProductCategoriesService {
     } else {
       await this.db.db.transaction(executeReorder);
     }
-  }
-
-  async updateSortOrder(categoryId: string, sortOrder: number, tx?: DbTransaction): Promise<CategoryResponseDto> {
-    const client = this.getClient(tx);
-
-    if (sortOrder < 0) {
-      throw new BadRequestError('Sort order must be non-negative');
-    }
-
-    // 카테고리 존재 확인
-    const [category] = await client
-      .select()
-      .from(pimSchema.productCategories)
-      .where(eq(pimSchema.productCategories.id, categoryId));
-
-    if (!category) {
-      throw new NotFoundError(`Category not found: ${categoryId}`);
-    }
-
-    // sortOrder 업데이트
-    const [updatedCategory] = await client
-      .update(pimSchema.productCategories)
-      .set({
-        sortOrder: sortOrder,
-        updatedAt: new Date(),
-      })
-      .where(eq(pimSchema.productCategories.id, categoryId))
-      .returning();
-
-    // Publish CategoryChanged event
-    const snapshot = this.buildCategorySnapshot(updatedCategory);
-    await this.publishCategoryEvent(categoryId, 'updated', snapshot);
-
-    const responseDto: CategoryResponseDto = CategoryMapper.toDto(updatedCategory);
-    return responseDto;
   }
 
   // 검증 및 유틸리티
