@@ -84,18 +84,18 @@ export class OutboxDispatcherService implements OnModuleInit {
           payload: Record<string, unknown>;
           attempts: number;
         }>(sql`
-          SELECT 
-            id, 
-            event_type, 
-            aggregate_type, 
-            aggregate_id, 
-            partition_key, 
+          SELECT
+            id,
+            event_type,
+            aggregate_type,
+            aggregate_id,
+            partition_key,
             payload,
             attempts
           FROM ${inboxEvents}
           WHERE status = 'pending'
             AND next_attempt_at <= NOW()
-            AND aggregate_type != 'Product'
+            AND aggregate_type = 'ChannelAdapter'
           ORDER BY created_at ASC
           LIMIT ${batchSize}
           FOR UPDATE SKIP LOCKED

@@ -1,5 +1,5 @@
 import { ExceptionFilter, Catch, ArgumentsHost, HttpException, HttpStatus, Logger } from '@nestjs/common';
-import type { Response, Request } from 'express';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import { SubscriptionException } from '../exceptions/subscription.exceptions';
 
 /**
@@ -26,8 +26,8 @@ export class SubscriptionExceptionFilter implements ExceptionFilter {
 
   catch(exception: SubscriptionException, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
-    const response = ctx.getResponse<Response>();
-    const request = ctx.getRequest<Request>();
+    const response = ctx.getResponse<FastifyReply>();
+    const request = ctx.getRequest<FastifyRequest>();
 
     const status = exception.getStatus();
     const exceptionResponse = exception.getResponse() as Record<string, any>;
@@ -49,7 +49,7 @@ export class SubscriptionExceptionFilter implements ExceptionFilter {
       },
     };
 
-    response.status(status).json(errorResponse);
+    response.status(status).send(errorResponse);
   }
 }
 
@@ -62,8 +62,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
   catch(exception: HttpException, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
-    const response = ctx.getResponse<Response>();
-    const request = ctx.getRequest<Request>();
+    const response = ctx.getResponse<FastifyReply>();
+    const request = ctx.getRequest<FastifyRequest>();
 
     const status = exception.getStatus();
     const exceptionResponse = exception.getResponse();
@@ -84,7 +84,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
           : (exceptionResponse as Record<string, any>)?.message || exception.message,
     };
 
-    response.status(status).json(errorResponse);
+    response.status(status).send(errorResponse);
   }
 }
 
@@ -97,8 +97,8 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
-    const response = ctx.getResponse<Response>();
-    const request = ctx.getRequest<Request>();
+    const response = ctx.getResponse<FastifyReply>();
+    const request = ctx.getRequest<FastifyRequest>();
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message = 'Internal server error';
@@ -126,6 +126,6 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       message,
     };
 
-    response.status(status).json(errorResponse);
+    response.status(status).send(errorResponse);
   }
 }
