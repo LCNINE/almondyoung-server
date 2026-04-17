@@ -1,7 +1,7 @@
 import axios, {
   type AxiosError,
   type AxiosInstance,
-  type AxiosRequestConfig,
+  type InternalAxiosRequestConfig,
 } from "axios"
 
 /**
@@ -43,12 +43,80 @@ function getBaseURL(service: ServiceName): string {
   return `http://localhost:${devPort}`
 }
 
-interface RetryConfig extends AxiosRequestConfig {
-  retry: number
-  retryDelay: number
+export const SESSION_EXPIRED_EVENT = "auth:session-expired"
+
+interface RetryConfig extends InternalAxiosRequestConfig {
+  retry?: number
+  retryDelay?: number
+  _retry?: boolean
+  _skipAuthRefresh?: boolean
 }
 
 const RETRY_DEFAULTS = { retry: 2, retryDelay: 1000 }
+
+// 토큰 리프레시 동시성 제어
+let isRefreshing = false
+let refreshSubscribers: Array<(ok: boolean) => void> = []
+
+function notifyRefreshDone(ok: boolean) {
+  const subs = refreshSubscribers
+  refreshSubscribers = []
+  subs.forEach((cb) => cb(ok))
+}
+
+function waitForRefresh(): Promise<boolean> {
+  return new Promise((resolve) => refreshSubscribers.push(resolve))
+}
+
+async function callRestoreToken(): Promise<boolean> {
+  // axios 인터셉터 재진입을 피하기 위해 raw fetch 사용
+  try {
+    const res = await fetch(`${getBaseURL("user")}/auth/restore-token`, {
+      method: "POST",
+      credentials: "include",
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+function applyAuthInterceptor(instance: AxiosInstance) {
+  instance.interceptors.response.use(
+    (response) => response,
+    async (err: AxiosError) => {
+      const config = err.config as RetryConfig | undefined
+      if (!config || config._skipAuthRefresh) return Promise.reject(err)
+
+      if (err.response?.status !== 401 || config._retry) {
+        return Promise.reject(err)
+      }
+
+      config._retry = true
+
+      // 이미 다른 요청이 리프레시 중이면 결과를 기다림
+      if (isRefreshing) {
+        const ok = await waitForRefresh()
+        if (!ok) return Promise.reject(err)
+        return instance(config)
+      }
+
+      isRefreshing = true
+      const ok = await callRestoreToken()
+      isRefreshing = false
+      notifyRefreshDone(ok)
+
+      if (!ok) {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT))
+        }
+        return Promise.reject(err)
+      }
+
+      return instance(config)
+    },
+  )
+}
 
 function applyRetryInterceptor(instance: AxiosInstance) {
   instance.interceptors.response.use(
@@ -56,6 +124,9 @@ function applyRetryInterceptor(instance: AxiosInstance) {
     async (err: AxiosError) => {
       const config = err.config as RetryConfig | undefined
       if (!config) return Promise.reject(err)
+
+      // 401은 auth 인터셉터에서만 처리 (네트워크 retry 대상 아님)
+      if (err.response?.status === 401) return Promise.reject(err)
 
       if (config.retry === undefined) {
         config.retry = RETRY_DEFAULTS.retry
@@ -84,7 +155,11 @@ export function getServiceClient(service: ServiceName): AxiosInstance {
     withCredentials: true,
   })
 
+  // 응답 인터셉터는 등록 순서대로 실행된다.
+  // retry가 먼저 — 401은 통과시키고, 401이 아닌 네트워크 에러만 재시도.
+  // auth가 그 다음 — 통과된 401을 잡아 리프레시 후 원 요청 재실행.
   applyRetryInterceptor(instance)
+  applyAuthInterceptor(instance)
   clients.set(service, instance)
 
   return instance
