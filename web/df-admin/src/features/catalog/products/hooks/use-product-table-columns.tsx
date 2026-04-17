@@ -1,22 +1,29 @@
 import { createColumnHelper } from "@tanstack/react-table"
 import { useMemo } from "react"
 import type { ProductSummaryDto } from "@/lib/types/catalog"
+import type { MasterBatchStat } from "@/lib/types/matching"
 import { DateCell } from "@/components/table-cells/date-cell"
 import { BadgeCell } from "@/components/table-cells/badge-cell"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Badge } from "@/components/ui/badge"
 
 const columnHelper = createColumnHelper<ProductSummaryDto>()
 
 const STATUS_MAP: Record<
   string,
-  { label: string; variant: "default" | "secondary" | "destructive" | "outline" }
+  {
+    label: string
+    variant: "default" | "secondary" | "destructive" | "outline"
+  }
 > = {
   active: { label: "활성", variant: "default" },
   inactive: { label: "비활성", variant: "secondary" },
   draft: { label: "초안", variant: "outline" },
 }
 
-export function useProductTableColumns() {
+export function useProductTableColumns(
+  statsByMasterId?: Record<string, MasterBatchStat>
+) {
   return useMemo(
     () => [
       columnHelper.display({
@@ -74,9 +81,25 @@ export function useProductTableColumns() {
       }),
       columnHelper.accessor("variantCount", {
         header: "변형 수",
-        cell: ({ getValue }) => (
-          <span className="text-sm">{getValue()}</span>
-        ),
+        cell: ({ getValue }) => <span className="text-sm">{getValue()}</span>,
+      }),
+      columnHelper.display({
+        id: "matching-rate",
+        header: "매칭 진행률",
+        cell: ({ row }) => {
+          const stat = statsByMasterId?.[row.original.masterId]
+          if (!stat || stat.totalVariants === 0) {
+            return <span className="text-xs text-muted-foreground">-</span>
+          }
+
+          return (
+            <Badge
+              variant={stat.matchingRate === 100 ? "default" : "secondary"}
+            >
+              {stat.matchedVariants}/{stat.totalVariants}
+            </Badge>
+          )
+        },
       }),
       columnHelper.accessor("priceSummary", {
         header: "가격",
@@ -98,6 +121,6 @@ export function useProductTableColumns() {
         cell: ({ getValue }) => <DateCell value={getValue()} />,
       }),
     ],
-    [],
+    [statsByMasterId]
   )
 }

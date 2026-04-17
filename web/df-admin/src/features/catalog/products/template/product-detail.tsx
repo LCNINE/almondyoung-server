@@ -4,6 +4,7 @@ import { useProduct } from "@/lib/services/catalog/products"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ProductInfoCard } from "../components/product-detail/product-info-card"
+import { ProductMatchingCard } from "../components/product-detail/product-matching-card"
 import { ProductVariantsCard } from "../components/product-detail/product-variants-card"
 import { ProductImagesCard } from "../components/product-detail/product-images-card"
 import { ProductVersionsCard } from "../components/product-detail/product-versions-card"
@@ -64,6 +65,7 @@ export default function ProductDetailTemplate() {
         <div className="space-y-4">
           <ProductInfoCard product={product} />
           <ProductVariantsCard product={product} />
+          <ProductMatchingCard product={product} />
         </div>
         <div className="space-y-4">
           <ProductImagesCard product={product} />
