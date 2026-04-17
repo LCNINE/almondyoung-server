@@ -1,5 +1,9 @@
 import { useState } from "react"
-import { useProducts, useBulkDeleteProducts } from "@/lib/services/catalog/products"
+import {
+  useProducts,
+  useBulkDeleteProducts,
+} from "@/lib/services/catalog/products"
+import { useMastersBatchStats } from "@/lib/services/matching/variant-mapping"
 import { useDataTable } from "@/hooks/use-data-table"
 import { useProductTableColumns } from "../hooks/use-product-table-columns"
 import { useProductTableFilters } from "../hooks/use-product-table-filters"
@@ -13,7 +17,12 @@ const PAGE_SIZE = 20
 export function ProductTable() {
   const { searchParams: query } = useProductTableQuery({ pageSize: PAGE_SIZE })
   const { data, isLoading, isFetching } = useProducts(query)
-  const columns = useProductTableColumns()
+  const masterIds = (data?.data ?? []).map((product) => product.masterId)
+  const { data: matchingStats } = useMastersBatchStats(masterIds)
+  const statsByMasterId = Object.fromEntries(
+    (matchingStats ?? []).map((stat) => [stat.masterId, stat])
+  )
+  const columns = useProductTableColumns(statsByMasterId)
   const filters = useProductTableFilters()
 
   const { table } = useDataTable({

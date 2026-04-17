@@ -52,6 +52,10 @@ export const router = createBrowserRouter([
             path: "inventory/skus/:skuId",
             lazy: () => import("./inventory/sku-detail-page"),
           },
+          {
+            path: "matching/order-lines",
+            lazy: () => import("./matching/order-lines-page"),
+          },
         ],
       },
     ],
