@@ -705,6 +705,149 @@ export class ProductMastersService {
   }
 
   /**
+   * Draft 버전 목록 조회 (버전 단위 flat list)
+   * master 당 draft가 여러 개일 수 있으므로 각 draft version을 개별 row로 반환한다.
+   */
+  async listDraftVersions(
+    filters?: {
+      categoryId?: string;
+      brand?: string;
+      name?: string;
+      page?: number;
+      limit?: number;
+    },
+    tx?: DbTransaction,
+  ): Promise<{
+    data: {
+      product: ProductMasterWithVersion;
+      aggregate: {
+        optionGroupNames: string[];
+        variantCount: number;
+        thumbnail: string | null;
+        priceSummary: PriceSummary | null;
+      };
+    }[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    return this.inTx(async (trx) => {
+      const returnAll = filters?.page === undefined;
+      const page = filters?.page ?? 1;
+      const limit = returnAll ? 99999 : Math.min(filters?.limit ?? 15, 100);
+      const offset = (page - 1) * limit;
+
+      // 카테고리 하위 트리 CTE
+      let categoryIds: string[] | undefined;
+      if (filters?.categoryId) {
+        const categoryTreeResult = await trx.execute<{ id: string }>(sql`
+          WITH RECURSIVE category_tree AS (
+            SELECT id FROM ${productCategories} WHERE id = ${filters.categoryId}
+            UNION ALL
+            SELECT pc.id FROM ${productCategories} pc
+            INNER JOIN category_tree ct ON pc.parent_id = ct.id
+          )
+          SELECT id FROM category_tree
+        `);
+        categoryIds = categoryTreeResult.map((row) => row.id);
+      }
+
+      const whereConditions: any[] = [
+        isNull(productMasters.deletedAt),
+        eq(productMasterVersions.status, 'draft'),
+        isNull(productMasterVersions.deletedAt),
+      ];
+      if (filters?.brand) {
+        whereConditions.push(ilike(productMasterVersions.brand, `%${filters.brand}%`));
+      }
+      if (filters?.name) {
+        whereConditions.push(ilike(productMasterVersions.name, `%${filters.name}%`));
+      }
+
+      const baseQuery = trx
+        .select()
+        .from(productMasters)
+        .innerJoin(productMasterVersions, eq(productMasterVersions.masterId, productMasters.id));
+
+      const queryWithCategory =
+        categoryIds && categoryIds.length > 0
+          ? baseQuery.innerJoin(
+              productMasterCategories,
+              and(
+                eq(productMasterCategories.masterId, productMasters.id),
+                eq(productMasterCategories.versionId, productMasterVersions.id),
+                inArray(productMasterCategories.categoryId, categoryIds),
+              ),
+            )
+          : baseQuery;
+
+      const finalQuery = queryWithCategory.where(and(...whereConditions));
+
+      const countResult = await finalQuery;
+      const total = countResult.length;
+
+      const orderedQuery = finalQuery.orderBy(desc(productMasterVersions.createdAt));
+      const rawData = await (returnAll ? orderedQuery : orderedQuery.limit(limit).offset(offset));
+
+      const versionIds = rawData.map((item) => item.product_master_versions.id);
+      if (versionIds.length === 0) {
+        return { data: [], total, page, limit };
+      }
+
+      const optionGroupNamesResult = await trx
+        .select({
+          versionId: productMasterOptionGroups.versionId,
+          names: sql<
+            string[]
+          >`array_agg(DISTINCT ${productOptionGroupDisplays.displayName} ORDER BY ${productOptionGroupDisplays.displayName})`,
+        })
+        .from(productMasterOptionGroups)
+        .innerJoin(
+          productOptionGroupDisplays,
+          and(
+            eq(productMasterOptionGroups.optionGroupId, productOptionGroupDisplays.optionGroupId),
+            eq(productMasterOptionGroups.versionId, productOptionGroupDisplays.versionId),
+            eq(productOptionGroupDisplays.locale, 'ko-KR'),
+          ),
+        )
+        .where(inArray(productMasterOptionGroups.versionId, versionIds))
+        .groupBy(productMasterOptionGroups.versionId);
+
+      const variantCounts = await trx
+        .select({
+          versionId: productMasterVariants.versionId,
+          count: count(),
+        })
+        .from(productMasterVariants)
+        .where(inArray(productMasterVariants.versionId, versionIds))
+        .groupBy(productMasterVariants.versionId);
+
+      const thumbnailMap = await this.productReadAssembler.getPrimaryImagesByVersionIds(versionIds, trx);
+      const priceSummaryMap = await this.priceCacheService.getPriceSummariesByVersionIds(versionIds, trx);
+
+      const optionGroupNamesMap = new Map(optionGroupNamesResult.map((item) => [item.versionId, item.names]));
+      const variantCountMap = new Map(variantCounts.map((item) => [item.versionId, item.count]));
+
+      const data = rawData.map((item) => {
+        const master = item.product_masters;
+        const version = item.product_master_versions;
+        const product: ProductMasterWithVersion = { ...master, version };
+        return {
+          product,
+          aggregate: {
+            optionGroupNames: optionGroupNamesMap.get(version.id) ?? [],
+            variantCount: variantCountMap.get(version.id) ?? 0,
+            thumbnail: thumbnailMap.get(version.id) ?? null,
+            priceSummary: priceSummaryMap.get(version.id) ?? null,
+          },
+        };
+      });
+
+      return { data, total, page, limit };
+    }, tx);
+  }
+
+  /**
    * Draft 버전 수정
    * @param versionId - Version ID (product_master_versions.id)
    * @param data - 수정할 데이터

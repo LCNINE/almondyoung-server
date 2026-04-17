@@ -113,10 +113,16 @@ module.exports = defineConfig({
             id: 's3',
             options: {
               file_url: process.env.S3_FILE_URL,
-              access_key_id: process.env.S3_ACCESS_KEY_ID,
-              secret_access_key: process.env.S3_SECRET_ACCESS_KEY,
               region: process.env.S3_REGION,
               bucket: process.env.S3_BUCKET,
+              // 명시적 키가 있으면 access-key 인증, 없으면 iam 인증(SDK 기본 provider chain → ECS task role).
+              ...(process.env.S3_ACCESS_KEY_ID && process.env.S3_SECRET_ACCESS_KEY
+                ? {
+                    authentication_method: 'access-key',
+                    access_key_id: process.env.S3_ACCESS_KEY_ID,
+                    secret_access_key: process.env.S3_SECRET_ACCESS_KEY,
+                  }
+                : { authentication_method: 'iam' }),
               ...(process.env.S3_ENDPOINT && {
                 endpoint: process.env.S3_ENDPOINT,
               }),

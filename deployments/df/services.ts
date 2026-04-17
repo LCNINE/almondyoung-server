@@ -17,6 +17,37 @@ export function setup(infra: SharedInfra) {
     },
   });
 
+  // raw Pulumi 리소스를 SST link로 사용하기 위한 등록.
+  // link: [mskCluster]을 받은 서비스의 task role에 아래 IAM 권한이 자동 부착된다.
+  // ServerlessCluster ARN: arn:aws:kafka:{region}:{account}:cluster/{name}/{uuid}-s1
+  // topic/group ARN: 같은 prefix에서 :cluster/ → :topic/ or :group/ 치환 후 /* 추가.
+  sst.Linkable.wrap(aws.msk.ServerlessCluster, (cluster) => ({
+    properties: { brokers: cluster.bootstrapBrokersSaslIam },
+    include: [
+      sst.aws.permission({
+        actions: [
+          "kafka-cluster:Connect",
+          "kafka-cluster:DescribeCluster",
+          "kafka-cluster:DescribeClusterDynamicConfiguration",
+          "kafka-cluster:DescribeTopic",
+          "kafka-cluster:DescribeTopicDynamicConfiguration",
+          "kafka-cluster:ReadData",
+          "kafka-cluster:WriteData",
+          "kafka-cluster:CreateTopic",
+          "kafka-cluster:AlterTopic",
+          "kafka-cluster:AlterTopicDynamicConfiguration",
+          "kafka-cluster:DescribeGroup",
+          "kafka-cluster:AlterGroup",
+        ],
+        resources: [
+          cluster.arn,
+          cluster.arn.apply((arn) => `${arn.replace(":cluster/", ":topic/")}/*`),
+          cluster.arn.apply((arn) => `${arn.replace(":cluster/", ":group/")}/*`),
+        ],
+      }),
+    ],
+  }));
+
   const kafkaEnv = (prefix: string, groupId: string) => ({
     KAFKA_BROKERS: mskCluster.bootstrapBrokersSaslIam,
     KAFKA_SASL_MECHANISM: "aws-iam",
@@ -56,7 +87,7 @@ export function setup(infra: SharedInfra) {
     domainSlug: "api",
     port: 3000,
     priority: 90,
-    link: [db],
+    link: [db, mskCluster],
     environment: {
       DATABASE_URL: dbUrl("core"),
       ...kafkaEnv("almondyoung-server", "almondyoung-server-group"),
@@ -70,7 +101,7 @@ export function setup(infra: SharedInfra) {
     domainSlug: "user",
     port: 3000,
     priority: 100,
-    link: [db, publicBucket],
+    link: [db, publicBucket, mskCluster],
     environment: {
       DATABASE_URL: dbUrl("user_service"),
       ...kafkaEnv("user-service", "user-service"),
@@ -93,6 +124,7 @@ export function setup(infra: SharedInfra) {
       CORS_ORIGIN_DOMAINS: [
         url("www"),
         url("medusa"),
+        url("admin"),
         "http://localhost:8000",
       ].join(","),
       AWS_REGION: "ap-northeast-2",
@@ -105,7 +137,7 @@ export function setup(infra: SharedInfra) {
   //   domainSlug: "analytics",
   //   port: 3040,
   //   priority: 110,
-  //   link: [db],
+  //   link: [db, mskCluster],
   //   environment: {
   //     DATABASE_URL: dbUrl("analytics"),
   //     ...kafkaEnv("analytics", "analytics-group"),
@@ -118,7 +150,7 @@ export function setup(infra: SharedInfra) {
     domainSlug: "channel-adapter",
     port: 3000,
     priority: 120,
-    link: [db],
+    link: [db, mskCluster],
     environment: {
       DATABASE_URL: dbUrl("channel_adapter"),
       ...kafkaEnv("channel-adapter", "channel-adapter-group"),
@@ -143,7 +175,7 @@ export function setup(infra: SharedInfra) {
   //   domainSlug: "membership",
   //   port: 3000,
   //   priority: 130,
-  //   link: [db],
+  //   link: [db, mskCluster],
   //   environment: {
   //     DATABASE_URL: dbUrl("membership"),
   //     ...kafkaEnv("membership", "membership-group"),
@@ -157,7 +189,7 @@ export function setup(infra: SharedInfra) {
   //   domainSlug: "ugc",
   //   port: 3030,
   //   priority: 160,
-  //   link: [db],
+  //   link: [db, mskCluster],
   //   environment: {
   //     DATABASE_URL: dbUrl("ugc"),
   //     ...kafkaEnv("ugc-service", "ugc-service-group"),
@@ -171,7 +203,7 @@ export function setup(infra: SharedInfra) {
     domainSlug: "wallet",
     port: 3000,
     priority: 180,
-    link: [db],
+    link: [db, mskCluster],
     environment: {
       DATABASE_URL: dbUrl("wallet"),
       ...kafkaEnv("wallet", "wallet-group"),
@@ -189,7 +221,7 @@ export function setup(infra: SharedInfra) {
     domainSlug: "file",
     port: 3000,
     priority: 190,
-    link: [db, publicBucket, privateBucket],
+    link: [db, publicBucket, privateBucket, mskCluster],
     environment: {
       DATABASE_URL: dbUrl("file_service"),
       ...kafkaEnv("file-service", "file-service-group"),

@@ -26,20 +26,16 @@ export const fileServiceEnvSchema = z
   })
   .refine(
     (data) => {
+      // Access keys remain optional — SDK default provider chain (ECS task role)
+      // supplies credentials on Fargate.
       if (data.STORAGE_PROVIDER === 'S3') {
-        return (
-          data.AWS_REGION &&
-          data.AWS_ACCESS_KEY_ID &&
-          data.AWS_SECRET_ACCESS_KEY &&
-          data.AWS_S3_PUBLIC_BUCKET &&
-          data.AWS_S3_PRIVATE_BUCKET
-        );
+        return data.AWS_REGION && data.AWS_S3_PUBLIC_BUCKET && data.AWS_S3_PRIVATE_BUCKET;
       }
       return true;
     },
     {
       message:
-        'AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_S3_PUBLIC_BUCKET, and AWS_S3_PRIVATE_BUCKET are required when STORAGE_PROVIDER is S3',
+        'AWS_REGION, AWS_S3_PUBLIC_BUCKET, and AWS_S3_PRIVATE_BUCKET are required when STORAGE_PROVIDER is S3',
       path: ['STORAGE_PROVIDER'],
     },
   );

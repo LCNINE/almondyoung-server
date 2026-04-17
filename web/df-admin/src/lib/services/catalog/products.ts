@@ -11,6 +11,14 @@ export function useProducts(query: ProductsQuery) {
   })
 }
 
+export function useProductDrafts(query: ProductsQuery) {
+  return useQuery({
+    queryKey: catalogKeys.products.drafts(query),
+    queryFn: () => productsApi.listDrafts(query),
+    placeholderData: (prev) => prev,
+  })
+}
+
 export function useProduct(id: string) {
   return useQuery({
     queryKey: catalogKeys.products.detail(id),

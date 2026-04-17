@@ -22,6 +22,7 @@ import { SchemaValidationOptions } from '@packages/event-contracts/types';
 import { OutboxConfig } from './outbox/outbox.types';
 import { OutboxPublisher } from './outbox/outbox-publisher.service';
 import { OutboxDispatcher } from './outbox/outbox-dispatcher.service';
+import { bootstrapKafkaTopics } from './bootstrap/topic-bootstrap.service';
 import { outboxSchema } from './outbox/outbox.schema';
 import { trackingSchema } from './tracking/tracking.schema';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -112,13 +113,24 @@ export class EventsModule {
         }
       : null;
 
-    // Graceful Shutdown Service
+    // async useFactory로 토픽 생성을 provider resolution 시점에 완료한다.
+    // shutdownProvider/publisherProviders가 이를 의존 → 미사용 시에도 강제 resolve.
+    const bootstrapToken = Symbol('TOPIC_BOOTSTRAP_FORROOT');
+    const topicBootstrapProvider = {
+      provide: bootstrapToken,
+      useFactory: async () => {
+        await bootstrapKafkaTopics({ kafka, streams: options.streams, includeDLQ: enableDLQ });
+        return true;
+      },
+    };
+
+    // Graceful Shutdown Service — topic bootstrap 완료를 대기하도록 의존성 주입.
     const shutdownProvider = {
       provide: GracefulShutdownService,
-      useFactory: (kafkaClient: any) => {
+      useFactory: (kafkaClient: any, _bootstrap: unknown) => {
         return new GracefulShutdownService(kafkaClient);
       },
-      inject: ['KAFKA_CLIENT'],
+      inject: ['KAFKA_CLIENT', bootstrapToken],
     };
 
     // Outbox 관련 providers
@@ -170,6 +182,7 @@ export class EventsModule {
       ...outboxProviders,
       ...trackingProviders,
       shutdownProvider, // Graceful shutdown 항상 등록
+      topicBootstrapProvider, // MSK Serverless 등 auto-create 불가 환경 대응
     ];
 
     return {
@@ -246,13 +259,22 @@ export class EventsModule {
       inject: ['Reflector'],
     };
 
-    // Graceful Shutdown Service
+    const bootstrapToken = Symbol('TOPIC_BOOTSTRAP_CONSUMER');
+    const topicBootstrapProvider = {
+      provide: bootstrapToken,
+      useFactory: async () => {
+        await bootstrapKafkaTopics({ kafka, streams: options.streams, includeDLQ: enableAutoDLQ });
+        return true;
+      },
+    };
+
+    // Graceful Shutdown — bootstrap 의존으로 강제 resolve.
     const shutdownProvider = {
       provide: GracefulShutdownService,
-      useFactory: (kafkaClient: any) => {
+      useFactory: (kafkaClient: any, _bootstrap: unknown) => {
         return new GracefulShutdownService(kafkaClient);
       },
-      inject: ['KAFKA_CLIENT'],
+      inject: ['KAFKA_CLIENT', bootstrapToken],
     };
 
     const chainInterceptorProvider = {
@@ -265,6 +287,7 @@ export class EventsModule {
       interceptorProvider, // 스키마 검증 Interceptor는 항상 등록
       chainInterceptorProvider, // chain context 전파 인터셉터
       shutdownProvider, // Graceful shutdown 항상 등록
+      topicBootstrapProvider, // MSK Serverless 등 auto-create 불가 환경 대응
       { provide: EventChainService, useClass: EventChainService },
       { provide: EventTrackingService, useClass: EventTrackingService },
       { provide: EventTraceReader, useClass: EventTraceReader },
