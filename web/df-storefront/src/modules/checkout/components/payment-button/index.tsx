@@ -1,10 +1,17 @@
 "use client"
 
-import { isManual, isStripeLike } from "@lib/constants"
-import { placeOrder } from "@lib/data/cart"
+import {
+  ALMOND_PAYMENT_PROVIDER_ID,
+  isAlmond,
+  isManual,
+  isStripeLike,
+} from "@lib/constants"
+import { initiatePaymentSession, placeOrder } from "@lib/data/cart"
+import { setCheckoutCartByIntent } from "@lib/util/checkout-intent-map"
 import { HttpTypes } from "@medusajs/types"
 import { Button } from "@medusajs/ui"
 import { useElements, useStripe } from "@stripe/react-stripe-js"
+import { useParams } from "next/navigation"
 import React, { useState } from "react"
 import ErrorMessage from "../error-message"
 
@@ -35,6 +42,14 @@ const PaymentButton: React.FC<PaymentButtonProps> = ({
           data-testid={dataTestId}
         />
       )
+    case isAlmond(paymentSession?.provider_id):
+      return (
+        <AlmondPaymentButton
+          notReady={notReady}
+          cart={cart}
+          data-testid={dataTestId}
+        />
+      )
     case isManual(paymentSession?.provider_id):
       return (
         <ManualTestPaymentButton notReady={notReady} data-testid={dataTestId} />
@@ -42,6 +57,40 @@ const PaymentButton: React.FC<PaymentButtonProps> = ({
     default:
       return <Button disabled>Select a payment method</Button>
   }
+}
+
+const buildPaymentItems = (cart: HttpTypes.StoreCart) => {
+  const lineItems =
+    cart.items?.map((item) => ({
+      id: item.id,
+      title: item.title,
+      quantity: item.quantity,
+      unitPrice: item.unit_price,
+      total: item.total,
+      thumbnail: item.thumbnail,
+    })) ?? []
+
+  const shippingItems =
+    cart.shipping_methods?.map((method) => ({
+      id: method.id,
+      title: method.name,
+      quantity: 1,
+      unitPrice: method.amount,
+      total: method.amount,
+    })) ?? []
+
+  return [...lineItems, ...shippingItems]
+}
+
+const getOrderName = (cart: HttpTypes.StoreCart) => {
+  const items = cart.items ?? []
+  const firstTitle = items[0]?.title ?? "Product"
+
+  if (items.length <= 1) {
+    return `DF Store - ${firstTitle}`
+  }
+
+  return `DF Store - ${firstTitle} and ${items.length - 1} more`
 }
 
 const StripePaymentButton = ({
@@ -146,6 +195,78 @@ const StripePaymentButton = ({
       <ErrorMessage
         error={errorMessage}
         data-testid="stripe-payment-error-message"
+      />
+    </>
+  )
+}
+
+const AlmondPaymentButton = ({
+  cart,
+  notReady,
+  "data-testid": dataTestId,
+}: {
+  cart: HttpTypes.StoreCart
+  notReady: boolean
+  "data-testid"?: string
+}) => {
+  const params = useParams()
+  const countryCode = params.countryCode as string
+  const [submitting, setSubmitting] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+  const handlePayment = async () => {
+    setSubmitting(true)
+    setErrorMessage(null)
+
+    try {
+      const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback`
+      const result = await initiatePaymentSession(cart, {
+        provider_id:
+          cart.payment_collection?.payment_sessions?.[0]?.provider_id ??
+          ALMOND_PAYMENT_PROVIDER_ID,
+        data: {
+          returnUrl,
+          orderName: getOrderName(cart),
+          items: buildPaymentItems(cart),
+        },
+      })
+
+      const paymentSession = result?.payment_collection?.payment_sessions?.find(
+        (session) => session.provider_id === ALMOND_PAYMENT_PROVIDER_ID
+      )
+      const intentId = paymentSession?.data?.intentId as string | undefined
+
+      if (!intentId) {
+        throw new Error("Failed to initialize Almond Wallet payment.")
+      }
+
+      setCheckoutCartByIntent(intentId, cart.id)
+
+      const walletWebUrl =
+        process.env.NEXT_PUBLIC_WALLET_WEB_URL || "http://localhost:3200"
+      window.location.href = `${walletWebUrl}/pay/${intentId}`
+    } catch (err) {
+      setErrorMessage(
+        err instanceof Error ? err.message : "Failed to start payment."
+      )
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <>
+      <Button
+        disabled={notReady}
+        onClick={handlePayment}
+        size="large"
+        isLoading={submitting}
+        data-testid={dataTestId}
+      >
+        Continue in Almond Wallet
+      </Button>
+      <ErrorMessage
+        error={errorMessage}
+        data-testid="almond-payment-error-message"
       />
     </>
   )

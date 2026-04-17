@@ -6,6 +6,8 @@ import { Badge } from '@/components/ui/badge';
 import { formatDistanceToNow } from 'date-fns';
 import { ko } from 'date-fns/locale';
 
+export const dynamic = 'force-dynamic';
+
 const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
   CREATED: 'secondary',
   PROCESSING: 'default',

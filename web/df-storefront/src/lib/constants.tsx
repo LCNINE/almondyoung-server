@@ -5,6 +5,8 @@ import Ideal from "@modules/common/icons/ideal"
 import Bancontact from "@modules/common/icons/bancontact"
 import PayPal from "@modules/common/icons/paypal"
 
+export const ALMOND_PAYMENT_PROVIDER_ID = "pp_almond-payment_almond-payment"
+
 /* Map of payment provider_id to their title and icon. Add in any payment providers you want to use. */
 export const paymentInfoMap: Record<
   string,
@@ -34,6 +36,10 @@ export const paymentInfoMap: Record<
     title: "Manual Payment",
     icon: <CreditCard />,
   },
+  [ALMOND_PAYMENT_PROVIDER_ID]: {
+    title: "Almond Wallet",
+    icon: <CreditCard />,
+  },
   // Add more payment providers here
 }
 
@@ -47,6 +53,11 @@ export const isStripeLike = (providerId?: string) => {
 export const isPaypal = (providerId?: string) => {
   return providerId?.startsWith("pp_paypal")
 }
+
+export const isAlmond = (providerId?: string) => {
+  return providerId === ALMOND_PAYMENT_PROVIDER_ID
+}
+
 export const isManual = (providerId?: string) => {
   return providerId?.startsWith("pp_system_default")
 }

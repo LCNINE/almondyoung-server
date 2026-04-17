@@ -1,7 +1,11 @@
 "use client"
 
 import { RadioGroup } from "@headlessui/react"
-import { isStripeLike, paymentInfoMap } from "@lib/constants"
+import {
+  isAlmond,
+  isStripeLike,
+  paymentInfoMap,
+} from "@lib/constants"
 import { initiatePaymentSession } from "@lib/data/cart"
 import { CheckCircleSolid, CreditCard } from "@medusajs/icons"
 import { Button, Container, Heading, Text, clx } from "@medusajs/ui"
@@ -29,7 +33,7 @@ const Payment = ({
   const [cardBrand, setCardBrand] = useState<string | null>(null)
   const [cardComplete, setCardComplete] = useState(false)
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(
-    activeSession?.provider_id ?? ""
+    activeSession?.provider_id ?? availablePaymentMethods?.[0]?.id ?? ""
   )
 
   const searchParams = useSearchParams()
@@ -164,6 +168,15 @@ const Payment = ({
             </>
           )}
 
+          {!paidByGiftcard && !availablePaymentMethods?.length && (
+            <Text
+              className="txt-medium text-ui-fg-subtle"
+              data-testid="payment-method-empty-state"
+            >
+              Almond Wallet payment is not available for this region yet.
+            </Text>
+          )}
+
           {paidByGiftcard && (
             <div className="flex flex-col w-1/3">
               <Text className="txt-medium-plus text-ui-fg-base mb-1">
@@ -231,6 +244,8 @@ const Payment = ({
                   <Text>
                     {isStripeLike(selectedPaymentMethod) && cardBrand
                       ? cardBrand
+                      : isAlmond(selectedPaymentMethod)
+                        ? "You will be redirected to Almond Wallet"
                       : "Another step will appear"}
                   </Text>
                 </div>

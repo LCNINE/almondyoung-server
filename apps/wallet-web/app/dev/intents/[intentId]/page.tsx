@@ -23,6 +23,8 @@ import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
 
+export const dynamic = 'force-dynamic';
+
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 function fmt(date: Date | null | undefined) {
