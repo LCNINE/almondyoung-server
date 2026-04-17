@@ -44,6 +44,14 @@ export const router = createBrowserRouter([
             path: "catalog/tags",
             lazy: () => import("./catalog/tag-page"),
           },
+          {
+            path: "inventory/skus",
+            lazy: () => import("./inventory/sku-list-page"),
+          },
+          {
+            path: "inventory/skus/:skuId",
+            lazy: () => import("./inventory/sku-detail-page"),
+          },
         ],
       },
     ],
