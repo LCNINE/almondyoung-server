@@ -25,6 +25,14 @@ export const productsApi = {
     return response.data
   },
 
+  listDrafts: async (
+    query: ProductsQuery = {},
+  ): Promise<PaginatedResponse<ProductSummaryDto>> => {
+    const qs = buildQueryString(query as Record<string, unknown>)
+    const response = await client.get(`/masters/drafts${qs ? `?${qs}` : ""}`)
+    return response.data
+  },
+
   get: async (id: string): Promise<ProductDto> => {
     const response = await client.get(`/masters/${id}`)
     return response.data

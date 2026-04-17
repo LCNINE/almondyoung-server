@@ -25,8 +25,16 @@ export const router = createBrowserRouter([
             lazy: () => import("./catalog/product-list-page"),
           },
           {
+            path: "catalog/products/drafts",
+            lazy: () => import("./catalog/product-drafts-page"),
+          },
+          {
             path: "catalog/products/:masterId",
             lazy: () => import("./catalog/product-detail-page"),
+          },
+          {
+            path: "catalog/products/:masterId/versions/:versionId",
+            lazy: () => import("./catalog/product-version-detail-page"),
           },
           {
             path: "catalog/categories",

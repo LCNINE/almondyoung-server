@@ -189,6 +189,49 @@ export class ProductMastersController {
     return deleted;
   }
 
+  @Get('drafts')
+  @ApiOperation({
+    summary: 'Draft 버전 목록 조회',
+    description: `
+      모든 master의 draft 버전을 **version 단위의 flat list**로 조회합니다.
+      한 master에 draft가 여러 개일 경우 각각 개별 row로 포함됩니다.
+    `,
+  })
+  @ApiQuery({ name: 'page', required: false, type: String })
+  @ApiQuery({ name: 'limit', required: false, type: String })
+  @ApiQuery({ name: 'categoryId', required: false, type: String })
+  @ApiQuery({ name: 'brand', required: false, type: String })
+  @ApiQuery({ name: 'name', required: false, type: String })
+  @ApiOkResponsePaginated(ProductSummaryDto, { description: 'Draft 목록 조회 성공' })
+  @ApiResponse({ status: 500, description: '서버 오류' })
+  async getDrafts(
+    @Query()
+    query: {
+      page?: string;
+      limit?: string;
+      categoryId?: string;
+      brand?: string;
+      name?: string;
+    },
+  ): Promise<PaginatedResponseDto<ProductSummaryDto>> {
+    const filters = {
+      page: query.page ? parseInt(query.page) : undefined,
+      limit: query.limit ? parseInt(query.limit) : undefined,
+      categoryId: query.categoryId,
+      brand: query.brand,
+      name: query.name,
+    };
+
+    const result = await this.productMastersService.listDraftVersions(filters);
+
+    return {
+      data: result.data.map((item) => ProductMasterMapper.toProductSummary({ ...item.product, ...item.aggregate })),
+      total: result.total,
+      page: result.page,
+      limit: result.limit,
+    };
+  }
+
   @Get(':id')
   @ApiOperation({
     summary: '제품 마스터 상세 조회 (Active 버전)',

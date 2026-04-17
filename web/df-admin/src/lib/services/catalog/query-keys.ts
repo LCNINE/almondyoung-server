@@ -4,6 +4,7 @@ export const catalogKeys = {
   products: {
     all: ["products"] as const,
     list: (query: ProductsQuery) => [...catalogKeys.products.all, "list", query] as const,
+    drafts: (query: ProductsQuery) => [...catalogKeys.products.all, "drafts", query] as const,
     detail: (id: string) => [...catalogKeys.products.all, id] as const,
   },
   versions: {
