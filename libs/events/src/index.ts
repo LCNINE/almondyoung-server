@@ -36,6 +36,9 @@ export * from './interceptors/schema-validation.interceptor';
 // Graceful Shutdown
 export * from './shutdown/graceful-shutdown.service';
 
+// Topic Bootstrap (MSK Serverless 등 auto-create 불가 환경)
+export * from './bootstrap/topic-bootstrap.service';
+
 // Outbox Pattern
 export * from './outbox/outbox.schema';
 export * from './outbox/outbox.types';

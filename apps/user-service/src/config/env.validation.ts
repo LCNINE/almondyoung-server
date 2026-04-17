@@ -22,9 +22,11 @@ export const userServiceEnvSchema = z.object({
   KAKAO_CALLBACK_URL: z.string().url().optional(),
 
   // AWS S3 Configuration
+  // Access keys are optional — when omitted, AWS SDK falls back to the default
+  // credential provider chain (ECS task role on Fargate).
   AWS_REGION: z.string(),
-  AWS_ACCESS_KEY_ID: z.string(),
-  AWS_SECRET_ACCESS_KEY: z.string(),
+  AWS_ACCESS_KEY_ID: z.string().optional(),
+  AWS_SECRET_ACCESS_KEY: z.string().optional(),
   AWS_S3_BUCKET: z.string(),
 
   // Cafe24 Link (optional: disabled when not set)

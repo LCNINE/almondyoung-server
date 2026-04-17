@@ -23,6 +23,11 @@ export const mainMenus: MainMenu[] = [
     defaultPath: "/catalog/products",
     children: [
       {
+        id: "catalog-products-drafts",
+        title: "작성중 상품",
+        path: "/catalog/products/drafts",
+      },
+      {
         id: "catalog-products",
         title: "상품 관리",
         path: "/catalog/products",

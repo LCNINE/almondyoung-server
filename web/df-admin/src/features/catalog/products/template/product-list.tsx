@@ -15,7 +15,7 @@ export default function ProductListTemplate() {
     try {
       const product = await createProduct.mutateAsync()
       toast.success("새 상품이 생성되었습니다")
-      navigate(`/catalog/products/${product.masterId}`)
+      navigate(`/catalog/products/${product.masterId}/versions/${product.id}`)
     } catch {
       toast.error("상품 생성 실패")
     }
