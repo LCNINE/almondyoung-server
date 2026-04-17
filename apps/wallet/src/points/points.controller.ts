@@ -1,7 +1,12 @@
-import { Controller, Get, Req, UnauthorizedException } from '@nestjs/common';
+import { Controller, Get, Query, Req, UnauthorizedException } from '@nestjs/common';
 import { WalletJwtAuth } from '../wallet-auth.decorator';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { PointsAdminService, PointsBalance } from '../admin/points-admin.service';
+import { PaginatedResponseDto, PaginationQueryDto } from '@app/shared';
+import {
+  PointsAdminService,
+  PointsBalance,
+  PointsEventRow,
+} from '../admin/points-admin.service';
 import { AuthenticatedRequest } from '../wallet.module';
 
 @ApiTags('Points')
@@ -17,5 +22,22 @@ export class PointsController {
       throw new UnauthorizedException('JWT authentication required');
     }
     return this.pointsAdminService.getBalance(req.jwtUserId);
+  }
+
+  @Get('history')
+  @WalletJwtAuth()
+  @ApiOperation({ summary: "Get current user's points history (JWT cookie auth, paginated)" })
+  async getMyHistory(
+    @Req() req: AuthenticatedRequest,
+    @Query() query: PaginationQueryDto,
+  ): Promise<PaginatedResponseDto<PointsEventRow>> {
+    if (!req.jwtUserId) {
+      throw new UnauthorizedException('JWT authentication required');
+    }
+    return this.pointsAdminService.getEventsPaginated(
+      req.jwtUserId,
+      query.page ?? 1,
+      query.limit ?? 20,
+    );
   }
 }
