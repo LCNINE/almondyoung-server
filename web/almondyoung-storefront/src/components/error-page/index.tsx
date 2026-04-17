@@ -1,9 +1,8 @@
 "use client"
 
+import LocalizedClientLink from "@/components/shared/localized-client-link"
+import Image from "next/image"
 import { useEffect, useState } from "react"
-
-import { MainHeader } from "@/components/layout/header/main-header"
-
 import ErrorCard from "./error-card"
 import PanoramaScene from "./panorama-scene"
 
@@ -33,8 +32,20 @@ export default function ErrorPageContent({
 
   return (
     <div className="flex min-h-screen flex-col">
-      {/* 실제 헤더 */}
-      <MainHeader />
+      <header className="bg-header-background border-b">
+        <div className="container mx-auto flex h-16 items-center px-4">
+          <LocalizedClientLink href="/">
+            <Image
+              src="/images/almond_white_logo.svg"
+              alt="아몬드영"
+              width={287}
+              height={45}
+              className="h-full w-full object-contain"
+              priority
+            />
+          </LocalizedClientLink>
+        </div>
+      </header>
 
       {/* 파노라마 풍경 (헤더와 푸터 사이 전체) */}
       <div className="relative flex-1 overflow-hidden">

@@ -27,7 +27,7 @@ export function useBusinessVerification({
       return
     }
     if (!form.watch("ceoName")) {
-      toast.error("대표자 이름을 입력해주세요.")
+      toast.error("대표이사 이름을 입력해주세요.")
       form.setFocus("ceoName")
       return
     }
@@ -56,7 +56,7 @@ export function useBusinessVerification({
               form.setFocus("businessNumber")
               break
             case "대표자 이름이 일치하지 않습니다.":
-              toast.error("대표자 이름이 일치하지 않습니다.")
+              toast.error("대표이사 이름이 일치하지 않습니다.")
               form.setFocus("ceoName")
               break
             default:

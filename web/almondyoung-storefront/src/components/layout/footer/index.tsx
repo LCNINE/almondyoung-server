@@ -82,7 +82,7 @@ export default function Footer({ className }: { className?: string }) {
               아몬드영 사업자 정보
             </strong>
             <FooterInfoLine>
-              회사 : 주식회사 엘씨나인 | 대표자 : 권흥철
+              회사 : 주식회사 엘씨나인 | 대표이사 : 권흥철
             </FooterInfoLine>
             <FooterInfoLine>
               사업자 등록번호 : 467-86-01638 [사업자정보확인]
@@ -161,7 +161,7 @@ export default function Footer({ className }: { className?: string }) {
 
             {/* 회사 정보 */}
             <address className="space-y-1 text-[11px] leading-relaxed text-stone-400 not-italic">
-              <p>주식회사 엘씨나인 | 대표자: 권흥철</p>
+              <p>주식회사 엘씨나인 | 대표이사: 권흥철</p>
               <p>사업자등록번호: 467-86-01638</p>
               <p>통신판매업신고: 2019-서울영등포-1446</p>
               <p>전화: 1877-7184</p>

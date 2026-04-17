@@ -1,5 +1,6 @@
 "use server"
 
+import { PaginatedResponseDto } from "@/lib/types/common/pagination"
 import type {
   AuthorizePaymentDto,
   AuthorizePaymentErrorResponse,
@@ -13,6 +14,7 @@ import type {
   IntentDto,
   OnboardHmsBnplResponse,
   PointBalanceDto,
+  PointsEventRowDto,
   TaxInvoiceData,
   TaxInvoiceDto,
 } from "@lib/types/dto/wallet"
@@ -461,23 +463,26 @@ export async function verifyPasswordForPinReset(
 
 /**
  * 포인트 내역 조회
- * @param limit 조회 개수 제한
+ * @param params.page 페이지 번호
+ * @param params.limit 페이지당 개수
  */
-export async function getPointHistory(limit?: number) {
+export async function getPointHistory(params?: {
+  page?: number
+  limit?: number
+}): Promise<PaginatedResponseDto<PointsEventRowDto>> {
   const queryParams = new URLSearchParams()
-  if (limit) queryParams.append("limit", limit.toString())
+  if (params?.page) queryParams.append("page", params.page.toString())
+  if (params?.limit) queryParams.append("limit", params.limit.toString())
 
-  const result = await api(
+  return await api<PaginatedResponseDto<PointsEventRowDto>>(
     "wallet",
-    `/payments/points/history${queryParams.toString() ? `?${queryParams.toString()}` : ""}`,
+    `/v1/points/history${queryParams.toString() ? `?${queryParams.toString()}` : ""}`,
     {
       method: "GET",
       cache: "no-store",
       withAuth: true,
     }
   )
-
-  return result
 }
 
 /**
@@ -489,7 +494,7 @@ export async function getPointBalance(): Promise<PointBalanceDto> {
     balance: 0,
     withdrawable: 0,
   }
-  // return await api<PointBalanceDto>("wallet", "/payments/points/balance", {
+  // return await api<PointBalanceDto>("wallet", "/v1/points/balance", {
   //   method: "GET",
   //   cache: "no-store",
   //   withAuth: true,

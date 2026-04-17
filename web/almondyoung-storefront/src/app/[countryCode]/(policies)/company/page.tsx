@@ -27,7 +27,7 @@ export default function CompanyPage() {
               <dd>주식회사 엘씨나인</dd>
             </div>
             <div className="flex gap-2">
-              <dt className="text-foreground w-32 shrink-0 font-medium">대표자</dt>
+              <dt className="text-foreground w-32 shrink-0 font-medium">대표이사</dt>
               <dd>권흥철</dd>
             </div>
             <div className="flex gap-2">
