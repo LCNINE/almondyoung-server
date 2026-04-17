@@ -1,11 +1,11 @@
 "use client"
 
+import { getBestProductsByCategory } from "@/domains/home/actions"
 import { FIXED_CATEGORIES, FixedCategory } from "@/lib/constants/categories"
+import { StoreCustomerWithGroups } from "@/lib/types/ui/medusa"
 import { HttpTypes } from "@medusajs/types"
 import { useState, useTransition } from "react"
-import { StoreCustomerWithGroups } from "@/lib/types/ui/medusa"
-import { getBestProductsByCategory } from "../../actions"
-import { ProductSection } from "../shared/product-section"
+import { ProductSection } from "../../shared/product-section"
 
 interface CategoryBestSectionProps {
   initialProducts: HttpTypes.StoreProduct[] | undefined

@@ -1,6 +1,6 @@
 import { FIXED_CATEGORIES } from "@/lib/constants/categories"
 import { getRegion } from "@/lib/api/medusa/regions"
-import { CategoryBestSection } from "../../components/category-best-section"
+import { CategoryBestSection } from "../../components/sections/category-best-section"
 import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import { getWishlist } from "@lib/api/users/wishlist"
 import { getBestProductsByCategory } from "../../actions"

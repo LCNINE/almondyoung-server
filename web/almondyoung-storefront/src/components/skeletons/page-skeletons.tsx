@@ -75,12 +75,12 @@ export function HomePageSkeleton() {
   return (
     <div className="min-h-screen bg-white">
       <div className="w-full">
-        <div className="px-4 pb-4 pt-4 md:pb-[87px]">
+        <div className="px-4 pt-4 pb-4 md:pb-[87px]">
           <Skeleton className="h-[350px] w-full rounded-2xl md:h-[540px]" />
         </div>
         <section className="w-full border-t border-gray-200 py-8 lg:py-12">
           <div className="container mx-auto max-w-[1360px] px-4 md:px-[40px]">
-            <CategoryBestSectionSkeleton />
+            <MainSectionSkeleton />
           </div>
         </section>
       </div>
@@ -127,7 +127,10 @@ export function CategorySubSkeleton() {
 
       <div className="flex gap-2 overflow-hidden">
         {repeat(6).map((_, index) => (
-          <Skeleton key={`sub-tab-${index}`} className="h-9 w-24 rounded-full" />
+          <Skeleton
+            key={`sub-tab-${index}`}
+            className="h-9 w-24 rounded-full"
+          />
         ))}
       </div>
 
@@ -155,7 +158,10 @@ export function ClassPageSkeleton() {
 
       <div className="flex gap-3 overflow-hidden">
         {repeat(6).map((_, index) => (
-          <Skeleton key={`class-tab-${index}`} className="h-14 w-24 rounded-full" />
+          <Skeleton
+            key={`class-tab-${index}`}
+            className="h-14 w-24 rounded-full"
+          />
         ))}
       </div>
 
@@ -165,7 +171,10 @@ export function ClassPageSkeleton() {
         <Skeleton className="h-5 w-28" />
         <div className="flex gap-3 overflow-hidden">
           {repeat(4).map((_, index) => (
-            <Skeleton key={`class-slide-${index}`} className="h-40 w-40 rounded-xl" />
+            <Skeleton
+              key={`class-slide-${index}`}
+              className="h-40 w-40 rounded-xl"
+            />
           ))}
         </div>
       </div>
@@ -182,7 +191,7 @@ export function ClassPageSkeleton() {
   )
 }
 
-export function CategoryBestSectionSkeleton() {
+export function MainSectionSkeleton() {
   return (
     <div className="w-full">
       <div className="flex items-center justify-between">
@@ -191,7 +200,10 @@ export function CategoryBestSectionSkeleton() {
       </div>
       <div className="mt-4 flex gap-2 overflow-hidden">
         {repeat(6).map((_, index) => (
-          <Skeleton key={`best-tab-${index}`} className="h-9 w-24 rounded-full" />
+          <Skeleton
+            key={`best-tab-${index}`}
+            className="h-9 w-24 rounded-full"
+          />
         ))}
       </div>
       <div className="mt-6">
@@ -276,12 +288,15 @@ export function ProductDetailSkeleton() {
     <div className="md:bg-muted/50 min-h-screen bg-white">
       <div className="mx-auto max-w-[1360px] px-[15px] md:px-[40px]">
         <div className="py-2 md:flex md:gap-4">
-          <main className="w-full min-w-0 flex-1 pb-24 md:pb-0 space-y-6">
+          <main className="w-full min-w-0 flex-1 space-y-6 pb-24 md:pb-0">
             <div className="space-y-4">
               <Skeleton className="aspect-square w-full rounded-2xl" />
               <div className="grid grid-cols-4 gap-3">
                 {repeat(4).map((_, index) => (
-                  <Skeleton key={`thumb-${index}`} className="aspect-square w-full rounded-lg" />
+                  <Skeleton
+                    key={`thumb-${index}`}
+                    className="aspect-square w-full rounded-lg"
+                  />
                 ))}
               </div>
             </div>
@@ -294,7 +309,10 @@ export function ProductDetailSkeleton() {
 
             <div className="flex gap-2 border-b pb-3">
               {repeat(4).map((_, index) => (
-                <Skeleton key={`tab-${index}`} className="h-9 w-20 rounded-full" />
+                <Skeleton
+                  key={`tab-${index}`}
+                  className="h-9 w-20 rounded-full"
+                />
               ))}
             </div>
 
@@ -305,11 +323,14 @@ export function ProductDetailSkeleton() {
               <Skeleton className="h-40 w-full rounded-lg" />
             </div>
 
-            <div className="rounded-lg bg-white px-4 py-6 md:px-6 space-y-4">
+            <div className="space-y-4 rounded-lg bg-white px-4 py-6 md:px-6">
               <Skeleton className="h-5 w-32" />
               <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
                 {repeat(4).map((_, index) => (
-                  <Skeleton key={`review-${index}`} className="h-24 w-full rounded-lg" />
+                  <Skeleton
+                    key={`review-${index}`}
+                    className="h-24 w-full rounded-lg"
+                  />
                 ))}
               </div>
             </div>
@@ -317,17 +338,23 @@ export function ProductDetailSkeleton() {
             <div className="space-y-3">
               <Skeleton className="h-5 w-32" />
               {repeat(3).map((_, index) => (
-                <Skeleton key={`accordion-${index}`} className="h-12 w-full rounded-lg" />
+                <Skeleton
+                  key={`accordion-${index}`}
+                  className="h-12 w-full rounded-lg"
+                />
               ))}
             </div>
           </main>
 
-          <aside className="hidden md:block w-[360px] shrink-0 space-y-4">
-            <div className="rounded-xl border border-gray-200 bg-white p-6 space-y-4">
+          <aside className="hidden w-[360px] shrink-0 space-y-4 md:block">
+            <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-6">
               <Skeleton className="h-6 w-40" />
               <Skeleton className="h-4 w-24" />
               {repeat(3).map((_, index) => (
-                <Skeleton key={`side-option-${index}`} className="h-10 w-full" />
+                <Skeleton
+                  key={`side-option-${index}`}
+                  className="h-10 w-full"
+                />
               ))}
               <div className="flex gap-2">
                 <Skeleton className="h-12 w-full" />
@@ -343,8 +370,8 @@ export function ProductDetailSkeleton() {
 
 export function CartPageSkeleton() {
   return (
-    <div className="min-h-screen bg-muted">
-      <div className="container mx-auto py-0 md:py-8 md:max-w-[1360px] md:px-[40px]">
+    <div className="bg-muted min-h-screen">
+      <div className="container mx-auto py-0 md:max-w-[1360px] md:px-[40px] md:py-8">
         {/* Mobile */}
         <div className="md:hidden">
           <div className="bg-white">
@@ -358,7 +385,7 @@ export function CartPageSkeleton() {
             </div>
           </div>
 
-          <div className="bg-white p-4 space-y-4">
+          <div className="space-y-4 bg-white p-4">
             <Skeleton className="h-10 w-full rounded-lg" />
             <div className="flex items-center justify-between">
               <Skeleton className="h-4 w-20" />
@@ -402,7 +429,10 @@ export function CartPageSkeleton() {
             <aside className="space-y-4 rounded-lg border border-gray-200 bg-white p-6">
               <Skeleton className="h-6 w-32" />
               {repeat(4).map((_, index) => (
-                <Skeleton key={`cart-summary-${index}`} className="h-4 w-full" />
+                <Skeleton
+                  key={`cart-summary-${index}`}
+                  className="h-4 w-full"
+                />
               ))}
               <Skeleton className="h-12 w-full" />
             </aside>
@@ -424,64 +454,67 @@ export function CartPageSkeleton() {
 
 export function CheckoutPageSkeleton() {
   return (
-    <div className="min-h-screen bg-muted">
-      <div className="hidden lg:block border-b bg-white">
+    <div className="bg-muted min-h-screen">
+      <div className="hidden border-b bg-white lg:block">
         <div className="container mx-auto max-w-[1360px] px-4 py-6 lg:px-[40px]">
           <Skeleton className="h-6 w-40" />
         </div>
       </div>
 
       <div className="container mx-auto max-w-[1360px] px-4 lg:px-[40px] lg:py-8">
-        <div className="lg:hidden mb-4">
+        <div className="mb-4 lg:hidden">
           <Skeleton className="h-10 w-full rounded-lg" />
         </div>
 
         <div className="lg:flex lg:w-full lg:justify-between lg:gap-9">
-          <div className="lg:max-w-[820px] lg:min-w-[420px] lg:flex-1 space-y-6">
-            <div className="rounded-[10px] border border-gray-200 bg-white p-6 space-y-4">
+          <div className="space-y-6 lg:max-w-[820px] lg:min-w-[420px] lg:flex-1">
+            <div className="space-y-4 rounded-[10px] border border-gray-200 bg-white p-6">
               <Skeleton className="h-6 w-32" />
               <FormFieldSkeleton />
               <FormFieldSkeleton />
             </div>
 
-            <div className="rounded-[10px] border border-gray-200 bg-white p-6 space-y-4">
+            <div className="space-y-4 rounded-[10px] border border-gray-200 bg-white p-6">
               <Skeleton className="h-6 w-32" />
               {repeat(3).map((_, index) => (
                 <Skeleton key={`shipping-${index}`} className="h-12 w-full" />
               ))}
             </div>
 
-            <div className="rounded-[10px] border border-gray-200 bg-white p-6 space-y-4">
+            <div className="space-y-4 rounded-[10px] border border-gray-200 bg-white p-6">
               <Skeleton className="h-6 w-32" />
               {repeat(3).map((_, index) => (
                 <Skeleton key={`order-item-${index}`} className="h-20 w-full" />
               ))}
             </div>
 
-            <div className="rounded-[10px] border border-gray-200 bg-white p-6 space-y-4">
+            <div className="space-y-4 rounded-[10px] border border-gray-200 bg-white p-6">
               <Skeleton className="h-6 w-32" />
               {repeat(2).map((_, index) => (
                 <Skeleton key={`discount-${index}`} className="h-12 w-full" />
               ))}
             </div>
 
-            <div className="rounded-[10px] border border-gray-200 bg-white p-6 space-y-4">
+            <div className="space-y-4 rounded-[10px] border border-gray-200 bg-white p-6">
               <Skeleton className="h-6 w-32" />
               {repeat(3).map((_, index) => (
-                <Skeleton key={`payment-method-${index}`} className="h-12 w-full" />
+                <Skeleton
+                  key={`payment-method-${index}`}
+                  className="h-12 w-full"
+                />
               ))}
             </div>
           </div>
 
-          <div className="lg:shrink-0 mt-8 lg:mt-0 space-y-4">
-            <div className="rounded-[10px] border border-gray-200 bg-white p-6 space-y-3">
+          <div className="mt-8 space-y-4 lg:mt-0 lg:shrink-0">
+            <div className="space-y-3 rounded-[10px] border border-gray-200 bg-white p-6">
               <Skeleton className="h-5 w-32" />
               {repeat(5).map((_, index) => (
                 <Skeleton key={`summary-${index}`} className="h-4 w-full" />
               ))}
               <Skeleton className="h-12 w-full" />
             </div>
-            <div className="rounded-[10px] border border-gray-200 bg-white p-6 space-y-3">
+            <div className="space-y-3 rounded-[10px] border border-gray-200 bg-white p-6">
               <Skeleton className="h-5 w-32" />
               {repeat(4).map((_, index) => (
                 <Skeleton key={`detail-${index}`} className="h-4 w-full" />
@@ -496,21 +529,21 @@ export function CheckoutPageSkeleton() {
 
 export function MembershipCheckoutSkeleton() {
   return (
-    <div className="min-h-screen bg-muted">
-      <div className="hidden lg:block border-b bg-white">
+    <div className="bg-muted min-h-screen">
+      <div className="hidden border-b bg-white lg:block">
         <div className="container mx-auto max-w-[1360px] px-4 py-6 lg:px-[40px]">
           <Skeleton className="h-6 w-40" />
         </div>
       </div>
 
       <div className="container mx-auto max-w-[1360px] px-4 lg:px-[40px] lg:py-8">
-        <div className="lg:hidden mb-4">
+        <div className="mb-4 lg:hidden">
           <Skeleton className="h-10 w-full rounded-lg" />
         </div>
 
         <div className="lg:flex lg:w-full lg:justify-between lg:gap-9">
-          <div className="lg:max-w-[820px] lg:min-w-[420px] lg:flex-1 space-y-6">
-            <div className="rounded-[10px] border border-gray-200 bg-white p-6 space-y-4">
+          <div className="space-y-6 lg:max-w-[820px] lg:min-w-[420px] lg:flex-1">
+            <div className="space-y-4 rounded-[10px] border border-gray-200 bg-white p-6">
               <Skeleton className="h-6 w-32" />
               <div className="flex items-center justify-between">
                 <div className="space-y-2">
@@ -521,33 +554,45 @@ export function MembershipCheckoutSkeleton() {
               </div>
             </div>
 
-            <div className="rounded-[10px] border border-gray-200 bg-white p-6 space-y-4">
+            <div className="space-y-4 rounded-[10px] border border-gray-200 bg-white p-6">
               <Skeleton className="h-6 w-32" />
               {repeat(3).map((_, index) => (
-                <Skeleton key={`membership-total-${index}`} className="h-4 w-full" />
+                <Skeleton
+                  key={`membership-total-${index}`}
+                  className="h-4 w-full"
+                />
               ))}
             </div>
 
-            <div className="rounded-[10px] border border-gray-200 bg-white p-6 space-y-4">
+            <div className="space-y-4 rounded-[10px] border border-gray-200 bg-white p-6">
               <Skeleton className="h-6 w-32" />
               {repeat(3).map((_, index) => (
-                <Skeleton key={`membership-method-${index}`} className="h-12 w-full" />
+                <Skeleton
+                  key={`membership-method-${index}`}
+                  className="h-12 w-full"
+                />
               ))}
             </div>
           </div>
 
-          <div className="lg:shrink-0 mt-8 lg:mt-0 space-y-4">
-            <div className="rounded-[10px] border border-gray-200 bg-white p-6 space-y-3">
+          <div className="mt-8 space-y-4 lg:mt-0 lg:shrink-0">
+            <div className="space-y-3 rounded-[10px] border border-gray-200 bg-white p-6">
               <Skeleton className="h-5 w-32" />
               {repeat(4).map((_, index) => (
-                <Skeleton key={`membership-summary-${index}`} className="h-4 w-full" />
+                <Skeleton
+                  key={`membership-summary-${index}`}
+                  className="h-4 w-full"
+                />
               ))}
               <Skeleton className="h-12 w-full" />
             </div>
-            <div className="rounded-[10px] border border-gray-200 bg-white p-6 space-y-3">
+            <div className="space-y-3 rounded-[10px] border border-gray-200 bg-white p-6">
               <Skeleton className="h-5 w-32" />
               {repeat(3).map((_, index) => (
-                <Skeleton key={`membership-detail-${index}`} className="h-4 w-full" />
+                <Skeleton
+                  key={`membership-detail-${index}`}
+                  className="h-4 w-full"
+                />
               ))}
             </div>
           </div>
@@ -644,7 +689,7 @@ export function AuthFindIdSkeleton() {
   return (
     <div className="min-h-screen bg-white">
       <div className="mx-auto flex min-h-lvh w-full max-w-[375px] flex-col justify-center px-4">
-        <div className="mb-6 text-center space-y-2">
+        <div className="mb-6 space-y-2 text-center">
           <Skeleton className="mx-auto h-7 w-32" />
           <Skeleton className="mx-auto h-4 w-64" />
         </div>
@@ -672,7 +717,7 @@ export function AuthFindPasswordSkeleton() {
   return (
     <div className="min-h-screen bg-white">
       <div className="mx-auto flex min-h-lvh w-full max-w-[375px] flex-col justify-center px-4">
-        <div className="mb-6 text-center space-y-2">
+        <div className="mb-6 space-y-2 text-center">
           <Skeleton className="mx-auto h-7 w-36" />
           <Skeleton className="mx-auto h-4 w-72" />
         </div>
@@ -736,7 +781,10 @@ export function AuthSignupSkeleton() {
           <div className="space-y-3">
             <Skeleton className="h-4 w-24" />
             {repeat(5).map((_, index) => (
-              <div key={`signup-consent-${index}`} className="flex items-center gap-3">
+              <div
+                key={`signup-consent-${index}`}
+                className="flex items-center gap-3"
+              >
                 <Skeleton className="h-4 w-4 rounded-sm" />
                 <Skeleton className="h-4 w-48" />
               </div>
@@ -779,7 +827,7 @@ export function ConsentsSkeleton() {
           </div>
 
           <Skeleton className="h-12 w-full" />
-          <Skeleton className="h-3 w-64 mx-auto" />
+          <Skeleton className="mx-auto h-3 w-64" />
         </div>
       </div>
     </div>
@@ -840,7 +888,10 @@ export function MypageHomeSkeleton() {
           <Skeleton className="h-20 w-full rounded-xl" />
           <div className="mt-6 space-y-4">
             {repeat(4).map((_, index) => (
-              <Skeleton key={`mypage-mobile-${index}`} className="h-14 w-full rounded-lg" />
+              <Skeleton
+                key={`mypage-mobile-${index}`}
+                className="h-14 w-full rounded-lg"
+              />
             ))}
           </div>
         </div>
@@ -854,11 +905,14 @@ export function MypageHomeSkeleton() {
                 <aside className="hidden w-[280px] shrink-0 lg:block">
                   <div className="space-y-4 rounded-lg border border-gray-200 bg-white p-6">
                     {repeat(6).map((_, index) => (
-                      <Skeleton key={`mypage-side-${index}`} className="h-4 w-32" />
+                      <Skeleton
+                        key={`mypage-side-${index}`}
+                        className="h-4 w-32"
+                      />
                     ))}
                   </div>
                 </aside>
-                <section className="content-area min-w-0 w-full flex-1 space-y-6">
+                <section className="content-area w-full min-w-0 flex-1 space-y-6">
                   <Skeleton className="h-24 w-full rounded-xl" />
                   <div className="grid grid-cols-2 gap-4">
                     {repeat(4).map((_, index) => (
@@ -883,7 +937,7 @@ export function MypageMembershipSkeleton() {
     <div className="bg-white px-3 py-4 md:min-h-screen md:px-6">
       <Skeleton className="h-6 w-40" />
       <div className="mt-6 space-y-4">
-        <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3">
+        <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4">
           <Skeleton className="h-5 w-32" />
           <div className="grid grid-cols-2 gap-3">
             <Skeleton className="h-16 w-full rounded-lg" />
@@ -891,14 +945,17 @@ export function MypageMembershipSkeleton() {
           </div>
         </div>
         <Skeleton className="h-12 w-full rounded-lg" />
-        <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3">
+        <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4">
           <Skeleton className="h-5 w-32" />
           <Skeleton className="h-24 w-full rounded-lg" />
         </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3">
+        <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4">
           <Skeleton className="h-5 w-32" />
           {repeat(3).map((_, index) => (
-            <Skeleton key={`membership-history-${index}`} className="h-10 w-full" />
+            <Skeleton
+              key={`membership-history-${index}`}
+              className="h-10 w-full"
+            />
           ))}
         </div>
         <Skeleton className="h-12 w-full rounded-lg" />
@@ -913,12 +970,18 @@ export function MypagePaymentManagerSkeleton() {
       <Skeleton className="h-6 w-40" />
       <div className="bg-gray-10 mt-5 mb-4 space-y-4 p-4">
         {repeat(4).map((_, index) => (
-          <Skeleton key={`payment-section-${index}`} className="h-20 w-full rounded-lg" />
+          <Skeleton
+            key={`payment-section-${index}`}
+            className="h-20 w-full rounded-lg"
+          />
         ))}
       </div>
       <div className="space-y-3">
         {repeat(4).map((_, index) => (
-          <Skeleton key={`payment-menu-${index}`} className="h-12 w-full rounded-lg" />
+          <Skeleton
+            key={`payment-menu-${index}`}
+            className="h-12 w-full rounded-lg"
+          />
         ))}
       </div>
     </div>
@@ -930,7 +993,7 @@ export function MypageProfileSkeleton() {
     <div className="bg-white px-3 py-4 md:min-h-screen md:px-6">
       <Skeleton className="h-6 w-40" />
       <div className="mt-6 space-y-6">
-        <div className="rounded-xl border border-gray-200 bg-white p-6 space-y-4">
+        <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-6">
           <Skeleton className="h-5 w-24" />
           <Skeleton className="h-4 w-64" />
           <div className="space-y-4">
@@ -943,16 +1006,19 @@ export function MypageProfileSkeleton() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-gray-200 bg-white p-6 space-y-4">
+        <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-6">
           <Skeleton className="h-5 w-32" />
           <Skeleton className="h-12 w-full" />
           <Skeleton className="h-10 w-32" />
         </div>
 
-        <div className="rounded-xl border border-gray-200 bg-white p-6 space-y-4">
+        <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-6">
           <Skeleton className="h-5 w-32" />
           {repeat(2).map((_, index) => (
-            <Skeleton key={`profile-address-${index}`} className="h-16 w-full rounded-lg" />
+            <Skeleton
+              key={`profile-address-${index}`}
+              className="h-16 w-full rounded-lg"
+            />
           ))}
         </div>
       </div>
@@ -970,7 +1036,7 @@ export function MypagePasswordSkeleton() {
           <FormFieldSkeleton key={`password-field-${index}`} />
         ))}
         <Skeleton className="h-12 w-full" />
-        <Skeleton className="h-3 w-64 mx-auto" />
+        <Skeleton className="mx-auto h-3 w-64" />
       </div>
     </div>
   )
@@ -981,12 +1047,12 @@ export function MypageCafe24Skeleton() {
     <div className="bg-white px-3 py-4 md:min-h-screen md:px-6">
       <Skeleton className="h-6 w-56" />
       <div className="mt-6 space-y-6">
-        <div className="rounded-xl border border-gray-200 bg-white p-6 space-y-3">
+        <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-6">
           <Skeleton className="h-5 w-32" />
           <Skeleton className="h-4 w-48" />
           <Skeleton className="h-10 w-32" />
         </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-6 space-y-4">
+        <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-6">
           <Skeleton className="h-5 w-32" />
           <div className="grid grid-cols-4 gap-4">
             {repeat(4).map((_, index) => (
@@ -996,7 +1062,10 @@ export function MypageCafe24Skeleton() {
           {repeat(3).map((_, index) => (
             <div key={`cafe24-row-${index}`} className="grid grid-cols-4 gap-4">
               {repeat(4).map((__, cellIndex) => (
-                <Skeleton key={`cafe24-cell-${index}-${cellIndex}`} className="h-4 w-full" />
+                <Skeleton
+                  key={`cafe24-cell-${index}-${cellIndex}`}
+                  className="h-4 w-full"
+                />
               ))}
             </div>
           ))}
@@ -1030,7 +1099,10 @@ export function MypageShopSettingSkeleton() {
           <Skeleton className="h-5 w-40" />
           <div className="flex flex-wrap gap-2">
             {repeat(5).map((_, index) => (
-              <Skeleton key={`shop-type-${index}`} className="h-10 w-24 rounded-[10px]" />
+              <Skeleton
+                key={`shop-type-${index}`}
+                className="h-10 w-24 rounded-[10px]"
+              />
             ))}
           </div>
         </div>
@@ -1039,7 +1111,10 @@ export function MypageShopSettingSkeleton() {
           <Skeleton className="h-5 w-32" />
           <div className="flex flex-wrap gap-2">
             {repeat(8).map((_, index) => (
-              <Skeleton key={`shop-category-${index}`} className="h-9 w-20 rounded-[10px]" />
+              <Skeleton
+                key={`shop-category-${index}`}
+                className="h-9 w-20 rounded-[10px]"
+              />
             ))}
           </div>
         </div>
@@ -1057,13 +1132,19 @@ export function MypageOrderListSkeleton() {
       <section className="my-5">
         <div className="flex gap-2">
           {repeat(4).map((_, index) => (
-            <Skeleton key={`order-filter-${index}`} className="h-8 w-20 rounded-full" />
+            <Skeleton
+              key={`order-filter-${index}`}
+              className="h-8 w-20 rounded-full"
+            />
           ))}
         </div>
       </section>
       <section className="space-y-6">
         {repeat(3).map((_, index) => (
-          <div key={`order-card-${index}`} className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
+          <div
+            key={`order-card-${index}`}
+            className="space-y-4 rounded-xl border border-gray-200 bg-white p-4"
+          >
             <div className="flex items-center justify-between">
               <Skeleton className="h-4 w-24" />
               <Skeleton className="h-4 w-32" />
@@ -1087,12 +1168,15 @@ export function MypageOrderListSkeleton() {
 export function MypageOrderTrackSkeleton() {
   return (
     <div className="bg-gray min-h-screen py-4">
-      <div className="px-3 md:px-0 space-y-8">
-        <div className="rounded-xl bg-white p-4 space-y-3">
+      <div className="space-y-8 px-3 md:px-0">
+        <div className="space-y-3 rounded-xl bg-white p-4">
           <Skeleton className="h-4 w-32" />
           <div className="flex items-center justify-between">
             {repeat(5).map((_, index) => (
-              <Skeleton key={`track-step-${index}`} className="h-8 w-8 rounded-full" />
+              <Skeleton
+                key={`track-step-${index}`}
+                className="h-8 w-8 rounded-full"
+              />
             ))}
           </div>
         </div>
@@ -1115,14 +1199,14 @@ export function MypageOrderTrackSkeleton() {
           </div>
         </section>
 
-        <section className="rounded-xl bg-white p-6 space-y-4">
+        <section className="space-y-4 rounded-xl bg-white p-6">
           <Skeleton className="h-5 w-32" />
           {repeat(3).map((_, index) => (
             <Skeleton key={`shipping-row-${index}`} className="h-4 w-full" />
           ))}
         </section>
 
-        <section className="rounded-xl bg-white p-4 space-y-4">
+        <section className="space-y-4 rounded-xl bg-white p-4">
           <Skeleton className="h-5 w-56" />
           {repeat(4).map((_, index) => (
             <Skeleton key={`faq-${index}`} className="h-10 w-full" />
@@ -1160,13 +1244,19 @@ export function MypagePointSkeleton() {
         <div className="sticky top-0 z-40 border-b border-gray-50 bg-white px-5 py-4">
           <div className="flex gap-2">
             {repeat(3).map((_, index) => (
-              <Skeleton key={`point-tab-${index}`} className="h-8 w-16 rounded-full" />
+              <Skeleton
+                key={`point-tab-${index}`}
+                className="h-8 w-16 rounded-full"
+              />
             ))}
           </div>
         </div>
         <ul className="flex flex-col pb-20">
           {repeat(5).map((_, index) => (
-            <li key={`point-row-${index}`} className="flex flex-col gap-3 border-b border-gray-50 px-5 py-5">
+            <li
+              key={`point-row-${index}`}
+              className="flex flex-col gap-3 border-b border-gray-50 px-5 py-5"
+            >
               <Skeleton className="h-3 w-24" />
               <div className="flex items-start justify-between">
                 <div className="flex flex-col gap-2">
@@ -1190,9 +1280,12 @@ export function MypageExchangeSkeleton() {
   return (
     <div className="bg-white px-3 py-4 md:min-h-screen md:px-6">
       <Skeleton className="h-6 w-40" />
-      <section className="space-y-6 mt-6">
+      <section className="mt-6 space-y-6">
         {repeat(2).map((_, index) => (
-          <div key={`exchange-card-${index}`} className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
+          <div
+            key={`exchange-card-${index}`}
+            className="space-y-4 rounded-xl border border-gray-200 bg-white p-4"
+          >
             <div className="flex items-center justify-between">
               <Skeleton className="h-4 w-24" />
               <Skeleton className="h-4 w-20" />
@@ -1231,7 +1324,10 @@ export function MypageDownloadSkeleton() {
           </div>
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {repeat(6).map((_, index) => (
-              <div key={`download-card-${index}`} className="rounded-xl border border-gray-200 bg-white p-4 space-y-3">
+              <div
+                key={`download-card-${index}`}
+                className="space-y-3 rounded-xl border border-gray-200 bg-white p-4"
+              >
                 <Skeleton className="h-36 w-full rounded-lg" />
                 <Skeleton className="h-4 w-32" />
                 <Skeleton className="h-3 w-24" />
@@ -1241,7 +1337,10 @@ export function MypageDownloadSkeleton() {
           </div>
           <div className="mt-8 flex items-center justify-center gap-2">
             {repeat(5).map((_, index) => (
-              <Skeleton key={`download-page-${index}`} className="h-9 w-16 rounded-md" />
+              <Skeleton
+                key={`download-page-${index}`}
+                className="h-9 w-16 rounded-md"
+              />
             ))}
           </div>
         </div>
@@ -1256,7 +1355,7 @@ export function MypageBusinessSkeleton() {
       <div className="mb-6 flex items-center gap-3">
         <Skeleton className="h-8 w-8 rounded-md md:hidden" />
       </div>
-      <div className="rounded-xl border border-gray-200 bg-white p-6 space-y-4">
+      <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-6">
         <Skeleton className="h-6 w-32" />
         <Skeleton className="h-4 w-48" />
         {repeat(3).map((_, index) => (
@@ -1275,18 +1374,24 @@ export function MypagePinSkeleton() {
   return (
     <div className="flex min-h-screen items-center justify-center p-4">
       <div className="w-full max-w-md space-y-6 rounded-lg border border-gray-200 bg-white p-6">
-        <div className="text-center space-y-2">
+        <div className="space-y-2 text-center">
           <Skeleton className="mx-auto h-6 w-40" />
           <Skeleton className="mx-auto h-4 w-56" />
         </div>
         <div className="flex justify-center gap-2">
           {repeat(6).map((_, index) => (
-            <Skeleton key={`pin-dot-${index}`} className="h-3 w-3 rounded-full" />
+            <Skeleton
+              key={`pin-dot-${index}`}
+              className="h-3 w-3 rounded-full"
+            />
           ))}
         </div>
         <div className="grid grid-cols-3 gap-3">
           {repeat(12).map((_, index) => (
-            <Skeleton key={`pin-key-${index}`} className="h-12 w-full rounded-lg" />
+            <Skeleton
+              key={`pin-key-${index}`}
+              className="h-12 w-full rounded-lg"
+            />
           ))}
         </div>
         <Skeleton className="h-10 w-full rounded-lg" />
@@ -1300,20 +1405,23 @@ export function MypageMembershipSubscribePaymentSkeleton() {
     <div className="bg-white px-3 py-4 md:min-h-screen md:px-6">
       <Skeleton className="h-6 w-32" />
       <div className="mt-6 grid grid-cols-1 gap-4">
-        <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-3">
+        <div className="space-y-3 rounded-lg border border-gray-200 bg-white p-4">
           <Skeleton className="h-5 w-32" />
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <Skeleton className="h-24 w-full rounded-lg" />
             <Skeleton className="h-24 w-full rounded-lg" />
           </div>
         </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-3">
+        <div className="space-y-3 rounded-lg border border-gray-200 bg-white p-4">
           <Skeleton className="h-5 w-32" />
           {repeat(3).map((_, index) => (
-            <Skeleton key={`benefit-${index}`} className="h-10 w-full rounded-lg" />
+            <Skeleton
+              key={`benefit-${index}`}
+              className="h-10 w-full rounded-lg"
+            />
           ))}
         </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-3">
+        <div className="space-y-3 rounded-lg border border-gray-200 bg-white p-4">
           <Skeleton className="h-5 w-32" />
           <div className="grid grid-cols-2 gap-3">
             {repeat(4).map((_, index) => (
@@ -1321,7 +1429,7 @@ export function MypageMembershipSubscribePaymentSkeleton() {
             ))}
           </div>
         </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-3">
+        <div className="space-y-3 rounded-lg border border-gray-200 bg-white p-4">
           <Skeleton className="h-5 w-32" />
           <Skeleton className="h-10 w-full" />
         </div>
@@ -1375,7 +1483,7 @@ export function MypageReviewsSkeleton() {
       </div>
       <div className="mt-4 space-y-4">
         <Skeleton className="h-20 w-full rounded-lg" />
-        <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-4">
+        <div className="space-y-4 rounded-lg border border-gray-200 bg-white p-4">
           {repeat(3).map((_, index) => (
             <div key={`review-card-${index}`} className="flex gap-4">
               <Skeleton className="h-20 w-20 rounded-md" />
@@ -1403,7 +1511,10 @@ export function MypageWishlistSkeleton() {
       </div>
       <div className="mt-4 space-y-3">
         {repeat(4).map((_, index) => (
-          <div key={`wishlist-item-${index}`} className="flex gap-4 rounded-lg border border-gray-200 bg-white p-4">
+          <div
+            key={`wishlist-item-${index}`}
+            className="flex gap-4 rounded-lg border border-gray-200 bg-white p-4"
+          >
             <Skeleton className="h-20 w-20 rounded-md" />
             <div className="flex-1 space-y-2">
               <Skeleton className="h-4 w-40" />
@@ -1431,7 +1542,7 @@ export function AdminInventorySkeleton() {
           <Skeleton className="mx-auto mt-4 h-4 w-64" />
           <Skeleton className="mx-auto mt-2 h-3 w-48" />
         </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-6 space-y-3">
+        <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-6">
           <Skeleton className="h-5 w-32" />
           {repeat(4).map((_, index) => (
             <Skeleton key={`inventory-row-${index}`} className="h-4 w-full" />
@@ -1470,7 +1581,10 @@ export function MembershipPaymentMethodSkeleton() {
             <section className="space-y-3">
               <Skeleton className="h-3 w-28" />
               {repeat(2).map((_, index) => (
-                <Skeleton key={`card-${index}`} className="h-16 w-full rounded-lg" />
+                <Skeleton
+                  key={`card-${index}`}
+                  className="h-16 w-full rounded-lg"
+                />
               ))}
             </section>
             <Skeleton className="h-12 w-full rounded-lg" />
@@ -1485,7 +1599,7 @@ export function MypageEmptyStateSkeleton() {
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center gap-6 p-8">
       <Skeleton className="h-24 w-24 rounded-full" />
-      <div className="text-center space-y-3">
+      <div className="space-y-3 text-center">
         <Skeleton className="h-7 w-64" />
         <Skeleton className="h-4 w-80" />
         <Skeleton className="h-3 w-64" />
@@ -1498,7 +1612,7 @@ export function MypageListSkeleton({ rows = 4 }: { rows?: number }) {
   return (
     <main className="md:bg-muted w-full bg-white">
       <div className="container mx-auto max-w-[1360px]">
-        <div className="block md:hidden px-4 py-6 space-y-4">
+        <div className="block space-y-4 px-4 py-6 md:hidden">
           <Skeleton className="h-6 w-32" />
           {repeat(rows).map((_, index) => (
             <ListRowSkeleton key={`mypage-mobile-row-${index}`} />
@@ -1514,7 +1628,7 @@ export function MypageListSkeleton({ rows = 4 }: { rows?: number }) {
                 ))}
               </div>
             </aside>
-            <section className="content-area min-w-0 w-full flex-1 space-y-4">
+            <section className="content-area w-full min-w-0 flex-1 space-y-4">
               <Skeleton className="h-8 w-48" />
               {repeat(rows).map((_, index) => (
                 <ListRowSkeleton key={`mypage-row-${index}`} />
@@ -1531,7 +1645,7 @@ export function MypageFormSkeleton({ fields = 4 }: { fields?: number }) {
   return (
     <main className="md:bg-muted w-full bg-white">
       <div className="container mx-auto max-w-[1360px]">
-        <div className="block md:hidden px-4 py-6">
+        <div className="block px-4 py-6 md:hidden">
           <Skeleton className="mb-4 h-6 w-32" />
           <div className="space-y-4 rounded-lg border border-gray-200 bg-white p-4">
             {repeat(fields).map((_, index) => (
@@ -1550,7 +1664,7 @@ export function MypageFormSkeleton({ fields = 4 }: { fields?: number }) {
                 ))}
               </div>
             </aside>
-            <section className="content-area min-w-0 w-full flex-1 space-y-6 rounded-lg border border-gray-200 bg-white p-6">
+            <section className="content-area w-full min-w-0 flex-1 space-y-6 rounded-lg border border-gray-200 bg-white p-6">
               <Skeleton className="h-6 w-40" />
               <div className="space-y-4">
                 {repeat(fields).map((_, index) => (
@@ -1570,7 +1684,7 @@ export function MypageTableSkeleton({ rows = 6 }: { rows?: number }) {
   return (
     <main className="md:bg-muted w-full bg-white">
       <div className="container mx-auto max-w-[1360px]">
-        <div className="block md:hidden px-4 py-6 space-y-4">
+        <div className="block space-y-4 px-4 py-6 md:hidden">
           <Skeleton className="h-6 w-32" />
           {repeat(rows).map((_, index) => (
             <ListRowSkeleton key={`mypage-mobile-table-row-${index}`} />
@@ -1586,19 +1700,28 @@ export function MypageTableSkeleton({ rows = 6 }: { rows?: number }) {
                 ))}
               </div>
             </aside>
-            <section className="content-area min-w-0 w-full flex-1 space-y-4">
+            <section className="content-area w-full min-w-0 flex-1 space-y-4">
               <Skeleton className="h-8 w-48" />
               <div className="rounded-lg border border-gray-200 bg-white p-4">
                 <div className="grid grid-cols-4 gap-4">
                   {repeat(4).map((_, index) => (
-                    <Skeleton key={`table-head-${index}`} className="h-4 w-20" />
+                    <Skeleton
+                      key={`table-head-${index}`}
+                      className="h-4 w-20"
+                    />
                   ))}
                 </div>
                 <div className="mt-4 space-y-3">
                   {repeat(rows).map((_, index) => (
-                    <div key={`table-row-${index}`} className="grid grid-cols-4 gap-4">
+                    <div
+                      key={`table-row-${index}`}
+                      className="grid grid-cols-4 gap-4"
+                    >
                       {repeat(4).map((__, cellIndex) => (
-                        <Skeleton key={`table-cell-${index}-${cellIndex}`} className="h-4 w-full" />
+                        <Skeleton
+                          key={`table-cell-${index}-${cellIndex}`}
+                          className="h-4 w-full"
+                        />
                       ))}
                     </div>
                   ))}
@@ -1629,7 +1752,10 @@ export function OrderTrackingSkeleton() {
           <Skeleton className="h-6 w-48" />
           <div className="mt-6 flex items-center justify-between">
             {repeat(5).map((_, index) => (
-              <Skeleton key={`track-step-${index}`} className="h-10 w-10 rounded-full" />
+              <Skeleton
+                key={`track-step-${index}`}
+                className="h-10 w-10 rounded-full"
+              />
             ))}
           </div>
         </div>
@@ -1648,13 +1774,13 @@ export function OrderDetailsSkeleton() {
     <>
       {/* Mobile */}
       <main className="relative min-h-screen w-full bg-[#f8f8f8] font-sans lg:hidden">
-        <div className="p-4 pb-24 space-y-4">
+        <div className="space-y-4 p-4 pb-24">
           <div className="flex items-center justify-between">
             <Skeleton className="h-4 w-24" />
             <Skeleton className="h-4 w-32" />
           </div>
 
-          <section className="rounded-lg bg-white p-4 space-y-3">
+          <section className="space-y-3 rounded-lg bg-white p-4">
             {repeat(4).map((_, index) => (
               <div key={`mobile-pay-${index}`} className="flex justify-between">
                 <Skeleton className="h-4 w-24" />
@@ -1665,11 +1791,11 @@ export function OrderDetailsSkeleton() {
 
           <Skeleton className="h-10 w-full rounded-md" />
 
-          <section className="rounded-lg bg-white p-4 space-y-3">
+          <section className="space-y-3 rounded-lg bg-white p-4">
             <Skeleton className="h-5 w-24" />
             <Skeleton className="h-4 w-3/4" />
             <Skeleton className="h-4 w-40" />
-            <div className="pt-3 border-t border-gray-200">
+            <div className="border-t border-gray-200 pt-3">
               <div className="flex gap-3">
                 <Skeleton className="h-4 w-20" />
                 <Skeleton className="h-4 w-32" />
@@ -1677,7 +1803,7 @@ export function OrderDetailsSkeleton() {
             </div>
           </section>
 
-          <section className="rounded-lg bg-white p-4 space-y-4">
+          <section className="space-y-4 rounded-lg bg-white p-4">
             <div className="flex items-center justify-between">
               <Skeleton className="h-5 w-24" />
               <Skeleton className="h-4 w-20" />
@@ -1701,13 +1827,16 @@ export function OrderDetailsSkeleton() {
 
         <div className="fixed right-4 bottom-24 z-10 flex flex-col gap-2">
           {repeat(3).map((_, index) => (
-            <Skeleton key={`floating-${index}`} className="h-12 w-12 rounded-full" />
+            <Skeleton
+              key={`floating-${index}`}
+              className="h-12 w-12 rounded-full"
+            />
           ))}
         </div>
       </main>
 
       {/* Desktop */}
-      <div className="hidden lg:block bg-white py-4 font-['Pretendard'] md:px-6">
+      <div className="hidden bg-white py-4 font-['Pretendard'] md:px-6 lg:block">
         <section className="mb-[35px] flex flex-col items-start gap-3.5">
           <Skeleton className="h-7 w-32" />
           <div className="flex w-full max-w-[813px] flex-col gap-2">
@@ -1717,7 +1846,7 @@ export function OrderDetailsSkeleton() {
         </section>
 
         <article className="mb-[35px] flex border border-gray-200">
-          <div className="flex-1 p-7 space-y-6">
+          <div className="flex-1 space-y-6 p-7">
             <Skeleton className="h-7 w-32" />
             <div className="flex flex-wrap items-end gap-6">
               <Skeleton className="h-24 w-24 rounded-[5px]" />
@@ -1738,7 +1867,10 @@ export function OrderDetailsSkeleton() {
           <Skeleton className="h-5 w-32" />
           <Skeleton className="h-px w-full" />
           {repeat(3).map((_, index) => (
-            <div key={`desktop-info-${index}`} className="flex items-center gap-16">
+            <div
+              key={`desktop-info-${index}`}
+              className="flex items-center gap-16"
+            >
               <Skeleton className="h-4 w-20" />
               <Skeleton className="h-4 w-64" />
             </div>

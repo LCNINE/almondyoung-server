@@ -1,10 +1,11 @@
-import { CategoryBestSectionSkeleton } from "@/components/skeletons/page-skeletons"
+import { ErrorBoundary } from "@/components/shared/error-boundary"
+import { MainSectionSkeleton } from "@/components/skeletons/page-skeletons"
 import { UserDetail } from "@/lib/types/ui/user"
 import { Suspense } from "react"
 import { HeroBanner } from "../components/banner/hero-banner"
 import { HomeSection } from "../components/shared/home-section"
 import { CategoryBestProductsWrapper } from "./best-categories"
-import { ErrorBoundary } from "@/components/shared/error-boundary"
+import { WelcomeDealWrapper } from "./welcome-deals"
 
 /*
  * ============================================================================
@@ -133,16 +134,20 @@ export async function HomeLogoutTemplate({
         <ErrorBoundary
           fallback={<div>카테고리별 제품 섹션을 불러오지 못했어요.</div>}
         >
-          <Suspense fallback={<CategoryBestSectionSkeleton />}>
+          <Suspense fallback={<MainSectionSkeleton />}>
             <CategoryBestProductsWrapper countryCode={countryCode} />
           </Suspense>
         </ErrorBoundary>
       </HomeSection>
 
       {/* 웰컴 딜 섹션 - 신규 회원 대상 할인 상품 */}
-      {/* <ProductListSection className="border-t md:border-t-0">
-        <WelcomeDealSection products={welcomeDealProducts} />
-      </ProductListSection> */}
+      <HomeSection>
+        <ErrorBoundary fallback={<div>웰컴 딜 섹션을 불러오지 못했어요.</div>}>
+          <Suspense fallback={<MainSectionSkeleton />}>
+            <WelcomeDealWrapper countryCode={countryCode} />
+          </Suspense>
+        </ErrorBoundary>
+      </HomeSection>
     </div>
   )
 }
