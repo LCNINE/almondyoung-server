@@ -1,5 +1,90 @@
 import "server-only"
-import { cookies as nextCookies } from "next/headers"
+import { cookies as nextCookies, headers as nextHeaders } from "next/headers"
+
+const getConfiguredCookieDomain = (): string | undefined => {
+  const domain =
+    process.env.COOKIE_DOMAIN ?? process.env.NEXT_PUBLIC_COOKIE_DOMAIN
+
+  if (!domain) {
+    return undefined
+  }
+
+  const trimmedDomain = domain.trim()
+
+  if (!trimmedDomain) {
+    return undefined
+  }
+
+  return trimmedDomain.startsWith(".") ? trimmedDomain : `.${trimmedDomain}`
+}
+
+const getHostnameFromHeader = (hostHeader: string | null): string | null => {
+  if (!hostHeader) {
+    return null
+  }
+
+  const firstHost = hostHeader.split(",")[0]?.trim().toLowerCase()
+
+  if (!firstHost) {
+    return null
+  }
+
+  if (firstHost.startsWith("[")) {
+    const closingIndex = firstHost.indexOf("]")
+
+    if (closingIndex === -1) {
+      return firstHost
+    }
+
+    return firstHost.slice(1, closingIndex)
+  }
+
+  return firstHost.split(":")[0]
+}
+
+const isIpHost = (hostname: string) => {
+  return /^(?:\d{1,3}\.){3}\d{1,3}$/.test(hostname) || hostname.includes(":")
+}
+
+const getSecondLevelDomain = (hostname: string): string | undefined => {
+  if (!hostname || hostname === "localhost" || isIpHost(hostname)) {
+    return undefined
+  }
+
+  const parts = hostname.split(".").filter(Boolean)
+
+  if (parts.length < 2) {
+    return undefined
+  }
+
+  return parts.slice(-2).join(".")
+}
+
+export const getTokenCookieDomain = async (): Promise<string | undefined> => {
+  const configuredDomain = getConfiguredCookieDomain()
+
+  if (configuredDomain) {
+    return configuredDomain
+  }
+
+  try {
+    const headers = await nextHeaders()
+    const host =
+      headers.get("x-forwarded-host") ??
+      headers.get("host") ??
+      headers.get("x-host")
+
+    const hostname = getHostnameFromHeader(host)
+
+    if (!hostname) {
+      return undefined
+    }
+
+    return getSecondLevelDomain(hostname)
+  } catch {
+    return undefined
+  }
+}
 
 export const getAuthHeaders = async (): Promise<
   { authorization: string } | {}
@@ -16,6 +101,16 @@ export const getAuthHeaders = async (): Promise<
   } catch {
     return {}
   }
+}
+
+export const getCookies = async () => {
+  const cookies = await nextCookies()
+  return cookies.toString()
+}
+
+export const getAccessToken = async () => {
+  const cookies = await nextCookies()
+  return cookies.get("accessToken")?.value
 }
 
 export const getCacheTag = async (tag: string): Promise<string> => {
@@ -52,18 +147,92 @@ export const getCacheOptions = async (
 export const setAuthToken = async (token: string) => {
   const cookies = await nextCookies()
   cookies.set("_medusa_jwt", token, {
-    maxAge: 60 * 60 * 24 * 7,
+    maxAge: 60 * 60 * 24 * 30,
     httpOnly: true,
     sameSite: "strict",
     secure: process.env.NODE_ENV === "production",
+    path: "/",
   })
+}
+
+export const setTokenCookies = async (
+  accessToken: string,
+  refreshToken?: string
+) => {
+  const cookies = await nextCookies()
+  const domain = await getTokenCookieDomain()
+
+  if (domain) {
+    cookies.set("accessToken", "", {
+      maxAge: -1,
+      path: "/",
+    })
+  }
+
+  cookies.set("accessToken", accessToken, {
+    path: "/",
+    maxAge: 60 * 60 * 24 * 7,
+    ...(domain ? { domain } : {}),
+  })
+
+  if (refreshToken) {
+    if (domain) {
+      cookies.set("refreshToken", "", {
+        maxAge: -1,
+        path: "/",
+      })
+    }
+
+    cookies.set("refreshToken", refreshToken, {
+      path: "/",
+      maxAge: 60 * 60 * 24 * 30,
+      ...(domain ? { domain } : {}),
+    })
+  }
 }
 
 export const removeAuthToken = async () => {
   const cookies = await nextCookies()
   cookies.set("_medusa_jwt", "", {
     maxAge: -1,
+    path: "/",
   })
+}
+
+export const removeAccessToken = async () => {
+  const cookies = await nextCookies()
+  const domain = await getTokenCookieDomain()
+
+  cookies.set("accessToken", "", {
+    maxAge: -1,
+    path: "/",
+  })
+
+  if (domain) {
+    cookies.set("accessToken", "", {
+      maxAge: -1,
+      path: "/",
+      domain,
+    })
+  }
+}
+
+export const removeRefreshToken = async () => {
+  const cookies = await nextCookies()
+  const domain = await getTokenCookieDomain()
+
+  cookies.set("refreshToken", "", {
+    maxAge: -1,
+    path: "/",
+  })
+
+  if (domain) {
+    cookies.set("refreshToken", "", {
+      maxAge: -1,
+      path: "/",
+      domain,
+    })
+  }
 }
 
 export const getCartId = async () => {
@@ -86,4 +255,19 @@ export const removeCartId = async () => {
   cookies.set("_medusa_cart_id", "", {
     maxAge: -1,
   })
+}
+
+export const removeAllAuthTokens = async () => {
+  const cookies = await nextCookies()
+  const domain = await getTokenCookieDomain()
+
+  cookies.set("accessToken", "", { maxAge: -1, path: "/" })
+  cookies.set("refreshToken", "", { maxAge: -1, path: "/" })
+  cookies.set("_medusa_jwt", "", { maxAge: -1, path: "/" })
+  cookies.set("_medusa_cart_id", "", { maxAge: -1 })
+
+  if (domain) {
+    cookies.set("accessToken", "", { maxAge: -1, path: "/", domain })
+    cookies.set("refreshToken", "", { maxAge: -1, path: "/", domain })
+  }
 }

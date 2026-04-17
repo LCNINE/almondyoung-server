@@ -1,16 +1,22 @@
+"use client"
+
 import { login } from "@lib/data/customer"
 import { LOGIN_VIEW } from "@modules/account/templates/login-template"
 import ErrorMessage from "@modules/checkout/components/error-message"
 import { SubmitButton } from "@modules/checkout/components/submit-button"
 import Input from "@modules/common/components/input"
 import { useActionState } from "react"
+import { useParams, useSearchParams } from "next/navigation"
 
 type Props = {
   setCurrentView: (view: LOGIN_VIEW) => void
 }
 
 const Login = ({ setCurrentView }: Props) => {
+  const { countryCode } = useParams() as { countryCode: string }
+  const searchParams = useSearchParams()
   const [message, formAction] = useActionState(login, null)
+  const redirectTo = searchParams.get("redirect_to") || "/"
 
   return (
     <div
@@ -22,15 +28,15 @@ const Login = ({ setCurrentView }: Props) => {
         Sign in to access an enhanced shopping experience.
       </p>
       <form className="w-full" action={formAction}>
+        <input type="hidden" name="countryCode" value={countryCode} />
+        <input type="hidden" name="redirect_to" value={redirectTo} />
         <div className="flex flex-col w-full gap-y-2">
           <Input
-            label="Email"
-            name="email"
-            type="email"
-            title="Enter a valid email address."
-            autoComplete="email"
+            label="Login ID"
+            name="loginId"
+            autoComplete="username"
             required
-            data-testid="email-input"
+            data-testid="login-id-input"
           />
           <Input
             label="Password"
@@ -40,6 +46,10 @@ const Login = ({ setCurrentView }: Props) => {
             required
             data-testid="password-input"
           />
+          <label className="mt-2 flex items-center gap-2 text-small-regular text-ui-fg-subtle">
+            <input type="checkbox" name="rememberMe" />
+            Keep me signed in
+          </label>
         </div>
         <ErrorMessage error={message} data-testid="login-error-message" />
         <SubmitButton data-testid="sign-in-button" className="w-full mt-6">

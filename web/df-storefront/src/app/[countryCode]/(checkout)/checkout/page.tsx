@@ -25,7 +25,7 @@ export default async function Checkout({
   const customer = await retrieveCustomer()
 
   if (!customer) {
-    redirect(`/${countryCode}/account`)
+    redirect(`/${countryCode}/account?redirect_to=/checkout`)
   }
 
   return (
