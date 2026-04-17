@@ -165,7 +165,7 @@ export const ReceiptSection = ({
                     사업자등록번호: {taxInvoiceData.businessNumber}
                   </p>
                   <p className="text-sm text-gray-500">
-                    대표자: {taxInvoiceData.ownerName}
+                    대표이사: {taxInvoiceData.ownerName}
                   </p>
                   <p className="text-sm text-gray-500">
                     {taxInvoiceData.address}

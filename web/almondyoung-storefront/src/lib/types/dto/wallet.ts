@@ -1,3 +1,5 @@
+import type { PaginatedResponseDto } from "../common/pagination"
+
 /*───────────────────────────
  * Intent
  *──────────────────────────*/
@@ -134,6 +136,32 @@ export type PointBalanceDto = {
 }
 
 /*───────────────────────────
+ * 포인트 (wallet points)
+ *──────────────────────────*/
+
+export type PointEventType = "EARN" | "REDEEM" | "EARN_CANCEL" | "REDEEM_CANCEL"
+
+export type PointsBalanceDto = {
+  /** 확정된 포인트 (지금까지 이벤트 amount의 총합) */
+  confirmed: number
+  /** 사용 예약(AUTHORIZED hold) 중인 포인트 */
+  reserved: number
+  /** 사용 가능 포인트 (confirmed - reserved) */
+  available: number
+}
+
+/** 포인트 이벤트(내역) */
+export type PointsEventRowDto = {
+  id: string
+  userId: string
+  eventType: PointEventType
+  amount: number
+  originalEventId: string | null
+  reasonCode: string | null
+  createdAt: string
+}
+
+/*───────────────────────────
  * 나중결제 요약 조회
  *──────────────────────────*/
 export type BnplSummaryDto = {
@@ -182,7 +210,7 @@ export interface TaxInvoiceData {
   name: string // 사업자명
   businessNumber: string
   address: string // 사업장 주소
-  ownerName: string // 대표자명
+  ownerName: string // 대표이사명
 }
 
 /*───────────────────────────

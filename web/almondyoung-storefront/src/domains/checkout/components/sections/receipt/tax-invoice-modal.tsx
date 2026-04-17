@@ -25,7 +25,7 @@ const taxInvoiceSchema = z.object({
     .string()
     .min(1, "사업자등록번호를 입력해주세요")
     .regex(/^\d{3}-\d{2}-\d{5}$/, "올바른 사업자등록번호 형식이 아닙니다"),
-  ownerName: z.string().min(1, "대표자명을 입력해주세요"),
+  ownerName: z.string().min(1, "대표이사명을 입력해주세요"),
   address: z.string().min(1, "사업장 주소를 입력해주세요"),
 })
 
@@ -149,11 +149,11 @@ export function TaxInvoiceModal({
 
           <div>
             <Label className="mb-2 block text-sm font-medium text-gray-700">
-              대표자명 <span className="text-red-500">*</span>
+              대표이사명 <span className="text-red-500">*</span>
             </Label>
             <Input
               {...register("ownerName")}
-              placeholder="대표자명을 입력하세요"
+              placeholder="대표이사명을 입력하세요"
               className={errors.ownerName ? "border-red-500" : ""}
               disabled={isPending}
             />

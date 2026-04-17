@@ -367,6 +367,31 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { Form, FormControl, FormField, FormItem } from "@/components/ui/form"
 ```
 
+### 10. 날짜 포맷팅
+
+- **날짜를 사람이 읽는 문자열로 변환할 때는 반드시 `formatDate` 유틸을 사용하세요** (`@/lib/utils/format-date`)
+- `new Date().toLocaleDateString(...)`, `Intl.DateTimeFormat(...)`, `date-fns`의 `format()` 직접 호출 금지
+- `parseISO` + `format` 조합 등 파싱/포맷 로직을 컴포넌트마다 재작성하지 마세요
+
+```tsx
+import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
+
+// 기본: "2024년 6월 14일"
+formatDate(order.createdAt)
+
+// 프리셋 사용: "2024.06.14"
+formatDate(order.createdAt, DATE_FORMATS.KO_DOT)
+
+// 커스텀 패턴 (date-fns 토큰)
+formatDate(order.createdAt, "yyyy/MM/dd HH:mm")
+
+// 유효하지 않은 값의 기본 fallback은 "-" (빈 문자열 등으로 오버라이드 가능)
+formatDate(maybeNull, DATE_FORMATS.KO_LONG, "")
+```
+
+- 지원 입력: `string | number | Date | null | undefined` (ISO 문자열/타임스탬프/Date 모두 허용)
+- 공용 프리셋(`DATE_FORMATS`): `KO_LONG`, `KO_DOT`, `ISO_DATE`, `KO_DOT_TIME`, `KO_LONG_WEEKDAY` — 필요한 프리셋이 없다면 `DATE_FORMATS`에 추가한 뒤 사용하세요
+
 ## 경로 Alias
 
 ```typescript
@@ -415,6 +440,7 @@ products.map((product) => ({
 3. **npm**을 사용하지 마세요. yarn만 사용합니다.
 4. **`fetch()`를 직접 호출하지 마세요.** 백엔드 API 요청은 반드시 `api()` 함수(`@/lib/api/api`)를 사용합니다.
 5. **`next/link`의 `Link`를 직접 사용하지 마세요.** 내부 링크는 반드시 `LocalizedClientLink`(`@/components/shared/localized-client-link`)를 사용합니다.
+6. **날짜 포맷팅 시 `toLocaleDateString`, `Intl.DateTimeFormat`, `date-fns`의 `format()`을 직접 호출하지 마세요.** 반드시 `formatDate`(`@/lib/utils/format-date`)를 사용합니다.
 
 ## 참고 문서
 

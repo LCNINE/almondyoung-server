@@ -227,11 +227,11 @@ function BusinessForm({
           control={form.control}
           render={({ field }) => (
             <div className="flex flex-col gap-2">
-              <Label htmlFor="ceo-name-input">대표자 명</Label>
+              <Label htmlFor="ceo-name-input">대표이사 명</Label>
               <Input
                 {...field}
                 id="ceo-name-input"
-                placeholder="대표자명(사업자등록증 표기)"
+                placeholder="대표이사명(사업자등록증 표기)"
                 autoComplete="off"
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {

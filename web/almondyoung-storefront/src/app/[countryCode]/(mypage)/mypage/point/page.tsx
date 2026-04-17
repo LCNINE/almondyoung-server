@@ -1,7 +1,15 @@
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { WithHeaderLayout } from "@/components/layout"
+import { PointTemplate } from "@/domains/mypage/template/point"
 
-export default function PointPage() {
+interface PointPageProps {
+  searchParams: Promise<{ page?: string }>
+}
+
+export default async function PointPage({ searchParams }: PointPageProps) {
+  const { page } = await searchParams
+  const currentPage = Math.max(1, Number(page) || 1)
+
   return (
     <WithHeaderLayout
       config={{
@@ -12,11 +20,7 @@ export default function PointPage() {
       }}
     >
       <MypageLayout>
-        <div className="min-h-screen w-full bg-white font-['Pretendard'] text-black">
-          <div className="mx-auto min-h-screen max-w-md bg-white">
-            <main>포인트페이지</main>
-          </div>
-        </div>
+        <PointTemplate page={currentPage} />
       </MypageLayout>
     </WithHeaderLayout>
   )
