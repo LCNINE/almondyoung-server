@@ -44,6 +44,19 @@ export const mainMenus: MainMenu[] = [
       },
     ],
   },
+  {
+    id: "inventory",
+    title: "재고",
+    icon: "Boxes",
+    defaultPath: "/inventory/skus",
+    children: [
+      {
+        id: "inventory-skus",
+        title: "재고상품 관리",
+        path: "/inventory/skus",
+      },
+    ],
+  },
 ]
 
 export function getMenuById(id: string): MainMenu | undefined {
