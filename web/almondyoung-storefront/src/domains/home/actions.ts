@@ -1,50 +1,52 @@
 "use server"
 
-import { getBestProductRankings } from "@lib/api/analytics"
+import type { HttpTypes } from "@medusajs/types"
 import { listProducts } from "@/lib/api/medusa/products"
-import { HttpTypes } from "@medusajs/types"
+import { getBestProductRankings } from "@/lib/api/analytics"
 
-type GetCategoryBestProductsParams = {
-  categoryId: string
+type Params = {
+  pimCategoryId: string
+  fallbackCategoryId: string
   regionId?: string
   limit?: number
 }
 
-export async function getCategoryBestProducts({
-  categoryId,
+/**
+ * 카테고리별 베스트 상품을 랭킹 순서대로 반환.
+ * 1) analytics에서 masterId 랭킹을 받아옴
+ * 2) masterId(=Medusa handle)로 상품 일괄 조회
+ * 3) 랭킹 순서대로 재정렬
+ * 4) 랭킹이 비어있으면 카테고리 기본 목록으로 fallback
+ */
+export async function getBestProductsByCategory({
+  pimCategoryId,
+  fallbackCategoryId,
   regionId,
   limit = 10,
-}: GetCategoryBestProductsParams): Promise<HttpTypes.StoreProduct[]> {
-  // 엘라스틱에서 베스트 상품 랭킹 조회
-  const bestRankings = await getBestProductRankings({
-    categoryId,
+}: Params): Promise<HttpTypes.StoreProduct[]> {
+  const rankings = await getBestProductRankings({
+    categoryId: pimCategoryId,
     limit,
   })
 
-  if (!bestRankings.length) {
-    return []
-  }
-
-  // masterId(handle)들로 Medusa 상품 조회
-  const handles = bestRankings.map((item) => item.masterId)
+  const masterIds = rankings.map((r) => r.masterId)
 
   const {
     response: { products },
-  } = await listProducts({
-    queryParams: {
-      handle: handles,
-      limit: handles.length,
-    },
-    regionId,
-  })
+  } = masterIds.length
+    ? await listProducts({
+        queryParams: { handle: masterIds, limit: masterIds.length },
+        regionId,
+      })
+    : await listProducts({
+        queryParams: { category_id: [fallbackCategoryId], limit },
+        regionId,
+      })
 
-  // 엘라스틱 랭킹 순서대로 정렬
-  const handleOrder = new Map(handles.map((handle, index) => [handle, index]))
-  const sortedProducts = [...products].sort((a, b) => {
-    const orderA = handleOrder.get(a.handle ?? "") ?? Infinity
-    const orderB = handleOrder.get(b.handle ?? "") ?? Infinity
-    return orderA - orderB
-  })
+  if (!masterIds.length) return products
 
-  return sortedProducts
+  const byHandle = new Map(products.map((p) => [p.handle, p]))
+  return masterIds
+    .map((id) => byHandle.get(id))
+    .filter((p): p is HttpTypes.StoreProduct => Boolean(p))
 }
