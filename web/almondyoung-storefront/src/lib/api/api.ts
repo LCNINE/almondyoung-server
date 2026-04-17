@@ -70,8 +70,7 @@ export async function api<T>(
     }
 
     ;(headers as Record<string, string>).Cookie = cookieString
-    ;(headers as Record<string, string>).Authorization =
-      `Bearer ${accessToken}`
+    ;(headers as Record<string, string>).Authorization = `Bearer ${accessToken}`
   }
 
   let response: Response

@@ -4,7 +4,7 @@ import { FIXED_CATEGORIES, FixedCategory } from "@/lib/constants/categories"
 import { HttpTypes } from "@medusajs/types"
 import { useState, useTransition } from "react"
 import { StoreCustomerWithGroups } from "@/lib/types/ui/medusa"
-import { listProducts } from "@/lib/api/medusa/products"
+import { getBestProductsByCategory } from "../../actions"
 import { ProductSection } from "../shared/product-section"
 
 interface CategoryBestSectionProps {
@@ -32,11 +32,13 @@ export function CategoryBestSection({
     setActiveTab(tab)
 
     startTransition(async () => {
-      const nextProducts = await listProducts({
-        queryParams: { category_id: tab.id, limit: 10 },
+      const nextProducts = await getBestProductsByCategory({
+        pimCategoryId: tab.pimCategoryId,
+        fallbackCategoryId: tab.id,
         regionId,
+        limit: 10,
       })
-      setProducts(nextProducts.response.products)
+      setProducts(nextProducts)
     })
   }
 

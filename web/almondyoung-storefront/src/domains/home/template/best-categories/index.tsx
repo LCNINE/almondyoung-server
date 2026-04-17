@@ -1,9 +1,9 @@
 import { FIXED_CATEGORIES } from "@/lib/constants/categories"
 import { getRegion } from "@/lib/api/medusa/regions"
 import { CategoryBestSection } from "../../components/category-best-section"
-import { listProducts } from "@/lib/api/medusa/products"
 import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import { getWishlist } from "@lib/api/users/wishlist"
+import { getBestProductsByCategory } from "../../actions"
 
 export async function CategoryBestProductsWrapper({
   countryCode,
@@ -12,15 +12,11 @@ export async function CategoryBestProductsWrapper({
 }) {
   const region = await getRegion(countryCode)
 
-  // 첫 번째 카테고리의 상품 조회
-  const {
-    response: { products },
-  } = await listProducts({
-    queryParams: {
-      category_id: [FIXED_CATEGORIES[0].id],
-      limit: 10,
-    },
+  const orderedProducts = await getBestProductsByCategory({
+    pimCategoryId: FIXED_CATEGORIES[0].pimCategoryId,
+    fallbackCategoryId: FIXED_CATEGORIES[0].id,
     regionId: region?.id,
+    limit: 10,
   })
 
   const customer = await retrieveCustomer()
@@ -31,7 +27,7 @@ export async function CategoryBestProductsWrapper({
 
   return (
     <CategoryBestSection
-      initialProducts={products}
+      initialProducts={orderedProducts}
       regionId={region?.id}
       customer={customer}
       wishlistIds={wishlistIds}
