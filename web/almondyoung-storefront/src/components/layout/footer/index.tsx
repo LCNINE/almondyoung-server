@@ -84,9 +84,7 @@ export default function Footer({ className }: { className?: string }) {
             <FooterInfoLine>
               회사 : 주식회사 엘씨나인 | 대표이사 : 권흥철
             </FooterInfoLine>
-            <FooterInfoLine>
-              사업자 등록번호 : 467-86-01638 [사업자정보확인]
-            </FooterInfoLine>
+            <FooterInfoLine>사업자 등록번호 : 467-86-01638</FooterInfoLine>
             <FooterInfoLine>
               통신판매업 신고 : 2019-서울영등포-1446
             </FooterInfoLine>
