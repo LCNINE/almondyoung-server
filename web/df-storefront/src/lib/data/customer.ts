@@ -6,41 +6,245 @@ import { HttpTypes } from "@medusajs/types"
 import { revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
 import {
+  getAccessToken,
+  getCookies,
   getAuthHeaders,
   getCacheOptions,
   getCacheTag,
   getCartId,
-  removeAuthToken,
-  removeCartId,
+  removeAllAuthTokens,
+  setTokenCookies,
   setAuthToken,
 } from "./cookies"
 
+const MEDUSA_PUBLISHABLE_KEY =
+  process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY ?? ""
+
+const getUsersServiceUrl = () =>
+  process.env.USERS_SERVICE_URL ??
+  process.env.NEXT_PUBLIC_USERS_SERVICE_URL ??
+  "http://localhost:3030"
+
+const getMedusaBackendUrl = () =>
+  process.env.MEDUSA_BACKEND_URL ?? "http://localhost:9000"
+
+async function fetchMedusaSignin(accessToken: string): Promise<string | null> {
+  const response = await fetch(`${getMedusaBackendUrl()}/auth/customer/my-auth`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      "x-publishable-api-key": MEDUSA_PUBLISHABLE_KEY,
+    },
+    cache: "no-store",
+  })
+
+  if (!response.ok) {
+    return null
+  }
+
+  const data = await response.json()
+  return data.token ?? data.data?.token ?? null
+}
+
+async function fetchMedusaSignup(
+  accessToken: string,
+  params: {
+    email: string
+    first_name: string
+    last_name: string
+    almond_user_id: string
+    almond_login_id: string
+  }
+) {
+  const response = await fetch(
+    `${getMedusaBackendUrl()}/auth/customer/my-auth/register`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        "x-publishable-api-key": MEDUSA_PUBLISHABLE_KEY,
+      },
+      body: JSON.stringify(params),
+      cache: "no-store",
+    }
+  )
+
+  return response.ok
+}
+
+async function signInToMedusa(accessToken: string) {
+  const medusaToken = await fetchMedusaSignin(accessToken)
+
+  if (!medusaToken) {
+    return false
+  }
+
+  await setAuthToken(medusaToken)
+
+  const customerCacheTag = await getCacheTag("customers")
+  revalidateTag(customerCacheTag)
+
+  await transferCart()
+
+  return true
+}
+
+async function restoreUserServiceAccessToken(): Promise<string | null> {
+  const response = await fetch(`${getUsersServiceUrl()}/auth/restore-token`, {
+    method: "POST",
+    headers: {
+      Cookie: await getCookies(),
+    },
+    cache: "no-store",
+  })
+
+  if (!response.ok) {
+    return null
+  }
+
+  const result = await response.json().catch(() => ({}))
+  const accessToken = result.data?.accessToken ?? result.accessToken ?? null
+
+  if (!accessToken) {
+    return null
+  }
+
+  await setTokenCookies(accessToken)
+
+  return accessToken
+}
+
+async function ensureMedusaAuthToken(): Promise<boolean> {
+  let accessToken = await getAccessToken()
+
+  if (!accessToken) {
+    accessToken = await restoreUserServiceAccessToken()
+  }
+
+  if (!accessToken) {
+    return false
+  }
+
+  return signInToMedusa(accessToken)
+}
+
+async function fetchCustomer() {
+  const authHeaders = await getAuthHeaders()
+
+  if (!authHeaders || !("authorization" in authHeaders)) {
+    return null
+  }
+
+  const next = {
+    ...(await getCacheOptions("customers")),
+  }
+
+  return sdk.client
+    .fetch<{ customer: HttpTypes.StoreCustomer }>(`/store/customers/me`, {
+      method: "GET",
+      query: {
+        fields: "*orders",
+      },
+      headers: authHeaders,
+      next,
+      cache: "force-cache",
+    })
+    .then(({ customer }) => customer)
+    .catch(() => null)
+}
+
+async function callbackSignup(userId: string) {
+  const response = await fetch(`${getUsersServiceUrl()}/auth/callback/signup`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ userId }),
+    cache: "no-store",
+  })
+
+  const result = await response.json().catch(() => ({}))
+
+  if (!response.ok) {
+    throw new Error(result.message || "Signup callback failed")
+  }
+
+  return result.data ?? result
+}
+
+async function signInToUserService(
+  loginId: string,
+  password: string,
+  rememberMe = false
+) {
+  const response = await fetch(`${getUsersServiceUrl()}/auth/signin`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ loginId, password, rememberMe }),
+    cache: "no-store",
+  })
+
+  const result = await response.json().catch(() => ({}))
+
+  if (!response.ok) {
+    throw new Error(result.message || "Login failed")
+  }
+
+  return result.data ?? result
+}
+
+async function signUpToUserService(payload: {
+  email: string
+  username: string
+  nickname: string
+  loginId: string
+  password: string
+  birthday: string
+  phoneNumber: string
+  isOver14: boolean
+  termsOfService: boolean
+  electronicTransaction: boolean
+  privacyPolicy: boolean
+  thirdPartySharing: boolean
+  marketingConsent: boolean
+}) {
+  const response = await fetch(`${getUsersServiceUrl()}/auth/signup`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+    cache: "no-store",
+  })
+
+  const result = await response.json().catch(() => ({}))
+
+  if (!response.ok) {
+    throw new Error(result.message || "Signup failed")
+  }
+
+  return result.data ?? result
+}
+
 export const retrieveCustomer =
   async (): Promise<HttpTypes.StoreCustomer | null> => {
-    const authHeaders = await getAuthHeaders()
+    const customer = await fetchCustomer()
 
-    if (!authHeaders) return null
-
-    const headers = {
-      ...authHeaders,
+    if (customer) {
+      return customer
     }
 
-    const next = {
-      ...(await getCacheOptions("customers")),
+    const restored = await ensureMedusaAuthToken()
+
+    if (!restored) {
+      return null
     }
 
-    return await sdk.client
-      .fetch<{ customer: HttpTypes.StoreCustomer }>(`/store/customers/me`, {
-        method: "GET",
-        query: {
-          fields: "*orders",
-        },
-        headers,
-        next,
-        cache: "force-cache",
-      })
-      .then(({ customer }) => customer)
-      .catch(() => null)
+    return fetchCustomer()
   }
 
 export const updateCustomer = async (body: HttpTypes.StoreUpdateCustomer) => {
@@ -60,82 +264,105 @@ export const updateCustomer = async (body: HttpTypes.StoreUpdateCustomer) => {
 }
 
 export async function signup(_currentState: unknown, formData: FormData) {
+  const countryCode = (formData.get("countryCode") as string) || "kr"
+  const redirectTo = (formData.get("redirect_to") as string) || "/"
+  const loginId = formData.get("loginId") as string
   const password = formData.get("password") as string
-  const customerForm = {
-    email: formData.get("email") as string,
-    first_name: formData.get("first_name") as string,
-    last_name: formData.get("last_name") as string,
-    phone: formData.get("phone") as string,
+  const email = formData.get("email") as string
+  const username = formData.get("username") as string
+  const nickname = formData.get("nickname") as string
+  const birthday = formData.get("birthday") as string
+  const phoneNumber = formData.get("phoneNumber") as string
+
+  const signupPayload = {
+    email,
+    username,
+    nickname,
+    loginId,
+    password,
+    birthday,
+    phoneNumber,
+    isOver14: formData.get("isOver14") === "on",
+    termsOfService: formData.get("termsOfService") === "on",
+    electronicTransaction: formData.get("electronicTransaction") === "on",
+    privacyPolicy: formData.get("privacyPolicy") === "on",
+    thirdPartySharing: formData.get("thirdPartySharing") === "on",
+    marketingConsent: formData.get("marketingConsent") === "on",
   }
 
   try {
-    const token = await sdk.auth.register("customer", "emailpass", {
-      email: customerForm.email,
-      password: password,
-    })
+    const signupResult = await signUpToUserService(signupPayload)
+    const tokens = await callbackSignup(signupResult.userId)
 
-    await setAuthToken(token as string)
+    await setTokenCookies(tokens.accessToken, tokens.refreshToken)
 
-    const headers = {
-      ...(await getAuthHeaders()),
+    const medusaSigninToken = await fetchMedusaSignin(tokens.accessToken)
+
+    if (!medusaSigninToken) {
+      const signupOk = await fetchMedusaSignup(tokens.accessToken, {
+        email,
+        first_name: username,
+        last_name: username,
+        almond_user_id: signupResult.userId,
+        almond_login_id: loginId,
+      })
+
+      if (!signupOk) {
+        throw new Error("Failed to create Medusa customer")
+      }
     }
 
-    const { customer: createdCustomer } = await sdk.store.customer.create(
-      customerForm,
-      {},
-      headers
-    )
+    const signedIn = await signInToMedusa(tokens.accessToken)
 
-    const loginToken = await sdk.auth.login("customer", "emailpass", {
-      email: customerForm.email,
-      password,
-    })
-
-    await setAuthToken(loginToken as string)
-
-    const customerCacheTag = await getCacheTag("customers")
-    revalidateTag(customerCacheTag)
-
-    await transferCart()
-
-    return createdCustomer
+    if (!signedIn) {
+      throw new Error("Failed to issue Medusa token")
+    }
   } catch (error: any) {
-    return error.toString()
+    return error.message || error.toString()
   }
+
+  redirect(`/${countryCode}${redirectTo}`)
 }
 
 export async function login(_currentState: unknown, formData: FormData) {
-  const email = formData.get("email") as string
+  const loginId = formData.get("loginId") as string
   const password = formData.get("password") as string
+  const countryCode = (formData.get("countryCode") as string) || "kr"
+  const redirectTo = (formData.get("redirect_to") as string) || "/"
+  const rememberMe = formData.get("rememberMe") === "on"
 
   try {
-    await sdk.auth
-      .login("customer", "emailpass", { email, password })
-      .then(async (token) => {
-        await setAuthToken(token as string)
-        const customerCacheTag = await getCacheTag("customers")
-        revalidateTag(customerCacheTag)
-      })
+    const tokens = await signInToUserService(loginId, password, rememberMe)
+    await setTokenCookies(tokens.accessToken, tokens.refreshToken)
+
+    const signedIn = await signInToMedusa(tokens.accessToken)
+
+    if (!signedIn) {
+      throw new Error("Failed to issue Medusa token")
+    }
   } catch (error: any) {
-    return error.toString()
+    return error.message || error.toString()
   }
 
-  try {
-    await transferCart()
-  } catch (error: any) {
-    return error.toString()
-  }
+  redirect(`/${countryCode}${redirectTo}`)
 }
 
 export async function signout(countryCode: string) {
-  await sdk.auth.logout()
+  try {
+    await fetch(`${getUsersServiceUrl()}/auth/signout`, {
+      method: "POST",
+      headers: {
+        Cookie: await getCookies(),
+      },
+      cache: "no-store",
+    })
+  } catch {}
 
-  await removeAuthToken()
+  await sdk.auth.logout().catch(() => {})
+  await removeAllAuthTokens()
 
   const customerCacheTag = await getCacheTag("customers")
   revalidateTag(customerCacheTag)
-
-  await removeCartId()
 
   const cartCacheTag = await getCacheTag("carts")
   revalidateTag(cartCacheTag)
