@@ -57,6 +57,19 @@ export const mainMenus: MainMenu[] = [
       },
     ],
   },
+  {
+    id: "matching",
+    title: "상품 매칭",
+    icon: "Link",
+    defaultPath: "/matching/order-lines",
+    children: [
+      {
+        id: "matching-order-lines",
+        title: "주문 매칭 관리",
+        path: "/matching/order-lines",
+      },
+    ],
+  },
 ]
 
 export function getMenuById(id: string): MainMenu | undefined {
@@ -74,10 +87,7 @@ export function getActiveMenuAndItem(pathname: string): {
   return { menuId: mainMenus[0]?.id ?? null, itemId: null }
 }
 
-function findItemByPath(
-  items: MenuItem[],
-  pathname: string,
-): MenuItem | null {
+function findItemByPath(items: MenuItem[], pathname: string): MenuItem | null {
   for (const item of items) {
     if (item.path && pathname.startsWith(item.path)) return item
     if (item.children) {
