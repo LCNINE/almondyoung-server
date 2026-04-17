@@ -77,7 +77,7 @@ export default async function seedData({ container }: ExecArgs) {
             name: 'Korea',
             currency_code: 'krw',
             countries: ['kr'],
-            payment_providers: ['pp_system_default'],
+            payment_providers: ['pp_almond-payment_almond-payment'],
           },
         ],
       },
