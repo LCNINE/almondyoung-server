@@ -10,15 +10,14 @@ import axios, {
  * 프로덕션: https://{subdomain}.{VITE_BASE_DOMAIN}
  * 개발:     http://localhost:{devPort}
  */
+// df 환경: pim/wms는 almondyoung-server(api)에 흡수됨. membership/notification/ugc는 미배포.
 const SERVICE_MAP = {
-  pim: { subdomain: "pim", devPort: 3020 },
-  wms: { subdomain: "wms", devPort: 3010 },
+  pim: { subdomain: "api", devPort: 3000 },
+  wms: { subdomain: "api", devPort: 3000 },
+  api: { subdomain: "api", devPort: 3000 },
   user: { subdomain: "user", devPort: 3030 },
   wallet: { subdomain: "wallet", devPort: 3040 },
-  membership: { subdomain: "membership", devPort: 3050 },
-  notification: { subdomain: "notification", devPort: 3060 },
   channel: { subdomain: "channel-adapter", devPort: 3070 },
-  ugc: { subdomain: "ugc", devPort: 3031 },
   file: { subdomain: "file", devPort: 3080 },
 } as const
 
