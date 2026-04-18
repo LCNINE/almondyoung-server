@@ -32,11 +32,12 @@ const Login = ({ setCurrentView }: Props) => {
         <input type="hidden" name="redirect_to" value={redirectTo} />
         <div className="flex flex-col w-full gap-y-2">
           <Input
-            label="Login ID"
-            name="loginId"
-            autoComplete="username"
+            label="Email"
+            name="email"
+            type="email"
+            autoComplete="email"
             required
-            data-testid="login-id-input"
+            data-testid="email-input"
           />
           <Input
             label="Password"
@@ -46,10 +47,6 @@ const Login = ({ setCurrentView }: Props) => {
             required
             data-testid="password-input"
           />
-          <label className="mt-2 flex items-center gap-2 text-small-regular text-ui-fg-subtle">
-            <input type="checkbox" name="rememberMe" />
-            Keep me signed in
-          </label>
         </div>
         <ErrorMessage error={message} data-testid="login-error-message" />
         <SubmitButton data-testid="sign-in-button" className="w-full mt-6">
