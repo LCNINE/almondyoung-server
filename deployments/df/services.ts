@@ -1,42 +1,110 @@
 /// <reference path="../../.sst/platform/config.d.ts" />
 
+import * as fs from "node:fs";
+import * as path from "node:path";
 import type { SharedInfra } from "../../infra/shared";
 
 export function setup(infra: SharedInfra) {
-  const { vpc, cluster, db, redis, dbUrl, redisUrl, baseDomain, url, createService } = infra;
+  const { vpc, db, redis, dbUrl, redisUrl, baseDomain, url, domain, createService } = infra;
 
-  // ─── Kafka (Redpanda, 단일 노드, Fargate Spot + EFS 영속) ───
-  // df 스테이지 비용 절감용. plaintext, VPC 내부 전용. Kafka wire-compatible이라
-  // KafkaJS/@app/events 코드는 그대로 작동.
-  const redpandaEfs = new sst.aws.Efs("RedpandaEfs", {
-    vpc,
-    throughput: "bursting",
+  // ─── Kafka (Redpanda, 단일 노드, EC2 + EBS 영속) ───
+  // df 스테이지 비용 절감용. plaintext, VPC 내부 전용. Kafka wire-compatible.
+  // Fargate/EFS는 Seastar AIO 미지원이라 불가 → EC2(t4g.micro) + EBS(gp3)로 영속.
+  // 인스턴스 교체 시에도 EBS 재부착으로 데이터 유지. DNS는 Cloud Map A record로 등록.
+
+  // Amazon Linux 2023 ARM64 최신 AMI
+  const redpandaAmi = aws.ec2.getAmi({
+    mostRecent: true,
+    owners: ["amazon"],
+    filters: [
+      { name: "name", values: ["al2023-ami-*-arm64"] },
+      { name: "virtualization-type", values: ["hvm"] },
+    ],
   });
 
-  // SST는 Cloud Map에 `${name}.${stage}.${app}.sst` A-record를 자동 등록.
-  // Redpanda 태스크 IP가 바뀌어도 클라이언트는 동일 DNS로 접속.
+  // SSM 접근용 IAM role (SSH 키 없이 세션 매니저로 접속 가능)
+  const redpandaRole = new aws.iam.Role("RedpandaRole", {
+    assumeRolePolicy: JSON.stringify({
+      Version: "2012-10-17",
+      Statement: [{
+        Effect: "Allow",
+        Principal: { Service: "ec2.amazonaws.com" },
+        Action: "sts:AssumeRole",
+      }],
+    }),
+  });
+  new aws.iam.RolePolicyAttachment("RedpandaRoleSsm", {
+    role: redpandaRole.name,
+    policyArn: "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
+  });
+  const redpandaInstanceProfile = new aws.iam.InstanceProfile("RedpandaInstanceProfile", {
+    role: redpandaRole.name,
+  });
+
+  // 공용 subnet[0] 사용 (Docker Hub에서 redpanda 이미지 pull 필요).
+  // SG 규칙은 VPC CIDR 내부 ingress만 허용하므로 public IP여도 9092는 외부 차단.
+  // EBS는 AZ 귀속이므로 인스턴스도 동일 AZ에 고정.
+  const redpandaSubnetId = vpc.nodes.publicSubnets.apply((s) => s[0].id);
+  const redpandaAz = vpc.nodes.publicSubnets.apply((s) => s[0].availabilityZone);
+
+  // 영속용 EBS (인스턴스와 별개 리소스 → 인스턴스 교체 시 보존)
+  const redpandaEbs = new aws.ebs.Volume("RedpandaData", {
+    availabilityZone: redpandaAz,
+    size: 10,
+    type: "gp3",
+    encrypted: true,
+  });
+
+  // Redpanda advertise용 Cloud Map DNS (기존 SST 네임스페이스 "sst" 재사용)
+  const redpandaDiscovery = new aws.servicediscovery.Service("RedpandaDiscovery", {
+    name: `Redpanda.${$app.stage}.${$app.name}`,
+    namespaceId: vpc.nodes.cloudmapNamespace.id,
+    dnsConfig: {
+      namespaceId: vpc.nodes.cloudmapNamespace.id,
+      dnsRecords: [{ ttl: 60, type: "A" }],
+      routingPolicy: "MULTIVALUE",
+    },
+  });
   const redpandaDns = `Redpanda.${$app.stage}.${$app.name}.sst`;
   const redpandaBrokers = `${redpandaDns}:9092`;
 
-  new sst.aws.Service("Redpanda", {
-    cluster,
-    capacity: "spot",
-    cpu: "0.25 vCPU",
-    memory: "0.5 GB",
-    image: "redpandadata/redpanda:latest",
-    command: [
-      "redpanda",
-      "start",
-      "--overprovisioned",
-      "--smp", "1",
-      "--memory", "400M",
-      "--reserve-memory", "0M",
-      "--node-id", "0",
-      "--check=false",
-      "--kafka-addr=PLAINTEXT://0.0.0.0:9092",
-      `--advertise-kafka-addr=PLAINTEXT://${redpandaDns}:9092`,
-    ],
-    volumes: [{ efs: redpandaEfs, path: "/var/lib/redpanda/data" }],
+  // user_data: 외부 스크립트 로드 후 advertise DNS 치환.
+  // 스크립트 내용이 바뀌면 userDataReplaceOnChange로 인스턴스 재생성됨.
+  // SST는 services.ts를 .sst/platform에 복사한 뒤 실행하므로 __dirname/import.meta.url이
+  // 원본 위치를 가리키지 않는다. sst.config.ts가 있는 프로젝트 루트($cli.paths.root)를 기준으로 해석.
+  const redpandaUserData = fs
+    .readFileSync(path.join($cli.paths.root, "redpanda.cloud-init.sh"), "utf8")
+    .replace(/__REDPANDA_ADVERTISE_DNS__/g, redpandaDns);
+
+  const redpandaInstance = new aws.ec2.Instance("Redpanda", {
+    ami: redpandaAmi.then((a) => a.id),
+    instanceType: "t4g.micro",
+    subnetId: redpandaSubnetId,
+    availabilityZone: redpandaAz,
+    vpcSecurityGroupIds: vpc.securityGroups,
+    associatePublicIpAddress: true,
+    iamInstanceProfile: redpandaInstanceProfile.name,
+    userData: redpandaUserData,
+    userDataReplaceOnChange: true,
+    // AL2023 AMI 스냅샷이 30GB라 그 이하로 못 줄임.
+    rootBlockDevice: { volumeSize: 30, volumeType: "gp3", encrypted: true },
+    tags: { Name: `${$app.name}-${$app.stage}-redpanda` },
+  });
+
+  new aws.ec2.VolumeAttachment("RedpandaDataAttach", {
+    deviceName: "/dev/sdf",
+    volumeId: redpandaEbs.id,
+    instanceId: redpandaInstance.id,
+    stopInstanceBeforeDetaching: true,
+  });
+
+  // 인스턴스의 private IP를 Cloud Map에 등록 → redpandaDns 해석 가능
+  new aws.servicediscovery.Instance("RedpandaDiscoveryInstance", {
+    instanceId: "redpanda-0",
+    serviceId: redpandaDiscovery.id,
+    attributes: {
+      AWS_INSTANCE_IPV4: redpandaInstance.privateIp,
+    },
   });
 
   const kafkaEnv = (prefix: string, groupId: string) => ({
@@ -100,7 +168,8 @@ export function setup(infra: SharedInfra) {
       JWT_VERIFICATION_TOKEN_SECRET: jwtVerificationTokenSecret.value,
       COOKIE_DOMAIN: `.${baseDomain}`,
       FRONTEND_URL: url("www"),
-      SIGNUP_CALLBACK_URL: `${url("www")}/callback/signup`,
+      // 이메일 인증 링크는 auth-web의 callback 페이지로 향한다.
+      SIGNUP_CALLBACK_URL: `${url("auth")}/callback/signup`,
       USER_SERVICE_URL: url("user"),
       REDIRECT_URL_WHITELIST: [
         "http://localhost:8000/callback/signup",
@@ -108,6 +177,8 @@ export function setup(infra: SharedInfra) {
         "http://localhost:8000",
         `${url("user")}/`,
         `${url("www")}/`,
+        `${url("auth")}/`,
+        `${url("auth")}/callback/signup`,
         "http://localhost:8080/",
       ].join(","),
       BIZNO_URL: "https://bizno.net/article",
@@ -115,6 +186,7 @@ export function setup(infra: SharedInfra) {
         url("www"),
         url("medusa"),
         url("admin"),
+        url("auth"),
         "http://localhost:8000",
       ].join(","),
       AWS_REGION: "ap-northeast-2",
@@ -289,6 +361,24 @@ export function setup(infra: SharedInfra) {
       // Admin & logging
       MEDUSA_ADMIN_ONBOARDING_TYPE: "default",
       LOG_LEVEL: "debug",
+    },
+  });
+
+  // ═══════════════════════════════════════════
+  //  Frontends (serverless Next.js via OpenNext)
+  // ═══════════════════════════════════════════
+
+  // auth-web: 계정 허브. user-service와 서버 사이드로만 통신한다.
+  // parent 도메인(.${baseDomain}) 쿠키는 auth-web이 직접 심는다.
+  new sst.aws.Nextjs("AuthWeb", {
+    path: "web/auth-web",
+    domain: { name: domain("auth") },
+    environment: {
+      USER_SERVICE_URL: url("user"),
+      PARENT_COOKIE_DOMAIN: `.${baseDomain}`,
+      PARENT_COOKIE_SECURE: "true",
+      PARENT_COOKIE_SAMESITE: "lax",
+      ALLOWED_REDIRECT_HOSTS: `.${baseDomain}`,
     },
   });
 }
