@@ -26,6 +26,7 @@ export default $config({
       userServiceUrl: infra.url("user"),
       walletUrl: infra.url("wallet"),
       apiUrl: infra.url("api"),
+      authUrl: infra.url("auth"),
     };
   },
 });
