@@ -3,54 +3,44 @@
 import type { SharedInfra } from "../../infra/shared";
 
 export function setup(infra: SharedInfra) {
-  const { vpc, db, redis, dbUrl, redisUrl, baseDomain, url, createService } = infra;
+  const { vpc, cluster, db, redis, dbUrl, redisUrl, baseDomain, url, createService } = infra;
 
-  // ─── Kafka (MSK Serverless — IAM auth via ECS task role) ───
-  const mskCluster = new aws.msk.ServerlessCluster("MskCluster", {
-    clusterName: `${$app.name}-${$app.stage}`,
-    vpcConfigs: [{
-      subnetIds: vpc.privateSubnets,
-      securityGroupIds: vpc.securityGroups,
-    }],
-    clientAuthentication: {
-      sasl: { iam: { enabled: true } },
-    },
+  // ─── Kafka (Redpanda, 단일 노드, Fargate Spot + EFS 영속) ───
+  // df 스테이지 비용 절감용. plaintext, VPC 내부 전용. Kafka wire-compatible이라
+  // KafkaJS/@app/events 코드는 그대로 작동.
+  const redpandaEfs = new sst.aws.Efs("RedpandaEfs", {
+    vpc,
+    throughput: "bursting",
   });
 
-  // raw Pulumi 리소스를 SST link로 사용하기 위한 등록.
-  // link: [mskCluster]을 받은 서비스의 task role에 아래 IAM 권한이 자동 부착된다.
-  // ServerlessCluster ARN: arn:aws:kafka:{region}:{account}:cluster/{name}/{uuid}-s1
-  // topic/group ARN: 같은 prefix에서 :cluster/ → :topic/ or :group/ 치환 후 /* 추가.
-  sst.Linkable.wrap(aws.msk.ServerlessCluster, (cluster) => ({
-    properties: { brokers: cluster.bootstrapBrokersSaslIam },
-    include: [
-      sst.aws.permission({
-        actions: [
-          "kafka-cluster:Connect",
-          "kafka-cluster:DescribeCluster",
-          "kafka-cluster:DescribeClusterDynamicConfiguration",
-          "kafka-cluster:DescribeTopic",
-          "kafka-cluster:DescribeTopicDynamicConfiguration",
-          "kafka-cluster:ReadData",
-          "kafka-cluster:WriteData",
-          "kafka-cluster:CreateTopic",
-          "kafka-cluster:AlterTopic",
-          "kafka-cluster:AlterTopicDynamicConfiguration",
-          "kafka-cluster:DescribeGroup",
-          "kafka-cluster:AlterGroup",
-        ],
-        resources: [
-          cluster.arn,
-          cluster.arn.apply((arn) => `${arn.replace(":cluster/", ":topic/")}/*`),
-          cluster.arn.apply((arn) => `${arn.replace(":cluster/", ":group/")}/*`),
-        ],
-      }),
+  // SST는 Cloud Map에 `${name}.${stage}.${app}.sst` A-record를 자동 등록.
+  // Redpanda 태스크 IP가 바뀌어도 클라이언트는 동일 DNS로 접속.
+  const redpandaDns = `Redpanda.${$app.stage}.${$app.name}.sst`;
+  const redpandaBrokers = `${redpandaDns}:9092`;
+
+  new sst.aws.Service("Redpanda", {
+    cluster,
+    capacity: "spot",
+    cpu: "0.25 vCPU",
+    memory: "0.5 GB",
+    image: "redpandadata/redpanda:latest",
+    command: [
+      "redpanda",
+      "start",
+      "--overprovisioned",
+      "--smp", "1",
+      "--memory", "400M",
+      "--reserve-memory", "0M",
+      "--node-id", "0",
+      "--check=false",
+      "--kafka-addr=PLAINTEXT://0.0.0.0:9092",
+      `--advertise-kafka-addr=PLAINTEXT://${redpandaDns}:9092`,
     ],
-  }));
+    volumes: [{ efs: redpandaEfs, path: "/var/lib/redpanda/data" }],
+  });
 
   const kafkaEnv = (prefix: string, groupId: string) => ({
-    KAFKA_BROKERS: mskCluster.bootstrapBrokersSaslIam,
-    KAFKA_SASL_MECHANISM: "aws-iam",
+    KAFKA_BROKERS: redpandaBrokers,
     KAFKA_CLIENT_ID_PREFIX: prefix,
     KAFKA_GROUP_ID: groupId,
   });
@@ -87,7 +77,7 @@ export function setup(infra: SharedInfra) {
     domainSlug: "api",
     port: 3000,
     priority: 90,
-    link: [db, mskCluster],
+    link: [db],
     environment: {
       DATABASE_URL: dbUrl("core"),
       ...kafkaEnv("almondyoung-server", "almondyoung-server-group"),
@@ -101,7 +91,7 @@ export function setup(infra: SharedInfra) {
     domainSlug: "user",
     port: 3000,
     priority: 100,
-    link: [db, publicBucket, mskCluster],
+    link: [db, publicBucket],
     environment: {
       DATABASE_URL: dbUrl("user_service"),
       ...kafkaEnv("user-service", "user-service"),
@@ -150,7 +140,7 @@ export function setup(infra: SharedInfra) {
     domainSlug: "channel-adapter",
     port: 3000,
     priority: 120,
-    link: [db, mskCluster],
+    link: [db],
     environment: {
       DATABASE_URL: dbUrl("channel_adapter"),
       ...kafkaEnv("channel-adapter", "channel-adapter-group"),
@@ -203,7 +193,7 @@ export function setup(infra: SharedInfra) {
     domainSlug: "wallet",
     port: 3000,
     priority: 180,
-    link: [db, mskCluster],
+    link: [db],
     environment: {
       DATABASE_URL: dbUrl("wallet"),
       ...kafkaEnv("wallet", "wallet-group"),
@@ -221,7 +211,7 @@ export function setup(infra: SharedInfra) {
     domainSlug: "file",
     port: 3000,
     priority: 190,
-    link: [db, publicBucket, privateBucket, mskCluster],
+    link: [db, publicBucket, privateBucket],
     environment: {
       DATABASE_URL: dbUrl("file_service"),
       ...kafkaEnv("file-service", "file-service-group"),
