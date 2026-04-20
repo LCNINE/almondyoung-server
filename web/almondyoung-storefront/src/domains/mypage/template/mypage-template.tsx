@@ -37,7 +37,11 @@ export async function MyPageTemplate({ countryCode }: { countryCode: string }) {
   const [currentUser, { isAdmin }, pointBalance] = await Promise.all([
     fetchMe(),
     checkAdminScope(),
-    getPointBalance().catch(() => ({ balance: 0, withdrawable: 0 })),
+    getPointBalance().catch(() => ({
+      available: 0,
+      confirmed: 0,
+      reserved: 0,
+    })),
   ])
 
   const isPayLaterBannerEnabled = false // bnpl 기능 미연결로 임시 비활성화
@@ -100,7 +104,7 @@ export async function MyPageTemplate({ countryCode }: { countryCode: string }) {
             <UserProfileSection
               userName={(currentUser as UserDetail)?.username}
               isMembership={isMembershipPricing}
-              initialPointBalance={pointBalance.balance}
+              initialPointBalance={pointBalance.available}
             />
 
             {/* 관리자 버튼 */}
