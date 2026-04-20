@@ -24,7 +24,7 @@ export default async function Home({
 
   return (
     <ProtectedRoute>
-      <HomeLogoutTemplate user={userDetailInfo} countryCode={countryCode} />
+      <HomeLogoutTemplate countryCode={countryCode} />
 
       {/* 설문 유도 배너 */}
       {showSurvey && <SurveyPromptBanner countryCode={countryCode} />}

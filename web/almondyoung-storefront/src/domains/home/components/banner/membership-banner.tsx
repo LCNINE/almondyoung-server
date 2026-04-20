@@ -13,7 +13,7 @@ export default async function MembershipBanner({
   className = "",
 }: MembershipBannerProps) {
   const bannerGroup: BannerGroup | null = await getBannerGroupByCode(
-    "MAIN_MEMBERSHIP"
+    "MEMBER_SHIP_HERO"
   ).catch((err) => {
     console.error("getBannerGroupByCode error:", err)
     return null
@@ -23,27 +23,26 @@ export default async function MembershipBanner({
   const activeBanners: BannerDto[] = getActiveBanners(bannerGroup?.banners)
 
   if (!bannerGroup || activeBanners.length === 0) {
-    return (
-      <Banner
-        href="/mypage/membership"
-        pcSrc="/images/banner/membership_banner.png"
-        mobileSrc="/images/banner/m.membership_banner.png"
-        alt="아몬드영 멤버십 가입하고 추가혜택 받으세요!"
-      />
-    )
+    return
   }
 
   const banner = activeBanners[0]
-  if (!banner.pcImageFileId || !banner.mobileImageFileId || !banner.linkUrl) {
-    return null
-  }
 
   return (
     <Banner
+      className={className}
       href={banner.linkUrl}
       pcSrc={banner.pcImageFileId}
       mobileSrc={banner.mobileImageFileId}
       alt={banner.title || "membership banner"}
+      hideOnMobile
+      dimensions={{
+        pc: { width: bannerGroup.pcWidth, height: bannerGroup.pcHeight },
+        mobile: {
+          width: bannerGroup.mobileWidth,
+          height: bannerGroup.mobileHeight,
+        },
+      }}
     />
   )
 }

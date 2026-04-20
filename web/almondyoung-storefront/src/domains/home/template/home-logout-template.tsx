@@ -1,11 +1,11 @@
 import { ErrorBoundary } from "@/components/shared/error-boundary"
 import { MainSectionSkeleton } from "@/components/skeletons/page-skeletons"
-import { UserDetail } from "@/lib/types/ui/user"
 import { Suspense } from "react"
 import { HeroBanner } from "../components/banner/hero-banner"
 import { HomeSection } from "../components/shared/home-section"
 import { CategoryBestProductsWrapper } from "./best-categories"
 import { WelcomeDealWrapper } from "./welcome-deals"
+import MembershipBanner from "../components/banner/membership-banner"
 
 /*
  * ============================================================================
@@ -113,7 +113,6 @@ import { WelcomeDealWrapper } from "./welcome-deals"
  */
 
 interface HomeLogoutTemplateProps {
-  user: UserDetail | null
   countryCode: string
 }
 
@@ -121,7 +120,6 @@ interface HomeLogoutTemplateProps {
  * 비로그인 사용자용
  *─────────────────*/
 export async function HomeLogoutTemplate({
-  user,
   countryCode,
 }: HomeLogoutTemplateProps) {
   return (
@@ -139,6 +137,9 @@ export async function HomeLogoutTemplate({
           </Suspense>
         </ErrorBoundary>
       </HomeSection>
+
+      {/* 멤버쉽 배너 */}
+      <MembershipBanner />
 
       {/* 웰컴 딜 섹션 - 신규 회원 대상 할인 상품 */}
       <HomeSection>
