@@ -74,15 +74,27 @@ export default function MembershipCheckoutTemplate({
         process.env.NEXT_PUBLIC_WALLET_WEB_URL || "http://localhost:3200"
       window.location.href = `${walletWebUrl}/pay/${intentId}`
     } catch (error: unknown) {
+      setLoading(false)
       const err = error as Error & { digest?: string }
       if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") {
-        throw error
+        // 이벤트 핸들러에서 throw는 error.tsx를 트리거하지 않으므로 인라인 토큰 복구
+        try {
+          const res = await fetch("/api/auth/restore-token", {
+            method: "POST",
+            credentials: "include",
+          })
+          if (res.ok) {
+            window.location.reload()
+            return
+          }
+        } catch {}
+        window.location.href = `/${countryCode}/login?redirect_to=${encodeURIComponent(window.location.pathname)}`
+        return
       }
       console.error("멤버십 결제 요청 실패:", error)
       toast.error(
         err instanceof Error ? err.message : "결제 요청에 실패했습니다."
       )
-      setLoading(false)
     }
   }
 
