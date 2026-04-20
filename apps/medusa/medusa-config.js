@@ -28,10 +28,15 @@ module.exports = defineConfig({
       jwtSecret: process.env.JWT_SECRET || 'supersecret',
       cookieSecret: process.env.COOKIE_SECRET || 'supersecret',
       jwtExpiresIn: process.env.JWT_EXPIRES_IN || '30d',
-      authMethodsPerActor: {
-        user: ['emailpass', 'my-auth'],
-        customer: ['emailpass', 'my-auth', 'user-service-sso'],
-      },
+      // AUTH_WEB_URL이 설정된 환경(df 등)에서만 user-service-sso 활성화
+      ...(process.env.AUTH_WEB_URL
+        ? {
+            authMethodsPerActor: {
+              user: ['emailpass', 'my-auth'],
+              customer: ['emailpass', 'my-auth', 'user-service-sso'],
+            },
+          }
+        : {}),
     },
   },
   presets: [require('@medusajs/ui-preset')],
@@ -82,16 +87,21 @@ module.exports = defineConfig({
               jwtSecret: process.env.JWT_SECRET,
             },
           },
-          {
-            resolve: './src/modules/user-service-sso',
-            id: 'user-service-sso',
-            options: {
-              authWebUrl: process.env.AUTH_WEB_URL,
-              authSecret: process.env.AUTH_SECRET,
-              userServiceUrl: process.env.USER_SERVICE_URL,
-              defaultCallbackUrl: process.env.SSO_DEFAULT_CALLBACK_URL,
-            },
-          },
+          // AUTH_WEB_URL이 설정된 환경(df 등)에서만 user-service-sso 활성화
+          ...(process.env.AUTH_WEB_URL
+            ? [
+                {
+                  resolve: './src/modules/user-service-sso',
+                  id: 'user-service-sso',
+                  options: {
+                    authWebUrl: process.env.AUTH_WEB_URL,
+                    authSecret: process.env.AUTH_SECRET,
+                    userServiceUrl: process.env.USER_SERVICE_URL,
+                    defaultCallbackUrl: process.env.SSO_DEFAULT_CALLBACK_URL,
+                  },
+                },
+              ]
+            : []),
         ],
       },
     },
