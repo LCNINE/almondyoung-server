@@ -128,25 +128,20 @@ export type OnboardHmsBnplResponse = {
 }
 
 /*───────────────────────────
- * 포인트 잔액 조회
- *──────────────────────────*/
-export type PointBalanceDto = {
-  balance: number // 포인트 잔액
-  withdrawable: number // 출금 가능 포인트
-}
-
-/*───────────────────────────
  * 포인트 (wallet points)
  *──────────────────────────*/
 
 export type PointEventType = "EARN" | "REDEEM" | "EARN_CANCEL" | "REDEEM_CANCEL"
 
+/*───────────────────────────
+ * 포인트 잔액 조회
+ *──────────────────────────*/
 export type PointsBalanceDto = {
-  /** 확정된 포인트 (지금까지 이벤트 amount의 총합) */
+  /** 확정된 총 적립 포인트 */
   confirmed: number
-  /** 사용 예약(AUTHORIZED hold) 중인 포인트 */
+  /** 결제 진행 중 hold 잡혀있는 포인트 */
   reserved: number
-  /** 사용 가능 포인트 (confirmed - reserved) */
+  /** 지금 사용 가능한 포인트 (서버에서 계산되어 내려옴) */
   available: number
 }
 

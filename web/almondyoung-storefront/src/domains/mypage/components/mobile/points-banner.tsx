@@ -7,8 +7,8 @@ interface PointsBannerProps {
 }
 
 export function PointsBanner({ initialData }: PointsBannerProps) {
-  const balance = initialData.balance
-  const hasRecentActivity = balance > 0
+  const available = initialData.available
+  const hasRecentActivity = available > 0
 
   return (
     <Link href="/kr/mypage/point">
@@ -26,7 +26,7 @@ export function PointsBanner({ initialData }: PointsBannerProps) {
           <div className="flex items-center gap-2">
             <span className="text-[11px] text-black">적립금</span>
             <span className="text-sm font-bold text-black">
-              {balance.toLocaleString()} 원
+              {available.toLocaleString()} 원
             </span>
           </div>
 
