@@ -27,6 +27,9 @@ export default $config({
       walletUrl: infra.url("wallet"),
       apiUrl: infra.url("api"),
       authUrl: infra.url("auth"),
+      storefrontUrl: infra.url("www"),
+      walletWebUrl: infra.url("wallet-web"),
+      adminUrl: infra.url("admin"),
     };
   },
 });

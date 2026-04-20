@@ -383,4 +383,40 @@ export function setup(infra: SharedInfra) {
       ALLOWED_REDIRECT_HOSTS: `.${baseDomain}`,
     },
   });
+
+  // wallet-web: 결제/지갑 프론트엔드.
+  new sst.aws.Nextjs("WalletWeb", {
+    path: "../../apps/wallet-web",
+    domain: { name: domain("wallet-web") },
+    environment: {
+      NEXT_PUBLIC_WALLET_API_URL: url("wallet"),
+      USER_SERVICE_URL: url("user"),
+      COOKIE_DOMAIN: `.${baseDomain}`,
+    },
+  });
+
+  // df-admin: Vite 기반 SPA 어드민.
+  new sst.aws.StaticSite("DfAdmin", {
+    path: "../../web/df-admin",
+    domain: { name: domain("admin") },
+    build: {
+      command: "npm run build",
+      output: "dist",
+    },
+  });
+
+  // df-storefront: Medusa 기반 storefront. www 서브도메인으로 배포.
+  new sst.aws.Nextjs("Storefront", {
+    path: "../../web/df-storefront",
+    domain: { name: domain("www") },
+    environment: {
+      USERS_SERVICE_URL: url("user"),
+      COOKIE_DOMAIN: `.${baseDomain}`,
+      MEDUSA_BACKEND_URL: url("medusa"),
+      NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY:
+        "pk_af4d36c57b3ad7eef7f337c2f69809dbbaddef6667446ffd1fd3d95b40ad118a",
+      NEXT_PUBLIC_WALLET_WEB_URL: url("wallet-web"),
+      NEXT_PUBLIC_DEFAULT_REGION: "kr",
+    },
+  });
 }
