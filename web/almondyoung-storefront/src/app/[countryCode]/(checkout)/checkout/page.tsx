@@ -5,7 +5,6 @@ import {
 } from "@/lib/api/medusa/cart"
 import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import { getMyPromotions } from "@/lib/api/medusa/promotion"
-import { getPointBalance } from "@/lib/api/wallet"
 import { CartResponseDto } from "@/lib/types/dto/medusa"
 import type { ShippingInfo } from "@/lib/types/ui/cart"
 import { getMembershipGroupIdFromEnv } from "@/lib/utils/membership-group"
@@ -60,8 +59,6 @@ async function CheckoutManager({ cartId }: { cartId?: string }) {
     })
   )
 
-  const [pointBalance] = await Promise.all([getPointBalance()])
-
   // 배송료 정보
   const shippingMethod = shippingMethods?.[0]
   const shipping: ShippingInfo = {
@@ -83,7 +80,6 @@ async function CheckoutManager({ cartId }: { cartId?: string }) {
       checkoutCartId={cart.id}
       shipping={shipping}
       promotions={promotionsResponse.promotions}
-      pointBalance={pointBalance}
     />
   )
 }
