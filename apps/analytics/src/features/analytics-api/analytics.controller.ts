@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards, UnauthorizedException, InternalServerErrorException } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, NotFoundException, BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard, User } from '@app/authorization';
 import { AnalyticsService } from './analytics.service';
@@ -92,8 +92,8 @@ export class AnalyticsController {
       return await this.userPurchaseQuery.getFrequentlyPurchased(user.userId, query.limit);
     } catch (e) {
       const msg = ((e as Error)?.message ?? '').toLowerCase();
-      if (msg.includes('not found')) throw new UnauthorizedException((e as Error).message);
-
+      if (msg.includes('not found')) throw new NotFoundException((e as Error).message);
+      if (msg.match(/already|invalid|failed|required|exceed/)) throw new BadRequestException((e as Error).message);
       throw new InternalServerErrorException((e as Error).message);
     }
   }
