@@ -1,6 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import { IsOptional, IsInt, Min, Max } from 'class-validator';
+import { PaginationQueryDto } from '@app/shared/dto';
 
 export class FrequentlyPurchasedDto {
   @ApiProperty({ description: 'PIM Master ID' })
@@ -19,16 +18,4 @@ export class FrequentlyPurchasedDto {
   lastPurchasedAt: string | null;
 }
 
-export class FrequentlyPurchasedQueryDto {
-  @ApiPropertyOptional({
-    description: '조회할 최대 개수',
-    example: 20,
-    default: 20,
-  })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  limit?: number = 20;
-}
+export class FrequentlyPurchasedQueryDto extends PaginationQueryDto {}

@@ -1,6 +1,8 @@
 import { Controller, Get, Query, UseGuards, NotFoundException, BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard, User } from '@app/authorization';
+import { ApiOkResponsePaginated } from '@app/shared/decorators/api-paginated-response.decorator';
+import { PaginatedResponseDto } from '@app/shared/dto';
 import { AnalyticsService } from './analytics.service';
 import { AnalyticsHealthDto, AnalyticsSummaryDto } from './dto';
 import { ProductOrderMetricDto, ProductRankingQueryDto } from '../product-ranking/api/dto';
@@ -75,11 +77,7 @@ export class AnalyticsController {
     summary: '자주 산 상품 목록 조회',
     description: '로그인한 사용자가 자주 구매한 상품 목록을 반환합니다.',
   })
-  @ApiResponse({
-    status: 200,
-    description: '자주 산 상품 목록',
-    type: [FrequentlyPurchasedDto],
-  })
+  @ApiOkResponsePaginated(FrequentlyPurchasedDto, { description: '자주 산 상품 페이지' })
   @ApiResponse({
     status: 401,
     description: '인증 필요',
@@ -87,9 +85,9 @@ export class AnalyticsController {
   async getFrequentlyPurchased(
     @User() user: { userId: string },
     @Query() query: FrequentlyPurchasedQueryDto,
-  ): Promise<FrequentlyPurchasedDto[]> {
+  ): Promise<PaginatedResponseDto<FrequentlyPurchasedDto>> {
     try {
-      return await this.userPurchaseQuery.getFrequentlyPurchased(user.userId, query.limit);
+      return await this.userPurchaseQuery.getFrequentlyPurchased(user.userId, query.page, query.limit);
     } catch (e) {
       const msg = ((e as Error)?.message ?? '').toLowerCase();
       if (msg.includes('not found')) throw new NotFoundException((e as Error).message);
