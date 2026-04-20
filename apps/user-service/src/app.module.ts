@@ -12,6 +12,7 @@ import { join } from 'path';
 import { userServiceSchema as baseUserServiceSchema } from '../database/drizzle/schema';
 import { AdminModule } from './api/admin/admin.module';
 import { AuthModule } from './api/auth/auth.module';
+import { OAuthModule } from './api/oauth/oauth.module';
 import { BusinessLicensesModule } from './api/business-licenses/business-licenses.module';
 import { Cafe24Module } from './api/cafe24/cafe24.module';
 import { Cafe24LinkModule } from './api/cafe24-link/cafe24-link.module';
@@ -127,6 +128,7 @@ const staticRoot = existsSync(join(__dirname, 'static')) ? join(__dirname, 'stat
       ],
     }),
     AuthModule.register(),
+    OAuthModule,
     UsersModule,
     ...optionalModules,
     ShopModule,

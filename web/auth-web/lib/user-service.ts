@@ -113,6 +113,35 @@ export async function restoreAccessToken(
   throw new Error("[restore-token] accessToken missing in response");
 }
 
+export type IssueOAuthCodeInput = {
+  clientId: string;
+  userId: string;
+  redirectUri: string;
+  codeChallenge: string;
+  codeChallengeMethod: "S256";
+  scope?: string;
+};
+
+export async function issueOAuthCodeInternal(
+  input: IssueOAuthCodeInput,
+): Promise<{ code: string; expiresIn: number }> {
+  if (!env.oauthInternalSecret) {
+    throw new Error("OAUTH_INTERNAL_SECRET not configured on auth-web");
+  }
+  const res = await fetch(`${env.userServiceUrl}/oauth/internal/issue-code`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-internal-secret": env.oauthInternalSecret,
+    },
+    body: JSON.stringify(input),
+    cache: "no-store",
+    redirect: "manual",
+  });
+  await throwIfBad(res, "issue-code");
+  return readJson<{ code: string; expiresIn: number }>(res);
+}
+
 export async function getMe(accessToken: string): Promise<UserProfile> {
   const res = await fetch(`${env.userServiceUrl}/users/me`, {
     method: "GET",
