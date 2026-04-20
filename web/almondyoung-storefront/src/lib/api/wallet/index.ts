@@ -13,7 +13,7 @@ import type {
   CreateIntentResponseDto,
   IntentDto,
   OnboardHmsBnplResponse,
-  PointBalanceDto,
+  PointsBalanceDto,
   PointsEventRowDto,
   TaxInvoiceData,
   TaxInvoiceDto,
@@ -488,17 +488,12 @@ export async function getPointHistory(params?: {
 /**
  * 포인트 잔액 조회
  */
-// TODO: 임시 mock 객체 사용
-export async function getPointBalance(): Promise<PointBalanceDto> {
-  return {
-    balance: 0,
-    withdrawable: 0,
-  }
-  // return await api<PointBalanceDto>("wallet", "/v1/points/balance", {
-  //   method: "GET",
-  //   cache: "no-store",
-  //   withAuth: true,
-  // })
+export async function getPointBalance(): Promise<PointsBalanceDto> {
+  return await api<PointsBalanceDto>("wallet", "/v1/points/balance", {
+    method: "GET",
+    cache: "no-store",
+    withAuth: true,
+  })
 }
 
 /*───────────────────────────

@@ -7,7 +7,6 @@ import { ShippingSection } from "@/domains/checkout/components/sections/shipping
 import type { ShippingMemo } from "@/domains/checkout/components/sections/shipping/types"
 import { initiatePaymentSession, updateCart } from "@/lib/api/medusa/cart"
 import { CartResponseDto } from "@/lib/types/dto/medusa"
-import type { PointBalanceDto } from "@/lib/types/dto/wallet"
 import type { CartTotals, ShippingInfo } from "@/lib/types/ui/cart"
 import type { Promotion } from "@/lib/types/ui/promotion"
 import { buildPaymentItems } from "@/lib/utils/build-payment-items"
@@ -30,7 +29,6 @@ interface CheckoutTemplateProps {
   checkoutCartId: string
   shipping: ShippingInfo
   promotions: Promotion[]
-  pointBalance: PointBalanceDto
 }
 
 export default function CheckoutTemplate({
@@ -134,7 +132,9 @@ export default function CheckoutTemplate({
       setError(null)
 
       if (selectedItems.length === 0) {
-        setError("결제할 상품이 없습니다. 장바구니로 돌아가 상품을 선택해주세요.")
+        setError(
+          "결제할 상품이 없습니다. 장바구니로 돌아가 상품을 선택해주세요."
+        )
         setLoading(false)
         return
       }

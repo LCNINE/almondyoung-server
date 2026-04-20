@@ -76,8 +76,12 @@ export interface SavingsData {
  * 포인트 잔액 데이터
  */
 export interface PointBalanceData {
-  balance: number
-  withdrawable: number
+  /** 확정된 총 적립 포인트 */
+  confirmed: number
+  /** 결제 진행 중 hold 잡혀있는 포인트 */
+  reserved: number
+  /** 지금 사용 가능한 포인트 (서버에서 계산되어 내려옴) */
+  available: number
 }
 
 /**
