@@ -35,6 +35,8 @@ export const statusEnum = pgEnum('status', [
 
 export const phoneVerificationPurposeEnum = pgEnum('phone_verification_purpose', ['phone_verify', 'pin_reset']);
 
+export const oauthCodeChallengeMethodEnum = pgEnum('oauth_code_challenge_method', ['S256']);
+
 /*───────────────────────────
  * HELPER COLUMNS
  *──────────────────────────*/
@@ -359,6 +361,52 @@ export const phoneVerifications = pgTable(
   }),
 );
 
+/*───────────────────────────
+ * OAUTH 2.0 (Authorization Code + PKCE) — IdP role
+ *──────────────────────────*/
+export const oauthAuthorizationCodes = pgTable(
+  'oauth_authorization_codes',
+  {
+    code: varchar('code', { length: 128 }).primaryKey(),
+    clientId: varchar('client_id', { length: 64 }).notNull(),
+    userId: uuid('user_id')
+      .references(() => users.id, { onDelete: 'cascade' })
+      .notNull(),
+    redirectUri: varchar('redirect_uri', { length: 1024 }).notNull(),
+    codeChallenge: varchar('code_challenge', { length: 256 }).notNull(),
+    codeChallengeMethod: oauthCodeChallengeMethodEnum('code_challenge_method').notNull(),
+    scope: varchar('scope', { length: 1024 }),
+    expiresAt: timestamp('expires_at').notNull(),
+    consumedAt: timestamp('consumed_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    expiresAtIdx: index('oauth_codes_expires_at_idx').on(table.expiresAt),
+    userClientIdx: index('oauth_codes_user_client_idx').on(table.userId, table.clientId),
+  }),
+);
+
+export const oauthTokens = pgTable(
+  'oauth_tokens',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .references(() => users.id, { onDelete: 'cascade' })
+      .notNull(),
+    clientId: varchar('client_id', { length: 64 }).notNull(),
+    refreshToken: text('refresh_token').notNull(),
+    scope: varchar('scope', { length: 1024 }),
+    isRevoked: boolean('is_revoked').default(false).notNull(),
+    expiresAt: timestamp('expires_at').notNull(),
+    rotatedFrom: uuid('rotated_from'),
+    ...timestampColumns,
+  },
+  (table) => ({
+    refreshTokenUniqueIdx: uniqueIndex('oauth_tokens_refresh_token_idx').on(table.refreshToken),
+    userClientIdx: index('oauth_tokens_user_client_idx').on(table.userId, table.clientId),
+  }),
+);
+
 /**
  * 블랙리스트 관리 테이블
  * 레코드가 존재하면서 deletedAt이 nulll이면  = 블랙리스트
@@ -535,6 +583,8 @@ export const userServiceTables = {
   wishlist,
   userRecentViews,
   phoneVerifications,
+  oauthAuthorizationCodes,
+  oauthTokens,
 } as const;
 
 /*───────────────────────────
@@ -564,6 +614,7 @@ export const userServiceEnums = {
   shopTypeEnum,
   statusEnum,
   phoneVerificationPurposeEnum,
+  oauthCodeChallengeMethodEnum,
 } as const;
 
 /*───────────────────────────
