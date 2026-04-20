@@ -28,6 +28,10 @@ module.exports = defineConfig({
       jwtSecret: process.env.JWT_SECRET || 'supersecret',
       cookieSecret: process.env.COOKIE_SECRET || 'supersecret',
       jwtExpiresIn: process.env.JWT_EXPIRES_IN || '30d',
+      authMethodsPerActor: {
+        user: ['emailpass', 'my-auth'],
+        customer: ['emailpass', 'my-auth', 'user-service-sso'],
+      },
     },
   },
   presets: [require('@medusajs/ui-preset')],
@@ -76,6 +80,16 @@ module.exports = defineConfig({
             id: 'my-auth',
             options: {
               jwtSecret: process.env.JWT_SECRET,
+            },
+          },
+          {
+            resolve: './src/modules/user-service-sso',
+            id: 'user-service-sso',
+            options: {
+              authWebUrl: process.env.AUTH_WEB_URL,
+              authSecret: process.env.AUTH_SECRET,
+              userServiceUrl: process.env.USER_SERVICE_URL,
+              defaultCallbackUrl: process.env.SSO_DEFAULT_CALLBACK_URL,
             },
           },
         ],
