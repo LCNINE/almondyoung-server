@@ -348,6 +348,8 @@ export function setup(infra: SharedInfra) {
       FRONTEND_URL: url("www"),
       USER_SERVICE_URL: url("user"),
       MEDUSA_BACKEND_URL: url("medusa"),
+      AUTH_WEB_URL: url("auth"),
+      SSO_DEFAULT_CALLBACK_URL: $interpolate`${url("www")}/kr/auth/callback`,
       WALLET_BASE_URL: url("wallet"),
       WALLET_API_KEY: walletApiKey.value,
       ALMOND_PAYMENT_ENDPOINT: url("wallet"),
@@ -371,7 +373,7 @@ export function setup(infra: SharedInfra) {
   // auth-web: 계정 허브. user-service와 서버 사이드로만 통신한다.
   // parent 도메인(.${baseDomain}) 쿠키는 auth-web이 직접 심는다.
   new sst.aws.Nextjs("AuthWeb", {
-    path: "web/auth-web",
+    path: "../../web/auth-web",
     domain: { name: domain("auth") },
     environment: {
       USER_SERVICE_URL: url("user"),

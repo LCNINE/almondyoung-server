@@ -4,6 +4,7 @@ import { sdk } from "@lib/config"
 import medusaError from "@lib/util/medusa-error"
 import { HttpTypes } from "@medusajs/types"
 import { revalidateTag } from "next/cache"
+import { cookies as nextCookies, headers as nextHeaders } from "next/headers"
 import { redirect } from "next/navigation"
 import {
   getAuthHeaders,
@@ -13,6 +14,25 @@ import {
   removeAllAuthTokens,
   setAuthToken,
 } from "./cookies"
+
+const SSO_PROVIDER = "user-service-sso"
+
+async function getStorefrontOrigin(): Promise<string> {
+  const h = await nextHeaders()
+  const proto = h.get("x-forwarded-proto") ?? "https"
+  const host = h.get("x-forwarded-host") ?? h.get("host")
+  if (!host) {
+    throw new Error("Unable to determine storefront host from request headers")
+  }
+  return `${proto}://${host}`
+}
+
+async function buildSsoCallbackUrl(countryCode: string, redirectTo: string): Promise<string> {
+  const origin = await getStorefrontOrigin()
+  const url = new URL(`/${countryCode}/auth/callback`, origin)
+  url.searchParams.set("redirect_to", redirectTo)
+  return url.toString()
+}
 
 async function fetchCustomer() {
   const authHeaders = await getAuthHeaders()
@@ -129,30 +149,96 @@ export async function signup(_currentState: unknown, formData: FormData) {
   redirect(`/${countryCode}${redirectTo}`)
 }
 
+function decodeJwtPayload(token: string): Record<string, any> | null {
+  try {
+    const part = token.split(".")[1]
+    if (!part) return null
+    const base64 = part.replace(/-/g, "+").replace(/_/g, "/")
+    const padded = base64 + "===".slice((base64.length + 3) % 4)
+    const json = Buffer.from(padded, "base64").toString("utf8")
+    return JSON.parse(json)
+  } catch {
+    return null
+  }
+}
+
+export async function completeSsoCallback(state: string) {
+  const cookieStore = await nextCookies()
+  const accessToken = cookieStore.get("accessToken")?.value
+
+  const headers: Record<string, string> = {}
+  if (accessToken) {
+    headers.authorization = `Bearer ${accessToken}`
+  }
+
+  const { token } = await sdk.client.fetch<{ token: string }>(
+    `/auth/customer/${SSO_PROVIDER}/callback`,
+    {
+      method: "GET",
+      query: { state },
+      headers,
+    }
+  )
+
+  if (!token || typeof token !== "string") {
+    throw new Error("SSO callback did not return a token")
+  }
+
+  const payload = decodeJwtPayload(token)
+  let finalToken = token
+
+  if (!payload?.actor_id) {
+    const email =
+      (payload?.user_metadata?.email as string | undefined) ??
+      (payload?.app_metadata?.email as string | undefined)
+
+    if (!email) {
+      throw new Error("SSO token is missing user email; cannot create customer")
+    }
+
+    await sdk.store.customer.create(
+      { email, first_name: "", last_name: "" },
+      {},
+      { authorization: `Bearer ${token}` }
+    )
+
+    finalToken = await sdk.auth.refresh({ authorization: `Bearer ${token}` })
+  }
+
+  await setAuthToken(finalToken)
+
+  const customerCacheTag = await getCacheTag("customers")
+  revalidateTag(customerCacheTag)
+
+  await transferCart()
+}
+
 export async function login(_currentState: unknown, formData: FormData) {
-  const email = formData.get("email") as string
-  const password = formData.get("password") as string
   const countryCode = (formData.get("countryCode") as string) || "kr"
   const redirectTo = (formData.get("redirect_to") as string) || "/"
 
+  let location: string | undefined
+
   try {
-    const token = await sdk.auth.login("customer", "emailpass", {
-      email,
-      password,
-    })
+    const callback_url = await buildSsoCallbackUrl(countryCode, redirectTo)
+    const result = await sdk.auth.login("customer", SSO_PROVIDER, { callback_url })
 
-    if (typeof token !== "string") {
-      throw new Error("Login requires additional authentication steps")
+    if (typeof result === "object" && result && "location" in result && typeof result.location === "string") {
+      location = result.location
+    } else if (typeof result === "string") {
+      await setAuthToken(result)
+      const customerCacheTag = await getCacheTag("customers")
+      revalidateTag(customerCacheTag)
+      await transferCart()
+    } else {
+      return "로그인 요청에 실패했습니다."
     }
-
-    await setAuthToken(token)
-
-    const customerCacheTag = await getCacheTag("customers")
-    revalidateTag(customerCacheTag)
-
-    await transferCart()
   } catch (error: any) {
     return error.message || error.toString()
+  }
+
+  if (location) {
+    redirect(location)
   }
 
   redirect(`/${countryCode}${redirectTo}`)
@@ -161,6 +247,7 @@ export async function login(_currentState: unknown, formData: FormData) {
 export async function signout(countryCode: string) {
   await sdk.auth.logout().catch(() => {})
   await removeAllAuthTokens()
+  await clearParentSessionCookies()
 
   const customerCacheTag = await getCacheTag("customers")
   revalidateTag(customerCacheTag)
@@ -169,6 +256,19 @@ export async function signout(countryCode: string) {
   revalidateTag(cartCacheTag)
 
   redirect(`/${countryCode}/account`)
+}
+
+async function clearParentSessionCookies() {
+  const domain = process.env.PARENT_COOKIE_DOMAIN
+  if (!domain) return
+  const cookieStore = await nextCookies()
+  for (const name of ["accessToken", "refreshToken"]) {
+    cookieStore.set(name, "", {
+      domain,
+      path: "/",
+      maxAge: -1,
+    })
+  }
 }
 
 export async function transferCart() {
