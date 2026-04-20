@@ -37,6 +37,12 @@ export const userServiceEnvSchema = z.object({
   CAFE24_CLIENT_ID: z.string().optional(),
   CAFE24_CLIENT_SECRET: z.string().optional(),
   CAFE24_TOKEN_URL: z.string().url().optional(),
+
+  // OAuth IdP (Authorization Code + PKCE for cross-domain SSO)
+  // OAUTH_CLIENTS: JSON array of {clientId, clientSecretHash, redirectUris, allowedScopes?}
+  OAUTH_CLIENTS: z.string().optional(),
+  // Shared secret for auth-web → user-service /oauth/internal/issue-code
+  OAUTH_INTERNAL_SECRET: z.string().optional(),
 });
 
 export type UserServiceEnvConfig = z.infer<typeof userServiceEnvSchema>;
