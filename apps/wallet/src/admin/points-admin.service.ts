@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { PaginatedResponseDto } from '@app/shared';
-import { and, count, desc, eq, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gte, lte, sql, SQL } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { pointEventDetails, pointEvents, pointHolds, WalletSchema } from '../schema';
 import { DbTx } from '../types';
@@ -66,11 +66,25 @@ export class PointsAdminService {
     return rows;
   }
 
-  async getEventsPaginated(userId: string, page: number, limit: number): Promise<PaginatedResponseDto<PointsEventRow>> {
+  async getEventsPaginated(
+    userId: string,
+    page: number,
+    limit: number,
+    filters?: { dateFrom?: string; dateTo?: string },
+  ): Promise<PaginatedResponseDto<PointsEventRow>> {
     const db = this.dbService.db;
     const offset = (page - 1) * limit;
 
-    const [countResult] = await db.select({ value: count() }).from(pointEvents).where(eq(pointEvents.userId, userId));
+    const conditions: SQL[] = [eq(pointEvents.userId, userId)];
+    if (filters?.dateFrom) {
+      conditions.push(gte(pointEvents.createdAt, new Date(filters.dateFrom)));
+    }
+    if (filters?.dateTo) {
+      conditions.push(lte(pointEvents.createdAt, new Date(filters.dateTo)));
+    }
+    const whereCondition = and(...conditions);
+
+    const [countResult] = await db.select({ value: count() }).from(pointEvents).where(whereCondition);
 
     const total = countResult?.value ?? 0;
 
@@ -85,7 +99,7 @@ export class PointsAdminService {
         createdAt: pointEvents.createdAt,
       })
       .from(pointEvents)
-      .where(eq(pointEvents.userId, userId))
+      .where(whereCondition)
       .orderBy(desc(pointEvents.createdAt))
       .limit(limit)
       .offset(offset);
