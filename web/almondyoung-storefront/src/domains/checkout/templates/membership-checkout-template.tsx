@@ -81,19 +81,32 @@ export default function MembershipCheckoutTemplate({
 
       if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") {
         // 이벤트 핸들러에서 throw는 error.tsx를 트리거하지 않으므로 인라인 토큰 복구
+        let tokenRestored = false
         try {
           const res = await fetch("/api/auth/restore-token", {
             method: "POST",
             credentials: "include",
           })
-          if (res.ok) {
-            setLoading(true)
-            await attemptPayment()
-            return
-          }
-        } catch {}
-        // 토큰 복구 실패 → 로그인 (planId 보존)
-        window.location.href = `/${countryCode}/login?redirect_to=${encodeURIComponent(window.location.pathname + window.location.search)}`
+          tokenRestored = res.ok
+        } catch {
+          // restore-token 네트워크 에러
+        }
+
+        if (!tokenRestored) {
+          window.location.href = `/${countryCode}/login?redirect_to=${encodeURIComponent(window.location.pathname + window.location.search)}`
+          return
+        }
+
+        // 토큰 복구 성공 → 결제 재시도 (실패 시 toast)
+        setLoading(true)
+        try {
+          await attemptPayment()
+        } catch (retryError: unknown) {
+          setLoading(false)
+          const retryErr = retryError as Error
+          console.error("멤버십 결제 재시도 실패:", retryError)
+          toast.error(retryErr instanceof Error ? retryErr.message : "결제 요청에 실패했습니다.")
+        }
         return
       }
 
