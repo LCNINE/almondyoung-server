@@ -84,7 +84,13 @@ export default function MembershipCheckoutTemplate({
             credentials: "include",
           })
           if (res.ok) {
-            window.location.reload()
+            // 토큰 복구 성공 → 결제 재시도
+            setLoading(true)
+            const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback`
+            const { intentId } = await createMembershipCheckoutIntent(planId, returnUrl, billingMode)
+            setPendingPaymentMode("membership", { planId, billingMode })
+            const walletWebUrl = process.env.NEXT_PUBLIC_WALLET_WEB_URL || "http://localhost:3200"
+            window.location.href = `${walletWebUrl}/pay/${intentId}`
             return
           }
         } catch {}
