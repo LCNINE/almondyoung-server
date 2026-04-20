@@ -17,10 +17,10 @@ export default async function PaymentManager() {
   const businessInfo = await getMyBusiness() // 사업자 정보 조회
   const bnplProfiles = await getBnplProfiles() // 나중결제 계좌 조회
 
-  const { balance, withdrawable } = await getPointBalance() // 적립금 잔액 조회
+  const { available, reserved } = await getPointBalance() // 적립금 잔액 조회
 
   // temp: 임시임 추후에는 pending이라는 상태명으로 들어올 예정
-  const pendingPoints = balance - withdrawable // 적립 예정 포인트 (출금 가능일 미도달)
+  const pendingPoints = reserved // 사용 예약(AUTHORIZED hold) 중인 포인트
 
   const defaultBnplProfile =
     bnplProfiles?.find((profile) => profile.isDefault) ?? null // 나중결제 계좌 중 내가 기본으로 설정한 계좌 조회
@@ -37,7 +37,7 @@ export default async function PaymentManager() {
         />
 
         {/* 적립금 섹션 */}
-        <PointSection withdrawable={withdrawable} />
+        <PointSection withdrawable={available} />
 
         {/* 계좌 섹션 */}
         <AccountSection
