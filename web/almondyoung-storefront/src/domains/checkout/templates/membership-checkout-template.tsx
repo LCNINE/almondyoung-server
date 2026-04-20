@@ -54,28 +54,31 @@ export default function MembershipCheckoutTemplate({
     [price]
   )
 
+  const attemptPayment = async () => {
+    const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback`
+    const { intentId } = await createMembershipCheckoutIntent(planId, returnUrl, billingMode)
+    setPendingPaymentMode("membership", { planId, billingMode })
+    const walletWebUrl = process.env.NEXT_PUBLIC_WALLET_WEB_URL || "http://localhost:3200"
+    window.location.href = `${walletWebUrl}/pay/${intentId}`
+  }
+
   const handlePayment = async () => {
     if (!agreed) {
       toast.error("결제 및 환불 정책에 동의해주세요.")
       return
     }
+    if (!user?.id) {
+      toast.error("로그인이 필요합니다.")
+      return
+    }
+
     try {
       setLoading(true)
-
-      if (!user?.id) {
-        throw new Error("로그인이 필요합니다.")
-      }
-
-      const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback`
-      const { intentId } = await createMembershipCheckoutIntent(planId, returnUrl, billingMode)
-      setPendingPaymentMode("membership", { planId, billingMode })
-
-      const walletWebUrl =
-        process.env.NEXT_PUBLIC_WALLET_WEB_URL || "http://localhost:3200"
-      window.location.href = `${walletWebUrl}/pay/${intentId}`
+      await attemptPayment()
     } catch (error: unknown) {
       setLoading(false)
       const err = error as Error & { digest?: string }
+
       if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") {
         // 이벤트 핸들러에서 throw는 error.tsx를 트리거하지 않으므로 인라인 토큰 복구
         try {
@@ -84,23 +87,18 @@ export default function MembershipCheckoutTemplate({
             credentials: "include",
           })
           if (res.ok) {
-            // 토큰 복구 성공 → 결제 재시도
             setLoading(true)
-            const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback`
-            const { intentId } = await createMembershipCheckoutIntent(planId, returnUrl, billingMode)
-            setPendingPaymentMode("membership", { planId, billingMode })
-            const walletWebUrl = process.env.NEXT_PUBLIC_WALLET_WEB_URL || "http://localhost:3200"
-            window.location.href = `${walletWebUrl}/pay/${intentId}`
+            await attemptPayment()
             return
           }
         } catch {}
-        window.location.href = `/${countryCode}/login?redirect_to=${encodeURIComponent(window.location.pathname)}`
+        // 토큰 복구 실패 → 로그인 (planId 보존)
+        window.location.href = `/${countryCode}/login?redirect_to=${encodeURIComponent(window.location.pathname + window.location.search)}`
         return
       }
+
       console.error("멤버십 결제 요청 실패:", error)
-      toast.error(
-        err instanceof Error ? err.message : "결제 요청에 실패했습니다."
-      )
+      toast.error(err instanceof Error ? err.message : "결제 요청에 실패했습니다.")
     }
   }
 
