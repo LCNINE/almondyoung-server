@@ -4,31 +4,28 @@ import { SharedPagination } from "@/components/shared/pagination"
 import { PageTitle } from "@/components/shared/page-title"
 import { useMembership } from "@/contexts/membership-context"
 import ProductCard from "domains/products/components/product-card"
-import type { FrequentProductItem } from "@/lib/types/ui/frequent-products"
+import type { FrequentProductsPage } from "@/lib/types/ui/frequent-products"
 import { useRouter } from "next/navigation"
 import { useMemo, useState } from "react"
 import { FrequentEmpty } from "../components/frequent-empty"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 
-const ITEMS_PER_PAGE = 12
-
 interface FrequentProductsTemplateProps {
   countryCode: string
-  items: FrequentProductItem[]
-  currentPage: number
+  data: FrequentProductsPage
 }
 
 export function FrequentProductsTemplate({
   countryCode,
-  items,
-  currentPage,
+  data,
 }: FrequentProductsTemplateProps) {
+  const { items, total, page: currentPage, limit } = data
   const router = useRouter()
   const { isMembershipPricing } = useMembership()
   const [excludeSoldout, setExcludeSoldout] = useState(false)
 
-  const filteredItems = useMemo(() => {
+  const displayItems = useMemo(() => {
     if (!excludeSoldout) return items
 
     return items.filter((item) => {
@@ -45,11 +42,7 @@ export function FrequentProductsTemplate({
     })
   }, [items, excludeSoldout])
 
-  const totalPages = Math.ceil(filteredItems.length / ITEMS_PER_PAGE)
-  const paginatedItems = useMemo(() => {
-    const start = (currentPage - 1) * ITEMS_PER_PAGE
-    return filteredItems.slice(start, start + ITEMS_PER_PAGE)
-  }, [filteredItems, currentPage])
+  const totalPages = Math.max(1, Math.ceil(total / limit))
 
   const handlePageChange = (page: number) => {
     const params = new URLSearchParams()
@@ -58,14 +51,7 @@ export function FrequentProductsTemplate({
     router.push(queryString ? `?${queryString}` : "?", { scroll: false })
   }
 
-  const handleExcludeSoldoutChange = (checked: boolean) => {
-    setExcludeSoldout(checked)
-    if (currentPage !== 1) {
-      handlePageChange(1)
-    }
-  }
-
-  if (items.length === 0) {
+  if (total === 0) {
     return (
       <div className="rounded-xl bg-white px-3 pt-4 pb-9 md:px-6">
         <PageTitle>자주 산 상품</PageTitle>
@@ -79,14 +65,12 @@ export function FrequentProductsTemplate({
       <PageTitle>자주 산 상품</PageTitle>
 
       <div className="mb-4 flex items-center justify-between">
-        <span className="text-sm text-gray-500">
-          총 {filteredItems.length}개
-        </span>
+        <span className="text-sm text-gray-500">총 {total}개</span>
         <div className="flex items-center gap-2">
           <Checkbox
             id="exclude-soldout"
             checked={excludeSoldout}
-            onCheckedChange={handleExcludeSoldoutChange}
+            onCheckedChange={(checked) => setExcludeSoldout(checked === true)}
           />
           <Label
             htmlFor="exclude-soldout"
@@ -97,14 +81,14 @@ export function FrequentProductsTemplate({
         </div>
       </div>
 
-      {filteredItems.length === 0 ? (
+      {displayItems.length === 0 ? (
         <div className="py-12 text-center text-sm text-gray-500">
           표시할 상품이 없습니다
         </div>
       ) : (
         <>
           <div className="grid w-full grid-cols-2 gap-x-6 gap-y-8 sm:grid-cols-3 md:grid-cols-4">
-            {paginatedItems.map((item) => (
+            {displayItems.map((item) => (
               <ProductCard
                 key={item.id}
                 product={item}

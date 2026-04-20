@@ -5,3 +5,10 @@ export interface FrequentProductItem extends StoreProduct {
   totalQuantity: number
   lastPurchasedAt?: string | null
 }
+
+export interface FrequentProductsPage {
+  items: FrequentProductItem[]
+  total: number
+  page: number
+  limit: number
+}
