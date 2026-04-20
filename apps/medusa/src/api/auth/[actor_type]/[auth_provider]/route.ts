@@ -121,7 +121,9 @@ export const GET = async (req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       });
     }
 
-    if (shouldAutoRegister(error)) {
+    // user-service-sso는 인증 identity를 validateCallback에서 직접 생성하므로
+    // 이 라우트의 email 기반 auto-register 경로를 타서는 안 됨.
+    if (shouldAutoRegister(error) && auth_provider !== 'user-service-sso') {
       const userServiceToken = extractUserServiceToken(req);
 
       if (!userServiceToken) {

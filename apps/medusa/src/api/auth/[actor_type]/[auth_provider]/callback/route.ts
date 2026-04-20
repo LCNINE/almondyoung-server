@@ -101,7 +101,11 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
 
   const authData = buildAuthData(req);
 
-  let { success, error, authIdentity } = await service.authenticate(auth_provider, authData);
+  // user-service-sso는 OAuth 스타일 redirect 플로우의 callback 단계. validateCallback을 호출해 state 검증과 auth_identity 생성/갱신을 수행.
+  let { success, error, authIdentity } =
+    auth_provider === 'user-service-sso'
+      ? await service.validateCallback(auth_provider, authData)
+      : await service.authenticate(auth_provider, authData);
 
   if (success && authIdentity) {
     const actorType = authIdentity?.app_metadata?.actor_type || actor_type;
@@ -123,7 +127,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     return res.status(200).json({ token });
   }
 
-  if (shouldAutoRegister(error)) {
+  if (shouldAutoRegister(error) && auth_provider !== 'user-service-sso') {
     const userServiceToken = extractUserServiceToken(req);
 
     if (!userServiceToken) {
