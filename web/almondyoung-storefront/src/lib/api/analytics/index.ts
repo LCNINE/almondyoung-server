@@ -3,6 +3,7 @@ import type {
   ProductRankingDto,
   FrequentlyPurchasedDto,
 } from "@lib/types/dto/analytics"
+import type { PaginatedResponseDto } from "@lib/types/common/pagination"
 
 type BestProductRankingsParams = {
   categoryId?: string
@@ -39,28 +40,25 @@ export const getBestProductRankings = async ({
 }
 
 /**
- * 자주 산 상품 목록 조회
- * @param limit 조회할 최대 개수 (기본값: 20, 최대: 100)
+ * 자주 산 상품 목록 조회 (페이지네이션)
  */
 export const getFrequentlyPurchased = async (
-  limit: number = 20
-): Promise<FrequentlyPurchasedDto[]> => {
+  page: number = 1,
+  limit: number = 12
+): Promise<PaginatedResponseDto<FrequentlyPurchasedDto>> => {
   const params = new URLSearchParams()
-  if (limit) params.set("limit", String(limit))
+  params.set("page", String(page))
+  params.set("limit", String(limit))
 
-  const queryString = params.toString()
-
-  const data = await api<FrequentlyPurchasedDto[]>(
+  return await api<PaginatedResponseDto<FrequentlyPurchasedDto>>(
     "anly",
-    `/frequently-purchased${queryString ? `?${queryString}` : ""}`,
+    `/frequently-purchased?${params.toString()}`,
     {
       method: "GET",
       withAuth: true,
       next: {
-        tags: ["frequently-purchased"],
+        tags: ["frequently-purchased", `page-${page}`, `limit-${limit}`],
       },
     }
   )
-
-  return data
 }

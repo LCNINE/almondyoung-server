@@ -3,34 +3,42 @@
 import { getFrequentlyPurchased } from "@/lib/api/analytics"
 import { listProducts } from "@/lib/api/medusa/products"
 import { getRegion } from "@/lib/api/medusa/regions"
-import type { FrequentProductItem } from "@/lib/types/ui/frequent-products"
+import type {
+  FrequentProductItem,
+  FrequentProductsPage,
+} from "@/lib/types/ui/frequent-products"
 
 /**
- * 자주 산 상품 아이템 조회
- * @param countryCode - 국가 코드
- * @param limit - 조회할 최대 개수
+ * 자주 산 상품 페이지 조회 (서버 페이지네이션)
  */
 export async function fetchFrequentProducts(
   countryCode: string,
-  limit: number = 100
-): Promise<FrequentProductItem[]> {
-  const frequentData = await getFrequentlyPurchased(limit)
+  page: number = 1,
+  limit: number = 12
+): Promise<FrequentProductsPage> {
+  const paginated = await getFrequentlyPurchased(page, limit)
 
-  if (!frequentData || frequentData.length === 0) {
-    return []
+  const empty: FrequentProductsPage = {
+    items: [],
+    total: paginated.total,
+    page: paginated.page,
+    limit: paginated.limit,
   }
 
-  // channelProductId가 있는 항목만 필터링
-  const validItems = frequentData.filter((item) => item.channelProductId)
+  if (!paginated.data || paginated.data.length === 0) {
+    return empty
+  }
+
+  const validItems = paginated.data.filter((item) => item.channelProductId)
   if (validItems.length === 0) {
-    return []
+    return empty
   }
 
   const productIds = validItems.map((item) => item.channelProductId as string)
   const region = await getRegion(countryCode)
 
   if (!region) {
-    return []
+    return empty
   }
 
   const { response } = await listProducts({
@@ -42,7 +50,6 @@ export async function fetchFrequentProducts(
     },
   })
 
-  // 구매 정보를 Map으로 변환 (빠른 조회)
   const purchaseMap = new Map(
     validItems.map((item) => [item.channelProductId, item])
   )
@@ -57,8 +64,12 @@ export async function fetchFrequentProducts(
     }
   })
 
-  // 구매 횟수 기준 내림차순 정렬
   items.sort((a, b) => b.purchaseCount - a.purchaseCount)
 
-  return items
+  return {
+    items,
+    total: paginated.total,
+    page: paginated.page,
+    limit: paginated.limit,
+  }
 }
