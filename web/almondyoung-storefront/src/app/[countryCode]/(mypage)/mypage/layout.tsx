@@ -1,10 +1,9 @@
-import { siteConfig } from "@/lib/config/site"
+import ProtectedRoute from "@components/protected-route"
 import { getSEOTags } from "@lib/seo"
 import Script from "next/script"
-import ProtectedRoute from "@components/protected-route"
 
 export const metadata = getSEOTags({
-  title: `${siteConfig.appName} | 마이페이지`,
+  title: `마이페이지`,
   openGraph: {},
   extraTags: {},
 })

@@ -1,7 +1,7 @@
-import { Suspense } from "react"
-import { WithHeaderLayout } from "@components/layout"
 import { MypageHomeSkeleton } from "@/components/skeletons/page-skeletons"
-import { MyPageTemplate } from "domains/mypage/template/mypage-template"
+import { MyPageTemplate } from "@/domains/mypage/template/main/mypage-template"
+import { WithHeaderLayout } from "@components/layout"
+import { Suspense } from "react"
 
 export default async function MyPage({
   params,

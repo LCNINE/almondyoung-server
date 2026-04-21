@@ -1,7 +1,7 @@
 import { getOrders } from "@lib/api/medusa/orders"
 import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
-import ShippingStatusCard from "../../components/mobile/shipping-status-card"
-import type { OrderItem } from "../../types/mypage-types"
+import ShippingStatusCard from "../../../components/mobile/shipping-status-card"
+import type { OrderItem } from "../../../types/mypage-types"
 import { resolveMypageShippingStatus } from "./mypage-order-status"
 
 /**

@@ -6,15 +6,6 @@ import { getPointBalance } from "@lib/api/wallet"
 import type { UserDetail } from "@lib/types/ui/user"
 import { Suspense } from "react"
 
-import { QuickMenuSection } from "../components/desktop/quick-menu-section"
-import { UserProfileSection } from "../components/desktop/user-profile-section"
-
-import { MENU_SECTIONS } from "../components/constants/mypage-constants"
-import { MenuList } from "../components/mobile/menu-list"
-import { MobileHeader } from "../components/mobile/mobile-header"
-import PayLaterBanner from "../components/mobile/paylater-banner"
-import { QuickLinks } from "../components/mobile/quick-links"
-
 import { PaymentInfoWrapper } from "./wrappers/payment-info-wrapper"
 import { PointsBannerWrapper } from "./wrappers/points-banner-wrapper"
 import { SavingsBannerWrapper } from "./wrappers/savings-banner-wrapper"
@@ -25,13 +16,20 @@ import { retrieveCart } from "@/lib/api/medusa/cart"
 import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import type { CustomerGroupRef } from "@/lib/utils/membership-group"
 import { isMembershipGroup } from "@/lib/utils/membership-group"
+import { MENU_SECTIONS } from "../../components/constants/mypage-constants"
+import { QuickMenuSection } from "../../components/desktop/quick-menu-section"
+import { UserProfileSection } from "../../components/desktop/user-profile-section"
+import { MenuList } from "../../components/mobile/menu-list"
+import { MobileHeader } from "../../components/mobile/mobile-header"
+import PayLaterBanner from "../../components/mobile/paylater-banner"
+import { QuickLinks } from "../../components/mobile/quick-links"
 import {
   PaymentInfoSkeleton,
   PointsBannerSkeleton,
   SavingsBannerSkeleton,
   ShippingItemsSkeleton,
   ShippingStatusSkeleton,
-} from "../components/shared/mypage-skeletons"
+} from "../../components/shared/mypage-skeletons"
 
 export async function MyPageTemplate({ countryCode }: { countryCode: string }) {
   const [currentUser, { isAdmin }, pointBalance] = await Promise.all([

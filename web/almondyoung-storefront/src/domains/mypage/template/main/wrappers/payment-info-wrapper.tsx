@@ -1,6 +1,6 @@
 import { getCurrentSubscription } from "@/lib/api/membership"
-import { PaymentInfoSection } from "../../components/desktop/payment-info-section"
-import type { BillingInfo } from "../../types/mypage-types"
+import { PaymentInfoSection } from "../../../components/desktop/payment-info-section"
+import type { BillingInfo } from "../../../types/mypage-types"
 
 /**
  * 결제 정보 Wrapper
