@@ -152,7 +152,7 @@ export class MembershipMedusaSyncService {
       return { success: true, data: { userId, action: 'skipped' } };
     } catch (error) {
       this.logger.error(`Failed to sync membership group for userId=${userId}`, error.stack);
-      return { success: false, data: { userId, action: 'failed' } };
+      throw error;
     }
   }
 }
