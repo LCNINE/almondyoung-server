@@ -249,7 +249,7 @@ export class AuthController {
     try {
       return await this.authService.signInWithSocial(kakaoUser, ProviderType.KAKAO, res);
     } catch (error) {
-      const frontendUrl = this.configService.get('FRONTEND_URL') ?? 'http://localhost:8000';
+      const frontendUrl = this.configService.get('FRONTEND_URL') ?? 'http://localhost:8001';
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
       return res.status(302).redirect(`${frontendUrl}/login?errorMessage=${encodeURIComponent(errorMessage)}`);
@@ -280,7 +280,7 @@ export class AuthController {
     try {
       return await this.authService.signInWithSocial(naverUser, ProviderType.NAVER, res);
     } catch (error) {
-      const frontendUrl = this.configService.get('FRONTEND_URL') ?? 'http://localhost:8000';
+      const frontendUrl = this.configService.get('FRONTEND_URL') ?? 'http://localhost:8001';
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
       return res.status(302).redirect(`${frontendUrl}/login?errorMessage=${encodeURIComponent(errorMessage)}`);

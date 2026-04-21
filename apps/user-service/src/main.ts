@@ -28,7 +28,7 @@ async function bootstrap() {
   const corsOrigins =
     process.env.NODE_ENV === 'production'
       ? (process.env.CORS_ORIGIN_DOMAINS?.split(',').map((origin) => origin.trim()) ?? [])
-      : ['http://localhost:8000', 'https://almondyoung-storefront.vercel.app'];
+      : ['http://localhost:8000', 'http://localhost:8001', 'https://almondyoung-storefront.vercel.app'];
 
   logger.log('CORS:', corsOrigins);
 
@@ -38,6 +38,7 @@ async function bootstrap() {
         ? corsOrigins
         : [
             'http://localhost:8000',
+            'http://localhost:8001',
             'http://localhost:3000',
             'http://localhost:9000',
             'http://127.0.0.1:3000',
