@@ -465,14 +465,20 @@ export async function verifyPasswordForPinReset(
  * 포인트 내역 조회
  * @param params.page 페이지 번호
  * @param params.limit 페이지당 개수
+ * @param params.dateFrom 기간 시작 (ISO 8601)
+ * @param params.dateTo 기간 종료 (ISO 8601)
  */
 export async function getPointHistory(params?: {
   page?: number
   limit?: number
+  dateFrom?: string
+  dateTo?: string
 }): Promise<PaginatedResponseDto<PointsEventRowDto>> {
   const queryParams = new URLSearchParams()
   if (params?.page) queryParams.append("page", params.page.toString())
   if (params?.limit) queryParams.append("limit", params.limit.toString())
+  if (params?.dateFrom) queryParams.append("dateFrom", params.dateFrom)
+  if (params?.dateTo) queryParams.append("dateTo", params.dateTo)
 
   return await api<PaginatedResponseDto<PointsEventRowDto>>(
     "wallet",

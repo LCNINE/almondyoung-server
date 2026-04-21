@@ -1,5 +1,5 @@
 import type { HttpTypes } from "@medusajs/types"
-import type { OrderStatus } from "../../types/mypage-types"
+import type { OrderStatus } from "../../../types/mypage-types"
 
 const getOrderStatusLabel = (order: HttpTypes.StoreOrder): string => {
   if (order.status === "canceled") return "취소됨"

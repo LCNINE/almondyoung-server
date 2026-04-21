@@ -46,7 +46,7 @@ export function ShopSettingTemplate({
       reset({
         isOperating: shopInfo.isOperating,
         yearsOperating: shopInfo.yearsOperating ?? 0,
-        shopType: shopInfo.shopType ?? "solo",
+        shopType: shopInfo.shopType ?? "",
         categories: shopInfo.categories ?? [],
         targetCustomers: (shopInfo.targetCustomers as string[]) ?? [],
         openDays: (shopInfo.openDays as string[]) ?? [],

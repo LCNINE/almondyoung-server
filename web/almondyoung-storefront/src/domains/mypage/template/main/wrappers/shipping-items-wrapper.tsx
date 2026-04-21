@@ -1,7 +1,7 @@
 import { getOrders } from "@lib/api/medusa/orders"
 import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
-import { ShippingItemsSection } from "../../components/desktop/shipping-items-section"
-import type { ShippingOrder } from "../../types/mypage-types"
+import { ShippingItemsSection } from "../../../components/desktop/shipping-items-section"
+import type { ShippingOrder } from "../../../types/mypage-types"
 import { resolveMypageShippingStatus } from "./mypage-order-status"
 
 /**

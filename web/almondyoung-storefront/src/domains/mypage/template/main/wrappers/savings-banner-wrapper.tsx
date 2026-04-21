@@ -2,8 +2,8 @@ import {
   getCurrentMonthSavings,
   getCurrentSubscription,
 } from "@/lib/api/membership"
-import { SavingsBanner } from "../../components/mobile/savings-banner"
-import type { SavingsData } from "../../types/mypage-types"
+import { SavingsBanner } from "../../../components/mobile/savings-banner"
+import type { SavingsData } from "../../../types/mypage-types"
 
 /**
  * 절약액 및 구독 정보 Wrapper

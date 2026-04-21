@@ -1,11 +1,10 @@
 import type { PointsEventRow } from "@/lib/types/ui/wallet"
 import { cn } from "@/lib/utils"
-import { ShoppingBag } from "lucide-react"
 import {
   formatPointAmount,
   formatPointDate,
   getPointEventMeta,
-} from "./point-event-meta"
+} from "./event-meta"
 
 interface PointHistoryItemProps {
   event: PointsEventRow
@@ -13,6 +12,7 @@ interface PointHistoryItemProps {
 
 export function PointHistoryItem({ event }: PointHistoryItemProps) {
   const meta = getPointEventMeta(event.eventType)
+  const Icon = meta.icon
   const isPositive = event.amount > 0
   const isNegative = event.amount < 0
 
@@ -30,10 +30,21 @@ export function PointHistoryItem({ event }: PointHistoryItemProps) {
     neutral: "bg-gray-40",
   }[meta.status.tone]
 
+  const iconWrapClass = {
+    earn: "bg-yellow-10 text-primary",
+    redeem: "bg-gray-10 text-gray-90",
+    cancel: "bg-gray-10 text-gray-60",
+  }[meta.iconTone]
+
   return (
     <li className="border-gray-10 flex items-center gap-3 rounded-xl border bg-white p-4 transition-colors hover:bg-gray-50">
-      <div className="bg-yellow-10 text-primary flex size-11 shrink-0 items-center justify-center rounded-full">
-        <ShoppingBag className="size-5" strokeWidth={1.8} />
+      <div
+        className={cn(
+          "flex size-11 shrink-0 items-center justify-center rounded-full",
+          iconWrapClass
+        )}
+      >
+        <Icon className="size-5" strokeWidth={2} />
       </div>
 
       <div className="min-w-0 flex-1">
