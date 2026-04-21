@@ -1,37 +1,21 @@
-/// <reference path="../.sst/platform/config.d.ts" />
+/// <reference path="../../../../.sst/platform/config.d.ts" />
 
 import type { SharedInfra } from "./shared";
 
 export function setup(infra: SharedInfra) {
-  const { db, redis, dbUrl, redisUrl, baseDomain, url, createService } = infra;
-
-  // ─── Kafka (Confluent Cloud) ───
-  const kafkaApiKey = new sst.Secret("KafkaApiKey");
-  const kafkaApiSecret = new sst.Secret("KafkaApiSecret");
-
-  const kafkaEnv = (prefix: string, groupId: string) => ({
-    KAFKA_BROKERS: "pkc-e82om.ap-northeast-2.aws.confluent.cloud:9092",
-    KAFKA_API_KEY: kafkaApiKey.value,
-    KAFKA_API_SECRET: kafkaApiSecret.value,
-    KAFKA_CLIENT_ID_PREFIX: prefix,
-    KAFKA_GROUP_ID: groupId,
-  });
+  const { db, redis, dbUrl, redisUrl, baseDomain, url, kafkaEnv, createService } = infra;
 
   // ─── Secrets ───
   const authSecret = new sst.Secret("AuthSecret");
   const awsS3AccessKeyId = new sst.Secret("AwsS3AccessKeyId");
   const awsS3SecretAccessKey = new sst.Secret("AwsS3SecretAccessKey");
 
-  // User Service
-  const kakaoClientId = new sst.Secret("KakaoClientId");
-  const kakaoClientSecret = new sst.Secret("KakaoClientSecret");
-  const jwtRefreshSecret = new sst.Secret("JwtRefreshSecret");
-  const jwtVerificationTokenSecret = new sst.Secret("JwtVerificationTokenSecret");
-  const twilioAccountSid = new sst.Secret("TwilioAccountSid");
-  const twilioAuthToken = new sst.Secret("TwilioAuthToken");
-  const cafe24ClientId = new sst.Secret("Cafe24ClientId");
-  const cafe24ClientSecret = new sst.Secret("Cafe24ClientSecret");
-  const cafe24ServiceKey = new sst.Secret("Cafe24ServiceKey");
+  // ─── IdP (lcnine-auth) 앱이 publish한 SSM Parameter 조회 ───
+  // user-service는 deployments/lcnine/auth/ 의 별도 SST 앱으로 분리되어 있으므로 URL을
+  // hardcoded가 아니라 cross-stack으로 읽어 온다. stage 이름은 두 앱이 동일하게 운용한다고 가정.
+  const idpUserServiceUrl = aws.ssm.getParameterOutput({
+    name: `/lcnine-auth/${$app.stage}/user-service-url`,
+  }).value;
 
   // Channel Adapter
   const channelAdapterInternalKey = new sst.Secret("ChannelAdapterInternalKey");
@@ -61,55 +45,6 @@ export function setup(infra: SharedInfra) {
   //  Services
   // ═══════════════════════════════════════════
 
-  createService("UserService", {
-    dockerfile: "apps/user-service/Dockerfile",
-    domainSlug: "user",
-    port: 3000,
-    priority: 100,
-    link: [db],
-    environment: {
-      DATABASE_URL: dbUrl("user_service"),
-      ...kafkaEnv("user-service", "user-service"),
-      AUTH_SECRET: authSecret.value,
-      JWT_REFRESH_SECRET: jwtRefreshSecret.value,
-      JWT_VERIFICATION_TOKEN_SECRET: jwtVerificationTokenSecret.value,
-      COOKIE_DOMAIN: `.${baseDomain}`,
-      FRONTEND_URL: url("www"),
-      SIGNUP_CALLBACK_URL: `${url("www")}/callback/signup`,
-      USER_SERVICE_URL: url("user"),
-      REDIRECT_URL_WHITELIST: [
-        "http://localhost:8000/callback/signup",
-        "http://localhost:8000/",
-        "http://localhost:8000",
-        `${url("user")}/`,
-        `${url("www")}/`,
-        "http://localhost:8080/",
-      ].join(","),
-      KAKAO_CLIENT_ID: kakaoClientId.value,
-      KAKAO_CLIENT_SECRET: kakaoClientSecret.value,
-      KAKAO_CALLBACK_URL: `${url("user")}/auth/kakao/callback`,
-      TWILIO_ACCOUNT_SID: twilioAccountSid.value,
-      TWILIO_AUTH_TOKEN: twilioAuthToken.value,
-      TWILIO_PHONE_NUMBER: "+15856342856",
-      CAFE24_CLIENT_ID: cafe24ClientId.value,
-      CAFE24_CLIENT_SECRET: cafe24ClientSecret.value,
-      CAFE24_SERVICE_KEY: cafe24ServiceKey.value,
-      BIZNO_URL: "https://bizno.net/article",
-      CORS_ORIGIN_DOMAINS: [
-        url("www"),
-        url("medusa"),
-        "http://localhost:8000",
-        "https://almondyoung.com",
-        "https://www.almondyoung.com",
-      ].join(","),
-      AWS_ACCESS_KEY_ID: awsS3AccessKeyId.value,
-      AWS_SECRET_ACCESS_KEY: awsS3SecretAccessKey.value,
-      AWS_REGION: "ap-northeast-2",
-      AWS_S3_BUCKET: "almondyoung",
-      CAFE24_MALL_ID: "lcnine",
-    },
-  });
-
   createService("Analytics", {
     dockerfile: "apps/analytics/Dockerfile",
     domainSlug: "analytics",
@@ -137,7 +72,7 @@ export function setup(infra: SharedInfra) {
       MEDUSA_API_URL: url("medusa"),
       MEDUSA_MEMBERSHIP_GROUP_ID: "cusgroup_01KFZ12A1M344F6HKGDV35J28A",
       ALMOND_AUTH_URL: "https://asia-northeast3-almond-auth.cloudfunctions.net/api",
-      USER_SERVICE_URL: url("user"),
+      USER_SERVICE_URL: idpUserServiceUrl,
       PIM_API_URL: url("pim"),
       NAVER_API_ENDPOINT: "https://dummy.com",
       NAVER_CLIENT_ID: "1",
@@ -291,7 +226,7 @@ export function setup(infra: SharedInfra) {
     priority: 210,
     link: [db, redis],
     buildArgs: {
-      VITE_USER_SERVICE_URL: url("user"),
+      VITE_USER_SERVICE_URL: idpUserServiceUrl,
     },
     loadBalancerHealth: {
       "9000/http": {
@@ -324,7 +259,7 @@ export function setup(infra: SharedInfra) {
       AUTH_CORS: [url("medusa"), url("www"), "https://almondyoung.com", "https://www.almondyoung.com"].join(","),
       // Internal service URLs
       FRONTEND_URL: url("www"),
-      USER_SERVICE_URL: url("user"),
+      USER_SERVICE_URL: idpUserServiceUrl,
       MEDUSA_BACKEND_URL: url("medusa"),
       WALLET_BASE_URL: url("wallet"),
       WALLET_API_KEY: walletApiKey.value,

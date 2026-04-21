@@ -1,11 +1,12 @@
-/// <reference path="./.sst/platform/config.d.ts" />
+/// <reference path="../../../.sst/platform/config.d.ts" />
 
 export default $config({
   app(input) {
     return {
-      name: "almondyoung-server",
-      removal: input?.stage === "production" ? "retain" : "remove",
-      protect: ["production"].includes(input?.stage),
+      name: "lcnine-services",
+      // "live" = 운영 stage. 삭제 저항성(retain)과 protect 적용. 도메인도 접두사 없음.
+      removal: input?.stage === "live" ? "retain" : "remove",
+      protect: ["live"].includes(input?.stage),
       home: "aws",
       providers: {
         aws: { region: "ap-northeast-2" },
@@ -23,7 +24,6 @@ export default $config({
       dbHost: infra.db.host,
       redisHost: infra.redis.host,
       medusaUrl: infra.url("medusa"),
-      userServiceUrl: infra.url("user"),
       walletUrl: infra.url("wallet"),
     };
   },
