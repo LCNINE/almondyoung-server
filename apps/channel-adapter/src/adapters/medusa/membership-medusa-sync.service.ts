@@ -92,17 +92,8 @@ export class MembershipMedusaSyncService {
       }
 
       if (!customer) {
-        this.logger.warn(`Medusa customer not found for email=${email} (userId=${userId})`);
-        await this.eventTrackingService
-          .trackEffect({
-            resourceType: 'UserMembership',
-            resourceId: userId,
-            action: 'SKIPPED',
-            description: `Medusa 고객 없음 (email=${email}, userId=${userId})`,
-            eventType: 'MembershipStatusChanged',
-          })
-          .catch((e) => this.logger.warn(`trackEffect 실패: ${e?.message}`));
-        return { success: false, data: { userId, action: 'skipped' } };
+        this.logger.warn(`Medusa customer not found for email=${email} (userId=${userId}), will retry`);
+        throw new Error(`Medusa customer not found for email=${email} (userId=${userId})`);
       }
 
       const addStatuses = new Set(['ACTIVE', 'RESUMED']);
