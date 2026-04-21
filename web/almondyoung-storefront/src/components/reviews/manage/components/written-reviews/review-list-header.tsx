@@ -1,8 +1,7 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
 import { CircleHelp, X } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { useEffect, useRef, useState } from "react"
 
 interface ReviewListHeaderProps {
   title: string
@@ -52,7 +51,7 @@ export const ReviewListHeader = ({
         )}
 
         {isOpen && tooltipContent && (
-          <div className="absolute top-full left-0 z-50 mt-2 w-fit whitespace-nowrap rounded-lg border border-gray-200 bg-white p-3 shadow-md">
+          <div className="absolute top-full left-0 z-50 mt-2 w-fit rounded-lg border border-gray-200 bg-white p-3 whitespace-nowrap shadow-md">
             <div className="absolute -top-1.5 left-4 h-3 w-3 rotate-45 border-t border-l border-gray-200 bg-white" />
             <div className="flex items-start justify-between gap-2">
               <div>{tooltipContent}</div>
