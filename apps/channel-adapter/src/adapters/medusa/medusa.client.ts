@@ -1069,10 +1069,11 @@ export class MedusaClient {
       return customers?.[0] || null;
     } catch (error) {
       const fetchError = error as FetchError;
+      if (fetchError.status === 404) return null;
       this.logger.warn(
         `Medusa findCustomerByEmail failed for ${email}: ${fetchError.message} (status=${fetchError.status})`,
       );
-      return null;
+      throw error;
     }
   }
 
@@ -1092,7 +1093,7 @@ export class MedusaClient {
       this.logger.warn(
         `Medusa findCustomerByAlmondUserId failed (almondUserId=${almondUserId}): ${fetchError.message} (status=${fetchError.status})`,
       );
-      return null;
+      throw error;
     }
   }
 
