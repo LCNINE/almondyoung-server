@@ -7,10 +7,17 @@ import { FIXED_CATEGORIES } from "@/lib/constants/categories"
 import { Logo } from "./logo"
 import { AccountMenu } from "./user-actions"
 
+type Categories = Awaited<ReturnType<typeof listCategories>>
+
 export async function MainHeader() {
   const mainCategories = FIXED_CATEGORIES
 
-  const categories = await listCategories({ parent_category_id: "null" })
+  let categories: Categories = []
+  try {
+    categories = await listCategories({ parent_category_id: "null" })
+  } catch (error) {
+    console.error("[MainHeader] Failed to load categories:", error)
+  }
 
   return (
     <header className="bg-header-background overflow-visible">
