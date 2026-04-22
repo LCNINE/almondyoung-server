@@ -1,4 +1,6 @@
+import { SearchPageSkeleton } from "@/components/skeletons/page-skeletons"
 import { SearchContainer } from "domains/search/search"
+import { Suspense } from "react"
 
 interface SearchPageProps {
   params: Promise<{
@@ -19,9 +21,12 @@ export default async function SearchPage({
   params,
   searchParams,
 }: SearchPageProps) {
+  const { q = "" } = await searchParams
   return (
     <div className="container mx-auto max-w-[1360px] px-4 py-6 md:px-[40px]">
-      <SearchContainer params={params} searchParams={searchParams} />
+      <Suspense key={q} fallback={<SearchPageSkeleton />}>
+        <SearchContainer params={params} searchParams={searchParams} />
+      </Suspense>
     </div>
   )
 }
