@@ -43,16 +43,16 @@ export const ReviewsTabs = ({
       onValueChange={handleTabChange}
       className="mt-3 w-full"
     >
-      <TabsList className="inline-flex h-auto w-full justify-start rounded-none border-b border-[#e5e5e5] bg-transparent p-0">
+      <TabsList className="bg-muted grid h-11 w-full grid-cols-2">
         <TabsTrigger
           value={REVIEW_TAB_VALUES.WRITABLE}
-          className="rounded-none border-b-2 border-transparent bg-transparent px-4 py-3 text-[15px] font-bold text-[#666666] shadow-none transition-colors focus-visible:ring-0 focus-visible:outline-none data-[state=active]:border-[#f29219] data-[state=active]:text-[#f29219] data-[state=active]:shadow-none data-[state=inactive]:hover:text-[#333333]"
+          className="data-[state=active]:bg-primary! data-[state=active]:text-primary-foreground! text-[14px] font-semibold data-[state=active]:shadow-sm"
         >
           작성 가능한 리뷰
         </TabsTrigger>
         <TabsTrigger
           value={REVIEW_TAB_VALUES.WRITTEN}
-          className="rounded-none border-b-2 border-transparent bg-transparent px-4 py-3 text-[15px] font-bold text-[#666666] shadow-none transition-colors focus-visible:ring-0 focus-visible:outline-none data-[state=active]:border-[#f29219] data-[state=active]:text-[#f29219] data-[state=active]:shadow-none data-[state=inactive]:hover:text-[#333333]"
+          className="data-[state=active]:bg-primary! data-[state=active]:text-primary-foreground! text-[14px] font-semibold data-[state=active]:shadow-sm"
         >
           내가 작성한 리뷰
         </TabsTrigger>
