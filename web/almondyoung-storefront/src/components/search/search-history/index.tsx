@@ -52,7 +52,7 @@ export function SearchHistory() {
           {keywords.map((item: string, idx: number) => (
             <CarouselItem key={`${item}-${idx}`} className="basis-auto pl-2">
               <div
-                className="flex cursor-pointer items-center gap-1.5 rounded-full border border-gray-200 bg-white px-4 py-0 text-xs font-medium text-gray-50"
+                className="flex cursor-pointer items-center gap-1.5 rounded-full border border-gray-200 bg-white px-4 py-0 text-xs font-medium text-gray-500"
                 onClick={() => handleHistoryClick(item)}
               >
                 <span>
