@@ -1,16 +1,22 @@
 "use client"
 
-import { useRouter } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
-import _ from "lodash"
+import chunk from "lodash/chunk"
 import {
   getTrendingKeywords,
   type TrendingKeyword,
 } from "@lib/api/pim/search"
 import { Skeleton } from "@/components/ui/skeleton"
+import { formatDate } from "@/lib/utils/format-date"
 
 export function SearchHotKeyword() {
   const router = useRouter()
+  const params = useParams<{ countryCode?: string }>()
+  const countryCode =
+    typeof params?.countryCode === "string" ? params.countryCode : undefined
+  const searchBasePath = countryCode ? `/${countryCode}/search` : "/search"
+
   const [keywords, setKeywords] = useState<TrendingKeyword[]>([])
   const [updatedAt, setUpdatedAt] = useState<string>("")
   const [isLoading, setIsLoading] = useState(true)
@@ -21,14 +27,7 @@ export function SearchHotKeyword() {
         const result = await getTrendingKeywords()
         if ("data" in result && result.data) {
           setKeywords(result.data.keywords)
-          // 시간만 추출 (예: "08:00")
-          const date = new Date(result.data.updatedAt)
-          const timeStr = date.toLocaleTimeString("ko-KR", {
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false,
-          })
-          setUpdatedAt(timeStr)
+          setUpdatedAt(formatDate(result.data.updatedAt, "HH:mm", ""))
         }
       } catch (error) {
         console.error("급상승 검색어 로드 실패:", error)
@@ -41,10 +40,10 @@ export function SearchHotKeyword() {
   }, [])
 
   // 데이터를 반으로 나눔 (예: 10개면 5개씩 2덩어리)
-  const columns = _.chunk(keywords, Math.ceil(keywords.length / 2))
+  const columns = chunk(keywords, Math.ceil(keywords.length / 2))
 
   const handleHotKeywordClick = (keyword: string) => {
-    router.push(`/search?q=${encodeURIComponent(keyword)}`)
+    router.push(`${searchBasePath}?q=${encodeURIComponent(keyword)}`)
   }
 
   if (isLoading) {

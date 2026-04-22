@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react"
 import { SearchInput } from "../search-input/input"
 import { SearchPopover } from "../search-popover"
-import { useRouter } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { useSearchHistory } from "@/hooks/ui/use-search-history"
 import { useSearchSheetStore } from "@/hooks/ui/use-search-sheet-store"
 import { getSuggestions } from "@lib/api/pim/search"
@@ -25,6 +25,10 @@ export function SearchCombobox() {
   const { addKeyword } = useSearchHistory()
   const { onClose: closeSheet } = useSearchSheetStore()
   const router = useRouter()
+  const params = useParams<{ countryCode?: string }>()
+  const countryCode =
+    typeof params?.countryCode === "string" ? params.countryCode : undefined
+  const searchBasePath = countryCode ? `/${countryCode}/search` : "/search"
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -39,7 +43,7 @@ export function SearchCombobox() {
 
     debounceTimer.current = setTimeout(async () => {
       const result = await getSuggestions({ q: searchTerm, size: 5 })
-      if (result.success && result.data) {
+      if ("data" in result && result.data) {
         setSuggestions(result.data.items.map((i: { keyword: string }) => i.keyword))
       } else {
         setSuggestions([])
@@ -57,7 +61,7 @@ export function SearchCombobox() {
     if (key === "Enter" && searchTerm.trim()) {
       addKeyword(searchTerm.trim())
       setIsOpen(false)
-      router.push(`/search?q=${encodeURIComponent(searchTerm)}`)
+      router.push(`${searchBasePath}?q=${encodeURIComponent(searchTerm)}`)
       closeSheet()
     }
   }
@@ -67,7 +71,7 @@ export function SearchCombobox() {
 
     addKeyword(searchTerm.trim())
     setIsOpen(false)
-    router.push(`/search?q=${encodeURIComponent(searchTerm.trim())}`)
+    router.push(`${searchBasePath}?q=${encodeURIComponent(searchTerm.trim())}`)
     closeSheet()
   }
 

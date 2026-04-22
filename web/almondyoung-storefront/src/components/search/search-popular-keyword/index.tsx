@@ -5,7 +5,7 @@ import {
   CarouselContent,
   CarouselItem,
 } from "@/components/ui/carousel"
-import { useRouter } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 import chunk from "lodash/chunk"
 import {
@@ -16,6 +16,11 @@ import { Skeleton } from "@/components/ui/skeleton"
 
 export function SearchPopularKeyword() {
   const router = useRouter()
+  const params = useParams<{ countryCode?: string }>()
+  const countryCode =
+    typeof params?.countryCode === "string" ? params.countryCode : undefined
+  const searchBasePath = countryCode ? `/${countryCode}/search` : "/search"
+
   const [keywords, setKeywords] = useState<PopularKeyword[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
@@ -37,7 +42,7 @@ export function SearchPopularKeyword() {
   }, [])
 
   const handleKeywordClick = (keyword: string) => {
-    router.push(`/search?q=${encodeURIComponent(keyword)}`)
+    router.push(`${searchBasePath}?q=${encodeURIComponent(keyword)}`)
   }
 
   // 데이터를 2개씩 묶어주는 로직 (두 줄 배치를 위해)
