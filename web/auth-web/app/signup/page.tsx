@@ -15,7 +15,7 @@ export default async function SignUpPage({
       <header className="flex flex-col gap-2">
         <h1 className="text-2xl font-semibold">회원가입</h1>
         <p className="text-sm text-muted-foreground">
-          가입 후 이메일 인증을 완료해야 로그인이 활성화됩니다.
+          필수 정보를 입력하면 가입이 즉시 완료됩니다.
         </p>
       </header>
       <SignUpForm redirectTo={redirectTo} />

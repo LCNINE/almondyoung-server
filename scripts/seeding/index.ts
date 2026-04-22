@@ -47,9 +47,22 @@ function isInsideSstShell(): boolean {
   return Object.keys(process.env).some((k) => k.startsWith('SST_RESOURCE_'));
 }
 
+/**
+ * deployment 키 → sst 실행 cwd.
+ *  - `df` (레거시 단일 스택) → `deployments/df`
+ *  - `{company}-{env}` (신규 컨벤션, env ∈ platform/auth/services) → `deployments/{company}/{env}`
+ */
+function deploymentToCwd(deployment: string): string {
+  const parts = deployment.split('-');
+  if (parts.length === 2 && ['platform', 'auth', 'services'].includes(parts[1])) {
+    return `deployments/${parts[0]}/${parts[1]}`;
+  }
+  return `deployments/${deployment}`;
+}
+
 function reExecViaSstShell(stage: string, deployment?: string): never {
-  // Determine cwd: for named deployments, run sst from deployments/<name>/
-  const sstCwd = deployment ? `deployments/${deployment}` : undefined;
+  // Determine cwd: for named deployments, run sst from deployments/<path>/
+  const sstCwd = deployment ? deploymentToCwd(deployment) : undefined;
 
   const args = process.argv.slice(2).join(' ');
   const cwdLabel = sstCwd ? ` (cwd: ${sstCwd})` : '';

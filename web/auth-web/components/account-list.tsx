@@ -7,7 +7,7 @@ import { Trash2 } from "lucide-react";
 import { removeAccountAction, selectAccountAction } from "@/app/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Empty, EmptyDescription, EmptyTitle } from "@/components/ui/empty";
+import { Empty, EmptyTitle } from "@/components/ui/empty";
 import type { StoredAccount } from "@/lib/account-store";
 
 type Props = {
@@ -30,9 +30,6 @@ export function AccountList({
     return (
       <Empty>
         <EmptyTitle>저장된 계정이 없습니다</EmptyTitle>
-        <EmptyDescription>
-          아래 버튼을 눌러 로그인하거나 새로 가입하세요.
-        </EmptyDescription>
       </Empty>
     );
   }

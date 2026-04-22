@@ -41,9 +41,18 @@ const DF_REGISTRY: ServiceConfig[] = [
   { name: 'medusa', database: 'medusa', hasSeedStep: false },
 ];
 
+/**
+ * lcnine-auth 배포: IdP 전용. user-service 한 개만 포함.
+ * DB는 `sst.aws.Postgres("IdpDb")` 리소스 (db-connection.ts가 자동 감지).
+ */
+const LCNINE_AUTH_REGISTRY: ServiceConfig[] = [
+  { name: 'user-service', database: 'user_service', drizzleConfig: 'apps/user-service/database/drizzle/drizzle.config.ts', hasSeedStep: true },
+];
+
 const REGISTRIES: Record<string, ServiceConfig[]> = {
   root: ROOT_REGISTRY,
   df: DF_REGISTRY,
+  'lcnine-auth': LCNINE_AUTH_REGISTRY,
 };
 
 export function getServiceRegistry(deployment?: string): ServiceConfig[] {

@@ -134,7 +134,7 @@ export class AuthService {
             nickname,
             loginId,
             password: hash,
-            isEmailVerified: false,
+            isEmailVerified: true,
           })
           .returning();
 
