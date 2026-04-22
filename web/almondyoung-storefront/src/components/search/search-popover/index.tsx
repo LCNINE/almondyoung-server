@@ -61,7 +61,7 @@ function SearchHistory({
     setDisableSave,
     addKeyword,
   } = useSearchHistory()
-  const { onClose: closeSheet } = useSearchSheetStore()
+  const { onClose: closeSheet, setSearchTerm } = useSearchSheetStore()
 
   const router = useRouter()
   const params = useParams<{ countryCode?: string }>()
@@ -70,6 +70,7 @@ function SearchHistory({
   const searchBasePath = countryCode ? `/${countryCode}/search` : "/search"
 
   const handleSuggestionClick = (keyword: string) => {
+    setSearchTerm(keyword)
     addKeyword(keyword)
     onClose()
     router.push(`${searchBasePath}?q=${encodeURIComponent(keyword)}`)
@@ -77,6 +78,7 @@ function SearchHistory({
   }
 
   const handleHistoryClick = (keyword: string) => {
+    setSearchTerm(keyword)
     addKeyword(keyword)
     onClose()
     router.push(`${searchBasePath}?q=${encodeURIComponent(keyword)}`)

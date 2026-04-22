@@ -13,9 +13,11 @@ import {
   type PopularKeyword,
 } from "@lib/api/pim/search"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useSearchSheetStore } from "@/hooks/ui/use-search-sheet-store"
 
 export function SearchPopularKeyword() {
   const router = useRouter()
+  const { setSearchTerm, onClose } = useSearchSheetStore()
   const params = useParams<{ countryCode?: string }>()
   const countryCode =
     typeof params?.countryCode === "string" ? params.countryCode : undefined
@@ -42,7 +44,9 @@ export function SearchPopularKeyword() {
   }, [])
 
   const handleKeywordClick = (keyword: string) => {
+    setSearchTerm(keyword)
     router.push(`${searchBasePath}?q=${encodeURIComponent(keyword)}`)
+    onClose()
   }
 
   // 데이터를 2개씩 묶어주는 로직 (두 줄 배치를 위해)

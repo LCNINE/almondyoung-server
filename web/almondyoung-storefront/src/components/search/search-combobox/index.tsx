@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import { SearchInput } from "../search-input/input"
 import { SearchPopover } from "../search-popover"
 import { useParams, useRouter } from "next/navigation"
@@ -18,12 +18,15 @@ import { getSuggestions } from "@lib/api/pim/search"
  * 확장적인 검색 관련 정보를 보여줄 수 있습니다.
  */
 export function SearchCombobox() {
-  const [searchTerm, setSearchTerm] = useState("")
   const [isOpen, setIsOpen] = useState(false)
   const [suggestions, setSuggestions] = useState<string[]>([])
 
   const { addKeyword } = useSearchHistory()
-  const { onClose: closeSheet } = useSearchSheetStore()
+  const {
+    onClose: closeSheet,
+    searchTerm,
+    setSearchTerm,
+  } = useSearchSheetStore()
   const router = useRouter()
   const params = useParams<{ countryCode?: string }>()
   const countryCode =
