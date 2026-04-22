@@ -8,7 +8,7 @@ import { StoreProductImage } from "@medusajs/types"
 
 type ThumbnailProps = {
   thumbnail?: string | null
-  images?: StoreProductImage[] | null | null
+  images?: StoreProductImage[] | null
   size?: "small" | "medium" | "large" | "full" | "square"
   className?: string
   "data-testid"?: string
