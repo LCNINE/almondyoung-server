@@ -296,11 +296,25 @@ export class MedusaClient {
             ...pimMetadata,
           },
         };
+        console.log(
+          `[CATEGORY-DEBUG] REQUEST target=${existing.id} payload=${JSON.stringify(updatePayload)}`,
+        );
         try {
-          const result = await this.sdk.admin.productCategory.update(existing.id, updatePayload);
-          console.log('메두사 카테고리 업데이트결과:', result);
+          const data = await this.sdk.admin.productCategory.update(existing.id, updatePayload);
+          console.log(
+            `[CATEGORY-DEBUG] RESPONSE target=${existing.id} data=${JSON.stringify(data)}`,
+          );
+
+          // 응답 후 실제 DB 반영 상태 재조회 (SDK 응답과 실제 DB가 달랐던 이슈 추적)
+          const verifyAfter = await this.getCategoryById(existing.id);
+          console.log(
+            `[CATEGORY-DEBUG] VERIFY-AFTER target=${existing.id} rank=${verifyAfter?.rank} updatedAt=${verifyAfter?.updated_at} data=${JSON.stringify(verifyAfter)}`,
+          );
         } catch (err) {
           const fetchError = err as FetchError;
+          console.log(
+            `[CATEGORY-DEBUG] ERROR target=${existing.id} message=${fetchError.message}`,
+          );
           this.logger.warn(
             `Failed to update Medusa category ${existing.id} from snapshot ${categorySnapshot.id}: ${fetchError.message}`,
           );
