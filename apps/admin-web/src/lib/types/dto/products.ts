@@ -15,13 +15,19 @@ export type PricingStrategy = 'option_based' | 'variant_based';
 export interface CreateCategoryDto {
   name: string;
   description?: string;
+  slug?: string;
+  imageUrl?: string;
   parentId?: string | null;
+  sortOrder?: number;
 }
 
 export interface UpdateCategoryDto {
   name?: string;
   description?: string;
-  parentId?: string | null;
+  slug?: string;
+  imageUrl?: string;
+  sortOrder?: number;
+  isActive?: boolean;
 }
 
 export interface CategoryDto {
