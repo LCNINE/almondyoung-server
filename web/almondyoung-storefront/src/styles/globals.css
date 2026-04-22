@@ -124,6 +124,9 @@ input[type="search"]::-webkit-search-results-decoration {
   --font-size-3xl: 18px;
   --font-size-4xl: 24px;
   --font-size-5xl: 36px;
+
+  --animate-collapsible-down: collapsible-down 0.25s ease-out;
+  --animate-collapsible-up: collapsible-up 0.25s ease-out;
 }
 
 :root {
@@ -310,6 +313,24 @@ input[type="search"]::-webkit-search-results-decoration {
   }
   .animate-shake {
     animation: shake 0.5s ease-in-out;
+  }
+}
+
+@keyframes collapsible-down {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--radix-collapsible-content-height);
+  }
+}
+
+@keyframes collapsible-up {
+  from {
+    height: var(--radix-collapsible-content-height);
+  }
+  to {
+    height: 0;
   }
 }
 
