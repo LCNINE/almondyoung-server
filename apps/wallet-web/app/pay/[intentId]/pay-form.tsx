@@ -26,6 +26,7 @@ interface Props {
   intent: PaymentIntent;
   methods: PaymentMethod[];
   pointsBalance: PointsBalance;
+  billingMethodsExist: boolean;
 }
 
 function getMethodIcon(type: string): ReactNode {
@@ -64,7 +65,7 @@ function formatAmount(amount: number, currency: string): string {
   return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(amount);
 }
 
-export function PayForm({ intent, methods, pointsBalance }: Props) {
+export function PayForm({ intent, methods, pointsBalance, billingMethodsExist }: Props) {
   const router = useRouter();
   // TODO: 무통장입금 UI 미구현 - 계좌번호 표시 후 활성화 예정
   // const externalMethods = methods.filter((m) => m.type !== 'POINTS');
@@ -161,13 +162,10 @@ export function PayForm({ intent, methods, pointsBalance }: Props) {
           payment_intent_id: intent.id,
           status: 'succeeded',
         });
-        // 이미 빌링키가 있는 결제수단(_BILLING)으로 결제한 경우 billing-setup 불필요
-        const alreadyHasBillingKey = selectedMethod?.type.endsWith('_BILLING') ?? false;
-        if (isRecurring && !alreadyHasBillingKey) {
-          // remaining > 0이면 실제 PG 결제가 발생했으므로 해당 PG의 빌링 등록 흐름으로 연결
-          const provider = remaining > 0 ? (selectedMethod?.type ?? '') : '';
-          const providerParam = provider ? `&provider=${provider}` : '';
-          router.replace(`/pay/${intent.id}/billing-setup?returnUrl=${encodeURIComponent(successUrl)}${providerParam}`);
+        if (isRecurring && !billingMethodsExist) {
+          const params = new URLSearchParams({ returnUrl: successUrl });
+          if (remaining > 0 && selectedMethod?.type) params.set('provider', selectedMethod.type);
+          router.replace(`/pay/${intent.id}/billing-setup?${params}`);
         } else {
           router.replace(successUrl);
         }
