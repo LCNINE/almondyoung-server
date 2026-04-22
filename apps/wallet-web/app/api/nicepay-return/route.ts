@@ -1,4 +1,4 @@
-import { approveNicepay } from '@/lib/wallet-api';
+import { approveNicepay, getBillingMethods } from '@/lib/wallet-api';
 import { buildReturnUrl } from '@/lib/return-url';
 
 /**
@@ -59,7 +59,11 @@ export async function POST(request: Request) {
         status: 'succeeded',
       });
       if (result.metadata?.billingMode === 'recurring') {
-        return Response.redirect(`${origin}/pay/${intentId}/billing-setup?provider=NICEPAY&returnUrl=${encodeURIComponent(successUrl)}`);
+        const cookieHeader = request.headers.get('Cookie') ?? '';
+        const billingMethods = await getBillingMethods(cookieHeader);
+        if (billingMethods.length === 0) {
+          return Response.redirect(`${origin}/pay/${intentId}/billing-setup?provider=NICEPAY&returnUrl=${encodeURIComponent(successUrl)}`);
+        }
       }
       return Response.redirect(successUrl);
     }

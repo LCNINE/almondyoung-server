@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
-import { getPaymentIntent, getPaymentMethods, getPointsBalance } from '@/lib/wallet-api';
+import { getPaymentIntent, getPaymentMethods, getPointsBalance, getBillingMethods } from '@/lib/wallet-api';
 import { buildReturnUrl } from '@/lib/return-url';
 import { PayForm } from './pay-form';
 import { Card, CardContent } from '@/components/ui/card';
@@ -26,7 +26,12 @@ export default async function PayPage({ params }: Props) {
     notFound();
   }
 
-  const methods = await getPaymentMethods(cookieHeader).catch(() => []);
+  const isRecurring = intent.metadata?.billingMode === 'recurring';
+
+  const [methods, billingMethods] = await Promise.all([
+    getPaymentMethods(cookieHeader).catch(() => []),
+    isRecurring ? getBillingMethods(cookieHeader) : Promise.resolve([]),
+  ]);
 
   if (['AUTHORIZED', 'CAPTURED', 'SUCCEEDED'].includes(intent.status)) {
     const returnUrl = intent.returnUrl
@@ -60,12 +65,10 @@ export default async function PayPage({ params }: Props) {
     );
   }
 
-  if (intent.metadata?.billingMode === 'recurring') {
-    const hasBillingMethod = methods.some((m) => m.type.endsWith('_BILLING'));
-    if (!hasBillingMethod) {
-      redirect(`/pay/${intentId}/billing-setup?mode=initial&returnUrl=${encodeURIComponent(`/pay/${intentId}`)}`);
-    }
+  if (isRecurring && billingMethods.length === 0) {
+    redirect(`/pay/${intentId}/billing-setup?mode=initial&returnUrl=${encodeURIComponent(`/pay/${intentId}`)}`);
   }
+  const billingMethodsExist = isRecurring;
 
   const pointsBalance = await getPointsBalance(cookieHeader).catch(() => ({ confirmed: 0, reserved: 0, available: 0 }));
 
@@ -89,5 +92,5 @@ export default async function PayPage({ params }: Props) {
     );
   }
 
-  return <PayForm intent={intent} methods={methods} pointsBalance={pointsBalance} />;
+  return <PayForm intent={intent} methods={methods} pointsBalance={pointsBalance} billingMethodsExist={billingMethodsExist} />;
 }
