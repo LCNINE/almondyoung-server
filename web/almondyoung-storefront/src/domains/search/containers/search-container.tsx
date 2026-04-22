@@ -36,13 +36,14 @@ export async function SearchContainer({
   searchParams,
   params,
 }: SearchContainerProps) {
-  const { q, sort, categoryIds, brands, minPrice, maxPrice } =
+  const { q, page, sort, categoryIds, brands, minPrice, maxPrice } =
     await searchParams
   const { countryCode } = await params
   const region = await getRegion(countryCode)
 
   const keyword = q?.trim() || ""
   const size = 20
+  const pageParam = Math.max(1, parseInt(page ?? "1", 10) || 1)
 
   const normalizedSort = normalizeSearchSort(sort)
   const brandList = toQueryArray(brands)
@@ -72,7 +73,7 @@ export async function SearchContainer({
       // 1. search 서비스 OpenSearch 검색으로 productId 목록 가져오기
       const searchApiResult = await searchProducts({
         q: keyword,
-        page: 1,
+        page: pageParam,
         size,
         sort: normalizedSort,
         categoryIds: categoryIdList,
