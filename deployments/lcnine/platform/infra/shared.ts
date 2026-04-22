@@ -9,11 +9,13 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 export function setup() {
-  // "live" 외의 모든 stage는 비운영으로 취급 (도메인 .dev. 접두사, bastion 등).
+  // "live" 외의 모든 stage는 비운영으로 취급 (도메인 .dev. 접두사 등).
   const isDev = $app.stage !== "live";
 
   // ─── VPC (auth/services가 Vpc.get(id)로 공유) ───
-  const vpc = new sst.aws.Vpc("PlatformVpc", { bastion: isDev });
+  // bastion은 dev/live 모두 상시 ON: IdP DB 등 VPC 내부 리소스에
+  // 시딩/점검 목적으로 `sst tunnel` 접근이 필요. t4g.nano 1대 비용(월 ~$3).
+  const vpc = new sst.aws.Vpc("PlatformVpc", { bastion: true });
 
   // ─── Redpanda 1-노드 EC2 + EBS 영속 ───
   // Fargate/EFS는 Seastar AIO 미지원이라 불가 → EC2(t4g.micro) + EBS(gp3) 선택.

@@ -3,6 +3,7 @@ import "server-only";
 import { env } from "./env";
 
 type SignInBody = { loginId: string; password: string; rememberMe?: boolean };
+type ApiEnvelope<T> = { success: boolean; data: T };
 
 export type TokenPair = { accessToken: string; refreshToken: string };
 
@@ -23,6 +24,11 @@ async function readJson<T>(res: Response): Promise<T> {
       `user-service returned non-JSON (${res.status}): ${text.slice(0, 200)}`,
     );
   }
+}
+
+async function readApiData<T>(res: Response): Promise<T> {
+  const body = await readJson<ApiEnvelope<T>>(res);
+  return body.data;
 }
 
 async function throwIfBad(res: Response, ctx: string): Promise<void> {
@@ -48,7 +54,7 @@ export async function signIn(body: SignInBody): Promise<TokenPair> {
     redirect: "manual",
   });
   await throwIfBad(res, "signin");
-  return readJson<TokenPair>(res);
+  return readApiData<TokenPair>(res);
 }
 
 export type LocalSignUpInput = {
@@ -78,7 +84,7 @@ export async function signUp(
     redirect: "manual",
   });
   await throwIfBad(res, "signup");
-  return readJson<{ userId: string; message: string }>(res);
+  return readApiData<{ userId: string; message: string }>(res);
 }
 
 export async function callbackSignup(userId: string): Promise<TokenPair> {
@@ -90,7 +96,7 @@ export async function callbackSignup(userId: string): Promise<TokenPair> {
     redirect: "manual",
   });
   await throwIfBad(res, "callback-signup");
-  return readJson<TokenPair>(res);
+  return readApiData<TokenPair>(res);
 }
 
 export async function restoreAccessToken(
@@ -103,7 +109,7 @@ export async function restoreAccessToken(
     redirect: "manual",
   });
   await throwIfBad(res, "restore-token");
-  const body = await readJson<{ accessToken?: string }>(res);
+  const body = await readApiData<{ accessToken?: string }>(res);
   if (body.accessToken) return body.accessToken;
 
   // Fallback: older behavior sets accessToken as Set-Cookie only
@@ -139,7 +145,7 @@ export async function issueOAuthCodeInternal(
     redirect: "manual",
   });
   await throwIfBad(res, "issue-code");
-  return readJson<{ code: string; expiresIn: number }>(res);
+  return readApiData<{ code: string; expiresIn: number }>(res);
 }
 
 export async function getMe(accessToken: string): Promise<UserProfile> {
@@ -150,5 +156,5 @@ export async function getMe(accessToken: string): Promise<UserProfile> {
     redirect: "manual",
   });
   await throwIfBad(res, "me");
-  return readJson<UserProfile>(res);
+  return readApiData<UserProfile>(res);
 }
