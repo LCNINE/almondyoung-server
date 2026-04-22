@@ -4,11 +4,11 @@ import React from "react"
 
 import PlaceholderImage from "@/icons/placeholder-image"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
+import { StoreProductImage } from "@medusajs/types"
 
 type ThumbnailProps = {
   thumbnail?: string | null
-  // TODO: Fix image type 교체
-  images?: any[] | null
+  images?: StoreProductImage[] | null | null
   size?: "small" | "medium" | "large" | "full" | "square"
   className?: string
   "data-testid"?: string
