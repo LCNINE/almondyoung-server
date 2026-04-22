@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/carousel"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
 import ProductCard from "@/domains/products/components/product-card"
+import RankBadge from "@/domains/products/components/rank-badge"
 import { CustomerGroup } from "@/lib/types/dto/medusa"
 import { StoreCustomerWithGroups } from "@/lib/types/ui/medusa"
 import { HttpTypes } from "@medusajs/types"
@@ -85,7 +86,7 @@ export function ProductSection<T extends TabItem>({
           ) ?? false
         }
         isMembershipOnly={p.metadata?.isMembershipOnly === true ? true : false}
-        rank={index + 1}
+        overlay={<RankBadge rank={index + 1} />}
         isWishlisted={wishlistIds?.has(p.id ?? "") ?? false}
       />
     )

@@ -4,6 +4,7 @@ import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { ProductQuickActions } from "domains/products/components/product-quick-actions"
 import { getProductPrice } from "@/lib/utils/get-product-price"
 import { HttpTypes } from "@medusajs/types"
+import React from "react"
 import ProductPrice from "./price"
 import Thumbnail from "../thumbnail"
 
@@ -11,14 +12,14 @@ export default function ProductCard({
   product,
   isMembership,
   isMembershipOnly,
-  rank,
+  overlay,
   countryCode = "kr",
   isWishlisted = false,
 }: {
   product: HttpTypes.StoreProduct
   isMembership: boolean
   isMembershipOnly: boolean
-  rank?: number
+  overlay?: React.ReactNode
   countryCode?: string
   isWishlisted?: boolean
 }) {
@@ -39,7 +40,7 @@ export default function ProductCard({
             thumbnail={product.thumbnail}
             images={product.images}
             size="full"
-            rank={rank}
+            overlay={overlay}
           />
           <ProductQuickActions
             productId={product.id ?? ""}

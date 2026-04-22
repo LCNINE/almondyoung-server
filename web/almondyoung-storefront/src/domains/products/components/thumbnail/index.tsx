@@ -12,7 +12,7 @@ type ThumbnailProps = {
   size?: "small" | "medium" | "large" | "full" | "square"
   className?: string
   "data-testid"?: string
-  rank?: number
+  overlay?: React.ReactNode
 }
 
 const Thumbnail: React.FC<ThumbnailProps> = ({
@@ -21,7 +21,7 @@ const Thumbnail: React.FC<ThumbnailProps> = ({
   size = "small",
   className,
   "data-testid": dataTestid,
-  rank,
+  overlay,
 }) => {
   const initialImage = thumbnail || images?.[0]?.url
 
@@ -40,12 +40,7 @@ const Thumbnail: React.FC<ThumbnailProps> = ({
       data-testid={dataTestid}
     >
       <ImageOrPlaceholder image={initialImage} size={size} />
-
-      {rank && (
-        <div className="absolute top-0 left-0 bg-black px-2.5 py-1 text-[12px] font-bold text-white">
-          {rank}
-        </div>
-      )}
+      {overlay}
     </div>
   )
 }
