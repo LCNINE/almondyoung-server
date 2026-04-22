@@ -2,6 +2,8 @@
 
 import { useOptimistic, useTransition } from "react"
 import { useRouter } from "next/navigation"
+import { Heart } from "lucide-react"
+import { showActionToast } from "@/components/shared/action-toast"
 import { AnimatedHeart } from "@/components/shared/animated-heart"
 import { Button } from "@/components/ui/button"
 import { useUser } from "@/contexts/user-context"
@@ -37,10 +39,26 @@ export function WishlistButton({
       return
     }
 
+    const nextWishlisted = !optimisticWishlisted
     startTransition(async () => {
-      setOptimisticWishlisted(!optimisticWishlisted)
+      setOptimisticWishlisted(nextWishlisted)
       try {
         await toggleWishlist(productId)
+        if (nextWishlisted) {
+          showActionToast({
+            icon: (
+              <Heart className="h-7 w-7" fill="currentColor" strokeWidth={0} />
+            ),
+            label: "좋아요",
+          })
+        } else {
+          // 좋아요 취소
+          showActionToast({
+            icon: <Heart className="h-7 w-7" strokeWidth={2.5} />,
+            label: "좋아요",
+            variant: "default",
+          })
+        }
       } catch (error) {
         console.error("찜하기 실패", error)
         // 실패 시 optimistic 값은 자동으로 isWishlisted(원래 값)로 롤백됨

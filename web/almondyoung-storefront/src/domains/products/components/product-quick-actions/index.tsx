@@ -3,8 +3,9 @@
 import { Button } from "@/components/ui/button"
 import { useAddToCart } from "@hooks/api/use-add-to-cart"
 import { cn } from "@/lib/utils"
+import { showActionToast } from "@/components/shared/action-toast"
 import { AnimatedHeart } from "@/components/shared/animated-heart"
-import { Minus, Plus, ShoppingCart, Check } from "lucide-react"
+import { Check, Heart, Minus, Plus, ShoppingCart } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
@@ -51,6 +52,10 @@ export function ProductQuickActions({
     e.preventDefault()
     e.stopPropagation()
 
+    // 처리 중이면 무시 — disabled 쓰면 pointer-events-none 때문에
+    // 두 번째 클릭이 부모 Link로 전파되어 페이지 이동함
+    if (isPending) return
+
     // 낙관적 업데이트
     const nextWishlisted = !isWishlisted
     setIsWishlisted(nextWishlisted)
@@ -59,11 +64,20 @@ export function ProductQuickActions({
       try {
         await toggleWishlist(productId)
         onWishlistChange?.(nextWishlisted)
-        toast.success(
-          nextWishlisted
-            ? "찜 목록에 추가되었습니다."
-            : "찜 목록에서 삭제되었습니다."
-        )
+        if (nextWishlisted) {
+          showActionToast({
+            icon: (
+              <Heart className="h-7 w-7" fill="currentColor" strokeWidth={0} />
+            ),
+            label: "좋아요",
+          })
+        } else {
+          showActionToast({
+            icon: <Heart className="h-7 w-7" strokeWidth={2.5} />,
+            label: "좋아요",
+            variant: "default",
+          })
+        }
       } catch (e) {
         // 실패 시 롤백
         setIsWishlisted(!nextWishlisted)
@@ -123,7 +137,10 @@ export function ProductQuickActions({
 
     if (result?.success) {
       setIsAddedToCart(true)
-      toast.success("장바구니에 담았습니다.")
+      showActionToast({
+        icon: <ShoppingCart className="h-7 w-7" strokeWidth={2.5} />,
+        label: "담았어요",
+      })
       // 2초 후 초기화
       setTimeout(() => {
         setShowQuantitySelector(false)
@@ -151,10 +168,10 @@ export function ProductQuickActions({
           "h-8 w-8 rounded-full border border-white/20 bg-white/80 shadow-sm backdrop-blur-sm",
           "transition-all duration-200 hover:scale-105 hover:bg-white active:scale-95",
           "md:opacity-0 md:group-hover:opacity-100",
-          isPending && "pointer-events-none opacity-50"
+          isPending && "opacity-50"
         )}
         onClick={handleWishlistToggle}
-        disabled={isPending}
+        aria-disabled={isPending}
       >
         <AnimatedHeart
           isActive={isWishlisted}
