@@ -12,8 +12,7 @@ export default async function TossBillingCompletePage({ params, searchParams }: 
   const { intentId } = await params;
   const { authKey, customerKey, returnUrl } = await searchParams;
 
-  const encodedReturnUrl = returnUrl ?? '';
-  const failBase = `/pay/${intentId}/billing-setup?provider=TOSS&returnUrl=${encodedReturnUrl}&fail=1`;
+  const failBase = `/pay/${intentId}/billing-setup?provider=TOSS&returnUrl=${encodeURIComponent(returnUrl ?? '')}&fail=1`;
 
   if (!authKey || !customerKey) {
     redirect(failBase);
@@ -23,7 +22,7 @@ export default async function TossBillingCompletePage({ params, searchParams }: 
     const cookieStore = await cookies();
     await issueTossBillingKey(authKey, customerKey, cookieStore.toString());
 
-    redirect(returnUrl ? decodeURIComponent(returnUrl) : '/');
+    redirect(returnUrl ?? '/');
   } catch (e) {
     if (isRedirectError(e)) throw e;
     const msg = encodeURIComponent(e instanceof Error ? e.message : '카드 등록에 실패했습니다.');
