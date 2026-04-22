@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Edit } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -13,6 +14,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { useUpdateCategory } from '@/lib/services/products/mutations';
 import type { Category } from '@/lib/types/ui/products';
 
 type CategoryEditButtonProps = {
@@ -28,13 +30,27 @@ export function CategoryEditButton({ category }: CategoryEditButtonProps) {
     sortOrder: category.sortOrder,
     isActive: category.isActive,
   });
+  const updateCategory = useUpdateCategory();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    console.log('카테고리 수정:', category.id, formData);
-    // TODO: 실제 API 호출
-    setOpen(false);
+    try {
+      await updateCategory.mutateAsync({
+        id: category.id,
+        data: {
+          name: formData.name.trim(),
+          slug: formData.slug?.trim() || undefined,
+          description: formData.description.trim() || undefined,
+          sortOrder: formData.sortOrder,
+          isActive: formData.isActive,
+        },
+      });
+      toast.success('카테고리가 수정되었습니다.');
+      setOpen(false);
+    } catch (error) {
+      toast.error('카테고리 수정에 실패했습니다.');
+    }
   };
 
   return (
@@ -117,10 +133,13 @@ export function CategoryEditButton({ category }: CategoryEditButtonProps) {
               type="button"
               variant="outline"
               onClick={() => setOpen(false)}
+              disabled={updateCategory.isPending}
             >
               취소
             </Button>
-            <Button type="submit">수정</Button>
+            <Button type="submit" disabled={updateCategory.isPending}>
+              {updateCategory.isPending ? '수정 중...' : '수정'}
+            </Button>
           </div>
         </form>
       </DialogContent>

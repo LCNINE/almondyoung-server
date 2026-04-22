@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,6 +14,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import { useDeleteCategory } from '@/lib/services/products/mutations';
 import type { Category } from '@/lib/types/ui/products';
 
 type CategoryDeleteButtonProps = {
@@ -21,11 +23,17 @@ type CategoryDeleteButtonProps = {
 
 export function CategoryDeleteButton({ category }: CategoryDeleteButtonProps) {
   const [open, setOpen] = useState(false);
+  const deleteCategory = useDeleteCategory();
 
-  const handleDelete = async () => {
-    console.log('카테고리 삭제:', category.id);
-    // TODO: 실제 API 호출
-    setOpen(false);
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    try {
+      await deleteCategory.mutateAsync({ id: category.id });
+      toast.success('카테고리가 삭제되었습니다.');
+      setOpen(false);
+    } catch (error) {
+      toast.error('카테고리 삭제에 실패했습니다.');
+    }
   };
 
   const hasChildren = category.children && category.children.length > 0;
@@ -56,13 +64,15 @@ export function CategoryDeleteButton({ category }: CategoryDeleteButtonProps) {
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>취소</AlertDialogCancel>
+          <AlertDialogCancel disabled={deleteCategory.isPending}>
+            취소
+          </AlertDialogCancel>
           <AlertDialogAction
             onClick={handleDelete}
             className="bg-red-600 hover:bg-red-700"
-            disabled={hasChildren}
+            disabled={hasChildren || deleteCategory.isPending}
           >
-            삭제
+            {deleteCategory.isPending ? '삭제 중...' : '삭제'}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

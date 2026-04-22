@@ -2,7 +2,6 @@ export * from './products';
 export * from './orders';
 export * from './inventory';
 export * from './customer';
-export * from './customers';
 export * from './auth';
 export * from './users';
 export * from './roles';

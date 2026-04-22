@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Plus } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -12,6 +13,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useCreateCategory } from '@/lib/services/products/mutations';
 
 export function CategoryCreateButton() {
   const [open, setOpen] = useState(false);
@@ -22,12 +24,9 @@ export function CategoryCreateButton() {
     parentId: '',
     sortOrder: 0,
   });
+  const createCategory = useCreateCategory();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    console.log('카테고리 생성:', formData);
-    // TODO: 실제 API 호출
-    setOpen(false);
+  const resetForm = () => {
     setFormData({
       name: '',
       slug: '',
@@ -35,6 +34,24 @@ export function CategoryCreateButton() {
       parentId: '',
       sortOrder: 0,
     });
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await createCategory.mutateAsync({
+        name: formData.name.trim(),
+        slug: formData.slug.trim() || undefined,
+        description: formData.description.trim() || undefined,
+        parentId: formData.parentId.trim() || undefined,
+        sortOrder: formData.sortOrder,
+      });
+      toast.success('카테고리가 생성되었습니다.');
+      setOpen(false);
+      resetForm();
+    } catch (error) {
+      toast.error('카테고리 생성에 실패했습니다.');
+    }
   };
 
   return (
@@ -102,10 +119,13 @@ export function CategoryCreateButton() {
               type="button"
               variant="outline"
               onClick={() => setOpen(false)}
+              disabled={createCategory.isPending}
             >
               취소
             </Button>
-            <Button type="submit">생성</Button>
+            <Button type="submit" disabled={createCategory.isPending}>
+              {createCategory.isPending ? '생성 중...' : '생성'}
+            </Button>
           </div>
         </form>
       </DialogContent>
