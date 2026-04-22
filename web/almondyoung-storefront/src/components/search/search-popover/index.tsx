@@ -9,6 +9,7 @@ import { useSearchHistory } from "@/hooks/ui/use-search-history"
 import { useSearchSheetStore } from "@/hooks/ui/use-search-sheet-store"
 import { useParams, useRouter } from "next/navigation"
 import { X } from "lucide-react"
+import { SearchHotKeyword } from "../search-hot-keyword"
 
 export function SearchPopover({
   isOpen,
@@ -35,12 +36,9 @@ export function SearchPopover({
             suggestions={suggestions}
             onClose={() => setIsOpen(false)}
           />
-          {/* todo: 급상승 검색어(미연결 구간) 임시 비활성화 */}
-          {/* <SearchTrending
-            items={trendingKeywords}
-            updatedAt={updatedAt}
-            onClose={() => setIsOpen(false)}
-          /> */}
+          <div className="flex-1 px-8 py-2">
+            <SearchHotKeyword />
+          </div>
         </div>
       </PopoverContent>
     </Popover>

@@ -13,8 +13,8 @@ import { ArrowLeft } from "lucide-react"
 import { useEffect, useState } from "react"
 import { SearchCombobox } from "../search-combobox"
 import { SearchHistory } from "../search-history"
-// import { SearchHotKeyword } from "../search-hot-keyword"
-// import { SearchPopularKeyword } from "../search-popular-keyword"
+import { SearchHotKeyword } from "../search-hot-keyword"
+import { SearchPopularKeyword } from "../search-popular-keyword"
 
 export function SearchSheet() {
   const { keywords } = useSearchHistory()
@@ -82,13 +82,12 @@ export function SearchSheet() {
               )}
             </AnimatePresence>
 
-            {/* todo: 추천/급상승 검색어(미연결 구간) 임시 비활성화 */}
-            {/* <section className="mb-6 rounded-2xl">
+            <section className="mb-6">
               <SearchPopularKeyword />
             </section>
-            <section className="rounded-2xl">
+            <section>
               <SearchHotKeyword />
-            </section> */}
+            </section>
           </div>
         </div>
       </SheetContent>
