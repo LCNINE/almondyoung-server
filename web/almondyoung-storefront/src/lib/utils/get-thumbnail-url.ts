@@ -1,7 +1,7 @@
 import { isRailwayBackend } from "@/lib/config/backend"
 
 // 일단은
-const FILE_SERVER_URL = "https://file.almondyoung-next.com"
+const FILE_SERVER_URL = "https://file.dev.almondyoung-next.com"
 
 export const getThumbnailUrl = (thumbnail: string) => {
   if (!thumbnail) return ""
