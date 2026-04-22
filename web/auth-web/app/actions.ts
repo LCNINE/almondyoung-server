@@ -9,10 +9,12 @@ import {
 } from "@/lib/account-store";
 import { decodeJwtPayload, isExpired } from "@/lib/jwt";
 import { setParentAuthCookies } from "@/lib/parent-cookies";
+import { parseAuthorizeRedirectTarget } from "@/lib/oauth-redirect";
 import { sanitizeRedirectTo } from "@/lib/redirect";
 import {
   callbackSignup,
   getMe,
+  issueOAuthCodeInternal,
   restoreAccessToken,
   signIn,
   signUp,
@@ -27,7 +29,7 @@ export type ActionResult =
 async function promoteTokens(
   tokens: TokenPair,
   rememberMe: boolean,
-): Promise<void> {
+): Promise<string> {
   const me = await getMe(tokens.accessToken);
   const refreshPayload = decodeJwtPayload<{ sub?: string }>(tokens.refreshToken);
   const accessPayload = decodeJwtPayload<{ sub?: string }>(tokens.accessToken);
@@ -47,6 +49,32 @@ async function promoteTokens(
     tokens.refreshToken,
   );
   await setParentAuthCookies({ ...tokens, rememberMe });
+  return userId;
+}
+
+async function redirectAfterAuth(
+  userId: string,
+  redirectToRaw: string | null | undefined,
+): Promise<never> {
+  const oauthParams = parseAuthorizeRedirectTarget(redirectToRaw);
+  if (oauthParams) {
+    const { code } = await issueOAuthCodeInternal({
+      clientId: oauthParams.clientId,
+      userId,
+      redirectUri: oauthParams.redirectUri,
+      codeChallenge: oauthParams.codeChallenge,
+      codeChallengeMethod: "S256",
+      scope: oauthParams.scope,
+    });
+
+    const url = new URL(oauthParams.redirectUri);
+    url.searchParams.set("code", code);
+    url.searchParams.set("state", oauthParams.state);
+    redirect(url.toString());
+  }
+
+  const redirectTo = sanitizeRedirectTo(redirectToRaw);
+  redirect(redirectTo ?? "/");
 }
 
 export async function signInAction(formData: FormData): Promise<ActionResult> {
@@ -54,15 +82,16 @@ export async function signInAction(formData: FormData): Promise<ActionResult> {
   const password = String(formData.get("password") ?? "");
   const rememberMe = formData.get("rememberMe") === "on";
   const redirectToRaw = String(formData.get("redirectTo") ?? "");
-  const redirectTo = sanitizeRedirectTo(redirectToRaw);
+  let userId: string;
 
   try {
     const tokens = await signIn({ loginId, password, rememberMe });
-    await promoteTokens(tokens, rememberMe);
+    userId = await promoteTokens(tokens, rememberMe);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "로그인 실패" };
   }
-  redirect(redirectTo ?? "/");
+
+  return redirectAfterAuth(userId, redirectToRaw);
 }
 
 export async function signUpAction(
@@ -91,23 +120,23 @@ export async function signUpAction(
     marketingConsent: formData.get("marketingConsent") === "on",
   };
   const redirectToRaw = String(formData.get("redirectTo") ?? "");
-  const redirectTo = sanitizeRedirectTo(redirectToRaw);
+  let userId: string;
 
   try {
     const result = await signUp(input);
     const tokens = await callbackSignup(result.userId);
-    await promoteTokens(tokens, false);
+    userId = await promoteTokens(tokens, false);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "회원가입 실패" };
   }
-  redirect(redirectTo ?? "/");
+
+  return redirectAfterAuth(userId, redirectToRaw);
 }
 
 export async function selectAccountAction(
   userId: string,
   redirectToRaw: string,
 ): Promise<ActionResult> {
-  const redirectTo = sanitizeRedirectTo(redirectToRaw);
   const refreshToken = await getRefreshToken(userId);
   if (!refreshToken) return { ok: false, error: "저장된 계정을 찾을 수 없습니다" };
   const payload = decodeJwtPayload<{ sub: string; exp?: number }>(refreshToken);
@@ -124,7 +153,8 @@ export async function selectAccountAction(
       error: e instanceof Error ? e.message : "토큰 갱신 실패",
     };
   }
-  redirect(redirectTo ?? "/");
+
+  return redirectAfterAuth(userId, redirectToRaw);
 }
 
 export async function removeAccountAction(userId: string): Promise<void> {
@@ -135,15 +165,17 @@ export async function completeSignupCallback(
   userId: string,
   redirectToRaw: string,
 ): Promise<ActionResult> {
-  const redirectTo = sanitizeRedirectTo(redirectToRaw);
+  let resolvedUserId: string;
+
   try {
     const tokens = await callbackSignup(userId);
-    await promoteTokens(tokens, false);
+    resolvedUserId = await promoteTokens(tokens, false);
   } catch (e) {
     return {
       ok: false,
       error: e instanceof Error ? e.message : "가입 완료 처리 실패",
     };
   }
-  redirect(redirectTo ?? "/");
+
+  return redirectAfterAuth(resolvedUserId, redirectToRaw);
 }
