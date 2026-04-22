@@ -13,7 +13,7 @@ import { useParams, useRouter } from "next/navigation"
 
 export function SearchHistory() {
   const { keywords, removeKeyword, clearAll } = useSearchHistory()
-  const { onClose } = useSearchSheetStore()
+  const { onClose, setSearchTerm } = useSearchSheetStore()
   const router = useRouter()
   const params = useParams<{ countryCode?: string }>()
   const countryCode =
@@ -21,6 +21,7 @@ export function SearchHistory() {
   const searchBasePath = countryCode ? `/${countryCode}/search` : "/search"
 
   const handleHistoryClick = (item: string) => {
+    setSearchTerm(item)
     router.push(`${searchBasePath}?q=${encodeURIComponent(item)}`)
     onClose()
   }

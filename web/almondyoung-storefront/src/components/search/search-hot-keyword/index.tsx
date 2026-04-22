@@ -8,10 +8,12 @@ import {
   type TrendingKeyword,
 } from "@lib/api/pim/search"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useSearchSheetStore } from "@/hooks/ui/use-search-sheet-store"
 import { formatDate } from "@/lib/utils/format-date"
 
 export function SearchHotKeyword() {
   const router = useRouter()
+  const { setSearchTerm, onClose } = useSearchSheetStore()
   const params = useParams<{ countryCode?: string }>()
   const countryCode =
     typeof params?.countryCode === "string" ? params.countryCode : undefined
@@ -43,7 +45,9 @@ export function SearchHotKeyword() {
   const columns = chunk(keywords, Math.ceil(keywords.length / 2))
 
   const handleHotKeywordClick = (keyword: string) => {
+    setSearchTerm(keyword)
     router.push(`${searchBasePath}?q=${encodeURIComponent(keyword)}`)
+    onClose()
   }
 
   if (isLoading) {
