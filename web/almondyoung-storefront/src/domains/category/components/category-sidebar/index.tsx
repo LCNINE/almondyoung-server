@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { usePathname } from "next/navigation"
-import { ChevronRight, ChevronDown } from "lucide-react"
+import { ChevronRight } from "lucide-react"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import {
   Collapsible,
@@ -107,15 +107,16 @@ function CategoryItem({ category, currentHandle, depth }: CategoryItemProps) {
               className="flex h-7 w-7 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
               aria-label={isOpen ? "접기" : "펼치기"}
             >
-              {isOpen ? (
-                <ChevronDown className="h-4 w-4" />
-              ) : (
-                <ChevronRight className="h-4 w-4" />
-              )}
+              <ChevronRight
+                className={cn(
+                  "h-4 w-4 transition-transform duration-200 ease-out",
+                  isOpen && "rotate-90"
+                )}
+              />
             </button>
           </CollapsibleTrigger>
         </div>
-        <CollapsibleContent>
+        <CollapsibleContent className="overflow-hidden data-[state=open]:animate-collapsible-down data-[state=closed]:animate-collapsible-up">
           <ul>
             {category.category_children?.map((child) => (
               <CategoryItem
