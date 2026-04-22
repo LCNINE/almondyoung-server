@@ -79,7 +79,8 @@ const idpUserServiceUrl = aws.ssm.getParameterOutput({
 - `live` 이외의 모든 stage(`dev`, `staging`, `pr-*` 등) — 비운영 취급.
   - `removal: "remove"` (state 삭제 시 리소스 동반 정리)
   - 도메인에 `.dev.` 접두사 (예: `id.dev.almondyoung-next.com`)
-  - VPC bastion 활성화 (SSM 접속 편의)
+
+VPC bastion은 **dev/live 모두 상시 ON**. VPC 내부 리소스(IdP DB 등)에 대한 시딩·점검 접근(`sst tunnel`) 경로가 필요하고, t4g.nano 1대 비용(월 ~$3)은 무시할 수준.
 
 배포·삭제 커맨드 예:
 ```bash

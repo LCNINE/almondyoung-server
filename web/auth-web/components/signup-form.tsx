@@ -33,6 +33,17 @@ export function SignUpForm({ redirectTo }: { redirectTo: string }) {
         <Input id="password" name="password" type="password" required minLength={8} maxLength={20} />
       </Field>
       <Field>
+        <FieldLabel htmlFor="passwordConfirm">비밀번호 확인</FieldLabel>
+        <Input
+          id="passwordConfirm"
+          name="passwordConfirm"
+          type="password"
+          required
+          minLength={8}
+          maxLength={20}
+        />
+      </Field>
+      <Field>
         <FieldLabel htmlFor="email">이메일</FieldLabel>
         <Input id="email" name="email" type="email" required />
       </Field>

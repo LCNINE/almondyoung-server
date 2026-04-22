@@ -28,12 +28,18 @@ async function promoteTokens(
   tokens: TokenPair,
   rememberMe: boolean,
 ): Promise<void> {
-  const payload = decodeJwtPayload<{ sub: string }>(tokens.refreshToken);
-  if (!payload?.sub) throw new Error("Invalid refresh token payload");
   const me = await getMe(tokens.accessToken);
+  const refreshPayload = decodeJwtPayload<{ sub?: string }>(tokens.refreshToken);
+  const accessPayload = decodeJwtPayload<{ sub?: string }>(tokens.accessToken);
+  const userId = me.id || accessPayload?.sub || refreshPayload?.sub;
+
+  if (!userId) {
+    throw new Error("Unable to resolve authenticated user");
+  }
+
   await upsertAccount(
     {
-      userId: payload.sub,
+      userId,
       email: me.email,
       nickname: me.username,
       username: me.username,
@@ -62,9 +68,16 @@ export async function signInAction(formData: FormData): Promise<ActionResult> {
 export async function signUpAction(
   formData: FormData,
 ): Promise<ActionResult> {
+  const password = String(formData.get("password") ?? "");
+  const passwordConfirm = String(formData.get("passwordConfirm") ?? "");
+
+  if (password !== passwordConfirm) {
+    return { ok: false, error: "비밀번호가 일치하지 않습니다." };
+  }
+
   const input: LocalSignUpInput = {
     loginId: String(formData.get("loginId") ?? "").trim(),
-    password: String(formData.get("password") ?? ""),
+    password,
     email: String(formData.get("email") ?? "").trim(),
     username: String(formData.get("username") ?? "").trim(),
     nickname: String(formData.get("nickname") ?? "").trim(),
@@ -81,14 +94,13 @@ export async function signUpAction(
   const redirectTo = sanitizeRedirectTo(redirectToRaw);
 
   try {
-    await signUp(input);
+    const result = await signUp(input);
+    const tokens = await callbackSignup(result.userId);
+    await promoteTokens(tokens, false);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "회원가입 실패" };
   }
-  const params = new URLSearchParams();
-  params.set("email", input.email);
-  if (redirectTo) params.set("redirect_to", redirectTo);
-  redirect(`/signup/pending?${params.toString()}`);
+  redirect(redirectTo ?? "/");
 }
 
 export async function selectAccountAction(

@@ -6,8 +6,26 @@
 import postgres, { Sql } from 'postgres';
 import { Resource } from 'sst';
 
+/**
+ * SST 리소스 이름은 배포마다 다름:
+ *  - root / df → `Db`
+ *  - lcnine-auth → `IdpDb` (deployments/lcnine/auth/infra/shared.ts)
+ * `sst shell`이 주입하는 SST_RESOURCE_<name> env var로 자동 선택.
+ */
+const DB_RESOURCE_CANDIDATES = ['Db', 'IdpDb'] as const;
+
 function getDbCredentials() {
-  const db = (Resource as any).Db;
+  const r = Resource as any;
+  const resourceName = DB_RESOURCE_CANDIDATES.find(
+    (name) => process.env[`SST_RESOURCE_${name}`],
+  );
+  if (!resourceName) {
+    throw new Error(
+      `No DB resource found. Tried: ${DB_RESOURCE_CANDIDATES.join(', ')}. ` +
+        `Ensure this is running inside 'sst shell' with a Postgres resource linked.`,
+    );
+  }
+  const db = r[resourceName];
   return {
     host: db.host as string,
     port: db.port as number,
