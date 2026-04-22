@@ -187,7 +187,7 @@ export async function issueNicepayBillingKey(
   if (encMode) payload['encMode'] = encMode;
   const res = await fetch(`${BASE_URL}/v1/billing-methods/nicepay`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
+    headers: { 'Content-Type': 'application/json', Cookie: cookieHeader, 'Idempotency-Key': crypto.randomUUID() },
     body: JSON.stringify(payload),
     cache: 'no-store',
   });
@@ -207,6 +207,7 @@ export async function issueTossBillingKey(
     headers: {
       'Content-Type': 'application/json',
       Cookie: cookieHeader,
+      'Idempotency-Key': crypto.randomUUID(),
     },
     body: JSON.stringify({ authKey, customerKey }),
     cache: 'no-store',
