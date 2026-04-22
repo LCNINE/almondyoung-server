@@ -9,6 +9,7 @@ import {
 } from "@/lib/account-store";
 import { decodeJwtPayload, isExpired } from "@/lib/jwt";
 import { setParentAuthCookies } from "@/lib/parent-cookies";
+import { normalizePhoneNumber } from "@/lib/phone-number";
 import { parseAuthorizeRedirectTarget } from "@/lib/oauth-redirect";
 import { sanitizeRedirectTo } from "@/lib/redirect";
 import {
@@ -94,14 +95,22 @@ export async function signInAction(formData: FormData): Promise<ActionResult> {
   return redirectAfterAuth(userId, redirectToRaw);
 }
 
-export async function signUpAction(
-  formData: FormData,
-): Promise<ActionResult> {
+export async function signUpAction(formData: FormData): Promise<ActionResult> {
   const password = String(formData.get("password") ?? "");
   const passwordConfirm = String(formData.get("passwordConfirm") ?? "");
+  const normalizedPhoneNumber = normalizePhoneNumber(
+    String(formData.get("phoneNumber") ?? ""),
+  );
 
   if (password !== passwordConfirm) {
     return { ok: false, error: "비밀번호가 일치하지 않습니다." };
+  }
+
+  if (!normalizedPhoneNumber) {
+    return {
+      ok: false,
+      error: "휴대폰 번호를 확인해주세요. 예: 01012345678",
+    };
   }
 
   const input: LocalSignUpInput = {
@@ -111,7 +120,7 @@ export async function signUpAction(
     username: String(formData.get("username") ?? "").trim(),
     nickname: String(formData.get("nickname") ?? "").trim(),
     birthday: String(formData.get("birthday") ?? "").trim(),
-    phoneNumber: String(formData.get("phoneNumber") ?? "").trim(),
+    phoneNumber: normalizedPhoneNumber,
     isOver14: formData.get("isOver14") === "on",
     termsOfService: formData.get("termsOfService") === "on",
     electronicTransaction: formData.get("electronicTransaction") === "on",
@@ -127,7 +136,10 @@ export async function signUpAction(
     const tokens = await callbackSignup(result.userId);
     userId = await promoteTokens(tokens, false);
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "회원가입 실패" };
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "회원가입 실패",
+    };
   }
 
   return redirectAfterAuth(userId, redirectToRaw);
