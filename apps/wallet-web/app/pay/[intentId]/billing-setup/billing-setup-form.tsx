@@ -21,9 +21,11 @@ interface BillingSetupFormProps {
   userId?: string;
   tossClientKey: string;
   initialError?: string;
+  mode?: 'initial';
 }
 
-export function BillingSetupForm({ intentId, returnUrl, provider, userId, tossClientKey, initialError }: BillingSetupFormProps) {
+export function BillingSetupForm({ intentId, returnUrl, provider, userId, tossClientKey, initialError, mode }: BillingSetupFormProps) {
+  const isInitialMode = mode === 'initial';
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(initialError ?? null);
@@ -52,12 +54,13 @@ export function BillingSetupForm({ intentId, returnUrl, provider, userId, tossCl
       // customerKey는 사용자별 고정 식별자 — userId 기반으로 일관성 유지
       const payment = tossPayments.payment({ customerKey: `user-${userId ?? intentId}` });
       const origin = window.location.origin;
+      const failParams = new URLSearchParams({ provider: 'TOSS', returnUrl, fail: '1' });
+      if (isInitialMode) failParams.set('mode', 'initial');
       await payment.requestBillingAuth({
         method: 'CARD',
         successUrl: `${origin}/pay/${intentId}/billing-setup/toss-complete?returnUrl=${encodeURIComponent(returnUrl)}`,
-        failUrl: `${origin}/pay/${intentId}/billing-setup?provider=TOSS&returnUrl=${encodeURIComponent(returnUrl)}&fail=1`,
+        failUrl: `${origin}/pay/${intentId}/billing-setup?${failParams}`,
       });
-      // requestBillingAuth는 리다이렉트하므로 여기 도달하지 않음
     } catch {
       setError('토스페이먼츠 빌링 인증 중 오류가 발생했습니다. 다시 시도해주세요.');
       setLoading(false);
@@ -98,29 +101,44 @@ export function BillingSetupForm({ intentId, returnUrl, provider, userId, tossCl
     <div className="min-h-screen bg-muted/40 flex items-center justify-center p-4">
       <div className="w-full max-w-md space-y-4">
 
-        {/* 결제 완료 알림 */}
-        <Card className="border-emerald-200 bg-emerald-50/50 shadow-sm">
-          <CardContent className="flex items-start gap-3 p-4">
-            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-500" />
-            <div>
-              <p className="text-sm font-semibold text-emerald-800">첫 달 결제가 완료되었습니다!</p>
-              <p className="mt-0.5 text-xs text-emerald-700">
-                아래 카드를 등록하면 다음 달부터 자동으로 결제됩니다.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+        {isInitialMode ? (
+          <Card className="border-amber-100 bg-amber-50/40 shadow-sm">
+            <CardContent className="flex items-start gap-2.5 p-4">
+              <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <div>
+                <p className="text-sm font-semibold text-amber-800">정기결제 카드를 먼저 등록해주세요</p>
+                <p className="mt-0.5 text-xs text-amber-700">
+                  등록한 카드로 첫 달 결제 및 이후 매월 자동결제가 진행됩니다.
+                  언제든지 마이페이지에서 해지할 수 있습니다.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <>
+            <Card className="border-emerald-200 bg-emerald-50/50 shadow-sm">
+              <CardContent className="flex items-start gap-3 p-4">
+                <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-500" />
+                <div>
+                  <p className="text-sm font-semibold text-emerald-800">첫 달 결제가 완료되었습니다!</p>
+                  <p className="mt-0.5 text-xs text-emerald-700">
+                    아래 카드를 등록하면 다음 달부터 자동으로 결제됩니다.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
 
-        {/* 정기결제 안내 */}
-        <Card className="border-amber-100 bg-amber-50/40 shadow-sm">
-          <CardContent className="flex items-start gap-2.5 p-4">
-            <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-            <p className="text-xs text-amber-700">
-              정기결제 카드를 등록하면 매월 같은 날 자동으로 결제됩니다.
-              언제든지 마이페이지에서 해지할 수 있으며, 해지 시 남은 기간은 그대로 이용 가능합니다.
-            </p>
-          </CardContent>
-        </Card>
+            <Card className="border-amber-100 bg-amber-50/40 shadow-sm">
+              <CardContent className="flex items-start gap-2.5 p-4">
+                <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                <p className="text-xs text-amber-700">
+                  정기결제 카드를 등록하면 매월 같은 날 자동으로 결제됩니다.
+                  언제든지 마이페이지에서 해지할 수 있으며, 해지 시 남은 기간은 그대로 이용 가능합니다.
+                </p>
+              </CardContent>
+            </Card>
+          </>
+        )}
 
         {/* 카드 등록 섹션 */}
         <Card className="shadow-sm">
@@ -289,15 +307,18 @@ export function BillingSetupForm({ intentId, returnUrl, provider, userId, tossCl
               </form>
             )}
 
-            <Separator className="my-4" />
-
-            <button
-              onClick={handleSkip}
-              disabled={loading}
-              className="w-full text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline disabled:opacity-50"
-            >
-              나중에 등록하기 (지금은 건너뛰기)
-            </button>
+            {!isInitialMode && (
+              <>
+                <Separator className="my-4" />
+                <button
+                  onClick={handleSkip}
+                  disabled={loading}
+                  className="w-full text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline disabled:opacity-50"
+                >
+                  나중에 등록하기 (지금은 건너뛰기)
+                </button>
+              </>
+            )}
           </CardContent>
         </Card>
 

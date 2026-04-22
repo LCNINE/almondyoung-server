@@ -1,5 +1,5 @@
 import { cookies } from 'next/headers';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { getPaymentIntent, getPaymentMethods, getPointsBalance } from '@/lib/wallet-api';
 import { buildReturnUrl } from '@/lib/return-url';
 import { PayForm } from './pay-form';
@@ -26,10 +26,7 @@ export default async function PayPage({ params }: Props) {
     notFound();
   }
 
-  const [methods, pointsBalance] = await Promise.all([
-    getPaymentMethods(cookieHeader).catch(() => []),
-    getPointsBalance(cookieHeader).catch(() => ({ confirmed: 0, reserved: 0, available: 0 })),
-  ]);
+  const methods = await getPaymentMethods(cookieHeader).catch(() => []);
 
   if (['AUTHORIZED', 'CAPTURED', 'SUCCEEDED'].includes(intent.status)) {
     const returnUrl = intent.returnUrl
@@ -62,6 +59,15 @@ export default async function PayPage({ params }: Props) {
       </div>
     );
   }
+
+  if (intent.metadata?.billingMode === 'recurring') {
+    const hasBillingMethod = methods.some((m) => m.type.endsWith('_BILLING'));
+    if (!hasBillingMethod) {
+      redirect(`/pay/${intentId}/billing-setup?mode=initial&returnUrl=${encodeURIComponent(`/pay/${intentId}`)}`);
+    }
+  }
+
+  const pointsBalance = await getPointsBalance(cookieHeader).catch(() => ({ confirmed: 0, reserved: 0, available: 0 }));
 
   if (intent.status === 'CANCELED') {
     return (

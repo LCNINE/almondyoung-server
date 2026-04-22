@@ -4,12 +4,12 @@ import { BillingSetupForm } from './billing-setup-form';
 
 interface Props {
   params: Promise<{ intentId: string }>;
-  searchParams: Promise<{ returnUrl?: string; provider?: string; fail?: string; msg?: string }>;
+  searchParams: Promise<{ returnUrl?: string; provider?: string; fail?: string; msg?: string; mode?: string }>;
 }
 
 export default async function BillingSetupPage({ params, searchParams }: Props) {
   const { intentId } = await params;
-  const { returnUrl, provider, fail, msg } = await searchParams;
+  const { returnUrl, provider, fail, msg, mode } = await searchParams;
 
   const cookieStore = await cookies();
   const intent = await getPaymentIntent(intentId, cookieStore.toString()).catch(() => null);
@@ -25,6 +25,7 @@ export default async function BillingSetupPage({ params, searchParams }: Props) 
       userId={intent?.userId}
       tossClientKey={process.env.TOSS_CLIENT_KEY ?? ''}
       initialError={initialError}
+      mode={mode === 'initial' ? 'initial' : undefined}
     />
   );
 }
