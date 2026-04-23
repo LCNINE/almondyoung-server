@@ -1,7 +1,5 @@
 'use client';
 
-const BILLING_CHANGE_ORDER_SUFFIX = 'C';
-
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -11,6 +9,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { CreditCard, AlertCircle, Smartphone } from 'lucide-react';
+
+const BILLING_CHANGE_ORDER_SUFFIX = 'C';
 
 interface BillingChangeFormProps {
   returnUrl: string;
