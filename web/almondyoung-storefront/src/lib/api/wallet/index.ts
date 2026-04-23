@@ -5,21 +5,20 @@ import type {
   AuthorizePaymentDto,
   AuthorizePaymentErrorResponse,
   AuthorizePaymentSuccessResponse,
+  BillingAgreementDto,
+  BillingMethodDto,
   BnplHistoryDto,
-  BnplProfileDto,
   BnplSummaryDto,
-  CreateHmsCardProfileRequest,
   CreateIntentRequestDto,
   CreateIntentResponseDto,
   IntentDto,
-  OnboardHmsBnplResponse,
   PointsBalanceDto,
   PointsEventRowDto,
   TaxInvoiceData,
   TaxInvoiceDto,
 } from "@lib/types/dto/wallet"
 import { api } from "../api"
-import { ApiNetworkError, HttpApiError } from "../api-error"
+import { HttpApiError } from "../api-error"
 
 // ==========================================
 // PIN 상태 관련 타입
@@ -76,29 +75,53 @@ export async function getApickAccount(bankCode: string, accountNumber: string) {
   return data
 }
 // ==========================================
-// 결제 프로필 관련 API
+// 빌링 수단 관련 API (/v1/billing-methods)
 // ==========================================
 
 /**
- * 결제 프로필 목록 조회
+ * 내 빌링 수단(정기결제 카드) 목록 조회
  */
-export async function getBnplProfiles(): Promise<BnplProfileDto[] | null> {
+export async function getBillingMethods(): Promise<BillingMethodDto[]> {
   try {
-    const data = await api<BnplProfileDto[]>("wallet", "/payments/profiles", {
+    return await api<BillingMethodDto[]>("wallet", "/v1/billing-methods", {
       method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-      },
       cache: "no-store",
       withAuth: true,
     })
-
-    return data
-  } catch (error) {
-    console.error("BNPL 프로필 조회 실패:", error)
-    // 에러 발생 시 null 반환하여 페이지는 정상 렌더링되도록 함
-    return null
+  } catch {
+    return []
   }
+}
+
+/**
+ * 빌링 어그리먼트(구독-카드 연결) 목록 조회
+ */
+export async function getBillingAgreements(): Promise<BillingAgreementDto[]> {
+  try {
+    return await api<BillingAgreementDto[]>("wallet", "/v1/billing-agreements", {
+      method: "GET",
+      cache: "no-store",
+      withAuth: true,
+    })
+  } catch {
+    return []
+  }
+}
+
+/**
+ * 빌링 어그리먼트의 결제 수단 변경
+ * @param agreementId 변경할 billing_agreement ID
+ * @param billingMethodId 새로 연결할 billing_method ID
+ */
+export async function updateBillingAgreementMethod(
+  agreementId: string,
+  billingMethodId: string,
+): Promise<void> {
+  await api<void>("wallet", `/v1/billing-agreements/${agreementId}/billing-method`, {
+    method: "PUT",
+    body: { billingMethodId },
+    withAuth: true,
+  })
 }
 
 export async function getBnplSummary(): Promise<BnplSummaryDto> {
@@ -112,51 +135,14 @@ export async function getBnplSummary(): Promise<BnplSummaryDto> {
 }
 
 /**
- * HMS 카드 프로필 생성
- * @param data HMS 카드 등록 정보
+ * 빌링 수단 삭제
+ * @param billingMethodId 삭제할 billing_method ID
  */
-export async function createHmsCardProfile(data: CreateHmsCardProfileRequest) {
-  const res = await api("wallet", "/payments/profiles/hms-card", {
-    method: "POST",
-    body: data,
+export async function deleteBillingMethod(billingMethodId: string): Promise<void> {
+  await api<void>("wallet", `/v1/billing-methods/${billingMethodId}`, {
+    method: "DELETE",
     withAuth: true,
   })
-
-  return res
-}
-
-/**
- * 기본 결제 수단 설정
- * @param profileId 프로필 ID
- */
-export async function setDefaultPaymentProfile(profileId: string) {
-  const data = await api<{ success: boolean }>(
-    "wallet",
-    `/payments/profiles/${profileId}/set-default`,
-    {
-      method: "PUT",
-      withAuth: true,
-    }
-  )
-
-  return data
-}
-
-/**
- * 결제 프로필 삭제
- * @param profileId 프로필 ID
- */
-export async function deletePaymentProfile(profileId: string) {
-  const res = await api<{ success: boolean }>(
-    "wallet",
-    `/payments/profiles/${profileId}`,
-    {
-      method: "DELETE",
-      withAuth: true,
-    }
-  )
-
-  return res
 }
 
 // ==========================================
@@ -165,7 +151,6 @@ export async function deletePaymentProfile(profileId: string) {
 
 /**
  * 나중결제 내역 조회
- * @param limit 조회 개수 제한
  */
 export async function getBnplHistory(
   year: number,
@@ -183,47 +168,6 @@ export async function getBnplHistory(
   return result
 }
 
-/**
- * HMS BNPL 온보딩 (FormData)
- * @param formData FormData (서명 파일 포함)
- */
-export async function onboardHmsBnpl(_: any, formData: FormData) {
-  try {
-    const data = await api<OnboardHmsBnplResponse>(
-      "wallet",
-      "/payments/hms-bnpl/onboard",
-      {
-        method: "POST",
-        body: formData,
-        credentials: "include",
-      }
-    )
-
-    return { ...data, success: true }
-  } catch (error) {
-    if (error instanceof HttpApiError) {
-      if (error.message.includes("Bad Request Exception")) {
-        return {
-          message:
-            "정기결제 신청에 실패했습니다. 입력하신 정보를 확인해주세요.",
-          success: false,
-        }
-      }
-
-      return {
-        message: error.message || "정기결제 신청에 실패했습니다.",
-        success: false,
-      }
-    }
-
-    if (error instanceof ApiNetworkError) {
-      return {
-        message: error.message || "네트워크 에러가 발생했습니다.",
-        success: false,
-      }
-    }
-  }
-}
 // ==========================================
 // 결제 Intent 관련 API
 // ==========================================
