@@ -5,6 +5,7 @@ import {
   getBillingMethods,
   updateBillingAgreementMethod,
 } from "@lib/api/wallet"
+import { getCurrentSubscription } from "@lib/api/membership"
 import type { BillingAgreementDto, BillingMethodDto } from "@lib/types/dto/wallet"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useEffect, useState } from "react"
@@ -31,9 +32,17 @@ const IconCheckCircle = () => (
   </svg>
 )
 
-function formatCardName(method: BillingMethodDto): string {
-  if (method.displayName) return method.displayName
-  return "등록된 카드"
+function providerLabel(providerType: BillingMethodDto["providerType"]): string {
+  if (providerType === "TOSS_BILLING") return "토스페이먼츠"
+  if (providerType === "NICEPAY_BILLING") return "나이스페이"
+  return "CMS"
+}
+
+function formatNextBillingDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return ""
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return ""
+  return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일`
 }
 
 export default function MembershipPaymentMethodPage() {
@@ -43,6 +52,7 @@ export default function MembershipPaymentMethodPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [agreement, setAgreement] = useState<BillingAgreementDto | null>(null)
   const [allMethods, setAllMethods] = useState<BillingMethodDto[]>([])
+  const [nextBillingDate, setNextBillingDate] = useState<string | null>(null)
   const [isChanging, setIsChanging] = useState<string | null>(null)
 
   const currentMethod = allMethods.find((m) => m.id === agreement?.billingMethodId) ?? null
@@ -51,10 +61,8 @@ export default function MembershipPaymentMethodPage() {
   )
 
   useEffect(() => {
-    // 새 카드 등록 완료 후 돌아온 경우 성공 토스트
     if (searchParams.get("cardChanged") === "1") {
       toast.success("결제 수단이 변경되었습니다.")
-      // URL에서 파라미터 제거 (history replace)
       const url = new URL(window.location.href)
       url.searchParams.delete("cardChanged")
       window.history.replaceState(null, "", url.toString())
@@ -65,12 +73,12 @@ export default function MembershipPaymentMethodPage() {
     async function load() {
       try {
         setIsLoading(true)
-        const [agreements, methods] = await Promise.all([
+        const [agreements, methods, subscription] = await Promise.all([
           getBillingAgreements(),
           getBillingMethods(),
+          getCurrentSubscription().catch(() => null),
         ])
 
-        // MEMBERSHIP 타입이고 ACTIVE인 어그리먼트 찾기
         const membershipAgreement =
           agreements.find(
             (a) => a.subscriberType === "MEMBERSHIP" && a.status === "ACTIVE",
@@ -78,6 +86,7 @@ export default function MembershipPaymentMethodPage() {
 
         setAgreement(membershipAgreement)
         setAllMethods(methods.filter((m) => m.status === "ACTIVE"))
+        setNextBillingDate(subscription?.nextBillingDate ?? null)
       } catch {
         toast.error("결제 수단 정보를 불러오는데 실패했습니다.")
       } finally {
@@ -95,8 +104,6 @@ export default function MembershipPaymentMethodPage() {
       setIsChanging(billingMethodId)
       await updateBillingAgreementMethod(agreement.id, billingMethodId)
       toast.success("결제 수단이 변경되었습니다.")
-
-      // 로컬 상태 갱신
       setAgreement({ ...agreement, billingMethodId })
     } catch {
       toast.error("결제 수단 변경에 실패했습니다.")
@@ -117,6 +124,8 @@ export default function MembershipPaymentMethodPage() {
   if (isLoading) {
     return <MembershipPaymentMethodSkeleton />
   }
+
+  const formattedNextBillingDate = formatNextBillingDate(nextBillingDate)
 
   return (
     <div className="flex min-h-screen flex-col bg-white font-['Pretendard']">
@@ -153,10 +162,13 @@ export default function MembershipPaymentMethodPage() {
                 {currentMethod ? (
                   <div className="flex items-center gap-3 rounded-md border border-gray-200 bg-gray-50 p-4">
                     <IconCheckCircle />
-                    <div>
+                    <div className="flex flex-1 flex-col gap-0.5">
                       <p className="text-sm font-semibold text-black">
-                        {formatCardName(currentMethod)}
+                        {currentMethod.displayName ?? "등록된 카드"}
                       </p>
+                      <span className="w-fit rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
+                        {providerLabel(currentMethod.providerType)}
+                      </span>
                     </div>
                   </div>
                 ) : (
@@ -174,7 +186,9 @@ export default function MembershipPaymentMethodPage() {
             {/* 결제 안내 */}
             <section aria-label="결제 안내">
               <p className="text-xs font-medium leading-relaxed text-gray-600">
-                매월 7일 결제되며, 해당 날짜가 없는 달에는 말일에 결제됩니다.
+                {formattedNextBillingDate
+                  ? <>다음 결제일은 <strong className="text-black">{formattedNextBillingDate}</strong>입니다.</>
+                  : "다음 결제일 정보를 불러올 수 없습니다."}
                 <br />
                 결제 실패 시 등록된 다른 카드로 순서대로 결제를 시도합니다.
               </p>
@@ -191,9 +205,14 @@ export default function MembershipPaymentMethodPage() {
                     key={method.id}
                     className="flex flex-col gap-3 rounded-md bg-gray-100 p-4 sm:flex-row sm:items-center sm:justify-between"
                   >
-                    <p className="text-sm font-medium text-black">
-                      {formatCardName(method)}
-                    </p>
+                    <div className="flex flex-col gap-0.5">
+                      <p className="text-sm font-medium text-black">
+                        {method.displayName ?? "등록된 카드"}
+                      </p>
+                      <span className="w-fit rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
+                        {providerLabel(method.providerType)}
+                      </span>
+                    </div>
                     <button
                       className="shrink-0 rounded-sm border border-gray-400 bg-white px-2.5 py-1.5 text-xs font-normal leading-4 text-black shadow-sm transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
                       onClick={() => handleChangeMethod(method.id)}
