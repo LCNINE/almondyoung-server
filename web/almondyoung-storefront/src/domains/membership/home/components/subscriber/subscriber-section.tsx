@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation"
 import { useMemo, useState } from "react"
+import { ChevronRight } from "lucide-react"
 import { IconTextButton } from "../../../components/icon-button"
 import { MembershipCancelModal } from "../../../components/modal"
 import MembershipPlanCard from "../membership-benefit-card"
@@ -59,6 +60,7 @@ interface SubscriberSectionProps {
   cancellationReasons: CancellationReasonDto[]
   currentBenefit: CycleBenefitDto | null
   benefitHistory: CycleBenefitHistoryDto | null
+  hasCafe24Link: boolean
 }
 
 const buildPlanBenefits = (plan?: PlanWithTier) => {
@@ -73,6 +75,10 @@ const buildPlanBenefits = (plan?: PlanWithTier) => {
   return benefits
 }
 
+const LEGACY_URL =
+  process.env.NEXT_PUBLIC_LEGACY_MEMBERSHIP_HISTORY_URL ??
+  "https://almondyoung.com/myshop/mileage/historyList.html"
+
 export default function SubscriberSection({
   membershipData,
   plans,
@@ -82,6 +88,7 @@ export default function SubscriberSection({
   cancellationReasons,
   currentBenefit,
   benefitHistory,
+  hasCafe24Link,
 }: SubscriberSectionProps) {
   const [open, setOpen] = useState(false)
   const [isCancelling, setIsCancelling] = useState(false)
@@ -152,6 +159,18 @@ export default function SubscriberSection({
         subscriptionHistory={subscriptionHistory}
         benefitHistory={benefitHistory}
       />
+      {/* 기존 아몬드영 멤버십 내역 (Cafe24 연동 고객 전용) */}
+      {hasCafe24Link && (
+        <a
+          href={LEGACY_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mb-2 flex items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+        >
+          <span>기존 아몬드영 멤버십 내역 확인하기</span>
+          <ChevronRight className="h-4 w-4 text-gray-400" />
+        </a>
+      )}
       {/* 해지 버튼 */}
       <IconTextButton
         label="멤버십 해지하기"

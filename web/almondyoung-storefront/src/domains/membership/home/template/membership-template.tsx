@@ -1,4 +1,3 @@
-import { PageTitle } from "@/components/shared/page-title"
 import SubscriberSection from "../components/subscriber/subscriber-section"
 import NonSubscriberSection from "../components/non-subscriber"
 import type {
@@ -23,6 +22,7 @@ interface MembershipTemplateProps {
   cancellationReasons: CancellationReasonDto[]
   currentBenefit: CycleBenefitDto | null
   benefitHistory: CycleBenefitHistoryDto | null
+  hasCafe24Link: boolean
 }
 
 export default function MembershipTemplate({
@@ -35,6 +35,7 @@ export default function MembershipTemplate({
   cancellationReasons,
   currentBenefit,
   benefitHistory,
+  hasCafe24Link,
 }: MembershipTemplateProps) {
   return (
     <div className="bg-white px-3 py-4 md:min-h-screen md:px-6">
@@ -48,9 +49,13 @@ export default function MembershipTemplate({
           cancellationReasons={cancellationReasons}
           currentBenefit={currentBenefit}
           benefitHistory={benefitHistory}
+          hasCafe24Link={hasCafe24Link}
         />
       ) : (
-        <NonSubscriberSection />
+        <NonSubscriberSection
+          subscriptionHistory={subscriptionHistory}
+          hasCafe24Link={hasCafe24Link}
+        />
       )}
     </div>
   )

@@ -11,6 +11,7 @@ import {
 } from "@lib/api/membership"
 import { getCurrentMonthSavings, getRangeSavings } from "@lib/api/membership"
 import { fetchMe } from "@lib/api/users/me"
+import { getCafe24LinkInfo } from "@lib/api/users/cafe24"
 import type {
   CancellationReasonDto,
   CycleBenefitDto,
@@ -21,14 +22,16 @@ import type {
 import type { PlanWithTier } from "@lib/types/membership"
 
 export default async function MembershipPage() {
-  const [user, subscription, plans] = await Promise.all([
+  const [user, subscription, plans, cafe24Info] = await Promise.all([
     fetchMe().catch(() => null),
     getCurrentSubscription().catch(() => null),
     getPlans().catch(() => []),
+    getCafe24LinkInfo().catch(() => null),
   ])
 
   const membershipData: SubscriptionDetailsDto | null = subscription ?? null
   const isMember = membershipData?.status === "ACTIVE"
+  const hasCafe24Link = !!(cafe24Info && "data" in cafe24Info && cafe24Info.data)
 
   let currentSavings = null
   let rangeSavings = null
@@ -89,6 +92,7 @@ export default async function MembershipPage() {
           cancellationReasons={cancellationReasons}
           currentBenefit={currentBenefit}
           benefitHistory={benefitHistory}
+          hasCafe24Link={hasCafe24Link}
         />
       </MypageLayout>
     </WithHeaderLayout>
