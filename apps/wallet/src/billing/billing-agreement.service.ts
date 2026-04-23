@@ -50,20 +50,21 @@ export class BillingAgreementService {
     subscriberRef: string,
     subscriberType: string,
   ): Promise<BillingAgreement> {
-    const latestMethods = await this.dbService.db
-      .select()
-      .from(billingMethods)
-      .where(and(eq(billingMethods.userId, userId), eq(billingMethods.status, 'ACTIVE')))
-      .orderBy(desc(billingMethods.createdAt))
-      .limit(1);
+    const [latestMethods, existing] = await Promise.all([
+      this.dbService.db
+        .select()
+        .from(billingMethods)
+        .where(and(eq(billingMethods.userId, userId), eq(billingMethods.status, 'ACTIVE')))
+        .orderBy(desc(billingMethods.createdAt))
+        .limit(1),
+      this.findBySubscriberRef(subscriberType, subscriberRef),
+    ]);
 
     if (latestMethods.length === 0) {
       throw new Error(`no active billing method found for user: ${userId}`);
     }
 
     const billingMethodId = latestMethods[0].id;
-
-    const existing = await this.findBySubscriberRef(subscriberType, subscriberRef);
     if (existing) {
       if (existing.billingMethodId !== billingMethodId) {
         await this.updateBillingMethod(existing.id, billingMethodId);
