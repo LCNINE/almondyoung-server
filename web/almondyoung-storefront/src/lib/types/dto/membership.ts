@@ -54,13 +54,17 @@ export interface SubscriptionHistoryItemDto {
   userId: string
   planId: string
   status: SubscriptionStatus
-  startDate?: string
-  endDate?: string | null
   billingDate?: string
   nextBillingDate?: string | null
   cancelledAt?: string | null
+  autoRenewal?: boolean
   createdAt: string
   updatedAt: string
+  plan?: { price: number; currency: string; durationDays: number } | null
+  tier?: { code: string } | null
+  // legacy compat
+  startDate?: string
+  endDate?: string | null
 }
 
 export interface SubscriptionHistoryResDto {
