@@ -44,6 +44,16 @@ export interface BillingMethod {
   createdAt: string;
 }
 
+export interface BillingAgreement {
+  id: string;
+  userId: string;
+  billingMethodId: string;
+  subscriberRef: string;
+  subscriberType: string;
+  status: string;
+  createdAt: string;
+}
+
 /**
  * cookieHeader: Next.js 서버 컴포넌트에서 호출 시 `cookies().toString()` 값을 전달.
  * 브라우저 클라이언트에서 호출 시 생략하면 credentials: 'include' 사용.
@@ -182,7 +192,7 @@ export async function issueNicepayBillingKey(
   orderId: string,
   cookieHeader: string,
   encMode?: string,
-): Promise<void> {
+): Promise<{ id: string }> {
   const payload: Record<string, string> = { encData, orderId };
   if (encMode) payload['encMode'] = encMode;
   const res = await fetch(`${BASE_URL}/v1/billing-methods/nicepay`, {
@@ -195,13 +205,14 @@ export async function issueNicepayBillingKey(
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.message ?? `NicePay billing key issuance failed (${res.status})`);
   }
+  return res.json();
 }
 
 export async function issueTossBillingKey(
   authKey: string,
   customerKey: string,
   cookieHeader: string,
-): Promise<void> {
+): Promise<{ id: string }> {
   const res = await fetch(`${BASE_URL}/v1/billing-methods/toss`, {
     method: 'POST',
     headers: {
@@ -215,6 +226,36 @@ export async function issueTossBillingKey(
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.message ?? `Toss billing key issuance failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function getBillingAgreements(cookieHeader?: string): Promise<BillingAgreement[]> {
+  const headers: Record<string, string> = {};
+  if (cookieHeader) headers['Cookie'] = cookieHeader;
+  const res = await fetch(`${BASE_URL}/v1/billing-agreements`, {
+    headers,
+    credentials: cookieHeader ? undefined : 'include',
+    cache: 'no-store',
+  });
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function updateBillingAgreementMethod(
+  agreementId: string,
+  billingMethodId: string,
+  cookieHeader: string,
+): Promise<void> {
+  const res = await fetch(`${BASE_URL}/v1/billing-agreements/${agreementId}/billing-method`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
+    body: JSON.stringify({ billingMethodId }),
+    cache: 'no-store',
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.message ?? `Failed to update billing agreement (${res.status})`);
   }
 }
 

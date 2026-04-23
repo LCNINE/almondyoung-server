@@ -100,6 +100,22 @@ export class BillingMethodResponseDto {
 
 // ─── Billing Agreement DTOs ─────────────────────────────────────────────────
 
+export class CreateBillingAgreementDto {
+  @ApiProperty({ description: 'User ID' })
+  @IsUUID()
+  userId: string;
+
+  @ApiProperty({ description: 'Subscriber reference (e.g. contractId)' })
+  @IsString()
+  @IsNotEmpty()
+  subscriberRef: string;
+
+  @ApiProperty({ description: 'Subscriber type (e.g. MEMBERSHIP)' })
+  @IsString()
+  @IsNotEmpty()
+  subscriberType: string;
+}
+
 export class UpdateBillingMethodDto {
   @ApiProperty({ description: 'New billing method ID' })
   @IsUUID()

@@ -8,6 +8,7 @@ import {
   InternalServerErrorException,
   NotFoundException,
   Param,
+  Post,
   Put,
   Req,
 } from '@nestjs/common';
@@ -15,13 +16,31 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { WalletJwtAuth } from '../wallet-auth.decorator';
 import { AuthenticatedRequest } from '../wallet.module';
 import { BillingAgreementService } from './billing-agreement.service';
-import { BillingAgreementResponseDto, UpdateBillingMethodDto } from './dto';
+import { BillingAgreementResponseDto, CreateBillingAgreementDto, UpdateBillingMethodDto } from './dto';
 import { BillingAgreement } from '../types';
 
 @ApiTags('Billing Agreements')
 @Controller('v1/billing-agreements')
 export class BillingAgreementController {
   constructor(private readonly service: BillingAgreementService) {}
+
+  @Post()
+  @ApiOperation({ summary: 'Create billing agreement (server-to-server, API key auth)' })
+  async create(@Body() dto: CreateBillingAgreementDto): Promise<BillingAgreementResponseDto> {
+    try {
+      const agreement = await this.service.createWithAutoMethod(
+        dto.userId,
+        dto.subscriberRef,
+        dto.subscriberType,
+      );
+      return this.toResponse(agreement);
+    } catch (e: any) {
+      const msg = (e?.message ?? '').toLowerCase();
+      if (msg.includes('not found') || msg.includes('no active')) throw new NotFoundException(e.message);
+      if (msg.match(/inactive|invalid|already/)) throw new BadRequestException(e.message);
+      throw new InternalServerErrorException(e.message);
+    }
+  }
 
   @Get()
   @WalletJwtAuth()
