@@ -151,10 +151,21 @@ export class SubscriptionService {
       throw new SubscriptionBadRequestException('payment intent metadata에 userId 또는 planId가 없습니다.');
     }
 
-    return this.createSubscription(userId, planId, email, {
+    const result = await this.createSubscription(userId, planId, email, {
       initialPaymentIntentId: intentId,
       initialWalletReferenceId: this.extractWalletReference(intent),
     });
+
+    this.paymentClientService
+      .createBillingAgreement(userId, result.contractId)
+      .catch((err: Error) =>
+        this.logger.error(
+          `billing_agreement 생성 실패 (userId=${userId}, contractId=${result.contractId}): ${err?.message}`,
+          err?.stack,
+        ),
+      );
+
+    return result;
   }
 
   private extractWalletReference(intent: WalletPaymentIntentResponse): string | undefined {

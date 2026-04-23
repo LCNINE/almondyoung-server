@@ -3,6 +3,8 @@ import { HttpModule } from '@nestjs/axios';
 import { DbModule } from '@app/db';
 import { EventsModule, EventTraceApiModule } from '@app/events';
 import { MEMBERSHIP_STREAM } from '@packages/event-contracts/streams';
+import { WALLET_COMMAND_STREAM } from '@packages/event-contracts/streams/wallet-command.stream';
+import { WalletCommandPublisher } from './services/billing/wallet-command.publisher';
 import { membershipSchema } from './shared/schemas/entities/schema';
 import { ConfigModule } from '@nestjs/config';
 import { validateMembershipEnv } from './config/env.validation';
@@ -68,7 +70,7 @@ import { JwtAuthGuard } from '@app/authorization';
       schema: membershipSchema,
     }),
     EventsModule.forRoot({
-      streams: [MEMBERSHIP_STREAM],
+      streams: [MEMBERSHIP_STREAM, WALLET_COMMAND_STREAM],
       serviceName: 'membership',
       enableDLQ: true,
     }),
@@ -126,6 +128,7 @@ import { JwtAuthGuard } from '@app/authorization';
     // Infrastructure
     PaymentClientService,
     MembershipEventPublisher,
+    WalletCommandPublisher,
     WelcomeMembershipService,
   ],
 })
