@@ -66,7 +66,9 @@ export class SubscriptionService {
    * ✅ 흐름만 표현: "권한 조회"
    */
   async getCurrentSubscriptionDetails(userId: string) {
-    return this.entitlementService.getUserEntitlement(userId);
+    const data = await this.entitlementService.getUserEntitlement(userId);
+    if (!data) return null;
+    return { ...data, nextBillingDate: data.contract.nextBillingDate ?? null };
   }
 
   /**
