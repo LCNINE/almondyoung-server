@@ -229,7 +229,23 @@ export class SubscriptionService {
    * ✅ 흐름만 표현: "계약 이력 조회"
    */
   async getSubscriptionHistory(userId: string) {
-    return this.contractReader.findContractsByUserId(userId);
+    const rows = await this.contractReader.findContractsByUserIdWithPlan(userId);
+    return rows.map(({ contract, plan, tier }) => ({
+      id: contract.id,
+      userId: contract.userId,
+      planId: contract.planId,
+      status: contract.status,
+      billingDate: contract.billingDate,
+      nextBillingDate: contract.nextBillingDate ?? null,
+      cancelledAt: contract.cancelledAt?.toISOString() ?? null,
+      autoRenewal: contract.autoRenewal,
+      createdAt: contract.createdAt.toISOString(),
+      updatedAt: contract.updatedAt.toISOString(),
+      plan: plan
+        ? { price: plan.price, currency: plan.currency ?? 'KRW', durationDays: plan.durationDays }
+        : null,
+      tier: tier ? { code: tier.code } : null,
+    }));
   }
 
   /**
