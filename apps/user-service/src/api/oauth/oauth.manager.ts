@@ -13,7 +13,7 @@ import { TokenRequestDto, TokenResponseDto } from './dto/token.dto';
 import { OAuthReader } from './oauth.reader';
 import { OAuthRepository } from './oauth.repository';
 
-const CODE_TTL_SECONDS = 60;
+const CODE_TTL_SECONDS = 300;
 
 function parseExpiresInToMs(expiresIn: string): number {
   const m = expiresIn.match(/^(\d+)([smhdw])$/);
