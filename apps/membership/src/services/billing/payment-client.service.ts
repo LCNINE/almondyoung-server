@@ -195,6 +195,27 @@ export class PaymentClientService {
   }
 
   /**
+   * wallet에 billing_agreement 생성 요청 (서버 간 API key 인증)
+   * 유저의 가장 최근 ACTIVE billing_method가 자동으로 선택됨
+   */
+  async createBillingAgreement(userId: string, contractId: string): Promise<void> {
+    const walletApiUrl = this.configService.get<string>('WALLET_API_URL', this.paymentServerUrl);
+    const walletApiKey = this.configService.get<string>('WALLET_API_KEY');
+
+    if (!walletApiUrl || !walletApiKey) {
+      throw new Error('WALLET_API_URL or WALLET_API_KEY is not configured');
+    }
+
+    await firstValueFrom(
+      this.httpService.post(
+        `${walletApiUrl}/v1/billing-agreements`,
+        { userId, subscriberRef: contractId, subscriberType: 'MEMBERSHIP' },
+        { headers: { Authorization: `Bearer ${walletApiKey}`, 'Content-Type': 'application/json' } },
+      ),
+    );
+  }
+
+  /**
    * 결제 Intent 생성
    * @param request 결제 의도 요청 데이터
    */

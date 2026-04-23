@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { WalletSchema, billingAgreements, billingMethods } from '../schema';
 import { BillingAgreement } from '../types';
 
@@ -39,6 +39,40 @@ export class BillingAgreementService {
       .returning();
 
     return rows[0];
+  }
+
+  /**
+   * 서버 간 호출용 — 유저의 가장 최근 ACTIVE billing_method로 agreement를 생성하거나 기존 것을 반환.
+   * subscriberRef+subscriberType 조합이 이미 존재하면 최신 billing_method로 업데이트.
+   */
+  async createWithAutoMethod(
+    userId: string,
+    subscriberRef: string,
+    subscriberType: string,
+  ): Promise<BillingAgreement> {
+    const latestMethods = await this.dbService.db
+      .select()
+      .from(billingMethods)
+      .where(and(eq(billingMethods.userId, userId), eq(billingMethods.status, 'ACTIVE')))
+      .orderBy(desc(billingMethods.createdAt))
+      .limit(1);
+
+    if (latestMethods.length === 0) {
+      throw new Error(`no active billing method found for user: ${userId}`);
+    }
+
+    const billingMethodId = latestMethods[0].id;
+
+    const existing = await this.findBySubscriberRef(subscriberType, subscriberRef);
+    if (existing) {
+      if (existing.billingMethodId !== billingMethodId) {
+        await this.updateBillingMethod(existing.id, billingMethodId);
+        return { ...existing, billingMethodId };
+      }
+      return existing;
+    }
+
+    return this.create(userId, billingMethodId, subscriberRef, subscriberType);
   }
 
   async findBySubscriberRef(subscriberType: string, subscriberRef: string): Promise<BillingAgreement | undefined> {
