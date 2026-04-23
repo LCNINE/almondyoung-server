@@ -3,7 +3,7 @@
 import { useCallback, useState } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
-import { ChevronDown, ChevronRight } from "lucide-react"
+import { ChevronDown, ChevronRight, ChevronUp } from "lucide-react"
 import { CustomButton } from "@/components/shared/custom-buttons"
 import { Separator } from "@/components/ui/separator"
 import type { SubscriptionHistoryItemDto } from "@lib/types/dto/membership"
@@ -24,20 +24,127 @@ const STATUS_LABEL: Record<string, string> = {
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  ACTIVE: "text-green-600",
-  CANCELLED: "text-red-400",
-  ENDED: "text-gray-400",
-  EXPIRED: "text-gray-400",
+  ACTIVE: "text-green-600 bg-green-50",
+  CANCELLED: "text-red-500 bg-red-50",
+  ENDED: "text-gray-500 bg-gray-100",
+  EXPIRED: "text-gray-500 bg-gray-100",
 }
 
-function formatPeriod(start?: string | null, end?: string | null): string {
-  const fmt = (d: string) => {
-    const date = new Date(d)
-    if (isNaN(date.getTime())) return d
-    return `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, "0")}`
-  }
-  if (!start) return "-"
-  return end ? `${fmt(start)} ~ ${fmt(end)}` : `${fmt(start)} ~`
+function fmtDate(d?: string | null): string {
+  if (!d) return "-"
+  const date = new Date(d)
+  if (isNaN(date.getTime())) return "-"
+  return date.toLocaleDateString("ko-KR", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  })
+}
+
+function planLabel(durationDays?: number): string {
+  if (!durationDays) return ""
+  if (durationDays <= 31) return "월간 구독"
+  if (durationDays >= 360) return "연간 구독"
+  return `${durationDays}일 구독`
+}
+
+interface HistoryCardProps {
+  item: SubscriptionHistoryItemDto
+}
+
+function HistoryCard({ item }: HistoryCardProps) {
+  const [open, setOpen] = useState(false)
+
+  const startDate = item.billingDate ?? item.startDate ?? item.createdAt
+  const endDate = item.cancelledAt ?? item.endDate ?? item.nextBillingDate ?? null
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-gray-100 bg-white">
+      {/* 요약 행 — 클릭으로 상세 토글 */}
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left"
+      >
+        <div className="flex flex-1 flex-col gap-0.5">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-gray-900">
+              {"아몬드영 멤버십"}
+            </span>
+            {item.plan && (
+              <span className="text-xs text-gray-400">
+                {planLabel(item.plan.durationDays)}
+              </span>
+            )}
+          </div>
+          <span className="text-xs text-gray-500">
+            {fmtDate(startDate)}
+            {item.status !== "ACTIVE" && endDate ? ` ~ ${fmtDate(endDate)}` : ""}
+          </span>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span
+            className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[item.status] ?? "text-gray-500 bg-gray-100"}`}
+          >
+            {STATUS_LABEL[item.status] ?? item.status}
+          </span>
+          {open ? (
+            <ChevronUp className="h-3.5 w-3.5 text-gray-400" />
+          ) : (
+            <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
+          )}
+        </div>
+      </button>
+
+      {/* 상세 내역 */}
+      {open && (
+        <div className="border-t border-gray-100 bg-gray-50 px-4 py-3 text-xs text-gray-700">
+          <div className="grid grid-cols-2 gap-y-2">
+            <span className="text-gray-400">구독 금액</span>
+            <span className="font-medium text-gray-900">
+              {item.plan ? `${item.plan.price.toLocaleString()}원` : "-"}
+            </span>
+
+            <span className="text-gray-400">구독 유형</span>
+            <span className="font-medium text-gray-900">
+              {item.plan ? planLabel(item.plan.durationDays) : "-"}
+            </span>
+
+            <span className="text-gray-400">정기결제</span>
+            <span className="font-medium text-gray-900">
+              {item.autoRenewal === undefined ? "-" : item.autoRenewal ? "정기결제" : "일시결제"}
+            </span>
+
+            <span className="text-gray-400">구독 시작일</span>
+            <span className="font-medium text-gray-900">{fmtDate(startDate)}</span>
+
+            {item.status === "ACTIVE" ? (
+              <>
+                <span className="text-gray-400">다음 결제일</span>
+                <span className="font-medium text-gray-900">
+                  {fmtDate(item.nextBillingDate)}
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="text-gray-400">종료일</span>
+                <span className="font-medium text-gray-900">{fmtDate(endDate)}</span>
+              </>
+            )}
+
+            {item.cancelledAt && (
+              <>
+                <span className="text-gray-400">해지일</span>
+                <span className="font-medium text-gray-900">
+                  {fmtDate(item.cancelledAt)}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 interface Props {
@@ -67,23 +174,11 @@ export default function NonSubscriberSection({ subscriptionHistory, hasCafe24Lin
     <div className="flex flex-col gap-3">
       {/* 멤버십 이용 기록 */}
       {hasHistory && (
-        <section className="rounded-xl border border-gray-100 bg-gray-50 p-4">
-          <h2 className="mb-3 text-sm font-bold text-gray-900">멤버십 이용 기록</h2>
-          <div className="flex flex-col divide-y divide-gray-100">
+        <section>
+          <h2 className="mb-2 text-sm font-bold text-gray-900">멤버십 이용 기록</h2>
+          <div className="flex flex-col gap-2">
             {subscriptionHistory.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center justify-between py-2.5 text-sm"
-              >
-                <span className="text-gray-700">
-                  {formatPeriod(item.startDate, item.endDate)}
-                </span>
-                <span
-                  className={`text-xs font-medium ${STATUS_COLOR[item.status] ?? "text-gray-400"}`}
-                >
-                  {STATUS_LABEL[item.status] ?? item.status}
-                </span>
-              </div>
+              <HistoryCard key={item.id} item={item} />
             ))}
           </div>
         </section>
@@ -102,9 +197,8 @@ export default function NonSubscriberSection({ subscriptionHistory, hasCafe24Lin
         </a>
       )}
 
-      {/* 아몬드영 멤버십 정보 / 가입 섹션 */}
+      {/* 아몬드영 멤버십 가입하기 / 혜택 보기 */}
       <div className="mt-2 overflow-hidden rounded-2xl bg-zinc-900">
-        {/* 토글 헤더 — 이력이 있을 때만 노출 */}
         {hasExtra && (
           <button
             type="button"
@@ -121,10 +215,8 @@ export default function NonSubscriberSection({ subscriptionHistory, hasCafe24Lin
           </button>
         )}
 
-        {/* 멤버십 소개 + 가입 콘텐츠 */}
         {showMembershipInfo && (
           <div className={hasExtra ? "px-4 pb-8" : "px-4 py-8 md:px-6"}>
-            {/* 히어로 섹션 */}
             <section className="relative flex flex-col items-center overflow-hidden rounded-xl py-12 text-center">
               <Image
                 src="/images/membership-hero-bg.webp"
