@@ -119,7 +119,34 @@ export type CreateHmsCardProfileRequest = {
 }
 
 /*───────────────────────────
- * HMS BNPL 온보딩 응답
+ * 빌링 수단 (billing_methods)
+ *──────────────────────────*/
+export type BillingMethodDto = {
+  id: string
+  userId: string
+  providerType: 'TOSS_BILLING' | 'NICEPAY_BILLING' | 'CMS_BATCH'
+  displayName: string | null
+  method: Record<string, unknown> | null
+  status: 'ACTIVE' | 'REVOKED' | 'DELETED' | 'EXPIRED'
+  expiresAt: string | null
+  createdAt: string
+}
+
+/*───────────────────────────
+ * 빌링 어그리먼트 (billing_agreements)
+ *──────────────────────────*/
+export type BillingAgreementDto = {
+  id: string
+  userId: string
+  billingMethodId: string
+  subscriberRef: string
+  subscriberType: string
+  status: 'ACTIVE' | 'SUSPENDED' | 'REVOKED'
+  createdAt: string
+}
+
+/*───────────────────────────
+ * HMS BNPL 온보딩 응답 (레거시)
  *──────────────────────────*/
 export type OnboardHmsBnplResponse = {
   success: boolean
