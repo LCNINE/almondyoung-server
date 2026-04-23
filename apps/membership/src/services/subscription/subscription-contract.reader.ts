@@ -69,4 +69,21 @@ export class SubscriptionContractReader {
       .where(eq(schema.subscriptionContracts.userId, userId))
       .orderBy(desc(schema.subscriptionContracts.createdAt));
   }
+
+  /**
+   * 사용자의 모든 계약 이력 + 플랜/티어 정보 함께 조회
+   */
+  async findContractsByUserIdWithPlan(userId: string) {
+    return await this.dbService.db
+      .select({
+        contract: schema.subscriptionContracts,
+        plan: schema.plan,
+        tier: schema.tiers,
+      })
+      .from(schema.subscriptionContracts)
+      .leftJoin(schema.plan, eq(schema.subscriptionContracts.planId, schema.plan.id))
+      .leftJoin(schema.tiers, eq(schema.plan.tierId, schema.tiers.id))
+      .where(eq(schema.subscriptionContracts.userId, userId))
+      .orderBy(desc(schema.subscriptionContracts.createdAt));
+  }
 }
