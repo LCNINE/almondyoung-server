@@ -114,18 +114,17 @@ export class PaymentClientService {
     this.paymentServerUrl = this.configService.get<string>('PAYMENT_SERVER_URL', 'http://localhost:5000');
   }
 
+  private getWalletConfig(): { url: string; key: string } {
+    const url = this.configService.get<string>('WALLET_API_URL', this.paymentServerUrl);
+    const key = this.configService.get<string>('WALLET_API_KEY');
+    if (!url || !key) throw new Error('WALLET_API_URL or WALLET_API_KEY is not configured');
+    return { url, key };
+  }
+
   async createMembershipCheckoutIntent(
     request: MembershipCheckoutIntentRequest,
   ): Promise<MembershipCheckoutIntentResponse> {
-    const walletApiUrl = this.configService.get<string>('WALLET_API_URL', this.paymentServerUrl);
-    const walletApiKey = this.configService.get<string>('WALLET_API_KEY');
-
-    if (!walletApiUrl) {
-      throw new Error('WALLET_API_URL is not configured');
-    }
-    if (!walletApiKey) {
-      throw new Error('WALLET_API_KEY is not configured');
-    }
+    const { url: walletApiUrl, key: walletApiKey } = this.getWalletConfig();
 
     try {
       const response = await firstValueFrom(
@@ -166,15 +165,7 @@ export class PaymentClientService {
    * confirm-checkout-intent 흐름에서 결제 검증에 사용
    */
   async getWalletPaymentIntent(intentId: string): Promise<WalletPaymentIntentResponse> {
-    const walletApiUrl = this.configService.get<string>('WALLET_API_URL', this.paymentServerUrl);
-    const walletApiKey = this.configService.get<string>('WALLET_API_KEY');
-
-    if (!walletApiUrl) {
-      throw new Error('WALLET_API_URL is not configured');
-    }
-    if (!walletApiKey) {
-      throw new Error('WALLET_API_KEY is not configured');
-    }
+    const { url: walletApiUrl, key: walletApiKey } = this.getWalletConfig();
 
     try {
       const response = await firstValueFrom(
@@ -199,12 +190,7 @@ export class PaymentClientService {
    * 유저의 가장 최근 ACTIVE billing_method가 자동으로 선택됨
    */
   async createBillingAgreement(userId: string, contractId: string): Promise<void> {
-    const walletApiUrl = this.configService.get<string>('WALLET_API_URL', this.paymentServerUrl);
-    const walletApiKey = this.configService.get<string>('WALLET_API_KEY');
-
-    if (!walletApiUrl || !walletApiKey) {
-      throw new Error('WALLET_API_URL or WALLET_API_KEY is not configured');
-    }
+    const { url: walletApiUrl, key: walletApiKey } = this.getWalletConfig();
 
     await firstValueFrom(
       this.httpService.post(
