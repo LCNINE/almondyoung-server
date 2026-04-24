@@ -265,13 +265,14 @@ export async function createMembershipCheckoutIntent(
 export async function subscribeWithBillingMethod(
   planId: string,
   billingMethodId: string,
+  billingMode: 'one_time' | 'recurring' = 'one_time',
 ): Promise<{ contractId: string }> {
   return await api<{ contractId: string }>(
     "membership",
     "/subscriptions/subscribe-with-method",
     {
       method: "POST",
-      body: { planId, billingMethodId },
+      body: { planId, billingMethodId, billingMode },
       withAuth: true,
       cache: "no-store",
     }
