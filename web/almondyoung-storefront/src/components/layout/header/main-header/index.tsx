@@ -1,4 +1,4 @@
-import { MegaMenu } from "@/components/category/mega-menu"
+import { CategoryDropdown } from "@/components/category/dropdown"
 import { CategoryNavigation } from "@/components/layout/nav/category-nav"
 import { SearchCombobox } from "@/components/search/search-combobox"
 import { SearchSheet } from "@/components/search/search-sheet"
@@ -39,8 +39,8 @@ export async function MainHeader() {
 
         {/* 하단 섹션 */}
         <div className="flex items-center gap-[clamp(0.5rem,2vw,1.75rem)] md:pt-2 md:pb-4">
-          {/* 데스크탑: 메가메뉴 */}
-          <MegaMenu categories={categories} />
+          {/* 데스크탑: 카테고리 드롭다운 */}
+          <CategoryDropdown categories={categories} />
 
           <CategoryNavigation mainCategories={mainCategories} />
         </div>
