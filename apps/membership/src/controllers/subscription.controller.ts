@@ -388,7 +388,7 @@ export class SubscriptionController {
     const email = user?.email ?? '';
     if (!userId) throw new BadRequestException('userId가 필요합니다');
     try {
-      return await this.subscriptionService.subscribeWithBillingMethod(userId, body.planId, email, body.billingMethodId);
+      return await this.subscriptionService.subscribeWithBillingMethod(userId, body.planId, email, body.billingMethodId, body.billingMode ?? 'one_time');
     } catch (e: any) {
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('already') || msg.includes('exists')) throw new BadRequestException(e.message);
