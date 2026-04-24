@@ -11,6 +11,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { useEffect, useState } from "react"
 import { toast } from "sonner"
 import { MembershipPaymentMethodSkeleton } from "@/components/skeletons/page-skeletons"
+import { providerLabel } from "@lib/utils/billing-provider"
 
 const IconChevronLeft = () => (
   <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -32,11 +33,6 @@ const IconCheckCircle = () => (
   </svg>
 )
 
-function providerLabel(providerType: BillingMethodDto["providerType"]): string {
-  if (providerType === "TOSS_BILLING") return "토스페이먼츠"
-  if (providerType === "NICEPAY_BILLING") return "나이스페이"
-  return "CMS"
-}
 
 function formatNextBillingDate(dateStr: string | null | undefined): string {
   if (!dateStr) return ""

@@ -55,6 +55,7 @@ export default function MembershipTemplate({
         <NonSubscriberSection
           subscriptionHistory={subscriptionHistory}
           hasCafe24Link={hasCafe24Link}
+          cancellationReasons={cancellationReasons}
         />
       )}
     </div>
