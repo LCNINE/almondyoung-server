@@ -17,8 +17,6 @@ import {
 } from "@/lib/utils/price-utils"
 import { MobileCTA, PCFixedCTA } from "domains/checkout/components/cta"
 import { MobileHeader, PCHeader } from "domains/checkout/components/header"
-import { MobileOrderSummary } from "domains/checkout/components/order-summary"
-import { PaymentDetailSidebar } from "domains/checkout/components/payment-detail-sidebar"
 import { useParams, useRouter } from "next/navigation"
 import { useCallback, useMemo, useState } from "react"
 import { toast } from "sonner"
@@ -57,22 +55,23 @@ export default function CheckoutTemplate({
   const cartTotals: CartTotals = useMemo(() => {
     const { currency_code } = getCartTotals(cart)
 
-    // 선택된 아이템 기준 상품 금액 계산
+    // 선택된 아이템 기준 상품 금액 계산 (멤버십 할인 적용 후)
     const item_subtotal = selectedItems.reduce((acc, item) => {
       return acc + (item.unit_price ?? 0) * (item.quantity ?? 0)
     }, 0)
 
     // 선택된 아이템 기준 프로모션 할인 계산
     const discount_subtotal = selectedItems.reduce((acc, item) => {
-      const originalPrice = (item.unit_price ?? 0) * (item.quantity ?? 0)
-      const discountedPrice = item.subtotal ?? originalPrice
-      return acc + Math.max(0, originalPrice - discountedPrice)
+      return acc + (item.discount_total ?? 0)
     }, 0)
 
     const membershipDiscount =
       isMembership && selectedItems.length > 0
         ? calculateMembershipDiscount(selectedItems)
         : 0
+
+    // 할인 전 정가 기준 상품 금액 (compare_at_unit_price 기준)
+    const original_item_subtotal = item_subtotal + membershipDiscount
 
     const totalDiscount = discount_subtotal
     const finalTotal = Math.max(
@@ -83,6 +82,7 @@ export default function CheckoutTemplate({
     return {
       currency_code,
       item_subtotal,
+      original_item_subtotal,
       shipping: shipping.amount,
       discount_subtotal,
       membershipDiscount,
@@ -92,7 +92,6 @@ export default function CheckoutTemplate({
     }
   }, [cart, shipping, selectedItems, isMembership])
 
-  const [isPaymentDetailsOpen, setIsPaymentDetailsOpen] = useState(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -200,62 +199,35 @@ export default function CheckoutTemplate({
     <main className="bg-muted min-h-screen w-full">
       <PCHeader />
 
-      <div className="container mx-auto max-w-[1360px] px-4 lg:px-[40px] lg:py-8">
+      <div className="container mx-auto px-4 lg:px-[40px] lg:py-8">
         <MobileHeader onClose={() => router.push(`/${countryCode}/cart`)} />
 
-        <div className="lg:flex lg:w-full lg:justify-between lg:gap-9">
-          {/* 왼쪽 섹션 */}
-          <div className="lg:max-w-[820px] lg:min-w-[420px] lg:flex-1">
-            <ShippingSection
-              cartId={checkoutCartId}
-              shippingAddress={cart?.shipping_address || null}
-              addressName={
-                cart?.metadata?.shipping_address_name as string | null
-              }
-              shippingMemo={shippingMemo}
-              onShippingMemoChange={handleShippingMemoChange}
-            />
-            <OrderProductsSection
-              cartId={checkoutCartId}
-              products={cart?.items}
-              shipping={shipping.amount}
-              selectedIds={selectedIds}
-              onSelectedIdsChange={setSelectedIds}
-            />
-            <DiscountSection
-              cartId={cart.id}
-              isMembership={isMembership}
-              membershipDiscount={cartTotals.membershipDiscount}
-              itemSubtotal={cartTotals.item_subtotal}
-              shipping={shipping}
-              promotions={promotions}
-              appliedPromotionCode={cart.promotions?.[0]?.code}
-              onCouponApplied={() => router.refresh()}
-            />
-            <PaymentTotalSection totals={cartTotals} />
-
-            {/* TODO: 현금영수증 및 세금계산서는 wallet-web의 책임이므로 대체 예정 */}
-            {/* <ReceiptSection
-              cashReceiptOption={cashReceiptOption}
-              setCashReceiptOption={setCashReceiptOption}
-              taxInvoiceOption={taxInvoiceOption}
-              setTaxInvoiceOption={setTaxInvoiceOption}
-              taxInvoice={taxInvoice}
-            /> */}
-          </div>
-
-          {/* 오른쪽 섹션 */}
-          <div className="lg:shrink-0">
-            <MobileOrderSummary
-              totals={cartTotals}
-              isMembership={isMembership}
-            />
-            <PaymentDetailSidebar
-              isOpen={isPaymentDetailsOpen}
-              setIsOpen={setIsPaymentDetailsOpen}
-              totals={cartTotals}
-            />
-          </div>
+        <div className="mx-auto lg:max-w-[820px]">
+          <ShippingSection
+            cartId={checkoutCartId}
+            shippingAddress={cart?.shipping_address || null}
+            addressName={cart?.metadata?.shipping_address_name as string | null}
+            shippingMemo={shippingMemo}
+            onShippingMemoChange={handleShippingMemoChange}
+          />
+          <OrderProductsSection
+            cartId={checkoutCartId}
+            products={cart?.items}
+            shipping={shipping.amount}
+            selectedIds={selectedIds}
+            onSelectedIdsChange={setSelectedIds}
+          />
+          <DiscountSection
+            cartId={cart.id}
+            isMembership={isMembership}
+            membershipDiscount={cartTotals.membershipDiscount}
+            itemSubtotal={cartTotals.item_subtotal}
+            shipping={shipping}
+            promotions={promotions}
+            appliedPromotionCode={cart.promotions?.[0]?.code}
+            onCouponApplied={() => router.refresh()}
+          />
+          <PaymentTotalSection totals={cartTotals} />
         </div>
       </div>
 
@@ -283,19 +255,6 @@ export default function CheckoutTemplate({
         totals={cartTotals}
       />
       <MobileCTA onPayment={handlePayment} loading={loading} />
-
-      {/* PIN 등록 필요 모달 */}
-      {/* <PinRequiredModal
-        open={pinRequiredModalOpen}
-        onOpenChange={setPinRequiredModalOpen}
-      /> */}
-
-      {/* PIN 검증 모달 */}
-      {/* <PinVerifyModal
-        open={pinVerifyModalOpen}
-        onOpenChange={setPinVerifyModalOpen}
-        onSuccess={processPayment}
-      /> */}
     </main>
   )
 }

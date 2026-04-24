@@ -44,6 +44,7 @@ export default function MembershipCheckoutTemplate({
     () => ({
       currency_code: "krw",
       item_subtotal: price,
+      original_item_subtotal: price,
       shipping: 0,
       discount_subtotal: 0,
       membershipDiscount: 0,

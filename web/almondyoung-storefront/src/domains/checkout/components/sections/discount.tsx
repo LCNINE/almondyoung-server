@@ -7,6 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { PriceRow } from "@/domains/checkout/components/shared/price-row"
 import { CheckoutMembershipTagIcon } from "@/icons/membership-tag-icon"
 import {
   addPromotionToCart,
@@ -107,9 +108,8 @@ export const DiscountSection = ({
       </h2>
 
       <div className="flex w-full flex-col gap-5 rounded-md border border-gray-200 bg-white p-4 lg:gap-6 lg:rounded-[10px] lg:p-6">
-        {/* 자동할인 - 총 할인 금액 표시 */}
         <DiscountRow
-          label="자동할인"
+          label="총 할인 금액"
           isMembership={isMembership}
           totalDiscount={totalDiscount}
           membershipDiscount={membershipDiscount}
@@ -198,7 +198,6 @@ export const DiscountSection = ({
             </Select>
           )}
         </div>
-
       </div>
     </section>
   )
@@ -226,47 +225,49 @@ const DiscountRow = ({
   const hasMembershipDiscount = isMembership && membershipDiscount > 0
   const hasDiscount = totalDiscount > 0
   const hasCouponDiscount = couponDiscount > 0
-  const isFreeShipping = shipping.amount === 0
 
   return (
-    <div className="flex items-start justify-between">
-      <div className="flex flex-col gap-1.5">
-        <span className="text-xs font-medium text-gray-900 lg:text-sm">
+    <div className="flex flex-col gap-1.5">
+      <PriceRow>
+        <PriceRow.Label size="sm" weight="medium">
           {label}
-        </span>
-
-        {isFreeShipping && shipping.description && (
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] font-medium text-[#F29219] lg:text-xs">
-              {shipping.description}
-            </span>
-          </div>
-        )}
-
-        {hasMembershipDiscount && (
-          <div className="flex items-center gap-1">
-            <CheckoutMembershipTagIcon />
-            <span className="text-[10px] font-medium text-[#E08F00] lg:text-xs">
-              멤버십 할인 {formatPrice(membershipDiscount)}원
-            </span>
-          </div>
-        )}
-
-        {hasCouponDiscount && appliedPromotion && (
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] font-medium text-[#F29219] lg:text-xs">
-              쿠폰 할인 {formatPrice(couponDiscount)}원
-            </span>
-          </div>
-        )}
-
-      </div>
-      <div className="flex flex-col items-end gap-0.5">
-        {/* 총 할인 금액 표시 */}
-        <span className="text-sm font-semibold text-gray-900 lg:text-base">
+        </PriceRow.Label>
+        <PriceRow.Value size="base" weight="semibold">
           {hasDiscount ? `-${formatPrice(totalDiscount)}원` : "0원"}
-        </span>
-      </div>
+        </PriceRow.Value>
+      </PriceRow>
+
+      {hasMembershipDiscount && (
+        <PriceRow>
+          <PriceRow.Label
+            size="xs"
+            tone="membership"
+            weight="medium"
+            className="flex items-center gap-1"
+          >
+            <CheckoutMembershipTagIcon />
+            멤버십 할인
+          </PriceRow.Label>
+          <PriceRow.Value size="xs" tone="membership" weight="medium">
+            -{formatPrice(membershipDiscount)}원
+          </PriceRow.Value>
+        </PriceRow>
+      )}
+
+      {hasCouponDiscount && appliedPromotion && (
+        <PriceRow>
+          <PriceRow.Label
+            size="xs"
+            tone="accent"
+            weight="medium"
+          >
+            쿠폰 할인
+          </PriceRow.Label>
+          <PriceRow.Value size="xs" tone="discount" weight="medium">
+            -{formatPrice(couponDiscount)}원
+          </PriceRow.Value>
+        </PriceRow>
+      )}
     </div>
   )
 }
