@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { EntitlementService } from './entitlement.service';
 import { SubscriptionContractReader } from './subscription/subscription-contract.reader';
 import {
@@ -8,6 +8,7 @@ import {
 } from './subscription/subscription-cancellation.manager';
 import { CancellationReasonReader } from './subscription/cancellation-reason.reader';
 import { MembershipEventPublisher } from './membership-event.publisher';
+import { PaymentClientService } from './billing/payment-client.service';
 
 // 하위 호환성을 위한 타입 export
 export type {
@@ -35,12 +36,15 @@ export interface CancellationResult {
  */
 @Injectable()
 export class SubscriptionCancellationService {
+  private readonly logger = new Logger(SubscriptionCancellationService.name);
+
   constructor(
     private readonly entitlementService: EntitlementService,
     private readonly contractReader: SubscriptionContractReader,
     private readonly cancellationManager: SubscriptionCancellationManager,
     private readonly reasonReader: CancellationReasonReader,
     private readonly membershipEventPublisher: MembershipEventPublisher,
+    private readonly paymentClientService: PaymentClientService,
   ) {}
 
   /**
@@ -82,6 +86,17 @@ export class SubscriptionCancellationService {
           eligibility,
         )
       : await this.cancellationManager.cancelRecurringPayment(userId, data.contract, reasonCode, reasonText);
+
+    if (result.type === 'RECURRING_CANCELLATION') {
+      this.paymentClientService
+        .revokeBillingAgreement(data.contract.id)
+        .catch((err: Error) =>
+          this.logger.error(
+            `billing_agreement revoke 실패 (contractId=${data.contract.id}): ${err?.message}`,
+            err?.stack,
+          ),
+        );
+    }
 
     if (result.type === 'IMMEDIATE_CANCELLATION') {
       await this.membershipEventPublisher.publishStatusChanged({

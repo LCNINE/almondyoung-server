@@ -10,6 +10,7 @@ import {
   Param,
   Post,
   Put,
+  Query,
   Req,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -28,11 +29,9 @@ export class BillingAgreementController {
   @ApiOperation({ summary: 'Create billing agreement (server-to-server, API key auth)' })
   async create(@Body() dto: CreateBillingAgreementDto): Promise<BillingAgreementResponseDto> {
     try {
-      const agreement = await this.service.createWithAutoMethod(
-        dto.userId,
-        dto.subscriberRef,
-        dto.subscriberType,
-      );
+      const agreement = dto.billingMethodId
+        ? await this.service.create(dto.userId, dto.billingMethodId, dto.subscriberRef, dto.subscriberType)
+        : await this.service.createWithAutoMethod(dto.userId, dto.subscriberRef, dto.subscriberType);
       return this.toResponse(agreement);
     } catch (e: any) {
       const msg = (e?.message ?? '').toLowerCase();
@@ -64,6 +63,20 @@ export class BillingAgreementController {
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('not found')) throw new NotFoundException(e.message);
       if (msg.match(/inactive|invalid/)) throw new BadRequestException(e.message);
+      throw new InternalServerErrorException(e.message);
+    }
+  }
+
+  @Delete('by-subscriber')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Revoke billing agreement by subscriber ref (server-to-server, API key auth)' })
+  async revokeBySubscriber(
+    @Query('subscriberType') subscriberType: string,
+    @Query('subscriberRef') subscriberRef: string,
+  ): Promise<void> {
+    try {
+      await this.service.revokeBySubscriberRef(subscriberType, subscriberRef);
+    } catch (e: any) {
       throw new InternalServerErrorException(e.message);
     }
   }

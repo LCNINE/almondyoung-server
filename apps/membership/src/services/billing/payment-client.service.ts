@@ -185,20 +185,61 @@ export class PaymentClientService {
     }
   }
 
-  /**
-   * wallet에 billing_agreement 생성 요청 (서버 간 API key 인증)
-   * 유저의 가장 최근 ACTIVE billing_method가 자동으로 선택됨
-   */
-  async createBillingAgreement(userId: string, contractId: string): Promise<void> {
+  async createBillingAgreement(userId: string, contractId: string, billingMethodId?: string): Promise<void> {
     const { url: walletApiUrl, key: walletApiKey } = this.getWalletConfig();
 
     await firstValueFrom(
       this.httpService.post(
         `${walletApiUrl}/v1/billing-agreements`,
-        { userId, subscriberRef: contractId, subscriberType: 'MEMBERSHIP' },
+        {
+          userId,
+          subscriberRef: contractId,
+          subscriberType: 'MEMBERSHIP',
+          ...(billingMethodId ? { billingMethodId } : {}),
+        },
         { headers: { Authorization: `Bearer ${walletApiKey}`, 'Content-Type': 'application/json' } },
       ),
     );
+  }
+
+  async revokeBillingAgreement(contractId: string): Promise<void> {
+    const { url: walletApiUrl, key: walletApiKey } = this.getWalletConfig();
+
+    await firstValueFrom(
+      this.httpService.delete(
+        `${walletApiUrl}/v1/billing-agreements/by-subscriber?subscriberType=MEMBERSHIP&subscriberRef=${encodeURIComponent(contractId)}`,
+        { headers: { Authorization: `Bearer ${walletApiKey}` } },
+      ),
+    );
+  }
+
+  async directCharge(params: {
+    userId: string;
+    billingMethodId: string;
+    amount: number;
+    currency?: string;
+    metadata?: Record<string, unknown>;
+    idempotencyKey?: string;
+  }): Promise<{ intentId: string; status: string }> {
+    const { url: walletApiUrl, key: walletApiKey } = this.getWalletConfig();
+
+    const response = await firstValueFrom(
+      this.httpService.post<{ intentId: string; status: string }>(
+        `${walletApiUrl}/v1/direct-billing-charges`,
+        {
+          userId: params.userId,
+          billingMethodId: params.billingMethodId,
+          amount: params.amount,
+          currency: params.currency ?? 'KRW',
+          purpose: 'SUBSCRIPTION',
+          metadata: params.metadata ?? {},
+          idempotencyKey: params.idempotencyKey,
+        },
+        { headers: { Authorization: `Bearer ${walletApiKey}`, 'Content-Type': 'application/json' } },
+      ),
+    );
+
+    return response.data;
   }
 
   /**

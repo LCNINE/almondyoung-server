@@ -132,4 +132,17 @@ export class BillingAgreementService {
       throw new Error('billing agreement not found or already inactive');
     }
   }
+
+  async revokeBySubscriberRef(subscriberType: string, subscriberRef: string): Promise<void> {
+    await this.dbService.db
+      .update(billingAgreements)
+      .set({ status: 'REVOKED', updatedAt: new Date() })
+      .where(
+        and(
+          eq(billingAgreements.subscriberType, subscriberType),
+          eq(billingAgreements.subscriberRef, subscriberRef),
+          eq(billingAgreements.status, 'ACTIVE'),
+        ),
+      );
+  }
 }
