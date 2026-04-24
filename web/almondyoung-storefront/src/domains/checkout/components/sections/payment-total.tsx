@@ -1,8 +1,8 @@
 "use client"
 
-import { MembershipTagIcon } from "@/icons/membership-tag-icon"
-import { convertToLocale } from "@/lib/utils/price-utils"
+import { CheckoutMembershipTagIcon } from "@/icons/membership-tag-icon"
 import type { CartTotals } from "@/lib/types/ui/cart"
+import { convertToLocale } from "@/lib/utils/price-utils"
 
 interface PaymentTotalSectionProps {
   totals: CartTotals
@@ -11,7 +11,7 @@ interface PaymentTotalSectionProps {
 export const PaymentTotalSection = ({ totals }: PaymentTotalSectionProps) => {
   const {
     currency_code,
-    item_subtotal,
+    original_item_subtotal,
     shipping,
     membershipDiscount,
     totalDiscount,
@@ -30,23 +30,44 @@ export const PaymentTotalSection = ({ totals }: PaymentTotalSectionProps) => {
       <div className="overflow-hidden rounded-md border border-gray-200 bg-white lg:rounded-[10px]">
         <div className="space-y-3 p-4 lg:p-6">
           <InfoRow
-            label="주문 상품"
-            value={formatAmount(item_subtotal)}
+            label="상품 금액"
+            value={formatAmount(original_item_subtotal)}
             dataTestId="cart-subtotal"
-            dataValue={item_subtotal}
+            dataValue={original_item_subtotal}
           />
+
           <InfoRow
             label="배송비"
             value={formatAmount(shipping)}
             dataTestId="cart-shipping"
             dataValue={shipping}
           />
+
+          {membershipDiscount > 0 && (
+            <InfoRow
+              label={
+                <div className="flex items-center gap-1">
+                  <CheckoutMembershipTagIcon />
+                  <span className="text-[10px] font-medium text-[#E08F00] lg:text-xs">
+                    멤버십 할인
+                  </span>
+                </div>
+              }
+              value={`- ${formatAmount(membershipDiscount)}`}
+              dataTestId="cart-discount"
+              dataValue={totalDiscount}
+              isDiscount
+            />
+          )}
+
           {totalDiscount > 0 && (
             <InfoRow
               label={
-                <span className="flex items-center gap-2">
-                  할인 / 부가결제
-                  {membershipDiscount > 0 && <MembershipTagIcon />}
+                <span className="inline-flex items-baseline gap-1">
+                  할인
+                  <span className="text-[10px] font-normal text-gray-400 lg:text-[11px]">
+                    (쿠폰·기타)
+                  </span>
                 </span>
               }
               value={`- ${formatAmount(totalDiscount)}`}

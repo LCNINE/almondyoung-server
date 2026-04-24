@@ -57,22 +57,23 @@ export default function CheckoutTemplate({
   const cartTotals: CartTotals = useMemo(() => {
     const { currency_code } = getCartTotals(cart)
 
-    // 선택된 아이템 기준 상품 금액 계산
+    // 선택된 아이템 기준 상품 금액 계산 (멤버십 할인 적용 후)
     const item_subtotal = selectedItems.reduce((acc, item) => {
       return acc + (item.unit_price ?? 0) * (item.quantity ?? 0)
     }, 0)
 
     // 선택된 아이템 기준 프로모션 할인 계산
     const discount_subtotal = selectedItems.reduce((acc, item) => {
-      const originalPrice = (item.unit_price ?? 0) * (item.quantity ?? 0)
-      const discountedPrice = item.subtotal ?? originalPrice
-      return acc + Math.max(0, originalPrice - discountedPrice)
+      return acc + (item.discount_total ?? 0)
     }, 0)
 
     const membershipDiscount =
       isMembership && selectedItems.length > 0
         ? calculateMembershipDiscount(selectedItems)
         : 0
+
+    // 할인 전 정가 기준 상품 금액 (compare_at_unit_price 기준)
+    const original_item_subtotal = item_subtotal + membershipDiscount
 
     const totalDiscount = discount_subtotal
     const finalTotal = Math.max(
@@ -83,6 +84,7 @@ export default function CheckoutTemplate({
     return {
       currency_code,
       item_subtotal,
+      original_item_subtotal,
       shipping: shipping.amount,
       discount_subtotal,
       membershipDiscount,
