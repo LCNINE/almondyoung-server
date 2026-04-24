@@ -7,6 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { PriceRow } from "@/domains/checkout/components/shared/price-row"
 import { CheckoutMembershipTagIcon } from "@/icons/membership-tag-icon"
 import {
   addPromotionToCart,
@@ -15,7 +16,7 @@ import {
 import type { ShippingInfo } from "@/lib/types/ui/cart"
 import type { Promotion } from "@/lib/types/ui/promotion"
 import { formatPrice } from "@/lib/utils/price-utils"
-import { type ReactNode, useCallback, useState, useTransition } from "react"
+import { useCallback, useState, useTransition } from "react"
 import { toast } from "sonner"
 
 interface DiscountSectionProps {
@@ -227,61 +228,46 @@ const DiscountRow = ({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <PriceRow
-        label={
-          <span className="text-xs font-medium text-gray-900 lg:text-sm">
-            {label}
-          </span>
-        }
-        amount={
-          <span className="text-sm font-semibold text-gray-900 lg:text-base">
-            {hasDiscount ? `-${formatPrice(totalDiscount)}원` : "0원"}
-          </span>
-        }
-      />
+      <PriceRow>
+        <PriceRow.Label size="sm" weight="medium">
+          {label}
+        </PriceRow.Label>
+        <PriceRow.Value size="base" weight="semibold">
+          {hasDiscount ? `-${formatPrice(totalDiscount)}원` : "0원"}
+        </PriceRow.Value>
+      </PriceRow>
 
       {hasMembershipDiscount && (
-        <PriceRow
-          label={
-            <span className="flex items-center gap-1 text-[10px] font-medium text-[#E08F00] lg:text-xs">
-              <CheckoutMembershipTagIcon />
-              멤버십 할인
-            </span>
-          }
-          amount={
-            <span className="text-[10px] font-medium text-[#E08F00] lg:text-xs">
-              -{formatPrice(membershipDiscount)}원
-            </span>
-          }
-        />
+        <PriceRow>
+          <PriceRow.Label
+            size="xs"
+            tone="membership"
+            weight="medium"
+            className="flex items-center gap-1"
+          >
+            <CheckoutMembershipTagIcon />
+            멤버십 할인
+          </PriceRow.Label>
+          <PriceRow.Value size="xs" tone="membership" weight="medium">
+            -{formatPrice(membershipDiscount)}원
+          </PriceRow.Value>
+        </PriceRow>
       )}
 
       {hasCouponDiscount && appliedPromotion && (
-        <PriceRow
-          label={
-            <span className="text-[10px] font-medium text-[#F29219] lg:text-xs">
-              쿠폰 할인
-            </span>
-          }
-          amount={
-            <span className="text-[10px] font-medium text-[#F29219] lg:text-xs">
-              -{formatPrice(couponDiscount)}원
-            </span>
-          }
-        />
+        <PriceRow>
+          <PriceRow.Label
+            size="xs"
+            tone="accent"
+            weight="medium"
+          >
+            쿠폰 할인
+          </PriceRow.Label>
+          <PriceRow.Value size="xs" tone="discount" weight="medium">
+            -{formatPrice(couponDiscount)}원
+          </PriceRow.Value>
+        </PriceRow>
       )}
     </div>
   )
 }
-
-interface PriceRowProps {
-  label: ReactNode
-  amount: ReactNode
-}
-
-const PriceRow = ({ label, amount }: PriceRowProps) => (
-  <div className="flex items-center justify-between">
-    {label}
-    {amount}
-  </div>
-)

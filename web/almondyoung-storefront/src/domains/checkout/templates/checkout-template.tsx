@@ -17,7 +17,6 @@ import {
 } from "@/lib/utils/price-utils"
 import { MobileCTA, PCFixedCTA } from "domains/checkout/components/cta"
 import { MobileHeader, PCHeader } from "domains/checkout/components/header"
-import { PaymentDetailSidebar } from "domains/checkout/components/payment-detail-sidebar"
 import { useParams, useRouter } from "next/navigation"
 import { useCallback, useMemo, useState } from "react"
 import { toast } from "sonner"
@@ -93,7 +92,6 @@ export default function CheckoutTemplate({
     }
   }, [cart, shipping, selectedItems, isMembership])
 
-  const [isPaymentDetailsOpen, setIsPaymentDetailsOpen] = useState(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -201,49 +199,35 @@ export default function CheckoutTemplate({
     <main className="bg-muted min-h-screen w-full">
       <PCHeader />
 
-      <div className="container mx-auto max-w-[1360px] px-4 lg:px-[40px] lg:py-8">
+      <div className="container mx-auto px-4 lg:px-[40px] lg:py-8">
         <MobileHeader onClose={() => router.push(`/${countryCode}/cart`)} />
 
-        <div className="lg:flex lg:w-full lg:justify-between lg:gap-9">
-          {/* 왼쪽 섹션 */}
-          <div className="lg:max-w-[820px] lg:min-w-[420px] lg:flex-1">
-            <ShippingSection
-              cartId={checkoutCartId}
-              shippingAddress={cart?.shipping_address || null}
-              addressName={
-                cart?.metadata?.shipping_address_name as string | null
-              }
-              shippingMemo={shippingMemo}
-              onShippingMemoChange={handleShippingMemoChange}
-            />
-            <OrderProductsSection
-              cartId={checkoutCartId}
-              products={cart?.items}
-              shipping={shipping.amount}
-              selectedIds={selectedIds}
-              onSelectedIdsChange={setSelectedIds}
-            />
-            <DiscountSection
-              cartId={cart.id}
-              isMembership={isMembership}
-              membershipDiscount={cartTotals.membershipDiscount}
-              itemSubtotal={cartTotals.item_subtotal}
-              shipping={shipping}
-              promotions={promotions}
-              appliedPromotionCode={cart.promotions?.[0]?.code}
-              onCouponApplied={() => router.refresh()}
-            />
-            <PaymentTotalSection totals={cartTotals} />
-          </div>
-
-          {/* 오른쪽 섹션 */}
-          <div className="lg:shrink-0">
-            <PaymentDetailSidebar
-              isOpen={isPaymentDetailsOpen}
-              setIsOpen={setIsPaymentDetailsOpen}
-              totals={cartTotals}
-            />
-          </div>
+        <div className="mx-auto lg:max-w-[820px]">
+          <ShippingSection
+            cartId={checkoutCartId}
+            shippingAddress={cart?.shipping_address || null}
+            addressName={cart?.metadata?.shipping_address_name as string | null}
+            shippingMemo={shippingMemo}
+            onShippingMemoChange={handleShippingMemoChange}
+          />
+          <OrderProductsSection
+            cartId={checkoutCartId}
+            products={cart?.items}
+            shipping={shipping.amount}
+            selectedIds={selectedIds}
+            onSelectedIdsChange={setSelectedIds}
+          />
+          <DiscountSection
+            cartId={cart.id}
+            isMembership={isMembership}
+            membershipDiscount={cartTotals.membershipDiscount}
+            itemSubtotal={cartTotals.item_subtotal}
+            shipping={shipping}
+            promotions={promotions}
+            appliedPromotionCode={cart.promotions?.[0]?.code}
+            onCouponApplied={() => router.refresh()}
+          />
+          <PaymentTotalSection totals={cartTotals} />
         </div>
       </div>
 
