@@ -590,20 +590,20 @@ export class PimMedusaSyncService {
    */
   private async handleCategoryDelete(pimCategoryId: string): Promise<void> {
     try {
-      const handle = `${pimCategoryId}`;
-      const existing = await this.medusaClient['findCategoryByHandle'](handle);
+      // 생성 시 handle은 slug 우선(pimCategoryId는 fallback)이라, 삭제에서는
+      // metadata.pimCategoryId + legacy handle 두 경로로 조회해야 한다.
+      const existing = await this.medusaClient.findCategoryByPimRef(pimCategoryId);
 
-      if (existing?.id) {
-        // Mark as inactive (soft delete)
-        await this.medusaClient['client'].post(`/product-categories/${existing.id}`, { is_active: false });
-
-        // Invalidate cache
-        this.medusaClient['categoryCache'].delete(handle);
-
-        this.logger.log(`Marked Medusa category as inactive: ${existing.id}`);
-      } else {
+      if (!existing?.id) {
         this.logger.debug(`Category ${pimCategoryId} not found in Medusa`);
+        return;
       }
+
+      await this.medusaClient.softDeleteCategory(existing.id);
+      if (existing.handle) {
+        this.medusaClient.invalidateCategoryCacheByHandle(existing.handle);
+      }
+      this.logger.log(`Marked Medusa category as inactive: ${existing.id} (handle=${existing.handle})`);
     } catch (error) {
       this.logger.error(`Failed to delete category ${pimCategoryId} from Medusa`, error.stack);
       throw error;
