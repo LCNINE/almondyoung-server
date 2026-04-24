@@ -1,8 +1,5 @@
-/**
- * Request DTOs for Swagger documentation
- * 기존 Zod 스키마를 nestjs-zod DTO로 변환
- */
-
+import { IsNotEmpty, IsString, IsUUID } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
 import { createZodDto } from 'nestjs-zod';
 import {
   // Admin Operations
@@ -56,3 +53,14 @@ export class ResumeSubscriptionRequestDto extends createZodDto(ResumeSubscriptio
 export class ForceCancelSubscriptionRequestDto extends createZodDto(ForceCancelSubscriptionRequestSchema) {}
 
 export class GetBulkSubscriptionsRequestDto extends createZodDto(GetBulkSubscriptionsRequestSchema) {}
+
+export class SubscribeWithMethodRequestDto {
+  @ApiProperty({ description: 'Plan ID to subscribe to' })
+  @IsString()
+  @IsNotEmpty()
+  planId: string;
+
+  @ApiProperty({ description: 'Billing method ID to charge' })
+  @IsUUID()
+  billingMethodId: string;
+}

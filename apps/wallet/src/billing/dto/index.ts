@@ -1,4 +1,4 @@
-import { IsIn, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { IsIn, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 // ─── Billing Method DTOs ────────────────────────────────────────────────────
@@ -114,6 +114,44 @@ export class CreateBillingAgreementDto {
   @IsString()
   @IsNotEmpty()
   subscriberType: string;
+
+  @ApiPropertyOptional({ description: 'Specific billing method ID. If omitted, uses the latest active method.' })
+  @IsOptional()
+  @IsUUID()
+  billingMethodId?: string;
+}
+
+export class DirectBillingChargeDto {
+  @ApiProperty({ description: 'User ID' })
+  @IsUUID()
+  userId: string;
+
+  @ApiProperty({ description: 'Billing method ID to charge' })
+  @IsUUID()
+  billingMethodId: string;
+
+  @ApiProperty({ description: 'Amount to charge' })
+  @IsNotEmpty()
+  amount: number;
+
+  @ApiPropertyOptional({ description: 'Currency (default: KRW)' })
+  @IsOptional()
+  @IsString()
+  currency?: string;
+
+  @ApiPropertyOptional({ description: 'Purpose (default: SUBSCRIPTION)' })
+  @IsOptional()
+  @IsString()
+  purpose?: string;
+
+  @ApiPropertyOptional({ description: 'Metadata' })
+  @IsOptional()
+  metadata?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ description: 'Idempotency key' })
+  @IsOptional()
+  @IsString()
+  idempotencyKey?: string;
 }
 
 export class UpdateBillingMethodDto {

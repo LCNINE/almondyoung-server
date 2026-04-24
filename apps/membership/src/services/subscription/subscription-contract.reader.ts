@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, isNotNull } from 'drizzle-orm';
 
 type Contract = typeof schema.subscriptionContracts.$inferSelect;
 type Plan = typeof schema.plan.$inferSelect;
@@ -81,7 +81,7 @@ export class SubscriptionContractReader {
         tier: schema.tiers,
       })
       .from(schema.subscriptionContracts)
-      .leftJoin(schema.plan, eq(schema.subscriptionContracts.planId, schema.plan.id))
+      .innerJoin(schema.plan, eq(schema.subscriptionContracts.planId, schema.plan.id))
       .leftJoin(schema.tiers, eq(schema.plan.tierId, schema.tiers.id))
       .where(eq(schema.subscriptionContracts.userId, userId))
       .orderBy(desc(schema.subscriptionContracts.createdAt));

@@ -241,10 +241,8 @@ export class SubscriptionService {
       autoRenewal: contract.autoRenewal,
       createdAt: contract.createdAt.toISOString(),
       updatedAt: contract.updatedAt.toISOString(),
-      plan: plan
-        ? { price: plan.price, currency: plan.currency ?? 'KRW', durationDays: plan.durationDays }
-        : null,
-      tier: tier ? { code: tier.code } : null,
+      plan: { price: plan.price, currency: plan.currency ?? 'KRW', durationDays: plan.durationDays },
+      tier: tier?.id ? { code: tier.code } : null,
     }));
   }
 
@@ -270,6 +268,60 @@ export class SubscriptionService {
       tierId: plan.tierId,
     };
   }
+  /**
+   * 기존 billing_method로 즉시 결제 후 구독 생성
+   *
+   * ✅ 흐름만 표현: "기존 구독 확인 → 플랜 조회 → 즉시 결제 → 구독 생성 → agreement 연결"
+   */
+  async subscribeWithBillingMethod(userId: string, planId: string, email: string, billingMethodId: string) {
+    const existing = await this.entitlementService.getUserEntitlement(userId);
+    if (existing) throw new ActiveSubscriptionExistsException();
+
+    const planDetails = await this.planService.getPlanDetails(planId);
+    if (!planDetails) throw new PlanNotFoundException();
+    if (!planDetails.plan.isActive) throw new PlanNotFoundException();
+
+    const chargeResult = await this.paymentClientService.directCharge({
+      userId,
+      billingMethodId,
+      amount: planDetails.plan.price,
+      currency: planDetails.plan.currency ?? 'KRW',
+      metadata: { planId: planDetails.plan.id, type: 'MEMBERSHIP_FEE', email },
+      idempotencyKey: `membership:subscribe:${userId}:${planId}:${Date.now()}`,
+    });
+
+    if (chargeResult.status === 'FAILED') {
+      throw new SubscriptionBadRequestException('결제에 실패했습니다. 카드 정보를 확인해주세요.');
+    }
+
+    const result = await this.subscriptionCreator.createNewSubscription(
+      userId,
+      planDetails.plan,
+      planDetails.tier,
+      { initialPaymentIntentId: chargeResult.intentId },
+    );
+
+    Promise.all([
+      this.paymentClientService.createBillingAgreement(userId, result.contractId, billingMethodId),
+      this.membershipEventPublisher.publishStatusChanged({
+        userId,
+        email,
+        status: 'ACTIVE',
+        occurredAt: new Date().toISOString(),
+        contractId: result.contractId,
+        planId: planDetails.plan.id,
+        tierId: planDetails.tier.id,
+      }),
+    ]).catch((err: Error) =>
+      this.logger.error(
+        `post-subscribe fire-and-forget 실패 (userId=${userId}): ${err?.message}`,
+        err?.stack,
+      ),
+    );
+
+    return result;
+  }
+
   /**
    * 여러 사용자의 구독 정보 일괄 조회
    *

@@ -83,6 +83,8 @@ import { BillingMethodService } from './billing/billing-method.service';
 import { BillingMethodController } from './billing/billing-method.controller';
 import { BillingAgreementService } from './billing/billing-agreement.service';
 import { BillingAgreementController } from './billing/billing-agreement.controller';
+import { DirectBillingChargeService } from './billing/direct-billing-charge.service';
+import { DirectBillingChargeController } from './billing/direct-billing-charge.controller';
 
 // Checkout
 import { CheckoutSessionService } from './checkout/checkout-session.service';
@@ -368,6 +370,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     TossWebhookController,
     BillingMethodController,
     BillingAgreementController,
+    DirectBillingChargeController,
     CheckoutSessionController,
     CmsAgreementController,
     UgcCommandConsumer,
@@ -438,6 +441,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     // Billing
     BillingMethodService,
     BillingAgreementService,
+    DirectBillingChargeService,
 
     // Checkout
     CheckoutSessionService,

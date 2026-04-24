@@ -5,11 +5,9 @@ import { BillingChargePayload } from '@packages/event-contracts/streams/wallet-c
 import { DomainEvent } from '@packages/event-contracts/types';
 import { DbService } from '@app/db';
 import { randomBytes } from 'node:crypto';
-import { sql } from 'drizzle-orm';
 import {
   WalletSchema,
   paymentIntents,
-  paymentMethods,
   outboxEvents,
   IntentPurpose,
 } from '../schema';
@@ -107,7 +105,7 @@ export class BillingChargeConsumer {
     }
 
     // 4. paymentMethod 레코드 생성 (빌링 결제용)
-    const paymentMethod = await this.findOrCreateBillingPaymentMethod(
+    const paymentMethod = await this.billingMethodService.findOrCreateForBilling(
       agreement.userId,
       providerType,
       billingMethod.id,
@@ -376,48 +374,6 @@ export class BillingChargeConsumer {
         throw handled;
       }
     }
-  }
-
-  // ─── Helpers ────────────────────────────────────────────────────────────────
-
-  /**
-   * 빌링 결제에서 사용할 paymentMethod 레코드를 찾거나 생성.
-   * billingMethod의 providerType을 payment_methods의 type으로 매핑하고
-   * providerData에 billingMethodId를 포함시켜 Provider가 billingKey를 조회할 수 있게 한다.
-   */
-  private async findOrCreateBillingPaymentMethod(
-    userId: string,
-    providerType: string,
-    billingMethodId: string,
-  ) {
-    // 기존에 동일한 billingMethodId로 생성된 paymentMethod가 있으면 재사용
-    const existing = await this.dbService.db
-      .select()
-      .from(paymentMethods)
-      .where(
-        sql`${paymentMethods.userId} = ${userId}
-        AND ${paymentMethods.type} = ${providerType}
-        AND ${paymentMethods.isDeleted} = false
-        AND ${paymentMethods.providerData}->>'billingMethodId' = ${billingMethodId}`,
-      )
-      .limit(1);
-
-    if (existing[0]) return existing[0];
-
-    const rows = await this.dbService.db
-      .insert(paymentMethods)
-      .values({
-        userId,
-        type: providerType as 'TOSS_BILLING' | 'NICEPAY_BILLING' | 'CMS_BATCH',
-        displayName: null,
-        isReusable: true,
-        isDeleted: false,
-        providerData: { billingMethodId },
-      })
-      .returning();
-
-    if (!rows[0]) throw new Error('BILLING_PAYMENT_METHOD_INSERT_FAILED');
-    return rows[0];
   }
 
   /**
