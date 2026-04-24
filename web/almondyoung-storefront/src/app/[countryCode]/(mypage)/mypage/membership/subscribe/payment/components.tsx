@@ -25,11 +25,15 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { HttpApiError } from "@lib/api/api-error"
+import { getBillingMethods } from "@lib/api/wallet"
+import { subscribeWithBillingMethod } from "@lib/api/membership"
 import { cn } from "@lib/utils"
+import { providerLabel } from "@lib/utils/billing-provider"
 import { useUser } from "@/contexts/user-context"
-import { Calendar, Gift } from "lucide-react"
+import type { BillingMethodDto } from "@lib/types/dto/wallet"
+import { Calendar, CreditCard, Gift } from "lucide-react"
 import { useParams, useRouter } from "next/navigation"
-import React, { useState } from "react"
+import React, { useEffect, useState } from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
 import { z } from "zod"
@@ -99,6 +103,7 @@ type MembershipFormProps = {
   existingSubType: SubscriptionType
   availableBenefits: MemberBenefit[]
 }
+
 export function MembershipForm({
   monthlyPlan,
   yearlyPlan,
@@ -110,6 +115,15 @@ export function MembershipForm({
   const countryCode =
     typeof params.countryCode === "string" ? params.countryCode : "kr"
   const { user } = useUser()
+
+  const [billingMethods, setBillingMethods] = useState<BillingMethodDto[]>([])
+  const [selectedBillingMethodId, setSelectedBillingMethodId] = useState<string | null>(null)
+
+  useEffect(() => {
+    getBillingMethods()
+      .then((methods) => setBillingMethods(methods.filter((m) => m.status === "ACTIVE")))
+      .catch(() => {})
+  }, [])
 
   const trialBenefits: MembershipTrialBenefit[] = []
   const discountBenefits: MembershipDiscountBenefit[] = []
@@ -140,7 +154,6 @@ export function MembershipForm({
 
   async function onSubmit(data: z.infer<typeof subscriptionSchema>) {
     try {
-      // 사용자 인증 확인
       if (!user) {
         toast.error("로그인이 필요합니다.")
         return
@@ -150,23 +163,26 @@ export function MembershipForm({
         return
       }
 
-      // 결제는 체크아웃 페이지에서 진행합니다. (HMS 카드 등록은 추후 연동)
-
-      // 2단계: 멤버십 구독 생성
       const selectedPlanId =
         data.subscriptionType === "monthly"
           ? monthlyPlan.plan.id
           : yearlyPlan.plan.id
 
-      toast.success("멤버십 결제 페이지로 이동합니다.")
-      router.push(
-        `/${countryCode}/checkout/membership?planId=${selectedPlanId}`
-      )
+      if (selectedBillingMethodId) {
+        // 기존 카드로 즉시 결제
+        await subscribeWithBillingMethod(selectedPlanId, selectedBillingMethodId)
+        toast.success("멤버십 가입이 완료되었습니다.")
+        router.push(`/${countryCode}/mypage/membership/subscribe/success`)
+      } else {
+        // 신규 카드 등록 → checkout 페이지로 이동
+        toast.success("멤버십 결제 페이지로 이동합니다.")
+        router.push(`/${countryCode}/checkout/membership?planId=${selectedPlanId}`)
+      }
     } catch (error) {
       if (error instanceof HttpApiError) {
         toast.error(error.message)
       } else {
-        toast.error("멤버십 등록에 실패했습니다.")
+        toast.error(error instanceof Error ? error.message : "멤버십 등록에 실패했습니다.")
       }
       console.error(error)
     }
@@ -294,6 +310,63 @@ export function MembershipForm({
               />
             </CardContent>
           </Card>
+
+          {billingMethods.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>결제 수단</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <p className="text-muted-foreground text-sm">
+                  등록된 카드로 바로 결제하거나, 새 카드를 등록할 수 있습니다.
+                </p>
+                {billingMethods.map((method) => (
+                  <div
+                    key={method.id}
+                    onClick={() =>
+                      setSelectedBillingMethodId(
+                        selectedBillingMethodId === method.id ? null : method.id
+                      )
+                    }
+                    className={cn(
+                      "flex cursor-pointer items-center gap-3 rounded-md border-2 p-3 transition-colors",
+                      selectedBillingMethodId === method.id
+                        ? "border-primary bg-primary/5"
+                        : "hover:bg-accent"
+                    )}
+                  >
+                    <CreditCard className="h-5 w-5 shrink-0 text-gray-500" />
+                    <div className="flex flex-1 flex-col gap-0.5">
+                      <p className="text-sm font-semibold">
+                        {method.displayName ?? "등록된 카드"}
+                      </p>
+                      <span className="w-fit rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
+                        {providerLabel(method.providerType)}
+                      </span>
+                    </div>
+                    {selectedBillingMethodId === method.id && (
+                      <span className="text-primary text-xs font-semibold">선택됨</span>
+                    )}
+                  </div>
+                ))}
+                <div
+                  onClick={() => setSelectedBillingMethodId(null)}
+                  className={cn(
+                    "flex cursor-pointer items-center gap-3 rounded-md border-2 p-3 transition-colors",
+                    selectedBillingMethodId === null
+                      ? "border-primary bg-primary/5"
+                      : "hover:bg-accent"
+                  )}
+                >
+                  <CreditCard className="h-5 w-5 shrink-0 text-gray-400" />
+                  <p className="text-sm text-gray-600">새 카드로 결제하기</p>
+                  {selectedBillingMethodId === null && (
+                    <span className="text-primary ml-auto text-xs font-semibold">선택됨</span>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {(totalTrialDays !== 0 || discountCount != 0) && (
             <Card>
@@ -439,7 +512,7 @@ export function MembershipForm({
                   처리중...
                 </span>
               ) : form.watch("agreement") ? (
-                "멤버십 등록하기"
+                selectedBillingMethodId ? "이 카드로 구독하기" : "새 카드로 구독하기"
               ) : (
                 "약관에 동의해주세요"
               )}

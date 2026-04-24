@@ -258,3 +258,22 @@ export async function createMembershipCheckoutIntent(
     )
   }
 }
+
+/**
+ * 기존 billing_method로 즉시 결제 후 구독 생성
+ */
+export async function subscribeWithBillingMethod(
+  planId: string,
+  billingMethodId: string,
+): Promise<{ contractId: string }> {
+  return await api<{ contractId: string }>(
+    "membership",
+    "/subscriptions/subscribe-with-method",
+    {
+      method: "POST",
+      body: { planId, billingMethodId },
+      withAuth: true,
+      cache: "no-store",
+    }
+  )
+}

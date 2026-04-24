@@ -6,7 +6,13 @@ import Image from "next/image"
 import { ChevronDown, ChevronRight, ChevronUp } from "lucide-react"
 import { CustomButton } from "@/components/shared/custom-buttons"
 import { Separator } from "@/components/ui/separator"
-import type { SubscriptionHistoryItemDto } from "@lib/types/dto/membership"
+import { MembershipCancelModal } from "@/domains/membership/components/modal"
+import { cancelSubscription } from "@lib/api/membership"
+import { refreshCartPrices } from "@/lib/api/medusa/cart"
+import type {
+  CancellationReasonDto,
+  SubscriptionHistoryItemDto,
+} from "@lib/types/dto/membership"
 import BenefitDetailSection from "./benefit-detail-section"
 import BenefitOverviewSection from "./benefit-overview-section"
 import MembershipFAQSection from "./membership-faq-section"
@@ -48,111 +54,162 @@ function planLabel(durationDays?: number): string {
   return `${durationDays}일 구독`
 }
 
-interface HistoryCardProps {
-  item: SubscriptionHistoryItemDto
+function pollCartRefreshUntilGroupRemoved(intervalMs = 3_000, maxDurationMs = 30_000): void {
+  const startedAt = Date.now()
+  const poll = () => {
+    setTimeout(async () => {
+      const result = await refreshCartPrices().catch(() => null)
+      if (!result || result.hasMembershipGroup !== true) return
+      if (Date.now() - startedAt < maxDurationMs) poll()
+    }, intervalMs)
+  }
+  poll()
 }
 
-function HistoryCard({ item }: HistoryCardProps) {
+interface HistoryCardProps {
+  item: SubscriptionHistoryItemDto
+  cancellationReasons: CancellationReasonDto[]
+  onCancelled: () => void
+}
+
+function HistoryCard({ item, cancellationReasons, onCancelled }: HistoryCardProps) {
   const [open, setOpen] = useState(false)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [isCancelling, setIsCancelling] = useState(false)
 
   const startDate = item.billingDate ?? item.startDate ?? item.createdAt
   const endDate = item.cancelledAt ?? item.endDate ?? item.nextBillingDate ?? null
+  const canCancel = item.status === "ACTIVE" && item.autoRenewal === true
+
+  const handleCancel = async ({ reasonCode, reasonText }: { reasonCode: string; reasonText?: string }) => {
+    try {
+      setIsCancelling(true)
+      await cancelSubscription(reasonCode, reasonText)
+      setModalOpen(false)
+      pollCartRefreshUntilGroupRemoved()
+      onCancelled()
+    } catch {
+      // 에러는 서버에서 처리
+    } finally {
+      setIsCancelling(false)
+    }
+  }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-gray-100 bg-white">
-      {/* 요약 행 — 클릭으로 상세 토글 */}
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left"
-      >
-        <div className="flex flex-1 flex-col gap-0.5">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-gray-900">
-              {"아몬드영 멤버십"}
+    <>
+      <div className="overflow-hidden rounded-xl border border-gray-100 bg-white">
+        {/* 요약 행 */}
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left"
+        >
+          <div className="flex flex-1 flex-col gap-0.5">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-gray-900">아몬드영 멤버십</span>
+              {item.plan && (
+                <span className="text-xs text-gray-400">{planLabel(item.plan.durationDays)}</span>
+              )}
+            </div>
+            <span className="text-xs text-gray-500">
+              {fmtDate(startDate)}
+              {item.status !== "ACTIVE" && endDate ? ` ~ ${fmtDate(endDate)}` : ""}
             </span>
-            {item.plan && (
-              <span className="text-xs text-gray-400">
-                {planLabel(item.plan.durationDays)}
-              </span>
-            )}
           </div>
-          <span className="text-xs text-gray-500">
-            {fmtDate(startDate)}
-            {item.status !== "ACTIVE" && endDate ? ` ~ ${fmtDate(endDate)}` : ""}
-          </span>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <span
-            className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[item.status] ?? "text-gray-500 bg-gray-100"}`}
-          >
-            {STATUS_LABEL[item.status] ?? item.status}
-          </span>
-          {open ? (
-            <ChevronUp className="h-3.5 w-3.5 text-gray-400" />
-          ) : (
-            <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
-          )}
-        </div>
-      </button>
-
-      {/* 상세 내역 */}
-      {open && (
-        <div className="border-t border-gray-100 bg-gray-50 px-4 py-3 text-xs text-gray-700">
-          <div className="grid grid-cols-2 gap-y-2">
-            <span className="text-gray-400">구독 금액</span>
-            <span className="font-medium text-gray-900">
-              {item.plan ? `${item.plan.price.toLocaleString()}원` : "-"}
+          <div className="flex items-center gap-2 shrink-0">
+            <span
+              className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[item.status] ?? "text-gray-500 bg-gray-100"}`}
+            >
+              {STATUS_LABEL[item.status] ?? item.status}
             </span>
-
-            <span className="text-gray-400">구독 유형</span>
-            <span className="font-medium text-gray-900">
-              {item.plan ? planLabel(item.plan.durationDays) : "-"}
-            </span>
-
-            <span className="text-gray-400">정기결제</span>
-            <span className="font-medium text-gray-900">
-              {item.autoRenewal === undefined ? "-" : item.autoRenewal ? "정기결제" : "일시결제"}
-            </span>
-
-            <span className="text-gray-400">구독 시작일</span>
-            <span className="font-medium text-gray-900">{fmtDate(startDate)}</span>
-
-            {item.status === "ACTIVE" ? (
-              <>
-                <span className="text-gray-400">다음 결제일</span>
-                <span className="font-medium text-gray-900">
-                  {fmtDate(item.nextBillingDate)}
-                </span>
-              </>
+            {open ? (
+              <ChevronUp className="h-3.5 w-3.5 text-gray-400" />
             ) : (
-              <>
-                <span className="text-gray-400">종료일</span>
-                <span className="font-medium text-gray-900">{fmtDate(endDate)}</span>
-              </>
-            )}
-
-            {item.cancelledAt && (
-              <>
-                <span className="text-gray-400">해지일</span>
-                <span className="font-medium text-gray-900">
-                  {fmtDate(item.cancelledAt)}
-                </span>
-              </>
+              <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
             )}
           </div>
-        </div>
-      )}
-    </div>
+        </button>
+
+        {/* 상세 내역 */}
+        {open && (
+          <div className="border-t border-gray-100 bg-gray-50 px-4 py-3">
+            <div className="grid grid-cols-2 gap-y-2 text-xs text-gray-700">
+              <span className="text-gray-400">구독 금액</span>
+              <span className="font-medium text-gray-900">
+                {item.plan ? `${item.plan.price.toLocaleString()}원` : "-"}
+              </span>
+
+              <span className="text-gray-400">구독 유형</span>
+              <span className="font-medium text-gray-900">
+                {item.plan ? planLabel(item.plan.durationDays) : "-"}
+              </span>
+
+              <span className="text-gray-400">정기결제</span>
+              <span className="font-medium text-gray-900">
+                {item.autoRenewal === undefined ? "-" : item.autoRenewal ? "정기결제" : "일시결제"}
+              </span>
+
+              <span className="text-gray-400">구독 시작일</span>
+              <span className="font-medium text-gray-900">{fmtDate(startDate)}</span>
+
+              {item.status === "ACTIVE" ? (
+                <>
+                  <span className="text-gray-400">다음 결제일</span>
+                  <span className="font-medium text-gray-900">{fmtDate(item.nextBillingDate)}</span>
+                </>
+              ) : (
+                <>
+                  <span className="text-gray-400">종료일</span>
+                  <span className="font-medium text-gray-900">{fmtDate(endDate)}</span>
+                </>
+              )}
+
+              {item.cancelledAt && (
+                <>
+                  <span className="text-gray-400">해지일</span>
+                  <span className="font-medium text-gray-900">{fmtDate(item.cancelledAt)}</span>
+                </>
+              )}
+            </div>
+
+            {/* 정기결제 해지 버튼 */}
+            {canCancel && (
+              <div className="mt-3 border-t border-gray-200 pt-3">
+                <p className="mb-2 text-xs text-gray-500">
+                  해지 시 <strong>{fmtDate(item.nextBillingDate)}</strong>까지 서비스를 이용하실 수 있으며,
+                  이후 자동 결제가 중단됩니다.
+                </p>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setModalOpen(true) }}
+                  className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50"
+                >
+                  정기결제 해지하기
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <MembershipCancelModal
+        open={modalOpen}
+        setOpen={setModalOpen}
+        reasons={cancellationReasons}
+        isSubmitting={isCancelling}
+        onConfirm={handleCancel}
+      />
+    </>
   )
 }
 
 interface Props {
   subscriptionHistory: SubscriptionHistoryItemDto[]
   hasCafe24Link: boolean
+  cancellationReasons: CancellationReasonDto[]
 }
 
-export default function NonSubscriberSection({ subscriptionHistory, hasCafe24Link }: Props) {
+export default function NonSubscriberSection({ subscriptionHistory, hasCafe24Link, cancellationReasons }: Props) {
   const router = useRouter()
   const hasHistory = subscriptionHistory.length > 0
   const hasExtra = hasHistory || hasCafe24Link
@@ -170,6 +227,10 @@ export default function NonSubscriberSection({ subscriptionHistory, hasCafe24Lin
     router.push("/kr/mypage/membership/subscribe/payment")
   }
 
+  const handleCancelled = () => {
+    router.refresh()
+  }
+
   return (
     <div className="flex flex-col gap-3">
       {/* 멤버십 이용 기록 */}
@@ -178,7 +239,12 @@ export default function NonSubscriberSection({ subscriptionHistory, hasCafe24Lin
           <h2 className="mb-2 text-sm font-bold text-gray-900">멤버십 이용 기록</h2>
           <div className="flex flex-col gap-2">
             {subscriptionHistory.map((item) => (
-              <HistoryCard key={item.id} item={item} />
+              <HistoryCard
+                key={item.id}
+                item={item}
+                cancellationReasons={cancellationReasons}
+                onCancelled={handleCancelled}
+              />
             ))}
           </div>
         </section>
@@ -228,19 +294,12 @@ export default function NonSubscriberSection({ subscriptionHistory, hasCafe24Lin
               <div className="absolute inset-0 bg-linear-to-b from-transparent via-zinc-900/50 to-zinc-900" />
               <div className="relative z-10 flex flex-col items-center pt-40 pb-10">
                 <div className="mb-6">
-                  <Image
-                    src="/images/logo.webp"
-                    alt="아몬드영 로고"
-                    width={120}
-                    height={80}
-                  />
+                  <Image src="/images/logo.webp" alt="아몬드영 로고" width={120} height={80} />
                 </div>
                 <h1 className="mb-1 text-xl font-bold text-white md:text-2xl">
                   아몬드영 멤버십 서비스
                 </h1>
-                <h2 className="mb-6 text-2xl font-bold text-white md:text-3xl">
-                  GRAND OPEN
-                </h2>
+                <h2 className="mb-6 text-2xl font-bold text-white md:text-3xl">GRAND OPEN</h2>
                 <CustomButton
                   onClick={handleSubscribe}
                   className="mb-4 h-12 w-full max-w-sm cursor-pointer rounded-lg bg-[#f29219] text-base font-semibold text-white hover:bg-[#d98317]"
@@ -248,12 +307,8 @@ export default function NonSubscriberSection({ subscriptionHistory, hasCafe24Lin
                   구독하기
                 </CustomButton>
                 <div className="space-y-1 text-left text-xs text-white/50">
-                  <p>
-                    <span className="text-red-400">* </span>유료 멤버십 월 4,990원 / 연 49,900원
-                  </p>
-                  <p>
-                    <span className="text-red-400">* </span>연간 구독 시 2개월 무료 사용
-                  </p>
+                  <p><span className="text-red-400">* </span>유료 멤버십 월 4,990원 / 연 49,900원</p>
+                  <p><span className="text-red-400">* </span>연간 구독 시 2개월 무료 사용</p>
                 </div>
               </div>
             </section>
