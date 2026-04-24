@@ -6,6 +6,7 @@ import { Pagination } from "../components/pagination"
 import ProductCard from "@/domains/products/components/product-card"
 import { SortOptions } from "../components/refinement-list/sort-products"
 import { getWishlist } from "@lib/api/users/wishlist"
+import { PackageX } from "lucide-react"
 
 const PRODUCT_LIMIT = 12
 
@@ -69,6 +70,20 @@ export default async function PaginatedProducts({
   // 로그인한 경우에만 위시리스트 조회
   const wishlist = customer ? await getWishlist().catch(() => []) : []
   const wishlistIds = new Set(wishlist.map((item) => item.productId))
+
+  if (products.length === 0) {
+    return (
+      <div className="flex min-h-[360px] flex-col items-center justify-center text-center">
+        <PackageX className="mb-4 h-12 w-12 text-gray-300" strokeWidth={1.5} />
+        <p className="text-[15px] font-medium text-gray-700">
+          상품이 없습니다
+        </p>
+        <p className="mt-1.5 text-[13px] text-gray-400">
+          조건에 맞는 상품을 찾을 수 없어요
+        </p>
+      </div>
+    )
+  }
 
   return (
     <>
