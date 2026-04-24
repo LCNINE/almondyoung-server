@@ -76,7 +76,13 @@ export class SubscriptionService {
    *
    * ✅ 흐름만 표현: "기존 구독 확인 → 플랜 조회 → 구독 생성"
    */
-  async createSubscription(userId: string, planId: string, email: string, options: CreateSubscriptionOptions = {}) {
+  async createSubscription(
+    userId: string,
+    planId: string,
+    email: string,
+    options: CreateSubscriptionOptions = {},
+    billingMode: 'one_time' | 'recurring' = 'one_time',
+  ) {
     const existing = await this.entitlementService.getUserEntitlement(userId);
     if (existing) throw new ActiveSubscriptionExistsException();
 
@@ -88,6 +94,7 @@ export class SubscriptionService {
       planDetails.plan,
       planDetails.tier,
       options,
+      billingMode,
     );
 
     // 실패 시 로그만 남기고 구독 생성 자체는 성공으로 처리
@@ -148,6 +155,8 @@ export class SubscriptionService {
     const userId = intent.metadata?.userId;
     const planId = intent.metadata?.planId;
     const email = (intent.metadata?.email as string) ?? '';
+    const rawBillingMode = intent.metadata?.billingMode;
+    const billingMode = rawBillingMode === 'recurring' ? 'recurring' : 'one_time';
 
     if (!userId || !planId) {
       throw new SubscriptionBadRequestException('payment intent metadata에 userId 또는 planId가 없습니다.');
@@ -156,7 +165,7 @@ export class SubscriptionService {
     const result = await this.createSubscription(userId, planId, email, {
       initialPaymentIntentId: intentId,
       initialWalletReferenceId: this.extractWalletReference(intent),
-    });
+    }, billingMode);
 
     this.paymentClientService
       .createBillingAgreement(userId, result.contractId)
@@ -273,7 +282,13 @@ export class SubscriptionService {
    *
    * ✅ 흐름만 표현: "기존 구독 확인 → 플랜 조회 → 즉시 결제 → 구독 생성 → agreement 연결"
    */
-  async subscribeWithBillingMethod(userId: string, planId: string, email: string, billingMethodId: string) {
+  async subscribeWithBillingMethod(
+    userId: string,
+    planId: string,
+    email: string,
+    billingMethodId: string,
+    billingMode: 'one_time' | 'recurring' = 'one_time',
+  ) {
     const existing = await this.entitlementService.getUserEntitlement(userId);
     if (existing) throw new ActiveSubscriptionExistsException();
 
@@ -281,24 +296,28 @@ export class SubscriptionService {
     if (!planDetails) throw new PlanNotFoundException();
     if (!planDetails.plan.isActive) throw new PlanNotFoundException();
 
-    const chargeResult = await this.paymentClientService.directCharge({
-      userId,
-      billingMethodId,
-      amount: planDetails.plan.price,
-      currency: planDetails.plan.currency ?? 'KRW',
-      metadata: { planId: planDetails.plan.id, type: 'MEMBERSHIP_FEE', email },
-      idempotencyKey: `membership:subscribe:${userId}:${planId}:${Date.now()}`,
-    });
-
-    if (chargeResult.status === 'FAILED') {
-      throw new SubscriptionBadRequestException('결제에 실패했습니다. 카드 정보를 확인해주세요.');
+    let initialPaymentIntentId: string | undefined;
+    if (billingMode === 'one_time') {
+      const chargeResult = await this.paymentClientService.directCharge({
+        userId,
+        billingMethodId,
+        amount: planDetails.plan.price,
+        currency: planDetails.plan.currency ?? 'KRW',
+        metadata: { planId: planDetails.plan.id, type: 'MEMBERSHIP_FEE', email },
+        idempotencyKey: `membership:subscribe:${userId}:${planId}:${Date.now()}`,
+      });
+      if (chargeResult.status === 'FAILED') {
+        throw new SubscriptionBadRequestException('결제에 실패했습니다. 카드 정보를 확인해주세요.');
+      }
+      initialPaymentIntentId = chargeResult.intentId;
     }
 
     const result = await this.subscriptionCreator.createNewSubscription(
       userId,
       planDetails.plan,
       planDetails.tier,
-      { initialPaymentIntentId: chargeResult.intentId },
+      { initialPaymentIntentId },
+      billingMode,
     );
 
     Promise.all([

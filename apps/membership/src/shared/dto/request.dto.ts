@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsUUID } from 'class-validator';
+import { IsIn, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { createZodDto } from 'nestjs-zod';
 import {
@@ -63,4 +63,9 @@ export class SubscribeWithMethodRequestDto {
   @ApiProperty({ description: 'Billing method ID to charge' })
   @IsUUID()
   billingMethodId: string;
+
+  @ApiProperty({ description: '결제 방식. recurring=7일 무료체험 후 자동결제, one_time=즉시결제', enum: ['one_time', 'recurring'], default: 'one_time' })
+  @IsOptional()
+  @IsIn(['one_time', 'recurring'])
+  billingMode?: 'one_time' | 'recurring';
 }
