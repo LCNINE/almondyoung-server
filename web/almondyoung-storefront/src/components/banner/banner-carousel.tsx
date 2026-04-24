@@ -108,7 +108,7 @@ export function HeroBannerCarousel({
         className="w-full"
       >
         <CarouselContent className="ml-0">
-          {banners.map((banner, index) => (
+          {banners.map((banner) => (
             <CarouselItem key={banner.id} className="pl-0">
               <div
                 className="relative aspect-(--mobile-ratio) w-full md:aspect-(--pc-ratio)"
