@@ -17,7 +17,6 @@ import {
 } from "@/lib/utils/price-utils"
 import { MobileCTA, PCFixedCTA } from "domains/checkout/components/cta"
 import { MobileHeader, PCHeader } from "domains/checkout/components/header"
-import { MobileOrderSummary } from "domains/checkout/components/order-summary"
 import { PaymentDetailSidebar } from "domains/checkout/components/payment-detail-sidebar"
 import { useParams, useRouter } from "next/navigation"
 import { useCallback, useMemo, useState } from "react"
@@ -248,10 +247,6 @@ export default function CheckoutTemplate({
 
           {/* 오른쪽 섹션 */}
           <div className="lg:shrink-0">
-            <MobileOrderSummary
-              totals={cartTotals}
-              isMembership={isMembership}
-            />
             <PaymentDetailSidebar
               isOpen={isPaymentDetailsOpen}
               setIsOpen={setIsPaymentDetailsOpen}
