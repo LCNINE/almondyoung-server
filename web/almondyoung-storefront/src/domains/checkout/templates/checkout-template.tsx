@@ -283,19 +283,6 @@ export default function CheckoutTemplate({
         totals={cartTotals}
       />
       <MobileCTA onPayment={handlePayment} loading={loading} />
-
-      {/* PIN 등록 필요 모달 */}
-      {/* <PinRequiredModal
-        open={pinRequiredModalOpen}
-        onOpenChange={setPinRequiredModalOpen}
-      /> */}
-
-      {/* PIN 검증 모달 */}
-      {/* <PinVerifyModal
-        open={pinVerifyModalOpen}
-        onOpenChange={setPinVerifyModalOpen}
-        onSuccess={processPayment}
-      /> */}
     </main>
   )
 }
