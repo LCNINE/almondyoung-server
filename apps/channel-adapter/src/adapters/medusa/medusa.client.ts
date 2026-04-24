@@ -149,6 +149,23 @@ export class MedusaClient {
     }
   }
 
+  // PIM 카테고리 ID로 Medusa 카테고리를 역참조.
+  // 생성 시 handle이 slug 또는 pimCategoryId 중 하나로 저장되므로
+  // (1) metadata.pimCategoryId 매칭 → (2) handle = pimCategoryId 매칭 순으로 조회한다.
+  async findCategoryByPimRef(pimCategoryId: string): Promise<HttpTypes.AdminProductCategory | null> {
+    const byMetadata = await this.findCategoryByPimId(pimCategoryId);
+    if (byMetadata?.id) return byMetadata;
+    return this.findCategoryByHandle(pimCategoryId);
+  }
+
+  async softDeleteCategory(medusaCategoryId: string): Promise<void> {
+    await this.sdk.admin.productCategory.update(medusaCategoryId, { is_active: false });
+  }
+
+  invalidateCategoryCacheByHandle(handle: string): void {
+    this.categoryCache.delete(handle);
+  }
+
   private async createCategory(payload: HttpTypes.AdminCreateProductCategory): Promise<HttpTypes.AdminProductCategory> {
     const { product_category } = await this.sdk.admin.productCategory.create(payload);
     if (!product_category) {
