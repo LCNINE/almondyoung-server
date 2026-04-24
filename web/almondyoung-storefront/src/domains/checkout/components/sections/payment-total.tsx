@@ -1,5 +1,6 @@
 "use client"
 
+import { PriceRow } from "@/domains/checkout/components/shared/price-row"
 import { CheckoutMembershipTagIcon } from "@/icons/membership-tag-icon"
 import type { CartTotals } from "@/lib/types/ui/cart"
 import { convertToLocale } from "@/lib/utils/price-utils"
@@ -29,92 +30,87 @@ export const PaymentTotalSection = ({ totals }: PaymentTotalSectionProps) => {
 
       <div className="overflow-hidden rounded-md border border-gray-200 bg-white lg:rounded-[10px]">
         <div className="space-y-3 p-4 lg:p-6">
-          <InfoRow
-            label="상품 금액"
-            value={formatAmount(original_item_subtotal)}
-            dataTestId="cart-subtotal"
-            dataValue={original_item_subtotal}
-          />
+          <PriceRow>
+            <PriceRow.Label size="sm">상품 금액</PriceRow.Label>
+            <PriceRow.Value
+              className="text-[13px] lg:text-sm"
+              data-testid="cart-subtotal"
+              data-value={original_item_subtotal}
+            >
+              {formatAmount(original_item_subtotal)}
+            </PriceRow.Value>
+          </PriceRow>
 
-          <InfoRow
-            label="배송비"
-            value={formatAmount(shipping)}
-            dataTestId="cart-shipping"
-            dataValue={shipping}
-          />
+          <PriceRow>
+            <PriceRow.Label size="sm">배송비</PriceRow.Label>
+            <PriceRow.Value
+              className="text-[13px] lg:text-sm"
+              data-testid="cart-shipping"
+              data-value={shipping}
+            >
+              {formatAmount(shipping)}
+            </PriceRow.Value>
+          </PriceRow>
 
           {membershipDiscount > 0 && (
-            <InfoRow
-              label={
-                <div className="flex items-center gap-1">
-                  <CheckoutMembershipTagIcon />
-                  <span className="text-[10px] font-medium text-[#E08F00] lg:text-xs">
-                    멤버십 할인
-                  </span>
-                </div>
-              }
-              value={`- ${formatAmount(membershipDiscount)}`}
-              dataTestId="cart-discount"
-              dataValue={totalDiscount}
-              isDiscount
-            />
+            <PriceRow>
+              <PriceRow.Label
+                size="xs"
+                tone="membership"
+                weight="medium"
+                className="flex items-center gap-1"
+              >
+                <CheckoutMembershipTagIcon />
+                멤버십 할인
+              </PriceRow.Label>
+              <PriceRow.Value
+                tone="discount"
+                className="text-[13px] lg:text-sm"
+                data-testid="cart-discount"
+                data-value={totalDiscount}
+              >
+                - {formatAmount(membershipDiscount)}
+              </PriceRow.Value>
+            </PriceRow>
           )}
 
           {totalDiscount > 0 && (
-            <InfoRow
-              label={
-                <span className="inline-flex items-baseline gap-1">
-                  할인
-                  <span className="text-[10px] font-normal text-gray-400 lg:text-[11px]">
-                    (쿠폰·기타)
-                  </span>
+            <PriceRow>
+              <PriceRow.Label
+                size="sm"
+                className="inline-flex items-baseline gap-1"
+              >
+                할인
+                <span className="text-[10px] font-normal text-gray-400 lg:text-[11px]">
+                  (쿠폰·기타)
                 </span>
-              }
-              value={`- ${formatAmount(totalDiscount)}`}
-              dataTestId="cart-discount"
-              dataValue={totalDiscount}
-              isDiscount
-            />
+              </PriceRow.Label>
+              <PriceRow.Value
+                tone="discount"
+                className="text-[13px] lg:text-sm"
+                data-testid="cart-discount"
+                data-value={totalDiscount}
+              >
+                - {formatAmount(totalDiscount)}
+              </PriceRow.Value>
+            </PriceRow>
           )}
         </div>
-        <div className="flex items-center justify-between bg-[#FFF7E5]/50 px-4 py-4 lg:px-6">
-          <span className="text-sm font-semibold text-gray-900 lg:text-base">
+        <PriceRow highlight="beige">
+          <PriceRow.Label size="base" weight="semibold">
             총 주문 금액
-          </span>
-          <span
-            className="text-base font-bold text-[#F29219] lg:text-lg"
+          </PriceRow.Label>
+          <PriceRow.Value
+            size="lg"
+            weight="bold"
+            tone="discount"
             data-testid="cart-total"
             data-value={finalTotal}
           >
             {formatAmount(finalTotal)}
-          </span>
-        </div>
+          </PriceRow.Value>
+        </PriceRow>
       </div>
     </section>
   )
 }
-
-const InfoRow = ({
-  label,
-  value,
-  dataTestId,
-  dataValue,
-  isDiscount,
-}: {
-  label: React.ReactNode
-  value: string
-  dataTestId?: string
-  dataValue?: number
-  isDiscount?: boolean
-}) => (
-  <div className="flex items-center justify-between">
-    <span className="text-[12px] text-gray-900 lg:text-sm">{label}</span>
-    <span
-      className={`text-[13px] lg:text-sm ${isDiscount ? "text-[#F29219]" : "text-gray-900"}`}
-      data-testid={dataTestId}
-      data-value={dataValue ?? 0}
-    >
-      {value}
-    </span>
-  </div>
-)

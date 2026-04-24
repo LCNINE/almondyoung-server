@@ -1,4 +1,4 @@
-import { CheckoutMembershipTagIcon } from "@/icons/membership-tag-icon"
+import { PriceRow } from "@/domains/checkout/components/shared/price-row"
 import type { CartTotals } from "@/lib/types/ui/cart"
 import { convertToLocale } from "@/lib/utils/price-utils"
 
@@ -56,45 +56,53 @@ export const PaymentDetailSidebar = ({
       {isOpen && (
         <div className="rounded-[10px] border border-gray-200 bg-white">
           <div className="p-7">
-            <div className="mb-4 flex items-center justify-between">
-              <span className="text-base text-gray-600">상품금액</span>
-              <span className="text-base font-semibold text-gray-900">
+            <PriceRow className="mb-4">
+              <PriceRow.Label size="base" tone="muted">
+                상품금액
+              </PriceRow.Label>
+              <PriceRow.Value size="base" weight="semibold">
                 {formatAmount(original_item_subtotal)}
-              </span>
-            </div>
-            <div className="mb-4 flex items-center justify-between">
-              <span className="text-base text-gray-600">배송비</span>
-              <span className="text-base font-semibold text-gray-900">
+              </PriceRow.Value>
+            </PriceRow>
+            <PriceRow className="mb-4">
+              <PriceRow.Label size="base" tone="muted">
+                배송비
+              </PriceRow.Label>
+              <PriceRow.Value size="base" weight="semibold">
                 {shipping > 0 ? formatAmount(shipping) : "무료"}
-              </span>
-            </div>
+              </PriceRow.Value>
+            </PriceRow>
 
             {membershipDiscount > 0 && (
-              <div className="mb-4 flex items-center justify-between">
-                <span className="text-base text-gray-600">멤버십 할인</span>
-                <span className="text-base font-semibold text-gray-900">
+              <PriceRow className="mb-4">
+                <PriceRow.Label size="base" tone="muted">
+                  멤버십 할인
+                </PriceRow.Label>
+                <PriceRow.Value size="base" weight="semibold">
                   {`-${formatAmount(membershipDiscount)}`}
-                </span>
-              </div>
+                </PriceRow.Value>
+              </PriceRow>
             )}
 
-            {totals.totalDiscount > 0 && (
-              <div className="mb-4 flex items-center justify-between">
-                <span className="text-base text-gray-600">할인</span>
-                <span className="text-base font-semibold text-gray-900">
+            {totalDiscount > 0 && (
+              <PriceRow className="mb-4">
+                <PriceRow.Label size="base" tone="muted">
+                  할인
+                </PriceRow.Label>
+                <PriceRow.Value size="base" weight="semibold">
                   {`-${formatAmount(totalDiscount)}`}
-                </span>
-              </div>
+                </PriceRow.Value>
+              </PriceRow>
             )}
             <hr className="-mx-7 my-4 border-gray-200" />
-            <div className="flex items-center justify-between">
-              <span className="text-lg font-bold text-gray-900">
+            <PriceRow>
+              <PriceRow.Label size="lg" weight="bold">
                 총 결제금액
-              </span>
-              <span className="text-lg font-bold text-[#F29219]">
+              </PriceRow.Label>
+              <PriceRow.Value size="lg" weight="bold" tone="discount">
                 {formatAmount(finalTotal)}
-              </span>
-            </div>
+              </PriceRow.Value>
+            </PriceRow>
           </div>
         </div>
       )}
