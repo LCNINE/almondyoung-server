@@ -15,7 +15,7 @@ import {
 import type { ShippingInfo } from "@/lib/types/ui/cart"
 import type { Promotion } from "@/lib/types/ui/promotion"
 import { formatPrice } from "@/lib/utils/price-utils"
-import { useCallback, useState, useTransition } from "react"
+import { type ReactNode, useCallback, useState, useTransition } from "react"
 import { toast } from "sonner"
 
 interface DiscountSectionProps {
@@ -107,9 +107,8 @@ export const DiscountSection = ({
       </h2>
 
       <div className="flex w-full flex-col gap-5 rounded-md border border-gray-200 bg-white p-4 lg:gap-6 lg:rounded-[10px] lg:p-6">
-        {/* 자동할인 - 총 할인 금액 표시 */}
         <DiscountRow
-          label="자동할인"
+          label="총 할인 금액"
           isMembership={isMembership}
           totalDiscount={totalDiscount}
           membershipDiscount={membershipDiscount}
@@ -198,7 +197,6 @@ export const DiscountSection = ({
             </Select>
           )}
         </div>
-
       </div>
     </section>
   )
@@ -226,47 +224,64 @@ const DiscountRow = ({
   const hasMembershipDiscount = isMembership && membershipDiscount > 0
   const hasDiscount = totalDiscount > 0
   const hasCouponDiscount = couponDiscount > 0
-  const isFreeShipping = shipping.amount === 0
 
   return (
-    <div className="flex items-start justify-between">
-      <div className="flex flex-col gap-1.5">
-        <span className="text-xs font-medium text-gray-900 lg:text-sm">
-          {label}
-        </span>
+    <div className="flex flex-col gap-1.5">
+      <PriceRow
+        label={
+          <span className="text-xs font-medium text-gray-900 lg:text-sm">
+            {label}
+          </span>
+        }
+        amount={
+          <span className="text-sm font-semibold text-gray-900 lg:text-base">
+            {hasDiscount ? `-${formatPrice(totalDiscount)}원` : "0원"}
+          </span>
+        }
+      />
 
-        {isFreeShipping && shipping.description && (
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] font-medium text-[#F29219] lg:text-xs">
-              {shipping.description}
+      {hasMembershipDiscount && (
+        <PriceRow
+          label={
+            <span className="flex items-center gap-1 text-[10px] font-medium text-[#E08F00] lg:text-xs">
+              <CheckoutMembershipTagIcon />
+              멤버십 할인
             </span>
-          </div>
-        )}
-
-        {hasMembershipDiscount && (
-          <div className="flex items-center gap-1">
-            <CheckoutMembershipTagIcon />
+          }
+          amount={
             <span className="text-[10px] font-medium text-[#E08F00] lg:text-xs">
-              멤버십 할인 {formatPrice(membershipDiscount)}원
+              -{formatPrice(membershipDiscount)}원
             </span>
-          </div>
-        )}
+          }
+        />
+      )}
 
-        {hasCouponDiscount && appliedPromotion && (
-          <div className="flex items-center gap-1">
+      {hasCouponDiscount && appliedPromotion && (
+        <PriceRow
+          label={
             <span className="text-[10px] font-medium text-[#F29219] lg:text-xs">
-              쿠폰 할인 {formatPrice(couponDiscount)}원
+              쿠폰 할인
             </span>
-          </div>
-        )}
-
-      </div>
-      <div className="flex flex-col items-end gap-0.5">
-        {/* 총 할인 금액 표시 */}
-        <span className="text-sm font-semibold text-gray-900 lg:text-base">
-          {hasDiscount ? `-${formatPrice(totalDiscount)}원` : "0원"}
-        </span>
-      </div>
+          }
+          amount={
+            <span className="text-[10px] font-medium text-[#F29219] lg:text-xs">
+              -{formatPrice(couponDiscount)}원
+            </span>
+          }
+        />
+      )}
     </div>
   )
 }
+
+interface PriceRowProps {
+  label: ReactNode
+  amount: ReactNode
+}
+
+const PriceRow = ({ label, amount }: PriceRowProps) => (
+  <div className="flex items-center justify-between">
+    {label}
+    {amount}
+  </div>
+)

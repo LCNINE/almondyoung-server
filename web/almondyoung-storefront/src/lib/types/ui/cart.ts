@@ -27,6 +27,7 @@ interface CartItem {
 interface CartTotals {
   currency_code: string
   item_subtotal: number
+  original_item_subtotal: number
   shipping: number
   discount_subtotal: number
   membershipDiscount: number
