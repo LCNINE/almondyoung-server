@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { and, eq } from 'drizzle-orm';
-import { WalletSchema, billingMethods } from '../schema';
+import { sql } from 'drizzle-orm';
+import { WalletSchema, billingMethods, paymentMethods } from '../schema';
 import { BillingMethod } from '../types';
 import { TossApiClient } from '../providers/toss/toss-api.client';
 import { NicepayBillingApiClient, IssueBillingKeyOptions } from '../providers/nicepay/nicepay-billing-api.client';
@@ -159,6 +160,36 @@ export class BillingMethodService {
       .where(eq(billingMethods.id, id))
       .limit(1);
     return rows[0];
+  }
+
+  async findOrCreateForBilling(userId: string, providerType: string, billingMethodId: string) {
+    const [existing] = await this.dbService.db
+      .select()
+      .from(paymentMethods)
+      .where(
+        sql`${paymentMethods.userId} = ${userId}
+        AND ${paymentMethods.type} = ${providerType}
+        AND ${paymentMethods.isDeleted} = false
+        AND ${paymentMethods.providerData}->>'billingMethodId' = ${billingMethodId}`,
+      )
+      .limit(1);
+
+    if (existing) return existing;
+
+    const [row] = await this.dbService.db
+      .insert(paymentMethods)
+      .values({
+        userId,
+        type: providerType as 'TOSS_BILLING' | 'NICEPAY_BILLING' | 'CMS_BATCH',
+        displayName: null,
+        isReusable: true,
+        isDeleted: false,
+        providerData: { billingMethodId },
+      })
+      .returning();
+
+    if (!row) throw new Error('BILLING_PAYMENT_METHOD_INSERT_FAILED');
+    return row;
   }
 
   async handleBillingDeletedWebhook(billingKey: string): Promise<void> {

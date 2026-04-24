@@ -47,6 +47,7 @@ import {
   UpgradeSubscriptionRequestDto,
   DowngradeSubscriptionRequestDto,
   CancelSubscriptionRequestDto,
+  SubscribeWithMethodRequestDto,
 } from '../shared/dto/request.dto';
 import { ZodValidationPipe } from '../shared/pipes/zod-validation.pipe';
 import { FastifyRequest } from 'fastify';
@@ -367,6 +368,34 @@ export class SubscriptionController {
   @UseGuards(JwtAuthGuard) // 🚨 임시 가드 사용
   async getSubscriptionHistory(@User('userId') userId: string) {
     return this.subscriptionService.getSubscriptionHistory(userId);
+  }
+
+  /**
+   * 기존 결제수단으로 즉시 구독
+   */
+  @Post('subscribe-with-method')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: '기존 결제수단으로 구독',
+    description: '이미 등록된 billing_method로 즉시 결제 후 구독을 생성합니다.',
+  })
+  @UseGuards(JwtAuthGuard)
+  async subscribeWithMethod(
+    @User() user: { userId: string; email?: string },
+    @Body() body: SubscribeWithMethodRequestDto,
+  ) {
+    const userId = user?.userId;
+    const email = user?.email ?? '';
+    if (!userId) throw new BadRequestException('userId가 필요합니다');
+    try {
+      return await this.subscriptionService.subscribeWithBillingMethod(userId, body.planId, email, body.billingMethodId);
+    } catch (e: any) {
+      const msg = (e?.message ?? '').toLowerCase();
+      if (msg.includes('already') || msg.includes('exists')) throw new BadRequestException(e.message);
+      if (msg.includes('not found') || msg.includes('plan')) throw new NotFoundException(e.message);
+      if (msg.includes('결제에 실패')) throw new BadRequestException(e.message);
+      throw new InternalServerErrorException(e.message);
+    }
   }
 
   /**
