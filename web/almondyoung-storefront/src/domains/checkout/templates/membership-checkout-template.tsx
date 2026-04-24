@@ -37,7 +37,7 @@ export default function MembershipCheckoutTemplate({
 
   const [loading, setLoading] = useState(false)
   const [isPaymentDetailsOpen, setIsPaymentDetailsOpen] = useState(true)
-  const [billingMode, setBillingMode] = useState<BillingMode>("one_time")
+  const [billingMode, setBillingMode] = useState<BillingMode>("recurring")
   const [agreed, setAgreed] = useState(false)
 
   const totals: CartTotals = useMemo(
