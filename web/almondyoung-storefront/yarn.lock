@@ -7023,6 +7023,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"embla-carousel-fade@npm:^8.6.0":
+  version: 8.6.0
+  resolution: "embla-carousel-fade@npm:8.6.0"
+  peerDependencies:
+    embla-carousel: 8.6.0
+  checksum: 62a5ddc9a51dcbb4071301e8df15de641c782cb19f94891871db89169ba66cdd39358be69f8b2a0cd186ddfacfbce8240b96ffca92cd99d8b1d7a9292903cea8
+  languageName: node
+  linkType: hard
+
 "embla-carousel-react@npm:^8.6.0":
   version: 8.6.0
   resolution: "embla-carousel-react@npm:8.6.0"
@@ -9734,6 +9743,7 @@ __metadata:
     date-fns: ^4.1.0
     embla-carousel: ^8.6.0
     embla-carousel-autoplay: ^8.6.0
+    embla-carousel-fade: ^8.6.0
     embla-carousel-react: ^8.6.0
     eslint: ^8.57.1
     eslint-config-next: 15.0.3

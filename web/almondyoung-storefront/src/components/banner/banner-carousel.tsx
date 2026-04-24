@@ -5,6 +5,7 @@ import Link from "next/link"
 import Image from "next/image"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import Autoplay from "embla-carousel-autoplay"
+import Fade from "embla-carousel-fade"
 
 import { Banner } from "@/lib/types/ui/pim"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
@@ -102,6 +103,7 @@ export function HeroBannerCarousel({
             stopOnInteraction: false,
             stopOnMouseEnter: true,
           }),
+          Fade(),
         ]}
         className="w-full"
       >
