@@ -10,6 +10,7 @@ import { skuGroupsClient } from '../../api/domains/inventory/sku-groups.client';
 import { warehousesClient } from '../../api/domains/inventory/warehouses.client';
 import { transfersClient } from '../../api/domains/inventory/transfers.client';
 import { reservationsClient } from '../../api/domains/inventory/reservations.client';
+import { stocktakingClient } from '../../api/domains/inventory/stocktaking.client';
 import type {
   AdjustStockDto,
   CreateSkuDto,
@@ -22,6 +23,11 @@ import type {
   BulkAddSkusToGroupDto,
   CreateTransferJobDto,
   MoveWithinWarehouseDto,
+  CreateStocktakingSessionRequest,
+  ScanLocationRequest,
+  ScanProductRequest,
+  UpdateLineCountRequest,
+  GenerateAdjustmentsRequest,
 } from '../../types/dto/inventory';
 
 export const useAdjustStock = () => {
@@ -271,6 +277,79 @@ export const useMoveWithinWarehouse = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory', 'transfers'] });
       queryClient.invalidateQueries({ queryKey: ['stocks', 'summary'] });
+    },
+  });
+};
+
+// 재고 실사 관련 mutations
+export const useCreateStocktakingSession = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreateStocktakingSessionRequest) =>
+      stocktakingClient.createSession(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory', 'stocktaking', 'sessions'] });
+    },
+  });
+};
+
+export const useStartStocktakingSession = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => stocktakingClient.startSession(id),
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: ['inventory', 'stocktaking', 'sessions'] });
+      queryClient.invalidateQueries({
+        queryKey: inventoryQueryKeys.stocktakingSession(id),
+      });
+    },
+  });
+};
+
+export const useScanLocation = () => {
+  return useMutation({
+    mutationFn: (data: ScanLocationRequest) => stocktakingClient.scanLocation(data),
+  });
+};
+
+export const useScanProduct = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: ScanProductRequest) => stocktakingClient.scanProduct(data),
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({
+        queryKey: inventoryQueryKeys.stocktakingVariances(vars.sessionId),
+      });
+    },
+  });
+};
+
+export const useUpdateLineCount = () => {
+  return useMutation({
+    mutationFn: ({ lineId, data }: { lineId: string; data: UpdateLineCountRequest }) =>
+      stocktakingClient.updateLineCount(lineId, data),
+  });
+};
+
+export const useGenerateAdjustments = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ sessionId, data }: { sessionId: string; data?: GenerateAdjustmentsRequest }) =>
+      stocktakingClient.generateAdjustments(sessionId, data),
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({
+        queryKey: inventoryQueryKeys.stocktakingVariances(vars.sessionId),
+      });
+    },
+  });
+};
+
+export const useCompleteStocktakingSession = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => stocktakingClient.completeSession(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory', 'stocktaking', 'sessions'] });
     },
   });
 };

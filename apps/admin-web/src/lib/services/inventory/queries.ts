@@ -10,11 +10,13 @@ import { skuGroupsClient } from '../../api/domains/inventory/sku-groups.client';
 import { warehousesClient } from '../../api/domains/inventory/warehouses.client';
 import { transfersClient } from '../../api/domains/inventory/transfers.client';
 import { reservationsClient } from '../../api/domains/inventory/reservations.client';
+import { stocktakingClient } from '../../api/domains/inventory/stocktaking.client';
 import type {
   StockSummaryQuery,
   StockHistoryQuery,
   TransferJobQuery,
   ReservationTargetType,
+  StocktakingSessionQuery,
 } from '../../types/dto/inventory';
 
 export const useStocks = (query = {}) => {
@@ -341,5 +343,23 @@ export const useReservationSummary = (warehouseId: string) => {
     queryKey: inventoryQueryKeys.reservationSummary(warehouseId),
     queryFn: () => reservationsClient.getReservationSummary(warehouseId),
     enabled: !!warehouseId,
+  });
+};
+
+// 재고 실사 관련 쿼리
+// NOTE: GET /stocktaking/sessions 목록 조회 엔드포인트가 서버에 미구현 — 빈 배열로 대체
+export const useStocktakingSessions = (_query: StocktakingSessionQuery = {}) => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.stocktakingSessions(_query),
+    queryFn: (): Promise<{ sessions: never[]; total: number }> =>
+      Promise.resolve({ sessions: [], total: 0 }),
+  });
+};
+
+export const useStocktakingVariances = (sessionId: string) => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.stocktakingVariances(sessionId),
+    queryFn: () => stocktakingClient.getVariances(sessionId),
+    enabled: !!sessionId,
   });
 };
