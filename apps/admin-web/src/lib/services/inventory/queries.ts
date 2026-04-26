@@ -6,6 +6,7 @@ import { inventoryQueryKeys } from './query-keys';
 import { inventoryMatchingClient } from '../../api/domains/inventory';
 import { stocksClient } from '../../api/domains/inventory/stocks.client';
 import { skusClient } from '../../api/domains/inventory/skus.client';
+import { skuGroupsClient } from '../../api/domains/inventory/sku-groups.client';
 import { warehousesClient } from '../../api/domains/inventory/warehouses.client';
 import type { StockSummaryQuery, StockHistoryQuery } from '../../types/dto/inventory';
 
@@ -86,6 +87,38 @@ export const useSkusByIds = (ids: string[]) => {
     queryKey: ['skus', 'by-ids', ids],
     queryFn: () => Promise.resolve([]),
     enabled: ids.length > 0,
+  });
+};
+
+// SKU 그룹 관련 쿼리
+export const useSkuGroups = () => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.skuGroups,
+    queryFn: () => skuGroupsClient.getSkuGroups(),
+    staleTime: 5 * 60 * 1000,
+  });
+};
+
+export const useSkuGroup = (id: string) => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.skuGroup(id),
+    queryFn: () => skuGroupsClient.getSkuGroup(id),
+    enabled: !!id,
+  });
+};
+
+export const useSkuGroupMembers = (id: string) => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.skuGroupMembers(id),
+    queryFn: () => skuGroupsClient.getSkuGroupMembers(id),
+    enabled: !!id,
+  });
+};
+
+export const useUngroupedSkus = (params?: { limit?: number; offset?: number }) => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.ungroupedSkus(params),
+    queryFn: () => skuGroupsClient.getUngroupedSkus(params),
   });
 };
 
