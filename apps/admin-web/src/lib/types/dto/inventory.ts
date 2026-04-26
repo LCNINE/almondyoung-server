@@ -62,8 +62,80 @@ export interface SkuWarehouseStockDto {
 export interface BarcodeDto {
   id: string;
   barcode: string;
-  barcodeType: string;
-  packingUnit?: string;
+  isPrimary: boolean;
+  packingUnit?: string | null;
+}
+
+export interface SupplierInfoDto {
+  id: string;
+  name: string;
+}
+
+export interface SkuImageDto {
+  id: string;
+  url: string;
+  sortOrder: number;
+}
+
+export interface SkuGroupDto {
+  id: string;
+  name: string;
+  code: string;
+  description: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SkuGroupResponseDto extends SkuGroupDto {
+  memberCount: number;
+}
+
+export interface SkuGroupMemberDto {
+  id: string;
+  name: string;
+  code: string;
+  safetyStock: number;
+  primaryLocationId?: string | null;
+}
+
+export interface SkuGroupMembersResponseDto {
+  groupId: string;
+  groupName: string;
+  totalMembers: number;
+  members: SkuGroupMemberDto[];
+}
+
+export interface BulkAddResultItemDto {
+  skuId: string;
+  success: boolean;
+  error?: string;
+}
+
+export interface BulkAddSkusResponseDto {
+  success: boolean;
+  totalCount: number;
+  successCount: number;
+  failedCount: number;
+  results: BulkAddResultItemDto[];
+}
+
+export interface CreateSkuGroupDto {
+  name: string;
+  code?: string;
+  description?: string;
+}
+
+export interface UpdateSkuGroupDto {
+  name?: string;
+  description?: string;
+}
+
+export interface AddSkuToGroupDto {
+  skuId: string;
+}
+
+export interface BulkAddSkusToGroupDto {
+  skuIds: string[];
 }
 
 export interface InventoryMasterDto {
@@ -72,24 +144,51 @@ export interface InventoryMasterDto {
 }
 
 export interface CreateSkuDto {
-  masterId?: string;
-  masterName?: string;
+  skuGroupId?: string;
+  holderId?: string;
   name: string;
-  optionKey?: Record<string, string>;
-  source: 'auto_matching' | 'manual_matching' | 'manual_entry';
-  productName?: string;
-  variantName?: string;
+  optionKey?: string;
+  source?: 'auto_matching' | 'manual_matching' | 'manual_entry';
   deliveryProfileId?: string;
+  stockType?: 'physical' | 'infinite' | 'drop_shipped' | 'consignment';
   sale1m?: number;
   sale3m?: number;
+  safetyStock?: number;
   supplierIds?: string[];
   categoryIds?: string[];
-  barcodes?: Array<{
-    barcode: string;
-    barcodeType: string;
-    packingUnit?: string;
-  }>;
+  businessProductName?: string;
+  importDeclarationNumber?: string;
+  logisticsPartnerId?: string;
+  discount?: string;
+  manufacturerStar?: string;
+  productWeight?: number;
+  dimensionWidth?: number;
+  dimensionHeight?: number;
+  dimensionDepth?: number;
+  productMaterial?: string;
+  koreanName?: string;
+  maxDiscountQuantity?: number;
+  packagingImporterName?: string;
+  productDescription?: string;
+  moq?: number;
+  memo2?: string;
+  memo3?: string;
+  mainImageUrl?: string;
+  imageUploadIds?: string[];
+  currentStock?: number;
+  expiryDateManagement?: boolean;
+  expiryStartDate?: string;
+  expiryEndDate?: string;
+  manufacturingDateManagement?: boolean;
+  isGeneralInventory?: boolean;
+  validityStartDate?: string;
+  validityEndDate?: string;
+  primaryLocationId?: string;
+  secondaryLocationId?: string;
+  variantGroupCode?: string;
 }
+
+export type UpdateSkuDto = Partial<Omit<CreateSkuDto, 'source'>>;
 
 export interface SkuDto {
   id: string;
@@ -99,9 +198,6 @@ export interface SkuDto {
   deliveryProfileId?: string;
   sale1m?: number;
   sale3m?: number;
-  masterId?: string;
-  optionKey?: Record<string, string>;
-  master?: Record<string, any>;
   barcodes: BarcodeDto[];
   supplierNames?: string[];
   categoryNames?: string[];
@@ -270,34 +366,60 @@ export interface StockHistoryDto {
   orderId?: string;
 }
 
-export interface UpdateSkuDto {
-  name?: string;
-  description?: string;
-  barcode?: string;
-  isActive?: boolean;
-}
-
 export interface SkuResponseDto {
   id: string;
   name: string;
   code: string;
-  defaultBarcode?: string;
-  deliveryProfileId?: string;
-  sale1m?: number;
-  sale3m?: number;
-  masterId?: string;
-  optionKey?: Record<string, string>;
-  master?: Record<string, any>;
+  deliveryProfileId?: string | null;
+  stockType: 'physical' | 'infinite' | 'drop_shipped' | 'consignment';
+  sale1m?: number | null;
+  sale3m?: number | null;
+  safetyStock: number;
+  groupId?: string | null;
+  optionKey?: string | null;
+  skuGroup?: SkuGroupDto | null;
   barcodes: BarcodeDto[];
-  supplierNames?: string[];
-  categoryNames?: string[];
+  suppliers: SupplierInfoDto[];
+  categoryNames: string[];
+  businessProductName?: string | null;
+  importDeclarationNumber?: string | null;
+  logisticsPartnerId?: string | null;
+  discount?: string | null;
+  manufacturerStar?: string | null;
+  productWeight?: number | null;
+  dimensionWidth?: number | null;
+  dimensionHeight?: number | null;
+  dimensionDepth?: number | null;
+  productMaterial?: string | null;
+  koreanName?: string | null;
+  maxDiscountQuantity?: number | null;
+  packagingImporterName?: string | null;
+  productDescription?: string | null;
+  moq?: number | null;
+  memo2?: string | null;
+  memo3?: string | null;
+  mainImageUrl?: string | null;
+  images?: SkuImageDto[];
+  currentStock?: number | null;
+  expiryDateManagement: boolean;
+  expiryStartDate?: string | null;
+  expiryEndDate?: string | null;
+  manufacturingDateManagement: boolean;
+  isGeneralInventory: boolean;
+  validityStartDate?: string | null;
+  validityEndDate?: string | null;
+  primaryLocationId?: string | null;
+  secondaryLocationId?: string | null;
+  variantGroupCode?: string | null;
+  isDeleted: boolean;
+  deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface AddBarcodeDto {
   barcode: string;
-  isPrimary?: boolean;
+  packingUnit?: number;
 }
 
 export interface SkuStockSummaryDto {
@@ -362,7 +484,9 @@ export interface SkuQuery {
   barcode?: string;
   name?: string;
   supplierName?: string;
-  masterId?: string;
+  groupId?: string;
+  limit?: number;
+  offset?: number;
 }
 
 export interface WarehousesResponseDto {

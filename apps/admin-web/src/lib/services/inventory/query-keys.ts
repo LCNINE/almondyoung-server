@@ -62,4 +62,11 @@ export const inventoryQueryKeys = {
     limit: number = 10
   ) => ['holders', 'search', query, isOurAsset, page, limit] as const,
   holder: (id: string) => ['holders', id] as const,
+
+  // SKU 그룹 관련
+  skuGroups: ['inventory', 'sku-groups'] as const,
+  skuGroup: (id: string) => ['inventory', 'sku-groups', id] as const,
+  skuGroupMembers: (id: string) => ['inventory', 'sku-groups', id, 'members'] as const,
+  ungroupedSkus: (params?: { limit?: number; offset?: number }) =>
+    ['inventory', 'sku-groups', 'ungrouped', params] as const,
 } as const;

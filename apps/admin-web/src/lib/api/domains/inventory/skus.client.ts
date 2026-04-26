@@ -8,6 +8,7 @@ import type {
   UpdateSkuDto,
   SkuResponseDto,
   AddBarcodeDto,
+  BarcodeDto,
   SkuStockSummaryDto,
   SkuQuery,
 } from '../../../types/dto/inventory';
@@ -36,7 +37,7 @@ export const createSku = async (
 // SKU 검색
 export const getSkus = async (
   query: SkuQuery = {}
-): Promise<SkuResponseDto[]> => {
+): Promise<{ items: SkuResponseDto[]; total: number; limit: number; offset: number }> => {
   const response = await client.get(
     `${ALMONDYOUNG_API_BASE_URL}/inventory/skus?${buildQueryString(query as Record<string, unknown>)}`
   );
@@ -74,11 +75,12 @@ export const deleteSku = async (id: string): Promise<void> => {
 export const addBarcode = async (
   id: string,
   data: AddBarcodeDto
-): Promise<void> => {
-  await client.post(
+): Promise<BarcodeDto> => {
+  const response = await client.post(
     `${ALMONDYOUNG_API_BASE_URL}/inventory/skus/${encodeURIComponent(id)}/barcodes`,
     data
   );
+  return response.data;
 };
 
 // 바코드 제거

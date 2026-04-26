@@ -192,6 +192,16 @@ export const mainMenus: MainMenu[] = [
         path: '/inventory/status',
       },
       {
+        id: 'inventory-skus',
+        title: 'SKU 마스터 관리',
+        path: '/inventory/skus',
+      },
+      {
+        id: 'inventory-sku-groups',
+        title: 'SKU 그룹 관리',
+        path: '/inventory/sku-groups',
+      },
+      {
         id: 'product-registration',
         title: '상품 등록',
         path: '/inventory/product-registration',
