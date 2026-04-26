@@ -11,7 +11,7 @@ import { useVariantsBatch } from '@/lib/services/products';
 import type { BatchVariantInfo } from '@/lib/api/domains/products/variants.client';
 import { SalesChannelMark, type SalesChannelType } from '@/components/common/sales-channel-mark';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useResolveMatching } from '@/lib/services/orders';
+import { useResolveMatching } from '@/lib/services/matching';
 import { RefreshCw } from 'lucide-react';
 
 interface MatchingTableProps {

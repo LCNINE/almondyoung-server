@@ -3,6 +3,37 @@
 
 import type { UUID } from './common';
 
+// ===== 매칭 타입 re-export (lib/types/dto/matching.ts로 이전됨) =====
+export type {
+  MatchingStatus,
+  MatchingStrategy,
+  MatchingPriority,
+  StockPolicyDto,
+  SkuMappingDto,
+  OptionMappingDto,
+  ResolveMatchingDto,
+  ResolveOptionMatchingDto,
+  SetMatchingPriorityDto,
+  ChangeStrategyDto,
+  SelectedOptionDto,
+  VariantSkuLookupDto,
+  MatchingDto,
+  MatchingsQuery,
+  MatchingsResponseDto,
+  OrderLineMatchedSku,
+  OrderLineDto,
+  OrderLinesResponseDto,
+  OrderLinesQuery,
+  VariantMatchingDto,
+  VariantSkuLookupResponseDto,
+  ResolveMatchingResponseDto,
+  SetMatchingPriorityResponseDto,
+  ChangeStrategyResponseDto,
+  UpdateStockPolicyResponseDto,
+  UpsertMatchingDto,
+  MasterMatchingStatsDto,
+} from './matching';
+
 // ===== 공통 타입 =====
 /** WMS 실제 enum 값과 일치 */
 export type SalesOrderStatus =
@@ -21,225 +52,6 @@ export type PurchaseOrderStatus =
   | 'delivered'
   | 'canceled';
 export type InvoiceStatus = 'created' | 'shipped' | 'canceled';
-
-// ===== 매칭 관련 (WMS API 스펙 기반) =====
-
-// 매칭 상태
-export type MatchingStatus = 'pending' | 'matched' | 'ignored';
-export type MatchingStrategy = 'void' | 'variant' | 'option';
-export type MatchingPriority = 'normal' | 'high';
-
-// 재고 정책
-export interface StockPolicyDto {
-  inventoryManagement: boolean; // 재고 관리 여부 (true: 물리적 재고, false: 디지털)
-  preStockSellable: boolean; // 재고 0이어도 선판매 가능 여부
-  alwaysSellableZeroStock: boolean; // 재고 0이어도 항상 판매 가능 (직배/신상품)
-}
-
-// SKU 매핑
-export interface SkuMappingDto {
-  skuId: string; // SKU ID
-  quantity: number; // 수량 (최소 1, 기본값 1)
-}
-
-// 옵션 매핑
-export interface OptionMappingDto {
-  optionName: string; // 옵션 이름 (예: CPU, RAM)
-  optionValue: string; // 옵션 값 (예: i7, 16GB)
-  skuId: string; // 매칭될 SKU ID
-}
-
-// 매칭 해소 요청
-export interface ResolveMatchingDto {
-  skuIds?: string[]; // 매칭될 SKU ID 목록 (matched 상태일 경우 최소 하나 이상의 UUID 필수)
-  skuMappings?: SkuMappingDto[]; // 매칭될 SKU와 수량 정보 목록 (수동 매칭 시 수량 지정 필요한 경우)
-  ignore: boolean; // 매칭을 무시할지 여부 (true인 경우 ignored 상태로 전환)
-  strategy: MatchingStrategy; // 매칭 전략 (기본값: variant)
-  stockPolicy: StockPolicyDto; // 재고 정책 설정
-  isGift: boolean; // 사은품 여부 (기본값: false)
-}
-
-// 옵션별 매칭 해소
-export interface ResolveOptionMatchingDto {
-  optionMappings: OptionMappingDto[]; // 옵션별 SKU 매핑 목록
-}
-
-// 매칭 우선순위 설정
-export interface SetMatchingPriorityDto {
-  priority: MatchingPriority; // 매칭 우선순위
-}
-
-// 매칭 전략 변경
-export interface ChangeStrategyDto {
-  strategy: MatchingStrategy; // 변경할 매칭 전략
-}
-
-// 선택된 옵션
-export interface SelectedOptionDto {
-  optionName: string; // 옵션 이름
-  optionValue: string; // 선택된 옵션 값
-}
-
-// Variant SKU 조회
-export interface VariantSkuLookupDto {
-  selectedOptions?: SelectedOptionDto[]; // 선택된 옵션 목록 (옵션별 매칭인 경우 필수)
-}
-
-// 매칭 대기 목록 조회 응답
-export interface MatchingDto {
-  id: string; // 매칭 ID
-  variantId: string; // Variant ID
-  status: MatchingStatus; // 매칭 상태
-  priority: MatchingPriority; // 우선순위
-  strategy: MatchingStrategy; // 매칭 전략
-  stockPolicy: StockPolicyDto; // 재고 정책
-  isGift: boolean; // 사은품 여부
-  orderCount?: number; // 관련 주문 수
-  createdAt: string; // 생성일시
-  updatedAt: string; // 수정일시
-
-  // include-order 옵션으로 조인된 주문 정보
-  order?: {
-    id: string;
-    salesOrderId: string;
-    salesChannel: string;
-    channelOrderId: string;
-    productName: string;
-    optionName?: string;
-    quantity: number;
-    salesAmount: number;
-    recipient: string;
-    orderDate: string;
-    shippingAddress?: string;
-    customerName?: string;
-    customerEmail?: string;
-    customerPhone?: string;
-  };
-
-  // 매칭된 SKU 정보 (matched 상태일 때)
-  matchedSkus?: SkuMappingDto[];
-
-  // Variant 정보
-  variant?: {
-    id: string;
-    name: string;
-    masterId: string;
-    optionKey?: Record<string, string>;
-  };
-
-  // Master 정보
-  master?: {
-    id: string;
-    name: string;
-  };
-}
-
-// 매칭 목록 조회 쿼리
-export interface MatchingsQuery {
-  status?: MatchingStatus; // 매칭 상태 필터
-  limit?: number;
-  offset?: number;
-}
-
-// 매칭 목록 응답
-export interface MatchingsResponseDto {
-  data: MatchingDto[];
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-  hasNext: boolean;
-  hasPrev: boolean;
-}
-
-// ===== 주문 라인 매칭 현황 =====
-
-export interface OrderLineMatchedSku {
-  skuId: string;
-  skuName: string;
-  skuCode?: string;
-  quantity: number;
-}
-
-// 주문 라인 하나 + 매칭 상태
-export interface OrderLineDto {
-  id: string;                        // sales_order_lines.id
-  variantId: string;
-  productName: string;               // 채널 상품명
-  quantity: number;
-  unitPrice?: number;
-  totalPrice?: number;
-  salesOrderId: string;
-  channelOrderId: string;
-  salesChannel: string;
-  customerName?: string;
-  customerPhone?: string;
-  orderDate: string;
-  matchingId?: string;               // product_matchings.id (null이면 PIM 미등록)
-  matchingStatus?: MatchingStatus;   // null이면 PIM 미등록
-  matchedSkus: OrderLineMatchedSku[];
-}
-
-export interface OrderLinesResponseDto {
-  data: OrderLineDto[];
-  total: number;
-  page: number;
-  limit: number;
-}
-
-export interface OrderLinesQuery {
-  matchingStatus?: MatchingStatus | 'unregistered';
-  excludeMatched?: boolean;
-  salesChannel?: string;
-  startDate?: string;
-  endDate?: string;
-  keyword?: string;
-  keywordType?: 'productName' | 'orderNumber' | 'customerName';
-  limit?: number;
-  offset?: number;
-}
-
-// Variant별 매칭 조회
-export interface VariantMatchingDto {
-  variantId: string;
-  status: MatchingStatus;
-  stockPolicy: StockPolicyDto;
-  isGift: boolean;
-  matchedSkus?: SkuMappingDto[];
-  createdAt: string;
-  updatedAt: string;
-}
-
-// Variant SKU 조회 응답
-export interface VariantSkuLookupResponseDto {
-  skuId: string;
-  quantity: number;
-}
-
-// 매칭 해소 응답
-export interface ResolveMatchingResponseDto {
-  id: string;
-  status: MatchingStatus;
-  message: string;
-}
-
-// 매칭 우선순위 설정 응답
-export interface SetMatchingPriorityResponseDto {
-  id: string;
-  priority: MatchingPriority;
-}
-
-// 매칭 전략 변경 응답
-export interface ChangeStrategyResponseDto {
-  id: string;
-  strategy: MatchingStrategy;
-}
-
-// 재고 정책 업데이트 응답
-export interface UpdateStockPolicyResponseDto {
-  id: string;
-  stockPolicy: StockPolicyDto;
-}
 
 // ===== 판매 주문 =====
 export interface SalesOrderItemDto {

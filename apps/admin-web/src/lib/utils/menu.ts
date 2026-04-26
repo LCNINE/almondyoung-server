@@ -202,6 +202,11 @@ export const mainMenus: MainMenu[] = [
         path: '/inventory/sku-groups',
       },
       {
+        id: 'product-matching',
+        title: '상품 매칭',
+        path: '/matching/products',
+      },
+      {
         id: 'product-registration',
         title: '상품 등록',
         path: '/inventory/product-registration',

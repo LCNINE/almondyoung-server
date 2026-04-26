@@ -32,24 +32,10 @@ export {
   useFulfillmentMetrics,
   useConfirmSalesOrder,
 
-  // 매칭 관련 쿼리 (WMS API 스펙 기반)
-  useMatchings,
-  useMatching,
-  useVariantMatching,
-  useVariantStockPolicy,
-  useVariantSkuLookup,
-  usePendingMatchings,
-  useMatchedMatchings,
-  useIgnoredMatchings,
-  useMatchingsWithOrders,
-  useOrderLines,
-
-  // 기존 매칭 관련 (호환성)
   useProductMatchings,
   useProductMatching,
   useProductSkuMappings,
   useProductSkuMapping,
-  useVariantSkuMapping,
 } from './queries';
 
 // 뮤테이션 훅들
@@ -61,16 +47,44 @@ export {
   useUpdateOutboundBatch,
   useDeleteOutboundBatch,
 
-  // 매칭 관련 뮤테이션 (WMS API 스펙 기반)
+} from './mutations';
+
+// 데이터 변환 함수들 (주문 전용)
+export * from './transformers';
+
+// 매칭 관련 — lib/services/matching 으로 이전됨. 하위 호환을 위해 re-export 유지.
+export {
+  matchingQueryKeys,
+  useMatchings,
+  useMatching,
+  useVariantMatching,
+  useVariantStockPolicy,
+  useVariantSkuLookup,
+  usePendingMatchings,
+  useMatchedMatchings,
+  useIgnoredMatchings,
+  useMatchingsWithOrders,
+  useOrderLines,
+  useMastersBatchStats,
+  useVariantSkuMapping,
   useResolveMatching,
   useResolveOptionMatching,
   useSetMatchingPriority,
   useChangeMatchingStrategy,
   useUpdateMatchingStockPolicy,
   useUpdateVariantMatching,
+  useUpsertVariantMatching,
   useIgnoreMatching,
   useCompleteMatching,
-} from './mutations';
-
-// 데이터 변환 함수들
-export * from './transformers';
+  getMatchingStatusLabel,
+  getMatchingStrategyLabel,
+  getPriorityLabel,
+  getSalesChannelLabel,
+  transformMatchingForTable,
+  transformMatchingsForTable,
+  createDefaultStockPolicy,
+  createDefaultResolveMatching,
+  getMatchingStatusColor,
+  getPriorityColor,
+  getSalesChannelColor,
+} from '@/lib/services/matching';

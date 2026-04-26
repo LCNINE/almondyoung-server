@@ -18,7 +18,7 @@ import {
 } from '@/components/common';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { OrderLineDto } from '@/lib/types/dto/orders';
-import { useResolveMatching } from '@/lib/services/orders';
+import { useResolveMatching } from '@/lib/services/matching';
 import { useCreateChannelProduct } from '@/lib/services/products';
 import { useSkus } from '@/lib/services/inventory';
 import { Search, Trash2, Link2, X, Loader2 } from 'lucide-react';
