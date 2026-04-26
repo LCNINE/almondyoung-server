@@ -3,10 +3,22 @@
 // 브라우저(클라이언트)는 Next.js 프록시 라우트(/api/proxy/*)를 통해 호출합니다.
 const isServer = typeof window === 'undefined';
 
+const ALMONDYOUNG_API_BASE_URL = isServer
+  ? (process.env.ALMONDYOUNG_API_URL ?? 'http://localhost:3000')
+  : '/proxy/api';
+
+/**
+ * @deprecated 통합 서버 이전 후 사용. 새 코드는 ALMONDYOUNG_API_BASE_URL 사용.
+ * Phase 1 마이그레이션 완료 시 제거됨 (PR #5-1).
+ */
 const PIM_BASE_URL = isServer
   ? (process.env.PIM_SERVICE_URL ?? 'http://localhost:3020')
   : '/proxy/pim';
 
+/**
+ * @deprecated 통합 서버 이전 후 사용. 새 코드는 ALMONDYOUNG_API_BASE_URL 사용.
+ * Phase 1 마이그레이션 완료 시 제거됨 (PR #5-1).
+ */
 const WMS_BASE_URL = isServer
   ? (process.env.WMS_SERVICE_URL ?? 'http://localhost:3010')
   : '/proxy/wms';
@@ -44,6 +56,7 @@ const MEDUSA_BASE_URL = isServer
   : '/proxy/medusa';
 
 export {
+  ALMONDYOUNG_API_BASE_URL,
   PIM_BASE_URL,
   WMS_BASE_URL,
   USER_SERVICE_BASE_URL,
