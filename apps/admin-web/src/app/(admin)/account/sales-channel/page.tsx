@@ -1,13 +1,12 @@
-/** @format */
-
-// src/app/(admin)/account/sales-channel/page.tsx
 import RouteGuard from '@/components/layout/route-guard';
-import SalesChannelPageClient from './SalesChannelPageClient';
+import SalesChannelTemplate from '@/features/account-management/sales-channel/template';
 
 export default function SalesChannelPage() {
   return (
     <RouteGuard requireRole={['admin', 'master']}>
-      <SalesChannelPageClient />
+      <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
+        <SalesChannelTemplate />
+      </div>
     </RouteGuard>
   );
 }

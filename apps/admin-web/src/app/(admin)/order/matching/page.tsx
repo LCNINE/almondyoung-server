@@ -1,18 +1,12 @@
-// src/app/(admin)/order/matching/page.tsx
-// 주문 매칭 페이지
-
-import { FilterProvider } from '@/features/order/matching/contexts/filter.context';
-import MatchingTemplate from '@/features/order/matching/template/Matching';
 import RouteGuard from '@/components/layout/route-guard';
+import MatchingTemplate from '@/features/order/matching/template';
 
 export default function OrderMatchingPage() {
   return (
-    // <RouteGuard
-    //   requireRole={['admin', 'master']}
-    // >
-    <FilterProvider>
-      <MatchingTemplate />
-    </FilterProvider>
-    // </RouteGuard>
+    <RouteGuard requireRole={['admin', 'master']}>
+      <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
+        <MatchingTemplate />
+      </div>
+    </RouteGuard>
   );
 }
