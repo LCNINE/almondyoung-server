@@ -8,7 +8,14 @@ import { stocksClient } from '../../api/domains/inventory/stocks.client';
 import { skusClient } from '../../api/domains/inventory/skus.client';
 import { skuGroupsClient } from '../../api/domains/inventory/sku-groups.client';
 import { warehousesClient } from '../../api/domains/inventory/warehouses.client';
-import type { StockSummaryQuery, StockHistoryQuery } from '../../types/dto/inventory';
+import { transfersClient } from '../../api/domains/inventory/transfers.client';
+import { reservationsClient } from '../../api/domains/inventory/reservations.client';
+import type {
+  StockSummaryQuery,
+  StockHistoryQuery,
+  TransferJobQuery,
+  ReservationTargetType,
+} from '../../types/dto/inventory';
 
 export const useStocks = (query = {}) => {
   return useQuery({
@@ -282,5 +289,57 @@ export const useHolder = (id: string) => {
     queryKey: inventoryQueryKeys.holder(id),
     queryFn: () => inventoryMatchingClient.holders.get(id),
     enabled: !!id,
+  });
+};
+
+// 재고 이동 관련 쿼리
+export const useTransferJobs = (query: TransferJobQuery = {}) => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.transferJobs(query),
+    queryFn: () => transfersClient.listTransferJobs(query),
+  });
+};
+
+export const useTransferJob = (id: string) => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.transferJob(id),
+    queryFn: () => transfersClient.getTransferJob(id),
+    enabled: !!id,
+  });
+};
+
+export const useTransferJobStatus = (id: string) => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.transferJobStatus(id),
+    queryFn: () => transfersClient.getTransferJobStatus(id),
+    enabled: !!id,
+  });
+};
+
+// 재고 예약 관련 쿼리
+export const useReservationsBySku = (skuId: string, warehouseId?: string) => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.reservationsBySku(skuId, warehouseId),
+    queryFn: () => reservationsClient.getReservationsBySku(skuId, warehouseId),
+    enabled: !!skuId,
+  });
+};
+
+export const useReservationsByTarget = (
+  targetType: ReservationTargetType,
+  targetId: string
+) => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.reservationsByTarget(targetType, targetId),
+    queryFn: () => reservationsClient.getReservationsByTarget(targetType, targetId),
+    enabled: !!targetType && !!targetId,
+  });
+};
+
+export const useReservationSummary = (warehouseId: string) => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.reservationSummary(warehouseId),
+    queryFn: () => reservationsClient.getReservationSummary(warehouseId),
+    enabled: !!warehouseId,
   });
 };
