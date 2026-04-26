@@ -762,3 +762,120 @@ export interface ExpireStaleReservationsResponseDto {
   releasedCount: number;
   message: string;
 }
+
+// ===== 재고 실사 (Stocktaking) =====
+export type StocktakingSessionStatus = 'draft' | 'in_progress' | 'completed';
+
+export interface StocktakingSessionDto {
+  id: string;
+  warehouseId: string;
+  sessionName: string;
+  notes?: string | null;
+  status: StocktakingSessionStatus;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StocktakingVarianceDto {
+  lineId: string;
+  locationCode: string | null;
+  skuName: string;
+  skuCode: string;
+  expectedQuantity: number;
+  countedQuantity: number | null;
+  variance: number | null;
+  discrepancyPercent: number;
+}
+
+export interface CreateStocktakingSessionRequest {
+  warehouseId: string;
+  sessionName: string;
+  notes?: string;
+}
+
+export interface StartStocktakingSessionResponse {
+  sessionId: string;
+  status: 'in_progress';
+  message: string;
+}
+
+export interface ScanLocationRequest {
+  sessionId: string;
+  locationBarcode: string;
+}
+
+export interface ScanLocationExpectedItem {
+  skuId: string;
+  skuName: string;
+  skuCode: string;
+  barcode: string | null;
+  expectedQuantity: number;
+}
+
+export interface ScanLocationResponse {
+  locationId: string;
+  locationCode: string;
+  expectedItems: ScanLocationExpectedItem[];
+}
+
+export interface ScanProductRequest {
+  sessionId: string;
+  locationId: string;
+  productBarcode: string;
+  quantity?: number;
+}
+
+export interface ScanProductResponse {
+  lineId: string;
+  skuId: string;
+  countedQuantity: number;
+  expectedQuantity: number;
+  variance: number;
+}
+
+export interface UpdateLineCountRequest {
+  countedQuantity: number;
+  notes?: string;
+}
+
+export interface UpdateLineCountResponse {
+  lineId: string;
+  countedQuantity: number;
+  expectedQuantity: number;
+  variance: number;
+}
+
+export interface GenerateAdjustmentsRequest {
+  lineIds?: string[];
+}
+
+export interface GenerateAdjustmentsResponse {
+  adjustmentsCreated: number;
+  eventsPosted: number;
+  message: string;
+}
+
+export interface CompleteStocktakingSessionResponse {
+  sessionId: string;
+  status: 'completed';
+  completedAt: string;
+  summary: {
+    totalLines: number;
+    discrepanciesFound: number;
+    adjustmentsApplied: number;
+  };
+}
+
+export interface StocktakingSessionQuery {
+  warehouseId?: string;
+  status?: StocktakingSessionStatus;
+  limit?: number;
+  offset?: number;
+}
+
+export interface StocktakingSessionListResponse {
+  sessions: StocktakingSessionDto[];
+  total: number;
+}

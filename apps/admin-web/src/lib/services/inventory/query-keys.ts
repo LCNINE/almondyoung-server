@@ -1,7 +1,13 @@
 // src/lib/services/inventory/query-keys.ts
 // 재고 관련 쿼리 키 팩토리
 
-import type { StockSummaryQuery, StockHistoryQuery, TransferJobQuery, ReservationTargetType } from '../../types/dto/inventory';
+import type {
+  StockSummaryQuery,
+  StockHistoryQuery,
+  TransferJobQuery,
+  ReservationTargetType,
+  StocktakingSessionQuery,
+} from '../../types/dto/inventory';
 
 export const inventoryQueryKeys = {
   // 재고 관련
@@ -82,4 +88,11 @@ export const inventoryQueryKeys = {
     ['inventory', 'reservations', 'by-target', targetType, targetId] as const,
   reservationSummary: (warehouseId: string) =>
     ['inventory', 'reservations', 'summary', warehouseId] as const,
+
+  // 재고 실사 관련
+  stocktakingSessions: (query?: StocktakingSessionQuery) =>
+    ['inventory', 'stocktaking', 'sessions', query] as const,
+  stocktakingSession: (id: string) => ['inventory', 'stocktaking', 'sessions', id] as const,
+  stocktakingVariances: (sessionId: string) =>
+    ['inventory', 'stocktaking', 'sessions', sessionId, 'variances'] as const,
 } as const;

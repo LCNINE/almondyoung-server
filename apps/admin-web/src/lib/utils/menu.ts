@@ -212,6 +212,11 @@ export const mainMenus: MainMenu[] = [
         path: '/inventory/reservations',
       },
       {
+        id: 'inventory-stocktaking',
+        title: '재고 실사',
+        path: '/inventory/stocktaking',
+      },
+      {
         id: 'product-matching',
         title: '상품 매칭',
         path: '/matching/products',
