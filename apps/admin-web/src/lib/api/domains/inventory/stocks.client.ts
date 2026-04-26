@@ -6,6 +6,7 @@ import { client } from '../../client';
 import type {
   StockDto,
   StockSummaryDto,
+  StockSummariesResponseDto,
   SkuTotalStockDto,
   SkuWarehouseStockDto,
   AdjustStockDto,
@@ -38,7 +39,7 @@ export const getStocks = async (
 // 재고 현황 요약 조회
 export const getStockSummary = async (
   query: StockSummaryQuery = {}
-): Promise<StockSummaryDto[]> => {
+): Promise<StockSummariesResponseDto> => {
   const response = await client.get(
     `${ALMONDYOUNG_API_BASE_URL}/inventory/stocks/summary?${buildQueryString(query as Record<string, unknown>)}`
   );

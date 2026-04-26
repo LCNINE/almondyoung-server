@@ -4,84 +4,83 @@
 import { useQuery } from '@tanstack/react-query';
 import { inventoryQueryKeys } from './query-keys';
 import { inventoryMatchingClient } from '../../api/domains/inventory';
+import { stocksClient } from '../../api/domains/inventory/stocks.client';
+import { skusClient } from '../../api/domains/inventory/skus.client';
+import { warehousesClient } from '../../api/domains/inventory/warehouses.client';
+import type { StockSummaryQuery, StockHistoryQuery } from '../../types/dto/inventory';
 
-// 재고 관련 쿼리 (임시 구현)
-export const useStocks = () => {
+export const useStocks = (query = {}) => {
   return useQuery({
-    queryKey: inventoryQueryKeys.stocks,
-    queryFn: () => Promise.resolve([]),
+    queryKey: [inventoryQueryKeys.stocks, query],
+    queryFn: () => stocksClient.getStocks(query),
   });
 };
 
-export const useStockSummary = () => {
+export const useStockSummary = (query: StockSummaryQuery = {}) => {
   return useQuery({
-    queryKey: inventoryQueryKeys.stockSummary,
-    queryFn: () => Promise.resolve({ total: 0, available: 0 }),
+    queryKey: inventoryQueryKeys.stockSummary(query),
+    queryFn: () => stocksClient.getStockSummary(query),
   });
 };
 
-export const useSkuTotalStock = (sku: string) => {
+export const useSkuTotalStock = (skuId: string) => {
   return useQuery({
-    queryKey: inventoryQueryKeys.skuTotalStock(sku),
-    queryFn: () => Promise.resolve({ sku, total: 0 }),
-    enabled: !!sku,
+    queryKey: inventoryQueryKeys.skuTotalStock(skuId),
+    queryFn: () => stocksClient.getSkuTotalStock(skuId),
+    enabled: !!skuId,
   });
 };
 
-export const useSkuWarehouseStock = (sku: string, warehouseId: string) => {
+export const useSkuWarehouseStock = (skuId: string, warehouseId: string) => {
   return useQuery({
-    queryKey: inventoryQueryKeys.skuWarehouseStock(sku, warehouseId),
-    queryFn: () => Promise.resolve({ sku, warehouseId, quantity: 0 }),
-    enabled: !!sku && !!warehouseId,
+    queryKey: inventoryQueryKeys.skuWarehouseStock(skuId, warehouseId),
+    queryFn: () => stocksClient.getSkuWarehouseStock(skuId, warehouseId),
+    enabled: !!skuId && !!warehouseId,
   });
 };
 
-export const useStockHistory = (sku: string) => {
+export const useStockHistory = (query: StockHistoryQuery) => {
   return useQuery({
-    queryKey: inventoryQueryKeys.stockHistory(sku),
-    queryFn: () => Promise.resolve([]),
-    enabled: !!sku,
+    queryKey: inventoryQueryKeys.stockHistory(query),
+    queryFn: () => stocksClient.getStockHistory(query),
+    enabled: !!query.skuId,
   });
 };
 
 // SKU 관련 쿼리
-export const useSkus = (query?: any) => {
+export const useSkus = (query?: Parameters<typeof skusClient.getSkus>[0]) => {
   return useQuery({
     queryKey: inventoryQueryKeys.skus(query),
-    queryFn: () => inventoryMatchingClient.skus.getSkus(query),
-    staleTime: 2 * 60 * 1000, // 2분
+    queryFn: () => skusClient.getSkus(query),
+    staleTime: 2 * 60 * 1000,
   });
 };
 
 export const useSkuSearch = (searchQuery: string, page = 1, limit = 10) => {
   return useQuery({
     queryKey: inventoryQueryKeys.skuSearch(searchQuery, page, limit),
-    queryFn: () =>
-      inventoryMatchingClient.skus.getSkus({
-        name: searchQuery,
-      }),
+    queryFn: () => skusClient.getSkus({ name: searchQuery }),
     enabled: !!searchQuery && searchQuery.length > 0,
-    staleTime: 2 * 60 * 1000, // 2분
+    staleTime: 2 * 60 * 1000,
   });
 };
 
 export const useSku = (id: string) => {
   return useQuery({
     queryKey: inventoryQueryKeys.sku(id),
-    queryFn: () => Promise.resolve({ id }),
+    queryFn: () => skusClient.getSku(id),
     enabled: !!id,
   });
 };
 
-export const useSkuStockSummary = (sku: string) => {
+export const useSkuStockSummary = (skuId: string) => {
   return useQuery({
-    queryKey: inventoryQueryKeys.skuStockSummary(sku),
-    queryFn: () => Promise.resolve({ sku, summary: [] }),
-    enabled: !!sku,
+    queryKey: inventoryQueryKeys.skuStockSummary(skuId),
+    queryFn: () => skusClient.getSkuStockSummary(skuId),
+    enabled: !!skuId,
   });
 };
 
-// SKU ID로 조회하는 함수 (기존 코드에서 사용)
 export const useSkusByIds = (ids: string[]) => {
   return useQuery({
     queryKey: ['skus', 'by-ids', ids],
@@ -90,18 +89,19 @@ export const useSkusByIds = (ids: string[]) => {
   });
 };
 
-// 창고 관련 쿼리 (임시 구현)
+// 창고 관련 쿼리
 export const useWarehouses = () => {
   return useQuery({
     queryKey: inventoryQueryKeys.warehouses,
-    queryFn: () => inventoryMatchingClient.warehouses.list(),
+    queryFn: () => warehousesClient.getWarehouses(),
+    staleTime: 5 * 60 * 1000,
   });
 };
 
 export const useWarehouse = (id: string) => {
   return useQuery({
     queryKey: inventoryQueryKeys.warehouse(id),
-    queryFn: () => Promise.resolve({ id }),
+    queryFn: () => warehousesClient.getWarehouse(id),
     enabled: !!id,
   });
 };
@@ -109,12 +109,12 @@ export const useWarehouse = (id: string) => {
 export const useWarehouseStockSummary = (warehouseId: string) => {
   return useQuery({
     queryKey: inventoryQueryKeys.warehouseStockSummary(warehouseId),
-    queryFn: () => Promise.resolve({ warehouseId, summary: [] }),
+    queryFn: () => warehousesClient.getWarehouseStockSummary(warehouseId),
     enabled: !!warehouseId,
   });
 };
 
-// 입고 관련 쿼리 (임시 구현)
+// 입고 관련 쿼리 (미구현 — Phase 4)
 export const useInbounds = () => {
   return useQuery({
     queryKey: inventoryQueryKeys.inbounds,
@@ -138,7 +138,7 @@ export const useInboundItems = (inboundId: string) => {
   });
 };
 
-// 검수 관련 쿼리 (임시 구현)
+// 검수 관련 쿼리 (미구현 — Phase 4)
 export const useInspections = () => {
   return useQuery({
     queryKey: inventoryQueryKeys.inspections,
@@ -154,7 +154,7 @@ export const useInspection = (id: string) => {
   });
 };
 
-// 이동 관련 쿼리 (임시 구현)
+// 이동 관련 쿼리 (미구현 — Phase 4)
 export const useMovements = () => {
   return useQuery({
     queryKey: inventoryQueryKeys.movements,
@@ -170,7 +170,7 @@ export const useMovement = (id: string) => {
   });
 };
 
-// 통합 관련 쿼리 (임시 구현)
+// 통합 관련 쿼리 (미구현 — Phase 4)
 export const useConsolidations = () => {
   return useQuery({
     queryKey: inventoryQueryKeys.consolidations,
@@ -183,7 +183,7 @@ export const useInventoryMatchings = () => {
   return useQuery({
     queryKey: inventoryQueryKeys.inventoryMatchings(),
     queryFn: () => inventoryMatchingClient.matchings.list(),
-    staleTime: 2 * 60 * 1000, // 2분
+    staleTime: 2 * 60 * 1000,
   });
 };
 
@@ -196,11 +196,11 @@ export const useInventoryMatching = (id: string) => {
 };
 
 // 공급처 관련 쿼리
-export const useSuppliers = (query?: any) => {
+export const useSuppliers = (query?: Parameters<typeof inventoryMatchingClient.suppliers.list>[0]) => {
   return useQuery({
     queryKey: inventoryQueryKeys.suppliers(query),
     queryFn: () => inventoryMatchingClient.suppliers.list(query),
-    staleTime: 5 * 60 * 1000, // 5분
+    staleTime: 5 * 60 * 1000,
   });
 };
 
@@ -209,7 +209,7 @@ export const useSupplierSearch = (query: string, page = 1, limit = 10) => {
     queryKey: inventoryQueryKeys.supplierSearch(query, page, limit),
     queryFn: () => inventoryMatchingClient.suppliers.search(query, page, limit),
     enabled: !!query && query.length > 0,
-    staleTime: 2 * 60 * 1000, // 2분
+    staleTime: 2 * 60 * 1000,
   });
 };
 
@@ -222,11 +222,11 @@ export const useSupplier = (id: string) => {
 };
 
 // 재고소유 관련 쿼리
-export const useHolders = (query?: any) => {
+export const useHolders = (query?: Parameters<typeof inventoryMatchingClient.holders.list>[0]) => {
   return useQuery({
     queryKey: inventoryQueryKeys.holders(query),
     queryFn: () => inventoryMatchingClient.holders.list(query),
-    staleTime: 5 * 60 * 1000, // 5분
+    staleTime: 5 * 60 * 1000,
   });
 };
 
@@ -238,10 +238,9 @@ export const useHolderSearch = (
 ) => {
   return useQuery({
     queryKey: inventoryQueryKeys.holderSearch(query, isOurAsset, page, limit),
-    queryFn: () =>
-      inventoryMatchingClient.holders.search(query, isOurAsset, page, limit),
+    queryFn: () => inventoryMatchingClient.holders.search(query, isOurAsset, page, limit),
     enabled: !!query && query.length > 0,
-    staleTime: 2 * 60 * 1000, // 2분
+    staleTime: 2 * 60 * 1000,
   });
 };
 
