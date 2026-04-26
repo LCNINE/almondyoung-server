@@ -2,7 +2,11 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { Container } from '@/components/admin-ui-experimental/common/container/container';
+import { Header } from '@/components/admin-ui-experimental/common/header/header';
+import { Button } from '@/components/ui/button';
 import { useMatchingFilter } from '../contexts/filter.context';
+import { FilterProvider } from '../contexts/filter.context';
 import { useOrderLines } from '@/lib/services/orders';
 import { FilterBox } from '../components/filter-box';
 import { MatchingTable } from '../components/table';
@@ -16,19 +20,18 @@ const CATEGORY_TO_CHANNEL: Record<string, string> = {
   phone_order: '3pl',
 };
 
-// keywordType 매핑 (filter context → server param)
 const KEYWORD_TYPE_MAP: Record<string, 'productName' | 'orderNumber' | 'customerName'> = {
   sellerProductName: 'productName',
   orderNumber: 'orderNumber',
   customerName: 'customerName',
 };
 
-export default function MatchingTemplate() {
+const LIMIT = 50;
+
+function MatchingContent() {
   const { appliedFilters } = useMatchingFilter();
   const [offset, setOffset] = useState(0);
-  const limit = 50;
 
-  // appliedFilters가 바뀌면 페이지 초기화
   useEffect(() => {
     setOffset(0);
   }, [appliedFilters]);
@@ -60,7 +63,7 @@ export default function MatchingTemplate() {
       keywordType: appliedFilters.keyword
         ? KEYWORD_TYPE_MAP[appliedFilters.keywordType]
         : undefined,
-      limit,
+      limit: LIMIT,
       offset,
     };
   }, [appliedFilters, offset]);
@@ -68,56 +71,63 @@ export default function MatchingTemplate() {
   const { data: response, isLoading, error } = useOrderLines(serverQuery);
 
   const lines = response?.data ?? [];
-
   const pendingCount = lines.filter(
     (l) => !l.matchingStatus || l.matchingStatus === 'pending',
   ).length;
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold">매칭체크</h1>
-        <button className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-md">
-          전부 새로 매칭하기
-        </button>
-      </div>
-
+    <div>
       <FilterBox />
 
-      <div className="bg-gray-50 p-4 rounded-lg">
-        <h2 className="text-lg font-semibold">
+      <div className="px-4 py-3">
+        <p className="text-sm font-semibold text-muted-foreground">
           매칭대기 {response ? pendingCount : '-'}건
-        </h2>
+        </p>
       </div>
 
-      <MatchingTable
-        data={lines}
-        isLoading={isLoading}
-        error={error as Error | null}
-      />
+      <MatchingTable data={lines} isLoading={isLoading} error={error as Error | null} />
 
-      {/* 페이지네이션 */}
-      {response && response.total > limit && (
-        <div className="flex justify-center gap-2">
-          <button
-            className="px-4 py-2 border rounded disabled:opacity-40"
+      {response && response.total > LIMIT && (
+        <div className="flex items-center justify-center gap-2 p-4">
+          <Button
+            variant="outline"
+            size="sm"
             disabled={offset === 0}
-            onClick={() => setOffset(Math.max(0, offset - limit))}
+            onClick={() => setOffset(Math.max(0, offset - LIMIT))}
           >
             이전
-          </button>
-          <span className="px-4 py-2 text-sm text-gray-600">
-            {Math.floor(offset / limit) + 1} / {Math.ceil(response.total / limit)}
+          </Button>
+          <span className="text-sm text-muted-foreground">
+            {Math.floor(offset / LIMIT) + 1} / {Math.ceil(response.total / LIMIT)}
           </span>
-          <button
-            className="px-4 py-2 border rounded disabled:opacity-40"
-            disabled={offset + limit >= response.total}
-            onClick={() => setOffset(offset + limit)}
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={offset + LIMIT >= response.total}
+            onClick={() => setOffset(offset + LIMIT)}
           >
             다음
-          </button>
+          </Button>
         </div>
       )}
     </div>
+  );
+}
+
+export default function MatchingTemplate() {
+  return (
+    <FilterProvider>
+      <Container className="divide-y-0">
+        <Header
+          title="매칭체크"
+          right={
+            <Button variant="default" size="sm" className="bg-orange-500 hover:bg-orange-600">
+              전부 새로 매칭하기
+            </Button>
+          }
+        />
+        <MatchingContent />
+      </Container>
+    </FilterProvider>
   );
 }
