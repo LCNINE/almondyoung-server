@@ -1,7 +1,7 @@
 // src/lib/api/domains/inventory/warehouses.client.ts
 // 창고 관련 API 클라이언트
 
-import { WMS_BASE_URL } from '@/const';
+import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import { client } from '../../client';
 import type {
   CreateWarehouseDto,
@@ -15,7 +15,7 @@ export const createWarehouse = async (
   data: CreateWarehouseDto
 ): Promise<WarehouseDto> => {
   const response = await client.post(
-    `${WMS_BASE_URL}/wms/inventory/warehouses`,
+    `${ALMONDYOUNG_API_BASE_URL}/inventory/warehouses`,
     data
   );
   return response.data;
@@ -23,14 +23,14 @@ export const createWarehouse = async (
 
 // 모든 창고 목록 조회
 export const getWarehouses = async (): Promise<WarehouseDto[]> => {
-  const response = await client.get(`${WMS_BASE_URL}/wms/inventory/warehouses`);
+  const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/inventory/warehouses`);
   return response.data;
 };
 
 // 특정 창고 조회
 export const getWarehouse = async (id: string): Promise<WarehouseDto> => {
   const response = await client.get(
-    `${WMS_BASE_URL}/wms/inventory/warehouses/${encodeURIComponent(id)}`
+    `${ALMONDYOUNG_API_BASE_URL}/inventory/warehouses/${encodeURIComponent(id)}`
   );
   return response.data;
 };
@@ -41,7 +41,7 @@ export const updateWarehouse = async (
   data: UpdateWarehouseDto
 ): Promise<WarehouseDto> => {
   const response = await client.patch(
-    `${WMS_BASE_URL}/wms/inventory/warehouses/${encodeURIComponent(id)}`,
+    `${ALMONDYOUNG_API_BASE_URL}/inventory/warehouses/${encodeURIComponent(id)}`,
     data
   );
   return response.data;
@@ -50,7 +50,7 @@ export const updateWarehouse = async (
 // 창고 삭제
 export const deleteWarehouse = async (id: string): Promise<void> => {
   await client.delete(
-    `${WMS_BASE_URL}/wms/inventory/warehouses/${encodeURIComponent(id)}`
+    `${ALMONDYOUNG_API_BASE_URL}/inventory/warehouses/${encodeURIComponent(id)}`
   );
 };
 
@@ -59,7 +59,7 @@ export const getWarehouseStockSummary = async (
   id: string
 ): Promise<WarehouseStockSummaryDto> => {
   const response = await client.get(
-    `${WMS_BASE_URL}/wms/inventory/warehouses/${encodeURIComponent(id)}/summary`
+    `${ALMONDYOUNG_API_BASE_URL}/inventory/warehouses/${encodeURIComponent(id)}/summary`
   );
   return response.data;
 };

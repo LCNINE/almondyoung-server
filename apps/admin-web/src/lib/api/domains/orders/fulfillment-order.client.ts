@@ -10,7 +10,7 @@ import type {
   AllocateInventoryDto,
   AllocateInventoryResponse,
 } from '../../../types/dto/orders';
-import { WMS_BASE_URL } from '@/const';
+import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import { client } from '../../client';
 
 export const fulfillmentOrder = {
@@ -19,7 +19,7 @@ export const fulfillmentOrder = {
     data: CreateFulfillmentOrderDto
   ): Promise<CreateFulfillmentOrderResponse> => {
     const response = await client.post(
-      `${WMS_BASE_URL}/wms/fulfillment-orders`,
+      `${ALMONDYOUNG_API_BASE_URL}/fulfillment-orders`,
       data
     );
     return response.data;
@@ -28,7 +28,7 @@ export const fulfillmentOrder = {
   // Fulfillment Order 삭제
   delete: async (id: string): Promise<DeleteFulfillmentOrderResponse> => {
     const response = await client.delete(
-      `${WMS_BASE_URL}/wms/fulfillment-orders/${encodeURIComponent(id)}`
+      `${ALMONDYOUNG_API_BASE_URL}/fulfillment-orders/${encodeURIComponent(id)}`
     );
     return response.data;
   },
@@ -39,7 +39,7 @@ export const fulfillmentOrder = {
     data: UpdatePriorityDto
   ): Promise<UpdatePriorityResponse> => {
     const response = await client.put(
-      `${WMS_BASE_URL}/wms/fulfillment-orders/${encodeURIComponent(
+      `${ALMONDYOUNG_API_BASE_URL}/fulfillment-orders/${encodeURIComponent(
         id
       )}/priority`,
       data
@@ -53,7 +53,7 @@ export const fulfillmentOrder = {
     data: AllocateInventoryDto
   ): Promise<AllocateInventoryResponse> => {
     const response = await client.post(
-      `${WMS_BASE_URL}/wms/fulfillment-orders/${encodeURIComponent(
+      `${ALMONDYOUNG_API_BASE_URL}/fulfillment-orders/${encodeURIComponent(
         id
       )}/allocate`,
       data

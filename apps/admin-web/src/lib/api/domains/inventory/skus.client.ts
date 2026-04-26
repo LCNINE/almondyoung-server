@@ -1,7 +1,7 @@
 // src/lib/api/domains/inventory/skus.client.ts
 // SKU 관련 API 클라이언트
 
-import { WMS_BASE_URL } from '@/const';
+import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import { client } from '../../client';
 import type {
   CreateSkuDto,
@@ -27,7 +27,7 @@ export const createSku = async (
   data: CreateSkuDto
 ): Promise<SkuResponseDto> => {
   const response = await client.post(
-    `${WMS_BASE_URL}/wms/inventory/skus`,
+    `${ALMONDYOUNG_API_BASE_URL}/inventory/skus`,
     data
   );
   return response.data;
@@ -38,7 +38,7 @@ export const getSkus = async (
   query: SkuQuery = {}
 ): Promise<SkuResponseDto[]> => {
   const response = await client.get(
-    `${WMS_BASE_URL}/wms/inventory/skus?${buildQueryString(query as Record<string, unknown>)}`
+    `${ALMONDYOUNG_API_BASE_URL}/inventory/skus?${buildQueryString(query as Record<string, unknown>)}`
   );
   return response.data;
 };
@@ -46,7 +46,7 @@ export const getSkus = async (
 // SKU 상세 조회
 export const getSku = async (id: string): Promise<SkuResponseDto> => {
   const response = await client.get(
-    `${WMS_BASE_URL}/wms/inventory/skus/${encodeURIComponent(id)}`
+    `${ALMONDYOUNG_API_BASE_URL}/inventory/skus/${encodeURIComponent(id)}`
   );
   return response.data;
 };
@@ -57,7 +57,7 @@ export const updateSku = async (
   data: UpdateSkuDto
 ): Promise<SkuResponseDto> => {
   const response = await client.put(
-    `${WMS_BASE_URL}/wms/inventory/skus/${encodeURIComponent(id)}`,
+    `${ALMONDYOUNG_API_BASE_URL}/inventory/skus/${encodeURIComponent(id)}`,
     data
   );
   return response.data;
@@ -66,7 +66,7 @@ export const updateSku = async (
 // SKU 삭제
 export const deleteSku = async (id: string): Promise<void> => {
   await client.delete(
-    `${WMS_BASE_URL}/wms/inventory/skus/${encodeURIComponent(id)}`
+    `${ALMONDYOUNG_API_BASE_URL}/inventory/skus/${encodeURIComponent(id)}`
   );
 };
 
@@ -76,7 +76,7 @@ export const addBarcode = async (
   data: AddBarcodeDto
 ): Promise<void> => {
   await client.post(
-    `${WMS_BASE_URL}/wms/inventory/skus/${encodeURIComponent(id)}/barcodes`,
+    `${ALMONDYOUNG_API_BASE_URL}/inventory/skus/${encodeURIComponent(id)}/barcodes`,
     data
   );
 };
@@ -87,7 +87,7 @@ export const removeBarcode = async (
   barcodeId: string
 ): Promise<void> => {
   await client.delete(
-    `${WMS_BASE_URL}/wms/inventory/skus/${encodeURIComponent(
+    `${ALMONDYOUNG_API_BASE_URL}/inventory/skus/${encodeURIComponent(
       id
     )}/barcodes/${encodeURIComponent(barcodeId)}`
   );
@@ -98,7 +98,7 @@ export const getSkuStockSummary = async (
   id: string
 ): Promise<SkuStockSummaryDto> => {
   const response = await client.get(
-    `${WMS_BASE_URL}/wms/inventory/skus/${encodeURIComponent(id)}/stock-summary`
+    `${ALMONDYOUNG_API_BASE_URL}/inventory/skus/${encodeURIComponent(id)}/stock-summary`
   );
   return response.data;
 };

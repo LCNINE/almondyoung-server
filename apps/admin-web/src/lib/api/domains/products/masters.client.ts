@@ -1,5 +1,5 @@
 // src/lib/api/domains/products/masters.client.ts
-import { PIM_BASE_URL } from '@/const';
+import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import type {
   CreateMasterDto,
   MasterDto,
@@ -23,7 +23,7 @@ function buildQueryString(query: Record<string, unknown>): string {
 
 export const mastersClient = {
   create: async (dto: CreateMasterDto): Promise<MasterDto> => {
-    const response = await client.post(`${PIM_BASE_URL}/masters`, dto);
+    const response = await client.post(`${ALMONDYOUNG_API_BASE_URL}/masters`, dto);
     return response.data;
   },
 
@@ -36,28 +36,28 @@ export const mastersClient = {
     limit: number;
   }> => {
     const response = await client.get(
-      `${PIM_BASE_URL}/masters?${buildQueryString(q || {})}`
+      `${ALMONDYOUNG_API_BASE_URL}/masters?${buildQueryString(q || {})}`
     );
     return response.data;
   },
 
   get: async (id: string): Promise<MasterDto> => {
-    const response = await client.get(`${PIM_BASE_URL}/masters/${id}`);
+    const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/masters/${id}`);
     return response.data;
   },
 
   update: async (id: string, dto: UpdateMasterDto): Promise<MasterDto> => {
-    const response = await client.put(`${PIM_BASE_URL}/masters/${id}`, dto);
+    const response = await client.put(`${ALMONDYOUNG_API_BASE_URL}/masters/${id}`, dto);
     return response.data;
   },
 
   remove: async (id: string): Promise<void> => {
-    await client.delete(`${PIM_BASE_URL}/masters/${id}`);
+    await client.delete(`${ALMONDYOUNG_API_BASE_URL}/masters/${id}`);
   },
 
   pricePreview: async (id: string): Promise<PricePreviewDto> => {
     const response = await client.get(
-      `${PIM_BASE_URL}/masters/${id}/price-preview`
+      `${ALMONDYOUNG_API_BASE_URL}/masters/${id}/price-preview`
     );
     return response.data;
   },
@@ -66,7 +66,7 @@ export const mastersClient = {
     id: string,
     dto: { pricingStrategy: string; migrationData?: Record<string, unknown> }
   ): Promise<void> => {
-    await client.put(`${PIM_BASE_URL}/masters/${id}/pricing`, dto);
+    await client.put(`${ALMONDYOUNG_API_BASE_URL}/masters/${id}/pricing`, dto);
   },
 };
 
@@ -78,7 +78,7 @@ export const getMasters = async (
   query: MastersQuery = {}
 ): Promise<MastersResponseDto> => {
   const response = await client.get(
-    `${PIM_BASE_URL}/masters?${buildQueryString(
+    `${ALMONDYOUNG_API_BASE_URL}/masters?${buildQueryString(
       query as Record<string, unknown>
     )}`
   );
@@ -90,7 +90,7 @@ export const getMasters = async (
  * GET /masters/{id}
  */
 export const getMaster = async (id: string): Promise<MasterDto> => {
-  const response = await client.get(`${PIM_BASE_URL}/masters/${id}`);
+  const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/masters/${id}`);
   return response.data;
 };
 
@@ -102,7 +102,7 @@ export const updateMaster = async (
   id: string,
   data: UpdateMasterDto
 ): Promise<MasterDto> => {
-  const response = await client.put(`${PIM_BASE_URL}/masters/${id}`, data);
+  const response = await client.put(`${ALMONDYOUNG_API_BASE_URL}/masters/${id}`, data);
   return response.data;
 };
 
@@ -111,7 +111,7 @@ export const updateMaster = async (
  * DELETE /masters/{id}
  */
 export const deleteMaster = async (id: string): Promise<void> => {
-  await client.delete(`${PIM_BASE_URL}/masters/${id}`);
+  await client.delete(`${ALMONDYOUNG_API_BASE_URL}/masters/${id}`);
 };
 
 /**
@@ -120,7 +120,7 @@ export const deleteMaster = async (id: string): Promise<void> => {
  */
 export const getPricePreview = async (id: string): Promise<PricePreviewDto> => {
   const response = await client.get(
-    `${PIM_BASE_URL}/masters/${id}/price-preview`
+    `${ALMONDYOUNG_API_BASE_URL}/masters/${id}/price-preview`
   );
   return response.data;
 };
@@ -134,7 +134,7 @@ export const updatePricingStrategy = async (
   data: UpdatePricingStrategyDto
 ): Promise<MasterDto> => {
   const response = await client.put(
-    `${PIM_BASE_URL}/masters/${id}/pricing`,
+    `${ALMONDYOUNG_API_BASE_URL}/masters/${id}/pricing`,
     data
   );
   return response.data;
