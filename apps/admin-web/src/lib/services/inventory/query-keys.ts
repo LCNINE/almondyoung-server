@@ -1,7 +1,7 @@
 // src/lib/services/inventory/query-keys.ts
 // 재고 관련 쿼리 키 팩토리
 
-import type { StockSummaryQuery, StockHistoryQuery } from '../../types/dto/inventory';
+import type { StockSummaryQuery, StockHistoryQuery, TransferJobQuery, ReservationTargetType } from '../../types/dto/inventory';
 
 export const inventoryQueryKeys = {
   // 재고 관련
@@ -69,4 +69,17 @@ export const inventoryQueryKeys = {
   skuGroupMembers: (id: string) => ['inventory', 'sku-groups', id, 'members'] as const,
   ungroupedSkus: (params?: { limit?: number; offset?: number }) =>
     ['inventory', 'sku-groups', 'ungrouped', params] as const,
+
+  // 재고 이동 관련
+  transferJobs: (query?: TransferJobQuery) => ['inventory', 'transfers', query] as const,
+  transferJob: (id: string) => ['inventory', 'transfers', id] as const,
+  transferJobStatus: (id: string) => ['inventory', 'transfers', id, 'status'] as const,
+
+  // 재고 예약 관련
+  reservationsBySku: (skuId: string, warehouseId?: string) =>
+    ['inventory', 'reservations', 'by-sku', skuId, warehouseId] as const,
+  reservationsByTarget: (targetType: ReservationTargetType, targetId: string) =>
+    ['inventory', 'reservations', 'by-target', targetType, targetId] as const,
+  reservationSummary: (warehouseId: string) =>
+    ['inventory', 'reservations', 'summary', warehouseId] as const,
 } as const;
