@@ -1,14 +1,12 @@
-// src/app/(admin)/inventory/status/page.tsx
-'use client';
-
-import { MainLayout } from '@/components/layout/main-layout';
-import { ComingSoon } from '@/components/ui/coming-soon';
+import RouteGuard from '@/components/layout/route-guard';
+import InventoryStatusTemplate from '@/features/inventory/status/template';
 
 export default function InventoryStatusPage() {
   return (
-      <ComingSoon
-        title="재고 현황"
-        description="현재 재고 현황을 확인할 수 있는 페이지입니다."
-      />
+    <RouteGuard requireRole={['admin', 'master']}>
+      <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
+        <InventoryStatusTemplate />
+      </div>
+    </RouteGuard>
   );
 }

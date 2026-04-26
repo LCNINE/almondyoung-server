@@ -343,6 +343,8 @@ export interface StockQuery {
 export interface StockSummaryQuery {
   skuId?: string;
   warehouseId?: string;
+  page?: number;
+  limit?: number;
 }
 
 export interface StockHistoryQuery {
