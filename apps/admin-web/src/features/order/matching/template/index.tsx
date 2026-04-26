@@ -7,7 +7,7 @@ import { Header } from '@/components/admin-ui-experimental/common/header/header'
 import { Button } from '@/components/ui/button';
 import { useMatchingFilter } from '../contexts/filter.context';
 import { FilterProvider } from '../contexts/filter.context';
-import { useOrderLines } from '@/lib/services/orders';
+import { useOrderLines } from '@/lib/services/matching';
 import { FilterBox } from '../components/filter-box';
 import { MatchingTable } from '../components/table';
 

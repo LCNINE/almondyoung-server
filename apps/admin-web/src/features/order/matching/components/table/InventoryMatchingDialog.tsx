@@ -11,7 +11,7 @@ import {
   FormLayout
 } from '@/components/common';
 import { OrderLineDto } from '@/lib/types/dto/orders';
-import { useResolveMatching } from '@/lib/services/orders';
+import { useResolveMatching } from '@/lib/services/matching';
 import { useCreateChannelProduct } from '@/lib/services/products';
 import { useSkuSearch } from '@/lib/services/inventory';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
