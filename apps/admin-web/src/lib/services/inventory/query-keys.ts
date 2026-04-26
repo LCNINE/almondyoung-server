@@ -1,14 +1,16 @@
 // src/lib/services/inventory/query-keys.ts
 // 재고 관련 쿼리 키 팩토리
 
+import type { StockSummaryQuery, StockHistoryQuery } from '../../types/dto/inventory';
+
 export const inventoryQueryKeys = {
   // 재고 관련
   stocks: ['stocks'] as const,
-  stockSummary: ['stocks', 'summary'] as const,
+  stockSummary: (query?: StockSummaryQuery) => ['stocks', 'summary', query] as const,
   skuTotalStock: (sku: string) => ['stocks', 'sku', sku, 'total'] as const,
   skuWarehouseStock: (sku: string, warehouseId: string) =>
     ['stocks', 'sku', sku, 'warehouse', warehouseId] as const,
-  stockHistory: (sku: string) => ['stocks', 'history', sku] as const,
+  stockHistory: (query: StockHistoryQuery) => ['stocks', 'history', query] as const,
 
   // SKU 관련
   skus: (query?: any) => ['skus', query] as const,

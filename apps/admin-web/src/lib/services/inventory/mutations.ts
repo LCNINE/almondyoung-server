@@ -4,66 +4,67 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { inventoryQueryKeys } from './query-keys';
 import { inventoryMatchingClient } from '../../api/domains/inventory';
+import { stocksClient } from '../../api/domains/inventory/stocks.client';
+import { skusClient } from '../../api/domains/inventory/skus.client';
+import { warehousesClient } from '../../api/domains/inventory/warehouses.client';
+import type {
+  AdjustStockDto,
+  CreateSkuDto,
+  UpdateSkuDto,
+  AddBarcodeDto,
+  CreateWarehouseDto,
+  UpdateWarehouseDto,
+} from '../../types/dto/inventory';
 
-// 재고 조정 뮤테이션 (임시 구현)
 export const useAdjustStock = () => {
   const queryClient = useQueryClient();
-
   return useMutation({
-    mutationFn: (data: any) =>
-      Promise.resolve({ success: true, adjustment: data }),
+    mutationFn: (data: AdjustStockDto) => stocksClient.adjustStock(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.stocks });
+      queryClient.invalidateQueries({ queryKey: ['stocks', 'summary'] });
     },
   });
 };
 
-// 재고 요약 재구성 뮤테이션 (임시 구현)
 export const useRebuildStockSummary = () => {
   const queryClient = useQueryClient();
-
   return useMutation({
-    mutationFn: () => Promise.resolve({ success: true }),
+    mutationFn: ({ skuId, warehouseId }: { skuId: string; warehouseId: string }) =>
+      stocksClient.rebuildStockSummary(skuId, warehouseId),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: inventoryQueryKeys.stockSummary,
-      });
+      queryClient.invalidateQueries({ queryKey: ['stocks', 'summary'] });
     },
   });
 };
 
-// 재고 이벤트 취소 뮤테이션 (임시 구현)
 export const useCancelStockEvent = () => {
   const queryClient = useQueryClient();
-
   return useMutation({
-    mutationFn: (eventId: string) =>
-      Promise.resolve({ success: true, eventId }),
+    mutationFn: (eventId: string) => stocksClient.cancelStockEvent(eventId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.stocks });
+      queryClient.invalidateQueries({ queryKey: ['stocks', 'summary'] });
+      queryClient.invalidateQueries({ queryKey: ['stocks', 'history'] });
     },
   });
 };
 
-// SKU 생성 뮤테이션 (임시 구현)
 export const useCreateSku = () => {
   const queryClient = useQueryClient();
-
   return useMutation({
-    mutationFn: (data: any) => Promise.resolve({ id: 'new-sku-id', ...data }),
+    mutationFn: (data: CreateSkuDto) => skusClient.createSku(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skus() });
     },
   });
 };
 
-// SKU 수정 뮤테이션 (임시 구현)
 export const useUpdateSku = () => {
   const queryClient = useQueryClient();
-
   return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: any }) =>
-      Promise.resolve({ id, ...data }),
+    mutationFn: ({ id, data }: { id: string; data: UpdateSkuDto }) =>
+      skusClient.updateSku(id, data),
     onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skus() });
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.sku(id) });
@@ -71,12 +72,10 @@ export const useUpdateSku = () => {
   });
 };
 
-// SKU 삭제 뮤테이션 (임시 구현)
 export const useDeleteSku = () => {
   const queryClient = useQueryClient();
-
   return useMutation({
-    mutationFn: (id: string) => Promise.resolve(),
+    mutationFn: (id: string) => skusClient.deleteSku(id),
     onSuccess: (_, id) => {
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skus() });
       queryClient.removeQueries({ queryKey: inventoryQueryKeys.sku(id) });
@@ -84,104 +83,77 @@ export const useDeleteSku = () => {
   });
 };
 
-// 바코드 추가 뮤테이션 (임시 구현)
 export const useAddBarcode = () => {
   const queryClient = useQueryClient();
-
   return useMutation({
-    mutationFn: ({ skuId, barcode }: { skuId: string; barcode: string }) =>
-      Promise.resolve({ skuId, barcode }),
+    mutationFn: ({ skuId, data }: { skuId: string; data: AddBarcodeDto }) =>
+      skusClient.addBarcode(skuId, data),
     onSuccess: (_, { skuId }) => {
-      queryClient.invalidateQueries({
-        queryKey: inventoryQueryKeys.sku(skuId),
-      });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.sku(skuId) });
     },
   });
 };
 
-// 바코드 제거 뮤테이션 (임시 구현)
 export const useRemoveBarcode = () => {
   const queryClient = useQueryClient();
-
   return useMutation({
-    mutationFn: ({ skuId, barcode }: { skuId: string; barcode: string }) =>
-      Promise.resolve({ skuId, barcode }),
+    mutationFn: ({ skuId, barcodeId }: { skuId: string; barcodeId: string }) =>
+      skusClient.removeBarcode(skuId, barcodeId),
     onSuccess: (_, { skuId }) => {
-      queryClient.invalidateQueries({
-        queryKey: inventoryQueryKeys.sku(skuId),
-      });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.sku(skuId) });
     },
   });
 };
 
-// 창고 생성 뮤테이션 (임시 구현)
 export const useCreateWarehouse = () => {
   const queryClient = useQueryClient();
-
   return useMutation({
-    mutationFn: (data: any) =>
-      Promise.resolve({ id: 'new-warehouse-id', ...data }),
+    mutationFn: (data: CreateWarehouseDto) => warehousesClient.createWarehouse(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: inventoryQueryKeys.warehouses,
-      });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.warehouses });
     },
   });
 };
 
-// 창고 수정 뮤테이션 (임시 구현)
 export const useUpdateWarehouse = () => {
   const queryClient = useQueryClient();
-
   return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: any }) =>
-      Promise.resolve({ id, ...data }),
+    mutationFn: ({ id, data }: { id: string; data: UpdateWarehouseDto }) =>
+      warehousesClient.updateWarehouse(id, data),
     onSuccess: (_, { id }) => {
-      queryClient.invalidateQueries({
-        queryKey: inventoryQueryKeys.warehouses,
-      });
-      queryClient.invalidateQueries({
-        queryKey: inventoryQueryKeys.warehouse(id),
-      });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.warehouses });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.warehouse(id) });
     },
   });
 };
 
-// 창고 삭제 뮤테이션 (임시 구현)
-// 자동재고매칭 관련 뮤테이션
 export const useCreateInventoryMatching = () => {
   const queryClient = useQueryClient();
-
   return useMutation({
-    mutationFn: (data: any) => inventoryMatchingClient.matchings.create(data),
+    mutationFn: (data: Parameters<typeof inventoryMatchingClient.matchings.create>[0]) =>
+      inventoryMatchingClient.matchings.create(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: inventoryQueryKeys.inventoryMatchings(),
-      });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inventoryMatchings() });
     },
   });
 };
 
-// 공급처 관련 뮤테이션
 export const useCreateSupplier = () => {
   const queryClient = useQueryClient();
-
   return useMutation({
-    mutationFn: (data: any) => inventoryMatchingClient.suppliers.create(data),
+    mutationFn: (data: Parameters<typeof inventoryMatchingClient.suppliers.create>[0]) =>
+      inventoryMatchingClient.suppliers.create(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: inventoryQueryKeys.suppliers(),
-      });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.suppliers() });
     },
   });
 };
 
-// 재고소유 관련 뮤테이션
 export const useCreateHolder = () => {
   const queryClient = useQueryClient();
-
   return useMutation({
-    mutationFn: (data: any) => inventoryMatchingClient.holders.create(data),
+    mutationFn: (data: Parameters<typeof inventoryMatchingClient.holders.create>[0]) =>
+      inventoryMatchingClient.holders.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.holders() });
     },
