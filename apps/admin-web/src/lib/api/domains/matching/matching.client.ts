@@ -21,7 +21,9 @@ import type {
   VariantSkuLookupResponseDto,
   OrderLinesQuery,
   OrderLinesResponseDto,
-} from '@/lib/types/dto/orders';
+  UpsertMatchingDto,
+  MasterMatchingStatsDto,
+} from '@/lib/types/dto/matching';
 
 /**
  * 매칭 대기 목록 조회
@@ -198,6 +200,36 @@ export const updateVariantMatching = async (
   return response.data;
 };
 
+/**
+ * Variant 매칭 upsert (SKU 매핑 + 재고 정책 한 번에)
+ * PUT /matchings/{variantId}
+ */
+export const upsertVariantMatching = async (
+  variantId: string,
+  data: UpsertMatchingDto
+): Promise<VariantMatchingDto> => {
+  const response = await client.put(
+    `${ALMONDYOUNG_API_BASE_URL}/matchings/${variantId}`,
+    data
+  );
+  return response.data;
+};
+
+/**
+ * 마스터 단위 매칭 통계 일괄 조회
+ * GET /matchings/masters/batch-stats?masterIds=a,b,c
+ */
+export const getMastersBatchStats = async (
+  masterIds: string[]
+): Promise<MasterMatchingStatsDto[]> => {
+  if (masterIds.length === 0) return [];
+  const params = new URLSearchParams({ masterIds: masterIds.join(',') });
+  const response = await client.get(
+    `${ALMONDYOUNG_API_BASE_URL}/matchings/masters/batch-stats?${params.toString()}`
+  );
+  return response.data;
+};
+
 // 매칭 클라이언트 객체
 export const matchingClient = {
   // 조회
@@ -206,6 +238,7 @@ export const matchingClient = {
   getVariantMatching,
   getVariantStockPolicy,
   getVariantSkuLookup,
+  getMastersBatchStats,
 
   // 매칭 해소
   resolveMatching,
@@ -216,4 +249,5 @@ export const matchingClient = {
   changeMatchingStrategy,
   updateMatchingStockPolicy,
   updateVariantMatching,
+  upsertVariantMatching,
 };
