@@ -1,5 +1,5 @@
 // src/lib/api/domains/products/channel-products.client.ts
-import { PIM_BASE_URL } from '@/const';
+import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import type { PaginationQuery, UUID } from '../../../types/dto/common';
 import type {
   ChannelProductDto,
@@ -23,13 +23,13 @@ function buildQueryString(query: Record<string, any>): string {
 
 export const channelProductsClient = {
   create: async (dto: CreateChannelProductDto): Promise<ChannelProductDto> => {
-    const response = await client.post(`${PIM_BASE_URL}/channel-products`, dto);
+    const response = await client.post(`${ALMONDYOUNG_API_BASE_URL}/channel-products`, dto);
     return response.data;
   },
 
   byMaster: async (masterId: UUID): Promise<ChannelProductDto[]> => {
     const response = await client.get(
-      `${PIM_BASE_URL}/channel-products/masters/${masterId}`
+      `${ALMONDYOUNG_API_BASE_URL}/channel-products/masters/${masterId}`
     );
     return response.data;
   },
@@ -44,13 +44,13 @@ export const channelProductsClient = {
     limit: number;
   }> => {
     const response = await client.get(
-      `${PIM_BASE_URL}/channel-products/channels/${channelId}?${buildQueryString(q || {})}`
+      `${ALMONDYOUNG_API_BASE_URL}/channel-products/channels/${channelId}?${buildQueryString(q || {})}`
     );
     return response.data;
   },
 
   get: async (id: UUID): Promise<ChannelProductDto> => {
-    const response = await client.get(`${PIM_BASE_URL}/channel-products/${id}`);
+    const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/channel-products/${id}`);
     return response.data;
   },
 
@@ -59,14 +59,14 @@ export const channelProductsClient = {
     dto: Partial<ChannelProductDto>
   ): Promise<ChannelProductDto> => {
     const response = await client.put(
-      `${PIM_BASE_URL}/channel-products/${id}`,
+      `${ALMONDYOUNG_API_BASE_URL}/channel-products/${id}`,
       dto
     );
     return response.data;
   },
 
   remove: async (id: UUID): Promise<void> => {
-    await client.delete(`${PIM_BASE_URL}/channel-products/${id}`);
+    await client.delete(`${ALMONDYOUNG_API_BASE_URL}/channel-products/${id}`);
   },
 
   merged: async (
@@ -74,17 +74,17 @@ export const channelProductsClient = {
     channelId: UUID
   ): Promise<MergedChannelProductDto> => {
     const response = await client.get(
-      `${PIM_BASE_URL}/channel-products/masters/${masterId}/channels/${channelId}/merged`
+      `${ALMONDYOUNG_API_BASE_URL}/channel-products/masters/${masterId}/channels/${channelId}/merged`
     );
     return response.data;
   },
 
   overrideName: async (id: UUID, name: string): Promise<void> => {
-    await client.put(`${PIM_BASE_URL}/channel-products/${id}/name`, { name });
+    await client.put(`${ALMONDYOUNG_API_BASE_URL}/channel-products/${id}/name`, { name });
   },
 
   setActive: async (id: UUID, isActive: boolean): Promise<void> => {
-    await client.put(`${PIM_BASE_URL}/channel-products/${id}/status`, {
+    await client.put(`${ALMONDYOUNG_API_BASE_URL}/channel-products/${id}/status`, {
       isActive,
     });
   },
@@ -98,7 +98,7 @@ export const getChannelProductsByMaster = async (
   masterId: string
 ): Promise<ChannelProductDto[]> => {
   const response = await client.get(
-    `${PIM_BASE_URL}/channel-products/masters/${masterId}`
+    `${ALMONDYOUNG_API_BASE_URL}/channel-products/masters/${masterId}`
   );
   return response.data;
 };
@@ -117,7 +117,7 @@ export const getChannelProductsByChannel = async (
   limit: number;
 }> => {
   const response = await client.get(
-    `${PIM_BASE_URL}/channel-products/channels/${channelId}?${buildQueryString(
+    `${ALMONDYOUNG_API_BASE_URL}/channel-products/channels/${channelId}?${buildQueryString(
       q || {}
     )}`
   );
@@ -131,7 +131,7 @@ export const getChannelProductsByChannel = async (
 export const getChannelProduct = async (
   id: string
 ): Promise<ChannelProductDto> => {
-  const response = await client.get(`${PIM_BASE_URL}/channel-products/${id}`);
+  const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/channel-products/${id}`);
   return response.data;
 };
 
@@ -144,7 +144,7 @@ export const updateChannelProduct = async (
   data: UpdateChannelProductDto
 ): Promise<ChannelProductDto> => {
   const response = await client.put(
-    `${PIM_BASE_URL}/channel-products/${id}`,
+    `${ALMONDYOUNG_API_BASE_URL}/channel-products/${id}`,
     data
   );
   return response.data;
@@ -155,7 +155,7 @@ export const updateChannelProduct = async (
  * DELETE /channel-products/{id}
  */
 export const deleteChannelProduct = async (id: string): Promise<void> => {
-  await client.delete(`${PIM_BASE_URL}/channel-products/${id}`);
+  await client.delete(`${ALMONDYOUNG_API_BASE_URL}/channel-products/${id}`);
 };
 
 /**
@@ -167,7 +167,7 @@ export const getMergedChannelProduct = async (
   channelId: string
 ): Promise<MergedChannelProductDto> => {
   const response = await client.get(
-    `${PIM_BASE_URL}/channel-products/masters/${masterId}/channels/${channelId}/merged`
+    `${ALMONDYOUNG_API_BASE_URL}/channel-products/masters/${masterId}/channels/${channelId}/merged`
   );
   return response.data;
 };
@@ -180,7 +180,7 @@ export const updateChannelProductName = async (
   id: string,
   data: UpdateChannelProductNameDto
 ): Promise<void> => {
-  await client.put(`${PIM_BASE_URL}/channel-products/${id}/name`, data);
+  await client.put(`${ALMONDYOUNG_API_BASE_URL}/channel-products/${id}/name`, data);
 };
 
 /**
@@ -191,7 +191,7 @@ export const updateChannelProductStatus = async (
   id: string,
   data: UpdateChannelProductStatusDto
 ): Promise<void> => {
-  await client.put(`${PIM_BASE_URL}/channel-products/${id}/status`, data);
+  await client.put(`${ALMONDYOUNG_API_BASE_URL}/channel-products/${id}/status`, data);
 };
 
 // 채널별 제품 클라이언트 객체

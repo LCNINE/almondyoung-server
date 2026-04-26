@@ -1,7 +1,7 @@
-// src/lib/api/domains/inventory/matching.client.ts
-// 재고 매칭 관련 API 클라이언트 (WMS API 스펙 기반)
+// src/lib/api/domains/matching/matching.client.ts
+// 매칭 관련 API 클라이언트 (통합 서버 /matchings 엔드포인트)
 
-import { WMS_BASE_URL } from '@/const';
+import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import { client } from '../../client';
 import type {
   MatchingsQuery,
@@ -25,7 +25,7 @@ import type {
 
 /**
  * 매칭 대기 목록 조회
- * GET /wms/matchings
+ * GET /matchings
  */
 export const getMatchings = async (
   query: MatchingsQuery = {}
@@ -37,14 +37,14 @@ export const getMatchings = async (
   if (query.offset !== undefined) params.append('offset', String(query.offset));
 
   const response = await client.get(
-    `${WMS_BASE_URL}/wms/matchings?${params.toString()}`
+    `${ALMONDYOUNG_API_BASE_URL}/matchings?${params.toString()}`
   );
   return response.data;
 };
 
 /**
  * 주문 라인별 매칭 현황 조회
- * GET /wms/matchings/order-lines
+ * GET /matchings/order-lines
  */
 export const getOrderLines = async (
   query: OrderLinesQuery = {}
@@ -62,21 +62,21 @@ export const getOrderLines = async (
   if (query.offset !== undefined) params.append('offset', String(query.offset));
 
   const response = await client.get(
-    `${WMS_BASE_URL}/wms/matchings/order-lines?${params.toString()}`
+    `${ALMONDYOUNG_API_BASE_URL}/matchings/order-lines?${params.toString()}`
   );
   return response.data;
 };
 
 /**
  * 매칭 대기 해소 (SKU와 매칭 또는 무시)
- * PATCH /wms/matchings/{id}/resolve
+ * PATCH /matchings/{id}/resolve
  */
 export const resolveMatching = async (
   id: string,
   data: ResolveMatchingDto
 ): Promise<ResolveMatchingResponseDto> => {
   const response = await client.patch(
-    `${WMS_BASE_URL}/wms/matchings/${id}/resolve`,
+    `${ALMONDYOUNG_API_BASE_URL}/matchings/${id}/resolve`,
     data
   );
   return response.data;
@@ -84,14 +84,14 @@ export const resolveMatching = async (
 
 /**
  * 옵션별 매칭 해소
- * PATCH /wms/matchings/{id}/resolve-options
+ * PATCH /matchings/{id}/resolve-options
  */
 export const resolveOptionMatching = async (
   id: string,
   data: ResolveOptionMatchingDto
 ): Promise<ResolveMatchingResponseDto> => {
   const response = await client.patch(
-    `${WMS_BASE_URL}/wms/matchings/${id}/resolve-options`,
+    `${ALMONDYOUNG_API_BASE_URL}/matchings/${id}/resolve-options`,
     data
   );
   return response.data;
@@ -99,14 +99,14 @@ export const resolveOptionMatching = async (
 
 /**
  * 매칭 대기 우선순위 설정
- * PATCH /wms/matchings/{id}/priority
+ * PATCH /matchings/{id}/priority
  */
 export const setMatchingPriority = async (
   id: string,
   data: SetMatchingPriorityDto
 ): Promise<SetMatchingPriorityResponseDto> => {
   const response = await client.patch(
-    `${WMS_BASE_URL}/wms/matchings/${id}/priority`,
+    `${ALMONDYOUNG_API_BASE_URL}/matchings/${id}/priority`,
     data
   );
   return response.data;
@@ -114,14 +114,14 @@ export const setMatchingPriority = async (
 
 /**
  * 매칭 전략 변경
- * PATCH /wms/matchings/{id}/strategy
+ * PATCH /matchings/{id}/strategy
  */
 export const changeMatchingStrategy = async (
   id: string,
   data: ChangeStrategyDto
 ): Promise<ChangeStrategyResponseDto> => {
   const response = await client.patch(
-    `${WMS_BASE_URL}/wms/matchings/${id}/strategy`,
+    `${ALMONDYOUNG_API_BASE_URL}/matchings/${id}/strategy`,
     data
   );
   return response.data;
@@ -129,14 +129,14 @@ export const changeMatchingStrategy = async (
 
 /**
  * 매칭의 재고 정책 업데이트
- * PATCH /wms/matchings/{id}/stock-policy
+ * PATCH /matchings/{id}/stock-policy
  */
 export const updateMatchingStockPolicy = async (
   id: string,
   data: StockPolicyDto
 ): Promise<UpdateStockPolicyResponseDto> => {
   const response = await client.patch(
-    `${WMS_BASE_URL}/wms/matchings/${id}/stock-policy`,
+    `${ALMONDYOUNG_API_BASE_URL}/matchings/${id}/stock-policy`,
     data
   );
   return response.data;
@@ -144,27 +144,27 @@ export const updateMatchingStockPolicy = async (
 
 /**
  * Variant의 재고 정책 조회
- * GET /wms/matchings/variants/{variantId}/stock-policy
+ * GET /matchings/variants/{variantId}/stock-policy
  */
 export const getVariantStockPolicy = async (
   variantId: string
 ): Promise<StockPolicyDto> => {
   const response = await client.get(
-    `${WMS_BASE_URL}/wms/matchings/variants/${variantId}/stock-policy`
+    `${ALMONDYOUNG_API_BASE_URL}/matchings/variants/${variantId}/stock-policy`
   );
   return response.data;
 };
 
 /**
  * Variant의 SKU 조합 조회
- * POST /wms/matchings/variants/{variantId}/sku-lookup
+ * POST /matchings/variants/{variantId}/sku-lookup
  */
 export const getVariantSkuLookup = async (
   variantId: string,
   data: VariantSkuLookupDto
 ): Promise<VariantSkuLookupResponseDto[]> => {
   const response = await client.post(
-    `${WMS_BASE_URL}/wms/matchings/variants/${variantId}/sku-lookup`,
+    `${ALMONDYOUNG_API_BASE_URL}/matchings/variants/${variantId}/sku-lookup`,
     data
   );
   return response.data;
@@ -172,27 +172,27 @@ export const getVariantSkuLookup = async (
 
 /**
  * Variant별 매칭 조회
- * GET /wms/matchings/{variantId}
+ * GET /matchings/{variantId}
  */
 export const getVariantMatching = async (
   variantId: string
 ): Promise<VariantMatchingDto> => {
   const response = await client.get(
-    `${WMS_BASE_URL}/wms/matchings/${variantId}`
+    `${ALMONDYOUNG_API_BASE_URL}/matchings/${variantId}`
   );
   return response.data;
 };
 
 /**
  * Variant별 매칭 업데이트
- * PUT /wms/matchings/{variantId}
+ * PUT /matchings/{variantId}
  */
 export const updateVariantMatching = async (
   variantId: string,
   data: Partial<VariantMatchingDto>
 ): Promise<VariantMatchingDto> => {
   const response = await client.put(
-    `${WMS_BASE_URL}/wms/matchings/${variantId}`,
+    `${ALMONDYOUNG_API_BASE_URL}/matchings/${variantId}`,
     data
   );
   return response.data;

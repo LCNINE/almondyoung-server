@@ -3,7 +3,7 @@
 
 import { salesOrders } from './sales-orders.client';
 import { fulfillmentOrder } from './fulfillment-order.client';
-import { matchingClient } from '../inventory/matching.client';
+import { matchingClient } from '../matching/matching.client';
 
 export const orders = {
   // Sales Orders Management
@@ -12,7 +12,7 @@ export const orders = {
   // Fulfillment Orders Management
   fulfillmentOrder,
 
-  // Matching Management (moved from inventory to orders for compatibility)
+  // Matching Management (domains/matching 으로 이전됨, 하위 호환성 유지)
   matching: matchingClient,
 };
 

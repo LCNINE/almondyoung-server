@@ -1,5 +1,5 @@
 // src/lib/api/domains/products/channels.client.ts
-import { PIM_BASE_URL } from '@/const';
+import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import type { UUID } from '../../../types/dto/common';
 
 import { client } from '../../client';
@@ -27,42 +27,42 @@ function buildQueryString(query: Record<string, unknown>): string {
 
 export const channelsClient = {
   create: async (dto: CreateChannelDto): Promise<ChannelDto> => {
-    const response = await client.post(`${PIM_BASE_URL}/channels`, dto);
+    const response = await client.post(`${ALMONDYOUNG_API_BASE_URL}/channels`, dto);
     return response.data;
   },
 
   list: async (q?: ChannelsQuery): Promise<ChannelsResponseDto> => {
     const response = await client.get(
-      `${PIM_BASE_URL}/channels?${buildQueryString((q as Record<string, unknown>) || {})}`
+      `${ALMONDYOUNG_API_BASE_URL}/channels?${buildQueryString((q as Record<string, unknown>) || {})}`
     );
     return response.data;
   },
 
   active: async (): Promise<ChannelDto[]> => {
-    const response = await client.get(`${PIM_BASE_URL}/channels/active`);
+    const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/channels/active`);
     return response.data;
   },
 
   get: async (id: UUID): Promise<ChannelDto> => {
-    const response = await client.get(`${PIM_BASE_URL}/channels/${id}`);
+    const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/channels/${id}`);
     return response.data;
   },
 
   update: async (id: UUID, dto: UpdateChannelDto): Promise<ChannelDto> => {
-    const response = await client.put(`${PIM_BASE_URL}/channels/${id}`, dto);
+    const response = await client.put(`${ALMONDYOUNG_API_BASE_URL}/channels/${id}`, dto);
     return response.data;
   },
 
   remove: async (id: UUID): Promise<void> => {
-    await client.delete(`${PIM_BASE_URL}/channels/${id}`);
+    await client.delete(`${ALMONDYOUNG_API_BASE_URL}/channels/${id}`);
   },
 
   setActive: async (id: UUID, isActive: boolean): Promise<void> => {
-    await client.put(`${PIM_BASE_URL}/channels/${id}/status`, { isActive });
+    await client.put(`${ALMONDYOUNG_API_BASE_URL}/channels/${id}/status`, { isActive });
   },
 
   byType: async (type: string): Promise<ChannelDto[]> => {
-    const response = await client.get(`${PIM_BASE_URL}/channels/type/${type}`);
+    const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/channels/type/${type}`);
     return response.data;
   },
 
@@ -70,7 +70,7 @@ export const channelsClient = {
     dto: ValidateChannelConfigDto
   ): Promise<ChannelValidationResponseDto> => {
     const response = await client.post(
-      `${PIM_BASE_URL}/channels/validate`,
+      `${ALMONDYOUNG_API_BASE_URL}/channels/validate`,
       dto
     );
     return response.data;
@@ -85,7 +85,7 @@ export const getChannels = async (
   query: ChannelsQuery = {}
 ): Promise<ChannelsResponseDto> => {
   const response = await client.get(
-    `${PIM_BASE_URL}/channels?${buildQueryString(
+    `${ALMONDYOUNG_API_BASE_URL}/channels?${buildQueryString(
       query as Record<string, unknown>
     )}`
   );
@@ -97,7 +97,7 @@ export const getChannels = async (
  * GET /channels/active
  */
 export const getActiveChannels = async (): Promise<ChannelDto[]> => {
-  const response = await client.get(`${PIM_BASE_URL}/channels/active`);
+  const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/channels/active`);
   // API가 paginated 응답 { data: [] } 형태로 반환
   return Array.isArray(response.data) ? response.data : (response.data?.data ?? []);
 };
@@ -107,7 +107,7 @@ export const getActiveChannels = async (): Promise<ChannelDto[]> => {
  * GET /channels/{id}
  */
 export const getChannel = async (id: string): Promise<ChannelDto> => {
-  const response = await client.get(`${PIM_BASE_URL}/channels/${id}`);
+  const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/channels/${id}`);
   return response.data;
 };
 
@@ -119,7 +119,7 @@ export const updateChannel = async (
   id: string,
   data: UpdateChannelDto
 ): Promise<ChannelDto> => {
-  const response = await client.put(`${PIM_BASE_URL}/channels/${id}`, data);
+  const response = await client.put(`${ALMONDYOUNG_API_BASE_URL}/channels/${id}`, data);
   return response.data;
 };
 
@@ -128,7 +128,7 @@ export const updateChannel = async (
  * DELETE /channels/{id}
  */
 export const deleteChannel = async (id: string): Promise<void> => {
-  await client.delete(`${PIM_BASE_URL}/channels/${id}`);
+  await client.delete(`${ALMONDYOUNG_API_BASE_URL}/channels/${id}`);
 };
 
 /**
@@ -140,7 +140,7 @@ export const updateChannelStatus = async (
   data: UpdateChannelStatusDto
 ): Promise<ChannelDto> => {
   const response = await client.put(
-    `${PIM_BASE_URL}/channels/${id}/status`,
+    `${ALMONDYOUNG_API_BASE_URL}/channels/${id}/status`,
     data
   );
   return response.data;
@@ -153,7 +153,7 @@ export const updateChannelStatus = async (
 export const getChannelsByType = async (
   type: string
 ): Promise<ChannelDto[]> => {
-  const response = await client.get(`${PIM_BASE_URL}/channels/type/${type}`);
+  const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/channels/type/${type}`);
   return response.data;
 };
 
@@ -164,7 +164,7 @@ export const getChannelsByType = async (
 export const validateChannelConfig = async (
   data: ValidateChannelConfigDto
 ): Promise<ChannelValidationResponseDto> => {
-  const response = await client.post(`${PIM_BASE_URL}/channels/validate`, data);
+  const response = await client.post(`${ALMONDYOUNG_API_BASE_URL}/channels/validate`, data);
   return response.data;
 };
 

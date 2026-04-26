@@ -1,6 +1,6 @@
 // src/lib/api/domains/products/categories.client.ts
 
-import { PIM_BASE_URL } from '@/const';
+import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import type { UUID } from '../../../types/dto/common';
 import type {
   CategoryDto,
@@ -14,23 +14,23 @@ import { client } from '../../client';
 
 export const categoriesClient = {
   create: async (dto: CreateCategoryDto): Promise<CategoryDto> => {
-    const response = await client.post(`${PIM_BASE_URL}/categories`, dto);
+    const response = await client.post(`${ALMONDYOUNG_API_BASE_URL}/categories`, dto);
     return response.data;
   },
 
   list: async (maxDepth?: number): Promise<CategoryTreeResponseDto> => {
     const url = maxDepth ? `/categories?maxDepth=${maxDepth}` : '/categories';
-    const response = await client.get(`${PIM_BASE_URL}${url}`);
+    const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}${url}`);
     return response.data;
   },
 
   get: async (id: UUID): Promise<CategoryDto> => {
-    const response = await client.get(`${PIM_BASE_URL}/categories/${id}`);
+    const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/categories/${id}`);
     return response.data;
   },
 
   update: async (id: UUID, dto: UpdateCategoryDto): Promise<CategoryDto> => {
-    const response = await client.put(`${PIM_BASE_URL}/categories/${id}`, dto);
+    const response = await client.put(`${ALMONDYOUNG_API_BASE_URL}/categories/${id}`, dto);
     return response.data;
   },
 
@@ -38,18 +38,18 @@ export const categoriesClient = {
     const url = moveProductsTo
       ? `/categories/${id}?moveProductsTo=${moveProductsTo}`
       : `/categories/${id}`;
-    await client.delete(`${PIM_BASE_URL}${url}`);
+    await client.delete(`${ALMONDYOUNG_API_BASE_URL}${url}`);
   },
 
   children: async (id: UUID): Promise<CategoryDto[]> => {
     const response = await client.get(
-      `${PIM_BASE_URL}/categories/${id}/children`
+      `${ALMONDYOUNG_API_BASE_URL}/categories/${id}/children`
     );
     return response.data;
   },
 
   path: async (id: UUID): Promise<CategoryPathResponseDto> => {
-    const response = await client.get(`${PIM_BASE_URL}/categories/${id}/path`);
+    const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/categories/${id}/path`);
     return response.data;
   },
 
@@ -65,7 +65,7 @@ export const categoriesClient = {
     const url = queryString
       ? `/categories/${id}/move?${queryString}`
       : `/categories/${id}/move`;
-    const response = await client.put(`${PIM_BASE_URL}${url}`, {});
+    const response = await client.put(`${ALMONDYOUNG_API_BASE_URL}${url}`, {});
     return response.data;
   },
 
@@ -79,7 +79,7 @@ export const getCategoryTree = async (
   maxDepth?: number
 ): Promise<CategoryTreeResponseDto> => {
   const params = maxDepth ? { maxDepth } : {};
-  const response = await client.get(`${PIM_BASE_URL}/categories`, { params });
+  const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/categories`, { params });
   return response.data;
 };
 
@@ -91,7 +91,7 @@ export const updateCategory = async (
   id: string,
   data: UpdateCategoryDto
 ): Promise<CategoryDto> => {
-  const response = await client.put(`${PIM_BASE_URL}/categories/${id}`, data);
+  const response = await client.put(`${ALMONDYOUNG_API_BASE_URL}/categories/${id}`, data);
   return response.data;
 };
 
@@ -104,7 +104,7 @@ export const deleteCategory = async (
   moveProductsTo?: string
 ): Promise<void> => {
   const params = moveProductsTo ? { moveProductsTo } : {};
-  await client.delete(`${PIM_BASE_URL}/categories/${id}`, { params });
+  await client.delete(`${ALMONDYOUNG_API_BASE_URL}/categories/${id}`, { params });
 };
 
 /**
@@ -112,7 +112,7 @@ export const deleteCategory = async (
  * GET /categories/{id}
  */
 export const getCategory = async (id: string): Promise<CategoryDto> => {
-  const response = await client.get(`${PIM_BASE_URL}/categories/${id}`);
+  const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/categories/${id}`);
   return response.data;
 };
 
@@ -124,7 +124,7 @@ export const getCategoryChildren = async (
   id: string
 ): Promise<CategoryDto[]> => {
   const response = await client.get(
-    `${PIM_BASE_URL}/categories/${id}/children`
+    `${ALMONDYOUNG_API_BASE_URL}/categories/${id}/children`
   );
   return response.data;
 };
@@ -136,7 +136,7 @@ export const getCategoryChildren = async (
 export const getCategoryPath = async (
   id: string
 ): Promise<CategoryPathResponseDto> => {
-  const response = await client.get(`${PIM_BASE_URL}/categories/${id}/path`);
+  const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/categories/${id}/path`);
   return response.data;
 };
 
@@ -150,7 +150,7 @@ export const moveCategory = async (
 ): Promise<CategoryDto> => {
   const params = data.newParentId ? { newParentId: data.newParentId } : {};
   const response = await client.put(
-    `${PIM_BASE_URL}/categories/${id}/move`,
+    `${ALMONDYOUNG_API_BASE_URL}/categories/${id}/move`,
     {},
     { params }
   );
