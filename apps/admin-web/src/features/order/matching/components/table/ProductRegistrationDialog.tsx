@@ -441,7 +441,7 @@ export function ProductRegistrationDialog({ isOpen, onClose, line }: ProductRegi
               </div>
 
               <div className="space-y-2 max-h-[320px] overflow-y-auto">
-                {(skuResults || []).map((s: any) => (
+                {((skuResults as any)?.items ?? (Array.isArray(skuResults) ? skuResults : [])).map((s: any) => (
                   <div
                     key={s.id}
                     className={cn(
@@ -464,7 +464,7 @@ export function ProductRegistrationDialog({ isOpen, onClose, line }: ProductRegi
                     </div>
                   </div>
                 ))}
-                {!searching && (skuResults?.length ?? 0) === 0 && (
+                {!searching && ((skuResults as any)?.items?.length ?? (Array.isArray(skuResults) ? skuResults.length : 0)) === 0 && (
                   <div className="text-sm text-gray-500 p-2">검색 결과가 없습니다.</div>
                 )}
               </div>

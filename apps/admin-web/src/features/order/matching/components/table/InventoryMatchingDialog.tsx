@@ -488,7 +488,7 @@ export function InventoryMatchingDialog({ isOpen, onClose, line }: InventoryMatc
   if (!line) return null;
 
   // 검색 결과 필터링 (서버에서 이미 필터링되므로 클라이언트에서는 추가 필터링 불필요)
-  const filteredSkuResults = skuResults || [];
+  const filteredSkuResults = (skuResults as any)?.items ?? (Array.isArray(skuResults) ? skuResults : []);
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>

@@ -48,10 +48,10 @@ export function AddOrderItemModal({ order, open, onOpenChange }: Props) {
         queryKey: ['skus', 'search', searchTerm],
         queryFn: async () => {
             if (!searchTerm || searchTerm.length < 2) return [];
-            const results = await inventory.skus.getSkus({ 
+            const results = await inventory.skus.getSkus({
                 name: searchTerm,
             });
-            return results || [];
+            return results?.items ?? [];
         },
         enabled: searchTerm.length >= 2,
         staleTime: 30 * 1000,

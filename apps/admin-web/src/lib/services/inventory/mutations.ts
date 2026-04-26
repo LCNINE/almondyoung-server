@@ -6,6 +6,7 @@ import { inventoryQueryKeys } from './query-keys';
 import { inventoryMatchingClient } from '../../api/domains/inventory';
 import { stocksClient } from '../../api/domains/inventory/stocks.client';
 import { skusClient } from '../../api/domains/inventory/skus.client';
+import { skuGroupsClient } from '../../api/domains/inventory/sku-groups.client';
 import { warehousesClient } from '../../api/domains/inventory/warehouses.client';
 import type {
   AdjustStockDto,
@@ -14,6 +15,9 @@ import type {
   AddBarcodeDto,
   CreateWarehouseDto,
   UpdateWarehouseDto,
+  CreateSkuGroupDto,
+  UpdateSkuGroupDto,
+  BulkAddSkusToGroupDto,
 } from '../../types/dto/inventory';
 
 export const useAdjustStock = () => {
@@ -156,6 +160,79 @@ export const useCreateHolder = () => {
       inventoryMatchingClient.holders.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.holders() });
+    },
+  });
+};
+
+// SKU 그룹 관련 mutations
+export const useCreateSkuGroup = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreateSkuGroupDto) => skuGroupsClient.createSkuGroup(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skuGroups });
+    },
+  });
+};
+
+export const useUpdateSkuGroup = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: UpdateSkuGroupDto }) =>
+      skuGroupsClient.updateSkuGroup(id, data),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skuGroups });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skuGroup(id) });
+    },
+  });
+};
+
+export const useDeleteSkuGroup = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => skuGroupsClient.deleteSkuGroup(id),
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skuGroups });
+      queryClient.removeQueries({ queryKey: inventoryQueryKeys.skuGroup(id) });
+    },
+  });
+};
+
+export const useAddSkuToGroup = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ groupId, skuId }: { groupId: string; skuId: string }) =>
+      skuGroupsClient.addSkuToGroup(groupId, { skuId }),
+    onSuccess: (_, { groupId }) => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skuGroups });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skuGroupMembers(groupId) });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skus() });
+    },
+  });
+};
+
+export const useBulkAddSkusToGroup = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ groupId, data }: { groupId: string; data: BulkAddSkusToGroupDto }) =>
+      skuGroupsClient.bulkAddSkusToGroup(groupId, data),
+    onSuccess: (_, { groupId }) => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skuGroups });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skuGroupMembers(groupId) });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skus() });
+    },
+  });
+};
+
+export const useRemoveSkuFromGroup = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ skuId, groupId }: { skuId: string; groupId: string }) =>
+      skuGroupsClient.removeSkuFromGroup(skuId),
+    onSuccess: (_, { groupId }) => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skuGroups });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skuGroupMembers(groupId) });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skus() });
     },
   });
 };
