@@ -1,5 +1,5 @@
 // src/lib/api/domains/products/variants.client.ts
-import { PIM_BASE_URL } from '@/const';
+import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import type { PaginationQuery, UUID } from '../../../types/dto/common';
 import type {
   BulkUpdateVariantDto,
@@ -31,32 +31,32 @@ export const variantsClient = {
     limit: number;
   }> => {
     const response = await client.get(
-      `${PIM_BASE_URL}/variants/masters/${masterId}?${buildQueryString(q || {})}`
+      `${ALMONDYOUNG_API_BASE_URL}/variants/masters/${masterId}?${buildQueryString(q || {})}`
     );
     return response.data;
   },
 
   get: async (id: UUID): Promise<VariantDto> => {
-    const response = await client.get(`${PIM_BASE_URL}/variants/${id}`);
+    const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/variants/${id}`);
     return response.data;
   },
 
   update: async (id: UUID, dto: UpdateVariantDto): Promise<VariantDto> => {
-    const response = await client.put(`${PIM_BASE_URL}/variants/${id}`, dto);
+    const response = await client.put(`${ALMONDYOUNG_API_BASE_URL}/variants/${id}`, dto);
     return response.data;
   },
 
   bulkUpdate: async (dto: BulkUpdateVariantDto): Promise<void> => {
-    await client.put(`${PIM_BASE_URL}/variants/bulk`, dto);
+    await client.put(`${ALMONDYOUNG_API_BASE_URL}/variants/bulk`, dto);
   },
 
   price: async (id: UUID): Promise<VariantPriceDto> => {
-    const response = await client.get(`${PIM_BASE_URL}/variants/${id}/price`);
+    const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/variants/${id}/price`);
     return response.data;
   },
 
   setStatus: async (id: UUID, status: string): Promise<void> => {
-    await client.put(`${PIM_BASE_URL}/variants/${id}/status`, { status });
+    await client.put(`${ALMONDYOUNG_API_BASE_URL}/variants/${id}/status`, { status });
   },
 };
 
@@ -65,7 +65,7 @@ export const variantsClient = {
  * GET /variants/{id}
  */
 export const getVariant = async (id: string): Promise<VariantDto> => {
-  const response = await client.get(`${PIM_BASE_URL}/variants/${id}`);
+  const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/variants/${id}`);
   return response.data;
 };
 
@@ -77,7 +77,7 @@ export const updateVariant = async (
   id: string,
   data: UpdateVariantDto
 ): Promise<VariantDto> => {
-  const response = await client.put(`${PIM_BASE_URL}/variants/${id}`, data);
+  const response = await client.put(`${ALMONDYOUNG_API_BASE_URL}/variants/${id}`, data);
   return response.data;
 };
 
@@ -88,7 +88,7 @@ export const updateVariant = async (
 export const bulkUpdateVariants = async (
   data: BulkUpdateVariantDto
 ): Promise<void> => {
-  await client.put(`${PIM_BASE_URL}/variants/bulk`, data);
+  await client.put(`${ALMONDYOUNG_API_BASE_URL}/variants/bulk`, data);
 };
 
 /**
@@ -96,7 +96,7 @@ export const bulkUpdateVariants = async (
  * GET /variants/{id}/price
  */
 export const getVariantPrice = async (id: string): Promise<VariantPriceDto> => {
-  const response = await client.get(`${PIM_BASE_URL}/variants/${id}/price`);
+  const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/variants/${id}/price`);
   return response.data;
 };
 
@@ -108,7 +108,7 @@ export const updateVariantStatus = async (
   id: string,
   data: UpdateVariantStatusDto
 ): Promise<void> => {
-  await client.put(`${PIM_BASE_URL}/variants/${id}/status`, data);
+  await client.put(`${ALMONDYOUNG_API_BASE_URL}/variants/${id}/status`, data);
 };
 
 export type BatchVariantInfo = {
@@ -126,7 +126,7 @@ export type BatchVariantInfo = {
  */
 export const getVariantsBatch = async (ids: string[]): Promise<BatchVariantInfo[]> => {
   if (!ids.length) return [];
-  const response = await client.get(`${PIM_BASE_URL}/variants/batch?ids=${ids.join(',')}`);
+  const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/variants/batch?ids=${ids.join(',')}`);
   return response.data;
 };
 

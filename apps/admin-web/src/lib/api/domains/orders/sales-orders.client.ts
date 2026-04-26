@@ -1,7 +1,7 @@
 // src/lib/api/domains/orders/sales-orders.client.ts
 // Sales Orders API 클라이언트
 
-import { WMS_BASE_URL } from '@/const';
+import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import type {
   CancelSalesOrderResponseDto,
   ConfirmSalesOrderResponseDto,
@@ -36,7 +36,7 @@ export const salesOrders = {
     data: CreateSalesOrderDto
   ): Promise<CreateSalesOrderResponseDto> => {
     const response = await client.post(
-      `${WMS_BASE_URL}/wms/sales-orders`,
+      `${ALMONDYOUNG_API_BASE_URL}/sales-orders`,
       data
     );
     return response.data;
@@ -48,7 +48,7 @@ export const salesOrders = {
   ): Promise<SalesOrdersResponseDto> => {
     const queryString = buildQueryString(query);
     const response = await client.get(
-      `${WMS_BASE_URL}/wms/sales-orders${queryString}`
+      `${ALMONDYOUNG_API_BASE_URL}/sales-orders${queryString}`
     );
     return response.data;
   },
@@ -59,7 +59,7 @@ export const salesOrders = {
     data: UpdateSalesOrderDto
   ): Promise<UpdateSalesOrderResponseDto> => {
     const response = await client.patch(
-      `${WMS_BASE_URL}/wms/sales-orders/${encodeURIComponent(id)}`,
+      `${ALMONDYOUNG_API_BASE_URL}/sales-orders/${encodeURIComponent(id)}`,
       data
     );
     return response.data;
@@ -68,7 +68,7 @@ export const salesOrders = {
   // 판매 주문 상세 조회
   getSalesOrder: async (id: string): Promise<SalesOrderDto> => {
     const response = await client.get(
-      `${WMS_BASE_URL}/wms/sales-orders/${encodeURIComponent(id)}`
+      `${ALMONDYOUNG_API_BASE_URL}/sales-orders/${encodeURIComponent(id)}`
     );
     return response.data;
   },
@@ -78,7 +78,7 @@ export const salesOrders = {
     id: string
   ): Promise<ConfirmSalesOrderResponseDto> => {
     const response = await client.post(
-      `${WMS_BASE_URL}/wms/sales-orders/${encodeURIComponent(id)}/confirm`
+      `${ALMONDYOUNG_API_BASE_URL}/sales-orders/${encodeURIComponent(id)}/confirm`
     );
     return response.data;
   },
@@ -88,14 +88,14 @@ export const salesOrders = {
     id: string
   ): Promise<CancelSalesOrderResponseDto> => {
     const response = await client.post(
-      `${WMS_BASE_URL}/wms/sales-orders/${encodeURIComponent(id)}/cancel`
+      `${ALMONDYOUNG_API_BASE_URL}/sales-orders/${encodeURIComponent(id)}/cancel`
     );
     return response.data;
   },
 
   // 주문 현황 통계
   getStats: async (): Promise<OrderStatsDto> => {
-    const response = await client.get(`${WMS_BASE_URL}/wms/sales-orders/stats`);
+    const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/sales-orders/stats`);
     return response.data;
   },
 
@@ -104,7 +104,7 @@ export const salesOrders = {
     data: MergeSalesOrdersDto
   ): Promise<MergeSalesOrdersResponseDto> => {
     const response = await client.post(
-      `${WMS_BASE_URL}/wms/sales-orders/merge`,
+      `${ALMONDYOUNG_API_BASE_URL}/sales-orders/merge`,
       data
     );
     return response.data;
