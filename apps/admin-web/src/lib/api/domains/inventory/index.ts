@@ -165,6 +165,8 @@ export { stocksClient } from './stocks.client';
 export { skusClient } from './skus.client';
 export { warehousesClient } from './warehouses.client';
 export { matchingClient } from '../matching/matching.client';
+export { transfersClient } from './transfers.client';
+export { reservationsClient } from './reservations.client';
 
 // 자동재고매칭 클라이언트 export
 export const inventoryMatchingClient = {

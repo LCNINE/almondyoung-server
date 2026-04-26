@@ -202,6 +202,16 @@ export const mainMenus: MainMenu[] = [
         path: '/inventory/sku-groups',
       },
       {
+        id: 'inventory-transfers',
+        title: '재고 이동',
+        path: '/inventory/transfers',
+      },
+      {
+        id: 'inventory-reservations',
+        title: '재고 예약',
+        path: '/inventory/reservations',
+      },
+      {
         id: 'product-matching',
         title: '상품 매칭',
         path: '/matching/products',

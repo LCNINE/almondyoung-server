@@ -630,3 +630,135 @@ export interface HolderSearchResponseDto {
   page: number;
   limit: number;
 }
+
+// ===== 재고 이동 (Transfer Jobs) =====
+export interface TransferItemInputDto {
+  skuId: string;
+  fromLocationId: string;
+  toLocationId: string;
+  quantity: number;
+}
+
+export interface CreateTransferJobDto {
+  fromWarehouseId: string;
+  toWarehouseId: string;
+  items: TransferItemInputDto[];
+  actorId?: string;
+  memo?: string;
+}
+
+export interface MoveWithinWarehouseDto {
+  skuId: string;
+  warehouseId: string;
+  fromLocationId: string;
+  toLocationId: string;
+  quantity: number;
+  actorId?: string;
+  memo?: string;
+}
+
+export interface TransferJobLineDto {
+  id: string;
+  jobId: string;
+  skuId: string;
+  quantity: number;
+  fromLocationId: string | null;
+  toLocationId: string | null;
+  eventId: string | null;
+  memo: string | null;
+  createdAt: string;
+}
+
+export interface BaseTransferJobDto {
+  id: string;
+  warehouseId: string;
+  occurredAt: string;
+  totalQuantity: number;
+  journalId: string | null;
+  actorId: string | null;
+  memo: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TransferJobWithLinesDto extends BaseTransferJobDto {
+  lines?: TransferJobLineDto[];
+}
+
+export interface TransferJobWithLineCountDto extends BaseTransferJobDto {
+  lineCount: number;
+}
+
+export interface TransferJobListResponseDto {
+  jobs: TransferJobWithLineCountDto[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface TransferJobStatusDto {
+  jobId: string;
+  total: number;
+  executed: number;
+  pending: number;
+  status: 'pending' | 'in_progress' | 'completed';
+}
+
+export interface CreateTransferJobResponseDto {
+  jobId: string;
+  journalId: string;
+  lines: TransferJobLineDto[];
+}
+
+export interface ExecuteTransferJobResponseDto {
+  jobId: string;
+  linesExecuted: number;
+}
+
+export interface MoveWithinWarehouseResponseDto {
+  jobId: string;
+  journalId: string;
+}
+
+export interface TransferJobQuery {
+  warehouseId?: string;
+  limit?: number;
+  offset?: number;
+}
+
+// ===== 재고 예약 (Reservations) =====
+export type ReservationTargetType = 'FULFILLMENT_ORDER' | 'MOVEMENT_TASK';
+export type ReservationStatus = 'pending' | 'confirmed' | 'released' | 'active';
+
+export interface ReservationDto {
+  id: string;
+  targetType: ReservationTargetType;
+  targetId: string;
+  skuId: string;
+  warehouseId: string;
+  quantity: number;
+  status: ReservationStatus;
+  fulfillmentOrderItemId: string | null;
+  timeoutAt: string | null;
+  reason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ReservationSummaryTargetDto {
+  targetType: string;
+  targetId: string;
+  quantity: number;
+}
+
+export interface ReservationSummaryDto {
+  skuId: string;
+  warehouseId: string;
+  totalReserved: number;
+  byTarget: ReservationSummaryTargetDto[];
+}
+
+export interface ExpireStaleReservationsResponseDto {
+  releasedCount: number;
+  message: string;
+}
