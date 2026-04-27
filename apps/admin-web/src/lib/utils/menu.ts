@@ -378,6 +378,7 @@ export const mainMenus: MainMenu[] = [
             title: '분류/카테고리',
             path: '/mall/categories',
           },
+          { id: 'product-tags', title: '태그', path: '/mall/tags' },
           { id: 'product-display', title: '진열' },
           { id: 'deleted-products', title: '휴지통(삭제상품 관리)' },
         ],
@@ -387,7 +388,7 @@ export const mainMenus: MainMenu[] = [
         title: '마케팅',
         children: [
           { id: 'messages', title: '메시지 or 푸시알림' },
-          { id: 'banners', title: '배너' },
+          { id: 'banner-groups', title: '배너 그룹', path: '/mall/banner-groups' },
           { id: 'popups', title: '팝업/공지사항' },
           { id: 'points', title: '적립금' },
           { id: 'coupons', title: '쿠폰' },
