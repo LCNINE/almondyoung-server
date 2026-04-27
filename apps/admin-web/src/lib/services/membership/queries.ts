@@ -63,3 +63,31 @@ export const useAdjustEntitlement = () => {
     },
   });
 };
+
+export const useForceCancelSubscription = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      contractId,
+      reason,
+      refundType,
+      refundAmount,
+      adminNote,
+    }: {
+      contractId: string;
+      reason: string;
+      refundType: 'FULL' | 'PARTIAL' | 'NONE';
+      refundAmount?: number;
+      adminNote?: string;
+    }) =>
+      membershipApi.forceCancelSubscription(contractId, {
+        reason,
+        refundType,
+        refundAmount,
+        adminNote,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: membershipQueryKeys.all });
+    },
+  });
+};

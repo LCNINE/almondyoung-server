@@ -68,7 +68,11 @@ export class SubscriptionService {
   async getCurrentSubscriptionDetails(userId: string) {
     const data = await this.entitlementService.getUserEntitlement(userId);
     if (!data) return null;
-    return { ...data, nextBillingDate: data.contract.nextBillingDate ?? null };
+    return {
+      ...data,
+      billingDate: data.contract.billingDate ?? null,
+      nextBillingDate: data.contract.nextBillingDate ?? null,
+    };
   }
 
   /**

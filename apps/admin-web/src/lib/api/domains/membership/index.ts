@@ -133,4 +133,19 @@ export const membershipApi = {
       reason,
     });
   },
+
+  forceCancelSubscription: async (
+    contractId: string,
+    body: {
+      reason: string;
+      refundType: 'FULL' | 'PARTIAL' | 'NONE';
+      refundAmount?: number;
+      adminNote?: string;
+    },
+  ): Promise<void> => {
+    await client.post(
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/subscriptions/${encodeURIComponent(contractId)}/force-cancel`,
+      body,
+    );
+  },
 };
