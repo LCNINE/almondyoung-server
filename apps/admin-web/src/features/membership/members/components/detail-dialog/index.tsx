@@ -5,6 +5,8 @@ import { toast } from 'sonner';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -14,6 +16,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Separator } from '@/components/ui/separator';
 import {
   Table,
   TableBody,
@@ -29,6 +35,7 @@ import {
   useMemberContractEvents,
   useSetAutoRenewal,
   useAdjustEntitlement,
+  useForceCancelSubscription,
 } from '@/lib/services/membership';
 
 interface MembershipMemberDetailDialogProps {
@@ -85,6 +92,138 @@ function getBillingEventLabel(eventType: string): { label: string; variant: 'def
     default:
       return { label: eventType, variant: 'outline' };
   }
+}
+
+// 강제 즉시 취소 다이얼로그
+interface ForceCancelDialogProps {
+  open: boolean;
+  onClose: () => void;
+  contractId: string;
+  onSuccess: () => void;
+}
+
+function ForceCancelDialog({ open, onClose, contractId, onSuccess }: ForceCancelDialogProps) {
+  const [reason, setReason] = useState('');
+  const [refundType, setRefundType] = useState<'FULL' | 'PARTIAL' | 'NONE'>('NONE');
+  const [refundAmount, setRefundAmount] = useState('');
+  const [adminNote, setAdminNote] = useState('');
+  const forceCancelMutation = useForceCancelSubscription();
+
+  const handleClose = () => {
+    setReason('');
+    setRefundType('NONE');
+    setRefundAmount('');
+    setAdminNote('');
+    onClose();
+  };
+
+  const handleConfirm = async () => {
+    if (!reason.trim()) {
+      toast.error('취소 사유를 입력해주세요.');
+      return;
+    }
+    if (refundType === 'PARTIAL' && (!refundAmount || Number(refundAmount) <= 0)) {
+      toast.error('환불 금액을 입력해주세요.');
+      return;
+    }
+    try {
+      await forceCancelMutation.mutateAsync({
+        contractId,
+        reason: reason.trim(),
+        refundType,
+        refundAmount: refundType === 'PARTIAL' ? Number(refundAmount) : undefined,
+        adminNote: adminNote.trim() || undefined,
+      });
+      toast.success('구독이 즉시 취소되었습니다.');
+      onSuccess();
+      handleClose();
+    } catch {
+      toast.error('강제 취소에 실패했습니다.');
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-destructive">구독 강제 즉시 취소</DialogTitle>
+          <DialogDescription>
+            구독이 즉시 종료됩니다. 이 작업은 되돌릴 수 없습니다.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label>취소 사유 <span className="text-destructive">*</span></Label>
+            <Textarea
+              placeholder="취소 사유를 입력해주세요"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={2}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>환불 유형 <span className="text-destructive">*</span></Label>
+            <RadioGroup
+              value={refundType}
+              onValueChange={(v) => setRefundType(v as 'FULL' | 'PARTIAL' | 'NONE')}
+              className="flex gap-4"
+            >
+              <div className="flex items-center gap-1.5">
+                <RadioGroupItem value="NONE" id="refund-none" />
+                <Label htmlFor="refund-none" className="cursor-pointer font-normal">환불 없음</Label>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <RadioGroupItem value="FULL" id="refund-full" />
+                <Label htmlFor="refund-full" className="cursor-pointer font-normal">전액 환불</Label>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <RadioGroupItem value="PARTIAL" id="refund-partial" />
+                <Label htmlFor="refund-partial" className="cursor-pointer font-normal">부분 환불</Label>
+              </div>
+            </RadioGroup>
+          </div>
+
+          {refundType === 'PARTIAL' && (
+            <div className="space-y-1.5">
+              <Label>환불 금액 (원) <span className="text-destructive">*</span></Label>
+              <Input
+                type="number"
+                placeholder="환불 금액 입력"
+                value={refundAmount}
+                onChange={(e) => setRefundAmount(e.target.value)}
+                min={0}
+              />
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <Label>관리자 메모 (선택)</Label>
+            <Textarea
+              placeholder="내부 메모 (고객에게 표시되지 않음)"
+              value={adminNote}
+              onChange={(e) => setAdminNote(e.target.value)}
+              rows={2}
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={handleClose}>
+            닫기
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={handleConfirm}
+            disabled={forceCancelMutation.isPending}
+          >
+            {forceCancelMutation.isPending ? '처리 중...' : '즉시 취소 확인'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 // 첫번째 탭: 기간 관리
@@ -164,29 +303,45 @@ function PeriodTab({ userId, contractId }: { userId: string; contractId: string 
   );
 }
 
-// 두번째 탭: 플랜 변경
+// 두번째 탭: 플랜 / 결제 방식 / 해지 관리
 function PlanTab({ userId, contractId }: { userId: string; contractId: string }) {
-  const { data: detail, isLoading } = useMemberDetail(userId);
+  const { data: detail, isLoading, refetch } = useMemberDetail(userId);
   const setAutoRenewalMutation = useSetAutoRenewal();
-  const [autoRenewal, setAutoRenewal] = useState<boolean | null>(null);
+  const [pendingAutoRenewal, setPendingAutoRenewal] = useState<boolean | null>(null);
+  const [forceCancelOpen, setForceCancelOpen] = useState(false);
 
-  const effectiveAutoRenewal = autoRenewal ?? detail?.autoRenewal ?? true;
+  const effectiveAutoRenewal = pendingAutoRenewal ?? detail?.autoRenewal ?? true;
+  const isActive = detail?.status === 'ACTIVE' || detail?.status === 'PAUSED';
 
-  const handleSave = async () => {
-    if (autoRenewal === null) return;
+  const handleAutoRenewalSave = async () => {
+    if (pendingAutoRenewal === null) return;
     try {
-      await setAutoRenewalMutation.mutateAsync({ contractId, autoRenewal });
-      toast.success('설정이 저장되었습니다.');
-      setAutoRenewal(null);
+      await setAutoRenewalMutation.mutateAsync({ contractId, autoRenewal: pendingAutoRenewal });
+      toast.success(
+        pendingAutoRenewal
+          ? '자동갱신이 재개되었습니다.'
+          : '해지가 예약되었습니다. 현재 구독 기간 만료 후 자동갱신이 중단됩니다.',
+      );
+      setPendingAutoRenewal(null);
     } catch {
       toast.error('설정 저장에 실패했습니다.');
     }
   };
 
+  // 결제 방식 표시
+  function getBillingTypeLabel() {
+    if (!detail) return '-';
+    if (detail.autoRenewal) return '정기결제 (자동갱신)';
+    // autoRenewal=false인 경우: nextBillingDate가 없으면 일시결제이거나 해지 예약됨
+    if (!detail.nextBillingDate) return '일시결제';
+    return '정기결제 (해지 예약됨)';
+  }
+
   if (isLoading) return <Skeleton className="h-48 w-full" />;
 
   return (
     <div className="space-y-4">
+      {/* 구독 정보 */}
       <div className="rounded-lg border p-4 space-y-3">
         <div className="flex items-center justify-between">
           <div>
@@ -205,35 +360,84 @@ function PlanTab({ userId, contractId }: { userId: string; contractId: string })
           </Badge>
         </div>
 
-        <div className="border-t pt-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">자동 연장</p>
-              <p className="text-xs text-muted-foreground">구독 만료 시 자동으로 갱신됩니다.</p>
-            </div>
-            <Switch
-              checked={effectiveAutoRenewal}
-              onCheckedChange={(checked) => setAutoRenewal(checked)}
-            />
-          </div>
+        <Separator />
+
+        {/* 결제 방식 */}
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-muted-foreground">결제 방식</span>
+          <span className="font-medium">{getBillingTypeLabel()}</span>
         </div>
 
+        {/* 다음 결제일 or 구독 종료일 */}
         <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">다음 결제일</span>
-          <span>{formatDate(detail?.nextBillingDate)}</span>
+          <span className="text-muted-foreground">
+            {detail?.autoRenewal ? '다음 결제일' : '구독 종료일'}
+          </span>
+          <span>
+            {detail?.autoRenewal
+              ? formatDate(detail.nextBillingDate)
+              : formatDate(detail?.endsAt)}
+          </span>
         </div>
       </div>
 
-      {autoRenewal !== null && (
-        <Button
-          size="sm"
-          onClick={handleSave}
-          disabled={setAutoRenewalMutation.isPending}
-          className="w-full"
-        >
-          {setAutoRenewalMutation.isPending ? '저장 중...' : '변경하기'}
-        </Button>
+      {/* 자동갱신 설정 — ACTIVE 구독에서만 의미 있음 */}
+      {isActive && (
+        <div className="rounded-lg border p-4 space-y-3">
+          <p className="text-sm font-medium">자동갱신 설정</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm">자동 연장</p>
+              <p className="text-xs text-muted-foreground">
+                {effectiveAutoRenewal
+                  ? '구독 만료 시 자동으로 갱신됩니다.'
+                  : '현재 구독 기간 만료 후 자동갱신이 중단됩니다.'}
+              </p>
+            </div>
+            <Switch
+              checked={effectiveAutoRenewal}
+              onCheckedChange={(checked) => setPendingAutoRenewal(checked)}
+            />
+          </div>
+
+          {pendingAutoRenewal !== null && (
+            <Button
+              size="sm"
+              onClick={handleAutoRenewalSave}
+              disabled={setAutoRenewalMutation.isPending}
+              className="w-full"
+            >
+              {setAutoRenewalMutation.isPending ? '저장 중...' : '변경 저장'}
+            </Button>
+          )}
+        </div>
       )}
+
+      {/* 강제 즉시 취소 — ACTIVE/PAUSED 구독에서만 */}
+      {isActive && (
+        <div className="rounded-lg border border-destructive/30 p-4 space-y-2">
+          <p className="text-sm font-medium text-destructive">강제 즉시 취소</p>
+          <p className="text-xs text-muted-foreground">
+            구독을 즉시 종료합니다. 정기결제 해지 예약과 달리 현재 구독 기간도 즉시 종료됩니다.
+            환불 여부를 선택할 수 있습니다.
+          </p>
+          <Button
+            size="sm"
+            variant="destructive"
+            className="w-full"
+            onClick={() => setForceCancelOpen(true)}
+          >
+            강제 즉시 취소
+          </Button>
+        </div>
+      )}
+
+      <ForceCancelDialog
+        open={forceCancelOpen}
+        onClose={() => setForceCancelOpen(false)}
+        contractId={contractId}
+        onSuccess={() => refetch()}
+      />
     </div>
   );
 }
@@ -371,7 +575,6 @@ export function MembershipMemberDetailDialog({
             </div>
           </div>
 
-          {/* Tabs */}
           {member && (
             <Tabs defaultValue="period">
               <TabsList className="w-full">
