@@ -11,12 +11,15 @@ import { warehousesClient } from '../../api/domains/inventory/warehouses.client'
 import { transfersClient } from '../../api/domains/inventory/transfers.client';
 import { reservationsClient } from '../../api/domains/inventory/reservations.client';
 import { stocktakingClient } from '../../api/domains/inventory/stocktaking.client';
+import { suppliersClient } from '../../api/domains/inventory/suppliers.client';
+import { supplierCategoriesClient } from '../../api/domains/inventory/supplier-categories.client';
 import type {
   StockSummaryQuery,
   StockHistoryQuery,
   TransferJobQuery,
   ReservationTargetType,
   StocktakingSessionQuery,
+  SupplierFiltersDto,
 } from '../../types/dto/inventory';
 
 export const useStocks = (query = {}) => {
@@ -238,27 +241,43 @@ export const useInventoryMatching = (id: string) => {
 };
 
 // 공급처 관련 쿼리
-export const useSuppliers = (query?: Parameters<typeof inventoryMatchingClient.suppliers.list>[0]) => {
+export const useSuppliers = (filters?: SupplierFiltersDto) => {
   return useQuery({
-    queryKey: inventoryQueryKeys.suppliers(query),
-    queryFn: () => inventoryMatchingClient.suppliers.list(query),
+    queryKey: inventoryQueryKeys.suppliers(filters),
+    queryFn: () => suppliersClient.list(filters),
     staleTime: 5 * 60 * 1000,
   });
 };
 
-export const useSupplierSearch = (query: string, page = 1, limit = 10) => {
+export const useSupplierFilterOptions = () => {
   return useQuery({
-    queryKey: inventoryQueryKeys.supplierSearch(query, page, limit),
-    queryFn: () => inventoryMatchingClient.suppliers.search(query, page, limit),
-    enabled: !!query && query.length > 0,
-    staleTime: 2 * 60 * 1000,
+    queryKey: inventoryQueryKeys.supplierFilterOptions(),
+    queryFn: () => suppliersClient.filterOptions(),
+    staleTime: 10 * 60 * 1000,
   });
 };
 
 export const useSupplier = (id: string) => {
   return useQuery({
     queryKey: inventoryQueryKeys.supplier(id),
-    queryFn: () => inventoryMatchingClient.suppliers.get(id),
+    queryFn: () => suppliersClient.get(id),
+    enabled: !!id,
+  });
+};
+
+// 공급처 분류 관련 쿼리
+export const useSupplierCategories = () => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.supplierCategories(),
+    queryFn: () => supplierCategoriesClient.list(),
+    staleTime: 10 * 60 * 1000,
+  });
+};
+
+export const useSupplierCategory = (id: string) => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.supplierCategory(id),
+    queryFn: () => supplierCategoriesClient.get(id),
     enabled: !!id,
   });
 };

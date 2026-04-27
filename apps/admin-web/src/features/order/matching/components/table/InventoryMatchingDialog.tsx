@@ -19,7 +19,6 @@ import { useVariant, useMaster } from '@/lib/services/products';
 import {
   useWarehouses,
   useSuppliers,
-  useSupplierSearch,
   useCreateSupplier,
   useHolders,
   useHolderSearch,
@@ -127,8 +126,9 @@ export function InventoryMatchingDialog({ isOpen, onClose, line }: InventoryMatc
 
   // API hooks
   const { data: warehouses, isLoading: loadingWarehouses } = useWarehouses();
-  const { data: suppliersResponse } = useSuppliers();
-  const { data: supplierSearchResults, isLoading: searchingSuppliers } = useSupplierSearch(supplierSearch);
+  const { data: suppliersResponse } = useSuppliers({ search: supplierSearch || undefined, limit: 50 });
+  const searchingSuppliers = false;
+  const supplierSearchResults = suppliersResponse;
   const { data: holdersResponse } = useHolders();
   const { data: holderSearchResults, isLoading: searchingHolders } = useHolderSearch(holderSearch);
 
@@ -281,10 +281,7 @@ export function InventoryMatchingDialog({ isOpen, onClose, line }: InventoryMatc
     const name = prompt('공급처명을 입력하세요:');
     if (name) {
       try {
-        const newSupplier = await createSupplier.mutateAsync({
-          name,
-          contactInfo: {},
-        });
+        const newSupplier = await createSupplier.mutateAsync({ name });
         setSupplierId(newSupplier.id);
         setSupplierSearch(newSupplier.name);
         setShowSupplierCreate(false);
@@ -319,7 +316,7 @@ export function InventoryMatchingDialog({ isOpen, onClose, line }: InventoryMatc
 
   // 검색 다이얼로그 핸들러들
   const handleSupplierSearch = (query: string) => {
-    // 검색 로직은 이미 useSupplierSearch 훅에서 처리됨
+    setSupplierSearch(query);
   };
 
   const handleSupplierSelect = (supplier: any) => {
@@ -329,10 +326,7 @@ export function InventoryMatchingDialog({ isOpen, onClose, line }: InventoryMatc
 
   const handleSupplierCreate = async (data: any) => {
     try {
-      const newSupplier = await createSupplier.mutateAsync({
-        name: data.name,
-        contactInfo: data.contactInfo || {},
-      });
+      const newSupplier = await createSupplier.mutateAsync({ name: data.name });
       setSupplierId(newSupplier.id);
       setSupplierSearch(newSupplier.name);
       alert('공급처가 성공적으로 생성되었습니다.');
