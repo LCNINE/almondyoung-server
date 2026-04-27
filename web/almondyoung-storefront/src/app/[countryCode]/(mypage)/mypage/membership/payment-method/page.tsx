@@ -5,13 +5,14 @@ import {
   getBillingMethods,
   updateBillingAgreementMethod,
 } from "@lib/api/wallet"
-import { getCurrentSubscription } from "@lib/api/membership"
+import { getCurrentSubscription, subscribeWithBillingMethod } from "@lib/api/membership"
 import type { BillingAgreementDto, BillingMethodDto } from "@lib/types/dto/wallet"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { useEffect, useState } from "react"
 import { toast } from "sonner"
 import { MembershipPaymentMethodSkeleton } from "@/components/skeletons/page-skeletons"
 import { providerLabel } from "@lib/utils/billing-provider"
+import { formatDate } from "@lib/utils/format-date"
 
 const IconChevronLeft = () => (
   <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -34,16 +35,16 @@ const IconCheckCircle = () => (
 )
 
 
-function formatNextBillingDate(dateStr: string | null | undefined): string {
-  if (!dateStr) return ""
-  const d = new Date(dateStr)
-  if (isNaN(d.getTime())) return ""
-  return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일`
-}
 
 export default function MembershipPaymentMethodPage() {
   const router = useRouter()
+  const params = useParams()
+  const countryCode = typeof params.countryCode === "string" ? params.countryCode : "kr"
   const searchParams = useSearchParams()
+
+  const planId = searchParams.get("planId")
+  const redirect = searchParams.get("redirect")
+  const isSubscribeFlow = redirect === "subscribe" && !!planId
 
   const [isLoading, setIsLoading] = useState(true)
   const [agreement, setAgreement] = useState<BillingAgreementDto | null>(null)
@@ -72,7 +73,7 @@ export default function MembershipPaymentMethodPage() {
         const [agreements, methods, subscription] = await Promise.all([
           getBillingAgreements(),
           getBillingMethods(),
-          getCurrentSubscription().catch(() => null),
+          isSubscribeFlow ? Promise.resolve(null) : getCurrentSubscription().catch(() => null),
         ])
 
         const membershipAgreement =
@@ -108,6 +109,21 @@ export default function MembershipPaymentMethodPage() {
     }
   }
 
+  const handleSubscribeWithMethod = async (billingMethodId: string) => {
+    if (!planId || isChanging) return
+
+    try {
+      setIsChanging(billingMethodId)
+      await subscribeWithBillingMethod(planId, billingMethodId, "recurring")
+      toast.success("7일 무료 체험이 시작되었습니다! 체험 종료 후 자동으로 결제됩니다.")
+      router.push(`/${countryCode}/mypage/membership/subscribe/success`)
+    } catch {
+      toast.error("구독 등록에 실패했습니다.")
+    } finally {
+      setIsChanging(null)
+    }
+  }
+
   const handleRegisterNewCard = () => {
     const walletWebUrl =
       process.env.NEXT_PUBLIC_WALLET_WEB_URL ?? "http://localhost:3200"
@@ -121,7 +137,7 @@ export default function MembershipPaymentMethodPage() {
     return <MembershipPaymentMethodSkeleton />
   }
 
-  const formattedNextBillingDate = formatNextBillingDate(nextBillingDate)
+  const formattedNextBillingDate = formatDate(nextBillingDate, undefined, "")
 
   return (
     <div className="flex min-h-screen flex-col bg-white font-['Pretendard']">
@@ -146,55 +162,61 @@ export default function MembershipPaymentMethodPage() {
         {/* 콘텐츠 */}
         <div className="flex-1 overflow-y-auto px-6 py-8">
           <div className="flex flex-col gap-8">
-            {/* 현재 정기결제 카드 */}
-            <section aria-labelledby="current-method-title">
-              <h2
-                id="current-method-title"
-                className="text-xs font-bold leading-4 text-black"
-              >
-                현재 정기결제 카드
-              </h2>
-              <div className="mt-3">
-                {currentMethod ? (
-                  <div className="flex items-center gap-3 rounded-md border border-gray-200 bg-gray-50 p-4">
-                    <IconCheckCircle />
-                    <div className="flex flex-1 flex-col gap-0.5">
-                      <p className="text-sm font-semibold text-black">
-                        {currentMethod.displayName ?? "등록된 카드"}
-                      </p>
-                      <span className="w-fit rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
-                        {providerLabel(currentMethod.providerType)}
-                      </span>
-                    </div>
+            {!isSubscribeFlow && (
+              <>
+                {/* 현재 정기결제 카드 */}
+                <section aria-labelledby="current-method-title">
+                  <h2
+                    id="current-method-title"
+                    className="text-xs font-bold leading-4 text-black"
+                  >
+                    현재 정기결제 카드
+                  </h2>
+                  <div className="mt-3">
+                    {currentMethod ? (
+                      <div className="flex items-center gap-3 rounded-md border border-gray-200 bg-gray-50 p-4">
+                        <IconCheckCircle />
+                        <div className="flex flex-1 flex-col gap-0.5">
+                          <p className="text-sm font-semibold text-black">
+                            {currentMethod.displayName ?? "등록된 카드"}
+                          </p>
+                          <span className="w-fit rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
+                            {providerLabel(currentMethod.providerType)}
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="rounded-md bg-gray-100 p-4">
+                        <p className="text-xs leading-4 text-gray-600">
+                          {agreement
+                            ? "결제 수단 정보를 불러올 수 없습니다."
+                            : "등록된 정기결제 수단이 없습니다."}
+                        </p>
+                      </div>
+                    )}
                   </div>
-                ) : (
-                  <div className="rounded-md bg-gray-100 p-4">
-                    <p className="text-xs leading-4 text-gray-600">
-                      {agreement
-                        ? "결제 수단 정보를 불러올 수 없습니다."
-                        : "등록된 정기결제 수단이 없습니다."}
-                    </p>
-                  </div>
-                )}
-              </div>
-            </section>
+                </section>
 
-            {/* 결제 안내 */}
-            <section aria-label="결제 안내">
-              <p className="text-xs font-medium leading-relaxed text-gray-600">
-                {formattedNextBillingDate
-                  ? <>다음 결제일은 <strong className="text-black">{formattedNextBillingDate}</strong>입니다.</>
-                  : "다음 결제일 정보를 불러올 수 없습니다."}
-                <br />
-                결제 실패 시 등록된 다른 카드로 순서대로 결제를 시도합니다.
-              </p>
-            </section>
+                {/* 결제 안내 */}
+                <section aria-label="결제 안내">
+                  <p className="text-xs font-medium leading-relaxed text-gray-600">
+                    {formattedNextBillingDate
+                      ? <>다음 결제일은 <strong className="text-black">{formattedNextBillingDate}</strong>입니다.</>
+                      : "다음 결제일 정보를 불러올 수 없습니다."}
+                    <br />
+                    결제 실패 시 등록된 다른 카드로 순서대로 결제를 시도합니다.
+                  </p>
+                </section>
+              </>
+            )}
 
-            {/* 다른 카드로 변경 */}
             {otherMethods.length > 0 && (
-              <section aria-label="다른 카드로 변경" className="flex flex-col gap-3">
+              <section
+                aria-label={isSubscribeFlow ? "등록된 카드 목록" : "다른 카드로 변경"}
+                className="flex flex-col gap-3"
+              >
                 <h2 className="text-xs font-bold leading-4 text-black">
-                  다른 카드로 변경
+                  {isSubscribeFlow ? "등록된 카드 목록" : "다른 카드로 변경"}
                 </h2>
                 {otherMethods.map((method) => (
                   <div
@@ -211,10 +233,18 @@ export default function MembershipPaymentMethodPage() {
                     </div>
                     <button
                       className="shrink-0 rounded-sm border border-gray-400 bg-white px-2.5 py-1.5 text-xs font-normal leading-4 text-black shadow-sm transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      onClick={() => handleChangeMethod(method.id)}
+                      onClick={() =>
+                        isSubscribeFlow
+                          ? handleSubscribeWithMethod(method.id)
+                          : handleChangeMethod(method.id)
+                      }
                       disabled={isChanging === method.id || !!isChanging}
                     >
-                      {isChanging === method.id ? "변경 중..." : "이 카드로 변경"}
+                      {isChanging === method.id
+                        ? "처리 중..."
+                        : isSubscribeFlow
+                          ? "이 카드로 구독하기"
+                          : "이 카드로 변경"}
                     </button>
                   </div>
                 ))}

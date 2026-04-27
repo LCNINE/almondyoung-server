@@ -70,7 +70,7 @@ const subscriptionSchema = z.object({
     .refine((val) => val === "monthly" || val === "yearly", {
       message: "구독 유형을 선택해주세요",
     }),
-  billingMode: z.enum(["recurring", "one_time"]).default("recurring"),
+  billingMode: z.enum(["recurring", "one_time"]),
   discountBenefitId: z.string().optional(),
   agreement: z.boolean().refine((value) => value === true, {
     message: "약관에 동의해주세요",
@@ -175,6 +175,10 @@ export function MembershipForm({
       const billingMode = data.billingMode
 
       if (selectedBillingMethodId) {
+        if (billingMode === "one_time" && !policyAgreed) {
+          toast.error("결제 및 환불 정책에 동의해주세요.")
+          return
+        }
         await subscribeWithBillingMethod(selectedPlanId, selectedBillingMethodId, billingMode)
         if (billingMode === "recurring") {
           toast.success("7일 무료 체험이 시작되었습니다! 체험 종료 후 자동으로 결제됩니다.")
@@ -186,7 +190,7 @@ export function MembershipForm({
         // 신규 카드: 정기결제는 카드 먼저 등록 필요, 한번만결제는 wallet-web으로 바로 이동
         if (billingMode === "recurring") {
           toast.info("정기결제 무료체험을 시작하려면 먼저 카드를 등록해주세요.")
-          router.push(`/${countryCode}/mypage/membership/payment-method?redirect=subscribe&planId=${selectedPlanId}&billingMode=recurring`)
+          router.push(`/${countryCode}/mypage/membership/payment-method?redirect=subscribe&planId=${selectedPlanId}`)
         } else {
           if (!policyAgreed) {
             toast.error("결제 및 환불 정책에 동의해주세요.")
@@ -264,7 +268,7 @@ export function MembershipForm({
                     <FormControl>
                       <RadioGroup
                         onValueChange={field.onChange}
-                        defaultValue={field.value}
+                        value={field.value ?? ""}
                         className="flex flex-col"
                       >
                         <FormItem className="flex flex-col items-center">
@@ -272,6 +276,7 @@ export function MembershipForm({
                             <Label
                               htmlFor="monthly"
                               className="bg-popover hover:bg-accent hover:text-accent-foreground has-checked:border-primary flex w-full items-center justify-between rounded-md border-2 p-3"
+                              onClick={() => field.onChange("monthly")}
                             >
                               <RadioGroupItem
                                 hidden
@@ -299,6 +304,7 @@ export function MembershipForm({
                             <Label
                               htmlFor="yearly"
                               className="bg-popover hover:bg-accent hover:text-accent-foreground has-checked:border-primary flex w-full items-center justify-between rounded-md border-2 p-3"
+                              onClick={() => field.onChange("yearly")}
                             >
                               <RadioGroupItem
                                 hidden
@@ -359,12 +365,13 @@ export function MembershipForm({
                     <FormControl>
                       <RadioGroup
                         onValueChange={field.onChange}
-                        defaultValue={field.value}
+                        value={field.value}
                         className="flex flex-col gap-2"
                       >
                         <Label
                           htmlFor="recurring"
                           className="bg-popover hover:bg-accent has-checked:border-primary flex cursor-pointer flex-col rounded-md border-2 p-3"
+                          onClick={() => field.onChange("recurring")}
                         >
                           <div className="flex items-center gap-3">
                             <RadioGroupItem hidden id="recurring" value="recurring" />
@@ -381,6 +388,7 @@ export function MembershipForm({
                         <Label
                           htmlFor="one_time"
                           className="bg-popover hover:bg-accent has-checked:border-primary flex cursor-pointer flex-col rounded-md border-2 p-3"
+                          onClick={() => field.onChange("one_time")}
                         >
                           <div className="flex items-center gap-3">
                             <RadioGroupItem hidden id="one_time" value="one_time" />

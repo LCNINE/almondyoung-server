@@ -54,8 +54,11 @@ function planLabel(durationDays?: number): string {
 
 function HistoryCard({ item }: { item: SubscriptionHistoryItemDto }) {
   const [open, setOpen] = useState(false)
-  const startDate = item.billingDate ?? item.startDate ?? item.createdAt
+  const startDate = item.startDate ?? item.createdAt
   const endDate = item.cancelledAt ?? item.endDate ?? item.nextBillingDate ?? null
+  const today = new Date()
+  const isInTrial = !!item.billingDate && item.status === "ACTIVE" && new Date(item.billingDate) > today
+  const displayNextBillingDate = isInTrial ? item.billingDate : item.nextBillingDate
 
   return (
     <div className="overflow-hidden rounded-xl border border-gray-100">
@@ -112,8 +115,10 @@ function HistoryCard({ item }: { item: SubscriptionHistoryItemDto }) {
             <span className="font-medium text-gray-900">{formatDate(startDate)}</span>
             {item.status === "ACTIVE" ? (
               <>
-                <span className="text-gray-400">다음 결제일</span>
-                <span className="font-medium text-gray-900">{formatDate(item.nextBillingDate)}</span>
+                <span className="text-gray-400">
+                  {isInTrial ? "자동 결제 시작일" : "다음 결제일"}
+                </span>
+                <span className="font-medium text-gray-900">{formatDate(displayNextBillingDate)}</span>
               </>
             ) : (
               <>
@@ -151,11 +156,9 @@ export default function MembershipHistorySection({
       )
     : []
 
-  const sortedSubscriptionHistory = [...subscriptionHistory].sort((a, b) => {
-    const aKey = a.startDate ?? a.billingDate ?? a.createdAt
-    const bKey = b.startDate ?? b.billingDate ?? b.createdAt
-    return bKey.localeCompare(aKey)
-  })
+  const sortedSubscriptionHistory = [...subscriptionHistory].sort((a, b) =>
+    b.createdAt.localeCompare(a.createdAt)
+  )
 
   return (
     <section className="mt-6 flex flex-col gap-4">

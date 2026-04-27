@@ -59,10 +59,18 @@ export default function MemberDetails({
     })
   }
 
-  const nextBillingDate =
-    membershipData?.nextBillingDate ??
-    membershipData?.currentPeriodEnd ??
-    membershipData?.endDate
+  const today = new Date()
+  const billingDateStr = membershipData?.billingDate
+  const isInTrial = !!billingDateStr && new Date(billingDateStr) > today
+  const trialDaysRemaining = isInTrial
+    ? Math.ceil((new Date(billingDateStr!).getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+    : 0
+
+  const nextBillingDate = isInTrial
+    ? billingDateStr
+    : (membershipData?.nextBillingDate ??
+        membershipData?.currentPeriodEnd ??
+        membershipData?.endDate)
 
   const tierCode =
     membershipData?.tier?.code ?? membershipData?.plan?.tier?.code ?? "-"
@@ -79,10 +87,22 @@ export default function MemberDetails({
   return (
     <div className="flex w-full flex-col items-center gap-4">
       {/* 1. 계정 상태 및 플랜 관리 */}
-      <figcaption className="text-center font-['Pretendard'] text-sm font-normal text-black">
-        다음 결제 예정일은{" "}
-        <strong>{formatDate(nextBillingDate)}</strong> 입니다
-      </figcaption>
+      {isInTrial ? (
+        <figcaption className="flex flex-col items-center gap-1.5 font-['Pretendard']">
+          <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
+            무료 체험 중 · {trialDaysRemaining}일 남음
+          </span>
+          <p className="text-center text-sm text-gray-600">
+            체험 종료 후 자동 결제 시작일:{" "}
+            <strong className="text-black">{formatDate(nextBillingDate)}</strong>
+          </p>
+        </figcaption>
+      ) : (
+        <figcaption className="text-center font-['Pretendard'] text-sm font-normal text-black">
+          다음 결제 예정일은{" "}
+          <strong>{formatDate(nextBillingDate)}</strong> 입니다
+        </figcaption>
+      )}
       <div className="flex items-center gap-2">
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1.5 rounded-md bg-yellow-100 px-2 py-1">

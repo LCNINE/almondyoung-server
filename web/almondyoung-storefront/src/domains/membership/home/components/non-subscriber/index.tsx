@@ -77,9 +77,12 @@ function HistoryCard({ item, cancellationReasons, onCancelled }: HistoryCardProp
   const [modalOpen, setModalOpen] = useState(false)
   const [isCancelling, setIsCancelling] = useState(false)
 
-  const startDate = item.billingDate ?? item.startDate ?? item.createdAt
+  const startDate = item.startDate ?? item.createdAt
   const endDate = item.cancelledAt ?? item.endDate ?? item.nextBillingDate ?? null
   const canCancel = item.status === "ACTIVE" && item.autoRenewal === true
+  const today = new Date()
+  const isInTrial = !!item.billingDate && item.status === "ACTIVE" && new Date(item.billingDate) > today
+  const displayNextBillingDate = isInTrial ? item.billingDate : item.nextBillingDate
 
   const handleCancel = async ({ reasonCode, reasonText }: { reasonCode: string; reasonText?: string }) => {
     try {
@@ -154,8 +157,16 @@ function HistoryCard({ item, cancellationReasons, onCancelled }: HistoryCardProp
 
               {item.status === "ACTIVE" ? (
                 <>
-                  <span className="text-gray-400">다음 결제일</span>
-                  <span className="font-medium text-gray-900">{fmtDate(item.nextBillingDate)}</span>
+                  <span className="text-gray-400">
+                    {isInTrial ? "자동 결제 시작일" : item.autoRenewal === false ? "구독 종료일" : "다음 결제일"}
+                  </span>
+                  <span className="font-medium text-gray-900">
+                    {isInTrial
+                      ? fmtDate(displayNextBillingDate)
+                      : item.autoRenewal === false
+                        ? fmtDate(item.endDate)
+                        : fmtDate(item.nextBillingDate)}
+                  </span>
                 </>
               ) : (
                 <>
@@ -176,8 +187,10 @@ function HistoryCard({ item, cancellationReasons, onCancelled }: HistoryCardProp
             {canCancel && (
               <div className="mt-3 border-t border-gray-200 pt-3">
                 <p className="mb-2 text-xs text-gray-500">
-                  해지 시 <strong>{fmtDate(item.nextBillingDate)}</strong>까지 서비스를 이용하실 수 있으며,
-                  이후 자동 결제가 중단됩니다.
+                  {isInTrial
+                    ? <>무료 체험을 해지하면 <strong>{fmtDate(item.billingDate)}</strong> 이전에 서비스 이용이 종료됩니다.</>
+                    : <>해지 시 <strong>{fmtDate(item.nextBillingDate)}</strong>까지 서비스를 이용하실 수 있으며, 이후 자동 결제가 중단됩니다.</>
+                  }
                 </p>
                 <button
                   type="button"
