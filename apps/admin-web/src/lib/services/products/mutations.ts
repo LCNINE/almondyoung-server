@@ -32,6 +32,9 @@ import type {
   UpdateTagGroupDto,
   CreateTagValueDto,
   UpdateTagValueDto,
+  ReplacePricingRulesDto,
+  CalculatePriceRequestDto,
+  CreateDraftVersionDto,
 } from '@/lib/types/dto/products';
 
 // ===== 카테고리 관련 뮤테이션 =====
@@ -590,5 +593,62 @@ export const useDeleteTagValue = () => {
       queryClient.invalidateQueries({ queryKey: productQueryKeys.tagGroups });
       queryClient.invalidateQueries({ queryKey: productQueryKeys.tagValues(data.groupId) });
     },
+  });
+};
+
+// ===== 버전 관련 뮤테이션 =====
+
+export const useCreateMasterDraftVersion = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ masterId, dto }: { masterId: string; dto: CreateDraftVersionDto }) =>
+      products.versions.createDraft(masterId, dto),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.masterVersions(variables.masterId),
+      });
+    },
+  });
+};
+
+// ===== 가격 관리 뮤테이션 =====
+
+export const useReplaceVersionPricingRules = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ versionId, dto }: { versionId: string; dto: ReplacePricingRulesDto }) =>
+      products.pricing.versions.replaceRules(versionId, dto),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.pricingVersionRules(variables.versionId),
+      });
+    },
+  });
+};
+
+export const useDeleteVersionPricingRules = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ versionId }: { versionId: string }) =>
+      products.pricing.versions.deleteRules(versionId),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.pricingVersionRules(variables.versionId),
+      });
+    },
+  });
+};
+
+export const useCalculateVersionPrice = () => {
+  return useMutation({
+    mutationFn: ({ versionId, dto }: { versionId: string; dto: CalculatePriceRequestDto }) =>
+      products.pricing.versions.calculate(versionId, dto),
+  });
+};
+
+export const useCalculateMasterPrice = () => {
+  return useMutation({
+    mutationFn: ({ masterId, dto }: { masterId: string; dto: CalculatePriceRequestDto }) =>
+      products.pricing.masters.calculate(masterId, dto),
   });
 };

@@ -636,3 +636,110 @@ export interface TagValueDto {
   createdAt: string;
   updatedAt: string;
 }
+
+// ===== 가격 관리 (Pricing) =====
+
+export type PricingLayer = 'base_price' | 'membership_price' | 'tiered_price';
+export type PricingScopeType = 'all_variants' | 'with_option' | 'variants';
+export type PricingOperationType = 'offset' | 'scale' | 'override';
+export type CustomerType = 'regular' | 'membership';
+
+export interface PricingRuleResponseDto {
+  id: string;
+  layer: PricingLayer;
+  order: number;
+  scopeType: PricingScopeType;
+  scopeTargetIds: string[] | null;
+  operationType: PricingOperationType;
+  operationValue: number;
+  minQuantity: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PricingRulesResponseDto {
+  basePriceRules: PricingRuleResponseDto[];
+  membershipPriceRules: PricingRuleResponseDto[];
+  tieredPriceRules: PricingRuleResponseDto[];
+}
+
+export interface PricingRuleInput {
+  order: number;
+  layer: PricingLayer;
+  scopeType: PricingScopeType;
+  scopeTargetIds?: string[];
+  operationType: PricingOperationType;
+  operationValue: number;
+  minQuantity?: number;
+}
+
+export interface ReplacePricingRulesDto {
+  basePriceRules: PricingRuleInput[];
+  membershipPriceRules: PricingRuleInput[];
+  tieredPriceRules: PricingRuleInput[];
+}
+
+export interface CalculatePriceRequestDto {
+  variantId: string;
+  quantity?: number;
+  customerType?: CustomerType;
+}
+
+export interface AppliedRuleDto {
+  ruleId: string;
+  layer: PricingLayer;
+  order: number;
+  scopeType: PricingScopeType;
+  operationType: PricingOperationType;
+  operationValue: number;
+  priceBeforeRule: number;
+  priceAfterRule: number;
+}
+
+export interface PriceBreakdownDto {
+  initialPrice: number;
+  afterBasePrice: number;
+  afterMembershipPrice?: number;
+  afterTieredPrice?: number;
+}
+
+export interface CalculatePriceResponseDto {
+  variantId: string;
+  price: number;
+  totalPrice?: number;
+  appliedRules: AppliedRuleDto[];
+  priceBreakdown: PriceBreakdownDto;
+}
+
+export interface TieredPriceDto {
+  minQuantity: number;
+  price: number;
+}
+
+export interface VariantPriceSetDto {
+  basePrice: number;
+  membershipPrice: number;
+  tieredPrices: TieredPriceDto[];
+}
+
+// ===== 버전 관련 =====
+
+export type VersionStatus = 'draft' | 'active' | 'inactive';
+
+export interface MasterVersionDto {
+  id: string;
+  masterId: string;
+  version: number;
+  status: VersionStatus;
+  name: string;
+  parentVersionId: string | null;
+  children: MasterVersionDto[];
+  createdAt: string;
+  updatedAt: string;
+  draftOwnerId?: string | null;
+}
+
+export interface CreateDraftVersionDto {
+  parentVersionId?: string;
+  copyMappings?: boolean;
+}
