@@ -1,17 +1,13 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { BarcodeScanInput } from '@/components/common/barcode-scan-input';
 import { useVerifyBarcode, useSimpleFullscanInbound } from '@/lib/services/inventory';
 import { toast } from 'sonner';
 import { Trash2 } from 'lucide-react';
-
-// 바코드 스캔 누적 후 simple-fullscan 방식으로 입고 처리
-// stocktaking session-detail-drawer의 Input + 로컬 state 패턴을 기반으로 구성
-// TODO: 추후 components/common/barcode-scan-input/ 공용 컴포넌트로 추출 예정
 
 type ScannedItem = {
   barcode: string;
@@ -29,19 +25,13 @@ type Props = {
 export function FullscanMode({ warehouseId, onSuccess }: Props) {
   const [barcode, setBarcode] = useState('');
   const [scannedItems, setScannedItems] = useState<ScannedItem[]>([]);
-  const barcodeInputRef = useRef<HTMLInputElement>(null);
 
   const verifyMutation = useVerifyBarcode();
   const inboundMutation = useSimpleFullscanInbound();
 
-  const handleScan = async () => {
-    const trimmed = barcode.trim();
-    if (!trimmed) return;
-
+  const handleScan = async (scanned: string) => {
     try {
-      const result = await verifyMutation.mutateAsync({ barcode: trimmed });
-      setBarcode('');
-      barcodeInputRef.current?.focus();
+      const result = await verifyMutation.mutateAsync({ barcode: scanned });
 
       const existing = scannedItems.find((i) => i.skuId === result.skuId);
       if (existing) {
@@ -52,7 +42,7 @@ export function FullscanMode({ warehouseId, onSuccess }: Props) {
       } else {
         setScannedItems((prev) => [
           ...prev,
-          { barcode: trimmed, skuId: result.skuId, skuCode: result.skuCode, skuName: result.skuName, quantity: 1 },
+          { barcode: scanned, skuId: result.skuId, skuCode: result.skuCode, skuName: result.skuName, quantity: 1 },
         ]);
         toast.success(`${result.skuName} 스캔 완료`);
       }
@@ -89,29 +79,13 @@ export function FullscanMode({ warehouseId, onSuccess }: Props) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex gap-2">
-        <div className="flex flex-1 flex-col gap-1">
-          <Label>바코드 스캔</Label>
-          <Input
-            ref={barcodeInputRef}
-            placeholder="바코드를 스캔하거나 입력 후 Enter"
-            value={barcode}
-            onChange={(e) => setBarcode(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleScan();
-            }}
-            autoFocus
-          />
-        </div>
-        <Button
-          variant="outline"
-          className="mt-6"
-          onClick={handleScan}
-          disabled={verifyMutation.isPending || !barcode.trim()}
-        >
-          확인
-        </Button>
-      </div>
+      <BarcodeScanInput
+        value={barcode}
+        onChange={setBarcode}
+        onScan={handleScan}
+        disabled={verifyMutation.isPending}
+        autoFocus
+      />
 
       {scannedItems.length > 0 && (
         <div className="flex flex-col gap-2">
