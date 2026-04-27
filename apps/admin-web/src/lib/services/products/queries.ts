@@ -418,3 +418,50 @@ export const useSalesChannelSites = (type: string = 'all') => {
     gcTime: Infinity,
   });
 };
+
+// ===== 배너 그룹 관련 쿼리 =====
+
+export const useBannerGroups = (query?: { category?: string }) => {
+  return useQuery({
+    queryKey: productQueryKeys.bannerGroupsList(query ?? {}),
+    queryFn: () => products.bannerGroups.list(query),
+    staleTime: 2 * 60 * 1000,
+  });
+};
+
+export const useBannerGroup = (id: string) => {
+  return useQuery({
+    queryKey: productQueryKeys.bannerGroup(id),
+    queryFn: () => products.bannerGroups.get(id),
+    enabled: !!id,
+    staleTime: 2 * 60 * 1000,
+  });
+};
+
+export const useBannersByGroup = (groupId: string, includeInactive = true) => {
+  return useQuery({
+    queryKey: productQueryKeys.bannersByGroup(groupId),
+    queryFn: () => products.banners.listByGroup(groupId, includeInactive),
+    enabled: !!groupId,
+    staleTime: 2 * 60 * 1000,
+  });
+};
+
+// ===== 태그 관련 쿼리 =====
+
+export const useTagGroups = (query?: { isActive?: boolean }) => {
+  return useQuery({
+    queryKey: productQueryKeys.tagGroupsList(query ?? {}),
+    queryFn: () => products.tags.listGroups(query),
+    staleTime: 2 * 60 * 1000,
+  });
+};
+
+export const useTagGroup = (id: string) => {
+  return useQuery({
+    queryKey: productQueryKeys.tagGroup(id),
+    queryFn: () => products.tags.getGroup(id),
+    enabled: !!id,
+    staleTime: 2 * 60 * 1000,
+  });
+};

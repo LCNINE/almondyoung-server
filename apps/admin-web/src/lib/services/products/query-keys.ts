@@ -59,6 +59,28 @@ export const productQueryKeys = {
   matchingTableList: (query: Record<string, any>) =>
     [...productQueryKeys.matchingTable, 'list', query] as const,
 
+  // 배너 그룹 관련
+  bannerGroups: ['banner-groups'] as const,
+  bannerGroupsList: (query: Record<string, unknown>) =>
+    [...productQueryKeys.bannerGroups, 'list', query] as const,
+  bannerGroup: (id: string) => [...productQueryKeys.bannerGroups, id] as const,
+
+  // 배너 관련
+  banners: ['banners'] as const,
+  bannersByGroup: (groupId: string) =>
+    [...productQueryKeys.banners, 'group', groupId] as const,
+  banner: (id: string) => [...productQueryKeys.banners, id] as const,
+
+  // 태그 그룹 관련
+  tagGroups: ['tag-groups'] as const,
+  tagGroupsList: (query: Record<string, unknown>) =>
+    [...productQueryKeys.tagGroups, 'list', query] as const,
+  tagGroup: (id: string) => [...productQueryKeys.tagGroups, id] as const,
+
+  // 태그 값 관련
+  tagValues: (groupId: string) =>
+    [...productQueryKeys.tagGroup(groupId), 'values'] as const,
+
   // 기존 호환성 (점진적 마이그레이션용)
   products: ['products'] as const,
   product: (id: string) => ['products', id] as const,

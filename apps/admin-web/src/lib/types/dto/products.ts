@@ -471,3 +471,168 @@ export interface LegacyVariantDto {
   created_at: string;
   updated_at: string;
 }
+
+// ===== 배너 그룹 관련 =====
+
+export interface CreateBannerGroupDto {
+  code: string;
+  title: string;
+  category?: string;
+  pcWidth?: number;
+  pcHeight?: number;
+  mobileWidth?: number;
+  mobileHeight?: number;
+  description?: string;
+  isActive?: boolean;
+  sortOrder?: number;
+  createdBy?: string;
+}
+
+export interface UpdateBannerGroupDto {
+  title?: string;
+  category?: string;
+  pcWidth?: number;
+  pcHeight?: number;
+  mobileWidth?: number;
+  mobileHeight?: number;
+  description?: string;
+  isActive?: boolean;
+  sortOrder?: number;
+  updatedBy?: string;
+}
+
+export interface BannerGroupDto {
+  id: string;
+  code: string;
+  title: string;
+  category?: string;
+  pcWidth?: number;
+  pcHeight?: number;
+  mobileWidth?: number;
+  mobileHeight?: number;
+  description?: string;
+  isActive: boolean;
+  sortOrder?: number;
+  createdBy?: string;
+  updatedBy?: string;
+  deletedAt?: string;
+  deletedBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BannerGroupListQuery {
+  category?: string;
+}
+
+// ===== 배너 관련 =====
+
+export interface CreateBannerDto {
+  bannerGroupId: string;
+  title: string;
+  description?: string;
+  pcImageFileId?: string;
+  mobileImageFileId?: string;
+  linkUrl?: string;
+  linkedProductMasterIds?: string[];
+  displayStartAt?: string;
+  displayEndAt?: string;
+  isActive?: boolean;
+  sortOrder?: number;
+  createdBy?: string;
+}
+
+export interface UpdateBannerDto {
+  title?: string;
+  description?: string;
+  pcImageFileId?: string;
+  mobileImageFileId?: string;
+  linkUrl?: string;
+  linkedProductMasterIds?: string[];
+  displayStartAt?: string;
+  displayEndAt?: string;
+  isActive?: boolean;
+  sortOrder?: number;
+  updatedBy?: string;
+}
+
+export interface BannerDto {
+  id: string;
+  bannerGroupId: string;
+  title: string;
+  description?: string;
+  pcImageFileId?: string;
+  mobileImageFileId?: string;
+  linkUrl?: string;
+  linkedProductMasterIds?: string[];
+  displayStartAt?: string;
+  displayEndAt?: string;
+  isActive: boolean;
+  sortOrder?: number;
+  createdBy?: string;
+  updatedBy?: string;
+  deletedAt?: string;
+  deletedBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BannerGroupWithBannersDto extends BannerGroupDto {
+  banners: BannerDto[];
+}
+
+// ===== 태그 그룹 관련 =====
+
+export interface CreateTagGroupDto {
+  name: string;
+  description?: string;
+  displayOrder?: number;
+  isActive?: boolean;
+}
+
+export interface UpdateTagGroupDto {
+  name?: string;
+  description?: string;
+  displayOrder?: number;
+  isActive?: boolean;
+}
+
+export interface TagGroupDto {
+  id: string;
+  name: string;
+  description?: string;
+  displayOrder?: number;
+  isActive: boolean;
+  valueCount?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TagGroupListQuery {
+  isActive?: boolean;
+}
+
+// ===== 태그 값 관련 =====
+
+export interface CreateTagValueDto {
+  name: string;
+  displayOrder?: number;
+  isActive?: boolean;
+}
+
+export interface UpdateTagValueDto {
+  name?: string;
+  displayOrder?: number;
+  isActive?: boolean;
+}
+
+export interface TagValueDto {
+  id: string;
+  groupId: string;
+  groupName?: string;
+  name: string;
+  displayOrder?: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}

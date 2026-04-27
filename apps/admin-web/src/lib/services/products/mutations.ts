@@ -24,6 +24,14 @@ import type {
   UpdateChannelProductDto,
   UpdateChannelProductNameDto,
   UpdateChannelProductStatusDto,
+  CreateBannerGroupDto,
+  UpdateBannerGroupDto,
+  CreateBannerDto,
+  UpdateBannerDto,
+  CreateTagGroupDto,
+  UpdateTagGroupDto,
+  CreateTagValueDto,
+  UpdateTagValueDto,
 } from '@/lib/types/dto/products';
 
 // ===== 카테고리 관련 뮤테이션 =====
@@ -435,6 +443,152 @@ export const useUpdateChannelProductStatus = () => {
       queryClient.invalidateQueries({
         queryKey: productQueryKeys.channelProduct(variables.id),
       });
+    },
+  });
+};
+
+// ===== 배너 그룹 뮤테이션 =====
+
+export const useCreateBannerGroup = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: CreateBannerGroupDto) => products.bannerGroups.create(dto),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.bannerGroups });
+    },
+  });
+};
+
+export const useUpdateBannerGroup = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, dto }: { id: string; dto: UpdateBannerGroupDto }) =>
+      products.bannerGroups.update(id, dto),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.bannerGroups });
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.bannerGroup(variables.id) });
+    },
+  });
+};
+
+export const useDeleteBannerGroup = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, deletedBy }: { id: string; deletedBy?: string }) =>
+      products.bannerGroups.remove(id, deletedBy),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.bannerGroups });
+    },
+  });
+};
+
+// ===== 배너 뮤테이션 =====
+
+export const useCreateBanner = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: CreateBannerDto) => products.banners.create(dto),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.bannersByGroup(data.bannerGroupId),
+      });
+    },
+  });
+};
+
+export const useUpdateBanner = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, dto }: { id: string; dto: UpdateBannerDto }) =>
+      products.banners.update(id, dto),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.bannersByGroup(data.bannerGroupId),
+      });
+    },
+  });
+};
+
+export const useDeleteBanner = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, groupId, deletedBy }: { id: string; groupId: string; deletedBy?: string }) =>
+      products.banners.remove(id, deletedBy).then((res) => ({ ...res, groupId })),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.bannersByGroup(data.groupId),
+      });
+    },
+  });
+};
+
+// ===== 태그 그룹 뮤테이션 =====
+
+export const useCreateTagGroup = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: CreateTagGroupDto) => products.tags.createGroup(dto),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.tagGroups });
+    },
+  });
+};
+
+export const useUpdateTagGroup = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, dto }: { id: string; dto: UpdateTagGroupDto }) =>
+      products.tags.updateGroup(id, dto),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.tagGroups });
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.tagGroup(variables.id) });
+    },
+  });
+};
+
+export const useDeleteTagGroup = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => products.tags.removeGroup(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.tagGroups });
+    },
+  });
+};
+
+// ===== 태그 값 뮤테이션 =====
+
+export const useCreateTagValue = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ groupId, dto }: { groupId: string; dto: CreateTagValueDto }) =>
+      products.tags.createValue(groupId, dto),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.tagGroups });
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.tagValues(data.groupId) });
+    },
+  });
+};
+
+export const useUpdateTagValue = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, groupId, dto }: { id: string; groupId: string; dto: UpdateTagValueDto }) =>
+      products.tags.updateValue(id, dto).then((res) => ({ ...res, groupId })),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.tagValues(data.groupId) });
+    },
+  });
+};
+
+export const useDeleteTagValue = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, groupId }: { id: string; groupId: string }) =>
+      products.tags.removeValue(id).then(() => ({ groupId })),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.tagGroups });
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.tagValues(data.groupId) });
     },
   });
 };
