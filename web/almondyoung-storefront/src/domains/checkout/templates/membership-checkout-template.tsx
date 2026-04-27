@@ -9,14 +9,11 @@ import { MobileCTA, PCFixedCTA } from "domains/checkout/components/cta"
 import { MobileHeader, PCHeader } from "domains/checkout/components/header"
 import { MobileOrderSummary } from "domains/checkout/components/order-summary"
 import { PaymentDetailSidebar } from "domains/checkout/components/payment-detail-sidebar"
-import { Switch } from "@/components/ui/switch"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { useParams, useRouter } from "next/navigation"
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
-
-type BillingMode = "one_time" | "recurring"
 
 interface MembershipCheckoutTemplateProps {
   user: UserDetail
@@ -37,7 +34,6 @@ export default function MembershipCheckoutTemplate({
 
   const [loading, setLoading] = useState(false)
   const [isPaymentDetailsOpen, setIsPaymentDetailsOpen] = useState(true)
-  const [billingMode, setBillingMode] = useState<BillingMode>("recurring")
   const [agreed, setAgreed] = useState(false)
 
   const totals: CartTotals = useMemo(
@@ -57,8 +53,8 @@ export default function MembershipCheckoutTemplate({
 
   const attemptPayment = async () => {
     const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback`
-    const { intentId } = await createMembershipCheckoutIntent(planId, returnUrl, billingMode)
-    setPendingPaymentMode("membership", { planId, billingMode })
+    const { intentId } = await createMembershipCheckoutIntent(planId, returnUrl, "one_time")
+    setPendingPaymentMode("membership", { planId, billingMode: "one_time" })
     const walletWebUrl = process.env.NEXT_PUBLIC_WALLET_WEB_URL || "http://localhost:3200"
     window.location.href = `${walletWebUrl}/pay/${intentId}`
   }
@@ -140,59 +136,18 @@ export default function MembershipCheckoutTemplate({
               </div>
             </section>
 
-            {/* 결제 방식 선택 */}
-            <section className="mb-4 rounded-[10px] border border-gray-200 bg-white p-6">
-              <h2 className="mb-4 text-base font-bold text-gray-900">결제 방식</h2>
-              <div className="flex items-center justify-between rounded-lg border border-gray-100 bg-gray-50 px-4 py-3">
-                <div>
-                  <p className="text-sm font-semibold text-gray-900">
-                    {billingMode === "recurring" ? "정기결제 (자동갱신)" : "1회 결제"}
-                  </p>
-                  <p className="mt-0.5 text-xs text-gray-500">
-                    {billingMode === "recurring"
-                      ? "매월 자동으로 결제됩니다"
-                      : "이번 달만 결제, 자동갱신 없음"}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-400">1회</span>
-                  <Switch
-                    checked={billingMode === "recurring"}
-                    onCheckedChange={(checked) => {
-                      setBillingMode(checked ? "recurring" : "one_time")
-                      // 모드 변경 시 정책 텍스트가 바뀌므로 재동의 필요
-                      setAgreed(false)
-                    }}
-                  />
-                  <span className="text-xs text-gray-400">정기</span>
-                </div>
-              </div>
-            </section>
-
             {/* 결제 정책 */}
             <section className="mb-4 rounded-[10px] border border-gray-200 bg-white p-6">
               <h2 className="mb-3 text-base font-bold text-gray-900">결제 안내</h2>
 
-              {billingMode === "one_time" ? (
-                <div className="space-y-2 text-sm text-gray-600">
-                  <p className="font-medium text-gray-800">📌 1회 결제 (자동결제 없음)</p>
-                  <ul className="ml-4 list-disc space-y-1 text-gray-600">
-                    <li>1회 결제로, 자동결제는 진행되지 않습니다.</li>
-                    <li>결제 즉시 이용이 시작되며, <span className="font-medium text-gray-800">이용 시작 후 환불은 불가</span>합니다.</li>
-                    <li>결제한 기간 동안 서비스 이용이 가능합니다.</li>
-                  </ul>
-                </div>
-              ) : (
-                <div className="space-y-2 text-sm text-gray-600">
-                  <p className="font-medium text-gray-800">🔄 정기결제 (매월 자동갱신)</p>
-                  <ul className="ml-4 list-disc space-y-1 text-gray-600">
-                    <li>매월 같은 날 자동으로 결제됩니다.</li>
-                    <li>언제든지 <span className="font-medium text-gray-800">다음 결제일 전</span>에 해지할 수 있습니다.</li>
-                    <li>해지 시 남은 기간은 그대로 이용 가능합니다.</li>
-                    <li><span className="font-medium text-gray-800">이용 시작 후 환불은 불가</span>합니다.</li>
-                  </ul>
-                </div>
-              )}
+              <div className="space-y-2 text-sm text-gray-600">
+                <p className="font-medium text-gray-800">📌 1회 결제 (자동결제 없음)</p>
+                <ul className="ml-4 list-disc space-y-1 text-gray-600">
+                  <li>1회 결제로, 자동결제는 진행되지 않습니다.</li>
+                  <li>결제 즉시 이용이 시작되며, <span className="font-medium text-gray-800">이용 시작 후 환불은 불가</span>합니다.</li>
+                  <li>결제한 기간 동안 서비스 이용이 가능합니다.</li>
+                </ul>
+              </div>
 
               {/* 환불 정책 공통 */}
               <div className="mt-4 rounded-lg bg-gray-50 p-3 text-xs text-gray-500">

@@ -26,7 +26,8 @@ import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { HttpApiError } from "@lib/api/api-error"
 import { getBillingMethods } from "@lib/api/wallet"
-import { subscribeWithBillingMethod } from "@lib/api/membership"
+import { subscribeWithBillingMethod, createMembershipCheckoutIntent } from "@lib/api/membership"
+import { setPendingPaymentMode } from "@lib/utils/checkout-intent-map"
 import { cn } from "@lib/utils"
 import { providerLabel } from "@lib/utils/billing-provider"
 import { useUser } from "@/contexts/user-context"
@@ -119,6 +120,7 @@ export function MembershipForm({
 
   const [billingMethods, setBillingMethods] = useState<BillingMethodDto[]>([])
   const [selectedBillingMethodId, setSelectedBillingMethodId] = useState<string | null>(null)
+  const [policyAgreed, setPolicyAgreed] = useState(false)
 
   useEffect(() => {
     getBillingMethods()
@@ -181,12 +183,20 @@ export function MembershipForm({
         }
         router.push(`/${countryCode}/mypage/membership/subscribe/success`)
       } else {
-        // 신규 카드: 정기결제는 카드 먼저 등록 필요, 한번만결제는 checkout으로
+        // 신규 카드: 정기결제는 카드 먼저 등록 필요, 한번만결제는 wallet-web으로 바로 이동
         if (billingMode === "recurring") {
           toast.info("정기결제 무료체험을 시작하려면 먼저 카드를 등록해주세요.")
           router.push(`/${countryCode}/mypage/membership/payment-method?redirect=subscribe&planId=${selectedPlanId}&billingMode=recurring`)
         } else {
-          router.push(`/${countryCode}/checkout/membership?planId=${selectedPlanId}`)
+          if (!policyAgreed) {
+            toast.error("결제 및 환불 정책에 동의해주세요.")
+            return
+          }
+          const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback`
+          const { intentId } = await createMembershipCheckoutIntent(selectedPlanId, returnUrl, "one_time")
+          setPendingPaymentMode("membership", { planId: selectedPlanId, billingMode: "one_time" })
+          const walletWebUrl = process.env.NEXT_PUBLIC_WALLET_WEB_URL || "http://localhost:3200"
+          window.location.href = `${walletWebUrl}/pay/${intentId}`
         }
       }
     } catch (error) {
@@ -204,12 +214,17 @@ export function MembershipForm({
 
   const billingMode = form.watch("billingMode")
 
+  useEffect(() => {
+    setPolicyAgreed(false)
+  }, [billingMode])
+
   function getSubmitButtonLabel() {
     if (!form.watch("agreement")) return "약관에 동의해주세요"
+    if (billingMode === "one_time" && !policyAgreed) return "결제 및 환불 정책에 동의해주세요"
     if (selectedBillingMethodId) {
       return billingMode === "recurring" ? "7일 무료체험 시작하기" : "이 카드로 구독하기"
     }
-    return billingMode === "recurring" ? "카드 등록 후 무료체험 시작하기" : "새 카드로 구독하기"
+    return billingMode === "recurring" ? "카드 등록 후 무료체험 시작하기" : "새 카드로 결제하기"
   }
   const hasPrice =
     form.watch("subscriptionType") == "monthly" ||
@@ -384,6 +399,61 @@ export function MembershipForm({
                   </FormItem>
                 )}
               />
+            </CardContent>
+          </Card>
+
+          {/* 결제 안내 */}
+          <Card>
+            <CardHeader>
+              <CardTitle>결제 안내</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {billingMode === "one_time" ? (
+                <div className="space-y-2 text-sm text-gray-600">
+                  <p className="font-medium text-gray-800">📌 1회 결제 (자동결제 없음)</p>
+                  <ul className="ml-4 list-disc space-y-1 text-gray-600">
+                    <li>1회 결제로, 자동결제는 진행되지 않습니다.</li>
+                    <li>결제 즉시 이용이 시작되며, <span className="font-medium text-gray-800">이용 시작 후 환불은 불가</span>합니다.</li>
+                    <li>결제한 기간 동안 서비스 이용이 가능합니다.</li>
+                  </ul>
+                </div>
+              ) : (
+                <div className="space-y-2 text-sm text-gray-600">
+                  <p className="font-medium text-gray-800">🔄 정기결제 (매월 자동갱신)</p>
+                  <ul className="ml-4 list-disc space-y-1 text-gray-600">
+                    <li>매월 같은 날 자동으로 결제됩니다.</li>
+                    <li>언제든지 <span className="font-medium text-gray-800">다음 결제일 전</span>에 해지할 수 있습니다.</li>
+                    <li>해지 시 남은 기간은 그대로 이용 가능합니다.</li>
+                    <li><span className="font-medium text-gray-800">이용 시작 후 환불은 불가</span>합니다.</li>
+                  </ul>
+                </div>
+              )}
+
+              <div className="rounded-lg bg-gray-50 p-3 text-xs text-gray-500">
+                <p className="mb-1 font-semibold text-gray-600">[환불 정책]</p>
+                <ul className="space-y-0.5">
+                  <li>· 단순 변심에 의한 환불은 불가합니다.</li>
+                  <li>· 서비스 장애, 기술적 오류 등으로 정상적인 이용이 어려운 경우, 이용하지 못한 기간에 대해 일부 환불이 진행될 수 있습니다.</li>
+                  <li>· 환불 여부 및 금액은 내부 정책에 따라 산정됩니다.</li>
+                </ul>
+              </div>
+
+              {billingMode === "one_time" && (
+                <div className="flex items-start gap-2 pt-1">
+                  <Checkbox
+                    id="policy-agree"
+                    checked={policyAgreed}
+                    onCheckedChange={(checked) => setPolicyAgreed(checked === true)}
+                    className="mt-0.5"
+                  />
+                  <Label
+                    htmlFor="policy-agree"
+                    className="cursor-pointer text-sm leading-snug text-gray-700"
+                  >
+                    결제 및 환불 정책을 확인하였으며 이에 동의합니다.
+                  </Label>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -580,7 +650,8 @@ export function MembershipForm({
               disabled={
                 !form.watch("agreement") ||
                 !form.watch("subscriptionType") ||
-                form.formState.isSubmitting
+                form.formState.isSubmitting ||
+                (billingMode === "one_time" && !policyAgreed)
               }
               type="submit"
             >
