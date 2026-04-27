@@ -34,6 +34,7 @@ export interface SubscriptionDetailsDto {
   endDate: string | null
   createdAt: string
   updatedAt: string
+  billingDate?: string | null
   nextBillingDate?: string | null
   currentPeriodStart?: string | null
   currentPeriodEnd?: string | null
