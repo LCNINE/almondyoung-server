@@ -375,6 +375,13 @@ export interface LocationCreateResultDto {
 }
 
 // ===== 입고 =====
+
+export type InboundMethod = 'individual' | 'simple' | 'simple_fullscan' | 'planned';
+export type InboundWorkLogType = 'INBOUND' | 'PUTAWAY' | 'RETURN' | 'CANCEL';
+export type InboundReceiptStatus = 'posted' | 'draft' | 'cancelled' | 'voided';
+export type InboundPlanType = 'source' | 'destination';
+
+// 요청 DTOs
 export interface SimpleInboundDto {
   warehouseId: string;
   items: Array<{
@@ -384,32 +391,240 @@ export interface SimpleInboundDto {
   }>;
 }
 
-export interface SimpleInboundResponse {
-  status: 'success';
-  message: string;
-  inboundId: string;
+export interface IndividualInboundDto {
+  warehouseId: string;
+  skuId: string;
+  quantity: number;
+  locationId?: string;
+  memo?: string;
 }
 
-export interface UpdateMemoDto {
+export interface PutawayRequestDto {
+  lineId: string;
+  toLocationId: string;
+  quantity: number;
+}
+
+export interface ReturnInboundDto {
+  lineId: string;
+  quantity: number;
+  reason?: string;
+}
+
+export interface CancelInboundDto {
+  lineId: string;
+  quantity: number;
+}
+
+export interface UpdateInboundLineMemoDto {
   memo: string;
 }
 
-export interface UpdateMemoResponse {
-  status: 'success';
-  message: string;
+export interface CreateInboundPlanDto {
+  expectedDate: string;
+  warehouseId: string;
+  destinationWarehouseId?: string;
+  linkedPurchaseOrderId: string;
+  planType?: InboundPlanType;
+  requiresTransfer?: boolean;
+  parentPlanId?: string;
 }
 
-export interface InboundDto {
+export interface InboundPlanItemInputDto {
+  skuId: string;
+  expectedQty: number;
+}
+
+export interface AddInboundPlanItemsDto {
+  planId: string;
+  items: InboundPlanItemInputDto[];
+}
+
+export interface ReceiveFromPlanDto {
+  planItemId: string;
+  quantity: number;
+  locationId?: string;
+  memo?: string;
+}
+
+export interface VerifyBarcodeRequest {
+  barcode: string;
+  expectedSkuId?: string;
+}
+
+// 쿼리 DTOs
+export interface InboundReceiptsQuery {
+  skuId?: string;
+  warehouseId?: string;
+  method?: InboundMethod;
+  startDate?: string;
+  endDate?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface InboundWorkLogsQuery {
+  warehouseId?: string;
+  skuId?: string;
+  type?: InboundWorkLogType;
+  method?: InboundMethod;
+  startDate?: string;
+  endDate?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface InboundStatusQuery {
+  skuId?: string;
+  warehouseId?: string;
+  startDate?: string;
+  endDate?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface ListPlanItemsQueryDto {
+  startDate?: string;
+  endDate?: string;
+  warehouseId?: string;
+  skuId?: string;
+}
+
+// 응답 DTOs
+export interface InboundReceiptLineDto {
   id: string;
-  warehouseId: string;
-  status: 'created' | 'processing' | 'completed' | 'canceled';
-  items: Array<{
-    skuId: string;
-    quantity: number;
-    memo?: string;
-  }>;
+  receiptId: string;
+  skuId: string;
+  quantity: number;
+  originLocationId: string | null;
+  eventId: string | null;
+  memo: string | null;
+  returnedQty: number;
+  canceledQty: number;
+  putawayFromOriginQty: number;
+  planItemId: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface InboundReceiptDto {
+  id: string;
+  method: InboundMethod;
+  warehouseId: string;
+  locationId: string | null;
+  occurredAt: string;
+  status: InboundReceiptStatus;
+  totalQuantity: number;
+  journalId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IndividualInboundResponseDto extends InboundReceiptDto {
+  line: InboundReceiptLineDto;
+}
+
+export interface SimpleInboundResponseDto extends InboundReceiptDto {
+  lines: InboundReceiptLineDto[];
+}
+
+export interface InboundReceiptsResponse {
+  total: number;
+  items: InboundReceiptDto[];
+}
+
+export interface InboundWorkLogDto {
+  id: string;
+  type: InboundWorkLogType;
+  method: InboundMethod;
+  skuId: string;
+  warehouseId: string;
+  quantity: number;
+  locationId: string | null;
+  receiptId: string | null;
+  lineId: string | null;
+  memo: string | null;
+  occurredAt: string;
+  createdAt: string;
+}
+
+export interface InboundWorkLogsResponse {
+  total: number;
+  items: InboundWorkLogDto[];
+}
+
+export interface VerifyBarcodeResponseDto {
+  skuId: string;
+  skuCode: string;
+  skuName: string;
+  isMatch: boolean;
+  message?: string;
+}
+
+export interface InboundPlanItemDto {
+  planItemId: string;
+  planId: string;
+  skuId: string;
+  skuCode?: string;
+  skuName?: string;
+  expectedQty: number;
+  receivedQty: number;
+  status: 'pending' | 'confirmed';
+  createdAt: string;
+}
+
+export interface InboundPlanItemsResponse {
+  total: number;
+  items: InboundPlanItemDto[];
+}
+
+export interface ReceiveFromPlanResponseDto {
+  success: boolean;
+  receiptId: string;
+}
+
+export interface InboundPendingItemDto {
+  skuId: string;
+  skuName: string;
+  skuCode: string;
+  expectedQty: number;
+  receivedQty: number;
+  pendingQty: number;
+}
+
+export interface InboundPendingDto {
+  planId: string;
+  planType: InboundPlanType;
+  warehouseId: string;
+  expectedDate: string | null;
+  isLinkedPlan: boolean;
+  sourcePlanStatus?: string;
+  purchaseOrder: {
+    id: string;
+    type: 'domestic' | 'foreign';
+    supplier?: {
+      id: string;
+      name: string;
+    };
+  };
+  items: InboundPendingItemDto[];
+  totalQuantity: number;
+  totalPendingQuantity: number;
+}
+
+export interface InboundPendingListResponseDto {
+  warehouseId?: string;
+  totalPendingPlans: number;
+  totalPendingQuantity: number;
+  pendingPlans: InboundPendingDto[];
+}
+
+export interface InboundLineMemoResponse {
+  success: boolean;
+}
+
+export interface InboundActionResponse {
+  success: boolean;
 }
 
 // ===== 피킹 =====
@@ -653,7 +868,7 @@ export interface LocationsResponseDto {
 }
 
 export interface InboundsResponseDto {
-  data: InboundDto[];
+  data: InboundReceiptDto[];
   total: number;
   page: number;
   limit: number;

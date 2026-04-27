@@ -16,6 +16,7 @@ import { supplierCategoriesClient } from '../../api/domains/inventory/supplier-c
 import { holdersClient } from '../../api/domains/inventory/holders.client';
 import { locationsClient } from '../../api/domains/inventory/locations.client';
 import { purchaseOrdersClient } from '../../api/domains/inventory/purchase-orders.client';
+import { inboundClient } from '../../api/domains/inventory/inbound.client';
 import type {
   StockSummaryQuery,
   StockHistoryQuery,
@@ -26,6 +27,10 @@ import type {
   HolderFiltersDto,
   LocationFiltersDto,
   PurchaseOrderListFilters,
+  InboundReceiptsQuery,
+  InboundWorkLogsQuery,
+  InboundStatusQuery,
+  ListPlanItemsQueryDto,
 } from '../../types/dto/inventory';
 
 export const useStocks = (query = {}) => {
@@ -165,27 +170,39 @@ export const useWarehouseStockSummary = (warehouseId: string) => {
   });
 };
 
-// 입고 관련 쿼리 (미구현 — Phase 4)
-export const useInbounds = () => {
+// 입고 관련 쿼리
+export const useInboundPending = (warehouseId?: string) => {
   return useQuery({
-    queryKey: inventoryQueryKeys.inbounds,
-    queryFn: () => Promise.resolve([]),
+    queryKey: inventoryQueryKeys.inboundPending(warehouseId),
+    queryFn: () => inboundClient.pending(warehouseId),
   });
 };
 
-export const useInbound = (id: string) => {
+export const useInboundReceipts = (query?: InboundReceiptsQuery) => {
   return useQuery({
-    queryKey: inventoryQueryKeys.inbound(id),
-    queryFn: () => Promise.resolve({ id }),
-    enabled: !!id,
+    queryKey: inventoryQueryKeys.inboundReceipts(query),
+    queryFn: () => inboundClient.receipts(query),
   });
 };
 
-export const useInboundItems = (inboundId: string) => {
+export const useInboundWorkLogs = (query?: InboundWorkLogsQuery) => {
   return useQuery({
-    queryKey: inventoryQueryKeys.inboundItems(inboundId),
-    queryFn: () => Promise.resolve([]),
-    enabled: !!inboundId,
+    queryKey: inventoryQueryKeys.inboundWorkLogs(query),
+    queryFn: () => inboundClient.workLogs(query),
+  });
+};
+
+export const useInboundStatus = (query?: InboundStatusQuery) => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.inboundStatus(query),
+    queryFn: () => inboundClient.status(query),
+  });
+};
+
+export const useInboundPlanItems = (query?: ListPlanItemsQueryDto) => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.inboundPlanItems(query),
+    queryFn: () => inboundClient.plans.listItems(query),
   });
 };
 

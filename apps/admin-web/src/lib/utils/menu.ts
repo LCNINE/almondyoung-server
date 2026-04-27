@@ -217,6 +217,11 @@ export const mainMenus: MainMenu[] = [
         path: '/inventory/purchase-orders',
       },
       {
+        id: 'inventory-inbound',
+        title: '입고 관리',
+        path: '/inventory/inbound',
+      },
+      {
         id: 'inventory-suppliers',
         title: '공급처 관리',
         path: '/inventory/suppliers',
