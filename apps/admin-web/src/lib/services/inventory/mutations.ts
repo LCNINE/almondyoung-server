@@ -13,6 +13,9 @@ import { reservationsClient } from '../../api/domains/inventory/reservations.cli
 import { stocktakingClient } from '../../api/domains/inventory/stocktaking.client';
 import { suppliersClient } from '../../api/domains/inventory/suppliers.client';
 import { supplierCategoriesClient } from '../../api/domains/inventory/supplier-categories.client';
+import { holdersClient } from '../../api/domains/inventory/holders.client';
+import { locationsClient } from '../../api/domains/inventory/locations.client';
+import { purchaseOrdersClient } from '../../api/domains/inventory/purchase-orders.client';
 import type {
   AdjustStockDto,
   CreateSkuDto,
@@ -34,6 +37,24 @@ import type {
   UpdateSupplierRequest,
   CreateSupplierCategoryRequest,
   UpdateSupplierCategoryRequest,
+  CreateHolderRequest,
+  UpdateHolderRequest,
+  CreateColumnRequest,
+  UpdateColumnRequest,
+  CreateRackRequest,
+  UpdateRackRequest,
+  CreateZoneLocationRequest,
+  UpdateLocationRequest,
+  AddCustomBinRequest,
+  CreatePurchaseOrderRequest,
+  UpdatePurchaseOrderStatusRequest,
+  UpdatePurchaseOrderLinesRequest,
+  AddToCartRequest,
+  UpdateCartItemRequest,
+  CreatePurchaseOrderFromCartRequest,
+  SubmitForAuditRequest,
+  ApprovePoRequest,
+  RejectPoRequest,
 } from '../../types/dto/inventory';
 
 export const useAdjustStock = () => {
@@ -228,10 +249,111 @@ export const useDeleteSupplierCategory = () => {
 export const useCreateHolder = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: Parameters<typeof inventoryMatchingClient.holders.create>[0]) =>
-      inventoryMatchingClient.holders.create(data),
+    mutationFn: (data: CreateHolderRequest) => holdersClient.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.holders() });
+    },
+  });
+};
+
+export const useUpdateHolder = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: UpdateHolderRequest }) =>
+      holdersClient.update(id, data),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.holders() });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.holder(id) });
+    },
+  });
+};
+
+export const useDeleteHolder = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => holdersClient.delete(id),
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.holders() });
+      queryClient.removeQueries({ queryKey: inventoryQueryKeys.holder(id) });
+    },
+  });
+};
+
+// 로케이션 관련 mutations
+export const useCreateColumn = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ warehouseId, data }: { warehouseId: string; data: CreateColumnRequest }) =>
+      locationsClient.columns.create(warehouseId, data),
+    onSuccess: (_, { warehouseId }) => {
+      queryClient.invalidateQueries({ queryKey: ['locations', warehouseId] });
+    },
+  });
+};
+
+export const useUpdateColumn = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ columnId, data }: { columnId: string; data: UpdateColumnRequest }) =>
+      locationsClient.columns.update(columnId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['locations'] });
+    },
+  });
+};
+
+export const useCreateRack = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ warehouseId, data }: { warehouseId: string; data: CreateRackRequest }) =>
+      locationsClient.racks.create(warehouseId, data),
+    onSuccess: (_, { warehouseId }) => {
+      queryClient.invalidateQueries({ queryKey: ['locations', warehouseId] });
+    },
+  });
+};
+
+export const useUpdateRack = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ rackId, data }: { rackId: string; data: UpdateRackRequest }) =>
+      locationsClient.racks.update(rackId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['locations'] });
+    },
+  });
+};
+
+export const useCreateZoneLocation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ warehouseId, data }: { warehouseId: string; data: CreateZoneLocationRequest }) =>
+      locationsClient.zones.create(warehouseId, data),
+    onSuccess: (_, { warehouseId }) => {
+      queryClient.invalidateQueries({ queryKey: ['locations', warehouseId] });
+    },
+  });
+};
+
+export const useUpdateLocation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: UpdateLocationRequest }) =>
+      locationsClient.update(id, data),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['locations'] });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.location(id) });
+    },
+  });
+};
+
+export const useAddCustomBin = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ warehouseId, data }: { warehouseId: string; data: AddCustomBinRequest }) =>
+      locationsClient.customBins.add(warehouseId, data),
+    onSuccess: (_, { warehouseId }) => {
+      queryClient.invalidateQueries({ queryKey: ['locations', warehouseId] });
     },
   });
 };
@@ -433,6 +555,130 @@ export const useExpireStaleReservations = () => {
     mutationFn: () => reservationsClient.expireStaleReservations(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory', 'reservations'] });
+    },
+  });
+};
+
+// 발주 관련 뮤테이션
+export const useCreatePurchaseOrder = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreatePurchaseOrderRequest) => purchaseOrdersClient.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrders() });
+    },
+  });
+};
+
+export const useCreatePurchaseOrderFromCart = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreatePurchaseOrderFromCartRequest) =>
+      purchaseOrdersClient.createFromCart(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrders() });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrderCart() });
+    },
+  });
+};
+
+export const useUpdatePurchaseOrderStatus = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: UpdatePurchaseOrderStatusRequest }) =>
+      purchaseOrdersClient.updateStatus(id, data),
+    onSuccess: (_result, { id }) => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrders() });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrder(id) });
+    },
+  });
+};
+
+export const useUpdatePurchaseOrderLines = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: UpdatePurchaseOrderLinesRequest }) =>
+      purchaseOrdersClient.updateLines(id, data),
+    onSuccess: (_result, { id }) => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrders() });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrder(id) });
+    },
+  });
+};
+
+export const useSubmitForAudit = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: SubmitForAuditRequest }) =>
+      purchaseOrdersClient.submitForAudit(id, data),
+    onSuccess: (_result, { id }) => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrders() });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrder(id) });
+    },
+  });
+};
+
+export const useApprovePo = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: ApprovePoRequest }) =>
+      purchaseOrdersClient.approve(id, data),
+    onSuccess: (_result, { id }) => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrders() });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrder(id) });
+    },
+  });
+};
+
+export const useRejectPo = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: RejectPoRequest }) =>
+      purchaseOrdersClient.reject(id, data),
+    onSuccess: (_result, { id }) => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrders() });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrder(id) });
+    },
+  });
+};
+
+export const useAddToCart = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: AddToCartRequest) => purchaseOrdersClient.cart.add(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrderCart() });
+    },
+  });
+};
+
+export const useUpdateCartItem = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ itemId, data }: { itemId: string; data: UpdateCartItemRequest }) =>
+      purchaseOrdersClient.cart.update(itemId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrderCart() });
+    },
+  });
+};
+
+export const useRemoveCartItem = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (itemId: string) => purchaseOrdersClient.cart.remove(itemId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrderCart() });
+    },
+  });
+};
+
+export const useClearCart = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (type?: string) => purchaseOrdersClient.cart.clear(type),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrderCart() });
     },
   });
 };

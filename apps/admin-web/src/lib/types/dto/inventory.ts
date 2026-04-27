@@ -216,15 +216,162 @@ export interface WarehouseDto {
   updatedAt?: string;
 }
 
-export interface LocationDto {
+export type LocationType = 'standard' | 'zone';
+
+export interface BaseLocationDto {
   id: string;
   warehouseId: string;
-  name: string;
   code: string;
-  type: string;
+  locationType: LocationType;
+  displayName: string;
+  capacityLimit: number | null;
+  fifoRank: number | null;
+  isExpirySeparated: boolean;
+  isActive: boolean;
+  isSystem: boolean;
+  systemRole: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StandardLocationDto extends BaseLocationDto {
+  locationType: 'standard';
+  rackId: string;
+  binIdentifier: string;
+  columnName?: string;
+  rackNumber?: number;
+}
+
+export interface ZoneLocationDto extends BaseLocationDto {
+  locationType: 'zone';
+  rackId: string | null;
+  binIdentifier: string | null;
+}
+
+export type LocationDto = StandardLocationDto | ZoneLocationDto;
+
+export interface LocationColumnDto {
+  id: string;
+  warehouseId: string;
+  columnName: string;
+  displayOrder: number | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface LocationRackDto {
+  id: string;
+  columnId: string;
+  column: LocationColumnDto;
+  rackNumber: number;
+  defaultBinStart: number;
+  defaultBinEnd: number;
+  autoGenerateBins: boolean;
+  physicalWidth: number | null;
+  physicalHeight: number | null;
+  notes: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BinRangeRequest {
+  start: number;
+  end: number;
+}
+
+export interface BinSettingsRequest {
+  autoGenerate: boolean;
+  standardBins?: BinRangeRequest;
+  customBins?: string[];
+}
+
+export interface CreateColumnRequest {
+  columnName: string;
+  displayOrder?: number;
+}
+
+export interface UpdateColumnRequest {
+  columnName?: string;
+  displayOrder?: number;
+  isActive?: boolean;
+}
+
+export interface CreateRackRequest {
+  columnName: string;
+  rackNumber: number;
+  binSettings: BinSettingsRequest;
+  physicalWidth?: number;
+  physicalHeight?: number;
+  notes?: string;
+}
+
+export interface UpdateRackRequest {
+  defaultBinStart?: number;
+  defaultBinEnd?: number;
+  autoGenerateBins?: boolean;
+  physicalWidth?: number;
+  physicalHeight?: number;
+  notes?: string;
+  isActive?: boolean;
+}
+
+export interface CreateZoneLocationRequest {
+  code: string;
+  displayName?: string;
+  capacityLimit?: number;
+  fifoRank?: number;
+  isExpirySeparated?: boolean;
+  notes?: string;
+}
+
+export interface UpdateLocationRequest {
+  displayName?: string;
+  capacityLimit?: number;
+  fifoRank?: number;
+  isExpirySeparated?: boolean;
+  isActive?: boolean;
+  notes?: string;
+}
+
+export interface AddCustomBinRequest {
+  columnName: string;
+  rackNumber: number;
+  customBinName: string;
+  displayName?: string;
+  capacityLimit?: number;
+  notes?: string;
+}
+
+export interface LocationFiltersDto {
+  type?: LocationType;
+  columnName?: string;
+  rackNumber?: number;
+  isActive?: boolean;
+  search?: string;
+  page?: number;
+  limit?: number;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+}
+
+export interface LocationListResponseDto {
+  items: LocationDto[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  hasNext: boolean;
+  hasPrev: boolean;
+}
+
+export interface LocationCreateResultDto {
+  success: boolean;
+  createdCount: number;
+  errors?: string[];
+  createdLocationCodes?: string[];
 }
 
 // ===== 입고 =====
@@ -718,6 +865,8 @@ export interface HolderSearchQuery {
   limit?: number;
 }
 
+export type HolderFiltersDto = HolderSearchQuery;
+
 // 검색 응답 DTO
 export interface HolderSearchResponseDto {
   data: HolderDto[];
@@ -725,6 +874,15 @@ export interface HolderSearchResponseDto {
   page: number;
   limit: number;
 }
+
+export type HolderListResponseDto = HolderSearchResponseDto;
+
+export interface CreateHolderRequest {
+  name: string;
+  isOurAsset: boolean;
+}
+
+export type UpdateHolderRequest = Partial<CreateHolderRequest>;
 
 // ===== 재고 이동 (Transfer Jobs) =====
 export interface TransferItemInputDto {
@@ -973,4 +1131,130 @@ export interface StocktakingSessionQuery {
 export interface StocktakingSessionListResponse {
   sessions: StocktakingSessionDto[];
   total: number;
+}
+
+// ─── 발주 (Purchase Orders) ───────────────────────────────────────────────────
+
+export type PurchaseOrderType = 'domestic' | 'foreign';
+export type PurchaseOrderStatus = 'created' | 'confirmed' | 'received';
+export type PurchaseOrderAuditStatus = 'draft' | 'pending_audit' | 'approved';
+
+export interface PurchaseOrderLineDto {
+  skuId: string;
+  quantity: number;
+  unitPrice: number | null;
+  sku?: {
+    name: string;
+    barcode: string | null;
+  };
+}
+
+export interface PurchaseOrderDto {
+  id: string;
+  type: PurchaseOrderType;
+  supplierId: string | null;
+  expectedArrival: string | null;
+  status: PurchaseOrderStatus;
+  auditStatus: PurchaseOrderAuditStatus;
+  createdAt: string;
+  updatedAt: string;
+  lines: PurchaseOrderLineDto[];
+  supplier?: {
+    id: string;
+    name: string;
+  };
+}
+
+export interface PurchaseOrderListResponseDto {
+  data: PurchaseOrderDto[];
+  total: number;
+}
+
+export interface PurchaseOrderListFilters {
+  status?: PurchaseOrderStatus;
+  type?: PurchaseOrderType;
+  limit?: number;
+  offset?: number;
+}
+
+export interface CreatePurchaseOrderLineRequest {
+  skuId: string;
+  quantity: number;
+  unitPrice?: number;
+}
+
+export interface CreatePurchaseOrderRequest {
+  type: PurchaseOrderType;
+  supplierId: string;
+  expectedArrival?: string;
+  destinationWarehouseId: string;
+  lines: CreatePurchaseOrderLineRequest[];
+}
+
+export interface UpdatePurchaseOrderStatusRequest {
+  status: PurchaseOrderStatus;
+  expectedArrival?: string;
+}
+
+export interface UpdatePurchaseOrderLinesRequest {
+  lines: CreatePurchaseOrderLineRequest[];
+}
+
+export interface AddToCartRequest {
+  skuId: string;
+  quantity: number;
+  type: PurchaseOrderType;
+  supplierId?: string;
+}
+
+export interface UpdateCartItemRequest {
+  quantity: number;
+  supplierId?: string;
+}
+
+export interface CreatePurchaseOrderFromCartRequest {
+  cartItemIds: string[];
+  supplierId: string;
+  expectedArrival?: string;
+  destinationWarehouseId: string;
+}
+
+export interface SubmitForAuditRequest {
+  notes?: string;
+}
+
+export interface ApprovePoRequest {
+  approvalNotes?: string;
+}
+
+export interface RejectPoRequest {
+  rejectionReason: string;
+}
+
+export interface CartItemDto {
+  id: string;
+  skuId: string;
+  quantity: number;
+  type: PurchaseOrderType;
+  supplier: {
+    id: string;
+    name: string;
+  } | null;
+  createdAt: string;
+  updatedAt: string;
+  sku: {
+    name: string;
+    barcode: string | null;
+  };
+}
+
+export interface StockReorderSuggestionDto {
+  skuId: string;
+  skuName: string;
+  currentStock: number;
+  safetyStock: number;
+  shortfall: number;
+  suggestedOrder: number;
+  onOrderQty: number;
+  inTransferQty: number;
 }

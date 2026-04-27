@@ -8,6 +8,9 @@ import type {
   ReservationTargetType,
   StocktakingSessionQuery,
   SupplierFiltersDto,
+  HolderFiltersDto,
+  LocationFiltersDto,
+  PurchaseOrderListFilters,
 } from '../../types/dto/inventory';
 
 export const inventoryQueryKeys = {
@@ -64,7 +67,7 @@ export const inventoryQueryKeys = {
   supplierCategory: (id: string) => ['supplier-categories', id] as const,
 
   // 재고소유 관련
-  holders: (query?: any) => ['holders', query] as const,
+  holders: (filters?: HolderFiltersDto) => ['holders', filters] as const,
   holderSearch: (
     query: string,
     isOurAsset?: boolean,
@@ -72,6 +75,15 @@ export const inventoryQueryKeys = {
     limit: number = 10
   ) => ['holders', 'search', query, isOurAsset, page, limit] as const,
   holder: (id: string) => ['holders', id] as const,
+
+  // 로케이션 관련
+  locations: (warehouseId: string, filters?: LocationFiltersDto) =>
+    ['locations', warehouseId, filters] as const,
+  location: (id: string) => ['locations', 'detail', id] as const,
+  locationColumns: (warehouseId: string, isActive?: boolean) =>
+    ['locations', warehouseId, 'columns', isActive] as const,
+  locationRacks: (warehouseId: string, columnName?: string, isActive?: boolean) =>
+    ['locations', warehouseId, 'racks', columnName, isActive] as const,
 
   // SKU 그룹 관련
   skuGroups: ['inventory', 'sku-groups'] as const,
@@ -99,4 +111,12 @@ export const inventoryQueryKeys = {
   stocktakingSession: (id: string) => ['inventory', 'stocktaking', 'sessions', id] as const,
   stocktakingVariances: (sessionId: string) =>
     ['inventory', 'stocktaking', 'sessions', sessionId, 'variances'] as const,
+
+  // 발주 관련
+  purchaseOrders: (filters?: PurchaseOrderListFilters) =>
+    ['purchase-orders', filters] as const,
+  purchaseOrder: (id: string) => ['purchase-orders', id] as const,
+  purchaseOrderCart: () => ['purchase-orders', 'cart'] as const,
+  reorderSuggestions: (warehouseId?: string) =>
+    ['purchase-orders', 'reorder', warehouseId] as const,
 } as const;

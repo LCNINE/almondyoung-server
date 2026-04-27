@@ -141,15 +141,15 @@ export const useProductSkuMapping = (id: string) => {
   });
 };
 
-// 구매 주문 관련 쿼리 (임시 구현)
-export const usePurchaseOrders = () => {
+// 구매 주문 관련 쿼리 (임시 구현 — 통합 서버 이전 전 stub. 신규는 inventory의 usePurchaseOrders 사용)
+export const useLegacyPurchaseOrders = () => {
   return useQuery({
     queryKey: orderQueryKeys.purchaseOrders,
     queryFn: () => Promise.resolve([]),
   });
 };
 
-export const usePurchaseOrder = (id: string) => {
+export const useLegacyPurchaseOrder = (id: string) => {
   return useQuery({
     queryKey: orderQueryKeys.purchaseOrder(id),
     queryFn: () => Promise.resolve({ id }),

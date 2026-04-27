@@ -212,6 +212,11 @@ export const mainMenus: MainMenu[] = [
         path: '/inventory/stocktaking',
       },
       {
+        id: 'inventory-purchase-orders',
+        title: '발주관리',
+        path: '/inventory/purchase-orders',
+      },
+      {
         id: 'inventory-suppliers',
         title: '공급처 관리',
         path: '/inventory/suppliers',
@@ -220,6 +225,16 @@ export const mainMenus: MainMenu[] = [
         id: 'inventory-supplier-categories',
         title: '공급처 분류',
         path: '/inventory/supplier-categories',
+      },
+      {
+        id: 'inventory-locations',
+        title: '로케이션 관리',
+        path: '/inventory/locations',
+      },
+      {
+        id: 'inventory-holders',
+        title: '재고 소유자 관리',
+        path: '/inventory/holders',
       },
       {
         id: 'product-matching',
