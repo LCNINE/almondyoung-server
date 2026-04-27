@@ -81,6 +81,20 @@ export const productQueryKeys = {
   tagValues: (groupId: string) =>
     [...productQueryKeys.tagGroup(groupId), 'values'] as const,
 
+  // 가격 관리 관련
+  pricingVersionRules: (versionId: string) =>
+    ['pricing', 'versions', versionId, 'rules'] as const,
+  pricingVersionPriceSet: (versionId: string, variantId: string) =>
+    ['pricing', 'versions', versionId, 'price-set', variantId] as const,
+  pricingMasterRules: (masterId: string) =>
+    ['pricing', 'masters', masterId, 'rules'] as const,
+  pricingMasterPriceSet: (masterId: string, variantId: string) =>
+    ['pricing', 'masters', masterId, 'price-set', variantId] as const,
+
+  // 버전 관련
+  masterVersions: (masterId: string) =>
+    ['master-versions', masterId] as const,
+
   // 기존 호환성 (점진적 마이그레이션용)
   products: ['products'] as const,
   product: (id: string) => ['products', id] as const,
