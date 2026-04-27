@@ -16,6 +16,7 @@ import { supplierCategoriesClient } from '../../api/domains/inventory/supplier-c
 import { holdersClient } from '../../api/domains/inventory/holders.client';
 import { locationsClient } from '../../api/domains/inventory/locations.client';
 import { purchaseOrdersClient } from '../../api/domains/inventory/purchase-orders.client';
+import { inboundClient } from '../../api/domains/inventory/inbound.client';
 import type {
   AdjustStockDto,
   CreateSkuDto,
@@ -55,6 +56,16 @@ import type {
   SubmitForAuditRequest,
   ApprovePoRequest,
   RejectPoRequest,
+  SimpleInboundDto,
+  IndividualInboundDto,
+  VerifyBarcodeRequest,
+  PutawayRequestDto,
+  ReturnInboundDto,
+  CancelInboundDto,
+  UpdateInboundLineMemoDto,
+  CreateInboundPlanDto,
+  AddInboundPlanItemsDto,
+  ReceiveFromPlanDto,
 } from '../../types/dto/inventory';
 
 export const useAdjustStock = () => {
@@ -679,6 +690,116 @@ export const useClearCart = () => {
     mutationFn: (type?: string) => purchaseOrdersClient.cart.clear(type),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrderCart() });
+    },
+  });
+};
+
+// 입고 관련 뮤테이션
+export const useSimpleInbound = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: SimpleInboundDto) => inboundClient.simple(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inbounds });
+    },
+  });
+};
+
+export const useSimpleFullscanInbound = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: SimpleInboundDto) => inboundClient.simpleFullscan(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inbounds });
+    },
+  });
+};
+
+export const useIndividualInbound = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: IndividualInboundDto) => inboundClient.individual(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inbounds });
+    },
+  });
+};
+
+export const useVerifyBarcode = () => {
+  return useMutation({
+    mutationFn: (data: VerifyBarcodeRequest) => inboundClient.verifyBarcode(data),
+  });
+};
+
+export const useCreateInboundPlan = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreateInboundPlanDto) => inboundClient.plans.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inboundPlanItems() });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inboundPending() });
+    },
+  });
+};
+
+export const useAddInboundPlanItems = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: AddInboundPlanItemsDto) => inboundClient.plans.addItems(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inboundPlanItems() });
+    },
+  });
+};
+
+export const useReceiveFromPlan = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: ReceiveFromPlanDto) => inboundClient.plans.receive(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inbounds });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inboundPending() });
+    },
+  });
+};
+
+export const usePutaway = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: PutawayRequestDto) => inboundClient.putaway(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inboundReceipts() });
+    },
+  });
+};
+
+export const useReturnInbound = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: ReturnInboundDto) => inboundClient.return(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inboundReceipts() });
+    },
+  });
+};
+
+export const useCancelInbound = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CancelInboundDto) => inboundClient.cancel(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inboundReceipts() });
+    },
+  });
+};
+
+export const useUpdateInboundLineMemo = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ lineId, data }: { lineId: string; data: UpdateInboundLineMemoDto }) =>
+      inboundClient.lines.memo(lineId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inboundReceipts() });
     },
   });
 };

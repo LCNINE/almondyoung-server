@@ -11,6 +11,10 @@ import type {
   HolderFiltersDto,
   LocationFiltersDto,
   PurchaseOrderListFilters,
+  InboundReceiptsQuery,
+  InboundWorkLogsQuery,
+  InboundStatusQuery,
+  ListPlanItemsQueryDto,
 } from '../../types/dto/inventory';
 
 export const inventoryQueryKeys = {
@@ -40,6 +44,16 @@ export const inventoryQueryKeys = {
   inbound: (id: string) => ['inbounds', id] as const,
   inboundItems: (inboundId: string) =>
     ['inbounds', inboundId, 'items'] as const,
+  inboundPending: (warehouseId?: string) =>
+    ['inbounds', 'pending', warehouseId] as const,
+  inboundReceipts: (query?: InboundReceiptsQuery) =>
+    ['inbounds', 'receipts', query] as const,
+  inboundWorkLogs: (query?: InboundWorkLogsQuery) =>
+    ['inbounds', 'work-logs', query] as const,
+  inboundStatus: (query?: InboundStatusQuery) =>
+    ['inbounds', 'status', query] as const,
+  inboundPlanItems: (query?: ListPlanItemsQueryDto) =>
+    ['inbounds', 'plan-items', query] as const,
 
   // 검수 관련
   inspections: ['inspections'] as const,
