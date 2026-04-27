@@ -6,15 +6,13 @@ import { stocksClient } from './stocks.client';
 import { skusClient } from './skus.client';
 import { warehousesClient } from './warehouses.client';
 import { matchingClient } from '../matching/matching.client';
+import { suppliersClient } from './suppliers.client';
 
 // 자동재고매칭용 클라이언트들 직접 생성
 import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import { client } from '../../client';
 import type {
   WarehouseDto,
-  SupplierDto,
-  SupplierSearchQuery,
-  SupplierSearchResponseDto,
   HolderDto,
   HolderSearchQuery,
   HolderSearchResponseDto,
@@ -23,7 +21,7 @@ import type {
   InventoryMatchingResponseDto,
 } from '../../../types/dto/inventory';
 
-function buildQueryString(query: Record<string, any>): string {
+function buildQueryString(query: Record<string, unknown>): string {
   const params = new URLSearchParams();
   Object.entries(query).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== '') {
@@ -45,41 +43,10 @@ const warehouseApi = {
   },
 };
 
-const supplierApi = {
-  list: async (
-    query?: SupplierSearchQuery
-  ): Promise<SupplierSearchResponseDto> => {
-    const response = await client.get(
-      `${ALMONDYOUNG_API_BASE_URL}/suppliers?${buildQueryString(query || {})}`
-    );
-    return response.data;
-  },
-  search: async (
-    query: string,
-    page = 1,
-    limit = 10
-  ): Promise<SupplierSearchResponseDto> => {
-    const response = await client.get(
-      `${ALMONDYOUNG_API_BASE_URL}/suppliers/search?q=${encodeURIComponent(query)}&page=${page}&limit=${limit}`
-    );
-    return response.data;
-  },
-  get: async (id: string): Promise<SupplierDto> => {
-    const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/suppliers/${id}`);
-    return response.data;
-  },
-  create: async (
-    data: Omit<SupplierDto, 'id' | 'createdAt' | 'updatedAt'>
-  ): Promise<SupplierDto> => {
-    const response = await client.post(`${ALMONDYOUNG_API_BASE_URL}/suppliers`, data);
-    return response.data;
-  },
-};
-
 const holderApi = {
   list: async (query?: HolderSearchQuery): Promise<HolderSearchResponseDto> => {
     const response = await client.get(
-      `${ALMONDYOUNG_API_BASE_URL}/holders?${buildQueryString(query || {})}`
+      `${ALMONDYOUNG_API_BASE_URL}/holders?${buildQueryString((query || {}) as Record<string, unknown>)}`
     );
     return response.data;
   },
@@ -154,7 +121,6 @@ export const inventory = {
   // 자동재고매칭 관련
   inventoryMatching: {
     warehouses: warehouseApi,
-    suppliers: supplierApi,
     holders: holderApi,
     matchings: inventoryMatchingApi,
   },
@@ -168,11 +134,13 @@ export { matchingClient } from '../matching/matching.client';
 export { transfersClient } from './transfers.client';
 export { reservationsClient } from './reservations.client';
 export { stocktakingClient } from './stocktaking.client';
+export { suppliersClient } from './suppliers.client';
+export { supplierCategoriesClient } from './supplier-categories.client';
 
 // 자동재고매칭 클라이언트 export
 export const inventoryMatchingClient = {
   warehouses: warehouseApi,
-  suppliers: supplierApi,
+  suppliers: suppliersClient,
   holders: holderApi,
   matchings: inventoryMatchingApi,
   skus: skusClient,
