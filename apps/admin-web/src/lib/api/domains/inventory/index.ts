@@ -7,29 +7,19 @@ import { skusClient } from './skus.client';
 import { warehousesClient } from './warehouses.client';
 import { matchingClient } from '../matching/matching.client';
 import { suppliersClient } from './suppliers.client';
+import { holdersClient } from './holders.client';
 
 // 자동재고매칭용 클라이언트들 직접 생성
 import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import { client } from '../../client';
 import type {
   WarehouseDto,
-  HolderDto,
   HolderSearchQuery,
   HolderSearchResponseDto,
   InventoryOptionDto,
   CreateInventoryMatchingDto,
   InventoryMatchingResponseDto,
 } from '../../../types/dto/inventory';
-
-function buildQueryString(query: Record<string, unknown>): string {
-  const params = new URLSearchParams();
-  Object.entries(query).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== '') {
-      params.append(key, String(value));
-    }
-  });
-  return params.toString();
-}
 
 // 자동재고매칭용 API들
 const warehouseApi = {
@@ -43,43 +33,19 @@ const warehouseApi = {
   },
 };
 
+// holderApi: holdersClient로 위임. search는 서버에 없는 경로였으므로 list({ search })로 매핑.
 const holderApi = {
-  list: async (query?: HolderSearchQuery): Promise<HolderSearchResponseDto> => {
-    const response = await client.get(
-      `${ALMONDYOUNG_API_BASE_URL}/holders?${buildQueryString((query || {}) as Record<string, unknown>)}`
-    );
-    return response.data;
-  },
-  search: async (
+  list: (query?: HolderSearchQuery): Promise<HolderSearchResponseDto> =>
+    holdersClient.list(query),
+  search: (
     query: string,
     isOurAsset?: boolean,
     page = 1,
     limit = 10
-  ): Promise<HolderSearchResponseDto> => {
-    const params = new URLSearchParams({
-      q: query,
-      page: String(page),
-      limit: String(limit),
-    });
-    if (isOurAsset !== undefined) {
-      params.append('isOurAsset', String(isOurAsset));
-    }
-
-    const response = await client.get(
-      `${ALMONDYOUNG_API_BASE_URL}/holders/search?${params.toString()}`
-    );
-    return response.data;
-  },
-  get: async (id: string): Promise<HolderDto> => {
-    const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/holders/${id}`);
-    return response.data;
-  },
-  create: async (
-    data: Omit<HolderDto, 'id' | 'createdAt' | 'updatedAt'>
-  ): Promise<HolderDto> => {
-    const response = await client.post(`${ALMONDYOUNG_API_BASE_URL}/holders`, data);
-    return response.data;
-  },
+  ): Promise<HolderSearchResponseDto> =>
+    holdersClient.list({ search: query, isOurAsset, page, limit }),
+  get: holdersClient.get,
+  create: (data: { name: string; isOurAsset: boolean }) => holdersClient.create(data),
 };
 
 const inventoryMatchingApi = {
@@ -136,6 +102,9 @@ export { reservationsClient } from './reservations.client';
 export { stocktakingClient } from './stocktaking.client';
 export { suppliersClient } from './suppliers.client';
 export { supplierCategoriesClient } from './supplier-categories.client';
+export { holdersClient } from './holders.client';
+export { locationsClient } from './locations.client';
+export { purchaseOrdersClient } from './purchase-orders.client';
 
 // 자동재고매칭 클라이언트 export
 export const inventoryMatchingClient = {
