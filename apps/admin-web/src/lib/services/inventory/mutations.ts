@@ -11,6 +11,8 @@ import { warehousesClient } from '../../api/domains/inventory/warehouses.client'
 import { transfersClient } from '../../api/domains/inventory/transfers.client';
 import { reservationsClient } from '../../api/domains/inventory/reservations.client';
 import { stocktakingClient } from '../../api/domains/inventory/stocktaking.client';
+import { suppliersClient } from '../../api/domains/inventory/suppliers.client';
+import { supplierCategoriesClient } from '../../api/domains/inventory/supplier-categories.client';
 import type {
   AdjustStockDto,
   CreateSkuDto,
@@ -28,6 +30,10 @@ import type {
   ScanProductRequest,
   UpdateLineCountRequest,
   GenerateAdjustmentsRequest,
+  CreateSupplierRequest,
+  UpdateSupplierRequest,
+  CreateSupplierCategoryRequest,
+  UpdateSupplierCategoryRequest,
 } from '../../types/dto/inventory';
 
 export const useAdjustStock = () => {
@@ -155,10 +161,66 @@ export const useCreateInventoryMatching = () => {
 export const useCreateSupplier = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: Parameters<typeof inventoryMatchingClient.suppliers.create>[0]) =>
-      inventoryMatchingClient.suppliers.create(data),
+    mutationFn: (data: CreateSupplierRequest) => suppliersClient.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.suppliers() });
+    },
+  });
+};
+
+export const useUpdateSupplier = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: UpdateSupplierRequest }) =>
+      suppliersClient.update(id, data),
+    onSuccess: (_result, { id }) => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.suppliers() });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.supplier(id) });
+    },
+  });
+};
+
+export const useDeleteSupplier = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => suppliersClient.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.suppliers() });
+    },
+  });
+};
+
+export const useCreateSupplierCategory = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreateSupplierCategoryRequest) => supplierCategoriesClient.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.supplierCategories() });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.supplierFilterOptions() });
+    },
+  });
+};
+
+export const useUpdateSupplierCategory = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: UpdateSupplierCategoryRequest }) =>
+      supplierCategoriesClient.update(id, data),
+    onSuccess: (_result, { id }) => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.supplierCategories() });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.supplierCategory(id) });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.supplierFilterOptions() });
+    },
+  });
+};
+
+export const useDeleteSupplierCategory = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => supplierCategoriesClient.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.supplierCategories() });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.supplierFilterOptions() });
     },
   });
 };

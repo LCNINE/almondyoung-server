@@ -128,11 +128,11 @@ export function SearchDialog({
                                                     <div className="flex items-center justify-between">
                                                         <div>
                                                             <h4 className="font-medium">{item.name}</h4>
-                                                            {isSupplier && item.contactInfo && (
+                                                            {isSupplier && item.contact && (
                                                                 <div className="text-sm text-gray-500 mt-1">
-                                                                    <div>📞 {item.contactInfo.phone}</div>
-                                                                    <div>📧 {item.contactInfo.email}</div>
-                                                                    <div>📍 {item.contactInfo.address}</div>
+                                                                    {item.contact.phone && <div>📞 {item.contact.phone}</div>}
+                                                                    {item.contact.email && <div>📧 {item.contact.email}</div>}
+                                                                    {item.address?.address1 && <div>📍 {item.address.address1}</div>}
                                                                 </div>
                                                             )}
                                                             {!isSupplier && (

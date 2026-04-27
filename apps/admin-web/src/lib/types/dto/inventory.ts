@@ -521,18 +521,127 @@ export type ProductType = '일반상품' | '세트상품' | '디지털상품';
 export type StockOwnerType = '자사' | '위탁' | '직송';
 
 // 공급처 정보
+export interface SupplierContactDto {
+  phone: string | null;
+  fax: string | null;
+  email: string | null;
+}
+
+export interface SupplierAddressDto {
+  zipcode: string | null;
+  address1: string | null;
+  address2: string | null;
+}
+
+export interface SupplierBusinessInfoDto {
+  businessRegNo: string | null;
+  businessType: string | null;
+  ceoName: string | null;
+}
+
+export interface SupplierPurchaseSettingsDto {
+  isDirectDelivery: boolean | null;
+  orderCutoffTime: string | null;
+}
+
+export interface SupplierPaymentInfoDto {
+  bankName: string | null;
+  bankAccountNo: string | null;
+  bankAccountHolder: string | null;
+  paymentMethod: string | null;
+}
+
+export interface SupplierCategoryInfoDto {
+  id: string;
+  name: string;
+  description: string | null;
+}
+
 export interface SupplierDto {
   id: string;
   name: string;
-  contactInfo?: {
-    phone?: string;
-    email?: string;
-    address?: string;
-  };
-  defaultWarehouseId?: string;
+  contact: SupplierContactDto | null;
+  address: SupplierAddressDto | null;
+  businessInfo: SupplierBusinessInfoDto | null;
+  purchaseSettings: SupplierPurchaseSettingsDto | null;
+  paymentInfo: SupplierPaymentInfoDto | null;
+  description: string | null;
+  memo: string | null;
+  purchaseManagerId: string | null;
+  defaultWarehouseId: string | null;
+  categories: SupplierCategoryInfoDto[];
   createdAt: string;
   updatedAt: string;
 }
+
+export interface CreateSupplierRequest {
+  name: string;
+  phone?: string;
+  fax?: string;
+  email?: string;
+  zipcode?: string;
+  address1?: string;
+  address2?: string;
+  businessRegNo?: string;
+  businessType?: string;
+  ceoName?: string;
+  isDirectDelivery?: boolean;
+  orderCutoffTime?: string;
+  bankName?: string;
+  bankAccountNo?: string;
+  bankAccountHolder?: string;
+  paymentMethod?: string;
+  description?: string;
+  memo?: string;
+  purchaseManagerId?: string;
+  defaultWarehouseId?: string;
+  categoryIds?: string[];
+}
+
+export type UpdateSupplierRequest = Partial<CreateSupplierRequest>;
+
+export interface SupplierFiltersDto {
+  search?: string;
+  categoryId?: string;
+  purchaseManagerId?: string;
+  page?: number;
+  limit?: number;
+  offset?: number;
+}
+
+export interface SupplierListResponseDto {
+  data: SupplierDto[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface FilterOptionDto {
+  value: string;
+  label: string;
+}
+
+export interface SupplierFilterOptionsResponseDto {
+  categories: FilterOptionDto[];
+  managers: FilterOptionDto[];
+  searchTypes: FilterOptionDto[];
+}
+
+// 공급처 분류
+export interface SupplierCategoryDto {
+  id: string;
+  name: string;
+  description: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateSupplierCategoryRequest {
+  name: string;
+  description?: string;
+}
+
+export type UpdateSupplierCategoryRequest = Partial<CreateSupplierCategoryRequest>;
 
 // 재고소유 정보
 export interface HolderDto {
@@ -602,13 +711,6 @@ export interface InventoryMatchingResponseDto {
   updatedAt: string;
 }
 
-// 검색 쿼리 DTO
-export interface SupplierSearchQuery {
-  search?: string;
-  page?: number;
-  limit?: number;
-}
-
 export interface HolderSearchQuery {
   search?: string;
   isOurAsset?: boolean;
@@ -617,13 +719,6 @@ export interface HolderSearchQuery {
 }
 
 // 검색 응답 DTO
-export interface SupplierSearchResponseDto {
-  data: SupplierDto[];
-  total: number;
-  page: number;
-  limit: number;
-}
-
 export interface HolderSearchResponseDto {
   data: HolderDto[];
   total: number;

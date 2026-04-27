@@ -87,11 +87,6 @@ export const mainMenus: MainMenu[] = [
         ],
       },
       {
-        id: 'supplier',
-        title: '발주처 관리',
-        path: '/account/supplier',
-      },
-      {
         id: 'customer',
         title: '고객 관리',
         children: [
@@ -215,6 +210,16 @@ export const mainMenus: MainMenu[] = [
         id: 'inventory-stocktaking',
         title: '재고 실사',
         path: '/inventory/stocktaking',
+      },
+      {
+        id: 'inventory-suppliers',
+        title: '공급처 관리',
+        path: '/inventory/suppliers',
+      },
+      {
+        id: 'inventory-supplier-categories',
+        title: '공급처 분류',
+        path: '/inventory/supplier-categories',
       },
       {
         id: 'product-matching',

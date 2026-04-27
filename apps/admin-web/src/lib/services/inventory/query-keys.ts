@@ -7,6 +7,7 @@ import type {
   TransferJobQuery,
   ReservationTargetType,
   StocktakingSessionQuery,
+  SupplierFiltersDto,
 } from '../../types/dto/inventory';
 
 export const inventoryQueryKeys = {
@@ -54,10 +55,13 @@ export const inventoryQueryKeys = {
   inventoryMatching: (id: string) => ['inventory-matchings', id] as const,
 
   // 공급처 관련
-  suppliers: (query?: any) => ['suppliers', query] as const,
-  supplierSearch: (query: string, page: number, limit: number) =>
-    ['suppliers', 'search', query, page, limit] as const,
+  suppliers: (filters?: SupplierFiltersDto) => ['suppliers', filters] as const,
+  supplierFilterOptions: () => ['suppliers', 'filter-options'] as const,
   supplier: (id: string) => ['suppliers', id] as const,
+
+  // 공급처 분류 관련
+  supplierCategories: () => ['supplier-categories'] as const,
+  supplierCategory: (id: string) => ['supplier-categories', id] as const,
 
   // 재고소유 관련
   holders: (query?: any) => ['holders', query] as const,
