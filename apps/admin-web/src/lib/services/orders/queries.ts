@@ -14,6 +14,7 @@ import type {
   VariantSkuLookupResponseDto,
   OrderLinesQuery,
 } from '@/lib/types/dto/orders';
+import type { QualityMetricsQuery } from '@/lib/types/dto/fulfillment';
 
 // 주문 관련 쿼리
 export const useSalesOrders = (params?: any) => {
@@ -39,27 +40,27 @@ export const useSalesOrderItems = (orderId: string) => {
   });
 };
 
-// 출고 배치 관련 쿼리 (임시 구현)
+// 출고 배치 관련 쿼리 (D2에서 구현 예정)
 export const useOutboundBatches = () => {
   return useQuery({
     queryKey: orderQueryKeys.outboundBatches,
-    queryFn: () => Promise.resolve([]),
+    queryFn: () => Promise.resolve([]), // TODO: D2에서 outbound-batches 클라이언트로 교체
   });
 };
 
 export const useOutboundBatch = (id: string) => {
   return useQuery({
     queryKey: orderQueryKeys.outboundBatch(id),
-    queryFn: () => Promise.resolve({ id }),
+    queryFn: () => Promise.resolve({ id }), // TODO: D2에서 교체
     enabled: !!id,
   });
 };
 
-// 피킹 관련 쿼리 (임시 구현)
+// 피킹 관련 쿼리
 export const usePickings = () => {
   return useQuery({
     queryKey: orderQueryKeys.pickings,
-    queryFn: () => Promise.resolve([]),
+    queryFn: () => Promise.resolve([]), // picking은 세션/배치 단위라 목록 API 없음
   });
 };
 
@@ -79,7 +80,31 @@ export const usePickingList = (orderId: string) => {
   });
 };
 
-// 이행 관련 쿼리 (임시 구현)
+export const useBatchPickingOperations = (batchId: string) => {
+  return useQuery({
+    queryKey: orderQueryKeys.batchOperations(batchId),
+    queryFn: () => orders.picking.getBatchOperations(batchId),
+    enabled: !!batchId,
+  });
+};
+
+export const useBatchPickingProgress = (batchId: string) => {
+  return useQuery({
+    queryKey: orderQueryKeys.batchProgress(batchId),
+    queryFn: () => orders.picking.getBatchProgress(batchId),
+    enabled: !!batchId,
+  });
+};
+
+export const usePickingSession = (foId: string) => {
+  return useQuery({
+    queryKey: orderQueryKeys.pickingSession(foId),
+    queryFn: () => orders.picking.getPickingSession(foId),
+    enabled: false, // 명시적 시작 버튼에서만 호출 (side-effect 있는 GET)
+  });
+};
+
+// 이행 관련 쿼리
 export const useFulfillments = () => {
   return useQuery({
     queryKey: orderQueryKeys.fulfillments,
@@ -107,6 +132,30 @@ export const useFulfillmentOrder = (id: string) => {
     queryKey: orderQueryKeys.fulfillmentOrder(id),
     queryFn: () => Promise.resolve({ id }),
     enabled: !!id,
+  });
+};
+
+// 검수 관련 쿼리
+export const useInspectionSummary = (foId: string) => {
+  return useQuery({
+    queryKey: orderQueryKeys.inspectionSummary(foId),
+    queryFn: () => orders.inspection.getSummary(foId),
+    enabled: !!foId,
+  });
+};
+
+export const useInspectionHistory = (foiId: string) => {
+  return useQuery({
+    queryKey: orderQueryKeys.inspectionHistory(foiId),
+    queryFn: () => orders.inspection.getHistory(foiId),
+    enabled: !!foiId,
+  });
+};
+
+export const useQualityMetrics = (query: QualityMetricsQuery = {}) => {
+  return useQuery({
+    queryKey: orderQueryKeys.qualityMetrics(query),
+    queryFn: () => orders.inspection.getQualityMetrics(query),
   });
 };
 
@@ -157,34 +206,34 @@ export const useLegacyPurchaseOrder = (id: string) => {
   });
 };
 
-// 송장 관련 쿼리 (임시 구현)
+// 송장 관련 쿼리
 export const useInvoices = () => {
   return useQuery({
     queryKey: orderQueryKeys.invoices,
-    queryFn: () => Promise.resolve([]),
+    queryFn: () => Promise.resolve([]), // 목록 API 없음 — FO 단위 발행 후 ID로 조회
   });
 };
 
 export const useInvoice = (id: string) => {
   return useQuery({
     queryKey: orderQueryKeys.invoice(id),
-    queryFn: () => Promise.resolve({ id }),
+    queryFn: () => orders.invoices.getDetail(id),
     enabled: !!id,
   });
 };
 
-// 직접 배송 관련 쿼리 (임시 구현)
+// 직접 배송 관련 쿼리 (D2에서 구현 예정)
 export const useDirectShips = () => {
   return useQuery({
     queryKey: orderQueryKeys.directShips,
-    queryFn: () => Promise.resolve([]),
+    queryFn: () => Promise.resolve([]), // TODO: D2에서 direct-ship 클라이언트로 교체
   });
 };
 
 export const useDirectShip = (id: string) => {
   return useQuery({
     queryKey: orderQueryKeys.directShip(id),
-    queryFn: () => Promise.resolve({ id }),
+    queryFn: () => Promise.resolve({ id }), // TODO: D2에서 교체
     enabled: !!id,
   });
 };

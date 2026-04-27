@@ -1,39 +1,12 @@
-/** @format */
-
-import { ShippingBatch } from '@/features/order/print-invoices-by-order/schemas/print-invoices-by-order-filter.schema';
-import PrintInvoicesByOrderTemplate from '@/features/order/print-invoices-by-order/template/PrintInvoicesByOrder';
-import CustomDialog from './(components)/CustomDialog';
 import RouteGuard from '@/components/layout/route-guard';
+import PrintInvoicesByOrderTemplate from '@/features/order/print-invoices-by-order/template';
 
-// 주문별 송장출력페이지
-export default async function OrderPrintInvoicesByOrderPage({
-  searchParams,
-}: {
-  searchParams: Promise<{
-    shippingBatch: ShippingBatch;
-    orderId: string;
-    modal: string;
-  }>;
-}) {
-  const params = await searchParams;
-
-  const isModal = params.modal === 'true';
-
-  if (isModal) {
-    return (
-      <RouteGuard
-        requireRole={['admin', 'master']}
-      >
-        <CustomDialog params={params} />
-      </RouteGuard>
-    );
-  }
-
+export default function OrderPrintInvoicesByOrderPage() {
   return (
-    <RouteGuard
-      requireRole={['admin', 'master']}
-    >
-      <PrintInvoicesByOrderTemplate params={params} />
+    <RouteGuard requireRole={['admin', 'master']}>
+      <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
+        <PrintInvoicesByOrderTemplate />
+      </div>
     </RouteGuard>
   );
 }

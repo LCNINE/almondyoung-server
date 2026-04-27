@@ -1,0 +1,51 @@
+// src/lib/api/domains/orders/invoices.client.ts
+import { ALMONDYOUNG_API_BASE_URL } from '@/const';
+import { client } from '../../client';
+import type {
+  IssueInvoiceRequest,
+  IssueInvoiceResponse,
+  PrintInvoicesRequest,
+  PrintInvoicesResponse,
+  InvoiceDetail,
+  TrackInvoiceResponse,
+} from '@/lib/types/dto/fulfillment';
+
+const BASE = `${ALMONDYOUNG_API_BASE_URL}/invoices`;
+
+export const invoicesClient = {
+  issue: async (data: IssueInvoiceRequest): Promise<IssueInvoiceResponse> => {
+    const res = await client.post(BASE, data);
+    return res.data;
+  },
+
+  getDetail: async (id: string): Promise<InvoiceDetail> => {
+    // ⚠️ 서버 getInvoiceDetail 응답의 items가 빈 배열로 반환됨.
+    // 라인아이템 표시가 필요하면 FO 라인을 별도 조회로 보강해야 함.
+    const res = await client.get(`${BASE}/${encodeURIComponent(id)}`);
+    return res.data;
+  },
+
+  print: async (data: PrintInvoicesRequest): Promise<PrintInvoicesResponse> => {
+    // 응답의 printUri를 window.open으로 열어 Goodsflow 인쇄 페이지를 표시.
+    // ⚠️ direct/self 방식으로 발행된 송장이 포함되면 BadRequest 발생.
+    const res = await client.post(`${BASE}/print`, data);
+    return res.data;
+  },
+
+  ship: async (id: string): Promise<{ message: string }> => {
+    // ⚠️ status가 'printed'인 경우에만 성공. direct/self 방식은 ship 처리 경로 없음.
+    const res = await client.put(`${BASE}/${encodeURIComponent(id)}/ship`);
+    return res.data;
+  },
+
+  cancel: async (id: string): Promise<{ message: string }> => {
+    const res = await client.put(`${BASE}/${encodeURIComponent(id)}/cancel`);
+    return res.data;
+  },
+
+  track: async (id: string): Promise<TrackInvoiceResponse> => {
+    // ⚠️ goodsflow 방식만 지원. direct/self는 서버에서 BadRequest 반환.
+    const res = await client.get(`${BASE}/${encodeURIComponent(id)}/track`);
+    return res.data;
+  },
+};
