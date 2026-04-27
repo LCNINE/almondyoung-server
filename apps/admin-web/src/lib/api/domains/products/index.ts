@@ -9,6 +9,8 @@ import { channels } from './channels.client';
 import { bannerGroupsClient } from './banner-groups.client';
 import { bannersClient } from './banners.client';
 import { tagsClient } from './tags.client';
+import { pricingClient } from './pricing.client';
+import { versionsClient } from './versions.client';
 
 export const products = {
   categories,
@@ -19,6 +21,8 @@ export const products = {
   bannerGroups: bannerGroupsClient,
   banners: bannersClient,
   tags: tagsClient,
+  pricing: pricingClient,
+  versions: versionsClient,
 };
 
 export { categories } from './categories.client';
@@ -29,3 +33,5 @@ export { channels } from './channels.client';
 export { bannerGroupsClient } from './banner-groups.client';
 export { bannersClient } from './banners.client';
 export { tagsClient } from './tags.client';
+export { pricingClient } from './pricing.client';
+export { versionsClient } from './versions.client';

@@ -2,10 +2,12 @@
 
 import { createColumnHelper } from '@tanstack/react-table';
 import { useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import type { MasterDto } from '@/lib/types/dto/products';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DateCell } from '@/components/table/table-cells/common';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 
 const columnHelper = createColumnHelper<MasterDto>();
 
@@ -17,6 +19,8 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export function useProductsListTableColumns() {
+  const router = useRouter();
+
   return useMemo(
     () => [
       columnHelper.display({
@@ -116,7 +120,24 @@ export function useProductsListTableColumns() {
         header: '수정일',
         cell: ({ getValue }) => <DateCell value={getValue()} />,
       }),
+      columnHelper.display({
+        id: 'actions',
+        header: '작업',
+        cell: ({ row }) => (
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-xs"
+            onClick={(e) => {
+              e.stopPropagation();
+              router.push(`/mall/pricing/${row.original.id}`);
+            }}
+          >
+            가격 관리
+          </Button>
+        ),
+      }),
     ],
-    []
+    [router]
   );
 }
