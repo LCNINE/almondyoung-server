@@ -1,13 +1,12 @@
 import RouteGuard from '@/components/layout/route-guard';
-import PickingListTemplate from '@/features/order/picking-list/template/PickingListTemplate';
+import PickingListTemplate from '@/features/order/picking-list/template';
 
-// 피킹 리스트 페이지(pc)
 export default function OrderPickingListPage() {
   return (
-    <RouteGuard
-      requireRole={['admin', 'master']}
-    >
-      <PickingListTemplate />
+    <RouteGuard requireRole={['admin', 'master']}>
+      <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
+        <PickingListTemplate />
+      </div>
     </RouteGuard>
   );
 }

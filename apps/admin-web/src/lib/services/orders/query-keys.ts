@@ -15,6 +15,9 @@ export const orderQueryKeys = {
   pickings: ['pickings'] as const,
   picking: (id: string) => ['pickings', id] as const,
   pickingList: (orderId: string) => ['pickings', 'list', orderId] as const,
+  pickingSession: (foId: string) => ['pickings', 'session', foId] as const,
+  batchOperations: (batchId: string) => ['pickings', 'batch', batchId, 'operations'] as const,
+  batchProgress: (batchId: string) => ['pickings', 'batch', batchId, 'progress'] as const,
 
   // 이행 관련
   fulfillments: ['fulfillments'] as const,
@@ -51,6 +54,11 @@ export const orderQueryKeys = {
   // 구매 주문 관련
   purchaseOrders: ['purchase-orders'] as const,
   purchaseOrder: (id: string) => ['purchase-orders', id] as const,
+
+  // 검수 관련
+  inspectionSummary: (foId: string) => ['inspection', 'summary', foId] as const,
+  inspectionHistory: (foiId: string) => ['inspection', 'history', foiId] as const,
+  qualityMetrics: (query: Record<string, any>) => ['inspection', 'metrics', 'quality', query] as const,
 
   // 송장 관련
   invoices: ['invoices'] as const,
