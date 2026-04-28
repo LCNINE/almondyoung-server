@@ -81,6 +81,35 @@ export interface ContractEventItem {
   createdAt: string;
 }
 
+export interface AdminBillingHistoryQuery {
+  page?: number;
+  limit?: number;
+  dateFrom?: string;
+  dateTo?: string;
+  contractId?: string;
+  userId?: string;
+  eventType?: string;
+}
+
+export interface AdminBillingHistoryItem {
+  id: string;
+  contractId: string;
+  userId: string;
+  eventType: string;
+  attemptNo: number | null;
+  amount: number | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+}
+
+export interface AdminBillingHistoryResponse {
+  data: AdminBillingHistoryItem[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
 function buildQueryString(query: Record<string, unknown>): string {
   const params = new URLSearchParams();
   Object.entries(query).forEach(([key, value]) => {
@@ -137,6 +166,14 @@ export const membershipApi = {
       days,
       reason,
     });
+  },
+
+  getAllBillingHistory: async (query: AdminBillingHistoryQuery): Promise<AdminBillingHistoryResponse> => {
+    const qs = buildQueryString(query as Record<string, unknown>);
+    const res = await client.get(
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/billing-history${qs ? `?${qs}` : ''}`,
+    );
+    return res.data;
   },
 
   forceCancelSubscription: async (

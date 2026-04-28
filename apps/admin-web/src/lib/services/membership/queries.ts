@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { membershipApi, AdminMembersQuery } from '@/lib/api/domains/membership';
+import { membershipApi, AdminMembersQuery, AdminBillingHistoryQuery } from '@/lib/api/domains/membership';
 import { membershipQueryKeys } from './query-keys';
 
 export const useMembershipMembers = (
@@ -65,6 +65,13 @@ export const useAdjustEntitlement = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: membershipQueryKeys.all });
     },
+  });
+};
+
+export const useBillingHistory = (query: AdminBillingHistoryQuery) => {
+  return useQuery({
+    queryKey: membershipQueryKeys.billingHistory(query),
+    queryFn: () => membershipApi.getAllBillingHistory(query),
   });
 };
 
