@@ -80,9 +80,9 @@ function HistoryCard({ item, cancellationReasons, onCancelled }: HistoryCardProp
   const startDate = item.startDate ?? item.createdAt
   const endDate = item.cancelledAt ?? item.endDate ?? item.nextBillingDate ?? null
   const canCancel = item.status === "ACTIVE" && item.autoRenewal === true
-  const today = new Date()
-  const isInTrial = !!item.billingDate && item.status === "ACTIVE" && new Date(item.billingDate) > today
-  const displayNextBillingDate = isInTrial ? item.billingDate : item.nextBillingDate
+  const isInTrial = item.status === "ACTIVE" && !!item.billingDate && new Date(item.billingDate) > new Date()
+  const nextBillingLabel = isInTrial ? "자동 결제 시작일" : item.autoRenewal === false ? "구독 종료일" : "다음 결제일"
+  const nextBillingValue = isInTrial ? item.billingDate : item.autoRenewal === false ? item.endDate : item.nextBillingDate
 
   const handleCancel = async ({ reasonCode, reasonText }: { reasonCode: string; reasonText?: string }) => {
     try {
@@ -157,16 +157,8 @@ function HistoryCard({ item, cancellationReasons, onCancelled }: HistoryCardProp
 
               {item.status === "ACTIVE" ? (
                 <>
-                  <span className="text-gray-400">
-                    {isInTrial ? "자동 결제 시작일" : item.autoRenewal === false ? "구독 종료일" : "다음 결제일"}
-                  </span>
-                  <span className="font-medium text-gray-900">
-                    {isInTrial
-                      ? fmtDate(displayNextBillingDate)
-                      : item.autoRenewal === false
-                        ? fmtDate(item.endDate)
-                        : fmtDate(item.nextBillingDate)}
-                  </span>
+                  <span className="text-gray-400">{nextBillingLabel}</span>
+                  <span className="font-medium text-gray-900">{fmtDate(nextBillingValue)}</span>
                 </>
               ) : (
                 <>

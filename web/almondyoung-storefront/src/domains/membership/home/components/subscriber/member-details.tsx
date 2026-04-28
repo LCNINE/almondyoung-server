@@ -1,4 +1,5 @@
 import React from "react"
+import { differenceInCalendarDays } from "date-fns"
 import type {
   CycleBenefitDto,
   SubscriptionDetailsDto,
@@ -60,14 +61,12 @@ export default function MemberDetails({
   }
 
   const today = new Date()
-  const billingDateStr = membershipData?.billingDate
-  const isInTrial = !!billingDateStr && new Date(billingDateStr) > today
-  const trialDaysRemaining = isInTrial
-    ? Math.ceil((new Date(billingDateStr!).getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-    : 0
+  const billingDate = membershipData?.billingDate ? new Date(membershipData.billingDate) : null
+  const isInTrial = !!billingDate && billingDate > today
+  const trialDaysRemaining = isInTrial ? differenceInCalendarDays(billingDate, today) : 0
 
   const nextBillingDate = isInTrial
-    ? billingDateStr
+    ? membershipData?.billingDate
     : (membershipData?.nextBillingDate ??
         membershipData?.currentPeriodEnd ??
         membershipData?.endDate)
