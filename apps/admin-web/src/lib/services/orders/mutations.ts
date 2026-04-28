@@ -12,6 +12,20 @@ import type {
   StockPolicyDto,
   VariantMatchingDto,
 } from '@/lib/types/dto/orders';
+import type {
+  StartInspectionRequest,
+  InspectItemRequest,
+  ForceShipmentRequest,
+  BulkApproveRequest,
+  CompleteInspectionSessionRequest,
+  IssueInvoiceRequest,
+  PrintInvoicesRequest,
+  BatchPickRequest,
+  PickByBarcodeRequest,
+  PickIndividualItemRequest,
+  ScanBarcodeRequest,
+  GenerateBarcodeRequest,
+} from '@/lib/types/dto/fulfillment';
 
 // 주문 관련 뮤테이션
 export const useCreateSalesOrder = () => {
@@ -91,6 +105,168 @@ export const useDeleteOutboundBatch = () => {
         queryKey: orderQueryKeys.outboundBatches,
       });
       queryClient.removeQueries({ queryKey: orderQueryKeys.outboundBatch(id) });
+    },
+  });
+};
+
+// ===== 피킹 관련 뮤테이션 =====
+
+export const useStartIndividualPicking = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (foId: string) => orders.picking.startIndividualPicking(foId),
+    onSuccess: (_, foId) => {
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.pickingSession(foId) });
+    },
+  });
+};
+
+export const usePickIndividualItem = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ foiId, data }: { foiId: string; data: PickIndividualItemRequest }) =>
+      orders.picking.pickIndividualItem(foiId, data),
+    onSuccess: (_, { foiId }) => {
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.pickings });
+    },
+  });
+};
+
+export const useCompleteIndividualPicking = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (foId: string) => orders.picking.completeIndividualPicking(foId),
+    onSuccess: (_, foId) => {
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.pickingSession(foId) });
+    },
+  });
+};
+
+export const useResetPickingItem = () => {
+  return useMutation({
+    mutationFn: (foiId: string) => orders.picking.resetPickingForItem(foiId),
+  });
+};
+
+export const useBatchPick = () => {
+  return useMutation({
+    mutationFn: (data: BatchPickRequest) => orders.picking.batchPick(data),
+  });
+};
+
+export const useScanBarcode = () => {
+  return useMutation({
+    mutationFn: (data: ScanBarcodeRequest) => orders.picking.scanBarcode(data),
+  });
+};
+
+export const usePickByBarcode = () => {
+  return useMutation({
+    mutationFn: (data: PickByBarcodeRequest) => orders.picking.pickByBarcodeScan(data),
+  });
+};
+
+export const useGenerateBarcode = () => {
+  return useMutation({
+    mutationFn: (data: GenerateBarcodeRequest) => orders.picking.generateBarcode(data),
+  });
+};
+
+// ===== 검수 관련 뮤테이션 =====
+
+export const useStartInspection = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: StartInspectionRequest) => orders.inspection.startSession(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inspection'] });
+    },
+  });
+};
+
+export const useCompleteInspectionSession = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ sessionId, data }: { sessionId: string; data: CompleteInspectionSessionRequest }) =>
+      orders.inspection.completeSession(sessionId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inspection'] });
+    },
+  });
+};
+
+export const useInspectItem = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: InspectItemRequest) => orders.inspection.inspectItem(data),
+    onSuccess: (_, data) => {
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.inspectionSummary(data.sessionId) });
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.inspectionHistory(data.foiId) });
+    },
+  });
+};
+
+export const useForceShipment = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: ForceShipmentRequest) => orders.inspection.forceShipment(data),
+    onSuccess: (_, data) => {
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.inspectionHistory(data.foiId) });
+    },
+  });
+};
+
+export const useResetInspection = () => {
+  return useMutation({
+    mutationFn: ({ foiId, inspectorUserId }: { foiId: string; inspectorUserId: string }) =>
+      orders.inspection.resetInspection(foiId, inspectorUserId),
+  });
+};
+
+export const useBulkApprove = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: BulkApproveRequest) => orders.inspection.bulkApprove(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inspection'] });
+    },
+  });
+};
+
+// ===== 송장 관련 뮤테이션 =====
+
+export const useIssueInvoice = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: IssueInvoiceRequest) => orders.invoices.issue(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.invoices });
+    },
+  });
+};
+
+export const usePrintInvoices = () => {
+  return useMutation({
+    mutationFn: (data: PrintInvoicesRequest) => orders.invoices.print(data),
+  });
+};
+
+export const useMarkInvoiceShipped = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => orders.invoices.ship(id),
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.invoice(id) });
+    },
+  });
+};
+
+export const useCancelInvoice = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => orders.invoices.cancel(id),
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.invoice(id) });
     },
   });
 };

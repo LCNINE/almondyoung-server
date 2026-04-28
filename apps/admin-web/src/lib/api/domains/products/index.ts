@@ -6,27 +6,32 @@ import { masters } from './masters.client';
 import { variants } from './variants.client';
 import { channelProducts } from './channel-products.client';
 import { channels } from './channels.client';
+import { bannerGroupsClient } from './banner-groups.client';
+import { bannersClient } from './banners.client';
+import { tagsClient } from './tags.client';
+import { pricingClient } from './pricing.client';
+import { versionsClient } from './versions.client';
 
 export const products = {
-  // Categories Management (PIM API)
   categories,
-
-  // Product Masters Management (PIM API)
   masters,
-
-  // Product Variants Management (PIM API)
   variants,
-
-  // Sales Channels Management (PIM API)
   channels,
-
-  // Channel Products Management (PIM API)
   channelProducts,
+  bannerGroups: bannerGroupsClient,
+  banners: bannersClient,
+  tags: tagsClient,
+  pricing: pricingClient,
+  versions: versionsClient,
 };
 
-// 기존 호환성을 위한 별도 export
 export { categories } from './categories.client';
 export { masters } from './masters.client';
 export { variants } from './variants.client';
 export { channelProducts } from './channel-products.client';
 export { channels } from './channels.client';
+export { bannerGroupsClient } from './banner-groups.client';
+export { bannersClient } from './banners.client';
+export { tagsClient } from './tags.client';
+export { pricingClient } from './pricing.client';
+export { versionsClient } from './versions.client';

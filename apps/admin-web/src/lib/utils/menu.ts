@@ -212,6 +212,16 @@ export const mainMenus: MainMenu[] = [
         path: '/inventory/stocktaking',
       },
       {
+        id: 'inventory-purchase-orders',
+        title: '발주관리',
+        path: '/inventory/purchase-orders',
+      },
+      {
+        id: 'inventory-inbound',
+        title: '입고 관리',
+        path: '/inventory/inbound',
+      },
+      {
         id: 'inventory-suppliers',
         title: '공급처 관리',
         path: '/inventory/suppliers',
@@ -220,6 +230,16 @@ export const mainMenus: MainMenu[] = [
         id: 'inventory-supplier-categories',
         title: '공급처 분류',
         path: '/inventory/supplier-categories',
+      },
+      {
+        id: 'inventory-locations',
+        title: '로케이션 관리',
+        path: '/inventory/locations',
+      },
+      {
+        id: 'inventory-holders',
+        title: '재고 소유자 관리',
+        path: '/inventory/holders',
       },
       {
         id: 'product-matching',
@@ -358,6 +378,7 @@ export const mainMenus: MainMenu[] = [
             title: '분류/카테고리',
             path: '/mall/categories',
           },
+          { id: 'product-tags', title: '태그', path: '/mall/tags' },
           { id: 'product-display', title: '진열' },
           { id: 'deleted-products', title: '휴지통(삭제상품 관리)' },
         ],
@@ -367,7 +388,7 @@ export const mainMenus: MainMenu[] = [
         title: '마케팅',
         children: [
           { id: 'messages', title: '메시지 or 푸시알림' },
-          { id: 'banners', title: '배너' },
+          { id: 'banner-groups', title: '배너 그룹', path: '/mall/banner-groups' },
           { id: 'popups', title: '팝업/공지사항' },
           { id: 'points', title: '적립금' },
           { id: 'coupons', title: '쿠폰' },
