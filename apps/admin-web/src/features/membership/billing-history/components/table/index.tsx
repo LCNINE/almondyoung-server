@@ -1,10 +1,10 @@
 'use client';
 
-import { useSearchParams } from 'next/navigation';
 import { createColumnHelper } from '@tanstack/react-table';
 import { useMemo } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { useBillingHistory } from '@/lib/services/membership';
+import { useBillingHistoryTableQuery } from '@/hooks/table/query/use-billing-history-table-query';
 import { useDataTable } from '@/hooks/use-data-table';
 import { DataTable } from '@/components/data-table';
 import { AdminBillingHistoryItem } from '@/lib/api/domains/membership';
@@ -62,10 +62,9 @@ function useColumns() {
         header: '실패 사유',
         cell: ({ getValue, row }) => {
           const code = getValue();
-          const msg = row.original.errorMessage;
           if (!code) return <span className="text-sm text-muted-foreground">-</span>;
           return (
-            <span className="text-sm text-destructive" title={msg ?? undefined}>
+            <span className="text-sm text-destructive" title={row.original.errorMessage ?? undefined}>
               {code}
             </span>
           );
@@ -85,19 +84,7 @@ function useColumns() {
 }
 
 export function BillingHistoryTable() {
-  const searchParams = useSearchParams();
-
-  const page = Number(searchParams.get('page') ?? 1);
-  const query = {
-    page,
-    limit: PAGE_SIZE,
-    dateFrom: searchParams.get('dateFrom') ?? undefined,
-    dateTo: searchParams.get('dateTo') ?? undefined,
-    userId: searchParams.get('userId') ?? undefined,
-    contractId: searchParams.get('contractId') ?? undefined,
-    eventType: searchParams.get('eventType') ?? undefined,
-  };
-
+  const query = useBillingHistoryTableQuery(PAGE_SIZE);
   const { data, isLoading, isFetching } = useBillingHistory(query);
   const columns = useColumns();
 
