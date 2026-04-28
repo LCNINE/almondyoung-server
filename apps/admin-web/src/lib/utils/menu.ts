@@ -455,7 +455,7 @@ export const mainMenus: MainMenu[] = [
       {
         id: 'benefit-management',
         title: '멤버십 혜택 관리',
-        children: [{ id: 'membership-plans', title: '멤버십 플랜' }],
+        children: [{ id: 'membership-plans', title: '멤버십 플랜', path: '/membership/plans' }],
       },
     ],
   },
