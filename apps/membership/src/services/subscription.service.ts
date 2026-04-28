@@ -44,6 +44,7 @@ type CreateSubscriptionOptions = {
   initialPaymentIntentId?: string;
   initialPaymentAttemptId?: string;
   initialWalletReferenceId?: string;
+  initialPaymentAmount?: number;
 };
 
 @Injectable()
