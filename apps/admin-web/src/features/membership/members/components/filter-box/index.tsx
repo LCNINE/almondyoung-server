@@ -12,11 +12,9 @@ import {
   FormDateRangePicker,
 } from '@/components/common/form';
 import { Button } from '@/components/ui/button';
-import { startOfDay, endOfDay, subDays, startOfMonth, endOfMonth, subMonths } from 'date-fns';
+import { DatePreset, DATE_PRESET_OPTIONS, computeDateRange } from '@/lib/utils/date';
 
-type DatePreset = 'all' | 'today' | 'yesterday' | 'week' | 'month' | 'lastMonth' | 'quarter' | 'custom';
 type StatusOption = '' | 'ACTIVE' | 'EXPIRED' | 'PAUSED' | 'CANCELLED';
-
 type SearchType = 'userId' | 'member';
 
 interface FilterState {
@@ -34,17 +32,6 @@ const DATE_TYPE_OPTIONS = [
   { value: 'createdAt', label: '가입일' },
 ];
 
-const DATE_PRESET_OPTIONS = [
-  { value: 'all', label: '전체' },
-  { value: 'today', label: '오늘' },
-  { value: 'yesterday', label: '어제' },
-  { value: 'week', label: '일주일' },
-  { value: 'month', label: '당월' },
-  { value: 'lastMonth', label: '전월' },
-  { value: 'quarter', label: '3개월' },
-  { value: 'custom', label: '임의기간' },
-];
-
 const STATUS_OPTIONS = [
   { value: '', label: '전체' },
   { value: 'ACTIVE', label: '활성화' },
@@ -52,31 +39,6 @@ const STATUS_OPTIONS = [
   { value: 'PAUSED', label: '일시정지' },
   { value: 'CANCELLED', label: '해지' },
 ];
-
-function computeDateRange(preset: DatePreset): { from: string; to: string } | null {
-  const now = new Date();
-  const fmt = (d: Date) => d.toISOString().slice(0, 10);
-  switch (preset) {
-    case 'today':
-      return { from: fmt(startOfDay(now)), to: fmt(endOfDay(now)) };
-    case 'yesterday': {
-      const y = subDays(now, 1);
-      return { from: fmt(startOfDay(y)), to: fmt(endOfDay(y)) };
-    }
-    case 'week':
-      return { from: fmt(startOfDay(subDays(now, 6))), to: fmt(endOfDay(now)) };
-    case 'month':
-      return { from: fmt(startOfMonth(now)), to: fmt(endOfMonth(now)) };
-    case 'lastMonth': {
-      const lm = subMonths(now, 1);
-      return { from: fmt(startOfMonth(lm)), to: fmt(endOfMonth(lm)) };
-    }
-    case 'quarter':
-      return { from: fmt(startOfDay(subMonths(now, 3))), to: fmt(endOfDay(now)) };
-    default:
-      return null;
-  }
-}
 
 export function MembershipMemberFilterBox() {
   const router = useRouter();
@@ -112,7 +74,7 @@ export function MembershipMemberFilterBox() {
     }
     if (from) params.set('dateFrom', from);
     if (to) params.set('dateTo', to);
-    if (filters.datePreset) params.set('datePreset', filters.datePreset);
+    if (filters.datePreset && filters.datePreset !== 'all') params.set('datePreset', filters.datePreset);
 
     router.replace(`${pathname}?${params.toString()}`);
   };
