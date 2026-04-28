@@ -80,7 +80,8 @@ function HistoryCard({ item, cancellationReasons, onCancelled }: HistoryCardProp
   const startDate = item.startDate ?? item.createdAt
   const endDate = item.cancelledAt ?? item.endDate ?? item.nextBillingDate ?? null
   const canCancel = item.status === "ACTIVE" && item.autoRenewal === true
-  const isInTrial = item.status === "ACTIVE" && !!item.billingDate && new Date(item.billingDate) > new Date()
+  const today = new Date()
+  const isInTrial = item.status === "ACTIVE" && !!item.billingDate && new Date(item.billingDate) > today
   const nextBillingLabel = isInTrial ? "자동 결제 시작일" : item.autoRenewal === false ? "구독 종료일" : "다음 결제일"
   const nextBillingValue = isInTrial ? item.billingDate : item.autoRenewal === false ? item.endDate : item.nextBillingDate
 
@@ -180,7 +181,7 @@ function HistoryCard({ item, cancellationReasons, onCancelled }: HistoryCardProp
               <div className="mt-3 border-t border-gray-200 pt-3">
                 <p className="mb-2 text-xs text-gray-500">
                   {isInTrial
-                    ? <>무료 체험을 해지하면 <strong>{fmtDate(item.billingDate)}</strong> 이전에 서비스 이용이 종료됩니다.</>
+                    ? <>무료 체험을 해지하면 즉시 이용이 종료됩니다. (자동 결제 예정일: <strong>{fmtDate(item.billingDate)}</strong>)</>
                     : <>해지 시 <strong>{fmtDate(item.nextBillingDate)}</strong>까지 서비스를 이용하실 수 있으며, 이후 자동 결제가 중단됩니다.</>
                   }
                 </p>

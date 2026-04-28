@@ -2,21 +2,7 @@ import type { Metadata } from "next"
 import Image from "next/image"
 import Link from "next/link"
 import { CartRefresher } from "./cart-refresher"
-
-const IconChevronLeft = () => (
-  <svg
-    className="h-5 w-5"
-    viewBox="0 0 20 20"
-    fill="currentColor"
-    aria-hidden="true"
-  >
-    <path
-      fillRule="evenodd"
-      d="M12.79 5.23a.75.75 0 010 1.06L9.06 10l3.73 3.71a.75.75 0 11-1.06 1.06l-4.25-4.25a.75.75 0 010-1.06l4.25-4.25a.75.75 0 011.06 0z"
-      clipRule="evenodd"
-    />
-  </svg>
-)
+import { BackButton } from "./back-button"
 
 export const metadata: Metadata = {
   title: "멤버십 가입 완료",
@@ -30,12 +16,10 @@ export default function MembershipSuccessScreen() {
       <div className="mx-auto flex w-full flex-1 flex-col px-6">
         <header className="flex w-full shrink-0 items-center border-b border-gray-200 px-3 py-4 md:px-6 md:py-3">
           <div className="flex-1">
-            <button aria-label="뒤로 가기" className="-m-2 p-2 text-black">
-              <IconChevronLeft />
-            </button>
+            <BackButton />
           </div>
           <h1 className="flex-1 text-center text-base font-bold text-black">
-            결제수단 관리
+            멤버십 가입 완료
           </h1>
           {/* 제목을 중앙에 맞추기 위한 오른쪽 스페이서 */}
           <div className="flex-1" />
