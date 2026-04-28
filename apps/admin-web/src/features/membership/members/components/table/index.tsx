@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { useMembershipMembers } from '@/lib/services/membership';
 import { userApi } from '@/lib/api/domains/users';
 import { useDataTable } from '@/hooks/use-data-table';
@@ -20,11 +21,18 @@ export function MembershipMemberTable() {
 
   // membership service can only filter by exact userIds, not by name/email.
   // When searching by member info, we first resolve matching userIds from user-service.
-  const { data: userSearchData, isFetching: isSearchingUsers } = useQuery({
+  const { data: userSearchData, isFetching: isSearchingUsers, isError: isUserSearchError } = useQuery({
     queryKey: ['admin-users-search', memberQ],
-    queryFn: () => userApi.getAdminUsers({ q: memberQ, limit: 200 }),
+    queryFn: () => userApi.getAdminUsers({ q: memberQ, limit: 1000 }),
     enabled: !!memberQ,
+    retry: 1,
   });
+
+  useEffect(() => {
+    if (isUserSearchError) {
+      toast.error('고객 정보 조회에 실패했습니다. 권한을 확인해주세요.');
+    }
+  }, [isUserSearchError]);
 
   const resolvedUserIds = memberQ
     ? (userSearchData?.data?.map((u) => u.id) ?? null)
@@ -36,7 +44,7 @@ export function MembershipMemberTable() {
       : query;
 
   const { data, isLoading, isFetching } = useMembershipMembers(membershipQuery, {
-    // disabled when user-service returned 0 matches (show empty table, not all members)
+    // disabled when memberQ is set but resolvedUserIds is not yet ready or empty
     enabled: !memberQ || (Array.isArray(resolvedUserIds) && resolvedUserIds.length > 0),
   });
 

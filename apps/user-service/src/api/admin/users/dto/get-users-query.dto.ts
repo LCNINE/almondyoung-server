@@ -20,14 +20,14 @@ export class GetUsersQueryDto {
   @ApiPropertyOptional({
     description: '페이지당 아이템 수',
     minimum: 1,
-    maximum: 100,
+    maximum: 1000,
     default: 20,
   })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(100)
+  @Max(1000)
   limit?: number;
 
   @ApiPropertyOptional({

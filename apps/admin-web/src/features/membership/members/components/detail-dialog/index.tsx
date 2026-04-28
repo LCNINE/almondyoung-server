@@ -122,9 +122,12 @@ function ForceCancelDialog({ open, onClose, contractId, onSuccess }: ForceCancel
       toast.error('취소 사유를 입력해주세요.');
       return;
     }
-    if (refundType === 'PARTIAL' && (!refundAmount || Number(refundAmount) <= 0)) {
-      toast.error('환불 금액을 입력해주세요.');
-      return;
+    if (refundType === 'PARTIAL') {
+      const amount = Number(refundAmount);
+      if (!refundAmount || isNaN(amount) || amount <= 0) {
+        toast.error('올바른 환불 금액을 입력해주세요.');
+        return;
+      }
     }
     try {
       await forceCancelMutation.mutateAsync({
