@@ -132,18 +132,19 @@ export class AdminOperationsService {
   }
 
   async getMemberBillingEvents(contractId: string): Promise<BillingEventItem[]> {
-    const [recurringEvents, paymentRef] = await Promise.all([
-      this.adminMembersReader.findBillingEventsByContractId(contractId),
-      this.adminMembersReader.findContractPaymentRef(contractId),
-    ]);
+    const events = await this.adminMembersReader.findBillingEventsByContractId(contractId);
 
-    if (!paymentRef?.lastPaymentIntentId) return recurringEvents;
+    // 신규 구독은 최초 결제가 billing_events에 직접 기록됨 → wallet 조회 불필요
+    if (events.some((e) => e.attemptNo === 1)) return events;
 
-    let initialEvent: BillingEventItem | null = null;
+    // 구버전 데이터 호환: lastPaymentIntentId로 wallet에서 최초 결제 조회
+    const paymentRef = await this.adminMembersReader.findContractPaymentRef(contractId);
+    if (!paymentRef?.lastPaymentIntentId) return events;
+
     try {
       const intent = await this.paymentClientService.getWalletPaymentIntent(paymentRef.lastPaymentIntentId);
       const succeeded = intent.status === 'AUTHORIZED' || intent.status === 'CAPTURED';
-      initialEvent = {
+      const initialEvent: BillingEventItem = {
         id: intent.id,
         contractId,
         eventType: succeeded ? 'CHARGE_SUCCESS' : intent.status === 'FAILED' ? 'CHARGE_FAIL' : 'CHARGE_ATTEMPT',
@@ -153,11 +154,10 @@ export class AdminOperationsService {
         errorMessage: null,
         createdAt: intent.createdAt,
       };
+      return [initialEvent, ...events];
     } catch {
-      // wallet 조회 실패 시 recurring 기록만 반환
+      return events;
     }
-
-    return initialEvent ? [initialEvent, ...recurringEvents] : recurringEvents;
   }
 
   async getMemberContractEvents(contractId: string) {
