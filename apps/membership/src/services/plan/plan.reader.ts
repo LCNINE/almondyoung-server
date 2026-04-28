@@ -135,6 +135,22 @@ export class PlanReader {
   }
 
   /**
+   * 모든 티어 + 전체 플랜(비활성 포함) 조회 (관리자용)
+   */
+  async findAllTiersWithAllPlans(): Promise<TierWithPlans[]> {
+    const tiers = await this.findAllTiers();
+    const allPlans = await this.dbService.db
+      .select()
+      .from(schema.plan)
+      .orderBy(desc(schema.plan.createdAt));
+
+    return tiers.map((tier) => ({
+      tier,
+      plans: allPlans.filter((p) => p.tierId === tier.id),
+    }));
+  }
+
+  /**
    * 플랜 ID로 조회 (활성 여부 무관)
    */
   async findPlanByIdAny(planId: string): Promise<Plan | null> {

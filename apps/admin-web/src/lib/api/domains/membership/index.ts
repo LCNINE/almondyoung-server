@@ -81,6 +81,31 @@ export interface ContractEventItem {
   createdAt: string;
 }
 
+export interface AdminTier {
+  id: string;
+  code: string;
+  priorityLevel: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminPlan {
+  id: string;
+  tierId: string;
+  price: number;
+  durationDays: number;
+  currency: string;
+  trialDays: number | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminTierWithPlans {
+  tier: AdminTier;
+  plans: AdminPlan[];
+}
+
 export interface AdminBillingHistoryQuery {
   page?: number;
   limit?: number;
@@ -165,6 +190,43 @@ export const membershipApi = {
       userId,
       days,
       reason,
+    });
+  },
+
+  getAllTiersWithPlans: async (): Promise<AdminTierWithPlans[]> => {
+    const res = await client.get(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/tiers`);
+    return res.data.data;
+  },
+
+  createTier: async (body: { code: string; priorityLevel: number }): Promise<void> => {
+    await client.post(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/tiers`, body);
+  },
+
+  updateTier: async (tierId: string, body: { priorityLevel?: number }): Promise<void> => {
+    await client.put(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/tiers/${encodeURIComponent(tierId)}`, body);
+  },
+
+  createPlan: async (body: {
+    tierId: string;
+    price: number;
+    durationDays: number;
+    currency?: string;
+    trialDays?: number;
+  }): Promise<void> => {
+    await client.post(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/plans`, body);
+  },
+
+  updatePlan: async (planId: string, body: {
+    price?: number;
+    durationDays?: number;
+    trialDays?: number;
+  }): Promise<void> => {
+    await client.put(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/plans/${encodeURIComponent(planId)}`, body);
+  },
+
+  deactivatePlan: async (planId: string, reason: string): Promise<void> => {
+    await client.delete(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/plans/${encodeURIComponent(planId)}`, {
+      data: { reason },
     });
   },
 

@@ -63,6 +63,10 @@ export class AdminOperationsService {
     return this.planService.deactivatePlan(planId, dto.reason, adminId);
   }
 
+  async getAllTiersWithPlans() {
+    return this.planService.getAllTiersWithPlans();
+  }
+
   // =================================================================
   // Policy Management
   // =================================================================
