@@ -1,11 +1,10 @@
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
-import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
+import { OnEvent, EventPayload } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { DbService } from '@app/db';
 import { membershipSchema } from '../shared/schemas/entities/schema';
 import * as schema from '../shared/schemas/entities/schema';
 import { eq, count } from 'drizzle-orm';
-import { MessageEnvelope } from '@packages/event-contracts/types';
 
 interface IntentEventPayload {
   intentId: string;
@@ -26,10 +25,7 @@ export class BillingResultConsumer {
   ) {}
 
   @OnEvent('payments.events.v1', 'payment.intent.authorized')
-  async onIntentAuthorized(
-    @EventPayload() payload: IntentEventPayload,
-    @EventEnvelope() envelope: MessageEnvelope,
-  ) {
+  async onIntentAuthorized(@EventPayload() payload: IntentEventPayload) {
     if (payload.subscriberType !== 'MEMBERSHIP' || !payload.subscriberRef) return;
 
     const contractId = payload.subscriberRef;
@@ -45,10 +41,7 @@ export class BillingResultConsumer {
   }
 
   @OnEvent('payments.events.v1', 'payment.intent.failed')
-  async onIntentFailed(
-    @EventPayload() payload: IntentEventPayload,
-    @EventEnvelope() envelope: MessageEnvelope,
-  ) {
+  async onIntentFailed(@EventPayload() payload: IntentEventPayload) {
     if (payload.subscriberType !== 'MEMBERSHIP' || !payload.subscriberRef) return;
 
     const contractId = payload.subscriberRef;
