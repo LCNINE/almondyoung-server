@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { membershipApi, AdminMembersQuery, AdminBillingHistoryQuery } from '@/lib/api/domains/membership';
+import { membershipApi, AdminMembersQuery, AdminBillingHistoryQuery, AdminTierWithPlans } from '@/lib/api/domains/membership';
 import { membershipQueryKeys } from './query-keys';
 
 export const useMembershipMembers = (
@@ -72,6 +72,57 @@ export const useBillingHistory = (query: AdminBillingHistoryQuery) => {
   return useQuery({
     queryKey: membershipQueryKeys.billingHistory(query),
     queryFn: () => membershipApi.getAllBillingHistory(query),
+  });
+};
+
+export const useTiersWithPlans = () => {
+  return useQuery({
+    queryKey: membershipQueryKeys.tiersWithPlans(),
+    queryFn: () => membershipApi.getAllTiersWithPlans(),
+  });
+};
+
+export const useCreateTier = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { code: string; priorityLevel: number }) => membershipApi.createTier(body),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: membershipQueryKeys.tiersWithPlans() }); },
+  });
+};
+
+export const useUpdateTier = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ tierId, ...body }: { tierId: string; priorityLevel?: number }) =>
+      membershipApi.updateTier(tierId, body),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: membershipQueryKeys.tiersWithPlans() }); },
+  });
+};
+
+export const useCreatePlan = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { tierId: string; price: number; durationDays: number; currency?: string; trialDays?: number }) =>
+      membershipApi.createPlan(body),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: membershipQueryKeys.tiersWithPlans() }); },
+  });
+};
+
+export const useUpdatePlan = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ planId, ...body }: { planId: string; price?: number; durationDays?: number; trialDays?: number }) =>
+      membershipApi.updatePlan(planId, body),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: membershipQueryKeys.tiersWithPlans() }); },
+  });
+};
+
+export const useDeactivatePlan = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ planId, reason }: { planId: string; reason: string }) =>
+      membershipApi.deactivatePlan(planId, reason),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: membershipQueryKeys.tiersWithPlans() }); },
   });
 };
 

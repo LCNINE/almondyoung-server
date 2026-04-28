@@ -345,6 +345,18 @@ export class AdminOperationsController {
     }
   }
 
+  @Get('tiers')
+  @ApiOperation({ summary: '티어 + 플랜 전체 조회 (관리자용)' })
+  @UseGuards(JwtAuthGuard)
+  async getAllTiersWithPlans() {
+    try {
+      const result = await this.adminOperationsService.getAllTiersWithPlans();
+      return { success: true, data: result };
+    } catch (error) {
+      this.handleError(error, '티어 목록 조회');
+    }
+  }
+
   // ===================================================================
   // Entitlement Management - 구독 권한 관리
   // ===================================================================
