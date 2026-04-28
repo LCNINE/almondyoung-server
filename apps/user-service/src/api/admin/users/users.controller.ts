@@ -34,7 +34,7 @@ export class UsersController {
   ) {}
 
   @Get()
-  @RequireScopes('master', 'admin:users:read')
+  @RequireScopes('master', 'admin:users:read', 'admin:access')
   @ApiOperation({
     summary: '사용자 목록 조회',
     description: '사용자 목록을 조회합니다.',
