@@ -7,9 +7,14 @@ export const orderQueryKeys = {
   order: (id: string) => ['orders', id] as const,
   orderItems: (orderId: string) => ['orders', orderId, 'items'] as const,
 
-  // 출고 관련
+  // 출고 배치 관련
   outboundBatches: ['outbound-batches'] as const,
+  outboundBatchList: (warehouseId?: string) =>
+    ['outbound-batches', 'list', warehouseId ?? ''] as const,
   outboundBatch: (id: string) => ['outbound-batches', id] as const,
+  outboundBatchPickingList: (id: string) => ['outbound-batches', id, 'picking-list'] as const,
+  availableFulfillmentOrders: (warehouseId: string) =>
+    ['outbound-batches', 'available', warehouseId] as const,
 
   // 피킹 관련
   pickings: ['pickings'] as const,
@@ -64,7 +69,29 @@ export const orderQueryKeys = {
   invoices: ['invoices'] as const,
   invoice: (id: string) => ['invoices', id] as const,
 
-  // 직접 배송 관련
+  // 직배송 관련
+  directShipDashboard: ['direct-ship', 'dashboard'] as const,
+  directShipCompanies: ['direct-ship', 'companies'] as const,
+  directShipOrders: (params?: Record<string, string>) =>
+    ['direct-ship', 'orders', params ?? {}] as const,
+  directShipOrdersByCompany: ['direct-ship', 'orders', 'by-company'] as const,
+  directShipCompanyOrders: (companyName: string, status?: string) =>
+    ['direct-ship', 'companies', companyName, status ?? ''] as const,
+  directShipCompanySummary: (companyName: string) =>
+    ['direct-ship', 'companies', companyName, 'summary'] as const,
+
+  // 합포장 관련
+  consolidationCandidates: (warehouseId: string) =>
+    ['consolidation', 'candidates', warehouseId] as const,
+  consolidationLive: (warehouseId: string) => ['consolidation', 'live', warehouseId] as const,
+  consolidationSavings: (warehouseId: string, days: number) =>
+    ['consolidation', 'savings', warehouseId, days] as const,
+  consolidationRules: ['consolidation', 'rules'] as const,
+
+  // 위치 최적화 관련
+  locationOptimizationZones: ['location-optimization', 'zones'] as const,
+
+  // 레거시 직접 배송 키 (호환성)
   directShips: ['direct-ships'] as const,
   directShip: (id: string) => ['direct-ships', id] as const,
 
