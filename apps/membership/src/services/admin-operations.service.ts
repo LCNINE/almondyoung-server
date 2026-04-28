@@ -4,7 +4,7 @@ import { SubscriptionService } from './subscription.service';
 import { SubscriptionCancellationService } from './subscription-cancellation.service';
 import { EntitlementService } from './entitlement.service';
 import { PauseService } from './pause.service';
-import { AdminMembersReader, AdminMembersQuery, BillingEventItem } from './admin/admin-members.reader';
+import { AdminMembersReader, AdminMembersQuery, BillingEventItem, AdminBillingHistoryQuery } from './admin/admin-members.reader';
 import { PaymentClientService } from './billing/payment-client.service';
 import {
   CreateTierRequest,
@@ -162,5 +162,9 @@ export class AdminOperationsService {
 
   async setAutoRenewal(contractId: string, autoRenewal: boolean) {
     return this.adminMembersReader.updateAutoRenewal(contractId, autoRenewal);
+  }
+
+  async getAllBillingHistory(query: AdminBillingHistoryQuery) {
+    return this.adminMembersReader.findAllBillingHistory(query);
   }
 }
