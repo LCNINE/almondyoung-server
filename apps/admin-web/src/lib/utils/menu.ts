@@ -468,14 +468,14 @@ export const mainMenus: MainMenu[] = [
         title: '멤버십 회원 관리',
         children: [
           { id: 'member-inquiry', title: '회원 조회', path: '/membership/members' },
-          { id: 'payment-history', title: '결제 내역 조회' },
-          { id: 'cancellation-history', title: '해지 내역 조회' },
+          { id: 'payment-history', title: '결제 내역 조회', path: '/membership/billing-history' },
+          { id: 'cancellation-history', title: '해지 내역 조회', path: '/membership/cancellations' },
         ],
       },
       {
         id: 'benefit-management',
         title: '멤버십 혜택 관리',
-        children: [{ id: 'membership-plans', title: '멤버십 플랜' }],
+        children: [{ id: 'membership-plans', title: '멤버십 플랜', path: '/membership/plans' }],
       },
     ],
   },

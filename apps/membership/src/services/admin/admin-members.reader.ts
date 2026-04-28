@@ -2,7 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
-import { eq, and, desc, asc, ilike, gte, lte, SQL, count } from 'drizzle-orm';
+import { eq, and, desc, asc, ilike, gte, lte, inArray, SQL, count } from 'drizzle-orm';
+import { endOfDay } from 'date-fns';
 
 export interface AdminMembersQuery {
   page?: number;
@@ -11,6 +12,8 @@ export interface AdminMembersQuery {
   status?: string;
   /** userId partial search */
   q?: string;
+  /** filter by resolved userIds (from user-service lookup) */
+  userIds?: string[];
   dateFrom?: string;
   dateTo?: string;
 }
@@ -82,12 +85,41 @@ export interface ContractEventItem {
   createdAt: string;
 }
 
+export interface AdminBillingHistoryQuery {
+  page?: number;
+  limit?: number;
+  dateFrom?: string;
+  dateTo?: string;
+  contractId?: string;
+  userId?: string;
+  eventType?: string;
+}
+
+export interface AdminBillingHistoryItem {
+  id: string;
+  contractId: string;
+  userId: string;
+  eventType: string;
+  attemptNo: number | null;
+  amount: number | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+}
+
+export interface AdminBillingHistoryResponse {
+  data: AdminBillingHistoryItem[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
 @Injectable()
 export class AdminMembersReader {
   constructor(private readonly dbService: DbService<typeof membershipSchema>) {}
 
   async findAllWithDetails(query: AdminMembersQuery): Promise<AdminMembersResponse> {
-    const { page = 1, limit = 20, status, q, dateFrom, dateTo } = query;
+    const { page = 1, limit = 20, status, q, userIds, dateFrom, dateTo } = query;
     const offset = (page - 1) * limit;
 
     const baseConditions: SQL[] = [];
@@ -96,12 +128,16 @@ export class AdminMembersReader {
       baseConditions.push(ilike(schema.subscriptionContracts.userId, `%${q}%`));
     }
 
+    if (userIds?.length) {
+      baseConditions.push(inArray(schema.subscriptionContracts.userId, userIds));
+    }
+
     if (dateFrom) {
       baseConditions.push(gte(schema.subscriptionContracts.createdAt, new Date(dateFrom)));
     }
 
     if (dateTo) {
-      baseConditions.push(lte(schema.subscriptionContracts.createdAt, new Date(dateTo)));
+      baseConditions.push(lte(schema.subscriptionContracts.createdAt, endOfDay(new Date(dateTo))));
     }
 
     // Status-specific contract conditions
@@ -324,6 +360,66 @@ export class AdminMembersReader {
       causedByUserId: r.causedByUserId,
       createdAt: r.createdAt.toISOString(),
     }));
+  }
+
+  async findContractPaymentRef(contractId: string): Promise<{ lastPaymentIntentId: string | null } | null> {
+    const [row] = await this.dbService.db
+      .select({ lastPaymentIntentId: schema.subscriptionContracts.lastPaymentIntentId })
+      .from(schema.subscriptionContracts)
+      .where(eq(schema.subscriptionContracts.id, contractId))
+      .limit(1);
+    return row ?? null;
+  }
+
+  async findAllBillingHistory(query: AdminBillingHistoryQuery): Promise<AdminBillingHistoryResponse> {
+    const { page = 1, limit = 20, dateFrom, dateTo, contractId, userId, eventType } = query;
+    const offset = (page - 1) * limit;
+
+    const conditions: SQL[] = [];
+    if (contractId) conditions.push(eq(schema.billingEvents.contractId, contractId));
+    if (userId) conditions.push(eq(schema.subscriptionContracts.userId, userId));
+    if (eventType) conditions.push(eq(schema.billingEvents.eventType, eventType));
+    if (dateFrom) conditions.push(gte(schema.billingEvents.createdAt, new Date(dateFrom)));
+    if (dateTo) conditions.push(lte(schema.billingEvents.createdAt, endOfDay(new Date(dateTo))));
+
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const rows = await this.dbService.db
+      .select({
+        id: schema.billingEvents.id,
+        contractId: schema.billingEvents.contractId,
+        userId: schema.subscriptionContracts.userId,
+        eventType: schema.billingEvents.eventType,
+        attemptNo: schema.billingEvents.attemptNo,
+        amount: schema.billingEvents.amount,
+        errorCode: schema.billingEvents.errorCode,
+        errorMessage: schema.billingEvents.errorMessage,
+        createdAt: schema.billingEvents.createdAt,
+      })
+      .from(schema.billingEvents)
+      .innerJoin(schema.subscriptionContracts, eq(schema.billingEvents.contractId, schema.subscriptionContracts.id))
+      .where(where)
+      .orderBy(desc(schema.billingEvents.createdAt));
+
+    const total = rows.length;
+    const paged = rows.slice(offset, offset + limit);
+
+    return {
+      data: paged.map((r) => ({
+        id: r.id,
+        contractId: r.contractId,
+        userId: r.userId,
+        eventType: r.eventType,
+        attemptNo: r.attemptNo,
+        amount: r.amount,
+        errorCode: r.errorCode,
+        errorMessage: r.errorMessage,
+        createdAt: r.createdAt.toISOString(),
+      })),
+      total,
+      page,
+      limit,
+    };
   }
 
   async updateAutoRenewal(contractId: string, autoRenewal: boolean): Promise<void> {

@@ -66,6 +66,8 @@ export interface MembershipCheckoutIntentRequest {
 export interface WalletPaymentIntentResponse {
   id: string;
   status: 'PENDING' | 'AUTHORIZED' | 'CAPTURED' | 'FAILED' | 'CANCELED';
+  payableAmount: number;
+  createdAt: string;
   metadata: {
     type?: string;
     planId?: string;

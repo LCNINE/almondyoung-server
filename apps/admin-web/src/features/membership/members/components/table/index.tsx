@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useMembershipMembers } from '@/lib/services/membership';
+import { useMemberUserSearch } from '@/hooks/use-member-user-search';
 import { useDataTable } from '@/hooks/use-data-table';
 import { useMembershipMemberTableColumns } from '@/hooks/table/columns/use-membership-member-table-columns';
 import { useMembershipMemberTableQuery } from '@/hooks/table/query/use-membership-member-table-query';
@@ -14,10 +15,19 @@ const PAGE_SIZE = 20;
 export function MembershipMemberTable() {
   const [selectedMember, setSelectedMember] = useState<AdminMemberListItem | null>(null);
 
-  const { searchParams: query } = useMembershipMemberTableQuery({
-    pageSize: PAGE_SIZE,
+  const { searchParams: query, memberQ } = useMembershipMemberTableQuery({ pageSize: PAGE_SIZE });
+  const { resolvedUserIds, isSearchingUsers } = useMemberUserSearch(memberQ);
+
+  const membershipQuery =
+    memberQ && resolvedUserIds !== null
+      ? { ...query, q: undefined, userIds: resolvedUserIds }
+      : query;
+
+  const { data, isLoading, isFetching } = useMembershipMembers(membershipQuery, {
+    // disabled when memberQ is set but resolvedUserIds is not yet ready or empty
+    enabled: !memberQ || (Array.isArray(resolvedUserIds) && resolvedUserIds.length > 0),
   });
-  const { data, isLoading, isFetching } = useMembershipMembers(query);
+
   const columns = useMembershipMemberTableColumns({ onEdit: setSelectedMember });
 
   const { table } = useDataTable({
@@ -32,7 +42,7 @@ export function MembershipMemberTable() {
     <>
       <DataTable
         table={table}
-        isLoading={isLoading}
+        isLoading={isLoading || (!!memberQ && isSearchingUsers)}
         isFetching={isFetching}
         count={data?.total ?? 0}
         pageSize={PAGE_SIZE}

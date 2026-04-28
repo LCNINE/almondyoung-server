@@ -4,9 +4,7 @@ import { useState } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { Search } from 'lucide-react';
 import {
-  FilterLayout,
   FormField,
-  FormSelect,
   FormInput,
   FormRadioGroup,
   FormDateRangePicker,
@@ -14,46 +12,29 @@ import {
 import { Button } from '@/components/ui/button';
 import { DatePreset, DATE_PRESET_OPTIONS, computeDateRange } from '@/lib/utils/date';
 
-type StatusOption = '' | 'ACTIVE' | 'EXPIRED' | 'PAUSED' | 'CANCELLED';
 type SearchType = 'userId' | 'member';
 
 interface FilterState {
-  dateType: string;
   datePreset: DatePreset;
   dateFrom: string;
   dateTo: string;
   searchType: SearchType;
   q: string;
   memberQ: string;
-  status: StatusOption;
 }
 
-const DATE_TYPE_OPTIONS = [
-  { value: 'createdAt', label: '가입일' },
-];
-
-const STATUS_OPTIONS = [
-  { value: '', label: '전체' },
-  { value: 'ACTIVE', label: '활성화' },
-  { value: 'EXPIRED', label: '만료' },
-  { value: 'PAUSED', label: '일시정지' },
-  { value: 'CANCELLED', label: '해지' },
-];
-
-export function MembershipMemberFilterBox() {
+export function CancellationsFilterBox() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
   const [filters, setFilters] = useState<FilterState>({
-    dateType: 'createdAt',
     datePreset: (searchParams.get('datePreset') as DatePreset) ?? 'all',
     dateFrom: searchParams.get('dateFrom') ?? '',
     dateTo: searchParams.get('dateTo') ?? '',
     searchType: searchParams.get('memberQ') ? 'member' : 'userId',
     q: searchParams.get('q') ?? '',
     memberQ: searchParams.get('memberQ') ?? '',
-    status: (searchParams.get('status') as StatusOption) ?? '',
   });
 
   const handleSearch = () => {
@@ -61,16 +42,12 @@ export function MembershipMemberFilterBox() {
     params.set('page', '1');
     if (filters.searchType === 'userId' && filters.q) params.set('q', filters.q);
     if (filters.searchType === 'member' && filters.memberQ) params.set('memberQ', filters.memberQ);
-    if (filters.status) params.set('status', filters.status);
 
     let from = filters.dateFrom;
     let to = filters.dateTo;
     if (filters.datePreset !== 'all' && filters.datePreset !== 'custom') {
       const range = computeDateRange(filters.datePreset);
-      if (range) {
-        from = range.from;
-        to = range.to;
-      }
+      if (range) { from = range.from; to = range.to; }
     }
     if (from) params.set('dateFrom', from);
     if (to) params.set('dateTo', to);
@@ -80,21 +57,16 @@ export function MembershipMemberFilterBox() {
   };
 
   const handleReset = () => {
-    setFilters({ dateType: 'createdAt', datePreset: 'all', dateFrom: '', dateTo: '', searchType: 'userId', q: '', memberQ: '', status: '' });
+    setFilters({ datePreset: 'all', dateFrom: '', dateTo: '', searchType: 'userId', q: '', memberQ: '' });
     router.replace(pathname);
   };
 
   return (
     <div className="mb-4 space-y-3 rounded-[10px] border border-[#D9D9D9] bg-[#F5F5F5] p-4">
-      {/* Row 1: 일자 */}
       <div className="flex flex-wrap items-start gap-4">
-        <div className="w-32 shrink-0">
+        <div className="w-24 shrink-0">
           <FormField label="일자" direction="horizontal">
-            <FormSelect
-              value={filters.dateType}
-              onValueChange={(v) => setFilters((p) => ({ ...p, dateType: v }))}
-              options={DATE_TYPE_OPTIONS}
-            />
+            <span className="text-sm">가입일</span>
           </FormField>
         </div>
         <div className="flex-1">
@@ -107,9 +79,8 @@ export function MembershipMemberFilterBox() {
         </div>
       </div>
 
-      {/* Custom date range */}
       {filters.datePreset === 'custom' && (
-        <div className="ml-36">
+        <div className="ml-28">
           <FormField label="기간">
             <FormDateRangePicker
               value={
@@ -129,7 +100,6 @@ export function MembershipMemberFilterBox() {
         </div>
       )}
 
-      {/* Row 2: 검색어 */}
       <div className="flex flex-wrap items-end gap-4">
         <FormField label="검색 유형" direction="horizontal">
           <FormRadioGroup
@@ -164,24 +134,8 @@ export function MembershipMemberFilterBox() {
         )}
       </div>
 
-      {/* Row 3: 활성화 여부 */}
-      <div className="flex items-center gap-4">
-        <FormField label="활성화 여부" direction="horizontal">
-          <FormRadioGroup
-            value={filters.status}
-            onValueChange={(v) => setFilters((p) => ({ ...p, status: v as StatusOption }))}
-            options={STATUS_OPTIONS}
-            orientation="horizontal"
-          />
-        </FormField>
-      </div>
-
-      {/* Search button */}
       <div className="flex justify-center gap-2 pt-1">
-        <Button
-          onClick={handleSearch}
-          className="h-9 w-28 bg-orange-500 text-white hover:bg-orange-600"
-        >
+        <Button onClick={handleSearch} className="h-9 w-28 bg-orange-500 text-white hover:bg-orange-600">
           <Search className="mr-1.5 h-4 w-4" />
           검색
         </Button>

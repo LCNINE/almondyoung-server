@@ -122,9 +122,12 @@ function ForceCancelDialog({ open, onClose, contractId, onSuccess }: ForceCancel
       toast.error('취소 사유를 입력해주세요.');
       return;
     }
-    if (refundType === 'PARTIAL' && (!refundAmount || Number(refundAmount) <= 0)) {
-      toast.error('환불 금액을 입력해주세요.');
-      return;
+    if (refundType === 'PARTIAL') {
+      const amount = Number(refundAmount);
+      if (!refundAmount || isNaN(amount) || amount <= 0) {
+        toast.error('올바른 환불 금액을 입력해주세요.');
+        return;
+      }
     }
     try {
       await forceCancelMutation.mutateAsync({
@@ -328,11 +331,9 @@ function PlanTab({ userId, contractId }: { userId: string; contractId: string })
     }
   };
 
-  // 결제 방식 표시
   function getBillingTypeLabel() {
     if (!detail) return '-';
     if (detail.autoRenewal) return '정기결제 (자동갱신)';
-    // autoRenewal=false인 경우: nextBillingDate가 없으면 일시결제이거나 해지 예약됨
     if (!detail.nextBillingDate) return '일시결제';
     return '정기결제 (해지 예약됨)';
   }
@@ -341,7 +342,6 @@ function PlanTab({ userId, contractId }: { userId: string; contractId: string })
 
   return (
     <div className="space-y-4">
-      {/* 구독 정보 */}
       <div className="rounded-lg border p-4 space-y-3">
         <div className="flex items-center justify-between">
           <div>
@@ -362,13 +362,11 @@ function PlanTab({ userId, contractId }: { userId: string; contractId: string })
 
         <Separator />
 
-        {/* 결제 방식 */}
         <div className="flex items-center justify-between text-sm">
           <span className="text-muted-foreground">결제 방식</span>
           <span className="font-medium">{getBillingTypeLabel()}</span>
         </div>
 
-        {/* 다음 결제일 or 구독 종료일 */}
         <div className="flex items-center justify-between text-sm">
           <span className="text-muted-foreground">
             {detail?.autoRenewal ? '다음 결제일' : '구독 종료일'}
@@ -381,7 +379,6 @@ function PlanTab({ userId, contractId }: { userId: string; contractId: string })
         </div>
       </div>
 
-      {/* 자동갱신 설정 — ACTIVE 구독에서만 의미 있음 */}
       {isActive && (
         <div className="rounded-lg border p-4 space-y-3">
           <p className="text-sm font-medium">자동갱신 설정</p>
@@ -413,7 +410,6 @@ function PlanTab({ userId, contractId }: { userId: string; contractId: string })
         </div>
       )}
 
-      {/* 강제 즉시 취소 — ACTIVE/PAUSED 구독에서만 */}
       {isActive && (
         <div className="rounded-lg border border-destructive/30 p-4 space-y-2">
           <p className="text-sm font-medium text-destructive">강제 즉시 취소</p>

@@ -345,6 +345,18 @@ export class AdminOperationsController {
     }
   }
 
+  @Get('tiers')
+  @ApiOperation({ summary: '티어 + 플랜 전체 조회 (관리자용)' })
+  @UseGuards(JwtAuthGuard)
+  async getAllTiersWithPlans() {
+    try {
+      const result = await this.adminOperationsService.getAllTiersWithPlans();
+      return { success: true, data: result };
+    } catch (error) {
+      this.handleError(error, '티어 목록 조회');
+    }
+  }
+
   // ===================================================================
   // Entitlement Management - 구독 권한 관리
   // ===================================================================
@@ -627,15 +639,20 @@ export class AdminOperationsController {
     @Query('limit') limit?: string,
     @Query('status') status?: string,
     @Query('q') q?: string,
+    @Query('userIds') userIds?: string | string[],
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
   ) {
     try {
+      const normalizedUserIds = userIds
+        ? (Array.isArray(userIds) ? userIds : [userIds])
+        : undefined;
       const result = await this.adminOperationsService.getMembersList({
         page: page ? Number(page) : 1,
         limit: limit ? Number(limit) : 20,
         status,
         q,
+        userIds: normalizedUserIds,
         dateFrom,
         dateTo,
       });
@@ -697,6 +714,39 @@ export class AdminOperationsController {
       return { success: true, data: result };
     } catch (error) {
       this.handleError(error, '멤버십 계약 이벤트 로그 조회', contractId);
+    }
+  }
+
+  /**
+   * 정기결제 내역 전체 조회
+   *
+   * GET /admin/billing-history?page=1&limit=20&dateFrom=&dateTo=&contractId=&userId=&eventType=
+   */
+  @Get('billing-history')
+  @ApiOperation({ summary: '정기결제 내역 전체 조회' })
+  @UseGuards(JwtAuthGuard)
+  async getAllBillingHistory(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+    @Query('contractId') contractId?: string,
+    @Query('userId') userId?: string,
+    @Query('eventType') eventType?: string,
+  ) {
+    try {
+      const result = await this.adminOperationsService.getAllBillingHistory({
+        page: page ? Number(page) : 1,
+        limit: limit ? Number(limit) : 20,
+        dateFrom,
+        dateTo,
+        contractId,
+        userId,
+        eventType,
+      });
+      return result;
+    } catch (error) {
+      this.handleError(error, '정기결제 내역 조회');
     }
   }
 

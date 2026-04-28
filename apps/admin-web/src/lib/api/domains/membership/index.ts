@@ -8,6 +8,8 @@ export interface AdminMembersQuery {
   status?: string;
   /** userId partial search */
   q?: string;
+  /** filter by resolved userIds (from user-service lookup) */
+  userIds?: string[];
   dateFrom?: string;
   dateTo?: string;
 }
@@ -79,10 +81,67 @@ export interface ContractEventItem {
   createdAt: string;
 }
 
+export interface AdminTier {
+  id: string;
+  code: string;
+  priorityLevel: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminPlan {
+  id: string;
+  tierId: string;
+  price: number;
+  durationDays: number;
+  currency: string;
+  trialDays: number | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminTierWithPlans {
+  tier: AdminTier;
+  plans: AdminPlan[];
+}
+
+export interface AdminBillingHistoryQuery {
+  page?: number;
+  limit?: number;
+  dateFrom?: string;
+  dateTo?: string;
+  contractId?: string;
+  userId?: string;
+  eventType?: string;
+}
+
+export interface AdminBillingHistoryItem {
+  id: string;
+  contractId: string;
+  userId: string;
+  eventType: string;
+  attemptNo: number | null;
+  amount: number | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+}
+
+export interface AdminBillingHistoryResponse {
+  data: AdminBillingHistoryItem[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
 function buildQueryString(query: Record<string, unknown>): string {
   const params = new URLSearchParams();
   Object.entries(query).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== '') {
+    if (value === undefined || value === null || value === '') return;
+    if (Array.isArray(value)) {
+      value.forEach((v) => params.append(key, String(v)));
+    } else {
       params.append(key, String(value));
     }
   });
@@ -132,6 +191,51 @@ export const membershipApi = {
       days,
       reason,
     });
+  },
+
+  getAllTiersWithPlans: async (): Promise<AdminTierWithPlans[]> => {
+    const res = await client.get(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/tiers`);
+    return res.data.data;
+  },
+
+  createTier: async (body: { code: string; priorityLevel: number }): Promise<void> => {
+    await client.post(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/tiers`, body);
+  },
+
+  updateTier: async (tierId: string, body: { priorityLevel?: number }): Promise<void> => {
+    await client.put(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/tiers/${encodeURIComponent(tierId)}`, body);
+  },
+
+  createPlan: async (body: {
+    tierId: string;
+    price: number;
+    durationDays: number;
+    currency?: string;
+    trialDays?: number;
+  }): Promise<void> => {
+    await client.post(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/plans`, body);
+  },
+
+  updatePlan: async (planId: string, body: {
+    price?: number;
+    durationDays?: number;
+    trialDays?: number;
+  }): Promise<void> => {
+    await client.put(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/plans/${encodeURIComponent(planId)}`, body);
+  },
+
+  deactivatePlan: async (planId: string, reason: string): Promise<void> => {
+    await client.delete(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/plans/${encodeURIComponent(planId)}`, {
+      data: { reason },
+    });
+  },
+
+  getAllBillingHistory: async (query: AdminBillingHistoryQuery): Promise<AdminBillingHistoryResponse> => {
+    const qs = buildQueryString(query as Record<string, unknown>);
+    const res = await client.get(
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/billing-history${qs ? `?${qs}` : ''}`,
+    );
+    return res.data;
   },
 
   forceCancelSubscription: async (

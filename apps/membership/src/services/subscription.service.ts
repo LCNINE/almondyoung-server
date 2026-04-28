@@ -44,6 +44,7 @@ type CreateSubscriptionOptions = {
   initialPaymentIntentId?: string;
   initialPaymentAttemptId?: string;
   initialWalletReferenceId?: string;
+  initialPaymentAmount?: number;
 };
 
 @Injectable()
@@ -169,6 +170,7 @@ export class SubscriptionService {
     const result = await this.createSubscription(userId, planId, email, {
       initialPaymentIntentId: intentId,
       initialWalletReferenceId: this.extractWalletReference(intent),
+      initialPaymentAmount: intent.payableAmount,
     }, billingMode);
 
     this.paymentClientService
