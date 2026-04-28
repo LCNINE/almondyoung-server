@@ -627,15 +627,20 @@ export class AdminOperationsController {
     @Query('limit') limit?: string,
     @Query('status') status?: string,
     @Query('q') q?: string,
+    @Query('userIds') userIds?: string | string[],
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
   ) {
     try {
+      const normalizedUserIds = userIds
+        ? (Array.isArray(userIds) ? userIds : [userIds])
+        : undefined;
       const result = await this.adminOperationsService.getMembersList({
         page: page ? Number(page) : 1,
         limit: limit ? Number(limit) : 20,
         status,
         q,
+        userIds: normalizedUserIds,
         dateFrom,
         dateTo,
       });
