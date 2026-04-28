@@ -3,6 +3,7 @@ import { DbService } from '@app/db';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
 import { eq, and, desc, asc, ilike, gte, lte, inArray, SQL, count } from 'drizzle-orm';
+import { endOfDay } from 'date-fns';
 
 export interface AdminMembersQuery {
   page?: number;
@@ -107,7 +108,7 @@ export class AdminMembersReader {
     }
 
     if (dateTo) {
-      baseConditions.push(lte(schema.subscriptionContracts.createdAt, new Date(dateTo)));
+      baseConditions.push(lte(schema.subscriptionContracts.createdAt, endOfDay(new Date(dateTo))));
     }
 
     // Status-specific contract conditions
