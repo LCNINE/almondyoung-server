@@ -14,6 +14,7 @@ type CreateSubscriptionPaymentRefs = {
   initialPaymentIntentId?: string;
   initialPaymentAttemptId?: string;
   initialWalletReferenceId?: string;
+  initialPaymentAmount?: number;
 };
 
 /**
@@ -88,7 +89,7 @@ export class SubscriptionCreator {
         })
         .returning();
 
-      // 3. CREATED 이벤트 추가
+      // 3. 계약 이벤트 기록
       await this.contractEventManager.addEvent(
         tx,
         contract.id,
@@ -105,7 +106,17 @@ export class SubscriptionCreator {
         userId,
       );
 
-      // 4. 구독 권한 생성
+      // 4. 최초 결제 기록 (one_time 결제일 때만)
+      if (billingMode === 'one_time' && paymentRefs.initialPaymentIntentId && paymentRefs.initialPaymentAmount != null) {
+        await tx.insert(schema.billingEvents).values({
+          contractId: contract.id,
+          eventType: 'CHARGE_SUCCESS',
+          attemptNo: 1,
+          amount: paymentRefs.initialPaymentAmount,
+        });
+      }
+
+      // 5. 구독 권한 생성
       const entitlement = await this.entitlementManager.createEntitlement(
         tx,
         userId,

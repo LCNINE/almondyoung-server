@@ -39,7 +39,7 @@ export class UsersService {
     try {
       const client = this.getClient(filters?.tx);
       const page = filters?.page || 1;
-      const limit = Math.min(filters?.limit || 20, 100);
+      const limit = Math.min(filters?.limit || 20, 1000);
       const offset = (page - 1) * limit;
       const sortBy = filters?.sort || 'createdAt';
       const sortOrder = filters?.order || 'desc';

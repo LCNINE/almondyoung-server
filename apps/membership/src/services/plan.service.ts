@@ -53,6 +53,10 @@ export class PlanService {
     return this.planReader.findAllTiers();
   }
 
+  async getAllTiersWithPlans() {
+    return this.planReader.findAllTiersWithAllPlans();
+  }
+
   /**
    * 티어별 플랜 조회
    *
