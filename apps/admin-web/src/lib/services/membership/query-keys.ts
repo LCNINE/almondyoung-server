@@ -1,4 +1,4 @@
-import { AdminMembersQuery } from '@/lib/api/domains/membership';
+import { AdminMembersQuery, AdminBillingHistoryQuery } from '@/lib/api/domains/membership';
 
 export const membershipQueryKeys = {
   all: ['membership'] as const,
@@ -9,4 +9,6 @@ export const membershipQueryKeys = {
     [...membershipQueryKeys.all, 'billingEvents', contractId] as const,
   contractEvents: (contractId: string) =>
     [...membershipQueryKeys.all, 'contractEvents', contractId] as const,
+  billingHistory: (query: AdminBillingHistoryQuery) =>
+    [...membershipQueryKeys.all, 'billingHistory', query] as const,
 };

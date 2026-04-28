@@ -706,6 +706,39 @@ export class AdminOperationsController {
   }
 
   /**
+   * 정기결제 내역 전체 조회
+   *
+   * GET /admin/billing-history?page=1&limit=20&dateFrom=&dateTo=&contractId=&userId=&eventType=
+   */
+  @Get('billing-history')
+  @ApiOperation({ summary: '정기결제 내역 전체 조회' })
+  @UseGuards(JwtAuthGuard)
+  async getAllBillingHistory(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+    @Query('contractId') contractId?: string,
+    @Query('userId') userId?: string,
+    @Query('eventType') eventType?: string,
+  ) {
+    try {
+      const result = await this.adminOperationsService.getAllBillingHistory({
+        page: page ? Number(page) : 1,
+        limit: limit ? Number(limit) : 20,
+        dateFrom,
+        dateTo,
+        contractId,
+        userId,
+        eventType,
+      });
+      return result;
+    } catch (error) {
+      this.handleError(error, '정기결제 내역 조회');
+    }
+  }
+
+  /**
    * 자동 연장 설정 변경
    *
    * PUT /admin/contracts/:contractId/auto-renewal
