@@ -8,6 +8,8 @@ export interface AdminMembersQuery {
   status?: string;
   /** userId partial search */
   q?: string;
+  /** filter by resolved userIds (from user-service lookup) */
+  userIds?: string[];
   dateFrom?: string;
   dateTo?: string;
 }
@@ -82,7 +84,10 @@ export interface ContractEventItem {
 function buildQueryString(query: Record<string, unknown>): string {
   const params = new URLSearchParams();
   Object.entries(query).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== '') {
+    if (value === undefined || value === null || value === '') return;
+    if (Array.isArray(value)) {
+      value.forEach((v) => params.append(key, String(v)));
+    } else {
       params.append(key, String(value));
     }
   });

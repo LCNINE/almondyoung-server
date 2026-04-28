@@ -1,7 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useMembershipMembers } from '@/lib/services/membership';
+import { userApi } from '@/lib/api/domains/users';
 import { useDataTable } from '@/hooks/use-data-table';
 import { useMembershipMemberTableColumns } from '@/hooks/table/columns/use-membership-member-table-columns';
 import { useMembershipMemberTableQuery } from '@/hooks/table/query/use-membership-member-table-query';
@@ -14,10 +16,30 @@ const PAGE_SIZE = 20;
 export function MembershipMemberTable() {
   const [selectedMember, setSelectedMember] = useState<AdminMemberListItem | null>(null);
 
-  const { searchParams: query } = useMembershipMemberTableQuery({
-    pageSize: PAGE_SIZE,
+  const { searchParams: query, memberQ } = useMembershipMemberTableQuery({ pageSize: PAGE_SIZE });
+
+  // membership service can only filter by exact userIds, not by name/email.
+  // When searching by member info, we first resolve matching userIds from user-service.
+  const { data: userSearchData, isFetching: isSearchingUsers } = useQuery({
+    queryKey: ['admin-users-search', memberQ],
+    queryFn: () => userApi.getAdminUsers({ q: memberQ, limit: 200 }),
+    enabled: !!memberQ,
   });
-  const { data, isLoading, isFetching } = useMembershipMembers(query);
+
+  const resolvedUserIds = memberQ
+    ? (userSearchData?.data?.map((u) => u.id) ?? null)
+    : undefined;
+
+  const membershipQuery =
+    memberQ && resolvedUserIds !== null
+      ? { ...query, q: undefined, userIds: resolvedUserIds }
+      : query;
+
+  const { data, isLoading, isFetching } = useMembershipMembers(membershipQuery, {
+    // disabled when user-service returned 0 matches (show empty table, not all members)
+    enabled: !memberQ || (Array.isArray(resolvedUserIds) && resolvedUserIds.length > 0),
+  });
+
   const columns = useMembershipMemberTableColumns({ onEdit: setSelectedMember });
 
   const { table } = useDataTable({
@@ -32,7 +54,7 @@ export function MembershipMemberTable() {
     <>
       <DataTable
         table={table}
-        isLoading={isLoading}
+        isLoading={isLoading || (!!memberQ && isSearchingUsers)}
         isFetching={isFetching}
         count={data?.total ?? 0}
         pageSize={PAGE_SIZE}

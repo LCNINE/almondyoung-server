@@ -17,12 +17,16 @@ import { startOfDay, endOfDay, subDays, startOfMonth, endOfMonth, subMonths } fr
 type DatePreset = 'all' | 'today' | 'yesterday' | 'week' | 'month' | 'lastMonth' | 'quarter' | 'custom';
 type StatusOption = '' | 'ACTIVE' | 'EXPIRED' | 'PAUSED' | 'CANCELLED';
 
+type SearchType = 'userId' | 'member';
+
 interface FilterState {
   dateType: string;
   datePreset: DatePreset;
   dateFrom: string;
   dateTo: string;
+  searchType: SearchType;
   q: string;
+  memberQ: string;
   status: StatusOption;
 }
 
@@ -84,14 +88,17 @@ export function MembershipMemberFilterBox() {
     datePreset: (searchParams.get('datePreset') as DatePreset) ?? 'all',
     dateFrom: searchParams.get('dateFrom') ?? '',
     dateTo: searchParams.get('dateTo') ?? '',
+    searchType: searchParams.get('memberQ') ? 'member' : 'userId',
     q: searchParams.get('q') ?? '',
+    memberQ: searchParams.get('memberQ') ?? '',
     status: (searchParams.get('status') as StatusOption) ?? '',
   });
 
   const handleSearch = () => {
     const params = new URLSearchParams();
     params.set('page', '1');
-    if (filters.q) params.set('q', filters.q);
+    if (filters.searchType === 'userId' && filters.q) params.set('q', filters.q);
+    if (filters.searchType === 'member' && filters.memberQ) params.set('memberQ', filters.memberQ);
     if (filters.status) params.set('status', filters.status);
 
     let from = filters.dateFrom;
@@ -111,7 +118,7 @@ export function MembershipMemberFilterBox() {
   };
 
   const handleReset = () => {
-    setFilters({ dateType: 'createdAt', datePreset: 'all', dateFrom: '', dateTo: '', q: '', status: '' });
+    setFilters({ dateType: 'createdAt', datePreset: 'all', dateFrom: '', dateTo: '', searchType: 'userId', q: '', memberQ: '', status: '' });
     router.replace(pathname);
   };
 
@@ -161,22 +168,38 @@ export function MembershipMemberFilterBox() {
       )}
 
       {/* Row 2: 검색어 */}
-      <div className="flex flex-wrap gap-4">
-        <div className="w-64">
-          <FormField label="자사몰 아이디" direction="horizontal">
+      <div className="flex flex-wrap items-end gap-4">
+        <FormField label="검색 유형" direction="horizontal">
+          <FormRadioGroup
+            value={filters.searchType}
+            onValueChange={(v) => setFilters((p) => ({ ...p, searchType: v as SearchType, q: '', memberQ: '' }))}
+            options={[
+              { value: 'userId', label: '자사몰 아이디' },
+              { value: 'member', label: '고객 정보' },
+            ]}
+            orientation="horizontal"
+          />
+        </FormField>
+
+        {filters.searchType === 'userId' ? (
+          <div className="w-72">
             <FormInput
-              placeholder="아이디 검색"
+              placeholder="자사몰 UUID 검색"
               value={filters.q}
               onChange={(e) => setFilters((p) => ({ ...p, q: e.target.value }))}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
             />
-          </FormField>
-        </div>
-        <div className="w-64">
-          <FormField label="고객 성함" direction="horizontal">
-            <FormInput placeholder="성함 검색 (미지원)" disabled />
-          </FormField>
-        </div>
+          </div>
+        ) : (
+          <div className="w-72">
+            <FormInput
+              placeholder="성함 · 이메일 · 로그인 ID 검색"
+              value={filters.memberQ}
+              onChange={(e) => setFilters((p) => ({ ...p, memberQ: e.target.value }))}
+              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+            />
+          </div>
+        )}
       </div>
 
       {/* Row 3: 활성화 여부 */}
