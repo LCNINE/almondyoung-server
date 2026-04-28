@@ -272,3 +272,266 @@ export interface TrackInvoiceResponse {
     description: string;
   }>;
 }
+
+// ===== Outbound Batches (D2) =====
+
+export type OutboundBatchStatus = 'created' | 'picking' | 'completed' | 'canceled';
+export type PickingMethod = 'individual' | 'total_picking';
+
+export interface CreateOutboundBatchRequest {
+  warehouseId: string;
+  pickingMethod: PickingMethod;
+  name?: string;
+  scheduledPickingAt?: string;
+}
+
+export interface AddFOsToBatchRequest {
+  fulfillmentOrderIds: string[];
+}
+
+export interface OutboundBatch {
+  id: string;
+  name?: string;
+  warehouseId: string;
+  pickingMethod: PickingMethod;
+  status: OutboundBatchStatus;
+  totalItems: number;
+  totalQty: number;
+  scheduledPickingAt?: string;
+  createdAt: string;
+}
+
+export interface OutboundBatchFOItem {
+  id: string;
+  salesOrderId: string;
+  salesOrderLineId: string;
+  skuId: string;
+  qty: number;
+  pickedQty: number;
+}
+
+export interface OutboundBatchFO {
+  id: string;
+  status: FulfillmentOrderStatus;
+  priority: FulfillmentOrderPriority;
+  totalItems: number;
+  totalQty: number;
+  items: OutboundBatchFOItem[];
+}
+
+export interface OutboundBatchDetail extends OutboundBatch {
+  startedAt?: string;
+  completedAt?: string;
+  fulfillmentOrders: OutboundBatchFO[];
+}
+
+export interface PickingListAggregateItem {
+  skuId: string;
+  skuName: string;
+  locationCode?: string; // ⚠️ 항상 undefined — 서버 미구현
+  totalQty: number;
+  fulfillmentOrderItems: Array<{
+    foiId: string;
+    fulfillmentOrderId: string;
+    salesOrderId: string;
+    salesOrderLineId: string;
+    qty: number;
+    pickedQty: number;
+  }>;
+}
+
+export interface AvailableFulfillmentOrder {
+  id: string;
+  priority: FulfillmentOrderPriority;
+  fulfillmentMode: FulfillmentMode;
+  totalItems: number;
+  totalQty: number;
+  createdAt: string;
+}
+
+// ===== Direct Ship (D2) =====
+
+export type DirectShipOrderStatus = 'pending' | 'forwarded' | 'completed' | 'canceled';
+
+export interface DirectShipOrderItem {
+  foiId: string;
+  salesOrderLineId: string;
+  skuId: string;
+  skuName: string;
+  qty: number;
+  supplierSku?: string; // ⚠️ 항상 undefined — 서버 미구현
+}
+
+export interface DirectShipOrder {
+  fulfillmentOrderId: string;
+  salesOrderId?: string;
+  companyName: string;
+  supplierCode?: string; // ⚠️ 항상 undefined — 서버 미구현
+  status: DirectShipOrderStatus;
+  priority: FulfillmentOrderPriority;
+  totalItems: number;
+  totalQty: number;
+  createdAt: string;
+  forwardedAt?: string;
+  completedAt?: string;
+  items: DirectShipOrderItem[];
+}
+
+export interface DirectShipCompanySummary {
+  companyName: string;
+  pendingCount: number;
+  forwardedCount: number;
+  completedCount: number;
+  lastOrderDate?: string;
+}
+
+export interface DirectShipDashboard {
+  pendingOrders: number;
+  forwardedOrders: number;
+  completedOrders: number;
+  totalOrders: number;
+  companySummary: DirectShipCompanySummary[];
+  recentActivity: Array<{
+    fulfillmentOrderId: string;
+    salesOrderId?: string;
+    companyName: string;
+    action: 'created' | 'forwarded' | 'completed';
+    timestamp: string;
+  }>;
+}
+
+export interface ForwardDirectShipOrdersRequest {
+  fulfillmentOrderIds: string[];
+  companyName: string;
+}
+
+export interface CompleteDirectShipOrdersRequest {
+  fulfillmentOrderIds: string[];
+  completedBy: string;
+}
+
+export interface ExportDirectShipFileRequest {
+  companyName: string;
+  format?: 'csv'; // ⚠️ xlsx 미구현 — csv만 허용
+}
+
+// ===== Consolidation (D2) =====
+// ⚠️ 후보·그룹·리포트 데이터가 Math.random() 기반 mock — 호출마다 결과가 다름
+// ⚠️ autoConsolidate는 stub — 실제 FO 머지 안 함
+
+export interface ConsolidationCandidate {
+  salesOrderId?: string;
+  customerId: string;
+  customerName: string;
+  shippingAddress: {
+    recipientName: string;
+    address: string;
+    city: string;
+    postalCode: string;
+    phone: string;
+  };
+  deliveryService: string;
+  priority: FulfillmentOrderPriority;
+  slaDeadline: string;
+  totalItems: number;
+  totalWeight?: number;
+  totalValue?: number;
+  items: Array<{
+    salesOrderLineId: string;
+    productId: string;
+    variantId: string;
+    qty: number;
+    weight?: number;
+    dimensions?: { l: number; w: number; h: number };
+  }>;
+  warehouseId: string;
+  createdAt: string;
+}
+
+export interface ConsolidationGroupSavings {
+  shippingCost: number;
+  packagingReduction: number;
+  efficiencyGain: number;
+}
+
+export interface ConsolidationGroup {
+  groupId: string;
+  consolidationKey: string;
+  reason: 'same_address' | 'same_customer_nearby' | 'same_service_zone' | 'manual';
+  confidence: number;
+  salesOrders: ConsolidationCandidate[];
+  estimatedSavings: ConsolidationGroupSavings;
+  constraints: {
+    maxWeight: number;
+    maxVolume: number;
+    maxItems: number;
+    slaDeadline: string;
+  };
+  recommendation: 'auto_consolidate' | 'manual_review' | 'skip';
+}
+
+export interface ConsolidationAnalysisResult {
+  warehouseId: string;
+  analyzedAt: string;
+  summary: {
+    totalCandidates: number;
+    groupsFound: number;
+    autoConsolidateRecommended: number;
+    manualReviewRequired: number;
+    estimatedTotalSavings: number;
+  };
+  groups: ConsolidationGroup[];
+}
+
+export interface ConsolidationLiveOpportunities {
+  warehouseId: string;
+  timestamp: string;
+  opportunities: {
+    immediate: { count: number; potentialSavings: number; groups: ConsolidationGroup[] };
+    reviewRequired: { count: number; potentialSavings: number; groups: ConsolidationGroup[] };
+  };
+  recommendations: string[];
+}
+
+export interface ConsolidationSavingsProjection {
+  warehouseId: string;
+  projectionPeriod: { days: number };
+  currentOpportunities: {
+    candidateOrders: number;
+    consolidationGroups: number;
+    consolidationRate: number;
+    dailySavings: number;
+  };
+  projection: {
+    totalSavings: number;
+    shippingCostSavings: number;
+    packagingSavings: number;
+    efficiencyGains: number;
+    carbonFootprintReduction: number;
+  };
+  breakdown: {
+    autoConsolidation: number;
+    manualReview: number;
+  };
+}
+
+export interface ConsolidationRule {
+  id: string;
+  name: string;
+  priority: number;
+  autoConsolidate: boolean;
+  criteria: Record<string, unknown>;
+  constraints: Record<string, unknown>;
+}
+
+// ===== Location Optimization (D2) =====
+// ⚠️ routes/optimize, routes/batches/:id, statistics/warehouses/:id 모두 pending_development
+// UI는 zones/configuration만 렌더
+
+export interface LocationOptimizationZone {
+  zoneCode: string;
+  name: string;
+  type: string;
+  priority: number;
+  description: string;
+}

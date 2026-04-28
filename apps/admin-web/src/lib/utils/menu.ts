@@ -166,6 +166,26 @@ export const mainMenus: MainMenu[] = [
             title: '검수발송',
             path: '/order/inspection',
           },
+          {
+            id: 'outbound-batches',
+            title: '출고 배치',
+            path: '/order/outbound-batches',
+          },
+          {
+            id: 'direct-ship',
+            title: '직배송 운영',
+            path: '/order/direct-ship',
+          },
+          {
+            id: 'consolidation',
+            title: '합포장 분석',
+            path: '/order/consolidation',
+          },
+          {
+            id: 'location-optimization',
+            title: '위치 최적화',
+            path: '/order/location-optimization',
+          },
         ],
       },
       {

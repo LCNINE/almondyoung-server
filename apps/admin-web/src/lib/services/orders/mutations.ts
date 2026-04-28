@@ -25,6 +25,10 @@ import type {
   PickIndividualItemRequest,
   ScanBarcodeRequest,
   GenerateBarcodeRequest,
+  CreateOutboundBatchRequest,
+  AddFOsToBatchRequest,
+  ForwardDirectShipOrdersRequest,
+  CompleteDirectShipOrdersRequest,
 } from '@/lib/types/dto/fulfillment';
 
 // 주문 관련 뮤테이션
@@ -64,19 +68,7 @@ export const useDeleteSalesOrder = () => {
   });
 };
 
-// 출고 배치 관련 뮤테이션 (임시 구현)
-export const useCreateOutboundBatch = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (data: any) => Promise.resolve({ id: 'new-batch-id', ...data }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: orderQueryKeys.outboundBatches,
-      });
-    },
-  });
-};
+// 레거시 stub — D2 useCreateOutboundBatch로 대체됨
 
 export const useUpdateOutboundBatch = () => {
   const queryClient = useQueryClient();
@@ -501,5 +493,124 @@ export const useCompleteMatching = () => {
           isGift,
         },
       }),
+  });
+};
+
+// ===== 출고 배치 뮤테이션 (D2) =====
+
+export const useCreateOutboundBatch = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreateOutboundBatchRequest) => orders.outboundBatches.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.outboundBatches });
+    },
+  });
+};
+
+export const useAddFOsToBatch = (batchId: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: AddFOsToBatchRequest) =>
+      orders.outboundBatches.addFulfillmentOrders(batchId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.outboundBatch(batchId) });
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.outboundBatches });
+    },
+  });
+};
+
+export const useRemoveFOFromBatch = (batchId: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (foId: string) => orders.outboundBatches.removeFulfillmentOrder(batchId, foId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.outboundBatch(batchId) });
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.outboundBatches });
+    },
+  });
+};
+
+export const useStartBatchPicking = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (batchId: string) => orders.outboundBatches.startPicking(batchId),
+    onSuccess: (_, batchId) => {
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.outboundBatch(batchId) });
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.outboundBatches });
+    },
+  });
+};
+
+export const useCompleteBatch = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (batchId: string) => orders.outboundBatches.complete(batchId),
+    onSuccess: (_, batchId) => {
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.outboundBatch(batchId) });
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.outboundBatches });
+    },
+  });
+};
+
+export const useCancelBatch = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (batchId: string) => orders.outboundBatches.cancel(batchId),
+    onSuccess: (_, batchId) => {
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.outboundBatch(batchId) });
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.outboundBatches });
+    },
+  });
+};
+
+// ===== 직배송 뮤테이션 (D2) =====
+
+export const useForwardDirectShipOrders = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: ForwardDirectShipOrdersRequest) =>
+      orders.directShip.forwardOrders(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['direct-ship'] });
+    },
+  });
+};
+
+export const useCompleteDirectShipOrders = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CompleteDirectShipOrdersRequest) =>
+      orders.directShip.completeOrders(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['direct-ship'] });
+    },
+  });
+};
+
+export const useExportDirectShipFile = () => {
+  return useMutation({
+    mutationFn: (companyName: string) => orders.directShip.exportFile(companyName),
+  });
+};
+
+// ===== 합포장 뮤테이션 (D2) =====
+
+export const useAnalyzeConsolidation = (warehouseId: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => orders.consolidation.analyze(warehouseId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: orderQueryKeys.consolidationCandidates(warehouseId),
+      });
+    },
+  });
+};
+
+export const useAutoConsolidate = () => {
+  // ⚠️ STUB — 실제 FO 머지 안 함. UI에서 stub 경고 표시 필수
+  return useMutation({
+    mutationFn: (groupId: string) => orders.consolidation.autoConsolidate(groupId),
   });
 };
