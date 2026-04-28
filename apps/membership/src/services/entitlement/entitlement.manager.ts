@@ -115,6 +115,35 @@ export class EntitlementManager {
         })
         .returning();
 
+      // 7. 계약 이벤트 로그 기록
+      const [activeContract] = await tx
+        .select({ id: schema.subscriptionContracts.id })
+        .from(schema.subscriptionContracts)
+        .where(
+          and(
+            eq(schema.subscriptionContracts.userId, userId),
+            eq(schema.subscriptionContracts.status, 'ACTIVE'),
+          ),
+        )
+        .limit(1);
+
+      if (activeContract) {
+        await tx.insert(schema.subscriptionContractEvents).values({
+          contractId: activeContract.id,
+          eventType,
+          userId,
+          metadata: {
+            days,
+            reason,
+            previousEndsAt: currentEndDate.toISOString(),
+            newEndsAt: newEndDate.toISOString(),
+          },
+          batchId: eventBatch.id,
+          causedBy: 'ADMIN',
+          causedByUserId: adminId,
+        });
+      }
+
       return newEntitlement;
     });
   }
