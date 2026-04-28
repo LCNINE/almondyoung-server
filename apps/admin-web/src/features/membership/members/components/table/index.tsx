@@ -1,10 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { useState } from 'react';
 import { useMembershipMembers } from '@/lib/services/membership';
-import { userApi } from '@/lib/api/domains/users';
+import { useMemberUserSearch } from '@/hooks/use-member-user-search';
 import { useDataTable } from '@/hooks/use-data-table';
 import { useMembershipMemberTableColumns } from '@/hooks/table/columns/use-membership-member-table-columns';
 import { useMembershipMemberTableQuery } from '@/hooks/table/query/use-membership-member-table-query';
@@ -18,25 +16,7 @@ export function MembershipMemberTable() {
   const [selectedMember, setSelectedMember] = useState<AdminMemberListItem | null>(null);
 
   const { searchParams: query, memberQ } = useMembershipMemberTableQuery({ pageSize: PAGE_SIZE });
-
-  // membership service can only filter by exact userIds, not by name/email.
-  // When searching by member info, we first resolve matching userIds from user-service.
-  const { data: userSearchData, isFetching: isSearchingUsers, isError: isUserSearchError } = useQuery({
-    queryKey: ['admin-users-search', memberQ],
-    queryFn: () => userApi.getAdminUsers({ q: memberQ, limit: 1000 }),
-    enabled: !!memberQ,
-    retry: 1,
-  });
-
-  useEffect(() => {
-    if (isUserSearchError) {
-      toast.error('고객 정보 조회에 실패했습니다. 권한을 확인해주세요.');
-    }
-  }, [isUserSearchError]);
-
-  const resolvedUserIds = memberQ
-    ? (userSearchData?.data?.map((u) => u.id) ?? null)
-    : undefined;
+  const { resolvedUserIds, isSearchingUsers } = useMemberUserSearch(memberQ);
 
   const membershipQuery =
     memberQ && resolvedUserIds !== null
