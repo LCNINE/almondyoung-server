@@ -4,7 +4,8 @@ import { SubscriptionService } from './subscription.service';
 import { SubscriptionCancellationService } from './subscription-cancellation.service';
 import { EntitlementService } from './entitlement.service';
 import { PauseService } from './pause.service';
-import { AdminMembersReader, AdminMembersQuery } from './admin/admin-members.reader';
+import { AdminMembersReader, AdminMembersQuery, BillingEventItem } from './admin/admin-members.reader';
+import { PaymentClientService } from './billing/payment-client.service';
 import {
   CreateTierRequest,
   UpdateTierRequest,
@@ -33,6 +34,7 @@ export class AdminOperationsService {
     private readonly entitlementService: EntitlementService,
     private readonly pauseService: PauseService,
     private readonly adminMembersReader: AdminMembersReader,
+    private readonly paymentClientService: PaymentClientService,
   ) {}
 
   // =================================================================
@@ -125,8 +127,33 @@ export class AdminOperationsService {
     return this.adminMembersReader.findDetailByUserId(userId);
   }
 
-  async getMemberBillingEvents(contractId: string) {
-    return this.adminMembersReader.findBillingEventsByContractId(contractId);
+  async getMemberBillingEvents(contractId: string): Promise<BillingEventItem[]> {
+    const [recurringEvents, paymentRef] = await Promise.all([
+      this.adminMembersReader.findBillingEventsByContractId(contractId),
+      this.adminMembersReader.findContractPaymentRef(contractId),
+    ]);
+
+    if (!paymentRef?.lastPaymentIntentId) return recurringEvents;
+
+    let initialEvent: BillingEventItem | null = null;
+    try {
+      const intent = await this.paymentClientService.getWalletPaymentIntent(paymentRef.lastPaymentIntentId);
+      const succeeded = intent.status === 'AUTHORIZED' || intent.status === 'CAPTURED';
+      initialEvent = {
+        id: intent.id,
+        contractId,
+        eventType: succeeded ? 'CHARGE_SUCCESS' : intent.status === 'FAILED' ? 'CHARGE_FAIL' : 'CHARGE_ATTEMPT',
+        attemptNo: 1,
+        amount: intent.payableAmount ?? null,
+        errorCode: null,
+        errorMessage: null,
+        createdAt: intent.createdAt,
+      };
+    } catch {
+      // wallet 조회 실패 시 recurring 기록만 반환
+    }
+
+    return initialEvent ? [initialEvent, ...recurringEvents] : recurringEvents;
   }
 
   async getMemberContractEvents(contractId: string) {
