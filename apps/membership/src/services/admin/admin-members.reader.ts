@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
-import { eq, and, desc, asc, ilike, gte, lte, SQL, count } from 'drizzle-orm';
+import { eq, and, desc, asc, ilike, gte, lte, inArray, SQL, count } from 'drizzle-orm';
 
 export interface AdminMembersQuery {
   page?: number;
@@ -11,6 +11,8 @@ export interface AdminMembersQuery {
   status?: string;
   /** userId partial search */
   q?: string;
+  /** filter by resolved userIds (from user-service lookup) */
+  userIds?: string[];
   dateFrom?: string;
   dateTo?: string;
 }
@@ -87,13 +89,17 @@ export class AdminMembersReader {
   constructor(private readonly dbService: DbService<typeof membershipSchema>) {}
 
   async findAllWithDetails(query: AdminMembersQuery): Promise<AdminMembersResponse> {
-    const { page = 1, limit = 20, status, q, dateFrom, dateTo } = query;
+    const { page = 1, limit = 20, status, q, userIds, dateFrom, dateTo } = query;
     const offset = (page - 1) * limit;
 
     const baseConditions: SQL[] = [];
 
     if (q) {
       baseConditions.push(ilike(schema.subscriptionContracts.userId, `%${q}%`));
+    }
+
+    if (userIds?.length) {
+      baseConditions.push(inArray(schema.subscriptionContracts.userId, userIds));
     }
 
     if (dateFrom) {
