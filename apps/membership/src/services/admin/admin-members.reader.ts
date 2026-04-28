@@ -333,6 +333,15 @@ export class AdminMembersReader {
     }));
   }
 
+  async findContractPaymentRef(contractId: string): Promise<{ lastPaymentIntentId: string | null } | null> {
+    const [row] = await this.dbService.db
+      .select({ lastPaymentIntentId: schema.subscriptionContracts.lastPaymentIntentId })
+      .from(schema.subscriptionContracts)
+      .where(eq(schema.subscriptionContracts.id, contractId))
+      .limit(1);
+    return row ?? null;
+  }
+
   async updateAutoRenewal(contractId: string, autoRenewal: boolean): Promise<void> {
     await this.dbService.db
       .update(schema.subscriptionContracts)
