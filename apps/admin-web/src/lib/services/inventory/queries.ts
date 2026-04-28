@@ -13,6 +13,10 @@ import { reservationsClient } from '../../api/domains/inventory/reservations.cli
 import { stocktakingClient } from '../../api/domains/inventory/stocktaking.client';
 import { suppliersClient } from '../../api/domains/inventory/suppliers.client';
 import { supplierCategoriesClient } from '../../api/domains/inventory/supplier-categories.client';
+import { holdersClient } from '../../api/domains/inventory/holders.client';
+import { locationsClient } from '../../api/domains/inventory/locations.client';
+import { purchaseOrdersClient } from '../../api/domains/inventory/purchase-orders.client';
+import { inboundClient } from '../../api/domains/inventory/inbound.client';
 import type {
   StockSummaryQuery,
   StockHistoryQuery,
@@ -20,6 +24,13 @@ import type {
   ReservationTargetType,
   StocktakingSessionQuery,
   SupplierFiltersDto,
+  HolderFiltersDto,
+  LocationFiltersDto,
+  PurchaseOrderListFilters,
+  InboundReceiptsQuery,
+  InboundWorkLogsQuery,
+  InboundStatusQuery,
+  ListPlanItemsQueryDto,
 } from '../../types/dto/inventory';
 
 export const useStocks = (query = {}) => {
@@ -159,27 +170,39 @@ export const useWarehouseStockSummary = (warehouseId: string) => {
   });
 };
 
-// 입고 관련 쿼리 (미구현 — Phase 4)
-export const useInbounds = () => {
+// 입고 관련 쿼리
+export const useInboundPending = (warehouseId?: string) => {
   return useQuery({
-    queryKey: inventoryQueryKeys.inbounds,
-    queryFn: () => Promise.resolve([]),
+    queryKey: inventoryQueryKeys.inboundPending(warehouseId),
+    queryFn: () => inboundClient.pending(warehouseId),
   });
 };
 
-export const useInbound = (id: string) => {
+export const useInboundReceipts = (query?: InboundReceiptsQuery) => {
   return useQuery({
-    queryKey: inventoryQueryKeys.inbound(id),
-    queryFn: () => Promise.resolve({ id }),
-    enabled: !!id,
+    queryKey: inventoryQueryKeys.inboundReceipts(query),
+    queryFn: () => inboundClient.receipts(query),
   });
 };
 
-export const useInboundItems = (inboundId: string) => {
+export const useInboundWorkLogs = (query?: InboundWorkLogsQuery) => {
   return useQuery({
-    queryKey: inventoryQueryKeys.inboundItems(inboundId),
-    queryFn: () => Promise.resolve([]),
-    enabled: !!inboundId,
+    queryKey: inventoryQueryKeys.inboundWorkLogs(query),
+    queryFn: () => inboundClient.workLogs(query),
+  });
+};
+
+export const useInboundStatus = (query?: InboundStatusQuery) => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.inboundStatus(query),
+    queryFn: () => inboundClient.status(query),
+  });
+};
+
+export const useInboundPlanItems = (query?: ListPlanItemsQueryDto) => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.inboundPlanItems(query),
+    queryFn: () => inboundClient.plans.listItems(query),
   });
 };
 
@@ -283,10 +306,10 @@ export const useSupplierCategory = (id: string) => {
 };
 
 // 재고소유 관련 쿼리
-export const useHolders = (query?: Parameters<typeof inventoryMatchingClient.holders.list>[0]) => {
+export const useHolders = (filters?: HolderFiltersDto) => {
   return useQuery({
-    queryKey: inventoryQueryKeys.holders(query),
-    queryFn: () => inventoryMatchingClient.holders.list(query),
+    queryKey: inventoryQueryKeys.holders(filters),
+    queryFn: () => holdersClient.list(filters),
     staleTime: 5 * 60 * 1000,
   });
 };
@@ -299,7 +322,7 @@ export const useHolderSearch = (
 ) => {
   return useQuery({
     queryKey: inventoryQueryKeys.holderSearch(query, isOurAsset, page, limit),
-    queryFn: () => inventoryMatchingClient.holders.search(query, isOurAsset, page, limit),
+    queryFn: () => holdersClient.list({ search: query, isOurAsset, page, limit }),
     enabled: !!query && query.length > 0,
     staleTime: 2 * 60 * 1000,
   });
@@ -308,8 +331,47 @@ export const useHolderSearch = (
 export const useHolder = (id: string) => {
   return useQuery({
     queryKey: inventoryQueryKeys.holder(id),
-    queryFn: () => inventoryMatchingClient.holders.get(id),
+    queryFn: () => holdersClient.get(id),
     enabled: !!id,
+  });
+};
+
+// 로케이션 관련 쿼리
+export const useLocations = (warehouseId: string, filters?: LocationFiltersDto) => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.locations(warehouseId, filters),
+    queryFn: () => locationsClient.list(warehouseId, filters),
+    enabled: !!warehouseId,
+  });
+};
+
+export const useLocation = (id: string) => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.location(id),
+    queryFn: () => locationsClient.get(id),
+    enabled: !!id,
+  });
+};
+
+export const useLocationColumns = (warehouseId: string, isActive?: boolean) => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.locationColumns(warehouseId, isActive),
+    queryFn: () => locationsClient.columns.list(warehouseId, isActive),
+    enabled: !!warehouseId,
+    staleTime: 2 * 60 * 1000,
+  });
+};
+
+export const useLocationRacks = (
+  warehouseId: string,
+  columnName?: string,
+  isActive?: boolean
+) => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.locationRacks(warehouseId, columnName, isActive),
+    queryFn: () => locationsClient.racks.list(warehouseId, { columnName, isActive }),
+    enabled: !!warehouseId,
+    staleTime: 2 * 60 * 1000,
   });
 };
 
@@ -380,5 +442,39 @@ export const useStocktakingVariances = (sessionId: string) => {
     queryKey: inventoryQueryKeys.stocktakingVariances(sessionId),
     queryFn: () => stocktakingClient.getVariances(sessionId),
     enabled: !!sessionId,
+  });
+};
+
+// 발주 관련 쿼리
+export const usePurchaseOrders = (filters?: PurchaseOrderListFilters) => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.purchaseOrders(filters),
+    queryFn: () => purchaseOrdersClient.list(filters),
+    staleTime: 2 * 60 * 1000,
+  });
+};
+
+export const usePurchaseOrder = (id: string) => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.purchaseOrder(id),
+    queryFn: () => purchaseOrdersClient.get(id),
+    enabled: !!id,
+  });
+};
+
+export const usePurchaseOrderCart = () => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.purchaseOrderCart(),
+    queryFn: () => purchaseOrdersClient.cart.list(),
+    staleTime: 30 * 1000,
+  });
+};
+
+export const useReorderSuggestions = (warehouseId?: string) => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.reorderSuggestions(warehouseId),
+    queryFn: () => purchaseOrdersClient.suggestions.reorder(warehouseId),
+    enabled: !!warehouseId,
+    staleTime: 5 * 60 * 1000,
   });
 };

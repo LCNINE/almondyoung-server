@@ -418,3 +418,103 @@ export const useSalesChannelSites = (type: string = 'all') => {
     gcTime: Infinity,
   });
 };
+
+// ===== 배너 그룹 관련 쿼리 =====
+
+export const useBannerGroups = (query?: { category?: string }) => {
+  return useQuery({
+    queryKey: productQueryKeys.bannerGroupsList(query ?? {}),
+    queryFn: () => products.bannerGroups.list(query),
+    staleTime: 2 * 60 * 1000,
+  });
+};
+
+export const useBannerGroup = (id: string) => {
+  return useQuery({
+    queryKey: productQueryKeys.bannerGroup(id),
+    queryFn: () => products.bannerGroups.get(id),
+    enabled: !!id,
+    staleTime: 2 * 60 * 1000,
+  });
+};
+
+export const useBannersByGroup = (groupId: string, includeInactive = true) => {
+  return useQuery({
+    queryKey: productQueryKeys.bannersByGroup(groupId),
+    queryFn: () => products.banners.listByGroup(groupId, includeInactive),
+    enabled: !!groupId,
+    staleTime: 2 * 60 * 1000,
+  });
+};
+
+// ===== 태그 관련 쿼리 =====
+
+export const useTagGroups = (query?: { isActive?: boolean }) => {
+  return useQuery({
+    queryKey: productQueryKeys.tagGroupsList(query ?? {}),
+    queryFn: () => products.tags.listGroups(query),
+    staleTime: 2 * 60 * 1000,
+  });
+};
+
+export const useTagGroup = (id: string) => {
+  return useQuery({
+    queryKey: productQueryKeys.tagGroup(id),
+    queryFn: () => products.tags.getGroup(id),
+    enabled: !!id,
+    staleTime: 2 * 60 * 1000,
+  });
+};
+
+// ===== 버전 관련 쿼리 =====
+
+export const useMasterVersions = (masterId: string) => {
+  return useQuery({
+    queryKey: productQueryKeys.masterVersions(masterId),
+    queryFn: () => products.versions.listByMaster(masterId),
+    enabled: !!masterId,
+    staleTime: 30 * 1000,
+  });
+};
+
+// ===== 가격 관리 관련 쿼리 =====
+
+export const useVersionPricingRules = (versionId: string) => {
+  return useQuery({
+    queryKey: productQueryKeys.pricingVersionRules(versionId),
+    queryFn: () => products.pricing.versions.getRules(versionId),
+    enabled: !!versionId,
+    staleTime: 30 * 1000,
+  });
+};
+
+export const useMasterPricingRules = (masterId: string) => {
+  return useQuery({
+    queryKey: productQueryKeys.pricingMasterRules(masterId),
+    queryFn: () => products.pricing.masters.getRules(masterId),
+    enabled: !!masterId,
+    staleTime: 30 * 1000,
+    retry: (count, error: any) => {
+      if (error?.response?.status === 404) return false;
+      return count < 2;
+    },
+  });
+};
+
+export const useVersionVariantPriceSet = (versionId: string, variantId: string) => {
+  return useQuery({
+    queryKey: productQueryKeys.pricingVersionPriceSet(versionId, variantId),
+    queryFn: () => products.pricing.versions.getPriceSet(versionId, variantId),
+    enabled: !!versionId && !!variantId,
+    staleTime: 30 * 1000,
+  });
+};
+
+export const useMasterVariantPriceSet = (masterId: string, variantId: string) => {
+  return useQuery({
+    queryKey: productQueryKeys.pricingMasterPriceSet(masterId, variantId),
+    queryFn: () => products.pricing.masters.getPriceSet(masterId, variantId),
+    enabled: !!masterId && !!variantId,
+    staleTime: 30 * 1000,
+  });
+};

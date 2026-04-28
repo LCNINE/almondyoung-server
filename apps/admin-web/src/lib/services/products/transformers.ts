@@ -276,6 +276,14 @@ export const formatOptionKeyAsTags = (optionKey: Record<string, string>) => {
   }));
 };
 
+// ===== 가격 룰 scale 변환 (서버는 ×1000 fixed-point, UI는 소수 배수) =====
+
+export const fromServerScale = (serverValue: number): number =>
+  serverValue / 1000;
+
+export const toServerScale = (uiValue: number): number =>
+  Math.round(uiValue * 1000);
+
 // ===== 검색 및 필터링용 변환 함수들 =====
 
 /**

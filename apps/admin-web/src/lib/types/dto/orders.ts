@@ -45,7 +45,7 @@ export type SalesOrderStatus =
   | 'cancelled'
   | 'timeout';
 export type FulfillmentStatus = 'created' | 'shipped' | 'canceled';
-export type PurchaseOrderStatus =
+export type LegacyPurchaseOrderStatus =
   | 'created'
   | 'confirmed'
   | 'shipped'
@@ -189,8 +189,8 @@ export interface FulfillmentsResponseDto {
   totalPages: number;
 }
 
-// ===== 발주 =====
-export interface PurchaseOrderLineDto {
+// ===== 발주 (레거시 — 통합 서버 이전 전 WMS API 스펙, 신규 코드는 inventory.ts의 PurchaseOrderDto 사용) =====
+export interface LegacyPurchaseOrderLineDto {
   skuId: string;
   quantity: number;
   unitPrice: number;
@@ -201,7 +201,7 @@ export interface CreatePurchaseOrderDto {
   supplierId: string;
   expectedArrival?: string;
   destinationWarehouseId: string;
-  lines: CreatePurchaseOrderLineDto[];
+  lines: LegacyPurchaseOrderLineDto[];
 }
 
 export interface CreatePurchaseOrderLineDto {
@@ -217,25 +217,25 @@ export interface CreatePurchaseOrderResponseDto {
   expectedArrival?: string;
   destinationWarehouseId: string;
   status: 'created';
-  lines: PurchaseOrderLineDto[];
+  lines: LegacyPurchaseOrderLineDto[];
   createdAt: string;
   updatedAt: string;
 }
 
-export interface PurchaseOrderDto {
+export interface LegacyPurchaseOrderDto {
   id: string;
   type: 'domestic' | 'foreign';
   supplierId: string;
   expectedArrival?: string;
   destinationWarehouseId: string;
-  status: PurchaseOrderStatus;
-  lines: PurchaseOrderLineDto[];
+  status: LegacyPurchaseOrderStatus;
+  lines: LegacyPurchaseOrderLineDto[];
   createdAt: string;
   updatedAt: string;
 }
 
-export interface PurchaseOrdersResponseDto {
-  data: PurchaseOrderDto[];
+export interface LegacyPurchaseOrdersResponseDto {
+  data: LegacyPurchaseOrderDto[];
   total: number;
   page: number;
   limit: number;
