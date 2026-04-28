@@ -471,3 +471,275 @@ export interface LegacyVariantDto {
   created_at: string;
   updated_at: string;
 }
+
+// ===== 배너 그룹 관련 =====
+
+export interface CreateBannerGroupDto {
+  code: string;
+  title: string;
+  category?: string;
+  pcWidth?: number;
+  pcHeight?: number;
+  mobileWidth?: number;
+  mobileHeight?: number;
+  description?: string;
+  isActive?: boolean;
+  sortOrder?: number;
+  createdBy?: string;
+}
+
+export interface UpdateBannerGroupDto {
+  title?: string;
+  category?: string;
+  pcWidth?: number;
+  pcHeight?: number;
+  mobileWidth?: number;
+  mobileHeight?: number;
+  description?: string;
+  isActive?: boolean;
+  sortOrder?: number;
+  updatedBy?: string;
+}
+
+export interface BannerGroupDto {
+  id: string;
+  code: string;
+  title: string;
+  category?: string;
+  pcWidth?: number;
+  pcHeight?: number;
+  mobileWidth?: number;
+  mobileHeight?: number;
+  description?: string;
+  isActive: boolean;
+  sortOrder?: number;
+  createdBy?: string;
+  updatedBy?: string;
+  deletedAt?: string;
+  deletedBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BannerGroupListQuery {
+  category?: string;
+}
+
+// ===== 배너 관련 =====
+
+export interface CreateBannerDto {
+  bannerGroupId: string;
+  title: string;
+  description?: string;
+  pcImageFileId?: string;
+  mobileImageFileId?: string;
+  linkUrl?: string;
+  linkedProductMasterIds?: string[];
+  displayStartAt?: string;
+  displayEndAt?: string;
+  isActive?: boolean;
+  sortOrder?: number;
+  createdBy?: string;
+}
+
+export interface UpdateBannerDto {
+  title?: string;
+  description?: string;
+  pcImageFileId?: string;
+  mobileImageFileId?: string;
+  linkUrl?: string;
+  linkedProductMasterIds?: string[];
+  displayStartAt?: string;
+  displayEndAt?: string;
+  isActive?: boolean;
+  sortOrder?: number;
+  updatedBy?: string;
+}
+
+export interface BannerDto {
+  id: string;
+  bannerGroupId: string;
+  title: string;
+  description?: string;
+  pcImageFileId?: string;
+  mobileImageFileId?: string;
+  linkUrl?: string;
+  linkedProductMasterIds?: string[];
+  displayStartAt?: string;
+  displayEndAt?: string;
+  isActive: boolean;
+  sortOrder?: number;
+  createdBy?: string;
+  updatedBy?: string;
+  deletedAt?: string;
+  deletedBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BannerGroupWithBannersDto extends BannerGroupDto {
+  banners: BannerDto[];
+}
+
+// ===== 태그 그룹 관련 =====
+
+export interface CreateTagGroupDto {
+  name: string;
+  description?: string;
+  displayOrder?: number;
+  isActive?: boolean;
+}
+
+export interface UpdateTagGroupDto {
+  name?: string;
+  description?: string;
+  displayOrder?: number;
+  isActive?: boolean;
+}
+
+export interface TagGroupDto {
+  id: string;
+  name: string;
+  description?: string;
+  displayOrder?: number;
+  isActive: boolean;
+  valueCount?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TagGroupListQuery {
+  isActive?: boolean;
+}
+
+// ===== 태그 값 관련 =====
+
+export interface CreateTagValueDto {
+  name: string;
+  displayOrder?: number;
+  isActive?: boolean;
+}
+
+export interface UpdateTagValueDto {
+  name?: string;
+  displayOrder?: number;
+  isActive?: boolean;
+}
+
+export interface TagValueDto {
+  id: string;
+  groupId: string;
+  groupName?: string;
+  name: string;
+  displayOrder?: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ===== 가격 관리 (Pricing) =====
+
+export type PricingLayer = 'base_price' | 'membership_price' | 'tiered_price';
+export type PricingScopeType = 'all_variants' | 'with_option' | 'variants';
+export type PricingOperationType = 'offset' | 'scale' | 'override';
+export type CustomerType = 'regular' | 'membership';
+
+export interface PricingRuleResponseDto {
+  id: string;
+  layer: PricingLayer;
+  order: number;
+  scopeType: PricingScopeType;
+  scopeTargetIds: string[] | null;
+  operationType: PricingOperationType;
+  operationValue: number;
+  minQuantity: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PricingRulesResponseDto {
+  basePriceRules: PricingRuleResponseDto[];
+  membershipPriceRules: PricingRuleResponseDto[];
+  tieredPriceRules: PricingRuleResponseDto[];
+}
+
+export interface PricingRuleInput {
+  order: number;
+  layer: PricingLayer;
+  scopeType: PricingScopeType;
+  scopeTargetIds?: string[];
+  operationType: PricingOperationType;
+  operationValue: number;
+  minQuantity?: number;
+}
+
+export interface ReplacePricingRulesDto {
+  basePriceRules: PricingRuleInput[];
+  membershipPriceRules: PricingRuleInput[];
+  tieredPriceRules: PricingRuleInput[];
+}
+
+export interface CalculatePriceRequestDto {
+  variantId: string;
+  quantity?: number;
+  customerType?: CustomerType;
+}
+
+export interface AppliedRuleDto {
+  ruleId: string;
+  layer: PricingLayer;
+  order: number;
+  scopeType: PricingScopeType;
+  operationType: PricingOperationType;
+  operationValue: number;
+  priceBeforeRule: number;
+  priceAfterRule: number;
+}
+
+export interface PriceBreakdownDto {
+  initialPrice: number;
+  afterBasePrice: number;
+  afterMembershipPrice?: number;
+  afterTieredPrice?: number;
+}
+
+export interface CalculatePriceResponseDto {
+  variantId: string;
+  price: number;
+  totalPrice?: number;
+  appliedRules: AppliedRuleDto[];
+  priceBreakdown: PriceBreakdownDto;
+}
+
+export interface TieredPriceDto {
+  minQuantity: number;
+  price: number;
+}
+
+export interface VariantPriceSetDto {
+  basePrice: number;
+  membershipPrice: number;
+  tieredPrices: TieredPriceDto[];
+}
+
+// ===== 버전 관련 =====
+
+export type VersionStatus = 'draft' | 'active' | 'inactive';
+
+export interface MasterVersionDto {
+  id: string;
+  masterId: string;
+  version: number;
+  status: VersionStatus;
+  name: string;
+  parentVersionId: string | null;
+  children: MasterVersionDto[];
+  createdAt: string;
+  updatedAt: string;
+  draftOwnerId?: string | null;
+}
+
+export interface CreateDraftVersionDto {
+  parentVersionId?: string;
+  copyMappings?: boolean;
+}
