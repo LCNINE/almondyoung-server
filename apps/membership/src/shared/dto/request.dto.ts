@@ -54,6 +54,21 @@ export class ForceCancelSubscriptionRequestDto extends createZodDto(ForceCancelS
 
 export class GetBulkSubscriptionsRequestDto extends createZodDto(GetBulkSubscriptionsRequestSchema) {}
 
+export class AdminSubscribeUserRequestDto {
+  @ApiProperty({ description: '구독할 사용자 ID' })
+  @IsString()
+  @IsNotEmpty()
+  userId: string;
+
+  @ApiProperty({ description: '구독할 플랜 ID' })
+  @IsUUID()
+  planId: string;
+
+  @ApiProperty({ description: '결제 방식', enum: ['one_time', 'recurring'], default: 'recurring' })
+  @IsIn(['one_time', 'recurring'])
+  billingMode: 'one_time' | 'recurring';
+}
+
 export class SubscribeWithMethodRequestDto {
   @ApiProperty({ description: 'Plan ID to subscribe to' })
   @IsString()

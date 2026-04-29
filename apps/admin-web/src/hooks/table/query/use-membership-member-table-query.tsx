@@ -11,11 +11,11 @@ export const useMembershipMemberTableQuery = ({
   pageSize = 20,
 }: UseMembershipMemberTableQueryProps) => {
   const queryObject = useQueryParams(
-    ['page', 'q', 'memberQ', 'status', 'dateFrom', 'dateTo'],
+    ['page', 'q', 'memberQ', 'status', 'dateFrom', 'dateTo', 'dateCriteria'],
     prefix,
   );
 
-  const { page, q, memberQ, status, dateFrom, dateTo } = queryObject;
+  const { page, q, memberQ, status, dateFrom, dateTo, dateCriteria } = queryObject;
 
   const searchParams: AdminMembersQuery = {
     limit: pageSize,
@@ -24,6 +24,7 @@ export const useMembershipMemberTableQuery = ({
     status,
     dateFrom,
     dateTo,
+    dateCriteria: (dateCriteria === 'createdAt' || dateCriteria === 'cancelledAt') ? dateCriteria : undefined,
   };
 
   return { searchParams, memberQ: memberQ ?? '', raw: queryObject };

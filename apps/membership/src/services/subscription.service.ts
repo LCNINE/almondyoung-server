@@ -348,6 +348,49 @@ export class SubscriptionService {
   }
 
   /**
+   * 관리자 직접 구독 등록 (무료체험 미적용, 즉시 결제 없음)
+   */
+  async adminCreateSubscription(
+    userId: string,
+    planId: string,
+    billingMode: 'one_time' | 'recurring',
+  ) {
+    const [existing, planDetails] = await Promise.all([
+      this.entitlementService.getUserEntitlement(userId),
+      this.planService.getPlanDetails(planId),
+    ]);
+    if (existing) throw new ActiveSubscriptionExistsException();
+    if (!planDetails) throw new PlanNotFoundException();
+    if (!planDetails.plan.isActive) throw new PlanNotFoundException();
+
+    const result = await this.subscriptionCreator.createNewSubscription(
+      userId,
+      planDetails.plan,
+      planDetails.tier,
+      {},
+      billingMode,
+      true,
+    );
+
+    this.membershipEventPublisher.publishStatusChanged({
+      userId,
+      email: '',
+      status: 'ACTIVE',
+      occurredAt: new Date().toISOString(),
+      contractId: result.contractId,
+      planId: planDetails.plan.id,
+      tierId: planDetails.tier.id,
+    }).catch((err: Error) =>
+      this.logger.error(
+        `MembershipStatusChanged Kafka 발행 실패 (userId=${userId}): ${err?.message}`,
+        err?.stack,
+      )
+    );
+
+    return result;
+  }
+
+  /**
    * 여러 사용자의 구독 정보 일괄 조회
    *
    * ✅ 흐름만 표현: "여러 사용자 권한 조회 → 응답 포맷팅"

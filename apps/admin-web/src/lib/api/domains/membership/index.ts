@@ -12,6 +12,7 @@ export interface AdminMembersQuery {
   userIds?: string[];
   dateFrom?: string;
   dateTo?: string;
+  dateCriteria?: 'createdAt' | 'cancelledAt';
 }
 
 export interface AdminMemberListItem {
@@ -251,5 +252,22 @@ export const membershipApi = {
       `${MEMBERSHIP_SERVICE_BASE_URL}/admin/subscriptions/${encodeURIComponent(contractId)}/force-cancel`,
       body,
     );
+  },
+
+  activatePlan: async (planId: string): Promise<void> => {
+    await client.patch(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/plans/${encodeURIComponent(planId)}/activate`);
+  },
+
+  adminSubscribeUser: async (body: {
+    userId: string;
+    planId: string;
+    billingMode: 'one_time' | 'recurring';
+  }): Promise<{ contractId: string; entitlementId: string }> => {
+    const res = await client.post(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/members/subscribe`, body);
+    return res.data.data;
+  },
+
+  retryBilling: async (contractId: string): Promise<void> => {
+    await client.post(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/billing/retry/${encodeURIComponent(contractId)}`);
   },
 };

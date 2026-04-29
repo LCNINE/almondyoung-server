@@ -42,9 +42,10 @@ function getPlanLabel(durationDays: number): string {
 
 type UseColumnsOptions = {
   onEdit?: (row: AdminMemberListItem) => void;
+  userMap?: Record<string, string>;
 };
 
-export const useMembershipMemberTableColumns = ({ onEdit }: UseColumnsOptions = {}) => {
+export const useMembershipMemberTableColumns = ({ onEdit, userMap = {} }: UseColumnsOptions = {}) => {
   return useMemo(
     () => [
       columnHelper.accessor('userId', {
@@ -66,7 +67,11 @@ export const useMembershipMemberTableColumns = ({ onEdit }: UseColumnsOptions = 
       columnHelper.display({
         id: 'name',
         header: '성명',
-        cell: () => <span className="text-sm text-muted-foreground">-</span>,
+        cell: ({ row }) => (
+          <span className="text-sm">
+            {userMap[row.original.userId] ?? <span className="text-muted-foreground">-</span>}
+          </span>
+        ),
       }),
       columnHelper.display({
         id: 'remainingDays',
@@ -123,6 +128,6 @@ export const useMembershipMemberTableColumns = ({ onEdit }: UseColumnsOptions = 
         ),
       }),
     ],
-    [onEdit],
+    [onEdit, userMap],
   );
 };
