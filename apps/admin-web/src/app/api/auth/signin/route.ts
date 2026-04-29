@@ -5,8 +5,12 @@ const USER_SERVICE_BASE_URL =
 
 const ADMIN_DOMAIN = process.env.ADMIN_DOMAIN ?? 'admin.almondyoung-next.com';
 
+const REMEMBER_ME_MAX_AGE = 90 * 24 * 60 * 60; // 90일
+const DEFAULT_MAX_AGE = 14 * 24 * 60 * 60; // 2주
+
 export async function POST(request: NextRequest) {
   const body = await request.json();
+  const rememberMe = body?.rememberMe === true;
 
   const upstream = await fetch(`${USER_SERVICE_BASE_URL}/auth/signin`, {
     method: 'POST',
@@ -35,6 +39,8 @@ export async function POST(request: NextRequest) {
 
   const response = NextResponse.json(data, { status: upstream.status });
 
+  const maxAge = rememberMe ? REMEMBER_ME_MAX_AGE : DEFAULT_MAX_AGE;
+
   if (accessToken) {
     response.cookies.set('admin_access_token', accessToken, {
       httpOnly: true,
@@ -42,6 +48,7 @@ export async function POST(request: NextRequest) {
       sameSite: 'lax',
       domain: process.env.NODE_ENV === 'production' ? ADMIN_DOMAIN : undefined,
       path: '/',
+      maxAge,
     });
   }
 
@@ -52,8 +59,19 @@ export async function POST(request: NextRequest) {
       sameSite: 'lax',
       domain: process.env.NODE_ENV === 'production' ? ADMIN_DOMAIN : undefined,
       path: '/',
+      maxAge,
     });
   }
+
+  // refresh 시 동일한 maxAge를 유지하기 위해 rememberMe 여부를 보관
+  response.cookies.set('admin_remember_me', rememberMe ? '1' : '0', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    domain: process.env.NODE_ENV === 'production' ? ADMIN_DOMAIN : undefined,
+    path: '/',
+    maxAge,
+  });
 
   return response;
 }

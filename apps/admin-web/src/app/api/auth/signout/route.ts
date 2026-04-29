@@ -33,6 +33,7 @@ export async function POST(request: NextRequest) {
 
   response.cookies.set('admin_access_token', '', cookieOptions);
   response.cookies.set('admin_refresh_token', '', cookieOptions);
+  response.cookies.set('admin_remember_me', '', cookieOptions);
 
   return response;
 }
