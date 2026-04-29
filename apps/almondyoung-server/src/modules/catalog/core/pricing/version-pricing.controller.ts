@@ -159,17 +159,31 @@ export class VersionPricingController {
     description: 'Get base, membership, and tiered prices for a variant using pricing rules from a specific version.',
   })
   @ApiParam({ name: 'versionId', description: 'Version ID' })
-  @ApiQuery({ name: 'variantId', description: 'Variant ID', required: true })
-  @ApiResponse({
-    status: 200,
-    description: 'Price set retrieved',
-    type: VariantPriceSetDto,
-  })
+  @ApiQuery({ name: 'variantId', description: 'Variant ID', required: false })
+  @ApiQuery({ name: 'variantIds', description: 'Comma-separated variant IDs for bulk lookup', required: false })
+  @ApiResponse({ status: 200, description: 'Price set retrieved', type: VariantPriceSetDto })
   @ApiResponse({ status: 404, description: 'Version or variant not found' })
   async getPriceSet(
     @Param('versionId') versionId: string,
-    @Query('variantId') variantId: string,
-  ): Promise<VariantPriceSetDto> {
+    @Query('variantId') variantId?: string,
+    @Query('variantIds') variantIdsParam?: string,
+  ): Promise<VariantPriceSetDto | { items: VariantPriceSetDto[] }> {
+    if (variantIdsParam) {
+      const ids = [...new Set(variantIdsParam.split(',').map((s) => s.trim()).filter(Boolean))];
+      if (ids.length === 0) {
+        throw new HttpException('variantIds must contain at least one ID', 400);
+      }
+      if (ids.length > 100) {
+        throw new HttpException('variantIds must not exceed 100 items', 400);
+      }
+      const items = await this.pricingService.getVariantPriceSetMany(versionId, ids);
+      return { items };
+    }
+
+    if (!variantId) {
+      throw new HttpException('Either variantId or variantIds query parameter is required', 400);
+    }
+
     return this.pricingService.getVariantPriceSet(versionId, variantId);
   }
 }

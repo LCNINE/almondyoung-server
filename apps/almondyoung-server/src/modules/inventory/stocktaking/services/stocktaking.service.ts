@@ -2,8 +2,9 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
-import { eq, and, sql } from 'drizzle-orm';
+import { count, desc, eq, and, gte, lte, sql } from 'drizzle-orm';
 import { CreateStocktakingSessionDto } from '../dto/create-session.dto';
+import { ListStocktakingSessionsQueryDto } from '../dto/list-sessions-query.dto';
 import { ScanLocationDto } from '../dto/scan-location.dto';
 import { ScanProductDto } from '../dto/scan-product.dto';
 import { UpdateCountDto } from '../dto/update-count.dto';
@@ -18,6 +19,36 @@ export class StocktakingService {
 
   private get db() {
     return this.dbService.db;
+  }
+
+  async listSessions(query: ListStocktakingSessionsQueryDto, tx?: DbTx) {
+    return this.inTx(async (tx) => {
+      const { stocktakingSessions } = wmsTables;
+      const { warehouseId, status, startDate, endDate, page = 1, limit = 20 } = query;
+      const offset = (page - 1) * limit;
+
+      const conditions = [
+        warehouseId ? eq(stocktakingSessions.warehouseId, warehouseId) : undefined,
+        status ? eq(stocktakingSessions.status, status) : undefined,
+        startDate ? gte(stocktakingSessions.createdAt, new Date(startDate)) : undefined,
+        endDate ? lte(stocktakingSessions.createdAt, new Date(new Date(endDate).setHours(23, 59, 59, 999))) : undefined,
+      ].filter(Boolean);
+
+      const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const [totalResult, items] = await Promise.all([
+        tx.select({ count: count() }).from(stocktakingSessions).where(where),
+        tx
+          .select()
+          .from(stocktakingSessions)
+          .where(where)
+          .orderBy(desc(stocktakingSessions.createdAt))
+          .limit(limit)
+          .offset(offset),
+      ]);
+
+      return { total: Number(totalResult[0]?.count ?? 0), page, limit, data: items };
+    }, tx);
   }
 
   /**
