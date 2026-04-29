@@ -40,3 +40,20 @@ export const useUserRoles = (userId: string) => {
     staleTime: 30 * 1000,
   });
 };
+
+/**
+ * 사용자 ID 목록으로 배치 조회 (작성자명 lookup용)
+ */
+export const useAdminUsersByIds = (ids: string[]) => {
+  const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
+  return useQuery({
+    queryKey: usersQueryKeys.batch(uniqueIds),
+    queryFn: () =>
+      userApi.getAdminUsers({
+        ids: uniqueIds.join(','),
+        limit: uniqueIds.length,
+      }),
+    enabled: uniqueIds.length > 0,
+    staleTime: 60 * 1000,
+  });
+};

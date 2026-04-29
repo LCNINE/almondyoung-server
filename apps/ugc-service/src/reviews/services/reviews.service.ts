@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { and, asc, count, desc, eq, exists, gte, inArray, isNull, notExists, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, exists, gte, inArray, isNull, ne, notExists, sql, type SQL } from 'drizzle-orm';
 import {
   reviewComments,
   reviewEligibilities,
@@ -12,9 +12,9 @@ import {
 import { CreateReviewDto } from '../dto/create-review.dto';
 import { CreateCommentDto } from '../dto/create-comment.dto';
 import { MyReviewListQueryDto } from '../dto/my-review-list-query.dto';
-import { ReviewListQueryDto } from '../dto/review-list-query.dto';
+import { AdminReviewListQueryDto, ReviewListQueryDto } from '../dto/review-list-query.dto';
 import { UpdateReviewDto } from '../dto/update-review.dto';
-import { type ReviewCommentEntity, type ReviewEntity, type ReviewWithMediaEntity } from '../types';
+import { type ReviewCommentEntity, type ReviewEntity, type ReviewStatus, type ReviewWithMediaEntity } from '../types';
 import { PaginatedResponseDto } from '@app/shared/dto';
 import { MAX_REVIEW_MEDIA_COUNT } from '../constants';
 import { ReviewRewardPolicyService } from './review-reward-policy.service';
@@ -581,6 +581,156 @@ export class ReviewsService {
         total,
         page,
         limit,
+      };
+    }, tx);
+  }
+
+  // ─── 관리자용 ───
+
+  async listAllForAdmin(
+    query: AdminReviewListQueryDto,
+    tx?: DbTransaction,
+  ): Promise<PaginatedResponseDto<ReviewWithMediaEntity>> {
+    return this.inTx(async (tx) => {
+      const page = query.page ?? 1;
+      const limit = query.limit ?? 20;
+      const offset = (page - 1) * limit;
+
+      const conditions: SQL[] = [];
+
+      if (query.status) {
+        conditions.push(eq(reviews.status, query.status));
+      } else {
+        conditions.push(ne(reviews.status, 'deleted'));
+      }
+
+      if (query.rating) {
+        if (query.rating === 'positive') {
+          conditions.push(inArray(reviews.rating, [4, 5]));
+        } else if (query.rating === 'negative') {
+          conditions.push(inArray(reviews.rating, [1, 2]));
+        } else {
+          conditions.push(eq(reviews.rating, Number(query.rating)));
+        }
+      }
+
+      if (query.productId) {
+        const productIdTerm = `%${query.productId}%`;
+        conditions.push(sql`${reviews.productId}::text ILIKE ${productIdTerm}`);
+      }
+
+      if (query.hasComment === 'true') {
+        conditions.push(
+          exists(
+            tx.select({ one: reviewComments.id }).from(reviewComments).where(eq(reviewComments.reviewId, reviews.id)),
+          ),
+        );
+      } else if (query.hasComment === 'false') {
+        conditions.push(
+          notExists(
+            tx.select({ one: reviewComments.id }).from(reviewComments).where(eq(reviewComments.reviewId, reviews.id)),
+          ),
+        );
+      }
+
+      if (query.q) {
+        const searchTerm = `%${query.q}%`;
+        conditions.push(
+          sql`(${reviews.content} ILIKE ${searchTerm} OR COALESCE(${reviews.legacyAuthorName}, '') ILIKE ${searchTerm})`,
+        );
+      }
+
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const [{ count: total }] = await tx.select({ count: count() }).from(reviews).where(whereClause);
+
+      const orderByClause = {
+        latest: desc(reviews.createdAt),
+        oldest: asc(reviews.createdAt),
+        rating_high: desc(reviews.rating),
+        rating_low: asc(reviews.rating),
+      }[query.sort ?? 'latest'];
+
+      const data = await tx
+        .select()
+        .from(reviews)
+        .where(whereClause)
+        .orderBy(orderByClause)
+        .limit(limit)
+        .offset(offset);
+
+      const reviewIds = data.map((review) => review.id);
+      const mediaMap = await this.fetchMediaFileIdsByReviewIds(reviewIds, tx);
+      const reactionCountMap = await this.fetchReactionCounts(reviewIds, tx);
+      const commentMap = await this.fetchCommentsByReviewIds(reviewIds, tx);
+
+      return {
+        data: data.map((review) => {
+          const counts = reactionCountMap.get(review.id) ?? { helpfulCount: 0, likeCount: 0, dislikeCount: 0 };
+          return {
+            ...review,
+            mediaFileIds: mediaMap.get(review.id) ?? [],
+            helpfulCount: counts.helpfulCount,
+            likeCount: counts.likeCount,
+            dislikeCount: counts.dislikeCount,
+            adminComment: commentMap.get(review.id) ?? null,
+          };
+        }),
+        total,
+        page,
+        limit,
+      };
+    }, tx);
+  }
+
+  async getReviewForAdmin(id: string, tx?: DbTransaction): Promise<ReviewWithMediaEntity> {
+    return this.inTx(async (tx) => {
+      const [review] = await tx.select().from(reviews).where(eq(reviews.id, id));
+
+      if (!review) {
+        throw new NotFoundException('Review not found');
+      }
+
+      const mediaFileIds = await this.fetchMediaFileIdsByReviewId(id, tx);
+      const reactionCountMap = await this.fetchReactionCounts([id], tx);
+      const counts = reactionCountMap.get(id) ?? { helpfulCount: 0, likeCount: 0, dislikeCount: 0 };
+      const commentMap = await this.fetchCommentsByReviewIds([id], tx);
+
+      return {
+        ...review,
+        mediaFileIds,
+        helpfulCount: counts.helpfulCount,
+        likeCount: counts.likeCount,
+        dislikeCount: counts.dislikeCount,
+        adminComment: commentMap.get(id) ?? null,
+      };
+    }, tx);
+  }
+
+  async updateStatus(id: string, status: ReviewStatus, tx?: DbTransaction): Promise<ReviewWithMediaEntity> {
+    return this.inTx(async (tx) => {
+      const [review] = await tx
+        .update(reviews)
+        .set({ status, updatedAt: new Date() })
+        .where(eq(reviews.id, id))
+        .returning();
+
+      if (!review) {
+        throw new NotFoundException('Review not found');
+      }
+
+      const mediaFileIds = await this.fetchMediaFileIdsByReviewId(id, tx);
+      const reactionCountMap = await this.fetchReactionCounts([id], tx);
+      const counts = reactionCountMap.get(id) ?? { helpfulCount: 0, likeCount: 0, dislikeCount: 0 };
+      const commentMap = await this.fetchCommentsByReviewIds([id], tx);
+
+      return {
+        ...review,
+        mediaFileIds,
+        helpfulCount: counts.helpfulCount,
+        likeCount: counts.likeCount,
+        dislikeCount: counts.dislikeCount,
+        adminComment: commentMap.get(id) ?? null,
       };
     }, tx);
   }

@@ -19,9 +19,14 @@ type OrderByOption = {
 type DataTableOrderByProps = {
   orderBy: OrderByOption[]
   prefix?: string
+  /**
+   * preset 모드: 각 옵션이 이미 정렬 방향을 포함한 단일 키(latest/oldest 등).
+   * asc/desc 토글 비활성, `order` 파라미터 미사용.
+   */
+  presetOnly?: boolean
 }
 
-export function DataTableOrderBy({ orderBy, prefix }: DataTableOrderByProps) {
+export function DataTableOrderBy({ orderBy, prefix, presetOnly }: DataTableOrderByProps) {
   const { get, add, deleteMany } = useSelectedParams({ prefix })
 
   const rawSort = get('sort')
@@ -32,6 +37,10 @@ export function DataTableOrderBy({ orderBy, prefix }: DataTableOrderByProps) {
   const currentLabel = orderBy.find((o) => o.key === sortValue)?.label
 
   const handleSelect = (key: string) => {
+    if (presetOnly) {
+      add('sort', key)
+      return
+    }
     if (sortValue === key) {
       add('order', orderValue === 'asc' ? 'desc' : 'asc')
     } else {
@@ -41,7 +50,7 @@ export function DataTableOrderBy({ orderBy, prefix }: DataTableOrderByProps) {
   }
 
   const handleClear = () => {
-    deleteMany(['sort', 'order'])
+    deleteMany(presetOnly ? ['sort'] : ['sort', 'order'])
   }
 
   return (
@@ -52,7 +61,11 @@ export function DataTableOrderBy({ orderBy, prefix }: DataTableOrderByProps) {
           {currentLabel ? (
             <>
               {currentLabel}
-              <span className="text-muted-foreground">{orderValue === 'asc' ? '↑' : '↓'}</span>
+              {!presetOnly && (
+                <span className="text-muted-foreground">
+                  {orderValue === 'asc' ? '↑' : '↓'}
+                </span>
+              )}
             </>
           ) : (
             '정렬'
@@ -67,7 +80,7 @@ export function DataTableOrderBy({ orderBy, prefix }: DataTableOrderByProps) {
             className={sortValue === opt.key ? 'font-medium' : ''}
           >
             {opt.label}
-            {sortValue === opt.key && (
+            {sortValue === opt.key && !presetOnly && (
               <span className="ml-auto text-muted-foreground">
                 {orderValue === 'asc' ? '↑' : '↓'}
               </span>

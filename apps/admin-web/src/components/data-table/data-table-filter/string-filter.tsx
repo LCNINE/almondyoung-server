@@ -49,7 +49,11 @@ export function StringFilter({ filter, open, onOpenChange, prefix }: StringFilte
       ) : (
         <PopoverAnchor />
       )}
-      <PopoverContent className="w-56 p-3" align="start">
+      <PopoverContent
+        className="w-56 p-3"
+        align="start"
+        onFocusOutside={(e) => e.preventDefault()}
+      >
         <div className="flex flex-col gap-2">
           <p className="text-xs font-medium">{filter.label}</p>
           <Input

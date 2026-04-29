@@ -40,6 +40,7 @@ interface AdminUsersQuery {
   roleName?: string;
   sort?: string;
   order?: string;
+  ids?: string;
 }
 
 interface AdminUserDto {
