@@ -164,8 +164,8 @@ export class AdminOperationsService {
     return this.adminMembersReader.findContractEventsByContractId(contractId);
   }
 
-  async setAutoRenewal(contractId: string, autoRenewal: boolean) {
-    return this.adminMembersReader.updateAutoRenewal(contractId, autoRenewal);
+  async setAutoRenewal(contractId: string, autoRenewal: boolean, adminId: string) {
+    return this.adminMembersReader.updateAutoRenewal(contractId, autoRenewal, adminId);
   }
 
   async getAllBillingHistory(query: AdminBillingHistoryQuery) {
