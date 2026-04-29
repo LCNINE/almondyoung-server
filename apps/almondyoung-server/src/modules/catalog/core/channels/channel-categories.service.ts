@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { NotFoundError, BadRequestError, ConflictError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
 import { ChannelCategory, NewChannelCategory, UpdateChannelCategory, DbTransaction } from '../../catalog.types';
 import { type PimSchema, channelCategories, salesChannels } from '../../schema/catalog.schema';
@@ -14,7 +15,7 @@ export class ChannelCategoriesService {
 
   async create(data: NewChannelCategory, tx?: DbTransaction): Promise<ChannelCategory> {
     if (!data.name) {
-      throw new Error('Category name is required');
+      throw new BadRequestError('Category name is required');
     }
 
     const client = this.getClient(tx);
@@ -64,7 +65,7 @@ export class ChannelCategoriesService {
 
   async findById(id: string, tx?: DbTransaction): Promise<ChannelCategory | null> {
     if (!id) {
-      throw new Error('Category ID is required');
+      throw new BadRequestError('Category ID is required');
     }
 
     const client = this.getClient(tx);
@@ -76,14 +77,14 @@ export class ChannelCategoriesService {
 
   async update(id: string, data: UpdateChannelCategory, tx?: DbTransaction): Promise<ChannelCategory> {
     if (!id) {
-      throw new Error('Category ID is required');
+      throw new BadRequestError('Category ID is required');
     }
 
     const client = this.getClient(tx);
 
     const existing = await this.findById(id, tx);
     if (!existing) {
-      throw new Error(`Category not found: ${id}`);
+      throw new NotFoundError(`Category not found: ${id}`);
     }
 
     const updateData = {
@@ -106,14 +107,14 @@ export class ChannelCategoriesService {
 
   async delete(id: string, tx?: DbTransaction): Promise<void> {
     if (!id) {
-      throw new Error('Category ID is required');
+      throw new BadRequestError('Category ID is required');
     }
 
     const client = this.getClient(tx);
 
     const existing = await this.findById(id, tx);
     if (!existing) {
-      throw new Error(`Category not found: ${id}`);
+      throw new NotFoundError(`Category not found: ${id}`);
     }
 
     const relatedChannels = await client
@@ -122,7 +123,7 @@ export class ChannelCategoriesService {
       .where(eq(salesChannels.categoryId, id));
 
     if (relatedChannels[0].count > 0) {
-      throw new Error(
+      throw new ConflictError(
         `Cannot delete category with existing channels. Found ${relatedChannels[0].count} related channels.`,
       );
     }

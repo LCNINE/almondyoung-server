@@ -7,9 +7,8 @@ import {
   Delete,
   Param,
   Body,
-  HttpException,
-  HttpStatus,
-  Logger,
+  BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
 import { User } from '@app/authorization';
@@ -22,8 +21,6 @@ import { ProductVersionMapper } from '../mappers/product-version.mapper';
 @ApiTags('Product Versions With Master')
 @Controller('masters/:masterId/versions')
 export class ProductMasterVersionsController {
-  private readonly logger = new Logger(ProductMasterVersionsController.name);
-
   constructor(
     private readonly productVersionsService: ProductVersionsService,
     private readonly productMastersService: ProductMastersService,
@@ -83,7 +80,7 @@ export class ProductMasterVersionsController {
     const versionDetail = await this.productVersionsService.getVersionDetail(versionId);
 
     if (versionDetail.masterId !== masterId) {
-      throw new HttpException('Version does not belong to the specified master', HttpStatus.BAD_REQUEST);
+      throw new BadRequestException('Version does not belong to the specified master');
     }
 
     return ProductVersionMapper.toDetailResponseDto(versionDetail);
@@ -116,10 +113,7 @@ export class ProductMasterVersionsController {
         const activeVersion = await this.productVersionsService.getActiveVersion(masterId);
         parentVersionId = activeVersion.id;
       } catch {
-        throw new HttpException(
-          'No active version found. Please provide parentVersionId explicitly.',
-          HttpStatus.BAD_REQUEST,
-        );
+        throw new BadRequestException('No active version found. Please provide parentVersionId explicitly.');
       }
     }
 
@@ -160,38 +154,13 @@ export class ProductMasterVersionsController {
     @Body() updateData: UpdateProductMasterDto,
     @User() user: { userId: string },
   ) {
-    try {
-      // 권한 확인 (draft 상태인지, 소유자인지)
-      const canModify = await this.productVersionsService.canUserModifyVersion(versionId, user.userId);
-
-      if (!canModify) {
-        throw new HttpException(
-          'Only draft versions can be modified. Create a new draft version to make changes.',
-          HttpStatus.FORBIDDEN,
-        );
-      }
-
-      const updatedVersion = await this.productMastersService.updateVersion(versionId, updateData);
-
-      const versionDetail = await this.productVersionsService.getVersionDetail(updatedVersion.id);
-      return ProductVersionMapper.toDetailResponseDto(versionDetail);
-    } catch (error) {
-      this.logger.error(`Failed to update version: ${error.message}`, error.stack);
-
-      if (error.status === HttpStatus.FORBIDDEN) {
-        throw error;
-      }
-      if (error.message.includes('not found')) {
-        throw new HttpException('Version not found', HttpStatus.NOT_FOUND);
-      }
-      if (error.message.includes('Only draft')) {
-        throw new HttpException(error.message, HttpStatus.FORBIDDEN);
-      }
-      if (error.message.includes('required')) {
-        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
-      }
-      throw new HttpException(`Failed to update version: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
+    const canModify = await this.productVersionsService.canUserModifyVersion(versionId, user.userId);
+    if (!canModify) {
+      throw new ForbiddenException('Only draft versions can be modified. Create a new draft version to make changes.');
     }
+    const updatedVersion = await this.productMastersService.updateVersion(versionId, updateData);
+    const versionDetail = await this.productVersionsService.getVersionDetail(updatedVersion.id);
+    return ProductVersionMapper.toDetailResponseDto(versionDetail);
   }
 
   @Patch(':versionId/publish')
@@ -209,19 +178,8 @@ export class ProductMasterVersionsController {
   @ApiResponse({ status: 404, description: '버전을 찾을 수 없음' })
   @ApiResponse({ status: 400, description: 'Draft 또는 Inactive 상태가 아닌 버전은 publish할 수 없음' })
   async publishVersion(@Param('masterId') masterId: string, @Param('versionId') versionId: string) {
-    try {
-      await this.productVersionsService.publishVersion(versionId);
-      return { message: 'Version published successfully' };
-    } catch (error) {
-      this.logger.error(`Failed to publish version: ${error.message}`, error.stack);
-      if (error.message.includes('not found')) {
-        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
-      }
-      if (error.message.includes('Only draft or inactive')) {
-        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
-      }
-      throw new HttpException(`Failed to publish version: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
-    }
+    await this.productVersionsService.publishVersion(versionId);
+    return { message: 'Version published successfully' };
   }
 
   @Get(':versionId/compare/:compareVersionId')
@@ -244,18 +202,7 @@ export class ProductMasterVersionsController {
     @Param('versionId') versionId: string,
     @Param('compareVersionId') compareVersionId: string,
   ): Promise<VersionDiffItemDto[]> {
-    try {
-      return await this.productVersionsService.compareVersions(versionId, compareVersionId);
-    } catch (error) {
-      this.logger.error(`Failed to compare versions: ${error.message}`, error.stack);
-      if (error.message.includes('not found')) {
-        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
-      }
-      if (error.message.includes('Cannot compare')) {
-        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
-      }
-      throw new HttpException(`Failed to compare versions: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
-    }
+    return this.productVersionsService.compareVersions(versionId, compareVersionId);
   }
 
   @Delete(':versionId')
@@ -269,22 +216,11 @@ export class ProductMasterVersionsController {
   @ApiResponse({ status: 400, description: 'Draft가 아닌 버전은 삭제 불가' })
   @ApiResponse({ status: 404, description: '버전을 찾을 수 없음' })
   async deleteDraftVersion(@Param('masterId') masterId: string, @Param('versionId') versionId: string) {
-    try {
-      await this.productVersionsService.deleteDraftVersion(versionId);
-      return {
-        success: true,
-        message: `Draft version ${versionId} deleted successfully`,
-      };
-    } catch (error) {
-      this.logger.error(`Failed to delete draft version: ${error.message}`, error.stack);
-      if (error.message.includes('not found')) {
-        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
-      }
-      if (error.message.includes('Only draft')) {
-        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
-      }
-      throw new HttpException(`Failed to delete draft version: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
-    }
+    await this.productVersionsService.deleteDraftVersion(versionId);
+    return {
+      success: true,
+      message: `Draft version ${versionId} deleted successfully`,
+    };
   }
 
   private _mapToResponseDto(node: any): VersionTreeResponseDto {

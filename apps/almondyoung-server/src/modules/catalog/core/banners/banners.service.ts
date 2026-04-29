@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { NotFoundError, ConflictError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
 import { type PimSchema, pimSchema } from '../../schema/catalog.schema';
 import { eq, and, isNull, sql, SQL, or, lte, gt } from 'drizzle-orm';
@@ -43,7 +44,7 @@ export class BannersService {
         .limit(1);
 
       if (existingGroup.length > 0) {
-        throw new Error(`Banner group with code "${dto.code}" already exists`);
+        throw new ConflictError(`Banner group with code "${dto.code}" already exists`);
       }
 
       const newBannerGroup: NewBannerGroup = dto;
@@ -63,7 +64,7 @@ export class BannersService {
         .limit(1);
 
       if (!group) {
-        throw new Error(`Banner group not found: ${id}`);
+        throw new NotFoundError(`Banner group not found: ${id}`);
       }
 
       return BannerMapper.toGroupDto(group);
@@ -79,7 +80,7 @@ export class BannersService {
         .limit(1);
 
       if (!group) {
-        throw new Error(`Banner group not found: ${code}`);
+        throw new NotFoundError(`Banner group not found: ${code}`);
       }
 
       const now = new Date();
@@ -136,7 +137,7 @@ export class BannersService {
         .returning();
 
       if (!updatedGroup) {
-        throw new Error(`Banner group not found: ${id}`);
+        throw new NotFoundError(`Banner group not found: ${id}`);
       }
 
       return BannerMapper.toGroupDto(updatedGroup);
@@ -159,7 +160,7 @@ export class BannersService {
         .returning();
 
       if (!deletedGroup) {
-        throw new Error(`Banner group not found: ${id}`);
+        throw new NotFoundError(`Banner group not found: ${id}`);
       }
     }, tx);
   }
@@ -173,7 +174,7 @@ export class BannersService {
         .limit(1);
 
       if (!group) {
-        throw new Error(`Banner group not found: ${dto.bannerGroupId}`);
+        throw new NotFoundError(`Banner group not found: ${dto.bannerGroupId}`);
       }
 
       const newBanner: NewBanner = {
@@ -198,7 +199,7 @@ export class BannersService {
         .limit(1);
 
       if (!banner) {
-        throw new Error(`Banner not found: ${id}`);
+        throw new NotFoundError(`Banner not found: ${id}`);
       }
 
       return BannerMapper.toDto(banner);
@@ -246,7 +247,7 @@ export class BannersService {
         .returning();
 
       if (!updatedBanner) {
-        throw new Error(`Banner not found: ${id}`);
+        throw new NotFoundError(`Banner not found: ${id}`);
       }
 
       return BannerMapper.toDto(updatedBanner);
@@ -264,7 +265,7 @@ export class BannersService {
         .returning();
 
       if (!deletedBanner) {
-        throw new Error(`Banner not found: ${id}`);
+        throw new NotFoundError(`Banner not found: ${id}`);
       }
     }, tx);
   }

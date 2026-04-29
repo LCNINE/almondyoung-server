@@ -119,24 +119,39 @@ Controller → Service → Reader/Manager → Repository
 ```
 
 **Rules (always apply):**
-- **Controller**: HTTP/WebSocket handling, DTO validation, auth guards, **Error → HTTP response conversion**. Never calls Repository directly.
-- **Service (Port)**: 2-3 lines, expresses business flow only. No validation logic. Throws `throw new Error("message")` on failure. Never imports `HttpException`, drizzle-orm, or Express types.
+- **Controller**: HTTP/WebSocket handling, DTO validation, auth guards. Never calls Repository directly. **No try/catch for error-to-status mapping** — the global filter handles it.
+- **Service (Port)**: 2-3 lines, expresses business flow only. No validation logic. Throws domain exceptions from `@app/shared` on failure. Never imports `HttpException`, drizzle-orm, or Express types.
 - **Reader/Manager/Creator (Implementation)**: All validation, business logic, and DB access lives here.
   - `xxx.reader.ts` — data queries (sits between Service and Repository)
   - `xxx.manager.ts` — validation + business logic + DB writes
   - `xxx.creator.ts` — entity creation
 - **Repository**: One per domain (not per table). DB access, external API calls, Kafka. Injects `DbService<typeof schema>`.
 
-**Error handling in controllers:**
+**Error handling:**
+
+Services throw domain exceptions from `@app/shared` — these are NOT `HttpException` and do not couple to Nest HTTP types:
 ```typescript
-try {
-  return await this.service.doSomething();
-} catch (e: any) {
-  const msg = (e?.message ?? '').toLowerCase();
-  if (msg.includes('not found')) throw new NotFoundException(e.message);
-  if (msg.match(/already|invalid|failed|required|exceed/)) throw new BadRequestException(e.message);
-  throw new InternalServerErrorException(e.message);
-}
+import { NotFoundError, BadRequestError, ConflictError } from '@app/shared';
+
+// Not found
+throw new NotFoundError(`Category not found: ${id}`);   // → 404
+// Bad input
+throw new BadRequestError('Category name is required'); // → 400
+// Conflict
+throw new ConflictError('Cannot delete: channels exist'); // → 409
+// Truly unexpected internal error — becomes 500
+throw new Error('DB returned empty result after insert');
+```
+
+`GlobalExceptionFilter` (`libs/shared/src/filters/http-exception.filter.ts`) maps `ApplicationException` subclasses to the correct HTTP status automatically.
+
+Controllers only throw Nest exceptions for **input validation at the controller boundary** (e.g., missing query params), and do not wrap service calls in try/catch:
+```typescript
+// Controller input guard — OK
+if (!warehouseId) throw new BadRequestException('warehouseId is required');
+
+// Simple delegation — no try/catch needed
+return this.service.doSomething(dto);
 ```
 
 ### Database Layer

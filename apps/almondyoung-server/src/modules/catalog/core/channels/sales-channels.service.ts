@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { NotFoundError, BadRequestError, ConflictError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
 import { SalesChannel, NewSalesChannel, UpdateSalesChannel, DbTransaction } from '../../catalog.types';
 import { type PimSchema, salesChannels, channelProducts, channelCategories } from '../../schema/catalog.schema';
@@ -20,7 +21,7 @@ export class SalesChannelsService {
 
   async createChannel(data: NewSalesChannel, tx?: DbTransaction): Promise<SalesChannelWithCategory> {
     if (!data.site || !data.name) {
-      throw new Error('Channel site and name are required');
+      throw new BadRequestError('Channel site and name are required');
     }
 
     return this.inTx(async (tx) => {
@@ -32,7 +33,7 @@ export class SalesChannelsService {
           .limit(1);
 
         if (category.length === 0) {
-          throw new Error(`Channel category not found: ${data.categoryId}`);
+          throw new NotFoundError(`Channel category not found: ${data.categoryId}`);
         }
       }
 
@@ -65,7 +66,7 @@ export class SalesChannelsService {
 
   async tryGetChannelById(channelId: string, tx?: DbTransaction): Promise<SalesChannelWithCategory | null> {
     if (!channelId) {
-      throw new Error('Channel ID is required');
+      throw new BadRequestError('Channel ID is required');
     }
 
     return this.inTx(async (tx) => {
@@ -177,7 +178,7 @@ export class SalesChannelsService {
     tx?: DbTransaction,
   ): Promise<SalesChannelWithCategory> {
     if (!channelId) {
-      throw new Error('Channel ID is required');
+      throw new BadRequestError('Channel ID is required');
     }
 
     return this.inTx(async (tx) => {
@@ -188,7 +189,7 @@ export class SalesChannelsService {
           .where(eq(channelCategories.id, data.categoryId));
 
         if (category.length === 0) {
-          throw new Error(`Channel category not found: ${data.categoryId}`);
+          throw new NotFoundError(`Channel category not found: ${data.categoryId}`);
         }
       }
 
@@ -214,13 +215,13 @@ export class SalesChannelsService {
 
   async deleteChannel(channelId: string, tx?: DbTransaction): Promise<void> {
     if (!channelId) {
-      throw new Error('Channel ID is required');
+      throw new BadRequestError('Channel ID is required');
     }
 
     return this.inTx(async (tx) => {
       const existing = await this.tryGetChannelById(channelId, tx);
       if (!existing) {
-        throw new Error(`Channel not found: ${channelId}`);
+        throw new NotFoundError(`Channel not found: ${channelId}`);
       }
       const relatedProducts = await tx
         .select({ count: count() })
@@ -228,7 +229,7 @@ export class SalesChannelsService {
         .where(eq(channelProducts.channelId, channelId));
 
       if (relatedProducts[0].count > 0) {
-        throw new Error(
+        throw new ConflictError(
           `Cannot delete channel with existing products. Found ${relatedProducts[0].count} related products.`,
         );
       }
@@ -242,7 +243,7 @@ export class SalesChannelsService {
 
   async setChannelActive(channelId: string, isActive: boolean, tx?: DbTransaction): Promise<SalesChannelWithCategory> {
     if (!channelId) {
-      throw new Error('Channel ID is required');
+      throw new BadRequestError('Channel ID is required');
     }
 
     return this.inTx(async (tx) => {
