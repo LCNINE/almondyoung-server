@@ -15,6 +15,8 @@ export const productQueryKeys = {
   masters: ['masters'] as const,
   mastersList: (query: Record<string, any>) =>
     [...productQueryKeys.masters, 'list', query] as const,
+  mastersBatch: (ids: string[]) =>
+    [...productQueryKeys.masters, 'batch', ids.slice().sort().join(',')] as const,
   master: (id: string) => [...productQueryKeys.masters, id] as const,
   masterPricePreview: (id: string) =>
     [...productQueryKeys.master(id), 'price-preview'] as const,

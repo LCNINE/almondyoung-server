@@ -11,9 +11,8 @@ import {
   HttpException,
   HttpStatus,
   HttpCode,
-  UseGuards,
 } from '@nestjs/common';
-import { JwtAuthGuard, User } from '@app/authorization';
+import { User } from '@app/authorization';
 import { DateMapper } from '../../../common/mappers';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { ProductMastersService } from '../services/product-masters.service';
@@ -137,6 +136,12 @@ export class ProductMastersController {
     type: String,
     description: '삭제된 상품 포함 여부 (기본값: false)',
   })
+  @ApiQuery({
+    name: 'ids',
+    required: false,
+    type: String,
+    description: 'master ID 목록 (UUID 콤마 구분, 예: id1,id2,id3). 지정 시 페이지네이션 무시하고 일치 항목만 반환',
+  })
   @ApiOkResponsePaginated(ProductSummaryDto, {
     description: '상품 목록 조회 성공',
   })
@@ -151,8 +156,14 @@ export class ProductMastersController {
       name?: string;
       mode?: 'active' | 'active-or-inactive';
       deleted?: string;
+      ids?: string;
     },
   ): Promise<PaginatedResponseDto<ProductSummaryDto>> {
+    const ids = query.ids
+      ?.split(',')
+      .map((id) => id.trim())
+      .filter((id) => id.length > 0);
+
     const filters = {
       page: query.page ? parseInt(query.page) : undefined,
       limit: query.limit ? parseInt(query.limit) : undefined,
@@ -161,6 +172,7 @@ export class ProductMastersController {
       name: query.name,
       mode: query.mode,
       deleted: query.deleted === 'true',
+      ids: ids && ids.length > 0 ? ids : undefined,
     };
 
     const result = await this.productMastersService.getMasters(filters);
@@ -223,7 +235,6 @@ export class ProductMastersController {
   }
 
   @Delete(':masterId')
-  @UseGuards(JwtAuthGuard)
   @ApiOperation({
     summary: '제품 마스터 소프트 삭제',
     description: `
@@ -255,7 +266,6 @@ export class ProductMastersController {
   }
 
   @Post(':masterId/restore')
-  @UseGuards(JwtAuthGuard)
   @HttpCode(200)
   @ApiOperation({
     summary: '제품 마스터 복원',
@@ -306,7 +316,6 @@ export class ProductMastersController {
   }
 
   @Delete(':id/permanent')
-  @UseGuards(JwtAuthGuard)
   @ApiOperation({
     summary: '제품 버전 영구 삭제',
     description: `

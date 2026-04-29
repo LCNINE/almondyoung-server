@@ -3,6 +3,7 @@ import { z } from 'zod';
 export const almondyoungEnvSchema = z.object({
   // Server
   PORT: z.string().regex(/^\d+$/).optional(),
+  NODE_ENV: z.string().optional(),
 
   // Database
   DATABASE_URL: z.string().url(),
@@ -14,7 +15,7 @@ export const almondyoungEnvSchema = z.object({
 
   // Kafka
   KAFKA_CLIENT_ID_PREFIX: z.string().optional(),
-  KAFKA_BROKERS: z.string().optional(),
+  KAFKA_BROKERS: z.string().min(1),
   KAFKA_GROUP_ID: z.string().optional(),
   KAFKA_API_KEY: z.string().optional(),
   KAFKA_API_SECRET: z.string().optional(),
@@ -23,6 +24,7 @@ export const almondyoungEnvSchema = z.object({
   ELASTICSEARCH_NODE: z.string().url().optional(),
   ELASTICSEARCH_USERNAME: z.string().optional(),
   ELASTICSEARCH_PASSWORD: z.string().optional(),
+  FILE_SERVICE_URL: z.string().url().optional(),
 
   // Goodsflow (Fulfillment)
   GOODSFLOW_API_URL: z.string().url().optional(),

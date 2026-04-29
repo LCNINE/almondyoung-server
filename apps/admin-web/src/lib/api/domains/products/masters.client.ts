@@ -23,7 +23,10 @@ function buildQueryString(query: Record<string, unknown>): string {
 
 export const mastersClient = {
   create: async (dto: CreateMasterDto): Promise<MasterDto> => {
-    const response = await client.post(`${ALMONDYOUNG_API_BASE_URL}/masters`, dto);
+    const response = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/masters`,
+      dto
+    );
     return response.data;
   },
 
@@ -42,12 +45,17 @@ export const mastersClient = {
   },
 
   get: async (id: string): Promise<MasterDto> => {
-    const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/masters/${id}`);
+    const response = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/masters/${id}`
+    );
     return response.data;
   },
 
   update: async (id: string, dto: UpdateMasterDto): Promise<MasterDto> => {
-    const response = await client.put(`${ALMONDYOUNG_API_BASE_URL}/masters/${id}`, dto);
+    const response = await client.put(
+      `${ALMONDYOUNG_API_BASE_URL}/masters/${id}`,
+      dto
+    );
     return response.data;
   },
 
@@ -68,7 +76,39 @@ export const mastersClient = {
   ): Promise<void> => {
     await client.put(`${ALMONDYOUNG_API_BASE_URL}/masters/${id}/pricing`, dto);
   },
+
+  listByIds: async (
+    ids: string[]
+  ): Promise<{
+    data: ProductSummary[];
+    total: number;
+    page: number;
+    limit: number;
+  }> => {
+    if (ids.length === 0) {
+      return { data: [], total: 0, page: 1, limit: 0 };
+    }
+
+    const response = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/masters?ids=${ids.join(',')}`
+    );
+
+    return response.data;
+  },
 };
+
+export interface ProductSummary {
+  masterId: string;
+  versionId: string;
+  name: string;
+  thumbnail: string | null;
+  brand: string | null;
+  isMembershipOnly: boolean;
+  status: string;
+  createdAt: string;
+  optionGroupNames: string[];
+  variantCount: number;
+}
 
 /**
  * 제품 마스터 목록 조회
@@ -90,7 +130,9 @@ export const getMasters = async (
  * GET /masters/{id}
  */
 export const getMaster = async (id: string): Promise<MasterDto> => {
-  const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/masters/${id}`);
+  const response = await client.get(
+    `${ALMONDYOUNG_API_BASE_URL}/masters/${id}`
+  );
   return response.data;
 };
 
@@ -102,7 +144,10 @@ export const updateMaster = async (
   id: string,
   data: UpdateMasterDto
 ): Promise<MasterDto> => {
-  const response = await client.put(`${ALMONDYOUNG_API_BASE_URL}/masters/${id}`, data);
+  const response = await client.put(
+    `${ALMONDYOUNG_API_BASE_URL}/masters/${id}`,
+    data
+  );
   return response.data;
 };
 
@@ -149,4 +194,5 @@ export const masters = {
   delete: deleteMaster,
   getPricePreview,
   updatePricingStrategy,
+  listByIds: mastersClient.listByIds,
 };

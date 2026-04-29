@@ -5,8 +5,9 @@ import { ReviewsService } from '../services/reviews.service';
 import { CreateReviewDto } from '../dto/create-review.dto';
 import { MyReviewListQueryDto } from '../dto/my-review-list-query.dto';
 import { RatingSummaryQueryDto, RatingSummaryResponseDto } from '../dto/rating-summary.dto';
-import { ReviewListQueryDto } from '../dto/review-list-query.dto';
+import { AdminReviewListQueryDto, ReviewListQueryDto } from '../dto/review-list-query.dto';
 import { UpdateReviewDto } from '../dto/update-review.dto';
+import { UpdateReviewStatusDto } from '../dto/update-review-status.dto';
 import { CommentResponseDto } from '../dto/comment-response.dto';
 import { CreateCommentDto } from '../dto/create-comment.dto';
 import { ReviewResponseDto } from '../dto/review-response.dto';
@@ -139,6 +140,71 @@ export class ReviewsController {
   })
   async ratingSummary(@Query() query: RatingSummaryQueryDto): Promise<RatingSummaryResponseDto> {
     return this.reviewsService.getRatingSummary(query.productId);
+  }
+
+  // ─── 관리자용 조회 ───
+
+  @Get('admin/reviews')
+  @RequireScopes('admin:ugc:read')
+  @ApiOperation({ summary: '전체 리뷰 목록 조회 (관리자)' })
+  @ApiQuery({
+    name: 'status',
+    description: '상태 필터 (미지정 시 deleted 제외)',
+    required: false,
+    enum: ['active', 'hidden', 'deleted'],
+  })
+  @ApiQuery({
+    name: 'rating',
+    description: '평점 필터 (1~5 또는 positive/negative)',
+    required: false,
+    enum: ['1', '2', '3', '4', '5', 'positive', 'negative'],
+  })
+  @ApiQuery({ name: 'productId', description: '상품 ID (UUID)', required: false, type: String })
+  @ApiQuery({
+    name: 'hasComment',
+    description: '어드민 댓글 작성 여부 ("true"/"false")',
+    required: false,
+    enum: ['true', 'false'],
+  })
+  @ApiQuery({
+    name: 'sort',
+    description: '정렬 옵션',
+    required: false,
+    enum: ['latest', 'oldest', 'rating_high', 'rating_low'],
+  })
+  @ApiQuery({ name: 'q', description: '검색어 (본문, 작성자명)', required: false, type: String })
+  @ApiQuery({ name: 'page', description: '페이지 번호', required: false, type: Number })
+  @ApiQuery({ name: 'limit', description: '페이지당 아이템 수', required: false, type: Number })
+  @ApiOkResponsePaginated(ReviewResponseDto, { description: '전체 리뷰 목록 조회 성공' })
+  async listReviewsForAdmin(@Query() query: AdminReviewListQueryDto): Promise<PaginatedResponseDto<ReviewResponseDto>> {
+    const result = await this.reviewsService.listAllForAdmin(query);
+    return {
+      ...result,
+      data: result.data.map(ReviewMapper.toResponse),
+    };
+  }
+
+  @Get('admin/reviews/:id')
+  @RequireScopes('admin:ugc:read')
+  @ApiOperation({ summary: '리뷰 상세 조회 (관리자)' })
+  @ApiParam({ name: 'id', description: '리뷰 ID (UUID)' })
+  @ApiResponse({ status: HttpStatus.OK, description: '리뷰 상세 조회 성공', type: ReviewResponseDto })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: '리뷰를 찾을 수 없음' })
+  async getReviewForAdmin(@Param('id') id: string): Promise<ReviewResponseDto> {
+    const review = await this.reviewsService.getReviewForAdmin(id);
+    return ReviewMapper.toResponse(review);
+  }
+
+  @Patch('admin/reviews/:id/status')
+  @RequireScopes('admin:ugc:modify')
+  @ApiOperation({ summary: '리뷰 상태 변경 (활성/숨김/삭제)' })
+  @ApiParam({ name: 'id', description: '리뷰 ID (UUID)' })
+  @ApiBody({ type: UpdateReviewStatusDto })
+  @ApiResponse({ status: HttpStatus.OK, description: '상태 변경 성공', type: ReviewResponseDto })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: '리뷰를 찾을 수 없음' })
+  async updateReviewStatus(@Param('id') id: string, @Body() dto: UpdateReviewStatusDto): Promise<ReviewResponseDto> {
+    const review = await this.reviewsService.updateStatus(id, dto.status);
+    return ReviewMapper.toResponse(review);
   }
 
   @Patch(':id')
