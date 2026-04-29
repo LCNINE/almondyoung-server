@@ -9,6 +9,7 @@ export class HealthController {
   constructor(private readonly healthService: HealthService) {}
 
   @Get()
+  @Public()
   @ApiOperation({
     summary: '\uc804\uccb4 \ud5ec\uc2a4\uccb4\ud06c',
     description: 'WMS \uc11c\ube44\uc2a4\uc758 \uc804\uccb4 \uc0c1\ud0dc\ub97c \ud655\uc778\ud569\ub2c8\ub2e4.',
@@ -20,6 +21,7 @@ export class HealthController {
   }
 
   @Get('ready')
+  @Public()
   @ApiOperation({
     summary: '\uc900\ube44\uc0c1\ud0dc \ud655\uc778',
     description:
@@ -32,6 +34,7 @@ export class HealthController {
   }
 
   @Get('live')
+  @Public()
   @ApiOperation({
     summary: '\uc0dd\uc874\uc0c1\ud0dc \ud655\uc778',
     description: '\uc11c\ube44\uc2a4\uac00 \uc0b4\uc544\uc788\ub294\uc9c0 \ud655\uc778\ud569\ub2c8\ub2e4.',

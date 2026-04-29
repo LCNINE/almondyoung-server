@@ -9,10 +9,9 @@ import {
   Query,
   HttpCode,
   HttpStatus,
-  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
-import { JwtAuthGuard, User } from '@app/authorization';
+import { User } from '@app/authorization';
 import { PurchaseOrderService } from '../services/purchase-order.service';
 import {
   CreatePurchaseOrderDto,
@@ -54,7 +53,6 @@ export class PurchaseOrderController {
   }
 
   @Post('from-cart')
-  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: '장바구니에서 발주 생성' })
   @ApiResponse({
     status: 201,
@@ -95,7 +93,6 @@ export class PurchaseOrderController {
   // ========== 발주대기리스트 (Cart) 관리 ==========
 
   @Post('cart')
-  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: '발주대기리스트에 아이템 추가' })
   @ApiResponse({
     status: 201,
@@ -106,7 +103,6 @@ export class PurchaseOrderController {
   }
 
   @Get('cart')
-  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: '발주대기리스트 조회' })
   @ApiQuery({ name: 'type', enum: PurchaseOrderType, required: false })
   async getCartItems(
@@ -117,7 +113,6 @@ export class PurchaseOrderController {
   }
 
   @Put('cart/:itemId')
-  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: '발주대기리스트 아이템 수정' })
   @ApiResponse({
     status: 200,
@@ -132,7 +127,6 @@ export class PurchaseOrderController {
   }
 
   @Delete('cart/:itemId')
-  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: '발주대기리스트에서 아이템 제거' })
   @ApiResponse({
     status: 204,
@@ -144,7 +138,6 @@ export class PurchaseOrderController {
   }
 
   @Delete('cart')
-  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: '발주대기리스트 비우기' })
   @ApiQuery({ name: 'type', enum: PurchaseOrderType, required: false })
   @ApiResponse({
