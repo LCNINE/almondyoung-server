@@ -10,10 +10,9 @@ import {
   HttpException,
   HttpStatus,
   Logger,
-  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
-import { JwtAuthGuard, User } from '@app/authorization';
+import { User } from '@app/authorization';
 import { ProductVersionsService } from '../services/product-versions.service';
 import { ProductMastersService } from '../services/product-masters.service';
 import { CreateDraftVersionDto, VersionTreeResponseDto, VersionDiffItemDto } from '../dto/versions';
@@ -91,7 +90,6 @@ export class ProductMasterVersionsController {
   }
 
   @Post()
-  @UseGuards(JwtAuthGuard)
   @ApiOperation({
     summary: '새 Draft 버전 생성',
     description: `기존 버전을 기반으로 새로운 draft 버전을 생성합니다.
@@ -138,7 +136,6 @@ export class ProductMasterVersionsController {
   }
 
   @Put(':versionId')
-  @UseGuards(JwtAuthGuard)
   @ApiOperation({
     summary: 'Draft 버전 수정',
     description: 'Draft 상태의 버전을 수정합니다. Active 또는 Inactive 상태의 버전은 수정할 수 없습니다.',
