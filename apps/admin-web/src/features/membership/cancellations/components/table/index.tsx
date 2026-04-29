@@ -1,8 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { createColumnHelper } from '@tanstack/react-table';
-import { useMemo } from 'react';
 import { useMembershipMembers } from '@/lib/services/membership';
 import { useMemberUserSearch } from '@/hooks/use-member-user-search';
 import { useMembershipMemberTableQuery } from '@/hooks/table/query/use-membership-member-table-query';
@@ -10,6 +9,7 @@ import { useDataTable } from '@/hooks/use-data-table';
 import { DataTable } from '@/components/data-table';
 import { AdminMemberListItem } from '@/lib/api/domains/membership';
 import { MembershipMemberDetailDialog } from '@/features/membership/members/components/detail-dialog';
+import { useUserNames } from '@/hooks/use-user-names';
 import Link from 'next/link';
 
 const PAGE_SIZE = 20;
@@ -22,7 +22,7 @@ function getPlanLabel(durationDays: number): string {
   return `${durationDays}일`;
 }
 
-function useColumns(onEdit?: (row: AdminMemberListItem) => void) {
+function useColumns(onEdit?: (row: AdminMemberListItem) => void, userMap: Record<string, string> = {}) {
   return useMemo(
     () => [
       columnHelper.accessor('userId', {
@@ -41,7 +41,11 @@ function useColumns(onEdit?: (row: AdminMemberListItem) => void) {
       columnHelper.display({
         id: 'name',
         header: '성명',
-        cell: () => <span className="text-sm text-muted-foreground">-</span>,
+        cell: ({ row }) => (
+          <span className="text-sm">
+            {userMap[row.original.userId] ?? <span className="text-muted-foreground">-</span>}
+          </span>
+        ),
       }),
       columnHelper.accessor('tierCode', {
         header: '플랜',
@@ -81,7 +85,7 @@ function useColumns(onEdit?: (row: AdminMemberListItem) => void) {
         ),
       }),
     ],
-    [onEdit],
+    [onEdit, userMap],
   );
 }
 
@@ -92,14 +96,16 @@ export function CancellationsTable() {
   const { resolvedUserIds, isSearchingUsers } = useMemberUserSearch(memberQ);
 
   const membershipQuery = memberQ && resolvedUserIds !== null
-    ? { ...query, q: undefined, userIds: resolvedUserIds, status: 'CANCELLED' }
-    : { ...query, status: 'CANCELLED' };
+    ? { ...query, q: undefined, userIds: resolvedUserIds, status: 'CANCELLED' as const }
+    : { ...query, status: 'CANCELLED' as const };
 
   const { data, isLoading, isFetching } = useMembershipMembers(membershipQuery, {
     enabled: !memberQ || (Array.isArray(resolvedUserIds) && resolvedUserIds.length > 0),
   });
 
-  const columns = useColumns(setSelectedMember);
+  const userIds = useMemo(() => data?.data.map((m) => m.userId) ?? [], [data?.data]);
+  const userMap = useUserNames(userIds);
+  const columns = useColumns(setSelectedMember, userMap);
 
   const { table } = useDataTable({
     data: data?.data ?? [],

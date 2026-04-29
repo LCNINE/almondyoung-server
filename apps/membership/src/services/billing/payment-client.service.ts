@@ -204,6 +204,23 @@ export class PaymentClientService {
     );
   }
 
+  async refundByIntent(
+    intentId: string,
+    amount: number,
+    reasonCode?: string,
+    reasonMessage?: string,
+  ): Promise<void> {
+    const { url: walletApiUrl, key: walletApiKey } = this.getWalletConfig();
+
+    await firstValueFrom(
+      this.httpService.post(
+        `${walletApiUrl}/v1/payment-intents/${intentId}/refund`,
+        { amount, reasonCode, reasonMessage },
+        { headers: { Authorization: `Bearer ${walletApiKey}`, 'Content-Type': 'application/json' } },
+      ),
+    );
+  }
+
   async revokeBillingAgreement(contractId: string): Promise<void> {
     const { url: walletApiUrl, key: walletApiKey } = this.getWalletConfig();
 

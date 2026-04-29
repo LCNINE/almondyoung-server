@@ -152,16 +152,19 @@ export class PlanService {
 
   /**
    * 플랜 비활성화 (관리자용)
-   *
-   * ✅ 흐름만 표현: "플랜 조회 → 플랜 비활성화"
    */
   async deactivatePlan(planId: string, reason: string, adminId: string) {
-    // 플랜 존재 확인
     const existingPlan = await this.planReader.findPlanByIdAny(planId);
-    if (!existingPlan) {
-      throw new Error('Plan not found');
-    }
-
+    if (!existingPlan) throw new Error('Plan not found');
     return this.planManager.deactivatePlan(planId, adminId);
+  }
+
+  /**
+   * 플랜 활성화 (관리자용)
+   */
+  async activatePlan(planId: string, adminId: string) {
+    const existingPlan = await this.planReader.findPlanByIdAny(planId);
+    if (!existingPlan) throw new Error('Plan not found');
+    return this.planManager.activatePlan(planId, adminId);
   }
 }

@@ -17,6 +17,8 @@ export interface AdminMembersQuery {
   userIds?: string[];
   dateFrom?: string;
   dateTo?: string;
+  /** date field for range filter — only meaningful when status=CANCELLED */
+  dateCriteria?: 'createdAt' | 'cancelledAt';
 }
 
 export interface AdminMemberListItem {
@@ -123,7 +125,7 @@ export class AdminMembersReader {
   ) {}
 
   async findAllWithDetails(query: AdminMembersQuery): Promise<AdminMembersResponse> {
-    const { page = 1, limit = 20, status, q, userIds, dateFrom, dateTo } = query;
+    const { page = 1, limit = 20, status, q, userIds, dateFrom, dateTo, dateCriteria = 'createdAt' } = query;
     const offset = (page - 1) * limit;
 
     const baseConditions: SQL[] = [];
@@ -136,12 +138,16 @@ export class AdminMembersReader {
       baseConditions.push(inArray(schema.subscriptionContracts.userId, userIds));
     }
 
+    const dateField = dateCriteria === 'cancelledAt'
+      ? schema.subscriptionContracts.cancelledAt
+      : schema.subscriptionContracts.createdAt;
+
     if (dateFrom) {
-      baseConditions.push(gte(schema.subscriptionContracts.createdAt, new Date(dateFrom)));
+      baseConditions.push(gte(dateField, new Date(dateFrom)));
     }
 
     if (dateTo) {
-      baseConditions.push(lte(schema.subscriptionContracts.createdAt, endOfDay(new Date(dateTo))));
+      baseConditions.push(lte(dateField, endOfDay(new Date(dateTo))));
     }
 
     // Status-specific contract conditions

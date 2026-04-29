@@ -153,3 +153,32 @@ export const useForceCancelSubscription = () => {
     },
   });
 };
+
+export const useActivatePlan = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (planId: string) => membershipApi.activatePlan(planId),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: membershipQueryKeys.tiersWithPlans() }); },
+  });
+};
+
+export const useAdminSubscribeUser = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { userId: string; planId: string; billingMode: 'one_time' | 'recurring' }) =>
+      membershipApi.adminSubscribeUser(body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: membershipQueryKeys.members() });
+    },
+  });
+};
+
+export const useRetryBilling = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (contractId: string) => membershipApi.retryBilling(contractId),
+    onSuccess: (_, contractId) => {
+      queryClient.invalidateQueries({ queryKey: membershipQueryKeys.billingEvents(contractId) });
+    },
+  });
+};
