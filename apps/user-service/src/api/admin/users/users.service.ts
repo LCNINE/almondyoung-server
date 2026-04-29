@@ -29,6 +29,7 @@ export class UsersService {
     roleName?: string;
     sort?: 'createdAt' | 'username' | 'email' | 'lastActivityAt';
     order?: 'asc' | 'desc';
+    ids?: string;
     tx?: DbTransaction;
   }): Promise<{
     data: UserWithRoles[];
@@ -38,13 +39,24 @@ export class UsersService {
   }> {
     try {
       const client = this.getClient(filters?.tx);
+      const idList = filters?.ids
+        ?.split(',')
+        .map((id) => id.trim())
+        .filter((id) => id.length > 0);
+      const hasIdFilter = !!idList && idList.length > 0;
+
       const page = filters?.page || 1;
-      const limit = Math.min(filters?.limit || 20, 1000);
+      const limit = hasIdFilter
+        ? Math.min(Math.max(idList!.length, filters?.limit || 20), 1000)
+        : Math.min(filters?.limit || 20, 1000);
       const offset = (page - 1) * limit;
       const sortBy = filters?.sort || 'createdAt';
       const sortOrder = filters?.order || 'desc';
 
       const conditions = [] as any[];
+      if (hasIdFilter) {
+        conditions.push(inArray(schema.users.id, idList!));
+      }
       if (filters?.q) {
         const searchTerm = `%${filters.q}%`;
         conditions.push(

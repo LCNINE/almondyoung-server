@@ -21,6 +21,8 @@ const timestampColumns = {
 
 export const reviewRewardPolicyTypeEnum = pgEnum('review_reward_policy_type', ['TEXT', 'PHOTO']);
 
+export const reviewStatusEnum = pgEnum('review_status', ['active', 'hidden', 'deleted']);
+
 export const reviewRewardPolicies = pgTable(
   'review_reward_policies',
   {
@@ -53,7 +55,7 @@ export const reviews = pgTable(
     rating: integer('rating').notNull(),
     content: text('content').notNull(),
 
-    status: varchar('status', { length: 20 }).notNull().default('active'),
+    status: reviewStatusEnum('status').notNull().default('active'),
 
     sourceSystem: varchar('source_system', { length: 30 }).notNull().default('almondyoung'),
 
