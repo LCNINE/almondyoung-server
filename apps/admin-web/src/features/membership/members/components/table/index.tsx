@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useMembershipMembers } from '@/lib/services/membership';
 import { useMemberUserSearch } from '@/hooks/use-member-user-search';
 import { useDataTable } from '@/hooks/use-data-table';
@@ -9,6 +9,7 @@ import { useMembershipMemberTableQuery } from '@/hooks/table/query/use-membershi
 import { DataTable } from '@/components/data-table';
 import { AdminMemberListItem } from '@/lib/api/domains/membership';
 import { MembershipMemberDetailDialog } from '../detail-dialog';
+import { useUserNames } from '@/hooks/use-user-names';
 
 const PAGE_SIZE = 20;
 
@@ -28,7 +29,9 @@ export function MembershipMemberTable() {
     enabled: !memberQ || (Array.isArray(resolvedUserIds) && resolvedUserIds.length > 0),
   });
 
-  const columns = useMembershipMemberTableColumns({ onEdit: setSelectedMember });
+  const userIds = useMemo(() => data?.data.map((m) => m.userId) ?? [], [data?.data]);
+  const userMap = useUserNames(userIds);
+  const columns = useMembershipMemberTableColumns({ onEdit: setSelectedMember, userMap });
 
   const { table } = useDataTable({
     data: data?.data ?? [],

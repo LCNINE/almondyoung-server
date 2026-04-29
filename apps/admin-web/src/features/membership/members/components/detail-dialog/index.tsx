@@ -36,7 +36,9 @@ import {
   useSetAutoRenewal,
   useAdjustEntitlement,
   useForceCancelSubscription,
+  useRetryBilling,
 } from '@/lib/services/membership';
+import { useUserNames } from '@/hooks/use-user-names';
 
 interface MembershipMemberDetailDialogProps {
   member: AdminMemberListItem | null;
@@ -130,14 +132,18 @@ function ForceCancelDialog({ open, onClose, contractId, onSuccess }: ForceCancel
       }
     }
     try {
-      await forceCancelMutation.mutateAsync({
+      const result = await forceCancelMutation.mutateAsync({
         contractId,
         reason: reason.trim(),
         refundType,
         refundAmount: refundType === 'PARTIAL' ? Number(refundAmount) : undefined,
         adminNote: adminNote.trim() || undefined,
       });
-      toast.success('구독이 즉시 취소되었습니다.');
+      if (result.refundStatus === 'FAILED') {
+        toast.warning('구독은 취소되었으나 환불 처리에 실패했습니다. 수동으로 환불해주세요.');
+      } else {
+        toast.success('구독이 즉시 취소되었습니다.');
+      }
       onSuccess();
       handleClose();
     } catch {
@@ -441,48 +447,71 @@ function PlanTab({ userId, contractId }: { userId: string; contractId: string })
 // 세번째 탭: 결제 기록
 function BillingTab({ contractId }: { contractId: string }) {
   const { data: events, isLoading } = useMemberBillingEvents(contractId);
+  const retryBillingMutation = useRetryBilling();
+
+  const handleRetry = async () => {
+    try {
+      await retryBillingMutation.mutateAsync(contractId);
+      toast.success('결제 재시도 요청이 전송되었습니다.');
+    } catch {
+      toast.error('결제 재시도에 실패했습니다.');
+    }
+  };
 
   if (isLoading) return <Skeleton className="h-48 w-full" />;
 
   return (
-    <div className="rounded-lg border">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>일시</TableHead>
-            <TableHead>상태</TableHead>
-            <TableHead className="text-right">결제액</TableHead>
-            <TableHead>오류</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {!events?.length ? (
+    <div className="space-y-3">
+      <div className="flex justify-end">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handleRetry}
+          disabled={retryBillingMutation.isPending}
+          className="h-7 text-xs"
+        >
+          {retryBillingMutation.isPending ? '처리 중...' : '결제 수동 재시도'}
+        </Button>
+      </div>
+      <div className="rounded-lg border">
+        <Table>
+          <TableHeader>
             <TableRow>
-              <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                결제 기록이 없습니다.
-              </TableCell>
+              <TableHead>일시</TableHead>
+              <TableHead>상태</TableHead>
+              <TableHead className="text-right">결제액</TableHead>
+              <TableHead>오류</TableHead>
             </TableRow>
-          ) : (
-            events.map((ev) => {
-              const { label, variant } = getBillingEventLabel(ev.eventType);
-              return (
-                <TableRow key={ev.id}>
-                  <TableCell className="text-xs">{formatDateTime(ev.createdAt)}</TableCell>
-                  <TableCell>
-                    <Badge variant={variant}>{label}</Badge>
-                  </TableCell>
-                  <TableCell className="text-right text-sm">
-                    {ev.amount != null ? `${ev.amount.toLocaleString()}원` : '-'}
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {ev.errorCode ?? '-'}
-                  </TableCell>
-                </TableRow>
-              );
-            })
-          )}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {!events?.length ? (
+              <TableRow>
+                <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                  결제 기록이 없습니다.
+                </TableCell>
+              </TableRow>
+            ) : (
+              events.map((ev) => {
+                const { label, variant } = getBillingEventLabel(ev.eventType);
+                return (
+                  <TableRow key={ev.id}>
+                    <TableCell className="text-xs">{formatDateTime(ev.createdAt)}</TableCell>
+                    <TableCell>
+                      <Badge variant={variant}>{label}</Badge>
+                    </TableCell>
+                    <TableCell className="text-right text-sm">
+                      {ev.amount != null ? `${ev.amount.toLocaleString()}원` : '-'}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {ev.errorCode ?? '-'}
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   );
 }
@@ -534,6 +563,7 @@ export function MembershipMemberDetailDialog({
   onClose,
 }: MembershipMemberDetailDialogProps) {
   const { data: detail } = useMemberDetail(member?.userId ?? null);
+  const userNames = useUserNames(member?.userId ? [member.userId] : []);
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -553,7 +583,7 @@ export function MembershipMemberDetailDialog({
             </div>
             <div className="flex gap-2">
               <span className="text-muted-foreground w-24 shrink-0">성함</span>
-              <span className="font-medium">-</span>
+              <span className="font-medium">{(member?.userId && userNames[member.userId]) || '-'}</span>
             </div>
             <div className="flex gap-2">
               <span className="text-muted-foreground w-24 shrink-0">최초 등록일</span>

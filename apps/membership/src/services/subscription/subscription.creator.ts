@@ -43,19 +43,19 @@ export class SubscriptionCreator {
     tier: Tier,
     paymentRefs: CreateSubscriptionPaymentRefs = {},
     billingMode: 'one_time' | 'recurring' = 'one_time',
+    skipTrial = false,
   ): Promise<{ contractId: string; entitlementId: string }> {
     return await this.dbService.db.transaction(async (tx) => {
       const now = new Date();
       const startsAt = now;
 
-      // 무료체험은 정기결제 첫 구독자에게만 적용
+      // 무료체험은 정기결제 첫 구독자에게만 적용 (관리자 생성 시 skipTrial=true)
       let effectiveTrialDays = 0;
-      if (billingMode === 'recurring') {
+      if (billingMode === 'recurring' && !skipTrial) {
         const [isFirstTime, trialReuseEnabled] = await Promise.all([
           this.isFirstTimeSubscriber(userId),
           this.policyService.getBooleanPolicy('TRIAL_REUSE_PREVENTION', 'enabled', plan.tierId, true),
         ]);
-        // plan.trialDays를 직접 사용 (어드민에서 플랜별 설정한 값 반영)
         effectiveTrialDays = (isFirstTime || !trialReuseEnabled) ? (plan.trialDays || 0) : 0;
       }
 

@@ -6,6 +6,7 @@ import { EntitlementService } from './entitlement.service';
 import { PauseService } from './pause.service';
 import { AdminMembersReader, AdminMembersQuery, BillingEventItem, AdminBillingHistoryQuery } from './admin/admin-members.reader';
 import { PaymentClientService } from './billing/payment-client.service';
+import { RecurringBillingService } from './billing/recurring-billing.service';
 import {
   CreateTierRequest,
   UpdateTierRequest,
@@ -35,6 +36,7 @@ export class AdminOperationsService {
     private readonly pauseService: PauseService,
     private readonly adminMembersReader: AdminMembersReader,
     private readonly paymentClientService: PaymentClientService,
+    private readonly recurringBillingService: RecurringBillingService,
   ) {}
 
   // =================================================================
@@ -61,6 +63,18 @@ export class AdminOperationsService {
 
   async deactivatePlan(planId: string, dto: DeactivatePlanRequest, adminId: string) {
     return this.planService.deactivatePlan(planId, dto.reason, adminId);
+  }
+
+  async activatePlan(planId: string, adminId: string) {
+    return this.planService.activatePlan(planId, adminId);
+  }
+
+  async adminSubscribeUser(userId: string, planId: string, billingMode: 'one_time' | 'recurring') {
+    return this.subscriptionService.adminCreateSubscription(userId, planId, billingMode);
+  }
+
+  async retryBillingForContract(contractId: string) {
+    return this.recurringBillingService.retryContractBilling(contractId);
   }
 
   async getAllTiersWithPlans() {

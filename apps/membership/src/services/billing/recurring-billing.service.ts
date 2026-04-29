@@ -151,8 +151,14 @@ export class RecurringBillingService {
   }
 
   /**
-   * 유틸리티: 비동기 대기
+   * 특정 계약에 대해 결제 즉시 재시도 (관리자용)
    */
+  async retryContractBilling(contractId: string): Promise<BillingResult> {
+    const contract = await this.billingReader.findContractById(contractId);
+    if (!contract) throw new Error(`Contract not found: ${contractId}`);
+    return this.billingManager.processSingleBilling(contract);
+  }
+
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
