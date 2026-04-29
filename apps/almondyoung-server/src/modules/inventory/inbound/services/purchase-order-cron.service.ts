@@ -43,6 +43,7 @@ export class PurchaseOrderCronService {
         .where(
           and(
             eq(wmsTables.purchaseOrders.status, 'created'),
+            eq(wmsTables.purchaseOrders.auditStatus, 'approved'),
             sql`DATE(${wmsTables.purchaseOrders.expectedArrival}) = ${todayDateOnly}`,
           ),
         );

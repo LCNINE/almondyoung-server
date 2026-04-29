@@ -33,7 +33,7 @@ export const invoicesClient = {
   },
 
   ship: async (id: string): Promise<{ message: string }> => {
-    // ⚠️ status가 'printed'인 경우에만 성공. direct/self 방식은 ship 처리 경로 없음.
+    // goodsflow: 'printed' 상태만 허용. direct/self: 'issued' 또는 'printed' 상태에서 허용.
     const res = await client.put(`${BASE}/${encodeURIComponent(id)}/ship`);
     return res.data;
   },

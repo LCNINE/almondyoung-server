@@ -197,6 +197,7 @@ export const fulfillmentStatusEnum = pgEnum('fulfillment_status', [
   'forwarded',
 ]);
 export const fulfillmentModeEnum = pgEnum('fulfillment_mode', ['in_house', '3pl', 'drop_ship']);
+export const directShipStatusEnum = pgEnum('direct_ship_status', ['pending', 'forwarded', 'completed', 'canceled']);
 export const outboxStatusEnum = pgEnum('outbox_status', ['pending', 'published', 'failed']);
 
 // FOI 기반 확장 enums
@@ -1091,6 +1092,7 @@ export const fulfillmentOrders = pgTable('fulfillment_orders', {
   warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'set null' }),
   ownerId: uuid('owner_id').references(() => holders.id, { onDelete: 'set null' }),
   status: fulfillmentStatusEnum('status').notNull().default('created'),
+  directShipStatus: directShipStatusEnum('direct_ship_status'),
 
   // 배치 및 출고 관련 필드들
   batchId: uuid('batch_id').references(() => outboundBatches.id, { onDelete: 'set null' }),

@@ -366,27 +366,28 @@ export class ReturnService {
         }
 
         if (item.action === 'restock') {
-          // 재입고: return_default → 목표 위치로 이동
-          if (!item.targetLocationId) {
-            throw new BadRequestException(`Target location is required for restocking item ${item.returnItemId}`);
-          }
-
           if (!returnItem.locationId) {
-            throw new BadRequestException(`Return item ${item.returnItemId} has no current location`);
+            throw new BadRequestException(
+              `Return item ${item.returnItemId} has no current location. Receive the return first.`,
+            );
           }
 
-          // 창고 내 이동 (return_default → target location)
-          await this.commandService.moveInternal(
-            {
-              skuId: returnItem.skuId,
-              warehouseId: returnHeader.warehouseId,
-              fromLocationId: returnItem.locationId,
-              toLocationId: item.targetLocationId,
-              quantity: item.quantity,
-              reason: `RESTOCK: ${item.reason || 'QC passed'}`,
-            },
-            trx,
-          );
+          const toLocationId = item.targetLocationId ?? returnItem.locationId;
+
+          // targetLocationId가 현재 위치와 다를 때만 이동 (return_default 현위치 유지도 유효)
+          if (toLocationId !== returnItem.locationId) {
+            await this.commandService.moveInternal(
+              {
+                skuId: returnItem.skuId,
+                warehouseId: returnHeader.warehouseId,
+                fromLocationId: returnItem.locationId,
+                toLocationId,
+                quantity: item.quantity,
+                reason: `RESTOCK: ${item.reason || 'QC passed'}`,
+              },
+              trx,
+            );
+          }
 
           totalRestocked += item.quantity;
 

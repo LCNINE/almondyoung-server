@@ -2,7 +2,7 @@ import { Injectable, Logger, NotFoundException, BadRequestException, ConflictExc
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { DbService } from '@app/db';
-import { and, eq, inArray, isNull, desc, lt } from 'drizzle-orm';
+import { and, eq, inArray, isNull, desc, lt, sql } from 'drizzle-orm';
 
 export interface CreateOutboundBatchDto {
   warehouseId: string;
@@ -540,7 +540,16 @@ export class OutboundBatchService {
             isNull(wmsTables.fulfillmentOrders.batchId),
           ),
         )
-        .orderBy(desc(wmsTables.fulfillmentOrders.priority), desc(wmsTables.fulfillmentOrders.createdAt));
+        .orderBy(
+          // pgEnum 알파벳 정렬을 우회해 urgent→high→normal 명시 순서 보장
+          sql`CASE ${wmsTables.fulfillmentOrders.priority}
+                WHEN 'urgent' THEN 0
+                WHEN 'high'   THEN 1
+                WHEN 'normal' THEN 2
+                ELSE 3
+              END`,
+          desc(wmsTables.fulfillmentOrders.createdAt),
+        );
 
       return fulfillmentOrders
         .filter((fo) => fo.fulfillmentMode !== 'drop_ship')

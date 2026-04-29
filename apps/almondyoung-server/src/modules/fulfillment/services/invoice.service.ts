@@ -226,6 +226,7 @@ export class InvoiceService {
         .select({
           id: wmsTables.invoices.id,
           fulfillmentOrderId: wmsTables.invoices.fulfillmentOrderId,
+          issueMethod: wmsTables.invoices.issueMethod,
           status: wmsTables.invoices.status,
         })
         .from(wmsTables.invoices)
@@ -239,7 +240,9 @@ export class InvoiceService {
 
       if (invoice.status === 'shipped') return;
 
-      if (invoice.status !== 'printed') {
+      const isDirectOrSelf = invoice.issueMethod === 'direct' || invoice.issueMethod === 'self';
+      const allowedStatuses = isDirectOrSelf ? ['issued', 'printed'] : ['printed'];
+      if (!allowedStatuses.includes(invoice.status)) {
         throw new ConflictException(`Cannot ship invoice in status: ${invoice.status}`);
       }
 

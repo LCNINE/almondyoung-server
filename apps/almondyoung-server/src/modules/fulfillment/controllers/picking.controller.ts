@@ -78,7 +78,7 @@ export class PickingController {
   @ApiOperation({ summary: '개별 피킹 세션 조회' })
   @ApiParam({ name: 'foId', description: '주문처리 ID' })
   async getIndividualPickingSession(@Param('foId') fulfillmentOrderId: string) {
-    return this.pickingProcessService.startIndividualPicking(fulfillmentOrderId);
+    return this.pickingProcessService.getIndividualPickingSession(fulfillmentOrderId);
   }
 
   @Post('fulfillment-order-items/:foiId/pick')
