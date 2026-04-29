@@ -40,19 +40,113 @@ export const useSalesOrderItems = (orderId: string) => {
   });
 };
 
-// 출고 배치 관련 쿼리 (D2에서 구현 예정)
-export const useOutboundBatches = () => {
+// ===== 출고 배치 관련 쿼리 (D2) =====
+
+export const useOutboundBatches = (warehouseId?: string) => {
   return useQuery({
-    queryKey: orderQueryKeys.outboundBatches,
-    queryFn: () => Promise.resolve([]), // TODO: D2에서 outbound-batches 클라이언트로 교체
+    queryKey: orderQueryKeys.outboundBatchList(warehouseId),
+    queryFn: () => orders.outboundBatches.list(warehouseId),
   });
 };
 
 export const useOutboundBatch = (id: string) => {
   return useQuery({
     queryKey: orderQueryKeys.outboundBatch(id),
-    queryFn: () => Promise.resolve({ id }), // TODO: D2에서 교체
+    queryFn: () => orders.outboundBatches.get(id),
     enabled: !!id,
+  });
+};
+
+export const useOutboundBatchPickingList = (id: string) => {
+  return useQuery({
+    queryKey: orderQueryKeys.outboundBatchPickingList(id),
+    queryFn: () => orders.outboundBatches.getPickingList(id),
+    enabled: !!id,
+  });
+};
+
+export const useAvailableFulfillmentOrders = (warehouseId: string) => {
+  return useQuery({
+    queryKey: orderQueryKeys.availableFulfillmentOrders(warehouseId),
+    queryFn: () => orders.outboundBatches.getAvailableFulfillmentOrders(warehouseId),
+    enabled: !!warehouseId,
+  });
+};
+
+// ===== 직배송 관련 쿼리 (D2) =====
+
+export const useDirectShipDashboard = () => {
+  return useQuery({
+    queryKey: orderQueryKeys.directShipDashboard,
+    queryFn: () => orders.directShip.getDashboard(),
+  });
+};
+
+export const useDirectShipCompanies = () => {
+  return useQuery({
+    queryKey: orderQueryKeys.directShipCompanies,
+    queryFn: () => orders.directShip.getCompanies(),
+  });
+};
+
+export const useDirectShipOrders = (params?: {
+  companyName?: string;
+  status?: string;
+  warehouseId?: string;
+}) => {
+  return useQuery({
+    queryKey: orderQueryKeys.directShipOrders(params as Record<string, string>),
+    queryFn: () => orders.directShip.getOrders(params),
+  });
+};
+
+export const useDirectShipCompanySummary = (companyName: string) => {
+  return useQuery({
+    queryKey: orderQueryKeys.directShipCompanySummary(companyName),
+    queryFn: () => orders.directShip.getCompanySummary(companyName),
+    enabled: !!companyName,
+  });
+};
+
+// ===== 합포장 관련 쿼리 (D2) =====
+
+export const useConsolidationCandidates = (warehouseId: string) => {
+  return useQuery({
+    queryKey: orderQueryKeys.consolidationCandidates(warehouseId),
+    queryFn: () => orders.consolidation.getCandidates(warehouseId),
+    enabled: !!warehouseId,
+  });
+};
+
+export const useConsolidationLive = (warehouseId: string) => {
+  return useQuery({
+    queryKey: orderQueryKeys.consolidationLive(warehouseId),
+    queryFn: () => orders.consolidation.getLiveOpportunities(warehouseId),
+    enabled: !!warehouseId,
+  });
+};
+
+export const useConsolidationSavings = (warehouseId: string, days: number = 30) => {
+  return useQuery({
+    queryKey: orderQueryKeys.consolidationSavings(warehouseId, days),
+    queryFn: () => orders.consolidation.getSavingsProjection(warehouseId, days),
+    enabled: !!warehouseId,
+  });
+};
+
+export const useConsolidationRules = () => {
+  return useQuery({
+    queryKey: orderQueryKeys.consolidationRules,
+    queryFn: () => orders.consolidation.getRules(),
+  });
+};
+
+// ===== 위치 최적화 관련 쿼리 (D2) =====
+
+export const useLocationOptimizationZones = () => {
+  return useQuery({
+    queryKey: orderQueryKeys.locationOptimizationZones,
+    queryFn: () => orders.locationOptimization.getZones(),
   });
 };
 
@@ -222,18 +316,18 @@ export const useInvoice = (id: string) => {
   });
 };
 
-// 직접 배송 관련 쿼리 (D2에서 구현 예정)
+// 레거시 직접 배송 쿼리 (호환성)
 export const useDirectShips = () => {
   return useQuery({
     queryKey: orderQueryKeys.directShips,
-    queryFn: () => Promise.resolve([]), // TODO: D2에서 direct-ship 클라이언트로 교체
+    queryFn: () => orders.directShip.getOrders(),
   });
 };
 
 export const useDirectShip = (id: string) => {
   return useQuery({
     queryKey: orderQueryKeys.directShip(id),
-    queryFn: () => Promise.resolve({ id }), // TODO: D2에서 교체
+    queryFn: () => Promise.resolve({ id }),
     enabled: !!id,
   });
 };
