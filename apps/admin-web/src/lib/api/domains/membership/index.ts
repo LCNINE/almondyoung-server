@@ -247,11 +247,12 @@ export const membershipApi = {
       refundAmount?: number;
       adminNote?: string;
     },
-  ): Promise<void> => {
-    await client.post(
+  ): Promise<{ refundStatus: 'COMPLETED' | 'FAILED' | 'PENDING' | 'NOT_APPLICABLE' }> => {
+    const res = await client.post(
       `${MEMBERSHIP_SERVICE_BASE_URL}/admin/subscriptions/${encodeURIComponent(contractId)}/force-cancel`,
       body,
     );
+    return res.data;
   },
 
   activatePlan: async (planId: string): Promise<void> => {
