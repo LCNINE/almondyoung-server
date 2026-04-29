@@ -8,7 +8,7 @@ import {
 import { getCurrentSubscription, subscribeWithBillingMethod } from "@lib/api/membership"
 import type { BillingAgreementDto, BillingMethodDto } from "@lib/types/dto/wallet"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { MembershipPaymentMethodSkeleton } from "@/components/skeletons/page-skeletons"
 import { providerLabel } from "@lib/utils/billing-provider"
@@ -45,6 +45,8 @@ export default function MembershipPaymentMethodPage() {
   const planId = searchParams.get("planId")
   const redirect = searchParams.get("redirect")
   const isSubscribeFlow = redirect === "subscribe" && !!planId
+  // 카드 등록 후 subscribe flow로 돌아온 경우 — URL 정리 전에 캡처
+  const autoSubscribeOnLoad = useRef(isSubscribeFlow && searchParams.get("cardChanged") === "1")
 
   const [isLoading, setIsLoading] = useState(true)
   const [agreement, setAgreement] = useState<BillingAgreementDto | null>(null)
@@ -59,12 +61,14 @@ export default function MembershipPaymentMethodPage() {
 
   useEffect(() => {
     if (searchParams.get("cardChanged") === "1") {
-      toast.success("결제 수단이 변경되었습니다.")
+      if (!isSubscribeFlow) {
+        toast.success("결제 수단이 변경되었습니다.")
+      }
       const url = new URL(window.location.href)
       url.searchParams.delete("cardChanged")
       window.history.replaceState(null, "", url.toString())
     }
-  }, [searchParams])
+  }, [searchParams, isSubscribeFlow])
 
   useEffect(() => {
     async function load() {
@@ -133,7 +137,15 @@ export default function MembershipPaymentMethodPage() {
     window.location.href = `${walletWebUrl}/billing-change?${params}`
   }
 
-  if (isLoading) {
+  // 카드 등록 후 subscribe flow 복귀 시 자동 구독
+  useEffect(() => {
+    if (!autoSubscribeOnLoad.current || isLoading || otherMethods.length === 0) return
+    autoSubscribeOnLoad.current = false
+    handleSubscribeWithMethod(otherMethods[0].id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading, otherMethods])
+
+  if (isLoading || (autoSubscribeOnLoad.current && otherMethods.length === 0)) {
     return <MembershipPaymentMethodSkeleton />
   }
 
