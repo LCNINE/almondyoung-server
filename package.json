@@ -113,7 +113,7 @@
     "start:file-service:prod": "node dist/apps/file-service/main.js",
     "start:main": "nest start almondyoung-server",
     "start:main:debug": "nest start almondyoung-server --debug --watch",
-    "start:main:dev": "nest start almondyoung-server --watch",
+    "start:main:dev": "./scripts/with-ipv4.sh dotenv -e apps/almondyoung-server/.env nest start almondyoung-server --watch",
     "start:main:prod": "node dist/apps/almondyoung-server/main.js",
     "start:membership": "nest start membership",
     "start:membership:dev": "nest start membership --watch",
