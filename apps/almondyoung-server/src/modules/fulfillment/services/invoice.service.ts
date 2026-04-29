@@ -3,6 +3,15 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { DbService } from '@app/db';
 import { eq, inArray } from 'drizzle-orm';
+
+interface ShippingAddressJson {
+  recipientName?: string;
+  name?: string;
+  phone?: string;
+  roadAddress?: string;
+  detailAddress?: string;
+  address?: string;
+}
 import { DeliveryProvider, DeliveryRequest } from './delivery-provider.interface';
 import { GoodsflowDeliveryProvider } from './goodsflow-delivery.provider';
 
@@ -29,6 +38,9 @@ export interface InvoiceDetail {
   issuedAt?: Date;
   printedAt?: Date;
   shippedAt?: Date;
+  recipientName?: string;
+  recipientAddress?: string;
+  recipientPhone?: string;
   items: Array<{
     id: string;
     foiId: string;
@@ -295,7 +307,7 @@ export class InvoiceService {
 
   async getInvoiceDetail(invoiceId: string, tx?: DbTx): Promise<InvoiceDetail> {
     return this.inTx(async (trx) => {
-      const invoice = await trx
+      const rows = await trx
         .select({
           id: wmsTables.invoices.id,
           fulfillmentOrderId: wmsTables.invoices.fulfillmentOrderId,
@@ -307,15 +319,50 @@ export class InvoiceService {
           issuedAt: wmsTables.invoices.issuedAt,
           printedAt: wmsTables.invoices.printedAt,
           shippedAt: wmsTables.invoices.shippedAt,
+          foShippingAddress: wmsTables.fulfillmentOrders.shippingAddress,
         })
         .from(wmsTables.invoices)
+        .leftJoin(
+          wmsTables.fulfillmentOrders,
+          eq(wmsTables.fulfillmentOrders.id, wmsTables.invoices.fulfillmentOrderId),
+        )
         .where(eq(wmsTables.invoices.id, invoiceId))
-        .limit(1)
-        .then((rows) => rows[0]);
+        .limit(1);
 
+      const invoice = rows[0];
       if (!invoice) {
         throw new NotFoundException(`Invoice ${invoiceId} not found`);
       }
+
+      const foiRows = await trx
+        .select({
+          foiId: wmsTables.fulfillmentOrderItems.id,
+          salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
+          productName: wmsTables.skus.name,
+          quantity: wmsTables.fulfillmentOrderItems.qty,
+        })
+        .from(wmsTables.fulfillmentOrderItems)
+        .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId))
+        .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, invoice.fulfillmentOrderId));
+
+      const salesOrderLineIds = foiRows
+        .map((r) => r.salesOrderLineId)
+        .filter((id): id is string => id !== null);
+      const priceMap =
+        salesOrderLineIds.length === 0
+          ? new Map<string, number>()
+          : await trx
+              .select({ id: wmsTables.salesOrderLines.id, unitPrice: wmsTables.salesOrderLines.unitPrice })
+              .from(wmsTables.salesOrderLines)
+              .where(inArray(wmsTables.salesOrderLines.id, salesOrderLineIds))
+              .then((lines) => new Map(lines.map((l) => [l.id, l.unitPrice])));
+
+      const addr = invoice.foShippingAddress as ShippingAddressJson | null;
+      const recipientName = addr?.recipientName ?? addr?.name ?? undefined;
+      const recipientAddress = addr
+        ? [addr.roadAddress ?? addr.address, addr.detailAddress].filter(Boolean).join(' ') || undefined
+        : undefined;
+      const recipientPhone = addr?.phone ?? undefined;
 
       return {
         id: invoice.id,
@@ -328,7 +375,16 @@ export class InvoiceService {
         issuedAt: invoice.issuedAt ?? undefined,
         printedAt: invoice.printedAt ?? undefined,
         shippedAt: invoice.shippedAt ?? undefined,
-        items: [],
+        recipientName,
+        recipientAddress,
+        recipientPhone,
+        items: foiRows.map((r) => ({
+          id: r.foiId,
+          foiId: r.foiId,
+          productName: r.productName ?? '',
+          quantity: r.quantity,
+          unitPrice: (r.salesOrderLineId && priceMap.get(r.salesOrderLineId)) || 0,
+        })),
       };
     }, tx);
   }
