@@ -13,16 +13,17 @@ export function CustomerDetailGeneralContent({
   customerId: string;
 }) {
   const { data } = useCustomerById(customerId);
-
   const customer = data?.data;
+  const profile = customer?.profile;
 
   const rows: { key: string; value: string | null }[] = [
     { key: '로그인 ID', value: customer?.loginId ?? null },
     { key: '이름', value: customer?.username ?? null },
+    { key: '닉네임', value: customer?.nickname ?? null },
     { key: '이메일', value: customer?.email ?? null },
-    { key: '전화번호', value: customer?.phoneNumber ?? null },
-    { key: '생년월일', value: customer?.birthDate ?? null },
-    { key: '주소', value: customer?.address ?? null },
+    { key: '전화번호', value: profile?.phoneNumber ?? null },
+    { key: '생년월일', value: formatDate(profile?.birthDate) },
+    { key: '주소', value: profile?.address ?? null },
     { key: '최근 활동일', value: formatDate(customer?.lastActivityAt) },
     { key: '가입일', value: formatDate(customer?.createdAt) },
   ];

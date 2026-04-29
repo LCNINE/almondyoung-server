@@ -115,7 +115,7 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
                 userIds.map(async (uid) => {
                     try {
                         const user = await customerApi.getCustomerById(uid);
-                        return [uid, { username: user.data.username ?? uid, phone: user.data.phoneNumber }] as const;
+                        return [uid, { username: user.data.username ?? uid, phone: user.data.profile?.phoneNumber ?? undefined }] as const;
                     } catch {
                         return [uid, { username: uid }] as const;
                     }

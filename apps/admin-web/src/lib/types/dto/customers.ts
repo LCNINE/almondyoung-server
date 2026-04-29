@@ -8,13 +8,22 @@ import { Shop } from './shop';
 interface Customer extends BaseUserInfo {}
 
 // ===== 고객 프로필 =====
+interface CustomerProfileDetail {
+  id: UUID;
+  userId: UUID;
+  phoneNumber: string | null;
+  address: string | null;
+  birthDate: string | null;
+  profileImageUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface CustomerProfile extends BaseUserInfo {
-  phoneNumber?: string;
-  address?: string;
-  birthDate?: string;
-  profileImageUrl?: string;
+  nickname: string | null;
   shop: Shop | null;
-  lastActivityAt: string;
+  profile: CustomerProfileDetail | null;
+  roles: string[];
 }
 
 interface UpdateCustomerProfileDto {
@@ -116,6 +125,7 @@ interface CustomerBusinessLicenseQueryDto {
 export type {
   Customer,
   CustomerProfile,
+  CustomerProfileDetail,
   UpdateCustomerProfileDto,
   CustomerConsent,
   CreateCustomerConsentDto,
