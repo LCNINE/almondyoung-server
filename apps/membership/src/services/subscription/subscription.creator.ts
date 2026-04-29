@@ -62,10 +62,13 @@ export class SubscriptionCreator {
       const autoRenewal = billingMode === 'recurring';
       const billingDate = addDays(startsAt, effectiveTrialDays);
       // nextBillingDate = billingDate: 체험 종료일이 곧 첫 결제일
-      // 결제 후 billing.manager가 nextBillingDate를 +durationDays로 진행시킴
+      // 결제 성공 시 BillingOutcomeHandler가 nextBillingDate를 endsAt + durationDays로 갱신
       const nextBillingDate = billingMode === 'recurring' ? billingDate : null;
-      // 체험 기간을 포함한 만료일 (체험 기간만큼 연장)
-      const endsAt = addDays(startsAt, plan.durationDays + effectiveTrialDays);
+      // recurring: endsAt = 체험 종료일 (첫 결제 시 +durationDays 연장)
+      // one_time: endsAt = 결제된 전체 서비스 기간
+      const endsAt = billingMode === 'recurring'
+        ? billingDate
+        : addDays(startsAt, plan.durationDays);
 
       // 1. 이벤트 배치 생성
       const [batch] = await tx
