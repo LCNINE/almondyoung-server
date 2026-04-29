@@ -1,7 +1,8 @@
-import { Controller, Get, Post, Put, Param, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Put, Param, Body, HttpCode, HttpStatus, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { StocktakingService } from '../services/stocktaking.service';
 import { CreateStocktakingSessionDto } from '../dto/create-session.dto';
+import { ListStocktakingSessionsQueryDto } from '../dto/list-sessions-query.dto';
 import { ScanLocationDto } from '../dto/scan-location.dto';
 import { ScanProductDto } from '../dto/scan-product.dto';
 import { UpdateCountDto } from '../dto/update-count.dto';
@@ -11,6 +12,13 @@ import { GenerateAdjustmentsDto } from '../dto/generate-adjustments.dto';
 @Controller('stocktaking')
 export class StocktakingController {
   constructor(private readonly stocktakingService: StocktakingService) {}
+
+  @Get('sessions')
+  @ApiOperation({ summary: '재고 실사 세션 목록 조회 (List stocktaking sessions)' })
+  @ApiResponse({ status: 200, description: 'Paginated list of sessions' })
+  async listSessions(@Query() query: ListStocktakingSessionsQueryDto) {
+    return this.stocktakingService.listSessions(query);
+  }
 
   @Post('sessions')
   @ApiOperation({ summary: '재고 실사 세션 생성 (Create stocktaking session)' })

@@ -233,6 +233,73 @@ export class PricingCalculatorService {
     }, tx);
   }
 
+  async calculateVariantPriceSetMany(
+    versionId: string,
+    variantIds: string[],
+    tx?: DbTransaction,
+  ): Promise<VariantPriceSet[]> {
+    return this.inTx(async (trx) => {
+      const [version] = await trx
+        .select({ masterId: productMasterVersions.masterId })
+        .from(productMasterVersions)
+        .where(eq(productMasterVersions.id, versionId));
+
+      if (!version) {
+        throw new NotFoundException(`Product version ${versionId} not found`);
+      }
+
+      const mappings = await trx
+        .select({ variantId: productMasterVariants.variantId })
+        .from(productMasterVariants)
+        .where(
+          and(
+            eq(productMasterVariants.masterId, version.masterId),
+            eq(productMasterVariants.versionId, versionId),
+          ),
+        );
+
+      const validVariantIds = new Set(mappings.map((m) => m.variantId));
+      const rules = await this.getRulesForVersion(versionId, undefined, trx);
+
+      const results: VariantPriceSet[] = [];
+
+      for (const variantId of variantIds) {
+        if (!validVariantIds.has(variantId)) {
+          continue;
+        }
+
+        const baseResult = await this.calculateVariantPriceByVersion(versionId, variantId, 1, 'regular', trx);
+        const membershipResult = await this.calculateVariantPriceByVersion(versionId, variantId, 1, 'membership', trx);
+
+        const tieredPrices: TieredPriceInfo[] = [];
+        const processedQuantities = new Set<number>();
+
+        for (const rule of rules.tieredPriceRules) {
+          if (
+            rule.minQuantity &&
+            !processedQuantities.has(rule.minQuantity) &&
+            (await this.matchesScope(variantId, rule, trx))
+          ) {
+            const tierResult = await this.calculateVariantPriceByVersion(
+              versionId,
+              variantId,
+              rule.minQuantity,
+              'membership',
+              trx,
+            );
+            tieredPrices.push({ minQuantity: rule.minQuantity, price: tierResult.price });
+            processedQuantities.add(rule.minQuantity);
+          }
+        }
+
+        tieredPrices.sort((a, b) => a.minQuantity - b.minQuantity);
+        results.push({ basePrice: baseResult.price, membershipPrice: membershipResult.price, tieredPrices });
+      }
+
+      return results;
+    }, tx);
+  }
+
   applyRule(currentPrice: number, rule: PricingRuleEntity): number {
     switch (rule.operationType) {
       case 'offset':
