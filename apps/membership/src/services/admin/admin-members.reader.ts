@@ -4,6 +4,7 @@ import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
 import { eq, and, desc, asc, ilike, gte, lte, inArray, SQL, count } from 'drizzle-orm';
 import { endOfDay } from 'date-fns';
+import { ContractEventManager } from '../subscription/contract-event.manager';
 
 export interface AdminMembersQuery {
   page?: number;
@@ -116,7 +117,10 @@ export interface AdminBillingHistoryResponse {
 
 @Injectable()
 export class AdminMembersReader {
-  constructor(private readonly dbService: DbService<typeof membershipSchema>) {}
+  constructor(
+    private readonly dbService: DbService<typeof membershipSchema>,
+    private readonly contractEventManager: ContractEventManager,
+  ) {}
 
   async findAllWithDetails(query: AdminMembersQuery): Promise<AdminMembersResponse> {
     const { page = 1, limit = 20, status, q, userIds, dateFrom, dateTo } = query;
@@ -422,10 +426,28 @@ export class AdminMembersReader {
     };
   }
 
-  async updateAutoRenewal(contractId: string, autoRenewal: boolean): Promise<void> {
-    await this.dbService.db
-      .update(schema.subscriptionContracts)
-      .set({ autoRenewal })
-      .where(eq(schema.subscriptionContracts.id, contractId));
+  async updateAutoRenewal(contractId: string, autoRenewal: boolean, adminId: string): Promise<void> {
+    await this.dbService.db.transaction(async (tx) => {
+      const [batch] = await tx
+        .insert(schema.eventBatches)
+        .values({ type: 'AUTO_RENEWAL_CHANGED', effectiveDate: new Date().toISOString().split('T')[0] })
+        .returning();
+
+      await tx
+        .update(schema.subscriptionContracts)
+        .set({ autoRenewal, updatedAt: new Date() })
+        .where(eq(schema.subscriptionContracts.id, contractId));
+
+      await this.contractEventManager.addEvent(
+        tx,
+        contractId,
+        'AUTO_RENEWAL_CHANGED',
+        { autoRenewal },
+        'ADMIN',
+        adminId,
+        batch.id,
+        adminId,
+      );
+    });
   }
 }
