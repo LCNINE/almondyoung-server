@@ -26,7 +26,9 @@ export default function SalesChannelTemplate() {
   const handleFormSuccess = () => {
     setShowForm(false);
     setEditingChannel(null);
-    toast.success(editingChannel ? '판매처가 수정되었습니다.' : '판매처가 생성되었습니다.');
+    toast.success(
+      editingChannel ? '판매처가 수정되었습니다.' : '판매처가 생성되었습니다.'
+    );
   };
 
   return (
