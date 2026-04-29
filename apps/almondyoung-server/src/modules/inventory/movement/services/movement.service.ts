@@ -3,6 +3,7 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx, MovementJobLine, MovementJob } from '../../schema/inventory.schema';
 import { MoveBatchDto } from '../dto/move-batch.dto';
+import { InterWarehouseTransferDto } from '../dto/inter-warehouse-transfer.dto';
 import { StockEventStore } from '../../core/repositories/stock-event.store';
 import { and, eq, inArray } from 'drizzle-orm';
 
@@ -166,6 +167,89 @@ export class MovementService {
     });
   }
 
+  async createInterWarehouseTransfer(dto: InterWarehouseTransferDto): Promise<{ jobId: string }> {
+    if (dto.fromWarehouseId === dto.toWarehouseId) {
+      throw new BadRequestException('Source and destination warehouses must be different');
+    }
+
+    const warehouses = await this.db
+      .select({ id: wmsTables.warehouses.id })
+      .from(wmsTables.warehouses)
+      .where(inArray(wmsTables.warehouses.id, [dto.fromWarehouseId, dto.toWarehouseId]));
+    if (warehouses.length !== 2) {
+      throw new BadRequestException('One or both warehouse IDs are invalid');
+    }
+
+    const skuRows = await this.db
+      .select({ id: wmsTables.skus.id })
+      .from(wmsTables.skus)
+      .where(eq(wmsTables.skus.id, dto.skuId))
+      .limit(1);
+    if (!skuRows[0]) {
+      throw new BadRequestException(`SKU ${dto.skuId} not found`);
+    }
+
+    const stockRow = await this.db.query.stockLedgers.findFirst({
+      where: and(
+        eq(wmsTables.stockLedgers.skuId, dto.skuId),
+        eq(wmsTables.stockLedgers.warehouseId, dto.fromWarehouseId),
+        eq(wmsTables.stockLedgers.stockState, 'ON_HAND'),
+      ),
+    });
+    if (!stockRow || stockRow.qty < dto.quantity) {
+      throw new BadRequestException('Insufficient ON_HAND stock in source warehouse');
+    }
+
+    return this.db.transaction(async (tx) => {
+      const occurredAt = new Date();
+      const [journal] = await tx
+        .insert(wmsTables.stockJournals)
+        .values({ sourceType: 'MOVEMENT' })
+        .returning();
+
+      // warehouseId = toWarehouseId: completeInterWarehouseMovement에서 destination plan 조회 기준
+      const [job] = await tx
+        .insert(wmsTables.movementJobs)
+        .values({
+          warehouseId: dto.toWarehouseId,
+          occurredAt,
+          journalId: journal.id,
+          totalQuantity: dto.quantity,
+          memo: dto.reason,
+        })
+        .returning();
+
+      // toLocationId 미확정이므로 fromState 차감만 기록 (toState는 completeInterWarehouseMovement에서 처리)
+      const event = await this.stockEventStore.createEvent(
+        {
+          journalId: journal.id,
+          skuId: dto.skuId,
+          fromWarehouseId: dto.fromWarehouseId,
+          fromLocationId: stockRow.locationId,
+          toWarehouseId: dto.toWarehouseId,
+          fromState: 'ON_HAND',
+          toState: null,
+          transitionType: 'MOVE',
+          quantity: dto.quantity,
+          occurredAt,
+          reason: dto.reason,
+        },
+        tx as unknown as DbTx,
+      );
+
+      await tx.insert(wmsTables.movementJobLines).values({
+        jobId: job.id,
+        skuId: dto.skuId,
+        quantity: dto.quantity,
+        fromLocationId: stockRow.locationId,
+        eventId: event?.id,
+        memo: dto.reason,
+      });
+
+      return { jobId: job.id };
+    });
+  }
+
   /**
    * 창고간 이동 완료 시 destination plan 활성화
    * 중국 창고에서 부천 창고로 이동 완료되면 부천 입고예정 활성화
@@ -216,7 +300,6 @@ export class MovementService {
         }
       }
 
-      console.log(`Activated ${destinationPlans.length} destination plans after movement completion`);
     });
   }
 }

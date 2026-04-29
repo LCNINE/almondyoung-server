@@ -267,6 +267,9 @@ export const suppliers = pgTable('suppliers', {
   businessType: varchar('business_type', { length: 100 }),
   ceoName: varchar('ceo_name', { length: 100 }),
 
+  // 사람이 식별하는 짧은 공급사 코드 (예: "LCN"). nullable.
+  code: varchar('code', { length: 50 }),
+
   // Purchase settings
   isDirectDelivery: boolean('is_direct_delivery').notNull().default(false),
   orderCutoffTime: varchar('order_cutoff_time', { length: 10 }),
@@ -484,6 +487,8 @@ export const skuSuppliers = pgTable(
     supplierId: uuid('supplier_id')
       .references(() => suppliers.id, { onDelete: 'cascade' })
       .notNull(),
+    // 공급사가 자기 시스템에서 이 SKU를 식별하는 코드 (예: "SKU-001"). nullable.
+    supplierSku: varchar('supplier_sku', { length: 100 }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
