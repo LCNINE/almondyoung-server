@@ -16,7 +16,7 @@ export interface AddressDto {
   address_1: string // 주소 1 (기본주소)
   address_2?: string // 주소 2 (상세주소)
   city: string // 도시
-  country_codeL: string // 국가 코드
+  country_code: string // 국가 코드
   postal_code: string // 우편번호
   province?: string // 시/도
 }
