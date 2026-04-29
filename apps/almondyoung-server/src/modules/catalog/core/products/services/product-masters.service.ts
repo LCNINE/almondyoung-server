@@ -485,6 +485,7 @@ export class ProductMastersService {
       page?: number;
       limit?: number;
       deleted?: boolean;
+      ids?: string[];
     },
     tx?: DbTransaction,
   ): Promise<{
@@ -592,6 +593,11 @@ export class ProductMastersService {
       // name 검색 필터
       if (filters?.name) {
         whereConditions.push(ilike(productMasterVersions.name, `%${filters.name}%`));
+      }
+
+      // ids 필터 (배치 조회용)
+      if (filters?.ids && filters.ids.length > 0) {
+        whereConditions.push(inArray(productMasters.id, filters.ids));
       }
 
       // ===== 최종 where 절 빌드 =====
