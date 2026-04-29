@@ -65,14 +65,18 @@ export const useReviewTableColumns = ({
           const product = productMap.get(productId);
           if (product?.name) {
             return (
-              <Copy asChild content={productId}>
+              <div className="flex items-center gap-1.5">
                 <span
                   className="line-clamp-1 cursor-pointer text-sm hover:underline"
-                  title="클릭하여 상품 ID 복사"
+                  title="리뷰 상세로 이동"
                 >
                   {product.name}
                 </span>
-              </Copy>
+                <Copy
+                  content={productId}
+                  className="shrink-0 text-muted-foreground hover:text-foreground"
+                />
+              </div>
             );
           }
           return <IdCell value={productId} />;

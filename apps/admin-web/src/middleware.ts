@@ -6,6 +6,8 @@ import { USER_SERVICE_BASE_URL } from './const';
 
 const JWT_SECRET = new TextEncoder().encode(process.env.AUTH_SECRET);
 const FIVE_MINUTES = 5 * 60 * 1000;
+const REMEMBER_ME_MAX_AGE = 90 * 24 * 60 * 60; // 90일
+const DEFAULT_MAX_AGE = 14 * 24 * 60 * 60; // 2주
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -142,11 +144,14 @@ function setRefreshedTokenResponse(
   newAccessToken: string
 ): NextResponse {
   const response = NextResponse.next();
+  const rememberMe =
+    request.cookies.get('admin_remember_me')?.value === '1';
   response.cookies.set('admin_access_token', newAccessToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
     path: '/',
+    maxAge: rememberMe ? REMEMBER_ME_MAX_AGE : DEFAULT_MAX_AGE,
   });
   return response;
 }
