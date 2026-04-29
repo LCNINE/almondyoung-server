@@ -8,11 +8,18 @@ import type { Filter } from './data-table-filter/types'
 type DataTableQueryProps = {
   filters?: Filter[]
   orderBy?: { key: string; label: string }[]
+  orderByPresetOnly?: boolean
   search?: boolean
   prefix?: string
 }
 
-export function DataTableQuery({ filters, orderBy, search, prefix }: DataTableQueryProps) {
+export function DataTableQuery({
+  filters,
+  orderBy,
+  orderByPresetOnly,
+  search,
+  prefix,
+}: DataTableQueryProps) {
   const hasFilters = filters && filters.length > 0
   const hasOrderBy = orderBy && orderBy.length > 0
 
@@ -25,7 +32,13 @@ export function DataTableQuery({ filters, orderBy, search, prefix }: DataTableQu
       </div>
       <div className="flex items-center gap-2">
         {search && <DataTableSearch prefix={prefix} />}
-        {hasOrderBy && <DataTableOrderBy orderBy={orderBy} prefix={prefix} />}
+        {hasOrderBy && (
+          <DataTableOrderBy
+            orderBy={orderBy}
+            prefix={prefix}
+            presetOnly={orderByPresetOnly}
+          />
+        )}
       </div>
     </div>
   )

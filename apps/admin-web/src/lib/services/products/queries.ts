@@ -3,7 +3,7 @@
 
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
 import { productQueryKeys } from './query-keys';
 import { products } from '@/lib/api/domains';
 import { channelListingsClient } from '@/lib/api/domains/products/channel-listings.client';
@@ -109,6 +109,33 @@ export const useMaster = (id: string) => {
     queryFn: () => products.masters.get(id),
     enabled: !!id,
     staleTime: 30 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+};
+
+/**
+ * 제품 마스터 ID 목록으로 배치 조회 (썸네일/이름 lookup용)
+ */
+export const useMastersByIds = (ids: string[]) => {
+  const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
+  return useQuery({
+    queryKey: productQueryKeys.mastersBatch(uniqueIds),
+    queryFn: () => products.masters.listByIds(uniqueIds),
+    enabled: uniqueIds.length > 0,
+    staleTime: 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+};
+
+/**
+ * 제품 마스터 배치 조회
+ */
+export const useMastersByIdsSuspense = (ids: string[]) => {
+  const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
+  return useSuspenseQuery({
+    queryKey: productQueryKeys.mastersBatch(uniqueIds),
+    queryFn: () => products.masters.listByIds(uniqueIds),
+    staleTime: 60 * 1000,
     gcTime: 5 * 60 * 1000,
   });
 };
@@ -503,7 +530,10 @@ export const useMasterPricingRules = (masterId: string) => {
   });
 };
 
-export const useVersionVariantPriceSet = (versionId: string, variantId: string) => {
+export const useVersionVariantPriceSet = (
+  versionId: string,
+  variantId: string
+) => {
   return useQuery({
     queryKey: productQueryKeys.pricingVersionPriceSet(versionId, variantId),
     queryFn: () => products.pricing.versions.getPriceSet(versionId, variantId),
@@ -512,7 +542,10 @@ export const useVersionVariantPriceSet = (versionId: string, variantId: string) 
   });
 };
 
-export const useMasterVariantPriceSet = (masterId: string, variantId: string) => {
+export const useMasterVariantPriceSet = (
+  masterId: string,
+  variantId: string
+) => {
   return useQuery({
     queryKey: productQueryKeys.pricingMasterPriceSet(masterId, variantId),
     queryFn: () => products.pricing.masters.getPriceSet(masterId, variantId),
