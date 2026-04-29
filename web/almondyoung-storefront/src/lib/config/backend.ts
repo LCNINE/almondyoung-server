@@ -14,13 +14,13 @@ export type BackendService =
 
 const SERVICE_SUBDOMAINS: Record<BackendService, string> = {
   users: "user",
-  wms: "wms",
+  wms: "almond",
   channelAdapter: "channel-adapter",
   fs: "file",
   medusa: "medusa",
   membership: "membership",
   notification: "notification",
-  pim: "pim",
+  pim: "almond",
   search: "search",
   wallet: "wallet",
   anly: "analytics",
@@ -44,13 +44,13 @@ const LEGACY_SERVICE_PATHS: Record<BackendService, string> = {
 
 const LOCAL_SERVICE_URLS: Record<BackendService, string> = {
   users: "http://localhost:3030", // user-service
-  wms: "http://localhost:3010",
+  wms: "http://localhost:3000", // almondyoung-server (pim+wms 통합)
   channelAdapter: "http://localhost:3003",
   fs: "http://localhost:3000", // file-service
   medusa: "http://localhost:8080",
   membership: "http://localhost:3001",
   notification: "http://localhost:5001",
-  pim: "http://localhost:3020",
+  pim: "http://localhost:3000", // almondyoung-server (pim+wms 통합)
   search: "http://localhost:3004",
   wallet: "http://localhost:5001",
   anly: "http://localhost:3040",
