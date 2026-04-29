@@ -1,5 +1,5 @@
 import RouteGuard from '@/components/layout/route-guard';
-import SalesChannelTemplate from '@/features/account-management/sales-channel/template';
+import SalesChannelTemplate from '@/features/sales-channel/template';
 
 export default function SalesChannelPage() {
   return (

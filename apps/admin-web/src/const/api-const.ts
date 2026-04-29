@@ -7,22 +7,6 @@ const ALMONDYOUNG_API_BASE_URL = isServer
   ? (process.env.ALMONDYOUNG_API_URL ?? 'http://localhost:3000')
   : '/proxy/api';
 
-/**
- * @deprecated 통합 서버 이전 후 사용. 새 코드는 ALMONDYOUNG_API_BASE_URL 사용.
- * Phase 1 마이그레이션 완료 시 제거됨 (PR #5-1).
- */
-const PIM_BASE_URL = isServer
-  ? (process.env.PIM_SERVICE_URL ?? 'http://localhost:3020')
-  : '/proxy/pim';
-
-/**
- * @deprecated 통합 서버 이전 후 사용. 새 코드는 ALMONDYOUNG_API_BASE_URL 사용.
- * Phase 1 마이그레이션 완료 시 제거됨 (PR #5-1).
- */
-const WMS_BASE_URL = isServer
-  ? (process.env.WMS_SERVICE_URL ?? 'http://localhost:3010')
-  : '/proxy/wms';
-
 const USER_SERVICE_BASE_URL = isServer
   ? (process.env.USER_SERVICE_URL ?? 'http://localhost:3030')
   : '/proxy/users';
@@ -57,8 +41,6 @@ const MEDUSA_BASE_URL = isServer
 
 export {
   ALMONDYOUNG_API_BASE_URL,
-  PIM_BASE_URL,
-  WMS_BASE_URL,
   USER_SERVICE_BASE_URL,
   WALLET_SERVICE_BASE_URL,
   MEMBERSHIP_SERVICE_BASE_URL,

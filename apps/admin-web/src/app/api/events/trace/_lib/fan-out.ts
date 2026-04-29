@@ -11,7 +11,11 @@ export const TRACKED_SERVICES = [
     envKey: 'CHANNEL_ADAPTER_SERVICE_URL',
     default: 'http://localhost:3070',
   },
-  { name: 'pim', envKey: 'PIM_SERVICE_URL', default: 'http://localhost:3020' },
+  {
+    name: 'almondyoung-server',
+    envKey: 'ALMONDYOUNG_API_URL',
+    default: 'http://localhost:3000',
+  },
   {
     name: 'membership',
     envKey: 'MEMBERSHIP_SERVICE_URL',
@@ -22,7 +26,6 @@ export const TRACKED_SERVICES = [
     envKey: 'WALLET_SERVICE_URL',
     default: 'http://localhost:3040',
   },
-  { name: 'wms', envKey: 'WMS_SERVICE_URL', default: 'http://localhost:3010' },
   {
     name: 'notification',
     envKey: 'NOTIFICATION_SERVICE_URL',

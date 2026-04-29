@@ -20,9 +20,6 @@ import type {
   VariantsQuery,
   VariantsResponseDto,
   VariantPriceDto,
-  ChannelDto,
-  ChannelsQuery,
-  ChannelsResponseDto,
   ActiveChannelsResponseDto,
   ChannelProductDto,
   ChannelProductsQuery,
@@ -213,53 +210,12 @@ export const useVariantPrice = (id: string) => {
   });
 };
 
-// ===== 판매 채널 관련 쿼리 =====
+// ===== 활성 판매 채널 조회 (order/input 등에서 사용) =====
 
-/**
- * 판매 채널 목록 조회
- */
-export const useChannels = (query: ChannelsQuery = {}) => {
-  return useQuery({
-    queryKey: productQueryKeys.channelsList(query),
-    queryFn: () => products.channels.getList(query),
-    staleTime: 5 * 60 * 1000, // 5분
-    gcTime: 10 * 60 * 1000, // 10분
-  });
-};
-
-/**
- * 활성 판매 채널 조회
- */
 export const useActiveChannels = () => {
   return useQuery({
     queryKey: productQueryKeys.activeChannels(),
     queryFn: () => products.channels.getActive(),
-    staleTime: 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
-  });
-};
-
-/**
- * 판매 채널 상세 조회
- */
-export const useChannel = (id: string) => {
-  return useQuery({
-    queryKey: productQueryKeys.channel(id),
-    queryFn: () => products.channels.get(id),
-    enabled: !!id,
-    staleTime: 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
-  });
-};
-
-/**
- * 타입별 판매 채널 조회
- */
-export const useChannelsByType = (type: string) => {
-  return useQuery({
-    queryKey: productQueryKeys.channelsByType(type),
-    queryFn: () => products.channels.getByType(type),
-    enabled: !!type,
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
   });
@@ -399,54 +355,10 @@ export const useProductVariants = (productId: string) => {
 // ===== 이름 변경 대응 별칭 (구 코드 호환성) =====
 
 /**
- * 제품 마스터 목록 조회 (useChannelList → useChannels로 이름 변경됨)
- * @deprecated useChannels 사용 권장
- */
-export const useChannelList = useChannels;
-
-/**
  * 제품 마스터 목록 조회 (useMasterList → useMasters로 이름 변경됨)
  * @deprecated useMasters 사용 권장
  */
 export const useMasterList = () => useMasters();
-
-// ===== 판매처 타입 정의 목록 =====
-
-export interface SalesChannelSite {
-  id: string;
-  type: string;
-  name: string;
-  isActive: boolean;
-}
-
-const SALES_CHANNEL_SITES: SalesChannelSite[] = [
-  { id: 'medusa', type: 'medusa', name: '아몬드영 (자사몰)', isActive: true },
-  {
-    id: 'naver_smartstore',
-    type: 'naver_smartstore',
-    name: '네이버 스마트스토어',
-    isActive: true,
-  },
-  { id: 'coupang', type: 'coupang', name: '쿠팡', isActive: true },
-  { id: 'phone_order', type: 'phone_order', name: '전화주문', isActive: true },
-  { id: 'other', type: 'other', name: '기타', isActive: true },
-];
-
-/**
- * 지원하는 판매처 타입 목록 반환
- * type이 'all'이면 전체, 특정 type이면 해당 타입만 반환
- */
-export const useSalesChannelSites = (type: string = 'all') => {
-  return useQuery({
-    queryKey: ['sales-channel-sites', type],
-    queryFn: () => {
-      if (type === 'all') return SALES_CHANNEL_SITES;
-      return SALES_CHANNEL_SITES.filter((s) => s.type === type);
-    },
-    staleTime: Infinity,
-    gcTime: Infinity,
-  });
-};
 
 // ===== 배너 그룹 관련 쿼리 =====
 

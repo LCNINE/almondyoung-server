@@ -1,16 +1,18 @@
 'use client';
 
 import { useCallback, useState } from 'react';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import {
-  useChannelList,
+  useChannels,
   useDeleteChannel,
   useSalesChannelSites,
-} from '@/lib/services/products';
+} from '@/lib/api/domains/sales-channel';
 import { useDataTable } from '@/hooks/use-data-table';
 import { useSalesChannelTableColumns } from '@/hooks/table/columns/use-sales-channel-table-columns';
+import { useSalesChannelTableQuery } from '@/hooks/table/query/use-sales-channel-table-query';
 import { DataTable } from '@/components/data-table';
-import type { ChannelDto, ChannelsQuery } from '@/lib/types/dto/products';
+import type { ChannelDto } from '@/lib/types/dto/products';
 import { SalesChannelFilters } from '../filter-box';
 import { ApiKeyDialog } from '../api-key-dialog';
 
@@ -21,14 +23,42 @@ type SalesChannelTableProps = {
 };
 
 export function SalesChannelTable({ onEdit }: SalesChannelTableProps) {
-  const [filters, setFilters] = useState<ChannelsQuery>({ page: 1, limit: PAGE_SIZE });
   const [apiKeyTarget, setApiKeyTarget] = useState<ChannelDto | null>(null);
 
-  const { data: channelsResponse, isLoading, isFetching, error } = useChannelList();
-  const { data: sites = [], isLoading: sitesLoading } = useSalesChannelSites('all');
+  const router = useRouter();
+  const pathname = usePathname();
+  const rawSearchParams = useSearchParams();
+
+  const { searchParams: query, raw } = useSalesChannelTableQuery({
+    pageSize: PAGE_SIZE,
+  });
+  const {
+    data: channelsResponse,
+    isLoading,
+    isFetching,
+    error,
+  } = useChannels(query);
+  const { data: sites = [], isLoading: sitesLoading } =
+    useSalesChannelSites('all');
   const deleteChannel = useDeleteChannel();
 
   const channels = channelsResponse?.data ?? [];
+
+  const handleFilterChange = useCallback(
+    (updates: Record<string, string | undefined>) => {
+      const params = new URLSearchParams(rawSearchParams.toString());
+      Object.entries(updates).forEach(([key, value]) => {
+        if (value) {
+          params.set(key, value);
+        } else {
+          params.delete(key);
+        }
+      });
+      params.delete('page');
+      router.push(`${pathname}?${params.toString()}`);
+    },
+    [router, pathname, rawSearchParams]
+  );
 
   const handleDelete = useCallback(
     async (channel: ChannelDto) => {
@@ -45,7 +75,9 @@ export function SalesChannelTable({ onEdit }: SalesChannelTableProps) {
 
   const columns = useSalesChannelTableColumns({
     onEdit,
-    onDelete: handleDelete,
+    onDelete: (channel) => {
+      void handleDelete(channel);
+    },
     onApiKeyEdit: setApiKeyTarget,
   });
 
@@ -62,8 +94,8 @@ export function SalesChannelTable({ onEdit }: SalesChannelTableProps) {
       <div className="border-b p-4">
         <SalesChannelFilters
           sites={sites}
-          filters={filters}
-          onFilterChange={(f) => setFilters({ ...f, page: 1, limit: PAGE_SIZE })}
+          filters={{ type: raw.type, search: raw.search }}
+          onFilterChange={handleFilterChange}
         />
       </div>
 

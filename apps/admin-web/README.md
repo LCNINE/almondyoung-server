@@ -43,17 +43,15 @@ npm start
 `.env.local` 파일을 생성하고 다음 환경변수들을 설정하세요:
 
 ```env
-# === Service URLs (for inter-service communication) ===
-WMS_SERVICE_URL=http://localhost:3010
-PIM_SERVICE_URL=http://localhost:3020
+# === 통합 서버 (WMS/PIM/매칭/풀필먼트 통합) ===
+ALMONDYOUNG_API_URL=http://localhost:3000
+
+# === 기타 서비스 URL ===
 USER_SERVICE_URL=http://localhost:3030
 WALLET_SERVICE_URL=http://localhost:3040
 MEMBERSHIP_SERVICE_URL=http://localhost:3050
 NOTIFICATION_SERVICE_URL=http://localhost:3060
 CHANNEL_ADAPTER_SERVICE_URL=http://localhost:3070
-
-# === API Gateway URL (for production) ===
-NEXT_PUBLIC_API_BASE_URL=http://localhost:3000/api
 
 # === Development Settings ===
 NODE_ENV=development
