@@ -1,7 +1,8 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { DbModule } from '@app/db';
-import { AuthorizationModule } from '@app/authorization';
+import { AuthorizationModule, JwtAuthGuard } from '@app/authorization';
 import { validateAlmondyoungEnv } from './config/env.validation';
 import { mergedSchema } from './platform/database/merged-schema';
 import { ALL_SCOPES } from './platform/auth/merged-scopes';
@@ -39,6 +40,6 @@ import { FulfillmentModule } from './modules/fulfillment/fulfillment.module';
     FulfillmentModule,
   ],
   controllers: [AppController],
-  providers: [],
+  providers: [{ provide: APP_GUARD, useClass: JwtAuthGuard }],
 })
 export class AppModule {}
