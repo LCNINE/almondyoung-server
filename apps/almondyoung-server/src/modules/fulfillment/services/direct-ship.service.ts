@@ -2,7 +2,8 @@ import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema } from '../../inventory/schema/inventory.schema';
 import { DbService } from '@app/db';
-import { and, eq, inArray, desc } from 'drizzle-orm';
+import { and, eq, inArray, desc, isNull, or } from 'drizzle-orm';
+import * as ExcelJS from 'exceljs';
 
 export interface DirectShipCustomerInfo {
   customerName: string | null;
@@ -79,6 +80,18 @@ export class DirectShipService {
     return this.dbService.db;
   }
 
+  private async lookupHolderByName(companyName: string): Promise<string> {
+    const rows = await this.db
+      .select({ id: wmsTables.holders.id })
+      .from(wmsTables.holders)
+      .where(eq(wmsTables.holders.name, companyName))
+      .limit(1);
+    if (!rows[0]) {
+      throw new BadRequestException(`Unknown company (holder not found): ${companyName}`);
+    }
+    return rows[0].id;
+  }
+
   async getDirectShipOrders(filters?: {
     companyName?: string;
     status?: 'pending' | 'forwarded' | 'completed' | 'canceled';
@@ -87,21 +100,33 @@ export class DirectShipService {
     const whereConditions = [eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'drop_ship')];
 
     if (filters?.companyName) {
-      whereConditions.push(eq(wmsTables.fulfillmentOrders.ownerId, filters.companyName));
+      const holderId = await this.lookupHolderByName(filters.companyName).catch(() => null);
+      if (holderId) {
+        whereConditions.push(eq(wmsTables.fulfillmentOrders.ownerId, holderId));
+      } else {
+        return [];
+      }
     }
     if (filters?.status) {
-      whereConditions.push(eq(wmsTables.fulfillmentOrders.status, filters.status));
+      // directShipStatus가 null인 레코드는 'pending'으로 간주 (마이그레이션 전 데이터 호환)
+      if (filters.status === 'pending') {
+        whereConditions.push(
+          or(eq(wmsTables.fulfillmentOrders.directShipStatus, 'pending'), isNull(wmsTables.fulfillmentOrders.directShipStatus))!,
+        );
+      } else {
+        whereConditions.push(eq(wmsTables.fulfillmentOrders.directShipStatus, filters.status));
+      }
     }
     if (filters?.warehouseId) {
       whereConditions.push(eq(wmsTables.fulfillmentOrders.warehouseId, filters.warehouseId));
     }
 
-    // Step 1: fetch FOs
+    // Step 1: fetch FOs + owner name via join
     const foRows = await this.db
       .select({
         id: wmsTables.fulfillmentOrders.id,
-        ownerId: wmsTables.fulfillmentOrders.ownerId,
-        status: wmsTables.fulfillmentOrders.status,
+        holderName: wmsTables.holders.name,
+        directShipStatus: wmsTables.fulfillmentOrders.directShipStatus,
         priority: wmsTables.fulfillmentOrders.priority,
         totalItems: wmsTables.fulfillmentOrders.totalItems,
         totalQty: wmsTables.fulfillmentOrders.totalQty,
@@ -110,6 +135,7 @@ export class DirectShipService {
         shippedAt: wmsTables.fulfillmentOrders.shippedAt,
       })
       .from(wmsTables.fulfillmentOrders)
+      .leftJoin(wmsTables.holders, eq(wmsTables.holders.id, wmsTables.fulfillmentOrders.ownerId))
       .where(and(...whereConditions))
       .orderBy(desc(wmsTables.fulfillmentOrders.createdAt));
 
@@ -117,7 +143,7 @@ export class DirectShipService {
 
     const foIds = foRows.map((r) => r.id);
 
-    // Step 2: fetch items + skus + supplier + customerInfo for all FOs
+    // Step 2: fetch items + skus + supplier for all FOs
     const itemRows = await this.db
       .select({
         id: wmsTables.fulfillmentOrderItems.id,
@@ -136,10 +162,9 @@ export class DirectShipService {
       .leftJoin(wmsTables.suppliers, eq(wmsTables.suppliers.id, wmsTables.skuSuppliers.supplierId))
       .where(inArray(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, foIds));
 
-    // Step 3: fetch customerInfo from salesOrders for each FO
-    const salesOrderIds = foRows.map((fo) => fo.id);
+    // Step 3: fetch customerInfo from salesOrders
     const salesOrderRows =
-      salesOrderIds.length === 0
+      foIds.length === 0
         ? []
         : await this.db
             .select({
@@ -161,7 +186,10 @@ export class DirectShipService {
             )
             .where(inArray(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, foIds));
 
-    const customerInfoByFoId = new Map<string, { customerName: string | null; customerEmail: string | null; customerPhone: string | null; shippingAddress: unknown }>();
+    const customerInfoByFoId = new Map<
+      string,
+      { customerName: string | null; customerEmail: string | null; customerPhone: string | null; shippingAddress: unknown }
+    >();
     for (const row of salesOrderRows) {
       if (!customerInfoByFoId.has(row.foId)) {
         customerInfoByFoId.set(row.foId, {
@@ -173,7 +201,6 @@ export class DirectShipService {
       }
     }
 
-    // Step 4: group items by foId
     const itemsByFoId = new Map<string, typeof itemRows>();
     for (const item of itemRows) {
       if (!itemsByFoId.has(item.fulfillmentOrderId)) {
@@ -189,9 +216,9 @@ export class DirectShipService {
       return {
         fulfillmentOrderId: fo.id,
         salesOrderId: items[0]?.salesOrderId ?? null,
-        companyName: fo.ownerId ?? 'Unknown',
+        companyName: fo.holderName ?? 'Unknown',
         supplierCode,
-        status: this.mapFOStatusToDirectShipStatus(fo.status),
+        status: fo.directShipStatus ?? 'pending',
         priority: fo.priority,
         totalItems: fo.totalItems,
         totalQty: fo.totalQty,
@@ -227,6 +254,8 @@ export class DirectShipService {
   }
 
   async forwardOrdersToCompany(fulfillmentOrderIds: string[], companyName: string): Promise<void> {
+    const holderId = await this.lookupHolderByName(companyName);
+
     const foRows = await this.db
       .select({ id: wmsTables.fulfillmentOrders.id, ownerId: wmsTables.fulfillmentOrders.ownerId })
       .from(wmsTables.fulfillmentOrders)
@@ -234,7 +263,10 @@ export class DirectShipService {
         and(
           inArray(wmsTables.fulfillmentOrders.id, fulfillmentOrderIds),
           eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'drop_ship'),
-          eq(wmsTables.fulfillmentOrders.status, 'pending'),
+          or(
+            eq(wmsTables.fulfillmentOrders.directShipStatus, 'pending'),
+            isNull(wmsTables.fulfillmentOrders.directShipStatus),
+          ),
         ),
       );
 
@@ -242,7 +274,8 @@ export class DirectShipService {
       throw new BadRequestException('Some orders are not available for forwarding');
     }
 
-    const invalidOrders = foRows.filter((fo) => fo.ownerId && fo.ownerId !== companyName);
+    // ownerId가 설정된 경우 동일한 holder인지 검증
+    const invalidOrders = foRows.filter((fo) => fo.ownerId && fo.ownerId !== holderId);
     if (invalidOrders.length > 0) {
       throw new BadRequestException(
         `Orders belong to different company: ${invalidOrders.map((fo) => fo.id).join(', ')}`,
@@ -253,13 +286,13 @@ export class DirectShipService {
       await tx
         .update(wmsTables.fulfillmentOrders)
         .set({
-          status: 'forwarded',
+          directShipStatus: 'forwarded',
           allocatedAt: new Date(),
-          ownerId: companyName,
+          ownerId: holderId,
         })
         .where(inArray(wmsTables.fulfillmentOrders.id, fulfillmentOrderIds));
 
-      this.logger.log(`Forwarded ${fulfillmentOrderIds.length} orders to company: ${companyName}`);
+      this.logger.log(`Forwarded ${fulfillmentOrderIds.length} orders to company: ${companyName} (holderId: ${holderId})`);
     });
   }
 
@@ -271,7 +304,7 @@ export class DirectShipService {
         and(
           inArray(wmsTables.fulfillmentOrders.id, fulfillmentOrderIds),
           eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'drop_ship'),
-          eq(wmsTables.fulfillmentOrders.status, 'forwarded'),
+          eq(wmsTables.fulfillmentOrders.directShipStatus, 'forwarded'),
         ),
       );
 
@@ -293,7 +326,7 @@ export class DirectShipService {
       await tx
         .update(wmsTables.fulfillmentOrders)
         .set({
-          status: 'completed',
+          directShipStatus: 'completed',
           shippedAt: new Date(),
         })
         .where(inArray(wmsTables.fulfillmentOrders.id, fulfillmentOrderIds));
@@ -344,24 +377,56 @@ export class DirectShipService {
       const csvContent = this.generateCSVContent(exportData);
       return {
         fileName: `직배주문_${companyName}_${timestamp}.csv`,
-        content: Buffer.from('\uFEFF' + csvContent, 'utf8'),
+        content: Buffer.from('﻿' + csvContent, 'utf8'),
         mimeType: 'text/csv; charset=utf-8',
       };
     } else {
-      throw new BadRequestException('XLSX format not yet implemented');
+      const content = await this.generateXLSXContent(exportData);
+      return {
+        fileName: `직배주문_${companyName}_${timestamp}.xlsx`,
+        content,
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      };
     }
   }
 
   private generateCSVContent(exportData: DirectShipExportData): string {
     const headers = ['판매주문ID', '주문라인ID', '상품명', '수량', '공급사SKU'];
     const rows = exportData.orders.map((order) => [
-      order.salesOrderId,
-      order.salesOrderLineId,
+      order.salesOrderId ?? '',
+      order.salesOrderLineId ?? '',
       order.productName,
       order.quantity.toString(),
-      order.supplierSku || '',
+      order.supplierSku ?? '',
     ]);
-    return [headers, ...rows].map((row) => row.map((cell) => `"${cell}"`).join(',')).join('\n');
+    return [headers, ...rows]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+  }
+
+  private async generateXLSXContent(exportData: DirectShipExportData): Promise<Buffer> {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('직배주문');
+
+    sheet.columns = [
+      { header: '판매주문ID', key: 'salesOrderId', width: 36 },
+      { header: '주문라인ID', key: 'salesOrderLineId', width: 36 },
+      { header: '상품명', key: 'productName', width: 40 },
+      { header: '수량', key: 'quantity', width: 10 },
+      { header: '공급사SKU', key: 'supplierSku', width: 30 },
+    ];
+
+    for (const order of exportData.orders) {
+      sheet.addRow({
+        salesOrderId: order.salesOrderId ?? '',
+        salesOrderLineId: order.salesOrderLineId ?? '',
+        productName: order.productName,
+        quantity: order.quantity,
+        supplierSku: order.supplierSku ?? '',
+      });
+    }
+
+    return workbook.xlsx.writeBuffer() as unknown as Promise<Buffer>;
   }
 
   async getDashboard(): Promise<DirectShipDashboard> {
@@ -414,24 +479,6 @@ export class DirectShipService {
         lastOrderDate: orders.length > 0 ? orders[0].createdAt : undefined,
       }))
       .sort((a, b) => b.orderCount - a.orderCount);
-  }
-
-  private mapFOStatusToDirectShipStatus(foStatus: string): 'pending' | 'forwarded' | 'completed' | 'canceled' {
-    switch (foStatus) {
-      case 'created':
-      case 'pending':
-        return 'pending';
-      case 'allocated':
-      case 'forwarded':
-        return 'forwarded';
-      case 'completed':
-      case 'shipped':
-        return 'completed';
-      case 'canceled':
-        return 'canceled';
-      default:
-        return 'pending';
-    }
   }
 
   private getRecentAction(order: DirectShipOrder): 'created' | 'forwarded' | 'completed' {

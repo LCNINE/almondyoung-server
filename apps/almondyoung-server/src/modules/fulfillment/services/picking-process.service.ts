@@ -77,7 +77,7 @@ export class PickingProcessService {
   async getPickingOperations(batchId: string, tx?: DbTx): Promise<PickingOperation[]> {
     return this.inTx(async (trx) => {
       const batchRows = await trx
-        .select({ id: wmsTables.outboundBatches.id })
+        .select({ id: wmsTables.outboundBatches.id, pickingMethod: wmsTables.outboundBatches.pickingMethod })
         .from(wmsTables.outboundBatches)
         .where(eq(wmsTables.outboundBatches.id, batchId))
         .limit(1);
@@ -85,6 +85,9 @@ export class PickingProcessService {
       const batch = batchRows[0];
       if (!batch) {
         throw new NotFoundException(`Outbound batch ${batchId} not found`);
+      }
+      if (batch.pickingMethod === 'total_picking') {
+        throw new BadRequestException('total_picking flow is not yet supported');
       }
 
       const itemRows = await trx
@@ -152,7 +155,11 @@ export class PickingProcessService {
 
     await this.inTx(async (trx) => {
       const batchRows = await trx
-        .select({ id: wmsTables.outboundBatches.id, status: wmsTables.outboundBatches.status })
+        .select({
+          id: wmsTables.outboundBatches.id,
+          status: wmsTables.outboundBatches.status,
+          pickingMethod: wmsTables.outboundBatches.pickingMethod,
+        })
         .from(wmsTables.outboundBatches)
         .where(eq(wmsTables.outboundBatches.id, batchId))
         .limit(1);
@@ -160,6 +167,10 @@ export class PickingProcessService {
 
       if (!batch) {
         throw new NotFoundException(`Outbound batch ${batchId} not found`);
+      }
+
+      if (batch.pickingMethod === 'total_picking') {
+        throw new BadRequestException('total_picking flow is not yet supported');
       }
 
       if (batch.status !== 'picking') {
@@ -229,7 +240,7 @@ export class PickingProcessService {
   async getPickingProgress(batchId: string, tx?: DbTx): Promise<PickingProgress> {
     return this.inTx(async (trx) => {
       const batchRows = await trx
-        .select({ id: wmsTables.outboundBatches.id })
+        .select({ id: wmsTables.outboundBatches.id, pickingMethod: wmsTables.outboundBatches.pickingMethod })
         .from(wmsTables.outboundBatches)
         .where(eq(wmsTables.outboundBatches.id, batchId))
         .limit(1);
@@ -237,6 +248,9 @@ export class PickingProcessService {
       const batch = batchRows[0];
       if (!batch) {
         throw new NotFoundException(`Outbound batch ${batchId} not found`);
+      }
+      if (batch.pickingMethod === 'total_picking') {
+        throw new BadRequestException('total_picking flow is not yet supported');
       }
 
       const items = await trx
@@ -333,6 +347,53 @@ export class PickingProcessService {
         completionPercentage: itemRows.length > 0 ? Math.round((completedItems / itemRows.length) * 100) : 0,
       };
     }, tx);
+  }
+
+  async getIndividualPickingSession(fulfillmentOrderId: string): Promise<IndividualPickingSession> {
+    const foRows = await this.db
+      .select({ id: wmsTables.fulfillmentOrders.id, status: wmsTables.fulfillmentOrders.status })
+      .from(wmsTables.fulfillmentOrders)
+      .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId))
+      .limit(1);
+
+    const fo = foRows[0];
+    if (!fo) {
+      throw new NotFoundException(`Fulfillment order ${fulfillmentOrderId} not found`);
+    }
+
+    if (fo.status !== 'picking') {
+      throw new NotFoundException(`No active picking session for fulfillment order ${fulfillmentOrderId}`);
+    }
+
+    const itemRows = await this.db
+      .select({
+        id: wmsTables.fulfillmentOrderItems.id,
+        skuId: wmsTables.fulfillmentOrderItems.skuId,
+        qty: wmsTables.fulfillmentOrderItems.qty,
+        pickedQty: wmsTables.fulfillmentOrderItems.pickedQty,
+        skuName: wmsTables.skus.name,
+      })
+      .from(wmsTables.fulfillmentOrderItems)
+      .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId))
+      .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderId));
+
+    const completedItems = itemRows.filter((i) => i.pickedQty >= i.qty).length;
+
+    return {
+      fulfillmentOrderId,
+      items: itemRows.map((item) => ({
+        foiId: item.id,
+        skuId: item.skuId,
+        skuName: item.skuName,
+        requiredQty: item.qty,
+        pickedQty: item.pickedQty,
+        locationCode: undefined,
+        isCompleted: item.pickedQty >= item.qty,
+      })),
+      totalItems: itemRows.length,
+      completedItems,
+      completionPercentage: itemRows.length > 0 ? Math.round((completedItems / itemRows.length) * 100) : 0,
+    };
   }
 
   async pickIndividualItem(foiId: string, pickedQty: number, pickerUserId?: string, tx?: DbTx): Promise<void> {

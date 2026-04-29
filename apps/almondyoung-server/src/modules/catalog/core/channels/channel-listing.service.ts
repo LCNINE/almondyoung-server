@@ -242,7 +242,7 @@ export class ChannelListingService {
     const whereClause = and(...conditions);
 
     const [countResult] = await client
-      .select({ count: productVariants.id })
+      .select({ count: sql<number>`count(*)::int` })
       .from(channelVariantListings)
       .where(whereClause);
 

@@ -171,6 +171,15 @@ export class PurchaseOrderService {
         throw new NotFoundException(`Purchase order with ID ${poId} not found`);
       }
 
+      if (
+        updateDto.status === PurchaseOrderStatus.CONFIRMED &&
+        existingPO.auditStatus !== 'approved'
+      ) {
+        throw new BadRequestException(
+          `Cannot confirm PO with auditStatus: ${existingPO.auditStatus}`,
+        );
+      }
+
       await trx
         .update(wmsTables.purchaseOrders)
         .set({

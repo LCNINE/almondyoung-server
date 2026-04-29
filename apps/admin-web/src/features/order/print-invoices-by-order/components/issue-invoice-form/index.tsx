@@ -104,7 +104,10 @@ export function IssueInvoiceForm() {
   };
 
   const canPrint = invoiceDetail?.status === 'issued' && issueMethod === 'goodsflow';
-  const canShip = invoiceDetail?.status === 'printed';
+  const isDirectOrSelf = issueMethod === 'direct' || issueMethod === 'self';
+  const canShip = isDirectOrSelf
+    ? invoiceDetail?.status === 'issued' || invoiceDetail?.status === 'printed'
+    : invoiceDetail?.status === 'printed';
   const isCanceled = invoiceDetail?.status === 'canceled';
 
   return (
@@ -226,12 +229,10 @@ export function IssueInvoiceForm() {
               {printMutation.isPending ? '출력 중…' : '송장 출력'}
             </Button>
 
-            {/* ⚠️ direct/self 방식은 printed 전이 불가 — 비활성화 */}
             <Button
               variant="outline"
               onClick={handleShip}
               disabled={!canShip || shipMutation.isPending}
-              title={issueMethod !== 'goodsflow' ? 'Goodsflow 방식만 배송 처리 가능' : ''}
             >
               <Truck className="mr-2 h-4 w-4" />
               {shipMutation.isPending ? '처리 중…' : '배송 처리'}
@@ -247,9 +248,9 @@ export function IssueInvoiceForm() {
             </Button>
           </div>
 
-          {issueMethod !== 'goodsflow' && (
+          {isDirectOrSelf && (
             <p className="text-xs text-muted-foreground">
-              direct/self 방식은 Goodsflow 인쇄 URI가 없어 배송 처리가 지원되지 않습니다.
+              direct/self 방식은 발행 즉시 배송 처리가 가능합니다 (Goodsflow 인쇄 불필요).
             </p>
           )}
         </div>
