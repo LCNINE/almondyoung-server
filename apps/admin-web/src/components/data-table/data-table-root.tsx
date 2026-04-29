@@ -75,8 +75,13 @@ export function DataTableRoot<TData extends RowData>({
             </Table.Row>
           ) : (
             rows.map((row) => {
+              const href = navigateTo ? navigateTo(row) : undefined;
               return (
-                <Table.Row key={row.id}>
+                <Table.Row
+                  key={row.id}
+                  className={href ? 'cursor-pointer' : ''}
+                  onClick={href ? () => router.push(href) : undefined}
+                >
                   {row.getVisibleCells().map((cell) => (
                     <Table.Cell key={cell.id}>
                       {flexRender(
