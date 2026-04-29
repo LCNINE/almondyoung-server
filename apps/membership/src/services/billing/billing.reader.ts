@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { eq, and, lte, sql } from 'drizzle-orm';
+import { eq, and, lte, lt, notInArray, sql } from 'drizzle-orm';
 import * as schema from '../../shared/schemas/entities/schema';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 
@@ -84,6 +84,32 @@ export class BillingReader {
       .select()
       .from(schema.membershipDunningQueue)
       .where(lte(schema.membershipDunningQueue.nextRetryAt, now));
+  }
+
+  /**
+   * 만료된 권한 조회 (autoRenewal=false, endsAt < today, isCurrent=true)
+   */
+  async findExpiredEntitlements(today: string): Promise<{ entitlementId: string; userId: string; contractId: string }[]> {
+    return this.dbService.db
+      .select({
+        entitlementId: schema.subscriptionEntitlement.id,
+        userId: schema.subscriptionEntitlement.userId,
+        contractId: schema.subscriptionContracts.id,
+      })
+      .from(schema.subscriptionEntitlement)
+      .innerJoin(
+        schema.subscriptionContracts,
+        eq(schema.subscriptionContracts.userId, schema.subscriptionEntitlement.userId),
+      )
+      .where(
+        and(
+          eq(schema.subscriptionEntitlement.isCurrent, true),
+          eq(schema.subscriptionContracts.autoRenewal, false),
+          eq(schema.subscriptionContracts.isVoided, false),
+          lt(schema.subscriptionEntitlement.endsAt, today),
+          notInArray(schema.subscriptionContracts.status, ['EXPIRED', 'CANCELLED']),
+        ),
+      );
   }
 
   /**
