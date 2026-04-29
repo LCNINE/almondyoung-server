@@ -471,6 +471,7 @@ export class OutboundBatchService {
           qty: wmsTables.fulfillmentOrderItems.qty,
           pickedQty: wmsTables.fulfillmentOrderItems.pickedQty,
           skuName: wmsTables.skus.name,
+          locationCode: wmsTables.locations.code,
         })
         .from(wmsTables.fulfillmentOrderItems)
         .innerJoin(
@@ -478,6 +479,7 @@ export class OutboundBatchService {
           eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
         )
         .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId))
+        .leftJoin(wmsTables.locations, eq(wmsTables.locations.id, wmsTables.skus.primaryLocationId))
         .where(eq(wmsTables.fulfillmentOrders.batchId, batchId));
 
       const skuMap = new Map<string, PickingListItem>();
@@ -486,7 +488,7 @@ export class OutboundBatchService {
           skuMap.set(row.skuId, {
             skuId: row.skuId,
             skuName: row.skuName,
-            locationCode: undefined,
+            locationCode: row.locationCode ?? undefined,
             totalQty: 0,
             fulfillmentOrderItems: [],
           });

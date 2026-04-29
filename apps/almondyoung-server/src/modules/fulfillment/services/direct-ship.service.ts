@@ -4,6 +4,13 @@ import { wmsTables, wmsSchema } from '../../inventory/schema/inventory.schema';
 import { DbService } from '@app/db';
 import { and, eq, inArray, desc } from 'drizzle-orm';
 
+export interface DirectShipCustomerInfo {
+  customerName: string | null;
+  customerEmail: string | null;
+  customerPhone: string | null;
+  shippingAddress: unknown;
+}
+
 export interface DirectShipOrder {
   fulfillmentOrderId: string;
   salesOrderId: string | null;
@@ -16,6 +23,7 @@ export interface DirectShipOrder {
   createdAt: Date;
   forwardedAt?: Date;
   completedAt?: Date;
+  customerInfo?: DirectShipCustomerInfo;
   items: Array<{
     foiId: string;
     salesOrderLineId: string | null;
@@ -109,7 +117,7 @@ export class DirectShipService {
 
     const foIds = foRows.map((r) => r.id);
 
-    // Step 2: fetch items + skus for all FOs
+    // Step 2: fetch items + skus + supplier + customerInfo for all FOs
     const itemRows = await this.db
       .select({
         id: wmsTables.fulfillmentOrderItems.id,
@@ -119,12 +127,53 @@ export class DirectShipService {
         skuId: wmsTables.fulfillmentOrderItems.skuId,
         skuName: wmsTables.skus.name,
         qty: wmsTables.fulfillmentOrderItems.qty,
+        supplierCode: wmsTables.suppliers.code,
+        supplierSku: wmsTables.skuSuppliers.supplierSku,
       })
       .from(wmsTables.fulfillmentOrderItems)
       .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId))
+      .leftJoin(wmsTables.skuSuppliers, eq(wmsTables.skuSuppliers.skuId, wmsTables.skus.id))
+      .leftJoin(wmsTables.suppliers, eq(wmsTables.suppliers.id, wmsTables.skuSuppliers.supplierId))
       .where(inArray(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, foIds));
 
-    // Step 3: group items by foId
+    // Step 3: fetch customerInfo from salesOrders for each FO
+    const salesOrderIds = foRows.map((fo) => fo.id);
+    const salesOrderRows =
+      salesOrderIds.length === 0
+        ? []
+        : await this.db
+            .select({
+              id: wmsTables.salesOrders.id,
+              customerName: wmsTables.salesOrders.customerName,
+              customerEmail: wmsTables.salesOrders.customerEmail,
+              customerPhone: wmsTables.salesOrders.customerPhone,
+              shippingAddress: wmsTables.salesOrders.shippingAddress,
+              foId: wmsTables.fulfillmentOrderItems.fulfillmentOrderId,
+            })
+            .from(wmsTables.salesOrders)
+            .innerJoin(
+              wmsTables.salesOrderLines,
+              eq(wmsTables.salesOrderLines.salesOrderId, wmsTables.salesOrders.id),
+            )
+            .innerJoin(
+              wmsTables.fulfillmentOrderItems,
+              eq(wmsTables.fulfillmentOrderItems.salesOrderLineId, wmsTables.salesOrderLines.id),
+            )
+            .where(inArray(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, foIds));
+
+    const customerInfoByFoId = new Map<string, { customerName: string | null; customerEmail: string | null; customerPhone: string | null; shippingAddress: unknown }>();
+    for (const row of salesOrderRows) {
+      if (!customerInfoByFoId.has(row.foId)) {
+        customerInfoByFoId.set(row.foId, {
+          customerName: row.customerName,
+          customerEmail: row.customerEmail,
+          customerPhone: row.customerPhone,
+          shippingAddress: row.shippingAddress,
+        });
+      }
+    }
+
+    // Step 4: group items by foId
     const itemsByFoId = new Map<string, typeof itemRows>();
     for (const item of itemRows) {
       if (!itemsByFoId.has(item.fulfillmentOrderId)) {
@@ -135,11 +184,13 @@ export class DirectShipService {
 
     return foRows.map((fo) => {
       const items = itemsByFoId.get(fo.id) ?? [];
+      const supplierCode = items[0]?.supplierCode ?? undefined;
+      const customerInfo = customerInfoByFoId.get(fo.id) ?? undefined;
       return {
         fulfillmentOrderId: fo.id,
         salesOrderId: items[0]?.salesOrderId ?? null,
         companyName: fo.ownerId ?? 'Unknown',
-        supplierCode: undefined,
+        supplierCode,
         status: this.mapFOStatusToDirectShipStatus(fo.status),
         priority: fo.priority,
         totalItems: fo.totalItems,
@@ -147,13 +198,14 @@ export class DirectShipService {
         createdAt: fo.createdAt,
         forwardedAt: fo.allocatedAt ?? undefined,
         completedAt: fo.shippedAt ?? undefined,
+        customerInfo,
         items: items.map((item) => ({
           foiId: item.id,
           salesOrderLineId: item.salesOrderLineId,
           skuId: item.skuId,
           skuName: item.skuName ?? '',
           qty: item.qty,
-          supplierSku: undefined,
+          supplierSku: item.supplierSku ?? undefined,
         })),
       };
     });
@@ -262,7 +314,7 @@ export class DirectShipService {
           productName: item.skuName,
           quantity: item.qty,
           supplierSku: item.supplierSku,
-          customerInfo: undefined,
+          customerInfo: order.customerInfo,
         })),
       ),
       totalOrders: orders.length,

@@ -14,6 +14,7 @@ const PickItemSchema = z.object({
 
 const PickIndividualItemSchema = z.object({
   pickedQty: z.number().int().positive(),
+  pickerUserId: z.string().optional(),
 });
 
 const ScanBarcodeSchema = z.object({
@@ -85,7 +86,7 @@ export class PickingController {
   @ApiParam({ name: 'foiId', description: '주문처리 라인 ID' })
   @UsePipes(new ZodValidationPipe(PickIndividualItemSchema))
   async pickIndividualItem(@Param('foiId') foiId: string, @Body() dto: z.infer<typeof PickIndividualItemSchema>) {
-    await this.pickingProcessService.pickIndividualItem(foiId, dto.pickedQty);
+    await this.pickingProcessService.pickIndividualItem(foiId, dto.pickedQty, dto.pickerUserId);
     return { message: 'Individual item picked successfully' };
   }
 

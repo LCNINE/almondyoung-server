@@ -335,7 +335,7 @@ export class PickingProcessService {
     }, tx);
   }
 
-  async pickIndividualItem(foiId: string, pickedQty: number, tx?: DbTx): Promise<void> {
+  async pickIndividualItem(foiId: string, pickedQty: number, pickerUserId?: string, tx?: DbTx): Promise<void> {
     if (pickedQty <= 0) {
       throw new BadRequestException('Picked quantity must be positive');
     }
@@ -379,7 +379,9 @@ export class PickingProcessService {
         })
         .where(eq(wmsTables.fulfillmentOrderItems.id, foiId));
 
-      this.logger.log(`Individual pick: FOI ${foiId} picked ${pickedQty}, total: ${newPickedQty}/${item.qty}`);
+      this.logger.log(
+        `Individual pick: FOI ${foiId} picked ${pickedQty}, total: ${newPickedQty}/${item.qty}${pickerUserId ? `, picker: ${pickerUserId}` : ''}`,
+      );
     }, tx);
   }
 
@@ -609,7 +611,7 @@ export class PickingProcessService {
           data: { skuId: parsed.id, pickedQty },
         };
       } else if (parsed.type === 'fulfillment_order_item') {
-        await this.pickIndividualItem(parsed.id, pickedQty, trx);
+        await this.pickIndividualItem(parsed.id, pickedQty, context.pickerUserId, trx);
 
         return {
           success: true,
