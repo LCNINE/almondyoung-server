@@ -277,6 +277,11 @@ export const mainMenus: MainMenu[] = [
         path: '/matching/products',
       },
       {
+        id: 'variant-matching',
+        title: '옵션 매칭',
+        path: '/matching/variants',
+      },
+      {
         id: 'product-registration',
         title: '상품 등록',
         path: '/inventory/product-registration',
