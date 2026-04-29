@@ -48,15 +48,6 @@
         "tsConfigPath": "libs/db/tsconfig.lib.json"
       }
     },
-    "events-test": {
-      "type": "application",
-      "root": "apps/events-test",
-      "entryFile": "main",
-      "sourceRoot": "apps/events-test/src",
-      "compilerOptions": {
-        "tsConfigPath": "apps/events-test/tsconfig.json"
-      }
-    },
     "file-service": {
       "type": "application",
       "root": "apps/file-service",
