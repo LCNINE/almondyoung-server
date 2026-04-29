@@ -8,13 +8,16 @@ import {
   FormInput,
   FormRadioGroup,
   FormDateRangePicker,
+  FormSelect,
 } from '@/components/common/form';
 import { Button } from '@/components/ui/button';
 import { DatePreset, DATE_PRESET_OPTIONS, computeDateRange } from '@/lib/utils/date';
 
 type SearchType = 'userId' | 'member';
+type DateCriteria = 'createdAt' | 'cancelledAt';
 
 interface FilterState {
+  dateCriteria: DateCriteria;
   datePreset: DatePreset;
   dateFrom: string;
   dateTo: string;
@@ -29,6 +32,7 @@ export function CancellationsFilterBox() {
   const searchParams = useSearchParams();
 
   const [filters, setFilters] = useState<FilterState>({
+    dateCriteria: (searchParams.get('dateCriteria') as DateCriteria) ?? 'createdAt',
     datePreset: (searchParams.get('datePreset') as DatePreset) ?? 'all',
     dateFrom: searchParams.get('dateFrom') ?? '',
     dateTo: searchParams.get('dateTo') ?? '',
@@ -52,12 +56,13 @@ export function CancellationsFilterBox() {
     if (from) params.set('dateFrom', from);
     if (to) params.set('dateTo', to);
     if (filters.datePreset && filters.datePreset !== 'all') params.set('datePreset', filters.datePreset);
+    if (filters.dateCriteria !== 'createdAt') params.set('dateCriteria', filters.dateCriteria);
 
     router.replace(`${pathname}?${params.toString()}`);
   };
 
   const handleReset = () => {
-    setFilters({ datePreset: 'all', dateFrom: '', dateTo: '', searchType: 'userId', q: '', memberQ: '' });
+    setFilters({ dateCriteria: 'createdAt', datePreset: 'all', dateFrom: '', dateTo: '', searchType: 'userId', q: '', memberQ: '' });
     router.replace(pathname);
   };
 
@@ -66,7 +71,14 @@ export function CancellationsFilterBox() {
       <div className="flex flex-wrap items-start gap-4">
         <div className="w-24 shrink-0">
           <FormField label="일자" direction="horizontal">
-            <span className="text-sm">가입일</span>
+            <FormSelect
+              value={filters.dateCriteria}
+              onValueChange={(v) => setFilters((p) => ({ ...p, dateCriteria: v as DateCriteria }))}
+              options={[
+                { value: 'createdAt', label: '가입일' },
+                { value: 'cancelledAt', label: '해지일' },
+              ]}
+            />
           </FormField>
         </div>
         <div className="flex-1">
