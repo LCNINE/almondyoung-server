@@ -52,7 +52,7 @@ export function setup(opts?: { baseDomain?: string }) {
 
   // ─── Redis (ElastiCache Serverless) ───
   const redis = new sst.aws.Redis("Redis", { vpc, cluster: false });
-  const encodedRedisPassword = redis.password.apply((p) =>
+  const encodedRedisPassword = redis.password?.apply((p) =>
     encodeURIComponent(p),
   );
   const redisUrl = (dbIndex: number) =>
@@ -82,7 +82,7 @@ export function setup(opts?: { baseDomain?: string }) {
       priority: number;
       environment: Record<string, $util.Output<string> | string>;
       buildArgs?: Record<string, $util.Output<string> | string>;
-      link?: sst.Linkable[];
+      link?: sst.Linkable<any>[];
       loadBalancerHealth?: Record<string, any>;
       transform?: any;
     },
