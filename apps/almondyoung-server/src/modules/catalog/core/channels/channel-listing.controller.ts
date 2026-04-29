@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { Public } from '@app/authorization';
 import { ChannelListingService } from './channel-listing.service';
@@ -54,22 +54,17 @@ export class ChannelListingController {
     @Query('channelItemId') channelItemId?: string,
   ): Promise<LookupChannelListingResponseDto | null> {
     if (!channelItemId) {
-      throw new HttpException('channelItemId is required', HttpStatus.BAD_REQUEST);
+      throw new BadRequestException('channelItemId is required');
     }
 
     if (!salesChannelId && !channelCode) {
-      throw new HttpException('Either salesChannelId or channelCode is required', HttpStatus.BAD_REQUEST);
+      throw new BadRequestException('Either salesChannelId or channelCode is required');
     }
 
-    try {
-      if (salesChannelId) {
-        return await this.channelListingService.lookupVariant(salesChannelId, channelItemId);
-      } else {
-        return await this.channelListingService.lookupVariantByChannelCode(channelCode!, channelItemId);
-      }
-    } catch (error) {
-      throw new HttpException('Failed to lookup variant', HttpStatus.INTERNAL_SERVER_ERROR);
+    if (salesChannelId) {
+      return this.channelListingService.lookupVariant(salesChannelId, channelItemId);
     }
+    return this.channelListingService.lookupVariantByChannelCode(channelCode!, channelItemId);
   }
 
   @Post()
@@ -86,24 +81,12 @@ export class ChannelListingController {
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
   @ApiResponse({ status: 409, description: '이미 동일한 매핑이 존재함' })
   async create(@Body() dto: CreateChannelListingDto): Promise<ChannelListingDto> {
-    try {
-      const exists = await this.channelListingService.existsListing(dto.salesChannelId, dto.channelItemId);
-
-      if (exists) {
-        throw new HttpException(`Mapping already exists for channel item: ${dto.channelItemId}`, HttpStatus.CONFLICT);
-      }
-
-      const listing = await this.channelListingService.createListing(dto);
-      return ChannelListingMapper.toDto(listing);
-    } catch (error) {
-      if (error.status === HttpStatus.CONFLICT) {
-        throw error;
-      }
-      if (error.message.includes('not found')) {
-        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
-      }
-      throw new HttpException('Failed to create channel listing', HttpStatus.INTERNAL_SERVER_ERROR);
+    const exists = await this.channelListingService.existsListing(dto.salesChannelId, dto.channelItemId);
+    if (exists) {
+      throw new ConflictException(`Mapping already exists for channel item: ${dto.channelItemId}`);
     }
+    const listing = await this.channelListingService.createListing(dto);
+    return ChannelListingMapper.toDto(listing);
   }
 
   @Get('by-variant/:variantId')
@@ -118,12 +101,8 @@ export class ChannelListingController {
     type: [ChannelListingWithChannelDto],
   })
   async getByVariant(@Param('variantId') variantId: string): Promise<ChannelListingWithChannelDto[]> {
-    try {
-      const listings = await this.channelListingService.getListingsByVariant(variantId);
-      return listings.map((listing) => ChannelListingMapper.toWithChannelDto(listing));
-    } catch (error) {
-      throw new HttpException('Failed to get channel listings', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
+    const listings = await this.channelListingService.getListingsByVariant(variantId);
+    return listings.map((listing) => ChannelListingMapper.toWithChannelDto(listing));
   }
 
   @Get(':id')
@@ -139,20 +118,11 @@ export class ChannelListingController {
   })
   @ApiResponse({ status: 404, description: '매핑을 찾을 수 없음' })
   async getById(@Param('id') id: string): Promise<ChannelListingDto> {
-    try {
-      const listing = await this.channelListingService.getListingById(id);
-
-      if (!listing) {
-        throw new HttpException('Channel listing not found', HttpStatus.NOT_FOUND);
-      }
-
-      return ChannelListingMapper.toDto(listing);
-    } catch (error) {
-      if (error.status === HttpStatus.NOT_FOUND) {
-        throw error;
-      }
-      throw new HttpException('Failed to get channel listing', HttpStatus.INTERNAL_SERVER_ERROR);
+    const listing = await this.channelListingService.getListingById(id);
+    if (!listing) {
+      throw new NotFoundException('Channel listing not found');
     }
+    return ChannelListingMapper.toDto(listing);
   }
 
   @Put(':id')
@@ -169,20 +139,11 @@ export class ChannelListingController {
   })
   @ApiResponse({ status: 404, description: '매핑을 찾을 수 없음' })
   async update(@Param('id') id: string, @Body() dto: UpdateChannelListingDto): Promise<ChannelListingDto> {
-    try {
-      const updated = await this.channelListingService.updateListing(id, dto);
-
-      if (!updated) {
-        throw new HttpException('Channel listing not found', HttpStatus.NOT_FOUND);
-      }
-
-      return ChannelListingMapper.toDto(updated);
-    } catch (error) {
-      if (error.status === HttpStatus.NOT_FOUND) {
-        throw error;
-      }
-      throw new HttpException('Failed to update channel listing', HttpStatus.INTERNAL_SERVER_ERROR);
+    const updated = await this.channelListingService.updateListing(id, dto);
+    if (!updated) {
+      throw new NotFoundException('Channel listing not found');
     }
+    return ChannelListingMapper.toDto(updated);
   }
 
   @Put(':id/deactivate')
@@ -193,11 +154,7 @@ export class ChannelListingController {
   @ApiParam({ name: 'id', description: '매핑 ID (UUID)' })
   @ApiResponse({ status: 200, description: '비활성화 성공' })
   async deactivate(@Param('id') id: string): Promise<void> {
-    try {
-      await this.channelListingService.deactivateListing(id);
-    } catch (error) {
-      throw new HttpException('Failed to deactivate channel listing', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
+    await this.channelListingService.deactivateListing(id);
   }
 
   @Put(':id/activate')
@@ -208,11 +165,7 @@ export class ChannelListingController {
   @ApiParam({ name: 'id', description: '매핑 ID (UUID)' })
   @ApiResponse({ status: 200, description: '활성화 성공' })
   async activate(@Param('id') id: string): Promise<void> {
-    try {
-      await this.channelListingService.activateListing(id);
-    } catch (error) {
-      throw new HttpException('Failed to activate channel listing', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
+    await this.channelListingService.activateListing(id);
   }
 
   @Delete(':id')
@@ -223,10 +176,6 @@ export class ChannelListingController {
   @ApiParam({ name: 'id', description: '삭제할 매핑 ID (UUID)' })
   @ApiResponse({ status: 200, description: '삭제 성공' })
   async delete(@Param('id') id: string): Promise<void> {
-    try {
-      await this.channelListingService.deleteListing(id);
-    } catch (error) {
-      throw new HttpException('Failed to delete channel listing', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
+    await this.channelListingService.deleteListing(id);
   }
 }

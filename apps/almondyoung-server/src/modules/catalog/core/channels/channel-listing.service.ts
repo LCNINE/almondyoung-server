@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { NotFoundError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
 import { ChannelVariantListing, NewChannelVariantListing, DbTransaction } from '../../catalog.types';
 import {
@@ -141,7 +142,7 @@ export class ChannelListingService {
       .limit(1);
 
     if (variant.length === 0) {
-      throw new Error(`Variant not found: ${dto.variantId}`);
+      throw new NotFoundError(`Variant not found: ${dto.variantId}`);
     }
 
     // Channel 존재 확인
@@ -152,7 +153,7 @@ export class ChannelListingService {
       .limit(1);
 
     if (channel.length === 0) {
-      throw new Error(`Sales channel not found: ${dto.salesChannelId}`);
+      throw new NotFoundError(`Sales channel not found: ${dto.salesChannelId}`);
     }
 
     const [listing] = await client

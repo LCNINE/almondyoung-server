@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Delete, Body, Param, Query, UsePipes } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, Query, UsePipes, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { OutboundBatchService } from '../services/outbound-batch.service';
 import { ZodValidationPipe } from '@app/shared/pipes/zod-validation.pipe';
@@ -45,7 +45,7 @@ export class OutboundBatchController {
   @ApiQuery({ name: 'warehouseId', required: true, type: String })
   async getAvailableFulfillmentOrders(@Query('warehouseId') warehouseId: string) {
     if (!warehouseId) {
-      throw new Error('warehouseId is required');
+      throw new BadRequestException('warehouseId is required');
     }
     return this.outboundBatchService.getAvailableFulfillmentOrders(warehouseId);
   }
