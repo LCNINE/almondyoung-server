@@ -418,6 +418,9 @@ export const mainMenus: MainMenu[] = [
           { id: 'channel-categories', title: '채널 카테고리', path: '/mall/channel-categories' },
           { id: 'product-display', title: '진열' },
           { id: 'deleted-products', title: '휴지통(삭제상품 관리)' },
+          { id: 'product-bulk', title: '일괄 작업', path: '/mall/bulk' },
+          { id: 'product-csv', title: 'CSV 가져오기/내보내기', path: '/mall/csv' },
+          { id: 'product-audit', title: '감사 이력/승인', path: '/mall/audit' },
         ],
       },
       {

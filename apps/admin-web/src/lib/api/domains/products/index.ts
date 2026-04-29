@@ -11,6 +11,10 @@ import { bannersClient } from './banners.client';
 import { tagsClient } from './tags.client';
 import { pricingClient } from './pricing.client';
 import { versionsClient } from './versions.client';
+import { bulkClient } from './bulk.client';
+import { csvClient } from './csv.client';
+import { auditClient } from './audit.client';
+import { approvalClient } from './approval.client';
 
 export const products = {
   categories,
@@ -23,6 +27,10 @@ export const products = {
   tags: tagsClient,
   pricing: pricingClient,
   versions: versionsClient,
+  bulk: bulkClient,
+  csv: csvClient,
+  audit: auditClient,
+  approval: approvalClient,
 };
 
 export { categories } from './categories.client';
@@ -35,3 +43,7 @@ export { bannersClient } from './banners.client';
 export { tagsClient } from './tags.client';
 export { pricingClient } from './pricing.client';
 export { versionsClient } from './versions.client';
+export { bulkClient } from './bulk.client';
+export { csvClient } from './csv.client';
+export { auditClient } from './audit.client';
+export { approvalClient } from './approval.client';

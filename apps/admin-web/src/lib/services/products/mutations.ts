@@ -41,6 +41,9 @@ import type {
   UpdateChannelListingDto,
   CreateChannelCategoryDto,
   UpdateChannelCategoryDto,
+  BulkUpdateDto,
+  BulkDeleteDto,
+  BulkRestoreDto,
 } from '@/lib/types/dto/products';
 
 // ===== 카테고리 관련 뮤테이션 =====
@@ -747,6 +750,90 @@ export const useDeleteChannelCategory = () => {
     mutationFn: (id: string) => channelCategoriesClient.deleteChannelCategory(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: productQueryKeys.channelCategories });
+    },
+  });
+};
+
+// ===== 일괄 작업 =====
+
+export const useBulkUpdateMasters = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: BulkUpdateDto) => products.bulk.update(dto),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.masters });
+    },
+  });
+};
+
+export const useBulkDeleteMasters = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: BulkDeleteDto) => products.bulk.delete(dto),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.masters });
+    },
+  });
+};
+
+export const useBulkRestoreMasters = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: BulkRestoreDto) => products.bulk.restore(dto),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.masters });
+    },
+  });
+};
+
+// ===== CSV =====
+
+export const useCsvBulkImport = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ file, userId }: { file: File; userId: string }) =>
+      products.csv.bulkImport(file, userId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.masters });
+    },
+  });
+};
+
+// ===== 승인 =====
+
+export const useSubmitApproval = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (masterId: string) => products.approval.submitApproval(masterId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.pendingApprovals });
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.masters });
+    },
+  });
+};
+
+export const useApprove = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ masterId, comment }: { masterId: string; comment?: string }) =>
+      products.approval.approve(masterId, comment),
+    onSuccess: (_, { masterId }) => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.pendingApprovals });
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.master(masterId) });
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.approvalHistory(masterId) });
+    },
+  });
+};
+
+export const useReject = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ masterId, reason }: { masterId: string; reason: string }) =>
+      products.approval.reject(masterId, reason),
+    onSuccess: (_, { masterId }) => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.pendingApprovals });
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.master(masterId) });
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.approvalHistory(masterId) });
     },
   });
 };
