@@ -10,6 +10,7 @@ export class MetricsController {
   constructor(private readonly metricsService: MetricsService) {}
 
   @Get()
+  @Public()
   @ApiOperation({
     summary: '\uba54\ud2b8\ub9ad \uc870\ud68c',
     description:

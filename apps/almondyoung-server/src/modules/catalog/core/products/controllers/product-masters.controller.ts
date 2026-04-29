@@ -11,9 +11,8 @@ import {
   HttpException,
   HttpStatus,
   HttpCode,
-  UseGuards,
 } from '@nestjs/common';
-import { JwtAuthGuard, User } from '@app/authorization';
+import { User } from '@app/authorization';
 import { DateMapper } from '../../../common/mappers';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { ProductMastersService } from '../services/product-masters.service';
@@ -223,7 +222,6 @@ export class ProductMastersController {
   }
 
   @Delete(':masterId')
-  @UseGuards(JwtAuthGuard)
   @ApiOperation({
     summary: '제품 마스터 소프트 삭제',
     description: `
@@ -255,7 +253,6 @@ export class ProductMastersController {
   }
 
   @Post(':masterId/restore')
-  @UseGuards(JwtAuthGuard)
   @HttpCode(200)
   @ApiOperation({
     summary: '제품 마스터 복원',
@@ -306,7 +303,6 @@ export class ProductMastersController {
   }
 
   @Delete(':id/permanent')
-  @UseGuards(JwtAuthGuard)
   @ApiOperation({
     summary: '제품 버전 영구 삭제',
     description: `
