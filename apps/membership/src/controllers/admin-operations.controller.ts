@@ -2,6 +2,7 @@ import {
   Controller,
   Post,
   Put,
+  Patch,
   Delete,
   Get,
   Body,
@@ -41,6 +42,7 @@ import {
   ExtendEntitlementRequestDto,
   ForceCancelSubscriptionRequestDto,
   GetBulkSubscriptionsRequestDto,
+  AdminSubscribeUserRequestDto,
 } from '../shared/dto/request.dto';
 import { JwtAuthGuard, User } from '@app/authorization';
 import { SubscriptionService } from '../services/subscription.service';
@@ -623,6 +625,52 @@ export class AdminOperationsController {
     }
   }
 
+  @Patch('plans/:planId/activate')
+  @ApiOperation({ summary: '플랜 활성화 복구' })
+  @UseGuards(JwtAuthGuard)
+  async activatePlan(@User('userId') adminId: string, @Param('planId') planId: string) {
+    try {
+      const result = await this.adminOperationsService.activatePlan(planId, adminId);
+      return { success: true, data: result };
+    } catch (error) {
+      this.handleError(error, '플랜 활성화', planId);
+    }
+  }
+
+  @Post('members/subscribe')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: '관리자 신규 회원 구독 등록' })
+  @ApiBody({ type: AdminSubscribeUserRequestDto })
+  @UseGuards(JwtAuthGuard)
+  async adminSubscribeUser(
+    @User('userId') adminId: string,
+    @Body() dto: AdminSubscribeUserRequestDto,
+  ) {
+    try {
+      const result = await this.adminOperationsService.adminSubscribeUser(
+        dto.userId,
+        dto.planId,
+        dto.billingMode,
+      );
+      return { success: true, data: result };
+    } catch (error) {
+      this.handleError(error, '신규 회원 구독 등록', dto.userId);
+    }
+  }
+
+  @Post('billing/retry/:contractId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '결제 수동 재시도' })
+  @UseGuards(JwtAuthGuard)
+  async retryBilling(@User('userId') adminId: string, @Param('contractId') contractId: string) {
+    try {
+      const result = await this.adminOperationsService.retryBillingForContract(contractId);
+      return { success: true, data: result };
+    } catch (error) {
+      this.handleError(error, '결제 재시도', contractId);
+    }
+  }
+
   /**
    * 멤버십 회원 목록 조회 (관리자 어드민용)
    *
@@ -642,6 +690,7 @@ export class AdminOperationsController {
     @Query('userIds') userIds?: string | string[],
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
+    @Query('dateCriteria') dateCriteria?: 'createdAt' | 'cancelledAt',
   ) {
     try {
       const normalizedUserIds = userIds
@@ -655,6 +704,7 @@ export class AdminOperationsController {
         userIds: normalizedUserIds,
         dateFrom,
         dateTo,
+        dateCriteria,
       });
       return result;
     } catch (error) {

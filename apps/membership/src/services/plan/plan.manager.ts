@@ -126,20 +126,36 @@ export class PlanManager {
    */
   async deactivatePlan(planId: string, adminId: string): Promise<{ planId: string }> {
     return this.dbService.db.transaction(async (tx: DrizzleTransaction) => {
-      // 1. 플랜 비활성화 (soft delete)
       await tx
         .update(schema.plan)
-        .set({
-          isActive: false,
-          updatedAt: new Date(),
-        })
+        .set({ isActive: false, updatedAt: new Date() })
         .where(eq(schema.plan.id, planId));
 
-      // 2. 이벤트 배치 기록
       await tx.insert(schema.eventBatches).values({
         id: crypto.randomUUID(),
         type: 'PLAN_DEACTIVATED',
-        adminId: adminId,
+        adminId,
+        effectiveDate: new Date().toISOString().split('T')[0],
+      });
+
+      return { planId };
+    });
+  }
+
+  /**
+   * 플랜 활성화 (비활성 → 활성 복구)
+   */
+  async activatePlan(planId: string, adminId: string): Promise<{ planId: string }> {
+    return this.dbService.db.transaction(async (tx: DrizzleTransaction) => {
+      await tx
+        .update(schema.plan)
+        .set({ isActive: true, updatedAt: new Date() })
+        .where(eq(schema.plan.id, planId));
+
+      await tx.insert(schema.eventBatches).values({
+        id: crypto.randomUUID(),
+        type: 'PLAN_ACTIVATED',
+        adminId,
         effectiveDate: new Date().toISOString().split('T')[0],
       });
 
