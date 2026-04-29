@@ -54,4 +54,11 @@ export class GetUsersQueryDto {
   @IsOptional()
   @IsEnum(['asc', 'desc'])
   order?: 'asc' | 'desc';
+
+  @ApiPropertyOptional({
+    description: 'ID 목록 (UUID 콤마 구분, 예: id1,id2). 지정 시 일치 항목만 반환',
+  })
+  @IsOptional()
+  @IsString()
+  ids?: string;
 }
