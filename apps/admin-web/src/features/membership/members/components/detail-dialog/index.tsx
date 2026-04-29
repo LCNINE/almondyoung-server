@@ -132,14 +132,18 @@ function ForceCancelDialog({ open, onClose, contractId, onSuccess }: ForceCancel
       }
     }
     try {
-      await forceCancelMutation.mutateAsync({
+      const result = await forceCancelMutation.mutateAsync({
         contractId,
         reason: reason.trim(),
         refundType,
         refundAmount: refundType === 'PARTIAL' ? Number(refundAmount) : undefined,
         adminNote: adminNote.trim() || undefined,
       });
-      toast.success('구독이 즉시 취소되었습니다.');
+      if (result.refundStatus === 'FAILED') {
+        toast.warning('구독은 취소되었으나 환불 처리에 실패했습니다. 수동으로 환불해주세요.');
+      } else {
+        toast.success('구독이 즉시 취소되었습니다.');
+      }
       onSuccess();
       handleClose();
     } catch {

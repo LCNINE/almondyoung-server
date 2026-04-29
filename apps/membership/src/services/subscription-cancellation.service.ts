@@ -23,7 +23,7 @@ export interface CancellationResult {
   cancelledAt: Date;
   refundEligible: boolean;
   refundAmount: number;
-  refundStatus: 'PENDING' | 'NOT_APPLICABLE';
+  refundStatus: 'COMPLETED' | 'FAILED' | 'PENDING' | 'NOT_APPLICABLE';
 }
 
 /**
@@ -162,7 +162,7 @@ export class SubscriptionCancellationService {
     const plan = await this.contractReader.findPlan(contract.planId);
     if (!plan) throw new Error('Plan not found');
 
-    return this.cancellationManager.forceCancelSubscription(
+    const result = await this.cancellationManager.forceCancelSubscription(
       contract,
       plan,
       adminId,
@@ -171,6 +171,27 @@ export class SubscriptionCancellationService {
       partialRefundAmount,
       refundReason,
     );
+
+    if (result.refundAmount <= 0 || !contract.lastPaymentIntentId) {
+      return result;
+    }
+
+    try {
+      await this.paymentClientService.refundByIntent(
+        contract.lastPaymentIntentId,
+        result.refundAmount,
+        'ADMIN_CANCEL',
+        refundReason ?? reason,
+      );
+      return { ...result, refundStatus: 'COMPLETED' };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `강제 취소 환불 실패 (contractId=${contractId}, amount=${result.refundAmount}): ${msg}`,
+        err instanceof Error ? err.stack : undefined,
+      );
+      return { ...result, refundStatus: 'FAILED' };
+    }
   }
 
   /**
