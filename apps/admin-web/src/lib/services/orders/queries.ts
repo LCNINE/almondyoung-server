@@ -194,7 +194,7 @@ export const usePickingSession = (foId: string) => {
   return useQuery({
     queryKey: orderQueryKeys.pickingSession(foId),
     queryFn: () => orders.picking.getPickingSession(foId),
-    enabled: false, // 명시적 시작 버튼에서만 호출 (side-effect 있는 GET)
+    enabled: !!foId,
   });
 };
 
