@@ -6,6 +6,8 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { productQueryKeys } from './query-keys';
 import { products } from '@/lib/api/domains';
+import { channelListingsClient } from '@/lib/api/domains/products/channel-listings.client';
+import { channelCategoriesClient } from '@/lib/api/domains/products/channel-categories.client';
 import type {
   CreateCategoryDto,
   UpdateCategoryDto,
@@ -35,6 +37,10 @@ import type {
   ReplacePricingRulesDto,
   CalculatePriceRequestDto,
   CreateDraftVersionDto,
+  CreateChannelListingDto,
+  UpdateChannelListingDto,
+  CreateChannelCategoryDto,
+  UpdateChannelCategoryDto,
 } from '@/lib/types/dto/products';
 
 // ===== 카테고리 관련 뮤테이션 =====
@@ -650,5 +656,97 @@ export const useCalculateMasterPrice = () => {
   return useMutation({
     mutationFn: ({ masterId, dto }: { masterId: string; dto: CalculatePriceRequestDto }) =>
       products.pricing.masters.calculate(masterId, dto),
+  });
+};
+
+// ===== 채널 리스팅 =====
+
+export const useCreateChannelListing = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreateChannelListingDto) =>
+      channelListingsClient.createChannelListing(data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.channelListingsByVariant(variables.variantId),
+      });
+    },
+  });
+};
+
+export const useUpdateChannelListing = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: UpdateChannelListingDto }) =>
+      channelListingsClient.updateChannelListing(id, data),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.channelListing(id) });
+      queryClient.invalidateQueries({ queryKey: ['channel-listings'] });
+    },
+  });
+};
+
+export const useActivateChannelListing = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => channelListingsClient.activateChannelListing(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['channel-listings'] });
+    },
+  });
+};
+
+export const useDeactivateChannelListing = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => channelListingsClient.deactivateChannelListing(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['channel-listings'] });
+    },
+  });
+};
+
+export const useDeleteChannelListing = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => channelListingsClient.deleteChannelListing(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['channel-listings'] });
+    },
+  });
+};
+
+// ===== 채널 카테고리 =====
+
+export const useCreateChannelCategory = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreateChannelCategoryDto) =>
+      channelCategoriesClient.createChannelCategory(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.channelCategories });
+    },
+  });
+};
+
+export const useUpdateChannelCategory = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: UpdateChannelCategoryDto }) =>
+      channelCategoriesClient.updateChannelCategory(id, data),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.channelCategories });
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.channelCategory(id) });
+    },
+  });
+};
+
+export const useDeleteChannelCategory = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => channelCategoriesClient.deleteChannelCategory(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.channelCategories });
+    },
   });
 };

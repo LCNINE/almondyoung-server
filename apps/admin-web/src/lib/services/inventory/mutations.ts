@@ -17,6 +17,8 @@ import { holdersClient } from '../../api/domains/inventory/holders.client';
 import { locationsClient } from '../../api/domains/inventory/locations.client';
 import { purchaseOrdersClient } from '../../api/domains/inventory/purchase-orders.client';
 import { inboundClient } from '../../api/domains/inventory/inbound.client';
+import { returnsClient } from '../../api/domains/inventory/returns.client';
+import { movementClient } from '../../api/domains/inventory/movement.client';
 import type {
   AdjustStockDto,
   CreateSkuDto,
@@ -66,6 +68,11 @@ import type {
   CreateInboundPlanDto,
   AddInboundPlanItemsDto,
   ReceiveFromPlanDto,
+  CreateReturnDto,
+  ReceiveReturnDto,
+  InspectReturnDto,
+  ProcessReturnDto,
+  MoveBatchRequestDto,
 } from '../../types/dto/inventory';
 
 export const useAdjustStock = () => {
@@ -800,6 +807,66 @@ export const useUpdateInboundLineMemo = () => {
       inboundClient.lines.memo(lineId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inboundReceipts() });
+    },
+  });
+};
+
+// ===== 회수(Returns) =====
+
+export const useCreateReturn = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreateReturnDto) => returnsClient.createReturn(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory', 'returns'] });
+    },
+  });
+};
+
+export const useReceiveReturn = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: ReceiveReturnDto }) =>
+      returnsClient.receiveReturn(id, data),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['inventory', 'returns'] });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.return(id) });
+    },
+  });
+};
+
+export const useInspectReturn = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: InspectReturnDto }) =>
+      returnsClient.inspectReturn(id, data),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['inventory', 'returns'] });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.return(id) });
+    },
+  });
+};
+
+export const useProcessReturn = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: ProcessReturnDto }) =>
+      returnsClient.processReturn(id, data),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['inventory', 'returns'] });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.return(id) });
+    },
+  });
+};
+
+// ===== 즉시 이동(Movement) =====
+
+export const useMoveImmediately = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: MoveBatchRequestDto) => movementClient.moveImmediately(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory', 'movement', 'history'] });
     },
   });
 };
