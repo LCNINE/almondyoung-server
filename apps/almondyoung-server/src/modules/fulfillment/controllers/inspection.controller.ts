@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Body, Param, Query, UsePipes } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, Query, UsePipes, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { InspectionService } from '../services/inspection.service';
 import { ZodValidationPipe } from '@app/shared/pipes/zod-validation.pipe';
@@ -93,7 +93,7 @@ export class InspectionController {
   @ApiQuery({ name: 'inspectorUserId', description: '검사자 사용자 ID', required: true })
   async resetInspection(@Param('foiId') foiId: string, @Query('inspectorUserId') inspectorUserId: string) {
     if (!inspectorUserId) {
-      throw new Error('inspectorUserId is required');
+      throw new BadRequestException('inspectorUserId is required');
     }
     await this.inspectionService.resetInspection(foiId, inspectorUserId);
     return { message: 'Inspection reset successfully' };

@@ -1,4 +1,5 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { NotFoundError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
 import { InjectStreamPublisher, StreamPublisher } from '@app/events';
 import { ProductEvents, PRODUCT_STREAM, ProductSnapshot } from '@packages/event-contracts';
@@ -379,7 +380,7 @@ export class ProductVersionsService {
     });
 
     if (!version) {
-      throw new Error(`Version ${versionId} not found`);
+      throw new NotFoundError(`Version ${versionId} not found`);
     }
 
     const categories = await this._buildCategoryTree(masterId, versionId, tx);

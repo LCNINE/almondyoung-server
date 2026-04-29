@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { NotFoundError, BadRequestError, ConflictError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
 import {
   CreateChannelProductDto,
@@ -28,7 +29,7 @@ export class ChannelProductsService {
 
   async createChannelProduct(data: CreateChannelProductDto, tx?: DbTransaction): Promise<ChannelProduct> {
     if (!data.masterId || !data.channelId) {
-      throw new Error('Master ID and Channel ID are required');
+      throw new BadRequestError('Master ID and Channel ID are required');
     }
 
     const client = this.getClient(tx);
@@ -40,7 +41,7 @@ export class ChannelProductsService {
       .where(and(eq(productMasterVersions.masterId, data.masterId), eq(productMasterVersions.status, 'active')));
 
     if (masterExists.length === 0) {
-      throw new Error(`Master not found or no active version: ${data.masterId}`);
+      throw new NotFoundError(`Master not found or no active version: ${data.masterId}`);
     }
 
     // 2. Channel 존재 확인
@@ -50,13 +51,13 @@ export class ChannelProductsService {
       .where(eq(salesChannels.id, data.channelId));
 
     if (channelExists.length === 0) {
-      throw new Error(`Channel not found: ${data.channelId}`);
+      throw new NotFoundError(`Channel not found: ${data.channelId}`);
     }
 
     // 3. 중복 확인
     const alreadyExists = await this.existsChannelProduct(data.masterId, data.channelId, tx);
     if (alreadyExists) {
-      throw new Error(`Channel product already exists for master ${data.masterId} and channel ${data.channelId}`);
+      throw new ConflictError(`Channel product already exists for master ${data.masterId} and channel ${data.channelId}`);
     }
 
     // 4. 채널 상품 생성
@@ -79,7 +80,7 @@ export class ChannelProductsService {
 
   async getChannelProduct(channelProductId: string, tx?: DbTransaction): Promise<ChannelProduct | null> {
     if (!channelProductId) {
-      throw new Error('Channel Product ID is required');
+      throw new BadRequestError('Channel Product ID is required');
     }
 
     const client = this.getClient(tx);
@@ -94,7 +95,7 @@ export class ChannelProductsService {
     tx?: DbTransaction,
   ): Promise<(ChannelProductEntity & { channel: SalesChannelEntity })[]> {
     if (!masterId) {
-      throw new Error('Master ID is required');
+      throw new BadRequestError('Master ID is required');
     }
 
     const client = this.getClient(tx);
@@ -134,7 +135,7 @@ export class ChannelProductsService {
     limit: number;
   }> {
     if (!channelId) {
-      throw new Error('Channel ID is required');
+      throw new BadRequestError('Channel ID is required');
     }
 
     const client = this.getClient(tx);
@@ -253,7 +254,7 @@ export class ChannelProductsService {
     tx?: DbTransaction,
   ): Promise<ChannelProduct> {
     if (!channelProductId) {
-      throw new Error('Channel Product ID is required');
+      throw new BadRequestError('Channel Product ID is required');
     }
 
     const client = this.getClient(tx);
@@ -261,7 +262,7 @@ export class ChannelProductsService {
     // 1. 채널 상품 존재 확인
     const existing = await this.getChannelProduct(channelProductId, tx);
     if (!existing) {
-      throw new Error(`Channel product not found: ${channelProductId}`);
+      throw new NotFoundError(`Channel product not found: ${channelProductId}`);
     }
 
     // 2. 업데이트할 필드만 추출 (id, masterId, channelId, createdAt 제외)
@@ -292,7 +293,7 @@ export class ChannelProductsService {
 
   async deleteChannelProduct(channelProductId: string, tx?: DbTransaction): Promise<void> {
     if (!channelProductId) {
-      throw new Error('Channel Product ID is required');
+      throw new BadRequestError('Channel Product ID is required');
     }
 
     const client = this.getClient(tx);
@@ -300,7 +301,7 @@ export class ChannelProductsService {
     // 1. 채널 상품 존재 확인
     const existing = await this.getChannelProduct(channelProductId, tx);
     if (!existing) {
-      throw new Error(`Channel product not found: ${channelProductId}`);
+      throw new NotFoundError(`Channel product not found: ${channelProductId}`);
     }
 
     // 2. 삭제 실행
@@ -322,7 +323,7 @@ export class ChannelProductsService {
     channelSpecificData?: any;
   } | null> {
     if (!masterId || !channelId) {
-      throw new Error('Master ID and Channel ID are required');
+      throw new BadRequestError('Master ID and Channel ID are required');
     }
 
     const client = this.getClient(tx);
@@ -376,11 +377,11 @@ export class ChannelProductsService {
 
   async overrideProductName(channelProductId: string, name: string, tx?: DbTransaction): Promise<void> {
     if (!channelProductId) {
-      throw new Error('Channel Product ID is required');
+      throw new BadRequestError('Channel Product ID is required');
     }
 
     if (!name || name.trim() === '') {
-      throw new Error('Product name is required');
+      throw new BadRequestError('Product name is required');
     }
 
     const client = this.getClient(tx);
@@ -388,7 +389,7 @@ export class ChannelProductsService {
     // 1. 채널 상품 존재 확인
     const existing = await this.getChannelProduct(channelProductId, tx);
     if (!existing) {
-      throw new Error(`Channel product not found: ${channelProductId}`);
+      throw new NotFoundError(`Channel product not found: ${channelProductId}`);
     }
 
     // 2. 상품명 오버라이드
@@ -403,7 +404,7 @@ export class ChannelProductsService {
 
   async setChannelProductActive(channelProductId: string, isActive: boolean, tx?: DbTransaction): Promise<void> {
     if (!channelProductId) {
-      throw new Error('Channel Product ID is required');
+      throw new BadRequestError('Channel Product ID is required');
     }
 
     const client = this.getClient(tx);
@@ -411,7 +412,7 @@ export class ChannelProductsService {
     // 1. 채널 상품 존재 확인
     const existing = await this.getChannelProduct(channelProductId, tx);
     if (!existing) {
-      throw new Error(`Channel product not found: ${channelProductId}`);
+      throw new NotFoundError(`Channel product not found: ${channelProductId}`);
     }
 
     // 2. 활성 상태 설정
@@ -426,7 +427,7 @@ export class ChannelProductsService {
 
   async setChannelSpecificData(channelProductId: string, data: any, tx?: DbTransaction): Promise<void> {
     if (!channelProductId) {
-      throw new Error('Channel Product ID is required');
+      throw new BadRequestError('Channel Product ID is required');
     }
 
     const client = this.getClient(tx);
@@ -434,7 +435,7 @@ export class ChannelProductsService {
     // 1. 채널 상품 존재 확인
     const existing = await this.getChannelProduct(channelProductId, tx);
     if (!existing) {
-      throw new Error(`Channel product not found: ${channelProductId}`);
+      throw new NotFoundError(`Channel product not found: ${channelProductId}`);
     }
 
     // 2. 특수 데이터 설정 (JSON 형태로 저장)
@@ -618,11 +619,11 @@ export class ChannelProductsService {
     tx?: DbTransaction,
   ): Promise<ChannelProduct[]> {
     if (!masterId) {
-      throw new Error('Master ID is required');
+      throw new BadRequestError('Master ID is required');
     }
 
     if (!channelConfigs || channelConfigs.length === 0) {
-      throw new Error('Channel configurations are required');
+      throw new BadRequestError('Channel configurations are required');
     }
 
     const client = this.getClient(tx);
@@ -635,7 +636,7 @@ export class ChannelProductsService {
         .where(and(eq(productMasterVersions.masterId, masterId), eq(productMasterVersions.status, 'active')));
 
       if (masterExists.length === 0) {
-        throw new Error(`Master not found or no active version: ${masterId}`);
+        throw new NotFoundError(`Master not found or no active version: ${masterId}`);
       }
 
       const channelIds = channelConfigs.map((config) => config.channelId);
@@ -650,7 +651,7 @@ export class ChannelProductsService {
       const missingChannelIds = uniqueChannelIds.filter((id) => !existingChannelIds.includes(id));
 
       if (missingChannelIds.length > 0) {
-        throw new Error(`Channels not found: ${missingChannelIds.join(', ')}`);
+        throw new NotFoundError(`Channels not found: ${missingChannelIds.join(', ')}`);
       }
 
       // 3. 중복 확인
@@ -665,7 +666,7 @@ export class ChannelProductsService {
         .filter((id) => existingChannelProductIds.includes(id));
 
       if (duplicateChannelIds.length > 0) {
-        throw new Error(`Channel products already exist for channels: ${duplicateChannelIds.join(', ')}`);
+        throw new ConflictError(`Channel products already exist for channels: ${duplicateChannelIds.join(', ')}`);
       }
 
       const channelProductsData = channelConfigs.map((config) => ({
@@ -692,7 +693,7 @@ export class ChannelProductsService {
 
   async getActiveProductCountByChannel(channelId: string, tx?: DbTransaction): Promise<number> {
     if (!channelId) {
-      throw new Error('Channel ID is required');
+      throw new BadRequestError('Channel ID is required');
     }
 
     const client = this.getClient(tx);
