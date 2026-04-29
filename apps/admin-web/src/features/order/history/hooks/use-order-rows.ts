@@ -312,7 +312,7 @@ export function useCreatePickingLists() {
                 const batchOrderIds = orderIds.slice(i, i + BATCH_SIZE);
                 const batch = await createBatch.mutateAsync({
                     warehouseId: 'WH001',
-                    pickingMethod: 'batch',
+                    pickingMethod: 'individual',
                     name: `피킹리스트-${new Date().toISOString().slice(0, 10)}-${i + 1}`,
                 });
                 void batchOrderIds;

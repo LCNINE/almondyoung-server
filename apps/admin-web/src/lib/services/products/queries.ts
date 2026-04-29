@@ -6,6 +6,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { productQueryKeys } from './query-keys';
 import { products } from '@/lib/api/domains';
+import { channelListingsClient } from '@/lib/api/domains/products/channel-listings.client';
+import { channelCategoriesClient } from '@/lib/api/domains/products/channel-categories.client';
 import type {
   CategoryDto,
   CategoryTreeResponseDto,
@@ -516,5 +518,26 @@ export const useMasterVariantPriceSet = (masterId: string, variantId: string) =>
     queryFn: () => products.pricing.masters.getPriceSet(masterId, variantId),
     enabled: !!masterId && !!variantId,
     staleTime: 30 * 1000,
+  });
+};
+
+// ===== 채널 리스팅 =====
+
+export const useChannelListingsByVariant = (variantId: string) => {
+  return useQuery({
+    queryKey: productQueryKeys.channelListingsByVariant(variantId),
+    queryFn: () => channelListingsClient.getChannelListingsByVariant(variantId),
+    enabled: !!variantId,
+    staleTime: 30 * 1000,
+  });
+};
+
+// ===== 채널 카테고리 =====
+
+export const useChannelCategories = () => {
+  return useQuery({
+    queryKey: productQueryKeys.channelCategories,
+    queryFn: () => channelCategoriesClient.listChannelCategories(),
+    staleTime: 60 * 1000,
   });
 };

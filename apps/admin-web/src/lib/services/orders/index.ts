@@ -7,31 +7,56 @@ export * from './query-keys';
 // 주문 액션 헬퍼
 export * from './order-actions';
 
-// 쿼리 훅들 (기존 WMS hooks에서 주문 관련만 추출)
+// 쿼리 훅들
 export {
   useOrderStats,
   useSalesOrders,
   useSalesOrder,
   useSalesOrderItems,
+  // 출고 배치 (D2)
   useOutboundBatches,
   useOutboundBatch,
+  useOutboundBatchPickingList,
+  useAvailableFulfillmentOrders,
+  // 직배송 (D2)
+  useDirectShipDashboard,
+  useDirectShipCompanies,
+  useDirectShipOrders,
+  useDirectShipCompanySummary,
+  // 합포장 (D2)
+  useConsolidationCandidates,
+  useConsolidationLive,
+  useConsolidationSavings,
+  useConsolidationRules,
+  // 위치 최적화 (D2)
+  useLocationOptimizationZones,
+  // 피킹
   usePickings,
   usePicking,
   usePickingList,
+  useBatchPickingOperations,
+  useBatchPickingProgress,
+  usePickingSession,
+  // 이행
   useFulfillments,
   useFulfillment,
   useFulfillmentOrders,
   useFulfillmentOrder,
   useLegacyPurchaseOrders,
   useLegacyPurchaseOrder,
+  // 검수
+  useInspectionSummary,
+  useInspectionHistory,
+  useQualityMetrics,
+  // 송장
   useInvoices,
   useInvoice,
+  // 레거시
   useDirectShips,
   useDirectShip,
   useOrderMetrics,
   useFulfillmentMetrics,
   useConfirmSalesOrder,
-
   useProductMatchings,
   useProductMatching,
   useProductSkuMappings,
@@ -43,10 +68,20 @@ export {
   useCreateSalesOrder,
   useUpdateSalesOrder,
   useDeleteSalesOrder,
+  // 출고 배치 (D2)
   useCreateOutboundBatch,
-  useUpdateOutboundBatch,
-  useDeleteOutboundBatch,
-
+  useAddFOsToBatch,
+  useRemoveFOFromBatch,
+  useStartBatchPicking,
+  useCompleteBatch,
+  useCancelBatch,
+  // 직배송 (D2)
+  useForwardDirectShipOrders,
+  useCompleteDirectShipOrders,
+  useExportDirectShipFile,
+  // 합포장 (D2)
+  useAnalyzeConsolidation,
+  useAutoConsolidate,
 } from './mutations';
 
 // 데이터 변환 함수들 (주문 전용)
