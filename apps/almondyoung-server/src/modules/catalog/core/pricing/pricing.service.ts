@@ -216,6 +216,16 @@ export class PricingService {
     }, tx);
   }
 
+  async getVariantPriceSetMany(
+    versionId: string,
+    variantIds: string[],
+    tx?: DbTransaction,
+  ): Promise<VariantPriceSet[]> {
+    return this.inTx(async (trx) => {
+      return this.calculatorService.calculateVariantPriceSetMany(versionId, variantIds, trx);
+    }, tx);
+  }
+
   /**
    * 고아 pricing rule 정리
    * - 다른 버전이 참조하지 않는 경우만 삭제

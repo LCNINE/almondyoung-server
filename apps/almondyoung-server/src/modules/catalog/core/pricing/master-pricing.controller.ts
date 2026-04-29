@@ -128,21 +128,35 @@ export class MasterPricingController {
       'Get base, membership, and tiered prices for a variant using pricing rules from the active version. Returns 404 if no active version exists.',
   })
   @ApiParam({ name: 'masterId', description: 'Master product ID' })
-  @ApiQuery({ name: 'variantId', description: 'Variant ID', required: true })
-  @ApiResponse({
-    status: 200,
-    description: 'Price set retrieved',
-    type: VariantPriceSetDto,
-  })
+  @ApiQuery({ name: 'variantId', description: 'Variant ID', required: false })
+  @ApiQuery({ name: 'variantIds', description: 'Comma-separated variant IDs for bulk lookup', required: false })
+  @ApiResponse({ status: 200, description: 'Price set retrieved', type: VariantPriceSetDto })
   @ApiResponse({ status: 404, description: 'Master not found, no active version, or variant not found' })
   async getPriceSet(
     @Param('masterId') masterId: string,
-    @Query('variantId') variantId: string,
-  ): Promise<VariantPriceSetDto> {
+    @Query('variantId') variantId?: string,
+    @Query('variantIds') variantIdsParam?: string,
+  ): Promise<VariantPriceSetDto | { items: VariantPriceSetDto[] }> {
     const versionId = await this.findActiveVersion(masterId);
 
     if (!versionId) {
       throw new HttpException('No active version found for this master product', HttpStatus.NOT_FOUND);
+    }
+
+    if (variantIdsParam) {
+      const ids = [...new Set(variantIdsParam.split(',').map((s) => s.trim()).filter(Boolean))];
+      if (ids.length === 0) {
+        throw new HttpException('variantIds must contain at least one ID', HttpStatus.BAD_REQUEST);
+      }
+      if (ids.length > 100) {
+        throw new HttpException('variantIds must not exceed 100 items', HttpStatus.BAD_REQUEST);
+      }
+      const items = await this.pricingService.getVariantPriceSetMany(versionId, ids);
+      return { items };
+    }
+
+    if (!variantId) {
+      throw new HttpException('Either variantId or variantIds query parameter is required', HttpStatus.BAD_REQUEST);
     }
 
     return this.pricingService.getVariantPriceSet(versionId, variantId);

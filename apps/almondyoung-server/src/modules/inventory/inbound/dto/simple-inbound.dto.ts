@@ -249,6 +249,7 @@ export interface InboundPendingResponse {
 
   // 아이템 목록
   items: Array<{
+    planItemId: string;
     skuId: string;
     skuName: string;
     skuCode: string;

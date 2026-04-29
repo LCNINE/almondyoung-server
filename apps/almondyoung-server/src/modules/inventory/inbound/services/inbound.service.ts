@@ -380,6 +380,7 @@ export class InboundService {
       // 2. pending items 조회 (SKU 정보 포함)
       const itemsData = await tx
         .select({
+          planItemId: inboundPlanItems.id,
           planId: inboundPlanItems.planId,
           skuId: inboundPlanItems.skuId,
           skuName: skus.name,
@@ -453,6 +454,7 @@ export class InboundService {
               : undefined,
           },
           items: planItems.map((item) => ({
+            planItemId: item.planItemId,
             skuId: item.skuId,
             skuName: item.skuName,
             skuCode: item.skuCode,

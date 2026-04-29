@@ -129,6 +129,26 @@ export class ProductMasterVersionsController {
     };
   }
 
+  @Post('empty')
+  @ApiOperation({
+    summary: '빈 Draft 버전 생성',
+    description: 'active 버전이 없는 신규 마스터에 첫 번째 빈 draft 버전을 생성합니다.',
+  })
+  @ApiParam({ name: 'masterId', description: 'Master ID' })
+  @ApiResponse({ status: 201, description: '빈 Draft 버전 생성 성공' })
+  @ApiResponse({ status: 404, description: '마스터를 찾을 수 없음' })
+  async createEmptyDraftVersion(
+    @Param('masterId') masterId: string,
+    @User() user: { userId: string },
+  ) {
+    const version = await this.productVersionsService.createInitialDraftVersion(masterId, user.userId);
+    return {
+      ...version,
+      createdAt: version.createdAt?.toISOString() || null,
+      updatedAt: version.updatedAt?.toISOString() || null,
+    };
+  }
+
   @Put(':versionId')
   @ApiOperation({
     summary: 'Draft 버전 수정',

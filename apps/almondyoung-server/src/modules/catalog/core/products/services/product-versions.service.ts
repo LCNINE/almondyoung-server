@@ -149,6 +149,41 @@ export class ProductVersionsService {
     return this.productReadAssembler.getVersionDetail(versionId, undefined, tx);
   }
 
+  async createInitialDraftVersion(masterId: string, userId: string, tx?: DbTransaction): Promise<ProductMasterVersion> {
+    return this.inTx(async (tx) => {
+      const [master] = await tx.select({ id: productMasters.id }).from(productMasters).where(eq(productMasters.id, masterId));
+
+      if (!master) {
+        throw new NotFoundException(`Master ${masterId} not found`);
+      }
+
+      const maxVersionResult = await tx
+        .select({ max: drizzleMax(productMasterVersions.version) })
+        .from(productMasterVersions)
+        .where(eq(productMasterVersions.masterId, masterId));
+
+      const nextVersion = (maxVersionResult[0]?.max || 0) + 1;
+
+      const [newVersion] = await tx
+        .insert(productMasterVersions)
+        .values({
+          id: uuidv7(),
+          masterId,
+          version: nextVersion,
+          parentVersionId: null,
+          status: 'draft',
+          draftOwnerId: userId,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .returning();
+
+      this.logger.log(`Created initial draft version ${newVersion.id} for master ${masterId}`);
+
+      return newVersion;
+    }, tx);
+  }
+
   async createDraftVersion(
     parentVersionId: string,
     userId: string,

@@ -52,7 +52,11 @@ export class TagsService {
         throw new NotFoundException(`Tag group with ID ${id} not found`);
       }
 
-      const tagValues = await tx.select().from(pimSchema.tagValues).where(eq(pimSchema.tagValues.groupId, id));
+      const tagValues = await tx
+        .select()
+        .from(pimSchema.tagValues)
+        .where(eq(pimSchema.tagValues.groupId, id))
+        .orderBy(pimSchema.tagValues.displayOrder, pimSchema.tagValues.name);
 
       return { ...tagGroup, values: tagValues };
     }, tx);
