@@ -743,3 +743,88 @@ export interface CreateDraftVersionDto {
   parentVersionId?: string;
   copyMappings?: boolean;
 }
+
+// ===== 채널 리스팅 =====
+
+export interface ChannelListingDto {
+  id: string;
+  variantId: string;
+  salesChannelId: string;
+  channelItemId: string;
+  channelItemName: string | null;
+  channelOptionName: string | null;
+  channelPrice: number | null;
+  channelProductUrl: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChannelSiteInfoDto {
+  id: string;
+  name: string;
+  site: string;
+}
+
+export interface ChannelListingWithChannelDto {
+  id: string;
+  channelItemId: string;
+  channelItemName: string | null;
+  channelOptionName: string | null;
+  channelPrice: number | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  channel: ChannelSiteInfoDto;
+}
+
+export interface ChannelListingListResponseDto {
+  data: ChannelListingWithChannelDto[];
+  total: number;
+}
+
+export interface CreateChannelListingDto {
+  variantId: string;
+  salesChannelId: string;
+  channelItemId: string;
+  channelItemName?: string;
+  channelOptionName?: string;
+  channelPrice?: number;
+  channelProductUrl?: string;
+}
+
+export interface UpdateChannelListingDto {
+  channelItemId?: string;
+  channelItemName?: string;
+  channelOptionName?: string;
+  channelPrice?: number;
+  channelProductUrl?: string;
+}
+
+// ===== 채널 카테고리 =====
+
+export interface ChannelCategoryDto {
+  id: string;
+  name: string;
+  description: string | null;
+  displayOrder: number;
+  channelCount?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChannelCategoryListResponseDto {
+  data: ChannelCategoryDto[];
+}
+
+export interface CreateChannelCategoryDto {
+  name: string;
+  description?: string;
+  displayOrder?: number;
+}
+
+export interface UpdateChannelCategoryDto {
+  name?: string;
+  description?: string;
+  displayOrder?: number;
+}

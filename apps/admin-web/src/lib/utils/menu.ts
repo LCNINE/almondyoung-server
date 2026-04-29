@@ -218,8 +218,13 @@ export const mainMenus: MainMenu[] = [
       },
       {
         id: 'inventory-transfers',
-        title: '재고 이동',
+        title: '재고 이동(잡)',
         path: '/inventory/transfers',
+      },
+      {
+        id: 'inventory-movement',
+        title: '재고 즉시 이동',
+        path: '/inventory/movement',
       },
       {
         id: 'inventory-reservations',
@@ -260,6 +265,11 @@ export const mainMenus: MainMenu[] = [
         id: 'inventory-holders',
         title: '재고 소유자 관리',
         path: '/inventory/holders',
+      },
+      {
+        id: 'inventory-returns',
+        title: '회수/반품 처리',
+        path: '/inventory/returns',
       },
       {
         id: 'product-matching',
@@ -399,6 +409,8 @@ export const mainMenus: MainMenu[] = [
             path: '/mall/categories',
           },
           { id: 'product-tags', title: '태그', path: '/mall/tags' },
+          { id: 'channel-listings', title: '채널 노출 관리', path: '/mall/channel-listings' },
+          { id: 'channel-categories', title: '채널 카테고리', path: '/mall/channel-categories' },
           { id: 'product-display', title: '진열' },
           { id: 'deleted-products', title: '휴지통(삭제상품 관리)' },
         ],
