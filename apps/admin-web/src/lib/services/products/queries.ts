@@ -574,3 +574,59 @@ export const useChannelCategories = () => {
     staleTime: 60 * 1000,
   });
 };
+
+// ===== 감사 로그 =====
+
+export const useAuditRecent = (limit = 100) => {
+  return useQuery({
+    queryKey: productQueryKeys.auditRecent(limit),
+    queryFn: () => products.audit.getRecent(limit),
+    staleTime: 30 * 1000,
+  });
+};
+
+export const useAuditByUser = (userId: string, limit = 100) => {
+  return useQuery({
+    queryKey: productQueryKeys.auditByUser(userId, limit),
+    queryFn: () => products.audit.getByUser(userId, limit),
+    enabled: !!userId,
+    staleTime: 30 * 1000,
+  });
+};
+
+export const useAuditByAction = (action: string, limit = 100) => {
+  return useQuery({
+    queryKey: productQueryKeys.auditByAction(action, limit),
+    queryFn: () => products.audit.getByAction(action, limit),
+    enabled: !!action,
+    staleTime: 30 * 1000,
+  });
+};
+
+export const useProductAuditHistory = (masterId: string) => {
+  return useQuery({
+    queryKey: productQueryKeys.auditProduct(masterId),
+    queryFn: () => products.audit.getProductHistory(masterId),
+    enabled: !!masterId,
+    staleTime: 30 * 1000,
+  });
+};
+
+// ===== 승인 =====
+
+export const usePendingApprovals = () => {
+  return useQuery({
+    queryKey: productQueryKeys.pendingApprovals,
+    queryFn: () => products.approval.getPending(),
+    staleTime: 30 * 1000,
+  });
+};
+
+export const useApprovalHistory = (masterId: string) => {
+  return useQuery({
+    queryKey: productQueryKeys.approvalHistory(masterId),
+    queryFn: () => products.approval.getApprovalHistory(masterId),
+    enabled: !!masterId,
+    staleTime: 30 * 1000,
+  });
+};
