@@ -111,4 +111,17 @@ export const productQueryKeys = {
   // 채널 카테고리 관련
   channelCategories: ['channel-categories'] as const,
   channelCategory: (id: string) => ['channel-categories', id] as const,
+
+  // 감사 로그 관련
+  auditRecent: (limit: number) => ['audit', 'recent', limit] as const,
+  auditByUser: (userId: string, limit: number) =>
+    ['audit', 'by-user', userId, limit] as const,
+  auditByAction: (action: string, limit: number) =>
+    ['audit', 'by-action', action, limit] as const,
+  auditProduct: (masterId: string) => ['audit', 'product', masterId] as const,
+
+  // 승인 관련
+  pendingApprovals: ['approval', 'pending'] as const,
+  approvalHistory: (masterId: string) =>
+    ['approval', 'history', masterId] as const,
 } as const;

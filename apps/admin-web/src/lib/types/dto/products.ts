@@ -828,3 +828,78 @@ export interface UpdateChannelCategoryDto {
   description?: string;
   displayOrder?: number;
 }
+
+// ===== 일괄 작업 관련 =====
+
+export interface BulkUpdateDto {
+  productIds: string[];
+  status?: 'active' | 'inactive';
+  approvalStatus?: 'draft' | 'pending' | 'approved' | 'rejected';
+  basePrice?: number;
+  brand?: string;
+  seller?: string;
+}
+
+export interface BulkDeleteDto {
+  productIds: string[];
+}
+
+export interface BulkRestoreDto {
+  productIds: string[];
+}
+
+export interface BulkOperationResultDto {
+  success: boolean;
+  affected: number;
+}
+
+// ===== CSV 관련 =====
+
+export interface CsvImportResultDto {
+  success: boolean;
+  imported: number;
+  failed: number;
+  errors: string[];
+}
+
+// ===== 감사 로그 관련 =====
+
+export interface AuditLogItemDto {
+  id: string;
+  productId: string;
+  action: string;
+  userId: string;
+  createdAt: string;
+}
+
+export interface ProductAuditHistoryItemDto extends AuditLogItemDto {
+  changes?: Record<string, { old: unknown; new: unknown }> | null;
+}
+
+// ===== 승인 관련 =====
+
+export interface PendingApprovalDto {
+  id: string;
+  name: string;
+  approvalStatus: string;
+  submittedAt?: string;
+  submittedBy?: string;
+}
+
+export interface ApprovalHistoryItemDto {
+  id: string;
+  productId: string;
+  action: 'submit' | 'approve' | 'reject';
+  actorId: string;
+  comment?: string;
+  reason?: string;
+  createdAt: string;
+}
+
+export interface ApproveProductDto {
+  comment?: string;
+}
+
+export interface RejectProductDto {
+  reason: string;
+}
