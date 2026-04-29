@@ -1,11 +1,10 @@
-import { Controller, Post, Get, Param, Body, HttpException, HttpStatus, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Param, Body, HttpException, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
-import { JwtAuthGuard, User } from '@app/authorization';
+import { User } from '@app/authorization';
 import { ProductApprovalService } from './product-approval.service';
 import { SubmitForApprovalDto, ApproveProductDto, RejectProductDto } from './dto';
 
 @ApiTags('Product Approval')
-@UseGuards(JwtAuthGuard)
 @Controller('masters')
 export class ProductApprovalController {
   constructor(private approvalService: ProductApprovalService) {}

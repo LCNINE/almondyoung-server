@@ -1,11 +1,10 @@
-import { Controller, Post, Body, HttpException, HttpStatus, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, HttpException, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
-import { JwtAuthGuard, User } from '@app/authorization';
+import { User } from '@app/authorization';
 import { ProductBulkService } from './product-bulk.service';
 import { BulkUpdateDto, BulkDeleteDto, BulkRestoreDto } from './dto';
 
 @ApiTags('Product Bulk Operations')
-@UseGuards(JwtAuthGuard)
 @Controller('masters/bulk')
 export class ProductBulkController {
   constructor(private bulkService: ProductBulkService) {}

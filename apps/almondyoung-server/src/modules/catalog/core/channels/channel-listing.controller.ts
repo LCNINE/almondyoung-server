@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpException, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
+import { Public } from '@app/authorization';
 import { ChannelListingService } from './channel-listing.service';
 import {
   CreateChannelListingDto,
@@ -16,6 +17,7 @@ export class ChannelListingController {
   constructor(private readonly channelListingService: ChannelListingService) {}
 
   @Get('lookup')
+  @Public()
   @ApiOperation({
     summary: '채널 상품 ID로 Variant 조회',
     description:
