@@ -100,4 +100,13 @@ export const productQueryKeys = {
   product: (id: string) => ['products', id] as const,
   productVariants: (productId: string) =>
     ['products', productId, 'variants'] as const,
+
+  // 채널 리스팅 관련
+  channelListingsByVariant: (variantId: string) =>
+    ['channel-listings', 'by-variant', variantId] as const,
+  channelListing: (id: string) => ['channel-listings', id] as const,
+
+  // 채널 카테고리 관련
+  channelCategories: ['channel-categories'] as const,
+  channelCategory: (id: string) => ['channel-categories', id] as const,
 } as const;

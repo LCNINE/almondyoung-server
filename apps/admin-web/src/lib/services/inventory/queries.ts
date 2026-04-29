@@ -17,6 +17,8 @@ import { holdersClient } from '../../api/domains/inventory/holders.client';
 import { locationsClient } from '../../api/domains/inventory/locations.client';
 import { purchaseOrdersClient } from '../../api/domains/inventory/purchase-orders.client';
 import { inboundClient } from '../../api/domains/inventory/inbound.client';
+import { returnsClient } from '../../api/domains/inventory/returns.client';
+import { movementClient } from '../../api/domains/inventory/movement.client';
 import type {
   StockSummaryQuery,
   StockHistoryQuery,
@@ -31,6 +33,8 @@ import type {
   InboundWorkLogsQuery,
   InboundStatusQuery,
   ListPlanItemsQueryDto,
+  ReturnFiltersDto,
+  MovementHistoryQuery,
 } from '../../types/dto/inventory';
 
 export const useStocks = (query = {}) => {
@@ -476,5 +480,41 @@ export const useReorderSuggestions = (warehouseId?: string) => {
     queryFn: () => purchaseOrdersClient.suggestions.reorder(warehouseId),
     enabled: !!warehouseId,
     staleTime: 5 * 60 * 1000,
+  });
+};
+
+// ===== 회수(Returns) =====
+
+export const useReturns = (filters: ReturnFiltersDto = {}) => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.returns(filters),
+    queryFn: () => returnsClient.listReturns(filters),
+    staleTime: 30 * 1000,
+  });
+};
+
+export const useReturn = (id: string) => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.return(id),
+    queryFn: () => returnsClient.getReturn(id),
+    enabled: !!id,
+  });
+};
+
+// ===== 즉시 이동(Movement) =====
+
+export const useMovementJob = (jobId: string) => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.movementJob(jobId),
+    queryFn: () => movementClient.getMovementJob(jobId),
+    enabled: !!jobId,
+  });
+};
+
+export const useMovementHistory = (query: MovementHistoryQuery = {}) => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.movementHistory(query),
+    queryFn: () => movementClient.getMovementHistory(query),
+    staleTime: 30 * 1000,
   });
 };

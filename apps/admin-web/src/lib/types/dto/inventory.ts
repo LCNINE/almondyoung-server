@@ -1473,3 +1473,205 @@ export interface StockReorderSuggestionDto {
   onOrderQty: number;
   inTransferQty: number;
 }
+
+// ===== 회수(Returns) =====
+
+export type ReturnStatus = 'requested' | 'received' | 'qc_passed' | 'qc_failed' | 'disposed';
+export type ReturnQcStatus = 'pending' | 'passed' | 'failed';
+export type ReturnProcessAction = 'restock' | 'dispose';
+
+export interface ReturnItemDto {
+  id: string;
+  returnId: string;
+  skuId: string;
+  requestedQuantity: number;
+  receivedQuantity: number | null;
+  qcPassedQuantity: number | null;
+  qcFailedQuantity: number | null;
+  restockedQuantity: number | null;
+  disposedQuantity: number | null;
+  locationId: string | null;
+  qcStatus: ReturnQcStatus | null;
+  qcReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ReturnDto {
+  id: string;
+  orderId: string | null;
+  shipmentId: string | null;
+  warehouseId: string;
+  status: ReturnStatus;
+  returnReason: string | null;
+  qcInspectedAt: string | null;
+  qcInspectedBy: string | null;
+  qcNotes: string | null;
+  restockQuantity: number;
+  disposeQuantity: number;
+  createdAt: string;
+  updatedAt: string;
+  items?: ReturnItemDto[];
+}
+
+export interface ReturnListResponseDto {
+  returns: ReturnDto[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ReturnFiltersDto {
+  warehouseId?: string;
+  status?: ReturnStatus;
+  orderId?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface CreateReturnItemDto {
+  skuId: string;
+  requestedQuantity: number;
+}
+
+export interface CreateReturnDto {
+  orderId?: string;
+  shipmentId?: string;
+  warehouseId: string;
+  returnReason: string;
+  items: CreateReturnItemDto[];
+}
+
+export interface ReceiveReturnItemDto {
+  returnItemId: string;
+  receivedQuantity: number;
+  locationId?: string;
+}
+
+export interface ReceiveReturnDto {
+  returnId: string;
+  items: ReceiveReturnItemDto[];
+}
+
+export interface InspectReturnItemDto {
+  returnItemId: string;
+  qcStatus: 'passed' | 'failed';
+  qcPassedQuantity?: number;
+  qcFailedQuantity?: number;
+  qcReason?: string;
+}
+
+export interface InspectReturnDto {
+  returnId: string;
+  inspectedBy: string;
+  items: InspectReturnItemDto[];
+  qcNotes?: string;
+}
+
+export interface ProcessReturnItemDto {
+  returnItemId: string;
+  action: ReturnProcessAction;
+  quantity: number;
+  targetLocationId?: string;
+  reason?: string;
+}
+
+export interface ProcessReturnDto {
+  returnId: string;
+  items: ProcessReturnItemDto[];
+}
+
+export interface CreateReturnResponseDto {
+  returnId: string;
+  items: ReturnItemDto[];
+}
+
+export interface ReceiveReturnResponseDto {
+  returnId: string;
+  journalId: string;
+}
+
+export interface InspectReturnResponseDto {
+  returnId: string;
+  status: string;
+}
+
+export interface ProcessReturnResponseDto {
+  returnId: string;
+  journalId: string;
+  restocked: number;
+  disposed: number;
+}
+
+// ===== 즉시 이동(Movement) =====
+
+export interface MoveBatchLineDto {
+  skuId: string;
+  fromLocationId: string;
+  toLocationId: string;
+  quantity: number;
+  memo?: string;
+}
+
+export interface MoveBatchRequestDto {
+  warehouseId: string;
+  occurredAt?: string;
+  actorId?: string;
+  memo?: string;
+  lines: MoveBatchLineDto[];
+}
+
+export interface MovementJobLineDto {
+  id: string;
+  jobId: string;
+  skuId: string;
+  quantity: number;
+  fromLocationId: string | null;
+  toLocationId: string | null;
+  eventId: string | null;
+  memo: string | null;
+  createdAt: string;
+}
+
+export interface MovementJobDto {
+  id: string;
+  warehouseId: string;
+  occurredAt: string;
+  totalQuantity: number;
+  journalId: string | null;
+  actorId: string | null;
+  memo: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MovementJobWithLinesDto extends MovementJobDto {
+  lines: MovementJobLineDto[];
+}
+
+export interface MovementWorkLogDto {
+  id: string;
+  type: string;
+  timestamp: string;
+  jobId: string | null;
+  lineId: string | null;
+  skuId: string | null;
+  warehouseId: string | null;
+  fromLocationId: string | null;
+  toLocationId: string | null;
+  quantity: number | null;
+  eventId: string | null;
+  reason: string | null;
+}
+
+export interface MovementHistoryResponseDto {
+  logs: MovementWorkLogDto[];
+  days: number;
+  total: number;
+}
+
+export interface MovementHistoryQuery {
+  skuId?: string;
+  warehouseId?: string;
+  days?: number;
+}
