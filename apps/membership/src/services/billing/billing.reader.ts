@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { eq, and, lte, or, sql } from 'drizzle-orm';
+import { eq, and, lte, sql } from 'drizzle-orm';
 import * as schema from '../../shared/schemas/entities/schema';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 
@@ -69,12 +69,9 @@ export class BillingReader {
       .where(
         and(
           eq(schema.subscriptionContracts.isVoided, false),
-          sql`${schema.subscriptionEntitlement.pausedAt} IS NULL`, // 일시정지 제외
+          eq(schema.subscriptionContracts.autoRenewal, true),
+          sql`${schema.subscriptionEntitlement.pausedAt} IS NULL`,
           lte(schema.subscriptionContracts.nextBillingDate, date),
-          or(
-            eq(schema.subscriptionContracts.isPastDue, false), // 정상 결제일
-            eq(schema.subscriptionContracts.isPastDue, true), // 연체 상태 재시도
-          ),
         ),
       );
   }
