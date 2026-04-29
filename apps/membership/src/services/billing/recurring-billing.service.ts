@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { format } from 'date-fns';
 import { BillingReader } from './billing.reader';
 import { BillingManager, BillingResult } from './billing.manager';
+import { BillingOutcomeHandler } from './billing-outcome.handler';
 
 // 하위 호환성을 위한 타입 export
 export type { BillingResult } from './billing.manager';
@@ -24,6 +25,7 @@ export class RecurringBillingService {
   constructor(
     private readonly billingReader: BillingReader,
     private readonly billingManager: BillingManager,
+    private readonly billingOutcomeHandler: BillingOutcomeHandler,
   ) {}
 
   /**
@@ -120,6 +122,31 @@ export class RecurringBillingService {
       } catch (error) {
         this.logger.error(`Failed to process dunning item ${item.id}: ${error.message}`);
       }
+    }
+  }
+
+  @Cron('0 3 * * *')
+  async runExpirationCheck(): Promise<void> {
+    this.logger.log('Starting expiration check...');
+
+    try {
+      const today = format(new Date(), 'yyyy-MM-dd');
+      const expired = await this.billingReader.findExpiredEntitlements(today);
+      this.logger.log(`Found ${expired.length} expired entitlements`);
+
+      // userId가 여러 계약과 조인될 수 있으므로 entitlementId 기준으로 중복 제거
+      const seen = new Set<string>();
+      for (const item of expired) {
+        if (seen.has(item.entitlementId)) continue;
+        seen.add(item.entitlementId);
+        try {
+          await this.billingOutcomeHandler.handleExpiration(item.entitlementId, item.userId, item.contractId);
+        } catch (error) {
+          this.logger.error(`Failed to expire entitlement ${item.entitlementId}: ${error.message}`);
+        }
+      }
+    } catch (error) {
+      this.logger.error(`Expiration check failed: ${error.message}`, error.stack);
     }
   }
 

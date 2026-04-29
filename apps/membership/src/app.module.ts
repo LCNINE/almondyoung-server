@@ -44,6 +44,7 @@ import { WelcomeMembershipController } from './controllers/welcome-membership.co
 import { WelcomeMembershipService } from './services/welcome-membership.service';
 import { BillingManager } from './services/billing/billing.manager';
 import { BillingReader } from './services/billing/billing.reader';
+import { BillingOutcomeHandler } from './services/billing/billing-outcome.handler';
 import { MembershipPolicyService } from './services/membership-policy.service';
 import { SavingsService } from './services/savings/savings.service';
 import { SavingsReader } from './services/savings/savings.reader';
@@ -123,6 +124,7 @@ import { JwtAuthGuard } from '@app/authorization';
     BenefitManager,
     SavingsReader,
     BillingManager,
+    BillingOutcomeHandler,
     RecurringBillingService,
     BillingReader,
     // Policy Layer (하드코딩 테이블)
