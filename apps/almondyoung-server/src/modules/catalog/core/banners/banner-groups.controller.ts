@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
+import { Public } from '@app/authorization';
 import { BannersService } from './banners.service';
 import {
   CreateBannerGroupDto,
@@ -36,6 +37,7 @@ export class BannerGroupsController {
     return this.bannersService.listBannerGroups(category);
   }
 
+  @Public()
   @Get('by-code/:code')
   @ApiOperation({
     summary: '배너 그룹 조회 (코드)',

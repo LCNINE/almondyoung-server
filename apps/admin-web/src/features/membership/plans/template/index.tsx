@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus, Pencil, Ban } from 'lucide-react';
+import { Plus, Pencil, Ban, RotateCcw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -11,7 +11,7 @@ import {
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
 import { AdminTier, AdminPlan, AdminTierWithPlans } from '@/lib/api/domains/membership';
-import { useTiersWithPlans } from '@/lib/services/membership';
+import { useTiersWithPlans, useActivatePlan } from '@/lib/services/membership';
 import { TierFormDialog } from '../components/tier-form-dialog';
 import { PlanFormDialog } from '../components/plan-form-dialog';
 import { DeactivatePlanDialog } from '../components/deactivate-plan-dialog';
@@ -30,7 +30,17 @@ type DialogState =
   | { type: 'deactivatePlan'; plan: AdminPlan }
   | null;
 
-function TierCard({ item, onAction }: { item: AdminTierWithPlans; onAction: (d: DialogState) => void }) {
+function TierCard({
+  item,
+  onAction,
+  onActivatePlan,
+  isActivating,
+}: {
+  item: AdminTierWithPlans;
+  onAction: (d: DialogState) => void;
+  onActivatePlan: (planId: string) => void;
+  isActivating: boolean;
+}) {
   const { tier, plans } = item;
 
   return (
@@ -92,7 +102,7 @@ function TierCard({ item, onAction }: { item: AdminTierWithPlans; onAction: (d: 
                     >
                       수정
                     </Button>
-                    {plan.isActive && (
+                    {plan.isActive ? (
                       <Button
                         size="sm"
                         variant="ghost"
@@ -100,6 +110,16 @@ function TierCard({ item, onAction }: { item: AdminTierWithPlans; onAction: (d: 
                         onClick={() => onAction({ type: 'deactivatePlan', plan })}
                       >
                         <Ban className="h-3 w-3" />
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 px-2 text-xs text-blue-600 hover:text-blue-700"
+                        disabled={isActivating}
+                        onClick={() => onActivatePlan(plan.id)}
+                      >
+                        <RotateCcw className="h-3 w-3" />
                       </Button>
                     )}
                   </div>
@@ -116,6 +136,7 @@ function TierCard({ item, onAction }: { item: AdminTierWithPlans; onAction: (d: 
 export function MembershipPlansTemplate() {
   const { data: tiers, isLoading } = useTiersWithPlans();
   const [dialog, setDialog] = useState<DialogState>(null);
+  const activatePlanMutation = useActivatePlan();
 
   return (
     <Container className="divide-y-0">
@@ -140,7 +161,13 @@ export function MembershipPlansTemplate() {
       ) : (
         <div className="space-y-4">
           {tiers?.map((item) => (
-            <TierCard key={item.tier.id} item={item} onAction={setDialog} />
+            <TierCard
+              key={item.tier.id}
+              item={item}
+              onAction={setDialog}
+              onActivatePlan={(planId) => activatePlanMutation.mutate(planId)}
+              isActivating={activatePlanMutation.isPending}
+            />
           ))}
         </div>
       )}
