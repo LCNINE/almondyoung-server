@@ -15,6 +15,8 @@ import type {
   InboundWorkLogsQuery,
   InboundStatusQuery,
   ListPlanItemsQueryDto,
+  ReturnFiltersDto,
+  MovementHistoryQuery,
 } from '../../types/dto/inventory';
 
 export const inventoryQueryKeys = {
@@ -133,4 +135,13 @@ export const inventoryQueryKeys = {
   purchaseOrderCart: () => ['purchase-orders', 'cart'] as const,
   reorderSuggestions: (warehouseId?: string) =>
     ['purchase-orders', 'reorder', warehouseId] as const,
+
+  // 회수(Returns) 관련
+  returns: (filters?: ReturnFiltersDto) => ['inventory', 'returns', filters] as const,
+  return: (id: string) => ['inventory', 'returns', id] as const,
+
+  // 즉시 이동(Movement) 관련
+  movementJob: (jobId: string) => ['inventory', 'movement', 'jobs', jobId] as const,
+  movementHistory: (query?: MovementHistoryQuery) =>
+    ['inventory', 'movement', 'history', query] as const,
 } as const;
