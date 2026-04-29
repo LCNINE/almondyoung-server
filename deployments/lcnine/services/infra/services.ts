@@ -3,7 +3,7 @@
 import type { SharedInfra } from "./shared";
 
 export function setup(infra: SharedInfra) {
-  const { db, redis, dbUrl, redisUrl, baseDomain, url, kafkaEnv, createService } = infra;
+  const { db, redis, dbUrl, redisUrl, baseDomain, domain, url, kafkaEnv, createService } = infra;
 
   // ─── Secrets ───
   const authSecret = new sst.Secret("AuthSecret");
@@ -73,7 +73,7 @@ export function setup(infra: SharedInfra) {
       MEDUSA_MEMBERSHIP_GROUP_ID: "cusgroup_01KFZ12A1M344F6HKGDV35J28A",
       ALMOND_AUTH_URL: "https://asia-northeast3-almond-auth.cloudfunctions.net/api",
       USER_SERVICE_URL: idpUserServiceUrl,
-      PIM_API_URL: url("pim"),
+      PIM_API_URL: url("core"),
       NAVER_API_ENDPOINT: "https://dummy.com",
       NAVER_CLIENT_ID: "1",
       NAVER_CLIENT_SECRET: "1",
@@ -120,21 +120,17 @@ export function setup(infra: SharedInfra) {
     },
   });
 
-  const elasticsearchPassword = new sst.Secret("ElasticsearchPassword");
-
-  createService("Pim", {
-    dockerfile: "apps/pim/Dockerfile",
-    domainSlug: "pim",
+  createService("Core", {
+    dockerfile: "apps/almondyoung-server/Dockerfile",
+    domainSlug: "core",
     port: 3000,
-    priority: 150,
+    priority: 145,
     link: [db],
     environment: {
-      DATABASE_URL: dbUrl("pim"),
-      ...kafkaEnv("pim", "pim-group"),
+      DATABASE_URL: dbUrl("core"),
+      ...kafkaEnv("almondyoung-server", "almondyoung-server-group"),
       AUTH_SECRET: authSecret.value,
-      ELASTICSEARCH_NODE: "https://elasticsearch-demo.up.railway.app",
-      ELASTICSEARCH_USERNAME: "elastic",
-      ELASTICSEARCH_PASSWORD: elasticsearchPassword.value,
+      JWT_ISSUER: "almondyoung-auth",
     },
   });
 
@@ -149,19 +145,6 @@ export function setup(infra: SharedInfra) {
       ...kafkaEnv("ugc-service", "ugc-service-group"),
       AUTH_SECRET: authSecret.value,
       JWT_ISSUER: "almondyoung-auth",
-    },
-  });
-
-  createService("Wms", {
-    dockerfile: "apps/wms/Dockerfile",
-    domainSlug: "wms",
-    port: 3000,
-    priority: 170,
-    link: [db],
-    environment: {
-      DATABASE_URL: dbUrl("wms"),
-      ...kafkaEnv("wms", "wms-group"),
-      AUTH_SECRET: authSecret.value,
     },
   });
 
@@ -263,7 +246,7 @@ export function setup(infra: SharedInfra) {
       MEDUSA_BACKEND_URL: url("medusa"),
       WALLET_BASE_URL: url("wallet"),
       WALLET_API_KEY: walletApiKey.value,
-      WMS_API_URL: url("wms"),
+      WMS_API_URL: url("core"),
       ALMOND_PAYMENT_ENDPOINT: url("wallet"),
       MEMBERSHIP_SERVICE_URL: url("membership"),
       UGC_SERVICE_URL: url("ugc"),
@@ -277,6 +260,22 @@ export function setup(infra: SharedInfra) {
       // Admin & logging
       MEDUSA_ADMIN_ONBOARDING_TYPE: "default",
       LOG_LEVEL: "debug",
+    },
+  });
+
+  // ─── admin-web (Next.js / OpenNext, CloudFront) ───
+  new sst.aws.Nextjs("AdminWeb", {
+    path: "../../../apps/admin-web",
+    domain: { name: domain("admin") },
+    environment: {
+      AUTH_SECRET: authSecret.value,
+      ALMONDYOUNG_API_URL: url("core"),
+      USER_SERVICE_URL: idpUserServiceUrl,
+      WALLET_SERVICE_URL: url("wallet"),
+      MEMBERSHIP_SERVICE_URL: url("membership"),
+      NOTIFICATION_SERVICE_URL: url("notification"),
+      CHANNEL_ADAPTER_SERVICE_URL: url("channel-adapter"),
+      ADMIN_DOMAIN: domain("admin"),
     },
   });
 }
