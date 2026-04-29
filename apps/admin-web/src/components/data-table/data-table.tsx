@@ -13,6 +13,7 @@ type DataTableProps<TData extends RowData> = {
   pageSize?: number
   filters?: Filter[]
   orderBy?: { key: string; label: string }[]
+  orderByPresetOnly?: boolean
   search?: boolean
   navigateTo?: (row: Row<TData>) => string
   noRecords?: { message: string }
@@ -27,6 +28,7 @@ export function DataTable<TData extends RowData>({
   pageSize = 20,
   filters,
   orderBy,
+  orderByPresetOnly,
   search,
   navigateTo,
   noRecords,
@@ -37,6 +39,7 @@ export function DataTable<TData extends RowData>({
       <DataTableQuery
         filters={filters}
         orderBy={orderBy}
+        orderByPresetOnly={orderByPresetOnly}
         search={search}
         prefix={prefix}
       />

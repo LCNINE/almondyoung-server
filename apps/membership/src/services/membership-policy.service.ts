@@ -59,7 +59,7 @@ const POLICY_TABLE: Record<string, PolicyValue> = {
   BENEFIT_USAGE_AFFECTS_REFUND: { enabled: true },
 
   // ===== 체험 정책 =====
-  TRIAL_DURATION_DAYS: { days: 7 },
+  // TRIAL_DURATION_DAYS는 plan.trialDays를 직접 사용하므로 여기 없음
   TRIAL_REUSE_PREVENTION: { enabled: true },
 
   // ===== 플랜 변경 정책 =====
