@@ -51,17 +51,19 @@ export class SubscriptionCreator {
       // 무료체험은 정기결제 첫 구독자에게만 적용
       let effectiveTrialDays = 0;
       if (billingMode === 'recurring') {
-        const [isFirstTime, trialDays, trialReuseEnabled] = await Promise.all([
+        const [isFirstTime, trialReuseEnabled] = await Promise.all([
           this.isFirstTimeSubscriber(userId),
-          this.policyService.getNumberPolicy('TRIAL_DURATION_DAYS', 'days', plan.tierId, plan.trialDays || 0),
           this.policyService.getBooleanPolicy('TRIAL_REUSE_PREVENTION', 'enabled', plan.tierId, true),
         ]);
-        effectiveTrialDays = isFirstTime || !trialReuseEnabled ? trialDays : 0;
+        // plan.trialDays를 직접 사용 (어드민에서 플랜별 설정한 값 반영)
+        effectiveTrialDays = (isFirstTime || !trialReuseEnabled) ? (plan.trialDays || 0) : 0;
       }
 
       const autoRenewal = billingMode === 'recurring';
       const billingDate = addDays(startsAt, effectiveTrialDays);
-      const nextBillingDate = billingMode === 'recurring' ? addDays(billingDate, plan.durationDays) : null;
+      // nextBillingDate = billingDate: 체험 종료일이 곧 첫 결제일
+      // 결제 후 billing.manager가 nextBillingDate를 +durationDays로 진행시킴
+      const nextBillingDate = billingMode === 'recurring' ? billingDate : null;
       // 체험 기간을 포함한 만료일 (체험 기간만큼 연장)
       const endsAt = addDays(startsAt, plan.durationDays + effectiveTrialDays);
 
