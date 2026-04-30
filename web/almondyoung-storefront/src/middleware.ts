@@ -8,6 +8,45 @@ const PUBLISHABLE_API_KEY = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY
 // 기본 리전을 'kr'로 설정
 const DEFAULT_REGION = process.env.NEXT_PUBLIC_DEFAULT_REGION || "kr"
 
+const AUTH_WEB_ORIGIN = process.env.AUTH_WEB_ORIGIN ?? ""
+
+// 보호 경로 — countryCode prefix 뒤의 path 가 이들로 시작하면 비인증 시 auth-web 으로 redirect.
+// 공개: /(main)/*, /(auth)/*, /(policies)/*, /cart, /order/track 등 게스트 허용
+const PROTECTED_PATH_PREFIXES = ["/mypage", "/consents"]
+
+function isProtectedPath(pathname: string): boolean {
+  // pathname: "/kr/mypage/..." → countryCode 제거하고 prefix 매칭
+  const segments = pathname.split("/").filter(Boolean)
+  if (segments.length < 2) return false
+  const afterCountry = "/" + segments.slice(1).join("/")
+  return PROTECTED_PATH_PREFIXES.some((p) => afterCountry.startsWith(p))
+}
+
+function buildSigninRedirect(request: NextRequest): NextResponse {
+  const url = new URL("/signin", AUTH_WEB_ORIGIN)
+  url.searchParams.set("redirect_to", request.nextUrl.href)
+  return NextResponse.redirect(url, 307)
+}
+
+/**
+ * sync 게이트 발화 여부.
+ * - 결제 PG 콜백(`/checkout/callback`, `/checkout/success`, `/checkout/fail`) 은 제외 — PG state 손실 방지
+ * - 그 외 page navigation 은 모두 통과시킴. medusaSignin() 내부의
+ *   transferCart / recoverCustomerCart 분기는 idempotent 라 안전.
+ */
+function shouldGateForMedusaSync(pathname: string): boolean {
+  if (pathname.includes("/checkout/callback")) return false
+  if (pathname.includes("/checkout/success")) return false
+  if (pathname.includes("/checkout/fail")) return false
+  return true
+}
+
+function buildMedusaSyncRedirect(request: NextRequest): NextResponse {
+  const url = new URL("/api/auth/sync-medusa", request.nextUrl.origin)
+  url.searchParams.set("next", request.nextUrl.href)
+  return NextResponse.redirect(url, 307)
+}
+
 const regionMapCache = {
   regionMap: new Map<string, HttpTypes.StoreRegion>(),
   regionMapUpdated: Date.now(),
@@ -117,6 +156,28 @@ async function getCountryCode(
  * Middleware to handle region selection and onboarding status.
  */
 export async function middleware(request: NextRequest) {
+  // 인증 게이트: 보호 경로에 비인증 접근 시 auth-web 으로 redirect.
+  // accessToken 또는 refreshToken 중 하나라도 있으면 통과 (만료/리프레시는 SSR/Server Action 단계에서 error.tsx 가 처리).
+  if (
+    AUTH_WEB_ORIGIN &&
+    isProtectedPath(request.nextUrl.pathname) &&
+    !request.cookies.get("accessToken")?.value &&
+    !request.cookies.get("refreshToken")?.value
+  ) {
+    return buildSigninRedirect(request)
+  }
+
+  // Medusa 세션 sync 게이트: auth-web 로그인 직후 storefront 첫 진입에서 1회 발화.
+  // user-service 토큰(accessToken)은 있지만 Medusa customer JWT(_medusa_jwt)가 없으면
+  // /api/auth/sync-medusa 로 우회시켜 토큰 교환 + 카트 attach 후 원래 path 로 복귀.
+  if (
+    request.cookies.get("accessToken")?.value &&
+    !request.cookies.get("_medusa_jwt")?.value &&
+    shouldGateForMedusaSync(request.nextUrl.pathname)
+  ) {
+    return buildMedusaSyncRedirect(request)
+  }
+
   let redirectUrl = request.nextUrl.href
 
   let response = NextResponse.redirect(redirectUrl, 307)
