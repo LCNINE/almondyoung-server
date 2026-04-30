@@ -5,6 +5,12 @@ import { medusaSignin } from "@lib/api/medusa/signin"
 
 const DEFAULT_REGION = process.env.NEXT_PUBLIC_DEFAULT_REGION || "kr"
 
+// 한 번 시도했음을 표시하는 마커 쿠키. 짧은 TTL 동안 sync 게이트를 우회시켜
+// medusaSignin 실패 시 무한 루프(/ ↔ /api/auth/sync-medusa) 를 차단한다.
+// _medusa_jwt 가 정상 set 되면 의미 없음 — 실패 폴백 전용.
+const SYNC_TRIED_COOKIE = "_medusa_sync_tried"
+const SYNC_TRIED_TTL_SECONDS = 30
+
 /**
  * `next` 파라미터를 안전하게 정규화한다.
  * - 동일 origin (request host) 인 경우 path+search 만 추출
@@ -39,26 +45,65 @@ export async function GET(request: NextRequest) {
 
   const jar = await cookies()
   const hasAccess = !!jar.get("accessToken")?.value
+  const hasRefresh = !!jar.get("refreshToken")?.value
+  const hadMedusaJwt = !!jar.get("_medusa_jwt")?.value
+
+  console.info("[sync-medusa] enter", {
+    next,
+    hasAccess,
+    hasRefresh,
+    hadMedusaJwt,
+  })
+
   if (!hasAccess) {
-    // 로그인 안 한 채로 sync 라우트 직접 호출 — 그냥 next 로 보냄
-    return NextResponse.redirect(target, {
-      status: 307,
-      headers: { "Cache-Control": "no-store" },
-    })
+    console.info("[sync-medusa] no accessToken — skip signin, redirect to next")
+    return buildRedirectWithMarker(target)
   }
 
   try {
     const result = await medusaSignin()
     if (!result.success) {
-      console.error("[sync-medusa] medusaSignin failed", result)
+      console.error("[sync-medusa] medusaSignin failed", {
+        error: result.error,
+        code: result.code,
+        message: result.message,
+      })
+    } else {
+      console.info("[sync-medusa] medusaSignin success", {
+        tokenLen: result.data?.length ?? 0,
+      })
     }
   } catch (e) {
-    // fail-open: sync 실패해도 사용자 흐름을 막지 않는다 (다음 진입에서 재시도됨)
-    console.error("[sync-medusa] unexpected error", e)
+    console.error("[sync-medusa] medusaSignin threw", {
+      name: (e as Error)?.name,
+      message: (e as Error)?.message,
+      stack: (e as Error)?.stack,
+    })
   }
 
-  return NextResponse.redirect(target, {
+  // jwt 가 set 됐는지 사후 확인 (cookies() 는 같은 요청 내에서 mutation 반영됨)
+  const hasMedusaJwtAfter = !!(await cookies()).get("_medusa_jwt")?.value
+  console.info("[sync-medusa] exit", {
+    hasMedusaJwtAfter,
+    redirectTo: target.toString(),
+  })
+
+  return buildRedirectWithMarker(target)
+}
+
+function buildRedirectWithMarker(target: URL): NextResponse {
+  const res = NextResponse.redirect(target, {
     status: 307,
     headers: { "Cache-Control": "no-store" },
   })
+  // 성공/실패와 무관하게 마커를 set — 실패 시 미들웨어 루프 차단용.
+  // 성공 시에는 _medusa_jwt 가 있으므로 미들웨어가 이미 게이트를 안 탄다.
+  res.cookies.set(SYNC_TRIED_COOKIE, "1", {
+    maxAge: SYNC_TRIED_TTL_SECONDS,
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+  })
+  return res
 }

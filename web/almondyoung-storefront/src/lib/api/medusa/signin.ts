@@ -13,6 +13,7 @@ export async function medusaSignin(): Promise<{
   message?: string
 }> {
   try {
+    console.info("[medusaSignin] requesting /auth/customer/my-auth")
     const data = await api<{ token: string }>(
       "medusa",
       "/auth/customer/my-auth",
@@ -21,8 +22,12 @@ export async function medusaSignin(): Promise<{
         withAuth: true,
       }
     )
+    console.info("[medusaSignin] my-auth ok", {
+      tokenLen: data?.token?.length ?? 0,
+    })
 
     await setMedusaAuthToken(data.token)
+    console.info("[medusaSignin] _medusa_jwt cookie set")
 
     const customerCacheTag = await getCacheTag("customers")
     revalidateTag(customerCacheTag)
@@ -30,9 +35,25 @@ export async function medusaSignin(): Promise<{
     // 게스트 카트가 있으면 이전, 없으면 고객 기존 카트 복구
     const cartId = await getCartId()
     if (cartId) {
-      await transferCart()
+      console.info("[medusaSignin] transferCart", { cartId })
+      try {
+        await transferCart()
+      } catch (e) {
+        console.error("[medusaSignin] transferCart failed", {
+          name: (e as Error)?.name,
+          message: (e as Error)?.message,
+        })
+      }
     } else {
-      await recoverCustomerCart()
+      console.info("[medusaSignin] recoverCustomerCart")
+      try {
+        await recoverCustomerCart()
+      } catch (e) {
+        console.error("[medusaSignin] recoverCustomerCart failed", {
+          name: (e as Error)?.name,
+          message: (e as Error)?.message,
+        })
+      }
     }
 
     return {
@@ -40,7 +61,14 @@ export async function medusaSignin(): Promise<{
       data: data.token,
     }
   } catch (error) {
-    console.error("medusaSignin error:", error)
+    const err = error as Error & { status?: number; code?: string }
+    console.error("[medusaSignin] error", {
+      name: err?.name,
+      message: err?.message,
+      status: err?.status,
+      code: err?.code,
+      stack: err?.stack,
+    })
     return {
       success: false,
       error: "TOKEN_PROCESS_ERROR",
