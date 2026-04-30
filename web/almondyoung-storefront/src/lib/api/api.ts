@@ -2,6 +2,9 @@ import { getAccessToken, getCookies } from "@lib/data/cookies"
 import { ApiAuthError, ApiNetworkError, HttpApiError } from "./api-error"
 import { getBackendBaseUrl, type BackendService } from "@/lib/config/backend"
 
+const MEDUSA_PUBLISHABLE_KEY =
+  process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY ?? ""
+
 /**
  * server action response type
  * 이 타입을 사용해야 프론트단에서 래핑된 에러를 처리할 수 있습니다.
@@ -58,6 +61,12 @@ export async function api<T>(
   // body가 있고 FormData가 아닐 때만 Content-Type 설정
   if (body && !isFormData) {
     ;(headers as Record<string, string>)["Content-Type"] = "application/json"
+  }
+
+  // Medusa store/auth 라우트는 publishable key 가 필수. 누락 시 401 처리됨.
+  if (service === "medusa" && MEDUSA_PUBLISHABLE_KEY) {
+    ;(headers as Record<string, string>)["x-publishable-api-key"] =
+      MEDUSA_PUBLISHABLE_KEY
   }
 
   if (withAuth) {
