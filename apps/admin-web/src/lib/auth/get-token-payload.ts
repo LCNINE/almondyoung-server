@@ -10,7 +10,7 @@ export interface TokenPayload {
 
 export async function getTokenPayload(): Promise<TokenPayload | null> {
   const cookieStore = await cookies();
-  const token = cookieStore.get('admin_access_token')?.value;
+  const token = cookieStore.get('accessToken')?.value;
 
   if (!token) return null;
 
