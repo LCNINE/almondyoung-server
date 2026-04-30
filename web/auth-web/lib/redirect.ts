@@ -15,6 +15,7 @@ export function sanitizeRedirectTo(raw: string | null | undefined): string | nul
     return null;
   }
   if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+  if (env.oauthBypassValidation) return url.toString();
   const host = url.host;
   const match = env.allowedRedirectHosts.some((allowed) => {
     if (allowed.startsWith(".")) return host === allowed.slice(1) || host.endsWith(allowed);
