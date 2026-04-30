@@ -5,8 +5,8 @@ export async function forwardRequest(
   targetBaseUrl: string,
   path: string[]
 ): Promise<NextResponse> {
-  const accessToken = request.cookies.get('admin_access_token')?.value ?? '';
-  const refreshToken = request.cookies.get('admin_refresh_token')?.value ?? '';
+  const accessToken = request.cookies.get('accessToken')?.value ?? '';
+  const refreshToken = request.cookies.get('refreshToken')?.value ?? '';
 
   const targetPath = path.join('/');
   const search = request.nextUrl.search;

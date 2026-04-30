@@ -41,8 +41,8 @@ function getServiceUrl(envKey: string, fallback: string): string {
 
 async function buildAuthHeaders(): Promise<HeadersInit> {
   const jar = await cookies();
-  const accessToken = jar.get('admin_access_token')?.value ?? '';
-  const refreshToken = jar.get('admin_refresh_token')?.value ?? '';
+  const accessToken = jar.get('accessToken')?.value ?? '';
+  const refreshToken = jar.get('refreshToken')?.value ?? '';
   return {
     'Content-Type': 'application/json',
     Cookie: `accessToken=${accessToken}; refreshToken=${refreshToken}`,

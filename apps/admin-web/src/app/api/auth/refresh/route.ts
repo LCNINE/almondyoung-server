@@ -3,23 +3,31 @@ import { NextRequest, NextResponse } from 'next/server';
 const USER_SERVICE_BASE_URL =
   process.env.USER_SERVICE_URL ?? 'http://localhost:3030';
 
-const ADMIN_DOMAIN = process.env.ADMIN_DOMAIN ?? 'admin.almondyoung-next.com';
+const PARENT_COOKIE_DOMAIN = process.env.PARENT_COOKIE_DOMAIN ?? '';
+const PARENT_COOKIE_SECURE =
+  (process.env.PARENT_COOKIE_SECURE ?? 'true') === 'true';
+const PARENT_COOKIE_SAMESITE = (process.env.PARENT_COOKIE_SAMESITE ?? 'lax') as
+  | 'lax'
+  | 'strict'
+  | 'none';
 
-const REMEMBER_ME_MAX_AGE = 90 * 24 * 60 * 60; // 90일
-const DEFAULT_MAX_AGE = 14 * 24 * 60 * 60; // 2주
+const ACCESS_MAX_AGE = 60 * 15; // 15 min — auth-web 쿠키 정책과 동일
 
 export async function POST(request: NextRequest) {
-  const adminAccessToken =
-    request.cookies.get('admin_access_token')?.value ?? '';
-  const adminRefreshToken =
-    request.cookies.get('admin_refresh_token')?.value ?? '';
-  const rememberMe =
-    request.cookies.get('admin_remember_me')?.value === '1';
+  const accessToken = request.cookies.get('accessToken')?.value ?? '';
+  const refreshToken = request.cookies.get('refreshToken')?.value ?? '';
+
+  if (!refreshToken) {
+    return NextResponse.json(
+      { error: 'No refresh token' },
+      { status: 401 },
+    );
+  }
 
   const upstream = await fetch(`${USER_SERVICE_BASE_URL}/auth/restore-token`, {
     method: 'POST',
     headers: {
-      Cookie: `accessToken=${adminAccessToken}; refreshToken=${adminRefreshToken}`,
+      Cookie: `accessToken=${accessToken}; refreshToken=${refreshToken}`,
     },
   });
 
@@ -33,17 +41,17 @@ export async function POST(request: NextRequest) {
 
   const response = NextResponse.json(
     { data: { accessToken: newAccessToken } },
-    { status: 200 }
+    { status: 200 },
   );
 
   if (newAccessToken) {
-    response.cookies.set('admin_access_token', newAccessToken, {
+    response.cookies.set('accessToken', newAccessToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      domain: process.env.NODE_ENV === 'production' ? ADMIN_DOMAIN : undefined,
+      secure: PARENT_COOKIE_SECURE,
+      sameSite: PARENT_COOKIE_SAMESITE,
+      domain: PARENT_COOKIE_DOMAIN || undefined,
       path: '/',
-      maxAge: rememberMe ? REMEMBER_ME_MAX_AGE : DEFAULT_MAX_AGE,
+      maxAge: ACCESS_MAX_AGE,
     });
   }
 
