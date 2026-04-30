@@ -11,6 +11,9 @@ const oauthClientsSchema = z.array(oauthClientSchema);
 
 export type OAuthClientConfig = z.infer<typeof oauthClientSchema>;
 
+// TEMP: 시연용 bypass 모드에서 사용되는 기본 clientId.
+export const DEMO_BYPASS_CLIENT_ID = '00000000-0000-0000-0000-000000000000';
+
 let cached: OAuthClientConfig[] | null = null;
 
 export function loadOAuthClients(raw: string | undefined): OAuthClientConfig[] {

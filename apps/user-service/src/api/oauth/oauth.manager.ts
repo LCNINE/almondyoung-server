@@ -58,7 +58,7 @@ export class OAuthManager {
   async issueAuthorizationCode(input: IssueCodeRequestDto): Promise<{ code: string; expiresIn: number }> {
     const client = this.reader.getClientOrThrow(input.clientId);
 
-    if (!client.redirectUris.includes(input.redirectUri)) {
+    if (!this.reader.isBypassEnabled() && !client.redirectUris.includes(input.redirectUri)) {
       throw new Error('invalid redirect_uri (not registered)');
     }
     if (input.codeChallengeMethod !== 'S256') {
@@ -100,6 +100,11 @@ export class OAuthManager {
   }
 
   private async assertClientCredentials(clientId: string, clientSecret: string): Promise<void> {
+    if (this.reader.isBypassEnabled()) {
+      // TEMP: 시연용. clientId만 stub으로 통과시키고 secret 비교를 건너뛴다.
+      this.reader.getClientOrThrow(clientId);
+      return;
+    }
     const client = this.reader.getClientOrThrow(clientId);
     const ok = await bcrypt.compare(clientSecret, client.clientSecretHash);
     if (!ok) throw new Error('invalid client_secret');
@@ -237,6 +242,7 @@ export class OAuthManager {
   // internal secret 검증 (auth-web → /oauth/internal/issue-code)
   // ─────────────────────────────────────────
   assertInternalSecret(provided: string | undefined): void {
+    if (this.reader.isBypassEnabled()) return; // TEMP: 시연용
     const expected = this.reader.getInternalSecret();
     if (!provided || provided !== expected) {
       throw new Error('invalid internal secret');

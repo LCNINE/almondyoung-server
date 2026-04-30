@@ -47,4 +47,9 @@ export const env = {
   oauthInternalSecret: optional("OAUTH_INTERNAL_SECRET", ""),
   oauthAllowedClients: parseOAuthClients(optional("OAUTH_ALLOWED_CLIENTS", "")),
   selfOrigin: required("AUTH_WEB_ORIGIN"),
+  // TEMP: 내부 시연용. true면 redirect host / oauth client / redirect_uri 검증을 모두 우회한다.
+  // 시연 끝나면 env에서 제거할 것.
+  oauthBypassValidation: optional("OAUTH_BYPASS_VALIDATION", "false") === "true",
 };
+
+export const DEMO_BYPASS_CLIENT_ID = "00000000-0000-0000-0000-000000000000";

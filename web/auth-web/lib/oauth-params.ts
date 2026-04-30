@@ -37,10 +37,12 @@ export function parseAuthorizeParams(raw: Record<string, string | string[] | und
   if (codeChallengeMethod !== "S256") return { ok: false, error: "code_challenge_method must be S256" };
   if (responseType !== "code") return { ok: false, error: "response_type must be code" };
 
-  const client = env.oauthAllowedClients.find((c) => c.clientId === clientId);
-  if (!client) return { ok: false, error: "unknown client_id" };
-  if (!client.redirectUris.includes(redirectUri)) {
-    return { ok: false, error: "redirect_uri not registered for client" };
+  if (!env.oauthBypassValidation) {
+    const client = env.oauthAllowedClients.find((c) => c.clientId === clientId);
+    if (!client) return { ok: false, error: "unknown client_id" };
+    if (!client.redirectUris.includes(redirectUri)) {
+      return { ok: false, error: "redirect_uri not registered for client" };
+    }
   }
 
   return {

@@ -79,6 +79,8 @@ export function setup(infra: IdpInfra) {
       AWS_S3_BUCKET: "almondyoung",
       OAUTH_CLIENTS: oauthClients.value,
       OAUTH_INTERNAL_SECRET: oauthInternalSecret.value,
+      // TEMP: 내부 시연용. OAuth client / redirect_uri / client_secret / internal_secret 검증 우회.
+      OAUTH_BYPASS_VALIDATION: "true",
       // ─── 기능별 Secret 미세팅 상태 (후속 활성화 시 주석 해제) ───
       // KAKAO_CLIENT_ID: kakaoClientId.value,
       // KAKAO_CLIENT_SECRET: kakaoClientSecret.value,
@@ -110,6 +112,8 @@ export function setup(infra: IdpInfra) {
       AUTH_WEB_ORIGIN: authWebUrl,
       OAUTH_INTERNAL_SECRET: oauthInternalSecret.value,
       OAUTH_ALLOWED_CLIENTS: oauthAllowedClients.value,
+      // TEMP: 내부 시연용. redirect host / oauth client / redirect_uri 검증 우회.
+      OAUTH_BYPASS_VALIDATION: "true",
     },
   });
 
