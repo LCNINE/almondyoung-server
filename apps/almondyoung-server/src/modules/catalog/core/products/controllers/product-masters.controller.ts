@@ -12,7 +12,7 @@ import {
   HttpStatus,
   HttpCode,
 } from '@nestjs/common';
-import { User } from '@app/authorization';
+import { Public, User } from '@app/authorization';
 import { DateMapper } from '../../../common/mappers';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { ProductMastersService } from '../services/product-masters.service';
@@ -202,6 +202,7 @@ export class ProductMastersController {
   }
 
   @Get(':id')
+  @Public()
   @ApiOperation({
     summary: '제품 마스터 상세 조회 (Active 버전)',
     description: `
