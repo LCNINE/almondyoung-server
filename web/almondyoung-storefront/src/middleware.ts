@@ -170,9 +170,12 @@ export async function middleware(request: NextRequest) {
   // Medusa 세션 sync 게이트: auth-web 로그인 직후 storefront 첫 진입에서 1회 발화.
   // user-service 토큰(accessToken)은 있지만 Medusa customer JWT(_medusa_jwt)가 없으면
   // /api/auth/sync-medusa 로 우회시켜 토큰 교환 + 카트 attach 후 원래 path 로 복귀.
+  // _medusa_sync_tried 마커 쿠키가 있으면 이미 한 번 시도한 것이므로 우회 — 실패 시
+  // 무한 루프 방지. 마커는 짧은 TTL 후 만료되어 재시도된다.
   if (
     request.cookies.get("accessToken")?.value &&
     !request.cookies.get("_medusa_jwt")?.value &&
+    !request.cookies.get("_medusa_sync_tried")?.value &&
     shouldGateForMedusaSync(request.nextUrl.pathname)
   ) {
     return buildMedusaSyncRedirect(request)
