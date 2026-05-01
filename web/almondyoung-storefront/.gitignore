@@ -56,8 +56,6 @@ dump.rdb
 /playwright/.cache/
 /playwright/.auth
 
-package-lock.json
-
 # MCP config (contains API keys)
 .mcp.json
 .env*.local
