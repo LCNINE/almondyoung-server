@@ -7,7 +7,7 @@
 - **프로젝트명**: 아몬드영 스토어프론트 (medusa-next)
 - **타입**: Next.js 15 기반 이커머스 프론트엔드
 - **백엔드**: Medusa V2
-- **패키지 매니저**: yarn (npm 사용 금지)
+- **패키지 매니저**: npm (모노레포 통일을 위해 yarn → npm 마이그레이션 완료)
 
 ## 기술 스택
 
@@ -23,17 +23,17 @@
 ## 자주 사용하는 명령어
 
 ```bash
-# 개발 서버 실행 (포트 8000)
-yarn dev
+# 개발 서버 실행 (포트 8001)
+npm run dev
 
 # 프로덕션 빌드
-yarn build
+npm run build
 
 # 프로덕션 서버 실행
-yarn start
+npm start
 
 # 린트 검사
-yarn lint
+npm run lint
 
 # shadcn/ui 컴포넌트 추가
 npx shadcn@latest add [component-name]
@@ -437,7 +437,7 @@ products.map((product) => ({
 
 1. **shadcn/ui 컴포넌트 소스**(`@/components/ui/`)를 직접 수정하지 마세요. CSS 변경도 금지! 래퍼 컴포넌트를 만드세요.
 2. **MedusaUI**를 사용하지 마세요. 항상 shadcn/ui를 사용하세요.
-3. **npm**을 사용하지 마세요. yarn만 사용합니다.
+3. **npm**을 사용합니다 (모노레포 통일).
 4. **`fetch()`를 직접 호출하지 마세요.** 백엔드 API 요청은 반드시 `api()` 함수(`@/lib/api/api`)를 사용합니다.
 5. **`next/link`의 `Link`를 직접 사용하지 마세요.** 내부 링크는 반드시 `LocalizedClientLink`(`@/components/shared/localized-client-link`)를 사용합니다.
 6. **날짜 포맷팅 시 `toLocaleDateString`, `Intl.DateTimeFormat`, `date-fns`의 `format()`을 직접 호출하지 마세요.** 반드시 `formatDate`(`@/lib/utils/format-date`)를 사용합니다.
