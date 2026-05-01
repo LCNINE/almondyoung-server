@@ -1,0 +1,307 @@
+{
+  "data": [
+    {
+      "id": "01999bef-d5c0-743f-b9eb-cff7e6da05cd",
+      "name": "제이시스 티나스타일링 에센스",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202501/38ddc4ccd1e0005e4ffa5275e1d5d033.jpg",
+      "basePrice": 25000,
+      "membershipPrice": 25000,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:43:30.367Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bef-ced7-746f-b5c3-55968ddbd2a6",
+      "name": "다용도 염색 짜개 치약 튜브 짜개 물감 짜개 미용재료",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202502/db90e9f1a6ccdf71d4aa82ed1d405981.png",
+      "basePrice": 2500,
+      "membershipPrice": 2500,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:43:28.595Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bef-c7dc-77c6-9cbc-2698231e8e8f",
+      "name": "남자 댄맨 브러쉬 덴맨브러쉬 이발소 바버샵 브러쉬",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202502/6671007ddb31f229f08225e6c05db96b.png",
+      "basePrice": 720,
+      "membershipPrice": 720,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:43:26.813Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bef-c0e4-72b4-9f6c-2280f8c2da6e",
+      "name": "면도날 보관 케이스 바버샵",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202502/d6c5bd1f14a48466ada027ab1fc89eca.png",
+      "basePrice": 1600,
+      "membershipPrice": 1600,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:43:25.028Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bef-b9d6-7133-849b-77b6243c0c8a",
+      "name": "고정 잘 되는 투명 새부리형 집게",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202502/fa52f6c804fc4c45a90aa841ff45db7f.png",
+      "basePrice": 3500,
+      "membershipPrice": 3500,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:43:23.211Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bef-b2d7-76c3-8018-20392affc8f2",
+      "name": "동해 꼬리빗 국가고시 시험용 자격증 꼬리빗 1개",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202502/5d4d800ec27141e00ab201858a55e673.jpg",
+      "basePrice": 300,
+      "membershipPrice": 200,
+      "isMembershipOnly": true,
+      "status": "active",
+      "createdAt": "2025-09-30T18:43:21.430Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bef-abe0-7166-bf9e-3ce46d6ad36c",
+      "name": "캐니온 분무기 미용자격증 시험용 학원용",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202502/dcd592e40ef00e456f64b6320f954af3.jpg",
+      "basePrice": 5000,
+      "membershipPrice": 2400,
+      "isMembershipOnly": true,
+      "status": "active",
+      "createdAt": "2025-09-30T18:43:19.646Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bef-a500-733c-a6c0-cdc0334aa883",
+      "name": "천혜사 미용사 국가자격증 실기 시험용 인모 컬러링 헤어피스 7레벨",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202506/91505b024d4c18eef2c5c7f637effab1.jpg",
+      "basePrice": 8000,
+      "membershipPrice": 8000,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:43:17.888Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bef-9df9-75aa-bae3-1376b7848324",
+      "name": "헤어 실기 시험용 스케일링제 MPB/레지나 스캘프 스케일링",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202502/fa26994f390429f4d2a31d9ecef803a2.png",
+      "basePrice": 2700,
+      "membershipPrice": 2700,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:43:16.087Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bef-971b-777c-86d0-fa5300560dee",
+      "name": "국가고시 미용사 자격증 시험용 염색볼",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202502/50f82ee98fc6c7431f3a803644b7b3c9.jpg",
+      "basePrice": 2700,
+      "membershipPrice": 2700,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:43:14.329Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bef-9021-73d8-bc21-3576227a3a83",
+      "name": "고무나라 1000 노란고무줄 고무밴드 7cmX1.3mm",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202502/ea5e2a64d5aa132cb82c4f4bba09479e.jpg",
+      "basePrice": 960,
+      "membershipPrice": 960,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:43:12.537Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bef-891e-729a-9693-519f98b00ba8",
+      "name": "천혜사 미용사 국가고시 시험용 통가발 인모 100% 옐로우라벨 레드라벨",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202506/9145736c602673be2cdde82f170eb0b0.jpg",
+      "basePrice": 97000,
+      "membershipPrice": 97000,
+      "isMembershipOnly": true,
+      "status": "active",
+      "createdAt": "2025-09-30T18:43:10.748Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bef-8229-779a-80b3-b9a095715b26",
+      "name": "데이퓨레테 딥 허브 샴푸 500ml",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202504/ef8cf9c13cba4289fa49d3277ffd5381.png",
+      "basePrice": 13000,
+      "membershipPrice": 13000,
+      "isMembershipOnly": true,
+      "status": "active",
+      "createdAt": "2025-09-30T18:43:08.967Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bef-7ac9-7465-888a-176300b75385",
+      "name": "천혜사 미용사 연습용 마네킹 MDW-V20",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202506/d6e2883be844a200d985c37c10f4265e.jpg",
+      "basePrice": 48000,
+      "membershipPrice": 48000,
+      "isMembershipOnly": true,
+      "status": "active",
+      "createdAt": "2025-09-30T18:43:07.078Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bef-73f9-7634-9a0c-c059127fb1b9",
+      "name": "천혜사 두상 민두 민머리 연습용 마네킹 MMD",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202506/20fe9026d5ff8c08d551bc8ee3d6c3fe.jpg",
+      "basePrice": 14000,
+      "membershipPrice": 13000,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:43:05.337Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bef-6cf5-77fa-8853-b1540e984be5",
+      "name": "천혜사 레귤러 고급 커트 연습용 덧가발 MTW-R 인모 30% 18인치",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202506/29bb73ffa87faed46b32257139375095.jpg",
+      "basePrice": 26000,
+      "membershipPrice": 26000,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:43:03.539Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bef-65f4-72d1-8d28-d0022171a68f",
+      "name": "천혜사 리미티드 중급 커트 연습용 덧가발 MTW-L 아카데미용",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202506/5d8548a5dde829e071a57a61cdb73d1c.jpg",
+      "basePrice": 22000,
+      "membershipPrice": 20000,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:43:01.741Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bef-5eeb-71df-b415-99b7972e50c7",
+      "name": "천혜사 주니어 초급 커트 연습용 덧가발 MTW-J",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202506/ab76800280aa2ac55462738aa0ce30af.jpg",
+      "basePrice": 15000,
+      "membershipPrice": 15000,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:42:59.946Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bef-57a8-738b-9a83-639d87120605",
+      "name": "천혜사 옐로우 100%인모 연습용 덧가발 MTW-Y (6)",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202506/8615f51ef33f1a9e407c9646826fed13.jpg",
+      "basePrice": 35000,
+      "membershipPrice": 35000,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:42:58.085Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999b23-2cab-700d-92e4-08ac5f6c1236",
+      "name": "미용 실기가운 국시 자격증 시험용 반팔 위생가운",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202503/ac81b87084ef17f97f1e225c75027714.jpg",
+      "basePrice": 6000,
+      "membershipPrice": 6000,
+      "isMembershipOnly": true,
+      "status": "active",
+      "createdAt": "2025-09-30T14:59:57.713Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    }
+  ],
+  "total": 20,
+  "page": 1,
+  "limit": 99999
+}
