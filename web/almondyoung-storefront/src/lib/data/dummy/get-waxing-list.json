@@ -1,0 +1,157 @@
+{
+  "data": [
+    {
+      "id": "01999bd7-e2f3-762f-b882-ba468de31bcf",
+      "name": "트위지스트랩 레스페인프랩 무통 왁싱 스프레이",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202310/7a03dc7cb948443c017c0b0e3b91f1be.jpg",
+      "basePrice": 81000,
+      "membershipPrice": 80000,
+      "isMembershipOnly": true,
+      "status": "active",
+      "createdAt": "2025-09-30T18:17:20.841Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bd7-e2f3-762f-b882-ba468de31bcf",
+      "name": "트위지스트랩 레스페인프랩 무통 왁싱 스프레이",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202310/7a03dc7cb948443c017c0b0e3b91f1be.jpg",
+      "basePrice": 81000,
+      "membershipPrice": 80000,
+      "isMembershipOnly": true,
+      "status": "active",
+      "createdAt": "2025-09-30T18:17:20.841Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bd7-dbe8-70fa-a89e-9a020164ace4",
+      "name": "트위지스트랩 노미싱 아웃 파우더 5g",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202310/15ce3a649d9294b34822f9f9e88df891.jpg",
+      "basePrice": 18000,
+      "membershipPrice": 17000,
+      "isMembershipOnly": true,
+      "status": "active",
+      "createdAt": "2025-09-30T18:17:19.035Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bd7-dbe8-70fa-a89e-9a020164ace4",
+      "name": "트위지스트랩 노미싱 아웃 파우더 5g",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202310/15ce3a649d9294b34822f9f9e88df891.jpg",
+      "basePrice": 18000,
+      "membershipPrice": 17000,
+      "isMembershipOnly": true,
+      "status": "active",
+      "createdAt": "2025-09-30T18:17:19.035Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bd7-d4f0-7046-a89e-028a2823bcc4",
+      "name": "트위지스트랩 올 데필 하드 왁스 1kg",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202310/a4fedc933aaabc641277f549f63a0eac.jpg",
+      "basePrice": 45000,
+      "membershipPrice": 43000,
+      "isMembershipOnly": true,
+      "status": "active",
+      "createdAt": "2025-09-30T18:17:17.253Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bd7-d4f0-7046-a89e-028a2823bcc4",
+      "name": "트위지스트랩 올 데필 하드 왁스 1kg",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202310/a4fedc933aaabc641277f549f63a0eac.jpg",
+      "basePrice": 45000,
+      "membershipPrice": 43000,
+      "isMembershipOnly": true,
+      "status": "active",
+      "createdAt": "2025-09-30T18:17:17.253Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bd7-ccf2-775c-b214-497f279dd495",
+      "name": "트위지스트랩 에프터 왁싱 스프레이 400ml",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202310/e10aaa93e9f52d75d0745e5d71d8c2f1.png",
+      "basePrice": 53000,
+      "membershipPrice": 52000,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:17:15.200Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bd7-ccf2-775c-b214-497f279dd495",
+      "name": "트위지스트랩 에프터 왁싱 스프레이 400ml",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202310/e10aaa93e9f52d75d0745e5d71d8c2f1.png",
+      "basePrice": 53000,
+      "membershipPrice": 52000,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:17:15.200Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bd7-c5cb-7179-83e9-c200e29e7520",
+      "name": "트위지스트랩 트위저",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202310/ebc971608ec99b92f8fa57e68e11ae82.jpg",
+      "basePrice": 12000,
+      "membershipPrice": 11000,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:17:13.373Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bd7-be93-74a1-acfa-6ef9673fddd4",
+      "name": "트위지스트랩 올인원 워머기 1구",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202310/a2226a33c1aee89e084e529a0fe18032.jpg",
+      "basePrice": 28000,
+      "membershipPrice": 26000,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:17:11.523Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    }
+  ],
+  "total": 10,
+  "page": 1,
+  "limit": 99999
+}

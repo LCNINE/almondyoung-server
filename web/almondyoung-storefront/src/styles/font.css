@@ -1,0 +1,243 @@
+/* 폰트 페이스 정의 */
+@font-face {
+  font-family: "SB Aggro";
+  src: url("/fonts/SBAggroL.otf") format("opentype");
+  font-weight: 300;
+}
+@font-face {
+  font-family: "SB Aggro";
+  src: url("/fonts/SBAggroM.otf") format("opentype");
+  font-weight: 400;
+}
+@font-face {
+  font-family: "SB Aggro";
+  src: url("/fonts/SBAggroB.otf") format("opentype");
+  font-weight: 700;
+}
+
+@font-face {
+  font-family: "Pretendard";
+  src:
+    url("/fonts/Pretendard-Regular.woff2") format("woff2"),
+    url("/fonts/Pretendard-Regular.woff") format("woff");
+  font-weight: 400;
+}
+@font-face {
+  font-family: "Pretendard";
+  src:
+    url("/fonts/Pretendard-Bold.woff2") format("woff2"),
+    url("/fonts/Pretendard-Bold.woff") format("woff");
+  font-weight: 700;
+}
+
+@theme inline {
+  /* 폰트 패밀리 */
+  --font-sans: "Pretendard", sans-serif;
+  --font-sb-aggro: "SB Aggro", sans-serif;
+
+  /* 타이포그래피 사이즈 */
+  --typo-medium-bold: 14px;
+  --typo-small-cancel: 12px;
+  --typo-medium: 16px;
+  --typo-price: 15px;
+  --typo-product-name: 14px;
+  --typo-category: 10px;
+  --typo-small-normal: 12px;
+  --typo-price-large: 15px;
+  --typo-small-semibold: 12px;
+  --typo-micro: 7px;
+  --typo-ghost-tag: 11px;
+  --typo-button-regular: 13px;
+  --typo-main-menu-lined: 14px;
+  --typo-detailpage-price: 18px;
+  --typo-detailpage-originalprice: 17px;
+  --typo-detailpage-product-name: 15px;
+  --typo-detailpage-regular: 12px;
+  --typo-detailpage-regular-bold: 12px;
+  --typo-detailpage-reviewr-tag: 10px;
+  --typo-mypage-name: 13px;
+  --typo-mypage-medium: 15px;
+  --typo-mypage-mainmenu: 14px;
+  --typo-order-price-normal: 13px;
+  --typo-order-price-cancel: 12px;
+  --typo-order-price-bold: 14px;
+  --typo-order-regular: 12px;
+  --typo-order-regular-bold: 12px;
+  --typo-order-date: 13px;
+}
+
+:root {
+  /* 폰트 패밀리 */
+  --font-sans: "Pretendard", sans-serif;
+  --font-sb-aggro: "SB Aggro", sans-serif;
+
+  /* 타이포그래피 사이즈 */
+  --typo-medium-bold: 14px;
+  --typo-small-cancel: 12px;
+  --typo-medium: 16px;
+  --typo-price: 15px;
+  --typo-product-name: 14px;
+  --typo-category: 10px;
+  --typo-small-normal: 12px;
+  --typo-price-large: 15px;
+  --typo-small-semibold: 12px;
+  --typo-micro: 7px;
+  --typo-ghost-tag: 11px;
+  --typo-button-regular: 13px;
+  --typo-main-menu-lined: 14px;
+  --typo-detailpage-price: 18px;
+  --typo-detailpage-originalprice: 17px;
+  --typo-detailpage-product-name: 15px;
+  --typo-detailpage-regular: 12px;
+  --typo-detailpage-regular-bold: 12px;
+  --typo-detailpage-reviewr-tag: 10px;
+  --typo-mypage-name: 13px;
+  --typo-mypage-medium: 15px;
+  --typo-mypage-mainmenu: 14px;
+  --typo-order-price-normal: 13px;
+  --typo-order-price-cancel: 12px;
+  --typo-order-price-bold: 14px;
+  --typo-order-regular: 12px;
+  --typo-order-regular-bold: 12px;
+  --typo-order-date: 13px;
+}
+
+/* 폰트 적용 */
+@layer base {
+  body {
+    font-family: var(--font-sans);
+  }
+}
+
+/* 타이포그래피 유틸리티 클래스 */
+@layer utilities {
+  /* SB Aggro 폰트 클래스 추가 */
+  .font-sb-aggro {
+    font-family: var(--font-sb-aggro);
+  }
+
+  .typo-medium-bold {
+    font-size: var(--typo-medium-bold);
+    font-weight: 700;
+  }
+
+  .typo-small-cancel {
+    font-size: var(--typo-small-cancel);
+    text-decoration: line-through;
+  }
+
+  .typo-medium {
+    font-size: var(--typo-medium);
+  }
+
+  .typo-price {
+    font-size: var(--typo-price);
+    font-weight: 600;
+  }
+
+  .typo-product-name {
+    font-size: var(--typo-product-name);
+  }
+
+  .typo-category {
+    font-size: var(--typo-category);
+    text-transform: uppercase;
+  }
+
+  .typo-small-normal {
+    font-size: var(--typo-small-normal);
+  }
+
+  .typo-price-large {
+    font-size: var(--typo-price-large);
+    font-weight: 600;
+  }
+
+  .typo-small-semibold {
+    font-size: var(--typo-small-semibold);
+    font-weight: 600;
+  }
+
+  .typo-micro {
+    font-size: var(--typo-micro);
+  }
+
+  .typo-ghost-tag {
+    font-size: var(--typo-ghost-tag);
+  }
+
+  .typo-button-regular {
+    font-size: var(--typo-button-regular);
+  }
+
+  .typo-main-menu-lined {
+    font-size: var(--typo-main-menu-lined);
+    text-decoration: underline;
+  }
+
+  .typo-detailpage-price {
+    font-size: var(--typo-detailpage-price);
+    font-weight: 600;
+  }
+
+  .typo-detailpage-originalprice {
+    font-size: var(--typo-detailpage-originalprice);
+    text-decoration: line-through;
+  }
+
+  .typo-detailpage-product-name {
+    font-size: var(--typo-detailpage-product-name);
+  }
+
+  .typo-detailpage-regular {
+    font-size: var(--typo-detailpage-regular);
+  }
+
+  .typo-detailpage-regular-bold {
+    font-size: var(--typo-detailpage-regular-bold);
+    font-weight: 700;
+  }
+
+  .typo-detailpage-reviewr-tag {
+    font-size: var(--typo-detailpage-reviewr-tag);
+  }
+
+  .typo-mypage-name {
+    font-size: var(--typo-mypage-name);
+  }
+
+  .typo-mypage-medium {
+    font-size: var(--typo-mypage-medium);
+  }
+
+  .typo-mypage-mainmenu {
+    font-size: var(--typo-mypage-mainmenu);
+  }
+
+  .typo-order-price-normal {
+    font-size: var(--typo-order-price-normal);
+  }
+
+  .typo-order-price-cancel {
+    font-size: var(--typo-order-price-cancel);
+    text-decoration: line-through;
+  }
+
+  .typo-order-price-bold {
+    font-size: var(--typo-order-price-bold);
+    font-weight: 700;
+  }
+
+  .typo-order-regular {
+    font-size: var(--typo-order-regular);
+  }
+
+  .typo-order-regular-bold {
+    font-size: var(--typo-order-regular-bold);
+    font-weight: 700;
+  }
+
+  .typo-order-date {
+    font-size: var(--typo-order-date);
+  }
+}

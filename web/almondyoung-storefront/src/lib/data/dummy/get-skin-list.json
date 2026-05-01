@@ -1,0 +1,67 @@
+{
+  "data": [
+    {
+      "id": "01999bef-f1b3-7248-95ab-c489d0440163",
+      "name": "양방향 다용도 이쑤시개 면봉(100개입)",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202507/b2ce1f79cb5e9721ed3c8cdcd21663ba.jpg",
+      "basePrice": 280,
+      "membershipPrice": 280,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:43:37.518Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bef-50c2-7407-b781-636648c43428",
+      "name": "손목 고무줄 원터치형",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202507/5d8e839705cd870bc7a405ba74eb2f0a.jpg",
+      "basePrice": 1000,
+      "membershipPrice": 1000,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:42:56.317Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bef-1f5b-71bb-813f-a3e9c2df16fd",
+      "name": "[웰컴 멤버십] 땅콩 펄 브러쉬 50개입 랜덤",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202311/d5347a47a3fa51dd01bb79bf5741d1b3.png",
+      "basePrice": 3444,
+      "membershipPrice": 100,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:42:43.674Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999b22-bc2d-73ca-820c-c2eb4ba761b7",
+      "name": "티나스타일 필로우 스탠드 작업대",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202508/d9540590d744653005f7a1138ad3b703.jpg",
+      "basePrice": 37000,
+      "membershipPrice": 37000,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T14:59:28.913Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    }
+  ],
+  "total": 4,
+  "page": 1,
+  "limit": 99999
+}

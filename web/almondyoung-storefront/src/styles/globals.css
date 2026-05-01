@@ -1,0 +1,493 @@
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css");
+
+@import "./font.css";
+@import "tailwindcss";
+@plugin "tailwindcss-animate";
+
+input[type="search"]::-webkit-search-decoration,
+input[type="search"]::-webkit-search-cancel-button,
+input[type="search"]::-webkit-search-results-button,
+input[type="search"]::-webkit-search-results-decoration {
+  -webkit-appearance: none;
+  display: none;
+}
+
+/* 상품 상세 HTML 스타일 */
+.product-detail-html {
+  line-height: 1.6;
+}
+
+.product-detail-html img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin: 8px 0;
+}
+
+.product-detail-html div {
+  margin: 8px 0;
+}
+
+.product-detail-html p {
+  margin: 8px 0;
+  line-height: 1.6;
+}
+
+.product-detail-html br {
+  line-height: 1.6;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-card-default: var(--card-default);
+
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+
+  --color-border: var(--border);
+  --color-border-muted: var(--border-muted);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --color-header-background: var(--header-background);
+  --color-header-foreground: var(--header-foreground);
+  --color-header-border: var(--header-border);
+  --color-button-accent: var(--button-accent);
+  --color-button-accent-foreground: var(--button-accent-foreground);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --color-white: var(--white);
+  --color-gray-0: var(--gray-0);
+  --color-gray-10: var(--gray-10);
+  --color-gray-20: var(--gray-20);
+  --color-gray-30: var(--gray-30);
+  --color-gray-40: var(--gray-40);
+  --color-gray-50: var(--gray-50);
+  --color-gray-60: var(--gray-60);
+  --color-gray-70: var(--gray-70);
+  --color-gray-80: var(--gray-80);
+  --color-gray-90: var(--gray-90);
+  --color-yellow-10: var(--yellow-10);
+  --color-yellow-20: var(--yellow-20);
+  --color-yellow-30: var(--yellow-30);
+  --color-yellow-40: var(--yellow-40);
+  --color-yellow-50: var(--yellow-50);
+  --color-orange-600: var(--orange-600);
+  --color-red-30: var(--red-30);
+  --color-red-40: var(--red-40);
+  --color-red-50: var(--red-50);
+  --color-green-30: var(--green-30);
+  --color-green-40: var(--green-40);
+
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-base: 14px;
+  --font-size-lg: 14px;
+  --font-size-xl: 16px;
+  --font-size-2xl: 17px;
+  --font-size-3xl: 18px;
+  --font-size-4xl: 24px;
+  --font-size-5xl: 36px;
+
+  --animate-collapsible-down: collapsible-down 0.25s ease-out;
+  --animate-collapsible-up: collapsible-up 0.25s ease-out;
+}
+
+:root {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: #f29219;
+  --primary-foreground: #ffffff;
+  --secondary: #ffffff;
+  --secondary-foreground: #1c1c1e;
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+
+  /* 폰트 및 컬러 팔레트 */
+  --font-geist-sans: "Pretendard", sans-serif;
+  --font-geist-mono:
+    ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+  --white: #ffffff;
+  --gray-0: #ffffff;
+  --gray-10: #f4f4f4;
+  --gray-20: #c6c6c6;
+  --gray-30: #aeaeb2;
+  --gray-40: #8e8e93;
+  --gray-50: #f9fafb;
+  --gray-60: #48484a;
+  --gray-70: #363639;
+  --gray-80: #2c2c2e;
+  --gray-90: #1c1c1e;
+  --yellow-10: #fff7e5;
+  --yellow-20: #ffe8b3;
+  --yellow-30: #f29219;
+  --yellow-40: #df7b00;
+  --yellow-50: #a86200;
+  --red-30: #f54527;
+  --red-40: #c7321f;
+  --red-50: #981c14;
+  --orange-600: #ff5722;
+  --green-30: #34c759;
+  --green-40: #22a343;
+
+  /* UI 커스텀 구성 요소 */
+  --card-default: var(--gray-0);
+  --card-default-border: var(--primary);
+  --border-muted: var(--gray-10);
+  --header-background: #57534e;
+  --header-foreground: var(--foreground);
+  --header-border: #44403c;
+  --button-accent: var(--yellow-30);
+  --button-accent-foreground: var(--gray-0);
+  --tab-background: var(--white);
+  --tab-foreground: var(--gray-90);
+  --tab-border: var(--gray-10);
+  --tab-accent: var(--gray-90);
+  --tab-accent-foreground: var(--white);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: #f29219;
+  --primary-foreground: #ffffff;
+  --secondary: #2c2c2e;
+  --secondary-foreground: #ffffff;
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+  --gray-50: #1f2937;
+}
+
+/* 블랙프라이데이 테마 */
+.black-friday {
+  --white: #ffffff;
+  --black-friday-bg: #000000;
+  --black-friday-surface: #1a1a1a;
+  --black-friday-accent: #db1829;
+  --black-friday-gold: #ffa500;
+  --black-friday-text: #ffffff;
+  --black-friday-text-muted: #cccccc;
+  --gray-0: #000000;
+  --gray-90: #ffffff;
+
+  --background: var(--black-friday-bg);
+  --foreground: var(--black-friday-text);
+  --card: var(--black-friday-surface);
+  --card-foreground: var(--black-friday-text);
+  --primary: var(--black-friday-accent);
+  --primary-foreground: var(--black-friday-text);
+  --border: #333333;
+  --header-background: #1d1a1a;
+  --header-border: #ff0000;
+  --button-accent: var(--black-friday-gold);
+  --button-accent-foreground: var(--black-friday-bg);
+}
+
+/* 발렌타인 테마 */
+.valentine {
+  --valentine-bg: #fef7f7;
+  --valentine-surface: #ffffff;
+  --valentine-accent: #e91e63;
+  --valentine-pink: #f8bbd9;
+  --valentine-text: #2d1b1b;
+
+  --background: var(--valentine-bg);
+  --foreground: var(--valentine-text);
+  --card: var(--valentine-surface);
+  --primary: var(--valentine-accent);
+  --primary-foreground: var(--valentine-surface);
+  --border: #f8bbd9;
+  --header-background: #f8bbd9;
+  --header-border: #e91e63;
+  --button-accent: var(--valentine-accent);
+}
+
+/* 크리스마스 테마 */
+.christmas {
+  --christmas-bg: #0f1419;
+  --christmas-surface: #1a2332;
+  --christmas-red: #dc2626;
+  --christmas-green: #16a34a;
+  --christmas-gold: #fbbf24;
+  --christmas-text: #ffffff;
+
+  --background: var(--christmas-bg);
+  --foreground: var(--christmas-text);
+  --card: var(--christmas-surface);
+  --primary: var(--christmas-red);
+  --secondary: var(--christmas-green);
+  --accent: var(--christmas-gold);
+  --border: var(--christmas-green);
+  --header-background: #16a34a;
+  --header-border: #dc2626;
+  --button-accent: var(--christmas-gold);
+}
+
+@layer components {
+  .animate-fade-in {
+    animation: fade-in 0.3s ease-out;
+  }
+  .animate-shake {
+    animation: shake 0.5s ease-in-out;
+  }
+}
+
+@keyframes collapsible-down {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--radix-collapsible-content-height);
+  }
+}
+
+@keyframes collapsible-up {
+  from {
+    height: var(--radix-collapsible-content-height);
+  }
+  to {
+    height: 0;
+  }
+}
+
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  10%,
+  30%,
+  50%,
+  70%,
+  90% {
+    transform: translateX(-10px);
+  }
+  20%,
+  40%,
+  60%,
+  80% {
+    transform: translateX(10px);
+  }
+}
+
+@keyframes fade-in {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground text-base;
+  }
+
+  [class*="text-"] {
+    color: inherit;
+  }
+
+  h1 {
+    @apply text-5xl font-medium;
+  }
+  h2 {
+    @apply text-4xl font-medium;
+  }
+  h3 {
+    @apply text-3xl font-bold;
+  }
+  h4 {
+    @apply text-xl font-normal;
+  }
+  p {
+    @apply text-base;
+  }
+  .section-title {
+    @apply text-[25px] leading-[31px] font-bold;
+  }
+
+  @media (max-width: 768px) {
+    h1 {
+      @apply text-[25px] font-bold;
+    }
+    h2 {
+      @apply text-xl font-bold;
+    }
+    h3 {
+      @apply text-lg font-normal;
+    }
+    h4 {
+      @apply text-lg font-normal;
+    }
+
+    .text-3xl {
+      @apply text-[18px] font-bold;
+    }
+    .text-2xl {
+      @apply text-[17px] font-bold;
+    }
+    .text-xl {
+      @apply text-[16px] font-bold;
+    }
+    .text-lg {
+      @apply text-[14px] font-normal;
+    }
+    .text-base,
+    p {
+      @apply text-[13px] font-normal;
+    }
+    .text-sm {
+      @apply text-[12px] font-medium;
+    }
+    .text-xs {
+      @apply text-[11px] font-normal;
+    }
+    .section-title {
+      @apply text-xl leading-[1.4] font-bold;
+    }
+
+    .scrollbar-hide {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+    .scrollbar-hide::-webkit-scrollbar {
+      display: none;
+    }
+  }
+
+  .scroll-touch-only {
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scroll-touch-only::-webkit-scrollbar {
+    display: none;
+  }
+
+  @media (max-width: 768px) {
+    .scroll-touch-only:active::-webkit-scrollbar {
+      display: block;
+      width: 4px;
+      height: 4px;
+    }
+    .scroll-touch-only:active::-webkit-scrollbar-thumb {
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 10px;
+    }
+    .carousel-nav-btn {
+      display: none !important;
+    }
+  }
+}
+
+@layer utilities {
+  .card-default-glow {
+    box-shadow:
+      0 0 0 1px hsl(var(--card-default-border)),
+      0 4px 16px -4px hsl(var(--primary) / 0.15);
+  }
+  .card-hover {
+    @apply transition-all duration-200 ease-out;
+  }
+  .card-hover:hover {
+    @apply shadow-md;
+    transform: translateY(-1px);
+  }
+}
