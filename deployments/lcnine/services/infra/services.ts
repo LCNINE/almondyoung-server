@@ -17,6 +17,13 @@ export function setup(infra: SharedInfra) {
     name: `/lcnine-auth/${$app.stage}/user-service-url`,
   }).value;
 
+  // TEMP(시연용): IdP 스택의 AUTH_SECRET을 가져와 user-service 발급 JWT를
+  // 검증하는 서비스(예: Medusa my-auth provider)가 같은 시크릿으로 verify할 수 있게 함.
+  const idpAuthSecret = aws.ssm.getParameterOutput({
+    name: `/lcnine-auth/${$app.stage}/auth-secret`,
+    withDecryption: true,
+  }).value;
+
   // Channel Adapter
   const channelAdapterInternalKey = new sst.Secret("ChannelAdapterInternalKey");
   const medusaApiKey = new sst.Secret("MedusaApiKey");
@@ -234,7 +241,9 @@ export function setup(infra: SharedInfra) {
       JWT_SECRET: medusaJwtSecret.value,
       COOKIE_SECRET: medusaCookieSecret.value,
       JWT_EXPIRES_IN: "30d",
-      AUTH_SECRET: authSecret.value,
+      // TEMP(시연용): my-auth provider가 user-service 발급 토큰을 jwt.verify하므로
+      // IdP 스택의 AUTH_SECRET과 동일한 값을 주입.
+      AUTH_SECRET: idpAuthSecret,
       MEDUSA_API_KEY: medusaApiKey.value,
       // CORS
       STORE_CORS: [url("www"), "https://almondyoung.com", "https://www.almondyoung.com"].join(","),
@@ -276,6 +285,20 @@ export function setup(infra: SharedInfra) {
       NOTIFICATION_SERVICE_URL: url("notification"),
       CHANNEL_ADAPTER_SERVICE_URL: url("channel-adapter"),
       ADMIN_DOMAIN: domain("admin"),
+    },
+  });
+
+  // ─── wallet-web (Next.js / OpenNext, CloudFront) ───
+  new sst.aws.Nextjs("WalletWeb", {
+    path: "../../../apps/wallet-web",
+    domain: { name: domain("wallet-web") },
+    environment: {
+      NEXT_PUBLIC_WALLET_API_URL: url("wallet"),
+      WALLET_API_URL: url("wallet"),
+      WALLET_API_KEY: walletApiKey.value,
+      USER_SERVICE_URL: idpUserServiceUrl,
+      COOKIE_DOMAIN: `.${baseDomain}`,
+      TOSS_CLIENT_KEY: tossClientKey.value,
     },
   });
 }

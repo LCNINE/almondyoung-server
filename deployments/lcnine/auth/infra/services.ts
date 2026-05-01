@@ -45,6 +45,15 @@ export function setup(infra: IdpInfra) {
     port: 3000,
     serviceName: "user-service",
     link: [db],
+    loadBalancerHealth: {
+      "3000/http": {
+        path: "/health",
+        interval: "30 seconds",
+        timeout: "5 seconds",
+        healthyThreshold: 2,
+        unhealthyThreshold: 5,
+      },
+    },
     environment: {
       DATABASE_URL: dbUrl("user_service"),
       // platform이 제공하는 VPC 내부 Redpanda. kafka-config.util은 API key/SASL 미지정 시
@@ -71,7 +80,9 @@ export function setup(infra: IdpInfra) {
       CORS_ORIGIN_DOMAINS: [
         authWebUrl,
         "http://localhost:8000",
-        `https://*.${baseDomain}`,
+        url("medusa"),
+        // NOTE: fastify-cors의 origin 배열은 와일드카드를 지원하지 않으므로
+        // 필요한 서브도메인은 여기에 명시적으로 추가할 것.
       ].join(","),
       // AWS_REGION/BUCKET은 env.validation에서 required라 남김. 실제 키 없이도
       // ECS task role fallback 경로로 동작하므로 ACCESS_KEY 쌍은 생략.
@@ -129,6 +140,14 @@ export function setup(infra: IdpInfra) {
     name: `/lcnine-auth/${$app.stage}/auth-web-url`,
     type: "String",
     value: authWebUrl,
+  });
+
+  // TEMP(시연용): user-service의 AUTH_SECRET을 SecureString으로 cross-stack export.
+  // df 스택의 Medusa가 같은 시크릿으로 JWT를 검증할 수 있도록 한다.
+  new aws.ssm.Parameter("IdpAuthSecret", {
+    name: `/lcnine-auth/${$app.stage}/auth-secret`,
+    type: "SecureString",
+    value: authSecret.value,
   });
 
   new aws.ssm.Parameter("IdpIssuerUrl", {
