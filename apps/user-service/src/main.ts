@@ -32,9 +32,13 @@ async function bootstrap() {
 
   logger.log('CORS:', corsOrigins);
 
+  // TEMP: 시연용. OAUTH_BYPASS_VALIDATION=true면 CORS도 모든 origin을 reflect-back으로 허용한다.
+  const corsBypass = process.env.OAUTH_BYPASS_VALIDATION === 'true';
+
   await app.register(fastifyCors, {
-    origin:
-      process.env.NODE_ENV === 'production'
+    origin: corsBypass
+      ? true
+      : process.env.NODE_ENV === 'production'
         ? corsOrigins
         : [
             'http://localhost:8000',
@@ -48,7 +52,22 @@ async function bootstrap() {
           ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Cookie', 'Set-Cookie'],
+    // credentials:true 모드에서는 ACAH의 '*'가 리터럴로 해석되므로, bypass든 아니든 명시적 리스트 필요.
+    // bypass에서는 medusa 등 클라이언트가 보낼 법한 커스텀 헤더까지 폭넓게 허용.
+    allowedHeaders: corsBypass
+      ? [
+          'Content-Type',
+          'Authorization',
+          'Accept',
+          'Cookie',
+          'Set-Cookie',
+          'X-Requested-With',
+          'X-Medusa-Access-Token',
+          'X-Publishable-Api-Key',
+          'X-Idempotency-Key',
+          'Idempotency-Key',
+        ]
+      : ['Content-Type', 'Authorization', 'Accept', 'Cookie', 'Set-Cookie'],
     exposedHeaders: ['Set-Cookie'],
   });
 

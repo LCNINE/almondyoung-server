@@ -26,6 +26,7 @@ import { UsersModule } from './api/users/users.module';
 import { WishlistModule } from './api/wishlist/wishlist.module';
 import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
 import { validateUserServiceEnv } from './config/env.validation';
+import { HealthController } from './health.controller';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ServeStaticModule } from '@nestjs/serve-static';
 
@@ -139,6 +140,7 @@ const staticRoot = existsSync(join(__dirname, 'static')) ? join(__dirname, 'stat
     BusinessLicensesModule,
     AdminModule,
   ],
+  controllers: [HealthController],
   providers: [
     {
       provide: APP_GUARD,
