@@ -7,7 +7,11 @@ import { type UserServiceSchema } from 'apps/user-service/database/drizzle/schem
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { DbTransaction } from '../../commons/types';
-import { JWT_ACCESS_TOKEN_EXPIRATION, JWT_REFRESH_TOKEN_LONG_EXPIRATION } from '../../constants/auth.constant';
+import {
+  INTERNAL_TOKEN_AUDIENCE,
+  JWT_ACCESS_TOKEN_EXPIRATION,
+  JWT_REFRESH_TOKEN_LONG_EXPIRATION,
+} from '../../constants/auth.constant';
 import { UsersService } from '../users/users.service';
 import { IssueCodeRequestDto } from './dto/issue-code.dto';
 import { TokenRequestDto, TokenResponseDto } from './dto/token.dto';
@@ -267,8 +271,19 @@ export class OAuthManager {
     let userId: string | null = null;
     if (input.accessToken) {
       try {
-        const payload = await this.jwtService.verifyAsync<{ sub?: string }>(input.accessToken);
-        if (payload.sub) userId = payload.sub;
+        // SLO 는 internal session token (aud=user-service-internal) 과
+        // OAuth access token (aud=등록된 client_id) 양쪽을 의도적으로 수용한다.
+        // JwtModule 은 issuer/RS256 만 강제하므로 audience 화이트리스트는 여기서 명시 검증한다.
+        const payload = await this.jwtService.verifyAsync<{ sub?: string; aud?: string }>(
+          input.accessToken,
+        );
+        const aud = payload.aud;
+        const audAccepted =
+          aud === INTERNAL_TOKEN_AUDIENCE ||
+          (typeof aud === 'string' && aud.length > 0 && (await this.repo.findActiveClientById(aud)) !== null);
+        if (audAccepted && payload.sub) {
+          userId = payload.sub;
+        }
       } catch {
         // 토큰이 만료/무효해도 logout 자체는 진행 (idempotent).
       }
