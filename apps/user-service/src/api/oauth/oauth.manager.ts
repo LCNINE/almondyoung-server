@@ -1,5 +1,5 @@
 import { DbService, InjectDb } from '@app/db';
-import { UnauthorizedError } from '@app/shared';
+import { BadRequestError, UnauthorizedError } from '@app/shared';
 import { Injectable, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { TokensService } from '../tokens/tokens.service';
@@ -61,13 +61,13 @@ export class OAuthManager {
     const client = await this.reader.getClientOrThrow(input.clientId);
 
     if (!isRedirectUriRegistered(client.redirectUris, input.redirectUri, client.clientType)) {
-      throw new Error('invalid redirect_uri (not registered)');
+      throw new BadRequestError('invalid redirect_uri (not registered)');
     }
     if (input.codeChallengeMethod !== 'S256') {
-      throw new Error('invalid code_challenge_method (only S256 allowed)');
+      throw new BadRequestError('invalid code_challenge_method (only S256 allowed)');
     }
     const user = await this.usersService.findUserById(input.userId);
-    if (!user) throw new Error('user not found');
+    if (!user) throw new BadRequestError('user not found');
 
     const code = crypto.randomBytes(48).toString('base64url');
     const expiresAt = new Date(Date.now() + CODE_TTL_SECONDS * 1000);
@@ -98,7 +98,7 @@ export class OAuthManager {
     if (input.grantType === 'refresh_token') {
       return this.refreshTokens(input);
     }
-    throw new Error('unsupported grant_type');
+    throw new BadRequestError('unsupported grant_type');
   }
 
   private async assertClientCredentials(clientId: string, clientSecret: string | undefined): Promise<void> {
@@ -106,31 +106,31 @@ export class OAuthManager {
     // public client: secret 검증 스킵. PKCE는 exchangeCodeForToken에서 강제됨.
     if (client.clientType === 'public') return;
 
-    if (!clientSecret) throw new Error('client_secret required for confidential client');
+    if (!clientSecret) throw new UnauthorizedError('client_secret required for confidential client');
     const okCurrent = await bcrypt.compare(clientSecret, client.clientSecretHash);
     if (okCurrent) return;
     if (client.previousSecretHash) {
       const okPrevious = await bcrypt.compare(clientSecret, client.previousSecretHash);
       if (okPrevious) return;
     }
-    throw new Error('invalid client_secret');
+    throw new UnauthorizedError('invalid client_secret');
   }
 
   private async exchangeCodeForToken(input: TokenRequestDto): Promise<TokenResponseDto> {
     if (!input.code || !input.codeVerifier || !input.redirectUri) {
-      throw new Error('code, code_verifier, redirect_uri required for authorization_code grant');
+      throw new BadRequestError('code, code_verifier, redirect_uri required for authorization_code grant');
     }
 
     return this.inTx(async (tx) => {
       const row = await this.repo.findUnconsumedCode(input.code!, tx);
-      if (!row) throw new Error('invalid or already used code');
-      if (row.expiresAt < new Date()) throw new Error('code expired');
-      if (row.clientId !== input.clientId) throw new Error('client mismatch');
-      if (row.redirectUri !== input.redirectUri) throw new Error('redirect_uri mismatch');
+      if (!row) throw new BadRequestError('invalid or already used code');
+      if (row.expiresAt < new Date()) throw new BadRequestError('code expired');
+      if (row.clientId !== input.clientId) throw new BadRequestError('client mismatch');
+      if (row.redirectUri !== input.redirectUri) throw new BadRequestError('redirect_uri mismatch');
 
       // PKCE 검증 (S256: BASE64URL(SHA256(verifier)) === codeChallenge)
       const computed = crypto.createHash('sha256').update(input.codeVerifier!).digest('base64url');
-      if (computed !== row.codeChallenge) throw new Error('PKCE verification failed');
+      if (computed !== row.codeChallenge) throw new BadRequestError('PKCE verification failed');
 
       await this.repo.markCodeConsumed(row.code, tx);
 
@@ -140,22 +140,22 @@ export class OAuthManager {
   }
 
   private async refreshTokens(input: TokenRequestDto): Promise<TokenResponseDto> {
-    if (!input.refreshToken) throw new Error('refresh_token required');
+    if (!input.refreshToken) throw new BadRequestError('refresh_token required');
 
     return this.inTx(async (tx) => {
       const row = await this.repo.findOAuthTokenByRefresh(input.refreshToken!, tx);
-      if (!row) throw new Error('invalid refresh_token');
-      if (row.clientId !== input.clientId) throw new Error('client mismatch');
+      if (!row) throw new UnauthorizedError('invalid refresh_token');
+      if (row.clientId !== input.clientId) throw new UnauthorizedError('client mismatch');
 
       // reuse detection: 이미 revoke된 토큰 재사용 → chain 전체 revoke
       if (row.isRevoked) {
         this.logger.warn(`refresh token reuse detected for tokenId=${row.id}`);
         await this.repo.revokeChain(row.id, tx);
-        throw new Error('refresh_token reuse detected; chain revoked');
+        throw new UnauthorizedError('refresh_token reuse detected; chain revoked');
       }
       if (row.expiresAt < new Date()) {
         await this.repo.revokeTokenById(row.id, tx);
-        throw new Error('refresh_token expired');
+        throw new UnauthorizedError('refresh_token expired');
       }
 
       // rotation: 이전 토큰 revoke + 새 토큰 발급 (rotatedFrom = 이전 id)
@@ -212,7 +212,7 @@ export class OAuthManager {
     await this.assertClientCredentials(clientId, clientSecret);
     const row = await this.repo.findOAuthTokenByRefresh(refreshToken);
     if (!row) return; // RFC 7009: 알 수 없는 토큰은 200으로 응답
-    if (row.clientId !== clientId) throw new Error('client mismatch');
+    if (row.clientId !== clientId) throw new UnauthorizedError('client mismatch');
     await this.repo.revokeTokenById(row.id);
   }
 
@@ -300,7 +300,7 @@ export class OAuthManager {
   assertInternalSecret(provided: string | undefined): void {
     const expected = this.reader.getInternalSecret();
     if (!provided || provided !== expected) {
-      throw new Error('invalid internal secret');
+      throw new UnauthorizedError('invalid internal secret');
     }
   }
 }

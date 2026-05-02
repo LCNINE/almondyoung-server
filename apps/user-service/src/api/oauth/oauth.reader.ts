@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { NotFoundError } from '@app/shared';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OAuthClientRow, OAuthRepository } from './oauth.repository';
 
@@ -11,7 +12,7 @@ export class OAuthReader {
 
   async getClientOrThrow(clientId: string): Promise<OAuthClientRow> {
     const client = await this.repo.findActiveClientById(clientId);
-    if (!client) throw new NotFoundException(`unknown client: ${clientId}`);
+    if (!client) throw new NotFoundError(`unknown client: ${clientId}`);
     return client;
   }
 
