@@ -39,12 +39,9 @@ export const userServiceEnvSchema = z.object({
   CAFE24_TOKEN_URL: z.string().url().optional(),
 
   // OAuth IdP (Authorization Code + PKCE for cross-domain SSO)
-  // OAUTH_CLIENTS: JSON array of {clientId, clientSecretHash, redirectUris, allowedScopes?}
-  OAUTH_CLIENTS: z.string().optional(),
+  // 클라이언트 등록 정보(clientId/secret/redirectUris/scopes)는 oauth_clients 테이블이 SoT.
   // Shared secret for auth-web → user-service /oauth/internal/issue-code
   OAUTH_INTERNAL_SECRET: z.string().optional(),
-  // TEMP: 내부 시연용. 'true'면 OAuth client / redirect_uri / client_secret 검증을 모두 우회.
-  OAUTH_BYPASS_VALIDATION: z.enum(['true', 'false']).optional(),
 });
 
 export type UserServiceEnvConfig = z.infer<typeof userServiceEnvSchema>;

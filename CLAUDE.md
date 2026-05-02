@@ -9,9 +9,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Backend Apps (`apps/`)
 | App | Purpose |
 |-----|---------|
-| `almondyoung-server` | Main API gateway/server |
-| `wms` | Warehouse Management System (inventory, inbound, outbound, movement) |
-| `pim` | Product Information Management (products, variants, categories) |
+| `almondyoung-server` | Main API server. **Superset of wms + pim** — all new WMS/PIM domain logic goes here. Deployed as `Core` (hostname `core.…`). |
+| `wms-legacy` | (Legacy) Warehouse Management System. Superseded by `almondyoung-server`. Kept for reference/migration only — do NOT add new features. |
+| `pim-legacy` | (Legacy) Product Information Management. Superseded by `almondyoung-server`. Kept for reference/migration only — do NOT add new features. |
 | `user-service` | Auth, user accounts |
 | `wallet` | Payments, BNPL, refunds |
 | `membership` | Subscription/membership management |

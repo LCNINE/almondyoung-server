@@ -56,9 +56,9 @@ export class OAuthManager {
   // 1. authorization code 발급 (auth-web → user-service internal)
   // ─────────────────────────────────────────
   async issueAuthorizationCode(input: IssueCodeRequestDto): Promise<{ code: string; expiresIn: number }> {
-    const client = this.reader.getClientOrThrow(input.clientId);
+    const client = await this.reader.getClientOrThrow(input.clientId);
 
-    if (!this.reader.isBypassEnabled() && !client.redirectUris.includes(input.redirectUri)) {
+    if (!client.redirectUris.includes(input.redirectUri)) {
       throw new Error('invalid redirect_uri (not registered)');
     }
     if (input.codeChallengeMethod !== 'S256') {
@@ -100,14 +100,14 @@ export class OAuthManager {
   }
 
   private async assertClientCredentials(clientId: string, clientSecret: string): Promise<void> {
-    if (this.reader.isBypassEnabled()) {
-      // TEMP: 시연용. clientId만 stub으로 통과시키고 secret 비교를 건너뛴다.
-      this.reader.getClientOrThrow(clientId);
-      return;
+    const client = await this.reader.getClientOrThrow(clientId);
+    const okCurrent = await bcrypt.compare(clientSecret, client.clientSecretHash);
+    if (okCurrent) return;
+    if (client.previousSecretHash) {
+      const okPrevious = await bcrypt.compare(clientSecret, client.previousSecretHash);
+      if (okPrevious) return;
     }
-    const client = this.reader.getClientOrThrow(clientId);
-    const ok = await bcrypt.compare(clientSecret, client.clientSecretHash);
-    if (!ok) throw new Error('invalid client_secret');
+    throw new Error('invalid client_secret');
   }
 
   private async exchangeCodeForToken(input: TokenRequestDto): Promise<TokenResponseDto> {
@@ -242,7 +242,6 @@ export class OAuthManager {
   // internal secret 검증 (auth-web → /oauth/internal/issue-code)
   // ─────────────────────────────────────────
   assertInternalSecret(provided: string | undefined): void {
-    if (this.reader.isBypassEnabled()) return; // TEMP: 시연용
     const expected = this.reader.getInternalSecret();
     if (!provided || provided !== expected) {
       throw new Error('invalid internal secret');
