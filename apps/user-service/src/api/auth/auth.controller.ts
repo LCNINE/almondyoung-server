@@ -176,12 +176,24 @@ export class AuthController {
     return await this.authService.signupVerifyEmail(token, res, redirectTo);
   }
 
-  @ApiOperation({ summary: '회원가입 콜백(쿠키 설정)' })
+  @ApiOperation({
+    summary: '회원가입 콜백(쿠키 설정)',
+    description:
+      'signupToken 은 verify-email 직후에만 발급되는 단발성 JWT. 이 토큰의 sub 만 userId 로 인정한다. ' +
+      '예전 구현은 userId 를 body 로 직접 받았는데, 인증되지 않은 호출자가 임의 사용자로 로그인 가능했던 결함이 있었다.',
+  })
   @ApiResponse({ status: 200, description: '회원가입 콜백(쿠키 설정) 성공' })
   @Post('callback/signup')
   @Public()
-  async callbackSignup(@Body() { userId }: { userId: string }, @Res({ passthrough: true }) res: FastifyReply) {
-    return await this.authService.callbackSignup(userId, res);
+  async callbackSignup(
+    @Body() body: { signupToken?: string; signup_token?: string },
+    @Res({ passthrough: true }) res: FastifyReply,
+  ) {
+    const signupToken = body.signupToken ?? body.signup_token;
+    if (!signupToken) {
+      throw new BadRequestException('signupToken 이 필요합니다.');
+    }
+    return await this.authService.callbackSignup(signupToken, res);
   }
 
   @ApiOperation({ summary: '인증 이메일 재전송' })
