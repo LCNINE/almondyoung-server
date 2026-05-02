@@ -1,9 +1,8 @@
 import { MobileBackHeader } from "@/components/layout/header/m-back-header"
+import { startOidcLogin } from "@/lib/api/medusa/sso"
 import type { Cafe24SignupBootstrapData } from "@lib/api/users/auth/signup-cafe24"
-import { fetchMe } from "@lib/api/users/me"
 import SignupTemplate from "domains/auth/templates/signup-template"
 import { cookies } from "next/headers"
-import { redirect } from "next/navigation"
 
 const CAFE24_SIGNUP_COOKIE = "cafe24_signup_bootstrap"
 
@@ -56,6 +55,7 @@ const parseCafe24SignupCookie = (
   }
 }
 
+// 일반 가입은 IdP(auth-web)의 가입 화면으로 일원화. Cafe24 마이그레이션 모드만 기존 SignupTemplate 유지.
 export default async function SignupPage({
   params,
   searchParams,
@@ -70,11 +70,6 @@ export default async function SignupPage({
 }) {
   const { countryCode } = await params
   const resolvedSearchParams = (await searchParams) ?? {}
-  const currentUser = await fetchMe().catch(() => null)
-
-  if (currentUser) {
-    redirect(`/${countryCode}/`)
-  }
 
   const isCafe24ModeRequested = resolvedSearchParams.signup_mode === "cafe24"
   const cookieStore = await cookies()
@@ -82,13 +77,15 @@ export default async function SignupPage({
     ? parseCafe24SignupCookie(cookieStore.get(CAFE24_SIGNUP_COOKIE)?.value)
     : null
 
-  const signupMode =
-    isCafe24ModeRequested && cafe24Bootstrap ? "cafe24" : "default"
+  if (!isCafe24ModeRequested || !cafe24Bootstrap) {
+    // 일반 가입 → SSO 진입과 동일하게 IdP로 보냄. user-service에 가입 화면이 있다는 전제.
+    await startOidcLogin(countryCode, resolvedSearchParams.redirect_to)
+  }
 
   return (
     <>
       <MobileBackHeader title="회원가입" />
-      <SignupTemplate mode={signupMode} cafe24Bootstrap={cafe24Bootstrap} />
+      <SignupTemplate mode="cafe24" cafe24Bootstrap={cafe24Bootstrap} />
     </>
   )
 }

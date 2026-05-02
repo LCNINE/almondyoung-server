@@ -1,0 +1,187 @@
+"use server"
+
+import { requireBackendBaseUrl } from "@/lib/config/backend"
+import {
+  getCacheTag,
+  getCartId,
+  removeMedusaAuthToken,
+  setMedusaAuthToken,
+} from "@lib/data/cookies"
+import { revalidateTag } from "next/cache"
+import { redirect } from "next/navigation"
+import { recoverCustomerCart, transferCart } from "./customer"
+
+const PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY ?? ""
+
+const decodeJwtPayload = <T = Record<string, unknown>>(token: string): T => {
+  const parts = token.split(".")
+  if (parts.length < 2) throw new Error("invalid JWT format")
+  return JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8")) as T
+}
+
+const buildCallbackUrl = (countryCode: string): string => {
+  const base = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:8000"
+  return `${base}/${countryCode}/callback/oidc`
+}
+
+const medusaFetch = async (
+  path: string,
+  init: RequestInit & { headers?: Record<string, string> } = {}
+): Promise<Response> => {
+  const baseUrl = requireBackendBaseUrl("medusa")
+  const headers: Record<string, string> = {
+    accept: "application/json",
+    ...(init.headers ?? {}),
+  }
+  if (PUBLISHABLE_KEY) headers["x-publishable-api-key"] = PUBLISHABLE_KEY
+  if (init.body && !headers["content-type"]) {
+    headers["content-type"] = "application/json"
+  }
+  return fetch(`${baseUrl}${path}`, { ...init, headers, cache: "no-store" })
+}
+
+/**
+ * 사용자가 로그인 버튼을 누르면 호출됨. medusa /auth/customer/user-service-sso 가
+ * authorize URL을 location으로 반환하며, 여기서 Next.js redirect로 사용자를 그곳으로 보낸다.
+ */
+export async function startOidcLogin(
+  countryCode: string,
+  redirectTo?: string
+): Promise<void> {
+  const callbackUrl = buildCallbackUrl(countryCode)
+
+  const res = await medusaFetch("/auth/customer/user-service-sso", {
+    method: "POST",
+    body: JSON.stringify({
+      callback_url: callbackUrl,
+      ...(redirectTo ? { redirect_to: redirectTo } : {}),
+    }),
+  })
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "")
+    throw new Error(`startOidcLogin failed: ${res.status} ${text}`)
+  }
+
+  const json = (await res.json()) as { location?: string }
+  if (!json.location) {
+    throw new Error("startOidcLogin: provider did not return location")
+  }
+
+  redirect(json.location)
+}
+
+type DecodedToken = {
+  actor_id?: string
+  auth_identity_id?: string
+  actor_type?: string
+  app_metadata?: { customer_id?: string }
+}
+
+/**
+ * IdP에서 redirect로 ?code & state 와 함께 돌아왔을 때 호출됨.
+ * 1) medusa /auth/customer/user-service-sso/callback 으로 검증 → JWT 수령
+ * 2) JWT에 actor_id가 없으면(=신규) /store/customers로 customer 생성 → /auth/token/refresh
+ * 3) _medusa_jwt 쿠키 세팅 + 카트 인계 + redirect
+ */
+export async function oidcCallback(args: {
+  code: string
+  state: string
+  countryCode: string
+  redirectTo?: string
+}): Promise<{ success: true; redirectTo: string } | { success: false; error: string }> {
+  const { code, state, countryCode } = args
+
+  const callbackRes = await medusaFetch(
+    `/auth/customer/user-service-sso/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`,
+    { method: "GET" }
+  )
+
+  if (!callbackRes.ok) {
+    const text = await callbackRes.text().catch(() => "")
+    return { success: false, error: `callback failed: ${callbackRes.status} ${text}` }
+  }
+
+  const { token } = (await callbackRes.json()) as { token: string }
+  if (!token) {
+    return { success: false, error: "no token in callback response" }
+  }
+
+  let finalToken = token
+  let decoded: DecodedToken
+  try {
+    decoded = decodeJwtPayload<DecodedToken>(token)
+  } catch (e) {
+    return { success: false, error: `failed to decode JWT: ${(e as Error).message}` }
+  }
+
+  // 신규 사용자: customer 레코드가 없으므로 생성 후 토큰 재발급
+  if (!decoded.actor_id && !decoded.app_metadata?.customer_id) {
+    const createRes = await medusaFetch(`/store/customers`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({}),
+    })
+
+    if (!createRes.ok) {
+      const text = await createRes.text().catch(() => "")
+      return { success: false, error: `customer create failed: ${createRes.status} ${text}` }
+    }
+
+    const refreshRes = await medusaFetch(`/auth/token/refresh`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+    })
+    if (!refreshRes.ok) {
+      const text = await refreshRes.text().catch(() => "")
+      return { success: false, error: `token refresh failed: ${refreshRes.status} ${text}` }
+    }
+    const refreshed = (await refreshRes.json()) as { token: string }
+    finalToken = refreshed.token
+  }
+
+  await setMedusaAuthToken(finalToken)
+
+  const customerCacheTag = await getCacheTag("customers")
+  if (customerCacheTag) revalidateTag(customerCacheTag)
+
+  // 게스트 카트 인계 / 기존 카트 복구
+  const cartId = await getCartId()
+  try {
+    if (cartId) {
+      await transferCart()
+    } else {
+      await recoverCustomerCart()
+    }
+  } catch (e) {
+    console.warn("[oidcCallback] cart sync failed", (e as Error).message)
+  }
+
+  const redirectTo = args.redirectTo && args.redirectTo.startsWith("/")
+    ? args.redirectTo
+    : `/${countryCode}`
+
+  return { success: true, redirectTo }
+}
+
+/**
+ * 로그아웃: _medusa_jwt 제거 후 user-service /oauth/end_session으로 redirect.
+ */
+export async function oidcSignOut(countryCode: string): Promise<void> {
+  await removeMedusaAuthToken()
+
+  const issuer = process.env.OIDC_ISSUER_URL ?? process.env.NEXT_PUBLIC_USER_SERVICE_URL
+  const clientId = process.env.OIDC_CLIENT_ID ?? "medusa-storefront"
+  const base = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:8000"
+
+  if (!issuer) {
+    redirect(`/${countryCode}`)
+  }
+
+  const url = new URL("/oauth/end_session", issuer)
+  url.searchParams.set("client_id", clientId)
+  url.searchParams.set("post_logout_redirect_uri", `${base}/${countryCode}`)
+
+  redirect(url.toString())
+}
+
