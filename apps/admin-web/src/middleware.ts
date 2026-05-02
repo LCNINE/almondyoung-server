@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { jwtVerify } from 'jose';
+import { createRemoteJWKSet, jwtVerify, type JWTVerifyOptions } from 'jose';
 
-const JWT_SECRET = new TextEncoder().encode(process.env.AUTH_SECRET);
 const FIVE_MINUTES = 5 * 60 * 1000;
 const ACCESS_MAX_AGE = 60 * 15; // 15 min
 const REFRESH_MAX_AGE = 60 * 60 * 24 * 14; // 2 weeks
@@ -19,6 +18,35 @@ const PARENT_COOKIE_SAMESITE = (process.env.PARENT_COOKIE_SAMESITE ?? 'lax') as
 
 const ACCESS_TOKEN = 'accessToken';
 const REFRESH_TOKEN = 'refreshToken';
+
+// 토큰 검증: user-service IdP의 RS256 공개키(JWKS) 우선, 실패 시 HS256 fallback (transition 기간).
+// 후속 PR에서 fallback 제거 예정.
+const OAUTH_JWKS_URL = process.env.OAUTH_JWKS_URL;
+const OAUTH_ISSUER_URL = process.env.OAUTH_ISSUER_URL;
+const HS256_SECRET = process.env.AUTH_SECRET
+  ? new TextEncoder().encode(process.env.AUTH_SECRET)
+  : null;
+
+const JWKS = OAUTH_JWKS_URL ? createRemoteJWKSet(new URL(OAUTH_JWKS_URL)) : null;
+
+const VERIFY_OPTS: JWTVerifyOptions = {
+  audience: 'user-service-internal',
+  ...(OAUTH_ISSUER_URL ? { issuer: OAUTH_ISSUER_URL } : {}),
+};
+
+async function verifyAccessToken(token: string) {
+  if (JWKS) {
+    try {
+      return await jwtVerify(token, JWKS, { ...VERIFY_OPTS, algorithms: ['RS256'] });
+    } catch {
+      // fall through to HS256 fallback
+    }
+  }
+  if (HS256_SECRET) {
+    return jwtVerify(token, HS256_SECRET, { ...VERIFY_OPTS, algorithms: ['HS256'] });
+  }
+  throw new Error('no verification key configured');
+}
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -57,7 +85,7 @@ export async function middleware(request: NextRequest) {
   // accessToken 검증 및 선제적 갱신
   if (accessToken) {
     try {
-      const { payload } = await jwtVerify(accessToken, JWT_SECRET);
+      const { payload } = await verifyAccessToken(accessToken);
       const expiresAt = (payload.exp ?? 0) * 1000;
       const needsProactiveRefresh = expiresAt - Date.now() < FIVE_MINUTES;
 
@@ -80,7 +108,7 @@ export async function middleware(request: NextRequest) {
         const newToken = await fetchNewToken(refreshToken);
         if (!newToken) return redirectToSignin(request);
         try {
-          await jwtVerify(newToken, JWT_SECRET);
+          await verifyAccessToken(newToken);
         } catch {
           console.error('재발급받은 토큰이 유효하지 않음');
           return redirectToSignin(request);
@@ -99,7 +127,7 @@ export async function middleware(request: NextRequest) {
       const newToken = await fetchNewToken(refreshToken);
       if (!newToken) return redirectToSignin(request);
       try {
-        await jwtVerify(newToken, JWT_SECRET);
+        await verifyAccessToken(newToken);
       } catch {
         return redirectToSignin(request);
       }

@@ -26,6 +26,16 @@ export class CreateOAuthClientDto {
   @IsUrl({ require_protocol: true, require_tld: false }, { each: true })
   redirectUris: string[];
 
+  @ApiProperty({
+    description: 'OIDC RP-Initiated Logout 후 redirect 허용 URI 목록(선택). 등록되지 않은 URI는 logout 시 default로 fallback.',
+    required: false,
+    example: ['https://daview.com/'],
+  })
+  @IsArray()
+  @IsOptional()
+  @IsUrl({ require_protocol: true, require_tld: false }, { each: true })
+  postLogoutRedirectUris?: string[];
+
   @ApiProperty({ description: '허용 스코프 목록(선택)', required: false, example: ['profile', 'email'] })
   @IsArray()
   @IsOptional()
@@ -40,6 +50,12 @@ export class UpdateOAuthClientDto {
   @ArrayMinSize(1)
   @IsUrl({ require_protocol: true, require_tld: false }, { each: true })
   redirectUris?: string[];
+
+  @ApiProperty({ description: 'logout 후 redirect 허용 URI 목록(빈 배열 = null)', required: false })
+  @IsArray()
+  @IsOptional()
+  @IsUrl({ require_protocol: true, require_tld: false }, { each: true })
+  postLogoutRedirectUris?: string[];
 
   @ApiProperty({ description: '허용 스코프 목록(선택, null 로 비우려면 빈 배열 전송)', required: false })
   @IsArray()
@@ -57,6 +73,7 @@ export class OAuthClientResponseDto {
   clientId: string;
   clientType: OAuthClientType;
   redirectUris: string[];
+  postLogoutRedirectUris: string[] | null;
   allowedScopes: string[] | null;
   isActive: boolean;
   hasPreviousSecret: boolean;

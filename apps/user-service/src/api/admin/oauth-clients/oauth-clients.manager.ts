@@ -46,6 +46,7 @@ export class OAuthClientsManager {
       clientType,
       clientSecretHash,
       redirectUris: dto.redirectUris,
+      postLogoutRedirectUris: dto.postLogoutRedirectUris ?? null,
       allowedScopes: dto.allowedScopes ?? null,
     });
     return { ...toResponseDto(row), clientSecret };
@@ -55,6 +56,9 @@ export class OAuthClientsManager {
     await this.reader.getRowOrThrow(clientId);
     const patch: Parameters<OAuthClientsRepository['update']>[1] = {};
     if (dto.redirectUris !== undefined) patch.redirectUris = dto.redirectUris;
+    if (dto.postLogoutRedirectUris !== undefined) {
+      patch.postLogoutRedirectUris = dto.postLogoutRedirectUris.length === 0 ? null : dto.postLogoutRedirectUris;
+    }
     if (dto.allowedScopes !== undefined) {
       patch.allowedScopes = dto.allowedScopes.length === 0 ? null : dto.allowedScopes;
     }
