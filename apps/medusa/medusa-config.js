@@ -28,12 +28,13 @@ module.exports = defineConfig({
       jwtSecret: process.env.JWT_SECRET || 'supersecret',
       cookieSecret: process.env.COOKIE_SECRET || 'supersecret',
       jwtExpiresIn: process.env.JWT_EXPIRES_IN || '30d',
-      // AUTH_WEB_URL이 설정된 환경(df 등)에서만 user-service-sso 활성화
+      // AUTH_WEB_URL이 설정된 환경(df 등)에서만 user-service-sso 활성화.
+      // customer는 OIDC(user-service-sso)만 사용. emailpass는 admin 전용으로 좁힘.
       ...(process.env.AUTH_WEB_URL
         ? {
             authMethodsPerActor: {
               user: ['emailpass', 'my-auth'],
-              customer: ['emailpass', 'my-auth', 'user-service-sso'],
+              customer: ['user-service-sso'],
             },
           }
         : {}),
@@ -94,8 +95,11 @@ module.exports = defineConfig({
                   resolve: './src/modules/user-service-sso',
                   id: 'user-service-sso',
                   options: {
+                    issuerUrl: process.env.OIDC_ISSUER_URL || process.env.USER_SERVICE_URL,
+                    clientId: process.env.OIDC_CLIENT_ID,
+                    clientSecret: process.env.OIDC_CLIENT_SECRET,
+                    scopes: process.env.OIDC_SCOPES || 'openid email profile',
                     authWebUrl: process.env.AUTH_WEB_URL,
-                    authSecret: process.env.AUTH_SECRET,
                     userServiceUrl: process.env.USER_SERVICE_URL,
                     defaultCallbackUrl: process.env.SSO_DEFAULT_CALLBACK_URL,
                   },
