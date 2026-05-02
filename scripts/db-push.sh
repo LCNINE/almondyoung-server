@@ -22,10 +22,4 @@ fi
 
 export DATABASE_URL="$DB_URL"
 
-# 1. Run drizzle-kit push
 ./scripts/with-ipv4.sh drizzle-kit push --config "$CONFIG"
-
-# 2. Run auth schema migration (uses DATABASE_URL from env)
-echo ""
-echo "Running auth schema migration..."
-./scripts/with-ipv4.sh ts-node -r tsconfig-paths/register libs/authorization/scripts/migrate-auth-schema.ts "$DB_URL"
