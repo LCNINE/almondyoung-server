@@ -23,4 +23,13 @@ export class OAuthService {
   userInfo(accessToken: string) {
     return this.manager.getUserInfo(accessToken);
   }
+
+  endSession(input: {
+    accessToken: string | null;
+    clientId?: string;
+    postLogoutRedirectUri?: string;
+    state?: string;
+  }) {
+    return this.manager.endSession(input);
+  }
 }

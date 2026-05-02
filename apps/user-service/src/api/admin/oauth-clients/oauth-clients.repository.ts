@@ -10,11 +10,13 @@ type CreateInput = {
   clientType: 'confidential' | 'public';
   clientSecretHash: string;
   redirectUris: string[];
+  postLogoutRedirectUris?: string[] | null;
   allowedScopes: string[] | null;
 };
 
 type UpdateInput = {
   redirectUris?: string[];
+  postLogoutRedirectUris?: string[] | null;
   allowedScopes?: string[] | null;
   isActive?: boolean;
   deactivatedAt?: Date | null;
@@ -48,6 +50,7 @@ export class OAuthClientsRepository {
         clientType: input.clientType,
         clientSecretHash: input.clientSecretHash,
         redirectUris: input.redirectUris,
+        postLogoutRedirectUris: input.postLogoutRedirectUris ?? null,
         allowedScopes: input.allowedScopes,
       })
       .returning();

@@ -2,6 +2,7 @@ import { DbModule } from '@app/db';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
+import { TokensModule } from '../tokens/tokens.module';
 import { UsersModule } from '../users/users.module';
 import { OAuthController } from './oauth.controller';
 import { OAuthManager } from './oauth.manager';
@@ -14,6 +15,7 @@ import { OAuthService } from './oauth.service';
     ConfigModule,
     DbModule,
     UsersModule,
+    TokensModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({

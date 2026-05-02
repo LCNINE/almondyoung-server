@@ -9,6 +9,7 @@ export interface OAuthClientResponse {
   clientId: string;
   clientType: OAuthClientType;
   redirectUris: string[];
+  postLogoutRedirectUris: string[] | null;
   allowedScopes: string[] | null;
   isActive: boolean;
   hasPreviousSecret: boolean;
@@ -26,11 +27,13 @@ export interface CreateOAuthClientDto {
   clientId: string;
   clientType?: OAuthClientType;
   redirectUris: string[];
+  postLogoutRedirectUris?: string[];
   allowedScopes?: string[];
 }
 
 export interface UpdateOAuthClientDto {
   redirectUris?: string[];
+  postLogoutRedirectUris?: string[];
   allowedScopes?: string[];
   isActive?: boolean;
 }

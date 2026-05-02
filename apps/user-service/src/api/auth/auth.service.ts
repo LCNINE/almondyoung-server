@@ -518,6 +518,30 @@ export class AuthService {
         }
         this.logger.log(`logout 진행중...`);
 
+        // SLO: access token 디코드 → 사용자별 내부 token + OAuth refresh token 일괄 revoke.
+        // 토큰 만료/무효라도 cookie clearing은 진행 (idempotent logout).
+        let userId: string | null = null;
+        try {
+          const payload = await this.jwtService.verifyAsync<{ sub?: string }>(accessToken);
+          if (payload.sub) userId = payload.sub;
+        } catch {
+          // ignore — proceed with cookie clear
+        }
+
+        if (userId) {
+          await this.tokensService.deleteAllTokens(userId, trx);
+          await trx
+            .update(userServiceSchema.oauthTokens)
+            .set({ isRevoked: true, updatedAt: new Date() })
+            .where(
+              and(
+                eq(userServiceSchema.oauthTokens.userId, userId),
+                eq(userServiceSchema.oauthTokens.isRevoked, false),
+              ),
+            );
+          this.logger.log(`SLO: revoked tokens for userId=${userId}`);
+        }
+
         const cookieDomain = this.configService.get<string>('COOKIE_DOMAIN');
         const normalizedCookieDomain = cookieDomain
           ? cookieDomain.startsWith('.')
@@ -596,11 +620,14 @@ export class AuthService {
 
     const expiresIn = JWT_ACCESS_TOKEN_EXPIRATION;
 
+    // 내부 access token도 OAuth와 동일한 RS256 키로 서명. audience로 OAuth 발급 토큰과 구분.
     const accessToken = await this.jwtService.signAsync(payload, {
-      secret: this.configService.getOrThrow<string>('AUTH_SECRET'),
+      privateKey: this.configService.getOrThrow<string>('OAUTH_JWT_PRIVATE_KEY'),
+      algorithm: 'RS256',
       expiresIn,
       issuer: this.configService.getOrThrow<string>('OAUTH_ISSUER_URL'),
       audience: INTERNAL_TOKEN_AUDIENCE,
+      keyid: this.configService.getOrThrow<string>('OAUTH_JWT_KID'),
     });
     const isRailway = !!process.env.RAILWAY_ENVIRONMENT;
     const isProd = process.env.NODE_ENV === 'production';

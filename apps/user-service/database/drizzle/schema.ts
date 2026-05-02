@@ -376,6 +376,7 @@ export const oauthClients = pgTable(
     previousSecretHash: varchar('previous_secret_hash', { length: 255 }),
     secretRotatedAt: timestamp('secret_rotated_at'),
     redirectUris: jsonb('redirect_uris').$type<string[]>().notNull(),
+    postLogoutRedirectUris: jsonb('post_logout_redirect_uris').$type<string[] | null>(),
     allowedScopes: jsonb('allowed_scopes').$type<string[] | null>(),
     isActive: boolean('is_active').default(true).notNull(),
     deactivatedAt: timestamp('deactivated_at'),

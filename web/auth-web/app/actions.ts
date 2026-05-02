@@ -7,8 +7,13 @@ import {
   removeAccount,
   upsertAccount,
 } from "@/lib/account-store";
+import { env } from "@/lib/env";
 import { decodeJwtPayload, isExpired } from "@/lib/jwt";
-import { setParentAuthCookies } from "@/lib/parent-cookies";
+import {
+  clearParentAuthCookies,
+  getParentAccessToken,
+  setParentAuthCookies,
+} from "@/lib/parent-cookies";
 import { normalizePhoneNumber } from "@/lib/phone-number";
 import { parseAuthorizeRedirectTarget } from "@/lib/oauth-redirect";
 import { sanitizeRedirectTo } from "@/lib/redirect";
@@ -185,6 +190,34 @@ export async function selectAccountAction(
 
 export async function removeAccountAction(userId: string): Promise<void> {
   await removeAccount(userId);
+}
+
+/**
+ * RP-Initiated Logout (auth-web 측 진입점).
+ * user-service /oauth/end_session 호출 → 사용자 전체 OAuth/내부 토큰 일괄 revoke.
+ * parent cookie도 만료. 마지막에 redirectTo (또는 / )로 navigate.
+ */
+export async function signOutAction(redirectTo?: string | null): Promise<never> {
+  const accessToken = await getParentAccessToken();
+
+  // user-service에 server-to-server 호출. 토큰이 없으면 cookie clear만.
+  if (accessToken) {
+    try {
+      await fetch(`${env.userServiceUrl}/oauth/end_session`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({}),
+      });
+    } catch {
+      // user-service 도달 실패해도 클라이언트 cookie는 비움 (idempotent).
+    }
+  }
+
+  await clearParentAuthCookies();
+  redirect(sanitizeRedirectTo(redirectTo) ?? "/");
 }
 
 export async function completeSignupCallback(

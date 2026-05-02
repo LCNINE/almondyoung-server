@@ -41,3 +41,23 @@ export async function hasParentRefreshToken(): Promise<string | null> {
   const jar = await cookies();
   return jar.get(REFRESH_TOKEN)?.value ?? null;
 }
+
+export async function getParentAccessToken(): Promise<string | null> {
+  const jar = await cookies();
+  return jar.get(ACCESS_TOKEN)?.value ?? null;
+}
+
+/** parent 도메인의 access/refresh 쿠키 만료(즉시). setParentAuthCookies와 동일 옵션으로 set + maxAge=0. */
+export async function clearParentAuthCookies(): Promise<void> {
+  const jar = await cookies();
+  const common = {
+    domain: env.parentCookieDomain,
+    httpOnly: true,
+    secure: env.parentCookieSecure,
+    sameSite: env.parentCookieSameSite,
+    path: "/",
+    maxAge: 0,
+  };
+  jar.set(ACCESS_TOKEN, "", common);
+  jar.set(REFRESH_TOKEN, "", common);
+}
