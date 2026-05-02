@@ -2,7 +2,7 @@ import { pgSchema } from 'drizzle-orm/pg-core';
 import { uuid, varchar, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
-const authSchema = pgSchema('auth');
+export const authSchema = pgSchema('auth');
 
 export const scopes = authSchema.table('scopes', {
   id: uuid('id').primaryKey().defaultRandom(),
