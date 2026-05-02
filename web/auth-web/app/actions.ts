@@ -150,9 +150,12 @@ export async function signUpAction(formData: FormData): Promise<ActionResult> {
   const redirectToRaw = String(formData.get("redirectTo") ?? "");
   let userId: string;
 
+  // 가입 단계에서 이메일 인증을 강제하지 않는다. signUp 응답의 단발성 signupToken 을 즉시
+  // callbackSignup 으로 교환해 세션을 시작한다. 이전처럼 body 의 userId 를 직접 신뢰하지 않으므로
+  // 외부 호출자가 임의 userId 로 callbackSignup 을 호출하는 우회는 차단된다.
   try {
     const result = await signUp(input);
-    const tokens = await callbackSignup(result.userId);
+    const tokens = await callbackSignup(result.signupToken);
     userId = await promoteTokens(tokens, false);
   } catch (e) {
     return {
@@ -221,13 +224,13 @@ export async function signOutAction(redirectTo?: string | null): Promise<never> 
 }
 
 export async function completeSignupCallback(
-  userId: string,
+  signupToken: string,
   redirectToRaw: string,
 ): Promise<ActionResult> {
   let resolvedUserId: string;
 
   try {
-    const tokens = await callbackSignup(userId);
+    const tokens = await callbackSignup(signupToken);
     resolvedUserId = await promoteTokens(tokens, false);
   } catch (e) {
     return {

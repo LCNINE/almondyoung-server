@@ -75,7 +75,7 @@ export type LocalSignUpInput = {
 
 export async function signUp(
   body: LocalSignUpInput,
-): Promise<{ userId: string; message: string }> {
+): Promise<{ userId: string; signupToken: string; message: string }> {
   const res = await fetch(`${env.userServiceUrl}/auth/signup`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -84,14 +84,14 @@ export async function signUp(
     redirect: "manual",
   });
   await throwIfBad(res, "signup");
-  return readApiData<{ userId: string; message: string }>(res);
+  return readApiData<{ userId: string; signupToken: string; message: string }>(res);
 }
 
-export async function callbackSignup(userId: string): Promise<TokenPair> {
+export async function callbackSignup(signupToken: string): Promise<TokenPair> {
   const res = await fetch(`${env.userServiceUrl}/auth/callback/signup`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ userId }),
+    body: JSON.stringify({ signupToken }),
     cache: "no-store",
     redirect: "manual",
   });
