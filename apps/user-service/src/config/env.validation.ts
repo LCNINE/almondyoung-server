@@ -1,5 +1,11 @@
 import { z } from 'zod';
 
+const pemString = z
+  .string()
+  .min(1)
+  .transform((s) => s.replace(/\\n/g, '\n'))
+  .refine((s) => s.includes('-----BEGIN'), { message: 'must be a PEM-encoded key' });
+
 export const userServiceEnvSchema = z.object({
   // Database
   DATABASE_URL: z.string().url(),
@@ -42,6 +48,12 @@ export const userServiceEnvSchema = z.object({
   // 클라이언트 등록 정보(clientId/secret/redirectUris/scopes)는 oauth_clients 테이블이 SoT.
   // Shared secret for auth-web → user-service /oauth/internal/issue-code
   OAUTH_INTERNAL_SECRET: z.string().optional(),
+
+  // OAuth access token signing (RS256). Internal user-service tokens still use AUTH_SECRET (HS256).
+  OAUTH_JWT_PRIVATE_KEY: pemString,
+  OAUTH_JWT_PUBLIC_KEY: pemString,
+  OAUTH_JWT_KID: z.string().min(1),
+  OAUTH_ISSUER_URL: z.string().url(),
 });
 
 export type UserServiceEnvConfig = z.infer<typeof userServiceEnvSchema>;
