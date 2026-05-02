@@ -2,13 +2,12 @@ import { redirect } from "next/navigation";
 
 import { issueOAuthCodeAndRedirect } from "@/app/actions";
 import { listAccounts } from "@/lib/account-store";
-import { decodeJwtPayload, isExpired } from "@/lib/jwt";
 import {
   buildAuthorizeUrl,
   buildErrorRedirect,
   parseAuthorizeParams,
 } from "@/lib/oauth-params";
-import { hasParentRefreshToken } from "@/lib/parent-cookies";
+import { getActiveSessionUserId } from "@/lib/session";
 import { env } from "@/lib/env";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
@@ -44,15 +43,9 @@ export default async function AuthorizePage({
     redirect(`/?redirect_to=${encodeURIComponent(back)}`);
   }
 
-  // 활성 세션 감지 (parent refresh cookie).
-  const parentRt = await hasParentRefreshToken();
-  const refreshPayload = parentRt
-    ? decodeJwtPayload<{ sub?: string; exp?: number }>(parentRt)
-    : null;
-  const activeUserId =
-    refreshPayload?.sub && !isExpired(refreshPayload.exp)
-      ? refreshPayload.sub
-      : null;
+  // 활성 세션 감지: parent cookie 의 토큰을 user-service /users/me 호출로 검증 위임.
+  // 로컬 JWT payload 디코드를 신뢰하지 않는다 (서명 검증은 user-service 가 수행).
+  const activeUserId = await getActiveSessionUserId();
 
   // prompt=none: 세션 없으면 OIDC error로 redirect_uri로 회신.
   if (params.prompt === "none" && !activeUserId) {
