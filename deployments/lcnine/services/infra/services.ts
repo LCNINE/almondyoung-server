@@ -3,7 +3,11 @@
 import type { SharedInfra } from "./shared";
 
 export function setup(infra: SharedInfra) {
-  const { db, redis, dbUrl, redisUrl, baseDomain, domain, url, kafkaEnv, createService } = infra;
+  const { isDev, db, redis, dbUrl, redisUrl, baseDomain, domain, url, kafkaEnv, createService } = infra;
+
+  // storefront/auth-web 등이 BACKEND_DOMAIN + 서비스 서브도메인 규칙으로 백엔드 URL을 조립한다.
+  // 즉 root는 stage에 따라 dev. 접두사가 붙는 형태와 동일해야 한다.
+  const backendRootDomain = isDev ? `dev.${baseDomain}` : baseDomain;
 
   // ─── Secrets ───
   const authSecret = new sst.Secret("AuthSecret");
@@ -22,6 +26,11 @@ export function setup(infra: SharedInfra) {
   const idpAuthSecret = aws.ssm.getParameterOutput({
     name: `/lcnine-auth/${$app.stage}/auth-secret`,
     withDecryption: true,
+  }).value;
+
+  // storefront가 미인증 보호경로 redirect 대상으로 쓰는 auth-web origin.
+  const idpAuthWebUrl = aws.ssm.getParameterOutput({
+    name: `/lcnine-auth/${$app.stage}/auth-web-url`,
   }).value;
 
   // Channel Adapter
@@ -47,6 +56,10 @@ export function setup(infra: SharedInfra) {
   // Medusa
   const medusaJwtSecret = new sst.Secret("MedusaJwtSecret");
   const medusaCookieSecret = new sst.Secret("MedusaCookieSecret");
+
+  // Storefront
+  const medusaPublishableKey = new sst.Secret("MedusaPublishableKey");
+  const storefrontRevalidateSecret = new sst.Secret("StorefrontRevalidateSecret");
 
   // ═══════════════════════════════════════════
   //  Services
@@ -285,6 +298,36 @@ export function setup(infra: SharedInfra) {
       NOTIFICATION_SERVICE_URL: url("notification"),
       CHANNEL_ADAPTER_SERVICE_URL: url("channel-adapter"),
       ADMIN_DOMAIN: domain("admin"),
+    },
+  });
+
+  // ─── storefront (Next.js / OpenNext, CloudFront) ───
+  // Medusa STORE_CORS/AUTH_CORS에 이미 url("www")로 등록되어 있다.
+  // 백엔드 서비스 URL은 storefront가 BACKEND_DOMAIN + 서비스 서브도메인 규칙으로 조립한다.
+  new sst.aws.Nextjs("Storefront", {
+    path: "../../../web/almondyoung-storefront",
+    domain: { name: domain("www") },
+    environment: {
+      NEXT_PUBLIC_BASE_URL: url("www"),
+      NEXT_PUBLIC_DEFAULT_REGION: "kr",
+      NEXT_PUBLIC_BACKEND_DOMAIN: backendRootDomain,
+      BACKEND_DOMAIN: backendRootDomain,
+      NEXT_PUBLIC_USE_RAILWAY_BACKEND: "true",
+      USE_RAILWAY_BACKEND: "true",
+      NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY: medusaPublishableKey.value,
+      REVALIDATE_SECRET: storefrontRevalidateSecret.value,
+      // 인증 일원화: auth-web origin + user-service 직접 호출(server-side).
+      AUTH_WEB_ORIGIN: idpAuthWebUrl,
+      USER_SERVICE_URL: idpUserServiceUrl,
+      // 형제 서브도메인 간 세션 공유 (auth-web과 동일 값이어야 함).
+      PARENT_COOKIE_DOMAIN: `.${baseDomain}`,
+      PARENT_COOKIE_SECURE: "true",
+      PARENT_COOKIE_SAMESITE: "lax",
+      // 레거시 cafe24 마이페이지 redirect.
+      NEXT_PUBLIC_LEGACY_ORDER_LIST_URL:
+        "https://almondyoung.com/myshop/order/list.html",
+      NEXT_PUBLIC_LEGACY_MEMBERSHIP_HISTORY_URL:
+        "https://almondyoung.com/myshop/mileage/historyList.html",
     },
   });
 

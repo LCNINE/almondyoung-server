@@ -73,8 +73,9 @@ SSM publish:
 | Medusa | `medusa.…` | 9000 | DB+Redis link, 600s grace, IdP `AUTH_SECRET` 으로 JWT verify |
 | AdminWeb | `admin.…` | — | Next.js / OpenNext / CloudFront |
 | WalletWeb | `wallet-web.…` | — | Next.js / OpenNext / CloudFront |
+| Storefront | `www.…` | — | Next.js / OpenNext / CloudFront. Medusa STORE_CORS에 등록된 슬롯 |
 
-cross-stack: `/lcnine-auth/<stage>/user-service-url` 과 (TEMP) `auth-secret` 을 읽어 Medusa·Wallet·admin 등에 주입.
+cross-stack: `/lcnine-auth/<stage>/user-service-url`, `/auth-web-url`, (TEMP) `auth-secret` 을 읽어 Medusa·Storefront·admin 등에 주입.
 
 ### Core 와 legacy wms/pim
 
