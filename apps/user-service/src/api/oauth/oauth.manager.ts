@@ -21,6 +21,11 @@ import { isRedirectUriRegistered } from './redirect-uri';
 
 const CODE_TTL_SECONDS = 300;
 
+function hasOpenIdScope(scope: string | null): boolean {
+  if (!scope) return false;
+  return scope.split(/\s+/).includes('openid');
+}
+
 function parseExpiresInToMs(expiresIn: string): number {
   const m = expiresIn.match(/^(\d+)([smhdw])$/);
   if (!m) return 15 * 60 * 1000;
@@ -138,7 +143,9 @@ export class OAuthManager {
 
       await this.repo.markCodeConsumed(row.code, tx);
 
-      const tokens = await this.mintTokenPair(row.userId, row.clientId, row.scope, undefined, tx);
+      const tokens = await this.mintTokenPair(row.userId, row.clientId, row.scope, undefined, tx, {
+        authTime: row.createdAt,
+      });
       return tokens;
     });
   }
@@ -174,6 +181,7 @@ export class OAuthManager {
     scope: string | null,
     rotatedFrom: string | undefined,
     tx: DbTransaction,
+    oidcContext?: { authTime: Date },
   ): Promise<TokenResponseDto> {
     const accessExpiresInMs = parseExpiresInToMs(JWT_ACCESS_TOKEN_EXPIRATION);
     const refreshExpiresInMs = parseExpiresInToMs(JWT_REFRESH_TOKEN_LONG_EXPIRATION);
@@ -183,6 +191,22 @@ export class OAuthManager {
       { sub: userId, client_id: clientId, scope: scope ?? undefined },
       { audience: clientId, expiresIn: JWT_ACCESS_TOKEN_EXPIRATION },
     );
+
+    // id_token: OIDC core. authorization_code 그랜트 + scope 에 `openid` 가 있을 때만 발급.
+    // refresh_token 그랜트에서는 발급하지 않는다 (oidcContext 미전달).
+    // TODO(nonce): authorize 단계에서 받은 nonce 를 oauth_authorization_codes 에 저장하도록
+    //              스키마 확장 후 여기서 echo. 현재는 nonce 미지원.
+    const wantsOpenId = !!oidcContext && hasOpenIdScope(scope);
+    let idToken: string | undefined;
+    if (wantsOpenId) {
+      idToken = await this.jwtService.signAsync(
+        {
+          sub: userId,
+          auth_time: Math.floor(oidcContext!.authTime.getTime() / 1000),
+        },
+        { audience: clientId, expiresIn: JWT_ACCESS_TOKEN_EXPIRATION },
+      );
+    }
 
     // refresh token: opaque (랜덤 문자열). DB에서만 검증.
     const refreshToken = crypto.randomBytes(48).toString('base64url');
@@ -206,6 +230,7 @@ export class OAuthManager {
       token_type: 'Bearer',
       expires_in: Math.floor(accessExpiresInMs / 1000),
       scope: scope ?? undefined,
+      id_token: idToken,
     };
   }
 

@@ -8,7 +8,6 @@ import {
   upsertAccount,
 } from "@/lib/account-store";
 import { env } from "@/lib/env";
-import { decodeJwtPayload } from "@/lib/jwt";
 import {
   clearParentAuthCookies,
   getParentAccessToken,
@@ -36,18 +35,16 @@ async function promoteTokens(
   tokens: TokenPair,
   rememberMe: boolean,
 ): Promise<string> {
+  // 권위 있는 userId 는 user-service 의 /users/me 응답만 신뢰한다.
+  // 로컬 토큰 payload 디코드는 서명 검증을 거치지 않은 값이라 폴백으로도 쓰지 않는다.
   const me = await getMe(tokens.accessToken);
-  const refreshPayload = decodeJwtPayload<{ sub?: string }>(tokens.refreshToken);
-  const accessPayload = decodeJwtPayload<{ sub?: string }>(tokens.accessToken);
-  const userId = me.id || accessPayload?.sub || refreshPayload?.sub;
-
-  if (!userId) {
+  if (!me.id) {
     throw new Error("Unable to resolve authenticated user");
   }
 
   await upsertAccount(
     {
-      userId,
+      userId: me.id,
       email: me.email,
       nickname: me.username,
       username: me.username,
@@ -55,7 +52,7 @@ async function promoteTokens(
     tokens.refreshToken,
   );
   await setParentAuthCookies({ ...tokens, rememberMe });
-  return userId;
+  return me.id;
 }
 
 // OAuth code 발급 후 redirect_uri로 302. 성공/실패 모두 throw redirect.
