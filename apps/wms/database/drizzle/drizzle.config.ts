@@ -10,13 +10,14 @@ export default defineConfig({
     'apps/wms/database/schemas/wms-schema.ts',
     'libs/events/src/outbox/outbox.schema.ts',
     'libs/events/src/tracking/tracking.schema.ts',
+    'libs/authorization/src/database/auth.schema.ts',
   ],
   out: 'apps/wms/database/drizzle',
   dialect: 'postgresql',
   dbCredentials: {
     url: process.env.DATABASE_URL ?? '',
   },
-  schemaFilter: ['public', 'event'],
+  schemaFilter: ['public', 'event', 'auth'],
   verbose: true,
   strict: true,
 });
