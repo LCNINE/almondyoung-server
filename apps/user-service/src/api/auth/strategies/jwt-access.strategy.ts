@@ -11,11 +11,11 @@ export class JwtAccessStrategy extends PassportStrategy(Strategy) {
     private configService: ConfigService,
     private usersService: UsersService,
   ) {
-    const jwtSecret = configService.get<string>('AUTH_SECRET');
+    const publicKey = configService.get<string>('OAUTH_JWT_PUBLIC_KEY');
     const issuer = configService.get<string>('OAUTH_ISSUER_URL');
 
-    if (!jwtSecret) {
-      throw new Error('AUTH_SECRET 환경 변수가 설정되지 않았습니다. JWT 인증을 위해 이 환경 변수를 설정하세요.');
+    if (!publicKey) {
+      throw new Error('OAUTH_JWT_PUBLIC_KEY 환경 변수가 설정되지 않았습니다.');
     }
     if (!issuer) {
       throw new Error('OAUTH_ISSUER_URL 환경 변수가 설정되지 않았습니다.');
@@ -28,11 +28,11 @@ export class JwtAccessStrategy extends PassportStrategy(Strategy) {
           return req?.cookies?.accessToken;
         },
       ]),
-      secretOrKey: jwtSecret,
+      // 내부 토큰은 OAuth와 동일한 RS256 키페어로 서명. RP는 JWKS로 공개키만 가져와 verify 가능.
+      secretOrKey: publicKey,
+      algorithms: ['RS256'],
       ignoreExpiration: false,
       passReqToCallback: true,
-      // OAuth 토큰(RS256, aud=client_id)과 구분 + 향후 시크릿 유출 시 RP가 자체 검증 가능하도록.
-      algorithms: ['HS256'],
       issuer,
       audience: INTERNAL_TOKEN_AUDIENCE,
     });

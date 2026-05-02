@@ -136,6 +136,20 @@ export class OAuthRepository {
       .where(eq(userServiceSchema.oauthTokens.id, id));
   }
 
+  /** SLO: 사용자의 모든 OAuth refresh token을 일괄 revoke. */
+  async revokeAllUserTokens(userId: string, tx?: DbTransaction): Promise<void> {
+    const client = this.getClient(tx);
+    await client
+      .update(userServiceSchema.oauthTokens)
+      .set({ isRevoked: true, updatedAt: new Date() })
+      .where(
+        and(
+          eq(userServiceSchema.oauthTokens.userId, userId),
+          eq(userServiceSchema.oauthTokens.isRevoked, false),
+        ),
+      );
+  }
+
   /**
    * rotation chain 전체 revoke. reuse detection 시 호출.
    * rotatedFrom으로 거슬러 올라간 root를 찾고, 그 root의 모든 후손을 BFS로 revoke.

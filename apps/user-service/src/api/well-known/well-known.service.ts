@@ -12,6 +12,7 @@ export interface OidcDiscoveryResponse {
   token_endpoint: string;
   userinfo_endpoint: string;
   jwks_uri: string;
+  end_session_endpoint: string;
   scopes_supported: string[];
   response_types_supported: string[];
   grant_types_supported: string[];
@@ -40,6 +41,7 @@ export class WellKnownService {
       token_endpoint: `${issuer}/oauth/token`,
       userinfo_endpoint: `${issuer}/oauth/userinfo`,
       jwks_uri: `${issuer}/.well-known/jwks.json`,
+      end_session_endpoint: `${issuer}/oauth/end_session`,
       scopes_supported: ['openid', 'profile', 'email'],
       response_types_supported: ['code'],
       grant_types_supported: ['authorization_code', 'refresh_token'],

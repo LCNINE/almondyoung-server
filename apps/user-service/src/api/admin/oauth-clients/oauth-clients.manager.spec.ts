@@ -15,6 +15,7 @@ function makeRow(overrides: Partial<OAuthClientRow> = {}): OAuthClientRow {
     previousSecretHash: null,
     secretRotatedAt: null,
     redirectUris: ['https://daview.com/auth/callback'],
+    postLogoutRedirectUris: null,
     allowedScopes: null,
     isActive: true,
     deactivatedAt: null,

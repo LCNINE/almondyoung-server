@@ -8,6 +8,7 @@ export function toResponseDto(row: OAuthClientRow): OAuthClientResponseDto {
     clientId: row.clientId,
     clientType: row.clientType,
     redirectUris: row.redirectUris,
+    postLogoutRedirectUris: row.postLogoutRedirectUris,
     allowedScopes: row.allowedScopes,
     isActive: row.isActive,
     hasPreviousSecret: row.previousSecretHash !== null,

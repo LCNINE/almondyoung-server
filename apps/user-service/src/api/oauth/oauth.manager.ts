@@ -2,6 +2,7 @@ import { DbService, InjectDb } from '@app/db';
 import { UnauthorizedError } from '@app/shared';
 import { Injectable, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { TokensService } from '../tokens/tokens.service';
 import { type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
@@ -46,6 +47,7 @@ export class OAuthManager {
     private readonly reader: OAuthReader,
     private readonly jwtService: JwtService,
     private readonly usersService: UsersService,
+    private readonly tokensService: TokensService,
   ) {}
 
   private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction): Promise<T> {
@@ -242,6 +244,54 @@ export class OAuthManager {
       nickname: user.nickname,
       username: user.username,
     };
+  }
+
+  // ─────────────────────────────────────────
+  // 5. end_session (Single Logout)
+  // ─────────────────────────────────────────
+  /**
+   * RP-Initiated Logout. access token으로 사용자 식별 후 OAuth refresh token 전체 + 내부 토큰 일괄 revoke.
+   * post_logout_redirect_uri를 등록된 client의 화이트리스트와 매칭하고, 매칭 시 그 URI로의 redirect URL 반환.
+   * @param accessToken Bearer access token (cookie 또는 Authorization 헤더)
+   * @param clientId post_logout_redirect_uri 검증용 client_id (선택)
+   * @param postLogoutRedirectUri RP가 제공한 logout 후 redirect URL (선택)
+   * @param state CSRF anchor (선택)
+   * @returns 최종 redirect URL — 검증 실패/미제공 시 null
+   */
+  async endSession(input: {
+    accessToken: string | null;
+    clientId?: string;
+    postLogoutRedirectUri?: string;
+    state?: string;
+  }): Promise<{ redirectUrl: string | null }> {
+    let userId: string | null = null;
+    if (input.accessToken) {
+      try {
+        const payload = await this.jwtService.verifyAsync<{ sub?: string }>(input.accessToken);
+        if (payload.sub) userId = payload.sub;
+      } catch {
+        // 토큰이 만료/무효해도 logout 자체는 진행 (idempotent).
+      }
+    }
+
+    if (userId) {
+      await this.repo.revokeAllUserTokens(userId);
+      await this.tokensService.deleteAllTokens(userId);
+      this.logger.log(`SLO: revoked all tokens for userId=${userId}`);
+    }
+
+    let redirectUrl: string | null = null;
+    if (input.postLogoutRedirectUri && input.clientId) {
+      const client = await this.repo.findActiveClientById(input.clientId);
+      const registered = client?.postLogoutRedirectUris ?? [];
+      if (registered.includes(input.postLogoutRedirectUri)) {
+        const url = new URL(input.postLogoutRedirectUri);
+        if (input.state) url.searchParams.set('state', input.state);
+        redirectUrl = url.toString();
+      }
+    }
+
+    return { redirectUrl };
   }
 
   // ─────────────────────────────────────────
