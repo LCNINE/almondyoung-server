@@ -201,10 +201,10 @@ export class OAuthManager {
     );
 
     return {
-      accessToken,
-      refreshToken,
-      tokenType: 'Bearer',
-      expiresIn: Math.floor(accessExpiresInMs / 1000),
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      token_type: 'Bearer',
+      expires_in: Math.floor(accessExpiresInMs / 1000),
       scope: scope ?? undefined,
     };
   }
@@ -307,6 +307,21 @@ export class OAuthManager {
     }
 
     return { redirectUrl };
+  }
+
+  // ─────────────────────────────────────────
+  // 6. redirect_uri 사전 검증 (auth-web 의 /oauth/authorize 단계에서 호출)
+  // ─────────────────────────────────────────
+  /**
+   * client 활성 여부 + redirect_uri 등록 매칭을 한 번에 확인한다.
+   * auth-web 이 OIDC error redirect (`error=login_required` 등) 를 보내기 전에 pre-flight 로 호출해
+   * 등록되지 않은 임의 URL 로 302 가 나가는 open redirect 를 막는다.
+   * client 가 없거나 비활성이거나 redirect_uri 가 등록 화이트리스트와 매칭되지 않으면 false.
+   */
+  async validateRedirectUri(input: { clientId: string; redirectUri: string }): Promise<boolean> {
+    const client = await this.repo.findActiveClientById(input.clientId);
+    if (!client) return false;
+    return isRedirectUriRegistered(client.redirectUris, input.redirectUri, client.clientType);
   }
 
   // ─────────────────────────────────────────

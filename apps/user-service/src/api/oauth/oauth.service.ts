@@ -32,4 +32,9 @@ export class OAuthService {
   }) {
     return this.manager.endSession(input);
   }
+
+  validateRedirectUri(input: { clientId: string; redirectUri: string }, internalSecret?: string): Promise<boolean> {
+    this.manager.assertInternalSecret(internalSecret);
+    return this.manager.validateRedirectUri(input);
+  }
 }
