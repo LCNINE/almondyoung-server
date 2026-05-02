@@ -54,6 +54,10 @@ export const userServiceEnvSchema = z.object({
   OAUTH_JWT_PUBLIC_KEY: pemString,
   OAUTH_JWT_KID: z.string().min(1),
   OAUTH_ISSUER_URL: z.string().url(),
+
+  // auth-web origin — OIDC discovery 의 authorization_endpoint 광고에 사용.
+  // user-service 자체에는 /oauth/authorize 엔드포인트가 없고 auth-web 이 호스팅한다.
+  AUTH_WEB_ORIGIN: z.string().url(),
 });
 
 export type UserServiceEnvConfig = z.infer<typeof userServiceEnvSchema>;

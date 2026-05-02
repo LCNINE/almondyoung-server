@@ -66,6 +66,7 @@ export function setup(infra: IdpInfra) {
       JWT_VERIFICATION_TOKEN_SECRET: jwtVerificationTokenSecret.value,
       COOKIE_DOMAIN: `.${baseDomain}`,
       FRONTEND_URL: authWebUrl,
+      AUTH_WEB_ORIGIN: authWebUrl,
       SIGNUP_CALLBACK_URL: `${authWebUrl}/callback/signup`,
       USER_SERVICE_URL: userServiceUrl,
       REDIRECT_URL_WHITELIST: [
