@@ -5,14 +5,14 @@ import { useEffect, useRef, useState } from "react";
 import { Spinner } from "@/components/ui/spinner";
 import type { ActionResult } from "@/app/actions";
 
-type Action = (userId: string, redirectTo: string) => Promise<ActionResult>;
+type Action = (signupToken: string, redirectTo: string) => Promise<ActionResult>;
 
 export function SignupCallbackClient({
-  userId,
+  signupToken,
   redirectTo,
   action,
 }: {
-  userId: string;
+  signupToken: string;
   redirectTo: string;
   action: Action;
 }) {
@@ -22,10 +22,10 @@ export function SignupCallbackClient({
   useEffect(() => {
     if (ran.current) return;
     ran.current = true;
-    action(userId, redirectTo).then((res) => {
+    action(signupToken, redirectTo).then((res) => {
       if (res && !res.ok) setError(res.error);
     });
-  }, [action, userId, redirectTo]);
+  }, [action, signupToken, redirectTo]);
 
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-md flex-col items-center justify-center gap-4 px-6 py-12">

@@ -34,6 +34,8 @@ import {
   JWT_REFRESH_TOKEN_EXPIRATION,
   JWT_REFRESH_TOKEN_LONG_EXPIRATION,
   JWT_RESET_PASSWORD_ACCESS_TOKEN_EXPIRATION,
+  JWT_SIGNUP_CALLBACK_TOKEN_EXPIRATION,
+  SIGNUP_CALLBACK_TOKEN_PURPOSE,
 } from '../../constants/auth.constant';
 import { ConsentsService } from '../consents/consents.service';
 import { TokensService } from '../tokens/tokens.service';
@@ -78,11 +80,25 @@ export class AuthService {
     return new URL(`/${provider}/callback?userId=${userId}`, this.frontendUrl).toString();
   }
 
+  /**
+   * 단발성 signup_token 발급. signUp 직후 / verify-email 직후 auth-web /callback/signup 으로
+   * 한 번 왕복하기 위한 용도. 짧은 TTL + purpose claim 으로 다른 verification JWT 와 분리.
+   */
+  private async issueSignupCallbackToken(userId: string): Promise<string> {
+    return this.jwtService.signAsync(
+      { sub: userId, purpose: SIGNUP_CALLBACK_TOKEN_PURPOSE },
+      {
+        secret: this.configService.getOrThrow<string>('JWT_VERIFICATION_TOKEN_SECRET'),
+        expiresIn: JWT_SIGNUP_CALLBACK_TOKEN_EXPIRATION,
+      },
+    );
+  }
+
   async signUp(
     signUpDto: LocalSignUpDto,
     @Res() reply: FastifyReply,
     redirect_to?: string,
-  ): Promise<{ userId: string; message: string }> {
+  ): Promise<{ userId: string; signupToken: string; message: string }> {
     const {
       email,
       username,
@@ -164,7 +180,11 @@ export class AuthService {
           await this.cafe24LinkService.linkCafe24Account(user.id, encryptedIdToken, tx);
         }
 
-        return { userId: user.id, message: '회원가입 성공' };
+        // 단발성 signup_token 발급. 호출자(auth-web)가 즉시 callbackSignup 으로 교환해 세션을 시작한다.
+        // 이메일 인증은 isEmailVerified 플래그를 토글하는 별개 흐름이며 가입 시 강제하지 않는다.
+        const signupToken = await this.issueSignupCallbackToken(user.id);
+
+        return { userId: user.id, signupToken, message: '회원가입 성공' };
       });
     } catch (error) {
       if (error instanceof ConflictException || error instanceof BadRequestException) {
@@ -237,9 +257,10 @@ export class AuthService {
         redirectUrl = this.configService.getOrThrow('SIGNUP_CALLBACK_URL');
       }
 
+      // 이메일 인증은 isEmailVerified 플래그만 토글한다. 세션은 가입 시점에 이미 발급됐거나 별도 로그인을
+      // 통해 얻으므로 여기서 signup_token 을 다시 내려줄 필요가 없다.
       if (redirectTo) {
         url.searchParams.set('redirect_to', redirectTo);
-        url.searchParams.set('userId', verificationToken.user.id);
       }
 
       await this.eventPublisher.publishEvent({
@@ -262,7 +283,23 @@ export class AuthService {
     }
   }
 
-  async callbackSignup(userId: string, reply: FastifyReply, redirectTo?: string, tx?: DbTransaction) {
+  async callbackSignup(signupToken: string, reply: FastifyReply, redirectTo?: string, tx?: DbTransaction) {
+    // signup_token 검증: signupVerifyEmail 에서 발급된 단발성 JWT.
+    // 이 검증을 통과해야만 userId 를 신뢰할 수 있다. (이전 구현은 body 의 userId 를 무검증으로 신뢰 → 계정 탈취 가능)
+    let userId: string;
+    try {
+      const payload = await this.jwtService.verifyAsync<{ sub?: string; purpose?: string }>(signupToken, {
+        secret: this.configService.getOrThrow<string>('JWT_VERIFICATION_TOKEN_SECRET'),
+      });
+      if (payload.purpose !== SIGNUP_CALLBACK_TOKEN_PURPOSE || !payload.sub) {
+        throw new UnauthorizedException('유효하지 않은 signup token 입니다');
+      }
+      userId = payload.sub;
+    } catch (err) {
+      if (err instanceof UnauthorizedException) throw err;
+      throw new UnauthorizedException('유효하지 않은 signup token 입니다');
+    }
+
     return this.inTx(async (trx) => {
       const user = await this.usersService.findUserById(userId, trx);
       if (!user) throw new NotFoundException('존재하지 않는 사용자입니다');
