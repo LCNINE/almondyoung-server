@@ -1,8 +1,10 @@
 import { Controller, Get, Header } from '@nestjs/common';
+import { SkipResponseEnvelope } from '@app/shared';
 import { Public } from '../../commons/decorator/public.decorator';
 import { JwksResponse, OidcDiscoveryResponse, WellKnownService } from './well-known.service';
 
 @Controller('.well-known')
+@SkipResponseEnvelope()
 export class WellKnownController {
   constructor(private readonly service: WellKnownService) {}
 

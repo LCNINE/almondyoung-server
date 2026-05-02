@@ -35,7 +35,9 @@ import {
   JWT_REFRESH_TOKEN_LONG_EXPIRATION,
   JWT_RESET_PASSWORD_ACCESS_TOKEN_EXPIRATION,
   JWT_SIGNUP_CALLBACK_TOKEN_EXPIRATION,
+  JWT_SOCIAL_CALLBACK_TOKEN_EXPIRATION,
   SIGNUP_CALLBACK_TOKEN_PURPOSE,
+  SOCIAL_CALLBACK_TOKEN_PURPOSE,
 } from '../../constants/auth.constant';
 import { ConsentsService } from '../consents/consents.service';
 import { TokensService } from '../tokens/tokens.service';
@@ -76,8 +78,37 @@ export class AuthService {
     return tx ? fn(tx) : this.dbService.db.transaction(fn);
   }
 
+  /**
+   * @deprecated body 의 userId 를 그대로 신뢰하는 `/auth/social/set-cookie` 와 짝을 이루는 레거시 redirect.
+   * storefront 가 새 social_token 흐름으로 이전한 뒤 후속 PR 에서 제거한다.
+   */
   private getSocialRedirectUrl(provider: ProviderType, userId: string): string {
     return new URL(`/${provider}/callback?userId=${userId}`, this.frontendUrl).toString();
+  }
+
+  /**
+   * 신규 소셜 콜백 redirect. URL fragment 에 단발성 social_token 만 실어 보내,
+   * storefront 는 이 토큰을 `/auth/callback/social` 에 제출해 세션을 시작한다.
+   * userId 는 URL 에 노출되지 않는다.
+   */
+  private getSocialRedirectUrlWithToken(provider: ProviderType, socialToken: string): string {
+    const url = new URL(`/${provider}/callback`, this.frontendUrl);
+    url.searchParams.set('social_token', socialToken);
+    return url.toString();
+  }
+
+  /**
+   * 단발성 social_token 발급. signInWithSocial 직후 storefront 콜백 페이지로 한 번 왕복하기 위한 용도.
+   * `signupToken` 과 동일 패턴 — secret/TTL 만 따로, purpose claim 으로 교차 사용 차단.
+   */
+  private async issueSocialCallbackToken(userId: string): Promise<string> {
+    return this.jwtService.signAsync(
+      { sub: userId, purpose: SOCIAL_CALLBACK_TOKEN_PURPOSE },
+      {
+        secret: this.configService.getOrThrow<string>('JWT_VERIFICATION_TOKEN_SECRET'),
+        expiresIn: JWT_SOCIAL_CALLBACK_TOKEN_EXPIRATION,
+      },
+    );
   }
 
   /**
@@ -423,17 +454,58 @@ export class AuthService {
       return existingUser;
     };
 
+    // 신규 흐름: 단발성 social_token 을 발급해 storefront 콜백 페이지로 redirect.
+    // storefront 는 토큰을 /auth/callback/social 에 제출해 세션을 시작한다 (callbackSignup 과 동일 패턴).
+    // 레거시 `?userId=` redirect (`getSocialRedirectUrl`) 와 `/auth/social/set-cookie` 는
+    // storefront 가 새 흐름으로 이전한 뒤 후속 PR 에서 제거한다.
     if (tx) {
       const result = await processSignIn(tx);
-      return reply.status(302).redirect(this.getSocialRedirectUrl(provider, result.user.id));
+      const socialToken = await this.issueSocialCallbackToken(result.user.id);
+      return reply.status(302).redirect(this.getSocialRedirectUrlWithToken(provider, socialToken));
     } else {
       return await this.dbService.db.transaction(async (transaction) => {
         const result = await processSignIn(transaction);
-        return reply.status(302).redirect(this.getSocialRedirectUrl(provider, result.user.id));
+        const socialToken = await this.issueSocialCallbackToken(result.user.id);
+        return reply.status(302).redirect(this.getSocialRedirectUrlWithToken(provider, socialToken));
       });
     }
   }
 
+  /**
+   * storefront `/{provider}/callback` 에서 호출. 단발성 social_token 을 검증한 뒤 세션을 시작한다.
+   * `callbackSignup` 과 동일한 패턴. 토큰의 purpose 가 `social_callback` 이 아니면 거부.
+   */
+  async callbackSocial(socialToken: string, reply: FastifyReply, tx?: DbTransaction) {
+    let userId: string;
+    try {
+      const payload = await this.jwtService.verifyAsync<{ sub?: string; purpose?: string }>(socialToken, {
+        secret: this.configService.getOrThrow<string>('JWT_VERIFICATION_TOKEN_SECRET'),
+      });
+      if (payload.purpose !== SOCIAL_CALLBACK_TOKEN_PURPOSE || !payload.sub) {
+        throw new UnauthorizedException('유효하지 않은 social token 입니다');
+      }
+      userId = payload.sub;
+    } catch (err) {
+      if (err instanceof UnauthorizedException) throw err;
+      throw new UnauthorizedException('유효하지 않은 social token 입니다');
+    }
+
+    return this.inTx(async (trx) => {
+      const user = await this.usersService.findUserById(userId, trx);
+      if (!user) throw new NotFoundException('존재하지 않는 사용자입니다');
+
+      const { accessToken } = await this.setAccessToken(user, reply, trx);
+      const { refreshToken } = await this.setRefreshToken(user.id, reply, false, trx);
+      await this.lastActivityAtUpdate(user as User, trx);
+
+      return { accessToken, refreshToken };
+    }, tx);
+  }
+
+  /**
+   * @deprecated body 의 userId 만으로 세션을 시작하는 인증 우회 결함. 새 `callbackSocial` 로 대체.
+   * storefront 가 새 흐름(`?social_token=…` → `/auth/callback/social`) 으로 이전한 뒤 후속 PR 에서 제거.
+   */
   async setSocialCookie(userId: string, reply: FastifyReply, tx?: DbTransaction) {
     const client = this.getClient(tx);
 

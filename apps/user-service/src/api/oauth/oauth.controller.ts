@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Headers,
   HttpCode,
   HttpStatus,
@@ -11,17 +12,20 @@ import {
   Res,
   UnauthorizedException,
 } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
+import { SkipResponseEnvelope } from '@app/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { Public } from '../../commons/decorator/public.decorator';
 import { IssueCodeRequestDto, IssueCodeResponseDto } from './dto/issue-code.dto';
 import { RevokeRequestDto } from './dto/revoke.dto';
 import { TokenRequestDto, TokenResponseDto } from './dto/token.dto';
+import { normalizeRevokeBody, normalizeTokenBody } from './oauth-body';
 import { OAuthService } from './oauth.service';
 
 @ApiTags('OAuth')
 @Controller('oauth')
+@SkipResponseEnvelope()
 export class OAuthController {
   constructor(
     private readonly oauthService: OAuthService,
@@ -39,11 +43,38 @@ export class OAuthController {
     return this.oauthService.issueCode(body, internalSecret);
   }
 
+  @ApiOperation({
+    summary: '[internal] redirect_uri 사전 검증',
+    description:
+      'auth-web 의 /oauth/authorize 가 OIDC error redirect 를 보내기 전 redirect_uri 가 등록 화이트리스트와 매칭되는지 확인한다. ' +
+      '미등록 URI 로의 외부 302(open redirect) 를 차단하는 용도.',
+  })
+  @Post('internal/validate-redirect-uri')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  async validateRedirectUri(
+    @Body() body: { clientId?: string; client_id?: string; redirectUri?: string; redirect_uri?: string },
+    @Headers('x-internal-secret') internalSecret?: string,
+  ): Promise<{ valid: boolean }> {
+    const clientId = body.clientId ?? body.client_id;
+    const redirectUri = body.redirectUri ?? body.redirect_uri;
+    if (!clientId || !redirectUri) {
+      return { valid: false };
+    }
+    const valid = await this.oauthService.validateRedirectUri({ clientId, redirectUri }, internalSecret);
+    return { valid };
+  }
+
   @ApiOperation({ summary: 'token endpoint (authorization_code | refresh_token)' })
+  @ApiConsumes('application/x-www-form-urlencoded', 'application/json')
+  @ApiBody({ type: TokenRequestDto })
   @Post('token')
   @Public()
   @HttpCode(HttpStatus.OK)
-  async token(@Body() body: TokenRequestDto): Promise<TokenResponseDto> {
+  @Header('Cache-Control', 'no-store')
+  @Header('Pragma', 'no-cache')
+  async token(@Body() raw: unknown): Promise<TokenResponseDto> {
+    const body = normalizeTokenBody(raw);
     return this.oauthService.exchangeToken(body);
   }
 
@@ -57,10 +88,15 @@ export class OAuthController {
   }
 
   @ApiOperation({ summary: 'token revocation (RFC 7009)' })
+  @ApiConsumes('application/x-www-form-urlencoded', 'application/json')
+  @ApiBody({ type: RevokeRequestDto })
   @Post('revoke')
   @Public()
   @HttpCode(HttpStatus.OK)
-  async revoke(@Body() body: RevokeRequestDto): Promise<{ ok: true }> {
+  @Header('Cache-Control', 'no-store')
+  @Header('Pragma', 'no-cache')
+  async revoke(@Body() raw: unknown): Promise<{ ok: true }> {
+    const body = normalizeRevokeBody(raw);
     await this.oauthService.revoke(body.clientId, body.clientSecret, body.token);
     return { ok: true };
   }

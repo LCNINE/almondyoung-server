@@ -1,7 +1,7 @@
 import './tracing';
 import { GlobalExceptionFilter } from '@app/shared/filters/http-exception.filter';
-import { ResponseInterceptor } from '@app/shared/interceptors/response.interceptor';
 import fastifyCookie from '@fastify/cookie';
+import fastifyFormbody from '@fastify/formbody';
 import fastifyCors from '@fastify/cors';
 import fastifyHelmet from '@fastify/helmet';
 import fastifyMultipart from '@fastify/multipart';
@@ -56,6 +56,9 @@ async function bootstrap() {
 
   await app.register(fastifyCookie);
 
+  // RFC 6749 §3.2 token endpoint 는 application/x-www-form-urlencoded 를 받는다.
+  await app.register(fastifyFormbody);
+
   await app.register(fastifySession, {
     secret: configService.getOrThrow<string>('AUTH_SECRET'),
     cookieName: 'sessionId',
@@ -89,8 +92,7 @@ async function bootstrap() {
       done();
     });
 
-  // 전역 설정
-  app.useGlobalInterceptors(new ResponseInterceptor());
+  // 전역 설정 (ResponseInterceptor 는 APP_INTERCEPTOR provider 로 app.module.ts 에서 등록)
   app.useGlobalFilters(new GlobalExceptionFilter());
   app.useGlobalPipes(
     new ValidationPipe({

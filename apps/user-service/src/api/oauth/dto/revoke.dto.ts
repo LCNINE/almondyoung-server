@@ -1,20 +1,16 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsString, MaxLength } from 'class-validator';
 
+/**
+ * /oauth/revoke (RFC 7009) 입력. 컨트롤러가 plain body 를 받아 `normalizeRevokeBody` 로 정규화.
+ * snake_case 와 camelCase 모두 수용.
+ */
 export class RevokeRequestDto {
-  @ApiProperty()
-  @IsString()
-  @MaxLength(64)
+  @ApiProperty({ description: 'client_id' })
   clientId: string;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
-  @IsString()
-  @MaxLength(256)
+  @ApiProperty({ required: false, description: 'client_secret' })
   clientSecret?: string;
 
-  @ApiProperty()
-  @IsString()
-  @MaxLength(2048)
+  @ApiProperty({ description: 'revoke 대상 token (refresh_token)' })
   token: string;
 }

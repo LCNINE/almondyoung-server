@@ -8,6 +8,7 @@ import {
   parseAuthorizeParams,
 } from "@/lib/oauth-params";
 import { getActiveSessionUserId } from "@/lib/session";
+import { validateRedirectUriInternal } from "@/lib/user-service";
 import { env } from "@/lib/env";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
@@ -31,6 +32,26 @@ export default async function AuthorizePage({
 
   const params = parsed.value;
   const back = `${env.selfOrigin}${buildAuthorizeUrl(params)}`;
+
+  // redirect_uri 사전 검증.
+  // user-service 는 issueAuthorizationCode 단계에서 등록 화이트리스트를 강제하지만, 그 전에
+  // OIDC error redirect (`buildErrorRedirect`) 가 미검증 URI 로 외부 302 를 보낼 수 있어
+  // open redirect 가 됐다. 여기서 한 번 끊어 임의 URL 로의 외부 302 를 차단한다.
+  // 검증 실패 시 redirect 없이 로컬 에러 화면 렌더 — 표준 RP 의 silent iframe 은 timeout 처리됨.
+  const redirectUriValid = await validateRedirectUriInternal({
+    clientId: params.clientId,
+    redirectUri: params.redirectUri,
+  });
+  if (!redirectUriValid) {
+    return (
+      <main className="mx-auto flex min-h-svh w-full max-w-md flex-col gap-4 px-6 py-12">
+        <h1 className="text-xl font-semibold">잘못된 요청</h1>
+        <p className="text-sm text-muted-foreground">
+          등록되지 않은 redirect_uri 입니다. 클라이언트 설정을 확인해주세요.
+        </p>
+      </main>
+    );
+  }
 
   // prompt=login: 항상 signin 강제. hub로 force_login 신호와 함께.
   if (params.prompt === "login") {

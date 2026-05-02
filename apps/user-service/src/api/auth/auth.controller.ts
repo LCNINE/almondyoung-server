@@ -299,11 +299,37 @@ export class AuthController {
     }
   }
 
-  @ApiOperation({ summary: '소셜로그인 쿠키 설정' })
+  /**
+   * @deprecated 인증 없는 userId 기반 세션 발급 결함. 신규 `/auth/callback/social` 로 대체.
+   * storefront 가 새 흐름으로 이전한 뒤 후속 PR 에서 제거.
+   */
+  @ApiOperation({ summary: '[DEPRECATED] 소셜로그인 쿠키 설정 — /auth/callback/social 로 대체됨' })
   @ApiResponse({ status: 200, description: '소셜로그인 쿠키 설정 성공' })
   @Post('social/set-cookie')
   @Public()
   async setSocialCookie(@Body() { userId }: { userId: string }, @Res({ passthrough: true }) res: FastifyReply) {
     return await this.authService.setSocialCookie(userId, res);
+  }
+
+  @ApiOperation({
+    summary: '소셜 로그인 콜백 (쿠키 설정)',
+    description:
+      'social_token 은 카카오/네이버 콜백 직후 발급되는 단발성 JWT. purpose=social_callback. ' +
+      'storefront 의 `/{provider}/callback` 페이지가 토큰을 받아 본 엔드포인트로 제출하면 세션을 시작한다. ' +
+      '예전 `/auth/social/set-cookie` 는 body 의 userId 를 무검증으로 신뢰해 임의 계정 탈취가 가능했고, 이 흐름이 그 결함을 닫는다.',
+  })
+  @ApiResponse({ status: 200, description: '소셜 콜백 성공, 세션 쿠키 설정' })
+  @Post('callback/social')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  async callbackSocial(
+    @Body() body: { socialToken?: string; social_token?: string },
+    @Res({ passthrough: true }) res: FastifyReply,
+  ) {
+    const socialToken = body.socialToken ?? body.social_token;
+    if (!socialToken) {
+      throw new BadRequestException('socialToken 이 필요합니다.');
+    }
+    return await this.authService.callbackSocial(socialToken, res);
   }
 }

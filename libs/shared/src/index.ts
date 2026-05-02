@@ -2,6 +2,8 @@ export * from './shared.module';
 export * from './shared.service';
 export * from './dto';
 export * from './decorators/api-paginated-response.decorator';
+export * from './decorators/skip-response-envelope.decorator';
+export * from './interceptors/response.interceptor';
 export * from './pipes/zod-validation.pipe';
 export * from './pim/pim.port';
 export * from './pim/pim.client';
