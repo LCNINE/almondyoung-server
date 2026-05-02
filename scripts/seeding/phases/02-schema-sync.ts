@@ -11,22 +11,6 @@ const logger = new Logger('Schema Sync');
 /** drizzle config 경로는 프로젝트 루트 기준이므로 항상 루트에서 실행 */
 const PROJECT_ROOT = path.resolve(__dirname, '../../..');
 
-/**
- * auth 스키마(auth.scopes, auth.role_scope_mapping)는 drizzle-kit pgSchema 버그로 인해
- * 별도 raw SQL 마이그레이션으로 관리됨. user-service DB push 후 실행 필요.
- */
-function runAuthSchemaMigration(databaseUrl: string): void {
-  try {
-    logger.info('Running auth schema migration...');
-    execSync(
-      `ts-node -r tsconfig-paths/register libs/authorization/scripts/migrate-auth-schema.ts "${databaseUrl}"`,
-      { stdio: 'inherit', cwd: PROJECT_ROOT },
-    );
-  } catch {
-    logger.error('Failed to run auth schema migration');
-  }
-}
-
 export async function runSchemaSync(options: { yes: boolean; deployment?: string }): Promise<string[]> {
   console.log(chalk.bold.cyan('\nPhase 2: Schema Sync'));
   console.log(chalk.cyan('─'.repeat(40)));
@@ -46,7 +30,6 @@ export async function runSchemaSync(options: { yes: boolean; deployment?: string
           cwd: PROJECT_ROOT,
           env: { ...process.env, DATABASE_URL: url },
         });
-        runAuthSchemaMigration(url);
         synced.push(svc.name);
       } catch {
         logger.error(`Failed to push: ${svc.name}`);
@@ -92,7 +75,6 @@ export async function runSchemaSync(options: { yes: boolean; deployment?: string
         cwd: PROJECT_ROOT,
         env: { ...process.env, DATABASE_URL: url },
       });
-      runAuthSchemaMigration(url);
       synced.push(svc.name);
     } catch {
       logger.error(`Failed to push: ${svc.name}`);
