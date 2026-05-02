@@ -24,6 +24,8 @@ type TokenInsert = {
   rotatedFrom?: string | null;
 };
 
+export type OAuthClientRow = typeof userServiceSchema.oauthClients.$inferSelect;
+
 @Injectable()
 export class OAuthRepository {
   constructor(@InjectDb() private readonly dbService: DbService<UserServiceSchema>) {}
@@ -32,6 +34,34 @@ export class OAuthRepository {
     return tx ?? this.dbService.db;
   }
 
+  // ─────────────────────────────────────────
+  // OAuth clients
+  // ─────────────────────────────────────────
+  async findActiveClientById(clientId: string, tx?: DbTransaction): Promise<OAuthClientRow | null> {
+    const client = this.getClient(tx);
+    const [row] = await client
+      .select()
+      .from(userServiceSchema.oauthClients)
+      .where(
+        and(eq(userServiceSchema.oauthClients.clientId, clientId), eq(userServiceSchema.oauthClients.isActive, true)),
+      )
+      .limit(1);
+    return row ?? null;
+  }
+
+  async findClientById(clientId: string, tx?: DbTransaction): Promise<OAuthClientRow | null> {
+    const client = this.getClient(tx);
+    const [row] = await client
+      .select()
+      .from(userServiceSchema.oauthClients)
+      .where(eq(userServiceSchema.oauthClients.clientId, clientId))
+      .limit(1);
+    return row ?? null;
+  }
+
+  // ─────────────────────────────────────────
+  // Authorization codes
+  // ─────────────────────────────────────────
   async insertAuthorizationCode(input: CodeInsert, tx?: DbTransaction): Promise<void> {
     const client = this.getClient(tx);
     await client.insert(userServiceSchema.oauthAuthorizationCodes).values({
@@ -69,6 +99,9 @@ export class OAuthRepository {
       .where(eq(userServiceSchema.oauthAuthorizationCodes.code, code));
   }
 
+  // ─────────────────────────────────────────
+  // Refresh tokens
+  // ─────────────────────────────────────────
   async insertOAuthToken(input: TokenInsert, tx?: DbTransaction) {
     const client = this.getClient(tx);
     const [row] = await client

@@ -364,11 +364,31 @@ export const phoneVerifications = pgTable(
 /*───────────────────────────
  * OAUTH 2.0 (Authorization Code + PKCE) — IdP role
  *──────────────────────────*/
+export const oauthClients = pgTable(
+  'oauth_clients',
+  {
+    clientId: varchar('client_id', { length: 64 }).primaryKey(),
+    clientSecretHash: varchar('client_secret_hash', { length: 255 }).notNull(),
+    previousSecretHash: varchar('previous_secret_hash', { length: 255 }),
+    secretRotatedAt: timestamp('secret_rotated_at'),
+    redirectUris: jsonb('redirect_uris').$type<string[]>().notNull(),
+    allowedScopes: jsonb('allowed_scopes').$type<string[] | null>(),
+    isActive: boolean('is_active').default(true).notNull(),
+    deactivatedAt: timestamp('deactivated_at'),
+    ...timestampColumns,
+  },
+  (table) => ({
+    isActiveIdx: index('oauth_clients_is_active_idx').on(table.isActive),
+  }),
+);
+
 export const oauthAuthorizationCodes = pgTable(
   'oauth_authorization_codes',
   {
     code: varchar('code', { length: 128 }).primaryKey(),
-    clientId: varchar('client_id', { length: 64 }).notNull(),
+    clientId: varchar('client_id', { length: 64 })
+      .references(() => oauthClients.clientId)
+      .notNull(),
     userId: uuid('user_id')
       .references(() => users.id, { onDelete: 'cascade' })
       .notNull(),
@@ -393,7 +413,9 @@ export const oauthTokens = pgTable(
     userId: uuid('user_id')
       .references(() => users.id, { onDelete: 'cascade' })
       .notNull(),
-    clientId: varchar('client_id', { length: 64 }).notNull(),
+    clientId: varchar('client_id', { length: 64 })
+      .references(() => oauthClients.clientId)
+      .notNull(),
     refreshToken: text('refresh_token').notNull(),
     scope: varchar('scope', { length: 1024 }),
     isRevoked: boolean('is_revoked').default(false).notNull(),
@@ -583,6 +605,7 @@ export const userServiceTables = {
   wishlist,
   userRecentViews,
   phoneVerifications,
+  oauthClients,
   oauthAuthorizationCodes,
   oauthTokens,
 } as const;

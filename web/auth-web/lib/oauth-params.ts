@@ -1,7 +1,5 @@
 import "server-only";
 
-import { env } from "./env";
-
 export type AuthorizeParams = {
   clientId: string;
   redirectUri: string;
@@ -37,13 +35,8 @@ export function parseAuthorizeParams(raw: Record<string, string | string[] | und
   if (codeChallengeMethod !== "S256") return { ok: false, error: "code_challenge_method must be S256" };
   if (responseType !== "code") return { ok: false, error: "response_type must be code" };
 
-  if (!env.oauthBypassValidation) {
-    const client = env.oauthAllowedClients.find((c) => c.clientId === clientId);
-    if (!client) return { ok: false, error: "unknown client_id" };
-    if (!client.redirectUris.includes(redirectUri)) {
-      return { ok: false, error: "redirect_uri not registered for client" };
-    }
-  }
+  // client_id / redirect_uri 등록 여부는 user-service /oauth/internal/issue-code 가 검증한다.
+  // auth-web 은 형태(필수 필드, S256, response_type=code) 만 본다.
 
   return {
     ok: true,

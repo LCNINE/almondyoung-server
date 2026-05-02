@@ -93,6 +93,7 @@
     "search:synonym-candidates": "ts-node -r tsconfig-paths/register apps/search/scripts/extract-synonym-candidates.ts",
     "seed": "ts-node -r tsconfig-paths/register src/database/seed-cli.ts",
     "seed:user-service": "cd scripts/seed-data && ts-node run-user-service.ts",
+    "seed:oauth-clients": "dotenv -e apps/user-service/.env -- npx tsx scripts/user-service/seed-oauth-clients.ts",
     "start": "npm run start:main",
     "start:admin-web": "cd apps/admin-web && npm run start",
     "start:admin-web:dev": "cd apps/admin-web && npm run dev",
