@@ -43,6 +43,7 @@ export function OAuthClientsTable({
       <TableHeader>
         <TableRow>
           <TableHead>clientId</TableHead>
+          <TableHead>type</TableHead>
           <TableHead>상태</TableHead>
           <TableHead>redirect URIs</TableHead>
           <TableHead>scopes</TableHead>
@@ -55,14 +56,14 @@ export function OAuthClientsTable({
       <TableBody>
         {isLoading && (
           <TableRow>
-            <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+            <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
               불러오는 중...
             </TableCell>
           </TableRow>
         )}
         {!isLoading && clients.length === 0 && (
           <TableRow>
-            <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+            <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
               등록된 OAuth client 가 없습니다.
             </TableCell>
           </TableRow>
@@ -70,6 +71,11 @@ export function OAuthClientsTable({
         {clients.map((c) => (
           <TableRow key={c.clientId}>
             <TableCell className="font-mono text-xs">{c.clientId}</TableCell>
+            <TableCell>
+              <Badge variant={c.clientType === 'public' ? 'outline' : 'secondary'} className="font-mono text-[10px]">
+                {c.clientType}
+              </Badge>
+            </TableCell>
             <TableCell>
               {c.isActive ? (
                 <Badge variant="default">활성</Badge>
@@ -117,9 +123,14 @@ export function OAuthClientsTable({
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem onClick={() => onAction('edit', c)}>수정</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => onAction('rotate', c)}>secret 회전</DropdownMenuItem>
                   <DropdownMenuItem
-                    disabled={!c.hasPreviousSecret}
+                    disabled={c.clientType === 'public'}
+                    onClick={() => onAction('rotate', c)}
+                  >
+                    secret 회전
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={!c.hasPreviousSecret || c.clientType === 'public'}
                     onClick={() => onAction('clear-previous', c)}
                   >
                     grace 종료

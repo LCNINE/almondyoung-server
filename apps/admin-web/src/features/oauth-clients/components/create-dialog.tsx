@@ -11,7 +11,9 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Textarea } from '@/components/ui/textarea';
+import type { OAuthClientType } from '@/lib/api/domains/oauth-clients';
 import { useCreateOAuthClient } from '@/lib/services/oauth-clients';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -24,15 +26,17 @@ export function CreateOAuthClientDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreated: (clientId: string, clientSecret: string) => void;
+  onCreated: (clientId: string, clientSecret: string | null) => void;
 }) {
   const [clientId, setClientId] = useState('');
+  const [clientType, setClientType] = useState<OAuthClientType>('confidential');
   const [redirectUrisText, setRedirectUrisText] = useState('');
   const [allowedScopesText, setAllowedScopesText] = useState('');
   const createMutation = useCreateOAuthClient();
 
   const reset = () => {
     setClientId('');
+    setClientType('confidential');
     setRedirectUrisText('');
     setAllowedScopesText('');
   };
@@ -54,12 +58,16 @@ export function CreateOAuthClientDialog({
     try {
       const res = await createMutation.mutateAsync({
         clientId: trimmedId,
+        clientType,
         redirectUris,
         allowedScopes: allowedScopes.length ? allowedScopes : undefined,
       });
       reset();
       onOpenChange(false);
       onCreated(res.clientId, res.clientSecret);
+      if (clientType === 'public') {
+        toast.success('public client 를 생성했어요. (PKCE only — client_secret 없음)');
+      }
     } catch {
       toast.error('OAuth client 생성에 실패했어요.');
     }
@@ -88,6 +96,23 @@ export function CreateOAuthClientDialog({
               placeholder="daview"
             />
             <p className="text-xs text-muted-foreground">영숫자, _, -, : 만 허용 (최대 64자)</p>
+          </div>
+          <div className="space-y-2">
+            <Label>client type</Label>
+            <RadioGroup value={clientType} onValueChange={(v) => setClientType(v as OAuthClientType)}>
+              <div className="flex items-start gap-2">
+                <RadioGroupItem id="ct-confidential" value="confidential" className="mt-1" />
+                <Label htmlFor="ct-confidential" className="font-normal">
+                  <span className="font-mono text-xs">confidential</span> — server BFF/백엔드. client_secret 사용.
+                </Label>
+              </div>
+              <div className="flex items-start gap-2">
+                <RadioGroupItem id="ct-public" value="public" className="mt-1" />
+                <Label htmlFor="ct-public" className="font-normal">
+                  <span className="font-mono text-xs">public</span> — SPA/모바일/RN. PKCE only, client_secret 없음.
+                </Label>
+              </div>
+            </RadioGroup>
           </div>
           <div className="space-y-2">
             <Label htmlFor="oauth-redirect-uris">redirect URIs</Label>
