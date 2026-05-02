@@ -27,6 +27,7 @@ import { and, desc, eq, gt, isNull, or } from 'drizzle-orm';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { DbTransaction, IUser, ProviderType } from '../../commons/types';
 import {
+  INTERNAL_TOKEN_AUDIENCE,
   JWT_ACCESS_TOKEN_EXPIRATION,
   JWT_EMAIL_VERIFICATION_ACCESS_TOKEN_EXPIRATION,
   JWT_PIN_RESET_VERIFICATION_TOKEN_EXPIRATION,
@@ -598,6 +599,8 @@ export class AuthService {
     const accessToken = await this.jwtService.signAsync(payload, {
       secret: this.configService.getOrThrow<string>('AUTH_SECRET'),
       expiresIn,
+      issuer: this.configService.getOrThrow<string>('OAUTH_ISSUER_URL'),
+      audience: INTERNAL_TOKEN_AUDIENCE,
     });
     const isRailway = !!process.env.RAILWAY_ENVIRONMENT;
     const isProd = process.env.NODE_ENV === 'production';
