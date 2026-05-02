@@ -47,4 +47,10 @@ export class TokenResponseDto {
 
   @ApiProperty({ required: false })
   scope?: string;
+
+  @ApiProperty({
+    required: false,
+    description: 'OIDC ID Token (RS256 JWT). scope 에 `openid` 가 포함된 authorization_code 그랜트에서만 발급.',
+  })
+  id_token?: string;
 }
