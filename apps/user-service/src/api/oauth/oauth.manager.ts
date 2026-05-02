@@ -1,6 +1,6 @@
 import { DbService, InjectDb } from '@app/db';
+import { UnauthorizedError } from '@app/shared';
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
 import * as bcrypt from 'bcrypt';
@@ -44,7 +44,6 @@ export class OAuthManager {
     private readonly repo: OAuthRepository,
     private readonly reader: OAuthReader,
     private readonly jwtService: JwtService,
-    private readonly configService: ConfigService,
     private readonly usersService: UsersService,
   ) {}
 
@@ -168,13 +167,10 @@ export class OAuthManager {
     const accessExpiresInMs = parseExpiresInToMs(JWT_ACCESS_TOKEN_EXPIRATION);
     const refreshExpiresInMs = parseExpiresInToMs(JWT_REFRESH_TOKEN_LONG_EXPIRATION);
 
-    // access token: JWT (현재 내부 access token과 동일한 시크릿/포맷 — 타겟 서비스가 검증 가능)
+    // access token: RS256 JWT. iss/kid/alg은 모듈 기본 signOptions에서 부여, aud=client_id.
     const accessToken = await this.jwtService.signAsync(
       { sub: userId, client_id: clientId, scope: scope ?? undefined },
-      {
-        secret: this.configService.getOrThrow<string>('AUTH_SECRET'),
-        expiresIn: JWT_ACCESS_TOKEN_EXPIRATION,
-      },
+      { audience: clientId, expiresIn: JWT_ACCESS_TOKEN_EXPIRATION },
     );
 
     // refresh token: opaque (랜덤 문자열). DB에서만 검증.
@@ -217,18 +213,23 @@ export class OAuthManager {
   // 4. userinfo
   // ─────────────────────────────────────────
   async getUserInfo(accessToken: string): Promise<{ sub: string; email: string; nickname: string; username: string }> {
-    let payload: { sub?: string };
+    type OAuthAccessPayload = { sub?: string; aud?: string | string[] };
+    let payload: OAuthAccessPayload;
     try {
-      payload = await this.jwtService.verifyAsync(accessToken, {
-        secret: this.configService.getOrThrow<string>('AUTH_SECRET'),
-      });
+      payload = await this.jwtService.verifyAsync<OAuthAccessPayload>(accessToken);
     } catch {
-      throw new Error('invalid access_token');
+      throw new UnauthorizedError('invalid access_token');
     }
-    if (!payload.sub) throw new Error('invalid access_token payload');
+    if (!payload.sub) throw new UnauthorizedError('invalid access_token');
+
+    // aud 엄격 검증: 등록된 active client_id여야 함
+    const audClientId = Array.isArray(payload.aud) ? payload.aud[0] : payload.aud;
+    if (!audClientId) throw new UnauthorizedError('invalid access_token');
+    const client = await this.repo.findActiveClientById(audClientId);
+    if (!client) throw new UnauthorizedError('invalid access_token');
 
     const user = await this.usersService.findUserById(payload.sub);
-    if (!user) throw new Error('user not found');
+    if (!user) throw new UnauthorizedError('invalid access_token');
 
     return {
       sub: user.id,
