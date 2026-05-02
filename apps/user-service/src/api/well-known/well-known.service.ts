@@ -17,7 +17,6 @@ export interface OidcDiscoveryResponse {
   response_types_supported: string[];
   grant_types_supported: string[];
   code_challenge_methods_supported: string[];
-  id_token_signing_alg_values_supported: string[];
   token_endpoint_auth_methods_supported: string[];
   subject_types_supported: string[];
 }
@@ -31,23 +30,23 @@ export class WellKnownService {
     const publicKeyPem = config.getOrThrow<string>('OAUTH_JWT_PUBLIC_KEY');
     const kid = config.getOrThrow<string>('OAUTH_JWT_KID');
     const issuer = config.getOrThrow<string>('OAUTH_ISSUER_URL').replace(/\/$/, '');
+    const authWebOrigin = config.getOrThrow<string>('AUTH_WEB_ORIGIN').replace(/\/$/, '');
 
     const jwk = createPublicKey({ key: publicKeyPem, format: 'pem' }).export({ format: 'jwk' });
     this.jwks = { keys: [{ ...jwk, kid, alg: 'RS256', use: 'sig' }] };
 
     this.discovery = {
       issuer,
-      authorization_endpoint: `${issuer}/oauth/authorize`,
+      authorization_endpoint: `${authWebOrigin}/oauth/authorize`,
       token_endpoint: `${issuer}/oauth/token`,
       userinfo_endpoint: `${issuer}/oauth/userinfo`,
       jwks_uri: `${issuer}/.well-known/jwks.json`,
       end_session_endpoint: `${issuer}/oauth/end_session`,
-      scopes_supported: ['openid', 'profile', 'email'],
+      scopes_supported: ['profile', 'email'],
       response_types_supported: ['code'],
       grant_types_supported: ['authorization_code', 'refresh_token'],
       code_challenge_methods_supported: ['S256'],
-      id_token_signing_alg_values_supported: ['RS256'],
-      token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
+      token_endpoint_auth_methods_supported: ['client_secret_post', 'none'],
       subject_types_supported: ['public'],
     };
   }
