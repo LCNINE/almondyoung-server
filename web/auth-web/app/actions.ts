@@ -8,7 +8,7 @@ import {
   upsertAccount,
 } from "@/lib/account-store";
 import { env } from "@/lib/env";
-import { decodeJwtPayload, isExpired } from "@/lib/jwt";
+import { decodeJwtPayload } from "@/lib/jwt";
 import {
   clearParentAuthCookies,
   getParentAccessToken,
@@ -173,14 +173,12 @@ export async function selectAccountAction(
 ): Promise<ActionResult> {
   const refreshToken = await getRefreshToken(userId);
   if (!refreshToken) return { ok: false, error: "저장된 계정을 찾을 수 없습니다" };
-  const payload = decodeJwtPayload<{ sub: string; exp?: number }>(refreshToken);
-  if (!payload || isExpired(payload.exp)) {
-    return { ok: false, error: "세션이 만료됐습니다. 다시 로그인해주세요" };
-  }
 
+  // 클라이언트가 넘긴 userId 를 그대로 신뢰하지 않는다. refreshToken 으로 access 를 복원한 뒤
+  // user-service /users/me 응답의 id 를 권위 있는 userId 로 사용 (서명 검증을 user-service 에 위임).
+  let accessToken: string;
   try {
-    const accessToken = await restoreAccessToken(refreshToken);
-    await setParentAuthCookies({ accessToken, refreshToken });
+    accessToken = await restoreAccessToken(refreshToken);
   } catch (e) {
     return {
       ok: false,
@@ -188,7 +186,23 @@ export async function selectAccountAction(
     };
   }
 
-  return redirectAfterAuth(userId, redirectToRaw);
+  let resolvedUserId: string;
+  try {
+    const me = await getMe(accessToken);
+    resolvedUserId = me.id;
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "세션 검증 실패",
+    };
+  }
+
+  if (resolvedUserId !== userId) {
+    return { ok: false, error: "계정 정보가 일치하지 않습니다" };
+  }
+
+  await setParentAuthCookies({ accessToken, refreshToken });
+  return redirectAfterAuth(resolvedUserId, redirectToRaw);
 }
 
 export async function removeAccountAction(userId: string): Promise<void> {
