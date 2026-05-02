@@ -148,6 +148,32 @@ export async function issueOAuthCodeInternal(
   return readApiData<{ code: string; expiresIn: number }>(res);
 }
 
+/**
+ * `/oauth/authorize` 처리 직후, redirect_uri 가 client 등록 화이트리스트와 매칭되는지 user-service 에 위임 검증.
+ * 미등록인 경우 OIDC error redirect 를 발사해 외부로 302 가 나가지 않도록 호출자가 로컬 에러 화면을 렌더해야 한다.
+ */
+export async function validateRedirectUriInternal(input: {
+  clientId: string;
+  redirectUri: string;
+}): Promise<boolean> {
+  if (!env.oauthInternalSecret) {
+    throw new Error("OAUTH_INTERNAL_SECRET not configured on auth-web");
+  }
+  const res = await fetch(`${env.userServiceUrl}/oauth/internal/validate-redirect-uri`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-internal-secret": env.oauthInternalSecret,
+    },
+    body: JSON.stringify(input),
+    cache: "no-store",
+    redirect: "manual",
+  });
+  if (!res.ok) return false;
+  const body = await readJson<{ valid?: boolean }>(res);
+  return body.valid === true;
+}
+
 export async function getMe(accessToken: string): Promise<UserProfile> {
   const res = await fetch(`${env.userServiceUrl}/users/me`, {
     method: "GET",

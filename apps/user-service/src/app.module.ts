@@ -1,9 +1,10 @@
 import { DbModule } from '@app/db';
 import { EventsModule, EventTraceApiModule } from '@app/events';
 import { AuthorizationModule, authorizationSchema, ScopeGuard } from '@app/authorization';
+import { ResponseInterceptor } from '@app/shared';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { USER_STREAM } from '@packages/event-contracts/streams';
 import { config } from 'dotenv';
@@ -144,6 +145,10 @@ const staticRoot = existsSync(join(__dirname, 'static')) ? join(__dirname, 'stat
   ],
   controllers: [HealthController],
   providers: [
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: ResponseInterceptor,
+    },
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,

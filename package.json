@@ -192,6 +192,7 @@
     "@elastic/elasticsearch": "^8.15.0",
     "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^11.0.1",
+    "@fastify/formbody": "^8.0.2",
     "@fastify/helmet": "^13.0.1",
     "@fastify/multipart": "^9.0.3",
     "@fastify/passport": "^3.0.2",
