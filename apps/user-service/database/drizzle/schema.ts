@@ -37,6 +37,9 @@ export const phoneVerificationPurposeEnum = pgEnum('phone_verification_purpose',
 
 export const oauthCodeChallengeMethodEnum = pgEnum('oauth_code_challenge_method', ['S256']);
 
+// confidential: server-side RP (client_secret + PKCE), public: SPA/모바일 (PKCE only, RFC 8252).
+export const oauthClientTypeEnum = pgEnum('oauth_client_type', ['confidential', 'public']);
+
 /*───────────────────────────
  * HELPER COLUMNS
  *──────────────────────────*/
@@ -368,6 +371,7 @@ export const oauthClients = pgTable(
   'oauth_clients',
   {
     clientId: varchar('client_id', { length: 64 }).primaryKey(),
+    clientType: oauthClientTypeEnum('client_type').default('confidential').notNull(),
     clientSecretHash: varchar('client_secret_hash', { length: 255 }).notNull(),
     previousSecretHash: varchar('previous_secret_hash', { length: 255 }),
     secretRotatedAt: timestamp('secret_rotated_at'),

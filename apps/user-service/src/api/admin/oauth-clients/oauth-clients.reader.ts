@@ -6,6 +6,7 @@ import { OAuthClientRow, OAuthClientsRepository } from './oauth-clients.reposito
 export function toResponseDto(row: OAuthClientRow): OAuthClientResponseDto {
   return {
     clientId: row.clientId,
+    clientType: row.clientType,
     redirectUris: row.redirectUris,
     allowedScopes: row.allowedScopes,
     isActive: row.isActive,

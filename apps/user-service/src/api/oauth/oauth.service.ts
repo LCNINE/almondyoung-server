@@ -16,7 +16,7 @@ export class OAuthService {
     return this.manager.issueToken(input);
   }
 
-  revoke(clientId: string, clientSecret: string, token: string): Promise<void> {
+  revoke(clientId: string, clientSecret: string | undefined, token: string): Promise<void> {
     return this.manager.revokeRefreshToken(clientId, clientSecret, token);
   }
 

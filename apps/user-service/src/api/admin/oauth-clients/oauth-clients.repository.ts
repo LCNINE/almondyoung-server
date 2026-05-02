@@ -7,6 +7,7 @@ export type OAuthClientRow = typeof userServiceSchema.oauthClients.$inferSelect;
 
 type CreateInput = {
   clientId: string;
+  clientType: 'confidential' | 'public';
   clientSecretHash: string;
   redirectUris: string[];
   allowedScopes: string[] | null;
@@ -44,6 +45,7 @@ export class OAuthClientsRepository {
       .insert(userServiceSchema.oauthClients)
       .values({
         clientId: input.clientId,
+        clientType: input.clientType,
         clientSecretHash: input.clientSecretHash,
         redirectUris: input.redirectUris,
         allowedScopes: input.allowedScopes,

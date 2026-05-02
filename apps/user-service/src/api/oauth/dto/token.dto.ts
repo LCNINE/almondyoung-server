@@ -11,10 +11,12 @@ export class TokenRequestDto {
   @MaxLength(64)
   clientId: string;
 
-  @ApiProperty()
+  // public client(SPA/모바일)는 client_secret 없이 PKCE만으로 인증.
+  @ApiProperty({ required: false })
+  @IsOptional()
   @IsString()
   @MaxLength(256)
-  clientSecret: string;
+  clientSecret?: string;
 
   // authorization_code 그랜트용
   @ApiProperty({ required: false })

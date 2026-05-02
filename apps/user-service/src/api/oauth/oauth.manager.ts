@@ -12,6 +12,7 @@ import { IssueCodeRequestDto } from './dto/issue-code.dto';
 import { TokenRequestDto, TokenResponseDto } from './dto/token.dto';
 import { OAuthReader } from './oauth.reader';
 import { OAuthRepository } from './oauth.repository';
+import { isRedirectUriRegistered } from './redirect-uri';
 
 const CODE_TTL_SECONDS = 300;
 
@@ -57,7 +58,7 @@ export class OAuthManager {
   async issueAuthorizationCode(input: IssueCodeRequestDto): Promise<{ code: string; expiresIn: number }> {
     const client = await this.reader.getClientOrThrow(input.clientId);
 
-    if (!client.redirectUris.includes(input.redirectUri)) {
+    if (!isRedirectUriRegistered(client.redirectUris, input.redirectUri, client.clientType)) {
       throw new Error('invalid redirect_uri (not registered)');
     }
     if (input.codeChallengeMethod !== 'S256') {
@@ -98,8 +99,12 @@ export class OAuthManager {
     throw new Error('unsupported grant_type');
   }
 
-  private async assertClientCredentials(clientId: string, clientSecret: string): Promise<void> {
+  private async assertClientCredentials(clientId: string, clientSecret: string | undefined): Promise<void> {
     const client = await this.reader.getClientOrThrow(clientId);
+    // public client: secret 검증 스킵. PKCE는 exchangeCodeForToken에서 강제됨.
+    if (client.clientType === 'public') return;
+
+    if (!clientSecret) throw new Error('client_secret required for confidential client');
     const okCurrent = await bcrypt.compare(clientSecret, client.clientSecretHash);
     if (okCurrent) return;
     if (client.previousSecretHash) {
@@ -201,7 +206,7 @@ export class OAuthManager {
   // ─────────────────────────────────────────
   // 3. revoke
   // ─────────────────────────────────────────
-  async revokeRefreshToken(clientId: string, clientSecret: string, refreshToken: string): Promise<void> {
+  async revokeRefreshToken(clientId: string, clientSecret: string | undefined, refreshToken: string): Promise<void> {
     await this.assertClientCredentials(clientId, clientSecret);
     const row = await this.repo.findOAuthTokenByRefresh(refreshToken);
     if (!row) return; // RFC 7009: 알 수 없는 토큰은 200으로 응답

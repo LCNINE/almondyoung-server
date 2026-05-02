@@ -1,5 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { ArrayMinSize, IsArray, IsBoolean, IsOptional, IsString, IsUrl, Matches, MaxLength } from 'class-validator';
+import { ArrayMinSize, IsArray, IsBoolean, IsIn, IsOptional, IsString, IsUrl, Matches, MaxLength } from 'class-validator';
+
+export type OAuthClientType = 'confidential' | 'public';
 
 export class CreateOAuthClientDto {
   @ApiProperty({ description: 'OAuth client_id (영숫자/하이픈/언더스코어)', example: 'daview' })
@@ -7,6 +9,16 @@ export class CreateOAuthClientDto {
   @MaxLength(64)
   @Matches(/^[A-Za-z0-9_\-:]+$/, { message: 'clientId 는 영숫자/_/-/: 만 허용' })
   clientId: string;
+
+  @ApiProperty({
+    description: 'client type. confidential=server BFF(secret 사용), public=SPA/모바일(PKCE only).',
+    enum: ['confidential', 'public'],
+    default: 'confidential',
+    required: false,
+  })
+  @IsOptional()
+  @IsIn(['confidential', 'public'])
+  clientType?: OAuthClientType;
 
   @ApiProperty({ description: '허용 redirect_uri 목록', example: ['https://daview.com/auth/callback'] })
   @IsArray()
@@ -43,6 +55,7 @@ export class UpdateOAuthClientDto {
 
 export class OAuthClientResponseDto {
   clientId: string;
+  clientType: OAuthClientType;
   redirectUris: string[];
   allowedScopes: string[] | null;
   isActive: boolean;
@@ -54,6 +67,6 @@ export class OAuthClientResponseDto {
 }
 
 export class OAuthClientWithSecretResponseDto extends OAuthClientResponseDto {
-  /** 생성/회전 직후 1회만 평문으로 노출. 이후 응답에는 포함되지 않음. */
-  clientSecret: string;
+  /** 생성/회전 직후 1회만 평문으로 노출. public client는 null. */
+  clientSecret: string | null;
 }

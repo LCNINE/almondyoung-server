@@ -56,7 +56,7 @@ export default function OAuthClientsTemplate() {
   const [editTarget, setEditTarget] = useState<OAuthClientResponse | null>(null);
   const [confirm, setConfirm] = useState<{ kind: ConfirmKind; client: OAuthClientResponse } | null>(null);
 
-  const [issuedSecret, setIssuedSecret] = useState<{ clientId: string; clientSecret: string } | null>(null);
+  const [issuedSecret, setIssuedSecret] = useState<{ clientId: string; clientSecret: string | null } | null>(null);
 
   const rotateMutation = useRotateOAuthClientSecret();
   const clearPrevMutation = useClearOAuthClientPreviousSecret();
@@ -106,7 +106,9 @@ export default function OAuthClientsTemplate() {
       <CreateOAuthClientDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        onCreated={(clientId, clientSecret) => setIssuedSecret({ clientId, clientSecret })}
+        onCreated={(clientId, clientSecret) => {
+          if (clientSecret) setIssuedSecret({ clientId, clientSecret });
+        }}
       />
 
       <EditOAuthClientDialog

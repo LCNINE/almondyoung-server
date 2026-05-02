@@ -10,6 +10,7 @@ import { OAuthClientRow, OAuthClientsRepository } from './oauth-clients.reposito
 function makeRow(overrides: Partial<OAuthClientRow> = {}): OAuthClientRow {
   return {
     clientId: 'daview',
+    clientType: 'confidential',
     clientSecretHash: 'hash-current',
     previousSecretHash: null,
     secretRotatedAt: null,
@@ -59,10 +60,34 @@ describe('OAuthClientsManager', () => {
         redirectUris: ['https://daview.com/cb'],
       });
       expect(result.clientSecret).toBeDefined();
-      expect(result.clientSecret.length).toBeGreaterThan(20);
+      expect(result.clientSecret).not.toBeNull();
+      expect(result.clientSecret!.length).toBeGreaterThan(20);
       const passed = repo.create.mock.calls[0][0];
+      expect(passed.clientType).toBe('confidential');
       expect(passed.clientSecretHash).not.toBe(result.clientSecret);
-      await expect(bcrypt.compare(result.clientSecret, passed.clientSecretHash)).resolves.toBe(true);
+      await expect(bcrypt.compare(result.clientSecret!, passed.clientSecretHash)).resolves.toBe(true);
+    });
+
+    it('public client: clientSecret null + 검증 불가능한 해시 저장', async () => {
+      repo.findById.mockResolvedValueOnce(null);
+      repo.create.mockImplementationOnce(async (input) =>
+        makeRow({
+          clientId: input.clientId,
+          clientType: input.clientType,
+          clientSecretHash: input.clientSecretHash,
+          redirectUris: input.redirectUris,
+        }),
+      );
+      const result = await manager.createClient({
+        clientId: 'spa-app',
+        clientType: 'public',
+        redirectUris: ['http://127.0.0.1/callback'],
+      });
+      expect(result.clientSecret).toBeNull();
+      expect(result.clientType).toBe('public');
+      const passed = repo.create.mock.calls[0][0];
+      expect(passed.clientType).toBe('public');
+      expect(passed.clientSecretHash).toMatch(/^\$2[aby]\$/); // bcrypt hash
     });
   });
 
@@ -87,6 +112,11 @@ describe('OAuthClientsManager', () => {
     it('미존재 clientId 면 NotFound', async () => {
       repo.findById.mockResolvedValueOnce(null);
       await expect(manager.rotateSecret('ghost')).rejects.toBeInstanceOf(OAuthClientNotFoundException);
+    });
+
+    it('public client는 회전 불가', async () => {
+      repo.findById.mockResolvedValueOnce(makeRow({ clientType: 'public' }));
+      await expect(manager.rotateSecret('daview')).rejects.toThrow(/public client/);
     });
   });
 
