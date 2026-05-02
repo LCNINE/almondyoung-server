@@ -1,13 +1,10 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Get,
   Headers,
   HttpCode,
   HttpStatus,
-  InternalServerErrorException,
-  NotFoundException,
   Post,
   Query,
   Req,
@@ -22,21 +19,6 @@ import { IssueCodeRequestDto, IssueCodeResponseDto } from './dto/issue-code.dto'
 import { RevokeRequestDto } from './dto/revoke.dto';
 import { TokenRequestDto, TokenResponseDto } from './dto/token.dto';
 import { OAuthService } from './oauth.service';
-
-function mapError(e: unknown): never {
-  const msg = (e instanceof Error ? e.message : String(e)) ?? '';
-  const lower = msg.toLowerCase();
-  if (lower.includes('not found') || lower.includes('unknown client')) {
-    throw new NotFoundException(msg);
-  }
-  if (lower.includes('invalid') || lower.includes('mismatch') || lower.includes('expired') || lower.includes('reuse') || lower.includes('failed') || lower.includes('required') || lower.includes('unsupported')) {
-    if (lower.includes('client_secret') || lower.includes('internal secret') || lower.includes('access_token')) {
-      throw new UnauthorizedException(msg);
-    }
-    throw new BadRequestException(msg);
-  }
-  throw new InternalServerErrorException(msg);
-}
 
 @ApiTags('OAuth')
 @Controller('oauth')
@@ -54,11 +36,7 @@ export class OAuthController {
     @Body() body: IssueCodeRequestDto,
     @Headers('x-internal-secret') internalSecret?: string,
   ): Promise<IssueCodeResponseDto> {
-    try {
-      return await this.oauthService.issueCode(body, internalSecret);
-    } catch (e) {
-      mapError(e);
-    }
+    return this.oauthService.issueCode(body, internalSecret);
   }
 
   @ApiOperation({ summary: 'token endpoint (authorization_code | refresh_token)' })
@@ -66,11 +44,7 @@ export class OAuthController {
   @Public()
   @HttpCode(HttpStatus.OK)
   async token(@Body() body: TokenRequestDto): Promise<TokenResponseDto> {
-    try {
-      return await this.oauthService.exchangeToken(body);
-    } catch (e) {
-      mapError(e);
-    }
+    return this.oauthService.exchangeToken(body);
   }
 
   @ApiOperation({ summary: 'userinfo endpoint' })
@@ -79,11 +53,7 @@ export class OAuthController {
   async userinfo(@Headers('authorization') auth?: string) {
     const m = auth?.match(/^Bearer\s+(.+)$/i);
     if (!m?.[1]) throw new UnauthorizedException('Bearer token required');
-    try {
-      return await this.oauthService.userInfo(m[1]);
-    } catch (e) {
-      mapError(e);
-    }
+    return this.oauthService.userInfo(m[1]);
   }
 
   @ApiOperation({ summary: 'token revocation (RFC 7009)' })
@@ -91,12 +61,8 @@ export class OAuthController {
   @Public()
   @HttpCode(HttpStatus.OK)
   async revoke(@Body() body: RevokeRequestDto): Promise<{ ok: true }> {
-    try {
-      await this.oauthService.revoke(body.clientId, body.clientSecret, body.token);
-      return { ok: true };
-    } catch (e) {
-      mapError(e);
-    }
+    await this.oauthService.revoke(body.clientId, body.clientSecret, body.token);
+    return { ok: true };
   }
 
   /**
