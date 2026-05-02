@@ -17,7 +17,17 @@ import { OAuthService } from './oauth.service';
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({
-        secret: config.get<string>('AUTH_SECRET'),
+        privateKey: config.getOrThrow<string>('OAUTH_JWT_PRIVATE_KEY'),
+        publicKey: config.getOrThrow<string>('OAUTH_JWT_PUBLIC_KEY'),
+        signOptions: {
+          algorithm: 'RS256',
+          issuer: config.getOrThrow<string>('OAUTH_ISSUER_URL'),
+          keyid: config.getOrThrow<string>('OAUTH_JWT_KID'),
+        },
+        verifyOptions: {
+          algorithms: ['RS256'],
+          issuer: config.getOrThrow<string>('OAUTH_ISSUER_URL'),
+        },
       }),
       inject: [ConfigService],
     }),
