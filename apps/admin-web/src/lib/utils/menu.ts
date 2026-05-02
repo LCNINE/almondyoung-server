@@ -63,7 +63,11 @@ export const mainMenus: MainMenu[] = [
             title: '메뉴 커스터마이즈',
             isComingSoon: true,
           },
-          { id: 'integration', title: '연동관리', isComingSoon: true },
+          {
+            id: 'integration',
+            title: 'OAuth 클라이언트',
+            path: '/company/integrations/oauth-clients',
+          },
         ],
       },
     ],
