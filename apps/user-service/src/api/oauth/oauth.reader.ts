@@ -1,26 +1,16 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DEMO_BYPASS_CLIENT_ID, findOAuthClient, OAuthClientConfig } from '../../config/oauth-clients';
+import { OAuthClientRow, OAuthRepository } from './oauth.repository';
 
 @Injectable()
 export class OAuthReader {
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly repo: OAuthRepository,
+    private readonly configService: ConfigService,
+  ) {}
 
-  isBypassEnabled(): boolean {
-    return this.configService.get<string>('OAUTH_BYPASS_VALIDATION') === 'true';
-  }
-
-  getClientOrThrow(clientId: string): OAuthClientConfig {
-    if (this.isBypassEnabled()) {
-      // TEMP: 시연용. 어떤 clientId가 와도 통과시키며, redirectUri 검증도 우회되도록 빈 배열을 둔다.
-      return {
-        clientId: clientId || DEMO_BYPASS_CLIENT_ID,
-        clientSecretHash: '',
-        redirectUris: [],
-        allowedScopes: undefined,
-      };
-    }
-    const client = findOAuthClient(clientId, this.configService.get<string>('OAUTH_CLIENTS'));
+  async getClientOrThrow(clientId: string): Promise<OAuthClientRow> {
+    const client = await this.repo.findActiveClientById(clientId);
     if (!client) throw new NotFoundException(`unknown client: ${clientId}`);
     return client;
   }

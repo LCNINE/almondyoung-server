@@ -29,9 +29,9 @@ export function setup(infra: IdpInfra) {
   // Kafka는 lcnine-platform이 VPC 내부 Redpanda를 PLAINTEXT로 제공 → API key/secret 불필요.
 
   // OAuth IdP 전용
-  const oauthClients = new sst.Secret("OauthClients");
+  // 클라이언트 등록 정보(clientId/secret/redirectUris/scopes)는 user-service `oauth_clients` 테이블이 SoT.
+  // env JSON(OAUTH_CLIENTS / OAUTH_ALLOWED_CLIENTS)과 시연용 bypass 플래그는 제거됨.
   const oauthInternalSecret = new sst.Secret("OauthInternalSecret");
-  const oauthAllowedClients = new sst.Secret("OauthAllowedClients");
 
   // ─── user-service 호스트는 id.<base>, auth-web은 auth.<base> ───
   const userServiceUrl = url("id");
@@ -88,10 +88,7 @@ export function setup(infra: IdpInfra) {
       // ECS task role fallback 경로로 동작하므로 ACCESS_KEY 쌍은 생략.
       AWS_REGION: "ap-northeast-2",
       AWS_S3_BUCKET: "almondyoung",
-      OAUTH_CLIENTS: oauthClients.value,
       OAUTH_INTERNAL_SECRET: oauthInternalSecret.value,
-      // TEMP: 내부 시연용. OAuth client / redirect_uri / client_secret / internal_secret 검증 우회.
-      OAUTH_BYPASS_VALIDATION: "true",
       // ─── 기능별 Secret 미세팅 상태 (후속 활성화 시 주석 해제) ───
       // KAKAO_CLIENT_ID: kakaoClientId.value,
       // KAKAO_CLIENT_SECRET: kakaoClientSecret.value,
@@ -122,9 +119,6 @@ export function setup(infra: IdpInfra) {
       ALLOWED_REDIRECT_HOSTS: `.${baseDomain}`,
       AUTH_WEB_ORIGIN: authWebUrl,
       OAUTH_INTERNAL_SECRET: oauthInternalSecret.value,
-      OAUTH_ALLOWED_CLIENTS: oauthAllowedClients.value,
-      // TEMP: 내부 시연용. redirect host / oauth client / redirect_uri 검증 우회.
-      OAUTH_BYPASS_VALIDATION: "true",
     },
   });
 
