@@ -53,8 +53,14 @@ function isInsideSstShell(): boolean {
  *  - `{company}-{env}` (신규 컨벤션, env ∈ platform/auth/services) → `deployments/{company}/{env}`
  */
 function deploymentToCwd(deployment: string): string {
+  const KNOWN_ENVS = ['platform', 'auth', 'services'];
   const parts = deployment.split('-');
-  if (parts.length === 2 && ['platform', 'auth', 'services'].includes(parts[1])) {
+  if (parts.length === 2) {
+    if (!KNOWN_ENVS.includes(parts[1])) {
+      throw new Error(
+        `Unknown deployment env "${parts[1]}" in "${deployment}". Expected one of: ${KNOWN_ENVS.join(', ')} (e.g. ${parts[0]}-services).`,
+      );
+    }
     return `deployments/${parts[0]}/${parts[1]}`;
   }
   return `deployments/${deployment}`;
