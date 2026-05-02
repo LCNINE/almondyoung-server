@@ -3,8 +3,11 @@ import { ApiResponse } from '@/lib/types/dto/api';
 import { AxiosResponse } from 'axios';
 import { client } from '../../client';
 
+export type OAuthClientType = 'confidential' | 'public';
+
 export interface OAuthClientResponse {
   clientId: string;
+  clientType: OAuthClientType;
   redirectUris: string[];
   allowedScopes: string[] | null;
   isActive: boolean;
@@ -16,11 +19,12 @@ export interface OAuthClientResponse {
 }
 
 export interface OAuthClientWithSecretResponse extends OAuthClientResponse {
-  clientSecret: string;
+  clientSecret: string | null;
 }
 
 export interface CreateOAuthClientDto {
   clientId: string;
+  clientType?: OAuthClientType;
   redirectUris: string[];
   allowedScopes?: string[];
 }

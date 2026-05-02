@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { AccountList } from "@/components/account-list";
 import { Button } from "@/components/ui/button";
@@ -7,7 +8,11 @@ import { hasParentRefreshToken } from "@/lib/parent-cookies";
 import { decodeJwtPayload } from "@/lib/jwt";
 import { sanitizeRedirectTo } from "@/lib/redirect";
 
-type SearchParams = Promise<{ redirect_to?: string; edit?: string }>;
+type SearchParams = Promise<{
+  redirect_to?: string;
+  edit?: string;
+  force_login?: string;
+}>;
 
 export default async function AccountHubPage({
   searchParams,
@@ -17,6 +22,13 @@ export default async function AccountHubPage({
   const params = await searchParams;
   const redirectTo = sanitizeRedirectTo(params.redirect_to) ?? "";
   const editing = params.edit === "1";
+
+  // prompt=login (authorize → /?force_login=1) → 계정 선택 건너뛰고 signin.
+  if (params.force_login === "1") {
+    const qs = new URLSearchParams();
+    if (redirectTo) qs.set("redirect_to", redirectTo);
+    redirect(`/signin?${qs.toString()}`);
+  }
 
   const accounts = await listAccounts();
   const parentRt = await hasParentRefreshToken();

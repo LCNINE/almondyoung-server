@@ -53,25 +53,39 @@ async function promoteTokens(
   return userId;
 }
 
+// OAuth code 발급 후 redirect_uri로 302. 성공/실패 모두 throw redirect.
+export async function issueOAuthCodeAndRedirect(
+  userId: string,
+  params: {
+    clientId: string;
+    redirectUri: string;
+    codeChallenge: string;
+    scope?: string;
+    state: string;
+  },
+): Promise<never> {
+  const { code } = await issueOAuthCodeInternal({
+    clientId: params.clientId,
+    userId,
+    redirectUri: params.redirectUri,
+    codeChallenge: params.codeChallenge,
+    codeChallengeMethod: "S256",
+    scope: params.scope,
+  });
+
+  const url = new URL(params.redirectUri);
+  url.searchParams.set("code", code);
+  url.searchParams.set("state", params.state);
+  redirect(url.toString());
+}
+
 async function redirectAfterAuth(
   userId: string,
   redirectToRaw: string | null | undefined,
 ): Promise<never> {
   const oauthParams = parseAuthorizeRedirectTarget(redirectToRaw);
   if (oauthParams) {
-    const { code } = await issueOAuthCodeInternal({
-      clientId: oauthParams.clientId,
-      userId,
-      redirectUri: oauthParams.redirectUri,
-      codeChallenge: oauthParams.codeChallenge,
-      codeChallengeMethod: "S256",
-      scope: oauthParams.scope,
-    });
-
-    const url = new URL(oauthParams.redirectUri);
-    url.searchParams.set("code", code);
-    url.searchParams.set("state", oauthParams.state);
-    redirect(url.toString());
+    return issueOAuthCodeAndRedirect(userId, oauthParams);
   }
 
   const redirectTo = sanitizeRedirectTo(redirectToRaw);

@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, MaxLength } from 'class-validator';
+import { IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class RevokeRequestDto {
   @ApiProperty()
@@ -7,10 +7,11 @@ export class RevokeRequestDto {
   @MaxLength(64)
   clientId: string;
 
-  @ApiProperty()
+  @ApiProperty({ required: false })
+  @IsOptional()
   @IsString()
   @MaxLength(256)
-  clientSecret: string;
+  clientSecret?: string;
 
   @ApiProperty()
   @IsString()
