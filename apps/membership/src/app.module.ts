@@ -41,6 +41,7 @@ import { PauseController } from './controllers/pause.controller';
 import { BenefitTrackingController } from './controllers/benefit-tracking.controller';
 import { SavingsController } from './controllers/savings.controller';
 import { WelcomeMembershipController } from './controllers/welcome-membership.controller';
+import { HealthController } from './controllers/health.controller';
 import { WelcomeMembershipService } from './services/welcome-membership.service';
 import { BillingManager } from './services/billing/billing.manager';
 import { BillingReader } from './services/billing/billing.reader';
@@ -88,6 +89,7 @@ import { JwtAuthGuard } from '@app/authorization';
     BenefitTrackingController,
     SavingsController,
     WelcomeMembershipController,
+    HealthController,
   ],
   providers: [
     {

@@ -34,9 +34,9 @@
 `auth/infra/shared.ts`
 
 - 위 SSM 두 키를 읽어 **platform VPC 공유** (`sst.aws.Vpc.get`). 같은 VPC 라서 Redpanda Cloud Map DNS 가 자동 해석됨.
-- 자체 소유: `Postgres("IdpDb")`, `Cluster`, **specific hostname ALB** (`id.<base>`).
+- 자체 소유: `Postgres("IdpDb")`, `Cluster`, **specific hostname ALB** (`user.<base>`).
   - services 의 wildcard ALB 와의 Route53 우선순위 충돌을 피하기 위함 (specific A record > wildcard alias).
-- 도메인: `id.dev.lcnine-dev.com` / live 시 `id.lcnine-dev.com`, `auth.<base>` 도 동일 패턴.
+- 도메인: `user.dev.lcnine-dev.com` / live 시 `user.lcnine-dev.com`, `auth.<base>` 도 동일 패턴.
 
 `auth/infra/services.ts`
 
