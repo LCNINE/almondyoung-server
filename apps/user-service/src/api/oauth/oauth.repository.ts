@@ -12,6 +12,7 @@ type CodeInsert = {
   codeChallenge: string;
   codeChallengeMethod: 'S256';
   scope?: string | null;
+  nonce?: string | null;
   expiresAt: Date;
 };
 
@@ -72,6 +73,7 @@ export class OAuthRepository {
       codeChallenge: input.codeChallenge,
       codeChallengeMethod: input.codeChallengeMethod,
       scope: input.scope ?? null,
+      nonce: input.nonce ?? null,
       expiresAt: input.expiresAt,
     });
   }

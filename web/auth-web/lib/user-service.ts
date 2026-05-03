@@ -126,6 +126,7 @@ export type IssueOAuthCodeInput = {
   codeChallenge: string;
   codeChallengeMethod: "S256";
   scope?: string;
+  nonce?: string;
 };
 
 export async function issueOAuthCodeInternal(

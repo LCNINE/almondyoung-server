@@ -124,7 +124,8 @@ export class OAuthController {
       postLogoutRedirectUri,
       state,
     });
-    this.clearParentCookies(reply);
+    // RP 들이 OIDC RP 로 전환된 후로는 user-service 가 parent-domain 쿠키를 set/clear 하지 않는다.
+    // 각 RP 가 자기 도메인의 자기 세션을 직접 정리한다 (admin-web 의 /api/auth/signout 등).
     const target = redirectUrl ?? this.defaultPostLogoutTarget();
     reply.redirect(target, HttpStatus.FOUND);
   }
@@ -150,7 +151,7 @@ export class OAuthController {
       postLogoutRedirectUri: body?.post_logout_redirect_uri,
       state: body?.state,
     });
-    this.clearParentCookies(reply);
+    // parent-domain cookie clear 는 폐기 — 위 GET 핸들러 주석 참고.
     return result;
   }
 
@@ -160,16 +161,6 @@ export class OAuthController {
     if (m?.[1]) return m[1];
     const cookieToken = (req as unknown as { cookies?: Record<string, string> }).cookies?.accessToken;
     return cookieToken ?? null;
-  }
-
-  private clearParentCookies(reply: FastifyReply): void {
-    const cookieDomain = this.configService.get<string>('COOKIE_DOMAIN');
-    const opts = {
-      path: '/',
-      ...(cookieDomain ? { domain: cookieDomain } : {}),
-    };
-    reply.clearCookie('accessToken', opts);
-    reply.clearCookie('refreshToken', opts);
   }
 
   private defaultPostLogoutTarget(): string {
