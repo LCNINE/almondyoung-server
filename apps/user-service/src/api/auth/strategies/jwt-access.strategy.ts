@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { INTERNAL_TOKEN_AUDIENCE } from '../../../constants/auth.constant';
+import { OAuthRepository } from '../../oauth/oauth.repository';
 import { UsersService } from '../../users/users.service';
 
 @Injectable()
@@ -10,6 +11,7 @@ export class JwtAccessStrategy extends PassportStrategy(Strategy) {
   constructor(
     private configService: ConfigService,
     private usersService: UsersService,
+    private oauthRepository: OAuthRepository,
   ) {
     const publicKey = configService.get<string>('OAUTH_JWT_PUBLIC_KEY');
     const issuer = configService.get<string>('OAUTH_ISSUER_URL');
@@ -34,12 +36,28 @@ export class JwtAccessStrategy extends PassportStrategy(Strategy) {
       ignoreExpiration: false,
       passReqToCallback: true,
       issuer,
-      audience: INTERNAL_TOKEN_AUDIENCE,
+      // audience 는 의도적으로 strategy 단에서 강제하지 않는다.
+      // INTERNAL_TOKEN_AUDIENCE 와 등록된 active OAuth client_id 양쪽을 모두 수용하기 때문.
+      // 실제 검증은 validate() 에서 수행한다 (oauth.manager.endSession 과 동일한 dual-audience 정책).
     });
   }
 
-  async validate(req: any, payload: { sub: string; email: string; roles: string[]; login_id?: string }) {
-    // JWT payload 정보 반환
+  async validate(
+    req: any,
+    payload: { sub: string; email: string; roles: string[]; login_id?: string; aud?: string | string[] },
+  ) {
+    const aud = Array.isArray(payload.aud) ? payload.aud[0] : payload.aud;
+    if (!aud) {
+      throw new UnauthorizedException('invalid token audience');
+    }
+
+    if (aud !== INTERNAL_TOKEN_AUDIENCE) {
+      const client = await this.oauthRepository.findActiveClientById(aud);
+      if (!client) {
+        throw new UnauthorizedException('invalid token audience');
+      }
+    }
+
     return {
       id: payload.sub,
       email: payload.email,
