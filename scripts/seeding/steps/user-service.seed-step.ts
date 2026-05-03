@@ -1,8 +1,32 @@
 import { sql } from 'drizzle-orm';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { SeedStep } from './base-seed-step';
 import { SeedCheckResult, SeedApplyResult } from '../lib/types';
 import { FIXED_UUIDS } from '../constants/uuids';
+
+/**
+ * OAuth RP 시드 정의. 새 RP 가 추가되면 여기 항목을 늘리고 orchestrator 의 collectConfig 에
+ * 대응 env 키만 추가하면 된다.
+ *
+ * - clientSecret 은 env 로 주입을 권장. 미주입 시 시더가 1회 생성·로그하고, 이후 실행에서는
+ *   `ON CONFLICT ... DO UPDATE` 가 secret_hash 를 건드리지 않으므로 안정적이다.
+ *   secret 회전이 필요하면 `/admin/oauth-clients/:clientId/rotate-secret` API 사용.
+ * - URL 이 비어 있으면 (env 미설정) 해당 client 는 시드 대상에서 제외된다.
+ */
+export type OAuthClientSeed = {
+  clientId: string;
+  clientType: 'confidential' | 'public';
+  redirectUris: string[];
+  postLogoutRedirectUris?: string[];
+  allowedScopes?: string[];
+  clientSecret?: string;
+};
+
+export type UserServiceSeedConfig = {
+  adminPassword: string;
+  oauthClients?: OAuthClientSeed[];
+};
 
 const ROLES = [
   { roleId: FIXED_UUIDS.ROLE_MASTER, name: 'master', description: '마스터' },
@@ -35,10 +59,12 @@ const ROLE_SCOPE_MAP: Record<string, string[]> = {
 
 export class UserServiceSeedStep extends SeedStep {
   private adminPassword: string;
+  private oauthClients: OAuthClientSeed[];
 
-  constructor(databaseUrl: string, adminPassword: string) {
+  constructor(databaseUrl: string, config: UserServiceSeedConfig) {
     super('User Service', databaseUrl);
-    this.adminPassword = adminPassword;
+    this.adminPassword = config.adminPassword;
+    this.oauthClients = config.oauthClients ?? [];
   }
 
   async check(): Promise<SeedCheckResult> {
@@ -70,6 +96,44 @@ export class UserServiceSeedStep extends SeedStep {
     const adminRoleIds = new Set(adminRoleRows.map((r) => r.role_id));
     const expectedAdminRoles = [FIXED_UUIDS.ROLE_MASTER, FIXED_UUIDS.ROLE_ADMIN];
     const missingAdminRoles = expectedAdminRoles.filter((id) => !adminRoleIds.has(id));
+
+    // OAuth clients: 행 자체 존재 + redirectUris/postLogoutRedirectUris 매칭까지 확인.
+    // (secret hash 는 회전 가능하므로 "있다 / 일치한다" 만 본다.)
+    let oauthMissing = 0;
+    const oauthMissingDetails: string[] = [];
+    if (this.oauthClients.length > 0) {
+      const expectedIds = this.oauthClients.map((c) => c.clientId);
+      const existingRows = await this.client.unsafe(
+        `SELECT client_id, redirect_uris, post_logout_redirect_uris
+           FROM oauth_clients
+          WHERE client_id = ANY($1) AND is_active = true`,
+        [expectedIds],
+      );
+      const byId = new Map<string, { redirect_uris: string[]; post_logout_redirect_uris: string[] | null }>(
+        existingRows.map((r) => [r.client_id as string, {
+          redirect_uris: (r.redirect_uris as string[]) ?? [],
+          post_logout_redirect_uris: (r.post_logout_redirect_uris as string[] | null) ?? null,
+        }]),
+      );
+      for (const seed of this.oauthClients) {
+        const existing = byId.get(seed.clientId);
+        if (!existing) {
+          oauthMissing++;
+          oauthMissingDetails.push(`${seed.clientId} (missing row)`);
+          continue;
+        }
+        const redirectsOk = seed.redirectUris.every((u) => existing.redirect_uris.includes(u));
+        const postLogout = seed.postLogoutRedirectUris ?? [];
+        const postLogoutOk =
+          postLogout.length === 0 ||
+          (existing.post_logout_redirect_uris ?? []).length > 0 &&
+            postLogout.every((u) => (existing.post_logout_redirect_uris ?? []).includes(u));
+        if (!redirectsOk || !postLogoutOk) {
+          oauthMissing++;
+          oauthMissingDetails.push(`${seed.clientId} (uri drift)`);
+        }
+      }
+    }
 
     const items = [
       {
@@ -108,6 +172,15 @@ export class UserServiceSeedStep extends SeedStep {
           (id) => ROLES.find((r) => r.roleId === id)?.name ?? id,
         ),
       },
+      ...(this.oauthClients.length > 0
+        ? [{
+            entity: 'oauth_clients',
+            expected: this.oauthClients.length,
+            existing: this.oauthClients.length - oauthMissing,
+            missing: oauthMissing,
+            missingDetails: oauthMissing > 0 ? oauthMissingDetails : undefined,
+          }]
+        : []),
     ];
 
     const isFullySeeded = items.every((i) => i.missing === 0);
@@ -190,7 +263,8 @@ export class UserServiceSeedStep extends SeedStep {
       itemsApplied += 2;
 
       // Step 6: Assign 'user' role to all existing users without any role
-      this.logger.step(6, 6, 'Assigning user role to existing users without roles');
+      const totalSteps = this.oauthClients.length > 0 ? 7 : 6;
+      this.logger.step(6, totalSteps, 'Assigning user role to existing users without roles');
       await this.db.execute(sql`
         INSERT INTO user_roles (user_id, role_id)
         SELECT u.id, r.role_id
@@ -202,6 +276,53 @@ export class UserServiceSeedStep extends SeedStep {
           )
         ON CONFLICT DO NOTHING
       `);
+
+      // Step 7: OAuth clients (멱등 upsert — 기존 secret_hash 는 덮지 않음).
+      if (this.oauthClients.length > 0) {
+        this.logger.step(7, totalSteps, 'Upserting OAuth clients');
+        for (const seed of this.oauthClients) {
+          const isPublic = seed.clientType === 'public';
+          const plaintextSecret = isPublic
+            ? null
+            : seed.clientSecret ?? crypto.randomBytes(32).toString('base64url');
+          // public client 는 secret 미사용이지만 schema NOT NULL 만족용 dummy hash. confidential 은 진짜 hash.
+          const secretHash = await bcrypt.hash(
+            plaintextSecret ?? crypto.randomBytes(32).toString('hex'),
+            10,
+          );
+
+          await this.db.execute(sql`
+            INSERT INTO oauth_clients (
+              client_id, client_type, client_secret_hash,
+              redirect_uris, post_logout_redirect_uris, allowed_scopes, is_active
+            )
+            VALUES (
+              ${seed.clientId},
+              ${seed.clientType},
+              ${secretHash},
+              ${JSON.stringify(seed.redirectUris)}::jsonb,
+              ${seed.postLogoutRedirectUris ? JSON.stringify(seed.postLogoutRedirectUris) : null}::jsonb,
+              ${seed.allowedScopes ? JSON.stringify(seed.allowedScopes) : null}::jsonb,
+              true
+            )
+            ON CONFLICT (client_id) DO UPDATE SET
+              redirect_uris = EXCLUDED.redirect_uris,
+              post_logout_redirect_uris = EXCLUDED.post_logout_redirect_uris,
+              allowed_scopes = EXCLUDED.allowed_scopes,
+              is_active = true,
+              updated_at = now()
+          `);
+
+          if (!isPublic && plaintextSecret && !seed.clientSecret) {
+            // env 미주입으로 우리가 secret 을 생성한 경우에만 1회 출력. 캡처해서 RP env 에 옮겨야 함.
+            // (다음 실행에서는 기존 행이 있어 ON CONFLICT 가 secret_hash 를 안 건드리므로 안전.)
+            this.logger.warn(
+              `Generated client_secret for "${seed.clientId}" — capture this value (will not be shown again):\n  ${plaintextSecret}`,
+            );
+          }
+          itemsApplied += 1;
+        }
+      }
 
       this.logger.success('User Service seeding completed');
       return { service: 'User Service', success: true, itemsApplied, duration: Date.now() - start };
