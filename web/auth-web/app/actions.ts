@@ -9,10 +9,10 @@ import {
 } from "@/lib/account-store";
 import { env } from "@/lib/env";
 import {
-  clearParentAuthCookies,
-  getParentAccessToken,
-  setParentAuthCookies,
-} from "@/lib/parent-cookies";
+  clearIdpSessionCookies,
+  getIdpAccessToken,
+  setIdpSessionCookies,
+} from "@/lib/idp-session";
 import { normalizePhoneNumber } from "@/lib/phone-number";
 import { parseAuthorizeRedirectTarget } from "@/lib/oauth-redirect";
 import { sanitizeRedirectTo } from "@/lib/redirect";
@@ -51,7 +51,7 @@ async function promoteTokens(
     },
     tokens.refreshToken,
   );
-  await setParentAuthCookies({ ...tokens, rememberMe });
+  await setIdpSessionCookies({ ...tokens, rememberMe });
   return me.id;
 }
 
@@ -64,6 +64,7 @@ export async function issueOAuthCodeAndRedirect(
     codeChallenge: string;
     scope?: string;
     state: string;
+    nonce?: string;
   },
 ): Promise<never> {
   const { code } = await issueOAuthCodeInternal({
@@ -73,6 +74,7 @@ export async function issueOAuthCodeAndRedirect(
     codeChallenge: params.codeChallenge,
     codeChallengeMethod: "S256",
     scope: params.scope,
+    nonce: params.nonce,
   });
 
   const url = new URL(params.redirectUri);
@@ -198,7 +200,7 @@ export async function selectAccountAction(
     return { ok: false, error: "계정 정보가 일치하지 않습니다" };
   }
 
-  await setParentAuthCookies({ accessToken, refreshToken });
+  await setIdpSessionCookies({ accessToken, refreshToken });
   return redirectAfterAuth(resolvedUserId, redirectToRaw);
 }
 
@@ -212,7 +214,7 @@ export async function removeAccountAction(userId: string): Promise<void> {
  * parent cookie도 만료. 마지막에 redirectTo (또는 / )로 navigate.
  */
 export async function signOutAction(redirectTo?: string | null): Promise<never> {
-  const accessToken = await getParentAccessToken();
+  const accessToken = await getIdpAccessToken();
 
   // user-service에 server-to-server 호출. 토큰이 없으면 cookie clear만.
   if (accessToken) {
@@ -230,7 +232,7 @@ export async function signOutAction(redirectTo?: string | null): Promise<never> 
     }
   }
 
-  await clearParentAuthCookies();
+  await clearIdpSessionCookies();
   redirect(sanitizeRedirectTo(redirectTo) ?? "/");
 }
 

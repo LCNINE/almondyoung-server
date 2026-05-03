@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { AccountList } from "@/components/account-list";
 import { Button } from "@/components/ui/button";
 import { listAccounts } from "@/lib/account-store";
-import { hasParentRefreshToken } from "@/lib/parent-cookies";
+import { hasIdpRefreshToken } from "@/lib/idp-session";
 import { decodeJwtPayload } from "@/lib/jwt";
 import { sanitizeRedirectTo } from "@/lib/redirect";
 
@@ -31,9 +31,9 @@ export default async function AccountHubPage({
   }
 
   const accounts = await listAccounts();
-  const parentRt = await hasParentRefreshToken();
-  const activeUserId = parentRt
-    ? decodeJwtPayload<{ sub: string }>(parentRt)?.sub ?? null
+  const idpRt = await hasIdpRefreshToken();
+  const activeUserId = idpRt
+    ? decodeJwtPayload<{ sub: string }>(idpRt)?.sub ?? null
     : null;
 
   const qs = new URLSearchParams();

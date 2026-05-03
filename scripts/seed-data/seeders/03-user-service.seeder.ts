@@ -2,14 +2,39 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { Logger } from '../shared/logger';
 import { FIXED_UUIDS } from '../constants/uuids';
 
 const logger = new Logger('User Service Seeder');
 
+const BCRYPT_COST = 10;
+
+export interface OAuthClientSeed {
+  clientId: string;
+  clientType: 'confidential' | 'public';
+  redirectUris: string[];
+  postLogoutRedirectUris?: string[];
+  allowedScopes?: string[];
+  /**
+   * confidential client 의 평문 secret. 미지정 시 랜덤 생성 후 로그에 1회만 출력 (개발/시드 환경 전용).
+   * public client 면 무시된다.
+   */
+  clientSecret?: string;
+}
+
+export interface SeedUserServiceOptions {
+  /**
+   * 등록할 OAuth client 목록. RP 가 늘어나면 이 배열에 항목을 추가한다.
+   * 시드는 멱등 — 이미 같은 clientId 가 있으면 redirect_uris/scopes/active 만 갱신하고 secret 은 보존한다.
+   */
+  oauthClients?: OAuthClientSeed[];
+}
+
 export async function seedUserService(
   databaseUrl: string,
   adminPassword: string,
+  options: SeedUserServiceOptions = {},
 ): Promise<void> {
   logger.info('Starting User Service seeding');
 
@@ -188,6 +213,56 @@ export async function seedUserService(
     `);
 
     logger.success('Assigned user role to existing users without roles');
+
+    // Step 7: Upsert OAuth clients
+    if (options.oauthClients && options.oauthClients.length > 0) {
+      logger.step(7, 7, 'Upserting OAuth clients');
+      for (const seed of options.oauthClients) {
+        const isPublic = seed.clientType === 'public';
+        const plaintextSecret = isPublic
+          ? null
+          : seed.clientSecret ?? crypto.randomBytes(32).toString('base64url');
+        const secretHash = await bcrypt.hash(
+          plaintextSecret ?? crypto.randomBytes(32).toString('hex'),
+          BCRYPT_COST,
+        );
+
+        // 멱등 upsert. 이미 존재하면 redirectUris/postLogoutRedirectUris/allowedScopes/isActive 만 갱신.
+        // client_secret_hash 는 새 row 일 때만 채우고, 기존 row 의 secret 은 절대 덮어쓰지 않는다
+        // (한 번 발급된 secret 을 운영 중에 유실시키지 않기 위함). secret 회전이 필요하면
+        // /admin/oauth-clients/:clientId/rotate-secret API 를 사용한다.
+        await db.execute(sql`
+          INSERT INTO oauth_clients (
+            client_id, client_type, client_secret_hash,
+            redirect_uris, post_logout_redirect_uris, allowed_scopes, is_active
+          )
+          VALUES (
+            ${seed.clientId},
+            ${seed.clientType},
+            ${secretHash},
+            ${JSON.stringify(seed.redirectUris)}::jsonb,
+            ${seed.postLogoutRedirectUris ? JSON.stringify(seed.postLogoutRedirectUris) : null}::jsonb,
+            ${seed.allowedScopes ? JSON.stringify(seed.allowedScopes) : null}::jsonb,
+            true
+          )
+          ON CONFLICT (client_id) DO UPDATE SET
+            redirect_uris = EXCLUDED.redirect_uris,
+            post_logout_redirect_uris = EXCLUDED.post_logout_redirect_uris,
+            allowed_scopes = EXCLUDED.allowed_scopes,
+            is_active = true,
+            updated_at = now()
+        `);
+
+        if (!isPublic && plaintextSecret && !seed.clientSecret) {
+          // env 로 secret 을 안 넘겨준 경우에만 생성된 secret 을 한 번 출력. 캡처해서 RP env 에 옮겨야 한다.
+          logger.warn(
+            `Generated client_secret for "${seed.clientId}" — capture this value (will not be shown again):\n  ${plaintextSecret}`,
+          );
+        }
+      }
+      logger.success(`Upserted ${options.oauthClients.length} OAuth client(s)`);
+    }
+
     logger.success('User Service seeding completed successfully');
   } catch (error) {
     logger.error('User Service seeding failed', error);

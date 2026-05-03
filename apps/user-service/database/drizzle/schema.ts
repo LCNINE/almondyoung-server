@@ -401,6 +401,7 @@ export const oauthAuthorizationCodes = pgTable(
     codeChallenge: varchar('code_challenge', { length: 256 }).notNull(),
     codeChallengeMethod: oauthCodeChallengeMethodEnum('code_challenge_method').notNull(),
     scope: varchar('scope', { length: 1024 }),
+    nonce: varchar('nonce', { length: 512 }),
     expiresAt: timestamp('expires_at').notNull(),
     consumedAt: timestamp('consumed_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),

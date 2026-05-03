@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { UserEvents } from '@packages/event-contracts/streams';
 import { type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import * as schema from '../../../database/drizzle/schema';
 import { roleScopeMapping as authRoleScopeMapping, scopes as authScopes } from '@app/authorization';
 import { AddressDto } from '../../commons/dto/address.dto';
@@ -260,6 +260,29 @@ export class UsersService {
     } catch (error) {
       throw new InternalServerErrorException('사용자 정보 업데이트 중 오류가 발생했습니다.');
     }
+  }
+
+  /**
+   * 사용자의 활성 역할 이름 목록을 평문 string[] 으로 반환.
+   * OAuth access_token 의 `roles` claim 에 그대로 박는 용도. expiresAt 이 null 이거나
+   * 미래인 역할만 포함한다 (auth.service.ts 의 동명 메서드와 동일 정책).
+   */
+  async getUserRoleNames(userId: string, tx?: DbTransaction): Promise<string[]> {
+    const client = this.getClient(tx);
+    const rows = await client
+      .select({ roleName: schema.roles.name })
+      .from(schema.userRoleAssignments)
+      .innerJoin(schema.roles, eq(schema.userRoleAssignments.roleId, schema.roles.roleId))
+      .where(
+        and(
+          eq(schema.userRoleAssignments.userId, userId),
+          or(
+            isNull(schema.userRoleAssignments.expiresAt),
+            gt(schema.userRoleAssignments.expiresAt, new Date()),
+          ),
+        ),
+      );
+    return [...new Set(rows.map((r) => r.roleName))];
   }
 
   // 사용자의 권한 정보 조회

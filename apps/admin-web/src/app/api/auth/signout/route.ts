@@ -1,43 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const USER_SERVICE_BASE_URL =
-  process.env.USER_SERVICE_URL ?? 'http://localhost:3030';
+import { buildEndSessionUrl } from '@/lib/auth/oidc-client';
+import { clearSessionCookiesOn } from '@/lib/auth/session-cookies';
 
-const PARENT_COOKIE_DOMAIN = process.env.PARENT_COOKIE_DOMAIN ?? '';
-const PARENT_COOKIE_SECURE =
-  (process.env.PARENT_COOKIE_SECURE ?? 'true') === 'true';
-const PARENT_COOKIE_SAMESITE = (process.env.PARENT_COOKIE_SAMESITE ?? 'lax') as
-  | 'lax'
-  | 'strict'
-  | 'none';
+/**
+ * 로그아웃: admin-web 자체 세션 쿠키를 비우고, IdP `/oauth/end_session` 으로 redirect.
+ * IdP 가 사용자 측 SSO 세션과 모든 OAuth refresh token 을 revoke 한 뒤
+ * `post_logout_redirect_uri` 화이트리스트에 매칭되는 URL 로 다시 redirect 한다.
+ *
+ * 클라이언트가 fetch 로 호출하는 시나리오를 위해 200 + `{ redirectUrl }` 도 함께 반환 — 호출자가
+ * 그 URL 로 location.assign 하면 된다.
+ */
+export async function POST(request: NextRequest): Promise<NextResponse> {
+  const idToken = request.cookies.get('idToken')?.value ?? null;
+  const redirectUrl = buildEndSessionUrl(idToken);
 
-export async function POST(request: NextRequest) {
-  const accessToken = request.cookies.get('accessToken')?.value ?? '';
-  const refreshToken = request.cookies.get('refreshToken')?.value ?? '';
+  const response = NextResponse.json({ redirectUrl }, { status: 200 });
+  clearSessionCookiesOn(response.cookies);
+  return response;
+}
 
-  await fetch(`${USER_SERVICE_BASE_URL}/auth/signout`, {
-    method: 'POST',
-    headers: {
-      Cookie: `accessToken=${accessToken}; refreshToken=${refreshToken}`,
-    },
-  }).catch(() => {
-    // user-service 오류가 있어도 로컬 쿠키는 반드시 삭제
-  });
-
-  const response = NextResponse.json({ success: true });
-
-  // 부모 도메인 쿠키 삭제 — auth-web과 동일 속성으로 만료
-  const cookieOptions = {
-    httpOnly: true,
-    secure: PARENT_COOKIE_SECURE,
-    sameSite: PARENT_COOKIE_SAMESITE,
-    domain: PARENT_COOKIE_DOMAIN || undefined,
-    path: '/',
-    maxAge: 0,
-  };
-
-  response.cookies.set('accessToken', '', cookieOptions);
-  response.cookies.set('refreshToken', '', cookieOptions);
-
+/**
+ * GET 으로 진입하면 곧장 IdP end_session 으로 navigate. 사용자가 `/api/auth/signout` 링크를
+ * 직접 누르거나 navigate 하는 시나리오 대응.
+ */
+export async function GET(request: NextRequest): Promise<NextResponse> {
+  const idToken = request.cookies.get('idToken')?.value ?? null;
+  const response = NextResponse.redirect(buildEndSessionUrl(idToken));
+  clearSessionCookiesOn(response.cookies);
   return response;
 }

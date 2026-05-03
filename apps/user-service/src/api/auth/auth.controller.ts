@@ -8,6 +8,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Logger,
   Post,
   Query,
   Req,
@@ -34,6 +35,8 @@ import { LocalSignUpDto } from './dto/sign-up.dto';
 @ApiBearerAuth('access-token')
 @Controller('auth')
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   constructor(
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
@@ -109,13 +112,33 @@ export class AuthController {
     return this.authService.signOut(request, reply);
   }
 
-  @ApiOperation({ summary: '토큰 재발급' })
+  /**
+   * @deprecated OIDC RP 들은 표준 `/oauth/token` (refresh_token grant) 을 사용해야 한다.
+   * 이 엔드포인트는 admin-web 이 OIDC RP 로 전환되기 전 parent-domain 쿠키 SSO 를 위해 존재했고,
+   * 지금은 storefront 의 `/api/auth/restore-token` 프록시, df-admin, wallet-web, auth-web 의
+   * 자체 IdP 세션 복구 등에서만 호출된다. 이들이 모두 OIDC 또는 user-service 자체 BFF 로 마이그레이션되면
+   * 이 라우트를 제거할 예정. 호출 빈도/소비자 식별을 위해 deprecation warning 로그 발행.
+   */
+  @ApiOperation({
+    summary: '[deprecated] 토큰 재발급 — 신규 클라이언트는 /oauth/token (refresh_token grant) 사용',
+    deprecated: true,
+  })
   @ApiResponse({ status: 200, description: '토큰 재발급 성공' })
   @Public()
   @Post('restore-token')
   @UseGuards(AuthGuard('jwt-refresh'))
   @HttpCode(HttpStatus.OK)
-  async restoreToken(@Res({ passthrough: true }) res: FastifyReply, @CurrentUser() user: JwtPayload) {
+  async restoreToken(
+    @Req() req: FastifyRequest,
+    @Res({ passthrough: true }) res: FastifyReply,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    const ua = req.headers['user-agent'] ?? 'unknown';
+    const referer = req.headers['referer'] ?? '-';
+    this.logger.warn(
+      `DEPRECATED /auth/restore-token called by userId=${user.id} ua="${ua}" referer="${referer}". ` +
+        `Migrate caller to OIDC /oauth/token (refresh_token grant).`,
+    );
     return await this.authService.restoreToken(user.id, res);
   }
 
