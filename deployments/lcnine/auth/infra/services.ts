@@ -33,8 +33,8 @@ export function setup(infra: IdpInfra) {
   // env JSON(OAUTH_CLIENTS / OAUTH_ALLOWED_CLIENTS)과 시연용 bypass 플래그는 제거됨.
   const oauthInternalSecret = new sst.Secret("OauthInternalSecret");
 
-  // ─── user-service 호스트는 id.<base>, auth-web은 auth.<base> ───
-  const userServiceUrl = url("id");
+  // ─── user-service 호스트는 user.<base>, auth-web은 auth.<base> ───
+  const userServiceUrl = url("user");
   const authWebUrl = url("auth");
 
   // ─── user-service ───

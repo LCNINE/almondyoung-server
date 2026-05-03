@@ -22,7 +22,7 @@ export default $config({
 
     return {
       dbHost: infra.db.host,
-      userServiceUrl: infra.url("id"),
+      userServiceUrl: infra.url("user"),
       authWebUrl: infra.url("auth"),
     };
   },
