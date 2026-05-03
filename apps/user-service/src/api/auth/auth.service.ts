@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import * as jwt from 'jsonwebtoken';
 import { UserEvents } from '@packages/event-contracts/streams';
 import {
   User,
@@ -730,8 +731,14 @@ export class AuthService {
     const expiresIn = JWT_ACCESS_TOKEN_EXPIRATION;
 
     // 내부 access token도 OAuth와 동일한 RS256 키로 서명. audience로 OAuth 발급 토큰과 구분.
-    const accessToken = await this.jwtService.signAsync(payload, {
-      privateKey: this.configService.getOrThrow<string>('OAUTH_JWT_PRIVATE_KEY'),
+    // NOTE: NestJS JwtService 를 쓰지 않는 이유 — auth.module 의 JwtModule 이 모듈 레벨에
+    //   `secret: JWT_VERIFICATION_TOKEN_SECRET` 을 설정해 놓았는데, JwtService.getSecretKey 의
+    //   precedence 가 `options?.secret || this.options.secret || (...privateKey...)` 라서
+    //   호출부에서 `{ privateKey, algorithm: 'RS256' }` 을 넘겨도 모듈의 HS256 secret 이 우선
+    //   적용된다. 결과적으로 jsonwebtoken 이 HMAC string 을 RS256 으로 서명하려다
+    //   "must be an asymmetric key when using RS256" 으로 실패한다.
+    //   → 이 경로만 jsonwebtoken 직접 호출로 우회한다.
+    const accessToken = jwt.sign(payload, this.configService.getOrThrow<string>('OAUTH_JWT_PRIVATE_KEY'), {
       algorithm: 'RS256',
       expiresIn,
       issuer: this.configService.getOrThrow<string>('OAUTH_ISSUER_URL'),

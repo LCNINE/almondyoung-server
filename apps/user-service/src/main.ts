@@ -1,7 +1,6 @@
 import './tracing';
 import { GlobalExceptionFilter } from '@app/shared/filters/http-exception.filter';
 import fastifyCookie from '@fastify/cookie';
-import fastifyFormbody from '@fastify/formbody';
 import fastifyCors from '@fastify/cors';
 import fastifyHelmet from '@fastify/helmet';
 import fastifyMultipart from '@fastify/multipart';
@@ -56,8 +55,9 @@ async function bootstrap() {
 
   await app.register(fastifyCookie);
 
-  // RFC 6749 §3.2 token endpoint 는 application/x-www-form-urlencoded 를 받는다.
-  await app.register(fastifyFormbody);
+  // application/x-www-form-urlencoded 는 NestFastifyAdapter 가 listen() 단계에서 자동 등록한다
+  // (RFC 6749 §3.2 token endpoint 가 이 content-type 을 받음). 여기서 fastifyFormbody 를 또
+  // 등록하면 FST_ERR_CTP_ALREADY_PRESENT 로 부팅이 실패하므로 명시 등록하지 않는다.
 
   await app.register(fastifySession, {
     secret: configService.getOrThrow<string>('AUTH_SECRET'),
