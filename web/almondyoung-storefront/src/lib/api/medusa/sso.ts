@@ -76,6 +76,14 @@ type DecodedToken = {
   auth_identity_id?: string
   actor_type?: string
   app_metadata?: { customer_id?: string }
+  // Medusa core 가 generateJwtTokenForAuthIdentity 에서 provider_identity.user_metadata 를 그대로 embed.
+  // 우리 user-service-sso 가 채우는 키: email, name, login_id, email_verified.
+  user_metadata?: {
+    email?: string
+    name?: string
+    login_id?: string
+    email_verified?: boolean
+  }
 }
 
 /**
@@ -115,12 +123,42 @@ export async function oidcCallback(args: {
     return { success: false, error: `failed to decode JWT: ${(e as Error).message}` }
   }
 
-  // 신규 사용자: customer 레코드가 없으므로 생성 후 토큰 재발급
+  // TEMP DIAG: Medusa 가 발급한 JWT 의 실제 키와 user_metadata 내용 확인.
+  console.log(
+    "[oidcCallback DIAG] decoded JWT keys=",
+    Object.keys(decoded as Record<string, unknown>).join(","),
+    " user_metadata keys=",
+    Object.keys((decoded as { user_metadata?: Record<string, unknown> }).user_metadata ?? {}).join(","),
+    " email_present=",
+    !!decoded.user_metadata?.email,
+    " actor_id=",
+    (decoded as { actor_id?: string }).actor_id,
+    " auth_identity_id=",
+    (decoded as { auth_identity_id?: string }).auth_identity_id,
+  )
+
+  // 신규 사용자: customer 레코드가 없으므로 생성 후 토큰 재발급.
+  // Medusa POST /store/customers 는 body.email 을 필수로 요구 (validate-customer-account-creation step).
+  // user-service SSO provider 가 user_metadata 에 email/name 을 채워 두므로, JWT 에서 꺼내 그대로 전달한다.
   if (!decoded.actor_id && !decoded.app_metadata?.customer_id) {
+    const email = decoded.user_metadata?.email
+    if (!email) {
+      return {
+        success: false,
+        error: "user_metadata.email missing in auth token — check user-service-sso provider mapping",
+      }
+    }
+    const fullName = decoded.user_metadata?.name?.trim()
+    const [firstName, ...rest] = fullName ? fullName.split(/\s+/) : []
+    const lastName = rest.join(" ") || undefined
     const createRes = await medusaFetch(`/store/customers`, {
       method: "POST",
       headers: { authorization: `Bearer ${token}` },
-      body: JSON.stringify({}),
+      body: JSON.stringify({
+        email,
+        ...(firstName ? { first_name: firstName } : {}),
+        ...(lastName ? { last_name: lastName } : {}),
+      }),
     })
 
     if (!createRes.ok) {
