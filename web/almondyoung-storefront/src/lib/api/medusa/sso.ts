@@ -123,20 +123,6 @@ export async function oidcCallback(args: {
     return { success: false, error: `failed to decode JWT: ${(e as Error).message}` }
   }
 
-  // TEMP DIAG: Medusa 가 발급한 JWT 의 실제 키와 user_metadata 내용 확인.
-  console.log(
-    "[oidcCallback DIAG] decoded JWT keys=",
-    Object.keys(decoded as Record<string, unknown>).join(","),
-    " user_metadata keys=",
-    Object.keys((decoded as { user_metadata?: Record<string, unknown> }).user_metadata ?? {}).join(","),
-    " email_present=",
-    !!decoded.user_metadata?.email,
-    " actor_id=",
-    (decoded as { actor_id?: string }).actor_id,
-    " auth_identity_id=",
-    (decoded as { auth_identity_id?: string }).auth_identity_id,
-  )
-
   // 신규 사용자: customer 레코드가 없으므로 생성 후 토큰 재발급.
   // Medusa POST /store/customers 는 body.email 을 필수로 요구 (validate-customer-account-creation step).
   // user-service SSO provider 가 user_metadata 에 email/name 을 채워 두므로, JWT 에서 꺼내 그대로 전달한다.
