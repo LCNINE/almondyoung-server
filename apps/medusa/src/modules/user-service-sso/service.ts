@@ -182,21 +182,12 @@ export class UserServiceSsoProviderService extends AbstractAuthModuleProvider {
       login_id: claims.preferred_username ?? claims.login_id,
     };
 
-    // TEMP DIAG: id_token 클레임 / userinfo 결과 / 최종 user_metadata 까지의 경로 추적.
-    this.logger_.info(
-      `[user-service-sso DIAG] id_token claims keys=${Object.keys(claims).join(',')} email=${!!claims.email} name=${!!claims.name}`,
-    );
-
     // id_token 클레임이 비어 있으면 userinfo로 보충
     if (!userMetadata.email || !userMetadata.name) {
-      this.logger_.info(`[user-service-sso DIAG] fetching userinfo (access_token len=${tokens.access_token?.length ?? 0})`);
       const userinfo = await this.fetchUserinfo(tokens.access_token).catch((e) => {
         this.logger_.warn(`user-service-sso: userinfo fetch failed — ${e?.message}`);
         return undefined;
       });
-      this.logger_.info(
-        `[user-service-sso DIAG] userinfo result: ${userinfo ? `keys=${Object.keys(userinfo).join(',')} email=${!!userinfo.email}` : 'undefined'}`,
-      );
       if (userinfo) {
         userMetadata = {
           ...userMetadata,
@@ -206,9 +197,6 @@ export class UserServiceSsoProviderService extends AbstractAuthModuleProvider {
         };
       }
     }
-    this.logger_.info(
-      `[user-service-sso DIAG] final user_metadata: email=${!!userMetadata.email} name=${!!userMetadata.name} login_id=${!!userMetadata.login_id}`,
-    );
 
     const providerMetadata: Record<string, unknown> = {
       iss: claims.iss,
@@ -217,21 +205,14 @@ export class UserServiceSsoProviderService extends AbstractAuthModuleProvider {
     };
 
     let authIdentity;
-    let opTaken: 'update' | 'create' = 'update';
     try {
       authIdentity = await authIdentityService.retrieve({ entity_id });
-      this.logger_.info(
-        `[user-service-sso DIAG] retrieve OK: pre-update provider_identities len=${authIdentity?.provider_identities?.length ?? 0} ` +
-          `pi[0].provider=${authIdentity?.provider_identities?.[0]?.provider} ` +
-          `pi[0].user_metadata keys=${Object.keys(authIdentity?.provider_identities?.[0]?.user_metadata ?? {}).join(',')}`,
-      );
       authIdentity = await authIdentityService.update(entity_id, {
         user_metadata: { ...authIdentity.user_metadata, ...userMetadata },
         provider_metadata: { ...authIdentity.provider_metadata, ...providerMetadata },
       });
     } catch (error: any) {
       if (error?.type === MedusaError.Types.NOT_FOUND) {
-        opTaken = 'create';
         authIdentity = await authIdentityService.create({
           entity_id,
           user_metadata: userMetadata,
@@ -241,20 +222,6 @@ export class UserServiceSsoProviderService extends AbstractAuthModuleProvider {
         return { success: false, error: error?.message ?? 'Failed to resolve auth identity' };
       }
     }
-
-    // TEMP DIAG: JWT 생성 직전 authIdentity 의 provider_identities[*].user_metadata 가 정말 채워졌는지.
-    // Medusa core 의 generateJwtTokenForAuthIdentity 가 이 값을 그대로 JWT user_metadata 로 embed.
-    const pis = (authIdentity as any)?.provider_identities ?? [];
-    this.logger_.info(
-      `[user-service-sso DIAG] post-${opTaken}: ai.id=${(authIdentity as any)?.id} ` +
-        `provider_identities len=${pis.length} ` +
-        pis
-          .map(
-            (pi: any, i: number) =>
-              `pi[${i}].provider=${pi?.provider} pi[${i}].user_metadata keys=${Object.keys(pi?.user_metadata ?? {}).join(',')} email=${!!pi?.user_metadata?.email}`,
-          )
-          .join(' | '),
-    );
 
     return { success: true, authIdentity };
   }
