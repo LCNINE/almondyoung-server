@@ -59,6 +59,31 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     );
 
     setAuthCookie(res, token);
+
+    // user-service-sso: storefront 가 단일 OIDC exchange 로 medusa JWT 와 user-service IdP 토큰을
+    // 동시에 받을 수 있도록 provider_metadata 에 보관된 access/refresh 를 응답에 함께 노출한다.
+    // 두 토큰 라이프사이클을 같은 origin (이 콜백 응답) 에 묶기 위함.
+    if (auth_provider === 'user-service-sso') {
+      // AuthIdentityDTO 는 provider_identities[].provider_metadata 에 우리가 update 한 값을 보관한다.
+      const providerIdentity =
+        authIdentity?.provider_identities?.find((pi) => pi.provider === 'user-service-sso') ??
+        authIdentity?.provider_identities?.[0];
+      const meta = (providerIdentity?.provider_metadata ?? {}) as Record<string, unknown>;
+      const access_token = typeof meta.access_token === 'string' ? meta.access_token : undefined;
+      const refresh_token = typeof meta.refresh_token === 'string' ? meta.refresh_token : undefined;
+      const expires_at = typeof meta.access_token_expires_at === 'number' ? meta.access_token_expires_at : undefined;
+      if (access_token && refresh_token) {
+        return res.status(200).json({
+          token,
+          idp_tokens: {
+            access_token,
+            refresh_token,
+            ...(expires_at ? { expires_at } : {}),
+          },
+        });
+      }
+    }
+
     return res.status(200).json({ token });
   }
 

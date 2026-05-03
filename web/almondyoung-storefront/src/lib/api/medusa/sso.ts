@@ -4,8 +4,9 @@ import { requireBackendBaseUrl } from "@/lib/config/backend"
 import {
   getCacheTag,
   getCartId,
-  removeMedusaAuthToken,
+  removeAllAuthTokens,
   setMedusaAuthToken,
+  setTokenCookies,
 } from "@lib/data/cookies"
 import { revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
@@ -110,9 +111,16 @@ export async function oidcCallback(args: {
     return { success: false, error: `callback failed: ${callbackRes.status} ${text}` }
   }
 
-  const { token } = (await callbackRes.json()) as { token: string }
+  const callbackJson = (await callbackRes.json()) as {
+    token: string
+    idp_tokens?: { access_token: string; refresh_token: string; expires_at?: number }
+  }
+  const { token, idp_tokens } = callbackJson
   if (!token) {
     return { success: false, error: "no token in callback response" }
+  }
+  if (!idp_tokens?.access_token || !idp_tokens?.refresh_token) {
+    return { success: false, error: "callback did not include idp_tokens — provider misconfigured" }
   }
 
   let finalToken = token
@@ -165,6 +173,7 @@ export async function oidcCallback(args: {
   }
 
   await setMedusaAuthToken(finalToken)
+  await setTokenCookies(idp_tokens.access_token, idp_tokens.refresh_token)
 
   const customerCacheTag = await getCacheTag("customers")
   if (customerCacheTag) revalidateTag(customerCacheTag)
@@ -192,7 +201,8 @@ export async function oidcCallback(args: {
  * 로그아웃: _medusa_jwt 제거 후 user-service /oauth/end_session으로 redirect.
  */
 export async function oidcSignOut(countryCode: string): Promise<void> {
-  await removeMedusaAuthToken()
+  // _medusa_jwt 와 user-service accessToken/refreshToken 모두 제거 (단일 OIDC 세션 라이프사이클).
+  await removeAllAuthTokens()
 
   const issuer = process.env.OIDC_ISSUER_URL ?? process.env.NEXT_PUBLIC_USER_SERVICE_URL
   const clientId = process.env.OIDC_CLIENT_ID ?? "medusa-storefront"
