@@ -56,6 +56,10 @@ export function setup(infra: SharedInfra) {
   // Medusa
   const medusaJwtSecret = new sst.Secret("MedusaJwtSecret");
   const medusaCookieSecret = new sst.Secret("MedusaCookieSecret");
+  // medusa-storefront RP 의 OIDC client_secret. user-service 시드 시 등록된 값과 동일해야 한다.
+  const medusaOidcClientSecret = new sst.Secret("MedusaOidcClientSecret");
+  // admin-web RP 의 OIDC client_secret. user-service 시드 시 등록된 값과 동일해야 한다.
+  const adminWebOidcClientSecret = new sst.Secret("AdminWebOidcClientSecret");
 
   // Storefront
   const medusaPublishableKey = new sst.Secret("MedusaPublishableKey");
@@ -275,6 +279,14 @@ export function setup(infra: SharedInfra) {
       FRONTEND_URL: url("www"),
       USER_SERVICE_URL: idpUserServiceUrl,
       MEDUSA_BACKEND_URL: url("medusa"),
+      // OIDC: medusa-config.js 는 AUTH_WEB_URL 이 truthy 일 때만 user-service-sso provider 를 등록한다.
+      // 아래 5개는 모두 set 되어야 storefront 의 /auth/customer/user-service-sso 가 동작.
+      AUTH_WEB_URL: idpAuthWebUrl,
+      OIDC_ISSUER_URL: idpUserServiceUrl,
+      OIDC_CLIENT_ID: "medusa-storefront",
+      OIDC_CLIENT_SECRET: medusaOidcClientSecret.value,
+      OIDC_SCOPES: "openid email profile",
+      SSO_DEFAULT_CALLBACK_URL: $interpolate`${url("www")}/kr/callback/oidc`,
       WALLET_BASE_URL: url("wallet"),
       WALLET_API_KEY: walletApiKey.value,
       WMS_API_URL: url("core"),
@@ -295,6 +307,8 @@ export function setup(infra: SharedInfra) {
   });
 
   // ─── admin-web (Next.js / OpenNext, CloudFront) ───
+  // admin-web 자체가 OIDC RP. 빌드 단계의 page-data collection 이 OIDC env 를 required 로 읽으므로,
+  // 아래 7개 변수는 누락 시 OpenNext 빌드가 실패한다 (apps/admin-web/src/lib/auth/env.ts 참조).
   new sst.aws.Nextjs("AdminWeb", {
     path: "../../../apps/admin-web",
     domain: { name: domain("admin") },
@@ -307,6 +321,14 @@ export function setup(infra: SharedInfra) {
       NOTIFICATION_SERVICE_URL: url("notification"),
       CHANNEL_ADAPTER_SERVICE_URL: url("channel-adapter"),
       ADMIN_DOMAIN: domain("admin"),
+      // OIDC (admin-web RP). client_id 는 시더와 동일하게 'admin-web'.
+      OIDC_ISSUER_URL: idpUserServiceUrl,
+      OIDC_AUTHORIZATION_URL: $interpolate`${idpAuthWebUrl}/oauth/authorize`,
+      OIDC_CLIENT_ID: "admin-web",
+      OIDC_CLIENT_SECRET: adminWebOidcClientSecret.value,
+      OIDC_REDIRECT_URI: $interpolate`${url("admin")}/auth/callback`,
+      OIDC_POST_LOGOUT_REDIRECT_URI: $interpolate`${url("admin")}/login`,
+      OAUTH_JWKS_URL: $interpolate`${idpUserServiceUrl}/.well-known/jwks.json`,
     },
   });
 
