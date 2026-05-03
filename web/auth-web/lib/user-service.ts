@@ -146,7 +146,9 @@ export async function issueOAuthCodeInternal(
     redirect: "manual",
   });
   await throwIfBad(res, "issue-code");
-  return readApiData<{ code: string; expiresIn: number }>(res);
+  // user-service OAuthController 는 @SkipResponseEnvelope() 라 envelope 없이 직접 반환한다.
+  // readApiData 를 쓰면 body.data 가 undefined 라서 호출부 destructure 가 폭발한다.
+  return readJson<{ code: string; expiresIn: number }>(res);
 }
 
 /**
@@ -170,7 +172,14 @@ export async function validateRedirectUriInternal(input: {
     cache: "no-store",
     redirect: "manual",
   });
-  if (!res.ok) return false;
+  if (!res.ok) {
+    // 401(secret 불일치) / 404(엔드포인트 미배포) 등은 silent false 로 흡수되면 "등록되지 않은
+    // redirect_uri" 화면과 구분이 안 돼 디버깅이 어렵다. status + clientId 만이라도 남겨둔다.
+    console.warn(
+      `[validate-redirect-uri] user-service responded ${res.status} for clientId=${input.clientId}`,
+    );
+    return false;
+  }
   const body = await readJson<{ valid?: boolean }>(res);
   return body.valid === true;
 }

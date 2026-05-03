@@ -1,10 +1,28 @@
 import { z } from 'zod';
 
+// PEM 은 multiline 이라 ECS env 등 일부 transport 에서 newline 이 손상되기 쉽다.
+// 안전하게 받기 위해 세 가지 입력을 모두 허용한다:
+//   1) 진짜 newline 을 포함한 PEM (로컬 .env / sst secret set < file 등)
+//   2) `\n` literal 로 escape 된 PEM (단일 줄 .env)
+//   3) base64-encoded PEM (newline-free 이라 transport 안전. 권장 방식)
 const pemString = z
   .string()
   .min(1)
-  .transform((s) => s.replace(/\\n/g, '\n'))
-  .refine((s) => s.includes('-----BEGIN'), { message: 'must be a PEM-encoded key' });
+  .transform((s) => {
+    if (s.includes('-----BEGIN')) {
+      // 1) or 2): literal `\n` 만 진짜 newline 으로 복원.
+      return s.replace(/\\n/g, '\n');
+    }
+    // 3): base64. 디코드 후 BEGIN 이 보이면 PEM 으로 인정.
+    try {
+      const decoded = Buffer.from(s, 'base64').toString('utf-8');
+      if (decoded.includes('-----BEGIN')) return decoded;
+    } catch {
+      // fallthrough — refine 에서 fail.
+    }
+    return s;
+  })
+  .refine((s) => s.includes('-----BEGIN'), { message: 'must be a PEM-encoded key (raw or base64)' });
 
 export const userServiceEnvSchema = z.object({
   // Database

@@ -20,7 +20,7 @@ import { Public } from '../../commons/decorator/public.decorator';
 import { IssueCodeRequestDto, IssueCodeResponseDto } from './dto/issue-code.dto';
 import { RevokeRequestDto } from './dto/revoke.dto';
 import { TokenRequestDto, TokenResponseDto } from './dto/token.dto';
-import { normalizeRevokeBody, normalizeTokenBody } from './oauth-body';
+import { normalizeRevokeBody, normalizeTokenBody, parseBasicAuthCredentials } from './oauth-body';
 import { OAuthService } from './oauth.service';
 
 @ApiTags('OAuth')
@@ -73,9 +73,19 @@ export class OAuthController {
   @HttpCode(HttpStatus.OK)
   @Header('Cache-Control', 'no-store')
   @Header('Pragma', 'no-cache')
-  async token(@Body() raw: unknown): Promise<TokenResponseDto> {
+  async token(
+    @Body() raw: unknown,
+    @Headers('authorization') authHeader?: string,
+  ): Promise<TokenResponseDto> {
     const body = normalizeTokenBody(raw);
-    return this.oauthService.exchangeToken(body);
+    // RFC 6749 §2.3.1: Basic auth header 가 있으면 그 자격 증명을 우선 신뢰. body 의 값은 fallback.
+    const basic = parseBasicAuthCredentials(authHeader);
+    const merged = {
+      ...body,
+      clientId: basic.clientId ?? body.clientId,
+      clientSecret: basic.clientSecret ?? body.clientSecret,
+    };
+    return this.oauthService.exchangeToken(merged);
   }
 
   @ApiOperation({ summary: 'userinfo endpoint' })
@@ -95,9 +105,18 @@ export class OAuthController {
   @HttpCode(HttpStatus.OK)
   @Header('Cache-Control', 'no-store')
   @Header('Pragma', 'no-cache')
-  async revoke(@Body() raw: unknown): Promise<{ ok: true }> {
+  async revoke(
+    @Body() raw: unknown,
+    @Headers('authorization') authHeader?: string,
+  ): Promise<{ ok: true }> {
     const body = normalizeRevokeBody(raw);
-    await this.oauthService.revoke(body.clientId, body.clientSecret, body.token);
+    // RFC 7009 §2.1 → §2.3 client auth 는 RFC 6749 §2.3 을 따른다 (Basic auth 우선).
+    const basic = parseBasicAuthCredentials(authHeader);
+    await this.oauthService.revoke(
+      basic.clientId ?? body.clientId,
+      basic.clientSecret ?? body.clientSecret,
+      body.token,
+    );
     return { ok: true };
   }
 

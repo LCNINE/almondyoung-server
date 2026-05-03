@@ -32,6 +32,14 @@ export function setup(infra: IdpInfra) {
   // 클라이언트 등록 정보(clientId/secret/redirectUris/scopes)는 user-service `oauth_clients` 테이블이 SoT.
   // env JSON(OAUTH_CLIENTS / OAUTH_ALLOWED_CLIENTS)과 시연용 bypass 플래그는 제거됨.
   const oauthInternalSecret = new sst.Secret("OauthInternalSecret");
+  // RS256 access token 서명용 PEM keypair. 미설정 시 user-service 부팅이 실패하므로
+  // 신규 stage 부트스트랩 시 반드시 set 해야 한다.
+  //   openssl genpkey -algorithm RSA -pkcs8 -out priv.pem -pkeyopt rsa_keygen_bits:2048
+  //   openssl pkey -in priv.pem -pubout -out pub.pem
+  //   sst secret set OauthJwtPrivateKey "$(cat priv.pem)" --stage <stage>
+  //   sst secret set OauthJwtPublicKey  "$(cat pub.pem)"  --stage <stage>
+  const oauthJwtPrivateKey = new sst.Secret("OauthJwtPrivateKey");
+  const oauthJwtPublicKey = new sst.Secret("OauthJwtPublicKey");
 
   // ─── user-service 호스트는 user.<base>, auth-web은 auth.<base> ───
   const userServiceUrl = url("user");
@@ -90,6 +98,12 @@ export function setup(infra: IdpInfra) {
       AWS_REGION: "ap-northeast-2",
       AWS_S3_BUCKET: "almondyoung",
       OAUTH_INTERNAL_SECRET: oauthInternalSecret.value,
+      // RS256 OAuth access token 서명. JWKS 도 같은 public key 로 노출됨(/.well-known/jwks.json).
+      // KID 회전 시엔 새 keypair set + KID 변경 후 배포 → 충분한 expose 기간 후 구 키 제거.
+      OAUTH_JWT_PRIVATE_KEY: oauthJwtPrivateKey.value,
+      OAUTH_JWT_PUBLIC_KEY: oauthJwtPublicKey.value,
+      OAUTH_JWT_KID: `lcnine-auth-${$app.stage}-1`,
+      OAUTH_ISSUER_URL: userServiceUrl,
       // ─── 기능별 Secret 미세팅 상태 (후속 활성화 시 주석 해제) ───
       // KAKAO_CLIENT_ID: kakaoClientId.value,
       // KAKAO_CLIENT_SECRET: kakaoClientSecret.value,

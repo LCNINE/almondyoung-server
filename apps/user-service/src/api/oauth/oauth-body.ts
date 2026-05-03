@@ -6,7 +6,28 @@ import type { RevokeRequestDto } from './dto/revoke.dto';
  * RFC 6749 §3.2 의 token endpoint 는 application/x-www-form-urlencoded 와 snake_case 를 표준으로 요구한다.
  * 동시에 auth-web/내부 호출자가 보내 오던 application/json + camelCase 도 호환을 위해 수용한다.
  * 글로벌 ValidationPipe 와 충돌하지 않도록 컨트롤러에서 plain body 를 받아 이 함수로 정규화한다.
+ *
+ * RFC 6749 §2.3.1 — confidential client 의 자격 증명은 HTTP Basic Auth 헤더로 보내는 것이 표준이고,
+ * 서버는 MUST 지원해야 한다. body 의 client_secret 은 NOT RECOMMENDED 이지만 대부분 구현이 같이 받는다.
+ * 따라서 헤더에서 먼저 추출 시도 → 없으면 body 의 client_secret 을 fallback 으로 본다.
  */
+export function parseBasicAuthCredentials(authHeader: string | undefined): { clientId?: string; clientSecret?: string } {
+  if (!authHeader) return {};
+  const m = authHeader.match(/^Basic\s+([A-Za-z0-9+/=_-]+)\s*$/i);
+  if (!m) return {};
+  let decoded: string;
+  try {
+    decoded = Buffer.from(m[1], 'base64').toString('utf-8');
+  } catch {
+    return {};
+  }
+  // RFC 6749 §2.3.1: HTTP Basic 사용 시 clientId 와 clientSecret 은 application/x-www-form-urlencoded 인코딩 후 콜론으로 결합.
+  const idx = decoded.indexOf(':');
+  if (idx < 0) return {};
+  const clientId = decodeURIComponent(decoded.slice(0, idx));
+  const clientSecret = decodeURIComponent(decoded.slice(idx + 1));
+  return { clientId, clientSecret };
+}
 
 const MAX_LEN_CLIENT_ID = 64;
 const MAX_LEN_SECRET = 256;
