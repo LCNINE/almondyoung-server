@@ -26,10 +26,10 @@ export function setup() {
 
   // ─── ALB (user-service 전용, non-wildcard hostname) ───
   // 같은 Route53 zone에서 specific A record가 wildcard alias보다 우선되므로
-  // id.<base>를 이 ALB로 정확히 라우팅.
+  // user.<base>를 이 ALB로 정확히 라우팅.
   const userAlb = new sst.aws.Alb("IdpUserAlb", {
     vpc,
-    domain: { name: domain("id") },
+    domain: { name: domain("user") },
     listeners: [
       { port: 80, protocol: "http" },
       { port: 443, protocol: "https" },

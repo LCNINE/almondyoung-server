@@ -110,6 +110,15 @@ export function setup(infra: SharedInfra) {
     port: 3000,
     priority: 130,
     link: [db],
+    loadBalancerHealth: {
+      "3000/http": {
+        path: "/health",
+        interval: "30 seconds",
+        timeout: "5 seconds",
+        healthyThreshold: 2,
+        unhealthyThreshold: 5,
+      },
+    },
     environment: {
       DATABASE_URL: dbUrl("membership"),
       ...kafkaEnv("membership", "membership-group"),
