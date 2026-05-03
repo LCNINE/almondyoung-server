@@ -89,6 +89,7 @@ export class OAuthManager {
       codeChallenge: input.codeChallenge,
       codeChallengeMethod: 'S256',
       scope: input.scope ?? null,
+      nonce: input.nonce ?? null,
       expiresAt,
     });
 
@@ -145,6 +146,7 @@ export class OAuthManager {
 
       const tokens = await this.mintTokenPair(row.userId, row.clientId, row.scope, undefined, tx, {
         authTime: row.createdAt,
+        nonce: row.nonce ?? undefined,
       });
       return tokens;
     });
@@ -181,31 +183,53 @@ export class OAuthManager {
     scope: string | null,
     rotatedFrom: string | undefined,
     tx: DbTransaction,
-    oidcContext?: { authTime: Date },
+    oidcContext?: { authTime: Date; nonce?: string },
   ): Promise<TokenResponseDto> {
     const accessExpiresInMs = parseExpiresInToMs(JWT_ACCESS_TOKEN_EXPIRATION);
     const refreshExpiresInMs = parseExpiresInToMs(JWT_REFRESH_TOKEN_LONG_EXPIRATION);
 
+    // access token 에 user 정체성 claim (email, login_id, roles) 를 함께 박는다.
+    // RP 마다 /users/me 를 따로 부르지 않아도 RBAC 게이팅을 할 수 있도록 — 레거시 internal token
+    // (auth.service.ts mintTokens) 과 동일한 claim 셋을 유지해 admin-web 등 RP 가 토큰만으로
+    // sub/email/login_id/roles 를 읽을 수 있게 한다.
+    const user = await this.usersService.findUserById(userId);
+    const roles = user ? await this.usersService.getUserRoleNames(userId, tx) : [];
+
     // access token: RS256 JWT. iss/kid/alg은 모듈 기본 signOptions에서 부여, aud=client_id.
     const accessToken = await this.jwtService.signAsync(
-      { sub: userId, client_id: clientId, scope: scope ?? undefined },
+      {
+        sub: userId,
+        client_id: clientId,
+        scope: scope ?? undefined,
+        ...(user
+          ? {
+              email: user.email,
+              login_id: user.loginId,
+              roles,
+            }
+          : {}),
+      },
       { audience: clientId, expiresIn: JWT_ACCESS_TOKEN_EXPIRATION },
     );
 
     // id_token: OIDC core. authorization_code 그랜트 + scope 에 `openid` 가 있을 때만 발급.
     // refresh_token 그랜트에서는 발급하지 않는다 (oidcContext 미전달).
-    // TODO(nonce): authorize 단계에서 받은 nonce 를 oauth_authorization_codes 에 저장하도록
-    //              스키마 확장 후 여기서 echo. 현재는 nonce 미지원.
+    // nonce 는 authorize 단계에서 RP 가 보낸 값을 oauth_authorization_codes 에 저장해 두었다가
+    // 여기서 그대로 echo. RP 는 id_token 의 nonce 를 자기가 보낸 값과 비교해 replay 를 차단한다.
     const wantsOpenId = !!oidcContext && hasOpenIdScope(scope);
     let idToken: string | undefined;
     if (wantsOpenId) {
-      idToken = await this.jwtService.signAsync(
-        {
-          sub: userId,
-          auth_time: Math.floor(oidcContext!.authTime.getTime() / 1000),
-        },
-        { audience: clientId, expiresIn: JWT_ACCESS_TOKEN_EXPIRATION },
-      );
+      const idTokenPayload: { sub: string; auth_time: number; nonce?: string } = {
+        sub: userId,
+        auth_time: Math.floor(oidcContext!.authTime.getTime() / 1000),
+      };
+      if (oidcContext!.nonce) {
+        idTokenPayload.nonce = oidcContext!.nonce;
+      }
+      idToken = await this.jwtService.signAsync(idTokenPayload, {
+        audience: clientId,
+        expiresIn: JWT_ACCESS_TOKEN_EXPIRATION,
+      });
     }
 
     // refresh token: opaque (랜덤 문자열). DB에서만 검증.

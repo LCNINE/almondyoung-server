@@ -104,7 +104,7 @@ export async function upsertAccount(
 
   const common = {
     httpOnly: true,
-    secure: env.parentCookieSecure,
+    secure: env.cookieSecure,
     sameSite: "lax" as const,
     path: "/",
   };
@@ -143,7 +143,7 @@ export async function removeAccount(userId: string): Promise<void> {
   }
   const common = {
     httpOnly: true,
-    secure: env.parentCookieSecure,
+    secure: env.cookieSecure,
     sameSite: "lax" as const,
     path: "/",
   };

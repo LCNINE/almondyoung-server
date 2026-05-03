@@ -12,9 +12,10 @@ function optional(name: string, fallback: string): string {
 
 export const env = {
   userServiceUrl: required("USER_SERVICE_URL"),
-  parentCookieDomain: required("PARENT_COOKIE_DOMAIN"),
-  parentCookieSecure: optional("PARENT_COOKIE_SECURE", "true") === "true",
-  parentCookieSameSite: optional("PARENT_COOKIE_SAMESITE", "lax") as
+  // auth-web 자체 host-only 세션 쿠키 옵션. parent-domain 공유는 폐기됨 — RP 들은
+  // OIDC code flow 로 자기 도메인에 자기 세션을 둔다. 여기는 IdP 자체 SSO 식별용 쿠키 옵션.
+  cookieSecure: optional("COOKIE_SECURE", "true") === "true",
+  cookieSameSite: optional("COOKIE_SAMESITE", "lax") as
     | "lax"
     | "none"
     | "strict",

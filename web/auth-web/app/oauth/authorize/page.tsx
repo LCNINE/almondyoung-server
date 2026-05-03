@@ -86,6 +86,7 @@ export default async function AuthorizePage({
         codeChallenge: params.codeChallenge,
         scope: params.scope,
         state: params.state,
+        nonce: params.nonce,
       });
       // unreachable
     }

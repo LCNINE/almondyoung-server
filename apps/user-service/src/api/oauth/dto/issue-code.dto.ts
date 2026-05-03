@@ -29,6 +29,12 @@ export class IssueCodeRequestDto {
   @IsString()
   @MaxLength(1024)
   scope?: string;
+
+  @ApiProperty({ required: false, description: 'OIDC nonce — id_token 에 echo 되어 replay 공격을 방지한다.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  nonce?: string;
 }
 
 export class IssueCodeResponseDto {

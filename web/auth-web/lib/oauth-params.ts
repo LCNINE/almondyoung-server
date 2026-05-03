@@ -18,6 +18,11 @@ export type AuthorizeParams = {
   scope?: string;
   responseType: "code";
   prompt?: PromptValue;
+  /**
+   * OIDC nonce. RP 가 보낸 값을 그대로 보존했다가 issue-code 단계에서 user-service 로 전달.
+   * user-service 는 code 레코드에 저장한 뒤 token 교환 시 발급되는 id_token 에 echo 한다.
+   */
+  nonce?: string;
 };
 
 export type AuthorizeParseResult =
@@ -38,6 +43,7 @@ export function parseAuthorizeParams(raw: Record<string, string | string[] | und
   const responseType = get("response_type");
   const scope = get("scope");
   const promptRaw = get("prompt");
+  const nonce = get("nonce");
 
   if (!clientId) return { ok: false, error: "client_id required" };
   if (!redirectUri) return { ok: false, error: "redirect_uri required" };
@@ -54,6 +60,12 @@ export function parseAuthorizeParams(raw: Record<string, string | string[] | und
   // client_id / redirect_uri 등록 여부는 user-service /oauth/internal/issue-code 가 검증한다.
   // auth-web 은 형태(필수 필드, S256, response_type=code) 만 본다.
 
+  // nonce 는 RP 가 보낸 값을 그대로 보존. 길이만 가벼이 가드 (id_token claim 으로 echo 되므로
+   // 비합리적으로 큰 값은 거절). 형식적 제약은 없음 (OIDC core: opaque string).
+  if (nonce !== undefined && nonce.length > 512) {
+    return { ok: false, error: "nonce too long (max 512 chars)" };
+  }
+
   return {
     ok: true,
     value: {
@@ -65,6 +77,7 @@ export function parseAuthorizeParams(raw: Record<string, string | string[] | und
       scope,
       responseType: "code",
       prompt,
+      nonce,
     },
   };
 }
@@ -79,6 +92,7 @@ export function buildAuthorizeUrl(params: AuthorizeParams): string {
   sp.set("response_type", "code");
   if (params.scope) sp.set("scope", params.scope);
   if (params.prompt) sp.set("prompt", params.prompt);
+  if (params.nonce) sp.set("nonce", params.nonce);
   return `/oauth/authorize?${sp.toString()}`;
 }
 
