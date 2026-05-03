@@ -7,7 +7,10 @@ import { SeedCheckResult, SeedApplyResult, SeedCheckItem, ServiceConfig } from '
 import { SeedStep } from '../steps/base-seed-step';
 import { WmsSeedStep } from '../steps/wms.seed-step';
 import { PimSeedStep } from '../steps/pim.seed-step';
-import { UserServiceSeedStep } from '../steps/user-service.seed-step';
+import {
+  UserServiceSeedStep,
+  type OAuthClientSeed,
+} from '../steps/user-service.seed-step';
 import { MembershipSeedStep } from '../steps/membership.seed-step';
 import { FileServiceSeedStep } from '../steps/file-service.seed-step';
 import { NotificationSeedStep } from '../steps/notification.seed-step';
@@ -38,6 +41,21 @@ async function collectConfig(options: { yes: boolean; deployment?: string }) {
   const twilioAccountSid = process.env.NOTIFICATION_TWILIO_ACCOUNT_SID || '';
   const nhnSecretKey = process.env.NOTIFICATION_NHN_SECRET_KEY || '';
 
+  // OAuth RP 시드. RP 마다 *_BASE_URL 이 비어 있으면 해당 client 는 시드하지 않는다 (옵션).
+  // secret 미지정 시 시더가 1회 생성·로그하고, 다음 실행에선 ON CONFLICT 가 secret_hash 를 안 건드려 안전.
+  const oauthClients: OAuthClientSeed[] = [];
+  const adminWebBase = process.env.ADMIN_WEB_BASE_URL;
+  if (adminWebBase) {
+    oauthClients.push({
+      clientId: 'admin-web',
+      clientType: 'confidential',
+      redirectUris: [`${adminWebBase}/auth/callback`],
+      postLogoutRedirectUris: [`${adminWebBase}/login`],
+      allowedScopes: ['openid', 'profile', 'email', 'offline_access'],
+      clientSecret: process.env.ADMIN_WEB_OIDC_CLIENT_SECRET,
+    });
+  }
+
   return {
     adminPassword,
     fileService: {
@@ -51,6 +69,7 @@ async function collectConfig(options: { yes: boolean; deployment?: string }) {
       twilioAccountSid,
       nhnSecretKey,
     },
+    oauthClients,
   };
 }
 
@@ -99,7 +118,12 @@ function buildSeedSteps(
 
   const userEntry = registryMap.get('user-service');
   if (userEntry?.hasSeedStep) {
-    steps.push(new UserServiceSeedStep(buildDatabaseUrl(userEntry.database), config.adminPassword));
+    steps.push(
+      new UserServiceSeedStep(buildDatabaseUrl(userEntry.database), {
+        adminPassword: config.adminPassword,
+        oauthClients: config.oauthClients,
+      }),
+    );
   }
 
   const membershipEntry = registryMap.get('membership');
