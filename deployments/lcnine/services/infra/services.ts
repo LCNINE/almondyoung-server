@@ -75,10 +75,21 @@ export function setup(infra: SharedInfra) {
     port: 3040,
     priority: 110,
     link: [db],
+    loadBalancerHealth: {
+      "3040/http": {
+        path: "/health",
+        interval: "30 seconds",
+        timeout: "5 seconds",
+        healthyThreshold: 2,
+        unhealthyThreshold: 5,
+      },
+    },
     environment: {
       DATABASE_URL: dbUrl("analytics"),
       ...kafkaEnv("analytics", "analytics-group"),
       AUTH_SECRET: authSecret.value,
+      // OIDC: storefront/admin-web 의 RS256 토큰 검증용. JWKS endpoint 는 라이브러리가 자동 파생.
+      OIDC_ISSUER_URL: idpUserServiceUrl,
     },
   });
 
@@ -128,6 +139,8 @@ export function setup(infra: SharedInfra) {
       ...kafkaEnv("membership", "membership-group"),
       WALLET_API_KEY: walletApiKey.value,
       WALLET_API_URL: url("wallet"),
+      // OIDC: storefront 의 RS256 토큰 검증용. (이전엔 hardcoded default 에 의존했지만 정식화됨.)
+      OIDC_ISSUER_URL: idpUserServiceUrl,
     },
   });
 
@@ -159,11 +172,22 @@ export function setup(infra: SharedInfra) {
     port: 3000,
     priority: 145,
     link: [db],
+    loadBalancerHealth: {
+      "3000/http": {
+        path: "/health",
+        interval: "30 seconds",
+        timeout: "5 seconds",
+        healthyThreshold: 2,
+        unhealthyThreshold: 5,
+      },
+    },
     environment: {
       DATABASE_URL: dbUrl("core"),
       ...kafkaEnv("almondyoung-server", "almondyoung-server-group"),
       AUTH_SECRET: authSecret.value,
       JWT_ISSUER: "almondyoung-auth",
+      // OIDC: storefront/admin-web 의 RS256 토큰 검증용.
+      OIDC_ISSUER_URL: idpUserServiceUrl,
     },
   });
 
@@ -178,6 +202,8 @@ export function setup(infra: SharedInfra) {
       ...kafkaEnv("ugc-service", "ugc-service-group"),
       AUTH_SECRET: authSecret.value,
       JWT_ISSUER: "almondyoung-auth",
+      // OIDC: storefront 의 RS256 토큰 검증용.
+      OIDC_ISSUER_URL: idpUserServiceUrl,
     },
   });
 
@@ -187,11 +213,23 @@ export function setup(infra: SharedInfra) {
     port: 3000,
     priority: 180,
     link: [db],
+    loadBalancerHealth: {
+      "3000/http": {
+        // wallet 의 HealthController 는 @Controller('v1') prefix 로 /v1/health 에 노출됨.
+        path: "/v1/health",
+        interval: "30 seconds",
+        timeout: "5 seconds",
+        healthyThreshold: 2,
+        unhealthyThreshold: 5,
+      },
+    },
     environment: {
       DATABASE_URL: dbUrl("wallet"),
       ...kafkaEnv("wallet", "wallet-group"),
       AUTH_SECRET: authSecret.value,
       USER_JWT_SECRET: authSecret.value,
+      // OIDC: storefront 의 RS256 토큰 검증용 (마이페이지 포인트/빌링 등).
+      OIDC_ISSUER_URL: idpUserServiceUrl,
       TOSS_CLIENT_KEY: tossClientKey.value,
       TOSS_SECRET_KEY: tossSecretKey.value,
       NICEPAY_CLIENT_KEY: nicepayClientKey.value,
@@ -215,6 +253,8 @@ export function setup(infra: SharedInfra) {
       DATABASE_URL: dbUrl("file_service"),
       ...kafkaEnv("file-service", "file-service-group"),
       AUTH_SECRET: authSecret.value,
+      // OIDC: storefront/admin-web 의 RS256 토큰 검증용.
+      OIDC_ISSUER_URL: idpUserServiceUrl,
       AWS_ACCESS_KEY_ID: awsS3AccessKeyId.value,
       AWS_SECRET_ACCESS_KEY: awsS3SecretAccessKey.value,
       AWS_REGION: "ap-northeast-2",

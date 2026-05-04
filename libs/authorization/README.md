@@ -123,13 +123,31 @@ export const YOUR_SERVICE_SCOPES: ScopeDefinition[] = [
 
 ### 4. 환경 변수 설정
 
-`.env` 파일에 JWT 인증에 필요한 환경 변수를 추가합니다:
+`.env` 파일에 JWT 인증에 필요한 환경 변수를 추가합니다. **AUTH_SECRET 또는 OIDC_ISSUER_URL 둘 중 하나는 반드시 설정**해야 합니다 (둘 다 설정하면 dual-mode 로 동작).
 
 ```env
-AUTH_SECRET=your-jwt-secret-key
-JWT_ISSUER=almondyoung-auth  # 선택사항, 기본값: 'almondyoung-auth'
-JWT_AUDIENCE=almondyoung      # 선택사항, 기본값: 'almondyoung'
+# Dual-mode 인증 — 둘 중 하나 또는 둘 다 설정
+AUTH_SECRET=your-jwt-secret-key   # HS256 (legacy): user-service mintTokens / Medusa my-auth
+OIDC_ISSUER_URL=https://user.dev.lcnine-dev.com  # RS256 (OIDC): JWKS 자동 파생 (${URL}/.well-known/jwks.json)
+
+# 선택사항
+ALLOWED_AUDIENCES=user-service-internal,medusa-storefront,admin-web  # 비우면 audience 검증 skip
+JWT_ISSUER=almondyoung-auth  # 호환 보존 (현재 미사용)
+JWT_AUDIENCE=almondyoung     # 호환 보존 (현재 미사용)
 ```
+
+#### Dual-mode 동작
+
+`JwtAccessStrategy` 는 토큰 헤더의 `kid` + `alg` 로 분기:
+
+- **`alg=RS256` + `kid`** → JWKS endpoint 에서 해당 kid 의 public key 를 fetch 해 검증 (jwks-rsa, 10분 캐시).
+- **`alg=HS256`** → `AUTH_SECRET` 으로 검증.
+
+`validate()` 단에서 추가 검증:
+- RS256 OIDC 토큰 (iss claim 보유): `oidcIssuer` 와 일치 + `allowedAudiences` (설정 시) 화이트리스트 매칭.
+- HS256 legacy 토큰 (iss claim 없음): payload 매핑만 수행.
+
+후속 라운드에서 Medusa my-auth 가 OIDC 로 전환되면 HS256 fallback (`AUTH_SECRET` 및 `secret` 필드) 을 제거하고 RS256-only 로 좁힐 예정.
 
 ### 5. AppModule 설정
 

@@ -1,146 +1,249 @@
-import postgres from 'postgres';
-import { drizzle } from 'drizzle-orm/postgres-js';
 import { sql } from 'drizzle-orm';
 import { SeedStep } from './base-seed-step';
 import { SeedCheckResult, SeedApplyResult } from '../lib/types';
 
-export interface FileServiceConfig {
-  templateDbUrl?: string;
-  s3PublicBucket?: string;
-  s3PrivateBucket?: string;
+interface FileContextSeed {
+  id: string;
+  name: string;
+  description: string | null;
+  allowPublic: boolean;
+  allowPrivate: boolean;
+  allowedMimeTypes: string[];
+  maxFileSize: number;
+  pathPrefix: string;
+  isActive: boolean;
 }
 
-export class FileServiceSeedStep extends SeedStep {
-  private config: FileServiceConfig;
+const FILE_CONTEXTS: FileContextSeed[] = [
+  {
+    id: 'banner-image',
+    name: 'Banner Image',
+    description: '배너 이미지',
+    allowPublic: true,
+    allowPrivate: false,
+    allowedMimeTypes: ['image/*'],
+    maxFileSize: 10485760,
+    pathPrefix: 'banners/images',
+    isActive: true,
+  },
+  {
+    id: 'business-verification-file',
+    name: 'Business Verification',
+    description: '사업자등록증',
+    allowPublic: false,
+    allowPrivate: true,
+    allowedMimeTypes: ['application/pdf', 'image/jpeg', 'image/png'],
+    maxFileSize: 20971520,
+    pathPrefix: 'business/verification',
+    isActive: true,
+  },
+  {
+    id: 'category-image',
+    name: 'Category Image',
+    description: '카테고리 이미지',
+    allowPublic: true,
+    allowPrivate: false,
+    allowedMimeTypes: ['image/*'],
+    maxFileSize: 10485760,
+    pathPrefix: 'categories/images',
+    isActive: true,
+  },
+  {
+    id: 'cs-inquiry',
+    name: 'cs inquiry',
+    description: 'cs문의 이미지',
+    allowPublic: true,
+    allowPrivate: true,
+    allowedMimeTypes: ['image/*'],
+    maxFileSize: 10485760,
+    pathPrefix: 'cs/inquiry',
+    isActive: true,
+  },
+  {
+    id: 'invoice',
+    name: 'Invoice',
+    description: '세금계산서',
+    allowPublic: false,
+    allowPrivate: true,
+    allowedMimeTypes: ['application/pdf'],
+    maxFileSize: 10485760,
+    pathPrefix: 'finance/invoices',
+    isActive: true,
+  },
+  {
+    id: 'product-description-image',
+    name: 'Product Description Image',
+    description: '상품 상세설명 본문 이미지',
+    allowPublic: true,
+    allowPrivate: false,
+    allowedMimeTypes: ['image/*'],
+    maxFileSize: 20971520,
+    pathPrefix: 'products/description-image',
+    isActive: true,
+  },
+  {
+    id: 'product-image',
+    name: 'Product Image',
+    description: '상품 이미지',
+    allowPublic: true,
+    allowPrivate: false,
+    allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+    maxFileSize: 10485760,
+    pathPrefix: 'products/images',
+    isActive: true,
+  },
+  {
+    id: 'product-variant-image',
+    name: 'Product Variant Image',
+    description: '상품 품목 이미지',
+    allowPublic: true,
+    allowPrivate: false,
+    allowedMimeTypes: ['image/*'],
+    maxFileSize: 10485760,
+    pathPrefix: 'products/variants/images',
+    isActive: true,
+  },
+  {
+    id: 'receipt',
+    name: 'Receipt',
+    description: '영수증',
+    allowPublic: false,
+    allowPrivate: true,
+    allowedMimeTypes: ['application/pdf', 'image/jpeg', 'image/png'],
+    maxFileSize: 5242880,
+    pathPrefix: 'finance/receipts',
+    isActive: true,
+  },
+  {
+    id: 'review-media',
+    name: 'Review Media',
+    description: '리뷰 이미지',
+    allowPublic: true,
+    allowPrivate: false,
+    allowedMimeTypes: ['image/*', 'video/*'],
+    maxFileSize: 104857600,
+    pathPrefix: 'reviews/media',
+    isActive: true,
+  },
+  {
+    id: 'shipment-label',
+    name: 'Shipment Label',
+    description: '택배 송장 (운송장)',
+    allowPublic: false,
+    allowPrivate: true,
+    allowedMimeTypes: ['application/pdf', 'image/png'],
+    maxFileSize: 5242880,
+    pathPrefix: 'shipments/labels',
+    isActive: true,
+  },
+  {
+    id: 'user-avatar',
+    name: 'User Avatar',
+    description: '사용자 프로필 사진',
+    allowPublic: true,
+    allowPrivate: true,
+    allowedMimeTypes: ['image/*'],
+    maxFileSize: 5242880,
+    pathPrefix: 'users/avatars',
+    isActive: true,
+  },
+  {
+    id: 'user-document',
+    name: 'User Document',
+    description: '신분증, 개인 서류',
+    allowPublic: false,
+    allowPrivate: true,
+    allowedMimeTypes: [
+      'image/jpeg',
+      'image/png',
+      'application/pdf',
+      'text/plain',
+      'text/csv',
+      'application/json',
+    ],
+    maxFileSize: 20971520,
+    pathPrefix: 'users/documents',
+    isActive: true,
+  },
+];
 
-  constructor(databaseUrl: string, config: FileServiceConfig) {
+const CONTEXT_IDS = FILE_CONTEXTS.map((c) => c.id);
+const CONTEXT_NAMES: Record<string, string> = Object.fromEntries(
+  FILE_CONTEXTS.map((c) => [c.id, c.name]),
+);
+
+export class FileServiceSeedStep extends SeedStep {
+  constructor(databaseUrl: string) {
     super('File Service', databaseUrl);
-    this.config = config;
   }
 
   async check(): Promise<SeedCheckResult> {
-    if (!this.config.templateDbUrl) {
-      return {
-        service: 'File Service',
-        items: [
-          { entity: 'file_contexts', expected: 0, existing: 0, missing: 0, missingDetails: ['(template DB URL not provided, skip)'] },
-        ],
-        isFullySeeded: true,
-        summary: 'Skipped (no template DB URL)',
-      };
-    }
+    const existing = await this.findExistingIds('file_contexts', CONTEXT_IDS);
+    const missingIds = CONTEXT_IDS.filter((id) => !existing.has(id));
 
-    const templateClient = postgres(this.config.templateDbUrl);
-    try {
-      const templateRows = await templateClient`SELECT count(*)::int as count FROM file_contexts`;
-      const templateCount = templateRows[0].count;
+    const items = [
+      {
+        entity: 'file_contexts',
+        expected: CONTEXT_IDS.length,
+        existing: existing.size,
+        missing: missingIds.length,
+        missingDetails: missingIds.map((id) => CONTEXT_NAMES[id]),
+      },
+    ];
 
-      const targetRows = await this.client`SELECT count(*)::int as count FROM file_contexts`;
-      const targetCount = targetRows[0].count;
-
-      const missing = Math.max(0, templateCount - targetCount);
-
-      const items = [
-        {
-          entity: 'file_contexts',
-          expected: templateCount,
-          existing: targetCount,
-          missing,
-          missingDetails: missing > 0 ? [`${missing} context(s) from template DB`] : undefined,
-        },
-      ];
-
-      const isFullySeeded = missing === 0;
-      return {
-        service: 'File Service',
-        items,
-        isFullySeeded,
-        summary: isFullySeeded ? 'All File Service seed data present' : `${missing} missing record(s)`,
-      };
-    } finally {
-      await templateClient.end();
-    }
+    const isFullySeeded = missingIds.length === 0;
+    return {
+      service: 'File Service',
+      items,
+      isFullySeeded,
+      summary: isFullySeeded
+        ? 'All File Service seed data present'
+        : `${missingIds.length} missing record(s)`,
+    };
   }
 
   async apply(): Promise<SeedApplyResult> {
     const start = Date.now();
 
-    if (!this.config.templateDbUrl) {
-      this.logger.warn('FILE_TEMPLATE_DB_URL not provided, skipping');
-      return { service: 'File Service', success: true, itemsApplied: 0, duration: Date.now() - start };
-    }
-
-    const templateClient = postgres(this.config.templateDbUrl);
-    const templateDb = drizzle(templateClient);
-
     try {
-      const totalSteps = (this.config.s3PublicBucket || this.config.s3PrivateBucket) ? 3 : 2;
-
-      // Step 1: Fetch from template
-      this.logger.step(1, totalSteps, 'Fetching file_contexts from template database');
-      const fileContexts = await templateDb.execute(sql`SELECT * FROM file_contexts`);
-      this.logger.info(`Found ${fileContexts.length} file contexts in template DB`);
-
-      if (fileContexts.length === 0) {
-        this.logger.warn('No file_contexts found in template database');
-        return { service: 'File Service', success: true, itemsApplied: 0, duration: Date.now() - start };
-      }
-
-      // Step 2: Insert into target
-      this.logger.step(2, totalSteps, 'Inserting file_contexts into target database');
-      for (const context of fileContexts) {
-        const row = context as Record<string, unknown>;
+      this.logger.step(1, 1, 'Inserting file_contexts');
+      for (const ctx of FILE_CONTEXTS) {
         await this.db.execute(sql`
           INSERT INTO file_contexts (
             id, name, description, allow_public, allow_private,
             allowed_mime_types, max_file_size, path_prefix, is_active
           )
           VALUES (
-            ${row.id}, ${row.name}, ${row.description ?? null},
-            ${row.allow_public}, ${row.allow_private},
-            ${JSON.stringify(row.allowed_mime_types)},
-            ${row.max_file_size}, ${row.path_prefix}, ${row.is_active}
+            ${ctx.id},
+            ${ctx.name},
+            ${ctx.description},
+            ${ctx.allowPublic},
+            ${ctx.allowPrivate},
+            ${JSON.stringify(ctx.allowedMimeTypes)},
+            ${ctx.maxFileSize},
+            ${ctx.pathPrefix},
+            ${ctx.isActive}
           )
           ON CONFLICT (id) DO NOTHING
         `);
       }
 
-      // Step 3: Fix S3 bucket names
-      if (this.config.s3PublicBucket || this.config.s3PrivateBucket) {
-        this.logger.step(3, totalSteps, 'Fixing uploads URL bucket names');
-
-        if (this.config.s3PublicBucket) {
-          const pub = this.config.s3PublicBucket;
-          const result = await this.db.execute(sql`
-            UPDATE uploads
-            SET url = regexp_replace(url, 'https://[^.]+\.s3\.', ${'https://' + pub + '.s3.'})
-            WHERE is_public = true
-            AND url LIKE 'https://%.s3.%amazonaws.com/%'
-            AND url NOT LIKE ${'https://' + pub + '.s3.%'}
-          `);
-          this.logger.info(`Fixed ${(result as any).count ?? 0} public upload URLs`);
-        }
-
-        if (this.config.s3PrivateBucket) {
-          const priv = this.config.s3PrivateBucket;
-          const result = await this.db.execute(sql`
-            UPDATE uploads
-            SET url = regexp_replace(url, 'https://[^.]+\.s3\.', ${'https://' + priv + '.s3.'})
-            WHERE is_public = false
-            AND url LIKE 'https://%.s3.%amazonaws.com/%'
-            AND url NOT LIKE ${'https://' + priv + '.s3.%'}
-          `);
-          this.logger.info(`Fixed ${(result as any).count ?? 0} private upload URLs`);
-        }
-      }
-
       this.logger.success('File Service seeding completed');
-      return { service: 'File Service', success: true, itemsApplied: fileContexts.length, duration: Date.now() - start };
+      return {
+        service: 'File Service',
+        success: true,
+        itemsApplied: FILE_CONTEXTS.length,
+        duration: Date.now() - start,
+      };
     } catch (error: any) {
       this.logger.error('File Service seeding failed', error);
-      return { service: 'File Service', success: false, itemsApplied: 0, duration: Date.now() - start, error: error.message };
-    } finally {
-      await templateClient.end();
+      return {
+        service: 'File Service',
+        success: false,
+        itemsApplied: 0,
+        duration: Date.now() - start,
+        error: error.message,
+      };
     }
   }
 }

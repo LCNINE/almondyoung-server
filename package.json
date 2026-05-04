@@ -252,6 +252,7 @@
     "form-data": "^4.0.4",
     "handlebars": "^4.7.8",
     "hms-api-wrapper": "file:packages/hms-api-wrapper",
+    "jwks-rsa": "^3.2.2",
     "kafkajs": "^2.2.4",
     "nestjs-cls": "^6.2.0",
     "nestjs-resend": "^1.0.3",
