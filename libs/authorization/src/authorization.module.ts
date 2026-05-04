@@ -28,14 +28,34 @@ export class AuthorizationModule {
         {
           provide: AUTH_CONFIG,
           useFactory: (configService: ConfigService) => {
+            // dual-mode 지원:
+            //   - HS256 (legacy): AUTH_SECRET
+            //   - RS256/OIDC: OIDC_ISSUER_URL → ${OIDC_ISSUER_URL}/.well-known/jwks.json
+            // 둘 중 하나는 반드시 있어야 한다.
             const secret = configService.get<string>('AUTH_SECRET');
-            if (!secret) {
-              throw new Error('AUTH_SECRET is not defined in environment variables');
+            const issuerUrl = configService.get<string>('OIDC_ISSUER_URL');
+            const allowedAud = configService.get<string>('ALLOWED_AUDIENCES');
+
+            if (!secret && !issuerUrl) {
+              throw new Error(
+                'Either AUTH_SECRET (HS256) or OIDC_ISSUER_URL (RS256) must be defined in environment variables',
+              );
             }
+
+            const normalizedIssuer = issuerUrl?.replace(/\/$/, '');
+
             return {
               secret,
               issuer: configService.get<string>('JWT_ISSUER', 'almondyoung-auth'),
               audience: configService.get<string>('JWT_AUDIENCE', 'almondyoung'),
+              jwksUri: normalizedIssuer ? `${normalizedIssuer}/.well-known/jwks.json` : undefined,
+              oidcIssuer: normalizedIssuer,
+              allowedAudiences: allowedAud
+                ? allowedAud
+                    .split(',')
+                    .map((s) => s.trim())
+                    .filter(Boolean)
+                : [],
             };
           },
           inject: [ConfigService],

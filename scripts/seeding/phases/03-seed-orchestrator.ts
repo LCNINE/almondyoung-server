@@ -30,11 +30,6 @@ async function collectConfig(options: { yes: boolean; deployment?: string }) {
     });
   }
 
-  // File service config
-  const templateDbUrl = process.env.FILE_TEMPLATE_DB_URL || '';
-  const s3PublicBucket = process.env.AWS_S3_PUBLIC_BUCKET || '';
-  const s3PrivateBucket = process.env.AWS_S3_PRIVATE_BUCKET || '';
-
   // Notification config
   const fcmPrivateKey = process.env.NOTIFICATION_FCM_PRIVATE_KEY || '';
   const twilioAuthToken = process.env.NOTIFICATION_TWILIO_AUTH_TOKEN || '';
@@ -73,11 +68,6 @@ async function collectConfig(options: { yes: boolean; deployment?: string }) {
 
   return {
     adminPassword,
-    fileService: {
-      templateDbUrl: templateDbUrl || undefined,
-      s3PublicBucket: s3PublicBucket || undefined,
-      s3PrivateBucket: s3PrivateBucket || undefined,
-    },
     notification: {
       fcmPrivateKey,
       twilioAuthToken,
@@ -148,7 +138,7 @@ function buildSeedSteps(
 
   const fileEntry = registryMap.get('file-service');
   if (fileEntry?.hasSeedStep) {
-    steps.push(new FileServiceSeedStep(buildDatabaseUrl(fileEntry.database), config.fileService));
+    steps.push(new FileServiceSeedStep(buildDatabaseUrl(fileEntry.database)));
   }
 
   const notifEntry = registryMap.get('notification');
