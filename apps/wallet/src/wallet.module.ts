@@ -380,14 +380,32 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     {
       provide: AUTH_CONFIG,
       useFactory: () => {
+        // dual-mode 지원: USER_JWT_SECRET (HS256 legacy) 또는 OIDC_ISSUER_URL (RS256/OIDC).
+        // 둘 중 하나는 반드시 있어야 한다. 공용 라이브러리(libs/authorization) 의 provider 와 동일 정책.
         const secret = process.env.USER_JWT_SECRET;
-        if (!secret) {
-          throw new Error('USER_JWT_SECRET is not defined in environment variables');
+        const issuerUrl = process.env.OIDC_ISSUER_URL;
+        const allowedAud = process.env.ALLOWED_AUDIENCES;
+
+        if (!secret && !issuerUrl) {
+          throw new Error(
+            'Either USER_JWT_SECRET (HS256) or OIDC_ISSUER_URL (RS256) must be defined in environment variables',
+          );
         }
+
+        const normalizedIssuer = issuerUrl?.replace(/\/$/, '');
+
         return {
           secret,
           issuer: process.env.JWT_ISSUER ?? 'almondyoung-auth',
           audience: process.env.JWT_AUDIENCE ?? 'almondyoung',
+          jwksUri: normalizedIssuer ? `${normalizedIssuer}/.well-known/jwks.json` : undefined,
+          oidcIssuer: normalizedIssuer,
+          allowedAudiences: allowedAud
+            ? allowedAud
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean)
+            : [],
         };
       },
     },

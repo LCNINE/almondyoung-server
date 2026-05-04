@@ -1,19 +1,26 @@
 import { z } from 'zod';
 
-export const membershipEnvSchema = z.object({
-  // Database
-  DATABASE_URL: z.string().url(),
-  PORT: z.string().regex(/^\d+$/).optional(),
-  NODE_ENV: z.enum(['development', 'production', 'test']).optional(),
+export const membershipEnvSchema = z
+  .object({
+    // Database
+    DATABASE_URL: z.string().url(),
+    PORT: z.string().regex(/^\d+$/).optional(),
+    NODE_ENV: z.enum(['development', 'production', 'test']).optional(),
 
-  // Payment Service Integration
-  PAYMENT_SERVER_URL: z.string().url().optional(),
-  WALLET_API_URL: z.string().url().optional(),
-  WALLET_API_KEY: z.string().min(1).optional(),
-  // JWT Authentication (user-service uses AUTH_SECRET)
-  AUTH_SECRET: z.string().min(1).default('ewfisdfdsfdsfdsf123@324'), // Railway 환경 변수 이슈 임시 우회
-  JWT_ISSUER: z.string().optional(),
-});
+    // Payment Service Integration
+    PAYMENT_SERVER_URL: z.string().url().optional(),
+    WALLET_API_URL: z.string().url().optional(),
+    WALLET_API_KEY: z.string().min(1).optional(),
+    // Auth — dual-mode: AUTH_SECRET (HS256 legacy) 또는 OIDC_ISSUER_URL (RS256/OIDC), 둘 중 하나 필수.
+    AUTH_SECRET: z.string().min(1).optional(),
+    OIDC_ISSUER_URL: z.string().url().optional(),
+    ALLOWED_AUDIENCES: z.string().optional(),
+    JWT_ISSUER: z.string().optional(),
+  })
+  .refine((data) => !!data.AUTH_SECRET || !!data.OIDC_ISSUER_URL, {
+    message: 'Either AUTH_SECRET (HS256) or OIDC_ISSUER_URL (RS256) must be set',
+    path: ['AUTH_SECRET'],
+  });
 
 export type MembershipEnvConfig = z.infer<typeof membershipEnvSchema>;
 
