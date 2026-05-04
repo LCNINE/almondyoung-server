@@ -26,14 +26,18 @@ export default function Error({
     hasTriedRef.current = true
 
     const tokenRefresh = async () => {
-      console.log("error,stack === ")
-      console.log("error:", error.stack)
-      console.log("error,stack end ====")
       if (error.digest === "UNAUTHORIZED" || error.message === "UNAUTHORIZED") {
         const isMainPage = /^\/[a-z]{2}\/?$/.test(pathname)
         const countryCode = extractCountryCodeFromPath(pathname, "kr")
         const loginPath = toLocalizedPath(countryCode, "/login")
         const redirectPath = encodeURIComponent(normalizeRedirectPath(pathname))
+        const restoreAttemptKey = `auth:restore-attempted:${pathname}`
+
+        if (sessionStorage.getItem(restoreAttemptKey) === "1") {
+          sessionStorage.removeItem(restoreAttemptKey)
+          window.location.href = `${loginPath}?redirect_to=${redirectPath}`
+          return
+        }
 
         try {
           const response = await fetch("/api/auth/restore-token", {
@@ -43,11 +47,14 @@ export default function Error({
 
           if (response.ok) {
             // 토큰 복구 성공하면 새로고침
+            sessionStorage.setItem(restoreAttemptKey, "1")
             await new Promise((resolve) => setTimeout(resolve, 100))
             window.location.reload()
 
             return
           }
+
+          sessionStorage.removeItem(restoreAttemptKey)
 
           // 토큰 복구 실패
           const data = await response.json().catch(() => ({}))
@@ -63,6 +70,7 @@ export default function Error({
           window.location.href = `${loginPath}?redirect_to=${redirectPath}`
         } catch (error) {
           console.error("토큰 복구 중 에러:", error)
+          sessionStorage.removeItem(restoreAttemptKey)
 
           if (isMainPage) {
             // 메인페이지에서 에러 발생 시 로그아웃 처리만하고 새로고침
