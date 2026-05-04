@@ -29,6 +29,21 @@ function buildOAuthClientSeeds(): OAuthClientSeed[] {
     });
   }
 
+  // storefront(=medusa-storefront RP). 콜백 경로: `${BASE}/${countryCode}/callback/oidc`
+  // (web/almondyoung-storefront/src/lib/api/medusa/sso.ts 의 buildCallbackUrl 과 동치).
+  // 운영 country 가 kr 단일이라 한 개만 등록. country 추가 시 redirectUris 배열에 추가하면 됨.
+  const storefrontBase = process.env.STOREFRONT_BASE_URL;
+  if (storefrontBase) {
+    seeds.push({
+      clientId: 'medusa-storefront',
+      clientType: 'confidential',
+      redirectUris: [`${storefrontBase}/kr/callback/oidc`],
+      postLogoutRedirectUris: [`${storefrontBase}/kr`],
+      allowedScopes: ['openid', 'profile', 'email'],
+      clientSecret: process.env.STOREFRONT_OIDC_CLIENT_SECRET,
+    });
+  }
+
   return seeds;
 }
 

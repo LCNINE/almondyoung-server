@@ -1,4 +1,5 @@
 const checkEnvVariables = require("./check-env-variables")
+const path = require("path")
 
 checkEnvVariables()
 
@@ -24,6 +25,10 @@ const nextConfig = {
     fetches: {
       fullUrl: true,
     },
+  },
+
+  turbopack: {
+    root: path.resolve(__dirname),
   },
 
   eslint: {

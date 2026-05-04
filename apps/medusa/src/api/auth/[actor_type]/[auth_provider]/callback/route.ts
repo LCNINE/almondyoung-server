@@ -1,4 +1,10 @@
-import { ConfigModule, IAuthModuleService, AuthenticationInput } from '@medusajs/framework/types';
+import {
+  AuthenticationInput,
+  AuthIdentityDTO,
+  ConfigModule,
+  IAuthModuleService,
+  ICustomerModuleService,
+} from '@medusajs/framework/types';
 import { ContainerRegistrationKeys, MedusaError, Modules } from '@medusajs/framework/utils';
 import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { generateJwtTokenForAuthIdentity } from '../../../../../utils/generate-jwt-token';
@@ -32,6 +38,54 @@ const buildAuthData = (req: MedusaRequest): AuthenticationInput => ({
   protocol: req.protocol,
 });
 
+const findProviderIdentity = (authIdentity: AuthIdentityDTO, provider: string) =>
+  authIdentity.provider_identities?.find((pi) => pi.provider === provider) ??
+  authIdentity.provider_identities?.[0];
+
+const linkExistingCustomerByVerifiedEmail = async (
+  req: MedusaRequest,
+  authIdentity: AuthIdentityDTO,
+  actorType: string,
+  authProvider: string,
+): Promise<AuthIdentityDTO> => {
+  if (actorType !== 'customer' || authProvider !== 'user-service-sso') {
+    return authIdentity;
+  }
+
+  if (authIdentity.app_metadata?.customer_id) {
+    return authIdentity;
+  }
+
+  const providerIdentity = findProviderIdentity(authIdentity, authProvider);
+  const userMetadata = (providerIdentity?.user_metadata ?? {}) as Record<string, unknown>;
+  const email = typeof userMetadata.email === 'string' ? userMetadata.email.trim().toLowerCase() : '';
+  const emailVerified = userMetadata.email_verified;
+
+  if (!email || emailVerified === false) {
+    return authIdentity;
+  }
+
+  const customerService = req.scope.resolve<ICustomerModuleService>(Modules.CUSTOMER);
+  const customers = await customerService.listCustomers({ email });
+  const customer = customers.find((c) => c.has_account) ?? customers[0];
+
+  if (!customer) {
+    return authIdentity;
+  }
+
+  const service: IAuthModuleService = req.scope.resolve(Modules.AUTH);
+  await service.updateAuthIdentities({
+    id: authIdentity.id,
+    app_metadata: {
+      ...(authIdentity.app_metadata ?? {}),
+      actor_type: 'customer',
+      customer_id: customer.id,
+    },
+  });
+
+  return service.retrieveAuthIdentity(authIdentity.id);
+};
+
 // OIDC redirect 콜백 — user-service-sso 등 redirect 기반 프로바이더의 callback 검증.
 // 다른 프로바이더(emailpass 등)는 callback 단계가 없으므로 바로 authenticate 로 폴백한다.
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
@@ -46,11 +100,18 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
       : await service.authenticate(auth_provider, authData);
 
   if (success && authIdentity) {
-    const actorType = (authIdentity?.app_metadata?.actor_type as string) || actor_type;
+    let resolvedAuthIdentity = authIdentity;
+    const actorType = (resolvedAuthIdentity?.app_metadata?.actor_type as string) || actor_type;
+    resolvedAuthIdentity = await linkExistingCustomerByVerifiedEmail(
+      req,
+      resolvedAuthIdentity,
+      actorType,
+      auth_provider as string,
+    );
     const { http } = config.projectConfig;
 
     const token = generateJwtTokenForAuthIdentity(
-      { authIdentity, actorType, authProvider: auth_provider },
+      { authIdentity: resolvedAuthIdentity, actorType, authProvider: auth_provider },
       {
         secret: http.jwtSecret!,
         expiresIn: http.jwtExpiresIn,
@@ -66,8 +127,8 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     if (auth_provider === 'user-service-sso') {
       // AuthIdentityDTO 는 provider_identities[].provider_metadata 에 우리가 update 한 값을 보관한다.
       const providerIdentity =
-        authIdentity?.provider_identities?.find((pi) => pi.provider === 'user-service-sso') ??
-        authIdentity?.provider_identities?.[0];
+        resolvedAuthIdentity?.provider_identities?.find((pi) => pi.provider === 'user-service-sso') ??
+        resolvedAuthIdentity?.provider_identities?.[0];
       const meta = (providerIdentity?.provider_metadata ?? {}) as Record<string, unknown>;
       const access_token = typeof meta.access_token === 'string' ? meta.access_token : undefined;
       const refresh_token = typeof meta.refresh_token === 'string' ? meta.refresh_token : undefined;
