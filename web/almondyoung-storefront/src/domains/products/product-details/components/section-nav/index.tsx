@@ -1,15 +1,14 @@
 "use client"
 
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { cn } from "@/lib/utils"
+import { useScrollSpyWindow } from "@/hooks/use-scroll-spy-window"
 import { usePathname, useSearchParams } from "next/navigation"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef } from "react"
 
 export type SectionTab = "detail" | "review" | "qna"
 
 const VALID_TABS: SectionTab[] = ["detail", "review", "qna"]
-
-const triggerClassName =
-  "flex-1 cursor-pointer !rounded-none !border-0 !border-b-2 !border-b-transparent !bg-transparent px-4 py-3 text-sm font-bold text-[#666666] !shadow-none transition-colors focus-visible:!ring-0 focus-visible:!outline-none !after:hidden data-[state=active]:!border-0 data-[state=active]:!border-b-2 data-[state=active]:!border-b-[#f29219] data-[state=active]:!bg-transparent data-[state=active]:!text-[#f29219] data-[state=active]:!shadow-none data-[state=inactive]:hover:text-[#333333] lg:text-base"
+const NAV_OFFSET = 56
 
 interface SectionTabsProps {
   reviewCountSlot?: React.ReactNode
@@ -24,22 +23,31 @@ export function SectionTabs({
 }: SectionTabsProps) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
-
   const tabParam = searchParams.get("tab") as SectionTab | null
-  const initialTab: SectionTab =
-    tabParam && VALID_TABS.includes(tabParam) ? tabParam : "detail"
-  const [activeTab, setActiveTabState] = useState<SectionTab>(initialTab)
 
-  const tabsRef = useRef<HTMLDivElement>(null)
+  const tabIds = useMemo(() => VALID_TABS, [])
+  const activeIdRaw = useScrollSpyWindow(tabIds, { topOffset: NAV_OFFSET + 8 })
+  const activeTab: SectionTab =
+    activeIdRaw && (VALID_TABS as string[]).includes(activeIdRaw)
+      ? (activeIdRaw as SectionTab)
+      : "detail"
 
-  const setActiveTab = useCallback(
-    (tab: SectionTab) => {
-      setActiveTabState(tab)
+  const scrollToSection = useCallback(
+    (tab: SectionTab, behavior: ScrollBehavior = "smooth") => {
+      const el = document.getElementById(tab)
+      el?.scrollIntoView({ behavior, block: "start" })
+    },
+    []
+  )
+
+  useEffect(() => {
+    if (!activeIdRaw) return
+    const handle = setTimeout(() => {
       const params = new URLSearchParams(searchParams.toString())
-      if (tab === "detail") {
+      if (activeIdRaw === "detail") {
         params.delete("tab")
       } else {
-        params.set("tab", tab)
+        params.set("tab", activeIdRaw)
       }
       const query = params.toString()
       window.history.replaceState(
@@ -47,62 +55,84 @@ export function SectionTabs({
         "",
         `${pathname}${query ? `?${query}` : ""}`
       )
-    },
-    [pathname, searchParams]
-  )
+    }, 80)
+    return () => clearTimeout(handle)
+  }, [activeIdRaw, pathname, searchParams])
+
+  const didInitialScroll = useRef(false)
+  useEffect(() => {
+    if (didInitialScroll.current) return
+    if (
+      !tabParam ||
+      !VALID_TABS.includes(tabParam) ||
+      tabParam === "detail"
+    ) {
+      didInitialScroll.current = true
+      return
+    }
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        scrollToSection(tabParam, "auto")
+        didInitialScroll.current = true
+      })
+    })
+  }, [tabParam, scrollToSection])
 
   useEffect(() => {
     const handler = (e: Event) => {
       const tab = (e as CustomEvent<SectionTab>).detail
       if (VALID_TABS.includes(tab)) {
-        setActiveTab(tab)
-        tabsRef.current?.scrollIntoView({ behavior: "smooth" })
+        scrollToSection(tab, "smooth")
       }
     }
     window.addEventListener("navigate-tab", handler)
     return () => window.removeEventListener("navigate-tab", handler)
-  }, [setActiveTab])
+  }, [scrollToSection])
+
+  const buttonClass = (active: boolean) =>
+    cn(
+      "flex-1 cursor-pointer border-0 border-b-2 px-4 py-3 text-sm font-bold transition-colors focus-visible:outline-none lg:text-base",
+      active
+        ? "border-b-[#f29219] text-[#f29219]"
+        : "border-b-transparent text-[#666666] hover:text-[#333333]"
+    )
 
   return (
-    <Tabs
-      ref={tabsRef}
-      value={activeTab}
-      onValueChange={(v) => setActiveTab(v as SectionTab)}
-      className="w-full"
-    >
-      <TabsList className="sticky top-0 z-10 mb-8 inline-flex h-auto w-full rounded-none border-b border-[#e5e5e5] bg-white p-0">
-        <TabsTrigger value="detail" className={triggerClassName}>
+    <div className="w-full">
+      <nav
+        aria-label="상품 정보"
+        className="sticky top-0 z-10 mb-8 flex h-auto w-full border-b border-[#e5e5e5] bg-white"
+      >
+        <button
+          type="button"
+          onClick={() => scrollToSection("detail")}
+          aria-current={activeTab === "detail" ? "true" : undefined}
+          className={buttonClass(activeTab === "detail")}
+        >
           상세정보
-        </TabsTrigger>
-        <TabsTrigger value="review" className={triggerClassName}>
+        </button>
+        <button
+          type="button"
+          onClick={() => scrollToSection("review")}
+          aria-current={activeTab === "review" ? "true" : undefined}
+          className={buttonClass(activeTab === "review")}
+        >
           리뷰
           {reviewCountSlot}
-        </TabsTrigger>
-
-        <TabsTrigger value="qna" className={triggerClassName}>
+        </button>
+        <button
+          type="button"
+          onClick={() => scrollToSection("qna")}
+          aria-current={activeTab === "qna" ? "true" : undefined}
+          className={buttonClass(activeTab === "qna")}
+        >
           Q&A
           {qnaCountSlot}
-        </TabsTrigger>
-      </TabsList>
+        </button>
+      </nav>
       {children}
-    </Tabs>
+    </div>
   )
 }
 
-interface SectionTabPanelProps {
-  value: SectionTab
-  className?: string
-  children: React.ReactNode
-}
-
-export function SectionTabPanel({
-  value,
-  className,
-  children,
-}: SectionTabPanelProps) {
-  return (
-    <TabsContent value={value} className={className}>
-      {children}
-    </TabsContent>
-  )
-}
+export { SectionTabPanel } from "./section-tab-panel"
