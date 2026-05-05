@@ -39,6 +39,10 @@ interface ProductSectionProps<T extends TabItem> {
   mobileRows?: number
   /** 위시리스트에 담긴 상품 ID Set */
   wishlistIds?: Set<string>
+  /** 단일 탭(예: 관심 카테고리 1개 섹션)일 때 탭 UI 를 숨김 */
+  hideTabs?: boolean
+  /** 헤더 우측에 추가로 렌더링할 요소 (편집 버튼 등). MoreButton 옆에 배치 */
+  headerExtra?: ReactNode
 }
 
 export function ProductSection<T extends TabItem>({
@@ -54,6 +58,8 @@ export function ProductSection<T extends TabItem>({
   emptyDescription,
   mobileRows = 2,
   wishlistIds,
+  hideTabs = false,
+  headerExtra,
 }: ProductSectionProps<T>) {
   const handleTabChange = (value: string) => {
     const nextTab = tabs.find((t) => t.id === value)
@@ -127,16 +133,21 @@ export function ProductSection<T extends TabItem>({
       <Header className="mb-6">
         <Title className="md:flex-1 md:text-center">{title}</Title>
         {moreHref && <MoreButton href={moreHref} />}
+        {headerExtra}
       </Header>
 
-      <Tabs defaultValue={activeTab.id} onValueChange={handleTabChange}>
-        <ResponsiveTabList
-          items={tabs}
-          activeId={activeTab.id}
-          onTabChange={handleTabChange}
-        />
-        <TabsContent value={activeTab.id}>{renderProducts()}</TabsContent>
-      </Tabs>
+      {hideTabs ? (
+        renderProducts()
+      ) : (
+        <Tabs defaultValue={activeTab.id} onValueChange={handleTabChange}>
+          <ResponsiveTabList
+            items={tabs}
+            activeId={activeTab.id}
+            onTabChange={handleTabChange}
+          />
+          <TabsContent value={activeTab.id}>{renderProducts()}</TabsContent>
+        </Tabs>
+      )}
     </div>
   )
 }

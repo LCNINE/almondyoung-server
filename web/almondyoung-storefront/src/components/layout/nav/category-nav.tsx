@@ -10,10 +10,17 @@ import { useRef, useState } from "react"
  * 카테고리 네비게이션 컴포넌트
  * 데스크탑 main header에서 사용되는 카테고리 네비게이션 컴포넌트입니다.
  *──────────────────────────*/
+type NavTab = {
+  name: string
+  handle: string
+  key?: string
+  isInterest?: boolean
+}
+
 export function CategoryNavigation({
   mainCategories,
 }: {
-  mainCategories: readonly { name: string; handle: string }[]
+  mainCategories: readonly NavTab[]
 }) {
   const { countryCode } = useParams()
   const pathname = usePathname()
@@ -29,10 +36,12 @@ export function CategoryNavigation({
     return pathname?.startsWith(`/${countryCode}/category/${handle}`)
   }
 
-  // Medusa 카테고리의 handle을 사용 (category page와 일관성 유지)
-  const allTabs = [
-    ...mainCategories.map((c) => ({ name: c.name, handle: c.handle })),
-  ]
+  const allTabs: NavTab[] = mainCategories.map((c) => ({
+    name: c.name,
+    handle: c.handle,
+    key: c.key,
+    isInterest: c.isInterest,
+  }))
 
   // 마우스 드래그 핸들러 (선택 사항)
   const onDragStart = (e: React.MouseEvent) => {
@@ -71,6 +80,7 @@ export function CategoryNavigation({
             key={tab.name}
             tab={tab}
             isActive={getIsActive(tab.handle)}
+            isInterest={!!tab.isInterest}
             countryCode={countryCode as string}
           />
         ))}
@@ -82,6 +92,7 @@ export function CategoryNavigation({
             key={tab.name}
             tab={tab}
             isActive={getIsActive(tab.handle)}
+            isInterest={!!tab.isInterest}
             countryCode={countryCode as string}
           />
         ))}
@@ -93,10 +104,12 @@ export function CategoryNavigation({
 function NavItem({
   tab,
   isActive,
+  isInterest,
   countryCode,
 }: {
   tab: { name: string; handle?: string }
   isActive: boolean
+  isInterest: boolean
   countryCode: string
 }) {
   return (
@@ -112,7 +125,13 @@ function NavItem({
         className={cn(
           "relative z-10 text-sm font-semibold transition-colors duration-300 md:text-xl",
           "outline-none select-none",
-          isActive ? "text-white" : "text-white/50 hover:text-white"
+          isActive
+            ? isInterest
+              ? "text-yellow-30"
+              : "text-white"
+            : isInterest
+              ? "text-yellow-30/80 hover:text-yellow-30"
+              : "text-white/50 hover:text-white"
         )}
       >
         {tab.name}
@@ -121,7 +140,10 @@ function NavItem({
       {isActive && (
         <motion.div
           layoutId="active-underline"
-          className="absolute right-0 bottom-0 left-0 h-[2px] bg-white"
+          className={cn(
+            "absolute right-0 bottom-0 left-0 h-[2px]",
+            isInterest ? "bg-yellow-30" : "bg-white"
+          )}
           transition={{ type: "spring", bounce: 0.2, duration: 0.5 }}
         />
       )}

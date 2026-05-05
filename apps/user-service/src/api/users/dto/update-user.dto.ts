@@ -1,6 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsDateString,
+  IsIn,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -11,6 +14,18 @@ import {
 } from 'class-validator';
 import { AddressDto } from '../../../commons/dto/address.dto';
 import { Type } from 'class-transformer';
+
+export const INTEREST_CATEGORY_KEYS = [
+  'lash-perm',
+  'lash-extension',
+  'semi-permanent',
+  'nail',
+  'tattoo',
+  'skincare',
+  'hair',
+  'waxing',
+] as const;
+export type InterestCategoryKey = (typeof INTEREST_CATEGORY_KEYS)[number];
 
 export class UpdateUserDto {
   @ApiProperty({
@@ -80,4 +95,21 @@ export class UpdateUserDto {
   @ValidateNested()
   @Type(() => AddressDto)
   address?: AddressDto | null;
+
+  @ApiProperty({
+    description: '관심 시술 카테고리 키 배열 (최대 3개). 빈 배열은 명시적 초기화로 처리됨.',
+    isArray: true,
+    enum: INTEREST_CATEGORY_KEYS,
+    required: false,
+    example: ['nail', 'tattoo'],
+  })
+  @IsOptional()
+  @IsArray({ message: '관심 카테고리는 배열이어야 합니다.' })
+  @ArrayMaxSize(3, { message: '관심 카테고리는 최대 3개까지 선택할 수 있습니다.' })
+  @IsString({ each: true })
+  @IsIn(INTEREST_CATEGORY_KEYS as unknown as string[], {
+    each: true,
+    message: '허용되지 않는 카테고리 키입니다.',
+  })
+  interestCategoryKeys?: InterestCategoryKey[];
 }

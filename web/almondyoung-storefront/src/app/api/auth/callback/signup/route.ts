@@ -1,6 +1,11 @@
 import { siteConfig } from "@/lib/config/site"
 import { toLocalizedPath } from "@/lib/utils/locale-path"
-import { setTokenCookies, setMedusaAuthToken } from "@lib/data/cookies"
+import {
+  removeInterestBannerDismissed,
+  removeInterestCategoryKeys,
+  setMedusaAuthToken,
+  setTokenCookies,
+} from "@lib/data/cookies"
 import { NextRequest, NextResponse } from "next/server"
 import { requireBackendBaseUrl } from "@/lib/config/backend"
 
@@ -88,6 +93,11 @@ export async function GET(request: NextRequest) {
 
     // 2. 쿠키에 토큰 설정
     await setTokenCookies(accessToken, refreshToken)
+
+    // 신규 가입자는 prefs 가 없으므로, anon 상태에서 임시로 골라둔 관심 카테고리/dismiss 를 폐기.
+    // 첫 홈 진입 시 배너가 다시 노출되어 계정 단위로 새로 묻는다.
+    await removeInterestCategoryKeys()
+    await removeInterestBannerDismissed()
 
     // 3. 이미 메두사 회원인지 체크 (로그인 시도)
     const medusaToken = await fetchMedusaSignin(accessToken)

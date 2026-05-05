@@ -7,6 +7,7 @@ export interface UserDetailDto extends UserBaseType {
     address: AddressDto | null
     birthDate: Date | null
     profileImageUrl: string | null
+    interestCategoryKeys: string[] | null
     createdAt: Date
     updatedAt: Date
   } | null
@@ -56,6 +57,7 @@ export interface ProfileDto {
   address: AddressDto | null //주소 정보
   birthDate: Date | null //생년월일
   profileImageUrl: string | null //프로필 이미지 URL
+  interestCategoryKeys: string[] | null //관심 시술 카테고리 키 (최대 3개)
   createdAt: Date //프로필 생성일
   updatedAt: Date //프로필 수정일
 }
