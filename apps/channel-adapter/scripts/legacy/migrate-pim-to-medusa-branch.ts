@@ -22,11 +22,11 @@
 import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { ConfigService } from '@nestjs/config';
-import { channelAdapterSchema } from '../src/schema';
+import { channelAdapterSchema } from '../../src/schema';
 import { PimSnapshotBuilder } from './lib/pim-snapshot-builder';
-import { PimMedusaSyncService } from '../src/adapters/medusa/pim-medusa-sync.service';
-import { MedusaClient } from '../src/adapters/medusa/medusa.client';
-import { PimMedusaMappingRepository } from '../src/adapters/medusa/pim-medusa-mapping.repository';
+import { PimMedusaSyncService } from '../../src/adapters/medusa/pim-medusa-sync.service';
+import { MedusaClient } from '../../src/adapters/medusa/medusa.client';
+import { PimMedusaMappingRepository } from '../../src/adapters/medusa/pim-medusa-mapping.repository';
 
 interface Args {
   batchSize: number;

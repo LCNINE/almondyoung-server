@@ -5,6 +5,7 @@ import type { PimProductSnapshot } from '../../src/types';
 export type ErrorType =
   | 'validation_error' // Snapshot validation failed (DON'T retry)
   | 'medusa_api_error' // Medusa API error (retry with backoff)
+  | 'service_unavailable' // 502/503 — 서버 과부하. 길게 기다렸다 재시도
   | 'network_error' // Timeout/connection issues (retry with backoff)
   | 'db_error' // Database operation failed (retry once)
   | 'unknown'; // Unexpected error (retry cautiously)
@@ -26,13 +27,31 @@ export function classifyError(error: any): ErrorType {
     return 'validation_error';
   }
 
-  // Check error message for validation keywords
-  if (error.message?.toLowerCase().includes('validation')) {
+  // Check error message for validation keywords. PIM 검증 메시지는 'validation' 키워드를
+  // 안 쓰는 경우가 있어(예: "PIM snapshot must have at least one variant") 명시적 패턴 추가.
+  const msg = error.message?.toLowerCase() || '';
+  if (msg.includes('validation') || msg.includes('pim snapshot') || msg.includes('snapshot must')) {
     return 'validation_error';
   }
 
-  // Medusa API errors (retry with backoff)
-  if (error.response?.status) {
+  // 503/502 = 서버 과부하. 매우 길게 기다렸다 재시도해야 cascade 가 풀린다.
+  const status = error.response?.status ?? error.status;
+  const lowerMsg = (error.message || '').toLowerCase();
+  const is5xxOverload =
+    status === 502 ||
+    status === 503 ||
+    status === 504 ||
+    lowerMsg.includes('service temporarily unavailable') ||
+    lowerMsg.includes('service unavailable') ||
+    lowerMsg.includes('bad gateway') ||
+    lowerMsg.includes('gateway timeout');
+  if (is5xxOverload) {
+    return 'service_unavailable';
+  }
+
+  // Medusa API errors (retry with backoff). Medusa SDK 의 FetchError 는 `.status` 를
+  // 직접 노출하므로 양쪽 모두 본다.
+  if (error.response?.status || typeof error.status === 'number') {
     return 'medusa_api_error';
   }
 
@@ -67,6 +86,7 @@ export function shouldRetry(errorType: ErrorType): boolean {
  *
  * Strategies:
  * - validation_error: No retry (0ms)
+ * - service_unavailable (502/503/504): 길게 — 15s, 30s, 60s. 서버가 회복할 시간 확보.
  * - network_error: Exponential backoff with base 1.5 (2s, 3s, 4.5s)
  * - medusa_api_error: Exponential backoff with base 2 (2s, 4s, 8s)
  * - db_error: Linear backoff (2s, 4s, 6s)
@@ -77,6 +97,11 @@ export function getRetryDelay(attempt: number, errorType: ErrorType): number {
 
   if (errorType === 'validation_error') {
     return 0; // No retry
+  }
+
+  if (errorType === 'service_unavailable') {
+    // 15s, 30s, 60s — 5xx 캐스케이드 풀어주려면 짧게 재시도하면 안 됨.
+    return 15000 * Math.pow(2, attempt - 1);
   }
 
   if (errorType === 'network_error') {

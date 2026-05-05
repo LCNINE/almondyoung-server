@@ -25,3 +25,7 @@ build
 
 .medusa
 static
+
+# 백필 빌드 타임 dump (apps/medusa/scripts/extract-core-snapshots.ts 결과)
+src/data/core-snapshots.json
+src/data/core-snapshots.json.gz

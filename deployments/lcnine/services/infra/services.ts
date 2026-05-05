@@ -281,6 +281,11 @@ export function setup(infra: SharedInfra) {
     port: 9000,
     priority: 210,
     link: [db, redis],
+    // 백필 / 트래픽 대응을 위한 scaling. 끝나면 본 블록을 제거(또는 SST 기본값으로
+    // 되돌리기) 후 sst deploy 로 원복할 것 — 비용 누적 방지.
+    cpu: "1 vCPU",
+    memory: "2 GB",
+    scaling: { min: 2, max: 4 },
     buildArgs: {
       VITE_USER_SERVICE_URL: idpUserServiceUrl,
     },

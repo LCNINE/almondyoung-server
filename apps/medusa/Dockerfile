@@ -27,6 +27,15 @@ RUN rm -rf /app/libs/db
 RUN mkdir -p /app/apps/channel-adapter/src
 COPY apps/channel-adapter/src/types.ts /app/apps/channel-adapter/src/types.ts
 
+# 3-1) 백필 데이터 baking 가드 — apps/medusa/scripts/extract-core-snapshots.ts 가
+# 사전에 실행되어 src/data/core-snapshots.json.gz 가 존재해야 백필 스크립트가 동작.
+# 누락이어도 일반 런타임은 동작하므로 build fail 은 시키지 않고 경고만 출력.
+RUN if [ -f src/data/core-snapshots.json.gz ]; then \
+      echo "[backfill data] OK: $(ls -lh src/data/core-snapshots.json.gz | awk '{print $5}') bundle baked"; \
+    else \
+      echo "[backfill data] WARN: src/data/core-snapshots.json.gz missing — backfill-from-core 스크립트 사용 시 추출 필요"; \
+    fi
+
 # 4) 애플리케이션 빌드 (Medusa CLI가 빌드 수행)
 # Vite envs must be present at build time to be baked into the admin bundle
 ENV VITE_USER_SERVICE_URL=$VITE_USER_SERVICE_URL

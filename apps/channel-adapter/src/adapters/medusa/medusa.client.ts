@@ -51,6 +51,9 @@ export class MedusaClient {
   private readonly apiUrl: string;
   private readonly apiKey: string;
   private readonly categoryCache = new Map<string, MedusaProduct['id']>(); // key: handle
+  // categoryCache 의 value(=Medusa category id) 만 모은 set. attachProductToCategories 에서
+  // "이 id 가 이미 알려진 것인가" 를 O(1) 으로 검사하기 위해 유지한다 (values() 선형 스캔 회피).
+  private readonly knownCategoryIds = new Set<string>();
   private readonly tagCache = new Map<string, string>(); // key: value
   private readonly typeCache = new Map<string, string>(); // key: value
   private readonly salesChannelCache = new Map<string, string>(); // key: name
@@ -74,10 +77,109 @@ export class MedusaClient {
   // 모든 캐시 초기화 (마이그레이션 시작 시 사용)
   clearAllCaches(): void {
     this.categoryCache.clear();
+    this.knownCategoryIds.clear();
     this.tagCache.clear();
     this.typeCache.clear();
     this.salesChannelCache.clear();
     this.logger.log('All caches cleared');
+  }
+
+  private setCategoryCache(key: string, medusaCategoryId: string): void {
+    this.categoryCache.set(key, medusaCategoryId);
+    this.knownCategoryIds.add(medusaCategoryId);
+  }
+
+  // 백필 시작 시 1회 호출하여 카테고리 전체를 categoryCache 에 적재한다.
+  // 이후 ensureCategoryFromSnapshot 가 list/verify/update 없이 cache hit 으로 즉답 가능.
+  // key: handle, metadata.pimCategoryId, metadata.pimSlug 모두 같은 medusaId 로 매핑.
+  async primeCategoryCache(): Promise<number> {
+    let total = 0;
+    const limit = 100;
+    let offset = 0;
+    while (true) {
+      const { product_categories } = await this.sdk.admin.productCategory.list({ limit, offset });
+      if (!product_categories?.length) break;
+      for (const c of product_categories) {
+        if (!c.id) continue;
+        if (c.handle) this.setCategoryCache(c.handle, c.id);
+        const meta = (c.metadata as any) || {};
+        if (meta.pimCategoryId) this.setCategoryCache(meta.pimCategoryId, c.id);
+        if (meta.pimSlug) this.setCategoryCache(meta.pimSlug, c.id);
+        total += 1;
+      }
+      if (product_categories.length < limit) break;
+      offset += limit;
+    }
+    this.logger.log(`Category cache primed: ${total} categories`);
+    return total;
+  }
+
+  // 백필 시작 시 1회 호출하여 태그 전체를 tagCache 에 적재한다.
+  async primeTagCache(): Promise<number> {
+    let total = 0;
+    const limit = 100;
+    let offset = 0;
+    while (true) {
+      const { product_tags } = await this.sdk.admin.productTag.list({ limit, offset });
+      if (!product_tags?.length) break;
+      for (const t of product_tags) {
+        if (t.value && t.id) {
+          this.tagCache.set(t.value, t.id);
+          total += 1;
+        }
+      }
+      if (product_tags.length < limit) break;
+      offset += limit;
+    }
+    this.logger.log(`Tag cache primed: ${total} tags`);
+    return total;
+  }
+
+  // 백필 시작 시 1회 호출하여 product type 전체를 typeCache 에 적재한다.
+  async primeProductTypeCache(): Promise<number> {
+    let total = 0;
+    const limit = 100;
+    let offset = 0;
+    while (true) {
+      const { product_types } = await this.sdk.admin.productType.list({ limit, offset });
+      if (!product_types?.length) break;
+      for (const t of product_types) {
+        if (t.value && t.id) {
+          this.typeCache.set(t.value, t.id);
+          total += 1;
+        }
+      }
+      if (product_types.length < limit) break;
+      offset += limit;
+    }
+    this.logger.log(`ProductType cache primed: ${total} types`);
+    return total;
+  }
+
+  // sales channel 은 보통 소수이므로 1 페이지면 충분.
+  async primeSalesChannelCache(): Promise<number> {
+    const { sales_channels } = await this.sdk.admin.salesChannel.list({ limit: 100 });
+    let total = 0;
+    for (const ch of sales_channels || []) {
+      if (ch.name && ch.id) {
+        this.salesChannelCache.set(ch.name, ch.id);
+        total += 1;
+      }
+    }
+    this.logger.log(`SalesChannel cache primed: ${total} channels`);
+    return total;
+  }
+
+  // 백필 진입점에서 호출. category/tag/productType/salesChannel 캐시를 한꺼번에 채워
+  // 상품 1건당 list/verify HTTP 호출을 0 회에 가깝게 줄인다.
+  async primeAll(): Promise<{ categories: number; tags: number; types: number; channels: number }> {
+    const [categories, tags, types, channels] = await Promise.all([
+      this.primeCategoryCache(),
+      this.primeTagCache(),
+      this.primeProductTypeCache(),
+      this.primeSalesChannelCache(),
+    ]);
+    return { categories, tags, types, channels };
   }
 
   // ===== Product Categories =====
@@ -136,12 +238,26 @@ export class MedusaClient {
     return null;
   }
 
-  private async findCategoryByPimId(pimCategoryId: string): Promise<HttpTypes.AdminProductCategory | null> {
+  // metadata 필터를 SDK 가 지원하지 않으므로 admin/product-category list 를 페이지네이션하며
+  // 인메모리 매칭한다. 카테고리가 수백 개 단위로 늘어나도 동작하도록 limit 단위로 끝까지 훑는다.
+  // cacheOnly=true 면 LIST 호출을 스킵하고 즉시 null. primeCategoryCache 후 백필에서만 활성화 추천.
+  private async findCategoryByPimId(
+    pimCategoryId: string,
+    options?: { cacheOnly?: boolean },
+  ): Promise<HttpTypes.AdminProductCategory | null> {
+    if (options?.cacheOnly) return null;
     try {
-      const { product_categories } = await this.sdk.admin.productCategory.list({
-        limit: 100,
-      });
-      return product_categories?.find((c) => (c.metadata as any)?.pimCategoryId === pimCategoryId) || null;
+      const limit = 100;
+      let offset = 0;
+      // count 가 응답에 없을 수 있어 빈 페이지를 종료 신호로 사용.
+      while (true) {
+        const { product_categories } = await this.sdk.admin.productCategory.list({ limit, offset });
+        if (!product_categories?.length) return null;
+        const found = product_categories.find((c) => (c.metadata as any)?.pimCategoryId === pimCategoryId);
+        if (found) return found;
+        if (product_categories.length < limit) return null;
+        offset += limit;
+      }
     } catch (error) {
       const fetchError = error as FetchError;
       this.logger.warn(`Medusa findCategoryByPimId failed for ${pimCategoryId}: ${fetchError.message}`);
@@ -150,12 +266,37 @@ export class MedusaClient {
   }
 
   // PIM 카테고리 ID로 Medusa 카테고리를 역참조.
-  // 생성 시 handle이 slug 또는 pimCategoryId 중 하나로 저장되므로
-  // (1) metadata.pimCategoryId 매칭 → (2) handle = pimCategoryId 매칭 순으로 조회한다.
-  async findCategoryByPimRef(pimCategoryId: string): Promise<HttpTypes.AdminProductCategory | null> {
+  // (1) 같은 프로세스에서 이미 만든 항목은 categoryCache 에 pimCategoryId 키로 들어가 있어 즉답
+  // (2) 캐시 미스 시 metadata.pimCategoryId 페이지네이션 검색
+  // (3) 마지막 fallback 으로 handle = pimCategoryId 매칭(legacy 트리 경로 호환).
+  // cacheOnly=true 면 (2)/(3) 모두 스킵 — primeCategoryCache 가 보장된 환경에서만 사용.
+  async findCategoryByPimRef(
+    pimCategoryId: string,
+    options?: { cacheOnly?: boolean },
+  ): Promise<HttpTypes.AdminProductCategory | null> {
+    const cachedId = this.categoryCache.get(pimCategoryId);
+    if (cachedId) {
+      return { id: cachedId } as HttpTypes.AdminProductCategory;
+    }
+    if (options?.cacheOnly) return null;
     const byMetadata = await this.findCategoryByPimId(pimCategoryId);
-    if (byMetadata?.id) return byMetadata;
-    return this.findCategoryByHandle(pimCategoryId);
+    if (byMetadata?.id) {
+      this.setCategoryCache(pimCategoryId, byMetadata.id);
+      return byMetadata;
+    }
+    const byHandle = await this.findCategoryByHandle(pimCategoryId);
+    if (byHandle?.id) {
+      this.setCategoryCache(pimCategoryId, byHandle.id);
+    }
+    return byHandle;
+  }
+
+  // 백필 진입 시 primeAll 후 호출. cacheOnly mode 를 켜서 ensureCategoryFromSnapshot 의
+  // paginated LIST 우회 — 캐시에 없는 항목은 신규 create 경로로 분기되어 정상 동작.
+  private cacheOnlyMode = false;
+  enableCacheOnlyCategoryLookup(enable: boolean): void {
+    this.cacheOnlyMode = enable;
+    this.logger.log(`Category cacheOnly mode: ${enable ? 'ON' : 'OFF'}`);
   }
 
   async softDeleteCategory(medusaCategoryId: string): Promise<void> {
@@ -163,7 +304,19 @@ export class MedusaClient {
   }
 
   invalidateCategoryCacheByHandle(handle: string): void {
+    const id = this.categoryCache.get(handle);
     this.categoryCache.delete(handle);
+    // 해당 medusaId 를 가리키는 다른 키가 남아있지 않은 경우에만 knownCategoryIds 에서 제거.
+    if (id) {
+      let stillReferenced = false;
+      for (const v of this.categoryCache.values()) {
+        if (v === id) {
+          stillReferenced = true;
+          break;
+        }
+      }
+      if (!stillReferenced) this.knownCategoryIds.delete(id);
+    }
   }
 
   private async createCategory(payload: HttpTypes.AdminCreateProductCategory): Promise<HttpTypes.AdminProductCategory> {
@@ -226,7 +379,7 @@ export class MedusaClient {
           );
         }
         // 조회 결과를 캐시에 저장 (다음 동일 제품에서 재사용)
-        this.categoryCache.set(handle, existing.id);
+        this.setCategoryCache(handle, existing.id);
         this.logger.debug(`Ensured existing Medusa category ${existing.id} for PIM ${pimCategoryId}`);
         return existing.id;
       }
@@ -246,7 +399,7 @@ export class MedusaClient {
     };
 
     const created = await this.createCategory(payload);
-    this.categoryCache.set(handle, created.id);
+    this.setCategoryCache(handle, created.id);
     this.logger.log(`Created Medusa category ${created.id} for PIM category ${detail.id}`);
     return created.id;
   }
@@ -264,6 +417,16 @@ export class MedusaClient {
     thumbnail?: string;
     sortOrder?: number;
   }): Promise<string> {
+    // Fast path: 이미 알고 있는 매핑이면 list/verify/update 없이 바로 반환.
+    // primeCategoryCache 또는 직전 호출에서 적재된 entry 가 있을 때 적용된다.
+    const cachedById = this.categoryCache.get(categorySnapshot.id);
+    if (cachedById) return cachedById;
+    const cachedBySlug = categorySnapshot.slug ? this.categoryCache.get(categorySnapshot.slug) : undefined;
+    if (cachedBySlug) {
+      this.setCategoryCache(categorySnapshot.id, cachedBySlug);
+      return cachedBySlug;
+    }
+
     const preferredHandle = categorySnapshot.slug || categorySnapshot.id;
     const legacyHandle = categorySnapshot.id;
 
@@ -278,9 +441,13 @@ export class MedusaClient {
 
     let parentMedusaId: string | undefined;
 
-    console.log('categorySnapshot::::', categorySnapshot);
     if (categorySnapshot.parentId) {
-      const existingParent = await this.findCategoryByCandidateHandles(categorySnapshot.parentId);
+      // 부모는 자식과 같은 식별자 규약(handle=slug||id, metadata.pimCategoryId)을 따라 저장된다.
+      // 자식이 들고 있는 parentId 는 PIM UUID 라서 handle 매칭만으로는 슬러그가 있는 부모를
+      // 못 찾는다. metadata 매칭까지 시도하는 findCategoryByPimRef 를 사용한다.
+      const existingParent = await this.findCategoryByPimRef(categorySnapshot.parentId, {
+        cacheOnly: this.cacheOnlyMode,
+      });
       if (existingParent?.id) {
         parentMedusaId = existingParent.id;
       } else {
@@ -288,58 +455,46 @@ export class MedusaClient {
       }
     }
 
-    const existing =
-      (await this.findCategoryByCandidateHandles(preferredHandle, legacyHandle)) ||
-      (await this.findCategoryByPimId(categorySnapshot.id));
+    // cacheOnly 모드면 paginated LIST 를 시도하지 않는다 — 캐시 미스는 신규로 처리.
+    const existing = this.cacheOnlyMode
+      ? null
+      : (await this.findCategoryByCandidateHandles(preferredHandle, legacyHandle)) ||
+        (await this.findCategoryByPimId(categorySnapshot.id));
     if (existing?.id) {
       const verified = await this.getCategoryById(existing.id);
-      console.log('verified :::', verified);
       if (!verified) {
         // getCategoryById 실패 시 handle 조회 결과를 신뢰 (네트워크 오류일 수 있음)
         this.logger.warn(`Category ${existing.id} found by handle but getCategoryById failed. Using handle result.`);
-        this.categoryCache.set(preferredHandle, existing.id);
-        return existing.id;
-      } else {
-        const updatePayload = {
-          name: categorySnapshot.name,
-          handle: preferredHandle,
-          is_internal: false,
-          is_active: isActive,
-          parent_category_id: parentMedusaId,
-          ...(categorySnapshot.thumbnail && { thumbnail: categorySnapshot.thumbnail }),
-          ...(categorySnapshot.sortOrder != null && { rank: categorySnapshot.sortOrder }),
-          metadata: {
-            ...(existing.metadata || {}),
-            ...pimMetadata,
-          },
-        };
-        console.log(
-          `[CATEGORY-DEBUG] REQUEST target=${existing.id} payload=${JSON.stringify(updatePayload)}`,
-        );
-        try {
-          const data = await this.sdk.admin.productCategory.update(existing.id, updatePayload);
-          console.log(
-            `[CATEGORY-DEBUG] RESPONSE target=${existing.id} data=${JSON.stringify(data)}`,
-          );
-
-          // 응답 후 실제 DB 반영 상태 재조회 (SDK 응답과 실제 DB가 달랐던 이슈 추적)
-          const verifyAfter = await this.getCategoryById(existing.id);
-          console.log(
-            `[CATEGORY-DEBUG] VERIFY-AFTER target=${existing.id} rank=${verifyAfter?.rank} updatedAt=${verifyAfter?.updated_at} data=${JSON.stringify(verifyAfter)}`,
-          );
-        } catch (err) {
-          const fetchError = err as FetchError;
-          console.log(
-            `[CATEGORY-DEBUG] ERROR target=${existing.id} message=${fetchError.message}`,
-          );
-          this.logger.warn(
-            `Failed to update Medusa category ${existing.id} from snapshot ${categorySnapshot.id}: ${fetchError.message}`,
-          );
-        }
-        this.categoryCache.set(preferredHandle, existing.id);
-        this.logger.debug(`Ensured existing Medusa category ${existing.id} for PIM ${categorySnapshot.id}`);
+        this.setCategoryCache(preferredHandle, existing.id);
+        this.setCategoryCache(categorySnapshot.id, existing.id);
         return existing.id;
       }
+
+      const updatePayload = {
+        name: categorySnapshot.name,
+        handle: preferredHandle,
+        is_internal: false,
+        is_active: isActive,
+        parent_category_id: parentMedusaId,
+        ...(categorySnapshot.thumbnail && { thumbnail: categorySnapshot.thumbnail }),
+        ...(categorySnapshot.sortOrder != null && { rank: categorySnapshot.sortOrder }),
+        metadata: {
+          ...(existing.metadata || {}),
+          ...pimMetadata,
+        },
+      };
+      try {
+        await this.sdk.admin.productCategory.update(existing.id, updatePayload);
+      } catch (err) {
+        const fetchError = err as FetchError;
+        this.logger.warn(
+          `Failed to update Medusa category ${existing.id} from snapshot ${categorySnapshot.id}: ${fetchError.message}`,
+        );
+      }
+      this.setCategoryCache(preferredHandle, existing.id);
+      this.setCategoryCache(categorySnapshot.id, existing.id);
+      this.logger.debug(`Ensured existing Medusa category ${existing.id} for PIM ${categorySnapshot.id}`);
+      return existing.id;
     }
 
     const payload = {
@@ -356,7 +511,8 @@ export class MedusaClient {
     };
 
     const created = await this.createCategory(payload);
-    this.categoryCache.set(preferredHandle, created.id);
+    this.setCategoryCache(preferredHandle, created.id);
+    this.setCategoryCache(categorySnapshot.id, created.id);
     this.logger.log(`Created Medusa category ${created.id} from snapshot for PIM category ${categorySnapshot.id}`);
     return created.id;
   }
@@ -370,10 +526,16 @@ export class MedusaClient {
     if (!categoryIds || categoryIds.length === 0) return;
     const unique = Array.from(new Set(categoryIds));
 
-    // 카테고리 존재 여부 확인
-    for (const catId of unique) {
-      const categoryExists = await this.getCategoryById(catId);
-      if (!categoryExists) {
+    // 카테고리 존재 여부 확인 (병렬). knownCategoryIds 에 있으면 getCategoryById 도 생략.
+    // primeCategoryCache 후엔 거의 모든 id 가 캐시 hit 이라 verify 라운드트립이 사라진다.
+    const verifyResults = await Promise.all(
+      unique.map(async (catId) => {
+        if (this.knownCategoryIds.has(catId)) return { catId, ok: true };
+        return { catId, ok: !!(await this.getCategoryById(catId)) };
+      }),
+    );
+    for (const { catId, ok } of verifyResults) {
+      if (!ok) {
         this.logger.warn(`Category ${catId} does not exist in Medusa before attaching product ${productId}`);
         if (options?.throwOnFailure) {
           throw new Error(`Category ${catId} not found`);
@@ -382,19 +544,25 @@ export class MedusaClient {
       }
     }
 
-    // productCategory.updateProducts로 M:N 조인 테이블에 직접 추가
+    // productCategory.updateProducts로 M:N 조인 테이블에 직접 추가 (병렬).
     // (product.update({ categories }) 는 product record만 업데이트하고 조인 테이블을 갱신하지 않음)
-    for (const catId of unique) {
-      try {
-        await this.sdk.admin.productCategory.updateProducts(catId, {
-          add: [productId],
-        } as any);
-        this.logger.debug(`Attached product ${productId} to category ${catId}`);
-      } catch (error) {
-        const fetchError = error as FetchError;
+    const attachResults = await Promise.allSettled(
+      unique.map((catId) =>
+        this.sdk.admin.productCategory
+          .updateProducts(catId, { add: [productId] } as any)
+          .then(() => {
+            this.logger.debug(`Attached product ${productId} to category ${catId}`);
+          }),
+      ),
+    );
+    for (let i = 0; i < attachResults.length; i++) {
+      const r = attachResults[i];
+      if (r.status === 'rejected') {
+        const fetchError = r.reason as FetchError;
+        const catId = unique[i];
         this.logger.warn(`Failed to attach product ${productId} to category ${catId}: ${fetchError.message}`);
         if (options?.throwOnFailure) {
-          throw error;
+          throw r.reason;
         }
       }
     }
@@ -487,12 +655,22 @@ export class MedusaClient {
   }
 
   async ensureTags(values: string[]): Promise<Array<{ id: string; value: string }>> {
-    const results: Array<{ id: string; value: string }> = [];
+    // 캐시 hit 분리 — 미스 항목만 병렬 ensure (primeTagCache 후엔 대부분 hit).
+    const hits: Array<{ id: string; value: string }> = [];
+    const misses: string[] = [];
     for (const value of values) {
-      const id = await this.ensureTag(value);
-      results.push({ id, value });
+      const cached = this.tagCache.get(value);
+      if (cached) {
+        hits.push({ id: cached, value });
+      } else {
+        misses.push(value);
+      }
     }
-    return results;
+    if (misses.length === 0) return hits;
+    const ensured = await Promise.all(
+      misses.map(async (value) => ({ value, id: await this.ensureTag(value) })),
+    );
+    return [...hits, ...ensured];
   }
 
   async getDefaultSalesChannel(): Promise<string> {
@@ -584,38 +762,55 @@ export class MedusaClient {
 
     // 1) 첫 variant만 넣어 product 생성
     const [firstVariant, ...rest] = variants;
-    const created = await this.createProduct({
+    let latest = await this.createProduct({
       ...payload,
       variants: [firstVariant],
     });
 
     try {
-      // 2) 나머지 variants는 작은 청크로 추가
+      // 2) 나머지 variants는 작은 청크로 추가. batchVariants 응답에 최신 product 가 포함되면
+      //    그것을 누적해서 마지막 getProduct 재조회를 회피한다.
       const chunkSize = 10;
       for (let i = 0; i < rest.length; i += chunkSize) {
         const chunk = rest.slice(i, i + chunkSize);
-        // MedusaProductPayload의 variants는 커스텀 타입이므로 SDK 타입으로 변환 필요
-        await this.addVariants(created.id, chunk as unknown as HttpTypes.AdminCreateProductVariant[]);
+        const updated = await this.addVariants(
+          latest.id,
+          chunk as unknown as HttpTypes.AdminCreateProductVariant[],
+        );
+        if (updated) latest = updated;
       }
     } catch (err) {
       // 부분 생성 방지: 추가 중 실패하면 생성한 상품을 롤백
       this.logger.error(
-        `Failed to add variants for product ${created.id}, rolling back create.`,
+        `Failed to add variants for product ${latest.id}, rolling back create.`,
         err?.response?.data || err?.message,
       );
-      await this.safeDeleteProduct(created.id);
+      await this.safeDeleteProduct(latest.id);
       throw err;
     }
 
-    // 3) 최신 product 리턴 (variant id 매핑 위해 조회)
-    return this.getProduct(created.id);
+    // 3) batchVariants 응답이 product 를 포함하지 않거나 variant 가 누락된 경우에만 재조회.
+    const expectedVariantCount = variants.length;
+    if (!latest.variants || latest.variants.length < expectedVariantCount) {
+      this.logger.debug(
+        `batchVariants response missing variants (${latest.variants?.length ?? 0}/${expectedVariantCount}); falling back to getProduct`,
+      );
+      return this.getProduct(latest.id);
+    }
+    return latest;
   }
 
-  private async addVariants(productId: string, variants: HttpTypes.AdminCreateProductVariant[]): Promise<void> {
+  private async addVariants(
+    productId: string,
+    variants: HttpTypes.AdminCreateProductVariant[],
+  ): Promise<MedusaProduct | undefined> {
     this.logger.debug(`Batch-adding ${variants.length} variants to product ${productId}`);
-    await this.sdk.admin.product.batchVariants(productId, {
+    const response = await this.sdk.admin.product.batchVariants(productId, {
       create: variants,
     });
+    // SDK 응답 형식이 버전마다 다를 수 있어 product 가 있을 때만 반환.
+    const product = (response as unknown as { product?: MedusaProduct }).product;
+    return product;
   }
 
   private async getProduct(productId: string): Promise<MedusaProduct> {
@@ -713,15 +908,90 @@ export class MedusaClient {
     }
   }
 
+  // SKU 다수를 한 번의 LIST 호출로 inventory_item id 매핑.
+  // SDK 가 sku 배열 필터를 받아주지 않으면 50개 청크 단위로 LIST + q 검색 fallback.
+  private async bulkSkuToInventoryItemId(skus: string[]): Promise<Map<string, string>> {
+    const result = new Map<string, string>();
+    if (skus.length === 0) return result;
+    const uniqueSkus = Array.from(new Set(skus));
+    const chunkSize = 50;
+    for (let i = 0; i < uniqueSkus.length; i += chunkSize) {
+      const chunk = uniqueSkus.slice(i, i + chunkSize);
+      try {
+        // Medusa v2 가 array filter 를 받으면 한 번에, 아니면 fallback 으로 분기.
+        const { inventory_items } = await this.sdk.admin.inventoryItem.list({
+          sku: chunk,
+          limit: chunk.length,
+        } as any);
+        for (const item of inventory_items || []) {
+          if (item.sku && item.id) result.set(item.sku, item.id);
+        }
+      } catch (error) {
+        const fetchError = error as FetchError;
+        this.logger.warn(
+          `Bulk SKU lookup failed (${chunk.length} skus), falling back to per-sku LIST: ${fetchError.message}`,
+        );
+        // 개별 LIST fallback — 이 경로는 비상시에만 타지만 그래도 N 회는 직렬보다 병렬로.
+        const found = await Promise.all(
+          chunk.map(async (sku) => {
+            try {
+              const { inventory_items } = await this.sdk.admin.inventoryItem.list({ sku, limit: 1 });
+              const id = inventory_items?.[0]?.id;
+              return id ? { sku, id } : null;
+            } catch {
+              return null;
+            }
+          }),
+        );
+        for (const entry of found) {
+          if (entry) result.set(entry.sku, entry.id);
+        }
+      }
+    }
+    return result;
+  }
+
+  // 누락된 SKU 들에 대해 inventory_item 을 약한 동시성(기본 5)으로 생성.
+  private async createMissingInventoryItems(
+    items: Array<{ sku: string; title: string }>,
+    concurrency = 5,
+  ): Promise<Map<string, string>> {
+    const created = new Map<string, string>();
+    for (let i = 0; i < items.length; i += concurrency) {
+      const slice = items.slice(i, i + concurrency);
+      const results = await Promise.all(
+        slice.map(async (x) => {
+          const id = await this.getOrCreateInventoryItemBySku(x.sku, x.title);
+          return { sku: x.sku, id };
+        }),
+      );
+      for (const { sku, id } of results) created.set(sku, id);
+    }
+    return created;
+  }
+
+  // variant ↔ inventory_item link 보장.
+  // - latestProduct 를 옵셔널로 받아 caller(`upsertProduct`)가 갖고 있는 객체를 재사용 가능.
+  //   (단, SDK 응답이 +variants.inventory_items 를 포함하지 않으면 내부에서 재조회.)
+  // - SKU 일괄 lookup + 단일 batchVariantInventoryItems 호출로 variant 수에 무관하게
+  //   1~3 회 round-trip 으로 끝낸다.
   private async ensureVariantInventoryLinks(
     productId: string,
     sourceVariants: MedusaProductPayload['variants'],
+    latestProduct?: MedusaProduct,
   ): Promise<void> {
     if (!sourceVariants || sourceVariants.length === 0) {
       return;
     }
 
-    const latest = await this.getProductWithVariantDetails(productId);
+    // inventory_items 까지 포함된 product 가 필요. 없으면 한 번 fetch.
+    const hasInventoryFields =
+      latestProduct &&
+      Array.isArray(latestProduct.variants) &&
+      latestProduct.variants.length > 0 &&
+      // inventory_items 가 1 개라도 응답에 포함되었으면 fields 가 채워졌다고 판단.
+      latestProduct.variants.some((v: any) => 'inventory_items' in v);
+    const latest = hasInventoryFields ? latestProduct! : await this.getProductWithVariantDetails(productId);
     const medusaVariants = latest.variants || [];
 
     type PayloadVariant = NonNullable<MedusaProductPayload['variants']>[number];
@@ -738,22 +1008,19 @@ export class MedusaClient {
       }
     }
 
+    const matchSrc = (medusaVariant: any): PayloadVariant | undefined =>
+      (medusaVariant.metadata?.pimVariantId
+        ? sourceByPimVariantId.get(medusaVariant.metadata.pimVariantId)
+        : undefined) || (medusaVariant.sku ? sourceBySku.get(medusaVariant.sku) : undefined);
+
+    // ── 1. manage_inventory 강제 ON 대상 수집 → 단일 batchVariants 호출 ──
     const variantsToForceManageInventory = medusaVariants
       .filter((medusaVariant) => {
-        const src =
-          (medusaVariant.metadata?.pimVariantId
-            ? sourceByPimVariantId.get(medusaVariant.metadata.pimVariantId)
-            : undefined) || (medusaVariant.sku ? sourceBySku.get(medusaVariant.sku) : undefined);
-
-        if (!src || src.manage_inventory === false) {
-          return false;
-        }
+        const src = matchSrc(medusaVariant);
+        if (!src || src.manage_inventory === false) return false;
         return medusaVariant.manage_inventory !== true;
       })
-      .map((medusaVariant) => ({
-        id: medusaVariant.id,
-        manage_inventory: true,
-      }));
+      .map((medusaVariant) => ({ id: medusaVariant.id, manage_inventory: true }));
 
     if (variantsToForceManageInventory.length > 0) {
       await this.sdk.admin.product.batchVariants(productId, {
@@ -761,51 +1028,75 @@ export class MedusaClient {
       });
     }
 
+    // ── 2. inventory link 가 필요한 variant 만 추림 ──
+    type LinkTarget = { variantId: string; sku: string; title: string };
+    const linkTargets: LinkTarget[] = [];
     for (const medusaVariant of medusaVariants) {
-      const src =
-        (medusaVariant.metadata?.pimVariantId
-          ? sourceByPimVariantId.get(medusaVariant.metadata.pimVariantId)
-          : undefined) || (medusaVariant.sku ? sourceBySku.get(medusaVariant.sku) : undefined);
+      const src = matchSrc(medusaVariant);
+      if (!src || src.manage_inventory === false) continue;
 
-      if (!src || src.manage_inventory === false) {
-        continue;
-      }
-
-      const hasInventoryLink = Array.isArray(medusaVariant.inventory_items) && medusaVariant.inventory_items.length > 0;
-
-      if (hasInventoryLink) {
-        continue;
-      }
+      const hasInventoryLink =
+        Array.isArray((medusaVariant as any).inventory_items) && (medusaVariant as any).inventory_items.length > 0;
+      if (hasInventoryLink) continue;
 
       const pimVariantId = src.metadata?.pimVariantId || medusaVariant.id;
       const sku = medusaVariant.sku || src.sku || `pim-${pimVariantId}`;
       const title = medusaVariant.title || src.title || sku;
+      linkTargets.push({ variantId: medusaVariant.id, sku, title });
+    }
 
-      const inventoryItemId = await this.getOrCreateInventoryItemBySku(sku, title);
+    if (linkTargets.length === 0) return;
 
-      try {
-        await this.sdk.admin.product.batchVariantInventoryItems(productId, {
-          create: [
-            {
-              inventory_item_id: inventoryItemId,
-              variant_id: medusaVariant.id,
-              required_quantity: 1,
-            },
-          ],
-        });
-        this.logger.log(
-          `Linked inventory_item ${inventoryItemId} to variant ${medusaVariant.id} (product ${productId})`,
-        );
-      } catch (error) {
-        const fetchError = error as FetchError;
-        const isConflict = fetchError.status === 409 || /already exists/i.test(fetchError.message || '');
-        if (isConflict) {
-          this.logger.debug(
-            `Variant inventory link already exists: variant=${medusaVariant.id}, inventory_item=${inventoryItemId}`,
-          );
-          continue;
+    // ── 3. SKU 일괄 lookup → 누락 SKU 만 동시 create ──
+    const skuToItemId = await this.bulkSkuToInventoryItemId(linkTargets.map((t) => t.sku));
+    const missing = linkTargets.filter((t) => !skuToItemId.has(t.sku));
+    if (missing.length > 0) {
+      const created = await this.createMissingInventoryItems(missing.map((m) => ({ sku: m.sku, title: m.title })));
+      for (const [sku, id] of created.entries()) skuToItemId.set(sku, id);
+    }
+
+    // ── 4. 모든 link 를 단일 batchVariantInventoryItems 호출로 ──
+    const createPayload = linkTargets
+      .map((t) => {
+        const inventoryItemId = skuToItemId.get(t.sku);
+        if (!inventoryItemId) return null;
+        return {
+          inventory_item_id: inventoryItemId,
+          variant_id: t.variantId,
+          required_quantity: 1,
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
+
+    if (createPayload.length === 0) return;
+
+    try {
+      await this.sdk.admin.product.batchVariantInventoryItems(productId, { create: createPayload });
+      this.logger.log(`Linked ${createPayload.length} variant inventory items in one batch (product ${productId})`);
+    } catch (error) {
+      const fetchError = error as FetchError;
+      const isConflict = fetchError.status === 409 || /already exists/i.test(fetchError.message || '');
+      if (!isConflict) throw error;
+
+      // 일부 link 가 race condition 으로 이미 존재. variant 단위 재시도(skip 가능 한 것은 skip).
+      this.logger.warn(
+        `batchVariantInventoryItems hit conflict; retrying per-variant for ${createPayload.length} entries`,
+      );
+      for (const entry of createPayload) {
+        try {
+          await this.sdk.admin.product.batchVariantInventoryItems(productId, { create: [entry] });
+        } catch (perItemError) {
+          const perItemFetch = perItemError as FetchError;
+          const perItemConflict =
+            perItemFetch.status === 409 || /already exists/i.test(perItemFetch.message || '');
+          if (perItemConflict) {
+            this.logger.debug(
+              `Variant inventory link already exists: variant=${entry.variant_id}, inventory_item=${entry.inventory_item_id}`,
+            );
+            continue;
+          }
+          throw perItemError;
         }
-        throw error;
       }
     }
   }
@@ -881,7 +1172,9 @@ export class MedusaClient {
       return { product, action: 'updated' };
     }
 
-    // 완전히 새 상품
+    // 완전히 새 상품. createProductChunked 가 반환하는 product 는 일반 retrieve 결과라
+    // inventory_items 필드가 없을 가능성이 높음 → ensureVariantInventoryLinks 가 필요시
+    // getProductWithVariantDetails 로 다시 조회한다 (기존 동작 유지).
     const product = await this.createProductChunked(payload);
     await this.ensureVariantInventoryLinks(product.id, payload.variants);
     return { product, action: 'created' };
