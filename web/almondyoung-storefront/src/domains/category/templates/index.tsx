@@ -39,10 +39,26 @@ export function CategoryTemplate({
       {/* 하위 카테고리 썸네일 */}
       {hasChildren && (
         <div className="mb-8">
-          <SubCategoryNav
-            categories={category.category_children!}
-            parentHandle={segments?.join("/")}
-          />
+          <Suspense
+            fallback={
+              <div className="flex flex-wrap gap-6">
+                {category!.category_children!.map((child) => (
+                  <div
+                    key={child.id}
+                    className="flex flex-col items-center gap-2"
+                  >
+                    <div className="h-24 w-24 animate-pulse rounded-full bg-gray-200" />
+                    <span className="text-sm text-gray-700">{child.name}</span>
+                  </div>
+                ))}
+              </div>
+            }
+          >
+            <SubCategoryNav
+              categories={category!.category_children!}
+              parentHandle={segments?.join("/")}
+            />
+          </Suspense>
         </div>
       )}
 

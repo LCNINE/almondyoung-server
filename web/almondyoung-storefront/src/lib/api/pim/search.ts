@@ -140,6 +140,36 @@ export const getPopularKeywords = async (): Promise<
   return { data: { keywords } }
 }
 
+// 카테고리 대표 이미지 1장 조회 (해당 카테고리의 아무 상품 썸네일)
+export const getCategoryFallbackThumbnail = async (
+  categoryIds: string[]
+): Promise<string | null> => {
+  if (categoryIds.length === 0) return null
+
+  try {
+    const searchParams = new URLSearchParams()
+    categoryIds.forEach((id) => searchParams.append("categoryIds", id))
+    searchParams.set("size", "1")
+
+    const result = await api<SearchServiceProductsResponse>(
+      "search",
+      `/search/products?${searchParams.toString()}`,
+      {
+        method: "GET",
+        withAuth: false,
+        next: {
+          tags: [`category-thumbnail-${categoryIds[0]}`],
+          revalidate: 3600,
+        },
+      }
+    )
+
+    return result.items[0]?.thumbnail ?? null
+  } catch {
+    return null
+  }
+}
+
 // 자동완성 제안 조회
 export const getSuggestions = async (params: {
   q?: string
