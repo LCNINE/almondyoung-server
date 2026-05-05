@@ -16,9 +16,11 @@ export default $config({
   async run() {
     const shared = await import("./infra/shared");
     const services = await import("./infra/services");
+    const console = await import("./infra/console");
 
     const infra = shared.setup();
     services.setup(infra);
+    console.setup(infra);
 
     return {
       vpcId: infra.vpc.id,
