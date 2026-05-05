@@ -20,12 +20,16 @@ export function setup() {
   // ─── Redpanda 1-노드 EC2 + EBS 영속 ───
   // Fargate/EFS는 Seastar AIO 미지원이라 불가 → EC2(t4g.micro) + EBS(gp3) 선택.
   // 인스턴스 교체 시에도 EBS 재부착으로 데이터 유지. Cloud Map A record로 DNS 부여.
+  // AMI 변종(minimal/ecs-hvm) 이 mostRecent 에서 의도치 않게 선택되어 SSM agent/docker 누락된
+  // 인스턴스가 생성되는 사고가 있었음 (2026-05). 표준 AL2023 + kernel 6.1 LTS 로 좁힌다.
+  // (minimal: al2023-ami-minimal-*, ecs: al2023-ami-ecs-hvm-* 으로 prefix 구분됨)
   const redpandaAmi = aws.ec2.getAmi({
     mostRecent: true,
     owners: ["amazon"],
     filters: [
-      { name: "name", values: ["al2023-ami-*-arm64"] },
+      { name: "name", values: ["al2023-ami-2023.*-kernel-6.1-arm64"] },
       { name: "virtualization-type", values: ["hvm"] },
+      { name: "architecture", values: ["arm64"] },
     ],
   });
 

@@ -22,6 +22,7 @@
 - **Redpanda 1-노드 Kafka**: EC2 `t4g.micro` (ARM AL2023) + EBS gp3 10GB(영속). Cloud Map A 레코드 `Redpanda.<stage>.lcnine-platform.sst:9092` 로 VPC 내부 DNS 공개. PLAINTEXT.
   - Fargate/EFS 는 Seastar AIO 미지원이라 EC2+EBS 선택. 단일 노드라 인스턴스/AZ 장애 시 짧은 다운타임 — application 레이어 transactional outbox 가 재시도로 흡수.
   - bootstrap: `redpanda.cloud-init.sh` (EBS 포맷/마운트 + Docker + systemd unit, `__REDPANDA_ADVERTISE_DNS__` 치환).
+  - 인스턴스 라이프사이클 보강 사항(systemd bootstrap 분리 / snapshot 경유 교체 / AMI pin) 은 [`platform/REDPANDA_HARDENING.md`](platform/REDPANDA_HARDENING.md) 참조.
 
 `platform/infra/services.ts` 가 SSM 으로 publish:
 

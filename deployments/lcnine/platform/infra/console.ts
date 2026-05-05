@@ -38,7 +38,8 @@ export function setup(infra: PlatformInfra) {
     memory: "0.5 GB",
     loadBalancer: {
       instance: alb,
-      rules: [{ listen: "443/https", forward: "8080/http" }],
+      // 전용 ALB 라 catch-all 이지만 SST 가 external ALB 룰에 condition 을 강제 → path /*
+      rules: [{ listen: "443/https", forward: "8080/http", conditions: { path: "/*" } }],
     },
     environment: {
       KAFKA_BROKERS: kafkaBrokers,
