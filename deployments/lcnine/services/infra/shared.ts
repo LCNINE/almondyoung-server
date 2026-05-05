@@ -58,6 +58,38 @@ export function setup(opts?: { baseDomain?: string }) {
   const redisUrl = (dbIndex: number) =>
     $interpolate`rediss://${redis.username}:${encodedRedisPassword}@${redis.host}:${redis.port}/${dbIndex}`;
 
+  // ─── OpenSearch (VPC, single-AZ, t3.small.search) ───
+  // sst.aws.OpenSearch 는 vpc 옵션을 직접 받지 않아 transform.domain 으로 vpcOptions 를 주입한다.
+  // analysis-nori 는 AWS OpenSearch Service 에 built-in 이므로 package association 불필요.
+  const vpcInfo = aws.ec2.getVpcOutput({ id: vpc.id });
+  const opensearchSg = new aws.ec2.SecurityGroup("OpensearchSg", {
+    vpcId: vpc.id,
+    description: "Allow HTTPS to OpenSearch domain from within VPC",
+    ingress: [
+      {
+        protocol: "tcp",
+        fromPort: 443,
+        toPort: 443,
+        cidrBlocks: [vpcInfo.cidrBlock],
+      },
+    ],
+    egress: [
+      { protocol: "-1", fromPort: 0, toPort: 0, cidrBlocks: ["0.0.0.0/0"] },
+    ],
+  });
+  const opensearch = new sst.aws.OpenSearch("Opensearch", {
+    instance: "t3.small",
+    storage: "10 GB",
+    transform: {
+      domain: (args) => {
+        args.vpcOptions = {
+          subnetIds: vpc.privateSubnets.apply((ids) => [ids[0]]),
+          securityGroupIds: [opensearchSg.id],
+        };
+      },
+    },
+  });
+
   // ─── Common env builders ───
   const baseEnv = (serviceName: string) => ({
     NODE_ENV: "production",
@@ -136,6 +168,7 @@ export function setup(opts?: { baseDomain?: string }) {
     cluster,
     db,
     redis,
+    opensearch,
     dbUrl,
     redisUrl,
     baseDomain,

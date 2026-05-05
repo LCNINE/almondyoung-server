@@ -70,7 +70,7 @@ SSM publish:
 | UgcService | `ugc.…` | 3030 | |
 | Wallet | `wallet.…` | 3000 | Toss/Nicepay, Medusa 결제 webhook |
 | FileService | `file.…` | 3000 | S3 (`almondyoung-demo`) |
-| Search | `search.…` | 3000 | 외부 OpenSearch (railway) |
+| Search | `search.…` | 3000 | AWS OpenSearch Service Domain (VPC, 단일 AZ, t3.small.search) — `services/infra/shared.ts` 에서 owned |
 | Medusa | `medusa.…` | 9000 | DB+Redis link, 600s grace, IdP `AUTH_SECRET` 으로 JWT verify |
 | AdminWeb | `admin.…` | — | Next.js / OpenNext / CloudFront |
 | WalletWeb | `wallet-web.…` | — | Next.js / OpenNext / CloudFront |

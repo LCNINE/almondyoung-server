@@ -3,7 +3,7 @@
 import type { SharedInfra } from "./shared";
 
 export function setup(infra: SharedInfra) {
-  const { isDev, db, redis, dbUrl, redisUrl, baseDomain, domain, url, kafkaEnv, createService } = infra;
+  const { isDev, db, redis, opensearch, dbUrl, redisUrl, baseDomain, domain, url, kafkaEnv, createService } = infra;
 
   // storefront/auth-web 등이 BACKEND_DOMAIN + 서비스 서브도메인 규칙으로 백엔드 URL을 조립한다.
   // 즉 root는 stage에 따라 dev. 접두사가 붙는 형태와 동일해야 한다.
@@ -272,7 +272,9 @@ export function setup(infra: SharedInfra) {
     port: 3000,
     priority: 200,
     environment: {
-      OPENSEARCH_NODE: "https://opensearch-demo.up.railway.app",
+      OPENSEARCH_NODE: opensearch.url,
+      OPENSEARCH_USERNAME: opensearch.username,
+      OPENSEARCH_PASSWORD: opensearch.password,
       SEARCH_PRODUCTS_INDEX: "search_products",
       ...kafkaEnv("search", "search-indexer-group"),
     },
