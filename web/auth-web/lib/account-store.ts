@@ -24,6 +24,7 @@ const RT_MAX_AGE = 60 * 60 * 24 * 90; // 90 days
 
 export type AccountMeta = {
   userId: string;
+  loginId: string;
   email: string;
   nickname: string;
   username: string;
@@ -62,7 +63,15 @@ export async function listAccounts(): Promise<StoredAccount[]> {
     let meta: AccountMeta;
     try {
       const parsed = JSON.parse(metaRaw);
-      meta = { userId: id, ...parsed };
+      // loginId 는 이번 변경 이전에 저장된 메타 쿠키엔 없을 수 있다. 누락된 경우 빈 문자열로 두고,
+      // 호출부 (selectAccountAction 등) 가 비어 있으면 prefill 없이 일반 /signin 으로 보내도록 한다.
+      meta = {
+        userId: id,
+        loginId: typeof parsed?.loginId === "string" ? parsed.loginId : "",
+        email: typeof parsed?.email === "string" ? parsed.email : "",
+        nickname: typeof parsed?.nickname === "string" ? parsed.nickname : "",
+        username: typeof parsed?.username === "string" ? parsed.username : "",
+      };
     } catch {
       continue;
     }
@@ -76,6 +85,27 @@ export async function listAccounts(): Promise<StoredAccount[]> {
     });
   }
   return out;
+}
+
+/**
+ * userId 로 메타 쿠키만 조회한다. 재인증 흐름이 prefill 용 loginId/email 만 필요할 때 사용.
+ */
+export async function getAccountMeta(userId: string): Promise<AccountMeta | null> {
+  const jar = await cookies();
+  const metaRaw = jar.get(metaCookieName(userId))?.value;
+  if (!metaRaw) return null;
+  try {
+    const parsed = JSON.parse(metaRaw);
+    return {
+      userId,
+      loginId: typeof parsed?.loginId === "string" ? parsed.loginId : "",
+      email: typeof parsed?.email === "string" ? parsed.email : "",
+      nickname: typeof parsed?.nickname === "string" ? parsed.nickname : "",
+      username: typeof parsed?.username === "string" ? parsed.username : "",
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function getRefreshToken(userId: string): Promise<string | null> {
@@ -113,6 +143,7 @@ export async function upsertAccount(
   jar.set(
     metaCookieName(meta.userId),
     JSON.stringify({
+      loginId: meta.loginId,
       email: meta.email,
       nickname: meta.nickname,
       username: meta.username,
