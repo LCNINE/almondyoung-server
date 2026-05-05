@@ -216,6 +216,7 @@ export const profiles = pgTable('profiles', {
   address: jsonb('address'),
   birthDate: timestamp('birth_date'),
   profileImageUrl: varchar('profile_image_url', { length: 1024 }),
+  interestCategoryKeys: text('interest_category_keys').array(),
   ...timestampColumns,
 });
 
