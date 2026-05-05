@@ -301,6 +301,9 @@ export function setup(infra: SharedInfra) {
     transform: {
       service: {
         healthCheckGracePeriodSeconds: 600,
+        // ECS Exec — 백필(`yarn medusa exec`) 을 컨테이너 안에서 직접 실행하기 위해 활성화.
+        // SST 가 자동으로 task role 에 ssmmessages:* 권한 부여.
+        enableExecuteCommand: true,
       },
     },
     environment: {
