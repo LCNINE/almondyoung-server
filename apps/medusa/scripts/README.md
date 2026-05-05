@@ -43,10 +43,14 @@ cd deployments/lcnine/services && npx sst deploy --stage dev
 # 3. 백필 실행 (Medusa 컨테이너 내부)
 # AWS CLI v2 + SSM Session Manager Plugin 필요:
 #   https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html
+# SST 가 클러스터 이름에 hash 를 붙여(예: lcnine-services-dev-ClusterCluster-xxxxxxxx)
+# 매번 stage 별로 lookup 하는 게 안전하다.
+CLUSTER_ARN=$(aws ecs list-clusters --query \
+  "clusterArns[?contains(@, 'lcnine-services-dev-ClusterCluster')]|[0]" --output text)
 TASK_ARN=$(aws ecs list-tasks \
-  --cluster lcnine-services-dev-Cluster --service-name lcnine-services-dev-Medusa \
+  --cluster "$CLUSTER_ARN" --service-name Medusa \
   --query 'taskArns[0]' --output text)
-aws ecs execute-command --cluster lcnine-services-dev-Cluster \
+aws ecs execute-command --cluster "$CLUSTER_ARN" \
   --task "$TASK_ARN" --container Medusa --interactive \
   --command "sh -c 'BACKFILL_LIMIT=20 yarn backfill:run'"
 # 표본 OK 면 BACKFILL_LIMIT 빼고 본 백필 실행
@@ -94,10 +98,12 @@ transformer 의 출력은 Medusa Admin REST 컨트랙트(`AdminCreateProduct` �
 - 환경변수: `REPAIR_LIMIT`, `REPAIR_BATCH_SIZE`, `REPAIR_RESUME=true`, `REPAIR_SKIP_CATEGORIES=true`, `REPAIR_SKIP_TAGS=true`
 
 ```bash
+CLUSTER_ARN=$(aws ecs list-clusters --query \
+  "clusterArns[?contains(@, 'lcnine-services-dev-ClusterCluster')]|[0]" --output text)
 TASK_ARN=$(aws ecs list-tasks \
-  --cluster lcnine-services-dev-Cluster --service-name lcnine-services-dev-Medusa \
+  --cluster "$CLUSTER_ARN" --service-name Medusa \
   --query 'taskArns[0]' --output text)
-aws ecs execute-command --cluster lcnine-services-dev-Cluster \
+aws ecs execute-command --cluster "$CLUSTER_ARN" \
   --task "$TASK_ARN" --container Medusa --interactive \
   --command "sh -c 'yarn repair:product-links'"
 ```

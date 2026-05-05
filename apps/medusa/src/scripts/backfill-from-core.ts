@@ -129,7 +129,11 @@ export default async function backfill({ container }: ExecArgs) {
     const limit_ = 100;
     let offset = 0;
     while (true) {
-      const cats = await productModule.listProductCategories({}, { take: limit_, skip: offset });
+      // metadata 는 listProductCategories 기본 응답에 안 실려 select 로 명시.
+      const cats = await productModule.listProductCategories(
+        {},
+        { take: limit_, skip: offset, select: ['id', 'handle', 'metadata'] },
+      );
       if (!cats.length) break;
       for (const c of cats) {
         const meta = (c.metadata as any) || {};

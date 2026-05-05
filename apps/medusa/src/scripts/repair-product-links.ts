@@ -120,12 +120,16 @@ export default async function repair({ container }: ExecArgs) {
   );
 
   // ── 1. 카테고리 캐시 prime: pimCategoryId → medusa id ────────────────
+  // metadata 는 listProductCategories 기본 응답에 안 실려 select 로 명시해야 한다.
   const categoryCache = new Map<string, string>();
   if (repairCategories) {
     const limit_ = 200;
     let offset = 0;
     while (true) {
-      const cats = await productModule.listProductCategories({}, { take: limit_, skip: offset });
+      const cats = await productModule.listProductCategories(
+        {},
+        { take: limit_, skip: offset, select: ['id', 'handle', 'metadata'] },
+      );
       if (!cats.length) break;
       for (const c of cats) {
         const meta = (c.metadata as any) || {};
