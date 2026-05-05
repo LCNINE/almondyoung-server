@@ -1,4 +1,4 @@
-import { MedusaClient } from '../src/adapters/medusa/medusa.client';
+import { MedusaClient } from '../../src/adapters/medusa/medusa.client';
 
 class EnvConfigService {
   get<T = any>(propertyPath: string): T | undefined {

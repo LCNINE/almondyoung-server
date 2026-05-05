@@ -78,16 +78,19 @@ OrderPollerOrchestrator (@Cron 5분) → ChannelOrderProvider[] → InboxService
 - 현재 `MedusaOrderProvider`만 등록 (Medusa 주문 → `OrderCreated`/`OrderModified` 이벤트)
 - Provider 추가로 다른 채널 주문 수집 확장 가능
 
-### 3-6. PIM → Medusa 상품 동기화 흐름
+### 3-6. Core(legacy PIM) → Medusa 상품 동기화 흐름
 ```
-PIM (Kafka) → PimProductEventConsumer → inbox_events
-                                           ↓
-                              InboxWorkerService → PimMedusaSyncService → MedusaClient
-                                                         ↓
-                                               pim_medusa_mappings 업데이트
+Core(구 PIM) (Kafka) → PimProductEventConsumer → inbox_events
+                                                    ↓
+                                       InboxWorkerService → PimMedusaSyncService → MedusaClient
+                                                                  ↓
+                                                        pim_medusa_mappings 업데이트
 ```
-- PIM에서 직접 HTTP 호출하지 않음 (`PimClient` 제거됨 — MSA 경계 준수)
+- Core(구 PIM 도메인)에 직접 HTTP 호출하지 않음 (런타임에서 `PimClient` 제거됨 — MSA 경계 준수)
 - 이벤트 페이로드에 포함된 `snapshot`으로 Medusa upsert
+- **백필 스크립트만 예외**: `scripts/` 의 v2 백필은 Core DB 직결 (`CORE_DB_URL`). v1 잔재(`scripts/legacy/`)는 사용 중지.
+- 백필 시 `MedusaClient.primeAll()` 로 카테고리/태그/타입/세일즈채널 캐시를 사전 적재해 상품당 list/verify HTTP 호출을 0 회에 가깝게 축소.
+- **대량 백필**: 본격 backfill 은 Medusa 컨테이너 안에서 실행하는 in-process 스크립트 사용. `apps/medusa/scripts/extract-core-snapshots.ts` 로 데이터를 image 에 baking → `apps/medusa/src/scripts/backfill-from-core.ts` 가 `createProductsWorkflow` 직접 호출해 HTTP/ALB 우회. 끝나면 `apps/channel-adapter/scripts/sync-mappings-from-medusa.ts` 로 `pim_medusa_mappings` 일괄 갱신. 절차 상세는 `apps/medusa/scripts/README.md` 참조.
 
 ### 3-7. 멤버십 → Medusa 고객 그룹 동기화
 두 경로가 존재:
@@ -141,7 +144,7 @@ channelAdapterSchema
 ### 주의사항
 - `inbox_events`는 Inbox(수신 처리)와 Outbox(발행) 두 역할을 겸하는 단일 테이블이다. `aggregateType`과 `eventType`으로 처리 주체가 구분된다.
 - `channelId` 컬럼 타입이 테이블마다 다르다 (`uuid` vs `varchar(50)`). 통일 필요.
-- `migration_progress`/`migration_failures`는 Phase 5 백필 스크립트 전용으로, 런타임 서비스 코드에서는 사용하지 않는다.
+- `migration_progress`/`migration_failures`는 Phase 5 백필 스크립트(`scripts/backfill-v2.ts`) 전용. 런타임 서비스 코드에서는 사용하지 않는다. `migration_failures.snapshot` 컬럼에 PIM 스냅샷 원본을 저장해 `retry-failed.ts` 가 재시도에 활용한다.
 
 ## 6. 로컬 개발 주의사항
 

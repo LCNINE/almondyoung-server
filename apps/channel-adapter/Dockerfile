@@ -26,12 +26,23 @@ COPY apps/channel-adapter/ ./apps/channel-adapter/
 RUN npm run build:channel-adapter
 
 FROM base AS runner
-# 런타임 이미지에서는 이미 deps-prod 레이어에서 설치한 node_modules를 재사용하여 중복 설치를 피함
+# 운영 코드용 prod node_modules 와, 일회성 마이그레이션 스크립트(ts-node) 용 dev 포함 node_modules 를
+# 따로 둔다. 운영 npm scripts/healthcheck 는 ./node_modules 를 그대로 사용하고,
+# scripts 실행 시에만 NODE_PATH 로 _scripts_node_modules 를 추가로 노출한다.
 COPY --from=deps-prod /app/node_modules ./node_modules
+COPY --from=deps /app/node_modules ./_scripts_node_modules
 COPY package*.json ./
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/libs ./libs
+
+# 일회성 backfill/migration 스크립트 실행에 필요한 소스 + tsconfig.
+# 운영 entrypoint(start:channel-adapter:prod)는 dist/ 만 사용하므로 영향 없음.
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
+COPY --from=builder /app/apps/channel-adapter/tsconfig.app.json ./apps/channel-adapter/tsconfig.app.json
+COPY --from=builder /app/apps/channel-adapter/src ./apps/channel-adapter/src
+COPY --from=builder /app/apps/channel-adapter/scripts ./apps/channel-adapter/scripts
+COPY --from=builder /app/packages ./packages
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nestjs

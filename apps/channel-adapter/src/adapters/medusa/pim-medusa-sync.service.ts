@@ -295,6 +295,14 @@ export class PimMedusaSyncService {
 
     this.logger.log(`Syncing from event snapshot: ${masterId} (v${snapshot.version})`);
 
+    // variant 가 0 개인 master 는 fail 이 아니라 skip (data 상 빈 master — 재시도해도 같음).
+    // validatePimSnapshot 도 같은 케이스를 던지지만, 그 전에 가로채서 카운트를
+    // skippedCount 로 분류하는 편이 운영자 입장에서 명확.
+    if (!snapshot.variants || snapshot.variants.length === 0) {
+      this.logger.warn(`Skipping ${masterId}: snapshot has no variants (orphan master)`);
+      return { success: true, masterId, action: 'skipped' };
+    }
+
     try {
       validatePimSnapshot(snapshot);
 
@@ -309,8 +317,40 @@ export class PimMedusaSyncService {
       const medusaTypeId = await this.medusaClient.ensureProductType(snapshot.productType || 'Unknown');
       const defaultSalesChannelId = await this.medusaClient.getDefaultSalesChannel();
 
+      // 같은 product 의 snapshot 안에서 다른 카테고리의 부모인 항목(=루트 또는 중간 노드)은
+      // attach 에서 제외한다. 같은 카테고리에 모든 product 가 동시에 attach 하면 Medusa
+      // 서버측 row lock 으로 직렬화되어 concurrency 가 죽는데, leaf 만 attach 하면
+      // product 마다 attach 대상이 거의 겹치지 않아 진짜 병렬이 살아난다. storefront 의 부모
+      // 카테고리 필터는 product_categories tree traversal 로 leaf attach 만으로도 잘 동작.
+      const allSnapshotCats = snapshot.categories || [];
+      const referencedAsParent = new Set<string>(
+        allSnapshotCats.map((c) => c.parentId).filter((p): p is string => !!p),
+      );
+      const explicitSkipIds = new Set(
+        (process.env.SKIP_ATTACH_CATEGORY_IDS || '')
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+      );
+      const explicitSkipSlugs = new Set(
+        (process.env.SKIP_ATTACH_CATEGORY_SLUGS || '')
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+      );
+      const isAttachable = (pimCategoryId: string) => {
+        if (referencedAsParent.has(pimCategoryId)) return false; // non-leaf
+        if (explicitSkipIds.has(pimCategoryId)) return false;
+        const c = allSnapshotCats.find((x) => x.id === pimCategoryId);
+        if (!c) return true;
+        if (c.parentId == null) return false; // root
+        if (c.slug && explicitSkipSlugs.has(c.slug)) return false; // 환경변수로 명시 제외 (예: 전체상품 보기)
+        return true;
+      };
+      const attachableCategories = medusaCategories.filter((c) => isAttachable(c.pimCategoryId));
+
       const medusaPayload = transformPimToMedusa(snapshot, {
-        ...(shouldSyncCategories ? { categories: medusaCategories.map(({ id }) => ({ id })) } : {}),
+        ...(shouldSyncCategories ? { categories: attachableCategories.map(({ id }) => ({ id })) } : {}),
         tags: medusaTags,
         type_id: medusaTypeId,
         sales_channels: [defaultSalesChannelId],
@@ -321,37 +361,11 @@ export class PimMedusaSyncService {
 
       const { product, action } = await this.medusaClient.upsertProduct(medusaPayload, medusaProductId);
 
-      this.logger.debug(`medusaCategories for ${product.id}: ${JSON.stringify(medusaCategories)}`);
-
-      if (shouldSyncCategories && medusaCategories && medusaCategories.length > 0) {
-        this.logger.log(`Attaching ${medusaCategories.length} categories to product ${product.id}`);
-
-        // 먼저 각 카테고리의 유효한 Medusa ID를 확보 (없으면 재생성)
-        const resolvedCategoryIds: string[] = [];
-        for (const cat of medusaCategories) {
-          try {
-            const exists = await this.medusaClient['getCategoryById'](cat.id);
-            if (exists) {
-              resolvedCategoryIds.push(cat.id);
-            } else {
-              this.logger.warn(
-                `Category ${cat.id} missing in Medusa, re-ensuring from snapshot (${cat.pimCategoryId})`,
-              );
-              const categorySnapshot = snapshot.categories?.find((c) => c.id === cat.pimCategoryId);
-              if (categorySnapshot) {
-                const refreshedId = await this.medusaClient.ensureCategoryFromSnapshot(categorySnapshot);
-                resolvedCategoryIds.push(refreshedId);
-              }
-            }
-          } catch (err: any) {
-            this.logger.warn(`Failed to resolve category ${cat.id}: ${err?.message}`);
-          }
-        }
-
-        // 모든 카테고리를 한 번에 붙임 (개별 호출 시 덮어쓰기 문제 방지)
-        if (resolvedCategoryIds.length > 0) {
-          await this.medusaClient.attachProductToCategories(product.id, resolvedCategoryIds, { throwOnFailure: false });
-        }
+      if (shouldSyncCategories && attachableCategories.length > 0) {
+        // 추가 verify (getCategoryById N 회 직렬) 는 attachProductToCategories 내부 verify 와
+        // 중복이라 제거. attach 측은 Promise.all + categoryCache 기반으로 이미 빠름.
+        const resolvedCategoryIds = attachableCategories.map((c) => c.id);
+        await this.medusaClient.attachProductToCategories(product.id, resolvedCategoryIds, { throwOnFailure: false });
       }
 
       this.logger.log(`Sync completed: ${masterId} → Medusa ${product.id} (${action})`);

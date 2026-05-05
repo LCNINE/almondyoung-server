@@ -8,8 +8,8 @@
 // - NOT for regular operational code
 // ========================================================================
 
-import { MedusaClient } from '../src/adapters/medusa/medusa.client';
-import { PimClient } from '../src/adapters/medusa/pim.client';
+import { MedusaClient } from '../../src/adapters/medusa/medusa.client';
+import { PimClient } from '../../src/adapters/medusa/pim.client';
 
 class EnvConfigService {
   get<T = any>(propertyPath: string): T | undefined {

@@ -16,6 +16,7 @@
     "build": "medusa build",
     "seed": "medusa exec ./src/scripts/seed.ts",
     "seed:shipping": "medusa exec ./src/scripts/seed-shipping.ts",
+    "backfill:run": "medusa exec ./src/scripts/backfill-from-core.ts",
     "disable-inventory": "medusa exec ./src/scripts/disable-inventory-management.ts",
     "fetch:sellmate": "medusa exec ./src/scripts/fetch-orders-sellmate.ts",
     "sellmate:fetch": "CACHE_REDIS_URL=${CACHE_REDIS_URL:-$REDIS_URL} XDG_CONFIG_HOME=${XDG_CONFIG_HOME:-/tmp} STATUS=${STATUS:-pending} yarn fetch:sellmate",

@@ -23,11 +23,11 @@
 import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { ConfigService } from '@nestjs/config';
-import { channelAdapterSchema } from '../src/schema';
-import { PimClient } from '../src/adapters/medusa/pim.client';
-import { MedusaClient } from '../src/adapters/medusa/medusa.client';
-import { PimMedusaMappingRepository } from '../src/adapters/medusa/pim-medusa-mapping.repository';
-import { PimMedusaSyncService } from '../src/adapters/medusa/pim-medusa-sync.service';
+import { channelAdapterSchema } from '../../src/schema';
+import { PimClient } from '../../src/adapters/medusa/pim.client';
+import { MedusaClient } from '../../src/adapters/medusa/medusa.client';
+import { PimMedusaMappingRepository } from '../../src/adapters/medusa/pim-medusa-mapping.repository';
+import { PimMedusaSyncService } from '../../src/adapters/medusa/pim-medusa-sync.service';
 
 type Args = {
   masters?: string[];
