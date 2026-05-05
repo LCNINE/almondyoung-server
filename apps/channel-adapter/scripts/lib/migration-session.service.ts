@@ -33,7 +33,13 @@ export interface ProgressUpdate {
   lastProcessedMasterId?: string;
 }
 
-export type ErrorType = 'validation_error' | 'medusa_api_error' | 'network_error' | 'db_error' | 'unknown';
+export type ErrorType =
+  | 'validation_error'
+  | 'medusa_api_error'
+  | 'service_unavailable'
+  | 'network_error'
+  | 'db_error'
+  | 'unknown';
 
 /**
  * MigrationSessionService - Manages migration progress tracking

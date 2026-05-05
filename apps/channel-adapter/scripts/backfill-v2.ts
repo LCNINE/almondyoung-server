@@ -11,11 +11,11 @@
  *
  * Usage:
  *   # New migration
- *   PIM_SOURCE_DB_URL=postgres://... DATABASE_URL=... MEDUSA_API_URL=... MEDUSA_API_KEY=... \
+ *   CORE_DB_URL=postgres://... DATABASE_URL=... MEDUSA_API_URL=... MEDUSA_API_KEY=... \
  *   npx ts-node apps/channel-adapter/scripts/backfill-v2.ts
  *
  *   # With options
- *   npx ts-node apps/channel-adapter/scripts/backfill-v2.ts --batch-size=50 --limit=100
+ *   npx ts-node apps/channel-adapter/scripts/backfill-v2.ts --batch-size=50 --limit=100 --concurrency=5
  *
  *   # Resume from checkpoint
  *   npx ts-node apps/channel-adapter/scripts/backfill-v2.ts --resume=backfill-1737600000-abc12345
@@ -37,22 +37,54 @@ interface BackfillOptions {
   batchSize: number;
   resumeSessionId?: string;
   limit?: number;
+  concurrency: number;
+  rateLimitMs: number;
 }
 
+const DEFAULT_CONCURRENCY = 3;
+const MAX_CONCURRENCY = 10;
+const DEFAULT_RATE_LIMIT_MS = 1000;
+
 /**
- * Parse command-line arguments
+ * Parse command-line arguments.
+ * `--key=value` / `--key value` 두 형식 모두 받는다 (npm alias 호환).
  */
+function getArgValue(args: string[], name: string): string | undefined {
+  const prefix = `--${name}=`;
+  const eqArg = args.find((a) => a.startsWith(prefix));
+  if (eqArg) return eqArg.slice(prefix.length);
+  const idx = args.indexOf(`--${name}`);
+  if (idx >= 0 && idx + 1 < args.length) {
+    const next = args[idx + 1];
+    // 다음 토큰이 또 다른 `--flag` 면 값으로 취급하지 않음.
+    if (!next.startsWith('--')) return next;
+  }
+  return undefined;
+}
+
 function parseArgs(): BackfillOptions {
   const args = process.argv.slice(2);
 
-  const batchSizeArg = args.find((a) => a.startsWith('--batch-size='));
-  const resumeArg = args.find((a) => a.startsWith('--resume='));
-  const limitArg = args.find((a) => a.startsWith('--limit='));
+  const batchSizeRaw = getArgValue(args, 'batch-size');
+  const resumeRaw = getArgValue(args, 'resume');
+  const limitRaw = getArgValue(args, 'limit');
+  const concurrencyRaw = getArgValue(args, 'concurrency');
+  const rateLimitRaw = getArgValue(args, 'rate-limit-ms');
+
+  // primeAll 적용 후 상품당 HTTP 호출이 크게 줄어 기본 동시성 1 → 3 으로 상향.
+  // Medusa Admin/RDS 부담을 감안해 상한은 10. 표본 스모크에서 5xx 비율을 본 뒤 결정 권장.
+  const rawConcurrency = concurrencyRaw ? parseInt(concurrencyRaw, 10) : DEFAULT_CONCURRENCY;
+  const concurrency = Math.min(MAX_CONCURRENCY, Math.max(1, Number.isFinite(rawConcurrency) ? rawConcurrency : DEFAULT_CONCURRENCY));
+
+  const rawRateLimit = rateLimitRaw ? parseInt(rateLimitRaw, 10) : DEFAULT_RATE_LIMIT_MS;
+  const rateLimitMs = Math.max(0, Number.isFinite(rawRateLimit) ? rawRateLimit : DEFAULT_RATE_LIMIT_MS);
 
   return {
-    batchSize: batchSizeArg ? parseInt(batchSizeArg.split('=')[1], 10) : 100,
-    resumeSessionId: resumeArg ? resumeArg.split('=')[1] : undefined,
-    limit: limitArg ? parseInt(limitArg.split('=')[1], 10) : undefined,
+    batchSize: batchSizeRaw ? parseInt(batchSizeRaw, 10) : 100,
+    resumeSessionId: resumeRaw,
+    limit: limitRaw ? parseInt(limitRaw, 10) : undefined,
+    concurrency,
+    rateLimitMs,
   };
 }
 
@@ -60,7 +92,7 @@ function parseArgs(): BackfillOptions {
  * Validate environment variables
  */
 function validateEnv(): void {
-  const required = ['PIM_SOURCE_DB_URL', 'DATABASE_URL', 'MEDUSA_API_URL', 'MEDUSA_API_KEY'];
+  const required = ['CORE_DB_URL', 'DATABASE_URL', 'MEDUSA_API_URL', 'MEDUSA_API_KEY'];
 
   const missing = required.filter((key) => !process.env[key]);
 
@@ -98,6 +130,8 @@ async function main() {
   const options = parseArgs();
   console.log('📋 Options:');
   console.log(`   Batch size: ${options.batchSize}`);
+  console.log(`   Concurrency: ${options.concurrency} (max ${MAX_CONCURRENCY})`);
+  console.log(`   Rate limit between batches: ${options.rateLimitMs}ms`);
   if (options.resumeSessionId) {
     console.log(`   Resume session: ${options.resumeSessionId}`);
   }
@@ -109,17 +143,24 @@ async function main() {
   // Validate environment
   validateEnv();
 
-  // Initialize PIM database connection (READ-ONLY)
-  console.log('🔌 Connecting to PIM database...');
-  const pimDb = postgres(process.env.PIM_SOURCE_DB_URL!, {
-    max: 5,
+  // Initialize Core (구 PIM) database connection (READ-ONLY).
+  // SST tunnel 의 SSM 포워딩이 동시 신규 TCP handshake 에 약하므로 풀을 직렬화한다.
+  // 운영 컨테이너에서 바로 돌리는 경우엔 max 를 더 키워도 되지만, 로컬 tunnel 경로가
+  // 표준이므로 보수적으로 잡는다.
+  console.log('🔌 Connecting to Core database...');
+  const pimDb = postgres(process.env.CORE_DB_URL!, {
+    max: 1,
     idle_timeout: 20,
-    connect_timeout: 10,
+    connect_timeout: 60,
   });
 
-  // Initialize Channel Adapter database
+  // Initialize Channel Adapter database (write 측도 동일 사유로 풀 보수화)
   console.log('🔌 Connecting to Channel Adapter database...');
-  const channelDbClient = postgres(process.env.DATABASE_URL!);
+  const channelDbClient = postgres(process.env.DATABASE_URL!, {
+    max: 1,
+    idle_timeout: 20,
+    connect_timeout: 60,
+  });
   const channelDb = drizzle(channelDbClient, { schema: channelAdapterSchema });
 
   // Initialize ConfigService for Medusa client
@@ -135,6 +176,15 @@ async function main() {
   const medusaClient = new MedusaClient(configService);
   const mappingRepo = new PimMedusaMappingRepository({ db: channelDb } as any);
   const syncService = new PimMedusaSyncService(medusaClient, mappingRepo);
+
+  // 카테고리/태그/타입/세일즈채널 캐시를 미리 채워 product 당 list/verify HTTP 호출을
+  // 0 회에 가깝게 줄인다. 이후 cacheOnly 모드를 활성화해 paginated LIST 조회도 회피.
+  console.log('🔥 Priming Medusa caches...');
+  const primed = await medusaClient.primeAll();
+  console.log(
+    `   Cached ${primed.categories} categories, ${primed.tags} tags, ${primed.types} types, ${primed.channels} sales channels\n`,
+  );
+  medusaClient.enableCacheOnlyCategoryLookup(true);
 
   const startTime = Date.now();
   let stopRequested = false;
@@ -182,83 +232,100 @@ async function main() {
 
       console.log(`   Processing ${snapshots.length} products...\n`);
 
-      // Process batch
+      // Process batch — concurrency 단위로 묶어 병렬 실행. 같은 청크 내 sync 결과는 순서대로
+      // 적용해 checkpoint(processedCount/currentOffset 등) 가 monotonic 하게 증가하도록 한다.
       let batchSuccess = 0;
       let batchFailed = 0;
+      let batchSkipped = 0;
       let shouldExit = false;
+      const concurrency = options.concurrency;
 
-      for (let i = 0; i < snapshots.length; i++) {
-        const snapshot = snapshots[i];
-        const num = offset + i + 1;
-        let itemSucceeded = false;
+      for (let i = 0; i < snapshots.length; i += concurrency) {
+        const slice = snapshots.slice(i, i + concurrency);
+        const results = await Promise.allSettled(
+          slice.map((snapshot) => syncWithRetry(snapshot, syncService, 3)),
+        );
 
-        try {
-          // Sync with retry
-          await syncWithRetry(snapshot, syncService, 3);
+        for (let k = 0; k < slice.length; k++) {
+          const snapshot = slice[k];
+          const num = offset + i + k + 1;
+          const result = results[k];
+          type Outcome = 'success' | 'skipped' | 'failed';
+          let outcome: Outcome = 'failed';
 
-          batchSuccess++;
-          itemSucceeded = true;
-          console.log(`  ✅ [${num}] ${snapshot.name} (${snapshot.masterId})`);
-        } catch (error: any) {
-          batchFailed++;
-          const errorType = classifyError(error);
+          if (result.status === 'fulfilled') {
+            const action = (result.value as { action?: string } | undefined)?.action;
+            if (action === 'skipped') {
+              outcome = 'skipped';
+              batchSkipped += 1;
+              console.log(`  ⏭️  [${num}] ${snapshot.name} (${snapshot.masterId}) — skipped`);
+            } else {
+              outcome = 'success';
+              batchSuccess += 1;
+              console.log(`  ✅ [${num}] ${snapshot.name} (${snapshot.masterId})`);
+            }
+          } else {
+            const error = result.reason;
+            batchFailed += 1;
+            const errorType = classifyError(error);
 
-          // Record failure
-          await sessionService.recordFailure(
-            session.sessionId,
-            snapshot.masterId,
-            snapshot.versionId,
-            error,
-            errorType,
-            snapshot,
-          );
+            await sessionService.recordFailure(
+              session.sessionId,
+              snapshot.masterId,
+              snapshot.versionId,
+              error,
+              errorType,
+              snapshot,
+            );
 
-          console.error(`  ❌ [${num}] ${snapshot.name} (${snapshot.masterId})`);
-          console.error(`     ${errorType}: ${error.message}`);
+            console.error(`  ❌ [${num}] ${snapshot.name} (${snapshot.masterId})`);
+            console.error(`     ${errorType}: ${error?.message || error}`);
+          }
+
+          session.processedCount += 1;
+          if (outcome === 'success') {
+            session.successCount += 1;
+          } else if (outcome === 'skipped') {
+            session.skippedCount += 1;
+          } else {
+            session.failedCount += 1;
+          }
+          session.currentOffset = offset + i + k + 1;
+          session.lastProcessedMasterId = snapshot.masterId;
+          try {
+            await sessionService.updateProgress(session.sessionId, {
+              processedCount: session.processedCount,
+              successCount: session.successCount,
+              failedCount: session.failedCount,
+              skippedCount: session.skippedCount,
+              currentOffset: session.currentOffset,
+              lastProcessedMasterId: session.lastProcessedMasterId,
+            });
+          } catch (updateError: any) {
+            console.error(
+              `⚠️  Failed to persist checkpoint for ${snapshot.masterId}: ${updateError?.message || updateError}`,
+            );
+          }
+
+          totalProcessed += 1;
+
+          if (options.limit && totalProcessed >= options.limit) {
+            console.log(`\n⏸️  Limit reached: ${options.limit} products`);
+            shouldExit = true;
+            break;
+          }
+          if (stopRequested) {
+            shouldExit = true;
+            break;
+          }
         }
-
-        // Update progress after each item to improve resume accuracy
-        session.processedCount += 1;
-        if (itemSucceeded) {
-          session.successCount += 1;
-        } else {
-          session.failedCount += 1;
-        }
-        session.currentOffset = offset + i + 1;
-        session.lastProcessedMasterId = snapshot.masterId;
-        try {
-          await sessionService.updateProgress(session.sessionId, {
-            processedCount: session.processedCount,
-            successCount: session.successCount,
-            failedCount: session.failedCount,
-            skippedCount: session.skippedCount,
-            currentOffset: session.currentOffset,
-            lastProcessedMasterId: session.lastProcessedMasterId,
-          });
-        } catch (updateError: any) {
-          console.error(
-            `⚠️  Failed to persist checkpoint for ${snapshot.masterId}: ${updateError?.message || updateError}`,
-          );
-        }
-
-        totalProcessed += 1;
-
-        // Check limit
-        if (options.limit && totalProcessed >= options.limit) {
-          console.log(`\n⏸️  Limit reached: ${options.limit} products`);
-          shouldExit = true;
-          break;
-        }
-
-        if (stopRequested) {
-          shouldExit = true;
-          break;
-        }
+        if (shouldExit) break;
       }
 
       // Print batch summary
       console.log(`\n   Batch ${batchNumber} complete:`);
       console.log(`     Success: ${batchSuccess}`);
+      console.log(`     Skipped: ${batchSkipped}`);
       console.log(`     Failed: ${batchFailed}`);
       console.log(`     Total processed: ${session.processedCount}`);
 
@@ -270,8 +337,10 @@ async function main() {
       offset += session.batchSize;
       batchNumber++;
 
-      // Rate limiting (1 second between batches)
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      // Rate limiting between batches (default 1s, configurable via --rate-limit-ms)
+      if (options.rateLimitMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, options.rateLimitMs));
+      }
     }
 
     // Complete session

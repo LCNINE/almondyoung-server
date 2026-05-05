@@ -8,7 +8,7 @@
  *
  * Usage:
  *   # Basic verification
- *   PIM_SOURCE_DB_URL=postgres://... DATABASE_URL=... \
+ *   CORE_DB_URL=postgres://... DATABASE_URL=... \
  *   npx ts-node apps/channel-adapter/scripts/verify-migration.ts
  *
  *   # Detailed verification (shows missing masters)
@@ -36,7 +36,7 @@ function parseArgs(): { detailed: boolean } {
  * Validate environment variables
  */
 function validateEnv(): void {
-  const required = ['PIM_SOURCE_DB_URL', 'DATABASE_URL'];
+  const required = ['CORE_DB_URL', 'DATABASE_URL'];
 
   const missing = required.filter((key) => !process.env[key]);
 
@@ -59,9 +59,9 @@ async function main() {
   // Validate environment
   validateEnv();
 
-  // Initialize PIM database connection (READ-ONLY)
-  console.log('🔌 Connecting to PIM database...');
-  const pimDb = postgres(process.env.PIM_SOURCE_DB_URL!, {
+  // Initialize Core (구 PIM) database connection (READ-ONLY)
+  console.log('🔌 Connecting to Core database...');
+  const pimDb = postgres(process.env.CORE_DB_URL!, {
     max: 5,
     idle_timeout: 20,
     connect_timeout: 10,

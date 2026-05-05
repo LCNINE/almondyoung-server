@@ -31,13 +31,18 @@ import { eq, and } from 'drizzle-orm';
 function parseArgs(): { sessionId?: string; all: boolean } {
   const args = process.argv.slice(2);
 
-  const sessionArg = args.find((a) => a.startsWith('--session='));
+  // `--session=<id>` 와 `--session <id>` 둘 다 허용 (npm alias 호환)
+  const eqArg = args.find((a) => a.startsWith('--session='));
+  let sessionId: string | undefined = eqArg ? eqArg.slice('--session='.length) : undefined;
+  if (!sessionId) {
+    const idx = args.indexOf('--session');
+    if (idx >= 0 && idx + 1 < args.length && !args[idx + 1].startsWith('--')) {
+      sessionId = args[idx + 1];
+    }
+  }
   const allFlag = args.includes('--all');
 
-  return {
-    sessionId: sessionArg ? sessionArg.split('=')[1] : undefined,
-    all: allFlag,
-  };
+  return { sessionId, all: allFlag };
 }
 
 /**

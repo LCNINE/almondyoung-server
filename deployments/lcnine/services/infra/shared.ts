@@ -73,6 +73,8 @@ export function setup(opts?: { baseDomain?: string }) {
   });
 
   // ─── Service helper ───
+  // cpu/memory/scaling 은 sst.aws.Service 가 그대로 받아 Fargate 에 적용한다.
+  // 백필 등 일시적 부하 대응 시 services.ts 에서 옵션으로 지정 → 끝나면 원복.
   const createService = (
     name: string,
     opts: {
@@ -85,11 +87,17 @@ export function setup(opts?: { baseDomain?: string }) {
       link?: sst.Linkable<any>[];
       loadBalancerHealth?: Record<string, any>;
       transform?: any;
+      cpu?: string; // e.g. "0.25 vCPU", "1 vCPU", "2 vCPU"
+      memory?: string; // e.g. "0.5 GB", "2 GB", "4 GB"
+      scaling?: { min: number; max: number };
     },
   ) =>
     new sst.aws.Service(name, {
       cluster,
       link: opts.link,
+      ...(opts.cpu ? { cpu: opts.cpu as any } : {}),
+      ...(opts.memory ? { memory: opts.memory as any } : {}),
+      ...(opts.scaling ? { scaling: opts.scaling } : {}),
       loadBalancer: {
         instance: alb,
         rules: [
