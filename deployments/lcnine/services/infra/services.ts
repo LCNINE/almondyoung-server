@@ -272,6 +272,7 @@ export function setup(infra: SharedInfra) {
     environment: {
       OPENSEARCH_NODE: "https://opensearch-demo.up.railway.app",
       SEARCH_PRODUCTS_INDEX: "search_products",
+      ...kafkaEnv("search", "search-indexer-group"),
     },
   });
 
