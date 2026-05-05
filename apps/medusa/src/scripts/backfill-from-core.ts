@@ -35,6 +35,7 @@ import {
   PimSnapshotValidationError,
   type PimProductSnapshot,
 } from './lib/transformer';
+import { toWorkflowInput } from './lib/payload-to-workflow-input';
 
 interface Bundle {
   meta: {
@@ -201,6 +202,35 @@ export default async function backfill({ container }: ExecArgs) {
     }
   }
 
+  // ── 2-1. 태그 prime ───────────────────────────────────────────────────
+  // workflow input 은 tag_ids: string[] 를 요구하므로 value → id 맵을 미리 만들어 둔다.
+  // 누락 태그는 일괄 createProductTags 로 보충. (Admin REST 경로는 tags: [{value}] 로 자동 ensure
+  // 되지만 모듈 DTO 경로는 그렇지 않다.)
+  const tagCache = new Map<string, string>(); // tag value → medusa tag id
+  {
+    const limit_ = 200;
+    let offset = 0;
+    while (true) {
+      const tags = await productModule.listProductTags({}, { take: limit_, skip: offset });
+      if (!tags.length) break;
+      for (const t of tags) tagCache.set(t.value, t.id);
+      if (tags.length < limit_) break;
+      offset += limit_;
+    }
+    const wantedValues = new Set<string>();
+    for (const s of bundle.snapshots) {
+      for (const v of s.tags || []) wantedValues.add(v);
+    }
+    const missing = Array.from(wantedValues).filter((v) => !tagCache.has(v));
+    if (missing.length > 0) {
+      const created = await productModule.createProductTags(missing.map((value) => ({ value })));
+      for (const t of created) tagCache.set(t.value, t.id);
+    }
+    logger.info(
+      `[backfill] Tag cache primed: ${tagCache.size} tags total (${missing.length} created).`,
+    );
+  }
+
   // ── 3. 이미 처리된 master 식별 (handle 로 product 존재 검사 + checkpoint 파일) ──
   const processed = await loadProgress();
   if (processed.size > 0) {
@@ -254,6 +284,8 @@ export default async function backfill({ container }: ExecArgs) {
     if (valid.length === 0) continue;
 
     // 4b. 변환 + override 주입 (categoryIds → medusa cat ids, sales_channels)
+    //     transformer 출력은 Admin REST 모양 → toWorkflowInput 로 모듈 DTO 모양으로 어댑트
+    //     (categories→category_ids, tags→tag_ids).
     const inputs = valid.map((snapshot) => {
       const medusaCategoryIds = (snapshot.categoryIds || [])
         .map((pimId) => categoryCache.get(pimId))
@@ -262,7 +294,7 @@ export default async function backfill({ container }: ExecArgs) {
         categories: medusaCategoryIds.map((id) => ({ id })),
         sales_channels: [defaultSc.id],
       });
-      return payload;
+      return toWorkflowInput(payload, { resolveTagId: (value) => tagCache.get(value) });
     });
 
     // 4c. createProductsWorkflow 일괄 호출
@@ -293,8 +325,9 @@ export default async function backfill({ container }: ExecArgs) {
           categories: medusaCategoryIds.map((id) => ({ id })),
           sales_channels: [defaultSc.id],
         });
+        const workflowInput = toWorkflowInput(payload, { resolveTagId: (value) => tagCache.get(value) });
         try {
-          await createProductsWorkflow(container).run({ input: { products: [payload as any] } });
+          await createProductsWorkflow(container).run({ input: { products: [workflowInput as any] } });
           success += 1;
           processed.add(snapshot.masterId);
         } catch (perItemError: any) {

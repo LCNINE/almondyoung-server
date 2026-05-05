@@ -137,12 +137,6 @@ const nextConfig = {
         hostname: "almondyoung-public.s3.ap-northeast-2.amazonaws.com",
         pathname: "/**",
       },
-
-      // 임시: demo 환경 file service
-      {
-        protocol: "https",
-        hostname: "file.almondyoung-next.com",
-      },
     ],
   },
 }
