@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 
 import {
+  getAccountMeta,
   getRefreshToken,
   removeAccount,
   upsertAccount,
@@ -31,9 +32,15 @@ export type ActionResult =
   | { ok: true }
   | { ok: false; error: string };
 
+/**
+ * @param expectUserId 재인증 흐름에서 호출자가 "이 userId 의 자격증명만 허용" 을 강제하고 싶을 때 전달.
+ *   resolved 된 me.id 가 다르면 cookie/store 를 건드리지 않고 throw 한다 — 호출부의 try/catch 가 잡아
+ *   사용자에게 재인증할 계정이 다르다는 메시지를 돌려준다.
+ */
 async function promoteTokens(
   tokens: TokenPair,
   rememberMe: boolean,
+  expectUserId?: string,
 ): Promise<string> {
   // 권위 있는 userId 는 user-service 의 /users/me 응답만 신뢰한다.
   // 로컬 토큰 payload 디코드는 서명 검증을 거치지 않은 값이라 폴백으로도 쓰지 않는다.
@@ -42,9 +49,16 @@ async function promoteTokens(
     throw new Error("Unable to resolve authenticated user");
   }
 
+  if (expectUserId && me.id !== expectUserId) {
+    throw new Error(
+      "재인증을 요청한 계정과 다른 계정입니다. 계정 리스트에서 다시 시도하거나, 다른 계정으로 로그인하려면 일반 로그인을 이용해주세요.",
+    );
+  }
+
   await upsertAccount(
     {
       userId: me.id,
+      loginId: me.loginId,
       email: me.email,
       nickname: me.username,
       username: me.username,
@@ -101,11 +115,14 @@ export async function signInAction(formData: FormData): Promise<ActionResult> {
   const password = String(formData.get("password") ?? "");
   const rememberMe = formData.get("rememberMe") === "on";
   const redirectToRaw = String(formData.get("redirectTo") ?? "");
+  // 재인증 모드 (계정 허브에서 stale RT 로 진입) 에서는 hidden 필드로 전달된 reauthUserId 와
+  // 실제 로그인된 userId 를 엄격 매칭한다. 빈 문자열 ("") 이면 일반 signin 으로 취급.
+  const reauthUserId = String(formData.get("reauthUserId") ?? "").trim();
   let userId: string;
 
   try {
     const tokens = await signIn({ loginId, password, rememberMe });
-    userId = await promoteTokens(tokens, rememberMe);
+    userId = await promoteTokens(tokens, rememberMe, reauthUserId || undefined);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "로그인 실패" };
   }
@@ -175,15 +192,26 @@ export async function selectAccountAction(
 
   // 클라이언트가 넘긴 userId 를 그대로 신뢰하지 않는다. refreshToken 으로 access 를 복원한 뒤
   // user-service /users/me 응답의 id 를 권위 있는 userId 로 사용 (서명 검증을 user-service 에 위임).
-  let accessToken: string;
-  try {
-    accessToken = await restoreAccessToken(refreshToken);
-  } catch (e) {
-    return {
-      ok: false,
-      error: e instanceof Error ? e.message : "토큰 갱신 실패",
-    };
+  const restored = await restoreAccessToken(refreshToken);
+
+  // user-service 가 401 로 응답 = stale refresh token. (다른 클라이언트의 재로그인으로 row overwrite,
+  // 어딘가에서의 logout, 자연 만료 등을 모두 포함.) 비밀번호 재인증 페이지로 보낸다 — loginId 는 메타
+  // 쿠키에서 prefill, reauth_user_id 로 엄격 매칭을 강제. 메타에 loginId 가 누락된 옛 쿠키면 prefill
+  // 없이 재인증 모드만 표시한다.
+  if (!restored.ok && restored.reauthRequired) {
+    const meta = await getAccountMeta(userId);
+    const qs = new URLSearchParams();
+    if (meta?.loginId) qs.set("login_id", meta.loginId);
+    qs.set("reauth_user_id", userId);
+    if (redirectToRaw) qs.set("redirect_to", redirectToRaw);
+    redirect(`/signin?${qs.toString()}`);
   }
+
+  if (!restored.ok) {
+    return { ok: false, error: restored.message };
+  }
+
+  const accessToken = restored.accessToken;
 
   let resolvedUserId: string;
   try {

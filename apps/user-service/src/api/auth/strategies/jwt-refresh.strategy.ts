@@ -40,19 +40,21 @@ export class JwtRefreshStrategy extends PassportStrategy(Strategy, 'jwt-refresh'
       throw new UnauthorizedException('refresh token not found');
     }
 
-    // DB에서 리프레시 토큰 검증 (만료, revoke 체크)
+    // DB에서 리프레시 토큰 검증 (만료, revoke 체크).
+    // 실패는 정상적인 stale 케이스 (다른 클라이언트의 재로그인으로 row overwrite, logout 으로 row 삭제,
+    // 자연 만료) 를 모두 포함하므로 ERROR 가 아닌 WARN 으로 남기고, 호출부 (auth-web 등) 가 401 을
+    // 받아 비밀번호 재인증 흐름으로 분기할 수 있도록 UnauthorizedException 으로 던진다.
     try {
       await this.tokensService.validateRefreshToken(payload.sub, refreshToken);
     } catch (error) {
-      this.logger.error('리프레시 토큰 검증 실패:', error);
-      // await this.tokensService.deleteAllTokens(payload.sub); // 해당 유저의 토큰 다 삭제
-      throw new Error('The refresh token is invalid');
+      this.logger.warn(`리프레시 토큰 검증 실패 userId=${payload.sub}: ${error instanceof Error ? error.message : error}`);
+      throw new UnauthorizedException('refresh token invalid or expired');
     }
 
     const user = await this.usersService.findUserById(payload.sub);
 
     if (!user) {
-      throw new Error('User not found');
+      throw new UnauthorizedException('user not found');
     }
 
     return {

@@ -99,24 +99,65 @@ export async function callbackSignup(signupToken: string): Promise<TokenPair> {
   return readApiData<TokenPair>(res);
 }
 
+/**
+ * `/auth/restore-token` 응답을 분기 가능한 결과로 반환한다.
+ *
+ * - 401 은 stale refresh token (DB row 가 다른 클라이언트 재로그인으로 overwrite 됐거나, logout 으로
+ *   삭제됐거나, 자연 만료된 경우 모두 포함). 호출부는 비밀번호 재인증 흐름으로 분기해야 한다.
+ * - 그 외 non-ok 는 진짜 서버 오류로 간주해 메시지를 그대로 노출.
+ *
+ * 다른 user-service 호출은 `throwIfBad` 가 status 를 메시지에 박아 던지지만, 여기는 호출부가 401 을
+ * 의미적으로 분기해야 하므로 throw 대신 union 결과를 반환한다.
+ */
+export type RestoreResult =
+  | { ok: true; accessToken: string }
+  | { ok: false; reauthRequired: true }
+  | { ok: false; reauthRequired: false; message: string };
+
 export async function restoreAccessToken(
   refreshToken: string,
-): Promise<string> {
+): Promise<RestoreResult> {
   const res = await fetch(`${env.userServiceUrl}/auth/restore-token`, {
     method: "POST",
     headers: { cookie: `refreshToken=${refreshToken}` },
     cache: "no-store",
     redirect: "manual",
   });
-  await throwIfBad(res, "restore-token");
+
+  if (res.status === 401) {
+    return { ok: false, reauthRequired: true };
+  }
+
+  if (!res.ok) {
+    const text = await res.text();
+    let message = text;
+    try {
+      const body = JSON.parse(text);
+      message = body?.message ?? text;
+      if (Array.isArray(message)) message = message.join(", ");
+    } catch {
+      // keep raw
+    }
+    return {
+      ok: false,
+      reauthRequired: false,
+      message: `[restore-token] ${res.status}: ${message}`,
+    };
+  }
+
   const body = await readApiData<{ accessToken?: string }>(res);
-  if (body.accessToken) return body.accessToken;
+  if (body.accessToken) return { ok: true, accessToken: body.accessToken };
 
   // Fallback: older behavior sets accessToken as Set-Cookie only
   const setCookie = res.headers.get("set-cookie") ?? "";
   const m = setCookie.match(/accessToken=([^;]+)/);
-  if (m?.[1]) return m[1];
-  throw new Error("[restore-token] accessToken missing in response");
+  if (m?.[1]) return { ok: true, accessToken: m[1] };
+
+  return {
+    ok: false,
+    reauthRequired: false,
+    message: "[restore-token] accessToken missing in response",
+  };
 }
 
 export type IssueOAuthCodeInput = {

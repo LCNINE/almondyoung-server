@@ -28,13 +28,11 @@ export async function getActiveSessionUserId(): Promise<string | null> {
   const refreshToken = await hasIdpRefreshToken();
   if (!refreshToken) return null;
 
-  let restored: string;
-  try {
-    restored = await restoreAccessToken(refreshToken);
-  } catch {
-    return null;
-  }
+  // 여기서는 reauth 분기를 띄울 컨텍스트가 없다 (RSC 의 silent SSO 판단/활성 계정 표시용 경로).
+  // stale 이면 그냥 "활성 세션 없음" 으로 취급해 호출부가 계정 허브/로그인을 노출하도록 둔다.
+  const restored = await restoreAccessToken(refreshToken);
+  if (!restored.ok) return null;
 
-  const me = await tryGetMe(restored);
+  const me = await tryGetMe(restored.accessToken);
   return me?.id ?? null;
 }
