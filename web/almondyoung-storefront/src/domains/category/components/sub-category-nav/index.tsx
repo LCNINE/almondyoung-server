@@ -1,5 +1,7 @@
 import LocalizedClientLink from "@/components/shared/localized-client-link"
+import { getCategoryFallbackThumbnail } from "@/lib/api/pim/search"
 import type { StoreProductCategoryTree } from "@/lib/types/medusa-category"
+import { collectCategoryIds } from "@/lib/utils/collect-category-ids"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import Image from "next/image"
 
@@ -8,15 +10,29 @@ interface SubCategoryNavProps {
   parentHandle?: string
 }
 
-export function SubCategoryNav({ categories, parentHandle }: SubCategoryNavProps) {
+async function resolveThumbnail(
+  category: StoreProductCategoryTree
+): Promise<string | null> {
+  const metaThumb = (category.metadata?.thumbnail as string) || null
+  if (metaThumb) return metaThumb
+
+  return await getCategoryFallbackThumbnail(collectCategoryIds(category))
+}
+
+export async function SubCategoryNav({
+  categories,
+  parentHandle,
+}: SubCategoryNavProps) {
   if (!categories || categories.length === 0) {
     return null
   }
 
+  const thumbnails = await Promise.all(categories.map(resolveThumbnail))
+
   return (
     <div className="flex flex-wrap gap-6">
-      {categories.map((category) => {
-        const imageUrl = (category.metadata?.thumbnail as string) || null
+      {categories.map((category, index) => {
+        const imageUrl = thumbnails[index]
         const href = parentHandle
           ? `/category/${parentHandle}/${category.handle}`
           : `/category/${category.handle}`
