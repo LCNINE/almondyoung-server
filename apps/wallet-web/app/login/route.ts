@@ -1,10 +1,10 @@
-import { redirect } from 'next/navigation';
+import { NextResponse, type NextRequest } from 'next/server';
 
 import {
   createAuthorizationRequest,
   type OidcStateRecord,
 } from '@/lib/auth/oidc-client';
-import { setStateCookie } from '@/lib/auth/session-cookies';
+import { writeStateCookie } from '@/lib/auth/session-cookies';
 
 /**
  * /login 진입점.
@@ -22,23 +22,22 @@ import { setStateCookie } from '@/lib/auth/session-cookies';
  *         callback 의 login_required fallback 이 이 모드로 재진입한다.
  *       - 'select_account' → 명시적 계정 전환
  *       - 'login' → 강제 재로그인
+ *
+ * Route Handler 인 이유: Server Component 렌더 단계에서는 cookie mutation 이 막혀 있어
+ * `NextResponse#cookies` 에 직접 써야 한다.
  */
-export default async function LoginPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ redirect_to?: string; prompt?: string }>;
-}) {
-  const params = await searchParams;
-  const redirectTo = sanitizeInternalRedirect(params.redirect_to);
-  const prompt = resolvePrompt(params.prompt);
+export async function GET(req: NextRequest): Promise<NextResponse> {
+  const sp = req.nextUrl.searchParams;
+  const redirectTo = sanitizeInternalRedirect(sp.get('redirect_to'));
+  const prompt = resolvePrompt(sp.has('prompt') ? (sp.get('prompt') ?? '') : undefined);
 
   const { authorizeUrl, stateRecord } = createAuthorizationRequest(redirectTo, prompt);
-  await setStateCookie(stateRecord);
-
-  redirect(authorizeUrl);
+  const res = NextResponse.redirect(authorizeUrl);
+  writeStateCookie(res.cookies, stateRecord);
+  return res;
 }
 
-function sanitizeInternalRedirect(value: string | undefined): string {
+function sanitizeInternalRedirect(value: string | null): string {
   if (!value) return '/';
   if (!value.startsWith('/')) return '/';
   if (value.startsWith('//')) return '/';

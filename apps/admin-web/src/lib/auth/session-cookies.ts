@@ -106,8 +106,12 @@ export async function getIdToken(): Promise<string | null> {
 
 const STATE_TTL_SECONDS = 10 * 60; // 10 분
 
-export async function setStateCookie(record: object): Promise<void> {
-  const jar = await cookies();
+/**
+ * authorize 진입점은 Route Handler 라서 `cookies()` 가 아닌 응답 jar
+ * (`NextResponse#cookies`) 에 직접 써야 한다 — Server Component 렌더 중
+ * cookie mutation 은 Next 가 throw 한다.
+ */
+export function writeStateCookie(jar: Jar, record: object): void {
   jar.set(STATE_COOKIE, Buffer.from(JSON.stringify(record), "utf8").toString("base64url"), {
     ...commonOptions(),
     maxAge: STATE_TTL_SECONDS,
