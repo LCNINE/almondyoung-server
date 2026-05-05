@@ -60,6 +60,8 @@ export function setup(infra: SharedInfra) {
   const medusaOidcClientSecret = new sst.Secret("MedusaOidcClientSecret");
   // admin-web RP 의 OIDC client_secret. user-service 시드 시 등록된 값과 동일해야 한다.
   const adminWebOidcClientSecret = new sst.Secret("AdminWebOidcClientSecret");
+  // wallet-web RP 의 OIDC client_secret. user-service 시드 시 등록된 값과 동일해야 한다.
+  const walletWebOidcClientSecret = new sst.Secret("WalletWebOidcClientSecret");
 
   // Storefront
   const medusaPublishableKey = new sst.Secret("MedusaPublishableKey");
@@ -413,6 +415,8 @@ export function setup(infra: SharedInfra) {
   });
 
   // ─── wallet-web (Next.js / OpenNext, CloudFront) ───
+  // wallet-web 자체가 OIDC RP. admin-web 과 동일한 패턴으로 user-service 와 직접 OIDC code-exchange.
+  // PR B 에서 apps/wallet-web/src/lib/auth/* 와 callback/signin route 를 추가할 때 아래 env 들을 소비한다.
   new sst.aws.Nextjs("WalletWeb", {
     path: "../../../apps/wallet-web",
     domain: { name: domain("wallet-web") },
@@ -423,6 +427,18 @@ export function setup(infra: SharedInfra) {
       USER_SERVICE_URL: idpUserServiceUrl,
       COOKIE_DOMAIN: `.${baseDomain}`,
       TOSS_CLIENT_KEY: tossClientKey.value,
+      // OIDC (wallet-web RP). client_id 는 시더와 동일하게 'wallet-web'.
+      OIDC_ISSUER_URL: idpUserServiceUrl,
+      OIDC_AUTHORIZATION_URL: $interpolate`${idpAuthWebUrl}/oauth/authorize`,
+      OIDC_CLIENT_ID: "wallet-web",
+      OIDC_CLIENT_SECRET: walletWebOidcClientSecret.value,
+      OIDC_REDIRECT_URI: $interpolate`${url("wallet-web")}/auth/callback`,
+      OIDC_POST_LOGOUT_REDIRECT_URI: url("wallet-web"),
+      OAUTH_JWKS_URL: $interpolate`${idpUserServiceUrl}/.well-known/jwks.json`,
+      // 형제 서브도메인 간 세션 공유 (storefront/auth-web 과 동일 값이어야 함).
+      PARENT_COOKIE_DOMAIN: `.${baseDomain}`,
+      PARENT_COOKIE_SECURE: "true",
+      PARENT_COOKIE_SAMESITE: "lax",
     },
   });
 }
