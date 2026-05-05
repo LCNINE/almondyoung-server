@@ -1,7 +1,4 @@
-import { isRailwayBackend } from "@/lib/config/backend"
-
-// 일단은
-const FILE_SERVER_URL = "https://file.dev.almondyoung-next.com"
+import { getBackendBaseUrl } from "@/lib/config/backend"
 
 export const getThumbnailUrl = (thumbnail: string) => {
   if (!thumbnail) return ""
@@ -10,22 +7,24 @@ export const getThumbnailUrl = (thumbnail: string) => {
     return thumbnail
   }
 
+  const fileBase = getBackendBaseUrl("fs")
+
   if (thumbnail.startsWith("http://") || thumbnail.startsWith("https://")) {
     const fileIdMatch = thumbnail.match(
       /\/files\/(?:public\/)?([a-f0-9-]{36})$/i
     )
-    if (fileIdMatch) {
+    if (fileIdMatch && fileBase) {
       const fileId = fileIdMatch[1]
-      return `${FILE_SERVER_URL}/files/public/${fileId}`
+      return `${fileBase}/files/public/${fileId}`
     }
     return thumbnail
   }
 
-  const useRailway = isRailwayBackend()
-
-  if (useRailway) {
-    return `${FILE_SERVER_URL}/files/public/${thumbnail}`
+  if (!fileBase) {
+    throw new Error(
+      "[get-thumbnail-url] file-service base URL이 설정되지 않았습니다. BACKEND_DOMAIN/NEXT_PUBLIC_BACKEND_DOMAIN 또는 로컬 설정을 확인하세요."
+    )
   }
 
-  return `http://localhost:3020/files/public/${thumbnail}`
+  return `${fileBase}/files/public/${thumbnail}`
 }
