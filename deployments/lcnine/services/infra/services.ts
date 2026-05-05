@@ -389,6 +389,7 @@ export function setup(infra: SharedInfra) {
     environment: {
       NEXT_PUBLIC_BASE_URL: url("www"),
       NEXT_PUBLIC_DEFAULT_REGION: "kr",
+      NEXT_PUBLIC_WALLET_WEB_URL: url("wallet-web"),
       NEXT_PUBLIC_BACKEND_DOMAIN: backendRootDomain,
       BACKEND_DOMAIN: backendRootDomain,
       NEXT_PUBLIC_USE_RAILWAY_BACKEND: "true",
