@@ -416,7 +416,7 @@ export function setup(infra: SharedInfra) {
 
   // ─── wallet-web (Next.js / OpenNext, CloudFront) ───
   // wallet-web 자체가 OIDC RP. admin-web 과 동일한 패턴으로 user-service 와 직접 OIDC code-exchange.
-  // PR B 에서 apps/wallet-web/src/lib/auth/* 와 callback/signin route 를 추가할 때 아래 env 들을 소비한다.
+  // RP 코드: apps/wallet-web/lib/auth/*, app/login, app/auth/callback, app/api/auth/{refresh,signout}, middleware.ts.
   new sst.aws.Nextjs("WalletWeb", {
     path: "../../../apps/wallet-web",
     domain: { name: domain("wallet-web") },
@@ -424,8 +424,6 @@ export function setup(infra: SharedInfra) {
       NEXT_PUBLIC_WALLET_API_URL: url("wallet"),
       WALLET_API_URL: url("wallet"),
       WALLET_API_KEY: walletApiKey.value,
-      USER_SERVICE_URL: idpUserServiceUrl,
-      COOKIE_DOMAIN: `.${baseDomain}`,
       TOSS_CLIENT_KEY: tossClientKey.value,
       // OIDC (wallet-web RP). client_id 는 시더와 동일하게 'wallet-web'.
       OIDC_ISSUER_URL: idpUserServiceUrl,
@@ -435,10 +433,8 @@ export function setup(infra: SharedInfra) {
       OIDC_REDIRECT_URI: $interpolate`${url("wallet-web")}/auth/callback`,
       OIDC_POST_LOGOUT_REDIRECT_URI: url("wallet-web"),
       OAUTH_JWKS_URL: $interpolate`${idpUserServiceUrl}/.well-known/jwks.json`,
-      // 형제 서브도메인 간 세션 공유 (storefront/auth-web 과 동일 값이어야 함).
-      PARENT_COOKIE_DOMAIN: `.${baseDomain}`,
-      PARENT_COOKIE_SECURE: "true",
-      PARENT_COOKIE_SAMESITE: "lax",
+      // 세션 쿠키는 host-only (admin-web 패턴). 다른 RP 와의 세션 공유는 IdP 레벨에서만
+      // 일어나며 (auth-web hub 의 parent-domain idp 쿠키), wallet-web 은 자체 도메인에만 토큰을 박는다.
     },
   });
 }

@@ -1,47 +1,35 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 
-const USER_SERVICE_URL = process.env.USER_SERVICE_URL;
+import { refreshTokens } from '@/lib/auth/oidc-client';
+import {
+  clearSessionCookiesOn,
+  getRefreshToken,
+  writeSessionCookies,
+} from '@/lib/auth/session-cookies';
 
-// CSR용 토큰 갱신 엔드포인트.
-// 브라우저가 refreshToken 쿠키와 함께 이 라우트를 호출하면,
-// user-service의 /auth/restore-token으로 프록시하고 새 accessToken 쿠키를 반환한다.
-export async function POST(request: NextRequest) {
-  if (!USER_SERVICE_URL) {
-    return new NextResponse(null, { status: 500 });
+/**
+ * CSR 용 토큰 갱신 엔드포인트.
+ *
+ * 브라우저가 refreshToken 쿠키와 함께 이 라우트를 호출하면, OIDC `/oauth/token`
+ * (refresh_token grant) 으로 access/refresh 회전 후 host-only HttpOnly 쿠키로 set.
+ * 실패 시 모든 세션 쿠키를 삭제해 클라이언트가 다음 401 에서 /login redirect 로 흐르게 한다.
+ */
+export async function POST(): Promise<NextResponse> {
+  const refresh = await getRefreshToken();
+  if (!refresh) {
+    return new NextResponse(null, { status: 401 });
   }
 
-  const cookieHeader = request.headers.get('cookie') ?? '';
-
-  let res: Response;
+  let tokens;
   try {
-    res = await fetch(`${USER_SERVICE_URL}/auth/restore-token`, {
-      method: 'POST',
-      headers: { cookie: cookieHeader },
-    });
+    tokens = await refreshTokens(refresh);
   } catch {
-    return new NextResponse(null, { status: 503 });
+    const fail = new NextResponse(null, { status: 401 });
+    clearSessionCookiesOn(fail.cookies);
+    return fail;
   }
 
-  if (!res.ok) {
-    return new NextResponse(null, { status: res.status });
-  }
-
-  // Set-Cookie 헤더에서 accessToken 값 추출
-  const setCookieHeader = res.headers.get('set-cookie') ?? '';
-  const match = setCookieHeader.match(/^accessToken=([^;]+)/);
-  if (!match) {
-    return new NextResponse(null, { status: 500 });
-  }
-
-  // domain을 user-service와 동일하게 맞춰야 기존 쿠키를 덮어쓰고 중복이 생기지 않음
-  const cookieDomain = process.env.COOKIE_DOMAIN || undefined;
   const response = new NextResponse(null, { status: 204 });
-  response.cookies.set('accessToken', match[1], {
-    httpOnly: true,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 60 * 15, // 15분 (user-service와 동일)
-    domain: cookieDomain,
-  });
+  writeSessionCookies(response.cookies, tokens);
   return response;
 }
