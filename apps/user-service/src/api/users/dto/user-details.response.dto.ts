@@ -52,6 +52,14 @@ export class ProfileDto {
   @ApiProperty({ description: '프로필 이미지 URL', nullable: true })
   profileImageUrl: string | null;
 
+  @ApiProperty({
+    description: '관심 시술 카테고리 키 배열 (최대 3개)',
+    isArray: true,
+    nullable: true,
+    example: ['nail', 'tattoo'],
+  })
+  interestCategoryKeys: string[] | null;
+
   @ApiProperty({ description: '프로필 생성일' })
   createdAt: Date;
 

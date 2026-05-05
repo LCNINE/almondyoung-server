@@ -211,7 +211,8 @@ export class UsersService {
 
   // 사용자 프로필 정보 업데이트
   async updateMyProfile(userId: string, updateUserDto: UpdateUserDto, tx?: DbTransaction): Promise<void> {
-    const { username, nickname, phoneNumber, birthDate, profileImageUrl, address } = updateUserDto;
+    const { username, nickname, phoneNumber, birthDate, profileImageUrl, address, interestCategoryKeys } =
+      updateUserDto;
 
     const client = this.getClient(tx);
 
@@ -220,12 +221,14 @@ export class UsersService {
         await client.update(schema.users).set({ username, nickname }).where(eq(schema.users.id, userId));
       }
 
+      // interestCategoryKeys는 빈 배열도 명시적 초기화로 인정해야 하므로 undefined 체크 사용
       const profileData = {
         userId,
         ...(phoneNumber && { phoneNumber }),
         ...(profileImageUrl && { profileImageUrl }),
         ...(birthDate && { birthDate: new Date(birthDate) }),
         ...(address && { address: JSON.stringify(address) }),
+        ...(interestCategoryKeys !== undefined && { interestCategoryKeys }),
       };
 
       // 업데이트할 프로필 필드가 있는 경우에만 upsert 실행
@@ -240,6 +243,7 @@ export class UsersService {
               ...(profileImageUrl && { profileImageUrl }),
               ...(birthDate && { birthDate: new Date(birthDate) }),
               ...(address && { address: JSON.stringify(address) }),
+              ...(interestCategoryKeys !== undefined && { interestCategoryKeys }),
             },
           });
       }

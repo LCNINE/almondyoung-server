@@ -32,6 +32,7 @@ import {
   type ProfileActionState,
 } from "../actions/profile"
 import { AddressBookSection } from "./address-book-section"
+import { InterestCategoriesSection } from "./interest-categories-section"
 import { PhoneSection } from "./phone-section"
 import { SocialLinkSection } from "./social-link-section"
 
@@ -246,6 +247,11 @@ export function ProfileEdit({
       {/* 휴대폰 번호 변경 */}
       <PhoneSection
         initialPhoneNumber={userData.profile?.phoneNumber ?? null}
+      />
+
+      {/* 관심 카테고리 */}
+      <InterestCategoriesSection
+        initialKeys={userData.profile?.interestCategoryKeys ?? []}
       />
 
       <Separator />

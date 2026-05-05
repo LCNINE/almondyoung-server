@@ -4,13 +4,29 @@ import { SearchCombobox } from "@/components/search/search-combobox"
 import { SearchSheet } from "@/components/search/search-sheet"
 import { listCategories } from "@/lib/api/medusa/categories"
 import { FIXED_CATEGORIES } from "@/lib/constants/categories"
+import { getInterestCategoryKeys } from "@lib/data/cookies"
 import { Logo } from "./logo"
 import { AccountMenu } from "./user-actions"
 
 type Categories = Awaited<ReturnType<typeof listCategories>>
 
 export async function MainHeader() {
-  const mainCategories = FIXED_CATEGORIES
+  const interestKeys = await getInterestCategoryKeys()
+  const interestKeySet = new Set(interestKeys)
+
+  // 사용자 선택 순서대로 앞에, 나머지는 원래 순서 유지 (노몬드는 자연스럽게 끝부분)
+  const orderedInterest = interestKeys
+    .map((k) => FIXED_CATEGORIES.find((c) => c.key === k))
+    .filter((c): c is (typeof FIXED_CATEGORIES)[number] => Boolean(c))
+
+  const rest = FIXED_CATEGORIES.filter((c) => !interestKeySet.has(c.key))
+
+  const mainCategories = [...orderedInterest, ...rest].map((c) => ({
+    name: c.name,
+    handle: c.handle,
+    key: c.key,
+    isInterest: interestKeySet.has(c.key),
+  }))
 
   let categories: Categories = []
   try {

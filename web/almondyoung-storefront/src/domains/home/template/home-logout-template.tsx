@@ -4,6 +4,7 @@ import { Suspense } from "react"
 import { HeroBanner } from "../components/banner/hero-banner"
 import { HomeSection } from "../components/shared/home-section"
 import { CategoryBestProductsWrapper } from "./best-categories"
+import { InterestCategoriesSlot } from "./interest-categories"
 import { WelcomeDealWrapper } from "./welcome-deals"
 import MembershipBanner from "../components/banner/membership-banner"
 
@@ -126,6 +127,17 @@ export async function HomeLogoutTemplate({
     <div className="w-full">
       {/* 메인 히어로 배너 */}
       <HeroBanner />
+
+      {/* 관심 카테고리 슬롯 (선택 배너 또는 선택된 카테고리 베스트) */}
+      <HomeSection>
+        <ErrorBoundary
+          fallback={<div>관심 카테고리 섹션을 불러오지 못했어요.</div>}
+        >
+          <Suspense fallback={<MainSectionSkeleton />}>
+            <InterestCategoriesSlot countryCode={countryCode} />
+          </Suspense>
+        </ErrorBoundary>
+      </HomeSection>
 
       {/* 카테고리별 제품 섹션  */}
       <HomeSection>

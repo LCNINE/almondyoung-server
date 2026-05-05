@@ -8,6 +8,7 @@ import {
   setMedusaAuthToken,
   setTokenCookies,
 } from "@lib/data/cookies"
+import { syncInterestPrefsFromServer } from "@lib/data/interest-categories"
 import { revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
 import { recoverCustomerCart, transferCart } from "./customer"
@@ -174,6 +175,10 @@ export async function oidcCallback(args: {
 
   await setMedusaAuthToken(finalToken)
   await setTokenCookies(idp_tokens.access_token, idp_tokens.refresh_token)
+
+  // 로그인 직후 user-service prefs 를 anon 쿠키와 동기화
+  // (서버에 prefs 가 비어있으면 anon 선택값/dismiss 도 폐기되어 다시 묻기 시작)
+  await syncInterestPrefsFromServer()
 
   const customerCacheTag = await getCacheTag("customers")
   if (customerCacheTag) revalidateTag(customerCacheTag)

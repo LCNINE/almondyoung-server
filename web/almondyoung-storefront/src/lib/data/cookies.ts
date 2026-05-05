@@ -246,8 +246,130 @@ export const removeAllAuthTokens = async () => {
   cookies.set("_medusa_jwt", "", { maxAge: -1, path: "/" })
   cookies.set("_medusa_cart_id", "", { maxAge: -1 })
 
+  // 관심 카테고리 / 배너 dismiss 쿠키도 함께 만료 — 계정 로그아웃 시 anon 상태로 복귀
+  cookies.set(INTEREST_CATEGORIES_COOKIE, "", { maxAge: -1, path: "/" })
+  cookies.set(INTEREST_BANNER_DISMISSED_COOKIE, "", { maxAge: -1, path: "/" })
+
   if (domain) {
     cookies.set("accessToken", "", { maxAge: -1, path: "/", domain })
     cookies.set("refreshToken", "", { maxAge: -1, path: "/", domain })
+    cookies.set(INTEREST_CATEGORIES_COOKIE, "", { maxAge: -1, path: "/", domain })
+    cookies.set(INTEREST_BANNER_DISMISSED_COOKIE, "", { maxAge: -1, path: "/", domain })
+  }
+}
+
+/*───────────────────────────
+ * 관심 카테고리 쿠키
+ *──────────────────────────*/
+
+const INTEREST_CATEGORIES_COOKIE = "ay_interest_categories"
+const INTEREST_BANNER_DISMISSED_COOKIE = "ay_interest_banner_dismissed_until"
+const INTEREST_CATEGORIES_MAX_AGE = 60 * 60 * 24 * 365 // 365일
+const INTEREST_BANNER_DISMISS_MAX_AGE = 60 * 60 * 24 * 7 // 7일
+
+const VALID_INTEREST_KEYS = new Set([
+  "lash-perm",
+  "lash-extension",
+  "semi-permanent",
+  "nail",
+  "tattoo",
+  "skincare",
+  "hair",
+  "waxing",
+])
+
+export const getInterestCategoryKeys = async (): Promise<string[]> => {
+  try {
+    const cookies = await nextCookies()
+    const raw = cookies.get(INTEREST_CATEGORIES_COOKIE)?.value
+    if (!raw) return []
+
+    const decoded = decodeURIComponent(raw)
+    const parsed: unknown = JSON.parse(decoded)
+    if (!Array.isArray(parsed)) return []
+
+    // 화이트리스트 sanitize + 중복 제거 + 최대 3개
+    const seen = new Set<string>()
+    const result: string[] = []
+    for (const item of parsed) {
+      if (typeof item !== "string") continue
+      if (!VALID_INTEREST_KEYS.has(item)) continue
+      if (seen.has(item)) continue
+      seen.add(item)
+      result.push(item)
+      if (result.length >= 3) break
+    }
+    return result
+  } catch {
+    return []
+  }
+}
+
+export const setInterestCategoryKeys = async (keys: string[]) => {
+  const cookies = await nextCookies()
+  const domain = await getTokenCookieDomain()
+
+  // sanitize once more before write
+  const sanitized = keys
+    .filter((k) => VALID_INTEREST_KEYS.has(k))
+    .filter((k, i, arr) => arr.indexOf(k) === i)
+    .slice(0, 3)
+
+  const value = encodeURIComponent(JSON.stringify(sanitized))
+
+  if (domain) {
+    cookies.set(INTEREST_CATEGORIES_COOKIE, "", { maxAge: -1, path: "/" })
+  }
+  cookies.set(INTEREST_CATEGORIES_COOKIE, value, {
+    maxAge: INTEREST_CATEGORIES_MAX_AGE,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    ...(domain ? { domain } : {}),
+  })
+}
+
+export const removeInterestCategoryKeys = async () => {
+  const cookies = await nextCookies()
+  const domain = await getTokenCookieDomain()
+  cookies.set(INTEREST_CATEGORIES_COOKIE, "", { maxAge: -1, path: "/" })
+  if (domain) {
+    cookies.set(INTEREST_CATEGORIES_COOKIE, "", { maxAge: -1, path: "/", domain })
+  }
+}
+
+export const getInterestBannerDismissed = async (): Promise<boolean> => {
+  try {
+    const cookies = await nextCookies()
+    const raw = cookies.get(INTEREST_BANNER_DISMISSED_COOKIE)?.value
+    if (!raw) return false
+    const until = new Date(raw).getTime()
+    if (Number.isNaN(until)) return false
+    return until > Date.now()
+  } catch {
+    return false
+  }
+}
+
+export const setInterestBannerDismissed7Days = async () => {
+  const cookies = await nextCookies()
+  const domain = await getTokenCookieDomain()
+  const until = new Date(Date.now() + INTEREST_BANNER_DISMISS_MAX_AGE * 1000).toISOString()
+
+  cookies.set(INTEREST_BANNER_DISMISSED_COOKIE, until, {
+    maxAge: INTEREST_BANNER_DISMISS_MAX_AGE,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    ...(domain ? { domain } : {}),
+  })
+}
+
+export const removeInterestBannerDismissed = async () => {
+  const cookies = await nextCookies()
+  const domain = await getTokenCookieDomain()
+  cookies.set(INTEREST_BANNER_DISMISSED_COOKIE, "", { maxAge: -1, path: "/" })
+  if (domain) {
+    cookies.set(INTEREST_BANNER_DISMISSED_COOKIE, "", { maxAge: -1, path: "/", domain })
   }
 }
