@@ -133,6 +133,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
       const access_token = typeof meta.access_token === 'string' ? meta.access_token : undefined;
       const refresh_token = typeof meta.refresh_token === 'string' ? meta.refresh_token : undefined;
       const expires_at = typeof meta.access_token_expires_at === 'number' ? meta.access_token_expires_at : undefined;
+      const redirect_to = typeof meta.redirect_to === 'string' && meta.redirect_to ? meta.redirect_to : undefined;
       if (access_token && refresh_token) {
         return res.status(200).json({
           token,
@@ -141,6 +142,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
             refresh_token,
             ...(expires_at ? { expires_at } : {}),
           },
+          ...(redirect_to ? { redirect_to } : {}),
         });
       }
     }

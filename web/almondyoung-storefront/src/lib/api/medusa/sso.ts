@@ -9,6 +9,7 @@ import {
   setTokenCookies,
 } from "@lib/data/cookies"
 import { syncInterestPrefsFromServer } from "@lib/data/interest-categories"
+import { toLocalizedPath } from "@/lib/utils/locale-path"
 import { revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
 import { recoverCustomerCart, transferCart } from "./customer"
@@ -115,8 +116,9 @@ export async function oidcCallback(args: {
   const callbackJson = (await callbackRes.json()) as {
     token: string
     idp_tokens?: { access_token: string; refresh_token: string; expires_at?: number }
+    redirect_to?: string
   }
-  const { token, idp_tokens } = callbackJson
+  const { token, idp_tokens, redirect_to: oidcRedirectTo } = callbackJson
   if (!token) {
     return { success: false, error: "no token in callback response" }
   }
@@ -195,9 +197,8 @@ export async function oidcCallback(args: {
     console.warn("[oidcCallback] cart sync failed", (e as Error).message)
   }
 
-  const redirectTo = args.redirectTo && args.redirectTo.startsWith("/")
-    ? args.redirectTo
-    : `/${countryCode}`
+  // Medusa state의 redirect_to 우선, 없으면 URL 파라미터, 없으면 홈. 외부 URL은 toLocalizedPath가 차단.
+  const redirectTo = toLocalizedPath(countryCode, oidcRedirectTo ?? args.redirectTo)
 
   return { success: true, redirectTo }
 }
