@@ -2,51 +2,43 @@
 
 import type { HttpTypes } from "@medusajs/types"
 import { listProducts } from "@/lib/api/medusa/products"
-import { getBestProductRankings } from "@/lib/api/analytics"
+import { searchProducts } from "@/lib/api/pim/search"
 
 type Params = {
   pimCategoryId: string
-  fallbackCategoryId: string
   regionId?: string
   limit?: number
 }
 
 /**
- * 카테고리별 베스트 상품을 랭킹 순서대로 반환.
- * 1) analytics에서 masterId 랭킹을 받아옴
- * 2) masterId(=Medusa handle)로 상품 일괄 조회
- * 3) 랭킹 순서대로 재정렬
- * 4) 랭킹이 비어있으면 카테고리 기본 목록으로 fallback
+ * 카테고리별 베스트 상품 목록.
+ * search 서비스에서 카테고리로 상품을 조회한 뒤,
+ * 결과의 productId (= Medusa handle) 로 Medusa 상품을 일괄 조회해 검색 순서대로 반환.
  */
 export async function getBestProductsByCategory({
   pimCategoryId,
-  fallbackCategoryId,
   regionId,
   limit = 10,
 }: Params): Promise<HttpTypes.StoreProduct[]> {
-  const rankings = await getBestProductRankings({
-    categoryId: pimCategoryId,
-    limit,
+  const searchResult = await searchProducts({
+    categoryIds: [pimCategoryId],
+    size: limit,
   })
 
-  const masterIds = rankings.map((r) => r.masterId)
+  if ("error" in searchResult || !searchResult.data) return []
+
+  const handles = searchResult.data.items.map((item) => item.productId)
+  if (handles.length === 0) return []
 
   const {
     response: { products },
-  } = masterIds.length
-    ? await listProducts({
-        queryParams: { handle: masterIds, limit: masterIds.length },
-        regionId,
-      })
-    : await listProducts({
-        queryParams: { category_id: [fallbackCategoryId], limit },
-        regionId,
-      })
-
-  if (!masterIds.length) return products
+  } = await listProducts({
+    queryParams: { handle: handles, limit: handles.length },
+    regionId,
+  })
 
   const byHandle = new Map(products.map((p) => [p.handle, p]))
-  return masterIds
+  return handles
     .map((id) => byHandle.get(id))
     .filter((p): p is HttpTypes.StoreProduct => Boolean(p))
 }

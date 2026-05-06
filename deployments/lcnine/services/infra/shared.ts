@@ -60,7 +60,9 @@ export function setup(opts?: { baseDomain?: string }) {
 
   // ─── OpenSearch (VPC, single-AZ, t3.small.search) ───
   // sst.aws.OpenSearch 는 vpc 옵션을 직접 받지 않아 transform.domain 으로 vpcOptions 를 주입한다.
-  // analysis-nori 는 AWS OpenSearch Service 에 built-in 이므로 package association 불필요.
+  // 한국어 형태소 분석은 AWS-managed `analysis-nori` 패키지를 도메인에 associate 해서 활성화 (built-in 아님).
+  // 패키지 ID 는 region + EngineVersion 별로 다름 — 아래 값은 ap-northeast-2 / OpenSearch_2.17.
+  // 엔진 버전 업그레이드 시 `aws opensearch describe-packages --filters Name=PackageName,Value=analysis-nori` 로 새 ID 조회.
   const vpcInfo = aws.ec2.getVpcOutput({ id: vpc.id });
   const opensearchSg = new aws.ec2.SecurityGroup("OpensearchSg", {
     vpcId: vpc.id,
@@ -89,6 +91,18 @@ export function setup(opts?: { baseDomain?: string }) {
       },
     },
   });
+  // Pulumi-aws 의 PackageAssociation 기본 wait 가 10분이라 t3.small 도메인 plugin install +
+  // rolling restart 에 부족할 때가 많다 — 60분으로 늘려둔다.
+  new aws.opensearch.PackageAssociation(
+    "OpensearchNoriAssociation",
+    {
+      packageId: "G267799487",
+      domainName: opensearch.nodes.domain!.domainName,
+    },
+    {
+      customTimeouts: { create: "60m", update: "60m", delete: "60m" },
+    },
+  );
 
   // ─── Common env builders ───
   const baseEnv = (serviceName: string) => ({

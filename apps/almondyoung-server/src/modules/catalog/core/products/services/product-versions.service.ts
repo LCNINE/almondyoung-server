@@ -437,6 +437,7 @@ export class ProductVersionsService {
       .where(eq(productTagValues.versionId, versionId));
 
     const fileServiceUrl = process.env.FILE_SERVICE_URL || '';
+    const primaryImage = images.find((img) => img.isPrimary);
 
     return {
       masterId,
@@ -445,7 +446,7 @@ export class ProductVersionsService {
       name: version.name,
       description: version.description || undefined,
       descriptionHtml: version.descriptionHtml || undefined,
-      thumbnail: version.thumbnail ? `${fileServiceUrl}/files/${version.thumbnail}` : undefined,
+      thumbnail: primaryImage ? `${fileServiceUrl}/files/${primaryImage.fileId}` : undefined,
       images: images.map((img) => ({
         fileId: img.fileId,
         url: `${fileServiceUrl}/files/${img.fileId}`,
