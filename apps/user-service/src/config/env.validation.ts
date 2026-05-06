@@ -32,6 +32,7 @@ export const userServiceEnvSchema = z.object({
 
   // CORS Configuration
   CORS_ORIGIN_DOMAIN: z.string().optional(),
+  CORS_ORIGIN_DOMAINS: z.string().optional(),
   COOKIE_DOMAIN: z.string().optional(),
 
   // JWT Configuration

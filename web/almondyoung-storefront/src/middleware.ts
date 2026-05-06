@@ -29,6 +29,33 @@ function buildLoginRedirect(request: NextRequest): NextResponse {
   return NextResponse.redirect(url, 307)
 }
 
+function isJwtExpired(token?: string, skewSeconds = 30): boolean {
+  if (!token) return true
+
+  try {
+    const payload = token.split(".")[1]
+    if (!payload) return true
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/")
+    const padded = normalized.padEnd(
+      normalized.length + ((4 - (normalized.length % 4)) % 4),
+      "="
+    )
+    const decoded = JSON.parse(atob(padded)) as { exp?: number }
+
+    if (!decoded.exp) return true
+
+    return decoded.exp <= Math.floor(Date.now() / 1000) + skewSeconds
+  } catch {
+    return true
+  }
+}
+
+function buildRestoreTokenRedirect(request: NextRequest): NextResponse {
+  const url = new URL("/api/auth/restore-token", request.nextUrl.origin)
+  url.searchParams.set("return_to", request.nextUrl.pathname + request.nextUrl.search)
+  return NextResponse.redirect(url, 307)
+}
+
 const regionMapCache = {
   regionMap: new Map<string, HttpTypes.StoreRegion>(),
   regionMapUpdated: Date.now(),
@@ -138,6 +165,13 @@ async function getCountryCode(
  * Middleware to handle region selection and onboarding status.
  */
 export async function middleware(request: NextRequest) {
+  const accessToken = request.cookies.get("accessToken")?.value
+  const refreshToken = request.cookies.get("refreshToken")?.value
+
+  if (refreshToken && isJwtExpired(accessToken)) {
+    return buildRestoreTokenRedirect(request)
+  }
+
   // 인증 게이트: 보호 경로에 비인증 접근 시 storefront /login 으로 redirect.
   // OIDC 통합 후 customer 세션의 SoT 는 _medusa_jwt 쿠키 단 하나.
   if (

@@ -24,9 +24,10 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
   const port = process.env.PORT ?? 3030;
 
+  const configuredCorsOrigins = process.env.CORS_ORIGIN_DOMAINS ?? process.env.CORS_ORIGIN_DOMAIN;
   const corsOrigins =
     process.env.NODE_ENV === 'production'
-      ? (process.env.CORS_ORIGIN_DOMAINS?.split(',').map((origin) => origin.trim()) ?? [])
+      ? (configuredCorsOrigins?.split(',').map((origin) => origin.trim()).filter(Boolean) ?? [])
       : ['http://localhost:8000', 'http://localhost:8001', 'https://almondyoung-storefront.vercel.app'];
 
   logger.log('CORS:', corsOrigins);
