@@ -13,8 +13,7 @@ export async function CategoryBestProductsWrapper({
   const region = await getRegion(countryCode)
 
   const orderedProducts = await getBestProductsByCategory({
-    pimCategoryId: FIXED_CATEGORIES[0].pimCategoryId,
-    fallbackCategoryId: FIXED_CATEGORIES[0].id,
+    categoryId: FIXED_CATEGORIES[0].id,
     regionId: region?.id,
     limit: 10,
   })
