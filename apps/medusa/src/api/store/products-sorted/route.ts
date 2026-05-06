@@ -40,7 +40,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const limit = parseInt(req.query.limit as string) || 20;
     const offset = parseInt(req.query.offset as string) || 0;
     const currencyCode = (req.query.currency_code as string) || 'krw';
-    const categoryIds = req.query.category_id as string[];
+    const rawCategoryId = req.query.category_id;
+    const categoryIds: string[] = Array.isArray(rawCategoryId)
+      ? (rawCategoryId as string[])
+      : typeof rawCategoryId === 'string' && rawCategoryId
+        ? [rawCategoryId]
+        : [];
     const collectionId = (req.query.collection_id as string) || '';
 
     const validSortFields: SortBy[] = ['min_price', 'max_price', 'sales_count'];
