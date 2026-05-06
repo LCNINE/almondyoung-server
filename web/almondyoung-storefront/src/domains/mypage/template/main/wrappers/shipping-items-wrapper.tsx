@@ -3,12 +3,13 @@ import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
 import { ShippingItemsSection } from "../../../components/desktop/shipping-items-section"
 import type { ShippingOrder } from "../../../types/mypage-types"
 import { resolveMypageShippingStatus } from "./mypage-order-status"
+import { withMypageTimeout } from "./mypage-timeout"
 
 /**
  * 배송 중 상품 Wrapper
  */
 export async function ShippingItemsWrapper() {
-  const ordersData = await getOrders({ limit: 10 }).catch(() => null)
+  const ordersData = await withMypageTimeout(getOrders({ limit: 10 }), null)
 
   const shippingOrders: ShippingOrder[] = (ordersData?.orders || [])
     .filter((order: any) => order.status !== "canceled")
