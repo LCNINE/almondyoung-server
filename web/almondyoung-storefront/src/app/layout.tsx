@@ -1,6 +1,7 @@
 import Footer from "@/components/layout/footer"
 import { BottomNavigation } from "@/components/layout/nav/bottom-nav"
 import { FloatingButtons } from "@/components/shared/custom-buttons/floating-buttons"
+import { PushNotificationProvider } from "@/components/providers/push-notification-provider"
 import { CartProvider } from "@/contexts/cart-context"
 import { UserProvider } from "@/contexts/user-context"
 import { getMyProfile } from "@/lib/api/users/profile"
@@ -42,6 +43,7 @@ export default async function RootLayout(props: { children: React.ReactNode }) {
       >
         <OverlayProvider>
           <UserProvider initialUser={userDetailInfo}>
+            <PushNotificationProvider />
             <CartProvider initialCart={cart}>
               <ThemeProvider
                 attribute="class"

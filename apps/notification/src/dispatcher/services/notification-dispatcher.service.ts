@@ -3,12 +3,13 @@ import { Injectable, Logger, NotFoundException, BadRequestException, Optional } 
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { DbService, InjectTypedDb } from '@app/db';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, inArray } from 'drizzle-orm';
 import {
   notificationTables,
   notifications,
   templates,
   notificationEvents,
+  fcmTokens,
 } from '../../../database/schemas/notification-schema';
 import { SendNotificationDto } from '../dto/send-notification.dto';
 import { Channel, Language, NotificationCategory, NotificationPriority, NotificationStatus } from '../../shared/enums';
@@ -251,25 +252,21 @@ export class NotificationDispatcherService {
         where: eq(notifications.notificationId, notificationId),
       });
 
+      const userId = notification?.userId || payload?.userId || '';
+
       const userProfile: UserProfile = {
-        userId: notification?.userId || payload?.userId || '',
+        userId,
         email: payload?.email || notification?.payload?.email,
         phoneNumber: payload?.phoneNumber || notification?.payload?.phoneNumber,
         pushToken: payload?.pushToken || notification?.payload?.pushToken,
         name: payload?.name || notification?.payload?.name,
       };
 
-      const contact = getContactForChannel(userProfile, channel);
-      if (!contact) {
-        throw new Error(`No contact info for channel ${channel}`);
-      }
-
       const provider = await this.providerManager.getAvailableProviderForChannel(channel);
       if (!provider) {
         throw new Error(`No provider available for channel ${channel}`);
       }
 
-      // 프로바이더 메타데이터 구성
       const providerMetadata: Record<string, any> = {
         notificationId,
         category: payload?.category,
@@ -277,19 +274,89 @@ export class NotificationDispatcherService {
         ...metadata,
       };
 
-      // 채널별 템플릿 변수 정보 추가
-      if (channel === 'KAKAO' && metadata.templateCode) {
+      if (channel === Channel.KAKAO && metadata.templateCode) {
         providerMetadata.templateCode = metadata.templateCode;
         providerMetadata.templateParameters = metadata.templateParameters || {};
       }
-
-      if (channel === 'EMAIL' && metadata.templateId) {
+      if (channel === Channel.EMAIL && metadata.templateId) {
         providerMetadata.templateId = metadata.templateId;
         providerMetadata.templateVariables = metadata.templateVariables || {};
       }
-
-      if (channel === 'PUSH' && metadata.fcmDataVariables) {
+      if (channel === Channel.PUSH && metadata.fcmDataVariables) {
         providerMetadata.fcmDataVariables = metadata.fcmDataVariables;
+      }
+
+      if (channel === Channel.PUSH) {
+        const explicitToken = userProfile.pushToken;
+        const tokensToSend: string[] = explicitToken
+          ? [explicitToken]
+          : await this.getActiveTokensForUser(userId);
+
+        if (tokensToSend.length === 0) {
+          throw new Error(`No active FCM tokens for user ${userId}`);
+        }
+
+        const sendResults = await Promise.allSettled(
+          tokensToSend.map((token) =>
+            provider.send({
+              to: token,
+              content: renderedContent.body,
+              subject: renderedContent.subject,
+              metadata: providerMetadata,
+            }),
+          ),
+        );
+
+        const invalidTokens = sendResults
+          .map((r, i) => {
+            if (r.status !== 'fulfilled' || r.value.success) return null;
+            const code = r.value.providerResponse?.code as string | undefined;
+            const isInvalid =
+              code?.includes('invalid-registration-token') ||
+              code?.includes('registration-token-not-registered');
+            return isInvalid ? tokensToSend[i] : null;
+          })
+          .filter((t): t is string => t !== null);
+
+        if (invalidTokens.length > 0) {
+          await this.db.db
+            .update(fcmTokens)
+            .set({ isActive: false, updatedAt: new Date() })
+            .where(inArray(fcmTokens.token, invalidTokens));
+        }
+
+        const successCount = sendResults.filter((r) => r.status === 'fulfilled' && r.value.success).length;
+        if (successCount === 0) {
+          throw new Error(`All FCM sends failed for user ${userId} (${tokensToSend.length} tokens)`);
+        }
+
+        await this.db.db
+          .update(notifications)
+          .set({
+            status: NotificationStatus.SENT,
+            sentAt: new Date(),
+            metadata: {
+              ...metadata,
+              pushResults: sendResults.map((r, i) => ({
+                token: tokensToSend[i].slice(-8), // 토큰 마지막 8자리만 로깅
+                success: r.status === 'fulfilled' ? r.value.success : false,
+              })),
+            },
+          })
+          .where(eq(notifications.notificationId, notificationId));
+
+        this.logger.log('[Dispatcher] PUSH sent directly', {
+          notificationId,
+          successCount,
+          totalTokens: tokensToSend.length,
+        });
+        return;
+      }
+
+      // PUSH 외 채널
+      const contact = getContactForChannel(userProfile, channel);
+      if (!contact) {
+        throw new Error(`No contact info for channel ${channel}`);
       }
 
       // 실제 발송
@@ -339,6 +406,14 @@ export class NotificationDispatcherService {
         })
         .where(eq(notifications.notificationId, notificationId));
     }
+  }
+
+  private async getActiveTokensForUser(userId: string): Promise<string[]> {
+    const rows = await this.db.db
+      .select({ token: fcmTokens.token })
+      .from(fcmTokens)
+      .where(and(eq(fcmTokens.userId, userId), eq(fcmTokens.isActive, true)));
+    return rows.map((r) => r.token);
   }
 
   /**

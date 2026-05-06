@@ -55,6 +55,13 @@ export const notificationEnvSchema = z.object({
 
   // Firebase Provider (Legacy Config)
   FIREBASE_SERVICE_ACCOUNT: z.string().optional(),
+
+  // 서비스 간 통신
+  USER_SERVICE_URL: z.string().url().optional(),
+  USER_SERVICE_INTERNAL_TOKEN: z.string().optional(),
+
+  // FCM 토큰 등록 엔드포인트 JWT 검증용 (user-service와 동일한 AUTH_SECRET)
+  JWT_ACCESS_SECRET: z.string().optional(),
 });
 
 export type NotificationEnvConfig = z.infer<typeof notificationEnvSchema>;

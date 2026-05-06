@@ -13,6 +13,7 @@ import { DispatcherModule } from './dispatcher/dispatcher.module';
 import { ProviderModule } from './provider/provider.module';
 import { TemplateModule } from './template/template.module';
 import { BulkModule } from './bulk/bulk.module';
+import { DeviceModule } from './device/device.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { BulkModule } from './bulk/bulk.module';
     ProviderModule,
     TemplateModule,
     BulkModule,
+    DeviceModule,
   ],
 })
 export class NotificationModule {}
