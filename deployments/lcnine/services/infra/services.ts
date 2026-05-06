@@ -272,9 +272,9 @@ export function setup(infra: SharedInfra) {
     port: 3000,
     priority: 200,
     environment: {
-      OPENSEARCH_NODE: opensearch.url,
-      OPENSEARCH_USERNAME: opensearch.username,
-      OPENSEARCH_PASSWORD: opensearch.password,
+      // TEMP: AWS OpenSearch(VPC) 연결 트러블슈팅 동안 Railway 자체호스팅 인스턴스로 폴백.
+      //       복구되면 opensearch.url/username/password 로 되돌릴 것.
+      OPENSEARCH_NODE: "https://opensearch-development.up.railway.app",
       SEARCH_PRODUCTS_INDEX: "search_products",
       ...kafkaEnv("search", "search-indexer-group"),
     },

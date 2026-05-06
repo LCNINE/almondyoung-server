@@ -140,7 +140,10 @@ export const getPopularKeywords = async (): Promise<
   return { data: { keywords } }
 }
 
-// 카테고리 대표 이미지 1장 조회 (해당 카테고리의 아무 상품 썸네일)
+// 카테고리 대표 이미지 1장 조회 — 인덱스에 thumbnail이 비어있는 상품이 많아
+// 여러 건을 받아 첫 non-null thumbnail을 선택합니다.
+const CATEGORY_THUMBNAIL_PROBE_SIZE = 20
+
 export const getCategoryFallbackThumbnail = async (
   categoryIds: string[]
 ): Promise<string | null> => {
@@ -149,7 +152,7 @@ export const getCategoryFallbackThumbnail = async (
   try {
     const searchParams = new URLSearchParams()
     categoryIds.forEach((id) => searchParams.append("categoryIds", id))
-    searchParams.set("size", "1")
+    searchParams.set("size", String(CATEGORY_THUMBNAIL_PROBE_SIZE))
 
     const result = await api<SearchServiceProductsResponse>(
       "search",
@@ -164,7 +167,7 @@ export const getCategoryFallbackThumbnail = async (
       }
     )
 
-    return result.items[0]?.thumbnail ?? null
+    return result.items.find((item) => item.thumbnail)?.thumbnail ?? null
   } catch {
     return null
   }

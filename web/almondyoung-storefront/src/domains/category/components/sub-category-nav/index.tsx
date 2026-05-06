@@ -1,5 +1,6 @@
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { getCategoryFallbackThumbnail } from "@/lib/api/pim/search"
+import { CATEGORY_FALLBACK_THUMBNAILS } from "@/lib/constants/category-thumbnails"
 import type { StoreProductCategoryTree } from "@/lib/types/medusa-category"
 import { collectCategoryIds } from "@/lib/utils/collect-category-ids"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
@@ -16,7 +17,13 @@ async function resolveThumbnail(
   const metaThumb = (category.metadata?.thumbnail as string) || null
   if (metaThumb) return metaThumb
 
-  return await getCategoryFallbackThumbnail(collectCategoryIds(category))
+  const ids = collectCategoryIds(category)
+  for (const id of ids) {
+    const hardcoded = CATEGORY_FALLBACK_THUMBNAILS[id]
+    if (hardcoded) return hardcoded
+  }
+
+  return await getCategoryFallbackThumbnail(ids)
 }
 
 export async function SubCategoryNav({
