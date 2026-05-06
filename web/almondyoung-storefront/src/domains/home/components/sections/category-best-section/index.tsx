@@ -33,8 +33,7 @@ export function CategoryBestSection({
 
     startTransition(async () => {
       const nextProducts = await getBestProductsByCategory({
-        pimCategoryId: tab.pimCategoryId,
-        fallbackCategoryId: tab.id,
+        categoryId: tab.id,
         regionId,
         limit: 10,
       })
