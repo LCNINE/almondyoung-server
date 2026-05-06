@@ -7,9 +7,16 @@ export default async function LoginPage({
   searchParams,
 }: {
   params: Promise<{ countryCode: string }>
-  searchParams?: Promise<{ redirect_to?: string }>
+  searchParams?: Promise<{ redirect_to?: string; prompt?: string }>
 }) {
   const { countryCode } = await params
   const resolved = (await searchParams) ?? {}
-  await startOidcLogin(countryCode, resolved.redirect_to, "select_account")
+  const prompt =
+    resolved.prompt === "login" || resolved.prompt === "select_account"
+      ? resolved.prompt
+      : resolved.redirect_to
+        ? undefined
+        : "select_account"
+
+  await startOidcLogin(countryCode, resolved.redirect_to, prompt)
 }
