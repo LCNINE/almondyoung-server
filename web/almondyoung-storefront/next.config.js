@@ -49,6 +49,18 @@ const nextConfig = {
     return config
   },
 
+  async headers() {
+    return [
+      {
+        source: "/firebase-messaging-sw.js",
+        headers: [
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+          { key: "Service-Worker-Allowed", value: "/" },
+        ],
+      },
+    ]
+  },
+
   images: {
     qualities: [25, 50, 75, 100],
     remotePatterns: [
