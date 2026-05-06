@@ -30,6 +30,7 @@ import {
   ShippingItemsSkeleton,
   ShippingStatusSkeleton,
 } from "../../components/shared/mypage-skeletons"
+import { withMypageTimeout } from "./wrappers/mypage-timeout"
 
 export async function MyPageTemplate({ countryCode }: { countryCode: string }) {
   const [currentUser, { isAdmin }, pointBalance] = await Promise.all([
@@ -45,8 +46,8 @@ export async function MyPageTemplate({ countryCode }: { countryCode: string }) {
   const isPayLaterBannerEnabled = false // bnpl 기능 미연결로 임시 비활성화
 
   const [customer, cart] = await Promise.all([
-    retrieveCustomer().catch(() => null),
-    retrieveCart(undefined, undefined, "no-store").catch(() => null),
+    withMypageTimeout(retrieveCustomer(), null),
+    withMypageTimeout(retrieveCart(undefined, undefined, "no-store"), null),
   ])
   const cartWithCustomer = cart as
     | (typeof cart & { customer?: { groups?: CustomerGroupRef[] } })
