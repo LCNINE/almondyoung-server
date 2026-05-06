@@ -7,6 +7,7 @@ import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   pimSchema,
   productCategories,
+  productImages,
   productMasterCategories,
   productMasters,
   productMasterVersions,
@@ -35,7 +36,6 @@ type ActiveVersionRow = {
   versionId: string;
   name: string;
   description: string | null;
-  thumbnail: string | null;
   brand: string | null;
   status: 'draft' | 'inactive' | 'active';
   updatedAt: Date;
@@ -213,7 +213,6 @@ async function fetchActiveVersionsBatch(
       versionId: productMasterVersions.id,
       name: productMasterVersions.name,
       description: productMasterVersions.description,
-      thumbnail: productMasterVersions.thumbnail,
       brand: productMasterVersions.brand,
       status: productMasterVersions.status,
       updatedAt: productMasterVersions.updatedAt,
@@ -307,6 +306,22 @@ async function fetchTagMap(db: PimDb, versionIds: string[]): Promise<Map<string,
   return result;
 }
 
+async function fetchPrimaryImageMap(db: PimDb, versionIds: string[]): Promise<Map<string, string>> {
+  if (versionIds.length === 0) {
+    return new Map();
+  }
+
+  const rows = await db
+    .select({
+      versionId: productImages.versionId,
+      fileId: productImages.fileId,
+    })
+    .from(productImages)
+    .where(and(inArray(productImages.versionId, versionIds), eq(productImages.isPrimary, true)));
+
+  return new Map(rows.map((row) => [row.versionId, row.fileId]));
+}
+
 async function fetchPriceMap(db: PimDb, versionIds: string[]): Promise<Map<string, PriceSummary>> {
   if (versionIds.length === 0) {
     return new Map();
@@ -342,12 +357,14 @@ function buildDocuments(
   categoryMap: Map<string, CategoryMapValue>,
   tagMap: Map<string, string[]>,
   priceMap: Map<string, PriceSummary>,
+  primaryImageMap: Map<string, string>,
   fileServiceUrl: string,
 ): SearchProductDocument[] {
   return activeVersions.map((row) => {
     const categories = categoryMap.get(row.versionId);
     const tags = tagMap.get(row.versionId) ?? [];
     const prices = priceMap.get(row.versionId);
+    const primaryFileId = primaryImageMap.get(row.versionId) ?? null;
     const updatedAtIso = row.updatedAt.toISOString();
 
     return {
@@ -356,7 +373,7 @@ function buildDocuments(
       name: row.name,
       name_compact: compactText(row.name),
       description: row.description ?? null,
-      thumbnail: toThumbnailUrl(row.thumbnail, fileServiceUrl),
+      thumbnail: toThumbnailUrl(primaryFileId, fileServiceUrl),
       brand: row.brand ?? null,
       category_ids: categories?.ids ?? [],
       category_names: categories?.names ?? [],
@@ -498,13 +515,14 @@ async function main() {
       }
 
       const versionIds = batch.map((row) => row.versionId);
-      const [categoryMap, tagMap, priceMap] = await Promise.all([
+      const [categoryMap, tagMap, priceMap, primaryImageMap] = await Promise.all([
         fetchCategoryMap(pimDb, versionIds),
         fetchTagMap(pimDb, versionIds),
         fetchPriceMap(pimDb, versionIds),
+        fetchPrimaryImageMap(pimDb, versionIds),
       ]);
 
-      const documents = buildDocuments(batch, categoryMap, tagMap, priceMap, fileServiceUrl);
+      const documents = buildDocuments(batch, categoryMap, tagMap, priceMap, primaryImageMap, fileServiceUrl);
 
       if (options.dryRun) {
         success += documents.length;

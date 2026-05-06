@@ -36,7 +36,6 @@ export async function InterestProductsList({
 
       const products = await getBestProductsByCategory({
         pimCategoryId: cat.pimCategoryId,
-        fallbackCategoryId: cat.id,
         regionId: region?.id,
         limit: 10,
       })
