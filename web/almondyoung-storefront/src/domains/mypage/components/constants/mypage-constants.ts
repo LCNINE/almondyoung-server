@@ -28,7 +28,7 @@ export const MENU_ITEMS: MenuItem[] = [
   },
   // todo: 쿠폰 임시 비활성화
   // { label: "쿠폰", icon: "🏷️", path: "/mypage/coupons" },
-  { label: "다운로드", icon: "📥", path: "/mypage/download" },
+  // { label: "다운로드", icon: "📥", path: "/mypage/download" },
   // { label: "구독 관리", icon: "🔁", path: "/mypage/subscribe/manage" },
   // {
   //   label: "사업자 정보",
@@ -71,7 +71,7 @@ export const MENU_SECTIONS: MenuSection[] = [
       { label: "결제수단", icon: "💳", path: "/mypage/membership/payment-method" },
       { label: "리뷰 관리", icon: "⭐", path: "/mypage/reviews" },
       { label: "내 문의 내역", icon: "❓", path: "/mypage/inquiries" },
-      { label: "다운로드", icon: "📥", path: "/mypage/download" },
+      // { label: "다운로드", icon: "📥", path: "/mypage/download" },
     ],
   },
 ]
@@ -183,12 +183,12 @@ export const SIDEBAR_MENU_ITEMS = [
   //   hasSubMenu: false,
   //   path: "/mypage/coupons",
   // },
-  {
-    id: "download",
-    label: "다운로드",
-    hasSubMenu: false,
-    path: "/mypage/download",
-  },
+  // {
+  //   id: "download",
+  //   label: "다운로드",
+  //   hasSubMenu: false,
+  //   path: "/mypage/download",
+  // },
   // {
   //   id: "subscription",
   //   label: "구독 관리",
