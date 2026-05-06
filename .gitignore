@@ -63,6 +63,7 @@ fcm-token-generator.html
 real-fcm-token-generator.html
 simple-fcm-test.html
 firebase-messaging-sw.js
+!web/almondyoung-storefront/public/firebase-messaging-sw.js
 generate-fcm-token.js
 create-template-now.js
 create-template.sh
@@ -264,6 +265,7 @@ public
 # Next.js app public directories (negation: public above is for Gatsby)
 !apps/wallet-web/public/
 !apps/admin-web/public/
+!web/almondyoung-storefront/public/
 
 # Next.js auto-generated type declaration files
 **/next-env.d.ts
