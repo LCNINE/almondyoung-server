@@ -11,5 +11,5 @@ export default async function LoginPage({
 }) {
   const { countryCode } = await params
   const resolved = (await searchParams) ?? {}
-  await startOidcLogin(countryCode, resolved.redirect_to)
+  await startOidcLogin(countryCode, resolved.redirect_to, "select_account")
 }
