@@ -49,7 +49,8 @@ const medusaFetch = async (
  */
 export async function startOidcLogin(
   countryCode: string,
-  redirectTo?: string
+  redirectTo?: string,
+  prompt?: "login" | "select_account"
 ): Promise<void> {
   const callbackUrl = buildCallbackUrl(countryCode)
 
@@ -58,6 +59,7 @@ export async function startOidcLogin(
     body: JSON.stringify({
       callback_url: callbackUrl,
       ...(redirectTo ? { redirect_to: redirectTo } : {}),
+      ...(prompt ? { prompt } : {}),
     }),
   })
 

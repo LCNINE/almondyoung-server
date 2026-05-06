@@ -103,6 +103,7 @@ export class UserServiceSsoProviderService extends AbstractAuthModuleProvider {
 
     const redirectTo =
       (data.body?.redirect_to as string | undefined) ?? (data.query?.redirect_to as string | undefined);
+    const prompt = (data.body?.prompt as string | undefined) ?? (data.query?.prompt as string | undefined);
 
     const stateKey = base64url(crypto.randomBytes(32));
     const codeVerifier = base64url(crypto.randomBytes(32));
@@ -124,6 +125,9 @@ export class UserServiceSsoProviderService extends AbstractAuthModuleProvider {
     authorizeUrl.searchParams.set('state', stateKey);
     authorizeUrl.searchParams.set('code_challenge', codeChallenge);
     authorizeUrl.searchParams.set('code_challenge_method', 'S256');
+    if (prompt === 'login' || prompt === 'select_account') {
+      authorizeUrl.searchParams.set('prompt', prompt);
+    }
 
     return { success: true, location: authorizeUrl.toString() };
   }
