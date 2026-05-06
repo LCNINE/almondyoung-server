@@ -176,7 +176,14 @@ export async function oidcCallback(args: {
   }
 
   await setMedusaAuthToken(finalToken)
-  await setTokenCookies(idp_tokens.access_token, idp_tokens.refresh_token)
+  const accessTokenMaxAge = idp_tokens.expires_at
+    ? Math.max(1, Math.floor((idp_tokens.expires_at - Date.now()) / 1000))
+    : undefined
+  await setTokenCookies(
+    idp_tokens.access_token,
+    idp_tokens.refresh_token,
+    accessTokenMaxAge
+  )
 
   // 로그인 직후 user-service prefs 를 anon 쿠키와 동기화
   // (서버에 prefs 가 비어있으면 anon 선택값/dismiss 도 폐기되어 다시 묻기 시작)
@@ -224,4 +231,3 @@ export async function oidcSignOut(countryCode: string): Promise<void> {
 
   redirect(url.toString())
 }
-

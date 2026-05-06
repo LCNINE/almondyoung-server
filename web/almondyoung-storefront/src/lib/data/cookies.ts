@@ -136,7 +136,8 @@ export const setMedusaAuthToken = async (token: string) => {
 
 export const setTokenCookies = async (
   accessToken: string,
-  refreshToken?: string
+  refreshToken?: string,
+  accessTokenMaxAge = 60 * 15
 ) => {
   const cookies = await nextCookies()
   const domain = await getTokenCookieDomain()
@@ -150,7 +151,7 @@ export const setTokenCookies = async (
 
   cookies.set("accessToken", accessToken, {
     path: "/",
-    maxAge: 60 * 60 * 24 * 7, // 7일: 크로스도메인 결제 리다이렉트 후 세션 쿠키 소실 방지
+    maxAge: accessTokenMaxAge,
     ...(domain ? { domain } : {}),
   })
 

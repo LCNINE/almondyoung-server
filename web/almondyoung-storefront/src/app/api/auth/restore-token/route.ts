@@ -30,6 +30,14 @@ const clearAuthCookies = (response: NextResponse, domain?: string) => {
   response.cookies.delete("_medusa_jwt")
 }
 
+const normalizeReturnTo = (value: string | null): string => {
+  if (!value || !value.startsWith("/") || value.startsWith("//")) {
+    return "/"
+  }
+
+  return value
+}
+
 type OidcTokenResponse = {
   access_token: string
   refresh_token: string
@@ -99,7 +107,11 @@ async function refreshMedusaJwt(currentMedusaJwt: string): Promise<string | null
   }
 }
 
-export async function POST(request: NextRequest) {
+async function restoreTokens(
+  request: NextRequest,
+  response: NextResponse,
+  failureResponse: NextResponse
+): Promise<NextResponse> {
   const tokenCookieDomain = getSecondLevelDomain(request.nextUrl.hostname)
 
   try {
@@ -108,20 +120,11 @@ export async function POST(request: NextRequest) {
     const currentMedusaJwt = cookieStore.get("_medusa_jwt")?.value
 
     if (!refreshToken) {
-      const response = NextResponse.json(
-        { success: false, message: "No refresh token" },
-        { status: 401 }
-      )
-      clearAuthCookies(response, tokenCookieDomain)
-      return response
+      clearAuthCookies(failureResponse, tokenCookieDomain)
+      return failureResponse
     }
 
     const tokens = await refreshOidcTokens(refreshToken)
-
-    const response = NextResponse.json(
-      { success: true, message: "Token restored successfully" },
-      { status: 200 }
-    )
 
     // 도메인 충돌 방지: domain 지정 쿠키로 갱신할 때는 path-only 잔존 쿠키를 먼저 만료시킨다.
     if (tokenCookieDomain) {
@@ -131,7 +134,7 @@ export async function POST(request: NextRequest) {
 
     response.cookies.set("accessToken", tokens.access_token, {
       path: "/",
-      maxAge: 60 * 60 * 24 * 7,
+      maxAge: tokens.expires_in,
       ...(tokenCookieDomain ? { domain: tokenCookieDomain } : {}),
     })
     response.cookies.set("refreshToken", tokens.refresh_token, {
@@ -170,17 +173,48 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const response = NextResponse.json(
-      {
-        success: false,
-        isMainPage,
-        message: isMainPage
-          ? "Token expired on main page"
-          : "Token expired, login required",
-      },
+    const isJsonFailure =
+      failureResponse.headers.get("content-type")?.includes("application/json")
+
+    if (isJsonFailure) {
+      const response = NextResponse.json(
+        {
+          success: false,
+          isMainPage,
+          message: isMainPage
+            ? "Token expired on main page"
+            : "Token expired, login required",
+        },
+        { status: 401 }
+      )
+      clearAuthCookies(response, tokenCookieDomain)
+      return response
+    }
+
+    clearAuthCookies(failureResponse, tokenCookieDomain)
+    return failureResponse
+  }
+}
+
+export async function POST(request: NextRequest) {
+  return restoreTokens(
+    request,
+    NextResponse.json(
+      { success: true, message: "Token restored successfully" },
+      { status: 200 }
+    ),
+    NextResponse.json(
+      { success: false, message: "No refresh token" },
       { status: 401 }
     )
-    clearAuthCookies(response, tokenCookieDomain)
-    return response
-  }
+  )
+}
+
+export async function GET(request: NextRequest) {
+  const returnTo = normalizeReturnTo(request.nextUrl.searchParams.get("return_to"))
+  return restoreTokens(
+    request,
+    NextResponse.redirect(new URL(returnTo, request.url)),
+    NextResponse.redirect(new URL("/", request.url))
+  )
 }
