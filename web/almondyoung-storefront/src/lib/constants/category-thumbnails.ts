@@ -2,590 +2,602 @@
 // 검색 인덱스의 thumbnail 데이터가 정상화되면 제거 예정 (임시 폴백)
 
 export const CATEGORY_FALLBACK_THUMBNAILS: Record<string, string> = {
-  // 100원 웰컴딜 (100won-welkeomdil)
-  "pcat_019c0c0d9b38734abfd353de5dcc68e4": "019b4cbc-7420-70b8-aaf0-faafa0a7ca72",
-  // 아이 브러쉬 (ai-beureoswi)
-  "pcat_019c0c0d9b377356b4f23363c8b78cec": "019b4cbb-f04e-72b4-8224-4225460cb2d5",
-  // 아이 메이크업 (ai-meikeueop)
-  "pcat_019c0c0d9b377356b4f21e8af7c9ac39": "019b4cbd-10f6-70ae-914e-0bfa1db5d006",
-  // 아이브로우 브러쉬 (aibeurou-beureoswi)
-  "pcat_019c0c0d9b377356b4f234ae306fab70": "019b4cbc-c235-729c-ac39-328fd819d302",
-  // 아이라이너 브러쉬 (airaineo-beureoswi)
-  "pcat_019c0c0d9b38734abfd4b3d18c75a959": "019b4cbb-fdb5-705f-9c02-c0dd9988ca41",
-  // 아크릴 (akeuril)
-  "pcat_019c0c0d9b38734abfd468f285923d4d": "019b4cbd-1fc1-7338-a62a-a2aa9ea9fe7e",
-  // 앞치마 (apchima)
-  "pcat_019c0c0d9b377356b4f1d793040f9e08": "019b4cbc-c782-705d-8447-9025f332bc6e",
-  // 앞치마 (apchima-2)
-  "pcat_019c0c0d9b38734abfd39f7dcf9de015": "019b4cbe-0856-71c2-8926-ef949ea7cf95",
-  // 아쁘레쑤 (appeuressu)
-  "pcat_019c0c0d9b38734abfd4489a6bb6dd98": "019b4cbc-d798-710e-a9d0-ad81b6deb123",
-  // 아우라글리터 (aurageulriteo)
-  "pcat_019c0c0d9b377356b4f066333af0eb37": "019b4cc0-1d73-774f-8d41-3681ecae191b",
-  // 바디 페인팅 (badi-peinting)
-  "pcat_019c0c0d9b377356b4f2971c8c06a1b9": "019b4cbc-c8de-73e5-ad16-9ec1598c5317",
-  // 배너&입간판 (baeneoipganpan)
-  "pcat_019c0c0d9b38734abfd3dfabffe86ddb": "019b4cbc-3a15-735e-b15c-36cf12c9cbb7",
-  // 바이뮤즈 (baimyujeu)
-  "pcat_019c0c0d9b377356b4f037605403affc": "019b4cbe-332f-7039-8016-df56d3292f41",
-  // 발라젤 (balrajel)
-  "pcat_019c0c0d9b377356b4f038bb851d1a93": "019b4cbe-6ff5-715b-a5d8-f9997411419b",
-  // 방수 앞치마 (bangsu-apchima)
-  "pcat_019c0c0d9b38734abfd3a4ac478d9bf6": "019b4cbe-0856-71c2-8926-ef949ea7cf95",
-  // 반하다 롯드 (banhada-rotdeu)
-  "pcat_019c0c0d9b38734abfd3620d8defdcde": "019b4cbd-08eb-741f-9bd1-374836f53381",
-  // 반영구 (banyeonggu)
-  "pcat_019c0c0d9b38734abfd42633f3bed370": "019b4cbd-07f9-7081-ac46-89320722a893",
-  // 베드 (bedeu)
-  "pcat_019c0c0d9b377356b4f2b222b56bc88d": "019b4cbc-030a-7067-9882-1365e25e5bed",
-  // 베럴왁싱 (bereolwaksing)
-  "pcat_019c0c0d9b377356b4f1dd283a8a60ac": "019b4cbc-313e-72d9-a8e0-f0f55374d36b",
-  // 베리굿네일 (berigutneil)
-  "pcat_019c0c0d9b377356b4f03e57588bbb2c": "019b4cc0-1cee-751a-adff-6e72e2584044",
-  // 베스트 (beseuteu)
-  "pcat_019c0c0d9b377356b4f2b96125a9cd69": "019b4cbc-bc63-769b-a5fc-a604861a6a0b",
-  // 베씨 (bessi)
-  "pcat_019c0c0d9b377356b4f041e8c42e112a": "019b4cbe-0d10-7108-9c29-c21154fb368f",
-  // 블랙프라이데이 (beulraekpeuraidei)
-  "pcat_019c0c0d9b38734abfd4e35168b44156": "019b4cbc-1027-7669-8e7f-34b742092c48",
-  // 블랑드블루 (beulrangdeubeulru)
-  "pcat_019c0c0d9b377356b4f04870ebac7b5a": "019b4cbf-7fb5-71c0-ae1e-b3f019264019",
-  // 블러셔, 쉐이딩 브러쉬 (beulreosyeo-sweiding-beureoswi)
-  "pcat_019c0c0d9b377356b4f22eaa993f759a": "019b4cbb-fb3d-708d-9a88-e962dfd32669",
-  // 블루크로스 (beulrukeuroseu)
-  "pcat_019c0c0d9b377356b4f05530718af579": "019b4cbc-0cbf-70ef-8c70-acaf036df86a",
-  // 브랜딩 (beuraending)
-  "pcat_019c0c0d9b38734abfd340ae15b052df": "019b4cbc-fdbe-758c-98bb-4af322d775d2",
-  // 브러쉬 (beureoswi)
-  "pcat_019c0c0d9b377356b4f0fd1a1d2335c3": "019b4cbd-24b5-76ab-90cd-804fab0b8b99",
-  // 브러쉬 커버, 케이스 (beureoswi-keobeo-keiseu)
-  "pcat_019c0c0d9b38734abfd4b894a8092acf": "019b4cbd-e3fa-72bb-974d-ceedff522a6f",
-  // 브러쉬 세척 (beureoswi-secheok)
-  "pcat_019c0c0d9b377356b4f24399004784b3": "019b4cbc-7f28-715a-b7f2-e8ee91d81d65",
-  // 브러쉬 세트 (beureoswi-seteu)
-  "pcat_019c0c0d9b38734abfd4b5f00d0cdb2c": "019b4cbc-aa00-74fe-b184-06cf85dd6de1",
-  // 비블라 (bibeulra)
-  "pcat_019c0c0d9b377356b4f04cad95790bb0": "019b4cbe-b97b-7549-9b53-d0bdad2f6a37",
-  // 비즈니스 (bijeuniseu)
-  "pcat_019c0c0d9b38734abfd4d8b146df51fc": "019b4cbd-20cb-77e5-a07c-a1759d69191d",
-  // 빅사이즈 (biksaijeu)
-  "pcat_019c0c0d9b38734abfd3aea8ffb1f47d": "019b4cbe-0947-7282-ab18-fd77ee4acdaa",
-  // 비트 (biteu)
-  "pcat_019c0c0d9b377356b4f0b9e16b114c52": "019b4cbd-7b82-715d-bb6e-4cae280fb145",
-  // 비투스 핀셋 (bituseu-pinset)
-  "pcat_019c0c0d9b38734abfd37853c47fe11d": "019b4cbc-027c-753e-896b-02d485d1542b",
-  // 부자재 (bujajae)
-  "pcat_019c0c0d9b377356b4efb3af07a80285": "019b4cbd-0b6d-747c-b625-3f1301b51000",
-  // 부자재 (bujajae-2)
-  "pcat_019c0c0d9b377356b4efc9d389bab069": "019b4cbb-da7b-71a3-acb9-ffb488358d7a",
-  // 부자재 (bujajae-3)
-  "pcat_019c0c0d9b377356b4efda762622d11f": "019b4cbc-1d41-77c8-a8e3-3f5e8851cea4",
-  // 부자재 (bujajae-4)
-  "pcat_019c0c0d9b377356b4eff16ae1d05bbe": "019b4cbd-0dd6-7662-8151-11df10789b56",
-  // 부자재 (bujajae-5)
-  "pcat_019c0c0d9b377356b4f11296a1af47ea": "019b4cbd-0cac-7139-b0bc-e8f0ed45a9e3",
-  // 부자재 (bujajae-6)
-  "pcat_019c0c0d9b38734abfd41f2cb757d856": "019b4cbc-5bf8-7513-bce5-df3a25594dc0",
-  // 분장 (bunjang)
-  "pcat_019c0c0d9b377356b4f2655ae4ad4eeb": "019b4cbd-8c01-75e5-94d0-3532caf38d06",
-  // 분장 소품 (bunjang-sopum)
-  "pcat_019c0c0d9b377356b4f284755f213142": "019b4cbd-8c01-75e5-94d0-3532caf38d06",
-  // 분무기 (bunmugi)
-  "pcat_019c0c0d9b377356b4f1ee9dffe3b49b": "019b4cbd-0cac-7139-b0bc-e8f0ed45a9e3",
-  // 뷰젤 (byujel)
-  "pcat_019c0c0d9b377356b4f044701193b604": "019b4cbe-10e8-70f8-a420-66ae7cc1e378",
-  // 뷰닉스 (byunikseu)
-  "pcat_019c0c0d9b38734abfd440c6e70b01d9": "019b4cbc-cc08-75dd-a7b0-05564e5cdfad",
-  // 뷰러 (byureo)
-  "pcat_019c0c0d9b377356b4f251d5240ea3db": "019b4cbc-8ebe-73cd-87c0-07b9b66ec720",
-  // 뷰티 소품 (byuti-sopum)
-  "pcat_019c0c0d9b377356b4f246376ac88462": "019b4cbc-bdbe-735f-b20c-dd3f7a1c83c0",
-  // 창고대방출! (반영구) (changgodaebangchul-banyeonggu)
-  "pcat_019c0c0d9b38734abfd3c313cb6898ee": "019b4cbc-4fe6-77ff-809e-77cc03a2abc1",
-  // 창고대방출! (헤어) (changgodaebangchul-heeo)
-  "pcat_019c0c0d9b38734abfd3d105f150fef6": "019b4cbc-46c8-7725-9672-a7eab9ebbc97",
-  // 창고대방출! (메이크업) (changgodaebangchul-meikeueop)
-  "pcat_019c0c0d9b38734abfd3c86360373248": "019b4cbc-8fcc-75ae-9772-b0f54d40a83d",
-  // 창고대방출! (네일) (changgodaebangchul-neil)
-  "pcat_019c0c0d9b38734abfd3c7d79bac2c9a": "019b4cbd-6cab-777e-8fd1-1636b358452a",
-  // 창고대방출! (속눈썹) (changgodaebangchul-soknunsseop)
-  "pcat_019c0c0d9b38734abfd3bcecae17eb08": "019b4cbc-5bf8-7513-bce5-df3a25594dc0",
-  // 창고대방출! (왁싱&피부) (changgodaebangchul-waksingpibu)
-  "pcat_019c0c0d9b38734abfd4f8cbc5811feb": "019b4cbb-d96c-75ea-a5d0-eac2faeb993e",
-  // 충청도&대전 (chungcheongdodaejeon)
-  "pcat_019c0c0d9b377356b4f2d10f4be74c2b": "019b4cbc-74f7-7470-b5df-b61669088e3f",
-  // 다이아미 (daiami)
-  "pcat_019c0c0d9b38734abfd4348b35aaaf70": "019b4cbf-e357-746f-a161-cdeae55fa63c",
-  // 더젤 (deojel)
-  "pcat_019c0c0d9b377356b4f00ac6afef11cf": "019b4cc0-0258-75d0-b9f6-a1b57e90bb36",
-  // 더스트브러쉬 (deoseuteubeureoswi)
-  "pcat_019c0c0d9b377356b4f0ebd8d4fab883": "019b4cbc-d7e7-74e5-b911-c89d8ab4cdbe",
-  // 덧가발 (deotgabal)
-  "pcat_019c0c0d9b377356b4f16493f1f613f4": "019b4cbd-3575-76ab-825a-85bfba09c791",
-  // 드라이기 (deuraigi)
-  "pcat_019c0c0d9b377356b4f1f553d47e8a12": "019b4cbc-fe17-7782-99ca-713bde118a45",
-  // 드릴 (deuril)
-  "pcat_019c0c0d9b377356b4f1325a3ca1abae": "019b4cbc-d64f-753b-839f-bbd42842eb2a",
-  // 드로잉 펜 (deuroing-pen)
-  "pcat_019c0c0d9b377356b4f0dd861b33085d": "019b4cbd-5de2-76fe-8d3b-0ae1a1570d9c",
-  // 디보크 (dibokeu)
-  "pcat_019c0c0d9b377356b4f00d731805bb5c": "019b4cbf-5cc0-72f8-893a-52a3d0c8946f",
-  // 디어마이젤 (dieomaijel)
-  "pcat_019c0c0d9b377356b4f0101781049c57": "019b4cbf-50fd-7652-8c42-0f125d726a21",
-  // 디젤 (dijel)
-  "pcat_019c0c0d9b377356b4f016220de83c71": "019b4cc0-1dba-728f-874e-bb6650ce78f2",
-  // 디플로마 (dipeulroma)
-  "pcat_019c0c0d9b38734abfd403b437a0019b": "019b4cbc-7a76-764e-92c7-dd5965c49f37",
-  // DIY 키트 (diy-kiteu)
-  "pcat_019c0c0d9b377356b4ef960a81df0656": "019b4cbc-a790-73d9-b3dc-ef0f137ccf7a",
-  // 엠보&수지펜 (embosujipen)
-  "pcat_019c0c0d9b377356b4efc15132ef4e5f": "019b4cbc-3943-7131-89d3-efba38ae7150",
-  // 엔리안 (enrian)
-  "pcat_019c0c0d9b377356b4f08446dd9442a5": "019b4cbe-0eb4-737c-a9cf-0271fc10c141",
-  // 업스타일 (eopseutail)
-  "pcat_019c0c0d9b377356b4f1a6e425e6f4d5": "019b4cbc-46c8-7725-9672-a7eab9ebbc97",
-  // 에루샤 (erusya)
-  "pcat_019c0c0d9b38734abfd36f02a800b58b": "019b4cbc-2d59-77ed-9d7e-5412ccc32a08",
-  // 에센스 (esenseu)
-  "pcat_019c0c0d9b377356b4ef8c1bba1aabea": "019b4cbb-ddd2-717f-a650-19359eba0181",
-  // 가발 (gabal)
-  "pcat_019c0c0d9b377356b4f15c7b3cc9363f": "019b4cbd-344d-729d-b68a-a3a7febe4363",
-  // 가발망/실망 (gabalmangsilmang)
-  "pcat_019c0c0d9b377356b4f1aff882ff4533": "019b4cbc-ae6c-700b-b825-3cd372260b5d",
-  // 가방 (gabang)
-  "pcat_019c0c0d9b377356b4f29c7c0174b009": "019b4cbd-2535-7070-ada2-64f81d10ea3e",
-  // 가구 (gagu)
-  "pcat_019c0c0d9b377356b4f2a5dd8ea25c94": "019b4cbc-1873-74af-ad12-67728b193830",
-  // 강원도 (gangwondo)
-  "pcat_019c0c0d9b38734abfd4d40e80b87131": "019b4cbc-645e-769f-8b2d-1215e5e5272a",
-  // 가운/앞치마 (gaunapchima)
-  "pcat_019c0c0d9b377356b4f1cc23b4f3fc5b": "019b4cbc-6230-750e-b5fe-cd2fb91ab0c3",
-  // 글루 (geulru)
-  "pcat_019c0c0d9b377356b4efa336a90292dc": "019b4cbc-4057-75e9-a133-e06f6bce2dd5",
-  // 글루/ 글루 드라이어 (geulru-geulru-deuraieo)
-  "pcat_019c0c0d9b377356b4f1071464c20cea": "019b4cbd-0910-740f-b2bd-ac2615ac4339",
-  // 그라시아 (geurasia)
-  "pcat_019c0c0d9b377356b4f006fe541dd652": "019b4cbc-d530-7339-8334-80133d434de7",
-  // 기타 (gita)
-  "pcat_019c0c0d9b38734abfd5014c57a50657": "019b4cbc-5d15-74fb-8262-e537e8d5d485",
-  // 기타 미용 (gita-miyong)
-  "pcat_019c0c0d9b38734abfd4c1bcb7c087c2": "019b4cbd-262a-746d-b348-55cf54039173",
-  // 기타소품 (gitasopum)
-  "pcat_019c0c0d9b377356b4f14af01f58b29b": "019b4cbd-21a7-72f3-a3f0-32b1520eb721",
-  // 고무판 (gomupan)
-  "pcat_019c0c0d9b38734abfd4293ed837ff78": "019b4cbc-389d-71b9-8fe0-ac8dc8185bd9",
-  // 국가고시 재료 (gukgagosi-jaeryo)
-  "pcat_019c0c0d9b377356b4eff9f2fa9fd35d": "019b4cbd-0910-740f-b2bd-ac2615ac4339",
-  // 국가고시 재료 세트 (gukgagosi-jaeryo-seteu)
-  "pcat_019c0c0d9b377356b4effdca7842a12d": "019b4cbd-294f-708d-b6a0-76b931edb577",
-  // 국가자격증 (gukgajagyeokjeung)
-  "pcat_019c0c0d9b377356b4eff4ac65dbd7a7": "019b4cbd-0910-740f-b2bd-ac2615ac4339",
-  // 국가자격증 (gukgajagyeokjeung-2)
-  "pcat_019c0c0d9b377356b4f13a5a3145708b": "019b4cbd-1163-71e7-aed8-3c1574bbb8b6",
-  // 국가자격증 (gukgajagyeokjeung-3)
-  "pcat_019c0c0d9b377356b4f156a6a35b7a9e": "019b4cbd-0cac-7139-b0bc-e8f0ed45a9e3",
-  // 국가자격증 (gukgajagyeokjeung-4)
-  "pcat_019c0c0d9b377356b4f20fb98e041c68": "019b4cbd-0e96-74e3-94ee-449f49dc4f34",
-  // 국가자격증 재료 (gukgajagyeokjeung-jaeryo)
-  "pcat_019c0c0d9b38734abfd4798913d63774": "019b4cbd-0cac-7139-b0bc-e8f0ed45a9e3",
-  // 국가자격증 재료 (gukgajagyeokjeung-jaeryo-2)
-  "pcat_019c0c0d9b38734abfd4a0388a753224": "019b4cbd-0e96-74e3-94ee-449f49dc4f34",
-  // 국가자격증 세트 (gukgajagyeokjeung-seteu-2)
-  "pcat_019c0c0d9b377356b4f213f7d5121160": "019b4cbe-1541-75cb-b744-f2e34480a11c",
-  // 경기도 (gyeonggido)
-  "pcat_019c0c0d9b377356b4f2ca4449aace61": "019b4cbc-8035-77bb-95d6-fdcc2f0ae4e9",
-  // 경상도&부산&대구 (gyeongsangdobusandaegu)
-  "pcat_019c0c0d9b377356b4f2d9d45caa9d63": "019b4cbc-5662-706a-adeb-e9385c3562ba",
-  // 하이젤 (haijel)
-  "pcat_019c0c0d9b377356b4f0c568138196a2": "019b4cbf-4669-73dd-81b7-b38ca79ba5be",
-  // 하모니 (hamoni)
-  "pcat_019c0c0d9b377356b4f0c1e1794ec413": "019b4cbe-0d91-7774-99bf-9a1a323f0262",
-  // 헤어 (heeo)
-  "pcat_019c0c0d9b377356b4f1522146205c90": "019b4cbd-0cac-7139-b0bc-e8f0ed45a9e3",
-  // 헤어 브러쉬 (heeo-beureoswi)
-  "pcat_019c0c0d9b377356b4f1ba86b5d39059": "019b4cbc-6851-724e-8bd6-6e19fbb524cd",
-  // 헤어 소품 (heeo-sopum)
-  "pcat_019c0c0d9b377356b4f1b47fe382d491": "019b4cbd-0cac-7139-b0bc-e8f0ed45a9e3",
-  // 헤어가전 (heeogajeon)
-  "pcat_019c0c0d9b377356b4f1f3dddba0caff": "019b4cbc-fe17-7782-99ca-713bde118a45",
-  // 흡진기 (heupjingi)
-  "pcat_019c0c0d9b38734abfd4734983c5237f": "019b4cbc-db13-763f-9fe5-99876882cf77",
-  // 화홍 (hwahong)
-  "pcat_019c0c0d9b377356b4f0cb85c854200a": "019b4cbd-8bf2-778e-b213-9297fb51b4c2",
-  // 화장품 (hwajangpum)
-  "pcat_019c0c0d9b377356b4f1445d29bc2c06": "019b4cbd-0667-712d-be7a-c2a2339215d2",
-  // 이벤트 (ibenteu)
-  "pcat_019c0c0d9b38734abfd3b94a606938f9": "019b4cbb-d96c-75ea-a5d0-eac2faeb993e",
-  // 일회용품 (ilhoeyongpum)
-  "pcat_019c0c0d9b377356b4f1eafce3d699a8": "019b4cbd-348c-732b-a88b-9b6a65514213",
-  // 일회용품 (ilhoeyongpum-2)
-  "pcat_019c0c0d9b377356b4f2635ef18be9e0": "019b4cbc-173d-75f9-bda0-06d0acf598d9",
-  // 임뷰티 (imbyuti)
-  "pcat_019c0c0d9b38734abfd3875ab922e554": "019b4cbc-6158-7399-8cd8-88f7ef5192cf",
-  // 인천 (incheon)
-  "pcat_019c0c0d9b377356b4f2c69f3d58260a": "019b4cbb-fcde-7416-a116-624c889d9812",
-  // 잉크 (ingkeu)
-  "pcat_019c0c0d9b377356b4efe16d7fa135b3": "019b4cbd-2dd5-73b6-9358-3d0c030d59cb",
-  // 인조 속눈썹 (injo-soknunsseop)
-  "pcat_019c0c0d9b377356b4f256c9dd2e30fa": "019b4cbc-bdbe-735f-b20c-dd3f7a1c83c0",
-  // 인레이 (inrei)
-  "pcat_019c0c0d9b38734abfd36bd55bbfefcb": "019b4cbc-ab06-755e-99ef-4d05dbba9242",
-  // 인쇄물 (inswaemul)
-  "pcat_019c0c0d9b38734abfd3cc7e86df4854": "019b4cbc-3a15-735e-b15c-36cf12c9cbb7",
-  // 인테리어 (interieo)
-  "pcat_019c0c0d9b38734abfd4cf1767188d49": "019b4cbc-1873-74af-ad12-67728b193830",
-  // 이탈왁스 (italwakseu)
-  "pcat_019c0c0d9b38734abfd398d2973d0c38": "019b4cbc-3032-72b9-869b-8f80e2eed859",
-  // 자개/ 글리터 (jagae-geulriteo)
-  "pcat_019c0c0d9b377356b4f0d66a5e58d45e": "019b4cbd-6c2f-713d-8b1c-108ae91ada56",
-  // 장가위 (janggawi)
-  "pcat_019c0c0d9b377356b4f17084385d498e": "019b4cbd-32b7-713b-a94c-406b753cd05b",
-  // 제이앤코 (jeiaenko)
-  "pcat_019c0c0d9b38734abfd4eebfd6f80edf": "019b4cbc-5faa-727c-a84d-97359b3ad538",
-  // 젤 연장 (jel-yeonjang)
-  "pcat_019c0c0d9b377356b4f10f41ef8d76bc": "019b4cbd-5996-734a-a4a4-edb7e4a261bd",
-  // 젤앤젤 (jelaenjel)
-  "pcat_019c0c0d9b38734abfd452ebcf49c083": "019b4cbf-02cf-764a-9fef-94ebd1df1be7",
-  // 젤로젤로 (jelrojelro)
-  "pcat_019c0c0d9b377356b4f08e8023af857f": "019b4cbc-a37b-7620-8988-90e3922c8d1e",
-  // 전동 기기 (jeondong-gigi)
-  "pcat_019c0c0d9b377356b4f129f2f449f5d6": "019b4cbd-79bf-75ac-9c07-cd242ffe0e7d",
-  // 전후처리제 (jeonhucheorije)
-  "pcat_019c0c0d9b377356b4efd6cc4751ad59": "019b4cbc-3032-72b9-869b-8f80e2eed859",
-  // 전라도 (jeonrado)
-  "pcat_019c0c0d9b377356b4f2d7319336a9b4": "019b4cbb-fd64-719d-9bc8-4ac855f7f404",
-  // 진열/ 컬러차트 (jinyeol-keolreochateu)
-  "pcat_019c0c0d9b377356b4f11858bda9942f": "019b4cbd-5553-7758-b932-cd3bc8a1f058",
-  // 집게핀 (jipgepin)
-  "pcat_019c0c0d9b377356b4f1e42e8fec70b6": "019b4cbc-bd62-7008-9995-7354889f98d6",
-  // 조명 (jomyeong)
-  "pcat_019c0c0d9b377356b4f2afef2d695700": "019b4cbc-5373-7049-b730-31570e89305e",
-  // 주얼리 (jueolri)
-  "pcat_019c0c0d9b38734abfd3b03a59e90afe": "019b4cbd-1607-735e-a460-d7c13f43b088",
-  // 중화 받침대 (junghwa-batchimdae)
-  "pcat_019c0c0d9b377356b4f19d25ebd6a762": "019b4cbc-a194-7313-bd51-41e4644cfacb",
-  // 주의사항 (juuisahang)
-  "pcat_019c0c0d9b38734abfd3d9f9378e0af1": "019b4cbc-6ee4-77ce-b20e-616c73e61432",
-  // 캔바 디자인 (kaenba-dijain)
-  "pcat_019c0c0d9b377356b4f2e25a8d6414b8": "019b4cbd-0c68-7238-ab23-55b20ee41bef",
-  // 캔디젤 (kaendijel)
-  "pcat_019c0c0d9b377356b4f09422e85444b0": "019b4cbf-5e2d-727a-9264-9b42aed9d83c",
-  // 캣츠미 (kaetcheumi)
-  "pcat_019c0c0d9b377356b4f09f5b923f4e87": "019b4cbc-ca99-763e-81f2-e5e620a3b275",
-  // 캣워크 (kaetwokeu)
-  "pcat_019c0c0d9b377356b4f09bafa0ab9fbb": "019b4cbe-0e70-7438-8832-6ce2543013c1",
-  // 케미젤 (kemijel)
-  "pcat_019c0c0d9b377356b4f0a2c04e54f2df": "019b4cbe-0d66-70fd-81c4-32bac58341e7",
-  // 켄지코 (kenjiko)
-  "pcat_019c0c0d9b377356b4f0a59aea069439": "019b4cbd-1b17-7713-88c3-9c5c36456405",
-  // 컨실러 브러쉬 (keonsilreo-beureoswi)
-  "pcat_019c0c0d9b38734abfd4a89f5345af50": "019b4cbc-91bb-7200-8a14-748005fee3b4",
-  // 커트 (keoteu)
-  "pcat_019c0c0d9b377356b4f16e04c37af477": "019b4cbc-6851-724e-8bd6-6e19fbb524cd",
-  // 커트빗/클리퍼 빗 (keoteubitkeulripeo-bit)
-  "pcat_019c0c0d9b377356b4f1beb9470b7c69": "019b4cbc-6851-724e-8bd6-6e19fbb524cd",
-  // 커트보 (keoteubo)
-  "pcat_019c0c0d9b377356b4f1d0b311c29339": "019b4cbc-6230-750e-b5fe-cd2fb91ab0c3",
-  // 클래스 (keulraeseu)
-  "pcat_019c0c0d9b377356b4f2bd124766e8d5": "019b4cbc-5662-706a-adeb-e9385c3562ba",
-  // 클래스 (keulraeseu-2)
-  "pcat_019c0c0d9b38734abfd33b7787bb093b": "019b4cbc-fb6e-747a-a90a-4a9f9c55fedc",
-  // 클레오 (keulreo)
-  "pcat_019c0c0d9b38734abfd3887ca0fcb623": "019b4cbc-50d0-71ac-af1b-e4d8280014ce",
-  // 클리퍼/팁커터 (keulripeotipkeoteo)
-  "pcat_019c0c0d9b377356b4f0f739a6001bb5": "019b4cbd-733e-763b-83d8-fa89aca53eba",
-  // 키스뉴욕 (kiseunyuyok)
-  "pcat_019c0c0d9b38734abfd4568599d7fd7c": "019b4cbe-0e4d-778c-ae62-e7159f6305e8",
-  // 꼬리빗 (kkoribit)
-  "pcat_019c0c0d9b38734abfd49037e324f330": "019b4cbc-8fee-75eb-974b-d37743ec2c3f",
-  // 쿠션 퍼프/라텍스 스펀지 (kusyeon-peopeuratekseu-seupeonji)
-  "pcat_019c0c0d9b377356b4f24b080819071d": "019b4cbc-8fcc-75ae-9772-b0f54d40a83d",
-  // LED/UV 연장 (leduv-yeonjang)
-  "pcat_019c0c0d9b377356b4f28cbd9a766c5e": "019b4cbd-0b6d-747c-b625-3f1301b51000",
-  // 매직기/판고데기 (maejikgipangodegi)
-  "pcat_019c0c0d9b377356b4f1fae2832b4e9b": "019b4cbc-f869-72a2-842c-deaa1bb5954b",
-  // 마케팅 (maketing)
-  "pcat_019c0c0d9b377356b4f2e4b094e212fb": "019b4cbd-04c9-721f-b9de-b97509209fa5",
-  // 마르시아 (mareusia)
-  "pcat_019c0c0d9b38734abfd38ccd37cbfa80": "019b4cbc-40c8-71bf-a53a-afe8cff5b687",
-  // MAST 마스트 (mast-maseuteu)
-  "pcat_019c0c0d9b38734abfd4de53ad5482c9": "019b4cbd-2885-7407-8570-38100f7b6261",
-  // 메이크업 (meikeueop)
-  "pcat_019c0c0d9b377356b4f20bc6e9cc67ce": "019b4cbc-bdbe-735f-b20c-dd3f7a1c83c0",
-  // 메이크업 브러쉬 (meikeueop-beureoswi)
-  "pcat_019c0c0d9b377356b4f224b3136f8e17": "019b4cbc-173d-75f9-bda0-06d0acf598d9",
-  // 메이유어 (meiyueo)
-  "pcat_019c0c0d9b377356b4f02481b6fc0ead": "019b4cbe-c4e5-7620-a267-52272e07f56d",
-  // 멜빵 앞치마 (melppang-apchima)
-  "pcat_019c0c0d9b38734abfd3a9980e830010": "019b4cbe-0947-7282-ab18-fd77ee4acdaa",
-  // 메모리 (memori)
-  "pcat_019c0c0d9b377356b4f023f280ee325c": "019b4cbd-2584-717c-b76d-3f3b127101ce",
-  // 멘다/ 공병 (menda-gongbyeong)
-  "pcat_019c0c0d9b377356b4f11576bb4c0e93": "019b4cbd-0cac-7139-b0bc-e8f0ed45a9e3",
-  // 메뉴판 (menyupan)
-  "pcat_019c0c0d9b38734abfd3d403c80054b9": "019b4cbc-7164-74db-b0d9-c036cc337f62",
-  // 머리끈 (meorikkeun)
-  "pcat_019c0c0d9b377356b4f1e18c86a6dc8d": "019b4cbc-1b29-71ad-b3bf-97b59142aee6",
-  // 머리끈/집게핀 (meorikkeunjipgepin)
-  "pcat_019c0c0d9b377356b4f1d82bef26f904": "019b4cbc-1b29-71ad-b3bf-97b59142aee6",
-  // 머신 (meosin)
-  "pcat_019c0c0d9b377356b4efc6b3b218ff71": "019b4cbd-214c-7369-baea-1dcbc7526d1a",
-  // 머신 (meosin-2)
-  "pcat_019c0c0d9b377356b4efeb52f278f5d2": "019b4cbd-214c-7369-baea-1dcbc7526d1a",
-  // 미고딕 (migodik)
-  "pcat_019c0c0d9b38734abfd43d5e01caeeb6": "019b4cbe-f48b-752b-858b-76ecf80edaf3",
-  // 미니배너 (minibaeneo)
-  "pcat_019c0c0d9b38734abfd4fe43b23006e3": "019b4cbc-4695-74d5-b198-20df89cb82a6",
-  // 민생회복 소비쿠폰 (minsaenghoebok-sobikupon)
-  "pcat_019c0c0d9b38734abfd4131208f8c004": "019b4cbe-2377-7563-a900-445e68d79187",
-  // 미라클 (mirakeul)
-  "pcat_019c0c0d9b377356b4f03111bf912dad": "019b4cbe-7739-746e-8fc2-ffdc615a9d4a",
-  // 미용기기 (miyonggigi)
-  "pcat_019c0c0d9b377356b4f2a1f099d2e782": "019b4cbb-e8b8-72fe-b522-e5cf52addcec",
-  // 미용기기 (miyonggigi-2)
-  "pcat_019c0c0d9b38734abfd47590bdb2dfb3": "019b4cbd-3c9c-7610-b138-a8702c504623",
-  // 모어젤 (moeojel)
-  "pcat_019c0c0d9b377356b4f02ee23323d74e": "019b4cbf-20ad-74fe-baf3-963b7e04ab69",
-  // 모스티브 (moseutibeu)
-  "pcat_019c0c0d9b377356b4f029cca22a060e": "019b4cbe-95c8-729c-8065-2319b9412d2c",
-  // 무대눈썹 (mudaenunsseop)
-  "pcat_019c0c0d9b377356b4f27f2e37d1f92b": "019b4cbd-8c12-754e-a60b-e00959942b76",
-  // 묶고 더블로 가 (mukgo-deobeulro-ga)
-  "pcat_019c0c0d9b38734abfd35630bae9a19a": "019b4cbc-85d3-74ef-a770-ca6308930a4b",
-  // 명함 (myeongham)
-  "pcat_019c0c0d9b38734abfd48b649c88972c": "019b4cbd-e0d1-736e-bba0-ac5ce6da8f34",
-  // 네일 도구 (neil-dogu)
-  "pcat_019c0c0d9b38734abfd466ecaeab2344": "019b4cbd-0910-740f-b2bd-ac2615ac4339",
-  // 네일 재료 (neil-jaeryo)
-  "pcat_019c0c0d9b377356b4f0cddb05d75f3e": "019b4cbd-5ea9-77ad-bb38-085575ae5d02",
-  // 네일 젤 브랜드 (neil-jel-beuraendeu)
-  "pcat_019c0c0d9b377356b4f00015a7b278f9": "019b4cc0-1d73-774f-8d41-3681ecae191b",
-  // 네일 케어 (neil-keeo)
-  "pcat_019c0c0d9b377356b4f0e3a380a68c0c": "019b4cbd-2255-708f-8ac5-4931dd850145",
-  // 네일 피커 (neil-pikeo)
-  "pcat_019c0c0d9b377356b4f127921e7d07c0": "019b4cbd-7deb-750d-8770-4f3c508d738e",
-  // 네일 팁 (neil-tip)
-  "pcat_019c0c0d9b377356b4f0d8425b80462d": "019b4cbd-3dd3-736f-92fc-0e7264c15591",
-  // 네일아트 (neilateu)
-  "pcat_019c0c0d9b38734abfd431dad85663f6": "019b4cc0-1d73-774f-8d41-3681ecae191b",
-  // 니들 (nideul)
-  "pcat_019c0c0d9b377356b4efb9ca015caa7c": "019b4cbb-da41-71aa-8b40-c46130a3989c",
-  // 니들 (nideul-2)
-  "pcat_019c0c0d9b38734abfd42e729749cf2e": "019b4cbc-1bd5-727c-b82d-17e9a4bb9181",
-  // 노몬드 (nomondeu)
-  "pcat_019c0c0d9b38734abfd34c0a584ffe35": "019b4cbd-0f79-74a9-8925-50a2aab66241",
-  // 누누뷰티 (nunubyuti)
-  "pcat_019c0c0d9b38734abfd3645dc69e9d03": "019b4cbb-def5-772e-84a5-802760071743",
-  // 오직미 (ojikmi)
-  "pcat_019c0c0d9b38734abfd40de28249de99": "019b4cbd-888b-707f-b209-a35e076f08e2",
-  // 오페라 (opera)
-  "pcat_019c0c0d9b377356b4f0757f26326939": "019b4cbd-1c24-70ea-9f21-35f1a403b79a",
-  // 패들 브러쉬 (paedeul-beureoswi)
-  "pcat_019c0c0d9b377356b4f1cb1e52665781": "019b4cbc-9266-753b-a5c9-ea8973573724",
-  // 패디플래닝 (paedipeulraening)
-  "pcat_019c0c0d9b377356b4f14207b8186c9c": "019b4cbb-d9a4-727e-8f0a-92d1866986ca",
-  // 팩&모델링팩 (paekmodelringpaek)
-  "pcat_019c0c0d9b377356b4f14f2f0626788c": "019b4cbd-2b54-75e2-a709-cd8690799ecc",
-  // 패션 (paesyeon)
-  "pcat_019c0c0d9b377356b4f2cf6fd89762a5": "019b4cbd-0abc-723a-9ff9-c38590eb26c3",
-  // 파일/샌딩 (pailsaending)
-  "pcat_019c0c0d9b377356b4f0f270b785bc38": "019b4cbd-2255-708f-8ac5-4931dd850145",
-  // 파마 (pama)
-  "pcat_019c0c0d9b377356b4f19577794317ee": "019b4cbd-3536-72ff-8752-448ade7aaae9",
-  // 팝페라 (pappera)
-  "pcat_019c0c0d9b377356b4f0b2d88a00eef3": "019b4cbf-4f67-70ae-98e9-74e951b71338",
-  // 파셋 (paset)
-  "pcat_019c0c0d9b377356b4f0ac66cd460356": "019b4cbe-9b75-76bc-9bca-c8c8c2cbbd34",
-  // 파우더 퍼프 (paudeo-peopeu)
-  "pcat_019c0c0d9b377356b4f24f0ff35c2bd7": "019b4cbc-c220-715e-b629-66fdc3aed49a",
-  // 파운데이션 브러쉬 (paundeisyeon-beureoswi)
-  "pcat_019c0c0d9b377356b4f22b26a8d5e670": "019b4cbc-2d79-742c-b9a1-824aa92059b6",
-  // 페이스 브러쉬 (peiseu-beureoswi)
-  "pcat_019c0c0d9b38734abfd4a6d7fec70f32": "019b4cbc-2d79-742c-b9a1-824aa92059b6",
-  // 페이스 메이크업 (peiseu-meikeueop)
-  "pcat_019c0c0d9b377356b4f21979732c057f": "019b4cbd-13b0-725c-8e45-e9d9619d9adf",
-  // 페이스 페인팅 (peiseu-peinting)
-  "pcat_019c0c0d9b377356b4f293e254a50710": "019b4cbc-c8de-73e5-ad16-9ec1598c5317",
-  // 페이스 쉴드 (peiseu-swildeu)
-  "pcat_019c0c0d9b38734abfd4986f74932678": "019b4cbc-9e37-7475-9ac0-d3bfcdd8708a",
-  // 페이스/바디페인팅 (peiseubadipeinting)
-  "pcat_019c0c0d9b38734abfd4cb507bc9eb14": "019b4cbc-c8de-73e5-ad16-9ec1598c5317",
-  // 퍼마블렌드 (peomabeulrendeu)
-  "pcat_019c0c0d9b38734abfd344b4f9bbc410": "019b4cbd-07f9-7081-ac46-89320722a893",
-  // 펌글루&왁스 (peomgeulruwakseu)
-  "pcat_019c0c0d9b377356b4ef8793bdbfd86d": "019b4cbc-bc63-769b-a5fc-a604861a6a0b",
-  // 펌제 (peomje)
-  "pcat_019c0c0d9b3677dc8539600b9c8b26a5": "019b4cbc-5e7c-720e-b0d4-7102028c9e40",
-  // 퍼스트스트릿 (peoseuteuseuteurit)
-  "pcat_019c0c0d9b377356b4f0b5316a43cae6": "019b4cc0-215f-728c-8e58-79577f4a7254",
-  // 프리미엄 명함 (peurimieom-myeongham)
-  "pcat_019c0c0d9b38734abfd3f8aef5044805": "019b4cbd-e0d1-736e-bba0-ac5ce6da8f34",
-  // 프롬 더 네일 (peurom-deo-neil)
-  "pcat_019c0c0d9b377356b4f0bd49fd08316e": "019b4cbf-1356-704b-88aa-cdcb6a4daa8b",
-  // 피부미용 (pibumiyong)
-  "pcat_019c0c0d9b377356b4f135c04d1af15a": "019b4cbd-0667-712d-be7a-c2a2339215d2",
-  // 핑거볼/세퍼레이터 (pinggeobolsepeoreiteo)
-  "pcat_019c0c0d9b377356b4f0f8202cc968f7": "019b4cbd-3d7b-7613-a371-01e85b85399a",
-  // 핀컬핀/악어 클립 (pinkeolpinakeo-keulrip)
-  "pcat_019c0c0d9b38734abfd48d7044820007": "019b4cbc-bd76-7142-b244-6021df312bcc",
-  // 핀셋 (pinset)
-  "pcat_019c0c0d9b377356b4efa4d1006cd792": "019b4cbd-0ec8-737e-9be6-6155153202e1",
-  // 핀셋 (pinset-2)
-  "pcat_019c0c0d9b377356b4f103978446a9b3": "019b4cbd-5e2b-754b-999e-2b625f973da2",
-  // 피오떼 (piotte)
-  "pcat_019c0c0d9b38734abfd45846ade1bed9": "019b4cbf-0c06-75f8-b2d9-efc8e853c97c",
-  // 푸셔/니퍼 (pusyeonipeo)
-  "pcat_019c0c0d9b377356b4f0ef98eeed0025": "019b4cbd-250e-731d-9f61-9aa905863472",
-  // 램프 (raempeu)
-  "pcat_019c0c0d9b377356b4f12e4db65c8420": "019b4cbd-79bf-75ac-9c07-cd242ffe0e7d",
-  // 래쉬 (raeswi)
-  "pcat_019c0c0d9b377356b4ef9fb9dd2052d1": "019b4cbb-d8a5-72b3-9238-4da90b39b170",
-  // 래쉬업 (raeswieop)
-  "pcat_019c0c0d9b38734abfd4e668155bfca6": "019b4cbc-bc63-769b-a5fc-a604861a6a0b",
-  // 래쉬홀릭 (raeswiholrik)
-  "pcat_019c0c0d9b38734abfd37145c58b4d22": "019b4cbb-de1e-739a-9a1a-1a3168427fd1",
-  // 래쉬몬스터 (raeswimonseuteo)
-  "pcat_019c0c0d9b38734abfd37c169966e1c4": "019b4cbc-402f-73ea-ab4a-4516c743e8a1",
-  // 라프랑스 (rapeurangseu)
-  "pcat_019c0c0d9b38734abfd391c7240eef6e": "019b4cbc-867e-76db-ba17-fefa830493bf",
-  // 라텍스/더마왁스/실리콘 (ratekseudeomawakseusilrikon)
-  "pcat_019c0c0d9b377356b4f269e6b6d1d236": "019b4cbd-8c01-75e5-94d0-3532caf38d06",
-  // 리무버&전처리제 (rimubeojeoncheorije)
-  "pcat_019c0c0d9b38734abfd420b43e035bfc": "019b4cbb-de1e-739a-9a1a-1a3168427fd1",
-  // 리무버/소독제/지혈제 (rimubeosodokjejihyeolje)
-  "pcat_019c0c0d9b38734abfd46048d33b13ff": "019b4cbd-0cac-7139-b0bc-e8f0ed45a9e3",
-  // 립 브러쉬 (rip-beureoswi)
-  "pcat_019c0c0d9b377356b4f23ab66f2ecc7e": "019b4cbc-173d-75f9-bda0-06d0acf598d9",
-  // 립 메이크업 (rip-meikeueop)
-  "pcat_019c0c0d9b377356b4f22212e97e5cc6": "019b4cbd-262a-746d-b348-55cf54039173",
-  // 로지힙 (rojihip)
-  "pcat_019c0c0d9b38734abfd4396a8cf45097": "019b4cbe-9b66-718b-9683-802a5374b73f",
-  // 롤 빗 (rol-bit)
-  "pcat_019c0c0d9b377356b4f1c4a80b90bc9c": "019b4cbc-9369-7020-b86b-0eae98222348",
-  // 롯드 (rotdeu)
-  "pcat_019c0c0d9b377356b4ef8b0c2db71ea3": "019b4cbd-08eb-741f-9bd1-374836f53381",
-  // 롯드/파지 (rotdeupaji)
-  "pcat_019c0c0d9b377356b4f1a2501d945c4d": "019b4cbd-3536-72ff-8752-448ade7aaae9",
-  // 루벤스 (rubenseu)
-  "pcat_019c0c0d9b377356b4f01c1244926f79": "019b4cbd-0f8b-714c-824a-eb5c2c57890e",
-  // 루가래쉬 (rugaraeswi)
-  "pcat_019c0c0d9b38734abfd37774d0cdc279": "019b4cbb-e7d7-763b-b761-fb06da7697c4",
-  // 루가색소 (rugasaekso)
-  "pcat_019c0c0d9b38734abfd3834e35432a5a": "019b4cbb-f738-700e-b63e-94fffce3a228",
-  // 색조 메이크업 (saekjo-meikeueop)
-  "pcat_019c0c0d9b377356b4f214b7d7cc13a7": "019b4cbd-10f6-70ae-914e-0bfa1db5d006",
-  // 색소 (saekso)
-  "pcat_019c0c0d9b377356b4efbde64f7818e3": "019b4cbd-07f9-7081-ac46-89320722a893",
-  // 사각 스티커 (sagak-seutikeo)
-  "pcat_019c0c0d9b38734abfd3ea0d136a05da": "019b4cbe-211d-71c9-b460-d916ff5551a9",
-  // 세체 (seche)
-  "pcat_019c0c0d9b38734abfd446e2e6999c67": "019b4cbd-1a90-70ee-aba8-efbda469c173",
-  // 세일 (seil)
-  "pcat_019c0c0d9b38734abfd4185d4bb319af": "019b4cbb-d9a4-727e-8f0a-92d1866986ca",
-  // 서플라이 (seopeulrai)
-  "pcat_019c0c0d9b377356b4efedeb493301e7": "019b4cbd-2885-7407-8570-38100f7b6261",
-  // 서울 (seoul)
-  "pcat_019c0c0d9b377356b4f2c01a7d384ca3": "019b4cbb-fd4a-7455-8d78-e1bb2bec8e93",
-  // 세트 (seteu)
-  "pcat_019c0c0d9b377356b4ef936ddf3ec9a5": "019b4cbb-ddb8-73fb-bfe8-e26308035a01",
-  // 세트 (seteu-2)
-  "pcat_019c0c0d9b377356b4efb4f024a33069": "019b4cbd-80ae-76a6-8ae7-ffe0e148ad61",
-  // 스킨플래닝 (seukinpeulraening)
-  "pcat_019c0c0d9b377356b4f13ed7b373c09e": "019b4cbd-0667-712d-be7a-c2a2339215d2",
-  // 스파츌라, 파레트 (seupachyulra-pareteu)
-  "pcat_019c0c0d9b38734abfd4be44a5133050": "019b4cbc-8f75-737d-9f79-8c661c3111d8",
-  // 스틱/ 솜 (seutik-som)
-  "pcat_019c0c0d9b377356b4f11c3c76280f1d": "019b4cbd-250e-731d-9f61-9aa905863472",
-  // 스티커 (seutikeo)
-  "pcat_019c0c0d9b38734abfd3e4caaada9894": "019b4cbe-211d-71c9-b460-d916ff5551a9",
-  // 스티커 (seutikeo-2)
-  "pcat_019c0c0d9b38734abfd45dad580c02b4": "019b4cbd-1ccf-744e-b651-65a35b92e83e",
-  // 스티커 (seutikeo-3)
-  "pcat_019c0c0d9b38734abfd4c74c52a36106": "019b4cbc-c399-720c-b878-1c2f49f6ad4c",
-  // 스톤/ 파츠 (seuton-pacheu)
-  "pcat_019c0c0d9b377356b4f0d15f8c8c6b22": "019b4cbd-5ea9-77ad-bb38-085575ae5d02",
-  // 스윗온 (seuwiton)
-  "pcat_019c0c0d9b377356b4f05f72a56f04b1": "019b4cbc-d978-773d-8670-620ea723b131",
-  // 실크/ 필러파우더/ 가위 (silkeu-pilreopaudeo-gawi)
-  "pcat_019c0c0d9b377356b4f10a18e4264b9d": "019b4cbd-0f8b-714c-824a-eb5c2c57890e",
-  // 실핀/U핀 (silpinupin)
-  "pcat_019c0c0d9b377356b4f1aa6b49fbf5b8": "019b4cbc-46c8-7725-9672-a7eab9ebbc97",
-  // 신상 (sinsang)
-  "pcat_019c0c0d9b377356b4f2b44866a77981": "019b4cc0-2185-747b-b36c-9c100ec13104",
-  // 속눈썹 브러쉬 (soknunsseop-beureoswi)
-  "pcat_019c0c0d9b377356b4f23f3602602d70": "019b4cbd-11a7-723d-b818-392e23fe4094",
-  // 속눈썹 핀셋 (soknunsseop-pinset)
-  "pcat_019c0c0d9b377356b4f25a4569bef765": "019b4cbc-88a5-77f4-9f48-ae900d3e5cb0",
-  // 속눈썹 열펌 (soknunsseop-yeolpeom)
-  "pcat_019c0c0d9b38734abfd35d6fbcf83d65": "019b4cbc-5e7c-720e-b0d4-7102028c9e40",
-  // 속눈썹펌 (soknunsseoppeom)
-  "pcat_019c0c0d9b3677dc85395e40e8411453": "019b4cbd-08eb-741f-9bd1-374836f53381",
-  // 속눈썹연장 (soknunsseopyeonjang)
-  "pcat_019c0c0d9b377356b4ef999a294d9dd2": "019b4cbb-de1e-739a-9a1a-1a3168427fd1",
-  // 소품 (sopum)
-  "pcat_019c0c0d9b377356b4f2a9935c115a14": "019b4cbc-18d1-75cc-b49f-8391d40fc03d",
-  // 씨씨 (ssissi)
-  "pcat_019c0c0d9b377356b4f0628d4e3f985b": "019b4cbd-14f1-751e-9550-e1c3640f4fcf",
-  // 수짜젤 (sujjajel)
-  "pcat_019c0c0d9b377356b4f05b26114e1a9b": "019b4cbe-a494-776e-99eb-0d27dfa521a0",
-  // 수염 (suyeom)
-  "pcat_019c0c0d9b377356b4f279d44c969413": "019b4cbd-8c01-75e5-94d0-3532caf38d06",
-  // 샴푸 (syampu)
-  "pcat_019c0c0d9b377356b4f2078a688d5f23": "019b4cbd-c97f-73bf-ae9e-efe73dfb5b61",
-  // 샵 간편식 (syap-ganpyeonsik)
-  "pcat_019c0c0d9b38734abfd409f83f822bb3": "019b4cbd-888b-707f-b209-a35e076f08e2",
-  // 섀도우 브러쉬 (syeedou-beureoswi)
-  "pcat_019c0c0d9b38734abfd4aef26c4f968d": "019b4cbb-f04e-72b4-8224-4225460cb2d5",
-  // 타사와라 (tasawara)
-  "pcat_019c0c0d9b38734abfd4eace80c92a68": "019b4cbc-9094-7791-b7aa-85ea8b165337",
-  // 타투 (tatu)
-  "pcat_019c0c0d9b377356b4efdfcf2a3fd02d": "019b4cbd-214c-7369-baea-1dcbc7526d1a",
-  // 테이프 (teipeu)
-  "pcat_019c0c0d9b377356b4efad1fb4499c57": "019b4cbc-0ee5-77fc-be09-65a9bcd8ac10",
-  // 트레이/ 화일통 (teurei-hwailtong)
-  "pcat_019c0c0d9b38734abfd46c2452f8338c": "019b4cbd-4da1-756a-9f9f-45eea1fecb28",
-  // 트위지스트랩 (teuwijiseuteuraep)
-  "pcat_019c0c0d9b38734abfd3972e2f6cdea4": "019b4cbc-de69-775c-8574-ad0bf9a321c0",
-  // 틴닝가위 (tinninggawi)
-  "pcat_019c0c0d9b377356b4f174ddaface232": "019b4cbd-32b7-713b-a94c-406b753cd05b",
-  // 팁/그립 (tipgeurip)
-  "pcat_019c0c0d9b377356b4efe4113f586ea4": "019b4cbc-7285-761f-86b8-e6e9339fcb59",
-  // 팁스탠드/ 인조손 (tipseutaendeu-injoson)
-  "pcat_019c0c0d9b377356b4f121d6bb603605": "019b4cbd-3dd3-736f-92fc-0e7264c15591",
-  // 통가발 (tonggabal)
-  "pcat_019c0c0d9b377356b4f1691af856017d": "019b4cbe-0f83-705b-83c1-c2e45cddbe75",
-  // 띵크 오브 네일 (ttingkeu-obeu-neil)
-  "pcat_019c0c0d9b377356b4f01b20436b2998": "019b4cbe-1286-704e-8b31-6bfe45eea271",
-  // 의류 (uiryu)
-  "pcat_019c0c0d9b38734abfd3b766ac16f26b": "019b4cbd-0abc-723a-9ff9-c38590eb26c3",
-  // 왁스 (wakseu)
-  "pcat_019c0c0d9b377356b4efd3b470c48aa9": "019b4cbc-313e-72d9-a8e0-f0f55374d36b",
-  // 왁싱 (waksing)
-  "pcat_019c0c0d9b377356b4efcdf0669629e1": "019b4cbc-3032-72b9-869b-8f80e2eed859",
-  // 웨건&트롤리&카트 (wegeonteurolrikateu)
-  "pcat_019c0c0d9b38734abfd4d1433a244bc3": "019b4cbd-1b28-746c-b329-1254a0c6e1de",
-  // 원피스 앞치마 (wonpiseu-apchima)
-  "pcat_019c0c0d9b38734abfd4f022b91f3ff9": "019b4cbe-0856-71c2-8926-ef949ea7cf95",
-  // 염모제 (yeommoje)
-  "pcat_019c0c0d9b38734abfd483d040cd1106": "019b4cbd-3325-72ba-9230-e8414e2ab3ef",
-  // 염색 (yeomsaek)
-  "pcat_019c0c0d9b377356b4f182e7aed63767": "019b4cbd-2364-7369-95ea-32cca0b964b1",
-  // 염색빗 (yeomsaekbit)
-  "pcat_019c0c0d9b377356b4f1c05718799714": "019b4cbc-6d3e-705f-ae2a-8876a62510e0",
-  // 염색볼/염색빗 (yeomsaekbolyeomsaekbit)
-  "pcat_019c0c0d9b377356b4f19128e353ffb4": "019b4cbd-2364-7369-95ea-32cca0b964b1",
-  // 염색/파마 (yeomsaekpama)
-  "pcat_019c0c0d9b377356b4f17e3091758001": "019b4cbd-2364-7369-95ea-32cca0b964b1",
-  // 영양제 (yeongyangje)
-  "pcat_019c0c0d9b377356b4efa8178a925693": "019b4cbd-0c3c-746a-8f57-dc91a4ff39c4",
-  // 영양제/강화제/오일/ 크림 (yeongyangjeganghwajeoil-keurim)
-  "pcat_019c0c0d9b377356b4f0e4f646d0e348": "019b4cbd-1c24-70ea-9f21-35f1a403b79a",
-  // 요거트젤 (yogeoteujel)
-  "pcat_019c0c0d9b377356b4f07bf646427ff5": "019b4cbe-fc4b-7581-ad0b-51ed64d738d9",
-  // 요고마요 (yogomayo)
-  "pcat_019c0c0d9b377356b4f07d06f294fffd": "019b4cbe-6b79-7629-a4b3-1ca66f186253",
-  // 유즈미  (yujeumi)
-  "pcat_019c0c0d9b377356b4f083a77c49e43a": "019b4cbe-13f0-77ca-a7c3-b314be1151c4",
-  // 유니코 (yuniko)
-  "pcat_019c0c0d9b38734abfd44e075be7d189": "019b4cbc-ddff-77a8-a9e2-51aca9f94beb",
+  // 경기도 (cafe24-cat-100)
+  "pcat_01KQRR64J2JK45H560XEF2Y5J5": "019df045-8325-7534-b1e4-d36f475694a4",
+  // 강원도 (cafe24-cat-101)
+  "pcat_01KQRR68F4WAD7E8JHN0482EY7": "019df01d-3f84-7815-b8cb-0dc2d39bd96e",
+  // 충청도&대전 (cafe24-cat-102)
+  "pcat_01KQRR6CC50F0WWDZ11BSX3FD2": "019df03e-1fc3-7caa-8de8-12efc186aa27",
+  // 전라도 (cafe24-cat-103)
+  "pcat_01KQRR6JGWTTBAN0T0GGBW1MC1": "019df02e-c605-77e3-adef-5c6bf9aad721",
+  // 경상도&부산&대구 (cafe24-cat-104)
+  "pcat_01KQRR6PM75ZH1N0CYNVDHT7AE": "019df02f-384c-7cc2-bf69-627c15f2ca85",
+  // 인천 (cafe24-cat-173)
+  "pcat_01KQRR6ZAA7E78QSDT3SWG8D4W": "019df045-50f0-7d03-8de0-960ba6f712cc",
+  // 속눈썹펌 (cafe24-cat-246)
+  "pcat_01KQRPDVFSN0FAZKPZAJ9XQ2HD": "019df005-943c-7c16-9713-9d140baf4c0b",
+  // 속눈썹연장 (cafe24-cat-247)
+  "pcat_01KQRPEJ1G70YQQFYSK0QJ7NQD": "019df03e-5da4-7019-8fb9-5095b3acb89d",
+  // 펌제 (cafe24-cat-248)
+  "pcat_01KQRPDY47SQ56G1RD7HWAHXVZ": "019df04d-7794-7829-8a7a-13429e188950",
+  // 펌글루&왁스 (cafe24-cat-249)
+  "pcat_01KQRPE120FZEZ49C2F8BY6VAT": "019df044-dcdd-7bc1-a5d2-13cafc5f8b5f",
+  // 롯드 (cafe24-cat-250)
+  "pcat_01KQRPE42TPMDM9K3V7ZHGCPAS": "019df04d-3e77-7d21-96f7-f42db807ae09",
+  // 에센스&영양제 (cafe24-cat-251)
+  "pcat_01KQRPE73MYQ5HHT0P8ESS3YSA": "019df005-943c-7c16-9713-9d140baf4c0b",
+  // 부자재 (cafe24-cat-252)
+  "pcat_01KQRPEA49J4XJM8QD1V2RFFS6": "019df04d-b93d-76a1-b871-9f47129fc0ea",
+  // 세트 (cafe24-cat-253)
+  "pcat_01KQRPED550J5RZ3RVWA7H5834": "019df03a-e110-7ecb-902d-c9535de3281b",
+  // 래쉬 (cafe24-cat-254)
+  "pcat_01KQRPEPB0CFS4JQVSNK6P1BXX": "019df03e-5da4-7019-8fb9-5095b3acb89d",
+  // 글루 (cafe24-cat-255)
+  "pcat_01KQRPESC1JKDJWT3FV348TJNX": "019df04c-70f8-756e-8795-c5d87ea0a264",
+  // 리무버&전처리제 (cafe24-cat-256)
+  "pcat_01KQRPEW6Q452TYRAABGW32AJC": "019df04d-a8f9-77dc-9ac2-b1e3188a9f27",
+  // 핀셋 (cafe24-cat-257)
+  "pcat_01KQRPEYTV2A5Q9KQ3F9FH37Y6": "019df049-62eb-746a-ae92-e633c997b162",
+  // 에센스&영양제 (cafe24-cat-258)
+  "pcat_01KQRPF1VNT0B1RVM0KCFRW6FB": "019df042-f34f-7246-b08e-8233c2c4fcc2",
+  // 테이프 (cafe24-cat-259)
+  "pcat_01KQRPF4G7WWWWYJM3MCJH3WZY": "019df04d-b4b0-7a5e-b299-e768ec68bbf0",
+  // 부자재 (cafe24-cat-260)
+  "pcat_01KQRPF77VPKGP6Q5VPSHAYM11": "019df04d-9fa3-7628-a002-955fd7c222ac",
+  // 반영구 (cafe24-cat-261)
+  "pcat_01KQRPFCA5TRFFRV9Y7DKJAECY": "019df04f-8224-778c-8321-977e5b7dce1a",
+  // 니들 (cafe24-cat-262)
+  "pcat_01KQRPFF7WXDZ7Y3NH103ADHHZ": "019df04e-06c0-7684-91ab-105b9a69f5e5",
+  // 색소 (cafe24-cat-263)
+  "pcat_01KQRPFJ5WV8WPS2KHPMJCHPMJ": "019df04f-95c1-70ae-9766-1a07783f2175",
+  // 엠보&수지펜 (cafe24-cat-264)
+  "pcat_01KQRPFN6QBD33WE77V05PBDCX": "019df04e-2048-71e0-92bc-accc43ac0890",
+  // 머신 (cafe24-cat-265)
+  "pcat_01KQRPFRAC0SX61C1SW2NNWY5K": "019df04f-8224-778c-8321-977e5b7dce1a",
+  // 부자재 (cafe24-cat-266)
+  "pcat_01KQRPFV5DNMYK3N499BR0Y1WF": "019df04d-c561-76f8-bb7a-e1d19a5d0764",
+  // 왁싱 (cafe24-cat-267)
+  "pcat_01KQRPG0QA0JWWPMSPN6206ZGQ": "019df04f-848a-7057-9ede-887d1449c81c",
+  // 왁스 (cafe24-cat-268)
+  "pcat_01KQRPG3EGMEC76E79NHFF6T0V": "019df04d-e38f-75ca-8faf-fa3cead6b40d",
+  // 전후처리제 (cafe24-cat-269)
+  "pcat_01KQRPG6FM69590DCD7FFWVCP4": "019df04e-05f2-7cf3-b3f4-259f7b4cf1d6",
+  // 부자재 (cafe24-cat-270)
+  "pcat_01KQRPG944T4DE37R9T3FRTSNN": "019df04f-848a-7057-9ede-887d1449c81c",
+  // 타투 (cafe24-cat-271)
+  "pcat_01KQRPGBFER3G9D67J4DREZZGJ": "019df04f-8224-778c-8321-977e5b7dce1a",
+  // 니들 (cafe24-cat-272)
+  "pcat_01KQRPGE6N6WN8F7X73WWMSQ93": "019df04a-315d-7840-95dd-9dbdab3c3133",
+  // 잉크 (cafe24-cat-273)
+  "pcat_01KQRPGHAMFZVWPNWC21NP6049": "019df03c-2943-7477-98b2-2eadc2c3abd3",
+  // 팁/그립 (cafe24-cat-274)
+  "pcat_01KQRPGME8AGGXVKAWFM2W5DQQ": "019df04d-4f7a-72f7-b231-63fb3639946e",
+  // 머신 (cafe24-cat-275)
+  "pcat_01KQRPGQJF2WTAX046KSATKF6G": "019df04f-8224-778c-8321-977e5b7dce1a",
+  // 서플라이 (cafe24-cat-276)
+  "pcat_01KQRPGTGCRGWNT238T3JDV90B": "019df03c-22a2-7053-96b8-c4b9547a3064",
+  // 부자재 (cafe24-cat-277)
+  "pcat_01KQRPGX7ZBKSNVE2G6BYZPNZJ": "019df04e-0465-785c-bcdd-2243b6196e92",
+  // 피부미용 (cafe24-cat-278)
+  "pcat_01KQRPGZJSY3PSD3VPRMXS25TW": "019df04e-08b9-7331-9a4c-1a3f262c90cd",
+  // 스킨플래닝 (cafe24-cat-279)
+  "pcat_01KQRPH2ACAJG6R63XT6M3A2S7": "019df04d-f93f-7d10-993c-a5c1669bec35",
+  // 네일아트 (cafe24-cat-28)
+  "pcat_01KQRPHN8A45F2FZCA745A40VA": "019df04d-f521-7c5e-bf29-4d137a5e666d",
+  // 패디플래닝 (cafe24-cat-280)
+  "pcat_01KQRPH5E5AY3S0VYX1SG0D2BN": "019df04d-bf4b-75b1-8d8c-51a32448c68e",
+  // 화장품 (cafe24-cat-281)
+  "pcat_01KQRPH890KSRTNVJVH7N3X4ZD": "019df045-4727-7938-8c42-0bbe4c321b92",
+  // 미용기기 (cafe24-cat-282)
+  "pcat_01KQRPHB0GP4Q1X6E51FTJ3Q95": "019df004-cb83-7692-8676-b6f79c3bacfd",
+  // 기타소품 (cafe24-cat-283)
+  "pcat_01KQRPHDHRC8ZBG8GDHB6V6XVP": "019df04d-e960-79b8-b9c7-dd506e1297c7",
+  // 팩&모델링팩 (cafe24-cat-284)
+  "pcat_01KQRPHG5SFT1HXK51774N1YV6": "019df04d-aa35-7775-a011-70e0e9224308",
+  // 가방 (cafe24-cat-289)
+  "pcat_01KQRQ1X2ZP2X3HJG9WPD0QCYK": "019df041-164b-7d5a-a1b3-7090991a1df5",
+  // 미용기기 (cafe24-cat-290)
+  "pcat_01KQRPTX5636NFWFBNAH7APYTS": "019df008-6c55-7d55-aa2e-565206071376",
+  // 마케팅 (cafe24-cat-299)
+  "pcat_01KQRPTZ9TGZTMZANGD0SZCJRX": "019df004-f559-7872-a913-2baa855a60f4",
+  // 퍼마블렌드 (cafe24-cat-339)
+  "pcat_01KQRPV2MPPBK53YHR1Z7M5REV": "019df04f-95c1-70ae-9766-1a07783f2175",
+  // 고무판 (cafe24-cat-340)
+  "pcat_01KQRPFY99Y374ZX882JDX0D0H": "019df04d-43ce-7bd2-9f0a-82cc307cc525",
+  // 캔바 디자인 (cafe24-cat-345)
+  "pcat_01KQRPV52DS5YTX0PH5J1Q9HBR": "019df04e-0303-7d33-a92b-3a128f647026",
+  // 헤어 (cafe24-cat-347)
+  "pcat_01KQRPVNYTMFNDFMCH3B5FSSX0": "019df04d-efae-7130-abd8-aff4d30d904f",
+  // 뷰티 소품 (cafe24-cat-351)
+  "pcat_01KQRQ20PGDTY8EMM4KA023HK0": "019df04d-ee3e-70f4-890f-244c340a141f",
+  // 메이크업 브러쉬 (cafe24-cat-352)
+  "pcat_01KQRQ34B81FC7RJ1SXNCRZ6ZN": "019df04a-67d7-75eb-a522-fa099846bd40",
+  // 색조 메이크업 (cafe24-cat-353)
+  "pcat_01KQRQ4NBPJ3FFGRQAYK48HGHV": "019df04d-5305-75e7-a606-9ba8c9733843",
+  // 페이스 메이크업 (cafe24-cat-354)
+  "pcat_01KQRQ4RJY176GN8KNVY88ZQMP": "019df030-13ab-70a7-85e7-e89cee6551f5",
+  // 아이 메이크업 (cafe24-cat-355)
+  "pcat_01KQRQ4WG3A0ZNWZ7V7Y6KM4CY": "019df04d-5305-75e7-a606-9ba8c9733843",
+  // 립 메이크업 (cafe24-cat-356)
+  "pcat_01KQRQ4ZTAS5C5WFAMBWFDAQNS": "019df045-5c4e-702b-bf17-5532ceb7e93e",
+  // 페이스 브러쉬 (cafe24-cat-357)
+  "pcat_01KQRQ37NB5SBM3PZCA7700PD4": "019df044-f7b9-7f88-9865-2a0a40488c9c",
+  // 아이 브러쉬 (cafe24-cat-358)
+  "pcat_01KQRQ3MVA65E8P64B8R8TQXHQ": "019df04a-67d7-75eb-a522-fa099846bd40",
+  // 섀도우 브러쉬 (cafe24-cat-359)
+  "pcat_01KQRQ3RRBT32C59ZE6PTTK1JV": "019df04a-67d7-75eb-a522-fa099846bd40",
+  // 아이브로우 브러쉬 (cafe24-cat-360)
+  "pcat_01KQRQ3XMCHRFPKJ84Y8FJ0YS4": "019df02f-75c0-7d0e-a5e6-2c4366a17e24",
+  // 파운데이션 브러쉬 (cafe24-cat-361)
+  "pcat_01KQRQ3B00QGSQ6387ECBSMGKX": "019df044-f7b9-7f88-9865-2a0a40488c9c",
+  // 컨실러 브러쉬 (cafe24-cat-362)
+  "pcat_01KQRQ3EK9XD2E7EMRMAKZHRW9": "019df040-9dd4-784c-a5cf-f356d819e1c6",
+  // 블러셔, 쉐이딩 브러쉬 (cafe24-cat-363)
+  "pcat_01KQRQ3HT84FA65W5NHTP8ZKS5": "019df02f-09ec-71de-a61c-5f91048e08fc",
+  // 립 브러쉬 (cafe24-cat-364)
+  "pcat_01KQRQ44FB7GB2KRZBNJHJVRDT": "019df040-9dd4-784c-a5cf-f356d819e1c6",
+  // 속눈썹 브러쉬 (cafe24-cat-365)
+  "pcat_01KQRQ482WX515HV3PG74710YA": "019df04d-557b-7128-9ef5-3870f45e0dc4",
+  // 브러쉬 세트 (cafe24-cat-366)
+  "pcat_01KQRQ4BPAYW4X3J729MKDFVZ9": "019df02a-0d41-71c7-b49e-f65fcd1b8a45",
+  // 브러쉬 커버, 케이스 (cafe24-cat-367)
+  "pcat_01KQRQ4F0SDNTWRNFN0AWTKVJ6": "019df003-449c-7932-a098-881846e24d60",
+  // 쿠션 퍼프/라텍스 스펀지 (cafe24-cat-368)
+  "pcat_01KQRQ24STMAMQWSS3R08D2MA5": "019df04d-5082-7de2-a264-e4222a950d15",
+  // 파우더 퍼프 (cafe24-cat-369)
+  "pcat_01KQRQ286YHBGKCA4DV3Q3CRGM": "019df029-e7f2-761d-9157-9c88b0997b08",
+  // 스파츌라, 파레트 (cafe24-cat-370)
+  "pcat_01KQRQ2BQTB02W3YCF2G2DWAPQ": "019df03b-1d84-7df8-9f03-85f6ddcb894b",
+  // 인조 속눈썹 (cafe24-cat-371)
+  "pcat_01KQRQ2FBBV2PH6WBS4XP3M4C7": "019df04d-ee3e-70f4-890f-244c340a141f",
+  // 일회용품 (cafe24-cat-373)
+  "pcat_01KQRQ2P94ST6K6WNM3RF9DEE7": "019df045-4b4c-7d3f-b20a-d08fe5d76ca2",
+  // 아이라이너 브러쉬 (cafe24-cat-378)
+  "pcat_01KQRQ40VVQEA12WK3ZWRSW8HS": "019df028-f1b4-7eb7-9888-60f57af3d69c",
+  // 커트 (cafe24-cat-379)
+  "pcat_01KQRPVVHEM04NWFJRGY5FYYF1": "019df024-e711-79e9-922e-efade0799b54",
+  // 염색/파마 (cafe24-cat-380)
+  "pcat_01KQRPWD0HQ22GJR2EGTWS28X2": "019df045-658b-7993-bd23-c96532af099a",
+  // 업스타일 (cafe24-cat-381)
+  "pcat_01KQRPXQ9TJC0AYZWHD1RJGYF2": "019df045-5cf9-72b2-acd9-0cd6cb98c6f7",
+  // 헤어 소품 (cafe24-cat-383)
+  "pcat_01KQRPYAE6DFJRCKN2KSC834PS": "019df04d-efae-7130-abd8-aff4d30d904f",
+  // 장가위 (cafe24-cat-385)
+  "pcat_01KQRPW2RFVWN2NZ5NZCW8VPM8": "019df036-a5ec-7864-bda5-2509e5c6b0f7",
+  // 틴닝가위 (cafe24-cat-386)
+  "pcat_01KQRPW6BYXQFKQZ9B94S2K494": "019df036-a5ec-7864-bda5-2509e5c6b0f7",
+  // 염색 (cafe24-cat-388)
+  "pcat_01KQRPWGASH7999GN5DC0CHMTT": "019df040-4f9b-70af-9f45-5b8283fab717",
+  // 파마 (cafe24-cat-389)
+  "pcat_01KQRPX57FNTNX2HC74ZT9D4VX": "019df045-658b-7993-bd23-c96532af099a",
+  // 염모제 (cafe24-cat-390)
+  "pcat_01KQRPWKVBKWX9VNMHP36PDS39": "019df02f-7292-7598-a2dc-7a36195a607b",
+  // 중화 받침대 (cafe24-cat-396)
+  "pcat_01KQRPXG2P93T8G7SRZTHXCRN0": "019df03f-8390-76ca-86e7-77df92095ecb",
+  // 롯드/파지 (cafe24-cat-397)
+  "pcat_01KQRPXKP7M4KZCVQMJT0HSZ17": "019df045-658b-7993-bd23-c96532af099a",
+  // 헤어 브러쉬 (cafe24-cat-399)
+  "pcat_01KQRPYDR8WKKA5KAKH1CPK80P": "019df04d-efae-7130-abd8-aff4d30d904f",
+  // 가운/앞치마 (cafe24-cat-400)
+  "pcat_01KQRPZ31PGX658CH8ANFZ7DBM": "019df041-2ec6-7ca8-96d2-8ba2da55d14f",
+  // 실핀/U핀 (cafe24-cat-401)
+  "pcat_01KQRPXTX9TQ3K2H2NE52JYE60": "019df045-5cf9-72b2-acd9-0cd6cb98c6f7",
+  // 핀컬핀/악어 클립 (cafe24-cat-402)
+  "pcat_01KQRPXY7HZVESVSXTYSDD1P6V": "019df02a-8888-76f7-89ef-adcee7191fda",
+  // 가발망/실망 (cafe24-cat-403)
+  "pcat_01KQRPY1EWYY3MG6GRFAQ0ZCXP": "019df009-b098-731f-9bb5-f230264079ba",
+  // 머리끈/집게핀 (cafe24-cat-405)
+  "pcat_01KQRPZH9K4B04ZYME3VRW62Y5": "019df04d-29cb-7010-aa05-c2a7d5543738",
+  // 머리끈 (cafe24-cat-406)
+  "pcat_01KQRPZMH6ABJK3BNK0YJ6MSV8": "019df03e-0ce0-7b4f-9e64-069f5561c3ba",
+  // 집게핀 (cafe24-cat-407)
+  "pcat_01KQRPZQR5AZ5W6Y9B74H3EBPY": "019df04d-29cb-7010-aa05-c2a7d5543738",
+  // 커트보 (cafe24-cat-408)
+  "pcat_01KQRPZ6C9K4HB4RD6E75E6KTK": "019df041-2ec6-7ca8-96d2-8ba2da55d14f",
+  // 앞치마 (cafe24-cat-410)
+  "pcat_01KQRPZDP2B5KW48HYK5BD44R6": "019df006-a34a-7049-90b3-139f8675343a",
+  // 커트빗/클리퍼 빗 (cafe24-cat-411)
+  "pcat_01KQRPYH5JKBKZNFSX7T2S7240": "019df04d-db5c-77db-b7f8-55aa6f6643d9",
+  // 꼬리빗 (cafe24-cat-412)
+  "pcat_01KQRPYMZNDN7RX2ET7V03PTKP": "019df03d-3f88-742c-98cd-628a3219d04e",
+  // 염색빗 (cafe24-cat-413)
+  "pcat_01KQRPYRK4931WRWZVZZNXF3BS": "019df03e-f7ec-7f9f-b675-874c521bce08",
+  // 롤 빗 (cafe24-cat-414)
+  "pcat_01KQRPYW6Y6VG52TCMK6MCVG00": "019df04d-efae-7130-abd8-aff4d30d904f",
+  // 패들 브러쉬 (cafe24-cat-420)
+  "pcat_01KQRPYZTBMRZ6Q9QAGD1DCT0W": "019df04c-a90e-7693-b7db-00a784ec969c",
+  // 기타 미용 (cafe24-cat-421)
+  "pcat_01KQRQ2SKHQ8FXGAK39W03ANAR": "019df045-5c4e-702b-bf17-5532ceb7e93e",
+  // 일회용품 (cafe24-cat-423)
+  "pcat_01KQRPZVEK3J3564AQK88D20D1": "019df044-9f15-76c2-b716-53e8536b5ae9",
+  // 페이스 쉴드 (cafe24-cat-424)
+  "pcat_01KQRPZZ8SB5DY66MNKCVPCV25": "019df044-9f15-76c2-b716-53e8536b5ae9",
+  // DIY 키트 (cafe24-cat-425)
+  "pcat_01KQRPEFZZ1N72F3C9RY5RB495": "019df03c-d57f-787e-b56d-0e7189aa81a6",
+  // 분장 (cafe24-cat-426)
+  "pcat_01KQRQ53B28JN8E8FBE03D3SVC": "019df03e-a374-70b1-9d3e-0ce67dcd3087",
+  // 페이스/바디페인팅 (cafe24-cat-427)
+  "pcat_01KQRQ68MQ76WS2ETEM0J2HGMN": "019df01d-fc1b-7523-8d0f-510e134b7e23",
+  // 라텍스/더마왁스/실리콘 (cafe24-cat-428)
+  "pcat_01KQRQ56Y8FXJSBF40TZGVF3E1": "019df02d-a483-7c47-b1d6-946cad517e75",
+  // 메이크업 (cafe24-cat-43)
+  "pcat_01KQRQ1SJ9N8QY0CMMQTXJF9PH": "019df04a-67d7-75eb-a522-fa099846bd40",
+  // 스티커 (cafe24-cat-432)
+  "pcat_01KQRQ5MSXAKAWQMY6S73YFDKX": "019df03e-a374-70b1-9d3e-0ce67dcd3087",
+  // 수염 (cafe24-cat-433)
+  "pcat_01KQRQ5QV9F54C781AH8SNA4ME": "019df03c-e26e-7bbb-a8df-5d81be41d418",
+  // 무대눈썹 (cafe24-cat-434)
+  "pcat_01KQRQ5V5EP67B1XBHPJEWW0K1": "019df03b-9396-771d-85b4-a41a0c2ac3e9",
+  // 페이스 페인팅 (cafe24-cat-437)
+  "pcat_01KQRQ6C4Z30H7JK8EXER8DJB8": "019df01d-fc1b-7523-8d0f-510e134b7e23",
+  // 바디 페인팅 (cafe24-cat-438)
+  "pcat_01KQRQ6FRPYSJRC8YF6J0YZ64W": "019df01d-2de9-7c93-b54b-085980b412ca",
+  // 인테리어 (cafe24-cat-44)
+  "pcat_01KQRQ70JC542H2ER9YXH5HV6C": "019df04d-8c93-777e-9262-a0d7a8eea3ce",
+  // 네일 재료 (cafe24-cat-441)
+  "pcat_01KQRPHR0C2P1J432RZNG7R9BY": "019df04d-f5f5-7677-a718-dfea836fde04",
+  // 스톤/ 파츠 (cafe24-cat-442)
+  "pcat_01KQRPHTHEGAX2BRYHTQJCE682": "019df04d-f5f5-7677-a718-dfea836fde04",
+  // 네일 팁 (cafe24-cat-443)
+  "pcat_01KQRPHXJ80KNA2YMNPAS1CV3Z": "019df04d-ee70-781b-8159-291fc0932a33",
+  // 드로잉 펜 (cafe24-cat-444)
+  "pcat_01KQRPJ09R26YXPXJVXG6K0E79": "019df03b-6751-7ac3-9437-af1f66b52517",
+  // 자개/ 글리터 (cafe24-cat-445)
+  "pcat_01KQRPJ2Y39PVYP03BW4NSSPT8": "019df04a-67d7-75eb-a522-fa099846bd40",
+  // 염색볼/염색빗 (cafe24-cat-446)
+  "pcat_01KQRPX1Q8TVQ45ZKHM171G1ED": "019df040-4f9b-70af-9f45-5b8283fab717",
+  // 브러쉬 세척 (cafe24-cat-447)
+  "pcat_01KQRQ4J7VEDEDGM4B6RYVVRYC": "019df03d-47fa-70e5-ad9a-16722dfeffc1",
+  // 뷰러 (cafe24-cat-448)
+  "pcat_01KQRQ2WXTSQ5JA9Q9YKD0B0JN": "019df03b-ab4c-769e-87c4-87db4420aef9",
+  // 속눈썹 핀셋 (cafe24-cat-449)
+  "pcat_01KQRQ30HN92MAE5RHTRAS7KFE": "019df044-b0f5-76b7-a58e-fa2e37258fe4",
+  // 국가자격증 (cafe24-cat-450)
+  "pcat_01KQRPJA5E4BW6TXZZ3EZR5MKJ": "019df04d-eb44-7b25-aafd-234e57171ed5",
+  // 국가고시 재료 세트 (cafe24-cat-451)
+  "pcat_01KQRPJD695W1N4NZXMXD8VE5D": "019df02d-d178-7c28-a280-65a4600f9e5c",
+  // 국가고시 재료 (cafe24-cat-452)
+  "pcat_01KQRPJFXXEVJSJWX44AAASRJD": "019df04d-eb44-7b25-aafd-234e57171ed5",
+  // 영양제/강화제/오일/ 크림 (cafe24-cat-453)
+  "pcat_01KQRPRVY07FWQCZQ4MNM3595C": "019df04d-d8a5-7b41-951b-6342b26d6ae7",
+  // 리무버/소독제/지혈제 (cafe24-cat-454)
+  "pcat_01KQRPRZ7XKYGDHFFZTQK9XRH4": "019df04c-aa53-7325-9862-6ec9280edb4b",
+  // 파일/샌딩 (cafe24-cat-455)
+  "pcat_01KQRPS32BHR6YX8C04J8DEEHT": "019df04d-2341-7fdf-b4c1-9ea727d09a1c",
+  // 푸셔/니퍼 (cafe24-cat-456)
+  "pcat_01KQRPS6NJ67XBGAS75WAJ5QH0": "019df04d-eb44-7b25-aafd-234e57171ed5",
+  // 클리퍼/팁커터 (cafe24-cat-457)
+  "pcat_01KQRPSA95F7YZ069CT8NVPH0K": "019df042-cab2-7857-8a4e-a85820d5da18",
+  // 더스트브러쉬 (cafe24-cat-458)
+  "pcat_01KQRPSDWV4102F43TFFQA3NCK": "019df045-7c6d-7575-b966-691b41e606b9",
+  // 브러쉬 (cafe24-cat-459)
+  "pcat_01KQRPT9THZBZ8WQ0NT3ZX8AMQ": "019df04a-67d7-75eb-a522-fa099846bd40",
+  // 핀셋 (cafe24-cat-460)
+  "pcat_01KQRPTDBA2V8T20QCZKG79WN3": "019df044-fd11-77e1-a19a-f49afb12a2a0",
+  // 글루/ 글루 드라이어 (cafe24-cat-461)
+  "pcat_01KQRPTGYM7Q1ASDRXANC76DJQ": "019df03e-f438-733c-bd63-1b78f21aa9c3",
+  // 실크/ 필러파우더/ 가위 (cafe24-cat-462)
+  "pcat_01KQRPTM8V7MD8KDE83GWPMJ71": "019df04c-e900-780a-b6cf-554861dafc4f",
+  // 젤 연장 (cafe24-cat-463)
+  "pcat_01KQRPTQK9243G2K9QXAB54APS": "019df03d-0a7e-702b-817e-b7fd2f3dccd2",
+  // 아크릴 (cafe24-cat-464)
+  "pcat_01KQRPTTXNBCKQYA97GY73NNDW": "019df045-7af2-7ddf-b642-2c29b834c6d4",
+  // 부자재 (cafe24-cat-465)
+  "pcat_01KQRPJK53CF257HQVDHDRHENC": "019df04d-631f-7e97-9478-e403aca44bf9",
+  // 팁스탠드/ 인조손 (cafe24-cat-466)
+  "pcat_01KQRPJP5W0SE0J4MEQX2VSBC3": "019df04c-a1c8-7227-8bc2-d4430e65ec93",
+  // 진열/ 컬러차트 (cafe24-cat-467)
+  "pcat_01KQRPJS3KKWD1AGPYBKYED2TS": "019df045-81b2-71c2-89a2-69339c296c89",
+  // 스틱/ 솜 (cafe24-cat-468)
+  "pcat_01KQRPJVTZ7HNFNAAE2W4RX5G6": "019df04d-631f-7e97-9478-e403aca44bf9",
+  // 멘다/ 공병 (cafe24-cat-469)
+  "pcat_01KQRPJYVQJYA051VG2WE6C1HN": "019df040-f8e8-7daf-8114-76f8abca86fc",
+  // 트레이/ 화일통 (cafe24-cat-470)
+  "pcat_01KQRPK1KNTP48H96P6ADZV0DE": "019df03d-2f98-7ae1-85ee-bf8c54d02120",
+  // 네일 피커 (cafe24-cat-471)
+  "pcat_01KQRPK47R77Z1BPV1XFT62RY7": "019df044-fd11-77e1-a19a-f49afb12a2a0",
+  // 핑거볼/세퍼레이터 (cafe24-cat-472)
+  "pcat_01KQRPSH71BKB490Q732A2K6XH": "019df00c-897f-7c5b-9657-3bb0dabde7e8",
+  // 국가자격증 (cafe24-cat-476)
+  "pcat_01KQRQ6R5G49QKDFHS8RVR5FBC": "019df04d-b882-74e8-8d4c-103316c16323",
+  // 국가자격증 세트 (cafe24-cat-477)
+  "pcat_01KQRQ6VFMGMAXY0S66ZQAANQM": "019df04d-b882-74e8-8d4c-103316c16323",
+  // 국가자격증 재료 (cafe24-cat-478)
+  "pcat_01KQRQ6YGMA894E40ZKJYMQJT0": "019df04d-b882-74e8-8d4c-103316c16323",
+  // 국가자격증 (cafe24-cat-479)
+  "pcat_01KQRQ05XD5FBXEV7D6R5S4BTS": "019df04d-db5c-77db-b7f8-55aa6f6643d9",
+  // 국가자격증 재료 (cafe24-cat-481)
+  "pcat_01KQRQ0D1DG42MSKNJV76R2QFH": "019df04d-db5c-77db-b7f8-55aa6f6643d9",
+  // 가발 (cafe24-cat-482)
+  "pcat_01KQRQ0GMW0F4KZ8JXXSZX0990": "019df03d-6d52-7771-aaaf-9fba2571987e",
+  // 덧가발 (cafe24-cat-484)
+  "pcat_01KQRQ0QNY0V45HT5PV0H6GZ9Q": "019df04c-53a9-79c2-bfed-28bdfbdfb8a5",
+  // 통가발 (cafe24-cat-485)
+  "pcat_01KQRQ0V6HRA4XBZJ9BXKSP4FF": "019df03d-6d52-7771-aaaf-9fba2571987e",
+  // 분장 소품 (cafe24-cat-486)
+  "pcat_01KQRQ65A6VEW54Q4KGN28DST2": "019df03e-a374-70b1-9d3e-0ce67dcd3087",
+  // 헤어가전 (cafe24-cat-487)
+  "pcat_01KQRQ10BV943SY21P9WR65NJ0": "019df02f-f09b-7ad8-ba0e-bbf50938a328",
+  // 드라이기 (cafe24-cat-488)
+  "pcat_01KQRQ13K7JA8BKAMEEGJ1KB4Y": "019df02f-f09b-7ad8-ba0e-bbf50938a328",
+  // 매직기/판고데기 (cafe24-cat-489)
+  "pcat_01KQRQ174B40PXWP5B0SJ77QWY": "019df008-4884-75a7-b05e-973956fa58a3",
+  // 분무기 (cafe24-cat-493)
+  "pcat_01KQRQ02JXS6ZXJVNZEPQPWYPS": "019df02b-7357-75ca-8860-0301631c8590",
+  // 노몬드 (cafe24-cat-495)
+  "pcat_01KQRQ7Q408S2CQ14Z8DKRN1JS": "019df04d-3e77-7d21-96f7-f42db807ae09",
+  // 묶고 더블로 가 (cafe24-cat-497)
+  "pcat_01KQRQ7SEZMSN5NY6RN33W5AGC": "019df04d-accb-75fa-801b-76e19f08fcc0",
+  // 100원 웰컴딜 (cafe24-cat-498)
+  "pcat_01KQRQ7VDB7HBK2GBCCYT92RHT": "019df04d-a0d6-708c-89db-4ffa3d934543",
+  // 전체상품 보기 (cafe24-cat-499)
+  "pcat_01KQRQ7XC1NWEHFWETQ8JXM4AY": "019df04d-f521-7c5e-bf29-4d137a5e666d",
+  // 속눈썹 열펌 (cafe24-cat-501)
+  "pcat_01KQRR1ZQV2PC6761S0RR3Y3RB": "019df03f-0191-7541-a92f-93471bd79dae",
+  // 반하다 롯드 (cafe24-cat-502)
+  "pcat_01KQRR22Z71597X0XTVJ5943GQ": "019df041-1367-750d-ace8-df6cfe4f759b",
+  // 누누뷰티 (cafe24-cat-503)
+  "pcat_01KQRR26JX1SDMP6TVTZ1VX577": "019df04d-b4b0-7a5e-b299-e768ec68bbf0",
+  // 인레이 (cafe24-cat-504)
+  "pcat_01KQRR2A6S8D3246YYJMGNNPPD": "019df04d-b93d-76a1-b871-9f47129fc0ea",
+  // 에루샤 (cafe24-cat-505)
+  "pcat_01KQRR2DT4GNF1WCKYAQ3PNKDD": "019df023-3526-785f-8a84-161bbc60e71c",
+  // 래쉬업 (cafe24-cat-506)
+  "pcat_01KQRR2H4AHYEJ68DYMTTN7AA2": "019df04d-69c5-7156-a9c0-ce7176b7c8ab",
+  // 래쉬홀릭 (cafe24-cat-507)
+  "pcat_01KQRR2MR1W38CE56Q2XHVH2A4": "019df04d-8ba6-7e05-944f-080ad0b9176d",
+  // 루가래쉬 (cafe24-cat-508)
+  "pcat_01KQRR2RV0TQ31PPTM0M8G9YNW": "019df03e-5da4-7019-8fb9-5095b3acb89d",
+  // 비투스 핀셋 (cafe24-cat-509)
+  "pcat_01KQRR2X1SH71ENVJ3N1RBZEYD": "019df049-62eb-746a-ae92-e633c997b162",
+  // 래쉬몬스터 (cafe24-cat-510)
+  "pcat_01KQRR3184RGBGS8W3RW6KEH9H": "019df03f-3c44-7ac2-974d-5ef1581af512",
+  // 마르시아 (cafe24-cat-513)
+  "pcat_01KQRR35553EW85X2534GP78PZ": "019df03f-8306-7695-b48a-f9a2b111ea44",
+  // 임뷰티 (cafe24-cat-514)
+  "pcat_01KQRR39BNVGE9KWGV5S99K5JJ": "019df04f-8639-7f65-a1ae-be4fb70ecfd8",
+  // 베럴왁싱 (cafe24-cat-516)
+  "pcat_01KQRR3DE94K5T4GEKD11W1PYV": "019df040-cc73-7e18-8301-f75972faa75f",
+  // 트위지스트랩 (cafe24-cat-517)
+  "pcat_01KQRR3HEK4G4JS3W93GMQABBV": "019df04d-bc56-74f2-8895-b888bb7a7831",
+  // 제이앤코 (cafe24-cat-518)
+  "pcat_01KQRR3N8AHEEC0KGQJFST8N8Y": "019df045-7280-7224-832c-e9cf65f0a68d",
+  // 이탈왁스 (cafe24-cat-519)
+  "pcat_01KQRR3S5MGZCXKPTADTMRQSB9": "019df04f-8cac-742d-8599-f1c9eda8dd6c",
+  // 라프랑스 (cafe24-cat-520)
+  "pcat_01KQRR3Z0VN1REBVSRVA5T0BF4": "019df04d-e38f-75ca-8faf-fa3cead6b40d",
+  // 비즈니스 (cafe24-cat-521)
+  "pcat_01KQRPV8P4C2B0H128NZ7EEKTH": "019df04e-0303-7d33-a92b-3a128f647026",
+  // 마케팅 (cafe24-cat-522)
+  "pcat_01KQRPVC0ANG6YE06AK8PB2DRC": "019df045-df74-7968-a4f8-68f694fdf714",
+  // 클래스 (cafe24-cat-523)
+  "pcat_01KQRPVFAEX22KZV57FBX9CFBQ": "019df04d-70d7-762d-aca2-f6d9e074872b",
+  // 브랜딩 (cafe24-cat-524)
+  "pcat_01KQRPVKGK25G4SBG8V8PK4B8H": "019df04e-01d1-71bd-be7a-c8beaa6250e7",
+  // 루가색소 (cafe24-cat-525)
+  "pcat_01KQRR43GVZG838572BM3X26QB": "019df02f-a446-73e5-be42-0a798ee02855",
+  // 타사와라 (cafe24-cat-527)
+  "pcat_01KQRR47Q8FFVPV79MEDSTB092": "019df04d-46c8-7d2e-a672-a45e8920f85f",
+  // 클레오 (cafe24-cat-528)
+  "pcat_01KQRR4BM0R0REMCVZ8DHDSBD5": "019df031-ea50-784f-8a3b-0ddd12454b3f",
+  // LED/UV 연장 (cafe24-cat-529)
+  "pcat_01KQRR4FGYBPMBD4RBZGGXQJYV": "019df03e-af14-7aca-bd1f-46f9b1ac2aeb",
+  // 패션 (cafe24-cat-530)
+  "pcat_01KQRQ7ZDQ991G3EPQ6E6VB9GP": "019df04d-96e0-79e4-90f1-395d0d705e0b",
+  // 주얼리 (cafe24-cat-531)
+  "pcat_01KQRQ82QTEC1N8P7WTYVGRE55": "019df03f-98f9-7ad1-bcc9-eab18aa67448",
+  // 의류 (cafe24-cat-532)
+  "pcat_01KQRQ86230B3YZZKPV73KHPH2": "019df031-a428-7f16-80b3-459baeb25f1b",
+  // 서비스 (cafe24-cat-533)
+  "pcat_01KQRQZCB6VEW2J5FR1TJXYC3S": "019df034-39f5-7164-91f7-57b930f6d515",
+  // 국가자격증 (cafe24-cat-535)
+  "pcat_01KQRPHJT86K84K0J7HC4YK5V1": "019df006-2f50-761e-8546-017190e2677c",
+  // 네일 젤 브랜드 (cafe24-cat-59)
+  "pcat_01KQRPK7299D301NGQRB8X19SC": "019df04d-f521-7c5e-bf29-4d137a5e666d",
+  // MAST 마스트 (cafe24-cat-594)
+  "pcat_01KQRQZG5559TSBNE6A6E6Z7V9": "019df04f-8224-778c-8321-977e5b7dce1a",
+  // 인쇄물 (cafe24-cat-595)
+  "pcat_01KQRQZKJ9VNHG3PK6M6ZGTET0": "019df04e-0517-7de6-a81c-b1c9d153fc58",
+  // 메뉴판 (cafe24-cat-596)
+  "pcat_01KQRQZQ5ZE7P1GJG2CPY9FYEX": "019df023-31ed-718c-90db-7ffeef096451",
+  // 주의사항 (cafe24-cat-597)
+  "pcat_01KQRQZTD0F4HMCMN39BWPEW8S": "019df043-0e81-77aa-8bed-ac437b914145",
+  // 미니배너 (cafe24-cat-598)
+  "pcat_01KQRQZY0Z6RTKB1JFEF6SZJ8R": "019df04d-9fa3-7628-a002-955fd7c222ac",
+  // 배너&입간판 (cafe24-cat-599)
+  "pcat_01KQRR01MMPXAF06GEDK3XWGHZ": "019df04e-0517-7de6-a81c-b1c9d153fc58",
+  // 네일 케어 (cafe24-cat-60)
+  "pcat_01KQRPRRKMRYZF0BTFSA5K9C8Z": "019df04d-eb44-7b25-aafd-234e57171ed5",
+  // 스티커 (cafe24-cat-601)
+  "pcat_01KQRR08VYYS4M5JEFEWV4APZ9": "019df037-ede3-78b4-acc5-9683f3ef0a93",
+  // 명함 (cafe24-cat-602)
+  "pcat_01KQRR0M6C8J7EB520YVDGAR8W": "019df027-a70a-7d01-92d7-da8c79867b80",
+  // 디플로마 (cafe24-cat-603)
+  "pcat_01KQRR1593MS7MK5C5XQMJJVJX": "019df04d-2fbe-70ee-912a-654e7b5e9375",
+  // 기타 (cafe24-cat-604)
+  "pcat_01KQRR18GGR3E7RTNBYSE7Y4DQ": "019df023-28ff-7ef4-8297-07302b402790",
+  // 사각 스티커 (cafe24-cat-605)
+  "pcat_01KQRR0CZ645MENTNSJWMSHBRH": "019df030-533e-7d0a-a684-72899c7acb8f",
+  // 도무송 스티커 (cafe24-cat-606)
+  "pcat_01KQRR0GNMVME2N1QCRPEY0344": "019df04d-c209-7f8e-99ec-ace3a01d37b5",
+  // 일반 명함 (cafe24-cat-608)
+  "pcat_01KQRR0QSY9AT5C3GFG4H2BZX8": "019df03a-9134-7971-a08f-a205d336108b",
+  // 특수지 명함 (cafe24-cat-609)
+  "pcat_01KQRR0V46FYERP5R7GTANCV0Y": "019df041-15c4-77b1-9f0b-ebb519c7e972",
+  // 프리미엄 명함 (cafe24-cat-611)
+  "pcat_01KQRR0YQW1S8B3GKWQ906WVJ8": "019df027-a70a-7d01-92d7-da8c79867b80",
+  // 후가공 명함 (cafe24-cat-612)
+  "pcat_01KQRR11RV1HSZ3A8GCM1XW90M": "019df044-92b4-7ad1-9ca2-16902707e656",
+  // 세트 (cafe24-cat-616)
+  "pcat_01KQRPFA5TJTE600Z7P83Y8TWD": "019df028-2f85-791f-bc2f-4525461b7904",
+  // 샵 간편식 (cafe24-cat-618)
+  "pcat_01KQRR1H9974ZTM79Q12P11MTV": "019df04d-9d15-7012-8aa2-cf8c15793d0e",
+  // 오직미 (cafe24-cat-619)
+  "pcat_01KQRR1MT7G63Z2GS40YF2HWHP": "019df04d-9d15-7012-8aa2-cf8c15793d0e",
+  // 네일 도구 (cafe24-cat-62)
+  "pcat_01KQRPSNKSCXB32J5XQGWSTM73": "019df04a-67d7-75eb-a522-fa099846bd40",
+  // 스티커 (cafe24-cat-621)
+  "pcat_01KQRPJ5RGCHSMFA6K5M1ACSVB": "019df04d-a4c7-70ba-8db5-ac75e16a30f8",
+  // 전동 기기 (cafe24-cat-622)
+  "pcat_01KQRPSREEM9H3R2VZB6F60Y7G": "019df04d-2085-75b1-a9cf-744046abbb5e",
+  // 램프 (cafe24-cat-623)
+  "pcat_01KQRPSW05RBDT6AKF4F1Q8HNX": "019df04d-2085-75b1-a9cf-744046abbb5e",
+  // 드릴 (cafe24-cat-624)
+  "pcat_01KQRPSZ90N78TA3ZK1NVP4BA5": "019df04c-dbfe-77b2-8ff9-cccd9737ce47",
+  // 흡진기 (cafe24-cat-625)
+  "pcat_01KQRPT2ZR5B6TRDKH3NR60TZK": "019df005-fb7c-77ee-aaf2-b030be0d64db",
+  // 비트 (cafe24-cat-626)
+  "pcat_01KQRPT66YW5RCTZGBEWM1C2NS": "019df040-8883-7fb2-a503-f31207a887f3",
+  // 그라시아 (cafe24-cat-627)
+  "pcat_01KQRPKA0DMZ9M5KXT4BAGGX6X": "019df045-7dbe-77cc-b263-2d713a642489",
+  // 프롬 더 네일 (cafe24-cat-628)
+  "pcat_01KQRPKD0VAC544MPWCZDGXHKW": "019df04e-1eb8-70cb-a2d8-4e3f5af666c5",
+  // 스윗온 (cafe24-cat-630)
+  "pcat_01KQRPKFYVH4RJMT66VEWXYNCN": "019df03a-d64a-7964-ba39-b394168e81ac",
+  // 루벤스 (cafe24-cat-631)
+  "pcat_01KQRPKJZD45YS8N0R5HH73JPS": "019df043-2317-75a7-8e54-3ed0745b9ee7",
+  // 오페라 (cafe24-cat-632)
+  "pcat_01KQRPKNPZTECK550NFKCM91J4": "019df04d-2085-75b1-a9cf-744046abbb5e",
+  // 뷰닉스 (cafe24-cat-633)
+  "pcat_01KQRPKRVBB7YBK5WF3NXJAHY2": "019df045-4278-7198-b290-b3ede33f6bfc",
+  // 아쁘레쑤 (cafe24-cat-634)
+  "pcat_01KQRPKVW5FGHA7ZDZD0N0W6ZM": "019df04d-0fe2-7a1d-84c4-39055d97e17c",
+  // 씨씨 (cafe24-cat-635)
+  "pcat_01KQRPKZ01PNE8YQ9TTHHRECPG": "019df03d-47ac-78cb-bc23-c87e6ee6bf62",
+  // 모스티브 (cafe24-cat-636)
+  "pcat_01KQRPM1XPD8GEPJBYX44XM7KF": "019df04f-8f0c-7e17-bbf2-856855d93e7c",
+  // 더젤 (cafe24-cat-637)
+  "pcat_01KQRPM4R5S4GZD7RCV2YQM43D": "019df04d-db06-7426-afb7-7186f084b4ef",
+  // 앞치마 (cafe24-cat-638)
+  "pcat_01KQRQ8962ZYNAPVWRNHQRWXGV": "019df04d-96e0-79e4-90f1-395d0d705e0b",
+  // 원피스 앞치마 (cafe24-cat-639)
+  "pcat_01KQRQYSG8P4FSZCQXT9XSY2QK": "019df04d-96e0-79e4-90f1-395d0d705e0b",
+  // X형H형 앞치마 (cafe24-cat-640)
+  "pcat_01KQRQYXWXD1BZAFD1MN33MJAG": "019df045-5e84-770f-b08a-1da20cf49f61",
+  // 방수 앞치마 (cafe24-cat-641)
+  "pcat_01KQRQZ1GC38TXKS677R1E9G8W": "019df04d-96e0-79e4-90f1-395d0d705e0b",
+  // 멜빵 앞치마 (cafe24-cat-642)
+  "pcat_01KQRQZ4TMAZYM32H0TANR9F58": "019df040-79ce-7062-970d-7bddf30f7d2f",
+  // 젤로젤로 (cafe24-cat-643)
+  "pcat_01KQRPM7CRQY9V5HY76K01PR57": "019df04d-c4d3-7623-9ceb-5c189f68de87",
+  // 샴푸 (cafe24-cat-651)
+  "pcat_01KQRQ1MZJ28YDV2XQ78RQR7BM": "019df006-c978-754e-b546-48ea01cd1167",
+  // 모어젤 (cafe24-cat-652)
+  "pcat_01KQRPMA413YN2FCMH562AKNVM": "019df04d-b7ed-79fc-bead-4259026dcdf2",
+  // 디젤 (cafe24-cat-653)
+  "pcat_01KQRPMDEAM2W7BCM4CJ459R51": "019df04d-fd2f-7d2d-ad1a-67ae053fe04e",
+  // 메이유어 (cafe24-cat-654)
+  "pcat_01KQRPMGC91KPJF8ZWGKEXMGXD": "019df04d-f962-71df-897b-18e58e5476df",
+  // 요고마요 (cafe24-cat-655)
+  "pcat_01KQRPMK3P3ZDGCJ6APM37N40P": "019df04d-8d95-711a-879b-7b42d1a09414",
+  // 요거트젤 (cafe24-cat-656)
+  "pcat_01KQRPMNV159FARFTM8Y3QMD42": "019df04e-090e-79d9-9c08-4bc37c88e148",
+  // 다이아미 (cafe24-cat-657)
+  "pcat_01KQRPMRRX0VD7W9A9T1E2AQWF": "019df04f-9721-7592-b6e6-6ad8f375082d",
+  // 키스뉴욕 (cafe24-cat-658)
+  "pcat_01KQRPMVSVGV9S90AXMT7SMNBK": "019df02e-a91d-7ecd-9ce4-d59b3926c58d",
+  // 바이뮤즈 (cafe24-cat-660)
+  "pcat_01KQRPMYE81AJWRVMNH564NZYA": "019df04c-7d90-70ed-abd8-7a12b04dc00b",
+  // 띵크 오브 네일 (cafe24-cat-665)
+  "pcat_01KQRPN5RWW0PXKP6ST6EHD5D3": "019df02e-a081-7942-8a3a-67f75b0fda49",
+  // 유니코 (cafe24-cat-667)
+  "pcat_01KQRPN8PB9T3M05A6WHF9SX3B": "019df045-b871-74e7-b3d7-6305b46093d6",
+  // 비블라 (cafe24-cat-669)
+  "pcat_01KQRPNBDZ3RG6BJDGQ3F4554V": "019df02a-321f-7649-add3-d55fe0a4ad20",
+  // 가구 (cafe24-cat-67)
+  "pcat_01KQRQ745W56ZX49GESZBAGYSE": "019df040-834f-700a-b9ac-1da0d116cf78",
+  // 뷰젤 (cafe24-cat-670)
+  "pcat_01KQRPNE2DNS1V4SRFG10B5533": "019df04d-7c3d-73da-85bb-d40f56f1ffb1",
+  // 세체 (cafe24-cat-671)
+  "pcat_01KQRPNH33HZ10TK8DVEDY5BXV": "019df040-4a81-72b7-9b58-a7c60cc96def",
+  // 켄지코 (cafe24-cat-672)
+  "pcat_01KQRPNKTJ5MBDKBM3X4PP203W": "019df00a-bc5e-7ef3-b1f6-acbeabb689fb",
+  // 베씨 (cafe24-cat-675)
+  "pcat_01KQRPNPF13AHD8PZZE2A6RA3H": "019df04c-7aed-7250-9517-d309caea9405",
+  // 빅사이즈 (cafe24-cat-676)
+  "pcat_01KQRQZ8EE1V05CDND6PHAAHM8": "019df034-0885-7f90-9a25-06a2bb9bbf71",
+  // 화홍 (cafe24-cat-678)
+  "pcat_01KQRPNS6CSWF03YB3671KPRP8": "019df037-f636-7f3a-8866-5b79ed7228a2",
+  // 소품 (cafe24-cat-68)
+  "pcat_01KQRQ7832C05K9N56BQ49SKS1": "019df04d-8c93-777e-9262-a0d7a8eea3ce",
+  // 퍼스트스트릿 (cafe24-cat-685)
+  "pcat_01KQRPNYZ0Y2PVHS2S8H0ARGNW": "019df04d-f521-7c5e-bf29-4d137a5e666d",
+  // 케미젤 (cafe24-cat-686)
+  "pcat_01KQRPP1WMGXXD9Z1SJETJ74RR": "019df03c-961e-7f85-a3f1-4a7a7e04f49b",
+  // 엔리안 (cafe24-cat-687)
+  "pcat_01KQRPP4M179MFC445S5NHD7RF": "019df041-7a51-7906-a263-7d98e1522f7f",
+  // 하모니 (cafe24-cat-688)
+  "pcat_01KQRPP78QZDZTME6BTZDB60QY": "019df04d-ca70-75e1-8aae-55af723b11bc",
+  // 메모리 (cafe24-cat-689)
+  "pcat_01KQRPPA9F8PJJPYHT4SDX7XYN": "019df003-03d0-7c0c-b6f3-3cdaf293d78e",
+  // 캣워크 (cafe24-cat-691)
+  "pcat_01KQRPPFYVNVZS2F3DM870W56H": "019df02f-b590-78af-8f3e-ce7041237d2c",
+  // 파셋 (cafe24-cat-692)
+  "pcat_01KQRPPK8TTMCF6W3VHDH279BB": "019df04f-87ea-7111-aff1-154e42f5603d",
+  // 유즈미 (cafe24-cat-693)
+  "pcat_01KQRPPP9MHBM7ERB7ZXVSZYRW": "019df04c-cdec-7ebd-a793-22fca5bb3334",
+  // 민생회복 소비쿠폰 (cafe24-cat-695)
+  "pcat_01KQRR1RGK4ZXMPYB1WPFWTGVS": "019df02a-6e34-7c6a-bdb9-39a5d8861105",
+  // 베드 (cafe24-cat-70)
+  "pcat_01KQRQ7EQAG3B097X3A080WV83": "019df031-7da7-7f31-bb0d-12fff901a38e",
+  // 발라젤 (cafe24-cat-701)
+  "pcat_01KQRPPSAD27XW6XEQ2R8S6TF5": "019df04d-f433-785b-b254-e3fe47f9d51f",
+  // 젤앤젤 (cafe24-cat-703)
+  "pcat_01KQRPPW1ZRYGEE8566ZP4ZSM2": "019df04f-942f-7ee9-a998-39eb044b1125",
+  // 로지힙 (cafe24-cat-704)
+  "pcat_01KQRPPYPGP4GGTVKPDKQ4YVF5": "019df04d-ca4f-72a8-b1a6-5a6ab97e7980",
+  // 수짜젤 (cafe24-cat-705)
+  "pcat_01KQRPQ1M9PCXKY2B2XSYEGX2G": "019df04c-fad8-7d70-a8f9-de9c04f2aa13",
+  // 미고딕 (cafe24-cat-706)
+  "pcat_01KQRPQ4BQKP8TQFBB85YH9M62": "019df04d-c9ca-78fa-9ca3-857c3e4a7423",
+  // 미라클 (cafe24-cat-707)
+  "pcat_01KQRPQ7CJSQF9XGR0YR5C16RN": "019df005-fb7c-77ee-aaf2-b030be0d64db",
+  // 블루크로스 (cafe24-cat-708)
+  "pcat_01KQRPQA3ZAF93XHFQEGGSWSD0": "019df04c-aa53-7325-9862-6ec9280edb4b",
+  // 디보크 (cafe24-cat-709)
+  "pcat_01KQRPQCRGD92ZDDN0BRC4DMY5": "019df04e-21d8-783e-be3d-e1f19ef9a7f3",
+  // 웨건&트롤리&카트 (cafe24-cat-71)
+  "pcat_01KQRQ7HN03T3SQA6R1Y31XZ20": "019df03d-2f98-7ae1-85ee-bf8c54d02120",
+  // 캔디젤 (cafe24-cat-710)
+  "pcat_01KQRPQH8B46Z1BM5TW0XEEQKK": "019df04d-bbb7-7853-8851-cb1216d6230a",
+  // 캣츠미 (cafe24-cat-711)
+  "pcat_01KQRPQKZHCM22ZK1TSPWZ08GD": "019df04d-73aa-7afa-8c14-4356f64e0e22",
+  // 블랑드블루 (cafe24-cat-713)
+  "pcat_01KQRPQSYBW8KPY99JGMVW1T4K": "019df04f-97ad-7282-82ea-b87bb594eab9",
+  // 피오떼 (cafe24-cat-719)
+  "pcat_01KQRPRCKAF6J5RBQSYTN4KBYY": "019df04e-1ea6-7343-9967-6483a85040c5",
+  // 베리굿네일 (cafe24-cat-720)
+  "pcat_01KQRPRFKV2NSZ9T8SD546NQCB": "019df04f-8987-72ed-9863-1641ef7ee127",
+  // 아우라글리터 (cafe24-cat-722)
+  "pcat_01KQRPRNJQ1VTY7ERG3PJ73T46": "019df045-6b6c-75a4-a743-447585f37a2f",
+  // 멀티탭 (cafe24-cat-727)
+  "pcat_01KQRQ7MZ6RW8QYNKXEE2ZW9FZ": "019df041-7502-7073-aa4f-961853ac04df",
+  // 브랜드 / 소카테고리 (cafe24-cat-728)
+  "pcat_01KQRR1W4DRS58KG4SKEYGMEY7": "019df04f-8cac-742d-8599-f1c9eda8dd6c",
+  // 이벤트 (cafe24-cat-729)
+  "pcat_01KQRR4KDYR4ZPSC1M191DKJ3W": "019df04d-c42b-79b4-8600-fb6f6bec8738",
+  // 네일 초특가 (cafe24-cat-730)
+  "pcat_01KQRR4QM8E0393YC8891QNG9M": "019df04d-6ef7-7856-9d59-55733310ac93",
+  // 핀셋 초특가 (cafe24-cat-732)
+  "pcat_01KQRR4VTRHCJSNK953BP52Q8C": "019df03b-963a-7c72-be5e-c12f775e2933",
+  // 헤어 초특가 (cafe24-cat-733)
+  "pcat_01KQRR5012173CTQTBTV2VS9BE": "019df045-5cf9-72b2-acd9-0cd6cb98c6f7",
+  // 인테리어,소품 초특가 (cafe24-cat-734)
+  "pcat_01KQRR541F4ZZMNF2FNJXY1NE3": "019df04d-c42b-79b4-8600-fb6f6bec8738",
+  // 속눈썹펌 롯드 추천관 (cafe24-cat-736)
+  "pcat_01KQRR57YAH879V1PEY45ABNXW": "019df03b-561e-724b-8ece-9efd8422b7d2",
+  // 연장 글루 추천관 (cafe24-cat-737)
+  "pcat_01KQRR5BV6PBDF9ZCK1RQW9E7D": "019df02a-7d5c-7b71-9422-b2b563417b82",
+  // 캐릭터 땅콩 브러쉬 모음전 (cafe24-cat-738)
+  "pcat_01KQRR5G1PWXMQV59QWMXT5DNA": "019df045-6f83-7222-a98d-61cf7c4f2f30",
+  // 속눈썹 영양제 추천관 (cafe24-cat-739)
+  "pcat_01KQRR5M1XH8WJD2ZJ8KJBTFA7": "019df03c-9de6-78bb-a977-e0ac59a0edd2",
+  // 신상 (cafe24-cat-81)
+  "pcat_01KQRR5R8A40H67TSSFZQ27513": "019df04f-8224-778c-8321-977e5b7dce1a",
+  // 베스트 (cafe24-cat-82)
+  "pcat_01KQRR5W5JG7CRZ50YV860T1WT": "019df04d-f93f-7d10-993c-a5c1669bec35",
+  // 클래스 (cafe24-cat-86)
+  "pcat_01KQRR60BNW1EGTZBXXBJ02YZV": "019df045-8325-7534-b1e4-d36f475694a4",
+  // 서울 (cafe24-cat-99)
+  "pcat_01KQRR73GPHJMP9Y7F9PMQCRGD": "019df02f-136e-7daf-a3c9-66f2565a3f2e",
 }
