@@ -200,6 +200,7 @@ export class UserServiceSsoProviderService extends AbstractAuthModuleProvider {
 
     // user-service 가 발급한 access/refresh 를 함께 보관해 callback route 가 storefront 에 surface 한다.
     // storefront 가 user-service API 를 호출할 때 사용 (단일 OIDC code-exchange 로 두 토큰을 모두 발급).
+    // redirect_to: state에 보관된 값을 매 로그인마다 덮어쓴다 (null이면 이전 값 제거).
     const accessTokenExpiresAt = Date.now() + tokens.expires_in * 1000;
     const providerMetadata: Record<string, unknown> = {
       iss: claims.iss,
@@ -207,6 +208,7 @@ export class UserServiceSsoProviderService extends AbstractAuthModuleProvider {
       access_token: tokens.access_token,
       access_token_expires_at: accessTokenExpiresAt,
       ...(tokens.refresh_token ? { refresh_token: tokens.refresh_token } : {}),
+      redirect_to: state.redirect_to ?? null,
     };
 
     let authIdentity;
