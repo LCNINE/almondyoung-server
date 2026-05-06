@@ -490,10 +490,10 @@ export default function ProductActions({
           {!allInStock && selectedItems.length > 0 ? (
             <Button
               variant="default"
-              className="h-12 w-full cursor-pointer gap-2 text-base font-medium"
+              className="w-full h-12 gap-2 text-base font-medium cursor-pointer"
               data-testid="restock-alert-button"
             >
-              <Bell className="h-5 w-5" />
+              <Bell className="w-5 h-5" />
               재입고 알림 받기
             </Button>
           ) : ( ... )} */}
@@ -555,6 +555,7 @@ export default function ProductActions({
       <CartAddedModal
         open={showCartModal}
         onOpenChange={setShowCartModal}
+        isPending={isPending}
         product={product}
       />
     </>
