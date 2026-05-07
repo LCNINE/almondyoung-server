@@ -325,9 +325,9 @@ export function setup(infra: SharedInfra) {
       AUTH_SECRET: idpAuthSecret,
       MEDUSA_API_KEY: medusaApiKey.value,
       // CORS
-      STORE_CORS: [url("www"), "https://almondyoung.com", "https://www.almondyoung.com"].join(","),
+      STORE_CORS: [url("www"), "https://almondyoung.com", "https://www.almondyoung.com", "http://localhost:8001"].join(","),
       ADMIN_CORS: [url("medusa"), "http://localhost:9000"].join(","),
-      AUTH_CORS: [url("medusa"), url("www"), "https://almondyoung.com", "https://www.almondyoung.com"].join(","),
+      AUTH_CORS: [url("medusa"), url("www"), "https://almondyoung.com", "https://www.almondyoung.com", "http://localhost:8001"].join(","),
       // Internal service URLs
       FRONTEND_URL: url("www"),
       USER_SERVICE_URL: idpUserServiceUrl,
@@ -395,6 +395,7 @@ export function setup(infra: SharedInfra) {
       NEXT_PUBLIC_BASE_URL: url("www"),
       NEXT_PUBLIC_DEFAULT_REGION: "kr",
       NEXT_PUBLIC_WALLET_WEB_URL: url("wallet-web"),
+      NEXT_PUBLIC_MEDUSA_MEMBERSHIP_GROUP_ID: "cusgroup_01KFZ12A1M344F6HKGDV35J28A",
       NEXT_PUBLIC_BACKEND_DOMAIN: backendRootDomain,
       BACKEND_DOMAIN: backendRootDomain,
       NEXT_PUBLIC_USE_RAILWAY_BACKEND: "true",
@@ -404,6 +405,10 @@ export function setup(infra: SharedInfra) {
       // 인증 일원화: auth-web origin + user-service 직접 호출(server-side).
       AUTH_WEB_ORIGIN: idpAuthWebUrl,
       USER_SERVICE_URL: idpUserServiceUrl,
+      // restore-token 라우트: OIDC refresh_token grant 로 user-service 토큰 회전.
+      // OIDC_CLIENT_ID는 코드 기본값 "medusa-storefront" 사용.
+      OIDC_ISSUER_URL: idpUserServiceUrl,
+      OIDC_CLIENT_SECRET: medusaOidcClientSecret.value,
       // 형제 서브도메인 간 세션 공유 (auth-web과 동일 값이어야 함).
       PARENT_COOKIE_DOMAIN: `.${baseDomain}`,
       PARENT_COOKIE_SECURE: "true",
