@@ -10,9 +10,7 @@ export const getThumbnailUrl = (thumbnail: string) => {
   const fileBase = getBackendBaseUrl("fs")
 
   if (thumbnail.startsWith("http://") || thumbnail.startsWith("https://")) {
-    const fileIdMatch = thumbnail.match(
-      /\/files\/(?:public\/)?([a-f0-9-]{36})$/i
-    )
+    const fileIdMatch = thumbnail.match(/\/files\/(?:public\/)?([^/?#\s]+)$/)
     if (fileIdMatch && fileBase) {
       const fileId = fileIdMatch[1]
       return `${fileBase}/files/public/${fileId}`

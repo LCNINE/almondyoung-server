@@ -1,9 +1,8 @@
 import { cn } from "@/lib/utils"
-import Image from "next/image"
 import React from "react"
 
 import PlaceholderImage from "@/icons/placeholder-image"
-import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
+import ThumbnailImage from "./thumbnail-image"
 import { StoreProductImage } from "@medusajs/types"
 
 type ThumbnailProps = {
@@ -50,15 +49,7 @@ const ImageOrPlaceholder = ({
   size,
 }: Pick<ThumbnailProps, "size"> & { image?: string }) => {
   return image ? (
-    <Image
-      src={getThumbnailUrl(image)}
-      alt="Thumbnail"
-      className="absolute inset-0 object-cover object-center"
-      draggable={false}
-      quality={50}
-      sizes="(max-width: 576px) 280px, (max-width: 768px) 360px, (max-width: 992px) 480px, 800px"
-      fill
-    />
+    <ThumbnailImage image={image} size={size} />
   ) : (
     <div className="absolute inset-0 flex h-full w-full items-center justify-center">
       <PlaceholderImage size={size === "small" ? 16 : 24} />
