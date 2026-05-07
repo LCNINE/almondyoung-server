@@ -55,6 +55,7 @@ import { ChannelListingClient } from './services/clients/channel-listing.client'
 import { PendingOrderService } from './services/pending-order.service';
 import { InboxService } from './services/inbox.service';
 import { OutboxDispatcherService } from './services/outbox-dispatcher.service';
+import { PollingChangeHashService } from './services/polling-change-hash.service';
 
 // PIM-Medusa 동기화 서비스
 // PIMCLIENT: Removed to enforce MSA boundary - no sync calls between internal services
@@ -162,6 +163,9 @@ import { OrderPollerOrchestrator } from './services/order-collection/order-polle
     // Inbox/Outbox 패턴 서비스
     InboxService,
     OutboxDispatcherService,
+
+    // 폴링 dedupe (외부 데이터 변경 감지)
+    PollingChangeHashService,
 
     // PIM-Medusa 동기화
     // PIMCLIENT: Removed to enforce MSA boundary
