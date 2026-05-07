@@ -11,6 +11,7 @@ import {
   boolean,
   uniqueIndex,
   index, // ← index 추가
+  primaryKey,
 } from 'drizzle-orm/pg-core';
 
 import { sql } from 'drizzle-orm';
@@ -383,6 +384,27 @@ export const migrationFailures = pgTable(
   ],
 );
 
+// 🔹 폴링 기반 외부 데이터 변경 감지용 해시 테이블 (어댑터 공용)
+// 외부 시스템을 폴링할 때 같은 리소스가 반복 반환되어도 실제 내용이 바뀌지 않으면
+// 다운스트림 이벤트를 발행하지 않도록 dedupe하기 위한 범용 저장소.
+// (source, resourceType, resourceId)가 키, hash는 페이로드의 안정적 sha256.
+// 신규 폴링 소스/리소스 타입을 추가할 때 별도 테이블 없이 재사용한다.
+export const pollingChangeHashes = pgTable(
+  'polling_change_hashes',
+  {
+    source: varchar('source', { length: 50 }).notNull(), // 'medusa', 'naver', 'coupang' …
+    resourceType: varchar('resource_type', { length: 50 }).notNull(), // 'order', 'product' …
+    resourceId: varchar('resource_id', { length: 255 }).notNull(), // 외부 시스템상의 식별자
+    hash: varchar('hash', { length: 64 }).notNull(), // sha256 hex
+    lastSeenAt: timestamp('last_seen_at').notNull().defaultNow(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.source, table.resourceType, table.resourceId] }),
+    index('idx_polling_hashes_last_seen').on(table.lastSeenAt),
+  ],
+);
+
 // 🔹 Cafe24 회원 매핑 테이블 (cafe24MemberId → userId/email)
 // user-service HTTP 의존 없이 로컬에서 조회 가능하도록 저장
 // Kafka Cafe24Linked 이벤트 수신 시 upsert, Cafe24Unlinked 시 delete
@@ -411,6 +433,7 @@ export const channelAdapterSchema = {
   migrationProgress,
   migrationFailures,
   cafe24MemberMappings,
+  pollingChangeHashes,
 } as const;
 
 export type ChannelAdapterSchema = typeof channelAdapterSchema;
