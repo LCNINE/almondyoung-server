@@ -374,8 +374,8 @@ export function setup(infra: SharedInfra) {
       NOTIFICATION_SERVICE_URL: url("notification"),
       CHANNEL_ADAPTER_SERVICE_URL: url("channel-adapter"),
       ADMIN_DOMAIN: domain("admin"),
-      // OIDC (admin-web RP). client_id 는 시더와 동일하게 'admin-web'.
       OIDC_ISSUER_URL: idpUserServiceUrl,
+      OAUTH_ISSUER_URL: idpUserServiceUrl,
       OIDC_AUTHORIZATION_URL: $interpolate`${idpAuthWebUrl}/oauth/authorize`,
       OIDC_CLIENT_ID: "admin-web",
       OIDC_CLIENT_SECRET: adminWebOidcClientSecret.value,
