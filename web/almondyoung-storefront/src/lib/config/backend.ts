@@ -14,13 +14,13 @@ export type BackendService =
 
 const SERVICE_SUBDOMAINS: Record<BackendService, string> = {
   users: "user",
-  wms: "almond",
+  wms: "core",
   channelAdapter: "channel-adapter",
   fs: "file",
   medusa: "medusa",
   membership: "membership",
   notification: "notification",
-  pim: "almond",
+  pim: "core",
   search: "search",
   wallet: "wallet",
   anly: "analytics",
