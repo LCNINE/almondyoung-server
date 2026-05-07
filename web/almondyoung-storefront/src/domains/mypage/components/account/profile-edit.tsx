@@ -242,7 +242,7 @@ export function ProfileEdit({
       </Card>
 
       {/* 소셜 계정 연동 */}
-      <SocialLinkSection identitiesState={identitiesState} />
+      {/* <SocialLinkSection identitiesState={identitiesState} /> */}
 
       {/* 휴대폰 번호 변경 */}
       <PhoneSection
