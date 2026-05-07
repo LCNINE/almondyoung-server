@@ -8,6 +8,7 @@ import { Star } from "lucide-react"
 import React, { useEffect, useMemo, useState } from "react"
 import ProductPrice from "./price"
 import Thumbnail from "../thumbnail"
+import { Quantity } from "./quantity"
 
 type RatingSummary = {
   averageRating: number
@@ -192,6 +193,8 @@ export default function ProductCard({
                 isMembershipOnly={isMembershipOnly}
               />
             )}
+
+            <Quantity product={product} />
           </div>
         </div>
       </div>
