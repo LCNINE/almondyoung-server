@@ -13,6 +13,7 @@ interface Props {
   children?: React.ReactNode
 }
 
+// 상품명, 브랜드, 찜하기 버튼, 리뷰 평점 등을 보여주는 컴포넌트
 export function ProductSummary({
   brand,
   productName,
