@@ -11,7 +11,7 @@ type ProductSortOption =
   | "sales_desc"
 
 // (/store/products-sorted) 정렬 타입
-type ProductSortBy = "min_price" | "max_price" | "sales_count"
+type ProductSortBy = "min_price" | "max_price" | "sales_count" | "review_count"
 type ProductSortOrder = "asc" | "desc"
 
 export type {

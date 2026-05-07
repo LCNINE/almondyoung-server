@@ -32,7 +32,10 @@ export default async function PaginatedProducts({
   }
 
   const isSorted =
-    sortBy === "price_asc" || sortBy === "price_desc" || sortBy === "sales_desc"
+    sortBy === "price_asc" ||
+    sortBy === "price_desc" ||
+    sortBy === "sales_desc" ||
+    sortBy === "review_count_desc"
 
   const { response } = isSorted
     ? await listProductsSorted({
@@ -42,7 +45,9 @@ export default async function PaginatedProducts({
             ? "min_price"
             : sortBy === "price_desc"
               ? "max_price"
-              : "sales_count",
+              : sortBy === "review_count_desc"
+                ? "review_count"
+                : "sales_count",
         order: sortBy === "price_asc" ? "asc" : "desc",
         countryCode,
         categoryId: categoryIds,
