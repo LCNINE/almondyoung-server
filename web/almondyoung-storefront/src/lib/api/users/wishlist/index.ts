@@ -1,7 +1,6 @@
 "use server"
 
 import { cache } from "react"
-import { revalidateTag } from "next/cache"
 import type { WishlistResponse } from "@lib/types/dto/users"
 import { api } from "../../api"
 
@@ -29,13 +28,11 @@ export const getWishlist = async (): Promise<WishlistResponse[]> => {
 export const toggleWishlist = async (
   productId: string
 ): Promise<WishlistToggleResult> => {
-  const result = await api<WishlistToggleResult>("users", "/wishlist", {
+  return api<WishlistToggleResult>("users", "/wishlist", {
     method: "POST",
     body: { productId },
     withAuth: true,
   })
-  revalidateTag("wishlist")
-  return result
 }
 
 /**
@@ -49,7 +46,7 @@ export const getWishlistByProductId = cache(
       {
         method: "GET",
         withAuth: true,
-        next: { tags: ["wishlist"] },
+        cache: "no-store",
       }
     )
 
