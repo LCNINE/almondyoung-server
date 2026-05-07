@@ -10,6 +10,7 @@ const ProductSortIndex = model
       max_price: model.bigNumber().default(0),
       sales_count: model.number().default(0),
       view_count: model.number().default(0),
+      review_count: model.number().default(0),
       currency_code: model.text().default('krw'),
     },
   )
@@ -21,6 +22,10 @@ const ProductSortIndex = model
     {
       on: ['sales_count'],
       name: 'idx_sort_sales_count',
+    },
+    {
+      on: ['review_count'],
+      name: 'idx_sort_review_count',
     },
     {
       on: ['product_id', 'currency_code'],

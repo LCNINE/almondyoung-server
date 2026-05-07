@@ -13,6 +13,7 @@ export type SortOptions =
   | "price_asc"
   | "price_desc"
   | "sales_desc"
+  | "review_count_desc"
 
 type SortProductsProps = {
   sortBy: SortOptions
@@ -24,6 +25,7 @@ const sortOptions = [
   { value: "sales_desc", label: "인기순" },
   { value: "price_asc", label: "낮은가격순" },
   { value: "price_desc", label: "높은가격순" },
+  { value: "review_count_desc", label: "리뷰많은순" },
 ]
 
 const SortProducts = ({ sortBy, setQueryParams }: SortProductsProps) => {

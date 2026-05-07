@@ -8,6 +8,7 @@ type UpsertSortIndexData = {
   max_price?: number;
   sales_count?: number;
   view_count?: number;
+  review_count?: number;
 };
 
 type ProductSortIndexRecord = {
@@ -17,6 +18,7 @@ type ProductSortIndexRecord = {
   max_price: number;
   sales_count: number;
   view_count: number;
+  review_count: number;
   currency_code: string;
 };
 
@@ -62,6 +64,7 @@ class ProductSortingModuleService extends MedusaService({ ProductSortIndex }) {
       if (data.max_price !== undefined) updateData.max_price = data.max_price;
       if (data.sales_count !== undefined) updateData.sales_count = data.sales_count;
       if (data.view_count !== undefined) updateData.view_count = data.view_count;
+      if (data.review_count !== undefined) updateData.review_count = data.review_count;
 
       return await this.methods.updateProductSortIndices(updateData);
     }
