@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { cookies } from "next/headers"
 import { requireBackendBaseUrl } from "@/lib/config/backend"
+import { restoreAccessToken } from "@/lib/auth/user-service"
 
 const isIpHost = (hostname: string) => {
   return /^(?:\d{1,3}\.){3}\d{1,3}$/.test(hostname) || hostname.includes(":")
@@ -113,10 +114,11 @@ async function restoreTokens(
   failureResponse: NextResponse
 ): Promise<NextResponse> {
   const tokenCookieDomain = getSecondLevelDomain(request.nextUrl.hostname)
+  let refreshToken: string | undefined
 
   try {
     const cookieStore = await cookies()
-    const refreshToken = cookieStore.get("refreshToken")?.value
+    refreshToken = cookieStore.get("refreshToken")?.value
     const currentMedusaJwt = cookieStore.get("_medusa_jwt")?.value
 
     if (!refreshToken) {
@@ -160,7 +162,30 @@ async function restoreTokens(
 
     return response
   } catch (error) {
-    console.error("Restore token error:", error)
+    // oauth_tokens 에 없는 레거시 JWT refreshToken → deprecated /auth/restore-token 으로 accessToken 재발급.
+    // 성공 시 accessToken 교체(refreshToken 은 JWT 그대로), 실패 시 쿠키 클리어 후 재로그인.
+    const isStaleToken =
+      error instanceof Error && error.message.includes("invalid refresh_token")
+
+    if (isStaleToken && refreshToken) {
+      const legacyAccessToken = await restoreAccessToken(refreshToken).catch(
+        () => null
+      )
+      if (legacyAccessToken) {
+        if (tokenCookieDomain) {
+          response.cookies.set("accessToken", "", { maxAge: -1, path: "/" })
+        }
+        response.cookies.set("accessToken", legacyAccessToken, {
+          path: "/",
+          maxAge: 60 * 15,
+          ...(tokenCookieDomain ? { domain: tokenCookieDomain } : {}),
+        })
+        return response
+      }
+      console.warn("Restore token: stale refresh token, clearing session")
+    } else {
+      console.error("Restore token error:", error)
+    }
 
     const referer = request.headers.get("referer")
     let isMainPage = false
