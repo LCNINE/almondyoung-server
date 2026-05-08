@@ -7,8 +7,9 @@ import { SeedResult, SeedReport, SeederFunction } from './shared/types';
 import { Logger } from './shared/logger';
 import { seedWMS } from './seeders/01-wms.seeder';
 import { seedPIM } from './seeders/02-pim.seeder';
-import { seedUserService, type OAuthClientSeed } from './seeders/03-user-service.seeder';
+import { seedUserService } from './seeders/03-user-service.seeder';
 import { seedMembership } from './seeders/04-membership.seeder';
+import { buildOAuthClientSeeds } from './shared/oauth-client-seeds';
 import { seedWallet } from './seeders/05-wallet.seeder';
 import { seedFileService } from './seeders/06-file-service.seeder';
 import { seedNotification } from './seeders/07-notification.seeder';
@@ -38,29 +39,7 @@ interface EnvConfig {
   SEED_VERBOSE: boolean;
 }
 
-/**
- * RP 별 OAuth client 시드. 새 RP 가 추가되면 항목을 늘리면 된다.
- * - clientSecret 은 env 로 주입하는 것이 권장. 미주입 시 시더가 1회 생성·로그하고, 그 이후 실행에서는
- *   `ON CONFLICT ... UPDATE` 가 secret 을 덮지 않으므로 안정적이다.
- * - URL 은 환경별로 다르므로 *_BASE_URL env 가 비어 있으면 해당 client 를 시드하지 않는다.
- */
-function buildOAuthClientSeeds(): OAuthClientSeed[] {
-  const seeds: OAuthClientSeed[] = [];
 
-  const adminWebBase = process.env.ADMIN_WEB_BASE_URL;
-  if (adminWebBase) {
-    seeds.push({
-      clientId: 'admin-web',
-      clientType: 'confidential',
-      redirectUris: [`${adminWebBase}/auth/callback`],
-      postLogoutRedirectUris: [`${adminWebBase}/login`],
-      allowedScopes: ['openid', 'profile', 'email', 'offline_access'],
-      clientSecret: process.env.ADMIN_WEB_OIDC_CLIENT_SECRET,
-    });
-  }
-
-  return seeds;
-}
 
 function loadEnvConfig(): EnvConfig {
   const config: EnvConfig = {
