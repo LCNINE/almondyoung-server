@@ -43,6 +43,16 @@ module.exports = defineConfig({
   presets: [require('@medusajs/ui-preset')],
 
   modules: [
+    // Modules.CACHE ("cache") — auth 모듈의 OIDC state 저장소. 기본값(cache-inmemory)을 사용하면
+    // 인메모리에만 저장되어 재시작 또는 다중 인스턴스 환경에서 "No state found" 오류가 발생
+    {
+      resolve: '@medusajs/medusa/cache-redis',
+      options: {
+        redisUrl: process.env.REDIS_URL,
+        ttl: 1800,
+      },
+    },
+    // Modules.CACHING ("caching") — 상품/카탈로그 등 일반 캐시용 (Redis, 새로운 provider API)
     {
       resolve: '@medusajs/medusa/caching',
       options: {
