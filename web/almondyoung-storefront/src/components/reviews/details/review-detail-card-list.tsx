@@ -1,20 +1,14 @@
 "use client"
 
 import { SharedPagination } from "@/components/shared/pagination"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { ProductReviewSkeleton } from "@/components/skeletons/product-detail-skeletons"
 import { getReviewsByProductId } from "@/lib/api/ugc"
 import { ReviewRatingFilter, ReviewSortOption } from "@/lib/types/common/filter"
 import { ReviewDetail } from "@/lib/types/ui/ugc"
+import { ArrowDown, ArrowUp } from "lucide-react"
 import { useCallback, useState } from "react"
-import { ReviewDetailCard } from "./review-detail-card"
 import { ReviewSummary } from "../summary/review-summary"
+import { ReviewDetailCard } from "./review-detail-card"
 
 type Props = {
   countryCode: string
@@ -25,22 +19,6 @@ type Props = {
 }
 
 const ITEMS_PER_PAGE = 10
-
-const SORT_OPTIONS: { label: string; value: ReviewSortOption }[] = [
-  { label: "최신순", value: "latest" },
-  { label: "오래된순", value: "oldest" },
-  { label: "별점 높은순", value: "rating_high" },
-  { label: "별점 낮은순", value: "rating_low" },
-]
-
-const RATING_FILTERS: { label: string; value: ReviewRatingFilter | "all" }[] = [
-  { label: "전체", value: "all" },
-  { label: "5점", value: "5" },
-  { label: "4점", value: "4" },
-  { label: "3점", value: "3" },
-  { label: "2점", value: "2" },
-  { label: "1점", value: "1" },
-]
 
 export function ReviewDetailCardList({
   countryCode,
@@ -96,16 +74,12 @@ export function ReviewDetailCardList({
     fetchReviews(page, sortOption, selectedFilter)
   }
 
-  const handleFilterChange = (filter: ReviewRatingFilter | "all") => {
-    setSelectedFilter(filter)
+  const handleSortToggle = () => {
+    const next: ReviewSortOption =
+      sortOption === "latest" ? "oldest" : "latest"
+    setSortOption(next)
     setCurrentPage(1)
-    fetchReviews(1, sortOption, filter)
-  }
-
-  const handleSortChange = (value: ReviewSortOption) => {
-    setSortOption(value)
-    setCurrentPage(1)
-    fetchReviews(1, value, selectedFilter)
+    fetchReviews(1, next, selectedFilter)
   }
 
   return (
@@ -115,40 +89,6 @@ export function ReviewDetailCardList({
         averageRating={averageRating}
         summaryTags={[]}
       />
-
-      {/* 정렬 및 필터 */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        {/* 정렬 드롭다운 */}
-        <Select value={sortOption} onValueChange={handleSortChange}>
-          <SelectTrigger className="w-[140px] bg-white">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {SORT_OPTIONS.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {/* 별점 필터 */}
-        <div className="flex flex-wrap gap-2">
-          {RATING_FILTERS.map((filter) => (
-            <button
-              key={filter.value}
-              onClick={() => handleFilterChange(filter.value)}
-              className={`rounded-full px-3 py-1.5 text-sm transition-colors ${
-                selectedFilter === filter.value
-                  ? "bg-black text-white"
-                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-              }`}
-            >
-              {filter.label}
-            </button>
-          ))}
-        </div>
-      </div>
 
       {/* 리뷰 목록 */}
       {isLoading ? (
@@ -161,9 +101,24 @@ export function ReviewDetailCardList({
         </div>
       ) : (
         <div className="space-y-6">
-          <p className="text-sm text-gray-600">
-            총 <span className="font-semibold">{total}</span>개의 리뷰
-          </p>
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-gray-600">
+              총 <span className="font-semibold">{total}</span>개의 리뷰
+            </p>
+            <button
+              type="button"
+              onClick={handleSortToggle}
+              className="flex cursor-pointer items-center gap-1 text-sm text-gray-600 hover:text-gray-900"
+              aria-label={`정렬: ${sortOption === "latest" ? "최신순" : "오래된순"} (클릭하여 전환)`}
+            >
+              {sortOption === "latest" ? "최신순" : "오래된순"}
+              {sortOption === "latest" ? (
+                <ArrowDown className="h-4 w-4" />
+              ) : (
+                <ArrowUp className="h-4 w-4" />
+              )}
+            </button>
+          </div>
 
           <ul className="divide-y divide-gray-200">
             {reviews.map((review) => (
