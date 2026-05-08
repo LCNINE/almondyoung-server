@@ -72,11 +72,13 @@ export function ReviewDetailCardList({
   const handlePageChange = (page: number) => {
     setCurrentPage(page)
     fetchReviews(page, sortOption, selectedFilter)
+    document
+      .getElementById("review")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" })
   }
 
   const handleSortToggle = () => {
-    const next: ReviewSortOption =
-      sortOption === "latest" ? "oldest" : "latest"
+    const next: ReviewSortOption = sortOption === "latest" ? "oldest" : "latest"
     setSortOption(next)
     setCurrentPage(1)
     fetchReviews(1, next, selectedFilter)
