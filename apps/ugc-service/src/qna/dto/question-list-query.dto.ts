@@ -1,10 +1,25 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsOptional, IsUUID } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsBoolean, IsIn, IsOptional, IsUUID } from 'class-validator';
 import { PaginationQueryDto } from '@app/shared/dto';
 import { QUESTION_CATEGORIES, type QuestionCategory } from '../constants';
 
 export const QUESTION_SORT_OPTIONS = ['latest', 'oldest'] as const;
 export type QuestionSortOption = (typeof QUESTION_SORT_OPTIONS)[number];
+
+export const QUESTION_ANSWER_STATUS_FILTERS = [
+  'answered',
+  'unanswered',
+] as const;
+export type QuestionAnswerStatusFilter =
+  (typeof QUESTION_ANSWER_STATUS_FILTERS)[number];
+
+const toBoolean = ({ value }: { value: unknown }): boolean | undefined => {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (value === true || value === 'true') return true;
+  if (value === false || value === 'false') return false;
+  return undefined;
+};
 
 export class QuestionListQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({
@@ -31,6 +46,32 @@ export class QuestionListQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsIn(QUESTION_SORT_OPTIONS)
   sort?: QuestionSortOption;
+
+  @ApiPropertyOptional({
+    description: '답변 상태 필터',
+    enum: QUESTION_ANSWER_STATUS_FILTERS,
+  })
+  @IsOptional()
+  @IsIn(QUESTION_ANSWER_STATUS_FILTERS)
+  answerStatus?: QuestionAnswerStatusFilter;
+
+  @ApiPropertyOptional({
+    description: '비밀글 제외 여부',
+    type: Boolean,
+  })
+  @IsOptional()
+  @Transform(toBoolean)
+  @IsBoolean()
+  excludeSecret?: boolean;
+
+  @ApiPropertyOptional({
+    description: '본인 Q&A만 조회 (인증 필요, 비인증 시 빈 결과)',
+    type: Boolean,
+  })
+  @IsOptional()
+  @Transform(toBoolean)
+  @IsBoolean()
+  mineOnly?: boolean;
 }
 
 // 내 문의 목록 조회용

@@ -2,24 +2,34 @@
 
 import { SharedPagination } from "@/components/shared/pagination"
 import { Button } from "@/components/ui/button"
-import { Separator } from "@/components/ui/separator"
+import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { ProductQnaSkeleton } from "@/components/skeletons/product-detail-skeletons"
 import { deleteQuestion, getQuestionsByProductId } from "@/lib/api/ugc/qna"
 import type { Question } from "@/lib/types/ui/ugc"
+import type { QnaAnswerStatusFilter } from "@/lib/types/common/filter"
 import { useUser } from "@/contexts/user-context"
 import { siteConfig } from "@/lib/config/site"
 import { getPathWithoutCountry } from "@/lib/utils/get-path-without-country"
 import { useParams, useRouter } from "next/navigation"
 import { useCallback, useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
-import { QnaCard } from "./qna-card"
 import { QnaInquiryDialog } from "./qna-inquiry-dialog"
+import { QNA_ROW_COLS, QnaRow } from "./qna-row"
 
 type Props = {
   productId: string
   productName: string
   productThumbnail: string | null
 }
+
+type AnswerStatusSelectValue = "all" | QnaAnswerStatusFilter
 
 const ITEMS_PER_PAGE = 10
 
@@ -39,6 +49,11 @@ export function QnaList({ productId, productName, productThumbnail }: Props) {
   )
   const [isDeleting, startDeleteTransition] = useTransition()
 
+  const [excludeSecret, setExcludeSecret] = useState(false)
+  const [mineOnly, setMineOnly] = useState(false)
+  const [statusFilter, setStatusFilter] =
+    useState<AnswerStatusSelectValue>("all")
+
   const totalPages = Math.ceil(total / ITEMS_PER_PAGE)
 
   const fetchQuestions = useCallback(
@@ -48,6 +63,9 @@ export function QnaList({ productId, productName, productThumbnail }: Props) {
         const result = await getQuestionsByProductId({
           productId,
           sort: "latest",
+          answerStatus: statusFilter === "all" ? undefined : statusFilter,
+          excludeSecret: excludeSecret || undefined,
+          mineOnly: mineOnly || undefined,
           page,
           limit: ITEMS_PER_PAGE,
         })
@@ -59,14 +77,18 @@ export function QnaList({ productId, productName, productThumbnail }: Props) {
       } catch (error) {
         console.error("Q&A 로드 실패:", error)
         setQuestions([])
+        setTotal(0)
       } finally {
         setIsLoading(false)
       }
     },
-    [productId]
+    [productId, statusFilter, excludeSecret, mineOnly]
   )
 
+  // 필터 변경 시 1페이지로 리셋 후 재조회
   useEffect(() => {
+    setCurrentPage(1)
+    setExpandedId(null)
     fetchQuestions(1)
   }, [fetchQuestions])
 
@@ -109,87 +131,139 @@ export function QnaList({ productId, productName, productThumbnail }: Props) {
     }
   }
 
+  const redirectToLogin = () => {
+    const path = getPathWithoutCountry(countryCode as string)
+    router.push(
+      `/${countryCode}${siteConfig.auth.loginUrl}?redirect_to=${encodeURIComponent(path)}`
+    )
+  }
+
+  const handleCsInquiryClick = () => {
+    if (!user) {
+      redirectToLogin()
+      return
+    }
+    router.push(`/${countryCode}/cs?tab=inquiry&productId=${productId}`)
+  }
+
+  const handleMyQnaToggle = () => {
+    if (!user) {
+      redirectToLogin()
+      return
+    }
+    setMineOnly((prev) => !prev)
+  }
+
+  const handleWriteQnaClick = () => {
+    if (!user) {
+      redirectToLogin()
+      return
+    }
+    setIsInquiryOpen(true)
+  }
+
   return (
     <section className="space-y-0">
-      {/* 상품 문의 / 배송·반품·교환 문의 버튼 */}
-      <div className="flex gap-3 px-0 py-4">
-        <Button
-          variant="outline"
-          className="h-[42px] flex-1 cursor-pointer rounded-lg text-[15px] font-medium"
-          onClick={() => {
-            if (!user) {
-              const path = getPathWithoutCountry(countryCode as string)
-              router.push(
-                `/${countryCode}${siteConfig.auth.loginUrl}?redirect_to=${encodeURIComponent(path)}`
-              )
-              return
-            }
-            setIsInquiryOpen(true)
-          }}
-        >
-          상품 문의
-        </Button>
-        <Button
-          variant="outline"
-          className="h-[42px] flex-1 cursor-pointer rounded-lg text-[15px] font-medium"
-          onClick={() => {
-            if (!user) {
-              const path = getPathWithoutCountry(countryCode as string)
+      <h4 className="font-bold">Q&A</h4>
 
-              router.push(
-                `/${countryCode}${siteConfig.auth.loginUrl}?redirect_to=${encodeURIComponent(path)}`
-              )
-              return
-            }
-
-            router.push(`/${countryCode}/cs?tab=inquiry&productId=${productId}`)
-          }}
+      <p className="text-gray-500">
+        상품에 대해 궁금한 점이 있으신 경우 문의해주세요.
+        <br />
+        배송·반품·교환 관련 문의는
+        <button
+          type="button"
+          onClick={handleCsInquiryClick}
+          className="ml-1 cursor-pointer font-medium text-gray-700 underline underline-offset-2"
         >
           배송·반품·교환 문의
-        </Button>
-      </div>
+        </button>
+        를 통해 문의해주세요.
+      </p>
 
-      {/* 안내 문구 */}
-      <button
-        className="w-full cursor-pointer py-3 text-center"
-        onClick={() => {
-          router.push(`/${countryCode}/cs?tab=inquiry&productId=${productId}`)
-        }}
-      >
-        <p className="text-sm text-gray-500">
-          배송·반품·교환 문의와 답변은 1:1 문의에서 확인해 보세요{" "}
-          <span className="text-gray-400">&gt;</span>
-        </p>
-      </button>
+      {/* 툴바: 좌측 액션 버튼 / 우측 필터 */}
+      <div className="flex flex-wrap items-center justify-between gap-3 py-4">
+        <div className="flex gap-3">
+          <Button
+            variant="default"
+            className="cursor-pointer rounded-none bg-[rgb(51,51,51)] text-white hover:bg-[rgb(51,51,51)]"
+            onClick={handleWriteQnaClick}
+          >
+            상품 Q&A 작성하기
+          </Button>
+          <Button
+            variant={mineOnly ? "default" : "outline"}
+            className={
+              mineOnly
+                ? "cursor-pointer rounded-none bg-[rgb(51,51,51)] text-white hover:bg-[rgb(51,51,51)]"
+                : "cursor-pointer rounded-none"
+            }
+            onClick={handleMyQnaToggle}
+          >
+            {mineOnly ? "전체 보기 >" : "나의 Q&A 조회 >"}
+          </Button>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-gray-600">
+          <label className="flex cursor-pointer items-center gap-2">
+            <Checkbox
+              checked={excludeSecret}
+              onCheckedChange={(checked) => setExcludeSecret(checked === true)}
+            />
+            비밀글 제외
+          </label>
+
+          <Select
+            value={statusFilter}
+            onValueChange={(v) => setStatusFilter(v as AnswerStatusSelectValue)}
+          >
+            <SelectTrigger className="h-9 w-[140px] cursor-pointer rounded-none">
+              <SelectValue placeholder="답변상태" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">답변상태 전체</SelectItem>
+              <SelectItem value="answered">답변완료</SelectItem>
+              <SelectItem value="unanswered">답변미완료</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
 
       {/* Q&A 목록 */}
       {isLoading ? (
         <ProductQnaSkeleton />
-      ) : questions.length === 0 ? (
-        <div className="py-12 text-center text-gray-500">
-          <p>아직 등록된 Q&A가 없습니다.</p>
-          <p className="mt-2 text-sm">
-            궁금한 점이 있으시면 언제든 문의해주세요!
-          </p>
-        </div>
       ) : (
-        <div>
-          <ul>
-            {questions.map((question, index) => (
-              <li key={question.id}>
-                <QnaCard
-                  question={question}
-                  isExpanded={expandedId === question.id}
-                  onToggle={() => handleToggle(question.id)}
-                  isAuthor={user?.id === question.userId}
-                  isDeleting={isDeleting}
-                  onEdit={() => handleEdit(question)}
-                  onDelete={() => handleDelete(question.id)}
-                />
-                {index < questions.length - 1 && <Separator />}
-              </li>
-            ))}
-          </ul>
+        <div className="border-t border-gray-300">
+          {/* 헤더 */}
+          <div
+            className={`${QNA_ROW_COLS} border-b border-gray-200 text-sm font-medium text-gray-700`}
+          >
+            <span>답변상태</span>
+            <span className="text-center">제목</span>
+            <span className="text-right">작성자</span>
+            <span className="text-right">작성일</span>
+          </div>
+
+          {questions.length === 0 ? (
+            <div className="py-12 text-center text-gray-500">
+              <p>조건에 해당하는 Q&A가 없습니다.</p>
+            </div>
+          ) : (
+            <ul>
+              {questions.map((question) => (
+                <li key={question.id}>
+                  <QnaRow
+                    question={question}
+                    isExpanded={expandedId === question.id}
+                    onToggle={() => handleToggle(question.id)}
+                    isAuthor={user?.id === question.userId}
+                    isDeleting={isDeleting}
+                    onEdit={() => handleEdit(question)}
+                    onDelete={() => handleDelete(question.id)}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
 
           {totalPages > 1 && (
             <div className="py-6">

@@ -91,7 +91,7 @@ export function ProductTemplate({
                 </ErrorBoundary>
               </SectionTabPanel>
 
-              {/* Q&A Tab Panel - 클라이언트 lazy loading */}
+              {/* Q&A Tab Panel */}
               <SectionTabPanel value="qna">
                 <QnaList
                   productId={product.metadata?.pimMasterId as string}
