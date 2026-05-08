@@ -217,16 +217,22 @@ export async function seedUserService(
     // Step 7: Upsert OAuth clients
     if (options.oauthClients && options.oauthClients.length > 0) {
       logger.step(7, 7, 'Upserting OAuth clients');
-      for (const seed of options.oauthClients) {
-        const isPublic = seed.clientType === 'public';
-        const plaintextSecret = isPublic
-          ? null
-          : seed.clientSecret ?? crypto.randomBytes(32).toString('base64url');
-        const secretHash = await bcrypt.hash(
-          plaintextSecret ?? crypto.randomBytes(32).toString('hex'),
-          BCRYPT_COST,
-        );
 
+      const clientsWithHashes = await Promise.all(
+        options.oauthClients.map(async (seed) => {
+          const isPublic = seed.clientType === 'public';
+          const plaintextSecret = isPublic
+            ? null
+            : seed.clientSecret ?? crypto.randomBytes(32).toString('base64url');
+          const secretHash = await bcrypt.hash(
+            plaintextSecret ?? crypto.randomBytes(32).toString('hex'),
+            BCRYPT_COST,
+          );
+          return { seed, isPublic, plaintextSecret, secretHash };
+        }),
+      );
+
+      for (const { seed, isPublic, plaintextSecret, secretHash } of clientsWithHashes) {
         // 멱등 upsert. 이미 존재하면 redirectUris/postLogoutRedirectUris/allowedScopes/isActive 만 갱신.
         // client_secret_hash 는 새 row 일 때만 채우고, 기존 row 의 secret 은 절대 덮어쓰지 않는다
         // (한 번 발급된 secret 을 운영 중에 유실시키지 않기 위함). secret 회전이 필요하면
