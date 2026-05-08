@@ -22,6 +22,7 @@ import { useCallback, useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
 import { QnaInquiryDialog } from "./qna-inquiry-dialog"
 import { QNA_ROW_COLS, QnaRow } from "./qna-row"
+import { Separator } from "../ui/separator"
 
 type Props = {
   productId: string
@@ -40,6 +41,7 @@ export function QnaList({ productId, productName, productThumbnail }: Props) {
 
   const [questions, setQuestions] = useState<Question[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [hasLoaded, setHasLoaded] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -53,6 +55,11 @@ export function QnaList({ productId, productName, productThumbnail }: Props) {
   const [mineOnly, setMineOnly] = useState(false)
   const [statusFilter, setStatusFilter] =
     useState<AnswerStatusSelectValue>("all")
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const totalPages = Math.ceil(total / ITEMS_PER_PAGE)
 
@@ -80,6 +87,7 @@ export function QnaList({ productId, productName, productThumbnail }: Props) {
         setTotal(0)
       } finally {
         setIsLoading(false)
+        setHasLoaded(true)
       }
     },
     [productId, statusFilter, excludeSecret, mineOnly]
@@ -164,6 +172,8 @@ export function QnaList({ productId, productName, productThumbnail }: Props) {
 
   return (
     <section className="space-y-0">
+      <Separator className="mb-7" />
+
       <h4 className="font-bold">Q&A</h4>
 
       <p className="text-gray-500">
@@ -212,27 +222,41 @@ export function QnaList({ productId, productName, productThumbnail }: Props) {
             비밀글 제외
           </label>
 
-          <Select
-            value={statusFilter}
-            onValueChange={(v) => setStatusFilter(v as AnswerStatusSelectValue)}
-          >
-            <SelectTrigger className="h-9 w-[140px] cursor-pointer rounded-none">
-              <SelectValue placeholder="답변상태" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">답변상태 전체</SelectItem>
-              <SelectItem value="answered">답변완료</SelectItem>
-              <SelectItem value="unanswered">답변미완료</SelectItem>
-            </SelectContent>
-          </Select>
+          {mounted ? (
+            <Select
+              value={statusFilter}
+              onValueChange={(v) =>
+                setStatusFilter(v as AnswerStatusSelectValue)
+              }
+            >
+              <SelectTrigger className="h-9 w-[140px] cursor-pointer rounded-none">
+                <SelectValue placeholder="답변상태" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">답변상태 전체</SelectItem>
+                <SelectItem value="answered">답변완료</SelectItem>
+                <SelectItem value="unanswered">답변미완료</SelectItem>
+              </SelectContent>
+            </Select>
+          ) : (
+            <div
+              aria-hidden
+              className="border-input h-9 w-[140px] rounded-none border bg-white"
+            />
+          )}
         </div>
       </div>
 
-      {/* Q&A 목록 */}
-      {isLoading ? (
+      {/* Q&A 목록 — 첫 로드만 스켈레톤, 이후 필터/페이지 변경은 dim 처리로 시프트 방지 */}
+      {!hasLoaded ? (
         <ProductQnaSkeleton />
       ) : (
-        <div className="border-t border-gray-300">
+        <div
+          className={`border-t border-gray-300 transition-opacity duration-150 ${
+            isLoading ? "pointer-events-none opacity-50" : "opacity-100"
+          }`}
+          aria-busy={isLoading}
+        >
           {/* 헤더 */}
           <div
             className={`${QNA_ROW_COLS} border-b border-gray-200 text-sm font-medium text-gray-700`}
