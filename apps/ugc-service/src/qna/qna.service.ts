@@ -260,6 +260,11 @@ export class QnaService {
       const limit = query.limit ?? 20;
       const offset = (page - 1) * limit;
 
+      // mineOnly=true인데 비인증이면 빈 결과 반환 (인증 필요한 필터)
+      if (query.mineOnly && !currentUserId) {
+        return { data: [], total: 0, page, limit };
+      }
+
       const conditions: SQL[] = [ne(questions.status, 'deleted')];
 
       // productId가 있으면 상품별 조회, 없으면 전체 조회 (productId가 있는 것만)
@@ -272,6 +277,23 @@ export class QnaService {
 
       if (query.category) {
         conditions.push(eq(questions.category, query.category));
+      }
+
+      // 답변 상태 필터: answered = 'answered', unanswered = 'active'
+      if (query.answerStatus === 'answered') {
+        conditions.push(eq(questions.status, 'answered'));
+      } else if (query.answerStatus === 'unanswered') {
+        conditions.push(eq(questions.status, 'active'));
+      }
+
+      // 비밀글 제외
+      if (query.excludeSecret) {
+        conditions.push(eq(questions.isSecret, false));
+      }
+
+      // 본인 글만 조회 (currentUserId는 위에서 검증됨)
+      if (query.mineOnly && currentUserId) {
+        conditions.push(eq(questions.userId, currentUserId));
       }
 
       const whereClause = and(...conditions);

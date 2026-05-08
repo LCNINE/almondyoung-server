@@ -4,6 +4,8 @@ type ReviewSortOption = "latest" | "oldest" | "rating_high" | "rating_low"
 
 type QnaSortOption = "latest" | "oldest"
 
+type QnaAnswerStatusFilter = "answered" | "unanswered"
+
 type ProductSortOption =
   | "created_at"
   | "price_asc"
@@ -18,6 +20,7 @@ export type {
   ReviewRatingFilter,
   ReviewSortOption,
   QnaSortOption,
+  QnaAnswerStatusFilter,
   ProductSortOption,
   ProductSortBy,
   ProductSortOrder,

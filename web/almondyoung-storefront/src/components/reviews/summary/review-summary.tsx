@@ -28,12 +28,12 @@ export function ReviewSummary({
       </div>
 
       {/* 2. 리뷰 요약 제목 */}
-      <div className="flex items-end gap-2 md:gap-[11px]">
+      {/* <div className="flex items-end gap-2 md:gap-[11px]">
         <h3 className="text-xs font-bold text-black md:text-lg">리뷰요약</h3>
         <p className="text-xs font-medium text-gray-500 md:text-base md:text-[#767676]">
           구매하신 분들의 리뷰를 분석했어요!
         </p>
-      </div>
+      </div> */}
 
       {/* 3. 리뷰 키워드 태그 */}
       <ul className="flex flex-wrap gap-1.5 md:gap-2.5">
