@@ -6,7 +6,12 @@ import { PaginatedResponseDto } from '@app/shared/dto';
 import { QnaService } from './qna.service';
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { UpdateQuestionDto } from './dto/update-question.dto';
-import { QuestionListQueryDto, MyQuestionListQueryDto, AdminQuestionListQueryDto } from './dto/question-list-query.dto';
+import {
+  QUESTION_ANSWER_STATUS_FILTERS,
+  QuestionListQueryDto,
+  MyQuestionListQueryDto,
+  AdminQuestionListQueryDto,
+} from './dto/question-list-query.dto';
 import { CreateAnswerDto } from './dto/create-answer.dto';
 import { AnswerResponseDto } from './dto/answer-response.dto';
 import { QuestionResponseDto } from './dto/question-response.dto';
@@ -44,6 +49,19 @@ export class QnaController {
     enum: ['product', 'delivery', 'order', 'exchange', 'account', 'etc'],
   })
   @ApiQuery({ name: 'sort', description: '정렬 옵션', required: false, enum: ['latest', 'oldest'] })
+  @ApiQuery({
+    name: 'answerStatus',
+    description: '답변 상태 필터',
+    required: false,
+    enum: QUESTION_ANSWER_STATUS_FILTERS,
+  })
+  @ApiQuery({ name: 'excludeSecret', description: '비밀글 제외 여부', required: false, type: Boolean })
+  @ApiQuery({
+    name: 'mineOnly',
+    description: '본인 Q&A만 조회 (인증 필요, 비인증 시 빈 결과)',
+    required: false,
+    type: Boolean,
+  })
   @ApiQuery({ name: 'page', description: '페이지 번호', required: false, type: Number })
   @ApiQuery({ name: 'limit', description: '페이지당 아이템 수', required: false, type: Number })
   @ApiOkResponsePaginated(QuestionResponseDto, { description: '질문 목록 조회 성공' })

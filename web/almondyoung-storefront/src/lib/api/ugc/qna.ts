@@ -25,6 +25,9 @@ export const getQuestionsByProductId = async ({
   productId,
   category,
   sort,
+  answerStatus,
+  excludeSecret,
+  mineOnly,
   page,
   limit,
 }: QuestionListQueryDto): Promise<
@@ -35,12 +38,16 @@ export const getQuestionsByProductId = async ({
   if (productId) params.productId = productId
   if (category) params.category = category
   if (sort) params.sort = sort
+  if (answerStatus) params.answerStatus = answerStatus
+  if (excludeSecret) params.excludeSecret = "true"
+  if (mineOnly) params.mineOnly = "true"
   if (page) params.page = String(page)
   if (limit) params.limit = String(limit)
 
   const queryString = new URLSearchParams(params).toString()
 
   // 토큰이 있으면 인증 포함 (본인 비밀글 확인 가능)
+  // mineOnly 요청은 인증 필수 — 토큰 없으면 서버가 빈 결과 반환
   const accessToken = await getAccessToken()
 
   return await api(
@@ -48,7 +55,7 @@ export const getQuestionsByProductId = async ({
     `/qna/questions${queryString ? `?${queryString}` : ""}`,
     {
       method: "GET",
-      withAuth: !!accessToken,
+      withAuth: !!accessToken || !!mineOnly,
     }
   )
 }
