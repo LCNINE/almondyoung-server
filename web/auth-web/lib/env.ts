@@ -25,4 +25,7 @@ export const env = {
     .filter(Boolean),
   oauthInternalSecret: optional("OAUTH_INTERNAL_SECRET", ""),
   selfOrigin: required("AUTH_WEB_ORIGIN"),
+  // SST infra 에서 stage !== "live" 일 때만 "true" 로 주입된다.
+  // /dev/* 라우트의 stage gate 로 사용 — live 에서는 라우트가 notFound() 처리.
+  devToolsEnabled: optional("DEV_TOOLS_ENABLED", "") === "true",
 };
