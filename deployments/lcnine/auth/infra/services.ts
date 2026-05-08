@@ -3,7 +3,7 @@
 import type { IdpInfra } from "./shared";
 
 export function setup(infra: IdpInfra) {
-  const { db, dbUrl, baseDomain, domain, url, createBackendService, kafkaBrokers } = infra;
+  const { isDev, db, dbUrl, baseDomain, domain, url, createBackendService, kafkaBrokers } = infra;
 
   // ─── Secrets ───
   // 루트 앱에서 쓰던 값과 별개로 IdP 앱 stage에 각각 `sst secret set` 해야 한다.
@@ -134,6 +134,9 @@ export function setup(infra: IdpInfra) {
       ALLOWED_REDIRECT_HOSTS: `.${baseDomain}`,
       AUTH_WEB_ORIGIN: authWebUrl,
       OAUTH_INTERNAL_SECRET: oauthInternalSecret.value,
+      // dev stage 에서만 /dev/oidc-clients 등 개발자용 도구 라우트가 활성화된다.
+      // live 에서는 빈 문자열이 되어 lib/env.ts 의 비교가 false 가 되고 라우트가 notFound() 처리됨.
+      DEV_TOOLS_ENABLED: isDev ? "true" : "",
     },
   });
 

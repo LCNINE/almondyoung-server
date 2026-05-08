@@ -1,9 +1,9 @@
 import "server-only";
 
 import { env } from "./env";
+import { readApiData, readJson, throwIfBad } from "./api-helpers";
 
 type SignInBody = { loginId: string; password: string; rememberMe?: boolean };
-type ApiEnvelope<T> = { success: boolean; data: T };
 
 export type TokenPair = { accessToken: string; refreshToken: string };
 
@@ -14,36 +14,6 @@ export type UserProfile = {
   email: string;
   isEmailVerified: boolean;
 };
-
-async function readJson<T>(res: Response): Promise<T> {
-  const text = await res.text();
-  try {
-    return JSON.parse(text) as T;
-  } catch {
-    throw new Error(
-      `user-service returned non-JSON (${res.status}): ${text.slice(0, 200)}`,
-    );
-  }
-}
-
-async function readApiData<T>(res: Response): Promise<T> {
-  const body = await readJson<ApiEnvelope<T>>(res);
-  return body.data;
-}
-
-async function throwIfBad(res: Response, ctx: string): Promise<void> {
-  if (res.ok) return;
-  const text = await res.text();
-  let message = text;
-  try {
-    const body = JSON.parse(text);
-    message = body?.message ?? text;
-    if (Array.isArray(message)) message = message.join(", ");
-  } catch {
-    // keep raw
-  }
-  throw new Error(`[${ctx}] ${res.status}: ${message}`);
-}
 
 export async function signIn(body: SignInBody): Promise<TokenPair> {
   const res = await fetch(`${env.userServiceUrl}/auth/signin`, {
