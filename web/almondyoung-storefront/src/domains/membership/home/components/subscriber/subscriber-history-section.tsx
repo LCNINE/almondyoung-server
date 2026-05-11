@@ -34,6 +34,8 @@ const formatDate = (value?: string | null) => {
 
 const STATUS_LABEL: Record<string, string> = {
   ACTIVE: "이용 중",
+  PAUSED: "일시중단",
+  RECURRING_CANCELLED: "자동결제 취소",
   CANCELLED: "취소됨",
   ENDED: "종료됨",
   EXPIRED: "만료됨",
@@ -41,6 +43,8 @@ const STATUS_LABEL: Record<string, string> = {
 
 const STATUS_COLOR: Record<string, string> = {
   ACTIVE: "text-green-600 bg-green-50",
+  PAUSED: "text-yellow-600 bg-yellow-50",
+  RECURRING_CANCELLED: "text-orange-500 bg-orange-50",
   CANCELLED: "text-red-500 bg-red-50",
   ENDED: "text-gray-500 bg-gray-100",
   EXPIRED: "text-gray-500 bg-gray-100",

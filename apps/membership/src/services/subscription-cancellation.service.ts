@@ -58,8 +58,6 @@ export class SubscriptionCancellationService {
     reasonCode: string,
     reasonText?: string,
   ): Promise<ImmediateCancellationResult | RecurringCancellationResult> {
-    await this.entitlementService.checkAndUpdateSubscription(userId);
-
     // 1. ACTIVE 계약 조회
     const data = await this.contractReader.findContractWithPlan(userId);
     if (!data) {
@@ -98,31 +96,17 @@ export class SubscriptionCancellationService {
         );
     }
 
-    if (result.type === 'IMMEDIATE_CANCELLATION') {
-      await this.membershipEventPublisher.publishStatusChanged({
-        userId,
-        email,
-        status: 'CANCELLED',
-        occurredAt: new Date().toISOString(),
-        contractId: data.contract.id,
-        planId: data.plan.id,
-        tierId: data.plan.tierId,
-        reasonCode,
-        reasonText,
-      });
-    } else {
-      await this.membershipEventPublisher.publishStatusChanged({
-        userId,
-        email,
-        status: 'RECURRING_CANCELLED',
-        occurredAt: new Date().toISOString(),
-        contractId: data.contract.id,
-        planId: data.plan.id,
-        tierId: data.plan.tierId,
-        reasonCode,
-        reasonText,
-      });
-    }
+    await this.membershipEventPublisher.publishStatusChanged({
+      userId,
+      email,
+      status: result.type === 'IMMEDIATE_CANCELLATION' ? 'CANCELLED' : 'RECURRING_CANCELLED',
+      occurredAt: new Date().toISOString(),
+      contractId: data.contract.id,
+      planId: data.plan.id,
+      tierId: data.plan.tierId,
+      reasonCode,
+      reasonText,
+    });
 
     return result;
   }

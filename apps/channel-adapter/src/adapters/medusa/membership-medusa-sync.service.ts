@@ -83,7 +83,7 @@ export class MembershipMedusaSyncService {
       }
 
       const addStatuses = new Set(['ACTIVE', 'RESUMED']);
-      const removeStatuses = new Set(['PAUSED', 'CANCELLED', 'EXPIRED']);
+      const removeStatuses = new Set(['CANCELLED', 'EXPIRED']); // PAUSED는 혜택 유지 (RESUMED 시 자동 복구)
 
       if (addStatuses.has(status)) {
         await this.medusaClient.addCustomerToGroup(customer.id, membershipGroupId);
