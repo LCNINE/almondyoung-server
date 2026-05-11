@@ -2,7 +2,7 @@
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Trash2 } from "lucide-react";
+import { ChevronRight, Trash2 } from "lucide-react";
 
 import { removeAccountAction, selectAccountAction } from "@/app/actions";
 import { Badge } from "@/components/ui/badge";
@@ -53,26 +53,31 @@ export function AccountList({
       {accounts.map((acct) => {
         const isActive = acct.userId === activeUserId;
         const expired = !acct.hasValidRefreshToken;
-        return (
-          <li
-            key={acct.userId}
-            className="flex items-center gap-3 rounded-lg border p-3"
-          >
-            <div className="flex min-w-0 flex-1 flex-col">
-              <div className="flex items-center gap-2">
-                <span className="truncate font-medium">
-                  {acct.nickname || acct.username}
-                </span>
-                {isActive && <Badge variant="secondary">현재 로그인</Badge>}
-                {expired && !isActive && (
-                  <Badge variant="outline">재로그인 필요</Badge>
-                )}
-              </div>
-              <span className="truncate text-xs text-muted-foreground">
-                {acct.email}
+        const info = (
+          <div className="flex min-w-0 flex-1 flex-col">
+            <div className="flex items-center gap-2">
+              <span className="truncate font-medium">
+                {acct.nickname || acct.username}
               </span>
+              {isActive && <Badge variant="secondary">현재 로그인</Badge>}
+              {expired && !isActive && (
+                <Badge variant="outline">재로그인 필요</Badge>
+              )}
             </div>
-            {editing ? (
+            <span className="truncate text-xs text-muted-foreground">
+              {acct.email}
+            </span>
+          </div>
+        );
+
+        // 편집 모드는 의도적 삭제 컨텍스트 — 카드 통클릭 대신 우측 trash 아이콘만 타겟.
+        if (editing) {
+          return (
+            <li
+              key={acct.userId}
+              className="flex items-center gap-3 rounded-lg border p-3"
+            >
+              {info}
               <Button
                 variant="ghost"
                 size="icon"
@@ -82,16 +87,30 @@ export function AccountList({
               >
                 <Trash2 className="size-4" />
               </Button>
-            ) : (
-              <Button
-                variant={isActive ? "secondary" : "default"}
-                size="sm"
-                disabled={pending || expired}
-                onClick={() => handleSelect(acct.userId)}
-              >
-                {isActive ? "계속" : "선택"}
-              </Button>
-            )}
+            </li>
+          );
+        }
+
+        const actionLabel = isActive
+          ? "현재 계정으로 계속"
+          : expired
+            ? "재로그인"
+            : "이 계정으로 로그인";
+        return (
+          <li key={acct.userId}>
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => handleSelect(acct.userId)}
+              aria-label={actionLabel}
+              className="flex w-full items-center gap-3 rounded-lg border p-3 text-left transition hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {info}
+              <ChevronRight
+                className="size-4 shrink-0 text-muted-foreground"
+                aria-hidden
+              />
+            </button>
           </li>
         );
       })}

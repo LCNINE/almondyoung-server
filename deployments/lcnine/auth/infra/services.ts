@@ -3,7 +3,7 @@
 import type { IdpInfra } from "./shared";
 
 export function setup(infra: IdpInfra) {
-  const { isDev, db, dbUrl, baseDomain, domain, url, createBackendService, kafkaBrokers } = infra;
+  const { db, dbUrl, baseDomain, domain, url, createBackendService, kafkaBrokers } = infra;
 
   // ─── Secrets ───
   // 루트 앱에서 쓰던 값과 별개로 IdP 앱 stage에 각각 `sst secret set` 해야 한다.
@@ -33,11 +33,12 @@ export function setup(infra: IdpInfra) {
   // env JSON(OAUTH_CLIENTS / OAUTH_ALLOWED_CLIENTS)과 시연용 bypass 플래그는 제거됨.
   const oauthInternalSecret = new sst.Secret("OauthInternalSecret");
   // RS256 access token 서명용 PEM keypair. 미설정 시 user-service 부팅이 실패하므로
-  // 신규 stage 부트스트랩 시 반드시 set 해야 한다.
-  //   openssl genpkey -algorithm RSA -pkcs8 -out priv.pem -pkeyopt rsa_keygen_bits:2048
+  // 신규 stage 부트스트랩 시 반드시 set 해야 한다. user-service env.validation 은 raw PEM /
+  // base64-encoded PEM 둘 다 받지만, transport 안전을 위해 base64 방식을 권장한다.
+  //   openssl genpkey -algorithm RSA -out priv.pem -pkeyopt rsa_keygen_bits:2048
   //   openssl pkey -in priv.pem -pubout -out pub.pem
-  //   sst secret set OauthJwtPrivateKey "$(cat priv.pem)" --stage <stage>
-  //   sst secret set OauthJwtPublicKey  "$(cat pub.pem)"  --stage <stage>
+  //   sst secret set OauthJwtPrivateKey "$(base64 -w0 < priv.pem)" --stage <stage>
+  //   sst secret set OauthJwtPublicKey  "$(base64 -w0 < pub.pem)"  --stage <stage>
   const oauthJwtPrivateKey = new sst.Secret("OauthJwtPrivateKey");
   const oauthJwtPublicKey = new sst.Secret("OauthJwtPublicKey");
 
@@ -134,9 +135,11 @@ export function setup(infra: IdpInfra) {
       ALLOWED_REDIRECT_HOSTS: `.${baseDomain}`,
       AUTH_WEB_ORIGIN: authWebUrl,
       OAUTH_INTERNAL_SECRET: oauthInternalSecret.value,
-      // dev stage 에서만 /dev/oidc-clients 등 개발자용 도구 라우트가 활성화된다.
-      // live 에서는 빈 문자열이 되어 lib/env.ts 의 비교가 false 가 되고 라우트가 notFound() 처리됨.
-      DEV_TOOLS_ENABLED: isDev ? "true" : "",
+      // /dev/oidc-clients 등 개발자용 도구 라우트 활성화 플래그.
+      // 원래는 isDev 일 때만 켜지만, 현재는 live 에서도 임시로 OIDC client 관리 UI 가 필요해
+      // 모든 stage 에서 강제로 "true" 로 둔다. 정식화 또는 별도 admin 화면으로 이전 후
+      // `isDev ? "true" : ""` 로 되돌릴 것.
+      DEV_TOOLS_ENABLED: "true", // TEMP(live 임시 개방): 위 주석 참고하여 dev-only 로 환원할 것.
     },
   });
 
