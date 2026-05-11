@@ -188,7 +188,17 @@ export async function selectAccountAction(
   redirectToRaw: string,
 ): Promise<ActionResult> {
   const refreshToken = await getRefreshToken(userId);
-  if (!refreshToken) return { ok: false, error: "저장된 계정을 찾을 수 없습니다" };
+
+  // RT 쿠키 자체가 사라진 경우 (브라우저 만료/수동 삭제 등) 도 reauth 흐름과 동일하게 취급.
+  // 계정 허브의 "재로그인" 버튼이 이 경로로 들어오므로 에러로 끊지 말고 비밀번호 재입력 페이지로.
+  if (!refreshToken) {
+    const meta = await getAccountMeta(userId);
+    const qs = new URLSearchParams();
+    if (meta?.loginId) qs.set("login_id", meta.loginId);
+    qs.set("reauth_user_id", userId);
+    if (redirectToRaw) qs.set("redirect_to", redirectToRaw);
+    redirect(`/signin?${qs.toString()}`);
+  }
 
   // 클라이언트가 넘긴 userId 를 그대로 신뢰하지 않는다. refreshToken 으로 access 를 복원한 뒤
   // user-service /users/me 응답의 id 를 권위 있는 userId 로 사용 (서명 검증을 user-service 에 위임).
