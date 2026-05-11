@@ -22,7 +22,7 @@ export type MembershipStatus = z.infer<typeof MembershipStatusSchema>;
 
 export interface MembershipStatusChangedPayload {
   userId: string;
-  email: string;
+  email?: string;
   status: MembershipStatus;
   occurredAt: string; // ISO 8601
   contractId?: string;
@@ -36,7 +36,7 @@ export interface MembershipStatusChangedPayload {
 
 const MembershipStatusChangedSchema = z.object({
   userId: z.string().min(1),
-  email: z.string().email(),
+  email: z.string().email().optional(),
   status: MembershipStatusSchema,
   occurredAt: z.string().datetime(),
   contractId: z.string().min(1).optional(),
