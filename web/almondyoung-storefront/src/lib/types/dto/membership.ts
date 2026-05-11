@@ -1,7 +1,7 @@
 /*───────────────────────────
  * 현재 구독 응답 DTO
  *──────────────────────────*/
-export type SubscriptionStatus = "ACTIVE" | "ENDED" | "CANCELLED" | "EXPIRED"
+export type SubscriptionStatus = "ACTIVE" | "PAUSED" | "RECURRING_CANCELLED" | "ENDED" | "CANCELLED" | "EXPIRED"
 
 export interface MembershipTierDto {
   id: string

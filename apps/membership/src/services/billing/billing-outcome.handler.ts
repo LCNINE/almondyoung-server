@@ -5,6 +5,7 @@ import * as schema from '../../shared/schemas/entities/schema';
 import { eq, and, count } from 'drizzle-orm';
 import { addDays, addHours, format } from 'date-fns';
 import { ContractEventManager } from '../subscription/contract-event.manager';
+import { MembershipEventPublisher } from '../membership-event.publisher';
 import { DrizzleTransaction } from '../../shared/schemas/types';
 
 const DUNNING_MAX_ATTEMPTS = 3;
@@ -18,6 +19,7 @@ export class BillingOutcomeHandler {
   constructor(
     private readonly dbService: DbService<typeof membershipSchema>,
     private readonly contractEventManager: ContractEventManager,
+    private readonly membershipEventPublisher: MembershipEventPublisher,
   ) {}
 
   async handleSuccess(contractId: string, amount: number | null): Promise<void> {
@@ -89,14 +91,14 @@ export class BillingOutcomeHandler {
   }
 
   async handleFailure(contractId: string, errorCode: string | null, errorMessage: string | null): Promise<void> {
-    await this.dbService.db.transaction(async (tx) => {
+    const terminatedUserId = await this.dbService.db.transaction(async (tx) => {
       const [contract] = await tx
         .select({ userId: schema.subscriptionContracts.userId })
         .from(schema.subscriptionContracts)
         .where(eq(schema.subscriptionContracts.id, contractId))
         .limit(1);
 
-      if (!contract) return;
+      if (!contract) return null;
 
       const [dunning] = await tx
         .select()
@@ -144,8 +146,17 @@ export class BillingOutcomeHandler {
       } else {
         this.logger.log(`Dunning max attempts reached for contract ${contractId} — terminating`);
         await this.terminateSubscription(tx, contractId, contract.userId, 'PAYMENT_FAILURE_MAX_ATTEMPTS');
+        return contract.userId;
       }
+
+      return null;
     });
+
+    if (terminatedUserId) {
+      this.membershipEventPublisher
+        .publishStatusChanged({ userId: terminatedUserId, status: 'CANCELLED', occurredAt: new Date().toISOString(), contractId })
+        .catch((e) => this.logger.warn(`Kafka 발행 실패 (CANCELLED/dunning): ${e?.message}`));
+    }
   }
 
   async handleExpiration(entitlementId: string, userId: string, contractId: string): Promise<void> {
@@ -171,6 +182,10 @@ export class BillingOutcomeHandler {
         'SYSTEM', userId, batch.id,
       );
     });
+
+    this.membershipEventPublisher
+      .publishStatusChanged({ userId, status: 'EXPIRED', occurredAt: new Date().toISOString(), contractId })
+      .catch((e) => this.logger.warn(`Kafka 발행 실패 (EXPIRED): ${e?.message}`));
   }
 
   private async terminateSubscription(
