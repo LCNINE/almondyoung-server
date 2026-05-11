@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { refreshCartPrices } from "@/lib/api/medusa/cart"
 
 /**
@@ -16,18 +17,27 @@ const POLL_INTERVAL_MS = 3_000
 const MAX_DURATION_MS = 30_000
 
 export function CartRefresher() {
+  const router = useRouter()
+
   useEffect(() => {
     const startedAt = Date.now()
     let timerId: ReturnType<typeof setTimeout>
+    let done = false
 
     const poll = () => {
       timerId = setTimeout(async () => {
         const result = await refreshCartPrices().catch(() => null)
 
-        // null → 카트 없음, true → 그룹 반영 완료: 둘 다 폴링 종료
-        if (!result || result.hasMembershipGroup !== false) return
+        if (!result) return
 
-        // 아직 그룹 미반영: 타임아웃 내에서 재시도
+        if (result.hasMembershipGroup !== false) {
+          if (!done) {
+            done = true
+            router.refresh()
+          }
+          return
+        }
+
         if (Date.now() - startedAt < MAX_DURATION_MS) {
           poll()
         }
@@ -36,7 +46,7 @@ export function CartRefresher() {
 
     poll()
     return () => clearTimeout(timerId)
-  }, [])
+  }, [router])
 
   return null
 }
