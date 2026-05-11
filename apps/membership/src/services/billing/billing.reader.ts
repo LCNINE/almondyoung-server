@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { eq, and, lte, lt, notInArray, sql } from 'drizzle-orm';
+import { eq, and, lte, lt, notInArray, isNull } from 'drizzle-orm';
 import * as schema from '../../shared/schemas/entities/schema';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 
@@ -70,7 +70,7 @@ export class BillingReader {
         and(
           eq(schema.subscriptionContracts.isVoided, false),
           eq(schema.subscriptionContracts.autoRenewal, true),
-          sql`${schema.subscriptionEntitlement.pausedAt} IS NULL`,
+          isNull(schema.subscriptionEntitlement.pausedAt),
           lte(schema.subscriptionContracts.nextBillingDate, date),
         ),
       );

@@ -10,9 +10,11 @@ import MembershipStatusSection from "domains/membership/components/status-select
 import MemberDetails from "./member-details"
 import { cancelSubscription } from "@/lib/api/membership"
 import { refreshCartPrices } from "@/lib/api/medusa/cart"
+import { toast } from "sonner"
 
-// 해지 후 그룹이 제거될 때까지 폴링
+// 해지 후 그룹이 제거될 때까지 폴링, 제거 확인 시 onGroupRemoved 호출
 function pollCartRefreshUntilGroupRemoved(
+  onGroupRemoved?: () => void,
   intervalMs = 3_000,
   maxDurationMs = 30_000,
 ): void {
@@ -20,8 +22,11 @@ function pollCartRefreshUntilGroupRemoved(
   const poll = () => {
     setTimeout(async () => {
       const result = await refreshCartPrices().catch(() => null)
-      // false → 그룹 제거 완료, null → 카트 없음: 둘 다 종료
-      if (!result || result.hasMembershipGroup !== true) return
+      if (result === null) return
+      if (result.hasMembershipGroup !== true) {
+        onGroupRemoved?.()
+        return
+      }
       if (Date.now() - startedAt < maxDurationMs) poll()
     }, intervalMs)
   }
@@ -188,8 +193,9 @@ export default function SubscriberSection({
             await cancelSubscription(reasonCode, reasonText)
             setOpen(false)
             router.push("/kr/mypage/membership")
-            // hasMembershipGroup === false가 될 때까지 3초 간격 폴링 (최대 30초)
-            pollCartRefreshUntilGroupRemoved()
+            pollCartRefreshUntilGroupRemoved(() =>
+              toast.success("장바구니 가격이 업데이트되었습니다."),
+            )
           } catch (error) {
             console.error("멤버십 해지 실패:", error)
           } finally {

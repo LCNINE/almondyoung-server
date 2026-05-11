@@ -63,6 +63,7 @@ export class EntitlementManager {
         .where(
           and(eq(schema.subscriptionEntitlement.userId, userId), eq(schema.subscriptionEntitlement.isCurrent, true)),
         )
+        .for('update')
         .limit(1);
 
       if (!activeEntitlement) {

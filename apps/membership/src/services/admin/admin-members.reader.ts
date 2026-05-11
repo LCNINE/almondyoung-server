@@ -2,15 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
-import { eq, and, desc, asc, ilike, gte, lte, inArray, SQL, count } from 'drizzle-orm';
+import { eq, and, desc, asc, ilike, gte, lte, inArray, SQL, count, isNull, isNotNull } from 'drizzle-orm';
 import { endOfDay } from 'date-fns';
 import { ContractEventManager } from '../subscription/contract-event.manager';
 
 export interface AdminMembersQuery {
   page?: number;
   limit?: number;
-  /** ACTIVE | PAUSED | CANCELLED | EXPIRED */
-  status?: string;
+  status?: 'ACTIVE' | 'PAUSED' | 'CANCELLED' | 'EXPIRED';
   /** userId partial search */
   q?: string;
   /** filter by resolved userIds (from user-service lookup) */
@@ -150,11 +149,13 @@ export class AdminMembersReader {
       baseConditions.push(lte(dateField, endOfDay(new Date(dateTo))));
     }
 
-    // Status-specific contract conditions
+    // PAUSED/ACTIVE는 entitlement.pausedAt 컬럼으로 SQL에서 직접 구분
     if (status === 'ACTIVE') {
       baseConditions.push(eq(schema.subscriptionContracts.status, 'ACTIVE'));
+      baseConditions.push(isNull(schema.subscriptionEntitlement.pausedAt));
     } else if (status === 'PAUSED') {
       baseConditions.push(eq(schema.subscriptionContracts.status, 'ACTIVE'));
+      baseConditions.push(isNotNull(schema.subscriptionEntitlement.pausedAt));
     } else if (status === 'CANCELLED') {
       baseConditions.push(eq(schema.subscriptionContracts.status, 'CANCELLED'));
     } else if (status === 'EXPIRED') {
@@ -163,20 +164,21 @@ export class AdminMembersReader {
 
     const whereClause = baseConditions.length > 0 ? and(...baseConditions) : undefined;
 
-    // For ACTIVE vs PAUSED we need to filter on the joined entitlement column.
-    // We fetch first and then optionally post-filter.
-    // Since PAUSED is a subset of ACTIVE contracts (where pausedAt IS NOT NULL),
-    // we add the entitlement condition after fetching with a subquery approach.
-    // Drizzle doesn't support complex post-join WHERE on left-join columns easily,
-    // so we build the where clause manually.
-
     const entitlementConditions = and(
       eq(schema.subscriptionEntitlement.userId, schema.subscriptionContracts.userId),
       eq(schema.subscriptionEntitlement.isCurrent, true),
     );
 
-    let rows = await this.dbService.db
-      .select({
+    const [[{ total }], rows] = await Promise.all([
+      this.dbService.db
+        .select({ total: count() })
+        .from(schema.subscriptionContracts)
+        .innerJoin(schema.plan, eq(schema.subscriptionContracts.planId, schema.plan.id))
+        .innerJoin(schema.tiers, eq(schema.plan.tierId, schema.tiers.id))
+        .leftJoin(schema.subscriptionEntitlement, entitlementConditions)
+        .where(whereClause),
+      this.dbService.db
+        .select({
         contractId: schema.subscriptionContracts.id,
         userId: schema.subscriptionContracts.userId,
         contractStatus: schema.subscriptionContracts.status,
@@ -190,25 +192,18 @@ export class AdminMembersReader {
         startsAt: schema.subscriptionEntitlement.startsAt,
         endsAt: schema.subscriptionEntitlement.endsAt,
         pausedAt: schema.subscriptionEntitlement.pausedAt,
-      })
-      .from(schema.subscriptionContracts)
-      .innerJoin(schema.plan, eq(schema.subscriptionContracts.planId, schema.plan.id))
-      .innerJoin(schema.tiers, eq(schema.plan.tierId, schema.tiers.id))
-      .leftJoin(schema.subscriptionEntitlement, entitlementConditions)
-      .where(whereClause)
-      .orderBy(desc(schema.subscriptionContracts.createdAt));
+        })
+        .from(schema.subscriptionContracts)
+        .innerJoin(schema.plan, eq(schema.subscriptionContracts.planId, schema.plan.id))
+        .innerJoin(schema.tiers, eq(schema.plan.tierId, schema.tiers.id))
+        .leftJoin(schema.subscriptionEntitlement, entitlementConditions)
+        .where(whereClause)
+        .orderBy(desc(schema.subscriptionContracts.createdAt))
+        .limit(limit)
+        .offset(offset),
+    ]);
 
-    // Post-filter for PAUSED/ACTIVE (depends on joined entitlement.pausedAt)
-    if (status === 'ACTIVE') {
-      rows = rows.filter((r) => r.pausedAt === null);
-    } else if (status === 'PAUSED') {
-      rows = rows.filter((r) => r.pausedAt !== null);
-    }
-
-    const total = rows.length;
-    const paged = rows.slice(offset, offset + limit);
-
-    const data: AdminMemberListItem[] = paged.map((r) => {
+    const data: AdminMemberListItem[] = rows.map((r) => {
       let computedStatus = r.contractStatus;
       if (r.contractStatus === 'ACTIVE' && r.pausedAt !== null) {
         computedStatus = 'PAUSED';
@@ -394,25 +389,31 @@ export class AdminMembersReader {
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 
-    const rows = await this.dbService.db
-      .select({
-        id: schema.billingEvents.id,
-        contractId: schema.billingEvents.contractId,
-        userId: schema.subscriptionContracts.userId,
-        eventType: schema.billingEvents.eventType,
-        attemptNo: schema.billingEvents.attemptNo,
-        amount: schema.billingEvents.amount,
-        errorCode: schema.billingEvents.errorCode,
-        errorMessage: schema.billingEvents.errorMessage,
-        createdAt: schema.billingEvents.createdAt,
-      })
-      .from(schema.billingEvents)
-      .innerJoin(schema.subscriptionContracts, eq(schema.billingEvents.contractId, schema.subscriptionContracts.id))
-      .where(where)
-      .orderBy(desc(schema.billingEvents.createdAt));
-
-    const total = rows.length;
-    const paged = rows.slice(offset, offset + limit);
+    const [[{ total }], paged] = await Promise.all([
+      this.dbService.db
+        .select({ total: count() })
+        .from(schema.billingEvents)
+        .innerJoin(schema.subscriptionContracts, eq(schema.billingEvents.contractId, schema.subscriptionContracts.id))
+        .where(where),
+      this.dbService.db
+        .select({
+          id: schema.billingEvents.id,
+          contractId: schema.billingEvents.contractId,
+          userId: schema.subscriptionContracts.userId,
+          eventType: schema.billingEvents.eventType,
+          attemptNo: schema.billingEvents.attemptNo,
+          amount: schema.billingEvents.amount,
+          errorCode: schema.billingEvents.errorCode,
+          errorMessage: schema.billingEvents.errorMessage,
+          createdAt: schema.billingEvents.createdAt,
+        })
+        .from(schema.billingEvents)
+        .innerJoin(schema.subscriptionContracts, eq(schema.billingEvents.contractId, schema.subscriptionContracts.id))
+        .where(where)
+        .orderBy(desc(schema.billingEvents.createdAt))
+        .limit(limit)
+        .offset(offset),
+    ]);
 
     return {
       data: paged.map((r) => ({
