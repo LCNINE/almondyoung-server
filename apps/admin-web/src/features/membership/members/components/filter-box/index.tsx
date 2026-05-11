@@ -14,7 +14,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { DatePreset, DATE_PRESET_OPTIONS, computeDateRange } from '@/lib/utils/date';
 
-type StatusOption = '' | 'ACTIVE' | 'EXPIRED' | 'PAUSED' | 'CANCELLED';
+type StatusOption = '' | 'ACTIVE' | 'PAUSED' | 'RECURRING_CANCELLED' | 'EXPIRED' | 'CANCELLED';
 type SearchType = 'userId' | 'member';
 
 interface FilterState {
@@ -35,8 +35,9 @@ const DATE_TYPE_OPTIONS = [
 const STATUS_OPTIONS = [
   { value: '', label: '전체' },
   { value: 'ACTIVE', label: '활성화' },
-  { value: 'EXPIRED', label: '만료' },
   { value: 'PAUSED', label: '일시정지' },
+  { value: 'RECURRING_CANCELLED', label: '자동결제 취소' },
+  { value: 'EXPIRED', label: '만료' },
   { value: 'CANCELLED', label: '해지' },
 ];
 
