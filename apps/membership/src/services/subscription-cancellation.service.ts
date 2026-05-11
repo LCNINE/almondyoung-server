@@ -172,6 +172,18 @@ export class SubscriptionCancellationService {
       refundReason,
     );
 
+    // 취소 이벤트 발행 (Medusa 고객 그룹 제거용)
+    await this.membershipEventPublisher.publishStatusChanged({
+      userId: contract.userId,
+      status: 'CANCELLED',
+      occurredAt: new Date().toISOString(),
+      contractId: contract.id,
+      planId: plan.id,
+      tierId: plan.tierId,
+      reasonCode: 'ADMIN_FORCED',
+      reasonText: reason,
+    });
+
     if (result.refundAmount <= 0 || !contract.lastPaymentIntentId) {
       return result;
     }

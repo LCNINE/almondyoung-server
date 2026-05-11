@@ -33,27 +33,13 @@ export class MembershipMedusaSyncService {
       return { success: false, data: { userId, action: 'skipped' } };
     }
 
-    if (!email) {
-      this.logger.warn(`Missing email for membership sync: ${userId}`);
-      await this.eventTrackingService
-        .trackEffect({
-          resourceType: 'UserMembership',
-          resourceId: userId,
-          action: 'SKIPPED',
-          description: `이메일 없음 (userId=${userId})`,
-          eventType: 'MembershipStatusChanged',
-        })
-        .catch((e) => this.logger.warn(`trackEffect 실패: ${e?.message}`));
-      return { success: false, data: { userId, action: 'skipped' } };
-    }
-
     try {
       let customer = await this.medusaClient.findCustomerByAlmondUserId(userId);
 
       // almond_user_id로 찾은 고객의 이메일이 멤버십 이메일과 다르면 유령 고객
       // (동일 almond_user_id를 가진 비활성/구버전 고객이 먼저 조회될 수 있음)
       let ghostCustomerId: string | null = null;
-      if (customer && customer.email !== email) {
+      if (customer && email && customer.email !== email) {
         this.logger.warn(
           `almond_user_id(${userId})로 찾은 고객(${customer.id}, email=${customer.email})이 ` +
           `멤버십 이메일(${email})과 불일치 → 유령 고객으로 판단, email fallback 사용`,
@@ -62,9 +48,8 @@ export class MembershipMedusaSyncService {
         customer = null;
       }
 
-      // almond_user_id가 없거나 유령 고객인 경우 email로 fallback 조회
-      // 찾은 경우 metadata를 자동 복구하여 이후 조회를 정상화함
-      if (!customer) {
+      // almond_user_id로 찾지 못한 경우 email fallback (email이 있을 때만)
+      if (!customer && email) {
         this.logger.warn(
           `almond_user_id(${userId})로 올바른 고객 미발견, email(${email})로 fallback 조회`,
         );
@@ -92,8 +77,9 @@ export class MembershipMedusaSyncService {
       }
 
       if (!customer) {
-        this.logger.warn(`Medusa customer not found for email=${email} (userId=${userId}), will retry`);
-        throw new Error(`Medusa customer not found for email=${email} (userId=${userId})`);
+        const hint = email ? `email=${email}` : `almond_user_id=${userId}`;
+        this.logger.warn(`Medusa customer not found (${hint}), will retry`);
+        throw new Error(`Medusa customer not found (userId=${userId})`);
       }
 
       const addStatuses = new Set(['ACTIVE', 'RESUMED']);
