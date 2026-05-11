@@ -260,6 +260,8 @@ function PeriodTab({ userId, contractId }: { userId: string; contractId: string 
 
   if (isLoading) return <Skeleton className="h-48 w-full" />;
 
+  const isActive = detail?.status === 'ACTIVE' || detail?.status === 'PAUSED';
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 rounded-lg border p-4">
@@ -281,33 +283,41 @@ function PeriodTab({ userId, contractId }: { userId: string; contractId: string 
         </div>
       </div>
 
-      <div className="space-y-2 rounded-lg border p-4">
-        <p className="text-sm font-medium">구독 기간 조정</p>
-        <p className="text-xs text-muted-foreground">양수: 연장 / 음수: 단축 (예: 7, -3)</p>
-        <div className="flex gap-2">
-          <Input
-            type="number"
-            placeholder="일수 (예: 7)"
-            value={days}
-            onChange={(e) => setDays(e.target.value)}
-            className="w-32"
-          />
-          <Input
-            placeholder="사유 입력"
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            className="flex-1"
-          />
+      {isActive ? (
+        <div className="space-y-2 rounded-lg border p-4">
+          <p className="text-sm font-medium">구독 기간 조정</p>
+          <p className="text-xs text-muted-foreground">양수: 연장 / 음수: 단축 (예: 7, -3)</p>
+          <div className="flex gap-2">
+            <Input
+              type="number"
+              placeholder="일수 (예: 7)"
+              value={days}
+              onChange={(e) => setDays(e.target.value)}
+              className="w-32"
+            />
+            <Input
+              placeholder="사유 입력"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              className="flex-1"
+            />
+          </div>
+          <Button
+            size="sm"
+            onClick={handleAdjust}
+            disabled={adjustMutation.isPending}
+            className="w-full"
+          >
+            {adjustMutation.isPending ? '처리 중...' : '변경하기'}
+          </Button>
         </div>
-        <Button
-          size="sm"
-          onClick={handleAdjust}
-          disabled={adjustMutation.isPending}
-          className="w-full"
-        >
-          {adjustMutation.isPending ? '처리 중...' : '변경하기'}
-        </Button>
-      </div>
+      ) : (
+        <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
+          구독이 활성 상태일 때만 기간 조정이 가능합니다.
+          <br />
+          해지된 고객은 &apos;신규 구독 등록&apos;으로 재등록해주세요.
+        </div>
+      )}
     </div>
   );
 }
