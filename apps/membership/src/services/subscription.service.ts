@@ -241,24 +241,55 @@ export class SubscriptionService {
   /**
    * 구독 이력 조회
    *
-   * ✅ 흐름만 표현: "계약 이력 조회"
+   * ✅ 흐름만 표현: "계약 이력 조회 + 현재 entitlement endsAt + 조정 이벤트"
    */
   async getSubscriptionHistory(userId: string) {
-    const rows = await this.contractReader.findContractsByUserIdWithPlan(userId);
-    return rows.map(({ contract, plan, tier }) => ({
-      id: contract.id,
-      userId: contract.userId,
-      planId: contract.planId,
-      status: contract.status,
-      billingDate: contract.billingDate,
-      nextBillingDate: contract.nextBillingDate ?? null,
-      cancelledAt: contract.cancelledAt?.toISOString() ?? null,
-      autoRenewal: contract.autoRenewal,
-      createdAt: contract.createdAt.toISOString(),
-      updatedAt: contract.updatedAt.toISOString(),
-      plan: { price: plan.price, currency: plan.currency ?? 'KRW', durationDays: plan.durationDays },
-      tier: tier?.id ? { code: tier.code } : null,
-    }));
+    const [rows, currentEntitlementData, adjustmentEvents] = await Promise.all([
+      this.contractReader.findContractsByUserIdWithPlan(userId),
+      this.entitlementService.getUserEntitlement(userId),
+      this.contractReader.findAdjustmentEventsByUserId(userId),
+    ]);
+
+    const currentEndsAt = currentEntitlementData?.entitlement.endsAt ?? null;
+
+    const adjustmentsByContract = new Map<string, typeof adjustmentEvents>();
+    for (const e of adjustmentEvents) {
+      const list = adjustmentsByContract.get(e.contractId) ?? [];
+      list.push(e);
+      adjustmentsByContract.set(e.contractId, list);
+    }
+
+    return rows.map(({ contract, plan, tier }) => {
+      const contractAdjustments = (adjustmentsByContract.get(contract.id) ?? []).map((e) => {
+        const meta = e.metadata as { days?: number; previousEndsAt?: string; newEndsAt?: string; reason?: string };
+        return {
+          id: e.id,
+          eventType: e.eventType,
+          days: meta.days ?? 0,
+          previousEndsAt: meta.previousEndsAt ?? null,
+          newEndsAt: meta.newEndsAt ?? null,
+          reason: meta.reason ?? null,
+          createdAt: e.createdAt.toISOString(),
+        };
+      });
+
+      return {
+        id: contract.id,
+        userId: contract.userId,
+        planId: contract.planId,
+        status: contract.status,
+        billingDate: contract.billingDate,
+        nextBillingDate: contract.nextBillingDate ?? null,
+        cancelledAt: contract.cancelledAt?.toISOString() ?? null,
+        autoRenewal: contract.autoRenewal,
+        createdAt: contract.createdAt.toISOString(),
+        updatedAt: contract.updatedAt.toISOString(),
+        endDate: contract.status === 'ACTIVE' ? currentEndsAt : null,
+        plan: { price: plan.price, currency: plan.currency ?? 'KRW', durationDays: plan.durationDays },
+        tier: tier?.id ? { code: tier.code } : null,
+        adjustments: contractAdjustments,
+      };
+    });
   }
 
   /**
