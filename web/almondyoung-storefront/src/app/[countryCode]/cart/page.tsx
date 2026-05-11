@@ -6,6 +6,8 @@ import {
 } from "@/lib/api/medusa/cart"
 import { notFound } from "next/navigation"
 
+export const dynamic = "force-dynamic"
+
 export default async function Cart() {
   let cart = await retrieveCart().catch((error) => {
     console.error(error)

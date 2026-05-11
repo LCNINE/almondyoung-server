@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
-import { eq, and, desc, isNotNull } from 'drizzle-orm';
+import { eq, and, desc, inArray } from 'drizzle-orm';
 
 type Contract = typeof schema.subscriptionContracts.$inferSelect;
 type Plan = typeof schema.plan.$inferSelect;
@@ -85,5 +85,21 @@ export class SubscriptionContractReader {
       .leftJoin(schema.tiers, eq(schema.plan.tierId, schema.tiers.id))
       .where(eq(schema.subscriptionContracts.userId, userId))
       .orderBy(desc(schema.subscriptionContracts.createdAt));
+  }
+
+  /**
+   * 사용자의 구독 기간 조정 이벤트 조회 (ENTITLEMENT_EXTENDED / ENTITLEMENT_REDUCED)
+   */
+  async findAdjustmentEventsByUserId(userId: string) {
+    return await this.dbService.db
+      .select()
+      .from(schema.subscriptionContractEvents)
+      .where(
+        and(
+          eq(schema.subscriptionContractEvents.userId, userId),
+          inArray(schema.subscriptionContractEvents.eventType, ['ENTITLEMENT_EXTENDED', 'ENTITLEMENT_REDUCED']),
+        ),
+      )
+      .orderBy(desc(schema.subscriptionContractEvents.createdAt));
   }
 }

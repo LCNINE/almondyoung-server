@@ -5,6 +5,7 @@ import { ChevronDown, ChevronUp } from "lucide-react"
 import type { RangeSavingsDto } from "@lib/types/dto/membership-savings"
 import type {
   CycleBenefitHistoryDto,
+  SubscriptionAdjustmentDto,
   SubscriptionHistoryItemDto,
 } from "@lib/types/dto/membership"
 
@@ -52,13 +53,32 @@ function planLabel(durationDays?: number): string {
   return `${durationDays}일 구독`
 }
 
+function AdjustmentBadge({ adj }: { adj: SubscriptionAdjustmentDto }) {
+  const isExtend = adj.eventType === "ENTITLEMENT_EXTENDED"
+  return (
+    <div className="flex items-center justify-between rounded-lg bg-white border border-gray-100 px-3 py-2 text-xs">
+      <span className="text-gray-600">{formatDate(adj.createdAt)}</span>
+      <span className={isExtend ? "font-semibold text-blue-600" : "font-semibold text-orange-500"}>
+        {isExtend ? "+" : "-"}{Math.abs(adj.days)}일 {isExtend ? "연장" : "차감"}
+      </span>
+      <span className="text-gray-400">{formatDate(adj.newEndsAt)} 만료</span>
+    </div>
+  )
+}
+
 function HistoryCard({ item }: { item: SubscriptionHistoryItemDto }) {
   const [open, setOpen] = useState(false)
   const startDate = item.startDate ?? item.createdAt
-  const endDate = item.cancelledAt ?? item.endDate ?? item.nextBillingDate ?? null
+  const cancelledEndDate = item.cancelledAt ?? item.endDate ?? null
   const today = new Date()
   const isInTrial = !!item.billingDate && item.status === "ACTIVE" && new Date(item.billingDate) > today
   const displayNextBillingDate = isInTrial ? item.billingDate : item.nextBillingDate
+
+  const headerDateSuffix = (): string => {
+    if (item.status === "ACTIVE" && item.endDate) return ` ~ ${formatDate(item.endDate)} 만료 예정`
+    if (item.status !== "ACTIVE" && cancelledEndDate) return ` ~ ${formatDate(cancelledEndDate)}`
+    return ""
+  }
 
   return (
     <div className="overflow-hidden rounded-xl border border-gray-100">
@@ -79,8 +99,7 @@ function HistoryCard({ item }: { item: SubscriptionHistoryItemDto }) {
             )}
           </div>
           <span className="text-xs text-gray-500">
-            {formatDate(startDate)}
-            {item.status !== "ACTIVE" && endDate ? ` ~ ${formatDate(endDate)}` : ""}
+            {formatDate(startDate)}{headerDateSuffix()}
           </span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -115,6 +134,8 @@ function HistoryCard({ item }: { item: SubscriptionHistoryItemDto }) {
             <span className="font-medium text-gray-900">{formatDate(startDate)}</span>
             {item.status === "ACTIVE" ? (
               <>
+                <span className="text-gray-400">구독 종료 예정일</span>
+                <span className="font-medium text-gray-900">{formatDate(item.endDate)}</span>
                 <span className="text-gray-400">
                   {isInTrial ? "자동 결제 시작일" : "다음 결제일"}
                 </span>
@@ -123,7 +144,7 @@ function HistoryCard({ item }: { item: SubscriptionHistoryItemDto }) {
             ) : (
               <>
                 <span className="text-gray-400">종료일</span>
-                <span className="font-medium text-gray-900">{formatDate(endDate)}</span>
+                <span className="font-medium text-gray-900">{formatDate(cancelledEndDate)}</span>
               </>
             )}
             {item.cancelledAt && (
@@ -133,6 +154,16 @@ function HistoryCard({ item }: { item: SubscriptionHistoryItemDto }) {
               </>
             )}
           </div>
+          {item.adjustments && item.adjustments.length > 0 && (
+            <div className="mt-3 border-t border-gray-200 pt-3">
+              <p className="mb-2 font-semibold text-gray-700">기간 조정 내역</p>
+              <div className="flex flex-col gap-1.5">
+                {item.adjustments.map((adj) => (
+                  <AdjustmentBadge key={adj.id} adj={adj} />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

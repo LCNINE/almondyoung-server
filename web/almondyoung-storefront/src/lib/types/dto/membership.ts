@@ -50,6 +50,16 @@ export interface CurrentSubscriptionResDto {
   data: SubscriptionDetailsDto
 }
 
+export interface SubscriptionAdjustmentDto {
+  id: number
+  eventType: "ENTITLEMENT_EXTENDED" | "ENTITLEMENT_REDUCED"
+  days: number
+  previousEndsAt: string | null
+  newEndsAt: string | null
+  reason: string | null
+  createdAt: string
+}
+
 export interface SubscriptionHistoryItemDto {
   id: string
   userId: string
@@ -61,11 +71,12 @@ export interface SubscriptionHistoryItemDto {
   autoRenewal?: boolean
   createdAt: string
   updatedAt: string
+  endDate?: string | null
   plan?: { price: number; currency: string; durationDays: number } | null
   tier?: { code: string } | null
+  adjustments?: SubscriptionAdjustmentDto[]
   // legacy compat
   startDate?: string
-  endDate?: string | null
 }
 
 export interface SubscriptionHistoryResDto {
