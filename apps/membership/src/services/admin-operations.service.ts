@@ -186,6 +186,10 @@ export class AdminOperationsService {
     return this.adminMembersReader.findContractEventsByUserId(userId);
   }
 
+  async adminGrantSubscriptionByDays(userId: string, days: number, memo: string | null, adminId: string) {
+    return this.entitlementService.grantByDays(userId, days, memo, adminId);
+  }
+
   async setAutoRenewal(contractId: string, autoRenewal: boolean, adminId: string) {
     return this.adminMembersReader.updateAutoRenewal(contractId, autoRenewal, adminId);
   }

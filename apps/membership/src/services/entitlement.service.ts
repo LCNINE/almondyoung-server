@@ -80,6 +80,13 @@ export class EntitlementService {
   }
 
   /**
+   * 관리자 직접 지급 (일수 + 메모)
+   */
+  async grantByDays(userId: string, days: number, memo: string | null, adminId: string) {
+    return this.manager.grantByDays(userId, days, memo, adminId);
+  }
+
+  /**
    * 권한 연장 (하위 호환성)
    *
    * ✅ 흐름만 표현: "권한 연장"

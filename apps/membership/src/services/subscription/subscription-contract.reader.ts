@@ -97,7 +97,7 @@ export class SubscriptionContractReader {
       .where(
         and(
           eq(schema.subscriptionContractEvents.userId, userId),
-          inArray(schema.subscriptionContractEvents.eventType, ['ENTITLEMENT_EXTENDED', 'ENTITLEMENT_REDUCED']),
+          inArray(schema.subscriptionContractEvents.eventType, ['ENTITLEMENT_EXTENDED', 'ENTITLEMENT_REDUCED', 'GRANTED_BY_ADMIN']),
         ),
       )
       .orderBy(desc(schema.subscriptionContractEvents.createdAt));

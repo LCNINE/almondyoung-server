@@ -52,7 +52,7 @@ export interface CurrentSubscriptionResDto {
 
 export interface SubscriptionAdjustmentDto {
   id: number
-  eventType: "ENTITLEMENT_EXTENDED" | "ENTITLEMENT_REDUCED"
+  eventType: "ENTITLEMENT_EXTENDED" | "ENTITLEMENT_REDUCED" | "GRANTED_BY_ADMIN"
   days: number
   previousEndsAt: string | null
   newEndsAt: string | null

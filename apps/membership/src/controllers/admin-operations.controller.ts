@@ -659,6 +659,30 @@ export class AdminOperationsController {
     }
   }
 
+  @Post('members/:userId/grant')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: '관리자 직접 구독 지급 (일수 + 메모)' })
+  @UseGuards(JwtAuthGuard)
+  async grantSubscriptionByDays(
+    @User('userId') adminId: string,
+    @Param('userId') userId: string,
+    @Body() body: { days: number; memo?: string },
+  ) {
+    const days = Number(body.days);
+    if (!days || days < 1) throw new BadRequestException('days는 1 이상이어야 합니다.');
+    try {
+      const result = await this.adminOperationsService.adminGrantSubscriptionByDays(
+        userId,
+        days,
+        body.memo ?? null,
+        adminId,
+      );
+      return { success: true, data: result };
+    } catch (error) {
+      this.handleError(error, '구독 지급', userId);
+    }
+  }
+
   @Post('billing/retry/:contractId')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '결제 수동 재시도' })

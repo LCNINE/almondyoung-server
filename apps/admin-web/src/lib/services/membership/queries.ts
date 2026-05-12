@@ -173,6 +173,17 @@ export const useAdminSubscribeUser = () => {
   });
 };
 
+export const useGrantSubscriptionByDays = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userId, days, memo }: { userId: string; days: number; memo?: string }) =>
+      membershipApi.grantSubscriptionByDays(userId, days, memo),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: membershipQueryKeys.all });
+    },
+  });
+};
+
 export const useRetryBilling = () => {
   const queryClient = useQueryClient();
   return useMutation({

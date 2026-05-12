@@ -18,35 +18,18 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { useTiersWithPlans, useAdminSubscribeUser } from '@/lib/services/membership';
+import { useGrantSubscriptionByDays } from '@/lib/services/membership';
 
-function getPlanLabel(durationDays: number): string {
-  if (durationDays >= 365) return '연간';
-  if (durationDays >= 28) return '월간';
-  return `${durationDays}일`;
-}
-
-function AdminSubscribeDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+function AdminGrantDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [userId, setUserId] = useState('');
-  const [planId, setPlanId] = useState('');
-  const [billingMode, setBillingMode] = useState<'one_time' | 'recurring'>('recurring');
-  const { data: tiers } = useTiersWithPlans();
-  const subscribeMutation = useAdminSubscribeUser();
-
-  const allPlans = tiers?.flatMap((t) => t.plans.filter((p) => p.isActive).map((p) => ({ ...p, tierCode: t.tier.code }))) ?? [];
+  const [days, setDays] = useState('');
+  const [memo, setMemo] = useState('');
+  const grantMutation = useGrantSubscriptionByDays();
 
   const handleClose = () => {
     setUserId('');
-    setPlanId('');
-    setBillingMode('recurring');
+    setDays('');
+    setMemo('');
     onClose();
   };
 
@@ -55,20 +38,21 @@ function AdminSubscribeDialog({ open, onClose }: { open: boolean; onClose: () =>
       toast.error('사용자 ID를 입력해주세요.');
       return;
     }
-    if (!planId) {
-      toast.error('플랜을 선택해주세요.');
+    const d = Number(days);
+    if (!d || d < 1) {
+      toast.error('1일 이상의 일수를 입력해주세요.');
       return;
     }
     try {
-      await subscribeMutation.mutateAsync({ userId: userId.trim(), planId, billingMode });
-      toast.success('구독이 등록되었습니다.');
+      await grantMutation.mutateAsync({ userId: userId.trim(), days: d, memo: memo.trim() || undefined });
+      toast.success('구독이 지급되었습니다.');
       handleClose();
     } catch (e: any) {
       const msg: string = e?.response?.data?.message ?? e?.message ?? '';
-      if (msg.toLowerCase().includes('already')) {
-        toast.error('이미 활성 구독이 존재하는 사용자입니다.');
+      if (msg.includes('이미 활성')) {
+        toast.error('이미 활성 구독이 있는 사용자입니다. 멤버십 상세에서 기간 조정을 이용하세요.');
       } else {
-        toast.error('구독 등록에 실패했습니다.');
+        toast.error('구독 지급에 실패했습니다.');
       }
     }
   };
@@ -77,9 +61,9 @@ function AdminSubscribeDialog({ open, onClose }: { open: boolean; onClose: () =>
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>신규 회원 구독 등록</DialogTitle>
+          <DialogTitle>신규 구독 지급</DialogTitle>
           <DialogDescription>
-            사용자 ID와 플랜을 선택해 직접 구독을 등록합니다. 무료체험 없이 즉시 적용됩니다.
+            사용자 ID와 지급할 일수를 입력합니다. 결제 없이 즉시 적용되며 메모는 마이페이지에서 확인할 수 있습니다.
           </DialogDescription>
         </DialogHeader>
 
@@ -94,41 +78,23 @@ function AdminSubscribeDialog({ open, onClose }: { open: boolean; onClose: () =>
           </div>
 
           <div className="space-y-1.5">
-            <Label>플랜 <span className="text-destructive">*</span></Label>
-            <Select value={planId} onValueChange={setPlanId}>
-              <SelectTrigger>
-                <SelectValue placeholder="플랜 선택" />
-              </SelectTrigger>
-              <SelectContent>
-                {allPlans.map((plan) => (
-                  <SelectItem key={plan.id} value={plan.id}>
-                    {plan.tierCode} / {getPlanLabel(plan.durationDays)} — {plan.price.toLocaleString()}원
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label>지급 일수 <span className="text-destructive">*</span></Label>
+            <Input
+              type="number"
+              placeholder="예: 30"
+              min={1}
+              value={days}
+              onChange={(e) => setDays(e.target.value)}
+            />
           </div>
 
-          <div className="space-y-2">
-            <Label>결제 방식 <span className="text-destructive">*</span></Label>
-            <RadioGroup
-              value={billingMode}
-              onValueChange={(v) => setBillingMode(v as 'one_time' | 'recurring')}
-              className="flex gap-4"
-            >
-              <div className="flex items-center gap-1.5">
-                <RadioGroupItem value="recurring" id="mode-recurring" />
-                <Label htmlFor="mode-recurring" className="cursor-pointer font-normal">
-                  정기결제 (자동갱신)
-                </Label>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <RadioGroupItem value="one_time" id="mode-onetime" />
-                <Label htmlFor="mode-onetime" className="cursor-pointer font-normal">
-                  일회성 (자동갱신 없음)
-                </Label>
-              </div>
-            </RadioGroup>
+          <div className="space-y-1.5">
+            <Label>메모 (선택)</Label>
+            <Input
+              placeholder="예: 계좌이체 확인, 서비스 제공"
+              value={memo}
+              onChange={(e) => setMemo(e.target.value)}
+            />
           </div>
         </div>
 
@@ -136,8 +102,8 @@ function AdminSubscribeDialog({ open, onClose }: { open: boolean; onClose: () =>
           <Button variant="outline" onClick={handleClose}>
             닫기
           </Button>
-          <Button onClick={handleConfirm} disabled={subscribeMutation.isPending}>
-            {subscribeMutation.isPending ? '처리 중...' : '구독 등록'}
+          <Button onClick={handleConfirm} disabled={grantMutation.isPending}>
+            {grantMutation.isPending ? '처리 중...' : '구독 지급'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -166,7 +132,7 @@ export default function MembershipMemberListTemplate() {
       />
       <MembershipMemberFilterBox />
       <MembershipMemberTable />
-      <AdminSubscribeDialog
+      <AdminGrantDialog
         open={subscribeDialogOpen}
         onClose={() => setSubscribeDialogOpen(false)}
       />

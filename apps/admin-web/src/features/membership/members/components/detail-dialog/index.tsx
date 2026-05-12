@@ -37,6 +37,7 @@ import {
   useAdjustEntitlement,
   useForceCancelSubscription,
   useRetryBilling,
+  useGrantSubscriptionByDays,
 } from '@/lib/services/membership';
 import { useUserNames } from '@/hooks/use-user-names';
 
@@ -235,21 +236,19 @@ function ForceCancelDialog({ open, onClose, contractId, onSuccess }: ForceCancel
   );
 }
 
-// 첫번째 탭: 기간 관리
-function PeriodTab({ userId, contractId }: { userId: string; contractId: string }) {
-  const { data: detail, isLoading } = useMemberDetail(userId);
-  const adjustMutation = useAdjustEntitlement();
+function AdjustForm({ userId }: { userId: string }) {
+  const mutation = useAdjustEntitlement();
   const [days, setDays] = useState('');
   const [reason, setReason] = useState('');
 
-  const handleAdjust = async () => {
+  const handleSubmit = async () => {
     const d = Number(days);
     if (!d || !reason.trim()) {
       toast.error('일수와 사유를 입력해주세요.');
       return;
     }
     try {
-      await adjustMutation.mutateAsync({ userId, days: d, reason: reason.trim() });
+      await mutation.mutateAsync({ userId, days: d, reason: reason.trim() });
       toast.success('구독 기간이 조정되었습니다.');
       setDays('');
       setReason('');
@@ -257,6 +256,91 @@ function PeriodTab({ userId, contractId }: { userId: string; contractId: string 
       toast.error('구독 기간 조정에 실패했습니다.');
     }
   };
+
+  return (
+    <div className="space-y-2 rounded-lg border p-4">
+      <p className="text-sm font-medium">구독 기간 조정</p>
+      <p className="text-xs text-muted-foreground">양수: 연장 / 음수: 단축 (예: 7, -3)</p>
+      <div className="flex gap-2">
+        <Input
+          type="number"
+          placeholder="일수 (예: 7)"
+          value={days}
+          onChange={(e) => setDays(e.target.value)}
+          className="w-32"
+        />
+        <Input
+          placeholder="사유 입력"
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          className="flex-1"
+        />
+      </div>
+      <Button size="sm" onClick={handleSubmit} disabled={mutation.isPending} className="w-full">
+        {mutation.isPending ? '처리 중...' : '변경하기'}
+      </Button>
+    </div>
+  );
+}
+
+function GrantForm({ userId }: { userId: string }) {
+  const mutation = useGrantSubscriptionByDays();
+  const [days, setDays] = useState('');
+  const [memo, setMemo] = useState('');
+
+  const handleSubmit = async () => {
+    const d = Number(days);
+    if (!d || d < 1) {
+      toast.error('1일 이상의 일수를 입력해주세요.');
+      return;
+    }
+    try {
+      await mutation.mutateAsync({ userId, days: d, memo: memo.trim() || undefined });
+      toast.success('구독이 지급되었습니다.');
+      setDays('');
+      setMemo('');
+    } catch (e: any) {
+      const msg: string = e?.response?.data?.message ?? e?.message ?? '';
+      if (msg.includes('이미 활성')) {
+        toast.error('이미 활성 구독이 있는 회원입니다. 기간 조정 기능을 이용하세요.');
+      } else {
+        toast.error('구독 지급에 실패했습니다.');
+      }
+    }
+  };
+
+  return (
+    <div className="space-y-3 rounded-lg border p-4">
+      <p className="text-sm font-medium">구독 지급</p>
+      <p className="text-xs text-muted-foreground">
+        지급할 일수와 사유(메모)를 입력하세요. 마이페이지에서 확인할 수 있습니다.
+      </p>
+      <div className="flex gap-2">
+        <Input
+          type="number"
+          placeholder="일수 (예: 30)"
+          value={days}
+          onChange={(e) => setDays(e.target.value)}
+          min={1}
+          className="w-32"
+        />
+        <Input
+          placeholder="메모 (예: 계좌이체 확인)"
+          value={memo}
+          onChange={(e) => setMemo(e.target.value)}
+          className="flex-1"
+        />
+      </div>
+      <Button size="sm" onClick={handleSubmit} disabled={mutation.isPending || !days} className="w-full">
+        {mutation.isPending ? '처리 중...' : '구독 지급'}
+      </Button>
+    </div>
+  );
+}
+
+// 첫번째 탭: 기간 관리
+function PeriodTab({ userId }: { userId: string }) {
+  const { data: detail, isLoading } = useMemberDetail(userId);
 
   if (isLoading) return <Skeleton className="h-48 w-full" />;
 
@@ -283,41 +367,7 @@ function PeriodTab({ userId, contractId }: { userId: string; contractId: string 
         </div>
       </div>
 
-      {isActive ? (
-        <div className="space-y-2 rounded-lg border p-4">
-          <p className="text-sm font-medium">구독 기간 조정</p>
-          <p className="text-xs text-muted-foreground">양수: 연장 / 음수: 단축 (예: 7, -3)</p>
-          <div className="flex gap-2">
-            <Input
-              type="number"
-              placeholder="일수 (예: 7)"
-              value={days}
-              onChange={(e) => setDays(e.target.value)}
-              className="w-32"
-            />
-            <Input
-              placeholder="사유 입력"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              className="flex-1"
-            />
-          </div>
-          <Button
-            size="sm"
-            onClick={handleAdjust}
-            disabled={adjustMutation.isPending}
-            className="w-full"
-          >
-            {adjustMutation.isPending ? '처리 중...' : '변경하기'}
-          </Button>
-        </div>
-      ) : (
-        <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
-          구독이 활성 상태일 때만 기간 조정이 가능합니다.
-          <br />
-          해지된 고객은 &apos;신규 구독 등록&apos;으로 재등록해주세요.
-        </div>
-      )}
+      {isActive ? <AdjustForm userId={userId} /> : <GrantForm userId={userId} />}
     </div>
   );
 }
@@ -631,7 +681,7 @@ export function MembershipMemberDetailDialog({
               </TabsList>
 
               <TabsContent value="period" className="mt-4">
-                <PeriodTab userId={member.userId} contractId={member.contractId} />
+                <PeriodTab userId={member.userId} />
               </TabsContent>
 
               <TabsContent value="plan" className="mt-4">
