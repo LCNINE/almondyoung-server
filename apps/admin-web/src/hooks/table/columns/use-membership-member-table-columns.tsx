@@ -40,18 +40,21 @@ function getPlanLabel(durationDays: number): string {
   return `${durationDays}일`;
 }
 
+import { UserInfo } from '@/hooks/use-user-names';
+
 type UseColumnsOptions = {
   onEdit?: (row: AdminMemberListItem) => void;
-  userMap?: Record<string, string>;
+  userMap?: Record<string, UserInfo>;
 };
 
 export const useMembershipMemberTableColumns = ({ onEdit, userMap = {} }: UseColumnsOptions = {}) => {
   return useMemo(
     () => [
       columnHelper.accessor('userId', {
-        header: '자사몰 아이디',
+        header: '로그인 아이디',
         cell: ({ getValue }) => {
           const userId = getValue();
+          const loginId = userMap[userId]?.loginId;
           return (
             <Link
               href={`/account/customer/${userId}`}
@@ -59,7 +62,7 @@ export const useMembershipMemberTableColumns = ({ onEdit, userMap = {} }: UseCol
               rel="noopener noreferrer"
               className="font-medium text-primary text-xs hover:underline"
             >
-              {userId}
+              {loginId || userId}
             </Link>
           );
         },
@@ -69,7 +72,7 @@ export const useMembershipMemberTableColumns = ({ onEdit, userMap = {} }: UseCol
         header: '성명',
         cell: ({ row }) => (
           <span className="text-sm">
-            {userMap[row.original.userId] ?? <span className="text-muted-foreground">-</span>}
+            {userMap[row.original.userId]?.username ?? <span className="text-muted-foreground">-</span>}
           </span>
         ),
       }),

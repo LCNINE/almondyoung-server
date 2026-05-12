@@ -9,7 +9,7 @@ import { useDataTable } from '@/hooks/use-data-table';
 import { DataTable } from '@/components/data-table';
 import { AdminMemberListItem } from '@/lib/api/domains/membership';
 import { MembershipMemberDetailDialog } from '@/features/membership/members/components/detail-dialog';
-import { useUserNames } from '@/hooks/use-user-names';
+import { useUserNames, UserInfo } from '@/hooks/use-user-names';
 import Link from 'next/link';
 
 const PAGE_SIZE = 20;
@@ -22,28 +22,32 @@ function getPlanLabel(durationDays: number): string {
   return `${durationDays}일`;
 }
 
-function useColumns(onEdit?: (row: AdminMemberListItem) => void, userMap: Record<string, string> = {}) {
+function useColumns(onEdit?: (row: AdminMemberListItem) => void, userMap: Record<string, UserInfo> = {}) {
   return useMemo(
     () => [
       columnHelper.accessor('userId', {
-        header: '자사몰 아이디',
-        cell: ({ getValue }) => (
-          <Link
-            href={`/account/customer/${getValue()}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-medium text-primary text-xs hover:underline"
-          >
-            {getValue()}
-          </Link>
-        ),
+        header: '로그인 아이디',
+        cell: ({ getValue }) => {
+          const userId = getValue();
+          const loginId = userMap[userId]?.loginId;
+          return (
+            <Link
+              href={`/account/customer/${userId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-primary text-xs hover:underline"
+            >
+              {loginId || userId}
+            </Link>
+          );
+        },
       }),
       columnHelper.display({
         id: 'name',
         header: '성명',
         cell: ({ row }) => (
           <span className="text-sm">
-            {userMap[row.original.userId] ?? <span className="text-muted-foreground">-</span>}
+            {userMap[row.original.userId]?.username ?? <span className="text-muted-foreground">-</span>}
           </span>
         ),
       }),
