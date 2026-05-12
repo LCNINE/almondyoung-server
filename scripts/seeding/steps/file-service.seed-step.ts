@@ -173,6 +173,8 @@ const CONTEXT_NAMES: Record<string, string> = Object.fromEntries(
 );
 
 export class FileServiceSeedStep extends SeedStep {
+  readonly groups = ['baseline'] as const;
+
   constructor(databaseUrl: string) {
     super('File Service', databaseUrl);
   }

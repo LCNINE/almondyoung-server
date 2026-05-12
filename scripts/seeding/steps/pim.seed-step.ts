@@ -14,6 +14,8 @@ const SALES_CHANNELS = [
 ];
 
 export class PimSeedStep extends SeedStep {
+  readonly groups = ['baseline'] as const;
+
   constructor(databaseUrl: string) {
     super('PIM', databaseUrl);
   }

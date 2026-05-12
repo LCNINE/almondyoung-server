@@ -18,7 +18,7 @@ import chalk from 'chalk';
 import { confirm, select } from '@inquirer/prompts';
 import { runDatabaseCreation } from './phases/01-database-creation';
 import { runSchemaSync } from './phases/02-schema-sync';
-import { runSeeding } from './phases/03-seed-orchestrator';
+import { runSeeding, listGroupsForDeployment } from './phases/03-seed-orchestrator';
 import { SetupReport, SeedApplyResult } from './lib/types';
 
 // ─── Argument parsing ───────────────────────────────────────────
@@ -27,6 +27,9 @@ function parseArgs(argv: string[]) {
   let stage: string | undefined;
   let deployment: string | undefined;
   let yes = false;
+  let group: string | undefined;
+  let listGroups = false;
+  let allowDemoInProd = false;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--stage' && args[i + 1]) {
@@ -35,10 +38,16 @@ function parseArgs(argv: string[]) {
       deployment = args[++i];
     } else if (args[i] === '--yes' || args[i] === '--non-interactive') {
       yes = true;
+    } else if (args[i] === '--group' && args[i + 1] !== undefined) {
+      group = args[++i];
+    } else if (args[i] === '--list-groups') {
+      listGroups = true;
+    } else if (args[i] === '--allow-demo-in-prod') {
+      allowDemoInProd = true;
     }
   }
 
-  return { stage, deployment, yes };
+  return { stage, deployment, yes, group, listGroups, allowDemoInProd };
 }
 
 // ─── SST shell re-exec ─────────────────────────────────────────
@@ -125,6 +134,18 @@ function printReport(report: SetupReport): void {
 async function main() {
   const parsed = parseArgs(process.argv);
 
+  // --list-groups는 DB 접근 없이 step 메타만 모은다 (sst shell도 필요 없음)
+  if (parsed.listGroups) {
+    const groups = await listGroupsForDeployment(parsed.deployment);
+    console.log('Available seed groups:');
+    if (groups.length === 0) {
+      console.log('  (없음)');
+    } else {
+      for (const g of groups) console.log(`  - ${g}`);
+    }
+    return;
+  }
+
   // If not inside sst shell, wrap ourselves
   if (!isInsideSstShell()) {
     if (!parsed.stage) {
@@ -160,7 +181,12 @@ async function main() {
     console.log(chalk.yellow('  Running in non-interactive mode (--yes)'));
   }
 
-  const options = { yes: isNonInteractive, deployment };
+  const options = {
+    yes: isNonInteractive,
+    deployment,
+    group: parsed.group,
+    allowDemoInProd: parsed.allowDemoInProd,
+  };
   let databasesCreated: string[] = [];
   let schemasSynced: string[] = [];
   let seedResults: SeedApplyResult[] = [];

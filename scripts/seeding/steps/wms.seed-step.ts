@@ -28,6 +28,8 @@ const SETTINGS = [
 ];
 
 export class WmsSeedStep extends SeedStep {
+  readonly groups = ['baseline'] as const;
+
   constructor(databaseUrl: string) {
     super('WMS', databaseUrl);
   }
