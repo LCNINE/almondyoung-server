@@ -271,4 +271,11 @@ export const membershipApi = {
   retryBilling: async (contractId: string): Promise<void> => {
     await client.post(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/billing/retry/${encodeURIComponent(contractId)}`);
   },
+
+  grantSubscriptionByDays: async (userId: string, days: number, memo?: string): Promise<void> => {
+    await client.post(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/members/${encodeURIComponent(userId)}/grant`, {
+      days,
+      memo,
+    });
+  },
 };

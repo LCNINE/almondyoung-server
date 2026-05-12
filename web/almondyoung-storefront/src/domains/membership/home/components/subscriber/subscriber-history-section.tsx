@@ -57,15 +57,26 @@ function planLabel(durationDays?: number): string {
   return `${durationDays}일 구독`
 }
 
+type AdjEventMeta = { label: (days: number) => string; className: string; showReason: boolean }
+
+const ADJ_EVENT_META: Record<string, AdjEventMeta> = {
+  GRANTED_BY_ADMIN:     { label: (d) => `관리자 지급 +${d}일`,   className: "font-semibold text-purple-600", showReason: true },
+  ENTITLEMENT_EXTENDED: { label: (d) => `+${d}일 연장`,          className: "font-semibold text-blue-600",   showReason: false },
+}
+const ADJ_REDUCED_META: AdjEventMeta = { label: (d) => `-${Math.abs(d)}일 차감`, className: "font-semibold text-orange-500", showReason: false }
+
 function AdjustmentBadge({ adj }: { adj: SubscriptionAdjustmentDto }) {
-  const isExtend = adj.eventType === "ENTITLEMENT_EXTENDED"
+  const meta = ADJ_EVENT_META[adj.eventType] ?? ADJ_REDUCED_META
   return (
-    <div className="flex items-center justify-between rounded-lg bg-white border border-gray-100 px-3 py-2 text-xs">
-      <span className="text-gray-600">{formatDate(adj.createdAt)}</span>
-      <span className={isExtend ? "font-semibold text-blue-600" : "font-semibold text-orange-500"}>
-        {isExtend ? "+" : "-"}{Math.abs(adj.days)}일 {isExtend ? "연장" : "차감"}
-      </span>
-      <span className="text-gray-400">{formatDate(adj.newEndsAt)} 만료</span>
+    <div className="rounded-lg bg-white border border-gray-100 px-3 py-2 text-xs">
+      <div className="flex items-center justify-between">
+        <span className="text-gray-600">{formatDate(adj.createdAt)}</span>
+        <span className={meta.className}>{meta.label(adj.days)}</span>
+        <span className="text-gray-400">{formatDate(adj.newEndsAt)} 만료</span>
+      </div>
+      {meta.showReason && adj.reason && (
+        <p className="mt-1 text-gray-500">사유: {adj.reason}</p>
+      )}
     </div>
   )
 }
