@@ -4,7 +4,12 @@ import { useQueries } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { userApi } from '@/lib/api/domains/users';
 
-export function useUserNames(userIds: string[]): Record<string, string> {
+export interface UserInfo {
+  username: string;
+  loginId: string;
+}
+
+export function useUserNames(userIds: string[]): Record<string, UserInfo> {
   const results = useQueries({
     queries: userIds.map((userId) => ({
       queryKey: ['admin-user-name', userId],
@@ -15,9 +20,9 @@ export function useUserNames(userIds: string[]): Record<string, string> {
   });
 
   return useMemo(() => {
-    return userIds.reduce<Record<string, string>>((acc, userId, i) => {
-      const name = results[i]?.data?.username;
-      if (name) acc[userId] = name;
+    return userIds.reduce<Record<string, UserInfo>>((acc, userId, i) => {
+      const data = results[i]?.data;
+      if (data) acc[userId] = { username: data.username ?? '', loginId: data.loginId ?? '' };
       return acc;
     }, {});
   // eslint-disable-next-line react-hooks/exhaustive-deps

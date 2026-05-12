@@ -588,12 +588,14 @@ export function MembershipMemberDetailDialog({
 
           <div className="grid grid-cols-2 gap-x-6 gap-y-2 rounded-lg bg-gray-50 px-4 py-3 text-sm">
             <div className="flex gap-2">
-              <span className="text-muted-foreground w-24 shrink-0">자사몰 아이디</span>
-              <span className="font-medium break-all">{member?.userId ?? '-'}</span>
+              <span className="text-muted-foreground w-24 shrink-0">로그인 아이디</span>
+              <span className="font-medium break-all">
+                {(member?.userId && userNames[member.userId]?.loginId) || member?.userId || '-'}
+              </span>
             </div>
             <div className="flex gap-2">
               <span className="text-muted-foreground w-24 shrink-0">성함</span>
-              <span className="font-medium">{(member?.userId && userNames[member.userId]) || '-'}</span>
+              <span className="font-medium">{(member?.userId && userNames[member.userId]?.username) || '-'}</span>
             </div>
             <div className="flex gap-2">
               <span className="text-muted-foreground w-24 shrink-0">최초 등록일</span>
