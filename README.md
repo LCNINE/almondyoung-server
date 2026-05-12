@@ -47,8 +47,7 @@ apps/
 │   │   ├── rights/            # 권한 관리
 │   │   ├── subscription/      # 구독 관리
 │   │   └── shared/           # 공통 모듈
-├── wms/                # 창고 관리 시스템
-└── almondyoung-server/ # 메인 서버
+└── core/               # 메인 서버 (catalog+inventory 통합)
 
 libs/
 ├── db/                 # 데이터베이스 모듈
@@ -91,9 +90,7 @@ GET    /policies/applicable   # 적용 가능한 정책 조회
 ```
 almondyoung-server/
 ├── apps/
-│   ├── wms/              # 창고 관리 시스템 (WMS)
-│   ├── pim/              # 상품 정보 관리 시스템 (PIM)  
-│   └── almondyoung-server/ # 메인 서버 애플리케이션
+│   └── core/             # 메인 서버 (catalog+inventory 통합)
 ├── libs/
 │   ├── shared/           # 공통 라이브러리
 │   ├── events/           # 이벤트 처리
