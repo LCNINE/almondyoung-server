@@ -512,23 +512,12 @@ export class ProductMastersService {
       const mode = filters?.mode ?? 'active';
       const deleted = filters?.deleted ?? false;
 
-      // ===== 모드별 버전 선택 로직 =====
-      // 각 master에서 어떤 버전을 선택할지 결정
-      // 타입 안전성을 위해 두 모드 모두 동일한 스키마 사용
-      const selectedVersionsSubquery =
-        mode === 'active'
+      // ===== 모드별 버전 선택 서브쿼리 =====
+      // - active: 서브쿼리 불필요 — productMasterVersions에 직접 status/deletedAt 조건을 건다.
+      // - active-or-inactive: master당 active 우선 → 최신 inactive 1개를 ROW_NUMBER로 선택.
+      const rankedVersionsSubquery =
+        mode === 'active-or-inactive'
           ? trx
-              .select({
-                masterId: productMasterVersions.masterId,
-                versionId: productMasterVersions.id,
-                status: productMasterVersions.status,
-                createdAt: productMasterVersions.createdAt,
-                rn: sql<number>`1`.as('rn'),
-              })
-              .from(productMasterVersions)
-              .where(and(eq(productMasterVersions.status, 'active'), isNull(productMasterVersions.deletedAt)))
-              .as('selected_versions')
-          : trx
               .select({
                 masterId: productMasterVersions.masterId,
                 versionId: productMasterVersions.id,
@@ -550,7 +539,8 @@ export class ProductMastersService {
                   isNull(productMasterVersions.deletedAt),
                 ),
               )
-              .as('ranked_versions');
+              .as('ranked_versions')
+          : null;
 
       // ===== 카테고리 필터: 하위 카테고리 포함 ID 목록 (Recursive CTE) =====
       let categoryIds: string[] | undefined;
@@ -600,38 +590,41 @@ export class ProductMastersService {
         whereConditions.push(inArray(productMasters.id, filters.ids));
       }
 
+      // 모드별 버전 필터: active는 productMasterVersions 컬럼으로, 다른 모드는 ranked subquery의 rn=1로.
+      if (mode === 'active') {
+        whereConditions.push(eq(productMasterVersions.status, 'active'));
+        whereConditions.push(isNull(productMasterVersions.deletedAt));
+      } else {
+        whereConditions.push(eq(rankedVersionsSubquery!.rn, 1));
+      }
+
       // ===== 최종 where 절 빌드 =====
       const whereClause = whereConditions.length > 0 ? and(...whereConditions) : undefined;
 
-      // ===== 모드별 조인 처리 =====
-      const filteredVersions = trx
-        .select({
-          masterId: selectedVersionsSubquery.masterId,
-          versionId: selectedVersionsSubquery.versionId,
-          status: selectedVersionsSubquery.status,
-          createdAt: selectedVersionsSubquery.createdAt,
-        })
-        .from(selectedVersionsSubquery)
-        .where(eq(selectedVersionsSubquery.rn, 1))
-        .as('filtered_versions');
-
-      const baseQuery =
-        mode === 'active-or-inactive'
+      // ===== COUNT 쿼리 =====
+      // Drizzle 빌더는 mutable이므로 count/data를 별개 인스턴스로 만든다.
+      // 사내 컨벤션: sales-channels.service.ts:126-148 참고.
+      const countBaseQuery =
+        mode === 'active'
           ? trx
-              .select()
+              .select({ c: count() })
               .from(productMasters)
-              .innerJoin(filteredVersions, eq(productMasters.id, filteredVersions.masterId))
-              .innerJoin(productMasterVersions, eq(filteredVersions.versionId, productMasterVersions.id))
+              .innerJoin(productMasterVersions, eq(productMasters.id, productMasterVersions.masterId))
           : trx
-              .select()
+              .select({ c: count() })
               .from(productMasters)
-              .innerJoin(selectedVersionsSubquery, eq(productMasters.id, selectedVersionsSubquery.masterId))
-              .innerJoin(productMasterVersions, eq(selectedVersionsSubquery.versionId, productMasterVersions.id));
+              .innerJoin(
+                rankedVersionsSubquery!,
+                eq(productMasters.id, rankedVersionsSubquery!.masterId),
+              )
+              .innerJoin(
+                productMasterVersions,
+                eq(rankedVersionsSubquery!.versionId, productMasterVersions.id),
+              );
 
-      // 카테고리 조인 추가 (필요한 경우)
-      const queryWithFilters =
+      const countQuery =
         categoryIds && categoryIds.length > 0
-          ? baseQuery.innerJoin(
+          ? countBaseQuery.innerJoin(
               productMasterCategories,
               and(
                 eq(productMasterCategories.masterId, productMasters.id),
@@ -639,17 +632,45 @@ export class ProductMastersService {
                 inArray(productMasterCategories.categoryId, categoryIds),
               ),
             )
-          : baseQuery;
+          : countBaseQuery;
 
-      // WHERE 절 적용
-      const finalQuery = whereClause ? queryWithFilters.where(whereClause) : queryWithFilters;
-
-      // ===== COUNT 쿼리 =====
-      const countResult = await finalQuery;
-      const total = countResult.length;
+      const [{ c: total }] = await (whereClause ? countQuery.where(whereClause) : countQuery);
 
       // ===== DATA 쿼리 (정렬 및 페이지네이션) =====
-      const orderedQuery = finalQuery.orderBy(desc(productMasterVersions.createdAt));
+      const dataBaseQuery =
+        mode === 'active'
+          ? trx
+              .select()
+              .from(productMasters)
+              .innerJoin(productMasterVersions, eq(productMasters.id, productMasterVersions.masterId))
+          : trx
+              .select()
+              .from(productMasters)
+              .innerJoin(
+                rankedVersionsSubquery!,
+                eq(productMasters.id, rankedVersionsSubquery!.masterId),
+              )
+              .innerJoin(
+                productMasterVersions,
+                eq(rankedVersionsSubquery!.versionId, productMasterVersions.id),
+              );
+
+      const dataQueryWithCategory =
+        categoryIds && categoryIds.length > 0
+          ? dataBaseQuery.innerJoin(
+              productMasterCategories,
+              and(
+                eq(productMasterCategories.masterId, productMasters.id),
+                eq(productMasterCategories.versionId, productMasterVersions.id),
+                inArray(productMasterCategories.categoryId, categoryIds),
+              ),
+            )
+          : dataBaseQuery;
+
+      const filteredDataQuery = whereClause
+        ? dataQueryWithCategory.where(whereClause)
+        : dataQueryWithCategory;
+      const orderedQuery = filteredDataQuery.orderBy(desc(productMasterVersions.createdAt));
 
       const rawData = await (returnAll ? orderedQuery : orderedQuery.limit(limit).offset(offset));
 
