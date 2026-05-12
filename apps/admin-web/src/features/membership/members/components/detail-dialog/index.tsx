@@ -455,8 +455,8 @@ function PlanTab({ userId, contractId }: { userId: string; contractId: string })
 }
 
 // 세번째 탭: 결제 기록
-function BillingTab({ contractId }: { contractId: string }) {
-  const { data: events, isLoading } = useMemberBillingEvents(contractId);
+function BillingTab({ userId, contractId }: { userId: string; contractId: string }) {
+  const { data: events, isLoading } = useMemberBillingEvents(userId);
   const retryBillingMutation = useRetryBilling();
 
   const handleRetry = async () => {
@@ -527,8 +527,8 @@ function BillingTab({ contractId }: { contractId: string }) {
 }
 
 // 네번째 탭: 로그
-function LogTab({ contractId }: { contractId: string }) {
-  const { data: events, isLoading } = useMemberContractEvents(contractId);
+function LogTab({ userId }: { userId: string }) {
+  const { data: events, isLoading } = useMemberContractEvents(userId);
 
   if (isLoading) return <Skeleton className="h-48 w-full" />;
 
@@ -637,11 +637,11 @@ export function MembershipMemberDetailDialog({
               </TabsContent>
 
               <TabsContent value="billing" className="mt-4">
-                <BillingTab contractId={member.contractId} />
+                <BillingTab userId={member.userId} contractId={member.contractId} />
               </TabsContent>
 
               <TabsContent value="log" className="mt-4">
-                <LogTab contractId={member.contractId} />
+                <LogTab userId={member.userId} />
               </TabsContent>
             </Tabs>
           )}

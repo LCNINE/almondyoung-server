@@ -23,19 +23,19 @@ export const useMemberDetail = (userId: string | null) => {
   });
 };
 
-export const useMemberBillingEvents = (contractId: string | null) => {
+export const useMemberBillingEvents = (userId: string | null) => {
   return useQuery({
-    queryKey: membershipQueryKeys.billingEvents(contractId ?? ''),
-    queryFn: () => membershipApi.getMemberBillingEvents(contractId!),
-    enabled: !!contractId,
+    queryKey: membershipQueryKeys.billingEvents(userId ?? ''),
+    queryFn: () => membershipApi.getMemberBillingEvents(userId!),
+    enabled: !!userId,
   });
 };
 
-export const useMemberContractEvents = (contractId: string | null) => {
+export const useMemberContractEvents = (userId: string | null) => {
   return useQuery({
-    queryKey: membershipQueryKeys.contractEvents(contractId ?? ''),
-    queryFn: () => membershipApi.getMemberContractEvents(contractId!),
-    enabled: !!contractId,
+    queryKey: membershipQueryKeys.contractEvents(userId ?? ''),
+    queryFn: () => membershipApi.getMemberContractEvents(userId!),
+    enabled: !!userId,
   });
 };
 
@@ -177,8 +177,8 @@ export const useRetryBilling = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (contractId: string) => membershipApi.retryBilling(contractId),
-    onSuccess: (_, contractId) => {
-      queryClient.invalidateQueries({ queryKey: membershipQueryKeys.billingEvents(contractId) });
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: membershipQueryKeys.all });
     },
   });
 };

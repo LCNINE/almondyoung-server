@@ -15,6 +15,7 @@ import {
   HttpException,
   Logger,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
 import { AdminOperationsService } from '../services/admin-operations.service';
@@ -699,7 +700,7 @@ export class AdminOperationsController {
       const result = await this.adminOperationsService.getMembersList({
         page: page ? Number(page) : 1,
         limit: limit ? Number(limit) : 20,
-        status,
+        status: status as 'ACTIVE' | 'PAUSED' | 'CANCELLED' | 'EXPIRED' | undefined,
         q,
         userIds: normalizedUserIds,
         dateFrom,
@@ -736,34 +737,50 @@ export class AdminOperationsController {
   /**
    * 멤버십 결제 이벤트 조회
    *
-   * GET /admin/billing-events?contractId=xxx
+   * GET /admin/billing-events?userId=xxx (또는 contractId=xxx for legacy)
    */
   @Get('billing-events')
   @ApiOperation({ summary: '멤버십 결제 이벤트 조회' })
   @UseGuards(JwtAuthGuard)
-  async getMemberBillingEvents(@Query('contractId') contractId: string) {
+  async getMemberBillingEvents(
+    @Query('userId') userId?: string,
+    @Query('contractId') contractId?: string,
+  ) {
+    if (!userId && !contractId) throw new BadRequestException('userId or contractId is required');
     try {
-      const result = await this.adminOperationsService.getMemberBillingEvents(contractId);
+      if (userId) {
+        const result = await this.adminOperationsService.getMemberBillingEventsByUserId(userId);
+        return { success: true, data: result };
+      }
+      const result = await this.adminOperationsService.getMemberBillingEvents(contractId!);
       return { success: true, data: result };
     } catch (error) {
-      this.handleError(error, '멤버십 결제 이벤트 조회', contractId);
+      this.handleError(error, '멤버십 결제 이벤트 조회', userId ?? contractId);
     }
   }
 
   /**
    * 멤버십 계약 이벤트(로그) 조회
    *
-   * GET /admin/contract-events?contractId=xxx
+   * GET /admin/contract-events?userId=xxx (또는 contractId=xxx for legacy)
    */
   @Get('contract-events')
   @ApiOperation({ summary: '멤버십 계약 이벤트 로그 조회' })
   @UseGuards(JwtAuthGuard)
-  async getMemberContractEvents(@Query('contractId') contractId: string) {
+  async getMemberContractEvents(
+    @Query('userId') userId?: string,
+    @Query('contractId') contractId?: string,
+  ) {
+    if (!userId && !contractId) throw new BadRequestException('userId or contractId is required');
     try {
-      const result = await this.adminOperationsService.getMemberContractEvents(contractId);
+      if (userId) {
+        const result = await this.adminOperationsService.getMemberContractEventsByUserId(userId);
+        return { success: true, data: result };
+      }
+      const result = await this.adminOperationsService.getMemberContractEvents(contractId!);
       return { success: true, data: result };
     } catch (error) {
-      this.handleError(error, '멤버십 계약 이벤트 로그 조회', contractId);
+      this.handleError(error, '멤버십 계약 이벤트 로그 조회', userId ?? contractId);
     }
   }
 

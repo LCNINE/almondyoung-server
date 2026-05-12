@@ -5,10 +5,10 @@ export const membershipQueryKeys = {
   members: () => [...membershipQueryKeys.all, 'members'] as const,
   memberList: (query: AdminMembersQuery) => [...membershipQueryKeys.members(), query] as const,
   memberDetail: (userId: string) => [...membershipQueryKeys.all, 'memberDetail', userId] as const,
-  billingEvents: (contractId: string) =>
-    [...membershipQueryKeys.all, 'billingEvents', contractId] as const,
-  contractEvents: (contractId: string) =>
-    [...membershipQueryKeys.all, 'contractEvents', contractId] as const,
+  billingEvents: (userId: string) =>
+    [...membershipQueryKeys.all, 'billingEvents', userId] as const,
+  contractEvents: (userId: string) =>
+    [...membershipQueryKeys.all, 'contractEvents', userId] as const,
   billingHistory: (query: AdminBillingHistoryQuery) =>
     [...membershipQueryKeys.all, 'billingHistory', query] as const,
   tiersWithPlans: () => [...membershipQueryKeys.all, 'tiersWithPlans'] as const,
