@@ -169,16 +169,8 @@ export class AdminMembersReader {
       eq(schema.subscriptionEntitlement.isCurrent, true),
     );
 
-    const [[{ total }], rows] = await Promise.all([
-      this.dbService.db
-        .select({ total: count() })
-        .from(schema.subscriptionContracts)
-        .innerJoin(schema.plan, eq(schema.subscriptionContracts.planId, schema.plan.id))
-        .innerJoin(schema.tiers, eq(schema.plan.tierId, schema.tiers.id))
-        .leftJoin(schema.subscriptionEntitlement, entitlementConditions)
-        .where(whereClause),
-      this.dbService.db
-        .select({
+    const latestPerUser = this.dbService.db
+      .selectDistinctOn([schema.subscriptionContracts.userId], {
         contractId: schema.subscriptionContracts.id,
         userId: schema.subscriptionContracts.userId,
         contractStatus: schema.subscriptionContracts.status,
@@ -192,13 +184,21 @@ export class AdminMembersReader {
         startsAt: schema.subscriptionEntitlement.startsAt,
         endsAt: schema.subscriptionEntitlement.endsAt,
         pausedAt: schema.subscriptionEntitlement.pausedAt,
-        })
-        .from(schema.subscriptionContracts)
-        .innerJoin(schema.plan, eq(schema.subscriptionContracts.planId, schema.plan.id))
-        .innerJoin(schema.tiers, eq(schema.plan.tierId, schema.tiers.id))
-        .leftJoin(schema.subscriptionEntitlement, entitlementConditions)
-        .where(whereClause)
-        .orderBy(desc(schema.subscriptionContracts.createdAt))
+      })
+      .from(schema.subscriptionContracts)
+      .innerJoin(schema.plan, eq(schema.subscriptionContracts.planId, schema.plan.id))
+      .innerJoin(schema.tiers, eq(schema.plan.tierId, schema.tiers.id))
+      .leftJoin(schema.subscriptionEntitlement, entitlementConditions)
+      .where(whereClause)
+      .orderBy(schema.subscriptionContracts.userId, desc(schema.subscriptionContracts.createdAt))
+      .as('lc');
+
+    const [[{ total }], rows] = await Promise.all([
+      this.dbService.db.select({ total: count() }).from(latestPerUser),
+      this.dbService.db
+        .select()
+        .from(latestPerUser)
+        .orderBy(desc(latestPerUser.createdAt))
         .limit(limit)
         .offset(offset),
     ]);
@@ -313,58 +313,76 @@ export class AdminMembersReader {
     };
   }
 
+  async findBillingEventsByUserId(userId: string): Promise<BillingEventItem[]> {
+    const rows = await this.dbService.db
+      .select(this.billingEventColumns())
+      .from(schema.billingEvents)
+      .innerJoin(schema.subscriptionContracts, eq(schema.billingEvents.contractId, schema.subscriptionContracts.id))
+      .where(eq(schema.subscriptionContracts.userId, userId))
+      .orderBy(desc(schema.billingEvents.createdAt))
+      .limit(500);
+    return rows.map((r) => this.toBillingEventItem(r));
+  }
+
+  async findContractEventsByUserId(userId: string): Promise<ContractEventItem[]> {
+    const rows = await this.dbService.db
+      .select(this.contractEventColumns())
+      .from(schema.subscriptionContractEvents)
+      .where(eq(schema.subscriptionContractEvents.userId, userId))
+      .orderBy(desc(schema.subscriptionContractEvents.createdAt))
+      .limit(500);
+    return rows.map((r) => this.toContractEventItem(r));
+  }
+
   async findBillingEventsByContractId(contractId: string): Promise<BillingEventItem[]> {
     const rows = await this.dbService.db
-      .select({
-        id: schema.billingEvents.id,
-        contractId: schema.billingEvents.contractId,
-        eventType: schema.billingEvents.eventType,
-        attemptNo: schema.billingEvents.attemptNo,
-        amount: schema.billingEvents.amount,
-        errorCode: schema.billingEvents.errorCode,
-        errorMessage: schema.billingEvents.errorMessage,
-        createdAt: schema.billingEvents.createdAt,
-      })
+      .select(this.billingEventColumns())
       .from(schema.billingEvents)
       .where(eq(schema.billingEvents.contractId, contractId))
       .orderBy(desc(schema.billingEvents.createdAt));
-
-    return rows.map((r) => ({
-      id: r.id,
-      contractId: r.contractId,
-      eventType: r.eventType,
-      attemptNo: r.attemptNo,
-      amount: r.amount,
-      errorCode: r.errorCode,
-      errorMessage: r.errorMessage,
-      createdAt: r.createdAt.toISOString(),
-    }));
+    return rows.map((r) => this.toBillingEventItem(r));
   }
 
   async findContractEventsByContractId(contractId: string): Promise<ContractEventItem[]> {
     const rows = await this.dbService.db
-      .select({
-        id: schema.subscriptionContractEvents.id,
-        contractId: schema.subscriptionContractEvents.contractId,
-        eventType: schema.subscriptionContractEvents.eventType,
-        userId: schema.subscriptionContractEvents.userId,
-        causedBy: schema.subscriptionContractEvents.causedBy,
-        causedByUserId: schema.subscriptionContractEvents.causedByUserId,
-        createdAt: schema.subscriptionContractEvents.createdAt,
-      })
+      .select(this.contractEventColumns())
       .from(schema.subscriptionContractEvents)
       .where(eq(schema.subscriptionContractEvents.contractId, contractId))
       .orderBy(desc(schema.subscriptionContractEvents.createdAt));
+    return rows.map((r) => this.toContractEventItem(r));
+  }
 
-    return rows.map((r) => ({
-      id: r.id,
-      contractId: r.contractId,
-      eventType: r.eventType,
-      userId: r.userId,
-      causedBy: r.causedBy,
-      causedByUserId: r.causedByUserId,
-      createdAt: r.createdAt.toISOString(),
-    }));
+  private billingEventColumns() {
+    return {
+      id: schema.billingEvents.id,
+      contractId: schema.billingEvents.contractId,
+      eventType: schema.billingEvents.eventType,
+      attemptNo: schema.billingEvents.attemptNo,
+      amount: schema.billingEvents.amount,
+      errorCode: schema.billingEvents.errorCode,
+      errorMessage: schema.billingEvents.errorMessage,
+      createdAt: schema.billingEvents.createdAt,
+    };
+  }
+
+  private contractEventColumns() {
+    return {
+      id: schema.subscriptionContractEvents.id,
+      contractId: schema.subscriptionContractEvents.contractId,
+      eventType: schema.subscriptionContractEvents.eventType,
+      userId: schema.subscriptionContractEvents.userId,
+      causedBy: schema.subscriptionContractEvents.causedBy,
+      causedByUserId: schema.subscriptionContractEvents.causedByUserId,
+      createdAt: schema.subscriptionContractEvents.createdAt,
+    };
+  }
+
+  private toBillingEventItem(r: { id: string; contractId: string; eventType: string; attemptNo: number | null; amount: number | null; errorCode: string | null; errorMessage: string | null; createdAt: Date }): BillingEventItem {
+    return { ...r, createdAt: r.createdAt.toISOString() };
+  }
+
+  private toContractEventItem(r: { id: number; contractId: string; eventType: string; userId: string; causedBy: string; causedByUserId: string | null; createdAt: Date }): ContractEventItem {
+    return { ...r, createdAt: r.createdAt.toISOString() };
   }
 
   async findContractPaymentRef(contractId: string): Promise<{ lastPaymentIntentId: string | null } | null> {
