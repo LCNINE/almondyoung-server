@@ -50,6 +50,7 @@ export const listProducts = async ({
 
   const next = {
     ...(await getCacheOptions("products")),
+    revalidate: 3600,
   }
 
   return sdk.client
@@ -67,7 +68,6 @@ export const listProducts = async ({
         },
         headers,
         next,
-        cache: "force-cache",
       }
     )
     .then(({ products, count }) => {
@@ -141,6 +141,7 @@ export const listProductsSorted = async ({
 
   const next = {
     ...(await getCacheOptions("products")),
+    revalidate: 3600,
   }
 
   // 쿼리 파라미터 구성
@@ -169,7 +170,6 @@ export const listProductsSorted = async ({
       query,
       headers,
       next,
-      cache: "force-cache",
     })
     .then(({ products, count }) => {
       const nextPage = count > offset + limit ? pageParam + 1 : null

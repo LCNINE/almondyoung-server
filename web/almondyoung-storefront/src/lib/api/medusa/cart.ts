@@ -1290,14 +1290,11 @@ export type CartRefreshResult = {
 export async function refreshCartPrices(): Promise<CartRefreshResult> {
   try {
     const headers = (await getAuthHeaders()) ?? undefined
-    console.log("[refreshCartPrices] 호출됨, headers:", headers ? "있음" : "없음")
 
     const result = await sdk.client.fetch<{
       refreshed: boolean
       hasMembershipGroup?: boolean | null
     }>("/store/customers/me/refresh-cart-prices", { method: "POST", headers })
-
-    console.log("[refreshCartPrices] 결과:", JSON.stringify(result))
 
     return {
       refreshed: Boolean(result.refreshed),
