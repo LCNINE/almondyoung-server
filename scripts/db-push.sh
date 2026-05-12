@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Usage: ./scripts/db-push.sh <env-file> <drizzle-config>
-# Example: ./scripts/db-push.sh apps/wms/.env apps/wms/database/drizzle/drizzle.config.ts
+# Example: ./scripts/db-push.sh apps/core/.env apps/core/drizzle.config.ts
 
 ENV_FILE="$1"
 CONFIG="$2"

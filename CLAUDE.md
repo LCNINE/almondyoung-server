@@ -9,9 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Backend Apps (`apps/`)
 | App | Purpose |
 |-----|---------|
-| `almondyoung-server` | Main API server. **Superset of wms + pim** — all new WMS/PIM domain logic goes here. Deployed as `Core` (hostname `core.…`). |
-| `wms-legacy` | (Legacy) Warehouse Management System. Superseded by `almondyoung-server`. Kept for reference/migration only — do NOT add new features. |
-| `pim-legacy` | (Legacy) Product Information Management. Superseded by `almondyoung-server`. Kept for reference/migration only — do NOT add new features. |
+| `core` | Main API server. WMS + PIM 도메인을 모두 포함하는 통합 백엔드. 배포 이름 `Core` (hostname `core.…`). |
 | `user-service` | Auth, user accounts |
 | `wallet` | Payments, BNPL, refunds |
 | `membership` | Subscription/membership management |
@@ -41,9 +39,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Starting Services
 ```bash
-npm run start:main:dev         # Main server (watch)
-npm run start:wms:dev          # WMS (loads .env + .env.local)
-npm run start:pim:dev          # PIM
+npm run start:main:dev         # core server (watch, loads apps/core/.env)
 npm run start:user-service:dev # User service
 npm run start:wallet:dev       # Wallet
 npm run start:membership:dev   # Membership
@@ -79,13 +75,9 @@ npm run test:bnpl:itdoc
 ### Database (Drizzle)
 Each service has its own schema and drizzle config:
 ```bash
-# WMS
-npm run db:generate:wms       # Generate migrations
-npm run db:push:wms           # Push schema
-
-# PIM
-npm run db:generate:pim
-npm run db:push:pim
+# Core (catalog + inventory 통합)
+npm run db:generate:core      # Generate migrations
+npm run db:push:core          # Push schema
 
 # Other services
 npm run db:push:wallet
@@ -162,17 +154,17 @@ return this.service.doSomething(dto);
 - **Drizzle types**: Use `InferSelectModel`/`InferInsertModel` for types; define in a `types.ts` alongside schema
 - **All table definitions** go in one `schema.ts` per service; snake_case table/column names, camelCase TypeScript exports
 
-### WMS-Specific Rules
+### Inventory (구 WMS) Rules
 
-WMS uses **event sourcing** for stock management:
+Inventory 모듈은 **event sourcing** 으로 재고를 관리한다 (apps/core/src/modules/inventory):
 - `stock_events` — immutable event log (source of truth)
 - `stock_summary` — projection with optimistic locking (`version` field)
 - Event types: `IN`, `OUT`, `ADJUST`, `MOVE`, `RESERVE`, `CONFIRM`, `RELEASE`, `CANCEL`
 
-**WMS Transaction Propagation** (strict rule):
+**Inventory Transaction Propagation** (strict rule):
 ```typescript
-// Import DbTx only from wms-schema.ts — never re-declare locally
-import { DbTx, wmsTables, wmsSchema } from '../../../database/schemas/wms-schema';
+// Import DbTx only from inventory.schema.ts — never re-declare locally
+import { DbTx, inventoryTables, inventorySchema } from 'apps/core/src/modules/inventory/schema/inventory.schema';
 
 // Standard helper in every service class
 private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> {
@@ -191,10 +183,10 @@ async createFoo(dto: CreateFooDto, tx?: DbTx) {
 private async loadFoo(tx: DbTx, id: string) { ... }
 ```
 
-**WMS Query Rules:**
+**Inventory Query Rules:**
 - Prohibited: `db.query.*`, `with` relations, `any`/`as` casting
 - Required: `trx.select().from().innerJoin().where().orderBy()` with Drizzle operators
-- DB injection: `@InjectTypedDb<typeof wmsSchema>()`, never `@Inject('DB')`
+- DB injection: `@InjectTypedDb<typeof inventorySchema>()`, never `@Inject('DB')`
 - No `@ApiProperty({ type: 'object' })` — always define nested DTOs as separate classes
 
 ### Type Safety
@@ -210,4 +202,4 @@ private async loadFoo(tx: DbTx, id: string) { ... }
 ## Environment Variables
 - `DATABASE_URL` — PostgreSQL connection string
 - `PORT` — Service port
-- Most services have `.env` files loaded via `dotenv-cli`; WMS also has `.env.local`
+- Most services have `.env` files loaded via `dotenv-cli`
