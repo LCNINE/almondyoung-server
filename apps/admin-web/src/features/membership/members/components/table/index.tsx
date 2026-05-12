@@ -38,7 +38,7 @@ export function MembershipMemberTable() {
     columns,
     count: data?.total,
     pageSize: PAGE_SIZE,
-    getRowId: (row) => row.contractId,
+    getRowId: (row) => row.userId,
   });
 
   return (
