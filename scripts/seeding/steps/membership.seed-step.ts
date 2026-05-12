@@ -21,6 +21,8 @@ const CANCELLATION_REASONS = [
 ];
 
 export class MembershipSeedStep extends SeedStep {
+  readonly groups = ['baseline'] as const;
+
   constructor(databaseUrl: string) {
     super('Membership', databaseUrl);
   }

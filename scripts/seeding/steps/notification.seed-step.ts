@@ -94,6 +94,8 @@ const PROVIDER_NAMES: Record<string, string> = {
 export class NotificationSeedStep extends SeedStep {
   private notificationConfig: NotificationConfig;
 
+  readonly groups = ['baseline'] as const;
+
   constructor(databaseUrl: string, config: NotificationConfig) {
     super('Notification', databaseUrl);
     this.notificationConfig = config;

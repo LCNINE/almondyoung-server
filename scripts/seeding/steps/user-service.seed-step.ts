@@ -58,6 +58,8 @@ const ROLE_SCOPE_MAP: Record<string, string[]> = {
 };
 
 export class UserServiceSeedStep extends SeedStep {
+  readonly groups = ['baseline'] as const;
+
   private adminPassword: string;
   private oauthClients: OAuthClientSeed[];
 
