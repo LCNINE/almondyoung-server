@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import type { SubscriptionEntitlement } from '../shared/schemas';
 import { EntitlementReader } from './entitlement/entitlement.reader';
 import { EntitlementManager } from './entitlement/entitlement.manager';
+import { MembershipEventPublisher } from './membership-event.publisher';
 import { DrizzleTransaction } from '../shared/schemas/types';
 
 /**
@@ -14,9 +15,12 @@ import { DrizzleTransaction } from '../shared/schemas/types';
  */
 @Injectable()
 export class EntitlementService {
+  private readonly logger = new Logger(EntitlementService.name);
+
   constructor(
     private readonly reader: EntitlementReader,
     private readonly manager: EntitlementManager,
+    private readonly membershipEventPublisher: MembershipEventPublisher,
   ) {}
 
   /**
@@ -83,7 +87,21 @@ export class EntitlementService {
    * 관리자 직접 지급 (일수 + 메모)
    */
   async grantByDays(userId: string, days: number, memo: string | null, adminId: string) {
-    return this.manager.grantByDays(userId, days, memo, adminId);
+    const result = await this.manager.grantByDays(userId, days, memo, adminId);
+    this.membershipEventPublisher
+      .publishStatusChanged({
+        userId,
+        email: '',
+        status: 'ACTIVE',
+        occurredAt: new Date().toISOString(),
+        contractId: result.contractId,
+        planId: result.planId,
+        tierId: result.tierId,
+      })
+      .catch((err: Error) =>
+        this.logger.error(`MembershipStatusChanged Kafka 발행 실패 (userId=${userId}): ${err?.message}`, err?.stack),
+      );
+    return result.entitlement;
   }
 
   /**
