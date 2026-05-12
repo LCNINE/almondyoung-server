@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and, inArray, desc } from 'drizzle-orm';
 import { addDays } from 'date-fns';
 import { DrizzleTransaction } from '../../shared/schemas/types';
 
@@ -144,6 +144,91 @@ export class EntitlementManager {
           causedByUserId: adminId,
         });
       }
+
+      return newEntitlement;
+    });
+  }
+
+  /**
+   * 관리자 직접 지급 (일수 + 메모)
+   *
+   * - 활성 권한 없음: 새 계약 + 권한 생성
+   * - 이미 활성 권한 있음: 오류 (기간 조정 기능 사용 요구)
+   */
+  async grantByDays(userId: string, days: number, memo: string | null, adminId: string): Promise<Entitlement> {
+    return await this.dbService.db.transaction(async (tx) => {
+      const [existing] = await tx
+        .select({ id: schema.subscriptionEntitlement.id })
+        .from(schema.subscriptionEntitlement)
+        .where(and(eq(schema.subscriptionEntitlement.userId, userId), eq(schema.subscriptionEntitlement.isCurrent, true)))
+        .for('update')
+        .limit(1);
+
+      if (existing) {
+        throw new Error('이미 활성 구독이 있습니다. 기간 조정 기능을 사용하세요.');
+      }
+
+      const today = new Date();
+      const todayStr = today.toISOString().split('T')[0];
+      const endsAt = addDays(today, days);
+
+      const [lastContractRow] = await tx
+        .select({ planId: schema.subscriptionContracts.planId, tierId: schema.plan.tierId })
+        .from(schema.subscriptionContracts)
+        .innerJoin(schema.plan, eq(schema.subscriptionContracts.planId, schema.plan.id))
+        .where(eq(schema.subscriptionContracts.userId, userId))
+        .orderBy(desc(schema.subscriptionContracts.createdAt))
+        .limit(1);
+
+      let planId: string;
+      let tierId: string;
+
+      if (lastContractRow) {
+        planId = lastContractRow.planId;
+        tierId = lastContractRow.tierId;
+      } else {
+        const [anyPlan] = await tx
+          .select({ id: schema.plan.id, tierId: schema.plan.tierId })
+          .from(schema.plan)
+          .where(eq(schema.plan.isActive, true))
+          .limit(1);
+
+        if (!anyPlan) throw new Error('활성 플랜이 없어 구독을 생성할 수 없습니다.');
+        planId = anyPlan.id;
+        tierId = anyPlan.tierId;
+      }
+
+      const [eventBatch] = await tx
+        .insert(schema.eventBatches)
+        .values({ type: 'GRANTED_BY_ADMIN', effectiveDate: todayStr, adminId })
+        .returning();
+
+      const [newContract] = await tx
+        .insert(schema.subscriptionContracts)
+        .values({ userId, planId, billingDate: todayStr, autoRenewal: false })
+        .returning();
+
+      const [newEntitlement] = await tx
+        .insert(schema.subscriptionEntitlement)
+        .values({
+          userId,
+          tierId,
+          startsAt: todayStr,
+          endsAt: endsAt.toISOString().split('T')[0],
+          isCurrent: true,
+          sourceBatchId: eventBatch.id,
+        })
+        .returning();
+
+      await tx.insert(schema.subscriptionContractEvents).values({
+        contractId: newContract.id,
+        eventType: 'GRANTED_BY_ADMIN',
+        userId,
+        metadata: { days, reason: memo, previousEndsAt: null, newEndsAt: endsAt.toISOString() },
+        batchId: eventBatch.id,
+        causedBy: 'ADMIN',
+        causedByUserId: adminId,
+      });
 
       return newEntitlement;
     });
