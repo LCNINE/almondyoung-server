@@ -87,7 +87,8 @@ export function QnaInquiryDialog({
           setIsUploading(true)
           try {
             mediaFileIds = await uploadImages()
-          } catch {
+          } catch (e) {
+            console.error("e:::::", e)
             setIsUploading(false)
             toast.error("이미지 업로드에 실패했습니다. 다시 시도해주세요.")
             return
@@ -148,7 +149,7 @@ export function QnaInquiryDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-h-[90vh] gap-0 overflow-y-auto p-6 sm:max-w-[480px]">
+      <DialogContent className="z-9999 max-h-[90vh] gap-0 overflow-y-auto p-6 sm:max-w-[480px]">
         <DialogHeader className="mb-5">
           <DialogTitle className="text-lg font-bold">
             {isEditMode ? "문의 수정하기" : "상품 문의하기"}
@@ -156,7 +157,7 @@ export function QnaInquiryDialog({
         </DialogHeader>
 
         {/* 상품 정보 */}
-        <div className="mb-4 flex items-center gap-3">
+        <div className="flex items-center gap-3 mb-4">
           {productThumbnail && (
             <div className="relative h-[72px] w-[72px] shrink-0 overflow-hidden rounded-md border border-gray-100">
               <Image
@@ -175,14 +176,14 @@ export function QnaInquiryDialog({
         {/* 1:1 문의 안내 배너 */}
         <Button
           variant="link"
-          className="mb-4 flex w-full items-center justify-between rounded-lg px-4 py-3"
+          className="flex items-center justify-between w-full px-4 py-3 mb-4 rounded-lg"
           asChild
         >
           <LocalizedClientLink href={`/cs?tab=inquiry&productId=${productId}`}>
             <span className="text-[13px] text-gray-600">
               배송·반품·교환 문의는 1:1 문의로 남겨주세요.
             </span>
-            <ChevronRight className="h-4 w-4 text-gray-400" />
+            <ChevronRight className="w-4 h-4 text-gray-400" />
           </LocalizedClientLink>
         </Button>
 
@@ -201,7 +202,7 @@ export function QnaInquiryDialog({
             className="min-h-[180px] resize-none rounded-lg border-gray-200 text-[14px] placeholder:text-gray-400"
             disabled={isBusy}
           />
-          <span className="absolute right-3 bottom-3 text-xs text-gray-400">
+          <span className="absolute text-xs text-gray-400 right-3 bottom-3">
             {content.length}
             <span className="mx-0.5">|</span>
             {MAX_LENGTH}
@@ -220,13 +221,13 @@ export function QnaInquiryDialog({
         )}
 
         {/* 비밀글 체크박스 */}
-        <label className="mb-4 flex cursor-pointer items-center gap-2">
+        <label className="flex items-center gap-2 mb-4 cursor-pointer">
           <Checkbox
             checked={isSecret}
             onCheckedChange={(checked) => setIsSecret(checked === true)}
             disabled={isBusy}
           />
-          <Lock className="h-4 w-4 text-gray-500" />
+          <Lock className="w-4 h-4 text-gray-500" />
           <span className="text-[14px] text-gray-700">비밀글로 문의하기</span>
         </label>
 
