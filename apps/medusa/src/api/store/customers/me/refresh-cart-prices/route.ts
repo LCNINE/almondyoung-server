@@ -56,6 +56,10 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     ? (activeCart.customer?.groups ?? []).some((g: any) => g.id === membershipGroupId)
     : null;
 
+  if (hasMembershipGroup === false) {
+    return res.status(200).json({ refreshed: false, hasMembershipGroup });
+  }
+
   try {
     await refreshCartItemsWorkflow(req.scope).run({
       input: { cart_id: activeCart.id, force_refresh: true },

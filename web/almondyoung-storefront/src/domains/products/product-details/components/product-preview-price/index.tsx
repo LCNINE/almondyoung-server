@@ -46,14 +46,17 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
     ? cheapestPrice.original_price_number - membershipPrice
     : 0
 
-  const isMembershipApplied = hasMembership && hasMembershipPrice
+  // 멤버: Medusa가 실제 적용한 할인 (price list 기반)
+  const memberActualDiscount = Math.round(
+    ((cheapestPrice.original_price_number - cheapestPrice.calculated_price_number) /
+      cheapestPrice.original_price_number) *
+      100
+  )
+  const hasMemberActualDiscount = memberActualDiscount > 0
 
-  const cheapestPriceAmount =
-    cheapestPrice.original_price_number - cheapestPrice.calculated_price_number
+  const isMembershipApplied = hasMembership && hasMemberActualDiscount
 
-  const showOriginalPrice =
-    (isMembershipApplied && membershipDiscountRate > 0) ||
-    cheapestPriceAmount > 0
+  const showOriginalPrice = cheapestPrice.calculated_price_number < cheapestPrice.original_price_number
 
   // 가격 숨김 상품: 비회원에게만 가격 숨김
   if (!hasMembership && isMembershipOnly) {
@@ -85,14 +88,11 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
         <div className="flex flex-col gap-2">
           <ProductMembershipBadge size="md" label="멤버십할인가" />
           <div className="flex items-center gap-2">
-            {membershipDiscountRate > 0 && (
-              <span className="text-xl font-semibold text-red-500">
-                {membershipDiscountRate}%
-              </span>
-            )}
-
+            <span className="text-xl font-semibold text-red-500">
+              {memberActualDiscount}%
+            </span>
             <span className="text-xl font-bold">
-              {membershipPrice.toLocaleString()}원
+              {cheapestPrice.calculated_price_number.toLocaleString()}원
             </span>
           </div>
         </div>

@@ -91,7 +91,6 @@ export class EntitlementService {
     this.membershipEventPublisher
       .publishStatusChanged({
         userId,
-        email: '',
         status: 'ACTIVE',
         occurredAt: new Date().toISOString(),
         contractId: result.contractId,
