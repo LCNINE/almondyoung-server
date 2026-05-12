@@ -165,16 +165,16 @@ export const membershipApi = {
     return res.data.data;
   },
 
-  getMemberBillingEvents: async (contractId: string): Promise<BillingEventItem[]> => {
+  getMemberBillingEvents: async (userId: string): Promise<BillingEventItem[]> => {
     const res = await client.get(
-      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/billing-events?contractId=${encodeURIComponent(contractId)}`,
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/billing-events?userId=${encodeURIComponent(userId)}`,
     );
     return res.data.data;
   },
 
-  getMemberContractEvents: async (contractId: string): Promise<ContractEventItem[]> => {
+  getMemberContractEvents: async (userId: string): Promise<ContractEventItem[]> => {
     const res = await client.get(
-      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/contract-events?contractId=${encodeURIComponent(contractId)}`,
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/contract-events?userId=${encodeURIComponent(userId)}`,
     );
     return res.data.data;
   },

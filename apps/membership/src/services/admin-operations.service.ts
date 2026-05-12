@@ -4,7 +4,7 @@ import { SubscriptionService } from './subscription.service';
 import { SubscriptionCancellationService } from './subscription-cancellation.service';
 import { EntitlementService } from './entitlement.service';
 import { PauseService } from './pause.service';
-import { AdminMembersReader, AdminMembersQuery, BillingEventItem, AdminBillingHistoryQuery } from './admin/admin-members.reader';
+import { AdminMembersReader, AdminMembersQuery, BillingEventItem, ContractEventItem, AdminBillingHistoryQuery } from './admin/admin-members.reader';
 import { PaymentClientService } from './billing/payment-client.service';
 import { RecurringBillingService } from './billing/recurring-billing.service';
 import {
@@ -176,6 +176,14 @@ export class AdminOperationsService {
 
   async getMemberContractEvents(contractId: string) {
     return this.adminMembersReader.findContractEventsByContractId(contractId);
+  }
+
+  async getMemberBillingEventsByUserId(userId: string): Promise<BillingEventItem[]> {
+    return this.adminMembersReader.findBillingEventsByUserId(userId);
+  }
+
+  async getMemberContractEventsByUserId(userId: string): Promise<ContractEventItem[]> {
+    return this.adminMembersReader.findContractEventsByUserId(userId);
   }
 
   async setAutoRenewal(contractId: string, autoRenewal: boolean, adminId: string) {
