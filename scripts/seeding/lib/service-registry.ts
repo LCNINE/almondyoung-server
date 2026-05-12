@@ -4,33 +4,30 @@ import { ServiceConfig } from './types';
  * Single source of truth for service → database → drizzle config mapping.
  *
  * Use getServiceRegistry(deployment) to get the correct registry for a deployment.
- *   - undefined / 'root'  → original multi-service layout (pim, wms separate)
- *   - 'df'                → monolithic layout (pim/wms absorbed into almondyoung-server, DB = "core")
+ *   - undefined / 'root'  → core (catalog+inventory 통합) + 부속 서비스
+ *   - 'df'                → core 단일 (DB = "core")
  */
 
 const ROOT_REGISTRY: ServiceConfig[] = [
+  { name: 'core', database: 'core', drizzleConfig: 'apps/core/drizzle.config.ts', hasSeedStep: true },
   { name: 'user-service', database: 'user_service', drizzleConfig: 'apps/user-service/database/drizzle/drizzle.config.ts', hasSeedStep: true },
   { name: 'analytics', database: 'analytics', drizzleConfig: 'apps/analytics/drizzle.config.ts', hasSeedStep: false },
   { name: 'channel-adapter', database: 'channel_adapter', drizzleConfig: 'apps/channel-adapter/drizzle.config.ts', hasSeedStep: false },
   { name: 'membership', database: 'membership', drizzleConfig: 'apps/membership/drizzle.config.ts', hasSeedStep: true },
   { name: 'notification', database: 'notification', drizzleConfig: 'apps/notification/database/drizzle/drizzle.config.ts', hasSeedStep: true },
-  { name: 'pim', database: 'pim', drizzleConfig: 'apps/pim/drizzle.config.ts', hasSeedStep: true },
   { name: 'ugc-service', database: 'ugc', drizzleConfig: 'apps/ugc-service/src/db/drizzle.config.ts', hasSeedStep: false },
-  { name: 'wms', database: 'wms', drizzleConfig: 'apps/wms/database/drizzle/drizzle.config.ts', hasSeedStep: true },
   { name: 'wallet', database: 'wallet', drizzleConfig: 'apps/wallet/drizzle.config.ts', hasSeedStep: false },
   { name: 'file-service', database: 'file_service', drizzleConfig: 'apps/file-service/src/database/drizzle/drizzle.config.ts', hasSeedStep: true },
-  { name: 'almondyoung-server', database: 'almondyoung_server', drizzleConfig: 'apps/almondyoung-server/drizzle.config.ts', hasSeedStep: false },
   { name: 'medusa', database: 'medusa', hasSeedStep: false },
 ];
 
 /**
- * df 배포: pim/wms가 almondyoung-server에 흡수됨.
- * - almondyoung-server → DB "core", drizzle config가 catalog+inventory 스키마 모두 포함
- * - pim, wms → 별도 항목 제거 (스키마/DB가 core에 통합)
+ * df 배포: core 단일 백엔드.
+ * - core → DB "core", drizzle config가 catalog+inventory 스키마 모두 포함
  * - notification → df에 배포되지 않으므로 제거
  */
 const DF_REGISTRY: ServiceConfig[] = [
-  { name: 'almondyoung-server', database: 'core', drizzleConfig: 'apps/almondyoung-server/drizzle.config.ts', hasSeedStep: true },
+  { name: 'core', database: 'core', drizzleConfig: 'apps/core/drizzle.config.ts', hasSeedStep: true },
   { name: 'user-service', database: 'user_service', drizzleConfig: 'apps/user-service/database/drizzle/drizzle.config.ts', hasSeedStep: true },
   { name: 'analytics', database: 'analytics', drizzleConfig: 'apps/analytics/drizzle.config.ts', hasSeedStep: false },
   { name: 'channel-adapter', database: 'channel_adapter', drizzleConfig: 'apps/channel-adapter/drizzle.config.ts', hasSeedStep: false },
@@ -52,11 +49,11 @@ const LCNINE_AUTH_REGISTRY: ServiceConfig[] = [
 /**
  * lcnine-services 배포: 커머스/물류/결제 도메인 서비스.
  * user-service는 lcnine-auth가 별도 소유하므로 제외.
- * pim/wms는 almondyoung-server(core)에 흡수되어 별도 항목 없음.
+ * core 에 catalog+inventory 가 통합되어 있음.
  * DB는 `sst.aws.Postgres("Db")` 리소스 (db-connection.ts가 자동 감지).
  */
 const LCNINE_SERVICES_REGISTRY: ServiceConfig[] = [
-  { name: 'almondyoung-server', database: 'core', drizzleConfig: 'apps/almondyoung-server/drizzle.config.ts', hasSeedStep: true },
+  { name: 'core', database: 'core', drizzleConfig: 'apps/core/drizzle.config.ts', hasSeedStep: true },
   { name: 'analytics', database: 'analytics', drizzleConfig: 'apps/analytics/drizzle.config.ts', hasSeedStep: false },
   { name: 'channel-adapter', database: 'channel_adapter', drizzleConfig: 'apps/channel-adapter/drizzle.config.ts', hasSeedStep: false },
   { name: 'membership', database: 'membership', drizzleConfig: 'apps/membership/drizzle.config.ts', hasSeedStep: true },

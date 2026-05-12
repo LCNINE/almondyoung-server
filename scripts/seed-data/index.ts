@@ -5,8 +5,6 @@ import * as path from 'path';
 import chalk from 'chalk';
 import { SeedResult, SeedReport, SeederFunction } from './shared/types';
 import { Logger } from './shared/logger';
-import { seedWMS } from './seeders/01-wms.seeder';
-import { seedPIM } from './seeders/02-pim.seeder';
 import { seedUserService } from './seeders/03-user-service.seeder';
 import { seedMembership } from './seeders/04-membership.seeder';
 import { buildOAuthClientSeeds } from './shared/oauth-client-seeds';
@@ -20,8 +18,6 @@ const logger = new Logger('Main');
 dotenv.config({ path: path.join(__dirname, '.env') });
 
 interface EnvConfig {
-  WMS_DATABASE_URL: string;
-  PIM_DATABASE_URL: string;
   USER_SERVICE_DATABASE_URL: string;
   MEMBERSHIP_DATABASE_URL: string;
   WALLET_DATABASE_URL: string;
@@ -43,8 +39,6 @@ interface EnvConfig {
 
 function loadEnvConfig(): EnvConfig {
   const config: EnvConfig = {
-    WMS_DATABASE_URL: process.env.WMS_DATABASE_URL || '',
-    PIM_DATABASE_URL: process.env.PIM_DATABASE_URL || '',
     USER_SERVICE_DATABASE_URL: process.env.USER_SERVICE_DATABASE_URL || '',
     MEMBERSHIP_DATABASE_URL: process.env.MEMBERSHIP_DATABASE_URL || '',
     WALLET_DATABASE_URL: process.env.WALLET_DATABASE_URL || '',
@@ -69,8 +63,6 @@ function loadEnvConfig(): EnvConfig {
 
   // Validate required environment variables
   const requiredVars = [
-    'WMS_DATABASE_URL',
-    'PIM_DATABASE_URL',
     'USER_SERVICE_DATABASE_URL',
     'MEMBERSHIP_DATABASE_URL',
     'WALLET_DATABASE_URL',
@@ -200,22 +192,6 @@ async function main() {
 
   // Run all seeders
   const results: SeedResult[] = [];
-
-  results.push(
-    await runSeeder(
-      'WMS',
-      () => seedWMS(config.WMS_DATABASE_URL),
-      config.SEED_CONTINUE_ON_ERROR,
-    ),
-  );
-
-  results.push(
-    await runSeeder(
-      'PIM',
-      () => seedPIM(config.PIM_DATABASE_URL),
-      config.SEED_CONTINUE_ON_ERROR,
-    ),
-  );
 
   results.push(
     await runSeeder(

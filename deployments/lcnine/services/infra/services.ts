@@ -169,7 +169,7 @@ export function setup(infra: SharedInfra) {
   });
 
   createService("Core", {
-    dockerfile: "apps/almondyoung-server/Dockerfile",
+    dockerfile: "apps/core/Dockerfile",
     domainSlug: "core",
     port: 3000,
     priority: 145,

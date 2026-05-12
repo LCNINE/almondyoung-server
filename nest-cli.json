@@ -1,24 +1,24 @@
 {
   "$schema": "https://json.schemastore.org/nest-cli",
   "collection": "@nestjs/schematics",
-  "sourceRoot": "apps/almondyoung-server/src",
+  "sourceRoot": "apps/core/src",
   "defaultLibraryPrefix": "@app",
   "compilerOptions": {
     "deleteOutDir": true,
     "webpack": true,
     "webpackConfigPath": "webpack.config.js",
-    "tsConfigPath": "apps/almondyoung-server/tsconfig.app.json"
+    "tsConfigPath": "apps/core/tsconfig.app.json"
   },
   "monorepo": true,
-  "root": "apps/almondyoung-server",
+  "root": "apps/core",
   "projects": {
-    "almondyoung-server": {
+    "core": {
       "type": "application",
-      "root": "apps/almondyoung-server",
+      "root": "apps/core",
       "entryFile": "main",
-      "sourceRoot": "apps/almondyoung-server/src",
+      "sourceRoot": "apps/core/src",
       "compilerOptions": {
-        "tsConfigPath": "apps/almondyoung-server/tsconfig.app.json"
+        "tsConfigPath": "apps/core/tsconfig.app.json"
       }
     },
     "analytics": {
@@ -93,15 +93,6 @@
         "tsConfigPath": "apps/outbox-demo/tsconfig.app.json"
       }
     },
-    "pim": {
-      "type": "application",
-      "root": "apps/pim",
-      "entryFile": "main",
-      "sourceRoot": "apps/pim/src",
-      "compilerOptions": {
-        "tsConfigPath": "apps/pim/tsconfig.app.json"
-      }
-    },
     "search": {
       "type": "application",
       "root": "apps/search",
@@ -163,15 +154,6 @@
         "assets": [
           "html/**/*"
         ]
-      }
-    },
-    "wms": {
-      "type": "application",
-      "root": "apps/wms",
-      "entryFile": "main",
-      "sourceRoot": "apps/wms/src",
-      "compilerOptions": {
-        "tsConfigPath": "apps/wms/tsconfig.app.json"
       }
     }
   }

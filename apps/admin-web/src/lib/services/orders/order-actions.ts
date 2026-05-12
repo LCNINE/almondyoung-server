@@ -37,11 +37,7 @@
 //    - Request Body: { lineIds: string[] } or { lines: Array<{ lineId: string; quantity: number }> }
 //    - 응답: { originalOrder: SalesOrder; newOrder: SalesOrder }
 //
-// 참고:
-// - apps/wms/src/order/sales-orders/dto/update-sales-order.dto.ts 수정 필요
-// - apps/wms/src/order/sales-orders/dto/create-sales-order-line.dto.ts 재사용 가능
-// - apps/wms/src/order/sales-orders/services/sales-orders.service.ts에 메서드 추가
-// - apps/wms/src/order/sales-orders/controllers/sales-orders.controller.ts에 엔드포인트 추가
+// 참고: 구현 위치는 apps/core/src/modules/sales-order 하위 (구 apps/wms/src/order/sales-orders).
 // ================================================================================================
 
 import { orders } from '@/lib/api/domains';
