@@ -1,7 +1,0 @@
-productCode,name,alternativeName,description,brand,material,basePrice,marketPrice,supplyPrice,status,productType,salesClassification,purchaseClassification,ageRestriction,minQuantity,maxQuantity,seller
-BEAUTY001,Premium Face Cream,프리미엄 페이스 크림,High-quality anti-aging face cream,BeautyBrand,Natural ingredients,35000,45000,28000,active,regular_sale,Beauty & Cosmetics,Retail,0,1,10,Beauty Supplier Co.
-BEAUTY002,Luxury Serum,럭셔리 세럼,Intensive hydrating serum with vitamins,BeautyBrand,Vitamin C + Hyaluronic Acid,55000,70000,44000,active,limited_edition,Beauty & Cosmetics,Retail,0,1,5,Beauty Supplier Co.
-FASHION001,Cotton T-Shirt,코튼 티셔츠,100% organic cotton comfortable t-shirt,FashionLine,100% Organic Cotton,25000,32000,20000,active,regular_sale,Fashion & Apparel,Retail,0,1,20,Fashion Wholesale
-FOOD001,Organic Green Tea,유기농 녹차,Premium organic green tea from Jeju,TeaHouse,Organic Green Tea Leaves,18000,22000,14000,active,regular_sale,Food & Beverage,Retail,0,2,50,Tea Importers Ltd
-TECH001,Wireless Earbuds,무선 이어버드,High-fidelity wireless earbuds with ANC,TechGear,Premium electronics,120000,150000,95000,draft,limited_edition,Electronics,Retail,0,1,3,Tech Distributors
-

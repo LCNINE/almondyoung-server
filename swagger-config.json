@@ -1,19 +1,5 @@
 {
   "apps": {
-    "wms": {
-      "title": "WMS API",
-      "description": "창고 관리 시스템 (Warehouse Management System) API",
-      "version": "1.0.0",
-      "appModule": "./apps/wms/src/wms.module.ts",
-      "port": 3010
-    },
-    "pim": {
-      "title": "PIM API",
-      "description": "상품 정보 관리 시스템 (Product Information Management) API",
-      "version": "1.0.0",
-      "appModule": "./apps/pim/src/pim.module.ts",
-      "port": 3000
-    },
     "membership": {
       "title": "Membership API",
       "description": "멤버십 관리 시스템 (Membership Management System) API",
