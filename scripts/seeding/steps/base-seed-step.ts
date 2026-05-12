@@ -8,6 +8,13 @@ export abstract class SeedStep {
   protected client: Sql;
   protected db: PostgresJsDatabase;
 
+  /**
+   * 이 step이 속한 시드 그룹들. orchestrator는 사용자가 선택한 그룹에 포함된
+   * step만 필터링해서 실행한다. 같은 step이 여러 그룹에 속할 수 있다.
+   * 예: ['baseline'], ['demo-salon'], ['baseline', 'demo-salon']
+   */
+  abstract readonly groups: readonly string[];
+
   constructor(
     public readonly serviceName: string,
     protected readonly databaseUrl: string,

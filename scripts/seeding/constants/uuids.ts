@@ -39,6 +39,12 @@ export const FIXED_UUIDS = {
 
   // Users
   USER_ADMIN: '019d0004-2001-7000-a000-000000000001',
+  /**
+   * clip(다른 repo)의 시연용 데모 user.
+   * 중요: clip/apps/backend/scripts/seeding/fixtures/demo.ts의 DEMO_USER_ID와
+   *       동일한 값이어야 cross-repo demo 시드가 같은 계정을 인식한다.
+   */
+  USER_DEMO: '00000000-0000-4000-8000-000000000001',
 
   // ==================== Membership ====================
 

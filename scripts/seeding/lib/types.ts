@@ -49,3 +49,19 @@ export interface SetupReport {
   seedResults: SeedApplyResult[];
   totalDuration: number;
 }
+
+/** 모든 phase에 공통으로 전달되는 옵션 */
+export interface PhaseOptions {
+  yes: boolean;
+  /** 배포 키 (root/df/lcnine-auth/lcnine-services) — service-registry 분기 */
+  deployment?: string;
+  /**
+   * Phase 3에서 활성화할 시드 그룹.
+   *  - undefined: 인터랙티브 선택
+   *  - 빈 문자열 or 'none': phase 3 건너뜀
+   *  - 그 외: 해당 그룹의 step만 실행
+   */
+  group?: string | null;
+  /** 운영 stage에서도 demo-* 그룹 실행 허용 */
+  allowDemoInProd?: boolean;
+}
