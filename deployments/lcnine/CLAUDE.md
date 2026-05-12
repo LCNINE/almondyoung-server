@@ -66,7 +66,7 @@ SSM publish:
 | ChannelAdapter | `channel-adapter.…` | 3000 | Naver/Coupang 키는 현재 더미 |
 | Membership | `membership.…` | 3000 | Wallet 호출 |
 | Notification | `notification.…` | 3000 | NHN AlimTalk + Resend |
-| **Core** (almondyoung-server) | `core.…` | 3000 | **wms + pim 통합 superset** (아래 참고) |
+| **Core** | `core.…` | 3000 | **wms + pim 통합 superset** (`apps/core`) |
 | UgcService | `ugc.…` | 3030 | |
 | Wallet | `wallet.…` | 3000 | Toss/Nicepay, Medusa 결제 webhook |
 | FileService | `file.…` | 3000 | S3 (`almondyoung-demo`) |
@@ -78,13 +78,11 @@ SSM publish:
 
 cross-stack: `/lcnine-auth/<stage>/user-service-url`, `/auth-web-url`, (TEMP) `auth-secret` 을 읽어 Medusa·Storefront·admin 등에 주입.
 
-### Core 와 legacy wms/pim
+### Core
 
-`apps/almondyoung-server` (= 배포 이름 **Core**, hostname `core.…`) 는 **wms 와 pim 의 기능을 포함하는 통합 superset**. lcnine 배포에서는 Core 만 띄우고 wms/pim 은 배포 대상에 포함하지 않음.
+`apps/core` (= 배포 이름 **Core**, hostname `core.…`) 는 **wms 와 pim 의 도메인을 모두 포함하는 통합 백엔드**. legacy `apps/wms`, `apps/pim` 은 제거됨 — 신규 도메인 로직은 모두 Core 에 추가.
 
-`apps/wms` 와 `apps/pim` 은 legacy 로 마킹 (`apps/wms-legacy/`, `apps/pim-legacy/` 로 폴더 rename 예정). 신규 도메인 로직은 모두 Core(=`apps/almondyoung-server`) 에 추가할 것. legacy 두 앱은 참고/이주 작업용으로만 유지.
-
-다른 서비스 환경변수에서 wms/pim 을 참조하는 자리(예: ChannelAdapter 의 `PIM_API_URL`, Medusa 의 `WMS_API_URL`)는 모두 `url("core")` 로 통합되어 있음.
+다른 서비스 환경변수에서 wms/pim 을 참조하던 자리(예: ChannelAdapter 의 `PIM_API_URL`, Medusa 의 `WMS_API_URL`)는 모두 `url("core")` 로 통합되어 있음.
 
 ## 핵심 설계 포인트
 

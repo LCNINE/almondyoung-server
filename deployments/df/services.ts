@@ -137,11 +137,11 @@ export function setup(infra: SharedInfra) {
   const medusaCookieSecret = new sst.Secret("MedusaCookieSecret");
 
   // ═══════════════════════════════════════════
-  //  Services (df 환경: Pim/Wms 없음, almondyoung-server 포함)
+  //  Services (df 환경: 단일 Core 서비스 + 부속 서비스)
   // ═══════════════════════════════════════════
 
   createService("AlmondyoungServer", {
-    dockerfile: "apps/almondyoung-server/Dockerfile",
+    dockerfile: "apps/core/Dockerfile",
     domainSlug: "api",
     port: 3000,
     priority: 90,

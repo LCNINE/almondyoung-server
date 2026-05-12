@@ -144,7 +144,7 @@ export function setup(infra: IdpInfra) {
   });
 
   // ─── Cross-stack exports via SSM Parameter Store ───
-  // consumer 앱(루트 almondyoung-server 등)은 aws.ssm.getParameterOutput()으로 읽는다.
+  // consumer 앱(루트 core 등)은 aws.ssm.getParameterOutput()으로 읽는다.
   new aws.ssm.Parameter("IdpUserServiceUrl", {
     name: `/lcnine-auth/${$app.stage}/user-service-url`,
     type: "String",
