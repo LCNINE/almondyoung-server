@@ -36,9 +36,6 @@ Pulumi state가 `{app-name}/{stage}` 키로 저장되므로 **한 번 배포된 
 | lcnine | platform | `lcnine-platform` | `deployments/lcnine/platform/` |
 | lcnine | auth | `lcnine-auth` | `deployments/lcnine/auth/` |
 | lcnine | services | `lcnine-services` | `deployments/lcnine/services/` |
-| df | platform | `df-platform` | `deployments/df/platform/` |
-| df | auth | `df-auth` | `deployments/df/auth/` |
-| df | services | `df-services` | `deployments/df/services/` |
 
 ## SSM 네임스페이스
 
@@ -108,16 +105,6 @@ npx sst deploy --stage live     # 운영 배포
 - `services`: 회사별 서비스 hostname은 `services` 앱이 결정. `auth`와 **다른 hostname**을 써야 ALB/CloudFront Route53 충돌 없음.
 
 같은 Route53 존을 공유하는 경우 ALB는 **wildcard가 아닌 specific hostname** 도메인으로 잡을 것 (specific A record가 wildcard alias보다 Route53에서 우선되므로 충돌 회피).
-
-## 레거시 (이주 대상)
-
-현재 컨벤션을 따르지 않는 기존 배포:
-
-| 현재 | 이주 목표 | 비고 |
-|---|---|---|
-| `deployments/df/` (`df`) | `deployments/df/services/` + `df-services` | platform/auth 분리 작업과 함께 진행 |
-
-이주 전까지는 기존 이름/경로를 유지하되, **신규는 반드시 이 컨벤션을 따를 것**.
 
 ## 주의
 

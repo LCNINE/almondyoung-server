@@ -5,7 +5,6 @@ import { ServiceConfig } from './types';
  *
  * Use getServiceRegistry(deployment) to get the correct registry for a deployment.
  *   - undefined / 'root'  → core (catalog+inventory 통합) + 부속 서비스
- *   - 'df'                → core 단일 (DB = "core")
  */
 
 const ROOT_REGISTRY: ServiceConfig[] = [
@@ -15,23 +14,6 @@ const ROOT_REGISTRY: ServiceConfig[] = [
   { name: 'channel-adapter', database: 'channel_adapter', drizzleConfig: 'apps/channel-adapter/drizzle.config.ts', hasSeedStep: false },
   { name: 'membership', database: 'membership', drizzleConfig: 'apps/membership/drizzle.config.ts', hasSeedStep: true },
   { name: 'notification', database: 'notification', drizzleConfig: 'apps/notification/database/drizzle/drizzle.config.ts', hasSeedStep: true },
-  { name: 'ugc-service', database: 'ugc', drizzleConfig: 'apps/ugc-service/src/db/drizzle.config.ts', hasSeedStep: false },
-  { name: 'wallet', database: 'wallet', drizzleConfig: 'apps/wallet/drizzle.config.ts', hasSeedStep: false },
-  { name: 'file-service', database: 'file_service', drizzleConfig: 'apps/file-service/src/database/drizzle/drizzle.config.ts', hasSeedStep: true },
-  { name: 'medusa', database: 'medusa', hasSeedStep: false },
-];
-
-/**
- * df 배포: core 단일 백엔드.
- * - core → DB "core", drizzle config가 catalog+inventory 스키마 모두 포함
- * - notification → df에 배포되지 않으므로 제거
- */
-const DF_REGISTRY: ServiceConfig[] = [
-  { name: 'core', database: 'core', drizzleConfig: 'apps/core/drizzle.config.ts', hasSeedStep: true },
-  { name: 'user-service', database: 'user_service', drizzleConfig: 'apps/user-service/database/drizzle/drizzle.config.ts', hasSeedStep: true },
-  { name: 'analytics', database: 'analytics', drizzleConfig: 'apps/analytics/drizzle.config.ts', hasSeedStep: false },
-  { name: 'channel-adapter', database: 'channel_adapter', drizzleConfig: 'apps/channel-adapter/drizzle.config.ts', hasSeedStep: false },
-  { name: 'membership', database: 'membership', drizzleConfig: 'apps/membership/drizzle.config.ts', hasSeedStep: true },
   { name: 'ugc-service', database: 'ugc', drizzleConfig: 'apps/ugc-service/src/db/drizzle.config.ts', hasSeedStep: false },
   { name: 'wallet', database: 'wallet', drizzleConfig: 'apps/wallet/drizzle.config.ts', hasSeedStep: false },
   { name: 'file-service', database: 'file_service', drizzleConfig: 'apps/file-service/src/database/drizzle/drizzle.config.ts', hasSeedStep: true },
@@ -66,7 +48,6 @@ const LCNINE_SERVICES_REGISTRY: ServiceConfig[] = [
 
 const REGISTRIES: Record<string, ServiceConfig[]> = {
   root: ROOT_REGISTRY,
-  df: DF_REGISTRY,
   'lcnine-auth': LCNINE_AUTH_REGISTRY,
   'lcnine-services': LCNINE_SERVICES_REGISTRY,
 };

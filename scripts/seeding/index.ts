@@ -6,16 +6,15 @@
  * Usage:
  *   npx tsx scripts/seeding/index.ts --stage dev                      # interactive (root deployment)
  *   npx tsx scripts/seeding/index.ts --stage dev --yes                # non-interactive (CI)
- *   npx tsx scripts/seeding/index.ts --stage dev --deployment df      # df deployment (monolithic)
  *   npx tsx scripts/seeding/index.ts --stage production               # production stage
  *
  * The script wraps itself in `sst shell --stage <stage>` automatically.
  * If already inside sst shell (SST_RESOURCE_App exists), it runs directly.
  */
 
-import { execSync, spawn } from 'child_process';
+import { spawn } from 'child_process';
 import chalk from 'chalk';
-import { confirm, select } from '@inquirer/prompts';
+import { confirm } from '@inquirer/prompts';
 import { runDatabaseCreation } from './phases/01-database-creation';
 import { runSchemaSync } from './phases/02-schema-sync';
 import { runSeeding, listGroupsForDeployment } from './phases/03-seed-orchestrator';
@@ -58,21 +57,17 @@ function isInsideSstShell(): boolean {
 
 /**
  * deployment 키 → sst 실행 cwd.
- *  - `df` (레거시 단일 스택) → `deployments/df`
- *  - `{company}-{env}` (신규 컨벤션, env ∈ platform/auth/services) → `deployments/{company}/{env}`
+ *  - `{company}-{env}` (env ∈ platform/auth/services) → `deployments/{company}/{env}`
  */
 function deploymentToCwd(deployment: string): string {
   const KNOWN_ENVS = ['platform', 'auth', 'services'];
   const parts = deployment.split('-');
-  if (parts.length === 2) {
-    if (!KNOWN_ENVS.includes(parts[1])) {
-      throw new Error(
-        `Unknown deployment env "${parts[1]}" in "${deployment}". Expected one of: ${KNOWN_ENVS.join(', ')} (e.g. ${parts[0]}-services).`,
-      );
-    }
-    return `deployments/${parts[0]}/${parts[1]}`;
+  if (parts.length !== 2 || !KNOWN_ENVS.includes(parts[1])) {
+    throw new Error(
+      `Invalid deployment "${deployment}". Expected "{company}-{env}" with env ∈ ${KNOWN_ENVS.join('/')} (e.g. lcnine-services).`,
+    );
   }
-  return `deployments/${deployment}`;
+  return `deployments/${parts[0]}/${parts[1]}`;
 }
 
 function reExecViaSstShell(stage: string, deployment?: string): never {
@@ -149,18 +144,8 @@ async function main() {
   // If not inside sst shell, wrap ourselves
   if (!isInsideSstShell()) {
     if (!parsed.stage) {
-      // Interactive stage selection
-      const stages = await detectStages();
-      if (stages.length === 0) {
-        console.error(chalk.red('  --stage <name> is required. Example: --stage dev'));
-        process.exit(1);
-      }
-      parsed.stage = await select({
-        message: 'Select SST stage:',
-        choices: stages.map((s) => ({ name: s, value: s })),
-      });
-      // Re-exec with the selected stage appended
-      process.argv.push('--stage', parsed.stage);
+      console.error(chalk.red('  --stage <name> is required. Example: --stage dev'));
+      process.exit(1);
     }
     reExecViaSstShell(parsed.stage, parsed.deployment);
     return; // unreachable, but makes TS happy
@@ -242,25 +227,6 @@ async function main() {
 
   const hasFailed = seedResults.some((r) => !r.success);
   if (hasFailed) process.exit(1);
-}
-
-/** Try to detect available SST stages from .sst state */
-async function detectStages(): Promise<string[]> {
-  try {
-    const output = execSync('aws s3 ls s3://$(aws ssm get-parameter --name /sst/bootstrap --query Parameter.Value --output text | jq -r .state)/almondyoung-server/ 2>/dev/null || true', {
-      encoding: 'utf-8',
-      timeout: 10000,
-    });
-    // Parse S3 prefixes like "PRE dev/" "PRE production/"
-    const stages = output
-      .split('\n')
-      .filter((line) => line.includes('PRE '))
-      .map((line) => line.replace(/.*PRE\s+/, '').replace(/\/$/, '').trim())
-      .filter(Boolean);
-    return stages;
-  } catch {
-    return [];
-  }
 }
 
 // Graceful shutdown

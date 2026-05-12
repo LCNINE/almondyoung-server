@@ -1,17 +1,17 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-This repository is a Yarn-based monorepo centered on NestJS services. `apps/` contains deployable applications such as `almondyoung-server`, `wms`, `pim`, `membership`, `user-service`, `channel-adapter`, `search`, and `analytics`, plus the standalone Medusa service in `apps/medusa` and web frontends in `apps/admin-web` and `apps/wallet-web`. Shared code lives in `libs/{shared,db,events,authorization}/src`, reusable typed packages live in `packages/`, automation lives in `scripts/`, and reference material lives in `docs/` or `apps/*/docs`.
+This repository is a Yarn-based monorepo centered on NestJS services. `apps/` contains deployable applications such as `core` (catalog+inventory 통합 백엔드), `membership`, `user-service`, `channel-adapter`, `search`, and `analytics`, plus the standalone Medusa service in `apps/medusa` and web frontends in `apps/admin-web` and `apps/wallet-web`. Shared code lives in `libs/{shared,db,events,authorization}/src`, reusable typed packages live in `packages/`, automation lives in `scripts/`, and reference material lives in `docs/` or `apps/*/docs`.
 
 ## Build, Test, and Development Commands
 Use Yarn at the repository root.
 
 - `yarn build`: build the main Nest applications defined in the root workspace.
-- `yarn start:<service>:dev`: run a service in watch mode, for example `yarn start:wms:dev` or `yarn start:user-service:dev`.
+- `yarn start:<service>:dev`: run a service in watch mode, for example `yarn start:main:dev` (core server) or `yarn start:user-service:dev`.
 - `yarn lint`: run ESLint with autofix across `apps/`, `libs/`, and `test/`.
 - `yarn format`: apply Prettier to TypeScript files under `apps/` and `libs/`.
 - `yarn test`, `yarn test:cov`: run the default Jest suite or coverage.
-- `yarn test:user-service`, `yarn test:membership`, `yarn wms:test`: run targeted suites.
+- `yarn test:user-service`, `yarn test:membership`: run targeted suites.
 - `yarn db:setup`: seed shared local data; service-specific DB tasks are exposed as `db:push:*`, `db:generate:*`, and `db:seed:*`.
 
 ## Coding Style & Naming Conventions

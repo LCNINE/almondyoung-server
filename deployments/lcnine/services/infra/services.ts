@@ -185,7 +185,7 @@ export function setup(infra: SharedInfra) {
     },
     environment: {
       DATABASE_URL: dbUrl("core"),
-      ...kafkaEnv("almondyoung-server", "almondyoung-server-group"),
+      ...kafkaEnv("core", "core-group"),
       AUTH_SECRET: authSecret.value,
       JWT_ISSUER: "almondyoung-auth",
       // OIDC: storefront/admin-web 의 RS256 토큰 검증용.

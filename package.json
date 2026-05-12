@@ -25,7 +25,6 @@
     "build:user-service": "nest build user-service",
     "build:wallet": "nest build wallet",
     "db:setup": "npx tsx scripts/seeding/index.ts",
-    "db:setup:df": "npx tsx scripts/seeding/index.ts --deployment df",
     "db:setup:lcnine-auth": "npx tsx scripts/seeding/index.ts --deployment lcnine-auth",
     "db:setup:ci": "npx tsx scripts/seeding/index.ts --yes",
     "db:generate:analytics": "drizzle-kit generate --config apps/analytics/drizzle.config.ts",
