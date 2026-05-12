@@ -155,7 +155,7 @@ export class EntitlementManager {
    * - 활성 권한 없음: 새 계약 + 권한 생성
    * - 이미 활성 권한 있음: 오류 (기간 조정 기능 사용 요구)
    */
-  async grantByDays(userId: string, days: number, memo: string | null, adminId: string): Promise<Entitlement> {
+  async grantByDays(userId: string, days: number, memo: string | null, adminId: string): Promise<{ entitlement: Entitlement; contractId: string; planId: string; tierId: string }> {
     return await this.dbService.db.transaction(async (tx) => {
       const [existing] = await tx
         .select({ id: schema.subscriptionEntitlement.id })
@@ -230,7 +230,7 @@ export class EntitlementManager {
         causedByUserId: adminId,
       });
 
-      return newEntitlement;
+      return { entitlement: newEntitlement, contractId: newContract.id, planId, tierId };
     });
   }
 
