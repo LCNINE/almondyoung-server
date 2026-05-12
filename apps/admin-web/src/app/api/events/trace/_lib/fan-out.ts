@@ -12,7 +12,7 @@ export const TRACKED_SERVICES = [
     default: 'http://localhost:3070',
   },
   {
-    name: 'almondyoung-server',
+    name: 'core',
     envKey: 'ALMONDYOUNG_API_URL',
     default: 'http://localhost:3000',
   },

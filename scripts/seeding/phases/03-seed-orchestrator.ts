@@ -159,7 +159,7 @@ function printCheckResult(result: SeedCheckResult): void {
 /**
  * Registry 기반으로 seed step 목록을 생성.
  * - 서비스가 registry에 있고 hasSeedStep=true인 경우만 생성
- * - almondyoung-server가 hasSeedStep=true인 경우 (df 배포) WMS/PIM 시딩을 해당 DB로 연결
+ * - core 서비스가 catalog+inventory 통합 스키마를 가지므로 WMS/PIM 시딩은 core DB로 연결
  */
 function buildSeedSteps(
   registry: ServiceConfig[],
@@ -173,22 +173,11 @@ function buildSeedSteps(
   const steps: SeedStep[] = [];
   const registryMap = new Map(registry.map((s) => [s.name, s]));
 
-  // almondyoung-server가 hasSeedStep=true면 WMS/PIM이 흡수된 것 (df 배포)
-  const ayEntry = registryMap.get('almondyoung-server');
-  if (ayEntry?.hasSeedStep) {
-    const coreDbUrl = urlFor(ayEntry.database);
+  const coreEntry = registryMap.get('core');
+  if (coreEntry?.hasSeedStep) {
+    const coreDbUrl = urlFor(coreEntry.database);
     steps.push(new WmsSeedStep(coreDbUrl));
     steps.push(new PimSeedStep(coreDbUrl));
-  } else {
-    // Root 배포: WMS/PIM이 별도 서비스
-    const wmsEntry = registryMap.get('wms');
-    if (wmsEntry?.hasSeedStep) {
-      steps.push(new WmsSeedStep(urlFor(wmsEntry.database)));
-    }
-    const pimEntry = registryMap.get('pim');
-    if (pimEntry?.hasSeedStep) {
-      steps.push(new PimSeedStep(urlFor(pimEntry.database)));
-    }
   }
 
   const userEntry = registryMap.get('user-service');
