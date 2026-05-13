@@ -1,3 +1,5 @@
+'use client';
+
 // src/lib/api/domains/orders/fulfillment-order.client.ts
 // Fulfillment Orders API 클라이언트
 

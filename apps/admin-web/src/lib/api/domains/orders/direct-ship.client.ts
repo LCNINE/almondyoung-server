@@ -1,3 +1,5 @@
+'use client';
+
 // src/lib/api/domains/orders/direct-ship.client.ts
 // ⚠️ forward는 POST, complete는 PUT — 서버 HTTP 메서드 비대칭
 // ⚠️ xlsx export 미구현 (BadRequestException) — csv만 사용

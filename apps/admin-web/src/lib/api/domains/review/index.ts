@@ -1,3 +1,5 @@
+'use client';
+
 import { UGC_SERVICE_BASE_URL } from '@/const';
 import {
   AdminCommentDto,

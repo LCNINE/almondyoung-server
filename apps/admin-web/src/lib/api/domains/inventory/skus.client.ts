@@ -1,3 +1,5 @@
+'use client';
+
 // src/lib/api/domains/inventory/skus.client.ts
 // SKU 관련 API 클라이언트
 
