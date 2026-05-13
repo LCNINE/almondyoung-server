@@ -3,6 +3,7 @@ import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import type {
   CreateMasterDto,
   MasterDto,
+  MasterSummaryListResponseDto,
   MastersQuery,
   MastersResponseDto,
   PricePreviewDto,
@@ -185,10 +186,26 @@ export const updatePricingStrategy = async (
   return response.data;
 };
 
+/**
+ * 제품 마스터 목록 조회 (요약 — 백엔드 ProductSummaryDto)
+ * GET /masters
+ */
+export const getMastersSummary = async (
+  query: MastersQuery = {},
+): Promise<MasterSummaryListResponseDto> => {
+  const response = await client.get(
+    `${ALMONDYOUNG_API_BASE_URL}/masters?${buildQueryString(
+      query as Record<string, unknown>,
+    )}`,
+  );
+  return response.data;
+};
+
 // 제품 마스터 클라이언트 객체
 export const masters = {
   create: mastersClient.create,
   getList: getMasters,
+  getListSummary: getMastersSummary,
   get: getMaster,
   update: updateMaster,
   delete: deleteMaster,
