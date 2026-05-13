@@ -20,6 +20,9 @@ const nextConfig = {
     staleTimes: {
       dynamic: 30,
     },
+    serverActions: {
+      bodySizeLimit: "12mb",
+    },
   },
   logging: {
     fetches: {
