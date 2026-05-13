@@ -173,9 +173,7 @@ function BlacklistRemoveDialog({
 }
 
 export function CustomerBlacklistContent({ userId }: { userId: string }) {
-  const { data, isLoading, error, refetch } = useBlacklistByUserId(userId);
-
-  const blacklist = data?.data;
+  const { data: blacklist, isLoading, error, refetch } = useBlacklistByUserId(userId);
   const { data: createdByAdmin } = useOptionalAdminUser(blacklist?.createdBy);
   const { data: deletedByAdmin } = useOptionalAdminUser(blacklist?.deletedBy);
 
