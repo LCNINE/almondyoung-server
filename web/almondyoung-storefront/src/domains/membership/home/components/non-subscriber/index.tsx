@@ -8,7 +8,8 @@ import { CustomButton } from "@/components/shared/custom-buttons"
 import { Separator } from "@/components/ui/separator"
 import { MembershipCancelModal } from "@/domains/membership/components/modal"
 import { cancelSubscription } from "@lib/api/membership"
-import { refreshCartPrices } from "@/lib/api/medusa/cart"
+import { toast } from "sonner"
+import { pollCartRefreshUntilGroupRemoved } from "../../poll-cart-refresh"
 import type {
   CancellationReasonDto,
   SubscriptionHistoryItemDto,
@@ -54,18 +55,6 @@ function planLabel(durationDays?: number): string {
   return `${durationDays}일 구독`
 }
 
-function pollCartRefreshUntilGroupRemoved(intervalMs = 3_000, maxDurationMs = 30_000): void {
-  const startedAt = Date.now()
-  const poll = () => {
-    setTimeout(async () => {
-      const result = await refreshCartPrices().catch(() => null)
-      if (!result || result.hasMembershipGroup !== true) return
-      if (Date.now() - startedAt < maxDurationMs) poll()
-    }, intervalMs)
-  }
-  poll()
-}
-
 interface HistoryCardProps {
   item: SubscriptionHistoryItemDto
   cancellationReasons: CancellationReasonDto[]
@@ -73,6 +62,7 @@ interface HistoryCardProps {
 }
 
 function HistoryCard({ item, cancellationReasons, onCancelled }: HistoryCardProps) {
+  const router = useRouter()
   const [open, setOpen] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [isCancelling, setIsCancelling] = useState(false)
@@ -90,8 +80,11 @@ function HistoryCard({ item, cancellationReasons, onCancelled }: HistoryCardProp
       setIsCancelling(true)
       await cancelSubscription(reasonCode, reasonText)
       setModalOpen(false)
-      pollCartRefreshUntilGroupRemoved()
       onCancelled()
+      pollCartRefreshUntilGroupRemoved(() => {
+        toast.success("장바구니 가격이 업데이트되었습니다.")
+        router.refresh()
+      })
     } catch {
       // 에러는 서버에서 처리
     } finally {
