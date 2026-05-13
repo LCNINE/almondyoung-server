@@ -3,6 +3,12 @@
 import axios, { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios';
 import { CustomError } from './customError';
 
+const REFRESH_LOCK_NAME = 'admin-web:auth-refresh';
+const REFRESH_MARKER_KEY = 'admin-web:last-auth-refresh';
+// 다른 탭이 직전에 refresh 한 사실을 확인할 때 사용하는 window. user-service refresh-token
+// rotation 의 reuse-grace 보다 짧게 잡으면 안전. 10s 면 새 쿠키가 jar 에 도착할 시간으로 충분.
+const REFRESH_FRESH_WINDOW_MS = 10 * 1000;
+
 const client: AxiosInstance = axios.create({
   baseURL: '/api',
   headers: {
@@ -11,42 +17,65 @@ const client: AxiosInstance = axios.create({
   withCredentials: true,
 });
 
-// 토큰 갱신 관련 상태 관리
-let isRefreshing = false;
-let refreshSubscribers: Array<(token: string | null) => void> = [];
-
-// 대기 중인 요청들에게 토큰 갱신 결과 알림
-function onRefreshed(token: string | null) {
-  refreshSubscribers.forEach((callback) => callback(token));
-  refreshSubscribers = [];
-}
-
-// 토큰 갱신 대기 큐에 추가
-function addRefreshSubscriber(callback: (token: string | null) => void) {
-  refreshSubscribers.push(callback);
-}
-
-async function refreshAccessToken(): Promise<string | null> {
-  try {
-    const response = await fetch('/api/auth/refresh', {
-      method: 'POST',
-      credentials: 'include',
-    });
-
-    if (!response.ok) {
-      throw new Error('Token refresh failed');
-    }
-
-    const data = await response.json();
-    return data.data.accessToken;
-  } catch (error) {
-    console.error('Token refresh error:', error);
-
-    throw new CustomError({
-      message: '인증이 만료되었습니다. 다시 로그인해주세요.',
-      statusCode: 401,
-    });
+/**
+ * 같은 origin 의 모든 탭/iframe 사이에서 refresh 호출을 단일화한다.
+ *
+ * 두 탭이 동시에 401 을 받으면 각자 `/api/auth/refresh` 를 호출해 user-service 의 refresh
+ * rotation 에 reuse detection 이 걸려 강제 로그아웃되는 사례가 있었다. Web Locks API 로
+ * 직렬화하고, 락을 늦게 잡은 탭은 localStorage marker 로 직전 refresh 시점을 확인해 중복
+ * 호출을 skip 한다. 새 쿠키는 cookie jar 에 공유되므로 skip 한 탭도 곧장 원 요청을 재시도하면 된다.
+ *
+ * Web Locks 미지원 환경(매우 오래된 브라우저)에서는 같은 탭 내 single-flight 만 보장하고
+ * 다중 탭 race 는 잔존 — admin-web 의 지원 브라우저 범위에서는 사실상 미지원 환경 없음.
+ */
+async function performRefresh(): Promise<void> {
+  const response = await fetch('/api/auth/refresh', {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    throw new Error(`Token refresh failed: ${response.status}`);
   }
+  try {
+    localStorage.setItem(REFRESH_MARKER_KEY, String(Date.now()));
+  } catch {
+    // private 모드 등 storage write 실패는 무해 — 다음 탭이 한 번 더 refresh 할 뿐.
+  }
+}
+
+function readRefreshMarker(): number {
+  try {
+    return Number(localStorage.getItem(REFRESH_MARKER_KEY)) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+// in-tab dedupe — Web Locks 미지원 환경에서만 의미가 있음. 지원 환경에선 navigator.locks 가 같은 탭의 두 번째 요청도 직렬화한다.
+let inflight: Promise<void> | null = null;
+
+async function refreshAccessToken(): Promise<void> {
+  if (inflight) return inflight;
+
+  const supportsLocks = typeof navigator !== 'undefined' && 'locks' in navigator;
+
+  const run = async () => {
+    if (supportsLocks) {
+      await navigator.locks.request(REFRESH_LOCK_NAME, async () => {
+        if (Date.now() - readRefreshMarker() < REFRESH_FRESH_WINDOW_MS) {
+          return; // 다른 탭이 방금 갱신함 — 새 쿠키는 jar 에 이미 있음
+        }
+        await performRefresh();
+      });
+    } else {
+      await performRefresh();
+    }
+  };
+
+  inflight = run().finally(() => {
+    inflight = null;
+  });
+  return inflight;
 }
 
 interface RetryConfig extends AxiosRequestConfig {
@@ -95,47 +124,22 @@ client.interceptors.response.use(
   async (err: AxiosError) => {
     const config = err.config as RetryConfig;
 
-    // 401 에러 처리 (인증 만료)
+    // 401 에러 처리 (인증 만료) — Web Locks 로 다중 탭 single-flight 화
     if (err.response?.status === 401 && !config._retry) {
       config._retry = true;
-
-      // 이미 토큰 갱신 중인 경우
-      if (isRefreshing) {
-        return new Promise((resolve, reject) => {
-          addRefreshSubscriber((token: string | null) => {
-            if (token) {
-              resolve(client(config));
-            } else {
-              reject(
-                new CustomError({
-                  message: '인증이 만료되었습니다. 다시 로그인해주세요.',
-                  statusCode: 401,
-                })
-              );
-            }
-          });
-        });
-      }
-
-      // 토큰 갱신 시작
-      isRefreshing = true;
-
       try {
-        const newToken = await refreshAccessToken();
-        onRefreshed(newToken);
-        isRefreshing = false;
-
-        return client(config); // newToken이 있으면 재시도
+        await refreshAccessToken();
+        return client(config);
       } catch (refreshError) {
-        onRefreshed(null);
-        isRefreshing = false;
-
-        // 세션 만료 이벤트 발행 (AuthExpiredHandler가 SPA 내 리다이렉트 처리)
+        // 세션 만료 이벤트 발행 (AuthExpiredHandler 가 SPA 내 리다이렉트 처리)
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('auth:session-expired'));
         }
-
-        throw refreshError as CustomError;
+        console.error('Token refresh error:', refreshError);
+        throw new CustomError({
+          message: '인증이 만료되었습니다. 다시 로그인해주세요.',
+          statusCode: 401,
+        });
       }
     }
 

@@ -1,3 +1,5 @@
+'use client';
+
 // src/lib/api/domains/orders/consolidation.client.ts
 // ⚠️ findConsolidationCandidates: customer/주소/치수/무게가 Math.random() 기반 mock
 //    호출마다 결과가 다름 — UI는 반드시 "어드바이저리" 라벨링 필요

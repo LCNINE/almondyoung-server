@@ -1,3 +1,5 @@
+'use client';
+
 import { WALLET_SERVICE_BASE_URL } from '@/const';
 import {
   PaymentIntentListItem,

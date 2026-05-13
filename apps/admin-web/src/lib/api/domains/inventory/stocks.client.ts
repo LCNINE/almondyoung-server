@@ -1,3 +1,5 @@
+'use client';
+
 // src/lib/api/domains/inventory/stocks.client.ts
 // 재고 관련 API 클라이언트
 

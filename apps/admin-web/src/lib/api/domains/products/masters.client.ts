@@ -1,3 +1,5 @@
+'use client';
+
 // src/lib/api/domains/products/masters.client.ts
 import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import type {

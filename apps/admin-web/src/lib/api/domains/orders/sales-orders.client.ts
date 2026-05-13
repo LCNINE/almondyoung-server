@@ -1,3 +1,5 @@
+'use client';
+
 // src/lib/api/domains/orders/sales-orders.client.ts
 // Sales Orders API 클라이언트
 

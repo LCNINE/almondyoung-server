@@ -1,3 +1,5 @@
+'use client';
+
 import { ApiResponse } from '@/lib/types/dto/api';
 import { client } from '../../client';
 
