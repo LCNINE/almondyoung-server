@@ -17,29 +17,27 @@ function buildQueryString(query: Record<string, unknown>): string {
   return params.toString();
 }
 
-export const moveImmediately = async (data: MoveBatchRequestDto): Promise<MovementJobWithLinesDto> => {
-  const response = await client.post(`${ALMONDYOUNG_API_BASE_URL}/movement/move`, data);
-  return response.data;
-};
-
-export const getMovementJob = async (jobId: string): Promise<MovementJobWithLinesDto> => {
-  const response = await client.get(
-    `${ALMONDYOUNG_API_BASE_URL}/movement/jobs/${encodeURIComponent(jobId)}`
-  );
-  return response.data;
-};
-
-export const getMovementHistory = async (
-  query: MovementHistoryQuery = {}
-): Promise<MovementHistoryResponseDto> => {
-  const response = await client.get(
-    `${ALMONDYOUNG_API_BASE_URL}/movement/history?${buildQueryString(query as Record<string, unknown>)}`
-  );
-  return response.data;
-};
-
 export const movementClient = {
-  moveImmediately,
-  getMovementJob,
-  getMovementHistory,
+  moveImmediately: async (
+    data: MoveBatchRequestDto
+  ): Promise<MovementJobWithLinesDto> => {
+    const response = await client.post(`${ALMONDYOUNG_API_BASE_URL}/movement/move`, data);
+    return response.data;
+  },
+
+  getMovementJob: async (jobId: string): Promise<MovementJobWithLinesDto> => {
+    const response = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/movement/jobs/${encodeURIComponent(jobId)}`
+    );
+    return response.data;
+  },
+
+  getMovementHistory: async (
+    query: MovementHistoryQuery = {}
+  ): Promise<MovementHistoryResponseDto> => {
+    const response = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/movement/history?${buildQueryString(query as Record<string, unknown>)}`
+    );
+    return response.data;
+  },
 };

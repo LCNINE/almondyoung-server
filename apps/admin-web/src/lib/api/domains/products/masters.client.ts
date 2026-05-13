@@ -22,6 +22,19 @@ function buildQueryString(query: Record<string, unknown>): string {
   return params.toString();
 }
 
+export interface ProductSummary {
+  masterId: string;
+  versionId: string;
+  name: string;
+  thumbnail: string | null;
+  brand: string | null;
+  isMembershipOnly: boolean;
+  status: string;
+  createdAt: string;
+  optionGroupNames: string[];
+  variantCount: number;
+}
+
 export const mastersClient = {
   create: async (dto: CreateMasterDto): Promise<MasterDto> => {
     const response = await client.post(
@@ -31,16 +44,22 @@ export const mastersClient = {
     return response.data;
   },
 
-  list: async (
-    q?: Record<string, unknown>
-  ): Promise<{
-    data: MasterDto[];
-    total: number;
-    page: number;
-    limit: number;
-  }> => {
+  getList: async (query: MastersQuery = {}): Promise<MastersResponseDto> => {
     const response = await client.get(
-      `${ALMONDYOUNG_API_BASE_URL}/masters?${buildQueryString(q || {})}`
+      `${ALMONDYOUNG_API_BASE_URL}/masters?${buildQueryString(
+        query as Record<string, unknown>
+      )}`
+    );
+    return response.data;
+  },
+
+  getListSummary: async (
+    query: MastersQuery = {}
+  ): Promise<MasterSummaryListResponseDto> => {
+    const response = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/masters?${buildQueryString(
+        query as Record<string, unknown>
+      )}`
     );
     return response.data;
   },
@@ -60,22 +79,26 @@ export const mastersClient = {
     return response.data;
   },
 
-  remove: async (id: string): Promise<void> => {
+  delete: async (id: string): Promise<void> => {
     await client.delete(`${ALMONDYOUNG_API_BASE_URL}/masters/${id}`);
   },
 
-  pricePreview: async (id: string): Promise<PricePreviewDto> => {
+  getPricePreview: async (id: string): Promise<PricePreviewDto> => {
     const response = await client.get(
       `${ALMONDYOUNG_API_BASE_URL}/masters/${id}/price-preview`
     );
     return response.data;
   },
 
-  changePricing: async (
+  updatePricingStrategy: async (
     id: string,
-    dto: { pricingStrategy: string; migrationData?: Record<string, unknown> }
-  ): Promise<void> => {
-    await client.put(`${ALMONDYOUNG_API_BASE_URL}/masters/${id}/pricing`, dto);
+    data: UpdatePricingStrategyDto
+  ): Promise<MasterDto> => {
+    const response = await client.put(
+      `${ALMONDYOUNG_API_BASE_URL}/masters/${id}/pricing`,
+      data
+    );
+    return response.data;
   },
 
   listByIds: async (
@@ -96,120 +119,4 @@ export const mastersClient = {
 
     return response.data;
   },
-};
-
-export interface ProductSummary {
-  masterId: string;
-  versionId: string;
-  name: string;
-  thumbnail: string | null;
-  brand: string | null;
-  isMembershipOnly: boolean;
-  status: string;
-  createdAt: string;
-  optionGroupNames: string[];
-  variantCount: number;
-}
-
-/**
- * 제품 마스터 목록 조회
- * GET /masters
- */
-export const getMasters = async (
-  query: MastersQuery = {}
-): Promise<MastersResponseDto> => {
-  const response = await client.get(
-    `${ALMONDYOUNG_API_BASE_URL}/masters?${buildQueryString(
-      query as Record<string, unknown>
-    )}`
-  );
-  return response.data;
-};
-
-/**
- * 제품 마스터 상세 조회
- * GET /masters/{id}
- */
-export const getMaster = async (id: string): Promise<MasterDto> => {
-  const response = await client.get(
-    `${ALMONDYOUNG_API_BASE_URL}/masters/${id}`
-  );
-  return response.data;
-};
-
-/**
- * 제품 마스터 수정
- * PUT /masters/{id}
- */
-export const updateMaster = async (
-  id: string,
-  data: UpdateMasterDto
-): Promise<MasterDto> => {
-  const response = await client.put(
-    `${ALMONDYOUNG_API_BASE_URL}/masters/${id}`,
-    data
-  );
-  return response.data;
-};
-
-/**
- * 제품 마스터 삭제
- * DELETE /masters/{id}
- */
-export const deleteMaster = async (id: string): Promise<void> => {
-  await client.delete(`${ALMONDYOUNG_API_BASE_URL}/masters/${id}`);
-};
-
-/**
- * 가격 미리보기
- * GET /masters/{id}/price-preview
- */
-export const getPricePreview = async (id: string): Promise<PricePreviewDto> => {
-  const response = await client.get(
-    `${ALMONDYOUNG_API_BASE_URL}/masters/${id}/price-preview`
-  );
-  return response.data;
-};
-
-/**
- * 가격 전략 변경
- * PUT /masters/{id}/pricing
- */
-export const updatePricingStrategy = async (
-  id: string,
-  data: UpdatePricingStrategyDto
-): Promise<MasterDto> => {
-  const response = await client.put(
-    `${ALMONDYOUNG_API_BASE_URL}/masters/${id}/pricing`,
-    data
-  );
-  return response.data;
-};
-
-/**
- * 제품 마스터 목록 조회 (요약 — 백엔드 ProductSummaryDto)
- * GET /masters
- */
-export const getMastersSummary = async (
-  query: MastersQuery = {},
-): Promise<MasterSummaryListResponseDto> => {
-  const response = await client.get(
-    `${ALMONDYOUNG_API_BASE_URL}/masters?${buildQueryString(
-      query as Record<string, unknown>,
-    )}`,
-  );
-  return response.data;
-};
-
-// 제품 마스터 클라이언트 객체
-export const masters = {
-  create: mastersClient.create,
-  getList: getMasters,
-  getListSummary: getMastersSummary,
-  get: getMaster,
-  update: updateMaster,
-  delete: deleteMaster,
-  getPricePreview,
-  updatePricingStrategy,
-  listByIds: mastersClient.listByIds,
 };
