@@ -1,5 +1,5 @@
 import { Warehouse } from '../../schema/inventory.schema';
-import { WarehouseDto } from '../dto/inventory/warehouse.dto';
+import { WarehouseDto } from '../dto/warehouse.dto';
 
 export class WarehouseMapper {
   static toDto(warehouse: Warehouse): WarehouseDto {
