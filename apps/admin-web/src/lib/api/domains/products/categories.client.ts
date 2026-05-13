@@ -7,7 +7,6 @@ import type {
   CategoryPathResponseDto,
   CategoryTreeResponseDto,
   CreateCategoryDto,
-  MoveCategoryDto,
   UpdateCategoryDto,
 } from '../../../types/dto/products';
 import { client } from '../../client';
@@ -18,9 +17,9 @@ export const categoriesClient = {
     return response.data;
   },
 
-  list: async (maxDepth?: number): Promise<CategoryTreeResponseDto> => {
-    const url = maxDepth ? `/categories?maxDepth=${maxDepth}` : '/categories';
-    const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}${url}`);
+  getTree: async (maxDepth?: number): Promise<CategoryTreeResponseDto> => {
+    const params = maxDepth ? { maxDepth } : {};
+    const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/categories`, { params });
     return response.data;
   },
 
@@ -34,137 +33,33 @@ export const categoriesClient = {
     return response.data;
   },
 
-  remove: async (id: UUID, moveProductsTo?: UUID): Promise<void> => {
-    const url = moveProductsTo
-      ? `/categories/${id}?moveProductsTo=${moveProductsTo}`
-      : `/categories/${id}`;
-    await client.delete(`${ALMONDYOUNG_API_BASE_URL}${url}`);
+  delete: async (id: UUID, moveProductsTo?: UUID): Promise<void> => {
+    const params = moveProductsTo ? { moveProductsTo } : {};
+    await client.delete(`${ALMONDYOUNG_API_BASE_URL}/categories/${id}`, { params });
   },
 
-  children: async (id: UUID): Promise<CategoryDto[]> => {
+  getChildren: async (id: UUID): Promise<CategoryDto[]> => {
     const response = await client.get(
       `${ALMONDYOUNG_API_BASE_URL}/categories/${id}/children`
     );
     return response.data;
   },
 
-  path: async (id: UUID): Promise<CategoryPathResponseDto> => {
+  getPath: async (id: UUID): Promise<CategoryPathResponseDto> => {
     const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/categories/${id}/path`);
     return response.data;
   },
 
-  move: async (
-    id: UUID,
-    newParentId?: UUID | null
-  ): Promise<CategoryDto> => {
-    const params = new URLSearchParams();
+  move: async (id: UUID, newParentId?: UUID | null): Promise<CategoryDto> => {
+    const params: Record<string, string> = {};
     if (newParentId !== undefined) {
-      params.append('newParentId', newParentId ?? 'null');
+      params.newParentId = newParentId ?? 'null';
     }
-    const queryString = params.toString();
-    const url = queryString
-      ? `/categories/${id}/move?${queryString}`
-      : `/categories/${id}/move`;
-    const response = await client.put(`${ALMONDYOUNG_API_BASE_URL}${url}`, {});
+    const response = await client.put(
+      `${ALMONDYOUNG_API_BASE_URL}/categories/${id}/move`,
+      {},
+      { params }
+    );
     return response.data;
   },
-
-};
-
-/**
- * 카테고리 트리 조회
- * GET /categories
- */
-export const getCategoryTree = async (
-  maxDepth?: number
-): Promise<CategoryTreeResponseDto> => {
-  const params = maxDepth ? { maxDepth } : {};
-  const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/categories`, { params });
-  return response.data;
-};
-
-/**
- * 카테고리 수정
- * PUT /categories/{id}
- */
-export const updateCategory = async (
-  id: string,
-  data: UpdateCategoryDto
-): Promise<CategoryDto> => {
-  const response = await client.put(`${ALMONDYOUNG_API_BASE_URL}/categories/${id}`, data);
-  return response.data;
-};
-
-/**
- * 카테고리 삭제
- * DELETE /categories/{id}
- */
-export const deleteCategory = async (
-  id: string,
-  moveProductsTo?: string
-): Promise<void> => {
-  const params = moveProductsTo ? { moveProductsTo } : {};
-  await client.delete(`${ALMONDYOUNG_API_BASE_URL}/categories/${id}`, { params });
-};
-
-/**
- * 카테고리 상세 조회
- * GET /categories/{id}
- */
-export const getCategory = async (id: string): Promise<CategoryDto> => {
-  const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/categories/${id}`);
-  return response.data;
-};
-
-/**
- * 하위 카테고리 조회
- * GET /categories/{id}/children
- */
-export const getCategoryChildren = async (
-  id: string
-): Promise<CategoryDto[]> => {
-  const response = await client.get(
-    `${ALMONDYOUNG_API_BASE_URL}/categories/${id}/children`
-  );
-  return response.data;
-};
-
-/**
- * 카테고리 경로 조회
- * GET /categories/{id}/path
- */
-export const getCategoryPath = async (
-  id: string
-): Promise<CategoryPathResponseDto> => {
-  const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/categories/${id}/path`);
-  return response.data;
-};
-
-/**
- * 카테고리 이동
- * PUT /categories/{id}/move
- */
-export const moveCategory = async (
-  id: string,
-  data: MoveCategoryDto
-): Promise<CategoryDto> => {
-  const params = data.newParentId ? { newParentId: data.newParentId } : {};
-  const response = await client.put(
-    `${ALMONDYOUNG_API_BASE_URL}/categories/${id}/move`,
-    {},
-    { params }
-  );
-  return response.data;
-};
-
-// 카테고리 클라이언트 객체
-export const categories = {
-  create: categoriesClient.create,
-  getTree: categoriesClient.list,
-  update: categoriesClient.update,
-  delete: categoriesClient.remove,
-  get: categoriesClient.get,
-  getChildren: categoriesClient.children,
-  getPath: categoriesClient.path,
-  move: categoriesClient.move,
 };

@@ -24,63 +24,56 @@ function buildQueryString(query: Record<string, unknown>): string {
   return params.toString();
 }
 
-export const listReturns = async (filters: ReturnFiltersDto = {}): Promise<ReturnListResponseDto> => {
-  const response = await client.get(
-    `${ALMONDYOUNG_API_BASE_URL}/inventory/returns?${buildQueryString(filters as Record<string, unknown>)}`
-  );
-  return response.data;
-};
-
-export const getReturn = async (id: string): Promise<ReturnDto> => {
-  const response = await client.get(
-    `${ALMONDYOUNG_API_BASE_URL}/inventory/returns/${encodeURIComponent(id)}`
-  );
-  return response.data;
-};
-
-export const createReturn = async (data: CreateReturnDto): Promise<CreateReturnResponseDto> => {
-  const response = await client.post(`${ALMONDYOUNG_API_BASE_URL}/inventory/returns`, data);
-  return response.data;
-};
-
-export const receiveReturn = async (
-  id: string,
-  data: ReceiveReturnDto
-): Promise<ReceiveReturnResponseDto> => {
-  const response = await client.patch(
-    `${ALMONDYOUNG_API_BASE_URL}/inventory/returns/${encodeURIComponent(id)}/receive`,
-    data
-  );
-  return response.data;
-};
-
-export const inspectReturn = async (
-  id: string,
-  data: InspectReturnDto
-): Promise<InspectReturnResponseDto> => {
-  const response = await client.patch(
-    `${ALMONDYOUNG_API_BASE_URL}/inventory/returns/${encodeURIComponent(id)}/inspect`,
-    data
-  );
-  return response.data;
-};
-
-export const processReturn = async (
-  id: string,
-  data: ProcessReturnDto
-): Promise<ProcessReturnResponseDto> => {
-  const response = await client.patch(
-    `${ALMONDYOUNG_API_BASE_URL}/inventory/returns/${encodeURIComponent(id)}/process`,
-    data
-  );
-  return response.data;
-};
-
 export const returnsClient = {
-  listReturns,
-  getReturn,
-  createReturn,
-  receiveReturn,
-  inspectReturn,
-  processReturn,
+  listReturns: async (filters: ReturnFiltersDto = {}): Promise<ReturnListResponseDto> => {
+    const response = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/inventory/returns?${buildQueryString(filters as Record<string, unknown>)}`
+    );
+    return response.data;
+  },
+
+  getReturn: async (id: string): Promise<ReturnDto> => {
+    const response = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/inventory/returns/${encodeURIComponent(id)}`
+    );
+    return response.data;
+  },
+
+  createReturn: async (data: CreateReturnDto): Promise<CreateReturnResponseDto> => {
+    const response = await client.post(`${ALMONDYOUNG_API_BASE_URL}/inventory/returns`, data);
+    return response.data;
+  },
+
+  receiveReturn: async (
+    id: string,
+    data: ReceiveReturnDto
+  ): Promise<ReceiveReturnResponseDto> => {
+    const response = await client.patch(
+      `${ALMONDYOUNG_API_BASE_URL}/inventory/returns/${encodeURIComponent(id)}/receive`,
+      data
+    );
+    return response.data;
+  },
+
+  inspectReturn: async (
+    id: string,
+    data: InspectReturnDto
+  ): Promise<InspectReturnResponseDto> => {
+    const response = await client.patch(
+      `${ALMONDYOUNG_API_BASE_URL}/inventory/returns/${encodeURIComponent(id)}/inspect`,
+      data
+    );
+    return response.data;
+  },
+
+  processReturn: async (
+    id: string,
+    data: ProcessReturnDto
+  ): Promise<ProcessReturnResponseDto> => {
+    const response = await client.patch(
+      `${ALMONDYOUNG_API_BASE_URL}/inventory/returns/${encodeURIComponent(id)}/process`,
+      data
+    );
+    return response.data;
+  },
 };
