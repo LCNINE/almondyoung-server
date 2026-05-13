@@ -58,11 +58,6 @@ export const productQueryKeys = {
       channelId,
     ] as const,
 
-  // 매칭 테이블 관련
-  matchingTable: ['matching-table'] as const,
-  matchingTableList: (query: Record<string, any>) =>
-    [...productQueryKeys.matchingTable, 'list', query] as const,
-
   // 배너 그룹 관련
   bannerGroups: ['banner-groups'] as const,
   bannerGroupsList: (query: Record<string, unknown>) =>
@@ -98,12 +93,6 @@ export const productQueryKeys = {
   // 버전 관련
   masterVersions: (masterId: string) =>
     ['master-versions', masterId] as const,
-
-  // 기존 호환성 (점진적 마이그레이션용)
-  products: ['products'] as const,
-  product: (id: string) => ['products', id] as const,
-  productVariants: (productId: string) =>
-    ['products', productId, 'variants'] as const,
 
   // 채널 리스팅 관련
   channelListingsByVariant: (variantId: string) =>
