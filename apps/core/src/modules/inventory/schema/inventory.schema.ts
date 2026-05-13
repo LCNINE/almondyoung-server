@@ -443,7 +443,6 @@ export const skus = pgTable(
 
     // 이미지 관리
     mainImageUrl: varchar('main_image_url', { length: 512 }), // @deprecated - Use skuImages table
-    currentStock: integer('current_stock').notNull().default(0), // Calculated/cached
 
     // 유효기간 및 날짜 관리
     expiryDateManagement: boolean('expiry_date_management').notNull().default(false),

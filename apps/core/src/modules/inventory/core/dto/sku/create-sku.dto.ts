@@ -203,11 +203,6 @@ export class CreateSkuDto {
   @IsOptional()
   imageUploadIds?: string[];
 
-  @ApiProperty({ description: '현재 재고 (계산/캐시)', required: false, default: 0 })
-  @IsNumber()
-  @IsOptional()
-  currentStock?: number;
-
   // 유효기간 및 날짜 관리
   @ApiProperty({ description: '유효기간 관리 여부', required: false, default: false })
   @IsOptional()

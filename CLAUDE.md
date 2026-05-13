@@ -203,3 +203,17 @@ private async loadFoo(tx: DbTx, id: string) { ... }
 - `DATABASE_URL` — PostgreSQL connection string
 - `PORT` — Service port
 - Most services have `.env` files loaded via `dotenv-cli`
+
+## Agent skills
+
+### Issue tracker
+
+Issues live on GitHub at `LCNINE/almondyoung-server`; use the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Canonical defaults (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout (`CONTEXT.md` + `docs/adr/` at repo root; created lazily by `/grill-with-docs`). See `docs/agents/domain.md`.
