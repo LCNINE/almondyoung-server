@@ -1,3 +1,5 @@
+'use client';
+
 // src/lib/api/domains/products/channels.client.ts
 import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import type { UUID } from '../../../types/dto/common';

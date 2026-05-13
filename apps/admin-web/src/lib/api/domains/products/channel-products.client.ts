@@ -1,3 +1,5 @@
+'use client';
+
 // src/lib/api/domains/products/channel-products.client.ts
 import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import type { PaginationQuery, UUID } from '../../../types/dto/common';

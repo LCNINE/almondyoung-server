@@ -1,3 +1,5 @@
+'use client';
+
 import { USER_SERVICE_BASE_URL } from '@/const';
 import { CreateRoleDto, RoleDto, UpdateRoleDto } from '@/lib/types/dto/user';
 import { client } from '../../client';

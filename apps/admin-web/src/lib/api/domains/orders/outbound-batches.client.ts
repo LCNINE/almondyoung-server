@@ -1,3 +1,5 @@
+'use client';
+
 // src/lib/api/domains/orders/outbound-batches.client.ts
 // ⚠️ GET /outbound-batches/available/fulfillment-orders 에 warehouseId 누락 시 raw Error → 500
 // ⚠️ priority 정렬이 enum 알파벳 순(urgent>normal>high) — 서버 버그, 클라이언트에서 보정

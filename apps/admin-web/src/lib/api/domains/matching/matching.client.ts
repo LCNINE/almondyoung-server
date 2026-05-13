@@ -1,3 +1,5 @@
+'use client';
+
 // src/lib/api/domains/matching/matching.client.ts
 // 매칭 관련 API 클라이언트 (통합 서버 /matchings 엔드포인트)
 
