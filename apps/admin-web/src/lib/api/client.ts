@@ -75,8 +75,23 @@ client.interceptors.request.use((config) => {
   return config;
 });
 
+// `{ success, data, message? }` envelope를 자동으로 unwrap 한다.
+// 백엔드 중 user-service 만 ResponseInterceptor(@app/shared) 로 envelope 를 씌우고,
+// core/ugc-service 등은 raw 응답을 그대로 반환한다.
+// 도메인 client 가 양쪽을 신경 쓰지 않도록 여기서 한 번에 정규화한다.
+function isApiEnvelope(body: unknown): body is { success: boolean; data: unknown; message?: string } {
+  if (!body || typeof body !== 'object') return false;
+  const v = body as Record<string, unknown>;
+  return v.success === true && 'data' in v;
+}
+
 client.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    if (isApiEnvelope(response.data)) {
+      response.data = response.data.data;
+    }
+    return response;
+  },
   async (err: AxiosError) => {
     const config = err.config as RetryConfig;
 

@@ -60,7 +60,7 @@ const inventoryMatchingApi = {
   },
   list: async (): Promise<InventoryMatchingResponseDto[]> => {
     const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/inventory-matching`);
-    return response.data.data;
+    return response.data;
   },
   get: async (id: string): Promise<InventoryMatchingResponseDto> => {
     const response = await client.get(

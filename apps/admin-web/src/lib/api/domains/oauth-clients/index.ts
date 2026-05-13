@@ -1,6 +1,4 @@
 import { USER_SERVICE_BASE_URL } from '@/const';
-import { ApiResponse } from '@/lib/types/dto/api';
-import { AxiosResponse } from 'axios';
 import { client } from '../../client';
 
 export type OAuthClientType = 'confidential' | 'public';
@@ -42,48 +40,48 @@ const base = `${USER_SERVICE_BASE_URL}/admin/oauth-clients`;
 
 export const oauthClientApi = {
   list: async (): Promise<OAuthClientResponse[]> => {
-    const res: AxiosResponse<ApiResponse<OAuthClientResponse[]>> = await client.get(base);
-    return res.data.data;
+    const res = await client.get<OAuthClientResponse[]>(base);
+    return res.data;
   },
 
   get: async (clientId: string): Promise<OAuthClientResponse> => {
-    const res: AxiosResponse<ApiResponse<OAuthClientResponse>> = await client.get(
+    const res = await client.get<OAuthClientResponse>(
       `${base}/${encodeURIComponent(clientId)}`,
     );
-    return res.data.data;
+    return res.data;
   },
 
   create: async (dto: CreateOAuthClientDto): Promise<OAuthClientWithSecretResponse> => {
-    const res: AxiosResponse<ApiResponse<OAuthClientWithSecretResponse>> = await client.post(base, dto);
-    return res.data.data;
+    const res = await client.post<OAuthClientWithSecretResponse>(base, dto);
+    return res.data;
   },
 
   update: async (clientId: string, dto: UpdateOAuthClientDto): Promise<OAuthClientResponse> => {
-    const res: AxiosResponse<ApiResponse<OAuthClientResponse>> = await client.patch(
+    const res = await client.patch<OAuthClientResponse>(
       `${base}/${encodeURIComponent(clientId)}`,
       dto,
     );
-    return res.data.data;
+    return res.data;
   },
 
   rotateSecret: async (clientId: string): Promise<OAuthClientWithSecretResponse> => {
-    const res: AxiosResponse<ApiResponse<OAuthClientWithSecretResponse>> = await client.post(
+    const res = await client.post<OAuthClientWithSecretResponse>(
       `${base}/${encodeURIComponent(clientId)}/rotate-secret`,
     );
-    return res.data.data;
+    return res.data;
   },
 
   clearPreviousSecret: async (clientId: string): Promise<OAuthClientResponse> => {
-    const res: AxiosResponse<ApiResponse<OAuthClientResponse>> = await client.post(
+    const res = await client.post<OAuthClientResponse>(
       `${base}/${encodeURIComponent(clientId)}/clear-previous-secret`,
     );
-    return res.data.data;
+    return res.data;
   },
 
   deactivate: async (clientId: string): Promise<OAuthClientResponse> => {
-    const res: AxiosResponse<ApiResponse<OAuthClientResponse>> = await client.delete(
+    const res = await client.delete<OAuthClientResponse>(
       `${base}/${encodeURIComponent(clientId)}`,
     );
-    return res.data.data;
+    return res.data;
   },
 };

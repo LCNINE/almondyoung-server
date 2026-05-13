@@ -1,7 +1,6 @@
 // Blacklists 도메인 API 클라이언트
 
 import { USER_SERVICE_BASE_URL } from '@/const';
-import { ApiResponse } from '@/lib/types/dto/api';
 import { client } from '../../client';
 
 export interface BlacklistResponse {
@@ -52,18 +51,18 @@ export const blacklistApi = {
     if (query?.userId) params.append('userId', query.userId);
     if (query?.q) params.append('q', query.q);
 
-    const response = await client.get<ApiResponse<BlacklistListResponse>>(
+    const response = await client.get<BlacklistListResponse>(
       `${USER_SERVICE_BASE_URL}/admin/blacklists`,
       { params }
     );
-    return response.data.data;
+    return response.data;
   },
 
   // 블랙리스트 조회 (사용자 ID로)
   getBlacklistByUserId: async (
     userId: string
-  ): Promise<ApiResponse<BlacklistResponse>> => {
-    const response = await client.get<ApiResponse<BlacklistResponse>>(
+  ): Promise<BlacklistResponse> => {
+    const response = await client.get<BlacklistResponse>(
       `${USER_SERVICE_BASE_URL}/admin/blacklists/${userId}`
     );
     return response.data;
@@ -72,8 +71,8 @@ export const blacklistApi = {
   // 블랙리스트 생성
   createBlacklist: async (
     dto: BlacklistCreateDto
-  ): Promise<ApiResponse<BlacklistResponse>> => {
-    const response = await client.post<ApiResponse<BlacklistResponse>>(
+  ): Promise<BlacklistResponse> => {
+    const response = await client.post<BlacklistResponse>(
       `${USER_SERVICE_BASE_URL}/admin/blacklists`,
       dto
     );
@@ -83,8 +82,8 @@ export const blacklistApi = {
   // 블랙리스트 삭제 (소프트 삭제)
   deleteBlacklist: async (
     userId: string
-  ): Promise<ApiResponse<BlacklistResponse>> => {
-    const response = await client.delete<ApiResponse<BlacklistResponse>>(
+  ): Promise<BlacklistResponse> => {
+    const response = await client.delete<BlacklistResponse>(
       `${USER_SERVICE_BASE_URL}/admin/blacklists/${userId}`
     );
     return response.data;

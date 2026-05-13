@@ -1,31 +1,29 @@
 import { USER_SERVICE_BASE_URL } from '@/const';
 import { CreateRoleDto, RoleDto, UpdateRoleDto } from '@/lib/types/dto/user';
-import { ApiResponse } from '@/lib/types/dto/api';
-import { AxiosResponse } from 'axios';
 import { client } from '../../client';
 
 export const roleApi = {
   listRoles: async (): Promise<RoleDto[]> => {
-    const response: AxiosResponse<ApiResponse<RoleDto[]>> = await client.get(
+    const response = await client.get<RoleDto[]>(
       `${USER_SERVICE_BASE_URL}/admin/roles`
     );
-    return response.data.data;
+    return response.data;
   },
 
   createRole: async (dto: CreateRoleDto): Promise<RoleDto> => {
-    const response: AxiosResponse<ApiResponse<RoleDto>> = await client.post(
+    const response = await client.post<RoleDto>(
       `${USER_SERVICE_BASE_URL}/admin/roles`,
       dto
     );
-    return response.data.data;
+    return response.data;
   },
 
   updateRole: async (roleId: string, dto: UpdateRoleDto): Promise<RoleDto> => {
-    const response: AxiosResponse<ApiResponse<RoleDto>> = await client.patch(
+    const response = await client.patch<RoleDto>(
       `${USER_SERVICE_BASE_URL}/admin/roles/${roleId}`,
       dto
     );
-    return response.data.data;
+    return response.data;
   },
 
   deleteRole: async (roleId: string): Promise<void> => {
