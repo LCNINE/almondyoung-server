@@ -1,15 +1,13 @@
 "use client"
 
-import { useParams, useRouter } from "next/navigation"
-import { useEffect, useState } from "react"
-import chunk from "lodash/chunk"
-import {
-  getTrendingKeywords,
-  type TrendingKeyword,
-} from "@lib/api/pim/search"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useSearchHistory } from "@/hooks/ui/use-search-history"
 import { useSearchSheetStore } from "@/hooks/ui/use-search-sheet-store"
 import { formatDate } from "@/lib/utils/format-date"
+import { getTrendingKeywords, type TrendingKeyword } from "@lib/api/pim/search"
+import chunk from "lodash/chunk"
+import { useParams, useRouter } from "next/navigation"
+import { useEffect, useState } from "react"
 
 export function SearchHotKeyword() {
   const router = useRouter()
@@ -22,6 +20,8 @@ export function SearchHotKeyword() {
   const [keywords, setKeywords] = useState<TrendingKeyword[]>([])
   const [updatedAt, setUpdatedAt] = useState<string>("")
   const [isLoading, setIsLoading] = useState(true)
+
+  const { addKeyword } = useSearchHistory()
 
   useEffect(() => {
     const fetchKeywords = async () => {
@@ -46,6 +46,7 @@ export function SearchHotKeyword() {
 
   const handleHotKeywordClick = (keyword: string) => {
     setSearchTerm(keyword)
+    addKeyword(keyword)
     router.push(`${searchBasePath}?q=${encodeURIComponent(keyword)}`)
     onClose()
   }
