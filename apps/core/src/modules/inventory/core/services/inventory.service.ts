@@ -58,7 +58,7 @@ export class InventoryService implements OnModuleInit {
 
   async createSku(createSkuDto: CreateSkuDto, tx?: DbTx): Promise<SkuResponseDto> {
     return this.inTx(async (trx) => {
-      const { supplierIds, categoryIds, source, skuGroupId, imageUploadIds, currentStock, ...skuData } = createSkuDto;
+      const { supplierIds, categoryIds, source, skuGroupId, imageUploadIds, ...skuData } = createSkuDto;
 
       const [newSku] = await trx
         .insert(wmsTables.skus)
