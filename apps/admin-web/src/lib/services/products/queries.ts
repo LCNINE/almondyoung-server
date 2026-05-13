@@ -26,7 +26,6 @@ import type {
   ChannelProductsResponseDto,
   MasterChannelProductsResponseDto,
   MergedChannelProductDto,
-  MatchingTableRowDto,
 } from '@/lib/types/dto/products';
 import type { BatchVariantInfo } from '@/lib/api/domains/products/variants.client';
 
@@ -287,79 +286,6 @@ export const useMergedChannelProduct = (
     queryKey: productQueryKeys.mergedChannelProduct(masterId, channelId),
     queryFn: () => products.channelProducts.getMerged(masterId, channelId),
     enabled: !!masterId && !!channelId,
-    staleTime: 30 * 1000,
-    gcTime: 5 * 60 * 1000,
-  });
-};
-
-// ===== 매칭 테이블 관련 쿼리 =====
-
-/**
- * 매칭 테이블 데이터 조회 (커스텀)
- */
-export const useMatchingTable = (query: Record<string, string> = {}) => {
-  return useQuery({
-    queryKey: productQueryKeys.matchingTableList(query),
-    queryFn: async () => {
-      // 실제로는 별도의 API 엔드포인트를 호출하거나
-      // 여러 API를 조합해서 매칭 테이블 데이터를 구성
-      const response = await fetch(
-        '/api/matching-table?' + new URLSearchParams(query)
-      );
-      return response.json();
-    },
-    staleTime: 30 * 1000,
-    gcTime: 5 * 60 * 1000,
-  });
-};
-
-// ===== 기존 호환성 쿼리 (점진적 마이그레이션용) =====
-
-/**
- * 기존 제품 목록 조회 (호환성)
- */
-export const useProducts = (query: Record<string, string> = {}) => {
-  return useQuery({
-    queryKey: [...productQueryKeys.products, query],
-    queryFn: async () => {
-      // 기존 API 호출 로직
-      const response = await fetch(
-        '/api/products?' + new URLSearchParams(query)
-      );
-      return response.json();
-    },
-    staleTime: 30 * 1000,
-    gcTime: 5 * 60 * 1000,
-  });
-};
-
-/**
- * 기존 제품 상세 조회 (호환성)
- */
-export const useProduct = (id: string) => {
-  return useQuery({
-    queryKey: productQueryKeys.product(id),
-    queryFn: async () => {
-      const response = await fetch(`/api/products/${id}`);
-      return response.json();
-    },
-    enabled: !!id,
-    staleTime: 30 * 1000,
-    gcTime: 5 * 60 * 1000,
-  });
-};
-
-/**
- * 기존 제품 변형 조회 (호환성)
- */
-export const useProductVariants = (productId: string) => {
-  return useQuery({
-    queryKey: productQueryKeys.productVariants(productId),
-    queryFn: async () => {
-      const response = await fetch(`/api/products/${productId}/variants`);
-      return response.json();
-    },
-    enabled: !!productId,
     staleTime: 30 * 1000,
     gcTime: 5 * 60 * 1000,
   });
