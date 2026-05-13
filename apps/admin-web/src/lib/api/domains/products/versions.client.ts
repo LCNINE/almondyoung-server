@@ -1,3 +1,5 @@
+'use client';
+
 import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import { client } from '../../client';
 import type { MasterVersionDto, CreateDraftVersionDto } from '../../../types/dto/products';

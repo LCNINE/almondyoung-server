@@ -1,3 +1,5 @@
+'use client';
+
 import { client } from '../../client';
 
 export interface TraceLink {

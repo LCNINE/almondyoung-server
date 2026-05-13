@@ -1,3 +1,5 @@
+'use client';
+
 // Customer 도메인 API 클라이언트
 
 import { USER_SERVICE_BASE_URL } from '@/const';

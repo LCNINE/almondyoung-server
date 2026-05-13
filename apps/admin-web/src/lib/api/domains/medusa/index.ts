@@ -1,3 +1,5 @@
+'use client';
+
 // Medusa Customer 도메인 API 클라이언트
 
 import { MEDUSA_BASE_URL } from '@/const';

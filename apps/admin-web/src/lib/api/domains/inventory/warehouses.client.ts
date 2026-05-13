@@ -1,3 +1,5 @@
+'use client';
+
 // src/lib/api/domains/inventory/warehouses.client.ts
 // 창고 관련 API 클라이언트
 

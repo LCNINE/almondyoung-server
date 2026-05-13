@@ -1,3 +1,5 @@
+'use client';
+
 // src/lib/api/domains/inventory/index.ts
 // Inventory 도메인 통합 클라이언트
 

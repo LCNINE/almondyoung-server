@@ -1,3 +1,5 @@
+'use client';
+
 import { MEMBERSHIP_SERVICE_BASE_URL } from '@/const';
 import { client } from '../../client';
 
