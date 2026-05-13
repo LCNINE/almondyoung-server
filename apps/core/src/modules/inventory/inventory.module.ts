@@ -7,6 +7,7 @@ import { MovementModule } from './movement/movement.module';
 import { StocktakingModule } from './stocktaking/stocktaking.module';
 import { SuppliersModule } from './suppliers/suppliers.module';
 import { SharedModule } from './shared/shared.module';
+import { WarehouseModule } from './warehouse/warehouse.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { SharedModule } from './shared/shared.module';
     }),
     SharedModule,
     CoreInventoryModule,
+    WarehouseModule,
     InboundModule,
     MovementModule,
     StocktakingModule,
@@ -24,6 +26,7 @@ import { SharedModule } from './shared/shared.module';
   ],
   exports: [
     CoreInventoryModule,
+    WarehouseModule,
     SharedModule,
   ],
 })

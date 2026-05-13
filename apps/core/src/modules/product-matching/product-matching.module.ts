@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { CoreInventoryModule } from '../inventory/core/inventory.module';
+import { WarehouseModule } from '../inventory/warehouse/warehouse.module';
 import { ProductMatchingController } from './controllers/product-matching.controller';
 import { ProductSkuMappingController } from './controllers/product-sku-mapping.controller';
 import { ProductMatchingService } from './services/product-matching.service';
@@ -8,6 +9,7 @@ import { ProductSkuMappingService } from './services/product-sku-mapping.service
 @Module({
   imports: [
     CoreInventoryModule, // InventoryService, StockEventService 의존
+    WarehouseModule, // WarehouseService 의존
   ],
   controllers: [
     ProductMatchingController,

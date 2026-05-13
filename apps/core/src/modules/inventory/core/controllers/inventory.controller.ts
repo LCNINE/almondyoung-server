@@ -27,11 +27,7 @@ import { BarcodeDto, SkuResponseDto } from '../dto/sku/sku-response.dto';
 import { SkuStockSummaryDto } from '../dto/sku/sku-stock-summary.dto';
 import { DeletedSkuFiltersDto } from '../dto/sku/deleted-sku-filters.dto';
 import { CurrentStockDto } from '../dto/sku/current-stock.dto';
-import { UpdateWarehouseDto } from '../dto/warehouse/update-warehouse.dto';
-import { CreateWarehouseDto } from '../dto/warehouse/create-warehouse.dto';
 import { CreateStockEntryBySkuIdDto } from '../../inbound/dto/create-stock-entry-by-skuid.dto';
-import { WarehouseDto } from '../dto/inventory/warehouse.dto';
-import { WarehouseMapper } from '../mappers/warehouse.mapper';
 import { ApiOkResponsePaginated } from '../../shared/decorators/api-paginated-response.decorator';
 import { PaginatedResponseDto } from '../../shared/dto';
 import { SkuBarcodeMapper } from '../mappers/sku.mapper';
@@ -409,58 +405,6 @@ export class InventoryController {
   @ApiResponse({ status: 404, description: 'SKU를 찾을 수 없습니다.' })
   async getSkuStockSummary(@Param('id') id: string): Promise<SkuStockSummaryDto> {
     return this.inventoryService.getSkuStockSummary(id);
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // 창고 관리 API
-  // ═══════════════════════════════════════════════════════════════
-
-  @Post('/warehouses')
-  @ApiOperation({ summary: '새 창고 생성' })
-  @ApiResponse({ status: 201, description: '창고가 생성되었습니다.', type: WarehouseDto })
-  async createWarehouse(@Body() createWarehouseDto: CreateWarehouseDto): Promise<WarehouseDto> {
-    const warehouse = await this.inventoryService.createWarehouse(createWarehouseDto);
-    return WarehouseMapper.toDto(warehouse);
-  }
-
-  @Get('/warehouses')
-  @ApiOperation({ summary: '모든 창고 목록 조회' })
-  @ApiResponse({ status: 200, description: '창고 목록을 반환합니다.' })
-  async findAllWarehouses(): Promise<WarehouseDto[]> {
-    const warehouses = await this.inventoryService.findAllWarehouses();
-    return warehouses.map((warehouse) => WarehouseMapper.toDto(warehouse));
-  }
-
-  @Get('/warehouses/:id')
-  @ApiOperation({ summary: '특정 창고 조회' })
-  @ApiResponse({ status: 200, description: '창고 정보를 반환합니다.' })
-  @ApiResponse({ status: 404, description: '창고를 찾을 수 없습니다.' })
-  async findOneWarehouse(@Param('id') id: string) {
-    return this.inventoryService.findOneWarehouse(id);
-  }
-
-  @Get('/warehouses/:id/summary')
-  @ApiOperation({ summary: '창고별 재고 요약 조회' })
-  @ApiResponse({ status: 200, description: '창고별 재고 요약을 반환합니다.' })
-  async getWarehouseStockSummary(@Param('id') id: string) {
-    return this.inventoryService.getWarehouseStockSummary(id);
-  }
-
-  @Patch('/warehouses/:id')
-  @ApiOperation({ summary: '창고 정보 수정' })
-  @ApiResponse({ status: 200, description: '창고 정보가 수정되었습니다.' })
-  @ApiResponse({ status: 404, description: '창고를 찾을 수 없습니다.' })
-  async updateWarehouse(@Param('id') id: string, @Body() updateWarehouseDto: UpdateWarehouseDto) {
-    return this.inventoryService.updateWarehouse(id, updateWarehouseDto);
-  }
-
-  @Delete('/warehouses/:id')
-  @ApiOperation({ summary: '창고 삭제' })
-  @ApiResponse({ status: 200, description: '창고가 삭제되었습니다.' })
-  @ApiResponse({ status: 404, description: '창고를 찾을 수 없습니다.' })
-  @ApiResponse({ status: 400, description: '기본 창고이거나 사용 중인 창고는 삭제할 수 없습니다.' })
-  async removeWarehouse(@Param('id') id: string) {
-    return this.inventoryService.removeWarehouse(id);
   }
 
   // ═══════════════════════════════════════════════════════════════
