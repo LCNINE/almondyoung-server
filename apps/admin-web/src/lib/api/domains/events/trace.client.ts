@@ -49,54 +49,49 @@ export interface GetTracedResourcesOptions {
   offset?: number;
 }
 
-export async function getTracedResources(
-  resourceType: string,
-  options: GetTracedResourcesOptions = {}
-): Promise<TracedResourcesResponse> {
-  const params = new URLSearchParams();
-  if (options.service) params.set('service', options.service);
-  if (options.limit !== undefined) params.set('limit', String(options.limit));
-  if (options.offset !== undefined)
-    params.set('offset', String(options.offset));
-
-  const qs = params.toString();
-  const res = await client.get(
-    `/events/trace/resource/${encodeURIComponent(resourceType)}${qs ? `?${qs}` : ''}`
-  );
-  return res.data;
-}
-
-export async function getResourceEvents(
-  resourceType: string,
-  resourceId: string,
-  options: { service?: string } = {}
-): Promise<ResourceEventsResponse> {
-  const params = new URLSearchParams();
-  if (options.service) params.set('service', options.service);
-
-  const qs = params.toString();
-  const res = await client.get(
-    `/events/trace/resource/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceId)}${qs ? `?${qs}` : ''}`
-  );
-  return res.data;
-}
-
-export async function getChainEvents(
-  chainId: string,
-  options: { service?: string } = {}
-): Promise<ChainEventsResponse> {
-  const params = new URLSearchParams();
-  if (options.service) params.set('service', options.service);
-
-  const qs = params.toString();
-  const res = await client.get(
-    `/events/trace/chain/${encodeURIComponent(chainId)}${qs ? `?${qs}` : ''}`
-  );
-  return res.data;
-}
-
 export const traceClient = {
-  getTracedResources,
-  getResourceEvents,
-  getChainEvents,
+  getTracedResources: async (
+    resourceType: string,
+    options: GetTracedResourcesOptions = {}
+  ): Promise<TracedResourcesResponse> => {
+    const params = new URLSearchParams();
+    if (options.service) params.set('service', options.service);
+    if (options.limit !== undefined) params.set('limit', String(options.limit));
+    if (options.offset !== undefined) params.set('offset', String(options.offset));
+
+    const qs = params.toString();
+    const res = await client.get(
+      `/events/trace/resource/${encodeURIComponent(resourceType)}${qs ? `?${qs}` : ''}`
+    );
+    return res.data;
+  },
+
+  getResourceEvents: async (
+    resourceType: string,
+    resourceId: string,
+    options: { service?: string } = {}
+  ): Promise<ResourceEventsResponse> => {
+    const params = new URLSearchParams();
+    if (options.service) params.set('service', options.service);
+
+    const qs = params.toString();
+    const res = await client.get(
+      `/events/trace/resource/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceId)}${qs ? `?${qs}` : ''}`
+    );
+    return res.data;
+  },
+
+  getChainEvents: async (
+    chainId: string,
+    options: { service?: string } = {}
+  ): Promise<ChainEventsResponse> => {
+    const params = new URLSearchParams();
+    if (options.service) params.set('service', options.service);
+
+    const qs = params.toString();
+    const res = await client.get(
+      `/events/trace/chain/${encodeURIComponent(chainId)}${qs ? `?${qs}` : ''}`
+    );
+    return res.data;
+  },
 };
