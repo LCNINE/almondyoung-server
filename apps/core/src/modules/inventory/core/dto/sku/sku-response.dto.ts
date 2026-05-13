@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { SkuGroupDto, SkuGroupResponseDto } from '../sku-groups/sku-group-response.dto';
+import { SkuGroupDto, SkuGroupResponseDto } from '../../../sku-group/dto/sku-group-response.dto';
 import { SkuImageDto } from './sku-image.dto';
 
 export class SupplierInfoDto {
