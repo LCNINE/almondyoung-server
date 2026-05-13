@@ -1,3 +1,5 @@
+'use client';
+
 import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import type { CsvImportResultDto } from '@/lib/types/dto/products';
 import { client } from '../../client';
