@@ -61,13 +61,17 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     await refreshCartItemsWorkflow(req.scope).run({
       input: { cart_id: activeCart.id, force_refresh: true },
     });
-
-    await fixCompareAtPrices(req.scope, activeCart);
-
-    return res.status(200).json({ refreshed: true, cart_id: activeCart.id, hasMembershipGroup });
   } catch (error: any) {
-    console.error(`[store/refresh-cart-prices] Failed:`, error?.message);
+    console.error(`[store/refresh-cart-prices] workflow failed:`, error?.message);
+  }
+
+  try {
+    await fixCompareAtPrices(req.scope, activeCart);
+  } catch (error: any) {
+    console.error(`[store/refresh-cart-prices] fixCompareAtPrices failed:`, error?.message);
     return res.status(500).json({ refreshed: false, hasMembershipGroup, message: 'Failed to refresh cart prices' });
   }
+
+  return res.status(200).json({ refreshed: true, cart_id: activeCart.id, hasMembershipGroup });
 }
 
