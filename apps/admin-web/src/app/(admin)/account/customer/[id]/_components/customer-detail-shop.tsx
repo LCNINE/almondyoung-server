@@ -14,9 +14,7 @@ const shopTypeLabels: Record<string, string> = {
 }
 
 export function CustomerDetailShopContent({ userId }: { userId: string }) {
-  const { data, isLoading } = useShopInfoByUserId(userId)
-
-  const shop = data?.data
+  const { data: shop, isLoading } = useShopInfoByUserId(userId)
 
   if (isLoading) {
     return <div className="flex justify-center p-4"><Spinner /></div>

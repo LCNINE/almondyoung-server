@@ -12,8 +12,7 @@ export function CustomerDetailGeneralContent({
 }: {
   customerId: string;
 }) {
-  const { data } = useCustomerById(customerId);
-  const customer = data?.data;
+  const { data: customer } = useCustomerById(customerId);
   const profile = customer?.profile;
 
   const rows: { key: string; value: string | null }[] = [

@@ -162,21 +162,21 @@ export const membershipApi = {
     const res = await client.get(
       `${MEMBERSHIP_SERVICE_BASE_URL}/admin/members/${encodeURIComponent(userId)}`,
     );
-    return res.data.data;
+    return res.data;
   },
 
   getMemberBillingEvents: async (userId: string): Promise<BillingEventItem[]> => {
     const res = await client.get(
       `${MEMBERSHIP_SERVICE_BASE_URL}/admin/billing-events?userId=${encodeURIComponent(userId)}`,
     );
-    return res.data.data;
+    return res.data;
   },
 
   getMemberContractEvents: async (userId: string): Promise<ContractEventItem[]> => {
     const res = await client.get(
       `${MEMBERSHIP_SERVICE_BASE_URL}/admin/contract-events?userId=${encodeURIComponent(userId)}`,
     );
-    return res.data.data;
+    return res.data;
   },
 
   setAutoRenewal: async (contractId: string, autoRenewal: boolean): Promise<void> => {
@@ -196,7 +196,7 @@ export const membershipApi = {
 
   getAllTiersWithPlans: async (): Promise<AdminTierWithPlans[]> => {
     const res = await client.get(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/tiers`);
-    return res.data.data;
+    return res.data;
   },
 
   createTier: async (body: { code: string; priorityLevel: number }): Promise<void> => {
@@ -265,7 +265,7 @@ export const membershipApi = {
     billingMode: 'one_time' | 'recurring';
   }): Promise<{ contractId: string; entitlementId: string }> => {
     const res = await client.post(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/members/subscribe`, body);
-    return res.data.data;
+    return res.data;
   },
 
   retryBilling: async (contractId: string): Promise<void> => {
