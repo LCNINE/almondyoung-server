@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { channels } from '../products/channels.client';
+import { channelsClient } from '../products/channels.client';
 import type { ChannelsQuery } from '@/lib/types/dto/products';
 
 export const channelQueryKeys = {
@@ -30,7 +30,7 @@ export const SALES_CHANNEL_SITES = [
 export const useChannels = (query: ChannelsQuery = {}) =>
   useQuery({
     queryKey: channelQueryKeys.list(query as Record<string, unknown>),
-    queryFn: () => channels.getList(query),
+    queryFn: () => channelsClient.getList(query),
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
   });
@@ -38,7 +38,7 @@ export const useChannels = (query: ChannelsQuery = {}) =>
 export const useActiveChannels = () =>
   useQuery({
     queryKey: channelQueryKeys.active(),
-    queryFn: () => channels.getActive(),
+    queryFn: () => channelsClient.getActive(),
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
   });
@@ -46,7 +46,7 @@ export const useActiveChannels = () =>
 export const useChannel = (id: string) =>
   useQuery({
     queryKey: channelQueryKeys.detail(id),
-    queryFn: () => channels.get(id),
+    queryFn: () => channelsClient.get(id),
     enabled: !!id,
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
@@ -55,7 +55,7 @@ export const useChannel = (id: string) =>
 export const useChannelsByType = (type: string) =>
   useQuery({
     queryKey: channelQueryKeys.byType(type),
-    queryFn: () => channels.getByType(type),
+    queryFn: () => channelsClient.getByType(type),
     enabled: !!type,
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
