@@ -10,6 +10,7 @@ import { SharedModule } from './shared/shared.module';
 import { WarehouseModule } from './warehouse/warehouse.module';
 import { SkuGroupModule } from './sku-group/sku-group.module';
 import { StockProjectionModule } from './stock-projection/stock-projection.module';
+import { SkuCatalogModule } from './sku-catalog/sku-catalog.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { StockProjectionModule } from './stock-projection/stock-projection.modul
     WarehouseModule,
     SkuGroupModule,
     StockProjectionModule,
+    SkuCatalogModule,
     InboundModule,
     MovementModule,
     StocktakingModule,
@@ -33,6 +35,7 @@ import { StockProjectionModule } from './stock-projection/stock-projection.modul
     WarehouseModule,
     SkuGroupModule,
     StockProjectionModule,
+    SkuCatalogModule,
     SharedModule,
   ],
 })

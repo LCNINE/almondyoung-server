@@ -13,7 +13,6 @@ import { TransferController } from './controllers/transfer.controller';
 import { HolderController } from './controllers/holder.controller';
 
 // Services
-import { InventoryService } from './services/inventory.service';
 import { StockEventService } from './services/stock-event.service';
 import { SafetyStockService } from './services/safety-stock.service';
 import { LocationService } from './services/location.service';
@@ -50,7 +49,6 @@ import { OutboxService } from '../shared/outbox/outbox.service';
     HolderController,
   ],
   providers: [
-    InventoryService,
     StockEventService,
     SafetyStockService,
     LocationService,
@@ -67,7 +65,6 @@ import { OutboxService } from '../shared/outbox/outbox.service';
     OutboxService,
   ],
   exports: [
-    InventoryService,
     StockEventService,
     SafetyStockService,
     LocationService,

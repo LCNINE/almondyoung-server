@@ -1,6 +1,7 @@
-import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { InjectTypedDb, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
+import { HOLDER_CONSTANTS } from '../constants/holder.constants';
 import { eq, and, like, count, asc, SQL } from 'drizzle-orm';
 import { HolderQueryDto } from '../dto/holder/holder-query.dto';
 import { CreateHolderDto } from '../dto/holder/holder-create.dto';
@@ -8,7 +9,7 @@ import { UpdateHolderDto } from '../dto/holder/holder-update.dto';
 import { HolderDto, HolderListResponseDto } from '../dto/holder/holder-response.dto';
 
 @Injectable()
-export class HolderService {
+export class HolderService implements OnModuleInit {
   private readonly logger = new Logger(HolderService.name);
 
   constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
@@ -19,6 +20,33 @@ export class HolderService {
 
   private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> {
     return tx ? fn(tx) : this.db.transaction(fn);
+  }
+
+  async onModuleInit() {
+    await this.ensureDefaultsExist();
+  }
+
+  private async ensureDefaultsExist(): Promise<void> {
+    try {
+      const defaultHolder = HOLDER_CONSTANTS.DEFAULT_HOLDER;
+
+      const [existing] = await this.db
+        .select()
+        .from(wmsTables.holders)
+        .where(eq(wmsTables.holders.id, defaultHolder.id))
+        .limit(1);
+
+      if (!existing) {
+        await this.db.insert(wmsTables.holders).values({
+          id: defaultHolder.id,
+          name: defaultHolder.name,
+          isOurAsset: defaultHolder.isOurAsset,
+        });
+        this.logger.log(`기본 Holder 생성: ${defaultHolder.name}`);
+      }
+    } catch (error) {
+      this.logger.error('기본 Holder 생성 중 오류 발생:', error);
+    }
   }
 
   async listHolders(query: HolderQueryDto, tx?: DbTx): Promise<HolderListResponseDto> {
