@@ -1,8 +1,7 @@
-// Users 도메인 통합 클라이언트
+// Customer 도메인 API 클라이언트
 
 import { USER_SERVICE_BASE_URL } from '@/const';
 import { Shop, User } from '@/lib/types';
-import { ApiResponse } from '@/lib/types/dto/api';
 import {
   CustomerBusinessLicense,
   CustomerBusinessLicenseQueryDto,
@@ -10,8 +9,6 @@ import {
   CustomerProfile,
 } from '@/lib/types/dto/customers';
 import { client } from '../../client';
-
-// User Service API 클라이언트
 
 export interface CustomerListQuery {
   page?: number;
@@ -44,8 +41,8 @@ export interface CustomerListResponse {
 
 export const customerApi = {
   // 사용자들 조회
-  getCustomers: async (): Promise<ApiResponse<User[]>> => {
-    const response = await client.get<ApiResponse<User[]>>(
+  getCustomers: async (): Promise<User[]> => {
+    const response = await client.get<User[]>(
       `${USER_SERVICE_BASE_URL}/admin/users`
     );
     return response.data;
@@ -62,25 +59,23 @@ export const customerApi = {
       }
     });
     const qs = params.toString();
-    const response = await client.get<ApiResponse<CustomerListResponse>>(
+    const response = await client.get<CustomerListResponse>(
       `${USER_SERVICE_BASE_URL}/admin/users${qs ? `?${qs}` : ''}`
     );
-    return response.data.data;
+    return response.data;
   },
 
   // 사용자id로 사용자 정보 조회
-  getCustomerById: async (
-    id: string
-  ): Promise<ApiResponse<CustomerProfile>> => {
-    const response = await client.get<ApiResponse<CustomerProfile>>(
+  getCustomerById: async (id: string): Promise<CustomerProfile> => {
+    const response = await client.get<CustomerProfile>(
       `${USER_SERVICE_BASE_URL}/admin/users/${id}`
     );
     return response.data;
   },
 
   // 이메일로 사용자 찾기
-  findCustomerByEmail: async (email: string): Promise<ApiResponse<User>> => {
-    const response = await client.get<ApiResponse<User>>(
+  findCustomerByEmail: async (email: string): Promise<User> => {
+    const response = await client.get<User>(
       `${USER_SERVICE_BASE_URL}/users/find-by-email?email=${encodeURIComponent(
         email
       )}`
@@ -94,20 +89,19 @@ export const customerApi = {
     limit?: number;
     sortBy?: 'createdAt' | 'username' | 'email' | 'lastActivityAt';
     sortOrder?: 'asc' | 'desc';
-  }): Promise<ApiResponse<CustomerConsent[]>> => {
-    const response = await client.get<ApiResponse<CustomerConsent[]>>(
+  }): Promise<CustomerConsent[]> => {
+    const response = await client.get<CustomerConsent[]>(
       `${USER_SERVICE_BASE_URL}/admin/users/consents`,
       { params: query }
     );
-
     return response.data;
   },
 
   // 사업자 등록증 목록 조회
   getBusinessLicenses: async (
     query: CustomerBusinessLicenseQueryDto
-  ): Promise<ApiResponse<CustomerBusinessLicense[]>> => {
-    const response = await client.get<ApiResponse<CustomerBusinessLicense[]>>(
+  ): Promise<CustomerBusinessLicense[]> => {
+    const response = await client.get<CustomerBusinessLicense[]>(
       `${USER_SERVICE_BASE_URL}/admin/users/business-licenses`,
       { params: query }
     );
@@ -115,8 +109,8 @@ export const customerApi = {
   },
 
   // 쇼핑몰 정보 조회
-  getShopByUserId: async (userId: string): Promise<ApiResponse<Shop>> => {
-    const response = await client.get<ApiResponse<Shop>>(
+  getShopByUserId: async (userId: string): Promise<Shop> => {
+    const response = await client.get<Shop>(
       `${USER_SERVICE_BASE_URL}/admin/shops/${userId}`
     );
     return response.data;
