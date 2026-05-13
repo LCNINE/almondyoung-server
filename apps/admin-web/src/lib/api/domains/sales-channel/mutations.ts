@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { channels } from '../products/channels.client';
+import { channelsClient } from '../products/channels.client';
 import { channelQueryKeys } from './queries';
 import type {
   CreateChannelDto,
@@ -12,7 +12,7 @@ import type {
 export const useCreateChannel = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: CreateChannelDto) => channels.create(data),
+    mutationFn: (data: CreateChannelDto) => channelsClient.create(data),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: channelQueryKeys.all });
     },
@@ -23,7 +23,7 @@ export const useUpdateChannel = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: UpdateChannelDto }) =>
-      channels.update(id, data),
+      channelsClient.update(id, data),
     onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({ queryKey: channelQueryKeys.all });
       void queryClient.invalidateQueries({
@@ -36,7 +36,7 @@ export const useUpdateChannel = () => {
 export const useDeleteChannel = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => channels.delete(id),
+    mutationFn: (id: string) => channelsClient.delete(id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: channelQueryKeys.all });
     },
@@ -47,7 +47,7 @@ export const useUpdateChannelStatus = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: UpdateChannelStatusDto }) =>
-      channels.updateStatus(id, data),
+      channelsClient.updateStatus(id, data),
     onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({ queryKey: channelQueryKeys.all });
       void queryClient.invalidateQueries({
