@@ -17,9 +17,6 @@ import { AddBarcodeDto } from '../dto/sku/add-barcode.dto';
 import { BarcodeDto, SkuResponseDto } from '../dto/sku/sku-response.dto';
 import { SkuStockSummaryDto } from '../dto/sku/sku-stock-summary.dto';
 import { CurrentStockDto } from '../dto/sku/current-stock.dto';
-import { CreateWarehouseDto } from '../dto/warehouse/create-warehouse.dto';
-import { UpdateWarehouseDto } from '../dto/warehouse/update-warehouse.dto';
-import { WAREHOUSE_CONSTANTS, WarehouseType } from '../constants/warehouse.constants';
 import { HOLDER_CONSTANTS } from '../constants/holder.constants';
 import { StockEventStore } from '../repositories/stock-event.store';
 import { InventoryQueryService } from './inventory-query.service';
@@ -49,7 +46,6 @@ export class InventoryService implements OnModuleInit {
 
   async onModuleInit() {
     await this._ensureDefaultHoldersExist();
-    await this._ensureDefaultWarehousesExist();
   }
 
   // ****************************************************************
@@ -1099,138 +1095,11 @@ export class InventoryService implements OnModuleInit {
     throw new BadRequestException('재고 요약 재구축은 추후 프로젝션 서비스로 제공됩니다.');
   }
 
-  // ****************************************************************
-  // 창고 관리 도메인
-  // ****************************************************************
-
-  async createWarehouse(createWarehouseDto: CreateWarehouseDto, tx?: DbTx) {
-    return this.inTx(async (trx) => {
-      const [newWarehouse] = await trx
-        .insert(wmsTables.warehouses)
-        .values({
-          name: createWarehouseDto.name,
-          type: createWarehouseDto.type || 'domestic',
-          location: createWarehouseDto.location,
-        })
-        .returning();
-
-      this.logger.log(`새 창고 생성: ${newWarehouse.name} (ID: ${newWarehouse.id})`);
-      // 창고 생성 직후 시스템 로케이션 보장 (동일 트랜잭션)
-      await this.locationService.ensureSystemLocations(newWarehouse.id, trx);
-      return newWarehouse;
-    }, tx);
-  }
-
-  async findAllWarehouses(tx?: DbTx) {
-    return this.inTx(
-      async (trx) => trx.select().from(wmsTables.warehouses).orderBy(asc(wmsTables.warehouses.name)),
-      tx,
-    );
-  }
-
-  async findOneWarehouse(id: string, tx?: DbTx) {
-    const warehouse = await this.inTx(async (trx) => {
-      const [row] = await trx.select().from(wmsTables.warehouses).where(eq(wmsTables.warehouses.id, id)).limit(1);
-      return row;
-    }, tx);
-
-    if (!warehouse) {
-      throw new NotFoundException(`창고를 찾을 수 없습니다: ${id}`);
-    }
-
-    return warehouse;
-  }
-
-  async updateWarehouse(id: string, updateWarehouseDto: UpdateWarehouseDto, tx?: DbTx) {
-    const [updatedWarehouse] = await this.inTx(
-      async (trx) =>
-        trx
-          .update(wmsTables.warehouses)
-          .set({
-            ...updateWarehouseDto,
-            updatedAt: new Date(),
-          })
-          .where(eq(wmsTables.warehouses.id, id))
-          .returning(),
-      tx,
-    ).then((r) => r);
-
-    if (!updatedWarehouse) {
-      throw new NotFoundException(`창고를 찾을 수 없습니다: ${id}`);
-    }
-
-    this.logger.log(`창고 정보 업데이트: ${updatedWarehouse.name}`);
-    return updatedWarehouse;
-  }
-
-  async removeWarehouse(id: string, tx?: DbTx) {
-    if (
-      id === WAREHOUSE_CONSTANTS.DEFAULT_DOMESTIC_WAREHOUSE.id ||
-      id === WAREHOUSE_CONSTANTS.DEFAULT_OVERSEAS_WAREHOUSE.id
-    ) {
-      throw new Error('기본 창고는 삭제할 수 없습니다.');
-    }
-
-    const inUse = await this._isWarehouseInUse(id);
-    if (inUse) {
-      throw new Error('사용 중인 창고는 삭제할 수 없습니다.');
-    }
-
-    const [deletedWarehouse] = await this.inTx(
-      async (trx) => trx.delete(wmsTables.warehouses).where(eq(wmsTables.warehouses.id, id)).returning(),
-      tx,
-    ).then((r) => r);
-
-    if (!deletedWarehouse) {
-      throw new NotFoundException(`창고를 찾을 수 없습니다: ${id}`);
-    }
-
-    return deletedWarehouse;
-  }
-
-  async getWarehouseStockSummary(warehouseId: string) {
-    const rows = await this.db
-      .select({
-        skuId: wmsTables.stockLedgers.skuId,
-        skuName: wmsTables.skus.name,
-        skuCode: wmsTables.skus.code,
-        totalQuantity: sql<number>`sum(${wmsTables.stockLedgers.qty})`,
-        locationCount: sql<number>`count(distinct ${wmsTables.stockLedgers.locationId})`,
-      })
-      .from(wmsTables.stockLedgers)
-      .innerJoin(wmsTables.skus, eq(wmsTables.stockLedgers.skuId, wmsTables.skus.id))
-      .where(eq(wmsTables.stockLedgers.warehouseId, warehouseId))
-      .groupBy(wmsTables.stockLedgers.skuId, wmsTables.skus.name, wmsTables.skus.code);
-
-    return {
-      warehouseId,
-      summary: rows,
-      totalSkus: rows.length,
-      totalQuantity: rows.reduce((sum, item) => sum + item.totalQuantity, 0),
-      totalAvailable: rows.reduce((sum, item) => sum + item.totalQuantity, 0),
-    };
-  }
-
   async findSkuById(skuId: string, tx?: DbTx) {
     return this.inTx(async (trx) => {
       const [row] = await trx.select().from(wmsTables.skus).where(eq(wmsTables.skus.id, skuId)).limit(1);
       return row;
     }, tx);
-  }
-
-  getDefaultWarehouseIdByType(type: WarehouseType): string {
-    switch (type) {
-      case 'domestic':
-        return WAREHOUSE_CONSTANTS.DEFAULT_DOMESTIC_WAREHOUSE.id;
-      case 'overseas':
-        return WAREHOUSE_CONSTANTS.DEFAULT_OVERSEAS_WAREHOUSE.id;
-      default:
-        return WAREHOUSE_CONSTANTS.DEFAULT_DOMESTIC_WAREHOUSE.id;
-    }
-  }
-
-  getDefaultWarehouseId(): string {
-    return WAREHOUSE_CONSTANTS.DEFAULT_DOMESTIC_WAREHOUSE.id;
   }
 
   // ****************************************************************
@@ -1302,46 +1171,4 @@ export class InventoryService implements OnModuleInit {
     }
   }
 
-  private async _ensureDefaultWarehousesExist() {
-    try {
-      const defaultWarehouses = [
-        WAREHOUSE_CONSTANTS.DEFAULT_DOMESTIC_WAREHOUSE,
-        WAREHOUSE_CONSTANTS.DEFAULT_OVERSEAS_WAREHOUSE,
-      ];
-
-      for (const warehouseData of defaultWarehouses) {
-        const existingWarehouse = await this.inTx(async (trx) => {
-          const [row] = await trx
-            .select()
-            .from(wmsTables.warehouses)
-            .where(eq(wmsTables.warehouses.id, warehouseData.id))
-            .limit(1);
-          return row;
-        });
-
-        if (!existingWarehouse) {
-          await this.inTx(async (trx) => {
-            await trx.insert(wmsTables.warehouses).values({
-              id: warehouseData.id,
-              name: warehouseData.name,
-              type: warehouseData.type,
-              location: warehouseData.location,
-            });
-          });
-          this.logger.log(`기본 창고 생성: ${warehouseData.name}`);
-        }
-      }
-    } catch (error) {
-      this.logger.error('기본 창고 생성 중 오류 발생:', error);
-    }
-  }
-
-  private async _isWarehouseInUse(warehouseId: string): Promise<boolean> {
-    const [row] = await this.db
-      .select({ count: sql<number>`count(*)` })
-      .from(wmsTables.stockLedgers)
-      .where(eq(wmsTables.stockLedgers.warehouseId, warehouseId));
-
-    return (row?.count ?? 0) > 0;
-  }
 }
