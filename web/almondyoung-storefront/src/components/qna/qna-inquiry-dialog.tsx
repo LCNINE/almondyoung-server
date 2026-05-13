@@ -14,15 +14,10 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { useUser } from "@/contexts/user-context"
 import { createQuestion, updateQuestion } from "@/lib/api/ugc/qna"
-import { uploadFile } from "@/lib/api/file/upload"
 import type { Question } from "@/lib/types/ui/ugc"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { toast } from "sonner"
-import {
-  ImageUpload,
-  type ImagePreview,
-} from "@/domains/cs/components/inquiry/image-upload"
 
 const MAX_LENGTH = 250
 
@@ -50,8 +45,6 @@ export function QnaInquiryDialog({
 
   const [content, setContent] = useState("")
   const [isSecret, setIsSecret] = useState(true)
-  const [images, setImages] = useState<ImagePreview[]>([])
-  const [isUploading, setIsUploading] = useState(false)
   const [isPending, startTransition] = useTransition()
 
   useEffect(() => {
@@ -61,47 +54,18 @@ export function QnaInquiryDialog({
     }
   }, [open, editQuestion])
 
-  const isBusy = isPending || isUploading
-
-  const uploadImages = async (): Promise<string[]> => {
-    const results = await Promise.all(
-      images.map((img) => {
-        const formData = new FormData()
-        formData.append("file", img.file)
-        formData.append("contextId", "cs-inquiry")
-        formData.append("isPublic", "true")
-        return uploadFile(formData)
-      })
-    )
-    return results.map((r) => r.id)
-  }
+  const isBusy = isPending
 
   const handleSubmit = () => {
     if (!content.trim() || isBusy) return
 
     startTransition(async () => {
       try {
-        let mediaFileIds: string[] | undefined
-
-        if (images.length > 0) {
-          setIsUploading(true)
-          try {
-            mediaFileIds = await uploadImages()
-          } catch (e) {
-            console.error("e:::::", e)
-            setIsUploading(false)
-            toast.error("이미지 업로드에 실패했습니다. 다시 시도해주세요.")
-            return
-          }
-          setIsUploading(false)
-        }
-
         if (isEditMode) {
           await updateQuestion(editQuestion.id, {
             title: content.slice(0, 50),
             content,
             isSecret,
-            mediaFileIds,
           })
         } else {
           await createQuestion({
@@ -110,12 +74,10 @@ export function QnaInquiryDialog({
             title: content.slice(0, 50),
             content,
             isSecret,
-            mediaFileIds,
           })
         }
         setContent("")
         setIsSecret(true)
-        setImages([])
         onOpenChange(false)
         onSuccess?.()
       } catch (error: unknown) {
@@ -142,7 +104,6 @@ export function QnaInquiryDialog({
     if (!value) {
       setContent("")
       setIsSecret(true)
-      setImages([])
     }
     onOpenChange(value)
   }
@@ -208,17 +169,6 @@ export function QnaInquiryDialog({
             {MAX_LENGTH}
           </span>
         </div>
-
-        {/* 이미지 첨부 (신규 작성 시에만) */}
-        {!isEditMode && (
-          <div className="mb-4">
-            <ImageUpload
-              images={images}
-              onImagesChange={setImages}
-              disabled={isBusy}
-            />
-          </div>
-        )}
 
         {/* 비밀글 체크박스 */}
         <label className="flex items-center gap-2 mb-4 cursor-pointer">
