@@ -3,13 +3,14 @@
 import { createColumnHelper } from '@tanstack/react-table';
 import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import type { MasterDto } from '@/lib/types/dto/products';
+import type { MasterSummaryDto } from '@/lib/types/dto/products';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DateCell } from '@/components/table/table-cells/common';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { FILE_SERVICE_BASE_URL } from '@/const/api-const';
 
-const columnHelper = createColumnHelper<MasterDto>();
+const columnHelper = createColumnHelper<MasterSummaryDto>();
 
 const STATUS_LABELS: Record<string, string> = {
   active: '활성',
@@ -17,6 +18,15 @@ const STATUS_LABELS: Record<string, string> = {
   draft: '임시저장',
   archived: '보관',
 };
+
+// thumbnail 은 fileId 또는 절대 URL. file-service public 경로로 변환한다.
+function resolveThumbnailSrc(thumbnail: string | null | undefined): string {
+  if (!thumbnail) return '/placeholder.svg';
+  if (thumbnail.startsWith('http://') || thumbnail.startsWith('https://')) {
+    return thumbnail;
+  }
+  return `${FILE_SERVICE_BASE_URL}/files/public/${thumbnail}`;
+}
 
 export function useProductsListTableColumns() {
   const router = useRouter();
@@ -45,58 +55,69 @@ export function useProductsListTableColumns() {
           />
         ),
       }),
-      columnHelper.accessor('id', {
+      columnHelper.accessor('masterId', {
         header: '품번코드',
         cell: ({ getValue }) => (
           <span className="break-all text-xs text-muted-foreground">{getValue()}</span>
         ),
       }),
-      columnHelper.accessor('images', {
+      columnHelper.accessor('thumbnail', {
         header: '이미지',
-        cell: ({ getValue }) => {
-          const images = getValue();
-          const src = images?.[0] ?? '/placeholder.svg';
-          return (
-            <div className="mx-auto h-14 w-14 overflow-hidden rounded">
-              <img src={src} alt="상품 이미지" className="h-full w-full object-cover" />
-            </div>
-          );
-        },
+        cell: ({ getValue }) => (
+          <div className="mx-auto h-14 w-14 overflow-hidden rounded">
+            <img
+              src={resolveThumbnailSrc(getValue())}
+              alt="상품 이미지"
+              className="h-full w-full object-cover"
+            />
+          </div>
+        ),
       }),
       columnHelper.accessor('name', {
-        header: '상품명/분류/브랜드',
+        header: '상품명/옵션/브랜드',
         cell: ({ row }) => (
           <div className="space-y-0.5">
             <p className="break-words text-sm font-medium leading-tight text-blue-800">
               {row.original.name}
             </p>
             <p className="text-xs text-muted-foreground">
-              {row.original.categories?.[0]?.name ?? '-'}
+              {row.original.optionGroupNames.join(' / ') || '-'}
             </p>
             <p className="text-xs text-muted-foreground">{row.original.brand ?? '-'}</p>
           </div>
         ),
       }),
-      columnHelper.accessor('variants', {
+      columnHelper.accessor('variantCount', {
         header: '옵션수',
         cell: ({ getValue }) => {
-          const variants = getValue();
+          const count = getValue();
           return (
             <span className="text-sm text-blue-900">
-              {variants?.length ? `${variants.length}개` : '단일상품'}
+              {count > 0 ? `${count}개` : '단일상품'}
             </span>
           );
         },
       }),
-      columnHelper.accessor('basePrice', {
+      columnHelper.accessor('priceSummary', {
         header: '판매가/멤버십가',
-        cell: ({ row }) => (
-          <div className="space-y-0.5 text-right text-sm">
-            <p className="font-medium">
-              {row.original.basePrice ? row.original.basePrice.toLocaleString() + '원' : '-'}
-            </p>
-          </div>
-        ),
+        cell: ({ getValue }) => {
+          const summary = getValue();
+          if (!summary) return <div className="text-right text-sm">-</div>;
+          const fmtRange = (min: number, max: number) =>
+            min === max
+              ? `${min.toLocaleString()}원`
+              : `${min.toLocaleString()} ~ ${max.toLocaleString()}원`;
+          return (
+            <div className="space-y-0.5 text-right text-sm">
+              <p className="font-medium">
+                {fmtRange(summary.minBasePrice, summary.maxBasePrice)}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {fmtRange(summary.minMembershipPrice, summary.maxMembershipPrice)}
+              </p>
+            </div>
+          );
+        },
       }),
       columnHelper.accessor('status', {
         header: '상태',
@@ -116,10 +137,6 @@ export function useProductsListTableColumns() {
         header: '등록일',
         cell: ({ getValue }) => <DateCell value={getValue()} />,
       }),
-      columnHelper.accessor('updatedAt', {
-        header: '수정일',
-        cell: ({ getValue }) => <DateCell value={getValue()} />,
-      }),
       columnHelper.display({
         id: 'actions',
         header: '작업',
@@ -130,7 +147,7 @@ export function useProductsListTableColumns() {
             className="text-xs"
             onClick={(e) => {
               e.stopPropagation();
-              router.push(`/mall/pricing/${row.original.id}`);
+              router.push(`/mall/pricing/${row.original.masterId}`);
             }}
           >
             가격 관리

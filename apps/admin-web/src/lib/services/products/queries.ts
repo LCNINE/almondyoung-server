@@ -98,6 +98,19 @@ export const useMasters = (query: MastersQuery = {}) => {
 };
 
 /**
+ * 제품 마스터 목록 요약 조회
+ * 백엔드 `GET /masters` 가 실제로 반환하는 ProductSummaryDto 모양에 맞춰진 훅.
+ */
+export const useMastersSummary = (query: MastersQuery = {}) => {
+  return useQuery({
+    queryKey: productQueryKeys.mastersSummaryList(query),
+    queryFn: () => products.masters.getListSummary(query),
+    staleTime: 30 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+};
+
+/**
  * 제품 마스터 상세 조회
  */
 export const useMaster = (id: string) => {

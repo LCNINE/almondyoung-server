@@ -1,7 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
-import { useMasters } from '@/lib/services/products/queries';
+import { useMastersSummary } from '@/lib/services/products/queries';
 import { useDataTable } from '@/hooks/use-data-table';
 import { useProductsListTableColumns } from '@/hooks/table/columns/use-products-list-table-columns';
 import { useProductsListTableFilters } from '@/hooks/table/filters/use-products-list-table-filters';
@@ -14,7 +13,7 @@ const PAGE_SIZE = 20;
 
 export function ProductsListTable() {
   const { searchParams: query } = useProductsListTableQuery({ pageSize: PAGE_SIZE });
-  const { data, isLoading, isFetching } = useMasters(query);
+  const { data, isLoading, isFetching } = useMastersSummary(query);
   const columns = useProductsListTableColumns();
   const filters = useProductsListTableFilters();
 
@@ -23,33 +22,14 @@ export function ProductsListTable() {
     columns,
     count: data?.total,
     pageSize: PAGE_SIZE,
-    getRowId: (row) => row.id,
+    getRowId: (row) => row.masterId,
     enableRowSelection: true,
   });
 
   const selectedRows = table.getSelectedRowModel().rows;
 
-  const pendingMatchingCount = useMemo(() => {
-    return (data?.data ?? []).reduce((count, master) => {
-      const variants = master.variants ?? [];
-      const hasChannelProduct = master.channelProducts && master.channelProducts.length > 0;
-      return count + (hasChannelProduct ? 0 : variants.length);
-    }, 0);
-  }, [data?.data]);
-
   return (
     <div>
-      {pendingMatchingCount > 0 && (
-        <div className="mx-4 mt-4 flex items-center gap-3 rounded-lg border border-red-200 bg-red-50 p-3">
-          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-red-500">
-            <span className="text-xs text-white">!</span>
-          </div>
-          <span className="text-sm font-semibold text-red-700">
-            매칭 대기 상품(옵션기준) {pendingMatchingCount}개
-          </span>
-        </div>
-      )}
-
       {selectedRows.length > 0 && (
         <div className="flex items-center gap-2 border-b bg-muted/50 p-3">
           <span className="text-sm text-muted-foreground">{selectedRows.length}개 선택됨</span>

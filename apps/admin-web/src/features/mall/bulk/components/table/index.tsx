@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useMasters } from '@/lib/services/products';
+import { useMastersSummary } from '@/lib/services/products/queries';
 import { useDataTable } from '@/hooks/use-data-table';
 import { useProductsListTableColumns } from '@/hooks/table/columns/use-products-list-table-columns';
 import { useProductsListTableFilters } from '@/hooks/table/filters/use-products-list-table-filters';
@@ -16,7 +16,7 @@ export function BulkTable() {
   const [modalAction, setModalAction] = useState<BulkActionType | null>(null);
 
   const { searchParams: query } = useProductsListTableQuery({ pageSize: PAGE_SIZE });
-  const { data, isLoading, isFetching } = useMasters(query);
+  const { data, isLoading, isFetching } = useMastersSummary(query);
   const columns = useProductsListTableColumns();
   const filters = useProductsListTableFilters();
 
@@ -25,13 +25,13 @@ export function BulkTable() {
     columns,
     count: data?.total,
     pageSize: PAGE_SIZE,
-    getRowId: (row) => row.id,
+    getRowId: (row) => row.masterId,
     enableRowSelection: true,
   });
 
   const selectedIds = table
     .getSelectedRowModel()
-    .rows.map((r) => r.original.id);
+    .rows.map((r) => r.original.masterId);
 
   function handleSuccess() {
     table.resetRowSelection();

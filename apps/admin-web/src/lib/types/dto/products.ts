@@ -128,6 +128,39 @@ export interface MastersResponseDto {
   hasPrev: boolean;
 }
 
+// ===== 마스터 목록 요약 응답 (GET /masters - ProductSummaryDto) =====
+// 백엔드 ProductSummaryDto 와 1:1 대응. 목록 API 가 실제로 반환하는 모양이다.
+
+export interface PriceSummaryDto {
+  minBasePrice: number;
+  maxBasePrice: number;
+  minMembershipPrice: number;
+  maxMembershipPrice: number;
+  hasTieredPrices: boolean;
+}
+
+export interface MasterSummaryDto {
+  masterId: string;
+  versionId: string;
+  name: string;
+  /** 대표 이미지의 fileId. URL 아님 — file-service 경로로 변환 필요. */
+  thumbnail: string | null;
+  brand: string | null;
+  isMembershipOnly: boolean;
+  status: ProductStatus;
+  createdAt: string;
+  optionGroupNames: string[];
+  variantCount: number;
+  priceSummary: PriceSummaryDto | null;
+}
+
+export interface MasterSummaryListResponseDto {
+  data: MasterSummaryDto[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
 export interface PricePreviewDto {
   masterId: string;
   basePrice: number;
