@@ -3,11 +3,11 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { DbService } from '@app/db';
 import { and, eq, desc, count, inArray, isNull, or, ne, gte, lte, ilike, SQL } from 'drizzle-orm';
-import { InventoryService } from '../../inventory/core/services/inventory.service';
 import { StockEventService } from '../../inventory/core/services/stock-event.service';
 import { WarehouseService } from '../../inventory/warehouse/services/warehouse.service';
+import { SkuCatalogService } from '../../inventory/sku-catalog/services/sku-catalog.service';
 import { ResolveMatchingDto, StockPolicyDto } from '../dto/resolve-matching.dto';
-import { SkuCreationSource } from '../../inventory/core/dto/sku/create-sku.dto';
+import { SkuCreationSource } from '../../inventory/sku-catalog/dto/create-sku.dto';
 import { MatchingStrategy, MatchingContext, SkuQuantityMapping } from '../strategies/matching-strategy.interface';
 import { VoidMatchingStrategy } from '../strategies/void-matching.strategy';
 import { VariantMatchingStrategy } from '../strategies/variant-matching.strategy';
@@ -39,7 +39,7 @@ export class ProductMatchingService {
 
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
-    private readonly inventoryService: InventoryService,
+    private readonly skuCatalogService: SkuCatalogService,
     private readonly stockEventService: StockEventService,
     private readonly warehouseService: WarehouseService,
   ) {
@@ -669,7 +669,7 @@ export class ProductMatchingService {
         throw new NotFoundException(`No product matching found for variant: ${variantId}`);
       }
 
-      const newSku = await this.inventoryService.createSku(
+      const newSku = await this.skuCatalogService.create(
         {
           name: skuData.name,
           source: SkuCreationSource.MANUAL_MATCHING,

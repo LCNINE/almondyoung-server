@@ -4,8 +4,7 @@ import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { DbService } from '@app/db';
 import { eq, and, isNull } from 'drizzle-orm';
 import { CreateStockEntryBySkuIdDto } from '../../inbound/dto/create-stock-entry-by-skuid.dto';
-import { SkuCreationSource } from '../dto/sku/create-sku.dto';
-import { InventoryService } from './inventory.service';
+import { SkuCreationSource } from '../../sku-catalog/dto/create-sku.dto';
 import { StockEventStore } from '../repositories/stock-event.store';
 import { InventoryCommandService } from '../services/inventory-command.service';
 import { UnifiedReservationService } from '../../shared/services/unified-reservation.service';
@@ -17,7 +16,6 @@ export class StockEventService {
 
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
-    private readonly inventoryService: InventoryService,
     private readonly eventStore: StockEventStore,
     private readonly commandService: InventoryCommandService,
     private readonly unifiedReservation: UnifiedReservationService,

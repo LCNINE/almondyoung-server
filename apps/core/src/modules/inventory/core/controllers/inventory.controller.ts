@@ -1,44 +1,32 @@
 import {
+  BadRequestException,
+  Body,
   Controller,
   Get,
-  Post,
-  Put,
-  Delete,
-  Query,
-  Param,
-  Body,
   HttpCode,
   HttpStatus,
-  Patch,
-  BadRequestException,
+  Param,
+  Post,
+  Query,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
-import { InventoryService } from '../services/inventory.service';
+import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { StockEventService } from '../services/stock-event.service';
 import { SafetyStockService } from '../services/safety-stock.service';
 import { InventoryCommandService } from '../services/inventory-command.service';
 import { AdjustStockDto } from '../dto/inventory/adjust-stock.dto';
-import { AdvancedInventoryFiltersDto } from '../dto/inventory/advanced-filters.dto';
-import { CreateSkuDto } from '../dto/sku/create-sku.dto';
-import { UpdateSkuDto } from '../dto/sku/update-sku.dto';
-import { AddBarcodeDto } from '../dto/sku/add-barcode.dto';
-import { BarcodeDto, SkuResponseDto } from '../dto/sku/sku-response.dto';
-import { DeletedSkuFiltersDto } from '../dto/sku/deleted-sku-filters.dto';
 import { CreateStockEntryBySkuIdDto } from '../../inbound/dto/create-stock-entry-by-skuid.dto';
-import { SkuBarcodeMapper } from '../mappers/sku.mapper';
 
 @ApiTags('Inventory')
 @Controller('inventory')
 export class InventoryController {
   constructor(
-    private readonly inventoryService: InventoryService,
     private readonly stockEventService: StockEventService,
     private readonly safetyStockService: SafetyStockService,
     private readonly commandService: InventoryCommandService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════════
-  // 재고 변경 API (mutation — projection 조회는 StockProjectionController 참조)
+  // 재고 변경 API (mutation)
   // ═══════════════════════════════════════════════════════════════
 
   @Post('/stocks/adjust')
@@ -81,192 +69,6 @@ export class InventoryController {
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // SKU 관리 API
-  // ═══════════════════════════════════════════════════════════════
-
-  @Post('/skus')
-  @ApiOperation({ summary: 'SKU 생성' })
-  @ApiResponse({ status: 201, description: 'SKU가 성공적으로 생성되었습니다.', type: SkuResponseDto })
-  @ApiResponse({ status: 400, description: '잘못된 요청' })
-  async createSku(@Body() createSkuDto: CreateSkuDto): Promise<SkuResponseDto> {
-    return this.inventoryService.createSku(createSkuDto);
-  }
-
-  @Get('/skus/deleted')
-  @ApiOperation({ summary: '삭제된 SKU 목록 조회' })
-  @ApiResponse({
-    status: 200,
-    description: '삭제된 SKU 목록 (Deleted SKUs list with pagination)',
-    schema: {
-      type: 'object',
-      properties: {
-        items: {
-          type: 'array',
-          items: { $ref: '#/components/schemas/SkuResponseDto' },
-          description: 'SKU 목록',
-        },
-        total: {
-          type: 'number',
-          description: '전체 결과 수',
-          example: 10,
-        },
-        limit: {
-          type: 'number',
-          description: '페이지 크기',
-          example: 50,
-        },
-        offset: {
-          type: 'number',
-          description: '페이지 오프셋',
-          example: 0,
-        },
-      },
-    },
-  })
-  async getDeletedSkus(@Query() filters: DeletedSkuFiltersDto): Promise<{
-    items: SkuResponseDto[];
-    total: number;
-    limit: number;
-    offset: number;
-  }> {
-    return this.inventoryService.getDeletedSkus(filters);
-  }
-
-  @Get('/skus')
-  @ApiOperation({ summary: 'SKU 검색' })
-  @ApiQuery({ name: 'id', required: false, description: 'SKU ID (정확히 일치)' })
-  @ApiQuery({ name: 'code', required: false, description: 'SKU 코드 (정확히 일치)' })
-  @ApiQuery({ name: 'barcode', required: false, description: 'SKU 기본 바코드 또는 서브 바코드' })
-  @ApiQuery({ name: 'name', required: false, description: 'SKU 이름 (부분 일치)' })
-  @ApiQuery({ name: 'supplierName', required: false, description: '공급사 이름 (부분 일치)' })
-  @ApiQuery({ name: 'groupId', required: false, description: 'SKU 그룹 ID (정확히 일치)' })
-  @ApiResponse({ status: 200, description: '검색된 SKU 목록', type: [SkuResponseDto] })
-  async searchSkus(
-    @Query('id') id?: string,
-    @Query('code') code?: string,
-    @Query('barcode') barcode?: string,
-    @Query('name') name?: string,
-    @Query('supplierName') supplierName?: string,
-    @Query('groupId') groupId?: string,
-  ): Promise<SkuResponseDto[]> {
-    return this.inventoryService.searchSkus({
-      id,
-      code,
-      barcode,
-      name,
-      supplierName,
-      groupId,
-    });
-  }
-
-  @Get('/skus/search/advanced')
-  @ApiOperation({ summary: '고급 재고 검색 (Advanced inventory search with comprehensive filtering)' })
-  @ApiResponse({
-    status: 200,
-    description: '검색 결과 (Search results with pagination)',
-    schema: {
-      type: 'object',
-      properties: {
-        items: {
-          type: 'array',
-          items: { $ref: '#/components/schemas/SkuResponseDto' },
-          description: 'SKU 목록',
-        },
-        total: {
-          type: 'number',
-          description: '전체 결과 수',
-          example: 150,
-        },
-        limit: {
-          type: 'number',
-          description: '페이지 크기',
-          example: 50,
-        },
-        offset: {
-          type: 'number',
-          description: '페이지 오프셋',
-          example: 0,
-        },
-      },
-    },
-  })
-  async searchInventoryAdvanced(@Query() filters: AdvancedInventoryFiltersDto): Promise<{
-    items: SkuResponseDto[];
-    total: number;
-    limit: number;
-    offset: number;
-  }> {
-    return this.inventoryService.searchInventoryAdvanced(filters);
-  }
-
-  @Get('/skus/:id')
-  @ApiOperation({ summary: 'SKU 상세 조회' })
-  @ApiParam({ name: 'id', description: 'SKU ID' })
-  @ApiResponse({ status: 200, description: 'SKU 상세 정보', type: SkuResponseDto })
-  @ApiResponse({ status: 404, description: 'SKU를 찾을 수 없습니다.' })
-  async getSkuById(@Param('id') id: string): Promise<SkuResponseDto> {
-    return this.inventoryService.getSkuById(id);
-  }
-
-  @Put('/skus/:id')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'SKU 수정' })
-  @ApiParam({ name: 'id', description: 'SKU ID' })
-  @ApiResponse({ status: 200, description: 'SKU가 성공적으로 수정되었습니다.', type: SkuResponseDto })
-  @ApiResponse({ status: 404, description: 'SKU를 찾을 수 없습니다.' })
-  async updateSku(@Param('id') id: string, @Body() updateSkuDto: UpdateSkuDto): Promise<SkuResponseDto> {
-    return this.inventoryService.updateSku(id, updateSkuDto);
-  }
-
-  @Patch('/skus/:id/restore')
-  @ApiOperation({ summary: 'SKU 복구 (Restore deleted SKU)' })
-  @ApiParam({ name: 'id', description: 'SKU ID' })
-  @ApiResponse({
-    status: 200,
-    description: 'SKU가 성공적으로 복구되었습니다.',
-    type: SkuResponseDto,
-  })
-  @ApiResponse({ status: 404, description: '삭제된 SKU를 찾을 수 없습니다.' })
-  async restoreSku(@Param('id') id: string): Promise<SkuResponseDto> {
-    return this.inventoryService.restoreSku(id);
-  }
-
-  @Delete('/skus/:id')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'SKU 삭제' })
-  @ApiParam({ name: 'id', description: 'SKU ID' })
-  @ApiResponse({ status: 204, description: 'SKU가 성공적으로 삭제되었습니다.' })
-  @ApiResponse({ status: 404, description: 'SKU를 찾을 수 없습니다.' })
-  @ApiResponse({ status: 409, description: '재고가 있거나 상품 매칭에 사용 중인 SKU는 삭제할 수 없습니다.' })
-  async deleteSku(@Param('id') id: string): Promise<void> {
-    return this.inventoryService.deleteSku(id);
-  }
-
-  @Post('/skus/:id/barcodes')
-  @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'SKU에 바코드 추가' })
-  @ApiParam({ name: 'id', description: 'SKU ID' })
-  @ApiResponse({ status: 201, description: '바코드가 성공적으로 추가되었습니다.', type: BarcodeDto })
-  @ApiResponse({ status: 404, description: 'SKU를 찾을 수 없습니다.' })
-  @ApiResponse({ status: 409, description: '이미 존재하는 바코드입니다.' })
-  async addBarcode(@Param('id') id: string, @Body() addBarcodeDto: AddBarcodeDto): Promise<BarcodeDto> {
-    const barcode = await this.inventoryService.addBarcode(id, addBarcodeDto);
-    return SkuBarcodeMapper.toDto(barcode);
-  }
-
-  @Delete('/skus/:id/barcodes/:barcodeId')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'SKU에서 바코드 제거' })
-  @ApiParam({ name: 'id', description: 'SKU ID' })
-  @ApiParam({ name: 'barcodeId', description: '바코드 ID' })
-  @ApiResponse({ status: 204, description: '바코드가 성공적으로 제거되었습니다.' })
-  @ApiResponse({ status: 400, description: '기본 바코드는 제거할 수 없습니다.' })
-  @ApiResponse({ status: 404, description: 'SKU 또는 바코드를 찾을 수 없습니다.' })
-  async removeBarcode(@Param('id') id: string, @Param('barcodeId') barcodeId: string): Promise<void> {
-    return this.inventoryService.removeBarcode(id, barcodeId);
-  }
-
-  // ═══════════════════════════════════════════════════════════════
   // 안전 재고 관리 API
   // ═══════════════════════════════════════════════════════════════
 
@@ -302,28 +104,6 @@ export class InventoryController {
   @ApiResponse({
     status: 200,
     description: 'Safety stock status for SKU across all warehouses',
-    schema: {
-      type: 'object',
-      properties: {
-        skuId: { type: 'string' },
-        skuName: { type: 'string' },
-        skuCode: { type: 'string' },
-        safetyStock: { type: 'number' },
-        warehouses: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              warehouseId: { type: 'string' },
-              warehouseName: { type: 'string' },
-              currentStock: { type: 'number' },
-              isBelowSafety: { type: 'boolean' },
-              shortfall: { type: 'number' },
-            },
-          },
-        },
-      },
-    },
   })
   @ApiResponse({ status: 404, description: 'SKU not found' })
   async getSafetyStockStatus(@Param('skuId') skuId: string) {
