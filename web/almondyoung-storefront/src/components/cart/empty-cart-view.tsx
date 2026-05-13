@@ -10,7 +10,7 @@ export function EmptyCartView({
   bgColor = "bg-white",
 }: EmptyCartViewProps) {
   return (
-    <div className={`flex min-h-screen w-full flex-col ${bgColor}`}>
+    <div className={`flex w-full flex-col ${bgColor}`}>
       {showHeader && (
         <header className="border-border bg-foreground w-full border-b">
           <div className="container mx-auto flex h-14 items-center px-4">
@@ -21,7 +21,7 @@ export function EmptyCartView({
         </header>
       )}
 
-      <main className="flex flex-1 flex-col items-center justify-center px-4 sm:px-6">
+      <main className="flex flex-1 flex-col items-center justify-start px-4 pt-24 sm:px-6 sm:pt-32">
         <div className="flex w-full max-w-md flex-col items-center">
           <h1 className="mb-3 text-center text-[24px] leading-snug font-semibold tracking-tight text-gray-900 sm:text-[28px] lg:text-[32px]">
             장바구니에 담긴 상품이 없어요
