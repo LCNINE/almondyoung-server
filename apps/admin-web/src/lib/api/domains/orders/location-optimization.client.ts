@@ -1,3 +1,5 @@
+'use client';
+
 // src/lib/api/domains/orders/location-optimization.client.ts
 // ⚠️ routes/optimize, routes/batches/:id, statistics/warehouses/:id 모두 pending_development
 //    zones/configuration만 실제 데이터 반환 — 나머지 함수는 추후 서버 구현 후 사용
