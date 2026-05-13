@@ -2,7 +2,7 @@
 
 import { Card, CardContent } from "@/components/ui/card"
 import { CartHeader } from "@/domains/cart/components/header"
-import { createCheckoutCartFromLineItems } from "@/lib/api/medusa/cart"
+import { createCheckoutCartFromLineItems, refreshCartPrices } from "@/lib/api/medusa/cart"
 import { HttpTypes } from "@medusajs/types"
 import { useParams, useRouter } from "next/navigation"
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
@@ -91,6 +91,10 @@ export default function CartTemplate({ cart }: Props) {
       }
     })
   }, [selectedIds, sortedItems, countryCode, router])
+
+  useEffect(() => {
+    refreshCartPrices().then(() => router.refresh()).catch(() => {})
+  }, [])
 
   // 아이템이 변경되면 (삭제 등) 선택 상태 동기화
   useEffect(() => {
