@@ -64,17 +64,17 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   for (const cart of activeCarts) {
     try {
       await refreshCartItemsWorkflow(req.scope).run({
-        input: {
-          cart_id: cart.id,
-          force_refresh: true,
-        },
+        input: { cart_id: cart.id, force_refresh: true },
       });
+    } catch (error: any) {
+      console.error(`[refresh-cart-prices] workflow failed for cart ${cart.id}:`, error?.message);
+    }
 
+    try {
       await fixCompareAtPrices(req.scope, cart);
-
       refreshedCartIds.push(cart.id);
     } catch (error: any) {
-      console.error(`[refresh-cart-prices] Failed to refresh cart ${cart.id}:`, error?.message);
+      console.error(`[refresh-cart-prices] fixCompareAtPrices failed for cart ${cart.id}:`, error?.message);
     }
   }
 
