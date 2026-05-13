@@ -9,20 +9,16 @@ import {
 import { InjectTypedDb, TypedDatabase, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx, SkuBarcode } from '../../schema/inventory.schema';
 import { and, eq, isNull, or, sql, asc, like, gte, lte, isNotNull, SQL, inArray, desc } from 'drizzle-orm';
-import { GetStockQueryDto } from '../dto/inventory/get-stock-query.dto';
 import { AdvancedInventoryFiltersDto, StockDisplayMode } from '../dto/inventory/advanced-filters.dto';
 import { CreateSkuDto, SkuCreationSource } from '../dto/sku/create-sku.dto';
 import { UpdateSkuDto } from '../dto/sku/update-sku.dto';
 import { AddBarcodeDto } from '../dto/sku/add-barcode.dto';
 import { BarcodeDto, SkuResponseDto } from '../dto/sku/sku-response.dto';
-import { SkuStockSummaryDto } from '../dto/sku/sku-stock-summary.dto';
-import { CurrentStockDto } from '../dto/sku/current-stock.dto';
 import { HOLDER_CONSTANTS } from '../constants/holder.constants';
 import { StockEventStore } from '../repositories/stock-event.store';
 import { InventoryQueryService } from './inventory-query.service';
 import { InventoryCommandService } from './inventory-command.service';
 import { LocationService } from './location.service';
-import { PaginatedResponseDto } from '../../shared/dto';
 
 @Injectable()
 export class InventoryService implements OnModuleInit {
@@ -912,188 +908,8 @@ export class InventoryService implements OnModuleInit {
   }
 
   // ****************************************************************
-  // 재고 관리 도메인
+  // 재고 관리 도메인 — projection 책임은 StockProjectionModule 로 분리됨.
   // ****************************************************************
-
-  async getCurrentStock(query: GetStockQueryDto, tx?: DbTx): Promise<PaginatedResponseDto<CurrentStockDto>> {
-    const { skuId, warehouseId, page = 1, limit = 20 } = query;
-    const offset = (page - 1) * limit;
-
-    return this.inTx(async (trx) => {
-      const conditions: SQL[] = [eq(wmsSchema.stockSummary.warehouseId, warehouseId)];
-
-      if (skuId) {
-        conditions.push(eq(wmsSchema.stockSummary.skuId, skuId));
-      }
-
-      const summaries = await trx
-        .select()
-        .from(wmsSchema.stockSummary)
-        .where(and(...conditions))
-        .limit(limit)
-        .offset(offset);
-
-      const data = summaries.map((s) => ({
-        skuId: s.skuId,
-        skuName: s.skuName ?? '',
-        warehouseId: s.warehouseId,
-        warehouseName: s.warehouseName ?? '',
-        onHandQty: s.onHandQty,
-        defectiveQty: s.defectiveQty,
-        inTransferQty: s.inTransferQty,
-        reservedQty: s.reservedQty,
-        availableQty: s.availableQty,
-        inboundPendingQty: s.inboundPendingQty,
-        projectedAvailableQty: s.projectedAvailableQty,
-        lastCalculatedAt: s.lastCalculatedAt,
-      }));
-
-      const [countResult] = await trx
-        .select({ count: sql<number>`count(*)` })
-        .from(wmsSchema.stockSummary)
-        .where(and(...conditions));
-
-      const total = Number(countResult?.count || 0);
-
-      return {
-        data,
-        total,
-        page,
-        limit,
-      };
-    }, tx);
-  }
-
-  async getTotalStockBySku(
-    skuId: string,
-    tx?: DbTx,
-  ): Promise<{
-    skuId: string;
-    totalRealQuantity: number;
-    totalReservedQuantity: number;
-    totalAvailableQuantity: number;
-  }> {
-    const summaries = await this.inTx(
-      async (trx) => trx.select().from(wmsSchema.stockSummary).where(eq(wmsSchema.stockSummary.skuId, skuId)),
-      tx,
-    );
-
-    const total = summaries.reduce(
-      (acc, summary) => ({
-        totalRealQuantity: acc.totalRealQuantity + summary.onHandQty + summary.defectiveQty + summary.inTransferQty,
-        totalReservedQuantity: acc.totalReservedQuantity + summary.reservedQty,
-        totalAvailableQuantity: acc.totalAvailableQuantity + summary.availableQty,
-      }),
-      { totalRealQuantity: 0, totalReservedQuantity: 0, totalAvailableQuantity: 0 },
-    );
-
-    return {
-      skuId,
-      totalRealQuantity: total.totalRealQuantity,
-      totalReservedQuantity: total.totalReservedQuantity,
-      totalAvailableQuantity: total.totalAvailableQuantity,
-    };
-  }
-
-  async getStockBySkuAndWarehouse(skuId: string, warehouseId: string, tx?: DbTx) {
-    const summary = await this.inTx(async (trx) => {
-      const [row] = await trx
-        .select()
-        .from(wmsSchema.stockSummary)
-        .where(and(eq(wmsSchema.stockSummary.skuId, skuId), eq(wmsSchema.stockSummary.warehouseId, warehouseId)))
-        .limit(1);
-      return row;
-    }, tx);
-
-    const details = await this.inTx(
-      async (trx) =>
-        trx
-          .select({
-            locationId: wmsTables.stockLedgers.locationId,
-            stockState: wmsTables.stockLedgers.stockState,
-            quantity: wmsTables.stockLedgers.qty,
-          })
-          .from(wmsTables.stockLedgers)
-          .where(and(eq(wmsTables.stockLedgers.skuId, skuId), eq(wmsTables.stockLedgers.warehouseId, warehouseId))),
-      tx,
-    );
-
-    return {
-      summary: summary
-        ? {
-            currentQuantity: summary.onHandQty + summary.defectiveQty + summary.inTransferQty,
-            availableQuantity: summary.availableQty,
-            reservedQuantity: summary.reservedQty,
-            inboundPendingQuantity: summary.inboundPendingQty,
-            outboundPendingQuantity: summary.onOrderQty,
-            movingQuantity: summary.inTransferQty,
-            defectiveQuantity: summary.defectiveQty,
-            returnPendingQuantity: summary.transferPendingQty,
-            lastUpdated: summary.lastCalculatedAt,
-          }
-        : null,
-      details,
-    };
-  }
-
-  async getStockHistory(skuId: string, warehouseId?: string, startDate?: string, endDate?: string) {
-    return this.eventStore.getEventHistory(skuId, warehouseId, startDate, endDate);
-  }
-
-  async getSkuStockSummary(skuId: string, tx?: DbTx): Promise<SkuStockSummaryDto> {
-    const sku = await this.findSkuById(skuId);
-    if (!sku) {
-      throw new NotFoundException(`SKU with ID ${skuId} not found`);
-    }
-
-    return await this.inTx(async (tx) => {
-      const summaries = await tx.select().from(wmsSchema.stockSummary).where(eq(wmsSchema.stockSummary.skuId, skuId));
-
-      const warehouseIds = summaries.map((summary) => summary.warehouseId);
-      const warehouses = await tx
-        .select()
-        .from(wmsTables.warehouses)
-        .where(inArray(wmsTables.warehouses.id, warehouseIds));
-
-      const warehouseMap = new Map(warehouses.map((warehouse) => [warehouse.id, warehouse]));
-
-      const warehouseStocks = summaries.map((summary) => ({
-        warehouseId: summary.warehouseId,
-        warehouseName: warehouseMap.get(summary.warehouseId)?.name || 'Unknown Warehouse',
-        realQuantity: summary.onHandQty + summary.defectiveQty + summary.inTransferQty,
-        reservedQuantity: summary.reservedQty,
-        availableQuantity: summary.availableQty,
-      }));
-
-      const totals = summaries.reduce(
-        (acc, summary) => ({
-          totalRealQuantity: acc.totalRealQuantity + summary.onHandQty + summary.defectiveQty + summary.inTransferQty,
-          totalReservedQuantity: acc.totalReservedQuantity + summary.reservedQty,
-          totalAvailableQuantity: acc.totalAvailableQuantity + summary.availableQty,
-        }),
-        { totalRealQuantity: 0, totalReservedQuantity: 0, totalAvailableQuantity: 0 },
-      );
-
-      return {
-        skuId: sku.id,
-        skuName: sku.name,
-        skuCode: sku.code,
-        totalRealQuantity: totals.totalRealQuantity,
-        totalReservedQuantity: totals.totalReservedQuantity,
-        totalAvailableQuantity: totals.totalAvailableQuantity,
-        warehouseStocks: warehouseStocks,
-      };
-    }, tx);
-  }
-
-  // 이벤트 관련 메서드들은 StockEventStore로 위임
-  async cancelStockEvent(eventId: string, reason: string): Promise<void> {
-    await this.eventStore.reverseEvent(eventId, reason);
-  }
-
-  async rebuildStockSummary(skuId: string, warehouseId: string): Promise<void> {
-    throw new BadRequestException('재고 요약 재구축은 추후 프로젝션 서비스로 제공됩니다.');
-  }
 
   async findSkuById(skuId: string, tx?: DbTx) {
     return this.inTx(async (trx) => {
