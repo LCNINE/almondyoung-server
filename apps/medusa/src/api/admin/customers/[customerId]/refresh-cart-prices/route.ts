@@ -151,7 +151,7 @@ async function fixCompareAtPrices(scope: any, cart: any): Promise<void> {
     priceSetToResult.set(cp.id, cp);
   }
 
-  const updates: Array<{ id: string; compare_at_unit_price: number | null }> = [];
+  const updates: Array<{ id: string; unit_price?: number; compare_at_unit_price?: number | null }> = [];
 
   for (const item of refreshedCart.items) {
     const priceSetId = variantToPriceSetId.get(item.variant_id);
@@ -164,12 +164,26 @@ async function fixCompareAtPrices(scope: any, cart: any): Promise<void> {
     const originalAmount = pricing.original_amount != null ? Number(pricing.original_amount) : null;
     const calculatedAmount = pricing.calculated_amount != null ? Number(pricing.calculated_amount) : null;
 
-    if (isSalePrice && originalAmount != null && calculatedAmount != null && originalAmount !== calculatedAmount) {
-      if (item.compare_at_unit_price == null || Number(item.compare_at_unit_price) !== originalAmount) {
-        updates.push({ id: item.id, compare_at_unit_price: originalAmount });
+    if (calculatedAmount == null) continue;
+
+    const update: { id: string; unit_price?: number; compare_at_unit_price?: number | null } = { id: item.id };
+
+    const currentUnitPrice = typeof item.unit_price === 'number' ? item.unit_price : null;
+    if (currentUnitPrice !== calculatedAmount) {
+      update.unit_price = calculatedAmount;
+    }
+
+    const currentCompareAt = item.compare_at_unit_price != null ? Number(item.compare_at_unit_price) : null;
+    if (isSalePrice && originalAmount != null && originalAmount !== calculatedAmount) {
+      if (currentCompareAt !== originalAmount) {
+        update.compare_at_unit_price = originalAmount;
       }
-    } else if (!isSalePrice && item.compare_at_unit_price != null) {
-      updates.push({ id: item.id, compare_at_unit_price: null });
+    } else if (!isSalePrice && currentCompareAt != null) {
+      update.compare_at_unit_price = null;
+    }
+
+    if (update.unit_price !== undefined || 'compare_at_unit_price' in update) {
+      updates.push(update);
     }
   }
 
