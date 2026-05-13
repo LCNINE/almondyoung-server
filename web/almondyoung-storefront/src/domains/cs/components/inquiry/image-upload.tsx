@@ -1,6 +1,5 @@
 "use client"
 
-import Image from "next/image"
 import { Camera, Plus, X } from "lucide-react"
 import { useRef } from "react"
 
@@ -100,12 +99,10 @@ export function ImageUpload({
                 key={image.id}
                 className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg border border-gray-200"
               >
-                <Image
+                <img
                   src={image.previewUrl}
                   alt="첨부 이미지"
-                  fill
-                  className="object-cover"
-                  sizes="80px"
+                  className="absolute inset-0 h-full w-full object-cover"
                 />
                 <button
                   type="button"
