@@ -5,7 +5,7 @@ import { RefundsService } from '../refunds/refunds.service';
 import {
   ConfirmPaymentIntentDto,
   CreatePaymentIntentDto,
-  NicepayApproveDto,
+  // NicepayApproveDto, // [비활성] NicePay 미사용
   PaymentIntentResponseDto,
   RefundByIntentDto,
   RefundByIntentResponseDto,
@@ -70,14 +70,9 @@ export class PaymentIntentsController {
     return this.toResponse(updated);
   }
 
-  @Post(':id/nicepay-approve')
-  @HttpCode(200)
-  @ApiOperation({ summary: 'Approve NicePay payment after checkout (API-key authenticated)' })
-  async nicepayApprove(@Param('id') id: string, @Body() dto: NicepayApproveDto): Promise<PaymentIntentResponseDto> {
-    await this.service.nicepayApprove(id, dto);
-    const updated = await this.service.findByIdOrThrow(id);
-    return this.toResponse(updated);
-  }
+  // [비활성] NicePay 미사용 — 엔드포인트 비활성화
+  // @Post(':id/nicepay-approve')
+  // async nicepayApprove(@Param('id') id: string, @Body() dto: NicepayApproveDto): Promise<PaymentIntentResponseDto>
 
   @Post(':id/capture')
   @HttpCode(200)
