@@ -1,12 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
-import { useForm, useWatch, type Control } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers/zod"
-import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
 import {
   Form,
   FormControl,
@@ -15,18 +9,24 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { useUser } from "@/contexts/user-context"
 import { uploadFile } from "@/lib/api/file/upload"
 import { createQuestion } from "@/lib/api/ugc/qna"
+import type { QuestionCategory } from "@/lib/types/dto/ugc"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { useState, useTransition } from "react"
+import { useForm, useWatch, type Control } from "react-hook-form"
+import { toast } from "sonner"
 import {
   inquiryFormSchema,
-  type InquiryFormValues,
   MAX_CONTENT_LENGTH,
   MIN_CONTENT_LENGTH,
+  type InquiryFormValues,
 } from "../../schemas/inquiry-schema"
 import { CategorySelect } from "./category-select"
 import { ImageUpload, type ImagePreview } from "./image-upload"
-import type { QuestionCategory } from "@/lib/types/dto/ugc"
-import { useUser } from "@/contexts/user-context"
 
 function ContentCharCounter({
   control,
@@ -88,7 +88,7 @@ export function InquiryForm({
         const formData = new FormData()
         formData.append("file", img.file)
         formData.append("contextId", "cs-inquiry")
-        formData.append("isPublic", "false")
+        formData.append("isPublic", "true")
         return uploadFile(formData)
       })
     )
@@ -122,7 +122,6 @@ export function InquiryForm({
           mediaFileIds,
         })
 
-        toast.success("문의가 등록되었습니다.")
         form.reset()
         setImages([])
         onSuccess?.()
