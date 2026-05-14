@@ -105,11 +105,11 @@ function CategoryFilter({
             aria-pressed={isActive}
             onClick={() => onChange(cat.value)}
             className={cn(
-              "shrink-0 rounded-full border px-3 py-1 text-sm transition-colors",
-              "focus-visible:ring-2 focus-visible:ring-[#f29219]/40 focus-visible:outline-none",
+              "shrink-0 rounded-full px-3.5 py-1.5 text-sm transition-colors",
+              "focus-visible:ring-2 focus-visible:ring-black/20 focus-visible:outline-none",
               isActive
-                ? "border-[#f29219] bg-[#f29219]/10 text-[#f29219]"
-                : "border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700"
+                ? "bg-black text-white"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
             )}
           >
             {cat.label}
