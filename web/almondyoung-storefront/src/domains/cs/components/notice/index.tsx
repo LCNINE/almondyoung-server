@@ -31,7 +31,9 @@ const NOTICE_CATEGORY_VALUES: NoticeCategory[] = [
 ]
 
 function isNoticeCategory(value: string | null): value is NoticeCategory {
-  return value !== null && NOTICE_CATEGORY_VALUES.includes(value as NoticeCategory)
+  return (
+    value !== null && NOTICE_CATEGORY_VALUES.includes(value as NoticeCategory)
+  )
 }
 
 function BadgeChip({
@@ -66,7 +68,7 @@ function NoticeMetaRow({
     <div className="flex flex-wrap items-center gap-2">
       {item.isPinned && (
         <Pin
-          className="h-3 w-3 shrink-0 text-gray-400"
+          className="w-3 h-3 text-gray-400 shrink-0"
           aria-label="상단 고정"
         />
       )}
@@ -92,7 +94,7 @@ function CategoryFilter({
     <div
       role="group"
       aria-label="공지사항 분류"
-      className="scrollbar-hide -mx-4 mb-4 flex gap-2 overflow-x-auto px-4"
+      className="flex gap-2 px-4 mb-4 -mx-4 overflow-x-auto scrollbar-hide"
     >
       {NOTICE_CATEGORIES.map((cat) => {
         const isActive = selected === cat.value
@@ -173,17 +175,17 @@ export function Notice() {
         <button
           type="button"
           onClick={() => setSelectedNoticeId(null)}
-          className="mb-4 flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
+          className="flex items-center gap-1 mb-4 text-sm text-gray-500 hover:text-gray-700"
         >
-          <ChevronRight className="h-4 w-4 rotate-180" aria-hidden="true" />
+          <ChevronRight className="w-4 h-4 rotate-180" aria-hidden="true" />
           <span>목록으로</span>
         </button>
-        <div className="rounded-lg border border-gray-200 p-4">
+        <div className="p-4 border border-gray-200 rounded-lg">
           <div className="mb-2">
             <NoticeMetaRow item={selectedItem} badgeSize="md" />
           </div>
           <h2 className="mb-4 text-lg font-bold">{selectedItem.title}</h2>
-          <p className="text-sm leading-relaxed whitespace-pre-line text-gray-600">
+          <p className="text-sm leading-relaxed text-gray-600 whitespace-pre-line">
             {selectedItem.content}
           </p>
         </div>
@@ -203,40 +205,40 @@ export function Notice() {
         <div
           aria-live="polite"
           aria-busy="true"
-          className="divide-y divide-gray-100 rounded-lg border border-gray-200"
+          className="border border-gray-200 divide-y divide-gray-100 rounded-lg"
         >
           {Array.from({ length: 5 }).map((_, index) => (
             <div
               key={index}
-              className="flex w-full items-center justify-between px-4 py-3"
+              className="flex items-center justify-between w-full px-4 py-3"
             >
               <div className="flex-1 space-y-2">
                 <div className="flex items-center gap-2">
-                  <Skeleton className="h-4 w-10" />
-                  <Skeleton className="h-3 w-12" />
-                  <Skeleton className="h-3 w-16" />
+                  <Skeleton className="w-10 h-4" />
+                  <Skeleton className="w-12 h-3" />
+                  <Skeleton className="w-16 h-3" />
                 </div>
-                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="w-3/4 h-4" />
               </div>
               <ChevronRight
-                className="h-4 w-4 shrink-0 text-gray-200"
+                className="w-4 h-4 text-gray-200 shrink-0"
                 aria-hidden="true"
               />
             </div>
           ))}
         </div>
       ) : hasError ? (
-        <div className="rounded-lg border border-gray-200 px-4 py-12 text-center text-sm text-gray-400">
+        <div className="px-4 py-12 text-sm text-center text-gray-400 border border-gray-200 rounded-lg">
           공지사항을 불러오지 못했습니다.
         </div>
       ) : notices.length === 0 ? (
-        <div className="rounded-lg border border-gray-200 px-4 py-12 text-center text-sm text-gray-400">
+        <div className="px-4 py-12 text-sm text-center text-gray-400 border border-gray-200 rounded-lg">
           {selectedCategory === "all"
             ? "등록된 공지사항이 없습니다."
             : "선택한 분류의 공지사항이 없습니다."}
         </div>
       ) : (
-        <div className="divide-y divide-gray-100 rounded-lg border border-gray-200">
+        <div className="border border-gray-200 divide-y divide-gray-100 rounded-lg">
           {notices.map((item) => (
             <button
               key={item.id}
@@ -244,14 +246,14 @@ export function Notice() {
               onClick={() => setSelectedNoticeId(item.id)}
               className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:text-[#f29219]"
             >
-              <div className="min-w-0 flex-1">
+              <div className="flex-1 min-w-0">
                 <div className="mb-1">
                   <NoticeMetaRow item={item} />
                 </div>
-                <p className="line-clamp-1 text-sm font-medium">{item.title}</p>
+                <p className="text-sm font-medium line-clamp-1">{item.title}</p>
               </div>
               <ChevronRight
-                className="ml-2 h-4 w-4 shrink-0 text-gray-400"
+                className="w-4 h-4 ml-2 text-gray-400 shrink-0"
                 aria-hidden="true"
               />
             </button>

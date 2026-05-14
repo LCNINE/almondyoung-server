@@ -2,11 +2,13 @@ import { CategoryDropdown } from "@/components/category/dropdown"
 import { CategoryNavigation } from "@/components/layout/nav/category-nav"
 import { SearchCombobox } from "@/components/search/search-combobox"
 import { SearchSheet } from "@/components/search/search-sheet"
+import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { listCategories } from "@/lib/api/medusa/categories"
 import { FIXED_CATEGORIES } from "@/lib/constants/categories"
 import { getInterestCategoryKeys } from "@lib/data/cookies"
 import { Logo } from "./logo"
 import { AccountMenu } from "./user-actions"
+import { UserInfo } from "./user-info"
 
 type Categories = Awaited<ReturnType<typeof listCategories>>
 
@@ -36,8 +38,26 @@ export async function MainHeader() {
   }
 
   return (
-    <header className="bg-header-background overflow-visible">
+    <header className="overflow-visible bg-header-background">
       <div className="container mx-auto max-w-[1360px] px-3.5 md:px-[40px]">
+        <div className="hidden items-center justify-end gap-3 py-1.5 text-xs text-white/80 md:flex">
+          <UserInfo />
+
+          <LocalizedClientLink
+            href="/mypage/order/list"
+            className="transition-colors hover:text-white"
+          >
+            주문배송
+          </LocalizedClientLink>
+
+          <LocalizedClientLink
+            href="/cs"
+            className="transition-colors hover:text-white"
+          >
+            고객센터
+          </LocalizedClientLink>
+        </div>
+
         {/* 상단 섹션 */}
         <div className="flex items-center justify-between gap-[clamp(0.5rem,2vw,1.75rem)] pt-2 pb-0 md:justify-normal md:py-5">
           <div>
