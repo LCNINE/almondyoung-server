@@ -4,7 +4,7 @@ import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import type { InboundReceipt, InboundReceiptLine } from '../../schema/inventory.schema';
 import { DbService } from '@app/db';
 import { and, eq, sql, gte, lte, desc, inArray } from 'drizzle-orm';
-import { InventoryService } from '../../core/services/inventory.service';
+import { SkuCatalogService } from '../../sku-catalog/services/sku-catalog.service';
 import { InventoryCommandService } from '../../core/services/inventory-command.service';
 import { LocationService } from '../../core/services/location.service';
 import { StockEventStore } from '../../core/repositories/stock-event.store';
@@ -28,7 +28,7 @@ export class InboundService {
 
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
-    private readonly inventoryService: InventoryService,
+    private readonly skuCatalogService: SkuCatalogService,
     private readonly commandService: InventoryCommandService,
     private readonly locationService: LocationService,
     private readonly eventStore: StockEventStore,
@@ -105,7 +105,7 @@ export class InboundService {
       let totalQty = 0;
       const lines: InboundReceiptLine[] = [];
       for (const item of items) {
-        const sku = await this.inventoryService.findSkuById(item.skuId, tx);
+        const sku = await this.skuCatalogService.findById(item.skuId, tx);
         if (!sku) throw new NotFoundException(`SKU ${item.skuId} not found`);
 
         const { eventId } = await this.commandService.receive(
@@ -190,7 +190,7 @@ export class InboundService {
       let totalQty = 0;
       const lines: InboundReceiptLine[] = [];
       for (const item of items) {
-        const sku = await this.inventoryService.findSkuById(item.skuId, tx);
+        const sku = await this.skuCatalogService.findById(item.skuId, tx);
         if (!sku) throw new NotFoundException(`SKU ${item.skuId} not found`);
         const { eventId } = await this.commandService.receive(
           {
@@ -268,7 +268,7 @@ export class InboundService {
         })
         .returning();
 
-      const sku = await this.inventoryService.findSkuById(skuId, tx);
+      const sku = await this.skuCatalogService.findById(skuId, tx);
       if (!sku) throw new NotFoundException(`SKU ${skuId} not found`);
 
       const { eventId } = await this.commandService.receive(
