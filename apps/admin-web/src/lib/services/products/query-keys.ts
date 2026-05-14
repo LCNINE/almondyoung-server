@@ -60,7 +60,7 @@ export const productQueryKeys = {
 
   // 배너 그룹 관련
   bannerGroups: ['banner-groups'] as const,
-  bannerGroupsList: (query: Record<string, unknown>) =>
+  bannerGroupsList: (query: object) =>
     [...productQueryKeys.bannerGroups, 'list', query] as const,
   bannerGroup: (id: string) => [...productQueryKeys.bannerGroups, id] as const,
 
@@ -72,13 +72,13 @@ export const productQueryKeys = {
 
   // 공지사항 관련
   notices: ['notices'] as const,
-  noticesList: (query: Record<string, unknown>) =>
+  noticesList: (query: object) =>
     [...productQueryKeys.notices, 'list', query] as const,
   notice: (id: string) => [...productQueryKeys.notices, id] as const,
 
   // 태그 그룹 관련
   tagGroups: ['tag-groups'] as const,
-  tagGroupsList: (query: Record<string, unknown>) =>
+  tagGroupsList: (query: object) =>
     [...productQueryKeys.tagGroups, 'list', query] as const,
   tagGroup: (id: string) => [...productQueryKeys.tagGroups, id] as const,
 
