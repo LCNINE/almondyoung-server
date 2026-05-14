@@ -4,24 +4,11 @@ import { and, eq } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { WalletSchema, billingMethods, paymentMethods } from '../schema';
 import { BillingMethod } from '../types';
-// import { TossApiClient } from '../providers/toss/toss-api.client'; // [비활성] TossBillingProvider 계약 없음
-// import { NicepayBillingApiClient, IssueBillingKeyOptions } from '../providers/nicepay/nicepay-billing-api.client'; // [비활성] NicePay 미사용
-
 @Injectable()
 export class BillingMethodService {
   private readonly logger = new Logger(BillingMethodService.name);
 
-  constructor(
-    private readonly dbService: DbService<WalletSchema>,
-    // private readonly tossApi: TossApiClient, // [비활성] TossBillingProvider 계약 없음
-    // private readonly nicepayBillingApi: NicepayBillingApiClient, // [비활성] NicePay 미사용
-  ) {}
-
-  // [비활성] TossBillingProvider — 토스페이먼츠 빌링 계약 없음. 정기결제는 CMS_BATCH만 사용
-  // async issueTossBillingKey(userId: string, authKey: string, customerKey: string): Promise<BillingMethod> { ... }
-
-  // [비활성] NicePay — 스토어프론트 미사용
-  // async issueNicepayBillingKey(userId: string, encData: string, orderId: string, options): Promise<BillingMethod> { ... }
+  constructor(private readonly dbService: DbService<WalletSchema>) {}
 
   async registerCmsBillingMethod(
     userId: string,
@@ -47,9 +34,6 @@ export class BillingMethodService {
     if (!existing || existing.status !== 'ACTIVE') {
       throw new Error('billing method not found or already inactive');
     }
-
-    // [비활성] NicePay 빌링키 만료 처리 — NicePay 미사용
-    // if (existing.providerType === 'NICEPAY_BILLING' && existing.billingKey) { ... }
 
     const updated = await this.dbService.db
       .update(billingMethods)
