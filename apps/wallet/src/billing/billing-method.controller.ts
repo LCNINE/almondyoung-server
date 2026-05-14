@@ -8,6 +8,7 @@ import {
   NotFoundException,
   Param,
   Post,
+  Put,
   Body,
   Req,
 } from '@nestjs/common';
@@ -15,13 +16,17 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { WalletJwtAuth } from '../wallet-auth.decorator';
 import { AuthenticatedRequest } from '../wallet.module';
 import { BillingMethodService } from './billing-method.service';
-import { BillingMethodResponseDto, RegisterCmsBillingMethodDto } from './dto';
+import { CmsMemberService } from '../cms/cms-member.service';
+import { BillingMethodResponseDto, CmsBankAccountDto, RegisterCmsBillingMethodDto } from './dto';
 import { BillingMethod } from '../types';
 
 @ApiTags('Billing Methods')
 @Controller('v1/billing-methods')
 export class BillingMethodController {
-  constructor(private readonly service: BillingMethodService) {}
+  constructor(
+    private readonly service: BillingMethodService,
+    private readonly cmsMemberService: CmsMemberService,
+  ) {}
 
   @Post('cms')
   @HttpCode(201)
@@ -38,6 +43,43 @@ export class BillingMethodController {
     } catch (e: any) {
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('already')) throw new BadRequestException(e.message);
+      throw new InternalServerErrorException(e.message);
+    }
+  }
+
+  @Post('cms/register')
+  @HttpCode(201)
+  @WalletJwtAuth()
+  @ApiOperation({ summary: 'CMS 은행 계좌 등록 — 효성 CMS API 호출 후 billing_method 생성' })
+  async registerCmsBankAccount(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: CmsBankAccountDto,
+  ): Promise<BillingMethodResponseDto> {
+    const userId = req.jwtUserId!;
+    try {
+      const { billingMethod } = await this.cmsMemberService.registerMember(userId, dto);
+      return this.toResponse(billingMethod);
+    } catch (e: any) {
+      const msg = (e?.message ?? '').toLowerCase();
+      if (msg.includes('already')) throw new BadRequestException(e.message);
+      throw new InternalServerErrorException(e.message);
+    }
+  }
+
+  @Put('cms/:id')
+  @WalletJwtAuth()
+  @ApiOperation({ summary: 'CMS 은행 계좌 변경 — 효성 CMS API 업데이트 후 cms_members PENDING 상태로 전환' })
+  async updateCmsBankAccount(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: CmsBankAccountDto,
+  ): Promise<void> {
+    const userId = req.jwtUserId!;
+    try {
+      await this.cmsMemberService.updateBankAccount(id, userId, dto);
+    } catch (e: any) {
+      const msg = (e?.message ?? '').toLowerCase();
+      if (msg.includes('not found') || msg.includes('access denied')) throw new NotFoundException(e.message);
       throw new InternalServerErrorException(e.message);
     }
   }

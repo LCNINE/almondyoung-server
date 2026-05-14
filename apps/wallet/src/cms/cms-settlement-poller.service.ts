@@ -1,10 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { DbService } from '@app/db';
-import { and, eq, inArray, lte, sql } from 'drizzle-orm';
+import { and, eq, inArray, lte } from 'drizzle-orm';
 import { WalletSchema, cmsWithdrawals } from '../schema';
 import { CmsWithdrawal } from '../types';
-import { CmsApiClient } from './cms-api.client';
+import { CmsApiClient, CmsPaymentData } from './cms-api.client';
+import { kstYesterdayYyyymmdd } from './cms-date.util';
 import { ChargesService } from '../charges/charges.service';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
 import { AutoCaptureService } from '../payment-intents/auto-capture.service';
@@ -35,7 +36,7 @@ export class CmsSettlementPollerService {
   @Cron('0 */30 * * * *')
   async pollPendingSettlements(): Promise<void> {
     // paymentDate의 D+1 이상 경과한 건만 — 결과 확인 가능 시점
-    const yesterday = this.getYesterdayDate();
+    const yesterday = kstYesterdayYyyymmdd();
     const pendingWithdrawals = await this.dbService.db
       .select()
       .from(cmsWithdrawals)
@@ -68,13 +69,14 @@ export class CmsSettlementPollerService {
       return;
     }
 
-    const apiStatus = result.data.status ?? '';
+    const paymentData = result.data.payment;
+    const apiStatus = paymentData.status ?? '';
 
-    if (apiStatus === '출금성공' || apiStatus === 'SUCCEEDED') {
-      await this.handleWithdrawalSuccess(withdrawal, result.data);
-    } else if (apiStatus === '출금실패' || apiStatus === 'FAILED') {
-      await this.handleWithdrawalFailure(withdrawal, result.data);
-    } else if (apiStatus === '출금중' || apiStatus === 'PROCESSING') {
+    if (apiStatus === '출금성공') {
+      await this.handleWithdrawalSuccess(withdrawal, paymentData);
+    } else if (apiStatus === '출금실패') {
+      await this.handleWithdrawalFailure(withdrawal, paymentData);
+    } else if (apiStatus === '출금중') {
       // 출금중 상태로 전환 (최초 REQUESTED에서 PROCESSING으로)
       if (withdrawal.status === 'REQUESTED') {
         await this.dbService.db
@@ -89,7 +91,7 @@ export class CmsSettlementPollerService {
 
   private async handleWithdrawalSuccess(
     withdrawal: CmsWithdrawal,
-    apiData: Record<string, unknown>,
+    apiData: CmsPaymentData,
   ): Promise<void> {
     const correlationId = `cms-poller:${withdrawal.transactionId}`;
     const now = new Date().toISOString();
@@ -99,10 +101,10 @@ export class CmsSettlementPollerService {
       .update(cmsWithdrawals)
       .set({
         status: 'SUCCEEDED',
-        resultCode: (apiData.resultCode as string) ?? null,
-        resultMessage: (apiData.resultMsg as string) ?? null,
-        actualAmount: (apiData.actualAmount as number) ?? null,
-        fee: (apiData.fee as number) ?? null,
+        resultCode: apiData.result?.code ?? null,
+        resultMessage: apiData.result?.message ?? null,
+        actualAmount: apiData.actualAmount ?? null,
+        fee: apiData.fee ?? null,
         updatedAt: new Date(),
       })
       .where(eq(cmsWithdrawals.id, withdrawal.id));
@@ -155,7 +157,7 @@ export class CmsSettlementPollerService {
 
   private async handleWithdrawalFailure(
     withdrawal: CmsWithdrawal,
-    apiData: Record<string, unknown>,
+    apiData: CmsPaymentData,
   ): Promise<void> {
     const correlationId = `cms-poller:${withdrawal.transactionId}`;
     const now = new Date().toISOString();
@@ -165,20 +167,23 @@ export class CmsSettlementPollerService {
       .update(cmsWithdrawals)
       .set({
         status: 'FAILED',
-        resultCode: (apiData.resultCode as string) ?? null,
-        resultMessage: (apiData.resultMsg as string) ?? null,
+        resultCode: apiData.result?.code ?? null,
+        resultMessage: apiData.result?.message ?? null,
         updatedAt: new Date(),
       })
       .where(eq(cmsWithdrawals.id, withdrawal.id));
 
     // 2. charge → FAILED
     await this.chargesService.updateStatus(withdrawal.chargeId, 'FAILED', {
-      errorCode: (apiData.resultCode as string) ?? 'CMS_WITHDRAWAL_FAILED',
-      errorMessage: (apiData.resultMsg as string) ?? 'CMS withdrawal failed',
+      errorCode: apiData.result?.code ?? 'CMS_WITHDRAWAL_FAILED',
+      errorMessage: apiData.result?.message ?? 'CMS withdrawal failed',
     });
 
-    // 3. intent → FAILED + 이벤트 발행
     const intent = await this.paymentIntentsService.findById(withdrawal.intentId);
+    if (!intent) {
+      this.logger.error(`Intent not found for withdrawal ${withdrawal.transactionId}: ${withdrawal.intentId}`);
+      return;
+    }
 
     await this.dbService.db.transaction(async (tx) => {
       await this.stateTransitionService.transitionIntent(
@@ -187,7 +192,7 @@ export class CmsSettlementPollerService {
         {
           correlationId,
           reasonCode: 'CMS_SETTLEMENT_FAILED',
-          reasonMessage: `CMS withdrawal ${withdrawal.transactionId} failed: ${(apiData.resultMsg as string) ?? ''}`,
+          reasonMessage: `CMS withdrawal ${withdrawal.transactionId} failed: ${apiData.result?.message ?? ''}`,
           triggeredByType: 'SYSTEM',
           outboxEvent: {
             eventType: GatewayEventType.INTENT_FAILED,
@@ -195,10 +200,10 @@ export class CmsSettlementPollerService {
             aggregateId: withdrawal.intentId,
             payload: buildPaymentIntentEventPayload({
               intentId: withdrawal.intentId,
-              userId: intent?.userId ?? '',
+              userId: intent.userId ?? '',
               status: 'FAILED',
-              payableAmount: intent?.payableAmount ?? 0,
-              currency: intent?.currency ?? 'KRW',
+              payableAmount: intent.payableAmount,
+              currency: intent.currency,
               occurredAt: now,
             }),
           },
@@ -211,18 +216,4 @@ export class CmsSettlementPollerService {
     this.logger.warn(`CMS withdrawal ${withdrawal.transactionId} failed → intent ${withdrawal.intentId} FAILED`);
   }
 
-  /**
-   * 어제 날짜를 YYYYMMDD 형식으로 반환 (KST 기준).
-   */
-  private getYesterdayDate(): string {
-    const now = new Date();
-    const kstOffset = 9 * 60 * 60 * 1000;
-    const kstNow = new Date(now.getTime() + kstOffset);
-    kstNow.setUTCDate(kstNow.getUTCDate() - 1);
-
-    const year = kstNow.getUTCFullYear();
-    const month = String(kstNow.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(kstNow.getUTCDate()).padStart(2, '0');
-    return `${year}${month}${day}`;
-  }
 }

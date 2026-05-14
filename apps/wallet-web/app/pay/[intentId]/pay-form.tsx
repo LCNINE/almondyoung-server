@@ -33,8 +33,6 @@ function getMethodIcon(type: string): ReactNode {
   switch (type) {
     case 'TOSS':
       return <Smartphone className="h-5 w-5" />;
-    case 'NICEPAY':
-      return <CreditCard className="h-5 w-5" />;
     case 'CARD':
       return <CreditCard className="h-5 w-5" />;
     case 'BALANCE':
@@ -42,20 +40,6 @@ function getMethodIcon(type: string): ReactNode {
     default:
       return <CreditCard className="h-5 w-5" />;
   }
-}
-
-function loadNicepayScript(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (typeof window !== 'undefined' && (window as { AUTHNICE?: unknown }).AUTHNICE) {
-      resolve();
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = 'https://pay.nicepay.co.kr/v1/js/';
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error('NicePay SDK 로드 실패'));
-    document.head.appendChild(script);
-  });
 }
 
 function formatAmount(amount: number, currency: string): string {
@@ -67,8 +51,6 @@ function formatAmount(amount: number, currency: string): string {
 
 export function PayForm({ intent, methods, pointsBalance, billingMethodsExist }: Props) {
   const router = useRouter();
-  // TODO: 무통장입금 UI 미구현 - 계좌번호 표시 후 활성화 예정
-  // const externalMethods = methods.filter((m) => m.type !== 'POINTS');
   const externalMethods = methods.filter((m) => m.type !== 'POINTS' && m.type !== 'BANK_TRANSFER');
   const availablePoints = pointsBalance.available;
 
@@ -79,7 +61,6 @@ export function PayForm({ intent, methods, pointsBalance, billingMethodsExist }:
   const [error, setError] = useState<string | null>(null);
 
   const isRecurring = intent.metadata?.billingMode === 'recurring';
-  const selectedMethod = externalMethods.find((m) => m.id === selectedMethodId);
   const maxPoints = Math.min(availablePoints, intent.payableAmount);
   const remainingAmount = intent.payableAmount - (usePoints ? pointsAmount : 0);
 
@@ -136,27 +117,6 @@ export function PayForm({ intent, methods, pointsBalance, billingMethodsExist }:
         return; // requestPayment redirects
       }
 
-      if (result.status === 'REQUIRES_ACTION' && result.nextAction?.type === 'NICEPAY_CHECKOUT') {
-        const na = result.nextAction;
-        await loadNicepayScript();
-        const returnUrl = `${window.location.origin}/api/nicepay-return?intentId=${intent.id}`;
-        (window as { AUTHNICE?: { requestPay: (opts: Record<string, unknown>) => void } }).AUTHNICE?.requestPay({
-          clientId: na.clientKey as string,
-          method: 'card',
-          orderId: na.orderId as string,
-          amount: na.amount as number,
-          goodsName: na.goodsName as string,
-          returnUrl,
-          fnError: (result: Record<string, unknown>) => {
-            setError((result?.errorMsg as string) ?? '결제 요청 중 오류가 발생했습니다.');
-            setLoading(false);
-          },
-          ...(na.buyerName ? { buyerName: na.buyerName as string } : {}),
-          ...(na.buyerEmail ? { buyerEmail: na.buyerEmail as string } : {}),
-        });
-        return; // requestPay redirects
-      }
-
       if (result.returnUrl) {
         const successUrl = buildReturnUrl(result.returnUrl, {
           payment_intent_id: intent.id,
@@ -164,7 +124,6 @@ export function PayForm({ intent, methods, pointsBalance, billingMethodsExist }:
         });
         if (isRecurring && !billingMethodsExist) {
           const params = new URLSearchParams({ returnUrl: successUrl });
-          if (remaining > 0 && selectedMethod?.type) params.set('provider', selectedMethod.type);
           router.replace(`/pay/${intent.id}/billing-setup?${params}`);
         } else {
           router.replace(successUrl);

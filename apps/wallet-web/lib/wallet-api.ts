@@ -149,6 +149,47 @@ export async function approveToss(
   return res.json();
 }
 
+export interface CmsBankAccountPayload {
+  paymentCompany: string;
+  payerName: string;
+  payerNumber: string;
+  paymentNumber: string;
+}
+
+export async function registerCmsBankAccount(
+  dto: CmsBankAccountPayload,
+  cookieHeader: string,
+): Promise<BillingMethod> {
+  const res = await fetch(`${BASE_URL}/v1/billing-methods/cms/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: cookieHeader, 'Idempotency-Key': crypto.randomUUID() },
+    body: JSON.stringify(dto),
+    cache: 'no-store',
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.message ?? `CMS 빌링 등록 실패 (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function updateCmsBankAccount(
+  billingMethodId: string,
+  dto: CmsBankAccountPayload,
+  cookieHeader: string,
+): Promise<void> {
+  const res = await fetch(`${BASE_URL}/v1/billing-methods/cms/${billingMethodId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Cookie: cookieHeader, 'Idempotency-Key': crypto.randomUUID() },
+    body: JSON.stringify(dto),
+    cache: 'no-store',
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.message ?? `CMS 빌링 수단 변경 실패 (${res.status})`);
+  }
+}
+
 export async function approveNicepay(
   intentId: string,
   tid: string,
@@ -171,19 +212,6 @@ export async function approveNicepay(
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.message ?? `NicePay approve failed (${res.status})`);
   }
-  return res.json();
-}
-
-export async function getBillingMethods(cookieHeader?: string): Promise<BillingMethod[]> {
-  const headers: Record<string, string> = {};
-  if (cookieHeader) headers['Cookie'] = cookieHeader;
-
-  const res = await fetch(`${BASE_URL}/v1/billing-methods`, {
-    headers,
-    credentials: cookieHeader ? undefined : 'include',
-    cache: 'no-store',
-  });
-  if (!res.ok) return [];
   return res.json();
 }
 
@@ -227,6 +255,19 @@ export async function issueTossBillingKey(
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.message ?? `Toss billing key issuance failed (${res.status})`);
   }
+  return res.json();
+}
+
+export async function getBillingMethods(cookieHeader?: string): Promise<BillingMethod[]> {
+  const headers: Record<string, string> = {};
+  if (cookieHeader) headers['Cookie'] = cookieHeader;
+
+  const res = await fetch(`${BASE_URL}/v1/billing-methods`, {
+    headers,
+    credentials: cookieHeader ? undefined : 'include',
+    cache: 'no-store',
+  });
+  if (!res.ok) return [];
   return res.json();
 }
 

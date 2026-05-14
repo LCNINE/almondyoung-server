@@ -40,16 +40,17 @@ export class CmsAgreementService {
       throw new Error(`CMS agreement upload failed: ${result.error.code} ${result.error.message}`);
     }
 
+    const agreementFile = result.data.agreementFile;
     const rows = await this.dbService.db
       .insert(cmsAgreements)
       .values({
         cmsMemberId,
-        agreementKey: result.data.agreementKey ?? null,
+        agreementKey: agreementFile.agreementKey ?? null,
         fileType,
         fileExtension,
-        status: '등록',
-        resultCode: result.data.resultCode,
-        resultMessage: result.data.resultMsg,
+        status: agreementFile.registerStatus ?? '등록',
+        resultCode: agreementFile.result?.code ?? null,
+        resultMessage: agreementFile.result?.message ?? null,
       })
       .returning();
 
@@ -91,17 +92,16 @@ export class CmsAgreementService {
       return existing;
     }
 
-    const newStatus = result.data.status ?? existing.status;
+    const agreementFile = result.data.agreementFile;
+    const newStatus = agreementFile.registerStatus ?? existing.status;
+    const resultCode = agreementFile.result?.code ?? null;
+    const resultMessage = agreementFile.result?.message ?? null;
+
     await this.dbService.db
       .update(cmsAgreements)
-      .set({
-        status: newStatus,
-        resultCode: result.data.resultCode,
-        resultMessage: result.data.resultMsg,
-        updatedAt: new Date(),
-      })
+      .set({ status: newStatus, resultCode, resultMessage, updatedAt: new Date() })
       .where(eq(cmsAgreements.agreementKey, agreementKey));
 
-    return { ...existing, status: newStatus, resultCode: result.data.resultCode, resultMessage: result.data.resultMsg };
+    return { ...existing, status: newStatus, resultCode, resultMessage };
   }
 }

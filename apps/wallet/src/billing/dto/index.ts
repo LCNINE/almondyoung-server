@@ -72,6 +72,32 @@ export class RegisterCmsBillingMethodDto {
   displayName?: string;
 }
 
+export class CmsBankAccountDto {
+  @ApiProperty({ description: '은행코드 3자리 (예: 004=국민, 088=신한)', example: '004' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(3)
+  paymentCompany: string;
+
+  @ApiProperty({ description: '예금주명', maxLength: 15 })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(15)
+  payerName: string;
+
+  @ApiProperty({ description: '생년월일 6자리(YYMMDD) 또는 사업자번호 10자리', maxLength: 10 })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(10)
+  payerNumber: string;
+
+  @ApiProperty({ description: '계좌번호 (숫자만)', maxLength: 16 })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(16)
+  paymentNumber: string;
+}
+
 export class BillingMethodResponseDto {
   @ApiProperty()
   id: string;

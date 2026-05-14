@@ -17,6 +17,7 @@ import { WalletSchema, cmsWithdrawals } from '../schema';
 import { CmsApiClient } from './cms-api.client';
 import { CmsMemberService } from './cms-member.service';
 import { CmsAgreementService } from './cms-agreement.service';
+import { nextCmsPaymentDate } from './cms-date.util';
 
 @Injectable()
 export class CmsBatchProvider implements PaymentProvider {
@@ -93,18 +94,17 @@ export class CmsBatchProvider implements PaymentProvider {
       };
     }
 
-    // 4. 출금일 계산 (다음 영업일 — 마감시간 D-1 17:00 고려)
-    const paymentDate = this.calculateNextPaymentDate();
+    const paymentDate = nextCmsPaymentDate();
 
     // 5. transactionId 생성
     const transactionId = this.generateTransactionId(params.chargeId);
 
     // 6. 효성 출금신청 API 호출
     const result = await this.cmsApi.requestWithdrawal({
+      transactionId,
       memberId: member.cmsMemberId,
       paymentDate,
-      amount: params.amount,
-      transactionId,
+      callAmount: params.amount,
     });
 
     if (!result.ok) {
@@ -198,58 +198,19 @@ export class CmsBatchProvider implements PaymentProvider {
       return { status: 'PENDING' };
     }
 
-    const apiStatus = result.data.status ?? '';
-    switch (apiStatus) {
+    const payment = result.data.payment;
+    switch (payment.status ?? '') {
       case '출금성공':
-      case 'SUCCEEDED':
-        return {
-          status: 'SUCCEEDED',
-          raw: result.data as unknown as Record<string, unknown>,
-        };
+        return { status: 'SUCCEEDED', raw: payment as unknown as Record<string, unknown> };
       case '출금실패':
-      case 'FAILED':
-        return {
-          status: 'FAILED',
-          raw: result.data as unknown as Record<string, unknown>,
-        };
+        return { status: 'FAILED', raw: payment as unknown as Record<string, unknown> };
       default:
         // 출금중, 출금대기 등
-        return {
-          status: 'PENDING',
-          raw: result.data as unknown as Record<string, unknown>,
-        };
+        return { status: 'PENDING', raw: payment as unknown as Record<string, unknown> };
     }
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
-
-  /**
-   * 다음 출금일 계산.
-   * 마감시간 D-1 17:00 기준 — 현재 시각이 17:00 이전이면 내일, 이후이면 모레.
-   * 주말/공휴일은 건너뛴다 (공휴일은 단순화를 위해 주말만 처리).
-   */
-  private calculateNextPaymentDate(): string {
-    const now = new Date();
-    const kstOffset = 9 * 60 * 60 * 1000;
-    const kstNow = new Date(now.getTime() + kstOffset);
-
-    const kstHour = kstNow.getUTCHours();
-    // 17:00 이전이면 다음 영업일, 이후이면 그 다음 영업일
-    let daysToAdd = kstHour < 17 ? 1 : 2;
-
-    const target = new Date(kstNow);
-    target.setUTCDate(target.getUTCDate() + daysToAdd);
-
-    // 주말 건너뛰기
-    while (target.getUTCDay() === 0 || target.getUTCDay() === 6) {
-      target.setUTCDate(target.getUTCDate() + 1);
-    }
-
-    const year = target.getUTCFullYear();
-    const month = String(target.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(target.getUTCDate()).padStart(2, '0');
-    return `${year}${month}${day}`;
-  }
 
   private generateTransactionId(chargeId: string): string {
     // chargeId(UUID)에서 하이픈 제거 후 앞 20자 + 타임스탬프 뒤 10자 = 최대 30자
