@@ -2,38 +2,61 @@ import { Injectable, Logger } from '@nestjs/common';
 
 // ─── Response types ──────────────────────────────────────────────────────────
 
-export interface CmsMemberResponse {
-  resultCode: string;
-  resultMsg: string;
-  memberId?: string;
-  memberNm?: string;
+interface CmsMemberData {
   status?: string;
+  memberId?: string;
+  memberName?: string;
+  paymentCompany?: string;
+  paymentNumber?: string;
+  payerName?: string;
+  result?: { flag?: string | null; code?: string | null; message?: string | null };
+  links?: Array<{ rel: string; href: string }>;
   [key: string]: unknown;
+}
+
+interface CmsAgreementData {
+  registerStatus?: string;
+  agreementKey?: string;
+  memberId?: string;
+  memberName?: string | null;
+  result?: { code?: string | null; message?: string | null };
+  [key: string]: unknown;
+}
+
+export interface CmsPaymentData {
+  status?: string;
+  transactionId?: string;
+  memberId?: string;
+  memberName?: string;
+  paymentDate?: string;
+  callAmount?: number;
+  actualAmount?: number;
+  fee?: number;
+  result?: { flag?: string | null; code?: string | null; message?: string | null };
+  links?: Array<{ rel: string; href: string }>;
+}
+
+export interface CmsMemberResponse {
+  member: CmsMemberData;
 }
 
 export interface CmsAgreementResponse {
-  resultCode: string;
-  resultMsg: string;
-  agreementKey?: string;
-  status?: string;
-  [key: string]: unknown;
+  agreementFile: CmsAgreementData;
 }
 
 export interface CmsWithdrawalResponse {
-  resultCode: string;
-  resultMsg: string;
-  transactionId?: string;
-  status?: string;
-  actualAmount?: number;
-  fee?: number;
-  [key: string]: unknown;
+  payment: CmsPaymentData;
 }
 
 export interface CmsWithdrawalSearchResponse {
-  resultCode: string;
-  resultMsg: string;
-  totalCount: number;
-  list: CmsWithdrawalResponse[];
+  totalCnt: number;
+  payments: CmsPaymentData[];
+  page?: {
+    pageNumber: number;
+    pageSize: number;
+    totalPages: number;
+    totalCount: number;
+  };
 }
 
 export interface CmsApiError {
@@ -48,37 +71,43 @@ export type CmsApiResult<T> =
 // ─── Request DTOs ────────────────────────────────────────────────────────────
 
 export interface CreateCmsMemberDto {
+  memberId: string;
+  memberName: string;
+  phone?: string;
+  paymentKind: 'CMS';
   paymentCompany: string;
+  paymentNumber: string;
   payerName: string;
   payerNumber: string;
-  bankAccount: string;
 }
 
 export interface UpdateCmsMemberDto {
+  paymentKind: 'CMS';
   paymentCompany?: string;
+  paymentNumber?: string;
   payerName?: string;
   payerNumber?: string;
-  bankAccount?: string;
 }
 
 export interface RequestCmsWithdrawalDto {
+  transactionId: string;
   memberId: string;
   paymentDate: string;
-  amount: number;
-  transactionId: string;
+  callAmount: number;
 }
 
 export interface UpdateCmsWithdrawalDto {
-  paymentDate?: string;
-  amount?: number;
+  paymentDate: string;
+  callAmount: number;
 }
 
 export interface SearchCmsWithdrawalsParams {
-  startDate: string;
-  endDate: string;
-  status?: string;
-  page?: number;
-  size?: number;
+  fromPaymentDate?: string;
+  toPaymentDate?: string;
+  memberId?: string;
+  memberName?: string;
+  pageSize?: number;
+  pageNumber?: number;
 }
 
 @Injectable()
@@ -108,43 +137,28 @@ export class CmsApiClient {
   // ─── 회원관리 ──────────────────────────────────────────────────────────────
 
   async createMember(dto: CreateCmsMemberDto): Promise<CmsApiResult<CmsMemberResponse>> {
-    return this.post<CmsMemberResponse>(`${this.apiUrl}/v1/cms/members`, {
-      swKey: this.swKey,
-      custKey: this.custKey,
-      ...dto,
-    });
+    return this.post<CmsMemberResponse>(`${this.apiUrl}/v1/members`, dto);
   }
 
   async updateMember(memberId: string, dto: UpdateCmsMemberDto): Promise<CmsApiResult<CmsMemberResponse>> {
-    return this.put<CmsMemberResponse>(`${this.apiUrl}/v1/cms/members/${memberId}`, {
-      swKey: this.swKey,
-      custKey: this.custKey,
-      ...dto,
-    });
+    return this.put<CmsMemberResponse>(`${this.apiUrl}/v1/members/${memberId}`, dto);
   }
 
-  async deleteMember(memberId: string): Promise<CmsApiResult<CmsMemberResponse>> {
-    return this.del<CmsMemberResponse>(`${this.apiUrl}/v1/cms/members/${memberId}`, {
-      swKey: this.swKey,
-      custKey: this.custKey,
-    });
+  async deleteMember(memberId: string): Promise<CmsApiResult<void>> {
+    return this.del<void>(`${this.apiUrl}/v1/members/${memberId}`);
   }
 
   async getMember(memberId: string): Promise<CmsApiResult<CmsMemberResponse>> {
-    return this.get<CmsMemberResponse>(`${this.apiUrl}/v1/cms/members/${memberId}`, {
-      swKey: this.swKey,
-      custKey: this.custKey,
-    });
+    return this.get<CmsMemberResponse>(`${this.apiUrl}/v1/members/${memberId}`);
   }
 
   // ─── 동의자료관리 ──────────────────────────────────────────────────────────
 
   async uploadAgreement(memberId: string, file: Buffer, fileType: string, fileExtension: string): Promise<CmsApiResult<CmsAgreementResponse>> {
-    const url = `${this.addUrl}/v1/cms/agreements`;
+    const url = `${this.addUrl}/v1/custs/${this.custId}/agreements`;
     this.logger.debug(`POST ${url} (multipart)`);
 
     const formData = new FormData();
-    formData.append('custId', this.custId);
     formData.append('memberId', memberId);
     formData.append('fileType', fileType);
     formData.append('fileExtension', fileExtension);
@@ -160,62 +174,44 @@ export class CmsApiClient {
   }
 
   async getAgreement(agreementKey: string): Promise<CmsApiResult<CmsAgreementResponse>> {
-    return this.get<CmsAgreementResponse>(`${this.addUrl}/v1/cms/agreements/${agreementKey}`, {
-      custId: this.custId,
-    });
+    return this.get<CmsAgreementResponse>(`${this.addUrl}/v1/custs/${this.custId}/agreements/${agreementKey}`);
   }
 
   // ─── 출금관리 ──────────────────────────────────────────────────────────────
 
   async requestWithdrawal(dto: RequestCmsWithdrawalDto): Promise<CmsApiResult<CmsWithdrawalResponse>> {
-    return this.post<CmsWithdrawalResponse>(`${this.apiUrl}/v1/cms/withdrawals`, {
-      swKey: this.swKey,
-      custKey: this.custKey,
-      ...dto,
-    });
+    return this.post<CmsWithdrawalResponse>(`${this.apiUrl}/v1/payments/cms`, dto);
   }
 
   async updateWithdrawal(transactionId: string, dto: UpdateCmsWithdrawalDto): Promise<CmsApiResult<CmsWithdrawalResponse>> {
-    return this.put<CmsWithdrawalResponse>(`${this.apiUrl}/v1/cms/withdrawals/${transactionId}`, {
-      swKey: this.swKey,
-      custKey: this.custKey,
-      ...dto,
-    });
+    return this.put<CmsWithdrawalResponse>(`${this.apiUrl}/v1/payments/cms/${transactionId}`, dto);
   }
 
-  async deleteWithdrawal(transactionId: string): Promise<CmsApiResult<CmsWithdrawalResponse>> {
-    return this.del<CmsWithdrawalResponse>(`${this.apiUrl}/v1/cms/withdrawals/${transactionId}`, {
-      swKey: this.swKey,
-      custKey: this.custKey,
-    });
+  async deleteWithdrawal(transactionId: string): Promise<CmsApiResult<void>> {
+    return this.del<void>(`${this.apiUrl}/v1/payments/cms/${transactionId}`);
   }
 
   async getWithdrawal(transactionId: string): Promise<CmsApiResult<CmsWithdrawalResponse>> {
-    return this.get<CmsWithdrawalResponse>(`${this.apiUrl}/v1/cms/withdrawals/${transactionId}`, {
-      swKey: this.swKey,
-      custKey: this.custKey,
-    });
+    return this.get<CmsWithdrawalResponse>(`${this.apiUrl}/v1/payments/cms/${transactionId}`);
   }
 
   async searchWithdrawals(params: SearchCmsWithdrawalsParams): Promise<CmsApiResult<CmsWithdrawalSearchResponse>> {
-    const query = new URLSearchParams({
-      swKey: this.swKey,
-      custKey: this.custKey,
-      startDate: params.startDate,
-      endDate: params.endDate,
-      ...(params.status ? { status: params.status } : {}),
-      ...(params.page !== undefined ? { page: String(params.page) } : {}),
-      ...(params.size !== undefined ? { size: String(params.size) } : {}),
-    });
-    return this.get<CmsWithdrawalSearchResponse>(`${this.apiUrl}/v1/cms/withdrawals?${query.toString()}`);
+    const query = new URLSearchParams();
+    if (params.fromPaymentDate) query.set('fromPaymentDate', params.fromPaymentDate);
+    if (params.toPaymentDate) query.set('toPaymentDate', params.toPaymentDate);
+    if (params.memberId) query.set('memberId', params.memberId);
+    if (params.memberName) query.set('memberName', params.memberName);
+    if (params.pageSize !== undefined) query.set('pageSize', String(params.pageSize));
+    if (params.pageNumber !== undefined) query.set('pageNumber', String(params.pageNumber));
+
+    return this.get<CmsWithdrawalSearchResponse>(`${this.apiUrl}/v1/payments/cms?${query.toString()}`);
   }
 
   // ─── HTTP helpers ──────────────────────────────────────────────────────────
 
   private authHeaders(): Record<string, string> {
     return {
-      'X-SW-KEY': this.swKey,
-      'X-CUST-KEY': this.custKey,
+      Authorization: `VAN ${this.swKey}:${this.custKey}`,
     };
   }
 
@@ -226,7 +222,7 @@ export class CmsApiClient {
     };
   }
 
-  private async post<T>(url: string, body: Record<string, unknown>): Promise<CmsApiResult<T>> {
+  private async post<T>(url: string, body: object): Promise<CmsApiResult<T>> {
     this.logger.debug(`POST ${url}`);
     const res = await fetch(url, {
       method: 'POST',
@@ -236,7 +232,7 @@ export class CmsApiClient {
     return this.handleResponse<T>(res);
   }
 
-  private async put<T>(url: string, body: Record<string, unknown>): Promise<CmsApiResult<T>> {
+  private async put<T>(url: string, body: object): Promise<CmsApiResult<T>> {
     this.logger.debug(`PUT ${url}`);
     const res = await fetch(url, {
       method: 'PUT',
@@ -246,24 +242,18 @@ export class CmsApiClient {
     return this.handleResponse<T>(res);
   }
 
-  private async del<T>(url: string, body?: Record<string, unknown>): Promise<CmsApiResult<T>> {
+  private async del<T>(url: string): Promise<CmsApiResult<T>> {
     this.logger.debug(`DELETE ${url}`);
     const res = await fetch(url, {
       method: 'DELETE',
-      headers: this.jsonHeaders(),
-      body: body ? JSON.stringify(body) : undefined,
+      headers: this.authHeaders(),
     });
     return this.handleResponse<T>(res);
   }
 
-  private async get<T>(url: string, params?: Record<string, string>): Promise<CmsApiResult<T>> {
-    let fullUrl = url;
-    if (params && !url.includes('?')) {
-      const query = new URLSearchParams(params);
-      fullUrl = `${url}?${query.toString()}`;
-    }
-    this.logger.debug(`GET ${fullUrl}`);
-    const res = await fetch(fullUrl, {
+  private async get<T>(url: string): Promise<CmsApiResult<T>> {
+    this.logger.debug(`GET ${url}`);
+    const res = await fetch(url, {
       method: 'GET',
       headers: this.authHeaders(),
     });
@@ -271,15 +261,19 @@ export class CmsApiClient {
   }
 
   private async handleResponse<T>(res: Response): Promise<CmsApiResult<T>> {
-    const body = await res.json().catch(() => ({ resultCode: 'UNKNOWN', resultMsg: 'Failed to parse response' }));
+    if (res.status === 204) {
+      return { ok: true, data: undefined as unknown as T };
+    }
 
-    if (res.ok && body.resultCode === '0000') {
+    const body = await res.json().catch(() => null);
+
+    if (res.ok) {
       return { ok: true, data: body as T };
     }
 
     const error: CmsApiError = {
-      code: body.resultCode ?? 'UNKNOWN',
-      message: body.resultMsg ?? 'Unknown error',
+      code: String(res.status),
+      message: body?.error?.message ?? body?.error?.developerMessage ?? 'Unknown error',
     };
     this.logger.error(`CMS API error: ${res.status} ${JSON.stringify(error)}`);
     return { ok: false, error, statusCode: res.status };
