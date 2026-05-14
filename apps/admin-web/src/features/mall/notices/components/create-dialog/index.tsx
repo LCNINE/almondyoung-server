@@ -1,12 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { type ChangeEvent, useState } from 'react';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,15 +39,25 @@ const EMPTY: CreateNoticeDto = {
 };
 
 const NONE_VALUE = '__none__';
+const switchClassName =
+  'h-6 w-11 border border-border data-[state=unchecked]:bg-muted';
 
 export function NoticeCreateDialog({ open, onOpenChange }: Props) {
   const [form, setForm] = useState<CreateNoticeDto>(EMPTY);
   const createMutation = useCreateNotice();
+  const titleLength = form.title?.length ?? 0;
+  const contentLength = form.content?.length ?? 0;
+  const canSubmit =
+    Boolean(form.title?.trim() && form.content?.trim()) &&
+    !createMutation.isPending;
 
   const set =
     <K extends keyof CreateNoticeDto>(key: K) =>
-    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-      setForm((prev) => ({ ...prev, [key]: e.target.value || undefined }) as CreateNoticeDto);
+    (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+      setForm(
+        (prev) =>
+          ({ ...prev, [key]: e.target.value || undefined }) as CreateNoticeDto
+      );
 
   const handleClose = () => {
     setForm(EMPTY);
@@ -73,128 +84,163 @@ export function NoticeCreateDialog({ open, onOpenChange }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
+      <DialogContent className="max-h-[90vh] w-[calc(100vw-2rem)] gap-0 overflow-hidden p-0 sm:max-w-[720px]">
+        <DialogHeader className="border-b px-6 py-5">
           <DialogTitle>공지사항 등록</DialogTitle>
+          <DialogDescription>
+            고객에게 노출되는 쇼핑몰 공지를 작성합니다.
+          </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4 py-2">
-          <div className="grid gap-1.5">
-            <Label htmlFor="title">
-              제목 <span className="text-destructive">*</span>
-            </Label>
+        <div className="grid max-h-[calc(90vh-132px)] gap-5 overflow-y-auto px-6 py-5">
+          <div className="grid gap-2">
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="title">
+                제목 <span className="text-destructive">*</span>
+              </Label>
+              <span className="text-xs text-muted-foreground">
+                {titleLength}자
+              </span>
+            </div>
             <Input
               id="title"
-              placeholder="예: [공지] 2024년 설 연휴 배송 안내"
+              className="h-11"
+              placeholder="예: 설 연휴 배송 일정 안내"
               value={form.title}
               onChange={set('title')}
             />
           </div>
 
-          <div className="grid gap-1.5">
-            <Label htmlFor="content">
-              본문 <span className="text-destructive">*</span>
-            </Label>
+          <div className="grid gap-2">
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="content">
+                본문 <span className="text-destructive">*</span>
+              </Label>
+              <span className="text-xs text-muted-foreground">
+                {contentLength}자
+              </span>
+            </div>
             <Textarea
               id="content"
-              rows={8}
-              placeholder="공지 본문 (HTML/마크다운 가능)"
+              className="min-h-[220px] resize-none leading-6"
+              placeholder="공지 본문을 입력하세요."
               value={form.content}
               onChange={set('content')}
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="grid gap-1.5">
-              <Label>분류</Label>
-              <Select
-                value={form.category ?? 'general'}
-                onValueChange={(v) => setForm((prev) => ({ ...prev, category: v }))}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="general">일반</SelectItem>
-                  <SelectItem value="event">이벤트</SelectItem>
-                  <SelectItem value="delivery">배송</SelectItem>
-                  <SelectItem value="service">서비스</SelectItem>
-                </SelectContent>
-              </Select>
+          <div className="grid gap-4 rounded-md border bg-muted/20 p-4">
+            <h3 className="text-sm font-medium">노출 설정</h3>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label>분류</Label>
+                <Select
+                  value={form.category ?? 'general'}
+                  onValueChange={(v) =>
+                    setForm((prev) => ({ ...prev, category: v }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="general">일반</SelectItem>
+                    <SelectItem value="event">이벤트</SelectItem>
+                    <SelectItem value="delivery">배송</SelectItem>
+                    <SelectItem value="service">서비스</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid gap-2">
+                <Label>뱃지</Label>
+                <Select
+                  value={form.badge ?? NONE_VALUE}
+                  onValueChange={(v) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      badge: v === NONE_VALUE ? undefined : v,
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="없음" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NONE_VALUE}>없음</SelectItem>
+                    <SelectItem value="important">중요</SelectItem>
+                    <SelectItem value="urgent">긴급</SelectItem>
+                    <SelectItem value="new">신규</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
-            <div className="grid gap-1.5">
-              <Label>뱃지</Label>
-              <Select
-                value={form.badge ?? NONE_VALUE}
-                onValueChange={(v) =>
-                  setForm((prev) => ({ ...prev, badge: v === NONE_VALUE ? undefined : v }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="없음" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NONE_VALUE}>없음</SelectItem>
-                  <SelectItem value="important">중요</SelectItem>
-                  <SelectItem value="urgent">긴급</SelectItem>
-                  <SelectItem value="new">신규</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="flex items-center justify-between gap-4 rounded-md border bg-background px-3 py-3">
+                <Label htmlFor="isActive" className="cursor-pointer">
+                  공개 게시
+                </Label>
+                <Switch
+                  id="isActive"
+                  className={switchClassName}
+                  checked={form.isActive ?? true}
+                  onCheckedChange={(checked) =>
+                    setForm((prev) => ({ ...prev, isActive: checked }))
+                  }
+                />
+              </div>
+              <div className="flex items-center justify-between gap-4 rounded-md border bg-background px-3 py-3">
+                <Label htmlFor="isPinned" className="cursor-pointer">
+                  상단 고정
+                </Label>
+                <Switch
+                  id="isPinned"
+                  className={switchClassName}
+                  checked={form.isPinned ?? false}
+                  onCheckedChange={(checked) =>
+                    setForm((prev) => ({ ...prev, isPinned: checked }))
+                  }
+                />
+              </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="grid gap-1.5">
-              <Label htmlFor="displayStartAt">게시 시작</Label>
-              <Input
-                id="displayStartAt"
-                type="datetime-local"
-                value={form.displayStartAt ?? ''}
-                onChange={set('displayStartAt')}
-              />
+          <div className="grid gap-4 rounded-md border bg-muted/20 p-4">
+            <h3 className="text-sm font-medium">게시 기간</h3>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="displayStartAt">게시 시작</Label>
+                <Input
+                  id="displayStartAt"
+                  type="datetime-local"
+                  value={form.displayStartAt ?? ''}
+                  onChange={set('displayStartAt')}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="displayEndAt">게시 종료</Label>
+                <Input
+                  id="displayEndAt"
+                  type="datetime-local"
+                  value={form.displayEndAt ?? ''}
+                  onChange={set('displayEndAt')}
+                />
+              </div>
             </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="displayEndAt">게시 종료</Label>
-              <Input
-                id="displayEndAt"
-                type="datetime-local"
-                value={form.displayEndAt ?? ''}
-                onChange={set('displayEndAt')}
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-3">
-              <Switch
-                id="isPinned"
-                checked={form.isPinned ?? false}
-                onCheckedChange={(checked) =>
-                  setForm((prev) => ({ ...prev, isPinned: checked }))
-                }
-              />
-              <Label htmlFor="isPinned">상단 고정</Label>
-            </div>
-            <div className="flex items-center gap-3">
-              <Switch
-                id="isActive"
-                checked={form.isActive ?? true}
-                onCheckedChange={(checked) =>
-                  setForm((prev) => ({ ...prev, isActive: checked }))
-                }
-              />
-              <Label htmlFor="isActive">활성</Label>
-            </div>
+            <p className="text-xs text-muted-foreground">
+              시작/종료를 비워두면 항상 게시됩니다.
+            </p>
           </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="border-t bg-background px-6 py-4">
           <Button variant="outline" onClick={handleClose}>
             취소
           </Button>
-          <Button onClick={handleSubmit} disabled={createMutation.isPending}>
-            등록
+          <Button onClick={handleSubmit} disabled={!canSubmit}>
+            공지 등록
           </Button>
         </DialogFooter>
       </DialogContent>

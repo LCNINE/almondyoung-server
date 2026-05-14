@@ -1,8 +1,8 @@
+import { MasterRoleGuard, Public } from '@app/authorization';
 import { Body, Controller, Delete, Get, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { MasterRoleGuard, Public } from '@app/authorization';
+import { CreateNoticeDto, NoticeListQueryDto, NoticeResponseDto, UpdateNoticeDto } from './dto';
 import { NoticesService } from './notices.service';
-import { CreateNoticeDto, NoticeResponseDto, UpdateNoticeDto } from './dto';
 
 @ApiTags('Notices')
 @Controller('notices')
@@ -24,21 +24,14 @@ export class NoticesController {
   @ApiBearerAuth()
   @ApiOperation({
     summary: '공지사항 목록 조회 (관리자)',
-    description: '관리자용 목록 — 카테고리 필터링 가능, 비활성 포함 옵션.',
-  })
-  @ApiQuery({ name: 'category', required: false, description: '공지 분류' })
-  @ApiQuery({
-    name: 'includeInactive',
-    required: false,
-    type: Boolean,
-    description: '비활성 공지 포함 여부 (기본: false)',
+    description: '관리자용 목록 — 카테고리/공개여부/상단고정/뱃지/제목 필터링 가능.',
   })
   @ApiResponse({ status: 200, description: '공지사항 목록 조회 성공', type: [NoticeResponseDto] })
-  async listNotices(
-    @Query('category') category?: string,
-    @Query('includeInactive') includeInactive?: boolean,
-  ): Promise<NoticeResponseDto[]> {
-    return this.noticesService.listNotices({ category, includeInactive: includeInactive === true });
+  async listNotices(@Query() query: NoticeListQueryDto): Promise<NoticeResponseDto[]> {
+    return this.noticesService.listNotices({
+      ...query,
+      includeInactive: query.includeInactive ?? false,
+    });
   }
 
   @Public()

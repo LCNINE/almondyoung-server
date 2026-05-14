@@ -88,7 +88,7 @@ export function DataTableFilter({ filters, prefix }: DataTableFilterProps) {
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="h-7 gap-1 text-xs">
+            <Button variant="outline" size="sm" className="gap-1 text-xs h-7">
               <ListFilter className="h-3.5 w-3.5" />
               필터 추가
             </Button>
@@ -111,7 +111,7 @@ export function DataTableFilter({ filters, prefix }: DataTableFilterProps) {
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 text-xs text-muted-foreground"
+            className="text-xs h-7 text-muted-foreground"
             onClick={removeAllFilters}
           >
             모두 지우기

@@ -6,6 +6,7 @@ import { DataTable } from '@/components/data-table';
 import { useDataTable } from '@/hooks/use-data-table';
 import { useNoticesTableColumns } from '@/hooks/table/columns/use-notices-table-columns';
 import { useNoticesTableFilters } from '@/hooks/table/filters/use-notices-table-filters';
+import { useNoticesTableQuery } from '@/hooks/table/query/use-notices-table-query';
 import { useNotices, useDeleteNotice } from '@/lib/services/products';
 import type { NoticeDto } from '@/lib/types/dto/products';
 import { Button } from '@/components/ui/button';
@@ -17,7 +18,8 @@ const PAGE_SIZE = 20;
 
 export function NoticesTable() {
   const router = useRouter();
-  const { data, isLoading, isFetching } = useNotices({ includeInactive: true });
+  const { searchParams } = useNoticesTableQuery();
+  const { data, isLoading, isFetching } = useNotices(searchParams);
   const filters = useNoticesTableFilters();
   const deleteMutation = useDeleteNotice();
 

@@ -26,6 +26,7 @@ import type {
   ChannelProductsResponseDto,
   MasterChannelProductsResponseDto,
   MergedChannelProductDto,
+  NoticeListQuery,
 } from '@/lib/types/dto/products';
 import type { BatchVariantInfo } from '@/lib/api/domains/products/variants.client';
 
@@ -484,7 +485,7 @@ export const useApprovalHistory = (masterId: string) => {
 
 // ===== 공지사항 관련 쿼리 =====
 
-export const useNotices = (query?: { category?: string; includeInactive?: boolean }) => {
+export const useNotices = (query?: NoticeListQuery) => {
   return useQuery({
     queryKey: productQueryKeys.noticesList(query ?? {}),
     queryFn: () => products.notices.list(query),

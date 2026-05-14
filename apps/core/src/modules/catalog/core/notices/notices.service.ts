@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { NotFoundError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
-import { and, desc, eq, gt, isNull, lte, or, SQL } from 'drizzle-orm';
+import { and, desc, eq, gt, ilike, isNull, lte, or, SQL } from 'drizzle-orm';
 import { type PimSchema, pimSchema } from '../../schema/catalog.schema';
 import { DbTransaction, NewNotice } from '../../catalog.types';
 import { CreateNoticeDto, NoticeResponseDto, UpdateNoticeDto } from './dto';
@@ -50,7 +50,14 @@ export class NoticesService {
   }
 
   async listNotices(
-    options: { category?: string; includeInactive?: boolean } = {},
+    options: {
+      category?: string;
+      includeInactive?: boolean;
+      isActive?: boolean;
+      isPinned?: boolean;
+      badge?: string;
+      q?: string;
+    } = {},
     tx?: DbTransaction,
   ): Promise<NoticeResponseDto[]> {
     return this.inTx(async (tx) => {
@@ -60,8 +67,22 @@ export class NoticesService {
         conditions.push(eq(pimSchema.notices.category, options.category));
       }
 
-      if (!options.includeInactive) {
+      if (options.isActive !== undefined) {
+        conditions.push(eq(pimSchema.notices.isActive, options.isActive));
+      } else if (!options.includeInactive) {
         conditions.push(eq(pimSchema.notices.isActive, true));
+      }
+
+      if (options.isPinned !== undefined) {
+        conditions.push(eq(pimSchema.notices.isPinned, options.isPinned));
+      }
+
+      if (options.badge) {
+        conditions.push(eq(pimSchema.notices.badge, options.badge));
+      }
+
+      if (options.q?.trim()) {
+        conditions.push(ilike(pimSchema.notices.title, `%${options.q.trim()}%`));
       }
 
       const notices = await tx
