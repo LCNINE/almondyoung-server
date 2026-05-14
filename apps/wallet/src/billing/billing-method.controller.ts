@@ -15,24 +15,13 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { WalletJwtAuth } from '../wallet-auth.decorator';
 import { AuthenticatedRequest } from '../wallet.module';
 import { BillingMethodService } from './billing-method.service';
-import {
-  BillingMethodResponseDto,
-  // IssueNicepayBillingKeyDto, // [비활성] NicePay 미사용
-  // IssueTossBillingKeyDto, // [비활성] TossBilling 계약 없음
-  RegisterCmsBillingMethodDto,
-} from './dto';
+import { BillingMethodResponseDto, RegisterCmsBillingMethodDto } from './dto';
 import { BillingMethod } from '../types';
 
 @ApiTags('Billing Methods')
 @Controller('v1/billing-methods')
 export class BillingMethodController {
   constructor(private readonly service: BillingMethodService) {}
-
-  // [비활성] TossBillingProvider — 토스페이먼츠 빌링 계약 없음. 정기결제는 CMS_BATCH만 사용
-  // @Post('toss') async issueTossBillingKey(...) { ... }
-
-  // [비활성] NicePay — 스토어프론트 미사용
-  // @Post('nicepay') async issueNicepayBillingKey(...) { ... }
 
   @Post('cms')
   @HttpCode(201)
