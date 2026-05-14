@@ -24,39 +24,32 @@ export class CmsMemberPollerService {
 
     this.logger.log(`Polling ${pendingMembers.length} pending CMS member(s)`);
 
-    for (const member of pendingMembers) {
-      try {
-        const result = await this.cmsApi.getMember(member.cmsMemberId);
-        if (!result.ok) {
-          this.logger.warn(
-            `CMS member query failed for ${member.cmsMemberId}: ${result.error.code} ${result.error.message}`,
-          );
-          continue;
-        }
+    await Promise.all(pendingMembers.map((member) => this.pollOneMember(member)));
+  }
 
-        const apiStatus = result.data.status ?? '';
-
-        if (apiStatus === '신청완료' || apiStatus === 'REGISTERED') {
-          await this.cmsMemberService.updateStatus(
-            member.id,
-            'REGISTERED',
-            result.data.resultCode,
-            result.data.resultMsg,
-          );
-          this.logger.log(`CMS member ${member.cmsMemberId} registered successfully`);
-        } else if (apiStatus === '신청실패' || apiStatus === 'FAILED') {
-          await this.cmsMemberService.updateStatus(
-            member.id,
-            'FAILED',
-            result.data.resultCode,
-            result.data.resultMsg,
-          );
-          this.logger.warn(`CMS member ${member.cmsMemberId} registration failed: ${result.data.resultMsg}`);
-        }
-        // 그 외(신청중 등): 다음 주기에 재조회
-      } catch (err) {
-        this.logger.error(`Error polling CMS member ${member.cmsMemberId}: ${err}`);
+  private async pollOneMember(member: Awaited<ReturnType<CmsMemberService['findPendingMembers']>>[number]): Promise<void> {
+    try {
+      const result = await this.cmsApi.getMember(member.cmsMemberId);
+      if (!result.ok) {
+        this.logger.warn(`CMS member query failed for ${member.cmsMemberId}: ${result.error.code} ${result.error.message}`);
+        return;
       }
+
+      const memberData = result.data.member;
+      const apiStatus = memberData.status ?? '';
+      const resultCode = memberData.result?.code ?? undefined;
+      const resultMessage = memberData.result?.message ?? undefined;
+
+      if (apiStatus === '신청완료') {
+        await this.cmsMemberService.updateStatus(member.id, 'REGISTERED', resultCode, resultMessage);
+        this.logger.log(`CMS member ${member.cmsMemberId} registered successfully`);
+      } else if (apiStatus === '신청실패') {
+        await this.cmsMemberService.updateStatus(member.id, 'FAILED', resultCode, resultMessage);
+        this.logger.warn(`CMS member ${member.cmsMemberId} registration failed: ${resultMessage}`);
+      }
+      // 그 외(신청중 등): 다음 주기에 재조회
+    } catch (err) {
+      this.logger.error(`Error polling CMS member ${member.cmsMemberId}: ${err}`);
     }
   }
 }
