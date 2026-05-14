@@ -4,8 +4,8 @@ import { and, eq } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { WalletSchema, billingMethods, paymentMethods } from '../schema';
 import { BillingMethod } from '../types';
-import { TossApiClient } from '../providers/toss/toss-api.client';
-import { NicepayBillingApiClient, IssueBillingKeyOptions } from '../providers/nicepay/nicepay-billing-api.client';
+// import { TossApiClient } from '../providers/toss/toss-api.client'; // [비활성] TossBillingProvider 계약 없음
+// import { NicepayBillingApiClient, IssueBillingKeyOptions } from '../providers/nicepay/nicepay-billing-api.client'; // [비활성] NicePay 미사용
 
 @Injectable()
 export class BillingMethodService {
@@ -13,63 +13,15 @@ export class BillingMethodService {
 
   constructor(
     private readonly dbService: DbService<WalletSchema>,
-    private readonly tossApi: TossApiClient,
-    private readonly nicepayBillingApi: NicepayBillingApiClient,
+    // private readonly tossApi: TossApiClient, // [비활성] TossBillingProvider 계약 없음
+    // private readonly nicepayBillingApi: NicepayBillingApiClient, // [비활성] NicePay 미사용
   ) {}
 
-  async issueTossBillingKey(userId: string, authKey: string, customerKey: string): Promise<BillingMethod> {
-    const result = await this.tossApi.issueBillingKey(authKey, customerKey);
-    if (!result.ok) {
-      throw new Error(`Toss billing key issuance failed: ${result.error.code} ${result.error.message}`);
-    }
+  // [비활성] TossBillingProvider — 토스페이먼츠 빌링 계약 없음. 정기결제는 CMS_BATCH만 사용
+  // async issueTossBillingKey(userId: string, authKey: string, customerKey: string): Promise<BillingMethod> { ... }
 
-    const { billingKey, cardCompany, cardNumber, method } = result.data;
-    const displayName = `${cardCompany} ${cardNumber}`;
-
-    const rows = await this.dbService.db
-      .insert(billingMethods)
-      .values({
-        userId,
-        providerType: 'TOSS_BILLING',
-        billingKey,
-        customerKey,
-        displayName,
-        method: method as Record<string, unknown>,
-        status: 'ACTIVE',
-      })
-      .returning();
-
-    return rows[0];
-  }
-
-  async issueNicepayBillingKey(
-    userId: string,
-    encData: string,
-    orderId: string,
-    options: IssueBillingKeyOptions = {},
-  ): Promise<BillingMethod> {
-    const result = await this.nicepayBillingApi.issueBillingKey(encData, orderId, options);
-    if (!result.ok) {
-      throw new Error(`NicePay billing key issuance failed: ${result.resultCode} ${result.resultMsg}`);
-    }
-
-    const { bid, cardCode, cardName } = result.data;
-    const displayName = cardName ?? cardCode;
-
-    const rows = await this.dbService.db
-      .insert(billingMethods)
-      .values({
-        userId,
-        providerType: 'NICEPAY_BILLING',
-        billingKey: bid,
-        displayName,
-        method: { cardCode, cardName } as Record<string, unknown>,
-        status: 'ACTIVE',
-      })
-      .returning();
-
-    return rows[0];
-  }
+  // [비활성] NicePay — 스토어프론트 미사용
+  // async issueNicepayBillingKey(userId: string, encData: string, orderId: string, options): Promise<BillingMethod> { ... }
 
   async registerCmsBillingMethod(
     userId: string,
@@ -96,16 +48,8 @@ export class BillingMethodService {
       throw new Error('billing method not found or already inactive');
     }
 
-    // NicePay 빌링키는 NicePay 서버에도 만료 처리
-    if (existing.providerType === 'NICEPAY_BILLING' && existing.billingKey) {
-      const expireOrderId = billingMethodId.replace(/-/g, '');
-      const expireResult = await this.nicepayBillingApi.expireBillingKey(existing.billingKey, expireOrderId);
-      if (!expireResult.ok) {
-        this.logger.warn(
-          `NicePay billing key expire failed (proceeding with revoke): ${expireResult.resultCode} ${expireResult.resultMsg}`,
-        );
-      }
-    }
+    // [비활성] NicePay 빌링키 만료 처리 — NicePay 미사용
+    // if (existing.providerType === 'NICEPAY_BILLING' && existing.billingKey) { ... }
 
     const updated = await this.dbService.db
       .update(billingMethods)
@@ -180,7 +124,7 @@ export class BillingMethodService {
       .insert(paymentMethods)
       .values({
         userId,
-        type: providerType as 'TOSS_BILLING' | 'NICEPAY_BILLING' | 'CMS_BATCH',
+        type: providerType as 'CMS_BATCH',
         displayName: null,
         isReusable: true,
         isDeleted: false,

@@ -15,7 +15,12 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { WalletJwtAuth } from '../wallet-auth.decorator';
 import { AuthenticatedRequest } from '../wallet.module';
 import { BillingMethodService } from './billing-method.service';
-import { BillingMethodResponseDto, IssueNicepayBillingKeyDto, IssueTossBillingKeyDto, RegisterCmsBillingMethodDto } from './dto';
+import {
+  BillingMethodResponseDto,
+  // IssueNicepayBillingKeyDto, // [비활성] NicePay 미사용
+  // IssueTossBillingKeyDto, // [비활성] TossBilling 계약 없음
+  RegisterCmsBillingMethodDto,
+} from './dto';
 import { BillingMethod } from '../types';
 
 @ApiTags('Billing Methods')
@@ -23,48 +28,11 @@ import { BillingMethod } from '../types';
 export class BillingMethodController {
   constructor(private readonly service: BillingMethodService) {}
 
-  @Post('toss')
-  @HttpCode(201)
-  @WalletJwtAuth()
-  @ApiOperation({ summary: 'Issue a Toss billing key' })
-  async issueTossBillingKey(
-    @Req() req: AuthenticatedRequest,
-    @Body() dto: IssueTossBillingKeyDto,
-  ): Promise<BillingMethodResponseDto> {
-    const userId = req.jwtUserId!;
-    try {
-      const method = await this.service.issueTossBillingKey(userId, dto.authKey, dto.customerKey);
-      return this.toResponse(method);
-    } catch (e: any) {
-      const msg = (e?.message ?? '').toLowerCase();
-      if (msg.includes('failed')) throw new BadRequestException(e.message);
-      throw new InternalServerErrorException(e.message);
-    }
-  }
+  // [비활성] TossBillingProvider — 토스페이먼츠 빌링 계약 없음. 정기결제는 CMS_BATCH만 사용
+  // @Post('toss') async issueTossBillingKey(...) { ... }
 
-  @Post('nicepay')
-  @HttpCode(201)
-  @WalletJwtAuth()
-  @ApiOperation({ summary: 'NicePay 빌링키 발급 (POST /v1/subscribe/regist)' })
-  async issueNicepayBillingKey(
-    @Req() req: AuthenticatedRequest,
-    @Body() dto: IssueNicepayBillingKeyDto,
-  ): Promise<BillingMethodResponseDto> {
-    const userId = req.jwtUserId!;
-    try {
-      const method = await this.service.issueNicepayBillingKey(userId, dto.encData, dto.orderId, {
-        encMode: dto.encMode,
-        buyerName: dto.buyerName,
-        buyerEmail: dto.buyerEmail,
-        buyerTel: dto.buyerTel,
-      });
-      return this.toResponse(method);
-    } catch (e: any) {
-      const msg = (e?.message ?? '').toLowerCase();
-      if (msg.includes('failed')) throw new BadRequestException(e.message);
-      throw new InternalServerErrorException(e.message);
-    }
-  }
+  // [비활성] NicePay — 스토어프론트 미사용
+  // @Post('nicepay') async issueNicepayBillingKey(...) { ... }
 
   @Post('cms')
   @HttpCode(201)

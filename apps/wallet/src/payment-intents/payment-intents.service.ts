@@ -17,13 +17,14 @@ import {
 } from '../messaging/gateway-event.builder';
 import { buildOutboxInsertValues } from '../messaging/outbox-event.util';
 import { outboxEvents } from '../schema';
-import { CreatePaymentIntentDto, ConfirmPaymentIntentDto, TossApproveDto, NicepayApproveDto } from './dto';
+import { CreatePaymentIntentDto, ConfirmPaymentIntentDto, TossApproveDto } from './dto';
+// import { NicepayApproveDto } from './dto'; // [비활성] NicePay 미사용
 import { calculatePricing } from './intent-pricing';
 import { ConfirmService } from './confirm.service';
 import { CaptureService } from './capture.service';
 import { CancelService } from './cancel.service';
 import { TossApproveService } from './toss-approve.service';
-import { NicepayApproveService } from './nicepay-approve.service';
+// import { NicepayApproveService } from './nicepay-approve.service'; // [비활성] NicePay 미사용
 
 const DEFAULT_INTENT_EXPIRY_MINUTES = 60 * 24; // 24 hours
 
@@ -36,7 +37,7 @@ export class PaymentIntentsService {
     private readonly captureService: CaptureService,
     private readonly cancelService: CancelService,
     private readonly tossApproveService: TossApproveService,
-    private readonly nicepayApproveService: NicepayApproveService,
+    // private readonly nicepayApproveService: NicepayApproveService, // [비활성] NicePay 미사용
   ) {}
 
   async create(dto: CreatePaymentIntentDto): Promise<typeof paymentIntents.$inferSelect> {
@@ -228,20 +229,8 @@ export class PaymentIntentsService {
     await this.tossApproveService.approve(intentId, dto.paymentKey, dto.orderId, dto.amount, correlationId);
   }
 
-  async nicepayApprove(intentId: string, dto: NicepayApproveDto): Promise<void> {
-    await this.findByIdOrThrow(intentId);
-    const correlationId = `nicepay-approve:${intentId}:${Date.now()}`;
-    await this.nicepayApproveService.approve(
-      intentId,
-      dto.tid,
-      dto.orderId,
-      dto.amount,
-      dto.authToken,
-      dto.clientId,
-      dto.signature,
-      correlationId,
-    );
-  }
+  // [비활성] NicePay 미사용
+  // async nicepayApprove(intentId: string, dto: NicepayApproveDto): Promise<void> { ... }
 
   async capture(intentId: string): Promise<void> {
     const intent = await this.findByIdOrThrow(intentId);
