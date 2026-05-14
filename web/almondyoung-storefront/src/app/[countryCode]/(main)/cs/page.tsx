@@ -7,6 +7,8 @@ import { Faq } from "@/domains/cs/components/faq"
 import { Inquiry } from "@/domains/cs/components/inquiry"
 import { Notice } from "@/domains/cs/components/notice"
 import { listProducts } from "@/lib/api/medusa/products"
+import { listPublicNotices } from "@/lib/api/pim/notices"
+import type { NoticeItem } from "@/lib/types/ui/notice"
 
 export const metadata = getSEOTags({
   title: `고객센터 | ${siteConfig.appName}`,
@@ -31,22 +33,32 @@ export default async function CsPage({ params, searchParams }: CsPageProps) {
   const { countryCode } = await params
   const { productId } = await searchParams
 
-  let product: { id: string; title: string } | undefined
-  if (productId) {
-    try {
-      const productData = await listProducts({
-        countryCode,
-        queryParams: { handle: productId },
-      }).then(({ response }) => response.products[0])
+  const productPromise: Promise<{ id: string; title: string } | undefined> =
+    productId
+      ? listProducts({
+          countryCode,
+          queryParams: { handle: productId },
+        })
+          .then(({ response }) => {
+            const productData = response.products[0]
+            const pimMasterId = productData?.metadata?.pimMasterId as
+              | string
+              | undefined
+            return pimMasterId
+              ? { id: pimMasterId, title: productData.title }
+              : undefined
+          })
+          .catch(() => undefined)
+      : Promise.resolve(undefined)
 
-      const pimMasterId = productData.metadata?.pimMasterId as string | undefined
-      if (pimMasterId) {
-        product = { id: pimMasterId, title: productData.title }
-      }
-    } catch {
-      // 상품 조회 실패 시 무시
-    }
-  }
+  const noticesPromise: Promise<NoticeItem[]> = listPublicNotices().catch(
+    () => []
+  )
+
+  const [product, notices] = await Promise.all([
+    productPromise,
+    noticesPromise,
+  ])
   return (
     <div className="min-h-screen bg-white">
       <CsHeader />
@@ -63,7 +75,7 @@ export default async function CsPage({ params, searchParams }: CsPageProps) {
             </CsTabPanel>
 
             <CsTabPanel value="notice">
-              <Notice />
+              <Notice notices={notices} />
             </CsTabPanel>
           </CsTabs>
         </Suspense>

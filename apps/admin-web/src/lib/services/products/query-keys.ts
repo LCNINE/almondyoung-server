@@ -18,7 +18,11 @@ export const productQueryKeys = {
   mastersSummaryList: (query: Record<string, any>) =>
     [...productQueryKeys.masters, 'summary-list', query] as const,
   mastersBatch: (ids: string[]) =>
-    [...productQueryKeys.masters, 'batch', ids.slice().sort().join(',')] as const,
+    [
+      ...productQueryKeys.masters,
+      'batch',
+      ids.slice().sort().join(','),
+    ] as const,
   master: (id: string) => [...productQueryKeys.masters, id] as const,
   masterPricePreview: (id: string) =>
     [...productQueryKeys.master(id), 'price-preview'] as const,
@@ -31,7 +35,11 @@ export const productQueryKeys = {
   variantPrice: (id: string) =>
     [...productQueryKeys.variant(id), 'price'] as const,
   variantsBatch: (ids: string[]) =>
-    [...productQueryKeys.variants, 'batch', ids.slice().sort().join(',')] as const,
+    [
+      ...productQueryKeys.variants,
+      'batch',
+      ids.slice().sort().join(','),
+    ] as const,
 
   // 판매 채널 관련
   channels: ['channels'] as const,
@@ -72,7 +80,7 @@ export const productQueryKeys = {
 
   // 공지사항 관련
   notices: ['notices'] as const,
-  noticesList: (query: object) =>
+  noticesList: <T extends object>(query: T) =>
     [...productQueryKeys.notices, 'list', query] as const,
   notice: (id: string) => [...productQueryKeys.notices, id] as const,
 
@@ -97,8 +105,7 @@ export const productQueryKeys = {
     ['pricing', 'masters', masterId, 'price-set', variantId] as const,
 
   // 버전 관련
-  masterVersions: (masterId: string) =>
-    ['master-versions', masterId] as const,
+  masterVersions: (masterId: string) => ['master-versions', masterId] as const,
 
   // 채널 리스팅 관련
   channelListingsByVariant: (variantId: string) =>
