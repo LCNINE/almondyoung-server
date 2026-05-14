@@ -33,8 +33,9 @@ import { PointsLedgerService } from './providers/points/points-ledger.service';
 import { TossApiClient } from './providers/toss/toss-api.client';
 import { TossPaymentProvider } from './providers/toss/toss.provider';
 import { BankTransferPaymentProvider } from './providers/bank-transfer/bank-transfer.provider';
-import { NicepayAuthService } from './providers/nicepay/nicepay-auth.service';
-import { NicepayPaymentProvider } from './providers/nicepay/nicepay.provider';
+// [비활성] NicePay — 스토어프론트 미사용
+// import { NicepayAuthService } from './providers/nicepay/nicepay-auth.service';
+// import { NicepayPaymentProvider } from './providers/nicepay/nicepay.provider';
 import { ProviderRegistry } from './providers/provider.registry';
 
 // Methods
@@ -52,7 +53,7 @@ import { CaptureService } from './payment-intents/capture.service';
 import { AutoCaptureService } from './payment-intents/auto-capture.service';
 import { CancelService } from './payment-intents/cancel.service';
 import { TossApproveService } from './payment-intents/toss-approve.service';
-import { NicepayApproveService } from './payment-intents/nicepay-approve.service';
+// import { NicepayApproveService } from './payment-intents/nicepay-approve.service'; // [비활성] NicePay 미사용
 
 // Refunds
 import { RefundsService } from './refunds/refunds.service';
@@ -91,12 +92,12 @@ import { CheckoutSessionService } from './checkout/checkout-session.service';
 import { CheckoutSessionController } from './checkout/checkout-session.controller';
 import { CheckoutSessionExpirationService } from './checkout/checkout-session-expiration.service';
 
-// Toss Billing Provider
-import { TossBillingProvider } from './providers/toss/toss-billing.provider';
+// [비활성] TossBillingProvider — 토스페이먼츠 빌링 계약 없음. 정기결제는 CMS_BATCH만 사용
+// import { TossBillingProvider } from './providers/toss/toss-billing.provider';
 
-// NicePay Billing Provider
-import { NicepayBillingApiClient } from './providers/nicepay/nicepay-billing-api.client';
-import { NicepayBillingProvider } from './providers/nicepay/nicepay-billing.provider';
+// [비활성] NicePay Billing — 미사용
+// import { NicepayBillingApiClient } from './providers/nicepay/nicepay-billing-api.client';
+// import { NicepayBillingProvider } from './providers/nicepay/nicepay-billing.provider';
 
 // CMS
 import { CmsApiClient } from './cms/cms-api.client';
@@ -428,11 +429,13 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     TossApiClient,
     TossPaymentProvider,
     BankTransferPaymentProvider,
-    NicepayAuthService,
-    NicepayPaymentProvider,
-    NicepayBillingApiClient,
-    NicepayBillingProvider,
-    TossBillingProvider,
+    // [비활성] NicePay 미사용
+    // NicepayAuthService,
+    // NicepayPaymentProvider,
+    // NicepayBillingApiClient,
+    // NicepayBillingProvider,
+    // [비활성] TossBillingProvider — 빌링 계약 없음
+    // TossBillingProvider,
     ProviderRegistry,
 
     // Methods / Charges
@@ -446,7 +449,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     AutoCaptureService,
     CancelService,
     TossApproveService,
-    NicepayApproveService,
+    // NicepayApproveService, // [비활성] NicePay 미사용
 
     // Refunds
     RefundsService,
