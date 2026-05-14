@@ -10,11 +10,9 @@ import { SkuLocationMovementController } from './controllers/sku-location-moveme
 import { ReservationController } from './controllers/reservation.controller';
 import { ReturnController } from './controllers/return.controller';
 import { TransferController } from './controllers/transfer.controller';
-import { SkuGroupController } from './controllers/sku-group.controller';
 import { HolderController } from './controllers/holder.controller';
 
 // Services
-import { InventoryService } from './services/inventory.service';
 import { StockEventService } from './services/stock-event.service';
 import { SafetyStockService } from './services/safety-stock.service';
 import { LocationService } from './services/location.service';
@@ -26,7 +24,6 @@ import { AllocationStrategyService } from './services/allocation-strategy.servic
 import { ReservationCronService } from './services/reservation-cron.service';
 import { ReturnService } from './services/return.service';
 import { TransferService } from './services/transfer.service';
-import { SkuGroupService } from './services/sku-group.service';
 import { HolderService } from './services/holder.service';
 
 // Repository
@@ -49,11 +46,9 @@ import { OutboxService } from '../shared/outbox/outbox.service';
     ReservationController,
     ReturnController,
     TransferController,
-    SkuGroupController,
     HolderController,
   ],
   providers: [
-    InventoryService,
     StockEventService,
     SafetyStockService,
     LocationService,
@@ -66,12 +61,10 @@ import { OutboxService } from '../shared/outbox/outbox.service';
     ReservationCronService,
     ReturnService,
     TransferService,
-    SkuGroupService,
     HolderService,
     OutboxService,
   ],
   exports: [
-    InventoryService,
     StockEventService,
     SafetyStockService,
     LocationService,
@@ -83,7 +76,6 @@ import { OutboxService } from '../shared/outbox/outbox.service';
     AllocationStrategyService,
     ReturnService,
     TransferService,
-    SkuGroupService,
     HolderService,
     OutboxService,
   ],

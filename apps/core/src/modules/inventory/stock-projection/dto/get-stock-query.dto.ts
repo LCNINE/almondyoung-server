@@ -1,6 +1,6 @@
 import { IsUUID, IsOptional, IsNotEmpty } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { PaginationQueryDto } from '../../../shared/dto';
+import { PaginationQueryDto } from '../../shared/dto';
 
 export class GetStockQueryDto extends PaginationQueryDto {
   @ApiProperty({ description: 'SKU ID 필터', required: false })

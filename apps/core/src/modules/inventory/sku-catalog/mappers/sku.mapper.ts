@@ -1,5 +1,5 @@
 import { SkuBarcode } from '../../schema/inventory.schema';
-import { BarcodeDto } from '../dto/sku/sku-response.dto';
+import { BarcodeDto } from '../dto/sku-response.dto';
 
 export class SkuBarcodeMapper {
   static toDto(barcode: SkuBarcode): BarcodeDto {

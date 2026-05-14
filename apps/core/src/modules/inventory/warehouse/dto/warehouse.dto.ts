@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { warehouseTypeEnum } from '../../../schema/inventory.schema';
+import { warehouseTypeEnum } from '../../schema/inventory.schema';
 
 export class WarehouseDto {
   @ApiProperty({ description: '창고 ID' })
