@@ -5,6 +5,7 @@ import { approvalClient } from './approval.client';
 import { auditClient } from './audit.client';
 import { bannerGroupsClient } from './banner-groups.client';
 import { bannersClient } from './banners.client';
+import { noticesClient } from './notices.client';
 import { bulkClient } from './bulk.client';
 import { categoriesClient } from './categories.client';
 import { channelProductsClient } from './channel-products.client';
@@ -24,6 +25,7 @@ export const products = {
   channelProducts: channelProductsClient,
   bannerGroups: bannerGroupsClient,
   banners: bannersClient,
+  notices: noticesClient,
   tags: tagsClient,
   pricing: pricingClient,
   versions: versionsClient,
@@ -40,6 +42,7 @@ export { channelsClient } from './channels.client';
 export { channelProductsClient } from './channel-products.client';
 export { bannerGroupsClient } from './banner-groups.client';
 export { bannersClient } from './banners.client';
+export { noticesClient } from './notices.client';
 export { tagsClient } from './tags.client';
 export { pricingClient } from './pricing.client';
 export { versionsClient } from './versions.client';

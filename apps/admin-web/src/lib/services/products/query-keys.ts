@@ -70,6 +70,12 @@ export const productQueryKeys = {
     [...productQueryKeys.banners, 'group', groupId] as const,
   banner: (id: string) => [...productQueryKeys.banners, id] as const,
 
+  // 공지사항 관련
+  notices: ['notices'] as const,
+  noticesList: (query: Record<string, unknown>) =>
+    [...productQueryKeys.notices, 'list', query] as const,
+  notice: (id: string) => [...productQueryKeys.notices, id] as const,
+
   // 태그 그룹 관련
   tagGroups: ['tag-groups'] as const,
   tagGroupsList: (query: Record<string, unknown>) =>

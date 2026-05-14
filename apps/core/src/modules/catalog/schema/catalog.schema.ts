@@ -875,6 +875,41 @@ export const banners = pgTable(
   ],
 );
 
+// ===== NOTICES (공지사항) =====
+export const notices = pgTable(
+  'notices',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    title: varchar('title', { length: 255 }).notNull(),
+    content: text('content').notNull(),
+    category: varchar('category', { length: 50 }).notNull().default('general'),
+    badge: varchar('badge', { length: 30 }),
+    isPinned: boolean('is_pinned').notNull().default(false),
+    displayStartAt: timestamp('display_start_at'),
+    displayEndAt: timestamp('display_end_at'),
+    isActive: boolean('is_active').notNull().default(true),
+    sortOrder: integer('sort_order').notNull().default(0),
+
+    deletedAt: timestamp('deleted_at'),
+    deletedBy: uuid('deleted_by'),
+
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    createdBy: uuid('created_by'),
+    updatedBy: uuid('updated_by'),
+  },
+  (table) => [
+    index('idx_notices_category').on(table.category),
+    index('idx_notices_active').on(table.isActive),
+    index('idx_notices_pinned').on(table.isPinned),
+    index('idx_notices_display_period').on(table.displayStartAt, table.displayEndAt),
+    index('idx_notices_deleted_at').on(table.deletedAt),
+    index('idx_notices_sort').on(table.isPinned, table.sortOrder, table.createdAt),
+  ],
+);
+
 // Catalog BC 스키마 (ex-PIM)
 export const catalogSchema = {
   productCategories,
@@ -905,6 +940,7 @@ export const catalogSchema = {
   productTagValues,
   bannerGroups,
   banners,
+  notices,
 };
 
 // ===== RELATIONS =====

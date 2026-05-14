@@ -34,6 +34,7 @@ import {
   productTagValues,
   bannerGroups,
   banners,
+  notices,
 } from './catalog.schema';
 
 // ===== Category Types =====
@@ -115,6 +116,10 @@ export type BannerGroupInsert = typeof bannerGroups.$inferInsert;
 
 export type BannerEntity = typeof banners.$inferSelect;
 export type BannerInsert = typeof banners.$inferInsert;
+
+// ===== Notice Types =====
+export type NoticeEntity = typeof notices.$inferSelect;
+export type NoticeInsert = typeof notices.$inferInsert;
 
 // ===== Other Types =====
 export type ProductImageEntity = typeof productImages.$inferSelect;

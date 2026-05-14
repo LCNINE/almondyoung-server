@@ -481,3 +481,22 @@ export const useApprovalHistory = (masterId: string) => {
     staleTime: 30 * 1000,
   });
 };
+
+// ===== 공지사항 관련 쿼리 =====
+
+export const useNotices = (query?: { category?: string; includeInactive?: boolean }) => {
+  return useQuery({
+    queryKey: productQueryKeys.noticesList(query ?? {}),
+    queryFn: () => products.notices.list(query),
+    staleTime: 2 * 60 * 1000,
+  });
+};
+
+export const useNotice = (id: string) => {
+  return useQuery({
+    queryKey: productQueryKeys.notice(id),
+    queryFn: () => products.notices.get(id),
+    enabled: !!id,
+    staleTime: 2 * 60 * 1000,
+  });
+};

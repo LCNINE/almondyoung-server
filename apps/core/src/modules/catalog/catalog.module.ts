@@ -9,6 +9,7 @@ import { ChannelsModule } from './core/channels/channels.module';
 import { PricingModule } from './core/pricing/pricing.module';
 import { TagsModule } from './core/tags/tags.module';
 import { BannersModule } from './core/banners/banners.module';
+import { NoticesModule } from './core/notices/notices.module';
 
 // Operations modules
 import { ApprovalModule } from './operations/approval/approval.module';
@@ -33,6 +34,7 @@ import { DashboardModule } from './analytics/dashboard/dashboard.module';
     PricingModule,
     TagsModule,
     BannersModule,
+    NoticesModule,
     // Operations
     ApprovalModule,
     BulkModule,
@@ -48,6 +50,7 @@ import { DashboardModule } from './analytics/dashboard/dashboard.module';
     PricingModule,
     TagsModule,
     BannersModule,
+    NoticesModule,
   ],
 })
 export class CatalogModule {}
