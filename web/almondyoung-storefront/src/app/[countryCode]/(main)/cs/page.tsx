@@ -7,8 +7,6 @@ import { Faq } from "@/domains/cs/components/faq"
 import { Inquiry } from "@/domains/cs/components/inquiry"
 import { Notice } from "@/domains/cs/components/notice"
 import { listProducts } from "@/lib/api/medusa/products"
-import { listPublicNotices } from "@/lib/api/pim/notices"
-import type { NoticeItem } from "@/lib/types/ui/notice"
 
 export const metadata = getSEOTags({
   title: `고객센터 | ${siteConfig.appName}`,
@@ -51,14 +49,8 @@ export default async function CsPage({ params, searchParams }: CsPageProps) {
           .catch(() => undefined)
       : Promise.resolve(undefined)
 
-  const noticesPromise: Promise<NoticeItem[]> = listPublicNotices().catch(
-    () => []
-  )
+  const product = await productPromise
 
-  const [product, notices] = await Promise.all([
-    productPromise,
-    noticesPromise,
-  ])
   return (
     <div className="min-h-screen bg-white">
       <CsHeader />
@@ -75,7 +67,7 @@ export default async function CsPage({ params, searchParams }: CsPageProps) {
             </CsTabPanel>
 
             <CsTabPanel value="notice">
-              <Notice notices={notices} />
+              <Notice />
             </CsTabPanel>
           </CsTabs>
         </Suspense>
