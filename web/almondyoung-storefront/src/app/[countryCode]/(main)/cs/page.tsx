@@ -16,8 +16,8 @@ export const metadata = getSEOTags({
 
 function CsTabsLoading() {
   return (
-    <div className="flex h-12 w-full items-center justify-center border-b border-gray-200">
-      <div className="h-4 w-24 animate-pulse rounded bg-gray-200" />
+    <div className="flex items-center justify-center w-full h-12 border-b border-gray-200">
+      <div className="w-24 h-4 bg-gray-200 rounded animate-pulse" />
     </div>
   )
 }
@@ -55,7 +55,7 @@ export default async function CsPage({ params, searchParams }: CsPageProps) {
     <div className="min-h-screen bg-white">
       <CsHeader />
 
-      <div className="mx-auto max-w-3xl bg-white">
+      <div className="max-w-3xl mx-auto bg-white">
         <Suspense fallback={<CsTabsLoading />}>
           <CsTabs>
             <CsTabPanel value="faq">
