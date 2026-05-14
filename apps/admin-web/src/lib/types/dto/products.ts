@@ -614,6 +614,55 @@ export interface BannerGroupWithBannersDto extends BannerGroupDto {
   banners: BannerDto[];
 }
 
+// ===== 공지사항 관련 =====
+
+export interface CreateNoticeDto {
+  title: string;
+  content: string;
+  category?: string;
+  badge?: string;
+  isPinned?: boolean;
+  displayStartAt?: string;
+  displayEndAt?: string;
+  isActive?: boolean;
+  sortOrder?: number;
+  createdBy?: string;
+}
+
+export interface UpdateNoticeDto {
+  title?: string;
+  content?: string;
+  category?: string;
+  badge?: string | null;
+  isPinned?: boolean;
+  displayStartAt?: string;
+  displayEndAt?: string;
+  isActive?: boolean;
+  sortOrder?: number;
+  updatedBy?: string;
+}
+
+export interface NoticeDto {
+  id: string;
+  title: string;
+  content: string;
+  category: string;
+  badge: string | null;
+  isPinned: boolean;
+  displayStartAt: string | null;
+  displayEndAt: string | null;
+  isActive: boolean;
+  sortOrder: number;
+  deletedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NoticeListQuery {
+  category?: string;
+  includeInactive?: boolean;
+}
+
 // ===== 태그 그룹 관련 =====
 
 export interface CreateTagGroupDto {
