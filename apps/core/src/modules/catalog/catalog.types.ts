@@ -30,6 +30,7 @@ import {
   productTagValues,
   bannerGroups,
   banners,
+  notices,
   type PimSchema,
 } from './schema/catalog.schema';
 
@@ -406,6 +407,11 @@ export type UpdateBannerGroup = Partial<Omit<NewBannerGroup, 'id' | 'createdAt' 
 export type Banner = InferSelectModel<typeof banners>;
 export type NewBanner = InferInsertModel<typeof banners>;
 export type UpdateBanner = Partial<Omit<NewBanner, 'id' | 'createdAt' | 'updatedAt'>>;
+
+// ===== NOTICES 타입 =====
+export type Notice = InferSelectModel<typeof notices>;
+export type NewNotice = InferInsertModel<typeof notices>;
+export type UpdateNotice = Partial<Omit<NewNotice, 'id' | 'createdAt' | 'updatedAt'>>;
 
 // ===== VERSION MANAGEMENT DTO =====
 

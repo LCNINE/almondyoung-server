@@ -433,13 +433,18 @@ export const mainMenus: MainMenu[] = [
         children: [
           { id: 'messages', title: '메시지 or 푸시알림' },
           { id: 'banner-groups', title: '배너 그룹', path: '/mall/banner-groups' },
-          { id: 'popups', title: '팝업/공지사항' },
+          { id: 'popups', title: '팝업' },
           { id: 'points', title: '적립금' },
           { id: 'coupons', title: '쿠폰' },
           { id: 'promotions', title: '프로모션' },
           { id: 'deposit', title: '예치금' },
           { id: 'events', title: '이벤트' },
         ],
+      },
+      {
+        id: 'customer-operations',
+        title: '고객지원/운영',
+        children: [{ id: 'notices', title: '공지사항', path: '/mall/notices' }],
       },
       {
         id: 'display-management',

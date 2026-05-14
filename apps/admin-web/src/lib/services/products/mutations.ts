@@ -26,6 +26,8 @@ import type {
   UpdateBannerGroupDto,
   CreateBannerDto,
   UpdateBannerDto,
+  CreateNoticeDto,
+  UpdateNoticeDto,
   CreateTagGroupDto,
   UpdateTagGroupDto,
   CreateTagValueDto,
@@ -743,6 +745,41 @@ export const useReject = () => {
       queryClient.invalidateQueries({ queryKey: productQueryKeys.pendingApprovals });
       queryClient.invalidateQueries({ queryKey: productQueryKeys.master(masterId) });
       queryClient.invalidateQueries({ queryKey: productQueryKeys.approvalHistory(masterId) });
+    },
+  });
+};
+
+// ===== 공지사항 뮤테이션 =====
+
+export const useCreateNotice = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: CreateNoticeDto) => products.notices.create(dto),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.notices });
+    },
+  });
+};
+
+export const useUpdateNotice = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, dto }: { id: string; dto: UpdateNoticeDto }) =>
+      products.notices.update(id, dto),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.notices });
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.notice(variables.id) });
+    },
+  });
+};
+
+export const useDeleteNotice = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, deletedBy }: { id: string; deletedBy?: string }) =>
+      products.notices.remove(id, deletedBy),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.notices });
     },
   });
 };
