@@ -7,6 +7,7 @@ import { userApi } from '@/lib/api/domains/users';
 export interface UserInfo {
   username: string;
   loginId: string;
+  roles: string[];
 }
 
 export function useUserNames(userIds: string[]): Record<string, UserInfo> {
@@ -22,7 +23,7 @@ export function useUserNames(userIds: string[]): Record<string, UserInfo> {
   return useMemo(() => {
     return userIds.reduce<Record<string, UserInfo>>((acc, userId, i) => {
       const data = results[i]?.data;
-      if (data) acc[userId] = { username: data.username ?? '', loginId: data.loginId ?? '' };
+      if (data) acc[userId] = { username: data.username ?? '', loginId: data.loginId ?? '', roles: data.roles ?? [] };
       return acc;
     }, {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
