@@ -1,58 +1,58 @@
-'use client'
+'use client';
 
-import { useState } from 'react'
-import { ListFilter } from 'lucide-react'
-import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Button } from '@/components/ui/button'
+import { useState } from 'react';
+import { ListFilter } from 'lucide-react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { FilterProvider } from './context'
-import { DateFilter } from './date-filter'
-import { SelectFilter } from './select-filter'
-import { StringFilter } from './string-filter'
-import type { Filter } from './types'
+} from '@/components/ui/dropdown-menu';
+import { FilterProvider } from './context';
+import { DateFilter } from './date-filter';
+import { SelectFilter } from './select-filter';
+import { StringFilter } from './string-filter';
+import type { Filter } from './types';
 
 type DataTableFilterProps = {
-  filters: Filter[]
-  prefix?: string
-}
+  filters: Filter[];
+  prefix?: string;
+};
 
 export function DataTableFilter({ filters, prefix }: DataTableFilterProps) {
-  const [openFilter, setOpenFilter] = useState<string | null>(null)
-  const router = useRouter()
-  const pathname = usePathname()
-  const searchParams = useSearchParams()
+  const [openFilter, setOpenFilter] = useState<string | null>(null);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
-  const prefixKey = (key: string) => (prefix ? `${prefix}_${key}` : key)
+  const prefixKey = (key: string) => (prefix ? `${prefix}_${key}` : key);
 
   const removeFilter = (key: string) => {
-    const params = new URLSearchParams(searchParams.toString())
-    params.delete(prefixKey(key))
-    params.delete(prefixKey('page'))
-    router.replace(`${pathname}?${params.toString()}`)
-  }
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete(prefixKey(key));
+    params.delete(prefixKey('page'));
+    router.replace(`${pathname}?${params.toString()}`);
+  };
 
   const removeAllFilters = () => {
-    const params = new URLSearchParams(searchParams.toString())
+    const params = new URLSearchParams(searchParams.toString());
     for (const filter of filters) {
-      params.delete(prefixKey(filter.key))
+      params.delete(prefixKey(filter.key));
     }
-    params.delete(prefixKey('page'))
-    router.replace(`${pathname}?${params.toString()}`)
-  }
+    params.delete(prefixKey('page'));
+    router.replace(`${pathname}?${params.toString()}`);
+  };
 
   const hasActiveFilters = filters.some((f) => {
-    const pKey = prefixKey(f.key)
-    return searchParams.has(pKey)
-  })
+    const pKey = prefixKey(f.key);
+    return searchParams.has(pKey);
+  });
 
   const handleOpenChange = (key: string) => (open: boolean) => {
-    setOpenFilter(open ? key : null)
-  }
+    setOpenFilter(open ? key : null);
+  };
 
   return (
     <FilterProvider
@@ -62,8 +62,8 @@ export function DataTableFilter({ filters, prefix }: DataTableFilterProps) {
     >
       <div className="flex flex-wrap items-center gap-2">
         {filters.map((filter) => {
-          const isOpen = openFilter === filter.key
-          const onOpenChange = handleOpenChange(filter.key)
+          const isOpen = openFilter === filter.key;
+          const onOpenChange = handleOpenChange(filter.key);
 
           if (filter.type === 'select') {
             return (
@@ -74,7 +74,7 @@ export function DataTableFilter({ filters, prefix }: DataTableFilterProps) {
                 onOpenChange={onOpenChange}
                 prefix={prefix}
               />
-            )
+            );
           }
           if (filter.type === 'date') {
             return (
@@ -85,7 +85,7 @@ export function DataTableFilter({ filters, prefix }: DataTableFilterProps) {
                 onOpenChange={onOpenChange}
                 prefix={prefix}
               />
-            )
+            );
           }
           if (filter.type === 'string') {
             return (
@@ -96,14 +96,14 @@ export function DataTableFilter({ filters, prefix }: DataTableFilterProps) {
                 onOpenChange={onOpenChange}
                 prefix={prefix}
               />
-            )
+            );
           }
-          return null
+          return null;
         })}
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="h-7 gap-1 text-xs">
+            <Button variant="outline" size="sm" className="gap-1 text-xs h-7">
               <ListFilter className="h-3.5 w-3.5" />
               필터 추가
             </Button>
@@ -124,7 +124,7 @@ export function DataTableFilter({ filters, prefix }: DataTableFilterProps) {
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 text-xs text-muted-foreground"
+            className="text-xs h-7 text-muted-foreground"
             onClick={removeAllFilters}
           >
             모두 지우기
@@ -132,5 +132,5 @@ export function DataTableFilter({ filters, prefix }: DataTableFilterProps) {
         )}
       </div>
     </FilterProvider>
-  )
+  );
 }
