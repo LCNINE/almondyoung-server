@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
-import { UserPlus } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Check, ChevronsUpDown, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
+import { useQuery } from '@tanstack/react-query';
 import { MembershipMemberTable } from '../components/table';
 import { MembershipMemberFilterBox } from '../components/filter-box';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
@@ -18,24 +19,55 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
 import { useGrantSubscriptionByDays } from '@/lib/services/membership';
+import { userApi } from '@/lib/api/domains/users';
+import { cn } from '@/lib/utils/ui';
+
+function useDebounced<T>(value: T, delay = 350) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+  return debounced;
+}
 
 function AdminGrantDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [userId, setUserId] = useState('');
+  const [selectedUser, setSelectedUser] = useState<{ id: string; loginId: string; username: string } | null>(null);
+  const [userQuery, setUserQuery] = useState('');
+  const [userPopoverOpen, setUserPopoverOpen] = useState(false);
   const [days, setDays] = useState('');
   const [memo, setMemo] = useState('');
   const grantMutation = useGrantSubscriptionByDays();
 
+  const debouncedQuery = useDebounced(userQuery, 350);
+  const { data: userResults, isFetching: searching } = useQuery({
+    queryKey: ['user-search-grant', debouncedQuery],
+    queryFn: () => userApi.getAdminUsers({ q: debouncedQuery, limit: 20 }),
+    enabled: debouncedQuery.length >= 1,
+    staleTime: 30 * 1000,
+  });
+
   const handleClose = () => {
-    setUserId('');
+    setSelectedUser(null);
+    setUserQuery('');
     setDays('');
     setMemo('');
     onClose();
   };
 
   const handleConfirm = async () => {
-    if (!userId.trim()) {
-      toast.error('사용자 ID를 입력해주세요.');
+    if (!selectedUser) {
+      toast.error('사용자를 선택해주세요.');
       return;
     }
     const d = Number(days);
@@ -44,7 +76,7 @@ function AdminGrantDialog({ open, onClose }: { open: boolean; onClose: () => voi
       return;
     }
     try {
-      await grantMutation.mutateAsync({ userId: userId.trim(), days: d, memo: memo.trim() || undefined });
+      await grantMutation.mutateAsync({ userId: selectedUser.id, days: d, memo: memo.trim() || undefined });
       toast.success('구독이 지급되었습니다.');
       handleClose();
     } catch (e: any) {
@@ -63,18 +95,67 @@ function AdminGrantDialog({ open, onClose }: { open: boolean; onClose: () => voi
         <DialogHeader>
           <DialogTitle>신규 구독 지급</DialogTitle>
           <DialogDescription>
-            사용자 ID와 지급할 일수를 입력합니다. 결제 없이 즉시 적용되며 메모는 마이페이지에서 확인할 수 있습니다.
+            사용자를 검색하여 선택한 뒤 지급할 일수를 입력합니다. 결제 없이 즉시 적용되며 메모는 마이페이지에서 확인할 수 있습니다.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label>사용자 ID <span className="text-destructive">*</span></Label>
-            <Input
-              placeholder="자사몰 UUID"
-              value={userId}
-              onChange={(e) => setUserId(e.target.value)}
-            />
+            <Label>사용자 <span className="text-destructive">*</span></Label>
+            <Popover open={userPopoverOpen} onOpenChange={setUserPopoverOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
+                  {selectedUser ? (
+                    <span className="truncate">
+                      {selectedUser.loginId}
+                      {selectedUser.username && (
+                        <span className="text-muted-foreground ml-1">({selectedUser.username})</span>
+                      )}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">아이디 · 이메일 · 이름으로 검색</span>
+                  )}
+                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[380px] p-0" align="start">
+                <Command shouldFilter={false}>
+                  <CommandInput
+                    placeholder="아이디 · 이메일 · 이름 검색..."
+                    value={userQuery}
+                    onValueChange={setUserQuery}
+                  />
+                  <CommandList>
+                    {searching ? (
+                      <div className="py-4 text-center text-sm text-muted-foreground">검색 중...</div>
+                    ) : !debouncedQuery ? (
+                      <CommandEmpty>검색어를 입력하세요.</CommandEmpty>
+                    ) : !userResults?.data?.length ? (
+                      <CommandEmpty>검색 결과가 없습니다.</CommandEmpty>
+                    ) : (
+                      <CommandGroup>
+                        {userResults.data.map((u) => (
+                          <CommandItem
+                            key={u.id}
+                            value={u.id}
+                            onSelect={() => {
+                              setSelectedUser({ id: u.id, loginId: u.loginId, username: u.username });
+                              setUserPopoverOpen(false);
+                              setUserQuery('');
+                            }}
+                          >
+                            <Check className={cn('mr-2 h-4 w-4', selectedUser?.id === u.id ? 'opacity-100' : 'opacity-0')} />
+                            <span className="font-medium">{u.loginId}</span>
+                            <span className="ml-1.5 text-muted-foreground text-xs">{u.username}</span>
+                            {u.email && <span className="ml-1.5 text-muted-foreground text-xs truncate">{u.email}</span>}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    )}
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
 
           <div className="space-y-1.5">

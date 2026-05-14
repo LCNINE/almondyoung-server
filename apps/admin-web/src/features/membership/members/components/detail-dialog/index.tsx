@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -580,6 +580,12 @@ function BillingTab({ userId, contractId }: { userId: string; contractId: string
 function LogTab({ userId }: { userId: string }) {
   const { data: events, isLoading } = useMemberContractEvents(userId);
 
+  const operatorIds = useMemo(
+    () => [...new Set((events ?? []).map((e) => e.causedByUserId).filter((id): id is string => !!id))],
+    [events]
+  );
+  const operatorNames = useUserNames(operatorIds);
+
   if (isLoading) return <Skeleton className="h-48 w-full" />;
 
   return (
@@ -605,7 +611,22 @@ function LogTab({ userId }: { userId: string }) {
                 <TableCell className="text-xs">{formatDateTime(ev.createdAt)}</TableCell>
                 <TableCell className="text-sm">{ev.eventType}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">
-                  {ev.causedByUserId ?? ev.causedBy}
+                  {ev.causedByUserId ? (
+                    operatorNames[ev.causedByUserId] ? (
+                      <span className="flex items-center gap-1">
+                        <span>{operatorNames[ev.causedByUserId].loginId}</span>
+                        {operatorNames[ev.causedByUserId].roles[0] && (
+                          <Badge variant="outline" className="text-xs py-0 px-1 h-4">
+                            {operatorNames[ev.causedByUserId].roles[0]}
+                          </Badge>
+                        )}
+                      </span>
+                    ) : (
+                      ev.causedByUserId
+                    )
+                  ) : (
+                    ev.causedBy
+                  )}
                 </TableCell>
               </TableRow>
             ))
