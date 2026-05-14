@@ -2,12 +2,7 @@ import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PaymentProvider } from './payment-provider.interface';
 import { PointsPaymentProvider } from './points/points.provider';
 import { TossPaymentProvider } from './toss/toss.provider';
-// [비활성] TossBillingProvider — 토스페이먼츠 빌링 계약 없음. 정기결제는 CMS_BATCH만 사용
-// import { TossBillingProvider } from './toss/toss-billing.provider';
 import { BankTransferPaymentProvider } from './bank-transfer/bank-transfer.provider';
-// [비활성] NicePay — 스토어프론트 미사용
-// import { NicepayPaymentProvider } from './nicepay/nicepay.provider';
-// import { NicepayBillingProvider } from './nicepay/nicepay-billing.provider';
 import { CmsBatchProvider } from '../cms/cms-batch.provider';
 
 export type ProviderKind = 'gateway' | 'ledger';
@@ -25,20 +20,11 @@ export class ProviderRegistry {
     pointsProvider: PointsPaymentProvider,
     tossProvider: TossPaymentProvider,
     bankTransferProvider: BankTransferPaymentProvider,
-    // [비활성] NicePay — 스토어프론트 미사용
-    // nicepayProvider: NicepayPaymentProvider,
-    // [비활성] TossBillingProvider — 빌링 계약 없음
-    // @Optional() tossBillingProvider?: TossBillingProvider,
-    // [비활성] NicepayBillingProvider — 미사용
-    // @Optional() nicepayBillingProvider?: NicepayBillingProvider,
     @Optional() cmsBatchProvider?: CmsBatchProvider,
   ) {
     this.register(pointsProvider, { kind: 'ledger' });
     this.register(tossProvider, { kind: 'gateway' });
     this.register(bankTransferProvider, { kind: 'gateway' });
-    // this.register(nicepayProvider, { kind: 'gateway' });
-    // if (tossBillingProvider) { this.register(tossBillingProvider, { kind: 'gateway' }); }
-    // if (nicepayBillingProvider) { this.register(nicepayBillingProvider, { kind: 'gateway' }); }
     if (cmsBatchProvider) {
       this.register(cmsBatchProvider, { kind: 'gateway' });
     }
