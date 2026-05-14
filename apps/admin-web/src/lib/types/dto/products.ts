@@ -661,6 +661,10 @@ export interface NoticeDto {
 export interface NoticeListQuery {
   category?: string;
   includeInactive?: boolean;
+  isActive?: boolean;
+  isPinned?: boolean;
+  badge?: string;
+  q?: string;
 }
 
 // ===== 태그 그룹 관련 =====
