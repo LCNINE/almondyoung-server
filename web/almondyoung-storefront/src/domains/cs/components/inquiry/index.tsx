@@ -1,6 +1,7 @@
 "use client"
 
 import { useParams, useRouter, useSearchParams } from "next/navigation"
+import { toast } from "sonner"
 import { InquiryForm } from "./inquiry-form"
 
 interface InquiryProps {
@@ -14,7 +15,13 @@ export function Inquiry({ product }: InquiryProps) {
   const productId = product?.id ?? searchParams.get("productId") ?? undefined
 
   const handleSuccess = () => {
-    router.push(`/${countryCode}/mypage/inquiries`)
+    toast.success("문의가 접수되었습니다.", {
+      description: "최대 3영업일 내에 답변드릴게요.",
+      action: {
+        label: "내 문의 보기",
+        onClick: () => router.push(`/${countryCode}/mypage/inquiries`),
+      },
+    })
   }
 
   return (
