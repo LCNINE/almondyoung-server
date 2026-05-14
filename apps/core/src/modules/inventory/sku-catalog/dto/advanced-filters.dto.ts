@@ -1,7 +1,7 @@
 import { IsOptional, IsString, IsEnum, IsInt, Min, IsBoolean, IsDateString, IsUUID } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { StockTypeEnum, stockTypeValues } from '../../../schema/enum-values';
+import { StockTypeEnum, stockTypeValues } from '../../schema/enum-values';
 
 export enum StockDisplayMode {
   ALL = 'all',
