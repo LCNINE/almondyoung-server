@@ -90,6 +90,13 @@ export interface UpdateMasterDto {
   tags?: string[];
 }
 
+/**
+ * @deprecated 백엔드 `ProductMasterDto` 응답과 어긋남.
+ * `basePrice`, `pricingStrategy`, `tags`, `categories`, `variants`,
+ * `channelProducts`, `specifications` 는 백엔드 응답에 존재하지 않음 (phantom 필드).
+ * 신규 코드는 `ProductMasterDetail` (lib/services/products/products-detail.types.ts) 사용.
+ * 전체 정합 정비는 별도 PR — 기존 7+ 곳 consumer 동시 수정 필요.
+ */
 export interface MasterDto {
   id: string;
   name: string;
@@ -213,6 +220,12 @@ export interface UpdateVariantDto {
   };
 }
 
+/**
+ * @deprecated 백엔드 `VariantWithPriceDto` 응답과 어긋남.
+ * `name`, `sku`, `optionKey`, `images`, `specifications`, `inventory` 는 백엔드 응답에 존재하지 않음 (phantom 필드).
+ * 백엔드 응답의 실제 필드는 `variantName`, `imageId`, `displayOrder`, `isDefault`, `optionValues` 등.
+ * 신규 코드는 `ProductVariantRow` (lib/services/products/products-detail.types.ts) 사용.
+ */
 export interface VariantDto {
   id: string;
   masterId: string;

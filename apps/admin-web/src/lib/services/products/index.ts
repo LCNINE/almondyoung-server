@@ -12,3 +12,6 @@ export * from './mutations';
 
 // 데이터 변환 함수들
 export * from './transformers';
+
+// products-detail 페이지 전용 로컬 타입 (백엔드 진실에 맞춰진 타입)
+export * from './products-detail.types';
