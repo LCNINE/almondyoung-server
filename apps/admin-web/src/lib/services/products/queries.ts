@@ -28,6 +28,10 @@ import type {
   MergedChannelProductDto,
 } from '@/lib/types/dto/products';
 import type { BatchVariantInfo } from '@/lib/api/domains/products/variants.client';
+import type {
+  ProductMasterDetail,
+  ProductVariantsResponse,
+} from './products-detail.types';
 
 // ===== 카테고리 관련 쿼리 =====
 
@@ -123,6 +127,21 @@ export const useMaster = (id: string) => {
 };
 
 /**
+ * 제품 마스터 상세 조회 (Suspense).
+ * products-detail 페이지 전용. 글로벌 MasterDto 가 백엔드 응답과 어긋나있어
+ * 로컬 ProductMasterDetail 타입으로 받는다. 정합 정비는 별도 PR.
+ */
+export const useMasterSuspense = (id: string) => {
+  return useSuspenseQuery({
+    queryKey: productQueryKeys.master(id),
+    queryFn: async () =>
+      (await products.masters.get(id)) as unknown as ProductMasterDetail,
+    staleTime: 30 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+};
+
+/**
  * 제품 마스터 ID 목록으로 배치 조회 (썸네일/이름 lookup용)
  */
 export const useMastersByIds = (ids: string[]) => {
@@ -172,6 +191,28 @@ export const useVariantsByMaster = (query: VariantsQuery) => {
     queryKey: productQueryKeys.variantsByMaster(query.masterId, query),
     queryFn: () => products.variants.getByMaster(query.masterId, query),
     enabled: !!query.masterId,
+    staleTime: 30 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+};
+
+/**
+ * 마스터별 제품 변형 조회 (Suspense).
+ * products-detail 페이지 전용. 글로벌 VariantDto 가 백엔드 응답과 어긋나있어
+ * 로컬 ProductVariantsResponse 타입으로 받는다. 정합 정비는 별도 PR.
+ */
+export const useVariantsByMasterSuspense = (
+  masterId: string,
+  limit = 100,
+) => {
+  const query = { masterId, page: 1, limit };
+  return useSuspenseQuery({
+    queryKey: productQueryKeys.variantsByMaster(masterId, query),
+    queryFn: async () =>
+      (await products.variants.getByMaster(
+        masterId,
+        query,
+      )) as unknown as ProductVariantsResponse,
     staleTime: 30 * 1000,
     gcTime: 5 * 60 * 1000,
   });
