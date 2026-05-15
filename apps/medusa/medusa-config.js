@@ -177,6 +177,9 @@ module.exports = defineConfig({
       resolve: './src/modules/product-sorting',
     },
     {
+      resolve: '@medusajs/medusa/promotion',
+    },
+    {
       resolve: '@medusajs/medusa/event-bus-redis',
       options: {
         redisUrl: process.env.REDIS_URL,

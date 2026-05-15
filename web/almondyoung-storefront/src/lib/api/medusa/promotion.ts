@@ -17,10 +17,6 @@ export async function getMyPromotions(params?: {
     ...(await getAuthHeaders()),
   }
 
-  const next = {
-    ...(await getCacheOptions("promotions")),
-  }
-
   const query: Record<string, string> = {}
   if (params?.limit) query.limit = String(params.limit)
   if (params?.offset) query.offset = String(params.offset)
@@ -30,8 +26,7 @@ export async function getMyPromotions(params?: {
       method: "GET",
       query,
       headers,
-      next,
-      cache: "force-cache",
+      cache: "no-store",
     })
     .catch(medusaError)
 }
