@@ -481,7 +481,7 @@ export const mainMenus: MainMenu[] = [
       },
       {
         id: 'points-management',
-        title: '포인트 관리',
+        title: '적립금 관리',
         path: '/payments/points',
       },
     ],

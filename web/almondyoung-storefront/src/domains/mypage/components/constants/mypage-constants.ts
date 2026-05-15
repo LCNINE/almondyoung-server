@@ -18,7 +18,7 @@ export const MENU_ITEMS: MenuItem[] = [
   { label: "리뷰 관리", icon: "⭐", path: "/mypage/reviews" },
   { label: "아몬드영 멤버십", icon: "💎", path: "/mypage/membership" },
   { label: "결제수단", icon: "💳", path: "/mypage/membership/payment-method" },
-  // { label: "적립금", icon: "💰", path: "/mypage/point" },
+  { label: "적립금", icon: "💰", path: "/mypage/point" },
   { label: "회원정보 수정", icon: "👤", path: "/mypage/account/profile" },
   { label: "비밀번호 변경", icon: "🔒", path: "/mypage/account/password" },
   {
@@ -67,7 +67,7 @@ export const MENU_SECTIONS: MenuSection[] = [
     title: "혜택 및 서비스",
     items: [
       { label: "아몬드영 멤버십", icon: "💎", path: "/mypage/membership" },
-      // { label: "적립금", icon: "💰", path: "/mypage/point" },
+      { label: "적립금", icon: "💰", path: "/mypage/point" },
       { label: "결제수단", icon: "💳", path: "/mypage/membership/payment-method" },
       { label: "리뷰 관리", icon: "⭐", path: "/mypage/reviews" },
       { label: "내 문의 내역", icon: "❓", path: "/mypage/inquiries" },

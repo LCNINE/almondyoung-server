@@ -4,7 +4,7 @@ import { PlaceholderCell } from '../common/placeholder-cell';
 
 const methodTypeLabels: Record<string, string> = {
   TOSS: '토스페이먼츠',
-  POINTS: '포인트',
+  POINTS: '적립금',
   BANK_TRANSFER: '무통장입금',
 };
 

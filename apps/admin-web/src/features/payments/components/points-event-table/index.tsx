@@ -59,7 +59,7 @@ export function PointsEventTable({ userId }: { userId: string }) {
       isFetching={isFetching}
       count={data?.total ?? 0}
       pageSize={PAGE_SIZE}
-      noRecords={{ message: '포인트 이벤트가 없습니다.' }}
+      noRecords={{ message: '적립금 내역이 없습니다.' }}
     />
   );
 }
