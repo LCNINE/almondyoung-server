@@ -30,4 +30,8 @@ export const walletQueryKeys = {
     [...walletQueryKeys.points(), 'balance', userId] as const,
   pointsEvents: (userId: string, page?: number, limit?: number) =>
     [...walletQueryKeys.points(), 'events', userId, { page, limit }] as const,
+  pointsStats: (params?: { dateFrom?: string; dateTo?: string }) =>
+    [...walletQueryKeys.points(), 'stats', params] as const,
+  allPointsEvents: (params: object) =>
+    [...walletQueryKeys.points(), 'events', 'all', params] as const,
 } as const;

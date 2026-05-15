@@ -85,3 +85,27 @@ export const usePointsEvents = (
     placeholderData: keepPreviousData,
   });
 };
+
+export const usePointsStats = (params?: { dateFrom?: string; dateTo?: string }) => {
+  return useQuery({
+    queryKey: walletQueryKeys.pointsStats(params),
+    queryFn: () => walletApi.getPointsStats(params),
+    staleTime: 60 * 1000,
+  });
+};
+
+export const useAllPointsEvents = (params: {
+  page?: number;
+  limit?: number;
+  userId?: string;
+  eventType?: string;
+  dateFrom?: string;
+  dateTo?: string;
+}) => {
+  return useQuery({
+    queryKey: walletQueryKeys.allPointsEvents(params),
+    queryFn: () => walletApi.getAllPointsEvents(params),
+    staleTime: 30 * 1000,
+    placeholderData: keepPreviousData,
+  });
+};
