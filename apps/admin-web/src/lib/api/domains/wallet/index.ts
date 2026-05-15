@@ -55,11 +55,15 @@ export const walletApi = {
   },
 
   captureIntent: async (id: string): Promise<void> => {
-    await client.post(`${BASE}/v1/admin/payment-intents/${id}/capture`);
+    await client.post(`${BASE}/v1/admin/payment-intents/${id}/capture`, undefined, {
+      headers: { 'Idempotency-Key': crypto.randomUUID() },
+    });
   },
 
   cancelIntent: async (id: string): Promise<void> => {
-    await client.post(`${BASE}/v1/admin/payment-intents/${id}/cancel`);
+    await client.post(`${BASE}/v1/admin/payment-intents/${id}/cancel`, undefined, {
+      headers: { 'Idempotency-Key': crypto.randomUUID() },
+    });
   },
 
   refundIntent: async (
@@ -71,7 +75,9 @@ export const walletApi = {
       reasonMessage?: string;
     }
   ): Promise<void> => {
-    await client.post(`${BASE}/v1/admin/payment-intents/${id}/refund`, dto);
+    await client.post(`${BASE}/v1/admin/payment-intents/${id}/refund`, dto, {
+      headers: { 'Idempotency-Key': crypto.randomUUID() },
+    });
   },
 
   // ── Refunds ──────────────────────────────────────────────────────────────
@@ -105,9 +111,8 @@ export const walletApi = {
   ): Promise<void> => {
     await client.post(
       `${BASE}/v1/admin/payment-intents/${id}/bank-transfer-confirm`,
-      {
-        depositorNote,
-      }
+      { depositorNote },
+      { headers: { 'Idempotency-Key': crypto.randomUUID() } },
     );
   },
 
@@ -135,10 +140,8 @@ export const walletApi = {
     amount: number,
     reasonCode?: string
   ): Promise<BatchEarnResultDto> => {
-    const res = await client.post(`${BASE}/v1/admin/points/earn/batch`, {
-      userIds,
-      amount,
-      reasonCode,
+    const res = await client.post(`${BASE}/v1/admin/points/earn/batch`, { userIds, amount, reasonCode }, {
+      headers: { 'Idempotency-Key': crypto.randomUUID() },
     });
     return res.data;
   },
@@ -165,10 +168,8 @@ export const walletApi = {
     amount: number,
     reasonCode?: string
   ): Promise<void> => {
-    await client.post(`${BASE}/v1/admin/points/earn`, {
-      userId,
-      amount,
-      reasonCode,
+    await client.post(`${BASE}/v1/admin/points/earn`, { userId, amount, reasonCode }, {
+      headers: { 'Idempotency-Key': crypto.randomUUID() },
     });
   },
 
@@ -177,10 +178,8 @@ export const walletApi = {
     amount: number,
     reasonCode?: string
   ): Promise<void> => {
-    await client.post(`${BASE}/v1/admin/points/deduct`, {
-      userId,
-      amount,
-      reasonCode,
+    await client.post(`${BASE}/v1/admin/points/deduct`, { userId, amount, reasonCode }, {
+      headers: { 'Idempotency-Key': crypto.randomUUID() },
     });
   },
 
@@ -195,6 +194,8 @@ export const walletApi = {
       earnEventId,
       ...(amount !== undefined && { amount }),
       ...(reasonCode && { reasonCode }),
+    }, {
+      headers: { 'Idempotency-Key': crypto.randomUUID() },
     });
   },
 };

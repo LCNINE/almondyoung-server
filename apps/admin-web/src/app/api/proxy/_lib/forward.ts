@@ -5,6 +5,7 @@ const FORWARDED_REQUEST_HEADERS = [
   'accept',
   'accept-language',
   'user-agent',
+  'idempotency-key',
 ] as const;
 
 const DEFAULT_TIMEOUT_MS = 30_000;
