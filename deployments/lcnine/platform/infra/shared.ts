@@ -20,18 +20,10 @@ export function setup() {
   // ─── Redpanda 1-노드 EC2 + EBS 영속 ───
   // Fargate/EFS는 Seastar AIO 미지원이라 불가 → EC2(t4g.micro) + EBS(gp3) 선택.
   // 인스턴스 교체 시에도 EBS 재부착으로 데이터 유지. Cloud Map A record로 DNS 부여.
-  // AMI 변종(minimal/ecs-hvm) 이 mostRecent 에서 의도치 않게 선택되어 SSM agent/docker 누락된
-  // 인스턴스가 생성되는 사고가 있었음 (2026-05). 표준 AL2023 + kernel 6.1 LTS 로 좁힌다.
-  // (minimal: al2023-ami-minimal-*, ecs: al2023-ami-ecs-hvm-* 으로 prefix 구분됨)
-  const redpandaAmi = aws.ec2.getAmi({
-    mostRecent: true,
-    owners: ["amazon"],
-    filters: [
-      { name: "name", values: ["al2023-ami-2023.*-kernel-6.1-arm64"] },
-      { name: "virtualization-type", values: ["hvm"] },
-      { name: "architecture", values: ["arm64"] },
-    ],
-  });
+  // AMI ID 고정: mostRecent 동적 조회는 AWS 카탈로그 변동 시 인스턴스를 자동 교체하는 사고를
+  // AMI 갱신이 필요하면 아래 ID를 변경할 것.
+  // 현재: al2023-ami-2023.*-kernel-6.1-arm64, ap-northeast-2, 2026-05 기준
+  const redpandaAmiId = "ami-05b5c26974028499f";
 
   const redpandaRole = new aws.iam.Role("RedpandaRole", {
     assumeRolePolicy: JSON.stringify({
@@ -85,7 +77,7 @@ export function setup() {
     .replace(/__REDPANDA_ADVERTISE_DNS__/g, redpandaDns);
 
   const redpandaInstance = new aws.ec2.Instance("Redpanda", {
-    ami: redpandaAmi.then((a) => a.id),
+    ami: redpandaAmiId,
     instanceType: "t4g.micro",
     subnetId: redpandaSubnetId,
     availabilityZone: redpandaAz,
@@ -93,7 +85,6 @@ export function setup() {
     associatePublicIpAddress: true,
     iamInstanceProfile: redpandaInstanceProfile.name,
     userData: redpandaUserData,
-    userDataReplaceOnChange: true,
     // AL2023 AMI 스냅샷이 30GB라 그 이하로 못 줄임.
     rootBlockDevice: { volumeSize: 30, volumeType: "gp3", encrypted: true },
     tags: { Name: `${$app.name}-${$app.stage}-redpanda` },
