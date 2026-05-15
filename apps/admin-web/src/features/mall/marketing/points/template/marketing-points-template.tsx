@@ -41,7 +41,7 @@ export default function MarketingPointsTemplate() {
       <Container className="divide-y-0">
         <Header
           title="적립금 관리"
-          subtitle="포인트 통계 및 이벤트 내역을 조회하고 일괄 지급합니다."
+          subtitle="적립금 통계 및 내역을 조회하고 일괄 지급합니다."
           right={
             <Button onClick={() => setBatchEarnOpen(true)} className="bg-orange-500 text-white hover:bg-orange-600">
               일괄 지급
