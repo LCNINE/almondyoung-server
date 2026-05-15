@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyOptions } from 'jose';
 
-const FIVE_MINUTES = 5 * 60 * 1000;
 const REFRESH_MAX_AGE = 60 * 60 * 24 * 14; // 2 weeks — refresh 쿠키 갱신 시 유지
 
 const ACCESS_TOKEN = 'accessToken';
@@ -69,23 +68,10 @@ export async function middleware(request: NextRequest) {
     return redirectToLogin(request);
   }
 
-  // accessToken 검증 및 선제적 갱신
+  // accessToken 검증: 유효하면 통과, 만료/invalid 시에만 refresh 시도
   if (accessToken) {
     try {
-      const { payload } = await verifyAccessToken(accessToken);
-      const expiresAt = (payload.exp ?? 0) * 1000;
-      const needsProactiveRefresh = expiresAt - Date.now() < FIVE_MINUTES;
-
-      if (!needsProactiveRefresh) {
-        return NextResponse.next();
-      }
-
-      if (refreshToken) {
-        const refreshed = await refreshTokens(refreshToken);
-        if (refreshed) {
-          return setRefreshedTokenResponse(refreshed);
-        }
-      }
+      await verifyAccessToken(accessToken);
       return NextResponse.next();
     } catch {
       if (!refreshToken) {
