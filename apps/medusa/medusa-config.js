@@ -219,9 +219,6 @@ module.exports = defineConfig({
     },
   ],
   admin: {
-    // admin 번들이 자기 origin 으로 요청을 보내게 함.
-    // 미설정 시 빌드 타임에 backend URL이 박히지 않아 localhost:9000 으로 폴백됨.
-    backendUrl: '/',
     // Custom Vite config is needed because the admin bundler sometimes
     // fails to resolve `@medusajs/admin-sdk` during Docker builds.
     // Point directly to the installed package to avoid rollup resolution errors.
@@ -229,11 +226,6 @@ module.exports = defineConfig({
       const adminSdkPath = path.resolve(__dirname, 'node_modules/@medusajs/admin-sdk');
 
       return {
-        // admin 번들에 박히는 backend URL 매크로를 명시적으로 override.
-        // admin-bundler 가 options.backendUrl 을 어떤 이유로든 무시할 경우의 안전망.
-        define: {
-          __BACKEND_URL__: JSON.stringify('/'),
-        },
         resolve: {
           alias: {
             '@medusajs/admin-sdk': adminSdkPath,
