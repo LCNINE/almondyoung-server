@@ -229,6 +229,11 @@ module.exports = defineConfig({
       const adminSdkPath = path.resolve(__dirname, 'node_modules/@medusajs/admin-sdk');
 
       return {
+        // admin 번들에 박히는 backend URL 매크로를 명시적으로 override.
+        // admin-bundler 가 options.backendUrl 을 어떤 이유로든 무시할 경우의 안전망.
+        define: {
+          __BACKEND_URL__: JSON.stringify('/'),
+        },
         resolve: {
           alias: {
             '@medusajs/admin-sdk': adminSdkPath,
