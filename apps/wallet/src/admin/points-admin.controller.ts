@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiProperty, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
-import { IsInt, IsNotEmpty, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { IsArray, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 import { PaginationQueryDto } from '@app/shared';
 import { PointsAdminService } from './points-admin.service';
 import { WalletAdminAuth } from '../wallet-admin-auth.decorator';
@@ -12,6 +12,23 @@ class EarnPointsDto {
   userId: string;
 
   @ApiProperty({ description: 'Amount to earn (positive integer)', minimum: 1 })
+  @IsInt()
+  @Min(1)
+  amount: number;
+
+  @ApiPropertyOptional({ description: 'Reason code', maxLength: 128 })
+  @IsOptional()
+  @IsString()
+  reasonCode?: string;
+}
+
+class DeductPointsDto {
+  @ApiProperty({ description: 'User ID', maxLength: 128 })
+  @IsString()
+  @IsNotEmpty()
+  userId: string;
+
+  @ApiProperty({ description: 'Amount to deduct (positive integer)', minimum: 1 })
   @IsInt()
   @Min(1)
   amount: number;
@@ -51,6 +68,57 @@ class PointsEventListQueryDto extends PaginationQueryDto {
   userId: string;
 }
 
+class AllEventsQueryDto extends PaginationQueryDto {
+  @ApiPropertyOptional({ description: 'Filter by User ID' })
+  @IsOptional()
+  @IsString()
+  userId?: string;
+
+  @ApiPropertyOptional({ enum: ['EARN', 'REDEEM', 'EARN_CANCEL', 'REDEEM_CANCEL'] })
+  @IsOptional()
+  @IsIn(['EARN', 'REDEEM', 'EARN_CANCEL', 'REDEEM_CANCEL'])
+  eventType?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  dateFrom?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  dateTo?: string;
+}
+
+class StatsQueryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  dateFrom?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  dateTo?: string;
+}
+
+class BatchEarnDto {
+  @ApiProperty({ description: 'List of user IDs to earn points', type: [String] })
+  @IsArray()
+  @IsString({ each: true })
+  userIds: string[];
+
+  @ApiProperty({ description: 'Amount to earn per user (positive integer)', minimum: 1 })
+  @IsInt()
+  @Min(1)
+  amount: number;
+
+  @ApiPropertyOptional({ description: 'Reason code', maxLength: 128 })
+  @IsOptional()
+  @IsString()
+  reasonCode?: string;
+}
+
 @ApiTags('Admin - Points')
 @WalletAdminAuth()
 @Controller('v1/admin/points')
@@ -63,10 +131,27 @@ export class PointsAdminController {
     return this.service.getBalance(userId);
   }
 
+  @Get('stats')
+  @ApiOperation({ summary: 'Get aggregated points statistics' })
+  async getStats(@Query() query: StatsQueryDto) {
+    return this.service.getStats({ dateFrom: query.dateFrom, dateTo: query.dateTo });
+  }
+
   @Get('events')
   @ApiOperation({ summary: 'Get point events for a user (paginated)' })
   async getEvents(@Query() query: PointsEventListQueryDto) {
     return this.service.getEventsPaginated(query.userId, query.page ?? 1, query.limit ?? 20);
+  }
+
+  @Get('events/all')
+  @ApiOperation({ summary: 'Get all point events across users (paginated, with filters)' })
+  async getAllEvents(@Query() query: AllEventsQueryDto) {
+    return this.service.getAllEventsPaginated(query.page ?? 1, query.limit ?? 20, {
+      userId: query.userId,
+      eventType: query.eventType,
+      dateFrom: query.dateFrom,
+      dateTo: query.dateTo,
+    });
   }
 
   @Post('earn')
@@ -74,6 +159,20 @@ export class PointsAdminController {
   @ApiOperation({ summary: 'Earn points for a user (admin)' })
   async earn(@Body() dto: EarnPointsDto) {
     return this.service.earn(dto.userId, dto.amount, dto.reasonCode);
+  }
+
+  @Post('earn/batch')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Batch earn points for multiple users (admin)' })
+  async batchEarn(@Body() dto: BatchEarnDto) {
+    return this.service.batchEarn(dto.userIds, dto.amount, dto.reasonCode);
+  }
+
+  @Post('deduct')
+  @HttpCode(201)
+  @ApiOperation({ summary: 'Deduct points from a user (admin)' })
+  async deduct(@Body() dto: DeductPointsDto) {
+    return this.service.deduct(dto.userId, dto.amount, dto.reasonCode);
   }
 
   @Post('earn-cancel')

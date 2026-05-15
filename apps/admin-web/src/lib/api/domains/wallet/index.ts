@@ -11,6 +11,8 @@ import {
   PendingBankTransferDto,
   PointsBalanceDto,
   PointsEventDto,
+  PointsStatsDto,
+  BatchEarnResultDto,
   PaginatedResponse,
 } from '@/lib/types/dto/wallet';
 import { client } from '../../client';
@@ -111,10 +113,38 @@ export const walletApi = {
 
   // ── Points ───────────────────────────────────────────────────────────────
 
+  getPointsStats: async (params?: { dateFrom?: string; dateTo?: string }): Promise<PointsStatsDto> => {
+    const res = await client.get(`${BASE}/v1/admin/points/stats`, { params });
+    return res.data;
+  },
+
+  getAllPointsEvents: async (params: {
+    page?: number;
+    limit?: number;
+    userId?: string;
+    eventType?: string;
+    dateFrom?: string;
+    dateTo?: string;
+  }): Promise<PaginatedResponse<PointsEventDto>> => {
+    const res = await client.get(`${BASE}/v1/admin/points/events/all`, { params });
+    return res.data;
+  },
+
+  batchEarnPoints: async (
+    userIds: string[],
+    amount: number,
+    reasonCode?: string
+  ): Promise<BatchEarnResultDto> => {
+    const res = await client.post(`${BASE}/v1/admin/points/earn/batch`, {
+      userIds,
+      amount,
+      reasonCode,
+    });
+    return res.data;
+  },
+
   getPointsBalance: async (userId: string): Promise<PointsBalanceDto> => {
-    const res = await client.get(
-      `${BASE}/v1/admin/points/balance?user_id=${encodeURIComponent(userId)}`
-    );
+    const res = await client.get(`${BASE}/v1/admin/points/balance`, { params: { user_id: userId } });
     return res.data;
   },
 
@@ -136,6 +166,18 @@ export const walletApi = {
     reasonCode?: string
   ): Promise<void> => {
     await client.post(`${BASE}/v1/admin/points/earn`, {
+      userId,
+      amount,
+      reasonCode,
+    });
+  },
+
+  deductPoints: async (
+    userId: string,
+    amount: number,
+    reasonCode?: string
+  ): Promise<void> => {
+    await client.post(`${BASE}/v1/admin/points/deduct`, {
       userId,
       amount,
       reasonCode,

@@ -3,8 +3,20 @@ import { DbService } from '@app/db';
 import { PaginatedResponseDto } from '@app/shared';
 import { and, count, desc, eq, gte, lte, sql, SQL } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
-import { pointEventDetails, pointEvents, pointHolds, WalletSchema } from '../schema';
+import { pointEventDetails, pointEvents, pointHolds, PointEventType, WalletSchema } from '../schema';
 import { DbTx } from '../types';
+
+export interface PointsStats {
+  totalEarned: number;
+  totalRedeemed: number;
+  totalCancelled: number;
+  currentCirculating: number;
+}
+
+export interface BatchEarnResult {
+  succeeded: string[];
+  failed: Array<{ userId: string; reason: string }>;
+}
 
 export interface PointsBalance {
   confirmed: number;
@@ -143,6 +155,38 @@ export class PointsAdminService {
     return { eventId };
   }
 
+  async deduct(
+    userId: string,
+    amount: number,
+    reasonCode?: string,
+  ): Promise<{ eventId: string }> {
+    if (amount <= 0) {
+      throw new BadRequestException('amount must be greater than 0');
+    }
+
+    const eventId = randomUUID();
+
+    await this.dbService.db.transaction(async (tx: DbTx) => {
+      const balance = await this.getBalance(userId);
+      if (balance.available < amount) {
+        throw new BadRequestException(
+          `잔액 부족. 사용 가능: ${balance.available}, 요청: ${amount}`,
+        );
+      }
+
+      await tx.insert(pointEvents).values({
+        id: eventId,
+        userId,
+        eventType: 'REDEEM',
+        amount: -amount,
+        providerIdempotencyKey: `admin:deduct:${eventId}`,
+        reasonCode: reasonCode ?? null,
+      });
+    });
+
+    return { eventId };
+  }
+
   async earnCancel(
     userId: string,
     earnEventId: string,
@@ -214,5 +258,133 @@ export class PointsAdminService {
     });
 
     return { eventId: cancelEventId };
+  }
+
+  async getStats(filters?: { dateFrom?: string; dateTo?: string }): Promise<PointsStats> {
+    const db = this.dbService.db;
+
+    const conditions: SQL[] = [];
+    if (filters?.dateFrom) conditions.push(gte(pointEvents.createdAt, new Date(filters.dateFrom)));
+    if (filters?.dateTo) conditions.push(lte(pointEvents.createdAt, new Date(filters.dateTo)));
+    const where = conditions.length ? and(...conditions) : undefined;
+
+    const rows = await db
+      .select({
+        eventType: pointEvents.eventType,
+        total: sql<number>`coalesce(sum(abs(${pointEvents.amount})), 0)`,
+      })
+      .from(pointEvents)
+      .where(where)
+      .groupBy(pointEvents.eventType);
+
+    const byType: Record<string, number> = {};
+    for (const r of rows) byType[r.eventType] = Number(r.total);
+
+    const totalEarned = byType['EARN'] ?? 0;
+    const totalRedeemed = byType['REDEEM'] ?? 0;
+    const earnCancelled = byType['EARN_CANCEL'] ?? 0;
+    const redeemCancelled = byType['REDEEM_CANCEL'] ?? 0;
+
+    return {
+      totalEarned,
+      totalRedeemed,
+      totalCancelled: earnCancelled,
+      currentCirculating: totalEarned - earnCancelled - totalRedeemed + redeemCancelled,
+    };
+  }
+
+  async getAllEventsPaginated(
+    page: number,
+    limit: number,
+    filters?: { userId?: string; eventType?: string; dateFrom?: string; dateTo?: string },
+  ): Promise<PaginatedResponseDto<PointsEventRow>> {
+    const db = this.dbService.db;
+    const offset = (page - 1) * limit;
+
+    const conditions: SQL[] = [];
+    if (filters?.userId) conditions.push(eq(pointEvents.userId, filters.userId));
+    if (filters?.eventType) conditions.push(eq(pointEvents.eventType, filters.eventType as PointEventType));
+    if (filters?.dateFrom) conditions.push(gte(pointEvents.createdAt, new Date(filters.dateFrom)));
+    if (filters?.dateTo) conditions.push(lte(pointEvents.createdAt, new Date(filters.dateTo)));
+    const where = conditions.length ? and(...conditions) : undefined;
+
+    const [[countResult], rows] = await Promise.all([
+      db.select({ value: count() }).from(pointEvents).where(where),
+      db
+        .select({
+          id: pointEvents.id,
+          userId: pointEvents.userId,
+          eventType: pointEvents.eventType,
+          amount: pointEvents.amount,
+          originalEventId: pointEvents.originalEventId,
+          reasonCode: pointEvents.reasonCode,
+          createdAt: pointEvents.createdAt,
+        })
+        .from(pointEvents)
+        .where(where)
+        .orderBy(desc(pointEvents.createdAt))
+        .limit(limit)
+        .offset(offset),
+    ]);
+
+    return { data: rows, total: countResult?.value ?? 0, page, limit };
+  }
+
+  async batchEarn(
+    userIds: string[],
+    amount: number,
+    reasonCode?: string,
+  ): Promise<BatchEarnResult> {
+    if (amount <= 0) throw new BadRequestException('amount must be greater than 0');
+    if (!userIds.length) throw new BadRequestException('userIds must not be empty');
+    if (userIds.length > 1000) throw new BadRequestException('최대 1000명까지 일괄 지급 가능합니다');
+
+    const succeeded: string[] = [];
+    const failed: BatchEarnResult['failed'] = [];
+
+    const chunkSize = 100;
+    for (let i = 0; i < userIds.length; i += chunkSize) {
+      const chunk = userIds.slice(i, i + chunkSize);
+
+      try {
+        await this.dbService.db.transaction(async (tx: DbTx) => {
+          const rows = chunk.map((userId) => ({
+            id: randomUUID(),
+            detailId: randomUUID(),
+            userId,
+          }));
+
+          await tx.insert(pointEvents).values(
+            rows.map((r) => ({
+              id: r.id,
+              userId: r.userId,
+              eventType: 'EARN' as const,
+              amount,
+              providerIdempotencyKey: `admin:batch-earn:${r.id}`,
+              reasonCode: reasonCode ?? null,
+            })),
+          );
+
+          await tx.insert(pointEventDetails).values(
+            rows.map((r) => ({
+              id: r.detailId,
+              pointEventId: r.id,
+              userId: r.userId,
+              eventType: 'EARN' as const,
+              amount,
+              earnedEventDetailId: r.detailId,
+            })),
+          );
+        });
+
+        for (const userId of chunk) succeeded.push(userId);
+      } catch (err) {
+        for (const userId of chunk) {
+          failed.push({ userId, reason: err instanceof Error ? err.message : 'unknown' });
+        }
+      }
+    }
+
+    return { succeeded, failed };
   }
 }

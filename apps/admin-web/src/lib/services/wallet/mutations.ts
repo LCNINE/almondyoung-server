@@ -98,6 +98,45 @@ export const useEarnPoints = () => {
   });
 };
 
+export const useBatchEarnPoints = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      userIds,
+      amount,
+      reasonCode,
+    }: {
+      userIds: string[];
+      amount: number;
+      reasonCode?: string;
+    }) => walletApi.batchEarnPoints(userIds, amount, reasonCode),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: walletQueryKeys.points() });
+    },
+  });
+};
+
+export const useDeductPoints = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      userId,
+      amount,
+      reasonCode,
+    }: {
+      userId: string;
+      amount: number;
+      reasonCode?: string;
+    }) => walletApi.deductPoints(userId, amount, reasonCode),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: walletQueryKeys.pointsBalance(variables.userId),
+      });
+      queryClient.invalidateQueries({ queryKey: walletQueryKeys.points() });
+    },
+  });
+};
+
 export const useCancelEarnPoints = () => {
   const queryClient = useQueryClient();
   return useMutation({

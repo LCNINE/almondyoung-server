@@ -136,11 +136,26 @@ export interface PointsBalanceDto {
 
 export interface PointsEventDto {
   id: string;
+  userId: string;
   eventType: string;
   amount: number;
   originalEventId: string | null;
   reasonCode: string | null;
   createdAt: string;
+}
+
+// ─── Points Stats ────────────────────────────────────────────────────────────
+
+export interface PointsStatsDto {
+  totalEarned: number;
+  totalRedeemed: number;
+  totalCancelled: number;
+  currentCirculating: number;
+}
+
+export interface BatchEarnResultDto {
+  succeeded: string[];
+  failed: Array<{ userId: string; reason: string }>;
 }
 
 // ─── Query & Pagination ─────────────────────────────────────────────────────

@@ -3,17 +3,23 @@ import { useMemo } from 'react';
 import type { PointsEventDto } from '@/lib/types/dto/wallet';
 import { IdCell, DateCell } from '@/components/table/table-cells/common';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 
 const columnHelper = createColumnHelper<PointsEventDto>();
 
-const eventTypeConfig: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
+export const eventTypeConfig: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
   EARN: { label: '적립', variant: 'default' },
   REDEEM: { label: '사용', variant: 'destructive' },
   EARN_CANCEL: { label: '적립취소', variant: 'secondary' },
   REDEEM_CANCEL: { label: '사용취소', variant: 'outline' },
 };
 
-export const usePointsEventTableColumns = () => {
+interface Options {
+  onCancel?: (eventId: string) => void;
+  cancelingId?: string | null;
+}
+
+export const usePointsEventTableColumns = ({ onCancel, cancelingId }: Options = {}) => {
   return useMemo(
     () => [
       columnHelper.accessor('id', {
@@ -48,7 +54,30 @@ export const usePointsEventTableColumns = () => {
         header: '일시',
         cell: ({ getValue }) => <DateCell value={getValue()} />,
       }),
+      ...(onCancel
+        ? [
+            columnHelper.display({
+              id: 'actions',
+              header: '',
+              cell: ({ row }) => {
+                if (row.original.eventType !== 'EARN') return null;
+                const id = row.original.id;
+                return (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs text-muted-foreground"
+                    disabled={cancelingId === id}
+                    onClick={() => onCancel(id)}
+                  >
+                    {cancelingId === id ? '취소 중...' : '적립취소'}
+                  </Button>
+                );
+              },
+            }),
+          ]
+        : []),
     ],
-    [],
+    [onCancel, cancelingId],
   );
 };
