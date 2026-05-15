@@ -1,28 +1,24 @@
 'use client';
 
+import { useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { usePointsEvents, useCancelEarnPoints } from '@/lib/services/wallet';
 import { useDataTable } from '@/hooks/use-data-table';
 import { usePointsEventTableColumns } from '@/hooks/table/columns/use-points-event-table-columns';
 import { DataTable } from '@/components/data-table';
-import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { useState } from 'react';
+import { AlertCircle } from 'lucide-react';
 
 const PAGE_SIZE = 20;
+const PREFIX = 'pts';
 
 export function PointsEventTable({ userId }: { userId: string }) {
-  const { data, isLoading, isFetching } = usePointsEvents(userId, 1, PAGE_SIZE);
-  const columns = usePointsEventTableColumns();
-  const cancelMutation = useCancelEarnPoints();
-  const [cancelingId, setCancelingId] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+  const page = Number(searchParams.get(`${PREFIX}_page`) ?? '1');
 
-  const { table } = useDataTable({
-    data: data?.data ?? [],
-    columns,
-    count: data?.total,
-    pageSize: PAGE_SIZE,
-    getRowId: (row) => row.id,
-  });
+  const [cancelingId, setCancelingId] = useState<string | null>(null);
+  const { data, isLoading, isFetching, isError } = usePointsEvents(userId, page, PAGE_SIZE);
+  const cancelMutation = useCancelEarnPoints();
 
   const handleCancel = async (earnEventId: string) => {
     setCancelingId(earnEventId);
@@ -36,41 +32,34 @@ export function PointsEventTable({ userId }: { userId: string }) {
     }
   };
 
+  const columns = usePointsEventTableColumns({ onCancel: handleCancel, cancelingId });
+
+  const { table } = useDataTable({
+    data: data?.data ?? [],
+    columns,
+    count: data?.total,
+    pageSize: PAGE_SIZE,
+    getRowId: (row) => row.id,
+    prefix: PREFIX,
+  });
+
+  if (isError) {
+    return (
+      <div className="px-4 py-6 flex items-center gap-2 text-sm text-destructive">
+        <AlertCircle className="h-4 w-4 shrink-0" />
+        <span>이벤트 목록을 불러오지 못했습니다.</span>
+      </div>
+    );
+  }
+
   return (
-    <div>
-      <DataTable
-        table={table}
-        isLoading={isLoading}
-        isFetching={isFetching}
-        count={data?.total ?? 0}
-        pageSize={PAGE_SIZE}
-        noRecords={{ message: '포인트 이벤트가 없습니다.' }}
-      />
-      {(data?.data ?? []).some((e) => e.eventType === 'EARN') && (
-        <div className="border-t px-4 py-2">
-          <p className="text-xs text-muted-foreground mb-2">적립 이벤트 취소</p>
-          <div className="space-y-1">
-            {data?.data
-              .filter((e) => e.eventType === 'EARN')
-              .map((event) => (
-                <div key={event.id} className="flex items-center justify-between text-sm py-1">
-                  <span className="font-mono text-xs">
-                    {event.id.slice(0, 8)}... (+{Math.abs(event.amount).toLocaleString('ko-KR')})
-                  </span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 text-xs"
-                    disabled={cancelingId === event.id}
-                    onClick={() => handleCancel(event.id)}
-                  >
-                    {cancelingId === event.id ? '취소 중...' : '취소'}
-                  </Button>
-                </div>
-              ))}
-          </div>
-        </div>
-      )}
-    </div>
+    <DataTable
+      table={table}
+      isLoading={isLoading}
+      isFetching={isFetching}
+      count={data?.total ?? 0}
+      pageSize={PAGE_SIZE}
+      noRecords={{ message: '포인트 이벤트가 없습니다.' }}
+    />
   );
 }

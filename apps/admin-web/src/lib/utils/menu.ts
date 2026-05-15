@@ -434,7 +434,7 @@ export const mainMenus: MainMenu[] = [
           { id: 'messages', title: '메시지 or 푸시알림' },
           { id: 'banner-groups', title: '배너 그룹', path: '/mall/banner-groups' },
           { id: 'popups', title: '팝업' },
-          { id: 'points', title: '적립금' },
+          { id: 'points', title: '적립금', path: '/mall/marketing/points' },
           { id: 'coupons', title: '쿠폰' },
           { id: 'promotions', title: '프로모션' },
           { id: 'deposit', title: '예치금' },
