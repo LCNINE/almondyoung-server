@@ -8,8 +8,7 @@ type Params = { params: Promise<{ path: string[] }> };
 
 function medusaExtraHeaders(): Record<string, string> | undefined {
   if (!MEDUSA_API_KEY) return undefined;
-  const basicAuth = Buffer.from(`${MEDUSA_API_KEY}:`).toString('base64');
-  return { Authorization: `Basic ${basicAuth}` };
+  return { Authorization: `Bearer ${MEDUSA_API_KEY}` };
 }
 
 function forwardToMedusa(request: NextRequest, path: string[]) {

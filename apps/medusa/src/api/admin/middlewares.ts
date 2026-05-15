@@ -10,13 +10,13 @@ export const adminRouteMiddlewares: MiddlewareRoute[] = [
   },
   {
     matcher: '/admin/*',
-    method: ['POST'],
-    middlewares: [authenticate('user', ['session', 'bearer', 'api-key'])],
+    method: ['GET'],
+    middlewares: [authenticate('user', ['api-key', 'bearer', 'session'])],
   },
   {
     matcher: '/admin/*',
-    method: ['GET'],
-    middlewares: [authenticate('user', ['api-key', 'bearer', 'session'])],
+    method: ['POST', 'PUT', 'PATCH', 'DELETE'],
+    middlewares: [authenticate('user', ['session', 'bearer', 'api-key'])],
   },
   ...adminPaymentRoutesMiddlewares,
 ];

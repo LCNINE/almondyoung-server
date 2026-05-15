@@ -26,8 +26,7 @@ export const MENU_ITEMS: MenuItem[] = [
     icon: "🔗",
     path: "/mypage/account/cafe24",
   },
-  // todo: 쿠폰 임시 비활성화
-  // { label: "쿠폰", icon: "🏷️", path: "/mypage/coupons" },
+  { label: "쿠폰", icon: "🏷️", path: "/mypage/coupons" },
   // { label: "다운로드", icon: "📥", path: "/mypage/download" },
   // { label: "구독 관리", icon: "🔁", path: "/mypage/subscribe/manage" },
   // {
@@ -68,6 +67,7 @@ export const MENU_SECTIONS: MenuSection[] = [
     items: [
       { label: "아몬드영 멤버십", icon: "💎", path: "/mypage/membership" },
       { label: "적립금", icon: "💰", path: "/mypage/point" },
+      { label: "쿠폰", icon: "🏷️", path: "/mypage/coupons" },
       { label: "결제수단", icon: "💳", path: "/mypage/membership/payment-method" },
       { label: "리뷰 관리", icon: "⭐", path: "/mypage/reviews" },
       { label: "내 문의 내역", icon: "❓", path: "/mypage/inquiries" },
@@ -177,12 +177,12 @@ export const SIDEBAR_MENU_ITEMS = [
     hasSubMenu: false,
     path: "/mypage/membership/payment-method",
   },
-  // {
-  //   id: "coupon",
-  //   label: "쿠폰",
-  //   hasSubMenu: false,
-  //   path: "/mypage/coupons",
-  // },
+  {
+    id: "coupon",
+    label: "쿠폰",
+    hasSubMenu: false,
+    path: "/mypage/coupons",
+  },
   // {
   //   id: "download",
   //   label: "다운로드",

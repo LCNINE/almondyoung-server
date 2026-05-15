@@ -368,6 +368,8 @@ export function setup(infra: SharedInfra) {
     environment: {
       AUTH_SECRET: authSecret.value,
       ALMONDYOUNG_API_URL: url("core"),
+      MEDUSA_API_URL: url("medusa"),
+      MEDUSA_API_KEY: medusaApiKey.value,
       USER_SERVICE_URL: idpUserServiceUrl,
       WALLET_SERVICE_URL: url("wallet"),
       MEMBERSHIP_SERVICE_URL: url("membership"),
