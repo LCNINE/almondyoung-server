@@ -63,9 +63,9 @@ export function PointsBatchEarnDialog({
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>포인트 일괄 지급</DialogTitle>
+          <DialogTitle>적립금 일괄 지급</DialogTitle>
           <DialogDescription>
-            여러 사용자에게 동일 금액의 포인트를 한 번에 지급합니다. (최대 1,000명)
+            여러 사용자에게 동일 금액의 적립금을 한 번에 지급합니다. (최대 1,000명)
           </DialogDescription>
         </DialogHeader>
 

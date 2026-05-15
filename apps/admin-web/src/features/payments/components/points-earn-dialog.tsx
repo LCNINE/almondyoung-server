@@ -31,12 +31,12 @@ export function PointsEarnDialog({
     if (!amount || amount <= 0) return;
     try {
       await earnMutation.mutateAsync({ userId, amount: amount as number, reasonCode: reasonCode || undefined });
-      toast.success(`포인트 ${(amount as number).toLocaleString('ko-KR')}원 적립 완료`);
+      toast.success(`적립금 ${(amount as number).toLocaleString('ko-KR')}원 적립 완료`);
       setAmount('');
       setReasonCode('');
       onOpenChange(false);
     } catch {
-      toast.error('포인트 적립 실패');
+      toast.error('적립금 적립 실패');
     }
   };
 
@@ -44,7 +44,7 @@ export function PointsEarnDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>포인트 적립</DialogTitle>
+          <DialogTitle>적립금 적립</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">

@@ -33,12 +33,12 @@ export function PointsDeductDialog({
     if (!amount || amount <= 0) return;
     try {
       await deductMutation.mutateAsync({ userId, amount: amount as number, reasonCode: reasonCode || undefined });
-      toast.success(`포인트 ${(amount as number).toLocaleString('ko-KR')}원 차감 완료`);
+      toast.success(`적립금 ${(amount as number).toLocaleString('ko-KR')}원 차감 완료`);
       setAmount('');
       setReasonCode('');
       onOpenChange(false);
     } catch {
-      toast.error('포인트 차감 실패');
+      toast.error('적립금 차감 실패');
     }
   };
 
@@ -48,7 +48,7 @@ export function PointsDeductDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>포인트 차감</DialogTitle>
+          <DialogTitle>적립금 차감</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
