@@ -8,13 +8,18 @@ import { Spinner } from '@/components/ui/spinner';
 import { DataTable } from '@/components/data-table';
 import { useDataTable } from '@/hooks/use-data-table';
 import { useProductVariantsTableColumns } from '@/hooks/table/columns/use-product-variants-table-columns';
-import { useVariantsByMasterSuspense } from '@/lib/services/products/queries';
+import {
+  useMasterSuspense,
+  useVariantsByMasterSuspense,
+} from '@/lib/services/products/queries';
 
 const PAGE_SIZE = 100;
 
 function ProductDetailVariantsContent({ masterId }: { masterId: string }) {
   const { data } = useVariantsByMasterSuspense(masterId, PAGE_SIZE);
-  const columns = useProductVariantsTableColumns();
+  // master 도 옆 Options 카드가 이미 호출 중 — React Query 캐시 공유.
+  const { data: master } = useMasterSuspense(masterId);
+  const columns = useProductVariantsTableColumns(master.optionGroups);
 
   // 서버 정렬 미지원 — client 에서 displayOrder asc, tie-breaker createdAt asc.
   const rows = useMemo(() => {

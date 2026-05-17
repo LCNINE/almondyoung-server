@@ -18,6 +18,20 @@
 - 핵심 속성: `code` (unique), `holderId`(소유자), `stockType`, `safetyStock`, 물리 속성(무게/치수/소재), `moq`.
 - 변화 동인: 입고/이동/실측/재고 보정.
 
+### 상품 카테고리 (Product Category) — 고객 노출용 분류 트리
+- 정의: 쇼핑몰에서 **고객이 상품을 탐색**할 때 쓰는 단일 분류 트리. 운영/집계용 내부 분류가 아니라 노출 메뉴.
+- 스키마: `apps/core/src/modules/catalog/schema/catalog.schema.ts` 의 `productCategories` (`product_categories`).
+- 구조: 단일 트리(여러 트리 아님). 부모-자식 관계, `sortOrder` 로 정렬, `isActive` 로 노출 토글.
+- 핵심 속성: `name`, `slug`, `description`, `parentId`, `level`, `sortOrder`, `isActive`.
+- **판매상품(master)** 과의 관계는 분류이지 강결합 아님. 매핑은 `productMasterCategories` (한 master 가 여러 카테고리에 속할 수 있음, `isPrimary` 로 대표 1건 지정).
+- 변화 동인: 시즌/기획전 개편, 메뉴 재배치, 노출 on/off.
+- admin 라우트: `apps/admin-web/src/app/(admin)/mall/categories`.
+
+### 채널 카테고리 (Channel Category) — 판매 채널 분류 (별개 개념)
+- 정의: **판매 채널**(`salesChannels`) 자체를 묶는 분류. 상품 카테고리와는 별개 테이블·별개 도메인.
+- 스키마: 같은 파일의 `channelCategories` (`channel_categories`). `salesChannels.categoryId` 가 이걸 참조.
+- 상품 카테고리와 혼동 금지 — UI 도 모듈도 분리되어 있음 (`channel-categories.controller.ts`).
+
 ### SKU Group — 재고상품의 느슨한 묶음
 - 정의: 매우 유사한 SKU들의 묶음 (예: 같은 제품인데 색만 다른 색연필).
 - 스키마: `apps/core/src/modules/inventory/schema/inventory.schema.ts` 의 `skuGroups` 테이블, `skus.groupId` (nullable).
