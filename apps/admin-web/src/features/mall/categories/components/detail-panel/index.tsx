@@ -250,7 +250,7 @@ function EditForm({
           </div>
         )}
         <Link
-          href={`/mall/products?categoryId=${categoryId}`}
+          href={`/mall/products-list?categoryId=${categoryId}`}
           className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
         >
           상품 목록 보러가기
