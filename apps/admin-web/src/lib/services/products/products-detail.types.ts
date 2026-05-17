@@ -6,6 +6,27 @@
 // - apps/core/.../dto/masters/master-response.dto.ts  (ProductMasterDto)
 // - apps/core/.../dto/variants/variant-response.dto.ts (VariantWithPriceDto)
 
+export type ProductOptionValue = {
+  id: string;
+  optionGroupId: string;
+  displayName: string;
+  sortOrder: number;
+};
+
+export type ProductOptionGroup = {
+  id: string;
+  displayName: string;
+  sortOrder: number;
+  values: ProductOptionValue[];
+};
+
+export type ProductImage = {
+  id: string;
+  fileId: string;
+  isPrimary: boolean;
+  sortOrder: number;
+};
+
 export type ProductMasterDetail = {
   id: string;
   name: string;
@@ -21,6 +42,8 @@ export type ProductMasterDetail = {
   updatedAt: string;
   createdBy: string | null;
   updatedBy: string | null;
+  optionGroups: ProductOptionGroup[];
+  images: ProductImage[];
 };
 
 export type ProductVariantRow = {

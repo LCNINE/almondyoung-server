@@ -4,7 +4,13 @@
 export const productQueryKeys = {
   // 카테고리 관련
   categories: ['categories'] as const,
-  categoryTree: () => [...productQueryKeys.categories, 'tree'] as const,
+  categoryTree: (options?: { maxDepth?: number; includeInactive?: boolean }) =>
+    [
+      ...productQueryKeys.categories,
+      'tree',
+      options?.maxDepth ?? 'all',
+      options?.includeInactive ? 'all-states' : 'active-only',
+    ] as const,
   category: (id: string) => [...productQueryKeys.categories, id] as const,
   categoryChildren: (id: string) =>
     [...productQueryKeys.category(id), 'children'] as const,

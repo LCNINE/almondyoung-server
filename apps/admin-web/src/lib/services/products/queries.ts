@@ -37,13 +37,17 @@ import type {
 
 /**
  * 카테고리 트리 조회
+ * - includeInactive: 어드민 트리에서 비활성 카테고리까지 노출하려면 true.
  */
-export const useCategoryTree = (maxDepth?: number) => {
+export const useCategoryTree = (options?: {
+  maxDepth?: number;
+  includeInactive?: boolean;
+}) => {
   return useQuery({
-    queryKey: productQueryKeys.categoryTree(),
-    queryFn: () => products.categories.getTree(maxDepth),
-    staleTime: 5 * 60 * 1000, // 5분
-    gcTime: 10 * 60 * 1000, // 10분
+    queryKey: productQueryKeys.categoryTree(options),
+    queryFn: () => products.categories.getTree(options),
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
   });
 };
 

@@ -143,13 +143,22 @@ export class ProductCategoriesController {
     type: Number,
     description: '조회할 최대 깊이 (미지정시 전체)',
   })
+  @ApiQuery({
+    name: 'includeInactive',
+    required: false,
+    type: Boolean,
+    description: '비활성(isActive=false) 카테고리 포함 여부. 어드민 트리 관리용. 기본 false (고객 노출용).',
+  })
   @ApiResponse({
     status: 200,
     description: '카테고리 트리 조회 성공',
     type: CategoryTreeResponseDto,
   })
-  async getCategoryTree(@Query('maxDepth') maxDepth?: number): Promise<CategoryTreeResponseDto> {
-    return this.productCategoriesService.getCategoryTree(maxDepth);
+  async getCategoryTree(
+    @Query('maxDepth') maxDepth?: number,
+    @Query('includeInactive') includeInactive?: string,
+  ): Promise<CategoryTreeResponseDto> {
+    return this.productCategoriesService.getCategoryTree(maxDepth, includeInactive === 'true');
   }
 
   @Get(':id/children')
