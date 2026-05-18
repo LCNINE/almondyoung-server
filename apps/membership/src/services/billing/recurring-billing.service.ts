@@ -66,8 +66,7 @@ export class RecurringBillingService {
         const result = await this.billingManager.processSingleBilling(contract);
         results.push(result);
 
-        // 결제 간격 조절 (API 부하 방지)
-        await this.sleep(1000); // 1초 대기
+        await this.sleep(1000); // API 부하 방지
       } catch (error) {
         this.logger.error(`Failed to process billing for contract ${contract.id}: ${error.message}`, error.stack);
 
@@ -125,28 +124,53 @@ export class RecurringBillingService {
     }
   }
 
-  @Cron('0 3 * * *')
+  /**
+   * 매 시간 정각 만료 처리
+   *
+   * - autoRenewal=false: endsAt < today -> 일반 만료 (one_time / recurring 해지 후 기간 종료)
+   * - autoRenewal=true + dunning 없음: BillingCharge 커맨드 발행 후 wallet 응답 미수신 stuck 상태
+   * (dunning 진행 중인 카드거절 케이스는 handleFailure -> dunning -> terminateSubscription으로 처리)
+   */
+  @Cron('0 * * * *')
   async runExpirationCheck(): Promise<void> {
     this.logger.log('Starting expiration check...');
 
     try {
       const today = format(new Date(), 'yyyy-MM-dd');
-      const expired = await this.billingReader.findExpiredEntitlements(today);
-      this.logger.log(`Found ${expired.length} expired entitlements`);
 
-      // userId가 여러 계약과 조인될 수 있으므로 entitlementId 기준으로 중복 제거
-      const seen = new Set<string>();
-      for (const item of expired) {
-        if (seen.has(item.entitlementId)) continue;
-        seen.add(item.entitlementId);
-        try {
-          await this.billingOutcomeHandler.handleExpiration(item.entitlementId, item.userId, item.contractId);
-        } catch (error) {
-          this.logger.error(`Failed to expire entitlement ${item.entitlementId}: ${error.message}`);
-        }
-      }
+      const [expired, stuck] = await Promise.all([
+        this.billingReader.findExpiredEntitlements(today),
+        this.billingReader.findStuckEntitlements(today),
+      ]);
+      this.logger.log(
+        `Expiration check: ${expired.length} expired (autoRenewal=false), ${stuck.length} stuck (autoRenewal=true)`,
+      );
+
+      await this.expireEntitlements(expired, false);
+      await this.expireEntitlements(stuck, true);
     } catch (error) {
       this.logger.error(`Expiration check failed: ${error.message}`, error.stack);
+    }
+  }
+
+  private async expireEntitlements(
+    items: { entitlementId: string; userId: string; contractId: string }[],
+    warnOnProcess: boolean,
+  ): Promise<void> {
+    const seen = new Set<string>();
+    for (const item of items) {
+      if (seen.has(item.entitlementId)) continue;
+      seen.add(item.entitlementId);
+      try {
+        if (warnOnProcess) {
+          this.logger.warn(`Expiring stuck entitlement: entitlementId=${item.entitlementId}, userId=${item.userId}`);
+        }
+        await this.billingOutcomeHandler.handleExpiration(item.entitlementId, item.userId, item.contractId);
+      } catch (error) {
+        this.logger.error(
+          `Failed to expire ${warnOnProcess ? 'stuck ' : ''}entitlement ${item.entitlementId}: ${error.message}`,
+        );
+      }
     }
   }
 
