@@ -19,7 +19,7 @@ import type { QualityMetricsQuery } from '@/lib/types/dto/fulfillment';
 // 주문 관련 쿼리
 export const useSalesOrders = (params?: any) => {
   return useQuery({
-    queryKey: orderQueryKeys.orders,
+    queryKey: orderQueryKeys.ordersList(params),
     queryFn: () => orders.salesOrders.getSalesOrders(params),
   });
 };

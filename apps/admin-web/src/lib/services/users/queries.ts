@@ -18,6 +18,17 @@ export const useAdminUserCount = () => {
   });
 };
 
+export const useAllUserCount = () => {
+  return useQuery({
+    queryKey: usersQueryKeys.allCount(),
+    queryFn: async () => {
+      const res = await userApi.getAdminUsers({ limit: 1 });
+      return res.total;
+    },
+    staleTime: 60 * 1000,
+  });
+};
+
 export const useAdminUsers = (query: AdminUsersQuery) => {
   return useQuery({
     queryKey: usersQueryKeys.list(query),

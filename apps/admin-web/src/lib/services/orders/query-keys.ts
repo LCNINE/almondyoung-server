@@ -4,6 +4,7 @@
 export const orderQueryKeys = {
   // 주문 관련
   orders: ['orders'] as const,
+  ordersList: (params?: object) => ['orders', 'list', params ?? {}] as const,
   order: (id: string) => ['orders', id] as const,
   orderItems: (orderId: string) => ['orders', orderId, 'items'] as const,
 
