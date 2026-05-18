@@ -12,12 +12,11 @@ export default defineConfig({
     'libs/events/src/tracking/tracking.schema.ts',
     'libs/authorization/src/database/auth.schema.ts',
   ],
-  out: './drizzle',
+  out: './apps/channel-adapter/drizzle',
   dialect: 'postgresql',
   dbCredentials: {
     url: process.env.DATABASE_URL ?? '',
   },
   schemaFilter: ['public', 'event', 'auth'],
-  verbose: true,
-  strict: true,
+  migrations: { prefix: 'supabase' },
 });

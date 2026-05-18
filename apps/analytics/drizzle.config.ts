@@ -18,6 +18,5 @@ export default defineConfig({
     url: process.env.DATABASE_URL ?? '',
   },
   schemaFilter: ['public', 'event', 'auth'],
-  verbose: true,
-  strict: true,
+  migrations: { prefix: 'supabase' },
 });
