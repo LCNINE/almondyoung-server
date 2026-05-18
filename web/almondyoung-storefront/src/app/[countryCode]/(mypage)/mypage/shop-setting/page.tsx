@@ -3,13 +3,15 @@ import { ShopSettingTemplate } from "@/domains/shop-setting"
 import { getShopSurvey } from "@/lib/api/users/shop-suvery"
 import { WithHeaderLayout } from "@components/layout"
 import { Metadata } from "next"
+import { getTranslations } from "next-intl/server"
 
-export const metadata: Metadata = {
-  title: "샵 설정",
-  description: "샵 정보를 설정하세요",
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations("mypage.shopSetting")
+  return { title: t("pageTitle") }
 }
 
 export default async function ShopSettingPage() {
+  const t = await getTranslations("mypage.shopSetting")
   const shopInfo = await getShopSurvey().catch(() => null)
 
   return (
@@ -18,7 +20,7 @@ export default async function ShopSettingPage() {
         showDesktopHeader: true,
         showMobileHeader: false,
         showMobileSubBackHeader: true,
-        mobileSubBackHeaderTitle: "샵 설정",
+        mobileSubBackHeaderTitle: t("pageTitle"),
       }}
     >
       <MypageLayout>

@@ -16,15 +16,46 @@ import { modifyShopSurvey } from "@/lib/api/users/shop-suvery"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { ShopInfoDto } from "@lib/types/dto/users"
 import { Building2, Check, Scissors, Users } from "lucide-react"
+import { useTranslations } from "next-intl"
 import { useEffect, useState } from "react"
 import { Controller, useForm } from "react-hook-form"
 import { toast } from "sonner"
+
+const CATEGORY_KEY: Record<string, string> = {
+  헤어: "hair",
+  네일: "nail",
+  속눈썹: "lash",
+  속눈썹연장: "lashExtension",
+  반영구: "semiPermanent",
+  왁싱: "waxing",
+  피부미용: "skincare",
+}
+
+const CUSTOMER_KEY: Record<string, string> = {
+  여성: "female",
+  남성: "male",
+  "10대": "teens",
+  "20~30대": "twentyToThirty",
+  "40대 이상": "fortyPlus",
+  아동: "kids",
+}
+
+const DAY_KEY: Record<string, string> = {
+  월: "mon",
+  화: "tue",
+  수: "wed",
+  목: "thu",
+  금: "fri",
+  토: "sat",
+  일: "sun",
+}
 
 export function ShopSettingTemplate({
   shopInfo,
 }: {
   shopInfo: ShopInfoDto | null
 }) {
+  const t = useTranslations("mypage.shopSetting")
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const { control, handleSubmit, watch, reset } = useForm<ShopFormValues>({
@@ -66,7 +97,7 @@ export function ShopSettingTemplate({
       return
     }
 
-    toast.success("상점 정보가 성공적으로 저장되었습니다.")
+    toast.success(t("savedSuccess"))
   }
 
   return (
@@ -82,7 +113,7 @@ export function ShopSettingTemplate({
           <section className="flex w-full flex-col gap-5">
             <header>
               <h2 className="text-base font-bold text-black">
-                샵 운영 여부 <span className="text-red-500">*</span>
+                {t("operationStatus")} <span className="text-red-500">*</span>
               </h2>
             </header>
 
@@ -91,7 +122,7 @@ export function ShopSettingTemplate({
               control={control}
               render={({ field: { value, onChange } }) => (
                 <fieldset className="flex gap-2">
-                  <legend className="sr-only">운영 상태 선택</legend>
+                  <legend className="sr-only">{t("operationLegend")}</legend>
                   <button
                     type="button"
                     onClick={() => onChange(true)}
@@ -101,8 +132,8 @@ export function ShopSettingTemplate({
                         : "bg-white font-normal text-gray-600 outline-[0.5px] outline-zinc-300"
                     }`}
                   >
-                    {value === true && <Check className="h-3.5 w-3.5" />}샵 운영
-                    중
+                    {value === true && <Check className="h-3.5 w-3.5" />}
+                    {t("operating")}
                   </button>
                   <button
                     type="button"
@@ -114,7 +145,7 @@ export function ShopSettingTemplate({
                     }`}
                   >
                     {value === false && <Check className="h-3.5 w-3.5" />}
-                    예비 원장
+                    {t("preparing")}
                   </button>
                 </fieldset>
               )}
@@ -122,7 +153,7 @@ export function ShopSettingTemplate({
 
             {isOperating && (
               <>
-                <p className="text-xs text-black">얼마나 운영하셨나요?</p>
+                <p className="text-xs text-black">{t("yearsHint")}</p>
 
                 <Controller
                   name="yearsOperating"
@@ -156,7 +187,7 @@ export function ShopSettingTemplate({
                         </button>
                       </div>
                       <span className="text-xs font-normal text-black">
-                        년차
+                        {t("yearsSuffix")}
                       </span>
                     </div>
                   )}
@@ -169,19 +200,20 @@ export function ShopSettingTemplate({
           <section className="flex w-full flex-col gap-5 md:max-w-[770px]">
             <header>
               <h2 className="flex items-center gap-1 text-base font-bold text-black">
-                <Building2 className="h-4 w-4 text-amber-500" />샵 기본 정보
+                <Building2 className="h-4 w-4 text-amber-500" />
+                {t("basicInfo")}
                 <span className="text-red-500">*</span>
               </h2>
             </header>
 
-            <p className="text-xs text-black">매장 규모</p>
+            <p className="text-xs text-black">{t("storeSize")}</p>
 
             <Controller
               name="shopType"
               control={control}
               render={({ field: { value, onChange } }) => (
                 <fieldset className="flex flex-wrap gap-2">
-                  {SHOP_TYPES.map(({ value: typeValue, label }) => (
+                  {SHOP_TYPES.map(({ value: typeValue }) => (
                     <button
                       key={typeValue}
                       type="button"
@@ -192,7 +224,7 @@ export function ShopSettingTemplate({
                           : "bg-white font-normal text-gray-600 outline-[0.5px] outline-zinc-300"
                       }`}
                     >
-                      {label}
+                      {t(`shopTypes.${typeValue}`)}
                     </button>
                   ))}
                 </fieldset>
@@ -204,13 +236,13 @@ export function ShopSettingTemplate({
           <section className="flex w-full flex-col gap-5 md:max-w-[770px]">
             <header>
               <h2 className="flex items-center gap-1 text-base font-bold text-black">
-                <Scissors className="h-4 w-4 text-amber-500" />샵 유형 및 시술
-                종류
+                <Scissors className="h-4 w-4 text-amber-500" />
+                {t("shopTypeTitle")}
               </h2>
             </header>
 
             <p className="text-xs text-black">
-              어떤 시술을 제공(또는 준비)하고 계신가요? (다중 선택 가능)
+              {t("shopTypeHint")}
               <span className="ml-1 text-red-500">*</span>
             </p>
 
@@ -221,6 +253,7 @@ export function ShopSettingTemplate({
                 <fieldset className="flex flex-wrap gap-2">
                   {CATEGORIES.map((item) => {
                     const isSelected = value.includes(item)
+                    const key = CATEGORY_KEY[item] ?? item
                     return (
                       <button
                         key={item}
@@ -237,7 +270,7 @@ export function ShopSettingTemplate({
                             : "bg-white font-normal text-gray-600 outline-[0.5px] outline-zinc-300"
                         }`}
                       >
-                        {item}
+                        {t(`categories.${key}`)}
                       </button>
                     )
                   })}
@@ -251,13 +284,11 @@ export function ShopSettingTemplate({
             <header>
               <h2 className="flex items-center gap-1 text-base font-bold text-black">
                 <Users className="h-4 w-4 text-amber-500" />
-                고객층 & 운영 정보
+                {t("customerInfoTitle")}
               </h2>
             </header>
 
-            <p className="text-xs text-black">
-              주요 고객층은 누구인가요? (다중 선택)
-            </p>
+            <p className="text-xs text-black">{t("mainCustomerHint")}</p>
             <Controller
               name="targetCustomers"
               control={control}
@@ -265,6 +296,7 @@ export function ShopSettingTemplate({
                 <fieldset className="flex flex-wrap gap-2">
                   {TARGET_CUSTOMERS.map((target) => {
                     const isSelected = value.includes(target)
+                    const key = CUSTOMER_KEY[target] ?? target
                     return (
                       <button
                         key={target}
@@ -281,7 +313,7 @@ export function ShopSettingTemplate({
                             : "bg-white font-normal text-gray-600 outline-[0.5px] outline-zinc-300"
                         }`}
                       >
-                        {target}
+                        {t(`customers.${key}`)}
                       </button>
                     )
                   })}
@@ -289,7 +321,7 @@ export function ShopSettingTemplate({
               )}
             />
 
-            <p className="text-xs text-black">샵 운영 요일 (다중 선택)</p>
+            <p className="text-xs text-black">{t("operatingDays")}</p>
             <Controller
               name="openDays"
               control={control}
@@ -297,6 +329,7 @@ export function ShopSettingTemplate({
                 <fieldset className="flex flex-wrap gap-2">
                   {DAYS_OF_WEEK.map((day) => {
                     const isSelected = value.includes(day)
+                    const key = DAY_KEY[day] ?? day
                     return (
                       <button
                         key={day}
@@ -313,7 +346,7 @@ export function ShopSettingTemplate({
                             : "bg-white font-normal text-gray-600 outline-[0.5px] outline-zinc-300"
                         }`}
                       >
-                        {day}
+                        {t(`days.${key}`)}
                       </button>
                     )
                   })}
@@ -328,7 +361,7 @@ export function ShopSettingTemplate({
               disabled={isSubmitting}
               className="rounded-[4px] bg-[#FFA500] px-6 py-3 text-white transition-colors hover:bg-[#FF8C00] disabled:bg-gray-300"
             >
-              {isSubmitting ? "저장 중..." : "저장하기"}
+              {isSubmitting ? t("saving") : t("save")}
             </button>
           </footer>
         </form>

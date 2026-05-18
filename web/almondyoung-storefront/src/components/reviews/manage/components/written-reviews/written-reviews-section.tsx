@@ -1,3 +1,4 @@
+import { getTranslations } from "next-intl/server"
 import { ReviewListHeader } from "./review-list-header"
 import { ReviewFilters } from "./review-filters"
 import { ReviewCardWritten } from "./review-card-written"
@@ -14,7 +15,7 @@ interface WrittenReviewsSectionProps {
   type: ReviewType
 }
 
-export const WrittenReviewsSection = ({
+export const WrittenReviewsSection = async ({
   reviews,
   totalCount,
   currentPage,
@@ -22,15 +23,16 @@ export const WrittenReviewsSection = ({
   period,
   type,
 }: WrittenReviewsSectionProps) => {
+  const t = await getTranslations("mypage.reviews")
   return (
     <section>
-      <ReviewListHeader title="리뷰" count={totalCount}>
+      <ReviewListHeader count={totalCount}>
         <ReviewFilters period={period} type={type} />
       </ReviewListHeader>
 
       {reviews.length === 0 ? (
         <p className="py-10 text-center text-gray-500">
-          작성한 리뷰가 없습니다.
+          {t("writtenEmpty")}
         </p>
       ) : (
         <>

@@ -2,6 +2,7 @@
 
 import { useSearchParams, useRouter, usePathname } from "next/navigation"
 import { useCallback } from "react"
+import { useTranslations } from "next-intl"
 import {
   Tabs,
   TabsContent,
@@ -22,6 +23,7 @@ export const ReviewsTabs = ({
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const t = useTranslations("mypage.reviews")
 
   const currentTab =
     searchParams.get("tab") === REVIEW_TAB_VALUES.WRITTEN
@@ -48,13 +50,13 @@ export const ReviewsTabs = ({
           value={REVIEW_TAB_VALUES.WRITABLE}
           className="data-[state=active]:bg-primary! data-[state=active]:text-primary-foreground! text-[14px] font-semibold data-[state=active]:shadow-sm"
         >
-          작성 가능한 리뷰
+          {t("tabWritable")}
         </TabsTrigger>
         <TabsTrigger
           value={REVIEW_TAB_VALUES.WRITTEN}
           className="data-[state=active]:bg-primary! data-[state=active]:text-primary-foreground! text-[14px] font-semibold data-[state=active]:shadow-sm"
         >
-          내가 작성한 리뷰
+          {t("tabWritten")}
         </TabsTrigger>
       </TabsList>
 

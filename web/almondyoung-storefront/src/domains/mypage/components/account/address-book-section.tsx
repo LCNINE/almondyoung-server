@@ -23,12 +23,15 @@ import { buildAddressLine } from "@/lib/utils/address-line"
 import { formatPhoneNumber } from "@/lib/utils/format-phone-number"
 import { HttpTypes } from "@medusajs/types"
 import { MapPin, MoreVertical, Pencil, Plus, Star, Trash2 } from "lucide-react"
+import { useTranslations } from "next-intl"
 import { useCallback, useEffect, useState } from "react"
 import { toast } from "sonner"
 import { ShippingAddressModal } from "@/components/address"
 import type { EditAddressState } from "@/domains/checkout/components/sections/shipping/types"
 
 export function AddressBookSection() {
+  const t = useTranslations("mypage.account.address")
+  const tLabels = useTranslations("mypage.account.labels")
   const [addresses, setAddresses] = useState<HttpTypes.StoreCustomerAddress[]>(
     []
   )
@@ -95,32 +98,32 @@ export function AddressBookSection() {
     try {
       const result = await setDefaultShippingAddress(addressId)
       if (result.success) {
-        toast.success("기본 배송지로 설정되었습니다.")
+        toast.success(t("setDefaultSuccess"))
         await fetchAddresses()
       } else {
-        toast.error("기본 배송지 설정에 실패했습니다.")
+        toast.error(t("setDefaultFailed"))
       }
     } catch {
-      toast.error("기본 배송지 설정에 실패했습니다.")
+      toast.error(t("setDefaultFailed"))
     } finally {
       setActionLoadingId(null)
     }
   }
 
   const handleDelete = async (addressId: string) => {
-    if (!confirm("이 배송지를 삭제하시겠습니까?")) return
+    if (!confirm(t("deleteConfirm"))) return
 
     setActionLoadingId(addressId)
     try {
       const result = await deleteCustomerAddress(addressId)
       if (result.success) {
-        toast.success("배송지가 삭제되었습니다.")
+        toast.success(t("deleted"))
         await fetchAddresses()
       } else {
-        toast.error("배송지 삭제에 실패했습니다.")
+        toast.error(t("deleteFailed"))
       }
     } catch {
-      toast.error("배송지 삭제에 실패했습니다.")
+      toast.error(t("deleteFailed"))
     } finally {
       setActionLoadingId(null)
     }
@@ -136,10 +139,8 @@ export function AddressBookSection() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="text-lg">배송지 관리</CardTitle>
-              <CardDescription>
-                자주 사용하는 배송지를 등록하고 관리할 수 있습니다.
-              </CardDescription>
+              <CardTitle className="text-lg">{t("title")}</CardTitle>
+              <CardDescription>{t("description")}</CardDescription>
             </div>
             <Button
               type="button"
@@ -148,24 +149,20 @@ export function AddressBookSection() {
               onClick={handleAddNew}
             >
               <Plus className="mr-1.5 h-4 w-4" />
-              추가
+              {t("add")}
             </Button>
           </div>
         </CardHeader>
         <CardContent>
           {isLoading ? (
             <div className="flex items-center justify-center py-8">
-              <p className="text-sm text-gray-500">불러오는 중...</p>
+              <p className="text-sm text-gray-500">{t("loading")}</p>
             </div>
           ) : addresses.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10">
               <MapPin className="mb-3 h-8 w-8 text-gray-300" />
-              <p className="mb-1 text-sm text-gray-500">
-                등록된 배송지가 없습니다.
-              </p>
-              <p className="text-xs text-gray-400">
-                배송지를 추가하면 주문 시 빠르게 입력할 수 있습니다.
-              </p>
+              <p className="mb-1 text-sm text-gray-500">{t("emptyTitle")}</p>
+              <p className="text-xs text-gray-400">{t("emptyDescription")}</p>
             </div>
           ) : (
             <div className="max-h-[400px] space-y-3 overflow-y-auto pr-1">
@@ -219,7 +216,7 @@ export function AddressBookSection() {
                           </span>
                           {address.is_default_shipping && (
                             <span className="rounded bg-[#e8f6ea] px-2 py-0.5 text-[11px] font-semibold text-[#2ba24c]">
-                              기본 배송지
+                              {t("defaultBadge")}
                             </span>
                           )}
                         </div>
@@ -229,12 +226,18 @@ export function AddressBookSection() {
                           </p>
                         )}
                         <dl className="mt-1 space-y-1 text-sm text-gray-600">
-                          <AddressRow label="우편번호" value={postalCode} />
                           <AddressRow
-                            label="기본주소"
+                            label={tLabels("postcode")}
+                            value={postalCode}
+                          />
+                          <AddressRow
+                            label={tLabels("address")}
                             value={address1 || fullAddress}
                           />
-                          <AddressRow label="상세주소" value={address2} />
+                          <AddressRow
+                            label={tLabels("addressDetail")}
+                            value={address2}
+                          />
                         </dl>
                       </div>
 
@@ -250,14 +253,14 @@ export function AddressBookSection() {
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => handleEdit(address)}>
                             <Pencil className="mr-2 h-4 w-4" />
-                            수정
+                            {t("edit")}
                           </DropdownMenuItem>
                           {!address.is_default_shipping && (
                             <DropdownMenuItem
                               onClick={() => handleSetDefault(address.id)}
                             >
                               <Star className="mr-2 h-4 w-4" />
-                              기본 배송지로 설정
+                              {t("setDefault")}
                             </DropdownMenuItem>
                           )}
                           <DropdownMenuItem
@@ -265,7 +268,7 @@ export function AddressBookSection() {
                             className="text-red-600 focus:text-red-600"
                           >
                             <Trash2 className="mr-2 h-4 w-4" />
-                            삭제
+                            {t("delete")}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>

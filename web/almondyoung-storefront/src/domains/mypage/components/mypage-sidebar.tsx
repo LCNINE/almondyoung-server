@@ -1,9 +1,10 @@
 "use client"
 
 import React, { useState } from "react"
-import Link from "next/link"
+import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { usePathname } from "next/navigation"
 import { ChevronDown } from "lucide-react"
+import { useTranslations } from "next-intl"
 
 import { SIDEBAR_MENU_ITEMS } from "./constants/mypage-constants"
 import type { MenuItem } from "../types/sidebar-types"
@@ -15,6 +16,7 @@ export default function MypageSidebar({
   menuItems?: MenuItem[]
   className?: string
 }) {
+  const t = useTranslations()
   const pathname = usePathname()
   const normalizedPathname = pathname.replace(/^\/[a-z]{2}(\/|$)/, "/")
 
@@ -78,7 +80,7 @@ export default function MypageSidebar({
                           : "text-gray-800"
                       }`}
                     >
-                      {item.label}
+                      {t(item.label)}
                     </span>
                     <span
                       className={`text-gray-400 transition-transform duration-200 ease-out ${
@@ -90,7 +92,7 @@ export default function MypageSidebar({
                   </button>
                 ) : (
                   item.path && (
-                    <Link
+                    <LocalizedClientLink
                       href={item.path}
                       className="group block px-6 py-4 transition-colors"
                     >
@@ -101,9 +103,9 @@ export default function MypageSidebar({
                             : "text-gray-800"
                         } group-hover:text-yellow-30`}
                       >
-                        {item.label}
+                        {t(item.label)}
                       </span>
-                    </Link>
+                    </LocalizedClientLink>
                   )
                 )}
 
@@ -117,7 +119,7 @@ export default function MypageSidebar({
                       const active = isActive(subItem.path)
                       return (
                         <li key={subItem.id}>
-                          <Link
+                          <LocalizedClientLink
                             href={subItem.path}
                             className={`relative block border-l-2 py-2.5 pr-6 pl-6 transition-colors duration-150 ${
                               active
@@ -130,9 +132,9 @@ export default function MypageSidebar({
                                 active ? "font-medium" : "font-normal"
                               }`}
                             >
-                              {subItem.label}
+                              {t(subItem.label)}
                             </span>
-                          </Link>
+                          </LocalizedClientLink>
                         </li>
                       )
                     })}

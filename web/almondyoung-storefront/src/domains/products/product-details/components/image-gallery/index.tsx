@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { HttpTypes } from "@medusajs/types"
 import Image from "next/image"
+import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
 
@@ -11,6 +12,7 @@ type Props = {
 }
 
 export function ImageGallery({ product }: Props) {
+  const t = useTranslations("productDetail.image")
   const images = product.images?.length
     ? product.images
     : product.thumbnail
@@ -23,14 +25,14 @@ export function ImageGallery({ product }: Props) {
   if (images.length === 0) {
     return (
       <section className="bg-muted flex aspect-square items-center justify-center rounded-lg">
-        <span className="text-muted-foreground text-sm">이미지 없음</span>
+        <span className="text-muted-foreground text-sm">{t("noImage")}</span>
       </section>
     )
   }
 
   return (
     <section className="mb-8 flex flex-col-reverse gap-3 md:flex-row lg:px-14">
-      {/* 썸네일 목록 - PC: 왼쪽 세로, 모바일: 아래 가로 */}
+      {/* 썸네일 목록 */}
       {images.length > 1 && (
         <div className="flex gap-2 md:flex-col">
           {images.map((image, index) => (
@@ -48,7 +50,11 @@ export function ImageGallery({ product }: Props) {
             >
               <Image
                 src={getThumbnailUrl(image.url)}
-                alt={product.title ?? `상품 이미지 ${index + 1}`}
+                alt={
+                  product.title
+                    ? t("altIndex", { name: product.title, index: index + 1 })
+                    : t("mainAlt")
+                }
                 fill
                 sizes="80px"
                 className="object-cover"
@@ -63,7 +69,7 @@ export function ImageGallery({ product }: Props) {
         {selectedImage && (
           <Image
             src={getThumbnailUrl(selectedImage.url)}
-            alt={product.title ?? "상품 이미지"}
+            alt={product.title ?? t("mainAlt")}
             fill
             sizes="(max-width: 768px) 100vw, 600px"
             className="object-cover"

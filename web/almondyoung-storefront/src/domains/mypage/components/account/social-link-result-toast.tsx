@@ -2,14 +2,17 @@
 
 import { useEffect, useRef } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
+import { useTranslations } from "next-intl"
 import { toast } from "sonner"
 
-const PROVIDER_LABEL: Record<string, string> = {
-  kakao: "카카오",
-  naver: "네이버",
+type ProviderKey = "providerKakao" | "providerNaver"
+const PROVIDER_KEY: Record<string, ProviderKey> = {
+  kakao: "providerKakao",
+  naver: "providerNaver",
 }
 
 export function SocialLinkResultToast() {
+  const t = useTranslations("mypage.socialLink")
   const searchParams = useSearchParams()
   const router = useRouter()
   const hasShownToast = useRef(false)
@@ -25,16 +28,18 @@ export function SocialLinkResultToast() {
 
     hasShownToast.current = true
 
-    const providerLabel = provider ? PROVIDER_LABEL[provider] || provider : ""
+    const providerLabel = provider
+      ? (PROVIDER_KEY[provider] ? t(PROVIDER_KEY[provider]) : provider)
+      : ""
 
     const handleResult = async () => {
       if (linkResult === "success") {
-        toast.success(`${providerLabel} 계정이 연동되었습니다.`)
+        toast.success(t("linkSuccess", { provider: providerLabel }))
         router.refresh()
       } else if (linkResult === "error") {
         const errorMessage = error
           ? decodeURIComponent(error)
-          : "소셜 계정 연동 중 오류가 발생했습니다."
+          : t("socialLinkError")
         toast.error(errorMessage)
       }
 
@@ -46,7 +51,7 @@ export function SocialLinkResultToast() {
     }
 
     handleResult()
-  }, [searchParams, router])
+  }, [searchParams, router, t])
 
   return null
 }

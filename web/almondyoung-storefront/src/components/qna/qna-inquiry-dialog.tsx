@@ -18,6 +18,7 @@ import type { Question } from "@/lib/types/ui/ugc"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { toast } from "sonner"
+import { useTranslations } from "next-intl"
 
 const MAX_LENGTH = 250
 
@@ -41,6 +42,7 @@ export function QnaInquiryDialog({
   editQuestion,
 }: QnaInquiryDialogProps) {
   const { user } = useUser()
+  const t = useTranslations("productDetail.qna.dialog")
   const isEditMode = !!editQuestion
 
   const [content, setContent] = useState("")
@@ -89,11 +91,11 @@ export function QnaInquiryDialog({
         const message =
           error instanceof Error
             ? error.message
-            : "알 수 없는 오류가 발생했습니다."
+            : t("unknownError")
 
         const fallbackMessage = isEditMode
-          ? "문의 수정에 실패했습니다. 다시 시도해주세요."
-          : "문의 등록에 실패했습니다. 다시 시도해주세요."
+          ? t("editFail")
+          : t("createFail")
 
         toast.error(message?.trim() ? message : fallbackMessage)
       }
@@ -113,7 +115,7 @@ export function QnaInquiryDialog({
       <DialogContent className="z-9999 max-h-[90vh] gap-0 overflow-y-auto p-6 sm:max-w-[480px]">
         <DialogHeader className="mb-5">
           <DialogTitle className="text-lg font-bold">
-            {isEditMode ? "문의 수정하기" : "상품 문의하기"}
+            {isEditMode ? t("editTitle") : t("createTitle")}
           </DialogTitle>
         </DialogHeader>
 
@@ -142,7 +144,7 @@ export function QnaInquiryDialog({
         >
           <LocalizedClientLink href={`/cs?tab=inquiry&productId=${productId}`}>
             <span className="text-[13px] text-gray-600">
-              배송·반품·교환 문의는 1:1 문의로 남겨주세요.
+              {t("csNotice")}
             </span>
             <ChevronRight className="w-4 h-4 text-gray-400" />
           </LocalizedClientLink>
@@ -151,9 +153,7 @@ export function QnaInquiryDialog({
         {/* 문의 입력 */}
         <div className="relative mb-4">
           <Textarea
-            placeholder={
-              "성분, 사용법, 구성 등 상품에 대해\n문의할 내용을 입력해 주세요"
-            }
+            placeholder={t("placeholder")}
             value={content}
             onChange={(e) => {
               if (e.target.value.length <= MAX_LENGTH) {
@@ -178,24 +178,18 @@ export function QnaInquiryDialog({
             disabled={isBusy}
           />
           <Lock className="w-4 h-4 text-gray-500" />
-          <span className="text-[14px] text-gray-700">비밀글로 문의하기</span>
+          <span className="text-[14px] text-gray-700">{t("secretLabel")}</span>
         </label>
 
         {/* 안내 문구 */}
         <ul className="mb-6 text-[12px] leading-relaxed text-gray-500">
           <li className="flex gap-1">
             <span className="shrink-0">•</span>
-            <span>
-              문의하신 내용에 대한 답변은 마이페이지 &gt; 상품 Q&A에서도 확인할
-              수 있습니다.
-            </span>
+            <span>{t("guide1")}</span>
           </li>
           <li className="flex gap-1">
             <span className="shrink-0">•</span>
-            <span>
-              재판매글, 상업성 홍보글, 미풍양속을 해치는 글 등 상품 Q&A의 취지에
-              맞지 않은 글은 삭제될 수 있습니다.
-            </span>
+            <span>{t("guide2")}</span>
           </li>
         </ul>
 
@@ -207,11 +201,11 @@ export function QnaInquiryDialog({
         >
           {isBusy
             ? isEditMode
-              ? "수정 중..."
-              : "등록 중..."
+              ? t("editing")
+              : t("submitting")
             : isEditMode
-              ? "수정하기"
-              : "등록하기"}
+              ? t("editButton")
+              : t("submitButton")}
         </Button>
       </DialogContent>
     </Dialog>

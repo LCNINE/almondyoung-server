@@ -5,6 +5,7 @@ import { toggleReviewReaction } from "@/lib/api/ugc"
 import { siteConfig } from "@/lib/config/site"
 import { getPathWithoutCountry } from "@/lib/utils/get-path-without-country"
 import { useRef, useState } from "react"
+import { useTranslations } from "next-intl"
 
 type Props = {
   countryCode: string
@@ -20,6 +21,7 @@ export function ReviewHelpfulButton({
   reviewId,
   initialLikeCount,
 }: Props) {
+  const t = useTranslations("productDetail.review")
   const [liked, setLiked] = useState(false)
   const [likeCount, setLikeCount] = useState(initialLikeCount)
   const isPending = useRef(false)
@@ -49,9 +51,7 @@ export function ReviewHelpfulButton({
         message.includes("Unauthorized") ||
         message.includes("UNAUTHORIZED")
       ) {
-        const confirmed = window.confirm(
-          "로그인이 필요해요. 로그인 페이지로 이동하시겠어요?"
-        )
+        const confirmed = window.confirm(t("loginRequired"))
         if (confirmed) {
           const path = getPathWithoutCountry(countryCode)
           window.location.href = `/${countryCode}${siteConfig.auth.loginUrl}?redirect_to=${encodeURIComponent(path)}`
@@ -74,10 +74,10 @@ export function ReviewHelpfulButton({
         }`}
         aria-pressed={liked}
       >
-        도움이 되었어요
+        {t("helpful")}
       </button>
       <p className="flex items-center gap-1 text-xs text-gray-500">
-        <span aria-label="좋아요">♥</span> {likeCount}
+        <span aria-label={t("likeAria")}>♥</span> {likeCount}
       </p>
     </footer>
   )

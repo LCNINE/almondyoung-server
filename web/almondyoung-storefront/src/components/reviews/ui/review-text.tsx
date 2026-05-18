@@ -1,3 +1,7 @@
+"use client"
+
+import { useTranslations } from "next-intl"
+
 type Props = {
   text: string
   /**
@@ -21,6 +25,7 @@ export function ReviewText({
   showMoreButton = false,
   onMoreClick,
 }: Props) {
+  const t = useTranslations("productDetail.review")
   // Tailwind의 line-clamp는 동적으로 생성되지 않으므로 명시적으로 작성
   const clampClass = lineClamp
     ? {
@@ -48,7 +53,7 @@ export function ReviewText({
           onClick={onMoreClick}
           className="text-[11px] font-medium text-gray-500"
         >
-          더보기
+          {t("expand")}
         </button>
       )}
     </div>

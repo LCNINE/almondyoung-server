@@ -2,6 +2,7 @@
 
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
+import { useTranslations } from "next-intl"
 import { InquiryForm } from "./inquiry-form"
 
 interface InquiryProps {
@@ -12,13 +13,14 @@ export function Inquiry({ product }: InquiryProps) {
   const router = useRouter()
   const { countryCode } = useParams<{ countryCode: string }>()
   const searchParams = useSearchParams()
+  const t = useTranslations("cs.inquiry")
   const productId = product?.id ?? searchParams.get("productId") ?? undefined
 
   const handleSuccess = () => {
-    toast.success("문의가 접수되었습니다.", {
-      description: "최대 3영업일 내에 답변드릴게요.",
+    toast.success(t("successToast"), {
+      description: t("successDesc"),
       action: {
-        label: "내 문의 보기",
+        label: t("successAction"),
         onClick: () => router.push(`/${countryCode}/mypage/inquiries`),
       },
     })
@@ -27,10 +29,8 @@ export function Inquiry({ product }: InquiryProps) {
   return (
     <div className="px-4 py-6">
       <div className="mb-6">
-        <h2 className="text-lg font-bold">1:1 문의</h2>
-        <p className="mt-1 text-sm text-gray-500">
-          문의하신 내용은 빠른 시간 내에 답변드리겠습니다.
-        </p>
+        <h2 className="text-lg font-bold">{t("title")}</h2>
+        <p className="mt-1 text-sm text-gray-500">{t("subtitle")}</p>
       </div>
 
       <div className="rounded-lg border border-gray-200 bg-white p-4">
@@ -42,9 +42,7 @@ export function Inquiry({ product }: InquiryProps) {
       </div>
 
       <div className="mt-6 border-t border-gray-100 pt-4">
-        <p className="text-xs text-gray-400">
-          운영시간: 평일 09:00 - 18:00 (주말/공휴일 휴무) | 접수 순서대로 답변 드리며, 최대 3영업일이 소요됩니다.
-        </p>
+        <p className="text-xs text-gray-400">{t("footerNotice")}</p>
       </div>
     </div>
   )

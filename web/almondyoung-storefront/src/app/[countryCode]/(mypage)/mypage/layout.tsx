@@ -1,12 +1,16 @@
 import ProtectedRoute from "@components/protected-route"
 import { getSEOTags } from "@lib/seo"
+import { getTranslations } from "next-intl/server"
 import Script from "next/script"
 
-export const metadata = getSEOTags({
-  title: `마이페이지`,
-  openGraph: {},
-  extraTags: {},
-})
+export async function generateMetadata() {
+  const t = await getTranslations("mypage.menu")
+  return getSEOTags({
+    title: t("mypage"),
+    openGraph: {},
+    extraTags: {},
+  })
+}
 
 export default function MyPageLayout({
   children,

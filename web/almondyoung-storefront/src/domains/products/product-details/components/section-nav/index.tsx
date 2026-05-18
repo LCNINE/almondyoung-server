@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils"
 import { useScrollSpyWindow } from "@/hooks/use-scroll-spy-window"
 import { usePathname, useSearchParams } from "next/navigation"
 import { useCallback, useEffect, useMemo, useRef } from "react"
+import { useTranslations } from "next-intl"
 
 export type SectionTab = "detail" | "review" | "qna"
 
@@ -23,6 +24,7 @@ export function SectionTabs({
 }: SectionTabsProps) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const t = useTranslations("productDetail.section")
   const tabParam = searchParams.get("tab") as SectionTab | null
 
   const tabIds = useMemo(() => VALID_TABS, [])
@@ -100,7 +102,7 @@ export function SectionTabs({
   return (
     <div className="w-full">
       <nav
-        aria-label="상품 정보"
+        aria-label={t("ariaLabel")}
         className="sticky top-0 z-10 mb-8 flex h-auto w-full border-b border-[#e5e5e5] bg-white"
       >
         <button
@@ -109,7 +111,7 @@ export function SectionTabs({
           aria-current={activeTab === "detail" ? "true" : undefined}
           className={buttonClass(activeTab === "detail")}
         >
-          상세정보
+          {t("detail")}
         </button>
         <button
           type="button"
@@ -117,7 +119,7 @@ export function SectionTabs({
           aria-current={activeTab === "review" ? "true" : undefined}
           className={buttonClass(activeTab === "review")}
         >
-          리뷰
+          {t("review")}
           {reviewCountSlot}
         </button>
         <button
@@ -126,7 +128,7 @@ export function SectionTabs({
           aria-current={activeTab === "qna" ? "true" : undefined}
           className={buttonClass(activeTab === "qna")}
         >
-          Q&A
+          {t("qna")}
           {qnaCountSlot}
         </button>
       </nav>

@@ -3,6 +3,7 @@
 import type { ProductCardProps } from "@lib/types/ui/product"
 import { ProductGrid } from "@/components/products/product-grid"
 import { useEffect, useState } from "react"
+import { useTranslations } from "next-intl"
 import { getProductList } from "@lib/api/medusa/products"
 import { mapStoreProductsToCardProps } from "@lib/utils/product-card"
 
@@ -27,6 +28,7 @@ function ProductGridSkeleton({ count = 6 }: { count?: number }) {
 }
 
 export function RecommendedProductsSection() {
+  const t = useTranslations("mypage.recommendedProducts")
   const [products, setProducts] = useState<ProductCardProps[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
@@ -61,7 +63,7 @@ export function RecommendedProductsSection() {
           id="recommended-products-heading"
           className="mb-4 text-[18px] font-bold"
         >
-          원장님을 위한 추천제품
+          {t("title")}
         </h3>
         <ProductGridSkeleton count={6} />
       </section>

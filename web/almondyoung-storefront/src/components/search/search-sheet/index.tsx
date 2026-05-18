@@ -11,12 +11,14 @@ import { useSearchSheetStore } from "@hooks/ui/use-search-sheet-store"
 import { AnimatePresence, motion } from "framer-motion"
 import { ArrowLeft } from "lucide-react"
 import { useEffect, useState } from "react"
+import { useTranslations } from "next-intl"
 import { SearchCombobox } from "../search-combobox"
 import { SearchHistory } from "../search-history"
 import { SearchHotKeyword } from "../search-hot-keyword"
 import { SearchPopularKeyword } from "../search-popular-keyword"
 
 export function SearchSheet() {
+  const t = useTranslations("search")
   const { keywords } = useSearchHistory()
   const [isHydrated, setIsHydrated] = useState(false)
 
@@ -45,7 +47,7 @@ export function SearchSheet() {
         className="w-full border-none bg-white p-0 sm:max-w-full [&>button]:hidden"
       >
         <SheetHeader className="sr-only">
-          <SheetTitle>아몬드영 검색</SheetTitle>
+          <SheetTitle>{t("sheetTitle")}</SheetTitle>
         </SheetHeader>
 
         <div className="flex h-full flex-col">
@@ -54,7 +56,7 @@ export function SearchSheet() {
             <button
               onClick={onClose}
               className="p-3 transition-transform active:scale-95"
-              aria-label="뒤로 가기"
+              aria-label={t("back")}
             >
               <ArrowLeft className="h-6 w-6 text-white" />
             </button>

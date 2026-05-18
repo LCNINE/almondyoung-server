@@ -3,8 +3,7 @@
 import { cn } from "@/lib/utils"
 import { useEffect, useState } from "react"
 import type { ReactNode } from "react"
-import { createPortal } from "react-dom"
-import { toast } from "sonner"
+import { createRoot, type Root } from "react-dom/client"
 
 type ActionToastVariant = "default" | "active"
 
@@ -16,7 +15,10 @@ type ShowActionToastOptions = {
 }
 
 const EXIT_DURATION = 300
-let currentToastId: string | number | undefined
+
+let currentRoot: Root | null = null
+let currentContainer: HTMLDivElement | null = null
+let cleanupTimer: number | null = null
 
 function ActionToastContent({
   icon,
@@ -33,13 +35,11 @@ function ActionToastContent({
 
   useEffect(() => {
     const exitDelay = Math.max(duration - EXIT_DURATION, 0)
-    const timer = setTimeout(() => setExiting(true), exitDelay)
-    return () => clearTimeout(timer)
+    const timer = window.setTimeout(() => setExiting(true), exitDelay)
+    return () => window.clearTimeout(timer)
   }, [duration])
 
-  if (typeof document === "undefined") return null
-
-  return createPortal(
+  return (
     <div className="pointer-events-none fixed inset-0 z-[9999] flex items-center justify-center">
       <div
         className={cn(
@@ -53,9 +53,23 @@ function ActionToastContent({
         <div className="flex h-8 w-8 items-center justify-center">{icon}</div>
         <span className="text-sm font-semibold tracking-tight">{label}</span>
       </div>
-    </div>,
-    document.body
+    </div>
   )
+}
+
+function disposeCurrent() {
+  if (cleanupTimer !== null) {
+    window.clearTimeout(cleanupTimer)
+    cleanupTimer = null
+  }
+  if (currentRoot) {
+    currentRoot.unmount()
+    currentRoot = null
+  }
+  if (currentContainer) {
+    currentContainer.remove()
+    currentContainer = null
+  }
 }
 
 export function showActionToast({
@@ -64,31 +78,26 @@ export function showActionToast({
   variant = "active",
   duration = 1800,
 }: ShowActionToastOptions) {
-  if (currentToastId !== undefined) {
-    toast.dismiss(currentToastId)
-  }
+  if (typeof document === "undefined") return
 
-  const id = toast.custom(
-    () => (
-      <ActionToastContent
-        icon={icon}
-        label={label}
-        variant={variant}
-        duration={duration}
-      />
-    ),
-    {
-      duration,
-      unstyled: true,
-      onAutoClose: () => {
-        if (currentToastId === id) currentToastId = undefined
-      },
-      onDismiss: () => {
-        if (currentToastId === id) currentToastId = undefined
-      },
-    }
+  disposeCurrent()
+
+  const container = document.createElement("div")
+  document.body.appendChild(container)
+  const root = createRoot(container)
+  root.render(
+    <ActionToastContent
+      icon={icon}
+      label={label}
+      variant={variant}
+      duration={duration}
+    />
   )
 
-  currentToastId = id
-  return id
+  currentContainer = container
+  currentRoot = root
+
+  cleanupTimer = window.setTimeout(() => {
+    disposeCurrent()
+  }, duration)
 }

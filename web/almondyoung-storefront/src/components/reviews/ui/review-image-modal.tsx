@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { useCallback, useEffect, useState } from "react"
+import { useTranslations } from "next-intl"
 
 type Props = {
   images: string[]
@@ -29,6 +30,7 @@ export function ReviewImageModal({
   open,
   onOpenChange,
 }: Props) {
+  const t = useTranslations("productDetail.review")
   const [api, setApi] = useState<CarouselApi>()
   const [current, setCurrent] = useState(startIndex)
 
@@ -57,7 +59,7 @@ export function ReviewImageModal({
         className="max-w-[90vw] border-none bg-transparent p-0 shadow-none sm:max-w-[600px] [&>button]:flex [&>button]:h-9 [&>button]:w-9 [&>button]:items-center [&>button]:justify-center [&>button]:rounded-full [&>button]:bg-black/50 [&>button]:text-white [&>button]:opacity-100 [&>button]:hover:bg-black/70 [&>button]:hover:text-white"
         showCloseButton
       >
-        <DialogTitle className="sr-only">리뷰 이미지</DialogTitle>
+        <DialogTitle className="sr-only">{t("modalTitle")}</DialogTitle>
 
         <div className="relative">
           <Carousel setApi={setApi} opts={{ startIndex, loop: true }}>
@@ -67,7 +69,7 @@ export function ReviewImageModal({
                   <div className="flex items-center justify-center">
                     <img
                       src={getThumbnailUrl(imageId)}
-                      alt={`리뷰 이미지 ${index + 1}`}
+                      alt={t("imageAlt", { index: index + 1 })}
                       className="max-h-[70vh] w-auto rounded-lg object-contain"
                     />
                   </div>

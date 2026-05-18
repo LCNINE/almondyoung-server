@@ -1,17 +1,19 @@
-import { WithHeaderLayout } from "@components/layout"
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
+import { WithHeaderLayout } from "@components/layout"
 import { fetchMe } from "@lib/api/users/me"
-import SecurityManager from "../(components)/sucurity-manager"
+import { getTranslations } from "next-intl/server"
 import ForgetPinForm from "domains/payment/components/forget-pin"
+import SecurityManager from "../(components)/sucurity-manager"
 
 export default async function ForgetPinPage() {
+  const t = await getTranslations("mypage.page")
   return (
     <WithHeaderLayout
       config={{
         showDesktopHeader: true,
         showMobileHeader: false,
         showMobileSubBackHeader: true,
-        mobileSubBackHeaderTitle: "비밀번호 설정",
+        mobileSubBackHeaderTitle: t("passwordSettings"),
       }}
     >
       <MypageLayout>
@@ -24,7 +26,6 @@ export default async function ForgetPinPage() {
 async function ForgetPinManager() {
   const currentUser = await fetchMe()
 
-  // 핸드폰 인증이 안되어있으면 본인인증 모달 띄움
   if (!currentUser.profile?.phoneNumber) {
     return <SecurityManager redirectTo="" />
   }

@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/carousel"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { useState } from "react"
+import { useTranslations } from "next-intl"
 import { ReviewImageModal } from "."
 
 type Props = {
@@ -16,6 +17,7 @@ type Props = {
 }
 
 export function ReviewThumbnailGallery({ thumbnails }: Props) {
+  const t = useTranslations("productDetail.review")
   const [modalOpen, setModalOpen] = useState(false)
   const [selectedIndex, setSelectedIndex] = useState(0)
 
@@ -34,7 +36,7 @@ export function ReviewThumbnailGallery({ thumbnails }: Props) {
             <CarouselItem key={index} className="basis-auto pl-2">
               <img
                 src={getThumbnailUrl(thumb)}
-                alt={`리뷰 이미지 ${index + 1}`}
+                alt={t("imageAlt", { index: index + 1 })}
                 className="h-[74px] w-[74px] cursor-pointer rounded-md object-cover transition-opacity hover:opacity-80"
                 loading="lazy"
                 onClick={() => handleImageClick(index)}

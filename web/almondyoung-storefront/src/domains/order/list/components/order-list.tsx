@@ -2,14 +2,15 @@
 
 import { PageTitle } from "@/components/shared/page-title"
 import { Button } from "@/components/ui/button"
+import { getOrders } from "@/lib/api/medusa/orders"
 import OrderCard from "@components/orders/order-card/order-card"
 import OrderCardContent from "@components/orders/order-card/order-card-content"
-import { OrderFilter, type FilterOptions } from "./shared/order-filter"
-import { getOrders } from "@/lib/api/medusa/orders"
-import { Package, Loader2 } from "lucide-react"
 import type { HttpTypes } from "@medusajs/types"
-import { useState, useMemo, useTransition } from "react"
 import { getYear } from "date-fns"
+import { Loader2, Package } from "lucide-react"
+import { useTranslations } from "next-intl"
+import { useMemo, useState, useTransition } from "react"
+import { OrderFilter, type FilterOptions } from "./shared/order-filter"
 
 interface OrderItem {
   orderId: string
@@ -38,17 +39,25 @@ interface OrderListClientProps {
 
 const LOAD_MORE_LIMIT = 20
 
-const getKoreanOrderStatus = (order: HttpTypes.StoreOrder): string => {
-  if (order.status === "canceled") return "취소됨"
-  if (order.payment_status === "awaiting") return "결제 대기"
-  if (order.fulfillment_status === "fulfilled") return "배송 완료"
-  if (order.fulfillment_status === "shipped") return "배송 중"
-  if (order.fulfillment_status === "partially_fulfilled") return "부분 배송"
-  if (order.fulfillment_status === "not_fulfilled") return "상품 준비 중"
-  return "결제 완료"
+const getOrderStatusKey = (order: HttpTypes.StoreOrder): string => {
+  if (order.status === "canceled") return "cancelled"
+  if (order.payment_status === "awaiting") return "paymentPending"
+  if (order.fulfillment_status === "fulfilled") return "delivered"
+  if (order.fulfillment_status === "shipped") return "shipping"
+  if (order.fulfillment_status === "partially_fulfilled") return "partialShipping"
+  if (order.fulfillment_status === "not_fulfilled") return "preparing"
+  return "paid"
 }
 
-const mapStoreOrderToOrderItem = (order: HttpTypes.StoreOrder): OrderItem => {
+interface MapperContext {
+  tStatus: (key: string) => string
+  tList: (key: string, values?: Record<string, string | number>) => string
+}
+
+const mapStoreOrderToOrderItem = (
+  order: HttpTypes.StoreOrder,
+  ctx: MapperContext
+): OrderItem => {
   const orderDate = new Date(order.created_at)
   const formatDate = `${orderDate.getMonth() + 1}월 ${orderDate.getDate()}일`
   const firstItem = order.items?.[0]
@@ -58,10 +67,12 @@ const mapStoreOrderToOrderItem = (order: HttpTypes.StoreOrder): OrderItem => {
     0
   )
   const representativeName =
-    firstItem?.title || firstItem?.variant?.product?.title || "상품"
+    firstItem?.title ||
+    firstItem?.variant?.product?.title ||
+    ctx.tList("defaultProductName")
   const productName =
     lineItemCount > 1
-      ? `${representativeName} 외 ${lineItemCount - 1}건`
+      ? `${representativeName} ${ctx.tList("productSuffix", { count: lineItemCount - 1 })}`
       : representativeName
   const displayPrice = typeof order.total === "number" ? order.total : 0
 
@@ -76,7 +87,7 @@ const mapStoreOrderToOrderItem = (order: HttpTypes.StoreOrder): OrderItem => {
       ? `#${order.display_id}`
       : `#${order.id.slice(0, 12)}`,
     orderDate: formatDate,
-    status: getKoreanOrderStatus(order),
+    status: ctx.tStatus(getOrderStatusKey(order)),
     paymentStatus: order.payment_status ?? "",
     deliveryInfo: "",
     shippingNote: "",
@@ -86,7 +97,7 @@ const mapStoreOrderToOrderItem = (order: HttpTypes.StoreOrder): OrderItem => {
       firstItem?.variant?.product?.thumbnail ||
       "https://placehold.co/80x80",
     price: `${displayPrice.toLocaleString()}원`,
-    quantity: `상품 ${lineItemCount}건 · 총 수량 ${totalQuantity}개`,
+    quantity: `${ctx.tList("items", { count: lineItemCount })} · ${ctx.tList("totalQuantity", { count: totalQuantity })}`,
     options,
     showInquiry: order.fulfillment_status === "fulfilled",
     orderItems: (order.items ?? [])
@@ -106,9 +117,14 @@ export function OrderList({
   initialLimit,
   hasError = false,
 }: OrderListClientProps) {
+  const tStatus = useTranslations("mypage.order.status")
+  const tList = useTranslations("mypage.order.list")
+  const tFilter = useTranslations("mypage.order.filter")
+  const tEmpty = useTranslations("mypage.empty")
+
   const [filter, setFilter] = useState<FilterOptions>({
-    year: "전체년도",
-    month: "전체",
+    year: tFilter("allYears"),
+    month: tFilter("allMonths"),
   })
   const [rawOrders, setRawOrders] =
     useState<HttpTypes.StoreOrder[]>(initialOrders)
@@ -118,8 +134,8 @@ export function OrderList({
   const hasMore = rawOrders.length < totalCount
 
   const allOrders: OrderItem[] = useMemo(
-    () => rawOrders.map(mapStoreOrderToOrderItem),
-    [rawOrders]
+    () => rawOrders.map((o) => mapStoreOrderToOrderItem(o, { tStatus, tList })),
+    [rawOrders, tStatus, tList]
   )
 
   const orders = useMemo(() => {
@@ -133,15 +149,16 @@ export function OrderList({
         : null
 
       const yearMatch =
-        filter.year === "전체년도" || String(orderYear) === filter.year
+        filter.year === tFilter("allYears") || String(orderYear) === filter.year
 
       const monthMatch =
-        filter.month === "전체" ||
-        (orderMonth !== null && filter.month === `${orderMonth}월`)
+        filter.month === tFilter("allMonths") ||
+        (orderMonth !== null &&
+          filter.month === tFilter("monthFormat", { month: orderMonth }))
 
       return yearMatch && monthMatch
     })
-  }, [allOrders, filter, rawOrders])
+  }, [allOrders, filter, rawOrders, tFilter])
 
   const handleFilterChange = (newFilter: FilterOptions) => {
     setFilter(newFilter)
@@ -166,7 +183,7 @@ export function OrderList({
   if (hasError) {
     return (
       <div className="flex min-h-[400px] flex-col items-center justify-center gap-4">
-        <p className="text-gray-500">주문 목록을 불러오는데 실패했습니다</p>
+        <p className="text-gray-500">{tList("errorTitle")}</p>
       </div>
     )
   }
@@ -175,14 +192,16 @@ export function OrderList({
   if (allOrders.length === 0) {
     return (
       <div className="min-h-screen bg-white px-3 py-4 md:px-6">
-        <PageTitle>주문 목록</PageTitle>
+        <PageTitle>{tList("title")}</PageTitle>
         <div className="flex min-h-[400px] flex-col items-center justify-center gap-4">
           <Package className="h-12 w-12 text-gray-300" />
           <div className="text-center">
             <p className="text-lg font-medium text-gray-600">
-              주문 내역이 없습니다
+              {tEmpty("orderTitle")}
             </p>
-            <p className="mt-1 text-sm text-gray-400">첫 주문을 시작해보세요</p>
+            <p className="mt-1 text-sm text-gray-400">
+              {tEmpty("orderDescription")}
+            </p>
           </div>
         </div>
       </div>
@@ -191,7 +210,7 @@ export function OrderList({
 
   return (
     <div className="min-h-screen bg-white px-3 py-4 md:px-6">
-      <PageTitle>주문 목록</PageTitle>
+      <PageTitle>{tList("title")}</PageTitle>
       <section className="my-5">
         <OrderFilter onFilterChange={handleFilterChange} />
       </section>
@@ -201,10 +220,10 @@ export function OrderList({
           <Package className="h-12 w-12 text-gray-300" />
           <div className="text-center">
             <p className="text-lg font-medium text-gray-600">
-              해당 기간에 주문 내역이 없습니다
+              {tEmpty("orderPeriodTitle")}
             </p>
             <p className="mt-1 text-sm text-gray-400">
-              다른 기간을 선택해보세요
+              {tEmpty("orderPeriodDescription")}
             </p>
           </div>
         </div>
@@ -246,10 +265,13 @@ export function OrderList({
                 {isPending ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    불러오는 중...
+                    {tList("loadingMore")}
                   </>
                 ) : (
-                  `더 보기 (${rawOrders.length}/${totalCount})`
+                  tList("loadMore", {
+                    loaded: rawOrders.length,
+                    total: totalCount,
+                  })
                 )}
               </Button>
             </div>

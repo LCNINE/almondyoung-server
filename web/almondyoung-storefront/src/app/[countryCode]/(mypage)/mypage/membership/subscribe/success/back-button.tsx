@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { useTranslations } from "next-intl";
 
 const IconChevronLeft = () => (
   <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -14,8 +15,9 @@ const IconChevronLeft = () => (
 
 export function BackButton() {
   const router = useRouter();
+  const t = useTranslations("mypage.membershipPaymentMethod");
   return (
-    <button aria-label="뒤로 가기" className="-m-2 p-2 text-black" onClick={() => router.back()}>
+    <button aria-label={t("backAria")} className="-m-2 p-2 text-black" onClick={() => router.back()}>
       <IconChevronLeft />
     </button>
   );

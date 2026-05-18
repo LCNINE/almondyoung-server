@@ -1,5 +1,7 @@
 "use client"
 
+import { useTranslations } from "next-intl"
+
 type Thumbnail = {
   id: string
   src: string
@@ -22,6 +24,7 @@ export function ProductReviewThumbnailGallery({
   moreCount,
   onMoreClick,
 }: ProductReviewThumbnailProps) {
+  const t = useTranslations("productDetail.review")
   // 모바일: 3개 표시 + 더보기, 데스크탑: 6개 표시 + 더보기
   const mobileLimit = 3
   const desktopLimit = 6
@@ -64,7 +67,7 @@ export function ProductReviewThumbnailGallery({
               {/* 마지막 썸네일을 배경으로 */}
               <img
                 src={thumbnails[mobileLimit]?.src || thumbnails[0].src}
-                alt="리뷰 사진 더보기"
+                alt={t("imagesMoreAlt")}
                 className="absolute inset-0 h-full w-full rounded-md object-cover"
                 loading="lazy"
               />
@@ -74,7 +77,7 @@ export function ProductReviewThumbnailGallery({
               <span className="relative z-10 text-[13px] font-bold">
                 {moreCount?.toLocaleString() || thumbnails.length - mobileLimit}
               </span>
-              <span className="relative z-10 text-[8px]">더보기</span>
+              <span className="relative z-10 text-[8px]">{t("imagesMore")}</span>
             </button>
           </li>
         )}
@@ -103,7 +106,7 @@ export function ProductReviewThumbnailGallery({
               {/* 마지막 썸네일을 배경으로 */}
               <img
                 src={thumbnails[desktopLimit]?.src || thumbnails[0].src}
-                alt="리뷰 사진 더보기"
+                alt={t("imagesMoreAlt")}
                 className="absolute inset-0 h-full w-full rounded-md object-cover"
                 loading="lazy"
               />
@@ -114,7 +117,7 @@ export function ProductReviewThumbnailGallery({
                 {moreCount?.toLocaleString() ||
                   thumbnails.length - desktopLimit}
               </span>
-              <span className="relative z-10 text-[8px]">더보기</span>
+              <span className="relative z-10 text-[8px]">{t("imagesMore")}</span>
             </button>
           </li>
         )}

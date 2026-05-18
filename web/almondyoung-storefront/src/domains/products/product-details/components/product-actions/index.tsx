@@ -28,6 +28,7 @@ import {
   useTransition,
 } from "react"
 import { toast } from "sonner"
+import { useTranslations } from "next-intl"
 import ProductPreviewPrice from "../product-preview-price"
 import CartAddedModal from "./cart-added-modal"
 import MobileActions from "./mobile-actions"
@@ -59,11 +60,11 @@ const optionsAsKeymap = (
   }, {})
 }
 
-const getVariantLabel = (variant: HttpTypes.StoreProductVariant) => {
+const getVariantLabel = (variant: HttpTypes.StoreProductVariant, fallback: string) => {
   return (
     variant.options?.map((o: any) => o.value).join(" / ") ||
     variant.title ||
-    "기본 옵션값"
+    fallback
   )
 }
 
@@ -79,6 +80,7 @@ export default function ProductActions({
   disabled,
   customer,
 }: ProductActionsProps) {
+  const t = useTranslations("productDetail.options")
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
   const pathname = usePathname()
@@ -103,7 +105,7 @@ export default function ProductActions({
             quantity: 1,
             variant,
             price,
-            label: getVariantLabel(variant),
+            label: getVariantLabel(variant, t("defaultLabel")),
           },
         ])
       }
@@ -168,11 +170,11 @@ export default function ProductActions({
         quantity: 1,
         variant: matchedVariant,
         price,
-        label: getVariantLabel(matchedVariant),
+        label: getVariantLabel(matchedVariant, t("defaultLabel")),
       },
     ])
     setOptions({})
-  }, [matchedVariant, isSimple, selectedItems])
+  }, [matchedVariant, isSimple, selectedItems, t])
 
   const setOptionValue = (optionId: string, value: string) => {
     setOptions((prev) => ({
@@ -187,7 +189,7 @@ export default function ProductActions({
   const updateQuantity = useCallback(
     (variantId: string, delta: number) => {
       if (isWelcomeMembership && delta > 0) {
-        toast.error("웰컴 멤버십 상품은 1개만 구매 가능합니다")
+        toast.error(t("welcomeMembershipLimit"))
         return
       }
       setSelectedItems((prev) => {
@@ -204,7 +206,7 @@ export default function ProductActions({
         )
       })
     },
-    [isSimple, isWelcomeMembership]
+    [isSimple, isWelcomeMembership, t]
   )
 
   // 항목 삭제
@@ -245,9 +247,9 @@ export default function ProductActions({
 
   const disabledLabel =
     selectedItems.length === 0
-      ? "옵션을 선택해주세요"
+      ? t("selectPlaceholder")
       : !allInStock
-        ? "품절"
+        ? t("soldOut")
         : null
 
   // 장바구니 담기
@@ -276,7 +278,7 @@ export default function ProductActions({
         if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") {
           throw error
         }
-        toast.error("장바구니 담기에 실패했습니다.")
+        toast.error(t("addCartFail"))
       }
     })
   }
@@ -407,7 +409,7 @@ export default function ProductActions({
                                     : si
                                 )
                               )
-                              toast.info("최소 수량은 1개입니다.")
+                              toast.info(t("minQtyOne"))
                             }
                           }}
                           onFocus={(e) => e.target.select()}
@@ -439,7 +441,7 @@ export default function ProductActions({
                         disabled={isWelcomeMembership}
                         className="h-8 px-3 text-xs text-gray-600"
                       >
-                        직접입력
+                        {t("directInput")}
                       </Button>
                     </div>
                   </div>
@@ -473,10 +475,10 @@ export default function ProductActions({
             <Separator />
             <div className="flex items-center justify-between py-2">
               <span className="text-sm font-bold">
-                구매수량 {totalQuantity}개
+                {t("totalQty", { count: totalQuantity })}
               </span>
               <span className="text-xl font-bold">
-                총 {totalPrice.toLocaleString()}원
+                {t("totalPrice", { amount: totalPrice.toLocaleString() })}
               </span>
             </div>
           </>
@@ -506,7 +508,7 @@ export default function ProductActions({
               className="h-12 w-full cursor-pointer text-base font-medium"
               data-testid="sold-out-button"
             >
-              품절
+              {t("soldOut")}
             </Button>
           ) : (
             <>
@@ -517,7 +519,7 @@ export default function ProductActions({
                 className="border-yellow-30 text-yellow-30 hover:text-primary h-12 w-full flex-1 cursor-pointer text-base hover:bg-transparent"
                 data-testid="add-product-button"
               >
-                {disabledLabel ?? "장바구니 담기"}
+                {disabledLabel ?? t("addToCart")}
               </Button>
 
               <Button
@@ -526,7 +528,7 @@ export default function ProductActions({
                 className="h-12 w-full flex-1 cursor-pointer text-base"
                 data-testid="buy-now-button"
               >
-                {disabledLabel ?? "바로구매"}
+                {disabledLabel ?? t("buyNow")}
               </Button>
             </>
           )}

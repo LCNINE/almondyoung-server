@@ -3,6 +3,7 @@
 import { useOptimistic, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Heart } from "lucide-react"
+import { useTranslations } from "next-intl"
 import { showActionToast } from "@/components/shared/action-toast"
 import { AnimatedHeart } from "@/components/shared/animated-heart"
 import { Button } from "@/components/ui/button"
@@ -27,6 +28,7 @@ export function WishlistButton({
 }: Props) {
   const { user } = useUser()
   const router = useRouter()
+  const t = useTranslations("productDetail.summary")
   const [isPending, startTransition] = useTransition()
   const [optimisticWishlisted, setOptimisticWishlisted] =
     useOptimistic(isWishlisted)
@@ -49,20 +51,18 @@ export function WishlistButton({
             icon: (
               <Heart className="h-7 w-7" fill="currentColor" strokeWidth={0} />
             ),
-            label: "좋아요",
+            label: t("wishlistToast"),
           })
         } else {
-          // 좋아요 취소
           showActionToast({
             icon: <Heart className="h-7 w-7" strokeWidth={2.5} />,
-            label: "좋아요",
+            label: t("wishlistToast"),
             variant: "default",
           })
         }
       } catch (error) {
-        console.error("찜하기 실패", error)
-        // 실패 시 optimistic 값은 자동으로 isWishlisted(원래 값)로 롤백됨
-        toast.error("처리 중 오류가 발생했습니다.")
+        console.error("wishlist toggle failed", error)
+        toast.error(t("wishlistFail"))
       }
     })
   }
@@ -72,7 +72,7 @@ export function WishlistButton({
       variant="ghost"
       onClick={handleToggle}
       disabled={disabled || isPending}
-      aria-label="관심 상품 등록"
+      aria-label={t("wishlistAria")}
       className="cursor-pointer hover:bg-transparent"
     >
       <AnimatedHeart isActive={optimisticWishlisted} className="h-7 w-7" />

@@ -1,3 +1,4 @@
+import { getTranslations } from "next-intl/server"
 import { getMyQuestions } from "@/lib/api/ugc/qna"
 import { MyInquiriesList } from "./my-inquiries-list"
 
@@ -7,6 +8,7 @@ type Props = {
 }
 
 export async function MyInquiriesTemplate({ searchParams }: Props) {
+  const t = await getTranslations("mypage.inquiry")
   const page = Number(searchParams.page) || 1
   const limit = 10
 
@@ -19,7 +21,7 @@ export async function MyInquiriesTemplate({ searchParams }: Props) {
   return (
     <div className="min-h-screen bg-white px-3 py-4 md:px-6">
       <h1 className="mb-6 hidden text-xl font-bold text-gray-900 md:block">
-        내 문의 내역
+        {t("myInquiriesTitle")}
       </h1>
 
       <MyInquiriesList

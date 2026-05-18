@@ -1,4 +1,5 @@
 import { Suspense } from "react"
+import { getTranslations } from "next-intl/server"
 import { siteConfig } from "@/lib/config/site"
 import { getSEOTags } from "@/lib/seo"
 import { CsHeader } from "@/domains/cs/components/cs-header"
@@ -8,11 +9,14 @@ import { Inquiry } from "@/domains/cs/components/inquiry"
 import { Notice } from "@/domains/cs/components/notice"
 import { listProducts } from "@/lib/api/medusa/products"
 
-export const metadata = getSEOTags({
-  title: `고객센터 | ${siteConfig.appName}`,
-  openGraph: {},
-  extraTags: {},
-})
+export async function generateMetadata() {
+  const t = await getTranslations("cs")
+  return getSEOTags({
+    title: `${t("metaTitle")} | ${siteConfig.appName}`,
+    openGraph: {},
+    extraTags: {},
+  })
+}
 
 function CsTabsLoading() {
   return (
