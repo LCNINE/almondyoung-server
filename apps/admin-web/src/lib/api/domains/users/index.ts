@@ -8,6 +8,7 @@ import {
   AdminUsersResponse,
   AdminUserRolesResponseDto,
   ReplaceUserRolesDto,
+  UpdateMyProfileDto,
 } from '@/lib/types/dto/user';
 import { client } from '../../client';
 
@@ -64,6 +65,20 @@ export const userApi = {
       `${USER_SERVICE_BASE_URL}/admin/users/${userId}/roles`
     );
     return response.data;
+  },
+
+  updateMyProfile: async (dto: UpdateMyProfileDto): Promise<void> => {
+    await client.patch(`${USER_SERVICE_BASE_URL}/users/me`, dto);
+  },
+
+  changePassword: async (
+    currentPassword: string,
+    newPassword: string
+  ): Promise<void> => {
+    await client.post(`${USER_SERVICE_BASE_URL}/auth/change-password`, {
+      currentPassword,
+      newPassword,
+    });
   },
 
   // 어드민 - 사용자 역할 전체 교체
