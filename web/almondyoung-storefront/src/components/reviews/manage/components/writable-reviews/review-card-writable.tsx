@@ -1,9 +1,11 @@
 "use client"
 
 import Image from "next/image"
+import { useTranslations } from "next-intl"
 import { Button } from "@components/common/ui/button"
 import type { WritableReview } from "../../types"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
+import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
 import type { RewardPolicy } from "@/lib/types/ui/ugc"
 
 interface ReviewCardWritableProps {
@@ -17,6 +19,7 @@ export const ReviewCardWritable = ({
   onWriteReview,
   rewardPolicies,
 }: ReviewCardWritableProps) => {
+  const t = useTranslations("mypage.reviews")
   const expiresAt = new Date(review.expiresAt)
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -26,9 +29,7 @@ export const ReviewCardWritable = ({
     (expiresAt.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
   )
 
-  const formattedExpiresAt = new Date(review.expiresAt).toLocaleDateString(
-    "ko-KR"
-  )
+  const formattedExpiresAt = formatDate(review.expiresAt, DATE_FORMATS.KO_DOT)
 
   const maxReward = Math.max(...rewardPolicies.map((p) => p.rewardAmount))
 
@@ -39,7 +40,7 @@ export const ReviewCardWritable = ({
           <figure className="relative h-24 w-24 shrink-0 overflow-hidden rounded-md border border-[#F0F0F0]">
             <Image
               src={getThumbnailUrl(review.productImage)}
-              alt={`${review.productName} 썸네일`}
+              alt={t("thumbnailAlt", { name: review.productName })}
               width={96}
               height={96}
               className="object-cover"
@@ -54,17 +55,17 @@ export const ReviewCardWritable = ({
               <div className="text-[#666666]">
                 {maxReward > 0 && (
                   <p className="text-sm">
-                    포인트 최대{" "}
+                    {t("maxRewardPrefix")}{" "}
                     <span className="font-bold text-[#1A1A1A]">
-                      {maxReward.toLocaleString()}원
+                      {t("maxRewardSuffix", { amount: maxReward.toLocaleString() })}
                     </span>
                   </p>
                 )}
                 <p className="flex items-center">
-                  <span>작성기한 {formattedExpiresAt}</span>
+                  <span>{t("writeDeadline", { date: formattedExpiresAt })}</span>
                   {diffDays >= 0 && (
                     <span className="ml-1 text-sm font-medium text-red-500">
-                      (D-{diffDays === 0 ? "Day" : diffDays})
+                      ({diffDays === 0 ? t("writeDeadlineDay") : t("writeDeadlineDays", { days: diffDays })})
                     </span>
                   )}
                 </p>
@@ -74,7 +75,7 @@ export const ReviewCardWritable = ({
                 onClick={onWriteReview}
                 className="h-[36px] px-4 text-[14px] font-medium"
               >
-                리뷰쓰기
+                {t("writeReview")}
               </Button>
             </div>
           </div>

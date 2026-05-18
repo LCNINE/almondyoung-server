@@ -1,7 +1,10 @@
 const checkEnvVariables = require("./check-env-variables")
 const path = require("path")
+const createNextIntlPlugin = require("next-intl/plugin")
 
 checkEnvVariables()
+
+const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts")
 
 const backendDomain =
   process.env.NEXT_PUBLIC_BACKEND_DOMAIN || process.env.BACKEND_DOMAIN
@@ -156,4 +159,4 @@ const nextConfig = {
   },
 }
 
-module.exports = nextConfig
+module.exports = withNextIntl(nextConfig)

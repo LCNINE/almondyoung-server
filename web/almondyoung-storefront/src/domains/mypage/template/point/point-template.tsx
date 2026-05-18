@@ -12,6 +12,7 @@ import {
   startOfDay,
   startOfMonth,
 } from "date-fns"
+import { getTranslations } from "next-intl/server"
 
 const PAGE_SIZE = 10
 
@@ -65,6 +66,7 @@ export async function PointTemplate({
   from,
   to,
 }: PointTemplateProps) {
+  const t = await getTranslations("mypage.point")
   const currentPage = Math.max(1, Math.floor(page) || 1)
   const { dateFrom, dateTo } = resolveDateRange({ year, month, from, to })
 
@@ -94,14 +96,15 @@ export async function PointTemplate({
 
       <header className="mt-8 mb-4 flex items-end justify-between gap-4 md:mt-10">
         <h2 className="text-gray-90 text-xl font-bold md:text-2xl">
-          포인트 내역
+          {t("historyTitle")}
         </h2>
         <p className="text-gray-40 text-sm tabular-nums">
-          총{" "}
-          <span className="text-gray-90 font-semibold">
-            {pointHistory.total.toLocaleString("ko-KR")}
-          </span>
-          건
+          {t.rich("totalCount", {
+            count: pointHistory.total,
+            strong: (chunks) => (
+              <span className="text-gray-90 font-semibold">{chunks}</span>
+            ),
+          })}
         </p>
       </header>
 
@@ -111,10 +114,8 @@ export async function PointTemplate({
 
       {events.length === 0 ? (
         <div className="border-gray-10 flex min-h-[200px] flex-col items-center justify-center rounded-xl border border-dashed bg-gray-50 p-10 text-center">
-          <p className="text-gray-60 text-base font-medium">
-            선택한 기간에 포인트 내역이 없어요
-          </p>
-          <p className="text-gray-40 mt-1 text-sm">다른 기간을 선택해보세요.</p>
+          <p className="text-gray-60 text-base font-medium">{t("emptyTitle")}</p>
+          <p className="text-gray-40 mt-1 text-sm">{t("emptyDescription")}</p>
         </div>
       ) : (
         <>

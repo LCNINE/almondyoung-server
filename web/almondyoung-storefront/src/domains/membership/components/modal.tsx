@@ -1,5 +1,6 @@
 "use client"
 
+import { useTranslations } from "next-intl"
 import { useEffect, useMemo, useState } from "react"
 import {
   Dialog,
@@ -26,6 +27,7 @@ export function MembershipCancelModal({
   isSubmitting?: boolean
   onConfirm: (payload: { reasonCode: string; reasonText?: string }) => void
 }) {
+  const t = useTranslations("mypage.membership.cancel")
   const [selectedReason, setSelectedReason] = useState<string>("")
   const [reasonText, setReasonText] = useState<string>("")
 
@@ -39,7 +41,7 @@ export function MembershipCancelModal({
   const showOtherInput = useMemo(() => {
     const selected = reasons.find((reason) => reason.code === selectedReason)
     if (!selected) return false
-    return selected.displayText.includes("기타") || selected.code === "OTHER"
+    return selected.code === "OTHER"
   }, [reasons, selectedReason])
 
   const resolvedReasons =
@@ -48,7 +50,7 @@ export function MembershipCancelModal({
       : [
           {
             code: "OTHER",
-            displayText: "기타",
+            displayText: t("etcLabel"),
             category: "GENERAL",
             sortOrder: 999,
           },
@@ -63,21 +65,21 @@ export function MembershipCancelModal({
         <DialogContent className="w-72 rounded-[5px] bg-white pt-6 text-center sm:w-md md:w-136 md:rounded-lg md:pt-8 lg:w-152">
           <DialogHeader>
             <DialogTitle className="text-center text-xs leading-4 font-normal text-black sm:text-sm sm:leading-5 md:text-base md:leading-6 lg:text-lg lg:leading-7">
-              이번 달 혜택 사용 내역이 없어
+              {t("titleNoUsage")}
               <br />
-              자동으로 결제액 전액 환불됩니다.
+              {t("titleRefund")}
               <br />
-              언제든 다시 가입하실 수 있어요!
+              {t("titleRejoin")}
             </DialogTitle>
           </DialogHeader>
 
           {/* 설명 문구 */}
           <div className="mt-5">
             <p className="text-xs leading-4 font-semibold text-black sm:text-sm sm:leading-5 md:text-base md:leading-6">
-              멤버십 취소 이유 (하나 선택)
+              {t("reasonHeading")}
             </p>
             <p className="text-xs leading-4 font-medium text-gray-500 sm:text-sm sm:leading-5 md:text-base md:leading-6">
-              더 나은 서비스를 위해 노력하겠습니다.
+              {t("reasonSubheading")}
             </p>
           </div>
 
@@ -111,7 +113,7 @@ export function MembershipCancelModal({
               <Input
                 value={reasonText}
                 onChange={(event) => setReasonText(event.target.value)}
-                placeholder="취소 사유를 입력해주세요"
+                placeholder={t("etcPlaceholder")}
               />
             </div>
           )}
@@ -123,7 +125,7 @@ export function MembershipCancelModal({
                 onClick={() => setOpen(false)}
                 disabled={isSubmitting}
               >
-                취소
+                {t("cancelButton")}
               </Button>
               <Button
                 onClick={() => {
@@ -135,7 +137,7 @@ export function MembershipCancelModal({
                 }}
                 disabled={!selectedReason || isSubmitting}
               >
-                {isSubmitting ? "처리중..." : "완료"}
+                {isSubmitting ? t("processing") : t("confirmButton")}
               </Button>
             </div>
           </DialogFooter>

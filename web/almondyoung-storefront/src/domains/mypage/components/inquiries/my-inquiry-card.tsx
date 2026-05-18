@@ -24,6 +24,7 @@ import { ChevronDown, Lock } from "lucide-react"
 import type { Question } from "@/lib/types/ui/ugc"
 import { cn } from "@/lib/utils"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
+import { useTranslations } from "next-intl"
 import Image from "next/image"
 
 type Props = {
@@ -43,16 +44,13 @@ function formatDate(dateStr: string): string {
   return `${year}.${month}.${day}`
 }
 
-function getCategoryLabel(category: string | null): string {
-  const categoryMap: Record<string, string> = {
-    product: "상품문의",
-    delivery: "배송문의",
-    order: "주문문의",
-    exchange: "교환/반품",
-    account: "계정문의",
-    etc: "기타문의",
-  }
-  return category ? categoryMap[category] || "기타" : "기타"
+const CATEGORY_I18N_KEY: Record<string, string> = {
+  product: "categoryProduct",
+  delivery: "categoryShipping",
+  order: "categoryOrder",
+  exchange: "categoryExchange",
+  account: "categoryAccount",
+  etc: "categoryEtc",
 }
 
 export function MyInquiryCard({
@@ -63,9 +61,14 @@ export function MyInquiryCard({
   onEdit,
   onDelete,
 }: Props) {
+  const t = useTranslations("mypage.inquiry")
   const isAnswered = question.status === "answered"
   const [imageModalOpen, setImageModalOpen] = useState(false)
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
+  const categoryKey = question.category
+    ? CATEGORY_I18N_KEY[question.category]
+    : undefined
+  const categoryLabel = categoryKey ? t(categoryKey) : t("categoryDefault")
 
   const handleImageClick = (index: number) => {
     setSelectedImageIndex(index)
@@ -86,11 +89,9 @@ export function MyInquiryCard({
                     : "bg-gray-100 text-gray-500 hover:bg-gray-100"
                 }
               >
-                {isAnswered ? "답변완료" : "답변대기"}
+                {isAnswered ? t("statusAnswered") : t("statusPending")}
               </Badge>
-              <span className="text-xs text-gray-400">
-                {getCategoryLabel(question.category)}
-              </span>
+              <span className="text-xs text-gray-400">{categoryLabel}</span>
               {question.isSecret && (
                 <Lock className="h-3.5 w-3.5 text-gray-400" />
               )}
@@ -131,7 +132,7 @@ export function MyInquiryCard({
                       >
                         <Image
                           src={getThumbnailUrl(fileId)}
-                          alt="첨부 이미지"
+                          alt={t("attachmentAlt")}
                           fill
                           className="object-cover"
                         />
@@ -152,7 +153,7 @@ export function MyInquiryCard({
             {question.answer && (
               <div className="mt-4 border-l-2 border-gray-900 pl-4">
                 <p className="mb-2 text-sm font-semibold text-gray-900">
-                  답변
+                  {t("answerSection")}
                 </p>
                 <p className="text-sm leading-relaxed whitespace-pre-line text-gray-700">
                   {question.answer.content}
@@ -172,7 +173,7 @@ export function MyInquiryCard({
                   disabled={isDeleting}
                   onClick={onEdit}
                 >
-                  수정
+                  {t("edit")}
                 </button>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
@@ -181,21 +182,22 @@ export function MyInquiryCard({
                       className="cursor-pointer text-xs text-gray-400 underline hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
                       disabled={isDeleting}
                     >
-                      {isDeleting ? "삭제 중..." : "삭제"}
+                      {isDeleting ? t("deleting") : t("delete")}
                     </button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
-                      <AlertDialogTitle>문의 삭제</AlertDialogTitle>
+                      <AlertDialogTitle>
+                        {t("deleteDialogTitle")}
+                      </AlertDialogTitle>
                       <AlertDialogDescription>
-                        이 문의를 삭제하시겠습니까? 삭제된 문의는 복구할 수
-                        없습니다.
+                        {t("deleteDialogDescription")}
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                      <AlertDialogCancel>취소</AlertDialogCancel>
+                      <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
                       <AlertDialogAction onClick={onDelete}>
-                        삭제
+                        {t("confirmDelete")}
                       </AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>

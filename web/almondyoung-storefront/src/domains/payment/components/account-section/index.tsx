@@ -4,6 +4,7 @@ import { Button } from "@components/common/ui/button"
 import { Card, CardContent } from "@components/common/ui/card"
 import { BnplProfileDto } from "@lib/types/dto/wallet"
 import { ChevronRight } from "lucide-react"
+import { useTranslations } from "next-intl"
 import EmptyState from "../empty-state"
 import { useBnplModalStore } from "../store/bnpl-modal-store"
 
@@ -17,10 +18,13 @@ export default function AccountSection({
   defaultBnplProfile,
   hasError,
 }: AccountSectionProps) {
+  const t = useTranslations("mypage.payment")
+  const { openModal } = useBnplModalStore()
+
   if (hasError) {
     return (
       <EmptyState
-        message="나중결제 내역을 불러오는데 실패했습니다"
+        message={t("bnplLoadFail")}
         contentClassName="p-0! py-4! pl-0! md:pl-2!"
         action={
           <Button
@@ -28,7 +32,7 @@ export default function AccountSection({
             className="w-full cursor-pointer px-6 font-medium sm:w-auto"
             onClick={() => window.location.reload()}
           >
-            다시 시도
+            {t("retry")}
           </Button>
         }
       />
@@ -36,11 +40,9 @@ export default function AccountSection({
   }
 
   if (!defaultBnplProfile) {
-    const { openModal } = useBnplModalStore()
-
     return (
       <EmptyState
-        message="계좌"
+        message={t("accountTitle")}
         className="bg-card border-none shadow-xs"
         action={
           <Button
@@ -49,7 +51,7 @@ export default function AccountSection({
             onClick={openModal}
           >
             <span className="w-full text-left font-bold">
-              등록한 계좌가 없어요
+              {t("noAccountRegistered")}
             </span>
             <ChevronRight className="size-4" />
           </Button>
@@ -62,15 +64,15 @@ export default function AccountSection({
     <Card className="mb-4 border-none shadow-xs">
       <CardContent className="flex items-center justify-between p-7">
         <div>
-          <span className="text-foreground font-bold sm:text-lg">계좌</span>
+          <span className="text-foreground font-bold sm:text-lg">{t("accountTitle")}</span>
         </div>
 
         <button
           className="hover:text-primary flex cursor-pointer items-center gap-2 text-base sm:text-lg"
-          aria-label="계좌 변경"
+          aria-label={t("accountChangeAria")}
         >
           <span className="text-foreground text-sm font-normal sm:text-base">
-            {defaultBnplProfile.name ?? "계좌"}
+            {defaultBnplProfile.name ?? t("accountTitle")}
           </span>
           <ChevronRight className="size-4" />
         </button>

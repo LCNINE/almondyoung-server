@@ -16,12 +16,14 @@ import { uploadFile } from "@/lib/api/file/upload"
 import { createQuestion } from "@/lib/api/ugc/qna"
 import type { QuestionCategory } from "@/lib/types/dto/ugc"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { useState, useTransition } from "react"
+import { useMemo, useState, useTransition } from "react"
 import { useForm, useWatch, type Control } from "react-hook-form"
 import { toast } from "sonner"
+import { useTranslations } from "next-intl"
 import {
-  inquiryFormSchema,
+  buildInquiryFormSchema,
   MAX_CONTENT_LENGTH,
+  MAX_TITLE_LENGTH,
   MIN_CONTENT_LENGTH,
   type InquiryFormValues,
 } from "../../schemas/inquiry-schema"
@@ -55,12 +57,30 @@ export function InquiryForm({
   onSuccess,
 }: InquiryFormProps) {
   const { user } = useUser()
+  const t = useTranslations("cs.inquiry")
+  const tForm = useTranslations("cs.inquiry.form")
+  const tValidation = useTranslations("cs.inquiry.form.validation")
   const [images, setImages] = useState<ImagePreview[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [isPending, startTransition] = useTransition()
 
+  const schema = useMemo(
+    () =>
+      buildInquiryFormSchema({
+        categoryRequired: tValidation("categoryRequired"),
+        subCategoryRequired: tValidation("subCategoryRequired"),
+        titleRequired: tValidation("titleRequired"),
+        titleMax: tValidation("titleMax", { max: MAX_TITLE_LENGTH }),
+        contentMin: tValidation("contentMin", { min: MIN_CONTENT_LENGTH }),
+        contentMax: tValidation("contentMax", {
+          max: MAX_CONTENT_LENGTH.toLocaleString(),
+        }),
+      }),
+    [tValidation]
+  )
+
   const form = useForm<InquiryFormValues>({
-    resolver: zodResolver(inquiryFormSchema),
+    resolver: zodResolver(schema),
     mode: "onChange",
     defaultValues: {
       category: undefined,
@@ -106,14 +126,14 @@ export function InquiryForm({
             mediaFileIds = await uploadImages()
           } catch {
             setIsUploading(false)
-            toast.error("이미지 업로드에 실패했습니다. 다시 시도해주세요.")
+            toast.error(t("uploadFail"))
             return
           }
           setIsUploading(false)
         }
 
         await createQuestion({
-          nickname: user?.nickname ?? "고객",
+          nickname: user?.nickname ?? t("defaultNickname"),
           productId: productId,
           category: data.category,
           subCategory: data.subCategory,
@@ -130,7 +150,7 @@ export function InquiryForm({
         if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") {
           throw error
         }
-        toast.error("문의 등록에 실패했습니다. 다시 시도해주세요.")
+        toast.error(t("submitFail"))
       }
     })
   }
@@ -140,7 +160,7 @@ export function InquiryForm({
       <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5">
         {productTitle && (
           <p className="text-sm">
-            <span className="font-medium text-gray-500">문의 상품</span>
+            <span className="font-medium text-gray-500">{tForm("productLabel")}</span>
             <span className="mx-2 text-gray-300">|</span>
             <span className="text-gray-900">{productTitle}</span>
           </p>
@@ -152,7 +172,7 @@ export function InquiryForm({
           render={() => (
             <FormItem>
               <FormLabel className="text-sm font-medium">
-                문의 유형 <span className="text-red-500">*</span>
+                {tForm("categoryLabel")} <span className="text-red-500">*</span>
               </FormLabel>
               <FormControl>
                 <CategorySelect
@@ -188,12 +208,12 @@ export function InquiryForm({
           render={({ field }) => (
             <FormItem>
               <FormLabel className="text-sm font-medium">
-                제목 <span className="text-red-500">*</span>
+                {tForm("titleLabel")} <span className="text-red-500">*</span>
               </FormLabel>
               <FormControl>
                 <Input
                   {...field}
-                  placeholder="문의 제목을 입력해주세요"
+                  placeholder={tForm("titlePlaceholder")}
                   className="h-11 bg-white text-gray-900"
                   disabled={isBusy}
                 />
@@ -209,7 +229,7 @@ export function InquiryForm({
           render={({ field }) => (
             <FormItem>
               <FormLabel className="text-sm font-medium">
-                문의 내용 <span className="text-red-500">*</span>
+                {tForm("contentLabel")} <span className="text-red-500">*</span>
               </FormLabel>
               <FormControl>
                 <Textarea
@@ -219,7 +239,7 @@ export function InquiryForm({
                       field.onChange(e.target.value)
                     }
                   }}
-                  placeholder={`문의 내용을 입력해주세요. (최소 ${MIN_CONTENT_LENGTH}자)`}
+                  placeholder={tForm("contentPlaceholder", { min: MIN_CONTENT_LENGTH })}
                   className="min-h-[180px] resize-none"
                   disabled={isBusy}
                 />
@@ -236,7 +256,7 @@ export function InquiryForm({
         />
 
         <div>
-          <p className="mb-2 text-sm font-medium">이미지 첨부</p>
+          <p className="mb-2 text-sm font-medium">{tForm("imageSectionLabel")}</p>
           <ImageUpload
             images={images}
             onImagesChange={setImages}
@@ -250,7 +270,7 @@ export function InquiryForm({
             disabled={isBusy}
             className="h-12 w-full bg-[#f29219] text-base font-bold hover:bg-[#e08010]"
           >
-            {isBusy ? "처리 중..." : "문의하기"}
+            {isBusy ? tForm("processing") : tForm("submit")}
           </Button>
         </div>
       </form>

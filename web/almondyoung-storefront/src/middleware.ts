@@ -249,14 +249,21 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  const redirectPath =
-    request.nextUrl.pathname === "/" ? "" : request.nextUrl.pathname
-
   const queryString = request.nextUrl.search ? request.nextUrl.search : ""
 
   // If no country code is set, we redirect to the relevant region.
   if (!urlHasCountryCode && countryCode) {
-    redirectUrl = `${request.nextUrl.origin}/${countryCode}${redirectPath}${queryString}`
+    // 첫 segment 가 2글자 country-like 인데 region map 에 없는 경우(미등록 region)
+    // 그 prefix 를 제거하고 fallback region 으로 교체한다. 예: /us/cart -> /kr/cart
+    const pathSegments = request.nextUrl.pathname.split("/").filter(Boolean)
+    const firstSegment = pathSegments[0] ?? ""
+    const hasInvalidCountryPrefix = /^[a-z]{2}$/i.test(firstSegment)
+    const restPath = hasInvalidCountryPrefix
+      ? pathSegments.slice(1).join("/")
+      : pathSegments.join("/")
+    const normalizedRest = restPath ? `/${restPath}` : ""
+
+    redirectUrl = `${request.nextUrl.origin}/${countryCode}${normalizedRest}${queryString}`
     response = NextResponse.redirect(`${redirectUrl}`, 307)
   }
 

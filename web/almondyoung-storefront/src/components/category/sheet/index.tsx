@@ -1,5 +1,6 @@
 "use client"
 
+import { LanguageSwitcher } from "@/components/layout/header/language-switcher"
 import {
   Sheet,
   SheetContent,
@@ -12,6 +13,7 @@ import { useScrollSpy } from "@/hooks/use-scroll-spy"
 import { listCategories } from "@/lib/api/medusa/categories"
 import { StoreProductCategoryTree } from "@/lib/types/medusa-category"
 import { AlertCircle } from "lucide-react"
+import { useTranslations } from "next-intl"
 import { useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { CategorySection } from "./category-section"
 import { SidebarTabs } from "./sidebar-tabs"
@@ -25,6 +27,7 @@ export function CategorySheet({ trigger }: CategorySheetProps) {
   const [isPending, startTransition] = useTransition()
   const [categories, setCategories] = useState<StoreProductCategoryTree[]>([])
   const [isError, setIsError] = useState(false)
+  const t = useTranslations("categorySheet")
 
   const scrollRef = useRef<HTMLElement>(null)
   const sectionIds = useMemo(() => categories.map((c) => c.id), [categories])
@@ -73,8 +76,13 @@ export function CategorySheet({ trigger }: CategorySheetProps) {
          * 각 탭별 컨텐츠 영역을 switch/render 하는 구조로 변경.
          */}
         <SheetHeader className="border-b border-gray-100 px-5 py-4 text-left">
-          <SheetTitle className="text-[17px] font-bold">카테고리</SheetTitle>
-          <SheetDescription className="sr-only">카테고리 목록</SheetDescription>
+          <div className="flex items-center justify-between">
+            <SheetTitle className="text-[17px] font-bold">
+              {t("title")}
+            </SheetTitle>
+            <LanguageSwitcher variant="sheet" />
+          </div>
+          <SheetDescription className="sr-only">{t("title")}</SheetDescription>
         </SheetHeader>
 
         {isError ? (

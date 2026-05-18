@@ -2,6 +2,7 @@
 
 import type { StoreCustomerWithGroups } from "@/lib/types/ui/medusa"
 import type { HttpTypes } from "@medusajs/types"
+import { useTranslations } from "next-intl"
 import { ProductSection } from "../shared/product-section"
 import { InterestEditSheet } from "./interest-edit-sheet"
 
@@ -11,13 +12,9 @@ interface InterestProductSectionProps {
   customer: StoreCustomerWithGroups | null
   wishlistIds?: Set<string>
   selectedKeys: string[]
-  /** 첫 섹션에만 편집 버튼 노출 (각 섹션마다 중복 노출 방지) */
   showEditButton?: boolean
 }
 
-/*───────────────────────────
- * 관심 카테고리 1개에 대응하는 베스트 상품 섹션 (탭 없음)
- *──────────────────────────*/
 export function InterestProductSection({
   category,
   products,
@@ -26,13 +23,16 @@ export function InterestProductSection({
   selectedKeys,
   showEditButton = false,
 }: InterestProductSectionProps) {
-  const tab = { id: category.key, name: category.name, handle: category.handle }
+  const t = useTranslations("home.categoryBest")
+  const tCat = useTranslations("categories")
+  const localizedName = tCat(category.key as "lash-perm") ?? category.name
+  const tab = { id: category.key, name: localizedName, handle: category.handle }
 
   return (
     <ProductSection
       title={
         <>
-          <span className="text-yellow-30">{category.name}</span> 베스트
+          <span className="text-yellow-30">{localizedName}</span> {t("interestTitleSuffix")}
         </>
       }
       tabs={[tab]}
@@ -43,8 +43,8 @@ export function InterestProductSection({
       customer={customer}
       wishlistIds={wishlistIds}
       hideTabs
-      emptyTitle="상품이 없습니다"
-      emptyDescription="이 카테고리에 등록된 상품이 없습니다."
+      emptyTitle={t("emptyTitle")}
+      emptyDescription={t("emptyDescription")}
       headerExtra={
         showEditButton ? (
           <InterestEditSheet initialKeys={selectedKeys} />

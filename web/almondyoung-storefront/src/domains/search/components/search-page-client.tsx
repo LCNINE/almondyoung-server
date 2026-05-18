@@ -7,6 +7,7 @@ import { SharedPagination } from "@/components/shared/pagination"
 import { useSearchHistory } from "@hooks/ui/use-search-history"
 import type { SearchProductResult } from "../containers/search-container"
 import { useRouter, useSearchParams } from "next/navigation"
+import { useTranslations } from "next-intl"
 import { SearchEmptyState } from "./search-empty-state"
 
 interface SearchPageClientProps {
@@ -19,13 +20,6 @@ interface SearchPageClientProps {
   wishlistIds?: string[]
 }
 
-const SORT_OPTIONS = [
-  { id: "relevance", label: "관련도순" },
-  { id: "price_asc", label: "낮은가격순" },
-  { id: "price_desc", label: "높은가격순" },
-  { id: "newest", label: "최신순" },
-]
-
 export function SearchPageClient({
   keyword,
   searchResult,
@@ -34,8 +28,17 @@ export function SearchPageClient({
   wishlistIds = [],
 }: SearchPageClientProps) {
   const router = useRouter()
+  const t = useTranslations("search.result")
+  const tSort = useTranslations("search.sort")
   const searchParams = useSearchParams()
   const { keywords: historyKeywords } = useSearchHistory()
+
+  const SORT_OPTIONS = [
+    { id: "relevance", label: tSort("relevance") },
+    { id: "price_asc", label: tSort("priceAsc") },
+    { id: "price_desc", label: tSort("priceDesc") },
+    { id: "newest", label: tSort("newest") },
+  ]
 
   const currentSort = normalizeSearchSort(searchParams.get("sort"))
   const currentPage = Math.max(1, Number(searchParams.get("page")) || 1)
@@ -89,20 +92,21 @@ export function SearchPageClient({
     <div className="flex flex-col">
       <div className="mb-6">
         <h1 className="mb-2 text-xl font-bold text-gray-900 md:text-2xl">
-          <span className="text-olive-600">&apos;{keyword}&apos;</span> 검색결과
+          <span className="text-olive-600">{t("title", { keyword })}</span>
         </h1>
         <p className="text-sm text-gray-500">
-          총{" "}
-          <span className="font-semibold text-gray-700">
-            {pagination.total.toLocaleString()}
-          </span>
-          개의 상품
+          {t.rich("totalCount", {
+            count: pagination.total.toLocaleString(),
+            strong: (chunks) => (
+              <span className="font-semibold text-gray-700">{chunks}</span>
+            ),
+          })}
         </p>
       </div>
 
       <div className="mb-4 flex items-center justify-between">
         <div className="hidden text-sm text-gray-500 md:block">
-          {currentPage}/{totalPages} 페이지
+          {t("pageInfo", { current: currentPage, total: totalPages })}
         </div>
         <div className="ml-auto">
           <CustomDropdown

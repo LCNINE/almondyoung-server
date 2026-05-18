@@ -1,4 +1,7 @@
+"use client"
+
 import { ChevronRight } from "lucide-react"
+import { useTranslations } from "next-intl"
 
 interface MembershipBenefit {
   id: string
@@ -22,6 +25,7 @@ interface MembershipBenefitsProps {
 export default function MembershipBenefitsHorizontal({
   benefits,
 }: MembershipBenefitsProps) {
+  const t = useTranslations("mypage.membership")
   return (
     <section className="rounded-[10px] border border-gray-200 p-8">
       {/* Benefits List - Grid 레이아웃 */}
@@ -60,7 +64,7 @@ export default function MembershipBenefitsHorizontal({
             </li>
           ))
         ) : (
-          <li className="text-sm text-gray-500">혜택 정보가 없습니다.</li>
+          <li className="text-sm text-gray-500">{t("noBenefitInfo")}</li>
         )}
       </ul>
     </section>
@@ -71,6 +75,7 @@ export default function MembershipBenefitsHorizontal({
  * 대안: Flex-wrap 버전 (고정 너비 유지)
  */
 export function MembershipBenefitsFlexWrap({ benefits }: MembershipBenefitsProps) {
+  const t = useTranslations("mypage.membership")
   return (
     <section className="rounded-[10px] border border-gray-200 px-20 py-8">
       <ul className="flex flex-wrap justify-center gap-6">
@@ -106,7 +111,7 @@ export function MembershipBenefitsFlexWrap({ benefits }: MembershipBenefitsProps
             </li>
           ))
         ) : (
-          <li className="text-sm text-gray-500">혜택 정보가 없습니다.</li>
+          <li className="text-sm text-gray-500">{t("noBenefitInfo")}</li>
         )}
       </ul>
     </section>
@@ -119,6 +124,7 @@ export function MembershipBenefitsFlexWrap({ benefits }: MembershipBenefitsProps
 export function MembershipBenefitsScrollable({
   benefits,
 }: MembershipBenefitsProps) {
+  const t = useTranslations("mypage.membership")
   return (
     <section className="rounded-[10px] border border-gray-200 px-8 py-8">
       <div className="overflow-x-auto">
@@ -155,7 +161,7 @@ export function MembershipBenefitsScrollable({
               </li>
             ))
           ) : (
-            <li className="text-sm text-gray-500">혜택 정보가 없습니다.</li>
+            <li className="text-sm text-gray-500">{t("noBenefitInfo")}</li>
           )}
         </ul>
       </div>

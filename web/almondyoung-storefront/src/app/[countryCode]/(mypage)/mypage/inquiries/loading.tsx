@@ -1,15 +1,17 @@
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { Skeleton } from "@/components/ui/skeleton"
 import { WithHeaderLayout } from "@components/layout"
+import { getTranslations } from "next-intl/server"
 
-export default function Loading() {
+export default async function Loading() {
+  const t = await getTranslations("mypage.menu")
   return (
     <WithHeaderLayout
       config={{
         showDesktopHeader: true,
         showMobileHeader: false,
         showMobileSubBackHeader: true,
-        mobileSubBackHeaderTitle: "내 문의 내역",
+        mobileSubBackHeaderTitle: t("inquiries"),
       }}
     >
       <MypageLayout>

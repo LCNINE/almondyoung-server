@@ -4,6 +4,7 @@ import { CategorySheet } from "@/components/category/sheet"
 import { useSearchSheetStore } from "@/hooks/ui/use-search-sheet-store"
 import { cn } from "@/lib/utils"
 import { House, Menu, Search, ShoppingCart, User } from "lucide-react"
+import { useTranslations } from "next-intl"
 import Link from "next/link"
 import { useParams, usePathname } from "next/navigation"
 
@@ -11,19 +12,20 @@ export function BottomNavigation() {
   const pathname = usePathname()
   const { countryCode } = useParams()
   const { onOpen } = useSearchSheetStore()
+  const t = useTranslations("nav")
 
   const navItems = [
-    { label: "홈", icon: House, href: `/${countryCode}`, type: "link" },
-    { label: "카테고리", icon: Menu, type: "sheet" },
-    { label: "검색", icon: Search, type: "action", onClick: onOpen },
+    { label: t("home"), icon: House, href: `/${countryCode}`, type: "link" },
+    { label: t("category"), icon: Menu, type: "sheet" },
+    { label: t("search"), icon: Search, type: "action", onClick: onOpen },
     {
-      label: "장바구니",
+      label: t("cart"),
       icon: ShoppingCart,
       href: `/${countryCode}/cart`,
       type: "link",
     },
     {
-      label: "마이",
+      label: t("myPage"),
       icon: User,
       href: `/${countryCode}/mypage`,
       type: "link",
@@ -40,7 +42,7 @@ export function BottomNavigation() {
         )
 
         // (Sheet 타입)
-        if (item.type === "sheet" && item.label === "카테고리") {
+        if (item.type === "sheet" && item.label === t("category")) {
           return (
             <CategorySheet
               key={item.label}

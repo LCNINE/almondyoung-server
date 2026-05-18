@@ -1,6 +1,7 @@
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { WithHeaderLayout } from "@/components/layout"
 import { PointTemplate } from "@/domains/mypage/template/point/point-template"
+import { getTranslations } from "next-intl/server"
 
 interface PointPageProps {
   searchParams: Promise<{
@@ -13,6 +14,7 @@ interface PointPageProps {
 }
 
 export default async function PointPage({ searchParams }: PointPageProps) {
+  const t = await getTranslations("mypage.page")
   const params = await searchParams
   const currentPage = Math.max(1, Number(params.page) || 1)
 
@@ -22,7 +24,7 @@ export default async function PointPage({ searchParams }: PointPageProps) {
         showDesktopHeader: true,
         showMobileHeader: false,
         showMobileSubBackHeader: true,
-        mobileSubBackHeaderTitle: "포인트 적립",
+        mobileSubBackHeaderTitle: t("pointEarn"),
       }}
     >
       <MypageLayout>

@@ -10,8 +10,10 @@ import { useSearchHistory } from "@/hooks/ui/use-search-history"
 import { useSearchSheetStore } from "@/hooks/ui/use-search-sheet-store"
 import { Trash2, X } from "lucide-react"
 import { useParams, useRouter } from "next/navigation"
+import { useTranslations } from "next-intl"
 
 export function SearchHistory() {
+  const t = useTranslations("search.history")
   const { keywords, removeKeyword, clearAll } = useSearchHistory()
   const { onClose, setSearchTerm } = useSearchSheetStore()
   const router = useRouter()
@@ -30,7 +32,7 @@ export function SearchHistory() {
     <>
       <div className="mb-4 flex items-end justify-between px-1">
         <h3 className="text-base leading-none font-bold text-gray-900">
-          최근 검색어
+          {t("title")}
         </h3>
 
         <button
@@ -38,7 +40,7 @@ export function SearchHistory() {
           className="flex items-center gap-1 text-[13px] text-gray-400 transition-colors hover:text-gray-600"
         >
           <Trash2 className="h-3.5 w-3.5" />
-          전체삭제
+          {t("clearAll")}
         </button>
       </div>
 

@@ -1,6 +1,7 @@
 "use client"
 
 import { ChevronLeft, ChevronRight } from "lucide-react"
+import { useTranslations } from "next-intl"
 import { cn } from "@lib/utils"
 
 interface SearchResultPaginationProps {
@@ -14,6 +15,7 @@ export function SearchResultPagination({
   totalPages,
   onPageChange,
 }: SearchResultPaginationProps) {
+  const t = useTranslations("search.pagination")
   // 페이지 번호 배열 생성 (현재 페이지 기준으로 표시)
   const getPageNumbers = () => {
     const pages: (number | "...")[] = []
@@ -56,7 +58,7 @@ export function SearchResultPagination({
   return (
     <nav
       className="flex items-center justify-center gap-1"
-      aria-label="페이지네이션"
+      aria-label={t("ariaLabel")}
     >
       {/* 이전 페이지 */}
       <button
@@ -68,7 +70,7 @@ export function SearchResultPagination({
             ? "cursor-not-allowed text-gray-300"
             : "text-gray-600 hover:bg-gray-100"
         )}
-        aria-label="이전 페이지"
+        aria-label={t("prevPage")}
       >
         <ChevronLeft className="h-5 w-5" />
       </button>
@@ -98,7 +100,7 @@ export function SearchResultPagination({
                 ? "bg-olive-600 text-white"
                 : "text-gray-600 hover:bg-gray-100"
             )}
-            aria-label={`${page} 페이지`}
+            aria-label={t("pageAria", { page })}
             aria-current={isActive ? "page" : undefined}
           >
             {page}
@@ -116,7 +118,7 @@ export function SearchResultPagination({
             ? "cursor-not-allowed text-gray-300"
             : "text-gray-600 hover:bg-gray-100"
         )}
-        aria-label="다음 페이지"
+        aria-label={t("nextPage")}
       >
         <ChevronRight className="h-5 w-5" />
       </button>

@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import { Search, X } from "lucide-react"
 import { forwardRef } from "react"
+import { useTranslations } from "next-intl"
 
 interface SearchInputProps extends React.HTMLAttributes<HTMLDivElement> {
   searchTerm: string
@@ -14,6 +15,7 @@ interface SearchInputProps extends React.HTMLAttributes<HTMLDivElement> {
 
 export const SearchInput = forwardRef<HTMLDivElement, SearchInputProps>(
   ({ searchTerm, setSearchTerm, onSearchKeyword, onSearch, ...props }, ref) => {
+    const t = useTranslations("search")
     return (
       <div ref={ref} {...props} className="w-full">
         <div className="relative w-full">
@@ -31,7 +33,7 @@ export const SearchInput = forwardRef<HTMLDivElement, SearchInputProps>(
               }
               onSearchKeyword(e.key)
             }}
-            placeholder="오늘 뭐 살까? 아몬드영"
+            placeholder={t("inputPlaceholder")}
             className="w-full rounded-xl border-none bg-gray-100 py-4 pr-20 pl-5 text-sm font-normal transition-all placeholder:text-gray-400 focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-yellow-400 focus-visible:ring-offset-0"
           />
           <div className="absolute top-1/2 right-3.5 flex -translate-y-1/2 items-center gap-2.5">

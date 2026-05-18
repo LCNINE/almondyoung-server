@@ -1,6 +1,9 @@
+"use client"
+
 import React from "react"
 import { Check, Package, Flag, Truck, MapPin } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
+import { useTranslations } from "next-intl"
 
 // ============================================
 // Types
@@ -151,32 +154,13 @@ const LineConnector = ({ fromStepId, currentStep }: LineConnectorProps) => (
 export default function DeliveryStepper({
   currentStep = 1,
 }: DeliveryStepperProps) {
+  const t = useTranslations("mypage.order.delivery")
   const steps: DeliveryStep[] = [
-    {
-      id: 1,
-      label: "결제완료",
-      icon: Check,
-    },
-    {
-      id: 2,
-      label: "상품 준비중",
-      icon: Package,
-    },
-    {
-      id: 3,
-      label: "배송시작",
-      icon: Flag,
-    },
-    {
-      id: 4,
-      label: "배송중",
-      icon: Truck,
-    },
-    {
-      id: 5,
-      label: "배송완료",
-      icon: MapPin,
-    },
+    { id: 1, label: t("paid"), icon: Check },
+    { id: 2, label: t("preparing"), icon: Package },
+    { id: 3, label: t("shippingStarted"), icon: Flag },
+    { id: 4, label: t("shipping"), icon: Truck },
+    { id: 5, label: t("delivered"), icon: MapPin },
   ]
 
   return (

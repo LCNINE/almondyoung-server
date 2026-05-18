@@ -1,3 +1,4 @@
+import { getTranslations } from "next-intl/server"
 import { MembershipForm } from "./components"
 import type { PlanWithTier } from "@lib/types/membership"
 
@@ -10,6 +11,7 @@ async function getPlansData(): Promise<PlanWithTier[]> {
 }
 
 export default async function MembershipFormPage() {
+  const t = await getTranslations("mypage.membershipSubscribe")
   let plans: PlanWithTier[] = []
   let plansError = false
 
@@ -35,16 +37,16 @@ export default async function MembershipFormPage() {
           showDesktopHeader: true,
           showMobileHeader: false,
           showMobileSubBackHeader: true,
-          mobileSubBackHeaderTitle: "멤버십 구독",
+          mobileSubBackHeaderTitle: t("pageTitle"),
         }}
       >
         <MypageLayout>
           <section className="rounded-lg border border-gray-200 bg-white p-6 text-center">
             <h2 className="text-lg font-semibold text-gray-900">
-              멤버십 플랜 정보를 불러오지 못했습니다.
+              {t("plansLoadFailTitle")}
             </h2>
             <p className="mt-2 text-sm text-gray-500">
-              잠시 후 다시 시도해주세요.
+              {t("plansLoadFailDescription")}
             </p>
           </section>
         </MypageLayout>

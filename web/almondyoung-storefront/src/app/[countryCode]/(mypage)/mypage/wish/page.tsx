@@ -1,7 +1,8 @@
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
-import { WithHeaderLayout } from "@components/layout"
-import { WishlistTemplate } from "@/domains/wishlist/templates"
 import { fetchWishlistItems } from "@/domains/wishlist/actions"
+import { WishlistTemplate } from "@/domains/wishlist/templates"
+import { WithHeaderLayout } from "@components/layout"
+import { getTranslations } from "next-intl/server"
 
 interface WishPageProps {
   params: Promise<{
@@ -14,6 +15,7 @@ interface WishPageProps {
 }
 
 export default async function WishPage({ params, searchParams }: WishPageProps) {
+  const t = await getTranslations("mypage.menu")
   const { countryCode } = await params
   const { q, page } = await searchParams
 
@@ -26,7 +28,7 @@ export default async function WishPage({ params, searchParams }: WishPageProps) 
         showDesktopHeader: true,
         showMobileHeader: false,
         showMobileSubBackHeader: true,
-        mobileSubBackHeaderTitle: "찜한 상품",
+        mobileSubBackHeaderTitle: t("wish"),
       }}
     >
       <MypageLayout>

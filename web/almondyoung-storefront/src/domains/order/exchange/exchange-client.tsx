@@ -1,12 +1,10 @@
 "use client"
 
-import { ShippingProduct, OrderStatus } from "@components/orders/types"
 import { PageTitle } from "@/components/shared/page-title"
-import OrderCardContent from "@components/orders/order-card/order-card-content"
-import OrderCard from "@components/orders/order-card/order-card"
-
-import { ReturnOrderCard } from "./return-order-card"
+import { ShippingProduct, OrderStatus } from "@components/orders/types"
+import { useTranslations } from "next-intl"
 import { ExchangeOrderCard } from "./exchange-order-card"
+import { ReturnOrderCard } from "./return-order-card"
 /**
  * (가상) Order 타입을 정의합니다.
  * OrderCardsList와 OrderCard의 props를 기반으로 재구성했습니다.
@@ -26,18 +24,16 @@ interface Order {
 }
 
 export function ExchangeClient() {
-  const handleMoreClick = (orderId: string) => {
-    console.log("주문 상세보기 클릭 (ID):", orderId)
-  }
+  const t = useTranslations("mypage.order.exchange")
 
   return (
     <div className="bg-white px-3 py-4 md:min-h-screen md:px-6">
-      <PageTitle>반품/교환/환불 목록</PageTitle>
+      <PageTitle>{t("pageTitle")}</PageTitle>
 
       <section className="space-y-6">
         <ReturnOrderCard
-          status={"반품완료"}
-          statusInfo={"2025. 05. 12 반품"}
+          status={t("returned")}
+          statusInfo={t("dateReturned", { date: "2025. 05. 12" })}
           productName={"노몬드 속눈썹 영양제 블랙"}
           productImage={"/images/sample-cosmetic.png"}
           price={"9,000원"}
@@ -47,7 +43,7 @@ export function ExchangeClient() {
         />
         <ExchangeOrderCard
           exchangeDate={"2025. 05. 12"}
-          status={"교환완료"}
+          status={t("exchanged")}
           productName={"노몬드 속눈썹 영양제 블랙"}
           productImage={"/images/sample-cosmetic.png"}
           price={"9,000원"}

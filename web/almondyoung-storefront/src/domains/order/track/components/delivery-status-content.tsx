@@ -1,17 +1,12 @@
-import React from "react"
+"use client"
 
-// ============================================
-// Types
-// ============================================
+import { useTranslations } from "next-intl"
+import React from "react"
 
 interface DeliveryStatusContentProps {
   title: string
   description?: string
 }
-
-// ============================================
-// Main Component
-// ============================================
 
 export function DeliveryStatusContent({
   title,
@@ -31,57 +26,55 @@ export function DeliveryStatusContent({
   )
 }
 
-// ============================================
-// Preset Components
-// ============================================
-
 export function DeliveryCompletedContent({ date }: { date: string }) {
+  const t = useTranslations("mypage.order.delivery")
   return (
     <DeliveryStatusContent
-      title={`${date} 도착완료`}
-      description="고객님이 주문하신 상품이 배송완료 되었습니다."
+      title={t("deliveredTitle", { date })}
+      description={t("deliveredDescription")}
     />
   )
 }
 
 export function PreparingOrderContent() {
-  return <DeliveryStatusContent title="상품 준비중! 오늘 출고" />
+  const t = useTranslations("mypage.order.delivery")
+  return <DeliveryStatusContent title={t("preparingTitle")} />
 }
 
 export function ShippingStartedContent() {
+  const t = useTranslations("mypage.order.delivery")
   return (
     <DeliveryStatusContent
-      title="배송이 시작되었습니다!"
-      description="상품이 고객님께 전달되는 중입니다."
+      title={t("shippingStartedTitle")}
+      description={t("shippingStartedDescription")}
     />
   )
 }
 
 export function InTransitContent() {
+  const t = useTranslations("mypage.order.delivery")
   return (
     <DeliveryStatusContent
-      title="배송중입니다"
-      description="곧 도착 예정입니다."
+      title={t("shippingTitle")}
+      description={t("shippingDescription")}
     />
   )
 }
 
-// ============================================
-// Dynamic Content by Step
-// ============================================
-
 interface DynamicDeliveryContentProps {
   currentStep: number
-  completedDate?: string // 배송 완료일 (예: "8/20(수)")
+  completedDate?: string
 }
 
 export function DynamicDeliveryContent({
   currentStep,
   completedDate,
 }: DynamicDeliveryContentProps) {
+  const t = useTranslations("mypage.order.delivery")
+
   switch (currentStep) {
     case 1:
-      return <DeliveryStatusContent title="결제가 완료되었습니다" />
+      return <DeliveryStatusContent title={t("paidTitle")} />
     case 2:
       return <PreparingOrderContent />
     case 3:
@@ -93,15 +86,15 @@ export function DynamicDeliveryContent({
         <DeliveryCompletedContent date={completedDate} />
       ) : (
         <DeliveryStatusContent
-          title="배송완료"
-          description="고객님이 주문하신 상품이 배송완료 되었습니다."
+          title={t("delivered")}
+          description={t("deliveredDescription")}
         />
       )
     default:
       return (
         <DeliveryStatusContent
-          title="주문 처리중"
-          description="주문을 처리하고 있습니다."
+          title={t("processingTitle")}
+          description={t("processingDescription")}
         />
       )
   }

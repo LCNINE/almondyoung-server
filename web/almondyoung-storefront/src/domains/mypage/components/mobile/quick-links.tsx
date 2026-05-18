@@ -1,8 +1,10 @@
-import React from "react"
-import Link from "next/link"
-import { Package, Heart, ShoppingBag, Eye } from "lucide-react"
+"use client"
 
-// --- 1. 재사용 가능한 메뉴 아이템 컴포넌트 ---
+import LocalizedClientLink from "@/components/shared/localized-client-link"
+import { Eye, Heart, Package, ShoppingBag } from "lucide-react"
+import { useTranslations } from "next-intl"
+import React from "react"
+
 interface QuickMenuItemProps {
   icon: React.ReactNode
   label: string
@@ -11,46 +13,45 @@ interface QuickMenuItemProps {
 
 function QuickMenuItem({ icon, label, href }: QuickMenuItemProps) {
   return (
-    <Link
+    <LocalizedClientLink
       href={href}
       className="group flex flex-1 flex-col items-center justify-center gap-[6px]"
     >
-      {/* 아이콘 영역 */}
       <div className="relative h-[27px] w-[27px]">{icon}</div>
-      {/* 텍스트 영역 */}
       <span className="text-center font-['Pretendard'] text-xs whitespace-nowrap text-black">
         {label}
       </span>
-    </Link>
+    </LocalizedClientLink>
   )
 }
 
-// --- 2. 메인 퀵 메뉴 컴포넌트 ---
 export function QuickLinks() {
+  const t = useTranslations("mypage.quickLink")
+
   return (
     <nav
       className="flex w-full items-center justify-between rounded-[10px] bg-white py-[15px] shadow-sm"
-      aria-label="퀵 메뉴"
+      aria-label={t("orderList")}
     >
       <QuickMenuItem
-        label="주문목록"
+        label={t("orderList")}
         icon={<Package size={27} className="text-amber-500" />}
-        href="/kr/mypage/order/list"
+        href="/mypage/order/list"
       />
       <QuickMenuItem
-        label="찜한상품"
+        label={t("wish")}
         icon={<Heart size={27} className="text-amber-500" />}
-        href="/kr/mypage/wish"
+        href="/mypage/wish"
       />
       <QuickMenuItem
-        label="자주산상품"
+        label={t("rebuy")}
         icon={<ShoppingBag size={27} className="text-amber-500" />}
-        href="/kr/mypage/rebuy"
+        href="/mypage/rebuy"
       />
       <QuickMenuItem
-        label="최근 본 상품"
+        label={t("recent")}
         icon={<Eye size={27} className="text-amber-500" />}
-        href="/kr/mypage/recent"
+        href="/mypage/recent"
       />
     </nav>
   )

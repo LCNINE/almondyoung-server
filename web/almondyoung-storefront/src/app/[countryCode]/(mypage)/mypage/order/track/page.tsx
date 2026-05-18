@@ -1,10 +1,13 @@
+import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
+import { WithHeaderLayout } from "@components/layout"
 import { OrderInfoCardShipping } from "@components/orders/order-info-cards"
 import { ExternalLink } from "lucide-react"
-import { Accordion } from "./accordion"
-import { WithHeaderLayout } from "@components/layout"
-import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
+import { getTranslations } from "next-intl/server"
 import { DeliveryHeader } from "domains/order/track/components"
-export default function OrderTrackPage() {
+import { Accordion } from "./accordion"
+
+export default async function OrderTrackPage() {
+  const t = await getTranslations("mypage.page")
   const faqData = [
     {
       id: "faq-1",
@@ -74,7 +77,7 @@ export default function OrderTrackPage() {
         showDesktopHeader: true,
         showMobileHeader: false,
         showMobileSubBackHeader: true,
-        mobileSubBackHeaderTitle: "배송 조회",
+        mobileSubBackHeaderTitle: t("trackDelivery"),
       }}
     >
       <MypageLayout>

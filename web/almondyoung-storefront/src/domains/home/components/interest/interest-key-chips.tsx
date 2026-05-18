@@ -7,6 +7,7 @@ import {
 } from "@/lib/constants/categories"
 import { cn } from "@/lib/utils"
 import { Check } from "lucide-react"
+import { useTranslations } from "next-intl"
 import { toast } from "sonner"
 
 interface InterestKeyChipsProps {
@@ -16,16 +17,14 @@ interface InterestKeyChipsProps {
   className?: string
 }
 
-/*───────────────────────────
- * 관심 카테고리 선택 칩 (배너 + 편집 Sheet 공용)
- * - 최대 3개 선택. 이미 3개 선택된 상태에서 4번째 누르면 비활성 + 토스트.
- *──────────────────────────*/
 export function InterestKeyChips({
   selectedKeys,
   onChange,
   disabled = false,
   className,
 }: InterestKeyChipsProps) {
+  const tBanner = useTranslations("home.interestBanner")
+  const tCat = useTranslations("categories")
   const isAtMax = selectedKeys.length >= MAX_INTEREST_CATEGORIES
 
   const handleToggle = (key: string) => {
@@ -37,7 +36,7 @@ export function InterestKeyChips({
     }
 
     if (isAtMax) {
-      toast.message(`최대 ${MAX_INTEREST_CATEGORIES}개까지 선택할 수 있어요`)
+      toast.message(tBanner("maxSelectable", { max: MAX_INTEREST_CATEGORIES }))
       return
     }
 
@@ -69,7 +68,7 @@ export function InterestKeyChips({
             )}
           >
             {isSelected && <Check className="mr-1 h-3.5 w-3.5" />}
-            {cat.name}
+            {tCat(cat.key as "lash-perm")}
           </Button>
         )
       })}

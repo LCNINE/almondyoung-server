@@ -12,9 +12,11 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { Lock } from "lucide-react"
+import { useTranslations } from "next-intl"
 
 import type { Question } from "@/lib/types/ui/ugc"
 import { cn } from "@/lib/utils"
+import { DATE_FORMATS, formatDate as formatDateUtil } from "@/lib/utils/format-date"
 
 type Props = {
   question: Question
@@ -36,11 +38,7 @@ function maskNickname(nickname: string): string {
 }
 
 function formatDate(dateStr: string): string {
-  const date = new Date(dateStr)
-  const yyyy = date.getFullYear()
-  const mm = String(date.getMonth() + 1).padStart(2, "0")
-  const dd = String(date.getDate()).padStart(2, "0")
-  return `${yyyy}.${mm}.${dd}.`
+  return `${formatDateUtil(dateStr, DATE_FORMATS.KO_DOT)}.`
 }
 
 export function QnaRow({
@@ -52,9 +50,10 @@ export function QnaRow({
   onEdit,
   onDelete,
 }: Props) {
+  const t = useTranslations("productDetail.qna")
   const isAnswered = question.status === "answered"
   const isSecretMasked = question.isSecret && !isAuthor
-  const displayTitle = isSecretMasked ? "비밀글입니다." : question.title
+  const displayTitle = isSecretMasked ? t("secretPlaceholder") : question.title
   const canExpand = !!question.answer || !isSecretMasked
 
   return (
@@ -74,7 +73,7 @@ export function QnaRow({
             isAnswered ? "text-gray-900" : "text-gray-400"
           )}
         >
-          {isAnswered ? "답변완료" : "답변미완료"}
+          {isAnswered ? t("answered") : t("unanswered")}
         </span>
 
         <span className="flex items-center gap-1.5 truncate text-sm text-gray-900">
@@ -125,7 +124,7 @@ export function QnaRow({
                   disabled={isDeleting}
                   onClick={onEdit}
                 >
-                  수정
+                  {t("edit")}
                 </button>
               )}
               <AlertDialog>
@@ -135,21 +134,20 @@ export function QnaRow({
                     className="cursor-pointer underline hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isDeleting}
                   >
-                    {isDeleting ? "삭제 중..." : "삭제"}
+                    {isDeleting ? t("deleting") : t("delete")}
                   </button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>문의 삭제</AlertDialogTitle>
+                    <AlertDialogTitle>{t("deleteDialogTitle")}</AlertDialogTitle>
                     <AlertDialogDescription>
-                      이 문의를 삭제하시겠습니까? 삭제된 문의는 복구할 수
-                      없습니다.
+                      {t("deleteDialogDescription")}
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
-                    <AlertDialogCancel>취소</AlertDialogCancel>
+                    <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
                     <AlertDialogAction onClick={onDelete}>
-                      삭제
+                      {t("delete")}
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>

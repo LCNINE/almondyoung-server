@@ -7,6 +7,7 @@ import { ReviewRatingFilter, ReviewSortOption } from "@/lib/types/common/filter"
 import { ReviewDetail } from "@/lib/types/ui/ugc"
 import { ArrowDown, ArrowUp } from "lucide-react"
 import { useCallback, useState } from "react"
+import { useTranslations } from "next-intl"
 import { ReviewSummary } from "../summary/review-summary"
 import { ReviewDetailCard } from "./review-detail-card"
 
@@ -27,6 +28,7 @@ export function ReviewDetailCardList({
   averageRating,
   initialReviews,
 }: Props) {
+  const t = useTranslations("productDetail.review")
   const [reviews, setReviews] = useState<ReviewDetail[]>(initialReviews)
   const [isLoading, setIsLoading] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
@@ -60,13 +62,13 @@ export function ReviewDetailCardList({
         setReviews(activeReviews)
         setTotal(result.total ?? 0)
       } catch (error) {
-        console.error("리뷰 로드 실패:", error)
+        console.error(t("loadFail"), error)
         setReviews([])
       } finally {
         setIsLoading(false)
       }
     },
-    [productId]
+    [productId, t]
   )
 
   const handlePageChange = (page: number) => {
@@ -98,22 +100,27 @@ export function ReviewDetailCardList({
       ) : reviews.length === 0 ? (
         <div className="py-12 text-center text-gray-500">
           {selectedFilter === "all"
-            ? "아직 작성된 리뷰가 없습니다."
-            : "해당 조건의 리뷰가 없습니다."}
+            ? t("emptyNoReviews")
+            : t("emptyNoMatch")}
         </div>
       ) : (
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <p className="text-sm text-gray-600">
-              총 <span className="font-semibold">{total}</span>개의 리뷰
+              {t.rich("totalCount", {
+                count: total,
+                strong: (chunks) => <span className="font-semibold">{chunks}</span>,
+              })}
             </p>
             <button
               type="button"
               onClick={handleSortToggle}
               className="flex cursor-pointer items-center gap-1 text-sm text-gray-600 hover:text-gray-900"
-              aria-label={`정렬: ${sortOption === "latest" ? "최신순" : "오래된순"} (클릭하여 전환)`}
+              aria-label={t("sortAria", {
+                label: sortOption === "latest" ? t("sortLatest") : t("sortOldest"),
+              })}
             >
-              {sortOption === "latest" ? "최신순" : "오래된순"}
+              {sortOption === "latest" ? t("sortLatest") : t("sortOldest")}
               {sortOption === "latest" ? (
                 <ArrowDown className="h-4 w-4" />
               ) : (

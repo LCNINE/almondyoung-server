@@ -8,9 +8,11 @@ import { getTrendingKeywords, type TrendingKeyword } from "@lib/api/pim/search"
 import chunk from "lodash/chunk"
 import { useParams, useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
+import { useTranslations } from "next-intl"
 
 export function SearchHotKeyword() {
   const router = useRouter()
+  const t = useTranslations("search.hotKeywords")
   const { setSearchTerm, onClose } = useSearchSheetStore()
   const params = useParams<{ countryCode?: string }>()
   const countryCode =
@@ -32,7 +34,7 @@ export function SearchHotKeyword() {
           setUpdatedAt(formatDate(result.data.updatedAt, "HH:mm", ""))
         }
       } catch (error) {
-        console.error("급상승 검색어 로드 실패:", error)
+        console.error(t("loadFail"), error)
       } finally {
         setIsLoading(false)
       }
@@ -56,7 +58,7 @@ export function SearchHotKeyword() {
       <section>
         <div className="mb-6 flex items-center justify-between">
           <h3 className="text-base leading-none font-bold text-gray-900">
-            급상승 검색어
+            {t("title")}
           </h3>
           <Skeleton className="h-4 w-16" />
         </div>
@@ -80,10 +82,10 @@ export function SearchHotKeyword() {
     <section>
       <div className="mb-6 flex items-center justify-between">
         <h3 className="text-base leading-none font-bold text-gray-900">
-          급상승 검색어
+          {t("title")}
         </h3>
         <span className="text-[12px] font-normal text-gray-400">
-          {updatedAt} 기준
+          {t("updatedAt", { time: updatedAt })}
         </span>
       </div>
 
@@ -110,7 +112,7 @@ export function SearchHotKeyword() {
                   <div className="flex w-8 justify-end">
                     {item.status === "new" ? (
                       <span className="rounded-sm bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold text-orange-600">
-                        NEW
+                        {t("statusNew")}
                       </span>
                     ) : item.status === "up" ? (
                       <span className="text-[10px] text-red-500">▲</span>

@@ -1,8 +1,7 @@
-/**
- * @description 5점 만점 별점 아이콘
- * @param rating - 0-5 사이의 숫자
- * @param size - 아이콘 크기 (Tailwind h- w- 값)
- */
+"use client"
+
+import { useTranslations } from "next-intl"
+
 export function StarRating({
   rating,
   size = "w-3 h-3",
@@ -10,6 +9,7 @@ export function StarRating({
   rating: number
   size?: string
 }) {
+  const t = useTranslations("productDetail.review")
   const fullStars = Math.floor(rating)
   const hasHalfStar = rating % 1 !== 0 // 반 별 표시는 원본 SVG에 없어 생략 (필요시 추가)
   const emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0)
@@ -17,7 +17,7 @@ export function StarRating({
   return (
     <div
       className="flex items-center gap-px"
-      aria-label={`평점 ${rating}점 / 5점 만점`}
+      aria-label={t("starAria", { rating })}
     >
       {/* 꽉 찬 별 */}
       {[...Array(fullStars)].map((_, i) => (

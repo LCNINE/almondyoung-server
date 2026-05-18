@@ -1,3 +1,4 @@
+import { getTranslations } from "next-intl/server"
 import { PageTitle } from "@/components/shared/page-title"
 import { getMyBusiness } from "@lib/api/users/business"
 import { fetchMe } from "@lib/api/users/me"
@@ -12,6 +13,7 @@ import PointSection from "./components/point-section"
 import PendingPointsSection from "./components/sections/pending-points-section"
 
 export default async function PaymentManager() {
+  const t = await getTranslations("mypage.payment")
   const currentUser = await fetchMe()
   const verificationStatus = await getVerificationStatus() // step 별 진행 상태, 결제 수단 등록할 때 인증 정보 steps 별 진행 상태 확인용
   const businessInfo = await getMyBusiness() // 사업자 정보 조회
@@ -27,7 +29,7 @@ export default async function PaymentManager() {
 
   return (
     <div className="rounded-xl bg-white px-3 pt-4 pb-9 md:px-6">
-      <PageTitle>결제수단 관리</PageTitle>
+      <PageTitle>{t("pageTitle")}</PageTitle>
 
       <div className="bg-gray-10 mt-5 mb-4 space-y-4 p-4">
         {/* 나중결제 내역 */}

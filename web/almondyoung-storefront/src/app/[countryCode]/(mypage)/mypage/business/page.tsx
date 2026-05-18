@@ -1,17 +1,22 @@
+import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { PageTitle } from "@/components/shared/page-title"
 import { WithHeaderLayout } from "@components/layout"
-import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { getMyBusiness } from "@lib/api/users/business"
 import { fetchMe } from "@lib/api/users/me"
 import { getSEOTags } from "@lib/seo"
+import { getTranslations } from "next-intl/server"
 import BusinessInfoTemplate from "domains/business/template/business-info-template"
 
-export const metadata = getSEOTags({
-  title: `마이페이지 | 사업자 정보`,
-  openGraph: {},
-})
+export async function generateMetadata() {
+  const t = await getTranslations("mypage.page")
+  return getSEOTags({
+    title: t("download"),
+    openGraph: {},
+  })
+}
 
 export default async function BusinessPage() {
+  const t = await getTranslations("mypage.page")
   const currentUser = await fetchMe()
 
   return (
@@ -20,12 +25,12 @@ export default async function BusinessPage() {
         showDesktopHeader: true,
         showMobileHeader: false,
         showMobileSubBackHeader: true,
-        mobileSubBackHeaderTitle: "다운로드",
+        mobileSubBackHeaderTitle: t("download"),
       }}
     >
       <MypageLayout>
         <div className="bg-white px-3 py-4 md:min-h-screen md:px-6">
-          <PageTitle>사업자 정보</PageTitle>
+          <PageTitle>{t("download")}</PageTitle>
           <BusinessContent user={currentUser} />
         </div>
       </MypageLayout>

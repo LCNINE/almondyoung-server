@@ -3,10 +3,11 @@ import { fetchFrequentProducts } from "@/domains/frequent-products/actions"
 import { FrequentProductsTemplate } from "@/domains/frequent-products/templates"
 import { WithHeaderLayout } from "@components/layout"
 import { Metadata } from "next"
+import { getTranslations } from "next-intl/server"
 
-export const metadata: Metadata = {
-  title: "자주 산 상품",
-  description: "자주 구매한 상품을 확인하세요",
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations("mypage.menu")
+  return { title: t("rebuy") }
 }
 
 const ITEMS_PER_PAGE = 12
@@ -24,6 +25,7 @@ export default async function RebuyPage({
   params,
   searchParams,
 }: RebuyPageProps) {
+  const t = await getTranslations("mypage.menu")
   const { countryCode } = await params
   const { page } = await searchParams
   const currentPage = Math.max(1, parseInt(page || "1", 10))
@@ -40,7 +42,7 @@ export default async function RebuyPage({
         showDesktopHeader: true,
         showMobileHeader: false,
         showMobileSubBackHeader: true,
-        mobileSubBackHeaderTitle: "자주 산 상품",
+        mobileSubBackHeaderTitle: t("rebuy"),
       }}
     >
       <MypageLayout>

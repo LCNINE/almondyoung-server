@@ -1,5 +1,8 @@
+"use client"
+
 import { getProductPrice } from "@/lib/utils/get-product-price"
 import { HttpTypes } from "@medusajs/types"
+import { useTranslations } from "next-intl"
 
 export default function ProductPrice({
   product,
@@ -10,6 +13,7 @@ export default function ProductPrice({
   variant?: HttpTypes.StoreProductVariant
   quantity?: number
 }) {
+  const t = useTranslations("productDetail.price")
   const { cheapestPrice, variantPrice } = getProductPrice({
     product,
     variantId: variant?.id,
@@ -29,7 +33,6 @@ export default function ProductPrice({
 
   return (
     <div className="relative flex flex-col">
-      {/* 원래 가격 (취소선) - 할인이 있을 때만 표시 */}
       {hasDiscount && (
         <span className="absolute -top-4 right-0 text-xs text-gray-400 line-through">
           {selectedPrice.original_price}
@@ -44,7 +47,8 @@ export default function ProductPrice({
         )}
 
         <span className="text-base font-bold">
-          {subtotal.toLocaleString()}원
+          {subtotal.toLocaleString()}
+          {t("won")}
         </span>
       </div>
     </div>

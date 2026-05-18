@@ -5,6 +5,7 @@ import { setDefaultPaymentProfile } from "@lib/api/wallet"
 import type { BnplProfileDto } from "@lib/types/dto/wallet"
 import { useRouter } from "next/navigation"
 import { useCallback, useEffect, useState, useTransition } from "react"
+import { useTranslations } from "next-intl"
 import EmptyState from "../empty-state"
 import { useBnplModalStore } from "../store/bnpl-modal-store"
 import BnplCard from "./bnpl-card"
@@ -23,6 +24,7 @@ export default function BnplSection({
   bnplProfiles,
   hasError = false,
 }: BnplSectionProps) {
+  const t = useTranslations("mypage.payment")
   const { openModal } = useBnplModalStore()
   const { isOpen: isChangeAccountSheetOpen, closeSheet } =
     useChangeAccountSheet()
@@ -95,7 +97,7 @@ export default function BnplSection({
   if (hasError) {
     return (
       <EmptyState
-        message="나중결제 내역을 불러오는데 실패했습니다"
+        message={t("bnplLoadFail")}
         contentClassName="p-0! py-4! pl-0! md:pl-2!"
         action={
           <Button
@@ -103,7 +105,7 @@ export default function BnplSection({
             className="w-full cursor-pointer px-6 text-sm font-medium sm:w-auto sm:text-base"
             onClick={() => window.location.reload()}
           >
-            다시 시도
+            {t("retry")}
           </Button>
         }
       />
@@ -114,7 +116,7 @@ export default function BnplSection({
   if (!hasBnplProfile) {
     return (
       <EmptyState
-        message="아직 등록한 계좌가 없습니다"
+        message={t("noAccountYet")}
         contentClassName="p-0! py-4! pl-0! md:pl-2!"
         action={
           <Button
@@ -122,7 +124,7 @@ export default function BnplSection({
             className="w-full cursor-pointer px-6 text-sm font-medium sm:w-auto sm:text-base"
             onClick={openModal}
           >
-            + 결제수단 등록
+            {t("registerMethod")}
           </Button>
         }
       />

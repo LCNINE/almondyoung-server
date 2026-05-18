@@ -6,20 +6,23 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion"
-import { FAQ_DATA } from "./benefits-data"
+import { useTranslations } from "next-intl"
+import { useFaqData } from "./benefits-data"
 
 export default function MembershipFAQSection() {
+  const t = useTranslations("mypage.membership.benefits")
+  const faqData = useFaqData()
   return (
     <section className="py-12">
       <div className="flex flex-col items-center gap-4 mb-8">
         <h2 className="text-2xl md:text-3xl font-bold text-center">
-          <span className="text-white">자주 묻는 </span>
-          <span className="text-[#f29219]">질문</span>
+          <span className="text-white">{t("faqTitle1")}</span>
+          <span className="text-[#f29219]">{t("faqTitle2")}</span>
         </h2>
       </div>
 
       <Accordion type="single" collapsible className="w-full">
-        {FAQ_DATA.map((faq, index) => (
+        {faqData.map((faq, index) => (
           <AccordionItem
             key={index}
             value={`item-${index}`}

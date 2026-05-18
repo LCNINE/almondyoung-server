@@ -11,6 +11,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Check, ShoppingCart } from "lucide-react"
+import { useTranslations } from "next-intl"
 
 interface CartSuccessModalProps {
   open: boolean
@@ -29,6 +30,7 @@ export function CartSuccessModal({
   onGoToCart,
   onContinueShopping,
 }: CartSuccessModalProps) {
+  const t = useTranslations("cartSuccess")
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent className="z-80 max-w-[400px]">
@@ -37,10 +39,10 @@ export function CartSuccessModal({
             <Check className="text-yellow-30 h-6 w-6" />
           </div>
           <AlertDialogTitle className="text-center">
-            장바구니에 상품이 담겼습니다
+            {t("title")}
           </AlertDialogTitle>
           <AlertDialogDescription className="text-center">
-            장바구니로 이동하시겠습니까?
+            {t("description")}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter className="flex-col gap-2 sm:flex-col">
@@ -49,13 +51,13 @@ export function CartSuccessModal({
             className="bg-yellow-30 hover:bg-yellow-40 w-full text-white"
           >
             <ShoppingCart className="mr-2 h-4 w-4" />
-            장바구니 보기
+            {t("goToCart")}
           </AlertDialogAction>
           <AlertDialogCancel
             onClick={onContinueShopping}
             className="w-full"
           >
-            쇼핑 계속하기
+            {t("continueShopping")}
           </AlertDialogCancel>
         </AlertDialogFooter>
       </AlertDialogContent>

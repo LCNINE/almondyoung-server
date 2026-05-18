@@ -39,6 +39,7 @@ import {
   unlinkCafe24,
 } from "@lib/api/users/cafe24"
 import { Link2, RefreshCw } from "lucide-react"
+import { useTranslations } from "next-intl"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
 import { toast } from "sonner"
@@ -46,18 +47,18 @@ import { toast } from "sonner"
 const CAFE24_MIGRATOR_BASE =
   "https://almondyoung.com/migrator/confirm.html"
 
-const KEY_LABELS: Record<Cafe24MigrationKey, string> = {
-  email: "이메일",
-  name: "이름",
-  birthday: "생년월일",
-  phone: "휴대폰 번호",
+const KEY_I18N: Record<Cafe24MigrationKey, string> = {
+  email: "email",
+  name: "name",
+  birthday: "birthday",
+  phone: "phone",
 }
 
-const STATUS_LABELS = {
-  synced: "동일",
-  out_of_sync: "이관 가능",
-  missing: "이관 불가",
-} as const
+const STATUS_I18N: Record<Cafe24MigrationItem["status"], string> = {
+  synced: "same",
+  out_of_sync: "migratable",
+  missing: "notMigratable",
+}
 
 const STATUS_BADGE_CLASS: Record<
   Cafe24MigrationItem["status"],
@@ -68,41 +69,23 @@ const STATUS_BADGE_CLASS: Record<
   missing: "border-gray-200 bg-gray-100 text-gray-600",
 }
 
-const LINK_STATUS_MESSAGES: Record<
+const LINK_STATUS_MAP: Record<
   string,
-  { title: string; description: string; variant?: "default" | "destructive" }
+  { titleKey: string; variant?: "default" | "destructive" }
 > = {
-  success: {
-    title: "연결이 완료되었습니다.",
-    description: "이관 항목을 확인하고 필요한 정보를 가져오세요.",
-  },
-  missing_token: {
-    title: "연결 토큰을 찾을 수 없습니다.",
-    description: "기존 아몬드영 연결을 다시 시작해주세요.",
-    variant: "destructive",
-  },
-  invalid_token: {
-    title: "연결 토큰이 유효하지 않습니다.",
-    description: "토큰이 만료되었거나 이미 사용되었습니다. 다시 연결해주세요.",
-    variant: "destructive",
-  },
-  failed: {
-    title: "계정 연결에 실패했습니다.",
-    description: "잠시 후 다시 시도하거나 연결 버튼으로 다시 진행해주세요.",
-    variant: "destructive",
-  },
-  login_required: {
-    title: "로그인이 필요합니다.",
-    description: "로그인 후 기존 아몬드영 연결을 다시 진행해주세요.",
-    variant: "destructive",
-  },
+  success: { titleKey: "linked" },
+  missing_token: { titleKey: "tokenNotFound", variant: "destructive" },
+  invalid_token: { titleKey: "invalidToken", variant: "destructive" },
+  failed: { titleKey: "linkFailed", variant: "destructive" },
+  login_required: { titleKey: "loginRequired", variant: "destructive" },
 }
 
 const formatValue = (value: string | null) => value ?? "-"
 const formatLinkedAt = (value?: string | null) =>
-  value ? new Date(value).toLocaleDateString("ko-KR") : "-"
+  value ? new Date(value).toLocaleDateString() : "-"
 
 export function Cafe24LinkSection() {
+  const t = useTranslations("mypage.account.cafe24")
   const { countryCode } = useParams() as { countryCode: string }
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -172,12 +155,12 @@ export function Cafe24LinkSection() {
         }
 
         if (status === 401 || status === 403) {
-          setError("로그인이 필요합니다.")
+          setError(t("loginRequired"))
           setItems(null)
           return
         }
 
-        setError(message ?? "이관 정보를 불러오는데 실패했습니다.")
+        setError(message ?? t("loadFailed"))
         setItems(null)
         return
       }
@@ -187,14 +170,13 @@ export function Cafe24LinkSection() {
       }
     } catch (loadError: any) {
       console.error("Cafe24 migration load failed:", loadError)
-      const message =
-        loadError?.message ?? "이관 정보를 불러오는데 실패했습니다."
+      const message = loadError?.message ?? t("loadFailed")
       setError(message)
       setItems(null)
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     loadLinkInfo()
@@ -204,13 +186,14 @@ export function Cafe24LinkSection() {
   useEffect(() => {
     if (!linkStatus) return
 
-    const message = LINK_STATUS_MESSAGES[linkStatus]
+    const message = LINK_STATUS_MAP[linkStatus]
     if (!message) return
 
+    const text = t(message.titleKey)
     if (message.variant === "destructive") {
-      toast.error(message.title)
+      toast.error(text)
     } else {
-      toast.success(message.title)
+      toast.success(text)
     }
 
     if (linkStatus === "success") {
@@ -225,7 +208,7 @@ export function Cafe24LinkSection() {
       ? `/${countryCode}/mypage/account/cafe24?${nextQuery}`
       : `/${countryCode}/mypage/account/cafe24`
     router.replace(nextPath)
-  }, [linkStatus, loadLinkInfo, loadMigration, countryCode, router, searchParams])
+  }, [linkStatus, loadLinkInfo, loadMigration, countryCode, router, searchParams, t])
 
   const handleStartLink = () => {
     if (!cafe24RedirectUrl) return
@@ -241,20 +224,17 @@ export function Cafe24LinkSection() {
         if ("error" in response && response.error) {
           const message =
             response.error.status === 401 || response.error.status === 403
-              ? "로그인이 필요합니다."
-              : response.error.message ??
-                "이관에 실패했습니다. 다시 시도해주세요."
+              ? t("loginRequired")
+              : response.error.message ?? t("migrationFailed")
           toast.error(message)
           return
         }
 
-        toast.success("이관이 완료되었습니다.")
+        toast.success(t("migrationSuccess"))
         await loadMigration()
       } catch (migrationError: any) {
         console.error("Cafe24 migration failed:", migrationError)
-        toast.error(
-          migrationError?.message ?? "이관에 실패했습니다. 다시 시도해주세요."
-        )
+        toast.error(migrationError?.message ?? t("migrationFailed"))
       } finally {
         setActiveKey(null)
       }
@@ -275,20 +255,18 @@ export function Cafe24LinkSection() {
       if ("error" in response && response.error) {
         const message =
           response.error.status === 401 || response.error.status === 403
-            ? "로그인이 필요합니다."
-            : response.error.message ?? "연결 해제에 실패했습니다."
+            ? t("loginRequired")
+            : response.error.message ?? t("unlinkFailed")
         toast.error(message)
         return
       }
 
-      toast.success("연결이 해제되었습니다.")
+      toast.success(t("unlinked"))
       setLinkInfo(null)
       await loadMigration()
     } catch (unlinkError: any) {
       console.error("Cafe24 unlink failed:", unlinkError)
-      toast.error(
-        unlinkError?.message ?? "연결 해제에 실패했습니다. 다시 시도해주세요."
-      )
+      toast.error(unlinkError?.message ?? t("unlinkFailedRetry"))
     } finally {
       setIsUnlinkPending(false)
     }
@@ -299,11 +277,8 @@ export function Cafe24LinkSection() {
       {isLinkInfoLoading ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">기존 아몬드영 계정 연결</CardTitle>
-            <CardDescription>
-              기존 아몬드영에 등록된 정보를 가져와 계정 정보를 최신으로 유지할 수
-              있습니다.
-            </CardDescription>
+            <CardTitle className="text-lg">{t("title")}</CardTitle>
+            <CardDescription>{t("cardDescription")}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex h-20 items-center justify-center">
@@ -314,18 +289,18 @@ export function Cafe24LinkSection() {
       ) : linkInfo ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">연결된 계정 정보</CardTitle>
+            <CardTitle className="text-lg">{t("linkedTitle")}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4 text-sm text-gray-700">
               <div className="flex items-center justify-between">
-                <span className="text-gray-500">연결된 아이디</span>
+                <span className="text-gray-500">{t("linkedId")}</span>
                 <span className="font-medium">
                   {formatValue(linkInfo.cafe24MemberId)}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-gray-500">연결 일자</span>
+                <span className="text-gray-500">{t("linkedAt")}</span>
                 <span className="font-medium">
                   {formatLinkedAt(linkInfo.linkedAt)}
                 </span>
@@ -336,21 +311,14 @@ export function Cafe24LinkSection() {
       ) : (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">기존 아몬드영 계정 연결</CardTitle>
-            <CardDescription>
-              기존 아몬드영에 등록된 정보를 가져와 계정 정보를 최신으로 유지할 수
-              있습니다.
-            </CardDescription>
+            <CardTitle className="text-lg">{t("title")}</CardTitle>
+            <CardDescription>{t("cardDescription")}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div className="space-y-1 text-sm text-gray-600">
-                <p>
-                  기존 아몬드영 계정으로 로그인한 상태에서 연결을 진행해주세요.
-                </p>
-                <p className="text-xs text-gray-400">
-                  연결 토큰은 1회용이며 만료 시간이 있습니다.
-                </p>
+                <p>{t("startLinkHint")}</p>
+                <p className="text-xs text-gray-400">{t("tokenInfo")}</p>
               </div>
               <Button
                 type="button"
@@ -358,7 +326,7 @@ export function Cafe24LinkSection() {
                 className="gap-2"
               >
                 <Link2 className="h-4 w-4" />
-                기존 아몬드영 계정 연결
+                {t("startLink")}
               </Button>
             </div>
           </CardContent>
@@ -369,10 +337,8 @@ export function Cafe24LinkSection() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2">
             <div>
-              <CardTitle className="text-lg">이관 항목</CardTitle>
-              <CardDescription>
-                기존 아몬드영 계정과 현재 계정의 차이를 확인하고 필요한 정보를 이관하세요.
-              </CardDescription>
+              <CardTitle className="text-lg">{t("migrationTitle")}</CardTitle>
+              <CardDescription>{t("migrationDescription")}</CardDescription>
             </div>
             <Button
               type="button"
@@ -383,7 +349,7 @@ export function Cafe24LinkSection() {
               className="gap-2"
             >
               <RefreshCw className="h-4 w-4" />
-              새로고침
+              {t("refresh")}
             </Button>
           </CardHeader>
           <CardContent>
@@ -401,12 +367,16 @@ export function Cafe24LinkSection() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-[140px]">항목</TableHead>
-                        <TableHead className="w-[120px]">상태</TableHead>
-                        <TableHead>기존 아몬드영 값</TableHead>
-                        <TableHead>현재 값</TableHead>
+                        <TableHead className="w-[140px]">
+                          {t("tableHeaders.item")}
+                        </TableHead>
+                        <TableHead className="w-[120px]">
+                          {t("tableHeaders.status")}
+                        </TableHead>
+                        <TableHead>{t("tableHeaders.previous")}</TableHead>
+                        <TableHead>{t("tableHeaders.current")}</TableHead>
                         <TableHead className="w-[120px] text-right">
-                          작업
+                          {t("tableHeaders.action")}
                         </TableHead>
                       </TableRow>
                     </TableHeader>
@@ -420,14 +390,14 @@ export function Cafe24LinkSection() {
                         return (
                           <TableRow key={item.key}>
                             <TableCell className="font-medium">
-                              {KEY_LABELS[item.key]}
+                              {t(`keys.${KEY_I18N[item.key]}`)}
                             </TableCell>
                             <TableCell>
                               <Badge
                                 variant="outline"
                                 className={STATUS_BADGE_CLASS[item.status]}
                               >
-                                {STATUS_LABELS[item.status]}
+                                {t(`status.${STATUS_I18N[item.status]}`)}
                               </Badge>
                             </TableCell>
                             <TableCell className="text-sm text-gray-700">
@@ -444,10 +414,10 @@ export function Cafe24LinkSection() {
                                 disabled={!isActionable || isRowPending}
                               >
                                 {isSynced
-                                  ? "완료"
+                                  ? t("migrated")
                                   : isRowPending
-                                    ? "이관 중..."
-                                    : "이관"}
+                                    ? t("migrating")
+                                    : t("migrate")}
                               </Button>
                             </TableCell>
                           </TableRow>
@@ -471,19 +441,19 @@ export function Cafe24LinkSection() {
                       >
                         <div className="flex items-center justify-between">
                           <span className="font-medium">
-                            {KEY_LABELS[item.key]}
+                            {t(`keys.${KEY_I18N[item.key]}`)}
                           </span>
                           <Badge
                             variant="outline"
                             className={STATUS_BADGE_CLASS[item.status]}
                           >
-                            {STATUS_LABELS[item.status]}
+                            {t(`status.${STATUS_I18N[item.status]}`)}
                           </Badge>
                         </div>
                         <div className="mt-3 space-y-2 text-gray-600">
                           <div className="flex items-center gap-2">
                             <span className="shrink-0 text-xs font-medium text-gray-500">
-                              기존
+                              {t("previous")}
                             </span>
                             <span className="ml-auto max-w-full truncate text-right">
                               {formatValue(item.cafe24Value)}
@@ -491,7 +461,7 @@ export function Cafe24LinkSection() {
                           </div>
                           <div className="flex items-center gap-2">
                             <span className="shrink-0 text-xs font-medium text-gray-500">
-                              현재
+                              {t("current")}
                             </span>
                             <span className="ml-auto max-w-full truncate text-right">
                               {formatValue(item.userValue)}
@@ -506,10 +476,10 @@ export function Cafe24LinkSection() {
                             disabled={!isActionable || isRowPending}
                           >
                             {isSynced
-                              ? "완료"
+                              ? t("migrated")
                               : isRowPending
-                                ? "이관 중..."
-                                : "이관"}
+                                ? t("migrating")
+                                : t("migrate")}
                           </Button>
                         </div>
                       </div>
@@ -519,7 +489,7 @@ export function Cafe24LinkSection() {
               </>
             ) : (
               <div className="rounded-lg border border-dashed border-gray-200 p-4 text-sm text-gray-500">
-                이관 항목이 없습니다. 먼저 기존 아몬드영 계정을 연결해주세요.
+                {t("noMigrationItems")}
               </div>
             )}
           </CardContent>
@@ -529,12 +499,14 @@ export function Cafe24LinkSection() {
       {!isLinkInfoLoading && linkInfo && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">연결 해제</CardTitle>
+            <CardTitle className="text-lg">
+              {t("unlinkSectionTitle")}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <p className="text-sm text-gray-600">
-                연결을 해제한 뒤에도 다시 연결할 수 있습니다.
+                {t("unlinkSectionDescription")}
               </p>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
@@ -543,27 +515,26 @@ export function Cafe24LinkSection() {
                     variant="destructive"
                     disabled={isUnlinkPending}
                   >
-                    연결 해제
+                    {t("unlink")}
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>연결 해제</AlertDialogTitle>
+                    <AlertDialogTitle>{t("unlink")}</AlertDialogTitle>
                     <AlertDialogDescription>
-                      기존 아몬드영 계정 연결을 해제하시겠습니까? 해제 후에도
-                      다시 연결할 수 있습니다.
+                      {t("unlinkConfirm")}
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel disabled={isUnlinkPending}>
-                      취소
+                      {t("cancel")}
                     </AlertDialogCancel>
                     <AlertDialogAction
                       onClick={handleUnlink}
                       disabled={isUnlinkPending}
                       className={buttonVariants({ variant: "destructive" })}
                     >
-                      연결 해제
+                      {t("unlink")}
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>

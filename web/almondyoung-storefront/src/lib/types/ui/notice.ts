@@ -4,14 +4,27 @@ export interface NoticeItem extends NoticeResponseDto {}
 
 export type NoticeCategoryFilter = NoticeCategory | "all"
 
+export const NOTICE_CATEGORY_VALUES: NoticeCategoryFilter[] = [
+  "all",
+  "general",
+  "event",
+  "delivery",
+  "service",
+]
+
+const DEFAULT_LABELS: Record<NoticeCategoryFilter, string> = {
+  all: "전체",
+  general: "일반",
+  event: "이벤트",
+  delivery: "배송",
+  service: "서비스",
+}
+
 export const NOTICE_CATEGORIES: { value: NoticeCategoryFilter; label: string }[] =
-  [
-    { value: "all", label: "전체" },
-    { value: "general", label: "일반" },
-    { value: "event", label: "이벤트" },
-    { value: "delivery", label: "배송" },
-    { value: "service", label: "서비스" },
-  ]
+  NOTICE_CATEGORY_VALUES.map((value) => ({
+    value,
+    label: DEFAULT_LABELS[value],
+  }))
 
 export const getNoticeCategoryLabel = (value: NoticeCategory): string =>
-  NOTICE_CATEGORIES.find((c) => c.value === value)?.label ?? value
+  DEFAULT_LABELS[value] ?? value

@@ -9,6 +9,7 @@ import { Check, Heart, Minus, Plus, ShoppingCart } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
+import { useTranslations } from "next-intl"
 import { Spinner } from "@/components/shared/spinner"
 import { toggleWishlist } from "@lib/api/users/wishlist"
 
@@ -39,6 +40,7 @@ export function ProductQuickActions({
   isWelcomeMembership = false,
 }: ProductQuickActionsProps) {
   const router = useRouter()
+  const t = useTranslations("productCard")
   const [isPending, startTransition] = useTransition()
   const { addToCart, isLoading: isCartLoading } = useAddToCart()
 
@@ -69,29 +71,27 @@ export function ProductQuickActions({
             icon: (
               <Heart className="h-7 w-7" fill="currentColor" strokeWidth={0} />
             ),
-            label: "좋아요",
+            label: t("wishlistToast"),
           })
         } else {
           showActionToast({
             icon: <Heart className="h-7 w-7" strokeWidth={2.5} />,
-            label: "좋아요",
+            label: t("wishlistToast"),
             variant: "default",
           })
         }
       } catch (e) {
-        // 실패 시 롤백
         setIsWishlisted(!nextWishlisted)
 
-        // 401 에러 시 로그인 안내
         const error = e as Error & { status?: number; digest?: string }
         if (
           error.status === 401 ||
           error.digest === "UNAUTHORIZED" ||
           error.message?.includes("UNAUTHORIZED")
         ) {
-          toast.error("로그인이 필요합니다.")
+          toast.error(t("loginRequired"))
         } else {
-          toast.error("처리 중 오류가 발생했습니다.")
+          toast.error(t("wishlistError"))
         }
       }
     })
@@ -117,7 +117,7 @@ export function ProductQuickActions({
     e.preventDefault()
     e.stopPropagation()
     if (isWelcomeMembership && delta > 0) {
-      toast.error("웰컴 멤버십 상품은 1개만 구매 가능합니다")
+      toast.error(t("welcomeMembershipLimit"))
       return
     }
     setQuantity((prev) => Math.max(1, prev + delta))
@@ -129,7 +129,7 @@ export function ProductQuickActions({
     e.stopPropagation()
 
     if (!variantId) {
-      toast.error("상품 정보를 찾을 수 없습니다.")
+      toast.error(t("productNotFound"))
       return
     }
 
@@ -139,7 +139,7 @@ export function ProductQuickActions({
       setIsAddedToCart(true)
       showActionToast({
         icon: <ShoppingCart className="h-7 w-7" strokeWidth={2.5} />,
-        label: "담았어요",
+        label: t("addedToast"),
       })
       // 2초 후 초기화
       setTimeout(() => {
@@ -202,7 +202,7 @@ export function ProductQuickActions({
           {isAddedToCart ? (
             <div className="flex items-center gap-1 px-2">
               <Check className="h-4 w-4 text-green-600" />
-              <span className="text-xs font-medium text-green-600">담김</span>
+              <span className="text-xs font-medium text-green-600">{t("added")}</span>
             </div>
           ) : (
             <>
@@ -234,7 +234,7 @@ export function ProductQuickActions({
                 onClick={handleAddToCart}
                 disabled={isCartLoading}
               >
-                {isCartLoading ? <Spinner size="sm" color="white" /> : "담기"}
+                {isCartLoading ? <Spinner size="sm" color="white" /> : t("add")}
               </Button>
               <Button
                 variant="ghost"

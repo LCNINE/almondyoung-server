@@ -1,11 +1,13 @@
 import { CategoryDropdown } from "@/components/category/dropdown"
 import { CategoryNavigation } from "@/components/layout/nav/category-nav"
+import { LanguageSwitcher } from "@/components/layout/header/language-switcher"
 import { SearchCombobox } from "@/components/search/search-combobox"
 import { SearchSheet } from "@/components/search/search-sheet"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { listCategories } from "@/lib/api/medusa/categories"
 import { FIXED_CATEGORIES } from "@/lib/constants/categories"
 import { getInterestCategoryKeys } from "@lib/data/cookies"
+import { getTranslations } from "next-intl/server"
 import { Logo } from "./logo"
 import { AccountMenu } from "./user-actions"
 import { UserInfo } from "./user-info"
@@ -13,6 +15,8 @@ import { UserInfo } from "./user-info"
 type Categories = Awaited<ReturnType<typeof listCategories>>
 
 export async function MainHeader() {
+  const t = await getTranslations("header.utility")
+  const tCategories = await getTranslations("categories")
   const interestKeys = await getInterestCategoryKeys()
   const interestKeySet = new Set(interestKeys)
 
@@ -24,7 +28,7 @@ export async function MainHeader() {
   const rest = FIXED_CATEGORIES.filter((c) => !interestKeySet.has(c.key))
 
   const mainCategories = [...orderedInterest, ...rest].map((c) => ({
-    name: c.name,
+    name: tCategories(c.key),
     handle: c.handle,
     key: c.key,
     isInterest: interestKeySet.has(c.key),
@@ -47,15 +51,17 @@ export async function MainHeader() {
             href="/mypage/order/list"
             className="transition-colors hover:text-white"
           >
-            주문배송
+            {t("shipping")}
           </LocalizedClientLink>
 
           <LocalizedClientLink
             href="/cs"
             className="transition-colors hover:text-white"
           >
-            고객센터
+            {t("support")}
           </LocalizedClientLink>
+
+          <LanguageSwitcher />
         </div>
 
         {/* 상단 섹션 */}

@@ -1,5 +1,8 @@
-import { MoreVertical } from "lucide-react"
+"use client"
+
 import { CustomButton } from "@/components/shared/custom-buttons"
+import { MoreVertical } from "lucide-react"
+import { useTranslations } from "next-intl"
 
 /** ============================================
  * 반품 카드 컴포넌트
@@ -62,6 +65,7 @@ export function ReturnOrderCard({
   onTrackingClick,
   onCancelReturnClick,
 }: ReturnOrderCardProps) {
+  const t = useTranslations("mypage.order")
   return (
     <>
       {/* 모바일 카드 */}
@@ -79,7 +83,7 @@ export function ReturnOrderCard({
               type="button"
               onClick={onMoreClick}
               className="h-5 w-5 shrink-0"
-              aria-label="더보기"
+              aria-label={t("exchange.more")}
             >
               <MoreVertical className="h-5 w-5 text-[#757575]" />
             </button>
@@ -115,7 +119,7 @@ export function ReturnOrderCard({
                   fullWidth={false}
                   onClick={onAddToCartClick}
                 >
-                  장바구니 담기
+                  {t("actions.addToCart")}
                 </CustomButton>
               </div>
             </div>
@@ -130,7 +134,7 @@ export function ReturnOrderCard({
               onClick={onReturnDetailClick}
               fullWidth={true}
             >
-              반품 상세보기
+              {t("exchange.returnDetail")}
             </CustomButton>
           </div>
         </div>
@@ -139,13 +143,15 @@ export function ReturnOrderCard({
       {/* 데스크탑 카드 */}
       <div className="hidden flex-col gap-5 rounded-[10px] border-[0.5px] border-[#d9d9d9] bg-white p-5 md:flex">
         <header className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-black">{returnDate} 반품</h2>
+          <h2 className="text-lg font-bold text-black">
+            {t("exchange.dateReturned", { date: returnDate ?? "" })}
+          </h2>
           <button
             type="button"
             onClick={onOrderDetailClick}
             className="text-base text-black hover:underline"
           >
-            주문 상세보기 &gt;
+            {t("actions.viewDetail")}
           </button>
         </header>
 
@@ -157,10 +163,12 @@ export function ReturnOrderCard({
 
             <div className="flex gap-[13px]">
               <p className="text-base text-black">
-                주문일 : <span className="font-bold">{orderDate}</span>
+                {t("labels.orderDate")} :{" "}
+                <span className="font-bold">{orderDate}</span>
               </p>
               <p className="text-base text-black">
-                주문번호 : <span className="font-bold">{orderNumber}</span>
+                {t("labels.orderNumber")} :{" "}
+                <span className="font-bold">{orderNumber}</span>
               </p>
             </div>
 
@@ -210,7 +218,7 @@ export function ReturnOrderCard({
               fullWidth={true}
               onClick={onTrackingClick}
             >
-              회수 조회
+              {t("exchange.returnTracking")}
             </CustomButton>
             <CustomButton
               variant="fill"
@@ -219,7 +227,7 @@ export function ReturnOrderCard({
               fullWidth={true}
               onClick={onCancelReturnClick}
             >
-              반품 철회
+              {t("exchange.withdrawReturn")}
             </CustomButton>
           </aside>
         </section>

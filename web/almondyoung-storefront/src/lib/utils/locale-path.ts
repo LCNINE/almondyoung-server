@@ -1,6 +1,39 @@
 const COUNTRY_PREFIX_REGEX = /^\/([a-z]{2})(?=\/|$)/i
 const COUNTRY_SEGMENT_REGEX = /^[a-z]{2}$/i
 
+export const SUPPORTED_LOCALES = ["ko", "en", "ja"] as const
+export const DEFAULT_LOCALE: SupportedLocale = "ko"
+export type SupportedLocale = (typeof SUPPORTED_LOCALES)[number]
+
+const COUNTRY_TO_LOCALE: Record<string, SupportedLocale> = {
+  kr: "ko",
+  jp: "ja",
+  us: "en",
+  en: "en",
+}
+
+const LOCALE_TO_COUNTRY: Record<SupportedLocale, string> = {
+  ko: "kr",
+  ja: "jp",
+  en: "us",
+}
+
+export function isSupportedLocale(value: unknown): value is SupportedLocale {
+  return (
+    typeof value === "string" &&
+    (SUPPORTED_LOCALES as readonly string[]).includes(value)
+  )
+}
+
+export function countryCodeToLocale(countryCode?: string | null): SupportedLocale {
+  if (!countryCode) return DEFAULT_LOCALE
+  return COUNTRY_TO_LOCALE[countryCode.toLowerCase()] ?? DEFAULT_LOCALE
+}
+
+export function localeToCountryCode(locale: SupportedLocale): string {
+  return LOCALE_TO_COUNTRY[locale] ?? LOCALE_TO_COUNTRY[DEFAULT_LOCALE]
+}
+
 const hasExternalScheme = (value: string) =>
   value.startsWith("http://") ||
   value.startsWith("https://") ||

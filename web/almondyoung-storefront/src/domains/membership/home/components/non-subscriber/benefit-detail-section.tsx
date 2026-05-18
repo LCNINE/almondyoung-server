@@ -1,20 +1,23 @@
 "use client"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { CURRENT_BENEFITS } from "./benefits-data"
+import { useTranslations } from "next-intl"
+import { useCurrentBenefits } from "./benefits-data"
 
 export default function BenefitDetailSection() {
+  const t = useTranslations("mypage.membership.benefits")
+  const currentBenefits = useCurrentBenefits()
   return (
     <section className="py-12">
       <div className="flex flex-col items-center gap-4 mb-8">
         <h2 className="text-2xl md:text-3xl font-bold text-center">
-          <span className="text-white">상세 </span>
-          <span className="text-[#f29219]">혜택 안내</span>
+          <span className="text-white">{t("detailTitle1")}</span>
+          <span className="text-[#f29219]">{t("detailTitle2")}</span>
         </h2>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {CURRENT_BENEFITS.map((benefit) => (
+        {currentBenefits.map((benefit) => (
           <Card
             key={benefit.id}
             id={benefit.id}

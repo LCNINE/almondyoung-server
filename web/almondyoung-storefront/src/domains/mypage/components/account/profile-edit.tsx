@@ -22,6 +22,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import type { UserDetail } from "@lib/types/ui/user"
 import type { SocialIdentitiesState } from "@/lib/types/ui/social-identity"
 import { toLocalizedPath } from "@lib/utils/locale-path"
+import { useTranslations } from "next-intl"
 import { useActionState, useEffect, useMemo, useTransition } from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
@@ -59,6 +60,8 @@ export function ProfileEdit({
   countryCode,
   identitiesState,
 }: ProfileEditProps) {
+  const t = useTranslations("mypage.account.profile")
+  const tLabels = useTranslations("mypage.account.labels")
   const [isWithdrawPending, startWithdrawTransition] = useTransition()
 
   const initialValues = useMemo(() => {
@@ -93,14 +96,12 @@ export function ProfileEdit({
 
   useEffect(() => {
     if (state?.success) {
-      toast.success("회원정보가 수정되었습니다.")
+      toast.success(t("savedSuccess"))
     }
-  }, [state])
+  }, [state, t])
 
   const handleWithdraw = () => {
-    const isConfirmed = window.confirm(
-      "정말 회원탈퇴 하시겠습니까? 탈퇴 후 계정 복구가 어려울 수 있습니다."
-    )
+    const isConfirmed = window.confirm(t("withdrawConfirm"))
 
     if (!isConfirmed) return
 
@@ -113,7 +114,7 @@ export function ProfileEdit({
         const message =
           error instanceof Error && error.message
             ? error.message
-            : "회원탈퇴 처리 중 오류가 발생했습니다."
+            : t("withdrawError")
         toast.error(message)
       }
     })
@@ -124,10 +125,8 @@ export function ProfileEdit({
       {/* 기본 정보 */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">기본 정보</CardTitle>
-          <CardDescription>
-            계정의 기본 정보를 확인하고 수정할 수 있습니다.
-          </CardDescription>
+          <CardTitle className="text-lg">{t("sectionTitle")}</CardTitle>
+          <CardDescription>{t("sectionDescription")}</CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>
@@ -137,12 +136,12 @@ export function ProfileEdit({
                 name="username"
                 render={({ field }) => (
                   <FormItem>
-                    <RequiredLabel>이름</RequiredLabel>
+                    <RequiredLabel>{tLabels("name")}</RequiredLabel>
                     <FormControl>
                       <Input
                         {...field}
                         autoComplete="name"
-                        placeholder="이름을 입력해주세요"
+                        placeholder={t("namePlaceholder")}
                         className={INPUT_CLASSNAME}
                       />
                     </FormControl>
@@ -153,7 +152,7 @@ export function ProfileEdit({
 
               {/* 아이디 (읽기 전용) */}
               <div className="space-y-2">
-                <Label className="text-sm font-medium">아이디</Label>
+                <Label className="text-sm font-medium">{tLabels("id")}</Label>
                 <div className="relative">
                   <Input
                     value={userData.loginId || ""}
@@ -166,7 +165,9 @@ export function ProfileEdit({
 
               {/* 이메일 (읽기 전용) */}
               <div className="space-y-2">
-                <Label className="text-sm font-medium">이메일</Label>
+                <Label className="text-sm font-medium">
+                  {tLabels("email")}
+                </Label>
                 <div className="relative">
                   <Input
                     value={userData.email || ""}
@@ -182,12 +183,12 @@ export function ProfileEdit({
                 name="nickname"
                 render={({ field }) => (
                   <FormItem>
-                    <RequiredLabel>닉네임</RequiredLabel>
+                    <RequiredLabel>{tLabels("nickname")}</RequiredLabel>
                     <FormControl>
                       <Input
                         {...field}
                         autoComplete="nickname"
-                        placeholder="닉네임을 입력해주세요"
+                        placeholder={t("nicknamePlaceholder")}
                         className={INPUT_CLASSNAME}
                       />
                     </FormControl>
@@ -201,11 +202,13 @@ export function ProfileEdit({
                 name="birthday"
                 render={({ field }) => (
                   <FormItem>
-                    <Label className="text-sm font-medium">생년월일</Label>
+                    <Label className="text-sm font-medium">
+                      {tLabels("birthdate")}
+                    </Label>
                     <FormControl>
                       <Input
                         {...field}
-                        placeholder="YYYYMMDD (예: 19900101)"
+                        placeholder={t("birthdayPlaceholder")}
                         autoComplete="bday"
                         maxLength={8}
                         inputMode="numeric"
@@ -232,7 +235,7 @@ export function ProfileEdit({
                     }
                     className="px-8"
                   >
-                    {isPending ? "저장 중..." : "저장"}
+                    {isPending ? t("saving") : t("save")}
                   </CustomButton>
                 </div>
               </div>
@@ -266,7 +269,7 @@ export function ProfileEdit({
           disabled={isWithdrawPending}
           className="text-xs text-gray-500 underline underline-offset-2 transition-colors hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {isWithdrawPending ? "탈퇴 처리 중..." : "회원탈퇴"}
+          {isWithdrawPending ? t("withdrawing") : t("withdraw")}
         </button>
       </div>
     </div>

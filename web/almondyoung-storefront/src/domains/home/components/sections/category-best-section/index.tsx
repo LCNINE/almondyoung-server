@@ -5,6 +5,7 @@ import { FIXED_CATEGORIES, FixedCategory } from "@/lib/constants/categories"
 import { StoreCustomerWithGroups } from "@/lib/types/ui/medusa"
 import { HttpTypes } from "@medusajs/types"
 import { useState, useTransition } from "react"
+import { useTranslations } from "next-intl"
 import { ProductSection } from "../../shared/product-section"
 
 interface CategoryBestSectionProps {
@@ -20,20 +21,28 @@ export function CategoryBestSection({
   customer,
   wishlistIds,
 }: CategoryBestSectionProps) {
-  const categories = FIXED_CATEGORIES
+  const t = useTranslations("home.categoryBest")
+  const tCat = useTranslations("categories")
 
-  const [activeTab, setActiveTab] = useState<FixedCategory>(categories[0])
+  const categories = FIXED_CATEGORIES.map((c) => ({
+    ...c,
+    name: tCat(c.key as "lash-perm"),
+  }))
+
+  const [activeTab, setActiveTab] = useState<(typeof categories)[number]>(
+    categories[0]
+  )
   const [products, setProducts] = useState<HttpTypes.StoreProduct[]>(
     initialProducts || []
   )
   const [isPending, startTransition] = useTransition()
 
-  const handleTabChange = (tab: FixedCategory) => {
+  const handleTabChange = (tab: (typeof categories)[number]) => {
     setActiveTab(tab)
 
     startTransition(async () => {
       const nextProducts = await getBestProductsByCategory({
-        categoryId: tab.id,
+        categoryId: (tab as unknown as FixedCategory).id,
         regionId,
         limit: 10,
       })
@@ -45,7 +54,7 @@ export function CategoryBestSection({
     <ProductSection
       title={
         <>
-          카테고리 <span className="text-yellow-30">베스트</span>
+          {t("titleFirst")} <span className="text-yellow-30">{t("titleSecond")}</span>
         </>
       }
       tabs={categories}
@@ -55,8 +64,8 @@ export function CategoryBestSection({
       moreHref={`/category/${activeTab.handle}`}
       onTabChange={handleTabChange}
       customer={customer}
-      emptyTitle="상품이 없습니다"
-      emptyDescription="이 카테고리에 등록된 상품이 없습니다."
+      emptyTitle={t("emptyTitle")}
+      emptyDescription={t("emptyDescription")}
       wishlistIds={wishlistIds}
     />
   )

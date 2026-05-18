@@ -8,6 +8,7 @@ import { Customer } from "@/lib/types/ui/medusa"
 import { isMembershipGroup } from "@/lib/utils/membership-group"
 import { HttpTypes } from "@medusajs/types"
 import { notFound } from "next/navigation"
+import { getTranslations } from "next-intl/server"
 import { Suspense } from "react"
 import { ImageGallery } from "../components/image-gallery"
 import ProductActions from "../components/product-actions"
@@ -27,7 +28,7 @@ type ProductTemplateProps = {
   customer: Customer | null
 }
 
-export function ProductTemplate({
+export async function ProductTemplate({
   product,
   region,
   countryCode,
@@ -36,6 +37,8 @@ export function ProductTemplate({
   if (!product || !product.id) {
     return notFound()
   }
+
+  const t = await getTranslations("productDetail.section")
 
   return (
     <div className="min-h-screen bg-white pt-6">
@@ -66,9 +69,7 @@ export function ProductTemplate({
             >
               {/* 상품 상세정보 Tab Panel */}
               <SectionTabPanel value="detail">
-                <ErrorBoundary
-                  fallback={<div>상품 정보를 불러오지 못했습니다.</div>}
-                >
+                <ErrorBoundary fallback={<div>{t("loadDetailFail")}</div>}>
                   <Suspense fallback={<ProductDetailInfoSkeleton />}>
                     <ProductDetailInfoWrapper pricedProduct={product} />
                   </Suspense>
@@ -79,9 +80,7 @@ export function ProductTemplate({
 
               {/* 리뷰 Tab Panel */}
               <SectionTabPanel value="review">
-                <ErrorBoundary
-                  fallback={<div>리뷰를 불러오지 못했습니다.</div>}
-                >
+                <ErrorBoundary fallback={<div>{t("loadReviewFail")}</div>}>
                   <Suspense fallback={<ProductReviewSkeleton />}>
                     <ReviewSectionWrapper
                       productId={product.metadata?.pimMasterId as string}

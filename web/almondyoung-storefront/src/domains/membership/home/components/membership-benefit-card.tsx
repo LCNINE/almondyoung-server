@@ -1,4 +1,7 @@
+"use client"
+
 import { ChevronRight } from "lucide-react"
+import { useTranslations } from "next-intl"
 
 interface MembershipBenefit {
   id: string
@@ -33,15 +36,18 @@ interface MembershipPlanCardProps {
  * - pro: Pro 플랜 (bg-[#007aff] 파란색)
  */
 export default function MembershipPlanCard({
-  planName = "연간",
+  planName,
   price = 54890,
-  period = "12개월(연간구독)",
+  period,
   monthlyPrice = "4,574원",
   discountRate = "약 21% 절감",
   benefitText,
   benefits = [],
   variant = "annual",
 }: Partial<MembershipPlanCardProps> = {}) {
+  const t = useTranslations("mypage.membership")
+  const resolvedPlanName = planName ?? t("benefits.planNameDefault")
+  const resolvedPeriod = period ?? t("subscription.annualLong")
   // Pro일 때만 파란색, 나머지는 검은색
   const headerBgColor = variant === "pro" ? "bg-[#007aff]" : "bg-[#2c2c2e]"
 
@@ -51,14 +57,14 @@ export default function MembershipPlanCard({
       <header className={`flex flex-col gap-2.5 p-5 ${headerBgColor}`}>
         {/* 플랜명 + 가격 */}
         <div className="flex items-center gap-[13px]">
-          <h2 className="text-[19px] font-bold text-white">{planName}</h2>
+          <h2 className="text-[19px] font-bold text-white">{resolvedPlanName}</h2>
           <p className="text-white">
             <span className="text-lg font-semibold text-white">
               {price.toLocaleString()}
             </span>
             <span className="text-sm text-white">
               {" "}
-              원 /{period} 월 {monthlyPrice}{" "}
+              {t("stats.unitWon")} /{resolvedPeriod} {t("subscription.monthlyAmount", { monthlyPrice })}{" "}
             </span>
           </p>
         </div>
@@ -106,7 +112,7 @@ export default function MembershipPlanCard({
             </li>
           ))
         ) : (
-          <li className="text-sm text-gray-500">혜택 정보가 없습니다.</li>
+          <li className="text-sm text-gray-500">{t("noBenefitInfo")}</li>
         )}
       </ul>
     </article>

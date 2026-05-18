@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation"
 import { useCallback } from "react"
+import { useTranslations } from "next-intl"
 import {
   Select,
   SelectContent,
@@ -25,6 +26,7 @@ interface ReviewFiltersProps {
 export const ReviewFilters = ({ period, type }: ReviewFiltersProps) => {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const t = useTranslations("mypage.reviews")
 
   const updateSearchParams = useCallback(
     (key: string, value: string) => {
@@ -51,10 +53,10 @@ export const ReviewFilters = ({ period, type }: ReviewFiltersProps) => {
         </SelectTrigger>
         <SelectContent>
           <SelectItem value={REVIEW_PERIOD_OPTIONS.SIX_MONTHS}>
-            6개월
+            {t("filterPeriodSix")}
           </SelectItem>
-          <SelectItem value={REVIEW_PERIOD_OPTIONS.ONE_YEAR}>1년</SelectItem>
-          <SelectItem value={REVIEW_PERIOD_OPTIONS.ALL}>전체</SelectItem>
+          <SelectItem value={REVIEW_PERIOD_OPTIONS.ONE_YEAR}>{t("filterPeriodOneYear")}</SelectItem>
+          <SelectItem value={REVIEW_PERIOD_OPTIONS.ALL}>{t("filterPeriodAll")}</SelectItem>
         </SelectContent>
       </Select>
       <Separator orientation="vertical" className="h-4" />
@@ -63,11 +65,11 @@ export const ReviewFilters = ({ period, type }: ReviewFiltersProps) => {
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value={REVIEW_TYPE_OPTIONS.ALL}>전체</SelectItem>
+          <SelectItem value={REVIEW_TYPE_OPTIONS.ALL}>{t("filterTypeAll")}</SelectItem>
           <SelectItem value={REVIEW_TYPE_OPTIONS.PHOTO}>
-            포토/동영상
+            {t("filterTypePhoto")}
           </SelectItem>
-          <SelectItem value={REVIEW_TYPE_OPTIONS.TEXT}>일반</SelectItem>
+          <SelectItem value={REVIEW_TYPE_OPTIONS.TEXT}>{t("filterTypeText")}</SelectItem>
         </SelectContent>
       </Select>
     </div>

@@ -1,11 +1,12 @@
 "use client"
 
+import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
 import { Spinner } from "@/components/shared/spinner"
 import { useUser } from "@/contexts/user-context"
 import { signout } from "@lib/api/users/signout"
 import { ChevronRight, Coins, Crown, User } from "lucide-react"
-import Link from "next/link"
+import { useTranslations } from "next-intl"
 import { useTransition } from "react"
 
 interface UserProfileSectionProps {
@@ -21,7 +22,7 @@ export function UserProfileSection({
 }: UserProfileSectionProps) {
   const [isPending, startTransition] = useTransition()
   const { setUser } = useUser()
-  // const { isMembershipPricing, tier } = useMembership()
+  const t = useTranslations("mypage.profile")
 
   const handleLogout = () => {
     startTransition(async () => {
@@ -31,7 +32,7 @@ export function UserProfileSection({
   }
 
   return (
-    <section aria-label="사용자 프로필" className="pb-6">
+    <section aria-label={t("ariaLabel")} className="pb-6">
       <div className="flex flex-wrap items-center justify-between gap-4 sm:gap-6">
         {/* 좌측: 아바타 / 이름 / 멤버십 / 액션 */}
         <div className="flex flex-1 items-center gap-4 md:gap-5">
@@ -46,41 +47,41 @@ export function UserProfileSection({
             <div className="flex items-center gap-1">
               <strong className="flex items-center gap-1 font-normal whitespace-nowrap">
                 <span className="text-lg font-bold text-black">{userName}</span>
-                <span className="text-lg text-zinc-600">님</span>
+                <span className="text-lg text-zinc-600">{t("honorific")}</span>
               </strong>
             </div>
 
             {/* 멤버십 뱃지 or 가입 유도 */}
             {isMembership ? (
-              <Link href="/kr/mypage/membership">
+              <LocalizedClientLink href="/mypage/membership">
                 <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[#FF9500] transition-opacity hover:opacity-80">
                   <Crown className="size-4" aria-hidden />
-                  <span className="text-base font-bold">멤버십 회원</span>
+                  <span className="text-base font-bold">{t("membershipMember")}</span>
                 </span>
-              </Link>
+              </LocalizedClientLink>
             ) : (
-              <Link href="/kr/mypage/membership/subscribe/payment">
+              <LocalizedClientLink href="/mypage/membership/subscribe/payment">
                 <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-3 py-1 whitespace-nowrap text-amber-700 transition-colors hover:bg-amber-200">
                   <Crown className="size-4" aria-hidden />
-                  <span className="text-sm font-bold">멤버십 가입하기</span>
+                  <span className="text-sm font-bold">{t("membershipJoin")}</span>
                 </span>
-              </Link>
+              </LocalizedClientLink>
             )}
           </div>
 
           {/* 액션 버튼들 */}
-          <nav aria-label="프로필 액션" className="ml-0 md:ml-1">
+          <nav aria-label={t("profileEdit")} className="ml-0 md:ml-1">
             <ul className="flex items-center gap-2">
               <li>
-                <Link href="/kr/mypage/account/profile">
+                <LocalizedClientLink href="/mypage/account/profile">
                   <CustomButton
                     className="text-gray-90 border-gray-90 hover:border-gray-90 cursor-pointer whitespace-nowrap hover:bg-gray-100"
                     variant="outline"
                     size="sm"
                   >
-                    프로필 수정
+                    {t("profileEdit")}
                   </CustomButton>
-                </Link>
+                </LocalizedClientLink>
               </li>
               <li>
                 <CustomButton
@@ -89,7 +90,7 @@ export function UserProfileSection({
                   size="sm"
                   onClick={handleLogout}
                 >
-                  {isPending ? <Spinner size="sm" color="gray" /> : "로그아웃"}
+                  {isPending ? <Spinner size="sm" color="gray" /> : t("logout")}
                 </CustomButton>
               </li>
             </ul>
@@ -97,10 +98,10 @@ export function UserProfileSection({
         </div>
 
         {/* 우측: 적립금 */}
-        <Link href="/kr/mypage/point">
+        <LocalizedClientLink href="/mypage/point">
           <button
             type="button"
-            aria-label="아몬드영 적립금 보기"
+            aria-label={t("pointAriaLabel")}
             className="mt-2 flex w-full items-center justify-between gap-3 border-t pt-3 transition-opacity hover:opacity-80 sm:mt-0 sm:w-auto sm:justify-end sm:gap-4 sm:border-0 sm:pt-0"
           >
             <div className="flex items-center gap-2.5">
@@ -112,19 +113,19 @@ export function UserProfileSection({
                   <Coins className="size-4 text-white" />
                 </span>
                 <span className="text-lg font-bold text-black">
-                  아몬드영 적립금
+                  {t("pointTitle")}
                 </span>
               </span>
 
               <span className="inline-flex items-center gap-2.5 whitespace-nowrap">
                 <span className="text-lg font-bold text-black">
-                  {initialPointBalance.toLocaleString()} 원
+                  {initialPointBalance.toLocaleString()} {t("won")}
                 </span>
                 <ChevronRight className="size-6 text-zinc-500" aria-hidden />
               </span>
             </div>
           </button>
-        </Link>
+        </LocalizedClientLink>
       </div>
     </section>
   )

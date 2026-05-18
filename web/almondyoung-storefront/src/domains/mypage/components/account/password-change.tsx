@@ -10,6 +10,7 @@ import {
   FormMessage,
 } from "@/components/ui/form"
 import { zodResolver } from "@hookform/resolvers/zod"
+import { useTranslations } from "next-intl"
 import {
   changePasswordAction,
   type PasswordActionState,
@@ -22,6 +23,8 @@ import {
 } from "../../schemas/password-schema"
 
 export function PasswordChange() {
+  const t = useTranslations("mypage.account.password")
+  const tLabels = useTranslations("mypage.account.labels")
   const [state, formAction, isPending] = useActionState<
     PasswordActionState,
     FormData
@@ -62,9 +65,7 @@ export function PasswordChange() {
 
   return (
     <div className="mx-auto w-full max-w-md py-2 md:py-6">
-      <p className="text-muted-foreground mb-4 text-sm">
-        비밀번호를 변경하려면 현재 비밀번호와 새 비밀번호를 입력해주세요.
-      </p>
+      <p className="text-muted-foreground mb-4 text-sm">{t("description")}</p>
 
       <Form {...form}>
         <form action={formAction} className="space-y-4">
@@ -77,7 +78,7 @@ export function PasswordChange() {
                   <CustomInput
                     {...field}
                     type="password"
-                    label="현재 비밀번호"
+                    label={tLabels("currentPassword")}
                     autoComplete="current-password"
                     hasValue={!!currentPassword}
                     onClear={handleClearCurrent}
@@ -98,7 +99,7 @@ export function PasswordChange() {
                   <CustomInput
                     {...field}
                     type="password"
-                    label="새 비밀번호"
+                    label={tLabels("newPassword")}
                     autoComplete="new-password"
                     hasValue={!!newPassword}
                     onClear={handleClearNew}
@@ -119,7 +120,7 @@ export function PasswordChange() {
                   <CustomInput
                     {...field}
                     type="password"
-                    label="새 비밀번호 확인"
+                    label={tLabels("confirmPassword")}
                     autoComplete="new-password"
                     hasValue={!!newPasswordConfirm}
                     onClear={handleClearConfirm}
@@ -138,12 +139,11 @@ export function PasswordChange() {
             isLoading={isPending}
             disabled={!form.formState.isValid}
           >
-            비밀번호 변경
+            {t("submit")}
           </CustomButton>
 
           <p className="text-muted-foreground text-center text-xs">
-            변경 완료 시 자동으로 로그아웃되며, 새 비밀번호로 다시
-            로그인해주세요.
+            {t("afterChange")}
           </p>
         </form>
       </Form>

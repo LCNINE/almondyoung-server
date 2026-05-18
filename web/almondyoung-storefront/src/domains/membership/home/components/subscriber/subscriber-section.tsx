@@ -1,8 +1,9 @@
 "use client"
 
-import { useRouter } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { useMemo, useState } from "react"
 import { ChevronRight } from "lucide-react"
+import { useTranslations } from "next-intl"
 import { IconTextButton } from "../../../components/icon-button"
 import { MembershipCancelModal } from "../../../components/modal"
 import MembershipPlanCard from "../membership-benefit-card"
@@ -47,18 +48,6 @@ interface SubscriberSectionProps {
   hasCafe24Link: boolean
 }
 
-const buildPlanBenefits = (plan?: PlanWithTier) => {
-  if (!plan) return []
-  const benefits = []
-  if (plan.plan.trialDays > 0) {
-    benefits.push({
-      id: `${plan.plan.id}-trial`,
-      title: `무료 체험 ${plan.plan.trialDays}일`,
-    })
-  }
-  return benefits
-}
-
 const LEGACY_URL =
   process.env.NEXT_PUBLIC_LEGACY_MEMBERSHIP_HISTORY_URL ??
   "https://almondyoung.com/myshop/mileage/historyList.html"
@@ -77,10 +66,26 @@ export default function SubscriberSection({
   const [open, setOpen] = useState(false)
   const [isCancelling, setIsCancelling] = useState(false)
   const router = useRouter()
+  const params = useParams()
+  const countryCode = (params?.countryCode as string) ?? "kr"
+  const t = useTranslations("mypage.membership")
   const hasCancellationReasons = useMemo(
     () => cancellationReasons.length > 0,
     [cancellationReasons]
   )
+
+  const buildPlanBenefits = (plan?: PlanWithTier) => {
+    if (!plan) return []
+    const benefits = []
+    if (plan.plan.trialDays > 0) {
+      benefits.push({
+        id: `${plan.plan.id}-trial`,
+        title: t("subscription.freeTrialTitle", { days: plan.plan.trialDays }),
+      })
+    }
+    return benefits
+  }
+
   const monthlyPlan = plans.find((plan) => plan.plan.durationDays === 30)
   const yearlyPlan = plans.find((plan) => plan.plan.durationDays === 365)
   const yearlyMonthlyPrice = yearlyPlan
@@ -111,28 +116,28 @@ export default function SubscriberSection({
       <section className="mb-6 flex flex-col gap-4">
         {/* 월회비 결제수단 변경 */}
         <IconTextButton
-          label="월회비 결제수단 변경"
+          label={t("billing.paymentMethod")}
           size="full"
-          onClick={() => router.push("/kr/mypage/membership/payment-method")}
+          onClick={() => router.push(`/${countryCode}/mypage/membership/payment-method`)}
         />
       </section>
       <MembershipPlanCard
-        planName={yearlyPlan?.tier?.name ?? "연간"}
+        planName={yearlyPlan?.tier?.name ?? t("benefits.planNameDefault")}
         price={yearlyPlan?.plan.price ?? 0}
         period={
           yearlyPlan
-            ? `${Math.round(yearlyPlan.plan.durationDays / 30)}개월(연간구독)`
-            : "12개월(연간구독)"
+            ? t("subscription.annualLongWithMonths", { months: Math.round(yearlyPlan.plan.durationDays / 30) })
+            : t("subscription.annualLong")
         }
         monthlyPrice={
           yearlyMonthlyPrice != null
-            ? `${yearlyMonthlyPrice.toLocaleString()}원`
+            ? t("billing.amountWon", { amount: yearlyMonthlyPrice.toLocaleString() })
             : "-"
         }
-        discountRate={discountRate != null ? `약 ${discountRate}% 절감` : "-"}
+        discountRate={discountRate != null ? t("subscription.savingsRate", { discountRate }) : "-"}
         benefitText={
           yearlyPlan?.plan.trialDays
-            ? `무료 체험 ${yearlyPlan.plan.trialDays}일`
+            ? t("subscription.freeTrialTitle", { days: yearlyPlan.plan.trialDays })
             : undefined
         }
         benefits={buildPlanBenefits(yearlyPlan)}
@@ -151,13 +156,13 @@ export default function SubscriberSection({
           rel="noopener noreferrer"
           className="mb-2 flex items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
         >
-          <span>기존 아몬드영 멤버십 내역 확인하기</span>
+          <span>{t("history.legacyHistory")}</span>
           <ChevronRight className="h-4 w-4 text-gray-400" />
         </a>
       )}
       {/* 해지 버튼 */}
       <IconTextButton
-        label="멤버십 해지하기"
+        label={t("history.cancelMembership")}
         size="full"
         onClick={() => setOpen(true)}
       />
@@ -171,9 +176,9 @@ export default function SubscriberSection({
             setIsCancelling(true)
             await cancelSubscription(reasonCode, reasonText)
             setOpen(false)
-            router.push("/kr/mypage/membership")
+            router.push(`/${countryCode}/mypage/membership`)
             pollCartRefreshUntilGroupRemoved(() => {
-              toast.success("장바구니 가격이 업데이트되었습니다.")
+              toast.success(t("billing.cartPriceUpdated"))
               router.refresh()
             })
           } catch (error) {

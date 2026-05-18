@@ -20,6 +20,7 @@ import { getPathWithoutCountry } from "@/lib/utils/get-path-without-country"
 import { useParams, useRouter } from "next/navigation"
 import { useCallback, useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
+import { useTranslations } from "next-intl"
 import { QnaInquiryDialog } from "./qna-inquiry-dialog"
 import { QNA_ROW_COLS, QnaRow } from "./qna-row"
 import { Separator } from "../ui/separator"
@@ -38,6 +39,7 @@ export function QnaList({ productId, productName, productThumbnail }: Props) {
   const { user } = useUser()
   const router = useRouter()
   const { countryCode } = useParams()
+  const t = useTranslations("productDetail.qna")
 
   const [questions, setQuestions] = useState<Question[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -82,7 +84,7 @@ export function QnaList({ productId, productName, productThumbnail }: Props) {
         setQuestions(filtered)
         setTotal(result.total ?? 0)
       } catch (error) {
-        console.error("Q&A 로드 실패:", error)
+        console.error(t("loadFail"), error)
         setQuestions([])
         setTotal(0)
       } finally {
@@ -90,7 +92,7 @@ export function QnaList({ productId, productName, productThumbnail }: Props) {
         setHasLoaded(true)
       }
     },
-    [productId, statusFilter, excludeSecret, mineOnly]
+    [productId, statusFilter, excludeSecret, mineOnly, t]
   )
 
   // 필터 변경 시 1페이지로 리셋 후 재조회
@@ -119,15 +121,15 @@ export function QnaList({ productId, productName, productThumbnail }: Props) {
     startDeleteTransition(async () => {
       try {
         await deleteQuestion(questionId)
-        toast.success("문의가 삭제되었습니다.")
+        toast.success(t("deleteSuccess"))
         fetchQuestions(currentPage)
       } catch (error) {
-        console.error("문의 삭제 실패:", error)
+        console.error("delete question failed", error)
         const err = error as Error & { digest?: string }
         if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") {
           throw error
         }
-        toast.error("문의 삭제에 실패했습니다. 다시 시도해주세요.")
+        toast.error(t("deleteFail"))
       }
     })
   }
@@ -174,20 +176,20 @@ export function QnaList({ productId, productName, productThumbnail }: Props) {
     <section className="space-y-0">
       <Separator className="mb-7" />
 
-      <h4 className="font-bold">Q&A</h4>
+      <h4 className="font-bold">{t("title")}</h4>
 
       <p className="text-gray-500">
-        상품에 대해 궁금한 점이 있으신 경우 문의해주세요.
+        {t("intro")}
         <br />
-        배송·반품·교환 관련 문의는
+        {t("csLinkPrefix")}
         <button
           type="button"
           onClick={handleCsInquiryClick}
           className="ml-1 cursor-pointer font-medium text-gray-700 underline underline-offset-2"
         >
-          배송·반품·교환 문의
+          {t("csLink")}
         </button>
-        를 통해 문의해주세요.
+        {t("csLinkSuffix")}
       </p>
 
       {/* 툴바: 좌측 액션 버튼 / 우측 필터 */}
@@ -198,7 +200,7 @@ export function QnaList({ productId, productName, productThumbnail }: Props) {
             className="cursor-pointer rounded-none bg-[rgb(51,51,51)] text-white hover:bg-[rgb(51,51,51)]"
             onClick={handleWriteQnaClick}
           >
-            상품 Q&A 작성하기
+            {t("writeQna")}
           </Button>
           <Button
             variant={mineOnly ? "default" : "outline"}
@@ -209,7 +211,7 @@ export function QnaList({ productId, productName, productThumbnail }: Props) {
             }
             onClick={handleMyQnaToggle}
           >
-            {mineOnly ? "전체 보기 >" : "나의 Q&A 조회 >"}
+            {mineOnly ? t("viewAll") : t("viewMine")}
           </Button>
         </div>
 
@@ -219,7 +221,7 @@ export function QnaList({ productId, productName, productThumbnail }: Props) {
               checked={excludeSecret}
               onCheckedChange={(checked) => setExcludeSecret(checked === true)}
             />
-            비밀글 제외
+            {t("excludeSecret")}
           </label>
 
           {mounted ? (
@@ -230,12 +232,12 @@ export function QnaList({ productId, productName, productThumbnail }: Props) {
               }
             >
               <SelectTrigger className="h-9 w-[140px] cursor-pointer rounded-none">
-                <SelectValue placeholder="답변상태" />
+                <SelectValue placeholder={t("statusPlaceholder")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">답변상태 전체</SelectItem>
-                <SelectItem value="answered">답변완료</SelectItem>
-                <SelectItem value="unanswered">답변미완료</SelectItem>
+                <SelectItem value="all">{t("statusAll")}</SelectItem>
+                <SelectItem value="answered">{t("statusAnswered")}</SelectItem>
+                <SelectItem value="unanswered">{t("statusUnanswered")}</SelectItem>
               </SelectContent>
             </Select>
           ) : (
@@ -261,15 +263,15 @@ export function QnaList({ productId, productName, productThumbnail }: Props) {
           <div
             className={`${QNA_ROW_COLS} border-b border-gray-200 text-sm font-medium text-gray-700`}
           >
-            <span>답변상태</span>
-            <span className="text-center">제목</span>
-            <span className="text-right">작성자</span>
-            <span className="text-right">작성일</span>
+            <span>{t("headerStatus")}</span>
+            <span className="text-center">{t("headerTitle")}</span>
+            <span className="text-right">{t("headerAuthor")}</span>
+            <span className="text-right">{t("headerDate")}</span>
           </div>
 
           {questions.length === 0 ? (
             <div className="py-12 text-center text-gray-500">
-              <p>조건에 해당하는 Q&A가 없습니다.</p>
+              <p>{t("empty")}</p>
             </div>
           ) : (
             <ul>

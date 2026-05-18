@@ -1,6 +1,7 @@
 "use client"
 
 import { Star } from "lucide-react"
+import { useTranslations } from "next-intl"
 
 type Props = {
   rating: number
@@ -12,6 +13,7 @@ type Props = {
  * ★★★★☆ 4.3 리뷰 128건 > 형태로 한 줄 표시
  */
 export function Rating({ rating, reviewCount }: Props) {
+  const t = useTranslations("productDetail.rating")
   const clampedRating = Math.max(0, Math.min(5, rating))
   const fullStars = Math.floor(clampedRating)
   const partialFill = (clampedRating - fullStars) * 100
@@ -24,7 +26,7 @@ export function Rating({ rating, reviewCount }: Props) {
   return (
     <div className="flex items-center gap-1.5 py-1">
       {/* 별점 */}
-      <div className="flex" role="img" aria-label={`평점 ${rating}점`}>
+      <div className="flex" role="img" aria-label={t("ariaLabel", { rating })}>
         {Array.from({ length: fullStars }).map((_, i) => (
           <Star
             key={`full-${i}`}
@@ -76,7 +78,7 @@ export function Rating({ rating, reviewCount }: Props) {
           )
         }}
       >
-        리뷰 {reviewCount.toLocaleString()}건<span className="ml-0.5">+</span>
+        {t("reviewCount", { count: reviewCount.toLocaleString() })}<span className="ml-0.5">+</span>
       </button>
     </div>
   )

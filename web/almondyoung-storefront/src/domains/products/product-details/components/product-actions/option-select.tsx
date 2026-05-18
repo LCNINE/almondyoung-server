@@ -1,6 +1,7 @@
 import { cn } from "@/lib/utils"
 import { HttpTypes } from "@medusajs/types"
 import { useMemo } from "react"
+import { useTranslations } from "next-intl"
 
 interface OptionSelectProps {
   option: HttpTypes.StoreProductOption
@@ -48,6 +49,7 @@ export default function OptionSelect({
   selectedOptions,
   selectedValues,
 }: OptionSelectProps) {
+  const t = useTranslations("productDetail.options")
   const { visibleValues, outOfStockSet } = useMemo(() => {
     const allValues = (option.values ?? []).map((v) => v.value)
     if (!variants) {
@@ -100,7 +102,7 @@ export default function OptionSelect({
               )}
               data-testid="option-button"
             >
-              {isOutOfStock ? `${v} (품절)` : v}
+              {isOutOfStock ? t("outOfStockSuffix", { value: v }) : v}
             </button>
           )
         })}

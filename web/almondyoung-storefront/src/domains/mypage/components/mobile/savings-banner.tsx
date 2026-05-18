@@ -1,5 +1,8 @@
+"use client"
+
+import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { ChevronRight } from "lucide-react"
-import Link from "next/link"
+import { useTranslations } from "next-intl"
 import type { SavingsData } from "../../types/mypage-types"
 
 interface SavingsBannerProps {
@@ -7,6 +10,8 @@ interface SavingsBannerProps {
 }
 
 export function SavingsBanner({ initialData }: SavingsBannerProps) {
+  const t = useTranslations("mypage.banner")
+
   if (!initialData.hasSubscription) {
     return null
   }
@@ -14,9 +19,9 @@ export function SavingsBanner({ initialData }: SavingsBannerProps) {
   const { totalSavings, tierName } = initialData
 
   return (
-    <Link href="/kr/mypage/membership">
+    <LocalizedClientLink href="/mypage/membership">
       <section
-        aria-label="절약 금액 안내"
+        aria-label={t("savingsAriaLabel")}
         className="flex items-center justify-between rounded-lg bg-yellow-100 p-3 text-sm transition-opacity hover:opacity-80"
       >
         <div className="flex items-center gap-2">
@@ -26,12 +31,14 @@ export function SavingsBanner({ initialData }: SavingsBannerProps) {
             </span>
           )}
           <p className="font-semibold">
-            이번달 <strong>{totalSavings.toLocaleString()}원</strong>{" "}
-            절약했어요!
+            {t.rich("savingsThisMonth", {
+              amount: totalSavings.toLocaleString(),
+              strong: (chunks) => <strong>{chunks}</strong>,
+            })}
           </p>
         </div>
         <ChevronRight className="h-5 w-5" />
       </section>
-    </Link>
+    </LocalizedClientLink>
   )
 }

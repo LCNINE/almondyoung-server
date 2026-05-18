@@ -4,11 +4,12 @@ import { SharedPagination } from "@/components/shared/pagination"
 import { Separator } from "@/components/ui/separator"
 import { deleteQuestion, getMyQuestions } from "@/lib/api/ugc/qna"
 import type { Question } from "@/lib/types/ui/ugc"
+import { useTranslations } from "next-intl"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useCallback, useState, useTransition } from "react"
 import { toast } from "sonner"
-import { MyInquiryCard } from "./my-inquiry-card"
 import { EditInquiryDialog } from "./edit-inquiry-dialog"
+import { MyInquiryCard } from "./my-inquiry-card"
 
 type Props = {
   initialQuestions: Question[]
@@ -25,6 +26,7 @@ export function MyInquiriesList({
 }: Props) {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const t = useTranslations("mypage.inquiry")
 
   const [questions, setQuestions] = useState<Question[]>(initialQuestions)
   const [total, setTotal] = useState(initialTotal)
@@ -98,9 +100,9 @@ export function MyInquiriesList({
   if (questions.length === 0 && !isLoading) {
     return (
       <div className="py-16 text-center">
-        <p className="text-gray-500">등록한 문의가 없습니다.</p>
+        <p className="text-gray-500">{t("myInquiriesEmpty")}</p>
         <p className="mt-2 text-sm text-gray-400">
-          상품 상세 페이지에서 궁금한 점을 문의해보세요.
+          {t("myInquiriesEmptyDescription")}
         </p>
       </div>
     )
@@ -109,7 +111,12 @@ export function MyInquiriesList({
   return (
     <div className={isLoading ? "opacity-50" : ""}>
       <p className="mb-4 text-sm text-gray-500">
-        총 <span className="font-medium text-gray-900">{total}</span>건
+        {t.rich("totalCount", {
+          count: total,
+          strong: (chunks) => (
+            <span className="font-medium text-gray-900">{chunks}</span>
+          ),
+        })}
       </p>
 
       <ul>

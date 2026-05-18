@@ -3,14 +3,17 @@ import { OrderList } from "@/domains/order/list/components/order-list"
 import { getOrders } from "@/lib/api/medusa/orders"
 import { WithHeaderLayout } from "@components/layout"
 import { Metadata } from "next"
-export const metadata: Metadata = {
-  title: "주문내역",
-  description: "주문 내역을 확인하세요",
+import { getTranslations } from "next-intl/server"
+
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations("mypage.menu")
+  return { title: t("orderList") }
 }
 
 const INITIAL_LIMIT = 20
 
 export default async function OrderListPage() {
+  const t = await getTranslations("mypage.menu")
   const ordersData = await getOrders({ limit: INITIAL_LIMIT, offset: 0 })
   return (
     <WithHeaderLayout
@@ -18,7 +21,7 @@ export default async function OrderListPage() {
         showDesktopHeader: true,
         showMobileHeader: false,
         showMobileSubBackHeader: true,
-        mobileSubBackHeaderTitle: "주문내역",
+        mobileSubBackHeaderTitle: t("orderList"),
       }}
     >
       <MypageLayout>

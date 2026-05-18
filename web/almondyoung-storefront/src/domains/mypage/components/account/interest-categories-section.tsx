@@ -11,6 +11,7 @@ import {
 import { InterestKeyChips } from "@/domains/home/components/interest/interest-key-chips"
 import { updateInterestCategories } from "@/domains/home/interest-categories-actions"
 import { MAX_INTEREST_CATEGORIES } from "@/lib/constants/categories"
+import { useTranslations } from "next-intl"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
 
@@ -25,6 +26,7 @@ interface InterestCategoriesSectionProps {
 export function InterestCategoriesSection({
   initialKeys,
 }: InterestCategoriesSectionProps) {
+  const t = useTranslations("mypage.account.interest")
   const [selected, setSelected] = useState<string[]>(initialKeys)
   const [isPending, startTransition] = useTransition()
 
@@ -36,13 +38,13 @@ export function InterestCategoriesSection({
     startTransition(async () => {
       try {
         await updateInterestCategories(selected)
-        toast.success("관심 카테고리가 저장됐어요")
+        toast.success(t("saved"))
       } catch (error: unknown) {
         const err = error as Error & { digest?: string }
         if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") {
           throw error
         }
-        toast.error("저장에 실패했어요. 다시 시도해주세요.")
+        toast.error(t("saveFailed"))
       }
     })
   }
@@ -50,11 +52,9 @@ export function InterestCategoriesSection({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-lg">관심 카테고리</CardTitle>
+        <CardTitle className="text-lg">{t("title")}</CardTitle>
         <CardDescription>
-          최대 {MAX_INTEREST_CATEGORIES}개까지 선택할 수 있어요. 선택한
-          카테고리의 베스트 상품을 홈에서 먼저 보여드리고, 헤더 메뉴 맨 앞에
-          정렬됩니다.
+          {t("description", { max: MAX_INTEREST_CATEGORIES })}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -70,7 +70,7 @@ export function InterestCategoriesSection({
             disabled={isPending || !isDirty}
             className="px-8"
           >
-            {isPending ? "저장 중..." : "저장"}
+            {isPending ? t("saving") : t("save")}
           </CustomButton>
         </div>
       </CardContent>

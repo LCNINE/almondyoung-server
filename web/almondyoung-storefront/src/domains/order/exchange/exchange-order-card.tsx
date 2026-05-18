@@ -1,5 +1,8 @@
+"use client"
+
 import { CustomButton } from "@/components/shared/custom-buttons"
 import { MoreVertical } from "lucide-react"
+import { useTranslations } from "next-intl"
 
 interface ExchangeOrderCardProps {
   /** 상태 (예: "교환완료", "교환신청") */
@@ -55,6 +58,7 @@ export function ExchangeOrderCard({
   onTrackingClick,
   onDeliveryTrackingClick,
 }: ExchangeOrderCardProps) {
+  const t = useTranslations("mypage.order")
   return (
     <>
       {/* 모바일 카드 */}
@@ -69,7 +73,7 @@ export function ExchangeOrderCard({
               type="button"
               onClick={onMoreClick}
               className="h-5 w-5 shrink-0"
-              aria-label="더보기"
+              aria-label={t("exchange.more")}
             >
               <MoreVertical className="h-5 w-5 text-[#757575]" />
             </button>
@@ -105,7 +109,7 @@ export function ExchangeOrderCard({
                   fullWidth={false}
                   onClick={onAddToCartClick}
                 >
-                  장바구니 담기
+                  {t("actions.addToCart")}
                 </CustomButton>
               </div>
             </div>
@@ -121,7 +125,7 @@ export function ExchangeOrderCard({
               fullWidth={true}
               className="flex-1"
             >
-              교환 상세보기
+              {t("exchange.exchangeDetail")}
             </CustomButton>
             <div className="flex gap-2.5">
               <CustomButton
@@ -132,7 +136,7 @@ export function ExchangeOrderCard({
                 fullWidth={true}
                 className="flex-1"
               >
-                회수조회
+                {t("exchange.returnTrackingShort")}
               </CustomButton>
               <CustomButton
                 variant="outline"
@@ -142,7 +146,7 @@ export function ExchangeOrderCard({
                 onClick={onDeliveryTrackingClick}
                 className="flex-1"
               >
-                배송조회
+                {t("exchange.trackingDeliveryShort")}
               </CustomButton>
             </div>
           </div>
@@ -152,13 +156,15 @@ export function ExchangeOrderCard({
       {/* 데스크탑 카드 */}
       <div className="hidden flex-col gap-5 rounded-[10px] border-[0.5px] border-[#d9d9d9] bg-white p-5 md:flex">
         <header className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-black">{exchangeDate} 교환</h2>
+          <h2 className="text-lg font-bold text-black">
+            {t("exchange.dateExchanged", { date: exchangeDate ?? "" })}
+          </h2>
           <button
             type="button"
             onClick={onOrderDetailClick}
             className="text-base text-black hover:underline"
           >
-            주문 상세보기 &gt;
+            {t("actions.viewDetail")}
           </button>
         </header>
 
@@ -170,10 +176,12 @@ export function ExchangeOrderCard({
 
             <div className="flex gap-[13px]">
               <p className="text-base text-black">
-                주문일 : <span className="font-bold">{orderDate}</span>
+                {t("labels.orderDate")} :{" "}
+                <span className="font-bold">{orderDate}</span>
               </p>
               <p className="text-base text-black">
-                주문번호 : <span className="font-bold">{orderNumber}</span>
+                {t("labels.orderNumber")} :{" "}
+                <span className="font-bold">{orderNumber}</span>
               </p>
             </div>
 
@@ -224,7 +232,7 @@ export function ExchangeOrderCard({
               fullWidth={true}
               className="flex-1"
             >
-              교환 상세
+              {t("exchange.exchangeDetailShort")}
             </CustomButton>
             <CustomButton
               variant="outline"
@@ -234,7 +242,7 @@ export function ExchangeOrderCard({
               fullWidth={true}
               className="flex-1"
             >
-              회수 조회
+              {t("exchange.returnTracking")}
             </CustomButton>
             <CustomButton
               variant="outline"
@@ -244,7 +252,7 @@ export function ExchangeOrderCard({
               fullWidth={true}
               className="flex-1"
             >
-              배송 조회
+              {t("exchange.trackingDelivery")}
             </CustomButton>
           </aside>
         </section>

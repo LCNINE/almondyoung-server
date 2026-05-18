@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils"
 import { HttpTypes } from "@medusajs/types"
 import { Minus, Plus, ShoppingCart, X } from "lucide-react"
 import React, { useState } from "react"
+import { useTranslations } from "next-intl"
 import ProductPrice from "../product-price"
 import OptionSelect from "./option-select"
 
@@ -56,13 +57,14 @@ const MobileActions: React.FC<MobileActionsProps> = ({
   isPending,
   show,
 }) => {
+  const t = useTranslations("productDetail.options")
   const [open, setOpen] = useState(false)
 
   const disabledLabel =
     selectedItems.length === 0
-      ? "옵션을 선택해주세요"
+      ? t("selectPlaceholder")
       : !inStock
-        ? "품절"
+        ? t("soldOut")
         : null
 
   return (
@@ -100,7 +102,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
               className="h-12 w-full cursor-pointer text-base font-medium"
               data-testid="sold-out-button"
             >
-              품절
+              {t("soldOut")}
             </Button>
           ) : (
             <>
@@ -116,7 +118,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                 className="border-yellow-30 text-yellow-30 hover:text-primary h-12 w-full flex-1 cursor-pointer text-base hover:bg-transparent"
                 data-testid="mobile-cart-button"
               >
-                장바구니 담기
+                {t("addToCart")}
               </Button>
               <Button
                 onClick={() => {
@@ -130,7 +132,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                 className="h-12 flex-1 cursor-pointer text-base"
                 data-testid="mobile-buy-button"
               >
-                바로구매
+                {t("buyNow")}
               </Button>
             </>
           )}
@@ -140,7 +142,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
       {/* 옵션 선택 바텀시트 */}
       <Drawer open={open} onOpenChange={setOpen}>
         <DrawerContent className="max-h-[85vh]">
-          <DrawerTitle className="sr-only">옵션 선택</DrawerTitle>
+          <DrawerTitle className="sr-only">{t("sheetTitle")}</DrawerTitle>
 
           <div className="overflow-y-auto px-4 pt-2 pb-2">
             {/* 옵션 선택 */}
@@ -152,7 +154,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                     option={option}
                     current={options[option.id]}
                     updateOption={setOptionValue}
-                    title={`${option.title} 선택`}
+                    title={t("optionSelectTitle", { title: option.title ?? "" })}
                     variants={product.variants}
                     selectedOptions={options}
                     selectedValues={selectedValuesMap[option.id]}
@@ -234,7 +236,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                           disabled={isWelcomeMembership}
                           className="h-7 px-2 text-[11px] text-gray-600"
                         >
-                          직접입력
+                          {t("directInput")}
                         </Button>
                       </div>
                     </div>
@@ -261,10 +263,10 @@ const MobileActions: React.FC<MobileActionsProps> = ({
           <div className="border-t border-gray-200 px-4 pt-3 pb-4">
             <div className="flex items-center justify-between pb-3">
               <span className="text-sm font-medium">
-                구매수량 {totalQuantity}개
+                {t("totalQty", { count: totalQuantity })}
               </span>
               <span className="text-lg font-bold">
-                총 {totalPrice.toLocaleString()}원
+                {t("totalPrice", { amount: totalPrice.toLocaleString() })}
               </span>
             </div>
             <div className="flex gap-x-3">
@@ -288,7 +290,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                   className="h-12 w-full cursor-pointer text-base font-medium"
                   data-testid="sold-out-button"
                 >
-                  품절
+                  {t("soldOut")}
                 </Button>
               ) : (
                 <>
@@ -302,7 +304,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                     className="h-12 flex-1 gap-2 text-base"
                   >
                     <ShoppingCart className="h-4 w-4" />
-                    {disabledLabel ?? "장바구니 담기"}
+                    {disabledLabel ?? t("addToCart")}
                   </Button>
                   <Button
                     onClick={() => {
@@ -312,7 +314,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                     disabled={!!disabledLabel || isPending}
                     className="h-12 flex-1 text-base"
                   >
-                    {disabledLabel ?? "바로 구매"}
+                    {disabledLabel ?? t("buyNowMobile")}
                   </Button>
                 </>
               )}

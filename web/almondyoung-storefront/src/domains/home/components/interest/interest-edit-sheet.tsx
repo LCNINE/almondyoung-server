@@ -14,16 +14,16 @@ import { updateInterestCategories } from "@/domains/home/interest-categories-act
 import { Pencil } from "lucide-react"
 import { useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
+import { useTranslations } from "next-intl"
 import { InterestKeyChips } from "./interest-key-chips"
 
 interface InterestEditSheetProps {
   initialKeys: string[]
 }
 
-/*───────────────────────────
- * 홈 섹션 헤더 옆 "편집" 버튼 → 시트로 재선택 UI
- *──────────────────────────*/
 export function InterestEditSheet({ initialKeys }: InterestEditSheetProps) {
+  const t = useTranslations("home.interestEdit")
+  const tBanner = useTranslations("home.interestBanner")
   const [open, setOpen] = useState(false)
   const [selected, setSelected] = useState<string[]>(initialKeys)
   const [isPending, startTransition] = useTransition()
@@ -36,14 +36,14 @@ export function InterestEditSheet({ initialKeys }: InterestEditSheetProps) {
     startTransition(async () => {
       try {
         await updateInterestCategories(selected)
-        toast.success("관심 카테고리가 변경됐어요")
+        toast.success(t("updated"))
         setOpen(false)
       } catch (error: unknown) {
         const err = error as Error & { digest?: string }
         if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") {
           throw error
         }
-        toast.error("저장에 실패했어요. 다시 시도해주세요.")
+        toast.error(tBanner("saveFail"))
       }
     })
   }
@@ -58,14 +58,14 @@ export function InterestEditSheet({ initialKeys }: InterestEditSheetProps) {
           className="text-xs text-zinc-500 hover:text-zinc-900"
         >
           <Pencil className="mr-1 h-3.5 w-3.5" />
-          편집
+          {t("trigger")}
         </Button>
       </SheetTrigger>
       <SheetContent side="bottom" className="rounded-t-2xl">
         <SheetHeader>
-          <SheetTitle>관심 카테고리 변경</SheetTitle>
+          <SheetTitle>{t("sheetTitle")}</SheetTitle>
           <SheetDescription>
-            최대 3개까지 선택할 수 있어요.
+            {t("sheetDescription")}
           </SheetDescription>
         </SheetHeader>
 
@@ -84,7 +84,7 @@ export function InterestEditSheet({ initialKeys }: InterestEditSheetProps) {
             onClick={() => setOpen(false)}
             disabled={isPending}
           >
-            취소
+            {t("cancel")}
           </Button>
           <CustomButton
             type="button"
@@ -92,7 +92,7 @@ export function InterestEditSheet({ initialKeys }: InterestEditSheetProps) {
             disabled={isPending}
             className="rounded-full"
           >
-            {isPending ? "저장 중..." : "저장"}
+            {isPending ? t("saving") : t("save")}
           </CustomButton>
         </div>
       </SheetContent>

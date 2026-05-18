@@ -2,6 +2,7 @@
 
 import { Camera, Plus, X } from "lucide-react"
 import { useRef } from "react"
+import { useTranslations } from "next-intl"
 
 const MAX_PHOTO_COUNT = 3
 const MAX_FILE_SIZE_MB = 10
@@ -25,6 +26,8 @@ export function ImageUpload({
   disabled = false,
 }: ImageUploadProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const t = useTranslations("cs.inquiry")
+  const tForm = useTranslations("cs.inquiry.form")
 
   const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
@@ -36,7 +39,7 @@ export function ImageUpload({
     const validFiles = newFiles.filter((file) => {
       const sizeMB = file.size / (1024 * 1024)
       if (sizeMB > MAX_FILE_SIZE_MB) {
-        alert(`${file.name}의 용량이 ${MAX_FILE_SIZE_MB}MB를 초과합니다.`)
+        alert(t("fileSizeOver", { name: file.name, size: MAX_FILE_SIZE_MB }))
         return false
       }
       return true
@@ -79,18 +82,17 @@ export function ImageUpload({
         >
           <Camera className="mb-1 h-6 w-6 text-gray-500" />
           <p className="text-[15px] font-semibold text-gray-800">
-            사진 첨부하기
+            {tForm("addPhoto")}
           </p>
           <p className="mt-0.5 text-[13px] text-gray-500">
-            최대 {MAX_PHOTO_COUNT}장, 각 {MAX_FILE_SIZE_MB}MB 이하
+            {tForm("addPhotoHint", { max: MAX_PHOTO_COUNT, sizeMB: MAX_FILE_SIZE_MB })}
           </p>
         </button>
       ) : (
         <div className="rounded-lg border border-gray-200 p-3">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-[13px] font-medium text-gray-700">
-              사진 <span className="text-[#f29219]">{images.length}</span>/
-              {MAX_PHOTO_COUNT}
+              {tForm("photoCount", { count: images.length, max: MAX_PHOTO_COUNT })}
             </p>
           </div>
           <div className="flex gap-2 overflow-x-auto">
@@ -101,7 +103,7 @@ export function ImageUpload({
               >
                 <img
                   src={image.previewUrl}
-                  alt="첨부 이미지"
+                  alt={tForm("photoAlt")}
                   className="absolute inset-0 h-full w-full object-cover"
                 />
                 <button

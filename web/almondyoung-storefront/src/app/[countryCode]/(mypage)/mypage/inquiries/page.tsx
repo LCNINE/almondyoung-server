@@ -1,14 +1,18 @@
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
+import { MyInquiriesTemplate } from "@/domains/mypage/components/inquiries/template"
 import { siteConfig } from "@/lib/config/site"
 import { getSEOTags } from "@/lib/seo"
 import { WithHeaderLayout } from "@components/layout"
-import { MyInquiriesTemplate } from "@/domains/mypage/components/inquiries/template"
+import { getTranslations } from "next-intl/server"
 
-export const metadata = getSEOTags({
-  title: `${siteConfig.appName} | 내 문의 내역`,
-  openGraph: {},
-  extraTags: {},
-})
+export async function generateMetadata() {
+  const t = await getTranslations("mypage.menu")
+  return getSEOTags({
+    title: `${siteConfig.appName} | ${t("inquiries")}`,
+    openGraph: {},
+    extraTags: {},
+  })
+}
 
 type Props = {
   params: Promise<{ countryCode: string }>
@@ -16,6 +20,7 @@ type Props = {
 }
 
 export default async function MyInquiriesPage(props: Props) {
+  const t = await getTranslations("mypage.menu")
   const [params, searchParams] = await Promise.all([
     props.params,
     props.searchParams,
@@ -27,7 +32,7 @@ export default async function MyInquiriesPage(props: Props) {
         showDesktopHeader: true,
         showMobileHeader: false,
         showMobileSubBackHeader: true,
-        mobileSubBackHeaderTitle: "내 문의 내역",
+        mobileSubBackHeaderTitle: t("inquiries"),
       }}
     >
       <MypageLayout>

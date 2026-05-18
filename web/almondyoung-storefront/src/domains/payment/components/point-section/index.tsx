@@ -1,18 +1,19 @@
+import { getTranslations } from "next-intl/server"
 import { Card, CardContent } from "@components/common/ui/card"
 import { Price } from "@components/price"
 
-// 아몬드영 적립금 섹션
 export default async function PointSection({
   withdrawable,
 }: {
   withdrawable: number
 }) {
+  const t = await getTranslations("mypage.payment")
   return (
     <Card className="mb-4 border-none shadow-xs">
       <CardContent className="flex items-center justify-between p-7">
         <div>
           <span className="text-foreground font-bold sm:text-lg">
-            아몬드영 적립금
+            {t("pointTitle")}
           </span>
         </div>
 

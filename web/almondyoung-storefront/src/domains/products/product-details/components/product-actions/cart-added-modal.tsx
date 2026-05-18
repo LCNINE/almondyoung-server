@@ -12,6 +12,7 @@ import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { HttpTypes } from "@medusajs/types"
 import { Loader2 } from "lucide-react"
 import Image from "next/image"
+import { useTranslations } from "next-intl"
 
 interface CartAddedModalProps {
   open: boolean
@@ -26,9 +27,9 @@ export default function CartAddedModal({
   product,
   isPending = false,
 }: CartAddedModalProps) {
+  const t = useTranslations("productDetail.cartModal")
   const thumbnail = product.thumbnail || product.images?.[0]?.url
 
-  // isPending 동안엔 사용자가 ESC/배경 클릭으로 닫지 못하게 (요청 도중 닫혀서 결과 못 보는 상황 방지)
   const handleOpenChange = (next: boolean) => {
     if (isPending && !next) return
     onOpenChange(next)
@@ -39,12 +40,10 @@ export default function CartAddedModal({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
-            {isPending ? "장바구니에 담는 중" : "장바구니 담기 완료"}
+            {isPending ? t("addingTitle") : t("addedTitle")}
           </DialogTitle>
           <DialogDescription className="sr-only">
-            {isPending
-              ? "장바구니에 상품을 담고 있습니다"
-              : "상품이 장바구니에 담겼습니다"}
+            {isPending ? t("addingDesc") : t("addedDesc")}
           </DialogDescription>
         </DialogHeader>
 
@@ -59,7 +58,7 @@ export default function CartAddedModal({
             />
           )}
           <span className="flex-1 text-sm">
-            {isPending ? "장바구니에 담는 중..." : "장바구니에 상품을 담았어요"}
+            {isPending ? t("addingBody") : t("addedBody")}
           </span>
           {isPending ? (
             <span
@@ -67,14 +66,14 @@ export default function CartAddedModal({
               aria-live="polite"
             >
               <Loader2 className="h-4 w-4 animate-spin" />
-              <span className="sr-only">처리 중</span>
+              <span className="sr-only">{t("processingSr")}</span>
             </span>
           ) : (
             <LocalizedClientLink
               href={"/cart"}
               className="text-primary hover:text-primary/80 text-sm font-medium whitespace-nowrap"
             >
-              바로가기
+              {t("goToCart")}
             </LocalizedClientLink>
           )}
         </div>

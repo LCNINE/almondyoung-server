@@ -4,6 +4,7 @@ import { useCart } from "@/contexts/cart-context"
 import { useUser } from "@/contexts/user-context"
 import { useSearchSheetStore } from "@hooks/ui/use-search-sheet-store"
 import { Search, ShoppingCart, User } from "lucide-react"
+import { useTranslations } from "next-intl"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 // import { Bell } from "lucide-react"
@@ -12,6 +13,7 @@ export function AccountMenu() {
   const { countryCode } = useParams()
   const { user } = useUser()
   const { itemCount: cartItemCount } = useCart()
+  const t = useTranslations("account")
   // todo: 알림 기능 활성화 시 복구
   // const hasNotification = true
 
@@ -24,7 +26,7 @@ export function AccountMenu() {
         <AccountMenuItem
           onClick={onOpen}
           icon={<Search className="h-6 w-6 md:h-8 md:w-8" color="white" />}
-          label="검색"
+          label={t("search")}
         />
       </div>
 
@@ -32,7 +34,7 @@ export function AccountMenu() {
       <AccountMenuItem
         href={`/${countryCode}/cart`}
         icon={<ShoppingCart className="h-6 w-6 md:h-8 md:w-8" color="white" />}
-        label="장바구니"
+        label={t("cart")}
         badgeCount={cartItemCount}
       />
 
@@ -41,7 +43,7 @@ export function AccountMenu() {
         <AccountMenuItem
           href={user ? `/${countryCode}/mypage` : `/${countryCode}/login`}
           icon={<User className="h-6 w-6 md:h-8 md:w-8" color="white" />}
-          label={user ? "마이" : "로그인"}
+          label={user ? t("myPage") : t("login")}
         />
       </div>
 

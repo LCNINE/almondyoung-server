@@ -2,10 +2,11 @@
 
 import Image from "next/image"
 import { Star, X, Camera, Plus } from "lucide-react"
-import { useRef, useState } from "react"
+import { useMemo, useRef, useState } from "react"
 import { useForm, useWatch, type Control } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
+import { useTranslations } from "next-intl"
 import {
   Card,
   CardHeader,
@@ -48,19 +49,19 @@ interface PhotoPreview {
   previewUrl: string
 }
 
-function createReviewSchema(minContentLength: number) {
+function createReviewSchema(
+  minContentLength: number,
+  messages: { ratingRequired: string; minLength: string; maxLength: string }
+) {
   return z.object({
     rating: z
-      .number({ error: "별점을 선택해주세요." })
-      .min(1, "별점을 선택해주세요.")
+      .number({ error: messages.ratingRequired })
+      .min(1, messages.ratingRequired)
       .max(5),
     text: z
       .string()
-      .min(minContentLength, `최소 ${minContentLength}자 이상 입력해주세요.`)
-      .max(
-        MAX_CONTENT_LENGTH,
-        `최대 ${MAX_CONTENT_LENGTH.toLocaleString()}자까지 입력 가능합니다.`
-      ),
+      .min(minContentLength, messages.minLength)
+      .max(MAX_CONTENT_LENGTH, messages.maxLength),
   })
 }
 
@@ -88,6 +89,8 @@ export const ReviewFormCard = ({
   onCancel,
   isSaving = false,
 }: ReviewFormCardProps) => {
+  const t = useTranslations("mypage.reviews")
+  const tForm = useTranslations("mypage.reviews.form")
   const [hoverRating, setHoverRating] = useState(0)
   const [photos, setPhotos] = useState<PhotoPreview[]>([])
   const [isUploading, setIsUploading] = useState(false)
@@ -103,8 +106,18 @@ export const ReviewFormCard = ({
       ? photoPolicy.rewardAmount - textPolicy.rewardAmount
       : (photoPolicy?.rewardAmount ?? 0)
 
+  const schema = useMemo(
+    () =>
+      createReviewSchema(minContentLength, {
+        ratingRequired: tForm("ratingRequired"),
+        minLength: tForm("minLength", { min: minContentLength }),
+        maxLength: tForm("maxLength", { max: MAX_CONTENT_LENGTH.toLocaleString() }),
+      }),
+    [minContentLength, tForm]
+  )
+
   const form = useForm<ReviewFormValues>({
-    resolver: zodResolver(createReviewSchema(minContentLength)),
+    resolver: zodResolver(schema),
     mode: "onChange",
     defaultValues: {
       rating: 0,
@@ -164,7 +177,7 @@ export const ReviewFormCard = ({
         mediaFileIds = await uploadPhotos()
       } catch (error) {
         setIsUploading(false)
-        toast.error("사진 업로드에 실패했습니다. 다시 시도해주세요.")
+        toast.error(t("uploadFail"))
         return
       }
       setIsUploading(false)
@@ -183,7 +196,7 @@ export const ReviewFormCard = ({
           <figure className="relative h-20 w-20 shrink-0 overflow-hidden rounded-md border border-[#F0F0F0]">
             <Image
               src={getThumbnailUrl(review.productImage)}
-              alt={`${review.productName} 썸네일`}
+              alt={t("thumbnailAlt", { name: review.productName })}
               width={80}
               height={80}
               className="object-cover"
@@ -200,7 +213,7 @@ export const ReviewFormCard = ({
             variant="ghost"
             size="icon"
             onClick={onCancel}
-            aria-label="리뷰 작성 취소"
+            aria-label={t("writeCancelAria")}
             className="h-8 w-8 shrink-0 text-gray-400"
           >
             <X className="h-5 w-5" />
@@ -224,7 +237,7 @@ export const ReviewFormCard = ({
                       <div
                         className="flex items-center gap-1.5"
                         role="radiogroup"
-                        aria-label="별점 평가"
+                        aria-label={t("ratingAria")}
                       >
                         <div
                           className="flex gap-0.5"
@@ -240,7 +253,7 @@ export const ReviewFormCard = ({
                                 type="button"
                                 role="radio"
                                 aria-checked={field.value === ratingValue}
-                                aria-label={`${ratingValue}점`}
+                                aria-label={t("ratingPoint", { value: ratingValue })}
                                 onClick={() => field.onChange(ratingValue)}
                                 onMouseEnter={() => setHoverRating(ratingValue)}
                                 className="cursor-pointer border-none bg-transparent p-0"
@@ -281,18 +294,21 @@ export const ReviewFormCard = ({
                             field.onChange(e.target.value)
                           }
                         }}
-                        placeholder={`최소 ${minContentLength}자 이상 입력해주세요.`}
+                        placeholder={tForm("placeholder", { min: minContentLength })}
                         className="min-h-[120px]"
                       />
                     </FormControl>
                     <div className="mt-1 flex items-center justify-between">
                       {textPolicy ? (
                         <p className="text-[12px] text-gray-400">
-                          텍스트 리뷰{" "}
-                          <span className="font-medium text-[#FF9500]">
-                            {textPolicy.rewardAmount.toLocaleString()}원 적립
-                          </span>{" "}
-                          (최소 {minContentLength}자)
+                          {tForm.rich("textRewardHint", {
+                            min: minContentLength,
+                            strong: () => (
+                              <span className="font-medium text-[#FF9500]">
+                                {tForm("textRewardAmount", { amount: textPolicy.rewardAmount.toLocaleString() })}
+                              </span>
+                            ),
+                          })}
                         </p>
                       ) : (
                         <FormMessage />
@@ -326,14 +342,17 @@ export const ReviewFormCard = ({
                   >
                     <Camera className="mb-1 h-6 w-6 text-gray-500" />
                     <p className="text-[15px] font-semibold text-gray-800">
-                      사진 첨부하기
+                      {tForm("addPhoto")}
                     </p>
                     {photoPolicy && photoBonusAmount > 0 && (
                       <p className="mt-0.5 text-[13px] text-gray-500">
-                        첨부하면{" "}
-                        <span className="font-semibold text-emerald-500">
-                          {photoBonusAmount.toLocaleString()}원 추가 적립!
-                        </span>
+                        {tForm.rich("addPhotoHint", {
+                          strong: () => (
+                            <span className="font-semibold text-emerald-500">
+                              {tForm("photoBonusAmount", { amount: photoBonusAmount.toLocaleString() })}
+                            </span>
+                          ),
+                        })}
                       </p>
                     )}
                   </button>
@@ -341,14 +360,16 @@ export const ReviewFormCard = ({
                   <div className="rounded-lg border border-gray-200 p-3">
                     <div className="mb-2 flex items-center justify-between">
                       <p className="text-[13px] font-medium text-gray-700">
-                        사진{" "}
-                        <span className="text-[#FF9500]">{photos.length}</span>/
-                        {MAX_PHOTO_COUNT}
+                        {tForm.rich("photoCount", {
+                          strong: () => (
+                            <span className="text-[#FF9500]">{photos.length}</span>
+                          ),
+                          max: MAX_PHOTO_COUNT,
+                        })}
                       </p>
                       {photoPolicy && photoBonusAmount > 0 && (
                         <p className="text-[12px] font-medium text-emerald-500">
-                          포토리뷰 {photoBonusAmount.toLocaleString()}원 추가
-                          적립!
+                          {tForm("photoBonusInline", { amount: photoBonusAmount.toLocaleString() })}
                         </p>
                       )}
                     </div>
@@ -370,7 +391,7 @@ export const ReviewFormCard = ({
                           >
                             <Image
                               src={photo.previewUrl}
-                              alt="리뷰 사진"
+                              alt={tForm("photoAlt")}
                               fill
                               className="object-cover"
                               sizes="80px"
@@ -400,8 +421,7 @@ export const ReviewFormCard = ({
               </div>
 
               <p className="text-[11px] leading-relaxed text-red-400">
-                최초 등록된 리뷰에 첨부된 사진 기준으로 포인트 적립되며, 상품과
-                무관한 첨부파일은 삭제 및 적립혜택이 회수됩니다.
+                {tForm("policyNotice")}
               </p>
 
               <div className="flex justify-end gap-2">
@@ -411,14 +431,14 @@ export const ReviewFormCard = ({
                   onClick={onCancel}
                   disabled={isBusy}
                 >
-                  취소
+                  {tForm("cancel")}
                 </Button>
                 <CustomButton
                   type="submit"
                   disabled={isBusy}
                   isLoading={isUploading || isBusy}
                 >
-                  등록
+                  {tForm("submit")}
                 </CustomButton>
               </div>
             </form>
