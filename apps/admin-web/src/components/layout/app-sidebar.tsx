@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import { getMenuById, type MenuItem } from '@/lib/utils/menu';
 import { Badge } from '@/components/ui/badge';
 import { useOrderStats } from '@/lib/services/orders';
+import { useAdminUserCount } from '@/lib/services/users';
 import {
   Sidebar,
   SidebarContent,
@@ -73,6 +74,7 @@ export function AppSidebar({
   };
 
   const { data: orderStats } = useOrderStats();
+  const { data: adminUserCount } = useAdminUserCount();
 
   // 특별한 정보 표시 (예: 주문/출고관리)
   const getMenuInfo = () => {
@@ -98,7 +100,7 @@ export function AppSidebar({
                 등록된 계정 수
               </span>
               <Badge variant="default" className="bg-sidebar-primary">
-                14
+                {adminUserCount ?? '-'}
               </Badge>
             </div>
           </div>
