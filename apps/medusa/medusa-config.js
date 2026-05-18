@@ -222,6 +222,10 @@ module.exports = defineConfig({
     },
   ],
   admin: {
+    // Admin UI fetch base — Vite inlines this at build time.
+    // Without it the bundle ships with the default `http://localhost:9000`,
+    // which mixed-content-blocks once the page is served over HTTPS.
+    backendUrl: process.env.MEDUSA_BACKEND_URL,
     // Custom Vite config is needed because the admin bundler sometimes
     // fails to resolve `@medusajs/admin-sdk` during Docker builds.
     // Point directly to the installed package to avoid rollup resolution errors.

@@ -293,6 +293,7 @@ export function setup(infra: SharedInfra) {
     scaling: { min: 2, max: 4 },
     buildArgs: {
       VITE_USER_SERVICE_URL: idpUserServiceUrl,
+      MEDUSA_BACKEND_URL: url("medusa"),
     },
     loadBalancerHealth: {
       "9000/http": {
