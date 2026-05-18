@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import Link from 'next/link';
+import { MobileNav } from './mobile-nav';
 import { useSignout } from '@/lib/services/auth';
 import { useMe, useMyRoles } from '@/lib/services/users';
 import { getFirstPagePath, mainMenus } from '@/lib/utils/menu';
@@ -51,10 +52,11 @@ const iconMap = {
 
 interface HeaderProps {
   activeMenu: string;
+  activeItem?: string;
   onMenuChange: (menuId: string) => void;
 }
 
-export function Header({ activeMenu, onMenuChange }: HeaderProps) {
+export function Header({ activeMenu, activeItem, onMenuChange }: HeaderProps) {
   const router = useRouter();
 
   const { mutateAsync: signout, isPending: isSigningOut } = useSignout();
@@ -152,14 +154,21 @@ export function Header({ activeMenu, onMenuChange }: HeaderProps) {
 
   return (
     <header className="bg-white border-b border-gray-200 shadow-sm">
-      <div className="flex items-center justify-between px-6 py-4">
-        {/* 로고(임시로 텍스트로) */}
-        <Link href="/" className="flex items-center mr-6 shrink-0">
+      <div className="flex items-center justify-between px-4 py-3 lg:px-6 lg:py-4">
+        {/* 햄버거 (모바일) */}
+        <MobileNav
+          activeMenu={activeMenu}
+          activeItem={activeItem}
+          onMenuChange={onMenuChange}
+        />
+
+        {/* 로고 */}
+        <Link href="/" className="flex items-center mx-3 lg:mr-6 lg:mx-0 shrink-0">
           <span className="text-lg font-bold text-blue-600 tracking-tight">LCNINE</span>
         </Link>
 
-        {/* 메인 메뉴 */}
-        <nav className="flex items-center space-x-3 flex-1">
+        {/* 메인 메뉴 (데스크톱) */}
+        <nav className="hidden lg:flex items-center space-x-3 flex-1">
           {mainMenus.map((menu) => {
             const IconComponent = iconMap[menu.icon as keyof typeof iconMap];
             const isActive = activeMenu === menu.id;
