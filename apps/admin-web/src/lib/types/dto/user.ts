@@ -120,6 +120,11 @@ interface ReplaceUserRolesDto {
   roleIds: string[];
 }
 
+interface UpdateMyProfileDto {
+  username?: string;
+  nickname?: string;
+}
+
 export type {
   CreateAdminAccountDto,
   User,
@@ -133,4 +138,5 @@ export type {
   UpdateRoleDto,
   AdminUserRolesResponseDto,
   ReplaceUserRolesDto,
+  UpdateMyProfileDto,
 };
