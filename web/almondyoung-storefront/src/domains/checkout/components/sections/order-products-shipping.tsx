@@ -20,6 +20,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { deleteLineItem, updateLineItem } from "@/lib/api/medusa/cart"
+import { FreeShippingProgress } from "@/domains/cart/components/free-shipping-progress"
 import { isWelcomeMembershipProduct } from "@/lib/utils/welcome-membership"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { calcItemPrice, formatPrice } from "@/lib/utils/price-utils"
@@ -172,8 +173,16 @@ export const OrderProductsSection = ({
           ))}
         </div>
 
-        {/* 배송비 */}
-        <div className="border-t border-gray-100 px-[14px] py-3 lg:px-10">
+        <div className="border-t border-gray-100 px-[14px] py-4 lg:px-10">
+          {selectedIds.size > 0 && (
+            <FreeShippingProgress
+              className="mb-3"
+              itemSubtotal={products?.reduce(
+                (sum, p) => (selectedIds.has(p.id) ? sum + (p.unit_price ?? 0) * (p.quantity ?? 0) : sum),
+                0
+              ) ?? 0}
+            />
+          )}
           <p className="text-right text-[12px] text-gray-600 lg:text-sm">
             배송비 {formatPrice(shipping)}원
           </p>

@@ -9,6 +9,7 @@ import { Loader2 } from "lucide-react"
 import { useMemo } from "react"
 
 import PriceErrorNotice from "../components/price-error-notice"
+import { FreeShippingProgress } from "../components/free-shipping-progress"
 
 type SummaryProps = {
   cart: HttpTypes.StoreCart & {
@@ -40,6 +41,10 @@ export default function Summary({
   return (
     <div className="flex flex-col gap-y-4">
       <h2 className="text-2xl font-semibold">주문 예상 금액</h2>
+
+      {selectedCount > 0 && (
+        <FreeShippingProgress itemSubtotal={totalsPreview.item_subtotal ?? 0} />
+      )}
 
       <Divider />
       <CartTotals totals={totalsPreview} />
