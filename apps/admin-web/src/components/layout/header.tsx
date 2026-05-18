@@ -16,6 +16,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import Link from 'next/link';
 import { useSignout } from '@/lib/services/auth';
 import { useMe, useMyRoles } from '@/lib/services/users';
 import { getFirstPagePath, mainMenus } from '@/lib/utils/menu';
@@ -152,8 +153,13 @@ export function Header({ activeMenu, onMenuChange }: HeaderProps) {
   return (
     <header className="bg-white border-b border-gray-200 shadow-sm">
       <div className="flex items-center justify-between px-6 py-4">
+        {/* 로고(임시로 텍스트로) */}
+        <Link href="/" className="flex items-center mr-6 shrink-0">
+          <span className="text-lg font-bold text-blue-600 tracking-tight">LCNINE</span>
+        </Link>
+
         {/* 메인 메뉴 */}
-        <nav className="flex items-center space-x-3">
+        <nav className="flex items-center space-x-3 flex-1">
           {mainMenus.map((menu) => {
             const IconComponent = iconMap[menu.icon as keyof typeof iconMap];
             const isActive = activeMenu === menu.id;
