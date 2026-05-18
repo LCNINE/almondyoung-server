@@ -1,6 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional, IsEnum, MinLength, IsUUID } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsString, IsOptional, IsEnum, IsNumber, MinLength, IsUUID, MaxLength } from 'class-validator';
 
 export class UpdateProductVariantDto {
   @ApiProperty({
@@ -16,7 +15,7 @@ export class UpdateProductVariantDto {
   @ApiProperty({ description: '품목 이미지 ID', type: String, required: false })
   @IsOptional()
   @IsUUID()
-  imageId: string;
+  imageId?: string;
 
   @ApiProperty({
     description: '변형 상태',
@@ -26,6 +25,17 @@ export class UpdateProductVariantDto {
   @IsOptional()
   @IsEnum(['active', 'inactive'])
   status?: 'active' | 'inactive';
+
+  @ApiProperty({ description: '표시 순서', required: false })
+  @IsOptional()
+  @IsNumber()
+  displayOrder?: number;
+
+  @ApiProperty({ description: '외부 식별자 (채널 어댑터에서 바코드로 매핑)', required: false })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  variantCode?: string;
 }
 
 export class UpdateVariantStatusDto {
