@@ -1,5 +1,6 @@
 "use client"
 
+import { LanguageSwitcher } from "@/components/layout/header/language-switcher"
 import { useCart } from "@/contexts/cart-context"
 import { useUser } from "@/contexts/user-context"
 import { useSearchSheetStore } from "@hooks/ui/use-search-sheet-store"
@@ -21,6 +22,11 @@ export function AccountMenu() {
 
   return (
     <div className="flex items-center gap-[clamp(0.5px,2vw,1.5rem)]">
+      {/* 모바일 언어 스위치 */}
+      <div className="flex md:hidden">
+        <LanguageSwitcher variant="iconButton" />
+      </div>
+
       {/* 모바일 검색 */}
       <div className="flex md:hidden">
         <AccountMenuItem

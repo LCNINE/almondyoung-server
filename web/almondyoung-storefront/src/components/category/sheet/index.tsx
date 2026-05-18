@@ -1,6 +1,5 @@
 "use client"
 
-import { LanguageSwitcher } from "@/components/layout/header/language-switcher"
 import {
   Sheet,
   SheetContent,
@@ -76,12 +75,9 @@ export function CategorySheet({ trigger }: CategorySheetProps) {
          * 각 탭별 컨텐츠 영역을 switch/render 하는 구조로 변경.
          */}
         <SheetHeader className="border-b border-gray-100 px-5 py-4 text-left">
-          <div className="flex items-center justify-between">
-            <SheetTitle className="text-[17px] font-bold">
-              {t("title")}
-            </SheetTitle>
-            <LanguageSwitcher variant="sheet" />
-          </div>
+          <SheetTitle className="text-[17px] font-bold">
+            {t("title")}
+          </SheetTitle>
           <SheetDescription className="sr-only">{t("title")}</SheetDescription>
         </SheetHeader>
 
