@@ -99,15 +99,13 @@ export class BillingReader {
       .from(schema.subscriptionEntitlement)
       .innerJoin(
         schema.subscriptionContracts,
-        and(
-          eq(schema.subscriptionContracts.userId, schema.subscriptionEntitlement.userId),
-          eq(schema.subscriptionContracts.autoRenewal, false),
-          eq(schema.subscriptionContracts.isVoided, false),
-        ),
+        eq(schema.subscriptionContracts.userId, schema.subscriptionEntitlement.userId),
       )
       .where(
         and(
           eq(schema.subscriptionEntitlement.isCurrent, true),
+          eq(schema.subscriptionContracts.autoRenewal, false),
+          eq(schema.subscriptionContracts.isVoided, false),
           lt(schema.subscriptionEntitlement.endsAt, today),
           notInArray(schema.subscriptionContracts.status, ['EXPIRED', 'CANCELLED']),
         ),
@@ -115,11 +113,10 @@ export class BillingReader {
   }
 
   /**
-   * autoRenewal=true인데 endsAt이 지나고 dunning 항목도 없는 "stuck" 권한 조회.
+   * autoRenewal=true인데 endsAt이 지나고 dunning 항목도 없는 "stuck" 권한 조회
    *
-   * 발생 원인: BillingCharge Kafka 커맨드 발행 후 wallet이 결제 결과 이벤트를
-   * 끝내 발행하지 못한 경우(wallet 장애, Kafka 단절 등).
-   * 이 경우 nextBillingDate만 앞당겨지고 entitlement는 isCurrent=true로 남는다.
+   * BillingCharge Kafka 커맨드 발행 후 wallet이 결제 결과 이벤트를 발행하지 못한 경우(wallet 장애, Kafka 단절 등)
+   * 이 경우 nextBillingDate만 앞당겨지고 entitlement는 isCurrent=true로 남음
    */
   async findStuckEntitlements(today: string): Promise<{ entitlementId: string; userId: string; contractId: string }[]> {
     return this.dbService.db
@@ -131,11 +128,7 @@ export class BillingReader {
       .from(schema.subscriptionEntitlement)
       .innerJoin(
         schema.subscriptionContracts,
-        and(
-          eq(schema.subscriptionContracts.userId, schema.subscriptionEntitlement.userId),
-          eq(schema.subscriptionContracts.autoRenewal, true),
-          eq(schema.subscriptionContracts.isVoided, false),
-        ),
+        eq(schema.subscriptionContracts.userId, schema.subscriptionEntitlement.userId),
       )
       .leftJoin(
         schema.membershipDunningQueue,
@@ -144,6 +137,8 @@ export class BillingReader {
       .where(
         and(
           eq(schema.subscriptionEntitlement.isCurrent, true),
+          eq(schema.subscriptionContracts.autoRenewal, true),
+          eq(schema.subscriptionContracts.isVoided, false),
           lt(schema.subscriptionEntitlement.endsAt, today),
           notInArray(schema.subscriptionContracts.status, ['EXPIRED', 'CANCELLED']),
           isNull(schema.membershipDunningQueue.id),
