@@ -204,22 +204,6 @@ export interface CreateVariantDto {
   };
 }
 
-export interface UpdateVariantDto {
-  name?: string;
-  sku?: string;
-  optionKey?: Record<string, string>;
-  price?: number;
-  status?: ProductStatus;
-  images?: string[];
-  specifications?: Record<string, string>;
-  inventory?: {
-    trackQuantity?: boolean;
-    allowBackorder?: boolean;
-    minOrderQuantity?: number;
-    maxOrderQuantity?: number;
-  };
-}
-
 /**
  * @deprecated 백엔드 `VariantWithPriceDto` 응답과 어긋남.
  * `name`, `sku`, `optionKey`, `images`, `specifications`, `inventory` 는 백엔드 응답에 존재하지 않음 (phantom 필드).
@@ -266,13 +250,6 @@ export interface VariantsResponseDto {
   hasPrev: boolean;
 }
 
-export interface BulkUpdateVariantDto {
-  variants: Array<{
-    id: string;
-    updates: UpdateVariantDto;
-  }>;
-}
-
 export interface VariantPriceDto {
   variantId: string;
   price: number;
@@ -284,10 +261,6 @@ export interface VariantPriceDto {
     description: string;
     adjustment: number;
   }>;
-}
-
-export interface UpdateVariantStatusDto {
-  status: ProductStatus;
 }
 
 // ===== 판매 채널 관련 =====

@@ -15,9 +15,6 @@ import type {
   CreateMasterDto,
   UpdateMasterDto,
   UpdatePricingStrategyDto,
-  UpdateVariantDto,
-  BulkUpdateVariantDto,
-  UpdateVariantStatusDto,
   CreateChannelProductDto,
   UpdateChannelProductDto,
   UpdateChannelProductNameDto,
@@ -222,65 +219,6 @@ export const useUpdatePricingStrategy = () => {
       });
       queryClient.invalidateQueries({
         queryKey: productQueryKeys.masterPricePreview(variables.id),
-      });
-    },
-  });
-};
-
-// ===== 제품 변형 관련 뮤테이션 =====
-
-/**
- * 제품 변형 수정
- */
-export const useUpdateVariant = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: UpdateVariantDto }) =>
-      products.variants.update(id, data),
-    onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: productQueryKeys.variants,
-      });
-      queryClient.invalidateQueries({
-        queryKey: productQueryKeys.variant(variables.id),
-      });
-    },
-  });
-};
-
-/**
- * 제품 변형 일괄 수정
- */
-export const useBulkUpdateVariants = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (data: BulkUpdateVariantDto) =>
-      products.variants.bulkUpdate(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: productQueryKeys.variants,
-      });
-    },
-  });
-};
-
-/**
- * 제품 변형 상태 수정
- */
-export const useUpdateVariantStatus = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: UpdateVariantStatusDto }) =>
-      products.variants.updateStatus(id, data),
-    onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: productQueryKeys.variants,
-      });
-      queryClient.invalidateQueries({
-        queryKey: productQueryKeys.variant(variables.id),
       });
     },
   });

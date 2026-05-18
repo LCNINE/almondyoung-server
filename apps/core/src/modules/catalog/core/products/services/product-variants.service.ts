@@ -9,13 +9,16 @@ import {
   productVariants,
   productMasterVersions,
   productMasterVariants,
+  productMasterPricingRules,
+  pricingRules,
   productOptionGroups,
   productOptionValues,
   productOptionGroupDisplays,
   productOptionValueDisplays,
   variantOptionValues,
 } from '../../../schema/catalog.schema';
-import { eq, and, or, like, ilike, count, asc, desc, sql, inArray, SQL, isNull } from 'drizzle-orm';
+import { eq, ne, and, or, like, ilike, count, asc, desc, sql, inArray, SQL, isNull } from 'drizzle-orm';
+import { v7 as uuidv7 } from 'uuid';
 import { UpdateProductVariantDto, UpdateVariantBulkDto } from '../dto';
 import { ProductVersionsService } from './product-versions.service';
 import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
@@ -341,147 +344,245 @@ export class ProductVariantsService {
     }, tx);
   }
 
-  async updateVariantStatus(variantId: string, status: string, tx?: DbTransaction): Promise<void> {
-    if (!variantId) {
-      throw new BadRequestException('Variant ID is required');
+  /**
+   * Draft 버전 컨텍스트에서 variant 를 편집한다. variantId 가 draft 외 다른 버전과
+   * 공유 매핑되어 있으면 copy-on-write 로 새 row 를 만들고 draft 의 정션만 repoint.
+   * 같은 트랜잭션 내에서 그 variantId 를 scopeTargetIds 에 포함하는 pricing rule 도
+   * cascading CoW.
+   *
+   * docs/adr/0004-variant-draft-scoped-edit-cow.md.
+   *
+   * @returns 편집된 variant 의 (CoW 시 새) id 와 CoW 발생 여부
+   */
+  async updateVariantInDraft(
+    masterId: string,
+    versionId: string,
+    variantId: string,
+    data: UpdateProductVariantDto,
+    tx?: DbTransaction,
+  ): Promise<{ variantId: string; cowed: boolean }> {
+    if (!masterId || !versionId || !variantId) {
+      throw new BadRequestException('masterId, versionId, variantId are required');
     }
 
-    if (!status) {
-      throw new BadRequestException('Status is required');
-    }
+    return this.inTx(async (trx) => {
+      const version = await this.productVersionsService.getVersionById(versionId, trx);
+      if (version.masterId !== masterId) {
+        throw new BadRequestException(`Version ${versionId} does not belong to master ${masterId}`);
+      }
+      if (version.status !== 'draft') {
+        throw new BadRequestException('Variants can only be edited on draft versions');
+      }
 
-    const validStatuses = ['active', 'inactive'];
-    if (!validStatuses.includes(status)) {
-      throw new BadRequestException(`Invalid status: ${status}. Valid statuses are: ${validStatuses.join(', ')}`);
-    }
+      const [mapping] = await trx
+        .select()
+        .from(productMasterVariants)
+        .where(
+          and(
+            eq(productMasterVariants.masterId, masterId),
+            eq(productMasterVariants.versionId, versionId),
+            eq(productMasterVariants.variantId, variantId),
+          ),
+        )
+        .limit(1);
+      if (!mapping) {
+        throw new NotFoundException(`Variant ${variantId} is not mapped to version ${versionId}`);
+      }
 
-    const client = this.getClient(tx);
+      const [sharedMapping] = await trx
+        .select({ versionId: productMasterVariants.versionId })
+        .from(productMasterVariants)
+        .where(
+          and(
+            eq(productMasterVariants.variantId, variantId),
+            ne(productMasterVariants.versionId, versionId),
+          ),
+        )
+        .limit(1);
 
-    const exists = await this.existsVariant(variantId, tx);
-    if (!exists) {
-      throw new NotFoundException(`Variant not found: ${variantId}`);
-    }
+      if (!sharedMapping) {
+        await this._applyVariantUpdate(variantId, data, trx);
+        return { variantId, cowed: false };
+      }
 
-    await client
-      .update(productVariants)
-      .set({
-        status,
-        updatedAt: new Date(),
-      })
-      .where(eq(productVariants.id, variantId));
+      const newVariantId = await this._cloneVariant(variantId, trx);
+      await this._cloneVariantOptionValues(variantId, newVariantId, trx);
+
+      await trx
+        .update(productMasterVariants)
+        .set({ variantId: newVariantId })
+        .where(
+          and(
+            eq(productMasterVariants.masterId, masterId),
+            eq(productMasterVariants.versionId, versionId),
+            eq(productMasterVariants.variantId, variantId),
+          ),
+        );
+
+      await this._cascadeVariantCoWToPricingRules(masterId, versionId, variantId, newVariantId, trx);
+      await this._applyVariantUpdate(newVariantId, data, trx);
+
+      return { variantId: newVariantId, cowed: true };
+    }, tx);
   }
 
-  async bulkUpdateVariantStatus(variantIds: string[], status: string, tx?: DbTransaction): Promise<void> {
-    if (!variantIds || variantIds.length === 0) {
-      throw new BadRequestException('Variant IDs are required');
-    }
-
-    if (!status) {
-      throw new BadRequestException('Status is required');
-    }
-
-    const validStatuses = ['active', 'inactive'];
-    if (!validStatuses.includes(status)) {
-      throw new BadRequestException(`Invalid status: ${status}. Valid statuses are: ${validStatuses.join(', ')}`);
-    }
-
-    const client = this.getClient(tx);
-
-    const existingVariants = await client
-      .select({ id: productVariants.id })
-      .from(productVariants)
-      .where(inArray(productVariants.id, variantIds));
-
-    const existingIds = existingVariants.map((v) => v.id);
-    const missingIds = variantIds.filter((id) => !existingIds.includes(id));
-
-    if (missingIds.length > 0) {
-      throw new NotFoundException(`Variants not found: ${missingIds.join(', ')}`);
-    }
-
-    await client
-      .update(productVariants)
-      .set({
-        status,
-        updatedAt: new Date(),
-      })
-      .where(inArray(productVariants.id, variantIds));
-  }
-
-  async updateVariant(variantId: string, data: UpdateProductVariantDto, tx?: DbTransaction): Promise<ProductVariant> {
-    if (!variantId) {
-      throw new BadRequestException('Variant ID is required');
-    }
-
-    const client = this.getClient(tx);
-
-    const exists = await this.existsVariant(variantId, tx);
-    if (!exists) {
-      throw new NotFoundException(`Variant not found: ${variantId}`);
-    }
-
-    const updateData = {
-      ...data,
-      updatedAt: new Date(),
-    };
-
-    const result = await client
-      .update(productVariants)
-      .set(updateData)
-      .where(eq(productVariants.id, variantId))
-      .returning();
-
-    if (result.length === 0) {
-      throw new NotFoundException(`Failed to update variant: ${variantId}`);
-    }
-
-    return result[0];
-  }
-
-  async bulkUpdateVariants(data: UpdateVariantBulkDto, tx?: DbTransaction): Promise<void> {
-    if (!data.updates || data.updates.length === 0) {
+  async bulkUpdateVariantsInDraft(
+    masterId: string,
+    versionId: string,
+    updates: Array<{ id: string } & UpdateProductVariantDto>,
+    tx?: DbTransaction,
+  ): Promise<Array<{ originalId: string; variantId: string; cowed: boolean }>> {
+    if (!updates || updates.length === 0) {
       throw new BadRequestException('Updates are required');
     }
 
-    const client = this.getClient(tx);
+    return this.inTx(async (trx) => {
+      const results: Array<{ originalId: string; variantId: string; cowed: boolean }> = [];
+      for (const update of updates) {
+        const { id, ...data } = update;
+        const result = await this.updateVariantInDraft(masterId, versionId, id, data, trx);
+        results.push({ originalId: id, ...result });
+      }
+      return results;
+    }, tx);
+  }
 
-    const existingVariants = await client
-      .select({ id: productVariants.id })
+  private async _applyVariantUpdate(
+    variantId: string,
+    data: UpdateProductVariantDto,
+    tx: DbTransaction,
+  ): Promise<void> {
+    const updateData: Partial<typeof productVariants.$inferInsert> = { updatedAt: new Date() };
+    if (data.variantName !== undefined) updateData.variantName = data.variantName;
+    if (data.imageId !== undefined) updateData.imageId = data.imageId;
+    if (data.status !== undefined) updateData.status = data.status;
+    if (data.displayOrder !== undefined) updateData.displayOrder = data.displayOrder;
+    if (data.variantCode !== undefined) updateData.variantCode = data.variantCode;
+
+    await tx.update(productVariants).set(updateData).where(eq(productVariants.id, variantId));
+  }
+
+  private async _cloneVariant(sourceVariantId: string, tx: DbTransaction): Promise<string> {
+    const [source] = await tx
+      .select()
       .from(productVariants)
+      .where(eq(productVariants.id, sourceVariantId))
+      .limit(1);
+    if (!source) {
+      throw new NotFoundException(`Variant ${sourceVariantId} not found`);
+    }
+    const newId = uuidv7();
+    await tx.insert(productVariants).values({
+      id: newId,
+      variantName: source.variantName,
+      imageId: source.imageId,
+      displayOrder: source.displayOrder,
+      status: source.status,
+      isDefault: source.isDefault,
+      variantCode: source.variantCode,
+    });
+    return newId;
+  }
+
+  private async _cloneVariantOptionValues(
+    sourceVariantId: string,
+    targetVariantId: string,
+    tx: DbTransaction,
+  ): Promise<void> {
+    const sources = await tx
+      .select({ optionValueId: variantOptionValues.optionValueId })
+      .from(variantOptionValues)
+      .where(eq(variantOptionValues.variantId, sourceVariantId));
+
+    if (sources.length === 0) return;
+
+    await tx.insert(variantOptionValues).values(
+      sources.map((s) => ({
+        variantId: targetVariantId,
+        optionValueId: s.optionValueId,
+      })),
+    );
+  }
+
+  /**
+   * Variant CoW 발생 시, 같은 draft 의 pricing rule 중 scopeType='variants' 이고
+   * scopeTargetIds 에 oldVariantId 를 포함하는 룰들을 cascading CoW.
+   * scopeType='with_option' 룰은 옵션값 기반이라 영향 없음.
+   */
+  private async _cascadeVariantCoWToPricingRules(
+    masterId: string,
+    versionId: string,
+    oldVariantId: string,
+    newVariantId: string,
+    tx: DbTransaction,
+  ): Promise<void> {
+    const draftRules = await tx
+      .select({
+        ruleId: pricingRules.id,
+        layer: pricingRules.layer,
+        order: pricingRules.order,
+        scopeType: pricingRules.scopeType,
+        scopeTargetIds: pricingRules.scopeTargetIds,
+        operationType: pricingRules.operationType,
+        operationValue: pricingRules.operationValue,
+        minQuantity: pricingRules.minQuantity,
+      })
+      .from(productMasterPricingRules)
+      .innerJoin(pricingRules, eq(productMasterPricingRules.pricingRuleId, pricingRules.id))
       .where(
-        inArray(
-          productVariants.id,
-          data.updates.map((u) => u.id),
+        and(
+          eq(productMasterPricingRules.masterId, masterId),
+          eq(productMasterPricingRules.versionId, versionId),
+          eq(pricingRules.scopeType, 'variants'),
         ),
       );
 
-    const existingIds = existingVariants.map((v) => v.id);
-    const missingIds = data.updates.map((u) => u.id).filter((id) => !existingIds.includes(id));
+    for (const rule of draftRules) {
+      const targets = rule.scopeTargetIds ?? [];
+      if (!targets.includes(oldVariantId)) continue;
 
-    if (missingIds.length > 0) {
-      throw new NotFoundException(`Variants not found: ${missingIds.join(', ')}`);
-    }
+      const newTargets = targets.map((id) => (id === oldVariantId ? newVariantId : id));
 
-    const validStatuses = ['active', 'inactive'];
-    if (data.updates.map((u) => u.status).some((status) => status && !validStatuses.includes(status))) {
-      throw new BadRequestException(
-        `Invalid status: ${data.updates.map((u) => u.status).join(', ')}. Valid statuses are: ${validStatuses.join(', ')}`,
-      );
-    }
+      const [otherMapping] = await tx
+        .select({ versionId: productMasterPricingRules.versionId })
+        .from(productMasterPricingRules)
+        .where(
+          and(
+            eq(productMasterPricingRules.pricingRuleId, rule.ruleId),
+            ne(productMasterPricingRules.versionId, versionId),
+          ),
+        )
+        .limit(1);
 
-    if (
-      data.updates.map((u) => u.displayOrder).some((displayOrder) => displayOrder !== undefined && displayOrder < 0)
-    ) {
-      throw new BadRequestException('Display order must be non-negative');
-    }
+      if (otherMapping) {
+        const newRuleId = uuidv7();
+        await tx.insert(pricingRules).values({
+          id: newRuleId,
+          layer: rule.layer,
+          order: rule.order,
+          scopeType: rule.scopeType,
+          scopeTargetIds: newTargets,
+          operationType: rule.operationType,
+          operationValue: rule.operationValue,
+          minQuantity: rule.minQuantity,
+        });
 
-    const updateData = data.updates.map((u) => ({
-      ...u,
-      updatedAt: new Date(),
-    }));
-
-    for (const update of updateData) {
-      await client.update(productVariants).set(update).where(eq(productVariants.id, update.id));
+        await tx
+          .update(productMasterPricingRules)
+          .set({ pricingRuleId: newRuleId })
+          .where(
+            and(
+              eq(productMasterPricingRules.masterId, masterId),
+              eq(productMasterPricingRules.versionId, versionId),
+              eq(productMasterPricingRules.pricingRuleId, rule.ruleId),
+            ),
+          );
+      } else {
+        await tx
+          .update(pricingRules)
+          .set({ scopeTargetIds: newTargets, updatedAt: new Date() })
+          .where(eq(pricingRules.id, rule.ruleId));
+      }
     }
   }
 

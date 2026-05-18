@@ -34,6 +34,10 @@ import {
   tagValues,
   productImages,
 } from '../../../schema/catalog.schema';
+import {
+  productMatchings,
+  productVariantSkuLinks,
+} from '../../../../inventory/schema/inventory.schema';
 import { eq, and, sql, max as drizzleMax, isNull, inArray, asc, desc } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
@@ -240,6 +244,10 @@ export class ProductVersionsService {
   /**
    * Draft 버전을 Active로 Publish
    * 기존 Active 버전이 있으면 자동으로 Inactive로 전환됨
+   *
+   * 부수 효과:
+   * - 새 active 의 variant 중 matching 없는 것을 이전 active 의 같은 옵션 조합 variant 로부터 인계 (docs/adr/0004)
+   * - 새 active variant 들끼리의 variantCode 충돌 검증 (DB 강제 없음 — 런타임 검증)
    */
   async publishVersion(versionId: string, tx?: DbTransaction): Promise<void> {
     return this.inTx(async (tx) => {
@@ -257,6 +265,9 @@ export class ProductVersionsService {
       } catch (e) {
         this.logger.debug(`No previous active version for ${version.masterId}`);
       }
+
+      // 새 active 가 될 버전의 variantCode 충돌 검증
+      await this._validateVariantCodeUniqueness(versionId, tx);
 
       // 기존 active를 inactive로
       await tx
@@ -276,6 +287,10 @@ export class ProductVersionsService {
         .set({ status: 'active', draftOwnerId: null, updatedAt: new Date() })
         .where(eq(productMasterVersions.id, versionId));
 
+      // 새 active 의 매칭되지 않은 variant 에 대해 이전 active 의 같은 옵션 조합 variant 로부터
+      // matching+links 를 인계 (inventory 모듈 직접 접근 — docs/adr/0004 참조)
+      await this._reconcileMatchingsAfterPublish(version.id, previousActiveVersion?.id ?? null, tx);
+
       // 이벤트 발행: 추가/삭제된 variant
       await this._publishVariantChangeEvents(version, previousActiveVersion, tx);
 
@@ -283,6 +298,203 @@ export class ProductVersionsService {
 
       this.logger.log(`Published version ${version.id} of master ${version.masterId} as active`);
     }, tx);
+  }
+
+  /**
+   * 같은 active 버전에 매달린 variant 들끼리 variantCode 충돌이 없는지 publish 직전에 검증.
+   * variant.status='active' 기준 partial unique 는 도메인 의미와 어긋나기 때문에 DB 강제는 없고
+   * 여기서 런타임 검증. docs/adr/0004.
+   */
+  private async _validateVariantCodeUniqueness(versionId: string, tx: DbTransaction): Promise<void> {
+    const rows = await tx
+      .select({ variantCode: productVariants.variantCode })
+      .from(productMasterVariants)
+      .innerJoin(productVariants, eq(productMasterVariants.variantId, productVariants.id))
+      .where(eq(productMasterVariants.versionId, versionId));
+
+    const seen = new Set<string>();
+    const dups = new Set<string>();
+    for (const row of rows) {
+      const code = row.variantCode;
+      if (!code) continue;
+      if (seen.has(code)) {
+        dups.add(code);
+      } else {
+        seen.add(code);
+      }
+    }
+
+    if (dups.size > 0) {
+      throw new BadRequestException(
+        `Duplicate variantCode in version ${versionId}: ${Array.from(dups).join(', ')}`,
+      );
+    }
+  }
+
+  /**
+   * 새 active 버전의 variant 중 inventory.productMatchings 가 없는 것에 대해, 이전 active 의
+   * 같은 옵션 조합 variant 의 matching+productVariantSkuLinks 를 clone 한다 (variantId 만 새 ID).
+   * 옵션 조합이 일치하지 않으면 정체성이 달라진 신규 variant — unmatched 유지.
+   *
+   * Inventory 모듈 테이블을 직접 접근한다. core 가 PIM+WMS 통합 앱이라는 사실 위에서 정당화됨.
+   * 자세한 결정은 docs/adr/0004.
+   */
+  private async _reconcileMatchingsAfterPublish(
+    newVersionId: string,
+    previousActiveVersionId: string | null,
+    tx: DbTransaction,
+  ): Promise<void> {
+    if (!previousActiveVersionId) {
+      this.logger.debug(`No previous active version — skipping matching reconciliation for ${newVersionId}`);
+      return;
+    }
+
+    const newVariants = await this._getVersionVariantsWithOptionValues(newVersionId, tx);
+    if (newVariants.length === 0) return;
+
+    const newVariantIds = newVariants.map((v) => v.variantId);
+
+    // 이미 matching 있는 variant 제외
+    const existingMatchings = await tx
+      .select({ variantId: productMatchings.variantId })
+      .from(productMatchings)
+      .where(inArray(productMatchings.variantId, newVariantIds));
+    const matched = new Set(existingMatchings.map((m) => m.variantId));
+    const unmatched = newVariants.filter((v) => !matched.has(v.variantId));
+    if (unmatched.length === 0) return;
+
+    const prevVariants = await this._getVersionVariantsWithOptionValues(previousActiveVersionId, tx);
+    if (prevVariants.length === 0) {
+      this.logger.debug(
+        `Previous active ${previousActiveVersionId} has no variants — leaving ${unmatched.length} new variants unmatched`,
+      );
+      return;
+    }
+
+    const prevByComboKey = new Map<string, { variantId: string }>();
+    for (const pv of prevVariants) {
+      prevByComboKey.set(this._comboKey(pv.optionValueIds), { variantId: pv.variantId });
+    }
+
+    const prevMatchingsByVariantId = new Map<
+      string,
+      {
+        id: string;
+        skuGroupId: string | null;
+        status: typeof productMatchings.$inferSelect.status;
+        priority: typeof productMatchings.$inferSelect.priority;
+        strategy: typeof productMatchings.$inferSelect.strategy;
+        isResolved: boolean;
+        inventoryManagement: boolean;
+        preStockSellable: boolean;
+        alwaysSellableZeroStock: boolean;
+      }
+    >();
+    {
+      const prevVariantIds = prevVariants.map((p) => p.variantId);
+      if (prevVariantIds.length > 0) {
+        const rows = await tx
+          .select({
+            id: productMatchings.id,
+            variantId: productMatchings.variantId,
+            skuGroupId: productMatchings.skuGroupId,
+            status: productMatchings.status,
+            priority: productMatchings.priority,
+            strategy: productMatchings.strategy,
+            isResolved: productMatchings.isResolved,
+            inventoryManagement: productMatchings.inventoryManagement,
+            preStockSellable: productMatchings.preStockSellable,
+            alwaysSellableZeroStock: productMatchings.alwaysSellableZeroStock,
+          })
+          .from(productMatchings)
+          .where(inArray(productMatchings.variantId, prevVariantIds));
+        for (const row of rows) {
+          prevMatchingsByVariantId.set(row.variantId, row);
+        }
+      }
+    }
+
+    let inheritedCount = 0;
+    for (const nv of unmatched) {
+      const twin = prevByComboKey.get(this._comboKey(nv.optionValueIds));
+      if (!twin) continue;
+
+      const prevMatching = prevMatchingsByVariantId.get(twin.variantId);
+      if (!prevMatching) continue;
+
+      const newMatchingId = uuidv7();
+      await tx.insert(productMatchings).values({
+        id: newMatchingId,
+        variantId: nv.variantId,
+        masterId: null,
+        skuGroupId: prevMatching.skuGroupId,
+        status: prevMatching.status,
+        priority: prevMatching.priority,
+        strategy: prevMatching.strategy,
+        isResolved: prevMatching.isResolved,
+        inventoryManagement: prevMatching.inventoryManagement,
+        preStockSellable: prevMatching.preStockSellable,
+        alwaysSellableZeroStock: prevMatching.alwaysSellableZeroStock,
+      });
+
+      const prevLinks = await tx
+        .select({
+          skuId: productVariantSkuLinks.skuId,
+          quantity: productVariantSkuLinks.quantity,
+        })
+        .from(productVariantSkuLinks)
+        .where(eq(productVariantSkuLinks.productMatchingId, prevMatching.id));
+
+      if (prevLinks.length > 0) {
+        await tx.insert(productVariantSkuLinks).values(
+          prevLinks.map((l) => ({
+            productMatchingId: newMatchingId,
+            skuId: l.skuId,
+            quantity: l.quantity,
+          })),
+        );
+      }
+
+      inheritedCount++;
+    }
+
+    if (inheritedCount > 0) {
+      this.logger.log(
+        `Matching reconciliation: inherited ${inheritedCount}/${unmatched.length} variant matchings from version ${previousActiveVersionId} to ${newVersionId}`,
+      );
+    }
+  }
+
+  private async _getVersionVariantsWithOptionValues(
+    versionId: string,
+    tx: DbTransaction,
+  ): Promise<Array<{ variantId: string; optionValueIds: string[] }>> {
+    const variantIds = await tx
+      .select({ variantId: productMasterVariants.variantId })
+      .from(productMasterVariants)
+      .where(eq(productMasterVariants.versionId, versionId));
+
+    if (variantIds.length === 0) return [];
+
+    const ids = variantIds.map((r) => r.variantId);
+    const optionRows = await tx
+      .select({
+        variantId: variantOptionValues.variantId,
+        optionValueId: variantOptionValues.optionValueId,
+      })
+      .from(variantOptionValues)
+      .where(inArray(variantOptionValues.variantId, ids));
+
+    const byVariant = new Map<string, string[]>();
+    for (const id of ids) byVariant.set(id, []);
+    for (const r of optionRows) {
+      byVariant.get(r.variantId)?.push(r.optionValueId);
+    }
+    return ids.map((id) => ({ variantId: id, optionValueIds: byVariant.get(id) ?? [] }));
+  }
+
+  private _comboKey(optionValueIds: string[]): string {
+    return [...optionValueIds].sort().join('|');
   }
 
   /**
