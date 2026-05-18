@@ -1,6 +1,5 @@
 'use client';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -9,89 +8,159 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
+import { useOrderStats, useSalesOrders, usePendingMatchings } from '@/lib/services/orders';
+import { useQuestions } from '@/lib/services/qna';
+import { useAllUserCount } from '@/lib/services/users';
+import type { SalesOrderStatus } from '@/lib/types/dto/orders';
 import {
-  dashboardStats,
-  quickActions,
-  recentOrders,
-  systemNotifications,
-} from '@/lib/mock/dashboard';
-import {
-  AlertCircle,
-  BarChart3,
   Boxes,
-  Building2,
   CheckCircle,
+  ChevronRight,
   Crown,
   Headphones,
+  MessageSquare,
   Package,
+  ShoppingBag,
   Store,
-  TrendingUp,
+  Tag,
   Users,
+  Warehouse,
 } from 'lucide-react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
-const iconMap = {
-  Package,
-  Boxes,
-  Users,
-  Headphones,
-  BarChart3,
-  Store,
-  Crown,
-  Building2,
+const STATUS_LABEL: Record<SalesOrderStatus, string> = {
+  pending: '대기',
+  confirmed: '확인',
+  processing: '처리중',
+  shipped: '배송중',
+  delivered: '완료',
+  cancelled: '취소',
+  timeout: '타임아웃',
 };
+
+const STATUS_COLOR: Record<SalesOrderStatus, string> = {
+  pending: 'bg-yellow-100 text-yellow-700',
+  confirmed: 'bg-blue-100 text-blue-700',
+  processing: 'bg-blue-100 text-blue-700',
+  shipped: 'bg-violet-100 text-violet-700',
+  delivered: 'bg-green-100 text-green-700',
+  cancelled: 'bg-red-100 text-red-600',
+  timeout: 'bg-gray-100 text-gray-600',
+};
+
+const QUICK_ACTIONS = [
+  { label: '주문 이력', icon: Package, path: '/order/history', iconColor: 'text-blue-600', bg: 'bg-blue-50' },
+  { label: '매칭', icon: Boxes, path: '/order/matching', iconColor: 'text-orange-600', bg: 'bg-orange-50' },
+  { label: '재고 현황', icon: Warehouse, path: '/inventory/status', iconColor: 'text-green-600', bg: 'bg-green-50' },
+  { label: 'QnA', icon: MessageSquare, path: '/cs/qna', iconColor: 'text-purple-600', bg: 'bg-purple-50' },
+  { label: '회원 관리', icon: Users, path: '/users', iconColor: 'text-pink-600', bg: 'bg-pink-50' },
+  { label: '판매처', icon: Store, path: '/account/sales-channel', iconColor: 'text-teal-600', bg: 'bg-teal-50' },
+  { label: '멤버십', icon: Crown, path: '/membership/members', iconColor: 'text-yellow-600', bg: 'bg-yellow-50' },
+  { label: '쿠폰', icon: Tag, path: '/mall/marketing/coupons', iconColor: 'text-red-600', bg: 'bg-red-50' },
+];
+
 export default function MainTemplate() {
+  const router = useRouter();
+
+  const { data: orderStats, isLoading: isOrderStatsLoading } = useOrderStats();
+  const { data: pendingMatchings, isLoading: isMatchingsLoading } = usePendingMatchings({ limit: 1 });
+  const { data: userCount, isLoading: isUserCountLoading } = useAllUserCount();
+  const { data: qnaData, isLoading: isQnaLoading } = useQuestions({ limit: 1, status: 'active' });
+  const { data: recentOrdersData, isLoading: isOrdersLoading } = useSalesOrders({ limit: 5 });
+
+  const stats = [
+    {
+      label: '오늘 주문',
+      value: orderStats?.todayCount,
+      isLoading: isOrderStatsLoading,
+      icon: ShoppingBag,
+      iconBg: 'bg-blue-50',
+      iconColor: 'text-blue-600',
+      path: '/order/history',
+    },
+    {
+      label: '매칭 대기',
+      value: pendingMatchings?.total,
+      isLoading: isMatchingsLoading,
+      icon: Boxes,
+      iconBg: 'bg-orange-50',
+      iconColor: 'text-orange-600',
+      path: '/order/matching',
+      highlight: (v: number) => v > 0,
+    },
+    {
+      label: '회원 수',
+      value: userCount,
+      isLoading: isUserCountLoading,
+      icon: Users,
+      iconBg: 'bg-green-50',
+      iconColor: 'text-green-600',
+      path: '/users',
+    },
+    {
+      label: '미답변 문의',
+      value: qnaData?.total,
+      isLoading: isQnaLoading,
+      icon: Headphones,
+      iconBg: 'bg-red-50',
+      iconColor: 'text-red-500',
+      path: '/cs/qna',
+      highlight: (v: number) => v > 0,
+    },
+  ];
+
+  const recentOrders = recentOrdersData?.data ?? [];
+
   return (
     <div className="space-y-6 px-4">
-      {/* 대시보드 헤더 */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">대시보드</h1>
-          <p className="text-gray-600 mt-2">
-            LCNINE 관리자 시스템에 오신 것을 환영합니다
-          </p>
+          <p className="text-gray-500 mt-1 text-sm">LCNINE 관리자 시스템</p>
         </div>
-        <div className="flex items-center space-x-4">
-          <Badge variant="outline" className="text-green-600 border-green-600">
-            <CheckCircle className="w-4 h-4 mr-1" />
-            시스템 정상
-          </Badge>
-          <Button variant="outline" size="sm">
-            <TrendingUp className="w-4 h-4 mr-2" />
-            실시간 현황
-          </Button>
+        <div className="flex items-center gap-2 text-sm text-green-600 border border-green-200 bg-green-50 px-3 py-1.5 rounded-full">
+          <CheckCircle className="w-4 h-4" />
+          시스템 정상
         </div>
       </div>
 
-      {/* 주요 지표 카드 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {dashboardStats.map((stat, index) => {
-          const IconComponent = iconMap[stat.icon as keyof typeof iconMap];
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {stats.map((stat) => {
+          const Icon = stat.icon;
+          const isHighlighted = stat.value != null && stat.highlight?.(stat.value);
           return (
             <Card
-              key={index}
-              className="bg-white border border-gray-200 shadow-sm"
+              key={stat.label}
+              className="bg-white border border-gray-200 shadow-sm cursor-pointer hover:shadow-md hover:border-gray-300 transition-all"
+              onClick={() => router.push(stat.path)}
             >
-              <CardContent className="p-6">
+              <CardContent className="p-5">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-gray-600">
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                       {stat.label}
                     </p>
-                    <p className="text-2xl font-bold text-gray-900">
-                      {stat.value}
-                    </p>
-                    <p
-                      className={`text-sm ${stat.change.startsWith('+')
-                          ? 'text-green-600'
-                          : 'text-red-600'
+                    {stat.isLoading ? (
+                      <Skeleton className="h-8 w-16 mt-1" />
+                    ) : (
+                      <p
+                        className={`text-2xl font-bold mt-1 ${
+                          isHighlighted ? 'text-red-600' : 'text-gray-900'
                         }`}
-                    >
-                      {stat.change} 지난 주 대비
-                    </p>
+                      >
+                        {stat.value ?? '-'}
+                      </p>
+                    )}
                   </div>
-                  <div className="p-3 bg-blue-50 rounded-full">
-                    <IconComponent className="w-6 h-6 text-blue-600" />
+                  <div className={`p-3 rounded-full ${stat.iconBg}`}>
+                    <Icon className={`w-5 h-5 ${stat.iconColor}`} />
                   </div>
+                </div>
+                <div className="flex items-center mt-3 text-xs text-gray-400">
+                  <span>바로가기</span>
+                  <ChevronRight className="w-3 h-3 ml-0.5" />
                 </div>
               </CardContent>
             </Card>
@@ -100,129 +169,100 @@ export default function MainTemplate() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* 최근 주문 */}
         <Card className="bg-white border border-gray-200 shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-gray-900">최근 주문</CardTitle>
-            <CardDescription className="text-gray-600">
-              최근 24시간 내 주문 현황
-            </CardDescription>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-gray-900 text-base">최근 주문</CardTitle>
+                <CardDescription className="text-gray-500 text-xs mt-0.5">
+                  최근 접수된 주문 현황
+                </CardDescription>
+              </div>
+              <Link
+                href="/order/history"
+                className="text-xs text-blue-600 hover:underline flex items-center gap-0.5"
+              >
+                전체보기 <ChevronRight className="w-3 h-3" />
+              </Link>
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {recentOrders.map((order, index) => (
-                <div
-                  key={index}
-                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-                >
-                  <div className="flex items-center space-x-3">
-                    <div className="p-2 bg-blue-100 rounded-full">
-                      <Package className="w-4 h-4 text-blue-600" />
+            {isOrdersLoading ? (
+              <div className="space-y-3">
+                {[...Array(4)].map((_, i) => (
+                  <Skeleton key={i} className="h-12 w-full" />
+                ))}
+              </div>
+            ) : recentOrders.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-6">주문이 없습니다</p>
+            ) : (
+              <div className="space-y-2">
+                {recentOrders.map((order) => (
+                  <div
+                    key={order.id}
+                    className="flex items-center justify-between py-2.5 px-3 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="p-1.5 bg-blue-50 rounded-md shrink-0">
+                        <Package className="w-3.5 h-3.5 text-blue-600" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {order.channelOrderId}
+                        </p>
+                        <p className="text-xs text-gray-400 truncate">
+                          {order.customerName ?? '-'}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">
-                        {order.order}
+                    <div className="flex items-center gap-3 shrink-0">
+                      <p className="text-sm font-medium text-gray-900 tabular-nums">
+                        {order.totalAmount != null
+                          ? `₩${order.totalAmount.toLocaleString('ko-KR')}`
+                          : '-'}
                       </p>
-                      <p className="text-xs text-gray-500">{order.customer}</p>
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[order.status]}`}
+                      >
+                        {STATUS_LABEL[order.status]}
+                      </span>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm font-medium text-gray-900">
-                      {order.amount}
-                    </p>
-                    <Badge
-                      variant={
-                        order.status === '완료' ? 'default' : 'secondary'
-                      }
-                      className="text-xs"
-                    >
-                      {order.status}
-                    </Badge>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 
-        {/* 시스템 알림 */}
         <Card className="bg-white border border-gray-200 shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-gray-900">시스템 알림</CardTitle>
-            <CardDescription className="text-gray-600">
-              중요한 시스템 업데이트 및 알림
+          <CardHeader className="pb-3">
+            <CardTitle className="text-gray-900 text-base">빠른 액션</CardTitle>
+            <CardDescription className="text-gray-500 text-xs mt-0.5">
+              자주 사용하는 메뉴
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {systemNotifications.map((notification, index) => (
-                <div
-                  key={index}
-                  className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg"
-                >
-                  <div
-                    className={`p-2 rounded-full ${notification.type === 'warning'
-                        ? 'bg-yellow-100'
-                        : notification.type === 'error'
-                          ? 'bg-red-100'
-                          : 'bg-blue-100'
-                      }`}
+            <div className="grid grid-cols-4 gap-2">
+              {QUICK_ACTIONS.map((action) => {
+                const Icon = action.icon;
+                return (
+                  <Button
+                    key={action.path}
+                    variant="ghost"
+                    className="flex flex-col items-center gap-2 h-20 rounded-xl hover:bg-gray-50 border border-transparent hover:border-gray-200"
+                    onClick={() => router.push(action.path)}
                   >
-                    <AlertCircle
-                      className={`w-4 h-4 ${notification.type === 'warning'
-                          ? 'text-yellow-600'
-                          : notification.type === 'error'
-                            ? 'text-red-600'
-                            : 'text-blue-600'
-                        }`}
-                    />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-gray-900">
-                      {notification.title}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      {notification.message}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      {notification.time}
-                    </p>
-                  </div>
-                </div>
-              ))}
+                    <div className={`p-2 rounded-lg ${action.bg}`}>
+                      <Icon className={`w-4 h-4 ${action.iconColor}`} />
+                    </div>
+                    <span className="text-xs text-gray-600 font-normal">{action.label}</span>
+                  </Button>
+                );
+              })}
             </div>
           </CardContent>
         </Card>
       </div>
-
-      {/* 빠른 액션 */}
-      <Card className="bg-white border border-gray-200 shadow-sm">
-        <CardHeader>
-          <CardTitle className="text-gray-900">빠른 액션</CardTitle>
-          <CardDescription className="text-gray-600">
-            자주 사용하는 기능에 빠르게 접근하세요
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
-            {quickActions.map((action, index) => {
-              const IconComponent =
-                iconMap[action.icon as keyof typeof iconMap];
-
-              return (
-                <Button
-                  key={index}
-                  variant="outline"
-                  className="flex flex-col items-center space-y-2 h-20 bg-white border-gray-200 hover:bg-gray-50"
-                >
-                  <IconComponent className={`w-6 h-6 ${action.color}`} />
-                  <span className="text-xs text-gray-700">{action.label}</span>
-                </Button>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }
