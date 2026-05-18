@@ -7,6 +7,17 @@ import {
 } from '@tanstack/react-query';
 import { usersQueryKeys } from './query-keys';
 
+export const useAdminUserCount = () => {
+  return useQuery({
+    queryKey: usersQueryKeys.count(),
+    queryFn: async () => {
+      const res = await userApi.getAdminUsers({ limit: 1, roleName: 'admin,master' });
+      return res.total;
+    },
+    staleTime: 60 * 1000,
+  });
+};
+
 export const useAdminUsers = (query: AdminUsersQuery) => {
   return useQuery({
     queryKey: usersQueryKeys.list(query),
